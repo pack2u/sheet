@@ -10,6 +10,9 @@ function registerPartnerMenu_() {
 
   ui.createMenu("💼 협력업체 관리")
 
+    // ━━━ 스마트 검색 (최상단 배치) ━━━━━━━━━━━━━━━━━━━━━━
+    .addItem("🔍 스마트 검색 (고유ID/수취인/송장)", "partnerOpenSmartSearch")
+    .addSeparator()
     // ━━━ 대리발송 발주시스템(New) ━━━━━━━━━━━━━━━━━━━━━━━━
     .addSubMenu(
       ui

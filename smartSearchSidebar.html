@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Noto Sans KR', 'Segoe UI', Arial, sans-serif;
+    background: #f5f7fa; color: #333;
+    display: flex; flex-direction: column; height: 100vh;
+  }
+
+  /* ── 헤더 ── */
+  .header {
+    background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+    color: #fff; padding: 16px 16px 14px; flex-shrink: 0;
+  }
+  .header h2 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+  .search-box {
+    display: flex; gap: 6px;
+  }
+  .search-box input {
+    flex: 1; padding: 9px 12px; border: none; border-radius: 8px;
+    font-size: 13px; background: rgba(255,255,255,.95); outline: none;
+  }
+  .search-box input:focus { box-shadow: 0 0 0 2px rgba(255,255,255,.5); }
+  .search-box button {
+    padding: 9px 14px; border: none; border-radius: 8px;
+    background: #ffb300; color: #1a237e; font-weight: 700; font-size: 13px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .search-box button:hover { background: #ffc107; }
+  .search-box button:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── 타입 필터 ── */
+  .filter-row {
+    display: flex; gap: 4px; padding: 8px 16px; flex-shrink: 0;
+    background: #fff; border-bottom: 1px solid #e0e0e0;
+  }
+  .filter-btn {
+    padding: 4px 10px; border: 1px solid #e0e0e0; border-radius: 14px;
+    font-size: 11px; cursor: pointer; background: #fff; color: #555;
+    transition: all .2s;
+  }
+  .filter-btn.active { background: #1a237e; color: #fff; border-color: #1a237e; }
+
+  /* ── 결과 카운트 ── */
+  .result-info {
+    padding: 8px 16px; font-size: 11px; color: #888;
+    border-bottom: 1px solid #f0f0f0; background: #fff; flex-shrink: 0;
+  }
+  .result-info strong { color: #1a237e; }
+
+  /* ── 결과 리스트 ── */
+  .results {
+    flex: 1; overflow-y: auto; padding: 8px 12px;
+  }
+
+  .card {
+    background: #fff; border-radius: 10px; margin-bottom: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06); overflow: hidden;
+    transition: box-shadow .2s;
+  }
+  .card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+
+  .card-header {
+    display: flex; align-items: center; padding: 10px 12px;
+    gap: 8px; cursor: pointer; user-select: none;
+  }
+  .card-header .type-badge {
+    font-size: 10px; font-weight: 700; padding: 2px 7px;
+    border-radius: 10px; white-space: nowrap;
+  }
+  .badge-hub { background: #e8eaf6; color: #283593; }
+  .badge-order { background: #e8f5e9; color: #2e7d32; }
+  .badge-archive { background: #fff3e0; color: #e65100; }
+  .badge-exclusive { background: #fce4ec; color: #c62828; }
+
+  .card-header .uid { font-size: 12px; font-weight: 600; color: #333; flex: 1; }
+  .card-header .vendor { font-size: 11px; color: #888; }
+  .card-header .arrow { font-size: 11px; color: #bbb; transition: transform .2s; }
+  .card-header .arrow.open { transform: rotate(90deg); }
+
+  .card-body {
+    display: none; padding: 0 12px 10px; font-size: 12px;
+  }
+  .card-body.open { display: block; }
+
+  .card-body table { width: 100%; border-collapse: collapse; }
+  .card-body th {
+    text-align: left; color: #888; font-weight: 500; padding: 3px 6px;
+    width: 80px; vertical-align: top; white-space: nowrap;
+  }
+  .card-body td { padding: 3px 6px; color: #333; word-break: break-all; }
+  .card-body tr { border-bottom: 1px solid #f5f5f5; }
+  .card-body tr:last-child { border-bottom: none; }
+
+  .status-tag {
+    display: inline-block; font-size: 10px; padding: 1px 6px;
+    border-radius: 8px; font-weight: 600;
+  }
+  .tag-normal { background: #e8f5e9; color: #2e7d32; }
+  .tag-cancel { background: #fce4ec; color: #c62828; }
+  .tag-return { background: #fff3e0; color: #e65100; }
+
+  /* ── 로딩 ── */
+  .loading {
+    text-align: center; padding: 40px; color: #888; font-size: 13px;
+  }
+  .loading .spinner {
+    display: inline-block; width: 24px; height: 24px;
+    border: 3px solid #e0e0e0; border-top-color: #1a237e;
+    border-radius: 50%; animation: spin .8s linear infinite;
+    margin-bottom: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty {
+    text-align: center; padding: 40px; color: #aaa; font-size: 13px;
+  }
+  .empty .icon { font-size: 36px; margin-bottom: 8px; }
+
+  /* ── 타임라인 ── */
+  .timeline {
+    margin-top: 8px; padding-left: 12px;
+    border-left: 2px solid #e0e0e0;
+  }
+  .timeline-item {
+    position: relative; padding: 2px 0 6px 12px; font-size: 11px;
+  }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -7px; top: 5px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #1a237e; border: 2px solid #fff;
+  }
+  .timeline-item .tl-date { color: #888; }
+  .timeline-item .tl-action { color: #333; font-weight: 500; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h2>🔍 스마트 검색</h2>
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="고유ID, 수취인명, 송장번호..."
+           onkeydown="if(event.key==='Enter')doSearch()">
+    <button id="searchBtn" onclick="doSearch()">검색</button>
+  </div>
+</div>
+
+<div class="filter-row">
+  <span class="filter-btn active" data-type="all" onclick="setFilter(this)">전체</span>
+  <span class="filter-btn" data-type="hub" onclick="setFilter(this)">허브</span>
+  <span class="filter-btn" data-type="order" onclick="setFilter(this)">발주탭</span>
+  <span class="filter-btn" data-type="archive" onclick="setFilter(this)">마감탭</span>
+  <span class="filter-btn" data-type="exclusive" onclick="setFilter(this)">전용양식</span>
+</div>
+
+<div class="result-info" id="resultInfo" style="display:none;">
+  <strong id="resultCount">0</strong>건 검색됨 · <span id="resultTime">0</span>초
+</div>
+
+<div class="results" id="resultsContainer">
+  <div class="empty">
+    <div class="icon">🔍</div>
+    고유ID, 수취인명, 송장번호를<br>입력하여 검색하세요
+  </div>
+</div>
+
+<script>
+var allResults = [];
+var currentFilter = 'all';
+
+function doSearch() {
+  var q = document.getElementById('searchInput').value.trim();
+  if (!q) return;
+
+  var btn = document.getElementById('searchBtn');
+  btn.disabled = true;
+  btn.textContent = '검색중...';
+
+  document.getElementById('resultsContainer').innerHTML =
+    '<div class="loading"><div class="spinner"></div><br>전체 시스템 검색 중...</div>';
+  document.getElementById('resultInfo').style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(onSearchSuccess)
+    .withFailureHandler(onSearchError)
+    .partnerSmartSearch(q);
+}
+
+function onSearchSuccess(data) {
+  var btn = document.getElementById('searchBtn');
+  btn.disabled = false;
+  btn.textContent = '검색';
+
+  allResults = data.results || [];
+  document.getElementById('resultCount').textContent = allResults.length;
+  document.getElementById('resultTime').textContent = data.elapsed || '0';
+  document.getElementById('resultInfo').style.display = '';
+
+  renderResults();
+}
+
+function onSearchError(err) {
+  var btn = document.getElementById('searchBtn');
+  btn.disabled = false;
+  btn.textContent = '검색';
+  document.getElementById('resultsContainer').innerHTML =
+    '<div class="empty"><div class="icon">❌</div>' + escHtml(err.message || '오류 발생') + '</div>';
+}
+
+function setFilter(el) {
+  document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+  el.classList.add('active');
+  currentFilter = el.getAttribute('data-type');
+  renderResults();
+}
+
+function renderResults() {
+  var container = document.getElementById('resultsContainer');
+  var filtered = currentFilter === 'all' ? allResults :
+    allResults.filter(function(r) { return r.type === currentFilter; });
+
+  if (!filtered.length) {
+    container.innerHTML = '<div class="empty"><div class="icon">📭</div>검색 결과가 없습니다</div>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < filtered.length; i++) {
+    var r = filtered[i];
+    var badgeClass = 'badge-' + r.type;
+    var typeLabel = { hub: '허브', order: '발주탭', archive: '마감탭', exclusive: '전용양식' }[r.type] || r.type;
+
+    var statusHtml = '';
+    if (r.cancel) statusHtml = '<span class="status-tag tag-cancel">취소</span>';
+    else if (r.returnC) statusHtml = '<span class="status-tag tag-return">반품</span>';
+    else statusHtml = '<span class="status-tag tag-normal">정상</span>';
+
+    html += '<div class="card">';
+    html += '<div class="card-header" onclick="toggleCard(this)">';
+    html += '<span class="type-badge ' + badgeClass + '">' + typeLabel + '</span>';
+    html += '<span class="uid">' + escHtml(r.uid || r.recipient || '—') + '</span>';
+    html += statusHtml;
+    html += '<span class="vendor">' + escHtml(r.vendorName || '') + '</span>';
+    html += '<span class="arrow">▶</span>';
+    html += '</div>';
+
+    html += '<div class="card-body">';
+    html += '<table>';
+    if (r.uid) html += row('고유ID', r.uid);
+    if (r.date) html += row('주문일자', r.date);
+    if (r.recipient) html += row('수취인', r.recipient);
+    if (r.phone) html += row('전화번호', r.phone);
+    if (r.itemName) html += row('품목명', r.itemName);
+    if (r.code) html += row('이카운트코드', r.code);
+    if (r.qty) html += row('수량', r.qty);
+    if (r.price) html += row('정산금액', formatNum(r.price));
+    if (r.invoice) html += row('송장번호', r.invoice);
+    if (r.status) html += row('상태', r.status);
+    if (r.reason) html += row('취소/반품사유', r.reason);
+    html += row('위치', escHtml(r.vendorName || '') + ' > ' + escHtml(r.tabName || ''));
+    html += '</table>';
+
+    // 타임라인
+    if (r.timeline && r.timeline.length) {
+      html += '<div class="timeline">';
+      for (var t = 0; t < r.timeline.length; t++) {
+        html += '<div class="timeline-item">';
+        html += '<span class="tl-date">' + escHtml(r.timeline[t].date || '') + '</span> ';
+        html += '<span class="tl-action">' + escHtml(r.timeline[t].action || '') + '</span>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    html += '</div></div>';
+  }
+  container.innerHTML = html;
+}
+
+function toggleCard(header) {
+  var body = header.nextElementSibling;
+  var arrow = header.querySelector('.arrow');
+  body.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+
+function row(label, value) {
+  return '<tr><th>' + label + '</th><td>' + escHtml(String(value || '')) + '</td></tr>';
+}
+
+function formatNum(n) {
+  if (!n && n !== 0) return '';
+  return Number(n).toLocaleString();
+}
+
+function escHtml(s) {
+  var d = document.createElement('div');
+  d.appendChild(document.createTextNode(s || ''));
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>
