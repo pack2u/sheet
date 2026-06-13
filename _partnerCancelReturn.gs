@@ -120,8 +120,9 @@ function partnerCollectCancels() {
         // ── (2) 발주탭 N열 상태 업데이트 ──
         _cr_updateOrderTab_(ss, uid, statusVal);
 
-        // ── (3) 마감탭 체크박스 체크 (취소완료/반품입고일 때만) ──
-        _cr_updateArchiveTab_(ss, uid, statusVal, reason, retInv, normCat);
+        // ── (3) 마감탭 체크박스 체크 + 반품배송비 기록 (취소완료/반품입고일 때만) ──
+        var shipFee = crData[r][_CR_COL.SHIP_FEE] || "";
+        _cr_updateArchiveTab_(ss, uid, statusVal, reason, retInv, normCat, shipFee);
 
         timestamps.push(now); // 처리 완료 시각 기록
         collected++;
@@ -179,9 +180,10 @@ function _cr_updateOrderTab_(ss, uid, statusVal) {
   }
 }
 
-// ── 마감탭 체크박스 업데이트 ──
+// ── 마감탭 체크박스 + 반품배송비 업데이트 ──
 // ★ 체크박스는 "취소완료" / "반품입고"일 때만 체크
-function _cr_updateArchiveTab_(ss, uid, statusVal, reason, retInv, originalCat) {
+// ★ 2026-06-13 최적화: 개별 setValue() 최대 5회 → 행 단위 setValues() 1회로 통합
+function _cr_updateArchiveTab_(ss, uid, statusVal, reason, retInv, originalCat, shipFee) {
   var tabPattern = /\(\d{4}년 \d{1,2}월\) 발주 마감/;
   var allTabs = ss.getSheets();
   var cat = (originalCat || "").replace(/\s/g, "");
@@ -197,7 +199,7 @@ function _cr_updateArchiveTab_(ss, uid, statusVal, reason, retInv, originalCat) 
     var data = tab.getRange(1, 1, lr, lc).getValues();
 
     var hdr = data[3]; // 4행 = index 3
-    var uidCol = -1, cancelCol = -1, returnCol = -1, reasonCol = -1, retInvCol = -1;
+    var uidCol = -1, cancelCol = -1, returnCol = -1, reasonCol = -1, retInvCol = -1, shipFeeCol = -1;
     for (var c = 0; c < hdr.length; c++) {
       var h = String(hdr[c] || "").replace(/\s/g, "");
       if (uidCol === -1 && h.indexOf("고유ID") !== -1) uidCol = c;
@@ -205,6 +207,7 @@ function _cr_updateArchiveTab_(ss, uid, statusVal, reason, retInv, originalCat) 
       if (returnCol === -1 && h === "반품") returnCol = c;
       if (reasonCol === -1 && h === "취소반품사유") reasonCol = c;
       if (retInvCol === -1 && h === "반품송장번호") retInvCol = c;
+      if (shipFeeCol === -1 && h === "반품배송비") shipFeeCol = c;
     }
     if (uidCol === -1) continue;
 
@@ -212,18 +215,31 @@ function _cr_updateArchiveTab_(ss, uid, statusVal, reason, retInv, originalCat) 
       var rowUid = String(data[r][uidCol] || "").trim();
       if (rowUid !== uid) continue;
 
-      // ★ 취소완료 → 취소 체크, 반품입고 → 반품 체크
+      // ★ 행 데이터를 메모리에서 수정 후 1회 기록
+      var rowData = data[r].slice(); // 복사
+      var changed = false;
+
       if (cat === "취소완료" && cancelCol !== -1) {
-        tab.getRange(r + 1, cancelCol + 1).setValue(true);
+        rowData[cancelCol] = true; changed = true;
       }
       if (cat === "반품입고" && returnCol !== -1) {
-        tab.getRange(r + 1, returnCol + 1).setValue(true);
+        rowData[returnCol] = true; changed = true;
       }
       if (reason && reasonCol !== -1) {
-        tab.getRange(r + 1, reasonCol + 1).setValue(reason);
+        rowData[reasonCol] = reason; changed = true;
       }
       if (retInv && retInvCol !== -1) {
-        tab.getRange(r + 1, retInvCol + 1).setValue(retInv);
+        rowData[retInvCol] = retInv; changed = true;
+      }
+      if (shipFee && shipFeeCol !== -1) {
+        var feeNum = parseFloat(String(shipFee).replace(/[^0-9.-]/g, ""));
+        if (!isNaN(feeNum) && feeNum > 0) {
+          rowData[shipFeeCol] = feeNum; changed = true;
+        }
+      }
+
+      if (changed) {
+        tab.getRange(r + 1, 1, 1, lc).setValues([rowData]);
       }
       return;
     }
@@ -522,4 +538,35 @@ function _cr_applyFormulas_(tab) {
   tab.getRange("L2:L200").setFormula(qtyFormula);
 
   Logger.log("[취소/반품] VLOOKUP 수식 적용 완료 — 발주탭 + 마감탭 " + archiveTabs.length + "개");
+}
+
+// ═══════════════════════════════════════════════════════
+//  ★ 경량 수식 갱신 — 수식만 빠르게 재빌드 (6분 초과 방지)
+// ═══════════════════════════════════════════════════════
+
+/**
+ * 취소/반품 접수 탭의 VLOOKUP 수식만 갱신 (헤더/드롭다운/서식 건너뜀)
+ * → 새 마감탭이 생겼을 때 "⚠ 미발견" 해결용
+ */
+function partnerRefreshCancelFormulasOnly() {
+  var ui; try { ui = SpreadsheetApp.getUi(); } catch(e) {}
+  var files = _pt_listFiles();
+  if (!files || !files.length) { if (ui) ui.alert("파일 없음"); return; }
+
+  var updated = 0, skipped = 0, errors = [];
+  for (var fi = 0; fi < files.length; fi++) {
+    try {
+      var ss = SpreadsheetApp.openById(files[fi].id);
+      var crTab = ss.getSheetByName(_CR_TAB_NAME);
+      if (!crTab) { skipped++; continue; }
+      _cr_applyFormulas_(crTab);
+      updated++;
+    } catch(e) {
+      errors.push(files[fi].name.replace("[협력업체] ", "") + ": " + e.message);
+    }
+  }
+  var msg = "✅ 취소/반품 수식 갱신 완료\n갱신: " + updated + "개 | 미해당: " + skipped + "개" +
+    (errors.length > 0 ? "\n⚠ 오류: " + errors.slice(0,3).join(", ") : "");
+  Logger.log(msg);
+  if (ui) ui.alert(msg);
 }

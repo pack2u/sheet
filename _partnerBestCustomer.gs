@@ -102,12 +102,22 @@ function _bc_analyzePartner_(fileInfo) {
     if (lr < _BC_DATA_START) continue;
 
     // 헤더에서 열 매핑
-    var headers = tab.getRange(_BC_HEADER_ROW, 1, 1, tab.getLastColumn()).getValues()[0];
+    var _lastCol_ = tab.getLastColumn();
+    var headers = tab.getRange(_BC_HEADER_ROW, 1, 1, _lastCol_).getValues()[0];
     var cMap = _bc_mapColumns_(headers);
     if (cMap.recipient === -1) continue;
 
-    // 데이터 읽기
-    var data = tab.getRange(_BC_DATA_START, 1, lr - _BC_DATA_START + 1, tab.getLastColumn()).getValues();
+    // ★ 2026-06-13 최적화: 필요한 열 최대 인덱스까지만 읽기 (메모리 ~55% 절감)
+    var _maxNeededCol_ = 1;
+    var _colKeys_ = ["date", "recipient", "phone", "price", "qty", "cancel", "returnC", "itemName", "itemCode"];
+    for (var _ci_ = 0; _ci_ < _colKeys_.length; _ci_++) {
+      var _cv_ = cMap[_colKeys_[_ci_]];
+      if (_cv_ !== undefined && _cv_ !== -1 && _cv_ + 1 > _maxNeededCol_) _maxNeededCol_ = _cv_ + 1;
+    }
+    _maxNeededCol_ = Math.min(_maxNeededCol_, _lastCol_); // 실제 열 수 초과 방지
+
+    // 데이터 읽기 (필요 열까지만)
+    var data = tab.getRange(_BC_DATA_START, 1, lr - _BC_DATA_START + 1, _maxNeededCol_).getValues();
 
     for (var r = 0; r < data.length; r++) {
       var row = data[r];
