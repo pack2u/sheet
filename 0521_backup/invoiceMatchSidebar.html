@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+      font-size: 13px; background: #f0f2f5;
+      display: flex; flex-direction: column; height: 100vh;
+    }
+    .header {
+      background: #1a73e8; color: white;
+      padding: 12px 16px; font-size: 15px; font-weight: bold;
+      flex-shrink: 0;
+    }
+    .section {
+      background: white; margin: 8px 8px 0;
+      border-radius: 8px; padding: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .section-title {
+      font-size: 11px; font-weight: bold; color: #888;
+      text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+    }
+    select, textarea {
+      width: 100%; border: 1px solid #ddd; border-radius: 6px;
+      padding: 8px; font-size: 13px; font-family: inherit;
+    }
+    textarea { height: 110px; resize: none; font-size: 12px; font-family: monospace; }
+    .btn {
+      width: 100%; padding: 9px; border: none; border-radius: 6px;
+      cursor: pointer; font-size: 13px; font-weight: bold;
+      margin-top: 8px; transition: 0.15s;
+    }
+    .btn-blue  { background: #1a73e8; color: white; }
+    .btn-blue:hover  { background: #1558b0; }
+    .btn-green { background: #34a853; color: white; }
+    .btn-green:hover { background: #2d8f46; }
+    .btn:disabled { background: #ccc; cursor: not-allowed; }
+    #resultSection { flex: 1; overflow-y: auto; display: none; }
+    .summary {
+      margin: 8px; background: white; border-radius: 8px;
+      padding: 10px 12px; font-size: 12px; color: #444;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { background: #f8f9fa; padding: 6px 8px; text-align: left; font-size: 11px; color: #666; }
+    td { padding: 5px 8px; border-bottom: 1px solid #f0f0f0; }
+    .ok  { color: #34a853; font-weight: bold; }
+    .err { color: #ea4335; font-weight: bold; }
+    .track { font-size: 11px; color: #555; font-family: monospace; }
+    #toast {
+      display: none; position: fixed; bottom: 16px; left: 50%;
+      transform: translateX(-50%); background: #333; color: white;
+      padding: 8px 18px; border-radius: 20px; font-size: 12px; z-index: 999;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="header">📬 카카오 송장번호 매칭</div>
+
+  <div class="section">
+    <div class="section-title">① 업체 선택</div>
+    <select id="vendorSelect">
+      <option value="">-- 로딩 중... --</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <div class="section-title">② 송장 데이터 입력 (붙여넣기 또는 엑셀 업로드)</div>
+    <div id="dropZone" style="margin-bottom: 8px; border: 2px dashed #ccc; padding: 12px; border-radius: 6px; background: #fafafa; text-align: center; cursor: pointer; transition: 0.2s;" onclick="document.getElementById('fileUpload').click()">
+      <div style="font-size: 13px; color: #555; margin-bottom: 4px;">📂 엑셀 파일을 여기에 드래그 앤 드롭 하세요</div>
+      <div style="font-size: 11px; color: #888;">또는 클릭하여 파일 선택</div>
+      <input type="file" id="fileUpload" accept=".xlsx, .xls, .csv" style="display: none;" onchange="handleFileUpload(event)">
+    </div>
+    <div style="font-size: 10px; color: #888; margin-bottom: 8px;">※ 엑셀 파일은 '이름', '송장번호' 열만 남겨두시면 인식률이 가장 높습니다.</div>
+    <textarea id="rawText" placeholder="예시:
+1234567890 홍길동
+김철수 5678901234
+(또는 위의 버튼으로 엑셀 파일을 업로드하세요)"></textarea>
+    <button class="btn btn-blue" id="analyzeBtn" onclick="analyze()">🔍 분석</button>
+  </div>
+
+  <div id="resultSection">
+    <div class="summary" id="summary"></div>
+    <div class="section" style="margin-bottom:8px;">
+      <button class="btn btn-green" id="applyBtn" onclick="applyAll()">✅ 전용양식에 반영</button>
+      <table>
+        <thead><tr><th>이름</th><th>송장번호</th><th>행</th><th></th></tr></thead>
+        <tbody id="matchTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    var _matches = null, _fileId = null;
+
+    function toast(msg, ms) {
+      var el = document.getElementById('toast');
+      el.textContent = msg; el.style.display = 'block';
+      setTimeout(function(){ el.style.display = 'none'; }, ms || 2500);
+    }
+
+    // 드래그 앤 드롭 이벤트 설정
+    document.addEventListener('DOMContentLoaded', function() {
+      var dropZone = document.getElementById('dropZone');
+      
+      dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.style.background = '#e8f0fe';
+        dropZone.style.borderColor = '#1a73e8';
+      });
+
+      dropZone.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.style.background = '#fafafa';
+        dropZone.style.borderColor = '#ccc';
+      });
+
+      dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.style.background = '#fafafa';
+        dropZone.style.borderColor = '#ccc';
+        
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          document.getElementById('fileUpload').files = e.dataTransfer.files;
+          handleFileUpload({ target: { files: e.dataTransfer.files } });
+        }
+      });
+    });
+
+    // 엑셀 파일 업로드 처리 (SheetJS 사용)
+    function handleFileUpload(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var btn = document.getElementById('analyzeBtn');
+      btn.textContent = '파일 읽는 중...';
+      btn.disabled = true;
+
+      var reader = new FileReader();
+      reader.onload = function(evt) {
+        var data = new Uint8Array(evt.target.result);
+        try {
+          var workbook = XLSX.read(data, {type: 'array'});
+          var firstSheet = workbook.SheetNames[0];
+          // 탭으로 구분된 텍스트로 변환 (기존 복사-붙여넣기와 동일한 효과)
+          var txtData = XLSX.utils.sheet_to_txt(workbook.Sheets[firstSheet]);
+          
+          document.getElementById('rawText').value = txtData;
+          toast('엑셀 파일 로드 완료! 분석을 눌러주세요.', 3000);
+        } catch(err) {
+          toast('파일 읽기 오류: ' + err.message, 4000);
+        } finally {
+          btn.textContent = '🔍 분석';
+          btn.disabled = false;
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // 업체 목록 로드
+    google.script.run
+      .withSuccessHandler(function(list) {
+        var sel = document.getElementById('vendorSelect');
+        sel.innerHTML = '<option value="">-- 업체 선택 --</option>';
+        list.forEach(function(f) {
+          var o = document.createElement('option');
+          o.value = f.id;
+          o.textContent = '[' + f.pfx + '] ' + f.name;
+          sel.appendChild(o);
+        });
+      })
+      .withFailureHandler(function(e) {
+        document.getElementById('vendorSelect').innerHTML = '<option>❌ 로드 실패</option>';
+      })
+      .getPartnerFileListForSidebar();
+
+    function analyze() {
+      var fileId = document.getElementById('vendorSelect').value;
+      var rawText = document.getElementById('rawText').value.trim();
+      if (!fileId) return toast('업체를 선택하세요.', 2000);
+      if (!rawText) return toast('텍스트를 붙여넣으세요.', 2000);
+
+      var btn = document.getElementById('analyzeBtn');
+      btn.disabled = true; btn.textContent = '분석 중...';
+      document.getElementById('resultSection').style.display = 'none';
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          btn.disabled = false; btn.textContent = '🔍 분석';
+          if (res.error) { toast('❌ ' + res.error, 3000); return; }
+          _matches = res.matches; _fileId = fileId;
+          showResults(res);
+        })
+        .withFailureHandler(function(e) {
+          btn.disabled = false; btn.textContent = '🔍 분석';
+          toast('오류: ' + e.message, 3000);
+        })
+        .parseAndMatchInvoiceText(fileId, rawText);
+    }
+
+    function showResults(res) {
+      var matched = (res.matches || []).filter(function(m){ return m.rows && m.rows.length > 0; });
+      var unmatched = res.unmatched || [];
+      document.getElementById('summary').innerHTML =
+        '<b>수취인 열:</b> ' + res.recipientHeader +
+        '&nbsp;&nbsp;|&nbsp;&nbsp;<span class="ok">✅ ' + matched.length + '건</span>' +
+        '&nbsp;&nbsp;<span class="err">❌ ' + unmatched.length + '건</span>';
+
+      var tbody = document.getElementById('matchTable');
+      tbody.innerHTML = '';
+      matched.forEach(function(m) {
+        var rowNums = m.rows.map(function(r) { return r + 2; }).join(',');
+        var nameStr = m.name !== m.matchedName ? m.name + '<span style="color:#aaa">≈</span>' + m.matchedName : m.name;
+        var status = m.append ? '<span style="color:#f29900">➕추가</span>' : '<span class="ok">✅</span>';
+        tbody.innerHTML += '<tr><td>' + nameStr + '</td><td class="track">' + m.tracking + '</td><td>' + rowNums + '</td><td>' + status + '</td></tr>';
+      });
+      unmatched.forEach(function(u) {
+        tbody.innerHTML += '<tr><td class="err">' + u.name + '</td><td class="track">' + u.tracking + '</td><td>-</td><td class="err">❌</td></tr>';
+      });
+
+      document.getElementById('applyBtn').style.display = matched.length ? 'block' : 'none';
+      document.getElementById('resultSection').style.display = 'block';
+    }
+
+    function applyAll() {
+      if (!_matches || !_fileId) return;
+      var btn = document.getElementById('applyBtn');
+      btn.disabled = true; btn.textContent = '반영 중...';
+      google.script.run
+        .withSuccessHandler(function(res) {
+          btn.disabled = false; btn.textContent = '✅ 전용양식에 반영';
+          toast(res.msg, 3000);
+        })
+        .withFailureHandler(function(e) {
+          btn.disabled = false; btn.textContent = '✅ 전용양식에 반영';
+          toast('오류: ' + e.message, 3000);
+        })
+        .applyInvoiceMatches(_fileId, JSON.stringify(_matches));
+    }
+  </script>
+</body>
+</html>

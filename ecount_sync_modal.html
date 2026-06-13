@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Premium Monochrome Design System */
+    :root {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f8fafc;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #94a3b8;
+      --border-color: #e2e8f0;
+      --accent-color: #0f172a;
+      --accent-light: #f1f5f9;
+      --error-color: #ef4444;
+      --error-bg: #fef2f2;
+      --font-main: 'Inter', sans-serif;
+      --font-title: 'Outfit', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-main);
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      height: 400px;
+      width: 100%;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      padding: 24px;
+      justify-content: space-between;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .header-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header h2 {
+      font-family: var(--font-title);
+      font-weight: 600;
+      font-size: 18px;
+      letter-spacing: -0.5px;
+      color: var(--text-primary);
+    }
+
+    .header-icon {
+      width: 20px;
+      height: 20px;
+      stroke: var(--text-primary);
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+
+    .rotating {
+      animation: spin 1.8s linear infinite;
+    }
+
+    @keyframes spin {
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Status Steps Panel */
+    .status-panel {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .step-card {
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 11px 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.25s ease;
+    }
+
+    .step-card.active {
+      border-color: var(--text-primary);
+      background-color: #ffffff;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+    }
+
+    .step-card.completed {
+      background-color: var(--accent-light);
+      border-color: var(--border-color);
+    }
+
+    .step-card.error {
+      background-color: var(--error-bg);
+      border-color: var(--error-color);
+    }
+
+    .step-info {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .step-num {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+
+    .step-card.active .step-num {
+      color: var(--text-secondary);
+    }
+
+    .step-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .step-card.active .step-name {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    /* Step Status Icons */
+    .step-icon-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+    }
+
+    .icon-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background-color: var(--text-muted);
+    }
+
+    .spinner-sm {
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--border-color);
+      border-top-color: var(--text-primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    .icon-svg {
+      width: 15px;
+      height: 15px;
+      fill: none;
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .icon-check {
+      stroke: var(--text-primary);
+    }
+
+    .icon-cross {
+      stroke: var(--error-color);
+    }
+
+    /* Progress & Actions */
+    .footer-section {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .progress-group {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 4px;
+      background-color: var(--accent-light);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      width: 0%;
+      height: 100%;
+      background-color: var(--accent-color);
+      border-radius: 2px;
+      transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+    }
+
+    .progress-bar-fill.shimmer::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.35) 50%,
+        rgba(255, 255, 255, 0) 100%
+      );
+      animation: shimmer 1.5s infinite;
+    }
+
+    @keyframes shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    .action-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Accordion Console Log */
+    .accordion-header {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      user-select: none;
+      transition: color 0.2s ease;
+    }
+
+    .accordion-header:hover {
+      color: var(--text-primary);
+    }
+
+    .accordion-arrow {
+      width: 10px;
+      height: 10px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      transition: transform 0.2s ease;
+    }
+
+    .accordion-arrow.open {
+      transform: rotate(90deg);
+    }
+
+    .log-container {
+      max-height: 0;
+      overflow: hidden;
+      background-color: var(--bg-secondary);
+      border: 0 solid var(--border-color);
+      border-radius: 6px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      font-family: Monaco, Consolas, monospace;
+      font-size: 10px;
+      line-height: 1.5;
+      color: var(--text-secondary);
+    }
+
+    .log-container.open {
+      max-height: 85px;
+      padding: 8px 10px;
+      border-width: 1px;
+      margin-top: 6px;
+      overflow-y: auto;
+    }
+
+    .log-item {
+      margin-bottom: 3px;
+      white-space: pre-wrap;
+    }
+
+    .log-item.success {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .log-item.error {
+      color: var(--error-color);
+      font-weight: 600;
+    }
+
+    /* Button */
+    .btn-solid {
+      background-color: var(--accent-color);
+      color: #ffffff;
+      border: none;
+      border-radius: 5px;
+      padding: 7px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: none;
+      box-shadow: 0 2px 4px rgba(15, 23, 42, 0.08);
+    }
+
+    .btn-solid:hover {
+      background-color: #000000;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(15, 23, 42, 0.12);
+    }
+
+    .btn-solid:active {
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-title-group">
+        <svg class="header-icon rotating" id="syncIcon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3l.7.8M22 12.5a10 10 0 0 1-18.8 4.3l-.7-.8"/>
+        </svg>
+        <h2 id="headerTitle">이카운트 데이터 동기화</h2>
+      </div>
+    </div>
+
+    <!-- Status Cards Panel -->
+    <div class="status-panel">
+      <!-- 1단계 -->
+      <div class="step-card" id="card1">
+        <div class="step-info">
+          <span class="step-num">Step 01</span>
+          <span class="step-name">보안 로그인</span>
+        </div>
+        <div class="step-icon-wrapper" id="iconBox1">
+          <div class="icon-dot"></div>
+        </div>
+      </div>
+      <!-- 2단계 -->
+      <div class="step-card" id="card2">
+        <div class="step-info">
+          <span class="step-num">Step 02</span>
+          <span class="step-name">품목 정보 연동</span>
+        </div>
+        <div class="step-icon-wrapper" id="iconBox2">
+          <div class="icon-dot"></div>
+        </div>
+      </div>
+      <!-- 3단계 -->
+      <div class="step-card" id="card3">
+        <div class="step-info">
+          <span class="step-num">Step 03</span>
+          <span class="step-name">실시간 재고 반영</span>
+        </div>
+        <div class="step-icon-wrapper" id="iconBox3">
+          <div class="icon-dot"></div>
+        </div>
+      </div>
+      <!-- 4단계 -->
+      <div class="step-card" id="card4">
+        <div class="step-info">
+          <span class="step-num">Step 04</span>
+          <span class="step-name">시트 후처리 적용</span>
+        </div>
+        <div class="step-icon-wrapper" id="iconBox4">
+          <div class="icon-dot"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress & Console Section -->
+    <div class="footer-section">
+      <!-- Progress Fill & Percentage -->
+      <div>
+        <div class="progress-group">
+          <span id="statusLabel">대기 중...</span>
+          <span id="percentText">0%</span>
+        </div>
+        <div class="progress-bar-bg" style="margin-top: 6px;">
+          <div class="progress-bar-fill shimmer" id="progressBar"></div>
+        </div>
+      </div>
+
+      <!-- Accordion detailed logs -->
+      <div>
+        <div class="action-row">
+          <div class="accordion-header" onclick="toggleLogs()">
+            <svg class="accordion-arrow" id="logArrow" viewBox="0 0 24 24">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+            상세 실시간 로그
+          </div>
+          <button class="btn-solid" id="closeBtn" onclick="google.script.host.close()">마치기</button>
+        </div>
+        <div class="log-container" id="logBox">
+          <!-- 상세 로그 기록 구역 -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const logBox = document.getElementById('logBox');
+    const logArrow = document.getElementById('logArrow');
+    let isLogOpen = false;
+
+    function toggleLogs(forceState) {
+      const state = (forceState !== undefined) ? forceState : !isLogOpen;
+      isLogOpen = state;
+      if (state) {
+        logBox.classList.add('open');
+        logArrow.classList.add('open');
+      } else {
+        logBox.classList.remove('open');
+        logArrow.classList.remove('open');
+      }
+    }
+
+    function addLog(text, type = 'normal') {
+      const cls = type === 'normal' ? 'log-item' : `log-item ${type}`;
+      logBox.innerHTML += `<div class="${cls}">➔ ${text}</div>`;
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function updateStepUI(stepNum, status) {
+      // status: 'waiting', 'active', 'completed', 'error'
+      const card = document.getElementById(`card${stepNum}`);
+      const iconBox = document.getElementById(`iconBox${stepNum}`);
+      
+      card.className = 'step-card'; // 클래스 리셋
+      
+      if (status === 'waiting') {
+        iconBox.innerHTML = '<div class="icon-dot"></div>';
+      } else if (status === 'active') {
+        card.classList.add('active');
+        iconBox.innerHTML = '<div class="spinner-sm"></div>';
+      } else if (status === 'completed') {
+        card.classList.add('completed');
+        iconBox.innerHTML = `
+          <svg class="icon-svg icon-check" viewBox="0 0 24 24">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        `;
+      } else if (status === 'error') {
+        card.classList.add('error');
+        iconBox.innerHTML = `
+          <svg class="icon-svg icon-cross" viewBox="0 0 24 24">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        `;
+      }
+    }
+
+    function setDone(isError) {
+      const syncIcon = document.getElementById('syncIcon');
+      const progressBar = document.getElementById('progressBar');
+      const percentText = document.getElementById('percentText');
+      const statusLabel = document.getElementById('statusLabel');
+      
+      syncIcon.classList.remove('rotating');
+      progressBar.classList.remove('shimmer');
+
+      if (isError) {
+        progressBar.style.backgroundColor = 'var(--error-color)';
+        syncIcon.innerHTML = `
+          <line x1="18" y1="6" x2="6" y2="18" stroke="var(--error-color)" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="6" y1="6" x2="18" y2="18" stroke="var(--error-color)" stroke-width="2.5" stroke-linecap="round"/>
+        `;
+        percentText.innerText = "오류";
+        percentText.style.color = 'var(--error-color)';
+        statusLabel.innerText = "중단됨";
+        statusLabel.style.color = 'var(--error-color)';
+        
+        // 오류 시에는 세부 로그를 무조건 자동 확장하여 에러 확인 유도
+        toggleLogs(true);
+      } else {
+        progressBar.style.width = '100%';
+        percentText.innerText = "100%";
+        statusLabel.innerText = "동기화 완료";
+        syncIcon.innerHTML = `
+          <polyline points="20 6 9 17 4 12" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        `;
+      }
+      document.getElementById('closeBtn').style.display = 'inline-block';
+    }
+
+    function updateProgress(val, label) {
+      document.getElementById('progressBar').style.width = val + '%';
+      document.getElementById('percentText').innerText = val + '%';
+      if (label) document.getElementById('statusLabel').innerText = label;
+    }
+
+    // 서버 사이드 비동기 래퍼 함수
+    function runStep1() {
+      return new Promise((resolve, reject) => {
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).ecountStep1();
+      });
+    }
+    function runStep2(auth) {
+      return new Promise((resolve, reject) => {
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).ecountStep2(auth);
+      });
+    }
+    function runStep3(auth) {
+      return new Promise((resolve, reject) => {
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).ecountStep3(auth);
+      });
+    }
+    function runStep4() {
+      return new Promise((resolve, reject) => {
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).ecountStep4ForModal();
+      });
+    }
+
+    // 모달 동기화 제어탑 로직
+    async function executeSync() {
+      try {
+        addLog("동기화 작업을 시작합니다.");
+        updateProgress(5, "프로세스 준비 중");
+        
+        // Step 1: 로그인 인증
+        updateStepUI(1, 'active');
+        addLog("1단계: 이카운트 서버 인증 및 세션 토큰 발행 중...");
+        let auth = await runStep1();
+        updateStepUI(1, 'completed');
+        addLog("1단계 성공: 세션 인증 토큰 획득 완료", "success");
+        updateProgress(25, "서버 로그인 성공");
+
+        // Step 2: 품목 목록 로드
+        updateStepUI(2, 'active');
+        addLog("2단계: 이카운트 품목 리스트 수집 중 (대기 시간 약 5초~20초)...");
+        await runStep2(auth);
+        updateStepUI(2, 'completed');
+        addLog("2단계 성공: '이카운트-품목정보' 시트 갱신 완료", "success");
+        updateProgress(60, "품목 데이터 반영 완료");
+
+        // Step 3: 실시간 재고 조회
+        updateStepUI(3, 'active');
+        addLog("3단계: 실시간 창고 재고 및 밸런스 수량 수집 중...");
+        await runStep3(auth);
+        updateStepUI(3, 'completed');
+        addLog("3단계 성공: '이카운트-재고' 및 품목 병합 완료", "success");
+        updateProgress(85, "실시간 재고 반영 완료");
+
+        // Step 4: 시트 정렬 및 이관 후처리
+        updateStepUI(4, 'active');
+        addLog("4단계: 시트 자동 정렬 및 다이렉트 이관 처리 중 (마무리 단계)...");
+        await runStep4();
+        updateStepUI(4, 'completed');
+        addLog("4단계 성공: 상품정보 최종 덮어쓰기 완료", "success");
+        updateProgress(100, "동기화 완료");
+
+        addLog("🎉 모든 데이터 연동 작업이 성공적으로 종료되었습니다.", "success");
+        setDone(false);
+
+      } catch (err) {
+        let msg = typeof err === 'object' ? (err.message || JSON.stringify(err)) : String(err);
+        addLog('에러 중단됨: ' + msg, "error");
+        
+        // 활성화된 단계 카드를 에러로 변경
+        for (let i = 1; i <= 4; i++) {
+          const card = document.getElementById(`card${i}`);
+          if (card.classList.contains('active')) {
+            updateStepUI(i, 'error');
+          }
+        }
+        
+        setDone(true);
+        // 에러 발생 시 동기화 락 해제
+        google.script.run.releaseSyncLockFromModal();
+      }
+    }
+
+    // 모달 초기 렌더링 0.5초 후 자동 시작
+    setTimeout(executeSync, 500);
+  </script>
+</body>
+</html>

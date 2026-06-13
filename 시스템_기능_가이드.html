@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pack2U 상품정보시트 — 기능 가이드</title>
+<style>
+  :root {
+    --blue:   #1a73e8;
+    --green:  #0f9d58;
+    --orange: #e8710a;
+    --purple: #7b2ff7;
+    --red:    #d93025;
+    --gray:   #5f6368;
+    --bg:     #f8f9fa;
+    --card:   #ffffff;
+    --border: #dadce0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Noto Sans KR', 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: #202124;
+    line-height: 1.6;
+  }
+
+  /* ── 헤더 ── */
+  .hero {
+    background: linear-gradient(135deg, #1a237e 0%, #1565c0 50%, #0288d1 100%);
+    color: white;
+    padding: 48px 40px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; top: -40px; right: -40px;
+    width: 300px; height: 300px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 50%;
+  }
+  .hero h1 { font-size: 2rem; font-weight: 700; margin-bottom: 8px; }
+  .hero .subtitle { font-size: 1rem; opacity: 0.85; }
+  .hero .badge-row { margin-top: 20px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 4px 12px; border-radius: 20px; font-size: 0.78rem;
+  }
+
+  /* ── 레이아웃 ── */
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+
+  /* ── TOC ── */
+  .toc {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 36px;
+  }
+  .toc h2 { font-size: 1rem; color: var(--gray); margin-bottom: 14px; letter-spacing: .05em; text-transform: uppercase; }
+  .toc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  .toc-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-radius: 8px;
+    text-decoration: none; color: #202124;
+    border: 1px solid var(--border);
+    font-size: 0.875rem;
+    transition: all .15s;
+  }
+  .toc-item:hover { border-color: var(--blue); color: var(--blue); background: #e8f0fe; }
+  .toc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── 섹션 ── */
+  .section { margin-bottom: 48px; }
+  .section-header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid;
+  }
+  .section-header .icon { font-size: 1.5rem; }
+  .section-header h2 { font-size: 1.3rem; font-weight: 700; }
+  .section-header .count {
+    margin-left: auto;
+    font-size: 0.8rem;
+    padding: 2px 10px; border-radius: 20px;
+    background: currentColor; color: white;
+    opacity: 0.85;
+  }
+
+  /* ── 카드 그리드 ── */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: box-shadow .15s, transform .15s;
+  }
+  .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); transform: translateY(-2px); }
+  .card-header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+  .card-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; flex-shrink: 0;
+  }
+  .card-title { font-weight: 600; font-size: 0.95rem; line-height: 1.4; }
+  .card-menu { font-size: 0.72rem; color: var(--gray); margin-top: 2px; }
+  .card-desc { font-size: 0.83rem; color: #444; line-height: 1.6; }
+  .card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+  .tag {
+    font-size: 0.7rem; padding: 2px 8px; border-radius: 12px;
+    font-weight: 500;
+  }
+
+  /* ── 워크플로우 ── */
+  .workflow {
+    background: white; border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px;
+    margin-bottom: 20px;
+  }
+  .workflow h3 { font-size: 1rem; font-weight: 600; margin-bottom: 16px; color: var(--gray); }
+  .flow-steps { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+  .step {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 14px;
+    font-size: 0.82rem; font-weight: 500;
+  }
+  .flow-arrow { color: var(--gray); font-size: 1rem; padding: 0 4px; }
+
+  /* ── 자동화 타임테이블 ── */
+  .time-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .time-table th, .time-table td {
+    padding: 10px 14px; text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .time-table th { background: var(--bg); font-weight: 600; color: var(--gray); }
+  .time-table tr:hover td { background: #f1f3f4; }
+  .time-chip {
+    background: #e8f0fe; color: var(--blue);
+    padding: 2px 10px; border-radius: 12px; font-weight: 600; font-size: 0.78rem;
+  }
+
+  /* ── 색상 시스템 ── */
+  .c-blue   { --accent: var(--blue);   }
+  .c-green  { --accent: var(--green);  }
+  .c-orange { --accent: var(--orange); }
+  .c-purple { --accent: var(--purple); }
+  .c-red    { --accent: var(--red);    }
+
+  .section-header.c-blue   { border-color: var(--blue);   color: var(--blue);   }
+  .section-header.c-green  { border-color: var(--green);  color: var(--green);  }
+  .section-header.c-orange { border-color: var(--orange); color: var(--orange); }
+  .section-header.c-purple { border-color: var(--purple); color: var(--purple); }
+  .section-header.c-red    { border-color: var(--red);    color: var(--red);    }
+
+  .card-icon.c-blue   { background: #e8f0fe; }
+  .card-icon.c-green  { background: #e6f4ea; }
+  .card-icon.c-orange { background: #fce8b2; }
+  .card-icon.c-purple { background: #f3e8fd; }
+  .card-icon.c-red    { background: #fce8e6; }
+
+  .tag.c-blue   { background: #e8f0fe; color: var(--blue);   }
+  .tag.c-green  { background: #e6f4ea; color: var(--green);  }
+  .tag.c-orange { background: #fce8b2; color: var(--orange); }
+  .tag.c-purple { background: #f3e8fd; color: var(--purple); }
+  .tag.c-red    { background: #fce8e6; color: var(--red);    }
+  .tag.c-gray   { background: #f1f3f4; color: var(--gray);   }
+
+  /* ── 경고/팁 박스 ── */
+  .note {
+    border-left: 4px solid;
+    padding: 12px 16px; border-radius: 0 8px 8px 0;
+    font-size: 0.83rem; margin: 12px 0;
+  }
+  .note.info  { border-color: var(--blue);   background: #e8f0fe; }
+  .note.warn  { border-color: var(--orange); background: #fff3e0; }
+  .note.danger{ border-color: var(--red);    background: #fce8e6; }
+  .note.ok    { border-color: var(--green);  background: #e6f4ea; }
+
+  /* ── 푸터 ── */
+  footer {
+    text-align: center; padding: 32px;
+    font-size: 0.8rem; color: var(--gray);
+    border-top: 1px solid var(--border);
+    margin-top: 48px;
+  }
+
+  @media (max-width: 600px) {
+    .card-grid { grid-template-columns: 1fr; }
+    .toc-grid  { grid-template-columns: 1fr 1fr; }
+    .hero h1 { font-size: 1.5rem; }
+    .flow-steps { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ HERO ═══════════ -->
+<div class="hero">
+  <h1>💎 Pack2U 상품정보시트</h1>
+  <div class="subtitle">이카운트 연동 · 협력업체 주문관리 · 허브 단가 시스템 통합 가이드</div>
+  <div class="badge-row">
+    <span class="badge">Google Apps Script</span>
+    <span class="badge">이카운트 ERP 연동</span>
+    <span class="badge">협력업체 발주·송장 자동화</span>
+    <span class="badge">허브 단가 관리</span>
+    <span class="badge">2026-05 현행 기준</span>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ═══════════ TOC ═══════════ -->
+<div class="toc">
+  <h2>목차</h2>
+  <div class="toc-grid">
+    <a href="#ecount-sync" class="toc-item"><span class="toc-dot" style="background:var(--blue)"></span>이카운트 동기화</a>
+    <a href="#ecount-tools" class="toc-item"><span class="toc-dot" style="background:#1557b0"></span>이카운트 작업 도구</a>
+    <a href="#order-system" class="toc-item"><span class="toc-dot" style="background:var(--green)"></span>대리발송 발주시스템</a>
+    <a href="#invoice" class="toc-item"><span class="toc-dot" style="background:#137333"></span>송장 수집·배포</a>
+    <a href="#cancel" class="toc-item"><span class="toc-dot" style="background:var(--red)"></span>취소·반품 처리</a>
+    <a href="#archive" class="toc-item"><span class="toc-dot" style="background:#5f6368"></span>마감탭 정리</a>
+    <a href="#hub-price" class="toc-item"><span class="toc-dot" style="background:var(--orange)"></span>허브 단가 관리</a>
+    <a href="#automation" class="toc-item"><span class="toc-dot" style="background:var(--purple)"></span>자동화 트리거</a>
+    <a href="#diag" class="toc-item"><span class="toc-dot" style="background:#7b2ff7"></span>진단·복구 도구</a>
+    <a href="#ops" class="toc-item"><span class="toc-dot" style="background:#5f6368"></span>운영·권한 점검</a>
+    <a href="#workflow" class="toc-item"><span class="toc-dot" style="background:#1a73e8"></span>표준 운영 플로우</a>
+  </div>
+</div>
+
+<!-- ═══════════ 1. 이카운트 동기화 ═══════════ -->
+<div class="section" id="ecount-sync">
+  <div class="section-header c-blue">
+    <span class="icon">🔄</span>
+    <h2>이카운트 동기화</h2>
+    <span style="font-size:0.8rem; margin-left: auto; opacity:0.7">💎 Pack2U 메뉴</span>
+  </div>
+
+  <div class="note info">
+    <strong>동작 원리:</strong> 이카운트 ERP API에 로그인 후 품목정보·재고를 가져와 상품정보 탭에 반영합니다.
+    자동 트리거는 02:10(품목/재고)·12:30(허브상태/재고) 에 실행됩니다.
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-blue">🔄</div>
+        <div>
+          <div class="card-title">이카운트 전체 동기화</div>
+          <div class="card-menu">💎 Pack2U › 이카운트 전체 동기화</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        이카운트 품목정보 + 재고를 한 번에 가져와 <code>상품정보</code> 탭을 최신 상태로 갱신합니다.
+        Zone 자동감지 → 로그인 → 품목 조회 → 재고 조회 순으로 실행됩니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-blue">자동화 있음</span>
+        <span class="tag c-gray">일 1~2회</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-blue">🔎</div>
+        <div>
+          <div class="card-title">선택 품목 최신정보 가져오기</div>
+          <div class="card-menu">💎 Pack2U › 선택 품목 최신정보 가져오기</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        <code>상품정보</code> 탭에서 선택한 행(6행 이후)의 품목코드만 이카운트에서 즉시 조회합니다.
+        전체 동기화보다 빠르게 특정 품목만 업데이트할 때 사용합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-blue">선택 실행</span>
+        <span class="tag c-gray">수동</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-blue">🚀</div>
+        <div>
+          <div class="card-title">선택 품목 상태 전송</div>
+          <div class="card-menu">💎 Pack2U › 선택 품목 상태 전송</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        선택한 품목의 판매 상태(판매중/판매중지 등)를 이카운트로 업로드합니다.
+        상품정보 탭에서 상태를 변경한 후 즉시 이카운트에 반영할 때 사용합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-blue">선택 실행</span>
+        <span class="tag c-orange">이카운트 업로드</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-blue">🚀</div>
+        <div>
+          <div class="card-title">선택 품목 재고 전송</div>
+          <div class="card-menu">💎 Pack2U › 선택 품목 재고 전송</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        선택한 품목의 재고 수량을 이카운트로 업로드합니다.
+        재고 조정 후 이카운트와 즉시 동기화할 때 사용합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-blue">선택 실행</span>
+        <span class="tag c-orange">이카운트 업로드</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 2. 이카운트 작업 도구 ═══════════ -->
+<div class="section" id="ecount-tools">
+  <div class="section-header c-blue">
+    <span class="icon">🛠️</span>
+    <h2>이카운트 작업 도구</h2>
+    <span style="font-size:0.8rem; margin-left: auto; opacity:0.7">💎 Pack2U › 🛠️ 이카운트 작업</span>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-blue">🚀</div>
+        <div>
+          <div class="card-title">이카운트 연동 초기화</div>
+          <div class="card-menu">사본/첫 설치용</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        시트 사본을 만든 후 이카운트 연동을 처음 설정할 때 실행합니다.
+        회사코드·사용자ID·API키를 저장하고 스크립트 속성을 초기화합니다.
+      </div>
+      <div class="card-tags"><span class="tag c-gray">최초 1회</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-blue">🔐</div>
+        <div>
+          <div class="card-title">이카운트 계정설정</div>
+          <div class="card-menu">이카운트 계정설정</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        이카운트 회사코드·사용자ID·비밀번호를 스크립트 속성에 저장합니다.
+        세션 만료나 비밀번호 변경 후 재입력할 때 사용합니다.
+      </div>
+      <div class="card-tags"><span class="tag c-orange">보안</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-blue">🔍</div>
+        <div>
+          <div class="card-title">품목 검색 시트 + 조건 조회</div>
+          <div class="card-menu">UP 품목 검색 시트 만들기 / 조건으로 품목 조회</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        이카운트 품목을 조건(코드·이름·상태 등)으로 필터링하여 별도 시트에 출력합니다.
+        대량 품목 관리 시 특정 조건 품목을 빠르게 추출할 수 있습니다.
+      </div>
+      <div class="card-tags"><span class="tag c-blue">검색</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-orange">📦</div>
+        <div>
+          <div class="card-title">이카운트 전표 업로드 3종</div>
+          <div class="card-menu">품목 등록/수정 · 판매전표 · 구매발주 · 재고조정</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        시트의 데이터를 이카운트 API로 직접 업로드합니다.<br>
+        • <strong>품목 등록/수정</strong>: 신규 품목 생성 또는 기존 품목 정보 수정<br>
+        • <strong>판매 전표</strong>: 판매 실적을 이카운트 판매현황에 업로드<br>
+        • <strong>구매 발주</strong>: 구매 발주서를 이카운트에 업로드<br>
+        • <strong>재고 조정</strong>: 재고 수량 조정 내역을 업로드
+      </div>
+      <div class="card-tags">
+        <span class="tag c-orange">업로드</span>
+        <span class="tag c-gray">수동 실행</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-purple">⏰</div>
+        <div>
+          <div class="card-title">자동연동 켜기/끄기/복구</div>
+          <div class="card-menu">01:20 / 02:00 / 11:50 / 12:30 자동 실행</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        시간 기반 트리거를 설치/제거합니다.<br>
+        • <strong>01:20</strong>: 이카운트 품목 동기화<br>
+        • <strong>02:00</strong>: 이카운트 재고 동기화<br>
+        • <strong>11:50</strong>: 허브 상태/재고 갱신<br>
+        • <strong>12:30</strong>: 허브 상태/재고 갱신 (2차)<br>
+        복구 기능으로 깨진 트리거를 자동 감지·재설치합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-purple">자동화</span>
+        <span class="tag c-blue">트리거</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-blue">🧪</div>
+        <div>
+          <div class="card-title">이카운트 연동 진단</div>
+          <div class="card-menu">이카운트 연동 진단</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        API 연결 상태, 인증 토큰, 스크립트 속성 설정값, 트리거 현황을 종합 점검합니다.
+        연동 오류 발생 시 가장 먼저 실행해야 하는 진단 도구입니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-red">진단</span>
+        <span class="tag c-gray">오류 시 최우선</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 3. 대리발송 발주시스템 ═══════════ -->
+<div class="section" id="order-system">
+  <div class="section-header c-green">
+    <span class="icon">📦</span>
+    <h2>대리발송 발주시스템 (New)</h2>
+    <span style="font-size:0.8rem; margin-left: auto; opacity:0.7">💼 협력업체 관리 › 📦 대리발송 발주시스템</span>
+  </div>
+
+  <div class="workflow">
+    <h3>📋 표준 발주 처리 순서</h3>
+    <div class="flow-steps">
+      <span class="step">① 발주 수집</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">② 판매현황 갱신</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">③ 공급업체 Push</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">④ 송장 수집</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">⑤ 폐기송장 적용</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">⑥ 송장 배포</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">⑦ 마감</span>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-green">1️⃣</div>
+        <div>
+          <div class="card-title">대리판매 발주수집</div>
+          <div class="card-menu">1️⃣ 대리판매 발주수집</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        등록된 협력업체 스프레드시트의 <strong>발주 및 송장조회</strong> 탭에서 신규 주문을 읽어
+        <strong>협력업체_발주허브</strong> 탭으로 수집합니다.
+        고유ID 기반으로 중복 수집을 방지합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-green">자동화 있음</span>
+        <span class="tag c-gray">5분 주기 옵션</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-green">2️⃣</div>
+        <div>
+          <div class="card-title">이카운트 업로드용 판매현황 갱신</div>
+          <div class="card-menu">2️⃣ 이카운트 업로드용 판매현황 갱신</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        허브에 수집된 발주를 <strong>이카운트-판매현황업로드용</strong> 탭으로 변환합니다.
+        날짜형식 강제(yyyyMMdd), 공급가액·부가세 자동계산, 거래처코드 매핑을 수행합니다.
+        이 탭을 복사하여 이카운트 PC에서 붙여넣기합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-orange">이카운트 복붙용</span>
+        <span class="tag c-purple">자동 갱신 옵션</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-green">3️⃣</div>
+        <div>
+          <div class="card-title">대리공급업체로 발주 Push</div>
+          <div class="card-menu">3️⃣ 대리공급업체로 발주 Push</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        허브의 발주를 각 공급업체의 <strong>전용양식</strong> 탭에 자동으로 입력합니다.
+        업체별 컬럼 매핑, 품목 별칭 변환, 고유ID 기반 중복 방지,
+        세트 상품 분리(한글 세트 한정)를 처리합니다.
+        고유ID가 없는 전화주문은 MMDD-ph-XXXX 형식으로 결정론적 UID를 생성합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-green">자동화 있음</span>
+        <span class="tag c-blue">업체별 양식 변환</span>
+        <span class="tag c-orange">세트 분리</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-orange">🔁</div>
+        <div>
+          <div class="card-title">일괄 처리 (허브아카이브 + 마감이동 + 월별이동)</div>
+          <div class="card-menu">🔄 [일괄] 허브아카이브 + 전용마감이동 + 월별정산이동</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        하루 마감 시 한 번에 실행하는 일괄 처리입니다.<br>
+        허브 완료건 아카이브 + 전용양식 마감탭 이동 + 월별 정산 탭 이동을 순차 실행합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-orange">일괄</span>
+        <span class="tag c-gray">일 마감용</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 4. 송장 수집·배포 ═══════════ -->
+<div class="section" id="invoice">
+  <div class="section-header c-green">
+    <span class="icon">📬</span>
+    <h2>송장 수집 · 배포</h2>
+    <span style="font-size:0.8rem; margin-left: auto; opacity:0.7">💼 협력업체 관리 › 📦 대리발송 발주시스템</span>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-green">5️⃣</div>
+        <div>
+          <div class="card-title">허브로 송장 수집</div>
+          <div class="card-menu">5️⃣ 허브로 송장 수집</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        공급업체 전용양식 탭의 A열(송장번호)을 읽어 허브의 해당 발주 행에 매칭합니다.
+        고유ID 기반으로 정확한 행을 찾아 송장번호를 기록하고 상태를 갱신합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-green">수집</span>
+        <span class="tag c-gray">고유ID 매칭</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-blue">📱</div>
+        <div>
+          <div class="card-title">카카오 송장매칭 (중앙 관리용)</div>
+          <div class="card-menu">└ 📬 카카오 송장매칭 (중앙 관리용)</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        카카오 채팅 또는 엑셀에서 복사한 <strong>운송장번호 + 수취인명</strong> 텍스트를 붙여넣어
+        허브 발주 행에 자동 매칭합니다.
+        엑셀 탭구분 데이터도 인식하며, 동명이인 시 품목명으로 추가 구분합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-blue">카카오</span>
+        <span class="tag c-blue">엑셀 붙여넣기</span>
+        <span class="tag c-orange">품목명 매칭</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-red">🚫</div>
+        <div>
+          <div class="card-title">폐기송장 적용</div>
+          <div class="card-menu">6️⃣ 폐기송장 적용</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        <strong>폐기송장</strong> 탭에 등록된 송장번호를 허브에서 제거하고 상태를 복원합니다.
+        폐기송장 탭에 새 송장번호를 입력하면 자동으로 발주업체·품목명·수취인이 조회됩니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-red">폐기</span>
+        <span class="tag c-green">자동 조회</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-green">7️⃣</div>
+        <div>
+          <div class="card-title">대리판매업체로 송장 배포</div>
+          <div class="card-menu">7️⃣ 대리판매업체로 송장 배포</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        허브에 수집된 송장번호를 각 협력업체 스프레드시트의 <strong>발주 및 송장조회</strong> 탭
+        해당 행에 기록하고 상태를 <strong>발송완료</strong>로 변경합니다.
+        송장이 없고 적요(메모)만 있는 경우(예: 익일발송예정)도 적요 내용을 전달합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-green">배포</span>
+        <span class="tag c-orange">적요 전달</span>
+        <span class="tag c-gray">상태 변경</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-blue">🗂️</div>
+        <div>
+          <div class="card-title">사방넷 송장매칭 탭 자동 기록</div>
+          <div class="card-menu">대리공급_임시기록 → 사방넷_송장매칭</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        대리공급 임시기록에 송장번호가 채워지면 <strong>사방넷_송장매칭</strong> 탭에 자동 기록됩니다.
+        E열(주문번호)에 고유ID(사방넷번호 또는 전화주문 UID)와 우리 품목명이 기록되어 혼란을 줄입니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-blue">사방넷</span>
+        <span class="tag c-green">자동</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 5. 취소·반품 ═══════════ -->
+<div class="section" id="cancel">
+  <div class="section-header c-red">
+    <span class="icon">🚫</span>
+    <h2>취소 · 반품 처리</h2>
+    <span style="font-size:0.8rem; margin-left: auto; opacity:0.7">💼 협력업체 관리 › 📦 대리발송 발주시스템</span>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-red">🚫</div>
+        <div>
+          <div class="card-title">취소/반품 수집</div>
+          <div class="card-menu">🚫 취소/반품 수집 (접수탭→허브·발주·마감)</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        협력업체 시트의 <strong>취소/반품 접수</strong> 탭 신규 건을 허브로 수집하고
+        원발주 행에 취소 상태를 반영합니다.
+      </div>
+      <div class="card-tags"><span class="tag c-red">취소</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-red">🚫</div>
+        <div>
+          <div class="card-title">취소/반품 배포</div>
+          <div class="card-menu">🚫 취소/반품 배포 (허브→업체시트)</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        허브에 반영된 취소 상태를 각 협력업체 시트의 발주 행에 전달합니다.
+      </div>
+      <div class="card-tags"><span class="tag c-red">반품</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 6. 마감탭 정리 ═══════════ -->
+<div class="section" id="archive">
+  <div class="section-header" style="border-color:var(--gray); color:var(--gray)">
+    <span class="icon">📁</span>
+    <h2>마감탭 정리 (아카이브)</h2>
+    <span style="font-size:0.8rem; margin-left: auto; opacity:0.7">💼 협력업체 관리 › 📋 마감탭 정리</span>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#f1f3f4">📅</div>
+        <div>
+          <div class="card-title">월별 정산 이동</div>
+          <div class="card-menu">월별 정산 이동 (송장완료→월별탭)</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        허브에서 송장 배포 완료된 건을 해당 월의 <strong>월별 마감 탭</strong>으로 이동합니다.
+        이동 후 허브에서는 해당 건이 삭제되며 복구는 월별탭에서 확인합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-gray">월 마감</span>
+        <span class="tag c-orange">삭제 주의</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#f1f3f4">📁</div>
+        <div>
+          <div class="card-title">전용양식 → 전용발주 마감탭 이동</div>
+          <div class="card-menu">📁 전용양식 → 전용발주 마감탭 이동</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        공급업체 전용양식 탭의 송장 완료 건을 <strong>전용발주 마감탭</strong>으로 이동합니다.
+        송장번호 없이 상태가 <strong>발송완료</strong>인 건도 이동 대상에 포함됩니다.
+      </div>
+      <div class="card-tags"><span class="tag c-gray">전용양식</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#f1f3f4">🗄️</div>
+        <div>
+          <div class="card-title">전일 허브 완료건 → 아카이브</div>
+          <div class="card-menu">전일 허브 완료건 → 아카이브</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        허브(협력업체_발주허브)의 오래된 완료 건을 월별 아카이브 스프레드시트로 이동합니다.
+        허브 탭의 데이터 누적을 방지합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-gray">자동화 있음</span>
+        <span class="tag c-gray">아카이브</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 7. 허브 단가 관리 ═══════════ -->
+<div class="section" id="hub-price">
+  <div class="section-header c-orange">
+    <span class="icon">💰</span>
+    <h2>통합 허브 단가 관리</h2>
+    <span style="font-size:0.8rem; margin-left: auto; opacity:0.7">💼 협력업체 관리 › 💰 통합 허브 단가 관리</span>
+  </div>
+
+  <div class="note info">
+    <strong>허브 구조:</strong> 허브 스프레드시트에 <code>전체 그룹 단가표</code> 탭이 있으며,
+    각 협력업체 시트의 단가조회(뷰어) 탭은 이 허브를 IMPORTRANGE로 참조합니다.
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-orange">1️⃣</div>
+        <div>
+          <div class="card-title">데이터 허브 구축/재구성</div>
+          <div class="card-menu">1️⃣ [허브] 데이터 허브 구축/재구성</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        상품정보 탭의 데이터를 기반으로 허브 스프레드시트의
+        <strong>전체 그룹 단가표</strong> 탭을 처음 생성하거나 전면 재구성합니다.
+        그룹별 단가 컬럼 구조, 수식, 헤더를 초기화합니다.
+      </div>
+      <div class="card-tags"><span class="tag c-orange">초기화</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-orange">2️⃣</div>
+        <div>
+          <div class="card-title">상품정보 → 허브 단가 업데이트</div>
+          <div class="card-menu">2️⃣ ⚡ [동기화] 상품정보 → 허브 단가 업데이트</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        상품정보 탭의 단가 변경분을 허브 단가표에 반영합니다.
+        변경된 그룹 단가만 선택적으로 업데이트하여 속도를 최적화합니다.
+        동기화 중 다른 계정의 중복 실행을 잠금으로 방지합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-orange">동기화</span>
+        <span class="tag c-purple">잠금 보호</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-orange">3️⃣</div>
+        <div>
+          <div class="card-title">판매 상태/재고만 업데이트</div>
+          <div class="card-menu">3️⃣ [상태 반영] 판매 상태/재고만 업데이트</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        단가는 건드리지 않고 <strong>판매 상태</strong>(판매중/품절 등)와
+        <strong>재고</strong>만 빠르게 허브에 반영합니다.
+        매일 오전 7시, 오후 12:30에 자동 실행됩니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-green">자동화 있음</span>
+        <span class="tag c-gray">07:00 / 12:30</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-orange">5️⃣</div>
+        <div>
+          <div class="card-title">모든 배포 시트 양식 최신화</div>
+          <div class="card-menu">5️⃣ 🔄 [일괄 업데이트] 모든 배포 시트 양식 최신화</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        등록된 모든 협력업체 스프레드시트에 최신 레이아웃·수식·헤더를 적용합니다.
+        허브 주소 변경 또는 시스템 업데이트 후 일괄 반영할 때 사용합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-orange">일괄</span>
+        <span class="tag c-gray">전체 업체</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 8. 자동화 타임테이블 ═══════════ -->
+<div class="section" id="automation">
+  <div class="section-header c-purple">
+    <span class="icon">⏰</span>
+    <h2>자동화 트리거 타임테이블</h2>
+  </div>
+
+  <div class="card" style="padding: 0; overflow: hidden;">
+    <table class="time-table">
+      <thead>
+        <tr>
+          <th>실행 시각</th>
+          <th>기능</th>
+          <th>담당 함수</th>
+          <th>설명</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="time-chip">01:20</span></td>
+          <td>이카운트 품목 동기화</td>
+          <td><code>runDailyEcountBatch</code></td>
+          <td>이카운트에서 품목정보 전체 가져오기</td>
+        </tr>
+        <tr>
+          <td><span class="time-chip">02:00</span></td>
+          <td>이카운트 재고 동기화</td>
+          <td><code>runDailyEcountBatch</code></td>
+          <td>이카운트에서 재고 수량 가져오기</td>
+        </tr>
+        <tr>
+          <td><span class="time-chip">07:00</span></td>
+          <td>허브 상태/재고 반영</td>
+          <td><code>syncStatusOnly</code></td>
+          <td>판매상태·재고를 허브에 빠르게 반영</td>
+        </tr>
+        <tr>
+          <td><span class="time-chip">11:50</span></td>
+          <td>이카운트 허브 동기화</td>
+          <td><code>runDailyHubBatch</code></td>
+          <td>허브 상태/재고 동기화 (1차)</td>
+        </tr>
+        <tr>
+          <td><span class="time-chip">12:30</span></td>
+          <td>허브 상태/재고 반영</td>
+          <td><code>syncStatusOnly</code></td>
+          <td>판매상태·재고를 허브에 빠르게 반영 (2차)</td>
+        </tr>
+        <tr>
+          <td><span class="time-chip">5분 주기</span></td>
+          <td>발주 수집 자동화</td>
+          <td><code>partnerCollectOrdersSilent_</code></td>
+          <td>협력업체 → 허브 발주 수집 (옵션, 수동 켜기)</td>
+        </tr>
+        <tr>
+          <td><span class="time-chip">5분 주기</span></td>
+          <td>대리발주 자동 Push</td>
+          <td><code>partnerPushOrdersToExclusiveFormsSilent_</code></td>
+          <td>허브 → 공급업체 전용양식 자동 Push (옵션)</td>
+        </tr>
+        <tr>
+          <td><span class="time-chip">N분 주기</span></td>
+          <td>대시보드 자동 갱신</td>
+          <td><code>partnerShowStatusDashboard</code></td>
+          <td>협력업체 상태 대시보드 자동 업데이트 (옵션)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════ 9. 진단·복구 도구 ═══════════ -->
+<div class="section" id="diag">
+  <div class="section-header c-purple">
+    <span class="icon">🔍</span>
+    <h2>진단 · 복구 도구</h2>
+    <span style="font-size:0.8rem; margin-left: auto; opacity:0.7">💼 협력업체 관리 › 🛠️ AS / 진단</span>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-red">🩺</div>
+        <div>
+          <div class="card-title">Push 시스템 통합 진단</div>
+          <div class="card-menu">🩺 Push 시스템 통합 진단 (이걸 먼저!)</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        발주 Push 전체 흐름(허브 연결 → 업체 파일 → 전용양식 탭 → 별칭맵)을 종합 점검합니다.
+        문제 발생 시 가장 먼저 실행해야 합니다.
+      </div>
+      <div class="card-tags"><span class="tag c-red">최우선 진단</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-purple">📊</div>
+        <div>
+          <div class="card-title">협력업체 상태 대시보드</div>
+          <div class="card-menu">협력업체 상태 대시보드 갱신</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        모든 협력업체 시트의 미처리 발주 건수, 마지막 수집 시각, 이상 상태를
+        <strong>대시보드</strong> 탭에 일목요연하게 표시합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-purple">모니터링</span>
+        <span class="tag c-green">자동갱신 옵션</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-orange">🔍</div>
+        <div>
+          <div class="card-title">거래처코드 매핑 진단</div>
+          <div class="card-menu">🔍 거래처코드 매핑 진단</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        이카운트 판매현황 업로드에 필요한 거래처코드가 올바르게 매핑됐는지 점검합니다.
+        미매핑 업체 발견 시 해당 업체의 <strong>설정 탭 B5(거래처명)/B6(코드)</strong>를 직접 입력해야 합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-orange">매핑</span>
+        <span class="tag c-red">판매현황 오류 원인</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-orange">🔧</div>
+        <div>
+          <div class="card-title">허브 발주업체명 일괄 보정</div>
+          <div class="card-menu">🔧 허브 발주업체명 일괄 보정 (B5 기준)</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        허브에 저장된 발주업체명을 각 협력업체 <strong>설정 탭 B5</strong> 값 기준으로 일괄 정정합니다.
+        파일명/시트명이 변경되어 매핑이 깨진 경우 복구합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-orange">보정</span>
+        <span class="tag c-gray">설정탭 B5 기준</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-purple">🔎</div>
+        <div>
+          <div class="card-title">코드변환 별칭 진단</div>
+          <div class="card-menu">코드변환 별칭 진단 / 별칭맵 진단</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        허브의 <strong>누적품목매핑</strong> 탭(팩투유코드 → 업체코드/업체품목명)이
+        올바른지 점검합니다. 단가 미입력 항목도 함께 확인합니다.
+      </div>
+      <div class="card-tags"><span class="tag c-purple">품목 매핑</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-green">📅</div>
+        <div>
+          <div class="card-title">월별 정산 Dry-run</div>
+          <div class="card-menu">월별 정산 Dry-run (미리보기)</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        실제로 이동하지 않고 월별 정산 이동 대상 건수·금액을 미리 확인합니다.
+        월 마감 전 대사 확인용으로 사용합니다.
+      </div>
+      <div class="card-tags"><span class="tag c-green">미리보기</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-red">🔓</div>
+        <div>
+          <div class="card-title">동기화 락 강제 해제</div>
+          <div class="card-menu">🔓 동기화 락 강제 해제 (stuck 복구용)</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        동기화 중 오류로 락(잠금)이 해제되지 않아 "다른 계정이 동기화 중"이 계속 표시될 때
+        강제 해제합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-red">긴급 복구</span>
+        <span class="tag c-gray">stuck 상태</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon c-orange">🔧</div>
+        <div>
+          <div class="card-title">복구 도구 모음</div>
+          <div class="card-menu">🔧 복구 도구</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        • 단가조회 3행 수식 긴급 복구<br>
+        • 발주탭 헤더·수식·조건부서식 복구<br>
+        • 전용양식/마감탭 헤더 보정<br>
+        • 월별 마감 탭 레이아웃 보정<br>
+        • 발주탭 자동완성 스크립트 재설치<br>
+        • K2(그룹) 설정 + 수식 복구
+      </div>
+      <div class="card-tags"><span class="tag c-orange">복구</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 10. 운영·권한 ═══════════ -->
+<div class="section" id="ops">
+  <div class="section-header" style="border-color:var(--gray); color:var(--gray)">
+    <span class="icon">⚙️</span>
+    <h2>운영 · 권한 점검</h2>
+    <span style="font-size:0.8rem; margin-left: auto; opacity:0.7">💎 Pack2U › ⚙️ 운영/진단</span>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#f1f3f4">🔑</div>
+        <div>
+          <div class="card-title">처음 실행 권한 안내</div>
+          <div class="card-menu">🔑 처음 실행 권한 안내</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        시트를 처음 사용하거나 권한 오류가 발생했을 때 필요한 OAuth 승인 절차를 안내합니다.
+      </div>
+      <div class="card-tags"><span class="tag c-gray">최초 설정</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#f1f3f4">✅</div>
+        <div>
+          <div class="card-title">권한 일괄 점검</div>
+          <div class="card-menu">권한 일괄 점검</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        Spreadsheet, Drive, UrlFetch, ScriptApp 4가지 권한을 실제로 호출하여
+        각각의 동작 여부를 확인합니다.
+      </div>
+      <div class="card-tags"><span class="tag c-gray">진단</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#f1f3f4">🧾</div>
+        <div>
+          <div class="card-title">사용자 권한 자가진단</div>
+          <div class="card-menu">🧾 사용자 권한 자가진단</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        현재 실행 중인 계정의 권한 상태를 상세히 진단합니다.
+        403 오류나 권한 부족 오류 발생 시 원인을 빠르게 파악합니다.
+      </div>
+      <div class="card-tags"><span class="tag c-gray">권한 오류 대응</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#f1f3f4">🤖</div>
+        <div>
+          <div class="card-title">상품정보 분석 챗봇</div>
+          <div class="card-menu">🤖 상품정보 분석 챗봇</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        Gemini AI 기반의 상품정보 분석 챗봇입니다.
+        상품정보 탭 데이터를 기반으로 질문에 답하거나 분석 결과를 제공합니다.
+      </div>
+      <div class="card-tags">
+        <span class="tag c-purple">AI</span>
+        <span class="tag c-blue">Gemini</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 11. 표준 운영 플로우 ═══════════ -->
+<div class="section" id="workflow">
+  <div class="section-header c-blue">
+    <span class="icon">🗺️</span>
+    <h2>표준 운영 플로우</h2>
+  </div>
+
+  <div class="workflow">
+    <h3>📅 매일 오전 확인 루틴</h3>
+    <div class="flow-steps">
+      <span class="step">이카운트-자동연동로그 확인</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">오류 있으면 이카운트 연동 진단</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">정상이면 발주 처리 시작</span>
+    </div>
+  </div>
+
+  <div class="workflow">
+    <h3>📦 발주 처리 순서</h3>
+    <div class="flow-steps">
+      <span class="step">① 발주 수집</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">② 판매현황 갱신</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">③ 대리공급 Push</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">공급사 작업</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">④ 송장 수집</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">⑤ 폐기송장 적용</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">⑥ 송장 배포</span>
+    </div>
+  </div>
+
+  <div class="workflow">
+    <h3>🗓️ 월 마감 순서</h3>
+    <div class="flow-steps">
+      <span class="step">이카운트 매출 대사</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">월별 정산 Dry-run 확인</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">월별 정산 이동</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">전용양식 마감탭 이동</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">허브 아카이브</span>
+    </div>
+  </div>
+
+  <div class="workflow">
+    <h3>⚠️ 장애 대응 순서</h3>
+    <div class="flow-steps">
+      <span class="step">Push 시스템 통합 진단</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">이카운트 연동 진단</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">거래처코드 매핑 진단</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">동기화 락 해제 (필요 시)</span>
+      <span class="flow-arrow">→</span>
+      <span class="step">재실행</span>
+    </div>
+  </div>
+
+  <div class="note warn">
+    <strong>⚠️ 절대 하지 말 것:</strong><br>
+    · 시트 열(Column)을 임의로 추가/삭제하지 않는다<br>
+    · 파일명/시트명으로 업체를 식별하지 않는다 (설정 탭 B5/B6만 기준)<br>
+    · 판매현황 복붙 전 사전 점검 없이 대량 반영하지 않는다<br>
+    · 매핑 실패를 문자열 트릭으로 우회하지 않는다
+  </div>
+
+  <div class="note ok">
+    <strong>✅ SSOT(정답 소스) 원칙:</strong><br>
+    · 거래처명/거래처코드: 각 협력업체 스프레드시트의 <strong>설정 탭 B5(거래처명) / B6(CUST_CD)</strong><br>
+    · 품목 정보: 이카운트 ERP (매일 자동 동기화)<br>
+    · 단가: 허브 스프레드시트의 전체 그룹 단가표
+  </div>
+</div>
+
+</div><!-- /container -->
+
+<footer>
+  Pack2U 상품정보시트 기능 가이드 &nbsp;·&nbsp; 2026-05 현행 기준 &nbsp;·&nbsp; Google Apps Script (V8)
+</footer>
+
+</body>
+</html>

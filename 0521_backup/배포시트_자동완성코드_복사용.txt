@@ -1,0 +1,130 @@
+// [용도]
+// - 배포 시트의 onEdit 자동완성 로직을 수동으로 복구/재설치할 때 쓰는 복사용 원본입니다.
+// [언제 사용]
+// - 자동 주입(createViewerNoticeScript_) 실패, 권한/API 오류, 개별 시트만 긴급 복구가 필요할 때.
+// [적용 방법]
+// - 대상 배포시트의 Apps Script 편집기에 붙여넣고 저장한 뒤, onEdit 트리거 동작을 테스트하세요.
+// [주의]
+// - 본 파일은 실행 파일이 아니라 운영 백업 스니펫입니다.
+// - A열(거래처명), B열(주문일자)은 건드리지 않음. A열은 단가조회!$AA$1을 참조하는 ARRAYFORMULA가 자동 처리.
+// ── [Pack2U] 발주 및 송장조회 탭 양방향 자동완성 및 품절 경고 매크로 (A/B열 비침습 버전) ──
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    var sheet = e.range.getSheet();
+    if (sheet.getName() !== '발주 및 송장조회') return;
+
+    var r = e.range;
+    var row = r.getRow();
+    var numRows = r.getNumRows();
+    var startCol = r.getColumn();
+    var numCols = r.getNumColumns();
+    if (row < 2 || numRows <= 0) return;
+    if (numRows > 500) return;
+
+    // C열(코드) 또는 D열(품목명)이 수정 범위 안에 포함되어 있는지 확인
+    var hasC = (startCol <= 3 && startCol + numCols > 3);
+    var hasD = (startCol <= 4 && startCol + numCols > 4);
+    if (!hasC && !hasD) return;
+
+    // [안전성] 뷰어(단가조회) 탭 동적 탐색
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var viewerTab = ss.getSheetByName('단가조회') || ss.getSheets()[0];
+    if (viewerTab.getName() === '발주 및 송장조회') {
+      var allTabs = ss.getSheets();
+      for (var t = 0; t < allTabs.length; t++) {
+        var tn = allTabs[t].getName();
+        if (tn.indexOf('뷰어') !== -1 || tn.indexOf('단가') !== -1) {
+          viewerTab = allTabs[t]; break;
+        }
+      }
+    }
+    var vLast = viewerTab.getLastRow();
+    if (vLast < 4) return;
+    // Row1=공지, Row2=헤더, Row3=숨긴 ARRAYFORMULA행 → 실제 코드는 Row4부터
+    var vData = viewerTab.getRange(4, 1, vLast - 3, 7).getValues(); // A~G열
+
+    // B열(주문일자): C/D 입력이 있는데 비어있으면 오늘 날짜(yyyyMMdd) 자동입력
+    // - 이미 값이 있는 B는 절대 덮어쓰지 않음
+    try {
+      var bcdData = sheet.getRange(row, 2, numRows, 3).getValues(); // B:C:D
+      var todayYmd = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd');
+      var bVals = [];
+      var bChanged = false;
+      for (var bi = 0; bi < bcdData.length; bi++) {
+        var curB = bcdData[bi][0];
+        var curC = String(bcdData[bi][1] || '').trim();
+        var curD = String(bcdData[bi][2] || '').trim();
+        if ((curC || curD) && !String(curB || '').trim()) {
+          curB = todayYmd;
+          bChanged = true;
+        }
+        bVals.push([curB]);
+      }
+      if (bChanged) sheet.getRange(row, 2, numRows, 1).setValues(bVals);
+    } catch (eDateFill) {}
+
+    // 편집된 범위에서 C~M열만 읽고 쓴다 (A,B는 건드리지 않음)
+    // editData 인덱스: 0=C(코드), 1=D(품목명), 7=J(적요), 9=L(정산단가)
+    var editRange = sheet.getRange(row, 3, numRows, 11); // C(3)~M(13) = 11개 컬럼
+    var editData = editRange.getValues();
+    var isChanged = false;
+
+    for (var i = 0; i < numRows; i++) {
+      var inputCode = String(editData[i][0]).replace(/\s/g, ''); // C열 (공백 완전 제거)
+      var inputName = String(editData[i][1]).trim(); // D열
+
+      if (!inputCode && !inputName) continue;
+
+      var finalName = '';
+      var foundStatus = '';
+      var foundPrice = '';
+
+      // [우선순위 1] C열(코드) 기준으로 품목명/상태/단가 조회
+      if (hasC && inputCode) {
+        for (var v = 0; v < vData.length; v++) {
+          if (String(vData[v][2]).replace(/\s/g, '') === inputCode) { // 뷰어 C열 = 코드
+            finalName   = vData[v][3]; // D열 = 품목명
+            foundStatus = vData[v][0]; // A열 = 상태
+            foundPrice  = vData[v][6]; // G열 = 정산단가
+            break;
+          }
+        }
+        if (finalName && finalName !== inputName) {
+          editData[i][1] = finalName; // D열 품목명 갱신
+          isChanged = true;
+        }
+        // 코드는 있지만 뷰어에 없으면 J열(적요)에 🚨코드오류 표시
+        if (inputCode && !finalName) {
+          var jNow = String(editData[i][7] || '').trim();
+          if (jNow.indexOf('코드오류') === -1) {
+            editData[i][7] = '🚨코드오류';
+            isChanged = true;
+          }
+        }
+      }
+      // D열만 수정한 경우 역매칭 없음 (코드 오염 방지)
+
+      // 정산단가(L열) = editData 인덱스 9
+      if (foundPrice !== '' && editData[i][9] !== foundPrice) {
+        editData[i][9] = foundPrice;
+        isChanged = true;
+      }
+
+      // 품절/단종 경고를 J열(적요) = editData 인덱스 7 에 입력
+      if (foundStatus && (String(foundStatus).indexOf('품절') !== -1 || String(foundStatus).indexOf('단종') !== -1)) {
+        var warn = '🚨 ' + foundStatus;
+        if (String(editData[i][7] || '') !== warn) {
+          editData[i][7] = warn;
+          isChanged = true;
+        }
+      }
+    }
+
+    if (isChanged) {
+      editRange.setValues(editData);
+    }
+  } catch (err) {
+    // console.error("자동완성(onEdit) 에러: " + err.message);
+  }
+}

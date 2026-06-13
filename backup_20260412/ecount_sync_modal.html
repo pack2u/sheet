@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    /* 고객 선호의 고급스러운 단색 모노톤 유지 */
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #ffffff;
+      color: #333333;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    .header {
+      padding: 20px;
+      border-bottom: 1px solid #eeeeee;
+      display: flex;
+      align-items: center;
+    }
+    .icon {
+      width: 24px;
+      height: 24px;
+      margin-right: 12px;
+      fill: none;
+      stroke: #555555;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      animation: spin 2s linear infinite;
+    }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+    h2 {
+      margin: 0;
+      font-weight: 600;
+      font-size: 16px;
+      color: #111111;
+      letter-spacing: -0.5px;
+    }
+    
+    /* 기존 토스트 알림처럼 좌르르 나오는 상황판 영역 */
+    .log-container {
+      flex: 1;
+      padding: 20px;
+      background-color: #fafafa;
+      overflow-y: auto;
+      font-family: Monaco, Consolas, "Courier New", monospace;
+      font-size: 13px;
+      color: #555555;
+      line-height: 1.6;
+    }
+    .log-item {
+      margin-bottom: 8px;
+      opacity: 0;
+      transform: translateY(10px);
+      animation: slideUp 0.3s forwards ease-out;
+    }
+    @keyframes slideUp { 
+      to { opacity: 1; transform: translateY(0); } 
+    }
+    .log-item.success { color: #111111; font-weight: 500; }
+    .log-item.error { color: #cc0000; font-weight: 600; }
+
+    /* 하단 진행바 및 조작부 */
+    .footer {
+      padding: 20px;
+      border-top: 1px solid #eeeeee;
+    }
+    .progress-bar-container {
+      width: 100%;
+      height: 6px;
+      background-color: #e6e6e6;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 15px;
+    }
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background-color: #333333;
+      transition: width 0.5s ease;
+    }
+    .footer-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .status-badge {
+      font-size: 13px;
+      font-weight: 600;
+      color: #111111;
+    }
+    .close-btn {
+      display: none;
+      background: #222222;
+      color: #ffffff;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .close-btn:hover { background: #000000; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <svg class="icon" id="syncIcon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+      <path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+    </svg>
+    <h2>이카운트 데이터 동기화</h2>
+  </div>
+
+  <div class="log-container" id="logBox">
+    <!-- 로그 표출 -->
+  </div>
+
+  <div class="footer">
+    <div class="progress-bar-container">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="footer-actions">
+      <span class="status-badge" id="percentText">0%</span>
+      <button class="close-btn" id="closeBtn" onclick="google.script.host.close()">마치기</button>
+    </div>
+  </div>
+  
+  <script>
+    const logBox = document.getElementById('logBox');
+    
+    function addLog(text, type = 'normal') {
+      const cls = type === 'normal' ? 'log-item' : `log-item ${type}`;
+      logBox.innerHTML += `<div class="${cls}">${text}</div>`;
+      logBox.scrollTop = logBox.scrollHeight; // 가장 아래로 자동 스크롤
+    }
+
+    function setDone(isError) {
+      document.getElementById('syncIcon').style.animation = 'none';
+      if (isError) {
+        document.getElementById('progressBar').style.backgroundColor = '#cc0000';
+        document.getElementById('syncIcon').innerHTML = '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>';
+        document.getElementById('syncIcon').style.stroke = '#cc0000';
+        document.getElementById('percentText').innerText = "오류 발생";
+        document.getElementById('percentText').style.color = '#cc0000';
+      } else {
+        document.getElementById('syncIcon').innerHTML = '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>';
+        document.getElementById('percentText').innerText = "100%";
+        document.getElementById('progressBar').style.width = '100%';
+      }
+      document.getElementById('closeBtn').style.display = 'inline-block';
+    }
+
+    function updateProgress(val) {
+      document.getElementById('progressBar').style.width = val + '%';
+      document.getElementById('percentText').innerText = val + '%';
+    }
+
+    // 서버 함수 비동기 프로미스화 (명시적 호출)
+    function runStep1() {
+      return new Promise((resolve, reject) => {
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).ecountStep1();
+      });
+    }
+    function runStep2(auth) {
+      return new Promise((resolve, reject) => {
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).ecountStep2(auth);
+      });
+    }
+    function runStep3(auth) {
+      return new Promise((resolve, reject) => {
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).ecountStep3(auth);
+      });
+    }
+    function runStep4() {
+      return new Promise((resolve, reject) => {
+        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).ecountStep4();
+      });
+    }
+
+    // 단계별 실행 로직 제어탑 (UI 동기화 충돌 방지용)
+    async function executeSync() {
+      try {
+        addLog("▶ [준비] 동기화 프로세스를 시작합니다...");
+        updateProgress(5);
+        
+        addLog("▶ [1단계] 서버 인증 및 보안 세션 생성 중...");
+        let auth = await runStep1();
+        addLog("✅ 인증 성공! (안전하게 암호화됨)", "success");
+        updateProgress(25);
+
+        addLog("▶ [2단계] 이카운트 서버에서 품목 데이터를 가져옵니다. (10초~30초 대기)");
+        await runStep2(auth);
+        addLog("✅ 대량의 품목 리스트를 엑셀 시트에 완벽히 복사했습니다.", "success");
+        updateProgress(60);
+
+        addLog("▶ [3단계] 이카운트 서버에서 실시간 재고를 가져옵니다. (10초~30초 대기)");
+        await runStep3(auth);
+        addLog("✅ 실시간 재고를 현 시트에 반영했습니다.", "success");
+        updateProgress(85);
+
+        addLog("▶ [4단계] 데이터 정렬 및 마무리 후처리 작업 진행 중...");
+        await runStep4();
+        addLog("✅ 정렬 업데이트 완료!", "success");
+        updateProgress(95);
+
+        addLog("🎉 시스템 동기화 및 덮어쓰기가 에러 없이 끝났습니다.", "success");
+        setDone(false);
+
+      } catch (err) {
+        let msg = typeof err === 'object' ? err.message : err;
+        addLog(`❌ 중단됨: ${msg}`, "error");
+        setDone(true);
+      }
+    }
+
+    // 창 렌더링 0.5초 직후 스크립트 실행
+    setTimeout(executeSync, 500);
+  </script>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden; /* 오버플로우로 인해 입력창이 안 보이는 현상 방지 */
+      }
+      body {
+        font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+        background-color: #b2c7d9; /* 카카오톡 배경색 */
+        display: flex;
+        flex-direction: column;
+      }
+      #chat-area {
+        flex: 1;
+        overflow-y: auto;
+        padding: 15px;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+      }
+      .message {
+        display: flex;
+        flex-direction: column;
+        max-width: 85%;
+        word-wrap: break-word; /* 글자가 박스를 뚫고 나가는 것 방지 */
+        font-size: 14px;
+        line-height: 1.5;
+        position: relative;
+      }
+      .message-user {
+        align-self: flex-end;
+      }
+      .message-bot {
+        align-self: flex-start;
+      }
+      .bubble {
+        padding: 10px 14px;
+        border-radius: 12px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        white-space: pre-wrap;
+      }
+      .bubble-user {
+        background-color: #fef01b; /* 카카오톡 옐로우 */
+        color: #000;
+        border-top-right-radius: 4px;
+      }
+      .bubble-bot {
+        background-color: #ffffff;
+        color: #000;
+        border-top-left-radius: 4px;
+      }
+      #input-area {
+        display: flex;
+        background-color: #ffffff;
+        padding: 10px;
+        border-top: 1px solid #ccc;
+      }
+      #user-input {
+        flex: 1;
+        border: 1px solid #ddd;
+        border-radius: 20px;
+        padding: 10px 15px;
+        font-size: 14px;
+        outline: none;
+      }
+      #send-btn {
+        background-color: #fef01b;
+        color: #000;
+        border: none;
+        border-radius: 20px;
+        padding: 0 15px;
+        margin-left: 8px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: 0.2s;
+      }
+      #send-btn:hover {
+        background-color: #eedd00;
+      }
+      #send-btn:disabled {
+        background-color: #ddd;
+        color: #888;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 채팅 내역이 쌓이는 공간 -->
+    <div id="chat-area">
+      <div class="message message-bot">
+        <div class="bubble bubble-bot">안녕하세요 CS 상담 챗봇입니다 😊 시트에 기반해 친절히 답변해 드릴게요!</div>
+      </div>
+    </div>
+    
+    <!-- 사용자 입력 공간 -->
+    <div id="input-area">
+      <input type="text" id="user-input" placeholder="질문을 입력하세요..." onkeypress="handleEnter(event)">
+      <button id="send-btn" onclick="sendMessage()">전송</button>
+    </div>
+
+    <script>
+      function handleEnter(e) {
+        if (e.key === 'Enter') {
+          sendMessage();
+        }
+      }
+
+      function scrollToBottom() {
+        var chatArea = document.getElementById('chat-area');
+        chatArea.scrollTop = chatArea.scrollHeight;
+      }
+
+      function sendMessage() {
+        var inputObj = document.getElementById('user-input');
+        var btnObj = document.getElementById('send-btn');
+        var text = inputObj.value.trim();
+        
+        if (text === '') return;
+        
+        inputObj.value = '';
+        inputObj.disabled = true;
+        btnObj.disabled = true;
+
+        // 1. 사용자 질문을 화면에 표시
+        var chatArea = document.getElementById('chat-area');
+        chatArea.innerHTML += '<div class="message message-user"><div class="bubble bubble-user">' + text + '</div></div>';
+        
+        // 2. 로딩 애니메이션 표시
+        var loadingId = 'loading-' + new Date().getTime();
+        chatArea.innerHTML += '<div class="message message-bot" id="' + loadingId + '"><div class="bubble bubble-bot">매뉴얼 검토 중...💬</div></div>';
+        scrollToBottom();
+
+        // 3. 구글 스크립트(서버) 통신
+        google.script.run
+          .withSuccessHandler(function(response) {
+            var loadingElem = document.getElementById(loadingId);
+            if (loadingElem) loadingElem.remove();
+            
+            chatArea.innerHTML += '<div class="message message-bot"><div class="bubble bubble-bot">' + response + '</div></div>';
+            scrollToBottom();
+            
+            inputObj.disabled = false;
+            btnObj.disabled = false;
+            inputObj.focus();
+          })
+          .withFailureHandler(function(error) {
+            var loadingElem = document.getElementById(loadingId);
+            if (loadingElem) loadingElem.remove();
+            
+            chatArea.innerHTML += '<div class="message message-bot"><div class="bubble bubble-bot" style="color:red;">통신 에러: ' + error.message + '</div></div>';
+            scrollToBottom();
+            
+            inputObj.disabled = false;
+            btnObj.disabled = false;
+          })
+          .callGeminiAPI(text);
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pack2U 협력업체 통합 관리 시스템 매뉴얼</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --primary-dark: #1557b0;
+            --secondary: #5f6368;
+            --bg-light: #f8f9fa;
+            --white: #ffffff;
+            --danger: #d93025;
+            --success: #1e8e3e;
+            --warning: #f9ab00;
+            --shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            --border: #dadce0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', 'Apple SD Gothic Neo', sans-serif;
+            background-color: var(--bg-light);
+            color: #3c4043;
+            line-height: 1.7;
+            scroll-behavior: smooth;
+        }
+
+        header {
+            background: linear-gradient(135deg, #1a73e8 0%, #1557b0 100%);
+            color: white;
+            padding: 60px 20px;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        header h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: -40px auto 60px;
+            padding: 0 20px;
+        }
+
+        .nav-wrapper {
+            position: sticky;
+            top: 20px;
+            float: right;
+            width: 200px;
+            margin-right: -240px;
+            display: none;
+        }
+
+        @media (min-width: 1400px) {
+            .nav-wrapper {
+                display: block;
+            }
+        }
+
+        .side-nav {
+            background: var(--white);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+        }
+
+        .side-nav h4 {
+            font-family: 'Outfit', sans-serif;
+            margin-bottom: 15px;
+            color: var(--primary);
+        }
+
+        .side-nav ul {
+            list-style: none;
+        }
+
+        .side-nav li {
+            margin-bottom: 10px;
+        }
+
+        .side-nav a {
+            text-decoration: none;
+            color: var(--secondary);
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+
+        .side-nav a:hover {
+            color: var(--primary);
+        }
+
+        .card {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 40px;
+            margin-bottom: 40px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+        }
+
+        h2 {
+            font-family: 'Outfit', sans-serif;
+            color: var(--primary);
+            font-size: 1.8rem;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        h3 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.3rem;
+            margin: 30px 0 15px;
+            color: #202124;
+        }
+
+        .badge {
+            background: var(--primary);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        img {
+            width: 100%;
+            height: auto;
+            border-radius: 12px;
+            margin: 25px 0;
+            border: 1px solid var(--border);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            background: #f1f3f4;
+            min-height: 200px;
+        }
+
+        .info-box {
+            background: #e8f0fe;
+            border-left: 6px solid var(--primary);
+            padding: 24px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .warning-box {
+            background: #fce8e6;
+            border-left: 6px solid var(--danger);
+            padding: 24px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .tip-box {
+            background: #fef7e0;
+            border-left: 6px solid var(--warning);
+            padding: 24px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        ul, ol {
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+
+        li {
+            margin-bottom: 10px;
+        }
+
+        code {
+            background: #f1f3f4;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--danger);
+            font-weight: 600;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 25px 0;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        th, td {
+            padding: 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            background-color: #f1f3f4;
+            font-weight: 600;
+            color: #202124;
+        }
+
+        footer {
+            text-align: center;
+            padding: 40px;
+            color: var(--secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .card {
+            animation: fadeIn 0.6s ease out forwards;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>📦 Pack2U 협력업체 통합 관리 시스템</h1>
+        <p>효율적인 발주 관리 및 자동화를 위한 업무 표준 매뉴얼</p>
+    </header>
+
+    <div class="container">
+        <div class="nav-wrapper">
+            <div class="side-nav">
+                <h4>바로가기</h4>
+                <ul>
+                    <li><a href="#setup">0. 권한 승인</a></li>
+                    <li><a href="#step1">1. 발주 Push</a></li>
+                    <li><a href="#step2">2. 발주 수집</a></li>
+                    <li><a href="#step3">3. 송장 처리</a></li>
+                    <li><a href="#step4">4. 정산 마감</a></li>
+                    <li><a href="#special">5. 취소/반품</a></li>
+                    <li><a href="#as">🛠️ 트러블슈팅</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div id="setup" class="card">
+            <h2><span class="badge">필수</span> 기본 준비: 스크립트 권한 승인</h2>
+            <p>시스템을 처음 사용하는 직원은 반드시 Google 계정의 파일 접근 권한을 승인해야 합니다. 이 과정이 누락되면 발주 수집 시 <strong>"0건 수집"</strong> 오류가 발생합니다.</p>
+            <div class="info-box">
+                <strong>실행 방법:</strong> 상단 메뉴 <code>💼 협력업체 관리</code> > <code>🔑 스크립트 권한 승인 (직원 최초 1회)</code> 클릭
+            </div>
+            <img src="click_feedback_1778685547244.png" alt="권한 승인 메뉴">
+        </div>
+
+        <div id="step1" class="card">
+            <h2><span class="badge">1단계</span> 대리발주 Push 및 전용양식 분배</h2>
+            <p>마스터 시트의 주문 중 <strong>'대리발송'</strong> 건을 필터링하여 각 협력업체의 전용 시트로 전송합니다.</p>
+            <h3>작동 프로세스</h3>
+            <ol>
+                <li>대리발송 건 자동 식별</li>
+                <li>협력업체별 전용 구글 시트(예: 뉴파츠)로 데이터 전송</li>
+                <li>업체 시트의 <code>[전용양식]</code> 탭에서 실시간 확인 가능</li>
+            </ol>
+            <img src="click_feedback_1778685553860.png" alt="대리발주 Push 메뉴">
+            <img src="click_feedback_1778685504735.png" alt="전용양식 확인">
+
+            <div class="warning-box">
+                <strong>🚨 오후 2차 발주 시 주의사항</strong><br>
+                반드시 <code>4️⃣ 대리발송 초기화 (UID만 초기화)</code>를 먼저 실행한 후 2차 발주를 Push해야 합니다. 그렇지 않으면 중복 방지 로직으로 인해 신규 주문이 누락될 수 있습니다.
+            </div>
+            <img src="click_feedback_1778685592319.png" alt="초기화 메뉴">
+        </div>
+
+        <div id="step2" class="card">
+            <h2><span class="badge">2단계</span> 발주 수집 (허브 통합)</h2>
+            <p>여러 업체 시트에 흩어진 발주 데이터를 <strong>'협력업체_발주허브'</strong> 탭으로 모아 중앙에서 관리합니다.</p>
+            <div class="tip-box">
+                모든 업체의 배송 현황을 한눈에 파악하고 통제할 수 있는 통합 관제탑 역할을 합니다.
+            </div>
+            <img src="click_feedback_1778685579611.png" alt="발주 수집">
+            <img src="click_feedback_1778685567100.png" alt="발주 허브 화면">
+        </div>
+
+        <div id="step3" class="card">
+            <h2><span class="badge">3~4단계</span> 송장 수집 및 배포</h2>
+            <p>업체가 입력한 송장번호를 수집하여 허브로 가져온 뒤, 이를 각 쇼핑몰 탭으로 배포하여 고객에게 발송 정보를 전달합니다.</p>
+            <img src="click_feedback_1778685592319.png" alt="송장 배포">
+            <img src="click_feedback_1778685425823.png" alt="송장 조회 탭">
+        </div>
+
+        <div id="step4" class="card">
+            <h2><span class="badge">5단계</span> 월별 정산 마감</h2>
+            <p>완료된 주문을 정산 탭으로 이동시키고, 실시간으로 정산 금액을 산출합니다.</p>
+            <ul>
+                <li>송장이 있는 주문을 <code>[(YYYY년 M월) 발주 마감]</code> 탭으로 이동</li>
+                <li><strong>정산금액(단가 × 수량)</strong> 자동 계산</li>
+                <li>취소/반품 건 체크박스 선택 시 총액에서 자동 차감</li>
+            </ul>
+            <img src="click_feedback_1778685592319.png" alt="마감 이동">
+            <img src="click_feedback_1778685448690.png" alt="정산 마감 화면">
+        </div>
+
+        <div id="special" class="card">
+            <h2><span class="badge" style="background:var(--danger)">특별</span> 취소/반품 연동 관리</h2>
+            <p>협력업체 시트에서 발생한 취소 및 반품 건을 중앙 허브 및 정산 탭과 동기화합니다.</p>
+            <h3>스마트 조회 기능</h3>
+            <p>고유ID만 입력하면 품목명, 수취인, 송장번호 등이 자동으로 연동됩니다.</p>
+            <img src="click_feedback_1778685437631.png" alt="취소반품 접수">
+            <div class="info-box">
+                <code>🚫 취소/반품 수집</code> 클릭 시 허브와 발주 탭의 상태가 즉시 갱신되며, 정산 마감 탭의 체크박스도 자동으로 활성화됩니다.
+            </div>
+            <img src="click_feedback_1778685592319.png" alt="취소반품 수집">
+        </div>
+
+        <div id="as" class="card">
+            <h2>🛠️ 예외 상황 및 트러블슈팅</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>증상</th>
+                        <th>해결 방법</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>발주 수집 건수가 0건일 때</td>
+                        <td>[진단·운영] > 🔐 파일 접근 권한 진단 실행</td>
+                    </tr>
+                    <tr>
+                        <td>업체 시트 헤더가 파손되었을 때</td>
+                        <td>[복구 도구] > 발주탭 헤더 복구 실행</td>
+                    </tr>
+                    <tr>
+                        <td>전체 구조가 밀렸을 때</td>
+                        <td>임의 수정 금지! 즉시 시스템 관리자에게 보고</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <footer>
+        &copy; 2026 Pack2U Integrated Management System. All rights reserved.
+    </footer>
+</body>
+</html>

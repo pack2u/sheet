@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+      body { font-family: 'Malgun Gothic', sans-serif; padding: 15px; background-color: #f8f9fa; color: #333; }
+      h3 { margin-top: 0; color: #1a73e8; }
+      p { font-size: 13px; line-height: 1.5; color: #555; }
+      .highlight { font-weight: bold; color: #d93025; }
+      textarea { width: 100%; height: 250px; padding: 10px; box-sizing: border-box; border: 2px dashed #1a73e8; border-radius: 4px; resize: none; font-family: monospace; background-color: #fff; transition: background-color 0.2s; }
+      textarea:focus { outline: none; background-color: #f1f8ff; }
+      .btn-wrap { text-align: center; margin-top: 15px; }
+      button { background-color: #1a73e8; color: white; border: none; padding: 10px 24px; font-size: 15px; font-weight: bold; border-radius: 4px; cursor: pointer; }
+      button:hover { background-color: #1557b0; }
+      button:disabled { background-color: #a8c7fa; cursor: not-allowed; }
+      #statusInfo { margin-top: 15px; font-weight: bold; text-align: center; font-size: 14px; }
+      #imgPreview { display: none; margin-top: 10px; max-width: 100%; max-height: 150px; border: 1px solid #ccc; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h3>📸 스캐너 탑재! 위탁 송장 매핑기</h3>
+    <p>
+      거래처에서 받은 발송 정보(텍스트, 사진, <b>엑셀 파일</b> 등)를 <b>화면에 복사(Ctrl+V)</b> 하세요!<br>
+      <span class="highlight">※ 사진을 넣으면 구글 AI가 내용을 판독하며, 엑셀 파일을 떨구면 자동으로 텍스트를 추출합니다!</span>
+    </p>
+    
+    <textarea id="rawText" placeholder="여기에 텍스트나 캡처 사진, 또는 엑셀 파일 붙여 넣으세요...&#10;&#10;예시:&#10;홍길동 010-1234-5678 123456789012&#10;[또는 카톡 캡처, 엑셀 파일 등 그대로 적용]"></textarea>
+    
+    <div style="text-align: center;">
+      <img id="imgPreview" src="" alt="이미지 미리보기" />
+    </div>
+
+    <div class="btn-wrap">
+      <button id="runBtn" onclick="runMapping()">자동 매핑 시작</button>
+    </div>
+    <div id="statusInfo"></div>
+
+    <script>
+      const textObj = document.getElementById('rawText');
+      const btnObj = document.getElementById('runBtn');
+      const statusObj = document.getElementById('statusInfo');
+      const imgPreview = document.getElementById('imgPreview');
+
+      let pastedImageData = null;
+      let pastedMimeType = null;
+
+      // 브라우저 기본 드래그앤드롭(새창으로 파일열림) 방지
+      window.addEventListener("dragover", function(e) { e.preventDefault(); }, false);
+      window.addEventListener("drop", function(e) { e.preventDefault(); }, false);
+
+      // 드래그 앤 드롭 이벤트 처리
+      textObj.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        textObj.style.backgroundColor = "#e8f0fe";
+      });
+      
+      textObj.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        textObj.style.backgroundColor = "#fff";
+      });
+      
+      textObj.addEventListener('drop', function(e) {
+        e.preventDefault();
+        textObj.style.backgroundColor = "#fff";
+        
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          let file = e.dataTransfer.files[0];
+          
+          if (file.name.match(/\.(xls|xlsx|csv)$/i)) {
+            startLoadingMode("📊 엑셀 파일을 파싱하는 중입니다...");
+            let reader = new FileReader();
+            reader.onload = function(event) {
+              let data = new Uint8Array(event.target.result);
+              let workbook = XLSX.read(data, {type: 'array'});
+              let firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+              let excelText = XLSX.utils.sheet_to_csv(firstSheet);
+              
+              textObj.value = excelText;
+              statusObj.innerHTML = "✅ 엑셀 파일 데이터 추출 완료! [자동 매핑 시작]을 눌러주세요.";
+              statusObj.style.color = "#0f9d58";
+              btnObj.disabled = false; 
+              textObj.disabled = false;
+            };
+            reader.readAsArrayBuffer(file);
+          } else if (file.type.indexOf("image") !== -1) {
+            pastedMimeType = file.type;
+            let reader = new FileReader();
+            reader.onload = function(event) {
+              pastedImageData = event.target.result;
+              textObj.value = "[이미지 드롭 완료 - 스캐너 구동 대기 중...]";
+              textObj.style.backgroundColor = "#e6f4ea";
+              imgPreview.src = pastedImageData;
+              imgPreview.style.display = "inline-block";
+              statusObj.innerHTML = "";
+            };
+            reader.readAsDataURL(file);
+          } else {
+            let reader = new FileReader();
+            reader.onload = function(event) {
+               textObj.value = event.target.result;
+            };
+            reader.readAsText(file);
+          }
+          return;
+        }
+      });
+
+      // 텍스트 박스 안에서 Ctrl+V 눌렀을 때 이미지 가로채는 마법의 이벤트 (리스너)
+      textObj.addEventListener('paste', function(e) {
+        if (e.clipboardData && e.clipboardData.items) {
+          // 엑셀에서 복사한 경우 텍스트와 이미지가 동시에 존재. 이때는 텍스트(표 내용)를 우선!
+          let plainText = e.clipboardData.getData("text/plain");
+          if (plainText && plainText.trim() !== "") {
+            return; // 텍스트가 있으면 기본 동작인 텍스트 붙여넣기를 수행하도록 함수 빠져나감
+          }
+
+          let items = e.clipboardData.items;
+          for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf("image") !== -1) {
+              // 이미지 복붙을 찾았다! 텍스트 붙여넣기는 멈춤!
+              e.preventDefault(); 
+              let blob = items[i].getAsFile();
+              pastedMimeType = blob.type; // 예: image/png
+              
+              let reader = new FileReader();
+              reader.onload = function(event) {
+                pastedImageData = event.target.result; // Base64 인코딩 데이터 추출 완료
+                
+                // 화면 처리
+                textObj.value = "[이미지 파일 첨부 완료 - 스캐너 구동 대기 중...]";
+                textObj.style.backgroundColor = "#e6f4ea";
+                imgPreview.src = pastedImageData;
+                imgPreview.style.display = "inline-block";
+                statusObj.innerHTML = "";
+              };
+              reader.readAsDataURL(blob);
+              return;
+            }
+          }
+        }
+      });
+
+      function runMapping() {
+        // 이미지가 들어왔을 경우
+        if (pastedImageData) {
+          startLoadingMode("📷 구글 AI가 사진 속 글자를 읽는 중입니다... (약 5초 소요)");
+          
+          // 백엔드 영문 번역기(OCR)로 이미지 데이터 발송!
+          google.script.run
+            .withSuccessHandler(handleSuccess)
+            .withFailureHandler(handleError)
+            .processImageOCR(pastedImageData, pastedMimeType);
+        } else {
+          // 그냥 일반 텍스트가 들어왔을 경우 (기존 방식)
+          let text = textObj.value;
+          if (!text || text.trim() === "") { alert("붙여넣은 텍스트나 사진이 없습니다!"); return; }
+
+          startLoadingMode("🔍 시트를 탐색하며 송장을 꽂아넣는 중...");
+          
+          google.script.run
+            .withSuccessHandler(handleSuccess)
+            .withFailureHandler(handleError)
+            .processTrackingText(text);
+        }
+      }
+
+      function startLoadingMode(msg) {
+        btnObj.disabled = true; 
+        textObj.disabled = true;
+        statusObj.style.color = "#333"; 
+        statusObj.innerHTML = msg;
+      }
+
+      function handleSuccess(res) {
+        if (res.success) {
+          statusObj.style.color = "#0f9d58"; 
+          statusObj.innerHTML = res.msg;
+          // 실패 건수나 에러로그가 있으면 창을 닫지 않고 유지!
+          if (!res.hasErrors) {
+             setTimeout(() => { google.script.host.close(); }, 3500);
+          }
+        } else {
+          statusObj.style.color = "#d93025"; 
+          statusObj.innerHTML = "에러: " + res.msg;
+          resetUI();
+        }
+      }
+
+      function handleError(err) {
+        statusObj.style.color = "#d93025"; 
+        statusObj.innerHTML = "시스템 에러: " + err.message;
+        resetUI();
+      }
+
+      function resetUI() {
+        btnObj.disabled = false; 
+        textObj.disabled = false;
+        textObj.style.backgroundColor = "#fff";
+      }
+    </script>
+  </body>
+</html>

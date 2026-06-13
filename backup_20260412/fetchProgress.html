@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      font-family: 'Inter', 'Noto Sans KR', sans-serif;
+      margin: 0; padding: 20px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      color: #333; height: 100vh; box-sizing: border-box;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 30px; box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+      width: 100%; max-width: 400px; text-align: center;
+    }
+    h2 { margin: 0 0 10px 0; color: #1a73e8; font-size: 20px; }
+    p.desc { font-size: 13px; color: #666; margin-bottom: 25px; }
+    
+    .progress-container {
+      width: 100%; background: #e0e0e0;
+      border-radius: 8px; overflow: hidden; height: 26px;
+      position: relative; margin-bottom: 20px;
+    }
+    .progress-bar {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+      transition: width 0.3s ease;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .progress-text {
+      position: absolute; width: 100%; height: 100%; left: 0; top: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: #000; font-weight: bold; font-size: 12px; z-index: 2;
+    }
+    
+    .status { font-size: 14px; font-weight: bold; margin-bottom: 10px; color: #333; }
+    .log-box {
+      font-size: 11px; text-align: left; height: 80px; overflow-y: auto;
+      background: #f8f9fa; border: 1px solid #ddd; border-radius: 5px; padding: 8px; color: #d32f2f;
+      display: none;
+    }
+    .btn {
+      background: #1a73e8; color: white; border: none; padding: 10px 20px;
+      border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;
+      display: none; transition: 0.2s;
+    }
+    .btn:hover { background: #1557b0; }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Noto+Sans+KR:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="card">
+    <h2>🚀 동기화 무중단 모드</h2>
+    <p class="desc">타임아웃(6분) 제한을 원천 차단하여<br>안전하게 데이터를 수집합니다.</p>
+    
+    <div class="progress-container">
+      <div class="progress-text" id="ptext">0 / 0 (0%)</div>
+      <div class="progress-bar" id="pbar"></div>
+    </div>
+    
+    <div class="status" id="status-msg">세션 연결 및 준비 중...</div>
+    <div class="log-box" id="log-box"></div>
+    
+    <button class="btn" id="close-btn" onclick="google.script.host.close()">마치기</button>
+  </div>
+
+  <script>
+    const targetCodes = JSON.parse(<?= targetCodes ?>);
+    const total = targetCodes.length;
+    let sessionId = "";
+    let zone = "";
+    
+    const BATCH_SIZE = 10;
+    let currentIndex = 0;
+    let updatedCount = 0;
+    let allErrors = [];
+
+    window.onload = function() {
+      if(total === 0) {
+        showError("수집할 항목이 없습니다.");
+        return;
+      }
+      document.getElementById('ptext').innerText = `0 / ${total} (0%)`;
+      
+      google.script.run
+        .withSuccessHandler(onSessionReady)
+        .withFailureHandler(fatalError)
+        .initSessionForFetch();
+    };
+
+    function onSessionReady(res) {
+      if(!res.success) {
+        showError("로그인 실패: " + res.error);
+        return;
+      }
+      sessionId = res.sessionId;
+      zone = res.zone;
+      
+      document.getElementById('status-msg').innerText = "데이터 조각 가져오는 중...";
+      processNextBatch();
+    }
+
+    function processNextBatch() {
+      if (currentIndex >= total) {
+        finalize();
+        return;
+      }
+      
+      let chunk = targetCodes.slice(currentIndex, currentIndex + BATCH_SIZE);
+      
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            showError("처리 중단 에러: " + res.error);
+            return;
+          }
+          
+          currentIndex += chunk.length;
+          updatedCount += res.updatedCount;
+          if (res.errorMessages && res.errorMessages.length > 0) {
+             allErrors = allErrors.concat(res.errorMessages);
+             document.getElementById('log-box').style.display = 'block';
+             document.getElementById('log-box').innerHTML = allErrors.join('<br>');
+          }
+          
+          updateProgress();
+          
+          setTimeout(processNextBatch, 200); 
+        })
+        .withFailureHandler(function(err) {
+           showError("구글 스크립트 강제 예외 발생: " + err);
+        })
+        .processEcountBatch(chunk, zone, sessionId);
+    }
+    
+    function updateProgress() {
+      let pc = Math.min(100, Math.round((currentIndex / total) * 100));
+      document.getElementById('pbar').style.width = pc + '%';
+      document.getElementById('ptext').innerText = `${currentIndex} / ${total} (${pc}%)`;
+    }
+
+    function finalize() {
+      document.getElementById('status-msg').innerText = "✅ 수집 완료! 마지막 연결 정리(약 5초)...";
+      document.getElementById('pbar').style.background = "linear-gradient(90deg, #11998e 0%, #38ef7d 100%)";
+      
+      google.script.run
+        .withSuccessHandler(function(msg) {
+           document.getElementById('status-msg').innerText = `✅ 모두 무사히 업데이트 완료!\n(총 ${updatedCount}개 성공)`;
+           document.getElementById('close-btn').style.display = 'inline-block';
+        })
+        .withFailureHandler(fatalError)
+        .finishFetchItemProcess();
+    }
+
+    function showError(msg) {
+      document.getElementById('status-msg').innerText = "❌ 중단됨";
+      document.getElementById('status-msg').style.color = "#d32f2f";
+      const logBox = document.getElementById('log-box');
+      logBox.style.display = 'block';
+      logBox.innerHTML = msg + "<br>" + logBox.innerHTML;
+    }
+    
+    function fatalError(err) {
+      showError(err);
+    }
+  </script>
+</body>
+</html>

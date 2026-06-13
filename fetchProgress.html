@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Premium Monochrome Design System */
+    :root {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f8fafc;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #94a3b8;
+      --border-color: #e2e8f0;
+      --accent-color: #0f172a;
+      --accent-light: #f1f5f9;
+      --error-color: #ef4444;
+      --error-bg: #fef2f2;
+      --font-main: 'Inter', sans-serif;
+      --font-title: 'Outfit', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-main);
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      height: 360px;
+      width: 100%;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      padding: 24px;
+      justify-content: space-between;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .header-icon {
+      width: 18px;
+      height: 18px;
+      stroke: var(--text-primary);
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      animation: spin 1.8s linear infinite;
+    }
+
+    @keyframes spin {
+      100% { transform: rotate(360deg); }
+    }
+
+    .header h2 {
+      font-family: var(--font-title);
+      font-weight: 600;
+      font-size: 16px;
+      letter-spacing: -0.5px;
+      color: var(--text-primary);
+    }
+
+    .desc {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-bottom: 20px;
+    }
+
+    /* Progress UI */
+    .progress-section {
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin-bottom: 16px;
+    }
+
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 4px;
+      background-color: var(--accent-light);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      width: 0%;
+      height: 100%;
+      background-color: var(--accent-color);
+      border-radius: 2px;
+      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+    }
+
+    .progress-bar-fill.shimmer::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.35) 50%,
+        rgba(255, 255, 255, 0) 100%
+      );
+      animation: shimmer 1.5s infinite;
+    }
+
+    @keyframes shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    .status-msg {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      text-align: center;
+      margin-bottom: 4px;
+      min-height: 20px;
+    }
+
+    /* Log Box */
+    .log-box {
+      max-height: 0;
+      overflow: hidden;
+      background-color: var(--error-bg);
+      border: 0 solid var(--error-color);
+      border-radius: 6px;
+      font-family: Monaco, Consolas, monospace;
+      font-size: 10px;
+      line-height: 1.4;
+      color: var(--error-color);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .log-box.open {
+      max-height: 80px;
+      padding: 8px 10px;
+      border-width: 1px;
+      margin-bottom: 12px;
+      overflow-y: auto;
+    }
+
+    /* Actions */
+    .action-row {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+    }
+
+    .btn-solid {
+      background-color: var(--accent-color);
+      color: #ffffff;
+      border: none;
+      border-radius: 5px;
+      padding: 7px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: none;
+      box-shadow: 0 2px 4px rgba(15, 23, 42, 0.08);
+    }
+
+    .btn-solid:hover {
+      background-color: #000000;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(15, 23, 42, 0.12);
+    }
+
+    .btn-solid:active {
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div>
+      <!-- Header -->
+      <div class="header">
+        <svg class="header-icon" id="syncIcon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3l.7.8M22 12.5a10 10 0 0 1-18.8 4.3l-.7-.8"/>
+        </svg>
+        <h2>선택 품목 최신정보 수집</h2>
+      </div>
+      <p class="desc">이카운트 세션 연결 및 배치 모드가 활성화되어<br>선택하신 품목 정보와 실시간 재고를 백그라운드로 갱신합니다.</p>
+      
+      <!-- Progress Bar Card -->
+      <div class="progress-section">
+        <div class="progress-meta">
+          <span id="status-msg">세션 준비 중...</span>
+          <span id="ptext">0 / 0 (0%)</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill shimmer" id="pbar"></div>
+        </div>
+      </div>
+
+      <!-- Log Box (for Errors) -->
+      <div class="log-box" id="log-box"></div>
+    </div>
+
+    <!-- Bottom Actions -->
+    <div class="action-row">
+      <button class="btn-solid" id="close-btn" onclick="google.script.host.close()">창 닫기</button>
+    </div>
+  </div>
+
+  <script id="init-data" type="application/json">
+    <?!= targetCodes ?>
+  </script>
+  <script>
+    const targetCodes = JSON.parse(document.getElementById('init-data').textContent);
+    const total = targetCodes.length;
+    let sessionId = "";
+    let zone = "";
+    
+    const BATCH_SIZE = 50;
+    let currentIndex = 0;
+    let updatedCount = 0;
+    let allErrors = [];
+
+    window.onload = function() {
+      if(total === 0) {
+        showError("수집할 항목이 없습니다.");
+        return;
+      }
+      document.getElementById('ptext').innerText = `0 / ${total} (0%)`;
+      document.getElementById('status-msg').innerText = "이카운트 세션 상태 확인 중...";
+      
+      google.script.run
+        .withSuccessHandler(onSessionReady)
+        .withFailureHandler(fatalError)
+        .initSessionForFetch();
+    };
+
+    function onSessionReady(res) {
+      if(!res.success) {
+        showError("로그인 실패: " + res.error);
+        return;
+      }
+      sessionId = res.sessionId;
+      zone = res.zone;
+      
+      document.getElementById('status-msg').innerText = "품목 정보 데이터 수집 시작...";
+      setTimeout(processNextBatch, 500);
+    }
+
+    function processNextBatch() {
+      if (currentIndex >= total) {
+        finalize();
+        return;
+      }
+      
+      let chunk = targetCodes.slice(currentIndex, currentIndex + BATCH_SIZE);
+      const batchLabel = (currentIndex + 1) + "~" + Math.min(currentIndex + BATCH_SIZE, total);
+      document.getElementById('status-msg').innerText = `수집 중 (${batchLabel}번 품목)`;
+      
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res.success) {
+            showError("처리 중단 에러: " + res.error);
+            return;
+          }
+          
+          currentIndex += chunk.length;
+          updatedCount += res.updatedCount;
+          if (res.errorMessages && res.errorMessages.length > 0) {
+             allErrors = allErrors.concat(res.errorMessages);
+             const logBox = document.getElementById('log-box');
+             logBox.classList.add('open');
+             logBox.innerHTML = allErrors.join('<br>');
+          }
+          
+          updateProgress();
+          processNextBatch();
+        })
+        .withFailureHandler(function(err) {
+           showError("구글 서버 통신 오류: " + err);
+        })
+        .processEcountBatch(chunk, zone, sessionId);
+    }
+    
+    function updateProgress() {
+      let pc = Math.min(100, Math.round((currentIndex / total) * 100));
+      document.getElementById('pbar').style.width = pc + '%';
+      document.getElementById('ptext').innerText = `${currentIndex} / ${total} (${pc}%)`;
+    }
+
+    function finalize() {
+      document.getElementById('status-msg').innerText = "시트 후처리 적용 중...";
+      document.getElementById('pbar').style.width = "100%";
+      document.getElementById('pbar').classList.remove('shimmer');
+      
+      google.script.run
+        .withSuccessHandler(function(msg) {
+           document.getElementById('syncIcon').style.animation = "none";
+           document.getElementById('syncIcon').innerHTML = `
+             <polyline points="20 6 9 17 4 12" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+           `;
+           document.getElementById('status-msg').innerText = "완료";
+           document.getElementById('ptext').innerText = `총 ${updatedCount}개 갱신 완료`;
+           document.getElementById('close-btn').style.display = 'inline-block';
+           
+           // 3초 후 자동 종료
+           setTimeout(function() {
+             google.script.host.close();
+           }, 3000);
+        })
+        .withFailureHandler(fatalError)
+        .finishFetchItemProcess(targetCodes);
+    }
+
+    function showError(msg) {
+      document.getElementById('syncIcon').style.animation = "none";
+      document.getElementById('syncIcon').innerHTML = `
+        <line x1="18" y1="6" x2="6" y2="18" stroke="var(--error-color)" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="6" y1="6" x2="18" y2="18" stroke="var(--error-color)" stroke-width="2.5" stroke-linecap="round"/>
+      `;
+      
+      const statusMsg = document.getElementById('status-msg');
+      statusMsg.innerText = "중단됨";
+      statusMsg.style.color = "var(--error-color)";
+      
+      const logBox = document.getElementById('log-box');
+      logBox.classList.add('open');
+      logBox.innerHTML = msg + "<br>" + logBox.innerHTML;
+      
+      document.getElementById('pbar').style.backgroundColor = "var(--error-color)";
+      document.getElementById('pbar').classList.remove('shimmer');
+      document.getElementById('close-btn').style.display = 'inline-block';
+    }
+    
+    function fatalError(err) {
+      showError(err);
+    }
+  </script>
+</body>
+</html>

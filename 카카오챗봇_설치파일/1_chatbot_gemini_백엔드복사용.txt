@@ -1,0 +1,70 @@
+// 발급해주신 Gemini 유료플랜 키 적용
+var GEMINI_API_KEY = "AIzaSyCXNK34AUDAaxWWghGK5hAsd7v8WEnBxdk"; 
+var CS_MANUAL_SPREADSHEET_ID = "1LlNX-spTs-2WgWD8HEha90PYU0m7s8MqFh84vy_Fi_Q";
+
+// 챗봇 메뉴 추가 (시트를 열면 상단에 버튼이 생깁니다)
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('🤖 고객센터 챗봇')
+      .addItem('채팅창 열기', 'showChatbotSidebar')
+      .addToUi();
+}
+
+function showChatbotSidebar() {
+  var html = HtmlService.createHtmlOutputFromFile('chatbotSidebar')
+      .setTitle('상담원 챗봇 (Gemini)')
+      .setWidth(350);
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+function getCSManualContext() {
+  try {
+    var ss = SpreadsheetApp.openById(CS_MANUAL_SPREADSHEET_ID);
+    var allSheets = ss.getSheets();
+    var contextText = "아래는 우리 회사의 공식 CS 매뉴얼 막 과거 처리 내역 데이터베이스입니다.\n\n";
+    for (var s = 0; s < allSheets.length; s++) {
+       var sheet = allSheets[s];
+       var sheetName = sheet.getName();
+       var data = sheet.getDataRange().getDisplayValues(); // 화면 텍스트 그대로 가져오기
+       
+       contextText += "========== [ 탭(카테고리) 명: " + sheetName + " ] ==========\n";
+       for (var i = 0; i < data.length; i++) {
+          var rowStr = data[i].join(" | ").trim();
+          if (rowStr.replace(/\|/g, '').trim().length > 0) contextText += rowStr + "\n";
+       }
+       contextText += "\n";
+    }
+    return contextText;
+  } catch(e) { return "[매뉴얼 로드 실패] 오류: " + e.message; }
+}
+
+function callGeminiAPI(userQuestion) {
+  try {
+    var manualContext = getCSManualContext();
+    var model = "gemini-2.5-flash-lite"; // 최신 2.5 플래시 라이트 모델 적용
+    var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + GEMINI_API_KEY;
+
+    var prompt = "당신은 Pack2U의 센스 있고 친절한 전문 CS 상담원입니다.\n" +
+                 "매뉴얼에 없는 것은 절대 지어내지 말고, 매뉴얼에 기반하여 고객에게 답변해주세요.\n" +
+                 "매뉴얼 내용을 시스템 코드처럼 딱딱하게 말하지 말고, 채팅하는 것처럼 예쁘고 상냥하게 요약해 주세요.\n" +
+                 "처리과정과 결과를 메뉴얼에서 찾아서 알려주세요.\n" +
+                 "---------------------------\n" + manualContext + "\n---------------------------\n" +
+                 "고객 질문: " + userQuestion;
+                 
+    var payload = {
+      "contents": [{"parts":[{"text": prompt}] }],
+      "generationConfig": { "temperature": 0.4 }
+    };
+    
+    var response = UrlFetchApp.fetch(url, {
+      "method": "post",
+      "contentType": "application/json",
+      "payload": JSON.stringify(payload),
+      "muteHttpExceptions": true
+    });
+    
+    var json = JSON.parse(response.getContentText());
+    if (json.error) return "에러가 발생했습니다: " + json.error.message;
+    return json.candidates[0].content.parts[0].text;
+  } catch(e) { return "오류가 발생했습니다: " + String(e); }
+}

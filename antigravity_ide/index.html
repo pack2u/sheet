@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity IDE</title>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Monaco Editor RequireJS Loader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 사이드바: 파일 탐색기 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="brand">ANTIGRAVITY IDE</span>
+                <button id="refresh-btn" class="icon-btn" title="새로고침">
+                    <!-- Refresh SVG (Monochrome) -->
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                </button>
+            </div>
+            <div class="explorer-title">EXPLORER</div>
+            <div class="file-tree-container">
+                <ul id="file-tree" class="file-tree">
+                    <!-- Dynamic rendering -->
+                    <li class="loading-text">로딩 중...</li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- 메인 작업 영역 -->
+        <main class="main-area">
+            <!-- 툴바 -->
+            <header class="toolbar">
+                <div class="file-info">
+                    <!-- File SVG (Monochrome) -->
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span id="active-file-path">파일을 선택해 주세요.</span>
+                    <span id="unsaved-indicator" class="unsaved-dot" style="display: none;"></span>
+                </div>
+                <div class="actions">
+                    <button id="save-btn" class="save-button" disabled>
+                        <!-- Save SVG (Monochrome) -->
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                        저장
+                    </button>
+                    <span class="status-badge">
+                        <span class="status-dot"></span>
+                        LOCAL
+                    </span>
+                </div>
+            </header>
+
+            <!-- 에디터 영역 -->
+            <div class="editor-wrapper">
+                <div id="editor-container" class="editor-container"></div>
+                <div id="editor-placeholder" class="editor-placeholder">
+                    <div class="placeholder-content">
+                        <div class="placeholder-logo">🐜</div>
+                        <h2>Antigravity IDE</h2>
+                        <p>좌측 탐색기에서 편집할 파일을 선택하세요.</p>
+                        <div class="shortcuts">
+                            <div class="shortcut-row"><span class="key">Ctrl</span> + <span class="key">S</span><span class="desc">파일 저장</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 알림 메시지 (Toast) -->
+    <div id="toast" class="toast">저장 완료</div>
+
+    <script>
+        let editorInstance = null;
+        let activeFilePath = null;
+        let originalContent = '';
+        let isUnsaved = false;
+
+        // Monaco Editor 로드 및 초기화
+        require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' } });
+        require(['vs/editor/editor.main'], function () {
+            editorInstance = monaco.editor.create(document.getElementById('editor-container'), {
+                value: '',
+                language: 'plaintext',
+                theme: 'vs-dark',
+                automaticLayout: true,
+                fontFamily: '"JetBrains Mono", Consolas, monospace',
+                fontSize: 14,
+                lineHeight: 22,
+                tabSize: 4,
+                minimap: { enabled: true },
+                scrollbar: {
+                    vertical: 'visible',
+                    horizontal: 'visible',
+                    useShadows: false,
+                    verticalScrollbarSize: 10,
+                    horizontalScrollbarSize: 10
+                },
+                lineNumbersMinChars: 3
+            });
+
+            // 변경 사항 감지
+            editorInstance.onDidChangeModelContent(() => {
+                if (!activeFilePath) return;
+                const currentContent = editorInstance.getValue();
+                if (currentContent !== originalContent) {
+                    setUnsaved(true);
+                } else {
+                    setUnsaved(false);
+                }
+            });
+
+            // Ctrl + S 저장 단축키 바인딩
+            editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, function() {
+                saveActiveFile();
+            });
+
+            // 파일 트리 로드
+            loadFiles();
+        });
+
+        // 파일 목록 불러오기
+        async function loadFiles() {
+            try {
+                const response = await fetch('/api/files');
+                const data = await response.json();
+                renderFileTree(data);
+            } catch (error) {
+                console.error('Error fetching file list:', error);
+                document.getElementById('file-tree').innerHTML = '<li class="error-text">파일 목록을 불러오지 못했습니다.</li>';
+            }
+        }
+
+        // 파일 트리 렌더링
+        function renderFileTree(nodes) {
+            const treeContainer = document.getElementById('file-tree');
+            treeContainer.innerHTML = '';
+            
+            function createNodeEl(node) {
+                const li = document.createElement('li');
+                const itemDiv = document.createElement('div');
+                itemDiv.className = `tree-item ${node.type}`;
+                itemDiv.dataset.path = node.path;
+
+                // 아이콘 지정
+                let iconSvg = '';
+                if (node.type === 'directory') {
+                    // Folder Icon SVG (Monochrome)
+                    iconSvg = `<svg class="node-icon folder-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+                } else {
+                    // File Icon SVG (Monochrome)
+                    iconSvg = `<svg class="node-icon file-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+                }
+
+                itemDiv.innerHTML = `${iconSvg}<span class="node-name">${node.name}</span>`;
+
+                if (node.type === 'directory') {
+                    const childrenUl = document.createElement('ul');
+                    childrenUl.className = 'tree-children collapsed';
+                    
+                    itemDiv.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const isCollapsed = childrenUl.classList.toggle('collapsed');
+                        itemDiv.classList.toggle('open', !isCollapsed);
+                    });
+
+                    node.children.forEach(child => {
+                        childrenUl.appendChild(createNodeEl(child));
+                    });
+
+                    li.appendChild(itemDiv);
+                    li.appendChild(childrenUl);
+                } else {
+                    itemDiv.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        // 기존 미저장 확인
+                        if (isUnsaved) {
+                            if (!confirm('저장하지 않은 변경사항이 있습니다. 무시하고 파일을 여시겠습니까?')) {
+                                return;
+                            }
+                        }
+                        loadFile(node.path);
+                    });
+                    li.appendChild(itemDiv);
+                }
+
+                return li;
+            }
+
+            nodes.forEach(node => {
+                treeContainer.appendChild(createNodeEl(node));
+            });
+        }
+
+        // 파일 열기
+        async function loadFile(filePath) {
+            try {
+                const response = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    showToast(data.error, true);
+                    return;
+                }
+
+                // 에디터 활성화
+                document.getElementById('editor-placeholder').style.display = 'none';
+                
+                activeFilePath = filePath;
+                originalContent = data.content;
+                isUnsaved = false;
+
+                // 기존 선택 스타일 제거 및 현재 노드 활성화
+                document.querySelectorAll('.tree-item.file').forEach(el => el.classList.remove('active'));
+                const activeNode = document.querySelector(`.tree-item.file[data-path="${filePath}"]`);
+                if (activeNode) activeNode.classList.add('active');
+
+                // 상단 파일 경로 표시
+                document.getElementById('active-file-path').textContent = filePath;
+                setUnsaved(false);
+
+                // 언어(구문 강조) 추론
+                const ext = filePath.split('.').pop().toLowerCase();
+                let language = 'plaintext';
+                if (ext === 'js' || ext === 'gs') language = 'javascript';
+                else if (ext === 'html') language = 'html';
+                else if (ext === 'css') language = 'css';
+                else if (ext === 'json') language = 'json';
+                else if (ext === 'md') language = 'markdown';
+
+                const oldModel = editorInstance.getModel();
+                const newModel = monaco.editor.createModel(data.content, language);
+                editorInstance.setModel(newModel);
+                if (oldModel) oldModel.dispose();
+
+            } catch (error) {
+                console.error('Error loading file:', error);
+                showToast('파일을 로드하지 못했습니다.', true);
+            }
+        }
+
+        // 파일 저장 로직
+        async function saveActiveFile() {
+            if (!activeFilePath || !isUnsaved) return;
+
+            const currentContent = editorInstance.getValue();
+
+            try {
+                const response = await fetch('/api/file', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        path: activeFilePath,
+                        content: currentContent
+                    })
+                });
+                
+                const data = await response.json();
+
+                if (data.success) {
+                    originalContent = currentContent;
+                    setUnsaved(false);
+                    showToast(data.message || '저장되었습니다.');
+                } else {
+                    showToast(data.error || '저장 실패', true);
+                }
+            } catch (error) {
+                console.error('Error saving file:', error);
+                showToast('파일 저장 실패', true);
+            }
+        }
+
+        // 미저장 상태 관리
+        function setUnsaved(unsaved) {
+            isUnsaved = unsaved;
+            const dot = document.getElementById('unsaved-indicator');
+            const saveBtn = document.getElementById('save-btn');
+            
+            if (unsaved) {
+                dot.style.display = 'inline-block';
+                saveBtn.disabled = false;
+                saveBtn.classList.add('dirty');
+            } else {
+                dot.style.display = 'none';
+                saveBtn.disabled = true;
+                saveBtn.classList.remove('dirty');
+            }
+        }
+
+        // Toast 알림
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${isError ? 'error' : ''} show`;
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // UI 이벤트 바인딩
+        document.getElementById('refresh-btn').addEventListener('click', loadFiles);
+        document.getElementById('save-btn').addEventListener('click', saveActiveFile);
+    </script>
+</body>
+</html>

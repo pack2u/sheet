@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pack2U 전사 통합 자동화 사업계획서 V3</title>
+    <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #030712;
+            --surface-color: #111827;
+            --surface-light: #1f2937;
+            --text-primary: #f9fafb;
+            --text-secondary: #9ca3af;
+            --accent: #3b82f6; 
+            --accent-glow: rgba(59, 130, 246, 0.5);
+            --border: #374151;
+            --success: #10b981;
+            --warning: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+        }
+
+        /* 세로 스크롤 컨테이너 */
+        .slide-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            padding: 60px 0;
+            gap: 80px;
+        }
+
+        /* 각 슬라이드는 가로 16:9 비율 고정 (모니터 가득 차게) */
+        .slide {
+            width: 1400px;
+            min-height: 787px; /* 16:9 비율 유지, 내용물 많으면 자동 확장 */
+            height: auto;
+            background: var(--surface-color);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 60px 80px;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            scroll-snap-align: center;
+        }
+
+        /* 배경 장식 */
+        .slide::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.08), transparent 60%);
+            pointer-events: none;
+        }
+
+        .header {
+            margin-bottom: 30px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 20px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .page-num {
+            position: absolute;
+            top: 60px;
+            right: 80px;
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--border);
+            z-index: 10;
+        }
+
+        .label {
+            color: var(--accent);
+            font-weight: 700;
+            letter-spacing: 2px;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            margin-bottom: 15px;
+            display: inline-block;
+        }
+
+        h1 {
+            font-size: 3.2rem;
+            font-weight: 800;
+            line-height: 1.3;
+            letter-spacing: -0.02em;
+            margin-bottom: 10px;
+        }
+
+        h2 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 10px;
+        }
+
+        h3 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--accent);
+            margin-bottom: 15px;
+        }
+
+        p {
+            font-size: 1.15rem;
+            line-height: 1.7;
+            color: var(--text-secondary);
+        }
+
+        /* 레이아웃 컴포넌트 */
+        .content-body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            flex-grow: 1;
+            gap: 40px;
+            position: relative;
+            z-index: 2;
+            width: 100%;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            width: 100%;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 30px;
+            width: 100%;
+        }
+
+        .box {
+            background: var(--surface-light);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 35px;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .box:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border-color: rgba(59,130,246,0.3);
+        }
+
+        ul {
+            list-style: none;
+        }
+
+        li {
+            margin-bottom: 16px;
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            line-height: 1.6;
+        }
+
+        li::before {
+            content: '✓';
+            color: var(--success);
+            font-weight: bold;
+        }
+
+        /* 이미지 및 다이아그램 */
+        .image-wrapper {
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .image-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* 커스텀 인포그래픽 - 화살표 플로우 */
+        .flow-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: 20px 0;
+        }
+        
+        .flow-card {
+            background: var(--surface-color);
+            border: 2px solid var(--border);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            width: 200px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .flow-arrow {
+            flex-grow: 1;
+            height: 4px;
+            background: var(--border);
+            position: relative;
+            margin: 0 15px;
+            z-index: 1;
+        }
+        .flow-arrow::after {
+            content: '';
+            position: absolute;
+            right: -2px;
+            top: -6px;
+            border-top: 8px solid transparent;
+            border-bottom: 8px solid transparent;
+            border-left: 12px solid var(--border);
+        }
+        .flow-arrow.active { background: var(--accent); }
+        .flow-arrow.active::after { border-left-color: var(--accent); }
+
+        .stat-number {
+            font-size: 4rem;
+            font-weight: 800;
+            color: var(--accent);
+            line-height: 1;
+            margin-bottom: 10px;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="slide-container">
+
+    <!-- 1. Cover -->
+    <div class="slide" style="justify-content: center; text-align: center;">
+        <div class="page-num">01</div>
+        <div style="max-width: 900px; margin: 0 auto; position: relative; z-index: 2;">
+            <div class="label" style="font-size: 1.2rem;">Master Plan 2026-2027</div>
+            <h1 style="font-size: 4.5rem; margin-bottom: 30px;">Pack2U 생태계 통합<br>전사 물류/운영 자동화 프로젝트</h1>
+            <p style="font-size: 1.5rem; margin-bottom: 40px; color: var(--text-primary);">
+                "단순 반복 업무의 완전한 소멸,<br>그리고 고객 경험(CS)에 집중하는 초연결 플랫폼으로의 진화"
+            </p>
+            <p style="font-size: 1.1rem;">
+                물류 자동화 시트, AI Image Maker, 상세페이지 HTML 자동생성, 쇼핑 APP, 그리고 중앙 Dashboard까지.<br>
+                모든 분산된 시스템을 하나로 통합하는 그랜드 마스터플랜.
+            </p>
+        </div>
+    </div>
+
+    <!-- 2. Executive Summary -->
+    <div class="slide">
+        <div class="page-num">02</div>
+        <div class="header">
+            <div class="label">Executive Summary</div>
+            <h2>핵심 요약 및 비전</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div class="box">
+                    <h3>현재의 문제: 인력의 병목화 및 운영 리스크</h3>
+                    <p style="margin-bottom: 10px;">파편화된 엑셀 작업, 수동 송장 매핑, 상세페이지 노가다 제작, 단순 문의 응대에 <strong>전체 인력의 70%를 낭비</strong>하고 있습니다.</p>
+                    <ul style="font-size: 0.95rem;">
+                        <li><strong>시간 누수:</strong> 일 평균 4.5시간이 단순 엑셀 다운로드/업로드에 소모됨</li>
+                        <li><strong>휴먼 에러 비용:</strong> 수기 입력 오류로 인한 오배송 및 재발송 로스 비용 월 평균 150만 원 발생</li>
+                        <li><strong>확장 한계:</strong> 현재 인력 구조로는 월 주문량 3만 건 돌파 시 물리적 시스템 붕괴 확정</li>
+                    </ul>
+                </div>
+                <div class="box" style="border-color: var(--accent);">
+                    <h3>해결책: Pack2U 통합 생태계 (Fully Automated)</h3>
+                    <p style="margin-bottom: 10px;">물류 코어, AI 이미지 제너레이터, 자사몰 쇼핑 앱, 관제 대시보드를 <strong>단일 API 파이프라인으로 연결</strong>합니다.</p>
+                    <ul style="font-size: 0.95rem;">
+                        <li><strong>Zero-Touch 물류:</strong> 사방넷 주문 수집 ➔ 이카운트 전표 생성 ➔ 송장 출력까지 인간의 개입 0%</li>
+                        <li><strong>초정밀 동기화:</strong> 이카운트 ERP와 Web App 간 실시간 양방향 Webhook 동기화</li>
+                        <li><strong>AI 기반 의사결정:</strong> RAG 기반 AI가 CS의 90%를 자동 방어 및 처리</li>
+                    </ul>
+                </div>
+                <div class="box" style="grid-column: 1 / -1; background: rgba(59, 130, 246, 0.05); border-color: var(--accent);">
+                    <h3>궁극적 비전 및 핵심 KPI (Key Performance Indicators)</h3>
+                    <div style="display: flex; justify-content: space-around; margin-top: 15px; text-align: center;">
+                        <div>
+                            <div style="color: var(--success); font-size: 2rem; font-weight: bold;">300% ⬆</div>
+                            <div style="font-size: 0.9rem; color: var(--text-secondary);">매출 볼륨 성장 여력</div>
+                        </div>
+                        <div>
+                            <div style="color: var(--success); font-size: 2rem; font-weight: bold;">0%</div>
+                            <div style="font-size: 0.9rem; color: var(--text-secondary);">단순 노무 인력 증가율</div>
+                        </div>
+                        <div>
+                            <div style="color: var(--success); font-size: 2rem; font-weight: bold;">-85% ⬇</div>
+                            <div style="font-size: 0.9rem; color: var(--text-secondary);">CS 응대 및 리드타임 감축</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Current State & Crisis -->
+    <div class="slide">
+        <div class="page-num">03</div>
+        <div class="header">
+            <div class="label">As-Is Analysis & Necessity</div>
+            <h2>왜 지금 당장 '자동화'가 필요한가? (위기 진단)</h2>
+        </div>
+        <div class="content-body">
+            <div style="display: flex; flex-direction: column; gap: 40px; width: 100%;">
+                
+                <!-- 1. 메인 위기 (Full Width) -->
+                <div class="box" style="border-color: #ef4444; background: rgba(239, 68, 68, 0.05); text-align: center; padding: 40px;">
+                    <h3 style="color: #ef4444; font-size: 1.8rem; margin-bottom: 20px;">물리적 한계: 3,500개 SKU의 압박과 인력 번아웃</h3>
+                    <p style="margin-bottom: 25px; font-size: 1.15rem; color: var(--text-primary);">
+                        현재 <strong>3,500가지의 막대한 제품군(SKU)</strong>을 관리 중이며, 단기 내 500여 가지의 신제품이 추가될 예정입니다.<br>
+                        이는 이미 인간의 뇌와 엑셀 수작업으로 감당할 수 있는 한계점(Threshold)을 완전히 돌파한 상태입니다.
+                    </p>
+                    <div style="display: flex; justify-content: space-around; font-size: 1.05rem; color: var(--text-secondary); background: rgba(0,0,0,0.2); padding: 15px; border-radius: 12px;">
+                        <div><strong style="color: #ef4444;">❌</strong> 수동 트래킹 불가 (단가/재고 연동 실패)</div>
+                        <div><strong style="color: #ef4444;">❌</strong> 치명적 휴먼 에러 기하급수적 증가 (오배송/로스)</div>
+                        <div><strong style="color: #ef4444;">❌</strong> 전화/카톡 폭주로 인한 CS 인력 극심한 과부하</div>
+                    </div>
+                </div>
+
+                <!-- 2. 세부 문제점 (Grid 3) -->
+                <div class="grid-3">
+                    <div class="box">
+                        <h3 style="color: #ef4444; font-size: 1.3rem;">물류: 모래성 같은 엑셀</h3>
+                        <p style="font-size: 1rem;">VLOOKUP 의존. 열(Column) 1개만 어긋나도 4,000개 제품의 송장이 연쇄 붕괴. 매일 폭탄 돌리기식 수동 운영.</p>
+                    </div>
+                    <div class="box">
+                        <h3 style="color: #ef4444; font-size: 1.3rem;">콘텐츠: 수작업 병목</h3>
+                        <p style="font-size: 1rem;">신제품 500개 입고 시 썸네일 누끼부터 HTML, 전산 등록까지 전 과정을 인간이 수작업. 출시 지연의 주범.</p>
+                    </div>
+                    <div class="box">
+                        <h3 style="color: #ef4444; font-size: 1.3rem;">세일즈: 수수료 종속</h3>
+                        <p style="font-size: 1rem;">외부 마켓 의존도 90% 이상. 자체 데이터 확보 불가로 4,000개 상품에 대한 단골 재구매 유도(Push) 불가능.</p>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. The Ultimate Vision (Architecture) -->
+    <div class="slide">
+        <div class="page-num">04</div>
+        <div class="header">
+            <div class="label">System Architecture</div>
+            <h2>Pack2U 3.0: 통합 생태계 조감도</h2>
+        </div>
+        <div class="content-body" style="flex-direction: column;">
+            <p style="text-align: center; margin-bottom: 30px;">5개의 독립된 프로젝트가 하나의 거대한 유기체로 작동합니다.</p>
+            
+            <div style="display: flex; gap: 20px; width: 100%; height: 400px;">
+                <!-- Left: Content Creation -->
+                <div style="flex: 1; border: 1px dashed var(--border); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between;">
+                    <h3 style="text-align: center; color: var(--text-secondary);">1. 상품/콘텐츠 자동화</h3>
+                    <div class="flow-card" style="width: 100%; margin-bottom: 10px;">AI_Image_Maker<br><small>(제품사진 → 연출컷)</small></div>
+                    <div style="text-align: center;">⬇</div>
+                    <div class="flow-card" style="width: 100%;">상세Html제작<br><small>(연출컷 → HTML코드)</small></div>
+                </div>
+                
+                <!-- Middle: Core Logistics -->
+                <div style="flex: 1.5; background: rgba(59, 130, 246, 0.05); border: 2px solid var(--accent); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                    <h3 style="color: var(--accent);">2. 코어 물류/정산 허브</h3>
+                    <div style="display: flex; gap: 10px; width: 100%; justify-content: center; margin-bottom: 20px;">
+                        <span style="padding: 10px; background: var(--surface-color); border-radius: 8px;">주문 수집</span>
+                        <span style="padding: 10px; background: var(--surface-color); border-radius: 8px;">송장 분배</span>
+                    </div>
+                    <div class="flow-card" style="width: 80%; border-color: var(--accent);">이카운트 다이렉트 브리지<br><small>(엑셀 파괴 엔진)</small></div>
+                </div>
+
+                <!-- Right: Front-end & Control -->
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
+                    <div style="flex: 1; border: 1px solid var(--border); border-radius: 16px; padding: 20px; display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                        <h3 style="color: var(--text-secondary);">3. B2C/B2B 채널</h3>
+                        <div class="flow-card" style="width: 100%;">Pack2U 쇼핑APP<br><small>(앱 푸시 / 자사몰)</small></div>
+                    </div>
+                    <div style="flex: 1; background: var(--surface-light); border: 1px solid var(--border); border-radius: 16px; padding: 20px; display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                        <h3 style="color: var(--text-primary);">4. 중앙 관제탑</h3>
+                        <div class="flow-card" style="width: 100%; border-color: var(--success);">Pack2U Dashboard</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. Core System: Logistics -->
+    <div class="slide">
+        <div class="page-num">05</div>
+        <div class="header">
+            <div class="label">1. Core Logistics Engine</div>
+            <h2>코어 물류망 전면 개편 (엑셀 파괴)</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div class="box">
+                    <h3>"열(Column) 의존성 탈피 및 무결성 확보"</h3>
+                    <p style="margin-bottom: 10px;">기존 시트의 수식(VLOOKUP) 의존도를 0%로 만듭니다. 모든 데이터는 JSON 객체(Key-Value 쌍) 형태로 변환되어 백엔드에서 처리되므로, 사원들이 실수로 시트의 행렬을 지워도 시스템은 붕괴하지 않습니다.</p>
+                    <ul style="font-size: 0.95rem;">
+                        <li><strong>데이터 모델링:</strong> 비정형 엑셀 데이터를 정규화된 RDBMS 스키마 형태로 파싱하여 메모리 적재</li>
+                        <li><strong>무인 자동 매핑:</strong> 협력업체 상품명과 이카운트 품목코드(Item Code) 간의 Levenshtein 유사도 기반 자동 매핑 알고리즘 적용</li>
+                        <li><strong>보안 격리:</strong> API 인증키 <code>PropertiesService</code> 완전 은닉 및 IP 기반 접근 통제(ACL)</li>
+                    </ul>
+                </div>
+                <div class="box">
+                    <h3>이카운트 OAPI 다이렉트 브리지 및 큐(Queue) 아키텍처</h3>
+                    <p style="margin-bottom: 10px;">엑셀 다운로드 후 수동 업로드 방식은 전면 폐기됩니다. <strong>"다이렉트 브리지(REST API)"</strong>를 통해 실시간 트랜잭션을 발생시킵니다.</p>
+                    <ul style="font-size: 0.95rem;">
+                        <li><strong>API 규격:</strong> 이카운트 <code>SaveOrder</code> (주문서), <code>SaveSale</code> (판매전표) 엔드포인트 직접 호출</li>
+                        <li><strong>세션 유지:</strong> 로그인 Session ID를 캐싱하여 불필요한 인증 요청 최소화 (Rate Limit 방어)</li>
+                        <li><strong>장애 복원력 (Resilience):</strong> 통신 오류 발생 시 메시지를 데드레터 큐(DLQ)에 보관 후, 지수 백오프(Exponential Backoff, 1분➔2분➔4분) 알고리즘으로 자동 재시도</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. Expansion 1: AI_Image_Maker -->
+    <div class="slide">
+        <div class="page-num">06</div>
+        <div class="header">
+            <div class="label">2. Content Automation</div>
+            <h2>AI_Image_Maker: 시각 자산 자동화</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div>
+                    <p style="margin-bottom: 20px;">일회용기 등 밋밋한 제품 누끼컷을 <strong>Gemini Vision API</strong>와 결합하여 고품질 연출컷으로 무한 생성합니다. 더 이상 값비싼 스튜디오 촬영이나 포토샵 노가다가 필요 없습니다.</p>
+                    <ul>
+                        <li><strong>입력:</strong> 휴대폰으로 찍은 제품 원본 사진 1장</li>
+                        <li><strong>AI 프로세스:</strong> 배경 제거 → 프롬프트 적용 (예: 고급 식탁 위, 피크닉 매트 위) → 그림자 및 조명 렌더링</li>
+                        <li><strong>출력:</strong> 5~10장의 고품질 라이프스타일 컷 즉시 생성</li>
+                        <li><strong>자동 적재:</strong> 상품 코드명 폴더를 생성하여 Google Drive에 자동 분류/저장</li>
+                    </ul>
+                </div>
+                <div class="box" style="background: transparent; border: 1px dashed var(--border); justify-content: center; align-items: center;">
+                    <div style="font-size: 5rem; margin-bottom: 20px;">📸 ➡️ 🖼️</div>
+                    <h3 style="text-align: center;">사진 1장이 10장의 화보로</h3>
+                    <p style="text-align: center;">디자이너 1.5명 분의 업무량 완벽 대체</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. Expansion 2: 상세Html제작 -->
+    <div class="slide">
+        <div class="page-num">07</div>
+        <div class="header">
+            <div class="label">3. Detail Page Automation</div>
+            <h2>상세Html제작 & Review Crawler</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div class="box">
+                    <h3>One-Click 상세페이지 제너레이터</h3>
+                    <p>AI_Image_Maker가 만든 사진들과 코어 시스템의 상품 정보(단가, 치수, 재질)를 끌어와, 오픈마켓에 바로 붙여넣을 수 있는 완성된 HTML 코드를 1초 만에 뽑아냅니다.</p>
+                    <ul style="margin-top: 15px;">
+                        <li>치수 표기표 자동 생성</li>
+                        <li>모바일/PC 반응형 레이아웃 HTML 출력</li>
+                        <li>신상품 업로드 리드타임: 3일 ➡️ 10분</li>
+                    </ul>
+                </div>
+                <div class="box">
+                    <h3>Pack2U Review Crawler</h3>
+                    <p>경쟁사 및 자사 제품의 리뷰를 자동으로 긁어옵니다. 고객의 Pain Point를 파악해 차기 제품 소싱에 반영하거나, 긍정적인 리뷰를 자사몰 상세페이지 하단에 즉각 HTML로 박아 넣어 구매 전환율(CVR)을 높입니다.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 8. Expansion 3: Pack2U 쇼핑APP -->
+    <div class="slide">
+        <div class="page-num">08</div>
+        <div class="header">
+            <div class="label">4. Direct to Consumer (D2C)</div>
+            <h2>Pack2U 쇼핑APP: 수수료 독립과 락인(Lock-in)</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div>
+                    <h3 style="color: var(--accent); margin-bottom: 20px;">오픈마켓 종속 탈피 (D2C 전략)</h3>
+                    <p>10~15%에 달하는 마켓 수수료를 방어하고, 고객의 DB를 우리가 직접 소유하기 위해 자체 안드로이드/iOS 앱을 런칭합니다.</p>
+                    <ul style="margin-top: 20px;">
+                        <li><strong>Push 알림 무제한:</strong> 카카오톡 알림톡 비용 절감. 특가, 품절 임박 푸시 발송.</li>
+                        <li><strong>단골 전용 혜택:</strong> 앱 설치 시 오프라인 마진기반 도매가 적용.</li>
+                        <li><strong>자동 로그인 & 간편 결제:</strong> 구매 허들 제거.</li>
+                        <li><strong>코어 물류 연동:</strong> 앱 주문 시 코어 시스템의 <code>통합 발주 DB</code>로 다이렉트 꽂힘.</li>
+                    </ul>
+                </div>
+                <div class="box" style="text-align: center; justify-content: center;">
+                    <h3 style="color: var(--success); font-size: 2rem;">마켓 수수료 절감액</h3>
+                    <div class="stat-number">15% ⬇</div>
+                    <p>절감된 비용은 고스란히 <strong>앱 전용 고객 할인</strong>과 <strong>고객 서비스(CS) 예산</strong>으로 재투자되어 압도적인 선순환 고리를 만듭니다.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 9. Expansion 4: Pack2U Dashboard -->
+    <div class="slide">
+        <div class="page-num">09</div>
+        <div class="header">
+            <div class="label">5. Central Control Tower</div>
+            <h2>Pack2U Dashboard: 모든 것을 한눈에</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div class="box">
+                    <h3>CEO & 매니저 전용 관제탑</h3>
+                    <p>파편화된 엑셀 시트들을 열어볼 필요가 없습니다. 모던한 Web UI(React/Vue 기반) 대시보드 하나로 회사의 모든 혈류를 모니터링합니다.</p>
+                    <ul style="margin-top: 15px;">
+                        <li>실시간 당일 매출 및 발주 건수 집계</li>
+                        <li>재고 부족(안전재고 미달) 품목 실시간 경고</li>
+                        <li>이카운트 API 전송 에러 건수 및 재시도 현황</li>
+                        <li>앱(App) 설치수 및 푸시 클릭 전환율 리포트</li>
+                    </ul>
+                </div>
+                <div style="flex: 1; border-radius: 16px; overflow: hidden; border: 1px solid var(--border); background: var(--bg-color); display: flex; flex-direction: column;">
+                    <!-- Header -->
+                    <div style="height: 50px; background: var(--surface-color); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 15px;">
+                        <div style="width: 12px; height: 12px; border-radius: 50%; background: #ef4444;"></div>
+                        <div style="width: 12px; height: 12px; border-radius: 50%; background: #f59e0b;"></div>
+                        <div style="width: 12px; height: 12px; border-radius: 50%; background: #10b981;"></div>
+                        <div style="color: var(--text-secondary); font-size: 0.9rem; margin-left: 10px;">Pack2U Command Center</div>
+                    </div>
+                    <!-- Body -->
+                    <div style="padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div style="background: var(--surface-light); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Today's Revenue</div>
+                            <div style="font-size: 1.5rem; font-weight: bold; color: var(--success); margin-top: 5px;">₩ 14,250,000</div>
+                        </div>
+                        <div style="background: var(--surface-light); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Pending Orders</div>
+                            <div style="font-size: 1.5rem; font-weight: bold; color: var(--accent); margin-top: 5px;">428</div>
+                        </div>
+                        <div style="grid-column: 1/-1; background: var(--surface-light); padding: 15px; border-radius: 8px; border: 1px solid var(--border); height: 120px; display: flex; flex-direction: column; justify-content: center;">
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 10px;">Ecount API Sync Status</div>
+                            <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+                                <div style="width: 95%; height: 100%; background: var(--success);"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.8rem;">
+                                <span style="color: var(--text-secondary);">Success: 95%</span>
+                                <span style="color: #ef4444;">Retry Queue: 5%</span>
+                            </div>
+                        </div>
+                        <div style="grid-column: 1/-1; background: rgba(245, 158, 11, 0.1); padding: 15px; border-radius: 8px; border: 1px solid var(--warning);">
+                            <span style="color: var(--warning); font-weight: bold;">⚠️ Alert:</span> [PP01-20] 안전재고 미달 (현재 40박스)
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 10. Smart WMS & QR App -->
+    <div class="slide">
+        <div class="page-num">10</div>
+        <div class="header">
+            <div class="label">6. Smart WMS & QR App</div>
+            <h2>물류팀 스마트폰 QR 연동: 재고파악의 편리화 및 속도 개선</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div class="box" style="border-color: var(--accent);">
+                    <h3 style="color: var(--accent);">종이 없는 스마트 창고 (Paperless WMS)</h3>
+                    <p style="margin-bottom: 15px;">기존에 종이 송장과 수기 장부에 의존하던 물류팀의 재고 파악 방식을 <strong>스마트폰 앱과 QR 코드 기반</strong>으로 전면 개편합니다.</p>
+                    <ul>
+                        <li><strong>입출고 스캔:</strong> 상품 랙(Rack)과 박스에 부착된 QR 코드를 스마트폰 카메라로 스캔하여 즉시 입고/출고 처리</li>
+                        <li><strong>실시간 재고 동기화:</strong> 스캔 즉시 Web App 및 이카운트 ERP로 데이터 전송되어 재고 불일치 0% 달성</li>
+                        <li><strong>휴먼 에러 방지:</strong> 오포장/오발송 시 스캔 단계에서 경고음 발생</li>
+                    </ul>
+                </div>
+                <div class="box" style="background: rgba(59, 130, 246, 0.05);">
+                    <h3 style="text-align: center; color: var(--text-primary);">작업 속도 및 효율성 극대화</h3>
+                    <div style="display: flex; justify-content: space-around; margin-top: 20px;">
+                        <div style="text-align: center;">
+                            <div class="stat-number" style="font-size: 2.5rem; color: var(--success);">3배 ⬆</div>
+                            <p style="font-size: 0.9rem;">재고 실사 속도</p>
+                        </div>
+                        <div style="text-align: center;">
+                            <div class="stat-number" style="font-size: 2.5rem; color: var(--success);">0%</div>
+                            <p style="font-size: 0.9rem;">수기 오기입률</p>
+                        </div>
+                    </div>
+                    <p style="margin-top: 20px; text-align: center;">무거운 전용 PDA 장비 없이, 물류팀 직원의 <strong>개인 스마트폰 앱</strong>만으로 누구나 10분 교육 후 즉각적인 피킹(Picking) 및 패킹(Packing) 업무 투입 가능.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 11. B2B Partner Portal -->
+    <div class="slide">
+        <div class="page-num">11</div>
+        <div class="header">
+            <div class="label">B2B Vendor Integration</div>
+            <h2>협력업체 30개사 직결망: 발주/소통의 완전 자동화</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div class="box" style="border-color: var(--warning); background: rgba(245, 158, 11, 0.05);">
+                    <h3 style="color: var(--warning);">현재의 난맥상: 파편화된 발주 채널</h3>
+                    <p style="margin-bottom: 15px;">20~30여 개 협력업체의 발주 방식이 <strong>엑셀, 이카운트 개별 발주, 전화, 카카오톡</strong> 등으로 제각각 흩어져 있습니다.</p>
+                    <ul style="font-size: 0.95rem;">
+                        <li>매일 아침 10가지가 넘는 채널의 발주 내역을 한 엑셀로 취합하는 데에만 2시간 소요</li>
+                        <li>단가 변동 시 일일이 전화나 카톡으로 고지해야 하는 소통 비용 발생</li>
+                        <li>"재고 있나요?", "언제 출고되나요?" 등 반복적인 단순 확인 전화 폭주</li>
+                    </ul>
+                </div>
+                <div class="box" style="border-color: var(--accent);">
+                    <h3 style="color: var(--accent);">해결책: Pack2U 파트너 전용 웹앱 (Direct Input)</h3>
+                    <p style="margin-bottom: 15px;">모든 협력업체에게 <strong>B2B 전용 Web App 접속 계정</strong>을 발급합니다. 파트너사가 직접 발주를 입력하면 Pack2U 생태계로 즉시 다이렉트 연동됩니다.</p>
+                    <ul style="font-size: 0.95rem;">
+                        <li><strong>실시간 재고/단가 동기화:</strong> 파트너사는 앱에서 실시간 재고를 확인하고, 본인 업체에 설정된 등급별 단가로 즉시 발주</li>
+                        <li><strong>취합 업무 Zero:</strong> 파트너사가 버튼을 누르는 순간 이카운트 ERP 전표 생성 및 WMS 피킹 리스트로 즉각 꽂힘</li>
+                        <li><strong>정산(월마감) 자동화:</strong> 매월 말일, 파트너사별 발주 누적 데이터가 엑셀과 PDF 명세서로 자동 생성되어 카카오 알림톡으로 발송됨</li>
+                    </ul>
+                </div>
+                <div class="box" style="grid-column: 1/-1; padding: 20px; text-align: center;">
+                    <p style="font-size: 1.15rem; color: var(--text-primary);">
+                        "협력사와의 소통(전화/카톡)과 발주 취합(엑셀) 과정을 전면 제거하여, 서로간의 <strong>행정적 마찰을 없애고 오직 비즈니스 성장에만 집중</strong>할 수 있는 B2B 생태계를 구축합니다."
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 12. Ecosystem Synergy -->
+    <div class="slide">
+        <div class="page-num">12</div>
+        <div class="header">
+            <div class="label">Synergy Effect</div>
+            <h2>시스템 연동의 폭발적 시너지</h2>
+        </div>
+        <div class="content-body">
+            <div style="width: 100%;">
+                <div class="flow-row">
+                    <div class="flow-card"><strong>기획/소싱</strong><br><small>리뷰 크롤러가<br>경쟁사 약점 파악</small></div>
+                    <div class="flow-arrow active"></div>
+                    <div class="flow-card"><strong>콘텐츠 제작</strong><br><small>AI가 사진 찍고<br>HTML 자동 생성</small></div>
+                    <div class="flow-arrow active"></div>
+                    <div class="flow-card"><strong>판매/마케팅</strong><br><small>쇼핑앱 푸시 발송<br>수수료 0% 판매</small></div>
+                    <div class="flow-arrow active"></div>
+                    <div class="flow-card"><strong>주문/물류</strong><br><small>코어 시스템이 엑셀 없이<br>이카운트로 직행</small></div>
+                </div>
+                <div class="box" style="margin-top: 40px; text-align: center;">
+                    <h3>"아이디어 구상부터 최종 배송 완료까지, 병목 구간(Bottleneck) Zero"</h3>
+                    <p>모든 데이터는 API와 Webhook으로 유기적으로 흐르며, 인간은 시스템의 승인(Approve)과 예외 처리(Exception Handling)만 담당하게 됩니다.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 12. Workforce Reallocation -->
+    <div class="slide">
+        <div class="page-num">13</div>
+        <div class="header">
+            <div class="label">HR Strategy</div>
+            <h2>인력의 재배치 (Workforce Reallocation)</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div>
+                    <h3 style="margin-bottom: 20px;">단순 노동자에서 "가치 창출자"로</h3>
+                    <p>자동화를 통해 일자리를 줄이는 것이 목적이 아닙니다. 직원들을 소모적인 작업에서 해방시켜, <strong>매출을 직접적으로 견인하는 부서로 전면 재배치</strong>합니다.</p>
+                    
+                    <div style="margin-top: 30px; display: flex; flex-direction: column; gap: 15px;">
+                        <div style="padding: 15px; border-left: 4px solid var(--border); background: rgba(255,255,255,0.05);">
+                            <strike style="color: var(--text-secondary);">수동 송장 복사/붙여넣기 담당 (2명)</strike><br>
+                            <span style="color: var(--success); font-weight: bold;">➡️ VIP 전담 어카운트 매니저 배치</span>
+                        </div>
+                        <div style="padding: 15px; border-left: 4px solid var(--border); background: rgba(255,255,255,0.05);">
+                            <strike style="color: var(--text-secondary);">상세페이지 포토샵 합성 담당 (1명)</strike><br>
+                            <span style="color: var(--success); font-weight: bold;">➡️ 신제품 소싱 및 트렌드 기획자로 전향</span>
+                        </div>
+                        <div style="padding: 15px; border-left: 4px solid var(--border); background: rgba(255,255,255,0.05);">
+                            <strike style="color: var(--text-secondary);">단가/재고 엑셀 업로더 (1명)</strike><br>
+                            <span style="color: var(--success); font-weight: bold;">➡️ 쇼핑앱 푸시 기획 및 프로모션 마케터</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="box" style="border-color: var(--success); background: rgba(16, 185, 129, 0.05);">
+                    <h3 style="color: var(--success); text-align: center; margin-bottom: 30px;">조직의 체질 개선</h3>
+                    <p style="text-align: center; font-size: 1.2rem; line-height: 1.8;">
+                        기계가 제일 잘하는 일(데이터 복사, 산술 계산)은 기계에게 100% 맡깁니다.<br><br>
+                        인간만이 할 수 있는 일(고객의 마음을 읽는 것, 불만 고객을 단골로 바꾸는 대화, 창의적인 상품 소싱)에 회사의 모든 인적 역량을 쏟아붓습니다.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 13. Customer Service (CS) Revolution -->
+    <div class="slide">
+        <div class="page-num">14</div>
+        <div class="header">
+            <div class="label">CS Focus Strategy</div>
+            <h2>압도적 CS 혁명과 단골 집중 케어</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div class="box">
+                    <h3>수동적 응대에서 "데이터 기반 능동적 케어(Proactive Care)"로</h3>
+                    <p style="margin-bottom: 10px;">자동화로 확보된 <strong>매일 10시간 이상(월 200시간)</strong>의 잉여 리소스를 오직 <strong>'고객 감동(UX)'</strong> 창출에 투자합니다.</p>
+                    <ul style="font-size: 0.95rem;">
+                        <li><strong>선제적 알림 시스템:</strong> 택배사 API 연동으로 배송 지연 예상 시, 고객이 묻기 전에 선제적 사과 알림톡 및 보상 쿠폰 자동 발급</li>
+                        <li><strong>Fast-Track 환불/교환:</strong> 파손 사진 업로드 시, 묻지도 따지지도 않는 즉각 재발송 프로세스 도입 (LTV 극대화를 위한 의도적 로스 감수)</li>
+                        <li><strong>NPS(순수추천지수) 관리:</strong> 구매 3일 후 해피콜을 통한 만족도 조사 및 제품 피드백 수집</li>
+                    </ul>
+                </div>
+                <div class="box">
+                    <h3>CRM 기반 VIP / B2B 고객 밀착 관리 체계</h3>
+                    <p style="margin-bottom: 10px;">파레토 법칙에 기반하여, 매출의 80%를 책임지는 상위 20% 핵심 단골(프랜차이즈, 대형 식당)에게 자원을 집중합니다.</p>
+                    <ul style="font-size: 0.95rem;">
+                        <li><strong>전담 어카운트 매니저(AM) 제도:</strong> VIP 고객별 1:1 직통 라인 배정으로 대기 시간 없는 하이엔드 CS 제공</li>
+                        <li><strong>RFM 데이터 기반 영업:</strong> 대시보드의 RFM(Recency, Frequency, Monetary) 알고리즘이 고객의 재구매 주기를 예측. 재고가 떨어질 시점에 AM이 선제적으로 발주 유도(Outbound Call)</li>
+                        <li><strong>폐쇄몰(Secret Mall) 혜택:</strong> 자체 쇼핑앱 내 B2B 전용 시크릿 권한을 부여하여 락인(Lock-in) 효과 극대화</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 14. Proprietary AI CS Bot & Data Collection -->
+    <div class="slide">
+        <div class="page-num">15</div>
+        <div class="header">
+            <div class="label">AI CS Bot & Data Assets</div>
+            <h2>8년의 노하우 집약: 자체 AI CS 봇 구축 및 데이터 자산화</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div>
+                    <h3 style="color: var(--accent); margin-bottom: 20px;">왜 '데이터 자산화(Data Asset)'가 가장 중요한가?</h3>
+                    <p style="margin-bottom: 15px;">지난 8년간 쇼핑몰을 운영하며 축적된 수만 건의 고객 문의(반품, 파손, 오배송, 단가 흥정) 로그는 돈으로 환산할 수 없는 <strong>기업 고유의 LLM 학습 데이터셋</strong>입니다.</p>
+                    <ul style="font-size: 0.95rem;">
+                        <li><strong>비정형 데이터 정제:</strong> 카카오톡 채널, 네이버 톡톡, 게시판의 대화 로그를 정형화된 JSON 형태로 파싱하여 Vector DB에 적재</li>
+                        <li><strong>의도 분류(Intent Classification) 모델:</strong> 단순 배송 조회인지, 파손 클레임인지, 대량 구매 단가 흥정인지 AI가 즉각 분류</li>
+                        <li><strong>지속적 학습(Continuous Learning):</strong> 매일 발생하는 신규 CS 데이터가 파이프라인을 타고 모델을 재학습(Fine-tuning)시켜 답변 정확도를 99%까지 끌어올림</li>
+                    </ul>
+                </div>
+                <div class="box" style="border-color: var(--accent); background: rgba(59, 130, 246, 0.05);">
+                    <h3 style="text-align: center;">Pack2U 전용 AI CS 봇 (RAG + Custom LLM)</h3>
+                    <p style="margin-top: 15px; font-size: 0.95rem;">수집된 8년치 CS 매뉴얼을 RAG(검색 증강 생성) 기술로 결합하여, Pack2U의 비즈니스 톤앤매너(Tone & Manner)를 완벽히 흉내 내는 <strong>AI 상담원</strong>을 배포합니다.</p>
+                    <ul style="font-size: 0.95rem; margin-top: 15px;">
+                        <li><strong>시나리오 1 (새벽 발주):</strong> 새벽 3시 식당 사장님의 "A용기 5박스 단가 얼마야?" ➔ AI가 고객 등급 확인 후 도매가로 즉각 자동 답변 및 가주문 생성</li>
+                        <li><strong>시나리오 2 (파손 클레임):</strong> "뚜껑이 깨졌어요 (사진 첨부)" ➔ AI Vision API가 사진 판독 ➔ 파손 확인 ➔ 사과 메시지와 함께 즉각 재발송 주문(ERP) 생성 및 10% 쿠폰 발급</li>
+                        <li><strong>효과:</strong> 전체 CS 인바운드 콜의 90%를 AI가 방어(Deflect)하여 인간 상담원의 감정 노동을 원천 차단</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 15. Cost Reduction & ROI -->
+    <div class="slide">
+        <div class="page-num">16</div>
+        <div class="header">
+            <div class="label">Financial Impact</div>
+            <h2>비용 감축 및 ROI 분석</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-3">
+                <div class="box" style="text-align: center;">
+                    <h3 style="color: var(--text-secondary);">물류/CS 인건비 효율화</h3>
+                    <div class="stat-number">1.2<span style="font-size: 1.5rem;">억 / 년</span></div>
+                    <p style="font-size: 0.95rem;">수작업에 투입되던 정규직 3.5명 분(FTE)의 업무량을 시스템이 완전 대체. 단순 데이터 입력 인건비를 완전히 소거하고 신규 채용 없이 매출 3배 스케일업(Scale-up) 감당.</p>
+                </div>
+                <div class="box" style="text-align: center;">
+                    <h3 style="color: var(--text-secondary);">마켓 플랫폼 수수료 절감</h3>
+                    <div class="stat-number">2.5<span style="font-size: 1.5rem;">억 / 년</span></div>
+                    <p style="font-size: 0.95rem;">쇼핑APP 런칭 및 자사몰 D2C 유도를 통해 오픈마켓에 납부하던 12~15%의 천문학적 수수료를 순이익(Net Margin)으로 직접 전환.</p>
+                </div>
+                <div class="box" style="text-align: center;">
+                    <h3 style="color: var(--text-secondary);">휴먼 에러 로스(Loss) 방어</h3>
+                    <div class="stat-number">100<span style="font-size: 1.5rem;">%</span></div>
+                    <p style="font-size: 0.95rem;">행 밀림, 송장 오입력, 오포장으로 발생하던 월평균 150만원의 불필요한 왕복 택배비 및 재고 로스를 API와 QR 검수 시스템이 원천 차단.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 16. Architecture Diagram Revisited -->
+    <div class="slide">
+        <div class="page-num">17</div>
+        <div class="header">
+            <div class="label">System Blueprint</div>
+            <h2>Pack2U 통합 데이터 파이프라인 (Visual)</h2>
+        </div>
+        <div class="content-body" style="flex-direction: column; justify-content: center; width: 100%;">
+            <div style="display: flex; justify-content: space-between; width: 100%; align-items: stretch; gap: 20px;">
+                <!-- 1. Data Collection -->
+                <div style="flex: 1; background: rgba(59, 130, 246, 0.05); border: 1px solid var(--accent); border-radius: 16px; padding: 25px; display: flex; flex-direction: column; align-items: center; text-align: center;">
+                    <div style="font-size: 1.2rem; font-weight: bold; color: var(--accent); margin-bottom: 20px;">1. 주문/데이터 수집</div>
+                    <div style="width: 100%; background: var(--surface-color); padding: 15px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 10px;">사방넷 통합 연동</div>
+                    <div style="width: 100%; background: var(--surface-color); padding: 15px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 10px;">자사 쇼핑APP</div>
+                    <div style="width: 100%; background: var(--surface-color); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">카카오톡 AI 봇</div>
+                </div>
+
+                <div style="display: flex; align-items: center; justify-content: center;">
+                    <div style="font-size: 2rem; color: var(--border);">➡️</div>
+                </div>
+
+                <!-- 2. Core Hub -->
+                <div style="flex: 1.5; background: rgba(16, 185, 129, 0.05); border: 2px solid var(--success); border-radius: 16px; padding: 25px; display: flex; flex-direction: column; align-items: center; text-align: center; position: relative;">
+                    <div style="font-size: 1.2rem; font-weight: bold; color: var(--success); margin-bottom: 20px;">2. 통합 통제 허브 (Web App)</div>
+                    <div style="width: 100%; display: flex; gap: 10px; margin-bottom: 15px;">
+                        <div style="flex: 1; background: var(--surface-color); padding: 10px; border-radius: 8px; border: 1px dashed var(--success);">주문/송장 매핑</div>
+                        <div style="flex: 1; background: var(--surface-color); padding: 10px; border-radius: 8px; border: 1px dashed var(--success);">실시간 재고 연동</div>
+                    </div>
+                    <div style="width: 100%; display: flex; gap: 10px;">
+                        <div style="flex: 1; background: var(--surface-color); padding: 10px; border-radius: 8px; border: 1px dashed var(--success);">AI 콘텐츠 제작기</div>
+                        <div style="flex: 1; background: var(--surface-color); padding: 10px; border-radius: 8px; border: 1px dashed var(--success);">데이터 파이프라인</div>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; justify-content: center;">
+                    <div style="font-size: 2rem; color: var(--border);">➡️</div>
+                </div>
+
+                <!-- 3. Execution & Storage -->
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 15px;">
+                    <div style="flex: 1; background: rgba(245, 158, 11, 0.05); border: 1px solid var(--warning); border-radius: 16px; padding: 20px; text-align: center; display: flex; flex-direction: column; justify-content: center;">
+                        <div style="font-weight: bold; color: var(--warning); margin-bottom: 10px;">3. 물류 실행</div>
+                        <div style="background: var(--surface-color); padding: 10px; border-radius: 8px; border: 1px solid var(--border);">스마트 WMS (QR)</div>
+                    </div>
+                    <div style="flex: 1; background: rgba(245, 158, 11, 0.05); border: 1px solid var(--warning); border-radius: 16px; padding: 20px; text-align: center; display: flex; flex-direction: column; justify-content: center;">
+                        <div style="font-weight: bold; color: var(--warning); margin-bottom: 10px;">4. ERP 정산</div>
+                        <div style="background: var(--surface-color); padding: 10px; border-radius: 8px; border: 1px solid var(--border);">이카운트 API</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="margin-top: 30px; text-align: center; padding: 20px; border: 1px dashed var(--border); border-radius: 16px;">
+                <h3 style="color: var(--text-primary); margin-bottom: 10px;">CEO 관제탑 (Dashboard)</h3>
+                <p style="color: var(--text-secondary); font-size: 1.1rem;">이 모든 파이프라인의 실시간 진행 현황, 매출/재고 통계를 <strong>하나의 모니터 화면에서 제어</strong>합니다.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 17. Implementation Roadmap -->
+    <div class="slide">
+        <div class="page-num">18</div>
+        <div class="header">
+            <div class="label">Timeline & Integration</div>
+            <h2>전사 생태계 통합 및 HR 재배치 로드맵</h2>
+        </div>
+        <div class="content-body" style="flex-direction: column; justify-content: center; gap: 12px;">
+            <div style="width: 100%; display: flex; align-items: center; background: var(--surface-light); padding: 18px 25px; border-radius: 12px; border-left: 4px solid var(--accent);">
+                <div style="font-size: 1.4rem; font-weight: bold; width: 120px; color: var(--accent);">Phase 1<br><span style="font-size: 0.9rem; color: var(--text-secondary); font-weight: normal;">(Month 1-2)</span></div>
+                <div style="flex-grow: 1;">
+                    <strong style="color: var(--text-primary); font-size: 1.15rem;">[인프라 격리 및 물류 코어 엔진 완성]</strong>
+                    <p style="margin-top: 5px; font-size: 0.95rem;">• 엑셀 파괴 엔진 도입: 이카운트 다이렉트 브리지 및 DLQ 재시도 큐 오픈<br>• 보안 강화: 하드코딩된 API 키 외부화 및 권한 체계 재정립<br>• HR 마일스톤: 수동 데이터 업로드 인력 1차 차출 ➔ <strong>단골 전담 AM(Account Manager) 교육 시작</strong></p>
+                </div>
+            </div>
+            
+            <div style="width: 100%; display: flex; align-items: center; background: var(--surface-light); padding: 18px 25px; border-radius: 12px; border-left: 4px solid var(--accent);">
+                <div style="font-size: 1.4rem; font-weight: bold; width: 120px; color: var(--accent);">Phase 2<br><span style="font-size: 0.9rem; color: var(--text-secondary); font-weight: normal;">(Month 3)</span></div>
+                <div style="flex-grow: 1;">
+                    <strong style="color: var(--text-primary); font-size: 1.15rem;">[콘텐츠 스튜디오 자동화 파이프라인 가동]</strong>
+                    <p style="margin-top: 5px; font-size: 0.95rem;">• <strong>AI_Image_Maker</strong> & <strong>상세Html제작</strong> 모듈 실무 전면 도입<br>• Review Crawler를 통한 경쟁사 분석 데이터 수집 시작<br>• HR 마일스톤: 포토샵/HTML 코딩 인력 해방 ➔ <strong>신상품 소싱 및 트렌드 기획팀으로 전면 재배치</strong></p>
+                </div>
+            </div>
+            
+            <div style="width: 100%; display: flex; align-items: center; background: var(--surface-light); padding: 18px 25px; border-radius: 12px; border-left: 4px solid var(--warning);">
+                <div style="font-size: 1.4rem; font-weight: bold; width: 120px; color: var(--warning);">Phase 3<br><span style="font-size: 0.9rem; color: var(--text-secondary); font-weight: normal;">(Month 4-5)</span></div>
+                <div style="flex-grow: 1;">
+                    <strong style="color: var(--text-primary); font-size: 1.15rem;">[B2C 채널 독립 및 중앙 관제탑(Dashboard) 오픈]</strong>
+                    <p style="margin-top: 5px; font-size: 0.95rem;">• <strong>Pack2U 쇼핑APP</strong> 베타 런칭 (마켓 수수료 우회 시작 및 앱 푸시 발송 테스트)<br>• <strong>Pack2U Dashboard</strong> 오픈: 경영진 실시간 매출/재고 모니터링 체계 가동<br>• HR 마일스톤: 확보된 잉여 리소스를 <strong>고객 케어(선제적 보상/해피콜) 및 마케팅(푸시 기획) 부서로 100% 이동</strong></p>
+                </div>
+            </div>
+            
+            <div style="width: 100%; display: flex; align-items: center; background: rgba(16, 185, 129, 0.05); padding: 18px 25px; border-radius: 12px; border: 1px solid var(--success); border-left: 4px solid var(--success);">
+                <div style="font-size: 1.4rem; font-weight: bold; width: 120px; color: var(--success);">Phase 4<br><span style="font-size: 0.9rem; color: var(--text-secondary); font-weight: normal;">(Month 6)</span></div>
+                <div style="flex-grow: 1;">
+                    <strong style="color: var(--text-primary); font-size: 1.15rem;">[전사 시스템 Full Cut-over 및 SaaS 비즈니스 준비]</strong>
+                    <p style="margin-top: 5px; font-size: 0.95rem;">• [AI 콘텐츠 ➔ 앱 주문 ➔ 코어 물류 ➔ ERP ➔ 대시보드] 파이프라인의 무중단 검증 완료<br>• 수동 엑셀 발주 및 레거시 스크립트 전면 폐기<br>• HR 마일스톤: 단순 노무 0% 달성, <strong>오직 "가치 창출"과 "VIP 고객 감동"에 집중하는 테크(Tech) 물류 조직 완성</strong></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 18. Web App Transition (Google Sheets vs Web App) -->
+    <div class="slide">
+        <div class="page-num">19</div>
+        <div class="header">
+            <div class="label">Platform Strategy</div>
+            <h2>구글 시트 의존성 탈피와 Web App 기반 고도화</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div class="box" style="border-color: var(--warning); background: rgba(245, 158, 11, 0.05);">
+                    <h3 style="color: var(--warning); text-align: center;">현재: Google Sheets 환경의 한계</h3>
+                    <ul style="margin-top: 15px;">
+                        <li><strong>데이터 한계 (Quota):</strong> 일일 API 호출 수 및 셀 갯수 제한(1,000만 개)으로 인해 대규모 스케일업 불가.</li>
+                        <li><strong>퍼포먼스 저하:</strong> 수천 건의 송장을 한 번에 매핑할 때, 스크립트 실행 시간(Timeout 6분) 초과 위험.</li>
+                        <li><strong>휴먼 에러 노출:</strong> 누구나 실수로 셀을 지우거나 필터를 잘못 걸면 전체 데이터가 꼬이는 원초적인 UI 문제.</li>
+                    </ul>
+                </div>
+                <div class="box" style="border-color: var(--success); background: rgba(16, 185, 129, 0.05);">
+                    <h3 style="color: var(--success); text-align: center;">미래: 전용 Web App 구축 시 장점</h3>
+                    <ul style="margin-top: 15px;">
+                        <li><strong>무한한 확장성 (Scalability):</strong> 클라우드 데이터베이스(PostgreSQL 등)를 도입하여 1억 건의 주문도 지연 없이 0.1초 만에 검색/처리 가능.</li>
+                        <li><strong>강력한 권한 제어 (Auth):</strong> 협력사나 직원이 볼 수 있는 화면과 메뉴를 DB 레벨에서 완벽히 통제 가능 (보안사고 Zero).</li>
+                        <li><strong>모바일/PC 반응형 UI:</strong> 비좁은 엑셀 화면이 아닌 직관적이고 쾌적한 전용 대시보드 인터페이스 제공.</li>
+                        <li><strong>실시간 양방향 연동 (WebSockets):</strong> 이카운트 ERP 업데이트 시, 웹 화면에서 즉각적으로 알림 팝업 및 데이터 자동 갱신.</li>
+                    </ul>
+                </div>
+                <div class="box" style="grid-column: 1/-1; padding: 20px; text-align: center;">
+                    <p style="font-size: 1.15rem; color: var(--text-primary);">
+                        "구글 시트는 훌륭한 초기 프로토타입(MVP) 도구였으나, <strong>월 매출 수십억 단위의 엔터프라이즈 환경에서는 반드시 독립적인 Web App(클라우드 서버+DB)으로 이관</strong>되어야 합니다."
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 19. Risk Management -->
+    <div class="slide">
+        <div class="page-num">20</div>
+        <div class="header">
+            <div class="label">Risk Management</div>
+            <h2>위험 관리 및 보안 대책</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div class="box">
+                    <h3>시스템 마비 (Downtime) 방어</h3>
+                    <p>구글 API나 이카운트 서버 점검으로 인한 일시적 통신 단절 시, 구축된 "메시지 큐(Queue)"가 모든 요청을 보관합니다. 서버가 복구되는 즉시 순차적으로 밀어넣어 데이터 증발을 100% 차단합니다.</p>
+                </div>
+                <div class="box">
+                    <h3>협력사 권한 탈취 방어</h3>
+                    <p>협력업체 대리발송용 시트에는 최소한의 권한(Read/Write)만 부여하고 백엔드 소스코드는 숨깁니다. 임의의 엑셀 열 추가 조작 시도를 감지하면 스크립트가 실행을 즉각 거부하고 관리자에게 경고합니다.</p>
+                </div>
+                <div class="box" style="grid-column: 1/-1;">
+                    <h3>안전한 전환(Rollback) 정책</h3>
+                    <p>빅뱅(Big-bang) 방식의 일괄 오픈이 아닌, 거래량이 적은 파트너부터 순차적으로 브리지를 엽니다. 에러 발생 시 버튼 한 번으로 구버전(엑셀 수동 방식)으로 즉시 회귀(Rollback)할 수 있는 '비상 스위치'를 대시보드에 탑재합니다.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 20. Ecount Integration Feasibility & Plan B -->
+    <div class="slide">
+        <div class="page-num">21</div>
+        <div class="header">
+            <div class="label">Feasibility & Fallback Plan</div>
+            <h2>이카운트 ERP 연동 타당성 검증 및 차선책 (Plan B)</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div class="box" style="border-color: var(--accent);">
+                    <h3 style="color: var(--accent);">Plan A: Ecount Open API (OAPI) 연동</h3>
+                    <p style="margin-bottom: 15px;">현재 이카운트 ERP는 외부 시스템 연동을 위한 Open API(SaveSale, SaveOrder 등)를 제공하고 있어 <strong>기술적인 자동화 구현은 100% 가능</strong>합니다.</p>
+                    <ul>
+                        <li><strong>구현 방식:</strong> JSON 페이로드를 통한 Session ID 인증 및 다이렉트 전표 생성</li>
+                        <li><strong>잠재적 리스크:</strong> 이카운트 요금제에 따른 일일 API 호출 횟수 제한(Rate Limit), IP 화이트리스트(IP Whitelisting) 정책으로 인한 동적 IP(구글 서버) 차단 가능성, API 서버의 간헐적 불안정성</li>
+                    </ul>
+                </div>
+                <div class="box" style="border-color: var(--warning); background: rgba(245, 158, 11, 0.05);">
+                    <h3 style="color: var(--warning);">Plan B: RPA (Robotic Process Automation) 봇 도입</h3>
+                    <p style="margin-bottom: 15px;">만약 API 호출 제한에 걸리거나 비용/정책상 API 사용이 불가능할 경우를 대비한 <strong>완벽한 차선책(플랜 B)</strong>이 준비되어 있습니다.</p>
+                    <ul>
+                        <li><strong>자동화 엑셀 생성:</strong> Web App 또는 GAS가 인간을 대신해 완벽한 '이카운트 전용 양식 엑셀 파일'을 백그라운드에서 생성하여 특정 클라우드 폴더에 떨굽니다.</li>
+                        <li><strong>무인 RPA 봇(Python/Selenium):</strong> 사무실 내 켜져 있는 미니 PC(또는 클라우드 가상머신)에 설치된 RPA 프로그램이 이카운트 웹사이트에 자동으로 로그인합니다.</li>
+                        <li><strong>UI 자동 업로드:</strong> RPA 봇이 '웹 자료올리기' 메뉴를 클릭하고 생성된 엑셀 파일을 업로드하는 과정을 인간의 손 없이 100% 모방(Simulate)합니다.</li>
+                    </ul>
+                </div>
+                <div class="box" style="grid-column: 1/-1; padding: 20px; text-align: center;">
+                    <p style="font-size: 1.15rem; color: var(--text-primary);">
+                        결론적으로, 이카운트 API 환경이 제한적이더라도 <strong>[서버리스 API (Plan A) ➔ 백엔드 무인 RPA 봇 (Plan B)]</strong>의 이중화 전략을 통해 인간의 개입이 필요한 구간은 완벽히 제거됩니다.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 21. Omnichannel Sync & Sabangnet -->
+    <div class="slide">
+        <div class="page-num">22</div>
+        <div class="header">
+            <div class="label">Channel Integration</div>
+            <h2>사방넷(Sabangnet) 연동 및 다채널 확장 (Omnichannel Sync)</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div class="box" style="border-color: var(--success); background: rgba(16, 185, 129, 0.05);">
+                    <h3 style="color: var(--success);">주문 수집 및 송장 전송 자동화</h3>
+                    <p style="margin-bottom: 15px;">사방넷 API를 활용하여 파편화된 외부 마켓(스마트스토어, 쿠팡, 11번가 등)의 주문 데이터를 <strong>Web App(중앙 DB)으로 통합 수집</strong>합니다.</p>
+                    <ul>
+                        <li>다양한 마켓의 각기 다른 양식을 표준화된 Pack2U 포맷으로 자동 변환</li>
+                        <li>포장 완료 및 송장 발행 시, 사방넷을 거쳐 각 마켓으로 <strong>운송장 번호 실시간 자동 전송</strong></li>
+                        <li>가송장이나 배송지연 패널티 리스크 완벽 차단</li>
+                    </ul>
+                </div>
+                <div class="box" style="border-color: var(--accent);">
+                    <h3 style="color: var(--accent);">실시간 재고 연동 (Inventory Sync)</h3>
+                    <p style="margin-bottom: 15px;"><strong>[이카운트 ERP ↔ Web App ↔ 사방넷]</strong>으로 이어지는 삼각 동기화 아키텍처를 구축합니다.</p>
+                    <ul>
+                        <li>물류 창고에서 상품 출고 시 이카운트 ERP에 반영되며, 해당 변동 사항이 사방넷을 통해 전 마켓 품절 처리로 직결</li>
+                        <li>단골용 B2B 몰과 B2C 외부 마켓 간의 재고 간섭 및 <strong>오버셀링(품절 취소 CS) 원천 차단</strong></li>
+                    </ul>
+                </div>
+                <div class="box" style="grid-column: 1/-1;">
+                    <h3>AI 상세페이지 전 채널 원클릭 배포 (Synergy)</h3>
+                    <p>기존에 구축된 <strong>[상세Html제작기]</strong>가 생성한 고품질 디자인 에셋을 사방넷의 '상품 일괄 등록' 기능과 연계합니다. 신제품 포장재가 입고되면 하루 만에 쿠팡, 스마트스토어 등 50여 개 채널에 동일한 규격의 프리미엄 디자인으로 동시 런칭되는 마케팅 폭발력을 확보합니다.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 22. Future Expansion (Next 3 Years) -->
+    <div class="slide">
+        <div class="page-num">23</div>
+        <div class="header">
+            <div class="label">Future Outlook</div>
+            <h2>Next 3 Years: 물류 SaaS 플랫폼으로의 진화</h2>
+        </div>
+        <div class="content-body">
+            <div class="grid-2">
+                <div>
+                    <p style="font-size: 1.3rem; margin-bottom: 20px;">우리가 내부에서 구축한 이 완벽한 <strong>[AI 콘텐츠 + 주문 통합 + ERP 연동 + 자사몰 앱]</strong> 파이프라인은 그 자체로 거대한 상품 가치를 지닙니다.</p>
+                    <ul>
+                        <li><strong>Pack2U 솔루션 상용화 (B2B SaaS):</strong> 동종업계(포장재, 부자재) 타 도매업체들에게 이 시스템 자체를 월 구독형(SaaS)으로 판매.</li>
+                        <li><strong>풀필먼트(Fulfillment) 비즈니스 확장:</strong> 완벽한 바코드 및 재고 관제 시스템을 무기로, 타 업체의 물류까지 대신 포장/발송해주는 3PL 사업으로의 수평 전개.</li>
+                        <li><strong>AI 수요 예측:</strong> 3년간 누적된 판매/발주 데이터를 기반으로, 날씨나 시즌에 따른 특정 포장재의 재고 부족을 AI가 한 달 전에 예측하여 자동 발주.</li>
+                    </ul>
+                </div>
+                <div class="box" style="background: rgba(255,255,255,0.02); border: none; justify-content: center; align-items: center; text-align: center;">
+                    <svg style="width: 120px; height: 120px; fill: none; stroke: var(--accent); stroke-width: 1; margin-bottom: 20px;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg>
+                    <h3 style="font-size: 2rem; color: var(--text-primary);">단순 유통사를 넘어,<br><span style="color: var(--accent);">테크(Tech) 물류 기업</span>으로</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 23. Conclusion -->
+    <div class="slide" style="justify-content: center; text-align: center;">
+        <div class="page-num">24</div>
+        <div style="max-width: 900px; margin: 0 auto; position: relative; z-index: 2;">
+            <svg style="width: 80px; height: 80px; fill: none; stroke: var(--success); stroke-width: 2; margin-bottom: 30px;" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+            <h1 style="font-size: 3.5rem; margin-bottom: 30px;">"시스템이 일하고, 사람은 고객의 마음을 얻습니다."</h1>
+            <p style="font-size: 1.5rem; color: var(--text-secondary); margin-bottom: 50px;">
+                Pack2U 통합 전사 자동화 프로젝트는 단순한 IT 도입이 아닙니다.<br>
+                비용을 죽이고, 이익을 극대화하며, 고객 충성도를 영구히 락인(Lock-in)하는<br>
+                가장 강력한 비즈니스 레버리지입니다.
+            </p>
+            <div style="display: inline-block; padding: 15px 40px; background: var(--accent); color: var(--bg-color); font-weight: bold; font-size: 1.2rem; border-radius: 50px;">
+                프로젝트 제안 승인 대기 중 (Go / No-Go)
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

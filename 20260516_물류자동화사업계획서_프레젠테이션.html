@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pack2U 쇼핑몰 물류 자동화 시스템 사업계획서</title>
+    <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0a0a0a;
+            --surface-color: #1a1a1a;
+            --surface-hover: #262626;
+            --text-primary: #ffffff;
+            --text-secondary: #a3a3a3;
+            --accent: #ffffff;
+            --border: #333333;
+            --glass-bg: rgba(26, 26, 26, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            overflow-y: hidden;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+        }
+
+        .horizontal-scroll-wrapper {
+            display: flex;
+            width: max-content;
+            height: 100vh;
+            padding: 40px;
+            gap: 40px;
+            scroll-snap-type: x mandatory;
+            align-items: center;
+        }
+
+        /* ------------------
+           카드 공통 스타일
+        ------------------- */
+        .card {
+            background: var(--surface-color);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 60px;
+            width: 800px;
+            height: 80vh;
+            scroll-snap-align: center;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            border-color: var(--glass-border);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%);
+            pointer-events: none;
+        }
+
+        .card-header {
+            margin-bottom: 40px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+        }
+
+        h2 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        p {
+            font-size: 1.1rem;
+            line-height: 1.7;
+            color: var(--text-secondary);
+        }
+
+        /* ------------------
+           특수 레이아웃
+        ------------------- */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            flex-grow: 1;
+        }
+
+        .info-box {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 30px;
+            transition: background 0.3s ease;
+        }
+
+        .info-box:hover {
+            background: rgba(255,255,255,0.05);
+        }
+
+        .info-box h3 {
+            font-size: 1.3rem;
+            margin-bottom: 16px;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        ul {
+            list-style: none;
+        }
+
+        li {
+            margin-bottom: 12px;
+            font-size: 1.05rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        li::before {
+            content: '•';
+            color: var(--accent);
+        }
+
+        /* ------------------
+           인포그래픽 요소
+        ------------------- */
+        .phase-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            flex-grow: 1;
+            justify-content: center;
+        }
+
+        .phase-item {
+            display: flex;
+            align-items: center;
+            gap: 30px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--glass-border);
+            border-radius: 100px;
+            padding: 20px 40px;
+            position: relative;
+        }
+
+        .phase-num {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--bg-color);
+            background: var(--accent);
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .phase-content h3 {
+            font-size: 1.3rem;
+            color: var(--accent);
+            margin-bottom: 4px;
+        }
+
+        /* ------------------
+           SVG 아이콘 
+        ------------------- */
+        .icon {
+            width: 32px;
+            height: 32px;
+            fill: none;
+            stroke: var(--accent);
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        /* 타임라인 플로우 */
+        .flow-diagram {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 40px;
+            padding: 40px 0;
+            position: relative;
+        }
+        
+        .flow-diagram::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50px;
+            right: 50px;
+            height: 2px;
+            background: var(--glass-border);
+            z-index: 0;
+        }
+
+        .flow-node {
+            background: var(--surface-color);
+            border: 2px solid var(--border);
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .flow-node:hover {
+            border-color: var(--accent);
+            transform: scale(1.1);
+            box-shadow: 0 0 20px rgba(255,255,255,0.1);
+        }
+
+        .flow-node::after {
+            content: attr(data-label);
+            position: absolute;
+            bottom: -40px;
+            width: 150px;
+            text-align: center;
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        /* 하단 스크롤 인디케이터 */
+        .scroll-hint {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; transform: translateX(-50%) translateY(0); }
+            50% { opacity: 1; transform: translateX(-50%) translateY(5px); }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="horizontal-scroll-wrapper">
+
+        <!-- Slide 1: 타이틀 -->
+        <div class="card">
+            <div style="flex-grow: 1; display: flex; flex-direction: column; justify-content: center;">
+                <svg class="icon" style="width: 64px; height: 64px; margin-bottom: 30px;" viewBox="0 0 24 24">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                </svg>
+                <h1 style="margin-bottom: 20px;">쇼핑몰 물류 자동화<br>시스템 구축 마스터플랜</h1>
+                <p style="font-size: 1.3rem; max-width: 80%;">
+                    스마트 관제 탑 수준의 Zero-Touch 파이프라인 구축을 통한<br>Pack2U 물류 운영의 완전 자동화 및 고도화 전략
+                </p>
+            </div>
+            <div style="border-top: 1px solid var(--border); padding-top: 20px;">
+                <p style="font-size: 0.9rem; letter-spacing: 1px;">PACK2U STRATEGIC INITIATIVE</p>
+            </div>
+        </div>
+
+        <!-- Slide 2: 사업 목표 -->
+        <div class="card">
+            <div class="card-header">
+                <h2>
+                    <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    사업 목표
+                </h2>
+            </div>
+            <div class="grid-2">
+                <div class="info-box">
+                    <h3>
+                        <svg class="icon" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        전 구간 완전 자동화
+                    </h3>
+                    <p>주문 수집, 재고 할당, 송장 매핑, 출고, 이카운트 전표 처리까지 인간의 개입이 필요 없는 Zero-Touch 데이터 파이프라인 완성.</p>
+                </div>
+                <div class="info-box">
+                    <h3>
+                        <svg class="icon" viewBox="0 0 24 24"><path d="M2 12h4l2-9 5 18 3-9h5"></path></svg>
+                        에러/로그 관제 고도화
+                    </h3>
+                    <p>중앙 집중식 로깅 체계 구축. API 에러 및 장애 발생 시 Slack/Telegram 기반 즉각적인 모니터링 알림 전송.</p>
+                </div>
+                <div class="info-box">
+                    <h3>
+                        <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                        확장성 및 유연성
+                    </h3>
+                    <p>AI 사진 가공(Gemini), 자동 마진 계산기, 현장 모바일 바코드 스캐너 등 신기능 확장을 완벽히 수용하는 견고한 아키텍처.</p>
+                </div>
+                <div class="info-box">
+                    <h3>
+                        <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        보안 및 권한 강화
+                    </h3>
+                    <p>스크립트 하드코딩 제거 및 API 키 외부화. 운영자 및 파트너별 정교한 권한 제어로 시스템 탈취 및 오염 원천 차단.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: 현재 아키텍처 및 한계점 -->
+        <div class="card">
+            <div class="card-header">
+                <h2>
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    현행 구조 한계 진단
+                </h2>
+            </div>
+            
+            <div class="flow-diagram" style="margin-bottom: 50px;">
+                <div class="flow-node" data-label="이카운트 API">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+                </div>
+                <div class="flow-node" data-label="허브 동기화" style="border-color: #ff4444;">
+                    <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                </div>
+                <div class="flow-node" data-label="송장 매핑" style="border-color: #ff4444;">
+                    <svg class="icon" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                </div>
+                <div class="flow-node" data-label="협력업체 배포">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="info-box">
+                    <h3>보안/권한 취약성</h3>
+                    <p>코드 내 API Key 평문 노출. 전역 권한 허용으로 인한 외부 파트너의 의도치 않은 시스템 조작 리스크 존재.</p>
+                </div>
+                <div class="info-box">
+                    <h3>스크립트 과부하 및 의존도</h3>
+                    <p>특정 파일에 기능이 과밀되어 수정 시 연쇄 장애 발생 우려. 절대 좌표(열 인덱스) 의존성 높음.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 4: 차기 마스터플랜 -->
+        <div class="card">
+            <div class="card-header">
+                <h2>
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                    차기 시스템 마스터플랜
+                </h2>
+            </div>
+            <div class="phase-container">
+                <div class="phase-item">
+                    <div class="phase-num">1</div>
+                    <div class="phase-content">
+                        <h3>코어 시스템 안정화 및 보안 (1~2개월)</h3>
+                        <p>비밀키 `PropertiesService` 이관, 역할별 디렉토리 분리, 중앙 집중식 에러 표준 로그 시트 도입.</p>
+                    </div>
+                </div>
+                <div class="phase-item">
+                    <div class="phase-num">2</div>
+                    <div class="phase-content">
+                        <h3>핵심 파이프라인 지능화 (3~4개월)</h3>
+                        <p>예외 건 자동 재처리 큐(Queue), 상태 머신 표준화, 엑셀 업로드 불필요한 이카운트 다이렉트 전송 API 모듈 완성.</p>
+                    </div>
+                </div>
+                <div class="phase-item">
+                    <div class="phase-num">3</div>
+                    <div class="phase-content">
+                        <h3>스마트 관제 및 기능 확장 (5~6개월)</h3>
+                        <p>AI 이미지 가공(Gemini), 자동 마진계산기, 모바일 PDA 연동, Web 기반 중앙 관제 대시보드 구축.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 5: 기대 효과 및 일정 -->
+        <div class="card">
+            <div class="card-header">
+                <h2>
+                    <svg class="icon" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                    기대 효과 및 로드맵
+                </h2>
+            </div>
+            <div class="grid-2">
+                <div class="info-box" style="grid-column: 1 / -1;">
+                    <ul style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <li><strong>운영비용 90% 절감:</strong> 수동 송장 매핑 및 엑셀 업로드 제거</li>
+                        <li><strong>에러율 Zero화:</strong> 백오프 알고리즘 기반 자동 재시도 큐</li>
+                        <li><strong>실시간 모니터링:</strong> Slack/Telegram 알림으로 MTTR 대폭 감소</li>
+                        <li><strong>SaaS형 플랫폼:</strong> UUID 기반 웹 DB 설계로 향후 스케일업 완벽 대비</li>
+                    </ul>
+                </div>
+                
+                <div class="info-box" style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; background: transparent; border: none; padding: 0; margin-top: 20px;">
+                    <h3 style="margin-bottom: 10px;">6개월 배포 로드맵</h3>
+                    <div style="display: flex; gap: 10px; height: 40px;">
+                        <div style="flex: 1; background: rgba(255,255,255,0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 600;">M+1: 보안/로그</div>
+                        <div style="flex: 2; background: rgba(255,255,255,0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 600;">M+3: 다이렉트 전송/큐 오픈</div>
+                        <div style="flex: 2; background: rgba(255,255,255,0.3); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 600;">M+5: AI/마진계산기 통합</div>
+                        <div style="flex: 1; background: var(--text-primary); color: var(--bg-color); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700;">M+6: 대시보드 오픈</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="scroll-hint">
+        Scroll Horizontally
+        <svg class="icon" style="width: 20px; height: 20px;" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+    </div>
+
+    <script>
+        // 마우스 휠로 가로 스크롤 가능하게 처리
+        const wrapper = document.querySelector('.horizontal-scroll-wrapper');
+        wrapper.addEventListener('wheel', (evt) => {
+            evt.preventDefault();
+            wrapper.scrollBy({
+                left: evt.deltaY > 0 ? window.innerWidth * 0.8 : -window.innerWidth * 0.8,
+                behavior: 'smooth'
+            });
+        });
+    </script>
+</body>
+</html>

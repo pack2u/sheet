@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pack2U 상품정보시트 — 검증보고서 & 기능가이드</title>
+<style>
+  :root {
+    --green: #1e8e3e; --red: #c5221f; --yellow: #f9ab00; --blue: #1a73e8;
+    --gray: #5f6368; --bg: #f8f9fa; --card: #ffffff;
+    --border: #e0e0e0; --success-bg: #e6f4ea; --warn-bg: #fef7e0; --danger-bg: #fce8e6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'Noto Sans KR', sans-serif; background: var(--bg); color: #202124; line-height: 1.6; }
+  .header { background: linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%); color: white; padding: 40px 48px; }
+  .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  .header .subtitle { opacity: 0.88; font-size: 14px; }
+  .header .date { opacity: 0.7; font-size: 12px; margin-top: 6px; }
+  .nav { background: #fff; border-bottom: 1px solid var(--border); padding: 0 48px; display: flex; gap: 0; position: sticky; top: 0; z-index: 100; }
+  .nav a { padding: 14px 18px; font-size: 13px; color: var(--gray); text-decoration: none; border-bottom: 3px solid transparent; white-space: nowrap; }
+  .nav a:hover { color: var(--blue); border-bottom-color: var(--blue); }
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+  section { margin-bottom: 48px; }
+  h2 { font-size: 22px; font-weight: 700; color: #202124; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid var(--blue); display: flex; align-items: center; gap: 10px; }
+  h3 { font-size: 16px; font-weight: 600; color: #202124; margin: 20px 0 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .card h3 { margin: 0 0 10px; font-size: 15px; }
+  .card p, .card ul { font-size: 13px; color: #444; }
+  .card ul { padding-left: 18px; }
+  .card li { margin-bottom: 4px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; margin-bottom: 8px; }
+  .badge-auto { background: #e8f0fe; color: #1967d2; }
+  .badge-manual { background: #fce8e6; color: #c5221f; }
+  .badge-trigger { background: #e6f4ea; color: #1e8e3e; }
+  .badge-deprecated { background: #f1f3f4; color: #9aa0a6; }
+  /* 검증 결과 */
+  .verify-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .verify-stat { background: var(--card); border-radius: 10px; padding: 20px; text-align: center; border: 1px solid var(--border); }
+  .verify-stat .num { font-size: 36px; font-weight: 700; }
+  .verify-stat .label { font-size: 12px; color: var(--gray); margin-top: 4px; }
+  .stat-ok .num { color: var(--green); }
+  .stat-warn .num { color: var(--yellow); }
+  .stat-err .num { color: var(--red); }
+  .stat-info .num { color: var(--blue); }
+  .alert { border-radius: 8px; padding: 14px 18px; margin-bottom: 12px; font-size: 13px; }
+  .alert-ok { background: var(--success-bg); border-left: 4px solid var(--green); }
+  .alert-warn { background: var(--warn-bg); border-left: 4px solid var(--yellow); }
+  .alert-err { background: var(--danger-bg); border-left: 4px solid var(--red); }
+  .alert strong { font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: #f1f3f4; padding: 10px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid var(--border); }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: #f8f9fa; }
+  .tag-ok { color: var(--green); font-weight: 700; }
+  .tag-warn { color: var(--yellow); font-weight: 700; }
+  .tag-err { color: var(--red); font-weight: 700; }
+  .tag-na { color: var(--gray); }
+  code { background: #f1f3f4; border-radius: 4px; padding: 1px 6px; font-family: 'Consolas', monospace; font-size: 12px; }
+  .file-tag { background: #e8f0fe; color: #1967d2; border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+  .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+  .flow-step { background: var(--blue); color: white; border-radius: 20px; padding: 6px 14px; font-size: 12px; }
+  .flow-arrow { color: var(--gray); font-size: 18px; }
+  .section-note { background: #f8f9fa; border-radius: 8px; padding: 14px; margin-bottom: 16px; font-size: 13px; color: #5f6368; border: 1px solid var(--border); }
+  .deleted-badge { background: #fce8e6; color: var(--red); border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+  .migrated-badge { background: #e6f4ea; color: var(--green); border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📦 Pack2U 상품정보시트 — 검증보고서 & 기능가이드</h1>
+  <div class="subtitle">독립배포 시스템 삭제 후 최종 검증 결과 + 전체 기능 상세 문서</div>
+  <div class="date">검증 일시: 2026-05-21 | 파일 수: 37개 .gs | 총 함수: 396개</div>
+</div>
+
+<nav class="nav">
+  <a href="#verification">🔍 검증보고서</a>
+  <a href="#deleted">🗑️ 삭제 내역</a>
+  <a href="#ecount">🔗 이카운트</a>
+  <a href="#partner">🤝 협력업체</a>
+  <a href="#orders">📦 발주/송장</a>
+  <a href="#push">🚀 대리발송</a>
+  <a href="#hub">📊 허브단가</a>
+  <a href="#automation">⏰ 자동화</a>
+  <a href="#diag">🛠️ 진단</a>
+  <a href="#ops">📋 운영절차</a>
+</nav>
+
+<div class="container">
+
+<!-- ===== 검증보고서 ===== -->
+<section id="verification">
+  <h2>🔍 독립배포 시스템 삭제 후 최종 검증보고서</h2>
+
+  <div class="verify-summary">
+    <div class="verify-stat stat-err">
+      <div class="num">0</div>
+      <div class="label">🔴 런타임 오류<br>(직접 호출 누락)</div>
+    </div>
+    <div class="verify-stat stat-warn">
+      <div class="num">2</div>
+      <div class="label">🟡 안전 경고<br>(typeof 가드 보호)</div>
+    </div>
+    <div class="verify-stat stat-ok">
+      <div class="num">396</div>
+      <div class="label">✅ 현재 정의 함수<br>(전체)</div>
+    </div>
+    <div class="verify-stat stat-info">
+      <div class="num">0</div>
+      <div class="label">⚠️ 중복 선언<br>(함수/전역변수)</div>
+    </div>
+  </div>
+
+  <div class="alert alert-ok">
+    <strong>✅ 결론: 안전 — 런타임 오류 없음</strong><br>
+    삭제된 3개 파일(orderSyncManager.gs, salesUploadFromIntegratedOrders.gs, vendorCustCodeManager.gs)에서 정의됐던 193개 함수 중 협력업체 시스템이 실제로 <strong>직접 호출</strong>하는 함수는 0개입니다. 모든 필수 함수는 사전에 이식 완료되었으며, 나머지는 typeof 가드로 보호되거나 미참조 상태입니다.
+  </div>
+
+  <h3>검증 항목별 결과</h3>
+  <table>
+    <thead>
+      <tr><th>검증 항목</th><th>결과</th><th>상세</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>삭제 함수 직접 호출</strong></td>
+        <td class="tag-ok">✅ 0건</td>
+        <td>193개 삭제 함수 중 현재 .gs 파일에서 직접 호출(비typeof/비주석)되는 것 없음</td>
+      </tr>
+      <tr>
+        <td><strong>중복 함수 정의</strong></td>
+        <td class="tag-ok">✅ 0건</td>
+        <td>GAS V8 Silent Overwrite 위험 없음 — 396개 함수 모두 단일 정의</td>
+      </tr>
+      <tr>
+        <td><strong>중복 전역 변수/상수</strong></td>
+        <td class="tag-ok">✅ 0건</td>
+        <td>이전에 발생했던 AUTOMATION_EVENT_LOG_SHEET 중복 문제 해결 완료</td>
+      </tr>
+      <tr>
+        <td><strong>메뉴 등록 함수 존재</strong></td>
+        <td class="tag-ok">✅ 전체</td>
+        <td>menu.gs, _partnerMenu.gs 에 등록된 모든 함수 정의 확인됨</td>
+      </tr>
+      <tr>
+        <td><strong>트리거 핸들러 함수 존재</strong></td>
+        <td class="tag-ok">✅ 전체</td>
+        <td>runDailyEcountBatch, runDailyHubBatch, runMorningSyncStatusBatch, runDailyInventoryAdjustBatch, partnerCollectOrdersSilent_, partnerPushOrdersToExclusiveFormsSilent_, _po_onEditVoidInvoiceAutoFill_ 모두 정의됨</td>
+      </tr>
+      <tr>
+        <td><strong>이식 함수 존재 (핵심 6종)</strong></td>
+        <td class="tag-ok">✅ 전체</td>
+        <td>sanitizeVendorText_, sanitizeCustCode_, normalizeVendorMapKey_, resolveVendorMapEntry_, buildVendorCandidateKeys_, loadVendorExclusiveTemplateHeadersFromHub_ 등 모두 이식 완료</td>
+      </tr>
+      <tr>
+        <td><strong>appendAutomationEventLog_ 의존</strong></td>
+        <td class="tag-ok">✅ 이식됨</td>
+        <td>hubOrderArchive.gs 4곳에서 직접 호출 → _partnerHelpers.gs 에 이식됨</td>
+      </tr>
+      <tr>
+        <td><strong>ensureSalesStatusPasteRebuildTimeTrigger_</strong></td>
+        <td class="tag-warn">🟡 안전</td>
+        <td>ecount.gs L640에서 <code>typeof</code> 가드로 보호: 독립배포 제거로 기능 비활성화이나 오류 없음</td>
+      </tr>
+      <tr>
+        <td><strong>onEditMaybeRebuildSalesStatusPaste_</strong></td>
+        <td class="tag-warn">🟡 안전</td>
+        <td>menu.gs 주석에만 언급 — 실제 호출 코드 없음, 오류 없음</td>
+      </tr>
+      <tr>
+        <td><strong>runSalesStatusPasteRebuildScheduled_</strong></td>
+        <td class="tag-na">➖ 기능 제거됨</td>
+        <td>독립배포 5분 판매현황 자동갱신 기능 — 현 운영에서 불필요, 어느 코드에서도 호출 없음</td>
+      </tr>
+      <tr>
+        <td><strong>applyCustCodeToExistingVendorSheets</strong></td>
+        <td class="tag-warn">🟡 안전</td>
+        <td>priceManager.gs L2933에서 <code>typeof</code> 가드로 보호 — vendorCustCodeManager.gs 삭제 후 비활성화, 오류 없음</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ===== 삭제 내역 ===== -->
+<section id="deleted">
+  <h2>🗑️ 삭제된 독립배포 시스템 파일 및 이식 내역</h2>
+
+  <div class="section-note">
+    독립배포 시스템(이카운트 판매현황 엑셀 업로드, 발주 통합 DB 등)은 현재 운영하지 않으므로 관련 코드를 삭제하였습니다. 필요한 함수는 협력업체 시스템 파일로 사전 이식하였습니다.
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>삭제 파일</th><th>원래 역할</th><th>이식된 함수</th><th>이식 위치</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="deleted-badge">삭제됨</span> <code>orderSyncManager.gs</code></td>
+        <td>독립배포 발주 수집, 공급사 전송, 송장 배포, 아카이브</td>
+        <td>
+          <code>appendAutomationEventLog_</code><br>
+          <code>showAutomationHealthSummary</code><br>
+          <code>loadVendorExclusiveTemplateHeadersFromHub_</code> 외 6개
+        </td>
+        <td>
+          <span class="migrated-badge">이식됨</span> <code>_partnerHelpers.gs</code><br>
+          <span class="migrated-badge">이식됨</span> <code>_partnerDeploy.gs</code>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="deleted-badge">삭제됨</span> <code>salesUploadFromIntegratedOrders.gs</code></td>
+        <td>통합 발주 DB → 이카운트 판매현황 엑셀 변환 탭 생성</td>
+        <td>
+          <code>sanitizeVendorText_</code><br>
+          <code>sanitizeCustCode_</code><br>
+          <code>normalizeVendorMapKey_</code><br>
+          <code>resolveVendorMapEntry_</code><br>
+          <code>buildVendorCandidateKeys_</code>
+        </td>
+        <td><span class="migrated-badge">이식됨</span> <code>_partnerHelpers.gs</code></td>
+      </tr>
+      <tr>
+        <td><span class="deleted-badge">삭제됨</span> <code>vendorCustCodeManager.gs</code></td>
+        <td>독립배포 업체 거래처코드 매핑 시트 생성/반영</td>
+        <td>—</td>
+        <td>협력업체 시스템 의존 없음, 전체 삭제</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ===== 이카운트 연동 ===== -->
+<section id="ecount">
+  <h2>🔗 이카운트 연동 시스템</h2>
+  <div class="section-note">핵심 파일: <span class="file-tag">ecount.gs</span> <span class="file-tag">fetchItem.gs</span> <span class="file-tag">moveToEcount.gs</span></div>
+
+  <div class="grid">
+    <div class="card">
+      <span class="badge badge-auto">자동 (02:10)</span>
+      <h3>🔄 이카운트 전체 동기화</h3>
+      <p>함수: <code>runDailyEcountBatch</code></p>
+      <ul>
+        <li>이카운트 품목정보 → 상품정보시트 동기화</li>
+        <li>이카운트 재고 현황 동기화</li>
+        <li>실행 결과 자동화로그 탭 기록</li>
+        <li>메뉴: <code>🔗 이카운트 작업 → 📊 이카운트 전체 동기화</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-auto">자동 (07:00)</span>
+      <h3>📊 아침 상태 동기화</h3>
+      <p>함수: <code>runMorningSyncStatusBatch</code></p>
+      <ul>
+        <li>판매 상태 / 재고만 업데이트 (경량 동기화)</li>
+        <li>허브 단가표 상태 반영</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-auto">자동 (12:30)</span>
+      <h3>📦 허브 일괄 동기화</h3>
+      <p>함수: <code>runDailyHubBatch</code></p>
+      <ul>
+        <li>허브 상태/재고 동기화 (점심 기준)</li>
+        <li>통합허브단가 관리 탭 갱신</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-auto">자동 (01:20 / 11:50)</span>
+      <h3>📐 재고 조정 배치</h3>
+      <p>함수: <code>runDailyInventoryAdjustBatch</code></p>
+      <ul>
+        <li>이카운트 재고 자동 조정 (새벽/낮)</li>
+        <li>조정 불일치 건 오류로그 기록</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>🎯 선택 품목 동기화</h3>
+      <p>함수: <code>fetchSelectedItems</code></p>
+      <ul>
+        <li>상품정보 탭에서 품목행 선택 후 실행</li>
+        <li>6행 이하 품목행 선택 필수 (다른 탭 실행 차단)</li>
+        <li>이카운트 품목정보, 재고 최신화</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>📤 이카운트 반영</h3>
+      <p>함수: <code>pushStatusToEcount</code> / <code>pushInventoryToEcount</code></p>
+      <ul>
+        <li>상태 변경분 이카운트 업로드</li>
+        <li>재고 변경분 이카운트 업로드</li>
+        <li>동기화 잠금(Lock) 적용 — 동시 실행 방지</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>🔐 계정 설정 및 진단</h3>
+      <p>함수: <code>setupEcountCredentials</code> / <code>diagnoseEcountIntegration</code></p>
+      <ul>
+        <li>이카운트 API 키 재입력</li>
+        <li>연동 진단: 인증/세션/존(Zone) 확인</li>
+        <li>HTTP 412 오류 시: Expect 헤더 점검</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-trigger">트리거 관리</span>
+      <h3>⏰ 자동화 트리거 설치/제거</h3>
+      <p>함수: <code>setupDailyTrigger</code> / <code>removeDailyTrigger</code> / <code>repairDailyTriggerHealth</code></p>
+      <ul>
+        <li>5개 시간 기반 트리거 일괄 설치</li>
+        <li>기존 트리거 삭제 및 중복 정리</li>
+        <li>트리거 상태 조회: <code>showDailyTriggerStatus</code></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 협력업체 시스템 ===== -->
+<section id="partner">
+  <h2>🤝 협력업체 시스템 (핵심)</h2>
+  <div class="section-note">
+    핵심 파일: <span class="file-tag">_partnerOrders.gs</span> <span class="file-tag">_partnerHelpers.gs</span> <span class="file-tag">_partnerDeploy.gs</span> <span class="file-tag">_partnerExclusivePush.gs</span><br>
+    거래처 식별 SSOT: 각 독립배포 파일 <strong>설정 탭 B5(거래처명) / B6(CUST_CD)</strong>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>🗂️ 협력업체 배포 시트 관리</h3>
+      <p>함수: <code>partnerManageDeploySheets</code></p>
+      <ul>
+        <li>등록된 협력업체 구글드라이브 파일 목록 조회</li>
+        <li>배포 시트 생성/갱신/삭제</li>
+        <li>업체별 단가 탭 자동 구성</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>💰 협력업체 단가 조회</h3>
+      <p>함수: <code>partnerSyncPrices</code></p>
+      <ul>
+        <li>허브 단가 → 업체별 등급단가 반영</li>
+        <li>세트상품 구성 포함</li>
+        <li>업체 단가 조회 탭 자동 갱신</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>🔍 업체 매핑 진단</h3>
+      <p>함수: <code>partnerDiagnoseVendorMapping</code></p>
+      <ul>
+        <li>설정탭 B5/B6 기반 거래처코드 매핑 점검</li>
+        <li>미매핑 업체 목록 출력</li>
+        <li>정밀점검: 후보키 생성 프로세스 추적</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>✅ 거래처코드 보정</h3>
+      <p>함수: <code>partnerFixVendorCustCodes</code></p>
+      <ul>
+        <li>발주DB의 vendorLabel을 설정탭 B5 기준으로 재스캔</li>
+        <li>미매핑 건 자동 보정 시도</li>
+        <li>보정 결과 요약 알림</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-trigger">동기화 잠금</span>
+      <h3>🔒 동기화 잠금 (Mutex)</h3>
+      <p>함수: <code>_acquireSyncLock_</code> / <code>_releaseSyncLock_</code></p>
+      <ul>
+        <li>동시 동기화 실행 방지</li>
+        <li>"다른 계정이 동기화 중입니다" 메시지 표시</li>
+        <li>TTL 15분 — 강제 해제: <code>adminForceReleaseSyncLock_</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>🏥 시스템 상태 요약</h3>
+      <p>함수: <code>showAutomationHealthSummary</code></p>
+      <ul>
+        <li>마지막 자동화 성공/실패 시각</li>
+        <li>아카이브/판매현황 갱신 상태</li>
+        <li>오류 코드 요약</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 발주/송장 ===== -->
+<section id="orders">
+  <h2>📦 협력업체 발주 수집 및 송장 배포</h2>
+  <div class="section-note">
+    핵심 파일: <span class="file-tag">_partnerOrders.gs</span><br>
+    <strong>주의:</strong> 2시 10분 이후 발주 수집 누락 문제 해결됨 (날짜 backfill 시간 필터 제거)
+  </div>
+
+  <h3>표준 처리 흐름</h3>
+  <div class="flow">
+    <div class="flow-step">① 발주 수집</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">② 주문일자 보정</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">③ (대리공급) 전용양식 발주</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">④ 송장 회수</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">⑤ 업체 시트 배포</div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <span class="badge badge-auto">자동 (5분 주기)</span>
+      <h3>📥 발주 통합 수집</h3>
+      <p>함수: <code>partnerCollectOrders</code> / <code>partnerCollectOrdersSilent_</code></p>
+      <ul>
+        <li>등록된 협력업체 파일의 <code>발주 및 송장조회</code> 탭 수집</li>
+        <li>거래처명: 설정탭 B5 우선 → vendorLabel fallback</li>
+        <li>날짜 없는 건: 수집 당일 날짜 부여 (시간 필터 없음)</li>
+        <li>수집 결과 → 협력업체_발주DB 탭 저장</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>📅 주문일자 보정</h3>
+      <p>함수: <code>partnerBackfillOrderDates</code></p>
+      <ul>
+        <li>날짜 공백 행 일괄 보정 (전체)</li>
+        <li>시간대 기준: Asia/Seoul</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>📤 송장 회수</h3>
+      <p>함수: <code>partnerFetchInvoices</code></p>
+      <ul>
+        <li>대리공급 임시기록 탭에서 송장번호 매칭</li>
+        <li>사방넷_송장매칭 탭 조회</li>
+        <li>매칭된 건 협력업체_발주DB 갱신</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>📨 업체 시트 송장 배포</h3>
+      <p>함수: <code>partnerPushInvoices</code></p>
+      <ul>
+        <li>송장번호 있는 건 → 업체 탭 발송완료 처리</li>
+        <li><strong>송장 없고 적요만 있는 건</strong>: 적요(익일발송예정 등) 전달 (상태 미변경)</li>
+        <li>배포 요약 알림 (송장 배포 / 적요만 전달 구분)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>📋 판매현황 갱신</h3>
+      <p>함수: <code>partnerRebuildSalesUploadSheet</code></p>
+      <ul>
+        <li>협력업체_발주DB 전체 기반 (날짜 필터 없음)</li>
+        <li>거래처코드 매핑 → 이카운트 판매현황 탭 재구성</li>
+        <li>매핑 실패 건 스킵 (오류 요약 포함)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>🗃️ 발주 아카이브</h3>
+      <p>함수: <code>partnerArchiveOrders</code></p>
+      <ul>
+        <li>완료 건을 월별 아카이브 탭으로 이동</li>
+        <li>체크박스 표시 건만 이동</li>
+        <li>미송장 건 잔류 (송장 없는 발송완료 건 → 마감탭)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 대리발송 ===== -->
+<section id="push">
+  <h2>🚀 대리발송 (전용양식 발주)</h2>
+  <div class="section-note">
+    핵심 파일: <span class="file-tag">_partnerExclusivePush.gs</span> <span class="file-tag">_partnerExclusiveArchive.gs</span><br>
+    <strong>중요:</strong> 전화주문(고유ID 없는 건)에 결정론적 UID 자동 생성 → 중복 push 방지
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <span class="badge badge-auto">자동 (5분 주기)</span>
+      <h3>📋 전용양식 발주 Push</h3>
+      <p>함수: <code>partnerPushOrdersToExclusiveForms</code> / <code>partnerPushOrdersToExclusiveFormsSilent_</code></p>
+      <ul>
+        <li>대리발송 탭 → 전용양식 탭 발주 자동 전송</li>
+        <li>대리공급_임시기록에서 중복 체크</li>
+        <li>세트상품(한글 "세트" 포함): 구성품 분리 Push</li>
+        <li>영문 "SET"는 세트 분리 적용 안 됨</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-trigger">UID 체계</span>
+      <h3>🔑 결정론적 UID (전화주문)</h3>
+      <p>함수: <code>_pep_deriveDeterministicUid_</code></p>
+      <ul>
+        <li>P열 고유ID 없는 행: 자동 생성</li>
+        <li>형식: <code>MMDD-ph-XXXX</code> (4자리 알파뉴메릭)</li>
+        <li>생성 기준: 날짜+품목코드+수신자명+전화번호 해시</li>
+        <li>동일 내용 재실행 → 동일 UID (멱등성 보장)</li>
+        <li>사방넷_송장매칭 E열(주문번호)에도 기록됨</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>📱 카카오 송장 매칭</h3>
+      <p>함수: <code>partnerMatchInvoiceFromKakao</code></p>
+      <ul>
+        <li>카카오 메시지 또는 엑셀 데이터 붙여넣기 지원</li>
+        <li>엑셀 Tab-separated 자동 감지 및 파싱</li>
+        <li>동일 수신자명 중복 시 상품명으로 추가 매칭</li>
+        <li>매칭 결과 미리보기 후 확인</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>🗂️ 전용양식 마감</h3>
+      <p>함수: <code>partnerArchiveExclusiveForm</code></p>
+      <ul>
+        <li>송장번호 있는 건만 마감탭 이동</li>
+        <li>송장 없이 발송완료 상태: 마감탭 이동</li>
+        <li>송장 없음 + 미발송: 잔류</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>🔄 취소/반품 처리</h3>
+      <p>파일: <code>_partnerCancelReturn.gs</code></p>
+      <ul>
+        <li>발주 취소 및 반품 처리</li>
+        <li>아카이브 탭 체크박스 기반</li>
+        <li>이카운트 반영 연계</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>📊 대리발송 대시보드</h3>
+      <p>파일: <code>_partnerDashboard.gs</code></p>
+      <ul>
+        <li>오늘/이번 달 발주 현황 요약</li>
+        <li>미처리 건 수 표시</li>
+        <li>자동 갱신 주기 설정 가능</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 허브단가 ===== -->
+<section id="hub">
+  <h2>📊 허브단가 관리 시스템</h2>
+  <div class="section-note">핵심 파일: <span class="file-tag">priceManager.gs</span> (5,015 lines)</div>
+
+  <div class="grid">
+    <div class="card">
+      <span class="badge badge-auto">자동</span>
+      <h3>🏭 통합허브단가 생성</h3>
+      <p>함수: <code>createHubPriceSheet</code></p>
+      <ul>
+        <li>이카운트 품목정보 기반 단가표 생성</li>
+        <li>업체 등급별 단가 자동 계산</li>
+        <li>세트 구성품 포함</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-auto">자동 (12:30)</span>
+      <h3>🔄 상태/재고 갱신</h3>
+      <p>함수: <code>runVendorSheetUpdateScheduled</code></p>
+      <ul>
+        <li>판매상태 / 재고만 경량 업데이트</li>
+        <li>매일 낮 12:30 자동 실행</li>
+        <li>전체 동기화보다 빠름</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>🏪 협력업체 단가 탭 생성</h3>
+      <p>함수: <code>createPartnerPriceTab</code></p>
+      <ul>
+        <li>선택 업체의 단가 조회 탭 신규 생성</li>
+        <li>등급 단가 자동 적용</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">수동</span>
+      <h3>📋 가격 분석 챗봇</h3>
+      <p>파일: <code>priceAnalysisChatbot.gs</code></p>
+      <ul>
+        <li>품목 단가 조회 및 비교</li>
+        <li>Gemini AI 연동 분석</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 자동화 ===== -->
+<section id="automation">
+  <h2>⏰ 자동화 스케줄 전체</h2>
+
+  <table>
+    <thead>
+      <tr><th>실행 시각</th><th>함수</th><th>역할</th><th>파일</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>매일 01:20 / 11:50</td>
+        <td><code>runDailyInventoryAdjustBatch</code></td>
+        <td>이카운트 재고 자동 조정</td>
+        <td><span class="file-tag">sendInventory.gs</span></td>
+      </tr>
+      <tr>
+        <td>매일 02:10</td>
+        <td><code>runDailyEcountBatch</code></td>
+        <td>이카운트 품목/재고 전체 동기화</td>
+        <td><span class="file-tag">ecount.gs</span></td>
+      </tr>
+      <tr>
+        <td>매일 07:00</td>
+        <td><code>runMorningSyncStatusBatch</code></td>
+        <td>아침 상태 동기화 (경량)</td>
+        <td><span class="file-tag">ecount.gs</span></td>
+      </tr>
+      <tr>
+        <td>매일 12:30</td>
+        <td><code>runDailyHubBatch</code></td>
+        <td>허브 상태/재고 동기화</td>
+        <td><span class="file-tag">ecount.gs</span></td>
+      </tr>
+      <tr>
+        <td>5분 주기</td>
+        <td><code>partnerCollectOrdersSilent_</code></td>
+        <td>협력업체 발주 자동 수집</td>
+        <td><span class="file-tag">_partnerOrders.gs</span></td>
+      </tr>
+      <tr>
+        <td>발주수집 직후 (연동)</td>
+        <td><code>partnerPushOrdersToExclusiveFormsSilent_</code></td>
+        <td>대리발송 자동 Push (발주수집 트리거 연계)</td>
+        <td><span class="file-tag">_partnerExclusivePush.gs</span></td>
+      </tr>
+      <tr>
+        <td>onEdit 이벤트</td>
+        <td><code>_po_onEditVoidInvoiceAutoFill_</code></td>
+        <td>송장번호 입력 시 품목명/수량 자동 완성</td>
+        <td><span class="file-tag">_partnerOrders.gs</span></td>
+      </tr>
+      <tr>
+        <td style="color:#9aa0a6;">제거됨</td>
+        <td><code style="color:#9aa0a6;">runSalesStatusPasteRebuildScheduled_</code></td>
+        <td style="color:#9aa0a6;">독립배포 판매현황 5분 갱신 — 삭제된 기능</td>
+        <td><span class="deleted-badge">삭제됨</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ===== 진단 도구 ===== -->
+<section id="diag">
+  <h2>🛠️ 진단 및 점검 도구</h2>
+
+  <div class="grid">
+    <div class="card">
+      <span class="badge badge-manual">진단</span>
+      <h3>🧪 이카운트 연동 진단</h3>
+      <p>함수: <code>diagnoseEcountIntegration</code></p>
+      <ul>
+        <li>인증 / 세션 / Zone 상태 확인</li>
+        <li>HTTP 412 오류 헤더 점검</li>
+        <li>API 키 유효성 테스트</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">진단</span>
+      <h3>🔍 처리 후 오류 점검</h3>
+      <p>함수: <code>runPostProcessErrorCheck</code></p>
+      <ul>
+        <li>오늘 날짜 배치 성공 여부 확인</li>
+        <li>오류 건 원인 분류</li>
+        <li>출근 직후 매일 확인 권장</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">진단</span>
+      <h3>📋 업체 매핑 정밀 점검</h3>
+      <p>함수: <code>partnerDiagnoseVendorMapping</code></p>
+      <ul>
+        <li>설정탭 B5 기반 매핑 전체 재점검</li>
+        <li>후보키 생성 프로세스 상세 추적</li>
+        <li>미매핑 원인: 설정탭 누락 / 코드 불일치</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">진단</span>
+      <h3>⚙️ 품목 필터 시트</h3>
+      <p>함수: <code>setupEcountFilterSheet</code> / <code>runEcountItemFilter</code></p>
+      <ul>
+        <li>이카운트 품목정보 조건 필터링</li>
+        <li>특정 품목코드/카테고리 추출</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">진단</span>
+      <h3>🔑 권한 자가 점검</h3>
+      <p>함수: <code>runPermissionBootstrap_</code> / <code>runUserPermissionSelfCheck</code></p>
+      <ul>
+        <li>현재 계정의 편집 권한 확인</li>
+        <li>OAuth 스코프 상태 점검</li>
+        <li>초기 실행 안내 포함</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-manual">진단</span>
+      <h3>📊 시스템 분석기</h3>
+      <p>파일: <code>systemAnalyzer.gs</code></p>
+      <ul>
+        <li>전체 시트 구조 분석</li>
+        <li>데이터 통계 요약</li>
+        <li>이상 건 감지</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 운영 절차 ===== -->
+<section id="ops">
+  <h2>📋 표준 운영 절차 (SOP)</h2>
+
+  <h3>매일 아침 체크리스트</h3>
+  <table>
+    <thead><tr><th>순서</th><th>작업</th><th>함수/메뉴</th><th>비고</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>이카운트 자동연동로그 탭 확인</td><td>탭 직접 확인</td><td>오늘 날짜 배치 성공 여부</td></tr>
+      <tr><td>2</td><td>실패 있으면 오류 점검</td><td><code>runPostProcessErrorCheck</code></td><td>⚙️ 운영/진단 메뉴</td></tr>
+      <tr><td>3</td><td>미수집 발주 있으면 수동 수집</td><td><code>partnerCollectOrders</code></td><td>자동 5분 주기 보완</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top:20px;">발주 처리 순서</h3>
+  <table>
+    <thead><tr><th>순서</th><th>작업</th><th>함수</th><th>주의사항</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>발주 통합 수집</td><td><code>partnerCollectOrders</code></td><td>설정탭 B5/B6 비어있으면 매핑 깨짐</td></tr>
+      <tr><td>2</td><td>주문일자 즉시 보정</td><td><code>partnerBackfillOrderDates</code></td><td>날짜 공백 건 처리</td></tr>
+      <tr><td>3</td><td>대리공급 전용양식 발주</td><td><code>partnerPushOrdersToExclusiveForms</code></td><td>세트(한글) 분리 적용</td></tr>
+      <tr><td>4</td><td>송장 회수</td><td><code>partnerFetchInvoices</code></td><td>공급사 작업 완료 후</td></tr>
+      <tr><td>5</td><td>업체 시트 송장 배포</td><td><code>partnerPushInvoices</code></td><td>적요(익일발송예정) 있으면 함께 전달</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top:20px;">장애 대응</h3>
+  <div class="grid">
+    <div class="card">
+      <div class="alert alert-err" style="margin:0">
+        <strong>HTTP 412 에러</strong><br>
+        원인: IIS 서버 Expect:100-continue 거부<br>
+        조치: ecount.gs의 verifyZoneAPI, login 함수에 <code>"Expect": ""</code> 헤더 확인
+      </div>
+    </div>
+    <div class="card">
+      <div class="alert alert-warn" style="margin:0">
+        <strong>거래처코드 미매핑</strong><br>
+        1. 해당 독립배포파일 설정탭 B5/B6 확인<br>
+        2. <code>partnerDiagnoseVendorMapping</code> 실행<br>
+        3. 원인 확인 후 <code>partnerFixVendorCustCodes</code> 보정
+      </div>
+    </div>
+    <div class="card">
+      <div class="alert alert-warn" style="margin:0">
+        <strong>동기화 잠금 해제 안 됨</strong><br>
+        원인: 이전 실행이 비정상 종료<br>
+        조치: <code>adminForceReleaseSyncLock_</code> 강제 해제 (TTL 15분 자동 만료)
+      </div>
+    </div>
+    <div class="card">
+      <div class="alert alert-ok" style="margin:0">
+        <strong>대리발송 중복 Push</strong><br>
+        현재: 결정론적 UID로 멱등성 보장<br>
+        전화주문 형식: <code>MMDD-ph-XXXX</code> (내용 기반 해시)
+      </div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:20px;">절대 하지 말 것</h3>
+  <div class="alert alert-err">
+    <ul style="margin:0; padding-left:18px;">
+      <li>시트 열(Column)을 임의로 추가/삭제하지 않는다</li>
+      <li>파일명/시트명으로 업체를 식별하지 않는다 — <strong>설정탭 B5/B6만 기준</strong></li>
+      <li>매핑 실패를 문자열 트릭으로 우회하지 않는다</li>
+      <li>이카운트 API 판매 업로드를 사용하지 않는다 (엑셀 반영만)</li>
+      <li>정산 대사 없이 보관본을 생성하지 않는다</li>
+    </ul>
+  </div>
+</section>
+
+</div><!-- /container -->
+
+<footer style="background:#f1f3f4; border-top:1px solid #e0e0e0; padding:20px 48px; font-size:12px; color:#9aa0a6; margin-top:20px;">
+  Pack2U 상품정보시트 시스템 &nbsp;|&nbsp; 검증일: 2026-05-21 &nbsp;|&nbsp;
+  현재 .gs 파일: 37개 &nbsp;|&nbsp; 총 함수: 396개 &nbsp;|&nbsp; 중복 선언: 0건 &nbsp;|&nbsp; 런타임 오류 위험: 0건
+</footer>
+
+</body>
+</html>

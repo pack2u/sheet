@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=device-width, initial-scale=1.0">
+  <title>Pack2U 협력업체 발주 및 송장 통합 관리 시스템 설명서</title>
+  <!-- Google Fonts: Outfit & Noto Sans KR -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-color: #0b0f19;
+      --panel-bg: rgba(17, 24, 39, 0.7);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent-color: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.35);
+      --success-color: #10b981;
+      --success-glow: rgba(16, 185, 129, 0.2);
+      --sidebar-width: 280px;
+      --transition-speed: 0.3s;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      display: flex;
+      min-height: 100vh;
+      overflow-x: hidden;
+      line-height: 1.6;
+    }
+
+    /* Scrollbar Styling */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Sidebar Layout */
+    .sidebar {
+      width: var(--sidebar-width);
+      background-color: rgba(10, 15, 30, 0.95);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      height: 100vh;
+      left: 0;
+      top: 0;
+      z-index: 100;
+      padding: 2rem 1.5rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 3rem;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      fill: none;
+      stroke: var(--accent-color);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 0 8px var(--accent-glow));
+    }
+
+    .brand-name {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #ffffff 0%, var(--text-muted) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .nav-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.85rem 1rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid transparent;
+    }
+
+    .nav-item svg {
+      width: 20px;
+      height: 20px;
+      stroke: var(--text-muted);
+      stroke-width: 1.8;
+      fill: none;
+      transition: stroke var(--transition-speed);
+    }
+
+    .nav-item:hover {
+      color: var(--text-main);
+      background-color: rgba(255, 255, 255, 0.03);
+    }
+
+    .nav-item.active {
+      color: var(--text-main);
+      background-color: rgba(59, 130, 246, 0.08);
+      border-color: rgba(59, 130, 246, 0.2);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15), inset 0 0 12px rgba(59, 130, 246, 0.1);
+    }
+
+    .nav-item.active svg {
+      stroke: var(--accent-color);
+      filter: drop-shadow(0 0 4px var(--accent-glow));
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.25);
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding-top: 1.5rem;
+      text-align: center;
+    }
+
+    /* Main Content Layout */
+    .main-content {
+      margin-left: var(--sidebar-width);
+      flex: 1;
+      padding: 3rem 4rem;
+      max-width: 1200px;
+      min-height: 100vh;
+    }
+
+    header {
+      margin-bottom: 3.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 2rem;
+    }
+
+    .subtitle {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--accent-color);
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+
+    .header-desc {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 800px;
+    }
+
+    /* Content Section */
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.4s ease-out forwards;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Cards and Glassmorphism */
+    .card {
+      background: var(--panel-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 2.25rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .card-title {
+      font-size: 1.35rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 0.75rem;
+    }
+
+    .card-title svg {
+      width: 24px;
+      height: 24px;
+      stroke: var(--accent-color);
+      stroke-width: 1.8;
+      fill: none;
+    }
+
+    /* Table Styling */
+    .data-table-container {
+      overflow-x: auto;
+      margin: 1.5rem 0;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+
+    .data-table th {
+      background-color: rgba(255, 255, 255, 0.02);
+      color: var(--text-main);
+      font-weight: 600;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .data-table td {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-muted);
+    }
+
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .data-table tr:hover td {
+      background-color: rgba(255, 255, 255, 0.01);
+      color: var(--text-main);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .badge-blue {
+      background-color: rgba(59, 130, 246, 0.1);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+
+    .badge-green {
+      background-color: rgba(16, 185, 129, 0.1);
+      color: #a7f3d0;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .badge-purple {
+      background-color: rgba(139, 92, 246, 0.1);
+      color: #ddd6fe;
+      border: 1px solid rgba(139, 92, 246, 0.2);
+    }
+
+    /* Callout styling */
+    .callout {
+      border-left: 3px solid var(--accent-color);
+      background-color: rgba(59, 130, 246, 0.03);
+      padding: 1.25rem;
+      border-radius: 0 12px 12px 0;
+      margin: 1.5rem 0;
+    }
+
+    .callout-title {
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 0.25rem;
+      font-size: 0.95rem;
+    }
+
+    .callout-desc {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    /* Flow diagram styled with HTML/CSS */
+    .flow-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      margin: 2rem 0;
+      position: relative;
+    }
+
+    .flow-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 1.5rem;
+      position: relative;
+    }
+
+    .flow-step:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      left: 17px;
+      top: 36px;
+      bottom: -24px;
+      width: 2px;
+      background: linear-gradient(to bottom, var(--accent-color), rgba(255,255,255,0.05));
+    }
+
+    .flow-num {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: rgba(59, 130, 246, 0.1);
+      border: 2px solid var(--accent-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-main);
+      flex-shrink: 0;
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .flow-content {
+      background-color: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 12px;
+      padding: 1.25rem;
+      flex: 1;
+    }
+
+    .flow-content h4 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--text-main);
+    }
+
+    .flow-content p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    /* Grid layout */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 1024px) {
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+      body {
+        flex-direction: column;
+      }
+      .sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        padding: 1.5rem;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+      }
+      .main-content {
+        margin-left: 0;
+        padding: 2rem;
+      }
+    }
+
+    /* List styling */
+    ul.styled-list {
+      list-style: none;
+      margin: 1rem 0;
+    }
+
+    ul.styled-list li {
+      position: relative;
+      padding-left: 1.5rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+    }
+
+    ul.styled-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0.5rem;
+      color: var(--accent-color);
+      font-weight: bold;
+    }
+
+    /* Highlight */
+    .highlight {
+      color: var(--text-main);
+      font-weight: 500;
+    }
+
+    .code-span {
+      font-family: monospace;
+      background-color: rgba(255, 255, 255, 0.06);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      color: #e5e7eb;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-icon" viewBox="0 0 24 24">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+      <span class="brand-name">Pack2U System</span>
+    </div>
+    
+    <nav>
+      <ul class="nav-list">
+        <li>
+          <a class="nav-item active" data-tab="tab-overview">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+            시스템 아키텍처 개요
+          </a>
+        </li>
+        <li>
+          <a class="nav-item" data-tab="tab-order">
+            <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 11v6M9 14h6"/></svg>
+            발주 및 송장 수집
+          </a>
+        </li>
+        <li>
+          <a class="nav-item" data-tab="tab-sales">
+            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+            판매현황 및 ERP 갱신
+          </a>
+        </li>
+        <li>
+          <a class="nav-item" data-tab="tab-archive">
+            <svg viewBox="0 0 24 24"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
+            일괄 마감 &amp; 초기화
+          </a>
+        </li>
+        <li>
+          <a class="nav-item" data-tab="tab-recommend">
+            <svg viewBox="0 0 24 24"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.808 13.066A6 6 0 1 1 15.5 17.5h-7a6.002 6.002 0 0 1-.157-4.898z"/></svg>
+            추천 편의 기능 제안
+          </a>
+        </li>
+      </ul>
+    </nav>
+    
+    <div class="sidebar-footer">
+      Pack2U 통합 관리 시스템<br>v1.5 Document • 2026
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="main-content">
+    
+    <!-- HEADER -->
+    <header>
+      <div class="subtitle">System Guidebook</div>
+      <h1 id="main-title">시스템 아키텍처 개요</h1>
+      <p class="header-desc" id="main-desc">Pack2U 구글 스프레드시트와 협력업체 개별 발주서 간의 데이터를 전송, 수집, 마감하는 연동 시스템의 명세서 및 사용 설명서입니다.</p>
+    </header>
+
+    <!-- TAB 1: SYSTEM OVERVIEW -->
+    <section id="tab-overview" class="tab-content active">
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          시스템 구조와 데이터 흐름
+        </div>
+        <p>본 시스템은 중앙의 <span class="highlight">상품정보 스프레드시트</span>를 허브로 작동하며, 다수의 협력업체 개별 스프레드시트와 실시간/주기적 API 통신을 통해 다음 기능을 수행합니다.</p>
+        
+        <div class="flow-container">
+          <div class="flow-step">
+            <div class="flow-num">1</div>
+            <div class="flow-content">
+              <h4>발주 데이터 1차 집합 (대리공급업체 발주 탭)</h4>
+              <p>수동 또는 외부 ERP 등에서 대리공급 대상 주문 정보가 <code class="code-span">대리공급업체 발주</code> 시트에 입력됩니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">2</div>
+            <div class="flow-content">
+              <h4>업체별 자동 분류 및 Push</h4>
+              <p>이카운트코드 분석 및 품목 매핑 후, 각 협력업체 고유 파일의 <code class="code-span">전용양식</code> 탭에 자동으로 나뉘어 전송(Push)됩니다. 동시에 중앙 시트의 <code class="code-span">대리공급_임시기록</code> 시트에도 상태가 실시간 백업됩니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">3</div>
+            <div class="flow-content">
+              <h4>업체 송장 입력 및 역수집</h4>
+              <p>협력업체가 전송받은 파일에 직접 송장번호를 채우면, 연동 트리거가 이를 감지하여 중앙의 <code class="code-span">협력업체_발주허브</code> 및 <code class="code-span">대리공급_임시기록</code>의 송장번호를 자동 업데이트합니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">4</div>
+            <div class="flow-content">
+              <h4>ERP 판매현황 반영 및 월별 마감</h4>
+              <p>송장이 입력된 발주 데이터는 판매현황 시트로 모여 이카운트 ERP로 최종 업로드되고, 마감 처리를 거치며 원본 시트에서 아카이브 탭으로 이동되어 다음 날 발주를 위한 공백 상태를 확보합니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          주요 관리 시트 정의
+        </div>
+        <div class="data-table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>시트/탭 이름</th>
+                <th>주요 역할 및 관리 정보</th>
+                <th>비고 및 특이사항</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="highlight">대리공급업체 발주</td>
+                <td>모든 대리공급 및 위탁 발주서의 1차 입력 소스 시트</td>
+                <td>D열의 이카운트코드가 핵심 식별값</td>
+              </tr>
+              <tr>
+                <td class="highlight">협력업체_발주허브</td>
+                <td>송장 수집 및 판매현황 연동의 중앙 DB 역할</td>
+                <td>P열: 이카운트 업 완료 여부, Q열: 진행 상태</td>
+              </tr>
+              <tr>
+                <td class="highlight">대리공급_임시기록</td>
+                <td>사방넷 주문번호 기준 당일 대리공급 발송 흐름 모니터링 시트</td>
+                <td>X열: 송장번호, Y열: 진행상태 ("송장수집", "발주완료")</td>
+              </tr>
+              <tr>
+                <td class="highlight">대리발송 별칭 테이블</td>
+                <td>원본 이카운트 품목코드를 협력업체 전용 코드로 매핑해주는 별칭 매칭표</td>
+                <td>이 매핑 데이터가 없으면 전용 규격 변환이 불가</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: ORDER & INVOICE -->
+    <section id="tab-order" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          1. 대리공급업체 발주 Push
+        </div>
+        <div class="callout">
+          <div class="callout-title">📂 관련 스크립트 파일</div>
+          <div class="callout-desc"><code class="code-span">_partnerExclusivePush.gs</code> → <code class="code-span">partnerPushOrdersToExclusiveForms()</code></div>
+        </div>
+        
+        <p>사용자 또는 자동 트리거(5분 간격)에 의해 <code class="code-span">대리공급업체 발주</code> 탭의 새로운 건이 처리됩니다.</p>
+        
+        <ul class="styled-list">
+          <li><span class="highlight">업체 식별 기준:</span> D열(이카운트코드)의 앞 2자리(예: NK, HR, BW)를 추출해 식별된 협력업체 스프레드시트의 파일 ID를 연동 맵에서 조회합니다.</li>
+          <li><span class="highlight">품목 코드 변환 (별칭 적용):</span> <code class="code-span">대리발송 별칭 테이블</code>에서 원본 품목코드를 검색하여 해당 업체에서 실제 접수하는 업체용 품목코드(vendorSku) 및 품목명(vendorName)으로 치환합니다.</li>
+          <li><span class="highlight">중복 Push 방지:</span> 사방넷주문번호(UID) + 치환된 품목코드를 조합한 복합 고유키(<code class="code-span">UID|품목코드</code>)를 생성합니다. 협력업체 전용 시트의 데이터를 읽어와 이미 전송된 고유키와 비교한 뒤, 기존에 내보낸 적 없는 새로운 행만 전송합니다.</li>
+          <li><span class="highlight">임시기록 생성:</span> Push된 데이터는 <code class="code-span">대리공급_임시기록</code> 시트 하단에 즉시 덧붙여 기록됩니다. (P열에 주문번호(UID), W열에 업체 코드, Y열에 "발주완료" 표시 기입)</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          2. 송장번호 역수집
+        </div>
+        <div class="callout">
+          <div class="callout-title">📂 관련 스크립트 파일</div>
+          <div class="callout-desc"><code class="code-span">_partnerOrders.gs</code> → <code class="code-span">partnerFetchInvoices()</code></div>
+        </div>
+        
+        <p>협력업체가 전용 시트의 A열(송장번호)에 직접 작성한 발송 정보를 수집합니다.</p>
+        
+        <ul class="styled-list">
+          <li><span class="highlight">수집 대상:</span> 모든 협력업체의 전용 발주 스프레드시트 <code class="code-span">전용양식</code> 탭을 순회 탐색합니다.</li>
+          <li><span class="highlight">매칭 및 동기화:</span> 전용 시트 AX열(50번째 열)에 저장되어 있던 고유ID(UID)를 키로 활용해 중앙 메인 시트에서 해당 주문을 찾습니다.</li>
+          <li><span class="highlight">기입 동작:</span>
+            <br>- 메인 시트 <code class="code-span">협력업체_발주허브</code>의 N열(송장번호)을 채워 넣고 상태(O열)를 "배송중" 또는 "발송완료"로 갱신합니다.
+            <br>- 메인 시트 <code class="code-span">대리공급_임시기록</code>의 X열(송장번호)에 값을 넣고 Y열(진행상태)을 <span class="badge badge-green">송장수집</span>으로 전환합니다.
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- TAB 3: SALES & ERP -->
+    <section id="tab-sales" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+          판매현황 갱신 및 이중 갱신 방지 (ERP 업로드 준비)
+        </div>
+        <div class="callout">
+          <div class="callout-title">📂 관련 스크립트 파일</div>
+          <div class="callout-desc"><code class="code-span">_partnerOrders.gs</code> → <code class="code-span">partnerRebuildSalesUploadSheetCore_()</code></div>
+        </div>
+        
+        <p>이카운트 ERP 판매 입력용 원본 시트를 갱신하는 기능의 작동 규격입니다.</p>
+
+        <div class="flow-container">
+          <div class="flow-step">
+            <div class="flow-num">A</div>
+            <div class="flow-content">
+              <h4>허브 데이터 필터링</h4>
+              <p><code class="code-span">협력업체_발주허브</code> 탭의 전체 행을 읽어옵니다. 이때 **P열(이카운트 업 완료 여부)에 "이카운트 업 완료"라는 문구가 이미 적힌 행은 수집 대상에서 제외(스킵)**하여 이중 전송이나 중복 매출 기입을 방지합니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">B</div>
+            <div class="flow-content">
+              <h4>갱신 대상 데이터 빌드</h4>
+              <p>필터링을 통과한 유효 발주 데이터를 이카운트 ERP 판매업로드 양식 형식에 맞추어 `판매현황_갱신` 시트 데이터로 가공 및 재정렬하여 써넣습니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">C</div>
+            <div class="flow-content">
+              <h4>상태 플래그 업데이트</h4>
+              <p>갱신 처리가 정상적으로 완수되면, 방금 수집하여 처리한 <code class="code-span">협력업체_발주허브</code> 행들의 P열에 즉시 <span class="badge badge-blue">이카운트 업 완료</span> 텍스트를 기입하여 락(Lock)을 겁니다. (최초 실행 시 P열 1행에 '이카운트 업 완료 여부' 헤더 자동 생성)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: ARCHIVE & RESET -->
+    <section id="tab-archive" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M21 8v13H3V8M1 3h22v5H1z"/></svg>
+          일괄 마감 업데이트 처리 흐름
+        </div>
+        <div class="callout">
+          <div class="callout-title">📂 관련 스크립트 파일</div>
+          <div class="callout-desc"><code class="code-span">_partnerWebApp.gs</code> → <code class="code-span">partnerDailyArchiveAll()</code></div>
+        </div>
+        
+        <p>일괄 마감 업데이트를 실행하면 다음 4가지 마감 스크립트가 순서대로 연쇄 작동하여 데이터 보관 및 원본 초기화를 수행합니다.</p>
+        
+        <div class="data-table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>순서</th>
+                <th>기능 단위</th>
+                <th>대상 데이터 조건</th>
+                <th>마감 시 보관 경로</th>
+                <th>원본 시트 처리</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td class="highlight">월별 정산 이동<br><small>(Monthly Settle)</small></td>
+                <td>오늘 이전 날짜 &amp; **송장번호 입력 완료** 건</td>
+                <td>협력업체 파일 내<br><code class="code-span">(YYYY년 M월) 발주 마감</code> 탭</td>
+                <td>원본 <code class="code-span">발주 및 송장조회</code> 탭에서 해당 데이터만 삭제<br><small>(미입력 건은 계속 잔류)</small></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td class="highlight">전용 마감 이동<br><small>(Exclusive Archive)</small></td>
+                <td>오늘 이전 날짜 &amp; (**송장 있음** 또는 **발송완료** 건)</td>
+                <td>협력업체 파일 내<br><code class="code-span">(YYYY년 M월) 전용발주 마감</code> 탭</td>
+                <td>원본 <code class="code-span">전용양식</code> 탭에서 해당 행 삭제<br><small>(미완료 건 잔류 및 소스 시트 협력Push ID 공백 리셋)</small></td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td class="highlight">통합 허브 아카이브<br><small>(Hub Archive)</small></td>
+                <td>오늘 이전 날짜 &amp; (**송장 있음** 또는 **취소/품절/단종/발송완료** 건)</td>
+                <td>지정 구글 드라이브 폴더의<br><code class="code-span">[Pack2U 통합발주 아카이브] YYYY-MM</code> 파일</td>
+                <td>메인 시트의 <code class="code-span">협력업체_발주허브</code> 원본 탭에서 아카이브가 완료된 행 삭제</td>
+              </tr>
+              <tr>
+                <td>4</td>
+                <td class="highlight">임시 기록 청소<br><small>(Temp Archive)</small></td>
+                <td>**송장번호(X열)가 정상 기입**된 완료 행</td>
+                <td>(백업 없이 단순 청소)</td>
+                <td>메인 시트의 <code class="code-span">대리공급_임시기록</code> 시트에서 송장이 매칭 완료된 행들만 골라 지움<br><small>(송장이 아직 수집 안 된 건은 계속 유지)</small></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: RECOMMENDATIONS -->
+    <section id="tab-recommend" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 16v-4M12 8h.01"/></svg>
+          향후 시스템 고도화를 위한 편의 기능 제안
+        </div>
+        <p>Pack2U 발주서-송장 흐름의 안정성과 운영 편의성을 대폭 향상할 수 있는 추가 고도화 기능 제안 목록입니다.</p>
+
+        <div class="flow-container">
+          <div class="flow-step">
+            <div class="flow-num">1</div>
+            <div class="flow-content">
+              <h4>송장 미기입 장기 방치 주문 리마인더 (알림 시스템)</h4>
+              <p><span class="highlight">상세 구성:</span> 발주 후 3일(영업일 기준) 이상 경과하였음에도 송장번호(운송장)가 등록되지 않은 발주 미발송 건이 있을 경우, 스프레드시트 관리자 화면 상단에 경고 배너를 띄우거나 담당자에게 슬랙/카카오톡으로 일일 미발송 알림 리포트를 자동 전송하는 기능입니다.</p>
+              <p style="margin-top:0.5rem; font-size:0.85rem; color:var(--accent-color);">장점: 협력업체의 누락 발주 및 출고 지연 사고를 선제적으로 모니터링하여 고객 불만을 대폭 감소시킵니다.</p>
+            </div>
+          </div>
+          
+          <div class="flow-step">
+            <div class="flow-num">2</div>
+            <div class="flow-content">
+              <h4>이카운트 ERP 판매현황 갱신 자동 자동화 스케줄러</h4>
+              <p><span class="highlight">상세 구성:</span> 관리자가 매번 시트에서 수동으로 '판매현황 갱신' 버튼을 누르지 않아도, 설정된 마감 시간(예: 오후 6시)에 맞추어 하루 동안 수집된 완료 발주 데이터를 바탕으로 이카운트 업로드 양식을 자동 생성하고, 백업본을 드라이브에 저장해 두는 타임 트리거 스케줄링 기능입니다.</p>
+              <p style="margin-top:0.5rem; font-size:0.85rem; color:var(--accent-color);">장점: 매일 수동으로 작업해야 하는 단순 반복적인 마감 단계를 1단계 줄여 운영 리소스를 단축합니다.</p>
+            </div>
+          </div>
+
+          <div class="flow-step">
+            <div class="flow-num">3</div>
+            <div class="flow-content">
+              <h4>발주 오류/매칭 실패 시각화 통합 대시보드</h4>
+              <p><span class="highlight">상세 구성:</span> 발주 Push 동작 시 '매핑 없음(이카운트코드 불일치)', '파일 없음(경로 오류)' 등으로 스킵되는 에러 건들이 발생했을 때, 스크립트 실행 로그(Logger)를 직접 열어보지 않고도 별도의 <code class="code-span">발주 오류 대시보드</code> 시트 탭에 에러 행과 구체적인 실패 사유가 실시간 누적되어 기록되도록 구현하는 것입니다. 사용자는 이 화면에서 잘못된 정보를 즉시 확인하고 바로 수정할 수 있습니다.</p>
+              <p style="margin-top:0.5rem; font-size:0.85rem; color:var(--accent-color);">장점: 발주 처리 누락을 조기에 감지하고 오류 복구 시간을 획기적으로 줄여 운영 안정성을 제공합니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // Tab switching interaction
+    const navItems = document.querySelectorAll('.nav-item');
+    const tabContents = document.querySelectorAll('.tab-content');
+    const mainTitle = document.getElementById('main-title');
+    const mainDesc = document.getElementById('main-desc');
+
+    const descMap = {
+      'tab-overview': 'Pack2U 구글 스프레드시트와 협력업체 개별 발주서 간의 데이터를 전송, 수집, 마감하는 연동 시스템의 명세서 및 사용 설명서입니다.',
+      'tab-order': '대리공급업체 발주 데이터를 각 협력업체 파일로 분배 전송(Push)하고, 업체가 입력한 송장번호를 중앙 시트로 다시 긁어오는(Fetch) 로직 명세입니다.',
+      'tab-sales': '수집된 유효 송장 완료 데이터를 취합하여 ERP 시스템에 등록하기 위한 판매현황 업로드 문서를 갱신 및 제어하는 로직입니다.',
+      'tab-archive': '당일 처리가 완료된 데이터를 전용 아카이브 파일 및 탭으로 이관 보관하고, 원본 시트를 안전하게 비워내는 정기 마감 프로세스입니다.',
+      'tab-recommend': '현재 구축된 발주-송장 수집 파이프라인의 안전성 및 관리 편의성을 한층 업그레이드할 수 있는 고도화 추천 제안서입니다.'
+    };
+
+    navItems.forEach(item => {
+      item.addEventListener('click', () => {
+        // Remove active class from all nav items
+        navItems.forEach(nav => nav.classList.remove('active'));
+        // Add active class to clicked item
+        item.classList.add('active');
+
+        // Hide all tab content
+        tabContents.forEach(content => content.classList.remove('active'));
+        
+        // Show target tab content
+        const targetTabId = item.getAttribute('data-tab');
+        const targetTab = document.getElementById(targetTabId);
+        if (targetTab) {
+          targetTab.classList.add('active');
+        }
+
+        // Update header dynamically
+        mainTitle.textContent = item.textContent.trim();
+        mainDesc.textContent = descMap[targetTabId] || '';
+        
+        // Smooth scroll to top of page
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    });
+  </script>
+</body>
+</html>

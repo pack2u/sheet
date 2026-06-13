@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;background:#b2c7d9;display:flex;flex-direction:column;overflow:hidden}
+#quick{background:#1a1a2e;padding:10px;display:flex;flex-wrap:wrap;gap:6px}
+#quick button{background:#16213e;color:#e0e0e0;border:1px solid #0f3460;border-radius:20px;padding:5px 10px;font-size:11px;cursor:pointer;transition:.2s}
+#quick button:hover{background:#0f3460;color:#fff}
+#chat{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.msg{display:flex;flex-direction:column;max-width:90%}
+.user{align-self:flex-end}
+.bot{align-self:flex-start}
+.bubble{padding:9px 13px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.bubble-user{background:#fef01b;color:#000;border-top-right-radius:3px}
+.bubble-bot{background:#fff;color:#222;border-top-left-radius:3px}
+.tbl-wrap{background:#fff;border-radius:10px;padding:10px;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.tbl-title{font-weight:700;color:#1a1a2e;margin-bottom:7px;font-size:13px}
+.tbl-count{color:#666;font-size:11px;margin-bottom:6px}
+table{border-collapse:collapse;width:100%;font-size:11px}
+th{background:#1a1a2e;color:#fff;padding:5px 6px;text-align:left}
+td{padding:4px 6px;border-bottom:1px solid #f0f0f0;vertical-align:top}
+tr:hover td{background:#f5f9ff}
+.edit-btn{background:#0f3460;color:#fff;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:10px}
+.detail-wrap{background:#fff;border-radius:10px;padding:12px;font-size:12px}
+.detail-title{font-weight:700;color:#1a1a2e;margin-bottom:8px;font-size:13px}
+.detail-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f5f5f5}
+.detail-key{color:#666;font-size:11px}
+.detail-val{font-weight:600;color:#1a1a2e}
+.confirm-box{background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px;font-size:12px}
+.confirm-title{font-weight:700;color:#856404;margin-bottom:6px}
+.confirm-btns{display:flex;gap:6px;margin-top:8px}
+.btn-ok{background:#198754;color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:12px}
+.btn-no{background:#dc3545;color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:12px}
+.loading{color:#666;font-size:12px;padding:8px}
+#input-area{display:flex;background:#fff;padding:8px;border-top:1px solid #ccc;gap:6px}
+#inp{flex:1;border:1px solid #ddd;border-radius:20px;padding:8px 14px;font-size:13px;outline:none;font-family:inherit}
+#inp:focus{border-color:#1a1a2e}
+#send{background:#fef01b;color:#000;border:1px solid #edd900;border-radius:20px;padding:0 14px;font-weight:700;cursor:pointer}
+#send:disabled{background:#ddd;border-color:#ccc;color:#888;cursor:not-allowed}
+</style>
+</head>
+<body>
+<div id="quick">
+  <button onclick="q('전체 현황 요약해줘')">📊 전체 현황</button>
+  <button onclick="q('전체 검증해줘')">🔍 전체 검증</button>
+  <button onclick="q('가격 차이 20% 이상 찾아줘')">💰 가격차이 20%↑</button>
+  <button onclick="q('마진 15% 미만 찾아줘')">📉 마진율 낮음</button>
+  <button onclick="q('미입력 항목 찾아줘')">⚠️ 미입력 항목</button>
+  <button onclick="q('재고 0인 품목')">📦 재고 없음</button>
+  <button onclick="q('단종품 목록')">🚫 단종 목록</button>
+  <button onclick="q('마진 15% 미만 품목 판매가 5% 올려줘')">📈 마진품목 일괄↑</button>
+  <button onclick="q('재고 0인 품목 상태 품절로 바꿔줘')">🔄 재고0 → 품절</button>
+</div>
+<div id="chat">
+  <div class="msg bot"><div class="bubble bubble-bot">안녕하세요! 📊 상품정보 분석 챗봇입니다.<br><br>【단일 수정】<br>• "JHCRJJIM0001 판매가 90000으로 수정"<br><br>【일괄 수정】<br>• "마진 15% 미만 품목 판매가 5% 올려줘"<br>• "재고 0인 품목 상태 품절로 바꿔줘"<br>• "판매중 품목 전체 판매가 3% 인상"<br><br>⚠️ 일괄수정은 미리보기 확인 후 적용됩니다.</div></div>
+</div>
+<div id="input-area">
+  <input id="inp" type="text" placeholder="질문 또는 명령을 입력하세요..." onkeydown="if(event.key==='Enter')send()">
+  <button id="send" onclick="send()">전송</button>
+</div>
+
+<script>
+var chatEl = document.getElementById('chat');
+var inpEl  = document.getElementById('inp');
+var sendEl = document.getElementById('send');
+
+function q(text){ inpEl.value=text; send(); }
+
+function scrollBot(){ chatEl.scrollTop=chatEl.scrollHeight; }
+
+function addMsg(html, isUser) {
+  var d=document.createElement('div');
+  d.className='msg '+(isUser?'user':'bot');
+  d.innerHTML=html;
+  chatEl.appendChild(d);
+  scrollBot();
+  return d;
+}
+
+function userBubble(text){ return '<div class="bubble bubble-user">'+esc(text)+'</div>'; }
+
+function send() {
+  var text=inpEl.value.trim();
+  if(!text) return;
+  inpEl.value=''; inpEl.disabled=true; sendEl.disabled=true;
+  addMsg(userBubble(text), true);
+  var ld=addMsg('<div class="loading">분석 중... 💬</div>', false);
+
+  google.script.run
+    .withSuccessHandler(function(res){
+      ld.remove();
+      renderResponse(res);
+      inpEl.disabled=false; sendEl.disabled=false; inpEl.focus();
+    })
+    .withFailureHandler(function(e){
+      ld.remove();
+      addMsg('<div class="bubble bubble-bot" style="color:red">오류: '+esc(String(e.message||e))+'</div>',false);
+      inpEl.disabled=false; sendEl.disabled=false;
+    })
+    .botQuery(text);
+}
+
+function renderResponse(raw) {
+  var data;
+  try { data=JSON.parse(raw); } catch(e){ addMsg('<div class="bubble bubble-bot">'+esc(raw)+'</div>',false); return; }
+
+  if(data.type==='TEXT') {
+    var rawMsg = data.msg;
+    var suggestionRegex = /\[EDIT_SUGGESTION:\s*({[\s\S]*?})\s*\]/;
+    var match = rawMsg.match(suggestionRegex);
+    
+    if (match) {
+      var cleanMsg = rawMsg.replace(suggestionRegex, '').trim();
+      addMsg('<div class="bubble bubble-bot">'+esc(cleanMsg)+'</div>', false);
+      
+      try {
+        var suggestion = JSON.parse(match[1]);
+        var changes = suggestion.changes || [];
+        if (changes.length > 0) {
+          // 프리미엄 모노크롬 카드 UI
+          var cardHtml = '<div class="tbl-wrap" style="border:2px dashed #0f172a; background:#f8fafc; margin-top:5px; padding:12px;">' +
+                         '<div class="tbl-title" style="color:#0f172a; font-size:12px; font-weight:700; display:flex; align-items:center; gap:4px; margin-bottom:8px;">' +
+                         '🤖 AI 수정 제안 (' + changes.length + '건)</div>' +
+                         '<table style="font-size:10px; margin-bottom:10px; border-collapse:collapse; width:100%;">' +
+                         '<thead><tr style="background:#0f172a; color:#fff;"><th style="padding:4px;">품목코드</th><th style="padding:4px;">품목명</th><th style="padding:4px;">항목</th><th style="padding:4px;">현재</th><th style="padding:4px;">변경안</th></tr></thead>' +
+                         '<tbody>';
+          
+          changes.forEach(function(ch) {
+            cardHtml += '<tr>' +
+                        '<td style="padding:3px; border-bottom:1px solid #e2e8f0;">' + esc(ch.code) + '</td>' +
+                        '<td style="padding:3px; border-bottom:1px solid #e2e8f0;">' + esc(ch.name) + '</td>' +
+                        '<td style="padding:3px; border-bottom:1px solid #e2e8f0; font-weight:600;">' + esc(ch.colName) + '</td>' +
+                        '<td style="padding:3px; border-bottom:1px solid #e2e8f0; text-decoration:line-through; color:#94a3b8;">' + esc(ch.oldVal) + '</td>' +
+                        '<td style="padding:3px; border-bottom:1px solid #e2e8f0; font-weight:700; color:#198754;">' + esc(ch.newVal) + '</td>' +
+                        '</tr>';
+          });
+          
+          cardHtml += '</tbody></table>';
+          var changesJson = JSON.stringify(changes);
+          cardHtml += '<div class="confirm-btns" style="margin-top:8px; display:flex; gap:6px;" data-changes="' + esc(changesJson) + '">' +
+                      '<button class="btn-ok" style="background:#0f172a; color:#fff; border:none; border-radius:4px; padding:4px 10px; cursor:pointer; font-size:11px;" onclick="doAISuggestedEdit(this)">✅ 제안 적용</button>' +
+                      '<button class="btn-no" style="background:#94a3b8; color:#fff; border:none; border-radius:4px; padding:4px 10px; cursor:pointer; font-size:11px;" onclick="this.closest(\'.tbl-wrap\').remove()">❌ 취소</button>' +
+                      '</div></div>';
+          addMsg(cardHtml, false);
+        }
+      } catch (err) {
+        console.error('AI 제안 파싱 에러:', err);
+      }
+    } else {
+      addMsg('<div class="bubble bubble-bot">'+esc(rawMsg)+'</div>', false);
+    }
+
+  } else if(data.type==='TABLE') {
+    var rows=data.rows||[];
+    var html='<div class="tbl-wrap"><div class="tbl-title">'+esc(data.title)+'</div>';
+    if(data.total>rows.length) html+='<div class="tbl-count">전체 '+data.total+'건 중 상위 '+rows.length+'건 표시</div>';
+    html+='<table><thead><tr>';
+    (data.cols||[]).forEach(function(c){ html+='<th>'+esc(c)+'</th>'; });
+    html+='<th></th></tr></thead><tbody>';
+    rows.forEach(function(r){
+      html+='<tr>';
+      var rowNum=r[r.length-1]; // 마지막이 rowNum
+      for(var i=0;i<r.length-1;i++) html+='<td>'+esc(String(r[i]||''))+'</td>';
+      html+='<td><button class="edit-btn" onclick="openEdit('+rowNum+',\''+esc(String(r[0]||''))+'\')">✏️</button></td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table></div>';
+    addMsg(html,false);
+
+  } else if(data.type==='DETAIL') {
+    var html='<div class="detail-wrap"><div class="detail-title">📦 '+esc(data.code)+'</div>';
+    (data.info||[]).forEach(function(item){
+      html+='<div class="detail-row"><span class="detail-key">'+esc(item.k)+'</span><span class="detail-val">'+esc(item.v)+'</span></div>';
+    });
+    html+='<br><button class="edit-btn" style="font-size:11px;padding:4px 10px" onclick="openEdit('+data.rowNum+',\''+esc(data.code)+'\')">✏️ 이 품목 수정</button>';
+    html+='</div>';
+    addMsg(html,false);
+
+  } else if(data.type==='EDIT_CONFIRM') {
+    var html='<div class="confirm-box"><div class="confirm-title">✏️ 수정 확인</div>'+
+      '<div style="white-space:pre-wrap;font-size:12px">'+esc(data.msg)+'</div>'+
+      '<div class="confirm-btns">'+
+      '<button class="btn-ok" onclick="doEdit('+data.rowNum+','+data.colNum+','+JSON.stringify(data.newVal)+',this)">✅ 확인</button>'+
+      '<button class="btn-no" onclick="this.parentElement.parentElement.remove()">❌ 취소</button>'+
+      '</div></div>';
+    addMsg(html,false);
+
+  } else if(data.type==='BULK_EDIT_CONFIRM') {
+    var rows=data.rows||[];
+    // ★ changes를 data- 속성에 저장 (HTML 이스케이프 이중처리 문제 방지)
+    var changesJson = JSON.stringify(data.changes||[]);
+    var html='<div class="tbl-wrap" style="border:2px solid #ffc107" data-changes="'+esc(changesJson)+'">';
+    html+='<div class="tbl-title" style="color:#856404">⚠️ '+esc(data.title)+'</div>';
+    if(data.total>rows.length)
+      html+='<div class="tbl-count">전체 <b>'+data.total+'건</b> 수정 예정 (미리보기: '+rows.length+'건)</div>';
+    else
+      html+='<div class="tbl-count">수정 대상: <b>'+data.total+'건</b></div>';
+    html+='<table><thead><tr>';
+    (data.cols||[]).forEach(function(c){ html+='<th>'+esc(c)+'</th>'; });
+    html+='</tr></thead><tbody>';
+    rows.forEach(function(r){
+      html+='<tr>';
+      for(var i=0;i<r.length;i++){
+        var cell=esc(String(r[i]||''));
+        html+= i===r.length-1
+          ? '<td style="color:#198754;font-weight:700">'+cell+'</td>'
+          : '<td>'+cell+'</td>';
+      }
+      html+='</tr>';
+    });
+    html+='</tbody></table>';
+    html+='<div class="confirm-btns" style="margin-top:10px">';
+    html+='<button class="btn-ok" onclick="doBulkEdit(this)">✅ '+data.total+'건 전체 적용</button>';
+    html+='<button class="btn-no" onclick="this.closest(\'[class*=tbl-wrap]\').remove()">❌ 취소</button>';
+    html+='</div></div>';
+    addMsg(html,false);
+  }
+}
+
+function doEdit(rowNum, colNum, newVal, btn) {
+  btn.disabled=true; btn.textContent='처리중...';
+  var box=btn.closest('.confirm-box');
+  google.script.run
+    .withSuccessHandler(function(res){
+      box.remove();
+      renderResponse(res);
+    })
+    .withFailureHandler(function(e){
+      addMsg('<div class="bubble bubble-bot" style="color:red">수정 실패: '+esc(String(e.message||e))+'</div>',false);
+    })
+    .botEdit(rowNum, colNum, newVal);
+}
+
+function doBulkEdit(btn) {
+  btn.disabled=true; btn.textContent='적용 중...';
+  var box=btn.closest('.tbl-wrap');
+  // data-changes 속성에서 JSON 가져오기 (HTML 이스케이프 문제 없음)
+  var changesJson = box.getAttribute('data-changes') || '[]';
+  google.script.run
+    .withSuccessHandler(function(res){
+      box.remove();
+      renderResponse(res);
+    })
+    .withFailureHandler(function(e){
+      btn.disabled=false; btn.textContent='재시도';
+      addMsg('<div class="bubble bubble-bot" style="color:red">일괄수정 실패: '+esc(String(e.message||e))+'</div>',false);
+    })
+    .botBulkEdit(changesJson);
+}
+
+var editRowNum=null;
+function openEdit(rowNum, code) {
+  editRowNum=rowNum;
+  var col=prompt(code+' 수정할 항목 이름:\n(판매가 / 개당매입가 / 재고수량)');
+  if(!col) return;
+  var val=prompt(col+' 새 값:');
+  if(val===null||val==='') return;
+  var num=parseFloat(String(val).replace(/,/g,''));
+  if(isNaN(num)){ alert('숫자만 입력 가능합니다.'); return; }
+  q(code+' '+col+' '+num+'으로 수정');
+}
+
+function doAISuggestedEdit(btn) {
+  btn.disabled = true;
+  btn.textContent = '적용 중...';
+  var container = btn.closest('.tbl-wrap');
+  var changesJson = btn.parentElement.getAttribute('data-changes') || '[]';
+  
+  google.script.run
+    .withSuccessHandler(function(res) {
+      container.remove();
+      renderResponse(res);
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      btn.textContent = '재시도';
+      addMsg('<div class="bubble bubble-bot" style="color:red">수정 적용 실패: ' + esc(String(e.message || e)) + '</div>', false);
+    })
+    .botBulkEdit(changesJson);
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>

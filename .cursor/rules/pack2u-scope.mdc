@@ -1,0 +1,25 @@
+---
+description: Pack2U 작업 범위 제한 — 협력업체 시스템 전용
+alwaysApply: true
+---
+
+# 작업 범위: 협력업체 시스템만
+
+## 절대 규칙
+- 모든 코드 수정은 **협력업체 시스템**에만 적용한다.
+- **독립배포 시스템**(`orderSyncManager.gs`, `salesUploadFromIntegratedOrders.gs`, `통합 발주 DB` 관련)은 사용자가 명시적으로 요청하지 않는 한 **건드리지 않는다**.
+
+## 협력업체 시스템 핵심 파일
+- `_partnerOrders.gs` — 발주 수집
+- `_partnerExclusivePush.gs` — 대리공급 발주 Push
+- `_partnerExclusiveArchive.gs` — 전용양식 마감 이동
+- `_partnerDeploy.gs` — 배포 시트 생성/갱신
+- `_partnerMenu.gs` — 메뉴
+- `_partnerHelpers.gs`, `_partnerMaintenance.gs` — 유틸/유지보수
+- `priceManager.gs` — 허브 단가 관리 (협력업체용)
+
+## 독립배포 시스템 (수정 금지)
+- `orderSyncManager.gs`
+- `salesUploadFromIntegratedOrders.gs`
+- `vendorCustCodeManager.gs`
+- `통합 발주 DB`, `이카운트-판매현황업로드용` 관련 로직

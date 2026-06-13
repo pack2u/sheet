@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=device-width, initial-scale=1.0">
+  <title>Pack2U 협력업체 시스템 종합 기술 명세 및 운영설명서</title>
+  <!-- Google Fonts: Outfit & Noto Sans KR -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Noto+Sans+KR:wght@300;400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-color: #080b11;
+      --panel-bg: rgba(13, 18, 30, 0.75);
+      --border-color: rgba(255, 255, 255, 0.07);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent-blue: #3b82f6;
+      --accent-purple: #8b5cf6;
+      --accent-glow: rgba(59, 130, 246, 0.25);
+      --success-color: #10b981;
+      --warning-color: #f59e0b;
+      --danger-color: #ef4444;
+      --sidebar-width: 290px;
+      --transition-speed: 0.25s;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      display: flex;
+      min-height: 100vh;
+      line-height: 1.625;
+    }
+
+    /* Scrollbar Styling */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.01);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    /* Sidebar Layout */
+    .sidebar {
+      width: var(--sidebar-width);
+      background-color: #0b0f19;
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      height: 100vh;
+      left: 0;
+      top: 0;
+      z-index: 100;
+      padding: 2.25rem 1.5rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 2.5rem;
+      padding-left: 0.5rem;
+    }
+
+    .brand-icon {
+      width: 28px;
+      height: 28px;
+      fill: none;
+      stroke: var(--accent-blue);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 0 8px var(--accent-glow));
+    }
+
+    .brand-name {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #ffffff 30%, var(--text-muted) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Search Box in Sidebar */
+    .search-box {
+      position: relative;
+      margin-bottom: 1.5rem;
+      padding: 0 0.25rem;
+    }
+
+    .search-input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 0.65rem 0.75rem 0.65rem 2.25rem;
+      color: var(--text-main);
+      font-size: 0.85rem;
+      font-family: inherit;
+      outline: none;
+      transition: all var(--transition-speed);
+    }
+
+    .search-input:focus {
+      border-color: var(--accent-blue);
+      background: rgba(255, 255, 255, 0.05);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 14px;
+      height: 14px;
+      stroke: var(--text-muted);
+      stroke-width: 2;
+      fill: none;
+      pointer-events: none;
+    }
+
+    .nav-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      overflow-y: auto;
+      flex: 1;
+      padding-right: 0.25rem;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 0.75rem 0.85rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition-speed);
+      border: 1px solid transparent;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .nav-item svg {
+      width: 18px;
+      height: 18px;
+      stroke: var(--text-muted);
+      stroke-width: 1.8;
+      fill: none;
+      flex-shrink: 0;
+      transition: stroke var(--transition-speed);
+    }
+
+    .nav-item:hover {
+      color: var(--text-main);
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    .nav-item.active {
+      color: var(--text-main);
+      background-color: rgba(59, 130, 246, 0.08);
+      border-color: rgba(59, 130, 246, 0.18);
+    }
+
+    .nav-item.active svg {
+      stroke: var(--accent-blue);
+      filter: drop-shadow(0 0 4px var(--accent-glow));
+    }
+
+    /* Main Content Layout */
+    .main-content {
+      margin-left: var(--sidebar-width);
+      flex: 1;
+      padding: 3rem 4.5rem;
+      max-width: 1250px;
+      min-height: 100vh;
+    }
+
+    header {
+      margin-bottom: 3rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 2rem;
+    }
+
+    .subtitle {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--accent-purple);
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-size: 2.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+      background: linear-gradient(to right, #ffffff, #a5b4fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .header-desc {
+      color: var(--text-muted);
+      font-size: 1rem;
+      max-width: 900px;
+    }
+
+    /* Content Section */
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Cards */
+    .card {
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      padding: 2.25rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.25);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 0.75rem;
+      color: #ffffff;
+    }
+
+    .card-title svg {
+      width: 22px;
+      height: 22px;
+      stroke: var(--accent-blue);
+      stroke-width: 2;
+      fill: none;
+    }
+
+    .section-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 1.75rem 0 0.75rem 0;
+      color: #e5e7eb;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .section-title::before {
+      content: "";
+      display: inline-block;
+      width: 3px;
+      height: 14px;
+      background-color: var(--accent-purple);
+      border-radius: 2px;
+    }
+
+    /* Tables */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 1.25rem 0 1.75rem 0;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .spec-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.85rem;
+    }
+
+    .spec-table th {
+      background-color: rgba(255, 255, 255, 0.025);
+      color: #ffffff;
+      font-weight: 600;
+      padding: 0.85rem 1.15rem;
+      border-bottom: 1px solid var(--border-color);
+      white-space: nowrap;
+    }
+
+    .spec-table td {
+      padding: 0.85rem 1.15rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-muted);
+      vertical-align: middle;
+    }
+
+    .spec-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .spec-table tr:hover td {
+      background-color: rgba(255, 255, 255, 0.015);
+      color: var(--text-main);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.2rem 0.5rem;
+      border-radius: 5px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      font-family: monospace;
+    }
+
+    .badge-blue { background: rgba(59, 130, 246, 0.08); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.18); }
+    .badge-purple { background: rgba(139, 92, 246, 0.08); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.18); }
+    .badge-green { background: rgba(16, 185, 129, 0.08); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.18); }
+    .badge-yellow { background: rgba(245, 158, 11, 0.08); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.18); }
+    .badge-red { background: rgba(239, 68, 68, 0.08); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.18); }
+
+    /* Callout */
+    .callout {
+      border-left: 3px solid var(--accent-purple);
+      background-color: rgba(139, 92, 246, 0.02);
+      padding: 1.15rem 1.25rem;
+      border-radius: 0 10px 10px 0;
+      margin: 1.5rem 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.02);
+      border-right: 1px solid rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+    }
+
+    .callout-title {
+      font-weight: 600;
+      color: #e5e7eb;
+      margin-bottom: 0.25rem;
+      font-size: 0.9rem;
+    }
+
+    .callout-desc {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    /* Flow Layout */
+    .flow-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      margin: 1.75rem 0;
+    }
+
+    .flow-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 1.25rem;
+      position: relative;
+    }
+
+    .flow-card:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      left: 15px;
+      top: 32px;
+      bottom: -22px;
+      width: 2px;
+      background: linear-gradient(to bottom, var(--accent-purple), rgba(255,255,255,0.02));
+    }
+
+    .flow-idx {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background-color: rgba(139, 92, 246, 0.06);
+      border: 2.2px solid var(--accent-purple);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #ffffff;
+      flex-shrink: 0;
+      box-shadow: 0 0 8px rgba(139, 92, 246, 0.2);
+    }
+
+    .flow-body {
+      background-color: rgba(255, 255, 255, 0.01);
+      border: 1px solid rgba(255, 255, 255, 0.03);
+      border-radius: 10px;
+      padding: 1.15rem;
+      flex: 1;
+    }
+
+    .flow-body h5 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+      color: #ffffff;
+    }
+
+    .flow-body p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* Utilities */
+    .code {
+      font-family: 'Fira Code', monospace;
+      font-size: 0.82rem;
+      color: #e5e7eb;
+      background-color: rgba(255, 255, 255, 0.06);
+      padding: 0.12rem 0.35rem;
+      border-radius: 4px;
+    }
+
+    .highlight {
+      color: #ffffff;
+      font-weight: 500;
+    }
+
+    p {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Grid Layout */
+    .grid-col-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 1024px) {
+      .grid-col-2 { grid-template-columns: 1fr; }
+      body { flex-direction: column; }
+      .sidebar { width: 100%; height: auto; position: relative; padding: 1.5rem; border-bottom: 1px solid var(--border-color); }
+      .main-content { margin-left: 0; padding: 2rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-icon" viewBox="0 0 24 24">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+      <span class="brand-name">Pack2U Tech Spec</span>
+    </div>
+    
+    <!-- Sidebar Search -->
+    <div class="search-box">
+      <input type="text" id="menu-search" class="search-input" placeholder="함수, 키워드 검색...">
+      <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </div>
+    
+    <nav style="flex: 1; overflow-y: auto;">
+      <ul class="nav-list" id="nav-list">
+        <li>
+          <a class="nav-item active" data-tab="tab-architecture">
+            <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            1. 시스템 아키텍처
+          </a>
+        </li>
+        <li>
+          <a class="nav-item" data-tab="tab-deployed-sheet">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
+            2. 협력업체 배포시트 구조
+          </a>
+        </li>
+        <li>
+          <a class="nav-item" data-tab="tab-core-sync">
+            <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            3. 발주 Push &amp; 송장 회수
+          </a>
+        </li>
+        <li>
+          <a class="nav-item" data-tab="tab-function-ref">
+            <svg viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6L2 12l6 6"/></svg>
+            4. 주요 코드 함수 레퍼런스
+          </a>
+        </li>
+        <li>
+          <a class="nav-item" data-tab="tab-troubleshoot">
+            <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            5. 운영 장애 대응 가이드
+          </a>
+        </li>
+      </ul>
+    </nav>
+    
+    <div class="sidebar-footer">
+      System Engineering Doc<br>Confidential • Pack2U
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="main-content">
+    
+    <!-- HEADER -->
+    <header>
+      <div class="subtitle" id="sub-title">1. System Architecture Specification</div>
+      <h1 id="main-title">1. 시스템 아키텍처 및 연동 흐름</h1>
+      <p class="header-desc" id="main-desc">중앙 데이터 허브와 각 협력업체 배포 시트 간의 데이터 통신, API 통합 및 트랜잭션 동기화 사양 문서입니다.</p>
+    </header>
+
+    <!-- TAB 1: ARCHITECTURE SPEC -->
+    <section id="tab-architecture" class="tab-content active">
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          시스템 관계도 및 데이터 바인딩
+        </div>
+        <p>본 시스템은 중앙 제어용 <span class="highlight">Pack2U 상품정보 스프레드시트</span>와 협력업체가 운영하는 독립적인 <span class="highlight">배포 스프레드시트</span>들을 유기적으로 결합한 다중 인스턴스 구조입니다. 보안 취약성을 극복하고 가볍고 빠른 응답성을 보장하기 위해 설계되었습니다.</p>
+        
+        <div class="callout">
+          <div class="callout-title">🔒 보안 격리 설계 (Anti-Leak Policy)</div>
+          <div class="callout-desc">
+            과거에는 모든 업체 매핑 정보가 담긴 시트를 IMPORTRANGE로 불러왔으나, 타 업체 거래처명/파일 ID가 유출될 위험이 존재했습니다.<br>
+            현재는 <strong>로컬 파일 내 설정 탭(B5 셀)</strong>에서 자기 업체의 거래처명만 직접 읽어오는 방식으로 개선되어 정보 유출 경로를 원천 차단했습니다.
+          </div>
+        </div>
+
+        <div class="flow-wrap">
+          <div class="flow-card">
+            <div class="flow-idx">1</div>
+            <div class="flow-body">
+              <h5>중앙 데이터 기지 (허브 파일 구축)</h5>
+              <p>상품정보시트에서 <code class="code-span">createStaticHub()</code>를 구동하여 중앙 허브를 생성하며, 모든 업체별 그룹 단가(VIP, A, B 등)와 소비자가격, 상태(품절/단종/재고까지만)를 1행부터 기록 및 통합 유지합니다.</p>
+            </div>
+          </div>
+          <div class="flow-card">
+            <div class="flow-idx">2</div>
+            <div class="flow-body">
+              <h5>독립 배포시트 동기화 (IMPORTRANGE 바인딩)</h5>
+              <p>배포된 협력업체 시트의 뷰어는 중앙 단가표를 실시간 IMPORTRANGE로 로드합니다. 이때, 뷰어 3행에 숨겨진 ARRAYFORMULA들이 이카운트 코드를 기반으로 품목명, 단가, 재고를 자동 출력합니다.</p>
+            </div>
+          </div>
+          <div class="flow-card">
+            <div class="flow-idx">3</div>
+            <div class="flow-body">
+              <h5>실시간 발주 트랜잭션 수집 (Fetch &amp; Push)</h5>
+              <p>5분 주기의 시간 트리거와 수동 매뉴얼 제어를 통해 중앙에서 업체별 미처리 발주를 수집 후 각 업체 전용 파일에 분배 기입합니다. 이후 업체가 송장을 채우면 이를 역수집하여 ERP 연동을 마칩니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+          시스템 주요 상수 정의 (Configuration)
+        </div>
+        <p>각 스크립트 모듈에서 정의된 파일 ID 및 주요 전역 식별자 상수 정보입니다.</p>
+        <div class="table-wrapper">
+          <table class="spec-table">
+            <thead>
+              <tr>
+                <th>상수 식별자</th>
+                <th>설정 값 (Value)</th>
+                <th>용도 설명</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="code">_PT.HUB_ID</td>
+                <td>1qRIEw--DcF44CqiO24C9vI74pYbN8VbqCimjNuHK5fk</td>
+                <td>중앙 단가/상태 정보가 기록되는 구글 스프레드시트 ID</td>
+              </tr>
+              <tr>
+                <td class="code">_PT.INFO_SS_ID</td>
+                <td>1Lz-ykUAQBpeEnZU1T_qdJeX9d9L10h6z6qYwHQna2QE</td>
+                <td>Pack2U 상품정보 본체 스프레드시트 ID</td>
+              </tr>
+              <tr>
+                <td class="code">_PT.TEMPLATE_ID</td>
+                <td>1ZT9hqXXOSuSYRS6gYaJUhvVpTHDql6HokqExJdPcbiA</td>
+                <td>신규 협력업체 파일 생성 시 활용되는 복사용 원본 템플릿 ID</td>
+              </tr>
+              <tr>
+                <td class="code">_PT.FOLDER_ID / FOLDER_ID2</td>
+                <td>1IqqPL... / 1J0f8H...</td>
+                <td>협력업체 배포 파일들이 보관 및 생성되는 구글 드라이브 폴더 ID</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: DEPLOYED SHEET SPEC -->
+    <section id="tab-deployed-sheet" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+          협력업체 배포용 파일 내부 탭 사양
+        </div>
+        <p>협력업체에 생성/배포되는 시트 파일 내부에는 역할에 따라 격리된 4개의 기본 시트 탭이 활성화되어 작동합니다.</p>
+        
+        <div class="section-title">1. [업체명] 뷰어 (단가 및 상태 조회 탭)</div>
+        <p>중앙 허브의 단가표와 1:1 결합되는 탭입니다. 2행 헤더 영역과 3행 수식 영역으로 나뉘며 3행은 외부 편집 방지를 위해 숨김 및 시트 보호가 적용되어 있습니다.</p>
+        <div class="table-wrapper">
+          <table class="spec-table">
+            <thead>
+              <tr>
+                <th>열 위치</th>
+                <th>헤더 명칭</th>
+                <th>동작 제어 (3행 주입 수식 및 논리)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="code">A열</td>
+                <td>상태</td>
+                <td><code class="code-span">=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, IDs, Hub!A:A)), "-")))</code> (품절, 단종 표시)</td>
+              </tr>
+              <tr>
+                <td class="code">B열</td>
+                <td>출고지</td>
+                <td><code class="code-span">=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, IDs, Hub!B:B)), "-")))</code></td>
+              </tr>
+              <tr>
+                <td class="code">C열</td>
+                <td>이카운트코드</td>
+                <td><span class="badge badge-yellow">수동 입력 열</span> 사용자가 직접 입력/검색하는 필드</td>
+              </tr>
+              <tr>
+                <td class="code">D열</td>
+                <td>품목명</td>
+                <td>이카운트코드를 인덱스로 허브 품목명 자동 바인딩</td>
+              </tr>
+              <tr>
+                <td class="code">E열</td>
+                <td>재고</td>
+                <td>허브의 해당 품목 재고 수량 연동</td>
+              </tr>
+              <tr>
+                <td class="code">F열</td>
+                <td>소비자가</td>
+                <td>허브의 소비자가 연동</td>
+              </tr>
+              <tr>
+                <td class="code">G열</td>
+                <td>최종단가</td>
+                <td>
+                  <strong>일반형:</strong> K2에 입력된 그룹 열 인덱스를 동적으로 치환해 해당 그룹 단가 표출<br>
+                  <strong>소비자용:</strong> 소비자가(F열) * 할인율 계산 후 <code class="code-span">ROUNDUP(..., -2)</code>로 100원 단위 올림 처리
+                </td>
+              </tr>
+              <tr>
+                <td class="code">H열</td>
+                <td>단가변동</td>
+                <td><code class="code-span">최종단가(G) - 지난단가(I)</code> 계산값 (변동 없을 시 "-" 출력)</td>
+              </tr>
+              <tr>
+                <td class="code">I열</td>
+                <td>지난단가</td>
+                <td><code class="code-span">K2 + 2</code>열을 타겟으로 지난 시즌 단가 연동</td>
+              </tr>
+              <tr>
+                <td class="code">J열</td>
+                <td>익월변동단가</td>
+                <td><code class="code-span">K2 + 4</code>열의 예고 단가 표출 (변동값 없을 시 "-" 출력)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section-title">2. 발주 및 송장조회 (표준 발주 입력 탭)</div>
+        <p>협력업체가 직접 발주를 넣고 송장번호를 피드백하는 표준 규격 시트입니다. **A열(거래처명), B열(주문일자), L열(정산금액), M열(고유ID), N열(상태)**은 뷰어 및 메타 데이터를 참조하여 자동으로 채워집니다.</p>
+        
+        <div class="callout">
+          <div class="callout-title">⚡ Spill 수식 주입 사양 (_pt_injectOrderSpillFormulas)</div>
+          <div class="callout-desc">
+            • A열: <code class="code-span">=ARRAYFORMULA(IF(C2:C="", "", AA1))</code> (AA1 메타 셀의 업체명을 수집)<br>
+            • L열: <code class="code-span">=ARRAYFORMULA(IF(C2:C="", "", IFERROR(E2:E * XLOOKUP(C2:C, 뷰어!C:C, 뷰어!G:G, 0), 0)))</code> (수량 × 뷰어의 해당 단가 실시간 연산)<br>
+            • N열: <code class="code-span">=ARRAYFORMULA(IF(C2:C="", "", IFERROR(XLOOKUP(C2:C, 뷰어!C:C, 뷰어!A:A), "-")))</code> (뷰어 상태 컬럼 참조)
+          </div>
+        </div>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          소비자용 배포시트의 가상 단가 제어 (K2 NNN 기법)
+        </div>
+        <p>소비자가 기반 할인 시트의 경우, 매번 수식을 개별 작성하지 않고 **K2 셀의 값을 활용해 할인율을 식별**하도록 고안되었습니다.</p>
+        <ul class="styled-list">
+          <li>소비자용 시트는 K2 셀에 <code class="code-span">할인율 * 111</code> 형태로 저장됩니다. (예: 5% 할인인 경우 <code class="code-span">K2 = 555</code>, 7.5%인 경우 <code class="code-span">K2 = 777</code>)</li>
+          <li>수식 복구 및 재생성 스크립트 구동 시, K2 값을 바탕으로 할인율을 계산(<code class="code-span">dcRate = Math.round(K2 / 111)</code>)하여 3행의 최종단가(G열)에 곱해질 수식을 실시간 갱신합니다.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- TAB 3: CORE SYNC LOGIC -->
+    <section id="tab-core-sync" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+          1. 대리공급업체 발주 Push 상세 명세
+        </div>
+        <p>이카운트 양식의 발주 원천 데이터를 분석하여 협력업체별 전용양식 탭으로 분기 주입하는 정밀 트랜잭션 과정입니다.</p>
+        
+        <div class="flow-wrap">
+          <div class="flow-card">
+            <div class="flow-idx">1</div>
+            <div class="flow-body">
+              <h5>업체 파일 수신처 확인 (Prefix Mapping)</h5>
+              <p>D열의 품목코드 맨 앞 2자리(예: NK, HR, BW)를 추출해 매핑 딕셔너리(<code class="code-span">_PEP_VENDOR_DIRECT_MAP_</code>)와 드라이브 경로를 교차 탐색하여 수신할 타겟 파일 ID를 식별합니다.</p>
+            </div>
+          </div>
+          <div class="flow-card">
+            <div class="flow-idx">2</div>
+            <div class="flow-body">
+              <h5>중복 발주 필터링 (Composite Dedup Key)</h5>
+              <p>사방넷주문번호(UID)와 품목 별칭 테이블에서 치환된 협력업체 품목코드를 결합하여 복합 고유키(<code class="code-span">UID|코드</code>)를 조합합니다. 대상 시트의 49번째 열(AX열)에 이미 존재하는 동일 키가 있을 경우, 중복 접수로 판단하여 전송에서 제외합니다.</p>
+            </div>
+          </div>
+          <div class="flow-card">
+            <div class="flow-idx">3</div>
+            <div class="flow-body">
+              <h5>전화번호 유실 방지 및 교대 색상 서식화</h5>
+              <p>수취인 연락처 열을 숫자로 저장 시 앞자리의 "0"이 탈락되는 현상을 완벽 차단하기 위해, 해당 범위에 미리 <code class="code-span">setNumberFormat("@")</code>을 일괄 지정합니다. 또한, 발송 배치를 시각적으로 구분하도록 매 Push 건마다 짝수/홀수 행 배경색(#efefef / #ffffff)을 다르게 지정합니다.</p>
+            </div>
+          </div>
+          <div class="flow-card">
+            <div class="flow-idx">4</div>
+            <div class="flow-body">
+              <h5>임시 기록 탭 백업 및 진행상태 표시</h5>
+              <p>Push가 정상 처리되면 <code class="code-span">대리공급_임시기록</code> 시트의 마지막 행 아래에 기록을 덧붙입니다. P열에 고유ID(UID), W열에 prefix, Y열에 진행상태인 **"발주완료"** 상태를 즉시 기록해 둡니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          2. 송장번호 역수집 (Fetch Invoices)
+        </div>
+        <p>각 협력업체가 자신의 배포 파일에 입력한 송장번호를 중앙 시트로 긁어와 이카운트 ERP 전표 업로드가 가능한 완성 상태로 가공하는 과정입니다.</p>
+        <ul class="styled-list">
+          <li><span class="highlight">작동 함수:</span> <code class="code-span">partnerFetchInvoices()</code>가 주기적으로 활성화됩니다.</li>
+          <li><span class="highlight">역수집 키 매칭:</span> 각 업체 시트의 전용양식 AX열(50번째 열)에 저장된 원본 고유 ID(UID)를 바탕으로 데이터 쌍을 맞춥니다.</li>
+          <li><span class="highlight">동기화 로직:</span> 송장번호가 채워지는 즉시 중앙 <code class="code-span">협력업체_발주허브</code>의 N열에 기입하며, 동시에 백업 시트인 <code class="code-span">대리공급_임시기록</code>의 X열에 해당 송장번호를 써넣고 Y열의 진행상태를 <span class="badge badge-green">송장수집</span>으로 전환시킵니다.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- TAB 4: FUNCTION REFERENCE -->
+    <section id="tab-function-ref" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          구글 앱스 스크립트 주요 핵심 함수 레퍼런스
+        </div>
+        <p>시스템에 구현된 각 주요 모듈별 엔트리포인트 및 핵심 로직 함수 정의 목록입니다.</p>
+        
+        <div class="section-title">발주 수집 및 Push 모듈 (_partnerOrders.gs / _partnerExclusivePush.gs)</div>
+        <div class="table-wrapper">
+          <table class="spec-table">
+            <thead>
+              <tr>
+                <th>함수명</th>
+                <th>반환/인자</th>
+                <th>수행 동작 및 핵심 기능 설명</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="code highlight">partnerCollectOrders()</td>
+                <td>void</td>
+                <td>대리공급업체 발주 시트의 신규 행을 취합해 '협력업체_발주허브' 중앙 DB로 긁어옵니다.</td>
+              </tr>
+              <tr>
+                <td class="code highlight">partnerPushOrdersToExclusiveForms()</td>
+                <td>void</td>
+                <td>각 협력업체 뷰어의 매핑 템플릿에 근거해 전용양식 시트로 중복 제외(UID 대조) 발주를 Push합니다.</td>
+              </tr>
+              <tr>
+                <td class="code highlight">partnerFetchInvoices()</td>
+                <td>void</td>
+                <td>각 협력업체 파일에 기록된 송장(운송장)번호를 대조해 중앙 발주허브 및 임시기록 탭에 역기록합니다.</td>
+              </tr>
+              <tr>
+                <td class="code highlight">_po_checkNonPartnerTempTabMatches_()</td>
+                <td>void</td>
+                <td>카카오 송장매칭 등으로 매칭된 일반 송장을 대조해 대리공급_임시기록 Y열 진행상태를 '송장수집'으로 전환합니다.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section-title">정기 마감 및 아카이빙 모듈 (_partnerMonthlySettle.gs / _partnerExclusiveArchive.gs / hubOrderArchive.gs)</div>
+        <div class="table-wrapper">
+          <table class="spec-table">
+            <thead>
+              <tr>
+                <th>함수명</th>
+                <th>반환/인자</th>
+                <th>수행 동작 및 핵심 기능 설명</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="code highlight">partnerArchiveToMonthlySettle()</td>
+                <td>void</td>
+                <td>협력업체 발주 및 송장조회에서 송장 완료된 과거 건을 월별 정산 마감 탭으로 이관하고 원본을 초기화합니다.</td>
+              </tr>
+              <tr>
+                <td class="code highlight">partnerArchiveExclusiveForm()</td>
+                <td>void</td>
+                <td>업체 파일 내 전용양식 탭의 완료 데이터를 '전용발주 마감' 탭으로 이관 후 소스의 Push 식별용 ID를 공백 리셋합니다.</td>
+              </tr>
+              <tr>
+                <td class="code highlight">archiveHubIntegratedOrders()</td>
+                <td>void</td>
+                <td>중앙 허브의 과거 완료 건 전체를 추출해 외부 아카이브 스프레드시트 파일로 내보내고 허브 시트의 행을 삭제합니다.</td>
+              </tr>
+              <tr>
+                <td class="code highlight">partnerDailyArchiveAll()</td>
+                <td>void</td>
+                <td>위의 마감 함수 3개와 임시기록 탭 청소 로직을 하나의 잠금(Lock) 하에 연속적으로 구동하는 통합 마감 핸들러입니다.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: TROUBLESHOOTING GUIDE -->
+    <section id="tab-troubleshoot" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+          연동 장애 발생 유형별 진단 및 조치법
+        </div>
+        <p>운영 환경에서 발생할 수 있는 주요 예외 상황과 복구 툴 사용 방법입니다.</p>
+
+        <div class="section-title">1. 다른 사무실이나 기기에서 연동이 차단될 때 (권한 오류)</div>
+        <p>구글 스프레드시트 API 연동은 실행 주체의 구글 계정 토큰을 거치기 때문에, 접속 장소나 주체가 바뀔 시 OAuth 보안 경고로 중단될 수 있습니다.</p>
+        <div class="callout" style="border-left-color: var(--danger-color);">
+          <div class="callout-title">🚨 해결 프로세스</div>
+          <div class="callout-desc">
+            1. 스프레드시트 메뉴 상단에서 <strong>[🛠️ AS / 진단] → [🔧 복구 도구] → [🔑 스크립트 권한 승인 (직원 최초 1회)]</strong>를 실행합니다.<br>
+            2. 구글 보안 인증 안내 창이 뜨면 계정을 선택하고, [고급] → [Pack2U 스크립트로 이동]을 눌러 접근 권한을 명시적으로 허용해 줍니다.
+          </div>
+        </div>
+
+        <div class="section-title">2. 단가조회 탭의 수식이 깨져서 단가/품목명이 안 나올 때</div>
+        <p>업체 사용자가 실수로 수식 영역을 건드렸거나 스케줄 꼬임으로 스필(Spill) 영역이 파괴된 경우입니다.</p>
+        <ul class="styled-list">
+          <li><strong>특정 한 업체만 깨진 경우:</strong> 복구 메뉴에서 <code class="code-span">단가조회 탭 복구 (업체 선택)</code>를 구동하여 해당 업체의 파일 아이디를 골라 수식만 강제 재주입합니다.</li>
+          <li><strong>모든 업체의 수식이 일시에 나간 경우:</strong> 복구 메뉴에서 <code class="code-span">🚨 단가조회 3행 수식 긴급 복구 (전체)</code>를 실행해 연동된 모든 협력업체의 뷰어 시트를 초기 스키마로 원격 강제 리셋시킵니다.</li>
+        </ul>
+
+        <div class="section-title">3. 발주 Push 구동 시 발생하는 주요 에러 코드 목록</div>
+        <div class="table-wrapper">
+          <table class="spec-table">
+            <thead>
+              <tr>
+                <th>에러명 (Error Logs)</th>
+                <th>발생 사유</th>
+                <th>담당 관리자 조치법</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="badge badge-red">매핑 없음 (No Map)</td>
+                <td>D열의 품목코드 prefix(2자리)가 설정 매핑에 존재하지 않음</td>
+                <td>'대리발송 별칭 테이블' 또는 연동 모듈에 해당 prefix 바인딩 등록</td>
+              </tr>
+              <tr>
+                <td class="badge badge-yellow">파일 없음 (No File)</td>
+                <td>업체 ID에 해당하는 구글 드라이브 파일이 삭제되었거나 경로가 변경됨</td>
+                <td>구글 드라이브 휴지통을 확인하거나, 신규 시트 생성 후 ID를 매핑 탭에 갱신</td>
+              </tr>
+              <tr>
+                <td class="badge badge-purple">락 선점 에러 (Lock Busy)</td>
+                <td>이전 아카이브나 Push 스크립트가 아직 돌고 있어 충돌 차단됨</td>
+                <td>5분 뒤 다시 시도하거나, <code class="code-span">동기화 락 강제 해제</code> 메뉴 실행</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- SEARCH & INTERACTION JS -->
+  <script>
+    // Search Interaction
+    const searchInput = document.getElementById('menu-search');
+    const navList = document.getElementById('nav-list');
+    const navItems = document.querySelectorAll('.nav-item');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    const subTitle = document.getElementById('sub-title');
+    const mainTitle = document.getElementById('main-title');
+    const mainDesc = document.getElementById('main-desc');
+
+    const descMap = {
+      'tab-architecture': {
+        sub: '1. System Architecture Specification',
+        title: '1. 시스템 아키텍처 및 연동 흐름',
+        desc: '중앙 데이터 허브와 각 협력업체 배포 시트 간의 데이터 통신, API 통합 및 트랜잭션 동기화 사양 문서입니다.'
+      },
+      'tab-deployed-sheet': {
+        sub: '2. Deployed Template Blueprint',
+        title: '2. 협력업체 배포시트 구조 및 수식 연동',
+        desc: '각 협력업체 개별 스프레드시트 내부 뷰어 및 발주 탭의 스키마 사양과 K2 할인 매커니즘 사양입니다.'
+      },
+      'tab-core-sync': {
+        sub: '3. Data Pipe Integration Spec',
+        title: '3. 발주 Push 및 송장 회수 파이프라인',
+        desc: '사방넷 고유 식별키 대조를 활용한 이중 접수 차단 기술 사양 및 송장 회수/배포 메커니즘 설명입니다.'
+      },
+      'tab-function-ref': {
+        sub: '4. Apps Script API Reference',
+        title: '4. 주요 코드 함수 레퍼런스',
+        desc: '대리발송 수집, Push, 마감, 정산 및 백업 아카이빙을 수행하는 구글 Apps Script 함수 및 트리거 상세입니다.'
+      },
+      'tab-troubleshoot': {
+        sub: '5. DevOps &amp; Troubleshooting Guide',
+        title: '5. 운영 장애 대응 및 복구 가이드',
+        desc: '사용 권한 거부 예외 상황, 수식 손상, 데이터 충돌 등 실무 운영 시 맞닥뜨리는 장애 조치 가이드입니다.'
+      }
+    };
+
+    // Navigation Click Handler
+    navItems.forEach(item => {
+      item.addEventListener('click', () => {
+        navItems.forEach(nav => nav.classList.remove('active'));
+        item.classList.add('active');
+
+        tabContents.forEach(content => content.classList.remove('active'));
+        const targetTabId = item.getAttribute('data-tab');
+        const targetTab = document.getElementById(targetTabId);
+        if (targetTab) {
+          targetTab.classList.add('active');
+        }
+
+        const info = descMap[targetTabId];
+        if (info) {
+          subTitle.innerHTML = info.sub;
+          mainTitle.innerHTML = info.title;
+          mainDesc.innerHTML = info.desc;
+        }
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    });
+
+    // Sidebar search filter logic
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      
+      // Filter Nav items
+      navItems.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        if (text.includes(query)) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+
+      // Highlight/Filter specs in tables & cards
+      const allSearchableElements = document.querySelectorAll('.spec-table tbody tr, .card p, .flow-body, .section-title');
+      allSearchableElements.forEach(el => {
+        const contentText = el.textContent.toLowerCase();
+        if (query === '') {
+          el.style.opacity = '1';
+          if (el.tagName === 'TR') el.style.display = 'table-row';
+        } else if (contentText.includes(query)) {
+          el.style.opacity = '1';
+          if (el.tagName === 'TR') el.style.display = 'table-row';
+        } else {
+          el.style.opacity = '0.25';
+          if (el.tagName === 'TR') el.style.display = 'none';
+        }
+      });
+    });
+  </script>
+</body>
+</html>
