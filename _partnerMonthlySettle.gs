@@ -547,12 +547,15 @@ function _pms_padRow_(row, extLc, origLc) {
 //  월별 마감 탭 레이아웃 적용
 // ──────────────────────────────────────────────────────
 function _pms_layoutArchiveTab_(tab, extHeaders, cMap, extLc, cancelC, returnC, reasonC, retInvC, shipFeeC, islandFeeC, etcFeeC, isNewBlank) {
-  // 1행: 요약 마커
+  // 1행: 요약 마커 ★ 2026-06-13 디자인 개선
   try {
     tab.getRange(1, 1, 1, 10).merge()
       .setValue("📊 월별 마감 요약")
-      .setBackground("#444444").setFontColor("white")
-      .setFontWeight("bold").setHorizontalAlignment("center");
+      .setBackground("#1a237e").setFontColor("#ffffff")
+      .setFontWeight("bold").setFontSize(12)
+      .setHorizontalAlignment("center")
+      .setVerticalAlignment("middle");
+    tab.setRowHeight(1, 32);
   } catch(e) {}
 
   // 2~3행: 합계 수식
@@ -563,33 +566,80 @@ function _pms_layoutArchiveTab_(tab, extHeaders, cMap, extLc, cancelC, returnC, 
     tab.insertColumnsAfter(tab.getMaxColumns(), extLc - tab.getMaxColumns());
   }
   tab.getRange(_PMS_HEADER_ROW, 1, 1, extLc).setValues([extHeaders])
-    .setBackground("#555555").setFontColor("white")
-    .setFontWeight("bold").setHorizontalAlignment("center");
+    .setBackground("#37474f").setFontColor("white")
+    .setFontWeight("bold").setHorizontalAlignment("center")
+    .setFontSize(10);
   // 취소·반품 체크박스 헤더 강조 (빨간)
-  tab.getRange(_PMS_HEADER_ROW, cancelC).setBackground("#c0392b").setFontColor("white");
-  tab.getRange(_PMS_HEADER_ROW, returnC).setBackground("#c0392b").setFontColor("white");
+  tab.getRange(_PMS_HEADER_ROW, cancelC).setBackground("#c62828").setFontColor("white");
+  tab.getRange(_PMS_HEADER_ROW, returnC).setBackground("#c62828").setFontColor("white");
   // 사유·반품송장 헤더 강조 (주황)
-  tab.getRange(_PMS_HEADER_ROW, reasonC).setBackground("#e67e22").setFontColor("white");
-  tab.getRange(_PMS_HEADER_ROW, retInvC).setBackground("#e67e22").setFontColor("white");
+  tab.getRange(_PMS_HEADER_ROW, reasonC).setBackground("#e65100").setFontColor("white");
+  tab.getRange(_PMS_HEADER_ROW, retInvC).setBackground("#e65100").setFontColor("white");
   // 반품배송비 헤더 강조 (파랑)
-  tab.getRange(_PMS_HEADER_ROW, shipFeeC).setBackground("#2980b9").setFontColor("white");
+  tab.getRange(_PMS_HEADER_ROW, shipFeeC).setBackground("#1565c0").setFontColor("white");
   // 도서산간배송비 헤더 강조 (보라)
-  tab.getRange(_PMS_HEADER_ROW, islandFeeC).setBackground("#7b1fa2").setFontColor("white");
+  tab.getRange(_PMS_HEADER_ROW, islandFeeC).setBackground("#6a1b9a").setFontColor("white");
   // 기타정산 헤더 강조 (초록)
-  tab.getRange(_PMS_HEADER_ROW, etcFeeC).setBackground("#27ae60").setFontColor("white");
-  // 열 너비
+  tab.getRange(_PMS_HEADER_ROW, etcFeeC).setBackground("#2e7d32").setFontColor("white");
+
+  // ★ 2026-06-13 개선: 자동 열 너비 + 주요 열 최적 너비
   try {
-    tab.setColumnWidth(reasonC, 200);
-    tab.setColumnWidth(retInvC, 150);
-    tab.setColumnWidth(shipFeeC, 120);
-    tab.setColumnWidth(islandFeeC, 120);
-    tab.setColumnWidth(etcFeeC, 120);
+    // 기본 열 너비 설정
+    if (cMap.date !== -1)      tab.setColumnWidth(cMap.date + 1, 90);    // 일자
+    if (cMap.recipient !== -1) tab.setColumnWidth(cMap.recipient + 1, 80); // 수취인
+    if (cMap.phone !== -1)     tab.setColumnWidth(cMap.phone + 1, 110);   // 전화번호
+    if (cMap.price !== -1)     tab.setColumnWidth(cMap.price + 1, 85);    // 정산금액
+    if (cMap.qty !== -1)       tab.setColumnWidth(cMap.qty + 1, 55);      // 수량
+    tab.setColumnWidth(cancelC, 45);   // 취소
+    tab.setColumnWidth(returnC, 45);   // 반품
+    tab.setColumnWidth(reasonC, 200);  // 사유
+    tab.setColumnWidth(retInvC, 150);  // 반품송장
+    tab.setColumnWidth(shipFeeC, 100); // 반품배송비
+    tab.setColumnWidth(islandFeeC, 100); // 도서산간
+    tab.setColumnWidth(etcFeeC, 100);  // 기타정산
   } catch(e) {}
+
   // 금액 열 숫자 형식
   try { tab.getRange(_PMS_DATA_START, shipFeeC, tab.getMaxRows() - _PMS_DATA_START + 1, 1).setNumberFormat("#,##0"); } catch(e) {}
   try { tab.getRange(_PMS_DATA_START, islandFeeC, tab.getMaxRows() - _PMS_DATA_START + 1, 1).setNumberFormat("#,##0"); } catch(e) {}
   try { tab.getRange(_PMS_DATA_START, etcFeeC, tab.getMaxRows() - _PMS_DATA_START + 1, 1).setNumberFormat("#,##0"); } catch(e) {}
+  if (cMap.price !== -1) {
+    try { tab.getRange(_PMS_DATA_START, cMap.price + 1, tab.getMaxRows() - _PMS_DATA_START + 1, 1).setNumberFormat("#,##0"); } catch(e) {}
+  }
+
   tab.setFrozenRows(_PMS_HEADER_ROW);
+
+  // ★ 2026-06-13 추가: 주요 열 고정 확대 (수취인 열까지)
+  try {
+    var freezeCols = 1; // 최소 1열(일자) 고정
+    if (cMap.recipient !== -1 && cMap.recipient + 1 <= 6) freezeCols = cMap.recipient + 1;
+    else if (cMap.item !== -1 && cMap.item + 1 <= 6) freezeCols = cMap.item + 1;
+    else freezeCols = Math.min(3, extLc);
+    tab.setFrozenColumns(freezeCols);
+  } catch(e) {}
+
+  // ★ 2026-06-13 추가: 취소/반품 행 조건부 서식 (행 전체 연한 빨강 강조)
+  try {
+    var dataRange = tab.getRange(_PMS_DATA_START, 1, tab.getMaxRows() - _PMS_DATA_START + 1, extLc);
+    // 취소=TRUE → 행 전체 연한 빨강
+    var cancelFormula = "=INDIRECT(\"R[0]C" + cancelC + "\",FALSE)=TRUE";
+    var cancelRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(cancelFormula)
+      .setBackground("#fce4ec")
+      .setRanges([dataRange])
+      .build();
+    // 반품=TRUE → 행 전체 연한 주황
+    var returnFormula = "=INDIRECT(\"R[0]C" + returnC + "\",FALSE)=TRUE";
+    var returnRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(returnFormula)
+      .setBackground("#fff3e0")
+      .setRanges([dataRange])
+      .build();
+    var existingRules = tab.getConditionalFormatRules() || [];
+    existingRules.push(cancelRule);
+    existingRules.push(returnRule);
+    tab.setConditionalFormatRules(existingRules);
+  } catch(e) {}
 }
 
 // ──────────────────────────────────────────────────────
@@ -619,10 +669,10 @@ function _pms_applyFormulas_(tab, cMap, cancelC, returnC, shipFeeC, islandFeeC, 
     cntNet = "=IFERROR(SUMPRODUCT((A" + dr + ':A<>"")*(' + cO + "<>TRUE)*(" + rO + "<>TRUE)),0)";
   }
 
-  tab.getRange(2,1).setValue("전체 건수");
-  tab.getRange(2,2).setFormula(cntAll).setNumberFormat("#,##0");
-  tab.getRange(3,1).setValue("취소·반품 제외 건수");
-  tab.getRange(3,2).setFormula(cntNet).setNumberFormat("#,##0");
+  tab.getRange(2,1).setValue("📦 전체 건수");
+  tab.getRange(2,2).setFormula(cntAll).setNumberFormat("#,##0").setFontWeight("bold").setFontSize(11);
+  tab.getRange(3,1).setValue("✅ 유효 건수 (취소·반품 제외)");
+  tab.getRange(3,2).setFormula(cntNet).setNumberFormat("#,##0").setFontWeight("bold").setFontSize(11).setFontColor("#1b5e20");
 
   if (cMap.price !== -1) {
     var pO = L(cMap.price+1) + dr + ":" + L(cMap.price+1);
@@ -632,45 +682,49 @@ function _pms_applyFormulas_(tab, cMap, cancelC, returnC, shipFeeC, islandFeeC, 
     var sumNet = dO
       ? "=IFERROR(SUMPRODUCT((" + dO + "<>0)*(" + cO + "<>TRUE)*(" + rO + "<>TRUE)*(" + pO + ")),0)"
       : "=IFERROR(SUMPRODUCT((" + pO + '<>"")*(' + cO + "<>TRUE)*(" + rO + "<>TRUE)*(" + pO + ")),0)";
-    tab.getRange(2,3).setValue("정산금액 합계");
-    tab.getRange(2,4).setFormula(sumAll).setNumberFormat("#,##0");
-    tab.getRange(3,3).setValue("정산금액 (취소반품 제외)");
-    tab.getRange(3,4).setFormula(sumNet).setNumberFormat("#,##0");
+    tab.getRange(2,3).setValue("💰 정산금액 합계");
+    tab.getRange(2,4).setFormula(sumAll).setNumberFormat("#,##0").setFontWeight("bold");
+    tab.getRange(3,3).setValue("💰 유효 정산금액");
+    tab.getRange(3,4).setFormula(sumNet).setNumberFormat("#,##0").setFontWeight("bold").setFontColor("#1b5e20");
 
     if (sfO) {
       // 2행: 반품배송비
-      tab.getRange(2,5).setValue("반품배송비");
+      tab.getRange(2,5).setValue("📦 반품배송비");
       tab.getRange(2,6).setFormula('=IFERROR(SUM(' + sfO + '),0)').setNumberFormat("#,##0");
 
       // 2행: 도서산간배송비
       if (ifO) {
-        tab.getRange(2,7).setValue("도서산간배송비");
+        tab.getRange(2,7).setValue("🏝️ 도서산간배송비");
         tab.getRange(2,8).setFormula('=IFERROR(SUM(' + ifO + '),0)').setNumberFormat("#,##0");
       }
 
       // 2행: 기타정산 합계
       if (efO) {
-        tab.getRange(2,9).setValue("기타정산");
+        tab.getRange(2,9).setValue("📋 기타정산");
         tab.getRange(2,10).setFormula('=IFERROR(SUM(' + efO + '),0)').setNumberFormat("#,##0");
       }
 
       // 3행: 최종 정산금액 = 정산금액(취소반품 제외) + 반품배송비 + 도서산간 + 기타정산
-      tab.getRange(3,5).setValue("최종 정산금액");
+      tab.getRange(3,5).setValue("🏷️ 최종 정산금액");
       var finalParts = "D3+F2";
       if (ifO) finalParts += "+H2";
       if (efO) finalParts += "+J2";
       tab.getRange(3,6).setFormula("=IFERROR(" + finalParts + ",0)").setNumberFormat("#,##0");
 
-      tab.getRange(3,5).setFontWeight("bold");
-      tab.getRange(3,6).setFontWeight("bold").setFontColor("#c0392b");
+      tab.getRange(3,5).setFontWeight("bold").setFontSize(11);
+      tab.getRange(3,6).setFontWeight("bold").setFontColor("#c62828").setFontSize(12);
 
       var summaryColCount = efO ? 10 : (ifO ? 8 : 6);
-      tab.getRange(2,1,2,summaryColCount).setBackground("#f5f5f5").setBorder(true,true,true,true,true,true);
+      // ★ 2026-06-13: 요약 영역 시각화 강화
+      tab.getRange(2,1,1,summaryColCount).setBackground("#e3f2fd").setBorder(true,true,true,true,true,true); // 연파랑
+      tab.getRange(3,1,1,summaryColCount).setBackground("#e8f5e9").setBorder(true,true,true,true,true,true); // 연초록
     } else {
-      tab.getRange(2,1,2,4).setBackground("#f5f5f5").setBorder(true,true,true,true,true,true);
+      tab.getRange(2,1,1,4).setBackground("#e3f2fd").setBorder(true,true,true,true,true,true);
+      tab.getRange(3,1,1,4).setBackground("#e8f5e9").setBorder(true,true,true,true,true,true);
     }
   } else {
-    tab.getRange(2,1,2,2).setBackground("#f5f5f5").setBorder(true,true,true,true,true,true);
+    tab.getRange(2,1,1,2).setBackground("#e3f2fd").setBorder(true,true,true,true,true,true);
+    tab.getRange(3,1,1,2).setBackground("#e8f5e9").setBorder(true,true,true,true,true,true);
   }
 }
 

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Noto Sans KR', 'Segoe UI', sans-serif;
+    background: #f8f9fa; color: #333; padding: 16px;
+  }
+  .header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-radius: 10px; margin-bottom: 16px;
+  }
+  .header.success { background: linear-gradient(135deg, #e8f5e9, #c8e6c9); }
+  .header.error { background: linear-gradient(135deg, #fce4ec, #f8bbd0); }
+  .header .icon { font-size: 28px; }
+  .header .title { font-size: 17px; font-weight: 700; color: #1b5e20; }
+  .header.error .title { color: #b71c1c; }
+  .header .time { margin-left: auto; font-size: 12px; color: #666; background: rgba(255,255,255,.7); padding: 4px 8px; border-radius: 6px; }
+
+  .steps {
+    background: #fff; border-radius: 10px; overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px;
+  }
+  .step {
+    display: flex; align-items: center; padding: 10px 16px;
+    border-bottom: 1px solid #f0f0f0; gap: 10px;
+  }
+  .step:last-child { border-bottom: none; }
+  .step .num { font-size: 12px; font-weight: 700; color: #999; min-width: 24px; }
+  .step .label { flex: 1; font-size: 13px; }
+  .step .badge {
+    font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 12px;
+  }
+  .badge.ok { background: #e8f5e9; color: #2e7d32; }
+  .badge.err { background: #fce4ec; color: #c62828; }
+  .badge.skip { background: #fff3e0; color: #e65100; }
+  .step .count { font-size: 12px; color: #666; min-width: 50px; text-align: right; }
+
+  .warn-box {
+    background: #fff8e1; border-left: 4px solid #ffa000;
+    padding: 10px 14px; border-radius: 0 8px 8px 0; margin-bottom: 16px;
+  }
+  .warn-box .wtitle { font-size: 12px; font-weight: 700; color: #e65100; margin-bottom: 4px; }
+  .warn-box .wtext { font-size: 12px; color: #555; line-height: 1.5; }
+
+  .detail-toggle {
+    font-size: 12px; color: #1a73e8; cursor: pointer;
+    text-align: center; padding: 8px; margin-bottom: 8px;
+  }
+  .detail-toggle:hover { text-decoration: underline; }
+  .detail-box {
+    display: none; background: #fff; border-radius: 8px;
+    padding: 12px; font-size: 11px; color: #555;
+    max-height: 200px; overflow-y: auto; margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08); white-space: pre-wrap;
+    font-family: 'Consolas', monospace; line-height: 1.6;
+  }
+
+  .btn-row { text-align: center; padding-top: 4px; }
+  .btn {
+    padding: 8px 28px; border: none; border-radius: 8px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    background: #1a73e8; color: #fff;
+    transition: background .2s;
+  }
+  .btn:hover { background: #1557b0; }
+</style>
+</head>
+<body>
+  <div id="header" class="header success">
+    <span class="icon" id="headerIcon">✅</span>
+    <span class="title" id="headerTitle">일괄 마감 완료</span>
+    <span class="time" id="headerTime">⏱️ --초</span>
+  </div>
+
+  <div class="steps" id="stepsContainer">
+    <!-- steps are dynamically inserted -->
+  </div>
+
+  <div id="warnBox" class="warn-box" style="display:none;">
+    <div class="wtitle">⚠️ 주의사항</div>
+    <div class="wtext" id="warnText"></div>
+  </div>
+
+  <div class="detail-toggle" id="detailToggle" onclick="toggleDetail()">▼ 상세 로그 보기</div>
+  <div class="detail-box" id="detailBox"></div>
+
+  <div class="btn-row">
+    <button class="btn" onclick="google.script.host.close()">확인</button>
+  </div>
+
+<script>
+  // GAS에서 전달하는 결과 객체를 수신하여 UI 렌더링
+  function renderResult(data) {
+    // data = { title, icon, success, elapsed, steps:[], warnings:[], detail }
+    // steps = [{ label, status: 'ok'|'err'|'skip', count: '23건' }]
+
+    var h = document.getElementById('header');
+    h.className = 'header ' + (data.success ? 'success' : 'error');
+    document.getElementById('headerIcon').textContent = data.icon || (data.success ? '✅' : '❌');
+    document.getElementById('headerTitle').textContent = data.title || '작업 완료';
+    document.getElementById('headerTime').textContent = '⏱️ ' + (data.elapsed || '--') + '초';
+
+    // steps
+    var container = document.getElementById('stepsContainer');
+    container.innerHTML = '';
+    if (data.steps && data.steps.length) {
+      for (var i = 0; i < data.steps.length; i++) {
+        var s = data.steps[i];
+        var statusLabel = s.status === 'ok' ? '✅ 완료' : s.status === 'err' ? '❌ 오류' : '⏭ 건너뜀';
+        var badgeClass = s.status === 'ok' ? 'ok' : s.status === 'err' ? 'err' : 'skip';
+        var div = document.createElement('div');
+        div.className = 'step';
+        div.innerHTML =
+          '<span class="num">' + (i + 1) + '</span>' +
+          '<span class="label">' + escHtml(s.label) + '</span>' +
+          '<span class="badge ' + badgeClass + '">' + statusLabel + '</span>' +
+          '<span class="count">' + escHtml(s.count || '') + '</span>';
+        container.appendChild(div);
+      }
+    }
+
+    // warnings
+    if (data.warnings && data.warnings.length) {
+      document.getElementById('warnBox').style.display = '';
+      document.getElementById('warnText').innerHTML = data.warnings.map(escHtml).join('<br>');
+    }
+
+    // detail
+    if (data.detail) {
+      document.getElementById('detailBox').textContent = data.detail;
+    } else {
+      document.getElementById('detailToggle').style.display = 'none';
+    }
+  }
+
+  function toggleDetail() {
+    var box = document.getElementById('detailBox');
+    var toggle = document.getElementById('detailToggle');
+    if (box.style.display === 'none' || !box.style.display) {
+      box.style.display = 'block';
+      toggle.textContent = '▲ 상세 로그 닫기';
+    } else {
+      box.style.display = 'none';
+      toggle.textContent = '▼ 상세 로그 보기';
+    }
+  }
+
+  function escHtml(s) {
+    var d = document.createElement('div');
+    d.appendChild(document.createTextNode(s || ''));
+    return d.innerHTML;
+  }
+</script>
+</body>
+</html>

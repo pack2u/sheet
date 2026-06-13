@@ -202,7 +202,16 @@ function partnerDailyArchiveAll() {
     ss = SpreadsheetApp.getActiveSpreadsheet();
   } catch (e) {}
 
-  // ★ 2026-06-13 추가: 단계별 Toast 진행 알림
+  // ★ 2026-06-13 추가: 단계별 Toast 진행 알림 + HTML 모달 결과 표시
+  var _startMs_ = new Date().getTime();
+  var _steps_ = [
+    { label: "월별 정산 이동", status: "ok", count: "" },
+    { label: "전용양식 마감 이동", status: "ok", count: "" },
+    { label: "통합 일일마감", status: "ok", count: "" },
+    { label: "초기화", status: "ok", count: "" }
+  ];
+  var _warnings_ = [];
+
   var _toast_ = function(msg) {
     if (ss) try { ss.toast(msg, "⏳ 일괄 마감 진행 중", 30); } catch(e) {}
   };
@@ -212,6 +221,8 @@ function partnerDailyArchiveAll() {
     // 1단계: 발주 및 송장조회 → 월별 마감탭 이동 (+ 허브 UID 행 동시 삭제)
     partnerArchiveToMonthlySettle();
   } catch (e1) {
+    _steps_[0].status = "err";
+    _steps_[0].count = String(e1.message || e1).substring(0, 60);
     if (ui)
       ui.alert("[단계 1 오류] 월별 정산 이동\n" + String(e1.message || e1));
     return;
@@ -222,6 +233,8 @@ function partnerDailyArchiveAll() {
     // 2단계: 전용양식 → 전용발주 마감탭 이동
     partnerArchiveExclusiveForm();
   } catch (e2) {
+    _steps_[1].status = "err";
+    _steps_[1].count = String(e2.message || e2).substring(0, 60);
     if (ui)
       ui.alert("[단계 2 오류] 전용양식 마감이동\n" + String(e2.message || e2));
     return;
@@ -284,24 +297,53 @@ function partnerDailyArchiveAll() {
       ui.alert("[단계 4 오류] 초기화\n" + String(e4.message || e4));
   }
 
+  // ★ 단계별 결과 수집
+  if (_unifiedResult_.error) {
+    _steps_[2].status = "err";
+    _steps_[2].count = _unifiedResult_.error.substring(0, 60);
+  } else {
+    _steps_[2].count = _unifiedResult_.archived + "건";
+  }
+  _steps_[3].count = "삭제 " + _tempClear_.cleared + "건, 유지 " + _tempClear_.kept + "건";
+
+  // ★ 경고 수집
+  if (_unifiedResult_.error) _warnings_.push("통합 마감: " + _unifiedResult_.error);
+  if (_tempClear_.kept > 0) _warnings_.push("미매칭 " + _tempClear_.kept + "건 유지 (송장 미입력)");
+
+  // ★ 2026-06-13 개선: HTML 모달로 결과 표시
+  var _elapsedSec_ = Math.round((new Date().getTime() - _startMs_) / 1000);
+  var _hasError_ = _steps_.some(function(s) { return s.status === "err"; });
+
   if (ui) {
-    var unifiedMsg = "";
-    if (_unifiedResult_.error) {
-      unifiedMsg = "⚠ " + _unifiedResult_.error;
-    } else {
-      unifiedMsg = _unifiedResult_.archived + "건 → " + (_unifiedResult_.tabName || "(없음)") +
-        " (로젠:" + _unifiedResult_.detail.lozen +
-        " 대리공급:" + _unifiedResult_.detail.temp + ")";
+    try {
+      var _resultData_ = {
+        title: _hasError_ ? "일괄 마감 (일부 오류)" : "일괄 마감 완료",
+        icon: _hasError_ ? "⚠️" : "✅",
+        success: !_hasError_,
+        elapsed: _elapsedSec_,
+        steps: _steps_,
+        warnings: _warnings_,
+        detail: "통합 마감: " + _unifiedResult_.archived + "건 → " + (_unifiedResult_.tabName || "(없음)") +
+          " (로젠:" + _unifiedResult_.detail.lozen + " 대리공급:" + _unifiedResult_.detail.temp + ")" +
+          (_lozenTabDeleted_ ? "\n로젠_임시기록 탭 삭제 완료" : "") +
+          "\n사방넷_송장매칭 초기화 완료"
+      };
+      var _html_ = HtmlService.createHtmlOutputFromFile("resultModal")
+        .setWidth(420).setHeight(480);
+      // 결과 데이터를 HTML에 주입
+      _html_.setTitle("일괄 마감 결과");
+      var _script_ = "<script>renderResult(" + JSON.stringify(_resultData_) + ");</script>";
+      _html_.append(_script_);
+      ui.showModalDialog(_html_, "일괄 마감 결과");
+    } catch (eModal) {
+      // HTML 모달 실패 시 기존 alert 폴백
+      ui.alert(
+        (_hasError_ ? "⚠️" : "✅") + " 일괄 마감 (" + _elapsedSec_ + "초)\n" +
+        _steps_.map(function(s, i) {
+          return (i + 1) + ". " + s.label + ": " + (s.status === "ok" ? "✅" : "❌") + " " + s.count;
+        }).join("\n")
+      );
     }
-    ui.alert(
-      "✅ 일괄 완료\n" +
-        "1. 발주 및 송장조회 → 월별 마감탭 이동\n" +
-        "2. 전용양식 → 전용발주 마감탭 이동\n" +
-        "3. 통합 일일마감(구글드라이브 시트): " + unifiedMsg + "\n" +
-        "4. 초기화(송장 있음 " + _tempClear_.cleared + "건 제거, 미매칭 " + _tempClear_.kept + "건 유지)" +
-        (_lozenTabDeleted_ ? " + 로젠_임시기록 탭 삭제" : "") +
-        " + 사방넷_송장매칭",
-    );
   }
 }
 
