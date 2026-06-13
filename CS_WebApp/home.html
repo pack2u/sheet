@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pack2U 모바일</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0f1117;
+      --bg-secondary: #1a1d28;
+      --bg-card: #222533;
+      --bg-card-hover: #2a2e42;
+      --text-primary: #f0f0f5;
+      --text-secondary: #8b8fa3;
+      --text-muted: #5c6078;
+      --accent-blue: #4a90d9;
+      --accent-blue-glow: rgba(74, 144, 217, 0.25);
+      --accent-green: #34c77b;
+      --accent-green-glow: rgba(52, 199, 123, 0.25);
+      --accent-orange: #f0a030;
+      --accent-orange-glow: rgba(240, 160, 48, 0.25);
+      --border: rgba(255, 255, 255, 0.06);
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html {
+      width: 100%;
+      height: 100%;
+      -webkit-text-size-adjust: 100%;
+      -ms-text-size-adjust: 100%;
+    }
+
+    body {
+      font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      width: 100%;
+      max-width: 100vw;
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-font-smoothing: antialiased;
+      touch-action: manipulation;
+    }
+
+    /* ── 헤더 ── */
+    .header {
+      padding: 48px 24px 32px;
+      text-align: center;
+      position: relative;
+    }
+    .header::before {
+      content: '';
+      position: absolute;
+      top: -60px; left: 50%;
+      transform: translateX(-50%);
+      width: 300px; height: 300px;
+      background: radial-gradient(circle, var(--accent-blue-glow) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .header .logo {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      position: relative;
+    }
+    .header .logo span {
+      background: linear-gradient(135deg, var(--accent-blue), #7b68ee);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header .subtitle {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-weight: 400;
+    }
+
+    /* ── 메인 메뉴 ── */
+    .menu-container {
+      padding: 0 20px 40px;
+      max-width: 420px;
+      margin: 0 auto;
+    }
+
+    .menu-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px 20px;
+      margin-bottom: 14px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      text-decoration: none;
+      color: inherit;
+      position: relative;
+      overflow: hidden;
+    }
+    .menu-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+    }
+    .menu-card:active {
+      transform: scale(0.97);
+    }
+    .menu-card:hover, .menu-card:active {
+      border-color: rgba(255,255,255,0.12);
+      background: var(--bg-card-hover);
+    }
+    .menu-card:hover::before, .menu-card:active::before {
+      opacity: 1;
+    }
+
+    /* 카드 아이콘 */
+    .menu-icon {
+      width: 52px; height: 52px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+    .menu-card.cs .menu-icon {
+      background: linear-gradient(135deg, rgba(74,144,217,0.15), rgba(74,144,217,0.05));
+      border: 1px solid rgba(74,144,217,0.2);
+      color: var(--accent-blue);
+    }
+    .menu-card.cs::before {
+      background: linear-gradient(135deg, var(--accent-blue-glow), transparent);
+    }
+    .menu-card.inv .menu-icon {
+      background: linear-gradient(135deg, rgba(52,199,123,0.15), rgba(52,199,123,0.05));
+      border: 1px solid rgba(52,199,123,0.2);
+      color: var(--accent-green);
+    }
+    .menu-card.inv::before {
+      background: linear-gradient(135deg, var(--accent-green-glow), transparent);
+    }
+
+    /* 카드 텍스트 */
+    .menu-text {
+      flex: 1;
+      min-width: 0;
+    }
+    .menu-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .menu-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+    .menu-arrow {
+      color: var(--text-muted);
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    /* ── 하단 정보 ── */
+    .footer-info {
+      padding: 0 20px;
+      max-width: 420px;
+      margin: 20px auto 0;
+    }
+    .info-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px 18px;
+    }
+    .info-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+    .info-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    .info-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .info-dot.blue { background: var(--accent-blue); }
+    .info-dot.green { background: var(--accent-green); }
+    .info-dot.orange { background: var(--accent-orange); }
+
+    /* ── 담당자 선택 모달 ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      align-items: flex-end;
+      justify-content: center;
+      backdrop-filter: blur(4px);
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-content {
+      background: var(--bg-card);
+      border-radius: 20px 20px 0 0;
+      width: 100%;
+      max-width: 420px;
+      padding: 24px 20px 40px;
+      animation: slideUp 0.3s ease;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+    .modal-handle {
+      width: 36px; height: 4px;
+      background: var(--text-muted);
+      border-radius: 2px;
+      margin: 0 auto 20px;
+    }
+    .modal-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .staff-btn {
+      display: block;
+      width: 100%;
+      padding: 14px 16px;
+      margin-bottom: 8px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-size: 15px;
+      font-family: inherit;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s;
+    }
+    .staff-btn:active {
+      background: var(--accent-blue);
+      transform: scale(0.98);
+    }
+
+    /* ── 버전 ── */
+    .version {
+      text-align: center;
+      padding: 32px 0;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 헤더 -->
+  <div class="header">
+    <div class="logo"><span>Pack2U</span> 모바일</div>
+    <div class="subtitle">바코드 스캔 · CS 접수 · 재고 실사</div>
+  </div>
+
+  <!-- 메인 메뉴 -->
+  <div class="menu-container">
+    <div class="menu-card cs" onclick="openPage('barcode')">
+      <div class="menu-icon">📦</div>
+      <div class="menu-text">
+        <div class="menu-title">반품 CS 접수</div>
+        <div class="menu-desc">바코드 스캔 → 상품 확인 → AppSheet 사진접수</div>
+      </div>
+      <div class="menu-arrow">›</div>
+    </div>
+
+    <div class="menu-card inv" onclick="openPage('inventory')">
+      <div class="menu-icon">📊</div>
+      <div class="menu-text">
+        <div class="menu-title">재고 실사</div>
+        <div class="menu-desc">바코드 연속 스캔 → 수량 입력 → 이카운트 연동</div>
+      </div>
+      <div class="menu-arrow">›</div>
+    </div>
+
+    <div class="menu-card" onclick="navigateTo('camera_test')" style="border-color: rgba(139,92,246,0.2);">
+      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(139,92,246,0.05)); border: 1px solid rgba(139,92,246,0.2); color: #8b5cf6;">📸</div>
+      <div class="menu-text">
+        <div class="menu-title">카메라 테스트 <span style="font-size:10px;color:#8b5cf6;background:rgba(139,92,246,0.12);padding:2px 6px;border-radius:6px;margin-left:6px;">PROTO</span></div>
+        <div class="menu-desc">송장 바코드 인식 · 사진 4장 촬영 · OCR 테스트</div>
+      </div>
+      <div class="menu-arrow">›</div>
+    </div>
+  </div>
+
+  <!-- 하단 정보 -->
+  <div class="footer-info">
+    <div class="info-card">
+      <div class="info-title">사용 안내</div>
+      <div class="info-item">
+        <div class="info-dot blue"></div>
+        반품 접수: 바코드 스캔 후 AppSheet에서 사진 촬영
+      </div>
+      <div class="info-item">
+        <div class="info-dot green"></div>
+        재고 실사: 바코드 연속 스캔 후 수량 확인
+      </div>
+      <div class="info-item">
+        <div class="info-dot orange"></div>
+        Wi-Fi 연결 상태에서 사용하세요
+      </div>
+    </div>
+  </div>
+
+  <div class="version">v1.0.0 · Pack2U Mobile System</div>
+
+  <!-- 담당자 선택 모달 -->
+  <div class="modal-overlay" id="staffModal">
+    <div class="modal-content">
+      <div class="modal-handle"></div>
+      <div class="modal-title">담당자를 선택하세요</div>
+      <div id="staffList"></div>
+    </div>
+  </div>
+
+  <script>
+    var currentPage = '';
+    var currentStaff = localStorage.getItem('pack2u_staff') || '';
+
+    function openPage(page) {
+      currentPage = page;
+      // 담당자가 저장되어 있으면 바로 이동
+      if (currentStaff) {
+        navigateTo(page);
+        return;
+      }
+      // 담당자 선택 모달 표시
+      showStaffModal(page);
+    }
+
+    function showStaffModal(page) {
+      var modal = document.getElementById('staffModal');
+      var list = document.getElementById('staffList');
+      list.innerHTML = '';
+
+      google.script.run
+        .withSuccessHandler(function(staffArr) {
+          staffArr.forEach(function(name) {
+            var btn = document.createElement('button');
+            btn.className = 'staff-btn';
+            btn.textContent = name;
+            btn.onclick = function() {
+              currentStaff = name;
+              localStorage.setItem('pack2u_staff', name);
+              modal.classList.remove('active');
+              navigateTo(page);
+            };
+            list.appendChild(btn);
+          });
+          modal.classList.add('active');
+        })
+        .getStaffList();
+
+      // 모달 바깥 클릭 시 닫기
+      modal.onclick = function(e) {
+        if (e.target === modal) modal.classList.remove('active');
+      };
+    }
+
+    function navigateTo(page) {
+      var baseUrl = window.location.href.split('?')[0];
+      window.location.href = baseUrl + '?page=' + page + '&staff=' + encodeURIComponent(currentStaff);
+    }
+  </script>
+
+</body>
+</html>

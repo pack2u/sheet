@@ -2,7 +2,7 @@
  * [ Pack2U CS 챗봇 - Gemini 연동 엔진 ]
  */
 
-var GEMINI_API_KEY = "AIzaSyCXNK34AUDAaxWWghGK5hAsd7v8WEnBxdk"; // 유료플랜 적용 키
+var GEMINI_API_KEY = "AIzaSyA9O-Dh3SDsMSK7OVHQQ2BG9INiFcgXCB0"; // 유료플랜 적용 키
 var CS_MANUAL_SPREADSHEET_ID = "1LlNX-spTs-2WgWD8HEha90PYU0m7s8MqFh84vy_Fi_Q";
 
 /** 

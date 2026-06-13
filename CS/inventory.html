@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>재고 실사 - Pack2U</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #0f1117;
+      --bg-secondary: #1a1d28;
+      --bg-card: #222533;
+      --bg-card-hover: #2a2e42;
+      --text-primary: #f0f0f5;
+      --text-secondary: #8b8fa3;
+      --text-muted: #5c6078;
+      --accent-blue: #4a90d9;
+      --accent-green: #34c77b;
+      --accent-red: #e74c5f;
+      --accent-orange: #f0a030;
+      --border: rgba(255, 255, 255, 0.06);
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Noto Sans KR', -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ── 상단 바 ── */
+    .top-bar {
+      display: flex; align-items: center;
+      padding: 16px 16px 12px; gap: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .back-btn {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      color: var(--text-primary); font-size: 18px;
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+    }
+    .top-title { font-size: 17px; font-weight: 600; }
+    .top-badge {
+      margin-left: auto;
+      padding: 4px 10px; border-radius: 20px;
+      background: rgba(52,199,123,0.12); color: var(--accent-green);
+      font-size: 12px; font-weight: 600;
+    }
+
+    /* ── 스캔 영역 (컴팩트) ── */
+    .scan-section {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .scan-toggle {
+      display: flex; gap: 8px; margin-bottom: 10px;
+    }
+    .scan-toggle button {
+      flex: 1; padding: 10px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-card);
+      color: var(--text-secondary); font-size: 13px; font-family: inherit;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .scan-toggle button.active {
+      background: var(--accent-green); color: white; border-color: var(--accent-green);
+    }
+    .scan-toggle button:active { transform: scale(0.96); }
+    #qr-reader { width: 100%; min-height: 200px; border-radius: 10px; overflow: hidden; }
+    #qr-reader video { border-radius: 10px !important; }
+    #qr-reader__dashboard button, #qr-reader select {
+      background: var(--bg-secondary) !important; color: var(--text-primary) !important;
+      border: 1px solid var(--border) !important; border-radius: 6px !important;
+      padding: 6px 10px !important; font-family: inherit !important; font-size: 12px !important;
+    }
+    .manual-row {
+      display: flex; gap: 8px; margin-top: 10px;
+    }
+    .manual-row input {
+      flex: 1; padding: 12px 14px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text-primary);
+      font-size: 14px; font-family: inherit; outline: none;
+    }
+    .manual-row input:focus { border-color: var(--accent-green); }
+    .manual-row input::placeholder { color: var(--text-muted); }
+    .btn-sm {
+      padding: 12px 16px; border-radius: 8px; border: none;
+      font-size: 13px; font-weight: 600; font-family: inherit;
+      cursor: pointer; background: var(--accent-green); color: white;
+    }
+    .btn-sm:active { transform: scale(0.96); }
+
+    /* ── 수량 입력 패널 (스캔 성공 시 표시) ── */
+    .qty-panel {
+      display: none; padding: 14px 16px;
+      background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+      animation: slideDown 0.25s ease;
+    }
+    .qty-panel.active { display: block; }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .qty-product-name {
+      font-size: 14px; font-weight: 600; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .qty-product-name .code {
+      font-size: 11px; color: var(--text-muted); font-weight: 400;
+      background: var(--bg-card); padding: 2px 6px; border-radius: 4px;
+    }
+    .qty-row {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .qty-btn {
+      width: 42px; height: 42px; border-radius: 10px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      color: var(--text-primary); font-size: 20px;
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+    }
+    .qty-btn:active { background: var(--accent-green); }
+    .qty-input {
+      width: 80px; text-align: center; padding: 10px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 10px; color: var(--text-primary);
+      font-size: 22px; font-weight: 700; font-family: inherit; outline: none;
+    }
+    .qty-input:focus { border-color: var(--accent-green); }
+    .qty-confirm {
+      margin-left: auto; padding: 10px 20px;
+      background: var(--accent-green); color: white;
+      border: none; border-radius: 10px;
+      font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .qty-confirm:active { transform: scale(0.96); }
+
+    /* ── 스캔 목록 ── */
+    .list-section { padding: 12px 16px; flex: 1; overflow-y: auto; }
+    .list-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 10px;
+    }
+    .list-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+    .list-count {
+      font-size: 12px; color: var(--text-muted);
+      background: var(--bg-card); padding: 3px 8px; border-radius: 12px;
+    }
+    .list-empty {
+      text-align: center; padding: 40px 20px;
+      color: var(--text-muted); font-size: 14px;
+    }
+
+    .item-card {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; margin-bottom: 8px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: all 0.15s;
+    }
+    .item-card .item-info { flex: 1; min-width: 0; }
+    .item-card .item-name {
+      font-size: 13px; font-weight: 500;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .item-card .item-code {
+      font-size: 11px; color: var(--text-muted); margin-top: 2px;
+    }
+    .item-card .item-qty {
+      font-size: 18px; font-weight: 700; min-width: 40px; text-align: right;
+    }
+    .item-card .item-diff {
+      font-size: 11px; min-width: 50px; text-align: right; font-weight: 500;
+    }
+    .item-card .item-diff.positive { color: var(--accent-green); }
+    .item-card .item-diff.negative { color: var(--accent-red); }
+    .item-card .item-diff.zero { color: var(--text-muted); }
+    .item-delete {
+      width: 28px; height: 28px; border-radius: 6px;
+      background: rgba(231,76,95,0.1); border: none;
+      color: var(--accent-red); font-size: 14px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── 하단 요약 바 ── */
+    .bottom-bar {
+      position: sticky; bottom: 0; left: 0; right: 0;
+      padding: 14px 16px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .summary-stats {
+      flex: 1; display: flex; gap: 12px;
+    }
+    .stat-item { text-align: center; }
+    .stat-value { font-size: 18px; font-weight: 700; }
+    .stat-label { font-size: 10px; color: var(--text-muted); }
+    .submit-btn {
+      padding: 14px 24px; border-radius: 12px; border: none;
+      background: var(--accent-green); color: white;
+      font-size: 15px; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .submit-btn:disabled {
+      opacity: 0.4; cursor: not-allowed;
+    }
+    .submit-btn:active:not(:disabled) { transform: scale(0.96); }
+
+    /* ── 결과 모달 ── */
+    .modal-overlay {
+      display: none; position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+      z-index: 100; align-items: center; justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-box {
+      background: var(--bg-card); border-radius: 20px;
+      padding: 32px 24px; margin: 20px; max-width: 360px; width: 100%;
+      text-align: center; animation: popIn 0.3s ease;
+    }
+    @keyframes popIn {
+      from { transform: scale(0.9); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    .modal-icon { font-size: 48px; margin-bottom: 12px; }
+    .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+    .modal-msg { font-size: 13px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5; }
+    .modal-actions { display: flex; flex-direction: column; gap: 8px; }
+    .modal-btn {
+      padding: 14px; border-radius: 10px; border: none;
+      font-size: 15px; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .modal-btn.primary { background: var(--accent-green); color: white; }
+    .modal-btn.outline { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); }
+    .modal-btn:active { transform: scale(0.97); }
+
+    /* ── 로딩 ── */
+    .loading-overlay {
+      display: none; position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15,17,23,0.85); backdrop-filter: blur(4px);
+      z-index: 200; align-items: center; justify-content: center;
+      flex-direction: column; gap: 16px;
+    }
+    .loading-overlay.active { display: flex; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border); border-top-color: var(--accent-green);
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-size: 14px; color: var(--text-secondary); }
+  </style>
+</head>
+<body>
+
+  <!-- 상단 바 -->
+  <div class="top-bar">
+    <button class="back-btn" onclick="goHome()">‹</button>
+    <div class="top-title">재고 실사</div>
+    <div class="top-badge" id="scanCount">0품목</div>
+  </div>
+
+  <!-- 스캔 영역 -->
+  <div class="scan-section">
+    <div class="scan-toggle">
+      <button class="active" id="btnCamera" onclick="toggleMode('camera')">📷 카메라 스캔</button>
+      <button id="btnManual" onclick="toggleMode('manual')">⌨️ 직접 입력</button>
+    </div>
+    <div id="cameraArea">
+      <div id="qr-reader"></div>
+    </div>
+    <div id="manualArea" style="display:none">
+      <div class="manual-row">
+        <input type="text" id="manualBarcode" placeholder="바코드/이카운트코드 입력" inputmode="text" autocomplete="off">
+        <button class="btn-sm" onclick="manualLookup()">조회</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 수량 입력 패널 -->
+  <div class="qty-panel" id="qtyPanel">
+    <div class="qty-product-name" id="qtyProductName"></div>
+    <div class="qty-row">
+      <button class="qty-btn" onclick="changeQty(-1)">−</button>
+      <input type="number" class="qty-input" id="qtyInput" value="1" min="0" inputmode="numeric">
+      <button class="qty-btn" onclick="changeQty(1)">+</button>
+      <button class="qty-confirm" onclick="confirmItem()">✓ 추가</button>
+    </div>
+  </div>
+
+  <!-- 스캔 목록 -->
+  <div class="list-section">
+    <div class="list-header">
+      <div class="list-title">스캔 목록</div>
+      <div class="list-count" id="listCount">0건</div>
+    </div>
+    <div id="itemList">
+      <div class="list-empty" id="emptyMsg">📦 바코드를 스캔하면 여기에 표시됩니다</div>
+    </div>
+  </div>
+
+  <!-- 하단 요약 -->
+  <div class="bottom-bar">
+    <div class="summary-stats">
+      <div class="stat-item">
+        <div class="stat-value" id="statTotal">0</div>
+        <div class="stat-label">품목</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value" id="statQty">0</div>
+        <div class="stat-label">총수량</div>
+      </div>
+    </div>
+    <button class="submit-btn" id="submitBtn" onclick="showSubmitModal()" disabled>실사 완료 →</button>
+  </div>
+
+  <!-- 결과 모달 -->
+  <div class="modal-overlay" id="resultModal">
+    <div class="modal-box">
+      <div class="modal-icon" id="modalIcon">✅</div>
+      <div class="modal-title" id="modalTitle">실사 완료!</div>
+      <div class="modal-msg" id="modalMsg"></div>
+      <div class="modal-actions">
+        <button class="modal-btn primary" onclick="resetAll()">📊 새 실사 시작</button>
+        <button class="modal-btn outline" onclick="goHome()">🏠 홈으로</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 로딩 -->
+  <div class="loading-overlay" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">처리 중...</div>
+  </div>
+
+  <script>
+    // ── 상태 ──
+    var items = {};       // barcode → { ecountCode, productName, qty }
+    var itemOrder = [];   // 스캔 순서 유지
+    var pendingItem = null; // 수량 입력 대기 중인 아이템
+    var scanner = null;
+    var scanMode = 'camera';
+    var urlParams = new URLSearchParams(window.location.search);
+    var currentStaff = urlParams.get('staff') || localStorage.getItem('pack2u_staff') || '';
+
+    // ── 초기화 ──
+    window.addEventListener('load', function() {
+      startScanner();
+    });
+
+    // ── 스캐너 ──
+    function startScanner() {
+      try {
+        scanner = new Html5Qrcode("qr-reader");
+        scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 250, height: 100 }, aspectRatio: 1.333 },
+          onScanSuccess,
+          function() {}
+        ).catch(function(err) {
+          console.log("카메라 실패:", err);
+          document.getElementById('qr-reader').innerHTML =
+            '<div style="padding:30px;text-align:center;color:var(--text-secondary)">' +
+            '📷 카메라 사용 불가<br>직접 입력 모드를 사용하세요</div>';
+        });
+      } catch(e) { console.log("스캐너 초기화 실패:", e); }
+    }
+
+    function toggleMode(mode) {
+      scanMode = mode;
+      document.getElementById('btnCamera').className = mode === 'camera' ? 'active' : '';
+      document.getElementById('btnManual').className = mode === 'manual' ? 'active' : '';
+      document.getElementById('cameraArea').style.display = mode === 'camera' ? 'block' : 'none';
+      document.getElementById('manualArea').style.display = mode === 'manual' ? 'block' : 'none';
+      if (mode === 'manual' && scanner) {
+        scanner.stop().catch(function(){});
+      } else if (mode === 'camera') {
+        startScanner();
+      }
+    }
+
+    // ── 스캔 성공 ──
+    function onScanSuccess(decodedText) {
+      if (navigator.vibrate) navigator.vibrate(100);
+      var code = decodedText.trim();
+
+      // 이미 스캔한 품목 → 수량 +1
+      if (items[code]) {
+        items[code].qty++;
+        renderList();
+        showQtyPanel(code, items[code], true);
+        return;
+      }
+
+      // 신규 품목 → 상품 조회
+      google.script.run
+        .withSuccessHandler(function(result) {
+          var itemData = {
+            ecountCode: result.found ? result.ecountCode : code,
+            productName: result.found ? result.productName : '(미확인: ' + code + ')',
+            qty: 1
+          };
+          pendingItem = { barcode: code, data: itemData };
+          showQtyPanel(code, itemData, false);
+        })
+        .withFailureHandler(function(err) {
+          pendingItem = { barcode: code, data: { ecountCode: code, productName: '(조회실패)', qty: 1 } };
+          showQtyPanel(code, pendingItem.data, false);
+        })
+        .lookupProductByBarcode(code);
+    }
+
+    function manualLookup() {
+      var code = document.getElementById('manualBarcode').value.trim();
+      if (!code) return;
+      document.getElementById('manualBarcode').value = '';
+      onScanSuccess(code);
+    }
+
+    // ── 수량 입력 패널 ──
+    function showQtyPanel(barcode, itemData, isExisting) {
+      var panel = document.getElementById('qtyPanel');
+      document.getElementById('qtyProductName').innerHTML =
+        itemData.productName +
+        ' <span class="code">' + itemData.ecountCode + '</span>';
+      document.getElementById('qtyInput').value = itemData.qty;
+      panel.classList.add('active');
+
+      if (!isExisting) {
+        pendingItem = { barcode: barcode, data: itemData };
+      } else {
+        pendingItem = null;
+      }
+
+      // 수량 입력에 포커스
+      setTimeout(function() {
+        document.getElementById('qtyInput').focus();
+        document.getElementById('qtyInput').select();
+      }, 100);
+    }
+
+    function changeQty(delta) {
+      var input = document.getElementById('qtyInput');
+      var val = Math.max(0, parseInt(input.value || '0') + delta);
+      input.value = val;
+      if (navigator.vibrate) navigator.vibrate(30);
+    }
+
+    function confirmItem() {
+      var qty = parseInt(document.getElementById('qtyInput').value || '0');
+
+      if (pendingItem) {
+        // 신규 아이템 추가
+        pendingItem.data.qty = qty;
+        items[pendingItem.barcode] = pendingItem.data;
+        itemOrder.push(pendingItem.barcode);
+        pendingItem = null;
+      } else {
+        // 기존 아이템 수량 업데이트 (마지막 스캔한 것)
+        var lastBarcode = itemOrder[itemOrder.length - 1];
+        if (lastBarcode && items[lastBarcode]) {
+          items[lastBarcode].qty = qty;
+        }
+      }
+
+      document.getElementById('qtyPanel').classList.remove('active');
+      renderList();
+
+      // 0이면 삭제
+      if (qty === 0) {
+        var barcodeToRemove = pendingItem ? pendingItem.barcode : itemOrder[itemOrder.length - 1];
+        removeItem(barcodeToRemove);
+      }
+    }
+
+    // ── 목록 렌더링 ──
+    function renderList() {
+      var container = document.getElementById('itemList');
+      var totalQty = 0;
+      var count = itemOrder.length;
+
+      if (count === 0) {
+        container.innerHTML = '<div class="list-empty" id="emptyMsg">📦 바코드를 스캔하면 여기에 표시됩니다</div>';
+      } else {
+        var html = '';
+        for (var i = itemOrder.length - 1; i >= 0; i--) {
+          var bc = itemOrder[i];
+          var item = items[bc];
+          if (!item) continue;
+          totalQty += item.qty;
+          html +=
+            '<div class="item-card">' +
+            '  <div class="item-info">' +
+            '    <div class="item-name">' + item.productName + '</div>' +
+            '    <div class="item-code">' + item.ecountCode + '</div>' +
+            '  </div>' +
+            '  <div class="item-qty">' + item.qty + '</div>' +
+            '  <button class="item-delete" onclick="removeItem(\'' + bc + '\')">✕</button>' +
+            '</div>';
+        }
+        container.innerHTML = html;
+      }
+
+      // 통계 업데이트
+      document.getElementById('scanCount').textContent = count + '품목';
+      document.getElementById('listCount').textContent = count + '건';
+      document.getElementById('statTotal').textContent = count;
+      document.getElementById('statQty').textContent = totalQty;
+      document.getElementById('submitBtn').disabled = count === 0;
+    }
+
+    function removeItem(barcode) {
+      delete items[barcode];
+      itemOrder = itemOrder.filter(function(bc) { return bc !== barcode; });
+      renderList();
+    }
+
+    // ── 실사 제출 ──
+    function showSubmitModal() {
+      if (itemOrder.length === 0) return;
+
+      var totalQty = 0;
+      itemOrder.forEach(function(bc) { totalQty += (items[bc] || {}).qty || 0; });
+
+      if (!confirm(itemOrder.length + '품목 / ' + totalQty + '개\n\n재고 실사를 저장하시겠습니까?')) return;
+
+      submitInventory();
+    }
+
+    function submitInventory() {
+      showLoading('재고 실사 저장 중...');
+
+      var itemArr = itemOrder.map(function(bc) {
+        var item = items[bc];
+        return {
+          barcode: bc,
+          ecountCode: item.ecountCode,
+          productName: item.productName,
+          systemQty: 0,
+          actualQty: item.qty,
+          memo: ''
+        };
+      });
+
+      var sessionData = {
+        submitter: currentStaff,
+        warehouse: '',
+        items: itemArr
+      };
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          hideLoading();
+          if (result.success) {
+            showResultModal('✅', '실사 완료!', result.message);
+          } else {
+            showResultModal('⚠️', '저장 실패', result.error);
+          }
+        })
+        .withFailureHandler(function(err) {
+          hideLoading();
+          showResultModal('❌', '오류 발생', err.message);
+        })
+        .submitInventoryCount(sessionData);
+    }
+
+    function showResultModal(icon, title, msg) {
+      document.getElementById('modalIcon').textContent = icon;
+      document.getElementById('modalTitle').textContent = title;
+      document.getElementById('modalMsg').textContent = msg;
+      document.getElementById('resultModal').classList.add('active');
+    }
+
+    // ── 유틸 ──
+    function resetAll() {
+      items = {};
+      itemOrder = [];
+      pendingItem = null;
+      document.getElementById('qtyPanel').classList.remove('active');
+      document.getElementById('resultModal').classList.remove('active');
+      renderList();
+      if (scanMode === 'camera') startScanner();
+    }
+
+    function goHome() {
+      var baseUrl = window.location.href.split('?')[0];
+      window.location.href = baseUrl;
+    }
+
+    function showLoading(text) {
+      document.getElementById('loadingText').textContent = text || '처리 중...';
+      document.getElementById('loading').classList.add('active');
+    }
+    function hideLoading() {
+      document.getElementById('loading').classList.remove('active');
+    }
+  </script>
+
+</body>
+</html>

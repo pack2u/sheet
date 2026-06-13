@@ -163,16 +163,19 @@ function submitSearchOrders() {
   var orderTab = ss.getSheetByName('발주 및 송장조회');
   if (!orderTab) { ui.alert('발주 및 송장조회 탭이 없습니다.'); return; }
 
-  // ① 품목명 → 이카운트코드 맵 (단가조회 D열=품목명, C열=이카운트코드)
-  var codeMap = {};
+  // ① 품목명 → 이카운트코드+상태 맵 (단가조회 A열=상태, C열=코드, D열=품목명)
+  var codeMap = {};   // 품목명 → 이카운트코드
+  var statusMap = {}; // 이카운트코드 → 상품상태
   var viewerTab = _findViewerTab_(ss);
   if (viewerTab && viewerTab.getLastRow() >= 3) {
     var vlr   = viewerTab.getLastRow();
-    var vData = viewerTab.getRange(3, 3, vlr - 2, 2).getValues(); // C=코드, D=품목명
+    var vData = viewerTab.getRange(3, 1, vlr - 2, 4).getValues(); // A=상태, B, C=코드, D=품목명
     vData.forEach(function(r) {
-      var ec = String(r[0] || '').trim(); // C열 이카운트코드
-      var nm = String(r[1] || '').trim(); // D열 품목명
+      var st = String(r[0] || '').trim(); // A열 상태
+      var ec = String(r[2] || '').trim(); // C열 이카운트코드
+      var nm = String(r[3] || '').trim(); // D열 품목명
       if (nm && ec && !codeMap[nm]) codeMap[nm] = ec;
+      if (ec && st) statusMap[ec] = st;
     });
   }
   // ② 폴백: 발주 및 송장조회 기존 이력 (C=이카운트코드, D=품목명)
@@ -205,6 +208,17 @@ function submitSearchOrders() {
     var ecCode = codeMap[itemName] || '';
     if (!ecCode) errNames.push(itemName);
 
+    // ★ 상품 상태 판정: 뷰어 탭 A열 상태 → N열 상태 반영
+    var orderStatus = '접수완료';
+    if (ecCode && statusMap[ecCode]) {
+      var rawSt = statusMap[ecCode].replace(/\s/g, '');
+      if (rawSt.indexOf('단종') !== -1)            orderStatus = '🚨단종';
+      else if (rawSt.indexOf('품절임박') !== -1)    orderStatus = '🚨품절임박';
+      else if (rawSt.indexOf('품절') !== -1 && rawSt.indexOf('품절+7') === -1)
+                                                    orderStatus = '🚨품절';
+      else if (rawSt.indexOf('재고까지만') !== -1)  orderStatus = '⚠재고까지만';
+    }
+
     var uid = 'SI-' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'MMddHHmmss') + '-' + (ri + 1);
 
     // 발주 및 송장조회 헤더:
@@ -224,7 +238,7 @@ function submitSearchOrders() {
       '',                            // K 송장번호
       '',                            // L 정산금액
       uid,                           // M 고유ID
-      '접수완료'                      // N 상태
+      orderStatus                    // N 상태 (품절/단종 시 경고)
     ]);
   }
 

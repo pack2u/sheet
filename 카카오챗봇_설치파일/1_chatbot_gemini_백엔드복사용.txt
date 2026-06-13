@@ -1,5 +1,5 @@
 // 발급해주신 Gemini 유료플랜 키 적용
-var GEMINI_API_KEY = "AIzaSyCXNK34AUDAaxWWghGK5hAsd7v8WEnBxdk"; 
+var GEMINI_API_KEY = "AIzaSyA9O-Dh3SDsMSK7OVHQQ2BG9INiFcgXCB0"; 
 var CS_MANUAL_SPREADSHEET_ID = "1LlNX-spTs-2WgWD8HEha90PYU0m7s8MqFh84vy_Fi_Q";
 
 // 챗봇 메뉴 추가 (시트를 열면 상단에 버튼이 생깁니다)

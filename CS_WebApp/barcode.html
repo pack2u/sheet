@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>반품 CS 접수 - Pack2U</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- html5-qrcode 바코드 스캔 라이브러리 -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #0f1117;
+      --bg-secondary: #1a1d28;
+      --bg-card: #222533;
+      --bg-card-hover: #2a2e42;
+      --text-primary: #f0f0f5;
+      --text-secondary: #8b8fa3;
+      --text-muted: #5c6078;
+      --accent-blue: #4a90d9;
+      --accent-blue-light: #6ba5e7;
+      --accent-green: #34c77b;
+      --accent-red: #e74c5f;
+      --accent-orange: #f0a030;
+      --accent-purple: #8b5cf6;
+      --border: rgba(255, 255, 255, 0.06);
+      --border-active: rgba(74, 144, 217, 0.4);
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Noto Sans KR', -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      width: 100%;
+      max-width: 100vw;
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-font-smoothing: antialiased;
+      touch-action: manipulation;
+    }
+
+    /* ── 상단 바 ── */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      padding: 16px 16px 12px;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .back-btn {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .top-title {
+      font-size: 17px;
+      font-weight: 600;
+    }
+    .step-indicator {
+      margin-left: auto;
+      display: flex;
+      gap: 6px;
+    }
+    .step-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      transition: all 0.3s;
+    }
+    .step-dot.active {
+      background: var(--accent-blue);
+      box-shadow: 0 0 8px var(--accent-blue);
+    }
+    .step-dot.done {
+      background: var(--accent-green);
+    }
+
+    /* ── 스캔 모드 탭 ── */
+    .mode-tabs {
+      display: flex;
+      gap: 0;
+      margin: 16px 16px 0;
+      background: var(--bg-secondary);
+      border-radius: var(--radius-sm);
+      padding: 3px;
+      border: 1px solid var(--border);
+    }
+    .mode-tab {
+      flex: 1;
+      padding: 11px 8px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.25s;
+      font-family: inherit;
+    }
+    .mode-tab.active {
+      background: var(--accent-blue);
+      color: white;
+      box-shadow: 0 2px 8px rgba(74,144,217,0.3);
+    }
+    .mode-tab:not(.active):hover {
+      color: var(--text-secondary);
+    }
+
+    /* ── 스텝 컨테이너 ── */
+    .step-container {
+      display: none;
+      padding: 20px 16px;
+      animation: fadeIn 0.3s ease;
+    }
+    .step-container.active { display: block; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── STEP 1: 바코드 스캔 ── */
+    .scan-area {
+      background: var(--bg-card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .scan-label {
+      padding: 12px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .scan-label .mode-badge {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .scan-label .mode-badge.product { background: rgba(74,144,217,0.2); color: var(--accent-blue-light); }
+    .scan-label .mode-badge.invoice { background: rgba(139,92,246,0.2); color: var(--accent-purple); }
+    #qr-reader {
+      width: 100%;
+      min-height: 280px;
+    }
+    #qr-reader video {
+      border-radius: 0 !important;
+    }
+    /* html5-qrcode 스타일 오버라이드 */
+    #qr-reader__scan_region {
+      min-height: 260px !important;
+    }
+    #qr-reader__dashboard {
+      padding: 8px !important;
+    }
+    #qr-reader__dashboard_section {
+      padding: 4px !important;
+    }
+    #qr-reader__dashboard button, #qr-reader select {
+      background: var(--bg-secondary) !important;
+      color: var(--text-primary) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 6px !important;
+      padding: 8px 14px !important;
+      font-family: inherit !important;
+    }
+
+    /* ── 카메라 폴백: 파일 캡처 ── */
+    .camera-fallback {
+      padding: 24px 16px;
+      text-align: center;
+    }
+    .fallback-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+    .fallback-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .fallback-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+    .fallback-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      background: var(--accent-blue);
+      color: white;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .fallback-btn:active {
+      transform: scale(0.96);
+    }
+    .file-input-hidden {
+      display: none;
+    }
+    .camera-error-detail {
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: rgba(231,76,95,0.08);
+      border: 1px solid rgba(231,76,95,0.2);
+      border-radius: 8px;
+      font-size: 11px;
+      color: var(--accent-red);
+      text-align: left;
+      word-break: break-all;
+    }
+
+    .manual-input {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .manual-input input {
+      flex: 1;
+      padding: 14px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: border 0.2s;
+    }
+    .manual-input input:focus {
+      border-color: var(--accent-blue);
+    }
+    .manual-input input::placeholder {
+      color: var(--text-muted);
+    }
+    .btn {
+      padding: 14px 20px;
+      border-radius: var(--radius-sm);
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary {
+      background: var(--accent-blue);
+      color: white;
+    }
+    .btn-purple {
+      background: var(--accent-purple);
+      color: white;
+    }
+    .btn-success {
+      background: var(--accent-green);
+      color: white;
+    }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+    }
+    .btn-full {
+      width: 100%;
+      padding: 16px;
+      font-size: 16px;
+    }
+
+    /* ── STEP 2: 상품 정보 확인 ── */
+    .product-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .product-card.found {
+      border-color: rgba(52, 199, 123, 0.3);
+    }
+    .product-card.not-found {
+      border-color: rgba(231, 76, 95, 0.3);
+    }
+    .product-card.invoice-found {
+      border-color: rgba(139, 92, 246, 0.3);
+    }
+    .product-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+    .product-status.found {
+      background: rgba(52,199,123,0.12);
+      color: var(--accent-green);
+    }
+    .product-status.not-found {
+      background: rgba(231,76,95,0.12);
+      color: var(--accent-red);
+    }
+    .product-status.invoice-found {
+      background: rgba(139,92,246,0.12);
+      color: var(--accent-purple);
+    }
+    .source-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(255,255,255,0.06);
+      color: var(--text-secondary);
+      margin-left: 6px;
+    }
+    .product-field {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .product-field:last-child { border-bottom: none; }
+    .field-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      min-width: 70px;
+    }
+    .field-value {
+      font-size: 14px;
+      font-weight: 500;
+      text-align: right;
+      max-width: 65%;
+      word-break: break-all;
+    }
+
+    /* ── STEP 3: 추가 정보 입력 ── */
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      display: block;
+    }
+    .form-select, .form-textarea, .form-input {
+      width: 100%;
+      padding: 14px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: border 0.2s;
+      -webkit-appearance: none;
+    }
+    .form-select:focus, .form-textarea:focus, .form-input:focus {
+      border-color: var(--accent-blue);
+    }
+    .form-textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+    .quantity-input {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .qty-btn {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .qty-btn:active { background: var(--accent-blue); }
+    .qty-value {
+      font-size: 24px;
+      font-weight: 700;
+      min-width: 60px;
+      text-align: center;
+    }
+
+    /* ── 결과 화면 ── */
+    .result-container {
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .result-icon {
+      font-size: 64px;
+      margin-bottom: 16px;
+    }
+    .result-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .result-subtitle {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+    .result-cs-number {
+      display: inline-block;
+      padding: 10px 20px;
+      background: rgba(74,144,217,0.12);
+      border: 1px solid rgba(74,144,217,0.3);
+      border-radius: var(--radius-sm);
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--accent-blue-light);
+      margin-bottom: 24px;
+      letter-spacing: 0.5px;
+    }
+    .result-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 300px;
+      margin: 0 auto;
+    }
+
+    /* ── 로딩 ── */
+    .loading-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15,17,23,0.85);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .loading-overlay.active { display: flex; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent-blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 상단 바 -->
+  <div class="top-bar">
+    <button class="back-btn" onclick="goBack()">‹</button>
+    <div class="top-title">반품 CS 접수</div>
+    <div class="step-indicator">
+      <div class="step-dot active" id="dot1"></div>
+      <div class="step-dot" id="dot2"></div>
+      <div class="step-dot" id="dot3"></div>
+    </div>
+  </div>
+
+  <!-- ★ 스캔 모드 탭 (Step 1에서만 표시) -->
+  <div class="mode-tabs" id="modeTabs">
+    <button class="mode-tab active" id="tabProduct" onclick="switchMode('product')">📦 상품 바코드</button>
+    <button class="mode-tab" id="tabInvoice" onclick="switchMode('invoice')">🚚 송장 바코드</button>
+  </div>
+
+  <!-- STEP 1: 바코드 스캔 -->
+  <div class="step-container active" id="step1">
+    <div class="scan-area">
+      <div class="scan-label" id="scanLabel">
+        📷 카메라로 바코드를 비춰주세요
+        <span class="mode-badge product" id="modeBadge">상품모드</span>
+      </div>
+      <div id="qr-reader"></div>
+    </div>
+    <div class="manual-input">
+      <input type="text" id="manualBarcode" placeholder="바코드/이카운트코드 직접 입력" inputmode="text" autocomplete="off">
+      <button class="btn btn-primary" id="manualBtn" onclick="manualLookup()">조회</button>
+    </div>
+  </div>
+
+  <!-- STEP 2: 상품 확인 -->
+  <div class="step-container" id="step2">
+    <div class="product-card" id="productInfo"></div>
+
+    <div class="form-group">
+      <label class="form-label">수량</label>
+      <div class="quantity-input">
+        <button class="qty-btn" onclick="changeQty(-1)">−</button>
+        <div class="qty-value" id="qtyValue">1</div>
+        <button class="qty-btn" onclick="changeQty(1)">+</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">CS 사유</label>
+      <select class="form-select" id="csReason">
+        <option value="">-- 선택 --</option>
+        <option value="불량">불량</option>
+        <option value="파손">파손 (배송 중 파손)</option>
+        <option value="오배송">오배송</option>
+        <option value="변심">변심 (단순 변심)</option>
+        <option value="수량오류">수량 오류</option>
+        <option value="유통기한">유통기한 문제</option>
+        <option value="기타">기타</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">메모 (선택)</label>
+      <textarea class="form-textarea" id="csMemo" placeholder="추가 내용을 입력하세요..."></textarea>
+    </div>
+
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-outline" style="flex:1" onclick="resetScan()">← 다시 스캔</button>
+      <button class="btn btn-success" style="flex:2" onclick="submitCS()">CS 접수하기 →</button>
+    </div>
+  </div>
+
+  <!-- STEP 3: 접수 완료 -->
+  <div class="step-container" id="step3">
+    <div class="result-container">
+      <div class="result-icon">✅</div>
+      <div class="result-title">CS 접수 완료!</div>
+      <div class="result-subtitle" id="resultMessage">
+        AppSheet에서 사진과 상세 내용을 추가하세요.
+      </div>
+      <div class="result-cs-number" id="resultCSNumber"></div>
+      <div class="result-actions">
+        <button class="btn btn-primary btn-full" onclick="openAppSheet()">📸 AppSheet에서 사진 추가</button>
+        <button class="btn btn-outline btn-full" onclick="resetAll()">📦 새 반품 접수</button>
+        <button class="btn btn-outline btn-full" onclick="goHome()">🏠 홈으로</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 로딩 -->
+  <div class="loading-overlay" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">상품 정보 조회 중...</div>
+  </div>
+
+  <script>
+    // ── 상태 ──
+    var currentStep = 1;
+    var scanMode = 'product'; // 'product' or 'invoice'
+    var scannedData = { barcode: '', ecountCode: '', productName: '', optionName: '' };
+    var invoiceData = null; // 송장 스캔 시 매칭된 판매 데이터
+    var quantity = 1;
+    var scanner = null;
+    var urlParams = new URLSearchParams(window.location.search);
+    var currentStaff = urlParams.get('staff') || localStorage.getItem('pack2u_staff') || '';
+
+    // ── 초기화 ──
+    window.addEventListener('load', function() {
+      startScanner();
+    });
+
+    // ── 스캔 모드 전환 ──
+    function switchMode(mode) {
+      scanMode = mode;
+      document.getElementById('tabProduct').className = 'mode-tab' + (mode === 'product' ? ' active' : '');
+      document.getElementById('tabInvoice').className = 'mode-tab' + (mode === 'invoice' ? ' active' : '');
+
+      var badge = document.getElementById('modeBadge');
+      var input = document.getElementById('manualBarcode');
+      var btn = document.getElementById('manualBtn');
+
+      if (mode === 'invoice') {
+        badge.className = 'mode-badge invoice';
+        badge.textContent = '송장모드';
+        input.placeholder = '로젠 송장번호 직접 입력';
+        input.inputMode = 'numeric';
+        btn.className = 'btn btn-purple';
+      } else {
+        badge.className = 'mode-badge product';
+        badge.textContent = '상품모드';
+        input.placeholder = '바코드/이카운트코드 직접 입력';
+        input.inputMode = 'text';
+        btn.className = 'btn btn-primary';
+      }
+    }
+
+    // ── 카메라 권한 체크 ──
+    function checkCameraPermission() {
+      return new Promise(function(resolve) {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          resolve({ available: false, reason: 'mediaDevices API 미지원 (iframe 제한 또는 브라우저 미지원)' });
+          return;
+        }
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+          .then(function(stream) {
+            // 카메라 접근 가능 — 스트림 정리
+            stream.getTracks().forEach(function(t) { t.stop(); });
+            resolve({ available: true });
+          })
+          .catch(function(err) {
+            resolve({ available: false, reason: err.name + ': ' + err.message });
+          });
+      });
+    }
+
+    // ── 바코드 스캐너 시작 (하이브리드: 카메라 → 파일 캡처 폴백) ──
+    function startScanner() {
+      checkCameraPermission().then(function(result) {
+        if (result.available) {
+          startCameraScanner();
+        } else {
+          console.log('카메라 사용 불가:', result.reason);
+          showFileCaptureMode(result.reason);
+        }
+      });
+    }
+
+    // 카메라 스트리밍 스캐너
+    function startCameraScanner() {
+      try {
+        scanner = new Html5Qrcode("qr-reader");
+        scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 250, height: 100 }, aspectRatio: 1.333 },
+          onScanSuccess,
+          function() {} // 스캔 실패는 무시
+        ).catch(function(err) {
+          console.log("카메라 시작 실패:", err);
+          showFileCaptureMode(err.toString());
+        });
+      } catch (e) {
+        console.log("스캐너 초기화 실패:", e);
+        showFileCaptureMode(e.toString());
+      }
+    }
+
+    // 파일 캡처 폴백 모드
+    function showFileCaptureMode(errorReason) {
+      var qrDiv = document.getElementById('qr-reader');
+      qrDiv.innerHTML =
+        '<div class="camera-fallback">' +
+        '  <div class="fallback-icon">📸</div>' +
+        '  <div class="fallback-title">카메라 직접 접근이 제한됩니다</div>' +
+        '  <div class="fallback-desc">사진을 촬영하여 바코드를 스캔하거나,<br>아래 입력란에 직접 입력해 주세요.</div>' +
+        '  <button class="fallback-btn" onclick="document.getElementById(\'barcodeFileInput\').click()">' +
+        '    📷 사진 촬영하여 스캔' +
+        '  </button>' +
+        '  <input type="file" id="barcodeFileInput" class="file-input-hidden" accept="image/*" capture="environment" onchange="handleFileCapture(event)">' +
+        '  <div class="camera-error-detail">⚠ ' + (errorReason || '카메라 접근 차단됨') + '</div>' +
+        '</div>';
+    }
+
+    // 파일 캡처로 바코드 디코딩
+    function handleFileCapture(event) {
+      var file = event.target.files[0];
+      if (!file) return;
+
+      showLoading('바코드 분석 중...');
+
+      var tempScanner = new Html5Qrcode("qr-reader-temp-" + Date.now());
+      // 임시 div 생성
+      var tempDiv = document.createElement('div');
+      tempDiv.id = tempScanner._elementId || ('qr-temp-' + Date.now());
+      tempDiv.style.display = 'none';
+      document.body.appendChild(tempDiv);
+
+      Html5Qrcode.scanFile(file, true)
+        .then(function(decodedText) {
+          hideLoading();
+          onScanSuccess(decodedText);
+        })
+        .catch(function(err) {
+          hideLoading();
+          alert('바코드를 인식하지 못했습니다.\n다시 촬영하거나 직접 입력해 주세요.\n\n오류: ' + err);
+        })
+        .finally(function() {
+          // 파일 입력 리셋
+          event.target.value = '';
+          if (tempDiv.parentNode) tempDiv.parentNode.removeChild(tempDiv);
+        });
+    }
+
+    // ── 스캔 성공 ──
+    function onScanSuccess(decodedText) {
+      if (scanner) {
+        scanner.stop().catch(function() {});
+      }
+      if (navigator.vibrate) navigator.vibrate(100);
+
+      if (scanMode === 'invoice') {
+        lookupInvoice(decodedText);
+      } else {
+        lookupProduct(decodedText);
+      }
+    }
+
+    // ── 수동 조회 ──
+    function manualLookup() {
+      var code = document.getElementById('manualBarcode').value.trim();
+      if (!code) return;
+      if (scanner) {
+        scanner.stop().catch(function() {});
+      }
+
+      if (scanMode === 'invoice') {
+        lookupInvoice(code);
+      } else {
+        lookupProduct(code);
+      }
+    }
+
+    // ── 상품 조회 (기존) ──
+    function lookupProduct(barcode) {
+      showLoading('상품 정보 조회 중...');
+      google.script.run
+        .withSuccessHandler(function(result) {
+          hideLoading();
+          showProductResult(barcode, result);
+        })
+        .withFailureHandler(function(err) {
+          hideLoading();
+          alert('조회 오류: ' + err.message);
+        })
+        .lookupProductByBarcode(barcode);
+    }
+
+    // ── ★ 송장번호 조회 (신규) ──
+    function lookupInvoice(invoiceNumber) {
+      showLoading('📦 판매 데이터 조회 중...');
+      google.script.run
+        .withSuccessHandler(function(result) {
+          hideLoading();
+          showInvoiceResult(invoiceNumber, result);
+        })
+        .withFailureHandler(function(err) {
+          hideLoading();
+          alert('조회 오류: ' + err.message);
+        })
+        .lookupByInvoice(invoiceNumber);
+    }
+
+    // ── 상품 결과 표시 (기존) ──
+    function showProductResult(barcode, result) {
+      var container = document.getElementById('productInfo');
+      invoiceData = null;
+
+      if (result.found) {
+        scannedData = result;
+        container.className = 'product-card found';
+        container.innerHTML =
+          '<div class="product-status found">✅ 상품 확인됨</div>' +
+          '<div class="product-field"><span class="field-label">바코드</span><span class="field-value">' + barcode + '</span></div>' +
+          '<div class="product-field"><span class="field-label">이카운트코드</span><span class="field-value">' + result.ecountCode + '</span></div>' +
+          '<div class="product-field"><span class="field-label">상품명</span><span class="field-value">' + result.productName + '</span></div>' +
+          (result.optionName ? '<div class="product-field"><span class="field-label">옵션</span><span class="field-value">' + result.optionName + '</span></div>' : '');
+      } else {
+        scannedData = { barcode: barcode, ecountCode: barcode, productName: '(미확인)', optionName: '' };
+        container.className = 'product-card not-found';
+        container.innerHTML =
+          '<div class="product-status not-found">⚠ 상품 미확인</div>' +
+          '<div class="product-field"><span class="field-label">입력값</span><span class="field-value">' + barcode + '</span></div>' +
+          '<div class="product-field"><span class="field-label">안내</span><span class="field-value" style="color:var(--text-secondary);font-size:12px">상품 정보를 찾을 수 없습니다.<br>그대로 접수하거나 다시 스캔하세요.</span></div>';
+      }
+
+      document.getElementById('modeTabs').style.display = 'none';
+      goToStep(2);
+    }
+
+    // ── ★ 송장 결과 표시 (신규) ──
+    function showInvoiceResult(invoiceNumber, result) {
+      var container = document.getElementById('productInfo');
+
+      if (result.found) {
+        invoiceData = result;
+        scannedData = {
+          barcode: invoiceNumber,
+          ecountCode: result.ecountCode || '',
+          productName: result.productName || '',
+          optionName: ''
+        };
+        // 수량 자동 설정
+        if (result.quantity && parseInt(result.quantity) > 0) {
+          quantity = parseInt(result.quantity);
+          document.getElementById('qtyValue').textContent = quantity;
+        }
+
+        container.className = 'product-card invoice-found';
+        var html = '<div class="product-status invoice-found">🚚 주문정보 매칭 완료 <span class="source-badge">' + result.source + '</span></div>';
+        html += '<div class="product-field"><span class="field-label">송장번호</span><span class="field-value">' + (result.invoiceNumber || invoiceNumber) + '</span></div>';
+        if (result.recipientName) html += '<div class="product-field"><span class="field-label">수취인</span><span class="field-value">' + result.recipientName + '</span></div>';
+        if (result.productName) html += '<div class="product-field"><span class="field-label">품목명</span><span class="field-value">' + result.productName + '</span></div>';
+        if (result.vendor) html += '<div class="product-field"><span class="field-label">발주업체</span><span class="field-value">' + result.vendor + '</span></div>';
+        if (result.ecountCode) html += '<div class="product-field"><span class="field-label">이카운트코드</span><span class="field-value">' + result.ecountCode + '</span></div>';
+        if (result.quantity) html += '<div class="product-field"><span class="field-label">수량</span><span class="field-value">' + result.quantity + '</span></div>';
+        if (result.recipientPhone) html += '<div class="product-field"><span class="field-label">전화번호</span><span class="field-value">' + result.recipientPhone + '</span></div>';
+        if (result.recipientAddr) html += '<div class="product-field"><span class="field-label">주소</span><span class="field-value" style="font-size:12px">' + result.recipientAddr + '</span></div>';
+        if (result.orderDate) html += '<div class="product-field"><span class="field-label">주문일자</span><span class="field-value">' + result.orderDate + '</span></div>';
+        if (result.status) html += '<div class="product-field"><span class="field-label">상태</span><span class="field-value">' + result.status + '</span></div>';
+        container.innerHTML = html;
+      } else {
+        invoiceData = null;
+        scannedData = { barcode: invoiceNumber, ecountCode: '', productName: '(미확인)', optionName: '' };
+        container.className = 'product-card not-found';
+        container.innerHTML =
+          '<div class="product-status not-found">⚠ 주문정보 미발견</div>' +
+          '<div class="product-field"><span class="field-label">송장번호</span><span class="field-value">' + invoiceNumber + '</span></div>' +
+          '<div class="product-field"><span class="field-label">안내</span><span class="field-value" style="color:var(--text-secondary);font-size:12px">' + (result.error || '해당 송장번호의 판매 데이터가 없습니다.') + '<br>그대로 접수하거나 다시 스캔하세요.</span></div>';
+      }
+
+      document.getElementById('modeTabs').style.display = 'none';
+      goToStep(2);
+    }
+
+    // ── 수량 변경 ──
+    function changeQty(delta) {
+      quantity = Math.max(1, quantity + delta);
+      document.getElementById('qtyValue').textContent = quantity;
+      if (navigator.vibrate) navigator.vibrate(30);
+    }
+
+    // ── CS 접수 제출 ──
+    function submitCS() {
+      var reason = document.getElementById('csReason').value;
+      if (!reason) {
+        alert('CS 사유를 선택해 주세요.');
+        return;
+      }
+
+      showLoading('CS 접수 중...');
+
+      var memo = document.getElementById('csMemo').value.trim();
+      // 송장 모드에서 매칭된 정보를 메모에 자동 추가
+      if (invoiceData) {
+        var autoMemo = '📦 송장: ' + (invoiceData.invoiceNumber || scannedData.barcode);
+        if (invoiceData.recipientName) autoMemo += ' | 수취인: ' + invoiceData.recipientName;
+        if (invoiceData.vendor) autoMemo += ' | 업체: ' + invoiceData.vendor;
+        if (invoiceData.recipientPhone) autoMemo += ' | 전화: ' + invoiceData.recipientPhone;
+        memo = autoMemo + (memo ? '\n' + memo : '');
+      }
+
+      var formData = {
+        barcode: scannedData.barcode,
+        ecountCode: scannedData.ecountCode,
+        productName: scannedData.productName,
+        optionName: scannedData.optionName,
+        quantity: quantity,
+        reason: reason,
+        memo: memo,
+        submitter: currentStaff
+      };
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          hideLoading();
+          if (result.success) {
+            showResult(result.csNumber, result.message);
+          } else {
+            alert('접수 실패: ' + result.error);
+          }
+        })
+        .withFailureHandler(function(err) {
+          hideLoading();
+          alert('접수 오류: ' + err.message);
+        })
+        .submitBarcodeToCS(formData);
+    }
+
+    // ── 결과 표시 ──
+    function showResult(csNumber, message) {
+      document.getElementById('resultCSNumber').textContent = csNumber;
+      document.getElementById('resultMessage').textContent = message;
+      goToStep(3);
+    }
+
+    // ── AppSheet 열기 ──
+    function openAppSheet() {
+      var appsheetUrl = 'https://www.appsheet.com/start/d45af596-e7f7-4474-934a-89f2dfcca507';
+      window.open(appsheetUrl, '_blank');
+    }
+
+    // ── 네비게이션 ──
+    function goToStep(step) {
+      currentStep = step;
+      document.querySelectorAll('.step-container').forEach(function(el) {
+        el.classList.remove('active');
+      });
+      document.getElementById('step' + step).classList.add('active');
+
+      // 모드 탭 표시/숨김
+      document.getElementById('modeTabs').style.display = (step === 1) ? 'flex' : 'none';
+
+      // 스텝 인디케이터 업데이트
+      for (var i = 1; i <= 3; i++) {
+        var dot = document.getElementById('dot' + i);
+        dot.className = 'step-dot';
+        if (i === step) dot.classList.add('active');
+        else if (i < step) dot.classList.add('done');
+      }
+    }
+
+    function resetScan() {
+      scannedData = { barcode: '', ecountCode: '', productName: '', optionName: '' };
+      invoiceData = null;
+      quantity = 1;
+      document.getElementById('qtyValue').textContent = '1';
+      document.getElementById('csReason').value = '';
+      document.getElementById('csMemo').value = '';
+      document.getElementById('manualBarcode').value = '';
+      goToStep(1);
+      startScanner();
+    }
+
+    function resetAll() {
+      resetScan();
+    }
+
+    function goBack() {
+      if (currentStep > 1) {
+        if (currentStep === 2) resetScan();
+        else goToStep(currentStep - 1);
+      } else {
+        goHome();
+      }
+    }
+
+    function goHome() {
+      var baseUrl = window.location.href.split('?')[0];
+      window.location.href = baseUrl;
+    }
+
+    // ── 로딩 ──
+    function showLoading(text) {
+      document.getElementById('loadingText').textContent = text || '처리 중...';
+      document.getElementById('loading').classList.add('active');
+    }
+    function hideLoading() {
+      document.getElementById('loading').classList.remove('active');
+    }
+  </script>
+
+</body>
+</html>

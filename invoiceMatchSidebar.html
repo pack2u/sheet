@@ -37,6 +37,8 @@
     .btn-blue:hover  { background: #1558b0; }
     .btn-green { background: #34a853; color: white; }
     .btn-green:hover { background: #2d8f46; }
+    .btn-orange { background: #f29900; color: white; }
+    .btn-orange:hover { background: #d88a00; }
     .btn:disabled { background: #ccc; cursor: not-allowed; }
     #resultSection { flex: 1; overflow-y: auto; display: none; }
     .summary {
@@ -55,6 +57,43 @@
       transform: translateX(-50%); background: #333; color: white;
       padding: 8px 18px; border-radius: 20px; font-size: 12px; z-index: 999;
     }
+    /* 탭 스타일 */
+    .tab-bar {
+      display: flex; margin: 8px 8px 0; gap: 2px;
+    }
+    .tab-btn {
+      flex: 1; padding: 8px 4px; border: none; border-radius: 8px 8px 0 0;
+      cursor: pointer; font-size: 12px; font-weight: bold;
+      background: #e0e0e0; color: #666; transition: 0.15s;
+    }
+    .tab-btn.active {
+      background: white; color: #1a73e8;
+      box-shadow: 0 -1px 3px rgba(0,0,0,0.1);
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    /* 이미지 드롭존 */
+    .img-drop-zone {
+      border: 2px dashed #ccc; padding: 16px; border-radius: 6px;
+      background: #fafafa; text-align: center; cursor: pointer;
+      transition: 0.2s; min-height: 80px; position: relative;
+    }
+    .img-drop-zone.dragover {
+      background: #e8f0fe; border-color: #1a73e8;
+    }
+    .img-drop-zone.has-image {
+      border-color: #34a853; background: #f6fff6;
+    }
+    .img-preview {
+      max-width: 100%; max-height: 150px; border-radius: 4px;
+      margin-top: 8px; border: 1px solid #ddd;
+    }
+    .img-remove {
+      position: absolute; top: 4px; right: 4px;
+      background: #ea4335; color: white; border: none;
+      border-radius: 50%; width: 20px; height: 20px;
+      cursor: pointer; font-size: 11px; line-height: 20px;
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
@@ -68,18 +107,46 @@
     </select>
   </div>
 
-  <div class="section">
-    <div class="section-title">② 송장 데이터 입력 (붙여넣기 또는 엑셀 업로드)</div>
-    <div id="dropZone" style="margin-bottom: 8px; border: 2px dashed #ccc; padding: 12px; border-radius: 6px; background: #fafafa; text-align: center; cursor: pointer; transition: 0.2s;" onclick="document.getElementById('fileUpload').click()">
-      <div style="font-size: 13px; color: #555; margin-bottom: 4px;">📂 엑셀 파일을 여기에 드래그 앤 드롭 하세요</div>
-      <div style="font-size: 11px; color: #888;">또는 클릭하여 파일 선택</div>
-      <input type="file" id="fileUpload" accept=".xlsx, .xls, .csv" style="display: none;" onchange="handleFileUpload(event)">
-    </div>
-    <div style="font-size: 10px; color: #888; margin-bottom: 8px;">※ 엑셀 파일은 '이름', '송장번호' 열만 남겨두시면 인식률이 가장 높습니다.</div>
-    <textarea id="rawText" placeholder="예시:
+  <!-- 입력 방식 탭 -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('text')">📋 텍스트/엑셀</button>
+    <button class="tab-btn" onclick="switchTab('image')">🖼️ 이미지 OCR</button>
+  </div>
+
+  <div class="section" style="border-radius: 0 0 8px 8px; margin-top: 0;">
+    <!-- 탭1: 텍스트/엑셀 -->
+    <div id="tab-text" class="tab-content active">
+      <div id="dropZone" style="margin-bottom: 8px; border: 2px dashed #ccc; padding: 12px; border-radius: 6px; background: #fafafa; text-align: center; cursor: pointer; transition: 0.2s;" onclick="document.getElementById('fileUpload').click()">
+        <div style="font-size: 13px; color: #555; margin-bottom: 4px;">📂 엑셀 파일을 여기에 드래그 앤 드롭 하세요</div>
+        <div style="font-size: 11px; color: #888;">또는 클릭하여 파일 선택</div>
+        <input type="file" id="fileUpload" accept=".xlsx, .xls, .csv" style="display: none;" onchange="handleFileUpload(event)">
+      </div>
+      <div style="font-size: 10px; color: #888; margin-bottom: 8px;">※ 엑셀 파일은 '이름', '송장번호' 열만 남겨두시면 인식률이 가장 높습니다.</div>
+      <textarea id="rawText" placeholder="예시:
 1234567890 홍길동
 김철수 5678901234
 (또는 위의 버튼으로 엑셀 파일을 업로드하세요)"></textarea>
+    </div>
+
+    <!-- 탭2: 이미지 OCR -->
+    <div id="tab-image" class="tab-content">
+      <div id="imgDropZone" class="img-drop-zone" onclick="document.getElementById('imgUpload').click()">
+        <div id="imgPlaceholder">
+          <div style="font-size: 22px; margin-bottom: 6px;">📸</div>
+          <div style="font-size: 13px; color: #555;">이미지를 붙여넣기(Ctrl+V) 하거나</div>
+          <div style="font-size: 13px; color: #555; margin-bottom: 4px;">드래그 앤 드롭 / 클릭하여 선택</div>
+          <div style="font-size: 11px; color: #aaa;">송장 목록 스크린샷을 넣으세요</div>
+        </div>
+        <input type="file" id="imgUpload" accept="image/*" style="display: none;" onchange="handleImageFile(event)">
+      </div>
+      <div id="imgPreviewArea" style="display:none; text-align: center; margin-top: 8px; position: relative;">
+        <button class="img-remove" onclick="clearImage(event)">✕</button>
+        <img id="imgPreview" class="img-preview" src="">
+        <div id="ocrStatus" style="font-size: 11px; color: #888; margin-top: 4px;"></div>
+      </div>
+      <button class="btn btn-orange" id="ocrBtn" onclick="runOCR()" style="display:none;">🔍 이미지에서 텍스트 추출</button>
+    </div>
+
     <button class="btn btn-blue" id="analyzeBtn" onclick="analyze()">🔍 분석</button>
   </div>
 
@@ -97,7 +164,7 @@
   <div id="toast"></div>
 
   <script>
-    var _matches = null, _fileId = null;
+    var _matches = null, _fileId = null, _imageBase64 = null;
 
     function toast(msg, ms) {
       var el = document.getElementById('toast');
@@ -105,41 +172,182 @@
       setTimeout(function(){ el.style.display = 'none'; }, ms || 2500);
     }
 
-    // 드래그 앤 드롭 이벤트 설정
+    // ── 탭 전환 ──
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-btn').forEach(function(btn, i) {
+        btn.classList.toggle('active', (tabName === 'text' && i === 0) || (tabName === 'image' && i === 1));
+      });
+      document.getElementById('tab-text').classList.toggle('active', tabName === 'text');
+      document.getElementById('tab-image').classList.toggle('active', tabName === 'image');
+    }
+
+    // ── 이미지 처리 ──
+    function handleImageData(base64) {
+      _imageBase64 = base64;
+      var preview = document.getElementById('imgPreview');
+      preview.src = base64;
+      document.getElementById('imgPreviewArea').style.display = 'block';
+      document.getElementById('imgPlaceholder').style.display = 'none';
+      document.getElementById('imgDropZone').classList.add('has-image');
+      document.getElementById('ocrBtn').style.display = 'block';
+      document.getElementById('ocrStatus').textContent = '이미지 준비 완료';
+    }
+
+    function clearImage(e) {
+      if (e) e.stopPropagation();
+      _imageBase64 = null;
+      document.getElementById('imgPreviewArea').style.display = 'none';
+      document.getElementById('imgPlaceholder').style.display = 'block';
+      document.getElementById('imgDropZone').classList.remove('has-image');
+      document.getElementById('ocrBtn').style.display = 'none';
+    }
+
+    // 파일 선택으로 이미지 로드
+    function handleImageFile(e) {
+      var file = e.target.files[0];
+      if (!file || !file.type.startsWith('image/')) return;
+      var reader = new FileReader();
+      reader.onload = function(evt) { handleImageData(evt.target.result); };
+      reader.readAsDataURL(file);
+    }
+
+    // Ctrl+V 붙여넣기 (전역 및 개별 요소 대상 안전 감지)
+    document.addEventListener('paste', function(e) {
+      var clipboardData = e.clipboardData || window.clipboardData;
+      if (!clipboardData) return;
+
+      var items = clipboardData.items;
+      var files = clipboardData.files;
+
+      // 1. items 검사 (대부분의 모던 브라우저)
+      if (items && items.length > 0) {
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf('image') !== -1) {
+            e.preventDefault();
+            var file = items[i].getAsFile();
+            readAndPreviewImage(file);
+            return;
+          }
+        }
+      }
+
+      // 2. files 검사 (일부 환경/클립보드 포맷 백업)
+      if (files && files.length > 0) {
+        for (var j = 0; j < files.length; j++) {
+          if (files[j].type.indexOf('image') !== -1) {
+            e.preventDefault();
+            readAndPreviewImage(files[j]);
+            return;
+          }
+        }
+      }
+    });
+
+    function readAndPreviewImage(file) {
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function(evt) {
+        switchTab('image');
+        handleImageData(evt.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // 이미지 드래그 앤 드롭
     document.addEventListener('DOMContentLoaded', function() {
+      var imgZone = document.getElementById('imgDropZone');
+
+      imgZone.addEventListener('dragover', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        imgZone.classList.add('dragover');
+      });
+      imgZone.addEventListener('dragleave', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        imgZone.classList.remove('dragover');
+      });
+      imgZone.addEventListener('drop', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        imgZone.classList.remove('dragover');
+        var file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+          var reader = new FileReader();
+          reader.onload = function(evt) { handleImageData(evt.target.result); };
+          reader.readAsDataURL(file);
+        }
+      });
+
+      // 엑셀 드래그 앤 드롭 (기존)
       var dropZone = document.getElementById('dropZone');
-      
       dropZone.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
+        e.preventDefault(); e.stopPropagation();
         dropZone.style.background = '#e8f0fe';
         dropZone.style.borderColor = '#1a73e8';
       });
-
       dropZone.addEventListener('dragleave', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
+        e.preventDefault(); e.stopPropagation();
         dropZone.style.background = '#fafafa';
         dropZone.style.borderColor = '#ccc';
       });
-
       dropZone.addEventListener('drop', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
+        e.preventDefault(); e.stopPropagation();
         dropZone.style.background = '#fafafa';
         dropZone.style.borderColor = '#ccc';
-        
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-          document.getElementById('fileUpload').files = e.dataTransfer.files;
-          handleFileUpload({ target: { files: e.dataTransfer.files } });
+          var file = e.dataTransfer.files[0];
+          if (file && file.type.startsWith('image/')) {
+            // 이미지 파일 감지 시 자동 탭 전환 및 이미지 로드
+            readAndPreviewImage(file);
+            toast('이미지 파일이 감지되어 이미지 OCR 탭으로 자동 전환되었습니다.', 3000);
+          } else {
+            document.getElementById('fileUpload').files = e.dataTransfer.files;
+            handleFileUpload({ target: { files: e.dataTransfer.files } });
+          }
         }
       });
     });
 
-    // 엑셀 파일 업로드 처리 (SheetJS 사용)
+    // ── OCR 실행 ──
+    function runOCR() {
+      if (!_imageBase64) return toast('이미지를 먼저 붙여넣으세요.', 2000);
+      var btn = document.getElementById('ocrBtn');
+      var status = document.getElementById('ocrStatus');
+      btn.disabled = true; btn.textContent = '📡 OCR 처리 중...';
+      status.textContent = 'Google Drive로 전송 중...';
+
+      google.script.run
+        .withSuccessHandler(function(text) {
+          btn.disabled = false; btn.textContent = '🔍 이미지에서 텍스트 추출';
+          if (!text || text.trim().length < 3) {
+            status.textContent = '❌ 텍스트를 인식하지 못했습니다.';
+            toast('이미지에서 텍스트를 인식하지 못했습니다.', 3000);
+            return;
+          }
+          // 추출된 텍스트를 텍스트 영역에 입력
+          document.getElementById('rawText').value = text;
+          status.textContent = '✅ ' + text.split('\n').length + '줄 추출 완료!';
+          switchTab('text');
+          toast('OCR 완료! 분석 버튼을 눌러주세요.', 3000);
+        })
+        .withFailureHandler(function(e) {
+          btn.disabled = false; btn.textContent = '🔍 이미지에서 텍스트 추출';
+          status.textContent = '❌ 오류: ' + (e.message || e);
+          toast('OCR 오류: ' + (e.message || e), 4000);
+        })
+        .ocrImageToText(_imageBase64);
+    }
+
+    // ── 엑셀 파일 업로드 처리 (기존) ──
     function handleFileUpload(e) {
       var file = e.target.files[0];
       if (!file) return;
+
+      // 이미지 파일 선택 시 자동으로 이미지 OCR 탭으로 연결
+      if (file && file.type.startsWith('image/')) {
+        readAndPreviewImage(file);
+        toast('이미지 파일이 감지되어 이미지 OCR 탭으로 자동 전환되었습니다.', 3000);
+        return;
+      }
+
       var btn = document.getElementById('analyzeBtn');
       btn.textContent = '파일 읽는 중...';
       btn.disabled = true;
@@ -150,9 +358,7 @@
         try {
           var workbook = XLSX.read(data, {type: 'array'});
           var firstSheet = workbook.SheetNames[0];
-          // 탭으로 구분된 텍스트로 변환 (기존 복사-붙여넣기와 동일한 효과)
           var txtData = XLSX.utils.sheet_to_txt(workbook.Sheets[firstSheet]);
-          
           document.getElementById('rawText').value = txtData;
           toast('엑셀 파일 로드 완료! 분석을 눌러주세요.', 3000);
         } catch(err) {
@@ -165,22 +371,28 @@
       reader.readAsArrayBuffer(file);
     }
 
-    // 업체 목록 로드
-    google.script.run
-      .withSuccessHandler(function(list) {
-        var sel = document.getElementById('vendorSelect');
-        sel.innerHTML = '<option value="">-- 업체 선택 --</option>';
-        list.forEach(function(f) {
-          var o = document.createElement('option');
-          o.value = f.id;
-          o.textContent = '[' + f.pfx + '] ' + f.name;
-          sel.appendChild(o);
-        });
-      })
-      .withFailureHandler(function(e) {
-        document.getElementById('vendorSelect').innerHTML = '<option>❌ 로드 실패</option>';
-      })
-      .getPartnerFileListForSidebar();
+    // ── 업체 목록 로드 ──
+    function loadVendorList() {
+      var sel = document.getElementById('vendorSelect');
+      sel.innerHTML = '<option value="">-- 로딩 중... --</option>';
+      google.script.run
+        .withSuccessHandler(function(list) {
+          sel.innerHTML = '<option value="">-- 업체 선택 --</option>';
+          list.forEach(function(f) {
+            var o = document.createElement('option');
+            o.value = f.id;
+            o.textContent = '[' + f.pfx + '] ' + f.name;
+            if (!f.id) o.disabled = true;
+            sel.appendChild(o);
+          });
+        })
+        .withFailureHandler(function(e) {
+          sel.innerHTML = '<option>❌ 로드 실패: ' + (e.message || e) + '</option>';
+          toast('업체 목록 로드 실패. 권한 승인 후 재시도하세요.', 5000);
+        })
+        .getPartnerFileListForSidebar();
+    }
+    loadVendorList();
 
     function analyze() {
       var fileId = document.getElementById('vendorSelect').value;
@@ -212,7 +424,12 @@
       document.getElementById('summary').innerHTML =
         '<b>수취인 열:</b> ' + res.recipientHeader +
         '&nbsp;&nbsp;|&nbsp;&nbsp;<span class="ok">✅ ' + matched.length + '건</span>' +
-        '&nbsp;&nbsp;<span class="err">❌ ' + unmatched.length + '건</span>';
+        '&nbsp;&nbsp;<span class="err">❌ ' + unmatched.length + '건</span>' +
+        (unmatched.length > 0 && res._debug_sheetNames ?
+          '<div style="margin-top:6px;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:4px">' +
+          '<b>🔍 디버그</b> 열위치:' + (res._debug_recipientColIdx + 1) +
+          '<br>시트 수취인: [' + (res._debug_sheetNames || []).join(', ') + ']' +
+          '<br>입력 파싱: [' + (res._debug_parsedNames || []).join(', ') + ']</div>' : '');
 
       var tbody = document.getElementById('matchTable');
       tbody.innerHTML = '';

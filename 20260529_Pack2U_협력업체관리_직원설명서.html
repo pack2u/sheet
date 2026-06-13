@@ -1,0 +1,1831 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pack2U 협력업체 관리 시스템 - 온라인 직원 교육 코스</title>
+  <!-- Google Fonts: Outfit & Noto Sans KR -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --panel-bg: #1e293b;
+      --panel-bg-light: #334155;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-color: #e2e8f0;
+      --highlight-color: #f1f5f9;
+      --btn-active-bg: rgba(255, 255, 255, 0.07);
+      
+      --accent-blue-mono: #cbd5e1;
+      --success-mono: #e2e8f0;
+      --warning-mono: #94a3b8;
+      
+      --sidebar-width: 320px;
+      --transition-speed: 0.25s;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      display: flex;
+      min-height: 100vh;
+      line-height: 1.65;
+    }
+
+    /* Scrollbar Styling */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.01);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Sidebar Layout */
+    .sidebar {
+      width: var(--sidebar-width);
+      background-color: #090d16;
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      height: 100vh;
+      left: 0;
+      top: 0;
+      z-index: 100;
+      padding: 2rem 1.25rem;
+      transition: transform var(--transition-speed);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+      padding-left: 0.5rem;
+    }
+
+    .brand-icon {
+      width: 24px;
+      height: 24px;
+      fill: none;
+      stroke: var(--accent-color);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .brand-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
+    }
+
+    .course-progress {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--text-main);
+      border-radius: 3px;
+      transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .nav-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      overflow-y: auto;
+      flex: 1;
+      padding-right: 0.2rem;
+    }
+
+    .nav-header {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin: 0.8rem 0 0.4rem 0.5rem;
+      font-weight: 600;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 0.85rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition-speed);
+      border: 1px solid transparent;
+      text-align: left;
+    }
+
+    .nav-item svg {
+      width: 18px;
+      height: 18px;
+      stroke: var(--text-muted);
+      stroke-width: 1.8;
+      fill: none;
+      flex-shrink: 0;
+      transition: stroke var(--transition-speed);
+    }
+
+    .nav-item:hover {
+      color: var(--text-main);
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    .nav-item.active {
+      color: var(--text-main);
+      background-color: var(--btn-active-bg);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .nav-item.active svg {
+      stroke: var(--text-main);
+    }
+
+    .nav-item.completed svg.check-icon {
+      stroke: var(--text-main);
+    }
+
+    .check-circle {
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid var(--text-muted);
+      border-radius: 50%;
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all var(--transition-speed);
+    }
+
+    .nav-item.completed .check-circle {
+      border-color: var(--text-main);
+      background-color: var(--text-main);
+    }
+
+    .nav-item.completed .check-circle::after {
+      content: "";
+      width: 4px;
+      height: 8px;
+      border: solid #090d16;
+      border-width: 0 1.5px 1.5px 0;
+      transform: rotate(45deg) translate(-1px, -1px);
+      display: block;
+    }
+
+    .sidebar-footer {
+      font-size: 0.72rem;
+      color: rgba(255, 255, 255, 0.25);
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding-top: 1.25rem;
+      text-align: center;
+      margin-top: 1rem;
+    }
+
+    /* Main Content Layout */
+    .main-content {
+      margin-left: var(--sidebar-width);
+      flex: 1;
+      padding: 3rem 4rem;
+      max-width: 1200px;
+      min-height: 100vh;
+      background-color: var(--bg-color);
+      transition: margin-left var(--transition-speed);
+    }
+
+    /* Mobile Header & Menu Button */
+    .mobile-bar {
+      display: none;
+      background-color: #090d16;
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 150;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .menu-toggle-btn {
+      background: none;
+      border: none;
+      color: var(--text-main);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+    }
+
+    .menu-toggle-btn svg {
+      width: 24px;
+      height: 24px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+    }
+
+    header {
+      margin-bottom: 3rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 2rem;
+    }
+
+    .chapter-tag {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--text-muted);
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.75rem;
+      color: var(--text-main);
+    }
+
+    .header-desc {
+      color: var(--text-muted);
+      font-size: 1rem;
+      max-width: 850px;
+    }
+
+    /* Content Section */
+    .tab-content {
+      display: none;
+      animation: fadeIn var(--transition-speed) ease-out forwards;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Cards */
+    .card {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 2.25rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 0.75rem;
+      color: var(--text-main);
+    }
+
+    .card-title svg {
+      width: 20px;
+      height: 20px;
+      stroke: var(--text-main);
+      stroke-width: 2;
+      fill: none;
+    }
+
+    /* Concept Block (참조 시트 / 실행 조건 / 결과) */
+    .concept-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .concept-item {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+
+    .concept-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .concept-label svg {
+      width: 14px;
+      height: 14px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+    }
+
+    .concept-value {
+      font-size: 0.9rem;
+      color: var(--text-main);
+      font-weight: 500;
+    }
+
+    .concept-value small {
+      display: block;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+      font-size: 0.8rem;
+      font-weight: 400;
+    }
+
+    /* Core Note Callout */
+    .callout {
+      border-left: 3px solid var(--text-main);
+      background-color: rgba(255, 255, 255, 0.02);
+      padding: 1.25rem;
+      border-radius: 0 12px 12px 0;
+      margin: 1.5rem 0;
+      border-top: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-color);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .callout-title {
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 0.35rem;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .callout-title svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+    }
+
+    .callout-desc {
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+
+    /* Flow Steps Diagram */
+    .flow-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin: 1.75rem 0;
+      position: relative;
+    }
+
+    .flow-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 1.25rem;
+      position: relative;
+    }
+
+    .flow-step:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      left: 17px;
+      top: 36px;
+      bottom: -16px;
+      width: 1px;
+      background: var(--border-color);
+    }
+
+    .flow-num {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background-color: rgba(255, 255, 255, 0.03);
+      border: 1.5px solid var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      flex-shrink: 0;
+      transition: all var(--transition-speed);
+    }
+
+    .flow-step.active .flow-num {
+      border-color: var(--text-main);
+      color: var(--text-main);
+      background-color: rgba(255, 255, 255, 0.08);
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+    }
+
+    .flow-body {
+      background-color: rgba(255, 255, 255, 0.01);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+      flex: 1;
+    }
+
+    .flow-body h5 {
+      font-size: 0.98rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+      color: var(--text-main);
+    }
+
+    .flow-body p {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+
+    /* Tables */
+    .table-container {
+      overflow-x: auto;
+      margin: 1.5rem 0;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.88rem;
+    }
+
+    .data-table th {
+      background-color: rgba(255, 255, 255, 0.02);
+      color: var(--text-main);
+      font-weight: 600;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .data-table td {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-muted);
+    }
+
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .data-table tr:hover td {
+      background-color: rgba(255, 255, 255, 0.015);
+      color: var(--text-main);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      font-family: monospace;
+      border: 1px solid transparent;
+    }
+
+    .badge-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+      border-color: var(--border-color);
+    }
+
+    .badge-primary {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    /* Self-Quiz Section */
+    .quiz-container {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 1.75rem;
+      margin-top: 2rem;
+    }
+
+    .quiz-question {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .quiz-question svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+      flex-shrink: 0;
+    }
+
+    .quiz-options {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .quiz-option-btn {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      border-radius: 8px;
+      padding: 0.85rem 1.25rem;
+      font-size: 0.9rem;
+      text-align: left;
+      cursor: pointer;
+      transition: all var(--transition-speed);
+      font-family: inherit;
+      width: 100%;
+    }
+
+    .quiz-option-btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .quiz-option-btn.selected {
+      background: var(--btn-active-bg);
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .quiz-feedback {
+      padding: 1rem;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-weight: 500;
+      display: none;
+      animation: fadeIn var(--transition-speed) ease-out;
+    }
+
+    .quiz-feedback.success {
+      background-color: rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .quiz-feedback.error {
+      background-color: rgba(255, 255, 255, 0.03);
+      color: var(--text-muted);
+      border: 1px solid var(--border-color);
+    }
+
+    .code-span {
+      font-family: monospace;
+      background-color: rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+      font-size: 0.82rem;
+    }
+
+    .text-highlight {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    .step-btn-container {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .step-nav-btn {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all var(--transition-speed);
+      font-family: inherit;
+    }
+
+    .step-nav-btn:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .step-nav-btn svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+    }
+
+    .step-nav-btn.complete-btn {
+      background: var(--text-main);
+      color: #090d16;
+      border: none;
+    }
+
+    .step-nav-btn.complete-btn:hover {
+      background: #e2e8f0;
+      color: #000;
+    }
+
+    /* Grid layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 1024px) {
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+      body {
+        flex-direction: column;
+      }
+      .sidebar {
+        transform: translateX(-100%);
+        width: 280px;
+        position: fixed;
+        height: 100vh;
+        z-index: 200;
+        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
+      }
+      .sidebar.open {
+        transform: translateX(0);
+      }
+      .main-content {
+        margin-left: 0;
+        padding: 2rem 1.5rem;
+      }
+      .mobile-bar {
+        display: flex;
+      }
+      .concept-grid {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .step-btn-container {
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .step-nav-btn {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- MOBILE BAR -->
+  <div class="mobile-bar">
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <svg class="brand-icon" viewBox="0 0 24 24">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+      <span class="brand-name">Pack2U 강좌</span>
+    </div>
+    <button class="menu-toggle-btn" id="menu-toggle" aria-label="메뉴 열기">
+      <svg viewBox="0 0 24 24">
+        <line x1="3" y1="12" x2="21" y2="12"></line>
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <line x1="3" y1="18" x2="21" y2="18"></line>
+      </svg>
+    </button>
+  </div>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <svg class="brand-icon" viewBox="0 0 24 24">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+      <span class="brand-name">Pack2U 강좌 코스</span>
+    </div>
+
+    <!-- 진척도 확인 -->
+    <div class="course-progress">
+      <div class="progress-header">
+        <span>강의 진척도</span>
+        <span id="progress-percent">0%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progress-bar"></div>
+      </div>
+    </div>
+    
+    <nav style="flex: 1; overflow-y: auto;">
+      <ul class="nav-list" id="nav-list">
+        <li class="nav-header">기초 오리엔테이션</li>
+        <li>
+          <a class="nav-item active" data-tab="tab-intro">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            OT. 시스템 핵심 연동 개념
+            <span class="check-circle"></span>
+          </a>
+        </li>
+        
+        <li class="nav-header">대리발송 발주시스템</li>
+        <li>
+          <a class="nav-item" data-tab="tab-collect">
+            <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+            1강. 대리판매 발주수집
+            <span class="check-circle"></span>
+          </a>
+        </li>
+        <li>
+          <a class="nav-item" data-tab="tab-sales">
+            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+            2강. 이카운트 판매현황 갱신
+            <span class="check-circle"></span>
+          </a>
+        </li>
+        <li>
+          <a class="nav-item" data-tab="tab-push">
+            <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            3강. 대리공급업체로 발주 Push
+            <span class="check-circle"></span>
+          </a>
+        </li>
+        <li>
+          <a class="nav-item" data-tab="tab-invoice">
+            <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2" ry="2"/><line x1="16" y1="8" x2="20" y2="8"/><line x1="16" y1="13" x2="23" y2="13"/><line x1="3" y1="16" x2="3" y2="20"/><line x1="13" y1="16" x2="13" y2="20"/></svg>
+            4강. 송장 수집 및 배포 처리
+            <span class="check-circle"></span>
+          </a>
+        </li>
+        <li>
+          <a class="nav-item" data-tab="tab-archive">
+            <svg viewBox="0 0 24 24"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
+            5강. 마감탭 정리와 아카이브
+            <span class="check-circle"></span>
+          </a>
+        </li>
+
+        <li class="nav-header">운영 및 장애 대응</li>
+        <li>
+          <a class="nav-item" data-tab="tab-repair">
+            <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            6강. 시트 복구 도구 사용법
+            <span class="check-circle"></span>
+          </a>
+        </li>
+      </ul>
+    </nav>
+    
+    <div class="sidebar-footer">
+      Pack2U 통합 자동화 교육<br>© 2026 Pack2U.
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="main-content" id="main-content">
+    
+    <!-- OT. INTRO -->
+    <section id="tab-intro" class="tab-content active">
+      <header>
+        <div class="chapter-tag">
+          <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          기초 오리엔테이션
+        </div>
+        <h1>OT. 시스템 핵심 연동 개념</h1>
+        <p class="header-desc">Pack2U 중앙 스프레드시트와 협력업체가 따로 사용하는 개별 배포 시트 간에 어떻게 정보를 주고받는지 이해합니다.</p>
+      </header>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          중앙 시트와 협력업체 시트의 구조
+        </div>
+        <p>Pack2U의 발주 관리 시스템은 본사의 <span class="text-highlight">중앙 시트(본체)</span>와 외부 협력업체들이 사용하는 <span class="text-highlight">협력업체 배포 시트</span>들로 분리되어 있습니다. 이는 거래처 간의 다른 정보가 유출되지 않도록 철저히 격리하면서도 필요한 데이터만 수집하기 위함입니다.</p>
+        
+        <div class="flow-steps">
+          <div class="flow-step active">
+            <div class="flow-num">1</div>
+            <div class="flow-body">
+              <h5>중앙 허브 구축 (본사)</h5>
+              <p>본사 시트의 <code class="code-span">💰 통합 허브 단가 관리</code> 메뉴에서 허브를 구성하면 모든 협력업체의 가격 정보가 담긴 단가 허브가 생성됩니다.</p>
+            </div>
+          </div>
+          <div class="flow-step active">
+            <div class="flow-num">2</div>
+            <div class="flow-content" style="background-color: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.25rem; flex: 1;">
+              <h5>협력업체 시트 배포 및 연동 (업체)</h5>
+              <p>각 협력업체 배포 시트의 <code class="code-span">단가조회</code> 탭은 본사 허브와 연동됩니다. 직원이 협력업체 시트의 <code class="code-span">설정</code> 탭 B5셀에 업체 이름을 입력하면, 해당 업체의 단가 그룹 정보만 안전하게 차단/필터링되어 불러와집니다.</p>
+            </div>
+          </div>
+          <div class="flow-step active">
+            <div class="flow-num">3</div>
+            <div class="flow-body">
+              <h5>발주 및 송장의 순환 흐름</h5>
+              <p>대리판매 업체의 발주 수집 ➔ 이카운트 업로드 ➔ 대리공급 업체로의 발주 Push ➔ 송장 회수 ➔ 마감 프로세스로 이어지는 순환 고리로 기능합니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+          대표적인 세부 참조 시트 관계
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>시트 명칭</th>
+                <th>주요 역할</th>
+                <th>주요 연동 필드</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-highlight">협력업체_발주허브</td>
+                <td>본사의 발주 수집 본부 (데이터베이스)</td>
+                <td>고유ID, 이카운트코드, 정산금액, 송장번호, 상태</td>
+              </tr>
+              <tr>
+                <td class="text-highlight">대리공급_임시기록</td>
+                <td>대리공급 발송 흐름의 일일 백업</td>
+                <td>P열: 사방넷 주문번호(UID), X열: 송장번호, Y열: 진행상태</td>
+              </tr>
+              <tr>
+                <td class="text-highlight">발주 및 송장조회</td>
+                <td>각 협력업체 시트 내에 들어있는 발주서 입력 탭</td>
+                <td>A~K열: 수동 입력 및 단가조회 참조, L~N열: 수식 자동완성</td>
+              </tr>
+              <tr>
+                <td class="text-highlight">대리발송 별칭 테이블</td>
+                <td>본사 이카운트코드 ➔ 협력업체용 상품코드 매핑 테이블</td>
+                <td>본사코드, 협력업체코드, 협력업체품목명</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Quiz -->
+      <div class="quiz-container" data-quiz="intro">
+        <div class="quiz-question">
+          <svg viewBox="0 0 24 24"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          [자가 체크] 협력업체 시트가 본사에서 구축한 단가 데이터를 보안 문제 없이 불러오는 연동 기준은 무엇인가요?
+        </div>
+        <div class="quiz-options">
+          <button class="quiz-option-btn" data-correct="false">1) 본사의 모든 원본 마스터 시트를 직접 링크하여 찾는다.</button>
+          <button class="quiz-option-btn" data-correct="true">2) 협력업체 시트 내부의 '설정' 탭 B5셀에 적힌 거래처명을 기준으로 필요한 정보만 필터링하여 불러온다.</button>
+          <button class="quiz-option-btn" data-correct="false">3) 스크립트 코드 내에 거래처 비밀번호를 하드코딩하여 연동한다.</button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <div class="step-btn-container">
+        <button class="step-nav-btn" style="visibility: hidden;"></button>
+        <button class="step-nav-btn next-btn" data-next="tab-collect">
+          1강 시작하기
+          <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- 1강. COLLECT -->
+    <section id="tab-collect" class="tab-content">
+      <header>
+        <div class="chapter-tag">
+          <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2;"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+          제 1강
+        </div>
+        <h1>1강. 대리판매 발주수집</h1>
+        <p class="header-desc">대리판매 협력업체들이 각자의 시트에 등록한 신규 주문들을 본사의 중앙 발주허브로 가져오는 단계입니다.</p>
+      </header>
+
+      <div class="concept-grid">
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+            참조 시트
+          </div>
+          <div class="concept-value">
+            업체 시트: <small>발주 및 송장조회 탭</small>
+            본사 시트: <small>협력업체_발주허브 탭</small>
+          </div>
+        </div>
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            실행 조건
+          </div>
+          <div class="concept-value">
+            오전 발주 마감 시간 이후<br>
+            <small>※ 5분 간격 자동 수집 트리거도 작동 중</small>
+          </div>
+        </div>
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            수행 후 결과
+          </div>
+          <div class="concept-value">
+            허브에 새 주문 누적<br>
+            업체 시트 상태 ➔ <small>"접수완료" 기입</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          동작 메커니즘
+        </div>
+        <p>메뉴에서 <span class="text-highlight">1️⃣ 대리판매 발주수집</span>을 클릭하면 시스템이 자동으로 다음과 같이 구동됩니다.</p>
+        
+        <div class="flow-steps">
+          <div class="flow-step">
+            <div class="flow-num">1</div>
+            <div class="flow-body">
+              <h5>협력업체 배포 시트 자동 조회</h5>
+              <p>구글 드라이브 지정 폴더 내에 있는 모든 '[협력업체] ...' 스프레드시트들을 하나씩 순회합니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">2</div>
+            <div class="flow-body">
+              <h5>미수집 발주 추출</h5>
+              <p>각 협력업체 시트의 <code class="code-span">발주 및 송장조회</code> 탭에서 N열(상태)이 '접수완료'가 아니고, C열(이카운트코드)이 빈칸이 아닌 행들을 신규 발주 데이터로 간주합니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">3</div>
+            <div class="flow-body">
+              <h5>중복체크 및 허브 적재</h5>
+              <p>이미 본사의 <code class="code-span">협력업체_발주허브</code>에 수집된 M열(고유ID)이 존재하지 않는 경우에만 본사 허브 시트의 최하단에 행을 덧붙여 수집합니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">4</div>
+            <div class="flow-body">
+              <h5>역기록(접수완료)을 통한 중복 방지</h5>
+              <p>수집에 성공한 주문건에 한하여, 협력업체 시트의 N열(상태)에 **'접수완료'**라고 자동 기록하여 다음 수집 때 또 들어오지 않도록 잠금 장치를 겁니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">
+          <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          주의사항: 고유 ID(UID)의 중요성
+        </div>
+        <div class="callout-desc">
+          모든 수집과 매칭은 M열의 <span class="text-highlight">고유ID</span>를 기준으로 처리됩니다. 이 고유 ID는 시트에 수식이 깨져서 `#REF`나 빈칸으로 보일 경우 매칭되지 않으므로, 항상 정상적으로 동작하는지 주의해서 보아야 합니다.
+        </div>
+      </div>
+
+      <!-- Quiz -->
+      <div class="quiz-container" data-quiz="collect">
+        <div class="quiz-question">
+          <svg viewBox="0 0 24 24"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          [자가 체크] '대리판매 발주수집' 메뉴가 실행되었을 때, 협력업체 시트에는 어떤 흔적이 남게 되나요?
+        </div>
+        <div class="quiz-options">
+          <button class="quiz-option-btn" data-correct="false">1) 시트에서 수집된 발주 정보가 아예 삭제된다.</button>
+          <button class="quiz-option-btn" data-correct="true">2) 수집 완료된 행의 상태(N열)가 '접수완료'로 바뀐다.</button>
+          <button class="quiz-option-btn" data-correct="false">3) 해당 시트가 PDF로 변환되어 백업 폴더로 이동된다.</button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <div class="step-btn-container">
+        <button class="step-nav-btn prev-btn" data-prev="tab-intro">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          이전 (오리엔테이션)
+        </button>
+        <button class="step-nav-btn next-btn" data-next="tab-sales">
+          2강 학습하기
+          <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- 2강. SALES -->
+    <section id="tab-sales" class="tab-content">
+      <header>
+        <div class="chapter-tag">
+          <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+          제 2강
+        </div>
+        <h1>2강. 이카운트 판매현황 갱신</h1>
+        <p class="header-desc">중앙 발주허브에 취합된 발주 데이터들 중, ERP에 등록되지 않은 데이터를 추출하여 업로드 엑셀용 시트를 갱신하는 단계입니다.</p>
+      </header>
+
+      <div class="concept-grid">
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+            참조 시트
+          </div>
+          <div class="concept-value">
+            본사 시트: <small>협력업체_발주허브 탭</small><br>
+            업로드 시트: <small>판매현황_갱신 탭</small>
+          </div>
+        </div>
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            실행 조건
+          </div>
+          <div class="concept-value">
+            수집 완료 후, 이카운트에 매출/판매 기록을 대량 등록하고자 할 때
+          </div>
+        </div>
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            수행 후 결과
+          </div>
+          <div class="concept-value">
+            업로드 엑셀 파일 기입 완료<br>
+            허브 P열 ➔ <small>"이카운트 업 완료" 잠금</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 16v-4M12 8h.01"/></svg>
+          동작 특징과 이중등록 방지(Lock)
+        </div>
+        <p>이 기능은 이카운트 ERP 연동의 안정성을 높이기 위해 **이중 업로드 방지 락** 구조를 가지고 있습니다.</p>
+        
+        <div class="flow-steps">
+          <div class="flow-step">
+            <div class="flow-num">1</div>
+            <div class="flow-body">
+              <h5>미업로드 주문 감지</h5>
+              <p>허브 데이터 중 P열(이카운트 업 완료 여부)이 완전히 **비어있는** 주문 행만 선별하여 추출합니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">2</div>
+            <div class="flow-body">
+              <h5>양식 재구성</h5>
+              <p>추출된 데이터를 이카운트 판매업로드 서식 규격에 맞춰 각 열에 자동 기입합니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">3</div>
+            <div class="flow-body">
+              <h5>허브 락 처리</h5>
+              <p>처리가 무사히 끝난 허브 상의 주문 행 P열에 즉시 **'이카운트 업 완료'** 플래그를 표기하여 락을 걸며, 이로 인해 다음번 갱신 시 중복 기입되지 않도록 격리됩니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">
+          <svg viewBox="0 0 24 24"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+          실무 팁: 수동 재발송이 필요한 경우
+        </div>
+        <div class="callout-desc">
+          특정 주문건을 수정하여 이카운트에 다시 올려야 한다면, <code class="code-span">협력업체_발주허브</code>의 해당 주문 줄 P열의 **'이카운트 업 완료' 글자만 지운 뒤** 갱신 기능을 재실행하면 됩니다.
+        </div>
+      </div>
+
+      <!-- Quiz -->
+      <div class="quiz-container" data-quiz="sales">
+        <div class="quiz-question">
+          <svg viewBox="0 0 24 24"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          [자가 체크] 2단계 판매현황 갱신을 실행할 때, 중복 업로드를 막아주는 장치는 무엇인가요?
+        </div>
+        <div class="quiz-options">
+          <button class="quiz-option-btn" data-correct="false">1) 거래처에 발송 완료 이메일을 보내는 것.</button>
+          <button class="quiz-option-btn" data-correct="true">2) 허브 시트의 P열에 '이카운트 업 완료' 텍스트를 기입하여 락(Lock)을 거는 것.</button>
+          <button class="quiz-option-btn" data-correct="false">3) 해당 주문 행의 이카운트 코드를 아예 공백으로 초기화하는 것.</button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <div class="step-btn-container">
+        <button class="step-nav-btn prev-btn" data-prev="tab-collect">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          이전 (1강)
+        </button>
+        <button class="step-nav-btn next-btn" data-next="tab-push">
+          3강 학습하기
+          <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- 3강. PUSH -->
+    <section id="tab-push" class="tab-content">
+      <header>
+        <div class="chapter-tag">
+          <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2;"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          제 3강
+        </div>
+        <h1>3강. 대리공급업체로 발주 Push</h1>
+        <p class="header-desc">본사 '대리공급업체 발주' 시트에 들어온 발주 데이터를 분석하여, 해당 품목을 제조/공급하는 협력업체의 전용양식 탭으로 주입하는 과정입니다.</p>
+      </header>
+
+      <div class="concept-grid">
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+            참조 시트
+          </div>
+          <div class="concept-value">
+            본사: <small>대리공급업체 발주 / 별칭 테이블</small><br>
+            업체 시트: <small>전용양식 탭</small>
+          </div>
+        </div>
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            실행 조건
+          </div>
+          <div class="concept-value">
+            수집 완료된 대리공급 발주 주문들을 협력 공급사에게 전송해야 할 때
+          </div>
+        </div>
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            수행 후 결과
+          </div>
+          <div class="concept-value">
+            공급업체 전용양식에 기입 완료<br>
+            임시기록 ➔ <small>"발주완료" 표시</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 16v-4M12 8h.01"/></svg>
+          상세 구동 순서
+        </div>
+        <p>본사 메뉴의 <span class="text-highlight">3️⃣ 대리공급업체로 발주 Push</span> 실행 시 아래 로직으로 분배됩니다.</p>
+        
+        <div class="flow-steps">
+          <div class="flow-step">
+            <div class="flow-num">1</div>
+            <div class="flow-body">
+              <h5>품목코드 분석 및 분기</h5>
+              <p>대리공급업체 발주 시트의 D열(이카운트코드)의 맨 앞 2자리 접두사(Prefix, 예: NK, HR, BW)를 추출하여 공급업체 파일을 선별합니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">2</div>
+            <div class="flow-body">
+              <h5>협력업체 전용 코드로 치환 (별칭 테이블)</h5>
+              <p><code class="code-span">대리발송 별칭 테이블</code> 시트를 조회하여, 본사의 품목코드를 공급 협력사가 실제로 이해하고 사용하는 품목명 및 상품코드 규격으로 변환하여 기입합니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">3</div>
+            <div class="flow-body">
+              <h5>중복 발송 완전 필터링</h5>
+              <p>각 행의 사방넷 번호(UID)와 치환된 품목코드를 결합하여 중복 식별용 복합 고유키(<code class="code-span">UID|품목코드</code>)를 생성합니다. 해당 업체 시트의 49번째 열(AX열)을 검색하여 이 고유키가 존재하는 건은 누락하고 새 발주만 전달합니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">4</div>
+            <div class="flow-body">
+              <h5>서식 자동 정리 및 백업</h5>
+              <p>연락처 숫자 0 누락을 방지하도록 텍스트서식 지정 후 주입하며, 전송 완료된 건은 본사의 <code class="code-span">대리공급_임시기록</code> 시트에 진행상태를 **'발주완료'**로 백업합니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">
+          <svg viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+          실행 조건 추가 설명: B6 거래처 코드
+        </div>
+        <div class="callout-desc">
+          Push 과정 중 공급업체 시트의 거래처 코드가 깨지거나 서식이 일반 숫자로 되어 앞자리 "0"이 탈락되는 경우(예: 이카운트 고객코드 `01392` ➔ `1392`로 변형), 매핑에 에러가 발생할 수 있습니다. 스크립트가 실행될 때 자동으로 이 셀들을 텍스트 서식 `@`로 지정하여 유지합니다.
+        </div>
+      </div>
+
+      <!-- Quiz -->
+      <div class="quiz-container" data-quiz="push">
+        <div class="quiz-question">
+          <svg viewBox="0 0 24 24"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          [자가 체크] 발주 Push 실행 시, 본사의 이카운트 품목코드가 협력사의 개별 코드로 바뀌는 원천 정보는 어디서 참조되나요?
+        </div>
+        <div class="quiz-options">
+          <button class="quiz-option-btn" data-correct="false">1) 협력업체 시트의 단가조회 탭</button>
+          <button class="quiz-option-btn" data-correct="true">2) 본사 메인 시트의 '대리발송 별칭 테이블' 탭</button>
+          <button class="quiz-option-btn" data-correct="false">3) 이카운트 웹페이지의 API 서버</button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <div class="step-btn-container">
+        <button class="step-nav-btn prev-btn" data-prev="tab-sales">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          이전 (2강)
+        </button>
+        <button class="step-nav-btn next-btn" data-next="tab-invoice">
+          4강 학습하기
+          <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- 4강. INVOICE -->
+    <section id="tab-invoice" class="tab-content">
+      <header>
+        <div class="chapter-tag">
+          <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2;"><rect x="1" y="3" width="15" height="13" rx="2" ry="2"/><line x1="16" y1="8" x2="20" y2="8"/><line x1="16" y1="13" x2="23" y2="13"/><line x1="3" y1="16" x2="3" y2="20"/><line x1="13" y1="16" x2="13" y2="20"/></svg>
+          제 4강
+        </div>
+        <h1>4강. 송장 수집 및 배포 처리</h1>
+        <p class="header-desc">공급사에서 전용 시트에 입력한 배송 송장 정보를 가져오고, 대리판매처 시트에는 역으로 송장 정보를 뿌려주는 흐름입니다.</p>
+      </header>
+
+      <div class="concept-grid">
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+            참조 시트
+          </div>
+          <div class="concept-value">
+            본사: <small>협력업체_발주허브 / 임시기록</small><br>
+            업체 시트: <small>전용양식 / 발주 및 송장조회</small>
+          </div>
+        </div>
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            실행 조건
+          </div>
+          <div class="concept-value">
+            공급사 송장 입력 완료 시 ➔ 수집<br>
+            수집 완료 후 판매처 전달 ➔ 배포
+          </div>
+        </div>
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            수행 후 결과
+          </div>
+          <div class="concept-value">
+            허브 송장 기입 및 상태 "발송완료"<br>
+            판매사 시트에 송장 자동 기록
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          송장 수집 및 배포의 투웨이(Two-way) 연동 구조
+        </div>
+        <p>송장 데이터는 공급사에서 회수하여 판매사 시트로 밀어주는 다단계 파이프라인으로 구성되어 있습니다.</p>
+        
+        <div class="flow-steps">
+          <div class="flow-step">
+            <div class="flow-num">1</div>
+            <div class="flow-body">
+              <h5>송장 번호 감지 및 회수</h5>
+              <p><span class="text-highlight">5️⃣ 허브로 송장 수집</span> 실행 시, 공급 협력사 전용 파일들을 조회해 전용양식 K열에 송장이 적혀있는지 수집합니다. (AX열의 UID 키를 기반으로 매칭함)</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">2</div>
+            <div class="flow-body">
+              <h5>본사 허브 상태 업데이트</h5>
+              <p>회수한 송장을 중앙 <code class="code-span">협력업체_발주허브</code>의 N열에 대입하고 O열 상태를 **'발송완료'**로 바꿉니다. 더불어 <code class="code-span">대리공급_임시기록</code>의 진행상태도 **'송장수집'**으로 변경합니다.</p>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-num">3</div>
+            <div class="flow-body">
+              <h5>판매처로 송장 배포</h5>
+              <p><span class="text-highlight">7️⃣ 대리판매업체로 송장 배포</span>를 실행하면 본사 허브에 매칭된 송장을 각 판매처 시트의 `발주 및 송장조회` 탭 송장번호 칸(K열)에 주입합니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          기타 수집 방식: 카카오 송장매칭 & Gmail 수집
+        </div>
+        <div class="callout-desc">
+          • **카카오 송장매칭**: 협력사가 엑셀을 쓰지 않고 카톡 등으로 보낸 경우 사이드바에서 일련번호로 수동 매칭합니다.<br>
+          • **Gmail 송장 수집**: 냅킨코리아와 같이 이메일로 송장을 주는 경우 메일함을 긁어와 자동 매칭 처리합니다.
+        </div>
+      </div>
+
+      <!-- Quiz -->
+      <div class="quiz-container" data-quiz="invoice">
+        <div class="quiz-question">
+          <svg viewBox="0 0 24 24"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          [자가 체크] 공급사가 입력한 송장이 수집 완료되면, 중앙 허브의 '상태(O열)'는 어떻게 업데이트되나요?
+        </div>
+        <div class="quiz-options">
+          <button class="quiz-option-btn" data-correct="false">1) '대기중'으로 변경된다.</button>
+          <button class="quiz-option-btn" data-correct="true">2) '발송완료'로 갱신된다.</button>
+          <button class="quiz-option-btn" data-correct="false">3) 셀 배경색이 빨간색으로 경고 표시된다.</button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <div class="step-btn-container">
+        <button class="step-nav-btn prev-btn" data-prev="tab-push">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          이전 (3강)
+        </button>
+        <button class="step-nav-btn next-btn" data-next="tab-archive">
+          5강 학습하기
+          <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- 5강. ARCHIVE -->
+    <section id="tab-archive" class="tab-content">
+      <header>
+        <div class="chapter-tag">
+          <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2;"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
+          제 5강
+        </div>
+        <h1>5강. 마감탭 정리와 아카이브</h1>
+        <p class="header-desc">매일의 운영이 끝나거나 월말이 되었을 때, 시트 처리 속도를 높이고 데이터를 보존하기 위해 기처리 완료된 데이터를 백업하고 본래 탭을 비우는 과정입니다.</p>
+      </header>
+
+      <div class="concept-grid">
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+            참조 시트
+          </div>
+          <div class="concept-value">
+            본사: <small>발주허브 / 대리공급 임시기록</small><br>
+            업체 시트: <small>각종 발주/공급 탭</small>
+          </div>
+        </div>
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            실행 조건
+          </div>
+          <div class="concept-value">
+            당일 영업 종료 후 또는 정기 마감 정산일 도래 시
+          </div>
+        </div>
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            수행 후 결과
+          </div>
+          <div class="concept-value">
+            원본 발주 데이터 ➔ <small>행 삭제 (비우기)</small><br>
+            이전 데이터 ➔ <small>마감 탭으로 보관 이체</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
+          일괄 마감 이동의 4단계 연쇄 작동 방식
+        </div>
+        <p>메뉴에서 <span class="text-highlight">🔄 [일괄] 대리판매+대리공급+발주허브 순차적 마감이동</span>을 실행하면 백그라운드에서 다음 4가지 동작이 연속해서 수행됩니다.</p>
+        
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>순서</th>
+                <th>대상 범위</th>
+                <th>실행 필터 조건</th>
+                <th>마감 후 이체 경로</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-highlight">1단계</td>
+                <td>대리판매 마감</td>
+                <td>오늘 이전 날짜 &amp; **송장번호 입력 완료** 주문건</td>
+                <td>업체 시트 내 <code class="code-span">(YYYY년 M월) 발주 마감</code> 탭</td>
+              </tr>
+              <tr>
+                <td class="text-highlight">2단계</td>
+                <td>대리공급 마감</td>
+                <td>오늘 이전 날짜 &amp; (**송장번호 기입** 또는 **상태 발송완료**) 건</td>
+                <td>업체 시트 내 <code class="code-span">(YYYY년 M월) 전용발주 마감</code> 탭</td>
+              </tr>
+              <tr>
+                <td class="text-highlight">3단계</td>
+                <td>통합 허브 마감</td>
+                <td>오늘 이전 날짜 &amp; (**송장번호 있음** 또는 **취소/품절/단종**) 건</td>
+                <td>지정 구글 드라이브 내 <code class="code-span">[Pack2U 통합발주 아카이브] YYYY-MM</code> 파일</td>
+              </tr>
+              <tr>
+                <td class="text-highlight">4단계</td>
+                <td>임시기록 비우기</td>
+                <td>**송장번호(X열) 매칭이 끝난** 임시기록 행</td>
+                <td>별도 아카이브 없이 메인 시트에서 즉시 행 삭제 (정리)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">
+          <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          핵심 룰: 당일 미발송건은 그대로 보존!
+        </div>
+        <div class="callout-desc">
+          마감이 일어난다고 모든 주문이 다 날아가거나 마감탭으로 가는 것이 아닙니다. **오늘 날짜의 최신 주문**이거나, 날짜가 지났어도 **아직 송장이 나오지 않은(미발송) 미완료 주문**들은 원본 시트에 그대로 남아 계속 관리됩니다.
+        </div>
+      </div>
+
+      <!-- Quiz -->
+      <div class="quiz-container" data-quiz="archive">
+        <div class="quiz-question">
+          <svg viewBox="0 0 24 24"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          [자가 체크] 일괄 마감이 완료된 후 본사 '대리공급_임시기록' 시트에는 어떤 데이터가 남아있게 되나요?
+        </div>
+        <div class="quiz-options">
+          <button class="quiz-option-btn" data-correct="false">1) 당일 접수되어 송장이 나온 완료 주문들</button>
+          <button class="quiz-option-btn" data-correct="true">2) 아직 배송 송장번호가 매칭/수집되지 않은 미완료 주문들</button>
+          <button class="quiz-option-btn" data-correct="false">3) 시스템 오류가 발생해 삭제되지 못한 손상된 행들</button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <div class="step-btn-container">
+        <button class="step-nav-btn prev-btn" data-prev="tab-invoice">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          이전 (4강)
+        </button>
+        <button class="step-nav-btn next-btn" data-next="tab-repair">
+          6강 학습하기
+          <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- 6강. REPAIR -->
+    <section id="tab-repair" class="tab-content">
+      <header>
+        <div class="chapter-tag">
+          <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2;"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          제 6강
+        </div>
+        <h1>6강. 시트 복구 도구 사용법</h1>
+        <p class="header-desc">협력업체들이 개별 시트를 임의로 편집하다 수식이 깨지거나, 양식 디자인이 망가졌을 때 본사 관리자가 일괄 복구하는 긴급 AS 조치 도구입니다.</p>
+      </header>
+
+      <div class="concept-grid">
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+            참조 시트
+          </div>
+          <div class="concept-value">
+            본사: <small>AS / 진단 ➔ 복구 도구 메뉴</small><br>
+            대상: <small>문제가 발생한 협력업체 파일</small>
+          </div>
+        </div>
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            실행 조건
+          </div>
+          <div class="concept-value">
+            협력사 파일 내 #REF!, Spill! 오류 등 시각적/기능적 에러 민원 접수 시
+          </div>
+        </div>
+        <div class="concept-item">
+          <div class="concept-label">
+            <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            수행 후 결과
+          </div>
+          <div class="concept-value">
+            대상 업체의 수식/헤더/스크립트 가동 상태 정상 복구
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          복구 도구 카테고리 분류 및 대처 방법
+        </div>
+        <p>복구 도구 메뉴를 클릭하면 체크박스가 포함된 **일괄 복구용 팝업 창**이 뜹니다. 문제가 발생한 업체를 다중 선택한 뒤 적절한 카테고리를 선택해 실행합니다.</p>
+        
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>복구 종류</th>
+                <th>주요 복구 상세</th>
+                <th>대응 조치 상황</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-highlight">📊 수식·단가 복구</td>
+                <td>단가조회 탭의 `ARRAYFORMULA` 및 발주 탭의 Spill 연동 수식 재주입</td>
+                <td>사용자가 단가 3행의 수식을 수동으로 삭제하여 단가나 품명이 나오지 않는 상태일 때 실행</td>
+              </tr>
+              <tr>
+                <td class="text-highlight">📋 헤더·양식 복구</td>
+                <td>발주 탭 1행 헤더 강제 기입 및 행 고정, 조건부 서식 재적용</td>
+                <td>협력사가 1행 헤더의 이름(예: 이카운트코드)을 바꾸거나 삭제하여 에러가 날 때 실행</td>
+              </tr>
+              <tr>
+                <td class="text-highlight">📝 스크립트 재설치</td>
+                <td>이카운트코드 입력 시 작동하는 자동완성 작동 코드(onEdit) 재생성</td>
+                <td>사용자가 코드를 쳤는데도 품명이나 수량 등이 자동완성되지 않고 반응이 없을 때 실행</td>
+              </tr>
+              <tr>
+                <td class="text-highlight">🗃️ 데이터 보정</td>
+                <td>거래처 코드 포맷 텍스트 전환 및 L열 단가 오류 강제 갱신</td>
+                <td>거래처코드 맨 앞 0이 유실되었거나, 기타 데이터 깨짐이 의심될 때 실행</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-title">
+          <svg viewBox="0 0 24 24"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+          성능 팁: Stuck 현상 발생 시
+        </div>
+        <div class="callout-desc">
+          여러명이서 동시 기입할 때 동기화가 풀리지 않고 먹통이 되는 Stuck 현상이 생기면, 메뉴의 `🔓 동기화 락 강제 해제`를 가동하여 락 걸린 캐시 키를 날려주면 바로 풀립니다.
+        </div>
+      </div>
+
+      <!-- Quiz -->
+      <div class="quiz-container" data-quiz="repair">
+        <div class="quiz-question">
+          <svg viewBox="0 0 24 24"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          [자가 체크] 협력사 직원이 발주 탭의 1행 헤더명을 잘못 편집하여 발주수집 에러가 날 때, 본사에서 실행해야 할 가장 빠른 조치는 무엇인가요?
+        </div>
+        <div class="quiz-options">
+          <button class="quiz-option-btn" data-correct="false">1) 협력업체 시트를 강제로 삭제하고 새로 만든다.</button>
+          <button class="quiz-option-btn" data-correct="true">2) 본사 복구 도구 메뉴에서 해당 업체를 체크하고 '헤더·양식 복구' 버튼을 눌러 복구한다.</button>
+          <button class="quiz-option-btn" data-correct="false">3) 협력사 컴퓨터를 직접 원격으로 조작해 직접 수정해준다.</button>
+        </div>
+        <div class="quiz-feedback"></div>
+      </div>
+
+      <div class="step-btn-container">
+        <button class="step-nav-btn prev-btn" data-prev="tab-invoice">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          이전 (4강)
+        </button>
+        <button class="step-nav-btn complete-btn" id="finish-course">
+          강좌 코스 이수 완료!
+          <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // 강좌 탭 전환 관리
+    const navItems = document.querySelectorAll('.nav-item');
+    const tabContents = document.querySelectorAll('.tab-content');
+    const nextButtons = document.querySelectorAll('.next-btn');
+    const prevButtons = document.querySelectorAll('.prev-btn');
+    const finishBtn = document.getElementById('finish-course');
+
+    // 모바일 사이드바 관련
+    const menuToggle = document.getElementById('menu-toggle');
+    const sidebar = document.getElementById('sidebar');
+    const mainContent = document.getElementById('main-content');
+
+    // 진척도 데이터 관리
+    const completedTabs = new Set(['tab-intro']); // 초기 OT는 완료 상태로 시작 가능
+    
+    function updateProgress() {
+      const totalLessons = 7; // OT + 1~6강 = 총 7개
+      const completedCount = completedTabs.size;
+      const percent = Math.round((completedCount / totalLessons) * 100);
+      
+      document.getElementById('progress-percent').innerText = `${percent}%`;
+      document.getElementById('progress-bar').style.width = `${percent}%`;
+
+      // 사이드바 체크 표시 동기화
+      navItems.forEach(item => {
+        const tabId = item.getAttribute('data-tab');
+        if (completedTabs.has(tabId)) {
+          item.classList.add('completed');
+        } else {
+          item.classList.remove('completed');
+        }
+      });
+    }
+
+    function switchTab(targetId) {
+      tabContents.forEach(tab => {
+        tab.classList.remove('active');
+        if (tab.id === targetId) {
+          tab.classList.add('active');
+        }
+      });
+
+      navItems.forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('data-tab') === targetId) {
+          item.classList.add('active');
+        }
+      });
+
+      // 스크롤 상단으로 이동
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      // 모바일일 때 사이드바 자동 닫기
+      if (window.innerWidth <= 1024) {
+        sidebar.classList.remove('open');
+      }
+      
+      // 현재 진입한 탭을 진척도 완료 상태로 체크
+      completedTabs.add(targetId);
+      updateProgress();
+    }
+
+    // 네비게이션 아이템 클릭 이벤트
+    navItems.forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetTab = item.getAttribute('data-tab');
+        switchTab(targetTab);
+      });
+    });
+
+    // 다음/이전 버튼 이벤트 연동
+    nextButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const nextTabId = btn.getAttribute('data-next');
+        switchTab(nextTabId);
+      });
+    });
+
+    prevButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const prevTabId = btn.getAttribute('data-prev');
+        switchTab(prevTabId);
+      });
+    });
+
+    // 마지막 완료 버튼 처리
+    if (finishBtn) {
+      finishBtn.addEventListener('click', () => {
+        completedTabs.add('tab-repair');
+        updateProgress();
+        alert('축하합니다! Pack2U 협력업체 관리 시스템 직원 교육 온라인 강좌 코스를 모두 이수하셨습니다.\n각 강좌의 개념과 참조 시트 위치를 되새기며 실무 운영에 적용해 보시기 바랍니다.');
+      });
+    }
+
+    // 모바일 메뉴 버튼 토글
+    if (menuToggle) {
+      menuToggle.addEventListener('click', () => {
+        sidebar.classList.toggle('open');
+      });
+    }
+
+    // 사이드바 외부 영역 클릭 시 닫기 (모바일 전용)
+    document.addEventListener('click', (e) => {
+      if (window.innerWidth <= 1024) {
+        if (!sidebar.contains(e.target) && !menuToggle.contains(e.target) && sidebar.classList.contains('open')) {
+          sidebar.classList.remove('open');
+        }
+      }
+    });
+
+    // 퀴즈 시스템 인터랙션
+    const quizContainers = document.querySelectorAll('.quiz-container');
+
+    quizContainers.forEach(container => {
+      const options = container.querySelectorAll('.quiz-option-btn');
+      const feedback = container.querySelector('.quiz-feedback');
+
+      options.forEach(opt => {
+        opt.addEventListener('click', () => {
+          // 동일 퀴즈 타 선택지 해제
+          options.forEach(o => o.classList.remove('selected'));
+          opt.classList.add('selected');
+
+          const isCorrect = opt.getAttribute('data-correct') === 'true';
+          
+          feedback.style.display = 'block';
+          if (isCorrect) {
+            feedback.className = 'quiz-feedback success';
+            feedback.innerHTML = '🎉 <strong>정답입니다!</strong> 훌륭한 이해력입니다. 다음 단계를 이어서 공부하세요.';
+          } else {
+            feedback.className = 'quiz-feedback error';
+            feedback.innerHTML = '❌ <strong>다시 한번 생각해 보세요.</strong> 오답입니다. 설명 내용을 읽어보고 다시 선택해 보세요.';
+          }
+        });
+      });
+    });
+
+    // 초기 진척도 계산 실행
+    updateProgress();
+  </script>
+</body>
+</html>

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+      font-size: 13px; background: #f5f5f5; padding: 16px;
+    }
+    h2 { font-size: 16px; margin-bottom: 12px; color: #1a73e8; }
+    .category {
+      background: white; border-radius: 8px; padding: 14px;
+      margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      cursor: pointer; transition: 0.15s;
+      border: 2px solid transparent;
+    }
+    .category:hover { border-color: #c8d6e8; }
+    .category.selected { border-color: #1a73e8; background: #eaf2fd; }
+    .category .title {
+      font-size: 14px; font-weight: bold; color: #333; margin-bottom: 4px;
+    }
+    .category .desc { font-size: 11px; color: #777; }
+    .vendor-section {
+      background: white; border-radius: 8px; padding: 14px;
+      margin-top: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      display: none;
+    }
+    .vendor-header {
+      display: flex; align-items: center; margin-bottom: 10px;
+      gap: 8px;
+    }
+    .vendor-header label {
+      font-size: 13px; font-weight: bold; color: #333; cursor: pointer;
+    }
+    .vendor-list {
+      max-height: 240px; overflow-y: auto;
+      border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px;
+    }
+    .vendor-item {
+      display: flex; align-items: center; padding: 5px 4px;
+      border-radius: 4px; cursor: pointer;
+    }
+    .vendor-item:hover { background: #f0f4ff; }
+    .vendor-item input { margin-right: 8px; cursor: pointer; }
+    .vendor-item label { cursor: pointer; flex: 1; font-size: 12px; }
+    .btn-row {
+      display: flex; gap: 8px; margin-top: 14px;
+    }
+    .btn {
+      flex: 1; padding: 10px; border: none; border-radius: 6px;
+      cursor: pointer; font-size: 13px; font-weight: bold; transition: 0.15s;
+    }
+    .btn-primary { background: #1a73e8; color: white; }
+    .btn-primary:hover { background: #1558b0; }
+    .btn-secondary { background: #e0e0e0; color: #333; }
+    .btn-secondary:hover { background: #ccc; }
+    .btn:disabled { background: #ccc; cursor: not-allowed; }
+    #status {
+      margin-top: 10px; font-size: 12px; color: #555;
+      padding: 8px; border-radius: 6px; display: none;
+    }
+    #status.running { background: #fff3cd; color: #856404; display: block; }
+    #status.done { background: #d4edda; color: #155724; display: block; }
+    #status.error { background: #f8d7da; color: #721c24; display: block; }
+    .progress-bar {
+      height: 4px; background: #e0e0e0; border-radius: 2px;
+      margin-top: 8px; display: none;
+    }
+    .progress-fill {
+      height: 100%; background: #1a73e8; border-radius: 2px;
+      width: 0; transition: width 0.3s;
+    }
+  </style>
+</head>
+<body>
+  <h2>🔧 복구 도구</h2>
+
+  <!-- 카테고리 선택 -->
+  <div class="category" data-cat="formula" onclick="selectCategory(this)">
+    <div class="title">📊 수식·단가 복구</div>
+    <div class="desc">단가조회 수식, 발주탭 spill 수식, K2 그룹 설정 복구</div>
+  </div>
+  <div class="category" data-cat="header" onclick="selectCategory(this)">
+    <div class="title">📋 헤더·양식 복구</div>
+    <div class="desc">발주탭 헤더, 전용양식 헤더, 마감탭, 조건부서식 복구</div>
+  </div>
+  <div class="category" data-cat="script" onclick="selectCategory(this)">
+    <div class="title">📝 스크립트 재설치</div>
+    <div class="desc">발주탭 자동완성 스크립트 재설치</div>
+  </div>
+  <div class="category" data-cat="data" onclick="selectCategory(this)">
+    <div class="title">🗃️ 데이터 보정</div>
+    <div class="desc">허브 단가 보정, 거래처코드 서식 수정</div>
+  </div>
+  <div class="category" data-cat="tabs" onclick="selectCategory(this)">
+    <div class="title">📑 탭 재생성</div>
+    <div class="desc">단가조회(뷰어), 발주 및 송장조회, 검색입력 탭 + 상품검색 스크립트 재생성</div>
+  </div>
+
+  <!-- 탭 재생성 옵션 -->
+  <div class="tab-options" id="tabOptions" style="display:none; background:white; border-radius:8px; padding:14px; margin-top:-4px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+    <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:8px;">재생성할 항목 선택:</div>
+    <label style="display:block; padding:4px 0; cursor:pointer; font-size:12px;">
+      <input type="checkbox" id="opt_viewer" checked> 📊 단가조회(뷰어) 탭
+    </label>
+    <label style="display:block; padding:4px 0; cursor:pointer; font-size:12px;">
+      <input type="checkbox" id="opt_order" checked> 📦 발주 및 송장조회 탭
+    </label>
+    <label style="display:block; padding:4px 0; cursor:pointer; font-size:12px;">
+      <input type="checkbox" id="opt_search" checked> 🔍 검색입력 탭
+    </label>
+    <label style="display:block; padding:4px 0; cursor:pointer; font-size:12px;">
+      <input type="checkbox" id="opt_script" checked> 📝 상품검색 스크립트
+    </label>
+  </div>
+
+  <!-- 업체 선택 -->
+  <div class="vendor-section" id="vendorSection">
+    <div class="vendor-header">
+      <input type="checkbox" id="selectAll" onchange="toggleAll(this)">
+      <label for="selectAll">전체 선택</label>
+      <span style="flex:1"></span>
+      <span id="selectedCount" style="font-size:11px; color:#888;">0개 선택</span>
+    </div>
+    <div class="vendor-list" id="vendorList">
+      <div style="color:#888; text-align:center; padding:20px;">로딩 중...</div>
+    </div>
+  </div>
+
+  <!-- 실행 버튼 -->
+  <div class="btn-row">
+    <button class="btn btn-secondary" onclick="google.script.host.close()">취소</button>
+    <button class="btn btn-primary" id="runBtn" onclick="runRepair()" disabled>🔧 복구 실행</button>
+  </div>
+
+  <div id="status"></div>
+  <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+
+  <script>
+    var _selectedCat = null;
+    var _vendors = [];
+
+    // 타이틀에서 사전 선택 카테고리 감지
+    var _catMap = { "수식": "formula", "헤더": "header", "스크립트": "script", "데이터": "data", "탭": "tabs" };
+    function autoSelectFromTitle() {
+      var title = document.title || "";
+      for (var key in _catMap) {
+        if (title.indexOf(key) !== -1) {
+          var el = document.querySelector('.category[data-cat="' + _catMap[key] + '"]');
+          if (el) selectCategory(el);
+          return;
+        }
+      }
+    }
+
+    // 카테고리 선택
+    function selectCategory(el) {
+      document.querySelectorAll('.category').forEach(function(c) { c.classList.remove('selected'); });
+      el.classList.add('selected');
+      _selectedCat = el.getAttribute('data-cat');
+      document.getElementById('vendorSection').style.display = 'block';
+      document.getElementById('runBtn').disabled = false;
+      // 탭 재생성 옵션 표시/숨김
+      var tabOpts = document.getElementById('tabOptions');
+      if (tabOpts) tabOpts.style.display = (_selectedCat === 'tabs') ? 'block' : 'none';
+      updateCount();
+    }
+
+    // 전체 선택 토글
+    function toggleAll(master) {
+      document.querySelectorAll('.vendor-item input').forEach(function(cb) {
+        cb.checked = master.checked;
+      });
+      updateCount();
+    }
+
+    // 선택 개수 업데이트
+    function updateCount() {
+      var checked = document.querySelectorAll('.vendor-item input:checked').length;
+      var total = document.querySelectorAll('.vendor-item input').length;
+      document.getElementById('selectedCount').textContent = checked + '/' + total + '개 선택';
+      document.getElementById('selectAll').checked = (checked === total && total > 0);
+    }
+
+    // 업체 목록 로드
+    function loadVendors() {
+      google.script.run
+        .withSuccessHandler(function(list) {
+          _vendors = list;
+          var html = '';
+          list.forEach(function(v, i) {
+            html += '<div class="vendor-item">' +
+              '<input type="checkbox" id="v' + i + '" value="' + v.id + '" onchange="updateCount()" checked>' +
+              '<label for="v' + i + '">[' + v.pfx + '] ' + v.name + '</label></div>';
+          });
+          document.getElementById('vendorList').innerHTML = html || '<div style="color:#888; text-align:center;">업체 없음</div>';
+          document.getElementById('selectAll').checked = true;
+          updateCount();
+          autoSelectFromTitle();
+        })
+        .withFailureHandler(function(e) {
+          document.getElementById('vendorList').innerHTML =
+            '<div style="color:#ea4335; text-align:center;">로드 실패: ' + (e.message || e) + '</div>';
+        })
+        .getRepairVendorList();
+    }
+    loadVendors();
+
+    // 복구 실행
+    function runRepair() {
+      if (!_selectedCat) return;
+      var selected = [];
+      document.querySelectorAll('.vendor-item input:checked').forEach(function(cb) {
+        selected.push(cb.value);
+      });
+      if (selected.length === 0) {
+        setStatus('error', '업체를 선택하세요.');
+        return;
+      }
+
+      var btn = document.getElementById('runBtn');
+      btn.disabled = true; btn.textContent = '⏳ 복구 중...';
+      setStatus('running', '복구 실행 중... (' + selected.length + '개 업체)');
+      showProgress(0);
+
+      // 탭 재생성일 때 옵션 전달
+      var extraOpts = null;
+      if (_selectedCat === 'tabs') {
+        extraOpts = {
+          viewer: document.getElementById('opt_viewer').checked,
+          order: document.getElementById('opt_order').checked,
+          search: document.getElementById('opt_search').checked,
+          script: document.getElementById('opt_script').checked
+        };
+      }
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          btn.disabled = false; btn.textContent = '🔧 복구 실행';
+          setStatus('done', result.msg);
+          showProgress(100);
+        })
+        .withFailureHandler(function(e) {
+          btn.disabled = false; btn.textContent = '🔧 복구 실행';
+          setStatus('error', '❌ 오류: ' + (e.message || e));
+        })
+        .executeRepairBatch(_selectedCat, selected, extraOpts);
+    }
+
+    function setStatus(cls, msg) {
+      var el = document.getElementById('status');
+      el.className = cls;
+      el.textContent = msg;
+      el.style.whiteSpace = 'pre-wrap';
+    }
+
+    function showProgress(pct) {
+      var bar = document.getElementById('progressBar');
+      var fill = document.getElementById('progressFill');
+      bar.style.display = 'block';
+      fill.style.width = pct + '%';
+    }
+  </script>
+</body>
+</html>
+

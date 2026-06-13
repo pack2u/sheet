@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>카메라 테스트 - Pack2U</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #0f1117;
+      --bg-secondary: #1a1d28;
+      --bg-card: #222533;
+      --bg-card-hover: #2a2e42;
+      --text-primary: #f0f0f5;
+      --text-secondary: #8b8fa3;
+      --text-muted: #5c6078;
+      --accent-blue: #4a90d9;
+      --accent-green: #34c77b;
+      --accent-red: #e74c5f;
+      --accent-orange: #f0a030;
+      --accent-purple: #8b5cf6;
+      --border: rgba(255,255,255,0.06);
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Noto Sans KR', -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-font-smoothing: antialiased;
+      touch-action: manipulation;
+    }
+
+    /* ── 상단 바 ── */
+    .top-bar {
+      display: flex; align-items: center;
+      padding: 16px 16px 12px; gap: 12px;
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 50;
+      background: var(--bg-primary);
+    }
+    .back-btn {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      color: var(--text-primary); font-size: 18px;
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+    }
+    .top-title { font-size: 17px; font-weight: 600; }
+    .top-badge {
+      margin-left: auto;
+      padding: 4px 10px; border-radius: 20px;
+      background: rgba(139,92,246,0.12); color: var(--accent-purple);
+      font-size: 11px; font-weight: 600;
+    }
+
+    /* ── 섹션 ── */
+    .section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-title {
+      font-size: 14px; font-weight: 600; color: var(--accent-blue);
+      margin-bottom: 12px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-title .num {
+      width: 24px; height: 24px; border-radius: 8px;
+      background: var(--accent-blue); color: white;
+      font-size: 12px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── 촬영 버튼 ── */
+    .capture-btn {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      width: 100%; padding: 18px;
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+      border: none; border-radius: var(--radius);
+      color: white; font-size: 16px; font-weight: 600;
+      font-family: inherit; cursor: pointer;
+      transition: all 0.2s; position: relative; overflow: hidden;
+    }
+    .capture-btn:active { transform: scale(0.97); opacity: 0.9; }
+    .capture-btn .icon { font-size: 22px; }
+    .file-hidden { display: none; }
+
+    /* ── 결과 카드 ── */
+    .result-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      margin-top: 12px;
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .result-card.success { border-color: rgba(52,199,123,0.3); }
+    .result-card.error { border-color: rgba(231,76,95,0.3); }
+    .result-card.info { border-color: rgba(74,144,217,0.3); }
+    .result-label {
+      font-size: 11px; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .result-value {
+      font-size: 15px; font-weight: 600; word-break: break-all;
+    }
+    .result-value.green { color: var(--accent-green); }
+    .result-value.red { color: var(--accent-red); }
+    .result-value.blue { color: var(--accent-blue); }
+    .result-time {
+      margin-top: 8px; font-size: 11px; color: var(--text-muted);
+      display: flex; align-items: center; gap: 4px;
+    }
+    .result-time .fast { color: var(--accent-green); }
+    .result-time .slow { color: var(--accent-orange); }
+
+    /* ── 사진 슬롯 ── */
+    .photo-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .photo-slot {
+      aspect-ratio: 4/3;
+      background: var(--bg-card);
+      border: 2px dashed rgba(255,255,255,0.1);
+      border-radius: var(--radius-sm);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      cursor: pointer; transition: all 0.2s;
+      position: relative; overflow: hidden;
+    }
+    .photo-slot:active { transform: scale(0.96); }
+    .photo-slot.filled {
+      border-style: solid;
+      border-color: rgba(52,199,123,0.3);
+    }
+    .photo-slot .slot-icon { font-size: 28px; margin-bottom: 4px; }
+    .photo-slot .slot-label {
+      font-size: 11px; color: var(--text-muted); font-weight: 500;
+    }
+    .photo-slot img {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover; border-radius: 8px;
+    }
+    .photo-slot .slot-check {
+      position: absolute; top: 6px; right: 6px;
+      width: 22px; height: 22px; border-radius: 6px;
+      background: var(--accent-green); color: white;
+      font-size: 12px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 2;
+    }
+    .photo-slot .slot-time {
+      position: absolute; bottom: 4px; left: 4px;
+      padding: 2px 6px; border-radius: 4px;
+      background: rgba(0,0,0,0.7); color: white;
+      font-size: 10px; z-index: 2;
+    }
+    .photo-slot .slot-size {
+      position: absolute; bottom: 4px; right: 4px;
+      padding: 2px 6px; border-radius: 4px;
+      background: rgba(0,0,0,0.7); color: var(--text-secondary);
+      font-size: 10px; z-index: 2;
+    }
+
+    /* ── 로그 영역 ── */
+    .log-area {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      margin-top: 12px;
+      max-height: 200px; overflow-y: auto;
+      font-size: 12px; font-family: 'Courier New', monospace;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+    .log-area .log-ok { color: var(--accent-green); }
+    .log-area .log-err { color: var(--accent-red); }
+    .log-area .log-info { color: var(--accent-blue); }
+    .log-area .log-warn { color: var(--accent-orange); }
+
+    /* ── 요약 배지 ── */
+    .summary-bar {
+      padding: 16px;
+      display: flex; gap: 10px; flex-wrap: wrap;
+    }
+    .badge {
+      padding: 6px 12px; border-radius: 20px;
+      font-size: 12px; font-weight: 600;
+    }
+    .badge.ok { background: rgba(52,199,123,0.12); color: var(--accent-green); }
+    .badge.fail { background: rgba(231,76,95,0.12); color: var(--accent-red); }
+    .badge.warn { background: rgba(240,160,48,0.12); color: var(--accent-orange); }
+
+    /* ── OCR 버튼 ── */
+    .ocr-btn {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 14px;
+      background: var(--bg-card); border: 1px solid var(--accent-purple);
+      border-radius: var(--radius-sm);
+      color: var(--accent-purple); font-size: 14px; font-weight: 600;
+      font-family: inherit; cursor: pointer;
+      margin-top: 10px; transition: all 0.2s;
+    }
+    .ocr-btn:active { transform: scale(0.97); background: rgba(139,92,246,0.1); }
+    .ocr-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── 로딩 ── */
+    .loading-overlay {
+      display: none; position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15,17,23,0.85); backdrop-filter: blur(4px);
+      z-index: 200; align-items: center; justify-content: center;
+      flex-direction: column; gap: 16px;
+    }
+    .loading-overlay.active { display: flex; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border); border-top-color: var(--accent-purple);
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-size: 14px; color: var(--text-secondary); }
+  </style>
+</head>
+<body>
+
+  <!-- 상단 바 -->
+  <div class="top-bar">
+    <button class="back-btn" onclick="goHome()">‹</button>
+    <div class="top-title">📸 카메라 테스트</div>
+    <div class="top-badge">PROTOTYPE</div>
+  </div>
+
+  <!-- ★ STEP 1: 송장 바코드 촬영 -->
+  <div class="section" id="sec1">
+    <div class="section-title">
+      <span class="num">1</span> 송장 바코드 촬영 → CODE128 인식
+    </div>
+    <button class="capture-btn" onclick="document.getElementById('barcodeInput').click()">
+      <span class="icon">📷</span> 송장 바코드 촬영하기
+    </button>
+    <input type="file" id="barcodeInput" class="file-hidden"
+           accept="image/*" capture="environment"
+           onchange="handleBarcodeScan(event)">
+
+    <div id="barcodeResult"></div>
+
+    <button class="ocr-btn" id="ocrBtn" onclick="runGeminiOCR()" disabled>
+      🤖 Gemini Vision OCR로 재시도
+    </button>
+  </div>
+
+  <!-- ★ STEP 2: 반품 사진 4장 촬영 -->
+  <div class="section" id="sec2">
+    <div class="section-title">
+      <span class="num">2</span> 반품 사진 4장 촬영 테스트
+    </div>
+    <div class="photo-grid">
+      <div class="photo-slot" id="slot0" onclick="document.getElementById('photo0').click()">
+        <span class="slot-icon">📦</span>
+        <span class="slot-label">택배 외관</span>
+      </div>
+      <div class="photo-slot" id="slot1" onclick="document.getElementById('photo1').click()">
+        <span class="slot-icon">🔍</span>
+        <span class="slot-label">상품 상태</span>
+      </div>
+      <div class="photo-slot" id="slot2" onclick="document.getElementById('photo2').click()">
+        <span class="slot-icon">⚠️</span>
+        <span class="slot-label">불량 부위</span>
+      </div>
+      <div class="photo-slot" id="slot3" onclick="document.getElementById('photo3').click()">
+        <span class="slot-icon">🏷️</span>
+        <span class="slot-label">바코드/라벨</span>
+      </div>
+    </div>
+    <!-- 히든 파일 인풋들 -->
+    <input type="file" id="photo0" class="file-hidden" accept="image/*" capture="environment" onchange="handlePhoto(0, event)">
+    <input type="file" id="photo1" class="file-hidden" accept="image/*" capture="environment" onchange="handlePhoto(1, event)">
+    <input type="file" id="photo2" class="file-hidden" accept="image/*" capture="environment" onchange="handlePhoto(2, event)">
+    <input type="file" id="photo3" class="file-hidden" accept="image/*" capture="environment" onchange="handlePhoto(3, event)">
+
+    <div id="photoSummary"></div>
+  </div>
+
+  <!-- ★ STEP 3: 환경 정보 + 테스트 로그 -->
+  <div class="section" id="sec3">
+    <div class="section-title">
+      <span class="num">3</span> 환경 정보 & 테스트 로그
+    </div>
+    <div id="envInfo" class="result-card info"></div>
+    <div class="log-area" id="logArea">
+      <div class="log-info">▶ 테스트 시작 대기 중...</div>
+    </div>
+  </div>
+
+  <!-- 종합 판정 -->
+  <div class="summary-bar" id="summaryBar" style="display:none"></div>
+
+  <!-- 로딩 -->
+  <div class="loading-overlay" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">처리 중...</div>
+  </div>
+
+  <script>
+    // ══════════════════════════════════════
+    //  상태
+    // ══════════════════════════════════════
+    var testResults = {
+      cameraOpen: null,    // <input capture> 동작 여부
+      barcodeRead: null,   // CODE128 디코딩 성공 여부
+      barcodeValue: '',    // 디코딩된 값
+      barcodeTime: 0,      // 디코딩 소요 시간
+      ocrRead: null,       // Gemini OCR 성공 여부
+      ocrValue: '',        // OCR 추출 값
+      ocrTime: 0,          // OCR 소요 시간
+      photos: [null, null, null, null], // 사진 4장
+      photoTimes: [0, 0, 0, 0],        // 각 사진 처리 시간
+      photoSizes: [0, 0, 0, 0]         // 각 사진 크기 (KB)
+    };
+
+    var capturedBarcodeFile = null; // OCR 폴백용
+
+    // ══════════════════════════════════════
+    //  초기화
+    // ══════════════════════════════════════
+    window.addEventListener('load', function() {
+      showEnvInfo();
+      addLog('info', '카메라 테스트 페이지 로드 완료');
+      addLog('info', 'html5-qrcode v' + (Html5Qrcode.version || '2.3.x') + ' 로드됨');
+
+      // mediaDevices 체크
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        addLog('ok', 'navigator.mediaDevices.getUserMedia 사용 가능');
+      } else {
+        addLog('warn', 'getUserMedia 미지원 (iframe 제한 가능성)');
+      }
+
+      // <input capture> 지원 체크
+      var testInput = document.createElement('input');
+      testInput.setAttribute('capture', 'environment');
+      if (testInput.capture !== undefined) {
+        addLog('ok', '<input capture> 속성 지원됨');
+      } else {
+        addLog('warn', '<input capture> 속성 미지원');
+      }
+    });
+
+    // ══════════════════════════════════════
+    //  STEP 1: 바코드 촬영 + 디코딩
+    // ══════════════════════════════════════
+    function handleBarcodeScan(event) {
+      var file = event.target.files[0];
+      if (!file) return;
+
+      capturedBarcodeFile = file;
+      testResults.cameraOpen = true;
+      addLog('ok', '카메라 촬영 성공! 파일: ' + file.name + ' (' + formatSize(file.size) + ')');
+
+      // 디코딩 시작
+      var startTime = Date.now();
+      showLoading('바코드 디코딩 중...');
+
+      Html5Qrcode.scanFile(file, true)
+        .then(function(decodedText) {
+          var elapsed = Date.now() - startTime;
+          hideLoading();
+
+          testResults.barcodeRead = true;
+          testResults.barcodeValue = decodedText;
+          testResults.barcodeTime = elapsed;
+
+          addLog('ok', 'CODE128 디코딩 성공: ' + decodedText + ' (' + elapsed + 'ms)');
+
+          // 로젠 송장번호 확인 (11자리 숫자)
+          var isLogen = /^\d{11}$/.test(decodedText.trim());
+
+          showBarcodeResult(true, decodedText, elapsed, isLogen);
+          document.getElementById('ocrBtn').disabled = false;
+          updateSummary();
+        })
+        .catch(function(err) {
+          var elapsed = Date.now() - startTime;
+          hideLoading();
+
+          testResults.barcodeRead = false;
+          testResults.barcodeTime = elapsed;
+
+          addLog('err', '바코드 디코딩 실패: ' + err + ' (' + elapsed + 'ms)');
+          showBarcodeResult(false, String(err), elapsed, false);
+          document.getElementById('ocrBtn').disabled = false;
+          updateSummary();
+        });
+
+      // 파일 입력 리셋
+      event.target.value = '';
+    }
+
+    function showBarcodeResult(success, value, time, isLogen) {
+      var div = document.getElementById('barcodeResult');
+      var timeClass = time < 3000 ? 'fast' : 'slow';
+
+      if (success) {
+        div.innerHTML =
+          '<div class="result-card success">' +
+          '  <div class="result-label">디코딩 결과</div>' +
+          '  <div class="result-value green">' + value + '</div>' +
+          (isLogen ? '  <div style="margin-top:6px;font-size:12px;color:var(--accent-purple)">✅ 로젠택배 송장번호 형식 (11자리)</div>' : '') +
+          '  <div class="result-time">⏱ <span class="' + timeClass + '">' + time + 'ms</span></div>' +
+          '</div>';
+      } else {
+        div.innerHTML =
+          '<div class="result-card error">' +
+          '  <div class="result-label">디코딩 실패</div>' +
+          '  <div class="result-value red">' + value + '</div>' +
+          '  <div class="result-time">⏱ ' + time + 'ms — Gemini OCR로 재시도 가능</div>' +
+          '</div>';
+      }
+    }
+
+    // ══════════════════════════════════════
+    //  Gemini Vision OCR 폴백
+    // ══════════════════════════════════════
+    function runGeminiOCR() {
+      if (!capturedBarcodeFile) {
+        alert('먼저 송장 바코드를 촬영해 주세요.');
+        return;
+      }
+
+      var startTime = Date.now();
+      showLoading('Gemini Vision OCR 분석 중...');
+      addLog('info', 'Gemini Vision OCR 시작...');
+
+      // 파일을 base64로 변환
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var base64Full = e.target.result;
+        var base64Data = base64Full.split(',')[1]; // data:image/...;base64, 제거
+        var mimeType = base64Full.split(';')[0].split(':')[1];
+
+        // GAS 서버로 전송
+        google.script.run
+          .withSuccessHandler(function(result) {
+            var elapsed = Date.now() - startTime;
+            hideLoading();
+
+            if (result && result.invoiceNumber) {
+              testResults.ocrRead = true;
+              testResults.ocrValue = result.invoiceNumber;
+              testResults.ocrTime = elapsed;
+
+              addLog('ok', 'Gemini OCR 성공! 송장번호: ' + result.invoiceNumber + ' (' + elapsed + 'ms)');
+
+              var extraInfo = '';
+              if (result.recipientName) extraInfo += '수취인: ' + result.recipientName + '<br>';
+              if (result.phone) extraInfo += '전화: ' + result.phone + '<br>';
+              if (result.address) extraInfo += '주소: ' + result.address;
+
+              var ocrDiv = document.createElement('div');
+              ocrDiv.className = 'result-card success';
+              ocrDiv.innerHTML =
+                '<div class="result-label">Gemini Vision OCR 결과</div>' +
+                '<div class="result-value green">' + result.invoiceNumber + '</div>' +
+                (extraInfo ? '<div style="margin-top:8px;font-size:12px;color:var(--text-secondary);line-height:1.6">' + extraInfo + '</div>' : '') +
+                '<div class="result-time">⏱ <span class="' + (elapsed < 5000 ? 'fast' : 'slow') + '">' + elapsed + 'ms</span> (Gemini API)</div>';
+              document.getElementById('barcodeResult').appendChild(ocrDiv);
+            } else {
+              testResults.ocrRead = false;
+              testResults.ocrTime = elapsed;
+              addLog('err', 'Gemini OCR: 송장번호 추출 실패 (' + elapsed + 'ms)');
+              addLog('err', 'OCR 응답: ' + JSON.stringify(result));
+            }
+            updateSummary();
+          })
+          .withFailureHandler(function(err) {
+            var elapsed = Date.now() - startTime;
+            hideLoading();
+            testResults.ocrRead = false;
+            testResults.ocrTime = elapsed;
+            addLog('err', 'Gemini OCR 오류: ' + err.message + ' (' + elapsed + 'ms)');
+            updateSummary();
+          })
+          .ocrInvoiceImage(base64Data, mimeType);
+      };
+      reader.readAsDataURL(capturedBarcodeFile);
+    }
+
+    // ══════════════════════════════════════
+    //  STEP 2: 사진 4장 촬영
+    // ══════════════════════════════════════
+    var photoLabels = ['택배 외관', '상품 상태', '불량 부위', '바코드/라벨'];
+
+    function handlePhoto(index, event) {
+      var file = event.target.files[0];
+      if (!file) return;
+
+      var startTime = Date.now();
+
+      // 이미지 리사이징 (1200px 이하)
+      resizeImage(file, 1200, function(resizedBlob, width, height) {
+        var elapsed = Date.now() - startTime;
+
+        testResults.photos[index] = resizedBlob;
+        testResults.photoTimes[index] = elapsed;
+        testResults.photoSizes[index] = resizedBlob.size;
+
+        addLog('ok', '사진 ' + (index + 1) + ' (' + photoLabels[index] + '): ' +
+          width + 'x' + height + ', ' + formatSize(resizedBlob.size) + ', ' + elapsed + 'ms');
+
+        // 미리보기 표시
+        var slot = document.getElementById('slot' + index);
+        var imgUrl = URL.createObjectURL(resizedBlob);
+        slot.innerHTML =
+          '<img src="' + imgUrl + '" alt="' + photoLabels[index] + '">' +
+          '<div class="slot-check">✓</div>' +
+          '<div class="slot-time">' + elapsed + 'ms</div>' +
+          '<div class="slot-size">' + formatSize(resizedBlob.size) + '</div>';
+        slot.classList.add('filled');
+
+        updatePhotoSummary();
+        updateSummary();
+      });
+
+      event.target.value = '';
+    }
+
+    function resizeImage(file, maxDim, callback) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var img = new Image();
+        img.onload = function() {
+          var w = img.width;
+          var h = img.height;
+
+          // 리사이징 필요 여부 확인
+          if (w <= maxDim && h <= maxDim) {
+            // 리사이징 불필요
+            callback(file, w, h);
+            return;
+          }
+
+          // 비율 유지 리사이징
+          var ratio = Math.min(maxDim / w, maxDim / h);
+          var nw = Math.round(w * ratio);
+          var nh = Math.round(h * ratio);
+
+          var canvas = document.createElement('canvas');
+          canvas.width = nw;
+          canvas.height = nh;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, nw, nh);
+
+          canvas.toBlob(function(blob) {
+            callback(blob, nw, nh);
+          }, 'image/jpeg', 0.85);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function updatePhotoSummary() {
+      var filled = testResults.photos.filter(function(p) { return p !== null; }).length;
+      var totalSize = testResults.photoSizes.reduce(function(a, b) { return a + b; }, 0);
+      var totalTime = testResults.photoTimes.reduce(function(a, b) { return a + b; }, 0);
+
+      var div = document.getElementById('photoSummary');
+      if (filled === 0) { div.innerHTML = ''; return; }
+
+      div.innerHTML =
+        '<div class="result-card ' + (filled === 4 ? 'success' : 'info') + '">' +
+        '  <div class="result-label">사진 촬영 현황</div>' +
+        '  <div class="result-value ' + (filled === 4 ? 'green' : 'blue') + '">' +
+             filled + '/4장 완료</div>' +
+        '  <div class="result-time">' +
+        '    📦 총 크기: ' + formatSize(totalSize) + ' · ' +
+        '    ⏱ 처리 시간: ' + totalTime + 'ms' +
+        '  </div>' +
+        (filled === 4 ?
+          '<div style="margin-top:8px;font-size:12px;color:var(--accent-green)">' +
+          '✅ 모든 사진 촬영 완료! GAS base64 업로드 시 예상: ~' +
+          Math.round(totalSize / 1024 / 50 * 5) + '초 (순차)' +
+          '</div>' : '') +
+        '</div>';
+    }
+
+    // ══════════════════════════════════════
+    //  환경 정보
+    // ══════════════════════════════════════
+    function showEnvInfo() {
+      var ua = navigator.userAgent;
+      var isIOS = /iPad|iPhone|iPod/.test(ua);
+      var isAndroid = /Android/.test(ua);
+      var isSamsung = /SamsungBrowser/.test(ua);
+      var isKakao = /KAKAOTALK/.test(ua);
+      var isNaver = /NAVER/.test(ua);
+      var isChrome = /Chrome/.test(ua) && !isSamsung && !isKakao && !isNaver;
+      var isSafari = /Safari/.test(ua) && !isChrome && !isSamsung;
+      var isInApp = isKakao || isNaver;
+      var hasMediaDevices = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+      var isSecure = location.protocol === 'https:' || location.hostname === 'localhost';
+      var isIframe = window.self !== window.top;
+
+      var browser = isKakao ? '카카오 인앱' :
+                    isNaver ? '네이버 인앱' :
+                    isSamsung ? 'Samsung Internet' :
+                    isChrome ? 'Chrome' :
+                    isSafari ? 'Safari' : '기타';
+      var os = isIOS ? 'iOS' : isAndroid ? 'Android' : 'Desktop';
+
+      var div = document.getElementById('envInfo');
+      div.innerHTML =
+        '<div class="result-label">테스트 환경</div>' +
+        '<div style="font-size:13px;line-height:1.8">' +
+        '📱 OS: <b>' + os + '</b><br>' +
+        '🌐 브라우저: <b>' + browser + '</b>' + (isInApp ? ' <span style="color:var(--accent-red)">(⚠ 인앱)</span>' : '') + '<br>' +
+        '🔒 HTTPS: ' + (isSecure ? '<b style="color:var(--accent-green)">✅</b>' : '<b style="color:var(--accent-red)">❌</b>') + '<br>' +
+        '📹 getUserMedia: ' + (hasMediaDevices ? '<b style="color:var(--accent-green)">✅</b>' : '<b style="color:var(--accent-red)">❌</b>') + '<br>' +
+        '🖼 iframe: ' + (isIframe ? '<b style="color:var(--accent-orange)">⚠ YES</b>' : '<b style="color:var(--accent-green)">NO</b>') +
+        '</div>';
+    }
+
+    // ══════════════════════════════════════
+    //  종합 판정
+    // ══════════════════════════════════════
+    function updateSummary() {
+      var bar = document.getElementById('summaryBar');
+      bar.style.display = 'flex';
+      var html = '';
+
+      // 카메라
+      if (testResults.cameraOpen === true) {
+        html += '<span class="badge ok">📷 카메라 ✅</span>';
+      } else if (testResults.cameraOpen === false) {
+        html += '<span class="badge fail">📷 카메라 ❌</span>';
+      }
+
+      // 바코드
+      if (testResults.barcodeRead === true) {
+        html += '<span class="badge ok">🔖 바코드 ✅ ' + testResults.barcodeTime + 'ms</span>';
+      } else if (testResults.barcodeRead === false) {
+        html += '<span class="badge fail">🔖 바코드 ❌</span>';
+      }
+
+      // OCR
+      if (testResults.ocrRead === true) {
+        html += '<span class="badge ok">🤖 OCR ✅ ' + testResults.ocrTime + 'ms</span>';
+      } else if (testResults.ocrRead === false) {
+        html += '<span class="badge fail">🤖 OCR ❌</span>';
+      }
+
+      // 사진
+      var filled = testResults.photos.filter(function(p) { return p !== null; }).length;
+      if (filled === 4) {
+        html += '<span class="badge ok">🖼 사진 4/4 ✅</span>';
+      } else if (filled > 0) {
+        html += '<span class="badge warn">🖼 사진 ' + filled + '/4</span>';
+      }
+
+      bar.innerHTML = html;
+    }
+
+    // ══════════════════════════════════════
+    //  유틸
+    // ══════════════════════════════════════
+    function addLog(type, msg) {
+      var area = document.getElementById('logArea');
+      var cls = type === 'ok' ? 'log-ok' : type === 'err' ? 'log-err' :
+                type === 'warn' ? 'log-warn' : 'log-info';
+      var prefix = type === 'ok' ? '✅' : type === 'err' ? '❌' :
+                   type === 'warn' ? '⚠' : 'ℹ';
+      var now = new Date();
+      var ts = now.getHours().toString().padStart(2, '0') + ':' +
+               now.getMinutes().toString().padStart(2, '0') + ':' +
+               now.getSeconds().toString().padStart(2, '0');
+      area.innerHTML += '<div class="' + cls + '">[' + ts + '] ' + prefix + ' ' + msg + '</div>';
+      area.scrollTop = area.scrollHeight;
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + 'B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + 'KB';
+      return (bytes / 1048576).toFixed(1) + 'MB';
+    }
+
+    function showLoading(text) {
+      document.getElementById('loadingText').textContent = text;
+      document.getElementById('loading').classList.add('active');
+    }
+    function hideLoading() {
+      document.getElementById('loading').classList.remove('active');
+    }
+
+    function goHome() {
+      var baseUrl = window.location.href.split('?')[0];
+      window.location.href = baseUrl;
+    }
+  </script>
+
+</body>
+</html>

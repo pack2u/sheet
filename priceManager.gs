@@ -3757,142 +3757,108 @@ function updateAllVendorSheets(opts) {
         var viewerTabName = sheet.getName();
         injectOrderSpillFormulas_(orderTab, viewerTabName);
 
-        // C열은 사용자 입력(이카�    "",
-    "function onEdit(e) {",
-    "  try {",
-    "    if (!e || !e.range) return;",
-    "    var sheet = e.range.getSheet();",
-    "    if (sheet.getName() !== '\ubc1c\uc8fc \ubc0f \uc1a1\uc7a5\uc870\ud68c') return;",
-    "",
-    "    var r = e.range;",
-    "    var row = r.getRow();",
-    "    var numRows = r.getNumRows();",
-    "    var startCol = r.getColumn();",
-    "    var numCols = r.getNumColumns();",
-    "    if (row < 2 || numRows <= 0) return;",
-    "    if (numRows > 500) return;",
-    "",
-    "    // \u2605 C~H(3~8) \uc5f4 \ubc94\uc704\uc640 \uacb9\uce58\ub294\uc9c0 \ud655\uc778",
-    "    var editEnd = startCol + numCols - 1;",
-    "    if (editEnd < 3 || startCol > 8) return;",
-    "",
-    "    var hasC = (startCol <= 3 && editEnd >= 3);",
-    "    var hasD = (startCol <= 4 && editEnd >= 4);",
-    "",
-    "    // \ube74\uc5b4\ud0ed \ub3d9\uc801 \ud0d0\uc0c9",
-    "    var ss = SpreadsheetApp.getActiveSpreadsheet();",
-    "    var viewerTab = ss.getSheetByName('\ub2e8\uac00\uc870\ud68c') || ss.getSheets()[0];",
-    "    if (viewerTab.getName() === '\ubc1c\uc8fc \ubc0f \uc1a1\uc7a5\uc870\ud68c') {",
-    "      var allTabs = ss.getSheets();",
-    "      for (var t = 0; t < allTabs.length; t++) {",
-    "        var tn = allTabs[t].getName();",
-    "        if (tn.indexOf('\ube74\uc5b4') !== -1 || tn.indexOf('\ub2e8\uac00') !== -1) {",
-    "          viewerTab = allTabs[t]; break;",
-    "        }",
-    "      }",
-    "    }",
-    "    var vLast = viewerTab.getLastRow();",
-    "    if (vLast < 4) return;",
-    "    var vData = viewerTab.getRange(4, 1, vLast - 3, 7).getValues();",
-    "",
-    "    // C~M\uc5f4 (0=C\ucf54\ub4dc, 1=D\ud488\ubaa9\uba85, 2=E\uc218\ub7c9, 3=F\uc218\ucde8\uc778, 4=G\uc804\ud654, 5=H\uc8fc\uc18c, 7=J\uc801\uc694, 9=L\ub2e8\uac00)",
-    "    var editRange = sheet.getRange(row, 3, numRows, 11);",
-    "    var editData = editRange.getValues();",
-    "    var isChanged = false;",
-    "",
-    "    for (var i = 0; i < numRows; i++) {",
-    "      var inputCode = String(editData[i][0]).replace(/\\\\s/g, '');",
-    "      var inputName = String(editData[i][1]).trim();",
-    "      if (!inputCode && !inputName) continue;",
-    "",
-    "      var finalName = '';",
-    "      var finalCode = '';",
-    "      var foundStatus = '';",
-    "      var foundPrice = '';",
-    "",
-    "      // \u2605 C\uc5f4 \uc785\ub825 \u2192 D\uc5f4(\ud488\ubaa9\uba85) \uc790\ub3d9\uc644\uc131",
-    "      if (hasC && inputCode) {",
-    "        for (var v = 0; v < vData.length; v++) {",
-    "          if (String(vData[v][2]).replace(/\\\\s/g, '') === inputCode) {",
-    "            finalName  = vData[v][3];",
-    "            foundStatus = vData[v][0];",
-    "            foundPrice  = vData[v][6];",
-    "            break;",
-    "          }",
-    "        }",
-    "        if (finalName && finalName !== inputName) {",
-    "          editData[i][1] = finalName;",
-    "          isChanged = true;",
-    "        }",
-    "        if (inputCode && !finalName) {",
-    "          var jNow = String(editData[i][7] || '').trim();",
-    "          if (jNow.indexOf('\ucf54\ub4dc\uc624\ub958') === -1) {",
-    "            editData[i][7] = '\uD83D\uDEA8\ucf54\ub4dc\uc624\ub958';",
-    "            isChanged = true;",
-    "          }",
-    "        }",
-    "      }",
-    "",
-    "      // \u2605 D\uc5f4 \uc785\ub825 \u2192 C\uc5f4(\uc774\uce74\uc6b4\ud2b8\ucf54\ub4dc) \uc5ed\uc870\ud68c (\uc2e0\uaddc)",
-    "      if (hasD && inputName && !inputCode) {",
-    "        for (var v2 = 0; v2 < vData.length; v2++) {",
-    "          if (String(vData[v2][3]).trim() === inputName) {",
-    "            finalCode   = String(vData[v2][2]).replace(/\\\\s/g, '');",
-    "            foundStatus = vData[v2][0];",
-    "            foundPrice  = vData[v2][6];",
-    "            break;",
-    "          }",
-    "        }",
-    "        if (finalCode) {",
-    "          editData[i][0] = finalCode;",
-    "          isChanged = true;",
-    "        }",
-    "      }",
-    "",
-    "      // L\uc5f4(\ub2e8\uac00) \uc790\ub3d9\uc644\uc131",
-    "      if (foundPrice !== '' && editData[i][9] !== foundPrice) {",
-    "        editData[i][9] = foundPrice;",
-    "        isChanged = true;",
-    "      }",
-    "",
-    "      // J\uc5f4 \ud488\uc808/\ub2e8\uc885 \uacbd\uace0",
-    "      if (foundStatus && (String(foundStatus).indexOf('\ud488\uc808') !== -1 || String(foundStatus).indexOf('\ub2e8\uc885') !== -1)) {",
-    "        var warn = '\uD83D\uDEA8 ' + foundStatus;",
-    "        if (String(editData[i][7] || '') !== warn) {",
-    "          editData[i][7] = warn;",
-    "          isChanged = true;",
-    "        }",
-    "      }",
-    "    }",
-    "",
-    "    if (isChanged) editRange.setValues(editData);",
-    "",
-    "    // \u2605 B\uc5f4 \uc8fc\ubb38\uc77c\uc790: C+E+F+G+H \ubaa8\ub450 \uc785\ub825 \uc2dc\uc5d0\ub9cc \uc790\ub3d9\uae30\uc785",
-    "    try {",
-    "      var bData = sheet.getRange(row, 2, numRows, 1).getValues();",
-    "      var cehData = sheet.getRange(row, 3, numRows, 6).getValues();",
-    "      var todayYmd = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd');",
-    "      var bVals = [];",
-    "      var bChanged = false;",
-    "      for (var bi = 0; bi < bData.length; bi++) {",
-    "        var curB = bData[bi][0];",
-    "        var cVal = String(cehData[bi][0] || '').trim();",
-    "        var eVal = String(cehData[bi][2] || '').trim();",
-    "        var fVal = String(cehData[bi][3] || '').trim();",
-    "        var gVal = String(cehData[bi][4] || '').trim();",
-    "        var hVal = String(cehData[bi][5] || '').trim();",
-    "        if (cVal && eVal && fVal && gVal && hVal && !String(curB || '').trim()) {",
-    "          curB = todayYmd;",
-    "          bChanged = true;",
-    "        }",
-    "        bVals.push([curB]);",
-    "      }",
-    "      if (bChanged) sheet.getRange(row, 2, numRows, 1).setValues(bVals);",
-    "    } catch (eDateFill) {}",
-    "",
-    "  } catch (err) {}",
-    "}",
-  ].join("\n");�으로 업데이트되었습니다.\n" +
+        // C열은 사용자 입력(이카운트코드)이므로 절대 일괄 비우지 않는다.
+        // 드롭다운으로 D열만 입력된 건은 품목명→코드 역매핑으로 보정.
+        try {
+          backfillOrderCodesFromItemName_(orderTab, sheet);
+        } catch (eCodeBackfill) {}
+
+        // [구글 시트 버그 회피용] 단가조회 탭이 락(보호) 걸려있으면 파란색 액세스 허용 버튼이 구글 버그로 안 뜹니다.
+        // 따라서 보호가 풀려있는 발주 탭의 순백색 영역(Z2)에 권한 뚫기 전용 수식을 이중으로 설치합니다.
+        orderTab
+          .getRange("Z2")
+          .setFormula('=IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!A1")')
+          .setFontColor("white");
+
+        // 발주 탭의 중요한 영역 보호 (업체에서 임의 조작 방지)
+        try {
+          var oProtections = orderTab.getProtections(
+            SpreadsheetApp.ProtectionType.RANGE,
+          );
+          for (var pIdx = 0; pIdx < oProtections.length; pIdx++)
+            oProtections[pIdx].remove();
+
+          // 1. 헤더 구조 변경 원천 차단
+          var headerProtect = orderTab
+            .getRange("1:1")
+            .protect()
+            .setDescription("발주 시트 헤더 락");
+          headerProtect.removeEditors(headerProtect.getEditors());
+
+          // 2. [사장님 요청] 정산단가(L열) 및 고유ID(M열) 조작 방지 락 체결
+          var abProtect = orderTab
+            .getRange("A:B")
+            .protect()
+            .setDescription("거래처/주문일자 수동입력 방지");
+          abProtect.removeEditors(abProtect.getEditors());
+          var priceProtect = orderTab
+            .getRange("L:M")
+            .protect()
+            .setDescription("정산금액 조작 방지");
+          priceProtect.removeEditors(priceProtect.getEditors());
+        } catch (e) {}
+
+        // 기존 업체 운영 차이를 존중하기 위해 업데이트 시 드롭다운을 강제 주입하지 않는다.
+        // (필요 업체는 생성 단계 선택 또는 수동 적용)
+
+        // 발주 탭 조건부 서식 업데이트
+        orderTab.clearConditionalFormatRules();
+        var oRange = orderTab.getRange("A2:K1000");
+        var oRulePink = SpreadsheetApp.newConditionalFormatRule()
+          .whenFormulaSatisfied('=AND(ISTEXT($J2), $J2<>"", $J2<>"발송완료")')
+          .setBackground("#f4cccc")
+          .setFontColor("red")
+          .setBold(false)
+          .setRanges([oRange])
+          .build();
+        var oRuleGray = SpreadsheetApp.newConditionalFormatRule()
+          .whenFormulaSatisfied('=ISNUMBER(SEARCH("발송완료", $J2))')
+          .setBackground("#d9d9d9")
+          .setFontColor("#000000")
+          .setBold(false)
+          .setRanges([oRange])
+          .build();
+        orderTab.setConditionalFormatRules([oRulePink, oRuleGray]);
+        try {
+          var policyApplyResult = applyVendorPolicyToOrderAndReply_(
+            ss,
+            orderTab,
+            sheet,
+            policyForThisFile,
+          );
+          policyAppliedCount++;
+          if (policyForThisFile.__fallback) policyFallbackCount++;
+          if (policyForThisFile.__matchedBy === "fileNameOrVendor")
+            policyNameMatchCount++;
+          if (policyApplyResult.dropdownApplied) policyDropdownEnabledCount++;
+          if (policyApplyResult.invoiceReplyApplied)
+            policyInvoiceReplyEnabledCount++;
+        } catch (ePolicyUpdate) {}
+
+        writeDeploySheetMeta_(sheet, {
+          type: isConsumer ? "consumer" : "standard",
+          dcRate: isConsumer ? consumerRate : "",
+        });
+        migratedMetaCount++;
+        applyDoneCount++;
+        try {
+          if (typeof markVendorGroupApplyResultByFileId_ === "function") {
+            markVendorGroupApplyResultByFileId_(
+              file.id,
+              true,
+              "적용완료:" + (effectiveGroup || "자동"),
+            );
+          }
+        } catch (eMarkApply) {}
+
+        updatedCount++;
+      } catch (e) {
+        errorLog.push(file.name + " : " + e.message);
+      }
+    }
+
+
+        var endMsg = "으로 업데이트되었습니다.\n" +
       "- 대상 탐색: " +
       targetCount +
       "개\n" +
@@ -4187,6 +4153,7 @@ function createViewerNoticeScript_(viewerSS) {
   var scriptKey = "VIEWER_BOUND_SCRIPT_ID_" + viewerSheetId;
   var savedScriptId = String(props.getProperty(scriptKey) || "").trim();
 
+
   // 1) 바운드 스크립트 소스:
   //    - onOpen: 공지 팝업
   //    - onEdit: 발주탭 C/D 입력 시 B(주문일자) 누락 행만 yyyyMMdd 자동기입
@@ -4198,35 +4165,90 @@ function createViewerNoticeScript_(viewerSS) {
     "    var notice = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getRange('Y1').getValue();",
     "    var msg = String(notice || '').trim();",
     "    // \uBE48\uAC12\uC774\uAC70\uB098 \uAE30\uBCF8 \uC548\uB0B4\uBB38\uAD6C(\uAD04\uD638\uB85C \uC2DC\uC791)\uBA74 \uBBF8\uD45C\uC2DC",
-    "    if (!msg || msg.charAt(0) === '(' || msg.charAt(0) === '#') return;",
+    "    if (msg && msg.charAt(0) !== '(' && msg.charAt(0) !== '#') {",
     "    var html = HtmlService.createHtmlOutput(",
     "      '<div style=\"font-family:Apple SD Gothic Neo,Arial,sans-serif;padding:24px;\">' +",
     "      '<div style=\"font-size:15px;font-weight:bold;color:#c07616;margin-bottom:14px;\">' +",
-    "      '\uD83D\uDCE2 \uACF5\uC9C0\uC0AC\uD56D</div>' +", // 📢 공지사항
+    "      '\uD83D\uDD14 \uACF5\uC9C0\uC0AC\uD56D</div>' +", // 📢 공지사항
     "      '<div style=\"font-size:13px;line-height:1.9;white-space:pre-wrap;\">' + msg + '</div>' +",
     "      '</div>'",
     "    ).setWidth(440).setHeight(230);",
-    "    SpreadsheetApp.getUi().showModelessDialog(html, '\uD83D\uDCE2 Pack2U \uACF5\uC9C0\uC0AC\uD56D');", // 📢 Pack2U 공지사항
-    "  } catch(e) { /* \uD31D\uC5C5 \uC624\uB958 \uBB34\uC2DC */ }",
-    "  // \u2605 \uAC80\uC0C9\uC785\uB825 \uD0ED\uC774 \uC788\uC73C\uBA74 \uAC80\uC0C9\uBC1C\uC8FC \uBA54\uB274 \uC790\uB3D9 \uB4F1\uB85D",
-    "  try {",
-    "    var ss2 = SpreadsheetApp.getActiveSpreadsheet();",
-    "    if (ss2.getSheetByName('\uAC80\uC0C9\uC785\uB825')) {",
-    "      SpreadsheetApp.getUi()",
-    "        .createMenu('\uD83D\uDCCB \uAC80\uC0C9 \uBC1C\uC8FC')",
-    "        .addItem('\u2460 \uD488\uBAA9 \uB4DC\uB86D\uB2E4\uC6B4 \uAC31\uC2E0 (\uB2E8\uAC00\uC870\uD68C \uAE30\uC900)', 'refreshSearchDropdown')",
-    "        .addSeparator()",
-    "        .addItem('\u2461 \uBC1C\uC8FC \uC81C\uCD9C \u2192 \uBC1C\uC8FC \uBC0F \uC1A1\uC7A5\uC870\uD68C', 'submitSearchOrders')",
-    "        .addToUi();",
+    "    SpreadsheetApp.getUi().showModelessDialog(html, '\uD83D\uDD14 Pack2U \uACF5\uC9C0\uC0AC\uD56D');", // 📢 Pack2U 공지사항
     "    }",
-    "  } catch(eMenu) {}",
+    "  } catch(e) { /* \uD31D\uC5C5 \uC624\uB958 \uBB34\uC2DC */ }",
+    "  // \u2605 \uC0C1\uD488 \uAC80\uC0C9 \uC0AC\uC774\uB4DC\uBC14 \uBA54\uB274 \uB4F1\uB85D",
+    "  try {",
+    "    SpreadsheetApp.getUi()",
+    "      .createMenu('\uD83D\uDD0D \uC0C1\uD488 \uAC80\uC0C9')",
+    "      .addItem('\uC0C1\uD488\uBA85\uC73C\uB85C \uCF54\uB4DC \uAC80\uC0C9', 'openProductSearchSidebar')",
+    "      .addToUi();",
+    "  } catch(eMenu2) {}",
     "}",
     "",
     "function onEdit(e) {",
     "  try {",
     "    if (!e || !e.range) return;",
     "    var sheet = e.range.getSheet();",
-    "    if (sheet.getName() !== '\ubc1c\uc8fc \ubc0f \uc1a1\uc7a5\uc870\ud68c') return;",
+    "    var sheetName = sheet.getName();",
+    "",
+    "    // ── [보강] 단가조회 탭 서식 오염 방지 및 조건부서식 재구축 ──",
+    "    if (sheetName === '단가조회' || sheetName === '팩투유 단가조회') {",
+    "      var r = e.range;",
+    "      var row = r.getRow();",
+    "      var numRows = r.getNumRows();",
+    "      sheet.getRange(row, 1, numRows, 10).setBackground(null);",
+    "      try {",
+    "        sheet.clearConditionalFormatRules();",
+    "        var vRange = sheet.getRange('A3:J5000');",
+    "        var rules = [];",
+    "        rules.push(",
+    "          SpreadsheetApp.newConditionalFormatRule()",
+    "            .whenFormulaSatisfied('=ISNUMBER(SEARCH(\"품절\", $A3))')",
+    "            .setBackground('#f4cccc')",
+    "            .setRanges([vRange])",
+    "            .build()",
+    "        );",
+    "        rules.push(",
+    "          SpreadsheetApp.newConditionalFormatRule()",
+    "            .whenFormulaSatisfied('=ISNUMBER(SEARCH(\"단종\", $A3))')",
+    "            .setBackground('#d9d9d9')",
+    "            .setRanges([vRange])",
+    "            .build()",
+    "        );",
+    "        rules.push(",
+    "          SpreadsheetApp.newConditionalFormatRule()",
+    "            .whenFormulaSatisfied('=ISNUMBER(SEARCH(\"재고까지만\", $A3))')",
+    "            .setBackground('#ffe599')",
+    "            .setRanges([vRange])",
+    "            .build()",
+    "        );",
+    "        sheet.setConditionalFormatRules(rules);",
+    "      } catch(errDesign) {}",
+    "      return;",
+    "    }",
+    "",
+    "    // ── [신규] 붙여넣기 서식 자동 제거 (발주/전용양식 탭) ──",
+    "    var isPasteTarget = (sheetName === '\uBC1C\uC8FC \uBC0F \uC1A1\uC7A5\uC870\uD68C' || sheetName.indexOf('\uC804\uC6A9\uC591\uC2DD') !== -1);",
+    "    if (isPasteTarget) {",
+    "      var pr = e.range;",
+    "      var pRow = pr.getRow();",
+    "      var pNumRows = pr.getNumRows();",
+    "      var pNumCols = pr.getNumColumns();",
+    "      // 붙여넣기 감지: 2행 이상 or 3열 이상 동시 편집",
+    "      if (pRow >= 2 && (pNumRows >= 2 || pNumCols >= 3)) {",
+    "        try {",
+    "          var pasteRange = sheet.getRange(pRow, pr.getColumn(), pNumRows, pNumCols);",
+    "          pasteRange.setBackground(null);",
+    "          pasteRange.setFontColor(null);",
+    "          pasteRange.setFontFamily(null);",
+    "          pasteRange.setFontSize(10);",
+    "          pasteRange.setFontWeight('normal');",
+    "          pasteRange.setFontStyle('normal');",
+    "        } catch(ePaste) {}",
+    "      }",
+    "    }",
+    "",
+    "    if (sheetName !== '\uBC1C\uC8FC \uBC0F \uC1A1\uC7A5\uC870\uD68C') return;",
     "",
     "    var r = e.range;",
     "    var row = r.getRow();",
@@ -4244,6 +4266,7 @@ function createViewerNoticeScript_(viewerSS) {
     "    var ss = SpreadsheetApp.getActiveSpreadsheet();",
     "    var viewerTab = ss.getSheetByName('\ub2e8\uac00\uc870\ud68c') || ss.getSheets()[0];",
     "    if (viewerTab.getName() === '\ubc1c\uc8fc \ubc0f \uc1a1\uc7a5\uc870\ud68c') {",
+
     "      var allTabs = ss.getSheets();",
     "      for (var t = 0; t < allTabs.length; t++) {",
     "        var tn = allTabs[t].getName();",
@@ -4447,6 +4470,139 @@ function createViewerNoticeScript_(viewerSS) {
     "}",
   ].join("\n");
 
+  // ★ 상품검색 사이드바 서버함수 + 인라인 HTML
+  var productSearchCode = [
+    "// [상품검색] 사이드바 서버함수 + HTML (자동 생성됨)",
+    "",
+    "function openProductSearchSidebar() {",
+    "  var html = HtmlService.createHtmlOutput(_getProductSearchHtml_())",
+    "    .setTitle('\uD83D\uDD0D \uC0C1\uD488 \uAC80\uC0C9');",
+    "  SpreadsheetApp.getUi().showSidebar(html);",
+    "}",
+    "",
+    "function searchProductByName(query) {",
+    "  var ss = SpreadsheetApp.getActiveSpreadsheet();",
+    "  var viewerTab = null;",
+    "  var sheets = ss.getSheets();",
+    "  for (var i = 0; i < sheets.length; i++) {",
+    "    var n = sheets[i].getName();",
+    "    if (n.indexOf('\uB2E8\uAC00\uC870\uD68C') !== -1 || n.indexOf('\uBE74\uC5B4') !== -1) {",
+    "      viewerTab = sheets[i]; break;",
+    "    }",
+    "  }",
+    "  if (!viewerTab || viewerTab.getLastRow() < 4) return [];",
+    "  var lr = viewerTab.getLastRow();",
+    "  var data = viewerTab.getRange(4, 1, lr - 3, 7).getValues();",
+    "  var q = String(query || '').trim().toLowerCase();",
+    "  if (!q) return [];",
+    "  var results = [];",
+    "  for (var r = 0; r < data.length; r++) {",
+    "    var status = String(data[r][0] || '').trim();",
+    "    var code = String(data[r][2] || '').trim();",
+    "    var name = String(data[r][3] || '').trim();",
+    "    var price = data[r][6];",
+    "    if (!code || !name) continue;",
+    "    if (name.toLowerCase().indexOf(q) !== -1 || code.toLowerCase().indexOf(q) !== -1) {",
+    "      results.push({ code: code, name: name, status: status, price: price });",
+    "      if (results.length >= 50) break;",
+    "    }",
+    "  }",
+    "  return results;",
+    "}",
+    "",
+    "function insertEcountCode(code) {",
+    "  var ss = SpreadsheetApp.getActiveSpreadsheet();",
+    "  var sheet = ss.getSheetByName('\uBC1C\uC8FC \uBC0F \uC1A1\uC7A5\uC870\uD68C');",
+    "  if (!sheet) { var sheets = ss.getSheets(); for (var si = 0; si < sheets.length; si++) { if (sheets[si].getName().indexOf('\uC804\uC6A9\uC591\uC2DD') !== -1) { sheet = sheets[si]; break; } } }",
+    "  if (!sheet) sheet = SpreadsheetApp.getActiveSheet();",
+    "  var lastRow = sheet.getLastRow();",
+    "  var cLastRow = 1;",
+    "  if (lastRow >= 2) {",
+    "    var cVals = sheet.getRange(2, 3, lastRow - 1, 1).getValues();",
+    "    for (var ci = cVals.length - 1; ci >= 0; ci--) {",
+    "      if (String(cVals[ci][0]).trim() !== '') { cLastRow = ci + 2; break; }",
+    "    }",
+    "  }",
+    "  var row = (cLastRow < 2) ? 2 : cLastRow + 1;",
+
+    "  // C열(3번째)에 코드 입력",
+    "  sheet.getRange(row, 3).setValue(code);",
+    "  // 다음 행 C열로 이동",
+    "  sheet.setActiveRange(sheet.getRange(row + 1, 3));",
+    "  return '';",
+    "}",
+    "",
+    "function _getProductSearchHtml_() {",
+    "  var css = [",
+    "    '* { box-sizing: border-box; margin: 0; padding: 0; }',",
+    "    'body { font-family: Apple SD Gothic Neo, Malgun Gothic, sans-serif; font-size: 13px; background: #f8f9fa; padding: 12px; }',",
+    "    '.search-box { position: sticky; top: 0; background: #f8f9fa; padding-bottom: 8px; z-index: 10; }',",
+    "    '.search-input { width: 100%; padding: 10px 12px; border: 2px solid #dadce0; border-radius: 8px; font-size: 14px; outline: none; transition: border-color 0.2s; }',",
+    "    '.search-input:focus { border-color: #1a73e8; }',",
+    "    '.hint { font-size: 11px; color: #888; margin-top: 6px; }',",
+    "    '.results { margin-top: 8px; }',",
+    "    '.result-item { background: white; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; cursor: pointer; border: 1px solid #e8eaed; transition: all 0.15s; }',",
+    "    '.result-item:hover { border-color: #1a73e8; background: #e8f0fe; transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.08); }',",
+    "    '.item-code { font-weight: bold; color: #1a73e8; font-size: 13px; }',",
+    "    '.item-name { color: #333; font-size: 12px; margin-top: 2px; }',",
+    "    '.item-meta { display: flex; justify-content: space-between; margin-top: 4px; font-size: 11px; color: #888; }',",
+    "    '.status-warn { color: #ea4335; font-weight: bold; }',",
+    "    '.empty { text-align: center; color: #999; padding: 30px 0; font-size: 12px; }',",
+    "    '.toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 8px 20px; border-radius: 20px; font-size: 12px; z-index: 100; display: none; }',",
+    "  ].join('\\n');",
+    "",
+    "  var js = [",
+    "    'var _timer = null;',",
+    "    'function debounceSearch() { clearTimeout(_timer); _timer = setTimeout(doSearch, 300); }',",
+    "    'function doSearch() {',",
+    "    '  var q = document.getElementById(\"q\").value.trim();',",
+    "    '  if (!q) { document.getElementById(\"results\").innerHTML = \"<div class=empty>\\uD488\\uBAA9\\uBA85\\uC744 \\uC785\\uB825\\uD558\\uC138\\uC694</div>\"; return; }',",
+    "    '  document.getElementById(\"results\").innerHTML = \"<div class=empty>\\uAC80\\uC0C9 \\uC911...</div>\";',",
+    "    '  google.script.run.withSuccessHandler(showResults).withFailureHandler(showError).searchProductByName(q);',",
+    "    '}',",
+    "    'function showResults(list) {',",
+    "    '  if (!list || list.length === 0) { document.getElementById(\"results\").innerHTML = \"<div class=empty>\\uAC80\\uC0C9 \\uACB0\\uACFC \\uC5C6\\uC74C</div>\"; return; }',",
+    "    '  var h = \"\";',",
+    "    '  for (var i = 0; i < list.length; i++) {',",
+    "    '    var it = list[i];',",
+    "    '    var sc = (it.status && (it.status.indexOf(\"\\uD488\\uC808\") !== -1 || it.status.indexOf(\"\\uB2E8\\uC885\") !== -1)) ? \" status-warn\" : \"\";',",
+    "    '    var ps = it.price ? Number(it.price).toLocaleString() + \"\\uC6D0\" : \"\";',",
+    "    '    h += \"<div class=result-item data-code=\" + it.code + \">\";',",
+    "    '    h += \"<div class=item-code>\" + it.code + \"</div>\";',",
+    "    '    h += \"<div class=item-name>\" + it.name + \"</div>\";',",
+    "    '    h += \"<div class=item-meta><span class=\" + sc + \">\" + (it.status || \"\\uC815\\uC0C1\") + \"</span><span>\" + ps + \"</span></div></div>\";',",
+    "    '  }',",
+    "    '  document.getElementById(\"results\").innerHTML = h;',",
+    "    '  var els = document.querySelectorAll(\".result-item\");',",
+    "    '  for (var j = 0; j < els.length; j++) {',",
+    "    '    els[j].addEventListener(\"click\", function() { pickCode(this.getAttribute(\"data-code\")); });',",
+    "    '  }',",
+    "    '}',",
+    "    'function showError(e) { document.getElementById(\"results\").innerHTML = \"<div class=empty style=color:#ea4335>\\uC624\\uB958: \" + (e.message || e) + \"</div>\"; }',",
+    "    'function pickCode(code) {',",
+    "    '  google.script.run.withSuccessHandler(function(err) {',",
+    "    '    if (err) { showToast(\"\\u26A0\\uFE0F \" + err); return; }',",
+    "    '    showToast(\"\\u2705 \" + code + \" \\uC785\\uB825 \\uC644\\uB8CC\");',",
+    "    '  }).withFailureHandler(function(e) { showToast(\"\\u274C \" + (e.message || e)); }).insertEcountCode(code);',",
+    "    '}',",
+    "    'function showToast(msg) {',",
+    "    '  var t = document.getElementById(\"toast\"); t.textContent = msg; t.style.display = \"block\";',",
+    "    '  setTimeout(function() { t.style.display = \"none\"; }, 2000);',",
+    "    '}',",
+    "  ].join('\\n');",
+    "",
+    "  return '<!DOCTYPE html><html><head><base target=\"_top\"><style>' + css + '</style></head><body>' +",
+    "    '<div class=search-box>' +",
+    "    '<input type=text class=search-input id=q placeholder=\"품목명 또는 코드 입력...\" oninput=debounceSearch()>' +",
+    "    '<div class=hint>검색 결과를 클릭하면 C열에 코드가 입력됩니다</div></div>' +",
+    "    '<div class=results id=results><div class=empty>품목명을 입력하세요</div></div>' +",
+    "    '<div class=toast id=toast></div>' +",
+    "    '<scr' + 'ipt>' + js + '</scr' + 'ipt></body></html>';",
+    "}",
+
+  ].join("\n");
+
+
   var manifest = JSON.stringify({
     timeZone: "Asia/Seoul",
     dependencies: {},
@@ -4455,6 +4611,11 @@ function createViewerNoticeScript_(viewerSS) {
   });
 
   function putScriptContent_(scriptId) {
+    var fileList = [
+      { name: "Code", type: "SERVER_JS", source: onOpenCode },
+      { name: "ProductSearch", type: "SERVER_JS", source: productSearchCode },
+      { name: "appsscript", type: "JSON", source: manifest },
+    ];
     return UrlFetchApp.fetch(
       "https://script.googleapis.com/v1/projects/" + scriptId + "/content",
       {
@@ -4465,11 +4626,7 @@ function createViewerNoticeScript_(viewerSS) {
           Expect: "",
         },
         payload: JSON.stringify({
-          files: [
-            { name: "Code", type: "SERVER_JS", source: onOpenCode },
-            { name: "SearchOrder", type: "SERVER_JS", source: searchOrderCode },
-            { name: "appsscript", type: "JSON", source: manifest },
-          ],
+          files: fileList,
         }),
         muteHttpExceptions: true,
       },
@@ -4480,18 +4637,21 @@ function createViewerNoticeScript_(viewerSS) {
   if (savedScriptId) {
     var reuseResp = putScriptContent_(savedScriptId);
     if (reuseResp.getResponseCode() === 200) return true;
+    var respCode = reuseResp.getResponseCode();
     if (
-      reuseResp.getResponseCode() === 404 ||
-      reuseResp.getResponseCode() === 410
+      respCode === 404 ||
+      respCode === 410 ||
+      respCode === 403 ||
+      respCode === 401
     ) {
       props.deleteProperty(scriptKey);
       savedScriptId = "";
     } else {
       throw new Error(
-        "Script \ucf54\ub4dc \uc5c5\ub370\uc774\ud2b8 \uc2e4\ud328 (" +
-          reuseResp.getResponseCode() +
+        "Script 코드 업데이트 실패 (" +
+          respCode +
           "): " +
-          reuseResp.getContentText(),
+          reuseResp.getContentText()
       );
     }
   }
@@ -4535,6 +4695,42 @@ function createViewerNoticeScript_(viewerSS) {
 
   props.setProperty(scriptKey, scriptId);
   return true;
+}
+
+function adminClearSingleVendorScriptId() {
+  var ui = SpreadsheetApp.getUi();
+  var files = typeof _pt_listFiles === "function" ? _pt_listFiles(true) : [];
+  if (files.length === 0) {
+    ui.alert("등록된 협력업체 배포 파일을 찾지 못했습니다.\n\n폴더 설정(_PT.FOLDER_ID)을 확인하세요.");
+    return;
+  }
+
+  var lines = files.map(function (f, i) {
+    return (i + 1) + ". " + f.name;
+  });
+  var resp = ui.prompt(
+    "업체 스크립트 캐시 초기화",
+    "스크립트 ID 캐시를 초기화(삭제)할 업체 번호를 입력하세요 (배포 권한 오류 해결용):\n\n" + lines.join("\n"),
+    ui.ButtonSet.OK_CANCEL,
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+
+  var idx = parseInt(String(resp.getResponseText() || "").trim(), 10) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= files.length) {
+    ui.alert("올바른 번호를 입력하세요 (1 ~ " + files.length + ").");
+    return;
+  }
+
+  var target = files[idx];
+  var props = PropertiesService.getScriptProperties();
+  var scriptKey = "VIEWER_BOUND_SCRIPT_ID_" + target.id;
+  
+  if (props.getProperty(scriptKey)) {
+    props.deleteProperty(scriptKey);
+    ui.alert("✅ 초기화 완료\n\n" + target.name + "의 스크립트 ID 캐시가 삭제되었습니다.\n이제 '스크립트 재설치'를 진행하면 새로 프로젝트를 만들어 배포합니다.");
+  } else {
+    ui.alert("⚠️ 캐시 없음\n\n" + target.name + "에 해당하는 저장된 스크립트 ID가 존재하지 않습니다.");
+  }
 }
 
 function adminInstallSingleVendorAutofillScript_() {
