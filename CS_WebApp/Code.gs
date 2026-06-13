@@ -400,8 +400,8 @@ function _cs_searchTempTab_(ss, invDigits) {
 //  (카메라 테스트 프로토타입용)
 // ══════════════════════════════════════════════
 
-/** Gemini API 키 (메인 시트 geminiChat.gs와 동일) */
-var _CS_GEMINI_KEY = "AIzaSyA9O-Dh3SDsMSK7OVHQQ2BG9INiFcgXCB0";
+// ★ GEMINI_API_KEY는 _secrets.gs에서 전역 정의됨 (GitHub 유출 방지)
+var _CS_GEMINI_KEY = GEMINI_API_KEY;
 
 /**
  * 송장 이미지를 Gemini Vision으로 분석하여 정보 추출

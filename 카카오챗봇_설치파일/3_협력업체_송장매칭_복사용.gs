@@ -228,8 +228,8 @@ function ocrImageToTextLocal(base64Data) {
       rawB64 = parts[1];
     }
 
-    // Gemini API 키 — 중앙 허브와 동일
-    var apiKey = "AIzaSyA9O-Dh3SDsMSK7OVHQQ2BG9INiFcgXCB0";
+    // ★ GEMINI_API_KEY는 _secrets.gs에서 전역 정의됨 (GitHub 유출 방지)
+    var apiKey = GEMINI_API_KEY;
     var model = "gemini-2.5-flash-lite";
     var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
       model + ":generateContent?key=" + apiKey;

@@ -1,0 +1,31 @@
+# ══════════════════════════════════════
+# Pack2U 상품정보시트 .gitignore
+# ══════════════════════════════════════
+
+# ★ 비밀 키 파일 (절대 커밋 금지)
+_secrets.gs
+
+# 백업 폴더
+0521_backup/
+backup_20260412/
+backup_20260613/
+
+# 대용량 바이너리
+*.xlsx
+*.docx
+
+# 스크래치/임시
+scratch/
+antigravity_ide/
+
+# IDE / 에디터
+.cursor/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS 파일
+Thumbs.db
+.DS_Store
+desktop.ini

@@ -2,7 +2,7 @@
  * [ Pack2U CS 챗봇 - Gemini 연동 엔진 ]
  */
 
-var GEMINI_API_KEY = "AIzaSyA9O-Dh3SDsMSK7OVHQQ2BG9INiFcgXCB0"; // 유료플랜 적용 키
+// ★ GEMINI_API_KEY는 _secrets.gs에서 전역 정의됨 (GitHub 유출 방지)
 var CS_MANUAL_SPREADSHEET_ID = "1LlNX-spTs-2WgWD8HEha90PYU0m7s8MqFh84vy_Fi_Q";
 
 /** 
