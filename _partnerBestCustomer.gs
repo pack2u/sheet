@@ -1,5 +1,5 @@
 /**
- * [협력업체] 베스트 고객 TOP10 분석  v1.1
+ * [협력업체] 베스트 고객 TOP10 분석  v1.2
  * 파일: _partnerBestCustomer.gs
  *
  * ★ 기능: 각 업체 시트의 발주 마감탭(최근 6개월) 데이터를 분석하여
@@ -7,6 +7,8 @@
  *   + 품목별 판매수량/금액 기준 베스트 품목 TOP10 산출
  * ★ 결과: 해당 업체 시트의 「분석데이타」탭에 기록
  * ★ 취소/반품 행 제외 (실매출 기반)
+ * ★ v1.2: 고객 식별 키를 이름+주소(끝8자)로 변경 (쿠팡 임시번호 대응)
+ *         주소 없으면 전화번호 끝4자리 fallback
  */
 
 // ═══════════════════════════════════════════
@@ -108,8 +110,9 @@ function _bc_analyzePartner_(fileInfo) {
     if (cMap.recipient === -1) continue;
 
     // ★ 2026-06-13 최적화: 필요한 열 최대 인덱스까지만 읽기 (메모리 ~55% 절감)
+    // ★ 2026-06-15 v1.2: address 열 추가 (쿠팡 임시번호 대응)
     var _maxNeededCol_ = 1;
-    var _colKeys_ = ["date", "recipient", "phone", "price", "qty", "cancel", "returnC", "itemName", "itemCode"];
+    var _colKeys_ = ["date", "recipient", "phone", "address", "price", "qty", "cancel", "returnC", "itemName", "itemCode"];
     for (var _ci_ = 0; _ci_ < _colKeys_.length; _ci_++) {
       var _cv_ = cMap[_colKeys_[_ci_]];
       if (_cv_ !== undefined && _cv_ !== -1 && _cv_ + 1 > _maxNeededCol_) _maxNeededCol_ = _cv_ + 1;
@@ -133,9 +136,17 @@ function _bc_analyzePartner_(fileInfo) {
       // 날짜 파싱
       var dateStr = cMap.date !== -1 ? _pms_parseDateStr_(row[cMap.date]) : null;
 
-      // 전화번호 끝4자리
+      // 전화번호 끝4자리 (주소 없을 때 fallback용)
       var phone = String(row[cMap.phone] || "").replace(/[^0-9]/g, "");
       var phone4 = phone.length >= 4 ? phone.slice(-4) : phone;
+
+      // ★ v1.2: 주소 끝8자 추출 (쿠팡 임시번호 대응)
+      var addrRaw = cMap.address !== -1 ? String(row[cMap.address] || "").trim() : "";
+      var addrSuffix = addrRaw.replace(/\s/g, ""); // 공백 제거
+      addrSuffix = addrSuffix.length >= 8 ? addrSuffix.slice(-8) : addrSuffix;
+
+      // ★ 고객 키: 이름+주소끝8자 (주소 없으면 이름+전화끝4자리 fallback)
+      var custKey = addrSuffix ? (recip + "_A" + addrSuffix) : (recip + "_" + phone4);
 
       // 금액
       var price = cMap.price !== -1 ? (Number(row[cMap.price]) || 0) : 0;
@@ -148,7 +159,7 @@ function _bc_analyzePartner_(fileInfo) {
       var itemCode = cMap.itemCode !== -1 ? String(row[cMap.itemCode] || "").trim() : "";
 
       allRows.push({
-        key:   recip + "_" + phone4,
+        key:   custKey,
         name:  recip,
         phone: phone4,
         date:  dateStr,
@@ -221,10 +232,14 @@ function _bc_mapColumns_(headers) {
     else if (returnC === -1 && h === "반품") returnC = i;
   }
 
+  // ★ v1.2: 주소 열 결정 (수취인주소 > 일반주소 우선)
+  var addrCol = _pt_resolveShipToAddressColumn(full);
+
   return {
     date:      full.date,
     recipient: full.recipient,
     phone:     full.phone,
+    address:   addrCol,          // ★ v1.2: 수취인주소 (쿠팡 임시번호 대응)
     price:     full.unitPrice,   // 정산금액/확정단가
     qty:       full.qty,
     cancel:    cancel,           // 마감탭 전용
