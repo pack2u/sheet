@@ -3605,7 +3605,7 @@ var _PO_UNMATCHED_HEADERS = [
   "집하지점",
   "배송지점",
   "명",
-  "우편번호", // K열: 실제 데이터=우편번호
+  "물품명", // K열: 물품명(품목명)
   "주소",
   "전화번호",
   "휴대폰",
@@ -3617,7 +3617,7 @@ var _PO_UNMATCHED_HEADERS = [
   "산간료",
   "선착불",
   "물품코드",
-  "물품명", // W열: 실제 데이터=물품명(품목명)
+  "우편번호", // W열: 우편번호
   "물품옵션",
   "추가옵션",
   "내품수량",
@@ -3641,8 +3641,8 @@ var _UM_COL_TEL = 12; // M열: 전화번호
 var _UM_COL_MOB = 13; // N열: 휴대폰
 var _UM_COL_QTY = 14; // O열: 수량
 var _UM_COL_ICODE = 21; // V열: 물품코드
-var _UM_COL_INAME = 22; // W열: 물품명(품목명) — 실제 데이터 위치
-var _UM_COL_ZIP = 10; // K열: 우편번호 — 실제 데이터 위치
+var _UM_COL_INAME = 10; // K열: 물품명(품목명) — K↔W 교체 수정 (2026-06-15)
+var _UM_COL_ZIP = 22; // W열: 우편번호 — K↔W 교체 수정 (2026-06-15)
 var _UM_COL_MSG = 26; // AA열: 배송메세지
 var _UM_COL_SEND_NAME = 27; // AB열: 명(보내는사람)
 var _UM_COL_SEND_ADDR = 28; // AC열: 주소(보내는사람)
