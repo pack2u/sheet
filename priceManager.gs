@@ -4158,7 +4158,7 @@ function createViewerNoticeScript_(viewerSS) {
   //    - onOpen: 공지 팝업
   //    - onEdit: 발주탭 C/D 입력 시 B(주문일자) 누락 행만 yyyyMMdd 자동기입
   //      (A열/A1 spill, L열 수식에는 절대 터치하지 않음)
-  var onOpenCode = [
+  var onOpenPart = [
     "// Pack2U \uACF5\uC9C0 \uD31D\uC5C5 \uC2A4\uD06C\uB9BD\uD2B8 (\uC790\uB3D9 \uC0DD\uC131\uB428)",
     "function onOpen() {",
     "  try {",
@@ -4183,179 +4183,33 @@ function createViewerNoticeScript_(viewerSS) {
     "      .addItem('\uC0C1\uD488\uBA85\uC73C\uB85C \uCF54\uB4DC \uAC80\uC0C9', 'openProductSearchSidebar')",
     "      .addToUi();",
     "  } catch(eMenu2) {}",
-    "}",
-    "",
-    "function onEdit(e) {",
+    "  // \u2605 2026-06-18: \uC1A1\uC7A5 \uB9E4\uCE6D \uC0AC\uC774\uB4DC\uBC14 \uBA54\uB274",
     "  try {",
-    "    if (!e || !e.range) return;",
-    "    var sheet = e.range.getSheet();",
-    "    var sheetName = sheet.getName();",
-    "",
-    "    // ── [보강] 단가조회 탭 서식 오염 방지 및 조건부서식 재구축 ──",
-    "    if (sheetName === '단가조회' || sheetName === '팩투유 단가조회') {",
-    "      var r = e.range;",
-    "      var row = r.getRow();",
-    "      var numRows = r.getNumRows();",
-    "      sheet.getRange(row, 1, numRows, 10).setBackground(null);",
-    "      try {",
-    "        sheet.clearConditionalFormatRules();",
-    "        var vRange = sheet.getRange('A3:J5000');",
-    "        var rules = [];",
-    "        rules.push(",
-    "          SpreadsheetApp.newConditionalFormatRule()",
-    "            .whenFormulaSatisfied('=ISNUMBER(SEARCH(\"품절\", $A3))')",
-    "            .setBackground('#f4cccc')",
-    "            .setRanges([vRange])",
-    "            .build()",
-    "        );",
-    "        rules.push(",
-    "          SpreadsheetApp.newConditionalFormatRule()",
-    "            .whenFormulaSatisfied('=ISNUMBER(SEARCH(\"단종\", $A3))')",
-    "            .setBackground('#d9d9d9')",
-    "            .setRanges([vRange])",
-    "            .build()",
-    "        );",
-    "        rules.push(",
-    "          SpreadsheetApp.newConditionalFormatRule()",
-    "            .whenFormulaSatisfied('=ISNUMBER(SEARCH(\"재고까지만\", $A3))')",
-    "            .setBackground('#ffe599')",
-    "            .setRanges([vRange])",
-    "            .build()",
-    "        );",
-    "        sheet.setConditionalFormatRules(rules);",
-    "      } catch(errDesign) {}",
-    "      return;",
-    "    }",
-    "",
-    "    // ── [신규] 붙여넣기 서식 자동 제거 (발주/전용양식 탭) ──",
-    "    var isPasteTarget = (sheetName === '\uBC1C\uC8FC \uBC0F \uC1A1\uC7A5\uC870\uD68C' || sheetName.indexOf('\uC804\uC6A9\uC591\uC2DD') !== -1);",
-    "    if (isPasteTarget) {",
-    "      var pr = e.range;",
-    "      var pRow = pr.getRow();",
-    "      var pNumRows = pr.getNumRows();",
-    "      var pNumCols = pr.getNumColumns();",
-    "      // 붙여넣기 감지: 2행 이상 or 3열 이상 동시 편집",
-    "      if (pRow >= 2 && (pNumRows >= 2 || pNumCols >= 3)) {",
-    "        try {",
-    "          var pasteRange = sheet.getRange(pRow, pr.getColumn(), pNumRows, pNumCols);",
-    "          pasteRange.setBackground(null);",
-    "          pasteRange.setFontColor(null);",
-    "          pasteRange.setFontFamily(null);",
-    "          pasteRange.setFontSize(10);",
-    "          pasteRange.setFontWeight('normal');",
-    "          pasteRange.setFontStyle('normal');",
-    "        } catch(ePaste) {}",
-    "      }",
-    "    }",
-    "",
-    "    if (sheetName !== '\uBC1C\uC8FC \uBC0F \uC1A1\uC7A5\uC870\uD68C') return;",
-    "",
-    "    var r = e.range;",
-    "    var row = r.getRow();",
-    "    var numRows = r.getNumRows();",
-    "    var startCol = r.getColumn();",
-    "    var numCols = r.getNumColumns();",
-    "    if (row < 2 || numRows <= 0) return;",
-    "    if (numRows > 500) return;",
-    "",
-    "    var hasC = (startCol <= 3 && startCol + numCols > 3);",
-    "    var hasD = (startCol <= 4 && startCol + numCols > 4);",
-    "    if (!hasC && !hasD) return;",
-    "",
-    "    // \ube74\uc5b4\ud0ed \ub3d9\uc801 \ud0d0\uc0c9",
-    "    var ss = SpreadsheetApp.getActiveSpreadsheet();",
-    "    var viewerTab = ss.getSheetByName('\ub2e8\uac00\uc870\ud68c') || ss.getSheets()[0];",
-    "    if (viewerTab.getName() === '\ubc1c\uc8fc \ubc0f \uc1a1\uc7a5\uc870\ud68c') {",
-
-    "      var allTabs = ss.getSheets();",
-    "      for (var t = 0; t < allTabs.length; t++) {",
-    "        var tn = allTabs[t].getName();",
-    "        if (tn.indexOf('\ube74\uc5b4') !== -1 || tn.indexOf('\ub2e8\uac00') !== -1) {",
-    "          viewerTab = allTabs[t]; break;",
-    "        }",
-    "      }",
-    "    }",
-    "    var vLast = viewerTab.getLastRow();",
-    "    if (vLast < 4) return;",
-    "    // Row1=공지, Row2=헤더, Row3=숨긴 ARRAYFORMULA행 → 실제 코드는 Row4부터",
-    "    var vData = viewerTab.getRange(4, 1, vLast - 3, 7).getValues();",
-    "",
-    "    // B\uc5f4 \uc8fc\ubb38\uc77c\uc790 \uc790\ub3d9\uae30\uc785",
-    "    try {",
-    "      var bcdData = sheet.getRange(row, 2, numRows, 3).getValues();",
-    "      var todayYmd = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd');",
-    "      var bVals = [];",
-    "      var bChanged = false;",
-    "      for (var bi = 0; bi < bcdData.length; bi++) {",
-    "        var curB = bcdData[bi][0];",
-    "        var curC = String(bcdData[bi][1] || '').trim();",
-    "        var curD = String(bcdData[bi][2] || '').trim();",
-    "        if ((curC || curD) && !String(curB || '').trim()) {",
-    "          curB = todayYmd;",
-    "          bChanged = true;",
-    "        }",
-    "        bVals.push([curB]);",
-    "      }",
-    "      if (bChanged) sheet.getRange(row, 2, numRows, 1).setValues(bVals);",
-    "    } catch (eDateFill) {}",
-    "",
-    "    // C~M\uc5f4 (0=C\ucf54\ub4dc, 1=D\ud488\ubaa9\uba85, 7=J\uc801\uc694, 9=L\uc815\uc0b0\ub2e8\uac00)",
-    "    var editRange = sheet.getRange(row, 3, numRows, 11);",
-    "    var editData = editRange.getValues();",
-    "    var isChanged = false;",
-    "",
-    "    for (var i = 0; i < numRows; i++) {",
-    "      var inputCode = String(editData[i][0]).replace(/\\s/g, '');",
-    "      var inputName = String(editData[i][1]).trim();",
-    "      if (!inputCode && !inputName) continue;",
-    "",
-    "      var finalName = '';",
-    "      var foundStatus = '';",
-    "      var foundPrice = '';",
-    "",
-    "      if (hasC && inputCode) {",
-    "        for (var v = 0; v < vData.length; v++) {",
-    "          if (String(vData[v][2]).replace(/\\s/g, '') === inputCode) {",
-    "            finalName  = vData[v][3];",
-    "            foundStatus = vData[v][0];",
-    "            foundPrice  = vData[v][6];",
-    "            break;",
-    "          }",
-    "        }",
-    "        if (finalName && finalName !== inputName) {",
-    "          editData[i][1] = finalName;",
-    "          isChanged = true;",
-    "        }",
-    "        // \ucf54\ub4dc \uc788\uc9c0\ub9cc \ube74\uc5b4\ud0ed\uc5d0 \uc5c6\uc73c\uba74 J\uc5f4\uc5d0 \ucf54\ub4dc\uc624\ub958 \ud45c\uc2dc",
-    "        if (inputCode && !finalName) {",
-    "          var jNow = String(editData[i][7] || '').trim();",
-    "          if (jNow.indexOf('\ucf54\ub4dc\uc624\ub958') === -1) {",
-    "            editData[i][7] = '\uD83D\uDEA8\ucf54\ub4dc\uc624\ub958';",
-    "            isChanged = true;",
-    "          }",
-    "        }",
-    "      }",
-    "",
-    "      if (foundPrice !== '' && editData[i][9] !== foundPrice) {",
-    "        editData[i][9] = foundPrice;",
-    "        isChanged = true;",
-    "      }",
-    "",
-    "      if (foundStatus && (String(foundStatus).indexOf('\ud488\uc808') !== -1 || String(foundStatus).indexOf('\ub2e8\uc885') !== -1)) {",
-    "        var warn = '\uD83D\uDEA8 ' + foundStatus;",
-    "        if (String(editData[i][7] || '') !== warn) {",
-    "          editData[i][7] = warn;",
-    "          isChanged = true;",
-    "        }",
-    "      }",
-    "    }",
-    "",
-    "    if (isChanged) editRange.setValues(editData);",
-    "  } catch (err) {}",
+    "    SpreadsheetApp.getActiveSpreadsheet()",
+    "      .addMenu('\uD83D\uDCEC \uC1A1\uC7A5 \uB9E4\uCE6D', [",
+    "        { name: '\uCE74\uCE74\uC624 \uC1A1\uC7A5\uBC88\uD638 \uC785\uB825', functionName: 'openInvoiceMatchSidebarLocal' }",
+    "      ]);",
+    "  } catch(eMenu3) {}",
     "}",
   ].join("\n");
 
-  // ★ 검색발주 스크립트: submitSearchOrders + refreshSearchDropdown
+  // ★ 2026-06-17: 단일 소스 전환 — onEdit 코드를 partnerOnEditSource.gs에서 읽음
+  // 수정은 partnerOnEditSource.gs의 getPartnerOnEditCode_() 한 곳에서만!
+  var onEditCode = "";
+  try {
+    onEditCode = getPartnerOnEditCode_();
+  } catch (eRead) {
+    Logger.log("getPartnerOnEditCode_ 호출 실패: " + eRead.message);
+    onEditCode = "function onEdit(e) { /* partnerOnEditSource.gs 파일 누락 */ }";
+  }
+
+  // onOpen + onEdit 합치기
+  var onOpenCode = onOpenPart + "\n\n" + onEditCode;
+
+
+
+
+
   var searchOrderCode = [
     "// [검색발주] 발주 제출 + 드롭다운 갱신 (자동 생성됨)",
     "var _SI_HEADERS = ['품목명','수량','수취인','수취인전화번호','수취인주소','배송메시지'];",
@@ -4610,12 +4464,37 @@ function createViewerNoticeScript_(viewerSS) {
     runtimeVersion: "V8",
   });
 
+  // ★ 2026-06-22: 송장 매칭 코드 + HTML 분리
+  var invoiceMatchCode = "";
+  try {
+    invoiceMatchCode = getPartnerInvoiceMatchCode_();
+  } catch (eIM) {
+    Logger.log("getPartnerInvoiceMatchCode_ 호출 실패: " + eIM.message);
+    invoiceMatchCode = "// InvoiceMatch 코드 로드 실패";
+  }
+  // ★ HTML 별도 파일로 분리 (이스케이프 문제 원천 차단)
+  var invoiceMatchHtml = "";
+  try {
+    var _apiKey = _getOcrApiKey_();
+    var _webAppUrl = _getWebAppUrl_();
+    invoiceMatchHtml = _getInvoiceMatchHtml_()
+      .replace('__OCR_API_KEY__', _apiKey)
+      .replace('__WEB_APP_URL__', _webAppUrl);
+  } catch (eIMH) {
+    Logger.log("InvoiceMatch HTML 로드 실패: " + eIMH.message);
+  }
+
   function putScriptContent_(scriptId) {
     var fileList = [
       { name: "Code", type: "SERVER_JS", source: onOpenCode },
       { name: "ProductSearch", type: "SERVER_JS", source: productSearchCode },
+      { name: "InvoiceMatch", type: "SERVER_JS", source: invoiceMatchCode },
       { name: "appsscript", type: "JSON", source: manifest },
     ];
+    // ★ 2026-06-22: HTML 파일 추가 (이스케이프 문제 해결)
+    if (invoiceMatchHtml) {
+      fileList.push({ name: "InvoiceMatchSidebar", type: "HTML", source: invoiceMatchHtml });
+    }
     return UrlFetchApp.fetch(
       "https://script.googleapis.com/v1/projects/" + scriptId + "/content",
       {
