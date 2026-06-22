@@ -5233,3 +5233,25 @@ function repairAndProtectAllViewerSheets() {
   Logger.log(msg);
   if (ui) ui.alert(msg);
 }
+
+function installAllVendorScriptsNoUI() {
+  var allFiles = typeof _pt_listFiles === "function" ? _pt_listFiles(true) : [];
+  if (allFiles.length === 0) {
+    Logger.log("협력업체 배포 파일을 찾지 못했습니다.");
+    return;
+  }
+  var scanned = 0, ok = 0, failed = [];
+  for (var i = 0; i < allFiles.length; i++) {
+    scanned++;
+    try {
+      var ss = SpreadsheetApp.openById(allFiles[i].id);
+      createViewerNoticeScript_(ss);
+      ok++;
+      Logger.log("✅ 성공: " + allFiles[i].name);
+    } catch (e) {
+      failed.push(allFiles[i].name + " (" + (e.message || e) + ")");
+      Logger.log("❌ 실패: " + allFiles[i].name + " - " + e.message);
+    }
+  }
+  Logger.log("일괄 배포 완료. 총: " + scanned + "개 중 성공: " + ok + "개, 실패: " + failed.length + "개");
+}
