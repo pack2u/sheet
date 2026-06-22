@@ -169,204 +169,20 @@ function _pms_core_(ui, silent) {
   var todayNum = parseInt(todayStr, 10);
 
   var archived = 0, failed = 0, errMsgs = [];
-  var _pms_archivedUids_ = {}; // ★ 이동된 행의 고유ID 세트 (허브 정리용)
+  var _pms_archivedUids_ = {};
 
   files.forEach(function(fileInfo) {
     try {
-      var ss      = SpreadsheetApp.openById(fileInfo.id);
-      var orderTab = ss.getSheetByName(_PMS_ORDER_TAB);
-      if (!orderTab || orderTab.getLastRow() < 2) return;
-
-      // 헤더 분석
-      var lr  = orderTab.getLastRow();
-      var lc  = orderTab.getMaxColumns();
-      var all = orderTab.getRange(1, 1, lr, lc).getValues();
-      var headers = all[0];
-      var cMap = _pms_buildColMap_(headers);
-
-      if (cMap.date === -1) return; // 주문일자 열 없으면 스킵
-
-      // ★ 품목명 보장: 단가조회 탭에서 코드→품목명 맵 구축
-      var _codeToNameMap_ = {};
-      try {
-        var _vTab_ = _pt_findViewerSheet(ss);
-        if (_vTab_) {
-          var _vLr_ = _vTab_.getLastRow();
-          if (_vLr_ >= 3) {
-            var _vData_ = _vTab_.getRange(3, 3, _vLr_ - 2, 2).getValues(); // C:D열 (코드, 품목명)
-            for (var vi = 0; vi < _vData_.length; vi++) {
-              var _code_ = String(_vData_[vi][0] || "").trim();
-              var _name_ = String(_vData_[vi][1] || "").trim();
-              if (_code_ && _name_) _codeToNameMap_[_code_] = _name_;
-            }
-          }
-        }
-      } catch(_eMap) {}
-
-      // 확장 헤더 (원본 + 취소 + 반품 + 취소반품사유 + 반품송장번호 + 반품배송비 + 도서산간배송비 + 기타정산)
-      var extHeaders = _pms_buildExtHeaders_(headers, lc);
-      var extLc      = extHeaders.length;
-      var etcFeeC    = extLc;      // 1-based: 기타정산 (마지막)
-      var islandFeeC = extLc - 1;  // 1-based: 도서산간배송비
-      var shipFeeC   = extLc - 2;  // 1-based: 반품배송비
-      var retInvC    = extLc - 3;  // 1-based: 반품송장번호
-      var reasonC    = extLc - 4;  // 1-based: 취소반품사유
-      var returnC    = extLc - 5;  // 1-based: 반품
-      var cancelC    = extLc - 6;  // 1-based: 취소
-
-      var keepData            = [];
-      var archiveDataByMonth  = {}; // tabName → [rowData, ...]
-
-      for (var r = 1; r < all.length; r++) {
-        var rowData = all[r];
-        var orderDate = rowData[cMap.date];
-
-        // 빈 행(주문일자 없음)은 유지
-        if (!orderDate) { keepData.push(rowData); continue; }
-
-        var dateStr = _pms_parseDateStr_(orderDate);
-        if (!dateStr) { keepData.push(rowData); continue; }
-
-
-        var dNum   = parseInt(dateStr.substring(0, 8), 10);
-        var isPast = dNum < todayNum;
-
-        if (!isPast) { keepData.push(rowData); continue; }
-
-        // 완료 조건 판별
-        // ★ 이동 조건: 송장번호가 입력된 행만 (상태값 무관)
-        var invoiceVal = cMap.invoice !== -1
-          ? String(rowData[cMap.invoice] || "").trim() : "";
-
-        if (!invoiceVal) { keepData.push(rowData); continue; }
-
-        // 월별 마감 탭명 결정
-        var yyyy   = dateStr.substring(0, 4);
-        var mm     = parseInt(dateStr.substring(4, 6), 10);
-
-        var tabName = "(" + yyyy + "년 " + mm + "월) 발주 마감";
-
-        if (!archiveDataByMonth[tabName]) archiveDataByMonth[tabName] = [];
-        // ★ 발주마감 이동 시: 단가 × 수량 = 정산금액으로 변환
-        var archiveRow = rowData.slice(0);
-        // ★ 품목명(D열, index 3)이 비어있으면 코드→품목명 맵에서 직접 조회
-        var _arItemName_ = String(archiveRow[3] || "").trim();
-        if (!_arItemName_ && String(archiveRow[2] || "").trim()) {
-          var _lookupName_ = _codeToNameMap_[String(archiveRow[2]).trim()];
-          if (_lookupName_) archiveRow[3] = _lookupName_;
-        }
-        if (cMap.price !== -1 && cMap.qty !== -1) {
-          var unitPrice = Number(archiveRow[cMap.price]);
-          var qty       = Number(archiveRow[cMap.qty]);
-          if (!isNaN(unitPrice) && !isNaN(qty) && qty > 0) {
-            archiveRow[cMap.price] = unitPrice * qty;
-          }
-        }
-        // ★ 이동된 행의 고유ID 수집 (허브 정리용) — M열(index 12) = 고유ID
-        var uidColIdx = 12; // 발주탭 기본 헤더: M열(0-based 12) = 고유ID
-        for (var hsi = 0; hsi < headers.length; hsi++) {
-          var hh = String(headers[hsi] || "").replace(/\s/g, "").toLowerCase();
-          if (hh.indexOf("고유id") !== -1 || hh.indexOf("uniqueid") !== -1) {
-            uidColIdx = hsi; break;
-          }
-        }
-        var archivedUid = String(rowData[uidColIdx] || "").trim();
-        if (archivedUid) _pms_archivedUids_[archivedUid] = true;
-        archiveDataByMonth[tabName].push(archiveRow);
-      }
-
-      var hasArchived = false;
-
-      // 월별 마감 탭으로 이동
-      for (var tabName in archiveDataByMonth) {
-        var arr = archiveDataByMonth[tabName];
-        if (!arr.length) continue;
-
-        hasArchived = true;
-        var monthKey = _PMS_KEY_PREFIX + tabName;
-
-        // 탭 취득 or 생성
-        var archTab = ss.getSheetByName(tabName);
-        if (!archTab) {
-          // 키 셀로 탐색
-          var byKey = _pms_findTabByKey_(ss, monthKey);
-          if (byKey) {
-            archTab = byKey;
-          } else {
-            archTab = ss.insertSheet(tabName);
-          }
-        }
-
-        var isNewBlank = archTab.getLastRow() < 1;
-
-        // 레이아웃 적용 (헤더 + 요약수식 + 보호)
-        _pms_layoutArchiveTab_(archTab, extHeaders, cMap, extLc, cancelC, returnC, reasonC, retInvC, shipFeeC, islandFeeC, etcFeeC, isNewBlank);
-        _pms_setKey_(archTab, monthKey);
-
-        // 기존 행 체크박스 보정
-        _pms_ensureCheckboxes_(archTab, cancelC, returnC);
-
-        // 데이터 추가
-        var padded = arr.map(function(row) {
-          return _pms_padRow_(row, extLc, lc);
-        });
-        var nextRow = archTab.getLastRow() + 1;
-        if (nextRow < _PMS_DATA_START) nextRow = _PMS_DATA_START;
-
-        archTab.getRange(nextRow, 1, padded.length, extLc)
-          .setValues(padded)
-          .setVerticalAlignment("middle");
-
-        // 취소·반품 체크박스 (2열만)
-        archTab.getRange(nextRow, cancelC, padded.length, 2)
-          .clearDataValidations();
-        archTab.getRange(nextRow, cancelC, padded.length, 2)
-          .setValue(false);
-        archTab.getRange(nextRow, cancelC, padded.length, 2)
-          .insertCheckboxes();
-
-        _pms_applyProtection_(archTab);
-        archived += padded.length;
-      }
-
-      if (hasArchived) {
-        SpreadsheetApp.flush();
-
-        // 발주탭 원본 행 삭제 — A열·D열·L열은 spill 수식이므로 clearContent 후 B~C, E~K, M~ 복원
-        orderTab.getRange(2, 1, orderTab.getMaxRows() - 1, lc).clearContent();
-
-        if (keepData.length > 0) {
-          // B~C열 (열2~3, 인덱스 1~2) — D열(품목명)은 ARRAYFORMULA이므로 건너뜀
-          var bcData = keepData.map(function(r){ return r.slice(1, 3); });
-          orderTab.getRange(2, 2, keepData.length, 2).setValues(bcData);
-          // E~K열 (열5~11, 인덱스 4~10) — D열(품목명) 건너뛴 후 복원
-          var ekCount = Math.min(7, lc - 4);
-          if (ekCount > 0) {
-            var ekData = keepData.map(function(r){ return r.slice(4, 4 + ekCount); });
-            orderTab.getRange(2, 5, keepData.length, ekCount).setValues(ekData);
-          }
-          // M열 이후 (인덱스 12~, 고유ID·비고 등)
-          if (lc >= 13) {
-            var tailW = lc - 12;
-            var tailData = keepData.map(function(r) {
-              var t = r.slice(12, 12 + tailW);
-              while (t.length < tailW) t.push("");
-              return t;
-            });
-            orderTab.getRange(2, 13, keepData.length, tailW).setValues(tailData);
-          }
-        }
-        SpreadsheetApp.flush();
-        // ★ A열·L열 spill 수식 heal (clearContent로 파괴된 경우 자동 복구)
+      var ss = SpreadsheetApp.openById(fileInfo.id);
+      var res = _pms_processOneFile_(ss, todayNum, _pms_archivedUids_);
+      archived += res.archived;
+      // ★ 새 마감탭 생성 시에만 취소/반품 수식 갱신
+      if (res.newTabCreated) {
         try {
-          var _viewerTab_ = _pt_findViewerSheet(ss);
-          var _viewerName_ = _viewerTab_ ? _viewerTab_.getName() : "단가조회";
-          _pt_healOrderSpillFormulas(orderTab, _viewerName_);
-        } catch(_eH) {}
-        // ★ 검색입력 탭 초기화 (월별마감 이동 완료 시)
-        try { _pt_clearSearchInputTab_(ss); } catch(_e) {}
+          var crTab = ss.getSheetByName(_CR_TAB_NAME);
+          if (crTab) _cr_applyFormulas_(crTab);
+        } catch(_eCr) {}
       }
-
     } catch(e) {
       errMsgs.push("[" + fileInfo.name + "] " + e.message);
       failed++;
@@ -374,24 +190,234 @@ function _pms_core_(ui, silent) {
   });
 
   // ── 협력업체_발주허브 탭에서 이동된 행 삭제 ──
-  if (archived > 0 && Object.keys(_pms_archivedUids_).length > 0) {
+  _pms_cleanupHub_(_pms_archivedUids_, archived, errMsgs);
+
+  var msg = "✅ 월별 정산 이동 완료\n이동: " + archived + "건"
+    + (failed > 0 ? "\n⚠ 파일 오류 " + failed + "건:\n" + errMsgs.slice(0,5).join("\n") : "");
+  Logger.log("[PMS] " + msg.replace(/\n/g," | "));
+  if (!silent && ui) ui.alert(msg);
+}
+
+/**
+ * ★ 단일 파일 처리 (일괄 마감 통합 루프에서 호출 가능)
+ * @param {Spreadsheet} ss - 이미 열린 스프레드시트 객체
+ * @param {number} todayNum - 오늘 날짜 숫자 (yyyyMMdd)
+ * @param {Object} archivedUids - 이동된 고유ID 세트 (외부에서 누적)
+ * @returns {{ archived: number }}
+ */
+function _pms_processOneFile_(ss, todayNum, archivedUids) {
+  var result = { archived: 0, newTabCreated: false };
+  var orderTab = ss.getSheetByName(_PMS_ORDER_TAB);
+  if (!orderTab || orderTab.getLastRow() < 2) return result;
+
+  var lr  = orderTab.getLastRow();
+  var lc  = orderTab.getMaxColumns();
+  var all = orderTab.getRange(1, 1, lr, lc).getValues();
+  var headers = all[0];
+  var cMap = _pms_buildColMap_(headers);
+
+  if (cMap.date === -1) return result;
+
+  // ★ 품목명 보장: 단가조회 탭에서 코드→품목명 맵 구축
+  var _codeToNameMap_ = {};
+  try {
+    var _vTab_ = _pt_findViewerSheet(ss);
+    if (_vTab_) {
+      var _vLr_ = _vTab_.getLastRow();
+      if (_vLr_ >= 3) {
+        var _vData_ = _vTab_.getRange(3, 3, _vLr_ - 2, 2).getValues();
+        for (var vi = 0; vi < _vData_.length; vi++) {
+          var _code_ = String(_vData_[vi][0] || "").trim();
+          var _name_ = String(_vData_[vi][1] || "").trim();
+          if (_code_ && _name_) _codeToNameMap_[_code_] = _name_;
+        }
+      }
+    }
+  } catch(_eMap) {}
+
+  var extHeaders = _pms_buildExtHeaders_(headers, lc);
+  var extLc      = extHeaders.length;
+  var etcFeeC    = extLc;
+  var islandFeeC = extLc - 1;
+  var shipFeeC   = extLc - 2;
+  var retInvC    = extLc - 3;
+  var reasonC    = extLc - 4;
+  var returnC    = extLc - 5;
+  var cancelC    = extLc - 6;
+
+  var keepData            = [];
+  var archiveDataByMonth  = {};
+
+  for (var r = 1; r < all.length; r++) {
+    var rowData = all[r];
+    var orderDate = rowData[cMap.date];
+
+    if (!orderDate) { keepData.push(rowData); continue; }
+
+    var dateStr = _pms_parseDateStr_(orderDate);
+    if (!dateStr) { keepData.push(rowData); continue; }
+
+    var dNum   = parseInt(dateStr.substring(0, 8), 10);
+    var isPast = dNum < todayNum;
+
+    if (!isPast) { keepData.push(rowData); continue; }
+
+    var invoiceVal = cMap.invoice !== -1
+      ? String(rowData[cMap.invoice] || "").trim() : "";
+
+    if (!invoiceVal) { keepData.push(rowData); continue; }
+
+    var yyyy   = dateStr.substring(0, 4);
+    var mm     = parseInt(dateStr.substring(4, 6), 10);
+    var tabName = "(" + yyyy + "년 " + mm + "월) 발주 마감";
+
+    if (!archiveDataByMonth[tabName]) archiveDataByMonth[tabName] = [];
+    var archiveRow = rowData.slice(0);
+    var _arItemName_ = String(archiveRow[3] || "").trim();
+    if (!_arItemName_ && String(archiveRow[2] || "").trim()) {
+      var _lookupName_ = _codeToNameMap_[String(archiveRow[2]).trim()];
+      if (_lookupName_) archiveRow[3] = _lookupName_;
+    }
+    if (cMap.price !== -1 && cMap.qty !== -1) {
+      var unitPrice = Number(archiveRow[cMap.price]);
+      var qty       = Number(archiveRow[cMap.qty]);
+      if (!isNaN(unitPrice) && !isNaN(qty) && qty > 0) {
+        archiveRow[cMap.price] = unitPrice * qty;
+      }
+    }
+    var uidColIdx = 12;
+    for (var hsi = 0; hsi < headers.length; hsi++) {
+      var hh = String(headers[hsi] || "").replace(/\s/g, "").toLowerCase();
+      if (hh.indexOf("고유id") !== -1 || hh.indexOf("uniqueid") !== -1) {
+        uidColIdx = hsi; break;
+      }
+    }
+    var archivedUid = String(rowData[uidColIdx] || "").trim();
+    if (archivedUid) archivedUids[archivedUid] = true;
+    archiveDataByMonth[tabName].push(archiveRow);
+  }
+
+  var hasArchived = false;
+
+  for (var tabName in archiveDataByMonth) {
+    var arr = archiveDataByMonth[tabName];
+    if (!arr.length) continue;
+
+    hasArchived = true;
+    var monthKey = _PMS_KEY_PREFIX + tabName;
+
+    var archTab = ss.getSheetByName(tabName);
+    if (!archTab) {
+      var byKey = _pms_findTabByKey_(ss, monthKey);
+      if (byKey) {
+        archTab = byKey;
+      } else {
+        archTab = ss.insertSheet(tabName);
+        result.newTabCreated = true; // ★ 새 마감탭 생성됨
+      }
+    }
+
+    var isNewBlank = archTab.getLastRow() < 1;
+
+    _pms_layoutArchiveTab_(archTab, extHeaders, cMap, extLc, cancelC, returnC, reasonC, retInvC, shipFeeC, islandFeeC, etcFeeC, isNewBlank);
+    _pms_setKey_(archTab, monthKey);
+    _pms_ensureCheckboxes_(archTab, cancelC, returnC);
+
+    var padded = arr.map(function(row) {
+      return _pms_padRow_(row, extLc, lc);
+    });
+    var nextRow = archTab.getLastRow() + 1;
+    if (nextRow < _PMS_DATA_START) nextRow = _PMS_DATA_START;
+
+    archTab.getRange(nextRow, 1, padded.length, extLc)
+      .setValues(padded)
+      .setVerticalAlignment("middle");
+
+    archTab.getRange(nextRow, cancelC, padded.length, 2)
+      .clearDataValidations();
+    archTab.getRange(nextRow, cancelC, padded.length, 2)
+      .setValue(false);
+    archTab.getRange(nextRow, cancelC, padded.length, 2)
+      .insertCheckboxes();
+
+    _pms_applyProtection_(archTab);
+    result.archived += padded.length;
+  }
+
+  if (hasArchived) {
+    SpreadsheetApp.flush();
+
+    orderTab.getRange(2, 1, orderTab.getMaxRows() - 1, lc).clearContent();
+
+    if (keepData.length > 0) {
+      var bcData = keepData.map(function(r){ return r.slice(1, 3); });
+      orderTab.getRange(2, 2, keepData.length, 2).setValues(bcData);
+      var ekCount = Math.min(7, lc - 4);
+      if (ekCount > 0) {
+        var ekData = keepData.map(function(r){ return r.slice(4, 4 + ekCount); });
+        orderTab.getRange(2, 5, keepData.length, ekCount).setValues(ekData);
+      }
+      if (lc >= 13) {
+        var tailW = lc - 12;
+        var tailData = keepData.map(function(r) {
+          var t = r.slice(12, 12 + tailW);
+          while (t.length < tailW) t.push("");
+          return t;
+        });
+        orderTab.getRange(2, 13, keepData.length, tailW).setValues(tailData);
+      }
+    }
+
+    try {
+      var totalRows = orderTab.getMaxRows() - 1;
+      if (totalRows > 0) {
+        orderTab.getRange(2, 1, totalRows, lc)
+          .setBorder(false, false, false, false, false, false);
+      }
+      var emptyStartRow = 2 + keepData.length;
+      var emptyRows = orderTab.getMaxRows() - emptyStartRow + 1;
+      if (emptyRows > 0) {
+        var fmtRange = orderTab.getRange(emptyStartRow, 1, emptyRows, lc);
+        fmtRange.setBackground(null);
+        fmtRange.setFontColor(null);
+        fmtRange.setFontSize(10);
+        fmtRange.setFontWeight("normal");
+        fmtRange.setFontStyle("normal");
+        fmtRange.setFontFamily(null);
+      }
+    } catch(eFmt) {}
+    SpreadsheetApp.flush();
+    try {
+      var _viewerTab_ = _pt_findViewerSheet(ss);
+      var _viewerName_ = _viewerTab_ ? _viewerTab_.getName() : "단가조회";
+      _pt_healOrderSpillFormulas(orderTab, _viewerName_);
+    } catch(_eH) {}
+    try { _pt_clearSearchInputTab_(ss); } catch(_e) {}
+  }
+
+  return result;
+}
+
+/**
+ * ★ 허브에서 이동된 행 삭제 (공통 로직)
+ */
+function _pms_cleanupHub_(archivedUids, archived, errMsgs) {
+  if (archived > 0 && Object.keys(archivedUids).length > 0) {
     try {
       var hubSS  = SpreadsheetApp.getActiveSpreadsheet();
-      var hubTab = hubSS.getSheetByName("협력업체_발주허브"); // _PO_HUB_SHEET_NAME 직접 기입
+      var hubTab = hubSS.getSheetByName("협력업체_발주허브");
       if (hubTab && hubTab.getLastRow() >= 2) {
         var hubLr      = hubTab.getLastRow();
         var hubLc      = hubTab.getLastColumn();
-        var HUB_UID_COL = 3;  // C열(1-based): 고유ID
+        var HUB_UID_COL = 3;
         var hubData    = hubTab.getRange(2, 1, hubLr - 1, hubLc).getValues();
-        // 삭제 대신 데이터 덮어쓰기 방식으로 속도 개선
         var keepHubData = [];
         for (var hr = 0; hr < hubData.length; hr++) {
           var hubUid = String(hubData[hr][HUB_UID_COL - 1] || "").trim();
-          if (!(hubUid && _pms_archivedUids_[hubUid])) {
+          if (!(hubUid && archivedUids[hubUid])) {
             keepHubData.push(hubData[hr]);
           }
         }
-        
         hubTab.getRange(2, 1, hubLr - 1, hubLc).clearContent();
         if (keepHubData.length > 0) {
           hubTab.getRange(2, 1, keepHubData.length, hubLc).setValues(keepHubData);
@@ -402,26 +428,11 @@ function _pms_core_(ui, silent) {
       errMsgs.push("[허브 정리] " + eHub.message);
     }
   }
-
-  // ── 취소/반품 접수 탭 수식 자동 갱신 ──
-  // ★ 마감탭이 새로 생겼으므로 VLOOKUP 범위를 최신 마감탭 포함으로 갱신
-  if (archived > 0) {
-    try {
-      _pms_refreshCancelReturnFormulas_(files);
-    } catch (eCr) {
-      errMsgs.push("[취소반품 수식 갱신] " + eCr.message);
-    }
-  }
-
-  var msg = "✅ 월별 정산 이동 완료\n이동: " + archived + "건"
-    + (failed > 0 ? "\n⚠ 파일 오류 " + failed + "건:\n" + errMsgs.slice(0,5).join("\n") : "");
-  Logger.log("[PMS] " + msg.replace(/\n/g," | "));
-  if (!silent && ui) ui.alert(msg);
 }
 
 /**
  * 취소/반품 접수 탭의 VLOOKUP 수식을 최신 마감탭 포함하여 갱신
- * 월별 마감 이동 후 자동 호출됨
+ * ★ 2026-06-18: 별도 메뉴로 분리 (일괄 마감에서 자동 호출 제거)
  */
 function _pms_refreshCancelReturnFormulas_(files) {
   if (!files) files = _pt_listFiles();
@@ -438,6 +449,20 @@ function _pms_refreshCancelReturnFormulas_(files) {
     }
   }
   Logger.log("[PMS] 취소/반품 수식 갱신 완료 (" + files.length + "개 파일)");
+}
+
+/** ★ 2026-06-18: 취소/반품 수식 갱신 — 공개 메뉴 함수 */
+function partnerRefreshCancelReturnFormulas() {
+  var ui = SpreadsheetApp.getUi();
+  var cf = ui.alert("🔄 취소/반품 수식 갱신",
+    "모든 협력업체 파일의 '취소/반품 접수' 탭 수식을\n" +
+    "최신 마감탭 포함하여 갱신합니다.\n\n" +
+    "(월별 마감 이동 후 실행 권장)\n계속할까요?",
+    ui.ButtonSet.YES_NO);
+  if (cf !== ui.Button.YES) return;
+
+  _pms_refreshCancelReturnFormulas_(null);
+  ui.alert("✅ 취소/반품 수식 갱신 완료");
 }
 
 // ──────────────────────────────────────────────────────

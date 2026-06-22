@@ -11,7 +11,7 @@ var CS_MANUAL_SPREADSHEET_ID = "1LlNX-spTs-2WgWD8HEha90PYU0m7s8MqFh84vy_Fi_Q";
 function showChatbotSidebar() {
   var html = HtmlService.createHtmlOutputFromFile('chatbotSidebar')
       .setTitle('상담원 챗봇 (Gemini)')
-      .setWidth(300);
+      .setWidth(450); // ★ 1.5배 확대
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
@@ -55,7 +55,7 @@ function callGeminiAPI(userQuestion) {
     var manualContext = getCSManualContext();
     
     // 모델 종류 (최신 2.5 릴리즈 버전 반영)
-    var model = "gemini-2.5-flash-lite"; 
+    var model = "gemini-3.1-flash-lite"; // ★ 2026-06-18: 3.1-flash-lite로 업그레이드
     var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + GEMINI_API_KEY;
 
     var prompt = "당신은 Pack2U (물류 풀필먼트) 전문 CS 상담원입니다.\n" +

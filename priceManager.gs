@@ -4473,13 +4473,12 @@ function createViewerNoticeScript_(viewerSS) {
     invoiceMatchCode = "// InvoiceMatch 코드 로드 실패";
   }
   // ★ HTML 별도 파일로 분리 (이스케이프 문제 원천 차단)
+  // ★ 2026-06-22: 로컬 하이브리드 방식으로 웹앱 URL이 필요 없음
   var invoiceMatchHtml = "";
   try {
     var _apiKey = _getOcrApiKey_();
-    var _webAppUrl = _getWebAppUrl_();
     invoiceMatchHtml = _getInvoiceMatchHtml_()
-      .replace('__OCR_API_KEY__', _apiKey)
-      .replace('__WEB_APP_URL__', _webAppUrl);
+      .replace('__OCR_API_KEY__', _apiKey);
   } catch (eIMH) {
     Logger.log("InvoiceMatch HTML 로드 실패: " + eIMH.message);
   }

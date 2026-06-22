@@ -127,7 +127,24 @@ function ecountStep1() {
     return { reqId: reqId, zone: zone, sessionId: rawSessionId };
   } else {
     _releaseSyncLock_();
-    throw new Error('로그인 실패 (키 만료 또는 IP 권한)');
+    // ★ 2026-06-22: 디버그 강화 — API 원문 응답 포함
+    var apiStatus = (sessionData && sessionData.Status) ? sessionData.Status : "(응답없음)";
+    var apiErr = extractEcountApiErrorMessage_(sessionData) || "";
+    var detail = "Status=" + apiStatus;
+    if (apiErr) detail += ", " + apiErr;
+    // SESSION_ID 외 응답 구조 힌트도 포함
+    if (sessionData && sessionData.Data && sessionData.Data.Datas) {
+      var keys = Object.keys(sessionData.Data.Datas);
+      detail += " [응답키: " + keys.join(",") + "]";
+    }
+    // ★ API 원문 응답 표시 (원인 즈시 파악)
+    var rawPreview = "";
+    try {
+      rawPreview = sessionData && sessionData._rawText_
+        ? String(sessionData._rawText_).substring(0, 400)
+        : JSON.stringify(sessionData).substring(0, 400);
+    } catch(eRaw) {}
+    throw new Error('로그인 실패: ' + detail + '\n\n[해결 방법]\n1. 이카운트 ERP > OAPI설정 > API인증키 재발급\n2. 메뉴 > 이카운트 작업 > 🔐 계정설정에서 회사코드/사용자ID/API키 모두 재입력\n\n[API 응답 원문]\n' + rawPreview);
   }
 }
 
@@ -407,21 +424,73 @@ function ecountStep4ForModal() {
 // 내부 통신 및 로우레벨 함수 모음
 // ============================================
 
+// ── ★ 2026-06-22: 이카운트 프록시 (고정 IP 34.64.87.69 경유) ──
+var _ECOUNT_PROXY_URL_ = 'https://ecount-proxy-43iravsbpa-du.a.run.app';
+var _ECOUNT_PROXY_KEY_ = 'pack2u-ecount-proxy-2026';
+var _ECOUNT_PROXY_SA_ = '329334961005-compute@developer.gserviceaccount.com';
+
+/**
+ * Cloud Run 호출용 ID 토큰 생성 (IAM Credentials API 경유)
+ * @returns {string} ID 토큰
+ */
+function _getCloudRunIdToken_() {
+  var accessToken = ScriptApp.getOAuthToken();
+  var url = 'https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/'
+    + _ECOUNT_PROXY_SA_ + ':generateIdToken';
+  var resp = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'Authorization': 'Bearer ' + accessToken },
+    payload: JSON.stringify({
+      audience: _ECOUNT_PROXY_URL_,
+      includeEmail: true
+    }),
+    muteHttpExceptions: true
+  });
+  var code = resp.getResponseCode();
+  if (code !== 200) {
+    throw new Error('ID Token 생성 실패 (HTTP ' + code + '): ' + resp.getContentText().substring(0, 300));
+  }
+  var data = JSON.parse(resp.getContentText());
+  return data.token;
+}
+
+/**
+ * 이카운트 API 호출을 Cloud Function 프록시를 통해 실행 (고정 IP 보장)
+ * @param {string} targetUrl - 이카운트 API 엔드포인트
+ * @param {Object} payload - 요청 본문
+ * @param {string} [method='POST'] - HTTP 메서드
+ * @returns {HTTPResponse} UrlFetchApp 응답 객체와 동일한 인터페이스
+ */
+function _ecountFetchViaProxy_(targetUrl, payload, method) {
+  var idToken = _getCloudRunIdToken_();
+  var proxyPayload = {
+    url: targetUrl,
+    payload: payload || {},
+    method: method || 'POST'
+  };
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(proxyPayload),
+    headers: {
+      'X-Proxy-Key': _ECOUNT_PROXY_KEY_,
+      'Authorization': 'Bearer ' + idToken
+    },
+    muteHttpExceptions: true
+  };
+  return fetchWithRetry(_ECOUNT_PROXY_URL_, options, 3);
+}
+
 function verifyZoneAPI() {
   var cfg = ensureEcountCredentialConfig_();
-  let url = 'https://oapi.ecount.com/OAPI/V2/Zone'; 
-  let requestData = { "COM_CODE": cfg.comCode };
-  let options = {
-    "method": "post",
-    "contentType": "application/json",
-    "payload": JSON.stringify(requestData),
-    "headers": { "Accept": "application/json", "Expect": "" },
-    "muteHttpExceptions": true
-  };
-  let response = fetchWithRetry(url, options, 3);
-  let statusCode = response.getResponseCode();
-  let rawText = response.getContentText();
-  let responseData;
+  // ★ 2026-06-22: 프록시 경유 (고정 IP)
+  var ecountUrl = 'https://oapi.ecount.com/OAPI/V2/Zone';
+  var requestData = { "COM_CODE": cfg.comCode };
+  var response = _ecountFetchViaProxy_(ecountUrl, requestData, 'POST');
+  var statusCode = response.getResponseCode();
+  var rawText = response.getContentText();
+  var responseData;
   try {
     responseData = JSON.parse(rawText);
   } catch(e) {
@@ -437,35 +506,35 @@ function verifyZoneAPI() {
     throw new Error("verifyZoneAPI 응답 이상 (HTTP " + statusCode + "): " + (apiMsg || rawText || "ZONE 값 없음"));
   }
 
-  let zone = responseData.Data.ZONE;
+  var zone = responseData.Data.ZONE;
   return zone;
 }
 
 function login(zone) {
   var cfg = ensureEcountCredentialConfig_();
-  let url = `https://oapi${zone}.ecount.com/OAPI/V2/OAPILogin`;
-  let requestData = {
+  // ★ 2026-06-22: 프록시 경유 (고정 IP 34.64.87.69)
+  var ecountUrl = 'https://oapi' + zone + '.ecount.com/OAPI/V2/OAPILogin';
+  var requestData = {
     "COM_CODE": cfg.comCode,
     "USER_ID": cfg.userId,
     "ZONE": zone,
     "API_CERT_KEY": cfg.apiCertKey,
     "LAN_TYPE": cfg.lanType
   };
-  let options = {
-    "method": "post",
-    "contentType": "application/json",
-    "payload": JSON.stringify(requestData),
-    "headers": { "Accept": "application/json", "Expect": "" },
-    "muteHttpExceptions": true
-  };
-  let response = fetchWithRetry(url, options, 3);
-  let rawText = response.getContentText();
-  let responseData;
+  var response = _ecountFetchViaProxy_(ecountUrl, requestData, 'POST');
+  var httpCode = response.getResponseCode();
+  var rawText = response.getContentText();
+  // ★ 로그인 응답 항상 로그 기록 (디버깅용)
+  Logger.log("[login] HTTP " + httpCode + " 응답: " + String(rawText || "").substring(0, 500));
+  var responseData;
   try {
     responseData = JSON.parse(rawText);
   } catch(e) {
-    throw new Error("login 파싱 오류");
+    var preview = String(rawText || "").replace(/\s+/g, " ").slice(0, 300);
+    throw new Error("login 파싱 오류 [HTTP " + httpCode + "]: " + (preview || "응답 본문 없음"));
   }
+  // ★ 원문 텍스트를 responseData에 첨부 (에러 출력용)
+  try { responseData._rawText_ = rawText; } catch(eA) {}
   return responseData;
 }
 

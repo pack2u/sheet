@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📊 Pack2U 단가 분석 챗봇 — 기능 가이드</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f0f1a;
+      --card: #1a1a2e;
+      --card-hover: #1e1e35;
+      --accent: #6c63ff;
+      --accent2: #00d4aa;
+      --accent3: #ff6b6b;
+      --accent4: #ffd93d;
+      --text: #e8e8f0;
+      --text-dim: #8888aa;
+      --border: #2a2a45;
+      --glow: rgba(108, 99, 255, 0.15);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 80px 20px 60px;
+      background: linear-gradient(135deg, #0f0f1a 0%, #1a1a3e 50%, #0f0f1a 100%);
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(108,99,255,0.08) 0%, transparent 70%);
+      top: -200px; right: -100px;
+    }
+    .hero-badge {
+      display: inline-block;
+      background: rgba(108,99,255,0.15);
+      color: var(--accent);
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(108,99,255,0.3);
+    }
+    .hero h1 {
+      font-size: 42px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff 0%, #6c63ff 50%, #00d4aa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 16px;
+    }
+    .hero p {
+      color: var(--text-dim);
+      font-size: 17px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .hero-stats {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      margin-top: 40px;
+    }
+    .stat {
+      text-align: center;
+    }
+    .stat-num {
+      font-size: 36px;
+      font-weight: 800;
+      color: var(--accent);
+    }
+    .stat-label {
+      font-size: 13px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    /* Container */
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 20px 80px;
+    }
+
+    /* Section */
+    .section {
+      margin-top: 60px;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .section-icon {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+    .section-icon.purple { background: rgba(108,99,255,0.15); }
+    .section-icon.green { background: rgba(0,212,170,0.15); }
+    .section-icon.red { background: rgba(255,107,107,0.15); }
+    .section-icon.yellow { background: rgba(255,217,61,0.15); }
+    .section-icon.blue { background: rgba(66,133,244,0.15); }
+    .section-title {
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .section-desc {
+      font-size: 14px;
+      color: var(--text-dim);
+    }
+
+    /* Cards */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      transition: all 0.3s ease;
+      cursor: default;
+      position: relative;
+      overflow: hidden;
+    }
+    .card:hover {
+      background: var(--card-hover);
+      border-color: rgba(108,99,255,0.3);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(108,99,255,0.1);
+    }
+    .card-tag {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .tag-analysis { background: rgba(108,99,255,0.15); color: #a29bfe; }
+    .tag-edit { background: rgba(0,212,170,0.15); color: #00d4aa; }
+    .tag-ai { background: rgba(255,217,61,0.15); color: #ffd93d; }
+    .tag-danger { background: rgba(255,107,107,0.15); color: #ff6b6b; }
+    .tag-auto { background: rgba(66,133,244,0.15); color: #4285f4; }
+
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-desc {
+      font-size: 13px;
+      color: var(--text-dim);
+      margin-bottom: 16px;
+      line-height: 1.7;
+    }
+    .card-example {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 8px;
+    }
+    .example-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+    .example-cmd {
+      font-size: 14px;
+      color: var(--accent2);
+      font-weight: 500;
+      cursor: pointer;
+      transition: color 0.2s;
+      position: relative;
+      padding-left: 20px;
+    }
+    .example-cmd::before {
+      content: '💬';
+      position: absolute;
+      left: 0;
+      font-size: 12px;
+    }
+    .example-cmd:hover { color: #fff; }
+    .example-cmd + .example-cmd { margin-top: 6px; }
+
+    .card-result {
+      background: rgba(0,212,170,0.05);
+      border: 1px solid rgba(0,212,170,0.15);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: #88ccbb;
+      line-height: 1.6;
+    }
+    .card-result strong { color: var(--accent2); }
+
+    /* Flow diagram */
+    .flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin: 40px 0;
+      flex-wrap: wrap;
+    }
+    .flow-step {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      text-align: center;
+      min-width: 140px;
+      transition: all 0.3s;
+    }
+    .flow-step:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 20px var(--glow);
+    }
+    .flow-step .icon { font-size: 28px; margin-bottom: 6px; }
+    .flow-step .label { font-size: 13px; font-weight: 600; }
+    .flow-step .sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+    .flow-arrow {
+      color: var(--accent);
+      font-size: 20px;
+      font-weight: bold;
+    }
+
+    /* Scenario */
+    .scenario {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      margin-top: 20px;
+    }
+    .scenario-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .chat-bubble {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      animation: fadeUp 0.4s ease;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .chat-avatar {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .avatar-user { background: rgba(108,99,255,0.2); }
+    .avatar-bot { background: rgba(0,212,170,0.2); }
+    .chat-msg {
+      border-radius: 12px;
+      padding: 12px 16px;
+      max-width: 85%;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .msg-user {
+      background: rgba(108,99,255,0.12);
+      border: 1px solid rgba(108,99,255,0.2);
+      color: #c8c4ff;
+    }
+    .msg-bot {
+      background: rgba(0,212,170,0.08);
+      border: 1px solid rgba(0,212,170,0.15);
+      color: #a8e8d8;
+    }
+    .msg-bot table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 12px;
+    }
+    .msg-bot th {
+      background: rgba(0,0,0,0.3);
+      padding: 6px 8px;
+      text-align: left;
+      font-weight: 600;
+      color: #88ccbb;
+      border-bottom: 1px solid rgba(0,212,170,0.15);
+    }
+    .msg-bot td {
+      padding: 5px 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      color: #c8e8dd;
+    }
+    .msg-bot .danger { color: #ff6b6b; }
+    .msg-bot .warn { color: #ffd93d; }
+    .msg-bot .ok { color: #00d4aa; }
+    .confirm-btn {
+      display: inline-block;
+      background: rgba(0,212,170,0.2);
+      color: #00d4aa;
+      border: 1px solid rgba(0,212,170,0.3);
+      padding: 8px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-top: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .confirm-btn:hover {
+      background: rgba(0,212,170,0.3);
+    }
+
+    /* Tips */
+    .tip-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .tip {
+      background: rgba(255,217,61,0.05);
+      border: 1px solid rgba(255,217,61,0.15);
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 13px;
+      color: #ddc866;
+      line-height: 1.6;
+    }
+    .tip strong { color: #ffd93d; }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-dim);
+      font-size: 13px;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 28px; }
+      .hero-stats { gap: 20px; }
+      .stat-num { font-size: 28px; }
+      .cards { grid-template-columns: 1fr; }
+      .flow { flex-direction: column; }
+      .flow-arrow { transform: rotate(90deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-badge">Gemini 3.5 Flash 기반</div>
+    <h1>📊 단가 분석 챗봇 가이드</h1>
+    <p>자연어로 질문하면 상품 데이터를 분석하고, 문제를 찾고, 일괄 수정까지 한번에 처리합니다</p>
+    <div class="hero-stats">
+      <div class="stat">
+        <div class="stat-num">11</div>
+        <div class="stat-label">분석·수정 기능</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">7</div>
+        <div class="stat-label">자동 검증 항목</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">∞</div>
+        <div class="stat-label">AI 자유 질문</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <!-- 워크플로우 -->
+    <div class="flow">
+      <div class="flow-step">
+        <div class="icon">💬</div>
+        <div class="label">자연어 입력</div>
+        <div class="sub">"마진 낮은 거 찾아줘"</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="icon">🧠</div>
+        <div class="label">의도 감지</div>
+        <div class="sub">MARGIN / EDIT / AI</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="icon">📋</div>
+        <div class="label">데이터 분석</div>
+        <div class="sub">시트 전체 스캔</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="icon">✅</div>
+        <div class="label">결과·수정 제안</div>
+        <div class="sub">확인 후 반영</div>
+      </div>
+    </div>
+
+    <!-- ═══ 1. 분석 기능 ═══ -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon purple">🔍</div>
+        <div>
+          <div class="section-title">분석 & 탐지 기능</div>
+          <div class="section-desc">귀찮은 수동 확인 작업을 자연어 한 줄로 해결</div>
+        </div>
+      </div>
+      <div class="cards">
+
+        <div class="card">
+          <div class="card-tag tag-danger">⚠️ 필수 점검</div>
+          <div class="card-title">🔴 마진 이상 품목 탐지</div>
+          <div class="card-desc">전체 상품의 마진율을 스캔하여 기준 이하 품목을 찾아냅니다. 역마진(원가 > 판매가)도 자동 감지합니다.</div>
+          <div class="card-example">
+            <div class="example-label">이렇게 물어보세요</div>
+            <div class="example-cmd">"마진 15% 미만 찾아줘"</div>
+            <div class="example-cmd">"마진율 낮은 품목 알려줘"</div>
+            <div class="example-cmd">"역마진 있는 거 있어?"</div>
+          </div>
+          <div class="card-result">
+            <strong>→ 결과:</strong> 마진율 낮은 품목 테이블 (품목코드, 품목명, 판매가, 원가, 마진율) 출력
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-tag tag-analysis">📊 비교 분석</div>
+          <div class="card-title">💱 채널별 가격 차이 비교</div>
+          <div class="card-desc">자사몰 vs 오프라인, 자사몰 vs 쿠팡, 또는 <strong>임의의 두 열</strong>의 가격 차이를 분석합니다.</div>
+          <div class="card-example">
+            <div class="example-label">이렇게 물어보세요</div>
+            <div class="example-cmd">"자사몰과 쿠팡 가격 차이 확인해줘"</div>
+            <div class="example-cmd">"오프라인 단가 비교 20% 이상"</div>
+            <div class="example-cmd">"W열과 BN열 비교해줘"</div>
+          </div>
+          <div class="card-result">
+            <strong>→ 결과:</strong> 편차 큰 품목 리스트 + 차이율(%) 표시. <span class="danger">🔴-30%</span> <span class="warn">🟡+25%</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-tag tag-danger">🚨 데이터 품질</div>
+          <div class="card-title">📝 미입력 항목 탐지</div>
+          <div class="card-desc">판매가, 매입가, 품목코드, 재고수량 중 비어있는 항목을 한눈에 파악합니다.</div>
+          <div class="card-example">
+            <div class="example-label">이렇게 물어보세요</div>
+            <div class="example-cmd">"비어있는 항목 찾아줘"</div>
+            <div class="example-cmd">"누락된 데이터 확인"</div>
+            <div class="example-cmd">"판매가 미입력된 거"</div>
+          </div>
+          <div class="card-result">
+            <strong>→ 결과:</strong> 품목별 비어있는 항목 (예: "판매가, 재고수량") 표시
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-tag tag-analysis">🔎 검색</div>
+          <div class="card-title">🏷️ 품목 검색 & 상세 조회</div>
+          <div class="card-desc">이카운트 코드나 품목명으로 검색하면 해당 품목의 전체 정보를 카드 형태로 표시합니다.</div>
+          <div class="card-example">
+            <div class="example-label">이렇게 물어보세요</div>
+            <div class="example-cmd">"JHCRJJIM0001 찾아줘"</div>
+            <div class="example-cmd">"한우갈비 검색"</div>
+            <div class="example-cmd">"최고갈비 정보 알려줘"</div>
+          </div>
+          <div class="card-result">
+            <strong>→ 결과:</strong> 상태, 코드, 품목명, 출고지, 구매처, 재고, 매입가, 판매가, 마진율 카드
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-tag tag-analysis">📈 현황</div>
+          <div class="card-title">📊 전체 요약 & 상태별 현황</div>
+          <div class="card-desc">전체 품목 수, 판매중/품절/단종 비율, 미입력/마진 이상 건수를 한눈에 요약합니다.</div>
+          <div class="card-example">
+            <div class="example-label">이렇게 물어보세요</div>
+            <div class="example-cmd">"전체 현황 알려줘"</div>
+            <div class="example-cmd">"단종품 몇 개야?"</div>
+            <div class="example-cmd">"품절 목록 보여줘"</div>
+          </div>
+          <div class="card-result">
+            <strong>→ 결과:</strong> 총 품목 1,200개 | 판매중 850 | 품절 120 | 단종 230 | 마진↓ 45
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-tag tag-danger">🛡️ 종합 점검</div>
+          <div class="card-title">✅ 전체 자동 검증 (7가지)</div>
+          <div class="card-desc">한 번에 7가지 항목을 자동 검증합니다: 코드 누락, 판매가 0, 매입가 0, 역마진, 저마진, 재고 0+판매중, 채널 가격 편차</div>
+          <div class="card-example">
+            <div class="example-label">이렇게 물어보세요</div>
+            <div class="example-cmd">"이상한 부분 확인해줘"</div>
+            <div class="example-cmd">"전체 검증 돌려줘"</div>
+            <div class="example-cmd">"문제 있는 품목 찾아줘"</div>
+          </div>
+          <div class="card-result">
+            <strong>→ 결과:</strong> 이슈 유형별 리스트 (역마진 3건, 코드 누락 5건, 재고 0 판매중 12건...)
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ═══ 2. 수정 기능 ═══ -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon green">✏️</div>
+        <div>
+          <div class="section-title">수정 & 일괄 처리 기능</div>
+          <div class="section-desc">수백 개 품목의 가격을 자연어 한 줄로 수정 — 미리보기 확인 후 반영</div>
+        </div>
+      </div>
+      <div class="cards">
+
+        <div class="card">
+          <div class="card-tag tag-edit">⭐ 핵심 기능</div>
+          <div class="card-title">🎯 마진 목표 역산 수정</div>
+          <div class="card-desc">목표 마진율을 입력하면 매입가 기준으로 판매가를 자동 계산합니다.<br><code>판매가 = 매입가 ÷ (1 - 목표마진)</code></div>
+          <div class="card-example">
+            <div class="example-label">이렇게 물어보세요</div>
+            <div class="example-cmd">"마진 30%로 맞춰줘"</div>
+            <div class="example-cmd">"마진 10% 미만 품목 마진 25%로 맞춰줘"</div>
+            <div class="example-cmd">"단종품 제외 마진 20%로 일괄 변경"</div>
+          </div>
+          <div class="card-result">
+            <strong>→ 동작:</strong> 매입가 10,000원인 품목 → 마진 30% → 판매가 <strong>14,286원</strong>으로 자동 계산
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-tag tag-edit">📐 비율 조정</div>
+          <div class="card-title">📈 % 기반 일괄 인상/인하</div>
+          <div class="card-desc">전체 또는 조건에 맞는 품목의 판매가를 % 단위로 올리거나 내립니다.</div>
+          <div class="card-example">
+            <div class="example-label">이렇게 물어보세요</div>
+            <div class="example-cmd">"판매가 5% 올려줘"</div>
+            <div class="example-cmd">"쿠팡판매가 10% 내려줘"</div>
+            <div class="example-cmd">"마진 15% 미만 판매가 8% 인상"</div>
+          </div>
+          <div class="card-result">
+            <strong>→ 동작:</strong> 현재 50,000원 → 5% 인상 → <strong>52,500원</strong> (미리보기 후 확인)
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-tag tag-edit">🔢 고정값</div>
+          <div class="card-title">💰 고정 금액 일괄 설정</div>
+          <div class="card-desc">특정 조건의 품목들을 동일한 금액으로 일괄 변경합니다.</div>
+          <div class="card-example">
+            <div class="example-label">이렇게 물어보세요</div>
+            <div class="example-cmd">"JHCRJJIM0001 판매가 85000으로 수정"</div>
+            <div class="example-cmd">"품절 품목 재고 0으로 변경"</div>
+          </div>
+          <div class="card-result">
+            <strong>→ 동작:</strong> 지정된 품목의 해당 열을 고정 금액으로 변경
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-tag tag-edit">🏷️ 다중 코드</div>
+          <div class="card-title">📋 복수 품목 지정 수정</div>
+          <div class="card-desc">여러 이카운트 코드를 나열하면 해당 품목들만 선택적으로 수정합니다.</div>
+          <div class="card-example">
+            <div class="example-label">이렇게 물어보세요</div>
+            <div class="example-cmd">"JHCRJJIM0001 JHCRJJIM0002 JHCRJJIM0003 판매가 5% 올려줘"</div>
+            <div class="example-cmd">"ABCDE00001 FGHIJ00002 상태 품절로 변경"</div>
+          </div>
+          <div class="card-result">
+            <strong>→ 동작:</strong> 지정된 코드만 필터링 → 미리보기 → 확인 후 반영
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-tag tag-edit">🔄 상태 변경</div>
+          <div class="card-title">📌 상태 일괄 변경</div>
+          <div class="card-desc">조건에 맞는 품목들의 상태(판매중/품절/단종품)를 한번에 변경합니다.</div>
+          <div class="card-example">
+            <div class="example-label">이렇게 물어보세요</div>
+            <div class="example-cmd">"재고 0인 품목 품절로 변경해줘"</div>
+            <div class="example-cmd">"단종품을 판매중으로 바꿔줘"</div>
+          </div>
+          <div class="card-result">
+            <strong>→ 동작:</strong> 조건 필터 → 상태 열 일괄 변경
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-tag tag-ai">🤖 AI 추천</div>
+          <div class="card-title">🧠 AI 자동 수정 제안</div>
+          <div class="card-desc">Gemini가 전체 데이터를 분석하여 문제점을 찾고, <strong>원클릭 수정 버튼</strong>과 함께 제안합니다.</div>
+          <div class="card-example">
+            <div class="example-label">이렇게 물어보세요</div>
+            <div class="example-cmd">"수정할 부분 제안해줘"</div>
+            <div class="example-cmd">"이상한 부분 고쳐줘"</div>
+            <div class="example-cmd">"어떤 부분을 수정하면 좋을까?"</div>
+          </div>
+          <div class="card-result">
+            <strong>→ 동작:</strong> AI가 역마진/저마진/누락 데이터 분석 → 수정 제안 + <span class="ok">[반영하기]</span> 버튼 생성
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ═══ 실제 시나리오 ═══ -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon yellow">💡</div>
+        <div>
+          <div class="section-title">실제 사용 시나리오</div>
+          <div class="section-desc">이런 상황에서 이렇게 사용하세요</div>
+        </div>
+      </div>
+
+      <!-- 시나리오 1 -->
+      <div class="scenario">
+        <div class="scenario-title">🎬 시나리오 1: "마진 이상 품목 찾고 한번에 수정"</div>
+
+        <div class="chat-bubble">
+          <div class="chat-avatar avatar-user">👤</div>
+          <div class="chat-msg msg-user">마진 10% 미만 찾아줘</div>
+        </div>
+
+        <div class="chat-bubble">
+          <div class="chat-avatar avatar-bot">🤖</div>
+          <div class="chat-msg msg-bot">
+            마진율 낮은 품목 (<10%)
+            <table>
+              <tr><th>품목코드</th><th>품목명</th><th>판매가</th><th>원가</th><th>마진율</th></tr>
+              <tr><td>JHCRJJIM0001</td><td>한우 갈비세트</td><td>52,000</td><td>48,000</td><td class="danger">8%</td></tr>
+              <tr><td>SPKR00042</td><td>양념갈비 선물</td><td>38,000</td><td>36,000</td><td class="danger">5%</td></tr>
+              <tr><td>MEAT00015</td><td>프리미엄 등심</td><td>120,000</td><td>115,000</td><td class="danger">4%</td></tr>
+            </table>
+          </div>
+        </div>
+
+        <div class="chat-bubble">
+          <div class="chat-avatar avatar-user">👤</div>
+          <div class="chat-msg msg-user">마진 10% 미만 품목 마진 25%로 맞춰줘</div>
+        </div>
+
+        <div class="chat-bubble">
+          <div class="chat-avatar avatar-bot">🤖</div>
+          <div class="chat-msg msg-bot">
+            [판매가] 일괄 수정 미리보기 — 마진 10% 미만 / 목표마진 25%
+            <table>
+              <tr><th>품목코드</th><th>품목명</th><th>현재값</th><th>변경 후</th></tr>
+              <tr><td>JHCRJJIM0001</td><td>한우 갈비세트</td><td>52,000</td><td class="ok">64,000</td></tr>
+              <tr><td>SPKR00042</td><td>양념갈비 선물</td><td>38,000</td><td class="ok">48,000</td></tr>
+              <tr><td>MEAT00015</td><td>프리미엄 등심</td><td>120,000</td><td class="ok">153,333</td></tr>
+            </table>
+            <div class="confirm-btn">✅ 3건 일괄 수정 반영</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 시나리오 2 -->
+      <div class="scenario" style="margin-top:16px">
+        <div class="scenario-title">🎬 시나리오 2: "전체 점검 → AI 수정 제안 → 원클릭 반영"</div>
+
+        <div class="chat-bubble">
+          <div class="chat-avatar avatar-user">👤</div>
+          <div class="chat-msg msg-user">이상한 부분 확인하고 수정 제안해줘</div>
+        </div>
+
+        <div class="chat-bubble">
+          <div class="chat-avatar avatar-bot">🤖</div>
+          <div class="chat-msg msg-bot">
+            전체 검증 결과, 다음 항목에 문제가 있습니다:<br><br>
+            <strong class="danger">🔴 역마진 2건</strong><br>
+            • BEEF001 한우등심: 판매가 95,000 < 원가 98,000<br>
+            • PORK042 삼겹살: 판매가 12,000 < 원가 13,500<br><br>
+            <strong class="warn">🟡 재고 0 + 판매중 4건</strong><br>
+            • SIDE007, SIDE012, DRINK003, SAUCE001<br><br>
+            <strong>권장 조치:</strong><br>
+            1. 역마진 품목 → 마진 20% 기준 판매가 조정<br>
+            2. 재고 0 품목 → 상태를 "품절"로 변경<br><br>
+            <div class="confirm-btn">✅ 6건 수정 제안 반영하기</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 시나리오 3 -->
+      <div class="scenario" style="margin-top:16px">
+        <div class="scenario-title">🎬 시나리오 3: "쿠팡 가격 정비"</div>
+
+        <div class="chat-bubble">
+          <div class="chat-avatar avatar-user">👤</div>
+          <div class="chat-msg msg-user">쿠팡 가격이 자사몰보다 30% 이상 차이나는 거 찾아줘</div>
+        </div>
+
+        <div class="chat-bubble">
+          <div class="chat-avatar avatar-bot">🤖</div>
+          <div class="chat-msg msg-bot">
+            단가 비교 (자사몰 vs 쿠팡, >=30%)
+            <table>
+              <tr><th>품목코드</th><th>품목명</th><th>자사몰</th><th>쿠팡</th><th>차이율</th></tr>
+              <tr><td>SET001</td><td>선물세트 A</td><td>89,000</td><td>129,000</td><td class="warn">🟡+45%</td></tr>
+              <tr><td>FRESH08</td><td>신선 과일박스</td><td>45,000</td><td>28,000</td><td class="danger">🔴-38%</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 활용 팁 ═══ -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon blue">💡</div>
+        <div>
+          <div class="section-title">활용 팁</div>
+          <div class="section-desc">더 효율적으로 사용하는 방법</div>
+        </div>
+      </div>
+      <div class="tip-grid">
+        <div class="tip">
+          <strong>조건 조합이 가능합니다</strong><br>
+          "마진 10% 미만 판매가 5% 올려줘" 처럼 <strong>조건 + 수정</strong>을 한 문장으로 조합할 수 있습니다.
+        </div>
+        <div class="tip">
+          <strong>열 이름을 직접 지정 가능</strong><br>
+          "W열과 BN열 비교해줘" 처럼 <strong>엑셀 열 알파벳</strong>을 직접 지정하여 임의의 두 열을 비교할 수 있습니다.
+        </div>
+        <div class="tip">
+          <strong>미리보기 → 확인 → 반영</strong><br>
+          일괄 수정은 항상 <strong>미리보기 테이블</strong>이 먼저 표시됩니다. 확인 버튼을 눌러야만 실제 반영되므로 안전합니다.
+        </div>
+        <div class="tip">
+          <strong>AI 자유 질문 지원</strong><br>
+          위 기능에 해당하지 않는 질문도 <strong>Gemini AI</strong>가 전체 시트 데이터를 분석하여 답변합니다.
+        </div>
+        <div class="tip">
+          <strong>200건 제한</strong><br>
+          한 번에 200건 이상 수정 시 조건을 더 구체적으로 좁혀달라는 안내가 표시됩니다.
+        </div>
+        <div class="tip">
+          <strong>상태 기반 필터</strong><br>
+          "단종품 제외", "판매중만", "품절 품목" 등 <strong>상태 조건</strong>을 조합하여 대상을 좁힐 수 있습니다.
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    Pack2U 단가 분석 챗봇 가이드 · Gemini 3.5 Flash 기반 · 2026
+  </div>
+
+</body>
+</html>

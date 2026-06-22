@@ -247,11 +247,29 @@ function _pt_parseConsumerDcRateFromName(fileName) {
 function _pt_findViewerSheet(ss) {
   if (!ss) return null;
   var sheets = ss.getSheets();
+  // ★ 1차: 이름에 "단가조회", "뷰어", "팩투유" 포함된 탭 탐색
   for (var i = 0; i < sheets.length; i++) {
     var n = String(sheets[i].getName() || "");
     if (n.indexOf("마감") !== -1) continue;
-    if (n.indexOf("단가조회") !== -1 || n.indexOf("뷰어") !== -1)
+    if (n.indexOf("발주") !== -1) continue;
+    if (n.indexOf("설정") !== -1) continue;
+    if (n.indexOf("검색") !== -1) continue;
+    if (
+      n.indexOf("단가조회") !== -1 ||
+      n.indexOf("뷰어") !== -1 ||
+      n.indexOf("팩투유") !== -1 ||
+      n.indexOf("단가") !== -1
+    )
       return sheets[i];
+  }
+  // ★ 2차: K2에 그룹 열번호가 있는 탭 (배포 시 K2에 설정됨)
+  for (var j = 0; j < sheets.length; j++) {
+    var nm = String(sheets[j].getName() || "");
+    if (nm.indexOf("발주") !== -1 || nm.indexOf("설정") !== -1 || nm.indexOf("검색") !== -1 || nm.indexOf("마감") !== -1) continue;
+    try {
+      var k2 = parseInt(sheets[j].getRange("K2").getValue(), 10);
+      if (k2 >= 7 && k2 <= 200) return sheets[j];
+    } catch (e) {}
   }
   return null;
 }
@@ -284,18 +302,44 @@ function _pt_resolveShipToAddressColumn(cMap) {
 // ═══════════════════════════════════════════
 function _pt_buildOrderVendorNameSpillFormula(viewerTabName) {
   var safeName = String(viewerTabName || "단가조회").replace(/'/g, "''");
+  // ★ 2026-06-16: D2:D 참조 제거 → D열 ARRAYFORMULA와의 순환 의존성 해소
+  // D열은 C열에 의존하므로 C열만 검사해도 동일한 결과
   return (
-    '={"거래처명"; ARRAYFORMULA(IF(LEN(C2:C)+LEN(D2:D)=0, "", \'' +
+    '={"거래처명"; ARRAYFORMULA(IF(LEN(C2:C)=0, "", \'' +
     safeName +
     "'!$AA$1))}"
   );
 }
-// ═══════════════════════════════════════════
-//  ★ 개별 셀 수식 빌더 (ARRAYFORMULA → 개별 수식 전환)
+// =====================================================================
+//  ★ 개별 셀 수식 빌더 (ARRAYFORMULA -> 개별 수식 전환)
 //  D열(품목명), L열(단가)은 개별 수식, A열(거래처명)은 ARRAYFORMULA 유지
-// ═══════════════════════════════════════════
+//
+//  ★★★ 중요: 탭별 데이터 참조 구조 (혼동 주의!) ★★★
+//
+//  [발주 및 송장조회] 탭 (모든 업체 공통):
+//    D열(품목명) -> 해당 파일의 "단가조회" 또는 "팩투유 단가조회" 탭
+//    L열(단가)   -> 해당 파일의 "단가조회" 또는 "팩투유 단가조회" 탭
+//    *** 아래 함수들(_pt_buildItemNameCellFormula, _pt_buildUnitPriceCellFormula)은
+//        "발주 및 송장조회" 탭 전용 ***
+//
+//  [전용양식] 탭 (뉴파츠 등 일부 업체만 보유):
+//    D열(품목명) -> "뉴파츠공급가" 탭 또는 통합 허브의 "누적품목매핑" 탭
+//    L열(단가)   -> "뉴파츠공급가" 탭 또는 통합 허브의 "누적품목매핑" 탭
+//    *** 업체마다 참조 소스가 다름 ***
+//    *** 이 함수들은 전용양식에 사용 금지! ***
+//    *** _pt_injectOrderSpillFormulas()에서 전용양식 탭은 자동 스킵됨 ***
+//
+//  예시) 뉴파츠:
+//    "발주 및 송장조회" D/L열 -> "팩투유 단가조회" 탭 (이것이 정상!)
+//    "전용양식" D/L열         -> "뉴파츠공급가" 탭 (별도 소스)
+// =====================================================================
 
-/** L열 개별 셀 수식: 단가 VLOOKUP */
+/**
+ * L열 개별 셀 수식: 단가 VLOOKUP
+ * ★ 대상: "발주 및 송장조회" 탭 전용
+ * ★ 참조: 단가조회(또는 팩투유 단가조회) 탭의 C:G (5번째 열 = 단가)
+ * ★ 전용양식 탭에는 사용 금지! (전용양식은 뉴파츠공급가 등 별도 소스 사용)
+ */
 function _pt_buildUnitPriceCellFormula(viewerTabName, row) {
   var sn = String(viewerTabName || "단가조회").replace(/'/g, "''");
   var cc = "TRIM(CLEAN(SUBSTITUTE(C" + row + ',CHAR(160),"")))';
@@ -310,7 +354,12 @@ function _pt_buildUnitPriceCellFormula(viewerTabName, row) {
   );
 }
 
-/** D열 개별 셀 수식: 품목명 VLOOKUP */
+/**
+ * D열 개별 셀 수식: 품목명 VLOOKUP
+ * ★ 대상: "발주 및 송장조회" 탭 전용
+ * ★ 참조: 단가조회(또는 팩투유 단가조회) 탭의 C:D (2번째 열 = 품목명)
+ * ★ 전용양식 탭에는 사용 금지!
+ */
 function _pt_buildItemNameCellFormula(viewerTabName, row) {
   var sn = String(viewerTabName || "단가조회").replace(/'/g, "''");
   var cc = "TRIM(CLEAN(SUBSTITUTE(C" + row + ',CHAR(160),"")))';
@@ -325,7 +374,11 @@ function _pt_buildItemNameCellFormula(viewerTabName, row) {
   );
 }
 
-/** D열/L열 개별 수식을 지정 범위에 일괄 적용 */
+/**
+ * D열/L열 개별 수식을 지정 범위에 일괄 적용
+ * ★ 대상: "발주 및 송장조회" 탭 전용
+ * ★ 전용양식 탭에는 호출하지 말것! (전용양식은 별도 참조 소스 사용)
+ */
 function _pt_applyIndividualFormulas(
   orderTab,
   viewerTabName,
@@ -384,17 +437,18 @@ function _pt_resolveViewerTabNameForOrderSpill(orderTab, viewerTabName) {
     var ss = orderTab.getParent();
     if (!ss) return fallback;
     if (fallback && ss.getSheetByName(fallback)) return fallback;
-    var sheets = ss.getSheets();
-    for (var i = 0; i < sheets.length; i++) {
-      var n = sheets[i].getName();
-      if (n.indexOf("단가조회") !== -1 || n.indexOf("뷰어") !== -1) return n;
-    }
+    // ★ _pt_findViewerSheet와 동일한 확장 탐색
+    var found = _pt_findViewerSheet(ss);
+    if (found) return found.getName();
   } catch (e) {}
   return fallback;
 }
 function _pt_injectOrderSpillFormulas(orderTab, viewerTabName) {
   if (!orderTab) return;
-  // ★ 전용양식 탭에는 spill 수식을 주입하지 않음 (A열=송장번호, B열=적요)
+  // ★★★ 전용양식 탭은 스킵! ★★★
+  // 전용양식 탭의 D/L열은 "뉴파츠공급가", 통합 허브의 "누적품목매핑" 등
+  // 업체별 별도 소스를 참조하므로, 여기서 단가조회 탭 기반 수식을 주입하면 안 됨.
+  // 이 함수는 "발주 및 송장조회" 탭 전용.
   var tabName = "";
   try {
     tabName = orderTab.getName();
@@ -426,29 +480,61 @@ function _pt_injectOrderSpillFormulas(orderTab, viewerTabName) {
       .getRange("A1")
       .setFormula(_pt_buildOrderVendorNameSpillFormula(safe));
   } catch (e1) {}
-  // D열: ARRAYFORMULA + 입력 보호
+  // ★ 2026-06-17: D/L열 → 값 기반 전환 (수식 완전 폐기)
+  // C열 입력 시 배포 onEdit가 뷰어 탭에서 조회하여 D/L에 값을 직접 기록
+  // 기존 수식이 남아있으면 → 현재 표시값을 보존하면서 수식만 제거
   try {
-    orderTab.getRange("D1:D").clearContent();
-    orderTab
-      .getRange("D1")
-      .setFormula(_pt_buildOrderItemNameSpillFormula(safe));
-    _pt_protectSpillColumn_(
-      orderTab,
-      "D",
-      "품목명은 자동입력 열입니다.\n이카운트코드(C열)를 입력하면 자동 채워집니다.",
-    );
+    // D열: 헤더 설정 + 기존 수식 → 값 변환
+    orderTab.getRange("D2:D1000").clearDataValidations();
+    var d1 = orderTab.getRange("D1");
+    var d1f = d1.getFormula() || "";
+    if (d1f) d1.clearContent();
+    d1.setValue("품목명(자동)");
+    // 기존 수식이 남아있는 D열 셀들: 표시값 보존 후 수식 제거
+    var dLr = orderTab.getLastRow();
+    if (dLr >= 2) {
+      var dRange = orderTab.getRange(2, 4, dLr - 1, 1);
+      var dFormulas = dRange.getFormulas();
+      var hasFormula = false;
+      for (var di = 0; di < dFormulas.length; di++) {
+        if (dFormulas[di][0]) { hasFormula = true; break; }
+      }
+      if (hasFormula) {
+        var dValues = dRange.getDisplayValues();
+        var dOut = [];
+        for (var dj = 0; dj < dValues.length; dj++) {
+          dOut.push([dValues[dj][0]]);
+        }
+        dRange.clearContent();
+        dRange.setValues(dOut);
+      }
+    }
   } catch (e3) {}
-  // L열: ARRAYFORMULA + 입력 보호
   try {
-    orderTab.getRange("L1:L").clearContent();
-    orderTab
-      .getRange("L1")
-      .setFormula(_pt_buildOrderUnitPriceSpillFormula(safe));
-    _pt_protectSpillColumn_(
-      orderTab,
-      "L",
-      "단가는 자동입력 열입니다.\n이카운트코드(C열)를 입력하면 자동 채워집니다.",
-    );
+    // L열: 헤더 설정 + 기존 수식 → 값 변환
+    orderTab.getRange("L2:L1000").clearDataValidations();
+    var l1 = orderTab.getRange("L1");
+    var l1f = l1.getFormula() || "";
+    if (l1f) l1.clearContent();
+    l1.setValue("단가");
+    var lLr = orderTab.getLastRow();
+    if (lLr >= 2) {
+      var lRange = orderTab.getRange(2, 12, lLr - 1, 1);
+      var lFormulas = lRange.getFormulas();
+      var lHasFormula = false;
+      for (var li = 0; li < lFormulas.length; li++) {
+        if (lFormulas[li][0]) { lHasFormula = true; break; }
+      }
+      if (lHasFormula) {
+        var lValues = lRange.getDisplayValues();
+        var lOut = [];
+        for (var lj = 0; lj < lValues.length; lj++) {
+          lOut.push([lValues[lj][0]]);
+        }
+        lRange.clearContent();
+        lRange.setValues(lOut);
+      }
+    }
   } catch (e2) {}
   try {
     var n1 = orderTab.getRange("N1");
@@ -458,6 +544,7 @@ function _pt_injectOrderSpillFormulas(orderTab, viewerTabName) {
     }
   } catch (eN) {}
 }
+
 
 /**
  * ★ ARRAYFORMULA spill 열에 데이터 유효성 검사(입력 거부) 적용
@@ -492,11 +579,21 @@ function _pt_cleanupStrayValidations_(sheet) {
       var criteria = rule.getCriteriaType();
       if (criteria === SpreadsheetApp.DataValidationCriteria.CUSTOM_FORMULA) {
         var args = rule.getCriteriaValues();
-        var formula = String(args && args[0] || "").replace(/\s/g, "").toUpperCase();
+        var formula = String((args && args[0]) || "")
+          .replace(/\s/g, "")
+          .toUpperCase();
         if (formula === "=FALSE" || formula === "=FALSE()") {
           var colLetter = String.fromCharCode(64 + col);
-          sheet.getRange(colLetter + "2:" + colLetter + "1000").clearDataValidations();
-          Logger.log("[SpillGuard] " + sheet.getName() + " " + colLetter + "열 =FALSE 검증 제거");
+          sheet
+            .getRange(colLetter + "2:" + colLetter + "1000")
+            .clearDataValidations();
+          Logger.log(
+            "[SpillGuard] " +
+              sheet.getName() +
+              " " +
+              colLetter +
+              "열 =FALSE 검증 제거",
+          );
         }
       }
     }
@@ -527,6 +624,10 @@ function _pt_onEditSpillGuard_(e) {
     // ★ C열(3) = 이카운트코드 편집 → N열(14) 상태 즉시 반영
     if (col === 3) {
       try {
+        // ★ 2026-06-16: ARRAYFORMULA(D열/A열) 재계산이 완료된 후 N열 업데이트
+        // flush()를 호출하여 spill 충돌에 의한 #REF 에러 방지
+        SpreadsheetApp.flush();
+
         var _code_ = String(e.range.getValue() || "").trim();
         if (!_code_) {
           // 코드 삭제 시 상태도 초기화
@@ -540,7 +641,8 @@ function _pt_onEditSpillGuard_(e) {
         for (var _vi_ = 0; _vi_ < _allSheets_.length; _vi_++) {
           var _tn_ = _allSheets_[_vi_].getName();
           if (_tn_.indexOf("단가조회") !== -1 || _tn_.indexOf("뷰어") !== -1) {
-            _viewerTab_ = _allSheets_[_vi_]; break;
+            _viewerTab_ = _allSheets_[_vi_];
+            break;
           }
         }
         if (!_viewerTab_ || _viewerTab_.getLastRow() < 3) {
@@ -553,16 +655,24 @@ function _pt_onEditSpillGuard_(e) {
         var _found_ = false;
         var _normalizedCode_ = _code_.replace(/[\s\-]/g, "").toUpperCase();
         for (var _pi_ = 0; _pi_ < _vData_.length; _pi_++) {
-          var _vCode_ = String(_vData_[_pi_][2] || "").replace(/[\s\-]/g, "").toUpperCase();
+          var _vCode_ = String(_vData_[_pi_][2] || "")
+            .replace(/[\s\-]/g, "")
+            .toUpperCase();
           if (_vCode_ === _normalizedCode_) {
             _found_ = true;
             var _rawStatus_ = String(_vData_[_pi_][0] || "").trim();
             var _statusCompact_ = _rawStatus_.replace(/\s/g, "");
             var _status_ = "";
             if (_statusCompact_.indexOf("단종") !== -1) _status_ = "🚨단종";
-            else if (_statusCompact_.indexOf("품절임박") !== -1) _status_ = "🚨품절임박";
-            else if (_statusCompact_.indexOf("품절") !== -1 && _statusCompact_.indexOf("품절+7") === -1) _status_ = "🚨품절";
-            else if (_statusCompact_.indexOf("재고까지만") !== -1) _status_ = "⚠재고까지만";
+            else if (_statusCompact_.indexOf("품절임박") !== -1)
+              _status_ = "🚨품절임박";
+            else if (
+              _statusCompact_.indexOf("품절") !== -1 &&
+              _statusCompact_.indexOf("품절+7") === -1
+            )
+              _status_ = "🚨품절";
+            else if (_statusCompact_.indexOf("재고까지만") !== -1)
+              _status_ = "⚠재고까지만";
             // 정상 상태 → 빈값 (발주수집 시 "접수완료"로 채워짐)
             sheet.getRange(row, 14).setValue(_status_);
             break;
@@ -577,42 +687,40 @@ function _pt_onEditSpillGuard_(e) {
       return;
     }
 
-    // A열(1), D열(4), L열(12) 만 감시 (기존 spill guard)
-    if (col !== 1 && col !== 4 && col !== 12) return;
+    // ★ 2026-06-17: D/L열은 값 기반으로 전환 → SpillGuard 불필요
+    // A열(1)만 감시 (ARRAYFORMULA 보호)
+    if (col !== 1) return;
 
-    // 수동 입력 클리어 (spill 복구)
+    // 수동 입력 클리어
     e.range.clearContent();
 
-    // 수식 복구 필요 여부 확인
+    // A열은 기존 ARRAYFORMULA heal 유지
     var cell1 = sheet.getRange(1, col);
     var formula = cell1.getFormula() || "";
     var display = cell1.getDisplayValue() || "";
-
     if (
       !formula ||
       formula.indexOf("ARRAYFORMULA") === -1 ||
       display.indexOf("#REF") !== -1
     ) {
-      // 수식 파괴됨 → 전체 heal
-      var ss = e.source;
-      var viewerName = "단가조회";
-      var sheets = ss.getSheets();
-      for (var i = 0; i < sheets.length; i++) {
-        var n = sheets[i].getName();
-        if (n.indexOf("단가조회") !== -1 || n.indexOf("뷰어") !== -1) {
-          viewerName = n;
-          break;
+      var ss2 = e.source;
+      var viewerName2 = "단가조회";
+      var sheets2 = ss2.getSheets();
+      for (var j = 0; j < sheets2.length; j++) {
+        var n2 = sheets2[j].getName();
+        if (n2.indexOf("단가조회") !== -1 || n2.indexOf("뷰어") !== -1) {
+          viewerName2 = n2; break;
         }
       }
-      _pt_healOrderSpillFormulas(sheet, viewerName);
+      _pt_healOrderSpillFormulas(sheet, viewerName2);
     }
 
-    // 사용자에게 안내
+
+
+    // 사용자에게 안내 (A열 = 업체명 자동입력)
     try {
-      var colName = col === 4 ? "품목명" : col === 1 ? "업체명" : "정산금액";
       ss.toast(
-        colName +
-          "은 자동입력 열입니다.\n이카운트코드를 입력하면 자동 채워집니다.",
+        "업체명은 자동입력 열입니다.\n수동 입력이 차단되었습니다.",
         "⚠ 자동입력 열",
         4,
       );
@@ -621,7 +729,6 @@ function _pt_onEditSpillGuard_(e) {
     // silent fail
   }
 }
-
 
 /**
  * 모든 협력업체 파일에 Spill Guard onEdit 트리거 설치
@@ -779,87 +886,82 @@ function _pt_healOrderSpillFormulas(orderTab, viewerTabName) {
       ? String(orderTab.getRange("A2").getValue() || "").trim()
       : "";
     var a2HasValue = !!a2F || (!!a2V && aF.indexOf("ARRAYFORMULA") !== -1);
+    // ★ 2026-06-16: D2:D 참조가 남아있으면 순환 의존성 문제 → 파괴 판정
+    var aHasD2Ref = aF.indexOf("D2:D") !== -1;
     var aBroken =
       !aF ||
       aF.indexOf("ARRAYFORMULA") === -1 ||
       aF.indexOf("$AA$1") === -1 ||
       aV.indexOf("#REF") !== -1 ||
       aHasRefBelow ||
-      a2HasValue;
+      a2HasValue ||
+      aHasD2Ref;
     if (aBroken) {
       orderTab.getRange("A1:A").clearContent();
       a1.setFormula(_pt_buildOrderVendorNameSpillFormula(safe));
       out.aFixed = true;
     }
   } catch (ea) {}
-  // ── D열: ARRAYFORMULA + 입력 보호 heal ──
+  // ── D열: 값 기반 전환 — 기존 수식 제거 + 표시값 보존 ──
+  // ★ 2026-06-17: 수식 폐기 → 값 기반. C열 입력 시 onEdit가 직접 값 기록
   try {
     var d1 = orderTab.getRange("D1");
     var dF = String(d1.getFormula() || "");
-    var dV = String(d1.getValue() || "");
-    var d2F = String(orderTab.getRange("D2").getFormula() || "");
-    var d2V = !d2F
-      ? String(orderTab.getRange("D2").getValue() || "").trim()
-      : "";
-    var d2HasValue = !!d2F || (!!d2V && dF.indexOf("ARRAYFORMULA") !== -1);
-    var dHasWrongTab = false;
-    if (safe && dF.indexOf("VLOOKUP") !== -1) {
-      dHasWrongTab = dF.indexOf(safe) === -1;
-    }
-    var dBroken =
-      dHasWrongTab ||
-      !dF ||
-      dF.indexOf("ARRAYFORMULA") === -1 ||
-      dF.indexOf("VLOOKUP") === -1 ||
-      dV.indexOf("#REF") !== -1 ||
-      dHasRefBelow ||
-      d2HasValue;
-    if (dBroken) {
-      orderTab.getRange("D1:D").clearContent();
-      orderTab.getRange("D2:D1000").clearDataValidations();
-      d1.setFormula(_pt_buildOrderItemNameSpillFormula(safe));
-      _pt_protectSpillColumn_(
-        orderTab,
-        "D",
-        "품목명은 자동입력 열입니다.\n이카운트코드(C열)를 입력하면 자동 채워집니다.",
-      );
-      out.dFixed = true;
+    orderTab.getRange("D2:D1000").clearDataValidations();
+    // D1 헤더 정리
+    if (dF) d1.clearContent();
+    d1.setValue("품목명(자동)");
+    // D2~ 기존 수식 → 표시값 보존 후 수식 제거
+    var dLr = orderTab.getLastRow();
+    if (dLr >= 2) {
+      var dRange = orderTab.getRange(2, 4, dLr - 1, 1);
+      var dFormulas = dRange.getFormulas();
+      var dHasFormula = false;
+      for (var di = 0; di < dFormulas.length; di++) {
+        if (dFormulas[di][0]) { dHasFormula = true; break; }
+      }
+      if (dHasFormula) {
+        var dValues = dRange.getDisplayValues();
+        var dOut = [];
+        for (var dj = 0; dj < dValues.length; dj++) {
+          var dv = dValues[dj][0];
+          // #REF, #N/A 같은 에러값은 빈 문자열로 치환
+          if (dv && (dv.indexOf("#REF") !== -1 || dv.indexOf("#N/A") !== -1)) dv = "";
+          dOut.push([dv]);
+        }
+        dRange.clearContent();
+        dRange.setValues(dOut);
+        out.dFixed = true;
+      }
     }
   } catch (ed) {}
-  // ── L열: ARRAYFORMULA + 입력 보호 heal ──
+  // ── L열: 값 기반 전환 — 기존 수식 제거 + 표시값 보존 ──
   try {
     var l1 = orderTab.getRange("L1");
     var lF = String(l1.getFormula() || "");
-    var lV = String(l1.getValue() || "");
-    var l2F = String(orderTab.getRange("L2").getFormula() || "");
-    var l2V = !l2F
-      ? String(orderTab.getRange("L2").getValue() || "").trim()
-      : "";
-    var l2HasValue = !!l2F || (!!l2V && lF.indexOf("ARRAYFORMULA") !== -1);
-    var lIsLegacy = lF.indexOf("* E2:E") !== -1 || lF.indexOf("*E2:E") !== -1;
-    var lHasWrongTab = false;
-    if (safe && lF.indexOf("VLOOKUP") !== -1) {
-      lHasWrongTab = lF.indexOf(safe) === -1;
-    }
-    var lBroken =
-      lIsLegacy ||
-      lHasWrongTab ||
-      !lF ||
-      lF.indexOf("ARRAYFORMULA") === -1 ||
-      lF.indexOf("VLOOKUP") === -1 ||
-      lV.indexOf("#REF") !== -1 ||
-      lHasRefBelow ||
-      l2HasValue;
-    if (lBroken) {
-      orderTab.getRange("L1:L").clearContent();
-      orderTab.getRange("L2:L1000").clearDataValidations();
-      l1.setFormula(_pt_buildOrderUnitPriceSpillFormula(safe));
-      _pt_protectSpillColumn_(
-        orderTab,
-        "L",
-        "단가는 자동입력 열입니다.\n이카운트코드(C열)를 입력하면 자동 채워집니다.",
-      );
-      out.lFixed = true;
+    orderTab.getRange("L2:L1000").clearDataValidations();
+    if (lF) l1.clearContent();
+    l1.setValue("단가");
+    var lLr = orderTab.getLastRow();
+    if (lLr >= 2) {
+      var lRange = orderTab.getRange(2, 12, lLr - 1, 1);
+      var lFormulas = lRange.getFormulas();
+      var lHasFormula = false;
+      for (var li = 0; li < lFormulas.length; li++) {
+        if (lFormulas[li][0]) { lHasFormula = true; break; }
+      }
+      if (lHasFormula) {
+        var lValues = lRange.getDisplayValues();
+        var lOut = [];
+        for (var lj = 0; lj < lValues.length; lj++) {
+          var lv = lValues[lj][0];
+          if (lv && (lv.indexOf("#REF") !== -1 || lv.indexOf("#N/A") !== -1 || lv === "코드오류")) lv = "";
+          lOut.push([lv]);
+        }
+        lRange.clearContent();
+        lRange.setValues(lOut);
+        out.lFixed = true;
+      }
     }
   } catch (el) {}
   // ── 잘못된 열의 =FALSE 데이터 유효성 검사 정리 ──
@@ -875,6 +977,7 @@ function _pt_healOrderSpillFormulas(orderTab, viewerTabName) {
   } catch (en) {}
   return out;
 }
+
 
 // ═══════════════════════════════════════════
 //  이식: backfillMissingOrderDatesOnTabData_ → _pt_backfillMissingOrderDates
@@ -1219,12 +1322,21 @@ function _pt_ingestInvoiceSheetTabIntoMap(
       // AX열에 실제 데이터가 있는지 샘플 확인 (2~5행)
       var _hasAxData_ = false;
       for (var _axCk_ = 1; _axCk_ < Math.min(invData.length, 5); _axCk_++) {
-        if (String(invData[_axCk_][49] || "").trim()) { _hasAxData_ = true; break; }
+        if (String(invData[_axCk_][49] || "").trim()) {
+          _hasAxData_ = true;
+          break;
+        }
       }
       if (_hasAxData_) {
         sabangnetUidIdx = 49;
         if (uidIdx === -1 || uidIdx <= 1) uidIdx = 49; // B열(적요)보다 AX열 우선
-        Logger.log("[송장인제스트] [" + labelForLog + "] AX열(49) 고유ID 강제 인식 (uidIdx=" + uidIdx + ")");
+        Logger.log(
+          "[송장인제스트] [" +
+            labelForLog +
+            "] AX열(49) 고유ID 강제 인식 (uidIdx=" +
+            uidIdx +
+            ")",
+        );
       }
     }
   }
@@ -1844,7 +1956,9 @@ function buildVendorCandidateKeys_(vendorName) {
  */
 function _pt_setTabKey_(tab, key, cell) {
   cell = cell || "AZ1";
-  try { tab.getRange(cell).setValue(key).setFontColor("white"); } catch (e) {}
+  try {
+    tab.getRange(cell).setValue(key).setFontColor("white");
+  } catch (e) {}
 }
 
 /**

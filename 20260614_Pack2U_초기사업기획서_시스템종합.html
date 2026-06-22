@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pack2U 전사 시스템 종합 기획서 — 초기 사업 단계 마스터 플랜 2026</title>
+  <meta name="description" content="Pack2U 쇼핑몰 물류 자동화, AI 비주얼 시스템, 영상 제작, 전사 통합 ERP 연동 초기 사업 기획서">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Noto+Sans+KR:wght@300;400;500;700;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg: #050a18;
+      --surface: rgba(15, 23, 42, 0.75);
+      --surface-light: rgba(30, 41, 59, 0.55);
+      --surface-glow: rgba(30, 41, 59, 0.35);
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.25);
+      --accent-deep: #2563eb;
+      --purple: #8b5cf6;
+      --purple-glow: rgba(139, 92, 246, 0.2);
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.15);
+      --amber: #f59e0b;
+      --amber-glow: rgba(245, 158, 11, 0.12);
+      --rose: #f43f5e;
+      --rose-glow: rgba(244, 63, 94, 0.12);
+      --cyan: #06b6d4;
+      --cyan-glow: rgba(6, 182, 212, 0.15);
+      --border: rgba(255, 255, 255, 0.06);
+      --border-active: rgba(59, 130, 246, 0.3);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-w: 1440px;
+      --transition: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Outfit', 'Noto Sans KR', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      line-height: 1.65;
+      overflow-x: hidden;
+      padding-top: 64px;
+    }
+
+    /* Ambient background blobs */
+    body::before, body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.12;
+      pointer-events: none;
+      z-index: 0;
+    }
+    body::before {
+      width: 600px; height: 600px;
+      background: var(--accent);
+      top: -200px; left: -200px;
+    }
+    body::after {
+      width: 500px; height: 500px;
+      background: var(--purple);
+      bottom: 200px; right: -150px;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+    /* ───── Header ───── */
+    .top-nav {
+      position: fixed; top: 0; left: 0; width: 100%; height: 64px;
+      background: rgba(5, 10, 24, 0.88);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 2rem; z-index: 999;
+    }
+    .logo-group { display: flex; align-items: center; gap: 0.6rem; }
+    .logo-icon {
+      width: 26px; height: 26px; fill: none;
+      stroke: var(--accent); stroke-width: 2;
+    }
+    .logo-text {
+      font-weight: 900; font-size: 1rem;
+      background: linear-gradient(135deg, #fff 30%, var(--accent));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .nav-select {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border); color: var(--text-primary);
+      padding: 0.35rem 0.75rem; border-radius: 8px;
+      font-size: 0.78rem; outline: none; cursor: pointer; font-family: inherit;
+    }
+
+    /* ───── Main ───── */
+    .deck {
+      max-width: var(--max-w); margin: 0 auto;
+      padding: 3rem 2rem; display: flex;
+      flex-direction: column; gap: 4rem;
+      position: relative; z-index: 1;
+    }
+
+    /* ───── Slide Card ───── */
+    .card {
+      background: var(--surface);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 3.5rem 4rem;
+      position: relative; overflow: hidden;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+      transition: border-color var(--transition);
+    }
+    .card:hover { border-color: var(--border-active); }
+    .card::before {
+      content: ''; position: absolute;
+      top: -40%; right: -30%; width: 80%; height: 80%;
+      background: radial-gradient(circle, rgba(59,130,246,0.04), transparent 70%);
+      pointer-events: none;
+    }
+    .card-num {
+      position: absolute; top: 1.5rem; right: 2rem;
+      font-size: 2.5rem; font-weight: 900;
+      color: rgba(255,255,255,0.04); line-height: 1;
+    }
+    .card-hdr { margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; position: relative; z-index: 2; }
+    .tag {
+      display: inline-block; padding: 0.2rem 0.65rem;
+      border-radius: 6px; font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 1.5px; text-transform: uppercase;
+      margin-bottom: 0.6rem;
+    }
+    .tag-blue { background: rgba(59,130,246,0.12); color: var(--accent); }
+    .tag-purple { background: rgba(139,92,246,0.12); color: var(--purple); }
+    .tag-emerald { background: rgba(16,185,129,0.12); color: var(--emerald); }
+    .tag-amber { background: rgba(245,158,11,0.12); color: var(--amber); }
+    .tag-rose { background: rgba(244,63,94,0.12); color: var(--rose); }
+    .tag-cyan { background: rgba(6,182,212,0.12); color: var(--cyan); }
+
+    h1 { font-size: 2.75rem; font-weight: 900; line-height: 1.2; }
+    h2 { font-size: 1.85rem; font-weight: 800; letter-spacing: -0.02em; color: #fff; }
+    h3 { font-size: 1.2rem; font-weight: 700; margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.5rem; }
+    p { font-size: 0.95rem; line-height: 1.75; color: var(--text-secondary); margin-bottom: 1.15rem; }
+    p strong { color: #fff; font-weight: 600; }
+
+    /* ───── Layout ───── */
+    .g2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 2rem; }
+    .g3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 1.75rem; }
+    .g4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 1.5rem; }
+
+    .box {
+      background: var(--surface-light); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 2rem;
+      transition: all var(--transition);
+    }
+    .box:hover { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(0,0,0,0.45); border-color: var(--border-active); }
+
+    /* ───── Lists ───── */
+    ul { list-style: none; }
+    li {
+      margin-bottom: 0.75rem; font-size: 0.9rem;
+      color: var(--text-secondary);
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    li::before { content: "▸"; color: var(--accent); font-weight: 800; font-size: 0.85rem; line-height: 1.6; flex-shrink: 0; }
+
+    /* ───── KPI ───── */
+    .kpi-row { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-top: 1.5rem; }
+    .kpi {
+      text-align: center; padding: 1.5rem 1rem;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      flex: 1; min-width: 170px; background: rgba(255,255,255,0.01);
+    }
+    .kpi-val { font-size: 2.2rem; font-weight: 900; margin-bottom: 0.25rem; }
+    .kpi-lbl { font-size: 0.78rem; color: var(--text-secondary); }
+
+    /* ───── Flow ───── */
+    .flow { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin: 1.5rem 0; }
+    .flow-item {
+      background: rgba(0,0,0,0.25); border: 1.5px solid var(--border);
+      padding: 1.1rem 1.25rem; border-radius: 14px; text-align: center;
+      flex: 1; min-width: 160px;
+    }
+    .flow-item h6 { font-size: 0.88rem; font-weight: 700; color: #fff; margin-bottom: 0.2rem; }
+    .flow-item small { font-size: 0.74rem; color: var(--text-secondary); }
+    .flow-arrow { width: 24px; height: 2px; background: var(--border); position: relative; flex-shrink: 0; }
+    .flow-arrow::after {
+      content: ''; position: absolute; right: 0; top: -4px;
+      border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+      border-left: 7px solid var(--border);
+    }
+    .flow-arrow.on { background: var(--accent); }
+    .flow-arrow.on::after { border-left-color: var(--accent); }
+
+    /* ───── Status Badge ───── */
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 0.18rem 0.55rem; border-radius: 6px;
+      font-size: 0.68rem; font-weight: 700;
+    }
+    .badge-live { background: rgba(16,185,129,0.12); color: var(--emerald); }
+    .badge-dev { background: rgba(245,158,11,0.12); color: var(--amber); }
+    .badge-plan { background: rgba(139,92,246,0.12); color: var(--purple); }
+    .badge-new { background: rgba(244,63,94,0.12); color: var(--rose); }
+
+    .badge::before {
+      content: ''; width: 6px; height: 6px; border-radius: 50%;
+    }
+    .badge-live::before { background: var(--emerald); }
+    .badge-dev::before { background: var(--amber); }
+    .badge-plan::before { background: var(--purple); }
+    .badge-new::before { background: var(--rose); }
+
+    /* ───── Timeline ───── */
+    .timeline { display: flex; flex-direction: column; gap: 1rem; }
+    .tl-item {
+      display: flex; align-items: center;
+      background: var(--surface-light); padding: 1.15rem 1.5rem;
+      border-radius: 14px;
+    }
+    .tl-phase {
+      font-size: 1.1rem; font-weight: 800; width: 130px; flex-shrink: 0;
+    }
+    .tl-body { flex: 1; }
+    .tl-title { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 0.2rem; }
+    .tl-desc { font-size: 0.82rem; color: var(--text-secondary); margin: 0; }
+
+    /* ───── Table ───── */
+    .tbl-wrap { overflow-x: auto; margin: 1rem 0; }
+    table {
+      width: 100%; border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    th {
+      background: rgba(59,130,246,0.08); color: var(--accent);
+      padding: 0.85rem 1rem; text-align: left;
+      font-weight: 700; border-bottom: 2px solid rgba(59,130,246,0.15);
+      white-space: nowrap;
+    }
+    td {
+      padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);
+      color: var(--text-secondary);
+    }
+    td.hi { color: #fff; font-weight: 600; }
+    tr:hover td { background: rgba(255,255,255,0.015); }
+
+    /* ───── Diagram ───── */
+    .diag { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+    .diag-panel {
+      flex: 1; min-width: 280px;
+      border: 1px solid var(--border); border-radius: var(--radius-md);
+      padding: 1.75rem; background: rgba(255,255,255,0.012);
+    }
+
+    /* ───── Responsive ───── */
+    @media (max-width: 1024px) {
+      .g2, .g3, .g4 { grid-template-columns: 1fr; }
+      .card { padding: 2.5rem 2rem; }
+      .flow-arrow { display: none; }
+      .flow { flex-direction: column; gap: 1rem; }
+      .flow-item { width: 100%; }
+      .deck { padding: 2rem 1rem; gap: 3rem; }
+    }
+    @media (max-width: 640px) {
+      h1 { font-size: 1.85rem; }
+      h2 { font-size: 1.4rem; }
+      .top-nav { padding: 0 1rem; }
+      .card { padding: 1.75rem 1.25rem; }
+    }
+
+    /* Animation */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .card { animation: fadeUp 0.6s ease forwards; }
+    .card:nth-child(2) { animation-delay: 0.05s; }
+    .card:nth-child(3) { animation-delay: 0.1s; }
+
+    /* Glow accent borders */
+    .glow-blue { border-color: rgba(59,130,246,0.25) !important; box-shadow: 0 0 20px rgba(59,130,246,0.06); }
+    .glow-purple { border-color: rgba(139,92,246,0.25) !important; box-shadow: 0 0 20px rgba(139,92,246,0.06); }
+    .glow-emerald { border-color: rgba(16,185,129,0.25) !important; box-shadow: 0 0 20px rgba(16,185,129,0.06); }
+    .glow-amber { border-color: rgba(245,158,11,0.25) !important; box-shadow: 0 0 20px rgba(245,158,11,0.06); }
+    .glow-rose { border-color: rgba(244,63,94,0.25) !important; box-shadow: 0 0 20px rgba(244,63,94,0.06); }
+    .glow-cyan { border-color: rgba(6,182,212,0.25) !important; box-shadow: 0 0 20px rgba(6,182,212,0.06); }
+  </style>
+</head>
+<body>
+
+  <!-- ═══ Navigation ═══ -->
+  <header class="top-nav">
+    <div class="logo-group">
+      <svg class="logo-icon" viewBox="0 0 24 24">
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+        <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+        <line x1="12" y1="22.08" x2="12" y2="12"/>
+      </svg>
+      <span class="logo-text">Pack2U System Blueprint 2026</span>
+    </div>
+    <select class="nav-select" onchange="scrollToSlide(this.value)">
+      <option value="s01">01. 표지</option>
+      <option value="s02">02. 비전 및 핵심 요약</option>
+      <option value="s03">03. 현재 보유 시스템 전체 지도</option>
+      <option value="s04">04. 상품정보시트 코어 엔진</option>
+      <option value="s05">05. 협력업체 연동 시스템</option>
+      <option value="s06">06. 이카운트 ERP 브리지</option>
+      <option value="s07">07. AI 이미지 메이커 & 배경변경앱</option>
+      <option value="s08">08. 상세HTML 자동 생성기</option>
+      <option value="s09">09. 리뷰 크롤러 & 시장 분석</option>
+      <option value="s10">10. AI 영상 시스템 개발 (NEW)</option>
+      <option value="s11">11. AI 챗봇 & CS 자동화</option>
+      <option value="s12">12. D2C 자사몰 & 모바일 앱</option>
+      <option value="s13">13. 스마트 WMS & 로봇 물류</option>
+      <option value="s14">14. 통합 경영 대시보드</option>
+      <option value="s15">15. 추천 신규 시스템 목록</option>
+      <option value="s16">16. 데이터 파이프라인 총괄 아키텍처</option>
+      <option value="s17">17. ROI 및 투자 계획</option>
+      <option value="s18">18. 3단계 로드맵 & 타임라인</option>
+      <option value="s19">19. 리스크 관리 & 보안</option>
+      <option value="s20">20. 미래 비전 & SaaS 확장</option>
+    </select>
+  </header>
+
+  <!-- ═══ SLIDES ═══ -->
+  <main class="deck">
+
+    <!-- ══ 01. COVER ══ -->
+    <section id="s01" class="card" style="justify-content:center; min-height:520px; display:flex; flex-direction:column;">
+      <div class="card-num">01</div>
+      <div style="text-align:center; max-width:960px; margin:0 auto;">
+        <span class="tag tag-blue">INITIAL BUSINESS BLUEPRINT · 2026.06.14</span>
+        <h1 style="margin:1.25rem 0 1.75rem; background:linear-gradient(135deg,#fff 35%,var(--accent) 80%,var(--purple)); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
+          Pack2U 전사 통합 시스템 기획서<br>
+          <span style="font-size:0.55em; font-weight:600; letter-spacing:0;">초기 사업 단계 — AI 비주얼·영상·물류·ERP 무인 자동화 마스터 플랜</span>
+        </h1>
+        <p style="font-size:1.15rem; color:#fff; font-weight:500; max-width:780px; margin:0 auto 1.75rem;">
+          "상품 소싱부터 AI 이미지 제작, 자동 상세페이지 생성, 영상 광고, 주문 수집, 송장 매칭, ERP 전표, 로봇 물류까지 — 하나의 파이프라인으로 끊김 없이."
+        </p>
+        <p style="font-size:0.88rem; max-width:700px; margin:0 auto;">
+          구글 스프레드시트 Apps Script 코어 | 이카운트 OAPI 브리지 | Gemini AI 비주얼 스튜디오 | Node.js 배경변경 데스크톱앱 | Python 하이브리드 HTML 변환기 | AI 영상 자동 제작 시스템 | 협력업체 30개사 Push/Fetch 연동
+        </p>
+      </div>
+    </section>
+
+    <!-- ══ 02. EXECUTIVE SUMMARY ══ -->
+    <section id="s02" class="card">
+      <div class="card-num">02</div>
+      <div class="card-hdr">
+        <span class="tag tag-blue">Executive Summary</span>
+        <h2>사업 비전 및 핵심 요약</h2>
+      </div>
+      <div class="g2">
+        <div class="box">
+          <h3 style="color:var(--rose);">현재 문제 진단: 수작업 번아웃</h3>
+          <p>30개 대리공급/위탁 업체와의 파편화된 발주 취합, 수동 송장 매핑, 수기 상세페이지 제작에 <strong>전체 인력·시간의 75%를 유실</strong>하고 있습니다.</p>
+          <ul>
+            <li><strong>매일 4.5시간:</strong> 엑셀 업로드·수기 데이터 매칭 소모</li>
+            <li><strong>신상품 런칭:</strong> 상세페이지 제작에 7~10일 소요</li>
+            <li><strong>영상 콘텐츠:</strong> 외주 의존 (건당 50~200만 원)</li>
+            <li><strong>확장 불가:</strong> 500개 SKU 추가 시 당일배송 붕괴</li>
+          </ul>
+        </div>
+        <div class="box glow-blue">
+          <h3 style="color:var(--accent);">해결 방향: AI 기반 무인 자동화 생태계</h3>
+          <p>주문 수집 즉시 ERP 전표 자동 생성, AI가 이미지·영상·상세페이지를 완전 자동 제작하며, 로봇이 피킹·포장을 무인 수행합니다.</p>
+          <ul>
+            <li><strong>Zero-Touch 물류:</strong> 주문→ERP→WCS→로봇 피킹 100% 무인</li>
+            <li><strong>AI 비주얼:</strong> 1분 만에 화보 10장 + 상세페이지 코드 생성</li>
+            <li><strong>AI 영상:</strong> 제품 이미지만으로 30초 SNS 광고 영상 자동 생성</li>
+            <li><strong>지능형 CS:</strong> RAG AI 챗봇이 고객문의 1차 방어</li>
+          </ul>
+        </div>
+      </div>
+      <div class="box glow-emerald" style="margin-top:2rem; background:rgba(16,185,129,0.03);">
+        <h3 style="color:var(--emerald);">목표 핵심 성과 지표 (Core KPIs)</h3>
+        <div class="kpi-row">
+          <div class="kpi"><div class="kpi-val" style="color:var(--emerald);">100%</div><div class="kpi-lbl">발주·ERP 기입 자동화</div></div>
+          <div class="kpi"><div class="kpi-val" style="color:var(--accent);">1분</div><div class="kpi-lbl">AI 이미지+상세페이지 생성</div></div>
+          <div class="kpi"><div class="kpi-val" style="color:var(--purple);">30초</div><div class="kpi-lbl">AI 자동 영상 광고 생성</div></div>
+          <div class="kpi"><div class="kpi-val" style="color:var(--amber);">-70%</div><div class="kpi-lbl">인건비·리드타임 감축</div></div>
+          <div class="kpi"><div class="kpi-val" style="color:var(--rose);">0.01%</div><div class="kpi-lbl">오발송 휴먼 에러율</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 03. SYSTEM MAP ══ -->
+    <section id="s03" class="card">
+      <div class="card-num">03</div>
+      <div class="card-hdr">
+        <span class="tag tag-blue">System Inventory</span>
+        <h2>현재 보유 & 개발 중 시스템 전체 지도</h2>
+      </div>
+      <p>Pack2U가 현재 운영·개발 중인 전체 시스템을 한눈에 파악합니다. 각 시스템의 성숙도와 역할을 매핑합니다.</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>시스템명</th><th>기술 스택</th><th>상태</th><th>핵심 역할</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td class="hi">상품정보시트 코어</td><td>Google Sheets + Apps Script (26개 .gs 파일)</td><td><span class="badge badge-live">가동 중</span></td><td>주문 수집·분배·ERP 전송·송장 매칭 중추 신경</td></tr>
+            <tr><td>2</td><td class="hi">협력업체 Push/Fetch 연동</td><td>Apps Script + 배포 시트 30개</td><td><span class="badge badge-live">가동 중</span></td><td>대리공급/위탁 30개사 자동 발주 및 송장 역수집</td></tr>
+            <tr><td>3</td><td class="hi">이카운트 ERP 브리지</td><td>Apps Script + REST OAPI</td><td><span class="badge badge-live">가동 중</span></td><td>판매/매입 전표·품목·재고 자동 동기화</td></tr>
+            <tr><td>4</td><td class="hi">AI 이미지 메이커 (GAS)</td><td>Apps Script + Gemini Vision API</td><td><span class="badge badge-live">가동 중</span></td><td>구글시트 내 누끼→화보 이미지 자동 생성</td></tr>
+            <tr><td>5</td><td class="hi">P2U 배경변경 데스크톱앱</td><td>Node.js + Express + Gemini API (v1.3)</td><td><span class="badge badge-live">가동 중</span></td><td>독립 EXE — 배치 배경 변경, 프리셋, 비교 슬라이더</td></tr>
+            <tr><td>6</td><td class="hi">상세HTML 자동 생성기</td><td>Python + Gemini + rembg(U2Net) — 5세대</td><td><span class="badge badge-live">가동 중</span></td><td>상세페이지 이미지→반응형 HTML 코드 자동 변환</td></tr>
+            <tr><td>7</td><td class="hi">상세페이지 GAS 빌더</td><td>Apps Script + 구글드라이브</td><td><span class="badge badge-live">가동 중</span></td><td>시트 데이터+이미지로 상세페이지 HTML 자동 빌드</td></tr>
+            <tr><td>8</td><td class="hi">Pack2U Review Crawler</td><td>Chrome Extension (Manifest V3)</td><td><span class="badge badge-dev">개발 중</span></td><td>쿠팡/네이버 리뷰 자동 수집 및 CSV 파싱</td></tr>
+            <tr><td>9</td><td class="hi">AI 챗봇 (Gemini)</td><td>Apps Script + Gemini Chat API</td><td><span class="badge badge-dev">개발 중</span></td><td>단가 조회, CS 문의 자동 응답</td></tr>
+            <tr><td>10</td><td class="hi">AI 영상 자동 제작 시스템</td><td>Gemini Veo / Runway / Sora API (계획)</td><td><span class="badge badge-new">신규 기획</span></td><td>제품 이미지→SNS 광고 영상 자동 생성</td></tr>
+            <tr><td>11</td><td class="hi">D2C 자사몰 쇼핑 앱</td><td>React Native / Flutter (계획)</td><td><span class="badge badge-plan">기획 중</span></td><td>도매 고객 직접 소통, 수수료 절감</td></tr>
+            <tr><td>12</td><td class="hi">스마트 WMS & 로봇 물류</td><td>Web App + WCS + AGV/AMR (계획)</td><td><span class="badge badge-plan">기획 중</span></td><td>무인 피킹·QR 검수·로봇 관제</td></tr>
+            <tr><td>13</td><td class="hi">통합 경영 대시보드</td><td>Next.js / Grafana (계획)</td><td><span class="badge badge-plan">기획 중</span></td><td>매출·재고·로봇 가동률 실시간 시각화</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ══ 04. 상품정보시트 코어 ══ -->
+    <section id="s04" class="card">
+      <div class="card-num">04</div>
+      <div class="card-hdr">
+        <span class="tag tag-blue">Core Engine</span>
+        <h2>상품정보시트 — 전사 운영의 중추 신경 시스템</h2>
+      </div>
+      <p>26개 이상의 Apps Script 모듈이 유기적으로 맞물려 작동하는 구글 스프레드시트 기반 <strong>통합 운영 플랫폼</strong>입니다. 주문 수집부터 ERP 전표, 송장 분배, 정산 마감까지 전 과정을 단일 시트에서 자동 처리합니다.</p>
+      <div class="g2">
+        <div class="box">
+          <h3 style="color:var(--accent);">📦 핵심 모듈 구조</h3>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>모듈</th><th>역할</th></tr></thead>
+              <tbody>
+                <tr><td class="hi">priceManager.gs</td><td>허브 생성·동기화, 독립배포 시트 30개 생성·단가 갱신 (197,651B)</td></tr>
+                <tr><td class="hi">_partnerOrders.gs</td><td>대리공급 발주 수집·Push·Fetch·송장 역수집 (183,141B)</td></tr>
+                <tr><td class="hi">_partnerExclusivePush.gs</td><td>전용양식 대리공급 Push 엔진 (217,234B)</td></tr>
+                <tr><td class="hi">_partnerHelpers.gs</td><td>공통 유틸리티, UID 매핑, 시트 탐색 (71,734B)</td></tr>
+                <tr><td class="hi">ecount.gs</td><td>이카운트 로그인 세션·3단계 API 호출 (47,486B)</td></tr>
+                <tr><td class="hi">moveToEcount.gs</td><td>이카운트→상품정보 탭 상태·재고 동기화 (30,266B)</td></tr>
+                <tr><td class="hi">priceAnalysisChatbot.gs</td><td>AI 단가 분석 챗봇 (32,151B)</td></tr>
+                <tr><td class="hi">ecountUploadFilter.gs</td><td>ERP 업로드 필터링·중복 방지 (25,801B)</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="box">
+          <h3 style="color:var(--accent);">🔄 데이터 파이프라인 (ETL)</h3>
+          <ul>
+            <li><strong>1. 수집:</strong> 팩투유 솔루션 → 스마트스토어, 쿠팡, 11번가 등 전 오픈마켓 주문 데이터 마스터 시트로 통합</li>
+            <li><strong>2. 분리:</strong> 외부 대리발송 업체로 전달할 주문을 `업체별대리발송` 탭으로 필터링</li>
+            <li><strong>3. 송장 수합:</strong> V4 광역 안전 엔진 — 이름/전화번호 타겟팅으로 빈 행 송장번호 자동 매핑</li>
+            <li><strong>4. 역분배:</strong> 쇼핑몰별 전용 탭 VLOOKUP 수식이 송장번호를 자동 흡수 → 배송 알림 발송</li>
+            <li><strong>5. ERP 전송:</strong> 이카운트 판매전표·품목등록·매입전표 탭 A열~끝열 하드코딩 위치값 정밀 전송</li>
+          </ul>
+          <div style="margin-top:1rem; padding:1rem; background:rgba(244,63,94,0.06); border:1px solid rgba(244,63,94,0.15); border-radius:10px;">
+            <p style="margin:0; font-size:0.82rem; color:var(--rose);"><strong>⚠ 절대 금지 규칙:</strong> 시트 열(Column) 추가/삭제 금지. 셀 1개 밀림 = 수백 건 UID 꼬임 + 이카운트 API 붕괴</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 05. 협력업체 연동 ══ -->
+    <section id="s05" class="card">
+      <div class="card-num">05</div>
+      <div class="card-hdr">
+        <span class="tag tag-emerald">B2B Vendor Hub</span>
+        <h2>협력업체 30개사 자동 연동 메커니즘</h2>
+      </div>
+      <div class="g2">
+        <div class="box">
+          <h3 style="color:var(--emerald);">📤 발주 Push 시스템</h3>
+          <ul>
+            <li><strong>이카운트 코드 Prefix 감지:</strong> 품목코드 앞 2자리로 협력업체 자동 라우팅</li>
+            <li><strong>복합 고유키 (UID|코드):</strong> 중복 Push 물리적 차단</li>
+            <li><strong>독립배포 시트:</strong> 업체별 전용 스프레드시트 자동 생성·배포</li>
+            <li><strong>메타 데이터:</strong> AA1(업체명), AB1(거래처코드), AC1(시트ID) 자동 기록</li>
+            <li><strong>상품 검색 사이드바:</strong> 300ms 디바운스 실시간 검색 → C열 자동 입력</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h3 style="color:var(--emerald);">📥 송장 Fetch & 정산 자동화</h3>
+          <ul>
+            <li><strong>송장 역수집:</strong> 업체가 A열에 송장 기입 → 자동 감지 → X열 기록 + 상태 전환</li>
+            <li><strong>연락처 0 보호:</strong> 수취인 번호 앞자리 0 소실 방지 — 텍스트형(@) 강제 유지</li>
+            <li><strong>Gmail 송장 수집:</strong> 비협력업체 이메일 송장을 자동 파싱</li>
+            <li><strong>월별 정산:</strong> 당월 정산 탭 자동 생성 → 대사 확인 → 보관본 생성</li>
+            <li><strong>CUST_CD 매핑:</strong> 업체등급단가매핑 시트 자동 갱신, 미입력 행 빨간색 경고</li>
+          </ul>
+        </div>
+      </div>
+      <div class="flow" style="margin-top:1.5rem;">
+        <div class="flow-item"><h6>중앙 허브 시트</h6><small>주문 통합 인입</small></div>
+        <div class="flow-arrow on"></div>
+        <div class="flow-item" style="border-color:var(--emerald);"><h6>Prefix 라우터</h6><small>업체 코드 자동 분류</small></div>
+        <div class="flow-arrow on"></div>
+        <div class="flow-item"><h6>독립배포 Push</h6><small>전용양식 탭 전송</small></div>
+        <div class="flow-arrow on"></div>
+        <div class="flow-item"><h6>송장 Fetch</h6><small>역수집 + 상태 갱신</small></div>
+        <div class="flow-arrow on"></div>
+        <div class="flow-item" style="border-color:var(--accent);"><h6>ERP + 쇼핑몰</h6><small>전표 등록 · 배송알림</small></div>
+      </div>
+    </section>
+
+    <!-- ══ 06. 이카운트 ERP ══ -->
+    <section id="s06" class="card">
+      <div class="card-num">06</div>
+      <div class="card-hdr">
+        <span class="tag tag-amber">ERP Integration</span>
+        <h2>이카운트 ERP 완전 통합 브리지</h2>
+      </div>
+      <div class="g2">
+        <div class="box">
+          <h3 style="color:var(--amber);">🔗 API 연동 파이프라인</h3>
+          <p>3단계 인증 + 비동기 전송 아키텍처로 안정적 ERP 동기화를 달성합니다.</p>
+          <ul>
+            <li><strong>세션 관리:</strong> PropertiesService 안전 보관 — 특수문자(%, +) 인코딩 손상 방지</li>
+            <li><strong>HTTP 412 방어:</strong> IIS 서버의 Expect: 100-continue 거부 → 명시적 빈 헤더 추가</li>
+            <li><strong>품목그룹3 코드표:</strong> 9001(판매중)~9007(소싱중) 7단계 상태 체계</li>
+            <li><strong>P열 중복 차단:</strong> 이카운트 업 완료 플래그 마킹으로 이중 갱신 원천 방어</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h3 style="color:var(--amber);">📊 동기화 대상 데이터</h3>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>흐름</th><th>상세</th></tr></thead>
+              <tbody>
+                <tr><td class="hi">품목정보 동기화</td><td>이카운트 API → 이카운트-품목정보 탭 → moveToEcount.gs → 상품정보 A열(상태)</td></tr>
+                <tr><td class="hi">재고수량 동기화</td><td>이카운트 API → 이카운트-재고 탭 → moveToEcount.gs → 상품정보 G열(재고수량)</td></tr>
+                <tr><td class="hi">판매전표 업로드</td><td>통합 발주 DB → salesUpload.gs → 이카운트 판매전표 자동 등록</td></tr>
+                <tr><td class="hi">단가 다이렉트</td><td>상품정보 시트 수정 → 변경값+품목코드 추출 → 이카운트 API 직접 전송</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 07. AI IMAGE ══ -->
+    <section id="s07" class="card">
+      <div class="card-num">07</div>
+      <div class="card-hdr">
+        <span class="tag tag-purple">AI Visual Studio</span>
+        <h2>AI 이미지 메이커 & 배경변경 데스크톱 앱</h2>
+      </div>
+      <div class="g2">
+        <div class="box glow-purple">
+          <h3 style="color:var(--purple);">📸 GAS 기반 AI 이미지 메이커</h3>
+          <p>구글시트 사이드바에서 직접 실행되는 <strong>Gemini Vision 기반 AI 화보 생성기</strong>입니다.</p>
+          <ul>
+            <li><strong>원클릭 화보:</strong> 핸드폰 스냅 1장 → AI가 재질 감지 → 카페·주방·테이블 등 10가지 배경 연출</li>
+            <li><strong>리드타임:</strong> 스튜디오 촬영 7~10일 → <strong>단 1분</strong>으로 단축</li>
+            <li><strong>구글 드라이브 자동 저장:</strong> 생성된 이미지를 드라이브 폴더에 자동 정리</li>
+            <li><strong>프리뷰 UI:</strong> 멀티 디자인 프리뷰, 사이드바 프리뷰 제공</li>
+          </ul>
+        </div>
+        <div class="box glow-purple">
+          <h3 style="color:var(--purple);">🖥️ P2U 배경변경 데스크톱 앱 (v1.3)</h3>
+          <p><strong>독립 실행형 EXE</strong>로 패키징된 Node.js 기반 AI 배경변경 전용 앱입니다.</p>
+          <ul>
+            <li><strong>배치 처리 테이블:</strong> 복수 이미지를 한 번에 다른 배경으로 일괄 변환</li>
+            <li><strong>프리셋 시스템:</strong> JSON 내보내기/가져오기, Base64 코드 공유, Google Sheets 동기화</li>
+            <li><strong>Before/After 비교:</strong> 좌우 드래그 슬라이더로 원본·결과 즉시 비교</li>
+            <li><strong>처리 통계:</strong> 성공률·성공/실패/재시도 건수 대시보드 (30일 보관)</li>
+            <li><strong>API 키 로테이션:</strong> 다중 API 키 순환으로 안정적 대량 처리</li>
+            <li><strong>행 복제 & 재생성:</strong> 같은 이미지 다른 프롬프트 빠른 추가</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 08. HTML 생성기 ══ -->
+    <section id="s08" class="card">
+      <div class="card-num">08</div>
+      <div class="card-hdr">
+        <span class="tag tag-cyan">Detail Page Automation</span>
+        <h2>상세페이지 HTML 자동 생성기 — 5세대 하이브리드 엔진</h2>
+      </div>
+      <div class="g3">
+        <div class="box">
+          <h3 style="color:var(--text-secondary);">3세대: 블라인드 스캐닝</h3>
+          <p>이미지를 20~30등분 스트립 슬라이싱 → Gemini가 KEEP/HTML/SKIP 분류 → 재조합</p>
+          <p style="color:var(--rose); font-size:0.82rem;">⚠ 한계: 경계면 뭉개짐, 크롭 품질 저하</p>
+        </div>
+        <div class="box">
+          <h3 style="color:var(--amber);">4세대: 수학적 배경 감지</h3>
+          <p>행별 RGB 분산·엣지 밀도·최빈 색상 비율로 AI 없이 자체 분류</p>
+          <p style="color:var(--rose); font-size:0.82rem;">⚠ 한계: 그라데이션 배경 오분류</p>
+        </div>
+        <div class="box glow-cyan">
+          <h3 style="color:var(--cyan);">5세대: 하이브리드 (현행)</h3>
+          <p>rembg(U2Net) 로컬 AI로 제품 Y범위 1회 추출 + 수학적 섹션 경계 → 15% 겹침 판정으로 PHOTO/TEXT 최적 분류</p>
+          <p style="color:var(--emerald); font-size:0.82rem;">✅ 최고 정확도, 디버그 시각화 지원</p>
+        </div>
+      </div>
+      <div class="box" style="margin-top:1.5rem;">
+        <h3 style="color:var(--accent);">🏗️ 생성 흐름</h3>
+        <div class="flow">
+          <div class="flow-item"><h6>상세페이지 이미지</h6><small>세로로 긴 1장</small></div>
+          <div class="flow-arrow on"></div>
+          <div class="flow-item" style="border-color:var(--cyan);"><h6>하이브리드 분석</h6><small>rembg + RGB 분산</small></div>
+          <div class="flow-arrow on"></div>
+          <div class="flow-item"><h6>PHOTO 영역</h6><small>원본 고화질 크롭</small></div>
+          <div class="flow-arrow on"></div>
+          <div class="flow-item"><h6>TEXT 영역</h6><small>Gemini → HTML/CSS</small></div>
+          <div class="flow-arrow on"></div>
+          <div class="flow-item" style="border-color:var(--emerald);"><h6>통합 HTML</h6><small>반응형 상세페이지</small></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 09. Review Crawler ══ -->
+    <section id="s09" class="card">
+      <div class="card-num">09</div>
+      <div class="card-hdr">
+        <span class="tag tag-emerald">Market Intelligence</span>
+        <h2>Pack2U Review Crawler & 시장 분석 시스템</h2>
+      </div>
+      <div class="g2">
+        <div class="box">
+          <h3 style="color:var(--emerald);">🔍 Chrome Extension 리뷰 크롤러</h3>
+          <p>쿠팡·네이버 쇼핑의 자사 및 경쟁사 리뷰를 <strong>자동 추출하여 CSV로 저장</strong>하는 브라우저 확장 프로그램입니다.</p>
+          <ul>
+            <li><strong>Manifest V3:</strong> 최신 크롬 확장 규격 준수</li>
+            <li><strong>자동 콘텐츠 스크립트:</strong> 페이지 진입 시 자동 리뷰 수집</li>
+            <li><strong>팝업 UI:</strong> 수집 현황 및 CSV 다운로드 인터페이스</li>
+            <li><strong>250건+ 완벽 추출:</strong> 페이지네이션 대응 대량 수집 검증 완료</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h3 style="color:var(--emerald);">📊 AI 기반 리뷰 분석 (추천 확장)</h3>
+          <ul>
+            <li><strong>감성 분석:</strong> "뚜껑 안 닫혀요" → 부정 클레임 자동 분류 → 소싱 개선</li>
+            <li><strong>경쟁사 벤치마킹:</strong> 카테고리별 경쟁 제품 평점·리뷰 추이 대시보드</li>
+            <li><strong>포토 리뷰 필터:</strong> 평점 4.8+ 고품질 포토 리뷰 자동 선별 → 상세페이지 연동</li>
+            <li><strong>키워드 트렌드:</strong> 월별 소비자 니즈 키워드 자동 추출 → 신상품 기획 반영</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 10. AI VIDEO SYSTEM (NEW) ══ -->
+    <section id="s10" class="card">
+      <div class="card-num">10</div>
+      <div class="card-hdr">
+        <span class="tag tag-rose">AI Video System — NEW</span>
+        <h2>🎬 AI 영상 자동 제작 시스템 개발 계획</h2>
+      </div>
+      <div class="box glow-rose" style="margin-bottom:2rem; background:rgba(244,63,94,0.03); text-align:center; padding:2.5rem;">
+        <h3 style="color:var(--rose); justify-content:center; font-size:1.4rem;">
+          제품 이미지 1장으로 30초 SNS 광고 영상을 완전 자동 생성
+        </h3>
+        <p style="color:#fff; font-size:1.05rem; margin:0;">
+          "사진만 올리면 AI가 시나리오를 쓰고, 모션을 입히고, 자막과 BGM까지 완성합니다."
+        </p>
+      </div>
+
+      <div class="g2">
+        <div class="box">
+          <h3 style="color:var(--rose);">🎯 핵심 기능 설계</h3>
+          <ul>
+            <li><strong>이미지→영상 변환:</strong> Gemini Veo 3 / Runway Gen-4 / Sora API를 활용해 정지 이미지에 카메라 무빙·줌·팬·틸트 자동 적용</li>
+            <li><strong>AI 시나리오 작성:</strong> 제품 카테고리·용도를 분석해 15/30/60초 SNS 광고 시나리오 자동 생성</li>
+            <li><strong>자동 자막 생성:</strong> 제품명·가격·USP(핵심 셀링 포인트) 자막 오버레이 자동 삽입</li>
+            <li><strong>BGM 매칭:</strong> 제품 무드에 맞는 로열티 프리 BGM 자동 선곡·합성</li>
+            <li><strong>멀티 포맷 출력:</strong> 인스타 릴스(9:16), 유튜브 쇼츠(9:16), 쿠팡 영상(1:1), 썸네일 등</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h3 style="color:var(--rose);">⚙️ 기술 아키텍처</h3>
+          <ul>
+            <li><strong>영상 생성 엔진:</strong> Gemini Veo 3 (구글 네이티브 최우선) → Runway Gen-4 (폴백)</li>
+            <li><strong>템플릿 시스템:</strong> 카테고리별 사전 정의 영상 템플릿 (일회용기, 위생용품, 포장재 등)</li>
+            <li><strong>배치 프로세서:</strong> 신상품 등록 시 자동으로 3종 영상(숏폼·정방형·배너) 일괄 생성</li>
+            <li><strong>프리뷰 편집기:</strong> 웹 기반 타임라인 편집기 — 자막 위치·BGM·전환 효과 미세 조정</li>
+            <li><strong>CDN 배포:</strong> 생성된 영상을 구글 드라이브 또는 CDN에 자동 업로드</li>
+            <li><strong>쇼핑몰 연동:</strong> 사방넷 API를 통해 마켓별 동영상 필드에 자동 등록</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="g3" style="margin-top:1.5rem;">
+        <div class="box" style="text-align:center;">
+          <h3 style="color:var(--text-secondary); justify-content:center;">📷 입력</h3>
+          <div style="font-size:2.5rem; margin:0.5rem 0;">🖼️</div>
+          <p style="margin:0; font-size:0.82rem;">제품 누끼·화보 이미지 1~5장</p>
+        </div>
+        <div class="box" style="text-align:center; border-color:var(--rose);">
+          <h3 style="color:var(--rose); justify-content:center;">🤖 AI 처리</h3>
+          <div style="font-size:2.5rem; margin:0.5rem 0;">🎬</div>
+          <p style="margin:0; font-size:0.82rem;">시나리오 → 모션 → 자막 → BGM → 합성</p>
+        </div>
+        <div class="box" style="text-align:center;">
+          <h3 style="color:var(--emerald); justify-content:center;">📤 출력</h3>
+          <div style="font-size:2.5rem; margin:0.5rem 0;">📱</div>
+          <p style="margin:0; font-size:0.82rem;">릴스·쇼츠·쿠팡 영상 3종 자동 배포</p>
+        </div>
+      </div>
+
+      <div class="box" style="margin-top:1.5rem;">
+        <h3 style="color:var(--rose);">💰 기대 효과</h3>
+        <div class="kpi-row">
+          <div class="kpi"><div class="kpi-val" style="color:var(--rose);">-95%</div><div class="kpi-lbl">영상 제작 비용 절감<br>(외주 50~200만→AI 5천 원)</div></div>
+          <div class="kpi"><div class="kpi-val" style="color:var(--accent);">30분</div><div class="kpi-lbl">영상 제작 소요 시간<br>(기존 2~3주 → 30분)</div></div>
+          <div class="kpi"><div class="kpi-val" style="color:var(--emerald);">+40%</div><div class="kpi-lbl">영상 보유 상품 매출 증가<br>(마켓 영상 상품 전환률 기준)</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 11. AI CHATBOT ══ -->
+    <section id="s11" class="card">
+      <div class="card-num">11</div>
+      <div class="card-hdr">
+        <span class="tag tag-cyan">AI CS Automation</span>
+        <h2>AI 챗봇 & CS 문의 자동화 시스템</h2>
+      </div>
+      <div class="g2">
+        <div class="box">
+          <h3 style="color:var(--cyan);">🤖 Gemini 기반 지능형 챗봇</h3>
+          <p>구글시트 사이드바 내장 <strong>AI 챗봇</strong>으로, 직원 및 협력업체의 실시간 문의에 자동 응답합니다.</p>
+          <ul>
+            <li><strong>단가 조회:</strong> "OO제품 단가 얼마예요?" → 시트 데이터 기반 즉시 응답</li>
+            <li><strong>마진 분석:</strong> 원가 대비 판매가 마진율 자동 계산·비교</li>
+            <li><strong>재고 확인:</strong> 이카운트 실시간 재고 수량 연동 응답</li>
+            <li><strong>CS 매크로:</strong> 배송 지연, 교환/반품 관련 정형화된 답변 자동 생성</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h3 style="color:var(--cyan);">🚀 확장 계획: RAG 기반 고도화</h3>
+          <ul>
+            <li><strong>RAG(검색증강생성):</strong> 제품 DB + 이전 CS 이력 + 배송 추적 정보를 벡터 인덱싱</li>
+            <li><strong>카카오 알림톡 연동:</strong> 고객 CS 문의 자동 1차 응답 → 해결 불가 건만 직원 에스컬레이션</li>
+            <li><strong>멀티채널:</strong> 카카오톡, 네이버 톡톡, 쿠팡 문의 통합 인박스</li>
+            <li><strong>감정 분석:</strong> 고객 불만 강도 자동 분류 → 긴급 건 우선 배정</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 12. D2C APP ══ -->
+    <section id="s12" class="card">
+      <div class="card-num">12</div>
+      <div class="card-hdr">
+        <span class="tag tag-emerald">D2C Strategy</span>
+        <h2>D2C 자사몰 쇼핑 앱 — 수수료 탈피 & 단골 락인</h2>
+      </div>
+      <div class="g2">
+        <div class="box">
+          <h3 style="color:var(--emerald);">📱 도매 고객 전용 모바일 앱</h3>
+          <ul>
+            <li><strong>수수료 절감:</strong> 오픈마켓 10~15% 수수료 → 자사앱 0% → 마진 확보</li>
+            <li><strong>앱 푸시 알림:</strong> 게릴라 특가, 재고 확보 알림 무제한 무료 발송</li>
+            <li><strong>도매 등급별 자동가:</strong> 이카운트 거래처 단가 그룹과 동기화</li>
+            <li><strong>재구매 원클릭:</strong> 이전 주문 내역에서 원클릭 재주문</li>
+            <li><strong>식당 사장님 특화:</strong> 월 정기 배송, 자동 발주 기능</li>
+          </ul>
+        </div>
+        <div class="box" style="text-align:center; border-color:var(--emerald);">
+          <h3 style="color:var(--emerald); justify-content:center;">예상 효과</h3>
+          <div style="font-size:3.5rem; font-weight:900; color:var(--emerald); margin:1rem 0;">15% ⬇</div>
+          <p style="margin:0;">외부 채널 수수료 절감분이<br>순영업이익률 상승으로 직결</p>
+          <div style="font-size:1.8rem; font-weight:800; color:var(--accent); margin-top:1rem;">연 6,500만 원 절감</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 13. SMART WMS ══ -->
+    <section id="s13" class="card">
+      <div class="card-num">13</div>
+      <div class="card-hdr">
+        <span class="tag tag-purple">Robot Logistics</span>
+        <h2>스마트 WMS & 무인 로봇 물류 자동화</h2>
+      </div>
+      <div class="g2">
+        <div class="box">
+          <h3 style="color:var(--purple);">🤖 AGV 무인 지게차</h3>
+          <p>최대 1.5톤 파레트를 6단 하이랙까지 자율 적재하는 <strong>무인 지게차</strong>입니다.</p>
+          <ul>
+            <li>QR 그리드 또는 LiDAR SLAM 기반 자율 주행</li>
+            <li>WMS 연동으로 회전율 기반 자동 전면 배치</li>
+            <li>LiDAR 이중 안전 센서 — 2.5m 감속, 1m 비상정지</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h3 style="color:var(--purple);">🚀 AMR 자율주행 이송 로봇</h3>
+          <p>다품종 소량 박스를 포장대까지 고속 이송하는 <strong>Goods-To-Person</strong> 방식 로봇입니다.</p>
+          <ul>
+            <li>WCS로부터 주문 수신 → 해당 선반 하부로 진입 → 선반 통째 이송</li>
+            <li>장애물 감지·우회 — 24시간 무중단 피킹</li>
+            <li>스마트폰 QR 스캔 WMS 연동 — 전용 PDA 불필요</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 14. DASHBOARD ══ -->
+    <section id="s14" class="card">
+      <div class="card-num">14</div>
+      <div class="card-hdr">
+        <span class="tag tag-blue">Command Center</span>
+        <h2>통합 경영 대시보드 — 실시간 관제탑</h2>
+      </div>
+      <div class="g2">
+        <div class="box">
+          <h3 style="color:var(--accent);">📊 실시간 지표 관제</h3>
+          <ul>
+            <li><strong>매출 실시간:</strong> 채널별·시간별 매출 그래프 (사방넷 연동)</li>
+            <li><strong>재고 경고:</strong> 안전재고 미달 품목 즉시 알림</li>
+            <li><strong>송장 미입력:</strong> 대기 건수 실시간 스캔</li>
+            <li><strong>이카운트 연동 상태:</strong> API 성공률·오류 건수 모니터링</li>
+            <li><strong>협력업체 응답률:</strong> 발주 Push 후 송장 회수까지 소요 시간 추적</li>
+          </ul>
+        </div>
+        <div style="border:1px solid var(--border); border-radius:var(--radius-md); overflow:hidden; background:var(--bg);">
+          <div style="background:rgba(255,255,255,0.02); padding:0.85rem 1.25rem; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:0.82rem; font-weight:700; color:var(--accent);">📊 Dashboard Preview</span>
+            <span class="badge badge-live">ALL SYSTEMS ONLINE</span>
+          </div>
+          <div style="padding:1.25rem; display:flex; flex-direction:column; gap:1rem;">
+            <div style="display:flex; gap:0.75rem;">
+              <div style="flex:1; background:var(--surface-light); padding:0.85rem; border-radius:8px;">
+                <div style="font-size:0.7rem; color:var(--text-muted);">당일 출고</div>
+                <div style="font-size:1.2rem; font-weight:800; color:#fff; margin-top:3px;">1,248건</div>
+              </div>
+              <div style="flex:1; background:var(--surface-light); padding:0.85rem; border-radius:8px;">
+                <div style="font-size:0.7rem; color:var(--text-muted);">AI 이미지 생성</div>
+                <div style="font-size:1.2rem; font-weight:800; color:var(--purple); margin-top:3px;">87장</div>
+              </div>
+              <div style="flex:1; background:var(--surface-light); padding:0.85rem; border-radius:8px;">
+                <div style="font-size:0.7rem; color:var(--text-muted);">AI 영상 생성</div>
+                <div style="font-size:1.2rem; font-weight:800; color:var(--rose); margin-top:3px;">12편</div>
+              </div>
+            </div>
+            <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.2); padding:0.65rem 1rem; border-radius:8px; font-size:0.78rem; display:flex; align-items:center; gap:6px;">
+              <span style="color:var(--emerald); font-weight:700;">✓</span> 이카운트 OAPI 정상 — 오류 0건 | 송장 미입력 대기 3건
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 15. RECOMMENDED NEW SYSTEMS ══ -->
+    <section id="s15" class="card">
+      <div class="card-num">15</div>
+      <div class="card-hdr">
+        <span class="tag tag-rose">Strategic Expansion</span>
+        <h2>추천 신규 시스템 — 추가 개발 가능성 아이템</h2>
+      </div>
+      <p>현재 시스템 생태계를 기반으로 사업 확장성과 ROI를 고려해 <strong>우선순위별로 추천</strong>하는 신규 개발 아이템입니다.</p>
+      <div class="g2">
+        <div class="box glow-rose">
+          <h3 style="color:var(--rose);">🔥 최우선 (High Impact)</h3>
+          <ul>
+            <li><strong>AI 영상 자동 제작 시스템:</strong> 제품 이미지→SNS 숏폼 영상 자동 생성 (Gemini Veo 3 / Runway)</li>
+            <li><strong>사방넷 OpenAPI 완전 연동:</strong> 50개 마켓 주문 자동 수집 + 송장 역전송 + 삼각 재고 동기화</li>
+            <li><strong>AI 가격 최적화 엔진:</strong> 경쟁사 가격 크롤링 + 마진율 자동 조정 + 이카운트 즉시 반영</li>
+            <li><strong>통합 알림 관제 시스템:</strong> 안전재고 경고·마진 이탈·API 오류를 텔레그램/슬랙으로 즉시 Push</li>
+          </ul>
+        </div>
+        <div class="box glow-amber">
+          <h3 style="color:var(--amber);">⚡ 중기 (Medium Term)</h3>
+          <ul>
+            <li><strong>AI 상품 설명 자동 생성기:</strong> 제품 스펙 데이터 → 마켓별 최적화된 상품명·설명·키워드 자동 작성</li>
+            <li><strong>검색 순위 모니터링 앱:</strong> 네이버·쿠팡 키워드 순위 일일 추적 대시보드</li>
+            <li><strong>AI 기반 수요 예측:</strong> 과거 판매 데이터 + 시즌 트렌드 → 발주량 자동 추천</li>
+            <li><strong>자동 발주 시스템:</strong> 안전재고 이하 품목 → 공급업체에 자동 발주 메일 발송</li>
+            <li><strong>카카오 알림톡 자동 발송:</strong> 주문확인·배송출발·배송완료 단계별 자동 알림</li>
+          </ul>
+        </div>
+        <div class="box glow-purple">
+          <h3 style="color:var(--purple);">🔮 장기 (Long Term)</h3>
+          <ul>
+            <li><strong>3PL 물류 플랫폼:</strong> 자사 로봇 인프라를 타사에 임대 — 보관/포장/배송 대행 수익 모델</li>
+            <li><strong>SaaS 솔루션 상품화:</strong> Pack2U 통합 시스템을 동종업계에 월 구독형 솔루션으로 판매</li>
+            <li><strong>AI 컨시어지 서비스:</strong> 도매 고객에게 AI 기반 맞춤 추천·자동 재발주·트렌드 인사이트 제공</li>
+            <li><strong>블록체인 정산:</strong> 협력업체 간 투명한 스마트 컨트랙트 기반 자동 정산</li>
+          </ul>
+        </div>
+        <div class="box glow-cyan">
+          <h3 style="color:var(--cyan);">🧠 AI 특화 확장</h3>
+          <ul>
+            <li><strong>AI 품질 검수 카메라:</strong> 포장 라인 카메라로 파손·오포장 실시간 검출</li>
+            <li><strong>Voice Commerce:</strong> AI 음성 인식으로 전화 주문 자동 접수·처리</li>
+            <li><strong>AR 제품 미리보기:</strong> 앱에서 AR로 용기 크기를 실공간에 배치해 확인</li>
+            <li><strong>AI 번역 시스템:</strong> 상세페이지·제품 설명 다국어 자동 번역 → 해외 마켓 진출</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 16. ARCHITECTURE ══ -->
+    <section id="s16" class="card">
+      <div class="card-num">16</div>
+      <div class="card-hdr">
+        <span class="tag tag-blue">System Architecture</span>
+        <h2>전사 데이터 파이프라인 통합 아키텍처</h2>
+      </div>
+      <div class="diag">
+        <div class="diag-panel">
+          <h3 style="color:var(--accent);">1. 채널 & 전산 코어</h3>
+          <div class="flow-item" style="width:100%; margin-bottom:0.5rem;"><h6>사방넷 OpenAPI</h6><small>50개 오픈마켓 주문 통합 수집</small></div>
+          <div class="flow-item" style="width:100%; margin-bottom:0.5rem;"><h6>이카운트 OAPI 브리지</h6><small>판매전표·품목·재고 실시간 동기화</small></div>
+          <div class="flow-item" style="width:100%;"><h6>D2C 자사몰 앱</h6><small>자사 주문 + 푸시 특가 알림</small></div>
+        </div>
+        <div class="diag-panel" style="border-color:var(--purple);">
+          <h3 style="color:var(--purple);">2. AI 콘텐츠 팩토리</h3>
+          <div class="flow-item" style="width:100%; margin-bottom:0.5rem; border-color:var(--purple);"><h6>AI Image Studio</h6><small>Gemini Vision 화보 + 배경 변경</small></div>
+          <div class="flow-item" style="width:100%; margin-bottom:0.5rem; border-color:var(--rose);"><h6>AI Video Maker (NEW)</h6><small>Veo 3 / Runway 영상 자동 생성</small></div>
+          <div class="flow-item" style="width:100%;"><h6>HTML Auto Builder</h6><small>5세대 하이브리드 상세페이지 생성</small></div>
+        </div>
+        <div class="diag-panel" style="border-color:var(--emerald);">
+          <h3 style="color:var(--emerald);">3. 물류 & 관제</h3>
+          <div class="flow-item" style="width:100%; margin-bottom:0.5rem; border-color:var(--emerald);"><h6>스마트 WMS + WCS</h6><small>AGV/AMR 로봇 관제 시스템</small></div>
+          <div class="flow-item" style="width:100%;"><h6>경영 대시보드</h6><small>매출·재고·AI생산·로봇 통합 시각화</small></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 17. ROI ══ -->
+    <section id="s17" class="card">
+      <div class="card-num">17</div>
+      <div class="card-hdr">
+        <span class="tag tag-emerald">Financial Impact</span>
+        <h2>비용 감축 & ROI 분석</h2>
+      </div>
+      <div class="g4">
+        <div class="box" style="text-align:center;">
+          <h3 style="color:var(--accent); justify-content:center; font-size:1rem;">물류/사무 효율화</h3>
+          <div style="font-size:2rem; font-weight:900; color:var(--accent); margin:0.5rem 0;">1.3억/년</div>
+          <p style="font-size:0.78rem; margin:0;">수동 데이터 입력·피킹 인력 절감</p>
+        </div>
+        <div class="box" style="text-align:center;">
+          <h3 style="color:var(--rose); justify-content:center; font-size:1rem;">콘텐츠 제작 절감</h3>
+          <div style="font-size:2rem; font-weight:900; color:var(--rose); margin:0.5rem 0;">4,800만/년</div>
+          <p style="font-size:0.78rem; margin:0;">AI 이미지+영상+상세페이지 자동화</p>
+        </div>
+        <div class="box" style="text-align:center;">
+          <h3 style="color:var(--emerald); justify-content:center; font-size:1rem;">수수료 절감</h3>
+          <div style="font-size:2rem; font-weight:900; color:var(--emerald); margin:0.5rem 0;">6,500만/년</div>
+          <p style="font-size:0.78rem; margin:0;">D2C 자사몰 전환에 의한 마켓 수수료 절감</p>
+        </div>
+        <div class="box" style="text-align:center;">
+          <h3 style="color:var(--amber); justify-content:center; font-size:1rem;">오발송/로스 소거</h3>
+          <div style="font-size:2rem; font-weight:900; color:var(--amber); margin:0.5rem 0;">1,800만/년</div>
+          <p style="font-size:0.78rem; margin:0;">QR 스캔+AMR 도입 에러 제로화</p>
+        </div>
+      </div>
+      <div class="box glow-emerald" style="margin-top:2rem; text-align:center;">
+        <div style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:0.5rem;">연간 총 절감 예상액</div>
+        <div style="font-size:3rem; font-weight:900; color:var(--emerald);">약 2.8억 원 / 년</div>
+        <div style="font-size:0.85rem; color:var(--text-secondary); margin-top:0.5rem;">투자 대비 12~14개월 내 ROI 달성 예상</div>
+      </div>
+
+      <div class="tbl-wrap" style="margin-top:2rem;">
+        <table>
+          <thead><tr><th>투자 항목</th><th>초기 비용</th><th>월 운영비</th><th>기대 효과</th></tr></thead>
+          <tbody>
+            <tr><td class="hi">AI 영상 시스템 개발</td><td>1,500만 원</td><td>API 비용 ~30만</td><td>영상 외주비 95% 절감, SNS 마케팅 강화</td></tr>
+            <tr><td class="hi">AMR 이송 로봇 6대</td><td>세팅비 2,500만</td><td>렌탈 350만</td><td>GTP 무인 피킹, 인력 70% 절감</td></tr>
+            <tr><td class="hi">AGV 무인 지게차 2대</td><td>세팅비 1,800만</td><td>렌탈 220만</td><td>하이랙 입출고 완전 무인화</td></tr>
+            <tr><td class="hi">WCS + 관제 시스템</td><td>3,000만</td><td>서버 소액</td><td>이카운트↔로봇 실시간 브리지</td></tr>
+            <tr><td class="hi">D2C 쇼핑 앱 개발</td><td>2,000만</td><td>서버 ~50만</td><td>마켓 수수료 15% 절감</td></tr>
+            <tr><td class="hi">바닥 QR 마커·설비</td><td>1,200만</td><td>없음</td><td>로봇 자율주행 정밀 그리드</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ══ 18. ROADMAP ══ -->
+    <section id="s18" class="card">
+      <div class="card-num">18</div>
+      <div class="card-hdr">
+        <span class="tag tag-blue">Implementation Roadmap</span>
+        <h2>3단계 전사 구축 로드맵 & 타임라인</h2>
+      </div>
+      <div class="diag" style="margin-bottom:2rem;">
+        <div class="diag-panel" style="border-left:4px solid var(--accent);">
+          <h3 style="color:var(--accent);">Phase 1: 코어 강화 (1~3개월)</h3>
+          <p>"현재 가동 시스템 고도화 + AI 콘텐츠 확장"</p>
+          <ul>
+            <li>사방넷 OpenAPI 완전 연동 (주문 자동 수집)</li>
+            <li>AI 영상 시스템 MVP 개발 (Gemini Veo 3)</li>
+            <li>이카운트 OAPI 비동기 큐 + 재시도 로직 강화</li>
+            <li>AI 챗봇 RAG 고도화 + 카카오 연동</li>
+            <li>통합 알림 관제 시스템 (텔레그램/슬랙)</li>
+            <li>배경변경앱 v2.0 — 영상 템플릿 통합</li>
+          </ul>
+        </div>
+        <div class="diag-panel" style="border-left:4px solid var(--amber);">
+          <h3 style="color:var(--amber);">Phase 2: 물류 혁신 (4~6개월)</h3>
+          <p>"로봇 물류 도입 + D2C 채널 구축"</p>
+          <ul>
+            <li>창고 바닥 QR 그리드 설치</li>
+            <li>AGV/AMR 렌탈 기기 반입 및 맵핑</li>
+            <li>WCS 로봇 제어 시스템 개발</li>
+            <li>스마트폰 QR 스캔 WMS 앱 배포</li>
+            <li>D2C 자사몰 쇼핑 앱 개발·배포</li>
+            <li>AI 영상 시스템 배치 자동화 완성</li>
+          </ul>
+        </div>
+        <div class="diag-panel" style="border-left:4px solid var(--emerald);">
+          <h3 style="color:var(--emerald);">Phase 3: 플랫폼 도약 (7~12개월)</h3>
+          <p>"SaaS 상품화 + 3PL 사업 확장"</p>
+          <ul>
+            <li>구글시트 → PostgreSQL+웹앱 시스템 이관</li>
+            <li>통합 경영 대시보드 풀 버전 배포</li>
+            <li>3PL 물류 대행 서비스 런칭</li>
+            <li>SaaS 솔루션 패키징 및 시범 고객 확보</li>
+            <li>AI 수요 예측 + 자동 발주 시스템 가동</li>
+            <li>해외 마켓 진출을 위한 AI 다국어 번역 시스템</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="timeline">
+        <div class="tl-item" style="border-left:4px solid var(--accent);">
+          <div class="tl-phase" style="color:var(--accent);">M1~M2</div>
+          <div class="tl-body">
+            <div class="tl-title">코어 시스템 고도화 & AI 영상 MVP</div>
+            <div class="tl-desc">사방넷 연동, 이카운트 브리지 안정화, AI 영상 프로토타입 개발, 알림 시스템 구축</div>
+          </div>
+        </div>
+        <div class="tl-item" style="border-left:4px solid var(--accent);">
+          <div class="tl-phase" style="color:var(--accent);">M3</div>
+          <div class="tl-body">
+            <div class="tl-title">AI 콘텐츠 팩토리 완성</div>
+            <div class="tl-desc">AI 영상 배치 자동화, 챗봇 RAG, 리뷰 크롤러 + 감성 분석 연동</div>
+          </div>
+        </div>
+        <div class="tl-item" style="border-left:4px solid var(--amber);">
+          <div class="tl-phase" style="color:var(--amber);">M4~M5</div>
+          <div class="tl-body">
+            <div class="tl-title">로봇 물류 도입 & D2C 앱 개발</div>
+            <div class="tl-desc">창고 설비 변경, AGV/AMR 반입·테스트, D2C 앱 베타 배포</div>
+          </div>
+        </div>
+        <div class="tl-item" style="border-left:4px solid var(--amber);">
+          <div class="tl-phase" style="color:var(--amber);">M6</div>
+          <div class="tl-body">
+            <div class="tl-title">무인 물류 통합 가동 & D2C 정식 런칭</div>
+            <div class="tl-desc">WCS-이카운트 실시간 브리지 완성, 자사몰 앱 정식 배포, 로봇 관제 대시보드 오픈</div>
+          </div>
+        </div>
+        <div class="tl-item" style="border-left:4px solid var(--emerald);">
+          <div class="tl-phase" style="color:var(--emerald);">M7~M12</div>
+          <div class="tl-body">
+            <div class="tl-title">클라우드 이관 & SaaS 플랫폼 확장</div>
+            <div class="tl-desc">구글시트 완전 이관, 3PL 서비스 런칭, 솔루션 SaaS 상품화, AI 수요 예측 가동</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 19. RISK ══ -->
+    <section id="s19" class="card">
+      <div class="card-num">19</div>
+      <div class="card-hdr">
+        <span class="tag tag-amber">Risk Management</span>
+        <h2>리스크 관리 & 보안 전략</h2>
+      </div>
+      <div class="g2">
+        <div class="box">
+          <h3 style="color:var(--amber);">⚠️ 시스템 안전 방어</h3>
+          <ul>
+            <li><strong>열 구조 보호:</strong> 시트 열 추가/삭제 절대 금지 — 함수 밀림·ERP 붕괴 차단</li>
+            <li><strong>Script Lock:</strong> 다중 메뉴 동시 호출 시 충돌 방지 락 메커니즘</li>
+            <li><strong>Dead Letter Queue:</strong> 실패한 트랜잭션 전용 큐 적재 → 서버 복구 시 일괄 처리</li>
+            <li><strong>롤백 스위치:</strong> API 장애 시 기존 수동 작업 탭 즉시 스위칭</li>
+            <li><strong>RPA Plan B:</strong> Selenium 기반 무인 RPA로 API 차단 시 ERP 웹 UI 자동 접속</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h3 style="color:var(--amber);">🔐 보안 & API 키 관리</h3>
+          <ul>
+            <li><strong>PropertiesService 전환:</strong> GAS 코드 내 API 키 하드코딩 완전 제거</li>
+            <li><strong>.gitignore 강화:</strong> .env, 테스트 파일, 백업 폴더 전체 제외</li>
+            <li><strong>API 키 로테이션:</strong> 다중 키 순환으로 단일 키 차단 리스크 분산</li>
+            <li><strong>로봇 안전:</strong> LiDAR 이중 센서 + 물리 E-Stop 버튼</li>
+            <li><strong>협력업체 권한 분리:</strong> 시트별 접근 권한 세분화 — 정보 유출 원천 차단</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ 20. FUTURE VISION ══ -->
+    <section id="s20" class="card" style="display:flex; flex-direction:column; justify-content:center; min-height:520px; text-align:center;">
+      <div class="card-num">20</div>
+      <div style="max-width:900px; margin:0 auto; position:relative; z-index:2;">
+        <span class="tag tag-purple" style="margin-bottom:1rem;">Future Vision · Next 3 Years</span>
+        <h1 style="font-size:2.25rem; font-weight:900; line-height:1.3; margin-bottom:1.5rem;">
+          "시스템이 일하고, AI가 만들고,<br>로봇이 나르고, 사람은 성장합니다."
+        </h1>
+        <p style="font-size:1.05rem; color:var(--text-secondary); margin-bottom:2.5rem; max-width:700px; margin-left:auto; margin-right:auto;">
+          Pack2U는 단순 도매 유통을 넘어, <strong>AI 콘텐츠 팩토리 + 무인 로봇 풀필먼트 + SaaS 기술 기업</strong>으로 도약합니다.<br>
+          상품 소싱부터 AI 이미지·영상 제작, 자동 상세페이지 생성, 주문 수집, 로봇 배송, ERP 마감까지 — 전 과정이 하나의 데이터로 끊김 없이 흐릅니다.
+        </p>
+        <div class="g3" style="margin-bottom:2.5rem;">
+          <div class="box" style="text-align:center; padding:1.5rem;">
+            <div style="font-size:2rem; margin-bottom:0.5rem;">🏭</div>
+            <h3 style="color:var(--accent); justify-content:center; font-size:1rem;">스마트 3PL</h3>
+            <p style="font-size:0.78rem; margin:0;">로봇 인프라로 타사 물류 대행</p>
+          </div>
+          <div class="box" style="text-align:center; padding:1.5rem;">
+            <div style="font-size:2rem; margin-bottom:0.5rem;">☁️</div>
+            <h3 style="color:var(--purple); justify-content:center; font-size:1rem;">SaaS 솔루션</h3>
+            <p style="font-size:0.78rem; margin:0;">동종업계에 월 구독형 판매</p>
+          </div>
+          <div class="box" style="text-align:center; padding:1.5rem;">
+            <div style="font-size:2rem; margin-bottom:0.5rem;">🌏</div>
+            <h3 style="color:var(--emerald); justify-content:center; font-size:1rem;">글로벌 확장</h3>
+            <p style="font-size:0.78rem; margin:0;">AI 다국어 번역 → 해외 마켓 진출</p>
+          </div>
+        </div>
+        <div style="display:inline-block; padding:0.85rem 2.5rem; background:linear-gradient(135deg, var(--accent), var(--purple)); color:#fff; font-weight:800; font-size:1rem; border-radius:50px; box-shadow:0 0 30px var(--accent-glow);">
+          Pack2U System Blueprint 2026 — 프로젝트 승인 대기 중
+        </div>
+        <p style="font-size:0.75rem; color:var(--text-muted); margin-top:1.5rem;">
+          작성일: 2026.06.14 | 작성: Pack2U AI 시스템 기획팀 | 문서 버전: v1.0
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ═══ Script ═══ -->
+  <script>
+    function scrollToSlide(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const offset = 80;
+      const pos = el.getBoundingClientRect().top + window.scrollY - offset;
+      window.scrollTo({ top: pos, behavior: 'smooth' });
+    }
+
+    // Scroll spy
+    window.addEventListener('scroll', () => {
+      const sel = document.querySelector('.nav-select');
+      const cards = document.querySelectorAll('.card');
+      const scrollY = window.scrollY + 120;
+      cards.forEach(c => {
+        if (scrollY >= c.offsetTop && scrollY < c.offsetTop + c.offsetHeight) {
+          sel.value = c.id;
+        }
+      });
+    });
+
+    // Intersection Observer for fade-in animation
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.style.opacity = '1';
+          entry.target.style.transform = 'translateY(0)';
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.card').forEach(card => {
+      card.style.opacity = '0';
+      card.style.transform = 'translateY(30px)';
+      card.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+      observer.observe(card);
+    });
+  </script>
+
+</body>
+</html>

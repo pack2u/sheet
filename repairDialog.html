@@ -8,38 +8,63 @@
       font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
       font-size: 13px; background: #f5f5f5; padding: 16px;
     }
-    h2 { font-size: 16px; margin-bottom: 12px; color: #1a73e8; }
+    h2 { font-size: 16px; margin-bottom: 6px; color: #1a73e8; }
+    .subtitle { font-size: 11px; color: #888; margin-bottom: 14px; }
+
     .category {
-      background: white; border-radius: 8px; padding: 14px;
-      margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      background: white; border-radius: 8px; padding: 12px 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
       cursor: pointer; transition: 0.15s;
       border: 2px solid transparent;
     }
     .category:hover { border-color: #c8d6e8; }
     .category.selected { border-color: #1a73e8; background: #eaf2fd; }
-    .category .title {
-      font-size: 14px; font-weight: bold; color: #333; margin-bottom: 4px;
+    .category .top-row {
+      display: flex; align-items: center; gap: 8px;
     }
-    .category .desc { font-size: 11px; color: #777; }
+    .category .icon { font-size: 18px; }
+    .category .title {
+      font-size: 14px; font-weight: bold; color: #333; flex: 1;
+    }
+    .category .badge {
+      font-size: 9px; padding: 2px 6px; border-radius: 10px;
+      color: white; font-weight: bold;
+    }
+    .badge-quick { background: #34a853; }
+    .badge-full { background: #ea4335; }
+
+    .category .symptoms {
+      margin-top: 8px; padding: 8px 10px;
+      background: #f8f9fa; border-radius: 6px;
+      font-size: 11px; color: #555; line-height: 1.7;
+    }
+    .category .symptoms b { color: #d93025; }
+    .category .symptoms .when { color: #1a73e8; font-weight: bold; }
+
+    .cat-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 10px; margin-bottom: 12px;
+    }
+
     .vendor-section {
       background: white; border-radius: 8px; padding: 14px;
-      margin-top: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      margin-top: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
       display: none;
     }
     .vendor-header {
-      display: flex; align-items: center; margin-bottom: 10px;
-      gap: 8px;
+      display: flex; align-items: center; margin-bottom: 10px; gap: 8px;
     }
     .vendor-header label {
       font-size: 13px; font-weight: bold; color: #333; cursor: pointer;
     }
     .vendor-list {
-      max-height: 240px; overflow-y: auto;
+      max-height: 260px; overflow-y: auto;
       border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px;
     }
     .vendor-item {
       display: flex; align-items: center; padding: 5px 4px;
       border-radius: 4px; cursor: pointer;
+      break-inside: avoid;
     }
     .vendor-item:hover { background: #f0f4ff; }
     .vendor-item input { margin-right: 8px; cursor: pointer; }
@@ -59,6 +84,7 @@
     #status {
       margin-top: 10px; font-size: 12px; color: #555;
       padding: 8px; border-radius: 6px; display: none;
+      white-space: pre-wrap; max-height: 200px; overflow-y: auto;
     }
     #status.running { background: #fff3cd; color: #856404; display: block; }
     #status.done { background: #d4edda; color: #155724; display: block; }
@@ -71,48 +97,90 @@
       height: 100%; background: #1a73e8; border-radius: 2px;
       width: 0; transition: width 0.3s;
     }
+    /* 탭 재생성 옵션 */
+    .tab-options {
+      display: none; background: white; border-radius: 8px;
+      padding: 14px; margin-top: -4px; margin-bottom: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .tab-options label {
+      display: block; padding: 4px 0; cursor: pointer; font-size: 12px;
+    }
   </style>
 </head>
 <body>
   <h2>🔧 복구 도구</h2>
+  <div class="subtitle">증상에 맞는 도구를 선택하세요</div>
 
-  <!-- 카테고리 선택 -->
+  <div class="cat-grid">
+  <!-- ① 수식·단가 복구 -->
   <div class="category" data-cat="formula" onclick="selectCategory(this)">
-    <div class="title">📊 수식·단가 복구</div>
-    <div class="desc">단가조회 수식, 발주탭 spill 수식, K2 그룹 설정 복구</div>
+    <div class="top-row">
+      <span class="icon">📊</span>
+      <span class="title">수식·단가 복구</span>
+      <span class="badge badge-quick">빠름</span>
+    </div>
+    <div class="symptoms">
+      <span class="when">▸ 이럴 때 사용:</span><br>
+      · 코드를 넣어도 <b>품목명/단가가 안 나올 때</b><br>
+      · A열(거래처명)에 <b>#REF 에러</b>가 뜰 때<br>
+      · 단가조회 탭에 <b>데이터가 안 보일 때</b>
+    </div>
   </div>
+
+  <!-- ② 헤더·양식 복구 -->
   <div class="category" data-cat="header" onclick="selectCategory(this)">
-    <div class="title">📋 헤더·양식 복구</div>
-    <div class="desc">발주탭 헤더, 전용양식 헤더, 마감탭, 조건부서식 복구</div>
+    <div class="top-row">
+      <span class="icon">📋</span>
+      <span class="title">헤더·양식 복구</span>
+      <span class="badge badge-quick">빠름</span>
+    </div>
+    <div class="symptoms">
+      <span class="when">▸ 이럴 때 사용:</span><br>
+      · 발주탭 <b>1행 헤더가 깨지거나 바뀌었을 때</b><br>
+      · <b>조건부서식</b>(색상 구분)이 사라졌을 때<br>
+      · 거래처코드(B6) <b>앞자리 0이 빠질 때</b>
+    </div>
   </div>
+
+  <!-- ③ 스크립트 재설치 -->
   <div class="category" data-cat="script" onclick="selectCategory(this)">
-    <div class="title">📝 스크립트 재설치</div>
-    <div class="desc">발주탭 자동완성 스크립트 재설치</div>
+    <div class="top-row">
+      <span class="icon">📝</span>
+      <span class="title">스크립트 재설치</span>
+      <span class="badge badge-quick">빠름</span>
+    </div>
+    <div class="symptoms">
+      <span class="when">▸ 이럴 때 사용:</span><br>
+      · 이카운트코드 입력해도 <b>자동완성이 안 될 때</b><br>
+      · 단가/품목명 <b>수정해도 원복이 안 될 때</b><br>
+      · 보호된 열 편집 시 <b>차단 메시지가 안 뜰 때</b>
+    </div>
   </div>
-  <div class="category" data-cat="data" onclick="selectCategory(this)">
-    <div class="title">🗃️ 데이터 보정</div>
-    <div class="desc">허브 단가 보정, 거래처코드 서식 수정</div>
-  </div>
+
+  <!-- ④ 탭 재생성 -->
   <div class="category" data-cat="tabs" onclick="selectCategory(this)">
-    <div class="title">📑 탭 재생성</div>
-    <div class="desc">단가조회(뷰어), 발주 및 송장조회, 검색입력 탭 + 상품검색 스크립트 재생성</div>
+    <div class="top-row">
+      <span class="icon">📑</span>
+      <span class="title">탭 재생성</span>
+      <span class="badge badge-full">전체 복구</span>
+    </div>
+    <div class="symptoms">
+      <span class="when">▸ 이럴 때 사용:</span><br>
+      · 탭이 <b>삭제되거나 통째로 망가졌을 때</b><br>
+      · 위 3개 도구로도 <b>해결이 안 될 때</b><br>
+      · ⚠️ <b>모든 복구를 포함</b>하는 최종 수단
+    </div>
   </div>
+  </div><!-- /cat-grid -->
 
   <!-- 탭 재생성 옵션 -->
-  <div class="tab-options" id="tabOptions" style="display:none; background:white; border-radius:8px; padding:14px; margin-top:-4px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+  <div class="tab-options" id="tabOptions">
     <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:8px;">재생성할 항목 선택:</div>
-    <label style="display:block; padding:4px 0; cursor:pointer; font-size:12px;">
-      <input type="checkbox" id="opt_viewer" checked> 📊 단가조회(뷰어) 탭
-    </label>
-    <label style="display:block; padding:4px 0; cursor:pointer; font-size:12px;">
-      <input type="checkbox" id="opt_order" checked> 📦 발주 및 송장조회 탭
-    </label>
-    <label style="display:block; padding:4px 0; cursor:pointer; font-size:12px;">
-      <input type="checkbox" id="opt_search" checked> 🔍 검색입력 탭
-    </label>
-    <label style="display:block; padding:4px 0; cursor:pointer; font-size:12px;">
-      <input type="checkbox" id="opt_script" checked> 📝 상품검색 스크립트
-    </label>
+    <label><input type="checkbox" id="opt_viewer" checked> 📊 단가조회(뷰어) 탭</label>
+    <label><input type="checkbox" id="opt_order" checked> 📦 발주 및 송장조회 탭</label>
+    <label><input type="checkbox" id="opt_search" checked> 🔍 검색입력 탭</label>
+    <label><input type="checkbox" id="opt_script" checked> 📝 상품검색 스크립트</label>
   </div>
 
   <!-- 업체 선택 -->
@@ -142,7 +210,7 @@
     var _vendors = [];
 
     // 타이틀에서 사전 선택 카테고리 감지
-    var _catMap = { "수식": "formula", "헤더": "header", "스크립트": "script", "데이터": "data", "탭": "tabs" };
+    var _catMap = { "수식": "formula", "헤더": "header", "스크립트": "script", "탭": "tabs" };
     function autoSelectFromTitle() {
       var title = document.title || "";
       for (var key in _catMap) {
@@ -221,7 +289,7 @@
 
       var btn = document.getElementById('runBtn');
       btn.disabled = true; btn.textContent = '⏳ 복구 중...';
-      setStatus('running', '복구 실행 중... (' + selected.length + '개 업체)');
+      setStatus('running', '복구 실행 중... (' + selected.length + '개 업체)\n예상 소요: 약 ' + Math.ceil(selected.length * 18 / 60) + '분');
       showProgress(0);
 
       // 탭 재생성일 때 옵션 전달
@@ -252,7 +320,6 @@
       var el = document.getElementById('status');
       el.className = cls;
       el.textContent = msg;
-      el.style.whiteSpace = 'pre-wrap';
     }
 
     function showProgress(pct) {
@@ -264,4 +331,3 @@
   </script>
 </body>
 </html>
-

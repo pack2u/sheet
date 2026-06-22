@@ -90,24 +90,35 @@ function ocrImageToText(base64Data) {
       rawB64 = parts[1];
     }
 
-    // Gemini Vision API 호출
-    var model = "gemini-2.5-flash-lite";
+    // ★ 2026-06-18: gemini-3.5-flash로 업그레이드 (OCR 정확도 최우선)
+    var model = "gemini-3.5-flash";
     var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
       model + ":generateContent?key=" + GEMINI_API_KEY;
 
+    // ★ 2026-06-18: 거래명세서 운송방법 섹션도 인식하도록 프롬프트 확장
     var prompt =
-      "이 이미지는 택배 송장번호 목록 테이블입니다.\n" +
-      "테이블에서 **받는사람(수취인) 이름**과 **송장번호(운송장번호, 10~14자리 숫자)**를 추출해주세요.\n\n" +
+      "이 이미지에서 **택배 수취인(받는사람) 이름**과 **택배 송장번호(운송장번호, 10~14자리 연속 숫자)**를 추출해주세요.\n\n" +
+      "이미지 유형별 처리:\n" +
+      "A) **택배 송장 목록 테이블**: 각 행(row)에서 받는사람 이름과 송장번호를 추출\n" +
+      "B) **거래명세서**: '운송방법' 또는 '배송정보' 영역에서만 이름과 송장번호를 추출\n" +
+      "C) **기타 형태**: 10~14자리 연속 숫자 근처의 이름을 추출\n\n" +
+      "❌ 절대 추출하지 말 것:\n" +
+      "- 사업자등록번호 (xxx-xx-xxxxx 형식, 예: 585-88-00931, 125-86-31688)\n" +
+      "- 거래명세서 상단의 공급자/공급받는자 성명 (대표자명)\n" +
+      "- TEL, FAX 전화번호\n" +
+      "- 은행계좌번호\n\n" +
       "규칙:\n" +
-      "1. 반드시 테이블의 각 **행(row)**을 하나씩 읽어주세요. 열(column) 단위로 읽지 마세요.\n" +
-      "2. 출력 형식: 한 줄에 '이름 송장번호' (공백으로 구분)\n" +
-      "3. '보내는사람/발송인' 열은 무시하고, '받는사람/수취인/수령인' 열의 이름만 추출하세요.\n" +
-      "4. 택배사명(롯데택배, CJ대한통운 등)은 출력하지 마세요.\n" +
-      "5. 이름 뒤의 '님'은 제거하세요.\n" +
-      "6. 다른 설명 없이 오직 '이름 송장번호' 형식만 출력하세요.\n\n" +
+      "1. 출력 형식: 한 줄에 '이름 송장번호' (공백으로 구분)\n" +
+      "2. 송장번호는 반드시 10~14자리 **연속 숫자** (하이픈으로 구분된 xxx-xx-xxxxx는 송장번호가 아님)\n" +
+      "3. 택배사명(롯데, CJ대한통운 등)은 이름이 아님. 단, '○○아파트 관리사무소', '○○ 커뮤니티센터' 같은 구체적 장소명은 수취인 이름으로 포함\n" +
+      "4. 이름 뒤의 '님'은 제거\n" +
+      "5. 한글/영문 이름 모두 추출\n" +
+      "6. 인라인 형태도 줄 단위로 분리\n" +
+      "7. 다른 설명 없이 오직 '이름 송장번호' 형식만 출력\n\n" +
       "예시 출력:\n" +
       "홍길동 1234567890\n" +
-      "김철수 9876543210";
+      "김철수 9876543210\n" +
+      "YINCHENGGUO 2670961463010";
 
     var payload = {
       contents: [{
@@ -278,7 +289,8 @@ function parseAndMatchInvoiceText(fileId, rawText) {
     var data = exTab.getRange(2, 1, lr - 1, lc).getValues();
     var nameToRows = {};
     for (var ri = 0; ri < data.length; ri++) {
-      var rn = String(data[ri][recipientCol] || "").replace(/\s*님\s*$/g, "").trim();
+      // ★ 2026-06-18: NFC 정규화 — 한글 조합형/분리형 인코딩 통일
+      var rn = String(data[ri][recipientCol] || "").normalize("NFC").replace(/\s*님\s*$/g, "").trim();
       if (!rn) continue;
       if (!nameToRows[rn]) nameToRows[rn] = [];
       nameToRows[rn].push(ri);
@@ -291,6 +303,19 @@ function parseAndMatchInvoiceText(fileId, rawText) {
     var pairs = _pep_parseInvoiceNamePairs_(rawText);
     if (pairs.length === 0)
       return { error: '인식된 쌍 없음. 형식: "송장번호   이름" (각 줄)' };
+    // ★ 2026-06-18: 파싱 결과 이름도 NFC 정규화 + 잔여 "택배사 / " 프리픽스 2차 정리
+    var COURIER_PREFIX_CLEAN = /^(롯데|CJ|한진|우체국|로젠|경동|대신|일양|천일|합동|건영|호남)\s*[\/]\s*/i;
+    for (var nfi = 0; nfi < pairs.length; nfi++) {
+      if (pairs[nfi].name) {
+        pairs[nfi].name = pairs[nfi].name.normalize("NFC")
+          .replace(COURIER_PREFIX_CLEAN, "")  // "롯데 / 북한산..." → "북한산..."
+          .replace(/^[\s\/]+/, "")            // 남은 "/" 또는 공백 정리
+          .trim();
+      }
+    }
+    // ★ 디버그: 파싱 결과 로깅
+    Logger.log("[PARSE_RESULT] " + pairs.length + "쌍: " + pairs.map(function(p) { return p.name + "→" + p.tracking; }).join(", "));
+    Logger.log("[SHEET_NAMES] " + Object.keys(nameToRows).join(", "));
 
     // ── 매칭: 같은 이름+같은 상품 → 그룹화하여 1개 송장으로 일괄 배정
     var matches = [],
@@ -338,11 +363,29 @@ function parseAndMatchInvoiceText(fileId, rawText) {
       var matchedName = p.name;
       var isAppend = false;
 
-      // ── 큐 키 찾기 (완전/부분 일치) ──
+      // ── 큐 키 찾기 (1.완전일치 → 2.공백제거 → 3.부분일치 → 4.유사도) ──
+      // ★ 2026-06-18: 공백 제거 비교 + 유사도 기반 퍼지 매칭 추가
       var queueKey = null;
+      // 1. 완전 일치
       if (rowQueue[p.name] && rowQueue[p.name].length > 0) {
         queueKey = p.name;
-      } else {
+      }
+      // 2. 공백 제거 후 비교 (시트: "등촌청구아파트 관리사무소" → "등촌청구아파트관리사무소")
+      if (!queueKey) {
+        var inputNoSp = p.name.replace(/\s/g, "");
+        for (var nm in rowQueue) {
+          if (rowQueue[nm].length > 0) {
+            var sheetNoSp = nm.replace(/\s/g, "");
+            if (sheetNoSp === inputNoSp) {
+              queueKey = nm;
+              matchedName = nm;
+              break;
+            }
+          }
+        }
+      }
+      // 3. 부분 문자열 포함
+      if (!queueKey) {
         for (var nm in rowQueue) {
           if (rowQueue[nm].length > 0 &&
               (nm.indexOf(p.name) !== -1 || p.name.indexOf(nm) !== -1)) {
@@ -350,6 +393,50 @@ function parseAndMatchInvoiceText(fileId, rawText) {
             matchedName = nm;
             break;
           }
+        }
+      }
+      // 4. 공백 제거 후 부분 포함
+      if (!queueKey) {
+        var inputNoSp2 = p.name.replace(/\s/g, "");
+        for (var nm in rowQueue) {
+          if (rowQueue[nm].length > 0) {
+            var sheetNoSp2 = nm.replace(/\s/g, "");
+            if (sheetNoSp2.indexOf(inputNoSp2) !== -1 || inputNoSp2.indexOf(sheetNoSp2) !== -1) {
+              queueKey = nm;
+              matchedName = nm;
+              break;
+            }
+          }
+        }
+      }
+      // 5. 유사도 매칭 (편집 거리 기반, 이름 길이 대비 오차 허용)
+      if (!queueKey) {
+        var bestKey = null, bestDist = 999, bestName = "";
+        var inputNorm = p.name.replace(/\s/g, "");
+        var fuzzyLog = [];
+        for (var nm in rowQueue) {
+          if (rowQueue[nm].length === 0) continue;
+          var sheetNorm = nm.replace(/\s/g, "");
+          var maxLen = Math.max(inputNorm.length, sheetNorm.length);
+          if (maxLen === 0) continue;
+          var dist = _pep_levenshtein_(inputNorm, sheetNorm);
+          // ★ 최소 2자 오차 허용 (3글자 이름 "번개라"↔"변계라" d=2 대응)
+          // 단, 전체 길이의 50% 이하만 허용 (오탐 방지)
+          var threshold = Math.max(2, Math.floor(maxLen * 0.3));
+          if (dist > Math.ceil(maxLen * 0.5)) threshold = -1; // 50% 초과 불가
+          fuzzyLog.push(inputNorm + "↔" + sheetNorm + " d=" + dist + " t=" + threshold + " q=" + rowQueue[nm].length);
+          if (dist <= threshold && dist < bestDist) {
+            bestDist = dist;
+            bestKey = nm;
+            bestName = nm;
+          }
+        }
+        if (fuzzyLog.length > 0) {
+          Logger.log("[MATCH_FUZZY] " + p.name + " → " + (bestKey || "FAIL") + " | " + fuzzyLog.join(", "));
+        }
+        if (bestKey) {
+          queueKey = bestKey;
+          matchedName = bestName;
         }
       }
 
@@ -1522,6 +1609,13 @@ function partnerPushOrdersToExclusiveForms(silent) {
     }
     Logger.log("[PEP] 업체별 Push\n" + pfxLogLines.join("\n"));
   }
+  // ★ 2026-06-19: 판매현황 단가맵 수집 — 10분 후 자동 실행 (Push 성능 영향 없음)
+  try {
+    _pep_schedulePriceMapCollection_();
+  } catch (ePriceMap) {
+    Logger.log("[PEP] 단가맵 트리거 예약 오류 (무시): " + ePriceMap.message);
+  }
+
   // ★ Google Chat 알림
   try {
     _chat_notifyExclusivePush_(pushed, pushedByPfx, totalSkip, errorLogs);
@@ -4360,15 +4454,50 @@ function _pep_parseInvoiceTableData_(text) {
 }
 
 /**
+ * ★ 2026-06-18: 편집 거리(Levenshtein Distance) — 유사도 기반 매칭용
+ * 두 문자열 사이의 최소 편집 횟수(삽입/삭제/치환) 반환
+ */
+function _pep_levenshtein_(a, b) {
+  if (a === b) return 0;
+  if (!a) return b.length;
+  if (!b) return a.length;
+  var m = a.length, n = b.length;
+  // 메모리 최적화: 2행 배열만 사용
+  var prev = [], curr = [];
+  for (var j = 0; j <= n; j++) prev[j] = j;
+  for (var i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (var j = 1; j <= n; j++) {
+      var cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,      // 삭제
+        curr[j - 1] + 1,   // 삽입
+        prev[j - 1] + cost  // 치환
+      );
+    }
+    var tmp = prev; prev = curr; curr = tmp;
+  }
+  return prev[n];
+}
+
+/**
  * ── 텍스트 파서: (송장번호, 이름) 쌍 추출 ──
  * 10~14자리 숫자 = 송장번호, 한글/영문 텍스트 = 이름
+ * ★ 2026-06-18: 인라인 파싱 + 영문 이름 지원 추가
  */
 function _pep_parseInvoiceNamePairs_(text) {
-  // ★ 택배사명 패턴 — 송장번호 뒤에 붙는 노이즈 제거용
+  // ★ 택배사명 패턴 — 송장번호 앞뒤에 붙는 노이즈 제거용
   var COURIER_NAMES = /[|｜\s]*(롯데택배|CJ대한통운|한진택배|우체국택배|로젠택배|경동택배|대신택배|일양로지스|천일택배|합동택배|건영택배|호남택배|CVSnet|GSpostbox|CJ택배|택배)/gi;
 
-  // ★ 전처리: 각 줄에서 택배사명 제거
-  var preprocessed = text.replace(COURIER_NAMES, "");
+  // ★ 2026-06-18: "택배사명 / " 프리픽스 제거 (거래명세서 운송방법 대응)
+  // "롯데 / ", "CJ / ", "한진 / " 등 → 제거. "롯데약국" 같은 이름은 보호
+  var COURIER_PREFIX = /^(롯데|CJ|한진|우체국|로젠|경동|대신|일양|천일|합동|건영|호남)\s*[\/]\s*/gim;
+
+  // ★ 2026-06-18: 거래명세서 노이즈 줄 제거 (사업자등록번호, 전화, FAX 등)
+  var NOISE_LINE_PATTERNS = /^.*(등록번호|사업자|TEL|FAX|전화|팩스|계좌|은행|입금바랍니다|거래명세서|공급가액|부가세|합계|수량|단가|품목|규격|거래일|상\s*호|업\s*태|종\s*목|주\s*소|성\s*명).*$/gim;
+
+  // ★ 전처리: 택배사명 + 프리픽스 + 거래명세서 노이즈 제거
+  var preprocessed = text.replace(COURIER_NAMES, "").replace(COURIER_PREFIX, "").replace(NOISE_LINE_PATTERNS, "");
 
   // 줄 분리
   var lines = preprocessed
@@ -4389,30 +4518,82 @@ function _pep_parseInvoiceNamePairs_(text) {
   var pairedLines = [];   // 한 줄에 번호+이름 쌍이 있는 경우
 
   // ★ 헬퍼: 하이픈 포함 송장번호에서 순수 숫자 추출 + 10~14자리 검증
+  // ★ 2026-06-18: 사업자등록번호(xxx-xx-xxxxx), 전화번호, FAX 필터 추가
   function _extractTracking(raw) {
-    var digits = raw.replace(/[\-\s]/g, "");
+    var trimmed = raw.trim();
+    // 사업자등록번호 패턴: xxx-xx-xxxxx (3-2-5)
+    if (/^\d{3}-\d{2}-\d{5}$/.test(trimmed)) return null;
+    // 전화번호 패턴: 0xx-xxx-xxxx, 0xx-xxxx-xxxx
+    if (/^0\d{1,2}-\d{3,4}-\d{4}$/.test(trimmed)) return null;
+    var digits = trimmed.replace(/[\-\s]/g, "");
     if (/^\d{10,14}$/.test(digits)) return digits;
     return null;
   }
 
-  // ★ 이름 정규화: "님" 제거, 앞뒤 공백 제거, | 제거
+  // ★ 이름 정규화: "님", "|" 제거 + ★ 2026-06-18: "/" 제거, 앞뒤 공백 제거
   function _cleanName(n) {
-    return n.replace(/[|｜]/g, "").replace(/\s*님\s*/g, "").trim();
+    return n.replace(/[|｜\/]/g, "").replace(/\s*님\s*/g, "").trim();
   }
+
+  // ★ 2026-06-18: 이름 유효성 검사 (한글 + 영문 모두 지원)
+  function _isValidName(n) {
+    if (!n || n.length < 2) return false;
+    if (/^[\d\-\s]+$/.test(n)) return false; // 숫자만
+    // 한글 이름: 2~15글자 (기관명 포함)
+    if (/^[가-힣\s]{2,15}$/.test(n)) return true;
+    // 영문 이름: 2글자 이상 영문 (한글+영문 혼합 불가)
+    if (/^[A-Za-z\s]{2,30}$/.test(n)) return true;
+    // 한글+영문+숫자 혼합 (기관명: "북한산1단지" 등)
+    if (/[가-힣]/.test(n) && n.length >= 2 && n.length <= 20) return true;
+    return false;
+  }
+
+  // ★ 2026-06-18: 노이즈 필터 제거 — 주소 입력 없이 글자=이름, 숫자=송장번호로 단순 인식
 
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
+
+    // ★ 0단계: 인라인 파싱 — 한 줄에 "이름1 번호1 이름2 번호2 ..." 형태
+    // 거래명세서 운송방법 섹션: "정현희 267096146273 이선미 267096146284 ..."
+    var inlineMatches = line.match(/[A-Za-z가-힣\s]{2,30}\s+\d{10,14}/g);
+    if (inlineMatches && inlineMatches.length >= 2) {
+      // 한 줄에서 2쌍 이상 발견 → 인라인 모드로 전환
+      for (var im = 0; im < inlineMatches.length; im++) {
+        var imParts = inlineMatches[im].trim().match(/^(.+?)\s+(\d{10,14})$/);
+        if (imParts) {
+          var imName = _cleanName(imParts[1]);
+          var imTrack = _extractTracking(imParts[2]);
+          if (imTrack && _isValidName(imName)) {
+            pairedLines.push({ tracking: imTrack, name: imName });
+          } else if (imTrack) {
+            trackingLines.push(imTrack);
+          }
+        }
+      }
+      // 인라인에서 못 잡은 단독 송장번호도 추출
+      var remaining = line;
+      for (var rm = 0; rm < inlineMatches.length; rm++) {
+        remaining = remaining.replace(inlineMatches[rm], " ");
+      }
+      var soloNums = remaining.match(/\d{10,14}/g);
+      if (soloNums) {
+        for (var sn = 0; sn < soloNums.length; sn++) {
+          var snTrack = _extractTracking(soloNums[sn]);
+          if (snTrack) trackingLines.push(snTrack);
+        }
+      }
+      continue;
+    }
 
     // ① 한 줄에 "송장번호  이름" 형태
     var m1 = line.match(/^([\d\-]{10,20})\s{1,}(.+)$/);
     if (m1) {
       var t1 = _extractTracking(m1[1]);
       var name1 = _cleanName(m1[2]);
-      if (t1 && name1.length >= 2) {
+      if (t1 && _isValidName(name1)) {
         pairedLines.push({ tracking: t1, name: name1 });
         continue;
       } else if (t1) {
-        // 이름 부분이 유효하지 않음 (예: 빈값, 1글자) → 번호만 저장
         trackingLines.push(t1);
         continue;
       }
@@ -4423,7 +4604,7 @@ function _pep_parseInvoiceNamePairs_(text) {
     if (m2) {
       var t2 = _extractTracking(m2[2]);
       var name2 = _cleanName(m2[1]);
-      if (t2 && name2.length >= 2 && !/^[\d\-]+$/.test(name2)) {
+      if (t2 && _isValidName(name2)) {
         pairedLines.push({ tracking: t2, name: name2 });
         continue;
       } else if (t2) {
@@ -4443,8 +4624,8 @@ function _pep_parseInvoiceNamePairs_(text) {
     var nameCandidates = line.split(/\s{2,}/);
     for (var ni = 0; ni < nameCandidates.length; ni++) {
       var nc = _cleanName(nameCandidates[ni]);
-      // 한글 이름 패턴: 2~5글자 한글 (또는 한글+공백 조합)
-      if (nc.length >= 2 && /^[가-힣\s]{2,10}$/.test(nc)) {
+      // ★ 2026-06-18: 한글 + 영문 이름 모두 인식
+      if (_isValidName(nc)) {
         nameLines.push(nc);
       }
     }
@@ -4476,7 +4657,7 @@ function _pep_parseInvoiceNamePairs_(text) {
         continue;
       }
       var fName = _cleanName(fLine);
-      if (fName.length >= 2 && !/^[\d\-]+$/.test(fName)) {
+      if (_isValidName(fName)) {
         if (pendingTracking !== null) {
           pairs.push({ tracking: pendingTracking, name: fName });
           pendingTracking = null;
@@ -5250,15 +5431,323 @@ function _pep_archiveLozenTemp_() {
 }
 
 // ═════════════════════════════════════════════
+//  ★ 판매현황 단가맵 (Push 시 자동 누적)
+//  대리공급 Push 시 세트분리 시트의 판매현황 탭을 읽어
+//  허브 '판매현황_단가맵' 탭에 누적 저장
+// ═════════════════════════════════════════════
+
+var _PEP_PRICE_MAP_TAB_ = "판매현황_단가맵";
+// ★ 2026-06-20: 6열→9열 확장 (수량, 품목명, 주소 추가)
+var _PEP_PRICE_MAP_HEADERS_ = [
+  "주문번호", "품목코드", "판매단가", "수취인", "전화번호",
+  "수량", "품목명", "주소", "수집일시"
+];
+
+/**
+ * ★ 단가맵 수집 10분 후 예약 (Push 완료 후 지연 실행)
+ * 원샷 트리거로 Push 업무 시간에 영향 없음
+ */
+function _pep_schedulePriceMapCollection_() {
+  // 기존 대기 중인 트리거 제거 (중복 방지)
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "_pep_collectPriceMapDelayed_") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  // 10분 후 실행
+  ScriptApp.newTrigger("_pep_collectPriceMapDelayed_")
+    .timeBased()
+    .after(10 * 60 * 1000) // 10분
+    .create();
+  Logger.log("[PRICE_MAP] 단가맵 수집 10분 후 예약됨");
+}
+
+/**
+ * ★ 단가맵 수집 지연 실행 (10분 후 트리거 핸들러)
+ * 세트분리 시트를 열어 판매현황 탭 데이터를 읽고 단가맵에 저장
+ */
+function _pep_collectPriceMapDelayed_() {
+  try {
+    // ★ 트리거 자동 정리 (1회용)
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === "_pep_collectPriceMapDelayed_") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+
+    var srcSS = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
+    var salesTab = srcSS.getSheetByName("판매현황");
+    if (salesTab && salesTab.getLastRow() >= 2) {
+      _pep_appendSalesPriceMap_(salesTab);
+    } else {
+      Logger.log("[PRICE_MAP] 판매현황 탭 데이터 없음 (스킵)");
+    }
+  } catch (e) {
+    Logger.log("[PRICE_MAP] 지연 수집 오류: " + e.message);
+  }
+}
+
+/**
+ * ★ 판매현황 탭에서 단가 정보를 추출하여 허브에 누적 저장
+ * ★ 2026-06-20: 헤더 자동 감지 + 9열 확장 (수량, 품목명, 주소 추가)
+ * @param {Sheet} salesTab 세트분리 시트의 판매현황 탭
+ */
+function _pep_appendSalesPriceMap_(salesTab) {
+  try {
+    if (!salesTab || salesTab.getLastRow() < 2) return;
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var nowStr = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm");
+
+    // ★ 탭을 먼저 생성/확인 (데이터 처리 전)
+    var mapTab = ss.getSheetByName(_PEP_PRICE_MAP_TAB_);
+    if (!mapTab) {
+      mapTab = ss.insertSheet(_PEP_PRICE_MAP_TAB_);
+      mapTab.getRange(1, 1, 1, _PEP_PRICE_MAP_HEADERS_.length)
+        .setValues([_PEP_PRICE_MAP_HEADERS_]);
+      mapTab.getRange("1:1")
+        .setBackground("#1a237e")
+        .setFontColor("white")
+        .setFontWeight("bold");
+      mapTab.setFrozenRows(1);
+      mapTab.getRange("E:E").setNumberFormat("@");
+      Logger.log("[PRICE_MAP] 판매현황_단가맵 탭 신규 생성 (9열)");
+    } else {
+      // 기존 탭이 6열이면 헤더 갱신
+      var curHeaders = mapTab.getRange(1, 1, 1, mapTab.getLastColumn()).getValues()[0];
+      if (curHeaders.length < _PEP_PRICE_MAP_HEADERS_.length) {
+        mapTab.getRange(1, 1, 1, _PEP_PRICE_MAP_HEADERS_.length)
+          .setValues([_PEP_PRICE_MAP_HEADERS_]);
+        Logger.log("[PRICE_MAP] 헤더 갱신: " + curHeaders.length + "열 → " + _PEP_PRICE_MAP_HEADERS_.length + "열");
+      }
+    }
+
+    var sLr = salesTab.getLastRow();
+    var sLc = Math.max(salesTab.getLastColumn(), 30);
+
+    // ★ 판매현황 구조: 1행=제목(회사명), 2행=헤더, 3행~=데이터
+    // 1행이 제목행인지 자동 감지 (빈 셀이 많으면 제목행)
+    var row1 = salesTab.getRange(1, 1, 1, sLc).getValues()[0];
+    var row2 = salesTab.getRange(2, 1, 1, sLc).getValues()[0];
+    var row1NonEmpty = 0, row2NonEmpty = 0;
+    for (var ri = 0; ri < row1.length; ri++) {
+      if (String(row1[ri] || "").trim()) row1NonEmpty++;
+      if (String(row2[ri] || "").trim()) row2NonEmpty++;
+    }
+
+    var headerRow, dataStartRow;
+    if (row2NonEmpty > row1NonEmpty && row2NonEmpty >= 3) {
+      // 2행이 헤더 (1행은 제목)
+      headerRow = 2;
+      dataStartRow = 3;
+      Logger.log("[PRICE_MAP] 헤더 감지: 2행 (1행=제목, 2행 비빈셀=" + row2NonEmpty + " > 1행=" + row1NonEmpty + ")");
+    } else {
+      // 1행이 헤더
+      headerRow = 1;
+      dataStartRow = 2;
+    }
+
+    var sHeader = salesTab.getRange(headerRow, 1, 1, sLc).getValues()[0];
+    if (sLr < dataStartRow) {
+      Logger.log("[PRICE_MAP] 데이터 행 없음 (헤더행=" + headerRow + ", 마지막행=" + sLr + ")");
+      return;
+    }
+    var sData = salesTab.getRange(dataStartRow, 1, sLr - dataStartRow + 1, sLc).getValues();
+
+    // ★ 헤더에서 열 인덱스 자동 감지
+    // 판매현황 실제 헤더: 순번, 일자-No., 품목코드, 품목명, 수량, 전화, 모바일, 주소1, 합계, 거래처명, ...
+    var colMap = { orderNo: -1, itemCode: -1, price: -1, recipient: -1,
+                   phone: -1, mobile: -1, qty: -1, itemName: -1, addr: -1 };
+    for (var ci = 0; ci < sHeader.length; ci++) {
+      var h = String(sHeader[ci] || "").replace(/\s/g, "");
+      // 주문번호: 일자-No., 주문번호, 사방넷주문번호, 고유ID
+      if (h.indexOf("주문번호") !== -1 || h.indexOf("사방넷주문번호") !== -1 ||
+          h.indexOf("고유ID") !== -1 || h === "일자-No." || h.indexOf("일자-No") !== -1) {
+        if (colMap.orderNo === -1) colMap.orderNo = ci;
+      }
+      // 품목코드
+      if (h.indexOf("품목코드") !== -1 || h.indexOf("이카운트코드") !== -1 || h.indexOf("물품코드") !== -1) {
+        if (colMap.itemCode === -1) colMap.itemCode = ci;
+      }
+      // 단가: 합계, 판매단가, 판매가, 단가, 금액
+      if (h === "합계" || h.indexOf("판매단가") !== -1 || h.indexOf("판매가") !== -1 ||
+          h.indexOf("단가") !== -1 || h === "금액") {
+        if (colMap.price === -1) colMap.price = ci;
+      }
+      // 수취인: 주문자명, 수취인, 명
+      if (h.indexOf("수취인") !== -1 || h.indexOf("주문자명") !== -1 || (h === "명" && ci < 15)) {
+        if (colMap.recipient === -1) colMap.recipient = ci;
+      }
+      // 전화
+      if (h.indexOf("전화") !== -1 && h.indexOf("보내는") === -1) {
+        if (colMap.phone === -1) colMap.phone = ci;
+      }
+      // 모바일/휴대폰
+      if (h.indexOf("휴대폰") !== -1 || h.indexOf("모바일") !== -1 || h.indexOf("핸드폰") !== -1) {
+        if (colMap.mobile === -1) colMap.mobile = ci;
+      }
+      // 수량
+      if (h === "수량" || h.indexOf("주문수량") !== -1) {
+        if (colMap.qty === -1) colMap.qty = ci;
+      }
+      if (h.indexOf("품목명") !== -1 || h.indexOf("물품명") !== -1 || h.indexOf("상품명") !== -1) {
+        if (colMap.itemName === -1) colMap.itemName = ci;
+      }
+      if (h.indexOf("주소") !== -1 && h.indexOf("보내는") === -1) {
+        if (colMap.addr === -1) colMap.addr = ci;
+      }
+    }
+    Logger.log("[PRICE_MAP] 판매현황 열 감지: " + JSON.stringify(colMap) +
+      " 헤더샘플: [" + sHeader.slice(0, 10).join(", ") + "] (행수=" + sData.length + ")");
+
+    if (colMap.price === -1) {
+      // ★ throw로 변경 — 수동 호출 시 사용자에게 알림
+      throw new Error("판매현황 헤더에서 '단가/판매단가/판매가' 열을 찾지 못함.\n" +
+        "헤더 1~10열: " + sHeader.slice(0, 10).join(", "));
+    }
+
+    var newRows = [];
+    for (var i = 0; i < sData.length; i++) {
+      var orderNo = colMap.orderNo >= 0 ? String(sData[i][colMap.orderNo] || "").trim() : "";
+      var itemCode = colMap.itemCode >= 0 ? String(sData[i][colMap.itemCode] || "").trim() : "";
+      var price = sData[i][colMap.price];
+      if (!orderNo && !itemCode) continue;
+      if (!price && price !== 0) continue;
+
+      var phone = "";
+      if (colMap.phone >= 0) phone = String(sData[i][colMap.phone] || "").trim();
+      if (!phone && colMap.mobile >= 0) phone = String(sData[i][colMap.mobile] || "").trim();
+
+      newRows.push([
+        orderNo,
+        itemCode,
+        price,
+        colMap.recipient >= 0 ? String(sData[i][colMap.recipient] || "").trim() : "",
+        phone,
+        colMap.qty >= 0 ? (Number(sData[i][colMap.qty]) || 1) : 1,
+        colMap.itemName >= 0 ? String(sData[i][colMap.itemName] || "").trim() : "",
+        colMap.addr >= 0 ? String(sData[i][colMap.addr] || "").trim() : "",
+        nowStr
+      ]);
+    }
+
+    if (newRows.length === 0) return;
+
+    // ★ 중복 방지: 기존 맵에서 (주문번호+품목명) 세트 구축
+    var existSet = {};
+    var mapLr = mapTab.getLastRow();
+    if (mapLr >= 2) {
+      var colCnt = Math.max(mapTab.getLastColumn(), 7);
+      var existData = mapTab.getRange(2, 1, mapLr - 1, colCnt).getValues();
+      for (var ei = 0; ei < existData.length; ei++) {
+        // 주문번호(A) + 품목명(G) 복합키
+        var eKey = String(existData[ei][0] || "").trim() + "|" +
+                   String(existData[ei][6] || "").trim();
+        existSet[eKey] = true;
+      }
+    }
+
+    // 중복 제거 후 신규 행만 추가
+    var filtered = [];
+    for (var fi = 0; fi < newRows.length; fi++) {
+      // newRows: [주문번호(0), 품목코드(1), 단가(2), 수취인(3), 전화(4), 수량(5), 품목명(6), ...]
+      var fKey = newRows[fi][0] + "|" + newRows[fi][6]; // 주문번호 + 품목명
+      if (!existSet[fKey]) {
+        filtered.push(newRows[fi]);
+        existSet[fKey] = true;
+      }
+    }
+
+    if (filtered.length > 0) {
+      var appendRow = mapTab.getLastRow() + 1;
+      if (appendRow < 2) appendRow = 2;
+      mapTab.getRange(appendRow, 1, filtered.length, _PEP_PRICE_MAP_HEADERS_.length)
+        .setValues(filtered);
+      Logger.log("[PRICE_MAP] 판매현황_단가맵 누적: " + filtered.length + "건 (중복제거: " +
+        (newRows.length - filtered.length) + "건)");
+    }
+  } catch (e) {
+    Logger.log("[PRICE_MAP] 단가맵 저장 오류 (무시): " + e.message);
+    // ★ Push 동작에 영향 주지 않음 — 에러 무시
+  }
+}
+
+/**
+ * ★ 판매현황_단가맵에서 { key: 단가 } 맵 구축
+ * ★ 2026-06-20: 9열 확장 대응 (하위 호환)
+ * @return {Object} priceMap - key: "주문번호|품목코드" 또는 "수취인|전화|품목코드"
+ */
+function _buildSalesPriceMap_() {
+  var priceMap = {};
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var mapTab = ss.getSheetByName(_PEP_PRICE_MAP_TAB_);
+    if (!mapTab || mapTab.getLastRow() < 2) return priceMap;
+
+    var colCount = Math.max(mapTab.getLastColumn(), 7); // 최소 7열 (품목명 포함)
+    var data = mapTab.getRange(2, 1, mapTab.getLastRow() - 1, colCount).getValues();
+    for (var i = 0; i < data.length; i++) {
+      var orderNo = String(data[i][0] || "").trim();
+      var itemCode = String(data[i][1] || "").trim();
+      var price = data[i][2];
+      var recipient = String(data[i][3] || "").trim();
+      var phone = String(data[i][4] || "").replace(/[^0-9]/g, "");
+      var itemName = colCount > 6 ? String(data[i][6] || "").trim() : ""; // G열: 품목명
+
+      // ★ 1순위 키: 전화앞7자리 + 품목명
+      // (판매현황=전체번호, 로젠=뒤4자리마스킹 → 앞7자리 공통)
+      var phone7 = phone.substring(0, 7);
+      if (phone7.length >= 7 && itemName) {
+        var phoneKey = "PH7:" + phone7 + "|" + itemName;
+        if (!priceMap[phoneKey]) priceMap[phoneKey] = price;
+      }
+      // 2순위 키: 수취인 + 품목명
+      if (recipient && itemName) {
+        var nameKey = recipient + "|" + itemName;
+        if (!priceMap[nameKey]) priceMap[nameKey] = price;
+      }
+      // 3순위 키: 주문번호 + 품목명 (형식 일치 시)
+      if (orderNo && itemName) {
+        var ordNameKey = orderNo + "|" + itemName;
+        if (!priceMap[ordNameKey]) priceMap[ordNameKey] = price;
+      }
+    }
+    Logger.log("[PRICE_MAP] 단가맵 로드: " + Object.keys(priceMap).length + "개 키");
+  } catch (e) {
+    Logger.log("[PRICE_MAP] 단가맵 읽기 오류: " + e.message);
+  }
+  return priceMap;
+}
+
+/**
+ * ★ 판매현황_단가맵 초기화 (일일마감 완료 후 호출)
+ */
+function _clearSalesPriceMap_() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var mapTab = ss.getSheetByName(_PEP_PRICE_MAP_TAB_);
+    if (mapTab && mapTab.getLastRow() >= 2) {
+      mapTab.getRange(2, 1, mapTab.getLastRow() - 1, mapTab.getLastColumn()).clearContent();
+      Logger.log("[PRICE_MAP] 판매현황_단가맵 초기화 완료");
+    }
+  } catch (e) {
+    Logger.log("[PRICE_MAP] 초기화 오류: " + e.message);
+  }
+}
+
+
+// ═════════════════════════════════════════════
 //  ★ 통합 일일 마감 시스템
-//  3개 소스를 공통 포맷으로 정규화 → 일일마감_(날짜) 탭
+//  4개 소스를 공통 포맷으로 정규화 → 일일마감_(날짜) 시트
 // ═════════════════════════════════════════════
 
 var _UNIFIED_ARCHIVE_PREFIX_ = "일일마감_";
 var _UNIFIED_HEADER_BG_ = "#1a237e";
 
 var _UNIFIED_HEADERS_ = [
-  "출처",         // A: 로젠 / 대리공급 / 사방넷
+  "출처",         // A: 로젠 / 대리공급
   "기록일시",     // B
   "주문번호",     // C: 검색 핵심 키
   "운송장번호",   // D: 검색 핵심 키
@@ -5273,17 +5762,21 @@ var _UNIFIED_HEADERS_ = [
   "업체/판매처",  // M
   "운임/배송비",  // N
   "비고",         // O
+  "발주업체",     // P: 협력업체명
+  "주문유형",     // Q: 로젠/대리공급
+  "단가",         // R: 플랫폼별 실판매단가
+  "정산금액",     // S: 단가 × 수량
 ];
 
 /**
- * 통합 일일 마감: 2개 소스(로젠+대리공급) → 정규화 → 일일마감_(날짜) 탭
+ * 통합 일일 마감: 3개 소스(로젠+대리공급+대리판매) → 정규화 → 일일마감_(날짜) 시트
  * ★ 사방넷_송장매칭은 대리공급_임시기록의 부분집합이므로 제외 (중복 방지)
- * @return {Object} { archived, tabName, detail: {lozen, temp}, error }
+ * @return {Object} { archived, tabName, detail: {lozen, temp, hub}, error }
  */
 function _pep_archiveUnifiedDaily_() {
   var result = {
     archived: 0, tabName: "", error: "",
-    detail: { lozen: 0, temp: 0 }
+    detail: { lozen: 0, temp: 0, hub: 0 }
   };
 
   try {
@@ -5291,14 +5784,131 @@ function _pep_archiveUnifiedDaily_() {
     var nowStr = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm");
     var allRows = [];
 
+    // ★ 로젠 단가 매핑용 — 판매현황 직접 읽기 + 단가맵 폴백
+    var priceMap = {};
+    try {
+      // 1차: 기존 판매현황_단가맵 탭에서 로드
+      priceMap = _buildSalesPriceMap_();
+      Logger.log("[UNIFIED] 단가맵(탭) 로드: " + Object.keys(priceMap).length + "개 키");
+
+      // 2차: 단가맵이 비어있으면 판매현황 탭에서 직접 읽기
+      if (Object.keys(priceMap).length === 0) {
+        Logger.log("[UNIFIED] 단가맵 비어있음 → 판매현황 직접 읽기 시도");
+        try {
+          var srcSS = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
+          var salesTab = srcSS.getSheetByName("판매현황");
+          if (salesTab && salesTab.getLastRow() >= 2) {
+            var sLr = salesTab.getLastRow();
+            var sLc = Math.max(salesTab.getLastColumn(), 30);
+
+            // ★ 헤더행 자동 감지 (1행=제목, 2행=헤더)
+            var r1 = salesTab.getRange(1, 1, 1, sLc).getValues()[0];
+            var r2 = salesTab.getRange(2, 1, 1, sLc).getValues()[0];
+            var r1cnt = 0, r2cnt = 0;
+            for (var rx = 0; rx < r1.length; rx++) {
+              if (String(r1[rx] || "").trim()) r1cnt++;
+              if (String(r2[rx] || "").trim()) r2cnt++;
+            }
+            var hdrRow = (r2cnt > r1cnt && r2cnt >= 3) ? 2 : 1;
+            var dtaRow = hdrRow + 1;
+
+            var sHeader = salesTab.getRange(hdrRow, 1, 1, sLc).getValues()[0];
+            if (sLr < dtaRow) {
+              Logger.log("[UNIFIED] 판매현황 데이터 없음");
+            } else {
+              var sData = salesTab.getRange(dtaRow, 1, sLr - dtaRow + 1, sLc).getValues();
+
+              // ★ 헤더에서 열 인덱스 자동 감지
+              var colMap = { orderNo: -1, itemCode: -1, price: -1, recipient: -1, phone: -1, mobile: -1 };
+              for (var ci = 0; ci < sHeader.length; ci++) {
+                var h = String(sHeader[ci] || "").replace(/\s/g, "");
+                if (h.indexOf("주문번호") !== -1 || h.indexOf("사방넷주문번호") !== -1 ||
+                    h.indexOf("고유ID") !== -1 || h === "일자-No." || h.indexOf("일자-No") !== -1) {
+                  if (colMap.orderNo === -1) colMap.orderNo = ci;
+                }
+                if (h.indexOf("품목코드") !== -1 || h.indexOf("이카운트코드") !== -1 || h.indexOf("물품코드") !== -1) {
+                  if (colMap.itemCode === -1) colMap.itemCode = ci;
+                }
+                if (h === "합계" || h.indexOf("판매단가") !== -1 || h.indexOf("판매가") !== -1 ||
+                    h.indexOf("단가") !== -1 || h === "금액") {
+                  if (colMap.price === -1) colMap.price = ci;
+                }
+                if (h.indexOf("수취인") !== -1 || h.indexOf("주문자명") !== -1 || (h === "명" && ci < 15)) {
+                  if (colMap.recipient === -1) colMap.recipient = ci;
+                }
+                if (h.indexOf("전화") !== -1 && h.indexOf("보내는") === -1) {
+                  if (colMap.phone === -1) colMap.phone = ci;
+                }
+                if (h.indexOf("휴대폰") !== -1 || h.indexOf("모바일") !== -1 || h.indexOf("핸드폰") !== -1) {
+                  if (colMap.mobile === -1) colMap.mobile = ci;
+                }
+              }
+              Logger.log("[UNIFIED] 판매현황 열 감지: " + JSON.stringify(colMap) +
+                " (헤더행=" + hdrRow + ", 행수=" + sData.length + ")");
+
+              if (colMap.price !== -1) {
+                var directCount = 0;
+                for (var si = 0; si < sData.length; si++) {
+                  var sOrd = colMap.orderNo >= 0 ? String(sData[si][colMap.orderNo] || "").trim() : "";
+                  var sItem = colMap.itemCode >= 0 ? String(sData[si][colMap.itemCode] || "").trim() : "";
+                  var sPrice = sData[si][colMap.price];
+                  if (!sPrice && sPrice !== 0) continue;
+                  var sRecip = colMap.recipient >= 0 ? String(sData[si][colMap.recipient] || "").trim() : "";
+                  var sPhone = "";
+                  if (colMap.phone >= 0) sPhone = String(sData[si][colMap.phone] || "").replace(/[^0-9]/g, "");
+                  if (!sPhone && colMap.mobile >= 0) sPhone = String(sData[si][colMap.mobile] || "").replace(/[^0-9]/g, "");
+
+                  // ★ 1순위: 전화앞7자리 + 품목명
+                  var sItemName = colMap.itemName >= 0 ? String(sData[si][colMap.itemName] || "").trim() : "";
+                  var sPhone7 = sPhone.substring(0, 7);
+                  if (sPhone7.length >= 7 && sItemName) {
+                    var sPhoneKey = "PH7:" + sPhone7 + "|" + sItemName;
+                    if (!priceMap[sPhoneKey]) priceMap[sPhoneKey] = sPrice;
+                    directCount++;
+                  }
+                  // 2순위: 수취인 + 품목명
+                  if (sRecip && sItemName) {
+                    var nameK = sRecip + "|" + sItemName;
+                    if (!priceMap[nameK]) priceMap[nameK] = sPrice;
+                  }
+                  // 3순위: 주문번호 + 품목명
+                  if (sOrd && sItemName) {
+                    var ordNameK = sOrd + "|" + sItemName;
+                    if (!priceMap[ordNameK]) priceMap[ordNameK] = sPrice;
+                  }
+                }
+                Logger.log("[UNIFIED] 판매현황 직접 읽기 완료: " + directCount + "건 → 총 " + Object.keys(priceMap).length + "개 키");
+              } else {
+                Logger.log("[UNIFIED] 판매현황 헤더에서 '단가/합계' 열을 찾지 못함");
+              }
+            }
+          } else {
+            Logger.log("[UNIFIED] 판매현황 탭 데이터 없음 (초기화 후?)");
+          }
+        } catch (eDirect) {
+          Logger.log("[UNIFIED] 판매현황 직접 읽기 오류 (무시): " + eDirect.message);
+        }
+      }
+    } catch (ePM) {
+      Logger.log("[UNIFIED] 단가맵 로드 오류 (무시): " + ePM.message);
+    }
+
     // ── ① 입력_로젠주문실적 (외부 시트에서 직접 읽기, 로젠_임시기록 중간단계 제거) ──
     try {
+      Logger.log("[UNIFIED_DEBUG] ① 로젠 수집 시작 — ID=" + _PT_INVOICE_SHEET_ID + " GID=" + _PT_PRIMARY_INVOICE_GID);
       var invSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
+      Logger.log("[UNIFIED_DEBUG] 시트 열기 성공: " + invSS.getName());
       var lozenSrcTab = _pt_getSheetByGid(invSS, _PT_PRIMARY_INVOICE_GID);
+      Logger.log("[UNIFIED_DEBUG] 탭 찾기 결과: " + (lozenSrcTab ? lozenSrcTab.getName() + " (lastRow=" + lozenSrcTab.getLastRow() + ")" : "NULL"));
       if (lozenSrcTab && lozenSrcTab.getLastRow() >= 2) {
         var lLr = lozenSrcTab.getLastRow();
         var lLc = Math.max(lozenSrcTab.getLastColumn(), 28);
         var lData = lozenSrcTab.getRange(2, 1, lLr - 1, lLc).getValues();
+        Logger.log("[UNIFIED_DEBUG] 로젠 데이터 행수=" + lData.length + " 열수=" + lLc);
+        // ★ 디버그: 처음 3행의 E,F열 값 출력
+        for (var dbg = 0; dbg < Math.min(lData.length, 3); dbg++) {
+          Logger.log("[UNIFIED_DEBUG] 행" + (dbg+2) + ": E(주문번호)=[" + String(lData[dbg][4] || "") + "] F(운송장번호)=[" + String(lData[dbg][5] || "") + "]");
+        }
 
         // ★ 중복 방지: 이미 오늘 일일마감 시트에 기록된 운송장번호 스킵
         var existInvSet = {};
@@ -5306,6 +5916,7 @@ function _pep_archiveUnifiedDaily_() {
         var existArchFileName = _UNIFIED_ARCHIVE_PREFIX_ + "(" + todayStr + ")";
         try {
           var existArchSs = _unified_findExistingArchiveSs_(existArchFileName);
+          Logger.log("[UNIFIED_DEBUG] 기존 아카이브 시트: " + (existArchSs ? existArchSs.getName() : "없음 (신규)"));
           if (existArchSs) {
             var existArchTab = existArchSs.getSheetByName("일일마감") || existArchSs.getSheets()[0];
             if (existArchTab && existArchTab.getLastRow() >= 2) {
@@ -5314,19 +5925,71 @@ function _pep_archiveUnifiedDaily_() {
                 var eInv = String(existD[ei][0] || "").trim();
                 if (eInv) existInvSet[eInv] = true;
               }
+              Logger.log("[UNIFIED_DEBUG] 기존 아카이브 중복 Set 크기=" + Object.keys(existInvSet).length);
             }
           }
         } catch (eExist) {
           Logger.log("[UNIFIED] 기존 아카이브 시트 중복체크 오류 (무시): " + eExist.message);
         }
 
+        var _skipEmpty_ = 0, _skipDup_ = 0, _matchCount_ = 0;
+        // ★ 진단: priceMap 샘플 키 출력
+        var pmKeys = Object.keys(priceMap);
+        Logger.log("[MATCH_DEBUG] priceMap 키 수=" + pmKeys.length +
+          " 샘플(3개): " + pmKeys.slice(0, 3).join(" | "));
+
         for (var li = 0; li < lData.length; li++) {
           var row = lData[li];
           // 원본 37열 직접 읽기 (offset 없음)
-          var ordNo = String(row[4] || "").trim();   // E열: 주문번호
+          var ordNo = String(row[4] || "").trim();   // E열: 주문번호 (로젠 형식)
           var invNo = String(row[5] || "").trim();   // F열: 운송장번호
-          if (!ordNo && !invNo) continue;
-          if (invNo && existInvSet[invNo]) continue; // 이미 기록된 운송장 스킵
+          if (!ordNo && !invNo) { _skipEmpty_++; continue; }
+          if (invNo && existInvSet[invNo]) { _skipDup_++; continue; }
+          // ★ 단가맵에서 단가 조회
+          var itemCode = String(row[21] || "").trim();  // V열: 품목코드 (비어있을 수 있음)
+          var lItemName = String(row[10] || "").trim(); // K열: 품목명
+          var lRecipient = String(row[9] || "").trim(); // J열: 수취인
+          // 전화번호: M열(전화) 또는 N열(휴대폰), *와 -를 제거하면 앞 7자리만 남음
+          var lPhoneRaw = String(row[12] || row[13] || "").replace(/[^0-9]/g, "");
+          var lPhone7 = lPhoneRaw.substring(0, 7);
+          var lQty = Number(row[14]) || 1;              // O열: 수량
+          var lPrice = "";
+          var lTotal = "";
+          // ★ 1순위: 전화앞7자리 + 품목명 (가장 확실 — 마스킹 영향 없음)
+          if (lPhone7.length >= 7 && lItemName) {
+            var phoneKey = "PH7:" + lPhone7 + "|" + lItemName;
+            if (priceMap[phoneKey] !== undefined) {
+              lPrice = priceMap[phoneKey];
+            }
+          }
+          // 2순위: 수취인 + 품목명
+          if ((!lPrice && lPrice !== 0) && lRecipient && lItemName) {
+            var nameKey = lRecipient + "|" + lItemName;
+            if (priceMap[nameKey] !== undefined) {
+              lPrice = priceMap[nameKey];
+            }
+          }
+          // 3순위: 주문번호 + 품목명 (형식 일치 시)
+          if ((!lPrice && lPrice !== 0) && ordNo && lItemName) {
+            var ordNameKey = ordNo + "|" + lItemName;
+            if (priceMap[ordNameKey] !== undefined) {
+              lPrice = priceMap[ordNameKey];
+            }
+          }
+
+          // ★ 진단: 처음 5건 상세 로그
+          if (li < 5) {
+            Logger.log("[MATCH_DEBUG] 로젠[" + li + "] phone7=[" + lPhone7 +
+              "] 품목명=[" + lItemName.substring(0, 20) +
+              "] 수취인=[" + lRecipient +
+              "] → PH7키=[PH7:" + lPhone7 + "|" + lItemName.substring(0, 20) +
+              "] → 매칭=" + (lPrice !== "" ? "✅" + lPrice : "❌"));
+          }
+
+          if (lPrice !== "" && lPrice !== null) {
+            lTotal = Number(lPrice) * lQty;
+            _matchCount_++;
+          }
           allRows.push([
             "로젠",
             nowStr,
@@ -5336,21 +5999,28 @@ function _pep_archiveUnifiedDaily_() {
             String(row[12] || ""),          // 전화(M)
             String(row[13] || ""),          // 휴대폰(N)
             String(row[11] || "").trim(),  // 주소(L)
-            String(row[21] || "").trim(),  // 품목코드(V)
-            String(row[22] || "").trim(),  // 품목명(W) — 실제 데이터 위치
-            row[14] || "",                   // 수량(O)
+            itemCode,                        // 품목코드(V)
+            String(row[10] || "").trim(),  // 품목명(K)
+            lQty,                            // 수량(O)
             String(row[26] || "").trim(),  // 배송메시지(AA)
             String(row[27] || "").trim(),  // 송하인명(AB)
             "",                              // 운임
             "",                              // 비고
+            String(row[27] || "").trim(),  // 발주업체 = 송하인명
+            "로젠",                          // 주문유형
+            lPrice,                          // 단가 (판매현황_단가맵)
+            lTotal,                          // 정산금액 = 단가 × 수량
           ]);
           if (invNo) existInvSet[invNo] = true;
           result.detail.lozen++;
         }
+        Logger.log("[UNIFIED_DEBUG] 로젠 결과: 수집=" + result.detail.lozen +
+          " 단가매칭=" + _matchCount_ + "/" + result.detail.lozen +
+          " 빈행스킵=" + _skipEmpty_ + " 중복스킵=" + _skipDup_);
         // ★ 원본(입력_로젠주문실적)은 삭제하지 않음 (외부 시트)
       }
     } catch (eL) {
-      Logger.log("[UNIFIED] 로젠(입력_로젠주문실적) 읽기 오류: " + eL.message);
+      Logger.log("[UNIFIED] 로젠(입력_로젠주문실적) 읽기 오류: " + eL.message + "\n" + eL.stack);
     }
 
     // ── ② 대리공급_임시기록 (송장번호 있는 행만) ──
@@ -5364,6 +6034,10 @@ function _pep_archiveUnifiedDaily_() {
           var tInv = String(tData[ti][_PO_TEMP_INV_COL_] || "").trim(); // X열: 송장번호
           if (!tInv) continue; // 송장 없는 행은 마감 대상 아님 (잔류)
           var tUid = String(tData[ti][_PO_TEMP_UID_COL_] || "").trim(); // P열: 주문번호
+          // ★ 대리공급 단가: L(11)=합계 (정산금액), G(6)=수량
+          var tTotal = Number(tData[ti][11]) || 0;  // L열: 합계=정산금액
+          var tQty = Number(tData[ti][6]) || 1;     // G열: 수량
+          var tPrice = tQty > 0 ? Math.round(tTotal / tQty) : tTotal; // 단가 = 합계 ÷ 수량
           allRows.push([
             "대리공급",
             nowStr,
@@ -5375,11 +6049,15 @@ function _pep_archiveUnifiedDaily_() {
             String(tData[ti][9] || "").trim(),  // 주소(J)
             String(tData[ti][3] || "").trim(),  // 품목코드(D)
             String(tData[ti][4] || "").trim(),  // 품목명(E)
-            tData[ti][6] || "",                  // 수량(G)
+            tQty,                                // 수량(G)
             String(tData[ti][10] || "").trim(), // 배송메시지(K)
             String(tData[ti][22] || "").trim(), // 업체prefix(W)
-            tData[ti][14] || "",                 // 배송비(O)
-            String(tData[ti][5] || "").trim(),  // 비고=품목명2(F) 또는 적요
+            tData[ti][13] || "",                 // 배송비(N=단품배송비)
+            String(tData[ti][14] || "").trim(),  // 비고=적요(O)
+            String(tData[ti][22] || "").trim(), // 발주업체 = 업체prefix
+            "대리공급",                          // 주문유형
+            tPrice || "",                        // 단가 = 합계 ÷ 수량
+            tTotal || "",                        // 정산금액 = L열 합계
           ]);
           result.detail.temp++;
         }
@@ -5388,11 +6066,55 @@ function _pep_archiveUnifiedDaily_() {
       Logger.log("[UNIFIED] 대리공급 읽기 오류: " + eT.message);
     }
 
-    // ── ③ 사방넷_송장매칭 — 제거됨 (대리공급_임시기록에 이미 포함, 중복 방지) ──
+    // ── ③ 대리판매: 협력업체_발주허브 (송장번호 있는 행) ──
+    try {
+      var hubTab = ss.getSheetByName("협력업체_발주허브");
+      if (hubTab && hubTab.getLastRow() >= 2) {
+        var hLr = hubTab.getLastRow();
+        var hLc = Math.max(hubTab.getLastColumn(), 15);
+        var hData = hubTab.getRange(2, 1, hLr - 1, hLc).getValues();
+        // 허브 열 구조: A(0)=수집일시, B(1)=발주업체, C(2)=고유ID, D(3)=주문일자,
+        //   E(4)=이카운트코드, F(5)=품목명, G(6)=수량, H(7)=수취인,
+        //   I(8)=수취인전화번호, J(9)=수취인주소, K(10)=배송메시지,
+        //   L(11)=정산금액, M(12)=적요, N(13)=송장번호, O(14)=상태
+        for (var hi = 0; hi < hData.length; hi++) {
+          var hInv = String(hData[hi][13] || "").trim(); // N열: 송장번호
+          if (!hInv) continue; // 송장 없는 행 스킵
+          var hUid = String(hData[hi][2] || "").trim();  // C열: 고유ID
+          var hTotal = Number(hData[hi][11]) || 0;       // L열: 정산금액
+          var hQty = Number(hData[hi][6]) || 1;          // G열: 수량
+          var hPrice = hQty > 0 ? Math.round(hTotal / hQty) : hTotal;
+          allRows.push([
+            "대리판매",
+            nowStr,
+            hUid,                                        // 고유ID
+            hInv,                                        // 송장번호
+            String(hData[hi][7] || "").trim(),           // 수취인(H)
+            String(hData[hi][8] || ""),                  // 전화(I)
+            "",                                          // 휴대폰
+            String(hData[hi][9] || "").trim(),           // 주소(J)
+            String(hData[hi][4] || "").trim(),           // 이카운트코드(E)
+            String(hData[hi][5] || "").trim(),           // 품목명(F)
+            hQty,                                        // 수량(G)
+            String(hData[hi][10] || "").trim(),          // 배송메시지(K)
+            String(hData[hi][1] || "").trim(),           // 발주업체(B) → 업체/판매처
+            "",                                          // 운임
+            String(hData[hi][12] || "").trim(),          // 적요(M) → 비고
+            String(hData[hi][1] || "").trim(),           // 발주업체(B)
+            "대리판매",                                   // 주문유형
+            hPrice || "",                                 // 단가 = 정산금액 ÷ 수량
+            hTotal || "",                                 // 정산금액(L)
+          ]);
+          result.detail.hub++;
+        }
+      }
+    } catch (eH) {
+      Logger.log("[UNIFIED] 대리판매(허브) 읽기 오류: " + eH.message);
+    }
 
     // ── 구글드라이브에 별도 시트 파일로 저장 ──
     if (allRows.length === 0) {
-      result.error = "기록 데이터 없음 (로젠+대리공급 모두 비어있음)";
+      result.error = "기록 데이터 없음 (로젠+대리공급+대리판매 모두 비어있음)";
       return result;
     }
 
@@ -5437,6 +6159,10 @@ function _pep_archiveUnifiedDaily_() {
       archTab.setColumnWidth(13, 100); // 업체
       archTab.setColumnWidth(14, 80);  // 운임
       archTab.setColumnWidth(15, 150); // 비고
+      archTab.setColumnWidth(16, 100); // 발주업체
+      archTab.setColumnWidth(17, 80);  // 주문유형
+      archTab.setColumnWidth(18, 80);  // 단가
+      archTab.setColumnWidth(19, 100); // 정산금액
     }
 
     var nextRow = archTab.getLastRow() + 1;
@@ -5446,6 +6172,7 @@ function _pep_archiveUnifiedDaily_() {
     var sections = [
       { label: "📦 로젠", key: "로젠", bg: "#e8eaf6", headerBg: "#3949ab", count: result.detail.lozen },
       { label: "🏭 대리공급", key: "대리공급", bg: "#e8f5e9", headerBg: "#2e7d32", count: result.detail.temp },
+      { label: "🏪 대리판매", key: "대리판매", bg: "#fff3e0", headerBg: "#e65100", count: result.detail.hub },
     ];
 
     for (var si = 0; si < sections.length; si++) {
@@ -5478,8 +6205,16 @@ function _pep_archiveUnifiedDaily_() {
     result.archived = allRows.length;
     SpreadsheetApp.flush();
 
+    // ★ 단가맵 초기화 (마감 완료 후)
+    try {
+      _clearSalesPriceMap_();
+    } catch (eClear) {
+      Logger.log("[UNIFIED] 단가맵 초기화 오류 (무시): " + eClear.message);
+    }
+
     Logger.log("[UNIFIED_ARCHIVE] " + archFileName + " (구글드라이브 시트) → 로젠:" + result.detail.lozen +
       " 대리공급:" + result.detail.temp +
+      " 대리판매:" + result.detail.hub +
       " = 합계:" + result.archived + "건");
 
   } catch (e) {
@@ -5499,6 +6234,7 @@ var _UNIFIED_ARCHIVE_FOLDER_PROP_ = "UNIFIED_DAILY_ARCHIVE_FOLDER_ID";
 
 /**
  * 기존 일일마감 시트 파일 찾기 (없으면 null)
+ * ★ 2026-06-20: 휴지통에 있는 파일은 무시 (openById는 휴지통 파일도 열림)
  * @param {string} fileName 파일명
  * @return {Spreadsheet|null}
  */
@@ -5507,15 +6243,24 @@ function _unified_findExistingArchiveSs_(fileName) {
   var propKey = _UNIFIED_ARCHIVE_SS_PREFIX_ + fileName;
   var cachedId = props.getProperty(propKey);
   if (cachedId) {
-    try { return SpreadsheetApp.openById(cachedId); }
+    try {
+      var cachedFile = DriveApp.getFileById(cachedId);
+      if (cachedFile.isTrashed()) {
+        Logger.log("[UNIFIED] 캐시된 파일이 휴지통에 있음 → 캐시 삭제: " + fileName);
+        props.deleteProperty(propKey);
+      } else {
+        return SpreadsheetApp.openById(cachedId);
+      }
+    }
     catch (e) { props.deleteProperty(propKey); }
   }
 
   // 폴더에서 검색
   var folder = _unified_resolveArchiveFolder_();
   var files = folder.getFilesByName(fileName);
-  if (files.hasNext()) {
+  while (files.hasNext()) {
     var file = files.next();
+    if (file.isTrashed()) continue;  // ★ 휴지통 파일 스킵
     props.setProperty(propKey, file.getId());
     return SpreadsheetApp.openById(file.getId());
   }
@@ -5524,6 +6269,7 @@ function _unified_findExistingArchiveSs_(fileName) {
 
 /**
  * 일일마감 시트 파일 가져오기 (없으면 구글드라이브에 새로 생성)
+ * ★ 2026-06-20: deprecated addFile/removeFile → moveTo() 전환
  * @param {Spreadsheet} ss 현재 시트 (폴더 폴백용)
  * @param {string} fileName 파일명
  * @return {Spreadsheet}
@@ -5536,16 +6282,26 @@ function _unified_getOrCreateArchiveSs_(ss, fileName) {
   var newSs = SpreadsheetApp.create(fileName);
   var folder = _unified_resolveArchiveFolder_(ss);
 
-  // 폴더로 이동
+  // ★ moveTo()로 폴더 이동 (deprecated addFile/removeFile 대체)
   var newFile = DriveApp.getFileById(newSs.getId());
-  folder.addFile(newFile);
-  DriveApp.getRootFolder().removeFile(newFile);
+  try {
+    newFile.moveTo(folder);
+  } catch (eMoveNew) {
+    // moveTo 미지원 환경 폴백 (오래된 런타임)
+    Logger.log("[UNIFIED] moveTo 실패, addFile 폴백 시도: " + eMoveNew.message);
+    try {
+      folder.addFile(newFile);
+      // ★ removeFile은 호출하지 않음 (파일 삭제 위험)
+    } catch (eAdd) {
+      Logger.log("[UNIFIED] 폴더 이동 실패 (루트에 생성됨): " + eAdd.message);
+    }
+  }
 
   // ID 캐싱
   var props = PropertiesService.getScriptProperties();
   props.setProperty(_UNIFIED_ARCHIVE_SS_PREFIX_ + fileName, newSs.getId());
 
-  Logger.log("[UNIFIED] 새 시트 생성: " + fileName + " (ID=" + newSs.getId() + ")");
+  Logger.log("[UNIFIED] 새 시트 생성: " + fileName + " (ID=" + newSs.getId() + ", 폴더=" + folder.getName() + ")");
   return newSs;
 }
 

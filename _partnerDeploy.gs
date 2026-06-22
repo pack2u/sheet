@@ -61,8 +61,12 @@ function _pt_listFiles(opt_forceRefresh) {
     try {
       var _cached_ = CacheService.getScriptCache().get(_PT_CACHE_KEY_);
       if (_cached_) {
-        _PT_FILES_CACHE_ = JSON.parse(_cached_);
-        return _PT_FILES_CACHE_;
+        var parsed = JSON.parse(_cached_);
+        // ★ 2026-06-22: 빈 배열 캐시는 무시 (DriveApp 오류 시 빈 배열이 캐시되는 버그 방지)
+        if (parsed && parsed.length > 0) {
+          _PT_FILES_CACHE_ = parsed;
+          return _PT_FILES_CACHE_;
+        }
       }
     } catch (e) {}
   }
@@ -95,17 +99,25 @@ function _pt_listFiles(opt_forceRefresh) {
         var normalizedName = nm.replace(PREFIX_UNDERSCORE, _PT.PREFIX);
         out.push({ id: id, name: normalizedName });
       }
-    } catch (e) {}
+    } catch (e) {
+      // ★ 2026-06-22: 에러 로깅 추가 (무음 삼킴 방지)
+      Logger.log("[_pt_listFiles] 폴더 " + fid + " 접근 실패: " + e.message);
+    }
   }
   out.sort(function (a, b) {
     return a.name.localeCompare(b.name);
   });
   _PT_FILES_CACHE_ = out;
 
-  // CacheService에 저장 (5분 TTL)
-  try {
-    CacheService.getScriptCache().put(_PT_CACHE_KEY_, JSON.stringify(out), 300);
-  } catch (e) {}
+  // ★ 2026-06-22: 빈 결과는 캐시하지 않음 (일시적 DriveApp 오류 시 복구 가능)
+  if (out.length > 0) {
+    try {
+      CacheService.getScriptCache().put(_PT_CACHE_KEY_, JSON.stringify(out), 300);
+    } catch (e) {}
+  } else {
+    // 혹시 이전에 저장된 빈 캐시 제거
+    try { CacheService.getScriptCache().remove(_PT_CACHE_KEY_); } catch (e) {}
+  }
 
   return out;
 }
@@ -1280,6 +1292,11 @@ function partnerForceUpdateAll() {
       }
       // ── 복구 시퀀스 (공통 헬퍼 사용) ──
       var K2Info = _pt_repairViewerSheetCore_(ss, f.name, sheet, K2, hubId);
+      // ★ 2026-06-16: 발주탭 spill 수식도 함께 heal (뷰어탭 이름 불일치 #REF! 방지)
+      try {
+        var ot = ss.getSheetByName("발주 및 송장조회");
+        if (ot) _pt_healOrderSpillFormulas(ot, sheet.getName());
+      } catch (eHeal) {}
       results.push(f.name + ": ✅ " + K2Info);
     } catch (e) {
       results.push(f.name + ": ❌ " + e.message);

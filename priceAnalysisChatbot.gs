@@ -11,7 +11,7 @@ var _BOT_DAT_ROW = 6;
 /* ── 사이드바 열기 ── */
 function openProductChatbot() {
   var html = HtmlService.createHtmlOutputFromFile('productChatbot')
-    .setTitle('📊 상품정보 챗봇').setWidth(400);
+    .setTitle('📊 상품정보 챗봇').setWidth(600); // ★ 1.5배 확대
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
@@ -550,8 +550,8 @@ function callGemini_(msg, sh, cm) {
   try {
     var report = buildSystemReportContext_(sh, cm);
     
-    // 모델 종류 (안정적이고 빠른 gemini-2.5-flash-lite 사용)
-    var model = "gemini-2.5-flash-lite";
+    // ★ 2026-06-18: gemini-3.5-flash로 업그레이드 (복잡 추론 향상)
+    var model = "gemini-3.5-flash";
     var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + GEMINI_API_KEY;
     
     var prompt = "당신은 Pack2U 상품정보 분석 전문가 및 수정 제안 AI입니다.\n" +

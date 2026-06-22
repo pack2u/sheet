@@ -483,6 +483,13 @@ function _pm_trimTab_(tab, maxTarget) {
  *   대신 각 업체 파일의 '발주 및 송장조회' 탭에서
  *   ARRAYFORMULA 수식이 정상인지(=Spill Guard가 작동하고 있는지)를 간접 진단합니다.
  */
+/**
+ * 모든 협력업체 파일의 발주탭 상태를 진단합니다.
+ *
+ * ★ 2026-06-17 업데이트: D/L열 값 기반 전환 반영
+ *   - A열: ARRAYFORMULA 정상 여부 확인
+ *   - D/L열: 수식이 남아있으면 "마이그레이션 필요" (값 기반 전환 미완료)
+ */
 function partnerDiagnoseSpillGuard() {
   var ui = SpreadsheetApp.getUi();
   var files = _pt_listFiles();
@@ -502,28 +509,34 @@ function partnerDiagnoseSpillGuard() {
         continue;
       }
 
-      // D2(품목명 ARRAYFORMULA) 수식 존재 여부 확인
+      var issues = [];
+
+      // A1: ARRAYFORMULA 존재 여부 확인 (유일한 spill 열)
+      var a1Formula = "";
+      try { a1Formula = orderTab.getRange("A1").getFormula(); } catch(e) {}
+      if (!a1Formula || a1Formula.indexOf("ARRAYFORMULA") === -1) {
+        issues.push("A열(업체명) ARRAYFORMULA 없음");
+      }
+
+      // D2: 수식이 남아있으면 마이그레이션 미완료 경고
       var d2Formula = "";
       try { d2Formula = orderTab.getRange("D2").getFormula(); } catch(e) {}
+      if (d2Formula && d2Formula.indexOf("VLOOKUP") !== -1) {
+        issues.push("D열 수식 잔존(마이그레이션 필요)");
+      }
 
-      // A2(업체명 ARRAYFORMULA) 수식 존재 여부 확인
-      var a2Formula = "";
-      try { a2Formula = orderTab.getRange("A2").getFormula(); } catch(e) {}
-
-      // L2(정산금액 ARRAYFORMULA) 수식 존재 여부 확인
+      // L2: 수식이 남아있으면 마이그레이션 미완료 경고
       var l2Formula = "";
       try { l2Formula = orderTab.getRange("L2").getFormula(); } catch(e) {}
-
-      var issues = [];
-      if (!d2Formula || d2Formula.indexOf("ARRAYFORMULA") === -1) issues.push("D열(품목명)");
-      if (!a2Formula || a2Formula.indexOf("ARRAYFORMULA") === -1) issues.push("A열(업체명)");
-      if (!l2Formula || l2Formula.indexOf("ARRAYFORMULA") === -1) issues.push("L열(정산금액)");
+      if (l2Formula && l2Formula.indexOf("VLOOKUP") !== -1) {
+        issues.push("L열 수식 잔존(마이그레이션 필요)");
+      }
 
       if (issues.length === 0) {
-        results.push("✅ " + name + ": 정상");
+        results.push("✅ " + name + ": 정상 (A=ARRAYFORMULA, D/L=값 기반)");
         okCount++;
       } else {
-        results.push("🔴 " + name + ": ARRAYFORMULA 누락 → " + issues.join(", "));
+        results.push("🔴 " + name + ": " + issues.join(", "));
         errorCount++;
       }
     } catch (e) {
@@ -533,18 +546,104 @@ function partnerDiagnoseSpillGuard() {
   }
 
   var summary =
-    "🛡️ Spill Guard 진단 결과\n\n" +
+    "🛡️ 발주탭 진단 결과\n\n" +
     "✅ 정상: " + okCount + "개\n" +
     "🔴 이상: " + errorCount + "개\n" +
     "⚠️ 주의: " + warnCount + "개\n\n" +
     results.join("\n");
 
-  // 결과가 길 수 있으므로 로그에도 기록
   Logger.log(summary);
-
-  // 화면에 표시 (4500자 제한 대비 앞부분만)
   if (summary.length > 4000) {
     summary = summary.substring(0, 4000) + "\n\n... (전체 결과는 실행 로그에서 확인)";
   }
   ui.alert(summary);
+}
+
+// ═══════════════════════════════════════════
+//  8. 발주탭 A1 수식 D2:D 참조 제거 일괄 적용
+//  ★ 2026-06-16 추가 — D열 ARRAYFORMULA #REF 에러 수정
+//  A1 수식의 LEN(C2:C)+LEN(D2:D)=0 → LEN(C2:C)=0 변경
+//  + D열/L열 ARRAYFORMULA heal
+// ═══════════════════════════════════════════
+
+/**
+ * 모든 협력업체 파일의 발주 및 송장조회 탭에서:
+ * 1) A1 수식의 D2:D 참조를 제거 (순환 의존성 해소)
+ * 2) D열/L열 ARRAYFORMULA #REF 상태 자동 복구 (heal)
+ *
+ * ★ 원인: A1 수식이 D2:D를 참조하면, C열 입력 → D열 ARRAYFORMULA 재계산 시
+ *   A열도 동시 재계산되면서 spill 충돌 → #REF 에러 발생
+ */
+function partnerFixAllOrderA1Formulas() {
+  var ui = SpreadsheetApp.getUi();
+  var ans = ui.alert(
+    '🔧 A1 수식 D2:D 참조 제거',
+    '모든 협력업체 파일의 「발주 및 송장조회」탭에서\n' +
+    'A1 수식의 D2:D 참조를 제거합니다.\n\n' +
+    '★ 변경: LEN(C2:C)+LEN(D2:D)=0 → LEN(C2:C)=0\n' +
+    '★ 추가: D열/L열 ARRAYFORMULA #REF 자동 복구\n\n' +
+    '→ C열 입력 시 D열 #REF 에러가 발생하는 문제를 해결합니다.\n\n계속할까요?',
+    ui.ButtonSet.YES_NO
+  );
+  if (ans !== ui.Button.YES) return;
+
+  var files = _pt_listFiles();
+  if (!files || !files.length) return ui.alert('협력업체 파일 없음');
+
+  var fixed = [], skipped = [], errors = [];
+
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    var nm = f.name.replace('[협력업체] ', '').trim();
+    try {
+      var ss = SpreadsheetApp.openById(f.id);
+      var orderTab = ss.getSheetByName('발주 및 송장조회');
+      if (!orderTab) {
+        skipped.push('⏭️ ' + nm + ': 발주탭 없음');
+        continue;
+      }
+
+      // A1 수식 확인
+      var a1Formula = String(orderTab.getRange('A1').getFormula() || '');
+      var needsA1Fix = a1Formula.indexOf('D2:D') !== -1;
+
+      // 뷰어 탭 이름 탐색
+      var viewerName = '단가조회';
+      var viewerTab = _pt_findViewerSheet(ss);
+      if (viewerTab) viewerName = viewerTab.getName();
+
+      // A1 수식 수정
+      if (needsA1Fix) {
+        orderTab.getRange('A1:A').clearContent();
+        orderTab.getRange('A1').setFormula(
+          _pt_buildOrderVendorNameSpillFormula(viewerName)
+        );
+      }
+
+      // D열/L열 ARRAYFORMULA heal
+      var healResult = _pt_healOrderSpillFormulas(orderTab, viewerName);
+
+      var changes = [];
+      if (needsA1Fix) changes.push('A1:D2:D제거');
+      if (healResult.dFixed) changes.push('D열복구');
+      if (healResult.lFixed) changes.push('L열복구');
+      if (healResult.aFixed && !needsA1Fix) changes.push('A열복구');
+
+      if (changes.length > 0) {
+        fixed.push('✅ ' + nm + ' (' + changes.join(', ') + ')');
+      } else {
+        skipped.push('⏭️ ' + nm + ': 이미 정상');
+      }
+    } catch (e) {
+      errors.push('❌ ' + nm + ': ' + String(e.message || '').substring(0, 40));
+    }
+  }
+
+  var msg = '🔧 A1 수식 수정 완료 (' + files.length + '개 검사)\n\n';
+  if (fixed.length) msg += '수정: ' + fixed.length + '개\n' + fixed.join('\n') + '\n\n';
+  if (skipped.length) msg += '스킵: ' + skipped.length + '개\n' + skipped.slice(0, 5).join('\n') + '\n\n';
+  if (errors.length) msg += '오류: ' + errors.length + '개\n' + errors.join('\n');
+
+  Logger.log(msg);
+  ui.alert('A1 수식 수정 결과', msg.substring(0, 4500), ui.ButtonSet.OK);
 }

@@ -20,18 +20,76 @@ function onOpen_copy_paste() {
 }
 
 function openInvoiceMatchSidebarLocal() {
-  // ★ 2026-06-22: Web App 전환 — ssId + webAppUrl을 HTML에 주입
-  var apiKey = _getOcrApiKey_();
-  var ssId = SpreadsheetApp.getActiveSpreadsheet().getId();
-  var webAppUrl = _getWebAppUrl_();
-  var htmlStr = _getInvoiceMatchHtml_()
-    .replace('__OCR_API_KEY__', apiKey)
-    .replace('__SPREADSHEET_ID__', ssId)
-    .replace('__WEB_APP_URL__', webAppUrl);
-  var html = HtmlService.createHtmlOutput(htmlStr)
-    .setTitle('\uD83D\uDCEC 카카오 송장 매칭')
-    .setWidth(400);
-  SpreadsheetApp.getUi().showSidebar(html);
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var exTab = null;
+    var sheets = ss.getSheets();
+    for (var ti = 0; ti < sheets.length; ti++) {
+      if (sheets[ti].getName().indexOf("전용양식") !== -1) {
+        exTab = sheets[ti];
+        break;
+      }
+    }
+    if (!exTab) {
+      SpreadsheetApp.getUi().alert("❌ 전용양식 탭을 찾을 수 없습니다.");
+      return;
+    }
+
+    var lr = exTab.getLastRow();
+    if (lr < 2) {
+      SpreadsheetApp.getUi().alert("⚠️ 전용양식 데이터가 없습니다.");
+      return;
+    }
+    var lc = Math.max(exTab.getLastColumn(), 1);
+    var headers = exTab.getRange(1, 1, 1, lc).getValues()[0];
+
+    // 수취인 열 자동 탐지
+    var KEYWORDS = ["받는분","받는사람","수령인","고객명","받으시는","수하인","수취인"];
+    var EXCLUDE_KW = ["보내는","송하인","발화주","발신"];
+    var recipientCol = -1;
+    for (var hi = 0; hi < headers.length; hi++) {
+      var h = String(headers[hi] || "").replace(/\s/g, "");
+      var excluded = false;
+      for (var ei = 0; ei < EXCLUDE_KW.length; ei++) {
+        if (h.indexOf(EXCLUDE_KW[ei]) !== -1) { excluded = true; break; }
+      }
+      if (excluded) continue;
+      for (var ki = 0; ki < KEYWORDS.length; ki++) {
+        if (h.indexOf(KEYWORDS[ki]) !== -1) { recipientCol = hi; break; }
+      }
+      if (recipientCol !== -1) break;
+    }
+    if (recipientCol === -1) {
+      SpreadsheetApp.getUi().alert("❌ 수취인(받는분) 열을 찾을 수 없습니다.");
+      return;
+    }
+
+    // 수취인 이름 및 행 번호 맵 구성
+    var data = exTab.getRange(2, 1, lr - 1, lc).getValues();
+    var nameToRows = {};
+    for (var ri = 0; ri < data.length; ri++) {
+      var rn = String(data[ri][recipientCol] || "").normalize("NFC").replace(/\s*님\s*$/g, "").trim();
+      if (!rn) continue;
+      if (!nameToRows[rn]) nameToRows[rn] = [];
+      nameToRows[rn].push(ri); // 0-based index
+    }
+
+    var apiKey = _getOcrApiKey_();
+    var recipientHeader = String(headers[recipientCol] || "");
+    
+    var htmlStr = _getInvoiceMatchHtml_()
+      .replace('__OCR_API_KEY__', apiKey)
+      .replace('__SPREADSHEET_ID__', ss.getId())
+      .replace('__RECIPIENT_HEADER__', recipientHeader)
+      .replace('__NAME_TO_ROWS_JSON__', JSON.stringify(nameToRows));
+      
+    var html = HtmlService.createHtmlOutput(htmlStr)
+      .setTitle('📬 카카오 송장 매칭')
+      .setWidth(400);
+    SpreadsheetApp.getUi().showSidebar(html);
+  } catch (e) {
+    SpreadsheetApp.getUi().alert("오류: " + e.message);
+  }
 }
 
 // ── Levenshtein 편집 거리 (퍼지 매칭용) ──
@@ -572,7 +630,7 @@ function _getInvoiceMatchHtml_() {
     '<div style="font-size:11px;color:#888">또는 클릭하여 파일 선택</div>' +
     '<input type="file" id="fileUpload" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFileUpload(event)">' +
     "</div>" +
-    '<textarea id="rt" placeholder="예시:\\n44363801252   최고갈비\\n443-8937-1622   임병혁"></textarea>' +
+    '<textarea id="rt" placeholder="예시:\n44363801252   최고갈비\n443-8937-1622   임병혁"></textarea>' +
     "</div>" +
     '<div id="tab-image" class="tab-content">' +
     '<div id="imgDrop" class="img-drop" onclick="document.getElementById(\'imgUpload\').click()">' +
@@ -618,70 +676,112 @@ function _getInvoiceMatchHtml_() {
     "if(e.dataTransfer.files&&e.dataTransfer.files.length>0){var f=e.dataTransfer.files[0];" +
     'if(f&&f.type.startsWith("image/")){var r=new FileReader();r.onload=function(ev){switchTab("image");handleImgData(ev.target.result)};r.readAsDataURL(f)}' +
     'else{document.getElementById("fileUpload").files=e.dataTransfer.files;handleFileUpload({target:{files:e.dataTransfer.files}})}}})});' +
-    'function runOCR(){if(!_imgB64)return toast("\uc774\ubbf8\uc9c0\ub97c \uba3c\uc800 \ubd99\uc5ec\ub123\uc73c\uc138\uc694",2000);' +
+    'function runOCR(){if(!_imgB64)return toast("이미지를 먼저 붙여넣으세요",2000);' +
     'var btn=document.getElementById("ocrBtn");var st=document.getElementById("ocrStatus");' +
-    'btn.disabled=true;btn.textContent="\uD83D\uDCE1 OCR \uCC98\uB9AC \uC911...";st.textContent="Gemini Vision\uc73c\ub85c \ubd84\uc11d \uc911...";' +
+    'btn.disabled=true;btn.textContent="📡 OCR 처리 중...";st.textContent="Gemini Vision으로 분석 중...";' +
     'var apiKey=document.getElementById("_ocrKey").value;' +
-    'if(!apiKey){btn.disabled=false;btn.textContent="\uD83D\uDD0D \uc774\ubbf8\uc9c0\uc5d0\uc11c \ud14d\uc2a4\ud2b8 \ucd94\ucd9c";st.textContent="\u274C API \ud0a4 \uc5c6\uc74c";toast("OCR API \ud0a4\uac00 \uc124\uc815\ub418\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4.",3000);return}' +
+    'if(!apiKey){btn.disabled=false;btn.textContent="🔍 이미지에서 텍스트 추출";st.textContent="❌ API 키 없음";toast("OCR API 키가 설정되지 않았습니다.",3000);return}' +
     'var mimeType="image/png";var rawB64=_imgB64;' +
     'if(_imgB64.indexOf(",")!==-1){var pp=_imgB64.split(",");var mmm=pp[0].match(/data:([^;]+)/);if(mmm)mimeType=mmm[1];rawB64=pp[1]}' +
     'var url="https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key="+apiKey;' +
-    'var prompt="\uc774 \uc774\ubbf8\uc9c0\uc5d0\uc11c \ud0dd\ubc30 \uc218\ucde8\uc778(\ubc1b\ub294\uc0ac\ub78c) \uc774\ub984\uacfc \ud0dd\ubc30 \uc1a1\uc7a5\ubc88\ud638(10~14\uc790\ub9ac \uc22b\uc790)\ub97c \ucd94\ucd9c.\\n"' +
-    '+"\uc0ac\uc5c5\uc790\ub4f1\ub85d\ubc88\ud638,\uc804\ud654\ubc88\ud638,\uacc4\uc88c\ubc88\ud638 \uc81c\uc678.\\n"' +
-    '+"\ud615\uc2dd: \uc774\ub984 \uc1a1\uc7a5\ubc88\ud638 (\uacf5\ubc31\uad6c\ubd84, \ud55c\uc904\uc5d0 1\uc30d)\\n"' +
-    '+"\ud0dd\ubc30\uc0ac\uba85\uc740 \uc774\ub984\uc774 \uc544\ub2d8. \ub2d8 \uc81c\uac70. \uc601\ubb38\uc774\ub984 \ud3ec\ud568.";' +
+    'var prompt="이 이미지에서 택배 수취인(받는사람) 이름과 택배 송장번호(10~14자리 숫자)를 추출.\\n"' +
+    '+"사업자등록번호,전화번호,계좌번호 제외.\\n"' +
+    '+"형식: 이름 송장번호 (공백구분, 한줄에 1쌍)\\n"' +
+    '+"택배사명은 이름이 아님. 님 제거. 영문이름 포함.";' +
     'var payload={contents:[{parts:[{text:prompt},{inline_data:{mime_type:mimeType,data:rawB64}}]}],generationConfig:{temperature:0.1,maxOutputTokens:2048}};' +
     'fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})' +
     '.then(function(r){return r.json()})' +
-    '.then(function(json){btn.disabled=false;btn.textContent="\uD83D\uDD0D \uc774\ubbf8\uc9c0\uc5d0\uc11c \ud14d\uc2a4\ud2b8 \ucd94\ucd9c";' +
-    'if(json.error){st.textContent="\u274C \uc624\ub958: "+json.error.message;toast("OCR \uc624\ub958: "+json.error.message,4000);return}' +
+    '.then(function(json){btn.disabled=false;btn.textContent="🔍 이미지에서 텍스트 추출";' +
+    'if(json.error){st.textContent="❌ 오류: "+json.error.message;toast("OCR 오류: "+json.error.message,4000);return}' +
     'var b3=String.fromCharCode(96,96,96);' +
     'var text=(json.candidates[0].content.parts[0].text||"").replace(new RegExp(b3+"[a-z]*\\\\n?","gi"),"").replace(new RegExp(b3,"g"),"").trim();' +
-    'if(!text||text.length<3){st.textContent="\u274C \ud14d\uc2a4\ud2b8\ub97c \uc778\uc2dd\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.";toast("\uc774\ubbf8\uc9c0\uc5d0\uc11c \ud14d\uc2a4\ud2b8\ub97c \uc778\uc2dd\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.",3000);return}' +
-    'document.getElementById("rt").value=text;st.textContent="\u2705 "+text.split("\\n").length+"\uc904 \ucd94\ucd9c \uc644\ub8cc!";switchTab("text");toast("OCR \uc644\ub8cc! \ubd84\uc11d \ubc84\ud2bc\uc744 \ub20c\ub7ec\uc8fc\uc138\uc694.",3000)})' +
-    '.catch(function(e){btn.disabled=false;btn.textContent="\uD83D\uDD0D \uc774\ubbf8\uc9c0\uc5d0\uc11c \ud14d\uc2a4\ud2b8 \ucd94\ucd9c";st.textContent="\u274C \uc624\ub958: "+e.message;toast("OCR \uc624\ub958: "+e.message,4000)})}' +
-    "function handleFileUpload(e){var f=e.target.files[0];if(!f)return;" +
+    'if(!text||text.length<3){st.textContent="❌ 텍스트를 인식하지 못했습니다.";toast("이미지에서 텍스트를 인식하지 못했습니다.",3000);return}' +
+    'document.getElementById("rt").value=text;st.textContent="✅ "+text.split("\\n").length+"줄 추출 완료!";switchTab("text");toast("OCR 완료! 분석 버튼을 눌러주세요.",3000)})' +
+    '.catch(function(e){btn.disabled=false;btn.textContent="🔍 이미지에서 텍스트 추출";st.textContent="❌ 오류: "+e.message;toast("OCR 오류: "+e.message,4000)})}' +
+    'function handleFileUpload(e){var f=e.target.files[0];if(!f)return;' +
     'if(f.type.startsWith("image/")){var r=new FileReader();r.onload=function(ev){switchTab("image");handleImgData(ev.target.result)};r.readAsDataURL(f);return}' +
     'var btn=document.getElementById("ab");btn.textContent="파일 읽는 중...";btn.disabled=true;' +
     "var reader=new FileReader();reader.onload=function(evt){var data=new Uint8Array(evt.target.result);" +
     'try{var wb=XLSX.read(data,{type:"array"});document.getElementById("rt").value=XLSX.utils.sheet_to_txt(wb.Sheets[wb.SheetNames[0]]);toast("엑셀 파일 로드 완료!",3000)}' +
     'catch(err){toast("파일 읽기 오류: "+err.message,4000)}finally{btn.textContent="🔍 분석";btn.disabled=false}};reader.readAsArrayBuffer(f)}' +
-    'function _callWebApp(action,body,onOk,onErr){' +
-    'var ssId=document.getElementById("_ssId").value;' +
-    'var webAppUrl=document.getElementById("_webAppUrl").value;' +
-    'if(!webAppUrl){onErr("웹앱 URL이 주입되지 않았습니다.");return;}' +
-    'var payload={action:action,spreadsheetId:ssId};' +
-    'if(action==="analyze"){payload.text=body.text;}' +
-    'else if(action==="apply"){payload.matches=body.matches;}' +
-    'fetch(webAppUrl,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify(payload)})' +
-    '.then(function(r){return r.json();})' +
-    '.then(function(res){if(res.error){onErr(res.error);}else{onOk(res);}})' +
-    '.catch(function(e){onErr(e.message||String(e));});' +
-    '}' +
-    'function analyze(){var rt=document.getElementById("rt").value.trim();if(!rt)return toast("텍스트를 붙여넣으세요.",2000);' +
-    'var btn=document.getElementById("ab");btn.disabled=true;btn.textContent="분석 중...";document.getElementById("rs").style.display="none";' +
-    '_callWebApp("analyze",{text:rt},function(res){btn.disabled=false;btn.textContent="🔍 분석";' +
-    'if(res.error){toast("❌ "+res.error,3000);return}_m=res.matches;showResults(res)},' +
-    'function(err){btn.disabled=false;btn.textContent="🔍 분석";toast("오류: "+err,3000)})}' +
-    "function showResults(res){var ok=(res.matches||[]).filter(function(m){return m.rows&&m.rows.length>0});" +
-    "var no=res.unmatched||[];" +
-    'document.getElementById("sum").innerHTML="<b>수취인 열:</b> "+res.recipientHeader+"&nbsp;|&nbsp;<span class=ok>✅ "+ok.length+"건</span>&nbsp;<span class=err>❌ "+no.length+"건</span>"' +
-    '+(no.length>0&&res._debug_sheetNames?"<br><span style=font-size:10px;color:#aaa>시트 이름: "+res._debug_sheetNames.join(", ")+"</span>":"");' +
+    'function _levenshteinLocal_(a,b){if(a===b)return 0;if(!a.length)return b.length;if(!b.length)return a.length;var m=[];' +
+    'for(var i=0;i<=b.length;i++)m[i]=[i];for(var j=0;j<=a.length;j++)m[0][j]=j;' +
+    'for(var i2=1;i2<=b.length;i2++){for(var j2=1;j2<=a.length;j2++){if(b.charAt(i2-1)===a.charAt(j2-1)){m[i2][j2]=m[i2-1][j2-1]}' +
+    'else{m[i2][j2]=Math.min(m[i2-1][j2-1]+1,m[i2][j2-1]+1,m[i2-1][j2]+1)}}}return m[b.length][a.length]}' +
+    'function _parseInvoicePairs_(text){var cn=/[|｜\\s]*(롯데택배|CJ대한통운|한진택배|우체국택배|로젠택배|경동택배|대신택배|일양로지스|천일택배|합동택배|건영택배|호남택배|CVSnet|GSpostbox|CJ택배|택배)/gi;' +
+    'var cp=/^(롯데|CJ|한진|우체국|로젠|경동|대신|일양|천일|합동|건영|호남)\\s*[\\/]\\s*/gim;' +
+    'var nl=/^.*(등록번호|사업자|TEL|FAX|전화|팩스|계좌|은행|입금바랍니다|거래명세서|공급가액|부가세|합계|수량|단가|품목|규격|거래일|상\\s*호|업\\s*태|종\\s*목|주\\s*소|성\\s*명).*$/gim;' +
+    'var pp=text.replace(cn,"").replace(cp,"").replace(nl,"");' +
+    'var lines=pp.split(/[\\r\\n]+/).map(function(l){return l.replace(/\\t/g,"   ").trim()}).filter(function(l){return l.length>0});' +
+    'var pairs=[],tl=[],nl_arr=[],pl=[];' +
+    'function exT(r){var tr=r.trim();if(/^\\d{3}-\\d{2}-\\d{5}$/.test(tr))return null;if(/^0\\d{1,2}-\\d{3,4}-\\d{4}$/.test(tr))return null;' +
+    'var dg=tr.replace(/[-\\s]/g,"");if(/^\\d{10,14}$/.test(dg))return dg;return null}' +
+    'function clN(n){return n.replace(/[|｜\\/]/g,"").replace(/\\s*님\\s*/g,"").trim()}' +
+    'function valN(n){if(!n||n.length<2)return false;if(/^\\d+$/.test(n))return false;if(/^[가-힣\\s]{2,15}$/.test(n))return true;' +
+    'if(/^[A-Za-z\\s]{2,30}$/.test(n))return true;if(/[가-힣]/.test(n)&&n.length>=2&&n.length<=20)return true;return false}' +
+    'for(var i=0;i<lines.length;i++){var line=lines[i];var im=line.match(/[A-Za-z가-힣\\s]{2,30}\\s+\\d{10,14}/g);' +
+    'if(im&&im.length>=2){for(var j=0;j<im.length;j++){var imp=im[j].trim().match(/^(.+?)\\s+(\\d{10,14})$/);' +
+    'if(imp){var imn=clN(imp[1]),imt=exT(imp[2]);if(imt&&valN(imn)){pl.push({tracking:imt,name:imn})}else if(imt){tl.push(imt)}}}' +
+    'var rd=line.replace(/[A-Za-z가-힣\\s]{2,30}\\s+\\d{10,14}/g,"");var en=rd.match(/\\d{10,14}/g);' +
+    'if(en){for(var k=0;k<en.length;k++){var et=exT(en[k]);if(et)tl.push(et)}}continue}' +
+    'var m1=line.match(/^([\\d\\-]{10,20})\\s{1,}(.+)$/);if(m1){var t1=exT(m1[1]),n1=clN(m1[2]);' +
+    'if(t1&&valN(n1)){pl.push({tracking:t1,name:n1});continue}else if(t1){tl.push(t1);continue}}' +
+    'var m2=line.match(/^(.+?)\\s{1,}([\\d\\-]{10,20})$/);if(m2){var t2=exT(m2[2]),n2=clN(m2[1]);' +
+    'if(t2&&valN(n2)){pl.push({tracking:t2,name:n2});continue}else if(t2){tl.push(t2);continue}}' +
+    'var sl=exT(line);if(sl&&/^[\\d\\-]+$/.test(line.trim())){tl.push(sl);continue}' +
+    'var nc=line.split(/\\s{2,}/);for(var j=0;j<nc.length;j++){var ncc=clN(nc[j]);if(valN(ncc))nl_arr.push(ncc)}}' +
+    'for(var j=0;j<pl.length;j++)pairs.push(pl[j]);' +
+    'if(tl.length>0&&nl_arr.length>0){var mc=Math.min(tl.length,nl_arr.length);for(var j=0;j<mc;j++)pairs.push({tracking:tl[j],name:nl_arr[j]})}' +
+    'else if(tl.length>0){var pd=null;for(var j=0;j<lines.length;j++){var fl=lines[j];var ft=exT(fl);' +
+    'if(ft&&/^[\\d\\-]+$/.test(fl.trim())){pd=ft;continue}var fn=clN(fl);if(valN(fn)&&pd){pairs.push({tracking:pd,name:fn});pd=null}}}' +
+    'return pairs}' +
+    'function analyze(){' +
+    'var rt=document.getElementById("rt").value.trim();if(!rt)return toast("텍스트를 붙여넣으세요.",2000);' +
+    'var btn=document.getElementById("ab");btn.disabled=true;btn.textContent="분석 중...";' +
+    'document.getElementById("rs").style.display="none";' +
+    'try{' +
+    'var nameToRows=JSON.parse(document.getElementById("_nameToRows").value||"{}");' +
+    'var recipientHeader=document.getElementById("_recipientHeader").value||"";' +
+    'var rowQueue={};for(var k in nameToRows){rowQueue[k]=nameToRows[k].slice()}' +
+    'var pairs=_parseInvoicePairs_(rt);' +
+    'if(pairs.length===0){btn.disabled=false;btn.textContent="🔍 분석";return toast("인식된 쌍 없음. 형식: \'송장번호   이름\'",3000)}' +
+    'var cpf=/^(롯데|CJ|한진|우체국|로젠|경동|대신|일양|천일|합동|건영|호남)\\s*[\\/]\\s*/i;' +
+    'for(var i=0;i<pairs.length;i++){if(pairs[i].name){pairs[i].name=pairs[i].name.normalize("NFC").replace(cpf,"").replace(/^[\\s\\/]+/,"").trim()}}' +
+    'var matches=[],unmatched=[],lastRow={};' +
+    'for(var i=0;i<pairs.length;i++){' +
+    'var p=pairs[i];var assigned=[];var mName=p.name;var isAp=false;var qKey=null;' +
+    'if(rowQueue[p.name]&&rowQueue[p.name].length>0){qKey=p.name}' +
+    'if(!qKey){var inSp=p.name.replace(/\\s/g,"");for(var nm in rowQueue){if(rowQueue[nm].length>0&&nm.replace(/\\s/g,"")===inSp){qKey=nm;mName=nm;break}}}' +
+    'if(!qKey){for(var nm in rowQueue){if(rowQueue[nm].length>0&&(nm.indexOf(p.name)!==-1||p.name.indexOf(nm)!==-1)){qKey=nm;mName=nm;break}}}' +
+    'if(!qKey){var inSp=p.name.replace(/\\s/g,"");for(var nm in rowQueue){if(rowQueue[nm].length>0){var shSp=nm.replace(/\\s/g,"");if(shSp.indexOf(inSp)!==-1||inSp.indexOf(shSp)!==-1){qKey=nm;mName=nm;break}}}}' +
+    'if(!qKey){var bK=null,bD=999,inN=p.name.replace(/\\s/g,"");for(var nm in rowQueue){if(rowQueue[nm].length===0)continue;' +
+    'var shN=nm.replace(/\\s/g,"");var maxL=Math.max(inN.length,shN.length);if(maxL===0)continue;var ds=_levenshteinLocal_(inN,shN);' +
+    'var th=Math.max(2,Math.floor(maxL*0.3));if(ds>Math.ceil(maxL*0.5))th=-1;if(ds<=th&&ds<bD){bD=ds;bK=nm}}}if(bK){qKey=bK;mName=bK}}' +
+    'if(qKey&&rowQueue[qKey].length>0){assigned=[rowQueue[qKey].shift()];lastRow[qKey]=assigned[0];lastRow[p.name]=assigned[0]}' +
+    'else if(lastRow[p.name]!==undefined){assigned=[lastRow[p.name]];isAp=true}' +
+    'else{for(var lrn in lastRow){if(lrn.indexOf(p.name)!==-1||p.name.indexOf(lrn)!==-1){assigned=[lastRow[lrn]];mName=lrn;isAp=true;break}}}' +
+    'if(assigned.length>0){matches.push({tracking:p.tracking,name:p.name,matchedName:mName,rows:assigned,append:isAp})}' +
+    'else{unmatched.push(p)}}' +
+    '_m=matches;' +
+    'var ok=matches.filter(function(m){return m.rows&&m.rows.length>0});var no=unmatched;' +
+    'document.getElementById("sum").innerHTML="<b>수취인 열:</b> "+recipientHeader+"&nbsp;|&nbsp;<span class=ok>✅ "+ok.length+"건</span>&nbsp;<span class=err>❌ "+no.length+"건</span>";' +
     'var tb=document.getElementById("mt");tb.innerHTML="";' +
-    'ok.forEach(function(m){var rn=m.rows.map(function(r){return r+2}).join(",");' +
-    'var ns=m.name!==m.matchedName?m.name+"<span style=color:#aaa>≈</span>"+m.matchedName:m.name;' +
+    'ok.forEach(function(m){var rn=m.rows.map(function(r){return r+2}).join(",");var ns=m.name!==m.matchedName?m.name+"<span style=color:#aaa>≈</span>"+m.matchedName:m.name;' +
     'var st=m.append?"<span style=color:#f29900>➕추가</span>":"<span class=ok>✅</span>";' +
     'tb.innerHTML+="<tr><td>"+ns+"</td><td class=tr>"+m.tracking+"</td><td>"+rn+"</td><td>"+st+"</td></tr>"});' +
     'no.forEach(function(u){tb.innerHTML+="<tr><td class=err>"+u.name+"</td><td class=tr>"+u.tracking+"</td><td>-</td><td class=err>❌</td></tr>"});' +
     'document.getElementById("apb").style.display=ok.length?"block":"none";' +
     'document.getElementById("rs").style.display="block"}' +
+    'catch(err){toast("분석 오류: "+err.message,4000)}finally{btn.disabled=false;btn.textContent="🔍 분석"}}' +
     'function applyAll(){if(!_m)return;var btn=document.getElementById("apb");btn.disabled=true;btn.textContent="반영 중...";' +
-    '_callWebApp("apply",{matches:_m},function(res){btn.disabled=false;btn.textContent="✅ 전용양식에 반영";toast(res.msg,3000)},' +
-    'function(err){btn.disabled=false;btn.textContent="✅ 전용양식에 반영";toast("오류: "+err,3000)})}' +
+    'google.script.run.withSuccessHandler(function(res){btn.disabled=false;btn.textContent="✅ 전용양식에 반영";toast(res.msg,3000)})' +
+    '.withFailureHandler(function(err){btn.disabled=false;btn.textContent="✅ 전용양식에 반영";toast("오류: "+err,3000)})' +
+    '.applyInvoiceMatchesLocal(JSON.stringify(_m))}' +
     "<\\/script>" +
     '<input type="hidden" id="_ocrKey" value="__OCR_API_KEY__">' +
     '<input type="hidden" id="_ssId" value="__SPREADSHEET_ID__">' +
-    '<input type="hidden" id="_webAppUrl" value="__WEB_APP_URL__">' +
+    '<input type="hidden" id="_recipientHeader" value="__RECIPIENT_HEADER__">' +
+    '<input type="hidden" id="_nameToRows" value=\'__NAME_TO_ROWS_JSON__\'>' +
     '<script async src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>' +
     "</body></html>"
   );
@@ -694,28 +794,59 @@ function _getInvoiceMatchHtml_() {
 // ★ 수정은 위의 실제 함수들에서 하면 자동 반영됨
 // ═══════════════════════════════════════════════════════════════════
 function getPartnerInvoiceMatchCode_() {
-  // ★ 2026-06-22 v7: HTML 별도 파일 방식
-  //   JSON.stringify 이중 이스케이프 문제 원천 해결
-  //   HTML은 createViewerNoticeScript_에서 별도 파일로 주입됨
-
-  // 서버 함수들을 .toString()으로 직렬화
-  var serverFuncs = [
-    _levenshteinLocal_.toString(),
-    parseAndMatchInvoiceTextLocal.toString(),
-    applyInvoiceMatchesLocal.toString(),
-    _parseInvoicePairs_.toString()
-  ].join('\n\n');
-
-  var code = '// [Pack2U] \uce74\uce74\uc624 \uc1a1\uc7a5 \ub9e4\uce6d v7 (\ub85c\uceec \u2014 \uc790\ub3d9 \uc0dd\uc131)\n' +
-    '// HTML\uc740 InvoiceMatchSidebar.html \ubcc4\ub3c4 \ud30c\uc77c\n\n' +
-    serverFuncs + '\n\n' +
+  // ★ 2026-06-22 v8: 로컬 하이브리드 방식
+  //   분석 및 파싱은 100% 브라우저단에서 동작하여 웹앱 통신 제거
+  //   반영(applyInvoiceMatchesLocal)만 서버 함수로 최소 주입
+  
+  var code = '// [Pack2U] \uce74\uce74\uc624 \uc1a1\uc7a5 \ub9e4\uce6d v8 (\ub85c\uceec \uD558\uc774\ube0c\ub9ac\ub4dc)\n\n' +
+    applyInvoiceMatchesLocal.toString() + '\n\n' +
     'function openInvoiceMatchSidebarLocal() {\n' +
-    '  var ssId = SpreadsheetApp.getActiveSpreadsheet().getId();\n' +
-    '  var raw = HtmlService.createHtmlOutputFromFile("InvoiceMatchSidebar").getContent();\n' +
-    '  raw = raw.replace(/__SPREADSHEET_ID__/g, ssId);\n' +
-    '  var output = HtmlService.createHtmlOutput(raw)\n' +
-    '    .setTitle("\\uD83D\\uDCEC \\uCE74\\uCE74\\uC624 \\uC1A1\\uC7A5 \\uB9E4\\uCE6D").setWidth(400);\n' +
-    '  SpreadsheetApp.getUi().showSidebar(output);\n' +
+    '  try {\n' +
+    '    var ss = SpreadsheetApp.getActiveSpreadsheet();\n' +
+    '    var exTab = null;\n' +
+    '    var sheets = ss.getSheets();\n' +
+    '    for (var ti = 0; ti < sheets.length; ti++) {\n' +
+    '      if (sheets[ti].getName().indexOf("전용양식") !== -1) { exTab = sheets[ti]; break; }\n' +
+    '    }\n' +
+    '    if (!exTab) { SpreadsheetApp.getUi().alert("❌ \uc804\uc6a9\uc591\uc2dd \ud0ed\uc744 \ucc3e\uc744 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4."); return; }\n' +
+    '    var lr = exTab.getLastRow();\n' +
+    '    if (lr < 2) { SpreadsheetApp.getUi().alert("\u26A0\ufe0f \uc804\uc6a9\uc591\uc2dd \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4."); return; }\n' +
+    '    var lc = Math.max(exTab.getLastColumn(), 1);\n' +
+    '    var headers = exTab.getRange(1, 1, 1, lc).getValues()[0];\n' +
+    '    var KEYWORDS = ["받는분","받는사람","수령인","고객명","받으시는","수하인","수취인"];\n' +
+    '    var EXCLUDE_KW = ["보내는","송하인","발화주","발신"];\n' +
+    '    var recipientCol = -1;\n' +
+    '    for (var hi = 0; hi < headers.length; hi++) {\n' +
+    '      var h = String(headers[hi] || "").replace(/\\s/g, "");\n' +
+    '      var excluded = false;\n' +
+    '      for (var ei = 0; ei < EXCLUDE_KW.length; ei++) {\n' +
+    '        if (h.indexOf(EXCLUDE_KW[ei]) !== -1) { excluded = true; break; }\n' +
+    '      }\n' +
+    '      if (excluded) continue;\n' +
+    '      for (var ki = 0; ki < KEYWORDS.length; ki++) {\n' +
+    '        if (h.indexOf(KEYWORDS[ki]) !== -1) { recipientCol = hi; break; }\n' +
+    '      }\n' +
+    '      if (recipientCol !== -1) break;\n' +
+    '    }\n' +
+    '    if (recipientCol === -1) { SpreadsheetApp.getUi().alert("\u274c \uc218\ucde8\uc778 \uc5f4\uc744 \ucc3e\uc744 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4."); return; }\n' +
+    '    var data = exTab.getRange(2, 1, lr - 1, lc).getValues();\n' +
+    '    var nameToRows = {};\n' +
+    '    for (var ri = 0; ri < data.length; ri++) {\n' +
+    '      var rn = String(data[ri][recipientCol] || "").normalize("NFC").replace(/\\s*님\\s*$/g, "").trim();\n' +
+    '      if (!rn) continue;\n' +
+    '      if (!nameToRows[rn]) nameToRows[rn] = [];\n' +
+    '      nameToRows[rn].push(ri);\n' +
+    '    }\n' +
+    '    var apiKey = (typeof GEMINI_API_KEY !== "undefined") ? GEMINI_API_KEY : "";\n' +
+    '    var raw = HtmlService.createHtmlOutputFromFile("InvoiceMatchSidebar").getContent();\n' +
+    '    raw = raw.replace("__OCR_API_KEY__", apiKey)\n' +
+    '             .replace("__SPREADSHEET_ID__", ss.getId())\n' +
+    '             .replace("__RECIPIENT_HEADER__", String(headers[recipientCol] || ""))\n' +
+    '             .replace("__NAME_TO_ROWS_JSON__", JSON.stringify(nameToRows));\n' +
+    '    var output = HtmlService.createHtmlOutput(raw)\n' +
+    '      .setTitle("\uD83D\uDCEC \uCE74\uCE74\uC624 \uC1A1\uC7A5 \uB9E4\uCE6D").setWidth(400);\n' +
+    '    SpreadsheetApp.getUi().showSidebar(output);\n' +
+    '  } catch(e) { SpreadsheetApp.getUi().alert("\uc624\ub958: " + e.message); }\n' +
     '}\n';
   return code;
 }

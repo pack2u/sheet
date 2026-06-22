@@ -176,21 +176,53 @@ function _pea_core_(tabName) {
         // 키 셀 기록
         _pea_setKey_(archTab, _PEA_KEY_PREFIX + tabName);
 
-        // 전용양식 원본에서 이동된 행 삭제 (데이터 덮어쓰기 방식으로 속도 개선)
-        if (keepRowIdxs.length === 0) {
-          // 전부 이동 → 기존처럼 전체 삭제
-          tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
-        } else {
-          // 남길 행이 있음 → 일괄 clearContent 후 setValues
-          tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
-          
-          var keepRowsData = [];
-          for (var ki = 0; ki < keepRowIdxs.length; ki++) {
-            keepRowsData.push(data[keepRowIdxs[ki]]);
+        // ★ 2026-06-22: 안전장치 — 마감탭 기록 성공 확인 후에만 원본 삭제
+        SpreadsheetApp.flush();
+        var verifyLastRow = archTab.getLastRow();
+        var expectedLastRow = nextRow + appendRows.length - 1;
+        if (verifyLastRow < expectedLastRow) {
+          result.errors.push("[" + files[fi].name + "/" + tabSheet.getName() + "] 마감탭 기록 검증 실패 (기대=" + expectedLastRow + " 실제=" + verifyLastRow + ") → 원본 보존");
+          continue;
+        }
+
+        // 전용양식 원본에서 이동된 행 삭제
+        // ★ try/catch 감싸 → 실패 시 메모리의 원본 data[] 배열로 전체 복구
+        try {
+          if (keepRowIdxs.length === 0) {
+            // 전부 이동 → 전체 삭제
+            tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+          } else {
+            // ★ 잔류 데이터를 clearContent 전에 미리 구성
+            var keepRowsData = [];
+            for (var ki = 0; ki < keepRowIdxs.length; ki++) {
+              keepRowsData.push(data[keepRowIdxs[ki]]);
+            }
+            tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+            if (keepRowsData.length > 0) {
+              tabSheet.getRange(2, 1, keepRowsData.length, lc).setValues(keepRowsData);
+            }
+            SpreadsheetApp.flush();
+
+            // ★ 잔류 행 복원 검증
+            var restoredCount = tabSheet.getLastRow() - 1;
+            if (restoredCount < keepRowsData.length) {
+              // 복원 부족 → 원본 전체 복구
+              tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+              tabSheet.getRange(2, 1, data.length, lc).setValues(data);
+              SpreadsheetApp.flush();
+              result.errors.push("[" + files[fi].name + "] 잔류 복원 검증 실패 → 원본 전체 복구");
+              continue;
+            }
           }
-          if (keepRowsData.length > 0) {
-            tabSheet.getRange(2, 1, keepRowsData.length, lc).setValues(keepRowsData);
-          }
+        } catch (eClear) {
+          // ★ clearContent 후 setValues 실패 → 원본 전체 복구
+          try {
+            tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+            tabSheet.getRange(2, 1, data.length, lc).setValues(data);
+            SpreadsheetApp.flush();
+          } catch (eRestore) {}
+          result.errors.push("[" + files[fi].name + "] 원본 삭제 중 오류 → 복구 시도: " + eClear.message);
+          continue;
         }
 
         result.moved       += archiveRows.length;
@@ -242,6 +274,150 @@ function _pea_core_(tabName) {
 // ══════════════════════════════════════════════
 //  헬퍼
 // ══════════════════════════════════════════════
+
+/**
+ * ★ 2026-06-18: 단일 파일 전용마감 처리 (일괄 마감 통합 루프에서 호출)
+ * @param {Spreadsheet} ss - 이미 열린 스프레드시트 객체
+ * @param {string} tabName - 마감 탭 이름 (예: "(2026년 6월) 전용발주 마감")
+ * @returns {{ moved: number, kept: number }}
+ */
+function _pea_processOneFile_(ss, tabName) {
+  var result = { moved: 0, kept: 0 };
+  var tabs = ss.getSheets();
+
+  for (var ti = 0; ti < tabs.length; ti++) {
+    var tabSheet = tabs[ti];
+    if (tabSheet.getName().indexOf("전용양식") === -1) continue;
+
+    var lr = tabSheet.getLastRow();
+    if (lr < 2) continue;
+
+    var lc      = tabSheet.getLastColumn();
+    var headers = tabSheet.getRange(1, 1, 1, lc).getValues()[0];
+    var data    = tabSheet.getRange(2, 1, lr - 1, lc).getValues();
+
+    var today = new Date();
+    today.setHours(23, 59, 59, 999);
+    var todayNum = today.getFullYear() * 10000 +
+                   (today.getMonth() + 1) * 100 +
+                   today.getDate();
+
+    var archiveRows = [];
+    var keepRowIdxs = [];
+
+    for (var di = 0; di < data.length; di++) {
+      var bVal = String(data[di][1] || "").trim();
+      var dateMatch = bVal.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+      if (dateMatch) {
+        var rowDateNum = parseInt(dateMatch[1], 10) * 10000 +
+                         parseInt(dateMatch[2], 10) * 100 +
+                         parseInt(dateMatch[3], 10);
+        if (rowDateNum >= todayNum) {
+          keepRowIdxs.push(di);
+          continue;
+        }
+      }
+
+      var invoice = String(data[di][0] || "").trim();
+      if (!invoice) {
+        keepRowIdxs.push(di);
+        continue;
+      }
+      archiveRows.push(data[di]);
+    }
+
+    if (archiveRows.length === 0) continue;
+
+    var archTab = ss.getSheetByName(tabName);
+    if (!archTab) {
+      var byKey = _pea_findTabByKey_(ss, _PEA_KEY_PREFIX + tabName);
+      archTab   = byKey || ss.insertSheet(tabName);
+    }
+
+    var isNew = archTab.getLastRow() < 1;
+    if (isNew) {
+      _pea_initArchiveTab_(archTab, headers, lc);
+    }
+
+    var nowStr = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm");
+    var appendRows = archiveRows.map(function(row) {
+      return [nowStr].concat(row);
+    });
+    var extHeaders = ["이동일시"].concat(headers);
+    var extLc      = extHeaders.length;
+
+    var maxCol = archTab.getMaxColumns();
+    if (maxCol < extLc) {
+      archTab.insertColumnsAfter(maxCol, extLc - maxCol);
+    }
+    archTab.getRange(1, 1, 1, extLc).setValues([extHeaders])
+      .setBackground(_PEA_HEADER_BG).setFontColor("white")
+      .setFontWeight("bold").setHorizontalAlignment("center");
+    archTab.setFrozenRows(1);
+
+    var curMax = archTab.getMaxColumns();
+    if (curMax > extLc) {
+      archTab.getRange(1, extLc + 1, 1, curMax - extLc).clearContent().setBackground("#ffffff");
+    }
+
+    var nextRow = archTab.getLastRow() + 1;
+    if (nextRow < 2) nextRow = 2;
+    archTab.getRange(nextRow, 1, appendRows.length, extLc).setValues(appendRows);
+
+    _pea_setKey_(archTab, _PEA_KEY_PREFIX + tabName);
+
+    // ★ 2026-06-22: 안전장치 — 마감탭 기록 성공 확인 후에만 원본 삭제
+    SpreadsheetApp.flush();
+    var verifyLastRow = archTab.getLastRow();
+    var expectedLastRow = nextRow + appendRows.length - 1;
+    if (verifyLastRow < expectedLastRow) {
+      // 마감탭 기록 검증 실패 → 원본 보존 (데이터 소실 방지)
+      continue;
+    }
+
+    // ★ try/catch 감싸 → 실패 시 메모리의 원본 data[] 배열로 전체 복구
+    try {
+      if (keepRowIdxs.length === 0) {
+        tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+      } else {
+        // ★ 잔류 데이터를 clearContent 전에 미리 구성
+        var keepRowsData = [];
+        for (var ki = 0; ki < keepRowIdxs.length; ki++) {
+          keepRowsData.push(data[keepRowIdxs[ki]]);
+        }
+        tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+        if (keepRowsData.length > 0) {
+          tabSheet.getRange(2, 1, keepRowsData.length, lc).setValues(keepRowsData);
+        }
+        SpreadsheetApp.flush();
+
+        // ★ 잔류 행 복원 검증
+        var restoredCount = tabSheet.getLastRow() - 1;
+        if (restoredCount < keepRowsData.length) {
+          tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+          tabSheet.getRange(2, 1, data.length, lc).setValues(data);
+          SpreadsheetApp.flush();
+          continue;
+        }
+      }
+    } catch (eClear) {
+      // ★ clearContent 후 setValues 실패 → 원본 전체 복구
+      try {
+        tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+        tabSheet.getRange(2, 1, data.length, lc).setValues(data);
+        SpreadsheetApp.flush();
+      } catch (eRestore) {}
+      continue;
+    }
+
+    result.moved += archiveRows.length;
+    result.kept  += keepRowIdxs.length;
+    SpreadsheetApp.flush();
+  }
+
+  return result;
+}
+
 function _pea_initArchiveTab_(tab, headers, lc) {
   // 빈 탭 초기 설정 (나중에 헤더 덮어씌워질 예정)
   try { tab.setFrozenRows(1); } catch(e) {}

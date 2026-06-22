@@ -93,10 +93,26 @@ function _po_applyHubDesign(hubTab) {
   try {
     var hRange = hubTab.getRange("A2:Q5000");
     var rules = [];
+    // ★ 출고가능 → 연초록 (품절보다 먼저 = 우선 적용)
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied('=ISNUMBER(SEARCH("출고가능", $O2))')
+        .setBackground("#c8e6c9")
+        .setRanges([hRange])
+        .build(),
+    );
     rules.push(
       SpreadsheetApp.newConditionalFormatRule()
         .whenFormulaSatisfied('=ISNUMBER(SEARCH("품절", $O2))')
         .setBackground("#f4cccc")
+        .setRanges([hRange])
+        .build(),
+    );
+    // ★ 품절임박 → 연주황
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied('=ISNUMBER(SEARCH("품절임박", $O2))')
+        .setBackground("#ffe0b2")
         .setRanges([hRange])
         .build(),
     );
@@ -450,8 +466,8 @@ function partnerCollectOrders(opt_noWriteBack) {
           continue;
         }
         var cMap = _po_buildColMap(data[0]);
-        // ★ =FALSE 유효성 검사 정리 (setValues 충돌 방지)
-        try { _pt_cleanupStrayValidations_(tab); } catch (eCV) {}
+        // ★ 2026-06-18: 유효성 검사 정리를 발주 수집에서 제거 (성능 최적화)
+        //   → 복구시스템(AS도구)에서만 실행. D/L열 값 기반 전환 완료로 충돌 없음
 
         // ★ "상태(자동)" 열 누락 시 자동 보수 (14열=N열)
         if (cMap.status === -1) {
@@ -483,12 +499,9 @@ function partnerCollectOrders(opt_noWriteBack) {
           cMap.item !== -1 || cMap.qty !== -1 || cMap.recipient !== -1;
         if (cMap.date === -1 && cMap.code === -1 && !hasMinFields) continue;
 
-        // ── spill 수식 자동복구 ──
-        if (viewerTabForHeal) {
-          try {
-            _pt_healOrderSpillFormulas(tab, viewerTabForHeal.getName());
-          } catch (eH) {}
-        }
+        // ★ 2026-06-18: spill 수식 자동복구를 발주 수집에서 제거 (성능 최적화)
+        //   → D/L열 값 기반 전환 완료(6/17)로 heal 불필요
+        //   → A열(ARRAYFORMULA) heal은 복구시스템(AS도구)에서만 실행
 
         // ── 주문일자 자동채움 ──
         var dateFillChanged = false;
@@ -652,12 +665,9 @@ function partnerCollectOrders(opt_noWriteBack) {
             cMap.status !== -1 ? String(data[r][cMap.status] || "").trim() : "";
           var stCompact = rawSt.replace(/\s/g, "");
 
-          // ★ 수집 제외 상태: 품절임박 (재고 부족 예고 상태 — 발주 접수 불가)
-          if (stCompact.indexOf("품절임박") !== -1) {
-            skippedByStatusFlag++;
-            skipped++;
-            continue;
-          }
+          // ★ 2026-06-17: 품절임박도 허브 수집 (직원이 출고가능 판단)
+          // 품절임박 상태를 감지하되 continue하지 않음
+          var isStockWarningImm = stCompact.indexOf("품절임박") !== -1;
 
           var wasStockWarn =
             stCompact.indexOf("재고부족") !== -1 ||
@@ -668,15 +678,23 @@ function partnerCollectOrders(opt_noWriteBack) {
               ? rawSt
               : "접수완료";
 
+          // ★ 출고가능 상태는 유지 (이미 직원이 승인한 건)
+          if (stCompact.indexOf("출고가능") !== -1) {
+            status = "✅출고가능";
+          } else if (isStockWarningImm) {
+            status = "🟡품절임박";
+          }
+
           if (priceMap[code]) {
             var ps = priceMap[code].status.replace(/\s/g, "");
             if (ps.indexOf("단종") !== -1) status = "🚨단종";
-            else if (ps.indexOf("품절") !== -1 && ps.indexOf("품절+7") === -1)
-              status = "🚨품절";
-            else if (wasStockWarn) status = "접수완료"; // 재고 복구 시 초기화
+            else if (ps.indexOf("품절") !== -1 && ps.indexOf("품절+7") === -1) {
+              // ★ 출고가능이면 품절 상태 덮어쓰지 않음
+              if (status !== "✅출고가능") status = "🚨품절";
+            }
+            else if (wasStockWarn && status !== "✅출고가능") status = "접수완료";
           }
           if (noCodeWarning) status = "🔴코드확인필요";
-          // 코드오류: 코드가 있지만 뷰어(단가조회)에 없는 경우 — 취소/발송완료는 유지
           if (
             codeNotInViewer &&
             stCompact.indexOf("취소") === -1 &&
@@ -686,16 +704,20 @@ function partnerCollectOrders(opt_noWriteBack) {
           }
 
           // ★ 상태는 업체 시트에 아직 쓰지 않음 → 허브 수집 성공 후 기록
-          // 품절/단종/코드확인필요는 즉시 기록 (수집 여부와 무관한 경고)
+          // 단종/코드오류/코드확인필요는 즉시 기록 + 수집 제외
+          // 품절/품절임박은 즉시 기록 + 수집 포함 (직원이 출고가능 전환)
+          var isBlockStatus =
+            status === "🚨단종" || status === "🚨코드오류" || status === "🔴코드확인필요";
           var isWarningStatus =
-            status.indexOf("🚨") !== -1 || status.indexOf("🔴") !== -1;
+            status.indexOf("🚨") !== -1 || status.indexOf("🔴") !== -1 || status.indexOf("🟡") !== -1;
+
           if (isWarningStatus && cMap.status !== -1 && rawSt !== status) {
             data[r][cMap.status] = status;
             statusFillChanged = true;
           }
 
-          // 품절, 단종 등 경고 상태인 경우 허브로 수집하지 않고 스킵
-          if (isWarningStatus) {
+          // ★ 단종/코드오류만 수집 제외 — 품절/품절임박은 허브로 수집됨
+          if (isBlockStatus) {
             if (status === "🚨코드오류") skippedByCodeErr++;
             skipped++;
             continue;
@@ -796,6 +818,40 @@ function partnerCollectOrders(opt_noWriteBack) {
   } // end files
 
   // ── 허브에 신규 발주 일괄 추가 ──
+  if (newOrders.length > 0) {
+    // ★ 2026-06-18: 최종 중복 제거 (시간초과 후 재수집 시 부분 기록 중복 방지)
+    //   허브 기록 직전에 현재 허브의 고유ID를 다시 읽어 중복 건 제거
+    try {
+      var freshLastRow = hubTab.getLastRow();
+      if (freshLastRow >= 2) {
+        var freshUids = hubTab.getRange(2, 3, freshLastRow - 1, 1).getValues(); // C열=고유ID
+        var freshIdSet = {};
+        for (var fu = 0; fu < freshUids.length; fu++) {
+          var fuid = String(freshUids[fu][0] || "").trim();
+          if (fuid) freshIdSet[fuid] = true;
+        }
+        var dedupOrders = [];
+        var dedupSeen = {};
+        var dedupRemoved = 0;
+        for (var di = 0; di < newOrders.length; di++) {
+          var orderUid = String(newOrders[di][2] || "").trim(); // 3번째=고유ID
+          if (orderUid && (freshIdSet[orderUid] || dedupSeen[orderUid])) {
+            dedupRemoved++;
+            continue;
+          }
+          if (orderUid) dedupSeen[orderUid] = true;
+          dedupOrders.push(newOrders[di]);
+        }
+        if (dedupRemoved > 0) {
+          Logger.log("[COLLECT] 최종 중복 제거: " + dedupRemoved + "건 (허브 " + Object.keys(freshIdSet).length + "건 기준)");
+          newOrders = dedupOrders;
+        }
+      }
+    } catch (eDedup) {
+      Logger.log("[COLLECT] 최종 dedup 실패: " + eDedup.message);
+    }
+  }
+
   if (newOrders.length > 0) {
     var startRow = hubTab.getLastRow() + 1;
     var writeRange = hubTab.getRange(
@@ -966,7 +1022,7 @@ function partnerFixHubUnitPrices() {
 /**
  * 기존 시스템과 동일한 송장 취합 스프레드시트를 읽어 협력업체_발주허브에 송장번호를 매칭 기록.
  * 매칭 우선순위: 고유ID 전용 (이름 단독 매칭 제거 — 동명이인 오매칭 방지)
- * ★ 적요(M열)에 이미 내용이 있는 행은 송장수집 패스
+ * ★ 2026-06-18: 적요(M열)에 내용이 있어도 송장 수집 진행하도록 변경
  */
 function partnerFetchInvoices() {
   var ui = null;
@@ -1258,9 +1314,7 @@ function partnerFetchInvoices() {
     }
     if (isTerminalOrderStatus_(String(hubData[r][14] || ""))) continue;
     if (String(hubData[r][14] || "").trim() === "발송완료") continue;
-    // ★ 적요(M열=12)에 내용이 있으면 송장수집 패스
-    var existingMemo0 = String(hubData[r][12] || "").trim();
-    if (existingMemo0) continue;
+    // ★ 2026-06-18: 적요(M열=12)에 내용이 있어도 송장 수집 진행 (제한 해제)
 
     var hubUid = String(hubData[r][2] || "").trim();
     if (!hubUid) continue; // 고유ID 없으면 이 패스에서 스킵 (name+phone으로 넘김)
@@ -1409,9 +1463,7 @@ function partnerFetchInvoices() {
     if (isTerminalOrderStatus_(String(hubData[r][14] || ""))) continue;
     var st = String(hubData[r][14] || "").trim();
     if (st === "발송완료") continue;
-    // ★ 적요(M열=12)에 내용이 있으면 송장수집 패스
-    var existingMemoG = String(hubData[r][12] || "").trim();
-    if (existingMemoG) continue;
+    // ★ 2026-06-18: 적요(M열=12)에 내용이 있어도 송장 수집 진행 (제한 해제)
 
     // ★ 고유ID가 있는 행은 무조건 UID 매칭 전용 (이름+전화 매칭 완전 차단)
     var hubUidForGroup = String(hubData[r][2] || "").trim();
@@ -1997,6 +2049,7 @@ function partnerPushInvoices() {
   // 배포 대상:
   //   ① 송장번호 있는 행 → 송장 + 발송완료 상태 + 적요 배포
   //   ② 송장번호 없어도 적요에 내용 있는 행 → 적요만 배포 (상태 변경 없음)
+  //   ③ 출고가능 상태 → 상태 배포 (송장/적요 없어도)
   // 예외: 취소/불용/반품/폐기 상태 제외, 폐기송장 목록에 있는 송장 제외
   var pendingByUid = {};
   for (var i = 0; i < hubData.length; i++) {
@@ -2005,7 +2058,9 @@ function partnerPushInvoices() {
     var status = String(hubData[i][14] || "").trim();
     var hubMemo = String(hubData[i][12] || "").trim(); // M열=적요
     if (!uid) continue;
-    if (!invoice && !hubMemo) continue; // 송장도 적요도 없으면 스킵
+    // ★ 출고가능 상태는 송장/적요 없어도 배포 대상
+    var isShipApproved = status.replace(/\s/g, "").indexOf("출고가능") !== -1;
+    if (!invoice && !hubMemo && !isShipApproved) continue;
     // 취소/반품/불용/폐기 상태는 배포 제외
     var stC = status.replace(/\s/g, "");
     if (
@@ -2022,7 +2077,8 @@ function partnerPushInvoices() {
       status: status,
       hubRow: i + 2,
       hubMemo: hubMemo,
-      memoOnly: !invoice,       // 적요만 배포하는 경우 (상태 변경 없음)
+      memoOnly: !invoice && !isShipApproved,  // 적요만 배포 (출고가능은 상태도 배포)
+      statusOnly: isShipApproved && !invoice,  // ★ 출고가능 상태만 배포
     };
   }
 
@@ -2091,7 +2147,14 @@ function partnerPushInvoices() {
           var curSt =
             cMap.status !== -1 ? String(data[r][cMap.status] || "").trim() : "";
 
-          if (p.memoOnly) {
+          if (p.statusOnly) {
+            // ③ 출고가능 상태만 배포 (송장 없음)
+            if (cMap.status !== -1 && curSt !== p.status) {
+              cellUpdates.push({ row: r + 1, col: cMap.status + 1, value: p.status });
+              tabChanged = true;
+              pushed++;
+            }
+          } else if (p.memoOnly) {
             // ② 적요만 배포 (송장 없음 — 상태·송장 변경 없음)
             if (p.hubMemo && cMap.note !== -1) {
               var curNoteM = String(data[r][cMap.note] || "").trim();
@@ -2759,6 +2822,17 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
     ) {
       skipCount++;
       _po_countReason_(skipReasons, "취소/반품/불용");
+      continue;
+    }
+
+    // ★ 2026-06-17: 품절/품절임박은 출고승인 전까지 이카운트 제외
+    // "✅출고가능"은 통과 (출고가능에는 "품절" 문자가 없으므로 자동 통과)
+    if (
+      (stCompact.indexOf("품절") !== -1 && stCompact.indexOf("출고가능") === -1) ||
+      stCompact.indexOf("단종") !== -1
+    ) {
+      skipCount++;
+      _po_countReason_(skipReasons, "품절/단종 (출고미승인)");
       continue;
     }
 
@@ -3672,6 +3746,7 @@ function _po_getNonPartnerTempTab_(ss) {
 }
 
 /** 허브 송장 매칭 결과 → UID/복합키 맵 (소스탭·임시기록 역기록용) */
+// ★ 2026-06-19: 같은 UID에 여러 송장(세트 상품) → 줄바꿈 병합 (덮어쓰기 방지)
 function _po_buildHubInvoiceKeyMap_(writeUpdates, hubData) {
   var hubInvoiceByKey = {};
   for (var ui2 = 0; ui2 < writeUpdates.length; ui2++) {
@@ -3683,9 +3758,29 @@ function _po_buildHubInvoiceKeyMap_(writeUpdates, hubData) {
     var hName2 = String(hubData[hubRow2][7] || "").trim();
     var hPhone2 = String(hubData[hubRow2][8] || "").replace(/[^0-9]/g, "");
     var hUid2 = String(hubData[hubRow2][2] || "").trim();
-    if (hUid2) hubInvoiceByKey["UID:" + hUid2] = upd2.inv;
+    // ★ UID 키: 같은 UID에 여러 송장 → 줄바꿈 구분 병합 (세트 상품 대응)
+    if (hUid2) {
+      var uidKey = "UID:" + hUid2;
+      if (hubInvoiceByKey[uidKey]) {
+        var existingInvs = hubInvoiceByKey[uidKey].split("\n");
+        var newInvs = upd2.inv.split("\n");
+        for (var ni = 0; ni < newInvs.length; ni++) {
+          var trimInv = newInvs[ni].trim();
+          if (trimInv && existingInvs.indexOf(trimInv) === -1) {
+            existingInvs.push(trimInv);
+          }
+        }
+        hubInvoiceByKey[uidKey] = existingInvs.join("\n");
+      } else {
+        hubInvoiceByKey[uidKey] = upd2.inv;
+      }
+    }
+    // ★ 복합키: 첫 매핑만 유지 (동명이인·동일코드 덮어쓰기 방지)
     if (hCode2 && hName2) {
-      hubInvoiceByKey[hCode2 + "|" + hName2 + "|" + hPhone2] = upd2.inv;
+      var compKey = hCode2 + "|" + hName2 + "|" + hPhone2;
+      if (!hubInvoiceByKey[compKey]) {
+        hubInvoiceByKey[compKey] = upd2.inv;
+      }
     }
   }
   return hubInvoiceByKey;
@@ -3701,13 +3796,15 @@ function _po_pickInvoiceFromMapCandidates_(found) {
 }
 
 /** 임시기록 행 → 송장번호 (허브매칭·UID·복합키·이름+전화 순) */
-function _po_resolveTempTabInvoice_(row, invoiceMap, hubInvoiceByKey) {
+// ★ 2026-06-19: usedInvSet 추가 — 소비형 매칭 (동일인 다른 품목 송장 뒤바뀜 방지)
+function _po_resolveTempTabInvoice_(row, invoiceMap, hubInvoiceByKey, usedInvSet) {
   hubInvoiceByKey = hubInvoiceByKey || {};
   invoiceMap = invoiceMap || {};
+  usedInvSet = usedInvSet || {};
   var tUid = String(row[_PO_TEMP_UID_COL_] || "").trim();
   if (tUid && hubInvoiceByKey["UID:" + tUid]) return hubInvoiceByKey["UID:" + tUid];
   if (tUid && invoiceMap[tUid]) {
-    var inv = _po_pickInvoiceFromMapCandidates_(invoiceMap[tUid]);
+    var inv = _po_pickUnusedInvoice_(invoiceMap[tUid], usedInvSet);
     if (inv) return inv;
   }
   var tCode = String(row[3] || "").trim();
@@ -3720,14 +3817,32 @@ function _po_resolveTempTabInvoice_(row, invoiceMap, hubInvoiceByKey) {
     var shortP =
       tPhone.length >= 4 ? tPhone.substring(tPhone.length - 4) : tPhone;
     var npKey = tName + "_" + shortP;
-    inv = _po_pickInvoiceFromMapCandidates_(invoiceMap[npKey]);
+    inv = _po_pickUnusedInvoice_(invoiceMap[npKey], usedInvSet);
     if (inv) return inv;
     var nNorm = tName.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9]/g, "");
     var normKey = nNorm + "_" + shortP;
     if (normKey !== npKey) {
-      inv = _po_pickInvoiceFromMapCandidates_(invoiceMap[normKey]);
+      inv = _po_pickUnusedInvoice_(invoiceMap[normKey], usedInvSet);
       if (inv) return inv;
     }
+  }
+  return "";
+}
+
+/** ★ 2026-06-19: 소비형 송장 선택 — 이미 사용된 송장을 건너뛰어 동일인 다른 품목에 다른 송장 배정 */
+function _po_pickUnusedInvoice_(found, usedInvSet) {
+  if (!found || !found.length) return "";
+  for (var fi = 0; fi < found.length; fi++) {
+    var candidate = String(found[fi].invRaw || "").trim();
+    if (candidate && !usedInvSet[candidate]) {
+      usedInvSet[candidate] = true;
+      return candidate;
+    }
+  }
+  // 모든 후보가 사용됨 → 첫 번째 유효한 것 반환 (기존 동작 유지)
+  for (var fi2 = 0; fi2 < found.length; fi2++) {
+    var c2 = String(found[fi2].invRaw || "").trim();
+    if (c2) return c2;
   }
   return "";
 }
@@ -3778,6 +3893,7 @@ function _po_checkNonPartnerTempTabMatches_(invoiceMap, scannedLogs, hubInvoiceB
     newlyMatched = 0,
     noMatchNp = 0;
   var updates = [];
+  var usedInvSet = {}; // ★ 2026-06-19: 소비형 매칭 — 한 번 배정된 송장은 다음 행에서 건너뜀
   for (var ti = 0; ti < tempData.length; ti++) {
     var tUid = String(tempData[ti][_PO_TEMP_UID_COL_] || "").trim();
     if (!tUid) continue;
@@ -3789,12 +3905,16 @@ function _po_checkNonPartnerTempTabMatches_(invoiceMap, scannedLogs, hubInvoiceB
       if (currentStatus !== "송장수집") {
         updates.push({ row: ti + 2, inv: String(tempData[ti][_PO_TEMP_INV_COL_]), updateStatusOnly: true });
       }
+      // ★ 기존 송장도 usedInvSet에 등록 (다른 행에서 중복 배정 방지)
+      var existInvVal = String(tempData[ti][_PO_TEMP_INV_COL_] || "").trim();
+      if (existInvVal) usedInvSet[existInvVal] = true;
       continue;
     }
     var bestInv = _po_resolveTempTabInvoice_(
       tempData[ti],
       invoiceMap,
       hubInvoiceByKey,
+      usedInvSet,
     );
     if (bestInv) {
       updates.push({ row: ti + 2, inv: bestInv, updateStatusOnly: false });
@@ -3955,8 +4075,10 @@ function _po_pushTempTabMatchedToNonPartnerSheet_(scannedLogs) {
         var bUid = String(tempData[bi][15] || "").trim();
         if (bInv && bUid) {
           var bDigits = bInv.replace(/[^0-9]/g, "");
-          invToUid[bInv] = bUid;
-          invToUid[bDigits] = bUid;
+          // ★ 2026-06-19: 같은 송장이 세트 구성품에서 복수 UID에 매핑 가능
+          // → 첫 번째 매핑만 유지 (덮어쓰기 방지)
+          if (!invToUid[bInv]) invToUid[bInv] = bUid;
+          if (!invToUid[bDigits]) invToUid[bDigits] = bUid;
         }
       }
       // 사방넷_송장매칭 E열(4) + F열(5=송장번호) 읽기
@@ -4385,6 +4507,14 @@ function _po_onEditVoidInvoiceAutoFill_(e) {
   if (!e || !e.range) return;
   var sheet = e.range.getSheet();
   var sheetName = sheet.getName();
+
+  // ★ 2026-06-18: 출고가능 동기화도 이 installable trigger에서 처리
+  //   (별도 트리거 추가 시 트리거 개수 제한 초과 → 합침)
+  if (sheetName === _PO_HUB_SHEET_NAME) {
+    try { _po_onEditHubShipApproval_(e); } catch(eShip) {}
+    return;
+  }
+
   if (sheetName !== _PO_VOID_TAB_NAME && sheetName !== _PO_VOID_TAB_NAME_LEGACY) return;
 
   var row = e.range.getRow();
@@ -4766,3 +4896,166 @@ function _po_buildInvoiceSummaryHtml_(matched, alreadyHas, noMatch, nonPartner, 
   return h;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  [onEdit] 허브 O열(상태) → "출고가능" 즉시 동기화
+//  ★ 2026-06-17: 허브에서 상태를 수정하면 해당 업체시트에도 즉시 반영
+// ═══════════════════════════════════════════════════════════════════
+function _po_onEditHubShipApproval_(e) {
+  if (!e || !e.range) return;
+  var sheet = e.range.getSheet();
+  if (sheet.getName() !== _PO_HUB_SHEET_NAME) return;
+
+  var col = e.range.getColumn();
+  var row = e.range.getRow();
+  if (row < 2) return;
+  if (col !== 15) return; // O열(15번째) = 상태
+
+  var newVal = String(e.range.getValue() || "").trim();
+  var isApproval = newVal.replace(/\s/g, "").indexOf("출고가능") !== -1;
+  if (!isApproval) return;
+
+  // 정규화: "✅출고가능" 형식으로 통일
+  if (newVal.indexOf("✅") === -1) {
+    newVal = "✅출고가능";
+    e.range.setValue(newVal);
+  }
+
+  // 고유ID (C열, 3번째) 읽기
+  var uid = String(sheet.getRange(row, 3).getValue() || "").trim();
+  if (!uid) return;
+
+  // 발주업체 (B열, 2번째) 읽기 → 파일 탐색 최적화
+  var vendorName = String(sheet.getRange(row, 2).getValue() || "").trim();
+
+  // 업체시트 찾아서 상태 동기화
+  var files = _pt_listFiles();
+  if (!files || !files.length) return;
+
+  var synced = false;
+  for (var fi = 0; fi < files.length; fi++) {
+    // 업체명 매칭으로 빠른 탐색 (불일치 시 전체 탐색)
+    if (vendorName && files[fi].name.indexOf(vendorName) === -1) continue;
+
+    try {
+      var ss = SpreadsheetApp.openById(files[fi].id);
+      var allTabs = ss.getSheets();
+
+      for (var ti = 0; ti < allTabs.length; ti++) {
+        var tabName = allTabs[ti].getName();
+        if (!_po_isOrderTab(tabName)) continue;
+
+        var tab = allTabs[ti];
+        var lr = tab.getLastRow();
+        if (lr <= 1) continue;
+        var lc = Math.max(tab.getLastColumn(), 14);
+        var data = tab.getRange(1, 1, lr, lc).getValues();
+        var cMap = _po_buildColMap(data[0]);
+        if (cMap.uniqueId === -1 || cMap.status === -1) continue;
+
+        for (var r = 1; r < data.length; r++) {
+          var rowUid = String(data[r][cMap.uniqueId] || "").trim();
+          if (rowUid === uid) {
+            tab.getRange(r + 1, cMap.status + 1).setValue(newVal);
+            SpreadsheetApp.flush();
+            synced = true;
+            break;
+          }
+        }
+        if (synced) break;
+      }
+    } catch (eSync) {}
+    if (synced) break;
+  }
+
+  // 전체 탐색 (업체명 매칭 실패 시)
+  if (!synced && vendorName) {
+    for (var fi2 = 0; fi2 < files.length; fi2++) {
+      if (files[fi2].name.indexOf(vendorName) !== -1) continue; // 이미 검색함
+      try {
+        var ss2 = SpreadsheetApp.openById(files[fi2].id);
+        var allTabs2 = ss2.getSheets();
+        for (var ti2 = 0; ti2 < allTabs2.length; ti2++) {
+          var tabName2 = allTabs2[ti2].getName();
+          if (!_po_isOrderTab(tabName2)) continue;
+          var tab2 = allTabs2[ti2];
+          var lr2 = tab2.getLastRow();
+          if (lr2 <= 1) continue;
+          var lc2 = Math.max(tab2.getLastColumn(), 14);
+          var data2 = tab2.getRange(1, 1, lr2, lc2).getValues();
+          var cMap2 = _po_buildColMap(data2[0]);
+          if (cMap2.uniqueId === -1 || cMap2.status === -1) continue;
+          for (var r2 = 1; r2 < data2.length; r2++) {
+            if (String(data2[r2][cMap2.uniqueId] || "").trim() === uid) {
+              tab2.getRange(r2 + 1, cMap2.status + 1).setValue(newVal);
+              SpreadsheetApp.flush();
+              synced = true;
+              break;
+            }
+          }
+          if (synced) break;
+        }
+      } catch (eSync2) {}
+      if (synced) break;
+    }
+  }
+
+  if (synced) {
+    try {
+      SpreadsheetApp.getActiveSpreadsheet().toast(
+        "✅ " + vendorName + " 업체시트에 '출고가능' 상태 동기화 완료",
+        "출고승인", 3
+      );
+    } catch(eToast) {}
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  [onEdit] 허브 O열(상태) → "출고가능" 즉시 동기화 — installable trigger
+//  ★ 2026-06-18: simple onEdit → installable trigger 전환
+//     simple trigger에서는 openById() 권한 없어 외부 시트 접근 불가했음
+// ═══════════════════════════════════════════════════════════════════
+
+var _PO_SHIP_APPROVAL_TRIGGER_FUNC = "_po_onEditHubShipApproval_";
+
+/** 출고가능 동기화 트리거 설치 */
+function partnerSetupShipApprovalTrigger() {
+  var ui = SpreadsheetApp.getUi();
+  // 기존 트리거 제거
+  var existing = ScriptApp.getProjectTriggers();
+  var removed = 0;
+  for (var i = 0; i < existing.length; i++) {
+    if (existing[i].getHandlerFunction() === _PO_SHIP_APPROVAL_TRIGGER_FUNC) {
+      ScriptApp.deleteTrigger(existing[i]);
+      removed++;
+    }
+  }
+  // 새 installable trigger 생성
+  ScriptApp.newTrigger(_PO_SHIP_APPROVAL_TRIGGER_FUNC)
+    .forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet())
+    .onEdit()
+    .create();
+  ui.alert(
+    "✅ 출고가능 동기화 트리거 설치 완료\n\n" +
+      "이제 허브 O열에 '출고가능' 입력 시\n" +
+      "해당 업체시트에 즉시 상태가 동기화됩니다.\n" +
+      (removed > 0 ? "(기존 트리거 " + removed + "개 교체)" : ""),
+  );
+}
+
+/** 출고가능 동기화 트리거 제거 */
+function partnerRemoveShipApprovalTrigger() {
+  var ui = SpreadsheetApp.getUi();
+  var existing = ScriptApp.getProjectTriggers();
+  var removed = 0;
+  for (var i = 0; i < existing.length; i++) {
+    if (existing[i].getHandlerFunction() === _PO_SHIP_APPROVAL_TRIGGER_FUNC) {
+      ScriptApp.deleteTrigger(existing[i]);
+      removed++;
+    }
+  }
+  ui.alert(
+    removed > 0
+      ? "✅ 출고가능 동기화 트리거 해제 (" + removed + "개 삭제)"
+      : "ℹ️ 등록된 출고가능 동기화 트리거 없음",
+  );
+}

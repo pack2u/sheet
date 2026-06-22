@@ -785,3 +785,319 @@ function fixK2Only() {
     SpreadsheetApp.getUi().alert(msg);
   } catch (e) {}
 }
+
+/**
+ * ★ 2026-06-22: _pt_listFiles 폴더 접근 진단
+ * GAS 에디터에서 직접 실행 → alert로 결과 표시
+ */
+function diagnosePtListFiles() {
+  var report = [];
+  report.push("=== _pt_listFiles 진단 ===");
+  report.push("시각: " + new Date().toLocaleString());
+  
+  // 1) _PT 상수 확인
+  try {
+    report.push("\n[_PT 상수]");
+    report.push("  FOLDER_ID: " + (typeof _PT !== "undefined" ? _PT.FOLDER_ID : "undefined"));
+    report.push("  FOLDER_ID2: " + (typeof _PT !== "undefined" ? _PT.FOLDER_ID2 : "undefined"));
+    report.push("  PREFIX: " + (typeof _PT !== "undefined" ? _PT.PREFIX : "undefined"));
+  } catch(e) {
+    report.push("  _PT 접근 에러: " + e.message);
+  }
+  
+  // 2) CacheService 확인
+  try {
+    var cached = CacheService.getScriptCache().get("PT_FILE_LIST_V2");
+    report.push("\n[CacheService]");
+    if (cached) {
+      var parsed = JSON.parse(cached);
+      report.push("  캐시 데이터: " + parsed.length + "건");
+      if (parsed.length === 0) report.push("  ⚠️ 빈 배열 캐시됨! 제거합니다.");
+      // 빈 캐시 제거
+      if (parsed.length === 0) {
+        CacheService.getScriptCache().remove("PT_FILE_LIST_V2");
+        report.push("  ✅ 빈 캐시 제거됨");
+      }
+    } else {
+      report.push("  캐시 없음 (정상)");
+    }
+  } catch(e) {
+    report.push("  CacheService 에러: " + e.message);
+  }
+  
+  // 3) DriveApp 폴더 직접 접근 테스트
+  var folderIds = ["1IqqPLKxBNrqh-u14Op6jKNN7khzE13Cl", "1J0f8HjtartQwixF3xKQf0p7fvr04Ef7v"];
+  for (var i = 0; i < folderIds.length; i++) {
+    report.push("\n[폴더 " + (i+1) + ": " + folderIds[i].substring(0,12) + "...]");
+    try {
+      var folder = DriveApp.getFolderById(folderIds[i]);
+      report.push("  ✅ 폴더명: " + folder.getName());
+      var files = folder.getFiles();
+      var count = 0;
+      var samples = [];
+      while (files.hasNext()) {
+        var f = files.next();
+        count++;
+        if (samples.length < 3) samples.push(f.getName());
+      }
+      report.push("  총 파일: " + count + "개");
+      var matchCount = 0;
+      // [협력업체] 접두어 파일 수
+      files = folder.getFiles();
+      while (files.hasNext()) {
+        var fn = files.next().getName();
+        if (fn.indexOf("[협력업체]") !== -1) matchCount++;
+      }
+      report.push("  [협력업체] 파일: " + matchCount + "개");
+      report.push("  샘플: " + samples.join(", "));
+    } catch(e) {
+      report.push("  ❌ 폴더 접근 실패: " + e.message);
+    }
+  }
+  
+  // 4) _pt_listFiles 직접 호출 (강제 리프레시)
+  report.push("\n[_pt_listFiles(true) 호출]");
+  try {
+    var result = _pt_listFiles(true);
+    report.push("  결과: " + result.length + "건");
+    for (var j = 0; j < Math.min(result.length, 5); j++) {
+      report.push("  " + (j+1) + ". " + result[j].name);
+    }
+    if (result.length === 0) {
+      report.push("  ⚠️ 결과 0건 — 폴더 접근 또는 접두어 매칭 실패");
+    }
+  } catch(e) {
+    report.push("  ❌ _pt_listFiles 에러: " + e.message);
+  }
+  
+  var fullReport = report.join("\n");
+  Logger.log(fullReport);
+  try {
+    SpreadsheetApp.getUi().alert("_pt_listFiles 진단 결과", fullReport, SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch(e) {}
+}
+
+/**
+ * ★ 2026-06-22: 전체 업체 스크립트 ID 캐시 초기화 + 강제 재설치
+ * - 기존 저장된 VIEWER_BOUND_SCRIPT_ID_xxx를 모두 삭제
+ * - 새로운 바운드 스크립트 프로젝트를 생성하여 코드 주입
+ * GAS 에디터에서 직접 실행하세요.
+ */
+function forceReinstallAllVendorScripts() {
+  var ui = SpreadsheetApp.getUi();
+  var resp = ui.alert(
+    "⚠️ 전체 스크립트 강제 재설치",
+    "모든 협력업체의 저장된 스크립트 ID를 초기화하고\n새로 스크립트를 생성합니다.\n\n진행하시겠습니까?",
+    ui.ButtonSet.YES_NO
+  );
+  if (resp !== ui.Button.YES) return;
+
+  var files = _pt_listFiles(true);
+  if (!files || files.length === 0) {
+    ui.alert("업체 파일을 찾을 수 없습니다.");
+    return;
+  }
+
+  var props = PropertiesService.getScriptProperties();
+  var cleared = 0;
+
+  // 1단계: 저장된 스크립트 ID 전부 삭제
+  for (var i = 0; i < files.length; i++) {
+    var key = "VIEWER_BOUND_SCRIPT_ID_" + files[i].id;
+    if (props.getProperty(key)) {
+      props.deleteProperty(key);
+      cleared++;
+    }
+  }
+  Logger.log("[강제재설치] 스크립트 ID " + cleared + "개 초기화");
+
+  // 2단계: 전용양식 탭이 있는 업체만 필터링
+  var targets = [];
+  var skipped = 0;
+  for (var f = 0; f < files.length; f++) {
+    try {
+      var ssTmp = SpreadsheetApp.openById(files[f].id);
+      var hasExForm = ssTmp.getSheets().some(function(s) { return s.getName().indexOf("전용양식") !== -1; });
+      if (hasExForm) {
+        targets.push(files[f]);
+      } else {
+        skipped++;
+        Logger.log("⏭️ 전용양식 없음 → 건너뜀: " + files[f].name);
+      }
+    } catch(e) {
+      skipped++;
+      Logger.log("⏭️ 시트 열기 실패 → 건너뜀: " + files[f].name);
+    }
+  }
+  Logger.log("[강제재설치] 대상: " + targets.length + "개 / 건너뜀: " + skipped + "개");
+
+  // 3단계: 재설치 (429 방지: 3초 딜레이 + 재시도)
+  var ok = 0, fail = 0, errors = [];
+  for (var j = 0; j < targets.length; j++) {
+    var retries = 0;
+    var success = false;
+    while (retries < 3 && !success) {
+      try {
+        var ss = SpreadsheetApp.openById(targets[j].id);
+        createViewerNoticeScript_(ss);
+        ok++;
+        Logger.log("✅ (" + (j+1) + "/" + targets.length + ") " + targets[j].name);
+        success = true;
+      } catch(e) {
+        var errMsg = e.message || "";
+        if (errMsg.indexOf("429") !== -1 || errMsg.indexOf("quota") !== -1 || errMsg.indexOf("RESOURCE_EXHAUSTED") !== -1) {
+          retries++;
+          Logger.log("⏳ 429 제한 → " + (retries * 10) + "초 대기 후 재시도 (" + retries + "/3) " + targets[j].name);
+          Utilities.sleep(retries * 10000);
+        } else {
+          fail++;
+          errors.push(targets[j].name.replace("[협력업체] ", "") + ": " + errMsg.substring(0, 60));
+          Logger.log("❌ " + targets[j].name + ": " + errMsg);
+          break;
+        }
+      }
+    }
+    if (!success && retries >= 3) {
+      fail++;
+      errors.push(targets[j].name.replace("[협력업체] ", "") + ": 429 제한 (3회 재시도 실패)");
+      Logger.log("❌ " + targets[j].name + ": 429 제한 3회 재시도 실패");
+    }
+    // 업체 간 3초 딜레이 (429 방지)
+    if (j < targets.length - 1) Utilities.sleep(3000);
+  }
+
+  var msg = "✅ 강제 재설치 완료\n\n" +
+    "초기화된 캐시: " + cleared + "개\n" +
+    "성공: " + ok + "개\n" +
+    "실패: " + fail + "개" +
+    (errors.length > 0 ? "\n\n실패 목록:\n" + errors.slice(0, 10).join("\n") : "");
+  
+  Logger.log(msg);
+  ui.alert(msg);
+}
+
+/**
+ * ★ 실패한 업체만 재설치 (캐시 없는 업체만 대상)
+ * - 기존 성공한 업체는 건드리지 않음
+ * - 10초 간격으로 429 방지
+ */
+function retryFailedVendorScripts() {
+  var ui = SpreadsheetApp.getUi();
+  var files = _pt_listFiles(true);
+  if (!files || files.length === 0) { ui.alert("업체 파일 없음"); return; }
+
+  var props = PropertiesService.getScriptProperties();
+
+  // 전용양식 있고 + 캐시 ID 없는 업체만 필터
+  var targets = [];
+  for (var f = 0; f < files.length; f++) {
+    var key = "VIEWER_BOUND_SCRIPT_ID_" + files[f].id;
+    if (props.getProperty(key)) {
+      Logger.log("⏭️ 이미 성공: " + files[f].name);
+      continue;
+    }
+    try {
+      var ssTmp = SpreadsheetApp.openById(files[f].id);
+      var hasEx = ssTmp.getSheets().some(function(s) { return s.getName().indexOf("전용양식") !== -1; });
+      if (hasEx) {
+        targets.push(files[f]);
+      } else {
+        Logger.log("⏭️ 전용양식 없음: " + files[f].name);
+      }
+    } catch(e) {
+      Logger.log("⏭️ 열기 실패: " + files[f].name);
+    }
+  }
+
+  if (targets.length === 0) {
+    ui.alert("✅ 재시도할 업체 없음 — 모두 설치 완료!");
+    return;
+  }
+
+  Logger.log("[재시도] 대상: " + targets.length + "개");
+  var ok = 0, fail = 0, errors = [];
+
+  for (var j = 0; j < targets.length; j++) {
+    // ★ 먼저 10초 대기 (첫 번째 업체부터)
+    if (j > 0) Utilities.sleep(10000);
+    
+    try {
+      var ss = SpreadsheetApp.openById(targets[j].id);
+      createViewerNoticeScript_(ss);
+      ok++;
+      Logger.log("✅ (" + (j+1) + "/" + targets.length + ") " + targets[j].name);
+    } catch(e) {
+      var errMsg = e.message || "";
+      if (errMsg.indexOf("429") !== -1 || errMsg.indexOf("quota") !== -1) {
+        // 429면 30초 대기 후 1회 재시도
+        Logger.log("⏳ 429 → 30초 대기 후 재시도: " + targets[j].name);
+        Utilities.sleep(30000);
+        try {
+          var ss2 = SpreadsheetApp.openById(targets[j].id);
+          createViewerNoticeScript_(ss2);
+          ok++;
+          Logger.log("✅ (재시도 성공) " + targets[j].name);
+        } catch(e2) {
+          fail++;
+          errors.push(targets[j].name.replace("[협력업체] ", ""));
+          Logger.log("❌ " + targets[j].name);
+        }
+      } else {
+        fail++;
+        errors.push(targets[j].name.replace("[협력업체] ", "") + ": " + errMsg.substring(0, 60));
+        Logger.log("❌ " + targets[j].name + ": " + errMsg);
+      }
+    }
+  }
+
+  var msg = "✅ 재시도 완료\n\n성공: " + ok + "개 / 실패: " + fail + "개" +
+    (errors.length > 0 ? "\n\n실패:\n" + errors.join("\n") : "");
+  Logger.log(msg);
+  ui.alert(msg);
+}
+
+/**
+ * ★ 코드 업데이트 전용 — 기존 스크립트 ID로 PUT 업데이트만 (429 걱정 없음!)
+ * 프로젝트 생성이 아닌 파일 내용 교체라 API 제한이 다름
+ * 전용양식 있는 업체만 대상
+ */
+function updateAllVendorScripts() {
+  var ui = SpreadsheetApp.getUi();
+  var files = _pt_listFiles(true);
+  if (!files || files.length === 0) { ui.alert("업체 파일 없음"); return; }
+  
+  var props = PropertiesService.getScriptProperties();
+  var ok = 0, fail = 0, skip = 0, errors = [];
+
+  for (var f = 0; f < files.length; f++) {
+    var key = "VIEWER_BOUND_SCRIPT_ID_" + files[f].id;
+    var scriptId = props.getProperty(key);
+    
+    // 캐시 없으면 건너뜀
+    if (!scriptId) { skip++; continue; }
+    
+    // 전용양식 확인
+    try {
+      var ssTmp = SpreadsheetApp.openById(files[f].id);
+      var hasEx = ssTmp.getSheets().some(function(s) { return s.getName().indexOf("전용양식") !== -1; });
+      if (!hasEx) { skip++; continue; }
+    } catch(e) { skip++; continue; }
+
+    // PUT 업데이트 (createViewerNoticeScript_ 재호출)
+    try {
+      createViewerNoticeScript_(ssTmp);
+      ok++;
+      Logger.log("✅ (" + (ok) + ") " + files[f].name);
+    } catch(e) {
+      fail++;
+      errors.push(files[f].name.replace("[협력업체] ", "") + ": " + (e.message || "").substring(0, 60));
+      Logger.log("❌ " + files[f].name + ": " + e.message);
+    }
+  }
+
+  var msg = "✅ 코드 업데이트 완료\n\n" +
+    "업데이트: " + ok + "개\n실패: " + fail + "개\n건너뜀: " + skip + "개" +
+    (errors.length > 0 ? "\n\n실패:\n" + errors.join("\n") : "");
+  Logger.log(msg);
+  ui.alert(msg);
+}

@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    font-family: 'Segoe UI', -apple-system, sans-serif;
+    background: #0f0f1a;
+    color: #e0e0e0;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-x: hidden;
+  }
+
+  /* ── 헤더 ── */
+  .header {
+    background: linear-gradient(135deg, #1a1a3e, #2d1b69);
+    padding: 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .header h1 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .header .sub {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    margin-top: 4px;
+  }
+
+  /* ── 요약 카드 ── */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    padding: 12px 16px;
+  }
+  .stat-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 10px 8px;
+    text-align: center;
+    transition: transform 0.15s;
+  }
+  .stat-card:hover { transform: translateY(-2px); }
+  .stat-card .num {
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+  .stat-card .label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.5);
+    margin-top: 2px;
+  }
+  .num.critical { color: #ff5252; }
+  .num.warning { color: #ffd740; }
+  .num.info { color: #ff9800; }
+  .num.ok { color: #69f0ae; }
+
+  /* ── 액션 버튼 ── */
+  .actions {
+    padding: 0 16px 12px;
+  }
+  .btn-audit {
+    width: 100%;
+    padding: 10px;
+    background: linear-gradient(135deg, #6c5ce7, #a855f7);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .btn-audit:hover { opacity: 0.85; }
+  .btn-audit:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-audit .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    display: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── 이슈 리스트 ── */
+  .issues-section {
+    padding: 0 16px;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .issues-section::-webkit-scrollbar { width: 4px; }
+  .issues-section::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+  .issue-group {
+    margin-bottom: 8px;
+  }
+  .issue-group-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.7);
+    padding: 6px 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+  }
+  .issue-group-header:hover { color: #fff; }
+  .issue-group-header .arrow { transition: transform 0.2s; font-size: 10px; }
+  .issue-group-header .arrow.open { transform: rotate(90deg); }
+  .issue-group-header .badge {
+    background: rgba(255,255,255,0.1);
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+  }
+
+  .issue-item {
+    background: rgba(255,255,255,0.03);
+    border-left: 3px solid rgba(255,255,255,0.1);
+    margin: 3px 0;
+    padding: 6px 10px;
+    border-radius: 0 6px 6px 0;
+    font-size: 12px;
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+  .issue-item.critical { border-left-color: #ff5252; }
+  .issue-item.warning { border-left-color: #ffd740; }
+  .issue-item.info { border-left-color: #ff9800; }
+  .issue-item .issue-meta {
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+  }
+  .issue-item .issue-desc {
+    margin-top: 2px;
+    color: rgba(255,255,255,0.8);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 30px 16px;
+    color: rgba(255,255,255,0.3);
+  }
+  .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
+
+  /* ── 구분선 ── */
+  .divider {
+    height: 1px;
+    background: rgba(255,255,255,0.06);
+    margin: 8px 16px;
+  }
+
+  /* ── 채팅 영역 ── */
+  .chat-section {
+    padding: 8px 16px;
+  }
+  .chat-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chat-messages {
+    min-height: 80px;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 8px;
+  }
+  .chat-messages::-webkit-scrollbar { width: 4px; }
+  .chat-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+  .chat-msg {
+    margin: 6px 0;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    animation: fadeIn 0.3s ease;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .chat-msg.user {
+    background: rgba(108, 92, 231, 0.3);
+    margin-left: 30px;
+    border: 1px solid rgba(108, 92, 231, 0.2);
+  }
+  .chat-msg.ai {
+    background: rgba(255,255,255,0.05);
+    margin-right: 20px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .chat-msg.ai .ai-label {
+    font-size: 10px;
+    color: #a855f7;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .chat-input-wrap {
+    display: flex;
+    gap: 6px;
+  }
+  .chat-input {
+    flex: 1;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .chat-input:focus { border-color: #6c5ce7; }
+  .chat-input::placeholder { color: rgba(255,255,255,0.3); }
+
+  .btn-send {
+    padding: 8px 14px;
+    background: #6c5ce7;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .btn-send:hover { opacity: 0.85; }
+  .btn-send:disabled { opacity: 0.3; }
+
+  /* ── 빠른 질문 칩 ── */
+  .quick-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .chip {
+    padding: 4px 10px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.6);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .chip:hover {
+    background: rgba(108, 92, 231, 0.2);
+    border-color: rgba(108, 92, 231, 0.4);
+    color: #fff;
+  }
+</style>
+</head>
+<body>
+
+<!-- 헤더 -->
+<div class="header">
+  <h1>🔍 주문 검증 AI</h1>
+  <div class="sub" id="lastUpdate">검증 결과를 불러오는 중...</div>
+</div>
+
+<!-- 요약 카드 -->
+<div class="summary-grid">
+  <div class="stat-card">
+    <div class="num ok" id="statOk">-</div>
+    <div class="label">정상</div>
+  </div>
+  <div class="stat-card">
+    <div class="num critical" id="statCritical">-</div>
+    <div class="label">긴급</div>
+  </div>
+  <div class="stat-card">
+    <div class="num warning" id="statWarning">-</div>
+    <div class="label">주의</div>
+  </div>
+  <div class="stat-card">
+    <div class="num info" id="statInfo">-</div>
+    <div class="label">경고</div>
+  </div>
+</div>
+
+<!-- 액션 -->
+<div class="actions">
+  <button class="btn-audit" id="btnAudit" onclick="runAudit()">
+    <span class="spinner" id="auditSpinner"></span>
+    <span id="auditLabel">🔄 전체 검증 실행</span>
+  </button>
+</div>
+
+<!-- 이슈 리스트 -->
+<div class="issues-section" id="issuesList">
+  <div class="empty-state">
+    <div class="icon">📋</div>
+    <div>검증을 실행하면 결과가 여기에 표시됩니다</div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- 채팅 -->
+<div class="chat-section">
+  <div class="chat-title">💬 AI에게 질문하기</div>
+  <div class="quick-chips">
+    <div class="chip" onclick="askQuick('오늘 주문 현황 요약해줘')">📊 오늘 현황</div>
+    <div class="chip" onclick="askQuick('송장 누락 건 확인해줘')">🔍 송장 누락</div>
+    <div class="chip" onclick="askQuick('비정상 주문 있어?')">⚠️ 이상 감지</div>
+    <div class="chip" onclick="askQuick('업체별 발주 현황')">🏢 업체별</div>
+  </div>
+  <div class="chat-messages" id="chatMessages"></div>
+  <div class="chat-input-wrap">
+    <input class="chat-input" id="chatInput" placeholder="질문을 입력하세요..." 
+           onkeydown="if(event.key==='Enter')sendChat()">
+    <button class="btn-send" id="btnSend" onclick="sendChat()">전송</button>
+  </div>
+</div>
+
+<script>
+  // ── 전체 검증 실행 ──
+  function runAudit() {
+    var btn = document.getElementById('btnAudit');
+    var spinner = document.getElementById('auditSpinner');
+    var label = document.getElementById('auditLabel');
+    btn.disabled = true;
+    spinner.style.display = 'inline-block';
+    label.textContent = '검증 중...';
+
+    google.script.run
+      .withSuccessHandler(function(resp) {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+        label.textContent = '🔄 전체 검증 실행';
+        try {
+          var data = JSON.parse(resp);
+          if (data.type === 'AUDIT_RESULT') {
+            updateDashboard(data.data);
+          }
+        } catch(e) {
+          showChatMsg('ai', '검증 완료! 📋 주문검증 탭을 확인하세요.');
+        }
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+        label.textContent = '🔄 전체 검증 실행';
+        showChatMsg('ai', '❌ 검증 오류: ' + err.message);
+      })
+      ._oa_chatQuery_('전체 검증 실행');
+  }
+
+  // ── 대시보드 업데이트 ──
+  function updateDashboard(data) {
+    document.getElementById('statOk').textContent = data.ok;
+    document.getElementById('statCritical').textContent = data.critical;
+    document.getElementById('statWarning').textContent = data.warning;
+    document.getElementById('statInfo').textContent = data.info;
+    document.getElementById('lastUpdate').textContent = 
+      '최종 검증: ' + data.timestamp + ' | 총 ' + data.total + '건';
+
+    renderIssues(data.issues);
+  }
+
+  // ── 이슈 렌더링 ──
+  function renderIssues(issues) {
+    var container = document.getElementById('issuesList');
+    if (!issues || issues.length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="icon">✅</div><div>모든 검증 항목 통과!</div></div>';
+      return;
+    }
+
+    // 유형별 그룹핑
+    var groups = {};
+    var typeLabels = {
+      'INVOICE_MISSING': '📦 송장 미배정',
+      'INVOICE_DUPLICATE': '🔄 송장 중복',
+      'ORDER_DUPLICATE': '📋 주문번호 중복',
+      'PRICE_MISMATCH': '💰 단가 불일치',
+      'QTY_ZERO': '📊 수량 이상',
+      'QTY_HIGH': '📊 대량 주문',
+      'INVALID_CODE': '🔤 품목코드 오류',
+      'CANCEL_RETURN_PENDING': '🚫 취소/반품 미처리',
+      'ARCHIVE_PENDING': '📁 마감 누락',
+      'STATUS_CODE_ERROR': '⚠️ 코드오류 방치',
+      'STATUS_SOLD_OUT': '⚠️ 품절 방치',
+      'ISLAND_SHIPPING': '🏝️ 도서산간'
+    };
+
+    for (var i = 0; i < issues.length; i++) {
+      var type = issues[i].type;
+      if (!groups[type]) groups[type] = [];
+      groups[type].push(issues[i]);
+    }
+
+    var html = '';
+    var typeKeys = Object.keys(groups);
+    for (var g = 0; g < typeKeys.length; g++) {
+      var type = typeKeys[g];
+      var items = groups[type];
+      var label = typeLabels[type] || type;
+      var sevClass = items[0].severity.indexOf('긴급') !== -1 ? 'critical' :
+                     items[0].severity.indexOf('주의') !== -1 ? 'warning' : 'info';
+
+      html += '<div class="issue-group">';
+      html += '<div class="issue-group-header" onclick="toggleGroup(this)">';
+      html += '<span class="arrow">▶</span> ' + label;
+      html += ' <span class="badge">' + items.length + '건</span>';
+      html += '</div>';
+      html += '<div class="issue-items" style="display:none">';
+      for (var j = 0; j < Math.min(items.length, 10); j++) {
+        html += '<div class="issue-item ' + sevClass + '">';
+        html += '<div class="issue-meta">' + items[j].vendor + ' | ' + items[j].code + ' | 행 ' + items[j].row + '</div>';
+        html += '<div class="issue-desc">' + escHtml(items[j].desc) + '</div>';
+        html += '</div>';
+      }
+      if (items.length > 10) {
+        html += '<div class="issue-item info"><div class="issue-desc">... 외 ' + (items.length - 10) + '건</div></div>';
+      }
+      html += '</div></div>';
+    }
+    container.innerHTML = html;
+  }
+
+  function toggleGroup(header) {
+    var items = header.nextElementSibling;
+    var arrow = header.querySelector('.arrow');
+    if (items.style.display === 'none') {
+      items.style.display = 'block';
+      arrow.classList.add('open');
+    } else {
+      items.style.display = 'none';
+      arrow.classList.remove('open');
+    }
+  }
+
+  // ── 채팅 ──
+  function askQuick(text) {
+    document.getElementById('chatInput').value = text;
+    sendChat();
+  }
+
+  function sendChat() {
+    var input = document.getElementById('chatInput');
+    var msg = input.value.trim();
+    if (!msg) return;
+    input.value = '';
+    showChatMsg('user', msg);
+    
+    var btn = document.getElementById('btnSend');
+    btn.disabled = true;
+
+    google.script.run
+      .withSuccessHandler(function(resp) {
+        btn.disabled = false;
+        try {
+          var data = JSON.parse(resp);
+          if (data.type === 'TEXT') {
+            showChatMsg('ai', data.msg);
+          } else if (data.type === 'AUDIT_RESULT') {
+            updateDashboard(data.data);
+            showChatMsg('ai', '✅ 검증 완료! 위 대시보드를 확인하세요.');
+          }
+        } catch(e) {
+          showChatMsg('ai', resp);
+        }
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        showChatMsg('ai', '❌ 오류: ' + err.message);
+      })
+      ._oa_chatQuery_(msg);
+  }
+
+  function showChatMsg(role, text) {
+    var container = document.getElementById('chatMessages');
+    var div = document.createElement('div');
+    div.className = 'chat-msg ' + role;
+    if (role === 'ai') {
+      div.innerHTML = '<div class="ai-label">🤖 AI</div>' + escHtml(text);
+    } else {
+      div.textContent = text;
+    }
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function escHtml(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+  }
+
+  // ── 초기 로드 ──
+  window.onload = function() {
+    document.getElementById('lastUpdate').textContent = '아직 검증이 실행되지 않았습니다. [전체 검증 실행] 버튼을 클릭하세요.';
+  };
+</script>
+
+</body>
+</html>

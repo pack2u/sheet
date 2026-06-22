@@ -12,6 +12,12 @@ function registerPartnerMenu_() {
 
     // ━━━ 스마트 검색 (최상단 배치) ━━━━━━━━━━━━━━━━━━━━━━
     .addItem("🔍 스마트 검색 (고유ID/수취인/송장)", "partnerOpenSmartSearch")
+    // ━━━ 주문 검증 AI ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    .addSubMenu(
+      ui.createMenu("🤖 주문 검증 AI")
+        .addItem("📊 전체 검증 실행", "_oa_runFullAuditOwner")
+        .addItem("💬 AI 분석 사이드바", "showOrderAuditSidebar")
+    )
     .addSeparator()
     // ━━━ 대리발송 발주시스템(New) ━━━━━━━━━━━━━━━━━━━━━━━━
     .addSubMenu(
@@ -78,7 +84,19 @@ function registerPartnerMenu_() {
               "📋 통합 일일마감 (수동)",
               "partnerUnifiedDailyArchiveManual",
             )
+            .addItem(
+              "💰 판매현황_단가맵 수동 수집",
+              "partnerCollectPriceMapManual",
+            )
+            .addItem(
+              "🔍 단가 매칭 진단",
+              "partnerDiagnosePriceMatch",
+            )
             .addSeparator()
+            .addItem(
+              "🔄 취소/반품 수식 갱신",
+              "partnerRefreshCancelReturnFormulas",
+            )
             .addItem(
               "🔧 월별 마감 탭 레이아웃 보정",
               "partnerRepairMonthlySettleTabs",
@@ -119,13 +137,9 @@ function registerPartnerMenu_() {
         .addItem("➕ 시트 생성 (단가조회 전용)", "partnerCreateViewerOnlySheet")
         .addItem("🔄 일반 → 소비자용 전환", "partnerConvertToConsumer")
         .addSeparator()
-        .addItem("📊 수식·단가 복구", "openRepairDialog_formula")
-        .addItem("📋 헤더·양식 복구", "openRepairDialog_header")
-        .addItem("📝 스크립트 재설치", "openRepairDialog_script")
-        .addItem("🗃️ 데이터 보정", "openRepairDialog_data")
-        .addItem("📑 탭 재생성", "openRepairDialog_tabs")
+        // ★ 2026-06-17: 복구 도구 1개 메뉴로 통합 (팝업 내에서 카테고리 선택)
+        .addItem("🛠️ 협력업체 복구시스템", "openRepairDialog")
         .addSeparator()
-        .addItem("🔄 전체 수식 갱신", "partnerForceUpdateAll")
         .addItem("🔄 검색입력 탭만 갱신", "partnerRefreshSearchInputOnly")
         .addItem("💰 단가 새로고침 (빠른)", "partnerRefreshViewerPrices")
         .addItem("🔑 뷰어 코드 → 수동 모드 전환", "partnerViewerCodeToManual")
@@ -189,39 +203,47 @@ function registerPartnerMenu_() {
         .addItem("📋 대시보드 자동갱신 상태 확인", "partnerShowDashboardTriggerStatus")
         .addSeparator()
         .addItem("폐기송장 자동조회 트리거 설치", "partnerSetupVoidAutoFillTrigger"),
+        // ★ 출고가능 동기화: 폐기송장 트리거에 합침 (별도 설치 불필요)
+        // ★ 2026-06-19: 통합 일일마감 트리거
+    )
+    .addSeparator()
+    .addSubMenu(
+      ui
+        .createMenu("⏰ 통합 일일마감 (20시)")
+        .addItem("▶ 일일마감 트리거 설치 (매일 20시)", "setupUnifiedDailyArchiveTrigger")
+        .addItem("⏸ 일일마감 트리거 제거", "removeUnifiedDailyArchiveTrigger"),
     )
     .addToUi();
 }
 
 // ═══════════════════════════════════════════
-//  복구 다이얼로그 열기 (카테고리별)
+//  복구 다이얼로그
+//  ★ 2026-06-17: 메뉴 1개 통합 → 팝업 내에서 카테고리 선택
 // ═══════════════════════════════════════════
 
-/** 수식·단가 복구 다이얼로그 */
+/** 통합 복구시스템 다이얼로그 (메뉴에서 호출) */
+function openRepairDialog() { _openRepairDialog_(null); }
+
+// ★ 하위 호환: 기존 개별 함수 유지 (외부 참조 방지)
 function openRepairDialog_formula() { _openRepairDialog_("formula"); }
-/** 헤더·양식 복구 다이얼로그 */
 function openRepairDialog_header() { _openRepairDialog_("header"); }
-/** 스크립트 재설치 다이얼로그 */
 function openRepairDialog_script() { _openRepairDialog_("script"); }
-/** 데이터 보정 다이얼로그 */
-function openRepairDialog_data() { _openRepairDialog_("data"); }
-/** 탭 재생성 다이얼로그 */
 function openRepairDialog_tabs() { _openRepairDialog_("tabs"); }
+function openRepairDialog_data() { _openRepairDialog_("header"); }
 
 function _openRepairDialog_(preselect) {
   var html = HtmlService.createHtmlOutputFromFile("repairDialog")
-    .setWidth(460)
-    .setHeight(580);
-  // 사전 선택 카테고리를 title에 포함하여 전달
+    .setWidth(700)
+    .setHeight(680);
   var titles = {
     formula: "🔧 수식·단가 복구",
     header: "🔧 헤더·양식 복구",
     script: "🔧 스크립트 재설치",
-    data: "🔧 데이터 보정",
     tabs: "📑 탭 재생성",
   };
-  html.setTitle(titles[preselect] || "🔧 복구 도구");
-  SpreadsheetApp.getUi().showModalDialog(html, titles[preselect] || "🔧 복구 도구");
+  var defaultTitle = "🛠️ 협력업체 복구시스템";
+  html.setTitle(titles[preselect] || defaultTitle);
+  SpreadsheetApp.getUi().showModalDialog(html, titles[preselect] || defaultTitle);
 }
 
 // ═══════════════════════════════════════════
@@ -261,13 +283,11 @@ function executeRepairBatch(category, fileIds, extraOpts) {
       results = _repairBatch_formula_(fileIds);
       break;
     case "header":
+    case "data":  // ★ data는 header에 통합됨 (하위 호환)
       results = _repairBatch_header_(fileIds);
       break;
     case "script":
       results = _repairBatch_script_(fileIds);
-      break;
-    case "data":
-      results = _repairBatch_data_(fileIds);
       break;
     case "tabs":
       results = _repairBatch_tabs_(fileIds, extraOpts || {});
@@ -340,6 +360,53 @@ function _repairBatch_formula_(fileIds) {
         if (healResult.aFixed || healResult.lFixed || healResult.dFixed) {
           logs.push("spill수식");
         }
+
+        // ③ D/L 백필: C열 코드 있는데 D/L 비어있는 행 재조회
+        try {
+          var vTab = viewer;
+          if (!vTab) vTab = _pt_findViewerSheet(ss);
+          if (vTab) {
+            var otLr = ot.getLastRow();
+            if (otLr >= 2) {
+              var vLast = vTab.getLastRow();
+              var vData = (vLast >= 4) ? vTab.getRange(4, 1, vLast - 3, 7).getValues() : [];
+              // 뷰어 구조: A=상태, B=?, C=이카운트코드(2), D=품목명(3), E/F=?, G=최종단가(6)
+              var vMap = {};
+              for (var vi = 0; vi < vData.length; vi++) {
+                var vCode = String(vData[vi][2] || "").replace(/\s/g, "");
+                if (vCode) {
+                  vMap[vCode] = {
+                    name: String(vData[vi][3] || "").trim(),
+                    price: vData[vi][6] // G열 = index 6 (최종단가)
+                  };
+                }
+              }
+
+              // C/D/L 데이터 읽기
+              var cdlRange = ot.getRange(2, 3, otLr - 1, 1);
+              var cVals = cdlRange.getValues();
+              var dVals = ot.getRange(2, 4, otLr - 1, 1).getValues();
+              var lVals = ot.getRange(2, 12, otLr - 1, 1).getValues();
+              var backfilled = 0;
+
+              for (var ri = 0; ri < cVals.length; ri++) {
+                var code = String(cVals[ri][0] || "").replace(/\s/g, "");
+                if (!code) continue;
+                var dEmpty = !String(dVals[ri][0] || "").trim();
+                var lEmpty = !String(lVals[ri][0] || "").toString().trim() || lVals[ri][0] === 0;
+                if (dEmpty || lEmpty) {
+                  var match = vMap[code];
+                  if (match) {
+                    if (dEmpty && match.name) ot.getRange(ri + 2, 4).setValue(match.name);
+                    if (lEmpty && match.price) ot.getRange(ri + 2, 12).setValue(match.price);
+                    backfilled++;
+                  }
+                }
+              }
+              if (backfilled > 0) logs.push("백필" + backfilled + "행");
+            }
+          }
+        } catch (eBf) {}
       }
 
       results.push("✅ " + nm + " (" + logs.join(", ") + ")");
@@ -354,9 +421,9 @@ function _repairBatch_formula_(fileIds) {
 function _repairBatch_header_(fileIds) {
   var results = [];
   var defaultH = [
-    "거래처명(자동)", "주문일자(자동)", "이카운트코드", "품목명",
+    "거래처명(자동)", "주문일자(자동)", "이카운트코드", "품목명(자동)",
     "수량", "수취인", "수취인전화번호", "수취인주소",
-    "배송메시지", "적요", "송장번호", "정산금액(자동)",
+    "배송메시지", "적요", "송장번호", "단가",
     "고유ID(자동)", "상태(자동)", "도서산간배송비",
   ];
 
@@ -383,12 +450,8 @@ function _repairBatch_header_(fileIds) {
           }
         } catch (eCfr) {}
 
-        // spill 수식 재연결
-        try {
-          var viewerTab = _pt_findViewerSheet(ss);
-          var viewerName = viewerTab ? viewerTab.getName() : "단가조회";
-          _pt_healOrderSpillFormulas(ot, viewerName);
-        } catch (eSpill) {}
+        // ★ 2026-06-17: D/L열 값 기반 전환으로 spill 수식 재연결 불필요
+        // 헤더만 정리하면 됨 (수식 없음)
       }
 
       // ③ 전용양식 헤더 + 조건부서식 복구
@@ -441,6 +504,17 @@ function _repairBatch_header_(fileIds) {
           if (monthTabs.length > 0) logs.push("마감레이아웃");
         }
       } catch (eLayout) {}
+
+      // ⑥ B6 거래처코드 서식 보정 (★ 데이터 보정에서 흡수)
+      try {
+        var st = ss.getSheetByName("설정");
+        if (st) {
+          var currentVal = String(st.getRange("B6").getDisplayValue() || "").trim();
+          st.getRange("B6").setNumberFormat("@");
+          if (currentVal) st.getRange("B6").setValue(currentVal);
+          logs.push("B6서식");
+        }
+      } catch (eB6) {}
 
       results.push("✅ " + nm + " (" + logs.join(", ") + ")");
     } catch (e) {
@@ -501,16 +575,12 @@ function _repairBatch_data_(fileIds) {
         logs.push("B6서식" + (currentVal ? "(" + currentVal + ")" : ""));
       }
 
-      // ② L열 단가 검증 (코드오류 정리)
+      // ② D/L열 값 기반 전환 후 수식 잔존 정리
       var ot = ss.getSheetByName("발주 및 송장조회");
       if (ot) {
-        // spill 수식 heal (CLEAN/TRIM 포함 최신 수식으로 교체)
-        var viewerTab = _pt_findViewerSheet(ss);
-        var viewerName = viewerTab ? viewerTab.getName() : "단가조회";
-        var healResult = _pt_healOrderSpillFormulas(ot, viewerName);
-        if (healResult.aFixed || healResult.lFixed || healResult.dFixed) {
-          logs.push("수식갱신");
-        }
+        // ★ 2026-06-17: heal은 수식·단가 복구에서만 실행 (중복 방지)
+        // 데이터 보정에서는 B6 서식 보정만 수행
+        logs.push("B6보정완료");
       }
 
       results.push("✅ " + nm + " (" + logs.join(", ") + ")");
@@ -632,9 +702,9 @@ function _repairBatch_tabs_(fileIds, opts) {
           logs.push("발주탭 생성");
         } else {
           var defaultH = [
-            "거래처명(자동)", "주문일자(자동)", "이카운트코드", "품목명",
+            "거래처명(자동)", "주문일자(자동)", "이카운트코드", "품목명(자동)",
             "수량", "수취인", "수취인전화번호", "수취인주소",
-            "배송메시지", "적요", "송장번호", "정산금액(자동)",
+            "배송메시지", "적요", "송장번호", "단가",
             "고유ID(자동)", "상태(자동)",
           ];
           orderTab.getRange(1, 1, 1, defaultH.length).setValues([defaultH]);

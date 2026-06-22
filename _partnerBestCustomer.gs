@@ -1,5 +1,5 @@
 /**
- * [협력업체] 베스트 고객 TOP10 분석  v1.2
+ * [협력업체] 베스트 고객 TOP10 분석  v1.3
  * 파일: _partnerBestCustomer.gs
  *
  * ★ 기능: 각 업체 시트의 발주 마감탭(최근 6개월) 데이터를 분석하여
@@ -9,7 +9,10 @@
  * ★ 취소/반품 행 제외 (실매출 기반)
  * ★ v1.2: 고객 식별 키를 이름+주소(끝8자)로 변경 (쿠팡 임시번호 대응)
  *         주소 없으면 전화번호 끝4자리 fallback
+ * ★ v1.3: 금액 열 매핑 개선 — 마감탭 헤더 "단가"(ARRAYFORMULA 생성)도 인식
+ *         unitPrice → lineTotal → "단가" 3단계 fallback
  */
+
 
 // ═══════════════════════════════════════════
 //  상수
@@ -235,12 +238,25 @@ function _bc_mapColumns_(headers) {
   // ★ v1.2: 주소 열 결정 (수취인주소 > 일반주소 우선)
   var addrCol = _pt_resolveShipToAddressColumn(full);
 
+  // ★ v1.3: 금액 열 결정 (정산단가/확정단가/정산금액 → lineTotal → "단가" 열 fallback)
+  // 마감탭에서는 단가×수량=정산금액으로 변환되어 저장되지만,
+  // L열 헤더가 ARRAYFORMULA에 의해 "단가"로 표시되어 unitPrice 매핑이 실패할 수 있음
+  var priceCol = full.unitPrice;
+  if (priceCol === -1) priceCol = full.lineTotal;  // 합계/주문금액 fallback
+  if (priceCol === -1) {
+    // 마감탭 "단가" 헤더 직접 스캔 (마감탭 이동 시 단가×수량으로 변환된 값이 저장됨)
+    for (var pi = 0; pi < headers.length; pi++) {
+      var ph = String(headers[pi] || "").replace(/\s/g, "");
+      if (ph === "단가") { priceCol = pi; break; }
+    }
+  }
+
   return {
     date:      full.date,
     recipient: full.recipient,
     phone:     full.phone,
     address:   addrCol,          // ★ v1.2: 수취인주소 (쿠팡 임시번호 대응)
-    price:     full.unitPrice,   // 정산금액/확정단가
+    price:     priceCol,         // ★ v1.3: 정산금액 (unitPrice → lineTotal → "단가" fallback)
     qty:       full.qty,
     cancel:    cancel,           // 마감탭 전용
     returnC:   returnC,          // 마감탭 전용

@@ -104,6 +104,10 @@ function registerPack2UMenu_() {
 function onEdit(e) {
   // 폐기송장 탭: 송장번호 입력 시 허브에서 판매처/품목명/수량/수취인 자동 조회
   try { _po_onEditVoidInvoiceAutoFill_(e); } catch(err) {}
+
+  // ★ 2026-06-18: 출고가능 동기화는 installable trigger로 이동
+  //   (simple trigger에서는 openById 권한 없어 외부 시트 접근 불가)
+  //   설치: partnerSetupShipApprovalTrigger()
 }
 
 /**

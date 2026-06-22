@@ -411,7 +411,7 @@ var _CS_GEMINI_KEY = GEMINI_API_KEY;
  */
 function ocrInvoiceImage(base64Data, mimeType) {
   try {
-    var model = "gemini-2.5-flash-lite";
+    var model = "gemini-3.5-flash"; // ★ 2026-06-18 OCR 정확도 최우선
     var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
       model + ":generateContent?key=" + _CS_GEMINI_KEY;
 
