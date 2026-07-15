@@ -1265,9 +1265,10 @@ function _trigger_monthlySettle_() {
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 대리판매 마감 스킵"); return; }
   try {
     Logger.log("[TRIGGER 07:00] 대리판매 마감 시작");
+    // ★ 2026-07-16: 연속 실행 구조 — 완료 알림은 _pms_runBatch_ 내부에서
+    //   전체 완료 시 1회만 발송 (파일 많으면 백그라운드 재개로 이어짐)
     partnerArchiveToMonthlySilent_();
-    Logger.log("[TRIGGER 07:00] 대리판매 마감 완료");
-    try { _chat_sendCard_("✅ 대리판매 마감 완료", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "상태", value: "정상 완료" }]); } catch (_) {}
+    Logger.log("[TRIGGER 07:00] 대리판매 마감 1차 배치 종료(완료 또는 백그라운드 재개)");
   } catch (e) {
     Logger.log("[TRIGGER 07:00] 대리판매 마감 에러: " + e.message);
     try { _chat_sendCard_("❌ 대리판매 마감 에러", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(e.message).substring(0, 200) }]); } catch (_) {}

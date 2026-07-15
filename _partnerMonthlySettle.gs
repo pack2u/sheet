@@ -103,7 +103,17 @@ function partnerArchiveToMonthlySettle() {
 /** [트리거용] 무음 실행 */
 function partnerArchiveToMonthlySilent_() {
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(15000)) return;
+  // ★ 2026-07-01: Lock 재시도 3회 (05시 일괄마감과 충돌 시 대비)
+  var acquired = false;
+  for (var _retry_ = 0; _retry_ < 3; _retry_++) {
+    if (lock.tryLock(30000)) { acquired = true; break; }
+    Logger.log("[PMS_SILENT] Lock 재시도 " + (_retry_ + 1) + "/3");
+  }
+  if (!acquired) {
+    Logger.log("[PMS_SILENT] Lock 획득 실패 (3회 재시도 후) → 스킵");
+    try { _chat_sendCard_("⚠ 대리판매 마감 Lock 실패", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "상태", value: "Lock 3회 재시도 후 스킵" }]); } catch (_) {}
+    return;
+  }
   try { _pms_core_(null, true); }
   catch(e) { try{Logger.log("[PMS_ERR] "+String(e.message||e));}catch(_){} }
   finally { lock.releaseLock(); }
@@ -149,10 +159,16 @@ function partnerDiagnoseMonthlyArchive() {
 // ──────────────────────────────────────────────────────
 //  핵심 로직
 // ──────────────────────────────────────────────────────
+// ★ 2026-07-16: 연속 실행(continuation) 상수 — GAS 6분 한도 회피
+var _PMS_RESUME_KEY_ = "_PMS_RESUME_STATE";       // ScriptProperties 상태 저장 키
+var _PMS_RESUME_TRIGGER_ = "_pms_continueResume_"; // 재개 트리거 핸들러명
+var _PMS_TIME_BUDGET_MS_ = 4.5 * 60 * 1000;        // 배치당 시간 예산(4.5분, 6분 한도 안전마진)
+
 function _pms_core_(ui, silent) {
   var files = _pt_listFiles();
   if (!files || !files.length) {
-    if (!silent && ui) ui.alert("협력업체 파일 없음"); return;
+    if (!silent && ui) ui.alert("협력업체 파일 없음");
+    return;
   }
 
   if (!silent && ui) {
@@ -165,18 +181,80 @@ function _pms_core_(ui, silent) {
     if (cf !== ui.Button.YES) return;
   }
 
-  var todayStr = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd");
-  var todayNum = parseInt(todayStr, 10);
+  // ★ 이전 미완료 상태/재개 트리거 정리 후 새 실행 시작
+  _pms_clearResumeState_();
 
-  var archived = 0, failed = 0, errMsgs = [];
-  var _pms_archivedUids_ = {};
+  var todayNum = parseInt(
+    Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd"), 10);
 
-  files.forEach(function(fileInfo) {
+  var errMsgs = [];
+  var _tempCleared_ = 0, _tempKept_ = 0;
+
+  // ★ 2026-07-04: 대리공급_임시기록 초기화 (파일 루프 전에 최우선 1회만 실행)
+  try {
+    var _hubSS_ = SpreadsheetApp.openById(_PT.INFO_SS_ID);
+    var _tempTab_ = _po_getNonPartnerTempTab_(_hubSS_);
+    if (_tempTab_) {
+      var _tempClear_ = _po_clearTempTabInvoicedRowsOnly_(_tempTab_);
+      _tempCleared_ = _tempClear_.cleared;
+      _tempKept_ = _tempClear_.kept;
+      Logger.log("[PMS] 임시기록 초기화: 삭제=" + _tempCleared_ + "건, 유지=" + _tempKept_ + "건");
+    }
+  } catch (_eTempClear_) {
+    errMsgs.push("[임시기록초기화] " + _eTempClear_.message);
+    Logger.log("[PMS] 임시기록 초기화 실패: " + _eTempClear_.message);
+  }
+
+  // ★ 처리 상태 저장 (파일 큐 + 누적 카운터) → 시간 초과 시 이어서 처리
+  var state = {
+    queue: files.map(function(f) { return { id: f.id, name: f.name }; }),
+    todayNum: todayNum,
+    archived: 0,
+    failed: 0,
+    errMsgs: errMsgs,
+    tempCleared: _tempCleared_,
+    tempKept: _tempKept_
+  };
+  _pms_saveResumeState_(state);
+
+  // 첫 배치 실행 (시간 예산 내에서 가능한 만큼 처리)
+  var done = _pms_runBatch_(silent);
+
+  if (!silent && ui) {
+    if (done) {
+      var fin = _pms_loadFinalSummary_();
+      ui.alert(fin || "✅ 월별 정산 이동 완료");
+    } else {
+      ui.alert("⏳ 대리판매 마감 진행 중\n\n" +
+        "파일이 많아 나눠서 처리합니다.\n" +
+        "나머지는 1분 뒤 백그라운드에서 자동으로 이어집니다.\n" +
+        "(완료 시 Google Chat 알림이 전송됩니다.)");
+    }
+  }
+}
+
+/**
+ * ★ 한 배치 처리 (시간 예산 내에서 파일 처리)
+ * @param {boolean} silent 무음 여부 (완료 시 Chat 알림 발송용)
+ * @return {boolean} 전체 완료 여부 (true=완료, false=재개 예약됨)
+ */
+function _pms_runBatch_(silent) {
+  var startTime = new Date();
+  var state = _pms_loadResumeState_();
+  if (!state || !state.queue) return true; // 상태 없음 = 완료로 간주
+
+  var batchArchivedUids = {}; // ★ 이번 배치에서 이동된 UID (배치별 허브 정리)
+  var processedThisBatch = 0;
+
+  while (state.queue.length > 0) {
+    // 시간 예산 초과 시 중단 (단, 최소 1개는 처리해 무한루프 방지)
+    if (processedThisBatch > 0 && (new Date() - startTime) > _PMS_TIME_BUDGET_MS_) break;
+
+    var fileInfo = state.queue.shift();
     try {
       var ss = SpreadsheetApp.openById(fileInfo.id);
-      var res = _pms_processOneFile_(ss, todayNum, _pms_archivedUids_);
-      archived += res.archived;
-      // ★ 새 마감탭 생성 시에만 취소/반품 수식 갱신
+      var res = _pms_processOneFile_(ss, state.todayNum, batchArchivedUids);
+      state.archived += res.archived;
       if (res.newTabCreated) {
         try {
           var crTab = ss.getSheetByName(_CR_TAB_NAME);
@@ -184,18 +262,96 @@ function _pms_core_(ui, silent) {
         } catch(_eCr) {}
       }
     } catch(e) {
-      errMsgs.push("[" + fileInfo.name + "] " + e.message);
-      failed++;
+      if (state.errMsgs.length < 20) state.errMsgs.push("[" + fileInfo.name + "] " + e.message);
+      state.failed++;
     }
-  });
+    processedThisBatch++;
+    _pms_saveResumeState_(state); // 진행 상황 저장(중단 대비)
+  }
 
-  // ── 협력업체_발주허브 탭에서 이동된 행 삭제 ──
-  _pms_cleanupHub_(_pms_archivedUids_, archived, errMsgs);
+  // ── 이번 배치에서 이동된 행을 허브에서 삭제 ──
+  _pms_cleanupHub_(batchArchivedUids, Object.keys(batchArchivedUids).length, state.errMsgs);
 
-  var msg = "✅ 월별 정산 이동 완료\n이동: " + archived + "건"
-    + (failed > 0 ? "\n⚠ 파일 오류 " + failed + "건:\n" + errMsgs.slice(0,5).join("\n") : "");
-  Logger.log("[PMS] " + msg.replace(/\n/g," | "));
-  if (!silent && ui) ui.alert(msg);
+  if (state.queue.length === 0) {
+    // ── 전체 완료 ──
+    var msg = "✅ 월별 정산 이동 완료\n이동: " + state.archived + "건"
+      + "\n📋 임시기록 정리: 삭제 " + state.tempCleared + "건, 유지 " + state.tempKept + "건"
+      + (state.failed > 0 ? "\n⚠ 파일 오류 " + state.failed + "건:\n" + state.errMsgs.slice(0,5).join("\n") : "");
+    Logger.log("[PMS] " + msg.replace(/\n/g," | "));
+    _pms_saveFinalSummary_(msg);
+    _pms_clearResumeState_();
+    if (silent) {
+      try {
+        _chat_sendCard_("✅ 대리판매 마감 완료",
+          Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"),
+          [
+            { label: "이동", value: state.archived + "건" },
+            { label: "📋 임시기록", value: "삭제 " + state.tempCleared + " / 유지 " + state.tempKept },
+            { label: "⚠ 파일오류", value: state.failed + "건" }
+          ]);
+      } catch(_) {}
+    }
+    return true;
+  }
+
+  // ── 미완료 → 재개 트리거 설치 ──
+  _pms_saveResumeState_(state);
+  _pms_scheduleResume_();
+  Logger.log("[PMS] 배치 중단 — 남은 파일 " + state.queue.length + "개, 1분 후 자동 재개");
+  return false;
+}
+
+/** ★ 재개 트리거 핸들러 — 저장된 상태로 이어서 처리 */
+function _pms_continueResume_() {
+  _pms_deleteResumeTriggers_(); // 자기 자신(일회성 트리거) 정리
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    Logger.log("[PMS_RESUME] Lock 실패 → 재예약");
+    _pms_scheduleResume_();
+    return;
+  }
+  try { _pms_runBatch_(true); }
+  catch(e) { try { Logger.log("[PMS_RESUME_ERR] " + String(e.message||e)); } catch(_) {} }
+  finally { lock.releaseLock(); }
+}
+
+// ── 연속 실행 상태 관리 헬퍼 ──
+function _pms_saveResumeState_(state) {
+  try { PropertiesService.getScriptProperties().setProperty(_PMS_RESUME_KEY_, JSON.stringify(state)); }
+  catch(e) { Logger.log("[PMS] 상태 저장 실패: " + e.message); }
+}
+function _pms_loadResumeState_() {
+  try {
+    var s = PropertiesService.getScriptProperties().getProperty(_PMS_RESUME_KEY_);
+    return s ? JSON.parse(s) : null;
+  } catch(e) { return null; }
+}
+function _pms_clearResumeState_() {
+  try { PropertiesService.getScriptProperties().deleteProperty(_PMS_RESUME_KEY_); } catch(e) {}
+  _pms_deleteResumeTriggers_();
+}
+function _pms_saveFinalSummary_(msg) {
+  try { PropertiesService.getScriptProperties().setProperty(_PMS_RESUME_KEY_ + "_FINAL", msg); } catch(e) {}
+}
+function _pms_loadFinalSummary_() {
+  try { return PropertiesService.getScriptProperties().getProperty(_PMS_RESUME_KEY_ + "_FINAL"); }
+  catch(e) { return null; }
+}
+function _pms_scheduleResume_() {
+  _pms_deleteResumeTriggers_(); // 중복 방지
+  try {
+    ScriptApp.newTrigger(_PMS_RESUME_TRIGGER_).timeBased().after(60 * 1000).create();
+  } catch(e) { Logger.log("[PMS] 재개 트리거 생성 실패: " + e.message); }
+}
+function _pms_deleteResumeTriggers_() {
+  try {
+    var trs = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < trs.length; i++) {
+      if (trs[i].getHandlerFunction() === _PMS_RESUME_TRIGGER_) {
+        try { ScriptApp.deleteTrigger(trs[i]); } catch(_) {}
+      }
+    }
+  } catch(e) {}
 }
 
 /**
@@ -218,14 +374,21 @@ function _pms_processOneFile_(ss, todayNum, archivedUids) {
 
   if (cMap.date === -1) return result;
 
+  // ★ 2026-07-01: 뷰어탭 1회만 접근 (캐싱)
+  var _viewerTab_ = null;
+  var _viewerName_ = "단가조회";
+  try {
+    _viewerTab_ = _pt_findViewerSheet(ss);
+    if (_viewerTab_) _viewerName_ = _viewerTab_.getName();
+  } catch(_eV) {}
+
   // ★ 품목명 보장: 단가조회 탭에서 코드→품목명 맵 구축
   var _codeToNameMap_ = {};
   try {
-    var _vTab_ = _pt_findViewerSheet(ss);
-    if (_vTab_) {
-      var _vLr_ = _vTab_.getLastRow();
+    if (_viewerTab_) {
+      var _vLr_ = _viewerTab_.getLastRow();
       if (_vLr_ >= 3) {
-        var _vData_ = _vTab_.getRange(3, 3, _vLr_ - 2, 2).getValues();
+        var _vData_ = _viewerTab_.getRange(3, 3, _vLr_ - 2, 2).getValues();
         for (var vi = 0; vi < _vData_.length; vi++) {
           var _code_ = String(_vData_[vi][0] || "").trim();
           var _name_ = String(_vData_[vi][1] || "").trim();
@@ -244,6 +407,15 @@ function _pms_processOneFile_(ss, todayNum, archivedUids) {
   var reasonC    = extLc - 4;
   var returnC    = extLc - 5;
   var cancelC    = extLc - 6;
+
+  // ★ 고유ID 열 인덱스 — 루프 밖에서 1회만 산출
+  var uidColIdx = 12;
+  for (var hsi = 0; hsi < headers.length; hsi++) {
+    var hh = String(headers[hsi] || "").replace(/\s/g, "").toLowerCase();
+    if (hh.indexOf("고유id") !== -1 || hh.indexOf("uniqueid") !== -1) {
+      uidColIdx = hsi; break;
+    }
+  }
 
   var keepData            = [];
   var archiveDataByMonth  = {};
@@ -283,13 +455,6 @@ function _pms_processOneFile_(ss, todayNum, archivedUids) {
       var qty       = Number(archiveRow[cMap.qty]);
       if (!isNaN(unitPrice) && !isNaN(qty) && qty > 0) {
         archiveRow[cMap.price] = unitPrice * qty;
-      }
-    }
-    var uidColIdx = 12;
-    for (var hsi = 0; hsi < headers.length; hsi++) {
-      var hh = String(headers[hsi] || "").replace(/\s/g, "").toLowerCase();
-      if (hh.indexOf("고유id") !== -1 || hh.indexOf("uniqueid") !== -1) {
-        uidColIdx = hsi; break;
       }
     }
     var archivedUid = String(rowData[uidColIdx] || "").trim();
@@ -333,70 +498,88 @@ function _pms_processOneFile_(ss, todayNum, archivedUids) {
       .setValues(padded)
       .setVerticalAlignment("middle");
 
-    archTab.getRange(nextRow, cancelC, padded.length, 2)
-      .clearDataValidations();
-    archTab.getRange(nextRow, cancelC, padded.length, 2)
-      .setValue(false);
-    archTab.getRange(nextRow, cancelC, padded.length, 2)
-      .insertCheckboxes();
+    // ★ 2026-07-16 성능: 신규 append 행은 insertCheckboxes 1회면 충분
+    //   (unchecked 기본값 자동 설정 → clearDataValidations/setValue(false) 불필요)
+    archTab.getRange(nextRow, cancelC, padded.length, 2).insertCheckboxes();
 
-    _pms_applyProtection_(archTab);
+    // ★ 2026-07-16 성능: 보호는 새/빈 탭일 때만 적용 (기존 탭은 이미 보호됨)
+    if (isNewBlank || result.newTabCreated) {
+      _pms_applyProtection_(archTab);
+    }
     result.archived += padded.length;
   }
 
   if (hasArchived) {
-    SpreadsheetApp.flush();
-
+    // ★ 2026-07-01: 잔류 데이터 복원 최적화 — 분할 5번 → 통합 1번 setValues
     orderTab.getRange(2, 1, orderTab.getMaxRows() - 1, lc).clearContent();
 
     if (keepData.length > 0) {
-      var bcData = keepData.map(function(r){ return r.slice(1, 3); });
-      orderTab.getRange(2, 2, keepData.length, 2).setValues(bcData);
-      var ekCount = Math.min(7, lc - 4);
-      if (ekCount > 0) {
-        var ekData = keepData.map(function(r){ return r.slice(4, 4 + ekCount); });
-        orderTab.getRange(2, 5, keepData.length, ekCount).setValues(ekData);
-      }
-      if (lc >= 13) {
-        var tailW = lc - 12;
-        var tailData = keepData.map(function(r) {
-          var t = r.slice(12, 12 + tailW);
-          while (t.length < tailW) t.push("");
-          return t;
-        });
-        orderTab.getRange(2, 13, keepData.length, tailW).setValues(tailData);
-      }
+      // A열 제외(수식), B~끝까지 한 번에 복원
+      var restW = lc - 1;
+      var restData = keepData.map(function(r) {
+        var row = r.slice(1, 1 + restW);
+        while (row.length < restW) row.push("");
+        return row;
+      });
+      orderTab.getRange(2, 2, keepData.length, restW).setValues(restData);
     }
 
-    try {
-      var totalRows = orderTab.getMaxRows() - 1;
-      if (totalRows > 0) {
-        orderTab.getRange(2, 1, totalRows, lc)
-          .setBorder(false, false, false, false, false, false);
-      }
-      var emptyStartRow = 2 + keepData.length;
-      var emptyRows = orderTab.getMaxRows() - emptyStartRow + 1;
-      if (emptyRows > 0) {
-        var fmtRange = orderTab.getRange(emptyStartRow, 1, emptyRows, lc);
-        fmtRange.setBackground(null);
-        fmtRange.setFontColor(null);
-        fmtRange.setFontSize(10);
-        fmtRange.setFontWeight("normal");
-        fmtRange.setFontStyle("normal");
-        fmtRange.setFontFamily(null);
-      }
-    } catch(eFmt) {}
     SpreadsheetApp.flush();
     try {
-      var _viewerTab_ = _pt_findViewerSheet(ss);
-      var _viewerName_ = _viewerTab_ ? _viewerTab_.getName() : "단가조회";
       _pt_healOrderSpillFormulas(orderTab, _viewerName_);
+      // ★ D/L 백필 — 빈 품목명/단가를 뷰어 탭에서 조회하여 채움
+      if (_viewerTab_) _pt_backfillOrderDL(orderTab, _viewerTab_);
     } catch(_eH) {}
     try { _pt_clearSearchInputTab_(ss); } catch(_e) {}
   }
 
+  // ★ 2026-07-04: DB 동기화 — 대리판매 월별 마감 상세 + 정산 요약
+  try {
+    if (result.archived > 0) {
+      // 업체명 추출 (설정 탭 B5 또는 시트 이름에서)
+      var _vName_ = "";
+      try {
+        var _setTab_ = ss.getSheetByName("설정");
+        if (_setTab_) _vName_ = String(_setTab_.getRange("B5").getValue() || "").trim();
+      } catch(_) {}
+      if (!_vName_) _vName_ = ss.getName().replace("[협력업체] ", "");
+
+      // 마감 월별로 상세 행을 DB에 저장
+      for (var _tab_ in archiveDataByMonth) {
+        var _arr_ = archiveDataByMonth[_tab_];
+        if (!_arr_ || !_arr_.length) continue;
+
+        // 탭 이름에서 정산월 추출: "(2026년 7월) 발주 마감" → "2026-07"
+        var _smMatch_ = _tab_.match(/\((\d{4})년\s*(\d{1,2})월\)/);
+        var _sm_ = _smMatch_ ? _smMatch_[1] + "-" + String(_smMatch_[2]).padStart(2, "0") : "";
+
+        if (_sm_) {
+          var _dbRows_ = _arr_.map(function(row) {
+            return {
+              unique_id: String(row[uidColIdx] || "").trim() || null,
+              order_date: String(row[cMap.date] || "").trim() || null,
+              ecount_code: String(row[2] || "").trim() || null,  // C열
+              item_name: String(row[3] || "").trim() || null,    // D열
+              qty: parseInt(row[cMap.qty]) || 1,
+              recipient: String(row[5] || "").trim() || null,    // F열
+              phone: String(row[6] || "").trim() || null,        // G열
+              address: String(row[7] || "").trim() || null,      // H열
+              message: String(row[8] || "").trim() || null,      // I열
+              unit_price: parseFloat(row[cMap.price]) || 0,
+              note: String(row[10] || "").trim() || null,        // K열
+              invoice_no: cMap.invoice !== -1 ? String(row[cMap.invoice] || "").trim() : null,
+              status: "마감완료"
+            };
+          });
+          _sb_syncPartnerSettle_(_vName_, _sm_, _dbRows_);
+        }
+      }
+    }
+  } catch (eDb) { Logger.log("[SB] 대리판매 마감 DB 동기화 오류: " + eDb.message); }
+
   return result;
 }
+
 
 /**
  * ★ 허브에서 이동된 행 삭제 (공통 로직)
@@ -404,7 +587,9 @@ function _pms_processOneFile_(ss, todayNum, archivedUids) {
 function _pms_cleanupHub_(archivedUids, archived, errMsgs) {
   if (archived > 0 && Object.keys(archivedUids).length > 0) {
     try {
+      // ★ 2026-07-01: getActiveSpreadsheet() → openById (트리거 실행 시 null 방지)
       var hubSS  = SpreadsheetApp.getActiveSpreadsheet();
+      if (!hubSS) hubSS = SpreadsheetApp.openById(_PT.HUB_ID);
       var hubTab = hubSS.getSheetByName("협력업체_발주허브");
       if (hubTab && hubTab.getLastRow() >= 2) {
         var hubLr      = hubTab.getLastRow();
@@ -781,23 +966,29 @@ function _pms_ensureCheckboxes_(tab, cancelC, returnC) {
   var lr = tab.getLastRow();
   if (lr < _PMS_DATA_START) return;
   var rowCount = lr - _PMS_DATA_START + 1;
-  var dv = tab.getRange(_PMS_DATA_START, cancelC, rowCount, 2).getDataValidations();
-  for (var i = 0; i < dv.length; i++) {
-    var need = false;
-    for (var j = 0; j < dv[i].length; j++) {
-      if (!dv[i][j]) { need = true; break; }
-      try {
-        if (dv[i][j].getCriteriaType() !== SpreadsheetApp.DataValidationCriteria.CHECKBOX) {
-          need = true; break;
-        }
-      } catch(e) { need = true; break; }
-    }
-    if (need) {
-      var row = _PMS_DATA_START + i;
-      tab.getRange(row, cancelC, 1, 2).clearDataValidations();
-      tab.getRange(row, cancelC, 1, 2).setValue(false);
-      tab.getRange(row, cancelC, 1, 2).insertCheckboxes();
-    }
+
+  // ★ 2026-07-16 성능: 첫 데이터 행에 이미 체크박스가 있으면 전체 정상으로 보고 스킵
+  //   (정상 마감탭은 이 경로에서 즉시 반환 → 기존 행별 스캔·삽입 비용 제거)
+  try {
+    var fdv = tab.getRange(_PMS_DATA_START, cancelC, 1, 2).getDataValidations()[0];
+    var CBX = SpreadsheetApp.DataValidationCriteria.CHECKBOX;
+    var ok0 = fdv[0] && fdv[0].getCriteriaType() === CBX;
+    var ok1 = fdv[1] && fdv[1].getCriteriaType() === CBX;
+    if (ok0 && ok1) return;
+  } catch(e) {}
+
+  // ★ 2026-07-16 성능: 행별 삽입 대신 전체 범위 1회 처리
+  //   기존 체크(true) 값은 보존하기 위해 값 백업 → insertCheckboxes → true만 복원
+  try {
+    var rng = tab.getRange(_PMS_DATA_START, cancelC, rowCount, 2);
+    var vals = rng.getValues();
+    rng.insertCheckboxes(); // 전체 unchecked 로 일괄 세팅
+    var restore = vals.map(function(r) {
+      return [ r[0] === true, r[1] === true ];
+    });
+    rng.setValues(restore);
+  } catch(e) {
+    Logger.log("[PMS] 체크박스 일괄 보정 실패: " + e.message);
   }
 }
 
