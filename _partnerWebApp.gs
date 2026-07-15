@@ -1292,29 +1292,17 @@ function _trigger_exclusiveArchive_() {
     var mm      = parseInt(Utilities.formatDate(now, "Asia/Seoul", "M"), 10);
     var tabName = "(" + yyyy + "년 " + mm + "월) " + _PEA_TAB_SUFFIX;
     Logger.log("[TRIGGER 07:20] 마감탭명: " + tabName);
-    var result  = _pea_core_(tabName);
-    Logger.log("[TRIGGER 07:20] 대리공급 마감 완료: 이동=" + result.moved + "건, 잔류=" + result.kept + "건" +
-      (result.tempCleared ? ", 임시기록삭제=" + result.tempCleared + "건" : "") +
-      (result.hubCleared ? ", 허브정리=" + result.hubCleared + "건" : "") +
-      (result.errors && result.errors.length > 0 ? ", 에러=" + result.errors.join("; ") : ""));
-    try {
-      var kvItems = [
-        { label: "이동", value: result.moved + "건" },
-        { label: "잔류", value: result.kept + "건" },
-        { label: "파일 수", value: (files ? files.length : 0) + "개" },
-      ];
-      if (result.tempCleared !== undefined) {
-        kvItems.push({ label: "📋 임시기록 삭제", value: result.tempCleared + "건" });
-        kvItems.push({ label: "📋 임시기록 유지", value: (result.tempKept || 0) + "건" });
-      }
-      if (result.hubCleared) {
-        kvItems.push({ label: "📋 발주허브 정리", value: result.hubCleared + "건" });
-      }
-      if (result.errors && result.errors.length > 0) {
-        kvItems.push({ label: "⚠ 에러", value: result.errors.slice(0, 3).join(", ") });
-      }
-      _chat_sendCard_("✅ 대리공급 마감 완료", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), kvItems);
-    } catch (_) {}
+    // ★ 2026-07-16: 연속 실행 구조 — 완료 알림은 _pea_core_ 내부에서 전체 완료 시 1회만 발송
+    //   (업체가 많으면 백그라운드 재개로 이어짐 → 여기서 완료 카드 발송 금지)
+    var result  = _pea_core_(tabName, true);
+    if (result.incomplete) {
+      Logger.log("[TRIGGER 07:20] 대리공급 마감 1차 배치 종료 — 남은 " + result.remaining + "개 업체 백그라운드 재개");
+    } else {
+      Logger.log("[TRIGGER 07:20] 대리공급 마감 완료: 이동=" + result.moved + "건, 잔류=" + result.kept + "건" +
+        (result.tempCleared ? ", 임시기록삭제=" + result.tempCleared + "건" : "") +
+        (result.hubCleared ? ", 허브정리=" + result.hubCleared + "건" : "") +
+        (result.errors && result.errors.length > 0 ? ", 에러=" + result.errors.join("; ") : ""));
+    }
   } catch (e) {
     Logger.log("[TRIGGER 07:20] 대리공급 마감 에러: " + e.message + "\n" + e.stack);
     try { _chat_sendCard_("❌ 대리공급 마감 에러", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(e.message).substring(0, 200) }]); } catch (_) {}
