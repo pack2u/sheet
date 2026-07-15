@@ -1561,9 +1561,9 @@ function _trigger_syncDb_() {
  * 이 배열의 순서가 곧 실행 스케줄입니다.
  */
 var _ALL_SCHEDULED_TRIGGERS_ = [
-  // ─── 새벽/아침: 마감 ───
-  // ★ 2026-07-02: 02시 이카운트 완전 제거
-  // ★ 2026-07-15: 6시/12시 runDailyEcountBatch 도 완전 제거 (수동 실행으로만 운영)
+  // ─── 새벽/아침: 이카운트 + 마감 ───
+  // ★ 2026-07-02: 02시 이카운트 완전 제거 (6시/12시는 유지)
+  { fn: "runDailyEcountBatch",                           h: 6,  m: 0,  label: "이카운트 전체동기화 1" },
   { fn: "_trigger_monthlySettle_",                       h: 7,  m: 0,  label: "대리판매 마감" },
   { fn: "_trigger_exclusiveArchive_",                    h: 7,  m: 20, label: "대리공급 마감" },
 
@@ -1571,7 +1571,8 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
   { fn: "partnerCollectOrdersSilent_",                   h: 8,  m: 0,  label: "발주 수집 + 판매현황 갱신 (1회전)" },
   { fn: "partnerPushOrdersToExclusiveFormsSilent_",      h: 9,  m: 20, label: "대리공급 Push + 우편번호 (1회전)" },
 
-  // ─── 점심: Supabase + 허브 ───
+  // ─── 점심: 이카운트 + Supabase + 허브 ───
+  { fn: "runDailyEcountBatch",                           h: 12, m: 0,  label: "이카운트 전체동기화 2" },
   { fn: "_trigger_syncDb_",                              h: 12, m: 30, label: "통합 DB 동기화 [Supabase]" },
   { fn: "runDailyHubBatch",                              h: 12, m: 40, label: "통합허브 상태/재고 업데이트" },
 
