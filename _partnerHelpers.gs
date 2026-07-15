@@ -556,33 +556,35 @@ function _pt_injectOrderSpillFormulas(orderTab, viewerTabName) {
     );
   } catch (eL) {}
 
-  // ── N열: "상태(자동)" 값 기반 유지 — 발주수집에서 역기록 ──
-  // ★ MAP 수식은 스필 충돌로 #ERROR 발생 → 값 기반으로 복구
+  // ── N열: MAP+LAMBDA 수식 (K=송장번호→발송완료, M=고유ID→접수완료) ──
+  // ★ 스필 충돌 방지: N1 수식 먼저 제거(스필 해제) → flush → N2 이하 초기화 → 새 수식 주입
   try {
     var n1 = orderTab.getRange("N1");
-    var n1f = String(n1.getFormula() || "");
-    if (n1f) {
-      // 기존 MAP/ARRAYFORMULA 수식 있으면 → 표시값 보존 후 수식 제거
-      var nLr = orderTab.getLastRow();
-      if (nLr >= 2) {
-        var nRng = orderTab.getRange(2, 14, nLr - 1, 1);
-        var nDisp = nRng.getDisplayValues();
-        var nOut = [];
-        for (var ni = 0; ni < nDisp.length; ni++) {
-          var nv = nDisp[ni][0];
-          if (nv && (nv.indexOf("#") === 0)) nv = "";
-          nOut.push([nv]);
-        }
-        nRng.clearContent();
-        nRng.setValues(nOut);
-      }
-      n1.clearContent();
-      n1.setValue("상태(자동)");
-    } else {
-      var n1v = String(n1.getValue() || "").replace(/\s/g, "");
-      if (n1v !== "상태(자동)" && n1v !== "상태") n1.setValue("상태(자동)");
-    }
+    n1.clearContent(); // N1 기존 수식/값 제거 → MAP 스필 즉시 해제
+    orderTab.getRange("N2:N1000").clearContent(); // 스필 영역 완전 초기화
+    SpreadsheetApp.flush(); // 클리어 즉시 반영
+    n1.setFormula(
+      '={"상태(자동)"; MAP(C2:C, E2:E, F2:F, G2:G, H2:H, K2:K, M2:M, LAMBDA(c, e, f, g, h, k, m, IF(c="", "", ' +
+      'IF(k<>"", "발송완료", ' +
+      'IF(m<>"", "접수완료", ' +
+      'LET(st, IFNA(XLOOKUP(TRIM(CLEAN(SUBSTITUTE(c, CHAR(160), ""))), ' + sq + '!C:C, ' + sq + '!A:A), "##NA##"), ' +
+      'IF(st="##NA##", "🔴코드확인필요", ' +
+      'IF(ISNUMBER(SEARCH("단종", st)), "🚨단종", ' +
+      'IF(ISNUMBER(SEARCH("품절", st)) * NOT(ISNUMBER(SEARCH("품절+7", st))), "🚨품절", ' +
+      'IF(ISNUMBER(SEARCH("재고까지만", st)), "⚠재고까지만", ' +
+      'IF((e="") + (e=0) + (f="") + (g="") + (h="") > 0, "⚠️입력미완", ' +
+      '"")))))))))))}'
+    );
   } catch (eN) {}
+  // ── P열 상태 수식 잔재 정리 (사용자 직접 입력분 제거) ──
+  try {
+    var p1 = orderTab.getRange("P1");
+    var p1f = String(p1.getFormula() || "");
+    var p1v = String(p1.getValue() || "").replace(/\s/g, "");
+    if (p1f.indexOf("MAP") !== -1 || p1v === "상태(자동)" || p1v === "상태") {
+      orderTab.getRange("P1:P1000").clearContent();
+    }
+  } catch (eP) {}
 
   // ── ★ 1행 보호 (강제 잠금 — 소유자만 편집 가능) ──
   _pt_protectOrderRow1_(orderTab);
@@ -890,30 +892,41 @@ function _pt_healOrderSpillFormulas(orderTab, viewerTabName) {
   try {
     _pt_cleanupStrayValidations_(orderTab);
   } catch (eCleanup) {}
-  // ── N열: MAP/ARRAYFORMULA 수식 제거 → 값 기반 복구 ──
-  // ★ MAP 수식은 스필 충돌로 #ERROR 발생 → 표시값 보존 후 값으로 교체
+  // ── N열: MAP+LAMBDA 수식 확인/복구 (K=송장번호→발송완료, M=고유ID→접수완료) ──
   try {
-    var n1 = orderTab.getRange("N1");
-    var nHealF = String(n1.getFormula() || "");
-    if (nHealF) {
-      var nHealLr = orderTab.getLastRow();
-      if (nHealLr >= 2) {
-        var nHealRng = orderTab.getRange(2, 14, nHealLr - 1, 1);
-        var nHealDisp = nHealRng.getDisplayValues();
-        var nHealOut = [];
-        for (var nhi = 0; nhi < nHealDisp.length; nhi++) {
-          var nhv = nHealDisp[nhi][0];
-          if (nhv && nhv.indexOf("#") === 0) nhv = "";
-          nHealOut.push([nhv]);
-        }
-        nHealRng.clearContent();
-        nHealRng.setValues(nHealOut);
-      }
-      n1.clearContent();
-      n1.setValue("상태(자동)");
+    var n1h = orderTab.getRange("N1");
+    var nHealF = String(n1h.getFormula() || "");
+    // K열 기반 "발송완료" 체크가 포함된 최신 수식인지 확인
+    var nOk = nHealF.indexOf("MAP") !== -1 && nHealF.indexOf("발송완료") !== -1;
+    if (!nOk) {
+      // 최신 MAP 수식이 없거나 구버전이면 → 스필 해제 후 재주입
+      n1h.clearContent(); // N1 수식/값 제거 → MAP 스필 즉시 해제
+      orderTab.getRange("N2:N1000").clearContent(); // 스필 영역 초기화
+      SpreadsheetApp.flush(); // 클리어 즉시 반영
+      n1h.setFormula(
+        '={"상태(자동)"; MAP(C2:C, E2:E, F2:F, G2:G, H2:H, K2:K, M2:M, LAMBDA(c, e, f, g, h, k, m, IF(c="", "", ' +
+        'IF(k<>"", "발송완료", ' +
+        'IF(m<>"", "접수완료", ' +
+        'LET(st, IFNA(XLOOKUP(TRIM(CLEAN(SUBSTITUTE(c, CHAR(160), ""))), ' + sq + '!C:C, ' + sq + '!A:A), "##NA##"), ' +
+        'IF(st="##NA##", "🔴코드확인필요", ' +
+        'IF(ISNUMBER(SEARCH("단종", st)), "🚨단종", ' +
+        'IF(ISNUMBER(SEARCH("품절", st)) * NOT(ISNUMBER(SEARCH("품절+7", st))), "🚨품절", ' +
+        'IF(ISNUMBER(SEARCH("재고까지만", st)), "⚠재고까지만", ' +
+        'IF((e="") + (e=0) + (f="") + (g="") + (h="") > 0, "⚠️입력미완", ' +
+        '"")))))))))))}'
+      );
       out.nFixed = true;
     }
   } catch (en) {}
+  // ── P열 상태 수식 잔재 정리 (사용자 직접 입력분) ──
+  try {
+    var p1h = orderTab.getRange("P1");
+    var p1fh = String(p1h.getFormula() || "");
+    var p1vh = String(p1h.getValue() || "").replace(/\s/g, "");
+    if (p1fh.indexOf("MAP") !== -1 || p1vh === "상태(자동)" || p1vh === "상태") {
+      orderTab.getRange("P1:P1000").clearContent();
+    }
+  } catch (eP) {}
   return out;
 }
 
