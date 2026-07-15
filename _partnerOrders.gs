@@ -1405,6 +1405,18 @@ function partnerFetchInvoices() {
     noMatch = 0;
   var writeUpdates = []; // {row, inv, status, writeInvoice}
   var globalUsedInvoices = {};
+  // ★ 허브에 이미 존재하는 송장번호를 globalUsedInvoices에 사전 등록
+  // → 동일 이름(name+phone)으로 다른 행이 같은 송장을 중복 배정받는 버그 방지
+  for (var _pri = 0; _pri < hubData.length; _pri++) {
+    var _preInv = String(hubData[_pri][13] || "").trim();
+    if (_preInv) {
+      var _preInvParts = _preInv.split(/[\n,;\/]+/);
+      for (var _pp = 0; _pp < _preInvParts.length; _pp++) {
+        var _pt = _preInvParts[_pp].trim();
+        if (_pt) globalUsedInvoices[_pt] = true;
+      }
+    }
+  }
   var unmatchedDiag = []; // 미매칭 진단
   // ── [최우선] 고유ID 직접 매칭 패스 ──
   // 고유ID가 있는 허브 행은 이름/전화번호 무시하고 고유ID로 직접 매칭
