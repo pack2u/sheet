@@ -934,6 +934,46 @@ function _pt_healOrderSpillFormulas(orderTab, viewerTabName) {
 // ═══════════════════════════════════════════
 //  _pt_backfillOrderDL: 발주탭 D(품목명)/L(단가) 빈 셀 역보충
 // ═══════════════════════════════════════════
+/**
+ * 허브 행 데이터 → 대리공급 Push UID 형식(MMdd-ph-XXXX) 파생
+ * _pep_deriveDeterministicUid_와 동일한 해시 알고리즘 사용.
+ * 허브 C열 UID(MMdd-ds-xxxx)와 전용양식 AX열 UID(MMdd-ph-XXXX)가 다를 때
+ * 이 함수로 파생 UID를 만들어 invoiceMap에서 재조회.
+ *
+ * hubRow 인덱스(허브 _PO_HUB_HEADERS 기준):
+ *   [3]=주문일자, [4]=이카운트코드, [7]=수취인, [8]=수취인전화번호, [9]=수취인주소
+ */
+function _pt_deriveHubRowPepUid_(hubRow) {
+  try {
+    var rawDate = hubRow[3]; // D열 = 주문일자
+    var dateStr = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd");
+    if (rawDate) {
+      var ds = rawDate instanceof Date
+        ? Utilities.formatDate(rawDate, "Asia/Seoul", "yyyyMMdd")
+        : String(rawDate).replace(/[^0-9]/g, "").substring(0, 8);
+      if (ds && ds.length >= 8) dateStr = ds;
+    }
+    var mmdd = dateStr.substring(4, 8);
+    var code = String(hubRow[4] || "").replace(/\s/g, "").trim().substring(0, 12) || "X";
+    var recipient = String(hubRow[7] || "").replace(/\s/g, "").trim().substring(0, 12) || "U";
+    var phone = String(hubRow[8] || "").replace(/[^0-9]/g, "");
+    var addr = String(hubRow[9] || "").replace(/\s/g, "").trim().substring(0, 16);
+    var hashInput = dateStr + code + recipient + phone + addr;
+    var CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    var h = 0;
+    for (var i = 0; i < hashInput.length; i++) {
+      h = Math.imul(31, h) + hashInput.charCodeAt(i) | 0;
+    }
+    var n = Math.abs(h);
+    var suffix = "";
+    for (var j = 0; j < 4; j++) {
+      suffix += CHARS[n % CHARS.length];
+      n = Math.floor(n / CHARS.length);
+    }
+    return mmdd + "-ph-" + suffix;
+  } catch (e) { return ""; }
+}
+
 function _pt_backfillOrderDL(orderTab, viewerTab) {
   var result = { filled: 0 };
   if (!orderTab || !viewerTab) return result;

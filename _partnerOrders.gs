@@ -1442,12 +1442,25 @@ function partnerFetchInvoices() {
     // ★ 2026-06-18: 적요(M열=12)에 내용이 있어도 송장 수집 진행 (제한 해제)
 
     var hubUid = String(hubData[r][2] || "").trim();
-    if (!hubUid) continue; // 고유ID 없으면 이 패스에서 스킵 (name+phone으로 넘김)
+    // ★ 직접 UID 없거나 invoiceMap에 없으면 파생 UID(push 형식 MMdd-ph-XXXX) 재시도
+    var _matchMapKey_ = hubUid;
+    if (!_matchMapKey_ || !invoiceMap[_matchMapKey_]) {
+      try {
+        var _dk_ = _pt_deriveHubRowPepUid_(hubData[r]);
+        if (_dk_ && invoiceMap[_dk_]) {
+          _matchMapKey_ = _dk_;
+          if (scannedLogs.length < 80)
+            scannedLogs.push("[파생UID] R"+(r+2)+" hub=["+(hubUid||"없음")+"] → pep=["+_dk_+"]");
+        }
+      } catch (eDk_) {}
+    }
+    if (!_matchMapKey_) continue; // C열 없고 파생도 실패 → name+phone으로
+    if (!invoiceMap[_matchMapKey_]) continue; // C열 있지만 모든 키 미매칭 → pass2에서 차단
 
-    // invoiceMap에서 고유ID로 직접 조회
-    if (invoiceMap[hubUid]) {
+    // invoiceMap에서 고유ID(직접 또는 파생)로 조회
+    if (invoiceMap[_matchMapKey_]) {
       var uidCandidates = parseInvoiceLinesFromMatchedRows_(
-        invoiceMap[hubUid],
+        invoiceMap[_matchMapKey_],
         globalUsedInvoices,
       );
       if (uidCandidates.length > 0) {
@@ -1469,7 +1482,7 @@ function partnerFetchInvoices() {
             .join("\n");
           Logger.log(
             "[세트디버그] UID=" +
-              hubUid +
+              _matchMapKey_ +
               " need=" +
               needSlots0 +
               " candidates=" +
@@ -1501,7 +1514,7 @@ function partnerFetchInvoices() {
           if (pickedInvs0.length >= 2 || detailCell0) {
             Logger.log(
               "[세트디버그] UID=" +
-                hubUid +
+                _matchMapKey_ +
                 " picked=" +
                 pickedInvs0.length +
                 " invCell=" +
