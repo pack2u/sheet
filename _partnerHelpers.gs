@@ -932,6 +932,58 @@ function _pt_healOrderSpillFormulas(orderTab, viewerTabName) {
 
 
 // ═══════════════════════════════════════════
+//  _pt_backfillOrderDL: 발주탭 D(품목명)/L(단가) 빈 셀 역보충
+// ═══════════════════════════════════════════
+function _pt_backfillOrderDL(orderTab, viewerTab) {
+  var result = { filled: 0 };
+  if (!orderTab || !viewerTab) return result;
+  try {
+    var otLr = orderTab.getLastRow();
+    if (otLr < 2) return result;
+    var vLast = viewerTab.getLastRow();
+    if (vLast < 3) return result;
+    // 뷰어 탭 데이터 → codeMap 구축
+    var vData = viewerTab.getRange(3, 1, vLast - 2, 7).getValues();
+    var vMap = {};
+    for (var vi = 0; vi < vData.length; vi++) {
+      var vCode = String(vData[vi][2] || "").replace(/\s/g, "");
+      if (vCode && vCode.indexOf("#REF") === -1 && vCode.indexOf("#N/A") === -1) {
+        if (!vMap[vCode]) {
+          vMap[vCode] = {
+            name: String(vData[vi][3] || "").trim(),
+            price: vData[vi][6]  // G열 = index 6 (최종단가)
+          };
+        }
+      }
+    }
+    if (Object.keys(vMap).length === 0) return result;
+    // 발주탭 C/D/L 일괄 읽기
+    var cVals = orderTab.getRange(2, 3, otLr - 1, 1).getValues();
+    var dVals = orderTab.getRange(2, 4, otLr - 1, 1).getValues();
+    var lVals = orderTab.getRange(2, 12, otLr - 1, 1).getValues();
+    var dChanged = false, lChanged = false;
+    for (var ri = 0; ri < cVals.length; ri++) {
+      var code = String(cVals[ri][0] || "").replace(/\s/g, "");
+      if (!code) continue;
+      var dEmpty = !String(dVals[ri][0] || "").trim();
+      var lEmpty = !String(lVals[ri][0] || "").toString().trim() || lVals[ri][0] === 0;
+      if (!dEmpty && !lEmpty) continue;
+      var match = vMap[code];
+      if (match) {
+        if (dEmpty && match.name) { dVals[ri][0] = match.name; dChanged = true; result.filled++; }
+        if (lEmpty && match.price) { lVals[ri][0] = match.price; lChanged = true; if (!dEmpty) result.filled++; }
+      }
+    }
+    // 배치 쓰기 (변경된 열만)
+    if (dChanged) orderTab.getRange(2, 4, otLr - 1, 1).setValues(dVals);
+    if (lChanged) orderTab.getRange(2, 12, otLr - 1, 1).setValues(lVals);
+  } catch (eBf) {
+    Logger.log("[_pt_backfillOrderDL] 에러: " + eBf.message);
+  }
+  return result;
+}
+
+// ═══════════════════════════════════════════
 //  이식: backfillMissingOrderDatesOnTabData_ → _pt_backfillMissingOrderDates
 // ═══════════════════════════════════════════
 function _pt_backfillMissingOrderDates(fullData, cMap, todayYmd) {
