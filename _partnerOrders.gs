@@ -952,10 +952,11 @@ function partnerCollectOrders(opt_noWriteBack) {
       for (var tgk in tabGroups) {
         var tg = tabGroups[tgk];
         try {
-          // ★ 신버전 "상태(자동)" 수식 열인 경우 수동 쓰기를 건너뜀 (Spill 에러 방지)
-          var headerVal = String(tg.tab.getRange(1, tg.col).getValue() || "");
-          if (headerVal.indexOf("상태(자동)") !== -1) {
-            continue; 
+          // ★ N1에 수식이 있는 경우(MAP/ARRAYFORMULA)에만 스킵 — 값 기반이면 직접 역기록
+          var headerCell = tg.tab.getRange(1, tg.col);
+          var headerFormula = String(headerCell.getFormula() || "");
+          if (headerFormula) {
+            continue; // 수식이 있으면 수식에 맡김 (Spill 에러 방지)
           }
           var tgLr = tg.tab.getLastRow();
           if (tgLr < 2) continue;
