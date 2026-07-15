@@ -446,105 +446,161 @@ function _pt_resolveViewerTabNameForOrderSpill(orderTab, viewerTabName) {
 function _pt_injectOrderSpillFormulas(orderTab, viewerTabName) {
   if (!orderTab) return;
   // ★★★ 전용양식 탭은 스킵! ★★★
-  // 전용양식 탭의 D/L열은 "뉴파츠공급가", 통합 허브의 "누적품목매핑" 등
-  // 업체별 별도 소스를 참조하므로, 여기서 단가조회 탭 기반 수식을 주입하면 안 됨.
-  // 이 함수는 "발주 및 송장조회" 탭 전용.
   var tabName = "";
-  try {
-    tabName = orderTab.getName();
-  } catch (e) {}
+  try { tabName = orderTab.getName(); } catch (e) {}
   if (tabName.indexOf("전용양식") !== -1) return;
-  // ★ 2차: 헤더 내용으로도 전용양식 감지 (탭 이름이 다를 수 있으므로)
+  // ★ 2차: 헤더 내용으로도 전용양식 감지
   try {
     var h1 = orderTab
       .getRange(1, 1, 1, Math.min(orderTab.getLastColumn(), 20))
       .getValues()[0];
     var hj = h1
-      .map(function (v) {
-        return String(v || "").replace(/\s/g, "");
-      })
+      .map(function (v) { return String(v || "").replace(/\s/g, ""); })
       .join("|");
     if (
       hj.indexOf("공급가액") !== -1 ||
       hj.indexOf("부가세") !== -1 ||
       hj.toLowerCase().indexOf("vat") !== -1 ||
       (hj.indexOf("택배수량") !== -1 && hj.indexOf("거래처명") !== -1)
-    )
-      return;
+    ) return;
   } catch (eH) {}
+
   var safe = _pt_resolveViewerTabNameForOrderSpill(orderTab, viewerTabName);
-  // A열: ARRAYFORMULA
+  var sq = "'" + safe.replace(/'/g, "''") + "'";
+
+  // ★ 2026-07-15: ARRAYFORMULA + XLOOKUP 전환 (성능 극대화)
+  // D/L/N열을 1행 수식으로 처리 → onEdit 의존 제거 → 대량 붙여넣기 즉시 반영
+
+  // ── A열: 거래처명 (값 기반 유지 — 확정 데이터이므로 수식 불가) ──
   try {
-    orderTab.getRange("A1:A").clearContent();
-    orderTab
-      .getRange("A1")
-      .setFormula(_pt_buildOrderVendorNameSpillFormula(safe));
+    var a1 = orderTab.getRange("A1");
+    var a1v = String(a1.getValue() || "").replace(/\s/g, "");
+    if (a1v !== "거래처명(자동)" && a1v !== "거래처명") {
+      a1.setValue("거래처명(자동)");
+    }
+    // 기존 ARRAYFORMULA 수식이 남아있으면 → 표시값 보존 후 제거
+    var a1f = a1.getFormula() || "";
+    if (a1f) {
+      var aLr = orderTab.getLastRow();
+      if (aLr >= 2) {
+        var aRange = orderTab.getRange(2, 1, aLr - 1, 1);
+        var aDisplayVals = aRange.getDisplayValues();
+        var aOut = [];
+        for (var ai = 0; ai < aDisplayVals.length; ai++) {
+          var av = aDisplayVals[ai][0];
+          if (av && av.indexOf("#") === 0) av = "";
+          aOut.push([av]);
+        }
+        aRange.clearContent();
+        aRange.setValues(aOut);
+      }
+      a1.clearContent();
+      a1.setValue("거래처명(자동)");
+    }
+    // 빈 A셀에 거래처명 채우기
+    try {
+      var _ss = orderTab.getParent();
+      var _st = _ss.getSheetByName("설정");
+      if (_st) {
+        var _vn = String(_st.getRange("B5").getValue() || "").trim();
+        var aLr2 = orderTab.getLastRow();
+        if (_vn && aLr2 >= 2) {
+          var aFinal = orderTab.getRange(2, 1, aLr2 - 1, 1).getValues();
+          var cVals = orderTab.getRange(2, 3, aLr2 - 1, 1).getValues();
+          var aFilled = false;
+          for (var af = 0; af < aFinal.length; af++) {
+            if (String(aFinal[af][0] || "").trim() === "" &&
+                String(cVals[af][0] || "").trim() !== "") {
+              aFinal[af][0] = _vn;
+              aFilled = true;
+            }
+          }
+          if (aFilled) orderTab.getRange(2, 1, aLr2 - 1, 1).setValues(aFinal);
+        }
+      }
+    } catch(eAFill) {}
   } catch (e1) {}
-  // ★ 2026-06-17: D/L열 → 값 기반 전환 (수식 완전 폐기)
-  // C열 입력 시 배포 onEdit가 뷰어 탭에서 조회하여 D/L에 값을 직접 기록
-  // 기존 수식이 남아있으면 → 현재 표시값을 보존하면서 수식만 제거
+
+  // ── B열: 주문일자 (값 기반 유지 — TODAY()는 매일 바뀌므로 확정 불가) ──
   try {
-    // D열: 헤더 설정 + 기존 수식 → 값 변환
+    var b1 = orderTab.getRange("B1");
+    var b1v = String(b1.getValue() || "").replace(/\s/g, "");
+    if (b1v !== "주문일자(자동)" && b1v !== "주문일자") {
+      b1.setValue("주문일자(자동)");
+    }
+  } catch (eB) {}
+
+  // ── D열: 품목명 (★ ARRAYFORMULA + XLOOKUP) ──
+  try {
     orderTab.getRange("D2:D1000").clearDataValidations();
-    var d1 = orderTab.getRange("D1");
-    var d1f = d1.getFormula() || "";
-    if (d1f) d1.clearContent();
-    d1.setValue("품목명(자동)");
-    // 기존 수식이 남아있는 D열 셀들: 표시값 보존 후 수식 제거
     var dLr = orderTab.getLastRow();
     if (dLr >= 2) {
-      var dRange = orderTab.getRange(2, 4, dLr - 1, 1);
-      var dFormulas = dRange.getFormulas();
-      var hasFormula = false;
-      for (var di = 0; di < dFormulas.length; di++) {
-        if (dFormulas[di][0]) { hasFormula = true; break; }
-      }
-      if (hasFormula) {
-        var dValues = dRange.getDisplayValues();
-        var dOut = [];
-        for (var dj = 0; dj < dValues.length; dj++) {
-          dOut.push([dValues[dj][0]]);
-        }
-        dRange.clearContent();
-        dRange.setValues(dOut);
-      }
+      orderTab.getRange(2, 4, dLr - 1, 1).clearContent();
     }
-  } catch (e3) {}
+    orderTab.getRange("D1").setFormula(
+      '={"품목명(자동)"; ARRAYFORMULA(IF(C2:C="", "", IFNA(XLOOKUP(TRIM(CLEAN(SUBSTITUTE(C2:C,CHAR(160),""))), ' +
+      sq + '!C:C, ' + sq + '!D:D), "🚨코드오류")))}'
+    );
+  } catch (eD) {}
+
+  // ── L열: 단가 (★ ARRAYFORMULA + XLOOKUP) ──
   try {
-    // L열: 헤더 설정 + 기존 수식 → 값 변환
     orderTab.getRange("L2:L1000").clearDataValidations();
-    var l1 = orderTab.getRange("L1");
-    var l1f = l1.getFormula() || "";
-    if (l1f) l1.clearContent();
-    l1.setValue("단가");
     var lLr = orderTab.getLastRow();
     if (lLr >= 2) {
-      var lRange = orderTab.getRange(2, 12, lLr - 1, 1);
-      var lFormulas = lRange.getFormulas();
-      var lHasFormula = false;
-      for (var li = 0; li < lFormulas.length; li++) {
-        if (lFormulas[li][0]) { lHasFormula = true; break; }
-      }
-      if (lHasFormula) {
-        var lValues = lRange.getDisplayValues();
-        var lOut = [];
-        for (var lj = 0; lj < lValues.length; lj++) {
-          lOut.push([lValues[lj][0]]);
-        }
-        lRange.clearContent();
-        lRange.setValues(lOut);
-      }
+      orderTab.getRange(2, 12, lLr - 1, 1).clearContent();
     }
-  } catch (e2) {}
+    orderTab.getRange("L1").setFormula(
+      '={"정산금액(자동)"; ARRAYFORMULA(IF(C2:C="", "", IFNA(XLOOKUP(TRIM(CLEAN(SUBSTITUTE(C2:C,CHAR(160),""))), ' +
+      sq + '!C:C, ' + sq + '!G:G), "")))}'
+    );
+  } catch (eL) {}
+
+  // ── N열: 상태 (★ ARRAYFORMULA — 품절/단종 경고 + 입력미완 체크) ──
+  // ★ 2026-07-15: ARRAYFORMULA 내 AND/OR 파싱 오류 해결을 위해 곱셈(*)과 덧셈(+) 연산자로 빌드
   try {
-    var n1 = orderTab.getRange("N1");
-    if (n1.getFormula()) {
-      n1.clearContent();
-      n1.setValue("상태(자동)");
+    var nLr = orderTab.getLastRow();
+    if (nLr >= 2) {
+      orderTab.getRange(2, 14, nLr - 1, 1).clearContent();
     }
+    orderTab.getRange("N1").setFormula(
+      '={"상태(자동)"; MAP(C2:C, E2:E, F2:F, G2:G, H2:H, M2:M, LAMBDA(c, e, f, g, h, m, IF(c="", "", ' +
+        'IF(m<>"", "접수완료", ' +
+        'LET(st, IFNA(XLOOKUP(TRIM(CLEAN(SUBSTITUTE(c, CHAR(160), ""))), ' + sq + '!C:C, ' + sq + '!A:A), "##NA##"), ' +
+        'IF(st="##NA##", "🔴코드확인필요", ' +
+        'IF(ISNUMBER(SEARCH("단종", st)), "🚨단종", ' +
+        'IF(ISNUMBER(SEARCH("품절", st)) * NOT(ISNUMBER(SEARCH("품절+7", st))), "🚨품절", ' +
+        'IF(ISNUMBER(SEARCH("재고까지만", st)), "⚠재고까지만", ' +
+        'IF((e="") + (e=0) + (f="") + (g="") + (h="") > 0, "⚠️입력미완", ' +
+        '"")))))))))))}'
+    );
   } catch (eN) {}
+
+  // ── ★ 1행 보호 (강제 잠금 — 소유자만 편집 가능) ──
+  _pt_protectOrderRow1_(orderTab);
 }
 
+/**
+ * ★ 2026-07-15: 발주탭 1행 보호 (수식 삭제 원천 차단)
+ * 소유자만 편집 가능. 편집자/뷰어 계정으로는 1행 수정 불가.
+ */
+function _pt_protectOrderRow1_(orderTab) {
+  if (!orderTab) return;
+  try {
+    // 기존 1행 보호 제거 (중복 방지)
+    var prots = orderTab.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+    for (var pi = 0; pi < prots.length; pi++) {
+      var desc = String(prots[pi].getDescription() || "");
+      if (desc.indexOf("수식보호") !== -1 || desc.indexOf("헤더보호") !== -1) {
+        prots[pi].remove();
+      }
+    }
+    // 1행 강제 잠금
+    var prot = orderTab.getRange("1:1").protect()
+      .setDescription("★ 1행 수식보호 — 삭제 금지");
+    prot.removeEditors(prot.getEditors());
+  } catch(eProt) {}
+}
 
 /**
  * ★ ARRAYFORMULA spill 열에 데이터 유효성 검사(입력 거부) 적용
@@ -612,122 +668,8 @@ function _pt_cleanupStrayValidations_(sheet) {
  * D/A/L열(ARRAYFORMULA spill)에 수동입력 감지 시 자동 복구
  */
 function _pt_onEditSpillGuard_(e) {
-  try {
-    if (!e || !e.range) return;
-    var sheet = e.range.getSheet();
-    if (sheet.getName() !== "발주 및 송장조회") return;
-
-    var col = e.range.getColumn();
-    var row = e.range.getRow();
-    if (row < 2) return; // 헤더는 무시
-
-    // ★ C열(3) = 이카운트코드 편집 → N열(14) 상태 즉시 반영
-    if (col === 3) {
-      try {
-        // ★ 2026-06-16: ARRAYFORMULA(D열/A열) 재계산이 완료된 후 N열 업데이트
-        // flush()를 호출하여 spill 충돌에 의한 #REF 에러 방지
-        SpreadsheetApp.flush();
-
-        var _code_ = String(e.range.getValue() || "").trim();
-        if (!_code_) {
-          // 코드 삭제 시 상태도 초기화
-          sheet.getRange(row, 14).setValue("");
-          return;
-        }
-        // 뷰어(단가조회) 탭에서 코드 → 상태 조회
-        var _ss_ = e.source;
-        var _viewerTab_ = null;
-        var _allSheets_ = _ss_.getSheets();
-        for (var _vi_ = 0; _vi_ < _allSheets_.length; _vi_++) {
-          var _tn_ = _allSheets_[_vi_].getName();
-          if (_tn_.indexOf("단가조회") !== -1 || _tn_.indexOf("뷰어") !== -1) {
-            _viewerTab_ = _allSheets_[_vi_];
-            break;
-          }
-        }
-        if (!_viewerTab_ || _viewerTab_.getLastRow() < 3) {
-          sheet.getRange(row, 14).setValue("🔴코드확인필요");
-          return;
-        }
-        // 뷰어 A:C열(상태, ?, 코드) 3행~ 읽기
-        var _vLr_ = _viewerTab_.getLastRow();
-        var _vData_ = _viewerTab_.getRange(3, 1, _vLr_ - 2, 3).getValues();
-        var _found_ = false;
-        var _normalizedCode_ = _code_.replace(/[\s\-]/g, "").toUpperCase();
-        for (var _pi_ = 0; _pi_ < _vData_.length; _pi_++) {
-          var _vCode_ = String(_vData_[_pi_][2] || "")
-            .replace(/[\s\-]/g, "")
-            .toUpperCase();
-          if (_vCode_ === _normalizedCode_) {
-            _found_ = true;
-            var _rawStatus_ = String(_vData_[_pi_][0] || "").trim();
-            var _statusCompact_ = _rawStatus_.replace(/\s/g, "");
-            var _status_ = "";
-            if (_statusCompact_.indexOf("단종") !== -1) _status_ = "🚨단종";
-            else if (_statusCompact_.indexOf("품절임박") !== -1)
-              _status_ = "🚨품절임박";
-            else if (
-              _statusCompact_.indexOf("품절") !== -1 &&
-              _statusCompact_.indexOf("품절+7") === -1
-            )
-              _status_ = "🚨품절";
-            else if (_statusCompact_.indexOf("재고까지만") !== -1)
-              _status_ = "⚠재고까지만";
-            // 정상 상태 → 빈값 (발주수집 시 "접수완료"로 채워짐)
-            sheet.getRange(row, 14).setValue(_status_);
-            break;
-          }
-        }
-        if (!_found_) {
-          sheet.getRange(row, 14).setValue("🔴코드확인필요");
-        }
-      } catch (_eStatus_) {
-        // silent fail — 상태 반영 실패해도 발주 자체에 영향 없음
-      }
-      return;
-    }
-
-    // ★ 2026-06-17: D/L열은 값 기반으로 전환 → SpillGuard 불필요
-    // A열(1)만 감시 (ARRAYFORMULA 보호)
-    if (col !== 1) return;
-
-    // 수동 입력 클리어
-    e.range.clearContent();
-
-    // A열은 기존 ARRAYFORMULA heal 유지
-    var cell1 = sheet.getRange(1, col);
-    var formula = cell1.getFormula() || "";
-    var display = cell1.getDisplayValue() || "";
-    if (
-      !formula ||
-      formula.indexOf("ARRAYFORMULA") === -1 ||
-      display.indexOf("#REF") !== -1
-    ) {
-      var ss2 = e.source;
-      var viewerName2 = "단가조회";
-      var sheets2 = ss2.getSheets();
-      for (var j = 0; j < sheets2.length; j++) {
-        var n2 = sheets2[j].getName();
-        if (n2.indexOf("단가조회") !== -1 || n2.indexOf("뷰어") !== -1) {
-          viewerName2 = n2; break;
-        }
-      }
-      _pt_healOrderSpillFormulas(sheet, viewerName2);
-    }
-
-
-
-    // 사용자에게 안내 (A열 = 업체명 자동입력)
-    try {
-      ss.toast(
-        "업체명은 자동입력 열입니다.\n수동 입력이 차단되었습니다.",
-        "⚠ 자동입력 열",
-        4,
-      );
-    } catch (_t) {}
-  } catch (ex) {
-    // silent fail
-  }
+  // ★ 2026-07-15: ARRAYFORMULA 수식 잠금으로 전환됨에 따라 불필요한 스크립트 트리거 삭제 및 즉시 종료 처리
+  return;
 }
 
 /**
@@ -843,7 +785,8 @@ function _pt_healOrderSpillFormulas(orderTab, viewerTabName) {
       return { aFixed: false, lFixed: false, dFixed: false };
   } catch (eH) {}
   var safe = _pt_resolveViewerTabNameForOrderSpill(orderTab, viewerTabName);
-  var out = { aFixed: false, lFixed: false, dFixed: false };
+  var sq = "'" + safe.replace(/'/g, "''") + "'";
+  var out = { aFixed: false, lFixed: false, dFixed: false, nFixed: false };
   var sampleRows = Math.max(Math.min(orderTab.getLastRow(), 200), 2);
   var checkRows = sampleRows - 1;
   var aHasRefBelow = false,
@@ -902,77 +845,64 @@ function _pt_healOrderSpillFormulas(orderTab, viewerTabName) {
       out.aFixed = true;
     }
   } catch (ea) {}
-  // ── D열: 값 기반 전환 — 기존 수식 제거 + 표시값 보존 ──
-  // ★ 2026-06-17: 수식 폐기 → 값 기반. C열 입력 시 onEdit가 직접 값 기록
+  // ── D열: ARRAYFORMULA+XLOOKUP 수식 확인/복구 ──
+  // ★ 2026-07-15: 수식 기반 전환 — XLOOKUP 수식이 없거나 깨진 경우에만 재주입
   try {
     var d1 = orderTab.getRange("D1");
     var dF = String(d1.getFormula() || "");
-    orderTab.getRange("D2:D1000").clearDataValidations();
-    // D1 헤더 정리
-    if (dF) d1.clearContent();
-    d1.setValue("품목명(자동)");
-    // D2~ 기존 수식 → 표시값 보존 후 수식 제거
-    var dLr = orderTab.getLastRow();
-    if (dLr >= 2) {
-      var dRange = orderTab.getRange(2, 4, dLr - 1, 1);
-      var dFormulas = dRange.getFormulas();
-      var dHasFormula = false;
-      for (var di = 0; di < dFormulas.length; di++) {
-        if (dFormulas[di][0]) { dHasFormula = true; break; }
-      }
-      if (dHasFormula) {
-        var dValues = dRange.getDisplayValues();
-        var dOut = [];
-        for (var dj = 0; dj < dValues.length; dj++) {
-          var dv = dValues[dj][0];
-          // #REF, #N/A 같은 에러값은 빈 문자열로 치환
-          if (dv && (dv.indexOf("#REF") !== -1 || dv.indexOf("#N/A") !== -1)) dv = "";
-          dOut.push([dv]);
-        }
-        dRange.clearContent();
-        dRange.setValues(dOut);
-        out.dFixed = true;
-      }
+    var dOk = dF.indexOf("ARRAYFORMULA") !== -1 && dF.indexOf("XLOOKUP") !== -1;
+    if (!dOk) {
+      orderTab.getRange("D2:D1000").clearDataValidations();
+      var dLr = orderTab.getLastRow();
+      if (dLr >= 2) orderTab.getRange(2, 4, dLr - 1, 1).clearContent();
+      d1.setFormula(
+        '={"품목명(자동)"; ARRAYFORMULA(IF(C2:C="", "", IFNA(XLOOKUP(TRIM(CLEAN(SUBSTITUTE(C2:C,CHAR(160),""))), ' +
+        sq + '!C:C, ' + sq + '!D:D), "🚨코드오류")))}'
+      );
+      out.dFixed = true;
     }
   } catch (ed) {}
-  // ── L열: 값 기반 전환 — 기존 수식 제거 + 표시값 보존 ──
+  // ── L열: ARRAYFORMULA+XLOOKUP 수식 확인/복구 ──
   try {
     var l1 = orderTab.getRange("L1");
     var lF = String(l1.getFormula() || "");
-    orderTab.getRange("L2:L1000").clearDataValidations();
-    if (lF) l1.clearContent();
-    l1.setValue("단가");
-    var lLr = orderTab.getLastRow();
-    if (lLr >= 2) {
-      var lRange = orderTab.getRange(2, 12, lLr - 1, 1);
-      var lFormulas = lRange.getFormulas();
-      var lHasFormula = false;
-      for (var li = 0; li < lFormulas.length; li++) {
-        if (lFormulas[li][0]) { lHasFormula = true; break; }
-      }
-      if (lHasFormula) {
-        var lValues = lRange.getDisplayValues();
-        var lOut = [];
-        for (var lj = 0; lj < lValues.length; lj++) {
-          var lv = lValues[lj][0];
-          if (lv && (lv.indexOf("#REF") !== -1 || lv.indexOf("#N/A") !== -1 || lv === "코드오류")) lv = "";
-          lOut.push([lv]);
-        }
-        lRange.clearContent();
-        lRange.setValues(lOut);
-        out.lFixed = true;
-      }
+    var lOk = lF.indexOf("ARRAYFORMULA") !== -1 && lF.indexOf("XLOOKUP") !== -1;
+    if (!lOk) {
+      orderTab.getRange("L2:L1000").clearDataValidations();
+      var lLr = orderTab.getLastRow();
+      if (lLr >= 2) orderTab.getRange(2, 12, lLr - 1, 1).clearContent();
+      l1.setFormula(
+        '={"정산금액(자동)"; ARRAYFORMULA(IF(C2:C="", "", IFNA(XLOOKUP(TRIM(CLEAN(SUBSTITUTE(C2:C,CHAR(160),""))), ' +
+        sq + '!C:C, ' + sq + '!G:G), "")))}'
+      );
+      out.lFixed = true;
     }
   } catch (el) {}
   // ── 잘못된 열의 =FALSE 데이터 유효성 검사 정리 ──
   try {
     _pt_cleanupStrayValidations_(orderTab);
   } catch (eCleanup) {}
+  // ── N열: MAP 수식 확인/복구 — 고유ID(M열) 값 있으면 "접수완료" 자동 표시 ──
+  // ★ 2026-07-15: MAP+LAMBDA 수식 기반 — 스크립트 역기록 불필요
   try {
     var n1 = orderTab.getRange("N1");
-    if (n1.getFormula()) {
-      n1.clearContent();
-      n1.setValue("상태(자동)");
+    var nF = String(n1.getFormula() || "");
+    var nOk = nF.indexOf("MAP") !== -1 && nF.indexOf("접수완료") !== -1;
+    if (!nOk) {
+      var nLr = orderTab.getLastRow();
+      if (nLr >= 2) orderTab.getRange(2, 14, nLr - 1, 1).clearContent();
+      n1.setFormula(
+        '={"상태(자동)"; MAP(C2:C, E2:E, F2:F, G2:G, H2:H, M2:M, LAMBDA(c, e, f, g, h, m, IF(c="", "", ' +
+          'IF(m<>"", "접수완료", ' +
+          'LET(st, IFNA(XLOOKUP(TRIM(CLEAN(SUBSTITUTE(c, CHAR(160), ""))), ' + sq + '!C:C, ' + sq + '!A:A), "##NA##"), ' +
+          'IF(st="##NA##", "🔴코드확인필요", ' +
+          'IF(ISNUMBER(SEARCH("단종", st)), "🚨단종", ' +
+          'IF(ISNUMBER(SEARCH("품절", st)) * NOT(ISNUMBER(SEARCH("품절+7", st))), "🚨품절", ' +
+          'IF(ISNUMBER(SEARCH("재고까지만", st)), "⚠재고까지만", ' +
+          'IF((e="") + (e=0) + (f="") + (g="") + (h="") > 0, "⚠️입력미완", ' +
+          '"")))))))))))}'
+      );
+      out.nFixed = true;
     }
   } catch (en) {}
   return out;
@@ -1979,3 +1909,4 @@ function _pt_findTabByKey_(ss, key, cell) {
   }
   return null;
 }
+

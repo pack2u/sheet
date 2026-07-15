@@ -620,13 +620,14 @@ function partnerFixAllOrderA1Formulas() {
         );
       }
 
-      // D열/L열 ARRAYFORMULA heal
+      // D/L/N열 ARRAYFORMULA 수식 heal (새 수식 방식: XLOOKUP+MAP)
       var healResult = _pt_healOrderSpillFormulas(orderTab, viewerName);
 
       var changes = [];
       if (needsA1Fix) changes.push('A1:D2:D제거');
-      if (healResult.dFixed) changes.push('D열복구');
-      if (healResult.lFixed) changes.push('L열복구');
+      if (healResult.dFixed) changes.push('D열수식복구');
+      if (healResult.lFixed) changes.push('L열수식복구');
+      if (healResult.nFixed) changes.push('N열수식복구');
       if (healResult.aFixed && !needsA1Fix) changes.push('A열복구');
 
       if (changes.length > 0) {
@@ -647,3 +648,507 @@ function partnerFixAllOrderA1Formulas() {
   Logger.log(msg);
   ui.alert('A1 수식 수정 결과', msg.substring(0, 4500), ui.ButtonSet.OK);
 }
+
+// ═══════════════════════════════════════════
+//  9. 뷰어(단가조회) 탭 3행 수식 종합 진단
+//  ★ 2026-06-23 추가 — C열 코드 입력 시 나머지 열 미연동 문제 진단
+// ═══════════════════════════════════════════
+
+/**
+ * 모든 협력업체 파일의 뷰어(단가조회) 탭 3행 ARRAYFORMULA 수식 상태를 진단합니다.
+ *
+ * 점검 항목:
+ *  1) A3, B3, D3, E3, F3, G3, H3, I3, J3에 ARRAYFORMULA 수식이 존재하는지
+ *  2) 수식 결과가 #REF!, #N/A, Loading... 등 에러 상태인지
+ *  3) 4행 이하에 스필을 차단하는 수동 입력값이 있는지
+ *  4) C열에 코드가 있는데 D열(품목명)이 비어있는 행이 있는지
+ */
+function partnerDiagnoseViewerRow3Formulas() {
+  var ui = SpreadsheetApp.getUi();
+  var files = _pt_listFiles();
+  if (!files || !files.length) return ui.alert("협력업체 파일이 없습니다.");
+
+  var results = [];
+  var okCount = 0, warnCount = 0, errorCount = 0;
+
+  // 점검 대상 열: A(1), B(2), D(4), E(5), F(6), G(7), H(8), I(9), J(10)
+  var checkCols = [
+    { col: 1, name: "A(상태)" },
+    { col: 2, name: "B(출고지)" },
+    { col: 4, name: "D(품목명)" },
+    { col: 5, name: "E(재고)" },
+    { col: 6, name: "F(소비자가)" },
+    { col: 7, name: "G(최종단가)" },
+    { col: 8, name: "H(단가변동)" },
+    { col: 9, name: "I(지난단가)" },
+    { col: 10, name: "J(익월변동)" }
+  ];
+
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    var nm = f.name.replace("[협력업체] ", "").trim();
+    try {
+      var ss = SpreadsheetApp.openById(f.id);
+      var viewer = null;
+      try { viewer = _pt_findViewerSheet(ss); } catch (e) {}
+      if (!viewer) viewer = ss.getSheetByName("단가조회");
+      if (!viewer) {
+        results.push("⚠️ " + nm + ": 뷰어탭 없음");
+        warnCount++;
+        continue;
+      }
+
+      var issues = [];
+
+      // ① 3행 수식 존재 여부 확인
+      var missingFormulas = [];
+      var errorFormulas = [];
+      for (var ci = 0; ci < checkCols.length; ci++) {
+        var cc = checkCols[ci];
+        try {
+          var formula = viewer.getRange(3, cc.col).getFormula();
+          if (!formula) {
+            missingFormulas.push(cc.name);
+          } else if (formula.indexOf("ARRAYFORMULA") === -1) {
+            missingFormulas.push(cc.name + "(AF없음)");
+          } else {
+            // 수식 결과 확인
+            var val = String(viewer.getRange(3, cc.col).getDisplayValue() || "");
+            if (val.indexOf("#REF") !== -1) {
+              errorFormulas.push(cc.name + "=#REF!");
+            } else if (val.indexOf("Loading") !== -1) {
+              errorFormulas.push(cc.name + "=Loading");
+            }
+          }
+        } catch (eF) {
+          missingFormulas.push(cc.name + "(접근불가)");
+        }
+      }
+      if (missingFormulas.length > 0) {
+        issues.push("수식없음: " + missingFormulas.join(","));
+      }
+      if (errorFormulas.length > 0) {
+        issues.push("수식에러: " + errorFormulas.join(","));
+      }
+
+      // ② 4행 이하 스필 차단 확인 (D/G열에 수동입력값 존재 여부)
+      var vLast = viewer.getLastRow();
+      if (vLast >= 4) {
+        var spillBlocked = [];
+        try {
+          var d4f = viewer.getRange(4, 4).getFormula();
+          var d4v = String(viewer.getRange(4, 4).getValue() || "").trim();
+          // ARRAYFORMULA가 정상이면 4행에는 수식이 없고 값이 있어야 함 (스필 결과)
+          // 만약 4행에 수식이 있으면 스필이 아닌 수동 입력
+          if (d4f) spillBlocked.push("D4수식잔존");
+        } catch (eSpill) {}
+        try {
+          var g4f = viewer.getRange(4, 7).getFormula();
+          if (g4f) spillBlocked.push("G4수식잔존");
+        } catch (eSpill2) {}
+        if (spillBlocked.length > 0) {
+          issues.push("스필차단: " + spillBlocked.join(","));
+        }
+      }
+
+      // ③ C열 코드 있는데 D열 비어있는 행 카운트 (샘플 50행)
+      var checkEnd = Math.min(vLast, 52); // 3~52행 (50행 샘플)
+      if (checkEnd >= 3) {
+        var sampleRows = checkEnd - 2;
+        var cData = viewer.getRange(3, 3, sampleRows, 1).getValues(); // C열
+        var dData = viewer.getRange(3, 4, sampleRows, 1).getValues(); // D열
+        var emptyCount = 0;
+        for (var si = 0; si < cData.length; si++) {
+          var cVal = String(cData[si][0] || "").trim();
+          var dVal = String(dData[si][0] || "").trim();
+          if (cVal && (!dVal || dVal === "-" || dVal === "#REF!")) {
+            emptyCount++;
+          }
+        }
+        if (emptyCount > 0) {
+          issues.push("코드O/품목X: " + emptyCount + "행 (샘플 " + sampleRows + "행)");
+        }
+      }
+
+      // ④ K2 값 확인
+      var K2 = "";
+      try { K2 = viewer.getRange("K2").getValue(); } catch (e) {}
+      if (!K2 || isNaN(parseInt(K2, 10))) {
+        issues.push("K2=없음");
+      }
+
+      if (issues.length === 0) {
+        results.push("✅ " + nm + " (K2=" + K2 + ")");
+        okCount++;
+      } else {
+        results.push("🔴 " + nm + ": " + issues.join(" | "));
+        errorCount++;
+      }
+    } catch (e) {
+      results.push("❌ " + nm + ": 접근실패 (" + String(e.message || "").substring(0, 30) + ")");
+      errorCount++;
+    }
+  }
+
+  var summary =
+    "🔍 뷰어 3행 수식 진단 결과\n\n" +
+    "✅ 정상: " + okCount + "개\n" +
+    "🔴 이상: " + errorCount + "개\n" +
+    "⚠️ 주의: " + warnCount + "개\n\n" +
+    results.join("\n");
+
+  Logger.log(summary);
+  if (summary.length > 4000) {
+    summary = summary.substring(0, 4000) + "\n\n... (전체 결과는 실행 로그에서 확인)";
+  }
+  ui.alert("뷰어 수식 진단", summary, ui.ButtonSet.OK);
+}
+
+/**
+ * 모든 업체의 뷰어 탭 3행 수식을 일괄 재적용합니다.
+ * C열(이카운트코드)은 보존하고 ARRAYFORMULA 수식만 재설정합니다.
+ */
+function partnerRepairAllViewerRow3Formulas() {
+  var ui = SpreadsheetApp.getUi();
+  var ans = ui.alert(
+    "🔧 뷰어 3행 수식 일괄 복구",
+    "모든 협력업체 파일의 단가조회 탭 3행 ARRAYFORMULA 수식을\n" +
+    "일괄 재적용합니다.\n\n" +
+    "★ C열(이카운트코드)은 보존됩니다.\n" +
+    "★ 스필 차단 데이터(4행 이하 수동입력)도 정리됩니다.\n\n" +
+    "계속할까요?",
+    ui.ButtonSet.YES_NO
+  );
+  if (ans !== ui.Button.YES) return;
+
+  var hubId = _PT.HUB_ID;
+  var files = _pt_listFiles();
+  if (!files || !files.length) return ui.alert("협력업체 파일이 없습니다.");
+
+  var fixed = 0, skipped = 0, errors = [];
+
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    var nm = f.name.replace("[협력업체] ", "").trim();
+    try {
+      var ss = SpreadsheetApp.openById(f.id);
+      var viewer = null;
+      try { viewer = _pt_findViewerSheet(ss); } catch (e) {}
+      if (!viewer) viewer = ss.getSheetByName("단가조회");
+      if (!viewer) {
+        skipped++;
+        continue;
+      }
+
+      var K2 = parseInt(viewer.getRange("K2").getValue(), 10);
+      if (!K2 || isNaN(K2)) {
+        errors.push("⚠️ " + nm + ": K2 없음(스킵)");
+        skipped++;
+        continue;
+      }
+
+      var isConsumer = f.name.indexOf("(소비자용)") !== -1;
+      var dcMul = 1;
+      if (isConsumer) {
+        var dcRate = _pt_parseConsumerDcRateFromName(f.name);
+        dcMul = (100 - dcRate) / 100;
+      } else {
+        var rateFromK2 = _pt_getConsumerRateFromK2(K2);
+        if (rateFromK2 > 0) {
+          isConsumer = true;
+          dcMul = (100 - rateFromK2) / 100;
+        }
+      }
+
+      // 스필 영역 정리 + 수식 재적용
+      _pt_clearSpillArea(viewer, isConsumer);
+      _pt_applyRow3Formulas(viewer, hubId, isConsumer, dcMul);
+      fixed++;
+    } catch (e) {
+      errors.push("❌ " + nm + ": " + String(e.message || "").substring(0, 40));
+    }
+  }
+
+  SpreadsheetApp.flush();
+
+  var msg =
+    "🔧 뷰어 3행 수식 복구 완료\n\n" +
+    "- 전체: " + files.length + "개\n" +
+    "- 복구: " + fixed + "개\n" +
+    "- 스킵: " + skipped + "개\n" +
+    (errors.length > 0 ? "\n⚠ 오류:\n" + errors.join("\n") : "");
+  Logger.log(msg);
+  ui.alert("뷰어 수식 복구 결과", msg.substring(0, 4500), ui.ButtonSet.OK);
+}
+
+// ═══════════════════════════════════════════
+//  10. ★ 2026-07-07: _data 탭 일괄 마이그레이션
+//  모든 업체에 _data 숨김 탭 추가 + 뷰어 수식 로컬 참조 전환
+//  → IMPORTRANGE 16회 → 1회 통합 (단가조회 속도 대폭 개선)
+// ═══════════════════════════════════════════
+
+/**
+ * 메뉴: 모든 업체에 _data 탭 추가 + 뷰어 수식 최적화
+ */
+function partnerMigrateToDataTab() {
+  var ui = SpreadsheetApp.getUi();
+  var ans = ui.alert(
+    "⚡ 단가조회 속도 최적화",
+    "모든 협력업체 파일에:\n\n" +
+    "① _data 숨김 탭 추가 (IMPORTRANGE 1회 통합)\n" +
+    "② 뷰어 3행 수식을 로컬 참조로 전환\n\n" +
+    "★ 기존 데이터/코드에 영향 없음\n" +
+    "★ 단가조회 탭 로딩 시간: ~10~30초 → ~3~8초\n\n" +
+    "계속할까요?",
+    ui.ButtonSet.YES_NO
+  );
+  if (ans !== ui.Button.YES) return;
+
+  var hubId = _PT.HUB_ID;
+  var files = _pt_listFiles();
+  if (!files || !files.length) return ui.alert("협력업체 파일이 없습니다.");
+
+  var created = 0, updated = 0, skipped = 0, errors = [];
+
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    var nm = f.name.replace("[협력업체] ", "").trim();
+    try {
+      var ss = SpreadsheetApp.openById(f.id);
+
+      // ① _data 탭 생성/확인
+      var existedBefore = !!ss.getSheetByName("_data");
+      _pt_ensureDataTab(ss, hubId);
+      if (!existedBefore) created++;
+
+      // ② 뷰어 탭 찾기
+      var viewer = null;
+      try { viewer = _pt_findViewerSheet(ss); } catch (e) {}
+      if (!viewer) viewer = ss.getSheetByName("단가조회");
+      if (!viewer) {
+        skipped++;
+        continue;
+      }
+
+      // ③ K2 확인
+      var K2 = parseInt(viewer.getRange("K2").getValue(), 10);
+      if (!K2 || isNaN(K2)) {
+        errors.push("⚠️ " + nm + ": K2 없음(스킵)");
+        skipped++;
+        continue;
+      }
+
+      // ④ 소비자용 판별
+      var isConsumer = f.name.indexOf("(소비자용)") !== -1;
+      var dcMul = 1;
+      if (isConsumer) {
+        var dcRate = _pt_parseConsumerDcRateFromName(f.name);
+        dcMul = (100 - dcRate) / 100;
+      } else {
+        var rateFromK2 = _pt_getConsumerRateFromK2(K2);
+        if (rateFromK2 > 0) {
+          isConsumer = true;
+          dcMul = (100 - rateFromK2) / 100;
+        }
+      }
+
+      // ⑤ 스필 정리 + 수식 재적용 (이제 _data 탭이 있으므로 로컬 참조 사용)
+      _pt_clearSpillArea(viewer, isConsumer);
+      _pt_applyRow3Formulas(viewer, hubId, isConsumer, dcMul);
+      updated++;
+    } catch (e) {
+      errors.push("❌ " + nm + ": " + String(e.message || "").substring(0, 50));
+    }
+  }
+
+  SpreadsheetApp.flush();
+
+  var msg =
+    "⚡ _data 탭 마이그레이션 완료\n\n" +
+    "- 전체: " + files.length + "개\n" +
+    "- _data 생성: " + created + "개\n" +
+    "- 수식 갱신: " + updated + "개\n" +
+    "- 스킵: " + skipped + "개\n" +
+    (errors.length > 0 ? "\n⚠ 오류:\n" + errors.join("\n") : "");
+  Logger.log(msg);
+  ui.alert("마이그레이션 결과", msg.substring(0, 4500), ui.ButtonSet.OK);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  ★ 2026-07-07: 뷰어탭 이름 "단가조회"로 일괄 통일
+//  + A열 ARRAYFORMULA → 값 기반 마이그레이션
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 메뉴: 뷰어탭 이름 통일 + A열 마이그레이션 (전체 업체)
+ */
+function partnerUnifyViewerTabNameOwner() {
+  var ui = SpreadsheetApp.getUi();
+  var confirm = ui.alert(
+    "📋 뷰어탭 통일 + A열 마이그레이션",
+    "모든 업체 시트에서:\n" +
+    "① 뷰어탭 이름 → '단가조회'로 변경\n" +
+    "② A열 ARRAYFORMULA → 값 기반 전환 (표시값 보존)\n" +
+    "③ 불필요한 _data 탭 삭제\n\n" +
+    "계속하시겠습니까?",
+    ui.ButtonSet.YES_NO
+  );
+  if (confirm !== ui.Button.YES) return;
+
+  var files = _pt_listFiles();
+  var renamed = 0, aMigrated = 0, dataDeleted = 0, errors = [];
+  var ss0 = SpreadsheetApp.getActiveSpreadsheet();
+
+  for (var fi = 0; fi < files.length; fi++) {
+    try {
+      var fss = SpreadsheetApp.openById(files[fi].id);
+      var nm = fss.getName().replace("[협력업체] ", "").trim();
+
+      // ── ① 뷰어탭 이름 변경 ──
+      var viewer = _pt_findViewerSheet(fss);
+      if (viewer) {
+        var vn = viewer.getName();
+        if (vn !== "단가조회") {
+          var existing = fss.getSheetByName("단가조회");
+          if (!existing) {
+            viewer.setName("단가조회");
+            renamed++;
+          } else if (existing.getSheetId() !== viewer.getSheetId()) {
+            errors.push("⚠ " + nm + " — '단가조회' 탭 이미 존재 (스킵)");
+          }
+        }
+      }
+
+      // ── ② A열 값 기반 마이그레이션 ──
+      var ot = fss.getSheetByName("발주 및 송장조회");
+      if (ot) {
+        var a1 = ot.getRange("A1");
+        var a1f = a1.getFormula() || "";
+        if (a1f) {
+          var lr = ot.getLastRow();
+          if (lr >= 2) {
+            var ar = ot.getRange(2, 1, lr - 1, 1);
+            var adv = ar.getDisplayValues();
+            var ao = [];
+            for (var ai = 0; ai < adv.length; ai++) {
+              var v = adv[ai][0];
+              if (v && v.indexOf("#") === 0) v = "";
+              ao.push([v]);
+            }
+            ar.clearContent();
+            ar.setValues(ao);
+          }
+          a1.clearContent();
+          a1.setValue("거래처명(자동)");
+          try {
+            var stab = fss.getSheetByName("설정");
+            if (stab && lr >= 2) {
+              var vnm = String(stab.getRange("B5").getValue() || "").trim();
+              if (vnm) {
+                var aFin = ot.getRange(2, 1, lr - 1, 1).getValues();
+                var cVal = ot.getRange(2, 3, lr - 1, 1).getValues();
+                var filled = false;
+                for (var j = 0; j < aFin.length; j++) {
+                  if (!String(aFin[j][0] || "").trim() && String(cVal[j][0] || "").trim()) {
+                    aFin[j][0] = vnm;
+                    filled = true;
+                  }
+                }
+                if (filled) ot.getRange(2, 1, lr - 1, 1).setValues(aFin);
+              }
+            }
+          } catch(eFill) {}
+          aMigrated++;
+        }
+      }
+
+      // ── ③ _data 탭 삭제 ──
+      try {
+        var dataTab = fss.getSheetByName("_data");
+        if (dataTab) {
+          fss.deleteSheet(dataTab);
+          dataDeleted++;
+        }
+      } catch(eDel) {}
+
+      if (fi % 5 === 0) {
+        try { ss0.toast((fi + 1) + "/" + files.length + " 처리 중...", "⏳", 3); } catch(_t) {}
+      }
+    } catch (e) {
+      errors.push("❌ " + files[fi].name + ": " + String(e.message || "").substring(0, 60));
+    }
+  }
+
+  var result =
+    "📋 뷰어탭 통일 + A열 마이그레이션 완료\n\n" +
+    "- 전체: " + files.length + "개\n" +
+    "- 뷰어탭 이름 변경: " + renamed + "개\n" +
+    "- A열 값 전환: " + aMigrated + "개\n" +
+    "- _data 탭 삭제: " + dataDeleted + "개\n" +
+    (errors.length > 0 ? "\n⚠ 오류/경고:\n" + errors.join("\n") : "");
+  ui.alert("결과", result.substring(0, 4500), ui.ButtonSet.OK);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ★ 2026-07-15: 신규 ARRAYFORMULA 및 1행 보호 일괄 마이그레이션
+// ═══════════════════════════════════════════════════════════════
+/**
+ * 메뉴: [관리자 전용] 모든 업체 시트 ARRAYFORMULA 일괄 마이그레이션
+ */
+function partnerMigrateToNewArrayFormulaOwner() {
+  var ui = SpreadsheetApp.getUi();
+  var confirm = ui.alert(
+    "📊 발주탭 ARRAYFORMULA 일괄 전환",
+    "모든 업체 시트의 「발주 및 송장조회」 탭을 신규 ARRAYFORMULA 수식 구조로 일괄 전환합니다.\n\n" +
+    "변경 사항:\n" +
+    "- D열(품목명), L열(단가), N열(상태) → 1행 ARRAYFORMULA 수식으로 전환\n" +
+    "- D2~, L2~, N2~ 고정 데이터 클리어 (수식이 자동 완성하기 위함)\n" +
+    "- 1행 수식 삭제 보호 (강제 잠금 적용)\n\n" +
+    "계속하시겠습니까?",
+    ui.ButtonSet.YES_NO
+  );
+  if (confirm !== ui.Button.YES) return;
+
+  var files = _pt_listFiles();
+  var migrated = 0, errors = [];
+  var ss0 = SpreadsheetApp.getActiveSpreadsheet();
+
+  for (var fi = 0; fi < files.length; fi++) {
+    try {
+      var fss = SpreadsheetApp.openById(files[fi].id);
+      var nm = fss.getName().replace("[협력업체] ", "").trim();
+      var ot = fss.getSheetByName("발주 및 송장조회");
+      
+      if (ot) {
+        // 실제 단가조회/뷰어 탭명 동적 검색
+        var viewerTabName = "단가조회";
+        var sheets = fss.getSheets();
+        for (var si = 0; si < sheets.length; si++) {
+          var sn = sheets[si].getName();
+          if (sn.indexOf("단가조회") !== -1 || sn.indexOf("뷰어") !== -1 || sn.indexOf("팩투유") !== -1) {
+            viewerTabName = sn;
+            break;
+          }
+        }
+        // ARRAYFORMULA 주입 + 1행 보호 (동적 검색된 탭명 주입)
+        _pt_injectOrderSpillFormulas(ot, viewerTabName);
+        migrated++;
+      }
+      
+      if (fi % 5 === 0) {
+        try { ss0.toast((fi + 1) + "/" + files.length + " 마이그레이션 중...", "⏳", 3); } catch(_t) {}
+      }
+    } catch(e) {
+      errors.push("❌ " + files[fi].name + ": " + String(e.message || "").substring(0, 60));
+    }
+  }
+
+  var result =
+    "📊 ARRAYFORMULA 일괄 전환 완료\n\n" +
+    "- 대상 파일: " + files.length + "개\n" +
+    "- 전환 완료: " + migrated + "개\n" +
+    (errors.length > 0 ? "\n⚠ 오류 내역:\n" + errors.join("\n") : "");
+  ui.alert("결과", result.substring(0, 4500), ui.ButtonSet.OK);
+}
+
