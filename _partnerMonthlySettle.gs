@@ -242,6 +242,11 @@ function _pms_runBatch_(silent) {
   var startTime = new Date();
   var state = _pms_loadResumeState_();
   if (!state || !state.queue) return true; // 상태 없음 = 완료로 간주
+  if (state.queue.length === 0) { _pms_clearResumeState_(); return true; }
+
+  // ★ 안전망: 이 실행이 6분 한도로 강제 종료돼도 이어지도록 5.5분 후 재개 예약.
+  //   정상 종료 경로(_pms_clearResumeState_ / _pms_scheduleResume_)에서 이 트리거를 제거/교체함.
+  _pms_scheduleResume_(5.5 * 60 * 1000);
 
   var batchArchivedUids = {}; // ★ 이번 배치에서 이동된 UID (배치별 허브 정리)
   var processedThisBatch = 0;
@@ -337,10 +342,10 @@ function _pms_loadFinalSummary_() {
   try { return PropertiesService.getScriptProperties().getProperty(_PMS_RESUME_KEY_ + "_FINAL"); }
   catch(e) { return null; }
 }
-function _pms_scheduleResume_() {
-  _pms_deleteResumeTriggers_(); // 중복 방지
+function _pms_scheduleResume_(delayMs) {
+  _pms_deleteResumeTriggers_(); // 중복 방지 (안전망 트리거 포함 교체)
   try {
-    ScriptApp.newTrigger(_PMS_RESUME_TRIGGER_).timeBased().after(60 * 1000).create();
+    ScriptApp.newTrigger(_PMS_RESUME_TRIGGER_).timeBased().after(delayMs || 60 * 1000).create();
   } catch(e) { Logger.log("[PMS] 재개 트리거 생성 실패: " + e.message); }
 }
 function _pms_deleteResumeTriggers_() {
