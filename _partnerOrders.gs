@@ -2711,34 +2711,49 @@ var _PO_TRIGGER_MINUTES = 5;
 function partnerCollectOrdersSilent_() {
   // ★ 2026-06-27: 주말 차단
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 발주 수집 스킵"); return; }
+  var startTime = new Date();
+  var collectOk = false, salesOk = false, errorMsg = "";
   // ① 발주 수집 (협력업체 발주탭 → 허브) — 업체시트에 "접수완료" 역기록 포함
   try {
     partnerCollectOrders(false); // ★ 2026-07-03: noWriteBack=false → 상태값도 함께 기록
+    collectOk = true;
   } catch (e) {
-    try {
-      Logger.log("[PARTNER_COLLECT_TRIGGER_ERR] " + String(e.message || e));
-    } catch (_) {}
+    errorMsg = String(e.message || e);
+    try { Logger.log("[PARTNER_COLLECT_TRIGGER_ERR] " + errorMsg); } catch (_) {}
   }
   // ② 폐기송장 적용 (폐기송장 탭에 등록된 송장번호를 허브에서 자동 제거)
   try {
     if (typeof partnerApplyVoidedInvoicesSilent_ === "function")
       partnerApplyVoidedInvoicesSilent_();
   } catch (e) {
-    try {
-      Logger.log("[VOID_INVOICE_TRIGGER_ERR] " + String(e.message || e));
-    } catch (_) {}
+    try { Logger.log("[VOID_INVOICE_TRIGGER_ERR] " + String(e.message || e)); } catch (_) {}
   }
   // ③ ★ 2026-07-02: 판매현황 갱신 (발주수집 후 자동 실행)
   try {
     partnerRebuildSalesUploadSheet(true); // silent=true
+    salesOk = true;
     Logger.log("[SALES_REFRESH] 판매현황 갱신 완료");
   } catch (e) {
-    try {
-      Logger.log("[SALES_REFRESH_ERR] " + String(e.message || e));
-    } catch (_) {}
+    try { Logger.log("[SALES_REFRESH_ERR] " + String(e.message || e)); } catch (_) {}
   }
   // ★ 2026-07-02: PEP_AUTO_PUSH 연쇄 호출 제거
   // Push는 별도 트리거(09:20/14:20)에서 실행 → 6분 초과 방지 + 중복 실행 방지
+
+  // ④ Chat 알림
+  var elapsed = Math.round((new Date() - startTime) / 1000);
+  var now = Utilities.formatDate(startTime, "Asia/Seoul", "HH:mm");
+  try {
+    if (collectOk) {
+      _chat_sendCard_("📦 발주 수집 완료", now, [
+        { label: "판매현황 갱신", value: salesOk ? "✅" : "❌" },
+        { label: "⏱ 소요시간", value: elapsed + "초" },
+      ]);
+    } else {
+      _chat_sendCard_("❌ 발주 수집 에러", now, [
+        { label: "오류", value: errorMsg.substring(0, 200) },
+      ]);
+    }
+  } catch (_) {}
 }
 
 /** 대리발주 자동 Push ON */

@@ -84,6 +84,27 @@ function _chat_sendCard_(title, subtitle, keyValues, footerText) {
 }
 
 // ══════════════════════════════════════════════
+//  웹훅 연결 테스트
+// ══════════════════════════════════════════════
+
+/** Google Chat 웹훅 연결 테스트 (메뉴에서 호출 가능) */
+function testChatWebhook() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (_) {}
+  try {
+    _chat_sendCard_(
+      "🔔 Chat 알림 테스트",
+      Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"),
+      [{ label: "상태", value: "웹훅 연결 정상 ✅" }]
+    );
+    if (ui) ui.alert("✅ Chat 알림 테스트 성공\nGoogle Chat에 메시지가 전송됐습니다.");
+  } catch (e) {
+    if (ui) ui.alert("❌ Chat 알림 테스트 실패\n\n" + String(e.message || e));
+    Logger.log("[CHAT_TEST] 실패: " + String(e.message || e));
+  }
+}
+
+// ══════════════════════════════════════════════
 //  이벤트별 알림 함수
 // ══════════════════════════════════════════════
 

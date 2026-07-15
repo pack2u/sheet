@@ -2353,11 +2353,15 @@ function partnerDiagnoseAliasMap() {
 // ─────────────────────────────────────────────────────
 function partnerPushOrdersToExclusiveFormsSilent_() {
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말/공휴일 차단 → 대리공급 Push 스킵"); return; }
+  var startTime = new Date();
+  var pushOk = false, errorMsg = "";
   // ① 대리공급 Push
   try {
     partnerPushOrdersToExclusiveForms(true);
+    pushOk = true;
   } catch (e) {
-    try { Logger.log("[PARTNER_EXCL_PUSH_ERR] " + String(e.message || e)); } catch (_) {}
+    errorMsg = String(e.message || e);
+    try { Logger.log("[PARTNER_EXCL_PUSH_ERR] " + errorMsg); } catch (_) {}
   }
   // ② 도서산간 추가배송비 확인 (Push 후 새 행 기준으로 즉시 적용)
   try {
@@ -2377,6 +2381,21 @@ function partnerPushOrdersToExclusiveFormsSilent_() {
   } catch (eZip) {
     try { Logger.log("[ZIP_FILL_ERR] " + String(eZip.message || eZip)); } catch (_) {}
   }
+  // ④ Chat 알림
+  var elapsed = Math.round((new Date() - startTime) / 1000);
+  var now = Utilities.formatDate(startTime, "Asia/Seoul", "HH:mm");
+  try {
+    if (pushOk) {
+      _chat_sendCard_("📤 대리공급 Push 완료", now, [
+        { label: "도서산간·우편번호", value: "✅ 자동 처리" },
+        { label: "⏱ 소요시간", value: elapsed + "초" },
+      ]);
+    } else {
+      _chat_sendCard_("❌ 대리공급 Push 에러", now, [
+        { label: "오류", value: errorMsg.substring(0, 200) },
+      ]);
+    }
+  } catch (_) {}
 }
 
 // ─────────────────────────────────────────────────────
