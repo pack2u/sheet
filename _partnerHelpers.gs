@@ -10,6 +10,28 @@
  */
 
 // ═══════════════════════════════════════════
+//  주말/공휴일 차단 (모든 자동 트리거에서 사용)
+// ═══════════════════════════════════════════
+/**
+ * 주말 및 월요일 새벽 블랙아웃 여부 반환
+ * - 토요일(6) 08:30 이후
+ * - 일요일(7) 전체
+ * - 월요일(1) 05:30 이전
+ */
+function _pt_isWeekendBlackout_() {
+  var now = new Date();
+  var parts = Utilities.formatDate(now, "Asia/Seoul", "u:HH:mm").split(":");
+  var dow  = parseInt(parts[0], 10);  // 1=월, 2=화, ..., 6=토, 7=일
+  var hhmm = parseInt(parts[1], 10) * 100 + parseInt(parts[2], 10);
+
+  if (dow === 6 && hhmm >= 830) return true; // 토요일 08:30 이후
+  if (dow === 7) return true;                // 일요일 전체
+  if (dow === 1 && hhmm < 530) return true;  // 월요일 05:30 이전
+
+  return false;
+}
+
+// ═══════════════════════════════════════════
 //  상수 (송장 시트 ID — 기존 orderSyncManager.gs에서 이식)
 // ═══════════════════════════════════════════
 var _PT_INVOICE_SHEET_ID = "1KIBSmjpMVKLGoAkbrcKyTr4LOflszwS_xtMzmRuvYWs";
