@@ -19,6 +19,7 @@ var _PEA_HEADER_BG     = "#1f4e78";
 // ★ 2026-07-16: 연속 실행(continuation) 상수 — GAS 6분 한도 회피
 var _PEA_RESUME_KEY_     = "_PEA_RESUME_STATE";     // ScriptProperties 상태 저장 키
 var _PEA_RESUME_TRIGGER_ = "_pea_continueResume_";  // 재개 트리거 핸들러명
+var _PEA_PENDING_KEY_    = "_PEA_PENDING_TABNAME";  // 비차단 신규 시작용 tabName 보관 키
 
 // ══════════════════════════════════════════════
 //  공개 진입점
@@ -26,6 +27,9 @@ var _PEA_RESUME_TRIGGER_ = "_pea_continueResume_";  // 재개 트리거 핸들�
 
 /**
  * [수동] 전용양식 → 전용발주 마감탭 이동 + UID 초기화
+ *  ★ 2026-07-16: 비차단(non-blocking) 방식.
+ *  확인창(미리보기) → 백그라운드 트리거로 실제 처리 → 완료 시 Chat 알림.
+ *  확인창 대기/처리 중 6분 한도로 죽던 문제 해결.
  */
 function partnerArchiveExclusiveForm() {
   var ui = SpreadsheetApp.getUi();
@@ -48,14 +52,29 @@ function partnerArchiveExclusiveForm() {
     "  · 대상 탭: " + preview.tabCount + "개\n\n" +
     "· 전용양식 원본 행 → 삭제 (헤더 유지)\n" +
     "· 소스 탭 협력Push UID → 초기화 (재Push 가능)\n\n" +
-    "계속할까요?",
+    "▶ 확인을 누르면 백그라운드에서 처리되며,\n" +
+    "   완료 시 Google Chat 알림이 전송됩니다.\n\n계속할까요?",
     ui.ButtonSet.YES_NO
   );
   if (cf !== ui.Button.YES) return;
 
+  // ★ 비차단: 이전 미완료 정리 → tabName 예약 → 백그라운드 트리거 시작
+  _pea_clearResumeState_();
+  try { PropertiesService.getScriptProperties().setProperty(_PEA_PENDING_KEY_, tabName); } catch(_) {}
+  var scheduled = _pea_scheduleResume_(5 * 1000); // 5초 후 백그라운드 시작
+
+  if (scheduled) {
+    ui.alert("✅ 대리공급 마감을 시작했습니다.\n\n" +
+      "백그라운드에서 처리되며, 완료되면 Google Chat 알림이 전송됩니다.\n" +
+      "이 창은 닫으셔도 됩니다.");
+    return;
+  }
+
+  // ── 트리거 예약 실패 → 인라인 폴백(차단 방식) ──
+  try { PropertiesService.getScriptProperties().deleteProperty(_PEA_PENDING_KEY_); } catch(_) {}
+  ui.alert("⚠ 백그라운드 예약 실패 → 즉시 처리합니다.\n(업체가 많으면 시간이 걸릴 수 있습니다.)");
   var result = _pea_core_(tabName, false);
 
-  // ★ 2026-07-16: 파일이 많아 나눠서 처리 중이면 안내 후 종료 (백그라운드 이어처리)
   if (result.incomplete) {
     ui.alert(
       "⏳ 전용발주 마감 진행 중\n\n" +
@@ -66,10 +85,8 @@ function partnerArchiveExclusiveForm() {
     return;
   }
 
-  // ★ Google Chat 알림
   try { _chat_notifyArchive_(result.moved, result.kept, result.tabsCleared, result.uidCleared); } catch (eChat) {}
 
-  // ★ 2026-07-02: 임시기록 초기화 결과도 표시
   ui.alert(
     "✅ 전용발주 마감 이동 완료\n\n" +
     "이동: " + result.moved + "행\n" +
@@ -425,7 +442,7 @@ function _pea_core_(tabName, silent) {
 //  ★ 2026-07-16: 연속 실행(continuation) 인프라
 // ══════════════════════════════════════════════
 
-/** 재개 트리거 핸들러 — 저장된 상태로 이어서 처리 */
+/** 재개/시작 트리거 핸들러 — 저장 상태 재개 또는 대기 중 신규 시작 처리 */
 function _pea_continueResume_() {
   _pea_deleteResumeTriggers_(); // 자기 자신(일회성 트리거) 정리
   var lock = LockService.getScriptLock();
@@ -434,7 +451,19 @@ function _pea_continueResume_() {
     _pea_scheduleResume_(60 * 1000);
     return;
   }
-  try { _pea_core_(null, true); } // tabName=null → 저장 상태로 재개
+  try {
+    var state = _pea_loadResumeState_();
+    if (state && state.queue) {
+      _pea_core_(null, true); // 저장 상태로 재개
+    } else {
+      // 비차단 신규 시작: 대기 중인 tabName으로 백그라운드 시작
+      var pending = PropertiesService.getScriptProperties().getProperty(_PEA_PENDING_KEY_);
+      if (pending) {
+        try { PropertiesService.getScriptProperties().deleteProperty(_PEA_PENDING_KEY_); } catch(_) {}
+        _pea_core_(pending, true);
+      }
+    }
+  }
   catch(e) { try { Logger.log("[PEA_RESUME_ERR] " + String(e.message||e)); } catch(_) {} }
   finally { lock.releaseLock(); }
 }
@@ -460,7 +489,8 @@ function _pea_scheduleResume_(delayMs) {
   _pea_deleteResumeTriggers_(); // 중복 방지 (안전망 트리거 포함 교체)
   try {
     ScriptApp.newTrigger(_PEA_RESUME_TRIGGER_).timeBased().after(delayMs || 60 * 1000).create();
-  } catch(e) { Logger.log("[PEA] 재개 트리거 생성 실패: " + e.message); }
+    return true;
+  } catch(e) { Logger.log("[PEA] 재개 트리거 생성 실패: " + e.message); return false; }
 }
 function _pea_deleteResumeTriggers_() {
   try {
