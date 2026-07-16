@@ -89,15 +89,73 @@ function _pms_parseDateStr_(orderDate) {
 //  공개 함수
 // ──────────────────────────────────────────────────────
 
-/** [수동] 발주 및 송장조회 완료건 → 같은 파일 내 월별 마감 탭으로 이동 */
+/** [수동] 발주 및 송장조회 완료건 → 같은 파일 내 월별 마감 탭으로 이동
+ *  ★ 2026-07-16: 비차단(non-blocking) 방식.
+ *  확인창 → 빠른 초기화(임시기록/큐 저장) → 백그라운드 트리거로 실제 처리.
+ *  확인창 대기 중 6분 한도로 죽던 문제 해결. 완료 시 Google Chat 알림 발송. */
 function partnerArchiveToMonthlySettle() {
-  var ui   = SpreadsheetApp.getUi();
+  var ui = SpreadsheetApp.getUi();
+  var cf = ui.alert("월별 정산 이동",
+    "각 협력업체 파일의 「발주 및 송장조회」탭에서\n" +
+    "송장번호가 입력된 행을 월별 마감 탭으로 이동합니다.\n\n" +
+    "⚠ 송장 수집을 먼저 실행한 뒤 이 기능을 사용하세요.\n\n" +
+    "▶ 확인을 누르면 백그라운드에서 처리되며,\n" +
+    "   완료 시 Google Chat 알림이 전송됩니다.\n\n계속할까요?",
+    ui.ButtonSet.YES_NO);
+  if (cf !== ui.Button.YES) return;
+
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) {
     ui.alert("⚠ 다른 작업 진행 중. 잠시 후 다시 시도해주세요."); return;
   }
-  try { _pms_core_(ui, false); }
-  finally { lock.releaseLock(); }
+  var scheduled = false;
+  try {
+    var files = _pt_listFiles();
+    if (!files || !files.length) { ui.alert("협력업체 파일 없음"); return; }
+
+    // 이전 미완료 상태/트리거 정리 후 새로 시작
+    _pms_clearResumeState_();
+
+    var todayNum = parseInt(
+      Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd"), 10);
+
+    var errMsgs = [], tempCleared = 0, tempKept = 0;
+    // ★ 임시기록 초기화 (빠른 작업 — 1회만)
+    try {
+      var _hubSS_ = SpreadsheetApp.openById(_PT.INFO_SS_ID);
+      var _tempTab_ = _po_getNonPartnerTempTab_(_hubSS_);
+      if (_tempTab_) {
+        var _tempClear_ = _po_clearTempTabInvoicedRowsOnly_(_tempTab_);
+        tempCleared = _tempClear_.cleared;
+        tempKept = _tempClear_.kept;
+        Logger.log("[PMS] 임시기록 초기화: 삭제=" + tempCleared + "건, 유지=" + tempKept + "건");
+      }
+    } catch (_eTempClear_) {
+      errMsgs.push("[임시기록초기화] " + _eTempClear_.message);
+    }
+
+    var state = {
+      queue: files.map(function(f) { return { id: f.id, name: f.name }; }),
+      todayNum: todayNum,
+      archived: 0, failed: 0, errMsgs: errMsgs,
+      tempCleared: tempCleared, tempKept: tempKept
+    };
+    _pms_saveResumeState_(state);
+    scheduled = _pms_scheduleResume_(5 * 1000); // 5초 후 백그라운드 시작
+  } finally { lock.releaseLock(); }
+
+  if (scheduled) {
+    ui.alert("✅ 대리판매 마감을 시작했습니다.\n\n" +
+      "백그라운드에서 처리되며, 완료되면 Google Chat 알림이 전송됩니다.\n" +
+      "이 창은 닫으셔도 됩니다.");
+  } else {
+    // 트리거 생성 실패 → 인라인 폴백(차단 방식)
+    ui.alert("⚠ 백그라운드 예약 실패 → 즉시 처리합니다.\n(파일이 많으면 시간이 걸릴 수 있습니다.)");
+    var lock2 = LockService.getScriptLock();
+    if (lock2.tryLock(20000)) {
+      try { _pms_runBatch_(true); } finally { lock2.releaseLock(); }
+    }
+  }
 }
 
 /** [트리거용] 무음 실행 */
@@ -346,7 +404,8 @@ function _pms_scheduleResume_(delayMs) {
   _pms_deleteResumeTriggers_(); // 중복 방지 (안전망 트리거 포함 교체)
   try {
     ScriptApp.newTrigger(_PMS_RESUME_TRIGGER_).timeBased().after(delayMs || 60 * 1000).create();
-  } catch(e) { Logger.log("[PMS] 재개 트리거 생성 실패: " + e.message); }
+    return true;
+  } catch(e) { Logger.log("[PMS] 재개 트리거 생성 실패: " + e.message); return false; }
 }
 function _pms_deleteResumeTriggers_() {
   try {

@@ -43,7 +43,7 @@ function registerPartnerMenu_() {
     // ── 마감 ──
     .addSubMenu(
       ui.createMenu("📋 마감탭 정리")
-        .addItem("📦 대리판매 발주 마감이동", "partnerArchiveToMonthlySettleOwner")
+        .addItem("📦 대리판매 발주 마감이동", "partnerArchiveToMonthlySettle")
         .addItem("🏭 대리공급 발주 마감이동", "partnerArchiveExclusiveFormOwner")
         .addSeparator()
         .addItem("📋 통합 일일마감 (수동)", "partnerUnifiedDailyArchiveManual")
