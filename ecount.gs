@@ -424,46 +424,23 @@ function ecountStep4ForModal() {
 // 내부 통신 및 로우레벨 함수 모음
 // ============================================
 
-// ── ★ 2026-06-22: 이카운트 프록시 (고정 IP 34.64.87.69 경유) ──
-var _ECOUNT_PROXY_URL_ = 'https://ecount-proxy-43iravsbpa-du.a.run.app';
+// ── ★ 2026-07-04: 이카운트 프록시 v2 (개인 GCP, 인증 불필요, 고정 IP 34.64.85.19) ──
+// 기존 pack2u-proxy 프로젝트는 조직 정책으로 GAS→Cloud Run IAM 인증 차단
+// 개인 GCP 프로젝트(ecount-proxy-personal)에 배포하여 allUsers 허용
+var _ECOUNT_PROXY_URL_ = 'https://asia-northeast3-ecount-proxy-personal.cloudfunctions.net/ecount-proxy';
 var _ECOUNT_PROXY_KEY_ = 'pack2u-ecount-proxy-2026';
-var _ECOUNT_PROXY_SA_ = '329334961005-compute@developer.gserviceaccount.com';
 
 /**
- * Cloud Run 호출용 ID 토큰 생성 (IAM Credentials API 경유)
- * @returns {string} ID 토큰
- */
-function _getCloudRunIdToken_() {
-  var accessToken = ScriptApp.getOAuthToken();
-  var url = 'https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/'
-    + _ECOUNT_PROXY_SA_ + ':generateIdToken';
-  var resp = UrlFetchApp.fetch(url, {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'Authorization': 'Bearer ' + accessToken },
-    payload: JSON.stringify({
-      audience: _ECOUNT_PROXY_URL_,
-      includeEmail: true
-    }),
-    muteHttpExceptions: true
-  });
-  var code = resp.getResponseCode();
-  if (code !== 200) {
-    throw new Error('ID Token 생성 실패 (HTTP ' + code + '): ' + resp.getContentText().substring(0, 300));
-  }
-  var data = JSON.parse(resp.getContentText());
-  return data.token;
-}
-
-/**
- * 이카운트 API 호출을 Cloud Function 프록시를 통해 실행 (고정 IP 보장)
+ * 이카운트 API 호출을 Cloud Function 프록시를 통해 실행
+ * ★ 2026-07-04: IAM 인증 제거 — API 키(X-Proxy-Key)만으로 보안 처리
+ * ★ 이카운트는 IP 화이트리스트를 적용하므로 프록시 필수 (고정 IP: 34.64.85.19)
+ *
  * @param {string} targetUrl - 이카운트 API 엔드포인트
  * @param {Object} payload - 요청 본문
  * @param {string} [method='POST'] - HTTP 메서드
- * @returns {HTTPResponse} UrlFetchApp 응답 객체와 동일한 인터페이스
+ * @returns {HTTPResponse} UrlFetchApp 응답 객체
  */
 function _ecountFetchViaProxy_(targetUrl, payload, method) {
-  var idToken = _getCloudRunIdToken_();
   var proxyPayload = {
     url: targetUrl,
     payload: payload || {},
@@ -474,8 +451,7 @@ function _ecountFetchViaProxy_(targetUrl, payload, method) {
     contentType: 'application/json',
     payload: JSON.stringify(proxyPayload),
     headers: {
-      'X-Proxy-Key': _ECOUNT_PROXY_KEY_,
-      'Authorization': 'Bearer ' + idToken
+      'X-Proxy-Key': _ECOUNT_PROXY_KEY_
     },
     muteHttpExceptions: true
   };
@@ -554,7 +530,18 @@ function getEcountAll(){
 function setupDailyTrigger() {
   var ui = null;
   try { ui = SpreadsheetApp.getUi(); } catch(e) {}
-  
+
+  // ★ 2026-07-01: 통합 트리거 존재 시 이카운트 전용 트리거 설치 차단 (이중 트리거 방지)
+  if (_ecount_hasUnifiedTriggers_()) {
+    var blockMsg = "⚠ 통합 자동 트리거(setupAllScheduledTriggers)가 이미 설치되어 있습니다.\n\n" +
+      "이카운트 동기화는 통합 트리거에 포함되어 자동 실행됩니다.\n" +
+      "이카운트 전용 트리거를 별도로 설치하면 이중 실행됩니다.\n\n" +
+      "통합 트리거를 사용 중이라면 이 메뉴는 실행하지 마세요.";
+    if (ui) ui.alert(blockMsg);
+    Logger.log("[TRIGGER_SETUP] 통합 트리거 감지 → 이카운트 전용 트리거 설치 차단");
+    return;
+  }
+
   var activeSS = SpreadsheetApp.getActiveSpreadsheet();
   if (activeSS) {
     PropertiesService.getScriptProperties().setProperty("MAIN_SS_ID", activeSS.getId());
@@ -562,13 +549,13 @@ function setupDailyTrigger() {
   try {
     removeDailyTrigger(true); // 중복 방지 (무음 처리)
     
-    // 1. 이카운트 로드 (새벽 2시10분 전후)
-    ScriptApp.newTrigger('runDailyEcountBatch')
-             .timeBased()
-             .everyDays(1)
-             .atHour(2)
-             .nearMinute(10)
-             .create();
+    // 1. 이카운트 로드 (새벽 2시10분 전후) — ★ 2026-06-26: 토큰에러로 비활성화
+    // ScriptApp.newTrigger('runDailyEcountBatch')
+    //          .timeBased()
+    //          .everyDays(1)
+    //          .atHour(2)
+    //          .nearMinute(10)
+    //          .create();
              
     // 2. 판매상태/재고 아침 동기화 (오전 7시 전후)
     ScriptApp.newTrigger('runMorningSyncStatusBatch')
@@ -602,20 +589,16 @@ function setupDailyTrigger() {
              
     if (ui) ui.alert(
       "⏰ [예약 완료]\n\n" +
-      "매일 새벽 2시10분: 이카운트 데이터 스캔/재고 반영\n" +
+      "❌ 새벽 2시10분 이카운트 스캔: 삭제됨 (설치 안 함)\n" +
       "매일 오전 7시00분: 판매 상태/재고 동기화 (1회차)\n" +
       "매일 오후 12시30분: 판매 상태/재고 동기화 (2회차)\n" +
-      "매일 새벽 1시20분 / 오전 11시50분: 재고조정입력 자동 전송\n" +
-      "매일 새벽 2시40분: 발주 월마감 자동 청소기(별도 설치)\n\n" +
-      "※ '이카운트-판매현황업로드용' 탭: 통합 발주 DB 반영분 5분마다 자동 갱신(중복 시 1회만 설치)\n\n" +
+      "매일 새벽 1시20분 / 오전 11시50분: 재고조정입력 자동 전송\n\n" +
+      "※ 이카운트 전체동기화는 통합 자동 트리거(06:00/12:00)를 사용하세요.\n" +
+      "※ '이카운트-판매현황업로드용(협력업체)' 탭은 자동 갱신이 아닙니다.\n" +
+      "   발주수집 직후 자동 갱신되고, 수동은 「📦 대리발송 발주시스템 → 2️⃣ 이카운트 업로드용 판매현황 갱신」입니다.\n\n" +
       "※ 구글 시간기반 트리거 특성상 실제 실행 시각은 ±수분 오차가 있을 수 있습니다."
     );
     appendEcountAutomationLog_("TRIGGER_SETUP", true, "자동연동 트리거 재설치 완료");
-    try {
-      if (typeof ensureSalesStatusPasteRebuildTimeTrigger_ === "function") {
-        ensureSalesStatusPasteRebuildTimeTrigger_();
-      }
-    } catch (ePasteTrig) {}
   } catch (e) {
     var p = getOwnershipDiagnostics_();
     var msg = String(e && e.message ? e.message : e);
@@ -687,16 +670,18 @@ function showDailyTriggerStatus() {
   lines.push("자동연동 상태: " + status);
   lines.push("");
   lines.push("기준 스케줄");
-  lines.push("- 새벽 2시10분: 이카운트 데이터 스캔/재고 반영");
-  lines.push("- 오전 7시00분: 판매 상태/재고 동기화 (1회차)");
-  lines.push("- 오후 12시30분: 판매 상태/재고 동기화 (2회차)");
-  lines.push("- 새벽 1시20분 / 오전 11시50분: 재고조정입력 자동 전송");
-  lines.push("- 새벽 2시40분: 발주 월마감 자동 청소기(별도 설치)");
+  lines.push("- ❌ 새벽 2시10분 이카운트 스캔: 삭제됨 (사용 안 함)");
+  lines.push("- 통합 트리거: 이카운트 전체동기화 06:00 / 12:00");
+  lines.push("- 통합 트리거: 통합허브 상태/재고 업데이트 12:40 (runDailyHubBatch)");
+  lines.push("- 오전 7시00분: 판매 상태/재고 동기화 (1회차, 전용 설치 시·레거시)");
+  lines.push("- ⚠ 레거시 setupDailyTrigger의 12:30 hub와 통합 12:40이 동시에 있으면 중복");
+  lines.push("- 새벽 1시20분 / 오전 11시50분: 재고조정입력 자동 전송 (전용 설치 시)");
   lines.push("");
   lines.push("현재 트리거 감지");
   lines.push("- runDailyEcountBatch: " + ecountCount + "개");
   lines.push("- runMorningSyncStatusBatch (07:00): " + morningStatusCount + "개");
-  lines.push("- runDailyHubBatch (12:30): " + hubCount + "개");
+  lines.push("- runDailyHubBatch (통합 12:40 / 레거시 12:30): " + hubCount + "개" +
+    (hubCount > 1 ? " ⚠ 중복 가능" : ""));
   lines.push("- runDailyInventoryAdjustBatch: " + inventoryAdjustCount + "개");
   lines.push("- archivePastOrders: " + archiveCount + "개");
   lines.push("");
@@ -888,8 +873,25 @@ function getSafeActiveSS() {
   return ss;
 }
 
+// ★ 2026-06-26: runDailyEcountBatch 트리거만 선택 제거 (다른 트리거 보존)
+function removeEcountBatchTriggerOnly() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var removed = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'runDailyEcountBatch') {
+      ScriptApp.deleteTrigger(triggers[i]);
+      removed++;
+    }
+  }
+  var msg = '🗑️ runDailyEcountBatch 트리거 ' + removed + '개 제거 완료\n\n다른 트리거는 모두 보존됨';
+  try { SpreadsheetApp.getUi().alert(msg); } catch(e) { Logger.log(msg); }
+  appendEcountAutomationLog_("TRIGGER_REMOVE_SELECTIVE", true, "runDailyEcountBatch만 " + removed + "개 제거");
+}
+
 // 1차 자동화: 이카운트 순수 데이터 로드 (새벽 2시10분 전후)
 function runDailyEcountBatch() {
+  // ★ 2026-06-27: 주말 차단
+  if (typeof _pt_isWeekendBlackout_ === "function" && _pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 이카운트 동기화 스킵"); return; }
   var runner = function() {
     var started = new Date().getTime();
     try {
@@ -901,11 +903,16 @@ function runDailyEcountBatch() {
       // ecountStep4() 내부에 10초 대기가 적용되어 있습니다.
       ecountStep4(); 
       SpreadsheetApp.flush();
-      appendEcountAutomationLog_("BATCH_ECOUNT", true, "실행 완료 (" + (new Date().getTime() - started) + "ms)");
+      var elapsed = new Date().getTime() - started;
+      appendEcountAutomationLog_("BATCH_ECOUNT", true, "실행 완료 (" + elapsed + "ms)");
+      // ★ 2026-06-24: Google Chat 알림 추가
+      try { _chat_sendCard_("✅ 이카운트 전체동기화 완료", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "상태", value: "정상 완료 (" + Math.round(elapsed/1000) + "초)" }]); } catch (_) {}
     } catch (e) {
       console.error("이카운트 새벽배치 에러: " + e.message);
       logSystemError("이카운트 새벽배치 에러: " + e.message, "이카운트 자동스캔");
       appendEcountAutomationLog_("BATCH_ECOUNT", false, e.message);
+      // ★ 2026-06-24: 실패 시 Chat 알림
+      try { _chat_sendCard_("❌ 이카운트 동기화 에러", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(e.message).substring(0, 200) }]); } catch (_) {}
     } finally {
       _releaseSyncLock_();
     }
@@ -919,6 +926,8 @@ function runDailyEcountBatch() {
 
 // 1.5차 자동화: 판매상태/재고 아침 동기화 (오전 7시 전후)
 function runMorningSyncStatusBatch() {
+  // ★ 2026-06-27: 주말 차단
+  if (typeof _pt_isWeekendBlackout_ === "function" && _pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 아침 상태동기화 스킵"); return; }
   var runner = function() {
     var started = new Date().getTime();
     try {
@@ -941,17 +950,24 @@ function runMorningSyncStatusBatch() {
 
 // 2차 자동화: 허브 서버 최종 정렬 (오후 12시 30분 전후)
 function runDailyHubBatch() {
+  // ★ 2026-06-27: 주말 차단
+  if (typeof _pt_isWeekendBlackout_ === "function" && _pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 허브 동기화 스킵"); return; }
   var runner = function() {
     var started = new Date().getTime();
     try {
       if (typeof syncStatusOnly === 'function') {
         syncStatusOnly(true); 
       }
-      appendEcountAutomationLog_("BATCH_HUB", true, "실행 완료 (" + (new Date().getTime() - started) + "ms)");
+      var elapsed = new Date().getTime() - started;
+      appendEcountAutomationLog_("BATCH_HUB", true, "실행 완료 (" + elapsed + "ms)");
+      // ★ 2026-06-24: Google Chat 알림 추가
+      try { _chat_sendCard_("✅ 통합허브 상태/재고 업데이트 완료", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "상태", value: "정상 완료 (" + Math.round(elapsed/1000) + "초)" }]); } catch (_) {}
     } catch (e) {
       console.error("허브 아침배치 에러: " + e.message);
       logSystemError("허브 단가 동기화 에러: " + e.message, "허브 아침배치");
       appendEcountAutomationLog_("BATCH_HUB", false, e.message);
+      // ★ 2026-06-24: 실패 시 Chat 알림
+      try { _chat_sendCard_("❌ 통합허브 업데이트 에러", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(e.message).substring(0, 200) }]); } catch (_) {}
     }
   };
   if (typeof runWithAutomationScriptLock_ === "function") {
@@ -1145,6 +1161,12 @@ function initializeEcountForSheet() {
   log.push("");
   log.push("━━ 자동 트리거 설치 ━━");
   try {
+    // ★ 2026-07-01: 통합 트리거 존재 시 이카운트 전용 트리거 설치 스킵
+    if (_ecount_hasUnifiedTriggers_()) {
+      log.push("⚠ 통합 자동 트리거(setupAllScheduledTriggers) 감지");
+      log.push("  → 이카운트 전용 트리거 설치를 스킵합니다.");
+      log.push("  → 이카운트 동기화는 통합 트리거에서 자동 실행됩니다.");
+    } else {
     // 기존 동일 트리거 정리
     var removed = 0;
     var triggers = ScriptApp.getProjectTriggers();
@@ -1158,19 +1180,22 @@ function initializeEcountForSheet() {
     }
     if (removed > 0) log.push("  기존 트리거 " + removed + "개 정리");
 
-    ScriptApp.newTrigger("runDailyEcountBatch").timeBased().everyDays(1).atHour(2).nearMinute(10).create();
+    // ★ 2026-06-26: 토큰에러로 비활성화
+    // ScriptApp.newTrigger("runDailyEcountBatch").timeBased().everyDays(1).atHour(2).nearMinute(10).create();
     ScriptApp.newTrigger("runMorningSyncStatusBatch").timeBased().everyDays(1).atHour(7).nearMinute(0).create();
     ScriptApp.newTrigger("runDailyHubBatch").timeBased().everyDays(1).atHour(12).nearMinute(30).create();
     ScriptApp.newTrigger("runDailyInventoryAdjustBatch").timeBased().everyDays(1).atHour(1).nearMinute(20).create();
     ScriptApp.newTrigger("runDailyInventoryAdjustBatch").timeBased().everyDays(1).atHour(11).nearMinute(50).create();
 
-    log.push("✅ 트리거 5개 설치 완료");
-    log.push("   새벽 02:10  → 이카운트 스캔 & 재고 반영");
+    log.push("✅ 트리거 4개 설치 완료 (새벽 02시 이카운트 스캔 삭제)");
+    log.push("   ❌ 새벽 02:10  → 이카운트 스캔 (삭제됨, 설치 안 함)");
     log.push("   오전 01:20  → 재고조정 자동 전송 (1회차)");
     log.push("   오전 07:00  → 판매 상태/재고 동기화 (1회차)");
     log.push("   오전 11:50  → 재고조정 자동 전송 (2회차)");
     log.push("   오후 12:30  → 판매 상태/재고 동기화 (2회차)");
+    log.push("   ※ 이카운트 전체동기화는 통합 트리거 06:00/12:00");
     appendEcountAutomationLog_("INIT_SETUP", true, "initializeEcountForSheet 완료");
+    } // ★ 2026-07-01: else 블록 종료
   } catch (eTrig) {
     log.push("❌ 트리거 설치 실패: " + eTrig.message);
     log.push("   → 파일 소유자 계정으로 실행하세요.");
@@ -1197,6 +1222,14 @@ function setupDailyTriggerForCopy() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var props = PropertiesService.getScriptProperties();
 
+  // ★ 2026-07-04: 통합 트리거 존재 시 차단 (이중 트리거 방지)
+  if (_ecount_hasUnifiedTriggers_()) {
+    ui.alert("⚠ 통합 자동 트리거가 이미 설치되어 있습니다.\n\n" +
+      "이카운트 동기화는 통합 트리거에 포함되어 자동 실행됩니다.\n" +
+      "사본 전용 트리거를 별도로 설치하면 이중 실행됩니다.");
+    return;
+  }
+
   // MAIN_SS_ID 갱신
   props.setProperty("MAIN_SS_ID", ss.getId());
 
@@ -1215,7 +1248,8 @@ function setupDailyTriggerForCopy() {
     }
 
     // 사본 전용 오프셋 시간으로 설치
-    ScriptApp.newTrigger("runDailyEcountBatch").timeBased().everyDays(1).atHour(2).nearMinute(25).create();           // 원본 2:10 → +15분
+    // ★ 2026-06-26: 토큰에러로 비활성화
+    // ScriptApp.newTrigger("runDailyEcountBatch").timeBased().everyDays(1).atHour(2).nearMinute(25).create();           // 원본 2:10 → +15분
     ScriptApp.newTrigger("runMorningSyncStatusBatch").timeBased().everyDays(1).atHour(7).nearMinute(20).create();     // 원본 7:00 → +20분
     ScriptApp.newTrigger("runDailyHubBatch").timeBased().everyDays(1).atHour(12).nearMinute(50).create();             // 원본 12:30 → +20분
     ScriptApp.newTrigger("runDailyInventoryAdjustBatch").timeBased().everyDays(1).atHour(1).nearMinute(40).create();  // 원본 1:20 → +20분
@@ -1225,12 +1259,12 @@ function setupDailyTriggerForCopy() {
     ui.alert(
       "✅ 사본 전용 트리거 설치 완료",
       "원본(상품정보)과 시간 충돌 없도록 오프셋 적용:\n\n" +
-      "  새벽 02:25  → 이카운트 스캔 & 재고 반영  (원본: 02:10)\n" +
+      "  ❌ 새벽 02시 이카운트 스캔: 삭제됨 (설치 안 함)\n" +
       "  오전 01:40  → 재고조정 자동 전송 1회차   (원본: 01:20)\n" +
       "  오전 07:20  → 판매 상태/재고 동기화 1회차 (원본: 07:00)\n" +
       "  오전 12:10  → 재고조정 자동 전송 2회차   (원본: 11:50)\n" +
       "  오후 12:50  → 판매 상태/재고 동기화 2회차 (원본: 12:30)\n\n" +
-      "※ 원본과 사본이 동시에 이카운트 API를 호출하지 않도록\n  15~20분 간격으로 설정되었습니다.",
+      "※ 이카운트 전체동기화는 통합 자동 트리거(06:00/12:00)를 사용하세요.",
       ui.ButtonSet.OK
     );
   } catch (e) {
@@ -1244,4 +1278,22 @@ function setupDailyTriggerForCopy() {
  */
 function releaseSyncLockFromModal() {
   _releaseSyncLock_();
+}
+
+// ★ 2026-07-01: 통합 트리거 존재 여부 확인 헬퍼
+// _partnerWebApp.gs의 _ALL_SCHEDULED_TRIGGERS_ 에 포함된 함수명 기준 감지
+function _ecount_hasUnifiedTriggers_() {
+  var unifiedFns = {
+    "_pep_unifiedDailyArchiveScheduled_": true,
+    "_trigger_monthlySettle_": true,
+    "_trigger_exclusiveArchive_": true,
+    "_trigger_fetchInvoices_": true,
+    "_trigger_pushInvoices_": true
+  };
+  var triggers = ScriptApp.getProjectTriggers();
+  var matched = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    if (unifiedFns[triggers[i].getHandlerFunction()]) matched++;
+  }
+  return matched >= 3; // 통합 트리거 함수 3개 이상 감지 시 true
 }

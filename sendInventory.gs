@@ -226,6 +226,8 @@ function sendInventoryToEcount(opts) {
 }
 
 function runDailyInventoryAdjustBatch() {
+  // ★ 2026-06-27: 주말 차단
+  if (typeof _pt_isWeekendBlackout_ === "function" && _pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 재고조정 스킵"); return; }
   var runner = function() {
     try {
       sendInventoryToEcount({ autoAll: true, silent: true });

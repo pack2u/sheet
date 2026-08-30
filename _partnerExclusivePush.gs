@@ -58,8 +58,8 @@ function ocrImageToText(base64Data) {
       rawB64 = parts[1];
     }
 
-    // ★ 2026-06-18: gemini-3.5-flash로 업그레이드 (OCR 정확도 최우선)
-    var model = "gemini-3.5-flash";
+    // ★ 2026-07-24: gemini-3.6-flash로 업그레이드 (OCR 정확도 최우선)
+    var model = "gemini-3.6-flash";
     var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
       model + ":generateContent?key=" + GEMINI_API_KEY;
 
@@ -102,7 +102,8 @@ function ocrImageToText(base64Data) {
       }],
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 2048,
+        // ★ 2026-07-24: 3.x 모델은 thinking 토큰이 출력 한도를 소모 → 2048에서 상향
+        maxOutputTokens: 8192,
       },
     };
 
@@ -281,7 +282,7 @@ function _parseStructuredTSV_(rawText) {
  * @returns {Array} [{name, tracking, itemName}] 배열
  */
 function _parseInvoicePairsWithGemini_(rawText) {
-  var model = "gemini-3.5-flash";
+  var model = "gemini-3.6-flash"; // ★ 2026-07-24 업그레이드
   var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
     model + ":generateContent?key=" + GEMINI_API_KEY;
 
@@ -316,9 +317,9 @@ function _parseInvoicePairsWithGemini_(rawText) {
   Logger.log("[Gemini] HTTP " + respCode + ", 응답: " + respText.substring(0, 500));
 
   if (respCode !== 200) {
-    // ★ 2026-07-08: 폴백 모델 — gemini-2.0은 서비스 종료, 1.5로 직접 폴백
-    Logger.log("[Gemini] " + model + " 실패, gemini-1.5-flash 시도...");
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_API_KEY;
+    // ★ 2026-07-24: 폴백 모델 — gemini-3.5-flash (1.5는 지원 종료)
+    Logger.log("[Gemini] " + model + " 실패, gemini-3.5-flash 시도...");
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + GEMINI_API_KEY;
     response = UrlFetchApp.fetch(url, options);
     respCode = response.getResponseCode();
     respText = response.getContentText();
@@ -388,13 +389,14 @@ function _parseInvoiceImageWithGemini_(base64Data) {
       rawB64 = parts[1];
     }
 
-    var model = "gemini-3.5-flash";
+    var model = "gemini-3.6-flash"; // ★ 2026-07-24 업그레이드
     var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
       model + ":generateContent?key=" + GEMINI_API_KEY;
 
     var prompt =
-      "이 이미지에서 받는사람 이름, 송장번호, 품목명을 찾아서 JSON 배열로 만들어줘.\n" +
-      "보내는 사람(팩투유 등)은 제외해.\n" +
+      "이 이미지에서 받는사람 이름, 송장번호(10~14자리 연속 숫자), 품목명을 찾아서 JSON 배열로 만들어줘.\n" +
+      "받는사람은 상호·지점명일 수 있음 — 전체를 그대로 출력하고 '님'과 수량 표기는 제거.\n" +
+      "보내는 사람(팩투유 등)·택배사명·사업자번호·전화번호는 제외해.\n" +
       "형식: [{\"name\":\"홍길동\",\"tracking\":\"1234567890\",\"itemName\":\"158Ø캡\"}]\n" +
       "JSON만 출력해.";
 
@@ -544,10 +546,6 @@ function parseAndMatchInvoiceFile(fileId, base64DataUrl) {
  */
 function _parseInvoiceFileWithGemini_(base64DataUrl) {
   try {
-    var model = "gemini-3.5-flash";
-    var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
-      model + ":generateContent?key=" + GEMINI_API_KEY;
-
     // data:mime;base64,XXXX 에서 mime과 base64 분리
     var match = base64DataUrl.match(/^data:([^;]+);base64,(.+)$/);
     if (!match) {
@@ -563,11 +561,20 @@ function _parseInvoiceFileWithGemini_(base64DataUrl) {
       return null;
     }
 
+    // ★ 2026-07-24: 인식률 개선 — 프롬프트 상세화 (기존 4줄 프롬프트가 인식 실패 주원인 중 하나)
     var prompt =
-      "이 이미지에서 받는사람 이름, 송장번호, 품목명을 찾아서 JSON 배열로 만들어줘.\n" +
-      "보내는 사람(팩투유 등)은 제외해.\n" +
-      "형식: [{\"name\":\"홍길동\",\"tracking\":\"1234567890\",\"itemName\":\"158Ø캡\"}]\n" +
-      "JSON만 출력해.";
+      "이 이미지는 택배 발송 목록입니다 (송장 라벨, 접수 리스트 테이블, 채팅 캡처, 거래명세서 등).\n" +
+      "각 건에서 받는사람(name), 송장번호(tracking), 품목명(itemName)을 추출해 JSON 배열로 출력하세요.\n\n" +
+      "규칙:\n" +
+      "1. tracking = 10~14자리 연속 숫자. 하이픈/공백이 섞여 있으면 제거하고 숫자만 출력.\n" +
+      "   사업자등록번호(xxx-xx-xxxxx), 전화번호, 계좌번호, 금액은 송장번호가 아님.\n" +
+      "2. name = 받는사람. 개인 이름뿐 아니라 상호·지점명일 수 있음(예: '밥장인 고터점', '햇살블루 김금자').\n" +
+      "   상호+이름이 함께 있으면 전체를 그대로 출력. 뒤에 붙은 '님'과 수량 표기('1박스', '2개' 등)는 제거.\n" +
+      "3. 보내는사람(팩투유, 주식회사 팩투유 등)·택배사명(로젠, CJ대한통운 등)·주소·전화번호는 제외.\n" +
+      "4. 테이블은 반드시 행(row) 단위로 읽고, 같은 행의 이름과 송장번호를 짝지을 것.\n" +
+      "5. 품목명이 안 보이면 itemName은 빈 문자열.\n" +
+      "6. 실제 이미지에 있는 값만 출력. 예시나 가짜 데이터를 만들지 말 것.\n" +
+      '출력 형식(JSON만): [{"name":"...","tracking":"...","itemName":"..."}]';
 
     var payload = {
       contents: [{
@@ -577,8 +584,10 @@ function _parseInvoiceFileWithGemini_(base64DataUrl) {
         ],
       }],
       generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 8192,
+        temperature: 0,
+        maxOutputTokens: 16384,
+        // ★ 2026-07-24: JSON 강제 출력 — 마크다운 감싸기/설명문 차단
+        responseMimeType: "application/json",
       },
     };
 
@@ -589,20 +598,55 @@ function _parseInvoiceFileWithGemini_(base64DataUrl) {
       muteHttpExceptions: true,
     };
 
-    var response = UrlFetchApp.fetch(url, options);
-    var json = JSON.parse(response.getContentText());
+    // ★ 2026-07-24: gemini-3.6-flash 업그레이드 + 실패 시 3.5-flash 폴백
+    var models = ["gemini-3.6-flash", "gemini-3.5-flash"];
+    var json = null;
+    for (var mi = 0; mi < models.length; mi++) {
+      var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
+        models[mi] + ":generateContent?key=" + GEMINI_API_KEY;
+      var response = UrlFetchApp.fetch(url, options);
+      var respCode = response.getResponseCode();
+      json = JSON.parse(response.getContentText());
+      if (respCode === 200 && !json.error) break;
+      Logger.log("[송장매칭-이미지] " + models[mi] + " HTTP " + respCode +
+        (json.error ? " (" + json.error.message + ")" : "") +
+        (mi < models.length - 1 ? " → 폴백 시도" : ""));
+      json = null;
+    }
+    if (!json) return null;
 
-    if (json.error) {
-      Logger.log("[송장매칭-이미지] Gemini API 에러: " + JSON.stringify(json.error));
+    var text = "";
+    try {
+      text = json.candidates[0].content.parts[0].text || "";
+    } catch (eResp) {
+      Logger.log("[송장매칭-이미지] 응답 구조 이상");
       return null;
     }
-
-    var text = json.candidates[0].content.parts[0].text;
     Logger.log("[송장매칭-이미지] Gemini 응답: " + text.substring(0, 300));
+
+    // ★ 2026-07-24 버그수정: 마크다운 코드블록 제거 — 기존엔 없어서
+    //   ```json ...``` 응답이 오면 JSON.parse 예외 → "인식 못함"으로 떨어졌음
+    text = text.replace(/```json\n?/gi, "").replace(/```/g, "").trim();
+
     var parsed = JSON.parse(text);
     if (!Array.isArray(parsed)) parsed = [parsed];
     if (parsed.length === 0) return null;
-    return parsed;
+
+    // ★ 2026-07-24: 서버측 정규화/검증 — 기존엔 원본 그대로 반환해
+    //   하이픈 섞인 송장번호·'님' 접미가 매칭 단계에서 실패했음
+    var result = [];
+    for (var i = 0; i < parsed.length; i++) {
+      var p = parsed[i] || {};
+      var tracking = String(p.tracking || "").replace(/\D/g, "");
+      var name = String(p.name || "")
+        .replace(/\s*님\s*$/g, "")
+        .replace(/\s*\d+\s*(박스|봉지|세트|묶음|개|EA)\s*$/i, "")
+        .trim();
+      if (!name || !/^\d{10,14}$/.test(tracking)) continue;
+      result.push({ name: name, tracking: tracking, itemName: String(p.itemName || "").trim() });
+    }
+    Logger.log("[송장매칭-이미지] 정규화 후 " + result.length + "건 (원본 " + parsed.length + "건)");
+    return result.length > 0 ? result : null;
   } catch (e) {
     Logger.log("[송장매칭-이미지] 예외: " + e.message);
     return null;
@@ -794,6 +838,51 @@ function _pep_loadExclusiveDedupCounts_(tab, directMap) {
     var key = _pep_dedupKey_(vals[i][0], "");
     if (!key) continue;
     counts[key] = (counts[key] || 0) + 1;
+  }
+  return counts;
+}
+
+/**
+ * ★ 2026-07-20: 마감탭("(YYYY년 M월) 전용발주 마감", 당월+전월) 고유ID 건수 집계
+ *   마감 이동된 주문이 소스탭에 남아 있어도 재Push되지 않도록 dedup에 합산.
+ *   마감탭은 "이동일시" 열이 앞에 붙어 고유ID가 51열(AY)이 기본 — 헤더로 탐지, 실패 시 51열 폴백.
+ * @param {Spreadsheet} ss - 협력업체 파일
+ * @returns {Object} { dedupKey: 건수 }
+ */
+function _pep_loadArchiveDedupCounts_(ss) {
+  var counts = {};
+  var now = new Date();
+  for (var back = 0; back <= 1; back++) {
+    var d = new Date(now.getFullYear(), now.getMonth() - back, 1);
+    var tabName =
+      "(" + d.getFullYear() + "년 " + (d.getMonth() + 1) + "월) " +
+      (typeof _PEA_TAB_SUFFIX !== "undefined" ? _PEA_TAB_SUFFIX : "전용발주 마감");
+    var t = null;
+    try { t = ss.getSheetByName(tabName); } catch (_) {}
+    if (!t || t.getLastRow() < 2) continue;
+
+    var lc = t.getLastColumn();
+    var lr = t.getLastRow();
+    var uidCol = -1;
+    try {
+      var hdr = t.getRange(1, 1, 1, lc).getValues()[0];
+      for (var hi = hdr.length - 1; hi >= 0; hi--) {
+        if (String(hdr[hi] || "").replace(/\s/g, "") === "고유ID") {
+          uidCol = hi;
+          break;
+        }
+      }
+    } catch (_) {}
+    if (uidCol === -1) uidCol = Math.min(50, lc - 1); // 폴백: 이동일시+AX = 51열(idx50)
+
+    try {
+      var vals = t.getRange(2, uidCol + 1, lr - 1, 1).getValues();
+      for (var i = 0; i < vals.length; i++) {
+        var key = _pep_dedupKey_(vals[i][0], "");
+        if (!key) continue;
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    } catch (_) {}
   }
   return counts;
 }
@@ -1144,14 +1233,26 @@ function _pep_loadAliasMap_() {
         vat: vat,
         priceVat: priceVat,
       };
+      // Push 는 접두를 대표 접두로 환산한 뒤 `JT_<코드>` 로 조회한다.
+      // 운영자가 업체접두 칸에 보조 접두(NS 등)를 적어도 찾히게 두 키 다 넣는다.
+      var pfxAlias = typeof _pep_resolvePrefixAlias_ === "function"
+        ? _pep_resolvePrefixAlias_(pfx) : pfx;
+
       // ① 팩투유상품코드로 인덱싱
       result.byPfxCode[pfx + "_" + code] = entry;
+      if (pfxAlias && pfxAlias !== pfx && !result.byPfxCode[pfxAlias + "_" + code]) {
+        result.byPfxCode[pfxAlias + "_" + code] = entry;
+      }
       if (!result.byCode[code]) result.byCode[code] = entry;
       // ② 업체상품코드(SKU)로도 역방향 인덱싱 ← 소스탭이 업체코드를 사용하는 경우 매칭
       if (sku) {
         var skuPfx = pfx || sku.substring(0, 2).toUpperCase();
+        var skuPfxAlias = typeof _pep_resolvePrefixAlias_ === "function"
+          ? _pep_resolvePrefixAlias_(skuPfx) : skuPfx;
         if (!result.byPfxCode[skuPfx + "_" + sku])
           result.byPfxCode[skuPfx + "_" + sku] = entry;
+        if (skuPfxAlias && skuPfxAlias !== skuPfx && !result.byPfxCode[skuPfxAlias + "_" + sku])
+          result.byPfxCode[skuPfxAlias + "_" + sku] = entry;
         if (!result.byCode[sku]) result.byCode[sku] = entry;
       }
     }
@@ -1164,7 +1265,27 @@ function _pep_loadAliasMap_() {
 // ─────────────────────────────────────────────────────
 //  메인 함수 (silent=true: 트리거 자동 실행 시 알림창 없음)
 // ─────────────────────────────────────────────────────
+// ★ 2026-07-17 (H3): ScriptLock 래퍼 — 트리거(09:20/14:20)와 수동 실행이
+//   동시에 돌면 같은 주문이 전용양식에 중복 Push되는 사고 방지
 function partnerPushOrdersToExclusiveForms(silent) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    var lockMsg = "⚠ 대리공급 Push가 이미 실행 중입니다. 잠시 후 다시 시도하세요.";
+    Logger.log("[PEP_LOCK] " + lockMsg);
+    if (!silent) {
+      try { SpreadsheetApp.getUi().alert(lockMsg); } catch (_) {}
+    }
+    return;
+  }
+  try {
+    _pep_pushCore_(silent);
+  } finally {
+    try { _pep_zipCacheSave_(); } catch (_) {} // ★ M4: 우편번호 영구 캐시 저장
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
+function _pep_pushCore_(silent) {
   var ui = null;
   if (!silent) {
     try {
@@ -1261,12 +1382,13 @@ function partnerPushOrdersToExclusiveForms(silent) {
     var rawCode = String(row[_PEP_CODE_COL] || "").trim();
     var rawName = String(row[_PEP_ITEM_COL] || "").trim();
 
+    // ★ 2026-08-25: 보조 접두(JH/BF 등)는 대표 접두(JT)로 환산 후 판정
     var codePfx =
-      rawCode.length >= 2 ? rawCode.substring(0, 2).toUpperCase() : "";
+      rawCode.length >= 2 ? _pep_resolvePrefixAlias_(rawCode.substring(0, 2)) : "";
     var namePfx = "";
     // ★ 2026-07-14: 품목명 앞 영문 2글자 인식 보완 (한글/공백/대괄호 등 제외한 가장 처음에 등장하는 영문 2글자)
     var m = rawName.replace(/^[^a-zA-Z]*/, "").match(/^([a-zA-Z]{2})/);
-    if (m) namePfx = m[1].toUpperCase();
+    if (m) namePfx = _pep_resolvePrefixAlias_(m[1]);
 
     var pfx = "";
     // 1순위: 이카운트코드 앞 2자리(codePfx)가 유효한 대리공급업체 코드(DIRECT_MAP 또는 LABELS)인 경우
@@ -1477,16 +1599,16 @@ function partnerPushOrdersToExclusiveForms(silent) {
         outRow[effNameCol] = vendorName;
       }
     }
-    // ★ 2026-07-08: BW(부원) 전용: 상품명(H열=7)과 수량(I열=8) 분리
-    //   기존에는 "품목명 수량개---박스수박스" 형태로 합쳐서 G열에 넣었으나,
-    //   새 레이아웃에서는 H열=상품명, I열=수량으로 분리
+    // ★ 2026-08-10: BW(부원) — 상품명(G=6)·수량(H=7) 분리 (부원택배 양식)
     if (pfx === "BW" && effNameCol != null) {
       var bwName =
         outRow[effNameCol] || String(row[_PEP_ITEM_COL] || "").trim();
-      outRow[effNameCol] = bwName; // H열: 품목명만 (수량 미포함)
-      // I열(8): 수량 = G열(소스 수량) — sourceToTarget에서 이미 매핑됨
-      // 수량이 없으면 1 기본값
-      if (!outRow[8] || outRow[8] === "") outRow[8] = 1;
+      outRow[effNameCol] = bwName;
+      var bwQtyCol =
+        directMap.qtyExtract && directMap.qtyExtract.qtyCol != null
+          ? directMap.qtyExtract.qtyCol
+          : 7;
+      if (!outRow[bwQtyCol] || outRow[bwQtyCol] === "") outRow[bwQtyCol] = 1;
     }
 
     // HR(뉴파츠): 30열 양식에서는 택배수량 열이 없으므로 별도 복사 불필요
@@ -1783,19 +1905,93 @@ function partnerPushOrdersToExclusiveForms(silent) {
 //  ★ 임시기록 → 전용양식 Push (수동 추가 건 대응)
 //  임시기록 탭의 데이터를 소스로 사용하여 전용양식에 Push
 //  - 소스 탭 대신 임시기록(대리공급_임시기록) 탭을 읽음
-//  - W열(22)에 저장된 prefix 사용
+//  - W열(22)에 저장된 prefix 사용 (JT / 준테크 등 — 대리공급 미분류 건 수동 지정)
 //  - P열(15)에 저장된 UID 사용
 //  - 전용양식 AX열 dedup으로 중복 방지
 // ═══════════════════════════════════════════════════════
+
+/**
+ * 임시기록 W열(업체prefix) → 등록된 접두 정규화
+ * 예: "JT", "jt", "준테크", "[협력업체] 준테크" → "JT"
+ * 보조 접두도 대표 접두로 환산: "JH", "BF", "NS" → "JT"
+ */
+function _pep_normalizeTempVendorPrefix_(wVal) {
+  var raw = String(wVal == null ? "" : wVal).trim();
+  if (!raw) return "";
+  var compact = raw.replace(/\s/g, "").replace(/\[협력업체\]/g, "");
+  var upper = compact.toUpperCase();
+
+  // ★ 2026-08-25: 보조 접두 우선 환산 (JH/BF → JT)
+  var aliased = _pep_resolvePrefixAlias_(upper);
+  if (
+    aliased !== upper &&
+    typeof _PEP_VENDOR_DIRECT_MAP_ !== "undefined" &&
+    _PEP_VENDOR_DIRECT_MAP_[aliased]
+  ) {
+    return aliased;
+  }
+
+  if (
+    typeof _PEP_VENDOR_DIRECT_MAP_ !== "undefined" &&
+    _PEP_VENDOR_DIRECT_MAP_[upper]
+  ) {
+    return upper;
+  }
+  if (upper.length >= 2) {
+    var two = _pep_resolvePrefixAlias_(upper.substring(0, 2));
+    if (
+      typeof _PEP_VENDOR_DIRECT_MAP_ !== "undefined" &&
+      _PEP_VENDOR_DIRECT_MAP_[two]
+    ) {
+      return two;
+    }
+  }
+
+  var labels =
+    typeof _PEP_VENDOR_LABELS_ !== "undefined" ? _PEP_VENDOR_LABELS_ : {};
+  for (var pfx in labels) {
+    var lab = String(labels[pfx] || "").replace(/\s/g, "");
+    if (!lab) continue;
+    if (compact.indexOf(lab) !== -1 || upper.indexOf(lab.toUpperCase()) !== -1) {
+      return pfx;
+    }
+  }
+  return upper.length >= 2 ? _pep_resolvePrefixAlias_(upper.substring(0, 2)) : upper;
+}
+
+/** 상품정보 시트의 대리공급_임시기록 탭 */
+function _pep_getTempRecordTab_() {
+  var ss = null;
+  try {
+    if (typeof _PT !== "undefined" && _PT.INFO_SS_ID) {
+      ss = SpreadsheetApp.openById(_PT.INFO_SS_ID);
+    }
+  } catch (eOpen) {}
+  if (!ss) {
+    try {
+      ss = SpreadsheetApp.getActiveSpreadsheet();
+    } catch (eAct) {}
+  }
+  if (!ss) return null;
+  var tab = ss.getSheetByName(_PEP_NON_PARTNER_TEMP_TAB_NAME_);
+  if (!tab) tab = ss.getSheetByName("대리발송_임시기록");
+  return tab;
+}
+
 function partnerPushFromTempTabToExclusive() {
   var ui = null;
   try { ui = SpreadsheetApp.getUi(); } catch (e) {}
 
-  // 1) 임시기록 탭 확인
-  var hubSS = SpreadsheetApp.getActiveSpreadsheet();
-  var tempTab = hubSS.getSheetByName(_PEP_NON_PARTNER_TEMP_TAB_NAME_);
+  // 1) 임시기록 탭 확인 (상품정보 시트 기준)
+  var tempTab = _pep_getTempRecordTab_();
   if (!tempTab || tempTab.getLastRow() < 2) {
-    if (ui) ui.alert("임시기록 탭에 데이터가 없습니다.");
+    if (ui) {
+      ui.alert(
+        "임시기록 탭에 데이터가 없습니다.\n\n" +
+          "상품정보 시트의 「대리공급_임시기록」 하단에 주문 행을 추가하고\n" +
+          "W열(업체prefix)에 JT(또는 준테크)를 넣은 뒤 다시 실행하세요."
+      );
+    }
     return;
   }
 
@@ -1803,8 +1999,10 @@ function partnerPushFromTempTabToExclusive() {
   if (ui) {
     var confirm = ui.alert(
       "📋 임시기록 → 전용양식 Push",
-      "임시기록 탭의 데이터를 전용양식에 Push합니다.\n" +
-      "이미 Push된 건(AX열 UID 중복)은 자동으로 스킵됩니다.\n\n계속할까요?",
+      "임시기록 탭의 데이터를 전용양식에 Push합니다.\n\n" +
+        "· W열(업체prefix)에 JT / 준테크 등을 넣으면 해당 업체 전용양식으로 갑니다.\n" +
+        "  (대리공급 미분류·재고없음 → 준테크 대리발송 수동 지정용)\n" +
+        "· 이미 Push된 건(AX열 UID 중복·Y열 Push완료)은 스킵됩니다.\n\n계속할까요?",
       ui.ButtonSet.YES_NO,
     );
     if (confirm !== ui.Button.YES) return;
@@ -1819,7 +2017,7 @@ function partnerPushFromTempTabToExclusive() {
 
   // 5) 임시기록 데이터 읽기
   var srcLr = tempTab.getLastRow();
-  var srcLc = Math.max(tempTab.getLastColumn(), 25);
+  var srcLc = Math.max(tempTab.getLastColumn(), 26);
   var srcAll = tempTab.getRange(1, 1, srcLr, srcLc).getValues();
 
   var today = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
@@ -1830,9 +2028,16 @@ function partnerPushFromTempTabToExclusive() {
   var skipNoMap = 0;
   var skipNoCode = 0;
   var skipNoFile = 0;
+  var skipDone = 0;
   var errorLogs = [];
   var _dedupOccurrenceInRun_ = {};
   var pushedSrcRows = []; // Push 성공한 임시기록 행 번호 (1-indexed)
+  var uidWriteBack = []; // 생성한 UID → P열 기록
+
+  // 팩투유 기본 보내는분 (수동 행에 Q/R/S 비어있을 때)
+  var _DEFAULT_SENDER_NAME_ = "팩투유";
+  var _DEFAULT_SENDER_PHONE_ = "031-923-7795";
+  var _DEFAULT_SENDER_ADDR_ = "경기 평택시 포승읍 석정리 369";
 
   for (var ri = 1; ri < srcAll.length; ri++) {
     var row = srcAll[ri];
@@ -1840,13 +2045,24 @@ function partnerPushFromTempTabToExclusive() {
     var rawName = String(row[_PEP_ITEM_COL] || "").trim(); // E열(4)
     if (!rawCode && !rawName) continue; // 빈 행 스킵
 
-    // prefix: W열(22)에 저장된 값 우선, 없으면 코드에서 추출
-    var pfx = String(row[22] || "").trim().toUpperCase();
+    // ★ 이미 전용양식 Push 완료 건 스킵 (하단 신규 수동 행만 처리)
+    var yStatus = String(row[24] || "").replace(/\s/g, "");
+    if (
+      yStatus.indexOf("전용양식Push완료") !== -1 ||
+      yStatus.indexOf("Push완료") !== -1
+    ) {
+      skipDone++;
+      continue;
+    }
+
+    // prefix: W열(22) 우선 — JT/준테크 등 수동 지정
+    var pfx = _pep_normalizeTempVendorPrefix_(row[22]);
     if (!pfx) {
-      var codePfx = rawCode.length >= 2 ? rawCode.substring(0, 2).toUpperCase() : "";
+      // ★ 2026-08-25: 보조 접두(JH/BF 등)는 대표 접두(JT)로 환산 후 판정
+      var codePfx = rawCode.length >= 2 ? _pep_resolvePrefixAlias_(rawCode.substring(0, 2)) : "";
       var namePfx = "";
-      var m = rawName.match(/([a-zA-Z]{2})/);
-      if (m) namePfx = m[1].toUpperCase();
+      var m = rawName.replace(/^[^a-zA-Z]*/, "").match(/^([a-zA-Z]{2})/);
+      if (m) namePfx = _pep_resolvePrefixAlias_(m[1]);
       if (codePfx && _PEP_VENDOR_DIRECT_MAP_[codePfx]) pfx = codePfx;
       else if (namePfx && _PEP_VENDOR_DIRECT_MAP_[namePfx]) pfx = namePfx;
       else if (codePfx) pfx = codePfx;
@@ -1858,12 +2074,21 @@ function partnerPushFromTempTabToExclusive() {
     if (!directMap) { skipNoMap++; continue; }
     if (!prefixToFile[pfx]) { skipNoFile++; continue; }
 
+    // W열에 정규화된 접두 되쓰기 (준테크 → JT)
+    if (String(row[22] || "").trim().toUpperCase() !== pfx) {
+      try {
+        tempTab.getRange(ri + 1, 23).setValue(pfx); // W열 1-based=23
+      } catch (eWset) {}
+      row[22] = pfx;
+    }
+
     // UID: P열(15)
     var _rowUid_ = String(row[15] || "").trim();
     if (!_rowUid_) {
-      // UID 없으면 생성
       _rowUid_ = _pep_deriveDeterministicUid_(row, today.replace(/-/g, ""));
       Logger.log("[PEP-TEMP] R" + (ri + 1) + " UID 생성: " + _rowUid_);
+      uidWriteBack.push({ row: ri + 1, uid: _rowUid_ });
+      row[15] = _rowUid_;
     }
 
     // 캐시 초기화 (업체별 1회)
@@ -1928,6 +2153,23 @@ function partnerPushFromTempTabToExclusive() {
       }
     }
 
+    // ★ 보내는분 Q/R/S 비어 있으면 팩투유 기본값 (수동 하단 추가 건)
+    if (!String(row[16] || "").trim() || !String(outRow[4] || "").trim()) {
+      // JT 대한통운: E(4)=보내는분성명 / 그 외 AP형: 보내는사람 열은 매핑에 따름
+      for (var si3 = 0; si3 < (directMap.sourceToTarget || []).length; si3++) {
+        var stm3 = directMap.sourceToTarget[si3];
+        if (stm3.sourceCol === 16 && !String(outRow[stm3.targetCol] || "").trim()) {
+          outRow[stm3.targetCol] = _DEFAULT_SENDER_NAME_;
+        }
+        if (stm3.sourceCol === 17 && !String(outRow[stm3.targetCol] || "").trim()) {
+          outRow[stm3.targetCol] = _DEFAULT_SENDER_PHONE_;
+        }
+        if (stm3.sourceCol === 18 && !String(outRow[stm3.targetCol] || "").trim()) {
+          outRow[stm3.targetCol] = _DEFAULT_SENDER_ADDR_;
+        }
+      }
+    }
+
     // 별칭 덮어쓰기 (기존 로직 재사용)
     var effSkuCol = directMap.vendorSkuCol;
     var effNameCol = directMap.vendorNameCol;
@@ -1950,11 +2192,15 @@ function partnerPushFromTempTabToExclusive() {
       } else if (vendorName) outRow[effNameCol] = vendorName;
     }
 
-    // ★ 2026-07-08: BW(부원) 전용: 상품명(H열=7)과 수량(I열=8) 분리
+    // ★ 2026-08-10: BW(부원) — 상품명(G=6)·수량(H=7) 분리
     if (pfx === "BW" && effNameCol != null) {
       var bwName = outRow[effNameCol] || String(row[_PEP_ITEM_COL] || "").trim();
-      outRow[effNameCol] = bwName; // H열: 품목명만 (수량 미포함)
-      if (!outRow[8] || outRow[8] === "") outRow[8] = 1;
+      outRow[effNameCol] = bwName;
+      var bwQtyCol =
+        directMap.qtyExtract && directMap.qtyExtract.qtyCol != null
+          ? directMap.qtyExtract.qtyCol
+          : 7;
+      if (!outRow[bwQtyCol] || outRow[bwQtyCol] === "") outRow[bwQtyCol] = 1;
     }
 
     // ★ HR(뉴파츠) 전용: 단가 주입 (J~M열)
@@ -2011,13 +2257,12 @@ function partnerPushFromTempTabToExclusive() {
         if (addrForZip && !outRow[11]) {
           try {
             // 세션 캐시 활용 (동일 주소 중복 호출 방지)
+            // ★ 2026-07-17 (M4): 미스 시 영구 캐시(Properties) 경유
             if (!cache["JM"]._zipCache) cache["JM"]._zipCache = {};
             var zipCode = cache["JM"]._zipCache[addrForZip];
             if (zipCode === undefined) {
-              zipCode = _pep_getZipCodeFromKakao_(addrForZip);
+              zipCode = _pep_getZipCodeCached_(addrForZip);
               cache["JM"]._zipCache[addrForZip] = zipCode || "";
-              // API 속도 제한 대응 (10건/초)
-              Utilities.sleep(120);
             }
             if (zipCode) {
               // ★ 2026-06-30: 우편번호 앞 0 보존 (문자열 5자리 패딩)
@@ -2112,6 +2357,17 @@ function partnerPushFromTempTabToExclusive() {
     }
   }
 
+  // ★ 생성한 UID → 임시기록 P열 기록 (재Push 시 dedup)
+  if (uidWriteBack.length > 0 && tempTab) {
+    try {
+      for (var uwi = 0; uwi < uidWriteBack.length; uwi++) {
+        tempTab.getRange(uidWriteBack[uwi].row, 16).setValue(uidWriteBack[uwi].uid); // P열
+      }
+    } catch (eUidWb) {
+      Logger.log("[PEP-TEMP] UID 되쓰기 실패: " + eUidWb.message);
+    }
+  }
+
   // ★ Push 성공 건의 임시기록 Y열(진행상태) 갱신
   if (pushedSrcRows.length > 0 && tempTab) {
     try {
@@ -2128,7 +2384,7 @@ function partnerPushFromTempTabToExclusive() {
   // 결과 표시 (HTML 팝업)
   var pfxList = Object.keys(pushedByPfx).sort(function(a,b){ return (pushedByPfx[b]||0)-(pushedByPfx[a]||0); });
   var pfxDetail = pfxList.map(function(k) { return k + ": " + pushedByPfx[k] + "건"; }).join(", ");
-  var totalSkip = skipUid + skipNoMap + skipNoCode + skipNoFile;
+  var totalSkip = skipUid + skipNoMap + skipNoCode + skipNoFile + skipDone;
   Logger.log("[PEP-TEMP] Push=" + pushed + " Skip=" + totalSkip + " (" + pfxDetail + ")");
 
   // ★ Google Chat 알림
@@ -2169,8 +2425,9 @@ function partnerPushFromTempTabToExclusive() {
         html += '<div style="background:#fff3e0;border-radius:8px;padding:10px;margin-bottom:10px;">';
         html += '<b>⏭ 스킵: ' + totalSkip + '건</b><br>';
         if (skipUid > 0) html += '&nbsp;&nbsp;├ 중복(이미Push): ' + skipUid + '건<br>';
+        if (skipDone > 0) html += '&nbsp;&nbsp;├ 이미완료(Y열): ' + skipDone + '건<br>';
         if (skipNoMap > 0) html += '&nbsp;&nbsp;├ 미등록업체: ' + skipNoMap + '건<br>';
-        if (skipNoCode > 0) html += '&nbsp;&nbsp;├ 코드없음: ' + skipNoCode + '건<br>';
+        if (skipNoCode > 0) html += '&nbsp;&nbsp;├ 코드/접두없음: ' + skipNoCode + '건<br>';
         if (skipNoFile > 0) html += '&nbsp;&nbsp;└ 파일없음: ' + skipNoFile + '건<br>';
         html += '</div>';
       }
@@ -2651,9 +2908,24 @@ function _pep_initVendorCache_(pfx, fileInfo, directMap) {
     }
     // ★ 전용양식 AX(50열)+품목코드 — UID|코드 복합키별 건수
     var existingDedupCounts = _pep_loadExclusiveDedupCounts_(tab, directMap);
+    // ★ 2026-07-20: 마감탭(전용발주 마감, 당월+전월) 고유ID도 dedup에 합산
+    //   마감으로 행이 전용양식에서 빠지면 AX dedup이 사라져, 소스탭에 남은
+    //   같은 주문이 다음 Push에서 "새 발주"로 재Push됨 → 이중 발주 사고 방지
+    var _archDedupKeys_ = 0;
+    try {
+      var archCounts = _pep_loadArchiveDedupCounts_(ss);
+      for (var _ak_ in archCounts) {
+        existingDedupCounts[_ak_] =
+          (existingDedupCounts[_ak_] || 0) + archCounts[_ak_];
+        _archDedupKeys_++;
+      }
+    } catch (eArcDedup) {
+      Logger.log("[PEP] " + pfx + " 마감탭 dedup 로드 실패: " + eArcDedup.message);
+    }
     Logger.log(
       "[PEP] " + pfx +
-      " 전용양식 dedup키=" + Object.keys(existingDedupCounts).length + "종 (tab.getLastRow=" + tab.getLastRow() + ")",
+      " 전용양식 dedup키=" + Object.keys(existingDedupCounts).length + "종" +
+      " (마감탭 포함 " + _archDedupKeys_ + "종, tab.getLastRow=" + tab.getLastRow() + ")",
     );
     return {
       ss: ss,
@@ -2766,6 +3038,16 @@ function _pep_buildPrefixToFileMap_(files) {
     }
   }
 
+  // ★ 2026-08-25: 보조 접두는 대표 접두와 같은 파일을 가리키게 한다.
+  //   (JH/BF → JT 파일. 업체명 역매핑이 1:1이라 별칭은 여기서 이어붙인다)
+  try {
+    for (var alias in _PEP_VENDOR_PREFIX_ALIAS_) {
+      if (!_PEP_VENDOR_PREFIX_ALIAS_.hasOwnProperty(alias)) continue;
+      var primary = _PEP_VENDOR_PREFIX_ALIAS_[alias];
+      if (!map[alias] && map[primary]) map[alias] = map[primary];
+    }
+  } catch (eAlias) {}
+
   return map;
 }
 
@@ -2825,28 +3107,55 @@ function _pep_getSourceTabName_() {
 // 협력업체 _PEP_EXCLUSIVE_FORM_HEADERS_ headerCsv 원본 (pipe 구분)
 // parseVendorExclusiveHeaderCsv_ 방식과 동일하게 | 로 분리하여 배열로 사용
 var _PEP_EXCLUSIVE_FORM_HEADERS_ = {
-  // JT: 준테크 — 19열 (★ 2026-07-15 추가)
-  // AP(올팩)과 동일 구조, C(2)에 "주문번호(지정)" 열이 추가된 점만 다름
+  // JT: 준테크 — 대한통운(CJ) 엑셀 양식 기준 (★ 2026-08-06)
+  // A=송장번호, B=이슈(운영) + C~W=대한통운 양식 21열 = 총 23열
+  // 원본: 폴더 「대한통운 양식.xlsx」
   JT: [
     "송장번호",
     "이슈",
-    "주문번호(지정)",
-    "보내는사람(지정)",
-    "전화번호1(지정)",
-    "전화번호2(지정)",
-    "우편번호(지정)",
-    "주소(지정)",
-    "받는사람",
-    "전화번호1",
-    "전화번호2",
-    "우편번호",
-    "주소1",
-    "상품명1",
-    "수량(A단위)",
-    "배송메시지",
-    "",
-    "유입구분",
-    "유입",
+    "예약구분",
+    "집하예정일",
+    "보내는분성명",
+    "보내는분전화번호",
+    "보내는분기타연락처",
+    "보내는분우편번호",
+    "보내는분주소(전체, 분할)",
+    "받는분성명",
+    "받는분전화번호",
+    "받는분기타연락처",
+    "받는분우편번호",
+    "받는분주소(전체, 분할)",
+    "운송장번호",
+    "고객주문번호",
+    "품목명",
+    "박스수량",
+    "박스타입",
+    "기본운임",
+    "배송메세지1",
+    "배송메세지2",
+    "운임구분",
+  ],
+  // SW: 선우 — 대한통운 양식 (★ 2026-08-25)
+  // A=송장번호, B=이슈(운영) + C~R=업체 제공 양식 16열 = 총 18열
+  SW: [
+    "송장번호",
+    "이슈",
+    "보내는분성명",
+    "보내는분전화번호",
+    "보내는분기타연락처",
+    "보내는분우편번호",
+    "보내는분주소(전체, 분할)",
+    "받는분성명",
+    "받는분전화번호",
+    "받는분기타연락처",
+    "받는분우편번호",
+    "받는분주소(전체, 분할)",
+    "품목명",
+    "내품명",
+    "박스수량",
+    "배송메세지1",
+    "박스타입",
+    "운임구분",
   ],
   // AP: 올팩 — 19열
   AP: [
@@ -2985,20 +3294,22 @@ var _PEP_EXCLUSIVE_FORM_HEADERS_ = {
     "박스타입",
     "배송메세지1",
   ],
-  // BW: 부원 — 18열
+  // BW: 부원 — 「부원택배 양식 (1).xlsx」+ 앞 송장번호·이슈 (★ 2026-08-10)
+  // A=송장번호, B=이슈, C=받는사람 … R=전화 (총 18열)
+  // 원본 엑셀은 받는사람부터 시작 → 운영 탭은 송장/이슈 2열을 앞에 붙임
   BW: [
     "송장번호",
     "이슈",
     "받는사람",
     "전화번호",
     "주소",
-    "우편번호",
+    "",
     "상품명",
-    "a 사용 X",
-    "B 2570",
-    "C 2920",
-    "D 4170",
-    "E 5170",
+    "수량",
+    "B2750",
+    "C3200",
+    "D5500",
+    "E6500",
     "배송메세지",
     "운임구분",
     "운임",
@@ -3161,23 +3472,8 @@ var _PEP_EXCLUSIVE_FORM_HEADERS_ = {
     "전화번호1(지정)",
     "주소(지정)",
   ],
-  // BW: 부원 — 12열 (★ 2026-07-08 추가)
-  // 우편번호 뒤 빈 열 포함, 수량 열 있음
-  BW: [
-    "송장번호",
-    "이슈",
-    "받는사람",
-    "전화번호",
-    "주소",
-    "우편번호",
-    "",
-    "상품명",
-    "수량",
-    "배송메세지",
-    "보내는사람",
-    "보내는주소",
-    "보내는전화",
-  ],
+  // (BW 헤더는 위 「부원택배 양식」18열 정의 사용 — 구 13열 중복 키 제거)
+  // KR 등 이어서
 };
 
 // ─────────────────────────────────────────────────────
@@ -3257,6 +3553,54 @@ function partnerDiagnosePushSystem() {
     }
   }
 
+  // 3-2) 등록 완성도: LABELS에만 있고 전용양식/Push 매핑이 없는 접두
+  var incomplete = [];
+  var formHeaders =
+    typeof _PEP_EXCLUSIVE_FORM_HEADERS_ !== "undefined"
+      ? _PEP_EXCLUSIVE_FORM_HEADERS_
+      : {};
+  for (var ci = 0; ci < allPfx.length; ci++) {
+    var cp = allPfx[ci];
+    var lack = [];
+    if (!directMap[cp]) lack.push("Push매핑(DIRECT_MAP)");
+    if (!formHeaders[cp]) lack.push("전용양식헤더(FORM_HEADERS)");
+    if (lack.length) {
+      incomplete.push("  ⚠️ [" + cp + "] " + labels[cp] + " → " + lack.join(" · ") + " 미등록");
+    }
+  }
+  if (incomplete.length) {
+    lines.push("\n[등록 미완성 접두 — Push 시 '매핑없음'으로 스킵됨]");
+    incomplete.forEach(function (l) {
+      lines.push(l);
+    });
+  }
+
+  // 3-3) 보조 접두 별칭 (한 업체가 코드 접두를 2개 이상 쓰는 경우)
+  try {
+    var aliasMap =
+      typeof _PEP_VENDOR_PREFIX_ALIAS_ !== "undefined"
+        ? _PEP_VENDOR_PREFIX_ALIAS_
+        : {};
+    var aliasKeys = Object.keys(aliasMap);
+    if (aliasKeys.length) {
+      lines.push("\n[보조 접두 별칭]");
+      for (var ai = 0; ai < aliasKeys.length; ai++) {
+        var aKey = aliasKeys[ai];
+        var aPrimary = aliasMap[aKey];
+        lines.push(
+          "  " +
+            aKey +
+            " → " +
+            aPrimary +
+            " (" +
+            (labels[aPrimary] || "대표 접두 미등록") +
+            ")" +
+            (directMap[aPrimary] ? "" : "  ⚠️ 대표 접두 DIRECT_MAP 미등록"),
+        );
+      }
+    }
+  } catch (eAliasDiag) {}
+
   // 4) 소스 탭 UID 현황
   try {
     var srcSS = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
@@ -3296,12 +3640,13 @@ function partnerDiagnosePushSystem() {
         var code = String(data[r][_PEP_CODE_COL] || "").trim();
         var name = String(data[r][_PEP_ITEM_COL] || "").trim();
 
+        // ★ 2026-08-25: 보조 접두(JH/BF)는 대표 접두(JT)로 환산해 집계
         var pfx2 = "";
         if (code.length >= 2) {
-          pfx2 = code.substring(0, 2).toUpperCase();
+          pfx2 = _pep_resolvePrefixAlias_(code.substring(0, 2));
         } else {
           var m = name.match(/([a-zA-Z]{2})/);
-          if (m) pfx2 = m[1].toUpperCase();
+          if (m) pfx2 = _pep_resolvePrefixAlias_(m[1]);
         }
 
         if (!pfx2) {
@@ -3386,7 +3731,870 @@ var _PEP_VENDOR_LABELS_ = {
   HP: "하나팩", // ★ 2026-07-08 추가
   YS: "와이에스", // ★ 2026-07-14 추가
   JT: "준테크",  // ★ 2026-07-15 추가
+  SW: "선우",    // ★ 2026-08-25 추가
 };
+
+// ─────────────────────────────────────────────────────
+//  업체 → 택배사 (SSOT)
+//  택배사는 업체 단위 사실이다. 사방넷 코드·통합조회 M열·CS 표시가
+//  모두 이 표 하나를 따른다. 코드(숫자)를 직접 적지 않는다.
+//  ★ 2026-08-26: 부엉이커피(OC) 한진택배 반영
+// ─────────────────────────────────────────────────────
+var _PEP_VENDOR_CARRIER_ = {
+  GW: "로젠택배",   // 그린우드
+  HR: "로젠택배",   // 뉴파츠
+  NK: "롯데택배",   // 냅킨코리아
+  LG: "롯데택배",   // 로엔그린
+  BW: "롯데택배",   // 부원
+  OC: "한진택배",   // 부엉이커피 (★ 2026-08-26 로젠 → 한진)
+  AJ: "로젠택배",   // 아주팩
+  AP: "롯데택배",   // 올팩
+  YS: "롯데택배",   // 와이에스
+  IW: "롯데택배",   // 인터웍스
+  JM: "대신택배",   // 제이엠
+  JT: "CJ대한통운", // 준테크 (보조 접두 JH·BF·NS 포함)
+  KR: "롯데택배",   // 코라마
+  SW: "CJ대한통운", // 선우
+  TY: "로젠택배",   // 태양
+  HP: "롯데택배",   // 하나팩
+  HU: "로젠택배",   // 후아코리아
+};
+
+// ─────────────────────────────────────────────────────
+//  택배사 → 사방넷 대량등록 택배사코드
+//  계정(사방넷 「사용 택배사 등록」)에 종속된 값이다.
+//  비어 있으면 해당 업체 행은 대량등록에서 제외되고
+//  "택배사코드 미지정"으로 보고된다 (잘못된 코드로 올리지 않는다).
+// ─────────────────────────────────────────────────────
+var _PEP_CARRIER_SABANG_CODE_ = {
+  "CJ대한통운": "001",
+  "롯데택배": "002",
+  "로젠택배": "007",
+  "대신택배": "037",
+  "한진택배": "", // ← 사방넷 계정의 한진 코드 확인 후 기입
+};
+
+// ─────────────────────────────────────────────────────
+//  운영 SSOT는 상품정보「업체_택배사」탭이다.
+//  위 두 상수는 탭이 없을 때의 씨앗·폴백일 뿐이다.
+//  탭에 적으면 코드 배포 없이 신규 업체·택배사코드를 반영할 수 있고,
+//  CS앱(별도 프로젝트)도 같은 탭을 읽으므로 표가 하나로 유지된다.
+// ─────────────────────────────────────────────────────
+var _PEP_VC_TAB_NAME_ = "업체_택배사";
+var _PEP_VC_HEADERS_ = ["접두", "업체명", "택배사", "사방넷코드", "비고"];
+var _pep_vcMem_ = null;
+
+/** 「업체_택배사」탭 → { byPfx, byLabel, code, conflicts, rows } */
+function _pep_loadVendorCarrierTable_(refresh) {
+  if (!refresh && _pep_vcMem_) return _pep_vcMem_;
+
+  var t = { byPfx: {}, byLabel: {}, code: {}, conflicts: [], rows: 0 };
+  try {
+    var infoId = typeof _PT !== "undefined" && _PT.INFO_SS_ID ? _PT.INFO_SS_ID : "";
+    var tab = infoId
+      ? SpreadsheetApp.openById(infoId).getSheetByName(_PEP_VC_TAB_NAME_)
+      : null;
+    if (tab && tab.getLastRow() >= 2) {
+      var data = tab.getRange(2, 1, tab.getLastRow() - 1, 4).getDisplayValues();
+      for (var i = 0; i < data.length; i++) {
+        var pfx = String(data[i][0] || "").trim().toUpperCase();
+        var label = String(data[i][1] || "").replace(/\s/g, "");
+        var carrier = String(data[i][2] || "").trim();
+        var code = String(data[i][3] || "").trim();
+        if (!carrier) continue;
+        if (pfx) t.byPfx[pfx] = carrier;
+        if (label) t.byLabel[label] = carrier;
+        if (code) {
+          // 사방넷코드는 택배사 단위 사실이다. 같은 택배사에 다른 코드가 오면 알린다.
+          if (t.code[carrier] && t.code[carrier] !== code) {
+            t.conflicts.push(carrier + ": " + t.code[carrier] + " vs " + code);
+          } else {
+            t.code[carrier] = code;
+          }
+        }
+        t.rows++;
+      }
+    }
+  } catch (e) {
+    Logger.log("[VENDOR_CARRIER] 탭 읽기 실패, 코드 폴백 사용: " + e.message);
+  }
+
+  _pep_vcMem_ = t;
+  return t;
+}
+
+/**
+ * 출처 문자열 → 택배사명. 출처가 택배사를 알려주면 그게 사실이다.
+ * `_puv_carrierFromSource_` 와 같은 판정을 쓴다 — 기준이 갈리면 일일마감과
+ * 통합조회의 택배사가 달라진다. 통합조회 쪽은 이 함수를 호출한다.
+ */
+function _pep_carrierFromSource_(src) {
+  var s = String(src || "");
+  if (!s) return "";
+  if (s.indexOf("로젠") >= 0) return "로젠택배";
+  if (s.indexOf("한진") >= 0) return "한진택배";
+  if (s.indexOf("우체국") >= 0) return "우체국";
+  if (s.indexOf("대신") >= 0) return "대신택배";
+  if (s.indexOf("CJ") >= 0 || s.indexOf("대한통운") >= 0) return "CJ대한통운";
+  // 합포장·1주출고는 우리 자사출고(롯데) 계열이다
+  if (s === "롯데" || s === "합포장" || s === "1주출고" || s.indexOf("롯데") >= 0) {
+    return "롯데택배";
+  }
+  return "";
+}
+
+/** 출처가 "업체가 자기 택배사로 보냈다" 를 뜻하는가 */
+function _pep_isPartnerShipSource_(src) {
+  var s = String(src || "");
+  if (!s) return false;
+  return s.indexOf("대리판매") >= 0 || s.indexOf("대리공급") >= 0;
+}
+
+// ═══════════════════════════════════════════
+//  품목코드 → 출고지 → 택배사
+//
+//  출고지는 이카운트 CLASS_CD2(품목그룹2) 를 상품정보 B열에 내려받은 값이다
+//  (`moveToEcount.gs` 동기화매핑: CLASS_CD2 → B).
+//
+//    · 평택 계열 (평택 / 평택A-1 …) → 우리 창고에서 나간다 → 롯데택배
+//    · 대리발송                     → 대리공급업체가 자기 택배사로 보낸다
+//    · 그 외 (일산 등)              → 모른다. 빈칸으로 둔다.
+//
+//  출고지가 접두보다 낫다. 접두는 「누구 상품인지」만 알려주므로 우리가 그
+//  업체 상품을 자사출고하면 틀린 답을 준다. 출고지는 「어디서 나가는지」다.
+// ═══════════════════════════════════════════
+
+var _PEP_INFO_TAB_NAME_ = "상품정보";
+var _PEP_INFO_HEADER_ROW_ = 4; // 4행=헤더, 6행~=데이터
+var _PEP_INFO_DATA_ROW_ = 6;
+var _pep_shipOriginMem_ = null;
+
+/** 상품정보 탭 → { 품목코드: 출고지 }. 실행 1회만 읽는다 */
+function _pep_loadItemShipOriginIndex_(refresh) {
+  if (!refresh && _pep_shipOriginMem_) return _pep_shipOriginMem_;
+
+  var idx = { map: {}, rows: 0, error: "" };
+  try {
+    var infoId = typeof _PT !== "undefined" && _PT.INFO_SS_ID ? _PT.INFO_SS_ID : "";
+    var ss = infoId ? SpreadsheetApp.openById(infoId) : SpreadsheetApp.getActiveSpreadsheet();
+    var tab = ss.getSheetByName(_PEP_INFO_TAB_NAME_);
+    if (!tab || tab.getLastRow() < _PEP_INFO_DATA_ROW_) {
+      idx.error = "'" + _PEP_INFO_TAB_NAME_ + "' 탭 없음/비어있음";
+      _pep_shipOriginMem_ = idx;
+      return idx;
+    }
+
+    var lc = tab.getLastColumn();
+    var hdr = tab.getRange(_PEP_INFO_HEADER_ROW_, 1, 1, lc).getValues()[0];
+    var codeCol = -1, originCol = -1;
+    for (var c = 0; c < hdr.length; c++) {
+      var h = String(hdr[c] || "").replace(/\s/g, "");
+      if (!h) continue;
+      if (codeCol < 0 && /이카운트코드|품목코드|물품코드|상품코드/.test(h)) codeCol = c;
+      if (originCol < 0 && /^출고지/.test(h)) originCol = c;
+    }
+    if (codeCol < 0 || originCol < 0) {
+      idx.error = "헤더 못 찾음 (품목코드=" + codeCol + ", 출고지=" + originCol + ")";
+      _pep_shipOriginMem_ = idx;
+      return idx;
+    }
+
+    // 필요한 두 열까지만 읽는다. 상품정보는 40열 넘게 넓어서 전폭을 읽으면
+    // 마감 한 번에 수 초가 그냥 날아간다 (품목코드 E, 출고지 B 로 서로 가깝다).
+    var lr = tab.getLastRow();
+    var readCols = Math.max(codeCol, originCol) + 1;
+    var data = tab.getRange(_PEP_INFO_DATA_ROW_, 1, lr - _PEP_INFO_DATA_ROW_ + 1, readCols)
+      .getDisplayValues();
+    for (var i = 0; i < data.length; i++) {
+      var code = String(data[i][codeCol] || "").trim().toUpperCase();
+      if (!code) continue;
+      var origin = String(data[i][originCol] || "").trim();
+      if (!origin) continue;
+      idx.map[code] = origin;
+      idx.rows++;
+    }
+  } catch (e) {
+    idx.error = String(e.message || e);
+    Logger.log("[SHIP_ORIGIN] 상품정보 읽기 실패: " + idx.error);
+  }
+  _pep_shipOriginMem_ = idx;
+  return idx;
+}
+
+/** 출고지 문자열 → 자사출고 여부 (평택 계열) */
+function _pep_isOwnWarehouseOrigin_(origin) {
+  return /평택/.test(String(origin || ""));
+}
+
+/** 출고지 문자열 → 대리공급업체 출고 여부 */
+function _pep_isProxyShipOrigin_(origin) {
+  return /대리발송|대리공급/.test(String(origin || ""));
+}
+
+/**
+ * 이카운트 품목코드 접두 → 업체 택배사. (예: `HR1234` → HR → 로젠택배)
+ * 표에 없으면 빈 문자열. 억지로 추측하지 않는다.
+ */
+function _pep_carrierFromItemCodePrefix_(code) {
+  var raw = String(code == null ? "" : code).trim().toUpperCase();
+  if (!raw) return "";
+  // 앞쪽 영문 연속만 접두로 본다 — 숫자·하이픈이 섞인 코드(HR1234, TY-100) 대응
+  var m = raw.match(/^([A-Z]{2,})/);
+  if (!m) return "";
+  var head = m[1];
+  var tbl = _pep_loadVendorCarrierTable_(false);
+
+  // 두 글자 접두가 표준이다. 세 글자 이상이면 앞 두 글자도 같이 본다.
+  var cands = head.length === 2 ? [head] : [head, head.substring(0, 2)];
+  for (var i = 0; i < cands.length; i++) {
+    var pfx = typeof _pep_resolvePrefixAlias_ === "function"
+      ? _pep_resolvePrefixAlias_(cands[i]) : cands[i];
+    if (tbl.byPfx[pfx]) return tbl.byPfx[pfx];
+    if (_PEP_VENDOR_CARRIER_[pfx]) return _PEP_VENDOR_CARRIER_[pfx];
+  }
+  return "";
+}
+
+/**
+ * 품목코드 → 택배사. 출고지를 먼저 보고, 그것이 답을 주지 않을 때만 접두를 본다.
+ *
+ * @param {string} code 이카운트 품목코드
+ * @param {string=} source 출처 — 출고지를 모를 때 접두를 써도 되는지 판단용
+ * @return {{carrier: string, via: string}} via 는 진단 표시용
+ */
+function _pep_carrierFromItemCode_(code, source) {
+  var raw = String(code == null ? "" : code).trim().toUpperCase();
+  if (!raw) return { carrier: "", via: "" };
+
+  var origin = _pep_loadItemShipOriginIndex_(false).map[raw] || "";
+
+  // 평택에서 나가면 우리가 보낸 것이다 — 무조건 롯데
+  if (_pep_isOwnWarehouseOrigin_(origin)) {
+    return { carrier: "롯데택배", via: "출고지(" + origin + ")" };
+  }
+  // 대리발송이면 업체가 자기 택배사로 보낸다 — 접두로 업체를 짚는다
+  if (_pep_isProxyShipOrigin_(origin)) {
+    var byPfx = _pep_carrierFromItemCodePrefix_(raw);
+    if (byPfx) return { carrier: byPfx, via: "출고지(대리발송)+접두" };
+    return { carrier: "", via: "" }; // 업체를 못 짚었다 — 추측하지 않는다
+  }
+
+  // 출고지를 못 읽었다(미등록·일산 등). 출처가 업체 출고라고 말해 줄 때만 접두를 쓴다.
+  // 자사출고 건에 접두를 쓰면 그 업체 택배사로 잘못 나간다.
+  if (_pep_isPartnerShipSource_(source)) {
+    var pfxOnly = _pep_carrierFromItemCodePrefix_(raw);
+    if (pfxOnly) return { carrier: pfxOnly, via: "접두(출고지없음)" };
+  }
+  return { carrier: "", via: "" };
+}
+
+/**
+ * 일일마감 한 행의 택배사.
+ *
+ * 순서가 곧 신뢰도다.
+ *   ① 송장맵 엔트리가 실어 온 값 — 업체 출고(허브·임시기록·전용마감)는
+ *      발주업체를 알고 `업체_택배사` 표에서 뜬 것이므로 가장 정확하다.
+ *   ② 출처 — 롯데·로젠처럼 출처가 곧 택배사인 경우.
+ *   ③ 업체명 — ①이 비었지만 업체를 아는 경우.
+ *   ④ 품목코드 → 출고지 (평택=롯데 / 대리발송=업체 접두) → 접두 폴백.
+ * 넷이 다 비면 빈칸으로 둔다. 송장번호 자릿수 추론은 하지 않는다
+ * (CJ 와 한진이 같은 4번대로 시작해 서로 뒤바뀐다).
+ *
+ * @param {?Object} invInfo 송장맵 엔트리 {inv, source, carrier, lag}
+ * @param {string} source   확정된 출처 (합포장 승격 등이 반영된 값)
+ * @param {string=} vendor  발주업체명
+ * @param {string=} itemCode 이카운트 품목코드 (④ 용)
+ * @param {?Object=} outVia via 를 받아 갈 객체 (진단용, 선택)
+ */
+function _pep_carrierForArchiveRow_(invInfo, source, vendor, itemCode, outVia) {
+  function done(c, via) {
+    var out = _pep_carrierWithLag_(c, invInfo && invInfo.lag);
+    if (outVia) outVia.via = out ? via : "";
+    return out;
+  }
+  if (invInfo && invInfo.carrier) return done(invInfo.carrier, "송장맵");
+  var fromSrc = _pep_carrierFromSource_(source);
+  if (fromSrc) return done(fromSrc, "출처");
+  if (vendor) {
+    var byVendor = _pep_carrierForVendor_(vendor);
+    if (byVendor) return done(byVendor, "업체명");
+  }
+  if (itemCode) {
+    var byCode = _pep_carrierFromItemCode_(itemCode, source);
+    if (byCode.carrier) return done(byCode.carrier, byCode.via);
+  }
+  return done("", "");
+}
+
+/** 업체명 또는 접두 → 택배사명. 모르면 빈 문자열 */
+function _pep_carrierForVendor_(vendorName) {
+  var tbl = _pep_loadVendorCarrierTable_(false);
+
+  var pfx =
+    typeof _pep_normalizeTempVendorPrefix_ === "function"
+      ? _pep_normalizeTempVendorPrefix_(vendorName)
+      : "";
+  if (pfx && typeof _pep_resolvePrefixAlias_ === "function") {
+    pfx = _pep_resolvePrefixAlias_(pfx);
+  }
+  if (pfx && tbl.byPfx[pfx]) return tbl.byPfx[pfx];
+  if (pfx && _PEP_VENDOR_CARRIER_[pfx]) return _PEP_VENDOR_CARRIER_[pfx];
+
+  var compact = String(vendorName == null ? "" : vendorName)
+    .replace(/\s/g, "")
+    .replace(/\[협력업체\]/g, "");
+  if (!compact) return "";
+  for (var lbl in tbl.byLabel) {
+    if (tbl.byLabel.hasOwnProperty(lbl) && compact.indexOf(lbl) !== -1) {
+      return tbl.byLabel[lbl];
+    }
+  }
+  for (var k in _PEP_VENDOR_CARRIER_) {
+    if (!_PEP_VENDOR_CARRIER_.hasOwnProperty(k)) continue;
+    var lab = String(_PEP_VENDOR_LABELS_[k] || "").replace(/\s/g, "");
+    if (lab && compact.indexOf(lab) !== -1) return _PEP_VENDOR_CARRIER_[k];
+  }
+  return "";
+}
+
+/** 택배사 → 사방넷 대량등록 코드. 미지정이면 빈 문자열 */
+function _pep_sabangCodeForCarrier_(carrier) {
+  var c = String(carrier == null ? "" : carrier).replace(/\(\d{1,2}\)\s*$/, "").trim();
+  if (!c) return "";
+  var tbl = _pep_loadVendorCarrierTable_(false);
+  if (tbl.code[c]) return tbl.code[c];
+  return String(_PEP_CARRIER_SABANG_CODE_[c] || "").trim();
+}
+
+/** 「업체_택배사」탭 확보. 비어 있으면 코드 상수로 초기 1회 채운다 */
+function _pep_ensureVendorCarrierTab_() {
+  var infoId = typeof _PT !== "undefined" && _PT.INFO_SS_ID ? _PT.INFO_SS_ID : "";
+  if (!infoId) throw new Error("상품정보 시트 ID 없음 (_PT.INFO_SS_ID)");
+  var ss = SpreadsheetApp.openById(infoId);
+  var tab = ss.getSheetByName(_PEP_VC_TAB_NAME_);
+  var created = false;
+  if (!tab) {
+    tab = ss.insertSheet(_PEP_VC_TAB_NAME_);
+    created = true;
+  }
+
+  if (tab.getLastRow() < 1 || !String(tab.getRange(1, 1).getDisplayValue()).trim()) {
+    tab
+      .getRange(1, 1, 1, _PEP_VC_HEADERS_.length)
+      .setValues([_PEP_VC_HEADERS_])
+      .setFontWeight("bold")
+      .setBackground("#E8EAED");
+    tab.setFrozenRows(1);
+    tab.setColumnWidth(1, 60);
+    tab.setColumnWidth(2, 140);
+    tab.setColumnWidth(3, 110);
+    tab.setColumnWidth(4, 100);
+    tab.setColumnWidth(5, 320);
+    tab
+      .getRange(1, 3)
+      .setNote("택배사명은 표시·조회에 그대로 쓰인다. 예: 한진택배, 롯데택배, 로젠택배, CJ대한통운, 대신택배");
+    tab
+      .getRange(1, 4)
+      .setNote(
+        "사방넷 「관리 > 사방넷 풀필먼트 설정 > 출고 > 사용 택배사 등록」의 코드.\n" +
+          "택배사 단위 값이므로 같은 택배사 행끼리 같아야 한다.\n" +
+          "비어 있으면 그 업체 행은 사방넷 대량등록에서 제외되고 '택배사코드 미지정'으로 보고된다.",
+      );
+    tab.getRange(1, 4).setNumberFormat("@"); // 001 앞 0 보존
+  }
+
+  var seeded = 0;
+  if (tab.getLastRow() < 2) {
+    var rows = [];
+    for (var pfx in _PEP_VENDOR_CARRIER_) {
+      if (!_PEP_VENDOR_CARRIER_.hasOwnProperty(pfx)) continue;
+      var carrier = _PEP_VENDOR_CARRIER_[pfx];
+      rows.push([
+        pfx,
+        _PEP_VENDOR_LABELS_[pfx] || "",
+        carrier,
+        String(_PEP_CARRIER_SABANG_CODE_[carrier] || ""),
+        "",
+      ]);
+    }
+    rows.sort(function (a, b) {
+      return String(a[1]).localeCompare(String(b[1]), "ko");
+    });
+    if (rows.length) {
+      tab.getRange(2, 1, rows.length, 5).setNumberFormat("@").setValues(rows);
+      seeded = rows.length;
+    }
+  }
+
+  _pep_vcMem_ = null; // 다음 읽기에서 새로 로드
+  return { tab: tab, created: created, seeded: seeded };
+}
+
+/** 메뉴: 업체 택배사 표 생성/점검 */
+function partnerEnsureVendorCarrierTable() {
+  var ui = null;
+  try {
+    ui = SpreadsheetApp.getUi();
+  } catch (e) {}
+
+  var lines = [];
+  try {
+    var res = _pep_ensureVendorCarrierTab_();
+    var tbl = _pep_loadVendorCarrierTable_(true);
+
+    lines.push("탭: 상품정보「" + _PEP_VC_TAB_NAME_ + "」");
+    lines.push(
+      res.created ? "· 탭을 새로 만들었습니다." : "· 기존 탭을 사용합니다.",
+    );
+    if (res.seeded) lines.push("· 코드 기본값 " + res.seeded + "행을 채웠습니다.");
+    lines.push("· 등록 업체: " + tbl.rows + "행");
+
+    // 택배사별 집계 + 코드 미지정
+    var byCarrier = {};
+    for (var p in tbl.byPfx) {
+      if (tbl.byPfx.hasOwnProperty(p)) {
+        byCarrier[tbl.byPfx[p]] = (byCarrier[tbl.byPfx[p]] || 0) + 1;
+      }
+    }
+    lines.push("");
+    lines.push("── 택배사별 ──");
+    var noCode = [];
+    for (var c in byCarrier) {
+      if (!byCarrier.hasOwnProperty(c)) continue;
+      var code = _pep_sabangCodeForCarrier_(c);
+      lines.push("· " + c + ": " + byCarrier[c] + "개 업체 / 사방넷코드 " + (code || "미지정"));
+      if (!code) noCode.push(c);
+    }
+
+    if (noCode.length) {
+      lines.push("");
+      lines.push("⚠ 사방넷코드 미지정: " + noCode.join(", "));
+      lines.push(
+        "해당 업체 송장은 사방넷 대량등록에서 제외됩니다. D열에 코드를 입력하세요.",
+      );
+    }
+    if (tbl.conflicts.length) {
+      lines.push("");
+      lines.push("⛔ 같은 택배사에 코드가 서로 다릅니다:");
+      for (var q = 0; q < tbl.conflicts.length; q++) lines.push("· " + tbl.conflicts[q]);
+    }
+    if (!noCode.length && !tbl.conflicts.length) {
+      lines.push("");
+      lines.push("✅ 코드 누락·충돌 없음");
+    }
+
+    lines.push("");
+    lines.push("이 표는 CS앱도 같이 읽습니다. 신규 업체는 여기에 행을 추가하면 됩니다.");
+  } catch (eMain) {
+    lines.push("오류: " + String(eMain.message || eMain));
+  }
+
+  var msg = lines.join("\n");
+  if (ui) ui.alert("업체 택배사 표", msg, ui.ButtonSet.OK);
+  Logger.log("[VENDOR_CARRIER] " + msg);
+}
+
+/**
+ * 일일마감 택배사 채움률 점검 (읽기 전용)
+ *
+ * 웹앱의 배송조회 링크는 일일마감 택배사 열을 근거로 삼는다. 그 열이 비면
+ * 링크가 네이버 검색으로 떨어지므로, 어디가 비었는지 여기서 본다.
+ *
+ * 택배사가 비는 원인은 둘 중 하나다.
+ *   ① 택배사 열이 아직 없는 옛 마감 파일 — 도입 전 날짜다. 정상.
+ *   ② 열은 있는데 값이 빈 행 — 업체가 `업체_택배사` 표에 없다. 표에 추가한다.
+ */
+function partnerDiagnoseArchiveCarrier() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+
+  var days = _PEP_BACKFILL_DAYS_ || 7;
+  var lines = [];
+  lines.push("최근 " + days + "일 일일마감의 택배사 열을 봅니다.");
+  lines.push("");
+
+  var totalRows = 0, totalFilled = 0, noColumnFiles = 0, checkedFiles = 0;
+  var byCarrier = {};
+  var emptyByVendor = {};
+
+  for (var d = 0; d <= days; d++) {
+    var dt = new Date();
+    dt.setDate(dt.getDate() - d);
+    var dateStr = Utilities.formatDate(dt, "Asia/Seoul", "yyyy-MM-dd");
+    var archSs;
+    try { archSs = _unified_findExistingArchiveSs_(_UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")"); }
+    catch (eF) { continue; }
+    if (!archSs) continue;
+    var tab = archSs.getSheetByName("일일마감") || archSs.getSheets()[0];
+    if (!tab || tab.getLastRow() < 2) continue;
+    checkedFiles++;
+
+    var all = tab.getRange(1, 1, tab.getLastRow(), Math.max(tab.getLastColumn(), 2)).getDisplayValues();
+    var cols = _pep_mapArchiveMatchCols_(all[0]);
+    if (cols.carrier < 0) {
+      noColumnFiles++;
+      lines.push("· " + dateStr + ": 택배사 열 없음 (도입 전 파일)");
+      continue;
+    }
+
+    var rows = 0, filled = 0;
+    for (var r = 1; r < all.length; r++) {
+      if (String(all[r][0] || "").indexOf("합계") !== -1) continue;
+      var src = String(all[r][cols.src] || "").trim();
+      // 송장이 없는 행은 조회할 것도 없으므로 분모에서 뺀다
+      if (src === "미매칭" || src === "기타") continue;
+      if (!_pep_normInvoiceNo_(all[r][cols.inv])) continue;
+      rows++;
+      var cr = String(all[r][cols.carrier] || "").trim();
+      if (cr) {
+        filled++;
+        byCarrier[cr] = (byCarrier[cr] || 0) + 1;
+      } else {
+        var v = cols.jShop >= 0 ? String(all[r][cols.jShop] || "").trim() : "";
+        var key = (src || "출처없음") + " / " + (v || "업체없음");
+        emptyByVendor[key] = (emptyByVendor[key] || 0) + 1;
+      }
+    }
+    totalRows += rows;
+    totalFilled += filled;
+    var pct = rows ? Math.round((filled / rows) * 100) : 0;
+    lines.push("· " + dateStr + ": " + filled + "/" + rows + "건 (" + pct + "%)");
+  }
+
+  if (!checkedFiles) {
+    lines.push("(최근 " + days + "일 일일마감 파일이 없습니다)");
+  } else {
+    var totalPct = totalRows ? Math.round((totalFilled / totalRows) * 100) : 0;
+    lines.push("");
+    lines.push("합계: " + totalFilled + "/" + totalRows + "건 (" + totalPct + "%)");
+
+    var carrierNames = [];
+    for (var c2 in byCarrier) if (byCarrier.hasOwnProperty(c2)) carrierNames.push(c2);
+    if (carrierNames.length) {
+      carrierNames.sort(function (a, b) { return byCarrier[b] - byCarrier[a]; });
+      lines.push("");
+      lines.push("── 택배사별 ──");
+      for (var ci = 0; ci < carrierNames.length; ci++) {
+        lines.push("· " + carrierNames[ci] + ": " + byCarrier[carrierNames[ci]] + "건");
+      }
+    }
+
+    var emptyKeys = [];
+    for (var k in emptyByVendor) if (emptyByVendor.hasOwnProperty(k)) emptyKeys.push(k);
+    if (emptyKeys.length) {
+      emptyKeys.sort(function (a, b) { return emptyByVendor[b] - emptyByVendor[a]; });
+      lines.push("");
+      lines.push("── 택배사 빈 건 (출처 / 업체) ──");
+      for (var ei = 0; ei < Math.min(emptyKeys.length, 15); ei++) {
+        lines.push("· " + emptyKeys[ei] + ": " + emptyByVendor[emptyKeys[ei]] + "건");
+      }
+      if (emptyKeys.length > 15) lines.push("· … 외 " + (emptyKeys.length - 15) + "종");
+      lines.push("");
+      lines.push("이 건들은 웹앱에서 네이버 검색 링크로 나갑니다.");
+      lines.push("위 '🚚 업체 택배사 표 생성/점검' 에서 해당 업체 행을 추가하세요.");
+      lines.push("추가 후 다음 일일마감부터 반영됩니다.");
+    } else if (totalRows) {
+      lines.push("");
+      lines.push("✅ 송장 있는 행은 모두 택배사가 채워져 있습니다.");
+    }
+  }
+
+  if (noColumnFiles) {
+    lines.push("");
+    lines.push("※ 택배사 열이 없는 " + noColumnFiles + "개 파일은 도입 전 날짜입니다.");
+    lines.push("  그 날짜는 웹앱이 종전처럼 출처로 택배사를 추론합니다.");
+  }
+
+  var msg2 = lines.join("\n");
+  if (ui) ui.alert("일일마감 택배사 채움률", msg2, ui.ButtonSet.OK);
+  Logger.log("[ARCHIVE_CARRIER] " + msg2);
+}
+
+/**
+ * 지난 일일마감에 택배사 소급 채움 (쓰기)
+ *
+ * 도입 전 파일에는 택배사 열이 아예 없다. 열을 운송장번호 앞에 끼워 넣고
+ * **출처와 출고지만으로** 채운다. 지난 파일에는 송장맵이 없으므로
+ * 발주업체를 알 길이 없고, 판매처 열에는 쿠팡·네이버가 들어 있다.
+ *
+ *   · 출처가 롯데·로젠·한진 → 그것이 곧 택배사다
+ *   · 출고지가 평택 계열     → 롯데택배
+ *   · 출고지가 대리발송      → 품목코드 접두로 업체 택배사
+ *
+ * 근거가 없으면 **빈칸으로 남긴다.** 웹앱은 빈칸이면 종전처럼 출처로 추론한다.
+ * 이미 값이 있는 칸은 건드리지 않는다 (마감 시점 판정이 더 정확하다).
+ */
+function partnerBackfillArchiveCarrier() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+
+  var days = 14;
+  if (ui) {
+    var resp = ui.prompt(
+      "지난 일일마감 택배사 채움",
+      "며칠 전까지 볼까요? (기본 14, 최대 90)\n\n" +
+      "· 택배사 열이 없는 파일은 운송장번호 앞에 열을 끼워 넣습니다\n" +
+      "· 이미 채워진 칸은 건드리지 않습니다\n" +
+      "· 근거(출처·출고지)가 없는 건은 빈칸으로 남습니다",
+      ui.ButtonSet.OK_CANCEL
+    );
+    if (resp.getSelectedButton() !== ui.Button.OK) return;
+    var typed = parseInt(String(resp.getResponseText() || "").trim(), 10);
+    if (!isNaN(typed) && typed > 0) days = Math.min(typed, 90);
+  }
+
+  // 출고지 인덱스를 먼저 확인한다. 이게 비면 소급 채움의 절반이 날아간다.
+  var originIdx = _pep_loadItemShipOriginIndex_(true);
+  if (originIdx.error || !originIdx.rows) {
+    var warn = "상품정보 출고지를 읽지 못했습니다.\n\n" +
+      (originIdx.error || "출고지 값이 있는 행이 0건") + "\n\n" +
+      "출고지 없이도 출처(롯데·로젠 등)만으로는 채울 수 있지만,\n" +
+      "대리판매·대리공급 건은 대부분 빈칸으로 남습니다. 계속할까요?";
+    if (ui) {
+      var go = ui.alert("출고지 못 읽음", warn, ui.ButtonSet.YES_NO);
+      if (go !== ui.Button.YES) return;
+    } else {
+      Logger.log("[CARRIER_BACKFILL] " + warn);
+    }
+  }
+
+  var lines = [];
+  lines.push("최근 " + days + "일 일일마감에 택배사를 채웁니다.");
+  lines.push("출고지 마스터: " + originIdx.rows + "품목" +
+    (originIdx.error ? " (오류: " + originIdx.error + ")" : ""));
+  lines.push("");
+
+  var files = 0, inserted = 0, totalFilled = 0, totalBlank = 0, errs = [];
+  var viaTally = {};
+
+  for (var d = 0; d <= days; d++) {
+    var dt = new Date();
+    dt.setDate(dt.getDate() - d);
+    var dateStr = Utilities.formatDate(dt, "Asia/Seoul", "yyyy-MM-dd");
+
+    try {
+      var archSs = _unified_findExistingArchiveSs_(_UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")");
+      if (!archSs) continue;
+      var tab = archSs.getSheetByName("일일마감") || archSs.getSheets()[0];
+      if (!tab || tab.getLastRow() < 2) continue;
+      files++;
+
+      var hdr = tab.getRange(1, 1, 1, Math.max(tab.getLastColumn(), 2)).getDisplayValues()[0];
+      var carrierIdx = _pep_findCarrierIdx_(hdr);
+      if (carrierIdx < 0) {
+        carrierIdx = _pep_insertCarrierColumnInto_(tab, hdr);
+        if (carrierIdx < 0) {
+          lines.push("· " + dateStr + ": 운송장번호 열을 못 찾아 건너뜀");
+          continue;
+        }
+        inserted++;
+        hdr = tab.getRange(1, 1, 1, tab.getLastColumn()).getDisplayValues()[0];
+      }
+
+      var lr = tab.getLastRow();
+      var lc = tab.getLastColumn();
+      var all = tab.getRange(1, 1, lr, lc).getDisplayValues();
+      var cols = _pep_mapArchiveMatchCols_(all[0]);
+      if (cols.carrier < 0) { lines.push("· " + dateStr + ": 택배사 열 인식 실패"); continue; }
+
+      // 택배사 열만 통째로 다시 쓴다. 다른 열을 건드리지 않는 것이 안전하다.
+      var colVals = [];
+      var filled = 0, blank = 0, changed = 0;
+      for (var r = 1; r < all.length; r++) {
+        var cur = String(all[r][cols.carrier] || "").trim();
+        colVals.push([cur]);
+
+        if (String(all[r][0] || "").indexOf("합계") !== -1) continue;
+        if (cur) { filled++; continue; }
+
+        var src = String(all[r][cols.src] || "").trim();
+        if (src === "미매칭" || src === "기타") continue;
+        if (!_pep_normInvoiceNo_(all[r][cols.inv])) continue;
+
+        var code = cols.code >= 0 ? all[r][cols.code] : "";
+        var vendor = cols.jShop >= 0 ? all[r][cols.jShop] : "";
+        var box = {};
+        var got = _pep_carrierForArchiveRow_(null, src, vendor, code, box);
+        if (got) {
+          colVals[colVals.length - 1] = [got];
+          changed++;
+          filled++;
+          viaTally[box.via] = (viaTally[box.via] || 0) + 1;
+        } else {
+          blank++;
+        }
+      }
+
+      if (changed > 0) {
+        tab.getRange(2, cols.carrier + 1, colVals.length, 1).setValues(colVals);
+        SpreadsheetApp.flush();
+      }
+      totalFilled += changed;
+      totalBlank += blank;
+      lines.push("· " + dateStr + ": +" + changed + "건 채움" +
+        (blank ? " / " + blank + "건 근거없음" : "") +
+        (filled - changed ? " (기존 " + (filled - changed) + "건 유지)" : ""));
+    } catch (eDay) {
+      errs.push(dateStr + ": " + String(eDay.message || eDay));
+    }
+  }
+
+  lines.push("");
+  lines.push("파일 " + files + "개 / 열 삽입 " + inserted + "개");
+  lines.push("채움 " + totalFilled + "건, 근거없음 " + totalBlank + "건");
+
+  var viaKeys = [];
+  for (var vk in viaTally) if (viaTally.hasOwnProperty(vk)) viaKeys.push(vk);
+  if (viaKeys.length) {
+    viaKeys.sort(function (a, b) { return viaTally[b] - viaTally[a]; });
+    lines.push("");
+    lines.push("── 판정 근거 ──");
+    for (var vi = 0; vi < viaKeys.length; vi++) {
+      lines.push("· " + viaKeys[vi] + ": " + viaTally[viaKeys[vi]] + "건");
+    }
+  }
+
+  if (totalBlank) {
+    lines.push("");
+    lines.push("근거없음 " + totalBlank + "건은 출처도 출고지도 답을 주지 않은 건입니다.");
+    lines.push("빈칸이면 웹앱이 종전처럼 출처로 추론합니다 (잘못 채우지 않습니다).");
+    lines.push("어느 업체인지는 '📦 일일마감 택배사 채움률 점검' 에서 봅니다.");
+  }
+  if (errs.length) {
+    lines.push("");
+    lines.push("── 오류 ──");
+    for (var ei2 = 0; ei2 < Math.min(errs.length, 8); ei2++) lines.push("· " + errs[ei2]);
+  }
+
+  var msg3 = lines.join("\n");
+  if (ui) ui.alert("지난 일일마감 택배사 채움", msg3, ui.ButtonSet.OK);
+  Logger.log("[CARRIER_BACKFILL] " + msg3);
+}
+
+/**
+ * 출고지 마스터 점검 (읽기 전용)
+ *
+ * 택배사 판정의 ④단계가 이 표에 걸려 있다. 상품정보 B열(출고지)이 비면
+ * 대리판매·대리공급 건이 통째로 빈칸이 된다.
+ */
+function partnerDiagnoseShipOrigin() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+
+  var idx = _pep_loadItemShipOriginIndex_(true);
+  var lines = [];
+  lines.push("상품정보 '출고지' 열(이카운트 CLASS_CD2)을 봅니다.");
+  lines.push("");
+
+  if (idx.error) {
+    lines.push("❌ " + idx.error);
+    lines.push("");
+    lines.push("상품정보 탭 4행 헤더에 '품목코드'(또는 이카운트코드) 와");
+    lines.push("'출고지' 가 있어야 합니다. 6행부터 품목 데이터로 읽습니다.");
+  } else {
+    var buckets = { own: 0, proxy: 0, other: 0 };
+    var otherVals = {};
+    var pfxMissing = {};
+    for (var code in idx.map) {
+      if (!idx.map.hasOwnProperty(code)) continue;
+      var o = idx.map[code];
+      if (_pep_isOwnWarehouseOrigin_(o)) buckets.own++;
+      else if (_pep_isProxyShipOrigin_(o)) {
+        buckets.proxy++;
+        if (!_pep_carrierFromItemCodePrefix_(code)) {
+          var head = String(code).match(/^([A-Z]{2,})/);
+          var key = head ? head[1].substring(0, 2) : "(접두없음)";
+          pfxMissing[key] = (pfxMissing[key] || 0) + 1;
+        }
+      } else {
+        buckets.other++;
+        otherVals[o] = (otherVals[o] || 0) + 1;
+      }
+    }
+
+    lines.push("읽은 품목: " + idx.rows + "건");
+    lines.push("· 평택 계열 (→ 롯데택배): " + buckets.own + "건");
+    lines.push("· 대리발송 (→ 업체 택배사): " + buckets.proxy + "건");
+    lines.push("· 그 외: " + buckets.other + "건");
+
+    var ov = [];
+    for (var k in otherVals) if (otherVals.hasOwnProperty(k)) ov.push(k);
+    if (ov.length) {
+      ov.sort(function (a, b) { return otherVals[b] - otherVals[a]; });
+      lines.push("");
+      lines.push("── '그 외' 출고지 값 ──");
+      for (var oi = 0; oi < Math.min(ov.length, 10); oi++) {
+        lines.push("· " + ov[oi] + ": " + otherVals[ov[oi]] + "건");
+      }
+      lines.push("");
+      lines.push("이 값들은 택배사를 판정하지 않습니다 (빈칸으로 둡니다).");
+      lines.push("어느 택배사인지 정해지면 알려주세요.");
+    }
+
+    var pm = [];
+    for (var k2 in pfxMissing) if (pfxMissing.hasOwnProperty(k2)) pm.push(k2);
+    if (pm.length) {
+      pm.sort(function (a, b) { return pfxMissing[b] - pfxMissing[a]; });
+      lines.push("");
+      lines.push("── 대리발송인데 접두가 '업체_택배사' 표에 없음 ──");
+      for (var pi = 0; pi < Math.min(pm.length, 15); pi++) {
+        lines.push("· " + pm[pi] + ": " + pfxMissing[pm[pi]] + "품목");
+      }
+      lines.push("");
+      lines.push("이 접두 품목은 택배사가 빈칸으로 남습니다.");
+      lines.push("위 '🚚 업체 택배사 표 생성/점검' 에서 행을 추가하세요.");
+    } else if (buckets.proxy) {
+      lines.push("");
+      lines.push("✅ 대리발송 품목의 접두는 모두 표에 있습니다.");
+    }
+  }
+
+  var msg4 = lines.join("\n");
+  if (ui) ui.alert("출고지 마스터 점검", msg4, ui.ButtonSet.OK);
+  Logger.log("[SHIP_ORIGIN_DIAG] " + msg4);
+}
+
+// ─────────────────────────────────────────────────────
+//  보조 접두 별칭 — 한 업체가 이카운트코드 접두를 2개 이상 쓰는 경우
+//  key: 보조 접두, value: 대표 접두
+//  대표 접두의 전용양식·Push 매핑·택배사 코드를 그대로 따른다.
+//  _PEP_VENDOR_LABELS_ / _PEP_VENDOR_DIRECT_MAP_ 에는 대표 접두만 등록한다.
+//  (업체명 역매핑이 1:1 전제이므로 보조 접두를 LABELS에 넣으면 파일 매핑이 덮어써짐)
+// ─────────────────────────────────────────────────────
+var _PEP_VENDOR_PREFIX_ALIAS_ = {
+  JH: "JT", // 준테크 보조 코드 (★ 2026-08-25)
+  BF: "JT", // 준테크 보조 코드 (★ 2026-08-25)
+  NS: "JT", // 준테크 보조 코드 (★ 2026-08-27)
+};
+
+/** 보조 접두 → 대표 접두. 별칭이 없으면 대문자 정규화만 하여 반환 */
+function _pep_resolvePrefixAlias_(pfx) {
+  var up = String(pfx == null ? "" : pfx).trim().toUpperCase();
+  if (!up) return "";
+  try {
+    if (
+      typeof _PEP_VENDOR_PREFIX_ALIAS_ !== "undefined" &&
+      _PEP_VENDOR_PREFIX_ALIAS_[up]
+    ) {
+      return _PEP_VENDOR_PREFIX_ALIAS_[up];
+    }
+  } catch (e) {}
+  return up;
+}
+
+/** 대표 접두 → 해당 대표에 묶인 보조 접두 목록 (진단·표시용) */
+function _pep_aliasPrefixesFor_(primary) {
+  var out = [];
+  var up = String(primary == null ? "" : primary).trim().toUpperCase();
+  if (!up) return out;
+  try {
+    for (var k in _PEP_VENDOR_PREFIX_ALIAS_) {
+      if (!_PEP_VENDOR_PREFIX_ALIAS_.hasOwnProperty(k)) continue;
+      if (_PEP_VENDOR_PREFIX_ALIAS_[k] === up) out.push(k);
+    }
+  } catch (e) {}
+  return out.sort();
+}
 
 // ─────────────────────────────────────────────────────
 //  업체별 소스→전용양식 열 매핑 (orderSyncManager.gs VENDOR_DIRECT_COLUMN_MAP_ 이식)
@@ -3496,22 +4704,24 @@ var _PEP_VENDOR_DIRECT_MAP_ = {
     ],
   },
   BW: {
-    // 부원 — 13열 (★ 2026-07-08 레이아웃 변경)
-    // A=송장번호, B=이슈, C=받는사람, D=전화번호, E=주소, F=우편번호, G=(빈), H=상품명, I=수량, J=배송메세지, K=보내는사람, L=보내는주소, M=보내는전화
-    totalCols: 13,
-    phoneTargetCols: [3, 12], // D(전화번호), M(보내는전화)
-    vendorNameCol: 7, // H열(상품명) — 별칭 테이블의 업체 품목명으로 덮어쓰기
-    qtyExtract: { nameCol: 7, qtyCol: 8 }, // ★ 상품명에서 "-2박스" 등 수량 분리 → I열
+    // 부원 — 「부원택배 양식 (1).xlsx」+ 송장번호·이슈 (★ 2026-08-10, 18열)
+    // A=송장번호 B=이슈 C=받는사람 D=전화번호 E=주소 F=(빈)
+    // G=상품명 H=수량 I~L=B2750~E6500 M=배송메세지 N=운임구분 O=운임
+    // P=보내는사람 Q=주소 R=전화
+    totalCols: 18,
+    phoneTargetCols: [3, 17], // D(전화번호), R(전화)
+    vendorNameCol: 6, // G열(상품명)
+    qtyExtract: { nameCol: 6, qtyCol: 7 }, // G=상품명, H=수량
     sourceToTarget: [
       { sourceCol: 12, targetCol: 2, label: "M(거래처명)→C(받는사람)" },
       { sourceCol: 8, targetCol: 3, label: "I(모바일)→D(전화번호)" },
       { sourceCol: 9, targetCol: 4, label: "J(주소1)→E(주소)" },
-      { sourceCol: 4, targetCol: 7, label: "E(품목명)→H(상품명)" },
-      { sourceCol: 6, targetCol: 8, label: "G(수량)→I(수량)" },
-      { sourceCol: 10, targetCol: 9, label: "K(배송메세지)→J(배송메세지)" },
-      { sourceCol: 16, targetCol: 10, label: "Q(보내는분)→K(보내는사람)" },
-      { sourceCol: 18, targetCol: 11, label: "S(보내는분주소)→L(보내는주소)" },
-      { sourceCol: 17, targetCol: 12, label: "R(보내는분전화)→M(보내는전화)" },
+      { sourceCol: 4, targetCol: 6, label: "E(품목명)→G(상품명)" },
+      { sourceCol: 6, targetCol: 7, label: "G(수량)→H(수량)" },
+      { sourceCol: 10, targetCol: 12, label: "K(배송메세지)→M(배송메세지)" },
+      { sourceCol: 16, targetCol: 15, label: "Q(보내는분)→P(보내는사람)" },
+      { sourceCol: 18, targetCol: 16, label: "S(보내는분주소)→Q(주소)" },
+      { sourceCol: 17, targetCol: 17, label: "R(보내는분전화)→R(전화)" },
     ],
   },
   KR: {
@@ -3599,27 +4809,48 @@ var _PEP_VENDOR_DIRECT_MAP_ = {
     ],
   },
   JT: {
-    // 준테크 — 19열 (★ 2026-07-15 추가)
-    // 이미지 배열: 올팩(AP)과 동일 구조이나 C(2)에 "주문번호(지정)" 열이 추가되어
-    // 보내는사람(지정)~상품명1 열이 AP 대비 +1 밀림.
+    // 준테크 — 대한통운 양식 (★ 2026-08-06)
     // A(0):송장번호, B(1):이슈,
-    // C(2):주문번호(지정), D(3):보내는사람(지정), E(4):전화번호1(지정),
-    // F(5):전화번호2(지정), G(6):우편번호(지정), H(7):주소(지정),
-    // I(8):받는사람, J(9):전화번호1, K(10):전화번호2, L(11):우편번호,
-    // M(12):주소1, N(13):상품명1, O(14):수량(A단위),
-    // P(15):배송메시지, Q(16):(빈열), R(17):유입구분, S(18):유입
-    totalCols: 19,
-    phoneTargetCols: [4, 9], // E(전화번호1-지정), J(전화번호1-받는)
+    // C(2):예약구분, D(3):집하예정일,
+    // E(4):보내는분성명, F(5):보내는분전화번호, G(6):보내는분기타연락처,
+    // H(7):보내는분우편번호, I(8):보내는분주소,
+    // J(9):받는분성명, K(10):받는분전화번호, L(11):받는분기타연락처,
+    // M(12):받는분우편번호, N(13):받는분주소,
+    // O(14):운송장번호, P(15):고객주문번호, Q(16):품목명, R(17):박스수량,
+    // S(18):박스타입, T(19):기본운임, U(20):배송메세지1, V(21):배송메세지2, W(22):운임구분
+    totalCols: 23,
+    phoneTargetCols: [5, 10], // F(보내는분전화), K(받는분전화)
     sourceToTarget: [
-      { sourceCol: 16, targetCol: 3,  label: "Q(보내는분)→D(보내는사람-지정)" },
-      { sourceCol: 17, targetCol: 4,  label: "R(보내는분전화)→E(전화번호1-지정)" },
-      { sourceCol: 18, targetCol: 7,  label: "S(보내는분주소)→H(주소-지정)" },
-      { sourceCol: 12, targetCol: 8,  label: "M(거래처명)→I(받는사람)" },
-      { sourceCol: 8,  targetCol: 9,  label: "I(모바일)→J(전화번호1)" },
-      { sourceCol: 9,  targetCol: 12, label: "J(주소1)→M(주소1)" },
-      { sourceCol: 4,  targetCol: 13, label: "E(품목명)→N(상품명1)" },
-      { sourceCol: 6,  targetCol: 14, label: "G(수량)→O(수량)" },
-      { sourceCol: 10, targetCol: 15, label: "K(배송메세지)→P(배송메시지)" },
+      { sourceCol: 16, targetCol: 4, label: "Q(보내는분)→E(보내는분성명)" },
+      { sourceCol: 17, targetCol: 5, label: "R(보내는분전화)→F(보내는분전화번호)" },
+      { sourceCol: 18, targetCol: 8, label: "S(보내는분주소)→I(보내는분주소)" },
+      { sourceCol: 12, targetCol: 9, label: "M(거래처명)→J(받는분성명)" },
+      { sourceCol: 8, targetCol: 10, label: "I(모바일)→K(받는분전화번호)" },
+      { sourceCol: 9, targetCol: 13, label: "J(주소1)→N(받는분주소)" },
+      { sourceCol: 4, targetCol: 16, label: "E(품목명)→Q(품목명)" },
+      { sourceCol: 6, targetCol: 17, label: "G(수량)→R(박스수량)" },
+      { sourceCol: 10, targetCol: 20, label: "K(배송메세지)→U(배송메세지1)" },
+    ],
+  },
+  SW: {
+    // 선우 — 대한통운 양식 (★ 2026-08-25)
+    // A(0):송장번호, B(1):이슈,
+    // C(2):보내는분성명, D(3):보내는분전화번호, E(4):보내는분기타연락처,
+    // F(5):보내는분우편번호, G(6):보내는분주소(전체, 분할),
+    // H(7):받는분성명, I(8):받는분전화번호, J(9):받는분기타연락처,
+    // K(10):받는분우편번호, L(11):받는분주소(전체, 분할),
+    // M(12):품목명, N(13):내품명, O(14):박스수량,
+    // P(15):배송메세지1, Q(16):박스타입, R(17):운임구분
+    // 보내는분(C~G)·내품명(N)·박스타입(Q)·운임구분(R)은 업체 입력 → 비움
+    totalCols: 18,
+    phoneTargetCols: [8], // I(받는분전화번호)
+    sourceToTarget: [
+      { sourceCol: 12, targetCol: 7, label: "M(거래처명)→H(받는분성명)" },
+      { sourceCol: 8, targetCol: 8, label: "I(모바일)→I(받는분전화번호)" },
+      { sourceCol: 9, targetCol: 11, label: "J(주소1)→L(받는분주소)" },
+      { sourceCol: 4, targetCol: 12, label: "E(품목명)→M(품목명)" },
+      { sourceCol: 6, targetCol: 14, label: "G(수량)→O(박스수량)" },
+      { sourceCol: 10, targetCol: 15, label: "K(배송메세지)→P(배송메세지1)" },
     ],
   },
   LG: {
@@ -5344,11 +6575,12 @@ function partnerRebuildTempRecords() {
     var rawName = String(row[_PEP_ITEM_COL] || "").trim();
     if (!rawCode) { noCode++; continue; }
 
-    var codePfx = rawCode.length >= 2 ? rawCode.substring(0, 2).toUpperCase() : "";
+    // ★ 2026-08-25: 보조 접두(JH/BF 등)는 대표 접두(JT)로 환산 후 판정
+    var codePfx = rawCode.length >= 2 ? _pep_resolvePrefixAlias_(rawCode.substring(0, 2)) : "";
     var namePfx = "";
     // ★ 2026-07-14: 품목명 앞 영문 2글자 인식 보완 (한글/공백/대괄호 등 제외한 가장 처음에 등장하는 영문 2글자)
     var m = rawName.replace(/^[^a-zA-Z]*/, "").match(/^([a-zA-Z]{2})/);
-    if (m) namePfx = m[1].toUpperCase();
+    if (m) namePfx = _pep_resolvePrefixAlias_(m[1]);
 
     var pfx = "";
     // 1순위: 이카운트코드 앞 2자리(codePfx)가 유효한 대리공급업체 코드(DIRECT_MAP 또는 LABELS)인 경우
@@ -5428,109 +6660,6 @@ function partnerRebuildTempRecords() {
     "▶ URL: " + verifyUrl;
   Logger.log("[REBUILD_TEMP] " + msg);
   if (ui) ui.alert(msg);
-}
-
-/**
- * ── 별칭맵 진단 (메뉴 실행용) ──
- * 누적품목매핑 로드 상태, 코드 목록, 단가 확인
- */
-function diagnosePepAliasMap() {
-  var ui = SpreadsheetApp.getUi();
-  var lines = ["📋 별칭맵 진단 결과\n"];
-
-  // 1) HUB 연결 확인
-  try {
-    var props = PropertiesService.getScriptProperties();
-    var hubId = props.getProperty("DB_HUB_ID");
-    if (!hubId) {
-      lines.push("❌ DB_HUB_ID 없음 → HUB 미연결");
-    } else {
-      lines.push("✅ HUB ID: " + hubId.substring(0, 20) + "...");
-      var hubSS = SpreadsheetApp.openById(hubId);
-      var hubTab = hubSS.getSheetByName(_PEP_HUB_ALIAS_TAB_NAME);
-      if (!hubTab) {
-        lines.push(
-          "❌ HUB에 「" + _PEP_HUB_ALIAS_TAB_NAME + "」탭 없음 → 외부시트 폴백",
-        );
-      } else {
-        lines.push(
-          "✅ HUB 탭 발견: " +
-            _PEP_HUB_ALIAS_TAB_NAME +
-            " (" +
-            (hubTab.getLastRow() - 1) +
-            "행)",
-        );
-        var hdr = hubTab
-          .getRange(1, 1, 1, hubTab.getLastColumn())
-          .getValues()[0];
-        lines.push("   헤더: " + hdr.join(" | "));
-
-        // ★ 열 감지 현황 확인
-        var colInfo = [];
-        for (var ci = 0; ci < hdr.length; ci++) {
-          var ch = String(hdr[ci] || "")
-            .replace(/\s/g, "")
-            .toLowerCase();
-          if (
-            ch.indexOf("포함가") !== -1 ||
-            (ch.indexOf("단가") !== -1 && ch.indexOf("vat") !== -1)
-          ) {
-            colInfo.push("VAT포함가열=" + (ci + 1) + "열(" + hdr[ci] + ")");
-          }
-          if (ch === "단가") colInfo.push("단가열=" + (ci + 1) + "열");
-          if (ch === "부가세") colInfo.push("부가세열=" + (ci + 1) + "열");
-        }
-        if (colInfo.length > 0)
-          lines.push("   감지된 단가열: " + colInfo.join(", "));
-        else lines.push("   ⚠️ VAT포함가/단가 열 미감지");
-      }
-    }
-  } catch (eHub) {
-    lines.push("❌ HUB 접근 오류: " + eHub.message);
-  }
-
-  // 2) 별칭맵 로드
-  var aliasMap = _pep_loadAliasMap_();
-  var codeKeys = Object.keys(aliasMap.byCode);
-  lines.push("\n로드된 코드 수: " + codeKeys.length + "건");
-
-  // ★ HR 코드 먼저, 없으면 전체에서
-  var hrKeys = codeKeys.filter(function (k) {
-    return k.substring(0, 2) === "HR";
-  });
-  lines.push("HR(뉴파츠) 코드: " + hrKeys.length + "건");
-
-  var sampleKeys =
-    hrKeys.length > 0 ? hrKeys.slice(0, 5) : codeKeys.slice(0, 3);
-  if (sampleKeys.length > 0) {
-    lines.push("\n【HR 샘플 (최대5개)】");
-    for (var i = 0; i < sampleKeys.length; i++) {
-      var k = sampleKeys[i];
-      var e = aliasMap.byCode[k];
-      var priceStatus =
-        e.priceVat > 0
-          ? "✅ " + e.priceVat
-          : e.price > 0
-            ? "⚠️ 단가만: " + e.price
-            : "❌ 없음";
-      lines.push(
-        "  " +
-          k +
-          " → " +
-          (e.name || "(이름없음)") +
-          "\n    단가(E):" +
-          (e.price || 0) +
-          " 부가세(F):" +
-          (e.vat || 0) +
-          " VAT포함가(G):" +
-          (e.priceVat || 0) +
-          " " +
-          priceStatus,
-      );
-    }
-  }
-
-  ui.alert(lines.join("\n"));
 }
 
 // ═════════════════════════════════════════════
@@ -5634,23 +6763,61 @@ function _pep_getZipCodeFromKakao_(address) {
   }
 }
 
+// ═════════════════════════════════════════════
+//  ★ 2026-07-17 (M4): 주소→우편번호 영구 캐시
+//  같은 수취인 주소가 매일 반복 조회되므로 ScriptProperties에 누적 저장.
+//  - 성공(우편번호 있음) 결과만 영구 저장 — 실패는 실행 내 캐시로만
+//  - 대량 행에서도 신규 주소만 API 호출 → 6분 한도·쿼터 압박 해소
+// ═════════════════════════════════════════════
+var _PEP_ZIP_CACHE_PROP_ = "_PEP_ZIP_CACHE_V1_";
+var _PEP_ZIP_CACHE_MAX_ = 1500; // Properties 총 500KB 한도 보호
+var _PEP_ZIP_CACHE_MEM_ = null;
+var _PEP_ZIP_CACHE_DIRTY_ = false;
+
+function _pep_zipCacheLoad_() {
+  if (_PEP_ZIP_CACHE_MEM_) return _PEP_ZIP_CACHE_MEM_;
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(_PEP_ZIP_CACHE_PROP_);
+    _PEP_ZIP_CACHE_MEM_ = raw ? JSON.parse(raw) : {};
+  } catch (_) { _PEP_ZIP_CACHE_MEM_ = {}; }
+  return _PEP_ZIP_CACHE_MEM_;
+}
+
+/** 실행 종료 전 1회 호출 — 신규 항목이 있을 때만 저장 */
+function _pep_zipCacheSave_() {
+  if (!_PEP_ZIP_CACHE_DIRTY_ || !_PEP_ZIP_CACHE_MEM_) return;
+  try {
+    var keys = Object.keys(_PEP_ZIP_CACHE_MEM_);
+    if (keys.length > _PEP_ZIP_CACHE_MAX_) {
+      // 초과분 앞쪽(오래된 삽입 순)부터 제거
+      var drop = keys.length - _PEP_ZIP_CACHE_MAX_;
+      for (var i = 0; i < drop; i++) delete _PEP_ZIP_CACHE_MEM_[keys[i]];
+    }
+    PropertiesService.getScriptProperties().setProperty(
+      _PEP_ZIP_CACHE_PROP_, JSON.stringify(_PEP_ZIP_CACHE_MEM_));
+    _PEP_ZIP_CACHE_DIRTY_ = false;
+  } catch (eSave) {
+    Logger.log("[PEP] 우편번호 캐시 저장 실패: " + eSave.message);
+  }
+}
+
 /**
- * 우편번호 조회 테스트 (메뉴에서 수동 실행)
+ * 주소→우편번호 (영구 캐시 우선, 미스 시 Kakao API + 120ms 대기)
+ * @returns {string} 우편번호 또는 ""
  */
-function partnerTestZipCodeLookup() {
-  var ui = SpreadsheetApp.getUi();
-  var resp = ui.prompt(
-    "📮 우편번호 조회 테스트",
-    "주소를 입력하세요 (예: 경남 김해시 주촌면 무척로 80):",
-    ui.ButtonSet.OK_CANCEL
-  );
-  if (resp.getSelectedButton() !== ui.Button.OK) return;
-  var addr = resp.getResponseText().trim();
-  if (!addr) return;
-  var zip = _pep_getZipCodeFromKakao_(addr);
-  ui.alert("📮 우편번호 조회 결과",
-    "주소: " + addr + "\n우편번호: " + (zip || "(찾을 수 없음)"),
-    ui.ButtonSet.OK);
+function _pep_getZipCodeCached_(addr) {
+  var key = String(addr || "").replace(/\s+/g, " ").trim();
+  if (!key) return "";
+  var cache = _pep_zipCacheLoad_();
+  if (cache[key]) return cache[key]; // 성공 결과만 저장돼 있음
+  var zip = "";
+  try { zip = _pep_getZipCodeFromKakao_(key) || ""; } catch (_) { zip = ""; }
+  if (zip) {
+    cache[key] = zip;
+    _PEP_ZIP_CACHE_DIRTY_ = true;
+  }
+  Utilities.sleep(120); // API rate limit 보호
+  return zip;
 }
 
 // ═════════════════════════════════════════════
@@ -5772,18 +6939,18 @@ function partnerJmFillZipAndShipping() {
       var newZip = curZip;
       var apiResult = "";
       if (addr && !curZip) {
+        // ★ 2026-07-17 (M4): 실행 내 캐시 → 영구 캐시(Properties) → API 순
         if (zipCache[addr] !== undefined) {
           newZip = zipCache[addr];
           apiResult = "캐시=" + newZip;
         } else {
           try {
-            newZip = _pep_getZipCodeFromKakao_(addr);
-            apiResult = "API결과=" + (newZip || "(빈값)");
+            newZip = _pep_getZipCodeCached_(addr);
+            apiResult = "API/영구캐시=" + (newZip || "(빈값)");
           } catch (eApi) {
             apiResult = "API오류=" + eApi.message;
           }
           zipCache[addr] = newZip || "";
-          Utilities.sleep(120);
         }
         Logger.log("[JM ZIP] 행" + (r+2) + " API호출: addr=[" + addr + "] → " + apiResult);
         if (newZip) zipFilled++;
@@ -5813,6 +6980,7 @@ function partnerJmFillZipAndShipping() {
     if (shipFilled > 0) {
       tab.getRange(2, 16, shipCol.length, 1).setValues(shipCol);
     }
+    _pep_zipCacheSave_(); // ★ 2026-07-17 (M4): 신규 우편번호 영구 캐시 저장
     SpreadsheetApp.flush();
 
     // 디버그 정보 포함 알림
@@ -6458,15 +7626,16 @@ var _SNAPSHOT_STATUS_MATCHED_ = "매칭완료";
  */
 function _pep_fixPhoneLeadingZero_(val) {
   if (val === "" || val == null) return val;
-  if (typeof val === "number") {
-    var s = String(val);
-    // 한국 전화번호 패턴: 숫자 9~10자리 (앞 0이 빠진 상태)
-    // 010-xxxx-xxxx → 1012345678 (10자리), 02-xxx-xxxx → 2xxxxxxx (9자리)
-    if (/^[1-9]\d{8,10}$/.test(s)) {
-      return "0" + s;
-    }
+  var sv = String(val).trim();
+  if (/e/i.test(sv) && isFinite(Number(val))) {
+    sv = String(Math.round(Number(val)));
   }
-  return val;
+  var digits = sv.replace(/[^0-9]/g, "");
+  if (!digits) return val;
+  if (digits.charAt(0) === "0") return sv.charAt(0) === "0" ? sv : digits;
+  // 010/02 등이 숫자로 읽혀 앞 0이 빠진 경우 (9~11자리)
+  if (/^[1-9]\d{8,10}$/.test(digits)) return "0" + digits;
+  return typeof val === "number" ? sv : val;
 }
 
 /**
@@ -6495,7 +7664,7 @@ function _pep_detectPhoneColumns_(headers) {
  * @param {Spreadsheet} srcSS - 이미 열린 세트분리 시트 (openById 재사용)
  * @return {Object} { saved, skipped, error }
  */
-function _pep_saveSnapshotToHub_(srcSS) {
+function _pep_saveSnapshotToHub_(srcSS, fallbackDateStr) {
   var result = { saved: 0, skipped: 0, error: "" };
   try {
     var salesTab = srcSS.getSheetByName("판매현황");
@@ -6533,6 +7702,10 @@ function _pep_saveSnapshotToHub_(srcSS) {
     for (var hi = 2; hi < 17; hi++) {
       salesHeaders.push(String(fullHeader[hi] || "").trim() || ("열" + String.fromCharCode(67 + hi - 2)));
     }
+    // ★ 2026-08-30: 일자는 B열 `일자-No.` 에 있다. C~Q만 보면 실행일로 떨어진다.
+    var dateCol = _pep_findSalesDateCol_(fullHeader);
+    Logger.log("[SNAPSHOT] 일자열=" + (dateCol >= 0 ? String.fromCharCode(65 + dateCol) : "없음") +
+      " 헤더B=" + String(fullHeader[1] || ""));
 
     // ★ 2026-06-25: 전화번호/휴대폰 열 인덱스 감지 (C~Q 범위 내)
     var phoneColIdxs = _pep_detectPhoneColumns_(salesHeaders);
@@ -6542,6 +7715,9 @@ function _pep_saveSnapshotToHub_(srcSS) {
     }
 
     // ★ 2026-06-25: 전화번호 앞 0 보정 (getValues()가 숫자로 변환한 값 복구)
+    var O_IDX_IN_CQ = 12; // O열 = C~Q 범위 내 index 12
+    var P_IDX_IN_CQ = 13;  // P열 = 전화번호 (C~Q 범위 내 index 13)
+    if (phoneColIdxs.indexOf(P_IDX_IN_CQ) === -1) phoneColIdxs.push(P_IDX_IN_CQ);
     for (var ri = 0; ri < salesData.length; ri++) {
       for (var pi = 0; pi < phoneColIdxs.length; pi++) {
         var pIdx = phoneColIdxs[pi];
@@ -6549,8 +7725,10 @@ function _pep_saveSnapshotToHub_(srcSS) {
       }
     }
 
-    var todayStr = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
-    var O_IDX_IN_CQ = 12; // O열 = C~Q 범위 내 index 12
+    var todayStr = fallbackDateStr || Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(todayStr))) {
+      todayStr = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+    }
 
     // 허브 시트에서 스냅샷 탭 가져오기/생성
     var hubSS = SpreadsheetApp.getActiveSpreadsheet();
@@ -6583,18 +7761,16 @@ function _pep_saveSnapshotToHub_(srcSS) {
           eDate = Utilities.formatDate(eDate, "Asia/Seoul", "yyyy-MM-dd");
         } else {
           eDate = String(eDate || "").trim();
+          if (eDate.length > 10) eDate = eDate.substring(0, 10);
         }
         var eKey = String(existData[ei][1] || "").trim();
-        if (eDate === todayStr && eKey) {
-          existKeySet[eKey] = true;
-        }
+        if (eKey) existKeySet[eKey] = { row: ei + 2, date: eDate };
       }
     }
 
     // 스냅샷 행 구성
     var newRows = [];
     var J_IDX_IN_CQ = 7;   // J열 = 판매처/가게명 (C~Q 범위 내 index 7)
-    var P_IDX_IN_CQ = 13;  // P열 = 전화번호 (C~Q 범위 내 index 13)
     // ★ 2026-06-30: 동일 전화번호 복수 주문 지원용 카운터
     var telKeyCounter = {};
 
@@ -6605,29 +7781,13 @@ function _pep_saveSnapshotToHub_(srcSS) {
       if (/계$/.test(_colA_) || _colA_ === "합계" || /계$/.test(_colB_) || _colB_ === "합계") continue;
 
       var oVal = String(salesData[si][O_IDX_IN_CQ] || "").trim();
-
-      var matchKey = "";
-
-      if (oVal) {
-        // 기존: O열 "이름/사방넷번호" → 사방넷번호 추출
-        if (oVal.indexOf("/") !== -1) {
-          matchKey = oVal.split("/").pop().trim();
-        } else {
-          matchKey = oVal;
-        }
-      } else {
-        // ★ 2026-06-29: 전화주문 — O열(수하인) 비어있음
-        //   → J열(가게명)을 O열 위치에 복사 (단골 분석용 고객명 보존)
-        //   → P열(전화번호)로 대체 매칭키 생성
-        var telName = String(salesData[si][J_IDX_IN_CQ] || "").trim();
-        var telPhone = String(salesData[si][P_IDX_IN_CQ] || "").trim();
-        telPhone = String(_pep_fixPhoneLeadingZero_(telPhone));
-        if (telName) {
-          salesData[si][O_IDX_IN_CQ] = telName; // J열 → O열 복사
-        }
-        if (telPhone) {
-          matchKey = "TEL:" + telPhone;
-        }
+      var telName = String(salesData[si][J_IDX_IN_CQ] || "").trim();
+      var telPhone = String(salesData[si][P_IDX_IN_CQ] || "").trim();
+      telPhone = String(_pep_fixPhoneLeadingZero_(telPhone));
+      // O열(일일마감 M열 주문자명(사방넷)) = 주문자명/고유아이디. 슬래시 뒤만 키.
+      var matchKey = _pep_deriveMatchKeyFromSalesCols_(oVal, telName, telPhone);
+      if (!oVal && telName) {
+        salesData[si][O_IDX_IN_CQ] = telName;
       }
 
       // ★ 2026-06-30: 매칭키 없어도 절대 스킵하지 않음 — 판매현황 모든 내용 저장
@@ -6645,22 +7805,44 @@ function _pep_saveSnapshotToHub_(srcSS) {
         }
       }
 
+      var orderDateStr = todayStr;
+      if (dateCol >= 0 && dateCol <= 1) {
+        orderDateStr = _pep_parseSalesDateCell_(abData[si][dateCol], todayStr);
+      } else if (dateCol >= 2) {
+        orderDateStr = _pep_parseSalesDateCell_(salesData[si][dateCol - 2], todayStr);
+      } else {
+        var fromCQ = _pep_deriveSnapOrderDate_(salesData[si], salesHeaders, "");
+        var fromB = _pep_parseSalesDateCell_(abData[si][1], "");
+        orderDateStr = fromCQ || fromB || todayStr;
+      }
+
+      function _pep_bumpSnapDate_(hit, newDate) {
+        if (!hit || !hit.row || !newDate) return;
+        if (String(hit.date || "") === newDate) return;
+        try {
+          snapTab.getRange(hit.row, 1).setValue(newDate);
+          hit.date = newDate;
+          result.dateFixed = (result.dateFixed || 0) + 1;
+        } catch (eFix) {}
+      }
+
       // ★ 2026-06-30: 동일 매칭키 중복 시 순번 추가 (같은 전화번호로 여러 건 주문)
       if (existKeySet[matchKey]) {
+        _pep_bumpSnapDate_(existKeySet[matchKey], orderDateStr);
         if (!telKeyCounter[matchKey]) telKeyCounter[matchKey] = 1;
         telKeyCounter[matchKey]++;
         var seqKey = matchKey + "#" + telKeyCounter[matchKey];
-        // 순번 키도 이미 있으면 → 진짜 중복이므로 스킵
         if (existKeySet[seqKey]) {
+          _pep_bumpSnapDate_(existKeySet[seqKey], orderDateStr);
           result.skipped++;
           continue;
         }
         matchKey = seqKey;
       }
-      existKeySet[matchKey] = true;
+      existKeySet[matchKey] = { row: 0, date: orderDateStr };
 
-      // 행: [날짜, 매칭키, C~Q(15열), 상태]
-      var snapRow = [todayStr, matchKey].concat(salesData[si]).concat([_SNAPSHOT_STATUS_UNMATCHED_]);
+      // 행: [주문일, 매칭키, C~Q(15열), 상태]
+      var snapRow = [orderDateStr, matchKey].concat(salesData[si]).concat([_SNAPSHOT_STATUS_UNMATCHED_]);
       newRows.push(snapRow);
       result.saved++;
     }
@@ -6670,17 +7852,18 @@ function _pep_saveSnapshotToHub_(srcSS) {
     if (newRows.length > 0) {
       var writeRow = snapTab.getLastRow() + 1;
       if (writeRow < 2) writeRow = 2;
-      snapTab.getRange(writeRow, 1, newRows.length, newRows[0].length).setValues(newRows);
-      // ★ 2026-06-25: 스냅샷 기존 탭에도 전화번호 열 텍스트 서식 적용
       for (var pfi2 = 0; pfi2 < phoneColIdxs.length; pfi2++) {
         var snapPhoneCol2 = phoneColIdxs[pfi2] + 3; // +2(날짜,매칭키) +1(1-based)
         snapTab.getRange(writeRow, snapPhoneCol2, newRows.length, 1).setNumberFormat("@");
       }
+      snapTab.getRange(writeRow, 1, newRows.length, newRows[0].length).setValues(newRows);
       SpreadsheetApp.flush();
     }
 
     Logger.log("[SNAPSHOT] 판매현황 스냅샷 저장: 신규=" + result.saved +
-      " 중복스킵=" + result.skipped + " (날짜=" + todayStr + ")");
+      " 중복스킵=" + result.skipped +
+      (result.dateFixed ? " 일자보정=" + result.dateFixed : "") +
+      " (폴백날짜=" + todayStr + ")");
 
   } catch (e) {
     result.error = e.message;
@@ -6755,6 +7938,13 @@ function _pep_cleanupSnapshot_() {
 var _UNIFIED_ARCHIVE_PREFIX_ = "일일마감_";
 var _UNIFIED_HEADER_BG_ = "#1a237e";
 
+/**
+ * 이전 일일마감 파일을 찾을 때 거슬러 보는 최대 일수.
+ * 본체 2단계는 「바로 이전 파일 1개」만 채운다. 주말·휴일로 파일이 비면
+ * 그 앞의 마지막 일일마감을 찾는다.
+ */
+var _PEP_BACKFILL_DAYS_ = 14;
+
 var _UNIFIED_HEADERS_ = [
   "출처",         // A: 로젠 / 대리공급
   "기록일시",     // B
@@ -6777,99 +7967,1919 @@ var _UNIFIED_HEADERS_ = [
   "정산금액",     // S: 단가 × 수량
 ];
 
+/** 운송장번호 정규화: 하이픈/공백 제거, "- -" 같은 빈칸 표시는 없음으로 처리 */
+function _pep_normInvoiceNo_(inv) {
+  var s = String(inv == null ? "" : inv).trim();
+  if (!s) return "";
+  var digits = s.replace(/[^0-9]/g, "");
+  if (digits.length < 8) return "";
+  return digits;
+}
+
+/** 운송장 문자열을 고유 번호 배열로 분해 (줄바꿈/쉼표 구분, 하이픈 제거) */
+function _pep_splitInvNos_(inv) {
+  return String(inv || "")
+    .split(/[\r\n,;]+/)
+    .map(function (s) { return _pep_normInvoiceNo_(s); })
+    .filter(function (s) { return !!s; });
+}
+
 /**
- * 통합 일일 마감: 3개 소스(로젠+대리공급+대리판매) → 정규화 → 일일마감_(날짜) 시트
- * ★ 사방넷_송장매칭은 대리공급_임시기록의 부분집합이므로 제외 (중복 방지)
- * @return {Object} { archived, tabName, detail: {lozen, temp, hub}, error }
+ * invoiceMap에 송장을 누적 (같은 주문번호에 송장이 여러 개면 줄바꿈으로 합침)
+ *
+ * @param {string=} carrier 택배사명. 출처만으로는 택배사를 알 수 없는 원천
+ *   (허브·임시기록·전용마감 = 업체가 자기 택배사로 보낸다) 이 넘긴다.
+ *   일일마감 택배사 열은 이 값을 그대로 쓴다. 롯데·로젠처럼 출처가 곧
+ *   택배사인 원천은 넘기지 않아도 `_pep_carrierFromSource_` 로 채워진다.
+ */
+/**
+ * 일일마감 M열 `주문자명(사방넷)` = `주문자명/고유아이디`.
+ * 마지막 `/` 뒤가 고유ID 다. 슬래시가 없으면 칸 전체가 후보.
+ * 조회·적재·재매칭이 **여기만** 쓴다. 칸 전체를 키로 넣으면 송장맵과 안 맞는다.
+ */
+function _pep_uidFromOrdererCell_(cell) {
+  var s = String(cell == null ? "" : cell).trim();
+  if (!s) return "";
+  if (s.indexOf("/") !== -1) s = s.split("/").pop().trim();
+  return _pep_normalizeMatchUid_(s);
+}
+
+/** trim, `#n` 접미사, `|코드` 접미사, `_S숫자` 세트접미 */
+function _pep_normalizeMatchUid_(uid) {
+  var u = String(uid == null ? "" : uid).trim();
+  if (!u) return "";
+  u = u.replace(/#\d+$/, "");
+  var pipe = u.indexOf("|");
+  if (pipe > 0) u = u.substring(0, pipe);
+  u = u.replace(/_S\d+$/, "");
+  return u;
+}
+
+/**
+ * 진짜 고유ID 인가.
+ * 사방넷 주문번호·우리가 발급한 `MMdd-ds-` / `MMdd-ph-` 는 예.
+ * 한글 이름만, `TEL:`, `FB:` 는 아니오 — 그 행은 조합키로 간다.
+ */
+function _pep_isRealUid_(key) {
+  var k = _pep_uidFromOrdererCell_(key);
+  if (!k || k.length <= 2) return false;
+  if (k.indexOf("TEL:") === 0 || k.indexOf("FB:") === 0) return false;
+  if (/[\uAC00-\uD7AF]/.test(k)) return false;
+  var d = k.replace(/[^0-9]/g, "");
+  if (/^01[016789]\d{7,8}$/.test(d) && !/-ph-|-ds-/i.test(k)) return false;
+  return true;
+}
+
+/**
+ * 행 하나 송장 조회 — 일일마감·백필·통합조회·재매칭이 같은 함수를 쓴다.
+ * 고유ID 가 있으면 그 키만. 없으면 이름+전화+품목+주소 조합만.
+ */
+function _pep_resolveRowInvoice_(map, row, outVia) {
+  row = row || {};
+  if (outVia) { outVia.via = ""; outVia.uid = ""; }
+  var uid = _pep_uidFromOrdererCell_(row.uid);
+  if (_pep_isRealUid_(uid)) {
+    if (outVia) outVia.uid = uid;
+    var hit = _pep_lookupInvoiceMap_(map, uid);
+    if (hit && hit.inv) {
+      hit = _pep_applyOrderDateFilter_(hit, row.orderDate);
+      if (hit && hit.inv) {
+        if (outVia) outVia.via = "UID";
+        return hit;
+      }
+    }
+    if (outVia) outVia.via = "UID미매칭";
+    return null;
+  }
+  var np = _pep_lookupNamePhoneInvoice_(map, row.name, row.phone, row.addr, row.item, outVia);
+  return _pep_applyOrderDateFilter_(np, row.orderDate);
+}
+
+/** 화면값·Date → yyyymmdd 숫자. 못 읽거나 연도가 이상하면 0 */
+function _pep_ymdNum_(raw) {
+  if (raw && typeof raw.getFullYear === "function" && !isNaN(raw.getTime())) {
+    return _pep_ymdPack_(raw.getFullYear(), raw.getMonth() + 1, raw.getDate());
+  }
+  var s = String(raw == null ? "" : raw).trim();
+  if (!s) return 0;
+  // 2026-08-28 / 2026. 8. 28 / 2026년 8월 28일 (점 뒤 공백 허용)
+  var m = s.match(/(\d{4})[-/.년]\s*(\d{1,2})[-/.월]\s*(\d{1,2})/);
+  if (m) {
+    var n = _pep_ymdPack_(m[1], m[2], m[3]);
+    if (n) return n;
+  }
+  // 08/28/2026 (MDY) 또는 28/08/2026 (DMY)
+  var mdy = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if (mdy) {
+    var a = parseInt(mdy[1], 10), b = parseInt(mdy[2], 10), y = parseInt(mdy[3], 10);
+    var n2 = (a > 12 && b <= 12)
+      ? _pep_ymdPack_(y, b, a)
+      : _pep_ymdPack_(y, a, b);
+    if (n2) return n2;
+  }
+  var d = s.replace(/[^0-9]/g, "");
+  if (d.length >= 8) return _pep_ymdPack_(d.substring(0, 4), d.substring(4, 6), d.substring(6, 8));
+  return 0;
+}
+
+function _pep_ymdPack_(y, m, d) {
+  y = parseInt(y, 10);
+  m = parseInt(m, 10);
+  d = parseInt(d, 10);
+  if (!(y >= 2020 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return 0;
+  return y * 10000 + m * 100 + d;
+}
+
+function _pep_ymdLagDays_(orderYmd, pickYmd) {
+  var a = parseInt(orderYmd, 10) || 0;
+  var b = parseInt(pickYmd, 10) || 0;
+  if (!a || !b || b < a) return 0;
+  var ay = Math.floor(a / 10000), am = Math.floor((a % 10000) / 100), ad = a % 100;
+  var by = Math.floor(b / 10000), bm = Math.floor((b % 10000) / 100), bd = b % 100;
+  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
+}
+
+/** 택배사명에 주문~집하 경과일. 당일이면 숫자를 붙이지 않는다. */
+function _pep_carrierWithLag_(carrier, lagDays) {
+  var c = String(carrier || "").replace(/\(\d{1,2}\)\s*$/, "").trim();
+  if (!c) return "";
+  var n = parseInt(lagDays, 10);
+  if (!(n >= 1)) return c;
+  if (n > 99) n = 99;
+  return c + "(" + (n < 10 ? "0" + n : String(n)) + ")";
+}
+
+/**
+ * 집하일이 주문일보다 이른 송장은 뺀다 (재구매 고객의 과거 출고분).
+ * 집하일이 없는 송장은 그대로 둔다 — 날짜 모른다고 미매칭으로 만들면 안 된다.
+ */
+function _pep_applyOrderDateFilter_(hit, orderDate) {
+  if (!hit || !hit.inv) return hit;
+  var orderYmd = _pep_ymdNum_(orderDate);
+  var parts = _pep_splitInvNos_(hit.inv);
+  if (!parts.length) return hit;
+  var dates = hit._dates || {};
+  var kept = [];
+  var pickMin = 0;
+  var dated = 0;
+  for (var i = 0; i < parts.length; i++) {
+    var d = parseInt(dates[parts[i]], 10) || 0;
+    if (d) dated++;
+    // 집하가 주문보다 3일 이상 이르면 과거 출고분으로 본다.
+    // 1~2일 차이는 접수/매출일 어긋남·스냅샷이 실행일로 남은 경우라 버리지 않는다.
+    if (orderYmd && d && d < orderYmd && _pep_ymdLagDays_(d, orderYmd) >= 3) continue;
+    kept.push(parts[i]);
+    if (d && (!pickMin || d < pickMin)) pickMin = d;
+  }
+  if (orderYmd && dated === parts.length && !kept.length) return null;
+  if (!kept.length) return hit;
+  return {
+    inv: kept.join("\n"),
+    source: hit.source || "",
+    carrier: hit.carrier || "",
+    _dates: dates,
+    picked: pickMin,
+    lag: (orderYmd && pickMin) ? _pep_ymdLagDays_(orderYmd, pickMin) : 0
+  };
+}
+
+/** 수량 칸에 숫자가 있고 송장 장수가 slot.max(2N) 를 넘으면 true */
+function _pep_qtyOverMax_(qty, itemName, invCell) {
+  if (typeof _par_slotSpec_ !== "function") return false;
+  var qtyRaw = String(qty == null ? "" : qty).replace(/[^0-9]/g, "");
+  if (!qtyRaw) return false;
+  var slot = _par_slotSpec_(qty, itemName);
+  return _pep_splitInvNos_(invCell).length > slot.max;
+}
+
+/** picked = 집하일(yyyymmdd 숫자 또는 화면값). 같은 송장에 이미 날짜가 있으면 유지 */
+function _pep_addInvoiceMap_(map, key, inv, source, carrier, picked) {
+  if (!map || !key) return;
+  key = String(key).trim();
+  if (!key) return;
+  // NAME: / NP7: 같은 조합키는 그대로. 원천 주문번호만 #n · |코드 · _S 를 벗긴다.
+  if (key.indexOf(":") === -1 && typeof _pep_normalizeMatchUid_ === "function") {
+    var nk = _pep_normalizeMatchUid_(key);
+    if (nk) key = nk;
+  }
+  // 주문자명/고유ID 만 슬래시 뒤로도 적재. NPI:이름|전화|품목 의 | 는 건드리면 안 된다.
+  if (key.indexOf("/") !== -1) {
+    var extracted = _pep_uidFromOrdererCell_(key);
+    if (extracted && extracted !== key) {
+      _pep_addInvoiceMap_(map, extracted, inv, source, carrier, picked);
+    }
+  }
+  var parts = _pep_splitInvNos_(inv);
+  if (!parts.length) return;
+  if (!map[key]) {
+    map[key] = { inv: "", source: source || "", carrier: carrier || "", _set: {}, _dates: {} };
+  }
+  if (!map[key]._dates) map[key]._dates = {};
+  var ymd = typeof picked === "number" ? picked : _pep_ymdNum_(picked);
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i];
+    if (ymd && !map[key]._dates[p]) map[key]._dates[p] = ymd;
+    if (map[key]._set[p]) continue;
+    map[key]._set[p] = true;
+    map[key].inv = map[key].inv ? map[key].inv + "\n" + p : p;
+  }
+  if (source && !map[key].source) map[key].source = source;
+  if (carrier && !map[key].carrier) map[key].carrier = carrier;
+}
+
+function _pep_lookupInvoiceMap_(map, matchKey) {
+  if (!map || !matchKey) return null;
+  if (map[matchKey] && map[matchKey].inv) return map[matchKey];
+  var extracted = _pep_uidFromOrdererCell_(matchKey);
+  if (extracted && extracted !== matchKey && map[extracted] && map[extracted].inv) {
+    return map[extracted];
+  }
+  var base = String(matchKey).replace(/#\d+$/, "");
+  if (base && base !== matchKey && map[base] && map[base].inv) return map[base];
+  return null;
+}
+
+function _pep_normRecipName_(name) {
+  var s = String(name || "").trim();
+  if (s.indexOf("/") !== -1) s = s.split("/")[0].trim();
+  s = s.replace(/\s+/g, "").replace(/님$/, "");
+  return s;
+}
+
+function _pep_phoneTail_(phone) {
+  var p = _pep_phoneDigits_(phone);
+  return p.length >= 4 ? p.substring(p.length - 4) : p;
+}
+
+// ─────────────────────────────────────────────────────
+//  ★ 2026-08-25: 고유ID 없는 건의 매칭 보강
+//    롯데 송장은 전화 뒷 4자리가 *로 마스킹돼 온다("010-1234-****").
+//    → 뒷 4자리는 쓸 수 없으므로 앞 7자리 + 주소 앞부분을 보조키로 쓴다.
+// ─────────────────────────────────────────────────────
+
+/** 주소키 길이 — 시도+시군구+도로명 수준이면 동명이인 구분에 충분 */
+var _PEP_ADDR_KEY_LEN_ = 12;
+
+/** 선행 시/도 표준 축약 (긴 표기 우선 매칭) */
+var _PEP_SIDO_ALIAS_ = [
+  ["서울특별시", "서울"], ["부산광역시", "부산"], ["대구광역시", "대구"],
+  ["인천광역시", "인천"], ["광주광역시", "광주"], ["대전광역시", "대전"],
+  ["울산광역시", "울산"], ["세종특별자치시", "세종"],
+  ["강원특별자치도", "강원"], ["전북특별자치도", "전북"],
+  ["제주특별자치도", "제주"], ["충청북도", "충북"], ["충청남도", "충남"],
+  ["전라북도", "전북"], ["전라남도", "전남"],
+  ["경상북도", "경북"], ["경상남도", "경남"],
+  ["경기도", "경기"], ["강원도", "강원"], ["제주도", "제주"],
+  ["서울시", "서울"], ["부산시", "부산"], ["대구시", "대구"],
+  ["인천시", "인천"], ["대전시", "대전"], ["울산시", "울산"], ["세종시", "세종"]
+];
+
+/**
+ * 주소 → 비교용 정규화 키 (앞부분만)
+ * 표기 차이("서울특별시 강남구 테헤란로 123, 4층" vs "서울 강남구 테헤란로 123 4층")를
+ * 같은 키로 모으기 위해 시도 축약·괄호·공백·구분자를 제거한다.
+ */
+function _pep_addrKey_(addr, len) {
+  var s = String(addr == null ? "" : addr).trim();
+  if (!s) return "";
+  s = s.replace(/\([^)]*\)/g, " ");   // (참고항목) 제거
+  s = s.replace(/[,\.·]/g, " ");
+  s = s.replace(/\s+/g, " ").trim();
+  for (var i = 0; i < _PEP_SIDO_ALIAS_.length; i++) {
+    if (s.indexOf(_PEP_SIDO_ALIAS_[i][0]) === 0) {
+      s = _PEP_SIDO_ALIAS_[i][1] + s.substring(_PEP_SIDO_ALIAS_[i][0].length);
+      break;
+    }
+  }
+  s = s.replace(/\s+/g, "").replace(/[^0-9A-Za-z\u3131-\u318E\uAC00-\uD7A3\-]/g, "");
+  if (!s) return "";
+  return s.substring(0, len || _PEP_ADDR_KEY_LEN_);
+}
+
+/** 마스킹 전화 여부 (010-1234-**** / 자릿수 부족) */
+function _pep_isMaskedPhone_(phone) {
+  var s = String(phone == null ? "" : phone);
+  if (!s.trim()) return false;
+  if (/[*xX\uFF0A\u2731#]/.test(s)) return true;
+  return _pep_phoneDigits_(phone).length < 10;
+}
+
+/** 전화 앞 7자리 — 마스킹돼도 남는 부분 */
+function _pep_phone7_(phone) {
+  var p = _pep_phoneDigits_(phone);
+  return p.length >= 7 ? p.substring(0, 7) : "";
+}
+
+/** 품목키 길이 — 원천마다 뒤에 붙는 표기가 달라 앞부분만 쓴다 */
+var _PEP_ITEM_KEY_LEN_ = 16;
+
+/**
+ * 품목명 정규화 키.
+ * 한 사람이 여러 건을 주문하면 이름·전화·주소가 모두 같아 행을 구분할 수 없다.
+ * 품목명을 키에 넣어 주문 행마다 자기 송장만 집어오게 한다.
+ *
+ * 걷어내는 것은 표기 차이뿐이다 — [무료배송] 같은 판촉 꼬리표, 공백, 구분기호.
+ * ★ 숫자·규격은 남긴다. "종이컵50개"와 "종이컵100개"는 다른 품목이므로,
+ *   수량 표기를 지우면 한 사람의 서로 다른 주문이 다시 한 키로 뭉친다.
+ *   원천마다 품목명이 달라 키가 안 맞으면 종전 키로 폴백하니 손실이 없다.
+ */
+function _pep_itemKey_(item) {
+  var s = String(item == null ? "" : item).trim();
+  if (!s) return "";
+  s = s.replace(/\[[^\]]*\]/g, " ");   // [무료배송] 같은 판촉 표시
+  s = s.replace(/[^0-9A-Za-z\u3131-\u318E\uAC00-\uD7A3]/g, "");
+  if (!s) return "";
+  return s.substring(0, _PEP_ITEM_KEY_LEN_);
+}
+
+/** info.inv 에 실린 송장 개수 (누적되면 2개 이상이 된다) */
+function _pep_invCount_(info) {
+  if (!info || !info.inv) return 0;
+  return _pep_splitInvNos_(info.inv).length;
+}
+
+/**
+ * 소스별 보조키 등록 통계 — 「보조키 매칭 진단」에서 읽는다.
+ * 어느 소스가 전화·주소를 실제로 제공하는지 눈으로 확인하는 용도.
+ */
+var _PEP_KEYSTAT_ = null;
+
+function _pep_keyStatReset_() { _PEP_KEYSTAT_ = {}; }
+
+function _pep_keyStat_(source) {
+  if (!_PEP_KEYSTAT_) _PEP_KEYSTAT_ = {};
+  var k = String(source || "기타");
+  if (!_PEP_KEYSTAT_[k]) {
+    _PEP_KEYSTAT_[k] = {
+      rows: 0, name: 0, np7: 0, na: 0, npa: 0, masked: 0,
+      item: 0, npi: 0, nai: 0, ni: 0,
+    };
+  }
+  return _PEP_KEYSTAT_[k];
+}
+
+/** 전화번호 숫자만 (선행 0 복원) — 일일마감 이름+전화 매칭용 */
+function _pep_phoneDigits_(phone) {
+  var raw = (typeof _pep_fixPhoneLeadingZero_ === "function")
+    ? _pep_fixPhoneLeadingZero_(phone)
+    : phone;
+  var p = String(raw == null ? "" : raw).replace(/[^0-9]/g, "");
+  if (p.length >= 10 && p.charAt(0) !== "0") p = "0" + p;
+  return p;
+}
+
+/**
+ * 일일마감 전용: 수취인+전화 보조키를 invoiceMap에 누적
+ * (송장수집 partnerFetchInvoices 는 이 키를 쓰지 않음)
+ */
+function _pep_addNamePhoneInvoiceKeys_(map, name, phone, inv, source, opt) {
+  if (!map || !inv) return;
+  var n = _pep_normRecipName_(name);
+  var p = _pep_phoneDigits_(phone);
+  var masked = _pep_isMaskedPhone_(phone);
+  var p7 = _pep_phone7_(phone);
+  var ak = _pep_addrKey_(opt && opt.addr);
+  var st = opt && opt.stat ? opt.stat : null;
+  // 택배사는 출처만으로 알 수 없는 원천(업체 출고)이 넘긴다. 일일마감 택배사 열이 쓴다.
+  var cr = (opt && opt.carrier) || "";
+  var pk = opt && opt.picked;
+
+  if (n && !(opt && opt.skipName)) {
+    _pep_addInvoiceMap_(map, "NAME:" + n, inv, source, cr, pk);
+    if (st) st.name = (st.name || 0) + 1;
+  }
+
+  // ★ 마스킹 전화는 "앞자리만 남은 값"이므로 전체번호·뒷4자리 키를 만들면 안 된다.
+  //   (예: "010-1234-****" → 숫자 "0101234", 뒷4자리 "1234"는 실제 뒷자리가 아님)
+  if (p && !masked) {
+    _pep_addInvoiceMap_(map, "TEL:" + p, inv, source, cr, pk);
+    if (p.length >= 8) _pep_addInvoiceMap_(map, "PH:" + p, inv, source, cr, pk);
+    if (n && p.length >= 4) {
+      _pep_addInvoiceMap_(map, "NP:" + n + "|" + p.substring(p.length - 4), inv, source, cr, pk);
+    }
+  }
+  if (n && p7) {
+    _pep_addInvoiceMap_(map, "NP7:" + n + "|P" + p7, inv, source, cr, pk);
+    if (st) st.np7 = (st.np7 || 0) + 1;
+  }
+  if (n && ak) {
+    _pep_addInvoiceMap_(map, "NA:" + n + "|" + ak, inv, source, cr, pk);
+    if (st) st.na = (st.na || 0) + 1;
+    if (p7) {
+      _pep_addInvoiceMap_(map, "NPA:" + n + "|P" + p7 + "|" + ak, inv, source, cr, pk);
+      if (st) st.npa = (st.npa || 0) + 1;
+    }
+  }
+
+  // ★ 2026-08-26: 품목키.
+  //   위 키들은 사람만 가리키므로, 한 사람이 여러 건을 주문하면 한 키에 송장이
+  //   여러 개 쌓이고 그 사람의 모든 행이 같은 목록을 받아간다. 품목명을 끼워
+  //   주문 행마다 자기 송장을 집어오게 한다.
+  var ik = _pep_itemKey_(opt && opt.item);
+  if (n && ik) {
+    if (p7) {
+      _pep_addInvoiceMap_(map, "NPI:" + n + "|P" + p7 + "|" + ik, inv, source, cr, pk);
+      if (st) st.npi = (st.npi || 0) + 1;
+    }
+    if (ak) {
+      _pep_addInvoiceMap_(map, "NAI:" + n + "|" + ak + "|" + ik, inv, source, cr, pk);
+      if (st) st.nai = (st.nai || 0) + 1;
+    }
+    // 롯데탭처럼 전화·주소가 없는 원천은 이 키만 만들 수 있다
+    _pep_addInvoiceMap_(map, "NI:" + n + "|" + ik, inv, source, cr, pk);
+    if (st) { st.ni = (st.ni || 0) + 1; st.item = (st.item || 0) + 1; }
+  }
+
+  if (st) {
+    st.rows = (st.rows || 0) + 1;
+    if (masked) st.masked = (st.masked || 0) + 1;
+  }
+}
+
+/**
+ * 고유ID가 없거나 UID 매칭 실패 시 보조 조회.
+ * 정확한 키부터 순서대로 시도한다:
+ *   이름+전화7+품목 → 이름+주소+품목 → 이름+전화7+주소 → 이름+전화7 → 이름+주소
+ *   → 이름+품목 → 롯데 수취인명 → 이름+전화뒷4 → 전화 → 수취인명
+ * ★ 롯데탭은 전화·주소가 없어 이름·품목 키만 만든다. 더 많은 필드가 맞는 키가
+ *   신뢰도 높으므로 롯데 NAME 폴백보다 앞에 둔다(동명이인 오매칭 방지).
+ * ★ 2026-08-26: 한 사람이 여러 건을 주문하면 사람만 가리키는 키에 송장이 여러 개
+ *   쌓여 모든 행이 같은 목록을 받아갔다. 송장이 하나로 확정되는 키를 우선한다.
+ * @param {Object} map  invoiceMap
+ * @param {string} name 수취인명
+ * @param {*} phone     전화 (마스킹 허용)
+ * @param {string=} addr 주소 (없으면 생략)
+ * @param {string=} item 품목명 (없으면 생략)
+ * @param {Object=} outVia 진단용 — 맞은 키 종류를 outVia.via,
+ *                  송장이 하나로 확정되지 않았으면 outVia.multi 에 담아준다
+ */
+/**
+ * 사람만 가리키는 조회 키.
+ *
+ * 품목이 안 들어가 있어서 한 사람의 **서로 다른 주문**이 같은 키에 쌓인다.
+ * 송장맵에는 날짜가 없어 과거 출고분까지 함께 쌓인다. 그래서 이 키들이
+ * 송장을 여러 개 들고 있으면 「분할 출고」가 아니라 「충돌」로 본다.
+ *
+ * 품목까지 맞는 NPI·NAI·NI 는 여기 넣지 않는다 — 같은 사람이 같은 품목을
+ * 두 박스로 나눠 받는 경우가 실제로 있고, 그때는 둘 다 그 주문의 송장이다.
+ */
+var _PEP_PERSON_ONLY_VIA_ = {
+  NP7: 1, NA: 1, NPA: 1, NP: 1,
+  NAME: 1, "NAME(롯데)": 1, TEL: 1, PH: 1
+};
+
+function _pep_lookupNamePhoneInvoice_(map, name, phone, addr, item, outVia) {
+  if (!map) return null;
+  var n = _pep_normRecipName_(name);
+  var p = _pep_phoneDigits_(phone);
+  var masked = _pep_isMaskedPhone_(phone);
+  var p7 = _pep_phone7_(phone);
+  var ak = _pep_addrKey_(addr);
+  var ik = _pep_itemKey_(item);
+
+  // 구체적인 키부터. 품목키는 한 사람의 여러 주문을 행 단위로 갈라주므로 앞에 둔다.
+  var tries = [];
+  if (n && ik && p7) tries.push(["NPI", "NPI:" + n + "|P" + p7 + "|" + ik]);
+  if (n && ik && ak) tries.push(["NAI", "NAI:" + n + "|" + ak + "|" + ik]);
+  if (n && ak && p7) tries.push(["NPA", "NPA:" + n + "|P" + p7 + "|" + ak]);
+  if (n && p7) tries.push(["NP7", "NP7:" + n + "|P" + p7]);
+  if (n && ak) tries.push(["NA", "NA:" + n + "|" + ak]);
+  // 롯데탭은 전화·주소가 없어 이름·품목 키만 만든다. 이름 단독보다 품목까지 맞는 쪽이 낫다.
+  if (n && ik) tries.push(["NI", "NI:" + n + "|" + ik]);
+  if (n && !masked && p.length >= 4) {
+    tries.push(["NP", "NP:" + n + "|" + p.substring(p.length - 4)]);
+  }
+
+  // ★ 2026-08-27: 단일 필드 키(이름 단독 NAME, 전화 단독 TEL·PH)를 사다리에서 뺐다.
+  //   위 키들은 모두 두 개 이상의 필드가 맞아야 성립하지만, 아래 셋은 하나만 맞으면
+  //   걸린다. 송장맵에는 날짜가 없으므로 재구매 고객은 과거 출고분과 새 주문이
+  //   같은 이름·전화 키를 공유한다. 그래서 이 셋이 과거 송장을 주워오는 통로였다.
+  //   매칭률이 크게 떨어져 되돌려야 하면 _pt_allowSingleFieldMatch_() 를 켠다.
+  if (typeof _pt_allowSingleFieldMatch_ === "function" && _pt_allowSingleFieldMatch_()) {
+    if (n) tries.push(["NAME(롯데)", "NAME:" + n, "롯데"]);
+    if (!masked && p.length >= 8) {
+      tries.push(["TEL", "TEL:" + p]);
+      tries.push(["TEL", "PH:" + p]);
+    }
+    if (n) tries.push(["NAME", "NAME:" + n]);
+  }
+
+  // 송장이 하나로 확정되는 키를 우선한다.
+  // 확정되지 않으면 품목까지 맞는 키에 한해 여러 개를 그대로 돌려준다 (분할 출고).
+  var first = null, firstVia = "";
+  for (var t = 0; t < tries.length; t++) {
+    var via = tries[t][0];
+    var info = map[tries[t][1]];
+    if (!info || !info.inv) continue;
+    if (tries[t][2] && info.source !== tries[t][2]) continue;
+    if (_pep_invCount_(info) === 1) {
+      if (outVia) outVia.via = via;
+      return info;
+    }
+    // ★ 2026-08-28: 사람만 가리키는 키가 송장을 여러 개 들고 있으면
+    //   그것은 분할 출고가 아니라 **서로 다른 주문이 한 키에 쌓인 것**이다.
+    //   대리발송처럼 수취인·전화·주소가 업체 자기 것이면 한 키에 수십 건이 모인다.
+    //   그대로 쓰면 수량 1개 행이 송장 수십 개를 받는다. 후보에서 뺀다.
+    if (_PEP_PERSON_ONLY_VIA_[via]) {
+      if (outVia) outVia.ambiguous = (outVia.ambiguous || 0) + 1;
+      continue;
+    }
+    if (!first) { first = info; firstVia = via; }
+  }
+  if (first) {
+    if (outVia) { outVia.via = firstVia; outVia.multi = true; }
+    return first;
+  }
+  if (outVia) outVia.via = "";
+  return null;
+}
+
+/** 판매현황 전체 헤더에서 일자 열 (0-based). B열 `일자-No.` 가 정본이다. */
+function _pep_findSalesDateCol_(fullHdr) {
+  if (!fullHdr) return -1;
+  for (var i = 0; i < fullHdr.length; i++) {
+    var h = String(fullHdr[i] || "").replace(/\s/g, "");
+    if (!h) continue;
+    if (/일자-No|일자No|^일자$|주문일|매출일|판매일/.test(h)) return i;
+  }
+  return -1;
+}
+
+/**
+ * 판매현황 일자 셀 → yyyy-MM-dd
+ * `일자-No.` 예: 20260828-1, 0828-15, 2026-08-28, Date
+ */
+function _pep_parseSalesDateCell_(raw, fallbackStr) {
+  if (raw instanceof Date && !isNaN(raw.getTime())) {
+    return Utilities.formatDate(raw, "Asia/Seoul", "yyyy-MM-dd");
+  }
+  var s = String(raw == null ? "" : raw).trim();
+  if (!s) return fallbackStr || "";
+  var iso = _pep_normSnapDate_(s, "");
+  if (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  var digits = s.replace(/[^0-9]/g, "");
+  if (digits.length >= 8 && /^20\d{2}/.test(digits)) {
+    var y = digits.substring(0, 4);
+    var mo = digits.substring(4, 6);
+    var da = digits.substring(6, 8);
+    var mi = parseInt(mo, 10), di = parseInt(da, 10);
+    if (mi >= 1 && mi <= 12 && di >= 1 && di <= 31) return y + "-" + mo + "-" + da;
+  }
+  var m2 = s.match(/^(\d{2})(\d{2})(?:\D|$)/);
+  if (m2) {
+    var mm = parseInt(m2[1], 10), dd = parseInt(m2[2], 10);
+    if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+      var yyyy = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy");
+      return yyyy + "-" + ("0" + mm).slice(-2) + "-" + ("0" + dd).slice(-2);
+    }
+  }
+  return fallbackStr || "";
+}
+
+/** 스냅샷/아카이브 날짜 → yyyy-MM-dd */
+function _pep_normSnapDate_(val, fallback) {
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return Utilities.formatDate(val, "Asia/Seoul", "yyyy-MM-dd");
+  }
+  var s = String(val || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+  return fallback || Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+}
+
+/** 판매현황 행에서 주문일(일일마감 파일 날짜) 추출 */
+function _pep_deriveSnapOrderDate_(salesRow, salesHeaders, fallbackStr) {
+  if (!salesRow || !salesRow.length) {
+    return fallbackStr || Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+  }
+  for (var hi = 0; hi < (salesHeaders || []).length; hi++) {
+    var h = String(salesHeaders[hi] || "").replace(/\s/g, "");
+    if (!h) continue;
+    if (/일자-No|일자No|^일자$|주문일|매출일|판매일/.test(h)) {
+      var d0 = _pep_parseSalesDateCell_(salesRow[hi], "");
+      if (d0) return d0;
+    }
+  }
+  var first = _pep_parseSalesDateCell_(salesRow[0], "");
+  if (first) return first;
+  return fallbackStr || Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+}
+
+/** 합포장·소분 품목명 판별 (---/소분, 합포장 등) */
+function _pep_isCombinedPackItem_(itemName) {
+  var s = String(itemName || "");
+  return /---\/\s*소분|---\/.*소분|\/소분|합포장|===합배송|---.*합포/.test(s);
+}
+
+/** 일일마감 배치에 송장이 있는 실출고 행이 1건이라도 있는지 */
+function _pep_batchHasInvoicedRows_(rows) {
+  if (!rows || !rows.length) return false;
+  var invIdx = rows[0].length - 2;
+  var srcIdx = rows[0].length - 1;
+  for (var i = 0; i < rows.length; i++) {
+    var src = String(rows[i][srcIdx] || "").trim();
+    if (src === "미매칭" || src === "기타") continue;
+    if (_pep_normInvoiceNo_(rows[i][invIdx])) return true;
+  }
+  return false;
+}
+
+/** 일일마감 행 헤더 → 매칭용 열 인덱스 */
+function _pep_mapArchiveMatchCols_(hdr) {
+  var m = {
+    name: -1, phone: -1, jShop: -1, inv: -1, src: -1, oid: -1,
+    addr: -1, item: -1, qty: -1, carrier: -1, code: -1, orderer: -1
+  };
+  for (var i = 0; i < hdr.length; i++) {
+    var h = String(hdr[i] || "").replace(/\s/g, "");
+    if (!h) continue;
+    if (m.code < 0 && /^품목코드$|^이카운트코드$|^물품코드$|^상품코드$/.test(h)) m.code = i;
+    if (m.inv < 0 && /운송장번호|송장번호/.test(h) && !/반품/.test(h)) m.inv = i;
+    if (m.src < 0 && h === "출처") m.src = i;
+    // "택배박스" 같은 부분일치를 배제하려고 완전일치만 본다
+    if (m.carrier < 0 && /^택배사$|^배송사$|^운송사$/.test(h)) m.carrier = i;
+    // M열 주문자명(사방넷) = 주문자명/고유아이디. 합성열이지 raw oid 가 아니다.
+    // `/사방넷/` 만으로 oid 에 넣으면 칸 전체가 키가 되어 송장맵과 안 맞는다.
+    if (/주문자명\(사방넷\)|^주문자명$/.test(h)) {
+      if (m.orderer < 0) m.orderer = i;
+      if (m.name < 0) m.name = i;
+      continue;
+    }
+    if (m.name < 0 && /수하인|수취인|받는/.test(h) && !/주소|전화/.test(h)) m.name = i;
+    if (m.phone < 0 && /전화|휴대폰|핸드폰|연락처/.test(h) && !/보내/.test(h)) m.phone = i;
+    if (m.addr < 0 && /주소/.test(h) && !/배송메|우편|보내/.test(h)) m.addr = i;
+    if (m.jShop < 0 && /판매처|가게|거래처/.test(h) && !/코드/.test(h)) m.jShop = i;
+    if (m.oid < 0 && /주문번호|사방넷주문번호|^고유ID$|^고유Id$/.test(h) && !/주문자명/.test(h)) {
+      m.oid = i;
+    }
+    if (m.item < 0 && /품목명|상품명|제품명|품명/.test(h) && !/코드|수량|옵션/.test(h)) m.item = i;
+    if (m.qty < 0 && (h === "수량" || h === "주문수량")) m.qty = i;
+  }
+  if (m.inv < 0) m.inv = Math.max(hdr.length - 2, 0);
+  if (m.src < 0) m.src = Math.max(hdr.length - 1, 0);
+  return m;
+}
+
+function _pep_deriveMatchKeyFromSalesCols_(oVal, jVal, pVal) {
+  var uid = _pep_uidFromOrdererCell_(oVal);
+  if (_pep_isRealUid_(uid)) return uid;
+  var telPhone = String(_pep_fixPhoneLeadingZero_(pVal || ""));
+  if (telPhone) return "TEL:" + telPhone;
+  return uid || "";
+}
+
+function _pep_deriveMatchKeyFromArchiveRow_(row, cols) {
+  var cell = "";
+  if (cols.orderer >= 0) cell = row[cols.orderer];
+  else if (cols.oid >= 0) cell = row[cols.oid];
+  else if (cols.name >= 0) cell = row[cols.name];
+  var uid = _pep_uidFromOrdererCell_(cell);
+  if (_pep_isRealUid_(uid)) return uid;
+  var jVal = cols.jShop >= 0 ? row[cols.jShop] : "";
+  var pVal = cols.phone >= 0 ? row[cols.phone] : "";
+  return _pep_deriveMatchKeyFromSalesCols_(cell, jVal, pVal);
+}
+
+/** 해당 날짜 일일마감에 이미 기록된 (주문키|송장) 쌍 */
+function _pep_loadArchiveExistPair_(dateStr) {
+  var existPair = {};
+  var existArchFileName = _UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")";
+  try {
+    var existArchSs = _unified_findExistingArchiveSs_(existArchFileName);
+    if (!existArchSs) return existPair;
+    var existSheets = existArchSs.getSheets();
+    for (var esi = 0; esi < existSheets.length; esi++) {
+      if (existSheets[esi].getLastRow() < 2) continue;
+      var existAll = existSheets[esi].getRange(1, 1, existSheets[esi].getLastRow(), existSheets[esi].getLastColumn()).getDisplayValues();
+      var cols = _pep_mapArchiveMatchCols_(existAll[0]);
+      for (var eRow = 1; eRow < existAll.length; eRow++) {
+        if (String(existAll[eRow][0] || "").indexOf("합계") !== -1) continue;
+        var mk = _pep_deriveMatchKeyFromArchiveRow_(existAll[eRow], cols);
+        var invs = _pep_splitInvNos_(existAll[eRow][cols.inv]);
+        for (var eii = 0; eii < invs.length; eii++) {
+          if (mk) existPair[mk + "|" + invs[eii]] = true;
+        }
+      }
+    }
+  } catch (eExist) {}
+  return existPair;
+}
+
+/** beforeDateStr 바로 앞에 실제로 있는 일일마감 날짜. 없으면 "" */
+function _pep_findPreviousArchiveDate_(beforeDateStr) {
+  var base;
+  if (beforeDateStr && /^\d{4}-\d{2}-\d{2}$/.test(beforeDateStr)) {
+    base = new Date(beforeDateStr.replace(/-/g, "/") + " 12:00:00");
+  } else {
+    base = new Date();
+  }
+  var lookback = _PEP_BACKFILL_DAYS_ || 14;
+  for (var d = 1; d <= lookback; d++) {
+    var dt = new Date(base.getTime());
+    dt.setDate(dt.getDate() - d);
+    var dateStr = Utilities.formatDate(dt, "Asia/Seoul", "yyyy-MM-dd");
+    var fileName = _UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")";
+    if (_unified_findExistingArchiveSs_(fileName)) return dateStr;
+  }
+  return "";
+}
+
+/**
+ * 2단계: 바로 이전 일일마감 파일의 미매칭만 오늘 송장맵으로 기입
+ */
+function _pep_backfillPreviousArchive_(invoiceMap, beforeDateStr) {
+  var out = { patched: 0, scanned: 0, files: 0, days: [], date: "" };
+  var prev = _pep_findPreviousArchiveDate_(beforeDateStr);
+  if (!prev) return out;
+  var fileName = _UNIFIED_ARCHIVE_PREFIX_ + "(" + prev + ")";
+  var archSs = _unified_findExistingArchiveSs_(fileName);
+  if (!archSs) return out;
+  var archTab = archSs.getSheetByName("일일마감") || archSs.getSheets()[0];
+  var patch = _pep_patchArchiveTabUnmatched_(archTab, invoiceMap, prev);
+  out.date = prev;
+  out.files = 1;
+  out.scanned = patch.scanned || 0;
+  out.patched = patch.patched || 0;
+  if (out.patched > 0) out.days.push(prev + ":" + out.patched);
+  Logger.log("[UNIFIED] 2단계 이전마감 보강 " + prev +
+    ": 채움=" + out.patched + " 스캔=" + out.scanned);
+  return out;
+}
+
+/**
+ * 최근 N일 일일마감에서 미매칭 행을 오늘 송장맵(롯데·허브·임시기록)으로 재매칭
+ */
+function _pep_backfillRecentArchives_(invoiceMap, maxDays) {
+  maxDays = maxDays || _PEP_BACKFILL_DAYS_;
+  var out = { patched: 0, scanned: 0, files: 0, days: [] };
+  var today = new Date();
+  for (var d = 1; d <= maxDays; d++) {
+    var dt = new Date(today.getTime());
+    dt.setDate(dt.getDate() - d);
+    var dateStr = Utilities.formatDate(dt, "Asia/Seoul", "yyyy-MM-dd");
+    var fileName = _UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")";
+    var archSs = _unified_findExistingArchiveSs_(fileName);
+    if (!archSs) continue;
+    var archTab = archSs.getSheetByName("일일마감") || archSs.getSheets()[0];
+    if (!archTab || archTab.getLastRow() < 2) continue;
+    out.files++;
+    var lr = archTab.getLastRow();
+    var lc = Math.max(archTab.getLastColumn(), 1);
+    var all = archTab.getRange(1, 1, lr, lc).getDisplayValues();
+    var cols = _pep_mapArchiveMatchCols_(all[0]);
+    var dayPatched = 0;
+    for (var ri = 1; ri < all.length; ri++) {
+      if (String(all[ri][0] || "").indexOf("합계") !== -1) continue;
+      out.scanned++;
+      var src = String(all[ri][cols.src] || "").trim();
+      var inv = String(all[ri][cols.inv] || "").trim();
+      if (inv && _pep_normInvoiceNo_(inv)) continue;
+      if (src && src !== "미매칭") continue;
+      var matchKey = _pep_deriveMatchKeyFromArchiveRow_(all[ri], cols);
+      if (!matchKey) continue;
+      var recipName = cols.name >= 0 ? _pep_normRecipName_(all[ri][cols.name]) : "";
+      var phone = cols.phone >= 0 ? all[ri][cols.phone] : "";
+      var addr = cols.addr >= 0 ? all[ri][cols.addr] : "";
+      var itemNm = cols.item >= 0 ? all[ri][cols.item] : "";
+      var invInfo = _pep_resolveRowInvoice_(invoiceMap, {
+        uid: matchKey,
+        name: recipName,
+        phone: phone,
+        addr: addr,
+        item: itemNm,
+        orderDate: dateStr
+      });
+      if (!invInfo || !invInfo.inv) continue;
+      if (_pep_qtyOverMax_(cols.qty >= 0 ? all[ri][cols.qty] : "", itemNm, invInfo.inv)) continue;
+      all[ri][cols.inv] = invInfo.inv;
+      all[ri][cols.src] = invInfo.source || "대리공급";
+      // 송장을 채웠으면 택배사도 같이 채운다. 송장만 있고 택배사가 비면
+      // 웹앱이 어느 택배사로 조회해야 할지 몰라 네이버 검색으로 떨어진다.
+      if (cols.carrier >= 0 && !String(all[ri][cols.carrier] || "").trim()) {
+        var bfVendor = cols.jShop >= 0 ? all[ri][cols.jShop] : "";
+        var bfCode = cols.code >= 0 ? all[ri][cols.code] : "";
+        all[ri][cols.carrier] =
+          _pep_carrierForArchiveRow_(invInfo, all[ri][cols.src], bfVendor, bfCode);
+      }
+      dayPatched++;
+    }
+    if (dayPatched > 0) {
+      archTab.getRange(1, 1, all.length, lc).setValues(all);
+      SpreadsheetApp.flush();
+      out.patched += dayPatched;
+      out.days.push(dateStr + ":" + dayPatched);
+    }
+  }
+  if (out.patched > 0) {
+    Logger.log("[UNIFIED] 이전 일일마감 송장 보강: " + out.patched + "건 / " + out.files + "개 파일 (" + out.days.join(", ") + ")");
+  }
+  return out;
+}
+
+var _PEP_UDA_PATCH_PROP_ = "_PEP_UDA_PATCH_DATE_";
+
+/** 이미 만들어진 일일마감 파일의 미매칭 행만 송장맵으로 채운다. */
+function _pep_patchArchiveTabUnmatched_(archTab, invoiceMap, dateStr) {
+  var out = { patched: 0, stillEmpty: 0, scanned: 0 };
+  if (!archTab || !invoiceMap) return out;
+  var lr = archTab.getLastRow();
+  if (lr < 2) return out;
+  var lc = Math.max(archTab.getLastColumn(), 1);
+  var all = archTab.getRange(1, 1, lr, lc).getDisplayValues();
+  var cols = _pep_mapArchiveMatchCols_(all[0]);
+  for (var ri = 1; ri < all.length; ri++) {
+    if (String(all[ri][0] || "").indexOf("합계") !== -1) continue;
+    out.scanned++;
+    var src = String(all[ri][cols.src] || "").trim();
+    var inv = String(all[ri][cols.inv] || "").trim();
+    if (inv && _pep_normInvoiceNo_(inv)) continue;
+    if (src && src !== "미매칭") continue;
+    var matchKey = _pep_deriveMatchKeyFromArchiveRow_(all[ri], cols);
+    if (!matchKey) { out.stillEmpty++; continue; }
+    var itemNm = cols.item >= 0 ? all[ri][cols.item] : "";
+    var invInfo = _pep_resolveRowInvoice_(invoiceMap, {
+      uid: matchKey,
+      name: cols.name >= 0 ? _pep_normRecipName_(all[ri][cols.name]) : "",
+      phone: cols.phone >= 0 ? all[ri][cols.phone] : "",
+      addr: cols.addr >= 0 ? all[ri][cols.addr] : "",
+      item: itemNm,
+      orderDate: dateStr
+    });
+    if (!invInfo || !invInfo.inv) { out.stillEmpty++; continue; }
+    if (_pep_qtyOverMax_(cols.qty >= 0 ? all[ri][cols.qty] : "", itemNm, invInfo.inv)) {
+      out.stillEmpty++;
+      continue;
+    }
+    all[ri][cols.inv] = invInfo.inv;
+    all[ri][cols.src] = invInfo.source || "대리공급";
+    if (cols.carrier >= 0 && !String(all[ri][cols.carrier] || "").trim()) {
+      all[ri][cols.carrier] = _pep_carrierForArchiveRow_(
+        invInfo, all[ri][cols.src],
+        cols.jShop >= 0 ? all[ri][cols.jShop] : "",
+        cols.code >= 0 ? all[ri][cols.code] : "");
+    }
+    out.patched++;
+  }
+  if (out.patched > 0) {
+    archTab.getRange(1, 1, all.length, lc).setValues(all);
+    SpreadsheetApp.flush();
+  }
+  return out;
+}
+
+/**
+ * 지정일 일일마감 파일의 미매칭만 다시 채운다.
+ * 송장맵은 새로 만든다 — 마감 때 시간초과로 빠졌던 전용/발주 마감탭을 포함한다.
+ */
+function _pep_fillUnmatchedArchiveDay_(dateStr) {
+  var out = { patched: 0, stillEmpty: 0, scanned: 0, keys: 0, error: "" };
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    out.error = "날짜 형식 오류";
+    return out;
+  }
+  var fileName = _UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")";
+  var archSs = _unified_findExistingArchiveSs_(fileName);
+  if (!archSs) {
+    out.error = "파일 없음: " + fileName;
+    return out;
+  }
+  var archTab = archSs.getSheetByName("일일마감") || archSs.getSheets()[0];
+  if (!archTab || archTab.getLastRow() < 2) {
+    out.error = "일일마감 탭이 비어 있습니다";
+    return out;
+  }
+  var stat = { lotte: 0, weekly: 0, ledger: 0, temp: 0, hub: 0, keys: 0, errors: [], skipPartnerArchives: true };
+  var invoiceMap = (typeof _puv_buildInvoiceMap_ === "function")
+    ? _puv_buildInvoiceMap_(stat)
+    : {};
+  out.keys = stat.keys || Object.keys(invoiceMap).length;
+  var patch = _pep_patchArchiveTabUnmatched_(archTab, invoiceMap, dateStr);
+  out.patched = patch.patched;
+  out.stillEmpty = patch.stillEmpty;
+  out.scanned = patch.scanned;
+  if (stat.errors && stat.errors.length) {
+    out.error = stat.errors.slice(0, 3).join(" / ");
+  }
+  Logger.log("[UNIFIED] 지정일 미매칭 재채움 " + dateStr +
+    " 키=" + out.keys + " 채움=" + out.patched + " 남은미매칭=" + out.stillEmpty);
+  return out;
+}
+
+function _pep_scheduleUnmatchedPatch_(dateStr) {
+  if (!dateStr) return;
+  try {
+    PropertiesService.getScriptProperties().setProperty(_PEP_UDA_PATCH_PROP_, dateStr);
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === "_pep_patchUnmatchedArchiveScheduled_") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+    ScriptApp.newTrigger("_pep_patchUnmatchedArchiveScheduled_")
+      .timeBased().after(15 * 1000).create();
+    Logger.log("[UNIFIED] 미매칭 재채움 예약: " + dateStr);
+  } catch (e) {
+    Logger.log("[UNIFIED] 미매칭 재채움 예약 실패: " + e.message);
+  }
+}
+
+function _pep_patchUnmatchedArchiveScheduled_() {
+  var dateStr = "";
+  try {
+    dateStr = PropertiesService.getScriptProperties().getProperty(_PEP_UDA_PATCH_PROP_) || "";
+    PropertiesService.getScriptProperties().deleteProperty(_PEP_UDA_PATCH_PROP_);
+  } catch (e) {}
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === "_pep_patchUnmatchedArchiveScheduled_") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+  } catch (eT) {}
+  if (!dateStr) return;
+  var dates = String(dateStr).split(",");
+  var patched = 0, remain = 0, errs = [];
+  for (var i = 0; i < dates.length; i++) {
+    var d = String(dates[i] || "").trim();
+    if (!d) continue;
+    var one = _pep_fillUnmatchedArchiveDay_(d);
+    patched += one.patched || 0;
+    remain += one.stillEmpty || 0;
+    if (one.error) errs.push(d + ": " + one.error);
+  }
+  Logger.log("[UNIFIED] 미매칭 재채움 자동실행: 채움=" + patched + " 남은=" + remain);
+  try {
+    var items = [
+      { label: "✅ 채움", value: patched + "건" },
+      { label: "⏳ 남은 미매칭", value: remain + "건" }
+    ];
+    if (errs.length) items.push({ label: "⚠", value: errs.join(" / ").substring(0, 200) });
+    _chat_sendCard_("📋 일일마감 미매칭 재채움", dateStr, items);
+  } catch (_) {}
+}
+
+/** [메뉴] 지정일 일일마감만 송장 재매칭 (롯데·1주출고 우선) */
+function partnerFillUnmatchedArchiveForDate() {
+  var ui = SpreadsheetApp.getUi();
+  var now = new Date();
+  var def = new Date(now.getTime());
+  if (def.getDay() === 0) def.setDate(def.getDate() - 2);
+  else if (def.getDay() === 6) def.setDate(def.getDate() - 1);
+  else if (now.getHours() < 6) def.setDate(def.getDate() - 1);
+  var defStr = Utilities.formatDate(def, "Asia/Seoul", "yyyy-MM-dd");
+  var resp = ui.prompt(
+    "지정일 송장 재매칭",
+    "이미 있는 일일마감 파일만 고칩니다. 파일을 새로 만들지 않습니다.\n" +
+      "롯데·1주출고 송장맵으로 비어 있는 칸을 채웁니다.\n\n날짜 yyyy-MM-dd\n기본: " + defStr,
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (!resp || resp.getSelectedButton() !== ui.Button.OK) return;
+  var dateStr = String(resp.getResponseText() || "").trim() || defStr;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    ui.alert("날짜 형식이 아닙니다. yyyy-MM-dd 로 입력하세요.");
+    return;
+  }
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10 * 1000)) {
+    ui.alert("다른 작업이 실행 중입니다. 잠시 후 다시 시도하세요.");
+    return;
+  }
+  try {
+    var out = _par_run_(false, 1, dateStr);
+    ui.alert(out.msg);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** 헤더 배열에서 택배사 열 위치. 없으면 -1 */
+function _pep_findCarrierIdx_(hdr) {
+  if (!hdr) return -1;
+  for (var i = 0; i < hdr.length; i++) {
+    if (/^택배사$|^배송사$|^운송사$/.test(String(hdr[i] || "").replace(/\s/g, ""))) return i;
+  }
+  return -1;
+}
+
+/**
+ * 옛 레이아웃 마감 탭에 택배사 열을 **운송장번호 앞**에 끼워 넣는다.
+ *
+ * 맨 끝에 붙이면 「출처 = 마지막 열, 운송장번호 = 끝에서 두 번째」를 위치로
+ * 가정하는 다섯 곳이 조용히 한 칸씩 틀어진다. 앞에 끼우면 그 가정이 그대로 산다.
+ *
+ * @return {number} 삽입한 0-based 인덱스. 못 넣었으면 -1
+ */
+function _pep_insertCarrierColumnInto_(archTab, oldHdr) {
+  var invIdx = -1;
+  for (var i = 0; i < oldHdr.length; i++) {
+    var h = String(oldHdr[i] || "").replace(/\s/g, "");
+    if (/운송장번호|송장번호/.test(h) && !/반품/.test(h)) { invIdx = i; break; }
+  }
+  if (invIdx < 0) return -1;
+  try {
+    archTab.insertColumnBefore(invIdx + 1);
+    archTab.getRange(1, invIdx + 1)
+      .setValue("택배사")
+      .setBackground("#1a237e").setFontColor("white")
+      .setFontWeight("bold").setFontSize(10)
+      .setHorizontalAlignment("center");
+    SpreadsheetApp.flush();
+    Logger.log("[UNIFIED_ARCHIVE] 마감 탭에 택배사 열 삽입 (" +
+      archTab.getParent().getName() + ", " + (invIdx + 1) + "번째)");
+    return invIdx;
+  } catch (eIns) {
+    Logger.log("[UNIFIED_ARCHIVE] 택배사 열 삽입 실패: " + eIns.message);
+    return -1;
+  }
+}
+
+/**
+ * 새 행(택배사 포함)을 이미 있는 일일마감 탭에 맞춘다.
+ *
+ * 세 갈래다.
+ *   ① 탭이 비었다 → 새 헤더를 그대로 쓴다. 할 일 없음.
+ *   ② 기존 헤더에 택배사가 있다 → 이미 새 레이아웃. 할 일 없음.
+ *   ③ 기존 헤더가 옛 레이아웃 → 운송장번호 앞에 열을 끼워 넣고 헤더를 고친다.
+ *      기존 행의 택배사 칸은 빈다(웹앱이 출처로 추론하는 종전 동작).
+ *      운송장번호를 못 찾아 끼워 넣지 못하면 새 행에서 택배사를 떼어낸다.
+ *
+ * @return {{headers: Array, rows: Array}} 기록에 쓸 헤더·행
+ */
+function _pep_fitArchiveCarrierColumn_(archTab, headers, rows) {
+  var newCarrierIdx = _pep_findCarrierIdx_(headers);
+  if (newCarrierIdx < 0) return { headers: headers, rows: rows }; // 택배사 없는 호출
+
+  var lastRow = archTab.getLastRow();
+  var lastCol = archTab.getLastColumn();
+  if (lastRow < 1 || lastCol < 1) return { headers: headers, rows: rows }; // ①
+
+  var oldHdr;
+  try { oldHdr = archTab.getRange(1, 1, 1, lastCol).getDisplayValues()[0]; }
+  catch (eH) { return { headers: headers, rows: rows }; }
+
+  if (_pep_findCarrierIdx_(oldHdr) >= 0) return { headers: headers, rows: rows }; // ②
+
+  // ③ 옛 레이아웃 — 운송장번호 앞에 열을 끼워 넣는다
+  if (_pep_insertCarrierColumnInto_(archTab, oldHdr) >= 0) {
+    return { headers: headers, rows: rows };
+  }
+
+  // 끼워 넣지 못했다 — 택배사를 떼고 옛 레이아웃으로 맞춘다
+  var outHdr = [];
+  for (var hi = 0; hi < headers.length; hi++) {
+    if (hi !== newCarrierIdx) outHdr.push(headers[hi]);
+  }
+  var outRows = [];
+  for (var ri = 0; ri < rows.length; ri++) {
+    var r = [];
+    for (var ci = 0; ci < rows[ri].length; ci++) {
+      if (ci !== newCarrierIdx) r.push(rows[ri][ci]);
+    }
+    outRows.push(r);
+  }
+  return { headers: outHdr, rows: outRows };
+}
+
+/**
+ * 일일마감 파일에 매칭 행 일괄 추가 (주문일별 분리 기록용)
+ * @return {{ written: number, tabName: string }}
+ */
+function _pep_appendArchiveRows_(ss, dateStr, headers, rows, detail) {
+  var out = { written: 0, tabName: _UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")" };
+  if (!rows || !rows.length || !headers || !headers.length) return out;
+
+  var archSs = _unified_getOrCreateArchiveSs_(ss, out.tabName);
+  var archTab = archSs.getSheetByName("일일마감") || archSs.getSheets()[0];
+  if (archTab.getLastRow() === 0 && archTab.getName() !== "일일마감") {
+    try { archTab.setName("일일마감"); } catch (eN) {}
+  }
+
+  // ★ 2026-08-27: 택배사 열 도입 이행 처리.
+  //   같은 날 파일이 이미 옛 헤더(택배사 없음)로 만들어져 있으면, 새 행은 한 열 더
+  //   길다. 그대로 붙이면 택배사가 운송장번호 칸에, 운송장번호가 출처 칸에 들어가
+  //   조용히 어긋난다. 열을 끼워 맞추거나, 못 맞추면 택배사를 떼고 옛 레이아웃으로
+  //   쓴다. 어긋난 채로 기록하는 것보다 택배사 한 칸을 포기하는 편이 안전하다.
+  var fit = _pep_fitArchiveCarrierColumn_(archTab, headers, rows);
+  headers = fit.headers;
+  rows = fit.rows;
+
+  var nextRow = archTab.getLastRow() + 1;
+  if (nextRow < 2) nextRow = 1;
+  var colCount = headers.length;
+
+  if (nextRow <= 1) {
+    archTab.getRange(1, 1, 1, colCount).setValues([headers]);
+    archTab.getRange(1, 1, 1, colCount)
+      .setBackground("#1a237e").setFontColor("white")
+      .setFontWeight("bold").setFontSize(10)
+      .setHorizontalAlignment("center");
+    archTab.setFrozenRows(1);
+    nextRow = 2;
+  }
+
+  var archPhoneIdxs = _pep_detectPhoneColumns_(headers);
+  if (archPhoneIdxs.indexOf(13) === -1 && colCount > 13) archPhoneIdxs.push(13);
+  for (var ari = 0; ari < rows.length; ari++) {
+    for (var api = 0; api < archPhoneIdxs.length; api++) {
+      var pCol = archPhoneIdxs[api];
+      if (pCol >= rows[ari].length) continue;
+      rows[ari][pCol] = _pep_fixPhoneLeadingZero_(rows[ari][pCol]);
+    }
+  }
+  for (var apfi = 0; apfi < archPhoneIdxs.length; apfi++) {
+    archTab.getRange(nextRow, archPhoneIdxs[apfi] + 1, rows.length, 1).setNumberFormat("@");
+  }
+  archTab.getRange(nextRow, colCount - 1, rows.length, 1)
+    .setNumberFormat("@")
+    .setWrap(true);
+
+  archTab.getRange(nextRow, 1, rows.length, colCount).setValues(rows);
+
+  for (var ri = 0; ri < rows.length; ri++) {
+    var source = String(rows[ri][colCount - 1] || "").trim();
+    var bgColor = "#e8f5e9";
+    if (source === "롯데") bgColor = "#e3f2fd";
+    else if (source === "1주출고") bgColor = "#bbdefb";
+    else if (source === "합포장") bgColor = "#c8e6c9";
+    else if (source === "대리판매") bgColor = "#fff9c4";
+    else if (source === "로젠") bgColor = "#e8eaf6";
+    else if (source === "로젠(전화)") bgColor = "#e1f5fe";
+    else if (source === "이름+전화") bgColor = "#e0f7fa";
+    else if (source === "미매칭") bgColor = "#fff3e0";
+    else if (source === "기타") bgColor = "#f3e5f5";
+    archTab.getRange(nextRow + ri, 1, 1, colCount).setBackground(bgColor);
+  }
+
+  out.written = rows.length;
+
+  try {
+    var sumRow = [];
+    for (var sci = 0; sci < colCount; sci++) sumRow.push("");
+    var gSum = 0, jSum = 0;
+    for (var gi = 0; gi < rows.length; gi++) {
+      gSum += Number(rows[gi][6]) || 0;
+      jSum += Number(rows[gi][9]) || 0;
+    }
+    sumRow[6] = gSum;
+    sumRow[9] = jSum;
+    var srcIdx = colCount - 1;
+    sumRow[srcIdx] = "롯데:" + (detail.lotte || 0) +
+      " 대리판매:" + (detail.hub || 0) +
+      " 대리공급:" + (detail.supply || 0) +
+      " 이름+전화:" + (detail.namePhone || 0) +
+      " 미매칭:" + (detail.noInvoice || 0) + "건";
+    sumRow[0] = "★ 합계 (" + rows.length + "건)";
+    var sumRowNum = nextRow + rows.length;
+    archTab.getRange(sumRowNum, 1, 1, colCount).setValues([sumRow]);
+    archTab.getRange(sumRowNum, 1, 1, colCount)
+      .setBackground("#37474f").setFontColor("white")
+      .setFontWeight("bold").setFontSize(11);
+    archTab.getRange(sumRowNum, 7, 1, 1).setNumberFormat("#,##0");
+    archTab.getRange(sumRowNum, 10, 1, 1).setNumberFormat("#,##0");
+  } catch (eSum) {
+    Logger.log("[UNIFIED_ARCHIVE] 합계 행 추가 오류(" + dateStr + "): " + eSum.message);
+  }
+
+  return out;
+}
+
+/**
+ * 1주출고 탭 — 최근 7일 택배 출고 이력 → 일일마감 송장맵 보조
+ * G=운송장번호, I=주문번호, L=수취인명 (당일 롯데탭에 없는 익일·지연 발송 보강)
+ */
+function _pep_loadWeeklyShipInvoiceMap_(invoiceMap, result) {
+  var out = { read: 0, primary: 0, name: 0 };
+  if (!invoiceMap) return out;
+  try {
+    var invSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
+    var wsTab = _pt_getSheetByGid(invSS, _PT_WEEKLY_SHIP_GID);
+    if (!wsTab || wsTab.getLastRow() < 2) {
+      Logger.log("[UNIFIED] 1주출고 탭 없음/비어있음 (GID " + _PT_WEEKLY_SHIP_GID + ")");
+      return out;
+    }
+    var lr = wsTab.getLastRow();
+    var lc = Math.max(wsTab.getLastColumn(), 12);
+    var all = wsTab.getRange(1, 1, lr, lc).getDisplayValues();
+    var hdrIdx = _pep_findLotteHeaderRow_(all);
+    var cols = {
+      name: _PT_WEEKLY_SHIP_FIXED_COL.name,
+      invoice: _PT_WEEKLY_SHIP_FIXED_COL.invoice,
+      uid: _PT_WEEKLY_SHIP_FIXED_COL.uid,
+      phone: _PT_WEEKLY_SHIP_FIXED_COL.phone,
+      addr: -1,
+      item: -1,
+      date: -1
+    };
+    // 롯데 기본값(J=주문번호)으로 I열을 덮지 않는다. 헤더에 그 칸이 있을 때만 옮긴다.
+    var resolved = _pep_resolveLotteCols_(all[hdrIdx]);
+    var det = resolved.detected || {};
+    if (det.invoice) cols.invoice = resolved.invoice;
+    if (det.uid) cols.uid = resolved.uid;
+    if (det.name) cols.name = resolved.name;
+    if (det.phone) cols.phone = resolved.phone;
+    if (det.addr) cols.addr = resolved.addr;
+    if (det.item) cols.item = resolved.item;
+    if (det.date) cols.date = resolved.date;
+    var dataStart = hdrIdx + 1;
+    if (_pep_countInvoiceCol_(all, dataStart, cols.invoice) === 0) {
+      dataStart = 1;
+    }
+    var srcLabel = "1주출고";
+    for (var i = dataStart; i < all.length; i++) {
+      if (String(all[i][0] || "").indexOf("합계") !== -1) continue;
+      var hdrCell = String(all[i][cols.invoice] || "").replace(/\s/g, "");
+      if (/운송장번호|송장번호/.test(hdrCell)) continue;
+      var ordNo = String(all[i][cols.uid] || "").trim();
+      var invNo = _pep_normInvoiceNo_(all[i][cols.invoice]);
+      if (!invNo) continue;
+      out.read++;
+      var wsPicked = (cols.date >= 0) ? _pep_ymdNum_(all[i][cols.date]) : 0;
+      if (ordNo) {
+        var useSrc = (invoiceMap[ordNo] && invoiceMap[ordNo].source === "롯데") ? "롯데" : srcLabel;
+        if (useSrc === srcLabel) out.primary++;
+        _pep_addInvoiceMap_(invoiceMap, ordNo, invNo, useSrc, "", wsPicked);
+      }
+      var wsName = _pep_normRecipName_(all[i][cols.name]);
+      if (wsName) {
+        _pep_addNamePhoneInvoiceKeys_(
+          invoiceMap, all[i][cols.name],
+          cols.phone >= 0 ? all[i][cols.phone] : "",
+          invNo, srcLabel,
+          {
+            addr: cols.addr >= 0 ? all[i][cols.addr] : "",
+            item: cols.item >= 0 ? all[i][cols.item] : "",
+            picked: wsPicked,
+            stat: _pep_keyStat_(srcLabel)
+          }
+        );
+        out.name++;
+      }
+    }
+    Logger.log("[UNIFIED] 1주출고 송장맵: 송장행=" + out.read +
+      " 주문번호=" + out.primary +
+      " 수취인=" + out.name +
+      " 합계키=" + Object.keys(invoiceMap).length + "건");
+  } catch (e) {
+    Logger.log("[UNIFIED] 1주출고 송장맵 오류: " + e.message);
+  }
+  if (result && result.detail) {
+    result.detail.weeklyRead = out.read;
+    result.detail.weeklyPrimary = out.primary;
+  }
+  return out;
+}
+
+/**
+ * 롯데 송장탭 실제 1~3행 헤더/샘플을 읽어, 코드가 가정한 F/G/J와 맞는지 확인
+ */
+function partnerInspectLotteInvoiceColumns() {
+  var ss = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
+  var tab = _pt_getSheetByGid(ss, _PT_SECONDARY_INVOICE_GID);
+  if (!tab) return { error: "롯데 탭 없음 GID " + _PT_SECONDARY_INVOICE_GID };
+
+  function colLetter_(idx) {
+    var n = idx + 1, s = "";
+    while (n > 0) {
+      var m = (n - 1) % 26;
+      s = String.fromCharCode(65 + m) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+  function sample_(vals, idx) {
+    if (idx < 0) return "";
+    var a = vals[1] ? String(vals[1][idx] || "").substring(0, 40) : "";
+    var b = vals[2] ? String(vals[2][idx] || "").substring(0, 40) : "";
+    return a + (b ? " | " + b : "");
+  }
+
+  var lc = Math.max(tab.getLastColumn(), 1);
+  var lr = tab.getLastRow();
+  var scanRows = Math.min(Math.max(lr, 1), 3);
+  var vals = tab.getRange(1, 1, scanRows, lc).getDisplayValues();
+  var hdr = vals[0] || [];
+  var resolved = _pep_resolveLotteCols_(hdr);
+  var headerList = [];
+  for (var c = 0; c < hdr.length; c++) {
+    var h = String(hdr[c] || "").trim();
+    if (!h) continue;
+    headerList.push(colLetter_(c) + "(" + c + ")=" + h);
+  }
+  var result = {
+    tabName: tab.getName(),
+    gid: String(tab.getSheetId()),
+    lastRow: lr,
+    lastCol: lc,
+    assumed: { name: "F", invoice: "G", uid: "J", item: "AC", phone: "없음" },
+    row1_FGJ_AC: {
+      F: hdr[5] || "",
+      G: hdr[6] || "",
+      J: hdr[9] || "",
+      AC: hdr[28] || ""
+    },
+    row1_sample_FGJ: {
+      F: sample_(vals, 5),
+      G: sample_(vals, 6),
+      J: sample_(vals, 9)
+    },
+    headerScan: {
+      name: colLetter_(resolved.name) + " [" + (hdr[resolved.name] || "") + "] " + sample_(vals, resolved.name),
+      invoice: colLetter_(resolved.invoice) + " [" + (hdr[resolved.invoice] || "") + "] " + sample_(vals, resolved.invoice),
+      uid: colLetter_(resolved.uid) + " [" + (hdr[resolved.uid] || "") + "] " + sample_(vals, resolved.uid),
+      phone: resolved.phone >= 0
+        ? colLetter_(resolved.phone) + " [" + (hdr[resolved.phone] || "") + "]"
+        : "없음"
+    },
+    headers: headerList
+  };
+  try {
+    var ui = SpreadsheetApp.getUi();
+    ui.alert(
+      "롯데 송장탭 열 확인",
+      "탭: " + result.tabName + " (GID " + result.gid + ")\n" +
+        "코드 가정: 이름=F / 송장=G / 고유ID=J\n\n" +
+        "실제 1행 F=[" + result.row1_FGJ_AC.F + "]\n" +
+        "실제 1행 G=[" + result.row1_FGJ_AC.G + "]\n" +
+        "실제 1행 J=[" + result.row1_FGJ_AC.J + "]\n\n" +
+        "헤더스캔 이름: " + result.headerScan.name + "\n" +
+        "헤더스캔 송장: " + result.headerScan.invoice + "\n" +
+        "헤더스캔 고유ID: " + result.headerScan.uid + "\n\n" +
+        headerList.slice(0, 20).join("\n"),
+      ui.ButtonSet.OK
+    );
+  } catch (eUi) {}
+  Logger.log("[LOTTE_COLS] " + JSON.stringify(result));
+  return result;
+}
+
+/** 열 인덱스 → A, B, … */
+function _pep_colLetter_(idx) {
+  var n = Number(idx) + 1, s = "";
+  if (!(n > 0)) return "?";
+  while (n > 0) {
+    var m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+/** 롯데탭 상단 8행 중 헤더 행 찾기 (1행이 제목이면 2행 헤더를 씀) */
+function _pep_findLotteHeaderRow_(rows) {
+  var best = 0, bestScore = -1;
+  var n = Math.min((rows && rows.length) || 0, 8);
+  for (var r = 0; r < n; r++) {
+    var score = 0;
+    var row = rows[r] || [];
+    for (var c = 0; c < row.length; c++) {
+      var h = String(row[c] || "").replace(/\s/g, "");
+      if (!h) continue;
+      if (/^\d{8,}$/.test(h)) { score -= 2; continue; }
+      if (/운송장번호|^송장번호$/.test(h) && !/반품|재출력|원송장/.test(h)) score += 6;
+      if (/사방넷주문번호|고객주문번호|^주문번호$/.test(h)) score += 4;
+      if (/수하인명|수취인명|받는사람/.test(h)) score += 3;
+    }
+    if (score > bestScore) { bestScore = score; best = r; }
+  }
+  return best;
+}
+
+/**
+ * 롯데 송장탭 헤더에서 열 위치 확정
+ * 기본값 F=수취인 G=운송장 J=주문번호. 헤더가 있으면 우선순위 높은 열을 먼저 채택(나중 열로 덮지 않음)
+ */
+function _pep_resolveLotteCols_(headerRow) {
+  var col = { name: 5, invoice: 6, uid: 9, phone: -1, addr: -1, item: -1, date: 3 };
+  if (typeof _PT_LOTTE_FIXED_COL !== "undefined") {
+    if (_PT_LOTTE_FIXED_COL.name >= 0) col.name = _PT_LOTTE_FIXED_COL.name;
+    if (_PT_LOTTE_FIXED_COL.invoice >= 0) col.invoice = _PT_LOTTE_FIXED_COL.invoice;
+    if (_PT_LOTTE_FIXED_COL.uid >= 0) col.uid = _PT_LOTTE_FIXED_COL.uid;
+    col.phone = _PT_LOTTE_FIXED_COL.phone;
+    // 롯데탭 상품명은 AC열로 고정돼 있다. 헤더 탐지가 실패해도 이 값을 쓴다.
+    if (_PT_LOTTE_FIXED_COL.item >= 0) col.item = _PT_LOTTE_FIXED_COL.item;
+    if (_PT_LOTTE_FIXED_COL.date >= 0) col.date = _PT_LOTTE_FIXED_COL.date;
+  }
+  col.detected = {
+    invoice: false, uid: false, name: false, phone: false,
+    addr: false, item: false, date: false
+  };
+  if (!headerRow || !headerRow.length) return col;
+  var invC = -1, uidC = -1, nameC = -1, phoneC = -1, addrC = -1, itemC = -1, dateC = -1;
+  var invPri = 99, uidPri = 99, namePri = 99, addrPri = 99, itemPri = 99;
+  for (var c = 0; c < headerRow.length; c++) {
+    var h = String(headerRow[c] || "").replace(/\s/g, "");
+    if (!h) continue;
+    if (!/반품|재출력|원송장/.test(h)) {
+      var ip = 99;
+      if (h === "운송장번호") ip = 1;
+      else if (h === "송장번호") ip = 2;
+      else if (/운송장번호/.test(h)) ip = 3;
+      else if (/송장번호/.test(h)) ip = 4;
+      if (ip < invPri) { invPri = ip; invC = c; }
+    }
+    var up = 99;
+    if (/사방넷주문번호/.test(h)) up = 1;
+    else if (/고객주문번호/.test(h)) up = 2;
+    else if (h === "주문번호") up = 3;
+    else if (/고유아이디|고유ID/.test(h)) up = 4;
+    else if (/주문번호/.test(h) && !/원주문|상품주문/.test(h)) up = 5;
+    if (up < uidPri) { uidPri = up; uidC = c; }
+    var np = 99;
+    if (h === "수하인명" || h === "수취인명") np = 1;
+    else if ((h === "받는사람" || h === "받는분") && !/주소|전화/.test(h)) np = 2;
+    else if (/수취인|수하인/.test(h) && !/주소|전화|코드|송하인/.test(h)) np = 3;
+    else if (h === "명") np = 4;
+    if (np < namePri) { namePri = np; nameC = c; }
+    if (phoneC < 0 && /전화|휴대폰|핸드폰|연락처/.test(h) && !/송하인|보내는|발송/.test(h)) phoneC = c;
+    // ★ 2026-08-25: 주소 열 — 수하인 주소 우선, 송하인·우편번호·배송메시지 제외
+    if (!/송하인|보내는|발송|우편|zip/i.test(h) && /주소/.test(h) && !/배송메/.test(h)) {
+      var ap = 99;
+      if (/수하인주소|수취인주소|받는분주소|받는사람주소/.test(h)) ap = 1;
+      else if (/배송지주소|도착지주소/.test(h)) ap = 2;
+      else if (h === "주소") ap = 3;
+      else ap = 4;
+      if (ap < addrPri) { addrPri = ap; addrC = c; }
+    }
+    // ★ 2026-08-26: 품목명 열 — 한 사람의 여러 주문을 행 단위로 구분하는 데 쓴다.
+    //   코드·수량·옵션만 있는 열은 품목명이 아니므로 제외한다.
+    if (!/코드|번호|수량|단가|금액|옵션/.test(h)) {
+      var tp = 99;
+      if (h === "품목명" || h === "상품명" || h === "제품명") tp = 1;
+      else if (/품목명|상품명|제품명|물품명/.test(h)) tp = 2;
+      else if (h === "품명" || h === "내품명") tp = 3;
+      else if (/품명/.test(h)) tp = 4;
+      if (tp < itemPri) { itemPri = tp; itemC = c; }
+    }
+    if (dateC < 0 && /집하일자|집하일/.test(h) && !/예정/.test(h)) dateC = c;
+  }
+  if (invC >= 0) col.invoice = invC;
+  if (uidC >= 0) col.uid = uidC;
+  if (nameC >= 0) col.name = nameC;
+  if (phoneC >= 0) col.phone = phoneC;
+  if (addrC >= 0) col.addr = addrC;
+  if (itemC >= 0) col.item = itemC;
+  if (dateC >= 0) col.date = dateC;
+  col.detected = {
+    invoice: invC >= 0, uid: uidC >= 0, name: nameC >= 0, phone: phoneC >= 0,
+    addr: addrC >= 0, item: itemC >= 0, date: dateC >= 0
+  };
+  return col;
+}
+
+function _pep_countFilledCol_(rows, start, idx) {
+  var n = 0;
+  if (idx < 0 || !rows) return 0;
+  for (var i = start; i < rows.length; i++) {
+    if (String((rows[i] && rows[i][idx]) || "").trim()) n++;
+  }
+  return n;
+}
+
+function _pep_countInvoiceCol_(rows, start, idx) {
+  var n = 0;
+  if (idx < 0 || !rows) return 0;
+  for (var i = start; i < rows.length; i++) {
+    if (_pep_normInvoiceNo_((rows[i] && rows[i][idx]) || "")) n++;
+  }
+  return n;
+}
+
+/** 판매현황 사방넷 주문번호(고유ID). 전화주문·생성UID·한글 비주문 제외 */
+function _pep_isSabangnetSnapKey_(key) {
+  var k = String(key || "").trim();
+  if (!k) return false;
+  if (k.indexOf("TEL:") === 0 || k.indexOf("FB:") === 0) return false;
+  k = k.replace(/#\d+$/, "");
+  if (typeof _po_isGeneratedUid_ === "function" && _po_isGeneratedUid_(k)) return false;
+  if (/[\uAC00-\uD7AF]/.test(k)) return false;
+  return true;
+}
+
+function _pep_mergeInvCells_(a, b) {
+  var set = {};
+  var out = [];
+  var parts = _pep_splitInvNos_(a).concat(_pep_splitInvNos_(b));
+  for (var i = 0; i < parts.length; i++) {
+    if (set[parts[i]]) continue;
+    set[parts[i]] = true;
+    out.push(parts[i]);
+  }
+  return out.join("\n");
+}
+
+function _pep_alreadyArchivedInv_(existPair, matchKey, invCell) {
+  var invs = _pep_splitInvNos_(invCell);
+  if (!invs.length) return false;
+  var oid = String(matchKey || "").replace(/#\d+$/, "");
+  for (var i = 0; i < invs.length; i++) {
+    var inv = invs[i];
+    if (existPair[matchKey + "|" + inv] || (oid && existPair[oid + "|" + inv])) continue;
+    return false;
+  }
+  return true;
+}
+
+function _pep_markArchivedInv_(existPair, matchKey, invCell) {
+  var invs = _pep_splitInvNos_(invCell);
+  var oid = String(matchKey || "").replace(/#\d+$/, "");
+  for (var i = 0; i < invs.length; i++) {
+    existPair[matchKey + "|" + invs[i]] = true;
+    if (oid) existPair[oid + "|" + invs[i]] = true;
+  }
+}
+
+/** 일일마감 6분 한도 — 파일 쓰기 전에 끊기 위한 예산(ms) */
+var _PEP_UDA_BUDGET_MS_ = 4.5 * 60 * 1000;
+
+function _pep_udaElapsed_(started) {
+  return new Date().getTime() - (started || 0);
+}
+
+/**
+ * 협력업체 파일을 한 번만 열어 전용마감+발주마감을 같이 송장맵에 넣는다.
+ * 예전에는 두 함수가 파일을 각각 전부 열어서 일일마감이 6분을 넘기고
+ * 파일 생성 전에 죽었다.
+ */
+function _pep_addAllPartnerArchivesToInvoiceMap_(invoiceMap, throughDateStr, started) {
+  var out = {
+    exclusiveArchiveRead: 0,
+    exclusiveArchiveFiles: 0,
+    orderArchiveRead: 0,
+    orderArchiveFiles: 0,
+    timedOut: false,
+    opened: 0,
+    remain: 0,
+    errors: []
+  };
+  if (!invoiceMap) return out;
+  var files = [];
+  try { files = _pt_listFiles() || []; }
+  catch (eList) { out.errors.push("파일 목록: " + eList.message); return out; }
+
+  for (var fi = 0; fi < files.length; fi++) {
+    if (started && _pep_udaElapsed_(started) > _PEP_UDA_BUDGET_MS_) {
+      out.timedOut = true;
+      out.remain = files.length - fi;
+      Logger.log("[UNIFIED] 협력업체 마감탭 스캔 시간예산 초과 → 남은 " +
+        out.remain + "개 파일은 다음 실행에서 보강");
+      break;
+    }
+    var vendor = String(files[fi].name || "").replace("[협력업체] ", "").trim();
+    var ss;
+    try { ss = SpreadsheetApp.openById(files[fi].id); }
+    catch (eOpen) { out.errors.push(vendor + " 열기 실패: " + eOpen.message); continue; }
+    out.opened++;
+
+    if (typeof _pea_ingestExclusiveArchiveSs_ === "function") {
+      var ex = _pea_ingestExclusiveArchiveSs_(ss, invoiceMap, throughDateStr, vendor);
+      out.exclusiveArchiveRead += ex.read || 0;
+      out.exclusiveArchiveFiles += ex.files || 0;
+      if (ex.errors && ex.errors.length) out.errors = out.errors.concat(ex.errors);
+    }
+    if (typeof _pms_ingestOrderArchiveSs_ === "function") {
+      var ord = _pms_ingestOrderArchiveSs_(ss, invoiceMap, throughDateStr, vendor);
+      out.orderArchiveRead += ord.read || 0;
+      out.orderArchiveFiles += ord.files || 0;
+      if (ord.errors && ord.errors.length) out.errors = out.errors.concat(ord.errors);
+    }
+  }
+  Logger.log("[UNIFIED] 협력업체 마감탭(1회 오픈): 전용=" +
+    out.exclusiveArchiveRead + "건/" + out.exclusiveArchiveFiles +
+    "파일 발주=" + out.orderArchiveRead + "건/" + out.orderArchiveFiles +
+    "파일 오픈=" + out.opened + "/" + files.length +
+    (out.timedOut ? " (시간예산초과 남은 " + out.remain + ")" : "") +
+    (out.errors.length ? " 오류=" + out.errors.length : ""));
+  return out;
+}
+
+/**
+ * 통합 일일 마감 — 예전과 같은 두 단계만 한다.
+ * 1단계: 판매현황을 그대로 가져와, 고유ID 있는 주문부터 송장 매칭 → 고유ID 없는 행 매칭
+ * 2단계: 바로 이전 일일마감 파일의 미매칭만 오늘 송장맵으로 기입
+ * @return {Object} { archived, tabName, detail, error }
  */
 function _pep_archiveUnifiedDaily_(targetDateStr) {
   // ★ 2026-06-25: 대리공급/대리판매 별도 수집 제거 → 스냅샷+송장매칭 단일 포맷
   // ★ 2026-06-29: targetDateStr 파라미터 추가 — 전달 시 해당 날짜로 저장 (자동실행→전날 매출일)
   var result = {
     archived: 0, tabName: "", error: "",
-    detail: { matched: 0, lozen: 0, supply: 0, skipped: 0, noInvoice: 0 }
+    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", hubRead: 0, backfill: 0, backfillDate: "", uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0 }
   };
 
   try {
+    var udaStarted = new Date().getTime();
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var nowStr = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm");
     // ★ 2026-06-29: archiveDate = 전달된 날짜 or 당일
     var archiveDate = targetDateStr || Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
     var matchedRows = [];   // ★ 스냅샷 매칭 결과 (판매현황 C~Q + 운송장번호 + 출처)
+    var matchedByDate = {}; // ★ 주문일(스냅샷 A열)별 → 해당 날짜 일일마감 파일에 기록
     var matchedHeaders = []; // ★ 헤더
     // ★ 2026-06-24: 스냅샷 기반 매칭 — 판매현황 직접 읽기 대신 스냅샷에서 미매칭 행 처리
-    // ── ① 송장맵 구축 (로젠 + 대리공급) ──
-    var invoiceMap = {}; // { 매칭키(주문번호): { inv: 송장번호, source: "로젠"|"대리공급" } }
+    // ── ⓪ 송장원장 갱신 (★ 2026-08-25) ──
+    //   마감이 대리공급_임시기록을 비우기 전에, 마감탭·아카이브에 남은 송장을 원장에 누적한다.
+    //   송장맵 구축보다 먼저 돌려 이번 회차부터 바로 반영되게 한다.
+    try {
+      if (typeof _pil_refresh_ === "function") {
+        // 마감탭은 아래 협력업체 1회 스캔이 읽는다. 여기서 또 열면 6분을 넘긴다.
+        var ledgerStat = _pil_refresh_({ skipArchives: true });
+        result.detail.ledgerAppended = ledgerStat.appended || 0;
+      }
+    } catch (eLedger) {
+      Logger.log("[UNIFIED] 송장원장 갱신 오류: " + eLedger.message);
+    }
 
-    // (a) 로젠 송장맵: 입력_로젠주문실적 E열(주문번호) → F열(운송장번호)
-    // ★ 2026-06-29: 전화주문 지원 — E열 비어있으면 M열(전화번호) 기반 2차 매칭키
+    // ── ① 송장맵 구축 (롯데 + 1주출고 + 허브 + 임시기록 + 송장원장. 로젠 입력탭은 사용하지 않음) ──
+    var invoiceMap = {}; // { 매칭키(주문번호/사방넷ID/NAME:/NP:): { inv, source } }
+
+    // (a) ★ 2026-08-07: 롯데 송장맵 (주) — J열(주문번호=사방넷/고유ID) → G열(운송장번호)
+    // ★ 2026-08-20: 같은 주문번호·같은 수취인의 송장을 덮어쓰지 않고 누적
+    // ★ 2026-08-20: 고유ID 없는 건은 수취인명(+전화가 있으면 전화)으로 매칭. 로젠탭은 쓰지 않음.
     try {
       var invSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
-      var lozenSrcTab = _pt_getSheetByGid(invSS, _PT_PRIMARY_INVOICE_GID);
-      if (lozenSrcTab && lozenSrcTab.getLastRow() >= 2) {
-        var lLr = lozenSrcTab.getLastRow();
-        var lData = lozenSrcTab.getRange(2, 1, lLr - 1, 13).getValues(); // ★ A~M열 (13열)
-        var _lPrimary = 0, _lSecondary = 0;
-        for (var li = 0; li < lData.length; li++) {
-          var lOrdNo = String(lData[li][4] || "").trim(); // E열: 주문번호
-          var lInvNo = String(lData[li][5] || "").trim(); // F열: 운송장번호
-          if (!lInvNo) continue;
-
-          if (lOrdNo) {
-            // 1차: 주문번호 매칭 (기존)
-            invoiceMap[lOrdNo] = { inv: lInvNo, source: "로젠" };
-            _lPrimary++;
-          } else {
-            // ★ 2차: 전화주문 → M열(전화번호) 기반 매칭키
-            var lPhone = String(lData[li][12] || "").trim(); // M열: 전화번호
-            lPhone = String(_pep_fixPhoneLeadingZero_(lPhone));
-            if (lPhone) {
-              var secKey = "TEL:" + lPhone;
-              // ★ 2026-06-30: 동일 전화번호 복수 주문 지원 — 순번 추가
-              if (invoiceMap[secKey]) {
-                var seqN = 2;
-                while (invoiceMap[secKey + "#" + seqN]) seqN++;
-                secKey = secKey + "#" + seqN;
-              }
-              invoiceMap[secKey] = { inv: lInvNo, source: "로젠(전화)" };
-              _lSecondary++;
-            }
+      var lotteSrcTab = _pt_getSheetByGid(invSS, _PT_SECONDARY_INVOICE_GID);
+      if (lotteSrcTab && lotteSrcTab.getLastRow() >= 2) {
+        var ltLr = lotteSrcTab.getLastRow();
+        var ltLc = Math.max(lotteSrcTab.getLastColumn(), 29);
+        // 주문번호가 긴 숫자면 getValues가 지수로 깨져 매칭이 전부 실패함 → 화면값 사용
+        var ltAll = lotteSrcTab.getRange(1, 1, ltLr, ltLc).getDisplayValues();
+        var hdrIdx = _pep_findLotteHeaderRow_(ltAll);
+        var ltCols = _pep_resolveLotteCols_(ltAll[hdrIdx]);
+        var dataStart = hdrIdx + 1;
+        if (_pep_countInvoiceCol_(ltAll, dataStart, ltCols.invoice) === 0) {
+          ltCols = { name: 5, invoice: 6, uid: 9, phone: -1, addr: -1, item: 28, date: 3 };
+          dataStart = (hdrIdx === 0) ? 1 : hdrIdx + 1;
+          if (_pep_countInvoiceCol_(ltAll, dataStart, 6) === 0 && _pep_countInvoiceCol_(ltAll, 1, 6) > 0) {
+            dataStart = 1;
           }
-
         }
-        Logger.log("[UNIFIED] 로젠 송장맵: 1차(주문번호)=" + _lPrimary +
-          " 2차(전화)=" + _lSecondary + " 합계=" + Object.keys(invoiceMap).length + "건");
+        var _uidIdx = ltCols.uid;
+        var _invIdx = ltCols.invoice;
+        var _nameIdx = ltCols.name;
+        var _phoneIdx = ltCols.phone;
+        var _ltPrimary = 0, _ltName = 0, _ltPhone = 0, _ltInvRows = 0;
+        for (var lti = dataStart; lti < ltAll.length; lti++) {
+          var ltOrdNo = String(ltAll[lti][_uidIdx] || "").trim();
+          var ltInvNo = _pep_normInvoiceNo_(ltAll[lti][_invIdx]);
+          if (!ltInvNo) continue;
+          _ltInvRows++;
+          var ltPicked = (ltCols.date >= 0) ? _pep_ymdNum_(ltAll[lti][ltCols.date]) : 0;
+          if (ltOrdNo) {
+            _pep_addInvoiceMap_(invoiceMap, ltOrdNo, ltInvNo, "롯데", "", ltPicked);
+            _ltPrimary++;
+          }
+          var ltPhone = (_phoneIdx >= 0) ? ltAll[lti][_phoneIdx] : "";
+          if (ltPhone) _ltPhone++;
+          _pep_addNamePhoneInvoiceKeys_(invoiceMap, ltAll[lti][_nameIdx], ltPhone, ltInvNo, "롯데",
+            {
+              addr: (ltCols.addr >= 0) ? ltAll[lti][ltCols.addr] : "",
+              item: (ltCols.item >= 0) ? ltAll[lti][ltCols.item] : "",
+              picked: ltPicked,
+              stat: _pep_keyStat_("롯데")
+            });
+          if (_pep_normRecipName_(ltAll[lti][_nameIdx])) _ltName++;
+        }
+        result.detail.lotteRead = _ltInvRows;
+        result.detail.lotteCols =
+          "송장=" + _pep_colLetter_(_invIdx) +
+          " 주문번호=" + _pep_colLetter_(_uidIdx) +
+          " 이름=" + _pep_colLetter_(_nameIdx) +
+          " 헤더행=" + (hdrIdx + 1);
+        Logger.log("[UNIFIED] 롯데 송장맵: 송장행=" + _ltInvRows +
+          " 주문번호=" + _ltPrimary +
+          " 수취인명=" + _ltName +
+          " " + result.detail.lotteCols +
+          " 합계키=" + Object.keys(invoiceMap).length + "건");
+      } else {
+        Logger.log("[UNIFIED] 롯데 송장탭 없음/비어있음 (GID " + _PT_SECONDARY_INVOICE_GID + ")");
       }
-    } catch (eLM) {
-      Logger.log("[UNIFIED] 로젠 송장맵 오류: " + eLM.message);
+    } catch (eLT) {
+      Logger.log("[UNIFIED] 롯데 송장맵 오류: " + eLT.message);
     }
+
+    // (a3) ★ 2026-08-24: 1주출고 — 최근 7일 택배 출고 이력 (지연·익일 발송 보강)
+    try {
+      _pep_loadWeeklyShipInvoiceMap_(invoiceMap, result);
+    } catch (eWs) {
+      Logger.log("[UNIFIED] 1주출고 송장맵 오류: " + eWs.message);
+    }
+
+    // (a2) 로젠 입력_로젠주문실적 — 일일마감 송장 소스로 사용하지 않음 (자사출고=롯데)
 
     // (b) 대리공급 송장맵: 대리공급_임시기록 P열(주문번호) → X열(송장번호)
     try {
-      var tempTab = _po_getNonPartnerTempTab_(ss);
+      var tempSS = typeof _po_openTempSheetSs_ === "function"
+        ? _po_openTempSheetSs_()
+        : ss;
+      var tempTab = _po_getNonPartnerTempTab_(tempSS);
       if (tempTab && tempTab.getLastRow() >= 2) {
         var tLr = tempTab.getLastRow();
         var tLc = Math.max(tempTab.getLastColumn(), _PO_TEMP_INV_COL_ + 1);
-        var tData = tempTab.getRange(2, 1, tLr - 1, tLc).getValues();
-        for (var ti = 0; ti < tData.length; ti++) {
-          var tUid = String(tData[ti][_PO_TEMP_UID_COL_] || "").trim(); // P열: 주문번호
-          var tInv = String(tData[ti][_PO_TEMP_INV_COL_] || "").trim(); // X열: 송장번호
-          if (tUid && tInv && !invoiceMap[tUid]) {
-            invoiceMap[tUid] = { inv: tInv, source: "대리공급" };
-          }
-        }
-        Logger.log("[UNIFIED] 대리공급 송장맵 추가 후 합계: " + Object.keys(invoiceMap).length + "건");
+        var tData = tempTab.getRange(2, 1, tLr - 1, tLc).getDisplayValues();
+        var tAdded = _po_addTempRowsToInvoiceMap_(invoiceMap, tData, "대리공급", 0);
+        Logger.log("[UNIFIED] 대리공급 임시기록 송장맵: " + tAdded + "건, 합계키=" + Object.keys(invoiceMap).length);
+      }
+      // (b1) ★ 2026-08-24: 마감 시 삭제된 임시기록 보관탭 — 익일·지연 발송 송장 보강
+      var archTab = typeof _po_getTempArchiveTab_ === "function" ? _po_getTempArchiveTab_(tempSS) : null;
+      if (archTab && archTab.getLastRow() >= 2) {
+        var aLr = archTab.getLastRow();
+        var aLc = Math.max(archTab.getLastColumn(), _PO_TEMP_INV_COL_ + _PO_TEMP_ARCHIVE_COL_OFFSET_ + 1);
+        var aData = archTab.getRange(2, 1, aLr - 1, aLc).getDisplayValues();
+        var aAdded = _po_addTempRowsToInvoiceMap_(invoiceMap, aData, "대리공급(보관)", _PO_TEMP_ARCHIVE_COL_OFFSET_);
+        result.detail.tempArchiveRead = aAdded;
+        Logger.log("[UNIFIED] 임시기록_보관 송장맵: " + aAdded + "건");
       }
     } catch (eTM) {
       Logger.log("[UNIFIED] 대리공급 송장맵 오류: " + eTM.message);
     }
 
-    // ── ② 판매현황 → 스냅샷 추가 + 매칭 ──
+    // 전 업체 전용/발주 마감탭 스캔은 본체에서 하지 않는다.
+    // 열면 6분을 넘기고 1단계 파일이 안 만들어진다. 송장은 롯데·임시기록·허브에서 붙이고,
+    // 못 붙인 건 내일 2단계(바로 이전 일일마감)에서 채운다.
+
+    // (b1d) 허브 월별 아카이브 — 허브에서 빠진 대리판매 송장
+    try {
+      if (typeof _ha_addHubArchiveToInvoiceMap_ === "function") {
+        var haArch = _ha_addHubArchiveToInvoiceMap_(invoiceMap, archiveDate);
+        result.detail.hubArchiveRead = haArch.read || 0;
+      }
+    } catch (eHa) {
+      Logger.log("[UNIFIED] 허브아카이브 송장맵 오류: " + eHa.message);
+    }
+
+    // (b2) 협력업체_발주허브 — C열(고유ID) → N열(송장번호). 대리판매·협력 출고 (롯데와 무관)
+    try {
+      var hubTab = ss.getSheetByName(typeof _PO_HUB_SHEET_NAME !== "undefined" ? _PO_HUB_SHEET_NAME : "협력업체_발주허브");
+      if (hubTab && hubTab.getLastRow() >= 2) {
+        var hubLc = Math.max(hubTab.getLastColumn(), 15);
+        var hubData = hubTab.getRange(2, 1, hubTab.getLastRow() - 1, hubLc).getDisplayValues();
+        var _hubPrimary = 0, _hubInvRows = 0;
+        for (var hbi = 0; hbi < hubData.length; hbi++) {
+          var hUid = String(hubData[hbi][2] || "").trim();
+          var hInv = String(hubData[hbi][13] || "").trim();
+          if (typeof _po_hasRealInvoice_ === "function" && !_po_hasRealInvoice_(hInv)) continue;
+          if (!hInv) continue;
+          _hubInvRows++;
+          // ★ 2026-08-27: 발주업체(B열)의 택배사를 송장과 함께 싣는다.
+          //   출처는 "대리판매" 뿐이어서 택배사를 알려주지 않는다. 업체가 자기
+          //   택배사로 보내므로 `업체_택배사` 표가 유일한 근거다. 여기서 실어두면
+          //   일일마감 택배사 열이 그대로 쓰고, 웹앱이 해당 택배사 조회로 연결한다.
+          var hCarrier = _pep_carrierForVendor_(hubData[hbi][1]);
+          if (hUid && !(invoiceMap[hUid] && invoiceMap[hUid].source === "롯데")) {
+            _pep_addInvoiceMap_(invoiceMap, hUid, hInv, "대리판매", hCarrier);
+            _hubPrimary++;
+          }
+          // ph UID(대리공급 Push)와 ds UID(허브) 불일치 시 교차 조회
+          if (typeof _pt_deriveHubRowPepUid_ === "function") {
+            try {
+              var hPepUid = _pt_deriveHubRowPepUid_(hubData[hbi]);
+              if (hPepUid && hPepUid !== hUid &&
+                  !(invoiceMap[hPepUid] && invoiceMap[hPepUid].source === "롯데")) {
+                _pep_addInvoiceMap_(invoiceMap, hPepUid, hInv, "대리판매", hCarrier);
+              }
+            } catch (ePepUid) {}
+          }
+          _pep_addNamePhoneInvoiceKeys_(
+            invoiceMap,
+            hubData[hbi][7],
+            hubData[hbi][8],
+            hInv,
+            "대리판매",
+            {
+              skipName: true,
+              addr: hubData[hbi][9],
+              item: hubData[hbi][5],
+              carrier: hCarrier,
+              stat: _pep_keyStat_("대리판매")
+            }
+          );
+        }
+        result.detail.hubRead = _hubInvRows;
+        Logger.log("[UNIFIED] 허브 송장맵: 송장행=" + _hubInvRows +
+          " 고유ID=" + _hubPrimary +
+          " 합계키=" + Object.keys(invoiceMap).length + "건");
+      } else {
+        Logger.log("[UNIFIED] 협력업체_발주허브 없음/비어있음");
+      }
+    } catch (eHub) {
+      Logger.log("[UNIFIED] 허브 송장맵 오류: " + eHub.message);
+    }
+
+    // (b3) ★ 2026-08-25: 송장원장 — 마감으로 임시기록에서 사라진 대리공급 송장 복구
+    try {
+      if (typeof _pil_addToInvoiceMap_ === "function") {
+        var ledgerRead = _pil_addToInvoiceMap_(invoiceMap);
+        result.detail.ledgerRead = ledgerRead;
+        Logger.log("[UNIFIED] 송장원장 송장맵: " + ledgerRead + "건, 합계키=" + Object.keys(invoiceMap).length);
+      }
+    } catch (eLg) {
+      Logger.log("[UNIFIED] 송장원장 송장맵 오류: " + eLg.message);
+    }
+
+    // (c) 합배송 탭 — 사방넷 UID/수취인 송장 보강 (롯데 J열이 비어 있는 합포장 행 보완)
+    try {
+      var hapSS = SpreadsheetApp.openById(_PT_COMBINED_INVOICE_SHEET_ID);
+      var hapTab = typeof _pt_getSheetByGid === "function"
+        ? _pt_getSheetByGid(hapSS, _PT_COMBINED_INVOICE_SHEET_GID)
+        : null;
+      if (!hapTab && hapSS) hapTab = hapSS.getSheetByName("합배송") || hapSS.getSheetByName("합배송 전용");
+      if (hapTab && hapTab.getLastRow() >= 2) {
+        var hapLc = Math.max(hapTab.getLastColumn(), 17);
+        var hapData = hapTab.getRange(1, 1, hapTab.getLastRow(), hapLc).getValues();
+        var hapHdr = hapData[0];
+        var hUid = -1, hInv = -1, hName = -1, hPhone = -1, hAddr = -1, hItem = -1;
+        for (var hc = 0; hc < hapHdr.length; hc++) {
+          var hh = String(hapHdr[hc] || "").replace(/\s/g, "");
+          if (!hh) continue;
+          if (hUid < 0 && /사방넷주문번호|고유아이디|고유ID|주문번호/i.test(hh)) hUid = hc;
+          if (hInv < 0 && /송장|운송장/.test(hh) && !/반품/.test(hh)) hInv = hc;
+          if (hName < 0 && /수취인|수령인|받는사람|받는분|고객명|이름|성명/.test(hh) && !/주소|전화|코드/.test(hh)) hName = hc;
+          if (hPhone < 0 && /전화|휴대폰|핸드폰|연락처/.test(hh) && !/주소/.test(hh)) hPhone = hc;
+          if (hAddr < 0 && /주소/.test(hh) && !/배송메|우편|보내는|송하인/.test(hh)) hAddr = hc;
+          if (hItem < 0 && /품목명|상품명|제품명|품명/.test(hh) && !/코드|수량|옵션/.test(hh)) hItem = hc;
+        }
+        var hapAdded = 0;
+        for (var hi = 1; hi < hapData.length; hi++) {
+          var hu = hUid >= 0 ? String(hapData[hi][hUid] || "").trim() : "";
+          var hv = hInv >= 0 ? String(hapData[hi][hInv] || "").trim() : "";
+          var hn = hName >= 0 ? hapData[hi][hName] : "";
+          var hp = hPhone >= 0 ? hapData[hi][hPhone] : "";
+          if (hu && hv) {
+            var hapSrc = (invoiceMap[hu] && invoiceMap[hu].source) ? invoiceMap[hu].source : "합배송";
+            _pep_addInvoiceMap_(invoiceMap, hu, hv, hapSrc);
+            hapAdded++;
+          }
+          if (hv) {
+            _pep_addNamePhoneInvoiceKeys_(invoiceMap, hn, hp, hv, "합배송",
+              {
+                addr: hAddr >= 0 ? hapData[hi][hAddr] : "",
+                item: hItem >= 0 ? hapData[hi][hItem] : "",
+                stat: _pep_keyStat_("합배송")
+              });
+          }
+        }
+        Logger.log("[UNIFIED] 합배송 송장맵 보강: " + hapAdded + "건");
+      }
+    } catch (eHap) {
+      Logger.log("[UNIFIED] 합배송 송장맵 오류: " + eHap.message);
+    }
+
+    // (d) 3-3_병합 — 이름+전화 폴백 (일일마감 전용. 송장수집은 사용하지 않음)
+    //     롯데탭에 전화번호가 없어 고유ID 없는 주문은 여기서 맞춘다.
+    try {
+      var npTab = null;
+      try {
+        var npInvSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
+        npTab = _pt_getSheetByGid(npInvSS, _PT_NAME_PHONE_FALLBACK_GID);
+      } catch (eNpInv) {}
+      if (!npTab) {
+        try {
+          var npCombSS = SpreadsheetApp.openById(_PT_COMBINED_INVOICE_SHEET_ID);
+          npTab = _pt_getSheetByGid(npCombSS, _PT_NAME_PHONE_FALLBACK_GID);
+        } catch (eNpComb) {}
+      }
+      if (npTab && npTab.getLastRow() >= 2) {
+        var npLc = Math.max(npTab.getLastColumn(), 4);
+        var npData = npTab.getRange(1, 1, npTab.getLastRow(), npLc).getValues();
+        // ★ 2026-08-25: 주소 열이 있으면 동명이인 구분에 쓴다 (없으면 무시)
+        // ★ 2026-08-26: 품목명 열이 있으면 한 사람의 여러 주문을 구분하는 데 쓴다
+        var npAddrIdx = -1, npItemIdx = -1;
+        for (var nhc = 0; nhc < npLc; nhc++) {
+          var nhh = String(npData[0][nhc] || "").replace(/\s/g, "");
+          if (!nhh) continue;
+          if (npAddrIdx < 0 && /주소/.test(nhh) && !/배송메|우편|보내는|송하인/.test(nhh)) npAddrIdx = nhc;
+          if (npItemIdx < 0 && /품목명|상품명|제품명|품명/.test(nhh) && !/코드|수량|옵션/.test(nhh)) npItemIdx = nhc;
+        }
+        var npAdded = 0;
+        for (var npi = 1; npi < npData.length; npi++) {
+          var npName = npData[npi][0];
+          var npPhone = npData[npi][1];
+          var npInv = String(npData[npi][3] || "").trim();
+          if (!npInv) continue;
+          _pep_addNamePhoneInvoiceKeys_(invoiceMap, npName, npPhone, npInv, "롯데",
+            {
+              addr: npAddrIdx >= 0 ? npData[npi][npAddrIdx] : "",
+              item: npItemIdx >= 0 ? npData[npi][npItemIdx] : "",
+              stat: _pep_keyStat_("3-3_병합")
+            });
+          npAdded++;
+        }
+        Logger.log("[UNIFIED] 3-3_병합 이름+전화 송장맵: " + npAdded + "건");
+      } else {
+        Logger.log("[UNIFIED] 3-3_병합 탭 없음/비어있음 (GID " + _PT_NAME_PHONE_FALLBACK_GID + ")");
+      }
+    } catch (eNp) {
+      Logger.log("[UNIFIED] 3-3_병합 송장맵 오류: " + eNp.message);
+    }
+
+    // 2단계(이전 일일마감 미매칭)는 1단계 파일을 쓴 뒤에 한다.
+
+    // ── 1단계: 판매현황 → 스냅샷 추가 + 송장 매칭 ──
     // ★ 2026-06-26: 항상 판매현황을 읽어 스냅샷에 새 행 추가 (기존 미발송분과 합침)
     var snapTab = ss.getSheetByName(_SNAPSHOT_TAB_NAME_);
     try {
       var srcSS = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
-      var snapResult = _pep_saveSnapshotToHub_(srcSS);
+      var snapResult = _pep_saveSnapshotToHub_(srcSS, archiveDate);
       Logger.log("[UNIFIED] 판매현황→스냅샷: saved=" + snapResult.saved +
         " skipped=" + snapResult.skipped +
         (snapResult.error ? " error=" + snapResult.error : ""));
@@ -6887,39 +9897,67 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
       // 스냅샷 구조: A(0)=날짜, B(1)=매칭키, C~Q(2~16)=판매현황15열, R(17)=상태
 
       var statusCol = snapLc; // 1-based 마지막 열 (상태열)
-      var _matchCount_ = 0, _skipAlready_ = 0, _skipNoInv_ = 0;
-      var _lozenCount_ = 0, _lozenPhoneCount_ = 0, _supplyCount_ = 0; // ★ 출처별 건수
+      var _matchCount_ = 0, _skipAlready_ = 0, _skipNoInv_ = 0, _multiInv_ = 0;
+      var _lozenCount_ = 0, _lozenPhoneCount_ = 0, _lotteCount_ = 0, _supplyCount_ = 0, _hubCount_ = 0;
+      var _namePhoneCount_ = 0;
+      var _carrierFilled_ = 0; // 택배사 열이 채워진 건수 — 웹앱 택배조회 링크의 근거
+      var _carrierVia_ = {};   // 무엇을 근거로 판정했나 (송장맵/출처/업체명/출고지…)
 
-      // ★ 중복 방지: 이미 오늘 아카이브에 기록된 운송장번호
-      var existInvSet = {};
-      // ★ 2026-06-29: archiveDate 사용 (전날 매출일 지원)
-      var existArchFileName = _UNIFIED_ARCHIVE_PREFIX_ + "(" + archiveDate + ")";
-      try {
-        var existArchSs = _unified_findExistingArchiveSs_(existArchFileName);
-        if (existArchSs) {
-          var existSheets = existArchSs.getSheets();
-          for (var esi = 0; esi < existSheets.length; esi++) {
-            if (existSheets[esi].getLastRow() >= 2) {
-              var existAll = existSheets[esi].getRange(1, 1, existSheets[esi].getLastRow(), existSheets[esi].getLastColumn()).getValues();
-              for (var eRow = 1; eRow < existAll.length; eRow++) {
-                for (var eCol = 0; eCol < existAll[eRow].length; eCol++) {
-                  var eVal = String(existAll[eRow][eCol] || "").trim();
-                  if (eVal && /^\d{10,14}$/.test(eVal)) existInvSet[eVal] = true;
-                }
-              }
-            }
-          }
-        }
-      } catch (eExist) {}
+      // ★ 중복 방지: 날짜별 (주문번호+송장) — 송장만으로 합배송 추가주문을 건너뛰지 않음
+      var existPairCache = {};
+      function _getExistPair_(dateKey) {
+        if (!existPairCache[dateKey]) existPairCache[dateKey] = _pep_loadArchiveExistPair_(dateKey);
+        return existPairCache[dateKey];
+      }
+      function _pushMatchedRow_(dateKey, row) {
+        matchedRows.push(row);
+        if (!matchedByDate[dateKey]) matchedByDate[dateKey] = [];
+        matchedByDate[dateKey].push(row);
+      }
 
-      // 헤더 구성: 스냅샷의 C~Q 헤더 + 운송장번호 + 출처
+      // 헤더 구성: 스냅샷의 C~Q 헤더 + 택배사 + 운송장번호 + 출처
+      //
+      // ★ 2026-08-27: 택배사를 **운송장번호 바로 앞**에 넣는다. 끝에 붙이지 않는다.
+      //   코드 전반이 "출처 = 마지막 열, 운송장번호 = 끝에서 두 번째" 를 위치로
+      //   가정한다 (`_pep_mapArchiveMatchCols_`·`_puv_mapDailyCols_` 의
+      //   hdr.length-2/-1 폴백, `_cs_isSnapshotDailyArchiveHeader_` 의 마지막 두 열
+      //   검사, 이 함수의 배경색·합계행 인덱스). 앞에 끼워 넣으면 그 가정이 전부
+      //   그대로 성립한다. 맨 끝에 붙이면 다섯 곳이 조용히 한 칸씩 틀어진다.
       matchedHeaders = [];
       var snapHdr = snapTab.getRange(1, 1, 1, snapLc).getValues()[0];
       for (var shi = 2; shi < snapLc - 1; shi++) { // 2~(lastCol-2) = 판매현황 C~Q 헤더
         matchedHeaders.push(String(snapHdr[shi] || "").trim() || ("열" + (shi - 1)));
       }
+      matchedHeaders.push("택배사");
       matchedHeaders.push("운송장번호");
       matchedHeaders.push("출처");
+
+      var SNAP_O = 14; // 스냅샷 수하인(판매현황 O)
+      var SNAP_P = 15; // 스냅샷 전화(판매현황 P)
+      var SNAP_ITEM = -1;
+      var SNAP_ADDR = -1; // ★ 2026-08-25: 주소 — 고유ID 없는 건의 동명이인 구분용
+      var SNAP_CODE = -1; // ★ 2026-08-27: 품목코드 — 출고지 조회용 (평택=롯데 / 대리발송=업체)
+      var SNAP_QTY = -1;  // ★ 2026-08-28: 수량 — 송장 개수 상한 (아래 안전장치)
+      for (var shi2 = 2; shi2 < snapLc - 1; shi2++) {
+        var hh2 = String(snapHdr[shi2] || "").replace(/\s/g, "");
+        if (!hh2) continue;
+        if (SNAP_QTY < 0 && /^수량$/.test(hh2)) SNAP_QTY = shi2;
+        if (SNAP_ITEM < 0 && /품목명|상품명|제품명|품명/.test(hh2)) SNAP_ITEM = shi2;
+        if (SNAP_ADDR < 0 && /주소/.test(hh2) && !/배송메|우편/.test(hh2)) SNAP_ADDR = shi2;
+        // 판매처 상품코드·옵션코드가 아니라 이카운트 품목코드여야 한다.
+        // 상품정보 탭이 그 코드로만 출고지를 답한다.
+        if (SNAP_CODE < 0 && /^(품목코드|이카운트코드|물품코드)$/.test(hh2)) SNAP_CODE = shi2;
+      }
+      if (SNAP_CODE < 0) {
+        for (var shi3 = 2; shi3 < snapLc - 1; shi3++) {
+          var hh3 = String(snapHdr[shi3] || "").replace(/\s/g, "");
+          if (/품목코드|이카운트코드/.test(hh3)) { SNAP_CODE = shi3; break; }
+        }
+      }
+      if (SNAP_ITEM < 0) SNAP_ITEM = 4;
+      Logger.log("[UNIFIED] 스냅샷 열: 품목=" + SNAP_ITEM + " 주소=" + SNAP_ADDR +
+        " 품목코드=" + SNAP_CODE + " 수량=" + SNAP_QTY);
+      var workItems = [];
 
       for (var si = 0; si < snapData.length; si++) {
         var snapStatus = String(snapData[si][snapLc - 1] || "").trim();
@@ -6930,97 +9968,303 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
 
         var matchKey = String(snapData[si][1] || "").trim(); // B열: 매칭키
         if (!matchKey) continue;
+        var snapDate = _pep_normSnapDate_(snapData[si][0], archiveDate);
 
-        // ★ 2026-06-25: 비주문 항목 → 송장 없이 바로 아카이브
-        // 조건1: 매칭키에 비주문 키워드 포함
         var _NON_ORDER_KEYWORDS_ = ["반품", "반품비", "제주도서산간", "제주도서", "도서산간", "추가배송비"];
         var _isNonOrder_ = false;
         for (var nk = 0; nk < _NON_ORDER_KEYWORDS_.length; nk++) {
           if (matchKey.indexOf(_NON_ORDER_KEYWORDS_[nk]) !== -1) { _isNonOrder_ = true; break; }
         }
-        // 조건2: D열(스냅샷 index 3)에 "[샘플]" 포함
         if (!_isNonOrder_) {
           var dVal = String(snapData[si][3] || "").trim();
-          if (dVal.indexOf("[샘플]") !== -1 || dVal.indexOf("[샘플]") !== -1) {
-            _isNonOrder_ = true;
-          }
-        }
-        // 조건3: 매칭키에 한글이 포함되어 있으면 비주문 (주문번호는 숫자/영문만)
-        if (!_isNonOrder_ && /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F\uA960-\uA97F\uD7B0-\uD7FF]/.test(matchKey)) {
-          _isNonOrder_ = true;
+          if (dVal.indexOf("[샘플]") !== -1) _isNonOrder_ = true;
         }
         if (_isNonOrder_) {
-          // 비주문 항목: 송장 없이 바로 기록
-          var nonRow = [];
-          for (var nci = 2; nci < snapLc - 1; nci++) { nonRow.push(snapData[si][nci]); }
-          nonRow.push("");          // 운송장번호 (없음)
-          nonRow.push("기타");  // 출처
-          matchedRows.push(nonRow);
-          _matchCount_++;
-          snapTab.getRange(si + 2, statusCol).setValue(_SNAPSHOT_STATUS_MATCHED_);
+          workItems.push({ si: si, matchKey: matchKey, snapDate: snapDate, kind: "other", inv: "", source: "기타" });
           continue;
         }
 
-        var invInfo = invoiceMap[matchKey];
-        // ★ 2026-06-29: 미매칭도 기록 (송장 빈칸 + 출처 "미매칭")
-        //   → 판매현황_임시기록 모두 일일마감으로 전환 + 단골 분석 데이터 확보
-        if (!invInfo) {
+        var recipName = _pep_normRecipName_(snapData[si][SNAP_O]);
+        if (!recipName && matchKey.indexOf("TEL:") !== 0 && matchKey.indexOf("FB:") !== 0 &&
+            /[\uAC00-\uD7AF]/.test(matchKey)) {
+          recipName = _pep_normRecipName_(matchKey);
+        }
+        var snapPhone = snapData[si][SNAP_P];
+        if ((!snapPhone || !String(snapPhone).replace(/[^0-9]/g, "")) && matchKey.indexOf("TEL:") === 0) {
+          snapPhone = matchKey.replace(/^TEL:/, "").replace(/#\d+$/, "");
+        }
+        var phoneTail = _pep_phoneTail_(snapPhone);
+        var snapAddr = SNAP_ADDR >= 0 ? snapData[si][SNAP_ADDR] : "";
+        var snapItem = SNAP_ITEM >= 0 ? snapData[si][SNAP_ITEM] : "";
+
+        workItems.push({
+          si: si,
+          matchKey: matchKey,
+          snapDate: snapDate,
+          itemName: String(snapData[si][SNAP_ITEM] || "").trim(),
+          kind: _pep_isSabangnetSnapKey_(matchKey) ? "sabang" : "other-order",
+          recipName: recipName,
+          phoneTail: phoneTail,
+          snapPhone: snapPhone,
+          snapAddr: snapAddr,
+          snapItem: snapItem,
+          uidCell: matchKey || (SNAP_O >= 0 ? snapData[si][SNAP_O] : ""),
+          usedNamePhone: false,
+          inv: "",
+          source: "",
+          carrier: "",
+          lag: 0
+        });
+      }
+
+      function _pep_applyInvToWorkItem_(it, invInfo, viaBox) {
+        if (!invInfo || !invInfo.inv) return false;
+        it.usedNamePhone = !!(viaBox && viaBox.via && viaBox.via !== "UID" && viaBox.via !== "UID미매칭");
+        it.inv = invInfo.inv;
+        it.source = invInfo.source || "";
+        it.carrier = invInfo.carrier || "";
+        it.lag = invInfo.lag || 0;
+        return true;
+      }
+
+      var _uidTried_ = 0, _uidHit_ = 0, _noUidTried_ = 0, _noUidHit_ = 0;
+      // 1단계 가: 고유아이디 있는 주문부터 송장 매칭
+      for (var wi1 = 0; wi1 < workItems.length; wi1++) {
+        var it1 = workItems[wi1];
+        if (it1.kind === "other") continue;
+        if (!_pep_isRealUid_(it1.uidCell || it1.matchKey)) continue;
+        _uidTried_++;
+        var via1 = {};
+        var hit1 = _pep_resolveRowInvoice_(invoiceMap, {
+          uid: it1.uidCell || it1.matchKey,
+          name: it1.recipName,
+          phone: it1.snapPhone,
+          addr: it1.snapAddr,
+          item: it1.snapItem,
+          orderDate: it1.snapDate
+        }, via1);
+        if (_pep_applyInvToWorkItem_(it1, hit1, via1)) _uidHit_++;
+      }
+      // 1단계 나: 고유아이디 없는 행 송장 매칭
+      for (var wi2 = 0; wi2 < workItems.length; wi2++) {
+        var it2 = workItems[wi2];
+        if (it2.kind === "other") continue;
+        if (_pep_isRealUid_(it2.uidCell || it2.matchKey)) continue;
+        _noUidTried_++;
+        var via2 = {};
+        var hit2 = _pep_resolveRowInvoice_(invoiceMap, {
+          uid: it2.uidCell || it2.matchKey,
+          name: it2.recipName,
+          phone: it2.snapPhone,
+          addr: it2.snapAddr,
+          item: it2.snapItem,
+          orderDate: it2.snapDate
+        }, via2);
+        if (_pep_applyInvToWorkItem_(it2, hit2, via2)) _noUidHit_++;
+      }
+      result.detail.uidMatched = _uidHit_;
+      result.detail.noUidMatched = _noUidHit_;
+      Logger.log("[UNIFIED] 1단계 매칭: 고유ID " + _uidHit_ + "/" + _uidTried_ +
+        " 고유ID없음 " + _noUidHit_ + "/" + _noUidTried_);
+
+      // ★ 같은 수취인(+전화)+주문일 그룹 — 합포장·소분은 동일 송장 전파
+      var sabangGroups = {};
+      for (var wi = 0; wi < workItems.length; wi++) {
+        var it0 = workItems[wi];
+        if (it0.kind === "other" || !it0.recipName) continue;
+        var gk = (it0.snapDate || archiveDate) + "|" + it0.recipName + "|" + (it0.phoneTail || "");
+        if (!sabangGroups[gk]) sabangGroups[gk] = [];
+        sabangGroups[gk].push(it0);
+      }
+      var _sabangGroupFilled_ = 0;
+      var _combinedPackCount_ = 0;
+      var _ambigGroupSkipped_ = 0; // 그룹 안에 서로 다른 송장이 섞여 전파를 포기한 그룹 수
+      var _qtyBlocked_ = 0;        // 송장 개수가 수량을 넘어 미매칭으로 돌린 행 수
+      for (var sgk in sabangGroups) {
+        if (!sabangGroups.hasOwnProperty(sgk)) continue;
+        var grp = sabangGroups[sgk];
+        var mergedInv = "";
+        var mergedSrc = "";
+        var isPackGrp = grp.length >= 2;
+        for (var gsi = 0; gsi < grp.length; gsi++) {
+          if (_pep_isCombinedPackItem_(grp[gsi].itemName)) { isPackGrp = true; }
+        }
+
+        // ★ 2026-08-28: `NAME:` · `NP:` 로 송장맵을 직접 뒤지던 두 블록을 없앴다.
+        //   그 키는 사람만 가리켜 **그 사람의 다른 주문 송장까지** 끌어왔다.
+        //   대리발송처럼 수취인·전화·주소가 업체 자기 것인 건에서는 한 사람 밑에
+        //   수십 건이 쌓여 있어, 수량 1개 행에 송장 수십 개가 붙었다.
+        //   그룹 병합은 이제 **구성원이 각자 찾아온 송장**만 합친다.
+        var mergedCarrier = "";
+        for (var gi = 0; gi < grp.length; gi++) {
+          mergedInv = _pep_mergeInvCells_(mergedInv, grp[gi].inv);
+          if (!mergedSrc && grp[gi].source) mergedSrc = grp[gi].source;
+          // 같은 송장을 나눠 쓰는 그룹이므로 택배사도 하나다 — 아는 놈에게서 가져온다
+          if (!mergedCarrier && grp[gi].carrier) mergedCarrier = grp[gi].carrier;
+        }
+        if (!mergedInv) continue;
+
+        // ★ 이 그룹 병합이 존재하는 이유는 **합포장** 하나다 —
+        //   여러 품목이 한 송장으로 나가는 경우. 그래서 전파는 송장이 하나일 때만 한다.
+        //   서로 다른 송장이 섞였다면 합포장이 아니라 **키 충돌**이다. 그때 전파하면
+        //   각 행이 남의 송장까지 받아 간다. 각자 찾아온 것을 그대로 두는 편이 맞다.
+        if (_pep_splitInvNos_(mergedInv).length !== 1) {
+          _ambigGroupSkipped_++;
+          continue;
+        }
+
+        for (var gj = 0; gj < grp.length; gj++) {
+          var before = grp[gj].inv;
+          grp[gj].inv = mergedInv;
+          if (isPackGrp) {
+            grp[gj].source = "합포장";
+          } else if (!grp[gj].source) {
+            grp[gj].source = mergedSrc || "롯데";
+          }
+          if (!grp[gj].carrier && mergedCarrier) grp[gj].carrier = mergedCarrier;
+          if (!before && mergedInv && grp[gj].kind !== "sabang") grp[gj].usedNamePhone = true;
+          if (before !== mergedInv) _sabangGroupFilled_++;
+          if (isPackGrp && mergedInv) _combinedPackCount_++;
+        }
+      }
+
+      for (var wj = 0; wj < workItems.length; wj++) {
+        var item = workItems[wj];
+        var rowDate = item.snapDate || archiveDate;
+        if (item.kind === "other") {
+          var nonRow = [];
+          for (var nci = 2; nci < snapLc - 1; nci++) { nonRow.push(snapData[item.si][nci]); }
+          nonRow.push(""); // 택배사 — 주문 행이 아니므로 판정하지 않는다
+          nonRow.push("");
+          nonRow.push("기타");
+          _pushMatchedRow_(rowDate, nonRow);
+          _matchCount_++;
+          snapTab.getRange(item.si + 2, statusCol).setValue(_SNAPSHOT_STATUS_MATCHED_);
+          continue;
+        }
+
+        // ★ 2026-08-28: 마지막 관문 — 송장 개수가 이 주문이 만들 수 있는 최대
+        //   장수를 넘으면 붙이지 않는다. 위 조회·전파를 다 통과해도 여기서 걸린다.
+        //
+        //   상한은 `_par_slotSpec_` 한 곳에만 정의돼 있다. **여기서 수량을 직접
+        //   비교하면 안 된다** — 품목명에 「세트」가 있으면 뚜껑·몸통이 따로 나가
+        //   1개 주문에 송장 2장이 정상이라, 수량으로 자르면 멀쩡한 세트가 통째로
+        //   미매칭이 된다. 비세트도 박스가 쪼개지면 2N 까지 정상이다.
+        if (item.inv && SNAP_QTY >= 0 && _pep_qtyOverMax_(snapData[item.si][SNAP_QTY], item.itemName, item.inv)) {
+          var slot = typeof _par_slotSpec_ === "function"
+            ? _par_slotSpec_(snapData[item.si][SNAP_QTY], item.itemName)
+            : { qty: "", max: 0, set: false };
+          var invN = _pep_splitInvNos_(item.inv).length;
+          if (_qtyBlocked_ < 5) {
+            Logger.log("[UNIFIED] 수량초과 송장 차단: 키=[" + item.matchKey + "] " +
+              (slot.set ? "세트 " : "") + "수량=" + slot.qty + " 최대=" + slot.max +
+              "장인데 송장=" + invN + "장 → 미매칭");
+          }
+          _qtyBlocked_++;
+          item.inv = "";
+          item.source = "";
+        }
+
+        if (!item.inv) {
+          var existPairNI = _getExistPair_(rowDate);
+          if (existPairNI[item.matchKey + "|__NOINV__"]) {
+            snapTab.getRange(item.si + 2, statusCol).setValue(_SNAPSHOT_STATUS_UNMATCHED_);
+            _skipAlready_++;
+            continue;
+          }
+          existPairNI[item.matchKey + "|__NOINV__"] = true;
           var noInvRow = [];
-          for (var nci = 2; nci < snapLc - 1; nci++) { noInvRow.push(snapData[si][nci]); }
-          noInvRow.push("");          // 운송장번호 (없음)
-          noInvRow.push("미매칭");    // 출처
-          matchedRows.push(noInvRow);
+          for (var nci2 = 2; nci2 < snapLc - 1; nci2++) { noInvRow.push(snapData[item.si][nci2]); }
+          noInvRow.push(""); // 택배사 — 송장이 없으면 조회할 것도 없다
+          noInvRow.push("");
+          noInvRow.push("미매칭");
+          _pushMatchedRow_(rowDate, noInvRow);
           _skipNoInv_++;
           _matchCount_++;
-          snapTab.getRange(si + 2, statusCol).setValue(_SNAPSHOT_STATUS_MATCHED_);
+          snapTab.getRange(item.si + 2, statusCol).setValue(_SNAPSHOT_STATUS_UNMATCHED_);
           continue;
         }
 
-        // 중복 체크
-        if (existInvSet[invInfo.inv]) {
+        var existPair = _getExistPair_(rowDate);
+        if (_pep_alreadyArchivedInv_(existPair, item.matchKey, item.inv)) {
           _skipAlready_++;
-          // 이미 기록된 것이므로 스냅샷도 완료 처리
-          snapTab.getRange(si + 2, statusCol).setValue(_SNAPSHOT_STATUS_MATCHED_);
+          snapTab.getRange(item.si + 2, statusCol).setValue(_SNAPSHOT_STATUS_MATCHED_);
           continue;
         }
-        existInvSet[invInfo.inv] = true;
+        _pep_markArchivedInv_(existPair, item.matchKey, item.inv);
 
-        // 행 구성: 판매현황 C~Q(15열) + 운송장번호 + 출처
         var outRow = [];
-        for (var ci = 2; ci < snapLc - 1; ci++) { // C~Q 데이터 (스냅샷 3열~마지막-1열)
-          outRow.push(snapData[si][ci]);
+        for (var ci = 2; ci < snapLc - 1; ci++) {
+          outRow.push(snapData[item.si][ci]);
         }
-        outRow.push(invInfo.inv);     // 운송장번호
-        outRow.push(invInfo.source);  // 출처 (로젠/대리공급)
-        matchedRows.push(outRow);
+        // 택배사 — 송장맵 → 출처 → 업체명 → 품목코드(출고지) 순. 여기서 확정해
+        // 기록하므로 이후 통합조회·웹앱은 다시 계산하지 않고 이 값을 읽어 쓴다.
+        var rowCode = SNAP_CODE >= 0 ? snapData[item.si][SNAP_CODE] : "";
+        var _viaBox_ = {};
+        var rowCarrier = _pep_carrierForArchiveRow_(item, item.source, "", rowCode, _viaBox_);
+        if (rowCarrier) {
+          _carrierFilled_++;
+          _carrierVia_[_viaBox_.via] = (_carrierVia_[_viaBox_.via] || 0) + 1;
+        }
+        outRow.push(rowCarrier);
+        outRow.push(item.inv);
+        outRow.push(item.source);
+        _pushMatchedRow_(rowDate, outRow);
 
-        // ★ 출처별 건수 추적
-        // ★ 2026-06-29: 로젠(전화) 구분 추가
-        if (invInfo.source === "로젠") _lozenCount_++;
-        else if (invInfo.source === "로젠(전화)") _lozenPhoneCount_++;
-        else _supplyCount_++;
+        if (_pep_splitInvNos_(item.inv).length > 1) _multiInv_++;
 
-        // 스냅샷 상태 업데이트: 매칭완료
-        snapTab.getRange(si + 2, statusCol).setValue(_SNAPSHOT_STATUS_MATCHED_);
+        if (item.usedNamePhone || item.source === "이름+전화") _namePhoneCount_++;
+        if (item.source === "롯데" || item.source === "1주출고") _lotteCount_++;
+        else if (item.source === "합포장") { /* 합포장은 롯데 계열 */ _lotteCount_++; }
+        else if (item.source === "대리판매") _hubCount_++;
+        else if (item.source === "로젠") _lozenCount_++;
+        else if (item.source === "로젠(전화)") _lozenPhoneCount_++;
+        else if (item.source !== "이름+전화") _supplyCount_++;
+
+        snapTab.getRange(item.si + 2, statusCol).setValue(_SNAPSHOT_STATUS_MATCHED_);
         _matchCount_++;
 
-        // 진단: 처음 3건 로그
         if (_matchCount_ <= 3) {
-          Logger.log("[UNIFIED] 스냅샷 매칭[" + _matchCount_ + "] 키=[" + matchKey +
-            "] → 송장=[" + invInfo.inv + "] 출처=" + invInfo.source);
+          Logger.log("[UNIFIED] 스냅샷 매칭[" + _matchCount_ + "] 키=[" + item.matchKey +
+            "] → 송장=[" + String(item.inv).replace(/\n/g, ",") + "] 출처=" + item.source);
         }
       }
 
       result.detail.matched = matchedRows.length;
-      result.detail.lozen = _lozenCount_;
+      result.detail.lotte = _lotteCount_;
+      result.detail.lozen = _lotteCount_;
       result.detail.lozenPhone = _lozenPhoneCount_;
+      result.detail.lozenFallback = _lozenCount_;
+      result.detail.hub = _hubCount_;
       result.detail.supply = _supplyCount_;
       result.detail.skipped = _skipAlready_;
       result.detail.noInvoice = _skipNoInv_;
+      result.detail.multiInvoice = _multiInv_;
+      result.detail.namePhone = _namePhoneCount_;
+      result.detail.combinedPack = _combinedPackCount_ || 0;
+      // 같은 수취인·전화 그룹인데 송장이 서로 달라 전파를 포기한 수.
+      // 대리발송처럼 수취인이 업체 자기 자신이면 여기가 크게 잡힌다 — 정상이다.
+      result.detail.ambiguousGroup = _ambigGroupSkipped_ || 0;
+      result.detail.qtyBlocked = _qtyBlocked_ || 0;
+      result.detail.carrierFilled = _carrierFilled_;
+      var _viaKeys_ = Object.keys(_carrierVia_);
+      var _viaTxt_ = _viaKeys_.map(function (k) { return k + ":" + _carrierVia_[k]; }).join(" ");
+      result.detail.carrierVia = _viaTxt_;
+      Logger.log("[UNIFIED] 택배사 열: " + _carrierFilled_ + "/" + _matchCount_ +
+        "건 판정" + (_viaTxt_ ? " [근거 " + _viaTxt_ + "]" : "") + ". 빈칸은 업체 택배사 미등록이다 — " +
+        "'💼 협력업체 관리 → 🚚 업체 택배사 표 생성/점검' 확인.");
       Logger.log("[UNIFIED] 스냅샷 매칭 결과: 매칭=" + _matchCount_ +
-        " (로젠:" + _lozenCount_ + " 로젠(전화):" + _lozenPhoneCount_ +
-        " 대리공급:" + _supplyCount_ + " 미매칭:" + _skipNoInv_ + ")" +
+        " (롯데:" + _lotteCount_ + " 대리판매:" + _hubCount_ + " 대리공급:" + _supplyCount_ +
+        " 로젠폴백:" + _lozenCount_ +
+        " 로젠(전화):" + _lozenPhoneCount_ +
+        " 이름+전화:" + _namePhoneCount_ +
+        " 미매칭:" + _skipNoInv_ + ")" +
         " 이미완료=" + _skipAlready_ +
+        " 사방넷복수송장=" + _multiInv_ +
+        " 그룹보강=" + _sabangGroupFilled_ +
+        " 합포장=" + (_combinedPackCount_ || 0) +
+        " 그룹모호보류=" + (_ambigGroupSkipped_ || 0) +
+        " 수량초과차단=" + (_qtyBlocked_ || 0) +
         " → 최종=" + matchedRows.length + "건");
 
       SpreadsheetApp.flush();
@@ -7033,118 +10277,42 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
     // ★ 2026-06-25: 대리공급/대리판매 별도 수집 제거 — 스냅샷+송장매칭으로 통합
     // 판매현황 = 전체 주문이므로 별도 수집 불필요
 
-    // ── 구글드라이브에 별도 시트 파일로 저장 ──
-    // ★ 2026-06-25: 매칭 0건은 에러가 아님 (송장 미도착 등 정상 상황)
-    if (matchedRows.length === 0) {
+    // ── 1단계 파일 기록: 판매현황 그대로 (미매칭 포함, 송장 없어도 파일 생성) ──
+    var dateKeys = Object.keys(matchedByDate);
+    if (matchedRows.length > 0) {
+      if (dateKeys.length === 0) {
+        matchedByDate[archiveDate] = matchedRows.slice();
+        dateKeys = [archiveDate];
+      }
+      var tabNames = [];
+      for (var dki = 0; dki < dateKeys.length; dki++) {
+        var dKey = dateKeys[dki];
+        var batchRows = matchedByDate[dKey];
+        if (!batchRows || !batchRows.length) continue;
+        var appendResult = _pep_appendArchiveRows_(ss, dKey, matchedHeaders, batchRows, result.detail);
+        result.archived += appendResult.written;
+        tabNames.push(appendResult.tabName);
+      }
+      result.tabName = tabNames.join(", ");
+      SpreadsheetApp.flush();
+    } else {
       result.archived = 0;
-      Logger.log("[UNIFIED_ARCHIVE] 매칭 0건 (스냅샷 있으나 송장 미도착 또는 이미 처리됨)");
-      return result;
+      Logger.log("[UNIFIED_ARCHIVE] 1단계 신규 행 없음 (이미 처리됐거나 판매현황 비어 있음)");
     }
 
-    // ★ 2026-06-29: archiveDate 사용 (전날 매출일 지원)
-    var archFileName = _UNIFIED_ARCHIVE_PREFIX_ + "(" + archiveDate + ")";
-    result.tabName = archFileName;
-
-    // ★ 구글드라이브에 별도 시트 파일로 저장 (탭이 아닌 독립 시트)
-    var archSs = _unified_getOrCreateArchiveSs_(ss, archFileName);
-    var archTab = archSs.getSheetByName("일일마감") || archSs.getSheets()[0];
-
-    // 탭 이름 설정 (최초)
-    if (archTab.getLastRow() === 0 && archTab.getName() !== "일일마감") {
-      try { archTab.setName("일일마감"); } catch (eN) {}
-    }
-
-    var nextRow = archTab.getLastRow() + 1;
-    if (nextRow < 2) nextRow = 1;
-
-    // ★ 2026-06-25: 단일 포맷 — 헤더 1줄 + 데이터 (출처 열로 로젠/대리공급 구분)
-    var colCount = matchedHeaders.length;
-
-    // 헤더 행 (최초 기록 시에만)
-    if (nextRow <= 1) {
-      archTab.getRange(1, 1, 1, colCount).setValues([matchedHeaders]);
-      archTab.getRange(1, 1, 1, colCount)
-        .setBackground("#1a237e").setFontColor("white")
-        .setFontWeight("bold").setFontSize(10)
-        .setHorizontalAlignment("center");
-      archTab.setFrozenRows(1);
-      nextRow = 2;
-    }
-
-    // ★ 2026-06-25: 아카이브 기록 전 전화번호 앞 0 보정 (스냅샷에서 이미 보정했지만 이중 안전)
-    var archPhoneIdxs = _pep_detectPhoneColumns_(matchedHeaders);
-    for (var ari = 0; ari < matchedRows.length; ari++) {
-      for (var api = 0; api < archPhoneIdxs.length; api++) {
-        matchedRows[ari][archPhoneIdxs[api]] = _pep_fixPhoneLeadingZero_(matchedRows[ari][archPhoneIdxs[api]]);
-      }
-    }
-
-    // 데이터 행 일괄 기록
-    archTab.getRange(nextRow, 1, matchedRows.length, colCount).setValues(matchedRows);
-
-    // 운송장번호 열 텍스트 서식 (마지막-1열 = 운송장번호)
-    var invColIdx = colCount - 1; // 0-based → 운송장번호 열
-    archTab.getRange(nextRow, invColIdx, matchedRows.length, 1).setNumberFormat("@");
-
-    // ★ 2026-06-25: 전화번호/휴대폰 열 텍스트 서식 (앞 0 보존)
-    for (var apfi = 0; apfi < archPhoneIdxs.length; apfi++) {
-      var archPhoneCol = archPhoneIdxs[apfi] + 1; // 1-based
-      archTab.getRange(nextRow, archPhoneCol, matchedRows.length, 1).setNumberFormat("@");
-    }
-
-    // 출처별 배경색 적용
-    // ★ 2026-06-29: 로젠(전화), 미매칭, 기타 색상 추가
-    for (var ri = 0; ri < matchedRows.length; ri++) {
-      var source = String(matchedRows[ri][colCount - 1] || "").trim();
-      var bgColor = "#e8f5e9"; // 기본: 연한 초록
-      if (source === "로젠") bgColor = "#e8eaf6";          // 연한 남색
-      else if (source === "로젠(전화)") bgColor = "#e1f5fe"; // 연한 하늘색
-      else if (source === "미매칭") bgColor = "#fff3e0";     // 연한 주황
-      else if (source === "기타") bgColor = "#f3e5f5";       // 연한 보라
-      archTab.getRange(nextRow + ri, 1, 1, colCount).setBackground(bgColor);
-    }
-
-    result.archived = matchedRows.length;
-
-    // ★ 2026-06-25: 합계 행 추가 (마지막 행 아래)
+    // ── 2단계: 바로 이전 일일마감의 미매칭만 오늘 송장맵으로 기입 ──
     try {
-      var sumRow = [];
-      for (var sci = 0; sci < colCount; sci++) sumRow.push("");
-      // G열(index 6) = 합계 총합
-      var gSum = 0;
-      for (var gi = 0; gi < matchedRows.length; gi++) {
-        gSum += Number(matchedRows[gi][6]) || 0;
+      var step2Before = archiveDate;
+      if (dateKeys.length) {
+        dateKeys.sort();
+        step2Before = dateKeys[0];
       }
-      sumRow[6] = gSum;
-      // J열(index 9) = 단품배송비 총합
-      var jSum = 0;
-      for (var ji = 0; ji < matchedRows.length; ji++) {
-        jSum += Number(matchedRows[ji][9]) || 0;
-      }
-      sumRow[9] = jSum;
-      // Q열(index 16, 출처열) = 로젠/대리공급 건수
-      var srcIdx = colCount - 1; // 출처열 = 마지막 열
-      // ★ 2026-06-29: 로젠(전화), 미매칭 건수 추가
-      sumRow[srcIdx] = "로젠:" + (result.detail.lozen || 0) +
-        " 전화:" + (result.detail.lozenPhone || 0) +
-        " 대리공급:" + (result.detail.supply || 0) +
-        " 미매칭:" + (result.detail.noInvoice || 0) + "건";
-      // A열에 "합계" 표시
-      sumRow[0] = "★ 합계 (" + matchedRows.length + "건)";
-
-      var sumRowNum = nextRow + matchedRows.length;
-      archTab.getRange(sumRowNum, 1, 1, colCount).setValues([sumRow]);
-      archTab.getRange(sumRowNum, 1, 1, colCount)
-        .setBackground("#37474f").setFontColor("white")
-        .setFontWeight("bold").setFontSize(11);
-      // 숫자 열 포맷 (천단위 구분)
-      archTab.getRange(sumRowNum, 7, 1, 1).setNumberFormat("#,##0"); // G열
-      archTab.getRange(sumRowNum, 10, 1, 1).setNumberFormat("#,##0"); // J열
-    } catch (eSum) {
-      Logger.log("[UNIFIED_ARCHIVE] 합계 행 추가 오류: " + eSum.message);
+      var bfResult = _pep_backfillPreviousArchive_(invoiceMap, step2Before);
+      result.detail.backfill = bfResult.patched || 0;
+      result.detail.backfillDate = bfResult.date || "";
+    } catch (eBf) {
+      Logger.log("[UNIFIED] 2단계 이전마감 보강 오류: " + eBf.message);
     }
-
-    SpreadsheetApp.flush();
 
     // ★ 2026-07-04: DB 동기화 — daily_archive 테이블
     try {
@@ -7193,9 +10361,15 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
       Logger.log("[UNIFIED_ARCHIVE] DB 동기화 오류: " + eDb.message);
     }
 
-    Logger.log("[UNIFIED_ARCHIVE] " + archFileName + " (구글드라이브 시트) → 매칭:" + result.detail.matched +
-      " (로젠:" + result.detail.lozen + " 대리공급:" + result.detail.supply + ")" +
+    Logger.log("[UNIFIED_ARCHIVE] 소요 " + Math.round(_pep_udaElapsed_(udaStarted) / 1000) + "초");
+    Logger.log("[UNIFIED_ARCHIVE] " + result.tabName + " (구글드라이브 시트) → 매칭:" + result.detail.matched +
+      " (롯데:" + (result.detail.lotte || result.detail.lozen || 0) +
+      " 대리판매:" + (result.detail.hub || 0) +
+      " 로젠폴백:" + (result.detail.lozenFallback || 0) +
+      " 대리공급:" + result.detail.supply +
+      " 이름+전화:" + (result.detail.namePhone || 0) + ")" +
       " 미매칭:" + result.detail.noInvoice +
+      " 이전마감보강:" + (result.detail.backfill || 0) +
       " = 합계:" + result.archived + "건");
 
     // ★ 2026-06-24: 스냅샷 정리 (매칭완료 삭제 + 7일 초과 만료)
@@ -7212,7 +10386,7 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
     // ★ 2026-06-25: 사방넷_송장매칭 탭 초기화 (일괄 마감이동 제거에 따른 대체)
     try {
       var _srcSS_ = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
-      var _unmatchedTab_ = _srcSS_.getSheetByName("사방넷_송장매칭");
+      var _unmatchedTab_ = _po_getSabangnetMatchTab_(_srcSS_);
       if (_unmatchedTab_ && _unmatchedTab_.getLastRow() >= 2) {
         _unmatchedTab_
           .getRange(2, 1, _unmatchedTab_.getLastRow() - 1, _unmatchedTab_.getLastColumn())
@@ -7240,36 +10414,100 @@ var _UNIFIED_ARCHIVE_SS_PREFIX_ = "UNIFIED_DAILY_SS_ID_";
 var _UNIFIED_ARCHIVE_FOLDER_PROP_ = "UNIFIED_DAILY_ARCHIVE_FOLDER_ID";
 
 /**
+ * 살아 있는 드라이브 파일인가.
+ * isTrashed() 만으로는 부족하다 — 폴더 getFilesByName 이 휴지통 파일을
+ * 주고, 휴지통인데 isTrashed()=false 인 경우가 있다. 부모 없는 파일은 휴지통.
+ */
+function _unified_isLiveArchiveFile_(file, folder) {
+  if (!file) return false;
+  try {
+    if (file.isTrashed()) return false;
+  } catch (eTr) {
+    return false;
+  }
+  var folderId = "";
+  try { if (folder) folderId = folder.getId(); } catch (eFd) {}
+  var parentCount = 0;
+  var inFolder = !folderId;
+  try {
+    var parents = file.getParents();
+    while (parents.hasNext()) {
+      parentCount++;
+      var p = parents.next();
+      if (folderId && p.getId() === folderId) inFolder = true;
+    }
+  } catch (ePar) {
+    return false;
+  }
+  if (parentCount === 0) return false;
+  if (folderId && !inFolder) return false;
+  return true;
+}
+
+/** trashed=false 검색. getFilesByName 보다 휴지통을 정확히 뺀다. */
+function _unified_searchLiveArchiveFile_(fileName, folder) {
+  var safe = String(fileName || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  var q = 'title = "' + safe + '" and mimeType = "application/vnd.google-apps.spreadsheet" and trashed = false';
+  try {
+    var it = DriveApp.searchFiles(q);
+    while (it.hasNext()) {
+      var f = it.next();
+      if (_unified_isLiveArchiveFile_(f, folder)) return f;
+    }
+  } catch (e) {
+    Logger.log("[UNIFIED] searchFiles 실패: " + e.message);
+  }
+  return null;
+}
+
+/**
  * 기존 일일마감 시트 파일 찾기 (없으면 null)
  * ★ 2026-06-20: 휴지통에 있는 파일은 무시 (openById는 휴지통 파일도 열림)
+ * ★ 2026-08-30: isTrashed() 단독 실패 대비 — 부모 없음/폴더 밖/trashed=false 검색
  * @param {string} fileName 파일명
  * @return {Spreadsheet|null}
  */
 function _unified_findExistingArchiveSs_(fileName) {
   var props = PropertiesService.getScriptProperties();
   var propKey = _UNIFIED_ARCHIVE_SS_PREFIX_ + fileName;
+  var folder = null;
+  try { folder = _unified_resolveArchiveFolder_(); } catch (eFolder) {}
+
   var cachedId = props.getProperty(propKey);
   if (cachedId) {
     try {
       var cachedFile = DriveApp.getFileById(cachedId);
-      if (cachedFile.isTrashed()) {
-        Logger.log("[UNIFIED] 캐시된 파일이 휴지통에 있음 → 캐시 삭제: " + fileName);
-        props.deleteProperty(propKey);
-      } else {
+      if (_unified_isLiveArchiveFile_(cachedFile, folder)) {
         return SpreadsheetApp.openById(cachedId);
       }
+      Logger.log("[UNIFIED] 캐시된 파일이 휴지통/폴더밖 → 캐시 삭제: " + fileName);
+      props.deleteProperty(propKey);
+    } catch (e) {
+      props.deleteProperty(propKey);
     }
-    catch (e) { props.deleteProperty(propKey); }
   }
 
-  // 폴더에서 검색
-  var folder = _unified_resolveArchiveFolder_();
-  var files = folder.getFilesByName(fileName);
-  while (files.hasNext()) {
-    var file = files.next();
-    if (file.isTrashed()) continue;  // ★ 휴지통 파일 스킵
-    props.setProperty(propKey, file.getId());
-    return SpreadsheetApp.openById(file.getId());
+  var live = folder ? _unified_searchLiveArchiveFile_(fileName, folder) : null;
+  if (live) {
+    props.setProperty(propKey, live.getId());
+    return SpreadsheetApp.openById(live.getId());
+  }
+
+  if (folder) {
+    var files = folder.getFilesByName(fileName);
+    var skippedTrash = 0;
+    while (files.hasNext()) {
+      var file = files.next();
+      if (!_unified_isLiveArchiveFile_(file, folder)) {
+        skippedTrash++;
+        continue;
+      }
+      props.setProperty(propKey, file.getId());
+      return SpreadsheetApp.openById(file.getId());
+    }
+    if (skippedTrash) {
+      Logger.log("[UNIFIED] 휴지통/고아 파일 " + skippedTrash + "개 스킵: " + fileName);
+    }
   }
   return null;
 }

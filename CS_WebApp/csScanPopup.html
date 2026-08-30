@@ -1,0 +1,224 @@
+<script>
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  카메라 스캔 팝업 (공용 모듈)
+ *
+ *  Apps Script 웹앱 HTML은 googleusercontent 샌드박스 iframe 안에서 돈다.
+ *  이 iframe 에는 camera 권한이 없어서(2026-02 구글 정책 변경) iframe 안에서
+ *  getUserMedia 를 부르면 환경과 무관하게 아래처럼 막힌다.
+ *    Permissions policy violation: camera is not allowed in this document
+ *    NotAllowedError: Permission denied
+ *  Apps Script 설정이나 iframe allow 속성으로는 풀 수 없다.
+ *
+ *  다만 샌드박스에 allow-popups-to-escape-sandbox 가 들어 있어 팝업 창은
+ *  샌드박스를 벗어난다. 그래서 스캐너 문서를 팝업에 직접 써 넣어 카메라를 열고,
+ *  인식한 값만 postMessage 로 돌려받는다.
+ *
+ *  쓰는 쪽:
+ *    csOpenScanPopup({ title: '송장 스캔', onResult: function(v) { ... } })
+ *      → true  팝업 열림
+ *      → false 팝업이 막힘. csScanPopupBlockedMsg() 안내를 보여줄 것
+ * ══════════════════════════════════════════════════════════════
+ */
+var CS_SCAN = { win: null, cb: null, last: '', lastAt: 0 };
+
+/** 팝업이 막혔을 때 사용자에게 보여줄 안내 */
+function csScanPopupBlockedMsg() {
+  return '팝업이 차단되어 카메라 창을 열 수 없습니다. 주소창의 팝업 차단을 허용하거나, 아래 사진 촬영을 사용하세요.';
+}
+
+/** 팝업에 써 넣을 스캐너 문서 */
+function csScanPopupDoc_(title) {
+  var t = String(title || '바코드 스캔');
+  var L = [];
+
+  L.push('<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">');
+  L.push('<meta name="viewport" content="width=device-width, initial-scale=1.0">');
+  L.push('<title>' + t + '</title>');
+  L.push('<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 64 64\'%3E%3Crect width=\'64\' height=\'64\' fill=\'%23FFD400\'/%3E%3Ctext x=\'32\' y=\'43\' text-anchor=\'middle\' font-family=\'Arial,Helvetica,sans-serif\' font-size=\'30\' font-weight=\'800\' fill=\'%231A1A1A\'%3ECS%3C/text%3E%3C/svg%3E">');
+  L.push('<style>');
+  L.push('*{box-sizing:border-box}');
+  L.push('body{margin:0;background:#12131a;color:#e8eaf0;');
+  L.push('font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif}');
+  L.push('#wrap{padding:12px;max-width:540px;margin:0 auto}');
+  L.push('h1{font-size:15px;margin:0 0 10px;font-weight:700}');
+  L.push('#v{width:100%;border-radius:12px;overflow:hidden;background:#000;min-height:200px}');
+  L.push('#msg{font-size:12.5px;line-height:1.55;color:#9aa0b4;margin:10px 0;min-height:36px}');
+  L.push('#msg.err{color:#ff9a9a}');
+  L.push('.row{display:flex;gap:8px;margin-top:8px}');
+  L.push('button,input{font-family:inherit;font-size:14px}');
+  L.push('button{flex:1;padding:11px 10px;border-radius:10px;border:1px solid #2f3342;');
+  L.push('background:#2c2f3a;color:#d6d9e3;font-weight:600;cursor:pointer}');
+  L.push('button:active{background:#363a48}');
+  L.push('input{flex:1;padding:11px;border-radius:10px;border:1px solid #2f3342;');
+  L.push('background:#1a1c25;color:#e8eaf0;min-width:0}');
+  L.push('#hits{margin-top:14px}');
+  L.push('.hit{padding:9px 11px;border-radius:9px;background:#1a1c25;margin-bottom:6px;');
+  L.push('display:flex;justify-content:space-between;gap:10px;font-size:13px}');
+  L.push('.hit b{color:#6ee7a8;font-weight:700;word-break:break-all}');
+  L.push('.hit span{color:#6f748a;flex-shrink:0}');
+  L.push('</style></head><body><div id="wrap">');
+  L.push('<h1>' + t + '</h1>');
+  L.push('<div id="v"></div>');
+  L.push('<div id="msg">카메라를 켜는 중…</div>');
+  L.push('<div class="row"><input id="man" placeholder="직접 입력" autocomplete="off">');
+  L.push('<button id="bMan" style="flex:0 0 76px">입력</button></div>');
+  L.push('<div class="row"><button id="bPhoto">📷 사진으로 인식</button>');
+  L.push('<button id="bClose">닫기</button></div>');
+  L.push('<input type="file" id="fCap" accept="image/*" capture="environment" style="display:none">');
+  L.push('<div id="fileHost" style="position:fixed;left:-10000px;top:0;width:320px;height:320px;overflow:hidden"></div>');
+  L.push('<div id="hits"></div></div>');
+  L.push('<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"><' + '/script>');
+  L.push('<script>');
+  L.push('(function(){');
+  L.push('  var sc = null, seen = "", seenAt = 0;');
+  L.push('  function el(i){ return document.getElementById(i); }');
+  L.push('  function msg(t, err){ var m = el("msg"); m.innerHTML = t; m.className = err ? "err" : ""; }');
+  L.push('  function send(type, value){');
+  L.push('    try {');
+  L.push('      if (window.opener && !window.opener.closed) {');
+  L.push('        window.opener.postMessage({ source: "pack2u-scan", type: type, value: value }, "*");');
+  L.push('      }');
+  L.push('    } catch (e) {}');
+  L.push('  }');
+  L.push('  function hit(v){');
+  L.push('    var d = document.createElement("div");');
+  L.push('    d.className = "hit";');
+  L.push('    var b = document.createElement("b"); b.textContent = v;');
+  L.push('    var s = document.createElement("span"); s.textContent = new Date().toTimeString().slice(0, 8);');
+  L.push('    d.appendChild(b); d.appendChild(s);');
+  L.push('    var h = el("hits"); h.insertBefore(d, h.firstChild);');
+  L.push('    while (h.children.length > 8) h.removeChild(h.lastChild);');
+  L.push('  }');
+  // 같은 바코드가 카메라에 계속 잡히므로 짧은 간격의 반복은 버린다
+  L.push('  function got(v){');
+  L.push('    v = String(v || "").trim();');
+  L.push('    if (!v) return;');
+  L.push('    var now = Date.now();');
+  L.push('    if (v === seen && now - seenAt < 1500) return;');
+  L.push('    seen = v; seenAt = now;');
+  L.push('    try { if (navigator.vibrate) navigator.vibrate(60); } catch (e) {}');
+  L.push('    hit(v); send("scan", v);');
+  L.push('  }');
+  L.push('  el("bClose").onclick = function(){');
+  L.push('    try { if (sc) sc.stop(); } catch (e) {}');
+  L.push('    send("close", "");');
+  L.push('    window.close();');
+  L.push('  };');
+  L.push('  el("bMan").onclick = function(){ var i = el("man"); got(i.value); i.value = ""; i.focus(); };');
+  L.push('  el("man").addEventListener("keydown", function(e){ if (e.key === "Enter") el("bMan").click(); });');
+  L.push('  el("bPhoto").onclick = function(){ el("fCap").click(); };');
+  L.push('  el("fCap").addEventListener("change", function(ev){');
+  L.push('    var f = ev.target.files && ev.target.files[0];');
+  L.push('    if (!f) return;');
+  L.push('    if (typeof Html5Qrcode === "undefined") { msg("스캔 라이브러리를 불러오지 못했습니다.", true); return; }');
+  L.push('    msg("사진 분석 중…");');
+  // scanFile 은 인스턴스 메서드다. 정적으로 부르면 TypeError 가 난다.
+  L.push('    var one;');
+  L.push('    try { one = new Html5Qrcode("fileHost", { verbose: false }); }');
+  L.push('    catch (e1) { msg("스캐너 초기화 실패: " + e1, true); return; }');
+  L.push('    one.scanFile(f, false)');
+  L.push('      .then(function(v){ msg("인식했습니다."); got(v); })');
+  L.push('      .catch(function(){ msg("사진에서 바코드를 찾지 못했습니다. 바코드가 화면을 꽉 채우게 다시 촬영하거나 직접 입력하세요.", true); })');
+  L.push('      .then(function(){ ev.target.value = ""; });');
+  L.push('  });');
+  L.push('  function fmts(){');
+  L.push('    if (typeof Html5QrcodeSupportedFormats === "undefined") return null;');
+  L.push('    return [Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39,');
+  L.push('      Html5QrcodeSupportedFormats.ITF, Html5QrcodeSupportedFormats.EAN_13,');
+  L.push('      Html5QrcodeSupportedFormats.QR_CODE];');
+  L.push('  }');
+  L.push('  function start(){');
+  L.push('    if (typeof Html5Qrcode === "undefined") {');
+  L.push('      msg("스캔 라이브러리를 불러오지 못했습니다. 네트워크를 확인하고 창을 다시 열어주세요.", true);');
+  L.push('      return;');
+  L.push('    }');
+  L.push('    var f = fmts();');
+  L.push('    try { sc = new Html5Qrcode("v", f ? { formatsToSupport: f, verbose: false } : undefined); }');
+  L.push('    catch (e) { msg("스캐너 초기화 실패: " + e, true); return; }');
+  L.push('    sc.start({ facingMode: "environment" },');
+  L.push('      { fps: 12, qrbox: { width: 300, height: 130 } }, got, function(){})');
+  L.push('      .then(function(){ msg("바코드를 화면 안에 맞추세요. 연속으로 인식해 앱에 바로 전달됩니다."); })');
+  L.push('      .catch(function(e){');
+  L.push('        msg("카메라를 열 수 없습니다 (" + ((e && e.name) ? e.name : e) + ").<br>' +
+    '사진으로 인식하거나 직접 입력을 사용하세요.", true);');
+  L.push('      });');
+  L.push('  }');
+  L.push('  window.addEventListener("beforeunload", function(){ send("close", ""); });');
+  L.push('  window.addEventListener("load", start);');
+  L.push('})();');
+  L.push('<' + '/script></body></html>');
+
+  return L.join('\n');
+}
+
+/**
+ * 스캔 팝업 열기
+ * @param {Object} opts {title, onResult}
+ * @return {boolean} 팝업이 열렸는지
+ */
+function csOpenScanPopup(opts) {
+  opts = opts || {};
+
+  // 이미 열려 있으면 그 창을 다시 쓴다 (창이 여러 개 뜨면 어느 창이 살아 있는지 헷갈린다)
+  if (CS_SCAN.win && !CS_SCAN.win.closed) {
+    CS_SCAN.cb = typeof opts.onResult === 'function' ? opts.onResult : CS_SCAN.cb;
+    try { CS_SCAN.win.focus(); } catch (eF) {}
+    return true;
+  }
+
+  var w = null;
+  try {
+    w = window.open('', 'pack2uScan', 'width=520,height=780');
+  } catch (eO) {
+    w = null;
+  }
+  if (!w) return false;
+
+  CS_SCAN.win = w;
+  CS_SCAN.cb = typeof opts.onResult === 'function' ? opts.onResult : null;
+
+  try {
+    w.document.open();
+    w.document.write(csScanPopupDoc_(opts.title));
+    w.document.close();
+  } catch (eW) {
+    CS_SCAN.win = null;
+    return false;
+  }
+  try { w.focus(); } catch (eF2) {}
+  return true;
+}
+
+/** 팝업 닫기 (페이지를 벗어날 때 남겨두지 않는다) */
+function csCloseScanPopup() {
+  try {
+    if (CS_SCAN.win && !CS_SCAN.win.closed) CS_SCAN.win.close();
+  } catch (e) {}
+  CS_SCAN.win = null;
+}
+
+window.addEventListener('message', function (ev) {
+  var d = ev && ev.data;
+  if (!d || d.source !== 'pack2u-scan') return;
+  // 우리가 띄운 창이 보낸 것만 받는다
+  if (CS_SCAN.win && ev.source !== CS_SCAN.win) return;
+
+  if (d.type === 'close') {
+    CS_SCAN.win = null;
+    return;
+  }
+  if (d.type !== 'scan') return;
+
+  var v = String(d.value || '').trim();
+  if (!v) return;
+
+  // 팝업에서도 걸러지지만, 창을 다시 열었을 때의 재전송까지 여기서 한 번 더 막는다
+  var now = Date.now();
+  if (v === CS_SCAN.last && now - CS_SCAN.lastAt < 1200) return;
+  CS_SCAN.last = v;
+  CS_SCAN.lastAt = now;
+
+  if (CS_SCAN.cb) CS_SCAN.cb(v);
+});
+</script>

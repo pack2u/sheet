@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>재고 실사 - Pack2U</title>
+  <?!= include('csFavicon'); ?>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
@@ -99,6 +100,11 @@
       font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer;
     }
     .fallback-btn:active { transform: scale(0.96); }
+    /* 두 번째 수단(사진 촬영)은 주된 버튼보다 눈에 덜 띄게 */
+    .fallback-btn-sub {
+      margin-top: 10px; background: #2c2f3a; color: #d6d9e3;
+      border: 1px solid #2f3342;
+    }
     .file-input-hidden { display: none; }
     .camera-error-detail {
       margin-top: 10px; padding: 8px 12px;
@@ -368,6 +374,9 @@
     <div class="loading-text" id="loadingText">처리 중...</div>
   </div>
 
+  <?!= include('csScanPopup') ?>
+  <?!= include('csDecode') ?>
+
   <script>
     // ── 상태 ──
     var items = {};       // barcode → { ecountCode, productName, qty }
@@ -377,6 +386,18 @@
     var scanMode = 'camera';
     var urlParams = new URLSearchParams(window.location.search);
     var currentStaff = urlParams.get('staff') || localStorage.getItem('pack2u_staff') || '';
+    var CS_EXEC_URL = "<?= webAppUrl ?>";
+
+    /** 웹앱 페이지 이동 — 최상위 프레임 기준 (iframe 내부 이동 시 Drive 오류) */
+    function csGoTo(url) {
+      try {
+        if (window.top && window.top !== window.self) {
+          window.top.location.href = url;
+          return;
+        }
+      } catch (eTop) {}
+      window.location.href = url;
+    }
 
     // ── 초기화 ──
     window.addEventListener('load', function() {
@@ -403,6 +424,11 @@
 
     // ── 스캐너 (하이브리드) ──
     function startScanner() {
+      // 샌드박스 iframe 이면 getUserMedia 를 부를 필요도 없다 (무조건 거부됨)
+      if (csLiveCameraLikelyBlocked()) {
+        showFileCaptureMode('앱 화면(iframe)에서는 카메라 영상이 허용되지 않습니다');
+        return;
+      }
       checkCameraPermission().then(function(result) {
         if (result.available) {
           startCameraScanner();
@@ -432,34 +458,50 @@
     }
 
     function showFileCaptureMode(errorReason) {
+      var mobile = csLiveCameraLikelyBlocked();
       var qrDiv = document.getElementById('qr-reader');
-      qrDiv.innerHTML =
+      var h =
         '<div class="camera-fallback">' +
-        '  <div class="fallback-icon">📸</div>' +
-        '  <div class="fallback-title">카메라 직접 접근이 제한됩니다</div>' +
-        '  <div class="fallback-desc">사진 촬영으로 바코드를 스캔하거나,<br>직접 입력 모드를 사용하세요.</div>' +
+        '  <div class="fallback-icon">📷</div>' +
+        '  <div class="fallback-title">사진으로 스캔하세요</div>' +
+        '  <div class="fallback-desc">구글 정책상 앱 화면 안에서는 카메라 영상이 열리지 않습니다.<br>' +
+        '  촬영 버튼을 누르면 폰 기본 카메라로 찍어 바로 인식합니다.</div>' +
         '  <button class="fallback-btn" onclick="document.getElementById(\'invFileInput\').click()">' +
-        '    📷 사진 촬영하여 스캔' +
-        '  </button>' +
+        '    📷 촬영해서 인식' +
+        '  </button>';
+      if (!mobile) {
+        h +=
+          '  <button class="fallback-btn fallback-btn-sub" onclick="openScanPopup()">' +
+          '    🖥 카메라 창 열고 연속 스캔 (PC)' +
+          '  </button>';
+      }
+      h +=
         '  <input type="file" id="invFileInput" class="file-input-hidden" accept="image/*" capture="environment" onchange="handleFileCapture(event)">' +
         '  <div class="camera-error-detail">⚠ ' + (errorReason || '카메라 접근 차단됨') + '</div>' +
         '</div>';
+      qrDiv.innerHTML = h;
+    }
+
+    /** 샌드박스를 벗어난 팝업에서 스캔 — 결과는 postMessage 로 돌아온다 */
+    function openScanPopup() {
+      var ok = csOpenScanPopup({
+        title: '재고 실사 바코드 스캔',
+        onResult: function (v) { onScanSuccess(v); }
+      });
+      if (!ok) alert(csScanPopupBlockedMsg());
     }
 
     function handleFileCapture(event) {
       var file = event.target.files[0];
       if (!file) return;
 
-      Html5Qrcode.scanFile(file, true)
-        .then(function(decodedText) {
-          onScanSuccess(decodedText);
-        })
+      // 상품 바코드는 숫자 자릿수 제약이 없고, 글자 OCR 대상도 아니다
+      csDecodeImageFile(file, { minDigits: 0, ocr: false })
+        .then(function(r) { onScanSuccess(r.value); })
         .catch(function(err) {
-          alert('바코드를 인식하지 못했습니다.\n다시 촬영하거나 직접 입력해 주세요.');
+          alert(String(err && err.message ? err.message : err));
         })
-        .finally(function() {
-          event.target.value = '';
-        });
+        .finally(function() { event.target.value = ''; });
     }
 
     function toggleMode(mode) {
@@ -679,8 +721,7 @@
     }
 
     function goHome() {
-      var baseUrl = window.location.href.split('?')[0];
-      window.location.href = baseUrl;
+      csGoTo(CS_EXEC_URL + '?page=home&staff=' + encodeURIComponent(currentStaff || ''));
     }
 
     function showLoading(text) {

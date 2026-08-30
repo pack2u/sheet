@@ -32,6 +32,75 @@ var _PMS_DATA_START    = 5;   // 데이터 시작 행
 var _PMS_KEY_CELL      = "AZ1";
 var _PMS_KEY_PREFIX    = "PARTNER_ARCHIVE_MONTH:";
 var _PMS_ORDER_TAB     = "발주 및 송장조회";  // ← 소스 탭 (전용양식 X)
+var _PMS_AMT_TOLERANCE = 1; // 원 단위
+
+/** 금액/수량 파싱 (콤마·원·#N/A 대응) */
+function _pms_toNumber_(v) {
+  if (typeof v === "number" && isFinite(v)) return v;
+  if (v instanceof Date) return 0;
+  var s = String(v == null ? "" : v)
+    .replace(/,/g, "")
+    .replace(/원/g, "")
+    .replace(/￦/g, "")
+    .replace(/\s/g, "")
+    .trim();
+  if (!s || s.charAt(0) === "#") return 0;
+  var n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+/** 발주탭 L열 헤더가 개별단가인지 (마감 시 ×수량 대상) */
+function _pms_isUnitPriceHeader_(header) {
+  var h = String(header || "").replace(/\s/g, "");
+  if (!h) return false;
+  if (h === "정산금액") return false; // 구형: 이미 줄합계
+  if (h === "단가" || h.indexOf("단가(자동)") !== -1) return true;
+  if (h.indexOf("정산단가") !== -1 || h.indexOf("확정단가") !== -1) return true;
+  if (h.indexOf("정산금액(자동)") !== -1 || h.indexOf("(자동)") !== -1) return true;
+  if (h.indexOf("단가") !== -1 && h.indexOf("조회") === -1) return true;
+  return false;
+}
+
+/**
+ * 마감 정산금액 = 개별단가 × 수량 (중복곱·미곱·미기입 보정)
+ * @return {{ amount: number, note: string }}
+ */
+function _pms_resolveArchiveLineAmount_(rawPrice, qty, priceHeader, lookupUnit) {
+  var raw = _pms_toNumber_(rawPrice);
+  var q = _pms_toNumber_(qty);
+  var lookup = _pms_toNumber_(lookupUnit);
+  if (!(q > 0)) q = 1;
+
+  if (!(raw > 0) && lookup > 0) {
+    raw = lookup;
+  }
+  if (!(raw > 0)) {
+    return { amount: 0, note: "no_price" };
+  }
+  if (q === 1) {
+    return { amount: Math.round(raw), note: "qty1" };
+  }
+
+  // 단가조회 단가로 이미합계/개별단가 판정
+  if (lookup > 0) {
+    if (Math.abs(raw - lookup * q) <= _PMS_AMT_TOLERANCE) {
+      return { amount: Math.round(raw), note: "already_total" };
+    }
+    if (Math.abs(raw - lookup) <= _PMS_AMT_TOLERANCE) {
+      return { amount: Math.round(lookup * q), note: "unit_x_qty" };
+    }
+  }
+
+  if (_pms_isUnitPriceHeader_(priceHeader)) {
+    return { amount: Math.round(raw * q), note: "hdr_unit" };
+  }
+  // 구형 헤더「정산금액」: 이미 줄합계로 보고 유지
+  if (String(priceHeader || "").replace(/\s/g, "") === "정산금액") {
+    return { amount: Math.round(raw), note: "hdr_total" };
+  }
+  // 기본: 개별단가로 보고 곱함 (1개분만 마감되던 사고 방지)
+  return { amount: Math.round(raw * q), note: "default_mul" };
+}
 
 /**
  * 날짜 셀 값을 받아 "yyyyMMdd" 형식의 8자리 문자열로 다드면서 리턴.
@@ -92,9 +161,26 @@ function _pms_parseDateStr_(orderDate) {
 /** [수동] 발주 및 송장조회 완료건 → 같은 파일 내 월별 마감 탭으로 이동
  *  ★ 2026-07-16: 비차단(non-blocking) 방식.
  *  확인창 → 빠른 초기화(임시기록/큐 저장) → 백그라운드 트리거로 실제 처리.
- *  확인창 대기 중 6분 한도로 죽던 문제 해결. 완료 시 Google Chat 알림 발송. */
+ *  ★ ScriptLock을 시작 단계에서 잡지 않음 — 백그라운드 배치가 락을 잡는 동안
+ *    「다른 작업 진행 중」으로 막히던 문제 해결. */
 function partnerArchiveToMonthlySettle() {
   var ui = SpreadsheetApp.getUi();
+
+  // ★ 이미 백그라운드 진행 중이면 재시작 여부만 확인 (ScriptLock 불필요)
+  var existing = _pms_loadResumeState_();
+  if (existing && existing.queue && existing.queue.length > 0) {
+    var cfBusy = ui.alert(
+      "⏳ 대리판매 마감 진행 중",
+      "이미 백그라운드에서 처리 중입니다.\n" +
+      "남은 파일: " + existing.queue.length + "개\n\n" +
+      "· 예 = 강제 재시작 (현재 진행 취소 후 처음부터)\n" +
+      "· 아니오 = 그대로 두기 (완료 시 Chat 알림)",
+      ui.ButtonSet.YES_NO
+    );
+    if (cfBusy !== ui.Button.YES) return;
+    _pms_clearResumeState_();
+  }
+
   var cf = ui.alert("월별 정산 이동",
     "각 협력업체 파일의 「발주 및 송장조회」탭에서\n" +
     "송장번호가 입력된 행을 월별 마감 탭으로 이동합니다.\n\n" +
@@ -104,23 +190,17 @@ function partnerArchiveToMonthlySettle() {
     ui.ButtonSet.YES_NO);
   if (cf !== ui.Button.YES) return;
 
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(20000)) {
-    ui.alert("⚠ 다른 작업 진행 중. 잠시 후 다시 시도해주세요."); return;
-  }
   var scheduled = false;
   try {
     var files = _pt_listFiles();
     if (!files || !files.length) { ui.alert("협력업체 파일 없음"); return; }
 
-    // 이전 미완료 상태/트리거 정리 후 새로 시작
     _pms_clearResumeState_();
 
     var todayNum = parseInt(
       Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd"), 10);
 
     var errMsgs = [], tempCleared = 0, tempKept = 0;
-    // ★ 임시기록 초기화 (빠른 작업 — 1회만)
     try {
       var _hubSS_ = SpreadsheetApp.openById(_PT.INFO_SS_ID);
       var _tempTab_ = _po_getNonPartnerTempTab_(_hubSS_);
@@ -141,40 +221,78 @@ function partnerArchiveToMonthlySettle() {
       tempCleared: tempCleared, tempKept: tempKept
     };
     _pms_saveResumeState_(state);
-    scheduled = _pms_scheduleResume_(5 * 1000); // 5초 후 백그라운드 시작
-  } finally { lock.releaseLock(); }
+    scheduled = _pms_scheduleResume_(5 * 1000);
+  } catch (eStart) {
+    ui.alert("⚠ 시작 실패: " + (eStart.message || eStart));
+    return;
+  }
 
   if (scheduled) {
     ui.alert("✅ 대리판매 마감을 시작했습니다.\n\n" +
       "백그라운드에서 처리되며, 완료되면 Google Chat 알림이 전송됩니다.\n" +
-      "이 창은 닫으셔도 됩니다.");
+      "이 창은 닫으셔도 됩니다.\n\n" +
+      "※ 다시 누르면 '진행 중' 안내가 뜹니다. 완료 Chat을 기다려 주세요.");
   } else {
-    // 트리거 생성 실패 → 인라인 폴백(차단 방식)
     ui.alert("⚠ 백그라운드 예약 실패 → 즉시 처리합니다.\n(파일이 많으면 시간이 걸릴 수 있습니다.)");
     var lock2 = LockService.getScriptLock();
-    if (lock2.tryLock(20000)) {
-      try { _pms_runBatch_(true); } finally { lock2.releaseLock(); }
+    if (lock2.tryLock(5000)) {
+      try { _pms_runBatch_(true); }
+      finally { lock2.releaseLock(); }
+    } else {
+      ui.alert("⚠ 다른 자동화가 잠시 실행 중입니다.\n메뉴「🛑 마감 백그라운드 강제 초기화」후 다시 시도하세요.");
     }
   }
 }
 
-/** [트리거용] 무음 실행 */
+/**
+ * ★ 대리판매/대리공급 마감 백그라운드 작업·재개 트리거 강제 초기화
+ *  「다른 작업 진행 중」에 계속 막힐 때 사용.
+ */
+function partnerForceClearArchiveJobs_() {
+  var ui = SpreadsheetApp.getUi();
+  var cf = ui.alert(
+    "🛑 마감 백그라운드 강제 초기화",
+    "진행 중인 대리판매/대리공급 마감의\n" +
+    "재개 상태·예약 트리거를 모두 취소합니다.\n\n" +
+    "※ 지금 돌고 있는 배치가 있으면 최대 약 5분 후 종료됩니다.\n" +
+    "계속할까요?",
+    ui.ButtonSet.YES_NO
+  );
+  if (cf !== ui.Button.YES) return;
+  try { _pms_clearResumeState_(); } catch (_) {}
+  try { _pea_clearResumeState_(); } catch (_) {}
+  try { PropertiesService.getScriptProperties().deleteProperty(_PEA_PENDING_KEY_); } catch (_) {}
+  try { PropertiesService.getScriptProperties().deleteProperty("_PMS_BATCH_RUNNING_"); } catch (_) {}
+  try { PropertiesService.getScriptProperties().deleteProperty("_PEA_BATCH_RUNNING_"); } catch (_) {}
+  ui.alert("✅ 마감 백그라운드 작업을 초기화했습니다.\n이제 마감 메뉴를 다시 실행할 수 있습니다.");
+}
+
+/** [트리거용] 무음 실행 — ScriptLock을 배치 전체 동안 붙잡지 않음 */
 function partnerArchiveToMonthlySilent_() {
-  var lock = LockService.getScriptLock();
-  // ★ 2026-07-01: Lock 재시도 3회 (05시 일괄마감과 충돌 시 대비)
-  var acquired = false;
-  for (var _retry_ = 0; _retry_ < 3; _retry_++) {
-    if (lock.tryLock(30000)) { acquired = true; break; }
-    Logger.log("[PMS_SILENT] Lock 재시도 " + (_retry_ + 1) + "/3");
-  }
-  if (!acquired) {
-    Logger.log("[PMS_SILENT] Lock 획득 실패 (3회 재시도 후) → 스킵");
-    try { _chat_sendCard_("⚠ 대리판매 마감 Lock 실패", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "상태", value: "Lock 3회 재시도 후 스킵" }]); } catch (_) {}
+  var props = PropertiesService.getScriptProperties();
+  var running = props.getProperty("_PMS_BATCH_RUNNING_");
+  if (running && (Date.now() - Number(running)) < 6 * 60 * 1000) {
+    Logger.log("[PMS_SILENT] 이미 배치 실행 중 → 스킵");
     return;
   }
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    Logger.log("[PMS_SILENT] Lock 획득 실패 → 1분 후 재시도 예약");
+    try { _pms_scheduleResume_(60 * 1000); } catch (_) {}
+    try {
+      _chat_sendCard_("⚠ 대리판매 마감 Lock 실패",
+        Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"),
+        [{ label: "상태", value: "Lock 실패 → 1분 후 재시도" }]);
+    } catch (_) {}
+    return;
+  }
+  props.setProperty("_PMS_BATCH_RUNNING_", String(Date.now()));
+  lock.releaseLock();
   try { _pms_core_(null, true); }
-  catch(e) { try{Logger.log("[PMS_ERR] "+String(e.message||e));}catch(_){} }
-  finally { lock.releaseLock(); }
+  catch (e) { try { Logger.log("[PMS_ERR] " + String(e.message || e)); } catch (_) {} }
+  finally {
+    try { props.deleteProperty("_PMS_BATCH_RUNNING_"); } catch (_) {}
+  }
 }
 
 /** [Dry-run] 이동 후보 미리보기 */
@@ -208,7 +326,7 @@ function partnerDiagnoseMonthlyArchive() {
     }
   });
 
-  if (!total) lines.push("이동 후보 없음\n(조건: 오늘 이전 날짜 + 송장번호 있음/취소/품절/발송완료)");
+  if (!total) lines.push("이동 후보 없음\n(조건: 오늘 포함 이전 날짜 + 송장번호 있음/취소/품절/발송완료)");
   else lines.push("\n총 이동 예정: " + total + "건");
 
   ui.alert("월별 정산 진단", lines.join("\n"), ui.ButtonSet.OK);
@@ -309,6 +427,11 @@ function _pms_runBatch_(silent) {
   var batchArchivedUids = {}; // ★ 이번 배치에서 이동된 UID (배치별 허브 정리)
   var processedThisBatch = 0;
 
+  // ★ 2026-07-17: 허브 날짜맵 배치당 1회만 — 파일마다 openById하면 업체수×수십초
+  var hubDateByUid = {};
+  try { hubDateByUid = _pt_buildHubOrderDateByUid_() || {}; } catch (_) { hubDateByUid = {}; }
+  Logger.log("[PMS] 허브 주문일자 맵: " + Object.keys(hubDateByUid).length + "건");
+
   while (state.queue.length > 0) {
     // 시간 예산 초과 시 중단 (단, 최소 1개는 처리해 무한루프 방지)
     if (processedThisBatch > 0 && (new Date() - startTime) > _PMS_TIME_BUDGET_MS_) break;
@@ -316,7 +439,7 @@ function _pms_runBatch_(silent) {
     var fileInfo = state.queue.shift();
     try {
       var ss = SpreadsheetApp.openById(fileInfo.id);
-      var res = _pms_processOneFile_(ss, state.todayNum, batchArchivedUids);
+      var res = _pms_processOneFile_(ss, state.todayNum, batchArchivedUids, hubDateByUid);
       state.archived += res.archived;
       if (res.newTabCreated) {
         try {
@@ -359,23 +482,40 @@ function _pms_runBatch_(silent) {
 
   // ── 미완료 → 재개 트리거 설치 ──
   _pms_saveResumeState_(state);
-  _pms_scheduleResume_();
-  Logger.log("[PMS] 배치 중단 — 남은 파일 " + state.queue.length + "개, 1분 후 자동 재개");
+  _pms_scheduleResume_(5 * 1000); // ★ 60초→5초 (배치 사이 대기만으로도 수십분 소모 방지)
+  Logger.log("[PMS] 배치 중단 — 남은 파일 " + state.queue.length + "개, 5초 후 자동 재개");
   return false;
 }
 
-/** ★ 재개 트리거 핸들러 — 저장된 상태로 이어서 처리 */
+/** ★ 재개 트리거 핸들러 — 저장된 상태로 이어서 처리
+ *  ScriptLock은 「동시 재개 방지」용으로만 짧게 잡고, 실제 배치 처리 중에는 해제.
+ *  → 마감 중에도 다른 메뉴가 「다른 작업 진행 중」에 장시간 막히지 않음. */
 function _pms_continueResume_() {
-  _pms_deleteResumeTriggers_(); // 자기 자신(일회성 트리거) 정리
+  _pms_deleteResumeTriggers_();
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) {
+  if (!lock.tryLock(10000)) {
     Logger.log("[PMS_RESUME] Lock 실패 → 재예약");
-    _pms_scheduleResume_();
+    _pms_scheduleResume_(60 * 1000);
     return;
   }
-  try { _pms_runBatch_(true); }
-  catch(e) { try { Logger.log("[PMS_RESUME_ERR] " + String(e.message||e)); } catch(_) {} }
-  finally { lock.releaseLock(); }
+  // 동시 재개 방지 플래그(속성) 설정 후 즉시 락 해제
+  var props = PropertiesService.getScriptProperties();
+  var running = props.getProperty("_PMS_BATCH_RUNNING_");
+  if (running && (Date.now() - Number(running)) < 6 * 60 * 1000) {
+    lock.releaseLock();
+    Logger.log("[PMS_RESUME] 이미 배치 실행 중 → 스킵");
+    return;
+  }
+  props.setProperty("_PMS_BATCH_RUNNING_", String(Date.now()));
+  lock.releaseLock();
+
+  try {
+    _pms_runBatch_(true);
+  } catch (e) {
+    try { Logger.log("[PMS_RESUME_ERR] " + String(e.message || e)); } catch (_) {}
+  } finally {
+    try { props.deleteProperty("_PMS_BATCH_RUNNING_"); } catch (_) {}
+  }
 }
 
 // ── 연속 실행 상태 관리 헬퍼 ──
@@ -425,44 +565,88 @@ function _pms_deleteResumeTriggers_() {
  * @param {Object} archivedUids - 이동된 고유ID 세트 (외부에서 누적)
  * @returns {{ archived: number }}
  */
-function _pms_processOneFile_(ss, todayNum, archivedUids) {
+function _pms_processOneFile_(ss, todayNum, archivedUids, hubDateByUid) {
   var result = { archived: 0, newTabCreated: false };
   var orderTab = ss.getSheetByName(_PMS_ORDER_TAB);
   if (!orderTab || orderTab.getLastRow() < 2) return result;
 
-  var lr  = orderTab.getLastRow();
-  var lc  = orderTab.getMaxColumns();
+  hubDateByUid = hubDateByUid || {};
+
+  // ★ B열 TODAY 수식일 때만 고정값 변환 (이미 값이면 스킵 — 파일마다 전체 재쓰기 금지)
+  try {
+    var b1f = String(orderTab.getRange("B1").getFormula() || "");
+    if (b1f.indexOf("TODAY") !== -1 || b1f.indexOf("ARRAYFORMULA") !== -1 || b1f.indexOf("{") === 0) {
+      _pt_freezeOrderDateColumn_(orderTab, hubDateByUid, false);
+      SpreadsheetApp.flush();
+    }
+  } catch (_eFreezeB) {}
+
+  // ARRAYFORMULA 스필로 lastRow가 부풀면 과도한 읽기 → C열 기준 실데이터만
+  var lr = orderTab.getLastRow();
+  try {
+    if (typeof _island_findLastDataRow_ === "function") {
+      lr = Math.max(2, _island_findLastDataRow_(orderTab, 3));
+    } else {
+      var cScan = Math.min(lr, 500);
+      if (cScan >= 2) {
+        var cCol = orderTab.getRange(2, 3, cScan - 1, 1).getDisplayValues();
+        var lastC = 1;
+        for (var ci = 0; ci < cCol.length; ci++) {
+          if (String(cCol[ci][0] || "").trim()) lastC = ci + 2;
+        }
+        lr = lastC;
+      }
+    }
+  } catch (_eLr) {}
+  if (lr < 2) return result;
+
+  var lc  = Math.min(orderTab.getLastColumn(), 20);
+  if (lc < 15) lc = 15;
   var all = orderTab.getRange(1, 1, lr, lc).getValues();
   var headers = all[0];
   var cMap = _pms_buildColMap_(headers);
 
   if (cMap.date === -1) return result;
 
-  // ★ 2026-07-01: 뷰어탭 1회만 접근 (캐싱)
-  var _viewerTab_ = null;
-  var _viewerName_ = "단가조회";
-  try {
-    _viewerTab_ = _pt_findViewerSheet(ss);
-    if (_viewerTab_) _viewerName_ = _viewerTab_.getName();
-  } catch(_eV) {}
-
-  // ★ 품목명 보장: 단가조회 탭에서 코드→품목명 맵 구축
-  var _codeToNameMap_ = {};
-  try {
-    if (_viewerTab_) {
-      var _vLr_ = _viewerTab_.getLastRow();
-      if (_vLr_ >= 3) {
-        var _vData_ = _viewerTab_.getRange(3, 3, _vLr_ - 2, 2).getValues();
-        for (var vi = 0; vi < _vData_.length; vi++) {
-          var _code_ = String(_vData_[vi][0] || "").trim();
-          var _name_ = String(_vData_[vi][1] || "").trim();
-          if (_code_ && _name_) _codeToNameMap_[_code_] = _name_;
+  // ★ 품목명/단가 맵 — 빈 품명·단가 미기입·수량미적용 보정용 (단가조회)
+  var _codeToNameMap_ = null;
+  var _codeToPriceMap_ = null;
+  function _pms_ensureViewerMaps_() {
+    if (_codeToNameMap_ && _codeToPriceMap_) {
+      return { name: _codeToNameMap_, price: _codeToPriceMap_ };
+    }
+    _codeToNameMap_ = {};
+    _codeToPriceMap_ = {};
+    try {
+      var vt = _pt_findViewerSheet(ss);
+      if (vt && vt.getLastRow() >= 3) {
+        var vLr = Math.min(vt.getLastRow(), 3500);
+        // C:G → code, name, …, 최종단가(G)
+        var vData = vt.getRange(3, 3, vLr - 2, 5).getValues();
+        for (var vi = 0; vi < vData.length; vi++) {
+          var code = String(vData[vi][0] || "").trim();
+          if (!code || code.indexOf("#") === 0) continue;
+          var name = String(vData[vi][1] || "").trim();
+          var price = _pms_toNumber_(vData[vi][4]);
+          if (name && !_codeToNameMap_[code]) _codeToNameMap_[code] = name;
+          if (price > 0 && !_codeToPriceMap_[code]) _codeToPriceMap_[code] = price;
         }
       }
-    }
-  } catch(_eMap) {}
+    } catch (_eMap) {}
+    return { name: _codeToNameMap_, price: _codeToPriceMap_ };
+  }
+  function _pms_ensureCodeNameMap_() {
+    return _pms_ensureViewerMaps_().name;
+  }
 
   var extHeaders = _pms_buildExtHeaders_(headers, lc);
+  // 마감탭 금액열 헤더는 줄합계 의미로 통일
+  if (cMap.price !== -1 && cMap.price < extHeaders.length) {
+    var _ph0 = String(extHeaders[cMap.price] || "").replace(/\s/g, "");
+    if (_ph0 && _ph0 !== "정산금액") {
+      extHeaders[cMap.price] = "정산금액";
+    }
+  }
   var extLc      = extHeaders.length;
   var etcFeeC    = extLc;
   var islandFeeC = extLc - 1;
@@ -486,15 +670,24 @@ function _pms_processOneFile_(ss, todayNum, archivedUids) {
 
   for (var r = 1; r < all.length; r++) {
     var rowData = all[r];
+    // C열(코드) 없으면 빈 스필행 — 스킵
+    if (!String(rowData[2] || "").trim()) continue;
+
+    var archivedUid = String(rowData[uidColIdx] || "").replace(/\s/g, "").trim();
     var orderDate = rowData[cMap.date];
 
-    if (!orderDate) { keepData.push(rowData); continue; }
-
-    var dateStr = _pms_parseDateStr_(orderDate);
+    // ★ 허브 수집일자 우선 (B열 TODAY 오염 시에도 마감 판정 가능, 시트 재쓰기 불필요)
+    var dateStr = "";
+    if (archivedUid && hubDateByUid[archivedUid]) {
+      dateStr = hubDateByUid[archivedUid];
+    } else {
+      dateStr = _pms_parseDateStr_(orderDate);
+    }
     if (!dateStr) { keepData.push(rowData); continue; }
 
     var dNum   = parseInt(dateStr.substring(0, 8), 10);
-    var isPast = dNum < todayNum;
+    // ★ 2026-08-03: 당일 건 포함 (오늘 날짜도 마감 대상, 미래만 잔류)
+    var isPast = dNum <= todayNum;
 
     if (!isPast) { keepData.push(rowData); continue; }
 
@@ -509,19 +702,46 @@ function _pms_processOneFile_(ss, todayNum, archivedUids) {
 
     if (!archiveDataByMonth[tabName]) archiveDataByMonth[tabName] = [];
     var archiveRow = rowData.slice(0);
+    // 마감 보관용 일자는 판정에 쓴 날짜로 고정
+    if (cMap.date !== -1) archiveRow[cMap.date] = dateStr;
     var _arItemName_ = String(archiveRow[3] || "").trim();
     if (!_arItemName_ && String(archiveRow[2] || "").trim()) {
-      var _lookupName_ = _codeToNameMap_[String(archiveRow[2]).trim()];
+      var _lookupName_ = _pms_ensureCodeNameMap_()[String(archiveRow[2]).trim()];
       if (_lookupName_) archiveRow[3] = _lookupName_;
     }
-    if (cMap.price !== -1 && cMap.qty !== -1) {
-      var unitPrice = Number(archiveRow[cMap.price]);
-      var qty       = Number(archiveRow[cMap.qty]);
-      if (!isNaN(unitPrice) && !isNaN(qty) && qty > 0) {
-        archiveRow[cMap.price] = unitPrice * qty;
+    // ★ 정산금액(마감) = 개별단가 × 수량
+    //   - 단가 헤더 미매핑 / 단가 미기입 / 이미 줄합계 / 조회단가 대조 보정
+    var priceCol = cMap.price;
+    var qtyCol = cMap.qty;
+    if (priceCol === -1 || qtyCol === -1) {
+      for (var _hci = 0; _hci < headers.length; _hci++) {
+        var _hh = String(headers[_hci] || "").replace(/\s/g, "");
+        if (priceCol === -1 && (
+          _hh.indexOf("정산금액") !== -1 || _hh.indexOf("정산단가") !== -1 ||
+          _hh === "단가" || _hh.indexOf("단가(자동)") !== -1 ||
+          (_hh.indexOf("단가") !== -1 && _hh.indexOf("조회") === -1)
+        )) priceCol = _hci;
+        if (qtyCol === -1 && _hh.indexOf("수량") !== -1 &&
+            _hh.indexOf("택배") === -1 && _hh.indexOf("박스") === -1) {
+          qtyCol = _hci;
+        }
       }
     }
-    var archivedUid = String(rowData[uidColIdx] || "").trim();
+    if (priceCol !== -1 && qtyCol !== -1) {
+      var priceHeader = String(headers[priceCol] || "");
+      var codeForPrice = String(archiveRow[2] || "").trim();
+      var lookupUnit = 0;
+      if (codeForPrice) {
+        lookupUnit = _pms_toNumber_(_pms_ensureViewerMaps_().price[codeForPrice]);
+      }
+      var resolved = _pms_resolveArchiveLineAmount_(
+        archiveRow[priceCol],
+        archiveRow[qtyCol],
+        priceHeader,
+        lookupUnit
+      );
+      archiveRow[priceCol] = resolved.amount;
+    }
     if (archivedUid) archivedUids[archivedUid] = true;
     archiveDataByMonth[tabName].push(archiveRow);
   }
@@ -548,8 +768,12 @@ function _pms_processOneFile_(ss, todayNum, archivedUids) {
 
     var isNewBlank = archTab.getLastRow() < 1;
 
-    _pms_layoutArchiveTab_(archTab, extHeaders, cMap, extLc, cancelC, returnC, reasonC, retInvC, shipFeeC, islandFeeC, etcFeeC, isNewBlank);
-    _pms_setKey_(archTab, monthKey);
+    // ★ 레이아웃/CF는 새 탭만 — 기존 탭마다 CF 누적·maxRows 서식 = 갈수록 더 느려짐
+    if (isNewBlank || result.newTabCreated) {
+      _pms_layoutArchiveTab_(archTab, extHeaders, cMap, extLc, cancelC, returnC, reasonC, retInvC, shipFeeC, islandFeeC, etcFeeC, isNewBlank);
+      _pms_setKey_(archTab, monthKey);
+      _pms_applyProtection_(archTab);
+    }
     _pms_ensureCheckboxes_(archTab, cancelC, returnC);
 
     var padded = arr.map(function(row) {
@@ -562,27 +786,36 @@ function _pms_processOneFile_(ss, todayNum, archivedUids) {
       .setValues(padded)
       .setVerticalAlignment("middle");
 
-    // ★ 2026-07-16 성능: 신규 append 행은 insertCheckboxes 1회면 충분
-    //   (unchecked 기본값 자동 설정 → clearDataValidations/setValue(false) 불필요)
     archTab.getRange(nextRow, cancelC, padded.length, 2).insertCheckboxes();
 
-    // ★ 2026-07-16 성능: 보호는 새/빈 탭일 때만 적용 (기존 탭은 이미 보호됨)
-    if (isNewBlank || result.newTabCreated) {
-      _pms_applyProtection_(archTab);
-    }
     result.archived += padded.length;
   }
 
   if (hasArchived) {
-    // ★ 2026-07-01: 잔류 데이터 복원 최적화 — 분할 5번 → 통합 1번 setValues
-    orderTab.getRange(2, 1, orderTab.getMaxRows() - 1, lc).clearContent();
+    // ★ maxRows 전체 clear 금지 → 실데이터 범위만
+    var clearRows = Math.max(lr - 1, keepData.length, 1);
+    // ★ 2026-07-24: 값+서식 동시 제거 (배경/테두리 잔재로 빈 칸이 지저분해 보이던 문제)
+    _pt_clearContentAndFormat_(orderTab.getRange(2, 1, clearRows, lc));
 
     if (keepData.length > 0) {
       // A열 제외(수식), B~끝까지 한 번에 복원
       var restW = lc - 1;
+      // ★ 2026-07-20: 스필 수식 열(D/L/N)은 값 복원 제외 — 수식 파괴(#REF!) 방지
+      //   헤더(1행)에 수식이 있는 열만 제외. C/K/M 값으로 스필이 자동 재계산됨.
+      //   (B열 기준 인덱스: D=2, L=10, N=12)
+      var _skipIdx_ = {};
+      try {
+        if (String(orderTab.getRange("D1").getFormula() || "")) _skipIdx_[2] = true;
+        if (String(orderTab.getRange("L1").getFormula() || "")) _skipIdx_[10] = true;
+        if (String(orderTab.getRange("N1").getFormula() || "")) _skipIdx_[12] = true;
+      } catch (_) {}
       var restData = keepData.map(function(r) {
         var row = r.slice(1, 1 + restW);
         while (row.length < restW) row.push("");
+        for (var si in _skipIdx_) {
+          var siN = parseInt(si, 10);
+          if (siN < row.length) row[siN] = "";
+        }
         return row;
       });
       orderTab.getRange(2, 2, keepData.length, restW).setValues(restData);
@@ -590,10 +823,16 @@ function _pms_processOneFile_(ss, todayNum, archivedUids) {
 
     SpreadsheetApp.flush();
     try {
-      _pt_healOrderSpillFormulas(orderTab, _viewerName_);
-      // ★ D/L 백필 — 빈 품목명/단가를 뷰어 탭에서 조회하여 채움
-      if (_viewerTab_) _pt_backfillOrderDL(orderTab, _viewerTab_);
-    } catch(_eH) {}
+      // 수식 재주입 (B열은 이미 값이면 freeze 스킵) — 내부에서 상태 CF도 재적용
+      _pt_injectOrderSpillFormulas(orderTab, null);
+    } catch(_eH) {
+      // inject 실패 시에도 상태 행색만이라도 복구
+      try {
+        if (typeof _pt_applyOrderTabDesign === "function") {
+          _pt_applyOrderTabDesign(orderTab);
+        }
+      } catch (_) {}
+    }
     try { _pt_clearSearchInputTab_(ss); } catch(_e) {}
   }
 
@@ -667,7 +906,8 @@ function _pms_cleanupHub_(archivedUids, archived, errMsgs) {
             keepHubData.push(hubData[hr]);
           }
         }
-        hubTab.getRange(2, 1, hubLr - 1, hubLc).clearContent();
+        // ★ 2026-07-24: 값+서식 동시 제거
+        _pt_clearContentAndFormat_(hubTab.getRange(2, 1, hubLr - 1, hubLc));
         if (keepHubData.length > 0) {
           hubTab.getRange(2, 1, keepHubData.length, hubLc).setValues(keepHubData);
         }
@@ -737,7 +977,8 @@ function _pms_scanOrderTab_(tab, todayNum) {
 
     var dNum = parseInt(dateStr.substring(0, 8), 10);
 
-    if (dNum >= todayNum) continue;
+    // ★ 2026-08-03: 당일 건 포함 (미래만 스킵)
+    if (dNum > todayNum) continue;
 
     // ★ 이동 조건: 송장번호 입력된 행만
     var invoiceVal = cMap.invoice !== -1 ? String(rowData[cMap.invoice]||"" ).trim() : "";
@@ -1123,4 +1364,356 @@ function partnerRepairMonthlySettleTabs() {
     "✅ 월별 마감 탭 보정 완료\n보정: " + fixed + "개 탭"
     + (errs.length ? "\n⚠ 오류:\n" + errs.join("\n") : "")
   );
+}
+
+/**
+ * ★ 2026-08-03: 기존 발주 마감탭 정산금액 보정
+ * 수량≥2 인데 금액이 단가조회 개별단가(1개분)와 같으면 → 단가×수량 으로 수정
+ * 금액 0 이고 단가조회에 단가 있으면 → 단가×수량 채움
+ */
+function partnerRepairArchiveLineTotals() {
+  var ui = SpreadsheetApp.getUi();
+  var files = _pt_listFiles();
+  if (!files || !files.length) {
+    return ui.alert("협력업체 파일 없음");
+  }
+
+  var names = [];
+  for (var i = 0; i < files.length; i++) {
+    names.push((i + 1) + ". " + files[i].name.replace("[협력업체] ", ""));
+  }
+  var listText = names.join("\n");
+  if (listText.length > 3500) {
+    listText = names.slice(0, 60).join("\n") + "\n… (번호 또는 all)";
+  }
+  var vResp = ui.prompt(
+    "마감 정산금액 보정 — 업체 선택",
+    "수량 미적용(1개분)·단가 미기입 행을 단가조회 기준으로 보정합니다.\n" +
+      "업체 번호(쉼표) 또는 all:\n\n" + listText,
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (vResp.getSelectedButton() !== ui.Button.OK) return;
+  var input = String(vResp.getResponseText() || "").trim().toLowerCase();
+  var selected = [];
+  if (input === "all" || input === "전체") {
+    selected = files.slice(0);
+  } else {
+    var nums = input.split(/[,\s]+/);
+    var seen = {};
+    for (var n = 0; n < nums.length; n++) {
+      if (!nums[n]) continue;
+      var idx = parseInt(nums[n], 10) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= files.length || seen[idx]) continue;
+      seen[idx] = true;
+      selected.push(files[idx]);
+    }
+  }
+  if (!selected.length) {
+    return ui.alert("선택된 업체가 없습니다.");
+  }
+
+  var ans = ui.alert(
+    "마감 정산금액 보정",
+    selected.length + "개 업체의 「발주 마감」탭을 스캔해\n" +
+      "· 수량≥2 & 금액=개별단가 → 단가×수량\n" +
+      "· 금액=0 & 단가 있음 → 단가×수량\n" +
+      "으로 수정합니다. 계속할까요?",
+    ui.ButtonSet.YES_NO
+  );
+  if (ans !== ui.Button.YES) return;
+
+  var tabPat = /^\(\d{4}년\s*\d{1,2}월\)\s*발주\s*마감$/;
+  var totalFixed = 0;
+  var fileLines = [];
+  var fail = 0;
+
+  for (var fi = 0; fi < selected.length; fi++) {
+    var fileInfo = selected[fi];
+    var vLabel = fileInfo.name.replace("[협력업체] ", "");
+    try {
+      var ss = SpreadsheetApp.openById(fileInfo.id);
+      var priceMap = {};
+      try {
+        var vt = _pt_findViewerSheet(ss);
+        if (vt && vt.getLastRow() >= 3) {
+          var vLr = Math.min(vt.getLastRow(), 3500);
+          var vData = vt.getRange(3, 3, vLr - 2, 5).getValues();
+          for (var vi = 0; vi < vData.length; vi++) {
+            var vc = String(vData[vi][0] || "").trim();
+            var vp = _pms_toNumber_(vData[vi][4]);
+            if (vc && vp > 0 && !priceMap[vc]) priceMap[vc] = vp;
+          }
+        }
+      } catch (eP) {}
+
+      var fileFixed = 0;
+      var sheets = ss.getSheets();
+      for (var si = 0; si < sheets.length; si++) {
+        var sh = sheets[si];
+        if (!tabPat.test(String(sh.getName() || ""))) continue;
+        var lr = sh.getLastRow();
+        var lc = sh.getLastColumn();
+        if (lr < _PMS_DATA_START || lc < 3) continue;
+
+        var hdr = sh.getRange(_PMS_HEADER_ROW, 1, 1, lc).getValues()[0];
+        var cMap = _pms_buildColMap_(hdr);
+        var priceCol = cMap.price;
+        var qtyCol = cMap.qty;
+        if (priceCol === -1 || qtyCol === -1) {
+          for (var hi = 0; hi < hdr.length; hi++) {
+            var hh = String(hdr[hi] || "").replace(/\s/g, "");
+            if (priceCol === -1 && (
+              hh.indexOf("정산금액") !== -1 || hh === "단가" ||
+              hh.indexOf("단가") !== -1
+            )) priceCol = hi;
+            if (qtyCol === -1 && hh.indexOf("수량") !== -1 &&
+                hh.indexOf("택배") === -1 && hh.indexOf("박스") === -1) {
+              qtyCol = hi;
+            }
+          }
+        }
+        if (priceCol === -1 || qtyCol === -1) continue;
+
+        var nRows = lr - _PMS_DATA_START + 1;
+        var data = sh.getRange(_PMS_DATA_START, 1, nRows, lc).getValues();
+        var priceColVals = sh.getRange(_PMS_DATA_START, priceCol + 1, nRows, 1).getValues();
+        var changed = false;
+
+        for (var r = 0; r < data.length; r++) {
+          var code = String(data[r][2] || "").trim();
+          if (!code) continue;
+          var qty = _pms_toNumber_(data[r][qtyCol]);
+          var amt = _pms_toNumber_(data[r][priceCol]);
+          var unit = _pms_toNumber_(priceMap[code]);
+          if (!(qty > 0)) continue;
+
+          var newAmt = null;
+          if (unit > 0 && qty >= 2 && Math.abs(amt - unit) <= _PMS_AMT_TOLERANCE) {
+            newAmt = Math.round(unit * qty);
+          } else if (amt === 0 && unit > 0) {
+            newAmt = Math.round(unit * qty);
+          }
+          if (newAmt != null && newAmt !== Math.round(amt)) {
+            priceColVals[r][0] = newAmt;
+            fileFixed++;
+            changed = true;
+          }
+        }
+        if (changed) {
+          sh.getRange(_PMS_DATA_START, priceCol + 1, nRows, 1).setValues(priceColVals);
+          // 헤더가 단가면 정산금액으로 표기
+          var curH = String(hdr[priceCol] || "").replace(/\s/g, "");
+          if (curH && curH !== "정산금액" && curH.indexOf("정산금액") === -1) {
+            try {
+              sh.getRange(_PMS_HEADER_ROW, priceCol + 1).setValue("정산금액");
+            } catch (eH) {}
+          }
+        }
+      }
+      totalFixed += fileFixed;
+      fileLines.push((fileFixed ? "✅ " : "· ") + vLabel + ": " + fileFixed + "건");
+    } catch (e) {
+      fail++;
+      fileLines.push("❌ " + vLabel + ": " + e.message);
+    }
+    if (fi % 5 === 4) SpreadsheetApp.flush();
+  }
+
+  ui.alert(
+    "✅ 마감 정산금액 보정 완료",
+    "보정 합계: " + totalFixed + "건 / 실패 파일: " + fail + "\n\n" +
+      fileLines.join("\n"),
+    ui.ButtonSet.OK
+  );
+}
+
+// ══════════════════════════════════════════════
+//  일일마감용: 발주 마감탭 → 송장맵
+//  ★ 2026-08-28: 대리판매 송장이 월마감으로 빠지면 발주탭·허브에 없다.
+//    재매칭·고유ID 점검은 `_puv_buildInvoiceMap_` 만 쓰므로 여기를 직접 읽는다.
+//    송장원장은 증분이라 이번 회차를 빠뜨릴 수 있다.
+// ══════════════════════════════════════════════
+
+/** 발주 마감 헤더 행. 새 탭은 4행, 옛 탭은 1행일 수 있다. */
+function _pms_findOrderArchiveHeaderRow_(all) {
+  var max = Math.min(all ? all.length : 0, 6);
+  for (var i = 0; i < max; i++) {
+    var row = all[i] || [];
+    for (var j = 0; j < row.length; j++) {
+      var h = String(row[j] || "").replace(/\s/g, "");
+      if (h === "송장번호" || h === "운송장번호") return i;
+    }
+  }
+  return 0;
+}
+
+/** 발주 마감 = 발주 및 송장조회 15열. 헤더로 찾고 못 찾으면 고정 위치. */
+function _pms_orderArchiveCols_(hdr) {
+  function find(re, fromRight) {
+    if (!hdr) return -1;
+    if (fromRight) {
+      for (var i = hdr.length - 1; i >= 0; i--) {
+        if (re.test(String(hdr[i] || "").replace(/\s/g, ""))) return i;
+      }
+      return -1;
+    }
+    for (var j = 0; j < hdr.length; j++) {
+      if (re.test(String(hdr[j] || "").replace(/\s/g, ""))) return j;
+    }
+    return -1;
+  }
+  var cols = {
+    inv: find(/^송장번호$|^운송장번호$/, false),
+    uid: find(/고유ID|고유아이디/, true),
+    name: find(/^수취인$|수령인|받는분성명/, false),
+    phone: find(/수취인전화|전화번호|연락처/, false),
+    item: find(/품목명|상품명/, false),
+    addr: find(/주소/, false),
+    date: find(/주문일|발주일|^일자/, false),
+    note: find(/^적요$/, false),
+  };
+  if (cols.inv < 0) cols.inv = 10;
+  if (cols.uid < 0) cols.uid = 12;
+  if (cols.name < 0) cols.name = 5;
+  if (cols.phone < 0) cols.phone = 6;
+  if (cols.item < 0) cols.item = 3;
+  if (cols.addr < 0) cols.addr = 7;
+  if (cols.date < 0) cols.date = 1;
+  return cols;
+}
+
+/**
+ * 협력업체 「발주 마감」탭을 throughDate(포함)까지 읽어 invoiceMap에 넣는다.
+ * @return {{read:number, files:number, skippedFuture:number, errors:string[]}}
+ */
+function _pms_ingestOrderArchiveSs_(ss, invoiceMap, throughDateStr, vendor) {
+  var out = { read: 0, files: 0, skippedFuture: 0, errors: [] };
+  if (!ss || !invoiceMap) return out;
+
+  var throughNum = 0;
+  if (typeof _pea_ymdToNum_ === "function") throughNum = _pea_ymdToNum_(throughDateStr);
+  else {
+    var d = String(throughDateStr || "").replace(/[^0-9]/g, "").substring(0, 8);
+    throughNum = d.length === 8 ? parseInt(d, 10) : 0;
+  }
+
+  var months = [];
+  if (throughNum) {
+    var ty = Math.floor(throughNum / 10000);
+    var tm = Math.floor((throughNum % 10000) / 100);
+    months.push({ yyyy: ty, m: tm });
+    var prev = new Date(ty, tm - 2, 1);
+    months.push({ yyyy: prev.getFullYear(), m: prev.getMonth() + 1 });
+  } else {
+    var now = new Date();
+    months.push({ yyyy: now.getFullYear(), m: now.getMonth() + 1 });
+  }
+
+  vendor = String(vendor || "").trim();
+  var vCarrier = "";
+  try {
+    var stTab = ss.getSheetByName("설정");
+    var b5 = stTab ? String(stTab.getRange("B5").getValue() || "").trim() : "";
+    if (typeof _pep_carrierForVendor_ === "function") {
+      vCarrier = _pep_carrierForVendor_(b5 || vendor);
+    }
+  } catch (eCr) {}
+
+  var fileRead = 0;
+  for (var mi = 0; mi < months.length; mi++) {
+    var tabName = "(" + months[mi].yyyy + "년 " + months[mi].m + "월) 발주 마감";
+    var tab = ss.getSheetByName(tabName);
+    if (!tab || tab.getLastRow() < 2) continue;
+    var lc = Math.max(tab.getLastColumn(), 15);
+    var all;
+    try { all = tab.getRange(1, 1, tab.getLastRow(), lc).getDisplayValues(); }
+    catch (eRead) { out.errors.push(vendor + "/" + tabName + ": " + eRead.message); continue; }
+    var hi = _pms_findOrderArchiveHeaderRow_(all);
+    var cols = _pms_orderArchiveCols_(all[hi]);
+    var start = hi + 1;
+    if (hi >= 3) start = Math.max(start, _PMS_DATA_START - 1);
+    for (var ri = start; ri < all.length; ri++) {
+      var row = all[ri];
+      var inv = cols.inv >= 0 ? row[cols.inv] : "";
+      if (typeof _pep_normInvoiceNo_ === "function") {
+        if (!_pep_normInvoiceNo_(inv) && !_pep_splitInvNos_(inv).length) continue;
+      } else if (!String(inv || "").trim()) continue;
+
+      var dateNum = 0;
+      if (cols.date >= 0) {
+        if (typeof _pea_parseDateNum_ === "function") dateNum = _pea_parseDateNum_(row[cols.date]);
+        else {
+          var ds = _pms_parseDateStr_(row[cols.date]);
+          dateNum = ds ? parseInt(ds, 10) : 0;
+        }
+      }
+      if (throughNum && dateNum && dateNum > throughNum) {
+        out.skippedFuture++;
+        continue;
+      }
+
+      var uid = cols.uid >= 0 ? String(row[cols.uid] || "").trim() : "";
+      if (uid && typeof _pep_uidFromOrdererCell_ === "function") {
+        uid = _pep_uidFromOrdererCell_(uid) || uid;
+      }
+      if (uid && !(invoiceMap[uid] && invoiceMap[uid].source === "롯데")) {
+        _pep_addInvoiceMap_(invoiceMap, uid, inv, "대리판매", vCarrier);
+      }
+      var note = cols.note >= 0 ? String(row[cols.note] || "").trim() : "";
+      if (note && typeof _pep_uidFromOrdererCell_ === "function") {
+        note = _pep_uidFromOrdererCell_(note);
+      }
+      if (note && note !== uid && typeof _pep_isRealUid_ === "function" && _pep_isRealUid_(note) &&
+          !(invoiceMap[note] && invoiceMap[note].source === "롯데")) {
+        _pep_addInvoiceMap_(invoiceMap, note, inv, "대리판매", vCarrier);
+      }
+      if (typeof _pep_addNamePhoneInvoiceKeys_ === "function") {
+        _pep_addNamePhoneInvoiceKeys_(
+          invoiceMap,
+          cols.name >= 0 ? row[cols.name] : "",
+          cols.phone >= 0 ? row[cols.phone] : "",
+          inv,
+          "대리판매",
+          {
+            skipName: true,
+            addr: cols.addr >= 0 ? row[cols.addr] : "",
+            item: cols.item >= 0 ? row[cols.item] : "",
+            carrier: vCarrier,
+            stat: typeof _pep_keyStat_ === "function" ? _pep_keyStat_("발주마감") : null,
+          }
+        );
+      }
+      out.read++;
+      fileRead++;
+    }
+  }
+  if (fileRead) out.files = 1;
+  return out;
+}
+
+function _pms_addOrderArchiveToInvoiceMap_(invoiceMap, throughDateStr) {
+  var out = { read: 0, files: 0, skippedFuture: 0, errors: [] };
+  if (!invoiceMap) return out;
+
+  var files = [];
+  try { files = _pt_listFiles() || []; }
+  catch (eList) { out.errors.push("파일 목록: " + eList.message); return out; }
+
+  for (var fi = 0; fi < files.length; fi++) {
+    var vendor = String(files[fi].name || "").replace("[협력업체] ", "").trim();
+    var ss;
+    try { ss = SpreadsheetApp.openById(files[fi].id); }
+    catch (eOpen) { out.errors.push(vendor + " 열기 실패: " + eOpen.message); continue; }
+    var one = _pms_ingestOrderArchiveSs_(ss, invoiceMap, throughDateStr, vendor);
+    out.read += one.read;
+    out.files += one.files;
+    out.skippedFuture += one.skippedFuture;
+    if (one.errors && one.errors.length) out.errors = out.errors.concat(one.errors);
+  }
+  Logger.log("[UNIFIED] 발주 마감탭 송장맵: " + out.read + "건 / " +
+    out.files + "파일" +
+    (throughDateStr ? " (~" + throughDateStr + ")" : "") +
+    (out.skippedFuture ? " 미래제외=" + out.skippedFuture : "") +
+    (out.errors.length ? " 오류=" + out.errors.length : ""));
+  return out;
 }

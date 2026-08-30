@@ -1,8 +1,6 @@
 /**
  * [Pack2U 통합 메뉴]
- * ★ 2026-05-10 독립배포 시스템 제거 — 협력업체 시스템 + 이카운트만 유지
- *   제거 항목: 독립배포 관리, 발주/송장 관리, 업체 코드 매핑, 판매현황(엑셀)·점검
- *   유지 항목: 이카운트 연동, 협력업체 관리
+ * 이카운트 연동 + 협력업체 관리
  */
 
 function onOpen() {
@@ -26,8 +24,7 @@ function onOpen() {
       SpreadsheetApp.getUi().alert(
         "협력업체 메뉴 등록 오류",
         "💼 협력업체 관리 메뉴만 실패했습니다.\n" +
-          String(ePartner && ePartner.message ? ePartner.message : ePartner) +
-          "\n\nGAS에 orderSyncManager.gs 등 삭제 예정 파일이 남아 있으면 제거하세요.",
+          String(ePartner && ePartner.message ? ePartner.message : ePartner),
         SpreadsheetApp.getUi().ButtonSet.OK,
       );
     } catch (ignore2) {}
@@ -43,7 +40,6 @@ function forceRegisterAllMenus() {
 
 function registerPack2UMenu_() {
   var ui = SpreadsheetApp.getUi();
-  // ★ 수정: 독립배포 전용 ensureSalesStatusPasteSheetOnOpen_ 호출 제거
 
   ui.createMenu("💎 Pack2U")
 
@@ -62,15 +58,6 @@ function registerPack2UMenu_() {
     .addSubMenu(
       ui
         .createMenu("🛠️ 이카운트 작업")
-        .addItem(
-          "🚀 이카운트 연동 초기화 (사본/첫 설치용)",
-          "initializeEcountForSheet",
-        )
-        .addItem(
-          "⏱️ 자동연동 켜기 — 사본 전용 시간 (원본과 충돌 방지)",
-          "setupDailyTriggerForCopy",
-        )
-        .addSeparator()
         .addItem("UP 품목 검색 시트 만들기", "setupEcountFilterSheet")
         .addItem("🔍 조건으로 품목 조회", "runEcountItemFilter")
         .addSeparator()
@@ -79,11 +66,11 @@ function registerPack2UMenu_() {
         .addItem("🛒 구매 발주 업로드(이카운트)", "sendPurchaseToEcount")
         .addItem("📊 재고 조정 업로드(이카운트)", "sendInventoryToEcount")
         .addSeparator()
-        .addItem(
-          "⏰ 자동연동 켜기 (01:20/02:00/11:50/12:30)",
-          "setupDailyTrigger",
-        )
-        .addItem("⏰ 자동연동 끄기", "removeDailyTrigger")
+        .addItem("🧾 전용마감 → 구매입력 변환", "buildEcountPurchaseFromExclusiveOwner")
+        .addItem("🔍 변환 매핑 소스 진단", "diagnoseEcountPurchaseAliasOwner")
+        .addItem("📋 변환 실패 사유 리포트", "reportEcountPurchaseFailuresOwner")
+        .addItem("🧾 미등록 코드 목록", "reportEcountMissingCodesOwner")
+        .addSeparator()
         .addItem("📋 자동연동 상태 확인", "showDailyTriggerStatus")
         .addItem("🔧 자동연동 복구 실행", "repairDailyTriggerHealth")
         .addItem("🧪 이카운트 연동 진단", "diagnoseEcountIntegration")
@@ -98,16 +85,15 @@ function registerPack2UMenu_() {
 
 /**
  * onEdit 이벤트 핸들러
- * ★ 수정: 독립배포 전용 onEditMaybeRebuildSalesStatusPaste_ 호출 제거
- *   협력업체 시스템은 시간 기반 트리거로 운영하므로 onEdit 불필요
  */
 function onEdit(e) {
   // 폐기송장 탭: 송장번호 입력 시 허브에서 판매처/품목명/수량/수취인 자동 조회
   try { _po_onEditVoidInvoiceAutoFill_(e); } catch(err) {}
 
-  // ★ 2026-06-18: 출고가능 동기화는 installable trigger로 이동
+  // ★ 2026-06-18: 출고가능/품절 동기화는 installable trigger로 이동
   //   (simple trigger에서는 openById 권한 없어 외부 시트 접근 불가)
-  //   설치: partnerSetupShipApprovalTrigger()
+  //   설치: 협력업체 관리 → 자동화 설정 → 허브 상태동기화 트리거 설치
+  //   ★ 2026-08-05: 품절 확정·다중셀·N열 placeholder 정리 포함
 }
 
 /**

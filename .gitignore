@@ -29,3 +29,13 @@ antigravity_ide/
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# 의존성 (웹앱 로컬 개발용, 커밋 대상 아님)
+node_modules/
+
+# 백업 폴더 전체 (.claspignore 와 동일 규칙)
+backup_*/
+
+# 서비스 계정 키 자리 (절대 커밋 금지)
+sa-key-temp.json
+*-key*.json

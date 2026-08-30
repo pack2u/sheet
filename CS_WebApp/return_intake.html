@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="format-detection" content="telephone=no">
+  <title>반품 입고 스캔 - Pack2U</title>
+  <?!= include('csFavicon'); ?>
+  <style>
+    html, body {
+      margin: 0; padding: 0; width: 100%;
+      min-height: 100vh; min-height: 100dvh;
+      background: #0f1117; color: #f0f0f5;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+    .top-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 14px 14px 10px;
+      padding-top: calc(14px + env(safe-area-inset-top, 0px));
+      background: #1a1d28; border-bottom: 1px solid rgba(255,255,255,0.06);
+      position: sticky; top: 0; z-index: 50;
+    }
+    .back-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; border-radius: 10px;
+      background: #222533; color: #f0f0f5; text-decoration: none; font-size: 22px;
+    }
+    .top-title { font-size: 17px; font-weight: 700; flex: 1; }
+    .staff-badge {
+      font-size: 11px; color: #4a90d9;
+      background: rgba(74,144,217,0.12);
+      border: 1px solid rgba(74,144,217,0.25);
+      padding: 4px 8px; border-radius: 8px;
+    }
+    .wrap { padding: 14px; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+    .mob-alert {
+      display: block; margin-bottom: 12px; padding: 12px;
+      border-radius: 12px; background: rgba(240,160,48,0.12);
+      border: 1px solid rgba(240,160,48,0.25);
+      font-size: 12px; line-height: 1.55; color: #e8c080;
+    }
+    .mob-alert a {
+      display: block; margin-top: 10px; padding: 12px;
+      border-radius: 10px; background: #4a90d9; color: #fff;
+      text-align: center; text-decoration: none; font-weight: 700; font-size: 14px;
+    }
+    .hint { font-size: 13px; color: #8b8fa3; line-height: 1.55; margin-bottom: 12px; }
+    .hint strong { color: #f0a030; }
+    .card {
+      background: #1a1d28; border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 14px; padding: 14px; margin-bottom: 12px;
+    }
+    .card-title { font-size: 13px; color: #8b8fa3; margin-bottom: 10px; }
+    .manual-row { display: flex; gap: 8px; }
+    .manual-row input {
+      flex: 1; padding: 14px 12px; border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.08); background: #222533;
+      color: #f0f0f5; font-size: 16px; min-width: 0;
+    }
+    .btn {
+      border: none; border-radius: 10px; padding: 14px 16px;
+      font-size: 15px; font-weight: 700; font-family: inherit; cursor: pointer;
+    }
+    .btn-primary { background: #4a90d9; color: #fff; white-space: nowrap; }
+    .btn-outline {
+      width: 100%; margin-top: 8px; background: transparent;
+      color: #8b8fa3; border: 1px solid rgba(255,255,255,0.08);
+    }
+    .btn-green { width: 100%; margin-top: 8px; background: #34c77b; color: #0f1117; }
+    #qr-reader {
+      min-height: 160px; background: #000; border-radius: 10px;
+      overflow: hidden; display: flex; align-items: center; justify-content: center;
+    }
+    #scanVideo { width: 100%; max-height: 260px; display: block; background: #000; }
+    .scan-msg { padding: 18px 12px; text-align: center; font-size: 13px; color: #8b8fa3; line-height: 1.55; }
+    .step { display: none; }
+    .step.on { display: block; }
+    .pick-card {
+      background: #222533; border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px; padding: 14px; margin-bottom: 10px; cursor: pointer;
+    }
+    .pick-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .pick-meta { font-size: 12px; color: #8b8fa3; line-height: 1.45; }
+    .pick-warn {
+      display: inline-block; margin-top: 6px; font-size: 11px; color: #f0a030;
+      background: rgba(240,160,48,0.12); padding: 2px 6px; border-radius: 6px;
+    }
+    .result-box { text-align: center; padding: 28px 8px; }
+    .result-icon { font-size: 52px; margin-bottom: 10px; }
+    .result-title { font-size: 21px; font-weight: 700; margin-bottom: 8px; }
+    .result-sub { font-size: 14px; color: #8b8fa3; line-height: 1.55; margin-bottom: 14px; }
+    .result-chip {
+      display: inline-block; padding: 8px 14px; border-radius: 10px;
+      background: rgba(52,199,123,0.12); border: 1px solid rgba(52,199,123,0.3);
+      color: #6ee7a8; font-weight: 600; font-size: 14px; margin-bottom: 16px;
+    }
+    .loading {
+      display: none; position: fixed; inset: 0; z-index: 300;
+      background: rgba(15,17,23,0.88); align-items: center; justify-content: center;
+      flex-direction: column; gap: 10px;
+    }
+    .loading.on { display: flex; }
+    .spin {
+      width: 34px; height: 34px; border: 3px solid rgba(255,255,255,0.08);
+      border-top-color: #4a90d9; border-radius: 50%;
+      animation: rot 0.8s linear infinite;
+    }
+    @keyframes rot { to { transform: rotate(360deg); } }
+    .ver { text-align: center; font-size: 11px; color: #5c6078; padding: 16px 0 4px; }
+    .boot-err {
+      display: none; margin: 12px 14px; padding: 12px; border-radius: 10px;
+      background: rgba(231,76,95,0.12); color: #f5a0a8; font-size: 12px; line-height: 1.5;
+    }
+    .file-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+  </style>
+</head>
+<body style="background:#0f1117;color:#f0f0f5;">
+
+  <div class="top-bar">
+    <a class="back-btn" id="linkHome" href="<?= webAppUrl ?>?page=home">‹</a>
+    <div class="top-title">반품 입고 스캔</div>
+    <div class="staff-badge" id="staffBadge"><?= staff ? staff : '현장' ?></div>
+  </div>
+
+  <div class="boot-err" id="bootErr"></div>
+
+  <div class="wrap step on" id="stepScan">
+    <div class="hint">
+      <strong>반품(회수) 송장번호</strong>를 입력하면 반품관리대장 상태가 <strong>반품입고</strong>로 변경됩니다.
+    </div>
+
+    <div class="card">
+      <div class="card-title">① 송장 촬영 (모바일 권장)</div>
+      <div id="qr-reader">
+        <div class="scan-msg" id="scanMsg">바코드가 화면을 꽉 채우게, 가로로 눕혀서 찍으세요.<br>바코드가 지워졌으면 인쇄된 숫자만 찍어도 됩니다.</div>
+      </div>
+      <button class="btn btn-primary" type="button" id="btnPhoto">📷 송장 촬영해서 인식</button>
+      <input type="file" id="fileCap" class="file-hidden" accept="image/*" capture="environment">
+    </div>
+
+    <div class="card">
+      <div class="card-title">② 송장번호 직접 입력</div>
+      <div class="manual-row">
+        <input type="text" id="manualInv" placeholder="예: 258131494106" inputmode="numeric" autocomplete="off" autocapitalize="off">
+        <button class="btn btn-primary" type="button" id="btnSubmit">입고</button>
+      </div>
+    </div>
+
+    <div class="card" id="cardLive" style="display:none">
+      <div class="card-title">③ 연속 스캔 (PC 전용)</div>
+      <button class="btn btn-outline" type="button" id="btnCamWin">📷 카메라 창 열고 연속 스캔</button>
+      <button class="btn btn-outline" type="button" id="btnCam">이 화면에서 카메라 켜기</button>
+    </div>
+
+    <div class="mob-alert" id="mobAlert" style="display:none">
+      <strong>모바일 안내</strong><br>
+      구글 정책상 앱 화면 안에서는 카메라 영상이 열리지 않습니다.
+      위의 <strong>송장 촬영</strong> 버튼을 쓰면 폰 기본 카메라로 찍어 그대로 인식됩니다.
+      <a id="linkStandalone" href="<?= webAppUrl ?>?page=return_intake&amp;staff=<?= encodeURIComponent(staff || '현장') ?>" target="_blank" rel="noopener">↗ Safari/Chrome 새 탭에서 열기</a>
+    </div>
+  </div>
+
+  <div class="wrap step" id="stepPick">
+    <div class="hint" id="pickHint">해당 건을 선택하세요.</div>
+    <div id="pickList"></div>
+    <button class="btn btn-outline" type="button" id="btnRescan">← 다시</button>
+  </div>
+
+  <div class="wrap step" id="stepDone">
+    <div class="result-box">
+      <div class="result-icon" id="doneIcon">✅</div>
+      <div class="result-title" id="doneTitle">반품입고 완료</div>
+      <div class="result-sub" id="doneSub"></div>
+      <div class="result-chip" id="doneChip"></div>
+      <button class="btn btn-green" type="button" id="btnNext">📷 다음 송장</button>
+      <a class="btn btn-outline" id="linkHome2" href="<?= webAppUrl ?>?page=home" style="display:block;text-align:center;text-decoration:none;line-height:1.2;padding-top:16px;padding-bottom:16px;">🏠 홈으로</a>
+    </div>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="spin"></div>
+    <div id="loadingText">처리 중…</div>
+  </div>
+
+  <div class="ver">v3.24 · 반품 입고 스캔</div>
+
+  <?!= include('csScanPopup') ?>
+  <?!= include('csDecode') ?>
+
+  <script>
+    (function() {
+      // ★ 2026-08-27: 인쇄 스크립틀릿은 script 안에서도 따옴표를 이스케이프한다.
+      //   그래서 값을 문자열 리터럴 안에 넣어 그 문제를 피한다.
+      var WEB_APP_URL = "<?= webAppUrl ?>";
+      var scanTimer = null, videoEl = null, streamRef = null, pendingInvoice = "";
+      var currentStaff = "<?= staff ?>" || "현장";
+      var BARCODE_FORMATS = ["code_128", "itf", "code_39", "ean_13", "codabar"];
+
+      function qs(name) {
+        var m = location.search.match(new RegExp("[?&]" + name + "=([^&]*)"));
+        return m ? decodeURIComponent(m[1].replace(/\+/g, " ")) : "";
+      }
+
+      function bootErr(msg) {
+        var el = document.getElementById("bootErr");
+        if (!el) return;
+        el.style.display = "block";
+        el.textContent = msg;
+      }
+
+      window.onerror = function(msg) {
+        bootErr("스크립트 오류: " + msg);
+      };
+
+      function nav(url) {
+        try {
+          if (window.top && window.top !== window.self) window.top.location.href = url;
+          else window.location.href = url;
+        } catch (e) {
+          window.location.href = url;
+        }
+      }
+
+      function showLoading(msg) {
+        document.getElementById("loadingText").textContent = msg || "처리 중…";
+        document.getElementById("loading").classList.add("on");
+      }
+      function hideLoading() { document.getElementById("loading").classList.remove("on"); }
+
+      function showStep(id) {
+        ["stepScan", "stepPick", "stepDone"].forEach(function(s) {
+          document.getElementById(s).classList.toggle("on", s === id);
+        });
+      }
+
+      function hasBarcodeDetector() {
+        return typeof window.BarcodeDetector !== "undefined";
+      }
+
+      function stopScanner() {
+        if (scanTimer) { cancelAnimationFrame(scanTimer); scanTimer = null; }
+        if (streamRef) {
+          streamRef.getTracks().forEach(function(t) { t.stop(); });
+          streamRef = null;
+        }
+        videoEl = null;
+      }
+
+      function setScanMsg(html) {
+        var box = document.getElementById("qr-reader");
+        box.innerHTML = '<div class="scan-msg" id="scanMsg">' + html + '</div>';
+      }
+
+      function startCamera() {
+        stopScanner();
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setScanMsg("카메라 API 미지원<br><b>송장번호 직접 입력</b>을 사용하세요.");
+          return;
+        }
+        if (!hasBarcodeDetector()) {
+          setScanMsg("이 브라우저는 실시간 바코드 미지원<br><b>송장번호 직접 입력</b> 또는 <b>사진</b>을 사용하세요.");
+          return;
+        }
+        var box = document.getElementById("qr-reader");
+        box.innerHTML = '<video id="scanVideo" playsinline muted></video>';
+        videoEl = document.getElementById("scanVideo");
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })
+          .then(function(stream) {
+            streamRef = stream;
+            videoEl.srcObject = stream;
+            return videoEl.play();
+          })
+          .then(loopDetect)
+          .catch(function(err) {
+            setScanMsg("카메라 접근 실패<br>" + esc(String(err && err.message ? err.message : err)) + "<br><b>새 탭에서 열기</b> 또는 송장번호 입력");
+          });
+      }
+
+      function loopDetect() {
+        if (!videoEl || !streamRef || !hasBarcodeDetector()) return;
+        var detector = new BarcodeDetector({ formats: BARCODE_FORMATS });
+        var busy = false;
+        (function tick() {
+          if (!videoEl || !streamRef) return;
+          if (videoEl.readyState < 2 || busy) { scanTimer = requestAnimationFrame(tick); return; }
+          busy = true;
+          detector.detect(videoEl).then(function(codes) {
+            busy = false;
+            if (codes && codes.length) { onScanSuccess(codes[0].rawValue); return; }
+            scanTimer = requestAnimationFrame(tick);
+          }).catch(function() { busy = false; scanTimer = requestAnimationFrame(tick); });
+        })();
+      }
+
+      /**
+       * 사진 → 송장번호. 공용 모듈이 BarcodeDetector · html5-qrcode · 서버 OCR을
+       * 순서대로 시도하므로 아이폰(BarcodeDetector 없음)에서도 동작한다.
+       */
+      function scanImageFile(file) {
+        return csDecodeImageFile(file, {
+          minDigits: 8,
+          ocr: true,
+          onStage: function(msg) { if (msg) showLoading(msg); }
+        }).then(function(r) { return r.value; });
+      }
+
+      function onScanSuccess(text) {
+        stopScanner();
+        if (navigator.vibrate) try { navigator.vibrate(80); } catch (e) {}
+        processInvoice(text);
+      }
+
+      /**
+       * 샌드박스를 벗어난 팝업에서 스캔.
+       * 이 화면(iframe) 안에서는 camera 권한이 없어 getUserMedia 가 막힌다.
+       */
+      function openScanPopup() {
+        stopScanner();
+        var ok = csOpenScanPopup({
+          title: "반품 입고 송장 스캔",
+          onResult: function (v) { onScanSuccess(v); }
+        });
+        if (!ok) {
+          setScanMsg(esc(csScanPopupBlockedMsg()));
+        } else {
+          setScanMsg("카메라 창에서 스캔하세요. 인식되면 이 화면이 이어서 처리합니다.");
+        }
+      }
+
+      function manualSubmit() {
+        var v = document.getElementById("manualInv").value.trim();
+        if (!v) { alert("송장번호를 입력하세요."); return; }
+        stopScanner();
+        processInvoice(v);
+      }
+
+      function processInvoice(raw) {
+        showLoading("송장 분석 중…");
+        google.script.run
+          .withSuccessHandler(function(parsed) {
+            var inv = (parsed && parsed.ok && parsed.invoice) ? parsed.invoice : String(raw || "").trim();
+            if (String(inv).replace(/[^0-9]/g, "").length < 8) {
+              hideLoading(); alert("송장번호 8자리 이상 필요합니다."); resetScan(); return;
+            }
+            pendingInvoice = inv;
+            showLoading("반품대장 조회 중…");
+            google.script.run
+              .withSuccessHandler(handleIntakeResult)
+              .withFailureHandler(failAndReset)
+              .csProcessReturnIntake({ returnInvoice: pendingInvoice, staff: currentStaff });
+          })
+          .withFailureHandler(function() {
+            var inv = String(raw || "").trim();
+            if (inv.replace(/[^0-9]/g, "").length < 8) {
+              hideLoading(); alert("송장번호 8자리 이상 필요합니다."); resetScan(); return;
+            }
+            pendingInvoice = inv;
+            showLoading("반품대장 조회 중…");
+            google.script.run
+              .withSuccessHandler(handleIntakeResult)
+              .withFailureHandler(failAndReset)
+              .csProcessReturnIntake({ returnInvoice: pendingInvoice, staff: currentStaff });
+          })
+          .csParseCourierBarcode(raw);
+      }
+
+      function failAndReset(err) {
+        hideLoading();
+        alert("오류: " + (err && err.message ? err.message : err));
+        resetScan();
+      }
+
+      function handleIntakeResult(res) {
+        hideLoading();
+        res = res || {};
+        if (res.needPick && res.matches && res.matches.length) { showPickList(res); return; }
+        if (!res.ok) { alert(res.error || res.message || "처리 실패"); resetScan(); return; }
+        showSuccess(res);
+      }
+
+      function showPickList(res) {
+        pendingInvoice = res.returnInvoice || pendingInvoice;
+        document.getElementById("pickHint").textContent = res.message || "해당 건을 선택하세요.";
+        var list = document.getElementById("pickList");
+        list.innerHTML = "";
+        res.matches.forEach(function(m) {
+          var card = document.createElement("div");
+          card.className = "pick-card";
+          var warn = m.matchVia === "original_invoice_warn" ? '<span class="pick-warn">원송장 일치 — 반품송장 확인</span>' : "";
+          card.innerHTML =
+            '<div class="pick-name">' + esc(m.name || "(이름없음)") + '</div>' +
+            '<div class="pick-meta">' + esc(m.item || "") + '<br>원송장: ' + esc(m.invoice || "-") +
+            ' · ' + esc(m.status || "") + (m.alreadyIntake ? " · 이미 반품입고" : "") + '<br>' +
+            esc(m.tab) + ' ' + m.row + '행' + warn + '</div>';
+          card.addEventListener("click", function() { pickRow(m); });
+          list.appendChild(card);
+        });
+        showStep("stepPick");
+      }
+
+      function pickRow(m) {
+        showLoading("입고 처리 중…");
+        google.script.run
+          .withSuccessHandler(handleIntakeResult)
+          .withFailureHandler(function(err) { hideLoading(); alert("오류: " + (err && err.message ? err.message : err)); })
+          .csProcessReturnIntake({
+            returnInvoice: pendingInvoice, staff: currentStaff,
+            tab: m.tab, row: m.row, matchVia: m.matchVia
+          });
+      }
+
+      function showSuccess(res) {
+        var action = res.action || "updated";
+        document.getElementById("doneIcon").textContent = action === "created" ? "🆕" : "✅";
+        document.getElementById("doneTitle").textContent = action === "created" ? "신규 등록 · 반품입고" : "반품입고 완료";
+        var sub = [];
+        if (res.name) sub.push(res.name);
+        if (res.item) sub.push(res.item);
+        if (res.tab && res.row) sub.push(res.tab + " " + res.row + "행");
+        if (res.warning) sub.push("⚠ " + res.warning);
+        document.getElementById("doneSub").textContent = sub.join(" · ") || (res.message || "");
+        document.getElementById("doneChip").textContent = (res.returnInvoice || pendingInvoice) + " → 반품입고";
+        showStep("stepDone");
+      }
+
+      function resetScan() {
+        pendingInvoice = "";
+        document.getElementById("manualInv").value = "";
+        document.getElementById("pickList").innerHTML = "";
+        stopScanner();
+        setScanMsg("바코드가 화면을 꽉 채우게, 가로로 눕혀서 찍으세요.");
+        showStep("stepScan");
+      }
+
+      function esc(s) {
+        return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      }
+
+      function init() {
+        try {
+          var qStaff = qs("staff");
+          if (qStaff) {
+            currentStaff = qStaff;
+            document.getElementById("staffBadge").textContent = currentStaff;
+          } else {
+            try {
+              var ls = localStorage.getItem("pack2u_staff");
+              if (ls) { currentStaff = ls; document.getElementById("staffBadge").textContent = currentStaff; }
+            } catch (e2) {}
+          }
+          var homeUrl = WEB_APP_URL + "?page=home&staff=" + encodeURIComponent(currentStaff);
+          var selfUrl = WEB_APP_URL + "?page=return_intake&staff=" + encodeURIComponent(currentStaff);
+          document.getElementById("linkHome").href = homeUrl;
+          document.getElementById("linkHome2").href = homeUrl;
+          document.getElementById("linkStandalone").href = selfUrl;
+
+          // 라이브 카메라는 샌드박스 iframe 에서 못 열린다. 되는 환경에서만 노출.
+          if (csLiveCameraLikelyBlocked()) {
+            document.getElementById("mobAlert").style.display = "block";
+          } else {
+            document.getElementById("cardLive").style.display = "block";
+          }
+
+          document.getElementById("btnSubmit").addEventListener("click", manualSubmit);
+          document.getElementById("btnCamWin").addEventListener("click", openScanPopup);
+          document.getElementById("btnCam").addEventListener("click", startCamera);
+          document.getElementById("btnPhoto").addEventListener("click", function() { document.getElementById("fileCap").click(); });
+          document.getElementById("fileCap").addEventListener("change", function(ev) {
+            var file = ev.target.files && ev.target.files[0];
+            if (!file) return;
+            showLoading("사진 분석 중…");
+            scanImageFile(file)
+              .then(function(t) { hideLoading(); onScanSuccess(t); })
+              .catch(function(err) {
+                hideLoading();
+                setScanMsg(esc(String(err && err.message ? err.message : err)));
+                alert(String(err && err.message ? err.message : err));
+              })
+              .finally(function() { ev.target.value = ""; });
+          });
+          document.getElementById("btnRescan").addEventListener("click", resetScan);
+          document.getElementById("btnNext").addEventListener("click", resetScan);
+          document.getElementById("manualInv").addEventListener("keydown", function(ev) {
+            if (ev.key === "Enter") manualSubmit();
+          });
+        } catch (err) {
+          bootErr(String(err && err.message ? err.message : err));
+        }
+      }
+
+      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+      else init();
+    })();
+  </script>
+</body>
+</html>

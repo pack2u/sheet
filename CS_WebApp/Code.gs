@@ -17,26 +17,69 @@
 
 function doGet(e) {
   var page = (e && e.parameter && e.parameter.page) || "home";
-  var template;
+  var file = "home";
+  var title = "팩투유(Pack2U) CS 웹앱";
+  var startWorkspace = false;
+
+  // ★ 2026-08-25: 허용 계정만 통과. 여기서 막으면 페이지 자체가 나가지 않는다.
+  var acc = _cs_ac_check_();
+  if (!acc.allowed) return _cs_ac_denyPage_(acc);
 
   switch (page) {
     case "barcode":
-      template = HtmlService.createTemplateFromFile("barcode");
+      file = "barcode";
       break;
     case "inventory":
-      template = HtmlService.createTemplateFromFile("inventory");
+      file = "inventory";
       break;
     case "camera_test":
-      template = HtmlService.createTemplateFromFile("camera_test");
+      file = "camera_test";
       break;
-    default:
-      template = HtmlService.createTemplateFromFile("home");
+    case "return_intake":
+      file = "return_intake";
+      title = "반품 입고 스캔";
+      break;
+    case "scan_test":
+      file = "scan_test";
+      title = "택배 바코드 스캔 테스트";
+      break;
+    case "diag":
+      return _cs_withFavicon_(HtmlService.createHtmlOutput(_cs_buildDiagPage_()))
+        .setTitle("웹앱 URL 진단")
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+        .addMetaTag("viewport", "width=device-width, initial-scale=1.0");
+    case "manual":
+    case "csmanual":
+    case "orders":
+    case "cs":
+    case "workspace":
+      file = "home";
+      startWorkspace = true;
+      title = "팩투유(Pack2U) CS 웹앱";
+      break;
   }
 
-  return template.evaluate()
-    .setTitle("Pack2U 모바일")
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no");
+  try {
+    // ★ 2026-08-25: 모든 페이지에 고정 exec URL 주입.
+    //   GAS 샌드박스 iframe에서는 window.location이 googleusercontent 내부 주소이므로
+    //   페이지 이동을 window.location 기준으로 만들면 Drive 오류가 난다.
+    var tpl = HtmlService.createTemplateFromFile(file);
+    tpl.webAppUrl = _csWebAppExecUrl_();
+    tpl.staff = String((e && e.parameter && e.parameter.staff) || "").trim();
+    tpl.startWorkspace = startWorkspace;
+    tpl.userEmail = acc.email;
+    tpl.userName = acc.name || "";
+    var out = tpl.evaluate();
+    return _cs_withFavicon_(out)
+      .setTitle(title)
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no");
+  } catch (err) {
+    return HtmlService.createHtmlOutput(
+      "<pre style='padding:16px;font-family:sans-serif'>페이지 로드 오류: " +
+      String(err && err.message ? err.message : err) + "</pre>"
+    ).setTitle("Pack2U 오류");
+  }
 }
 
 /** HTML 인클루드 헬퍼 */
@@ -44,46 +87,149 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
+/** 노란 배경 + CS — 탭 아이콘. data URI가 거부되면 HTML link가 담당한다. */
+var _CS_FAVICON_PNG_ =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAKzSURBVHhe7ZctT15BEIVfAg0QmqYhTcX7P6rq0Zj+gdbXVOIQ9WhEHYoEW2wFBkWC7Q+or7/NIZlmc+7M3dndKyAz4slNZr9mz579uJvpcTNFZsOBaKQAHIhGCsCBaKQAHIhGCsCBaKQAHIhGCsCBaKQAHIhGCsCBaKQAHIhGCsCBHv7e70x3V/vTj+9H05dPx/85//pmur08eCrnNjW0/gBivX1qDAmAJJDQdrutcnH22pX09cXhrK0Fxub2rXQL8Pvn3nR68m6W1BKoj3bclwDHcJsa6NMjrEWXAH9+7c4S8WIl/HDzalbXy4gTugSwVh4riL2LyeBrrSi2A/eJ/c315AxBf7U+uT8vzQIgIR4cgsAVXBfA8lwfsAu4HONwX4J2TkAgruehWYCPH97PBrcmL2ii8QS5XHNJibhCYEG9NAmg7f1aooIIJ1cZi8b9AjhrzStPo0kAbSW91uMJM9beFuR84XajNAmg3flrrY7mLgu4riaol2EBuM4I1oFpge209K7w8KwEAHBUbTswfKC28OwEECAErjvtfaDhPYuYYQG8FsRk0L7nypKfrSVnfPv8dtbOQ5MASIIH9tqP3w+YDNfxgjy01yjX89AkAFaCB4VFuR6jvfPhCCnHqV7+8pZlFtpicB0PTQIAWI0HXkoYommrVV5jmrVr20R7k3AdD80CWFeVdjdbv8xsf2010c462LTJY4txPQ/NAgDtMCwTh421iQssFOAzoqTcHlwm9P4SdwkANNt6sJ6zlrM8QGzuz0u3AED7LV3CsrQAEZacoAFX1M6LJYYEALAz7GcljjjKvUnKA2hpCwEcxpabWhgWoATJr/GPXgJXlH1q58cIqwrwEkkBOBCNFIAD0UgBOBCNFIAD0UgBOBCNFIAD0UgBOBCNFIAD0UgBOBCN8AL8A9lhp/MjNTwaAAAAAElFTkSuQmCC";
+
+function _cs_withFavicon_(out) {
+  try { out.setFaviconUrl(_CS_FAVICON_PNG_); } catch (eFav) {}
+  return out;
+}
+
+/** 고정 폴백 exec URL (배포 ID 고정) */
+var _CS_FALLBACK_EXEC_URL_ =
+  "https://script.google.com/macros/s/AKfycbxvDzpleqHey7gm0aHILVdALGAuCaymCXlFUfyVKNYt8Je2qhOPbCoKFtgLKMmeXBdpTA/exec";
+
+/** /exec 형식 웹앱 URL인지 검증 (/dev·오타·구 배포 문자열 차단) */
+function _cs_isValidExecUrl_(u) {
+  u = String(u || "").trim().replace(/\?.*$/, "");
+  return /^https:\/\/script\.google\.com\/(a\/[^/]+\/)?macros\/s\/[A-Za-z0-9_-]{30,}\/exec$/.test(u);
+}
+
+/**
+ * CS WebApp exec URL
+ * ★ 2026-08-25: 실행 중인 배포 URL을 1순위로 사용.
+ *   스크립트 속성에 옛 배포 URL이 남아 있으면 페이지 이동이 전부
+ *   "현재 파일을 열 수 없습니다"(Drive 오류)로 깨지므로 형식 검증 후에만 쓴다.
+ */
+function _csWebAppExecUrl_() {
+  try {
+    var live = String(ScriptApp.getService().getUrl() || "").trim();
+    if (_cs_isValidExecUrl_(live)) return live.replace(/\?.*$/, "");
+  } catch (eLive) {}
+
+  try {
+    var fromProp = String(
+      PropertiesService.getScriptProperties().getProperty("CS_WEBAPP_URL") || ""
+    ).trim();
+    if (_cs_isValidExecUrl_(fromProp)) return fromProp.replace(/\?.*$/, "");
+  } catch (eProp) {}
+
+  return _CS_FALLBACK_EXEC_URL_;
+}
+
+/** 웹앱 URL 결정 과정 진단 (page=diag 화면에서 사용) */
+function csDiagnoseWebAppUrl() {
+  var out = {
+    resolved: "",
+    live: "",
+    liveValid: false,
+    prop: "",
+    propValid: false,
+    fallback: _CS_FALLBACK_EXEC_URL_,
+    source: "",
+  };
+  try {
+    out.live = String(ScriptApp.getService().getUrl() || "").trim();
+  } catch (e) {
+    out.live = "(오류: " + (e && e.message ? e.message : e) + ")";
+  }
+  out.liveValid = _cs_isValidExecUrl_(out.live);
+  try {
+    out.prop = String(
+      PropertiesService.getScriptProperties().getProperty("CS_WEBAPP_URL") || ""
+    ).trim();
+  } catch (e2) {}
+  out.propValid = _cs_isValidExecUrl_(out.prop);
+  out.resolved = _csWebAppExecUrl_();
+  out.source = out.liveValid
+    ? "실행 중 배포(ScriptApp)"
+    : out.propValid
+      ? "스크립트 속성(CS_WEBAPP_URL)"
+      : "고정 폴백";
+  return out;
+}
+
+/** 잘못된 CS_WEBAPP_URL 스크립트 속성 제거 */
+function csClearWebAppUrlProperty() {
+  try {
+    PropertiesService.getScriptProperties().deleteProperty("CS_WEBAPP_URL");
+    return { ok: true, message: "CS_WEBAPP_URL 속성을 삭제했습니다." };
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : String(e) };
+  }
+}
+
+/** page=diag 화면 HTML */
+function _cs_buildDiagPage_() {
+  var d = csDiagnoseWebAppUrl();
+  var base = d.resolved;
+  var pages = ["home", "return_intake", "scan_test", "barcode", "inventory"];
+  var links = "";
+  for (var i = 0; i < pages.length; i++) {
+    var u = base + "?page=" + pages[i];
+    links +=
+      '<a target="_top" rel="noopener" href="' + u + '"' +
+      ' style="display:block;padding:12px 14px;margin:8px 0;background:#1b2130;' +
+      'border:1px solid #2b3448;border-radius:10px;color:#8ab4ff;text-decoration:none">' +
+      pages[i] + "</a>";
+  }
+  function row(label, val, ok) {
+    return (
+      '<div style="margin:10px 0"><div style="color:#8b8fa3;font-size:11px">' + label +
+      "</div><div style=\"word-break:break-all;font-size:12px;color:" +
+      (ok === false ? "#ef9a9a" : "#f0f0f5") + '">' + (val || "(없음)") + "</div></div>"
+    );
+  }
+  return (
+    '<div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;' +
+    'background:#0f1117;color:#f0f0f5;min-height:100vh;padding:16px;box-sizing:border-box">' +
+    '<h2 style="margin:0 0 4px;font-size:16px">웹앱 URL 진단</h2>' +
+    '<div style="color:#8b8fa3;font-size:11px;margin-bottom:14px">이동 링크가 깨질 때 확인하는 화면입니다.</div>' +
+    row("사용 중인 주소 · 출처: " + d.source, d.resolved) +
+    row("실행 중 배포(ScriptApp)", d.live, d.liveValid) +
+    row("스크립트 속성 CS_WEBAPP_URL", d.prop, d.prop ? d.propValid : undefined) +
+    row("고정 폴백", d.fallback) +
+    '<div style="margin-top:18px;color:#8b8fa3;font-size:11px">아래 링크를 눌러 각 페이지 진입을 확인하세요.</div>' +
+    links +
+    "</div>"
+  );
+}
+
 // ══════════════════════════════════════════════
 //  바코드 → 상품 정보 조회
 // ══════════════════════════════════════════════
 
 /**
- * 바코드(이카운트코드)로 상품 정보 조회
- * 상품정보 시트의 E열(이카운트코드) → C열(상품명) 매핑
+ * 바코드(이카운트코드)로 상품 정보 조회 — Supabase SSOT
  */
 function lookupProductByBarcode(barcode) {
   if (!barcode) return { found: false, error: "바코드가 비어 있습니다." };
 
-  try {
-    var ss = SpreadsheetApp.openById("1Lz-ykUAQBpeEnZU1T_qdJeX9d9L10h6z6qYwHQna2QE");
-    var sheet = ss.getSheetByName("상품정보");
-    if (!sheet) return { found: false, error: "상품정보 시트를 찾을 수 없습니다." };
-
-    var lastRow = sheet.getLastRow();
-    if (lastRow < 4) return { found: false, error: "상품 데이터가 없습니다." };
-
-    // E열(이카운트코드), C열(상품명), D열(옵션명)
-    var data = sheet.getRange(4, 1, lastRow - 3, 10).getValues();
-    var barcodeClean = String(barcode).trim().toUpperCase();
-
-    for (var i = 0; i < data.length; i++) {
-      var ecountCode = String(data[i][4] || "").trim().toUpperCase(); // E열 = index 4
-      if (ecountCode === barcodeClean) {
-        return {
-          found: true,
-          ecountCode: ecountCode,
-          productName: String(data[i][2] || "").trim(), // C열 = 상품명
-          optionName: String(data[i][3] || "").trim(),  // D열 = 옵션명
-          barcode: barcode
-        };
-      }
-    }
-
-    return { found: false, error: "'" + barcode + "' 에 해당하는 상품을 찾을 수 없습니다." };
-  } catch (e) {
-    return { found: false, error: "조회 오류: " + e.message };
+  var detail = csLookupProductDetail(barcode);
+  if (!detail || !detail.ok) {
+    return {
+      found: false,
+      error: (detail && detail.error) || ("'" + barcode + "' 에 해당하는 상품을 찾을 수 없습니다."),
+    };
   }
+  return {
+    found: true,
+    ecountCode: detail.codeRaw || detail.code,
+    productName: detail.productName || "",
+    optionName: detail.optionName || "",
+    barcode: barcode,
+  };
 }
 
 // ══════════════════════════════════════════════
@@ -105,6 +251,7 @@ function _cs_generateId_() {
  * AppSheet에서 나머지 (사진, 사유 등) 입력
  */
 function submitBarcodeToCS(data) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   try {
     // CS목록 시트 열기 (공유드라이브)
     var csSheetId = _cs_getCSSheetId_();
@@ -175,6 +322,7 @@ function submitBarcodeToCS(data) {
  * @param {Object} sessionData - { submitter, warehouse, items: [{barcode, ecountCode, productName, systemQty, actualQty, diff}] }
  */
 function submitInventoryCount(sessionData) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   try {
     var ss = SpreadsheetApp.openById("1Lz-ykUAQBpeEnZU1T_qdJeX9d9L10h6z6qYwHQna2QE");
     var sheet = ss.getSheetByName("재고실사");
@@ -242,9 +390,19 @@ function _cs_getCSSheetId_() {
   return id;
 }
 
-/** 담당자 목록 가져오기 */
+/**
+ * 담당자 목록 가져오기.
+ * 표시 이름이 지정된 계정도 담당자로 넣는다. 목록에 없으면 그 사람의
+ * 읽음 여부가 카드에 잡히지 않고, 옛 이름이 계속 작성자로 남는다.
+ */
 function getStaffList() {
-  return ["배진숙", "이정은", "김진수"];
+  var list = ["김진수", "고윤서", "박상식"];
+  var extra = [];
+  try { extra = _cs_ac_allDisplayNames_(); } catch (e) { extra = []; }
+  for (var i = 0; i < extra.length; i++) {
+    if (list.indexOf(extra[i]) === -1) list.push(extra[i]);
+  }
+  return list;
 }
 
 /** CS시트 ID 설정 (관리자용) */
@@ -291,6 +449,12 @@ function lookupByInvoice(invoiceNumber) {
     var tempResult = _cs_searchTempTab_(ss, invClean);
     if (tempResult) return tempResult;
 
+    // ── 4차: 일일마감 최근 14일 ──
+    if (typeof _cs_searchDailyArchiveByInvoice_ === "function") {
+      var dailyResult = _cs_searchDailyArchiveByInvoice_(invClean);
+      if (dailyResult) return dailyResult;
+    }
+
     return { found: false, error: "'" + invoiceNumber + "' 에 해당하는 판매 데이터를 찾을 수 없습니다." };
   } catch (e) {
     return { found: false, error: "조회 오류: " + e.message };
@@ -324,6 +488,8 @@ function _cs_searchHub_(ss, invDigits) {
         recipientName: String(data[i][7] || "").trim(),  // 수취인
         recipientPhone: String(data[i][8] || "").trim(), // 전화번호
         recipientAddr: String(data[i][9] || "").trim(),  // 주소
+        shipMsg: _cs_sanitizeShipMsg_(String(data[i][10] || "").trim(), String(data[i][9] || "").trim()),
+        deliveryMessage: _cs_sanitizeShipMsg_(String(data[i][10] || "").trim(), String(data[i][9] || "").trim()),
         memo: String(data[i][12] || "").trim(),      // 적요
         status: String(data[i][14] || "").trim()     // 상태
       };
@@ -400,8 +566,18 @@ function _cs_searchTempTab_(ss, invDigits) {
 //  (카메라 테스트 프로토타입용)
 // ══════════════════════════════════════════════
 
-// ★ GEMINI_API_KEY는 _secrets.gs에서 전역 정의됨 (GitHub 유출 방지)
-var _CS_GEMINI_KEY = GEMINI_API_KEY;
+/**
+ * CS 웹앱은 허브와 별도 프로젝트라 _secrets.gs가 없을 수 있음.
+ * 전역 참조를 로드 시점에 하면 doGet 전체가 죽는다.
+ */
+function _cs_getGeminiKey_() {
+  if (typeof GEMINI_API_KEY !== "undefined" && GEMINI_API_KEY) return String(GEMINI_API_KEY);
+  try {
+    var k = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY");
+    if (k) return String(k);
+  } catch (e) {}
+  return "";
+}
 
 /**
  * 송장 이미지를 Gemini Vision으로 분석하여 정보 추출
@@ -411,9 +587,13 @@ var _CS_GEMINI_KEY = GEMINI_API_KEY;
  */
 function ocrInvoiceImage(base64Data, mimeType) {
   try {
-    var model = "gemini-3.5-flash"; // ★ 2026-06-18 OCR 정확도 최우선
+    var apiKey = _cs_getGeminiKey_();
+    if (!apiKey) {
+      return { error: "Gemini API 키가 없습니다. CS 웹앱에 _secrets.gs 또는 스크립트 속성 GEMINI_API_KEY를 넣어 주세요." };
+    }
+    var model = "gemini-3.6-flash"; // ★ 2026-07-24 업그레이드 (OCR 정확도 최우선)
     var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
-      model + ":generateContent?key=" + _CS_GEMINI_KEY;
+      model + ":generateContent?key=" + apiKey;
 
     var prompt = 
       "이 택배 송장 이미지를 분석해서 다음 정보를 JSON 형식으로 추출해 주세요.\n" +
@@ -482,4 +662,67 @@ function ocrInvoiceImage(base64Data, mimeType) {
     Logger.log("[OCR] 오류: " + e.message);
     return { error: "OCR 처리 오류: " + e.message };
   }
+}
+
+/**
+ * 스캔 화면 공용 OCR 엔드포인트 (csDecode.html 4단계)
+ *
+ * 바코드가 접혔거나 인쇄가 지워져 디코더가 실패했을 때, 라벨에 인쇄된
+ * 숫자·글자를 읽어 송장번호를 건진다. 여러 개가 잡히면 택배사 송장번호
+ * 형태(10~14자리)를 우선한다.
+ *
+ * @param {string} base64Data 리사이즈된 JPEG 의 base64 (dataURL 접두 제외)
+ * @param {string} mimeType
+ * @return {{ok:boolean, invoice:string, text:string, fields:Object, error:string}}
+ */
+function csOcrImageForScan(base64Data, mimeType) {
+  try {
+    if (!base64Data) return { ok: false, error: "이미지가 비어 있습니다." };
+
+    var r = ocrInvoiceImage(base64Data, mimeType || "image/jpeg");
+    if (!r || r.error) {
+      return { ok: false, error: (r && r.error) ? r.error : "OCR 응답이 없습니다." };
+    }
+
+    var inv = String(r.invoiceNumber || "").replace(/[^0-9]/g, "");
+
+    // 송장번호 칸이 비었으면 응답 전체에서 송장번호처럼 보이는 숫자를 찾는다
+    if (inv.length < 8) {
+      var pool = [r.invoiceNumber, r.phone, r.address, r.recipientName, r.senderName, r.carrier]
+        .map(function (v) { return String(v || ""); }).join(" ");
+      inv = _cs_pickInvoiceLikeDigits_(pool);
+    }
+
+    return {
+      ok: inv.length >= 8,
+      invoice: inv,
+      text: [r.recipientName, r.phone, r.address, r.carrier]
+        .filter(function (v) { return v; }).join(" / "),
+      fields: {
+        recipientName: String(r.recipientName || ""),
+        phone: String(r.phone || ""),
+        address: String(r.address || ""),
+        senderName: String(r.senderName || ""),
+        carrier: String(r.carrier || "")
+      },
+      error: inv.length >= 8 ? "" : "글자에서 송장번호를 찾지 못했습니다."
+    };
+  } catch (e) {
+    Logger.log("[OCR-SCAN] 오류: " + e.message);
+    return { ok: false, error: "OCR 처리 오류: " + e.message };
+  }
+}
+
+/** 문자열에서 송장번호일 가능성이 큰 숫자 묶음을 고른다 (전화번호는 제외) */
+function _cs_pickInvoiceLikeDigits_(s) {
+  var groups = String(s || "").match(/[0-9][0-9\-\s]{8,}[0-9]/g) || [];
+  var best = "";
+  for (var i = 0; i < groups.length; i++) {
+    var d = groups[i].replace(/[^0-9]/g, "");
+    if (d.length < 10 || d.length > 14) continue;
+    if (/^01[0-9]{8,9}$/.test(d)) continue; // 휴대폰
+    if (/^0[2-6][0-9]{7,9}$/.test(d)) continue; // 지역번호
+    if (d.length > best.length) best = d;
+  }
+  return best;
 }

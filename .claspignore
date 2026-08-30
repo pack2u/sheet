@@ -13,6 +13,7 @@ backup_*/**
 AI_Image_Maker/**
 CS/**
 CS_WebApp/**
+Partner_WebApp/**
 _docs/**
 scratch/**
 antigravity_ide/**
@@ -37,6 +38,9 @@ InvoiceMatchWebApp/**
 # 비GAS HTML (날짜 붙은 문서, 시스템 설명서)
 2026*.html
 시스템_*.html
+
+# 로컬 검증용 Node 테스트 (GAS 프로젝트에 올리지 않는다)
+*_test.js
 
 # 기타 제외
 *.zip

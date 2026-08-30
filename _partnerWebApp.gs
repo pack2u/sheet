@@ -90,18 +90,26 @@ function partnerAuthorizeForStaff() {
 
 /**
  * 공통 래퍼: 함수 실행 + Chat 알림 (시작/완료/에러)
+ *
+ * fn 이 [{label, value}] 배열을 돌려주면 완료 카드에 그대로 덧붙인다.
+ * (중복 점검 건수처럼 작업별로 알릴 내용이 있을 때 쓴다)
+ *
  * @param {string} label - 알림에 표시할 작업명
  * @param {Function} fn - 실행할 함수
  */
 function _owner_runWithNotify_(label, fn) {
   var startTime = new Date();
   try {
-    fn();
+    var extra = fn();
     var elapsed = Math.round((new Date() - startTime) / 1000);
     try {
+      // 배열만 받는다. 기존 호출은 함수 참조를 그대로 넘기므로 반환값이
+      // 문자열·객체일 수 있는데, 그것이 카드에 새어들면 안 된다.
+      var fields = [{ label: "⏱ 소요시간", value: elapsed + "초" }];
+      if (Array.isArray(extra)) fields = fields.concat(extra);
       _chat_sendCard_("✅ " + label + " 완료",
         Utilities.formatDate(startTime, "Asia/Seoul", "yyyy-MM-dd HH:mm"),
-        [{ label: "⏱ 소요시간", value: elapsed + "초" }]
+        fields
       );
     } catch (eC) {}
   } catch (e) {
@@ -149,16 +157,21 @@ function partnerCheckIslandShippingOwner() {
 // ── 직접 호출 메뉴 함수 래퍼 (Chat 알림 통합) ──
 function partnerPushOrdersToExclusiveFormsOwner() {
   _owner_runWithNotify_("대리공급 발주 Push", function() {
+    // ★ 2026-08-27: Push 전에 오전/오후 중복 점검 — 건수만 알림에 싣고 Push 는 진행
+    var dup = _dw_preCheckBeforePush_();
     partnerPushOrdersToExclusiveForms();
     // ★ 2026-07-08: Push 후 자동 중복 감지
     _oa_autoCheckDuplicates_("전용양식");
+    return dup.fields;
   });
 }
 function partnerPushFromTempTabToExclusiveOwner() {
   _owner_runWithNotify_("임시기록 Push", function() {
+    var dup = _dw_preCheckBeforePush_();
     partnerPushFromTempTabToExclusive();
     // ★ 2026-07-08: Push 후 자동 중복 감지
     _oa_autoCheckDuplicates_("전용양식");
+    return dup.fields;
   });
 }
 // ★ 2026-07-06: 임시기록 강제 재생성 (버그 복구용)
@@ -195,10 +208,108 @@ function partnerUnifiedDailyArchiveManual() {
       "저장 위치: 구글드라이브 시트\n" +
       "파일명: " + (result.tabName || "(없음)") + "\n\n" +
       "매칭 기록: " + result.archived + "건\n" +
-      " └ 로젠 송장: " + (result.detail.lozen || 0) + "건\n" +
+      " └ 롯데 송장: " + (result.detail.lotte || result.detail.lozen || 0) + "건\n" +
+      (result.detail.lotteRead
+        ? "    (롯데탭에서 송장 " + result.detail.lotteRead + "건 읽음, " + (result.detail.lotteCols || "") + ")\n"
+        : "    (롯데탭 송장 0건 — 탭/열 확인 필요)\n") +
+      (result.detail.weeklyRead
+        ? " └ 1주출고(이력): " + (result.detail.weeklyPrimary || 0) + "건 (탭 " + result.detail.weeklyRead + "행)\n"
+        : "") +
+      (result.detail.hub
+        ? " └ 대리판매(허브): " + result.detail.hub + "건\n"
+        : "") +
+      (result.detail.lozenFallback
+        ? " └ 로젠 폴백: " + result.detail.lozenFallback + "건\n"
+        : "") +
       " └ 대리공급 송장: " + (result.detail.supply || 0) + "건\n" +
+      (result.detail.namePhone
+        ? " └ 이름+전화 매칭: " + result.detail.namePhone + "건\n"
+        : "") +
+      (result.detail.multiInvoice
+        ? " └ 사방넷 복수송장 기입: " + result.detail.multiInvoice + "건\n"
+        : "") +
+      (result.detail.exclusiveArchiveRead
+        ? " └ 전용양식 마감탭: " + result.detail.exclusiveArchiveRead + "건"
+          + (result.detail.exclusiveArchiveFiles ? " (" + result.detail.exclusiveArchiveFiles + "개 파일)" : "") + "\n"
+        : "") +
+      (result.detail.orderArchiveRead
+        ? " └ 발주 마감탭: " + result.detail.orderArchiveRead + "건"
+          + (result.detail.orderArchiveFiles ? " (" + result.detail.orderArchiveFiles + "개 파일)" : "") + "\n"
+        : "") +
+      (result.detail.hubArchiveRead
+        ? " └ 허브아카이브: " + result.detail.hubArchiveRead + "건\n"
+        : "") +
+      (result.detail.ledgerRead
+        ? " └ 송장원장: " + result.detail.ledgerRead + "건 참조"
+          + (result.detail.ledgerAppended ? " (이번에 " + result.detail.ledgerAppended + "건 신규 적재)" : "") + "\n"
+        : "") +
+      (result.detail.uidMatched
+        ? " └ 고유ID 매칭: " + result.detail.uidMatched + "건\n"
+        : "") +
+      (result.detail.noUidMatched
+        ? " └ 고유ID없음 매칭: " + result.detail.noUidMatched + "건\n"
+        : "") +
+      (result.detail.backfill
+        ? "이전 마감 송장 보강: " + result.detail.backfill + "건"
+          + (result.detail.backfillDate ? " (" + result.detail.backfillDate + ")" : "") + "\n"
+        : "") +
+      (result.detail.combinedPack
+        ? "합포장(동일송장): " + result.detail.combinedPack + "건\n"
+        : "") +
       "미매칭(다음날 재시도): " + (result.detail.noInvoice || 0) + "건",
       ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert("❌ 일일마감 오류: " + e.message);
+  }
+}
+
+/**
+ * 날짜를 지정해 일일마감을 다시 돌린다.
+ * 새벽(06시 전)에는 전날을 기본값으로 한다 — 26일 마감이 반쪽인 채
+ * 자정을 넘긴 뒤 판매현황을 채우고 재처리하는 경우를 위한 것.
+ * 전용양식 마감탭은 지정일까지 읽어 이미 넘어간 대리공급 송장을 매칭한다.
+ */
+function partnerUnifiedDailyArchiveForDate() {
+  var ui = SpreadsheetApp.getUi();
+  var now = new Date();
+  var defaultDate = new Date(now.getTime());
+  if (now.getHours() < 6) defaultDate.setDate(defaultDate.getDate() - 1);
+  var defStr = Utilities.formatDate(defaultDate, "Asia/Seoul", "yyyy-MM-dd");
+  var resp = ui.prompt(
+    "일일마감 재처리",
+    "처리할 매출일을 yyyy-MM-dd 로 입력하세요.\n" +
+      "1단계: 판매현황을 그대로 가져와 고유ID 있는 주문부터 송장 매칭합니다.\n" +
+      "2단계: 바로 이전 일일마감의 미매칭 송장을 기입합니다.\n\n" +
+      "이미 일일마감에 들어간 같은 주문+송장은 건너뜁니다.\n\n기본: " + defStr,
+    ui.ButtonSet.OK_CANCEL,
+  );
+  if (!resp || resp.getSelectedButton() !== ui.Button.OK) return;
+  var dateStr = String(resp.getResponseText() || "").trim() || defStr;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    ui.alert("날짜 형식이 아닙니다. yyyy-MM-dd 로 입력하세요. (예: " + defStr + ")");
+    return;
+  }
+  try {
+    var result = _pep_archiveUnifiedDaily_(dateStr);
+    if (result.error) {
+      ui.alert("❌ 일일마감 오류: " + result.error);
+      return;
+    }
+    ui.alert(
+      "📋 일일마감 재처리 완료 (" + dateStr + ")",
+      "매칭 기록: " + result.archived + "건\n" +
+        " └ 롯데 송장: " + (result.detail.lotte || 0) + "건\n" +
+        " └ 대리공급 송장: " + (result.detail.supply || 0) + "건\n" +
+        (result.detail.uidMatched ? " └ 고유ID 매칭: " + result.detail.uidMatched + "건\n" : "") +
+        (result.detail.noUidMatched ? " └ 고유ID없음 매칭: " + result.detail.noUidMatched + "건\n" : "") +
+        (result.detail.namePhone ? " └ 이름+전화: " + result.detail.namePhone + "건\n" : "") +
+        (result.detail.backfill
+          ? "이전 마감 송장 보강: " + result.detail.backfill + "건"
+            + (result.detail.backfillDate ? " (" + result.detail.backfillDate + ")" : "") + "\n"
+          : "") +
+        "미매칭: " + (result.detail.noInvoice || 0) + "건",
+      ui.ButtonSet.OK,
+    );
   } catch (e) {
     ui.alert("❌ 일일마감 오류: " + e.message);
   }
@@ -330,11 +441,9 @@ function partnerDiagnosePriceMatch() {
  *   3) 최근 7일간 미생성 마감을 소급 확인 → 데이터 있으면 오늘 날짜로 통합 생성
  */
 function _pep_unifiedDailyArchiveScheduled_() {
-  // ★ 2026-06-27: 주말 차단
-  if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 통합 일일마감 스킵"); return; }
   try {
     var now = new Date();
-    // ★ 2026-07-01: 당일 23:30 실행 → 당일 날짜 그대로 사용 (yesterday 계산 불필요)
+    // ★ 2026-08-03: 당일 22:00 실행 → 당일 날짜 그대로 사용 (yesterday 계산 불필요)
     var todayStr = Utilities.formatDate(now, "Asia/Seoul", "yyyy-MM-dd");
 
     // ── ① 이미 당일 마감 시트가 존재하면 스킵 ──
@@ -369,6 +478,16 @@ function _pep_unifiedDailyArchiveScheduled_() {
       } catch (ePast) {}
     }
 
+    // ★ 2026-08-29: 주말 정규 마감은 막되, 평일 파일이 시간초과로 안 만들어진
+    //   경우에는 소급한다. 막으면 월요일까지 어제 마감이 비어 있다.
+    if (_pt_isWeekendBlackout_()) {
+      if (missedDays.length === 0) {
+        Logger.log("[BLACKOUT] 주말 차단 → 통합 일일마감 스킵");
+        return;
+      }
+      Logger.log("[BLACKOUT] 주말이지만 미생성 평일 마감 소급: " + missedDays.join(", "));
+    }
+
     if (missedDays.length > 0) {
       Logger.log("[SCHEDULED] 최근 7일 미생성 마감: " + missedDays.join(", "));
     }
@@ -389,25 +508,54 @@ function _pep_unifiedDailyArchiveScheduled_() {
     // ★ 2026-06-25: 스냅샷+송장매칭 단일 포맷 로그
     // ★ 2026-06-29: 로젠(전화) 건수 추가
     var logMsg = "[SCHEDULED] 통합 일일마감 완료: " +
-      result.archived + "건 (로젠:" + (result.detail.lozen || 0) +
+      result.archived + "건 (롯데:" + (result.detail.lotte || result.detail.lozen || 0) +
+      " 대리판매:" + (result.detail.hub || 0) +
+      " 로젠폴백:" + (result.detail.lozenFallback || 0) +
       " 로젠(전화):" + (result.detail.lozenPhone || 0) +
       " 대리공급:" + (result.detail.supply || 0) +
-      " 미매칭:" + (result.detail.noInvoice || 0) + ")";
+      " 이름+전화:" + (result.detail.namePhone || 0) +
+      " 미매칭:" + (result.detail.noInvoice || 0) +
+      " 고유ID:" + (result.detail.uidMatched || 0) +
+      " 고유ID없음:" + (result.detail.noUidMatched || 0) +
+      " 1주출고:" + (result.detail.weeklyPrimary || 0) +
+      " 이전마감보강:" + (result.detail.backfill || 0) +
+      (result.detail.backfillDate ? "(" + result.detail.backfillDate + ")" : "") + ")";
     if (missedDays.length > 0) {
       logMsg += " ※ 미생성 과거: " + missedDays.join(", ");
     }
     Logger.log(logMsg);
 
     // ★ 2026-06-25: Google Chat 알림 — 매칭 기반
-    // ★ 2026-06-29: 로젠(전화) 건수 추가
+    // ★ 2026-08-07: 롯데 주 송장 표시
     try {
       var kvItems = [
         { label: "📊 매칭 기록", value: result.archived + "건" },
-        { label: "🚚 로젠 송장", value: (result.detail.lozen || 0) + "건" },
-        { label: "📞 로젠(전화)", value: (result.detail.lozenPhone || 0) + "건" },
+        { label: "🚚 롯데 송장", value: (result.detail.lotte || result.detail.lozen || 0) + "건" },
+        { label: "🏭 대리판매(허브)", value: (result.detail.hub || 0) + "건" },
         { label: "🏭 대리공급 송장", value: (result.detail.supply || 0) + "건" },
         { label: "⏳ 미매칭", value: (result.detail.noInvoice || 0) + "건" },
       ];
+      if (result.detail.weeklyPrimary) {
+        kvItems.splice(2, 0, { label: "📦 1주출고", value: result.detail.weeklyPrimary + "건" });
+      }
+      if (result.detail.exclusiveArchiveRead) {
+        kvItems.splice(4, 0, {
+          label: "🏭 전용양식 마감탭",
+          value: result.detail.exclusiveArchiveRead + "건",
+        });
+      }
+      if (result.detail.backfill) {
+        kvItems.splice(4, 0, { label: "🔄 이전마감 보강", value: result.detail.backfill + "건" });
+      }
+      if (result.detail.lozenFallback) {
+        kvItems.splice(2, 0, { label: "📦 로젠 폴백", value: result.detail.lozenFallback + "건" });
+      }
+      if (result.detail.lozenPhone) {
+        kvItems.splice(2, 0, { label: "📞 로젠(전화)", value: result.detail.lozenPhone + "건" });
+      }
+      if (result.detail.namePhone) {
+        kvItems.splice(2, 0, { label: "👤 이름+전화", value: result.detail.namePhone + "건" });
+      }
       if (result.error) {
         kvItems.push({ label: "⚠ 오류", value: String(result.error).substring(0, 200) });
       }
@@ -430,14 +578,17 @@ function _pep_unifiedDailyArchiveScheduled_() {
 
 /**
  * ★ 당일 마감 대상 데이터 존재 여부 확인 (주말 스킵 판단용)
- * 로젠 + 대리공급 임시기록에 데이터가 1건이라도 있으면 true
+ * 롯데(+로젠폴백) + 대리공급 임시기록에 데이터가 1건이라도 있으면 true
  * @return {boolean}
  */
 function _pep_checkDailyDataExists_() {
   try {
-    // ① 로젠: 입력_로젠주문실적 데이터 확인
+    // ① ★ 2026-08-07: 롯데 송장탭 우선 확인
     try {
       var invSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
+      var lotteTab = _pt_getSheetByGid(invSS, _PT_SECONDARY_INVOICE_GID);
+      if (lotteTab && lotteTab.getLastRow() >= 2) return true;
+      // 로젠 폴백
       var lozenTab = _pt_getSheetByGid(invSS, _PT_PRIMARY_INVOICE_GID);
       if (lozenTab && lozenTab.getLastRow() >= 2) return true;
     } catch (eL) {}
@@ -449,7 +600,7 @@ function _pep_checkDailyDataExists_() {
       if (tempTab && tempTab.getLastRow() >= 2) {
         var tData = tempTab.getRange(2, _PO_TEMP_INV_COL_ + 1, tempTab.getLastRow() - 1, 1).getValues();
         for (var i = 0; i < tData.length; i++) {
-          if (String(tData[i][0] || "").trim()) return true; // 송장번호 있는 행 발견
+          if (_po_hasRealInvoice_(tData[i][0])) return true; // 실제 송장번호 있는 행 발견
         }
       }
     } catch (eT) {}
@@ -461,7 +612,7 @@ function _pep_checkDailyDataExists_() {
   }
 }
 
-/** ★ 통합 일일마감 트리거 설치 (매일 23:30) */
+/** ★ 통합 일일마감 트리거 설치 (매일 22:00) */
 function setupUnifiedDailyArchiveTrigger() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
@@ -470,9 +621,9 @@ function setupUnifiedDailyArchiveTrigger() {
     }
   }
   ScriptApp.newTrigger("_pep_unifiedDailyArchiveScheduled_")
-    .timeBased().everyDays(1).atHour(23).nearMinute(30).create();
+    .timeBased().everyDays(1).atHour(22).nearMinute(0).create();
   try {
-    SpreadsheetApp.getUi().alert("✅ 통합 일일마감 트리거 설치 완료 (매일 23:30)");
+    SpreadsheetApp.getUi().alert("✅ 통합 일일마감 트리거 설치 완료 (매일 22:00)");
   } catch (e) { Logger.log("[TRIGGER] 트리거 설치 완료"); }
 }
 
@@ -495,7 +646,7 @@ function removeUnifiedDailyArchiveTrigger() {
 // ★ v4.1 (2026-06-19): 통합 일일마감을 별도 20시 트리거로 분리
 //   1+2단계: 단일 루프에서 월별정산 + 전용마감 동시 처리
 //   3단계: 초기화 (임시기록 정리 + 사방넷_송장매칭 + 로젠_임시기록 탭 삭제)
-//   ★ 통합 일일마감은 _pep_unifiedDailyArchiveScheduled_ (23:30 자동 트리거)
+//   ★ 통합 일일마감은 _pep_unifiedDailyArchiveScheduled_ (22:00 자동 트리거)
 function partnerDailyArchiveAll() {
   var ui = null;
   var ss = null;
@@ -648,7 +799,7 @@ function partnerDailyArchiveAll() {
   // ★ Google Chat 알림 (전용마감)
   try { _chat_notifyArchive_(peaArchived, peaKept, 0, 0); } catch (eChat) {}
 
-  // ★ 2026-06-19: 통합 일일마감은 23:30 자동 트리거로 분리 (여기서 실행하지 않음)
+  // ★ 2026-08-03: 통합 일일마감은 22:00 자동 트리거로 분리 (여기서 실행하지 않음)
 
   // ══════════════════════════════════════════════
   //  3단계: 초기화
@@ -665,7 +816,7 @@ function partnerDailyArchiveAll() {
     }
     try {
       var _srcSS_ = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
-      var _unmatchedTab_ = _srcSS_.getSheetByName("사방넷_송장매칭");
+      var _unmatchedTab_ = _po_getSabangnetMatchTab_(_srcSS_);
       if (_unmatchedTab_ && _unmatchedTab_.getLastRow() >= 2) {
         _unmatchedTab_
           .getRange(2, 1, _unmatchedTab_.getLastRow() - 1, _unmatchedTab_.getLastColumn())
@@ -837,6 +988,36 @@ function _getWebAppUrl_() {
   return "https://script.google.com/macros/s/AKfycbzTRCZpioVmlgC_Mfji-UeTBVuAA6yiku5-cX4n/exec";
 }
 
+/**
+ * CS 주문/송장 검색 웹앱 열기
+ * CS_WebApp 프로젝트 배포 URL (Script Properties CS_WEBAPP_URL 로 덮어쓸 수 있음)
+ */
+function _getCsWebAppUrl_() {
+  var fromProp = "";
+  try {
+    fromProp = String(PropertiesService.getScriptProperties().getProperty("CS_WEBAPP_URL") || "").trim();
+  } catch (e) {}
+  if (fromProp) return fromProp.replace(/\?.*$/, "");
+  // CS_WebApp 프로젝트 활성 배포 (v2.0 camera test 이후)
+  return "https://script.google.com/macros/s/AKfycbxvDzpleqHey7gm0aHILVdALGAuCaymCXlFUfyVKNYt8Je2qhOPbCoKFtgLKMmeXBdpTA/exec";
+}
+
+function partnerOpenCsOrderSearchApp() {
+  var ui = SpreadsheetApp.getUi();
+  var base = _getCsWebAppUrl_();
+  var url = base + (base.indexOf("?") >= 0 ? "&" : "?") + "page=home";
+  var html = HtmlService.createHtmlOutput(
+    '<div style="font-family:sans-serif;padding:12px 8px 4px;line-height:1.5">' +
+    '<p style="margin:0 0 12px">CS 웹앱(홈)입니다. 주문검색·반품·매뉴얼 + <b>입고/송장 스캔</b> 메뉴가 있습니다.</p>' +
+    '<p><a href="' + url + '" target="_blank" rel="noopener" style="font-size:15px">📱 CS 웹앱 열기</a></p>' +
+    '<p style="color:#666;font-size:12px;word-break:break-all">' + url + '</p>' +
+    '<p style="color:#888;font-size:11px;margin-top:8px">스캔·카메라는 Chrome/Safari 새 탭에서 가장 잘 동작합니다.</p>' +
+    '</div>' +
+    '<script>window.open("' + url + '");</script>'
+  ).setWidth(420).setHeight(210);
+  ui.showModalDialog(html, "CS 웹앱");
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  Web App 서버 함수: 분석 (parseAndMatchInvoiceTextLocal과 동일 로직)
 // ═══════════════════════════════════════════════════════════════
@@ -995,7 +1176,9 @@ function _imParseAndMatch_(ssId, rawText, preParsedPairs) {
     var COURIER_PFX = /^(롯데|CJ|한진|우체국|로젠|경동|대신|일양|천일|합동|건영|호남)\s*[\/]\s*/i;
     for (var nfi = 0; nfi < pairs.length; nfi++) {
       if (pairs[nfi].name) {
-        pairs[nfi].name = pairs[nfi].name.normalize("NFC").replace(COURIER_PFX, "").replace(/^[\s\/]+/, "").trim();
+        pairs[nfi].name = pairs[nfi].name.normalize("NFC").replace(COURIER_PFX, "").replace(/^[\s\/]+/, "")
+          .replace(/\s*\d+\s*(박스|봉지|세트|묶음|개|EA)\s*$/i, "") // ★ 2026-07-24: 수량 접미 제거
+          .trim();
       }
     }
 
@@ -1003,6 +1186,7 @@ function _imParseAndMatch_(ssId, rawText, preParsedPairs) {
     var matches = [], unmatched = [], lastRowForName = {};
     var nameItemRowMap = {}; // ★ "이름|품목" → 이미 매칭된 행 번호
     var rowCapacity = {};    // ★ rowIndex → { max: 수량, used: 사용량 } (수량 기반 배분)
+    var overflowRows = {};   // ★ rowIndex → 수량을 넘겨 들어간 송장 수 (경고용)
     var slashGroupRowMap = {}; // ★ 2026-07-08: 슬래시 그룹 → 배정된 행
 
     for (var pi = 0; pi < pairs.length; pi++) {
@@ -1011,6 +1195,12 @@ function _imParseAndMatch_(ssId, rawText, preParsedPairs) {
       var matchedName = p.name;
       var isAppend = false;
       var queueKey = null;
+
+      // ★ 2026-08-25: itemKey를 루프 앞에서 항상 계산한다.
+      //   과거에는 아래 if 블록 안에서 선언해, _slashGroup 건에서는 계산을 건너뛰고
+      //   직전 pair의 itemKey가 그대로 남았다. 그 상태로 nameItemRowMap에 등록되면
+      //   엉뚱한 (이름+품목)이 그 행에 묶여 배분이 어긋난다.
+      var itemKey = p.name + "|" + (p.itemName || "").replace(/\s/g, "").toUpperCase();
 
       // ★ 슬래시 그룹 체크: 같은 그룹의 이전 송장이 이미 행에 배정되었으면 같은 행 사용
       if (p._slashGroup && slashGroupRowMap[p._slashGroup] !== undefined) {
@@ -1022,32 +1212,31 @@ function _imParseAndMatch_(ssId, rawText, preParsedPairs) {
       // ★ 0. 같은 (이름+품목) 조합이 이미 행에 배정되었으면
       //   단, _slashGroup이 있으면 스킵 (새 그룹은 반드시 큐에서 새 행을 받아야 함)
       if (assignedRows.length === 0 && !p._slashGroup) {
-        var itemKey = p.name + "|" + (p.itemName || "").replace(/\s/g, "").toUpperCase();
         if (nameItemRowMap[itemKey] !== undefined) {
           var mapped = nameItemRowMap[itemKey];
-          if (p.itemName) {
+          var cap = rowCapacity[mapped.row];
+
+          // ★ 2026-08-25: 배분 기준은 오직 "그 행의 수량"이다.
+          //   [기존 버그] 품목명이 있으면 무제한 append 했다. 그래서 같은 수취인·같은 품목이
+          //   여러 행(각 수량 1)으로 나뉘어 있을 때 송장이 전부 첫 행에 쌓이고,
+          //   나머지 행은 미송장으로 남아 재발주(중복 출고)가 발생했다.
+          if (cap && cap.used < cap.max) {
+            cap.used++;
             assignedRows = [mapped.row];
             matchedName = mapped.matchedName || p.name;
             isAppend = true;
-          } else if (qtyCol !== -1 && rowCapacity[mapped.row]) {
-            var cap = rowCapacity[mapped.row];
-            if (cap.used >= cap.max) {
-              delete nameItemRowMap[itemKey];
-            } else {
-              cap.used++;
-              assignedRows = [mapped.row];
-              matchedName = mapped.matchedName || p.name;
-              isAppend = true;
-            }
           } else {
-            // 품목명도 없고 수량 열도 없으면 → 큐에 다른 행이 남아있으면 새 행 배정
+            // 여유가 없거나 알 수 없다 → 같은 이름의 남은 행으로 보낸다.
+            // 미송장을 남겨 재발주가 나는 것보다 행을 나누는 편이 안전하다.
             var fallbackQ = rowQueue[p.name] || rowQueue[mapped.matchedName || p.name];
             if (fallbackQ && fallbackQ.length > 0) {
-              // fall-through to queue lookup
+              delete nameItemRowMap[itemKey]; // 아래 큐 탐색에서 새 행을 받는다
             } else {
               assignedRows = [mapped.row];
               matchedName = mapped.matchedName || p.name;
               isAppend = true;
+              if (cap) cap.used++;
+              overflowRows[mapped.row] = (overflowRows[mapped.row] || 0) + 1;
             }
           }
         }
@@ -1088,6 +1277,37 @@ function _imParseAndMatch_(ssId, rawText, preParsedPairs) {
                   queueKey = nm3; matchedName = nm3; break;
                 }
               }
+            }
+          }
+        }
+        // 4.5 ★ 2026-07-24: 토큰 단위 매칭 — "햇살블루 김금자"(상호+이름)처럼
+        //   붙어 나오면 각 토큰(2자 이상)을 시트 이름과 정확 대조 (뒤 토큰 우선)
+        if (!queueKey && /\s/.test(p.name)) {
+          var _toks = p.name.split(/\s+/).filter(function (t) { return t.length >= 2; });
+          for (var _tki = _toks.length - 1; _tki >= 0 && !queueKey; _tki--) {
+            var _tok = _toks[_tki];
+            if (rowQueue[_tok] && rowQueue[_tok].length > 0) {
+              queueKey = _tok; matchedName = _tok;
+            } else {
+              for (var _nmT in rowQueue) {
+                if (rowQueue[_nmT].length > 0 && _nmT.replace(/\s/g, "") === _tok) {
+                  queueKey = _nmT; matchedName = _nmT; break;
+                }
+              }
+            }
+          }
+        }
+        // 4.6 ★ 역방향: 시트 쪽이 "상호 이름"이고 입력이 이름만인 경우
+        if (!queueKey) {
+          var _inpTok = p.name.replace(/\s/g, "");
+          if (_inpTok.length >= 2) {
+            for (var _nmS in rowQueue) {
+              if (rowQueue[_nmS].length === 0 || _nmS.indexOf(" ") === -1) continue;
+              var _sToks = _nmS.split(/\s+/);
+              for (var _ssi = 0; _ssi < _sToks.length; _ssi++) {
+                if (_sToks[_ssi] === _inpTok) { queueKey = _nmS; matchedName = _nmS; break; }
+              }
+              if (queueKey) break;
             }
           }
         }
@@ -1153,6 +1373,7 @@ function _imParseAndMatch_(ssId, rawText, preParsedPairs) {
         } else if (lastRowForName[p.name] !== undefined) {
           assignedRows = [lastRowForName[p.name]];
           isAppend = true;
+          _imTrackAppend_(rowCapacity, overflowRows, assignedRows[0]);
         } else {
           for (var lrn in lastRowForName) {
             var lenDiff = Math.abs(lrn.length - p.name.length);
@@ -1161,6 +1382,7 @@ function _imParseAndMatch_(ssId, rawText, preParsedPairs) {
                 assignedRows = [lastRowForName[lrn]];
                 matchedName = lrn;
                 isAppend = true;
+                _imTrackAppend_(rowCapacity, overflowRows, assignedRows[0]);
                 break;
               }
             }
@@ -1180,12 +1402,38 @@ function _imParseAndMatch_(ssId, rawText, preParsedPairs) {
       }
     }
 
+    // ★ 2026-07-24: 미매칭 건에 유사 이름 후보 + 남은 수취인 큐 (수동 매칭용)
+    var remainingQueue = {};
+    for (var rqk in rowQueue) {
+      if (rowQueue[rqk] && rowQueue[rqk].length > 0) {
+        remainingQueue[rqk] = rowQueue[rqk].slice();
+      }
+    }
+    for (var ui = 0; ui < unmatched.length; ui++) {
+      unmatched[ui].suggestions = _imBuildNameSuggestions_(unmatched[ui].name, remainingQueue, 3);
+    }
+    var lastMatchedRows = {};
+    for (var lmk in lastRowForName) {
+      lastMatchedRows[lmk] = lastRowForName[lmk];
+    }
+
+    // ★ 2026-08-25: 반영 전 수량 대비 송장 개수 검증 (미송장 → 재발주 방지)
+    var audit = _imAuditRowQty_(data, matches, {
+      recipientCol: recipientCol, productCol: productCol, qtyCol: qtyCol,
+      overflowRows: overflowRows
+    });
+
     return {
       matches: matches,
       unmatched: unmatched,
       recipientHeader: String(headers[recipientCol] || ""),
       total: pairs.length,
       parseMethod: parseMethod,
+      remainingQueue: remainingQueue,
+      lastMatchedRows: lastMatchedRows,
+      qtyWarnings: audit.warnings,
+      noInvoiceRows: audit.noInvoice,
+      hasQtyCol: qtyCol !== -1,
       _debug_sheetNames: Object.keys(nameToRows).slice(0, 20)
     };
   } catch (e) {
@@ -1257,54 +1505,54 @@ function _trigger_dailyArchiveAll_() {
   }
 }
 
-/** 대리판매 마감 (07시) — Silent
+/** 대리판매 마감 (23:00) — Silent
  *  ★ partnerArchiveToMonthlySettle은 UI 의존적이므로,
  *  기존 Silent 래퍼 partnerArchiveToMonthlySilent_ 호출 */
 function _trigger_monthlySettle_() {
   // ★ 2026-06-27: 주말 차단
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 대리판매 마감 스킵"); return; }
   try {
-    Logger.log("[TRIGGER 07:00] 대리판매 마감 시작");
+    Logger.log("[TRIGGER 23:00] 대리판매 마감 시작");
     // ★ 2026-07-16: 연속 실행 구조 — 완료 알림은 _pms_runBatch_ 내부에서
     //   전체 완료 시 1회만 발송 (파일 많으면 백그라운드 재개로 이어짐)
     partnerArchiveToMonthlySilent_();
-    Logger.log("[TRIGGER 07:00] 대리판매 마감 1차 배치 종료(완료 또는 백그라운드 재개)");
+    Logger.log("[TRIGGER 23:00] 대리판매 마감 1차 배치 종료(완료 또는 백그라운드 재개)");
   } catch (e) {
-    Logger.log("[TRIGGER 07:00] 대리판매 마감 에러: " + e.message);
+    Logger.log("[TRIGGER 23:00] 대리판매 마감 에러: " + e.message);
     try { _chat_sendCard_("❌ 대리판매 마감 에러", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(e.message).substring(0, 200) }]); } catch (_) {}
   }
 }
 
-/** 대리공급(전용양식) 마감 (07:20) — Silent
+/** 대리공급(전용양식) 마감 (23:30) — Silent
  *  ★ partnerArchiveExclusiveForm은 UI 의존적이므로,
  *  핵심 로직 _pea_core_ 를 직접 호출 */
 function _trigger_exclusiveArchive_() {
   // ★ 2026-06-27: 주말 차단
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 대리공급 마감 스킵"); return; }
   try {
-    Logger.log("[TRIGGER 07:20] 대리공급 마감 시작");
+    Logger.log("[TRIGGER 23:30] 대리공급 마감 시작");
     // ★ 2026-06-30: 디버깅 — 파일 목록 확인
     var files = _pt_listFiles();
-    Logger.log("[TRIGGER 07:20] 파일 목록: " + (files ? files.length : "null") + "개");
+    Logger.log("[TRIGGER 23:30] 파일 목록: " + (files ? files.length : "null") + "개");
 
     var now     = new Date();
     var yyyy    = Utilities.formatDate(now, "Asia/Seoul", "yyyy");
     var mm      = parseInt(Utilities.formatDate(now, "Asia/Seoul", "M"), 10);
     var tabName = "(" + yyyy + "년 " + mm + "월) " + _PEA_TAB_SUFFIX;
-    Logger.log("[TRIGGER 07:20] 마감탭명: " + tabName);
+    Logger.log("[TRIGGER 23:30] 마감탭명: " + tabName);
     // ★ 2026-07-16: 연속 실행 구조 — 완료 알림은 _pea_core_ 내부에서 전체 완료 시 1회만 발송
     //   (업체가 많으면 백그라운드 재개로 이어짐 → 여기서 완료 카드 발송 금지)
     var result  = _pea_core_(tabName, true);
     if (result.incomplete) {
-      Logger.log("[TRIGGER 07:20] 대리공급 마감 1차 배치 종료 — 남은 " + result.remaining + "개 업체 백그라운드 재개");
+      Logger.log("[TRIGGER 23:30] 대리공급 마감 1차 배치 종료 — 남은 " + result.remaining + "개 업체 백그라운드 재개");
     } else {
-      Logger.log("[TRIGGER 07:20] 대리공급 마감 완료: 이동=" + result.moved + "건, 잔류=" + result.kept + "건" +
+      Logger.log("[TRIGGER 23:30] 대리공급 마감 완료: 이동=" + result.moved + "건, 잔류=" + result.kept + "건" +
         (result.tempCleared ? ", 임시기록삭제=" + result.tempCleared + "건" : "") +
         (result.hubCleared ? ", 허브정리=" + result.hubCleared + "건" : "") +
         (result.errors && result.errors.length > 0 ? ", 에러=" + result.errors.join("; ") : ""));
     }
   } catch (e) {
-    Logger.log("[TRIGGER 07:20] 대리공급 마감 에러: " + e.message + "\n" + e.stack);
+    Logger.log("[TRIGGER 23:30] 대리공급 마감 에러: " + e.message + "\n" + e.stack);
     try { _chat_sendCard_("❌ 대리공급 마감 에러", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(e.message).substring(0, 200) }]); } catch (_) {}
   }
 }
@@ -1397,12 +1645,12 @@ function _trigger_fillZipAndShipping_() {
 
       var newZip = curZip;
       if (addr && !curZip) {
+        // ★ 2026-07-17 (M4): 실행 내 캐시 → 영구 캐시(Properties) → API 순
         if (zipCache[addr] !== undefined) {
           newZip = zipCache[addr];
         } else {
-          try { newZip = _pep_getZipCodeFromKakao_(addr); } catch (eApi) {}
+          try { newZip = _pep_getZipCodeCached_(addr); } catch (eApi) {}
           zipCache[addr] = newZip || "";
-          Utilities.sleep(120);
         }
         if (newZip) zipFilled++;
       }
@@ -1418,6 +1666,7 @@ function _trigger_fillZipAndShipping_() {
 
     if (zipFilled > 0) tab.getRange(2, 12, zipCol.length, 1).setValues(zipCol);
     if (shipFilled > 0) tab.getRange(2, 16, shipCol.length, 1).setValues(shipCol);
+    _pep_zipCacheSave_(); // ★ 2026-07-17 (M4): 신규 우편번호 영구 캐시 저장
     SpreadsheetApp.flush();
     Logger.log("[TRIGGER] 우편번호: " + zipFilled + "건, 택배비: " + shipFilled + "건 채우기 완료");
     try { _chat_sendCard_("✅ 우편번호/택배비 완료", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "우편번호", value: zipFilled + "건" }, { label: "택배비", value: shipFilled + "건" }]); } catch (_) {}
@@ -1432,12 +1681,12 @@ function _trigger_collectPriceMap_() {
   Logger.log("[TRIGGER] 단가맵 제거됨 — 스킵");
 }
 
-/** 냅킨코리아 Gmail 송장수집 (15:40) — Silent (★ 2026-06-23: 시간 윈도우 보정 및 Chat 알림 추가) */
+/** 냅킨코리아 Gmail 송장수집 — Silent (스케줄: 16:00, ★ 2026-08-10) */
 function _trigger_NK_Gmail_() {
   try {
-    Logger.log("[TRIGGER 15:40] 냅킨코리아 Gmail 송장수집 시작");
+    Logger.log("[TRIGGER 16:00] 냅킨코리아 Gmail 송장수집 시작");
     
-    // 시간 윈도우 체크 (15:30 ~ 16:30)
+    // 시간 윈도우 체크 (_GMI_TRIGGER_* 상수)
     var now = new Date();
     var h = now.getHours();
     var m = now.getMinutes();
@@ -1446,21 +1695,21 @@ function _trigger_NK_Gmail_() {
     var endMin = _GMI_TRIGGER_END_HOUR * 60 + _GMI_TRIGGER_END_MIN;
     
     if (totalMin < startMin || totalMin > endMin) {
-      Logger.log("[TRIGGER 15:40] 시간 윈도우 밖으로 인한 스킵 (현재 " + h + ":" + m + ")");
+      Logger.log("[TRIGGER 16:00] 시간 윈도우 밖으로 인한 스킵 (현재 " + h + ":" + m + ")");
       return;
     }
     
     // 락 검사 및 메일 처리 실행 (동시 실행 방지)
     var lock = LockService.getScriptLock();
     if (!lock.tryLock(10000)) {
-      Logger.log("[TRIGGER 15:40] NK Gmail 송장수집: Lock 확보 실패");
+      Logger.log("[TRIGGER 16:00] NK Gmail 송장수집: Lock 확보 실패");
       return;
     }
     
     try {
       var result = _gmi_processNKInvoiceMails_(false);
       var statusMsg = "메일 " + result.mailCount + "건, 파싱 " + result.parsedCount + "쌍, 매칭 " + result.matchedCount + "건, 미매칭 " + result.unmatchedCount + "건";
-      Logger.log("[TRIGGER 15:40] 냅킨코리아 Gmail 송장수집 완료: " + statusMsg);
+      Logger.log("[TRIGGER 16:00] 냅킨코리아 Gmail 송장수집 완료: " + statusMsg);
       
       try {
         _chat_sendCard_(
@@ -1477,7 +1726,7 @@ function _trigger_NK_Gmail_() {
     }
     
   } catch (e) {
-    Logger.log("[TRIGGER 15:40] 냅킨코리아 Gmail 송장수집 에러: " + e.message);
+    Logger.log("[TRIGGER 16:00] 냅킨코리아 Gmail 송장수집 에러: " + e.message);
     try {
       _chat_sendCard_(
         "❌ 냅킨코리아 Gmail 수집 에러",
@@ -1488,17 +1737,17 @@ function _trigger_NK_Gmail_() {
   }
 }
 
-/** 송장 수집 (15:50) — Silent */
+/** 송장 수집 (16:05) — Silent (★ 2026-08-10) */
 function _trigger_fetchInvoices_() {
   // ★ 2026-06-27: 주말 차단
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 송장 수집 스킵"); return; }
   try {
-    Logger.log("[TRIGGER 15:50] 허브 송장 수집 시작");
+    Logger.log("[TRIGGER 16:05] 허브 송장 수집 시작");
     partnerFetchInvoices();
-    Logger.log("[TRIGGER 15:50] 허브 송장 수집 완료");
+    Logger.log("[TRIGGER 16:05] 허브 송장 수집 완료");
     try { _chat_sendCard_("✅ 자동 송장 수집 완료", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), []); } catch (_) {}
   } catch (e) {
-    Logger.log("[TRIGGER 15:50] 허브 송장 수집 에러: " + e.message);
+    Logger.log("[TRIGGER 16:05] 허브 송장 수집 에러: " + e.message);
     try { _chat_sendCard_("❌ 자동 송장 수집 에러", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(e.message).substring(0, 200) }]); } catch (_) {}
   }
 }
@@ -1550,11 +1799,8 @@ function _trigger_syncDb_() {
  * 이 배열의 순서가 곧 실행 스케줄입니다.
  */
 var _ALL_SCHEDULED_TRIGGERS_ = [
-  // ─── 새벽/아침: 이카운트 + 마감 ───
-  // ★ 2026-07-02: 02시 이카운트 완전 제거 (6시/12시는 유지)
+  // ─── 아침: 이카운트 (★ 02시 이카운트는 완전 삭제, 6시/12시만 유지) ───
   { fn: "runDailyEcountBatch",                           h: 6,  m: 0,  label: "이카운트 전체동기화 1" },
-  { fn: "_trigger_monthlySettle_",                       h: 7,  m: 0,  label: "대리판매 마감" },
-  { fn: "_trigger_exclusiveArchive_",                    h: 7,  m: 20, label: "대리공급 마감" },
 
   // ─── 오전 1회전 ───
   { fn: "partnerCollectOrdersSilent_",                   h: 8,  m: 0,  label: "발주 수집 + 판매현황 갱신 (1회전)" },
@@ -1569,14 +1815,19 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
   { fn: "partnerCollectOrdersSilent_",                   h: 14, m: 5,  label: "발주 수집 + 판매현황 갱신 (2회전)" },
   { fn: "partnerPushOrdersToExclusiveFormsSilent_",      h: 14, m: 20, label: "대리공급 Push + 우편번호 (2회전)" },
 
-  // ─── 송장 처리 ───
-  { fn: "_gmi_triggerFetchNKInvoice_",                   h: 15, m: 35, label: "넵킨코리아 Gmail 송장수집" },
-  { fn: "_trigger_fetchInvoices_",                       h: 15, m: 40, label: "송장 수집" },
+  // ─── 송장 처리 (★ 2026-08-10: 냅킨 16:00 → 송장수집 16:05) ───
+  { fn: "_gmi_triggerFetchNKInvoice_",                   h: 16, m: 0,  label: "냅킨코리아 Gmail 송장수집" },
+  { fn: "_trigger_fetchInvoices_",                       h: 16, m: 5,  label: "송장 수집" },
   { fn: "_trigger_pushInvoices_",                        h: 16, m: 20, label: "송장 배포" },
 
-  // ─── 저녁: Supabase + 일일마감 ───
+  // ─── 저녁: Supabase + 마감 (★ 2026-08-03: 시각 변경, 당일 건 포함) ───
   { fn: "_trigger_syncDb_",                              h: 17, m: 0,  label: "발주허브-DB + 협력업체-DB 동기화 [Supabase]" },
-  { fn: "_pep_unifiedDailyArchiveScheduled_",            h: 23, m: 30, label: "통합 일일마감" },
+  { fn: "_pep_unifiedDailyArchiveScheduled_",            h: 22, m: 0,  label: "통합 일일마감" },
+  // ★ 2026-08-25: 일일마감(22:00) 이후, 마감 정리(23:00·23:30)가 임시기록을 비우기 전에
+  //   통합조회를 통째로 재생성한다. CS는 이 탭 하나만 읽는다.
+  { fn: "_puv_rebuildScheduled_",                        h: 22, m: 45, label: "통합조회 재생성 [CS 조회용]" },
+  { fn: "_trigger_monthlySettle_",                       h: 23, m: 0,  label: "대리판매 마감" },
+  { fn: "_trigger_exclusiveArchive_",                    h: 23, m: 30, label: "대리공급 마감" },
 ];
 
 

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>반품 CS 접수 - Pack2U</title>
+  <?!= include('csFavicon'); ?>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- html5-qrcode 바코드 스캔 라이브러리 -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -220,6 +221,13 @@
     }
     .fallback-btn:active {
       transform: scale(0.96);
+    }
+    /* 두 번째 수단(사진 촬영)은 주된 버튼보다 눈에 덜 띄게 */
+    .fallback-btn-sub {
+      margin-top: 10px;
+      background: #2c2f3a;
+      color: #d6d9e3;
+      border: 1px solid var(--border, #2f3342);
     }
     .file-input-hidden {
       display: none;
@@ -581,6 +589,9 @@
     <div class="loading-text" id="loadingText">상품 정보 조회 중...</div>
   </div>
 
+  <?!= include('csScanPopup') ?>
+  <?!= include('csDecode') ?>
+
   <script>
     // ── 상태 ──
     var currentStep = 1;
@@ -590,6 +601,18 @@
     var quantity = 1;
     var scanner = null;
     var urlParams = new URLSearchParams(window.location.search);
+    var CS_EXEC_URL = "<?= webAppUrl ?>";
+
+    /** 웹앱 페이지 이동 — 최상위 프레임 기준 (iframe 내부 이동 시 Drive 오류) */
+    function csGoTo(url) {
+      try {
+        if (window.top && window.top !== window.self) {
+          window.top.location.href = url;
+          return;
+        }
+      } catch (eTop) {}
+      window.location.href = url;
+    }
     var currentStaff = urlParams.get('staff') || localStorage.getItem('pack2u_staff') || '';
 
     // ── 초기화 ──
@@ -643,6 +666,11 @@
 
     // ── 바코드 스캐너 시작 (하이브리드: 카메라 → 파일 캡처 폴백) ──
     function startScanner() {
+      // 샌드박스 iframe 이면 getUserMedia 를 부를 필요도 없다 (무조건 거부됨)
+      if (csLiveCameraLikelyBlocked()) {
+        showFileCaptureMode('앱 화면(iframe)에서는 카메라 영상이 허용되지 않습니다');
+        return;
+      }
       checkCameraPermission().then(function(result) {
         if (result.available) {
           startCameraScanner();
@@ -673,49 +701,65 @@
     }
 
     // 파일 캡처 폴백 모드
+    /**
+     * 카메라 영상이 막힌 환경의 대체 UI.
+     * 모바일에서는 팝업 카메라도 못 열리므로 사진 촬영을 1순위로 둔다.
+     */
     function showFileCaptureMode(errorReason) {
+      var mobile = csLiveCameraLikelyBlocked();
       var qrDiv = document.getElementById('qr-reader');
-      qrDiv.innerHTML =
+      var h =
         '<div class="camera-fallback">' +
-        '  <div class="fallback-icon">📸</div>' +
-        '  <div class="fallback-title">카메라 직접 접근이 제한됩니다</div>' +
-        '  <div class="fallback-desc">사진을 촬영하여 바코드를 스캔하거나,<br>아래 입력란에 직접 입력해 주세요.</div>' +
+        '  <div class="fallback-icon">📷</div>' +
+        '  <div class="fallback-title">사진으로 스캔하세요</div>' +
+        '  <div class="fallback-desc">구글 정책상 앱 화면 안에서는 카메라 영상이 열리지 않습니다.<br>' +
+        '  촬영 버튼을 누르면 폰 기본 카메라로 찍어 바로 인식합니다.</div>' +
         '  <button class="fallback-btn" onclick="document.getElementById(\'barcodeFileInput\').click()">' +
-        '    📷 사진 촬영하여 스캔' +
-        '  </button>' +
+        '    📷 촬영해서 인식' +
+        '  </button>';
+      if (!mobile) {
+        h +=
+          '  <button class="fallback-btn fallback-btn-sub" onclick="openScanPopup()">' +
+          '    🖥 카메라 창 열고 연속 스캔 (PC)' +
+          '  </button>';
+      }
+      h +=
         '  <input type="file" id="barcodeFileInput" class="file-input-hidden" accept="image/*" capture="environment" onchange="handleFileCapture(event)">' +
         '  <div class="camera-error-detail">⚠ ' + (errorReason || '카메라 접근 차단됨') + '</div>' +
         '</div>';
+      qrDiv.innerHTML = h;
     }
 
-    // 파일 캡처로 바코드 디코딩
+    /** 샌드박스를 벗어난 팝업에서 스캔 — 결과는 postMessage 로 돌아온다 */
+    function openScanPopup() {
+      var label = scanMode === 'invoice' ? '송장 바코드 스캔' : '상품 바코드 스캔';
+      var ok = csOpenScanPopup({
+        title: label,
+        onResult: function (v) { onScanSuccess(v); }
+      });
+      if (!ok) alert(csScanPopupBlockedMsg());
+    }
+
+    /**
+     * 사진 한 장에서 바코드 인식 (공용 모듈)
+     * 송장모드일 때는 바코드가 안 읽히면 인쇄된 숫자까지 읽어 본다.
+     */
     function handleFileCapture(event) {
       var file = event.target.files[0];
       if (!file) return;
 
-      showLoading('바코드 분석 중...');
-
-      var tempScanner = new Html5Qrcode("qr-reader-temp-" + Date.now());
-      // 임시 div 생성
-      var tempDiv = document.createElement('div');
-      tempDiv.id = tempScanner._elementId || ('qr-temp-' + Date.now());
-      tempDiv.style.display = 'none';
-      document.body.appendChild(tempDiv);
-
-      Html5Qrcode.scanFile(file, true)
-        .then(function(decodedText) {
-          hideLoading();
-          onScanSuccess(decodedText);
-        })
+      showLoading('사진 분석 중...');
+      csDecodeImageFile(file, {
+        minDigits: scanMode === 'invoice' ? 8 : 0,
+        ocr: scanMode === 'invoice',
+        onStage: function(m) { if (m) showLoading(m); }
+      })
+        .then(function(r) { hideLoading(); onScanSuccess(r.value); })
         .catch(function(err) {
           hideLoading();
-          alert('바코드를 인식하지 못했습니다.\n다시 촬영하거나 직접 입력해 주세요.\n\n오류: ' + err);
+          alert(String(err && err.message ? err.message : err));
         })
-        .finally(function() {
-          // 파일 입력 리셋
-          event.target.value = '';
-          if (tempDiv.parentNode) tempDiv.parentNode.removeChild(tempDiv);
-        });
+        .finally(function() { event.target.value = ''; });
     }
 
     // ── 스캔 성공 ──
@@ -832,6 +876,8 @@
         if (result.quantity) html += '<div class="product-field"><span class="field-label">수량</span><span class="field-value">' + result.quantity + '</span></div>';
         if (result.recipientPhone) html += '<div class="product-field"><span class="field-label">전화번호</span><span class="field-value">' + result.recipientPhone + '</span></div>';
         if (result.recipientAddr) html += '<div class="product-field"><span class="field-label">주소</span><span class="field-value" style="font-size:12px">' + result.recipientAddr + '</span></div>';
+        var shipMsg = result.shipMsg || result.deliveryMessage || '';
+        if (shipMsg) html += '<div class="product-field"><span class="field-label">배송메시지</span><span class="field-value" style="font-size:12px">' + shipMsg + '</span></div>';
         if (result.orderDate) html += '<div class="product-field"><span class="field-label">주문일자</span><span class="field-value">' + result.orderDate + '</span></div>';
         if (result.status) html += '<div class="product-field"><span class="field-label">상태</span><span class="field-value">' + result.status + '</span></div>';
         container.innerHTML = html;
@@ -873,6 +919,8 @@
         if (invoiceData.recipientName) autoMemo += ' | 수취인: ' + invoiceData.recipientName;
         if (invoiceData.vendor) autoMemo += ' | 업체: ' + invoiceData.vendor;
         if (invoiceData.recipientPhone) autoMemo += ' | 전화: ' + invoiceData.recipientPhone;
+        var shipMsg = invoiceData.shipMsg || invoiceData.deliveryMessage || '';
+        if (shipMsg) autoMemo += ' | 배송메시지: ' + shipMsg;
         memo = autoMemo + (memo ? '\n' + memo : '');
       }
 
@@ -962,8 +1010,7 @@
     }
 
     function goHome() {
-      var baseUrl = window.location.href.split('?')[0];
-      window.location.href = baseUrl;
+      csGoTo(CS_EXEC_URL + '?page=home&staff=' + encodeURIComponent(currentStaff || ''));
     }
 
     // ── 로딩 ──

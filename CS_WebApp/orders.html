@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pack2U CS 검색</title>
+  <?!= include('csFavicon'); ?>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0f1117;
+      --bg-secondary: #1a1d28;
+      --bg-card: #222533;
+      --bg-card-hover: #2a2e42;
+      --text-primary: #f0f0f5;
+      --text-secondary: #8b8fa3;
+      --text-muted: #5c6078;
+      --accent-blue: #4a90d9;
+      --accent-green: #34c77b;
+      --accent-orange: #f0a030;
+      --accent-red: #e85d5d;
+      --border: rgba(255, 255, 255, 0.06);
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      min-height: 100%;
+      -webkit-text-size-adjust: 100%;
+    }
+    body {
+      font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      -webkit-tap-highlight-color: transparent;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 16px 16px 48px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .back {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-primary);
+      font-size: 18px;
+      cursor: pointer;
+    }
+    .topbar h1 {
+      font-size: 18px;
+      font-weight: 700;
+      flex: 1;
+    }
+    .topbar .sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+    .search-box {
+      position: relative;
+      margin-bottom: 12px;
+    }
+    .search-box input {
+      width: 100%;
+      height: 52px;
+      padding: 0 88px 0 16px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-primary);
+      font-size: 16px;
+      font-family: inherit;
+      outline: none;
+    }
+    .search-box input:focus {
+      border-color: rgba(74,144,217,0.5);
+    }
+    .search-box button.go {
+      position: absolute;
+      right: 6px; top: 6px;
+      height: 40px;
+      padding: 0 14px;
+      border: none;
+      border-radius: 10px;
+      background: var(--accent-blue);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .hint {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-bottom: 12px;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+      align-items: center;
+    }
+    .chip {
+      border: 1px solid var(--border);
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .chip.on {
+      background: rgba(74,144,217,0.18);
+      color: #9cc7f0;
+      border-color: rgba(74,144,217,0.35);
+    }
+    .chip.ghost { margin-left: auto; }
+    .status {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      min-height: 18px;
+    }
+    .status.warn { color: var(--accent-orange); }
+    .status.err { color: var(--accent-red); }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 10px;
+    }
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      align-items: flex-start;
+    }
+    .name {
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: right;
+      line-height: 1.25;
+    }
+    .meta .date-line { display: block; white-space: nowrap; }
+    .meta .date-y { font-size: 11px; font-weight: 400; color: var(--text-muted); }
+    .meta .date-sep { font-size: 11px; color: var(--text-muted); margin: 0 1px; }
+    .meta .date-md {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+      vertical-align: baseline;
+    }
+    .meta .match-line { display: block; font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+    .row {
+      display: flex;
+      gap: 8px;
+      font-size: 13px;
+      line-height: 1.55;
+      margin-top: 4px;
+    }
+    .lab {
+      width: 52px;
+      flex-shrink: 0;
+      color: var(--text-muted);
+    }
+    .val { flex: 1; word-break: break-all; }
+    .val.big {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      color: #fff;
+    }
+    .copy {
+      border: 1px solid var(--border);
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      border-radius: 8px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-family: inherit;
+      cursor: pointer;
+      margin-left: 6px;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      margin-left: 6px;
+      background: rgba(255,255,255,0.06);
+      color: var(--text-secondary);
+    }
+    .tag.lotte { background: rgba(74,144,217,0.18); color: #9cc7f0; }
+    .tag.hub { background: rgba(52,199,123,0.18); color: #7ee0ad; }
+    .tag.miss { background: rgba(240,160,48,0.18); color: #f0c070; }
+    .tag.pack { background: rgba(76,175,80,0.22); color: #a5d6a7; }
+    .empty {
+      text-align: center;
+      padding: 48px 16px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%) translateY(20px);
+      background: #2e7d57;
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.2s;
+      z-index: 20;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .spin {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: #9cc7f0;
+      border-radius: 50%;
+      animation: rot 0.7s linear infinite;
+      vertical-align: -1px;
+      margin-right: 6px;
+    }
+    @keyframes rot { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <button class="back" onclick="goHome()" aria-label="홈">‹</button>
+      <div>
+        <h1>주문 · 송장 검색</h1>
+        <div class="sub">일일마감 최근 1~2주 · 전화 / 송장 / 이름</div>
+      </div>
+    </div>
+
+    <div class="search-box">
+      <input id="q" type="search" inputmode="search" autocomplete="off"
+             placeholder="전화번호, 송장번호, 이름, 주문번호"
+             onkeydown="if(event.key==='Enter'){ event.preventDefault(); doSearch(true); }">
+      <button class="go" onclick="doSearch(true)">검색</button>
+    </div>
+    <div class="hint">010-1234-5678 · 끝 4자리 · 송장(하이픈 있어도 됨) · 수취인 이름</div>
+
+    <div class="toolbar">
+      <button class="chip on" id="d14" onclick="setDays(14)">2주</button>
+      <button class="chip" id="d7" onclick="setDays(7)">1주</button>
+      <button class="chip ghost" onclick="warm(true)">새로고침</button>
+    </div>
+    <div class="status" id="status">일일마감을 불러오는 중…</div>
+    <div id="list"></div>
+  </div>
+  <div class="toast" id="toast">복사됨</div>
+
+  <script>
+    var DAYS = 14;
+    var timer = null;
+    var lastQ = "";
+    var warming = false;
+
+    document.getElementById('q').addEventListener('input', function () {
+      clearTimeout(timer);
+      timer = setTimeout(function () { doSearch(false); }, 350);
+    });
+
+    function setDays(n) {
+      DAYS = n;
+      document.getElementById('d14').classList.toggle('on', n === 14);
+      document.getElementById('d7').classList.toggle('on', n === 7);
+      warm(false);
+    }
+
+    function setStatus(msg, cls) {
+      var el = document.getElementById('status');
+      el.className = 'status' + (cls ? ' ' + cls : '');
+      el.innerHTML = msg;
+    }
+
+    function goHome() {
+      var url = "<?= webAppUrl ?>" + '?page=home';
+      try {
+        if (window.top && window.top !== window.self) {
+          window.top.location.href = url;
+          return;
+        }
+      } catch (eTop) {}
+      window.location.href = url;
+    }
+
+    function dateList(n) {
+      var out = [];
+      var d = new Date();
+      for (var i = 0; i < n; i++) {
+        var x = new Date(d.getFullYear(), d.getMonth(), d.getDate() - i);
+        var mm = ('0' + (x.getMonth() + 1)).slice(-2);
+        var dd = ('0' + x.getDate()).slice(-2);
+        out.push(x.getFullYear() + '-' + mm + '-' + dd);
+      }
+      return out;
+    }
+
+    function warm(refresh) {
+      if (warming) return;
+      warming = true;
+      // 통합조회 탭이 있으면 파일 1개라 날짜별 예열이 필요 없다
+      google.script.run
+        .withSuccessHandler(function (plan) {
+          if (plan && plan.unified) {
+            finishWarm(refresh);
+            return;
+          }
+          warmByDay(refresh);
+        })
+        .withFailureHandler(function () { warmByDay(refresh); })
+        .csWarmPlan(DAYS);
+    }
+
+    function finishWarm(refresh) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          warming = false;
+          if (res && res.ok) {
+            var upd = res.viewUpdatedAt ? ' · 갱신 ' + res.viewUpdatedAt : '';
+            setStatus((res.from || '') + ' ~ ' + (res.to || '') + ' · '
+              + (res.rowCount || 0).toLocaleString() + '건 · 통합조회' + upd);
+          } else {
+            setStatus('불러오기 실패');
+          }
+          if (document.getElementById('q').value.trim()) doSearch(true);
+        })
+        .withFailureHandler(function () {
+          warming = false;
+          setStatus('불러오기 실패');
+        })
+        .csWarmArchiveCache({ days: DAYS, refresh: !!refresh });
+    }
+
+    function warmByDay(refresh) {
+      var dates = dateList(DAYS);
+      var i = 0;
+      var loaded = 0, found = 0, rows = 0, missing = 0;
+      function next() {
+        if (i >= dates.length) {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              warming = false;
+              if (res && res.ok) {
+                var miss = (res.missingDays && res.missingDays.length) ? ' · 파일없음 ' + res.missingDays.length + '일' : '';
+                setStatus((res.from || '') + ' ~ ' + (res.to || '') + ' · ' + (res.rowCount || 0).toLocaleString() + '건' + miss);
+              } else {
+                setStatus(dates[dates.length - 1] + ' ~ ' + dates[0] + ' · 일일마감 ' + found + '일');
+              }
+              if (document.getElementById('q').value.trim()) doSearch(true);
+            })
+            .withFailureHandler(function () {
+              warming = false;
+              setStatus(dates[dates.length - 1] + ' ~ ' + dates[0] + ' · 일일마감 ' + found + '일');
+            })
+            .csWarmArchiveCache({ days: DAYS, refresh: false });
+          return;
+        }
+        var day = dates[i++];
+        setStatus('<span class="spin"></span>' + day + ' 불러오는 중… (' + i + '/' + dates.length + ')');
+        google.script.run
+          .withSuccessHandler(function (res) {
+            loaded++;
+            if (res && res.ok && res.found) { found++; rows += (res.rows || 0); }
+            else missing++;
+            next();
+          })
+          .withFailureHandler(function () { missing++; next(); })
+          .csWarmDay(day, !!refresh);
+      }
+      next();
+    }
+
+    function doSearch(force) {
+      if (warming) return;
+      var q = document.getElementById('q').value.trim();
+      if (!force && q === lastQ) return;
+      lastQ = q;
+      if (!q) {
+        document.getElementById('list').innerHTML = '<div class="empty">전화번호나 송장번호를 입력하세요</div>';
+        return;
+      }
+      setStatus('<span class="spin"></span>검색 중…');
+      google.script.run
+        .withSuccessHandler(render)
+        .withFailureHandler(function (err) {
+          setStatus('검색 오류: ' + (err && err.message ? err.message : err), 'err');
+        })
+        .csSearchOrders(q, { days: DAYS, refresh: false });
+    }
+
+    function render(res) {
+      if (!res || !res.ok) {
+        setStatus((res && res.error) || '검색 실패', 'err');
+        return;
+      }
+      var m = res.meta || {};
+      var extra = res.truncated ? ' (상위 ' + res.results.length + '건만 표시)' : '';
+      setStatus(
+        (m.from || '') + ' ~ ' + (m.to || '') +
+        ' · ' + (m.rowCount || 0).toLocaleString() + '건 중 ' +
+        (res.results || []).length + '건' + extra
+      );
+      var list = document.getElementById('list');
+      var rows = res.results || [];
+      if (!rows.length) {
+        list.innerHTML = '<div class="empty">일치하는 주문이 없습니다<br><span style="font-size:12px">끝 4자리나 이름만으로도 검색해 보세요</span></div>';
+        return;
+      }
+      var html = '';
+      for (var i = 0; i < rows.length; i++) {
+        html += cardHtml(rows[i]);
+      }
+      list.innerHTML = html;
+    }
+
+    function tagClass(src, origin) {
+      if (origin === 'hub') return 'hub';
+      if (src === '합포장') return 'pack';
+      if (src === '롯데' || src === '이름+전화') return 'lotte';
+      if (src === '미매칭') return 'miss';
+      return '';
+    }
+
+    function cardHtml(r) {
+      var src = r.source || (r.origin === 'hub' ? '허브' : '');
+      var inv = esc(r.invoice || '-');
+      var phone = esc(r.phone || '-');
+      return '<div class="card">' +
+        '<div class="card-head">' +
+          '<div class="name">' + esc(r.name || '(이름 없음)') +
+            (r.combinedPack ? '<span class="tag pack" title="동일 송장 합포장">📦합포장</span>' : '') +
+            (src ? '<span class="tag ' + tagClass(r.source, r.origin) + '">' + esc(src) + '</span>' : '') +
+          '</div>' +
+          '<div class="meta"><span class="date-line">' + dateHtml(r.date) + '</span>' +
+            (r.match ? '<span class="match-line">' + esc(r.match) + '</span>' : '') + '</div>' +
+        '</div>' +
+        '<div class="row"><div class="lab">송장</div><div class="val big">' + inv +
+          (r.invoice ? '<button class="copy" onclick="copyText(\'' + js(r.invoice) + '\')">복사</button>' : '') +
+        '</div></div>' +
+        '<div class="row"><div class="lab">전화</div><div class="val">' + phone +
+          (r.phone ? '<button class="copy" onclick="copyText(\'' + js(r.phone) + '\')">복사</button>' : '') +
+          (r.phone ? '<a class="copy" href="tel:' + esc(String(r.phone).replace(/[^0-9]/g,'')) + '" style="text-decoration:none">전화</a>' : '') +
+        '</div></div>' +
+        '<div class="row"><div class="lab">품목</div><div class="val">' + esc(r.item || '-') +
+          (r.qty ? ' × ' + esc(r.qty) : '') + '</div></div>' +
+        (r.orderNo ? '<div class="row"><div class="lab">주문</div><div class="val">' + esc(r.orderNo) + '</div></div>' : '') +
+        (r.vendor ? '<div class="row"><div class="lab">업체</div><div class="val">' + esc(r.vendor) + '</div></div>' : '') +
+        (r.shipMsg ? '<div class="row"><div class="lab">배송메시지</div><div class="val">' + esc(r.shipMsg) +
+          '<button class="copy" onclick="copyText(\'' + js(r.shipMsg) + '\')">복사</button></div></div>' : '') +
+      '</div>';
+    }
+
+    function dateHtml(dateStr) {
+      var s = String(dateStr || '').trim();
+      var m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+      if (!m) return esc(s);
+      var mm = ('0' + m[2]).slice(-2);
+      var dd = ('0' + m[3]).slice(-2);
+      return '<span class="date-y">' + esc(m[1]) + '</span><span class="date-sep">-</span>' +
+        '<span class="date-md">' + mm + '.' + dd + '</span>';
+    }
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;');
+    }
+    function js(s) {
+      return String(s == null ? '' : s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ').replace(/\r/g,'');
+    }
+    function copyText(t) {
+      t = String(t || '').replace(/\s+/g, ' ').trim();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(t).then(function(){ toast('복사됨'); }, function(){ fallbackCopy(t); });
+      } else fallbackCopy(t);
+    }
+    function fallbackCopy(t) {
+      var a = document.createElement('textarea');
+      a.value = t;
+      document.body.appendChild(a);
+      a.select();
+      try { document.execCommand('copy'); toast('복사됨'); } catch (e) { toast(t); }
+      document.body.removeChild(a);
+    }
+    function toast(msg) {
+      var el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      setTimeout(function(){ el.classList.remove('show'); }, 1400);
+    }
+
+    warm(false);
+    document.getElementById('q').focus();
+  </script>
+</body>
+</html>

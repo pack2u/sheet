@@ -22,6 +22,280 @@ var _PEA_RESUME_TRIGGER_ = "_pea_continueResume_";  // 재개 트리거 핸들�
 var _PEA_PENDING_KEY_    = "_PEA_PENDING_TABNAME";  // 비차단 신규 시작용 tabName 보관 키
 
 // ══════════════════════════════════════════════
+//  이동 판정 (core·미리보기·단일파일 처리 공통)
+//  ★ 2026-08-25: 판정 규칙을 헬퍼로 단일화.
+//    이전에는 core만 "15일 초과 강제 이동"을 수행하면서 기준일을 C~AX 전 열에서
+//    "연속 8자리 숫자"로 탐색했다. 이 때문에 전화번호(01012345678)·주문번호가
+//    날짜로 오인되어(0101년 23월 45일) 송장 없는 행이 15일 초과로 판정되고
+//    마감탭으로 넘어갔다. 기준일은 신뢰 가능한 열에서만 읽는다.
+// ══════════════════════════════════════════════
+
+var _PEA_FORCE_MOVE_DAYS_ = 15;
+var _PEA_UID_COL_IDX_     = 49; // AX열: Push가 기입하는 고유ID
+
+/** 문자열에서 yyyymmdd 정수 추출. 실제 날짜 범위가 아니면 null */
+function _pea_parseDateNum_(val) {
+  var s = String(val == null ? "" : val).trim();
+  if (!s) return null;
+  var m = s.match(/(20\d{2})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/); // 2026/05/15
+  if (!m) m = s.match(/(20\d{2})(\d{2})(\d{2})/);               // AP-20260707-001
+  if (!m) return null;
+  var mo = parseInt(m[2], 10),
+      d  = parseInt(m[3], 10);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return parseInt(m[1], 10) * 10000 + mo * 100 + d;
+}
+
+/** N일 전 yyyymmdd */
+function _pea_cutoffNum_(days) {
+  var c = new Date();
+  c.setDate(c.getDate() - days);
+  return c.getFullYear() * 10000 + (c.getMonth() + 1) * 100 + c.getDate();
+}
+
+/** 헤더명이 날짜인 열 인덱스 (양식마다 위치가 달라 헤더로 찾는다) */
+function _pea_dateColIdxs_(headers) {
+  var out = [];
+  for (var i = 0; i < (headers || []).length; i++) {
+    var h = String(headers[i] || "").replace(/\s/g, "");
+    if (!h) continue;
+    if (h.indexOf("일자") !== -1 || h.indexOf("집하예정") !== -1 ||
+        h.indexOf("주문일") !== -1 || h.indexOf("발주일") !== -1) out.push(i);
+  }
+  return out;
+}
+
+/** placeholder("재고확인 후 판단" 등)는 송장 없음으로 취급 */
+function _pea_hasInvoice_(v) {
+  try {
+    if (typeof _po_hasRealInvoice_ === "function") return _po_hasRealInvoice_(v);
+  } catch (e) {}
+  return String(v == null ? "" : v).trim() !== "";
+}
+
+/** 행의 기준일 — AX열 고유ID → B열 → 헤더가 날짜인 열 순. 못 찾으면 null */
+function _pea_rowBaseDateNum_(row, dateColIdxs) {
+  var n = null;
+  if (row.length > _PEA_UID_COL_IDX_) {
+    n = _pea_parseDateNum_(row[_PEA_UID_COL_IDX_]);
+    if (n) return n;
+  }
+  n = _pea_parseDateNum_(row[1]);
+  if (n) return n;
+  for (var i = 0; i < (dateColIdxs || []).length; i++) {
+    n = _pea_parseDateNum_(row[dateColIdxs[i]]);
+    if (n) return n;
+  }
+  return null;
+}
+
+/**
+ * 전용양식 1행의 마감 이동 여부
+ * @returns {{move:boolean, reason:string}}
+ *   future=예약 발주 잔류, invoice=송장 있어 이동,
+ *   stale=송장 없으나 기준일 15일 초과로 강제 이동,
+ *   recent=15일 이내 잔류, nodate=기준일 불명 잔류
+ */
+function _pea_decideRow_(row, dateColIdxs, todayNum, cutoffNum) {
+  // 미래 날짜(예약 발주)만 잔류 — B열("2026/05/15-33") 기준
+  var bNum = _pea_parseDateNum_(row[1]);
+  if (bNum && bNum > todayNum) return { move: false, reason: "future" };
+
+  if (_pea_hasInvoice_(row[0])) return { move: true, reason: "invoice" };
+
+  var baseNum = _pea_rowBaseDateNum_(row, dateColIdxs);
+  if (baseNum && baseNum <= cutoffNum) return { move: true, reason: "stale" };
+  return { move: false, reason: baseNum ? "recent" : "nodate" };
+}
+
+// ══════════════════════════════════════════════
+//  일일마감용: 전용발주 마감탭 → 송장맵
+//  ★ 2026-08-27: 대리공급 송장의 원천은 전용양식 A열이다.
+//    마감이동이 그 행을 마감탭으로 옮기면 임시기록·전용양식에는 더 이상 없다.
+//    일일마감을 다시 돌릴 때 마감탭을 날짜까지 직접 읽지 않으면
+//    오전 판매현황이 뒤늦게 들어와도 대리공급 송장을 찾지 못한다.
+//    송장원장 커서는 2분 예산·증분 읽기라 이번 회차에 빠질 수 있다.
+// ══════════════════════════════════════════════
+
+/** yyyy-MM-dd → yyyymmdd. 못 읽으면 0 */
+function _pea_ymdToNum_(ymd) {
+  var n = _pea_parseDateNum_(ymd);
+  return n || 0;
+}
+
+/** 마감탭 헤더에서 열 위치. 전용양식 앞에 「이동일시」가 붙어 있다 */
+function _pea_archiveInvCols_(hdr) {
+  function find(re, fromRight) {
+    if (!hdr) return -1;
+    if (fromRight) {
+      for (var i = hdr.length - 1; i >= 0; i--) {
+        if (re.test(String(hdr[i] || "").replace(/\s/g, ""))) return i;
+      }
+      return -1;
+    }
+    for (var j = 0; j < hdr.length; j++) {
+      if (re.test(String(hdr[j] || "").replace(/\s/g, ""))) return j;
+    }
+    return -1;
+  }
+  var cols = {
+    moved: 0,
+    inv: find(/^송장번호$|^운송장번호$/, false),
+    uid: find(/^고유ID$/i, true),
+    sabang: find(/사방넷주문번호|^사방넷주문$/, false),
+    orderer: find(/주문자명\(사방넷\)|^주문자명$/, false),
+    name: find(/수취인|수령인|받는분성명|받는분|받는사람/, false),
+    phone: find(/받는분전화|수취인전화|수령인연락처|받는전화|전화번호|휴대폰|연락처/, false),
+    item: find(/품목명|상품명|품명/, false),
+    addr: find(/주소/, false),
+    date: find(/주문일|발주일|^일자/, false),
+  };
+  if (cols.inv < 0) cols.inv = 1; // 이동일시 + 전용양식 A열
+  if (cols.uid < 0) cols.uid = Math.min(50, (hdr && hdr.length ? hdr.length : 51) - 1);
+  return cols;
+}
+
+/**
+ * 마감탭 행을 이 날짜까지 읽을지.
+ * 이동일시가 있으면 그걸 기준으로 한다 (오늘 넘어간 26일 행을 살리는 기준).
+ * 이동일시가 없으면 주문일·고유ID 날짜로 본다. 날짜를 전혀 못 읽으면 포함한다.
+ */
+function _pea_archiveRowOnOrBefore_(row, cols, throughNum) {
+  if (!throughNum) return true;
+  var n = _pea_parseDateNum_(row[cols.moved]);
+  if (!n && cols.date >= 0) n = _pea_parseDateNum_(row[cols.date]);
+  if (!n && cols.uid >= 0) n = _pea_parseDateNum_(row[cols.uid]);
+  if (!n) return true;
+  return n <= throughNum;
+}
+
+/**
+ * 협력업체 「전용발주 마감」탭을 throughDate(포함)까지 읽어 invoiceMap에 넣는다.
+ * @return {{read:number, files:number, skippedFuture:number, errors:string[]}}
+ */
+function _pea_archiveMonths_(throughDateStr) {
+  var throughNum = _pea_ymdToNum_(throughDateStr);
+  var months = [];
+  if (throughNum) {
+    var ty = Math.floor(throughNum / 10000);
+    var tm = Math.floor((throughNum % 10000) / 100);
+    months.push({ yyyy: ty, m: tm });
+    var prev = new Date(ty, tm - 2, 1); // 전달 — 월초 마감이 전월 탭에 있을 수 있다
+    months.push({ yyyy: prev.getFullYear(), m: prev.getMonth() + 1 });
+  } else {
+    var now = new Date();
+    months.push({ yyyy: now.getFullYear(), m: now.getMonth() + 1 });
+  }
+  return { throughNum: throughNum, months: months };
+}
+
+/** 이미 연 협력업체 시트 1개에서 전용발주 마감탭만 송장맵에 넣는다. */
+function _pea_ingestExclusiveArchiveSs_(ss, invoiceMap, throughDateStr, vendor) {
+  var out = { read: 0, files: 0, skippedFuture: 0, errors: [] };
+  if (!ss || !invoiceMap) return out;
+  var plan = _pea_archiveMonths_(throughDateStr);
+  var throughNum = plan.throughNum;
+  var months = plan.months;
+  vendor = String(vendor || "").trim();
+
+  var vCarrier = "";
+  try {
+    var stTab = ss.getSheetByName("설정");
+    var b5 = stTab ? String(stTab.getRange("B5").getValue() || "").trim() : "";
+    if (typeof _pep_carrierForVendor_ === "function") {
+      vCarrier = _pep_carrierForVendor_(b5 || vendor);
+    }
+  } catch (eCr) {}
+
+  var suffix = _PEA_TAB_SUFFIX;
+  var fileRead = 0;
+  for (var mi = 0; mi < months.length; mi++) {
+    var tabName = "(" + months[mi].yyyy + "년 " + months[mi].m + "월) " + suffix;
+    var tab = ss.getSheetByName(tabName);
+    if (!tab || tab.getLastRow() < 2) continue;
+    var lc = Math.max(tab.getLastColumn(), 2);
+    var all;
+    try { all = tab.getRange(1, 1, tab.getLastRow(), lc).getDisplayValues(); }
+    catch (eRead) { out.errors.push(vendor + "/" + tabName + ": " + eRead.message); continue; }
+    var cols = _pea_archiveInvCols_(all[0]);
+    for (var ri = 1; ri < all.length; ri++) {
+      var row = all[ri];
+      var inv = row[cols.inv];
+      if (typeof _pep_normInvoiceNo_ === "function") {
+        if (!_pep_normInvoiceNo_(inv) && !_pep_splitInvNos_(inv).length) continue;
+      } else if (!String(inv || "").trim()) continue;
+      if (!_pea_archiveRowOnOrBefore_(row, cols, throughNum)) {
+        out.skippedFuture++;
+        continue;
+      }
+      var uid = cols.uid >= 0 ? String(row[cols.uid] || "").trim() : "";
+      if (uid && typeof _pep_uidFromOrdererCell_ === "function") {
+        uid = _pep_uidFromOrdererCell_(uid) || uid;
+      }
+      if (uid && !(invoiceMap[uid] && invoiceMap[uid].source === "롯데")) {
+        _pep_addInvoiceMap_(invoiceMap, uid, inv, "대리공급", vCarrier);
+      }
+      var sb = "";
+      if (cols.sabang >= 0) sb = String(row[cols.sabang] || "").trim();
+      if (!sb && cols.orderer >= 0) sb = String(row[cols.orderer] || "").trim();
+      if (sb && typeof _pep_uidFromOrdererCell_ === "function") {
+        sb = _pep_uidFromOrdererCell_(sb);
+      }
+      if (sb && sb !== uid && !(invoiceMap[sb] && invoiceMap[sb].source === "롯데")) {
+        _pep_addInvoiceMap_(invoiceMap, sb, inv, "대리공급", vCarrier);
+      }
+      if (typeof _pep_addNamePhoneInvoiceKeys_ === "function") {
+        _pep_addNamePhoneInvoiceKeys_(
+          invoiceMap,
+          cols.name >= 0 ? row[cols.name] : "",
+          cols.phone >= 0 ? row[cols.phone] : "",
+          inv,
+          "대리공급",
+          {
+            skipName: true,
+            addr: cols.addr >= 0 ? row[cols.addr] : "",
+            item: cols.item >= 0 ? row[cols.item] : "",
+            carrier: vCarrier,
+            stat: typeof _pep_keyStat_ === "function" ? _pep_keyStat_("전용마감") : null,
+          },
+        );
+      }
+      out.read++;
+      fileRead++;
+    }
+  }
+  if (fileRead) out.files = 1;
+  return out;
+}
+
+function _pea_addExclusiveArchiveToInvoiceMap_(invoiceMap, throughDateStr) {
+  var out = { read: 0, files: 0, skippedFuture: 0, errors: [] };
+  if (!invoiceMap) return out;
+
+  var files = [];
+  try { files = _pt_listFiles() || []; }
+  catch (eList) { out.errors.push("파일 목록: " + eList.message); return out; }
+
+  for (var fi = 0; fi < files.length; fi++) {
+    var vendor = String(files[fi].name || "").replace("[협력업체] ", "").trim();
+    var ss;
+    try { ss = SpreadsheetApp.openById(files[fi].id); }
+    catch (eOpen) { out.errors.push(vendor + " 열기 실패: " + eOpen.message); continue; }
+    var one = _pea_ingestExclusiveArchiveSs_(ss, invoiceMap, throughDateStr, vendor);
+    out.read += one.read;
+    out.files += one.files;
+    out.skippedFuture += one.skippedFuture;
+    if (one.errors && one.errors.length) out.errors = out.errors.concat(one.errors);
+  }
+  Logger.log("[UNIFIED] 전용발주 마감탭 송장맵: " + out.read + "건 / " +
+    out.files + "파일" +
+    (throughDateStr ? " (~" + throughDateStr + ")" : "") +
+    (out.skippedFuture ? " 미래제외=" + out.skippedFuture : "") +
+    (out.errors.length ? " 오류=" + out.errors.length : ""));
+  return out;
+}
+
+// ══════════════════════════════════════════════
 //  공개 진입점
 // ══════════════════════════════════════════════
 
@@ -29,7 +303,7 @@ var _PEA_PENDING_KEY_    = "_PEA_PENDING_TABNAME";  // 비차단 신규 시작�
  * [수동] 전용양식 → 전용발주 마감탭 이동 + UID 초기화
  *  ★ 2026-07-16: 비차단(non-blocking) 방식.
  *  확인창(미리보기) → 백그라운드 트리거로 실제 처리 → 완료 시 Chat 알림.
- *  확인창 대기/처리 중 6분 한도로 죽던 문제 해결.
+ *  ★ ScriptLock을 시작 단계에서 잡지 않음 — 「다른 작업 진행 중」 오탐 방지.
  */
 function partnerArchiveExclusiveForm() {
   var ui = SpreadsheetApp.getUi();
@@ -38,6 +312,25 @@ function partnerArchiveExclusiveForm() {
   var yyyy    = Utilities.formatDate(now, "Asia/Seoul", "yyyy");
   var mm      = parseInt(Utilities.formatDate(now, "Asia/Seoul", "M"), 10);
   var tabName = "(" + yyyy + "년 " + mm + "월) " + _PEA_TAB_SUFFIX;
+
+  // ★ 이미 백그라운드 진행 중이면 재시작 여부만 확인
+  var existing = _pea_loadResumeState_();
+  var pending = null;
+  try { pending = PropertiesService.getScriptProperties().getProperty(_PEA_PENDING_KEY_); } catch (_) {}
+  if ((existing && existing.queue && existing.queue.length > 0) || pending) {
+    var remain = (existing && existing.queue) ? existing.queue.length : "(시작 대기)";
+    var cfBusy = ui.alert(
+      "⏳ 대리공급 마감 진행 중",
+      "이미 백그라운드에서 처리 중입니다.\n" +
+      "남은 업체: " + remain + "\n\n" +
+      "· 예 = 강제 재시작 (현재 진행 취소 후 처음부터)\n" +
+      "· 아니오 = 그대로 두기 (완료 시 Chat 알림)",
+      ui.ButtonSet.YES_NO
+    );
+    if (cfBusy !== ui.Button.YES) return;
+    _pea_clearResumeState_();
+    try { PropertiesService.getScriptProperties().deleteProperty(_PEA_PENDING_KEY_); } catch (_) {}
+  }
 
   // ★ 마감 이동 전 미리보기 (이동/잔류 예상 건수 사전 스캔)
   var preview = _pea_preview_(tabName);
@@ -49,7 +342,11 @@ function partnerArchiveExclusiveForm() {
     "📊 예상 결과:\n" +
     "  · 이동: " + preview.moveCount + "행\n" +
     "  · 잔류: " + preview.keepCount + "행\n" +
-    "  · 대상 탭: " + preview.tabCount + "개\n\n" +
+    "  · 대상 탭: " + preview.tabCount + "개\n" +
+    (preview.staleCount > 0
+      ? "  ⚠ 이동분 중 송장없음(" + _PEA_FORCE_MOVE_DAYS_ + "일 초과 강제): " +
+        preview.staleCount + "행\n"
+      : "") + "\n" +
     "· 전용양식 원본 행 → 삭제 (헤더 유지)\n" +
     "· 소스 탭 협력Push UID → 초기화 (재Push 가능)\n\n" +
     "▶ 확인을 누르면 백그라운드에서 처리되며,\n" +
@@ -66,7 +363,8 @@ function partnerArchiveExclusiveForm() {
   if (scheduled) {
     ui.alert("✅ 대리공급 마감을 시작했습니다.\n\n" +
       "백그라운드에서 처리되며, 완료되면 Google Chat 알림이 전송됩니다.\n" +
-      "이 창은 닫으셔도 됩니다.");
+      "이 창은 닫으셔도 됩니다.\n\n" +
+      "※ 다시 누르면 '진행 중' 안내가 뜹니다. 완료 Chat을 기다려 주세요.");
     return;
   }
 
@@ -90,6 +388,10 @@ function partnerArchiveExclusiveForm() {
   ui.alert(
     "✅ 전용발주 마감 이동 완료\n\n" +
     "이동: " + result.moved + "행\n" +
+    (result.staleMoved > 0
+      ? "  ⚠ 그중 송장없음(" + _PEA_FORCE_MOVE_DAYS_ + "일 초과 강제): " +
+        result.staleMoved + "행\n"
+      : "") +
     "잔류(송장없음·미완료): " + result.kept + "행\n" +
     "처리 탭: " + result.tabsCleared + "개\n" +
     "UID 초기화: " + result.uidCleared + "건\n" +
@@ -118,8 +420,9 @@ function _pea_core_(tabName, silent) {
     _pea_clearResumeState_();
     state = {
       tabName: tabName, queue: [],
-      moved: 0, kept: 0, tabsCleared: 0, uidCleared: 0,
-      tempCleared: 0, tempKept: 0, hubCleared: 0, errors: []
+      moved: 0, kept: 0, staleMoved: 0, tabsCleared: 0, uidCleared: 0,
+      tempCleared: 0, tempKept: 0, hubCleared: 0, errors: [],
+      archivedUids: {} // ★ 2026-07-17 (H4): 이번 마감에서 이동된 전용양식 UID 누적
     };
 
     // ★ 시작 초기화(1회만): 임시기록 + 허브 (재개 시엔 재실행 금지)
@@ -136,37 +439,10 @@ function _pea_core_(tabName, silent) {
       state.errors.push("[임시기록초기화] " + eTempClear.message);
     }
 
-    try {
-      var hubSS_ = SpreadsheetApp.openById(_PT.HUB_ID);
-      var hubTab_ = hubSS_.getSheetByName("협력업체_발주허브");
-      if (hubTab_ && hubTab_.getLastRow() >= 2) {
-        var hubLr_ = hubTab_.getLastRow();
-        var hubLc_ = hubTab_.getLastColumn();
-        var hubData_ = hubTab_.getRange(2, 1, hubLr_ - 1, hubLc_).getValues();
-        var INV_COL_ = 13;
-        var keepHub_ = [];
-        var removedHub_ = 0;
-        for (var hr_ = 0; hr_ < hubData_.length; hr_++) {
-          var hubInv_ = String(hubData_[hr_][INV_COL_] || "").trim();
-          if (hubInv_) {
-            removedHub_++;
-          } else {
-            keepHub_.push(hubData_[hr_]);
-          }
-        }
-        if (removedHub_ > 0) {
-          hubTab_.getRange(2, 1, hubLr_ - 1, hubLc_).clearContent();
-          if (keepHub_.length > 0) {
-            hubTab_.getRange(2, 1, keepHub_.length, hubLc_).setValues(keepHub_);
-          }
-          SpreadsheetApp.flush();
-          state.hubCleared = removedHub_;
-          Logger.log("[PEA] 발주허브 초기화: 삭제=" + removedHub_ + "건, 유지=" + keepHub_.length + "건");
-        }
-      }
-    } catch (eHubClear) {
-      state.errors.push("[발주허브초기화] " + eHubClear.message);
-    }
+    // ★ 2026-07-17 (H4): 시작 시 "송장 있는 행 전부 삭제" 폐기
+    //   → 대리판매 미마감 건까지 지워지는 사고 방지.
+    //   허브 정리는 이번 마감에서 실제 이동된 전용양식 UID와 매칭된 행만
+    //   (_pea_clearHubRowsByUids_) 슬라이스 종료 시점에 수행.
 
     var files = _pt_listFiles();
     state.queue = files.map(function(f) { return { id: f.id, name: f.name }; });
@@ -199,70 +475,27 @@ function _pea_core_(tabName, silent) {
         var headers = tabSheet.getRange(1, 1, 1, lc).getValues()[0];
         var data    = tabSheet.getRange(2, 1, lr - 1, lc).getValues();
 
-        // ★ B열(인덱스1) 날짜 기준 필터링: 오늘 이전(어제까지) 날짜만 마감탭으로 이동 (오늘 발주건은 남김)
+        // ★ 2026-08-03: B열 날짜 기준 — 오늘 포함 이전 날짜 마감 (미래만 잔류)
         var today = new Date();
         today.setHours(23, 59, 59, 999); // 오늘 끝까지 포함
         var todayNum = today.getFullYear() * 10000 +
                        (today.getMonth() + 1) * 100 +
                        today.getDate();
 
+        var cutoffNum   = _pea_cutoffNum_(_PEA_FORCE_MOVE_DAYS_);
+        var dateColIdxs = _pea_dateColIdxs_(headers);
+
         var archiveRows = []; // 마감탭으로 이동할 행
         var keepRowIdxs = []; // 전용양식에 남길 행 인덱스 (0-based in data[])
 
         for (var di = 0; di < data.length; di++) {
-          var bVal = String(data[di][1] || "").trim();
-          // B열 형식: "2026/05/15-33" → 날짜 부분 추출
-          var dateMatch = bVal.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-          if (dateMatch) {
-            var rowDateNum = parseInt(dateMatch[1], 10) * 10000 +
-                             parseInt(dateMatch[2], 10) * 100 +
-                             parseInt(dateMatch[3], 10);
-            if (rowDateNum >= todayNum) {
-              // 미래 날짜 + 오늘 날짜 → 전용양식에 남김 (날짜 우선)
-              keepRowIdxs.push(di);
-              continue;
-            }
-          }
-
-          // ★ 송장번호(A열) 기준 이동 판단
-          //   - 송장번호 있음 → 마감탭으로 이동
-          //   - 송장번호 없음 → 15일 이내 잔류, 15일 초과 시 강제 이동
-          var invoice    = String(data[di][0] || "").trim(); // A열: 송장번호
-
-          if (!invoice) {
-            // ★ 2026-07-07: 송장 없는 행 — 15일 이내 잔류, 15일 초과 강제 이동
-            // AX열(49) 또는 전체 행에서 날짜 추출
-            var _pushDate15 = null;
-            // 방법1: AX열(49) UID에서 날짜 추출 (예: "AP-20260707-001")
-            for (var _axc = Math.min(lc - 1, 49); _axc >= 2; _axc--) {
-              var _axVal = String(data[di][_axc] || "").trim();
-              var _axDateM = _axVal.match(/(\d{4})(\d{2})(\d{2})/);
-              if (!_axDateM) _axDateM = _axVal.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-              if (_axDateM) {
-                _pushDate15 = parseInt(_axDateM[1], 10) * 10000 +
-                              parseInt(_axDateM[2], 10) * 100 +
-                              parseInt(_axDateM[3], 10);
-                break;
-              }
-            }
-            if (_pushDate15) {
-              var _cutoff15 = new Date();
-              _cutoff15.setDate(_cutoff15.getDate() - 15);
-              var _cutoffNum15 = _cutoff15.getFullYear() * 10000 +
-                                 (_cutoff15.getMonth() + 1) * 100 +
-                                 _cutoff15.getDate();
-              if (_pushDate15 <= _cutoffNum15) {
-                // 15일 초과 → 강제 마감 이동
-                archiveRows.push(data[di]);
-                continue;
-              }
-            }
-            // 15일 이내 또는 날짜 불명 → 잔류
+          var decision = _pea_decideRow_(data[di], dateColIdxs, todayNum, cutoffNum);
+          if (decision.move) {
+            archiveRows.push(data[di]);
+            if (decision.reason === "stale") result.staleMoved = (result.staleMoved || 0) + 1;
+          } else {
             keepRowIdxs.push(di);
-            continue;
           }
-          // 송장번호 있음 → 마감탭으로 이동
-          archiveRows.push(data[di]);
         }
 
         if (archiveRows.length === 0) continue; // 이동할 행 없음
@@ -324,15 +557,15 @@ function _pea_core_(tabName, silent) {
         // ★ try/catch 감싸 → 실패 시 메모리의 원본 data[] 배열로 전체 복구
         try {
           if (keepRowIdxs.length === 0) {
-            // 전부 이동 → 전체 삭제
-            tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+            // 전부 이동 → 전체 삭제 (★ 2026-07-24: 값+서식)
+            _pt_clearContentAndFormat_(tabSheet.getRange(2, 1, lr - 1, lc));
           } else {
-            // ★ 잔류 데이터를 clearContent 전에 미리 구성
+            // ★ 잔류 데이터를 clear 전에 미리 구성
             var keepRowsData = [];
             for (var ki = 0; ki < keepRowIdxs.length; ki++) {
               keepRowsData.push(data[keepRowIdxs[ki]]);
             }
-            tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+            _pt_clearContentAndFormat_(tabSheet.getRange(2, 1, lr - 1, lc));
             if (keepRowsData.length > 0) {
               tabSheet.getRange(2, 1, keepRowsData.length, lc).setValues(keepRowsData);
             }
@@ -342,7 +575,7 @@ function _pea_core_(tabName, silent) {
             var restoredCount = tabSheet.getLastRow() - 1;
             if (restoredCount < keepRowsData.length) {
               // 복원 부족 → 원본 전체 복구
-              tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+              _pt_clearContentAndFormat_(tabSheet.getRange(2, 1, lr - 1, lc));
               tabSheet.getRange(2, 1, data.length, lc).setValues(data);
               SpreadsheetApp.flush();
               result.errors.push("[" + fileInfo.name + "] 잔류 복원 검증 실패 → 원본 전체 복구");
@@ -350,9 +583,9 @@ function _pea_core_(tabName, silent) {
             }
           }
         } catch (eClear) {
-          // ★ clearContent 후 setValues 실패 → 원본 전체 복구
+          // ★ clear 후 setValues 실패 → 원본 전체 복구
           try {
-            tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+            _pt_clearContentAndFormat_(tabSheet.getRange(2, 1, lr - 1, lc));
             tabSheet.getRange(2, 1, data.length, lc).setValues(data);
             SpreadsheetApp.flush();
           } catch (eRestore) {}
@@ -363,6 +596,19 @@ function _pea_core_(tabName, silent) {
         result.moved       += archiveRows.length;
         result.kept        += keepRowIdxs.length;
         result.tabsCleared += 1;
+
+        // ★ 2026-07-17 (H4): 이동 확정 행의 AX열(50열, idx49) UID 수집
+        //   → 완료 시 허브에서 이 UID 매칭 행만 삭제
+        if (!state.archivedUids) state.archivedUids = {};
+        for (var au = 0; au < archiveRows.length; au++) {
+          var _axRaw_ = archiveRows[au].length > 49 ? archiveRows[au][49] : "";
+          var _axUid_ = "";
+          try { _axUid_ = _pep_normalizeAxUid_(_axRaw_); }
+          catch (_) { _axUid_ = String(_axRaw_ || "").trim(); }
+          _axUid_ = String(_axUid_ || "").replace(/\s/g, "");
+          if (_axUid_) state.archivedUids[_axUid_] = true;
+        }
+
         SpreadsheetApp.flush();
       }
     } catch (e) {
@@ -415,7 +661,13 @@ function _pea_core_(tabName, silent) {
     result.errors.push("[UID초기화] " + eUid.message);
   }
 
-  // ★ 2026-07-03: 임시기록+허브 초기화는 파일 루프 전으로 이동됨 (위 참조)
+  // ★ 2026-07-17 (H4): 허브 정리 — 이번 마감에서 이동된 전용양식 UID 매칭 행만 삭제
+  //   (기존 "송장 있는 행 전부 삭제"는 대리판매 미마감 건까지 지워 폐기)
+  try {
+    state.hubCleared = _pea_clearHubRowsByUids_(state.archivedUids || {});
+  } catch (eHubClear) {
+    result.errors.push("[발주허브정리] " + eHubClear.message);
+  }
 
   // ── 전체 완료 → 상태 정리 + 완료 알림 ──
   result.incomplete = false;
@@ -427,6 +679,7 @@ function _pea_core_(tabName, silent) {
         Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"),
         [
           { label: "이동", value: result.moved + "행" },
+          { label: "⚠ 송장없음 강제이동", value: (result.staleMoved || 0) + "행" },
           { label: "잔류", value: result.kept + "행" },
           { label: "처리 탭", value: result.tabsCleared + "개" },
           { label: "UID 초기화", value: result.uidCleared + "건" },
@@ -438,34 +691,87 @@ function _pea_core_(tabName, silent) {
   return result;
 }
 
+/**
+ * ★ 2026-07-17 (H4): 허브에서 지정 UID(고유ID, C열) 매칭 행만 삭제
+ * @param {Object} uidMap - { 정규화UID: true } (전용양식 AX열 기준)
+ * @returns {number} 삭제된 행 수
+ */
+function _pea_clearHubRowsByUids_(uidMap) {
+  var uidCount = 0;
+  for (var k in uidMap) { uidCount++; break; }
+  if (!uidCount) return 0;
+
+  var hubSS = SpreadsheetApp.openById(_PT.HUB_ID);
+  var hubTab = hubSS.getSheetByName("협력업체_발주허브");
+  if (!hubTab || hubTab.getLastRow() < 2) return 0;
+
+  var hubLr = hubTab.getLastRow();
+  var hubLc = hubTab.getLastColumn();
+  var hubData = hubTab.getRange(2, 1, hubLr - 1, hubLc).getValues();
+  var keepHub = [];
+  var removed = 0;
+  for (var hr = 0; hr < hubData.length; hr++) {
+    var hubUid = String(hubData[hr][2] || "").replace(/\s/g, ""); // C열=고유ID
+    var norm = hubUid;
+    try { norm = String(_pep_normalizeAxUid_(hubUid) || "").replace(/\s/g, ""); } catch (_) {}
+    if (hubUid && (uidMap[hubUid] || uidMap[norm])) {
+      removed++;
+    } else {
+      keepHub.push(hubData[hr]);
+    }
+  }
+  if (removed > 0) {
+    // ★ 2026-07-24: 값+서식 동시 제거
+    _pt_clearContentAndFormat_(hubTab.getRange(2, 1, hubLr - 1, hubLc));
+    if (keepHub.length > 0) {
+      hubTab.getRange(2, 1, keepHub.length, hubLc).setValues(keepHub);
+    }
+    SpreadsheetApp.flush();
+    Logger.log("[PEA] 발주허브 UID 매칭 정리: 삭제=" + removed + "건, 유지=" + keepHub.length + "건");
+  }
+  return removed;
+}
+
 // ══════════════════════════════════════════════
 //  ★ 2026-07-16: 연속 실행(continuation) 인프라
 // ══════════════════════════════════════════════
 
-/** 재개/시작 트리거 핸들러 — 저장 상태 재개 또는 대기 중 신규 시작 처리 */
+/** 재개/시작 트리거 핸들러 — 저장 상태 재개 또는 대기 중 신규 시작 처리
+ *  ScriptLock은 짧게만 사용 → 마감 중 다른 메뉴 장시간 차단 방지. */
 function _pea_continueResume_() {
-  _pea_deleteResumeTriggers_(); // 자기 자신(일회성 트리거) 정리
+  _pea_deleteResumeTriggers_();
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) {
+  if (!lock.tryLock(10000)) {
     Logger.log("[PEA_RESUME] Lock 실패 → 재예약");
     _pea_scheduleResume_(60 * 1000);
     return;
   }
+  var props = PropertiesService.getScriptProperties();
+  var running = props.getProperty("_PEA_BATCH_RUNNING_");
+  if (running && (Date.now() - Number(running)) < 6 * 60 * 1000) {
+    lock.releaseLock();
+    Logger.log("[PEA_RESUME] 이미 배치 실행 중 → 스킵");
+    return;
+  }
+  props.setProperty("_PEA_BATCH_RUNNING_", String(Date.now()));
+  lock.releaseLock();
+
   try {
     var state = _pea_loadResumeState_();
     if (state && state.queue) {
-      _pea_core_(null, true); // 저장 상태로 재개
+      _pea_core_(null, true);
     } else {
-      // 비차단 신규 시작: 대기 중인 tabName으로 백그라운드 시작
-      var pending = PropertiesService.getScriptProperties().getProperty(_PEA_PENDING_KEY_);
+      var pending = props.getProperty(_PEA_PENDING_KEY_);
       if (pending) {
-        try { PropertiesService.getScriptProperties().deleteProperty(_PEA_PENDING_KEY_); } catch(_) {}
+        try { props.deleteProperty(_PEA_PENDING_KEY_); } catch (_) {}
         _pea_core_(pending, true);
       }
     }
+  } catch (e) {
+    try { Logger.log("[PEA_RESUME_ERR] " + String(e.message || e)); } catch (_) {}
+  } finally {
+    try { props.deleteProperty("_PEA_BATCH_RUNNING_"); } catch (_) {}
   }
-  catch(e) { try { Logger.log("[PEA_RESUME_ERR] " + String(e.message||e)); } catch(_) {} }
-  finally { lock.releaseLock(); }
 }
 
 function _pea_saveResumeState_(state) {
@@ -534,28 +840,18 @@ function _pea_processOneFile_(ss, tabName) {
                    (today.getMonth() + 1) * 100 +
                    today.getDate();
 
+    var cutoffNum   = _pea_cutoffNum_(_PEA_FORCE_MOVE_DAYS_);
+    var dateColIdxs = _pea_dateColIdxs_(headers);
+
     var archiveRows = [];
     var keepRowIdxs = [];
 
     for (var di = 0; di < data.length; di++) {
-      var bVal = String(data[di][1] || "").trim();
-      var dateMatch = bVal.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-      if (dateMatch) {
-        var rowDateNum = parseInt(dateMatch[1], 10) * 10000 +
-                         parseInt(dateMatch[2], 10) * 100 +
-                         parseInt(dateMatch[3], 10);
-        if (rowDateNum >= todayNum) {
-          keepRowIdxs.push(di);
-          continue;
-        }
-      }
-
-      var invoice = String(data[di][0] || "").trim();
-      if (!invoice) {
+      if (_pea_decideRow_(data[di], dateColIdxs, todayNum, cutoffNum).move) {
+        archiveRows.push(data[di]);
+      } else {
         keepRowIdxs.push(di);
-        continue;
       }
-      archiveRows.push(data[di]);
     }
 
     if (archiveRows.length === 0) continue;
@@ -610,14 +906,14 @@ function _pea_processOneFile_(ss, tabName) {
     // ★ try/catch 감싸 → 실패 시 메모리의 원본 data[] 배열로 전체 복구
     try {
       if (keepRowIdxs.length === 0) {
-        tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+        _pt_clearContentAndFormat_(tabSheet.getRange(2, 1, lr - 1, lc));
       } else {
-        // ★ 잔류 데이터를 clearContent 전에 미리 구성
+        // ★ 잔류 데이터를 clear 전에 미리 구성
         var keepRowsData = [];
         for (var ki = 0; ki < keepRowIdxs.length; ki++) {
           keepRowsData.push(data[keepRowIdxs[ki]]);
         }
-        tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+        _pt_clearContentAndFormat_(tabSheet.getRange(2, 1, lr - 1, lc));
         if (keepRowsData.length > 0) {
           tabSheet.getRange(2, 1, keepRowsData.length, lc).setValues(keepRowsData);
         }
@@ -626,16 +922,16 @@ function _pea_processOneFile_(ss, tabName) {
         // ★ 잔류 행 복원 검증
         var restoredCount = tabSheet.getLastRow() - 1;
         if (restoredCount < keepRowsData.length) {
-          tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+          _pt_clearContentAndFormat_(tabSheet.getRange(2, 1, lr - 1, lc));
           tabSheet.getRange(2, 1, data.length, lc).setValues(data);
           SpreadsheetApp.flush();
           continue;
         }
       }
     } catch (eClear) {
-      // ★ clearContent 후 setValues 실패 → 원본 전체 복구
+      // ★ clear 후 setValues 실패 → 원본 전체 복구
       try {
-        tabSheet.getRange(2, 1, lr - 1, lc).clearContent();
+        _pt_clearContentAndFormat_(tabSheet.getRange(2, 1, lr - 1, lc));
         tabSheet.getRange(2, 1, data.length, lc).setValues(data);
         SpreadsheetApp.flush();
       } catch (eRestore) {}
@@ -796,13 +1092,14 @@ function partnerRepairExclusiveArchiveHeaders() {
 //  미리보기: 마감 이동 전 이동/잔류 예상 건수 스캔
 // ══════════════════════════════════════════════
 function _pea_preview_(tabName) {
-  var result = { moveCount: 0, keepCount: 0, tabCount: 0 };
+  var result = { moveCount: 0, keepCount: 0, tabCount: 0, staleCount: 0 };
   var files = _pt_listFiles();
   var today = new Date();
   today.setHours(23, 59, 59, 999);
   var todayNum = today.getFullYear() * 10000 +
                  (today.getMonth() + 1) * 100 +
                  today.getDate();
+  var cutoffNum = _pea_cutoffNum_(_PEA_FORCE_MOVE_DAYS_);
 
   for (var fi = 0; fi < files.length; fi++) {
     try {
@@ -813,18 +1110,17 @@ function _pea_preview_(tabName) {
         var lr = tabs[ti].getLastRow();
         if (lr < 2) continue;
         result.tabCount++;
-        var data = tabs[ti].getRange(2, 1, lr - 1, Math.max(tabs[ti].getLastColumn(), 2)).getValues();
+        var lc = Math.max(tabs[ti].getLastColumn(), 2);
+        var dateColIdxs = _pea_dateColIdxs_(tabs[ti].getRange(1, 1, 1, lc).getValues()[0]);
+        var data = tabs[ti].getRange(2, 1, lr - 1, lc).getValues();
         for (var di = 0; di < data.length; di++) {
-          var bVal = String(data[di][1] || "").trim();
-          var dateMatch = bVal.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-          if (dateMatch) {
-            var rowDateNum = parseInt(dateMatch[1], 10) * 10000 +
-                             parseInt(dateMatch[2], 10) * 100 +
-                             parseInt(dateMatch[3], 10);
-            if (rowDateNum >= todayNum) { result.keepCount++; continue; }
+          var decision = _pea_decideRow_(data[di], dateColIdxs, todayNum, cutoffNum);
+          if (decision.move) {
+            result.moveCount++;
+            if (decision.reason === "stale") result.staleCount++;
+          } else {
+            result.keepCount++;
           }
-          var invoice = String(data[di][0] || "").trim();
-          if (!invoice) { result.keepCount++; } else { result.moveCount++; }
         }
       }
     } catch (e) {}

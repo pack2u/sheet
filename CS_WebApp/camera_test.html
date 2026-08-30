@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>카메라 테스트 - Pack2U</title>
+  <?!= include('csFavicon'); ?>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
@@ -315,6 +316,8 @@
     <div class="loading-text" id="loadingText">처리 중...</div>
   </div>
 
+  <?!= include('csDecode') ?>
+
   <script>
     // ══════════════════════════════════════
     //  상태
@@ -340,7 +343,21 @@
     window.addEventListener('load', function() {
       showEnvInfo();
       addLog('info', '카메라 테스트 페이지 로드 완료');
-      addLog('info', 'html5-qrcode v' + (Html5Qrcode.version || '2.3.x') + ' 로드됨');
+      // 라이브러리 로드가 실패했을 때 ReferenceError 로 초기화 전체가 죽지 않게 한다
+      if (typeof Html5Qrcode === 'undefined') {
+        addLog('warn', 'html5-qrcode CDN 로드 실패 — 폴백 CDN 으로 재시도합니다');
+        csEnsureScanLib().then(function(ok) {
+          addLog(ok ? 'ok' : 'err', ok ? 'html5-qrcode 폴백 CDN 로드 성공' : 'html5-qrcode 로드 불가 — 사진 바코드 인식 제한');
+        });
+      } else {
+        addLog('ok', 'html5-qrcode v' + (Html5Qrcode.version || '2.3.x') + ' 로드됨');
+      }
+
+      if (typeof window.BarcodeDetector !== 'undefined') {
+        addLog('ok', 'BarcodeDetector 사용 가능 (네이티브 디코딩)');
+      } else {
+        addLog('warn', 'BarcodeDetector 미지원 (아이폰 정상) — html5-qrcode 로 처리');
+      }
 
       // mediaDevices 체크
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -374,8 +391,10 @@
       var startTime = Date.now();
       showLoading('바코드 디코딩 중...');
 
-      Html5Qrcode.scanFile(file, true)
-        .then(function(decodedText) {
+      // scanFile 은 인스턴스 메서드다 — 정적 호출은 TypeError
+      csDecodeImageFile(file, { minDigits: 0, ocr: false })
+        .then(function(r) {
+          var decodedText = r.value;
           var elapsed = Date.now() - startTime;
           hideLoading();
 
@@ -629,7 +648,13 @@
         '🌐 브라우저: <b>' + browser + '</b>' + (isInApp ? ' <span style="color:var(--accent-red)">(⚠ 인앱)</span>' : '') + '<br>' +
         '🔒 HTTPS: ' + (isSecure ? '<b style="color:var(--accent-green)">✅</b>' : '<b style="color:var(--accent-red)">❌</b>') + '<br>' +
         '📹 getUserMedia: ' + (hasMediaDevices ? '<b style="color:var(--accent-green)">✅</b>' : '<b style="color:var(--accent-red)">❌</b>') + '<br>' +
-        '🖼 iframe: ' + (isIframe ? '<b style="color:var(--accent-orange)">⚠ YES</b>' : '<b style="color:var(--accent-green)">NO</b>') +
+        '🖼 iframe: ' + (isIframe ? '<b style="color:var(--accent-orange)">⚠ YES</b>' : '<b style="color:var(--accent-green)">NO</b>') + '<br>' +
+        '🔍 BarcodeDetector: ' + (typeof window.BarcodeDetector !== 'undefined'
+          ? '<b style="color:var(--accent-green)">✅</b>'
+          : '<b style="color:var(--accent-orange)">없음 (html5-qrcode 사용)</b>') + '<br>' +
+        '📚 html5-qrcode: ' + (typeof Html5Qrcode !== 'undefined'
+          ? '<b style="color:var(--accent-green)">✅</b>'
+          : '<b style="color:var(--accent-red)">로드 실패</b>') +
         '</div>';
     }
 
@@ -705,8 +730,14 @@
     }
 
     function goHome() {
-      var baseUrl = window.location.href.split('?')[0];
-      window.location.href = baseUrl;
+      var url = "<?= webAppUrl ?>" + '?page=home';
+      try {
+        if (window.top && window.top !== window.self) {
+          window.top.location.href = url;
+          return;
+        }
+      } catch (eTop) {}
+      window.location.href = url;
     }
   </script>
 
