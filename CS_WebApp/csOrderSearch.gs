@@ -554,26 +554,69 @@ function _cs_loadDay_(dateStr, refresh, cacheOnly) {
   }
 }
 
+/** 허브가 일일마감을 모아 두는 하위폴더 (허브 _UNIFIED_DAILY_SUBFOLDER_ 와 같은 이름) */
+var _CS_DAILY_SUBFOLDER_ = "일일마감";
+
+/** 실행 1회분 폴더 캐시 — 날짜 14개마다 하위폴더를 다시 뒤지지 않게 */
+var _CS_DAILY_FOLDER_CACHE_ = null;
+
+/**
+ * 일일마감 파일을 찾을 폴더 목록.
+ * 허브가 「일일마감」 하위폴더에 저장하도록 바뀌었다.
+ * 하위폴더를 앞에 두되, 그 이전 파일이 남아 있는 상위 폴더도 뒤에 유지한다.
+ */
+function _cs_dailyFolders_() {
+  if (_CS_DAILY_FOLDER_CACHE_) return _CS_DAILY_FOLDER_CACHE_;
+
+  var ids = [];
+  try {
+    var propId = String(
+      PropertiesService.getScriptProperties().getProperty("UNIFIED_DAILY_ARCHIVE_FOLDER_ID") || ""
+    ).trim();
+    if (propId) ids.push(propId);
+  } catch (eP) {}
+  for (var i = 0; i < _CS_DAILY_FOLDER_IDS_.length; i++) ids.push(_CS_DAILY_FOLDER_IDS_[i]);
+
+  var subs = [], bases = [], seen = {};
+  for (var f = 0; f < ids.length; f++) {
+    var id = String(ids[f] || "").trim();
+    if (!id || seen[id]) continue;
+    var base = null;
+    try { base = DriveApp.getFolderById(id); } catch (eF) { continue; }
+    seen[id] = true;
+    bases.push(base);
+
+    try {
+      var it = base.getFoldersByName(_CS_DAILY_SUBFOLDER_);
+      while (it.hasNext()) {
+        var sub = it.next();
+        var trashed = false;
+        try { trashed = sub.isTrashed(); } catch (eT) { trashed = false; }
+        if (trashed) continue;
+        var sid = sub.getId();
+        if (seen[sid]) continue;
+        seen[sid] = true;
+        subs.push(sub);
+      }
+    } catch (eS) {}
+  }
+
+  _CS_DAILY_FOLDER_CACHE_ = subs.concat(bases);
+  return _CS_DAILY_FOLDER_CACHE_;
+}
+
 function _cs_findDailyFile_(dateStr) {
   var name = _CS_DAILY_PREFIX_ + "(" + dateStr + ")";
 
-  var propId = "";
-  try {
-    propId = String(PropertiesService.getScriptProperties().getProperty("UNIFIED_DAILY_ARCHIVE_FOLDER_ID") || "").trim();
-  } catch (eP) {}
-
-  var folderIds = [];
-  if (propId) folderIds.push(propId);
-  for (var i = 0; i < _CS_DAILY_FOLDER_IDS_.length; i++) folderIds.push(_CS_DAILY_FOLDER_IDS_[i]);
-
-  for (var f = 0; f < folderIds.length; f++) {
+  var folders = _cs_dailyFolders_();
+  for (var f = 0; f < folders.length; f++) {
     try {
-      var folder = DriveApp.getFolderById(folderIds[f]);
-      var it = folder.getFilesByName(name);
+      var it = folders[f].getFilesByName(name);
       if (it.hasNext()) return it.next();
     } catch (eF) {}
   }
 
+  // 폴더를 못 찾아도 이름으로 한 번 더 — 위치가 바뀌어도 검색이 죽지 않게
   try {
     var glob = DriveApp.getFilesByName(name);
     if (glob.hasNext()) return glob.next();

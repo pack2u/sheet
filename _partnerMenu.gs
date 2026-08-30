@@ -73,6 +73,7 @@ function registerPartnerMenu_() {
         .addSeparator()
         .addItem("📋 통합 일일마감 (수동)", "partnerUnifiedDailyArchiveManual")
         .addItem("📋 일일마감 재처리 (날짜 지정)", "partnerUnifiedDailyArchiveForDate")
+        .addItem("🗂️ 일일마감 파일 폴더 정리 (일회성)", "partnerMoveDailyCloseFilesToSubFolder")
         .addItem("📒 송장원장 갱신", "partnerRefreshInvoiceLedger")
         .addItem("🗂️ 통합조회 재생성 (CS 조회용)", "partnerRebuildUnifiedView")
         .addItem("📞 CS 주문/송장 검색 웹앱", "partnerOpenCsOrderSearchApp")

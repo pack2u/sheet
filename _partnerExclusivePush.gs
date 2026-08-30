@@ -10413,6 +10413,9 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
 var _UNIFIED_ARCHIVE_SS_PREFIX_ = "UNIFIED_DAILY_SS_ID_";
 var _UNIFIED_ARCHIVE_FOLDER_PROP_ = "UNIFIED_DAILY_ARCHIVE_FOLDER_ID";
 
+// 일일마감 파일을 모아 둘 하위폴더 이름 (상위 폴더 안에 만든다)
+var _UNIFIED_DAILY_SUBFOLDER_ = "일일마감";
+
 /**
  * 살아 있는 드라이브 파일인가.
  * isTrashed() 만으로는 부족하다 — 폴더 getFilesByName 이 휴지통 파일을
@@ -10425,22 +10428,31 @@ function _unified_isLiveArchiveFile_(file, folder) {
   } catch (eTr) {
     return false;
   }
-  var folderId = "";
-  try { if (folder) folderId = folder.getId(); } catch (eFd) {}
+  // folder 는 폴더 하나 또는 폴더 배열을 받는다.
+  // 배열인 이유 — 저장 위치를 「일일마감」 하위폴더로 옮기면서도
+  // 예전 상위폴더에 있는 기존 파일을 계속 찾아 써야 하기 때문이다.
+  var list = (folder && typeof folder.length === "number") ? folder : (folder ? [folder] : []);
+  var wanted = {}, wantCount = 0;
+  for (var w = 0; w < list.length; w++) {
+    try {
+      if (list[w]) { wanted[list[w].getId()] = true; wantCount++; }
+    } catch (eW) {}
+  }
+
   var parentCount = 0;
-  var inFolder = !folderId;
+  var inFolder = !wantCount;
   try {
     var parents = file.getParents();
     while (parents.hasNext()) {
       parentCount++;
       var p = parents.next();
-      if (folderId && p.getId() === folderId) inFolder = true;
+      if (wantCount && wanted[p.getId()]) inFolder = true;
     }
   } catch (ePar) {
     return false;
   }
   if (parentCount === 0) return false;
-  if (folderId && !inFolder) return false;
+  if (wantCount && !inFolder) return false;
   return true;
 }
 
@@ -10470,8 +10482,7 @@ function _unified_searchLiveArchiveFile_(fileName, folder) {
 function _unified_findExistingArchiveSs_(fileName) {
   var props = PropertiesService.getScriptProperties();
   var propKey = _UNIFIED_ARCHIVE_SS_PREFIX_ + fileName;
-  var folder = null;
-  try { folder = _unified_resolveArchiveFolder_(); } catch (eFolder) {}
+  var folder = _unified_archiveFolderCandidates_();
 
   var cachedId = props.getProperty(propKey);
   if (cachedId) {
@@ -10487,15 +10498,16 @@ function _unified_findExistingArchiveSs_(fileName) {
     }
   }
 
-  var live = folder ? _unified_searchLiveArchiveFile_(fileName, folder) : null;
+  var live = folder.length ? _unified_searchLiveArchiveFile_(fileName, folder) : null;
   if (live) {
     props.setProperty(propKey, live.getId());
     return SpreadsheetApp.openById(live.getId());
   }
 
-  if (folder) {
-    var files = folder.getFilesByName(fileName);
-    var skippedTrash = 0;
+  // 하위폴더 → 상위폴더 순으로 뒤진다.
+  var skippedTrash = 0;
+  for (var fi = 0; fi < folder.length; fi++) {
+    var files = folder[fi].getFilesByName(fileName);
     while (files.hasNext()) {
       var file = files.next();
       if (!_unified_isLiveArchiveFile_(file, folder)) {
@@ -10505,9 +10517,9 @@ function _unified_findExistingArchiveSs_(fileName) {
       props.setProperty(propKey, file.getId());
       return SpreadsheetApp.openById(file.getId());
     }
-    if (skippedTrash) {
-      Logger.log("[UNIFIED] 휴지통/고아 파일 " + skippedTrash + "개 스킵: " + fileName);
-    }
+  }
+  if (skippedTrash) {
+    Logger.log("[UNIFIED] 휴지통/고아 파일 " + skippedTrash + "개 스킵: " + fileName);
   }
   return null;
 }
@@ -10525,7 +10537,8 @@ function _unified_getOrCreateArchiveSs_(ss, fileName) {
 
   // 새 시트 생성
   var newSs = SpreadsheetApp.create(fileName);
-  var folder = _unified_resolveArchiveFolder_(ss);
+  // 새 파일은 「일일마감」 하위폴더에 만든다.
+  var folder = _unified_dailyCloseFolder_(ss);
 
   // ★ moveTo()로 폴더 이동 (deprecated addFile/removeFile 대체)
   var newFile = DriveApp.getFileById(newSs.getId());
@@ -10556,6 +10569,50 @@ function _unified_getOrCreateArchiveSs_(ss, fileName) {
  * @param {Spreadsheet=} ss 현재 시트 (폴백용)
  * @return {Folder}
  */
+/** 상위 폴더 안에서 이름이 같은 하위폴더를 찾고, 없으면 만든다. */
+function _unified_getOrCreateSubFolder_(parent, name) {
+  if (!parent) return null;
+  var it = parent.getFoldersByName(name);
+  while (it.hasNext()) {
+    var f = it.next();
+    var trashed = false;
+    try { trashed = f.isTrashed(); } catch (eT) { trashed = false; }
+    if (!trashed) return f;
+  }
+  return parent.createFolder(name);
+}
+
+/** 일일마감 파일을 새로 만들 폴더 — 상위 폴더 안의 「일일마감」 */
+function _unified_dailyCloseFolder_(ss) {
+  var base = _unified_resolveArchiveFolder_(ss);
+  var sub = null;
+  try {
+    sub = _unified_getOrCreateSubFolder_(base, _UNIFIED_DAILY_SUBFOLDER_);
+  } catch (eS) {
+    Logger.log("[UNIFIED] 일일마감 하위폴더 생성 실패, 상위 폴더에 저장: " + eS.message);
+  }
+  return sub || base;
+}
+
+/**
+ * 일일마감 파일을 찾을 폴더 후보.
+ *   [0] 새 저장 위치인 「일일마감」 하위폴더
+ *   [1] 예전 저장 위치인 상위 폴더
+ * 상위 폴더를 빼면 안 된다. 빼는 순간 기존 파일을 못 찾아
+ * 같은 이름으로 새로 만들고 하루치가 둘로 갈라진다.
+ */
+function _unified_archiveFolderCandidates_(ss) {
+  var out = [];
+  var base = null;
+  try { base = _unified_resolveArchiveFolder_(ss); } catch (eB) { return out; }
+  try {
+    var sub = _unified_getOrCreateSubFolder_(base, _UNIFIED_DAILY_SUBFOLDER_);
+    if (sub) out.push(sub);
+  } catch (eS) {}
+  if (base) out.push(base);
+  return out;
+}
+
 function _unified_resolveArchiveFolder_(ss) {
   var props = PropertiesService.getScriptProperties();
 
@@ -10578,4 +10635,95 @@ function _unified_resolveArchiveFolder_(ss) {
   }
 
   throw new Error("일일마감 아카이브 폴더를 찾을 수 없습니다. 스크립트 속성에 " + _UNIFIED_ARCHIVE_FOLDER_PROP_ + "를 설정하세요.");
+}
+
+/**
+ * 기존 일일마감 파일을 「일일마감」 하위폴더로 모은다. (일회성 정리)
+ *
+ * 저장 위치를 하위폴더로 바꾼 뒤, 그 전에 만들어진 파일은 상위 폴더에 남는다.
+ * 조회는 두 곳을 다 뒤지므로 안 옮겨도 동작한다. 상위 폴더를 정리하는 용도다.
+ *
+ * moveTo 는 복사가 아니라 이동이라 파일 ID 가 그대로다.
+ * 따라서 스크립트 속성에 캐싱해 둔 ID 도 그대로 유효하다.
+ *
+ * 6분 한도로 한 번에 다 못 옮길 수 있다. 남으면 다시 실행하면 된다.
+ */
+function partnerMoveDailyCloseFilesToSubFolder() {
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActive();
+
+  var base = null, sub = null;
+  try {
+    base = _unified_resolveArchiveFolder_(ss);
+    sub = _unified_getOrCreateSubFolder_(base, _UNIFIED_DAILY_SUBFOLDER_);
+  } catch (e) {
+    ui.alert("일일마감 폴더 정리", "폴더를 찾지 못했습니다.\n" + e.message, ui.ButtonSet.OK);
+    return;
+  }
+  if (!sub) {
+    ui.alert("일일마감 폴더 정리", "하위폴더를 만들지 못했습니다.", ui.ButtonSet.OK);
+    return;
+  }
+  var subId = sub.getId();
+
+  // 훑을 곳 — 상위 폴더 + 레거시 배포 폴더
+  var scan = [base];
+  if (typeof ORDER_TARGET_FOLDER_ID_LEGACY !== "undefined" && ORDER_TARGET_FOLDER_ID_LEGACY) {
+    try {
+      var legacy = DriveApp.getFolderById(ORDER_TARGET_FOLDER_ID_LEGACY);
+      if (legacy.getId() !== base.getId()) scan.push(legacy);
+    } catch (eL) {}
+  }
+
+  var targets = [];
+  for (var s = 0; s < scan.length; s++) {
+    if (scan[s].getId() === subId) continue;
+    var it = scan[s].getFiles();
+    while (it.hasNext()) {
+      var f = it.next();
+      if (String(f.getName() || "").indexOf(_UNIFIED_ARCHIVE_PREFIX_) !== 0) continue;
+      targets.push(f);
+    }
+  }
+
+  if (!targets.length) {
+    ui.alert(
+      "일일마감 폴더 정리",
+      "옮길 파일이 없습니다.\n이미 「" + _UNIFIED_DAILY_SUBFOLDER_ + "」 안에 있습니다.",
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
+  var ans = ui.alert(
+    "일일마감 폴더 정리",
+    targets.length + "개를 「" + _UNIFIED_DAILY_SUBFOLDER_ + "」 폴더로 옮깁니다.\n\n" +
+      "이동이라 사본이 생기지 않고 파일 ID 도 그대로입니다.\n계속할까요?",
+    ui.ButtonSet.YES_NO
+  );
+  if (ans !== ui.Button.YES) return;
+
+  var started = new Date().getTime();
+  var moved = 0, failed = 0, errs = [];
+  for (var i = 0; i < targets.length; i++) {
+    if (new Date().getTime() - started > 4.5 * 60 * 1000) break;
+    try {
+      targets[i].moveTo(sub);
+      moved++;
+    } catch (eM) {
+      failed++;
+      if (errs.length < 3) errs.push(targets[i].getName() + ": " + eM.message);
+    }
+  }
+  var left = targets.length - moved - failed;
+
+  ui.alert(
+    "일일마감 폴더 정리",
+    "옮김: " + moved + "개\n" +
+      (failed ? "실패: " + failed + "개\n" : "") +
+      (left ? "남음: " + left + "개 — 시간 한도로 멈췄습니다. 다시 실행하세요.\n" : "") +
+      (errs.length ? "\n" + errs.join("\n") : ""),
+    ui.ButtonSet.OK
+  );
+  Logger.log("[UNIFIED] 일일마감 이동: " + moved + "개 (실패 " + failed + ", 남음 " + left + ")");
 }
