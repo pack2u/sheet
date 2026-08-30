@@ -52,6 +52,14 @@ var _EPX_DIAG_SHIP_IDX_  = 3;  // 진단열 내 배송비 위치 (finalize의 �
 
 var _EPX_VAT_DIVISOR_ = 1.1;
 
+// 송장번호는 한 행에 여러 개가 붙는다(대리발송·분할출고). W열에는 이만큼만 적는다.
+var _EPX_MAX_INVOICES_ = 4;
+
+// 앞자리 0 이 살아 있어야 하는 열 (1-based).
+// 시트는 "000123" 을 숫자 123 으로 삼킨다. 값을 넣기 전에 텍스트로 잠가야 한다.
+// A 일자 · C 거래처코드 · K 품목코드 · W 송장번호
+var _EPX_TEXT_COLS_ = [1, 3, 11, 23];
+
 // 택배비 집계행에 찍는 이카운트 품목코드
 var _EPX_SHIP_ITEM_CODE_ = "LGTB00001";
 
@@ -456,7 +464,8 @@ function _epx_run_(ym, resumeState) {
     var cols = _epx_resolveColumns_(headers);
 
     if (cols.itemName < 0 && cols.itemCode < 0) {
-      warnings.push("[" + fileInfo.name + "] 품목명/품목코드 열을 찾지 못함 → 건너뜀");
+      warnings.push("[" + fileInfo.name + "] 품목명/품목코드 열을 찾지 못함 → 건너뜀" +
+        "\n    (헤더: " + headers.map(function (v) { return String(v || ""); }).filter(String).join(" | ") + ")");
       continue;
     }
     if (cols.qty < 0) {
@@ -515,7 +524,7 @@ function _epx_run_(ym, resumeState) {
         memo:    "",
         buyer:   cols.receiver >= 0 ? String(row[cols.receiver] || "").trim() : "",
         carrier: vendorCarrier,
-        invoice: cols.invoice >= 0 ? String(row[cols.invoice] || "").trim() : "",
+        invoice: _epx_capInvoices_(cols.invoice >= 0 ? row[cols.invoice] : ""),
         status:  status || "OK",
         rawName: rawName || rawCode,
         file:    fileInfo.name
@@ -741,6 +750,7 @@ function _epx_loadVendorMasterMap_(hub) {
 function _epx_cleanCustCd_(v) {
   var s = String(v == null ? "" : v).trim();
   if (!s) return "";
+  s = s.replace(/,/g, ""); // 표시값에 천단위 구분자가 붙어 오는 경우
   if (/^\d+\.0+$/.test(s)) s = s.split(".")[0];
   else if (/^\d+\.\d+e\+?\d+$/i.test(s)) {
     var n = Number(s);
@@ -841,7 +851,11 @@ function _epx_readVendorIdentity_(vss, fileInfo, maps) {
     var setTab = vss.getSheetByName(_EPX_SET_TAB_);
     if (setTab) {
       custNm = String(setTab.getRange(_EPX_SET_NAME_CELL_).getValue() || "").trim();
-      custCd = _epx_cleanCustCd_(setTab.getRange(_EPX_SET_CUST_CELL_).getValue());
+      // getValue() 는 셀이 숫자면 앞자리 0 을 잃는다.
+      // 표시값을 먼저 보고, 비어 있을 때만 원값으로 물러난다.
+      var cdCell = setTab.getRange(_EPX_SET_CUST_CELL_);
+      custCd = _epx_cleanCustCd_(cdCell.getDisplayValue());
+      if (!custCd) custCd = _epx_cleanCustCd_(cdCell.getValue());
       if (custCd) src = "설정B6";
     }
   } catch (e) {}
@@ -906,7 +920,9 @@ function _epx_resolveColumns_(headers) {
   return {
     // 지에스는 택배박스수량 + 판매수량 둘 다 존재 → 판매수량 우선
     qty:      find(["판매수량", "수량", "수량(a타입)", "박스수량", "택배박스수량"], null),
-    itemName: find(["품목명", "상품명1", "상품명", "품명"], ["상세", "쇼핑몰"]),
+    // "품목(필수)"(후아코리아) 처럼 꾸밈말이 붙은 헤더가 있어 단독 "품목"도 후보에 둔다.
+    // 부분일치라 "품목코드"를 집을 수 있으므로 제외어에 "코드"를 넣는다.
+    itemName: find(["품목명", "상품명1", "상품명", "품명", "품목"], ["상세", "쇼핑몰", "코드"]),
     itemCode: find(["품목코드", "업체상품코드", "상품코드", "품번"], null),
     date:     find(["일자", "월/일", "주문일", "발주일", "일자-no."], ["이동일시"]),
     invoice:  find(["송장번호", "운송장번호"], null),
@@ -1186,7 +1202,7 @@ function _epx_finalize_(tab) {
   }
 
   var outMain = [], outDiag = [];
-  var seq = {}, shipRows = 0;
+  var shipRows = 0;
   var prevSet = null;
 
   /** 한 업체의 하루치 택배비 블록 — 적요에는 그 업체의 택배사명이 들어간다 */
@@ -1222,8 +1238,7 @@ function _epx_finalize_(tab) {
     if (prevSet !== null && key !== prevSet) flushShip(prevSet);
     prevSet = key;
 
-    seq[key] = (seq[key] || 0) + 1;
-    row[1] = seq[key]; // 순번 = 같은 일자+거래처 묶음 내 일련번호
+    row[1] = ""; // 순번은 비워 둔다 — 이카운트에서 채운다
 
     outMain.push(row);
     outDiag.push(recs[k].diag);
@@ -1245,13 +1260,16 @@ function _epx_finalize_(tab) {
   tab.getRange(2, _EPX_DIAG_START_COL_, clearRows, _EPX_DIAG_HEADERS_.length).clearContent();
 
   if (outMain.length) {
+    // ★ 순서 중요 — 값을 넣기 전에 잠근다.
+    //   쓰고 나서 서식을 바꿔 봐야 이미 숫자가 된 값의 앞자리 0 은 돌아오지 않는다.
+    _epx_lockTextCols_(tab, outMain.length);
+
     tab.getRange(2, 1, outMain.length, _EPX_HEADERS_.length).setValues(outMain);
     tab.getRange(2, _EPX_DIAG_START_COL_, outDiag.length, _EPX_DIAG_HEADERS_.length).setValues(outDiag);
 
     // 숫자 서식
     tab.getRange(2, 14, outMain.length, 1).setNumberFormat("#,##0");      // 수량
     tab.getRange(2, 15, outMain.length, 5).setNumberFormat("#,##0");      // 단가~금액
-    tab.getRange(2, 1, outMain.length, 1).setNumberFormat("@");           // 일자 문자열 유지
 
     // 집계행 음영
     for (var v = 0; v < outDiag.length; v++) {
@@ -1317,6 +1335,36 @@ function _epx_padCode_(v) {
   if (!s) return "";
   if (typeof padEcountCode_ === "function") return padEcountCode_(s);
   return s;
+}
+
+/**
+ * 송장번호 상한 — 한 셀에 개행/쉼표로 여러 개가 들어온다.
+ * 중복을 걷어낸 뒤 앞에서부터 _EPX_MAX_INVOICES_ 개까지만 남긴다.
+ * 구분자는 마감탭 관행대로 개행을 쓴다.
+ */
+/**
+ * 코드·번호 열을 텍스트로 잠근다. setValues 앞에서 불러야 한다.
+ * 변환탭과 당일 구매입력 시트가 같이 쓴다.
+ */
+function _epx_lockTextCols_(tab, rows) {
+  if (!rows) return;
+  for (var i = 0; i < _EPX_TEXT_COLS_.length; i++) {
+    tab.getRange(2, _EPX_TEXT_COLS_[i], rows, 1).setNumberFormat("@");
+  }
+}
+
+function _epx_capInvoices_(raw) {
+  var s = String(raw || "").trim();
+  if (!s) return "";
+  var parts = s.split(/[\r\n,]+/);
+  var out = [];
+  for (var i = 0; i < parts.length; i++) {
+    var v = parts[i].trim();
+    if (!v || out.indexOf(v) !== -1) continue;
+    out.push(v);
+    if (out.length >= _EPX_MAX_INVOICES_) break;
+  }
+  return out.join("\n");
 }
 
 function _epx_comma_(n) {
