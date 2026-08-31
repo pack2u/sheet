@@ -30,6 +30,99 @@ var _PO_HUB_HEADERS = [
   "상태",
 ];
 
+// ═══════════════════════════════════════════
+//  택배사 열 (2026-08-31 신설)
+//
+//  송장수집 시점에 "이 송장이 어느 택배사 것인가"를 같이 남긴다.
+//  판정은 _partnerExclusivePush.gs 의 _pep_carrierForArchiveRow_ 를 그대로 쓴다
+//  (_carrier_origin_test.js 로 검증된 엔진 — 여기서 규칙을 다시 짜지 않는다).
+//
+//    허브        R열(18) — 표준 15열 뒤. P=판매갱신 lock, Q=미사용이라 R 로 잡았다
+//    임시기록    V열(22) — 헤더 배열의 빈칸 자리
+//    업체 발주탭 P열(16) — 허브 R열을 그대로 배포 (재판정 없음)
+// ═══════════════════════════════════════════
+var _PO_HUB_CARRIER_COL_ = 17;        // 0-based. 허브 R열
+var _PO_HUB_CARRIER_HEADER_ = "택배사";
+var _PO_VENDOR_CARRIER_COL_ = 16;     // 1-based. 업체 발주탭 P열
+var _PO_VENDOR_CARRIER_HEADER_ = "택배사";
+
+/** 시트에 최소 n열을 확보한다 (없으면 뒤에 붙인다) */
+function _po_ensureCols_(tab, n) {
+  try {
+    var maxC = tab.getMaxColumns();
+    if (maxC < n) tab.insertColumnsAfter(maxC, n - maxC);
+  } catch (e) {}
+}
+
+/** 허브 R열(택배사) 확보 + 헤더 보수. 읽기/쓰기 전에 한 번 부른다 */
+function _po_ensureHubCarrierCol_(hubTab) {
+  if (!hubTab) return;
+  _po_ensureCols_(hubTab, _PO_HUB_CARRIER_COL_ + 1);
+  try {
+    var h = hubTab.getRange(1, _PO_HUB_CARRIER_COL_ + 1);
+    if (String(h.getValue() || "").trim() !== _PO_HUB_CARRIER_HEADER_) {
+      h.setValue(_PO_HUB_CARRIER_HEADER_)
+        .setBackground("#1f4e78")
+        .setFontColor("white")
+        .setFontWeight("bold")
+        .setHorizontalAlignment("center");
+    }
+  } catch (e) {}
+}
+
+/**
+ * 허브 행의 택배사 판정.
+ *   ① 송장 출처(원천 탭 이름) — 로젠주문실적/롯데택배 탭이 곧 택배사다
+ *   ② 발주업체명(B열)  ③ 이카운트코드(E열) → 출고지 → 택배사
+ * 근거가 없으면 빈칸. 추측해서 채우지 않는다 (틀린 택배사가 빈칸보다 나쁘다).
+ */
+function _po_carrierForHubRow_(srcLabel, hubRow) {
+  if (typeof _pep_carrierForArchiveRow_ !== "function") return "";
+  try {
+    return (
+      _pep_carrierForArchiveRow_(
+        null,
+        srcLabel || "",
+        hubRow ? hubRow[1] : "", // B열: 발주업체
+        hubRow ? hubRow[4] : "", // E열: 이카운트코드
+      ) || ""
+    );
+  } catch (e) {
+    return "";
+  }
+}
+
+/**
+ * 임시기록 행의 택배사 판정.
+ * 임시기록은 전부 대리공급이라 출처가 택배사를 알려주지 않는다 —
+ * W열 업체prefix(「업체_택배사」표)가 1순위, D열 품목코드→출고지가 2순위다.
+ */
+function _po_carrierForTempRow_(tempRow) {
+  if (!tempRow || typeof _pep_carrierForArchiveRow_ !== "function") return "";
+  try {
+    return (
+      _pep_carrierForArchiveRow_(
+        null,
+        "대리공급",
+        tempRow[_PO_TEMP_PFX_COL_] || "", // W열: 업체prefix
+        tempRow[3] || "", // D열: 품목코드
+      ) || ""
+    );
+  } catch (e) {
+    return "";
+  }
+}
+
+/** picked 목록(세트 다건)에서 택배사를 하나 고른다 — 첫 유효값 */
+function _po_carrierFromPicked_(pickedList, hubRow) {
+  if (!pickedList || !pickedList.length) return "";
+  for (var i = 0; i < pickedList.length; i++) {
+    var c = _po_carrierForHubRow_(pickedList[i] && pickedList[i].src, hubRow);
+    if (c) return c;
+  }
+  return "";
+}
+
 /** 품절임박 대기 시 허브 N열(송장번호) 안내문구 — 실제 송장으로 취급하지 않음 */
 var _PO_INV_PLACEHOLDER = "재고확인후 판단";
 
@@ -1790,8 +1883,10 @@ function partnerFetchInvoices() {
   }
 
   // ── 허브 데이터 읽기 ──
+  // ★ R열(택배사)까지 읽는다 — 배치 쓰기가 열 전체를 다시 쓰므로 기존 값이 필요하다
+  _po_ensureHubCarrierCol_(hubTab);
   var hubData = hubTab
-    .getRange(2, 1, hubLr - 1, _PO_HUB_HEADERS.length)
+    .getRange(2, 1, hubLr - 1, _PO_HUB_CARRIER_COL_ + 1)
     .getValues();
   var matched = 0,
     alreadyHas = 0,
@@ -1934,6 +2029,7 @@ function partnerFetchInvoices() {
             setDetail: detailCell0,
             status: "발송완료",
             writeInvoice: true,
+            carrier: _po_carrierFromPicked_(pickedInvs0, hubData[r]),
           });
           matched++;
           uidMatchCount++;
@@ -1966,9 +2062,16 @@ function partnerFetchInvoices() {
 
       // 그룹 내 송장 있는 행 찾기
       var sourceInv = "";
+      var sourceCarrier = ""; // 합배송은 같은 송장 = 같은 택배사
       for (var ci = 0; ci < cGrpRows.length; ci++) {
         var cInv = String(hubData[cGrpRows[ci]][13] || "").trim();
-        if (_po_hasRealInvoice_(cInv)) { sourceInv = cInv; break; }
+        if (_po_hasRealInvoice_(cInv)) {
+          sourceInv = cInv;
+          sourceCarrier = String(
+            hubData[cGrpRows[ci]][_PO_HUB_CARRIER_COL_] || "",
+          ).trim();
+          break;
+        }
       }
       if (!sourceInv) continue; // 그룹 내 송장 없음
 
@@ -1985,6 +2088,7 @@ function partnerFetchInvoices() {
           inv: sourceInv,
           status: "합배송",
           writeInvoice: true,
+          carrier: sourceCarrier,
         });
         matched++;
         combinedUidMatched++;
@@ -2134,17 +2238,20 @@ function partnerFetchInvoices() {
         .join("\n")
         .trim();
       hubData[repIdx][13] = invCell;
+      var repCarrier = _po_carrierFromPicked_(pickedInvs, hubData[repIdx]);
       writeUpdates.push({
         row: repIdx + 2,
         inv: invCell,
         setDetail: detailCell,
         status: "발송완료",
         writeInvoice: true,
+        carrier: repCarrier,
       });
       assignedRep.push({
         idx: repIdx,
         uid: String(hubData[repIdx][2] || "").trim(),
         inv: invCell,
+        carrier: repCarrier,
       });
       matched++;
     }
@@ -2170,6 +2277,7 @@ function partnerFetchInvoices() {
           inv: assignedRep[0].inv,
           status: "합배송",
           writeInvoice: true,
+          carrier: assignedRep[0].carrier || "",
         });
       }
     }
@@ -2292,17 +2400,20 @@ function partnerFetchInvoices() {
         .join("\n")
         .trim();
       hubData[ri2b][13] = inv2;
+      var carrier2 = _po_carrierFromPicked_(picked2, hubData[ri2b]);
       writeUpdates.push({
         row: ri2b + 2,
         inv: inv2,
         setDetail: detailCell2,
         status: "발송완료",
         writeInvoice: true,
+        carrier: carrier2,
       });
       assigned2.push({
         idx: ri2b,
         uid: String(hubData[ri2b][2] || "").trim(),
         inv: inv2,
+        carrier: carrier2,
       });
       matched++;
       pass2Matched++;
@@ -2329,6 +2440,7 @@ function partnerFetchInvoices() {
           inv: assigned2[0].inv,
           status: "합배송",
           writeInvoice: true,
+          carrier: assigned2[0].carrier || "",
         });
       }
     }
@@ -2339,6 +2451,7 @@ function partnerFetchInvoices() {
   // 기존: 매 건마다 setValue(송장) + setValue(상태) + setValue(적요) = 행당 2~3 API 호출
   // 개선: hubData 배열에 사전 반영 → 열별 setValues() 3회 일괄 쓰기
   var hubChanged = false;
+  var carrierChanged = false; // R열은 바뀐 게 있을 때만 쓴다 (setValues 1회 절약)
   for (var wi = 0; wi < writeUpdates.length; wi++) {
     var upd = writeUpdates[wi];
     var hubIdx = upd.row - 2;
@@ -2359,6 +2472,15 @@ function partnerFetchInvoices() {
       } else if (upd.setDetail) {
         hubData[hubIdx][12] = upd.setDetail;
         hubChanged = true;
+      }
+      // ★ 2026-08-31: R열(18) 택배사 — 판정이 된 건만 덮는다.
+      //   빈 판정으로 기존 값을 지우면 재수집할수록 정보가 줄어든다.
+      if (upd.carrier) {
+        if (String(hubData[hubIdx][_PO_HUB_CARRIER_COL_] || "").trim() !== upd.carrier) {
+          hubData[hubIdx][_PO_HUB_CARRIER_COL_] = upd.carrier;
+          carrierChanged = true;
+          hubChanged = true;
+        }
       }
     } catch (eW) {}
   }
@@ -2392,6 +2514,19 @@ function partnerFetchInvoices() {
     hubTab.getRange(2, 13, hubData.length, 1).setValues(_mVals);
     hubTab.getRange(2, 14, hubData.length, 1).setValues(_nVals);
     hubTab.getRange(2, 15, hubData.length, 1).setValues(_oVals);
+    // ★ 2026-08-31: R열(택배사) — 판정이 바뀐 건이 있을 때만 1회 추가 쓰기
+    if (carrierChanged) {
+      var _rVals = [], _rFilled = 0;
+      for (var _ri = 0; _ri < hubData.length; _ri++) {
+        var _rv = hubData[_ri][_PO_HUB_CARRIER_COL_] || "";
+        if (_rv) _rFilled++;
+        _rVals.push([_rv]);
+      }
+      hubTab
+        .getRange(2, _PO_HUB_CARRIER_COL_ + 1, hubData.length, 1)
+        .setValues(_rVals);
+      scannedLogs.push("[택배사] 허브 R열 기록: " + _rFilled + "건");
+    }
     SpreadsheetApp.flush();
     // ★ 2026-08-25: 드롭다운은 더 이상 붙이지 않으므로, 갱신된 행에 남은 잔여 규칙을
     //   상태와 무관하게 모두 걷어낸다. 수집을 돌릴수록 과거 잔여물이 사라진다.
@@ -2702,9 +2837,10 @@ function partnerPushInvoices() {
     return;
   }
 
-  // 허브 데이터 (헤더 인덱스: 고유ID=2, 송장번호=13, 상태=14)
+  // 허브 데이터 (헤더 인덱스: 고유ID=2, 송장번호=13, 상태=14, 택배사=17)
+  _po_ensureHubCarrierCol_(hubTab);
   var hubData = hubTab
-    .getRange(2, 1, lastRow - 1, _PO_HUB_HEADERS.length)
+    .getRange(2, 1, lastRow - 1, _PO_HUB_CARRIER_COL_ + 1)
     .getValues();
 
   // ★ 폐기송장 목록 로드 → 배포 시 폐기 송장 제외
@@ -2742,6 +2878,9 @@ function partnerPushInvoices() {
       status: status,
       hubRow: i + 2,
       hubMemo: hubMemo,
+      // ★ 2026-08-31: 허브 R열을 그대로 배포한다. 업체 파일에서 재판정하지 않는다
+      //   — 같은 송장이 파일마다 다른 택배사로 보이면 안 된다
+      carrier: String(hubData[i][_PO_HUB_CARRIER_COL_] || "").trim(),
       memoOnly: !invoice && !isShipApproved,  // 적요만 배포 (출고가능은 상태도 배포)
       statusOnly: isShipApproved && !invoice,  // ★ 출고가능 상태만 배포
     };
@@ -2785,7 +2924,9 @@ function partnerPushInvoices() {
         var tabName = tab.getName();
         var lr = tab.getLastRow();
         if (lr <= 1) continue;
-        var lc = Math.max(tab.getLastColumn(), 14);
+        // ★ 2026-08-31: P열(택배사)까지 읽는다 — 배치 쓰기가 data 배열을 기준으로 돈다
+        _po_ensureCols_(tab, _PO_VENDOR_CARRIER_COL_);
+        var lc = Math.max(tab.getLastColumn(), _PO_VENDOR_CARRIER_COL_);
         var data = tab.getRange(1, 1, lr, lc).getValues();
         var cMap = _po_buildColMap(data[0]);
         // ★ =FALSE 유효성 검사 정리 (setValues 충돌 방지)
@@ -2798,7 +2939,7 @@ function partnerPushInvoices() {
           var _stGuardInv_ = _pt_guardVendorOrderStatusCol_(tab, cMap);
           if (_stGuardInv_) stFormulaMode = !!_stGuardInv_.formulaMode;
           if (_stGuardInv_ && _stGuardInv_.reloaded) {
-            lc = Math.max(tab.getLastColumn(), 14);
+            lc = Math.max(tab.getLastColumn(), _PO_VENDOR_CARRIER_COL_);
             data = tab.getRange(1, 1, lr, lc).getValues();
             cMap = _po_buildColMap(data[0]);
             _stGuardInv_ = _pt_guardVendorOrderStatusCol_(tab, cMap);
@@ -2810,6 +2951,7 @@ function partnerPushInvoices() {
 
         var invCol = _po_findInvoiceCol(data[0]);
         var tabChanged = false;
+        var carrierPushed = false; // P열 헤더는 실제로 값을 쓸 때만 만든다
         var cellUpdates = []; // ★ 개별 셀 업데이트 목록 {row, col, value}
 
         for (var r = 1; r < data.length; r++) {
@@ -2864,6 +3006,22 @@ function partnerPushInvoices() {
                 tabChanged = true;
               }
             }
+            // ★ 2026-08-31: 허브 R열 택배사 → 발주탭 P열 배포.
+            //   빈 판정으로 기존 값을 지우지 않는다 (허브가 아직 못 채운 건이 있다).
+            if (p.carrier) {
+              var curCarrier = String(
+                data[r][_PO_VENDOR_CARRIER_COL_ - 1] || "",
+              ).trim();
+              if (curCarrier !== p.carrier) {
+                cellUpdates.push({
+                  row: r + 1,
+                  col: _PO_VENDOR_CARRIER_COL_,
+                  value: p.carrier,
+                });
+                tabChanged = true;
+                carrierPushed = true;
+              }
+            }
             hubStatusRows.push(p.hubRow);
             pushed++;
           }
@@ -2872,6 +3030,21 @@ function partnerPushInvoices() {
         //   ARRAYFORMULA 보호: D열(품목명), A열(거래처명), L열(단가)은 건드리지 않음
         //   변경된 열(송장/상태/적요)만 열 단위 setValues 1회씩 호출
         if (tabChanged && cellUpdates.length > 0) {
+          // ★ 2026-08-31: P열 헤더 보수 — 배포 헤더(A~O 15열) 밖이라 여기서 만든다.
+          //   "택배사" 라는 이름이 _pt_wipeVendorOrderLeftoverStatusP_ 의 면제 조건이므로
+          //   헤더가 없으면 다음 수집 때 P열이 통째로 지워질 수 있다.
+          if (carrierPushed) {
+            try {
+              var _pH = tab.getRange(1, _PO_VENDOR_CARRIER_COL_);
+              if (String(_pH.getValue() || "").trim() !== _PO_VENDOR_CARRIER_HEADER_) {
+                _pH.setValue(_PO_VENDOR_CARRIER_HEADER_)
+                  .setBackground("#1f4e78")
+                  .setFontColor("white")
+                  .setFontWeight("bold");
+                data[0][_PO_VENDOR_CARRIER_COL_ - 1] = _PO_VENDOR_CARRIER_HEADER_;
+              }
+            } catch (ePH) {}
+          }
           // data 배열에 반영
           for (var cu = 0; cu < cellUpdates.length; cu++) {
             var dRow = cellUpdates[cu].row - 1; // 1-indexed → 0-indexed
@@ -5434,6 +5607,7 @@ function _po_applyUnmatchedNumberFormats_(tab, startRow, nRows, layout) {
  * @return {number} 수집된 건수
  */
 var _PO_TEMP_UID_COL_ = 15; // P열: 사방넷주문번호
+var _PO_TEMP_CARRIER_COL_ = 21; // V열: 택배사 (★ 2026-08-31 신설)
 var _PO_TEMP_PFX_COL_ = 22; // W열: 업체prefix (택배사 판정 근거)
 var _PO_TEMP_INV_COL_ = 23; // X열: 송장번호
 var _PO_TEMP_STATUS_COL_ = 24; // Y열: 진행상태
@@ -5924,6 +6098,12 @@ function _po_checkNonPartnerTempTabMatches_(invoiceMap, scannedLogs, hubInvoiceB
     return;
   }
   var tempLr = tempTab.getLastRow();
+  _po_ensureCols_(tempTab, _PO_TEMP_ISSUE_COL_ + 1); // V(택배사)·Z(이슈) 쓰기 자리 확보
+  // V1 헤더 — 대리공급 Push 가 헤더행을 다시 쓰기 전에 수집이 먼저 돌 수 있다
+  try {
+    var _vH = tempTab.getRange(1, _PO_TEMP_CARRIER_COL_ + 1);
+    if (String(_vH.getValue() || "").trim() === "") _vH.setValue("택배사");
+  } catch (eVH) {}
   var tempLc = Math.max(tempTab.getLastColumn(), _PO_TEMP_ISSUE_COL_ + 1); // ★ Z열(이슈) 포함 보장
   var tempData = tempTab.getRange(2, 1, tempLr - 1, tempLc).getValues();
   var totalNp = 0,
@@ -6083,15 +6263,18 @@ function _po_checkNonPartnerTempTabMatches_(invoiceMap, scannedLogs, hubInvoiceB
   // ★ 2026-06-26: 배치 처리 최적화 (개별 setValue → 배열 수정 + setValues 2회)
   var invoiceGreen = "#d9ead3"; // 연한 녹색
   if (updates.length > 0) {
-    // ① 기존 X열(송장), Y열(상태) 배열 구축
+    // ① 기존 X열(송장), Y열(상태), V열(택배사) 배열 구축
     var xVals = [];
     var yVals = [];
+    var vVals = [];
     for (var ai = 0; ai < tempData.length; ai++) {
       xVals.push([tempData[ai][_PO_TEMP_INV_COL_] || ""]);
       yVals.push([tempData[ai][_PO_TEMP_STATUS_COL_] || ""]);
+      vVals.push([tempData[ai][_PO_TEMP_CARRIER_COL_] || ""]);
     }
     // ② updates 반영
     var bgA1Ranges = [];
+    var vChanged = false;
     for (var ui = 0; ui < updates.length; ui++) {
       var idx = updates[ui].row - 2; // row(1-based) → tempData index(0-based)
       if (updates[ui].updateStatusOnly) {
@@ -6100,11 +6283,26 @@ function _po_checkNonPartnerTempTabMatches_(invoiceMap, scannedLogs, hubInvoiceB
         xVals[idx] = [updates[ui].inv];
         yVals[idx] = ["송장수집"];
       }
+      // ★ 2026-08-31: V열(택배사).
+      //   임시기록은 전부 대리공급이라 출처가 택배사를 알려주지 않는다.
+      //   W열 업체prefix → 「업체_택배사」표가 1순위, 품목코드 → 출고지가 2순위다.
+      if (String(vVals[idx][0] || "").trim() === "") {
+        var _tc = _po_carrierForTempRow_(tempData[idx]);
+        if (_tc) {
+          vVals[idx] = [_tc];
+          vChanged = true;
+        }
+      }
       bgA1Ranges.push(updates[ui].row + ":" + updates[ui].row);
     }
-    // ③ 배치 쓰기 (API 호출 2회)
+    // ③ 배치 쓰기 (API 호출 2~3회)
     tempTab.getRange(2, _PO_TEMP_INV_COL_ + 1, tempData.length, 1).setValues(xVals);
     tempTab.getRange(2, _PO_TEMP_STATUS_COL_ + 1, tempData.length, 1).setValues(yVals);
+    if (vChanged) {
+      tempTab
+        .getRange(2, _PO_TEMP_CARRIER_COL_ + 1, tempData.length, 1)
+        .setValues(vVals);
+    }
     // ④ 배경색 일괄 적용
     try {
       tempTab.getRangeList(bgA1Ranges).setBackground(invoiceGreen);

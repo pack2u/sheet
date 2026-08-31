@@ -707,6 +707,10 @@ function _pt_wipeVendorOrderLeftoverStatusP_(orderTab) {
     var p1 = orderTab.getRange("P1");
     var p1f = String(p1.getFormula() || "");
     var p1v = String(p1.getValue() || "").replace(/\s/g, "");
+    // ★ 2026-08-31: P열은 이제 택배사 열이다 (송장수집이 허브 R열에서 배포).
+    //   이 함수의 목적은 구버전 "상태" 잔재 청소이므로, 택배사 열은 건드리지 않는다.
+    //   (헤더 상수 _PT_ORDER_TAB_CARRIER_HEADER_ 와 같이 유지할 것)
+    if (p1v.indexOf("택배사") !== -1) return;
     var pClear = p1f.indexOf("MAP") !== -1 || p1f.indexOf("ARRAYFORMULA") !== -1 ||
         p1v.indexOf("상태") !== -1;
     if (!pClear) {
@@ -2914,7 +2918,7 @@ function _pt_pickInvoicesForHubRow(
     }
     if (ev.score > 0) anyPositive = true;
     scored.push({
-      idx: cc, inv: cand.inv, detail: cand.detail,
+      idx: cc, inv: cand.inv, detail: cand.detail, src: cand.src || "",
       score: ev.score, specHit: ev.specHit, hasInfo: ev.hasInfo,
     });
   }
@@ -2964,7 +2968,7 @@ function _pt_pickInvoicesForHubRow(
       }
     }
     picked.push({
-      inv: best.inv, setDetail: setDetail,
+      inv: best.inv, setDetail: setDetail, src: best.src || "",
       grade: grade, score: best.score,
       // 품목 근거가 있는 후보가 있는데도 근거 없는 걸 집었다면 특히 의심스럽다
       suspect: grade === "약함" && anyPositive,
@@ -3033,7 +3037,9 @@ function parseInvoiceLinesFromMatchedRows_(matchedArr, globalUsedInvoices) {
         continue;
       }
       seen[iv] = out.length;
-      out.push({ inv: iv, detail: dt });
+      // src = 이 송장이 나온 원천 탭 이름. 택배사 판정의 1순위 근거다
+      // (로젠주문실적 → 로젠택배, 롯데택배 탭 → 롯데택배).
+      out.push({ inv: iv, detail: dt, src: String(matchedArr[m].src || "") });
     }
   }
   return out;

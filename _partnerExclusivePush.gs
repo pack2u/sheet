@@ -1463,6 +1463,9 @@ function _pep_pushCore_(silent) {
       }
       var _tRow_ = [];
       for (var _tci_ = 0; _tci_ < 22; _tci_++) {
+        // V(21)은 택배사 열이다 — 소스탭 22번째 열을 그대로 실어오지 않는다.
+        // 값은 송장수집이 채운다 (_PO_TEMP_CARRIER_COL_).
+        if (_tci_ === 21) { _tRow_.push(""); continue; }
         _tRow_.push(_tci_ < row.length ? row[_tci_] : "");
       }
       _tempPendingRows_.push(_tRow_.concat([pfx, "", "발주완료"]));
@@ -2491,7 +2494,7 @@ var _PEP_NON_PARTNER_TEMP_HEADERS_ = [
   "보내는주소", // S(18)
   "", // T(19)
   "", // U(20)
-  "", // V(21)
+  "택배사", // V(21) ← ★ 2026-08-31 송장수집이 기입 (_PO_TEMP_CARRIER_COL_)
   "업체prefix", // W(22) ← append
   "송장번호", // X(23) ← 수집 시 기록
   "진행상태", // Y(24) ← 발주완료 또는 송장수집 기입
@@ -6610,6 +6613,8 @@ function partnerRebuildTempRecords() {
     // 임시기록 행 생성 (22열 + pfx + "" + "발주완료")
     var tRow = [];
     for (var ci = 0; ci < 22; ci++) {
+      // V(21)은 택배사 열 — 소스탭 값으로 덮지 않는다 (송장수집이 채운다)
+      if (ci === 21) { tRow.push(""); continue; }
       tRow.push(ci < row.length ? row[ci] : "");
     }
     tRow[15] = rowUid;
