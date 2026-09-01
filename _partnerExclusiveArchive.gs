@@ -397,6 +397,7 @@ function partnerArchiveExclusiveForm() {
     "UID 초기화: " + result.uidCleared + "건\n" +
     "발주허브 정리: " + (result.hubCleared || 0) + "건\n" +
     "📋 임시기록 정리: 삭제 " + (result.tempCleared || 0) + "건, 유지 " + (result.tempKept || 0) + "건\n" +
+    (result.tempSnapshot ? "💾 삭제 전 스냅샷: " + result.tempSnapshot + "\n" : "") +
     (result.errors.length > 0 ? "\n⚠ 오류:\n" + result.errors.slice(0, 5).join("\n") : "") +
     "\n\n이제 '대리발주 Push'를 실행하면 새 발주가 전용양식에 채워집니다."
   );
@@ -421,7 +422,7 @@ function _pea_core_(tabName, silent) {
     state = {
       tabName: tabName, queue: [],
       moved: 0, kept: 0, staleMoved: 0, tabsCleared: 0, uidCleared: 0,
-      tempCleared: 0, tempKept: 0, hubCleared: 0, errors: [],
+      tempCleared: 0, tempKept: 0, hubCleared: 0, tempSnapshot: "", errors: [],
       archivedUids: {} // ★ 2026-07-17 (H4): 이번 마감에서 이동된 전용양식 UID 누적
     };
 
@@ -430,6 +431,26 @@ function _pea_core_(tabName, silent) {
       var hubSS = SpreadsheetApp.openById(_PT.INFO_SS_ID);
       var tempTab = _po_getNonPartnerTempTab_(hubSS);
       if (tempTab) {
+        // ★ 2026-08-31: 지우기 전에 스냅샷 ★
+        //   아래 _po_clearTempTabInvoicedRowsOnly_ 가 송장 찍힌 행을 삭제한다.
+        //   지워지면 그날 무엇이 어떤 송장으로 나갔는지 되짚을 방법이 없다.
+        //   구매입력 폴더에 「대리공급임시기록_(날짜)」로 원본을 남긴다.
+        //
+        //   스냅샷이 실패해도 마감은 계속 간다. 마감이 밀리는 게 더 큰 손해다.
+        try {
+          if (typeof epdSnapshotTempRecord === "function") {
+            var snap = epdSnapshotTempRecord(tempTab);
+            state.tempSnapshot = snap.ok ? snap.name : "";
+            Logger.log(snap.ok
+              ? "[PEA] 임시기록 스냅샷: " + snap.name + " (" + snap.rows + "행)"
+              : "[PEA] 임시기록 스냅샷 실패(마감은 계속): " + snap.error);
+            if (!snap.ok) state.errors.push("[임시기록스냅샷] " + snap.error);
+          }
+        } catch (eSnap) {
+          Logger.log("[PEA] 임시기록 스냅샷 예외(마감은 계속): " + eSnap.message);
+          state.errors.push("[임시기록스냅샷] " + eSnap.message);
+        }
+
         var tempClear = _po_clearTempTabInvoicedRowsOnly_(tempTab);
         state.tempCleared = tempClear.cleared;
         state.tempKept = tempClear.kept;
@@ -684,6 +705,7 @@ function _pea_core_(tabName, silent) {
           { label: "처리 탭", value: result.tabsCleared + "개" },
           { label: "UID 초기화", value: result.uidCleared + "건" },
           { label: "📋 임시기록", value: "삭제 " + (result.tempCleared||0) + " / 유지 " + (result.tempKept||0) },
+          { label: "💾 스냅샷", value: result.tempSnapshot || "없음" },
           { label: "⚠ 오류", value: result.errors.length + "건" }
         ]);
     } catch(_) {}

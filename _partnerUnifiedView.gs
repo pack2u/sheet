@@ -22,6 +22,18 @@ var _PUV_DAYS_ = 14;
 var _PUV_TIME_BUDGET_MS_ = 300000; // 5분. GAS 6분 제한 대비 여유
 var _PUV_MAX_ROWS_ = 30000;
 
+/**
+ * 급감 방어 — 결과가 기존 탭의 절반도 안 되면 덮지 않는다.
+ *
+ * ★ 왜 필요한가 (2026-09-01) ★
+ *   기존 방어는 "시간초과일 때만" 덮어쓰기를 막았다. 그런데 시간초과가
+ *   아니면서 수집이 거의 안 된 회차가 7,800행짜리 탭을 131행으로 조용히
+ *   덮었고, CS 웹앱이 하루 종일 주문을 못 찾았다. 아무도 몰랐다.
+ *   14일 창은 하루가 지나도 13일이 겹친다. 절반이 사라졌다면 정상이 아니다.
+ */
+var _PUV_SHRINK_MIN_ = 500;    // 기존이 이보다 적으면 판정하지 않는다 (최초 구축·복구 중)
+var _PUV_SHRINK_RATIO_ = 0.5;  // 기존의 50% 미만이면 의심
+
 /** 고정 스키마 — 열 위치가 CS와의 계약이다. 임의로 순서를 바꾸지 않는다. */
 var _PUV_HEADERS_ = [
   "주문일",       // A(0)
@@ -488,11 +500,31 @@ function _puv_rebuild_(opt) {
       ]);
     }
     stat.rows = rows.length;
-    // 시간 초과로 일부만 모았다면, 온전한 어제 데이터를 부분 데이터로 덮지 않는다.
-    // CS 입장에서 "조금 낡았지만 온전한 것"이 "최신이지만 빠진 것"보다 낫다.
-    if (stat.timedOut && _puv_existingRowCount_() > rows.length) {
+    var existing = _puv_existingRowCount_();
+    stat.existingRows = existing;
+
+    // 덮어쓰면 안 되는 두 경우. CS 입장에서 "조금 낡았지만 온전한 것"이
+    // "최신이지만 빠진 것"보다 낫다.
+    //   1) 시간 초과로 일부만 모았다
+    //   2) 시간 초과가 아닌데도 결과가 기존의 절반도 안 된다
+    stat.shrinkGuard = existing >= _PUV_SHRINK_MIN_ &&
+      rows.length < existing * _PUV_SHRINK_RATIO_;
+    var block = !opt.force &&
+      ((stat.timedOut && existing > rows.length) || stat.shrinkGuard);
+
+    if (block) {
       stat.skippedWrite = true;
-      Logger.log("[UNIFIED_VIEW] 시간초과 + 기존 행이 더 많음 → 기록 생략 (기존 유지)");
+      Logger.log("[UNIFIED_VIEW] " + (stat.timedOut ? "시간초과" : "결과 급감") +
+        " → 기록 생략 (기존 " + existing + "행 유지, 이번 " + rows.length + "행)");
+      // 로그만 남기면 아무도 안 본다. 급감은 사람에게 알린다.
+      if (stat.shrinkGuard) {
+        try {
+          _chat_sendText_("⚠️ 통합조회 재생성을 중단했습니다\n" +
+            "이번 결과 " + rows.length + "행 · 기존 " + existing + "행 (절반 미만)\n" +
+            "기존 탭을 그대로 두었습니다. 일일마감 수집 " + stat.daily + "건.\n" +
+            "점검: puvDiagnoseRowLoss() — 파일 _puvDiagnoseRowLoss.gs");
+        } catch (eN) {}
+      }
     } else {
       _puv_write_(rows);
     }
@@ -678,9 +710,25 @@ function partnerRebuildUnifiedView() {
   var ui = null;
   try { ui = SpreadsheetApp.getUi(); } catch (e) {}
   var stat = _puv_rebuild_({});
+
+  // 급감 방어에 걸렸다 — 수동 실행이니 사람에게 묻고 결정한다.
+  // 자동 실행이라면 물어볼 상대가 없어 그냥 기존을 지킨다.
+  if (stat.shrinkGuard && stat.skippedWrite && ui) {
+    var ask = ui.alert("통합조회 — 결과가 급감했습니다",
+      "이번 수집 " + stat.rows + "행 · 기존 탭 " + stat.existingRows + "행 (절반 미만)\n" +
+      "일일마감 수집 " + stat.daily + "건\n\n" +
+      "기존 탭을 그대로 두었습니다.\n" +
+      "그래도 이번 결과로 덮어쓸까요?",
+      ui.ButtonSet.YES_NO);
+    if (ask === ui.Button.YES) stat = _puv_rebuild_({ force: true });
+  }
+
   var text = _puv_summaryText_(stat);
   Logger.log("[UNIFIED_VIEW]\n" + text);
-  if (ui) ui.alert("통합조회 재생성 완료", text + "\n\n탭: " + _PUV_TAB_NAME_, ui.ButtonSet.OK);
+  if (ui) {
+    ui.alert(stat.skippedWrite ? "통합조회 — 기록 생략 (기존 유지)" : "통합조회 재생성 완료",
+      text + "\n\n탭: " + _PUV_TAB_NAME_, ui.ButtonSet.OK);
+  }
   return stat;
 }
 

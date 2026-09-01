@@ -139,6 +139,7 @@
     <div id="dlSummary" style="font-size:11px; color:#888; margin-top:4px; text-align:right;"></div>
     <button class="btn btn-green" onclick="downloadSelectedExcel()">📥 선택 항목 다운로드</button>
     <button class="btn" style="background:#eee; color:#333; font-size:11px;" onclick="downloadAllExcel()">📦 전체 미발주 다운로드</button>
+    <button class="btn" style="background:#fff3cd; color:#7a5c00; font-size:11px;" onclick="clearExportMarks()">🔄 발주표시 해제</button>
   </div>
 
   <!-- 입력 방식 탭 -->
@@ -698,7 +699,7 @@
     function renderDlList(res) {
       var list = document.getElementById('dlList');
       if (!res.data || res.data.length === 0) {
-        list.innerHTML = '<div style="padding:16px; text-align:center; color:#888;">미발주 건이 없습니다.</div>';
+        list.innerHTML = '<div style="padding:16px; text-align:center; color:#888;">대기 중인 발주 건이 없습니다.</div>';
         document.getElementById('dlSummary').textContent = '';
         return;
       }
@@ -715,6 +716,7 @@
       var html = '';
       for (var i = 0; i < res.data.length; i++) {
         var row = res.data[i];
+        var mark = (res.marks && res.marks[i]) ? String(res.marks[i]) : '';
         var recip = recipCol >= 0 ? String(row[recipCol] || '').trim() : String(row[0] || '').trim();
         var prod = prodCol >= 0 ? String(row[prodCol] || '').trim() : '';
         var qty = qtyCol >= 0 ? String(row[qtyCol] || '').trim() : '';
@@ -722,7 +724,15 @@
         var label = recip || '(이름없음)';
         if (prod) label += ' <span style="color:#888">· ' + prod + '</span>';
         if (qty && qty !== '0') label += ' <span style="color:#1a73e8">×' + qty + '</span>';
-        html += '<label class="dl-item"><input type="checkbox" class="dl-cb" data-idx="' + i + '" checked onchange="updateDlSummary()"> <span>' + label + '</span></label>';
+        // 이미 내보낸 건은 숨기지 않고 회색으로 남긴다.
+        // 숨기면 "오전에 뭐가 나갔는지"를 확인할 방법이 사라진다.
+        if (mark) {
+          html += '<label class="dl-item" style="opacity:.5">' +
+                  '<input type="checkbox" class="dl-cb" data-idx="' + i + '" data-done="1" onchange="updateDlSummary()">' +
+                  ' <span>' + label + ' <span style="color:#c77700">· 발주됨 ' + mark.substring(5) + '</span></span></label>';
+        } else {
+          html += '<label class="dl-item"><input type="checkbox" class="dl-cb" data-idx="' + i + '" checked onchange="updateDlSummary()"> <span>' + label + '</span></label>';
+        }
       }
       list.innerHTML = html;
       updateDlSummary();
@@ -730,14 +740,22 @@
 
     function updateDlSummary() {
       var cbs = document.querySelectorAll('.dl-cb');
-      var checked = 0;
-      for (var i = 0; i < cbs.length; i++) { if (cbs[i].checked) checked++; }
-      document.getElementById('dlSummary').textContent = checked + ' / ' + cbs.length + '건 선택';
+      var checked = 0, done = 0;
+      for (var i = 0; i < cbs.length; i++) {
+        if (cbs[i].checked) checked++;
+        if (cbs[i].getAttribute('data-done') === '1') done++;
+      }
+      document.getElementById('dlSummary').textContent =
+        checked + ' / ' + cbs.length + '건 선택' + (done ? '  (이미 발주 ' + done + '건)' : '');
     }
 
     function dlSelectAll(val) {
+      // 켤 때는 미발주만 켠다. 이미 발주된 건까지 켜면 이중발주를 막으려는
+      // 표시가 무의미해진다. 끌 때는 전부 끈다.
       var cbs = document.querySelectorAll('.dl-cb');
-      for (var i = 0; i < cbs.length; i++) cbs[i].checked = val;
+      for (var i = 0; i < cbs.length; i++) {
+        cbs[i].checked = val && cbs[i].getAttribute('data-done') !== '1';
+      }
       updateDlSummary();
     }
 
@@ -782,7 +800,7 @@
       return true;
     }
 
-    async function _buildXlsx(rows) {
+    async function _buildXlsx(rows, rowNums) {
       if (!_dlData) return 0;
       var wb = XLSX.utils.book_new();
       var wsData = [_dlData.headers].concat(rows);
@@ -800,25 +818,77 @@
       XLSX.utils.book_append_sheet(wb, ws, '발주');
       var fn = _getDlFileName();
       var ok = await _saveXlsx(wb, fn);
+      // ★ 저장이 실제로 끝난 뒤에만 표시한다.
+      //   취소한 건을 발주됨으로 남기면 그 주문은 아무도 발주하지 않은 채 사라진다.
+      if (ok && rowNums && rowNums.length) _markExported(rowNums, fn);
       return ok ? rows.length : 0;
+    }
+
+    // 전용양식 AW열에 내보낸 시각을 찍는다 (파일: _partnerExcelOrderMark.gs)
+    function _markExported(rowNums, fileName) {
+      var fileId = document.getElementById('vendorSelect').value;
+      if (!fileId) return;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (r && r.ok) {
+            toast('✅ ' + r.marked + '건 발주표시 완료', 2500);
+            toggleDownload(); toggleDownload();   // 목록 새로고침
+          } else {
+            toast('⚠ 발주표시 실패: ' + ((r && r.error) || '알 수 없음') +
+                  '\n같은 건이 다시 나올 수 있으니 확인하세요.', 6000);
+          }
+        })
+        .withFailureHandler(function (e) {
+          toast('⚠ 발주표시 실패: ' + e + '\n같은 건이 다시 나올 수 있으니 확인하세요.', 6000);
+        })
+        .markExclusiveFormExported(fileId, rowNums, fileName);
+    }
+
+    function clearExportMarks() {
+      var fileId = document.getElementById('vendorSelect').value;
+      if (!fileId) return toast('업체를 선택하세요.', 2000);
+      if (!confirm('이 업체의 발주표시를 모두 해제할까요?\n\n해제하면 해당 건이 다시 미발주로 나옵니다.')) return;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (r && r.ok) {
+            toast('🔄 ' + r.cleared + '건 해제', 2500);
+            toggleDownload(); toggleDownload();
+          } else toast('오류: ' + ((r && r.error) || ''), 4000);
+        })
+        .withFailureHandler(function (e) { toast('오류: ' + e, 4000); })
+        .clearExclusiveFormExportMarks(fileId, '');
     }
 
     async function downloadSelectedExcel() {
       if (!_dlData || !_dlData.data || _dlData.data.length === 0) return toast('데이터가 없습니다.', 2000);
       var cbs = document.querySelectorAll('.dl-cb');
-      var selected = [];
+      var selected = [], selRows = [], reDone = 0;
       for (var i = 0; i < cbs.length; i++) {
-        if (cbs[i].checked) selected.push(_dlData.data[parseInt(cbs[i].getAttribute('data-idx'), 10)]);
+        if (!cbs[i].checked) continue;
+        var idx = parseInt(cbs[i].getAttribute('data-idx'), 10);
+        if (cbs[i].getAttribute('data-done') === '1') reDone++;
+        selected.push(_dlData.data[idx]);
+        selRows.push(_dlData.rowNums[idx]);
       }
       if (selected.length === 0) return toast('선택된 항목이 없습니다.', 2000);
-      var cnt = await _buildXlsx(selected);
+      // 이미 발주된 건을 일부러 켰다면 한 번 더 확인한다
+      if (reDone && !confirm('이미 발주된 ' + reDone + '건이 포함돼 있습니다.\n그대로 내려받을까요?')) return;
+      var cnt = await _buildXlsx(selected, selRows);
       if (cnt) toast('✅ ' + cnt + '건 다운로드 완료', 3000);
     }
 
     async function downloadAllExcel() {
-      if (!_dlData || !_dlData.data || _dlData.data.length === 0) return toast('미발주 건이 없습니다.', 2000);
-      var cnt = await _buildXlsx(_dlData.data);
-      if (cnt) toast('✅ 전체 ' + cnt + '건 다운로드 완료', 3000);
+      if (!_dlData || !_dlData.data || _dlData.data.length === 0) return toast('발주 건이 없습니다.', 2000);
+      // "전체"는 아직 안 나간 것만. 이미 나간 것까지 넣으면 이중발주가 된다.
+      var rows = [], rowNums = [];
+      for (var i = 0; i < _dlData.data.length; i++) {
+        if (_dlData.marks && _dlData.marks[i]) continue;
+        rows.push(_dlData.data[i]);
+        rowNums.push(_dlData.rowNums[i]);
+      }
+      if (rows.length === 0) return toast('미발주 건이 없습니다. (전부 발주 완료)', 3000);
+      var cnt = await _buildXlsx(rows, rowNums);
+      if (cnt) toast('✅ 미발주 ' + cnt + '건 다운로드 완료', 3000);
     }
   </script>
 </body>

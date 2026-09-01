@@ -198,7 +198,10 @@ function _pstmt_ensureAllTabs_(ss, activate) {
 
 function _pstmt_initSettingsTab_(tab) {
   tab.clear();
-  tab.getRange("A1:B20").setValues([
+  // ★ 2026-08-31 버그수정: "A1:B20"(20행)에 18행 배열을 넣어 setValues 가 예외를 던졌다.
+  //   이 함수는 탭 생성 루프의 첫 번째라, 죽으면 「명세서_설정」만 빈 채로 남고
+  //   나머지 7개 탭은 아예 안 만들어진다. 행수는 배열에서 세어 쓴다.
+  var rows = [
     ["명세서 정리 설정", ""],
     ["대상월 (yyyy-MM)", _pstmt_defaultMonth_()],
     ["공급사 prefix", ""],
@@ -217,8 +220,9 @@ function _pstmt_initSettingsTab_(tab) {
     ["", ""],
     ["Gmail 수집", "발신업체 미정 — 범용 첨부만 수집"],
     ["처리라벨", "P2U_명세처리완료"],
-  ]);
-  tab.getRange("A1:A13").setFontWeight("bold");
+  ];
+  tab.getRange(1, 1, rows.length, 2).setValues(rows);
+  tab.getRange(1, 1, rows.length, 1).setFontWeight("bold");
   tab.getRange("B2:B9").setNumberFormat("@");
   tab.setColumnWidth(1, 180);
   tab.setColumnWidth(2, 220);

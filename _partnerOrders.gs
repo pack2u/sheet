@@ -1792,7 +1792,12 @@ function partnerFetchInvoices() {
           // 전용양식 구조: A=송장번호(0), B=이슈(1), AX열(49)=고유ID
           for (var _bi = 1; _bi < ptData.length; _bi++) {
             var _bInvoice = String(ptData[_bi][0] || "").trim();
-            var _bIssue = String(ptData[_bi][1] || "").trim();
+            // ★ B열에는 푸시 회차 도장(0901-1)이 먼저 찍혀 있다.
+            //   도장을 떼고 남은 것만 업체가 쓴 이슈다. 안 떼면 모든 행이
+            //   "이슈 있음"으로 잡혀 이슈 목록이 쓸모없어진다.
+            var _bIssue = (typeof _pep_stripPushStamp_ === "function")
+              ? _pep_stripPushStamp_(ptData[_bi][1])
+              : String(ptData[_bi][1] || "").trim();
             if (!_bIssue || _bInvoice) continue; // 이슈 없거나 송장 이미 있으면 스킵
             // 고유ID 탐색 (AX열=49 우선, 역방향 탐색)
             var _bUid = "";

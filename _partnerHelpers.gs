@@ -3024,6 +3024,16 @@ function parseInvoiceLinesFromMatchedRows_(matchedArr, globalUsedInvoices) {
       var iv = String(iSplit[z] || iSplit[0] || "").trim();
       var dt = String(dSplit[z] || dSplit[0] || "").trim();
       if (!iv) continue;
+      // ★ 하이픈·공백 방어 (2026-09-01)
+      //   업체가 "2683-3413-0455" 처럼 적어 넣으면 여기까지 원문 그대로 왔다.
+      //   중복 사용 판정(globalUsedInvoices)이 문자열 키라서, 같은 송장이
+      //   하이픈 유무로 다른 키가 되어 한 송장이 두 주문에 붙을 수 있었다.
+      //   숫자만 남긴다. 8자리 미만이면 송장이 아니므로 원문을 그대로 둔다
+      //   (기존 동작 유지 — 여기서 값을 지우면 조용히 사라진다).
+      if (typeof _pep_normInvoiceNo_ === "function") {
+        var _ivNorm = _pep_normInvoiceNo_(iv);
+        if (_ivNorm) iv = _ivNorm;
+      }
       if (globalUsedInvoices && globalUsedInvoices[iv]) continue;
       if (seen[iv] != null) {
         // ★ 중복 송장: "---" 세트 상세가 있는 detail을 우선 채택

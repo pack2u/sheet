@@ -141,3 +141,77 @@ function cleanupDuplicateEventTriggers() {
     SpreadsheetApp.getUi().alert("🔧 트리거 정리", msg, SpreadsheetApp.getUi().ButtonSet.OK);
   } catch (e) {}
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  설치된 트리거 점검 — 읽기 전용. 아무것도 지우지 않는다.
+ *  파일: _debug_triggers.gs
+ *
+ *  ★ 위의 debugTriggers() 와 헷갈리지 말 것 ★
+ *    그 함수는 이름과 달리 대리공급 푸시 트리거를 삭제하고
+ *    PEP_AUTO_PUSH 를 OFF 로 바꾼다. 점검용이 아니다.
+ *
+ *  _ALL_SCHEDULED_TRIGGERS_(_partnerWebApp.gs) 와 대조해
+ *  빠진 것 · 시각이 다른 것 · 목록에 없는 것을 보여준다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function triggerListSafe() {
+  var L = [];
+  var live = ScriptApp.getProjectTriggers();
+
+  // 설치된 시간 트리거 수집
+  var installed = {};
+  var other = [];
+  for (var i = 0; i < live.length; i++) {
+    var t = live[i];
+    var fn = t.getHandlerFunction();
+    if (String(t.getEventType()) !== "CLOCK") { other.push(fn + " (" + t.getEventType() + ")"); continue; }
+    (installed[fn] = installed[fn] || []).push(t.getUniqueId());
+  }
+
+  L.push("═══ 트리거 점검 (읽기 전용) ═══");
+  L.push("실행: " + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"));
+  L.push("시간 트리거 " + (live.length - other.length) + "개 / 이벤트 " + other.length + "개 / 한도 20개");
+  L.push("");
+
+  // 기대 목록과 대조. 시각은 GAS API로 못 읽으므로 설치 여부만 본다.
+  var expect = (typeof _ALL_SCHEDULED_TRIGGERS_ !== "undefined") ? _ALL_SCHEDULED_TRIGGERS_ : [];
+  var missing = [];
+  L.push("── 예정 일정 (_partnerWebApp.gs) ──");
+  for (var e = 0; e < expect.length; e++) {
+    var x = expect[e];
+    var hhmm = ("0" + x.h).slice(-2) + ":" + ("0" + x.m).slice(-2);
+    var n = installed[x.fn] ? installed[x.fn].length : 0;
+    if (!n) missing.push(hhmm + " " + x.label + "  [" + x.fn + "]");
+    L.push("  " + (n ? (n > 1 ? "▲x" + n : "✔") : "★ 없음") + "  " + hhmm + "  " + x.label);
+  }
+
+  // 목록에 없는데 설치된 것
+  var known = {};
+  for (var k = 0; k < expect.length; k++) known[expect[k].fn] = true;
+  var extra = [];
+  for (var f in installed) if (!known[f]) extra.push(f + " x" + installed[f].length);
+
+  L.push("");
+  if (missing.length) {
+    L.push("★ 설치 안 된 일정 " + missing.length + "개:");
+    for (var m = 0; m < missing.length; m++) L.push("    " + missing[m]);
+    L.push("  → 메뉴 [⏰ 통합 자동 트리거 설치 (전체)] 를 실행하세요.");
+  } else {
+    L.push("✔ 예정 일정이 모두 설치되어 있습니다.");
+  }
+  if (extra.length) {
+    L.push("");
+    L.push("목록에 없는 시간 트리거 " + extra.length + "개 (수동 설치분일 수 있음):");
+    for (var x2 = 0; x2 < extra.length; x2++) L.push("    " + extra[x2]);
+  }
+  if (other.length) {
+    L.push("");
+    L.push("이벤트 트리거: " + other.join(", "));
+  }
+
+  var text = L.join("\n");
+  Logger.log(text);
+  try { SpreadsheetApp.getUi().alert("트리거 점검", text, SpreadsheetApp.getUi().ButtonSet.OK); } catch (eU) {}
+  return text;
+}

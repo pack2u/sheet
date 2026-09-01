@@ -1811,17 +1811,32 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
   { fn: "_trigger_syncDb_",                              h: 12, m: 30, label: "통합 DB 동기화 [Supabase]" },
   { fn: "runDailyHubBatch",                              h: 12, m: 40, label: "통합허브 상태/재고 업데이트" },
 
-  // ─── 오후 2회전 ───
-  { fn: "partnerCollectOrdersSilent_",                   h: 14, m: 5,  label: "발주 수집 + 판매현황 갱신 (2회전)" },
-  { fn: "partnerPushOrdersToExclusiveFormsSilent_",      h: 14, m: 20, label: "대리공급 Push + 우편번호 (2회전)" },
+  // ─── 오후 2회전 (★ 2026-08-31: 14:05/14:20 → 13:00/13:50) ───
+  { fn: "partnerCollectOrdersSilent_",                   h: 13, m: 0,  label: "발주 수집 + 판매현황 갱신 (2회전)" },
+  { fn: "partnerPushOrdersToExclusiveFormsSilent_",      h: 13, m: 50, label: "대리공급 Push + 우편번호 (2회전)" },
+
+  // ─── 오후 3회전 (★ 2026-08-31 신규, 푸시 15:30 → 15:40) ───
+  //   푸시(15:40)와 냅킨 송장수집(16:00) 사이가 20분뿐이다.
+  //   구글 시간 트리거는 nearMinute 이 ±15분이라 푸시가 15:55 에 돌 수도 있고,
+  //   그러면 이 배치는 당일 송장수집(16:05)에 못 잡힌다.
+  //
+  //   ★ 이건 알고 둔 것이다 (2026-08-31 확인) ★
+  //     3회전 푸시분은 다음 회차 수집에 잡혀도 된다고 정리했다.
+  //     그러니 이 간격을 "버그"로 보고 송장수집을 뒤로 미루지 말 것.
+  //     당일 수집에 꼭 넣어야 할 사정이 생기면 그때 16:20~16:30 으로 옮긴다.
+  { fn: "partnerCollectOrdersSilent_",                   h: 15, m: 0,  label: "발주 수집 + 판매현황 갱신 (3회전)" },
+  { fn: "partnerPushOrdersToExclusiveFormsSilent_",      h: 15, m: 40, label: "대리공급 Push + 우편번호 (3회전)" },
 
   // ─── 송장 처리 (★ 2026-08-10: 냅킨 16:00 → 송장수집 16:05) ───
   { fn: "_gmi_triggerFetchNKInvoice_",                   h: 16, m: 0,  label: "냅킨코리아 Gmail 송장수집" },
   { fn: "_trigger_fetchInvoices_",                       h: 16, m: 5,  label: "송장 수집" },
   { fn: "_trigger_pushInvoices_",                        h: 16, m: 20, label: "송장 배포" },
 
-  // ─── 저녁: Supabase + 마감 (★ 2026-08-03: 시각 변경, 당일 건 포함) ───
-  { fn: "_trigger_syncDb_",                              h: 17, m: 0,  label: "발주허브-DB + 협력업체-DB 동기화 [Supabase]" },
+  // ─── 저녁: 구매입력 → DB 동기화 (★ 2026-08-31: 두 개를 하나로 묶음) ───
+  //   전에는 17:00 동기화 / 17:30 구매입력 으로 따로 돌았고 순서도 뒤집혀 있었다.
+  //   구글 시간 트리거는 nearMinute 이 ±15분이라 따로 두면 순서가 어긋날 수 있다.
+  //   한 함수로 묶어 구매입력 → 동기화 순서를 보장한다. 트리거 자리도 하나 아낀다.
+  { fn: "runEveningPurchaseAndSync",                     h: 17, m: 0,  label: "당일 구매입력 → DB 동기화 [Supabase]" },
   { fn: "_pep_unifiedDailyArchiveScheduled_",            h: 22, m: 0,  label: "통합 일일마감" },
   // ★ 2026-08-25: 일일마감(22:00) 이후, 마감 정리(23:00·23:30)가 임시기록을 비우기 전에
   //   통합조회를 통째로 재생성한다. CS는 이 탭 하나만 읽는다.

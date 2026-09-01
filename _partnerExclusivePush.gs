@@ -680,34 +680,45 @@ function applyInvoiceMatches(fileId, matchesJson) {
 function getExclusiveFormDataForDownload(fileId) {
   try {
     var ss = SpreadsheetApp.openById(fileId);
-    var tabs = ss.getSheets();
-    var exTab = null;
-    for (var i = 0; i < tabs.length; i++) {
-      if (tabs[i].getName().indexOf("전용양식") !== -1) {
-        exTab = tabs[i]; break;
-      }
-    }
+    var exTab = _peo_findFormTab_(ss);
     if (!exTab) return { error: "전용양식 탭을 찾을 수 없습니다." };
 
     var lr = exTab.getLastRow();
     if (lr < 2) return { error: "전용양식에 데이터가 없습니다." };
-    var lc = exTab.getLastColumn();
+    var lc = Math.max(exTab.getLastColumn(), _PEO_MARK_COL_);
 
     var headers = exTab.getRange(1, 1, 1, lc).getValues()[0];
     var data = exTab.getRange(2, 1, lr - 1, lc).getValues();
 
-    // A열(송장번호) 비어있고, C열 이후 데이터가 있는 행만 필터
-    var filtered = [];
+    // 업체 양식의 실제 폭 — 머리글이 있는 마지막 열까지.
+    // AW(엑셀발주 표시)·AX(고유ID)는 우리 내부 열이라 엑셀에 넣지 않는다.
+    // 부원처럼 양식 중간에 빈 머리글이 있는 업체가 있으므로
+    // "첫 빈칸"이 아니라 "마지막 값 있는 칸"을 기준으로 잡는다.
+    var formEnd = 2;
+    for (var hi = 2; hi < Math.min(headers.length, _PEO_MARK_COL_ - 1); hi++) {
+      if (String(headers[hi] || "").trim()) formEnd = hi;
+    }
+
+    var out = [];        // 엑셀에 들어갈 값 (C열 ~ 양식 끝)
+    var rowNums = [];    // 전용양식 시트 행번호 — 나중에 표시를 찍으려면 필요하다
+    var marks = [];      // 이미 내보낸 시각 ("" 이면 미발주)
+    var waiting = 0;
     for (var di = 0; di < data.length; di++) {
-      var invoice = String(data[di][0] || "").trim();
-      // 송장번호 있으면 이미 발주 완료 → 제외
-      if (invoice) continue;
-      // C열(index 2) 이후 값이 하나라도 있으면 포함
+      // 송장이 있으면 발주가 끝나 마감으로 갈 행이다 — 목록에서 뺀다
+      if (String(data[di][0] || "").trim()) continue;
+
+      // C열 이후에 값이 하나라도 있어야 실제 주문 행이다
       var hasData = false;
-      for (var ci = 2; ci < data[di].length; ci++) {
+      for (var ci = 2; ci <= formEnd; ci++) {
         if (String(data[di][ci] || "").trim()) { hasData = true; break; }
       }
-      if (hasData) filtered.push(data[di].slice(2)); // C열부터
+      if (!hasData) continue;
+
+      var mk = String(data[di][_PEO_MARK_COL_ - 1] || "").trim();
+      out.push(data[di].slice(2, formEnd + 1));
+      rowNums.push(di + 2);
+      marks.push(mk);
+      if (!mk) waiting++;
     }
 
     // 거래처명
@@ -715,15 +726,19 @@ function getExclusiveFormDataForDownload(fileId) {
     try {
       var st = ss.getSheetByName("설정");
       if (st) vendorName = String(st.getRange("B5").getValue() || "").trim();
-    } catch(e) {}
+    } catch (e) {}
     if (!vendorName) vendorName = ss.getName().replace("[협력업체] ", "");
 
     return {
-      headers: headers.slice(2).map(function(h) { return String(h || ""); }),
-      data: filtered,
+      headers: headers.slice(2, formEnd + 1).map(function (h) { return String(h || ""); }),
+      data: out,
+      rowNums: rowNums,
+      marks: marks,
       vendorName: vendorName,
       total: data.length,
-      filtered: filtered.length
+      filtered: out.length,
+      waiting: waiting,
+      exported: out.length - waiting
     };
   } catch (e) {
     return { error: e.message };
@@ -1267,6 +1282,67 @@ function _pep_loadAliasMap_() {
 // ─────────────────────────────────────────────────────
 // ★ 2026-07-17 (H3): ScriptLock 래퍼 — 트리거(09:20/14:20)와 수동 실행이
 //   동시에 돌면 같은 주문이 전용양식에 중복 Push되는 사고 방지
+/**
+ * ── 푸시 회차 도장 ──────────────────────────────────
+ *  전용양식 B열(이슈)에 "MMdd-차수" 를 찍는다. 예: 0901-1
+ *
+ *  ★ 왜 필요한가 ★
+ *    같은 날 오전·오후 여러 차례 푸시하는데, 전용양식만 보면 어느 행이
+ *    몇 차에 들어온 건지 알 수 없다. 업체도 우리도 구분이 안 된다.
+ *
+ *  ★ 왜 B열(이슈)인가 ★
+ *    업체가 보는 칸이라 눈에 바로 띈다. 업체가 이슈를 적으면 도장 뒤에
+ *    덧붙이거나 지우고 쓰면 되고, 수집 쪽은 도장을 떼고 읽는다
+ *    (_pep_stripPushStamp_).
+ *
+ *  차수는 스크립트 속성에 날짜별로 센다. 자동 3회전이든 수동이든
+ *  "이번 실행 = 다음 번호" 로 단순하게 센다.
+ */
+var _PEP_PUSH_STAMP_ = "";
+
+/** 도장 형식 — 이슈 수집 쪽(_partnerOrders.gs)도 이 규칙을 본다 */
+var _PEP_PUSH_STAMP_RE_ = /^\s*\d{4}-\d{1,2}\s*/;
+
+function _pep_nextPushStamp_() {
+  var now = new Date();
+  var ymd = Utilities.formatDate(now, "Asia/Seoul", "yyyyMMdd");
+  var key = "PEP_PUSH_ROUND_" + ymd;
+  var n = 1;
+  try {
+    var props = PropertiesService.getScriptProperties();
+    n = parseInt(props.getProperty(key) || "0", 10);
+    n = (n > 0 ? n : 0) + 1;
+    props.setProperty(key, String(n));
+
+    // 지난 날짜 키 정리 — 안 지우면 속성이 무한히 쌓인다
+    var all = props.getProperties();
+    for (var k in all) {
+      if (k.indexOf("PEP_PUSH_ROUND_") !== 0) continue;
+      if (k.substring(15) < ymd) props.deleteProperty(k);
+    }
+  } catch (e) {
+    Logger.log("[PEP_STAMP] 회차 계산 실패 → 1차로 진행: " + e.message);
+    n = 1;
+  }
+  return Utilities.formatDate(now, "Asia/Seoul", "MMdd") + "-" + n;
+}
+
+/**
+ * 이슈 문자열에서 회차 도장을 떼어낸다.
+ * "0901-1"          → ""            (업체가 쓴 게 없다)
+ * "0901-1 재고없음"  → "재고없음"
+ * "0901-2\n품절"     → "품절"
+ */
+function _pep_stripPushStamp_(s) {
+  var lines = String(s == null ? "" : s).split(/\r?\n/);
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i].replace(_PEP_PUSH_STAMP_RE_, "").trim();
+    if (ln) out.push(ln);
+  }
+  return out.join("\n").trim();
+}
+
 function partnerPushOrdersToExclusiveForms(silent) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) {
@@ -1278,6 +1354,9 @@ function partnerPushOrdersToExclusiveForms(silent) {
     return;
   }
   try {
+    // 이번 실행분 전체가 같은 도장을 쓴다 — 업체별로 번호가 갈리면 안 된다
+    _PEP_PUSH_STAMP_ = _pep_nextPushStamp_();
+    Logger.log("[PEP_STAMP] 이번 푸시 회차: " + _PEP_PUSH_STAMP_);
     _pep_pushCore_(silent);
   } finally {
     try { _pep_zipCacheSave_(); } catch (_) {} // ★ M4: 우편번호 영구 캐시 저장
@@ -1618,6 +1697,8 @@ function _pep_pushCore_(silent) {
 
     // A(0) 강제 비워둠 — 송장번호는 업체 직접 기입 (전 업체 공통)
     outRow[0] = ""; // 송장번호: 업체 직접 기입
+    // B(1) 회차 도장 — 어느 차수에 들어온 행인지 업체도 우리도 보이게
+    if (_PEP_PUSH_STAMP_) outRow[1] = _PEP_PUSH_STAMP_;
     // B(1) 이슈 — ★ 2026-07-07: 적요→이슈 변경 (고유ID는 AX열에 별도 기입)
     // ★ AX열(index 49) — 원본 고유ID 그대로 (변형·접미사 없음)
     var _pepUid_ = _rowUid_;
@@ -3761,6 +3842,35 @@ var _PEP_VENDOR_CARRIER_ = {
   TY: "로젠택배",   // 태양
   HP: "롯데택배",   // 하나팩
   HU: "로젠택배",   // 후아코리아
+};
+
+// ─────────────────────────────────────────────────────
+//  접두 → 업체명
+//
+//  위 택배사 맵의 주석에만 있던 업체명을 쓸 수 있는 값으로 옮겼다.
+//  구매입력 변환이 임시기록 W열(접두)로 거래처를 찾을 때 쓴다.
+//
+//  운영 SSOT 는 「업체_택배사」탭(A 접두 | B 업체명)이다. 여기는 폴백일 뿐이라
+//  신규 업체는 탭에 적으면 되고 코드를 고칠 필요가 없다.
+// ─────────────────────────────────────────────────────
+var _PEP_VENDOR_NAME_ = {
+  AP: "올팩",
+  BW: "부원",
+  GW: "그린우드",
+  JT: "준테크",
+  HR: "뉴파츠",
+  NK: "냅킨코리아", // 「업체_택배사」탭 표기에 맞춘다 (넵킨 아님)
+  AJ: "아주팩",
+  IW: "인터웍스",
+  TY: "태양",
+  YS: "와이에스",
+  KR: "코라마",
+  HU: "후아코리아",
+  OC: "부엉이커피",
+  LG: "로엔그린",
+  JM: "제이엠",
+  SW: "선우",
+  HP: "하나팩",
 };
 
 // ─────────────────────────────────────────────────────

@@ -66,6 +66,26 @@ function registerPartnerMenu_() {
         .addItem("🧪 명세서 사전점검", "partnerDiagnoseStatementReconcile")
         .addItem("🧪 Gmail 미처리 점검", "partnerDiagnoseStatementGmail")
     )
+    // 「명세서 정리」는 **받은** 명세를 대사하고,
+    // 「거래명세표 발행」은 우리가 **보낼** 명세를 만든다. 방향이 반대다.
+    .addSubMenu(
+      ui.createMenu("🧾 거래명세표 발행")
+        .addItem("🗂️ 마감탭에서 골라 발행", "partnerOpenTaxStatementPicker")
+        .addItem("🖱️ 선택한 행으로 발행 (현재 탭)", "partnerIssueTaxStatementFromSelection")
+        .addItem("📅 날짜 구간으로 발행 (현재 파일)", "partnerIssueTaxStatementByDateRange")
+        .addItem("📄 월 단위 발행 (현재 파일)", "partnerIssueTaxStatementHere")
+        .addSeparator()
+        .addItem("📤 전체 거래처 일괄 발행 + 메일", "partnerIssueTaxStatementsAll")
+        .addItem("🧪 거래명세표 사전점검", "partnerDiagnoseTaxStatement")
+        .addSeparator()
+        .addItem("⚙️ 설정 탭 생성 (허브)", "partnerCreateTaxStatementTabs")
+        .addItem("🔄 거래처 목록 동기화", "partnerSyncTaxStatementVendors")
+        // 사업자정보 손입력을 줄이는 3단계 — 코드 채우기 → 진단 → 자동 채우기
+        .addItem("   └ ① 거래처코드 채우기 (업체 설정탭에서)", "partnerFillVendorCustCodes")
+        .addItem("   └ ② 🧪 이카운트 거래처 조회 진단", "partnerProbeEcountCustomers")
+        .addItem("   └ ③ 🏢 이카운트에서 사업자정보 채우기", "partnerFillVendorInfoFromEcount")
+        .addItem("♻️ 일괄 발행 진행기록 초기화", "partnerResetTaxStatementProgress")
+    )
     .addSubMenu(
       ui.createMenu("📋 마감탭 정리")
         .addItem("📦 대리판매 발주 마감이동", "partnerArchiveToMonthlySettle")
