@@ -40,6 +40,7 @@ function registerPartnerMenu_() {
     .addItem("   └ 📥 사방넷 송장대량등록 엑셀 저장", "partnerExportSabangnetBulkExcel")
     .addItem("   └ 📬 송장매칭/엑셀저장", "openInvoiceMatchSidebar")
     .addItem("   └ 🔁 중복 발주 점검", "partnerCheckDuplicateOrders")
+    .addItem("   └ 🛬 푸시 착지 확인", "partnerVerifyPushLanded")
     .addItem("   └ 📧 냅킨코리아 Gmail 송장 수집", "partnerFetchInvoiceFromGmail_NK_Manual")
     .addItem("6️⃣ 폐기송장 적용", "partnerApplyVoidedInvoicesOwner")
     .addItem("7️⃣ 대리판매업체로 송장 배포", "partnerPushInvoicesOwner")

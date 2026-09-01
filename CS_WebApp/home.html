@@ -6196,22 +6196,12 @@
        페이지를 여는 사람에게만 닿고, 열어둔 화면은 옛 HTML 을 계속 돌린다.
        그래서 20초 pulse 에 빌드 번호를 얹어 스스로 알아채게 했다.
 
-       알아챈 뒤에도 곧바로 새로고침하지 않는다.
-       글자칸은 임시저장이 받쳐 주지만 사진은 File 객체라 못 받는다.
-       잃을 게 없을 때만 조용히 새로고침하고, 아니면 알림 줄로 기다린다.
+       알아챈 뒤에는 알림 줄만 띄우고 기다린다. 자동으로 새로고침하지 않는다 —
+       하려다 흰 화면 사고를 냈다. 이유는 csApplyNewBuild 주석에 적어 뒀다.
        ══════════════════════════════════════════════════ */
 
     var CS_BUILD_SEEN = null;
     var CS_NEW_BUILD = false;
-    var CS_BUILD_NOTICED = false;   // 한 틱은 알림만 띄우고 참는다 (갑자기 화면이 튀지 않게)
-
-    /** 어디든 입력칸에 커서가 있는가 */
-    function csFocusedAnywhere() {
-      var a = document.activeElement;
-      if (!a) return false;
-      var t = String(a.tagName || '').toUpperCase();
-      return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || !!a.isContentEditable;
-    }
 
     /** 아직 못 올린 사진이 하나라도 있는가 */
     function csStagedPhotosAny() {
@@ -6229,16 +6219,6 @@
       return false;
     }
 
-    /* 통째로 새로고침해도 잃을 게 없는가.
-       패널만 다시 그리는 것(csBoardBusy)보다 기준이 높다 — 화면 전체가 날아가기 때문이다 */
-    function csReloadSafe() {
-      if (csAnyModalOpen()) return false;
-      if (csFocusedAnywhere()) return false;
-      if (csStagedPhotosAny()) return false;
-      if (csBoardBusy() || csRetBusy()) return false;
-      return true;
-    }
-
     function setBuildBar(on) {
       var el = document.getElementById('csBuildBar');
       if (el) el.classList.toggle('on', !!on);
@@ -6252,20 +6232,25 @@
       CS_NEW_BUILD = true;
     }
 
-    /* 매 틱 불린다. 될 때까지 20초마다 다시 노린다 */
+    /* 매 틱 불린다. 알림 줄만 띄우고, 실제 이동은 사람이 누를 때 한다.
+       자동으로 못 하는 이유가 있다 (2026-09-01 흰 화면 사고):
+         이 HTML 은 googleusercontent.com 샌드박스 iframe 안에서 돈다.
+         location.reload() 는 앱 주소(/exec)가 아니라 그 iframe 의 일회성
+         임시 URL 을 다시 부르고, 재요청이 안 되는 주소라 흰 화면이 남았다.
+       제대로 하려면 최상위 프레임을 /exec 로 보내야 하는데(csGoTo),
+       크로스 오리진 top 이동은 사용자 조작이 있어야만 허용된다.
+       그래서 "자동"은 애초에 불가능하다. 누르게 하는 것이 유일한 길이다. */
     function csApplyNewBuild() {
       if (!CS_NEW_BUILD) return;
       setBuildBar(true);
-      // 처음 한 번은 알림만 띄운다. 예고 없이 화면이 새로 뜨면 그게 더 놀랍다
-      if (!CS_BUILD_NOTICED) { CS_BUILD_NOTICED = true; return; }
-      if (csReloadSafe()) location.reload();
     }
 
     /** 알림 줄을 눌렀을 때 — 못 올린 사진이 있으면 먼저 확인한다 */
     function csForceReload() {
       if (csStagedPhotosAny() &&
           !confirm('아직 올리지 않은 사진이 있습니다.\n새로고침하면 사라집니다. 계속할까요?')) return;
-      location.reload();
+      // location.reload() 를 쓰면 안 된다 — 위 주석 참고. 최상위 프레임을 옮긴다.
+      csGoTo(CS_EXEC_URL);
     }
 
     function setPulseBar(which, show, label) {

@@ -1828,10 +1828,21 @@ function _pep_pushCore_(silent) {
 
       // ★ 전화번호 열 텍스트 서식 일괄 적용 (배치 전체 범위)
       var bDirectMap = _PEP_VENDOR_DIRECT_MAP_[bpfx] || null;
+      // ★ 서식 지정은 따로 감싼다 (2026-09-01)
+      //   Apps Script 는 서식 적용을 미뤘다가 flush 때 실제로 보낸다. 그래서
+      //   바깥 try 안에 있어도 오류가 이 블록 밖에서 터져 Push 전체를 죽였다.
+      //   여기서 flush 로 결과를 확정지어야 오류를 여기서 잡는다.
+      //   원인은 대상 열에 구글시트 「열 유형」이 걸린 것 — 서식은 못 바꿔도
+      //   값은 쓸 수 있으므로, 실패해도 발주는 계속 간다.
       if (bDirectMap && bDirectMap.phoneTargetCols) {
-        for (var ptci2 = 0; ptci2 < bDirectMap.phoneTargetCols.length; ptci2++) {
-          var phCol2 = bDirectMap.phoneTargetCols[ptci2];
-          bTab.getRange(bStartRow, phCol2 + 1, bRows.length, 1).setNumberFormat("@");
+        try {
+          for (var ptci2 = 0; ptci2 < bDirectMap.phoneTargetCols.length; ptci2++) {
+            var phCol2 = bDirectMap.phoneTargetCols[ptci2];
+            bTab.getRange(bStartRow, phCol2 + 1, bRows.length, 1).setNumberFormat("@");
+          }
+          SpreadsheetApp.flush();
+        } catch (eFmt2) {
+          errorLogs.push("[" + bpfx + "] 전화번호 열 서식 지정 실패(열 유형 적용됨?) — 값은 그대로 기록합니다: " + eFmt2.message);
         }
       }
 
@@ -2425,15 +2436,21 @@ function partnerPushFromTempTabToExclusive() {
         batchData.push(r);
       }
       var bDirectMap = _PEP_VENDOR_DIRECT_MAP_[bpfx] || null;
-      if (bDirectMap && bDirectMap.phoneTargetCols) {
-        for (var ptci2 = 0; ptci2 < bDirectMap.phoneTargetCols.length; ptci2++) {
-          var phCol2 = bDirectMap.phoneTargetCols[ptci2];
-          bTab.getRange(bStartRow, phCol2 + 1, bRows.length, 1).setNumberFormat("@");
+      // ★ 서식 지정 분리 (2026-09-01) — 지연 적용된 오류가 Push 전체를 죽이지 않게
+      try {
+        if (bDirectMap && bDirectMap.phoneTargetCols) {
+          for (var ptci2 = 0; ptci2 < bDirectMap.phoneTargetCols.length; ptci2++) {
+            var phCol2 = bDirectMap.phoneTargetCols[ptci2];
+            bTab.getRange(bStartRow, phCol2 + 1, bRows.length, 1).setNumberFormat("@");
+          }
         }
-      }
-      // ★ 2026-06-30: JM 우편번호(L열=12) 텍스트 형식 — 앞 0 보존
-      if (bpfx === "JM") {
-        bTab.getRange(bStartRow, 12, bRows.length, 1).setNumberFormat("@");
+        // ★ 2026-06-30: JM 우편번호(L열=12) 텍스트 형식 — 앞 0 보존
+        if (bpfx === "JM") {
+          bTab.getRange(bStartRow, 12, bRows.length, 1).setNumberFormat("@");
+        }
+        SpreadsheetApp.flush();
+      } catch (eFmt3) {
+        errorLogs.push("[" + bpfx + "] 열 서식 지정 실패(열 유형 적용됨?) — 값은 그대로 기록합니다: " + eFmt3.message);
       }
       bTab.getRange(bStartRow, 1, bRows.length, maxCols).setValues(batchData);
       var bDmCols = bRows[0].dmCols || maxCols;
@@ -2876,6 +2893,7 @@ function _pep_initVendorCache_(pfx, fileInfo, directMap) {
           tab
             .getRange(2, pcol, Math.max(tab.getMaxRows() - 1, 1), 1)
             .setNumberFormat("@");
+          SpreadsheetApp.flush(); // 지연 적용 오류를 이 try 안에서 확정짓는다
         } catch (eFmt) {}
       }
     }
