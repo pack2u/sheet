@@ -19,14 +19,13 @@ var _CS_FAV_PROP_ = "CS_FAVORITES";
 
 /**
  * 기본 목록.
- * 코드 안에서 ID 가 확인되는 시트만 넣었다. 사방넷·이카운트처럼 주소를
- * 확인하지 못한 것은 일부러 비워 뒀다 — 틀린 링크를 넣어 두는 쪽이 더 나쁘다.
- * 스크립트 속성으로 추가하면 된다.
+ * 사방넷·이카운트처럼 주소를 확인하지 못한 것은 일부러 비워 뒀다 —
+ * 틀린 링크를 넣어 두는 쪽이 더 나쁘다. 스크립트 속성으로 추가하면 된다.
  */
 var _CS_FAV_DEFAULT_ = [
   {
     icon: "📊",
-    name: "상품정보 시트",
+    name: "상품정보시트",
     url: "https://docs.google.com/spreadsheets/d/1Lz-ykUAQBpeEnZU1T_qdJeX9d9L10h6z6qYwHQna2QE/edit",
   },
   {
@@ -38,6 +37,17 @@ var _CS_FAV_DEFAULT_ = [
     icon: "📖",
     name: "CS 매뉴얼 DB",
     url: "https://docs.google.com/spreadsheets/d/1LlNX-spTs-2WgWD8HEha90PYU0m7s8MqFh84vy_Fi_Q/edit",
+  },
+  {
+    icon: "🚚",
+    name: "롯데 ALPS",
+    url: "https://partner.alps.llogis.com/main/pages/sec/authentication",
+  },
+  {
+    // 계정 목록 시트. 링크만 둔다 — 열람 권한은 시트 공유 설정이 정한다.
+    icon: "🔑",
+    name: "아이디·패스워드",
+    url: "https://docs.google.com/spreadsheets/d/1xziVmMIsQfwyDwleNmB0haRsiE5t24aMu2SHkuI_34U/edit?gid=0#gid=0",
   },
 ];
 

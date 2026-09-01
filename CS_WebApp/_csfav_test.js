@@ -16,10 +16,11 @@ vm.runInContext(src, ctx);
 let pass = 0, fail = 0;
 const ok = (name, cond) => { cond ? (pass++, console.log('  ok  ' + name)) : (fail++, console.log('  FAIL ' + name)); };
 const names = () => ctx.csGetFavorites().items.map(i => i.name);
+const DEF = ctx._CS_FAV_DEFAULT_.length;   // 기본 목록이 늘어도 테스트가 안 깨지게
 
 console.log('\n[속성이 없으면 코드 기본 목록]');
 prop = null;
-ok('기본 3개가 나온다', ctx.csGetFavorites().items.length === 3);
+ok('기본 목록이 통째로 나온다', ctx.csGetFavorites().items.length === DEF);
 ok('전부 https 링크', ctx.csGetFavorites().items.every(i => i.url.indexOf('https://') === 0));
 ok('출처를 코드 기본이라고 말한다', ctx._cs_fav_list_().from.indexOf('코드 기본') === 0);
 
@@ -30,10 +31,10 @@ ok('출처를 속성이라고 말한다', ctx._cs_fav_list_().from.indexOf('스�
 
 console.log('\n[깨진 설정이 바를 죽이지 않는다]');
 prop = '{이건 JSON 이 아니다';
-ok('JSON 이 깨지면 기본 목록으로 돌아간다', ctx.csGetFavorites().items.length === 3);
+ok('JSON 이 깨지면 기본 목록으로 돌아간다', ctx.csGetFavorites().items.length === DEF);
 ok('출처에 깨졌다고 적어 준다', ctx._cs_fav_list_().from.indexOf('깨졌음') !== -1);
 prop = '[]';
-ok('빈 배열도 기본 목록으로 돌아간다', ctx.csGetFavorites().items.length === 3);
+ok('빈 배열도 기본 목록으로 돌아간다', ctx.csGetFavorites().items.length === DEF);
 
 console.log('\n[쓸 수 없는 항목은 걸러낸다]');
 prop = JSON.stringify([
