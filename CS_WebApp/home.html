@@ -691,6 +691,12 @@
       color: var(--text-secondary); font-size: 11px; font-family: inherit; font-weight: 700;
     }
     .cs-fav-back:hover { border-color: var(--accent-green); color: var(--accent-green); }
+    /* 한번에 열기는 탭을 여러 개 여는 큰 동작이라 오른쪽 끝에 따로 세운다 */
+    .cs-fav-back.openall {
+      margin-left: auto; color: var(--accent-green);
+      border-color: rgba(52, 199, 123, 0.35);
+    }
+    .cs-fav-back.openall:hover { background: rgba(52, 199, 123, 0.12); }
     .cs-fav-grid { display: flex; flex-wrap: wrap; gap: 6px; }
 
     /* 좁은 화면에서 70% 는 너무 좁다. 거의 꽉 채우고 스크롤로 넘긴다 */
@@ -7688,6 +7694,9 @@
       if (!items || !items.length) { wrap.style.display = 'none'; return; }
 
       CS_FAV_ITEMS = items;
+      // 목록을 새로 받았으면 파고들던 경로는 더 이상 유효하지 않다.
+      // 안 지우면 엉뚱한 폴더가 열려 있거나 빈 패널이 남는다.
+      csFavCloseMenu();
       var h = '';
       for (var i = 0; i < items.length; i++) h += csFavChip(items[i] || {}, i, false);
       bar.innerHTML = h;
@@ -7720,10 +7729,15 @@
       if (!menu || !wrap || !node) { csFavCloseMenu(); return; }
 
       var kids = node.children || [];
+      var links = csFavDirectLinks(node);
       var h = '<div class="cs-fav-menu-head">' +
               '<button type="button" class="cs-fav-back" data-back="1">‹ 뒤로</button>' +
-              '<span>' + esc(node.name || '') + ' · ' + kids.length + '개</span></div>' +
-              '<div class="cs-fav-grid">';
+              '<span>' + esc(node.name || '') + ' · ' + kids.length + '개</span>' +
+              (links.length >= 2
+                ? '<button type="button" class="cs-fav-back openall" data-openall="1">' +
+                  '한번에 열기 (' + links.length + ')</button>'
+                : '') +
+              '</div><div class="cs-fav-grid">';
       for (var i = 0; i < kids.length; i++) h += csFavChip(kids[i] || {}, i, true);
       menu.innerHTML = h + '</div>';
       menu.classList.add('on');
@@ -7738,6 +7752,38 @@
       else if (CS_FAV_PATH.length === 1 && CS_FAV_PATH[0] === idx) { csFavCloseMenu(); return; }
       else CS_FAV_PATH = [idx];
       csFavPaintMenu();
+    }
+
+    /** 지금 보고 있는 폴더의 '직접' 링크들. 하위 폴더 안까지 파고들지 않는다 */
+    function csFavDirectLinks(node) {
+      var out = [];
+      var kids = (node && node.children) || [];
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i] && kids[i].url) out.push(kids[i].url);
+      }
+      return out;
+    }
+
+    /* 폴더 안 링크를 한 번에 연다.
+       하위 폴더까지 따라 들어가지는 않는다 — 협력업체 시트 전체는 56개이고
+       그걸 한 번에 열면 브라우저가 못 버틴다. 보고 있는 목록만 연다.
+       업체별 시트를 아침에 쭉 훑을 때가 이 기능의 쓰임새다. */
+    function csFavOpenAll() {
+      var urls = csFavDirectLinks(csFavNodeAt(CS_FAV_PATH));
+      if (!urls.length) return;
+      if (urls.length > 5 && !confirm(urls.length + '개를 새 탭으로 엽니다. 계속할까요?')) return;
+
+      var blocked = 0;
+      for (var i = 0; i < urls.length; i++) {
+        // 팝업 차단에 걸리면 null 이 온다. 몇 개가 막혔는지 알려 줘야
+        // "일부만 열렸다"를 앱 오작동으로 오해하지 않는다.
+        if (!window.open(urls[i], '_blank', 'noopener')) blocked++;
+      }
+      if (blocked) {
+        toast(blocked + '개가 팝업 차단에 막혔습니다 · 주소창의 차단 아이콘에서 허용해 주세요', 4200);
+      } else {
+        toast(urls.length + '개를 새 탭으로 열었습니다', 2000);
+      }
     }
 
     /** 뒤로 — 한 겹 위로. 맨 위에서 누르면 닫는다 */
@@ -7756,6 +7802,7 @@
         var t = ev.target;
         if (!t || !t.closest) return;
 
+        if (t.closest('[data-openall]')) { csFavOpenAll(); return; }
         if (t.closest('[data-back]')) { csFavBack(); return; }
 
         var f = t.closest('[data-folder]');
