@@ -8,15 +8,27 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
-    :root {
-      --bg-primary: #0f1117;
-      --bg-secondary: #1a1d28;
-      --bg-card: #222533;
-      --bg-card-hover: #2a2e42;
-      --text-primary: #f0f0f5;
-      --text-secondary: #8b8fa3;
-      --text-muted: #5c6078;
-      --accent-blue: #4a90d9;
+    /* ── 다크 기본값 (팔레트보다 먼저 깔린다) ── */
+    html {
+      background: #111111;
+      color-scheme: dark; /* 스크롤바·기본 폼 컨트롤까지 어둡게 */
+    }
+    ::selection { background: rgba(173, 173, 173, 0.30); color: #f0f0f0; }
+    * { scrollbar-width: thin; scrollbar-color: #393939 transparent; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #393939; border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: #494949; }
+
+:root {
+      --bg-primary: #111111;
+      --bg-secondary: #1d1d1d;
+      --bg-card: #252525;
+      --bg-card-hover: #2f2f2f;
+      --text-primary: #f0f0f0;
+      --text-secondary: #909090;
+      --text-muted: #616161;
+      --accent: #757575;
       --accent-green: #34c77b;
       --accent-red: #e74c5f;
       --accent-orange: #f0a030;
@@ -102,8 +114,8 @@
     .fallback-btn:active { transform: scale(0.96); }
     /* 두 번째 수단(사진 촬영)은 주된 버튼보다 눈에 덜 띄게 */
     .fallback-btn-sub {
-      margin-top: 10px; background: #2c2f3a; color: #d6d9e3;
-      border: 1px solid #2f3342;
+      margin-top: 10px; background: #2f2f2f; color: #d9d9d9;
+      border: 1px solid #333333;
     }
     .file-input-hidden { display: none; }
     .camera-error-detail {
@@ -278,7 +290,7 @@
     .loading-overlay {
       display: none; position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(15,17,23,0.85); backdrop-filter: blur(4px);
+      background: rgba(17, 17, 17,0.85); backdrop-filter: blur(4px);
       z-index: 200; align-items: center; justify-content: center;
       flex-direction: column; gap: 16px;
     }

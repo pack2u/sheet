@@ -18,6 +18,7 @@
  *  쓰는 쪽:
  *    csDecodeImageFile(file, {
  *      minDigits: 8,                       // 송장번호로 인정할 최소 자릿수
+ *      fast: true,                         // 바코드 시도를 2판으로 줄인다(현장 촬영용)
  *      ocr: true,                          // 4단계 서버 OCR 허용
  *      onStage: function(msg) { ... }      // 진행 상황 표시
  *    }).then(function(r) {
@@ -298,13 +299,23 @@ function csDecodeImageFile(file, opts) {
     .then(function (im) {
       img = im;
       // 큰 판 → 회전 → 대비 강화 순으로 후보를 만든다. 앞쪽이 성공률이 높다.
-      [[1600, 0], [2200, 0], [1100, 0], [1600, 90], [1600, 270]].forEach(function (p) {
+      //
+      //  fast 모드 — 현장 촬영용. 판을 2개로 줄인다.
+      //  6판 × 2엔진이면 12번 시도라 폰에서 10초 넘게 걸린다. 라벨이 멀리 찍혀
+      //  바코드가 뭉개진 사진은 판을 늘려도 어차피 안 읽히고 기다리기만 한다.
+      //  그런 사진은 OCR 이 답이라 바코드는 빨리 포기하는 편이 낫다.
+      var plan = opts.fast
+        ? [[2200, 0], [2200, 90]]
+        : [[1600, 0], [2200, 0], [1100, 0], [1600, 90], [1600, 270]];
+      plan.forEach(function (p) {
         var c = csDrawCanvas_(img, p[0], p[1]);
         if (c) cands.push(c);
       });
       if (!cands.length) throw new Error('이미지를 처리할 수 없습니다');
-      var b = csBoostCanvas_(cands[0]);
-      if (b) cands.push(b);
+      if (!opts.fast) {
+        var b = csBoostCanvas_(cands[0]);
+        if (b) cands.push(b);
+      }
 
       stage('바코드 찾는 중…');
       return csTryDetector_(cands);

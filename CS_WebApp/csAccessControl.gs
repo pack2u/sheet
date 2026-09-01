@@ -19,6 +19,7 @@ var _CS_AC_DEFAULT_ALLOWED_ = [
   "jskim721210@gmail.com",
   "polo115419@gmail.com",
   "siot5ta@gmail.com",
+  "rkdtjgml486@gmail.com",
 ];
 
 var _CS_AC_PROP_ = "CS_ALLOWED_EMAILS";
@@ -31,6 +32,7 @@ var _CS_AC_PROP_ = "CS_ALLOWED_EMAILS";
  */
 var _CS_AC_DEFAULT_NAMES_ = {
   "pack2u@pack2u.co.kr": "팩투유",
+  "rkdtjgml486@gmail.com": "강서희",
 };
 
 var _CS_AC_NAME_PROP_ = "CS_ACCOUNT_NAMES";
@@ -153,7 +155,49 @@ function _cs_ac_check_() {
   }
   return {
     allowed: true, email: email, name: _cs_ac_displayName_(email), reason: "",
+    logistics: _cs_ac_isLogistics_(email),
   };
+}
+
+/**
+ * 물류팀 계정인가.
+ *
+ * 권한을 나누려는 게 아니다 — CS 워크스페이스는 전부 열려 있다.
+ * 이 값은 **모바일에서 어느 화면으로 먼저 떨어질지**만 정한다.
+ * 물류팀은 창고에서 촬영부터 하므로 4번째(입고촬영) 패널로 보낸다.
+ *
+ * 배포 없이 바꾸려면 스크립트 속성 CS_LOGISTICS_EMAILS (쉼표 구분).
+ */
+var _CS_AC_LOGISTICS_PROP_ = "CS_LOGISTICS_EMAILS";
+var _CS_AC_DEFAULT_LOGISTICS_ = [
+  "gimdongbin5@gmail.com",
+  "siot5ta@gmail.com", // 테스트용 — 빼려면 이 줄만 지우면 된다
+];
+
+function _cs_ac_isLogistics_(email) {
+  var me = _cs_ac_norm_(email);
+  if (!me) return false;
+
+  var raw = "";
+  try {
+    raw = String(PropertiesService.getScriptProperties()
+      .getProperty(_CS_AC_LOGISTICS_PROP_) || "").trim();
+  } catch (eP) {}
+
+  var list = [];
+  if (raw) {
+    var parts = raw.split(/[,\s;]+/);
+    for (var i = 0; i < parts.length; i++) {
+      var one = _cs_ac_norm_(parts[i]);
+      if (one && one.indexOf("@") > 0) list.push(one);
+    }
+  }
+  if (!list.length) {
+    for (var d = 0; d < _CS_AC_DEFAULT_LOGISTICS_.length; d++) {
+      list.push(_cs_ac_norm_(_CS_AC_DEFAULT_LOGISTICS_[d]));
+    }
+  }
+  return list.indexOf(me) !== -1;
 }
 
 /**

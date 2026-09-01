@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>반품 입고 촬영</title>
+<?!= include('csFavicon'); ?>
+<style>
+  /* ── 다크 기본값 ── */
+  html { background: #111111; color-scheme: dark; }
+  ::selection { background: rgba(173,173,173,0.30); color: #f0f0f0; }
+  * { scrollbar-width: thin; scrollbar-color: #343434 transparent; box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #343434; border-radius: 8px; }
+
+  :root {
+    --bg: #111111; --bg2: #1d1d1d; --card: #252525; --card2: #2f2f2f;
+    --tx: #f0f0f0; --tx2: #909090; --tx3: #616161;
+    --ac: #757575; --acs: #c1c1c1; --acg: rgba(173,173,173,0.22);
+    --green: #34c77b; --orange: #f0a030; --red: #e74c5f;
+    --bd: rgba(255,255,255,0.07); --r: 14px;
+  }
+  body {
+    margin: 0; padding: 0 14px 40px; background: var(--bg); color: var(--tx);
+    font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans KR', sans-serif;
+    -webkit-tap-highlight-color: transparent; -webkit-font-smoothing: antialiased;
+    max-width: 620px; margin: 0 auto;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5; background: var(--bg);
+    padding: 14px 0 10px; border-bottom: 1px solid var(--bd); margin-bottom: 14px;
+  }
+  h1 { font-size: 17px; margin: 0; font-weight: 700; }
+  .sub { font-size: 12px; color: var(--tx3); margin-top: 3px; }
+
+  .shot {
+    display: block; width: 100%; padding: 22px; margin-bottom: 12px;
+    background: var(--card); border: 1px solid var(--bd); border-radius: var(--r);
+    color: var(--tx); font-size: 17px; font-weight: 700; text-align: center;
+  }
+  .shot:active { background: var(--card2); }
+  .shot .big { font-size: 30px; display: block; margin-bottom: 6px; }
+  .shot .hint { display: block; font-size: 12px; color: var(--tx3); font-weight: 400; margin-top: 6px; }
+  #fileCap { display: none; }
+
+  .card { background: var(--card); border: 1px solid var(--bd); border-radius: var(--r); padding: 14px; margin-bottom: 12px; }
+  /* 긁어서 복사할 수 있어야 한다 — 기본값에 기대지 않고 못박는다 */
+  .card, .log, .stat { -webkit-user-select: text; user-select: text; }
+  .tier { display: inline-block; padding: 4px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .tier.sure { background: rgba(52,199,123,.18); color: var(--green); }
+  .tier.maybe { background: rgba(240,160,48,.18); color: var(--orange); }
+  .tier.none { background: rgba(231,76,95,.18); color: var(--red); }
+  .inv { font-size: 22px; font-weight: 700; letter-spacing: .5px; margin: 10px 0 4px; word-break: break-all; }
+  .note { font-size: 12px; color: var(--tx2); }
+  .via { font-size: 11px; color: var(--tx3); margin-top: 2px; }
+
+  .pick { border: 1px solid var(--bd); border-radius: 10px; padding: 11px; margin-top: 8px; background: var(--bg2); }
+  .pick:active, .pick.on { border-color: var(--acs); background: var(--card2); }
+  .pick b { font-size: 14px; }
+  .pick .m { font-size: 11px; color: var(--tx3); margin-top: 3px; }
+  .pick .w { font-size: 11px; color: var(--orange); margin-top: 3px; }
+
+  .thumbs { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
+  .thumbs img { width: 62px; height: 62px; object-fit: cover; border-radius: 8px; border: 1px solid var(--bd); }
+
+  input[type=text] {
+    width: 100%; background: var(--bg2); border: 1px solid var(--bd); border-radius: 10px;
+    padding: 12px 13px; color: var(--tx); font-size: 16px; outline: none; margin-top: 8px;
+  }
+  input[type=text]:focus { border-color: var(--acs); box-shadow: 0 0 0 3px var(--acg); }
+
+  .row { display: flex; gap: 8px; margin-top: 12px; }
+  .btn { flex: 1; padding: 14px; border: 0; border-radius: 11px; font-size: 15px; font-weight: 700; color: #fff; background: var(--ac); }
+  .btn.green { background: var(--green); color: #06130b; }
+  .btn.ghost { background: transparent; border: 1px solid var(--bd); color: var(--acs); }
+  .btn:disabled { opacity: .5; }
+
+  h2 { font-size: 11px; letter-spacing: .1em; color: var(--tx3); margin: 22px 0 8px; text-transform: uppercase; }
+  .log { background: var(--card); border: 1px solid var(--bd); border-radius: var(--r); overflow: hidden; }
+  .log .r { display: flex; gap: 9px; padding: 10px 12px; border-bottom: 1px solid var(--bd); font-size: 12px; align-items: baseline; }
+  .log .r:last-child { border-bottom: 0; }
+  .log .t { color: var(--tx3); width: 38px; flex: none; }
+  .log .i { color: var(--tx); font-weight: 600; flex: none; }
+  .log .s { color: var(--tx2); margin-left: auto; text-align: right; }
+  .empty { padding: 18px; text-align: center; color: var(--tx3); font-size: 12px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    background: var(--card2); border: 1px solid var(--bd); color: var(--tx);
+    padding: 12px 18px; border-radius: 11px; font-size: 13px; z-index: 50;
+    max-width: 90%; text-align: center; display: none;
+  }
+
+  /* 보드 타일 그리드 — 반품 많은 날 20장까지 쌓인다.
+     한 줄에 하나면 세로로만 길어지고 좌우가 빈다.
+     카드를 그릴 때만 켠다(.grid) — 안내문이 타일로 찌그러지는 걸 막는다. */
+  #board.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 10px; align-items: start;
+  }
+  /* align-items 를 지정하지 않으면 stretch 라 배지가 카드 전폭으로 늘어난다 */
+  #board.grid .card {
+    margin-bottom: 0; display: flex; flex-direction: column;
+    align-items: flex-start; min-width: 0;
+  }
+  #board.grid .card > * { max-width: 100%; }
+  #board.grid .card .row.mini { align-self: stretch; }
+  #board.grid .card .note {
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden; overflow-wrap: anywhere;
+  }
+  #board.grid .card .row.mini { margin-top: auto; }
+
+  /* 보드 카드의 완료는 보조 동작 — 전폭 버튼이면 주 동작처럼 보인다 */
+  .card .row.mini { justify-content: flex-end; }
+  .card .row.mini .btn { flex: 0 0 auto; padding: 7px 16px; font-size: 12px; }
+
+  /* ── 현황 타일 ── */
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 14px; }
+  .stat { background: var(--card); border: 1px solid var(--bd); border-radius: var(--r); padding: 12px 14px; }
+  .stat b { display: block; font-size: 22px; font-weight: 700; color: var(--acs); line-height: 1.15; }
+  .stat b.g { color: var(--green); } .stat b.o { color: var(--orange); } .stat b.r { color: var(--red); }
+  .stat span { display: block; font-size: 11px; color: var(--tx3); margin-top: 3px; }
+
+  /* ── 반응형 ──
+     모바일: 촬영이 맨 위. 창고에서 폰으로 찍는 게 주 용도다.
+     PC:    보드와 현황이 주. 촬영은 왼쪽 열에 둔다.
+     DOM 순서를 촬영 → 내역 → 보드로 두면 모바일이 그대로 맞고,
+     PC 는 그리드로 두 열을 만들면 되므로 순서를 건드릴 필요가 없다. */
+  .wrap { display: grid; grid-template-columns: 1fr; gap: 0 20px; }
+
+  @media (min-width: 900px) {
+    body { max-width: 1240px; padding: 0 22px 48px; }
+    .stats { grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .stat b { font-size: 26px; }
+    .wrap { grid-template-columns: minmax(300px, 380px) 1fr; }
+    .col-left { position: sticky; top: 76px; align-self: start; }
+    .shot { padding: 26px; }
+    h2 { margin-top: 0; }
+    .col-right h2:first-child { margin-top: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>반품 입고 촬영</h1>
+  <div class="sub" id="who">물류팀 · 사진을 찍으면 송장번호를 자동으로 읽습니다</div>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="wrap">
+<div class="col-left">
+
+<button class="shot" type="button" id="btnShot">
+  <span class="big">📷</span>
+  송장·입고 사진 촬영
+  <span class="hint">촬영하면 바코드 → 글자 순서로 번호를 찾습니다</span>
+</button>
+<input type="file" id="fileCap" accept="image/*" capture="environment" multiple>
+
+<div id="result"></div>
+
+<h2>오늘 올린 내역</h2>
+<div class="log" id="log"><div class="empty">불러오는 중…</div></div>
+
+</div>
+<div class="col-right">
+
+<h2 style="display:flex;align-items:center;gap:8px">
+  물류 커뮤니티 보드
+  <button type="button" id="btnNewCard"
+    style="margin-left:auto;background:transparent;border:1px solid var(--bd);color:var(--acs);border-radius:8px;padding:5px 11px;font-size:11px">
+    글쓰기
+  </button>
+</h2>
+
+<div id="cardForm" style="display:none" class="card">
+  <input type="text" id="cTitle" placeholder="제목 (필수)">
+  <input type="text" id="cBody" placeholder="내용">
+  <input type="text" id="cLink" placeholder="연결 — 송장·주문번호·고객명 (선택)">
+  <div class="row" style="gap:6px">
+    <button class="btn ghost" type="button" data-lv="긴급">긴급</button>
+    <button class="btn ghost" type="button" data-lv="주의">주의</button>
+    <button class="btn ghost" type="button" data-lv="일반">일반</button>
+  </div>
+  <div class="row">
+    <button class="btn ghost" type="button" id="cCancel">취소</button>
+    <button class="btn" type="button" id="cSave">등록</button>
+  </div>
+</div>
+
+<div id="board"><div class="empty">불러오는 중…</div></div>
+
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<?!= include('csDecode') ?>
+
+<script>
+  var STAFF = <?= JSON.stringify(userName || staff || "") ?>;
+  var PENDING = [];   // [{dataB64, mimeType, name, url}]
+  var LAST = null;    // 최근 인식 결과
+  var PICKED = null;  // 사람이 고른 매칭 건
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (m) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m];
+    });
+  }
+  function toast(msg, ms) {
+    var t = document.getElementById("toast");
+    t.textContent = msg; t.style.display = "block";
+    clearTimeout(t._h); t._h = setTimeout(function () { t.style.display = "none"; }, ms || 2600);
+  }
+  if (STAFF) document.getElementById("who").textContent = STAFF + " · 사진을 찍으면 송장번호를 자동으로 읽습니다";
+
+  // ── 사진 축소 — 원본 그대로 올리면 용량 한도에 걸린다 ──
+  function shrink(file) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      var url = URL.createObjectURL(file);
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        var max = 1600;
+        var w = img.width, h = img.height;
+        if (Math.max(w, h) > max) {
+          var k = max / Math.max(w, h);
+          w = Math.round(w * k); h = Math.round(h * k);
+        }
+        var cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        cv.getContext("2d").drawImage(img, 0, 0, w, h);
+        var dataUrl = cv.toDataURL("image/jpeg", 0.82);
+        resolve({
+          dataB64: dataUrl.split(",")[1],
+          mimeType: "image/jpeg",
+          name: file.name || "photo.jpg",
+          url: dataUrl
+        });
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("이미지를 열 수 없습니다")); };
+      img.src = url;
+    });
+  }
+
+  document.getElementById("btnShot").addEventListener("click", function () {
+    document.getElementById("fileCap").value = "";
+    document.getElementById("fileCap").click();
+  });
+
+  document.getElementById("fileCap").addEventListener("change", function (ev) {
+    var files = Array.prototype.slice.call(ev.target.files || []);
+    if (!files.length) return;
+    handleFiles(files);
+  });
+
+  function stage(msg) {
+    document.getElementById("result").innerHTML =
+      '<div class="card"><div class="note">' + esc(msg) + '</div></div>';
+  }
+
+  function handleFiles(files) {
+    PENDING = []; LAST = null; PICKED = null;
+    stage("사진 준비 중…");
+
+    Promise.all(files.map(shrink)).then(function (list) {
+      PENDING = list;
+      stage("송장번호 인식 중…");
+      // 첫 장에서만 번호를 찾는다. 보통 첫 장이 송장 사진이다.
+      // minDigits 4 — 파손으로 일부만 읽혀도 뒷자리 매칭에 쓴다.
+      // 바코드만 빠르게 본다(fast). 여기서 ocr 을 켜지 않는 게 핵심이다 —
+      // 켜면 csDecode 안에서 Gemini 를 부르고, 8자리를 못 채우면 예외를 던져
+      // 아래 catch 가 또 부른다. 왕복 두 번이 체감 지연의 가장 큰 원인이었다.
+      return csDecodeImageFile(files[0], {
+        minDigits: 4,
+        ocr: false,
+        fast: true,
+        onStage: function (m) { if (m) stage(m); }
+      }).catch(function () {
+        // 바코드 실패 → 글자 읽기. 여기서 딱 한 번만 부른다.
+        // csDecode 를 거치지 않고 직접 불러야 8자리 미만이어도
+        // 같이 읽은 보내는분 이름·전화를 건질 수 있다.
+        stage("바코드가 안 읽혀 글자를 읽는 중…");
+        return new Promise(function (resolve) {
+          google.script.run
+            .withSuccessHandler(function (r) {
+              if (!r) { resolve(null); return; }
+              resolve({ value: String(r.invoice || ""), via: "ocr", fields: r.fields || {} });
+            })
+            .withFailureHandler(function () { resolve(null); })
+            .csOcrImageForScan(PENDING[0].dataB64, "image/jpeg");
+        });
+      });
+    }).then(function (dec) {
+      var raw = (dec && dec.value) ? dec.value : "";
+      var via = (dec && dec.via) ? dec.via : "";
+      var fields = (dec && dec.fields) ? dec.fields : {};
+      stage(raw ? "대장에서 찾는 중…" : "번호를 못 읽었습니다. 대장 확인 중…");
+      return new Promise(function (resolve) {
+        google.script.run
+          .withSuccessHandler(function (m) { resolve({ m: m, raw: raw, via: via, fields: fields }); })
+          .withFailureHandler(function () { resolve({ m: null, raw: raw, via: via, fields: fields }); })
+          .csLogisticsMatch(raw, fields);
+      });
+    }).then(function (r) {
+      LAST = {
+        raw: r.raw, via: r.via || "manual", fields: r.fields || {},
+        match: r.m || { tier: "none", digits: "", matches: [], note: "매칭 조회 실패" }
+      };
+      render();
+    }).catch(function (e) {
+      stage("처리 실패: " + (e && e.message ? e.message : e));
+    });
+  }
+
+  function render() {
+    var m = LAST.match;
+    var tier = m.tier || "none";
+    var label = tier === "sure" ? "확정" : (tier === "maybe" ? "확인 필요" : "번호 미상");
+
+    var h = '<div class="card">';
+    h += '<span class="tier ' + tier + '">' + label + '</span>';
+    h += '<div class="inv">' + esc(m.digits || "번호 없음") + '</div>';
+    h += '<div class="note">' + esc(m.note || "") + '</div>';
+    if (LAST.via) h += '<div class="via">인식 경로: ' + esc(LAST.via) + '</div>';
+
+    // 라벨에서 읽은 보내는 분 — 반품회수 라벨은 이쪽이 실제 고객이다.
+    // 번호가 깨졌을 때 현장에서 눈으로 대조할 근거가 된다.
+    var f = LAST.fields || {};
+    var who = [f.senderName, f.senderPhone].filter(function (v) { return v; }).join(" · ");
+    if (who) h += '<div class="via">라벨 보내는분: ' + esc(who) + '</div>';
+    if (f.originalInvoiceNumber) h += '<div class="via">원송장번호: ' + esc(f.originalInvoiceNumber) + '</div>';
+
+    // 사진 미리보기
+    if (PENDING.length) {
+      h += '<div class="thumbs">';
+      PENDING.forEach(function (p) { h += '<img src="' + p.url + '">'; });
+      h += '</div>';
+    }
+
+    if (tier === "sure" && m.matches.length) {
+      var s = m.matches[0];
+      h += '<div class="pick on"><b>' + esc(s.name || "-") + '</b>';
+      h += '<div class="m">' + esc(s.item || "") + '</div>';
+      h += '<div class="m">' + esc(s.matchVia) + ' · ' + esc(s.status || "") + '</div></div>';
+    } else if (tier === "maybe") {
+      h += '<div style="margin-top:12px;font-size:12px;color:var(--tx2)">해당 건을 눌러 확정하세요</div>';
+      m.matches.forEach(function (c, i) {
+        h += '<div class="pick" data-i="' + i + '"><b>' + esc(c.name || "-") + '</b>';
+        h += '<div class="m">' + esc(c.item || "") + '</div>';
+        h += '<div class="m">' + esc(c.matchVia) + ' · ' + esc(c.status || "") + '</div>';
+        if (String(c.matchVia).indexOf("원송장") === 0) h += '<div class="w">원송장 기준 매칭 — 확인 후 선택</div>';
+        h += '</div>';
+      });
+    }
+
+    // ★ 뒤 4자리 입력은 항상 보인다 ★
+    //   진행 중 반품이 백 건 안쪽이라 뒤 4자리면 대부분 유일하게 걸린다.
+    //   멀리서 찍혔거나 매직으로 덮인 라벨은 인식을 기다리는 것보다 이게 빠르다.
+    //   인식이 성공했어도 틀렸을 수 있으니 덮어쓸 수단으로 남겨둔다.
+    h += '<input type="text" id="manualInv" inputmode="numeric" ' +
+         'placeholder="송장 뒤 4자리만 입력해도 찾습니다">';
+
+    h += '<div class="row">';
+    h += '<button class="btn ghost" type="button" id="btnCancel">취소</button>';
+    h += '<button class="btn ' + (tier === "sure" ? "green" : "") + '" type="button" id="btnSave">' +
+         (tier === "sure" ? "저장 · 입고처리" : "사진 저장") + '</button>';
+    h += '</div></div>';
+
+    document.getElementById("result").innerHTML = h;
+
+    Array.prototype.forEach.call(document.querySelectorAll(".pick[data-i]"), function (el) {
+      el.addEventListener("click", function () {
+        Array.prototype.forEach.call(document.querySelectorAll(".pick[data-i]"), function (x) { x.classList.remove("on"); });
+        el.classList.add("on");
+        PICKED = LAST.match.matches[parseInt(el.getAttribute("data-i"), 10)];
+        var b = document.getElementById("btnSave");
+        b.textContent = "저장 · 입고처리"; b.classList.add("green");
+      });
+    });
+    document.getElementById("btnCancel").addEventListener("click", reset);
+    document.getElementById("btnSave").addEventListener("click", save);
+
+    // 4자리 이상 치면 바로 대장에서 찾는다. 버튼을 또 누르게 하지 않는다.
+    var mi = document.getElementById("manualInv");
+    if (mi) {
+      var t = null;
+      mi.addEventListener("input", function () {
+        var d = mi.value.replace(/[^0-9]/g, "");
+        clearTimeout(t);
+        if (d.length < 4) return;
+        t = setTimeout(function () { manualLookup(d); }, 350);
+      });
+    }
+  }
+
+  /** 손으로 친 번호로 다시 매칭 — 사진과 인식결과는 그대로 두고 후보만 갱신 */
+  function manualLookup(digits) {
+    google.script.run
+      .withSuccessHandler(function (m) {
+        if (!m) return;
+        LAST.raw = digits;
+        LAST.via = "manual";
+        LAST.match = m;
+        PICKED = null;
+        render();
+        var mi = document.getElementById("manualInv");
+        if (mi) { mi.value = digits; mi.focus(); }
+      })
+      .withFailureHandler(function () { toast("조회 실패", 2600); })
+      .csLogisticsMatch(digits, LAST.fields || {});
+  }
+
+  function reset() {
+    PENDING = []; LAST = null; PICKED = null;
+    document.getElementById("result").innerHTML = "";
+  }
+
+  function save() {
+    if (!PENDING.length) { toast("사진이 없습니다"); return; }
+    var btn = document.getElementById("btnSave");
+    btn.disabled = true; btn.textContent = "저장 중…";
+
+    var manual = document.getElementById("manualInv");
+    var inv = LAST.match.digits;
+    var via = LAST.via;
+    if (manual && manual.value.replace(/[^0-9]/g, "").length >= 4) {
+      inv = manual.value.replace(/[^0-9]/g, "");
+      via = "manual";
+    }
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false;
+        if (!res || !res.ok) {
+          btn.textContent = "사진 저장";
+          toast((res && res.error) || "저장 실패", 3600);
+          return;
+        }
+        toast(res.message || "저장했습니다");
+        reset();
+        loadToday();
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = "사진 저장";
+        toast(String((err && err.message) || err), 3600);
+      })
+      .csLogisticsSubmit({
+        staff: STAFF,
+        raw: LAST.raw,
+        invoice: inv,
+        via: via,
+        tier: PICKED ? "maybe" : LAST.match.tier,
+        pick: PICKED,
+        sureMatch: (LAST.match.tier === "sure" && LAST.match.matches.length) ? LAST.match.matches[0] : null,
+        photos: PENDING.map(function (p) {
+          return { dataB64: p.dataB64, mimeType: p.mimeType, name: p.name };
+        })
+      });
+  }
+
+  function renderStats(s) {
+    if (!s) return;
+    var el = document.getElementById("stats");
+    function tile(v, label, cls) {
+      return '<div class="stat"><b' + (cls ? ' class="' + cls + '"' : '') + '>' +
+        esc(v) + '</b><span>' + esc(label) + '</span></div>';
+    }
+    el.innerHTML =
+      tile(s.total, "오늘 촬영", "") +
+      tile(s.sure, "자동 입고검수", "g") +
+      tile(s.maybe + s.none, "확인 필요", (s.maybe + s.none) ? "o" : "") +
+      tile(s.pending < 0 ? "-" : s.pending, "진행 중 반품", "");
+  }
+
+  function loadToday() {
+    google.script.run
+      .withSuccessHandler(function (r) {
+        var el = document.getElementById("log");
+        if (r && r.summary) renderStats(r.summary);
+        if (!r || !r.ok || !r.rows || !r.rows.length) {
+          el.innerHTML = '<div class="empty">오늘 올린 내역이 없습니다</div>';
+          return;
+        }
+        var h = "";
+        r.rows.forEach(function (x) {
+          h += '<div class="r"><span class="t">' + esc(x.time) + '</span>';
+          h += '<span class="i">' + esc(x.invoice || "무번호") + '</span>';
+          h += '<span class="s">' + esc(x.name || "") + ' · ' + esc(x.result || "") + '</span></div>';
+        });
+        el.innerHTML = h;
+      })
+      .withFailureHandler(function () {
+        document.getElementById("log").innerHTML = '<div class="empty">목록을 불러오지 못했습니다</div>';
+      })
+      .csLogisticsToday();
+  }
+
+  // ── 물류 커뮤니티 보드 ───────────────────────────────
+  //   CS 보드와 같은 코드를 쓰되 board:"logi" 로 탭만 가른다.
+  //   board 를 빠뜨리면 CS 보드에 글이 올라가므로 호출마다 반드시 넣는다.
+  var BOARD = "logi";
+  var CLEVEL = "일반";
+
+  document.getElementById("btnNewCard").addEventListener("click", function () {
+    var f = document.getElementById("cardForm");
+    f.style.display = f.style.display === "none" ? "block" : "none";
+  });
+  document.getElementById("cCancel").addEventListener("click", function () {
+    document.getElementById("cardForm").style.display = "none";
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-lv]"), function (b) {
+    b.addEventListener("click", function () {
+      CLEVEL = b.getAttribute("data-lv");
+      Array.prototype.forEach.call(document.querySelectorAll("[data-lv]"), function (x) {
+        x.classList.add("ghost"); x.classList.remove("green");
+      });
+      b.classList.remove("ghost"); b.classList.add("green");
+    });
+  });
+
+  document.getElementById("cSave").addEventListener("click", function () {
+    var t = document.getElementById("cTitle").value.trim();
+    if (!t) { toast("제목을 입력하세요"); return; }
+    var btn = this;
+    btn.disabled = true; btn.textContent = "등록 중…";
+    google.script.run
+      .withSuccessHandler(function (r) {
+        btn.disabled = false; btn.textContent = "등록";
+        if (!r || !r.ok) { toast((r && r.error) || "등록 실패", 3200); return; }
+        document.getElementById("cTitle").value = "";
+        document.getElementById("cBody").value = "";
+        document.getElementById("cLink").value = "";
+        document.getElementById("cardForm").style.display = "none";
+        toast("등록했습니다");
+        loadBoard();
+      })
+      .withFailureHandler(function (e) {
+        btn.disabled = false; btn.textContent = "등록";
+        toast(String((e && e.message) || e), 3200);
+      })
+      .csCreateHandoffCard({
+        board: BOARD, staff: STAFF || "물류", level: CLEVEL,
+        title: t,
+        body: document.getElementById("cBody").value.trim(),
+        link: document.getElementById("cLink").value.trim()
+      });
+  });
+
+  function loadBoard() {
+    google.script.run
+      .withSuccessHandler(function (r) {
+        var el = document.getElementById("board");
+        if (!r || !r.ok) { el.className = ''; el.innerHTML = '<div class="empty">보드를 불러오지 못했습니다</div>'; return; }
+        var rows = (r.rows || []).filter(function (c) { return !c.done; });
+        if (!rows.length) { el.className = ''; el.innerHTML = '<div class="empty">진행 중인 글이 없습니다</div>'; return; }
+        var h = "";
+        rows.forEach(function (c) {
+          var lv = c.level === "긴급" ? "none" : (c.level === "주의" ? "maybe" : "sure");
+          h += '<div class="card" style="padding:12px">';
+          h += '<span class="tier ' + lv + '">' + esc(c.level) + '</span>';
+          h += '<div style="font-weight:700;margin-top:8px">' + esc(c.title) + '</div>';
+          if (c.body) h += '<div class="note" style="margin-top:4px">' + esc(c.body) + '</div>';
+          h += '<div class="via" style="margin-top:6px">' + esc(c.author) + ' · ' + esc(c.at);
+          if (c.noteCount) h += ' · 댓글 ' + c.noteCount;
+          h += '</div>';
+          h += '<div class="row mini"><button class="btn ghost" type="button" data-done="' + esc(c.id) + '">완료</button></div>';
+          h += '</div>';
+        });
+        el.className = 'grid';
+        el.innerHTML = h;
+        Array.prototype.forEach.call(el.querySelectorAll("[data-done]"), function (b) {
+          b.addEventListener("click", function () {
+            b.disabled = true;
+            google.script.run
+              .withSuccessHandler(function (x) {
+                if (!x || !x.ok) { b.disabled = false; toast((x && x.error) || "실패", 3000); return; }
+                toast("완료 처리했습니다"); loadBoard();
+              })
+              .withFailureHandler(function () { b.disabled = false; toast("실패", 3000); })
+              .csCompleteHandoffCard({ board: BOARD, id: b.getAttribute("data-done"), staff: STAFF || "물류" });
+          });
+        });
+      })
+      .withFailureHandler(function () {
+        var bd = document.getElementById("board");
+        bd.className = '';
+        bd.innerHTML = '<div class="empty">보드를 불러오지 못했습니다</div>';
+      })
+      .csListHandoffCards({ board: BOARD });
+  }
+
+  // ── 카드에서 긁으면 바로 복사 ─────────────────────────
+  //   home.html 과 같은 동작. 송장번호를 손으로 옮겨 적을 일이 없게 한다.
+  //   이 화면 카드에는 토글이 없어서 "긁으면 접힌다" 문제는 없고, 복사만 붙인다.
+  var LG_PTR_ = { x: 0, y: 0, moved: false, copied: false };
+  document.addEventListener('pointerdown', function (e) {
+    LG_PTR_.x = e.clientX; LG_PTR_.y = e.clientY;
+    LG_PTR_.moved = false; LG_PTR_.copied = false;
+  }, true);
+  document.addEventListener('pointermove', function (e) {
+    if (LG_PTR_.moved) return;
+    if (Math.abs(e.clientX - LG_PTR_.x) > 6 || Math.abs(e.clientY - LG_PTR_.y) > 6) {
+      LG_PTR_.moved = true;
+    }
+  }, true);
+  document.addEventListener('pointerup', function (e) {
+    if (!LG_PTR_.moved || LG_PTR_.copied) return;
+    if (!e.target || !e.target.closest) return;
+    if (!e.target.closest('.card, .log, .stat')) return;
+    LG_PTR_.copied = true;
+    setTimeout(function () {
+      var s = '';
+      try { s = String(window.getSelection() || ''); } catch (eSel) { return; }
+      if (s.replace(/\s/g, '').length < 2) return;
+      var t = s.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+      var done = function () { toast('복사됨 · ' + t.replace(/\s+/g, ' ').slice(0, 18)); };
+      // 샌드박스에서 clipboard API 가 막히는 경우가 있어 execCommand 폴백을 둔다
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(t).then(done, function () { lgFallbackCopy(t, done); });
+      } else {
+        lgFallbackCopy(t, done);
+      }
+    }, 0);
+  }, true);
+
+  function lgFallbackCopy(t, done) {
+    var a = document.createElement('textarea');
+    a.value = t;
+    document.body.appendChild(a);
+    a.select();
+    try { document.execCommand('copy'); done(); } catch (e) { toast('복사 실패', 2000); }
+    document.body.removeChild(a);
+  }
+
+  loadToday();
+  loadBoard();
+</script>
+</body>
+</html>

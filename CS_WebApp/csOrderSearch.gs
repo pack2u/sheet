@@ -2232,7 +2232,8 @@ function _cs_formatLedgerInvoice_(raw) {
 //  반품관리대장 조회 — 진행 중 목록 · 검색 뱃지
 // ══════════════════════════════════════════════
 
-var _CS_RETURN_CACHE_VER_ = "v8"; // v8: 사진 첨부 타임라인 kind 추가
+// v9: lastRow<5 가드 수정. 고치기 전에 캐시된 "빈 결과"를 버려야 해서 올린다
+var _CS_RETURN_CACHE_VER_ = "v9";
 var _CS_RETURN_CACHE_TTL_ = 600; // 10분
 // 캐시 세대 — 기록이 생길 때마다 올라간다. `csInvalidateReturnLedgerCache_` 참고.
 var _CS_RETURN_GEN_PROP_ = "_CS_RET_CACHE_GEN_";
@@ -2247,8 +2248,21 @@ function _cs_returnCacheKey_(days, activeOnly) {
   }
   return _CS_RETURN_CACHE_VER_ + "g" + gen + "_" + days + "_" + (activeOnly ? "A" : "X");
 }
+/**
+ * 반품 상태 — 2026-08-31 9개에서 4개로 줄였다.
+ *
+ *   접수        고객 반품 요청을 받은 단계
+ *   반품송장    회수 송장이 나간 단계 (구 수거요청·수거중)
+ *   입고검수    물건이 들어와 확인한 단계 (구 반품입고·입고·입고검수)
+ *               물류팀이 사진을 올리면 여기로 넘어간다
+ *   이카운트OK  처리 종료 (구 환불처리·완료·철회)
+ *
+ * 드롭다운만 줄인 것이라 기존 행의 옛 값은 그대로 남는다.
+ * 옛 값도 화면에 보여야 하므로 이 목록으로 필터링하지 말 것.
+ * 완료 판정은 _cs_isReturnDoneMark_ 가 하며 "이카운트OK"·"이카운트 ok" 둘 다 잡는다.
+ */
 var _CS_RETURN_STATUS_OPTS_ = [
-  "접수", "수거요청", "수거중", "반품입고", "입고검수", "환불처리", "완료", "철회", "이카운트 ok"
+  "접수", "반품송장", "입고검수", "이카운트OK"
 ];
 
 function _cs_ledgerStamp_(staff) {
@@ -2568,6 +2582,11 @@ function _cs_isReturnDoneMark_(v) {
   var s = raw.replace(/\s/g, "");
   if (s === "완료" || s.indexOf("완료") === 0) return true;
   if (/이카운트\s*ok/i.test(raw)) return true;
+  // 철회 — 고객이 반품을 취소한 건.
+  //   2026-08-31 상태를 4개로 줄이면서 드롭다운에서 뺐지만 과거 행에는 남아 있다.
+  //   여기서 완료로 쳐 주지 않으면 영원히 "진행 중"으로 떠 있는다.
+  //   대장 값을 고치지 않고 판정만 바꾼다 — 되돌리기 쉽고 이력도 그대로 남는다.
+  if (s === "철회" || s.indexOf("철회") === 0) return true;
   return false;
 }
 
@@ -2631,7 +2650,14 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
   if (!tab) return [];
   var lastCol = Math.max(tab.getLastColumn(), 15);
   var lastRow = tab.getLastRow();
-  if (lastRow < 5) return [];
+  // ★ 2026-09-01 수정 ★
+  //   전에는 `lastRow < 5` 였다. 헤더가 4행에 있다는 가정에서 나온 숫자인데,
+  //   새로 만들어지는 월별 탭은 헤더가 1행이다. 그래서 월이 바뀐 첫날
+  //   "접수는 되는데 조회가 안 되는" 증상이 났다 — 헤더 1행 + 데이터 1행이면
+  //   lastRow 가 2라서 읽어보지도 않고 빈 배열을 돌려줬다.
+  //   헤더 위치는 아래 _cs_findReturnHeaderRow_ 가 알아서 찾으므로
+  //   여기서는 "헤더 + 데이터 최소 1행"만 확인하면 된다.
+  if (lastRow < 2) return [];
 
   var values = tab.getRange(1, 1, lastRow, lastCol).getDisplayValues();
   var headerIdx = _cs_findReturnHeaderRow_(values);

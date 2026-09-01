@@ -12,6 +12,23 @@
 var _CS_HB_TAB_NAME_ = "CS_커뮤니티보드";
 /** 이전 탭명 — 이름만 바꿔 이어 쓴다 (카드가 이미 쌓여 있으므로 새로 만들면 안 된다) */
 var _CS_HB_TAB_LEGACY_ = "CS_전달보드";
+
+/**
+ * ★ 보드 분리 ★
+ *   같은 코드로 여러 보드를 굴린다. 탭만 다르고 구조는 같다.
+ *   board 를 넘기지 않으면 항상 "cs" 다 — 기존 호출부는 손댈 필요가 없다.
+ *   카드ID 접두도 보드마다 다르게 줘서, 보드를 잘못 지정하면 조용히
+ *   엉뚱한 탭을 뒤지는 대신 그냥 "못 찾음"으로 끝나게 한다.
+ */
+var _CS_HB_BOARDS_ = {
+  cs:   { tab: "CS_커뮤니티보드",   prefix: "HB", label: "CS 커뮤니티 보드" },
+  logi: { tab: "물류_커뮤니티보드", prefix: "LB", label: "물류 커뮤니티 보드" }
+};
+
+function _cs_hb_board_(v) {
+  var k = String(v == null ? "" : v).trim().toLowerCase();
+  return _CS_HB_BOARDS_[k] ? k : "cs";
+}
 var _CS_HB_LOCK_MS_ = 10000;
 
 /** 보드에 쌓아둘 진행 카드 권장 상한 — 넘으면 프런트에서 정리 경고 */
@@ -38,12 +55,21 @@ var _CS_HB_HEADERS_ = [
   "완료자",      // L
   "첨부",        // M  fileId|파일명|mime|yyMMdd HH:mm|올린이  (여러 줄)
   "출처키",      // N  자동 생성 카드의 원본. 반품 문의는 `반품:{탭}:{행}`
+  // ★ 2026-08-31: 반품 카드처럼 항목을 나눠 받는다.
+  //   전에는 전부 내용/연결에 뭉뚱그려 적어서 나중에 검색도 집계도 안 됐다.
+  //   **반드시 뒤에 붙인다** — 협력업체 포털(prpBoard.gs)이 헤더명으로 열을 찾으므로
+  //   중간에 끼우면 그쪽 열 위치가 밀린다.
+  "고객명",      // O
+  "전화",        // P
+  "송장",        // Q
+  "품목",        // R
 ];
 
 var _CS_HB_COL_ = {
   id: 0, at: 1, author: 2, level: 3, title: 4, body: 5,
   link: 6, notes: 7, read: 8, status: 9, doneAt: 10, doneBy: 11,
   att: 12, srcKey: 13,
+  custName: 14, phone: 15, invoice: 16, item: 17,
 };
 
 /**
@@ -107,12 +133,16 @@ function _cs_hb_staff_(v) {
 }
 
 /** 보드 탭 — 없으면 헤더까지 만들어 반환. 열이 늘어난 버전이면 헤더만 갱신 */
-function _cs_hb_getTab_() {
+function _cs_hb_getTab_(board) {
+  var bk = _cs_hb_board_(board);
+  var tabName = _CS_HB_BOARDS_[bk].tab;
+
   var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
-  var tab = ss.getSheetByName(_CS_HB_TAB_NAME_);
+  var tab = ss.getSheetByName(tabName);
 
   // 이름만 바뀌었을 뿐 데이터는 그대로다. 옛 탭이 있으면 새 이름으로 바꿔 이어 쓴다.
-  if (!tab) {
+  // (CS 보드에만 해당한다. 다른 보드는 옛 탭이 없다)
+  if (!tab && bk === "cs") {
     var legacy = ss.getSheetByName(_CS_HB_TAB_LEGACY_);
     if (legacy) {
       try { legacy.setName(_CS_HB_TAB_NAME_); } catch (eR) {}
@@ -133,17 +163,17 @@ function _cs_hb_getTab_() {
     if (needFix) {
       tab.getRange(1, 1, 1, _CS_HB_HEADERS_.length).setValues([_CS_HB_HEADERS_]);
       tab.getRange(1, 1, 1, _CS_HB_HEADERS_.length)
-        .setFontWeight("bold").setBackground("#4a90d9").setFontColor("#ffffff");
+        .setFontWeight("bold").setBackground("#252525").setFontColor("#f0f0f0");
     }
     return tab;
   }
 
-  tab = ss.insertSheet(_CS_HB_TAB_NAME_);
+  tab = ss.insertSheet(tabName);
   tab.getRange(1, 1, 1, _CS_HB_HEADERS_.length).setValues([_CS_HB_HEADERS_]);
   tab.getRange(1, 1, 1, _CS_HB_HEADERS_.length)
     .setFontWeight("bold")
-    .setBackground("#4a90d9")
-    .setFontColor("#ffffff");
+    .setBackground("#252525")
+    .setFontColor("#f0f0f0");
   tab.setFrozenRows(1);
   tab.setColumnWidth(1, 150); // 카드ID
   tab.setColumnWidth(2, 130); // 등록일시
@@ -153,8 +183,8 @@ function _cs_hb_getTab_() {
   return tab;
 }
 
-function _cs_hb_newId_() {
-  return "HB" + _cs_hb_now_("yyMMddHHmmss") +
+function _cs_hb_newId_(board) {
+  return _CS_HB_BOARDS_[_cs_hb_board_(board)].prefix + _cs_hb_now_("yyMMddHHmmss") +
     "-" + Math.floor(Math.random() * 900 + 100);
 }
 
@@ -343,17 +373,28 @@ function _cs_hb_rowToCard_(row, sheetRow) {
     doneAt: String(row[c.doneAt] || "").trim(),
     doneBy: String(row[c.doneBy] || "").trim(),
     srcKey: String(row[c.srcKey] || "").trim(),
+    custName: String(row[c.custName] || "").trim(),
+    phone: String(row[c.phone] || "").trim(),
+    invoice: String(row[c.invoice] || "").trim(),
+    item: String(row[c.item] || "").trim(),
   };
 }
 
 /** 쓰기 작업 공통 래퍼 — 락 + 행 조회 + 예외를 한곳에서 처리 */
-function _cs_hb_withCard_(id, fn) {
+/**
+ * ref 는 payload 객체(권장) 또는 카드ID 문자열.
+ * 객체면 board 까지 같이 읽는다 — 호출부가 보드를 따로 넘길 필요가 없다.
+ */
+function _cs_hb_withCard_(ref, fn) {
+  var isObj = (ref && typeof ref === "object");
+  var id = isObj ? ref.id : ref;
+  var board = isObj ? ref.board : "";
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(_CS_HB_LOCK_MS_)) {
     return { ok: false, error: "다른 담당자가 보드를 수정 중입니다. 잠시 후 다시 시도하세요." };
   }
   try {
-    var tab = _cs_hb_getTab_();
+    var tab = _cs_hb_getTab_(board);
     var sheetRow = _cs_hb_findRow_(tab, id);
     if (sheetRow < 2) return { ok: false, error: "카드를 찾을 수 없습니다. 새로고침 후 다시 시도하세요." };
     var lastCol = Math.min(
@@ -382,7 +423,7 @@ function csListHandoffCards(opts) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   opts = opts || {};
   try {
-    var tab = _cs_hb_getTab_();
+    var tab = _cs_hb_getTab_(opts.board);
     var lr = tab.getLastRow();
     if (lr < 2) {
       return {
@@ -456,8 +497,8 @@ function csCreateHandoffCard(payload) {
     return { ok: false, error: "다른 담당자가 보드를 수정 중입니다. 잠시 후 다시 시도하세요." };
   }
   try {
-    var tab = _cs_hb_getTab_();
-    var id = _cs_hb_newId_();
+    var tab = _cs_hb_getTab_(payload.board);
+    var id = _cs_hb_newId_(payload.board);
     var row = [];
     row[_CS_HB_COL_.id] = id;
     row[_CS_HB_COL_.at] = _cs_hb_now_();
@@ -473,6 +514,10 @@ function csCreateHandoffCard(payload) {
     row[_CS_HB_COL_.doneBy] = "";
     row[_CS_HB_COL_.att] = ""; // 파일은 카드 생성 직후 별도 호출로 올린다
     row[_CS_HB_COL_.srcKey] = String(payload.srcKey || "").trim();
+    row[_CS_HB_COL_.custName] = String(payload.custName || "").trim();
+    row[_CS_HB_COL_.phone] = String(payload.phone || "").trim();
+    row[_CS_HB_COL_.invoice] = String(payload.invoice || "").trim();
+    row[_CS_HB_COL_.item] = String(payload.item || "").trim();
     for (var i = 0; i < _CS_HB_HEADERS_.length; i++) {
       if (row[i] == null) row[i] = "";
     }
@@ -498,7 +543,7 @@ function csAddHandoffNote(payload) {
   var staff = _cs_hb_staff_(payload.staff);
   if (!staff) return { ok: false, error: "담당자를 먼저 선택하세요." };
 
-  return _cs_hb_withCard_(payload.id, function (tab, sheetRow, row) {
+  return _cs_hb_withCard_(payload, function (tab, sheetRow, row) {
     var next = _cs_hb_appendNoteLine_(
       row[_CS_HB_COL_.notes], _cs_hb_stamp_(staff) + " " + text,
     );
@@ -529,7 +574,7 @@ function csMarkHandoffRead(payload) {
   var staff = _cs_hb_staff_(payload.staff);
   if (!staff) return { ok: false, error: "담당자가 지정되지 않았습니다." };
 
-  return _cs_hb_withCard_(payload.id, function (tab, sheetRow, row) {
+  return _cs_hb_withCard_(payload, function (tab, sheetRow, row) {
     var read = _cs_hb_readList_(row[_CS_HB_COL_.read]);
     if (read.indexOf(staff) !== -1) return { ok: true, read: read, changed: false };
     read.push(staff);
@@ -548,7 +593,7 @@ function csCompleteHandoffCard(payload) {
   var staff = _cs_hb_staff_(payload.staff);
   if (!staff) return { ok: false, error: "담당자를 먼저 선택하세요." };
 
-  return _cs_hb_withCard_(payload.id, function (tab, sheetRow, row) {
+  return _cs_hb_withCard_(payload, function (tab, sheetRow, row) {
     if (String(row[_CS_HB_COL_.status] || "").trim() === _CS_HB_STATUS_DONE_) {
       return { ok: true, already: true, message: "이미 완료된 카드입니다." };
     }
@@ -573,7 +618,7 @@ function csReopenHandoffCard(payload) {
   var staff = _cs_hb_staff_(payload.staff);
   if (!staff) return { ok: false, error: "담당자를 먼저 선택하세요." };
 
-  return _cs_hb_withCard_(payload.id, function (tab, sheetRow, row) {
+  return _cs_hb_withCard_(payload, function (tab, sheetRow, row) {
     tab.getRange(sheetRow, _CS_HB_COL_.status + 1).setValue(_CS_HB_STATUS_OPEN_);
     tab.getRange(sheetRow, _CS_HB_COL_.doneAt + 1).setValue("");
     tab.getRange(sheetRow, _CS_HB_COL_.doneBy + 1).setValue("");
@@ -592,7 +637,7 @@ function csReopenHandoffCard(payload) {
 function csDeleteHandoffCard(payload) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   payload = payload || {};
-  return _cs_hb_withCard_(payload.id, function (tab, sheetRow, row) {
+  return _cs_hb_withCard_(payload, function (tab, sheetRow, row) {
     var title = String(row[_CS_HB_COL_.title] || "").trim();
     var trashed = _cs_hb_trashAtt_(_cs_hb_parseAtt_(row[_CS_HB_COL_.att]));
     tab.deleteRow(sheetRow);
@@ -631,7 +676,7 @@ function csAttachHandoffFile(payload) {
     };
   }
 
-  return _cs_hb_withCard_(payload.id, function (tab, sheetRow, row) {
+  return _cs_hb_withCard_(payload, function (tab, sheetRow, row) {
     var list = _cs_hb_parseAtt_(row[_CS_HB_COL_.att]);
     if (list.length >= _CS_HB_ATT_MAX_PER_CARD_) {
       return { ok: false, error: "첨부는 카드당 " + _CS_HB_ATT_MAX_PER_CARD_ + "개까지입니다." };
@@ -668,7 +713,7 @@ function csDeleteHandoffAttachment(payload) {
   var fileId = String(payload.fileId || "").trim();
   if (!fileId) return { ok: false, error: "파일을 찾을 수 없습니다." };
 
-  return _cs_hb_withCard_(payload.id, function (tab, sheetRow, row) {
+  return _cs_hb_withCard_(payload, function (tab, sheetRow, row) {
     var list = _cs_hb_parseAtt_(row[_CS_HB_COL_.att]);
     var keep = [];
     var hit = null;
@@ -688,11 +733,12 @@ function csDeleteHandoffAttachment(payload) {
   });
 }
 
-/** 보드 연동 점검 — 탭 생성·권한·행 수 확인 */
-function csDiagnoseHandoffBoard() {
-  var out = { ok: false, tab: _CS_HB_TAB_NAME_, ssId: _CS_RETURN_LEDGER_ID_ };
+/** 보드 연동 점검 — 탭 생성·권한·행 수 확인. board 를 넘기면 그 보드를 본다 */
+function csDiagnoseHandoffBoard(board) {
+  var bk = _cs_hb_board_(board);
+  var out = { ok: false, board: bk, tab: _CS_HB_BOARDS_[bk].tab, ssId: _CS_RETURN_LEDGER_ID_ };
   try {
-    var tab = _cs_hb_getTab_();
+    var tab = _cs_hb_getTab_(bk);
     out.ok = true;
     out.ssName = tab.getParent().getName();
     out.lastRow = tab.getLastRow();

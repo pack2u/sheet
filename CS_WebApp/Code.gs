@@ -39,6 +39,11 @@ function doGet(e) {
       file = "return_intake";
       title = "반품 입고 스캔";
       break;
+    case "logistics":
+      // 물류팀 전용 — 반품 입고 사진 촬영·업로드 (csLogistics.gs)
+      file = "logistics";
+      title = "반품 입고 촬영";
+      break;
     case "scan_test":
       file = "scan_test";
       title = "택배 바코드 스캔 테스트";
@@ -69,6 +74,8 @@ function doGet(e) {
     tpl.startWorkspace = startWorkspace;
     tpl.userEmail = acc.email;
     tpl.userName = acc.name || "";
+    // 물류팀이면 모바일에서 입고촬영 패널로 먼저 떨어진다 (권한과 무관, 시작 위치만)
+    tpl.isLogistics = !!acc.logistics;
     var out = tpl.evaluate();
     return _cs_withFavicon_(out)
       .setTitle(title)
@@ -595,16 +602,38 @@ function ocrInvoiceImage(base64Data, mimeType) {
     var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
       model + ":generateContent?key=" + apiKey;
 
-    var prompt = 
-      "이 택배 송장 이미지를 분석해서 다음 정보를 JSON 형식으로 추출해 주세요.\n" +
-      "반드시 아래 JSON 형식만 출력하고, 다른 텍스트는 포함하지 마세요.\n" +
-      "찾을 수 없는 항목은 빈 문자열로 남겨주세요.\n\n" +
+    // ★ 실제 현장 라벨(롯데 반품회수)을 보고 맞춘 프롬프트 ★
+    //   · 번호가 두 개다: 「운송장번호」(이번 회수) 와 「원송장번호」(최초 출고)
+    //   · 같은 번호가 상단 칸·좌측 세로·하단 바코드 옆에 여러 번 인쇄된다 → 대조하면 정확도가 오른다
+    //   · 반품 라벨은 받는분이 팩투유(회수처)다. 실제 고객은 "보내는 분" 이다.
+    //   · 현장 라벨에는 빨간 손글씨·검은 테이프·찢김이 흔하다. 인쇄된 글자만 읽어야 한다.
+    var prompt =
+      "이 택배 송장 사진에서 정보를 뽑아 JSON 만 출력하세요. 다른 말은 쓰지 마세요.\n" +
+      "찾을 수 없으면 빈 문자열로 두세요.\n\n" +
+      "읽는 요령:\n" +
+      "- 번호는 NNNN-NNNN-NNNN 12자리 형식이 많습니다. 하이픈은 빼고 숫자만 적으세요.\n" +
+      "- 「운송장번호」 칸의 번호와 「원송장번호」 칸의 번호는 서로 다릅니다. 각각 따로 적으세요.\n" +
+      "- 같은 번호가 라벨의 여러 위치(상단 칸, 왼쪽 세로 여백, 아래쪽 바코드 옆)에 반복 인쇄됩니다.\n" +
+      "  여러 곳을 서로 대조해서 가장 확실한 값을 쓰세요. 한 곳이 가려졌으면 다른 곳을 보세요.\n" +
+      "- 빨간 손글씨, 검은 테이프, 찢어진 부분, 도장은 무시하고 인쇄된 글자만 읽으세요.\n" +
+      "- ★ 0504-XXXX-XXXX, 0502-XXXX-XXXX 는 안심번호(전화)입니다. 송장번호가 아닙니다.\n" +
+      "  송장번호와 자릿수·하이픈 모양이 똑같으니 헷갈리지 마세요. 송장번호는 2 로 시작합니다.\n" +
+      "  0 으로 시작하는 번호는 절대 invoiceNumber 에 넣지 말고 전화번호 칸에 넣으세요.\n" +
+      "- 라벨이 세로로 돌아가 있거나 다른 라벨이 겹쳐 있을 수 있습니다.\n" +
+      "  「반품회수」 표시가 있는 라벨의 번호를 우선하세요.\n" +
+      "- 「반품회수」 라벨이면 받는 분은 회수처(팩투유)이고, 보내는 분이 실제 고객입니다.\n" +
+      "  senderName·senderPhone 에 보내는 분 정보를 정확히 넣으세요.\n\n" +
       "{\n" +
-      "  \"invoiceNumber\": \"송장번호 (숫자만)\",\n" +
-      "  \"recipientName\": \"수취인 이름\",\n" +
-      "  \"phone\": \"수취인 전화번호\",\n" +
-      "  \"address\": \"수취인 주소\",\n" +
-      "  \"senderName\": \"발송인 이름\",\n" +
+      "  \"invoiceNumber\": \"운송장번호 (숫자만). 없으면 사진에서 가장 확실한 송장번호\",\n" +
+      "  \"returnInvoiceNumber\": \"운송장번호 칸의 번호 (숫자만)\",\n" +
+      "  \"originalInvoiceNumber\": \"원송장번호 칸의 번호 (숫자만)\",\n" +
+      "  \"recipientName\": \"받는 분 이름\",\n" +
+      "  \"phone\": \"받는 분 전화번호\",\n" +
+      "  \"address\": \"받는 분 주소\",\n" +
+      "  \"senderName\": \"보내는 분 이름 (반품이면 이쪽이 고객)\",\n" +
+      "  \"senderPhone\": \"보내는 분 전화번호\",\n" +
+      "  \"orderNumber\": \"주문번호 칸의 값\",\n" +
+      "  \"itemName\": \"품명 칸의 값\",\n" +
       "  \"carrier\": \"택배사명\"\n" +
       "}";
 
@@ -651,9 +680,13 @@ function ocrInvoiceImage(base64Data, mimeType) {
 
     var result = JSON.parse(jsonMatch[0]);
 
-    // 송장번호 정리 (숫자만)
-    if (result.invoiceNumber) {
-      result.invoiceNumber = String(result.invoiceNumber).replace(/[^0-9]/g, "");
+    // 번호 칸은 전부 숫자만 남긴다 (하이픈 표기 NNNN-NNNN-NNNN 대응)
+    ["invoiceNumber", "returnInvoiceNumber", "originalInvoiceNumber"].forEach(function (k) {
+      if (result[k]) result[k] = String(result[k]).replace(/[^0-9]/g, "");
+    });
+    // 운송장번호 칸을 읽었으면 그것을 대표값으로 올린다
+    if (!result.invoiceNumber && result.returnInvoiceNumber) {
+      result.invoiceNumber = result.returnInvoiceNumber;
     }
 
     return result;
@@ -703,7 +736,13 @@ function csOcrImageForScan(base64Data, mimeType) {
         phone: String(r.phone || ""),
         address: String(r.address || ""),
         senderName: String(r.senderName || ""),
-        carrier: String(r.carrier || "")
+        senderPhone: String(r.senderPhone || ""),
+        carrier: String(r.carrier || ""),
+        // 반품회수 라벨에는 번호가 둘이다. 매칭 쪽에서 둘 다 써야 한다.
+        returnInvoiceNumber: String(r.returnInvoiceNumber || ""),
+        originalInvoiceNumber: String(r.originalInvoiceNumber || ""),
+        orderNumber: String(r.orderNumber || ""),
+        itemName: String(r.itemName || "")
       },
       error: inv.length >= 8 ? "" : "글자에서 송장번호를 찾지 못했습니다."
     };

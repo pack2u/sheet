@@ -1,10 +1,22 @@
 /**
- * 반품 현장 입고 — 반품송장 스캔 → 반품관리대장 처리상태 "반품입고"
- * SSOT: 반품관리대장 (csOrderSearch.gs)
+ * 반품 현장 입고 — 반품송장 스캔 → 반품관리대장 처리상태 "입고검수"
+ * 반품 현장 입고 — 반품송장 스캔 → 반품관리대장 처리상태 "입고검수"
  */
+
+// ★ 2026-08-31 ★ 상태를 4개로 줄이면서 "반품입고"를 "입고검수"가 흡수했다.
+//   물류팀이 사진을 올리는 행위가 곧 입고 확인이라 단계를 나눌 이유가 없다.
+//   과거 행에는 "반품입고"가 남아 있으므로 읽을 때는 둘 다 인정한다.
+var _CS_RI_STATUS_INTAKE_ = "입고검수";
+var _CS_RI_STATUS_LEGACY_ = "반품입고"; // 과거 행 호환 (새로 쓰지는 않는다)
 
 function _cs_normalizeInvDigits_(raw) {
   return String(raw || "").replace(/[^0-9]/g, "");
+}
+
+/** 이미 입고 처리된 상태인가 — 신규(입고검수)와 과거(반품입고) 둘 다 인정 */
+function _cs_ri_isIntakeStatus_(v) {
+  var s = String(v == null ? "" : v).replace(/[^가-힣]/g, "");
+  return s === _CS_RI_STATUS_INTAKE_ || s === _CS_RI_STATUS_LEGACY_;
 }
 
 function _cs_returnInvMatchesCase_(caseRow, digits) {
@@ -53,7 +65,7 @@ function csFindReturnIntakeMatches(returnInvoice, opt) {
       returnInvoice: c.returnInvoice || _cs_parseReturnInvFromNotice_(c.notice),
       matchVia: m.via,
       active: c.active,
-      alreadyIntake: String(c.status || "").replace(/\s/g, "") === "반품입고"
+      alreadyIntake: _cs_ri_isIntakeStatus_(c.status)
     });
   }
 
@@ -68,9 +80,9 @@ function csFindReturnIntakeMatches(returnInvoice, opt) {
 
 /**
  * 반품송장 스캔 처리
- * - 1건 매칭: 반품입고 + 비고 이력
+ * - 1건 매칭: 입고검수 + 비고 이력
  * - 다건: needPick
- * - 0건: 신규 행 (현장입고) + 반품입고
+ * - 0건: 신규 행 (현장입고) + 입고검수
  */
 function csProcessReturnIntake(payload) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
@@ -115,7 +127,11 @@ function csProcessReturnIntake(payload) {
   return _cs_intakeCreateNewReturn_(returnInv, staff, payload);
 }
 
-function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia) {
+/**
+ * @param {Array<string>=} photoLinks 물류팀이 올린 사진 URL. 상담이력에 함께 남긴다.
+ *   반품 카드에서 사진을 바로 열어볼 수 있어야 하므로 대장에도 링크를 적는다.
+ */
+function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, photoLinks) {
   try {
     var ctx = _cs_openReturnLedgerRow_(tabName, rowNum);
     var notice = ctx.col.notice >= 0 ? String(ctx.row[ctx.col.notice] || "").trim() : "";
@@ -139,10 +155,18 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia) 
       }
     }
 
+    var noteText = "현장입고 스캔 · " + formatted +
+      (matchVia === "original_invoice_warn" ? " (원송장 일치)" : "");
+    var links = (photoLinks && photoLinks.length) ? photoLinks : [];
+    if (links.length) {
+      noteText += " · 사진 " + links.length + "장";
+      for (var pi = 0; pi < links.length; pi++) noteText += "\n" + links[pi];
+    }
+
     var consult = appendReturnConsultation({
       tab: tabName,
       row: rowNum,
-      text: "현장입고 스캔 · " + formatted + (matchVia === "original_invoice_warn" ? " (원송장 일치)" : ""),
+      text: noteText,
       staff: staff
     });
     if (!consult.ok) return consult;
@@ -150,7 +174,7 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia) 
     var statusRes = updateReturnLedgerStatus({
       tab: tabName,
       row: rowNum,
-      status: "반품입고",
+      status: _CS_RI_STATUS_INTAKE_,
       staff: staff
     });
     if (!statusRes.ok) return statusRes;
@@ -164,10 +188,10 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia) 
       row: rowNum,
       name: name,
       item: item,
-      status: "반품입고",
+      status: _CS_RI_STATUS_INTAKE_,
       matchVia: matchVia || "",
       returnInvoice: formatted,
-      message: tabName + " " + rowNum + "행 · 반품입고 처리"
+      message: tabName + " " + rowNum + "행 · " + _CS_RI_STATUS_INTAKE_ + " 처리"
     };
   } catch (e) {
     return { ok: false, error: e.message || String(e) };
@@ -186,7 +210,7 @@ function _cs_intakeCreateNewReturn_(returnInv, staff, payload) {
   var data = {
     staff: staff,
     type: "현장입고",
-    status: "반품입고",
+    status: _CS_RI_STATUS_INTAKE_,
     // 반품송장은 전용 열로 들어간다. 열이 없는 탭이면 submitReturnLedger 가 비고로 돌린다.
     returnInvoice: formatted,
     memo: "현장 스캔 신규 접수",
@@ -220,7 +244,7 @@ function _cs_intakeCreateNewReturn_(returnInv, staff, payload) {
   var statusRes = updateReturnLedgerStatus({
     tab: res.sheet,
     row: res.row,
-    status: "반품입고",
+    status: _CS_RI_STATUS_INTAKE_,
     staff: staff
   });
   if (!statusRes.ok) {
@@ -241,14 +265,14 @@ function _cs_intakeCreateNewReturn_(returnInv, staff, payload) {
     row: res.row,
     name: data.name || "",
     item: data.item || "",
-    status: "반품입고",
+    status: _CS_RI_STATUS_INTAKE_,
     returnInvoice: formatted,
     orderHint: orderHint && orderHint.found ? {
       source: orderHint.source,
       name: orderHint.recipientName,
       item: orderHint.productName
     } : null,
-    message: res.message + " · 반품입고"
+    message: res.message + " · " + _CS_RI_STATUS_INTAKE_
   };
 }
 

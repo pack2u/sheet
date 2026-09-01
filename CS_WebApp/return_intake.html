@@ -9,10 +9,22 @@
   <title>반품 입고 스캔 - Pack2U</title>
   <?!= include('csFavicon'); ?>
   <style>
-    html, body {
+    /* ── 다크 기본값 (팔레트보다 먼저 깔린다) ── */
+    html {
+      background: #111111;
+      color-scheme: dark; /* 스크롤바·기본 폼 컨트롤까지 어둡게 */
+    }
+    ::selection { background: rgba(173, 173, 173, 0.30); color: #f0f0f0; }
+    * { scrollbar-width: thin; scrollbar-color: #393939 transparent; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #393939; border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: #494949; }
+
+html, body {
       margin: 0; padding: 0; width: 100%;
       min-height: 100vh; min-height: 100dvh;
-      background: #0f1117; color: #f0f0f5;
+      background: #111111; color: #f0f0f0;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
       -webkit-text-size-adjust: 100%;
     }
@@ -20,19 +32,19 @@
       display: flex; align-items: center; gap: 8px;
       padding: 14px 14px 10px;
       padding-top: calc(14px + env(safe-area-inset-top, 0px));
-      background: #1a1d28; border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: #1d1d1d; border-bottom: 1px solid rgba(255,255,255,0.06);
       position: sticky; top: 0; z-index: 50;
     }
     .back-btn {
       display: inline-flex; align-items: center; justify-content: center;
       width: 36px; height: 36px; border-radius: 10px;
-      background: #222533; color: #f0f0f5; text-decoration: none; font-size: 22px;
+      background: #252525; color: #f0f0f0; text-decoration: none; font-size: 22px;
     }
     .top-title { font-size: 17px; font-weight: 700; flex: 1; }
     .staff-badge {
-      font-size: 11px; color: #4a90d9;
-      background: rgba(74,144,217,0.12);
-      border: 1px solid rgba(74,144,217,0.25);
+      font-size: 11px; color: #adadad;
+      background: rgba(173, 173, 173,0.12);
+      border: 1px solid rgba(173, 173, 173,0.25);
       padding: 4px 8px; border-radius: 8px;
     }
     .wrap { padding: 14px; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
@@ -44,46 +56,46 @@
     }
     .mob-alert a {
       display: block; margin-top: 10px; padding: 12px;
-      border-radius: 10px; background: #4a90d9; color: #fff;
+      border-radius: 10px; background: #757575; color: #fff;
       text-align: center; text-decoration: none; font-weight: 700; font-size: 14px;
     }
-    .hint { font-size: 13px; color: #8b8fa3; line-height: 1.55; margin-bottom: 12px; }
+    .hint { font-size: 13px; color: #909090; line-height: 1.55; margin-bottom: 12px; }
     .hint strong { color: #f0a030; }
     .card {
-      background: #1a1d28; border: 1px solid rgba(255,255,255,0.06);
+      background: #1d1d1d; border: 1px solid rgba(255,255,255,0.06);
       border-radius: 14px; padding: 14px; margin-bottom: 12px;
     }
-    .card-title { font-size: 13px; color: #8b8fa3; margin-bottom: 10px; }
+    .card-title { font-size: 13px; color: #909090; margin-bottom: 10px; }
     .manual-row { display: flex; gap: 8px; }
     .manual-row input {
       flex: 1; padding: 14px 12px; border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.08); background: #222533;
-      color: #f0f0f5; font-size: 16px; min-width: 0;
+      border: 1px solid rgba(255,255,255,0.08); background: #252525;
+      color: #f0f0f0; font-size: 16px; min-width: 0;
     }
     .btn {
       border: none; border-radius: 10px; padding: 14px 16px;
       font-size: 15px; font-weight: 700; font-family: inherit; cursor: pointer;
     }
-    .btn-primary { background: #4a90d9; color: #fff; white-space: nowrap; }
+    .btn-primary { background: #757575; color: #fff; white-space: nowrap; }
     .btn-outline {
       width: 100%; margin-top: 8px; background: transparent;
-      color: #8b8fa3; border: 1px solid rgba(255,255,255,0.08);
+      color: #909090; border: 1px solid rgba(255,255,255,0.08);
     }
-    .btn-green { width: 100%; margin-top: 8px; background: #34c77b; color: #0f1117; }
+    .btn-green { width: 100%; margin-top: 8px; background: #34c77b; color: #111111; }
     #qr-reader {
       min-height: 160px; background: #000; border-radius: 10px;
       overflow: hidden; display: flex; align-items: center; justify-content: center;
     }
     #scanVideo { width: 100%; max-height: 260px; display: block; background: #000; }
-    .scan-msg { padding: 18px 12px; text-align: center; font-size: 13px; color: #8b8fa3; line-height: 1.55; }
+    .scan-msg { padding: 18px 12px; text-align: center; font-size: 13px; color: #909090; line-height: 1.55; }
     .step { display: none; }
     .step.on { display: block; }
     .pick-card {
-      background: #222533; border: 1px solid rgba(255,255,255,0.06);
+      background: #252525; border: 1px solid rgba(255,255,255,0.06);
       border-radius: 10px; padding: 14px; margin-bottom: 10px; cursor: pointer;
     }
     .pick-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
-    .pick-meta { font-size: 12px; color: #8b8fa3; line-height: 1.45; }
+    .pick-meta { font-size: 12px; color: #909090; line-height: 1.45; }
     .pick-warn {
       display: inline-block; margin-top: 6px; font-size: 11px; color: #f0a030;
       background: rgba(240,160,48,0.12); padding: 2px 6px; border-radius: 6px;
@@ -91,7 +103,7 @@
     .result-box { text-align: center; padding: 28px 8px; }
     .result-icon { font-size: 52px; margin-bottom: 10px; }
     .result-title { font-size: 21px; font-weight: 700; margin-bottom: 8px; }
-    .result-sub { font-size: 14px; color: #8b8fa3; line-height: 1.55; margin-bottom: 14px; }
+    .result-sub { font-size: 14px; color: #909090; line-height: 1.55; margin-bottom: 14px; }
     .result-chip {
       display: inline-block; padding: 8px 14px; border-radius: 10px;
       background: rgba(52,199,123,0.12); border: 1px solid rgba(52,199,123,0.3);
@@ -99,17 +111,17 @@
     }
     .loading {
       display: none; position: fixed; inset: 0; z-index: 300;
-      background: rgba(15,17,23,0.88); align-items: center; justify-content: center;
+      background: rgba(17, 17, 17,0.88); align-items: center; justify-content: center;
       flex-direction: column; gap: 10px;
     }
     .loading.on { display: flex; }
     .spin {
       width: 34px; height: 34px; border: 3px solid rgba(255,255,255,0.08);
-      border-top-color: #4a90d9; border-radius: 50%;
+      border-top-color: #adadad; border-radius: 50%;
       animation: rot 0.8s linear infinite;
     }
     @keyframes rot { to { transform: rotate(360deg); } }
-    .ver { text-align: center; font-size: 11px; color: #5c6078; padding: 16px 0 4px; }
+    .ver { text-align: center; font-size: 11px; color: #616161; padding: 16px 0 4px; }
     .boot-err {
       display: none; margin: 12px 14px; padding: 12px; border-radius: 10px;
       background: rgba(231,76,95,0.12); color: #f5a0a8; font-size: 12px; line-height: 1.5;
@@ -117,7 +129,7 @@
     .file-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
   </style>
 </head>
-<body style="background:#0f1117;color:#f0f0f5;">
+<body style="background:#111111;color:#f0f0f0;">
 
   <div class="top-bar">
     <a class="back-btn" id="linkHome" href="<?= webAppUrl ?>?page=home">‹</a>

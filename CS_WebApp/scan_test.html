@@ -8,26 +8,38 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
-    :root {
-      --bg: #0f1117; --card: #222533; --text: #f0f0f5; --muted: #8b8fa3;
-      --blue: #4a90d9; --green: #34c77b; --orange: #f0a030; --red: #e74c5f;
+    /* ── 다크 기본값 (팔레트보다 먼저 깔린다) ── */
+    html {
+      background: #111111;
+      color-scheme: dark; /* 스크롤바·기본 폼 컨트롤까지 어둡게 */
+    }
+    ::selection { background: rgba(173, 173, 173, 0.30); color: #f0f0f0; }
+    * { scrollbar-width: thin; scrollbar-color: #393939 transparent; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #393939; border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: #494949; }
+
+:root {
+      --bg: #111111; --card: #252525; --text: #f0f0f0; --muted: #909090;
+      --accent: #757575; --green: #34c77b; --orange: #f0a030; --red: #e74c5f;
       --border: rgba(255,255,255,0.08);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Noto Sans KR', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-    .bar { display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: #1a1d28; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
+    .bar { display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: #1d1d1d; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
     .back { width: 36px; height: 36px; border: none; border-radius: 10px; background: var(--card); color: var(--text); font-size: 22px; }
     .title { font-size: 16px; font-weight: 700; flex: 1; }
     .wrap { padding: 14px 16px 24px; }
     .tag { display: inline-block; font-size: 11px; padding: 3px 8px; border-radius: 6px; background: rgba(240,160,48,0.15); color: var(--orange); margin-bottom: 10px; }
     .hint { font-size: 13px; color: var(--muted); line-height: 1.55; margin-bottom: 12px; }
-    .scan-box { background: #1a1d28; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 12px; }
+    .scan-box { background: #1d1d1d; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 12px; }
     .scan-label { padding: 10px 12px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
     #qr-reader { width: 100%; min-height: 200px; }
     .row { display: flex; gap: 8px; margin-bottom: 12px; }
     .row input { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 16px; }
     .btn { border: none; border-radius: 10px; padding: 12px 14px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
-    .btn-blue { background: var(--blue); color: #fff; }
+    .btn-blue { background: var(--accent); color: #fff; }
     .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--muted); width: 100%; margin-top: 8px; }
     .result { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-top: 12px; display: none; }
     .result.show { display: block; }
@@ -42,11 +54,11 @@
     .chip.bad { background: rgba(231,76,95,0.15); color: #f5a0a8; }
     .samples { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
     .sample { font-size: 11px; padding: 6px 8px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); color: var(--muted); cursor: pointer; }
-    .loading { display: none; position: fixed; inset: 0; background: rgba(15,17,23,0.88); z-index: 99; align-items: center; justify-content: center; flex-direction: column; gap: 10px; }
+    .loading { display: none; position: fixed; inset: 0; background: rgba(17, 17, 17,0.88); z-index: 99; align-items: center; justify-content: center; flex-direction: column; gap: 10px; }
     .loading.on { display: flex; }
-    .spin { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: rot 0.7s linear infinite; }
+    .spin { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: rot 0.7s linear infinite; }
     @keyframes rot { to { transform: rotate(360deg); } }
-    .ver { text-align: center; font-size: 11px; color: #5c6078; padding-top: 16px; }
+    .ver { text-align: center; font-size: 11px; color: #616161; padding-top: 16px; }
   </style>
 </head>
 <body>
@@ -74,7 +86,7 @@
     <button class="btn btn-blue" onclick="document.getElementById('fileInTop').click()">📷 촬영해서 인식 (모바일 권장)</button>
     <input type="file" id="fileInTop" style="display:none" accept="image/*" capture="environment" onchange="scanFile(event)">
     <button class="btn btn-outline" id="btnPopupScan" style="display:none" onclick="openScanPopup()">🖥 카메라 창 열고 연속 스캔 (PC)</button>
-    <div id="embedBanner" style="display:none;margin:10px 0;padding:10px 12px;border-radius:10px;background:rgba(74,144,217,0.12);font-size:12px;line-height:1.5;color:#8b8fa3">
+    <div id="embedBanner" style="display:none;margin:10px 0;padding:10px 12px;border-radius:10px;background:rgba(173, 173, 173,0.12);font-size:12px;line-height:1.5;color:#909090">
       구글 정책상 앱 화면 안에서는 카메라 영상이 열리지 않습니다.
       위 <b>촬영해서 인식</b>을 쓰면 폰 기본 카메라로 찍어 그대로 인식합니다.
       <button type="button" class="btn btn-blue" style="margin-top:8px;width:100%" onclick="openStandalone()">↗ Chrome/Safari 새 탭에서 열기</button>
@@ -134,7 +146,7 @@
         var b = document.getElementById("embedBanner");
         if (b) b.style.display = "block";
         document.getElementById("qr-reader").innerHTML =
-          '<div style="padding:20px;text-align:center;color:#8b8fa3;font-size:13px;line-height:1.6">' +
+          '<div style="padding:20px;text-align:center;color:#909090;font-size:13px;line-height:1.6">' +
           '바코드가 화면을 꽉 채우게, 가로로 눕혀서 촬영하세요.<br>' +
           '바코드가 지워졌으면 인쇄된 숫자만 찍어도 인식합니다.</div>';
         return;
@@ -142,7 +154,7 @@
       document.getElementById("btnPopupScan").style.display = "block";
       if (typeof Html5Qrcode === "undefined") {
         document.getElementById("qr-reader").innerHTML =
-          '<div style="padding:20px;text-align:center;color:#8b8fa3;font-size:13px">스캔 라이브러리 로드 실패 — 사진 스캔 또는 직접 입력 사용</div>';
+          '<div style="padding:20px;text-align:center;color:#909090;font-size:13px">스캔 라이브러리 로드 실패 — 사진 스캔 또는 직접 입력 사용</div>';
         return;
       }
       startScanner();
@@ -175,7 +187,7 @@
           function() {}
         ).catch(function(err) {
           document.getElementById("qr-reader").innerHTML =
-            '<div style="padding:20px;text-align:center;color:#8b8fa3;font-size:13px">카메라 불가 — 사진 스캔 또는 직접 입력<br>' +
+            '<div style="padding:20px;text-align:center;color:#909090;font-size:13px">카메라 불가 — 사진 스캔 또는 직접 입력<br>' +
             '<button class="btn btn-blue" style="margin-top:10px" onclick="document.getElementById(\'fileIn\').click()">📷 사진 스캔</button>' +
             '<button class="btn btn-outline" style="margin-top:8px;width:100%" onclick="openStandalone()">↗ 새 탭에서 열기</button>' +
             '<input type="file" id="fileIn" style="display:none" accept="image/*" capture="environment" onchange="scanFile(event)"></div>';
@@ -303,7 +315,7 @@
         (res.note ? '<div class="r-line">메모: ' + esc(res.note) + '</div>' : '') +
         '<div id="orderBlock"></div>' +
         '<div class="r-line" style="margin-top:10px;font-size:12px">롯데 조회: <a href="https://www.lotteglogis.com/home/reservation/tracking/linkView?InvNo=' +
-        esc(res.invoice) + '" target="_blank" rel="noopener" style="color:#9cc7f0">배송추적 ↗</a></div>';
+        esc(res.invoice) + '" target="_blank" rel="noopener" style="color:#c1c1c1">배송추적 ↗</a></div>';
     }
 
     function appendOrderResult(order) {

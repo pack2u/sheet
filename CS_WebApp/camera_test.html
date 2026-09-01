@@ -8,19 +8,31 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
-    :root {
-      --bg-primary: #0f1117;
-      --bg-secondary: #1a1d28;
-      --bg-card: #222533;
-      --bg-card-hover: #2a2e42;
-      --text-primary: #f0f0f5;
-      --text-secondary: #8b8fa3;
-      --text-muted: #5c6078;
-      --accent-blue: #4a90d9;
+    /* ── 다크 기본값 (팔레트보다 먼저 깔린다) ── */
+    html {
+      background: #111111;
+      color-scheme: dark; /* 스크롤바·기본 폼 컨트롤까지 어둡게 */
+    }
+    ::selection { background: rgba(173, 173, 173, 0.30); color: #f0f0f0; }
+    * { scrollbar-width: thin; scrollbar-color: #393939 transparent; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #393939; border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: #494949; }
+
+:root {
+      --bg-primary: #111111;
+      --bg-secondary: #1d1d1d;
+      --bg-card: #252525;
+      --bg-card-hover: #2f2f2f;
+      --text-primary: #f0f0f0;
+      --text-secondary: #909090;
+      --text-muted: #616161;
+      --accent: #757575;
       --accent-green: #34c77b;
       --accent-red: #e74c5f;
       --accent-orange: #f0a030;
-      --accent-purple: #8b5cf6;
+      --accent-purple: #717171;
       --border: rgba(255,255,255,0.06);
       --radius: 16px;
       --radius-sm: 10px;
@@ -54,7 +66,7 @@
     .top-badge {
       margin-left: auto;
       padding: 4px 10px; border-radius: 20px;
-      background: rgba(139,92,246,0.12); color: var(--accent-purple);
+      background: rgba(113, 113, 113,0.12); color: var(--accent-purple);
       font-size: 11px; font-weight: 600;
     }
 
@@ -64,13 +76,13 @@
       border-bottom: 1px solid var(--border);
     }
     .section-title {
-      font-size: 14px; font-weight: 600; color: var(--accent-blue);
+      font-size: 14px; font-weight: 600; color: var(--accent-soft);
       margin-bottom: 12px;
       display: flex; align-items: center; gap: 8px;
     }
     .section-title .num {
       width: 24px; height: 24px; border-radius: 8px;
-      background: var(--accent-blue); color: white;
+      background: var(--accent); color: white;
       font-size: 12px; font-weight: 700;
       display: flex; align-items: center; justify-content: center;
     }
@@ -79,7 +91,7 @@
     .capture-btn {
       display: flex; align-items: center; justify-content: center; gap: 10px;
       width: 100%; padding: 18px;
-      background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+      background: linear-gradient(135deg, var(--accent), var(--accent-purple));
       border: none; border-radius: var(--radius);
       color: white; font-size: 16px; font-weight: 600;
       font-family: inherit; cursor: pointer;
@@ -104,7 +116,7 @@
     }
     .result-card.success { border-color: rgba(52,199,123,0.3); }
     .result-card.error { border-color: rgba(231,76,95,0.3); }
-    .result-card.info { border-color: rgba(74,144,217,0.3); }
+    .result-card.info { border-color: rgba(173, 173, 173,0.3); }
     .result-label {
       font-size: 11px; font-weight: 600; color: var(--text-muted);
       text-transform: uppercase; letter-spacing: 0.5px;
@@ -115,7 +127,7 @@
     }
     .result-value.green { color: var(--accent-green); }
     .result-value.red { color: var(--accent-red); }
-    .result-value.blue { color: var(--accent-blue); }
+    .result-value.blue { color: var(--accent-soft); }
     .result-time {
       margin-top: 8px; font-size: 11px; color: var(--text-muted);
       display: flex; align-items: center; gap: 4px;
@@ -189,7 +201,7 @@
     }
     .log-area .log-ok { color: var(--accent-green); }
     .log-area .log-err { color: var(--accent-red); }
-    .log-area .log-info { color: var(--accent-blue); }
+    .log-area .log-info { color: var(--accent-soft); }
     .log-area .log-warn { color: var(--accent-orange); }
 
     /* ── 요약 배지 ── */
@@ -215,14 +227,14 @@
       font-family: inherit; cursor: pointer;
       margin-top: 10px; transition: all 0.2s;
     }
-    .ocr-btn:active { transform: scale(0.97); background: rgba(139,92,246,0.1); }
+    .ocr-btn:active { transform: scale(0.97); background: rgba(113, 113, 113,0.1); }
     .ocr-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
     /* ── 로딩 ── */
     .loading-overlay {
       display: none; position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(15,17,23,0.85); backdrop-filter: blur(4px);
+      background: rgba(17, 17, 17,0.85); backdrop-filter: blur(4px);
       z-index: 200; align-items: center; justify-content: center;
       flex-direction: column; gap: 16px;
     }

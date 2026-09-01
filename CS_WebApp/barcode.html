@@ -9,22 +9,34 @@
   <!-- html5-qrcode 바코드 스캔 라이브러리 -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
-    :root {
-      --bg-primary: #0f1117;
-      --bg-secondary: #1a1d28;
-      --bg-card: #222533;
-      --bg-card-hover: #2a2e42;
-      --text-primary: #f0f0f5;
-      --text-secondary: #8b8fa3;
-      --text-muted: #5c6078;
-      --accent-blue: #4a90d9;
-      --accent-blue-light: #6ba5e7;
+    /* ── 다크 기본값 (팔레트보다 먼저 깔린다) ── */
+    html {
+      background: #111111;
+      color-scheme: dark; /* 스크롤바·기본 폼 컨트롤까지 어둡게 */
+    }
+    ::selection { background: rgba(173, 173, 173, 0.30); color: #f0f0f0; }
+    * { scrollbar-width: thin; scrollbar-color: #393939 transparent; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #393939; border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: #494949; }
+
+:root {
+      --bg-primary: #111111;
+      --bg-secondary: #1d1d1d;
+      --bg-card: #252525;
+      --bg-card-hover: #2f2f2f;
+      --text-primary: #f0f0f0;
+      --text-secondary: #909090;
+      --text-muted: #616161;
+      --accent: #757575;
+      --accent-soft: #adadad;
       --accent-green: #34c77b;
       --accent-red: #e74c5f;
       --accent-orange: #f0a030;
-      --accent-purple: #8b5cf6;
+      --accent-purple: #717171;
       --border: rgba(255, 255, 255, 0.06);
-      --border-active: rgba(74, 144, 217, 0.4);
+      --border-active: rgba(173, 173, 173, 0.4);
       --radius: 16px;
       --radius-sm: 10px;
     }
@@ -80,8 +92,8 @@
       transition: all 0.3s;
     }
     .step-dot.active {
-      background: var(--accent-blue);
-      box-shadow: 0 0 8px var(--accent-blue);
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
     }
     .step-dot.done {
       background: var(--accent-green);
@@ -112,9 +124,9 @@
       font-family: inherit;
     }
     .mode-tab.active {
-      background: var(--accent-blue);
+      background: var(--accent);
       color: white;
-      box-shadow: 0 2px 8px rgba(74,144,217,0.3);
+      box-shadow: 0 2px 8px rgba(173, 173, 173,0.3);
     }
     .mode-tab:not(.active):hover {
       color: var(--text-secondary);
@@ -156,8 +168,8 @@
       font-size: 11px;
       font-weight: 700;
     }
-    .scan-label .mode-badge.product { background: rgba(74,144,217,0.2); color: var(--accent-blue-light); }
-    .scan-label .mode-badge.invoice { background: rgba(139,92,246,0.2); color: var(--accent-purple); }
+    .scan-label .mode-badge.product { background: rgba(173, 173, 173,0.2); color: var(--accent-soft); }
+    .scan-label .mode-badge.invoice { background: rgba(113, 113, 113,0.2); color: var(--accent-purple); }
     #qr-reader {
       width: 100%;
       min-height: 280px;
@@ -209,7 +221,7 @@
       align-items: center;
       gap: 8px;
       padding: 14px 28px;
-      background: var(--accent-blue);
+      background: var(--accent);
       color: white;
       border: none;
       border-radius: var(--radius-sm);
@@ -225,9 +237,9 @@
     /* 두 번째 수단(사진 촬영)은 주된 버튼보다 눈에 덜 띄게 */
     .fallback-btn-sub {
       margin-top: 10px;
-      background: #2c2f3a;
-      color: #d6d9e3;
-      border: 1px solid var(--border, #2f3342);
+      background: #2f2f2f;
+      color: #d9d9d9;
+      border: 1px solid var(--border, #333333);
     }
     .file-input-hidden {
       display: none;
@@ -262,7 +274,7 @@
       transition: border 0.2s;
     }
     .manual-input input:focus {
-      border-color: var(--accent-blue);
+      border-color: var(--accent);
     }
     .manual-input input::placeholder {
       color: var(--text-muted);
@@ -279,7 +291,7 @@
     }
     .btn:active { transform: scale(0.96); }
     .btn-primary {
-      background: var(--accent-blue);
+      background: var(--accent);
       color: white;
     }
     .btn-purple {
@@ -316,7 +328,7 @@
       border-color: rgba(231, 76, 95, 0.3);
     }
     .product-card.invoice-found {
-      border-color: rgba(139, 92, 246, 0.3);
+      border-color: rgba(113, 113, 113, 0.3);
     }
     .product-status {
       display: inline-flex;
@@ -337,7 +349,7 @@
       color: var(--accent-red);
     }
     .product-status.invoice-found {
-      background: rgba(139,92,246,0.12);
+      background: rgba(113, 113, 113,0.12);
       color: var(--accent-purple);
     }
     .source-badge {
@@ -395,7 +407,7 @@
       -webkit-appearance: none;
     }
     .form-select:focus, .form-textarea:focus, .form-input:focus {
-      border-color: var(--accent-blue);
+      border-color: var(--accent);
     }
     .form-textarea {
       min-height: 100px;
@@ -418,7 +430,7 @@
       align-items: center;
       justify-content: center;
     }
-    .qty-btn:active { background: var(--accent-blue); }
+    .qty-btn:active { background: var(--accent); }
     .qty-value {
       font-size: 24px;
       font-weight: 700;
@@ -449,12 +461,12 @@
     .result-cs-number {
       display: inline-block;
       padding: 10px 20px;
-      background: rgba(74,144,217,0.12);
-      border: 1px solid rgba(74,144,217,0.3);
+      background: rgba(173, 173, 173,0.12);
+      border: 1px solid rgba(173, 173, 173,0.3);
       border-radius: var(--radius-sm);
       font-size: 16px;
       font-weight: 600;
-      color: var(--accent-blue-light);
+      color: var(--accent-soft);
       margin-bottom: 24px;
       letter-spacing: 0.5px;
     }
@@ -471,7 +483,7 @@
       display: none;
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(15,17,23,0.85);
+      background: rgba(17, 17, 17,0.85);
       backdrop-filter: blur(4px);
       z-index: 200;
       align-items: center;
@@ -483,7 +495,7 @@
     .spinner {
       width: 40px; height: 40px;
       border: 3px solid var(--border);
-      border-top-color: var(--accent-blue);
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
