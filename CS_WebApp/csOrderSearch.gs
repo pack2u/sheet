@@ -2849,3 +2849,80 @@ function csInvalidateReturnLedgerCache_() {
     Logger.log("[RETURN_LEDGER] 캐시 세대 증가 실패: " + e.message);
   }
 }
+
+/**
+ * 특정 날짜의 건수가 왜 그렇게 나오는지 캐낸다.
+ * 파일: csOrderSearch.gs  ★ 2026-09-02 신규
+ *
+ * 대시보드는 통합조회(또는 일일마감 폴백)로 만든 인덱스를 날짜별로 세는데,
+ * 날짜를 못 읽은 행은 date:"" 로 들어가 어느 날짜 버킷에도 안 걸린다.
+ * 즉 데이터는 있는데 집계에서만 조용히 빠진다. 그 차이를 눈으로 보게 한다.
+ *
+ * @param {string} dateStr "2026-09-01" (비우면 어제)
+ */
+function csDiagnoseDayCount(dateStr) {
+  var out = { date: "", unified: {}, daily: {}, verdict: "", hint: "" };
+
+  dateStr = String(dateStr || "").trim();
+  if (!dateStr) {
+    var y = new Date();
+    y.setDate(y.getDate() - 1);
+    dateStr = Utilities.formatDate(y, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  }
+  out.date = dateStr;
+
+  // ── 통합조회 쪽 ──
+  try {
+    var uv = _cs_loadUnifiedView_(_CS_DAILY_DAYS_DEFAULT_, true);
+    var onDate = 0, blank = 0, byDate = {};
+    for (var i = 0; i < uv.rows.length; i++) {
+      var d = String(uv.rows[i].date || "");
+      if (!d) blank++;
+      else {
+        byDate[d] = (byDate[d] || 0) + 1;
+        if (d === dateStr) onDate++;
+      }
+    }
+    out.unified = {
+      사용중: uv.found,
+      전체행: uv.rows.length,
+      해당날짜: onDate,
+      날짜없는행: blank,
+      갱신시각: uv.updatedAt || "",
+      오류: uv.error || "",
+      날짜별: byDate,
+    };
+  } catch (eU) {
+    out.unified = { 오류: eU.message };
+  }
+
+  // ── 일일마감 파일 쪽 (캐시 무시하고 새로 읽는다) ──
+  try {
+    var day = _cs_loadDay_(dateStr, true, false);
+    out.daily = {
+      파일찾음: day.found,
+      행수: (day.rows || []).length,
+      오류: day.error || "",
+    };
+  } catch (eD) {
+    out.daily = { 오류: eD.message };
+  }
+
+  var u = out.unified.해당날짜 || 0;
+  var f = out.daily.행수 || 0;
+  out.verdict = "통합조회 " + u + "건 · 일일마감 파일 " + f + "건";
+  if (out.unified.날짜없는행) {
+    out.hint = "★ 통합조회에 날짜를 못 읽은 행이 " + out.unified.날짜없는행 +
+      "건 있다. 이 행들은 대시보드 날짜 집계에서 통째로 빠진다 — " +
+      "통합조회 시트의 날짜 열 서식(텍스트/빈칸)을 확인할 것.";
+  } else if (f > u) {
+    out.hint = "일일마감 파일이 " + (f - u) + "건 더 많다. 통합조회가 그만큼 " +
+      "덜 담고 있다는 뜻이다 — 허브의 통합조회 갱신이 늦었거나 일부 출처가 빠졌다.";
+  } else {
+    out.hint = "두 쪽 건수가 비슷하다. 대시보드가 다르게 보인다면 브라우저에 " +
+      "남은 옛 인덱스(localStorage) 문제일 수 있다.";
+  }
+
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
