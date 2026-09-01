@@ -50,18 +50,37 @@ function _cs_sb_productByCode_(normCode, rawTok) {
   normCode = String(normCode || "").trim();
   rawTok = String(rawTok || normCode || "").trim().toUpperCase();
   var tries = [];
-  if (rawTok) tries.push(rawTok);
-  if (normCode && tries.indexOf(normCode) < 0) tries.push(normCode);
-  if (rawTok.indexOf("-") < 0 && normCode.length >= 4) tries.push(rawTok.replace(/([A-Z]{2})(\d)/, "$1-$2"));
+  function addTry(v) {
+    v = String(v == null ? "" : v).trim();
+    if (v && tries.indexOf(v) < 0) tries.push(v);
+  }
+  addTry(rawTok);
+  addTry(normCode);
+  if (rawTok.indexOf("-") < 0 && normCode.length >= 4) {
+    addTry(rawTok.replace(/([A-Z]{2})(\d)/, "$1-$2"));
+  }
+  if (!tries.length) return null;
 
-  var i;
+  /* 후보를 하나씩 물어보면 왕복이 최대 3번이다. GAS 의 UrlFetch 는 한 번에
+     1초 안팎이 들어서 그 차이가 그대로 체감된다. in.() 으로 한 번에 받는다.
+     대신 우선순위는 서버가 아니라 우리가 매긴다 — 먼저 넣은 후보가 이긴다.
+     코드에 쉼표·괄호가 섞여도 깨지지 않게 큰따옴표로 감싼다. */
+  var inList = tries
+    .map(function (t) { return encodeURIComponent('"' + t.replace(/"/g, "") + '"'); })
+    .join(",");
+  var rows = _cs_sb_get_(
+    "products_hub",
+    "ecount_code=in.(" + inList + ")" +
+    "&select=" + _CS_SB_SELECT_ + "&limit=" + tries.length
+  ) || [];
+
+  var i, j;
   for (i = 0; i < tries.length; i++) {
-    var rows = _cs_sb_get_(
-      "products_hub",
-      "ecount_code=eq." + encodeURIComponent(tries[i]) +
-      "&select=" + _CS_SB_SELECT_ + "&limit=1"
-    );
-    if (rows && rows.length) return rows[0];
+    for (j = 0; j < rows.length; j++) {
+      if (String(rows[j].ecount_code == null ? "" : rows[j].ecount_code).trim() === tries[i]) {
+        return rows[j];
+      }
+    }
   }
 
   var fuzzy = _cs_sb_get_(
@@ -520,5 +539,39 @@ function csDiagnoseProductDb() {
     out.errors.push("배송비: " + eSf.message);
   }
 
+  /* 실제 상세조회를 한 번 돌려 구간별 시간을 잰다. 어디가 느린지 추측하지 말고
+     숫자로 본다. 캐시가 살아 있으면 0ms 가 나와 의미가 없으므로 비우고 잰다
+     (지운 캐시는 다음 조회 때 다시 채워진다). */
+  try {
+    var probe = out.supabaseDirect && out.supabaseDirect.sampleCode;
+    if (probe) {
+      var pn = _cs_prod_normCode_(probe);
+      var ca = CacheService.getScriptCache();
+      try { ca.remove(_CS_PRODUCT_CACHE_VER_ + "_" + pn); } catch (eR1) {}
+      try { ca.remove(_CS_SHIPFEE_CACHE_VER_ + "_ship_" + pn); } catch (eR2) {}
+
+      var tDb = Date.now();
+      var hit = _cs_sb_productByCode_(pn, probe);
+      var dbMs = Date.now() - tDb;
+
+      var tSf = Date.now();
+      _cs_prod_shipFeeByCode_(pn);
+      var sfMs = Date.now() - tSf;
+
+      out.timing = {
+        probeCode: probe,
+        found: !!hit,
+        dbMs: dbMs, // Supabase 코드 조회 (in.() 1회)
+        shipFeeMs: sfMs, // 상품정보 O열 시트 스캔
+        totalMs: dbMs + sfMs,
+      };
+    }
+  } catch (eT) {
+    out.errors.push("시간측정: " + eT.message);
+  }
+
+  // 편집기는 반환값을 로그에 찍어주지 않는다. 사람이 직접 돌리는 점검 함수라
+  // 로그를 남겨야 결과가 보인다 — csShowAllowedEmails / csShowFavorites 와 같은 방식.
+  try { Logger.log(JSON.stringify(out, null, 2)); } catch (eL) {}
   return out;
 }
