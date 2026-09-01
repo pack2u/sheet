@@ -976,6 +976,26 @@
     .ledger-field textarea { min-height: 64px; resize: vertical; }
     .ledger-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .ledger-help { font-size: 11px; color: var(--text-muted); margin: -4px 0 10px; line-height: 1.45; }
+
+    /* ★ 2026-09-01: 카드 작성 중 임시저장 표시줄.
+       자료 찾으러 모달을 닫아도 적던 내용이 남는다는 걸 눈으로 확인시켜 준다.
+       기본은 숨김이고 저장분이 생기면 .on 이 붙는다. */
+    .draft-bar {
+      display: none; align-items: center; gap: 8px;
+      margin: -4px 0 10px; padding: 7px 10px;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--bg-secondary);
+      font-size: 11px; color: var(--text-secondary); line-height: 1.4;
+    }
+    .draft-bar.on { display: flex; }
+    .draft-bar .dm { flex: 1; min-width: 0; }
+    .draft-bar .dx {
+      flex: none; padding: 4px 9px; border: 1px solid var(--border);
+      border-radius: 6px; background: var(--bg-primary); color: var(--text-secondary);
+      font-size: 11px; font-family: inherit; font-weight: 700; cursor: pointer;
+    }
+    .draft-bar.restored { border-color: var(--accent-green); color: var(--accent-green); }
+
     .ledger-btns { display: flex; gap: 8px; margin-top: 14px; }
     .ledger-btns button {
       flex: 1; padding: 12px; border: none; border-radius: 10px;
@@ -1916,6 +1936,10 @@
     <div class="modal-content" style="max-height:88vh;overflow-y:auto;">
       <div class="modal-handle"></div>
       <div class="modal-title">CS 전달 카드 작성</div>
+      <div class="draft-bar" id="hbDraftBar">
+        <span class="dm"></span>
+        <button type="button" class="dx" onclick="draftDiscard('hb')">새로 작성</button>
+      </div>
       <div class="ledger-field">
         <label>중요도</label>
         <div class="hb-lv-pick" id="hbLvPick">
@@ -1978,7 +2002,7 @@
         <select id="hbStaff"></select>
       </div>
       <div class="ledger-btns">
-        <button class="ledger-cancel" type="button" onclick="closeHbModal()">취소</button>
+        <button class="ledger-cancel" type="button" onclick="closeHbModal(true)">취소</button>
         <button class="ledger-ok" type="button" id="hbSubmitBtn" onclick="submitHbCard()">등록</button>
       </div>
     </div>
@@ -2010,6 +2034,10 @@
       <div class="modal-handle"></div>
       <div class="modal-title">반품 카드 작성</div>
       <div class="ledger-help">주문검색에 없는 건도 여기서 바로 접수할 수 있습니다. 송장·전화를 넣으면 불러온 주문에서 채웁니다.</div>
+      <div class="draft-bar" id="retNewDraftBar">
+        <span class="dm"></span>
+        <button type="button" class="dx" onclick="draftDiscard('retNew')">새로 작성</button>
+      </div>
       <div class="ledger-field">
         <label>접수자</label>
         <select id="retNewStaff"></select>
@@ -2097,7 +2125,7 @@
         <div id="retNewPhotoPrev"></div>
       </div>
       <div class="ledger-btns">
-        <button class="ledger-cancel" type="button" onclick="closeRetNewModal()">취소</button>
+        <button class="ledger-cancel" type="button" onclick="closeRetNewModal(true)">취소</button>
         <button class="ledger-ok" type="button" id="retNewSubmitBtn" onclick="submitRetNew(false)">카드 생성</button>
       </div>
     </div>
@@ -2108,6 +2136,10 @@
       <div class="modal-handle"></div>
       <div class="modal-title">반품관리대장 기록</div>
       <div class="ledger-preview" id="ledgerPreview"></div>
+      <div class="draft-bar" id="ledgerDraftBar">
+        <span class="dm"></span>
+        <button type="button" class="dx" onclick="draftDiscard('ledger')">새로 작성</button>
+      </div>
       <div class="ledger-field">
         <label>접수자</label>
         <select id="ledgerStaff"></select>
@@ -2142,7 +2174,7 @@
         <div id="ledgerPhotoPrev"></div>
       </div>
       <div class="ledger-btns">
-        <button class="ledger-cancel" type="button" onclick="closeLedger()">취소</button>
+        <button class="ledger-cancel" type="button" onclick="closeLedger(true)">취소</button>
         <button class="ledger-ok" type="button" id="ledgerSubmitBtn" onclick="submitLedger(false)">기록</button>
       </div>
     </div>
@@ -3415,7 +3447,179 @@
       return el ? String(el.value || '').trim() : '';
     }
 
+    // ══════════════════════════════════════════════
+    //  ★ 2026-09-01: 카드 작성 임시저장 (중간 저장)
+    //
+    //  자료를 찾으러 모달을 닫는 일이 잦은데 그때마다 적던 내용이 날아갔다.
+    //  이제 입력이 멎을 때마다 localStorage 에 담고, 다시 열면 그대로 되살린다.
+    //
+    //  닫기·취소로는 지우지 않는다 — 그게 이 기능의 목적이다.
+    //  지우는 시점은 등록 성공 직후와 「새로 작성」을 누른 때, 두 번뿐이다.
+    //
+    //  사진·첨부는 File 객체라 담기지 않는다. 글자칸만 남는다.
+    // ══════════════════════════════════════════════
+    var DRAFT_PREFIX = 'pack2u_draft_';
+    var DRAFT_TTL_MS = 24 * 60 * 60 * 1000;  // 하루 지난 초안은 흘려보낸다
+    var DRAFT_TIMERS = {};
+    var DRAFT_QUIET = false;   // 모달을 여는 동안엔 담지 않는다 (빈 칸으로 덮어쓰는 사고 방지)
+
+    var DRAFT_SPECS = {
+      retNew: {
+        modal: 'retNewModal', bar: 'retNewDraftBar',
+        fields: ['retNewStaff', 'retNewName', 'retNewPhone', 'retNewInvoice', 'retNewQty',
+                 'retNewItem', 'retNewVendor', 'retNewPickup', 'retNewRetInvoice',
+                 'retNewFee', 'retNewType', 'retNewStatus', 'retNewMemo']
+      },
+      hb: {
+        modal: 'hbModal', bar: 'hbDraftBar',
+        fields: ['hbStaff', 'hbTitle', 'hbCustName', 'hbPhone', 'hbInvoice',
+                 'hbItem', 'hbBody', 'hbLink'],
+        // 중요도는 입력칸이 아니라 버튼이라 따로 담고 따로 되살린다
+        save: function(v) { v._lv = HB_NEW_LEVEL || '일반'; },
+        load: function(v) { if (v._lv) pickHbLevel(v._lv); }
+      },
+      // 대장 기록은 특정 반품 건에 붙는 모달이라 건별로 나눠 담는다.
+      // 송장이 없으면 아예 담지 않는다 — 엉뚱한 건에 남의 메모가 붙는 게 더 나쁘다.
+      ledger: {
+        modal: 'ledgerModal', bar: 'ledgerDraftBar', requireScope: true,
+        fields: ['ledgerStaff', 'ledgerType', 'ledgerPickup', 'ledgerMemo'],
+        scope: function() {
+          var r = CS_ROWS[LEDGER_IDX] || {};
+          return String(r.invoice || '').replace(/[^0-9]/g, '');
+        }
+      }
+    };
+
+    function draftKey(name) {
+      var spec = DRAFT_SPECS[name];
+      if (!spec) return '';
+      var scope = spec.scope ? String(spec.scope() || '') : '';
+      if (spec.requireScope && !scope) return '';
+      return DRAFT_PREFIX + name + (scope ? '_' + scope : '');
+    }
+
+    function draftStamp(t) {
+      var d = new Date(t);
+      var p = function(n) { return (n < 10 ? '0' : '') + n; };
+      return p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+
+    function draftShowBar(name, msg, restored) {
+      var spec = DRAFT_SPECS[name];
+      var bar = spec && document.getElementById(spec.bar);
+      if (!bar) return;
+      if (!msg) { bar.classList.remove('on', 'restored'); return; }
+      var m = bar.querySelector('.dm');
+      if (m) m.textContent = msg;
+      bar.classList.add('on');
+      bar.classList.toggle('restored', !!restored);
+    }
+
+    /** 지금 입력칸 값을 담는다. 사람이 적은 게 하나도 없으면 담지 않고 기존 것도 버린다 */
+    function draftSave(name) {
+      var spec = DRAFT_SPECS[name];
+      var key = draftKey(name);
+      if (!spec || !key) return;
+
+      var vals = {};
+      var typed = 0;
+      for (var i = 0; i < spec.fields.length; i++) {
+        var el = document.getElementById(spec.fields[i]);
+        if (!el) continue;
+        var v = String(el.value == null ? '' : el.value);
+        vals[spec.fields[i]] = v;
+        // 담당자·유형·상태는 열자마자 기본값이 박혀 있어 「적은 것」으로 세지 않는다
+        if (v && el.tagName !== 'SELECT') typed++;
+      }
+      if (spec.save) { try { spec.save(vals); } catch (eX) {} }
+
+      if (!typed) { draftDrop(name); draftShowBar(name, ''); return; }
+
+      var now = new Date().getTime();
+      try {
+        localStorage.setItem(key, JSON.stringify({ t: now, v: vals }));
+        draftShowBar(name, '임시저장됨 ' + draftStamp(now) + ' · 닫아도 남습니다', false);
+      } catch (eS) {}
+    }
+
+    function draftDrop(name) {
+      var key = draftKey(name);
+      if (!key) return;
+      try { localStorage.removeItem(key); } catch (eR) {}
+    }
+
+    /** 등록이 실제로 끝났을 때만 부른다 */
+    function draftClear(name) {
+      draftDrop(name);
+      draftShowBar(name, '');
+    }
+
+    /** 취소로 닫을 때만 부른다 — 날아가지 않았다는 걸 그 자리에서 알려준다 */
+    function draftBye(name) {
+      var key = draftKey(name);
+      if (!key) return;
+      var raw = '';
+      try { raw = localStorage.getItem(key) || ''; } catch (eB) {}
+      if (raw) toast('적던 내용은 임시저장했습니다 · 다시 열면 이어서 씁니다', 2400);
+    }
+
+    /** 값이 바뀌었다고 알린다. 잠깐 멎으면 담는다 */
+    function draftTouch(name) {
+      if (DRAFT_QUIET) return;
+      clearTimeout(DRAFT_TIMERS[name]);
+      DRAFT_TIMERS[name] = setTimeout(function() { draftSave(name); }, 400);
+    }
+
+    /** 모달 안의 모든 입력을 지켜본다. 모달마다 한 번만 붙는다 */
+    function draftWatch(name) {
+      var spec = DRAFT_SPECS[name];
+      if (!spec || spec._watched) return;
+      var el = document.getElementById(spec.modal);
+      if (!el) return;
+      spec._watched = true;
+      var fire = function() { draftTouch(name); };
+      el.addEventListener('input', fire);
+      el.addEventListener('change', fire);
+    }
+
+    /** 모달을 연 직후에 부른다. 담긴 게 있으면 입력칸에 되살린다 */
+    function draftRestore(name) {
+      var spec = DRAFT_SPECS[name];
+      var key = draftKey(name);
+      draftShowBar(name, '');
+      if (!spec || !key) return false;
+
+      var raw = '';
+      try { raw = localStorage.getItem(key) || ''; } catch (eG) { return false; }
+      if (!raw) return false;
+
+      var d = null;
+      try { d = JSON.parse(raw); } catch (eP) { d = null; }
+      if (!d || !d.v || !d.t) { draftDrop(name); return false; }
+      if ((new Date().getTime() - d.t) > DRAFT_TTL_MS) { draftDrop(name); return false; }
+
+      for (var i = 0; i < spec.fields.length; i++) {
+        var id = spec.fields[i];
+        var el = document.getElementById(id);
+        if (!el || !(id in d.v)) continue;
+        el.value = d.v[id];
+      }
+      if (spec.load) { try { spec.load(d.v); } catch (eL) {} }
+      draftShowBar(name, '적던 내용을 되살렸습니다 · ' + draftStamp(d.t), true);
+      return true;
+    }
+
+    /** 「새로 작성」 — 담긴 것을 버리고 빈 칸으로 다시 연다 */
+    function draftDiscard(name) {
+      draftClear(name);
+      if (name === 'retNew') openRetNewModal();
+      else if (name === 'hb') openHbModal();
+      else if (name === 'ledger') openLedger(LEDGER_IDX);
+      toast('임시저장을 지우고 새로 시작합니다');
+    }
+
     function openHbModal() {
+      DRAFT_QUIET = true;
       HB_NEW_LEVEL = '일반';
       pickHbLevel('일반');
       var t = document.getElementById('hbTitle'); if (t) t.value = '';
@@ -3430,11 +3634,15 @@
       hbRenderPending('create');
       fillStaffSelect(hbStaffName(), 'hbStaff');
       document.getElementById('hbModal').classList.add('active');
+      draftWatch('hb');
+      draftRestore('hb');
+      DRAFT_QUIET = false;
       setTimeout(function(){ if (t) t.focus(); }, 120);
     }
 
-    function closeHbModal() {
+    function closeHbModal(fromCancel) {
       document.getElementById('hbModal').classList.remove('active');
+      if (fromCancel) draftBye('hb');
     }
 
     function pickHbLevel(lv) {
@@ -3443,6 +3651,7 @@
       for (var i = 0; i < btns.length; i++) {
         btns[i].classList.toggle('on', btns[i].getAttribute('data-lv') === HB_NEW_LEVEL);
       }
+      draftTouch('hb');   // 중요도는 버튼이라 input/change 가 안 뜬다
     }
 
     function submitHbCard() {
@@ -3460,6 +3669,7 @@
       function finish(msg, ms) {
         if (btn) { btn.disabled = false; btn.textContent = '등록'; }
         closeHbModal();
+        draftClear('hb');
         toast(msg, ms);
         loadHandoffBoard(false);
       }
@@ -6271,6 +6481,7 @@
     }
 
     function openRetNewModal() {
+      DRAFT_QUIET = true;
       RET_NEW_PENDING = true;
       LEDGER_IDX = -1;
       fillStaffSelect(currentStaff, 'retNewStaff');
@@ -6291,14 +6502,18 @@
       btn.disabled = false;
       btn.textContent = '카드 생성';
       document.getElementById('retNewModal').classList.add('active');
+      draftWatch('retNew');
+      draftRestore('retNew');
+      DRAFT_QUIET = false;
       setTimeout(function() {
         var el = document.getElementById('retNewName');
         if (el) el.focus();
       }, 80);
     }
 
-    function closeRetNewModal() {
+    function closeRetNewModal(fromCancel) {
       document.getElementById('retNewModal').classList.remove('active');
+      if (fromCancel) draftBye('retNew');
     }
 
     function retNewDigits(s) {
@@ -6341,6 +6556,8 @@
       if (!document.getElementById('retNewQty').value) document.getElementById('retNewQty').value = best.qty || '';
       if (!document.getElementById('retNewVendor').value) document.getElementById('retNewVendor').value = best.vendor || '';
       if (!document.getElementById('retNewPickup').value) document.getElementById('retNewPickup').value = resolveCarrier(best) || '';
+      // 여기서 채운 값은 .value 직접 대입이라 input 이 안 뜬다. 직접 알려줘야 담긴다
+      draftTouch('retNew');
       if (forceToast || bestScore >= 80) toast('주문 정보로 채웠습니다');
     }
 
@@ -6371,6 +6588,7 @@
           }
           closeRetNewModal();
           closeLedgerDup();
+          draftClear('retNew');
           var pend = retModalList('retNew').length;
           if (pend) toast('카드 생성됨 · 사진 ' + pend + '장 올리는 중…', 2600);
           retModalPhotoUpload('retNew', res, staff, name, function(photoMsg) {
@@ -6402,6 +6620,7 @@
     }
 
     function openLedger(i) {
+      DRAFT_QUIET = true;
       RET_NEW_PENDING = false;
       LEDGER_IDX = i;
       var r = CS_ROWS[i] || {};
@@ -6420,10 +6639,14 @@
       btn.disabled = false;
       btn.textContent = '기록';
       document.getElementById('ledgerModal').classList.add('active');
+      draftWatch('ledger');
+      draftRestore('ledger');
+      DRAFT_QUIET = false;
     }
 
-    function closeLedger() {
+    function closeLedger(fromCancel) {
       document.getElementById('ledgerModal').classList.remove('active');
+      if (fromCancel) draftBye('ledger');
     }
 
     function showLedgerDup(msg) {
@@ -6468,6 +6691,7 @@
           }
           closeLedger();
           closeLedgerDup();
+          draftClear('ledger');   // LEDGER_IDX 가 아직 살아 있어야 건별 키가 잡힌다
           var pend = retModalList('ledger').length;
           if (pend) toast('기록됨 · 사진 ' + pend + '장 올리는 중…', 2600);
           retModalPhotoUpload('ledger', res, staff, r.name, function(photoMsg) {
