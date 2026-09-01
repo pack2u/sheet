@@ -7826,13 +7826,18 @@
 
       /* 손잡이로 연 뒤에는 손잡이가 숨는다. 마우스가 없는 기기에는 닫을 길이
          없어지므로 바깥을 누르면 접는다. */
+      /* ★ 캡처 단계여야 한다 (2026-09-02 폴더 안 폴더가 안 열리던 버그).
+         버블링으로 받으면 이미 메뉴가 다시 그려진 뒤라, 방금 누른 칩이 DOM 에서
+         떨어져 나가 closest('#csFavWrap') 가 null 을 준다. 그러면 안쪽을 눌렀는데도
+         "바깥 클릭"으로 보고 방금 연 폴더를 도로 닫는다.
+         캡처는 메뉴 핸들러보다 먼저 도니 요소가 아직 붙어 있다. */
       document.addEventListener('click', function(ev) {
         var w = document.getElementById('csFavWrap');
         if (!w || !w.classList.contains('on')) return;
         if (ev.target && ev.target.closest && ev.target.closest('#csFavWrap')) return;
         csFavCloseMenu();
         w.classList.remove('on');
-      });
+      }, true);
 
       google.script.run
         .withSuccessHandler(function(res) {

@@ -102,6 +102,16 @@ popupsBlocked = 2; toasts = [];
 ctx.csFavOpenAll();
 ok('막힌 개수를 토스트로 알린다', toasts.some(t => /2개가 팝업 차단/.test(t)));
 
+console.log('\n[바깥 클릭 감지는 캡처 단계여야 한다]');
+/* 폴더 안 폴더가 안 열리던 버그(2026-09-02)의 원인.
+   버블링으로 받으면 그때는 이미 메뉴가 다시 그려진 뒤라, 방금 누른 칩이 DOM 에서
+   떨어져 closest('#csFavWrap') 가 null 을 준다 → 안쪽 클릭을 바깥으로 오인해
+   방금 연 폴더를 도로 닫는다. 동작 재현은 DOM 분리까지 흉내 내야 하므로
+   소스에서 capture 플래그를 직접 확인한다. */
+const initSrc = src.slice(b).join('\n');
+ok('document click 리스너가 capture=true 로 붙는다',
+   /document\.addEventListener\(\s*'click',[\s\S]*?\},\s*true\s*\)/.test(initSrc));
+
 console.log('\n[폴더칩이 없으면 버튼도 없다]');
 ctx.csFavRender([{ name: '한개뿐', children: [L('하나')] }]);
 ctx.csFavOpenFolder(0, false);
