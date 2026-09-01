@@ -101,11 +101,6 @@ var _CS_FAV_DEFAULT_ = [
       { icon: "📄", name: "직매입-그린우드", url: "https://docs.google.com/spreadsheets/d/1w0yCTEMJYKbdNXy8B60Xwm3Y5wjrOjdvSpbMBiwBQV4/edit?gid=60277540#gid=60277540" },
       { icon: "📄", name: "직매입-성우플러스", url: "https://docs.google.com/spreadsheets/d/1tuv_2xMIpyaUx1yhXuZxocPfdEE3qX7ksBvldCgwPck/edit" },
     ] },
-    { icon: "📁", name: "AI 시트", children: [
-      { icon: "📄", name: "상세 HTML/시멘틱 생성기_V4_naver add", url: "https://docs.google.com/spreadsheets/d/1vSTzelkB71yIHYIf6_Qsq_QOf9rzZhETv1lQO_O6waw/edit?gid=967046554#gid=967046554" },
-      { icon: "📄", name: "AI_Image_Maker", url: "https://docs.google.com/spreadsheets/d/1vs6jMFd4DDEg02qw7_xMdTs7TTPcAYYKwLTrUI7JlgA/edit?gid=0#gid=0" },
-      { icon: "📄", name: "AI 배경 변경 시스템", url: "https://docs.google.com/spreadsheets/d/1aOx8P1ClBOBoxbOdyYS9UmcwiVl_WMHZLlhGcJismME/edit?gid=0#gid=0" },
-    ] },
     { icon: "📄", name: "상품정보", url: "https://docs.google.com/spreadsheets/d/1Lz-ykUAQBpeEnZU1T_qdJeX9d9L10h6z6qYwHQna2QE/edit?gid=1026076873#gid=1026076873" },
     { icon: "📄", name: "[Pack2U] 통합 관리 HUB (최종 완성본)", url: "https://docs.google.com/spreadsheets/d/1qRIEw--DcF44CqiO24C9vI74pYbN8VbqCimjNuHK5fk/edit?gid=0#gid=0" },
     { icon: "📄", name: "(사용중)세트분리", url: "https://docs.google.com/spreadsheets/d/1vWdJgmbW_Gwm_2b1pP8mVBxpfYBbUiAduSwkStXxs0Y/edit?gid=312828664#gid=312828664" },
