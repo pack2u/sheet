@@ -12,6 +12,17 @@
  * 무엇보다 바뀐 게 없을 때 화면을 건드리지 않는다.
  */
 
+/**
+ * 배포 빌드 번호.
+ *
+ * ★ 재배포할 때마다 clasp 버전 번호와 같이 올린다 ★
+ *   Apps Script 는 서버에서 브라우저를 깨우지 못한다. 재배포는 그 다음에
+ *   페이지를 새로 여는 사람에게만 닿고, 열어둔 화면은 옛 HTML 을 계속 돌린다.
+ *   그래서 이 값을 pulse 에 실어 보내 프런트가 스스로 알아채게 한다.
+ *   안 올리면 사람들은 옛 화면을 쓰면서 고쳐진 줄 안다.
+ */
+var CS_BUILD_ = "164";
+
 /** 문자열 → 짧은 지문. djb2 변형, 36진수 */
 function _cs_pulse_hash_(s) {
   s = String(s == null ? "" : s);
@@ -96,7 +107,7 @@ function csGetCsPulse(opt) {
   var _acg_ = _cs_ac_guard_();
   if (_acg_) return _acg_;
 
-  var out = { ok: true, board: null, ret: null, errors: [] };
+  var out = { ok: true, build: CS_BUILD_, board: null, ret: null, errors: [] };
 
   try {
     out.board = _cs_pulse_board_();
