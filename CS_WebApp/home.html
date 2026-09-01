@@ -665,10 +665,39 @@
     .cs-fav-wrap:hover .cs-fav-tab,
     .cs-fav-wrap.on .cs-fav-tab { opacity: 0; pointer-events: none; }
 
+    /* 폴더칩을 누르면 바 아래로 펼쳐지는 패널.
+       바 안에 넣으면 overflow-x:auto 에 잘리므로 형제로 두고 아래에 붙인다. */
+    .cs-fav-menu {
+      display: none; width: 70%; margin: 0 auto; padding: 10px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border); border-top: none;
+      border-bottom: 2px solid var(--accent-green);
+      border-radius: 0 0 var(--radius) var(--radius);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+      max-height: 60vh; overflow-y: auto; pointer-events: auto;
+    }
+    .cs-fav-menu.on { display: block; }
+    /* 패널이 붙어 있는 동안 바는 아래쪽을 닫지 않는다 — 한 덩어리로 보이게 */
+    .cs-fav-wrap.menu-open .cs-fav-bar {
+      border-radius: 0; border-bottom-color: var(--border);
+    }
+    .cs-fav-menu-head {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 9px;
+      font-size: 11px; color: var(--text-muted);
+    }
+    .cs-fav-back {
+      padding: 3px 9px; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--bg-secondary);
+      color: var(--text-secondary); font-size: 11px; font-family: inherit; font-weight: 700;
+    }
+    .cs-fav-back:hover { border-color: var(--accent-green); color: var(--accent-green); }
+    .cs-fav-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+
     /* 좁은 화면에서 70% 는 너무 좁다. 거의 꽉 채우고 스크롤로 넘긴다 */
     @media (max-width: 900px) {
       .cs-fav-hot { left: 3%; right: 3%; }
       .cs-fav-bar { width: 94%; justify-content: flex-start; }
+      .cs-fav-menu { width: 94%; }
       .cs-fav-tab { right: 3%; }
     }
     .cs-build-bar .dot {
@@ -1758,6 +1787,7 @@
   <!-- 숨은 즐겨찾기 바 — 목록이 비면 통째로 감춘다 (csFavorites.gs) -->
   <div class="cs-fav-wrap" id="csFavWrap" style="display:none">
     <div class="cs-fav-bar" id="csFavBar"></div>
+    <div class="cs-fav-menu" id="csFavMenu"></div>
     <div class="cs-fav-hot" aria-hidden="true"></div>
     <div class="cs-fav-tab" id="csFavTab" onclick="csFavToggle()" title="즐겨찾기">★</div>
   </div>
@@ -7630,6 +7660,25 @@
       if (w) w.classList.toggle('on');
     }
 
+    /* 폴더는 칩 하나로 접어 두고 눌러야 펼친다. 협력업체 시트만 56개라
+       전부 늘어놓으면 바가 가로로 끝없이 넘친다.
+       폴더 안에 폴더가 또 있으므로 파고들기(드릴다운) 방식으로 만든다. */
+    var CS_FAV_ITEMS = [];
+    var CS_FAV_PATH = [];   // 지금 보고 있는 폴더의 인덱스 경로
+
+    function csFavChip(it, idx, inMenu) {
+      var ic = '<span class="ic">' + esc(it.icon || (it.children ? '📁' : '🔗')) + '</span>';
+      var nm = '<span class="nm">' + esc(it.name || it.url || '') + '</span>';
+      if (it.children && it.children.length) {
+        return '<button type="button" class="cs-fav-item" data-folder="' + idx + '"' +
+               (inMenu ? ' data-in-menu="1"' : '') + '>' + ic + nm +
+               '<span style="opacity:.55">›</span></button>';
+      }
+      if (!it.url) return '';
+      return '<a class="cs-fav-item" href="' + esc(it.url) + '" target="_blank" rel="noopener">' +
+             ic + nm + '</a>';
+    }
+
     function csFavRender(items) {
       var wrap = document.getElementById('csFavWrap');
       var bar = document.getElementById('csFavBar');
@@ -7638,30 +7687,95 @@
       // 넣을 게 없으면 손잡이까지 감춘다. 눌러도 빈 바만 나오면 고장으로 보인다
       if (!items || !items.length) { wrap.style.display = 'none'; return; }
 
+      CS_FAV_ITEMS = items;
       var h = '';
-      for (var i = 0; i < items.length; i++) {
-        var it = items[i] || {};
-        if (!it.url) continue;
-        h += '<a class="cs-fav-item" href="' + esc(it.url) + '" target="_blank" rel="noopener">' +
-             '<span class="ic">' + esc(it.icon || '🔗') + '</span>' +
-             '<span class="nm">' + esc(it.name || it.url) + '</span></a>';
-      }
+      for (var i = 0; i < items.length; i++) h += csFavChip(items[i] || {}, i, false);
       bar.innerHTML = h;
       wrap.style.display = h ? 'block' : 'none';
+    }
+
+    /** 경로를 따라 지금 펼쳐야 할 목록을 찾는다 */
+    function csFavNodeAt(path) {
+      var list = CS_FAV_ITEMS, node = null;
+      for (var i = 0; i < path.length; i++) {
+        node = list[path[i]];
+        if (!node || !node.children) return null;
+        list = node.children;
+      }
+      return node;
+    }
+
+    function csFavCloseMenu() {
+      CS_FAV_PATH = [];
+      var menu = document.getElementById('csFavMenu');
+      var wrap = document.getElementById('csFavWrap');
+      if (menu) { menu.classList.remove('on'); menu.innerHTML = ''; }
+      if (wrap) wrap.classList.remove('menu-open');
+    }
+
+    function csFavPaintMenu() {
+      var menu = document.getElementById('csFavMenu');
+      var wrap = document.getElementById('csFavWrap');
+      var node = csFavNodeAt(CS_FAV_PATH);
+      if (!menu || !wrap || !node) { csFavCloseMenu(); return; }
+
+      var kids = node.children || [];
+      var h = '<div class="cs-fav-menu-head">' +
+              '<button type="button" class="cs-fav-back" data-back="1">‹ 뒤로</button>' +
+              '<span>' + esc(node.name || '') + ' · ' + kids.length + '개</span></div>' +
+              '<div class="cs-fav-grid">';
+      for (var i = 0; i < kids.length; i++) h += csFavChip(kids[i] || {}, i, true);
+      menu.innerHTML = h + '</div>';
+      menu.classList.add('on');
+      wrap.classList.add('on');        // 펼친 동안 바가 접히지 않게 고정
+      wrap.classList.add('menu-open');
+      menu.scrollTop = 0;
+    }
+
+    /** 폴더칩 클릭. inMenu 면 지금 경로 아래로 파고든다 */
+    function csFavOpenFolder(idx, inMenu) {
+      if (inMenu) CS_FAV_PATH = CS_FAV_PATH.concat([idx]);
+      else if (CS_FAV_PATH.length === 1 && CS_FAV_PATH[0] === idx) { csFavCloseMenu(); return; }
+      else CS_FAV_PATH = [idx];
+      csFavPaintMenu();
+    }
+
+    /** 뒤로 — 한 겹 위로. 맨 위에서 누르면 닫는다 */
+    function csFavBack() {
+      CS_FAV_PATH = CS_FAV_PATH.slice(0, -1);
+      if (!CS_FAV_PATH.length) { csFavCloseMenu(); return; }
+      csFavPaintMenu();
     }
 
     /* 열어 둔 채로 링크를 누르면 새 탭이 뜨고 바는 남는다.
        돌아왔을 때 바가 화면을 덮고 있으면 거슬리니 눌린 뒤엔 접는다. */
     (function initFavorites() {
-      var bar = document.getElementById('csFavBar');
-      if (bar) {
-        bar.addEventListener('click', function(ev) {
-          if (ev.target && ev.target.closest && ev.target.closest('.cs-fav-item')) {
-            var w = document.getElementById('csFavWrap');
-            if (w) w.classList.remove('on');
-          }
-        });
+      /* 바와 패널의 클릭을 한곳에서 받는다. 칩은 다시 그려지므로
+         개별 onclick 대신 위임으로 붙여야 한다. */
+      function onFavClick(ev, inMenu) {
+        var t = ev.target;
+        if (!t || !t.closest) return;
+
+        if (t.closest('[data-back]')) { csFavBack(); return; }
+
+        var f = t.closest('[data-folder]');
+        if (f) {
+          ev.preventDefault();
+          csFavOpenFolder(parseInt(f.getAttribute('data-folder'), 10), inMenu);
+          return;
+        }
+        // 진짜 링크를 눌렀다 — 새 탭으로 나가고 여기는 접는다
+        if (t.closest('a.cs-fav-item')) {
+          csFavCloseMenu();
+          var w = document.getElementById('csFavWrap');
+          if (w) w.classList.remove('on');
+        }
       }
+
+      var bar = document.getElementById('csFavBar');
+      if (bar) bar.addEventListener('click', function(ev) { onFavClick(ev, false); });
+      var menu = document.getElementById('csFavMenu');
+      if (menu) menu.addEventListener('click', function(ev) { onFavClick(ev, true); });
 
       /* 손잡이로 연 뒤에는 손잡이가 숨는다. 마우스가 없는 기기에는 닫을 길이
          없어지므로 바깥을 누르면 접는다. */
@@ -7669,6 +7783,7 @@
         var w = document.getElementById('csFavWrap');
         if (!w || !w.classList.contains('on')) return;
         if (ev.target && ev.target.closest && ev.target.closest('#csFavWrap')) return;
+        csFavCloseMenu();
         w.classList.remove('on');
       });
 

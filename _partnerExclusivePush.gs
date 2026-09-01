@@ -10464,6 +10464,12 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
         var dKey = dateKeys[dki];
         var batchRows = matchedByDate[dKey];
         if (!batchRows || !batchRows.length) continue;
+        // 샘플은 본 주문 상자에 같이 나간다 — 같은 수취인 송장을 옮겨 적는다
+        // (파일: _partnerTraceItem.gs). 같은 수취인이 없으면 손대지 않는다.
+        try {
+          var _sf_ = pepFillSampleCombinedInvoice(batchRows);
+          if (_sf_) result.detail.sampleCombined = (result.detail.sampleCombined || 0) + _sf_;
+        } catch (eSf) { Logger.log("[UNIFIED] 샘플 합포장 보강 오류: " + eSf.message); }
         var appendResult = _pep_appendArchiveRows_(ss, dKey, matchedHeaders, batchRows, result.detail);
         result.archived += appendResult.written;
         tabNames.push(appendResult.tabName);

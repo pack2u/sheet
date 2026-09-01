@@ -214,3 +214,75 @@ function partnerTraceItemInDailyClose(optKeyword, optDateStr) {
   }
   return _pti_out_(L);
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  샘플 합포장 보강 — 같은 수취인의 송장을 샘플 줄에도 붙인다
+ *  파일: _partnerTraceItem.gs  (일일마감 _pep_archiveUnifiedDaily_ 에서 호출)
+ *
+ *  샘플은 단독으로 나가는 일이 드물다. 본 주문 상자에 같이 담겨 나가므로
+ *  송장번호가 같다. 그런데 샘플 줄은 사방넷 주문번호가 따로 없거나
+ *  롯데탭에 안 잡혀서 매칭에 실패하는 일이 잦다.
+ *
+ *  그래서 매칭이 끝난 뒤, 송장이 빈 샘플 줄에 대해
+ *  같은 날 · 같은 수취인 · 같은 전화 인 줄의 송장을 그대로 옮겨 적는다.
+ *
+ *  ★ 같은 수취인이 없으면 아무것도 하지 않는다 ★
+ *    단독 발송 샘플에 남의 송장을 붙이면 조회가 엉뚱한 상자를 가리킨다.
+ *    미매칭으로 남겨 두는 편이 눈에 띄고 안전하다.
+ *
+ *  행 구조 (matchedHeaders 와 짝):
+ *    0 품목코드 · 1 품목명 · 3 전화 · 4 모바일 · 7 거래처명(수취인)
+ *    15 택배사 · 16 운송장번호 · 17 출처
+ * ══════════════════════════════════════════════════════════════
+ */
+var _PSF_ITEM_ = 1, _PSF_PHONE_ = 3, _PSF_MOBILE_ = 4, _PSF_NAME_ = 7;
+var _PSF_CARRIER_ = 15, _PSF_INV_ = 16, _PSF_SRC_ = 17;
+
+function _psf_isSampleItem_(v) {
+  var s = String(v == null ? "" : v).replace(/^\s+/, "");
+  return s.indexOf("[샘플]") === 0 || s.indexOf("샘플") === 0;
+}
+
+function _psf_key_(row) {
+  var name = String(row[_PSF_NAME_] || "").replace(/\s/g, "").trim();
+  var ph = String(row[_PSF_PHONE_] || "").replace(/[^0-9]/g, "");
+  if (!ph) ph = String(row[_PSF_MOBILE_] || "").replace(/[^0-9]/g, "");
+  if (!name && !ph) return "";
+  return name + "|" + ph;
+}
+
+/**
+ * @param {Array[]} rows 한 날짜분 일일마감 행
+ * @return {number} 채운 건수
+ */
+function pepFillSampleCombinedInvoice(rows) {
+  if (!rows || !rows.length) return 0;
+
+  // 송장이 있는 줄의 수취인키 → {inv, carrier}
+  var donor = {};
+  for (var i = 0; i < rows.length; i++) {
+    var inv = String(rows[i][_PSF_INV_] || "").trim();
+    if (!inv) continue;
+    if (_psf_isSampleItem_(rows[i][_PSF_ITEM_])) continue; // 샘플끼리는 주고받지 않는다
+    var k = _psf_key_(rows[i]);
+    if (!k || donor[k]) continue;
+    donor[k] = { inv: inv, carrier: String(rows[i][_PSF_CARRIER_] || "").trim() };
+  }
+
+  var filled = 0;
+  for (var r = 0; r < rows.length; r++) {
+    if (String(rows[r][_PSF_INV_] || "").trim()) continue;      // 이미 송장 있음
+    if (!_psf_isSampleItem_(rows[r][_PSF_ITEM_])) continue;      // 샘플 줄만
+    var k2 = _psf_key_(rows[r]);
+    if (!k2 || !donor[k2]) continue;                             // 같은 수취인 없음 → 그대로 둔다
+    rows[r][_PSF_INV_] = donor[k2].inv;
+    if (!String(rows[r][_PSF_CARRIER_] || "").trim() && donor[k2].carrier) {
+      rows[r][_PSF_CARRIER_] = donor[k2].carrier;
+    }
+    rows[r][_PSF_SRC_] = "합포장";
+    filled++;
+  }
+  if (filled) Logger.log("[UNIFIED] 샘플 합포장 보강: " + filled + "건");
+  return filled;
+}

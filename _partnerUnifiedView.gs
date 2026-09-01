@@ -31,6 +31,12 @@ var _PUV_MAX_ROWS_ = 30000;
  *   덮었고, CS 웹앱이 하루 종일 주문을 못 찾았다. 아무도 몰랐다.
  *   14일 창은 하루가 지나도 13일이 겹친다. 절반이 사라졌다면 정상이 아니다.
  */
+/**
+ * 22:45 재생성이 만든 송장맵. 바로 뒤 소급 보강이 그대로 다시 쓴다.
+ * 다시 만들면 1~2분이 더 들고, 22:45~23:00(마감 정리) 사이가 그만큼 좁아진다.
+ */
+var _PUV_LAST_INVOICE_MAP_ = null;
+
 var _PUV_SHRINK_MIN_ = 500;    // 기존이 이보다 적으면 판정하지 않는다 (최초 구축·복구 중)
 var _PUV_SHRINK_RATIO_ = 0.5;  // 기존의 50% 미만이면 의심
 
@@ -455,6 +461,7 @@ function _puv_rebuild_(opt) {
 
   try {
     var invoiceMap = _puv_buildInvoiceMap_(stat);
+    _PUV_LAST_INVOICE_MAP_ = invoiceMap; // 소급 보강이 재사용
 
     var fromDt = new Date();
     fromDt.setDate(fromDt.getDate() - _PUV_DAYS_);
@@ -741,10 +748,39 @@ function _puv_rebuildScheduled_() {
     Logger.log("[BLACKOUT] 주말 차단 → 통합조회 재생성 스킵");
     return;
   }
+  var _startedAt_ = new Date().getTime();
   try {
     var stat = _puv_rebuild_({});
     Logger.log("[UNIFIED_VIEW 22:45] 재생성 완료 — 행=" + stat.rows +
       " 매칭=" + stat.matched + " 미매칭=" + stat.unmatched);
+
+    // ── 이어서 미매칭 소급 보강 ──
+    //   마감은 "직전 파일 1개"만 채운다. 이틀 넘게 늦게 들어온 송장은
+    //   영영 미매칭으로 남아 있었다(2026-09-01 감사: 1,702건 누적).
+    //   여기서 도는 이유: 방금 만든 송장맵을 그대로 쓸 수 있어 공짜에 가깝다.
+    //
+    //   ★ 날짜 수를 7일로 줄인 이유 ★
+    //     GAS 실행은 6분에서 잘린다. 재생성이 이미 최대 5분을 쓸 수 있으므로
+    //     남은 시간에 파일 14개를 여는 건 무리다. 매일 도니 7일이면 충분하고,
+    //     더 거슬러 올라갈 일이 생기면 메뉴에서 14일로 수동 실행하면 된다.
+    try {
+      var _elapsed_ = new Date().getTime() - _startedAt_;
+      // 재생성이 오래 끌었으면 보강을 건너뛴다. GAS 는 6분에서 실행을 자르는데,
+      // 그때 잘리면 보강이 파일을 반만 고친 채로 끝난다 — 그게 제일 나쁘다.
+      if (_elapsed_ > 210000) {
+        Logger.log("[UNIFIED_VIEW 22:45] 재생성에 " + Math.round(_elapsed_ / 1000) +
+          "초 — 남은 시간이 부족해 소급 보강 건너뜀 (메뉴에서 수동 실행하세요)");
+      } else if (_PUV_LAST_INVOICE_MAP_) {
+        var _bf_ = _pep_backfillRecentArchives_(_PUV_LAST_INVOICE_MAP_, 7);
+        Logger.log("[UNIFIED_VIEW 22:45] 소급 보강 — 채움=" + _bf_.patched +
+          " 파일=" + _bf_.files + (_bf_.days.length ? " (" + _bf_.days.join(", ") + ")" : ""));
+      } else {
+        Logger.log("[UNIFIED_VIEW 22:45] 송장맵이 없어 소급 보강 건너뜀");
+      }
+    } catch (eBf) {
+      // 보강이 실패해도 통합조회 재생성은 이미 끝났다. 여기서 예외를 올리면 안 된다.
+      Logger.log("[UNIFIED_VIEW 22:45] 소급 보강 실패: " + eBf.message);
+    }
   } catch (e) {
     Logger.log("[UNIFIED_VIEW 22:45] 실패: " + e.message);
   }

@@ -21,7 +21,11 @@ const DEF = ctx._CS_FAV_DEFAULT_.length;   // 기본 목록이 늘어도 테스�
 console.log('\n[속성이 없으면 코드 기본 목록]');
 prop = null;
 ok('기본 목록이 통째로 나온다', ctx.csGetFavorites().items.length === DEF);
-ok('전부 https 링크', ctx.csGetFavorites().items.every(i => i.url.indexOf('https://') === 0));
+// 폴더는 url 이 없고 children 을 가진다. 잎만 모아서 본다.
+const leaves = (list) => list.reduce((acc, i) => acc.concat(i.children ? leaves(i.children) : [i]), []);
+ok('잎은 전부 https 링크', leaves(ctx.csGetFavorites().items).every(i => i.url.indexOf('https://') === 0));
+ok('만료된 세션 토큰이 섞여 들어가지 않았다',
+   !leaves(ctx.csGetFavorites().items).some(i => /token=eyJ/.test(i.url)));
 ok('출처를 코드 기본이라고 말한다', ctx._cs_fav_list_().from.indexOf('코드 기본') === 0);
 
 console.log('\n[속성이 있으면 그쪽이 이긴다]');
@@ -55,6 +59,30 @@ prop = JSON.stringify([{ url: 'https://noname.example/' }]);
 const one = ctx.csGetFavorites().items[0];
 ok('이름이 없으면 주소를 이름으로 쓴다', one.name === 'https://noname.example/');
 ok('아이콘이 없으면 기본 아이콘', one.icon === '🔗');
+
+console.log('\n[폴더]');
+prop = JSON.stringify([
+  { icon: '🤝', name: '협력업체', children: [
+    { icon: '📁', name: '대리공급', children: [{ name: '뉴파츠', url: 'https://a.example/' }] },
+    { name: '직접링크', url: 'https://b.example/' },
+  ] },
+]);
+let f = ctx.csGetFavorites().items[0];
+ok('폴더는 url 없이 children 을 가진다', !f.url && f.children.length === 2);
+ok('폴더 안의 폴더도 살아남는다', f.children[0].children[0].name === '뉴파츠');
+ok('아이콘이 없으면 폴더 기본 아이콘', f.children[0].icon === '📁');
+
+prop = JSON.stringify([{ name: '빈폴더', children: [{ name: '깨진것', url: 'javascript:1' }] }]);
+ok('쓸 수 있는 자식이 하나도 없으면 폴더째 버린다', ctx.csGetFavorites().items.length === DEF);
+
+prop = JSON.stringify([
+  { name: '섞임', children: [
+    { name: '정상', url: 'https://ok.example/' },
+    { name: '위험', url: 'javascript:alert(1)' },
+  ] },
+]);
+ok('폴더 안에서도 위험한 주소는 걸러낸다',
+   ctx.csGetFavorites().items[0].children.length === 1);
 
 console.log('\n[접근 권한이 없으면 목록을 주지 않는다]');
 ctx._cs_ac_guard_ = () => ({ ok: false, denied: true, error: '차단' });

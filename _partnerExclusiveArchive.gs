@@ -31,6 +31,22 @@ var _PEA_PENDING_KEY_    = "_PEA_PENDING_TABNAME";  // 비차단 신규 시작�
 // ══════════════════════════════════════════════
 
 var _PEA_FORCE_MOVE_DAYS_ = 15;
+
+/**
+ * ★ 2026-09-01: 송장 없는 행은 마감으로 옮기지 않는다 ★
+ *
+ *   종전에는 15일이 지나면 송장이 없어도 마감탭으로 강제 이동했다.
+ *   전용양식이 무한정 길어지는 걸 막으려는 규칙이었다.
+ *
+ *   그런데 마감으로 옮겨지는 순간 그 주문은 전용양식에서 사라지고,
+ *   업체도 우리도 더는 보지 않는다. 송장은 영영 붙지 않는다.
+ *   실제로 최근 14일 일일마감에 송장 없는 일반 품목이 1,113건 쌓인 걸
+ *   확인했다(2026-09-01 감사). 눈에 보이는 채로 남아 있어야 누가 챙긴다.
+ *
+ *   전용양식이 길어지는 건 감수한다. 오래된 무송장 행은
+ *   partnerListStaleNoInvoice() 로 따로 뽑아 본다.
+ */
+var _PEA_MOVE_WITHOUT_INVOICE_ = false;
 var _PEA_UID_COL_IDX_     = 49; // AX열: Push가 기입하는 고유ID
 
 /** 문자열에서 yyyymmdd 정수 추출. 실제 날짜 범위가 아니면 null */
@@ -118,7 +134,10 @@ function _pea_decideRow_(row, dateColIdxs, todayNum, cutoffNum) {
   if (_pea_hasInvoice_(row[0])) return { move: true, reason: "invoice" };
 
   var baseNum = _pea_rowBaseDateNum_(row, dateColIdxs);
-  if (baseNum && baseNum <= cutoffNum) return { move: true, reason: "stale" };
+  // 송장 없는 행은 여기서 멈춘다 — 위 스위치를 켜지 않는 한 옮기지 않는다
+  if (_PEA_MOVE_WITHOUT_INVOICE_ && baseNum && baseNum <= cutoffNum) {
+    return { move: true, reason: "stale" };
+  }
   return { move: false, reason: baseNum ? "recent" : "nodate" };
 }
 
@@ -1227,4 +1246,81 @@ function partnerDiagnoseExclusiveUid() {
 
   var htmlOut = HtmlService.createHtmlOutput(html).setWidth(550).setHeight(450);
   ui.showModalDialog(htmlOut, "🔍 AX열 UID 진단");
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  오래 남은 무송장 행 — 전용양식에 며칠째 송장 없이 서 있는가
+ *  파일: _partnerExclusiveArchive.gs
+ *
+ *  송장 없는 행을 마감으로 안 옮기기로 했으니(_PEA_MOVE_WITHOUT_INVOICE_),
+ *  그 행들이 조용히 쌓이지 않게 따로 뽑아 본다.
+ *  옮겨서 숨기는 대신 목록으로 보고 챙기자는 것이다.
+ *
+ *  읽기만 한다.
+ *  @param {number=} optDays 며칠 넘은 것만. 기본 7
+ * ══════════════════════════════════════════════════════════════
+ */
+function partnerListStaleNoInvoice(optDays) {
+  var days = parseInt(optDays, 10) || 7;
+  var L = ["═══ 송장 없이 남은 행 (" + days + "일 초과) ═══",
+    Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"), ""];
+  var grand = 0, shown = 0;
+  try {
+    var cutoff = _pea_cutoffNum_(days);
+    var files = _pt_listFiles();
+    for (var fi = 0; fi < files.length; fi++) {
+      var nm = files[fi].name.replace("[협력업체] ", "");
+      try {
+        var ss = SpreadsheetApp.openById(files[fi].id);
+        var tab = _peo_findFormTab_(ss);
+        if (!tab) continue;
+        var lr = tab.getLastRow();
+        if (lr < 2) continue;
+        var lc = Math.max(tab.getLastColumn(), 2);
+        var all = tab.getRange(1, 1, lr, lc).getDisplayValues();
+        var dateColIdxs = _pea_dateColIdxs_(all[0]);
+
+        var hits = [];
+        for (var r = 1; r < all.length; r++) {
+          if (_pea_hasInvoice_(all[r][0])) continue;          // 송장 있음
+          var base = _pea_rowBaseDateNum_(all[r], dateColIdxs);
+          if (!base || base > cutoff) continue;                // 아직 최근
+          hits.push({ row: r + 1, date: base, cells: all[r] });
+        }
+        if (!hits.length) continue;
+        grand += hits.length;
+        L.push("  " + nm + " — " + hits.length + "건");
+        for (var h = 0; h < Math.min(hits.length, 5); h++) {
+          var c = hits[h].cells;
+          // 양식이 업체마다 달라 특정 열을 짚을 수 없다. 값이 있는 앞쪽 칸을 보여준다.
+          var bits = [];
+          for (var ci = 2; ci < Math.min(c.length, 14) && bits.length < 3; ci++) {
+            var v = String(c[ci] || "").trim();
+            if (v && v.length > 1) bits.push(v.substring(0, 18));
+          }
+          L.push("      " + hits[h].date + "  " + bits.join(" · ") + "  (" + hits[h].row + "행)");
+          shown++;
+        }
+        if (hits.length > 5) L.push("      … 외 " + (hits.length - 5) + "건");
+      } catch (eF) {
+        L.push("  ★ " + nm + ": " + eF.message);
+      }
+    }
+    L.push("");
+    L.push(grand
+      ? "총 " + grand + "건이 송장 없이 " + days + "일 넘게 서 있습니다."
+      : "✔ " + days + "일 넘게 송장 없이 남은 행이 없습니다.");
+    if (grand) {
+      L.push("");
+      L.push("이 건들은 이제 마감으로 안 넘어갑니다. 업체에 송장을 요청하거나,");
+      L.push("실제로 안 나간 주문이면 전용양식에서 직접 지우셔야 합니다.");
+    }
+  } catch (e) {
+    L.push("★ 실패: " + e.message);
+  }
+  var text = L.join("\n");
+  Logger.log(text);
+  try { SpreadsheetApp.getUi().alert("송장 없이 남은 행", text, SpreadsheetApp.getUi().ButtonSet.OK); } catch (eU) {}
+  return text;
 }
