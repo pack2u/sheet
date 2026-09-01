@@ -1358,6 +1358,9 @@ function partnerPushOrdersToExclusiveForms(silent) {
     _PEP_PUSH_STAMP_ = _pep_nextPushStamp_();
     Logger.log("[PEP_STAMP] 이번 푸시 회차: " + _PEP_PUSH_STAMP_);
     _pep_pushCore_(silent);
+    // 푸시가 끝난 뒤 중복 발주 점검 (파일: _partnerDupOrderCheck.gs).
+    // 점검이 실패해도 발주는 이미 끝났다 — 여기서 예외를 올리면 안 된다.
+    try { _pdc_checkAfterPush_(); } catch (ePdc) { Logger.log("[DUP] " + ePdc.message); }
   } finally {
     try { _pep_zipCacheSave_(); } catch (_) {} // ★ M4: 우편번호 영구 캐시 저장
     try { lock.releaseLock(); } catch (_) {}
@@ -1547,6 +1550,9 @@ function _pep_pushCore_(silent) {
         if (_tci_ === 21) { _tRow_.push(""); continue; }
         _tRow_.push(_tci_ < row.length ? row[_tci_] : "");
       }
+      // B열(순번)은 소스에서 온 값인데 우리 쪽에서 쓰임새가 없다.
+      // 어느 차수에 들어온 행인지가 훨씬 쓸모 있으므로 회차 도장으로 바꾼다.
+      if (_PEP_PUSH_STAMP_) _tRow_[1] = _PEP_PUSH_STAMP_;
       _tempPendingRows_.push(_tRow_.concat([pfx, "", "발주완료"]));
     }
 
@@ -2642,6 +2648,8 @@ function _pep_appendToNonPartnerTempTab_(row, pfx, tab, uidSet, nowStr) {
   for (var ci = 0; ci < 22; ci++) {
     srcRow.push(ci < row.length ? row[ci] : "");
   }
+  // B열(순번) → 회차 도장. 위 배치 경로와 같은 규칙을 쓴다.
+  if (_PEP_PUSH_STAMP_) srcRow[1] = _PEP_PUSH_STAMP_;
   var newRow = srcRow.concat([pfx, "", "발주완료"]); // 소스행 + 업체prefix(W) + 송장번호빈칸(X) + 진행상태(Y)
   var nextRow = tab.getLastRow() + 1;
   if (nextRow < 2) nextRow = 2;

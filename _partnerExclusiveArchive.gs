@@ -46,6 +46,20 @@ function _pea_parseDateNum_(val) {
   return parseInt(m[1], 10) * 10000 + mo * 100 + d;
 }
 
+/**
+ * 전용양식 B열 값 → Supabase push_date (yyyy-MM-dd) 또는 null.
+ *
+ * B열은 원래 "2026/05/15-33" 같은 예약 표기를 담았다. 2026-09-01 부터는
+ * 푸시 회차 도장("0901-1")도 여기에 찍힌다. 도장은 날짜가 아니므로
+ * 그대로 보내면 date 열 적재가 깨진다. 날짜로 읽히는 값만 보낸다.
+ */
+function _pea_pushDateForDb_(val) {
+  var n = _pea_parseDateNum_(val);
+  if (!n) return null;
+  var s = String(n);
+  return s.substring(0, 4) + "-" + s.substring(4, 6) + "-" + s.substring(6, 8);
+}
+
 /** N일 전 yyyymmdd */
 function _pea_cutoffNum_(days) {
   var c = new Date();
@@ -994,7 +1008,7 @@ function _pea_processOneFile_(ss, tabName) {
         var _dbRows_ = archiveRows.map(function(row) {
           return {
             unique_id: null,
-            push_date: String(row[1] || "").trim() || null,  // B열: 날짜
+            push_date: _pea_pushDateForDb_(row[1]),  // B열 — 회차 도장은 날짜가 아니므로 걸러진다
             ecount_code: String(row[_getC_(["품목코드", "코드"]) >= 0 ? _getC_(["품목코드", "코드"]) : 2] || "").trim(),
             item_name: String(row[_getC_(["품목명"]) >= 0 ? _getC_(["품목명"]) : 3] || "").trim(),
             qty: parseInt(row[_getC_(["수량"]) >= 0 ? _getC_(["수량"]) : 4]) || 1,
