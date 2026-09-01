@@ -602,6 +602,53 @@
       cursor: pointer; user-select: none;
     }
     .cs-build-bar.on { display: flex; }
+
+    /* ★ 2026-09-01: 숨은 즐겨찾기 바.
+       화면 맨 위 10px 에 마우스가 닿으면 내려온다. 자리를 상시로 차지하지
+       않으려고 숨겨 뒀다 — 작업 화면은 이미 3분할이라 세로가 아깝다.
+       마우스가 없는 기기에서는 오른쪽 위 ★ 손잡이를 눌러 연다. */
+    .cs-fav-wrap {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 8000;
+      pointer-events: none;   /* 감지 띠와 바만 클릭을 받는다 */
+    }
+    .cs-fav-hot {
+      position: absolute; top: 0; left: 0; right: 0; height: 10px;
+      pointer-events: auto;
+    }
+    .cs-fav-bar {
+      display: flex; align-items: center; gap: 6px;
+      padding: 7px 12px; overflow-x: auto; scrollbar-width: none;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+      transform: translateY(-100%); transition: transform 0.18s ease;
+      pointer-events: auto;
+    }
+    .cs-fav-bar::-webkit-scrollbar { display: none; }
+    .cs-fav-wrap:hover .cs-fav-bar,
+    .cs-fav-wrap.on .cs-fav-bar { transform: translateY(0); }
+
+    .cs-fav-item {
+      display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
+      padding: 6px 11px; border-radius: 8px; text-decoration: none;
+      border: 1px solid var(--border); background: var(--bg-primary);
+      color: var(--text-secondary); font-size: 12px; font-weight: 600;
+      white-space: nowrap;
+    }
+    .cs-fav-item:hover { border-color: var(--accent-green); color: var(--accent-green); }
+    .cs-fav-item .ic { font-size: 14px; line-height: 1; }
+
+    /* 손잡이 — 있는지조차 모르면 아무도 안 쓴다. 늘 살짝 보이게 둔다 */
+    .cs-fav-tab {
+      position: absolute; top: 0; right: 14px;
+      padding: 2px 12px 4px; border-radius: 0 0 8px 8px;
+      background: var(--bg-secondary); border: 1px solid var(--border); border-top: none;
+      color: var(--text-muted); font-size: 11px; line-height: 1.4;
+      cursor: pointer; user-select: none; opacity: 0.55;
+      pointer-events: auto; transition: opacity 0.18s ease;
+    }
+    .cs-fav-wrap:hover .cs-fav-tab,
+    .cs-fav-wrap.on .cs-fav-tab { opacity: 0; pointer-events: none; }
     .cs-build-bar .dot {
       width: 7px; height: 7px; border-radius: 50%; background: #062214; flex: 0 0 auto;
       animation: csPulseDot 1.4s ease-in-out infinite;
@@ -1678,6 +1725,13 @@
   <!-- 새 배포 알림 — 20초 pulse 가 빌드 번호 바뀐 걸 잡으면 뜬다 -->
   <div id="csBuildBar" class="cs-build-bar" onclick="csForceReload()">
     <span class="dot"></span><span>새 버전이 나왔습니다 · 눌러서 새로고침</span>
+  </div>
+
+  <!-- 숨은 즐겨찾기 바 — 목록이 비면 통째로 감춘다 (csFavorites.gs) -->
+  <div class="cs-fav-wrap" id="csFavWrap" style="display:none">
+    <div class="cs-fav-bar" id="csFavBar"></div>
+    <div class="cs-fav-hot" aria-hidden="true"></div>
+    <div class="cs-fav-tab" id="csFavTab" onclick="csFavToggle()" title="즐겨찾기">★</div>
   </div>
 
   <div id="view-home">
@@ -7536,6 +7590,72 @@
         })
         .csUncheckDailyTask({ id: id });
     }
+
+    /* ══════════════════════════════════════════════════
+       숨은 즐겨찾기 바 (2026-09-01)
+
+       목록은 공용이다 — 서버(csFavorites.gs)가 준다. 다섯 사람이 같은
+       업무를 하니 필요한 링크가 같고, 개인별로 두면 새로 온 사람은 빈 바를
+       본다. 목록을 고치려면 스크립트 속성 CS_FAVORITES 를 쓴다.
+
+       마우스가 없는 기기를 위해 ★ 손잡이를 남겨 뒀다. hover 만 두면
+       모바일에서는 존재 자체를 모른다.
+       ══════════════════════════════════════════════════ */
+
+    function csFavToggle() {
+      var w = document.getElementById('csFavWrap');
+      if (w) w.classList.toggle('on');
+    }
+
+    function csFavRender(items) {
+      var wrap = document.getElementById('csFavWrap');
+      var bar = document.getElementById('csFavBar');
+      if (!wrap || !bar) return;
+
+      // 넣을 게 없으면 손잡이까지 감춘다. 눌러도 빈 바만 나오면 고장으로 보인다
+      if (!items || !items.length) { wrap.style.display = 'none'; return; }
+
+      var h = '';
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i] || {};
+        if (!it.url) continue;
+        h += '<a class="cs-fav-item" href="' + esc(it.url) + '" target="_blank" rel="noopener">' +
+             '<span class="ic">' + esc(it.icon || '🔗') + '</span>' +
+             '<span class="nm">' + esc(it.name || it.url) + '</span></a>';
+      }
+      bar.innerHTML = h;
+      wrap.style.display = h ? 'block' : 'none';
+    }
+
+    /* 열어 둔 채로 링크를 누르면 새 탭이 뜨고 바는 남는다.
+       돌아왔을 때 바가 화면을 덮고 있으면 거슬리니 눌린 뒤엔 접는다. */
+    (function initFavorites() {
+      var bar = document.getElementById('csFavBar');
+      if (bar) {
+        bar.addEventListener('click', function(ev) {
+          if (ev.target && ev.target.closest && ev.target.closest('.cs-fav-item')) {
+            var w = document.getElementById('csFavWrap');
+            if (w) w.classList.remove('on');
+          }
+        });
+      }
+
+      /* 손잡이로 연 뒤에는 손잡이가 숨는다. 마우스가 없는 기기에는 닫을 길이
+         없어지므로 바깥을 누르면 접는다. */
+      document.addEventListener('click', function(ev) {
+        var w = document.getElementById('csFavWrap');
+        if (!w || !w.classList.contains('on')) return;
+        if (ev.target && ev.target.closest && ev.target.closest('#csFavWrap')) return;
+        w.classList.remove('on');
+      });
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.ok) csFavRender(res.items);
+        })
+        .withFailureHandler(function() {})   // 없으면 그냥 없는 대로 둔다
+        .csGetFavorites();
+    })();
 
     // 1분마다 다시 그린다 — 서버를 다시 부르지 않고 시각만 흘려보낸다.
     // 10분 전이 되면 카드가 저절로 뜨고, 예정 시각을 넘기면 빨갛게 바뀐다.
