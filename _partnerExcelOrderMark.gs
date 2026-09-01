@@ -177,3 +177,77 @@ function partnerDiagnoseExcelOrderMarks() {
   try { SpreadsheetApp.getUi().alert("엑셀 발주 표시", text, SpreadsheetApp.getUi().ButtonSet.OK); } catch (eU) {}
   return text;
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  잘못 찍힌 회차 도장 청소 (2026-09-01)
+ *
+ *  첫 도장 형식이 "0901-1" 이었는데, 구글시트가 이걸 날짜로 읽어
+ *  연도 0901 짜리 Date 로 바꿔 버렸다. 전용양식 이슈칸과 임시기록
+ *  이슈칸에 "Tue Mar 01 0901 00:00:00 GMT+0827" 같은 값이 남았다.
+ *
+ *  형식은 "0901-1차" 로 고쳤지만 이미 적힌 쓰레기는 지워야 한다.
+ *  업체가 쓴 진짜 이슈는 건드리지 않는다 — 연도 09xx 날짜만 지운다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function partnerCleanBadPushStamps() {
+  var BAD = /^[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+0\d{3}\s/;
+  var L = ["═══ 잘못 찍힌 회차 도장 청소 ═══",
+    Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"), ""];
+  var total = 0;
+
+  function sweep(tab, col, label) {
+    if (!tab || col < 1) return;
+    var lr = tab.getLastRow();
+    if (lr < 2) return;
+    var rng = tab.getRange(2, col, lr - 1, 1);
+    var vals = rng.getValues();
+    var hit = 0;
+    for (var i = 0; i < vals.length; i++) {
+      var v = vals[i][0];
+      if (v instanceof Date) {
+        // 연도가 09xx 면 도장이 삼켜진 것. 진짜 날짜는 20xx 다.
+        if (v.getFullYear() < 1900) { vals[i][0] = ""; hit++; }
+        continue;
+      }
+      if (BAD.test(String(v || "").trim())) { vals[i][0] = ""; hit++; }
+    }
+    if (hit) { rng.setValues(vals); total += hit; }
+    L.push("  " + (hit ? "정리 " + hit + "건" : "이상 없음") + "  " + label);
+  }
+
+  // 1) 업체 전용양식 — 머리글이 "이슈"인 열
+  try {
+    var files = _pt_listFiles();
+    for (var fi = 0; fi < files.length; fi++) {
+      try {
+        var ss = SpreadsheetApp.openById(files[fi].id);
+        var tab = _peo_findFormTab_(ss);
+        if (!tab) continue;
+        var hdr = tab.getRange(1, 1, 1, Math.max(tab.getLastColumn(), 2)).getDisplayValues()[0];
+        var col = -1;
+        for (var h = 0; h < hdr.length; h++) {
+          if (String(hdr[h] || "").replace(/\s/g, "") === "이슈") { col = h + 1; break; }
+        }
+        if (col < 1) { L.push("  건너뜀 (이슈 열 없음)  " + files[fi].name.replace("[협력업체] ", "")); continue; }
+        sweep(tab, col, files[fi].name.replace("[협력업체] ", ""));
+      } catch (eF) {
+        L.push("  ★ " + files[fi].name + ": " + eF.message);
+      }
+    }
+  } catch (eL) { L.push("★ 업체 목록 실패: " + eL.message); }
+
+  // 2) 임시기록 이슈 열 (Z, 26번째)
+  try {
+    var hub = SpreadsheetApp.getActiveSpreadsheet();
+    var tTab = hub.getSheetByName(_PEP_NON_PARTNER_TEMP_TAB_NAME_);
+    sweep(tTab, 26, "대리공급_임시기록 (이슈)");
+  } catch (eT) { L.push("★ 임시기록: " + eT.message); }
+
+  L.push("");
+  L.push(total ? "총 " + total + "건 정리했습니다." : "정리할 것이 없습니다.");
+  var text = L.join("\n");
+  Logger.log(text);
+  try { SpreadsheetApp.getUi().alert("회차 도장 청소", text, SpreadsheetApp.getUi().ButtonSet.OK); } catch (eU) {}
+  return text;
+}

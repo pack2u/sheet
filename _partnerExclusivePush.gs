@@ -1301,7 +1301,16 @@ function _pep_loadAliasMap_() {
 var _PEP_PUSH_STAMP_ = "";
 
 /** 도장 형식 — 이슈 수집 쪽(_partnerOrders.gs)도 이 규칙을 본다 */
-var _PEP_PUSH_STAMP_RE_ = /^\s*\d{4}-\d{1,2}\s*/;
+/** 도장 형식 — 이슈 수집 쪽(_partnerOrders.gs)도 이 규칙을 본다 */
+// "차" 없는 옛 형식(0901-1)도 계속 인식한다 — 이미 시트에 적혀 있다.
+var _PEP_PUSH_STAMP_RE_ = /^\s*\d{4}-\d{1,2}차?\s*/;
+
+/**
+ * 구글시트가 옛 도장("0901-1")을 날짜로 삼킨 흔적.
+ * 셀에 Date 가 들어가 "Tue Mar 01 0901 00:00:00 GMT+0827" 같은 값이 된다.
+ * 연도가 09xx 인 날짜는 현실에 없으므로 이걸로 판별한다.
+ */
+var _PEP_PUSH_STAMP_DATE_RE_ = /^[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+0\d{3}\s/;
 
 function _pep_nextPushStamp_() {
   var now = new Date();
@@ -1324,7 +1333,9 @@ function _pep_nextPushStamp_() {
     Logger.log("[PEP_STAMP] 회차 계산 실패 → 1차로 진행: " + e.message);
     n = 1;
   }
-  return Utilities.formatDate(now, "Asia/Seoul", "MMdd") + "-" + n;
+  // 끝에 "차" 를 붙인다 — 이게 없으면 구글시트가 "0901-1" 을 날짜로 읽어
+  // 연도 0901 짜리 엉뚱한 날짜로 바꿔 버린다 (2026-09-01 실제 발생).
+  return Utilities.formatDate(now, "Asia/Seoul", "MMdd") + "-" + n + "차";
 }
 
 /**
@@ -1337,7 +1348,10 @@ function _pep_stripPushStamp_(s) {
   var lines = String(s == null ? "" : s).split(/\r?\n/);
   var out = [];
   for (var i = 0; i < lines.length; i++) {
-    var ln = lines[i].replace(_PEP_PUSH_STAMP_RE_, "").trim();
+    var raw = lines[i].trim();
+    // 날짜로 삼켜진 도장은 통째로 버린다 — 업체가 쓴 글이 아니다
+    if (_PEP_PUSH_STAMP_DATE_RE_.test(raw)) continue;
+    var ln = raw.replace(_PEP_PUSH_STAMP_RE_, "").trim();
     if (ln) out.push(ln);
   }
   return out.join("\n").trim();
@@ -1703,8 +1717,16 @@ function _pep_pushCore_(silent) {
 
     // A(0) 강제 비워둠 — 송장번호는 업체 직접 기입 (전 업체 공통)
     outRow[0] = ""; // 송장번호: 업체 직접 기입
-    // B(1) 회차 도장 — 어느 차수에 들어온 행인지 업체도 우리도 보이게
-    if (_PEP_PUSH_STAMP_) outRow[1] = _PEP_PUSH_STAMP_;
+    // 회차 도장 — 어느 차수에 들어온 행인지 업체도 우리도 보이게.
+    // ★ 열을 1로 고정하지 않는다 ★
+    //   B열이 "이슈"인 업체가 대부분이지만 전부는 아니다. 고정하면
+    //   다른 뜻으로 쓰는 칸(적요 등)을 덮어써 업체에 잘못된 정보가 간다.
+    //   머리글에서 "이슈" 를 찾고, 없으면 도장을 찍지 않는다.
+    var _stampCol_ = (cache[pfx] && cache[pfx].issueCol != null) ? cache[pfx].issueCol : -1;
+    if (_PEP_PUSH_STAMP_ && _stampCol_ >= 0) {
+      while (outRow.length <= _stampCol_) outRow.push("");
+      outRow[_stampCol_] = _PEP_PUSH_STAMP_;
+    }
     // B(1) 이슈 — ★ 2026-07-07: 적요→이슈 변경 (고유ID는 AX열에 별도 기입)
     // ★ AX열(index 49) — 원본 고유ID 그대로 (변형·접미사 없음)
     var _pepUid_ = _rowUid_;
@@ -3037,7 +3059,16 @@ function _pep_initVendorCache_(pfx, fileInfo, directMap) {
       " 전용양식 dedup키=" + Object.keys(existingDedupCounts).length + "종" +
       " (마감탭 포함 " + _archDedupKeys_ + "종, tab.getLastRow=" + tab.getLastRow() + ")",
     );
+    // 회차 도장을 찍을 칸 — 머리글이 "이슈"인 열. 없으면 -1(안 찍음)
+    var _issueCol_ = -1;
+    try {
+      var _hdrAll_ = tab.getRange(1, 1, 1, Math.max(tab.getLastColumn(), 2)).getDisplayValues()[0];
+      for (var _hi_ = 0; _hi_ < _hdrAll_.length; _hi_++) {
+        if (String(_hdrAll_[_hi_] || "").replace(/\s/g, "") === "이슈") { _issueCol_ = _hi_; break; }
+      }
+    } catch (eIC) {}
     return {
+      issueCol: _issueCol_,
       ss: ss,
       tab: tab,
       nextSeq: nextSeq,
@@ -10116,10 +10147,13 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
         for (var nk = 0; nk < _NON_ORDER_KEYWORDS_.length; nk++) {
           if (matchKey.indexOf(_NON_ORDER_KEYWORDS_[nk]) !== -1) { _isNonOrder_ = true; break; }
         }
-        if (!_isNonOrder_) {
-          var dVal = String(snapData[si][3] || "").trim();
-          if (dVal.indexOf("[샘플]") !== -1) _isNonOrder_ = true;
-        }
+        // ★ 2026-09-01: [샘플] 을 비주문에서 뺐다 ★
+        //   위 낱말들(반품비·도서산간 추가운임 등)은 다른 택배에 얹혀 가는
+        //   "요금 줄"이라 붙일 송장이 없다. 그래서 기타로 뺀다.
+        //   그런데 샘플은 실제로 상자가 나가고 업체가 송장을 적어 준다.
+        //   기타로 빼면 그 송장을 영영 못 주워 와서, 일일마감에 늘
+        //   송장 없는 줄로 남았다. 샘플도 보통 주문처럼 매칭한다.
+        //   못 찾으면 기타가 아니라 미매칭으로 남아 눈에 띈다.
         if (_isNonOrder_) {
           workItems.push({ si: si, matchKey: matchKey, snapDate: snapDate, kind: "other", inv: "", source: "기타" });
           continue;

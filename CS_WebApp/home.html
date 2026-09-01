@@ -27,6 +27,11 @@
       --border: rgba(255, 255, 255, 0.06);
       --radius: 16px;
       --radius-sm: 10px;
+
+      /* 커뮤니티 보드 카드 글자 배율. 반드시 여기(:root)에 기본값 1 을 둔다 —
+         #hbList 밖에 있는 .hb-* 요소(라이트박스 등)가 이 변수를 못 찾으면
+         font-size 선언이 통째로 무효가 되어 글자가 깨진다. */
+      --hb-text-scale: 1;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1178,7 +1183,7 @@
     /* 배지는 제목과 다른 줄에 둔다. 좁은 타일에서 제목이 짜부라지지 않게 */
     .hb-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 5px; }
     .hb-badge {
-      flex-shrink: 0; font-size: 9px; font-weight: 700; padding: 1px 6px;
+      flex-shrink: 0; font-size: calc(9px * var(--hb-text-scale)); font-weight: 700; padding: 1px 6px;
       border-radius: 999px; letter-spacing: 0.02em;
     }
     .hb-badge.lv-urgent { background: rgba(232,93,93,0.2); color: #ff9e9e; }
@@ -1190,23 +1195,23 @@
 
     /* 카드 항목칸 — 고객명·전화·송장·품목을 한 줄로 */
     .hb-facts {
-      font-size: 11px; color: #c1c1c1; margin-top: 4px;
+      font-size: calc(11px * var(--hb-text-scale)); color: #c1c1c1; margin-top: 4px;
       overflow-wrap: anywhere; line-height: 1.45;
     }
 
-    .hb-title { font-size: 13px; font-weight: 600; line-height: 1.38; word-break: break-word; }
+    .hb-title { font-size: calc(13px * var(--hb-text-scale)); font-weight: 600; line-height: 1.38; word-break: break-word; }
     .hb-card:not(.open) .hb-title {
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
     }
-    .hb-card.open .hb-title { font-size: 15px; line-height: 1.4; }
+    .hb-card.open .hb-title { font-size: calc(15px * var(--hb-text-scale)); line-height: 1.4; }
     .hb-card.hb-done .hb-title { text-decoration: line-through; }
 
     .hb-meta {
-      font-size: 10px; color: var(--text-muted); margin-top: 5px;
+      font-size: calc(10px * var(--hb-text-scale)); color: var(--text-muted); margin-top: 5px;
       display: flex; flex-wrap: wrap; gap: 3px 7px;
     }
     .hb-body {
-      font-size: 12px; color: var(--text-secondary); line-height: 1.45;
+      font-size: calc(12px * var(--hb-text-scale)); color: var(--text-secondary); line-height: 1.45;
       margin-top: 6px; white-space: pre-wrap; word-break: break-word;
     }
     .hb-card:not(.open) .hb-body {
@@ -1216,7 +1221,7 @@
       display: inline-flex; align-items: center; gap: 4px; margin-top: 7px;
       border: 1px solid rgba(173, 173, 173,0.35); background: rgba(173, 173, 173,0.12);
       color: #c1c1c1; border-radius: 7px; padding: 4px 8px;
-      font-size: 11px; font-family: inherit; cursor: pointer;
+      font-size: calc(11px * var(--hb-text-scale)); font-family: inherit; cursor: pointer;
     }
 
     /* ── 최초 등록 내용 — 테두리로 가둬 아래 전달 내역과 섞이지 않게 한다 ── */
@@ -1227,21 +1232,21 @@
     }
     .hb-sec {
       display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px;
-      font-size: 10px; color: var(--text-muted); margin-bottom: 5px;
+      font-size: calc(10px * var(--hb-text-scale)); color: var(--text-muted); margin-bottom: 5px;
     }
     .hb-sec-t { font-weight: 700; letter-spacing: 0.03em; }
-    .hb-sec-who { color: #c1c1c1; font-weight: 700; font-size: 11px; }
+    .hb-sec-who { color: #c1c1c1; font-weight: 700; font-size: calc(11px * var(--hb-text-scale)); }
     .hb-orig-text {
-      font-size: 13px; line-height: 1.6; color: var(--text-primary);
+      font-size: calc(13px * var(--hb-text-scale)); line-height: 1.6; color: var(--text-primary);
       white-space: pre-wrap; word-break: break-word;
     }
 
     /* ── 진행 과정 — 왼쪽 레일 + 점으로 시간 순서를 눈에 보이게 ── */
     .hb-tl-head {
       display: flex; align-items: baseline; gap: 5px; margin: 13px 0 3px;
-      font-size: 11px; font-weight: 700; color: var(--text-secondary);
+      font-size: calc(11px * var(--hb-text-scale)); font-weight: 700; color: var(--text-secondary);
     }
-    .hb-tl-head span { font-weight: 500; color: var(--text-muted); font-size: 10px; }
+    .hb-tl-head span { font-weight: 500; color: var(--text-muted); font-size: calc(10px * var(--hb-text-scale)); }
     .hb-tl { position: relative; padding-left: 15px; }
     .hb-tl::before {
       content: ''; position: absolute; left: 3px; top: 10px; bottom: 10px;
@@ -1259,13 +1264,13 @@
     .hb-tl-line {
       display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px;
     }
-    .hb-tl-by { font-size: 12px; font-weight: 700; color: #c1c1c1; }
+    .hb-tl-by { font-size: calc(12px * var(--hb-text-scale)); font-weight: 700; color: #c1c1c1; }
     .hb-tl-item.k-open .hb-tl-by   { color: #bdbdbd; }
     .hb-tl-item.k-done .hb-tl-by   { color: #7fd1a8; }
     .hb-tl-item.k-reopen .hb-tl-by { color: #ffca7a; }
-    .hb-tl-at { font-size: 10px; color: var(--text-muted); }
+    .hb-tl-at { font-size: calc(10px * var(--hb-text-scale)); color: var(--text-muted); }
     .hb-tl-tag {
-      font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
+      font-size: calc(9px * var(--hb-text-scale)); font-weight: 700; padding: 1px 5px; border-radius: 4px;
       background: rgba(255,255,255,0.07); color: var(--text-muted);
     }
     .hb-tl-item.k-open .hb-tl-tag   { background: rgba(132, 132, 132,0.20); color: #bdbdbd; }
@@ -1273,15 +1278,15 @@
     .hb-tl-item.k-reopen .hb-tl-tag { background: rgba(240,160,48,0.18); color: #ffca7a; }
     /* 전달 내용이 주인공 — 원본보다 밝게 두지 않되 흐리지도 않게 */
     .hb-tl-text {
-      font-size: 13px; line-height: 1.55; color: var(--text-primary);
+      font-size: calc(13px * var(--hb-text-scale)); line-height: 1.55; color: var(--text-primary);
       white-space: pre-wrap; word-break: break-word; margin-top: 2px;
     }
-    .hb-tl-empty { font-size: 12px; color: var(--text-muted); padding: 4px 0 2px; }
+    .hb-tl-empty { font-size: calc(12px * var(--hb-text-scale)); color: var(--text-muted); padding: 4px 0 2px; }
 
     /* 접힌 타일에서 "마지막에 누가 손댔나"를 한 줄로 */
     .hb-last {
       display: flex; align-items: baseline; gap: 4px; margin-top: 5px;
-      font-size: 10px; color: var(--text-muted); min-width: 0;
+      font-size: calc(10px * var(--hb-text-scale)); color: var(--text-muted); min-width: 0;
     }
     .hb-last-by { color: #b2b2b2; font-weight: 700; flex-shrink: 0; }
     .hb-last-at { flex-shrink: 0; }
@@ -1291,12 +1296,12 @@
       flex: 1; min-height: 38px; max-height: 120px; resize: vertical;
       padding: 8px 10px; border-radius: 9px; border: 1px solid var(--border);
       background: var(--bg-secondary); color: var(--text-primary);
-      font-size: 13px; font-family: inherit;
+      font-size: calc(13px * var(--hb-text-scale)); font-family: inherit;
     }
     .hb-add button {
       flex-shrink: 0; align-self: stretch; padding: 0 12px;
       border: none; border-radius: 9px; background: var(--accent);
-      color: #fff; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+      color: #fff; font-size: calc(13px * var(--hb-text-scale)); font-weight: 600; font-family: inherit; cursor: pointer;
     }
 
     /* 첨부 */
@@ -1306,7 +1311,7 @@
     .hb-att-btn {
       border: 1px solid var(--border); background: var(--bg-secondary);
       color: var(--text-secondary); border-radius: 8px; padding: 5px 9px;
-      font-size: 11px; font-family: inherit; cursor: pointer;
+      font-size: calc(11px * var(--hb-text-scale)); font-family: inherit; cursor: pointer;
     }
     .hb-att-btn:active { background: var(--bg-card-hover); }
     .hb-addwrap { margin-top: 9px; }
@@ -1328,13 +1333,13 @@
     .hb-thumb-doc {
       display: flex; width: 100%; height: 100%;
       align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 700; color: var(--text-secondary);
+      font-size: calc(11px * var(--hb-text-scale)); font-weight: 700; color: var(--text-secondary);
     }
     .hb-thumb-x {
       position: absolute; top: 2px; right: 2px; z-index: 2;
       width: 15px; height: 15px; padding: 0; border: none; border-radius: 4px;
       background: rgba(0,0,0,0.62); color: #ff9e9e;
-      font-size: 11px; line-height: 15px; cursor: pointer;
+      font-size: calc(11px * var(--hb-text-scale)); line-height: 15px; cursor: pointer;
     }
     .hb-thumb-x:active { background: rgba(231,76,95,0.55); }
 
@@ -1342,7 +1347,7 @@
     .hb-act {
       border: 1px solid var(--border); background: var(--bg-secondary);
       color: var(--text-secondary); border-radius: 7px; padding: 5px 9px;
-      font-size: 11px; font-family: inherit; cursor: pointer;
+      font-size: calc(11px * var(--hb-text-scale)); font-family: inherit; cursor: pointer;
     }
     .hb-act.done { background: rgba(52,199,123,0.16); color: #7fd1a8; border-color: rgba(52,199,123,0.35); }
     .hb-act.danger { background: rgba(232,93,93,0.14); color: #ff9e9e; border-color: rgba(232,93,93,0.32); }
@@ -1351,11 +1356,11 @@
     /* 누가 봤고 누가 아직 안 봤는지 — 소통이 목적이라 미확인이 더 중요하다 */
     .hb-readers {
       display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
-      margin-top: 10px; font-size: 10px; color: var(--text-muted);
+      margin-top: 10px; font-size: calc(10px * var(--hb-text-scale)); color: var(--text-muted);
     }
     .hb-rd-lb { font-weight: 700; }
     .hb-rd {
-      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+      font-size: calc(10px * var(--hb-text-scale)); font-weight: 700; padding: 2px 7px; border-radius: 999px;
       background: rgba(52,199,123,0.15); color: #7fd1a8;
     }
     .hb-rd.no {
@@ -2440,7 +2445,8 @@
     var HB_NEW_LEVEL = '일반';
     var HB_ACC_KEY = 'pack2u_hb_guide_open';
     var HB_SIZE_KEY = 'pack2u_hb_card_w';
-    var HB_CARD_W = 150;
+    var HB_CARD_W_BASE = 150;   // 기본 카드 폭. 글자 배율의 기준점이기도 하다
+    var HB_CARD_W = HB_CARD_W_BASE;
     var hbSearchTimer = null;
 
     /**
@@ -2691,11 +2697,17 @@
      */
     function setHbCardSize(px, persist) {
       var v = parseInt(px, 10);
-      if (!(v > 0)) v = 150;
+      if (!(v > 0)) v = HB_CARD_W_BASE;
       v = Math.max(110, Math.min(420, v));
       HB_CARD_W = v;
       var list = document.getElementById('hbList');
-      if (list) list.style.setProperty('--hb-card-w', v + 'px');
+      if (list) {
+        list.style.setProperty('--hb-card-w', v + 'px');
+        /* 글자는 키울 때만 같이 커진다. 기본(150)과 그 아래에서는 1 로 묶는다 —
+           카드를 좁히는 건 한 화면에 많이 담으려는 것이지 글자를 못 읽게
+           하려는 게 아니다. 줄이면서 글자까지 줄면 결국 아무도 못 읽는다. */
+        list.style.setProperty('--hb-text-scale', String(Math.max(1, v / HB_CARD_W_BASE)));
+      }
       var lab = document.getElementById('hbSizeVal');
       if (lab) lab.textContent = String(v);
       var sl = document.getElementById('hbSize');
@@ -2708,7 +2720,7 @@
     function initHbCardSize() {
       var saved = 0;
       try { saved = parseInt(localStorage.getItem(HB_SIZE_KEY), 10) || 0; } catch (eZ) {}
-      setHbCardSize(saved || 150, false);
+      setHbCardSize(saved || HB_CARD_W_BASE, false);
     }
 
     /* silent=true 는 자동 새로고침용. 스피너를 띄우지 않고 스크롤을 지킨다.
