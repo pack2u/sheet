@@ -611,16 +611,22 @@
       position: fixed; top: 0; left: 0; right: 0; z-index: 8000;
       pointer-events: none;   /* 감지 띠와 바만 클릭을 받는다 */
     }
+    /* 감지 띠도 바와 같은 폭이다. 전체 폭으로 두면 브라우저 주소창 쪽으로
+       마우스를 올릴 때마다 엉뚱하게 열린다. */
     .cs-fav-hot {
-      position: absolute; top: 0; left: 0; right: 0; height: 10px;
+      position: absolute; top: 0; left: 15%; right: 15%; height: 12px;
       pointer-events: auto;
     }
     .cs-fav-bar {
-      display: flex; align-items: center; gap: 6px;
-      padding: 7px 12px; overflow-x: auto; scrollbar-width: none;
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--border);
-      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+      width: 70%; margin: 0 auto;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 9px 14px; overflow-x: auto; scrollbar-width: none;
+      /* 페이지 배경(#111)과 뚜렷이 구분되게 한 단계 밝은 면 + 초록 밑선 */
+      background: var(--bg-card);
+      border: 1px solid var(--border); border-top: none;
+      border-bottom: 2px solid var(--accent-green);
+      border-radius: 0 0 var(--radius) var(--radius);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), 0 0 22px var(--accent-green-glow);
       transform: translateY(-100%); transition: transform 0.18s ease;
       pointer-events: auto;
     }
@@ -630,25 +636,36 @@
 
     .cs-fav-item {
       display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
-      padding: 6px 11px; border-radius: 8px; text-decoration: none;
-      border: 1px solid var(--border); background: var(--bg-primary);
-      color: var(--text-secondary); font-size: 12px; font-weight: 600;
-      white-space: nowrap;
+      padding: 7px 12px; border-radius: var(--radius-sm); text-decoration: none;
+      border: 1px solid var(--border); background: var(--bg-secondary);
+      color: var(--text-primary); font-size: 12px; font-weight: 600;
+      white-space: nowrap; transition: border-color 0.14s ease, color 0.14s ease;
     }
-    .cs-fav-item:hover { border-color: var(--accent-green); color: var(--accent-green); }
+    .cs-fav-item:hover {
+      border-color: var(--accent-green); color: var(--accent-green);
+      background: var(--bg-card-hover);
+    }
     .cs-fav-item .ic { font-size: 14px; line-height: 1; }
 
-    /* 손잡이 — 있는지조차 모르면 아무도 안 쓴다. 늘 살짝 보이게 둔다 */
+    /* 손잡이 — 있는지조차 모르면 아무도 안 쓴다. 늘 살짝 보이게 둔다.
+       바가 70% 라 오른쪽 끝(15%)에 붙여 바와 한 덩어리로 보이게 한다. */
     .cs-fav-tab {
-      position: absolute; top: 0; right: 14px;
-      padding: 2px 12px 4px; border-radius: 0 0 8px 8px;
-      background: var(--bg-secondary); border: 1px solid var(--border); border-top: none;
-      color: var(--text-muted); font-size: 11px; line-height: 1.4;
-      cursor: pointer; user-select: none; opacity: 0.55;
+      position: absolute; top: 0; right: 15%;
+      padding: 2px 13px 4px; border-radius: 0 0 8px 8px;
+      background: var(--bg-card); border: 1px solid var(--border); border-top: none;
+      color: var(--accent-green); font-size: 11px; line-height: 1.4;
+      cursor: pointer; user-select: none; opacity: 0.6;
       pointer-events: auto; transition: opacity 0.18s ease;
     }
     .cs-fav-wrap:hover .cs-fav-tab,
     .cs-fav-wrap.on .cs-fav-tab { opacity: 0; pointer-events: none; }
+
+    /* 좁은 화면에서 70% 는 너무 좁다. 거의 꽉 채우고 스크롤로 넘긴다 */
+    @media (max-width: 900px) {
+      .cs-fav-hot { left: 3%; right: 3%; }
+      .cs-fav-bar { width: 94%; justify-content: flex-start; }
+      .cs-fav-tab { right: 3%; }
+    }
     .cs-build-bar .dot {
       width: 7px; height: 7px; border-radius: 50%; background: #062214; flex: 0 0 auto;
       animation: csPulseDot 1.4s ease-in-out infinite;
