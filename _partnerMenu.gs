@@ -20,95 +20,46 @@ function registerPartnerMenu_() {
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   //  📦 대리발송 발주시스템 — 매일 실행하는 것만
+  //
+  //  ★ 이 메뉴에 넣는 기준 (2026-09-02 정리) ★
+  //    "오늘 하루를 굴리려면 눌러야 하는가?" 하나만 본다.
+  //    점검·감사·복구·월단위 작업은 아무리 자주 써도 여기 두지 않는다.
+  //    → 전부 「💼 협력업체 관리」로 보냈다.
+  //
+  //    번호(1️⃣~7️⃣)는 하루의 순서다. 위에서 아래로 그대로 따라가면 된다.
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ui.createMenu("📦 대리발송 발주시스템")
 
-    // ── 발주 수집 ~ Push ──
+    // ── 아침: 발주 수집 → 업체로 Push ──
     .addItem("1️⃣ 대리판매 발주수집", "partnerCollectOrdersOwner")
     .addItem("2️⃣ 이카운트 업로드용 판매현황 갱신", "partnerRebuildSalesUploadOwner")
-    .addItem("🏝️ 도서산간 추가배송비 확인", "partnerCheckIslandShippingOwner")
+    .addItem("   └ 🏝️ 도서산간 추가배송비 확인", "partnerCheckIslandShippingOwner")
     .addItem("3️⃣ 대리공급업체로 발주 Push", "partnerPushOrdersToExclusiveFormsOwner")
+    // Push 가 중간에 끊겼을 때 이어서 밀 때 쓴다. 매일 흐름의 일부라 남긴다.
     .addItem("   └ 📋 임시기록 → 전용양식 Push", "partnerPushFromTempTabToExclusiveOwner")
-    .addItem("   └ 🔧 임시기록 강제 재생성", "partnerRebuildTempRecordsOwner")
-    .addItem("   └ 📮 전용양식 우편번호/택배비 채우기", "partnerJmFillZipAndShipping")
     .addSeparator()
 
-    // ── 송장 ──
-    // 사방넷 대량등록 탭은 5️⃣ 수집이 자동으로 다시 만든다. 수동 갱신은
-    // 수집 없이 다시 만들 때만 쓰므로 관리 → 🚚 송장·택배사 설정 으로 옮겼다.
+    // ── 오후: 송장 수집 → 배포 ──
     .addItem("5️⃣ 허브로 송장 수집", "partnerFetchInvoicesOwner")
     .addItem("   └ 📥 사방넷 송장대량등록 엑셀 저장", "partnerExportSabangnetBulkExcel")
     .addItem("   └ 📬 송장매칭/엑셀저장", "openInvoiceMatchSidebar")
-    .addItem("   └ 🔁 중복 발주 점검", "partnerCheckDuplicateOrders")
-    .addItem("   └ 🛬 푸시 착지 확인", "partnerVerifyPushLanded")
-    .addItem("   └ 🧹 잘못 찍힌 회차 도장 청소", "partnerCleanBadPushStamps")
-    .addItem("   └ 📊 송장 매칭 감사", "partnerAuditInvoiceMatching")
-    .addItem("   └ ⏪ 미매칭 소급 보강 (14일)", "partnerBackfillRecentArchives")
-    .addItem("   └ 🔍 미매칭 성격 분석", "partnerAnalyzeUnmatched")
-    .addItem("   └ ⏳ 송장 없이 남은 행", "partnerListStaleNoInvoice")
     .addItem("   └ 📧 냅킨코리아 Gmail 송장 수집", "partnerFetchInvoiceFromGmail_NK_Manual")
     .addItem("6️⃣ 폐기송장 적용", "partnerApplyVoidedInvoicesOwner")
     .addItem("7️⃣ 대리판매업체로 송장 배포", "partnerPushInvoicesOwner")
     .addSeparator()
 
-    // ── 취소/반품 ──
+    // ── 수시: 취소/반품 ──
     .addItem("🚫 취소/반품 수집 (접수탭→허브·발주·마감)", "partnerCollectCancelsOwner")
     .addItem("🚫 취소/반품 배포 (허브→업체시트)", "partnerPushCancelStatusOwner")
     .addSeparator()
 
-    // ── 검증 ──
-    .addItem("🔍 중복 발주 감지 (발주탭+전용양식)", "partnerCheckDuplicateOrdersOwner")
-    .addItem("🕵️ 오전/오후 판매현황 중복 점검", "partnerCheckSalesDuplicatesOwner")
-    .addItem("   └ 📅 날짜 지정 점검", "partnerCheckSalesDuplicatesForDate")
+    // ── 밤: 마감 ──
+    // 평소에는 트리거가 22:00 에 자동으로 돈다. 여기 있는 건 자동이 걸렀을 때
+    // 사람이 직접 돌리는 용도다 — 그래서 매일 메뉴에 남긴다.
+    .addItem("📋 통합 일일마감 (수동)", "partnerUnifiedDailyArchiveManual")
+    .addItem("🗂️ 통합조회 재생성 (CS 조회용)", "partnerRebuildUnifiedView")
     .addSeparator()
-
-    // ── 마감 ──
-    .addSubMenu(
-      ui.createMenu("📋 명세서 정리")
-        .addItem("① 명세서 탭 생성 (현재 파일)", "partnerCreateStatementTabs")
-        .addItem("② 원본 → 파싱", "partnerParseStatementFromRaw")
-        .addItem("③ 비교·정리 실행", "partnerRunStatementReconcile")
-        .addSeparator()
-        .addItem("📧 Gmail 첨부 수집 (현재 파일)", "partnerFetchStatementFromGmail")
-        .addItem("🧪 명세서 사전점검", "partnerDiagnoseStatementReconcile")
-        .addItem("🧪 Gmail 미처리 점검", "partnerDiagnoseStatementGmail")
-    )
-    // 「명세서 정리」는 **받은** 명세를 대사하고,
-    // 「거래명세표 발행」은 우리가 **보낼** 명세를 만든다. 방향이 반대다.
-    .addSubMenu(
-      ui.createMenu("🧾 거래명세표 발행")
-        .addItem("🗂️ 마감탭에서 골라 발행", "partnerOpenTaxStatementPicker")
-        .addItem("🖱️ 선택한 행으로 발행 (현재 탭)", "partnerIssueTaxStatementFromSelection")
-        .addItem("📅 날짜 구간으로 발행 (현재 파일)", "partnerIssueTaxStatementByDateRange")
-        .addItem("📄 월 단위 발행 (현재 파일)", "partnerIssueTaxStatementHere")
-        .addSeparator()
-        .addItem("📤 전체 거래처 일괄 발행 + 메일", "partnerIssueTaxStatementsAll")
-        .addItem("🧪 거래명세표 사전점검", "partnerDiagnoseTaxStatement")
-        .addSeparator()
-        .addItem("⚙️ 설정 탭 생성 (허브)", "partnerCreateTaxStatementTabs")
-        .addItem("🔄 거래처 목록 동기화", "partnerSyncTaxStatementVendors")
-        // 사업자정보 손입력을 줄이는 3단계 — 코드 채우기 → 진단 → 자동 채우기
-        .addItem("   └ ① 거래처코드 채우기 (업체 설정탭에서)", "partnerFillVendorCustCodes")
-        .addItem("   └ ② 🧪 이카운트 거래처 조회 진단", "partnerProbeEcountCustomers")
-        .addItem("   └ ③ 🏢 이카운트에서 사업자정보 채우기", "partnerFillVendorInfoFromEcount")
-        .addItem("♻️ 일괄 발행 진행기록 초기화", "partnerResetTaxStatementProgress")
-    )
-    .addSubMenu(
-      ui.createMenu("📋 마감탭 정리")
-        .addItem("📦 대리판매 발주 마감이동", "partnerArchiveToMonthlySettle")
-        .addItem("🏭 대리공급 발주 마감이동", "partnerArchiveExclusiveForm")
-        .addSeparator()
-        .addItem("📋 통합 일일마감 (수동)", "partnerUnifiedDailyArchiveManual")
-        .addItem("📋 일일마감 재처리 (날짜 지정)", "partnerUnifiedDailyArchiveForDate")
-        .addItem("🗂️ 일일마감 파일 폴더 정리 (일회성)", "partnerMoveDailyCloseFilesToSubFolder")
-        .addItem("📒 송장원장 갱신", "partnerRefreshInvoiceLedger")
-        .addItem("🗂️ 통합조회 재생성 (CS 조회용)", "partnerRebuildUnifiedView")
-        .addItem("📞 CS 주문/송장 검색 웹앱", "partnerOpenCsOrderSearchApp")
-        .addSeparator()
-        .addItem("🔄 취소/반품 수식 갱신", "partnerRefreshCancelReturnFormulas")
-        .addItem("🔧 월별 마감 탭 레이아웃 보정", "partnerRepairMonthlySettleTabs")
-        .addItem("🔧 마감 정산금액 보정 (단가×수량)", "partnerRepairArchiveLineTotals")
-    )
+    .addItem("📞 CS 주문/송장 검색 웹앱", "partnerOpenCsOrderSearchApp")
     .addToUi();
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -124,6 +75,25 @@ function registerPartnerMenu_() {
   //    섞여 있으면 눈으로 보려다 데이터를 고치게 된다.
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ui.createMenu("💼 협력업체 관리")
+
+    // ─────────── 매일 흐름에서 문제가 났을 때 ───────────
+    // 2026-09-02: 발주시스템 메뉴에 섞여 있던 점검·복구를 여기로 모았다.
+    // 매일 쓰는 것과 가끔 쓰는 것이 한 줄에 있으면 매일 쓰는 걸 못 찾는다.
+    .addSubMenu(
+      ui.createMenu("🩺 발주·Push 점검")
+        // ── 왜 안 갔나 (읽기 전용) ──
+        .addItem("🛬 푸시 착지 확인", "partnerVerifyPushLanded")
+        .addItem("🔁 중복 발주 점검 (임시기록 차수)", "partnerCheckDuplicateOrders")
+        .addItem("🔍 중복 발주 감지 (발주탭+전용양식)", "partnerCheckDuplicateOrdersOwner")
+        .addItem("🕵️ 오전/오후 판매현황 중복 점검", "partnerCheckSalesDuplicatesOwner")
+        .addItem("   └ 📅 날짜 지정 점검", "partnerCheckSalesDuplicatesForDate")
+        .addSeparator()
+        // ── 고치기 (쓴다) ──
+        .addItem("🔧 임시기록 강제 재생성", "partnerRebuildTempRecordsOwner")
+        .addItem("📮 전용양식 우편번호/택배비 채우기", "partnerJmFillZipAndShipping")
+        .addItem("🧹 잘못 찍힌 회차 도장 청소", "partnerCleanBadPushStamps")
+    )
+    .addSeparator()
 
     // ─────────── 업체를 향한 것 ───────────
     .addSubMenu(
@@ -207,6 +177,12 @@ function registerPartnerMenu_() {
         .addItem("2️⃣ 일일마감 송장 재매칭 반영 (2주)", "partnerApplyArchiveInvoiceRefix")
         .addItem("3️⃣ 지정일 송장 재매칭", "partnerFillUnmatchedArchiveForDate")
         .addItem("🧹 일일마감 수량초과 송장 정리", "partnerPurgeArchiveQtyOverflow")
+        .addSeparator()
+        // 2026-09-02: 발주시스템 메뉴에 있던 감사·보강을 옮겼다.
+        .addItem("📊 송장 매칭 감사", "partnerAuditInvoiceMatching")
+        .addItem("⏪ 미매칭 소급 보강 (14일)", "partnerBackfillRecentArchives")
+        .addItem("🔍 미매칭 성격 분석", "partnerAnalyzeUnmatched")
+        .addItem("⏳ 송장 없이 남은 행", "partnerListStaleNoInvoice")
     )
     .addSeparator()
 
@@ -237,6 +213,53 @@ function registerPartnerMenu_() {
         .addItem("🎨 발주탭 상태색 재적용 (전체 업체)", "partnerReapplyOrderTabCFR")
         .addItem("🎨 허브 상태색 재적용", "partnerReapplyHubCFOwner")
         .addItem("🎨 조건부서식 중복 정리 (허브+전체 업체)", "partnerDedupConditionalFormatsAll")
+    )
+    .addSeparator()
+
+    // ─────────── 마감 · 월 단위 ───────────
+    // 2026-09-02: 발주시스템에 있던 것을 옮겼다. 매일 하는 일이 아니다.
+    .addSubMenu(
+      ui.createMenu("📋 명세서 정리")
+        .addItem("① 명세서 탭 생성 (현재 파일)", "partnerCreateStatementTabs")
+        .addItem("② 원본 → 파싱", "partnerParseStatementFromRaw")
+        .addItem("③ 비교·정리 실행", "partnerRunStatementReconcile")
+        .addSeparator()
+        .addItem("📧 Gmail 첨부 수집 (현재 파일)", "partnerFetchStatementFromGmail")
+        .addItem("🧪 명세서 사전점검", "partnerDiagnoseStatementReconcile")
+        .addItem("🧪 Gmail 미처리 점검", "partnerDiagnoseStatementGmail")
+    )
+    // 「명세서 정리」는 **받은** 명세를 대사하고,
+    // 「거래명세표 발행」은 우리가 **보낼** 명세를 만든다. 방향이 반대다.
+    .addSubMenu(
+      ui.createMenu("🧾 거래명세표 발행")
+        .addItem("🗂️ 마감탭에서 골라 발행", "partnerOpenTaxStatementPicker")
+        .addItem("🖱️ 선택한 행으로 발행 (현재 탭)", "partnerIssueTaxStatementFromSelection")
+        .addItem("📅 날짜 구간으로 발행 (현재 파일)", "partnerIssueTaxStatementByDateRange")
+        .addItem("📄 월 단위 발행 (현재 파일)", "partnerIssueTaxStatementHere")
+        .addSeparator()
+        .addItem("📤 전체 거래처 일괄 발행 + 메일", "partnerIssueTaxStatementsAll")
+        .addItem("🧪 거래명세표 사전점검", "partnerDiagnoseTaxStatement")
+        .addSeparator()
+        .addItem("⚙️ 설정 탭 생성 (허브)", "partnerCreateTaxStatementTabs")
+        .addItem("🔄 거래처 목록 동기화", "partnerSyncTaxStatementVendors")
+        // 사업자정보 손입력을 줄이는 3단계 — 코드 채우기 → 진단 → 자동 채우기
+        .addItem("   └ ① 거래처코드 채우기 (업체 설정탭에서)", "partnerFillVendorCustCodes")
+        .addItem("   └ ② 🧪 이카운트 거래처 조회 진단", "partnerProbeEcountCustomers")
+        .addItem("   └ ③ 🏢 이카운트에서 사업자정보 채우기", "partnerFillVendorInfoFromEcount")
+        .addItem("♻️ 일괄 발행 진행기록 초기화", "partnerResetTaxStatementProgress")
+    )
+    .addSubMenu(
+      ui.createMenu("📋 마감탭 정리")
+        .addItem("📦 대리판매 발주 마감이동", "partnerArchiveToMonthlySettle")
+        .addItem("🏭 대리공급 발주 마감이동", "partnerArchiveExclusiveForm")
+        .addSeparator()
+        .addItem("📋 일일마감 재처리 (날짜 지정)", "partnerUnifiedDailyArchiveForDate")
+        .addItem("🗂️ 일일마감 파일 폴더 정리 (일회성)", "partnerMoveDailyCloseFilesToSubFolder")
+        .addItem("📒 송장원장 갱신", "partnerRefreshInvoiceLedger")
+        .addSeparator()
+        .addItem("🔄 취소/반품 수식 갱신", "partnerRefreshCancelReturnFormulas")
+        .addItem("🔧 월별 마감 탭 레이아웃 보정", "partnerRepairMonthlySettleTabs")
+        .addItem("🔧 마감 정산금액 보정 (단가×수량)", "partnerRepairArchiveLineTotals")
     )
     .addSeparator()
 

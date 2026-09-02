@@ -560,6 +560,9 @@ var _CS_DAILY_SUBFOLDER_ = "일일마감";
 /** 실행 1회분 폴더 캐시 — 날짜 14개마다 하위폴더를 다시 뒤지지 않게 */
 var _CS_DAILY_FOLDER_CACHE_ = null;
 
+/** 폴더를 못 연 이유를 모아 둔다. 진단이 읽어 간다 */
+var _CS_DAILY_FOLDER_ERRORS_ = [];
+
 /**
  * 일일마감 파일을 찾을 폴더 목록.
  * 허브가 「일일마감」 하위폴더에 저장하도록 바뀌었다.
@@ -577,12 +580,29 @@ function _cs_dailyFolders_() {
   } catch (eP) {}
   for (var i = 0; i < _CS_DAILY_FOLDER_IDS_.length; i++) ids.push(_CS_DAILY_FOLDER_IDS_[i]);
 
+  /* ★ 2026-09-02: 상품정보 시트의 부모 폴더도 후보에 넣는다.
+     허브의 _unified_resolveArchiveFolder_ 는 전용 폴더 ID 가 안 열리면 조용히
+     「시트의 부모 폴더」로 폴백해 거기에 일일마감을 저장한다. CS앱은 죽은 ID 만
+     보고 있어서 폴백이 통째로 죽어 있었다(2026-09-01 사고).
+     같은 경로를 따라가면 양쪽이 ID 없이도 저절로 같은 폴더를 본다. */
+  try {
+    var parents = DriveApp.getFileById(_CS_MAIN_SHEET_ID).getParents();
+    while (parents.hasNext()) ids.push(parents.next().getId());
+  } catch (eMp) {}
+
   var subs = [], bases = [], seen = {};
   for (var f = 0; f < ids.length; f++) {
     var id = String(ids[f] || "").trim();
     if (!id || seen[id]) continue;
     var base = null;
-    try { base = DriveApp.getFolderById(id); } catch (eF) { continue; }
+    try {
+      base = DriveApp.getFolderById(id);
+    } catch (eF) {
+      // 조용히 넘기면 안 된다. 전부 실패해도 "파일 없음"으로만 보여서
+      // 폴백이 죽은 걸 아무도 모른 채 지나갔다(2026-09-01 사고).
+      _CS_DAILY_FOLDER_ERRORS_.push(id + " · " + eF.message);
+      continue;
+    }
     seen[id] = true;
     bases.push(base);
 
@@ -2936,7 +2956,44 @@ function csDiagnoseDayCount(dateStr) {
  * 이라는 정확한 이름으로만 찾으므로, 한 글자만 달라도 못 본다.
  */
 function csListDailyFiles() {
-  var out = { 폴더: [], 찾는이름형식: _CS_DAILY_PREFIX_ + "(YYYY-MM-DD)", 파일: [] };
+  var out = { 폴더ID점검: [], 폴더: [], 찾는이름형식: _CS_DAILY_PREFIX_ + "(YYYY-MM-DD)", 파일: [] };
+
+  /* 어느 ID 가 왜 안 열리는지 먼저 본다.
+     _cs_dailyFolders_ 는 열기 실패를 catch{continue} 로 조용히 삼키기 때문에,
+     전부 실패해도 "폴더 0곳"이라는 결과만 남고 이유가 안 보인다. */
+  var probe = [];
+  try {
+    var pid = String(
+      PropertiesService.getScriptProperties().getProperty("UNIFIED_DAILY_ARCHIVE_FOLDER_ID") || ""
+    ).trim();
+    probe.push({ 출처: "스크립트속성 UNIFIED_DAILY_ARCHIVE_FOLDER_ID", id: pid });
+  } catch (eP) {
+    probe.push({ 출처: "스크립트속성", id: "", 결과: "읽기실패 · " + eP.message });
+  }
+  for (var p = 0; p < _CS_DAILY_FOLDER_IDS_.length; p++) {
+    probe.push({ 출처: "코드 _CS_DAILY_FOLDER_IDS_[" + p + "]", id: _CS_DAILY_FOLDER_IDS_[p] });
+  }
+  try {
+    var par = DriveApp.getFileById(_CS_MAIN_SHEET_ID).getParents();
+    while (par.hasNext()) {
+      probe.push({ 출처: "상품정보 시트의 부모 폴더 (허브가 실제로 쓰는 곳)", id: par.next().getId() });
+    }
+  } catch (eMp2) {
+    probe.push({ 출처: "상품정보 시트의 부모 폴더", id: "", 결과: "조회실패 · " + eMp2.message });
+  }
+  for (var q = 0; q < probe.length; q++) {
+    var pe = probe[q];
+    if (pe.결과) { out.폴더ID점검.push(pe); continue; }
+    if (!pe.id) { pe.결과 = "(값 없음)"; out.폴더ID점검.push(pe); continue; }
+    try {
+      var fo = DriveApp.getFolderById(pe.id);
+      pe.결과 = "열림 · " + fo.getName();
+      try { if (fo.isTrashed()) pe.결과 += "  ★휴지통에 있음"; } catch (eT2) {}
+    } catch (eO) {
+      pe.결과 = "열기실패 · " + eO.message;
+    }
+    out.폴더ID점검.push(pe);
+  }
 
   var folders = _cs_dailyFolders_();
   for (var f = 0; f < folders.length; f++) {
