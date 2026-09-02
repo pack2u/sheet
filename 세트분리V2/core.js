@@ -24,6 +24,7 @@ var SS_ROUTE = {
   LOTTE_ISLAND_CONSIGN: '롯데택배-도서산간(위탁배송)',
   LOTTE_LOCAL: '롯데택배-동네배송',
   PARTNER: '대리발송',
+  MERGED: '합배송',
   HOLD: '보류'
 };
 
@@ -36,10 +37,17 @@ var SS_OUT_HEADER = [
 
 var SS_HOLD_HEADER = SS_OUT_HEADER.concat(['보류사유', '상세']);
 
+/** 합배송 탭 — 대표행과 동봉행을 한자리에 모아 박스 구성이 보이게 한다 */
+var SS_MERGED_HEADER = ['구분', '실제경로', '합포장키'].concat(SS_OUT_HEADER);
+
+/** 도서산간 탭 — 롯데 요금 구분(제주연계 / 도선료·산간료)에 맞춘 권역을 앞에 붙인다 */
+var SS_ISLAND_HEADER = ['권역', '우편번호', '판정'].concat(SS_OUT_HEADER);
+
 var SS_LEDGER_HEADER = [
-  '회차키', '라인ID', '실행시각', '경로', '보류사유', '출고지', '순번', '일자-No.',
+  '회차키', '라인ID', '고유ID', '주문번호출처', '실행시각', '경로', '보류사유', '출고지', '순번', '일자-No.',
   '원본품목코드', '품목코드', '품목명', '출력품목명', '택배박스수량', '주문수량', '소요량', '수량',
   '조건ID', '합포장그룹', '합포장대표', '배송비', '배송비산출', '부족수량',
+  '도서권역', '우편번호', '도서판정',
   '거래처명', '전화', '모바일', '주소1', '배송메시지', '합계',
   '적요', '사방넷주문번호', '보내는분', '보내는분전화'
 ];
@@ -56,7 +64,9 @@ var SS_DEFAULT_CONFIG = {
   보내는주소: '경기도 평택시 포승읍 성해홍원로 91 팩투유',
   대표전화: '031-923-7795',
   동네배송_사용: '중단',
-  도서산간_미확인: '보류'
+  도서산간_미확인: '보류',
+  도서산간_판정: '우편번호우선',
+  전화주문_고유ID: '주문번호칸에채움'
 };
 
 /* ── 작은 도구들 ──────────────────────────────────────── */
@@ -109,6 +119,71 @@ function ssWarn(list, level, code, target, msg) {
   list.push({ level: level, code: code, target: ssText(target), msg: msg });
 }
 
+/* ── 고유ID ───────────────────────────────────────────── */
+
+/** FNV-1a 32bit — 짧고 결정적이면 충분하다 (암호용 아님) */
+function ssHash4(s) {
+  var h = 0x811c9dc5;
+  var t = ssText(s);
+  for (var i = 0; i < t.length; i++) {
+    h ^= t.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return ('0000000' + h.toString(16)).slice(-4);
+}
+
+/** 자릿수를 지정하는 판 */
+function ssHashN(s, n) {
+  var h = 0x811c9dc5;
+  var t = ssText(s);
+  for (var i = 0; i < t.length; i++) {
+    h ^= t.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return ('00000000' + h.toString(16)).slice(-(n || 5));
+}
+
+/**
+ * 전화주문처럼 주문번호가 없는 건에 붙일 고유ID.
+ *
+ * 판매현황은 하루 두 번 통째로 다시 받는다.
+ * 그래서 순번 기반이나 랜덤(UUID)은 쓸 수 없다 — 회차마다 값이 달라진다.
+ * 전표번호와 주문 내용만으로 계산해 **같은 주문이면 언제 계산해도 같은 값**이 나온다.
+ *
+ *   260902-PH-a3f19
+ *    └날짜   └표식 └전표·수취인·연락처·주소·품목·수량 해시
+ *
+ * 상품정보 시트의 「MMdd-ds-xxxx」(발주수집이 발급)와 나란한 형태지만
+ * 뒷자리가 랜덤이 아니라 내용 해시다 — 랜덤이면 회차마다 값이 달라진다.
+ */
+function ssMakeOrderId(L) {
+  var 일자 = ssText(L.일자);
+  var parts = 일자.split('-');
+  var digits = ssText(parts[0]).replace(/[^0-9]/g, '');
+  var ymd = digits.length >= 8 ? digits.slice(2, 8) : digits;
+  var no = ssText(parts[1]).replace(/[^0-9]/g, '') || '0';
+  var seed = [
+    no, ssNorm(L.받는분), ssText(L.모바일) || ssText(L.전화),
+    ssNorm(L.주소1), ssText(L.원본코드), ssText(L.주문수량)
+  ].join('|');
+  return ymd + '-PH-' + ssHashN(seed, 5);
+}
+
+
+/**
+ * 판매현황 내용의 지문. 같은 자료를 다시 돌리면 같은 값이 나온다.
+ * 이걸로 「같은 회차 재실행」과 「새 회차」를 구분한다.
+ */
+function ssFingerprint(lines) {
+  var parts = [];
+  for (var i = 0; i < lines.length; i++) {
+    var L = lines[i];
+    parts.push(L.일자 + '|' + L.원본코드 + '|' + L.주문수량 + '|' + ssNorm(L.받는분) + '|' + ssNorm(L.주소1));
+  }
+  parts.sort();
+  return ssHash4(parts.join('~')) + ssHash4(parts.length + '~' + parts.join('#'));
+}
+
 /* ── 1단계 · 판매현황 정규화 ──────────────────────────── */
 
 var SS_SALES_COLS = [
@@ -151,6 +226,7 @@ function ssNormalize(grid, cfg, warnings) {
 
   var out = [];
   var seen = {};
+  var issued = {};
   for (var r = found.headerRow + 1; r < grid.length; r++) {
     var row = grid[r];
     if (!row) continue;
@@ -199,7 +275,7 @@ function ssNormalize(grid, cfg, warnings) {
     }
     seen[순번] = true;
 
-    out.push({
+    var line = {
       순번: 순번,
       출처: 출처,
       일자: g(row, '일자-No.'),
@@ -220,7 +296,23 @@ function ssNormalize(grid, cfg, warnings) {
       보내는주소: cfg.보내는주소,
       판매처표기: /인\//.test(거래처) ? 거래처.replace('대리발송-', '') : '',
       거래처명원본: 거래처
-    });
+    };
+    line.고유ID = ssText(line.사방넷주문번호) || ssMakeOrderId(line);
+    if (line.주문번호출처 !== undefined) { /* noop */ }
+    if (!ssText(line.사방넷주문번호)) {
+      var base = line.고유ID, n = 1;
+      while (issued[line.고유ID]) { n++; line.고유ID = base + '-' + n; }
+      issued[line.고유ID] = true;
+      if (n > 1) {
+        ssWarn(warnings, '주의', 'ID_COLLISION', line.고유ID,
+          '같은 회차에 동일한 고유ID가 계산되어 뒤에 순번을 붙였습니다.');
+      }
+    }
+    line.주문번호출처 = ssText(line.사방넷주문번호) ? '사방넷' : '자동발급';
+    if (line.주문번호출처 === '자동발급' && ssText(cfg.전화주문_고유ID) === '주문번호칸에채움') {
+      line.사방넷주문번호 = line.고유ID;
+    }
+    out.push(line);
   }
   return out;
 }
@@ -431,6 +523,11 @@ function ssMerge(units, cfg) {
     rep.배송비산출 = '합포장 최대 ' + maxFee + ' (' + g.length + '건)';
     rep.출력품목명 = (sample ? '[샘플] ' : '') + ssCompressNames(names) + ' ===합배송';
     for (var k = 1; k < g.length; k++) g[k].합포장흡수 = true;
+    // 이 묶음은 물리적으로 한 박스다. 대표행도 동봉행도 합배송 탭에서 함께 본다.
+    for (var q = 0; q < g.length; q++) {
+      g[q].실경로 = g[q].route;
+      g[q].route = SS_ROUTE.MERGED;
+    }
   }
   return units;
 }
@@ -549,6 +646,17 @@ function ssRoute(units, masters, cfg, warnings) {
   var localAddr = (ssText(cfg.동네배송_사용) === '사용') ? (masters.localAddrs || {}) : {};
   var holdIsland = ssText(cfg.도서산간_미확인) !== '일반출고';
 
+  // 한 글자 키워드는 시/군을 가려내지 못한다.
+  // 예전 목록의 「중」은 중구·중랑구·중앙로·궁중보쌈까지 전부 후보로 만들었다.
+  for (var kk = 0; kk < islandKw.length; kk++) {
+    var kw = islandKw[kk];
+    if (kw && ssText(kw.kw).length < 2) {
+      kw.skip = true;
+      ssWarn(warnings, '주의', 'ISLAND_KW', kw.kw,
+        '한 글자 키워드라 무시했습니다. 시/군 이름을 두 글자 이상으로 적어 주세요.');
+    }
+  }
+
   for (var i = 0; i < units.length; i++) {
     var u = units[i];
     u.보류사유 = ''; u.보류상세 = '';
@@ -573,26 +681,46 @@ function ssRoute(units, masters, cfg, warnings) {
 
     if (localAddr[addr]) { u.route = SS_ROUTE.LOTTE_LOCAL; continue; }
 
-    var 후보 = false;
-    for (var k = 0; k < islandKw.length; k++) {
-      if (islandKw[k] && addr.indexOf(islandKw[k]) >= 0) { 후보 = true; break; }
-    }
-    if (후보) {
-      var zip = ssText(addrZip[addr]);
-      if (!zip) {
-        if (holdIsland) {
-          u.route = SS_ROUTE.HOLD; u.보류사유 = '도서산간미확인';
-          u.보류상세 = addr;
-          ssWarn(warnings, '주의', 'ISLAND_UNKNOWN', addr,
-            '도서산간 후보 주소입니다. 「도서산간 우편번호」 탭에 우편번호를 입력하세요.');
-          continue;
-        }
-        ssWarn(warnings, '주의', 'ISLAND_UNKNOWN', addr,
-          '도서산간 후보인데 우편번호가 없어 일반 출고로 보냈습니다.');
-      } else if (islandZip[zip]) {
+    var zip = ssText(addrZip[addr]);
+    u.우편번호 = zip;
+
+    // 1) 우편번호가 있으면 그것만으로 끝난다. 도시 이름은 보지 않는다.
+    if (zip) {
+      if (islandZip[zip]) {
+        u.도서권역 = islandZip[zip];
+        u.도서판정 = '우편번호';
         u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
         continue;
       }
+      u.route = SS_ROUTE.LOTTE;
+      continue;
+    }
+
+    // 2) 우편번호가 아직 없을 때만 지역명을 본다
+    var 확정 = '', 후보 = false;
+    for (var k = 0; k < islandKw.length; k++) {
+      if (!islandKw[k] || islandKw[k].skip) continue;
+      if (addr.indexOf(islandKw[k].kw) < 0) continue;
+      후보 = true;
+      if (islandKw[k].confirm) { 확정 = islandKw[k].zone || '도서'; break; }
+    }
+    if (확정) {
+      // 제주·울릉처럼 시/군 전체가 도서인 곳은 우편번호가 없어도 확정
+      u.도서권역 = 확정;
+      u.도서판정 = '지역확정';
+      u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
+      continue;
+    }
+    if (후보) {
+      if (holdIsland) {
+        u.route = SS_ROUTE.HOLD; u.보류사유 = '도서산간미확인';
+        u.보류상세 = addr;
+        ssWarn(warnings, '주의', 'ISLAND_UNKNOWN', addr,
+          '우편번호를 구하지 못해 도서산간 여부를 확정할 수 없습니다.');
+        continue;
+      }
+      ssWarn(warnings, '주의', 'ISLAND_UNKNOWN', addr,
+        '우편번호를 구하지 못해 일반 출고로 보냈습니다. 도서산간이면 추가운임이 누락됩니다.');
     }
     u.route = SS_ROUTE.LOTTE;
   }
@@ -617,13 +745,22 @@ function ssOutRow(u) {
   ];
 }
 
+function ssIslandRow(u) {
+  return [u.도서권역 || '', u.우편번호 || '', u.도서판정 || ''].concat(ssOutRow(u));
+}
+
+function ssMergedRow(u) {
+  return [u.합포장대표 ? '대표' : '동봉', u.실경로 || '', u.합포장그룹 || ''].concat(ssOutRow(u));
+}
+
 function ssLedgerRow(u, runKey, at) {
   return [
-    runKey, u.라인ID, at, u.route, u.보류사유 || '', u.출고지, u.순번, u.일자,
+    runKey, u.라인ID, u.고유ID || '', u.주문번호출처 || '', at, u.route, u.보류사유 || '', u.출고지, u.순번, u.일자,
     u.원본코드, u.품목코드, u.품목명, u.출력품목명 || ssDisplayName(u),
     u.박스수, u.주문수량, u.소요량, u.수량,
     u.조건ID || '', u.합포장그룹 || '', u.합포장대표 ? 'Y' : '',
     u.배송비, u.배송비산출, u.부족수량,
+    u.도서권역 || '', u.우편번호 || '', u.도서판정 || '',
     u.받는분, u.전화, u.모바일, u.주소1, u.배송메시지, u.합계,
     u.적요, u.사방넷주문번호, u.보내는분, u.보내는분전화
   ];
@@ -642,6 +779,7 @@ function ssRun(grid, masters, cfg) {
   var warnings = [];
 
   var lines = ssNormalize(grid, cfg, warnings);
+  var 지문 = ssFingerprint(lines);
   var units = ssExplode(lines, masters, warnings);
   ssEnrich(units, masters, warnings);
   ssAssignCondition(units, masters, cfg);
@@ -652,31 +790,40 @@ function ssRun(grid, masters, cfg) {
 
   var buckets = {};
   for (var k in SS_ROUTE) if (Object.prototype.hasOwnProperty.call(SS_ROUTE, k)) buckets[SS_ROUTE[k]] = [];
-  var 출력건수 = 0, 흡수건수 = 0;
+  var 흡수건수 = 0;
   for (var j = 0; j < units.length; j++) {
     var u = units[j];
-    if (u.합포장흡수) { 흡수건수++; continue; }
+    if (u.합포장흡수) 흡수건수++;
     buckets[u.route].push(u);
-    출력건수++;
   }
+  // 합배송 탭은 박스 단위로 읽히도록 묶음키 → 대표 먼저 순으로 정렬
+  buckets[SS_ROUTE.MERGED].sort(function (a, b) {
+    if (a.합포장그룹 !== b.합포장그룹) return a.합포장그룹 < b.합포장그룹 ? -1 : 1;
+    return (a.합포장대표 ? 0 : 1) - (b.합포장대표 ? 0 : 1);
+  });
+  var 출력건수 = units.length;
 
   var stats = {
     입력행: lines.length,
     분해행: units.length,
     합포장흡수: 흡수건수,
     출력행: 출력건수,
+    송장건수: units.length - 흡수건수 - buckets[SS_ROUTE.HOLD].length,
     보류: buckets[SS_ROUTE.HOLD].length,
     경고: warnings.length,
+    지문: 지문,
     버전: SS_VERSION
   };
   for (var b in buckets) {
     if (Object.prototype.hasOwnProperty.call(buckets, b)) stats['탭_' + b] = buckets[b].length;
   }
 
-  // 행 보존 검증 — 분해행 = 출력행 + 흡수행 이어야 한다
-  if (units.length !== 출력건수 + 흡수건수) {
+  // 행 보존 검증 — 분해된 모든 행이 정확히 한 탭에 들어가야 한다
+  var 탭합계 = 0;
+  for (var bb in buckets) if (Object.prototype.hasOwnProperty.call(buckets, bb)) 탭합계 += buckets[bb].length;
+  if (units.length !== 탭합계) {
     ssWarn(warnings, '오류', 'ROW_LOSS', '', '행 수가 맞지 않습니다. 분해 ' + units.length +
-      ' ≠ 출력 ' + 출력건수 + ' + 합포장흡수 ' + 흡수건수);
+      ' ≠ 탭 합계 ' + 탭합계);
   }
 
   return { buckets: buckets, warnings: warnings, units: units, stats: stats };
@@ -715,13 +862,14 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     SS_VERSION: SS_VERSION, SS_ROUTE: SS_ROUTE,
     SS_OUT_HEADER: SS_OUT_HEADER, SS_HOLD_HEADER: SS_HOLD_HEADER,
-    SS_LEDGER_HEADER: SS_LEDGER_HEADER, SS_WARN_HEADER: SS_WARN_HEADER,
+    SS_LEDGER_HEADER: SS_LEDGER_HEADER, SS_WARN_HEADER: SS_WARN_HEADER, SS_MERGED_HEADER: SS_MERGED_HEADER, SS_ISLAND_HEADER: SS_ISLAND_HEADER,
     SS_FEE_RULE_HEADER: SS_FEE_RULE_HEADER, SS_DEFAULT_CONFIG: SS_DEFAULT_CONFIG,
     ssRun: ssRun, ssNormalize: ssNormalize, ssExplode: ssExplode, ssEnrich: ssEnrich,
     ssAssignCondition: ssAssignCondition, ssAllocateStock: ssAllocateStock,
     ssRoute: ssRoute, ssMerge: ssMerge, ssShippingFee: ssShippingFee,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssOutRow: ssOutRow, ssLedgerRow: ssLedgerRow, ssDisplayName: ssDisplayName,
+    ssMakeOrderId: ssMakeOrderId, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint,
+    ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssLedgerRow: ssLedgerRow, ssDisplayName: ssDisplayName,
     ssStripName: ssStripName, ssNormAddr: ssNormAddr, ssPad6: ssPad6
   };
 }

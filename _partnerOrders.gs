@@ -389,7 +389,13 @@ function _po_getHubTab() {
 // ═══════════════════════════════════════════
 function _po_applyHubDesign(hubTab) {
   try {
-    var hRange = hubTab.getRange("A2:Q5000");
+    // ★ 2026-09-02: 범위를 5000행 고정에서 시트 전체로 바꿨다 ★
+    //   허브는 계속 쌓이는 탭이다. 5000행을 넘는 순간 그 아래 행에는
+    //   조건부서식이 아예 없어서, 송장이 들어와도 초록으로 안 바뀐다.
+    //   "전에는 됐는데 언제부터 안 된다"의 정체가 이것이다.
+    //   시트가 커지면 서식도 따라 커져야 한다.
+    var _hubRows_ = Math.max(hubTab.getMaxRows() - 1, 1);
+    var hRange = hubTab.getRange(2, 1, _hubRows_, 17); // A2:Q(끝)
     var rules = [];
     // ★ 출고가능 → 연초록 (품절보다 먼저 = 우선 적용)
     rules.push(

@@ -38,6 +38,13 @@ console.log('\n[ssParseFeeRule] 레거시 문자열 이관');
 
 console.log('\n[ssPad6 / ssNormAddr]');
 eq('순번 포맷 TEXT(n,"100000")', C.ssPad6(35), '100035');
+
+console.log('\n[고유ID] 결정적이어야 한다');
+const _L = { 일자: '2026/09/02 -8', 받는분: '김대선', 모바일: '010-5415-4432', 주소1: '서울 강동구 양재대로89가길 34', 원본코드: 'BFTANG00001', 주문수량: 2 };
+eq('형식 YYMMDD-PH-xxxxx', /^260902-PH-[0-9a-f]{5}$/.test(C.ssMakeOrderId(_L)), true);
+eq('재계산해도 동일', C.ssMakeOrderId(_L), C.ssMakeOrderId(_L));
+eq('전표 다르면 다른 ID', C.ssMakeOrderId(Object.assign({}, _L, { 일자: '2026/09/02 -12' })) !== C.ssMakeOrderId(_L), true);
+eq('상품정보 -ds- 와 형식 구분', /-ds-/.test(C.ssMakeOrderId(_L)), false);
 eq('주소 정규화', C.ssNormAddr('서울  강남구  1\n.(참고)'), '서울 강남구 1');
 
 console.log('\n' + (fail ? `실패 ${fail}건 / ` : '') + `통과 ${pass}건`);

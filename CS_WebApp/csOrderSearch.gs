@@ -2098,7 +2098,32 @@ function csDiagnoseReturnLedger() {
     var values = tab.getRange(1, 1, scanRows, lastCol).getDisplayValues();
     var headerIdx = _cs_findReturnHeaderRow_(values);
     var header = headerIdx >= 0 ? values[headerIdx] : [];
-    return {
+    var colMap = headerIdx >= 0 ? _cs_mapReturnLedgerCols_(header) : null;
+
+    /* 어느 항목이 어느 열에 붙었는지 사람이 읽을 수 있게 편다.
+       -1 이면 그 항목은 **조용히 안 적힌다** — 이게 유형(K열)이 안 써지던
+       이유였다. 매핑 실패가 보이지 않으면 아무도 모른다. */
+    var readable = [], unmapped = [];
+    if (colMap) {
+      var label = {
+        status: "처리상태", date: "반품접수날짜", staff: "접수자", vendor: "업체명",
+        name: "반품신청자", phone: "연락처", pickup: "수거입력처", item: "상품명",
+        qty: "수량", invoice: "원송장", type: "유형", fee: "반품비",
+        notice: "고객요청/비고", returnInvoice: "반품송장"
+      };
+      for (var f in label) {
+        if (!Object.prototype.hasOwnProperty.call(label, f)) continue;
+        var idx = colMap[f];
+        if (idx >= 0) {
+          readable.push(label[f] + " → " + _cs_colLetter_(idx) + "열 (헤더: \"" +
+            String(header[idx] || "").trim() + "\")");
+        } else {
+          unmapped.push(label[f]);
+        }
+      }
+    }
+
+    var out = {
       ok: headerIdx >= 0,
       ssName: ss.getName(),
       monthKey: monthKey,
@@ -2110,9 +2135,14 @@ function csDiagnoseReturnLedger() {
       lastRow: lastRow,
       headerRow: headerIdx >= 0 ? headerIdx + 1 : 0,
       headers: header,
-      colMap: headerIdx >= 0 ? _cs_mapReturnLedgerCols_(header) : null,
+      매핑: readable,
+      매핑실패: unmapped.length ? unmapped : "없음",
+      colMap: colMap,
       error: headerIdx < 0 ? "반품접수날짜 헤더 없음 (상위 " + scanRows + "행 검색)" : ""
     };
+    // 편집기는 반환값을 로그에 찍어주지 않는다. 사람이 직접 돌리는 점검이라 남긴다.
+    try { Logger.log(JSON.stringify(out, null, 2)); } catch (eL) {}
+    return out;
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -2140,6 +2170,20 @@ function _cs_findReturnHeaderRow_(values) {
   return -1;
 }
 
+/** 0-based 열 번호 → 스프레드시트 열 문자 (0 → A, 10 → K) */
+function _cs_colLetter_(idx) {
+  var n = Number(idx);
+  if (!(n >= 0)) return "?";
+  var s = "";
+  n = n + 1;
+  while (n > 0) {
+    var r = (n - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
 function _cs_mapReturnLedgerCols_(header) {
   var col = {
     date: -1, staff: -1, vendor: -1, name: -1, phone: -1,
@@ -2160,7 +2204,7 @@ function _cs_mapReturnLedgerCols_(header) {
     else if (col.qty < 0 && (h === "수량" || h.indexOf("수량") === 0)) col.qty = i;
     else if (col.invoice < 0 && /원송장|송장번호/.test(h) && !/회수|재발송|반품송장/.test(h)) col.invoice = i;
     else if (col.returnInvoice < 0 && /반품송장|회수송장/.test(h)) col.returnInvoice = i;
-    else if (col.type < 0 && /교환.?반품|반품구분/.test(h)) col.type = i;
+    else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유/.test(h)) col.type = i;
     else if (col.fee < 0 && /반품비|반품운임|반품배송비/.test(h)) col.fee = i;
     else if (col.notice < 0 && /고객요청|유의사항|비고/.test(h)) col.notice = i;
   }
@@ -2168,6 +2212,21 @@ function _cs_mapReturnLedgerCols_(header) {
   col.status = 0;
   // M열 = 반품비 (헤더명이 비어 있거나 다를 때)
   if (col.fee < 0) col.fee = 12;
+
+  /* K열 = 유형 (재출고/단순/오주문입력/오배송).
+     ★ 2026-09-02: 헤더명으로 못 찾으면 K열을 쓴다.
+       헤더 문구가 코드의 정규식과 어긋나면 col.type 이 -1 로 남고, 그러면
+       유형이 **조용히 안 적힌다**. 사람은 드롭다운에서 골랐으니 적힌 줄 안다.
+       A열(처리상태)·M열(반품비)이 이미 같은 방식으로 위치를 못 박고 있다.
+       다른 항목이 이미 K를 가져갔으면 건드리지 않는다 — 덮어쓰는 게 더 나쁘다. */
+  if (col.type < 0) {
+    var K = 10;
+    var taken = false;
+    for (var k in col) {
+      if (Object.prototype.hasOwnProperty.call(col, k) && col[k] === K) { taken = true; break; }
+    }
+    if (!taken) col.type = K;
+  }
   return col;
 }
 

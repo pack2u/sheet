@@ -69,10 +69,15 @@ const writeCsv = (name, header, rows) => {
 
 for (const key of Object.keys(C.SS_ROUTE)) {
   const name = C.SS_ROUTE[key];
-  if (name === C.SS_ROUTE.HOLD) continue;
+  if (name === C.SS_ROUTE.HOLD || name === C.SS_ROUTE.MERGED) continue;
+  if (name === C.SS_ROUTE.LOTTE_ISLAND || name === C.SS_ROUTE.LOTTE_ISLAND_CONSIGN) {
+    writeCsv(name, C.SS_ISLAND_HEADER, res.buckets[name].map(C.ssIslandRow));
+    continue;
+  }
   writeCsv(name, C.SS_OUT_HEADER, res.buckets[name].map(C.ssOutRow));
 }
-writeCsv('보류', C.SS_HOLD_HEADER,
+writeCsv('합배송', C.SS_MERGED_HEADER, res.buckets[C.SS_ROUTE.MERGED].map(C.ssMergedRow));
+writeCsv('보류(미발송)', C.SS_HOLD_HEADER,
   res.buckets[C.SS_ROUTE.HOLD].map((u) => C.ssOutRow(u).concat([u.보류사유, u.보류상세])));
 writeCsv('경고', C.SS_WARN_HEADER, res.warnings.map((w) => [w.level, w.code, w.target, w.msg]));
 
@@ -90,15 +95,22 @@ L.push('');
 L.push('입력 판매현황 행 : ' + res.stats.입력행);
 L.push('세트분해 후      : ' + res.stats.분해행);
 L.push('합포장 흡수      : ' + res.stats.합포장흡수);
-L.push('출력 합계        : ' + res.stats.출력행);
-L.push('검증 분해=출력+흡수 : ' +
-  (res.stats.분해행 === res.stats.출력행 + res.stats.합포장흡수 ? 'OK' : '불일치!'));
+L.push('탭 합계          : ' + res.stats.출력행 + '  (분해행과 같아야 함)');
+L.push('실제 송장 건수   : ' + res.stats.송장건수);
+L.push('검증 분해=탭합계 : ' + (res.stats.분해행 === res.stats.출력행 ? 'OK' : '불일치!'));
 L.push('');
 for (const key of Object.keys(C.SS_ROUTE)) {
   const name = C.SS_ROUTE[key];
   L.push('  ' + name.padEnd(26) + String(res.buckets[name].length).padStart(5));
 }
 L.push('');
+const isl = res.buckets[C.SS_ROUTE.LOTTE_ISLAND].concat(res.buckets[C.SS_ROUTE.LOTTE_ISLAND_CONSIGN]);
+if (isl.length) {
+  const z = {};
+  for (const u of isl) z[u.도서권역 || '미상'] = (z[u.도서권역 || '미상'] || 0) + 1;
+  L.push('도서산간 권역 : ' + Object.entries(z).map(([k, v]) => k + ' ' + v).join(' · '));
+  L.push('');
+}
 L.push('경고 ' + res.warnings.length + '건');
 const wc = {};
 for (const w of res.warnings) (wc[w.code] ||= []).push(w);

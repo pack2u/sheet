@@ -1076,3 +1076,103 @@ function partnerReapplyHubCFOwner() {
 }
 
 
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  허브 조건부서식 점검 — 왜 초록으로 안 바뀌는가
+ *  파일: _partnerMaintenance.gs
+ *
+ *  "송장이 들어오면 초록"은 조건부서식이 한다. 규칙은 상태(O열)가
+ *  "발송완료"인지를 본다. 그러니 안 바뀌는 이유는 셋 중 하나다.
+ *    ① 서식 범위가 그 행까지 안 닿는다   (5000행 고정 문제)
+ *    ② 규칙 자체가 지워졌다
+ *    ③ 송장은 들어왔는데 상태가 안 바뀌었다
+ *  어느 것인지 숫자로 가른다. 읽기만 한다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function partnerDiagnoseHubGreen() {
+  var L = ["═══ 허브 조건부서식 점검 ═══",
+    Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"), ""];
+  try {
+    var tab = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("협력업체_발주허브");
+    if (!tab) { L.push("★ 탭 없음"); return _pm_greenOut_(L); }
+
+    var lr = tab.getLastRow(), mr = tab.getMaxRows();
+    L.push("[1] 크기");
+    L.push("    데이터 " + lr + "행 / 시트 전체 " + mr + "행");
+    if (lr > 5000) {
+      L.push("    ★ 5000행을 넘었습니다 — 옛 서식 범위(A2:Q5000) 밖입니다.");
+      L.push("      5001행부터는 서식이 아예 없어 초록이 안 됩니다.");
+    }
+    L.push("");
+
+    // ── 규칙이 어디까지 덮는가 ──
+    L.push("[2] 조건부서식 규칙");
+    var rules = tab.getConditionalFormatRules();
+    L.push("    규칙 " + rules.length + "개");
+    var greenMax = 0, hasSent = false;
+    for (var i = 0; i < rules.length; i++) {
+      var rr = rules[i].getRanges();
+      var last = 0;
+      for (var j = 0; j < rr.length; j++) {
+        last = Math.max(last, rr[j].getRow() + rr[j].getNumRows() - 1);
+      }
+      var cond = "";
+      try { cond = (rules[i].getBooleanCondition().getCriteriaValues() || []).join(" "); } catch (eB) {}
+      if (cond.indexOf("발송완료") !== -1) { hasSent = true; greenMax = Math.max(greenMax, last); }
+    }
+    if (!rules.length) {
+      L.push("    ★ 규칙이 하나도 없습니다 — 서식이 통째로 지워졌습니다.");
+    } else if (!hasSent) {
+      L.push("    ★ '발송완료' 규칙이 없습니다 — 그 규칙만 지워졌습니다.");
+    } else {
+      L.push("    '발송완료' 규칙이 덮는 마지막 행: " + greenMax);
+      if (greenMax < lr) {
+        L.push("    ★ 데이터가 " + lr + "행인데 서식은 " + greenMax + "행까지입니다.");
+        L.push("      " + (greenMax + 1) + "행부터 초록이 안 됩니다.");
+      } else {
+        L.push("    ✔ 데이터 전체를 덮고 있습니다.");
+      }
+    }
+    L.push("");
+
+    // ── 송장은 있는데 상태가 안 바뀐 행 ──
+    L.push("[3] 송장 있는데 상태가 '발송완료'가 아닌 행");
+    if (lr < 2) {
+      L.push("    데이터 없음");
+    } else {
+      var vals = tab.getRange(2, 14, lr - 1, 2).getDisplayValues(); // N=송장, O=상태
+      var bad = 0, sent = 0, withInv = 0, samples = [];
+      for (var r = 0; r < vals.length; r++) {
+        var inv = String(vals[r][0] || "").trim();
+        var st = String(vals[r][1] || "").trim();
+        if (!inv) continue;
+        withInv++;
+        if (st.indexOf("발송완료") !== -1) { sent++; continue; }
+        bad++;
+        if (samples.length < 8) samples.push("      " + (r + 2) + "행  송장 " + inv.substring(0, 14) +
+          "  상태 \"" + (st || "(빈칸)") + "\"");
+      }
+      L.push("    송장 있는 행 " + withInv + " · 상태 발송완료 " + sent + " · ★ 불일치 " + bad);
+      for (var s = 0; s < samples.length; s++) L.push(samples[s]);
+      if (bad) {
+        L.push("");
+        L.push("    ★ 이 행들은 서식을 고쳐도 초록이 안 됩니다.");
+        L.push("      규칙이 보는 건 송장이 아니라 상태(O열)입니다.");
+      }
+    }
+
+    L.push("");
+    L.push("고치려면: 메뉴 [🎨 허브 조건부서식 재적용] — partnerReapplyHubCFOwner");
+  } catch (e) {
+    L.push("★ 실패: " + e.message);
+  }
+  return _pm_greenOut_(L);
+}
+
+function _pm_greenOut_(L) {
+  var text = L.join("\n");
+  Logger.log(text);
+  try { SpreadsheetApp.getUi().alert("허브 조건부서식 점검", text, SpreadsheetApp.getUi().ButtonSet.OK); } catch (eU) {}
+  return text;
+}

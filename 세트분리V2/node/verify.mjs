@@ -10,6 +10,7 @@
 
 import { createRequire } from 'node:module';
 import { openXlsx } from './xlsxread.mjs';
+import { loadMasters } from './masters.mjs';
 const require = createRequire(import.meta.url);
 const C = require('../core.js');
 
@@ -21,60 +22,10 @@ const T = (v) => (v === null || v === undefined ? '' : String(v).trim());
 const N = (v) => { const n = parseFloat(T(v).replace(/[,\s]/g, '')); return isFinite(n) ? n : 0; };
 const body = (name) => wb.sheet(name).slice(1);
 
-/* ── 구 시트 탭 → 마스터 ──────────────────────────────── */
+/* ── 마스터는 masters.mjs 가 만든다 (run.mjs 와 완전히 같은 경로) ── */
 
-const masters = {
-  items: {}, stock: {}, bom: {}, splitExcept: {},
-  cond: {}, condCodes: {}, feeRules: {},
-  islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {}
-};
-
-let feeBad = 0;
-for (const r of body('상품정보(ALL)')) {
-  const code = T(r[2]); if (!code) continue;
-  const raw = T(r[5]);
-  masters.items[code] = {
-    name: T(r[3]), status: T(r[0]), origin: T(r[1]),
-    unitFee: N(r[4]), feeRuleRaw: raw
-  };
-  const p = C.ssParseFeeRule(code, raw);
-  for (const x of p.rows) {
-    (masters.feeRules[code] ||= {})[String(x.qty)] = { fee: x.fee, fullBox: x.fullBox };
-  }
-  feeBad += p.bad.length;
-}
-for (const r of body('IMPORT이카운트재고')) { const c = T(r[0]); if (c) masters.stock[c] = N(r[1]); }
-
-const setName = {};
-for (const r of body('(직접수정금지)importBOM현황')) {
-  const s = T(r[0]), comp = T(r[4]); if (!s || !comp) continue;
-  setName[s] = T(r[1]);
-  (masters.bom[s] ||= []).push({ code: comp, qty: N(r[7]) || 1 });
-}
-for (const k of Object.keys(masters.bom)) if (/소분/.test(setName[k] || '')) masters.splitExcept[k] = true;
-for (const r of body('(예외품목추가)분리예외')) { const c = T(r[0]); if (c) masters.splitExcept[c] = true; }
-
-for (const r of body('합배송조건')) {
-  const cond = T(r[0]), code = T(r[1]); if (!cond || !code) continue;
-  const a = (masters.cond[code] ||= []);
-  if (!a.includes(cond)) a.push(cond);
-  (masters.condCodes[cond] ||= {})[code] = true;
-}
-
-for (const r of body('import도서산간목록')) {
-  const kw = T(r[0]); if (kw) masters.islandKeywords.push(kw);
-  const zp = T(r[1]); if (zp) masters.islandZips[zp] = true;
-}
-for (const tab of ['도서산간분류확인', '도서산간분류확인(위탁배송)']) {
-  for (const r of wb.sheet(tab).slice(2)) {
-    const addr = C.ssNormAddr(r[2]); const zip = T(r[3]);
-    if (addr && zip) masters.addrZip[addr] = zip;
-  }
-}
-for (const r of wb.sheet('import금일동네배송')) {
-  const a = C.ssNormAddr(r[0]);
-  if (a && !a.startsWith('#')) masters.localAddrs[a] = true;
-}
+const { masters, stat } = loadMasters(wb, 'legacy');
+const feeBad = stat.feeBad;
 
 /* ── 실행 ─────────────────────────────────────────────── */
 
@@ -119,7 +70,8 @@ const oldTabs = {
 console.log('\n════ 구 시트와 대조 ════');
 let sameTotal = 0, onlyNewTotal = 0, onlyOldTotal = 0;
 for (const [name, oldKeys] of Object.entries(oldTabs)) {
-  const newKeys = new Set(res.buckets[name].map((u) => keyOf(u.순번, u.품목코드)));
+  const merged = res.buckets[C.SS_ROUTE.MERGED].filter((u) => u.합포장대표 && u.실경로 === name);
+  const newKeys = new Set(res.buckets[name].concat(merged).map((u) => keyOf(u.순번, u.품목코드)));
   const same = [...newKeys].filter((k) => oldKeys.has(k)).length;
   const onlyNew = [...newKeys].filter((k) => !oldKeys.has(k));
   const onlyOld = [...oldKeys].filter((k) => !newKeys.has(k));

@@ -10,9 +10,9 @@ var SSM_STOCK_HEADER = ['품목코드', '가용수량'];
 var SSM_BOM_HEADER = ['세트코드', '세트명', '구성품코드', '소요량'];
 var SSM_COND_HEADER = ['조건ID', '품목코드', '품목명(참고)', '비고'];
 var SSM_EXCEPT_HEADER = ['품목코드', '사유'];
-var SSM_ISL_KW_HEADER = ['시/군'];
-var SSM_ISL_ZIP_HEADER = ['우편번호'];
-var SSM_ISL_DICT_HEADER = ['정규주소', '우편번호', '도서산간', '최초확인', '메모'];
+var SSM_ISL_KW_HEADER = ['시/군', '권역', '확정'];
+var SSM_ISL_ZIP_HEADER = ['우편번호', '권역'];
+var SSM_ISL_DICT_HEADER = ['정규주소', '우편번호', '권역', '최초확인', '메모'];
 var SSM_LOCAL_HEADER = ['정규주소', '동네', '일자'];
 
 function ssm_open(id, tab, label) {
@@ -56,24 +56,27 @@ function ssm_setLocalTabVisible(show) {
   }
 }
 
-/**
- * 전체 마스터 새로고침. 각 단계의 행수를 리포트로 돌려준다.
- */
-function ssm_refreshAll() {
-  var cfg = ssio_config();
-  var report = [];
-  var warn = [];
 
-  // 1) 상태 / 출고지 코드표
+/* ── 조각 갱신 — 실행 때마다 다시 읽을 수 있게 따로 뺐다 ─────── */
+
+/** 상태·출고지 코드표 */
+function ssm_codeMaps(cfg, report) {
   var statusMap = {}, originMap = {};
   var st = ssm_open(cfg['이카운트시트ID'], cfg['이카운트_상태탭'], '이카운트');
   for (var i = 1; i < st.length; i++) if (ssText(st[i][0])) statusMap[ssText(st[i][0])] = ssText(st[i][1]);
   var og = ssm_open(cfg['이카운트시트ID'], cfg['이카운트_출고지탭'], '이카운트');
   for (var j = 1; j < og.length; j++) if (ssText(og[j][0])) originMap[ssText(og[j][0])] = ssText(og[j][1]);
-  report.push(['상태코드', st.length - 1]);
-  report.push(['출고지코드', og.length - 1]);
+  if (report) {
+    report.push(['상태코드', st.length - 1]);
+    report.push(['출고지코드', og.length - 1]);
+  }
+  return { status: statusMap, origin: originMap };
+}
 
-  // 2) 품목정보 (+ 배송비규칙 전개)
+/** 품목정보 + 배송비규칙 전개 (상태·출고지·단품배송비가 여기서 온다) */
+function ssm_refreshItems(cfg, report, warn) {
+  report = report || []; warn = warn || [];
+  var maps = ssm_codeMaps(cfg, report);
   var it = ssm_open(cfg['이카운트시트ID'], cfg['이카운트_품목정보탭'], '이카운트');
   var items = [], feeRows = [], badFee = [];
   for (var k = 1; k < it.length; k++) {
@@ -82,8 +85,8 @@ function ssm_refreshAll() {
     if (!code) continue;
     var statusCode = ssText(r[2]);
     var originCode = ssText(r[17]);
-    var status = statusMap[statusCode];
-    var origin = originMap[originCode];
+    var status = maps.status[statusCode];
+    var origin = maps.origin[originCode];
     if (status === undefined) {
       status = statusCode;
       warn.push(['주의', 'STATUS_CODE', code, '상태코드 ' + statusCode + ' 가 상태표에 없습니다.']);
@@ -108,14 +111,83 @@ function ssm_refreshAll() {
   report.push(['품목정보', items.length]);
   report.push(['배송비규칙(전개)', feeRows.length]);
   report.push(['배송비규칙 해석실패', badFee.length]);
-  warn = warn.concat(badFee);
+  for (var w = 0; w < badFee.length; w++) warn.push(badFee[w]);
+  ssm_stamp('품목정보');
+  return items.length;
+}
 
-  // 3) 재고
+/**
+ * 재고 — 하루에도 여러 번 바뀐다.
+ * 구 시트는 IMPORTRANGE 라 원천이 바뀌면 자동으로 따라왔다.
+ * V2 는 실행 시점에 이 함수를 다시 불러 같은 신선도를 유지한다.
+ */
+function ssm_refreshStock(cfg, report, warn) {
+  report = report || [];
   var sk = ssm_open(cfg['이카운트시트ID'], cfg['이카운트_재고탭'], '이카운트');
   var stock = [];
   for (var s = 1; s < sk.length; s++) if (ssText(sk[s][0])) stock.push([ssText(sk[s][0]), ssNum(sk[s][1])]);
   ssio_write(SSIO_TABS.M재고, SSM_STOCK_HEADER, stock);
   report.push(['재고', stock.length]);
+  ssm_stamp('재고');
+  return stock.length;
+}
+
+/** 마스터별 마지막 갱신 시각 기록/조회 */
+function ssm_stamp(name) {
+  try {
+    PropertiesService.getScriptProperties().setProperty(
+      'MASTER_TS_' + name,
+      Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss'));
+  } catch (e) {}
+}
+
+function ssm_stampOf(name) {
+  try { return PropertiesService.getScriptProperties().getProperty('MASTER_TS_' + name) || ''; }
+  catch (e) { return ''; }
+}
+
+/** 갱신 시각이 몇 시간 지났는지 (모르면 -1) */
+function ssm_stampAgeHours(name) {
+  var s = ssm_stampOf(name);
+  if (!s) return -1;
+  var p = s.replace(/-/g, '/');
+  var t = new Date(p).getTime();
+  if (!t) return -1;
+  return (new Date().getTime() - t) / 3600000;
+}
+
+/**
+ * 실행 직전 갱신. 설정 「실행전_마스터갱신」 에 따라 범위가 달라진다.
+ *   재고만(기본) · 재고+품목 · 전체 · 안함
+ */
+function ssm_refreshBeforeRun(cfg) {
+  var mode = ssText(cfg['실행전_마스터갱신']) || '재고만';
+  var report = [], warn = [];
+  if (mode === '안함') return { mode: mode, report: report, warnings: warn };
+  try {
+    if (mode === '전체') {
+      var r = ssm_refreshAll();
+      return { mode: mode, report: r.report, warnings: r.warnings };
+    }
+    if (mode === '재고+품목') ssm_refreshItems(cfg, report, warn);
+    ssm_refreshStock(cfg, report, warn);
+  } catch (e) {
+    warn.push(['오류', 'PRERUN_REFRESH', mode,
+      '실행 전 마스터 갱신에 실패해 직전 값으로 계산합니다. ' + e.message]);
+  }
+  return { mode: mode, report: report, warnings: warn };
+}
+
+/**
+ * 전체 마스터 새로고침. 각 단계의 행수를 리포트로 돌려준다.
+ */
+function ssm_refreshAll() {
+  var cfg = ssio_config();
+  var report = [];
+  var warn = [];
+
+  ssm_refreshItems(cfg, report, warn);
+  ssm_refreshStock(cfg, report, warn);
 
   // 4) BOM
   var bm = ssm_open(cfg['이카운트시트ID'], cfg['이카운트_BOM탭'], '이카운트');
@@ -132,8 +204,20 @@ function ssm_refreshAll() {
   // 5) 도서산간 시/군 · 우편번호 — 원천이 없어도 로컬 탭을 그대로 쓴다
   var kwRes = ssm_openOptional(cfg['도서산간시트ID'], cfg['도서산간_시군탭'], '도서산간');
   if (kwRes.ok) {
+    // 권역·확정 열은 사람이 관리하는 값이라 원천으로 덮어쓰지 않는다
+    var kwKeep = {};
+    var kwOld = ssio_body(SSIO_TABS.도서산간시군);
+    for (var ko = 0; ko < kwOld.length; ko++) {
+      var kk = ssText(kwOld[ko][0]);
+      if (kk) kwKeep[kk] = [ssText(kwOld[ko][1]), ssText(kwOld[ko][2])];
+    }
     var kws = [];
-    for (var w = 1; w < kwRes.values.length; w++) { var v = ssText(kwRes.values[w][1]); if (v) kws.push([v]); }
+    for (var w = 1; w < kwRes.values.length; w++) {
+      var v = ssText(kwRes.values[w][1]);
+      if (!v) continue;
+      var keep = kwKeep[v] || ['', ''];
+      kws.push([v, keep[0] || ssm_guessZone(v), keep[1]]);
+    }
     ssio_write(SSIO_TABS.도서산간시군, SSM_ISL_KW_HEADER, kws);
     report.push(['도서산간 시/군', kws.length]);
   } else {
@@ -147,7 +231,10 @@ function ssm_refreshAll() {
   var zpRes = ssm_openOptional(cfg['도서산간시트ID'], cfg['도서산간_우편번호탭'], '도서산간');
   if (zpRes.ok) {
     var zips = [];
-    for (var z = 1; z < zpRes.values.length; z++) { var q = ssText(zpRes.values[z][0]); if (/^[0-9]{5}$/.test(q)) zips.push([q]); }
+    for (var z = 1; z < zpRes.values.length; z++) {
+      var q = ssText(zpRes.values[z][0]);
+      if (/^[0-9]{5}$/.test(q)) zips.push([q, ssm_zoneOfZip(q)]);
+    }
     ssio_write(SSIO_TABS.도서산간우편, SSM_ISL_ZIP_HEADER, zips);
     report.push(['도서산간 우편번호', zips.length]);
   } else {
@@ -282,9 +369,16 @@ function ssm_load() {
   }
 
   var kw = ssio_body(SSIO_TABS.도서산간시군);
-  for (var k = 0; k < kw.length; k++) { var kv = ssText(kw[k][0]); if (kv) M.islandKeywords.push(kv); }
+  for (var k = 0; k < kw.length; k++) {
+    var kv = ssText(kw[k][0]);
+    if (!kv) continue;
+    M.islandKeywords.push({ kw: kv, zone: ssText(kw[k][1]) || ' 도서'.trim(), confirm: ssText(kw[k][2]) === 'Y' });
+  }
   var zp = ssio_body(SSIO_TABS.도서산간우편);
-  for (var z = 0; z < zp.length; z++) { var zv = ssText(zp[z][0]); if (zv) M.islandZips[zv] = true; }
+  for (var z = 0; z < zp.length; z++) {
+    var zv = ssText(zp[z][0]);
+    if (zv) M.islandZips[zv] = ssText(zp[z][1]) || '도서';
+  }
 
   var dc = ssio_body(SSIO_TABS.도서산간사전);
   for (var y = 0; y < dc.length; y++) {
@@ -299,28 +393,54 @@ function ssm_load() {
 }
 
 /**
- * 이번 실행에서 나온 도서산간 후보 주소를 사전 탭에 추가한다(우편번호는 비워 둔 채).
- * 사람이 한 번 채워 넣으면 그 주소는 다시 물어보지 않는다.
+ * 롯데로 나가는 주소 중 사전에 없는 것을 전부 추가한다 (우편번호는 비운 채).
+ *
+ * 예전에는 「도서산간 후보」만 넣었다. 그런데 후보 판정을 도시 이름으로 하다 보니
+ * 여수·목포·군산 같은 육지 도시가 통째로 후보가 되어 보류가 쏟아졌다.
+ * 이제는 주소마다 우편번호를 한 번씩만 구해 두고, 판정은 우편번호로만 한다.
+ * 사전은 영구 캐시라 같은 주소를 두 번 조회하지 않는다.
  */
-function ssm_addIslandCandidates(units, masters) {
+function ssm_addAddresses(units, masters, limit) {
   var sh = ssio_sheet(SSIO_TABS.도서산간사전, SSM_ISL_DICT_HEADER);
   var have = masters.addrZip || {};
   var existing = {};
   var body = ssio_body(SSIO_TABS.도서산간사전);
   for (var i = 0; i < body.length; i++) existing[ssText(body[i][0])] = true;
 
+  var 대상 = {};
+  대상[SS_ROUTE.LOTTE] = true;
+  대상[SS_ROUTE.LOTTE_ISLAND] = true;
+  대상[SS_ROUTE.LOTTE_ISLAND_CONSIGN] = true;
+  대상[SS_ROUTE.LOTTE_LOCAL] = true;
+  대상[SS_ROUTE.MERGED] = true;
+
   var add = [], seen = {};
   var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
-  for (var j = 0; j < units.length; j++) {
+  var cap = limit > 0 ? limit : 300;
+  for (var j = 0; j < units.length && add.length < cap; j++) {
     var u = units[j];
-    if (u.보류사유 !== '도서산간미확인') continue;
+    if (!대상[u.route] && u.보류사유 !== '도서산간미확인') continue;
     var a = u.정규주소;
     if (!a || existing[a] || seen[a] || have[a]) continue;
     seen[a] = true;
-    add.push([a, '', '', today, '우편번호를 입력하세요']);
+    add.push([a, '', '', today, '우편번호 조회 대기']);
   }
   if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, SSM_ISL_DICT_HEADER.length).setValues(add);
   return add.length;
+}
+
+/**
+ * 롯데 요금 구분에 맞춘 권역 추정.
+ * 제주(63xxx)는 「제주연계」 정액, 나머지 도서는 도선료·산간료 대상이다.
+ * 목록에 산간(내륙 오지)은 없어 기본값을 「도서」로 둔다. 필요하면 탭에서 직접 고친다.
+ */
+function ssm_zoneOfZip(zip) {
+  var z = ssText(zip);
+  return (z.length === 5 && z.charAt(0) === '6' && z.charAt(1) === '3') ? '제주' : '도서';
+}
+
+function ssm_guessZone(kw) {
+  return /제주|서귀포/.test(ssText(kw)) ? '제주' : '도서';
 }
 
 /* ── 합배송조건 탭 정리 ───────────────────────────────── */
@@ -411,4 +531,89 @@ function ss_합배송조건정리() {
   if (r.dup.length) msg += '\n\n[중복 코드]\n  ' + r.dup.slice(0, 15).join('\n  ');
   msg += '\n\n※ 중복 코드는 배송키 묶음 안에서 전용 코드가 많은 조건으로 자동 결정됩니다.';
   return ssio_alert(msg);
+}
+
+/* ── 판매현황 입력 ─────────────────────────────────────── */
+
+/**
+ * 판매현황을 읽어 온다.
+ *
+ * 「판매현황_원천시트ID」가 있으면 그 시트에서 읽고, 이 시트의 판매현황 탭에 그대로 비춘다.
+ * 비추는 이유는 두 가지 — 무엇을 계산했는지 눈으로 확인할 수 있고, 원천이 나중에 바뀌어도
+ * 이 회차에 쓴 자료가 시트에 남는다.
+ *
+ * IMPORTRANGE 가 아니라 실행 시점 openById 다. 못 읽으면 조용히 빈 값이 되는 대신 멈춘다.
+ */
+function ssm_readSales(cfg) {
+  var srcId = ssText(cfg['판매현황_원천시트ID']);
+  if (!srcId) {
+    return { grid: ssio_values(SSIO_TABS.입력), 원천: '이 시트', 행: 0 };
+  }
+
+  var ss;
+  try { ss = SpreadsheetApp.openById(srcId); }
+  catch (e) {
+    throw new Error('판매현황 입력 시트를 열 수 없습니다 (ID: ' + srcId + ').\n' +
+      '공유 권한을 확인하거나 「설정」의 판매현황_원천시트ID 를 비우고 이 시트에 직접 붙여넣으세요.\n' + e.message);
+  }
+
+  var tabName = ssText(cfg['판매현황_원천탭']) || '판매현황';
+  var sh = ss.getSheetByName(tabName) || ss.getSheets()[0];
+  if (!sh) throw new Error('판매현황 입력 시트에 탭이 없습니다.');
+  if (sh.getLastRow() < 2) {
+    throw new Error('판매현황 입력 시트 「' + ss.getName() + ' / ' + sh.getName() + '」 가 비어 있습니다.\n' +
+      '이카운트 판매현황을 붙여넣은 뒤 다시 실행하세요.');
+  }
+
+  var grid = sh.getDataRange().getValues();
+
+  // 이 시트에 그대로 비춰 둔다
+  var mirror = ssio_sheet(SSIO_TABS.입력, SS_SALES_COLS);
+  ssio_clearBody(mirror);
+  var cols = 0;
+  for (var r = 0; r < grid.length; r++) if (grid[r].length > cols) cols = grid[r].length;
+  if (cols > mirror.getMaxColumns()) mirror.insertColumnsAfter(mirror.getMaxColumns(), cols - mirror.getMaxColumns());
+  if (grid.length > mirror.getMaxRows()) mirror.insertRowsAfter(mirror.getMaxRows(), grid.length - mirror.getMaxRows() + 10);
+  var padded = [];
+  for (var g = 0; g < grid.length; g++) {
+    var row = grid[g].slice();
+    while (row.length < cols) row.push('');
+    padded.push(row);
+  }
+  mirror.getRange(1, 1, padded.length, cols).setValues(padded);
+
+  return { grid: grid, 원천: ss.getName() + ' / ' + sh.getName(), 행: grid.length };
+}
+
+/** 입력 시트를 비운다 (붙여넣기 전에) */
+function ssm_clearSales(cfg) {
+  var srcId = ssText(cfg['판매현황_원천시트ID']);
+  if (!srcId) {
+    ssio_clearBody(ssio_sheet(SSIO_TABS.입력, SS_SALES_COLS));
+    return '이 시트의 판매현황 탭';
+  }
+  var ss = SpreadsheetApp.openById(srcId);
+  var sh = ss.getSheetByName(ssText(cfg['판매현황_원천탭']) || '판매현황') || ss.getSheets()[0];
+  if (sh.getLastRow() > 0) sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).clearContent();
+  return ss.getName() + ' / ' + sh.getName();
+}
+
+/** 입력 시트 준비 — 탭 이름을 맞추고 링크를 알려준다 */
+function ss_입력시트준비() {
+  var cfg = ssio_config();
+  var srcId = ssText(cfg['판매현황_원천시트ID']);
+  if (!srcId) return ssio_alert('「설정」의 판매현황_원천시트ID 가 비어 있습니다.\n이 시트의 판매현황 탭에 직접 붙여넣는 방식입니다.');
+  var ss = SpreadsheetApp.openById(srcId);
+  var want = ssText(cfg['판매현황_원천탭']) || '판매현황';
+  var sh = ss.getSheetByName(want);
+  if (!sh) {
+    sh = ss.getSheets()[0];
+    sh.setName(want);
+  }
+  sh.setFrozenRows(2);
+  return ssio_alert('판매현황 입력 시트 준비 완료\n\n' +
+    '  ' + ss.getName() + ' / ' + sh.getName() + '\n' +
+    '  ' + ss.getUrl() + '\n\n' +
+    '이카운트 판매현황 엑셀을 1행부터 그대로 붙여넣으세요.\n' +
+    '(1행 회사명, 2행 헤더인 원본 그대로도 됩니다)');
 }

@@ -1300,6 +1300,33 @@ function _pep_loadAliasMap_() {
  */
 var _PEP_PUSH_STAMP_ = "";
 
+/**
+ * 임시기록 회차 배경색 — 한 번의 Push 가 넣은 행 전체가 같은 색이다.
+ *
+ * ★ 행 단위 얼룩말이 아니라 회차 단위로 칠한다 ★
+ *   한 줄씩 번갈아 칠하면 예쁘기만 하고 아무것도 알려주지 않는다.
+ *   회차 단위로 칠해야 "어디부터 오후분인지"가 한눈에 보인다.
+ *   전용양식이 이미 같은 규칙으로 칠하고 있어 눈에 익다.
+ */
+var _PEP_TEMP_BATCH_COLOR_ = null;
+
+var _PEP_BATCH_BG_A_ = "#ffffff";
+var _PEP_BATCH_BG_B_ = "#eef4fb"; // 옅은 파랑 — 흰 바탕과 확실히 갈리되 눈이 안 아프다
+
+/** 바로 윗행 색을 보고 이번 회차 색을 정한다. Push 당 한 번만 계산한다. */
+function _pep_tempBatchColor_(tab, nextRow) {
+  if (_PEP_TEMP_BATCH_COLOR_) return _PEP_TEMP_BATCH_COLOR_;
+  var prevIsPlain = true;
+  try {
+    if (tab && nextRow > 2) {
+      var prev = tab.getRange(nextRow - 1, 1).getBackground();
+      prevIsPlain = !prev || prev === "#ffffff" || prev === "white";
+    }
+  } catch (eC) {}
+  _PEP_TEMP_BATCH_COLOR_ = prevIsPlain ? _PEP_BATCH_BG_B_ : _PEP_BATCH_BG_A_;
+  return _PEP_TEMP_BATCH_COLOR_;
+}
+
 /** 도장 형식 — 이슈 수집 쪽(_partnerOrders.gs)도 이 규칙을 본다 */
 /** 도장 형식 — 이슈 수집 쪽(_partnerOrders.gs)도 이 규칙을 본다 */
 // "차" 없는 옛 형식(0901-1)도 계속 인식한다 — 이미 시트에 적혀 있다.
@@ -1370,6 +1397,7 @@ function partnerPushOrdersToExclusiveForms(silent) {
   try {
     // 이번 실행분 전체가 같은 도장을 쓴다 — 업체별로 번호가 갈리면 안 된다
     _PEP_PUSH_STAMP_ = _pep_nextPushStamp_();
+    _PEP_TEMP_BATCH_COLOR_ = null; // 이번 회차 색은 첫 기록 때 정해진다
     Logger.log("[PEP_STAMP] 이번 푸시 회차: " + _PEP_PUSH_STAMP_);
     _pep_pushCore_(silent);
     // 푸시가 끝난 뒤 중복 발주 점검 (파일: _partnerDupOrderCheck.gs).
@@ -1901,6 +1929,12 @@ function _pep_pushCore_(silent) {
       _tempTab_
         .getRange(tStartRow, 1, _tempPendingRows_.length, tMaxCols)
         .setValues(_tempPendingRows_);
+      // 회차 단위 배경색 — 어디부터가 이번 Push 분인지 보이게
+      try {
+        _tempTab_
+          .getRange(tStartRow, 1, _tempPendingRows_.length, tMaxCols)
+          .setBackground(_pep_tempBatchColor_(_tempTab_, tStartRow));
+      } catch (eBg) { Logger.log("[PEP] 임시탭 배경색 실패: " + eBg.message); }
       Logger.log("[PEP] 임시탭 배치 쓰기: " + _tempPendingRows_.length + "건");
     } catch (eTempBatch) {
       Logger.log("[PEP] 임시탭 배치 쓰기 실패: " + eTempBatch.message);
@@ -2693,6 +2727,11 @@ function _pep_appendToNonPartnerTempTab_(row, pfx, tab, uidSet, nowStr) {
   var nextRow = tab.getLastRow() + 1;
   if (nextRow < 2) nextRow = 2;
   tab.getRange(nextRow, 1, 1, newRow.length).setValues([newRow]);
+  // 배치 경로와 같은 색을 쓴다 — 한 Push 안에서 색이 갈리면 안 된다
+  try {
+    tab.getRange(nextRow, 1, 1, newRow.length)
+      .setBackground(_pep_tempBatchColor_(tab, nextRow));
+  } catch (eBg2) {}
 }
 
 // ─────────────────────────────────────────────────────

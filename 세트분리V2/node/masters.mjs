@@ -63,9 +63,11 @@ export function loadMasters(wb, layout = detectLayout(wb)) {
       const a = (M.cond[code] ||= []); if (!a.includes(cond)) a.push(cond);
       (M.condCodes[cond] ||= {})[code] = true;
     }
+    const zoneOf = (z) => (T(z).startsWith('63') ? '제주' : '도서');
     for (const r of body('import도서산간목록')) {
-      const kw = T(r[0]); if (kw) M.islandKeywords.push(kw);
-      const zp = T(r[1]); if (zp) M.islandZips[zp] = true;
+      const kw = T(r[0]);
+      if (kw) M.islandKeywords.push({ kw, zone: /제주|서귀포/.test(kw) ? '제주' : '도서', confirm: /제주|서귀포|울릉/.test(kw) });
+      const zp = T(r[1]); if (/^[0-9]{5}$/.test(zp)) M.islandZips[zp] = zoneOf(zp);
     }
     for (const tab of ['도서산간분류확인', '도서산간분류확인(위탁배송)']) {
       if (!has(tab)) continue;
@@ -106,8 +108,13 @@ export function loadMasters(wb, layout = detectLayout(wb)) {
     const a = (M.cond[code] ||= []); if (!a.includes(cond)) a.push(cond);
     (M.condCodes[cond] ||= {})[code] = true;
   }
-  for (const r of body('도서산간_시군')) { const k = T(r[0]); if (k) M.islandKeywords.push(k); }
-  for (const r of body('도서산간_우편번호')) { const z = T(r[0]); if (z) M.islandZips[z] = true; }
+  for (const r of body('도서산간_시군')) {
+    const k = T(r[0]);
+    if (k) M.islandKeywords.push({ kw: k, zone: T(r[1]) || '도서', confirm: T(r[2]) === 'Y' });
+  }
+  for (const r of body('도서산간_우편번호')) {
+    const z = T(r[0]); if (z) M.islandZips[z] = T(r[1]) || '도서';
+  }
   for (const r of body('도서산간_주소사전')) {
     const a = T(r[0]), z = T(r[1]); if (a && z) M.addrZip[a] = z;
   }

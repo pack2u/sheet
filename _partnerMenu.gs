@@ -211,6 +211,7 @@ function registerPartnerMenu_() {
         .addItem("📋 뷰어탭 이름 통일 + A열 마이그레이션", "partnerUnifyViewerTabNameOwner")
         .addSeparator()
         .addItem("🎨 발주탭 상태색 재적용 (전체 업체)", "partnerReapplyOrderTabCFR")
+        .addItem("🔎 허브 상태색 점검 (왜 초록이 안 되나)", "partnerDiagnoseHubGreen")
         .addItem("🎨 허브 상태색 재적용", "partnerReapplyHubCFOwner")
         .addItem("🎨 조건부서식 중복 정리 (허브+전체 업체)", "partnerDedupConditionalFormatsAll")
     )
