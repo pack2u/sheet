@@ -269,15 +269,23 @@ function ssMakeUnit(L, code, 소요, seq) {
 
 /* ── 3단계 · 품목 마스터 결합 ─────────────────────────── */
 
+/**
+ * 상태·출고지는 「원본 세트 코드」 기준, 품목명·배송비는 「구성품 코드」 기준.
+ * (구 시트도 이 규칙이다 — 변환!B:C 는 판매현황 품목코드로 조회하고,
+ *  품목명·배송비는 합배송 단계에서 분해된 코드로 다시 조회한다.
+ *  세트가 판매중이면 그 구성품도 함께 나간다는 뜻)
+ */
 function ssEnrich(units, masters, warnings) {
   var items = masters.items || {};
   var missing = {};
   for (var i = 0; i < units.length; i++) {
     var u = units[i];
     var m = items[u.품목코드];
+    var head = items[u.원본코드] || m;
+    if (head) { u.상태 = head.status || ''; u.출고지 = head.origin || ''; }
     if (!m) {
       u.품목명 = u.세트분해 ? '(품목정보 없음) ' + u.품목코드 : u.원본품목명;
-      u.상태 = ''; u.출고지 = ''; u.단품배송비 = 0; u.배송비규칙원문 = '';
+      u.단품배송비 = 0; u.배송비규칙원문 = '';
       u.품목누락 = true;
       if (!missing[u.품목코드]) {
         missing[u.품목코드] = true;
@@ -287,8 +295,6 @@ function ssEnrich(units, masters, warnings) {
       continue;
     }
     u.품목명 = m.name || u.원본품목명;
-    u.상태 = m.status || '';
-    u.출고지 = m.origin || '';
     u.단품배송비 = ssNum(m.unitFee);
     u.배송비규칙원문 = ssText(m.feeRuleRaw);
   }

@@ -1215,6 +1215,32 @@
     }
     .hb-card.hb-done { opacity: 0.55; background: var(--bg-secondary); }
 
+    /* ★ 2026-09-02: 오래 남아 있는 카드 — 외곽에 푸른 빛이 천천히 깜박인다.
+       완료된 카드와 펼쳐 놓고 보는 중인 카드는 뺀다 (읽는 중에 깜박이면 거슬린다).
+       빨강/주황은 이미 중요도 배지가 쓰고 있어 파랑을 골랐다 — "급한 것"이
+       아니라 "묵은 것"이라는 뜻이라 색이 겹치면 안 된다. */
+    .hb-card.hb-stale:not(.open) {
+      animation: hbStaleGlow 2.4s ease-in-out infinite;
+    }
+    @keyframes hbStaleGlow {
+      0%, 100% {
+        border-color: var(--border);
+        box-shadow: 0 0 0 0 rgba(90, 170, 255, 0);
+      }
+      50% {
+        border-color: rgba(90, 170, 255, 0.75);
+        box-shadow: 0 0 13px 2px rgba(90, 170, 255, 0.5);
+      }
+    }
+    /* 깜박임을 꺼 둔 사람에게는 정지된 파란 테두리로 같은 정보를 준다 */
+    @media (prefers-reduced-motion: reduce) {
+      .hb-card.hb-stale:not(.open) {
+        animation: none;
+        border-color: rgba(90, 170, 255, 0.7);
+        box-shadow: 0 0 10px 1px rgba(90, 170, 255, 0.35);
+      }
+    }
+
     /* 배지는 제목과 다른 줄에 둔다. 좁은 타일에서 제목이 짜부라지지 않게 */
     .hb-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 5px; }
     .hb-badge {
@@ -2719,6 +2745,43 @@
     }
 
     /** 좁은 타일에서는 연도를 뗀다: 2026-08-25 21:40 → 08-25 21:40 */
+    /* ══════════════════════════════════════════════════
+       묵은 카드 표시 (2026-09-02)
+
+       등록하고 5시간이 지났는데 아직 완료되지 않은 카드는 외곽이 깜박인다.
+       카드가 조용히 묻히는 걸 막으려는 것이다.
+
+       시각을 카드에 data-at 로 박아 두고 별도로 훑는 이유:
+         hbCardHtml 은 보드가 다시 그려질 때만 돈다. 그런데 보드는 내용이
+         바뀌어야 다시 그린다(20초 pulse 가 지문을 비교한다). 아무도 손대지
+         않은 카드는 다시 그려지지 않으므로, 5시간을 넘겨도 계속 안 깜박인다.
+         그래서 5분마다 DOM 만 훑어 class 를 갈아 끼운다.
+       ══════════════════════════════════════════════════ */
+    var HB_STALE_HOURS = 5;
+
+    /** "yyyy-MM-dd HH:mm" → 지난 시간(시). 못 읽으면 -1 */
+    function hbAgeHours(at) {
+      var m = String(at || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})/);
+      if (!m) return -1;
+      // 시트가 Asia/Seoul 로 찍고 보는 사람도 한국이라 그대로 로컬시각으로 읽는다
+      var t = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], 0, 0).getTime();
+      if (!isFinite(t)) return -1;
+      return (new Date().getTime() - t) / 3600000;
+    }
+
+    /** 지금 화면에 있는 카드들의 묵음 표시를 다시 계산한다 */
+    function hbRefreshStale() {
+      var cards = document.querySelectorAll('#hbList .hb-card[data-at]');
+      for (var i = 0; i < cards.length; i++) {
+        var el = cards[i];
+        // 완료된 카드는 묵어도 상관없다. 깜박이면 눈만 아프다.
+        var age = el.classList.contains('hb-done') ? -1 : hbAgeHours(el.getAttribute('data-at'));
+        el.classList.toggle('hb-stale', age >= HB_STALE_HOURS);
+      }
+    }
+
+    setInterval(hbRefreshStale, 300000);   // 5분마다. 5시간 경계라 이 정도면 충분하다
+
     function hbShortAt(at) {
       var s = String(at || '');
       var m = s.match(/^\d{4}-(\d{2}-\d{2}\s+\d{1,2}:\d{2})/);
@@ -3258,8 +3321,13 @@
       var isOpen = (c.id === HB_OPEN_ID);
       var isUnread = !c.done && me && (c.read || []).indexOf(me) === -1;
 
-      var cls = 'hb-card ' + lvCls + (c.done ? ' hb-done' : '') + (isOpen ? ' open' : '');
-      var h = '<div id="hb-card-' + esc(c.id) + '" class="' + cls + '" onclick="toggleHbCard(\'' + js(c.id) + '\', event)">';
+      // 5시간 넘게 완료되지 않은 카드는 외곽이 깜박인다 (hbRefreshStale 참고)
+      var stale = !c.done && hbAgeHours(c.at) >= HB_STALE_HOURS;
+      var cls = 'hb-card ' + lvCls + (c.done ? ' hb-done' : '') +
+        (stale ? ' hb-stale' : '') + (isOpen ? ' open' : '');
+      var h = '<div id="hb-card-' + esc(c.id) + '" class="' + cls + '"' +
+        ' data-at="' + esc(c.at) + '"' +
+        ' onclick="toggleHbCard(\'' + js(c.id) + '\', event)">';
 
       h += '<div class="hb-card-top">';
       h += '<span class="hb-badge ' + lvCls + '">' + esc(c.level) + '</span>';
