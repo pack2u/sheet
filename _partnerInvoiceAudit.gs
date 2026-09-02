@@ -214,6 +214,80 @@ function _pia_out_(L, title) {
  *  파일: _partnerInvoiceAudit.gs
  * ══════════════════════════════════════════════════════════════
  */
+/**
+ * 품목코드·품목명 → 상품정보 상태값 맵. 실행 1회분만 캐시한다.
+ * ★ 2026-09-02 신규
+ *
+ * 미매칭(송장 없는 행)의 성격을 가를 때 쓴다. 품목이 품절이면 송장 매칭이
+ * 실패한 게 아니라 애초에 물건이 안 나갔을 가능성이 크다. 둘은 손쓸 곳이
+ * 전혀 다르다 — 전자는 매칭을 고치고, 후자는 주문을 취소하거나 발송해야 한다.
+ */
+var _PIA_STATUS_MAP_ = null;
+
+function _pia_itemStatusMap_() {
+  if (_PIA_STATUS_MAP_) return _PIA_STATUS_MAP_;
+  var map = { byCode: {}, byName: {}, rows: 0, error: "" };
+
+  try {
+    var tab = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("상품정보");
+    if (!tab) {
+      map.error = "'상품정보' 탭 없음";
+      _PIA_STATUS_MAP_ = map;
+      return map;
+    }
+    var vals = tab.getDataRange().getDisplayValues();
+
+    // 헤더 행을 찾는다 — 상품정보는 5행 헤더/6행 데이터가 표준이지만 확정하지 않는다
+    var hdrRow = -1, cCode = -1, cName = -1, cStat = -1;
+    for (var r = 0; r < Math.min(vals.length, 12); r++) {
+      var row = vals[r] || [];
+      var code = -1, name = -1, stat = -1;
+      for (var c = 0; c < row.length; c++) {
+        var h = String(row[c] || "").replace(/\s/g, "");
+        if (code < 0 && /품목코드|이카운트코드|PROD_CD/i.test(h)) code = c;
+        if (name < 0 && /품목명|상품명/.test(h) && !/코드/.test(h)) name = c;
+        if (stat < 0 && h === "상태") stat = c;
+      }
+      if (code >= 0 && stat >= 0) { hdrRow = r; cCode = code; cName = name; cStat = stat; break; }
+    }
+    if (hdrRow < 0) {
+      map.error = "상품정보에서 품목코드/상태 헤더를 찾지 못함";
+      _PIA_STATUS_MAP_ = map;
+      return map;
+    }
+
+    for (var i = hdrRow + 1; i < vals.length; i++) {
+      var v = vals[i] || [];
+      var st = String(v[cStat] || "").trim();
+      if (!st) continue;
+      var cd = String(v[cCode] || "").trim().toUpperCase();
+      if (cd) { map.byCode[cd] = st; map.rows++; }
+      if (cName >= 0) {
+        var nm = String(v[cName] || "").replace(/\s/g, "");
+        if (nm && !map.byName[nm]) map.byName[nm] = st;
+      }
+    }
+  } catch (e) {
+    map.error = e.message;
+  }
+
+  _PIA_STATUS_MAP_ = map;
+  return map;
+}
+
+/**
+ * 이 상태값이면 물건이 안 나갔을 수 있다.
+ * "품절+7"은 7일 뒤 입고라 판매중으로 본다 — 기존 orderSyncManager 판정과 같다.
+ */
+function _pia_isNoShipStatus_(st) {
+  var s = String(st || "");
+  if (!s) return "";
+  if (s.indexOf("품절+") !== -1) return "";
+  if (s.indexOf("품절") !== -1) return "품절";
+  if (s.indexOf("단종") !== -1) return "단종";
+  return "";
+}
+
 function partnerAnalyzeUnmatched(optDays) {
   var days = parseInt(optDays, 10) || _PIA_SCAN_DAYS_;
   var L = ["═══ 남은 미매칭 성격 분석 (최근 " + days + "일) ═══",
@@ -221,6 +295,7 @@ function partnerAnalyzeUnmatched(optDays) {
   try {
     var byShop = {}, byItemKind = {}, bySrc = {}, total = 0, files = 0;
     var samples = [];
+    var noShipSamples = [], noShipTotal = 0;   // 품절·단종 → 미발송 의심
     var today = new Date();
 
     // 송장이 원래 없는 줄들 — 이건 미매칭이 아니라 정상이다
@@ -240,7 +315,7 @@ function partnerAnalyzeUnmatched(optDays) {
       var all = tab.getRange(1, 1, lr, lc).getDisplayValues();
       var hdr = all[0];
 
-      var cInv = -1, cSrc = -1, cShop = -1, cItem = -1, cMemo = -1;
+      var cInv = -1, cSrc = -1, cShop = -1, cItem = -1, cMemo = -1, cCode = -1;
       for (var h = 0; h < hdr.length; h++) {
         var hh = String(hdr[h] || "").replace(/\s/g, "");
         if (cInv < 0 && /운송장번호|송장번호/.test(hh)) cInv = h;
@@ -248,7 +323,10 @@ function partnerAnalyzeUnmatched(optDays) {
         if (cShop < 0 && /거래처명|업체|판매처/.test(hh)) cShop = h;
         if (cItem < 0 && /품목명|상품명/.test(hh) && !/코드/.test(hh)) cItem = h;
         if (cMemo < 0 && /적요/.test(hh)) cMemo = h;
+        if (cCode < 0 && /품목코드|이카운트코드/.test(hh)) cCode = h;
       }
+      // 일일마감 표준 양식은 A=품목코드다. 헤더로 못 찾으면 그걸로 본다.
+      if (cCode < 0) cCode = 0;
       if (cInv < 0) cInv = lc - 2;
       if (cSrc < 0) cSrc = lc - 1;
 
@@ -275,7 +353,24 @@ function partnerAnalyzeUnmatched(optDays) {
           if (item.indexOf(NO_PARCEL[nk]) !== -1) { kind = "택배 아님(" + NO_PARCEL[nk] + ")"; break; }
         }
         if (kind === "일반 품목") {
-          if (item.indexOf("샘플") !== -1) kind = "샘플";
+          /* ★ 2026-09-02: 상태값이 품절/단종이면 「미발송 의심」으로 가른다.
+             송장이 안 붙은 게 매칭 실패가 아니라 물건이 안 나간 것일 수 있다.
+             손쓸 곳이 다르다 — 매칭을 고칠 게 아니라 발송하거나 취소해야 한다.
+             샘플·방문수령보다 먼저 본다. 이쪽이 훨씬 급하다. */
+          var smap = _pia_itemStatusMap_();
+          var code = cCode >= 0 ? String(all[r][cCode] || "").trim().toUpperCase() : "";
+          var st = (code && smap.byCode[code]) ||
+            smap.byName[item.replace(/\s/g, "")] || "";
+          var noShip = _pia_isNoShipStatus_(st);
+          if (noShip) {
+            kind = "미발송 의심(" + noShip + ")";
+            if (noShipSamples.length < 20) {
+              noShipSamples.push(ds + "  [" + st + "] " +
+                shop.substring(0, 16) + " · " + item.substring(0, 24) +
+                (code ? " (" + code + ")" : ""));
+            }
+            noShipTotal++;
+          } else if (item.indexOf("샘플") !== -1) kind = "샘플";
           else if (/방문수령|방문|직접/.test(memo)) kind = "방문수령(적요)";
         }
         byItemKind[kind] = (byItemKind[kind] || 0) + 1;
@@ -287,6 +382,26 @@ function partnerAnalyzeUnmatched(optDays) {
     }
 
     L.push("파일 " + files + "개 · 송장 없는 행 " + total + "건");
+
+    /* 미발송 의심을 맨 위에 세운다. 나머지 통계는 "왜 안 붙었나"를 보는
+       참고자료지만 이건 지금 손봐야 하는 건이다 — 물건이 안 나갔을 수 있다. */
+    var smap0 = _pia_itemStatusMap_();
+    L.push("");
+    if (smap0.error) {
+      L.push("⚠️ 미발송 의심 판정 불가 — 상품정보 상태값을 못 읽었습니다: " + smap0.error);
+    } else if (noShipTotal) {
+      L.push("🚨 미발송 의심 " + noShipTotal + "건 — 품목 상태가 품절/단종인데 송장이 없습니다");
+      L.push("   송장 매칭 문제가 아니라 물건이 안 나갔을 수 있습니다.");
+      L.push("   발송할지 취소할지 확인이 필요합니다.");
+      for (var ns = 0; ns < noShipSamples.length; ns++) L.push("   · " + noShipSamples[ns]);
+      if (noShipTotal > noShipSamples.length) {
+        L.push("   … 외 " + (noShipTotal - noShipSamples.length) + "건");
+      }
+    } else {
+      L.push("✅ 미발송 의심 없음 — 송장 없는 행 중 품절/단종 품목은 없습니다 (상품정보 " +
+        smap0.rows + "행 대조)");
+    }
+
     L.push("");
     L.push("[1] 품목 성격별 — 애초에 송장이 없는 줄이 섞여 있는가");
     L.push(_pia_rank_(byItemKind, total, 10));

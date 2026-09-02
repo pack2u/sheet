@@ -24,7 +24,22 @@ var SSIO_TABS = {
   동네배송: '동네배송_금일'
 };
 
-function ssio_ss() { return SpreadsheetApp.getActiveSpreadsheet(); }
+/** 이 스크립트가 붙어 있는 스프레드시트 (헤드리스 실행 대비 ID 폴백) */
+var SSIO_SHEET_ID = '1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo';
+
+function ssio_ss() {
+  var ss = null;
+  try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) {}
+  if (!ss) ss = SpreadsheetApp.openById(SSIO_SHEET_ID);
+  return ss;
+}
+
+/** UI가 없는 환경(clasp run·트리거)에서는 로그로 대신한다 */
+function ssio_alert(msg) {
+  try { SpreadsheetApp.getUi().alert(msg); }
+  catch (e) { Logger.log(msg); }
+  return msg;
+}
 
 function ssio_sheet(name, headers) {
   var ss = ssio_ss();
@@ -103,6 +118,7 @@ var SSIO_CONFIG_DEFAULTS = [
   ['도서산간_우편번호탭', '우편번호', 'A열 = 도서산간 우편번호'],
   ['동네배송시트ID', '1Y12Yh8hONbH3w-3FQ7Iu1u2TVTlSmWHHK3dU-wATNpo', '동네배송 내역 원천'],
   ['동네배송_탭', '동네배송내역', 'B=동네 C=일자 I=주소'],
+  ['동네배송_사용', '중단', '중단 | 사용 — 중단이면 동네배송 분류를 통째로 건너뛰고 경고도 내지 않는다'],
   ['자사출고지접두', '평택', '이 접두로 시작하는 출고지는 자사 출고'],
   ['합배송출고지', '평택S-1', '합포장 대상 출고지'],
   ['위탁출고지', '대리발송', '재고 부족 시 협력업체로 넘기는 출고지명'],

@@ -8,7 +8,7 @@
 var SSM_ITEM_HEADER = ['품목코드', '품목명', '상태', '출고지', '단품배송비', '배송비규칙원문'];
 var SSM_STOCK_HEADER = ['품목코드', '가용수량'];
 var SSM_BOM_HEADER = ['세트코드', '세트명', '구성품코드', '소요량'];
-var SSM_COND_HEADER = ['조건ID', '품목코드', '품목명(참고)'];
+var SSM_COND_HEADER = ['조건ID', '품목코드', '품목명(참고)', '비고'];
 var SSM_EXCEPT_HEADER = ['품목코드', '사유'];
 var SSM_ISL_KW_HEADER = ['시/군'];
 var SSM_ISL_ZIP_HEADER = ['우편번호'];
@@ -23,6 +23,37 @@ function ssm_open(id, tab, label) {
   if (!sh) throw new Error(label + ' 시트에 「' + tab + '」 탭이 없습니다.');
   if (sh.getLastRow() < 2) throw new Error(label + ' 「' + tab + '」 탭에 데이터가 없습니다 (' + sh.getLastRow() + '행).');
   return sh.getDataRange().getValues();
+}
+
+/**
+ * 없어도 실행은 되는 원천용. 실패하면 던지지 않고 사유를 돌려준다.
+ * 이카운트(품목·재고·BOM)는 필수라 ssm_open 을 그대로 쓰고,
+ * 도서산간·동네배송은 이걸 써서 "못 읽었다"와 "0건이다"를 구분한다.
+ */
+function ssm_openOptional(id, tab, label) {
+  if (!ssText(id) || !ssText(tab)) return { ok: false, why: label + ' 원천이 설정 탭에 비어 있습니다.' };
+  try { return { ok: true, values: ssm_open(id, tab, label) }; }
+  catch (e) { return { ok: false, why: e.message }; }
+}
+
+/** 로컬 탭에 이미 들어 있는 데이터 행 수 */
+function ssm_localRows(tabName) {
+  var sh = ssio_ss().getSheetByName(tabName);
+  return sh ? Math.max(0, sh.getLastRow() - 1) : 0;
+}
+
+/**
+ * 동네배송이 중단이면 관련 탭 2개를 숨긴다. 「사용」으로 되돌리면 다시 보인다.
+ * 지우지 않으므로 언제든 설정 한 줄로 복구된다.
+ */
+function ssm_setLocalTabVisible(show) {
+  var ss = ssio_ss();
+  var names = [SSIO_TABS.동네배송, '롯데택배-동네배송'];
+  for (var i = 0; i < names.length; i++) {
+    var sh = ss.getSheetByName(names[i]);
+    if (!sh) continue;
+    try { if (show) sh.showSheet(); else sh.hideSheet(); } catch (e) {}
+  }
 }
 
 /**
@@ -98,33 +129,100 @@ function ssm_refreshAll() {
   ssio_write(SSIO_TABS.MBOM, SSM_BOM_HEADER, bom);
   report.push(['BOM', bom.length]);
 
-  // 5) 도서산간 시/군 · 우편번호
-  var kw = ssm_open(cfg['도서산간시트ID'], cfg['도서산간_시군탭'], '도서산간');
-  var kws = [];
-  for (var w = 1; w < kw.length; w++) { var v = ssText(kw[w][1]); if (v) kws.push([v]); }
-  ssio_write(SSIO_TABS.도서산간시군, SSM_ISL_KW_HEADER, kws);
-  var zp = ssm_open(cfg['도서산간시트ID'], cfg['도서산간_우편번호탭'], '도서산간');
-  var zips = [];
-  for (var z = 1; z < zp.length; z++) { var q = ssText(zp[z][0]); if (q) zips.push([q]); }
-  ssio_write(SSIO_TABS.도서산간우편, SSM_ISL_ZIP_HEADER, zips);
-  report.push(['도서산간 시/군', kws.length]);
-  report.push(['도서산간 우편번호', zips.length]);
-
-  // 6) 금일 동네배송
-  var lo = ssm_open(cfg['동네배송시트ID'], cfg['동네배송_탭'], '동네배송');
-  var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
-  var locals = [], seenL = {};
-  for (var l = 1; l < lo.length; l++) {
-    var d = lo[l][2];
-    var ds = (d instanceof Date) ? Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd') : ssText(d);
-    if (ds.indexOf(today) !== 0) continue;
-    var a = ssNormAddr(lo[l][8]);
-    if (!a || seenL[a]) continue;
-    seenL[a] = true;
-    locals.push([a, ssText(lo[l][1]), today]);
+  // 5) 도서산간 시/군 · 우편번호 — 원천이 없어도 로컬 탭을 그대로 쓴다
+  var kwRes = ssm_openOptional(cfg['도서산간시트ID'], cfg['도서산간_시군탭'], '도서산간');
+  if (kwRes.ok) {
+    var kws = [];
+    for (var w = 1; w < kwRes.values.length; w++) { var v = ssText(kwRes.values[w][1]); if (v) kws.push([v]); }
+    ssio_write(SSIO_TABS.도서산간시군, SSM_ISL_KW_HEADER, kws);
+    report.push(['도서산간 시/군', kws.length]);
+  } else {
+    var kwHave = ssm_localRows(SSIO_TABS.도서산간시군);
+    report.push(['도서산간 시/군', '건너뜀 — 기존 ' + kwHave + '행 유지']);
+    warn.push([kwHave ? '주의' : '오류', 'ISLAND_SRC', cfg['도서산간_시군탭'],
+      kwHave ? '원천을 못 읽어 기존 목록을 그대로 씁니다. ' + kwRes.why
+             : '원천도 못 읽고 로컬 목록도 비었습니다. 「도서산간 목록 심기」를 실행하세요. ' + kwRes.why]);
   }
-  ssio_write(SSIO_TABS.동네배송, SSM_LOCAL_HEADER, locals);
-  report.push(['금일 동네배송', locals.length]);
+
+  var zpRes = ssm_openOptional(cfg['도서산간시트ID'], cfg['도서산간_우편번호탭'], '도서산간');
+  if (zpRes.ok) {
+    var zips = [];
+    for (var z = 1; z < zpRes.values.length; z++) { var q = ssText(zpRes.values[z][0]); if (/^[0-9]{5}$/.test(q)) zips.push([q]); }
+    ssio_write(SSIO_TABS.도서산간우편, SSM_ISL_ZIP_HEADER, zips);
+    report.push(['도서산간 우편번호', zips.length]);
+  } else {
+    var zpHave = ssm_localRows(SSIO_TABS.도서산간우편);
+    report.push(['도서산간 우편번호', '건너뜀 — 기존 ' + zpHave + '행 유지']);
+    if (!zpHave) {
+      warn.push(['오류', 'ISLAND_SRC', cfg['도서산간_우편번호탭'],
+        '도서산간 우편번호가 비었습니다. 「도서산간 목록 심기」를 실행하세요. ' + zpRes.why]);
+    }
+  }
+
+  // 6) 금일 동네배송 — 설정에서 「중단」이면 통째로 건너뛴다 (경고도 안 낸다)
+  var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
+  var 동네사용 = (ssText(cfg['동네배송_사용']) === '사용');
+  if (!동네사용) {
+    ssio_write(SSIO_TABS.동네배송, SSM_LOCAL_HEADER, []);
+    ssm_setLocalTabVisible(false);
+    report.push(['금일 동네배송', '중단 (설정)']);
+    // 7) 합배송조건 표 정리 + 검증 (구 시트에서 붙여넣은 #REF! 수식을 값으로 덮어쓴다)
+  var tc = ssm_tidyCond();
+  report.push(['합배송조건', tc.rows]);
+  report.push(['  조건 수', tc.conds]);
+  if (tc.missing.length) {
+    warn.push(['오류', 'COND_CODE', tc.missing.slice(0, 5).join(', '),
+      '합배송조건에 품목정보에 없는 코드가 ' + tc.missing.length + '건 있습니다. 「합배송조건」 D열 비고를 보세요.']);
+  }
+  if (tc.dup.length) {
+    warn.push(['주의', 'COND_DUP', String(tc.dup.length) + '건',
+      '두 개 이상 조건에 걸친 코드가 있습니다. 배송키 묶음 안에서 전용 코드가 많은 조건으로 자동 결정됩니다.']);
+  }
+
+  return { report: report, warnings: warn };
+  }
+  ssm_setLocalTabVisible(true);
+
+  var loRes = ssm_openOptional(cfg['동네배송시트ID'], cfg['동네배송_탭'], '동네배송');
+  if (loRes.ok) {
+    var lo = loRes.values;
+    var locals = [], seenL = {}, newest = '';
+    for (var l = 1; l < lo.length; l++) {
+      var d = lo[l][2];
+      var ds = (d instanceof Date) ? Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd') : ssText(d);
+      if (ds > newest) newest = ds;
+      if (ds.indexOf(today) !== 0) continue;
+      var a = ssNormAddr(lo[l][8]);
+      if (!a || seenL[a]) continue;
+      seenL[a] = true;
+      locals.push([a, ssText(lo[l][1]), today]);
+    }
+    ssio_write(SSIO_TABS.동네배송, SSM_LOCAL_HEADER, locals);
+    report.push(['금일 동네배송', locals.length]);
+    if (!locals.length) {
+      warn.push(['주의', 'LOCAL_STALE', cfg['동네배송_탭'],
+        '오늘(' + today + ') 동네배송 자료가 없습니다. 원천의 최신 일자는 ' + (newest || '없음') +
+        ' 입니다. 동네배송 건은 전부 일반 롯데 출고로 나갑니다.']);
+    }
+  } else {
+    ssio_write(SSIO_TABS.동네배송, SSM_LOCAL_HEADER, []);
+    report.push(['금일 동네배송', '건너뜀 — 원천 접근 불가']);
+    warn.push(['주의', 'LOCAL_SRC', cfg['동네배송_탭'],
+      '동네배송 원천을 못 읽어 동네배송 분류를 건너뜁니다. 해당 건은 일반 롯데 출고로 나갑니다. ' + loRes.why]);
+  }
+
+  // 7) 합배송조건 표 정리 + 검증 (구 시트에서 붙여넣은 #REF! 수식을 값으로 덮어쓴다)
+  var tc = ssm_tidyCond();
+  report.push(['합배송조건', tc.rows]);
+  report.push(['  조건 수', tc.conds]);
+  if (tc.missing.length) {
+    warn.push(['오류', 'COND_CODE', tc.missing.slice(0, 5).join(', '),
+      '합배송조건에 품목정보에 없는 코드가 ' + tc.missing.length + '건 있습니다. 「합배송조건」 D열 비고를 보세요.']);
+  }
+  if (tc.dup.length) {
+    warn.push(['주의', 'COND_DUP', String(tc.dup.length) + '건',
+      '두 개 이상 조건에 걸친 코드가 있습니다. 배송키 묶음 안에서 전용 코드가 많은 조건으로 자동 결정됩니다.']);
+  }
 
   return { report: report, warnings: warn };
 }
@@ -223,4 +321,94 @@ function ssm_addIslandCandidates(units, masters) {
   }
   if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, SSM_ISL_DICT_HEADER.length).setValues(add);
   return add.length;
+}
+
+/* ── 합배송조건 탭 정리 ───────────────────────────────── */
+
+/**
+ * 합배송조건 탭의 C(품목명)·D(비고)를 값으로 채우고 E:F에 조건별 품목수를 쓴다.
+ *
+ * 구 시트에서 그대로 복사해 오면 C열에 IMPORT이카운트품목정보 를 보는 수식이 따라와
+ * 신 시트에서는 #REF! 가 된다. 여기서 수식을 값으로 덮어써 없앤다.
+ * 겸사겸사 이 표 자체를 검증한다 — 품목정보에 없는 코드, 두 조건에 걸친 코드.
+ */
+function ssm_tidyCond() {
+  var sh = ssio_sheet(SSIO_TABS.합배송조건, SSM_COND_HEADER);
+  var last = sh.getLastRow();
+  if (last < 2) return { rows: 0, missing: [], dup: [], conds: 0 };
+
+  sh.getRange(1, 1, 1, SSM_COND_HEADER.length).setValues([SSM_COND_HEADER]);
+  var ab = sh.getRange(2, 1, last - 1, 2).getValues();
+
+  var items = {};
+  var body = ssio_body(SSIO_TABS.M품목);
+  for (var i = 0; i < body.length; i++) {
+    var c = ssText(body[i][0]);
+    if (c) items[c] = ssText(body[i][1]);
+  }
+
+  // 코드가 몇 개의 조건에 걸려 있는지 먼저 센다
+  var owners = {}, condCount = {}, order = [];
+  for (var j = 0; j < ab.length; j++) {
+    var cond = ssText(ab[j][0]), code = ssText(ab[j][1]);
+    if (!cond || !code) continue;
+    var set = owners[code] || (owners[code] = {});
+    set[cond] = true;
+    if (condCount[cond] === undefined) { condCount[cond] = 0; order.push(cond); }
+    condCount[cond]++;
+  }
+
+  var nameCol = [], noteCol = [], missing = [], dup = {}, blank = 0;
+  for (var k = 0; k < ab.length; k++) {
+    var cond2 = ssText(ab[k][0]), code2 = ssText(ab[k][1]);
+    if (!cond2 || !code2) { nameCol.push(['']); noteCol.push(['']); blank++; continue; }
+    var nm = items[code2];
+    var note = '';
+    if (nm === undefined) {
+      nm = '';
+      note = '품목정보에 없는 코드';
+      if (missing.indexOf(code2) < 0) missing.push(code2);
+    }
+    var n = 0, list = [];
+    for (var c2 in owners[code2]) if (Object.prototype.hasOwnProperty.call(owners[code2], c2)) { n++; list.push(c2); }
+    if (n > 1) {
+      note = (note ? note + ' / ' : '') + '조건 ' + n + '개 중복: ' + list.sort().join(', ');
+      dup[code2] = list.sort().join(', ');
+    }
+    nameCol.push([nm]);
+    noteCol.push([note]);
+  }
+
+  sh.getRange(2, 3, nameCol.length, 1).setValues(nameCol);
+  sh.getRange(2, 4, noteCol.length, 1).setValues(noteCol);
+
+  // E:F 조건별 품목수 (구 시트의 참고용 통계와 같은 자리)
+  var stats = [];
+  order.sort(function (a, b) { return condCount[b] - condCount[a]; });
+  for (var s = 0; s < order.length; s++) stats.push([order[s], condCount[order[s]]]);
+  var eLast = Math.min(Math.max(sh.getLastRow(), stats.length + 4), sh.getMaxRows() - 1);
+  if (eLast > 0) sh.getRange(2, 5, eLast, 2).clearContent();
+  sh.getRange(2, 5, 1, 2).setValues([['조건ID', '품목수']]);
+  if (stats.length) sh.getRange(3, 5, stats.length, 2).setValues(stats);
+
+  ssio_styleHeader(sh, SSM_COND_HEADER.length);
+  sh.getRange(2, 5, 1, 2).setBackground('#e8eeed').setFontWeight('bold');
+
+  var dupList = [];
+  for (var d in dup) if (Object.prototype.hasOwnProperty.call(dup, d)) dupList.push(d + ' → ' + dup[d]);
+  return { rows: ab.length - blank, missing: missing, dup: dupList, conds: order.length };
+}
+
+/** 메뉴에서 직접 부를 때 */
+function ss_합배송조건정리() {
+  var r = ssm_tidyCond();
+  var msg = '합배송조건 정리 완료\n\n' +
+    '  · 행 : ' + r.rows + '\n' +
+    '  · 조건 : ' + r.conds + '개\n' +
+    '  · 품목정보에 없는 코드 : ' + r.missing.length + '건\n' +
+    '  · 두 개 이상 조건에 걸친 코드 : ' + r.dup.length + '건';
+  if (r.missing.length) msg += '\n\n[없는 코드]\n  ' + r.missing.slice(0, 15).join('\n  ');
+  if (r.dup.length) msg += '\n\n[중복 코드]\n  ' + r.dup.slice(0, 15).join('\n  ');
+  msg += '\n\n※ 중복 코드는 배송키 묶음 안에서 전용 코드가 많은 조건으로 자동 결정됩니다.';
+  return ssio_alert(msg);
 }

@@ -55,6 +55,7 @@ var SS_DEFAULT_CONFIG = {
   허용상태: '판매중,임박,특판',
   보내는주소: '경기도 평택시 포승읍 성해홍원로 91 팩투유',
   대표전화: '031-923-7795',
+  동네배송_사용: '중단',
   도서산간_미확인: '보류'
 };
 
@@ -545,7 +546,7 @@ function ssRoute(units, masters, cfg, warnings) {
   var islandKw = masters.islandKeywords || [];
   var islandZip = masters.islandZips || {};
   var addrZip = masters.addrZip || {};
-  var localAddr = masters.localAddrs || {};
+  var localAddr = (ssText(cfg.동네배송_사용) === '사용') ? (masters.localAddrs || {}) : {};
   var holdIsland = ssText(cfg.도서산간_미확인) !== '일반출고';
 
   for (var i = 0; i < units.length; i++) {
