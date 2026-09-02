@@ -24,7 +24,9 @@ function onOpen() {
     .addSeparator()
     .addItem('📮 우편번호 자동조회 (카카오)', 'ss_우편번호채우기')
     .addItem('🔑 카카오 API 키 설정', 'ss_카카오키설정')
+    .addItem('🩺 카카오 진단', 'ss_카카오진단')
     .addSeparator()
+    .addItem('🕵️ 중복발주 의심 점검', 'ss_중복점검')
     .addItem('🔍 검증 (행수 대조)', 'ss_검증')
     .addItem('🛠 시트 설치 / 복구', 'ss_설치')
     .addToUi();
@@ -59,6 +61,7 @@ function ss_설치() {
   ssio_sheet(SSIO_TABS.원장, SS_LEDGER_HEADER);
   ssio_sheet(SSIO_TABS.실행이력, SS_RUNLOG_HEADER);
   ssio_sheet(SSIO_TABS.회차, SS_ROUND_HEADER);
+  ssio_sheet(SSIO_TABS.중복의심, SS_DUP_HEADER);
 
   ssio_sheet(SSIO_TABS.M품목, SSM_ITEM_HEADER);
   ssio_sheet(SSIO_TABS.M재고, SSM_STOCK_HEADER);
@@ -199,7 +202,15 @@ function ss_실행() {
       } else if (!zr.noKey && zr.tried && !zr.filled) {
         재실행 = '신규 주소 ' + zr.tried + '건 조회했으나 전부 실패';
       }
+      if (zr.stopped) {
+        재실행 = '우편번호 조회 중단 — ' + zr.stopped;
+        ssWarn(res.warnings, '오류', 'ZIP_BLOCKED', zr.stopped,
+          '카카오 호출이 막혀 도서산간 판정을 못 했습니다. 키가 맞는지, 스크립트 권한을 다시 승인했는지 확인하세요.');
+      }
       if (zr.failed && zr.failed.length) {
+        var rsn = [];
+        for (var rk in zr.reasons) if (Object.prototype.hasOwnProperty.call(zr.reasons, rk)) rsn.push(rk + '×' + zr.reasons[rk]);
+        ssWarn(res.warnings, '주의', 'ZIP_FAIL_REASON', rsn.join(' / '), '우편번호 조회 실패 사유별 건수');
         ssWarn(res.warnings, '주의', 'ZIP_FAIL', zr.failed.slice(0, 3).join(' / '),
           '카카오가 못 찾은 주소 ' + zr.failed.length + '건. 「도서산간_주소사전」에 직접 입력하면 다음 회차부터 반영됩니다.');
       }
@@ -263,6 +274,13 @@ function ss_실행() {
       ['  신규 주소 추가', added],
       ['  조회 시도 / 성공 / 실패', zr.tried + ' / ' + zr.filled + ' / ' + (zr.failed ? zr.failed.length : 0)],
       ['  카카오 키', ssz_key() ? '설정됨' : '없음  ← 도서산간 판정 불가'],
+      ['  사전 조회대기 / 영구실패', ssz_pendingCount() + ' / ' + ssz_permanentCount()],
+      ['마스터 · 품목 / 재고 / BOM',
+        Object.keys(masters.items).length + ' / ' + Object.keys(masters.stock).length + ' / ' + Object.keys(masters.bom).length],
+      ['마스터 · 합배송조건 코드 / 배송비규칙',
+        Object.keys(masters.cond).length + ' / ' + Object.keys(masters.feeRules).length],
+      ['마스터 · 도서산간 우편번호 / 주소사전',
+        Object.keys(masters.islandZips).length + ' / ' + Object.keys(masters.addrZip).length],
       ['실행전 마스터갱신', pre.mode],
       ['재고 기준시각', ssm_stampOf('재고') || '(모름)'],
       ['품목정보 기준시각', ssm_stampOf('품목정보') || '(모름)']
@@ -273,7 +291,16 @@ function ss_실행() {
     sum.push([SSIO_TABS.합배송 + ' (대표+동봉)', res.stats['탭_' + SS_ROUTE.MERGED]]);
     sum.push([SSIO_TABS.보류, res.stats.보류]);
     sum.push(['경고', res.warnings.length]);
-    ssio_write(SSIO_TABS.요약, SS_SUMMARY_HEADER, sum);
+    var dup = ss_중복점검(true);
+    if (dup.cross) {
+      ssWarn(res.warnings, '오류', 'DUP_CROSS', String(dup.cross) + '그룹',
+        '회차 간 중복 의심이 있습니다. 오전에 출고한 건이 다시 올라왔을 수 있습니다. 「중복의심」 탭 확인.');
+      ssio_write(SSIO_TABS.경고, SS_WARN_HEADER,
+        res.warnings.map(function (w) { return [w.level, w.code, w.target, w.msg]; }), { bg: '#7a5b12' });
+    }
+    sum.push(['중복의심 그룹 (회차간)', dup.groups + ' (' + dup.cross + ')']);
+
+        ssio_write(SSIO_TABS.요약, SS_SUMMARY_HEADER, sum);
 
     var 대표 = res.stats['탭_' + SS_ROUTE.MERGED] - res.stats.합포장흡수;
     var msg = '세트분리 완료 · ' + sec.toFixed(1) + '초\n' +
@@ -290,7 +317,8 @@ function ss_실행() {
       '개 (대표 ' + 대표 + ' + 동봉 ' + res.stats.합포장흡수 + ')\n' +
       '  보류(미발송) ' + res.stats.보류 +
       (res.stats.보류 ? '   ← 우편번호: ' + (재실행 || '해당 없음') : '') + '\n\n' +
-      '경고 ' + res.warnings.length + '건\n' +
+      '경고 ' + res.warnings.length + '건' +
+      (dup.cross ? '   ⚠ 회차간 중복의심 ' + dup.cross + '그룹' : '') + '\n' +
       '재고 기준 ' + (ssm_stampOf('재고') || '모름');
     ssio_alert(msg + (res.stats.보류 ? '\n\n※ 「보류(미발송)」 탭을 반드시 확인하세요. 사유가 적혀 있습니다.' : ''));
   } finally {
@@ -428,4 +456,74 @@ function ss_원장회차삭제(회차키) {
   ssio_clearBody(sh);
   if (keep.length) sh.getRange(2, 1, keep.length, SS_LEDGER_HEADER.length).setValues(keep);
   return count;
+}
+
+/* ── 중복발주 의심 ─────────────────────────────────────── */
+
+/**
+ * 오늘 원장을 훑어 중복 의심 건을 뽑는다.
+ *
+ * 회차를 쌓아 두니까 가능해진 점검이다 — 오전에 올린 주문이 오후 판매현황에
+ * 또 들어오면 이중 출고가 된다. 구 시스템은 판매현황이 매번 지워져 비교할 대상이 없었다.
+ *
+ * 등급 규칙은 상품정보 시트의 _partnerDupWatch.gs 와 같다.
+ */
+function ss_중복점검(quiet) {
+  var sh = ssio_ss().getSheetByName(SSIO_TABS.원장);
+  if (!sh || sh.getLastRow() < 2) {
+    if (!quiet) ssio_alert('원장이 비어 있습니다. 먼저 세트분리를 실행하세요.');
+    return { groups: 0, rows: 0, cross: 0 };
+  }
+
+  var idx = {};
+  for (var h = 0; h < SS_LEDGER_HEADER.length; h++) idx[SS_LEDGER_HEADER[h]] = h;
+
+  var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
+  var all = sh.getRange(2, 1, sh.getLastRow() - 1, SS_LEDGER_HEADER.length).getValues();
+  var rows = [];
+  for (var i = 0; i < all.length; i++) {
+    var r = all[i];
+    if (ssText(r[idx['회차키']]).indexOf(today) !== 0) continue;   // 오늘 회차만
+    rows.push({
+      회차: ssText(r[idx['회차키']]),
+      고유ID: ssText(r[idx['고유ID']]),
+      원본코드: ssText(r[idx['원본품목코드']]),
+      품목명: ssText(r[idx['품목명']]),
+      경로: ssText(r[idx['경로']]),
+      받는분: ssText(r[idx['거래처명']]),
+      전화: ssText(r[idx['전화']]),
+      모바일: ssText(r[idx['모바일']]),
+      주소: ssText(r[idx['주소1']]),
+      수량: ssNum(r[idx['수량']]),
+      금액: ssNum(r[idx['합계']])
+    });
+  }
+
+  var found = ssFindDuplicates(rows);
+  var out = ssDupRows(found);
+  var tab = ssio_write(SSIO_TABS.중복의심, SS_DUP_HEADER, out, { bg: '#6b3a2c' });
+  if (out.length) {
+    tab.getRange(2, 1, out.length, 1).insertCheckboxes();
+    // 회차 간 건을 눈에 띄게
+    for (var g = 0; g < out.length; g++) {
+      if (out[g][4] === '회차간') tab.getRange(g + 2, 1, 1, SS_DUP_HEADER.length).setBackground('#fdecea');
+    }
+  }
+
+  var cross = 0;
+  for (var k = 0; k < found.groups.length; k++) if (found.groups[k].회차간) cross++;
+  var res = { groups: found.groups.length, rows: out.length, cross: cross, 주문라인: found.records.length };
+
+  if (!quiet) {
+    var msg = '중복발주 의심 점검 (' + today + ')\n\n' +
+      '  · 오늘 주문라인 : ' + res.주문라인 + '건\n' +
+      '  · 의심 그룹 : ' + res.groups + '건 (그중 회차 간 ' + res.cross + '건)\n' +
+      '  · 표시 행 : ' + res.rows + '\n\n';
+    msg += res.cross
+      ? '⚠ 회차 간 중복이 있습니다. 오전에 이미 출고한 건이 오후에 다시 올라왔을 수 있습니다.\n「중복의심」 탭을 확인하세요.'
+      : (res.groups ? '회차 간 중복은 없습니다. 같은 회차 안 반복 주문일 수 있으니 탭에서 확인하세요.'
+                    : '의심 건이 없습니다.');
+    ssio_alert(msg);
+  }
+  return res;
 }

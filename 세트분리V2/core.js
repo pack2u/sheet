@@ -829,6 +829,142 @@ function ssRun(grid, masters, cfg) {
   return { buckets: buckets, warnings: warnings, units: units, stats: stats };
 }
 
+/* ── 중복발주 의심 ────────────────────────────────────── */
+
+var SS_DUP_HEADER = ['확인', '그룹', '등급', '사유', '회차간', '회차', '고유ID', '경로',
+  '받는분', '전화', '품목코드', '품목명', '수량', '금액', '주소'];
+
+function ssNameKey(s) { return ssText(s).replace(/\s+/g, '').replace(/[()\[\]{}.,\-_\/]/g, ''); }
+function ssPhoneDigits(s) { return ssText(s).replace(/[^0-9]/g, ''); }
+function ssAddrKey(s) { return ssNormAddr(s).replace(/\s+/g, '').replace(/[()\[\]{}.,\-_\/]/g, ''); }
+
+/**
+ * 등급 정의 — 상품정보 시트 _partnerDupWatch.gs 와 같은 규칙을 쓴다.
+ * 두 시스템이 서로 다른 판정을 내면 운영자가 무엇을 믿어야 할지 알 수 없다.
+ * keyFn 이 빈 문자열을 돌려주면 그 레코드는 그 등급에서 빠진다.
+ */
+function ssDupLevels() {
+  return [
+    { grade: '🔴 확실', reason: '동일 고유ID',
+      keyFn: function (r) { return r.고유ID ? 'U|' + r.고유ID : ''; } },
+    { grade: '🔴 확실', reason: '수취인+전화+품목코드 일치',
+      keyFn: function (r) {
+        var n = ssNameKey(r.받는분), p = ssPhoneDigits(r.전화);
+        if (!n || !r.품목코드 || p.length < 10) return '';
+        return 'NP|' + n + '|' + p + '|' + r.품목코드;
+      } },
+    { grade: '🟡 의심', reason: '수취인+품목코드 일치 (전화 다름/없음)',
+      keyFn: function (r) {
+        var n = ssNameKey(r.받는분);
+        if (!n || !r.품목코드) return '';
+        return 'N|' + n + '|' + r.품목코드;
+      } },
+    { grade: '⚪ 참고', reason: '주소+품목코드 일치 (수취인 다름)',
+      keyFn: function (r) {
+        var a = ssAddrKey(r.주소);
+        if (!a || !r.품목코드) return '';
+        return 'A|' + a + '|' + r.품목코드;
+      },
+      // 창고 한 곳으로 같은 품목을 여러 건 보내는 곳이 있다. 덩어리가 크면 정상 패턴이다.
+      maxMembers: 5 }
+  ];
+}
+
+/**
+ * 중복 의심 그룹 찾기.
+ *
+ * 세트분리 특성 주의 — 세트 1건이 몸통·뚜껑 2행으로 갈린다. 그건 중복이 아니다.
+ * 그래서 (회차 + 고유ID + 원본코드) 로 먼저 한 건으로 접은 뒤 비교한다.
+ *
+ * 상위 등급에서 이미 잡힌 조합을 하위 등급이 반복하지 않도록,
+ * 구성원이 기존 그룹의 부분집합이면 버린다.
+ */
+function ssFindDuplicates(rows) {
+  // 1) 주문라인 단위로 접기
+  var byLine = {}, records = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var k = ssText(r.회차) + '|' + ssText(r.고유ID) + '|' + ssText(r.원본코드);
+    if (byLine[k] !== undefined) {
+      var prev = records[byLine[k]];
+      prev.수량 += ssNum(r.수량);
+      continue;
+    }
+    byLine[k] = records.length;
+    records.push({
+      회차: ssText(r.회차), 고유ID: ssText(r.고유ID), 경로: ssText(r.경로),
+      받는분: ssText(r.받는분), 전화: ssText(r.전화) || ssText(r.모바일),
+      품목코드: ssText(r.원본코드) || ssText(r.품목코드), 품목명: ssText(r.품목명),
+      수량: ssNum(r.수량), 금액: ssNum(r.금액), 주소: ssText(r.주소)
+    });
+  }
+
+  // 2) 등급별로 묶기
+  var levels = ssDupLevels();
+  var groups = [], emitted = [];
+  for (var li = 0; li < levels.length; li++) {
+    var lv = levels[li];
+    var buckets = {};
+    for (var ri = 0; ri < records.length; ri++) {
+      var key = lv.keyFn(records[ri]);
+      if (!key) continue;
+      (buckets[key] || (buckets[key] = [])).push(ri);
+    }
+    for (var bk in buckets) {
+      if (!Object.prototype.hasOwnProperty.call(buckets, bk)) continue;
+      var mem = buckets[bk];
+      if (mem.length < 2) continue;
+      if (lv.maxMembers && mem.length > lv.maxMembers) continue;
+
+      var sig = mem.slice().sort(function (x, y) { return x - y; }).join(',');
+      var dup = false;
+      for (var e = 0; e < emitted.length; e++) {
+        if (ssIsSubset(mem, emitted[e])) { dup = true; break; }
+      }
+      if (dup) continue;
+      emitted.push(mem);
+
+      var rounds = {};
+      for (var m = 0; m < mem.length; m++) rounds[records[mem[m]].회차] = true;
+      groups.push({
+        grade: lv.grade, reason: lv.reason,
+        회차간: Object.keys(rounds).length > 1,
+        members: mem, sig: sig
+      });
+    }
+  }
+
+  // 회차 간 > 등급 순으로 정렬
+  var order = { '🔴 확실': 0, '🟡 의심': 1, '⚪ 참고': 2 };
+  groups.sort(function (x, y) {
+    if (x.회차간 !== y.회차간) return x.회차간 ? -1 : 1;
+    return (order[x.grade] || 9) - (order[y.grade] || 9);
+  });
+  return { groups: groups, records: records };
+}
+
+function ssIsSubset(small, big) {
+  var set = {};
+  for (var i = 0; i < big.length; i++) set[big[i]] = true;
+  for (var j = 0; j < small.length; j++) if (!set[small[j]]) return false;
+  return true;
+}
+
+/** 그룹 → 시트 행 */
+function ssDupRows(found) {
+  var out = [];
+  for (var g = 0; g < found.groups.length; g++) {
+    var G = found.groups[g];
+    for (var m = 0; m < G.members.length; m++) {
+      var r = found.records[G.members[m]];
+      out.push([false, g + 1, G.grade, G.reason, G.회차간 ? '회차간' : '',
+        r.회차, r.고유ID, r.경로, r.받는분, r.전화,
+        r.품목코드, r.품목명, r.수량, r.금액, r.주소]);
+    }
+  }
+  return out;
+}
+
 /* ── 레거시 배송비 문자열 → 규칙 테이블 (1회성 이관) ──── */
 
 /**
@@ -869,6 +1005,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssRoute: ssRoute, ssMerge: ssMerge, ssShippingFee: ssShippingFee,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
     ssMakeOrderId: ssMakeOrderId, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint,
+    ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssLedgerRow: ssLedgerRow, ssDisplayName: ssDisplayName,
     ssStripName: ssStripName, ssNormAddr: ssNormAddr, ssPad6: ssPad6
   };
