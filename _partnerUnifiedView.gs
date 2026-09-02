@@ -523,15 +523,21 @@ function _puv_rebuild_(opt) {
       stat.skippedWrite = true;
       Logger.log("[UNIFIED_VIEW] " + (stat.timedOut ? "시간초과" : "결과 급감") +
         " → 기록 생략 (기존 " + existing + "행 유지, 이번 " + rows.length + "행)");
-      // 로그만 남기면 아무도 안 본다. 급감은 사람에게 알린다.
-      if (stat.shrinkGuard) {
-        try {
-          _chat_sendText_("⚠️ 통합조회 재생성을 중단했습니다\n" +
-            "이번 결과 " + rows.length + "행 · 기존 " + existing + "행 (절반 미만)\n" +
-            "기존 탭을 그대로 두었습니다. 일일마감 수집 " + stat.daily + "건.\n" +
-            "점검: puvDiagnoseRowLoss() — 파일 _puvDiagnoseRowLoss.gs");
-        } catch (eN) {}
-      }
+      /* 로그만 남기면 아무도 안 본다. 기록을 건너뛰면 사람에게 알린다.
+         ★ 2026-09-02: 시간초과에도 알리도록 넓혔다.
+           전에는 급감일 때만 알렸다. 그래서 9/1 밤 재생성이 시간초과로
+           기록을 포기했는데 아무도 몰랐고, 다음날 CS 대시보드가 하루치를
+           통째로 잃은 채 돌았다. 조용히 넘어가는 게 가장 나쁘다. */
+      try {
+        _chat_sendText_("⚠️ 통합조회 재생성을 중단했습니다 (" +
+          (stat.timedOut ? "시간초과" : "결과 급감") + ")\n" +
+          "이번 결과 " + rows.length + "행 · 기존 " + existing + "행\n" +
+          "기존 탭을 그대로 두었습니다. 일일마감 수집 " + stat.daily + "건.\n" +
+          (stat.timedOut
+            ? "→ 어제치가 안 들어왔을 수 있습니다. 메뉴 「📦 대리발송 발주시스템 →\n" +
+              "   🗂️ 통합조회 재생성」을 낮에 한 번 돌려 주세요."
+            : "점검: puvDiagnoseRowLoss() — 파일 _puvDiagnoseRowLoss.gs"));
+      } catch (eN) {}
     } else {
       _puv_write_(rows);
     }
