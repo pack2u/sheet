@@ -2926,3 +2926,51 @@ function csDiagnoseDayCount(dateStr) {
   Logger.log(JSON.stringify(out, null, 2));
   return out;
 }
+
+/**
+ * 일일마감 파일이 실제로 어디에 어떤 이름으로 있는지 훑는다.
+ * 파일: csOrderSearch.gs  ★ 2026-09-02 신규
+ *
+ * csDiagnoseDayCount 가 "파일찾음: false" 를 냈을 때, 파일이 정말 없는 건지
+ * 이름·위치가 어긋난 건지 구분하려고 만든다. CS앱은 「일일마감_(YYYY-MM-DD)」
+ * 이라는 정확한 이름으로만 찾으므로, 한 글자만 달라도 못 본다.
+ */
+function csListDailyFiles() {
+  var out = { 폴더: [], 찾는이름형식: _CS_DAILY_PREFIX_ + "(YYYY-MM-DD)", 파일: [] };
+
+  var folders = _cs_dailyFolders_();
+  for (var f = 0; f < folders.length; f++) {
+    var name = "?", id = "?";
+    try { name = folders[f].getName(); id = folders[f].getId(); } catch (eN) {}
+    out.폴더.push(name + "  [" + id + "]");
+
+    try {
+      var it = folders[f].getFiles();
+      var n = 0;
+      while (it.hasNext() && n < 40) {
+        var file = it.next();
+        var fn = file.getName();
+        if (fn.indexOf(_CS_DAILY_PREFIX_) !== 0) continue;   // 일일마감_ 로 시작하는 것만
+        n++;
+        out.파일.push({
+          이름: fn,
+          폴더: name,
+          수정: Utilities.formatDate(file.getLastUpdated(), Session.getScriptTimeZone(), "MM-dd HH:mm"),
+          이름규칙일치: /^일일마감_\(\d{4}-\d{2}-\d{2}\)$/.test(fn),
+        });
+      }
+    } catch (eL) {}
+  }
+
+  // 최근 것이 위로 오게
+  out.파일.sort(function (a, b) { return a.이름 < b.이름 ? 1 : -1; });
+  out.파일 = out.파일.slice(0, 20);
+
+  var bad = 0;
+  for (var i = 0; i < out.파일.length; i++) if (!out.파일[i].이름규칙일치) bad++;
+  out.요약 = "폴더 " + out.폴더.length + "곳 · 일일마감 파일 " + out.파일.length +
+    "개(최근 20개만) · 이름규칙 어긋남 " + bad + "개";
+
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
