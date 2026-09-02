@@ -2406,7 +2406,9 @@
       csGoTo(CS_EXEC_URL + '?page=' + page + '&staff=' + encodeURIComponent(currentStaff));
     }
 
-    var DAYS = 14;
+    // 허브 _PUV_DAYS_ · 서버 _CS_DAILY_DAYS_DEFAULT_ 와 같은 값이어야 한다.
+    // 크면 대시보드에 데이터 없는 날짜가 0건으로 찍혀 고장난 것처럼 보인다.
+    var DAYS = 10;
     var timer = null;
     var lastQ = "";
     var warming = false;

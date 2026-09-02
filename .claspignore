@@ -23,6 +23,9 @@ antigravity_ide/**
 설명서/**
 송장시스템/**
 InvoiceMatchWebApp/**
+# 자체 .clasp.json 을 가진 별도 GAS 프로젝트.
+# 빼지 않으면 appsscript.json 이 루트 것과 부딪혀 허브 push 자체가 막힌다.
+세트분리V2/**
 
 # 문서 및 비코드 파일
 *.md

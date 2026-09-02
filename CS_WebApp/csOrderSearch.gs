@@ -14,7 +14,16 @@
  */
 
 var _CS_DAILY_PREFIX_ = "일일마감_";
-var _CS_DAILY_DAYS_DEFAULT_ = 14;
+
+/**
+ * 조회 일수.
+ * ★ 허브의 _PUV_DAYS_ (파일: _partnerUnifiedView.gs) 와 같은 값이어야 한다 ★
+ *   CS 는 통합조회 탭 하나를 읽으므로, 여기서 14일을 달라고 해도 그 탭에
+ *   10일치밖에 없으면 10일치만 온다. 숫자가 어긋나면 대시보드에 빈 날짜가
+ *   0건으로 찍혀 고장난 것처럼 보인다.
+ *   2026-09-02: 야간 재생성 시간초과 때문에 허브를 10일로 줄이면서 같이 맞췄다.
+ */
+var _CS_DAILY_DAYS_DEFAULT_ = 10;
 var _CS_DA_CACHE_TTL_ = 21600; // 6시간
 var _CS_DA_CACHE_VER_ = "v15";
 var _CS_SEARCH_LIMIT_ = 80;
