@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const C = require('../core.js');
 
-const files = ['core.js', 'gasIO.js', 'gasMasters.js', 'gasMain.js', 'gasSeed.js', 'gasZip.js'];
+const files = ['core.js', 'gasIO.js', 'gasMasters.js', 'gasMain.js', 'gasSeed.js', 'gasZip.js', 'gasExcel.js'];
 const src = Object.fromEntries(files.map((f) => [f, readFileSync('../' + f, 'utf8').toString()]));
 const all = files.map((f) => src[f]).join('\n');
 let bad = 0;

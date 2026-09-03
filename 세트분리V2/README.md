@@ -318,6 +318,9 @@ node node/_genschema.mjs
 - 구 시트를 읽어가는 허브 GAS(`_partnerExclusivePush.gs` 의 `_PEP_SOURCE_SHEET_ID`,
   `_partnerOrders.gs` 의 `_PO_UNMATCHED_TAB_GID`, `_partnerIslandShipping.gs`)는
   **아직 구 시트를 본다.** 병행 운영 기간이 끝나면 이 참조를 V2로 옮겨야 한다.
+- **허브 일일마감을 원장에 연결** (V2 검증 완료 후) — 허브의 `판매현황_단가맵` 퍼지 매칭
+  (수취인+전화+품목, 적중 ~40%)을 원장의 고유ID 정확 일치로 교체한다.
+  원장에 단가(합계)·운송장번호·경로가 모두 있어 일일마감이 읽기만 하면 된다.
 - `주문라인원장`을 Supabase(`bmlbehjtdleshsbvxfrx`)로 흘려보내면 회차 간 조회·정산 대조가
   시트 밖에서 가능해진다. CLI가 이미 같은 원장을 CSV로 뱉으므로 적재만 붙이면 된다.
 

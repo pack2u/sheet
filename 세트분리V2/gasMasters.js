@@ -639,15 +639,29 @@ var SSM_VENDOR_SEED = [
   ['WD', '월드유명'], ['AP', '올팩코리아'], ['GD', '성우포장'], ['GW', '그린우드'],
   ['BW', '부원'], ['IW', '인터웍스'], ['HR', '허브로스팅'], ['HU', '후아코리아'],
   ['LG', '로엔그린'], ['AJ', '아주팩'], ['OC', '부엉이'], ['YS', '와이에스'],
-  ['SW', '선우'], ['JH', '준테크'], ['BF', '준테크'], ['NS', '준테크']
+  ['SW', '선우'], ['JH', '준테크'], ['BF', '준테크'], ['NS', '준테크'],
+  ['JM', '제이엠']
 ];
 
-/** 협력업체 표가 비어 있으면 구 시트 목록으로 채운다 */
+/**
+ * 협력업체 표에 시드 목록 중 빠진 코드만 채워 넣는다.
+ * 사람이 적은 행은 절대 건드리지 않는다 — 이름을 고쳤거나 새 코드를 추가했어도 그대로 둔다.
+ * (예전엔 탭이 비어 있을 때만 채워서, 시드에 JM을 추가해도 기존 시트에 반영되지 않았다)
+ */
 function ssm_seedVendors() {
   var sh = ssio_sheet(SSIO_TABS.업체, SS_VENDOR_HEADER);
-  if (sh.getLastRow() > 1) return 0;
-  sh.getRange(2, 1, SSM_VENDOR_SEED.length, 2).setValues(SSM_VENDOR_SEED);
-  return SSM_VENDOR_SEED.length;
+  var have = {};
+  var body = ssio_body(SSIO_TABS.업체);
+  for (var i = 0; i < body.length; i++) {
+    var c = ssText(body[i][0]).toUpperCase();
+    if (c) have[c] = true;
+  }
+  var add = [];
+  for (var s = 0; s < SSM_VENDOR_SEED.length; s++) {
+    if (!have[SSM_VENDOR_SEED[s][0]]) add.push(SSM_VENDOR_SEED[s]);
+  }
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, 2).setValues(add);
+  return add.length;
 }
 
 /**

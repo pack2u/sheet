@@ -30,6 +30,7 @@ function onOpen() {
     .addItem('🔎 보류 조치 진단', 'ss_보류조치진단')
     .addItem('🔎 합배송 진단', 'ss_합배송진단')
     .addItem('🔁 송장 전파 (롯데 → 사방넷)', 'ss_송장전파')
+    .addItem('📊 사방넷 대량등록 엑셀 저장', 'ss_사방넷엑셀저장')
     .addItem('🕵️ 중복발주 의심 점검', 'ss_중복점검')
     .addItem('🔍 검증 (행수 대조)', 'ss_검증')
     .addItem('🛠 시트 설치 / 복구', 'ss_설치')

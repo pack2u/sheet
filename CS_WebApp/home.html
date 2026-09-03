@@ -4,6 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>팩투유(Pack2U) CS 웹앱</title>
+  <script>
+    /* 저장해 둔 테마를 그리기 전에 입힌다.
+       body 나 onload 에서 하면 어두운 화면이 한 번 번쩍이고 밝게 바뀐다. */
+    (function () {
+      try {
+        var t = localStorage.getItem('pack2u_theme');
+        if (t === 'light' || t === 'dark') {
+          document.documentElement.setAttribute('data-theme', t);
+        }
+      } catch (e) {}
+    })();
+  </script>
   <?!= include('csFavicon'); ?>
   <?!= include('csDecode') ?>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -25,6 +37,10 @@
       --accent-orange-glow: rgba(240, 160, 48, 0.25);
       --accent-red: #ff5f56;
       --border: rgba(255, 255, 255, 0.06);
+      /* --text-secondary 보다 밝은 본문색. 값·이름 같은 "읽어야 하는 글자"에 쓴다.
+         전에는 #c1c1c1 로 24곳에 박혀 있었다 — 밝은 테마에서 안 보여 변수로 뺐다. */
+      --text-bright: #c1c1c1;
+
       --radius: 16px;
       --radius-sm: 10px;
 
@@ -33,6 +49,74 @@
          font-size 선언이 통째로 무효가 되어 글자가 깨진다. */
       --hb-text-scale: 1;
     }
+
+    /* ══════════════════════════════════════════════════
+       밝은 테마 (2026-09-03)
+
+       사람마다 골라 쓴다. 고른 값은 브라우저에 남으므로 기기별로 따로 간다
+       — 창고 태블릿은 밝게, 사무실 모니터는 어둡게 쓸 수 있다.
+
+       구조색은 전부 변수라 여기서 갈아 끼우면 화면 대부분이 따라온다.
+       다만 배지·타임라인의 옅은 강조색은 어두운 배경에 맞춰 고른 값이라
+       흰 바탕에서는 너무 흐리다. 그건 아래에서 따로 진하게 바꾼다.
+       ══════════════════════════════════════════════════ */
+    :root[data-theme="light"] {
+      /* 바탕을 흰색 바로 아래로 낮춘다. 카드가 흰색이라 바탕까지 희면
+         경계가 안 보여 화면이 통째로 뿌옇게 읽힌다. */
+      --bg-primary: #e9ebef;
+      --bg-secondary: #ffffff;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f2f4f7;
+      --text-primary: #1b1e23;
+      --text-secondary: #5b6169;
+      --text-muted: #868d96;
+      --text-bright: #2f343b;
+      --accent: #6b7280;
+      --accent-glow: rgba(0, 0, 0, 0.10);
+      --accent-green: #1a9e68;
+      --accent-green-glow: rgba(26, 158, 104, 0.20);
+      --accent-orange: #b46a00;
+      --accent-orange-glow: rgba(180, 106, 0, 0.20);
+      --accent-red: #d13b32;
+      --border: rgba(0, 0, 0, 0.13);
+    }
+
+    /* 흰 바탕에서 흐려지는 강조색만 진하게. 배경 rgba 는 그대로 두고 글자만 바꾼다 */
+    :root[data-theme="light"] .hb-badge.lv-urgent { color: #b3261e; }
+    :root[data-theme="light"] .hb-badge.lv-warn   { color: #8a5300; }
+    :root[data-theme="light"] .hb-badge.lv-normal { color: #4a5058; }
+    :root[data-theme="light"] .hb-sec-who,
+    :root[data-theme="light"] .hb-tl-by,
+    :root[data-theme="light"] .hb-last-by { color: #2f343b; }
+    :root[data-theme="light"] .hb-tl-item.k-done .hb-tl-by,
+    :root[data-theme="light"] .hb-tl-item.k-done .hb-tl-tag { color: #10714b; }
+    :root[data-theme="light"] .hb-tl-item.k-reopen .hb-tl-by,
+    :root[data-theme="light"] .hb-tl-item.k-reopen .hb-tl-tag { color: #8a5300; }
+    :root[data-theme="light"] .hb-tl-item.k-open .hb-tl-by,
+    :root[data-theme="light"] .hb-tl-item.k-open .hb-tl-tag { color: #4a5058; }
+    :root[data-theme="light"] .dash-kpi.warn .dash-kpi-val { color: #8a5300; }
+    :root[data-theme="light"] .dash-kpi.ok .dash-kpi-val { color: #10714b; }
+    :root[data-theme="light"] .dash-kpi.accent .dash-kpi-val { color: #3a4048; }
+    /* 자동 새로고침 알림 줄 — 어두운 배경용 노란 톤이라 흰 바탕에서 안 읽힌다 */
+    :root[data-theme="light"] .cs-pulse-bar {
+      color: #8a5300;
+      background: rgba(180, 106, 0, 0.10);
+      border-color: rgba(180, 106, 0, 0.35);
+    }
+    :root[data-theme="light"] .cs-pulse-bar .dot { background: #b46a00; }
+
+    /* 테마 전환 단추 — 화면 왼쪽 아래 구석. 위쪽은 즐겨찾기·배포 알림이 쓴다 */
+    .cs-theme-btn {
+      position: fixed; left: 12px; bottom: 12px; z-index: 8500;
+      width: 34px; height: 34px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg-card); border: 1px solid var(--border);
+      color: var(--text-secondary); font-size: 15px; line-height: 1;
+      cursor: pointer; user-select: none; opacity: 0.55;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+      transition: opacity 0.15s ease, border-color 0.15s ease;
+    }
+    .cs-theme-btn:hover { opacity: 1; border-color: var(--accent-green); }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -419,7 +503,7 @@
     }
     .ws-mobile-tabs button.on {
       background: rgba(173, 173, 173,0.18); border-color: rgba(173, 173, 173,0.45);
-      color: #c1c1c1;
+      color: var(--text-bright);
     }
     .ws-mobile-tabs button[data-pane="1"].on {
       background: rgba(255,193,7,0.15); border-color: rgba(255,193,7,0.4); color: #ffc107;
@@ -454,7 +538,7 @@
     }
     /* 로그인 계정 — 좁은 화면에서는 앞부분만, 넓으면 전체 */
     .ws-me {
-      font-size: 10px; color: #c1c1c1; padding: 2px 7px;
+      font-size: 10px; color: var(--text-bright); padding: 2px 7px;
       border-radius: 6px; background: rgba(173, 173, 173,0.14);
       flex-shrink: 1; min-width: 0; max-width: 40%;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -574,7 +658,7 @@
       color: var(--text-secondary); border-radius: 999px; padding: 6px 12px;
       font-size: 12px; font-family: inherit; cursor: pointer;
     }
-    .os-chip.on { background: rgba(173, 173, 173,0.18); color: #c1c1c1; border-color: rgba(173, 173, 173,0.35); }
+    .os-chip.on { background: rgba(173, 173, 173,0.18); color: var(--text-bright); border-color: rgba(173, 173, 173,0.35); }
     .os-chip.ghost { margin-left: auto; }
     .os-status { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; min-height: 18px; }
     .os-status.err { color: #e85d5d; }
@@ -732,7 +816,7 @@
     .os-val { flex: 1; word-break: break-all; }
     .os-val.big { font-size: 16px; font-weight: 700; color: #fff; }
     .os-inv {
-      color: #c1c1c1;
+      color: var(--text-bright);
       text-decoration: underline;
       font-weight: 700;
       margin-right: 8px;
@@ -746,16 +830,20 @@
       text-decoration: none;
     }
     .os-copy:active { background: rgba(255,255,255,0.04); color: var(--text-secondary); }
+    /* 롯데 화물추적 결과 배지 — 눌러서 조회한 뒤 그 자리에 상태가 남는다 */
+    .os-trk[disabled] { opacity: 0.55; cursor: default; }
+    .os-trk-run { border-color: rgba(90,160,240,0.45); color: #8fbdf0; }
+    .os-trk-done { border-color: rgba(52,199,123,0.45); color: #7ee0ad; }
     .os-tag { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 6px; margin-left: 6px; background: rgba(255,255,255,0.06); color: var(--text-secondary); }
-    .os-tag.lotte { background: rgba(173, 173, 173,0.18); color: #c1c1c1; }
+    .os-tag.lotte { background: rgba(173, 173, 173,0.18); color: var(--text-bright); }
     .os-tag.hub { background: rgba(52,199,123,0.18); color: #7ee0ad; }
     .os-tag.miss { background: rgba(240,160,48,0.18); color: #f0c070; }
     .os-tag.pack { background: rgba(76,175,80,0.22); color: #a5d6a7; }
     .os-tag.manual { background: rgba(74, 74, 74,0.2); color: #a5a5a5; }
     .os-tag.case { background: rgba(255,183,77,0.2); color: #ffcc80; }
-    .os-tag.guide { background: rgba(150, 150, 150,0.22); color: #c1c1c1; }
+    .os-tag.guide { background: rgba(150, 150, 150,0.22); color: var(--text-bright); }
     .manual-flow {
-      font-size: 11px; color: #c1c1c1; margin-top: 6px; line-height: 1.45;
+      font-size: 11px; color: var(--text-bright); margin-top: 6px; line-height: 1.45;
       padding: 6px 8px; border-radius: 8px; background: rgba(150, 150, 150,0.08);
     }
     .manual-trigger { font-size: 12px; color: var(--text-secondary); margin-top: 6px; line-height: 1.5; }
@@ -1065,7 +1153,7 @@
     }
     .os-item-link {
       background: none; border: none; padding: 0; margin: 0;
-      color: #c1c1c1; text-decoration: underline; cursor: pointer;
+      color: var(--text-bright); text-decoration: underline; cursor: pointer;
       font: inherit; text-align: left; max-width: 100%;
     }
     .os-item-link:active { opacity: 0.85; }
@@ -1075,10 +1163,10 @@
     .prod-row:last-child { border-bottom: none; }
     .prod-lab { flex: 0 0 88px; font-size: 12px; color: var(--text-muted); }
     .prod-val { flex: 1; word-break: break-word; }
-    .prod-sheet-link { display: inline-block; margin-top: 12px; font-size: 12px; color: #c1c1c1; }
+    .prod-sheet-link { display: inline-block; margin-top: 12px; font-size: 12px; color: var(--text-bright); }
     .prod-links { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 12px; }
     .prod-links a {
-      font-size: 12px; color: #c1c1c1; text-decoration: none;
+      font-size: 12px; color: var(--text-bright); text-decoration: none;
       padding: 8px 12px; border-radius: 8px; background: rgba(193, 193, 193,0.12);
     }
     .prod-links a:active { opacity: 0.85; }
@@ -1135,7 +1223,7 @@
     .os-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     .os-spin {
       display: inline-block; width: 12px; height: 12px;
-      border: 2px solid rgba(255,255,255,0.2); border-top-color: #c1c1c1;
+      border: 2px solid rgba(255,255,255,0.2); border-top-color: var(--text-bright);
       border-radius: 50%; animation: osrot 0.7s linear infinite; vertical-align: -1px; margin-right: 6px;
     }
     @keyframes osrot { to { transform: rotate(360deg); } }
@@ -1249,14 +1337,14 @@
     }
     .hb-badge.lv-urgent { background: rgba(232,93,93,0.2); color: #ff9e9e; }
     .hb-badge.lv-warn   { background: rgba(240,160,48,0.2); color: #ffca7a; }
-    .hb-badge.lv-normal { background: rgba(173, 173, 173,0.18); color: #c1c1c1; }
+    .hb-badge.lv-normal { background: rgba(173, 173, 173,0.18); color: var(--text-bright); }
     .hb-badge.hb-unread { background: rgba(232,93,93,0.9); color: #fff; }
     .hb-badge.hb-partner { background: rgba(240,180,94,0.9); color: #2a2216; }
     .hb-badge.hb-note { background: rgba(255,255,255,0.07); color: var(--text-secondary); }
 
     /* 카드 항목칸 — 고객명·전화·송장·품목을 한 줄로 */
     .hb-facts {
-      font-size: calc(11px * var(--hb-text-scale)); color: #c1c1c1; margin-top: 4px;
+      font-size: calc(11px * var(--hb-text-scale)); color: var(--text-bright); margin-top: 4px;
       overflow-wrap: anywhere; line-height: 1.45;
     }
 
@@ -1281,7 +1369,7 @@
     .hb-link-btn {
       display: inline-flex; align-items: center; gap: 4px; margin-top: 7px;
       border: 1px solid rgba(173, 173, 173,0.35); background: rgba(173, 173, 173,0.12);
-      color: #c1c1c1; border-radius: 7px; padding: 4px 8px;
+      color: var(--text-bright); border-radius: 7px; padding: 4px 8px;
       font-size: calc(11px * var(--hb-text-scale)); font-family: inherit; cursor: pointer;
     }
 
@@ -1296,7 +1384,7 @@
       font-size: calc(10px * var(--hb-text-scale)); color: var(--text-muted); margin-bottom: 5px;
     }
     .hb-sec-t { font-weight: 700; letter-spacing: 0.03em; }
-    .hb-sec-who { color: #c1c1c1; font-weight: 700; font-size: calc(11px * var(--hb-text-scale)); }
+    .hb-sec-who { color: var(--text-bright); font-weight: 700; font-size: calc(11px * var(--hb-text-scale)); }
     .hb-orig-text {
       font-size: calc(13px * var(--hb-text-scale)); line-height: 1.6; color: var(--text-primary);
       white-space: pre-wrap; word-break: break-word;
@@ -1325,7 +1413,7 @@
     .hb-tl-line {
       display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px;
     }
-    .hb-tl-by { font-size: calc(12px * var(--hb-text-scale)); font-weight: 700; color: #c1c1c1; }
+    .hb-tl-by { font-size: calc(12px * var(--hb-text-scale)); font-weight: 700; color: var(--text-bright); }
     .hb-tl-item.k-open .hb-tl-by   { color: #bdbdbd; }
     .hb-tl-item.k-done .hb-tl-by   { color: #7fd1a8; }
     .hb-tl-item.k-reopen .hb-tl-by { color: #ffca7a; }
@@ -1515,7 +1603,7 @@
     }
     .hb-lv-btn.lv-urgent.on { background: rgba(232,93,93,0.2); color: #ff9e9e; border-color: rgba(232,93,93,0.45); }
     .hb-lv-btn.lv-warn.on   { background: rgba(240,160,48,0.2); color: #ffca7a; border-color: rgba(240,160,48,0.45); }
-    .hb-lv-btn.lv-normal.on { background: rgba(173, 173, 173,0.2); color: #c1c1c1; border-color: rgba(173, 173, 173,0.45); }
+    .hb-lv-btn.lv-normal.on { background: rgba(173, 173, 173,0.2); color: var(--text-bright); border-color: rgba(173, 173, 173,0.45); }
 
     /* 하단 접기 — 처리가이드·CS사례 */
     .hb-acc { margin-top: 18px; border-top: 1px solid rgba(255,255,255,0.09); padding-top: 12px; }
@@ -1557,7 +1645,7 @@
     .dash-kpi.wide { grid-column: span 2; }
     .dash-kpi-val { font-size: 20px; font-weight: 700; line-height: 1.2; color: var(--text-primary); }
     .dash-kpi-lab { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
-    .dash-kpi.accent .dash-kpi-val { color: #c1c1c1; }
+    .dash-kpi.accent .dash-kpi-val { color: var(--text-bright); }
     .dash-kpi.warn .dash-kpi-val { color: #ffc107; }
     .dash-kpi.ok .dash-kpi-val { color: #6ee7a8; }
     .dash-section { margin-bottom: 12px; }
@@ -1662,7 +1750,7 @@
     .dash-vendor-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
     .dash-vendor-row:last-child { border-bottom: none; }
     .dash-vendor-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .dash-vendor-n { flex-shrink: 0; font-weight: 700; color: #c1c1c1; }
+    .dash-vendor-n { flex-shrink: 0; font-weight: 700; color: var(--text-bright); }
     .dash-origin { display: flex; gap: 6px; flex-wrap: wrap; }
     .dash-origin-item {
       flex: 1; min-width: 72px; text-align: center;
@@ -1704,7 +1792,7 @@
     }
     .mn-sec:hover::-webkit-resizer {
       background: linear-gradient(315deg,
-        #c1c1c1 0 34%,
+        var(--text-bright) 0 34%,
         transparent 34% 100%);
     }
     .mn-sec-head {
@@ -1765,10 +1853,10 @@
     .lb-lv { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
     .lb-lv.u { background: rgba(231,76,95,.18); color: #e74c5f; }
     .lb-lv.w { background: rgba(240,160,48,.18); color: #f0a030; }
-    .lb-lv.n { background: rgba(173,173,173,.18); color: #c1c1c1; }
+    .lb-lv.n { background: rgba(173,173,173,.18); color: var(--text-bright); }
     .lb-act { text-align: right; margin-top: 8px; }
     .lb-act button {
-      background: transparent; border: 1px solid var(--border); color: #c1c1c1;
+      background: transparent; border: 1px solid var(--border); color: var(--text-bright);
       border-radius: 8px; padding: 5px 12px; font-size: 11px; font-family: inherit; cursor: pointer;
     }
     .lb-form input {
@@ -1788,14 +1876,14 @@
     #lgFile { display: none; }
     .lg-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
     .lg-stat { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
-    .lg-stat b { display: block; font-size: 20px; font-weight: 700; color: #c1c1c1; }
+    .lg-stat b { display: block; font-size: 20px; font-weight: 700; color: var(--text-bright); }
     .lg-stat b.g { color: var(--accent-green); } .lg-stat b.o { color: var(--accent-orange); }
     .lg-stat span { display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
     .lg-pick {
       border: 1px solid var(--border); border-radius: 8px; padding: 10px;
       margin-top: 7px; background: var(--bg-secondary); cursor: pointer;
     }
-    .lg-pick.on { border-color: #c1c1c1; background: var(--bg-card-hover); }
+    .lg-pick.on { border-color: var(--text-bright); background: var(--bg-card-hover); }
     .lg-thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
     .lg-thumbs img { width: 56px; height: 56px; object-fit: cover; border-radius: 7px; border: 1px solid var(--border); }
 
@@ -1815,6 +1903,10 @@
      href="<?= webAppUrl ?>" onclick="return csBuildBarClick()">
     <span class="dot"></span><span>새 버전이 나왔습니다 · 눌러서 새로고침</span>
   </a>
+
+  <!-- 테마 전환 — 고른 값은 이 기기에만 남는다 -->
+  <div class="cs-theme-btn" id="csThemeBtn" onclick="csToggleTheme()"
+       title="밝게 / 어둡게" role="button" aria-label="테마 전환">🌙</div>
 
   <!-- 숨은 즐겨찾기 바 — 목록이 비면 통째로 감춘다 (csFavorites.gs) -->
   <div class="cs-fav-wrap" id="csFavWrap" style="display:none">
@@ -2749,6 +2841,44 @@
     }
 
     /** 좁은 타일에서는 연도를 뗀다: 2026-08-25 21:40 → 08-25 21:40 */
+    /* ══════════════════════════════════════════════════
+       테마 (2026-09-03)
+
+       사람마다 밝게/어둡게 고른다. 값은 localStorage 라 이 기기에만 남는다 —
+       창고 태블릿은 밝게, 사무실은 어둡게 쓸 수 있다. 서버는 관여하지 않는다.
+
+       처음 그리기 전에 <head> 의 인라인 스크립트가 이미 한 번 입힌다.
+       여기서는 단추 표정만 맞추고, 누를 때 갈아 끼운다.
+       ══════════════════════════════════════════════════ */
+    var CS_THEME_KEY = 'pack2u_theme';
+
+    function csCurrentTheme() {
+      return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    }
+
+    function csApplyTheme(theme, persist) {
+      var light = (theme === 'light');
+      if (light) document.documentElement.setAttribute('data-theme', 'light');
+      else document.documentElement.removeAttribute('data-theme');
+
+      // 지금 무엇을 쓰고 있는지가 아니라 "누르면 무엇이 되는지"를 보여준다
+      var btn = document.getElementById('csThemeBtn');
+      if (btn) {
+        btn.textContent = light ? '🌙' : '☀️';
+        btn.title = light ? '어둡게 보기' : '밝게 보기';
+      }
+      if (persist) {
+        try { localStorage.setItem(CS_THEME_KEY, light ? 'light' : 'dark'); } catch (eT) {}
+      }
+    }
+
+    function csToggleTheme() {
+      csApplyTheme(csCurrentTheme() === 'light' ? 'dark' : 'light', true);
+    }
+
+    // 단추 표정을 지금 상태에 맞춘다 (head 스크립트가 이미 테마는 입혔다)
+    csApplyTheme(csCurrentTheme(), false);
+
     /* ══════════════════════════════════════════════════
        묵은 카드 표시 (2026-09-02)
 
@@ -6591,6 +6721,66 @@
       return lotteTrackUrl(d);
     }
 
+    /**
+     * 롯데 건인가 — 화물추적 API 를 부를 수 있는 대상인지 판별한다.
+     * trackingUrl 의 분기를 그대로 따라간다. 거기서 롯데로 떨어지는 건만 true.
+     * (출처를 모르는 대리판매 건은 네이버로 가므로 여기서도 제외된다)
+     */
+    function isLotteTrack(source, carrier) {
+      var c = String(carrier || '').replace(/\s/g, '');
+      if (c) return c.indexOf('롯데') !== -1;
+      var src = String(source || '');
+      if (src.indexOf('로젠') !== -1) return false;
+      if (src.indexOf('CJ') !== -1 || src.indexOf('대한통운') !== -1) return false;
+      if (src.indexOf('한진') !== -1) return false;
+      if (isProxySource(src)) return false;
+      return true; // trackingUrl 의 최종 기본값이 롯데다
+    }
+
+    /**
+     * 롯데 화물추적 — 「상태」 버튼을 눌렀을 때만 부른다.
+     *
+     * ★ 자동 조회를 하지 않는 이유 ★
+     *   API 쿼터가 하루 10,000건이다. 검색 결과를 그릴 때마다 송장마다 부르면
+     *   금세 는다. CS 가 실제로 궁금해하는 건만 누르게 둔다.
+     *   서버(csLotte.gs)에서 30분 캐시와 일일 상한도 함께 걸어뒀다.
+     *
+     *   결과는 버튼 자리에 그대로 남는다. 전체 이력은 title 로 붙여
+     *   마우스를 올리면 보이게 했다 — 목록 화면을 밀어내지 않으려는 것이다.
+     */
+    function lotteTrack(btn) {
+      var inv = btn.getAttribute('data-inv');
+      if (!inv || btn.disabled) return;
+      var old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '조회중';
+      google.script.run
+        .withSuccessHandler(function (r) {
+          btn.disabled = false;
+          if (!r || !r.ok) {
+            btn.textContent = old;
+            toast(String((r && r.error) || '배송조회 실패'), 3200);
+            return;
+          }
+          btn.textContent = r.statusName + (r.lastAt ? ' · ' + r.lastAt : '');
+          btn.classList.add(r.delivered ? 'os-trk-done' : 'os-trk-run');
+          var lines = [];
+          for (var i = 0; i < (r.history || []).length; i++) {
+            var h = r.history[i];
+            lines.push(h.at + '  ' + h.name +
+              (h.branch ? ' (' + h.branch + ')' : '') +
+              (h.msg ? '  ' + h.msg : ''));
+          }
+          btn.title = lines.join('\n') || r.lastMsg || '';
+        })
+        .withFailureHandler(function (e) {
+          btn.disabled = false;
+          btn.textContent = old;
+          toast(String((e && e.message) || '통신 실패'), 3200);
+        })
+        .csLotteTrack(inv, {});
+    }
+
     function lotteTrackUrl(d) {
       return 'https://www.lotteglogis.com/home/reservation/tracking/linkView?InvNo=' + d;
     }
@@ -6652,6 +6842,11 @@
         var d = invs[i];
         var url = trackingUrl(d, source, carrier);
         html += '<a class="os-inv" href="' + url + '" target="_blank" rel="noopener" onclick="return openTrack(event,this.href)">' + esc(d) + '</a>';
+        // 롯데 건은 사이트로 나가지 않고 여기서 바로 상태를 볼 수 있다
+        if (isLotteTrack(source, carrier)) {
+          html += '<button class="os-copy os-trk" data-inv="' + esc(d) +
+            '" onclick="lotteTrack(this)">상태</button>';
+        }
         if (proxy) {
           html += '<a class="os-copy" href="' + naverTrackUrl(d) + '" target="_blank" rel="noopener" onclick="return openTrack(event,this.href)">네이버</a>';
           html += '<a class="os-copy" href="' + lotteTrackUrl(d) + '" target="_blank" rel="noopener" onclick="return openTrack(event,this.href)">롯데</a>';
