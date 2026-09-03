@@ -163,6 +163,13 @@
     :root[data-theme="light"] .ret-proc.photo {
       background: #eef0f3; border-color: rgba(0, 0, 0, 0.12);
     }
+    /* 칩 안 글자는 rgba(255,255,255,0.x) 였다 — 배경만 밝히면 글자가 사라진다.
+       같은 투명도 구조를 검정으로 뒤집어 강약(시각·꼬리표·본문)을 유지한다. */
+    :root[data-theme="light"] .ret-proc-when { color: rgba(0, 0, 0, 0.82); }
+    :root[data-theme="light"] .ret-proc-tag { color: rgba(0, 0, 0, 0.50); }
+    :root[data-theme="light"] .ret-proc-body { color: rgba(0, 0, 0, 0.62); }
+    :root[data-theme="light"] .ret-card.ret-focus .ret-proc-body { color: rgba(0, 0, 0, 0.75); }
+
     :root[data-theme="light"] .ret-proc-link {
       background: rgba(26, 158, 104, 0.16); color: #10714b;
     }

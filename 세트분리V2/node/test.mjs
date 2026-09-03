@@ -340,5 +340,15 @@ console.log('\n[사방넷등록 표시] 주문번호당 한 줄 · 전화주문 
   eq('원장 행 폭 (운송장번호·송장매칭 포함)', C.ssLedgerRow(res.units[0], 'k', 'at').length, C.SS_LEDGER_HEADER.length);
 }
 
+
+console.log('\n[사방넷 번호 판별] 시스템 발급 ID는 등록 제외');
+{
+  eq('사방넷 숫자 번호', C.ssIsSabangnetUid('2159711511'), true);
+  eq('상품정보 발급 -ds-', C.ssIsSabangnetUid('0902-ds-e158'), false);
+  eq('세트분리 전화주문 -PH-', C.ssIsSabangnetUid('260903-PH-4bdf'), false);
+  eq('빈 값', C.ssIsSabangnetUid(''), false);
+  eq('문자 섞임', C.ssIsSabangnetUid('ABC123'), false);
+}
+
 console.log('\n' + (fail ? `실패 ${fail}건 / ` : '') + `통과 ${pass}건`);
 process.exit(fail ? 1 : 0);

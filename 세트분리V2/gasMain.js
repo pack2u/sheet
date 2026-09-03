@@ -30,7 +30,8 @@ function onOpen() {
     .addItem('🔎 보류 조치 진단', 'ss_보류조치진단')
     .addItem('🔎 합배송 진단', 'ss_합배송진단')
     .addItem('🔁 송장 전파 (롯데 → 사방넷)', 'ss_송장전파')
-    .addItem('📊 사방넷 대량등록 엑셀 저장', 'ss_사방넷엑셀저장')
+    .addItem('📊 사방넷 송장대량등록 (오늘 전체)', 'ss_사방넷엑셀저장')
+    .addItem('🔎 사방넷 진단 (저장 안 함)', 'ss_사방넷진단')
     .addItem('🕵️ 중복발주 의심 점검', 'ss_중복점검')
     .addItem('🔍 검증 (행수 대조)', 'ss_검증')
     .addItem('🛠 시트 설치 / 복구', 'ss_설치')
@@ -780,6 +781,9 @@ var SS_REG_HEADER = ['주문번호', '운송장번호', '택배사'];
  * 롯데에는 합포장 대표만 올라가므로 송장번호도 대표 주문번호로만 돌아온다.
  * 동봉 주문은 대표를 따라가게 해 같은 번호를 넣는다 — 그래야 사방넷에서 빠지는 게 없다.
  */
+// 송장 셀 파싱용 — 공백·쉼표·슬래시·줄바꿈으로 쪼개고, 숫자만 남은 토큰을 송장으로 본다
+var ssInvSplitRe_ = new RegExp("[" + String.fromCharCode(92) + "s,/]+");
+var ssDigitsRe_ = new RegExp("^[0-9]+$");
 function ss_송장전파() {
   var inv = ssio_ss().getSheetByName(SSIO_TABS.사방넷송장);
   if (!inv || inv.getLastRow() < 2) {
@@ -841,15 +845,54 @@ function ss_송장전파() {
     tempErr = tRes.why;
   }
 
-  if (lotteErr && tempErr) {
+  // ── 1c) 협력업체_발주허브 → 대리판매 건의 송장 (C열 UID · N열 송장번호) ──
+  // 대리공급은 임시기록에, 대리판매는 발주허브에 송장이 붙는다. 둘 다 상품정보 시트다.
+  var hub = {}, hubErr = '';
+  var hRes = ssm_openOptional(cfg['이카운트시트ID'],
+    cfg['발주허브탭'] || '협력업체_발주허브', '상품정보');
+  if (hRes.ok) {
+    // 업체 접두 → 택배사명 (업체_택배사 A열 → C열)
+    var pfxCarrier = {};
+    try {
+      var vc = SpreadsheetApp.openById(cfg['이카운트시트ID']).getSheetByName('업체_택배사');
+      if (vc && vc.getLastRow() >= 2) {
+        var vcv = vc.getRange(2, 1, vc.getLastRow() - 1, 3).getDisplayValues();
+        for (var p = 0; p < vcv.length; p++) {
+          var pf = ssText(vcv[p][0]).toUpperCase();
+          var cr = ssText(vcv[p][2]);
+          if (pf && cr) pfxCarrier[pf] = cr;
+        }
+      }
+    } catch (ePc) {}
+    for (var hh = 1; hh < hRes.values.length; hh++) {
+      var hu = ssText(hRes.values[hh][2]);
+      var hwRaw = ssText(hRes.values[hh][13]);
+      if (!hu || !hwRaw) continue;
+      // 셀에 송장이 여러 개거나 메모가 섞일 수 있다 — 숫자 9자리 이상인 첫 토큰만 쓴다
+      var hw = '';
+      var toks = hwRaw.split(ssInvSplitRe_);
+      for (var tk = 0; tk < toks.length; tk++) {
+        var d = ssText(toks[tk]).split('-').join('');
+        if (d.length >= 9 && ssDigitsRe_.test(d)) { hw = d; break; }
+      }
+      if (!hw) continue;
+      var hv = ssText(hRes.values[hh][1]).toUpperCase();
+      hub[hu] = { w: hw, c: pfxCarrier[hv] || '' };
+    }
+  } else {
+    hubErr = hRes.why;
+  }
+
+  if (lotteErr && tempErr && hubErr) {
     return ssio_alert('송장 원천을 하나도 읽지 못했습니다.' + NL + NL +
-      '롯데 송장탭: ' + lotteErr + NL + '임시기록: ' + tempErr);
+      '롯데 송장탭: ' + lotteErr + NL + '임시기록: ' + tempErr + NL + '발주허브: ' + hubErr);
   }
 
   // 통합 조회 — 롯데가 먼저, 없으면 임시기록
   function find(uid) {
     if (lotte[uid]) return { w: lotte[uid], c: '롯데택배', src: '롯데' };
     if (temp[uid]) return { w: temp[uid].w, c: temp[uid].c, src: '대리공급' };
+    if (hub[uid]) return { w: hub[uid].w, c: hub[uid].c, src: '대리판매' };
     return null;
   }
 
@@ -857,7 +900,8 @@ function ss_송장전파() {
   var iCar = SS_INVOICE_HEADER.indexOf('택배사');
   var n = inv.getLastRow() - 1;
   var v = inv.getRange(2, 1, n, SS_INVOICE_HEADER.length).getValues();
-  var 롯데직접 = 0, 대리공급건 = 0, 전파 = 0, 미매칭 = 0;
+  var 롯데직접 = 0, 대리공급건 = 0, 대리판매건 = 0, 전파 = 0, 미매칭 = 0, 전화미매칭 = 0;
+  var 미매칭목록 = [];
   for (var i = 0; i < n; i++) {
     var 주문 = ssText(v[i][0]);
     var 대표 = ssText(v[i][4]);
@@ -866,19 +910,35 @@ function ss_송장전파() {
     if (hit) {
       v[i][5] = hit.w;
       if (iCar >= 0) v[i][iCar] = hit.c;
-      if (direct) { if (hit.src === '롯데') 롯데직접++; else 대리공급건++; }
+      if (direct) {
+        if (hit.src === '롯데') 롯데직접++;
+        else if (hit.src === '대리공급') 대리공급건++;
+        else 대리판매건++;
+      }
       else 전파++;
       continue;
     }
     v[i][5] = '';
     if (iCar >= 0) v[i][iCar] = '';
-    if (주문) 미매칭++;
+    if (주문) {
+      // 전화주문(P-ID)은 구 세트분리로 출고되는 동안 롯데에 그 번호가 없다.
+      // 진짜 미매칭과 섞이면 노이즈라 따로 센다. V2 실운영 후엔 자연히 매칭된다.
+      if (ssText(v[i][9]) === '자동발급') {
+        전화미매칭++;
+      } else {
+        미매칭++;
+        if (미매칭목록.length < 15) {
+          미매칭목록.push(주문 + '  ' + ssText(v[i][7]).slice(0, 10) + '  ' +
+            ssText(v[i][6]) + '  ' + ssText(v[i][8]).slice(0, 24));
+        }
+      }
+    }
   }
   inv.getRange(2, 1, n, SS_INVOICE_HEADER.length).setValues(v);
 
   // ── 3) 원장에도 기록 — 일일마감·대시보드는 여기서 주문번호별 송장을 읽는다 ──
   ssio_migrateHeader(SSIO_TABS.원장, SS_LEDGER_HEADER);
-  var 원장직접 = 0, 원장전파 = 0;
+  var 원장직접 = 0, 원장전파 = 0, 원장기채움 = 0;
   var lg = ssio_ss().getSheetByName(SSIO_TABS.원장);
   if (lg && lg.getLastRow() > 1) {
     var lcols = lg.getLastColumn();
@@ -894,12 +954,13 @@ function ss_송장전파() {
       var groupInv = {};
       for (var a = 0; a < lv.length; a++) {
         var uid = ssText(lv[a][li['고유ID']]);
+        if (ssText(lv[a][li['운송장번호']])) 원장기채움++;
         if (!ssText(lv[a][li['운송장번호']])) {
           var hit2 = find(uid);
           if (hit2) {
             lv[a][li['운송장번호']] = hit2.w;
             if (li['송장매칭'] !== undefined) {
-              lv[a][li['송장매칭']] = hit2.src === '롯데' ? '롯데 직접' : '대리공급';
+              lv[a][li['송장매칭']] = hit2.src === '롯데' ? '롯데 직접' : hit2.src;
             }
             원장직접++;
           }
@@ -938,25 +999,52 @@ function ss_송장전파() {
       conflicts.push(uid2 + ' → ' + invByUid[uid2] + ' / ' + w3);
     }
   }
+  // 등록 자격은 여기서 다시 판정한다.
+  // 「사방넷등록」 열은 세트분리 때 찍힌 값이라, 판정 규칙을 고치거나 원천을 늘려도
+  // 세트분리를 다시 돌리기 전까지 낡은 값이 남는다. 전파 시점의 규칙이 기준이다.
   var regRows = [], 전화건 = 0, 무송장 = 0;
+  var seenReg = {}, 회차사방넷 = {};
   for (var d = 0; d < n; d++) {
-    if (iSrc >= 0 && ssText(v[d][iSrc]) === '자동발급' && ssText(v[d][5])) 전화건++;
-    if (iReg < 0 || ssText(v[d][iReg]) !== 'Y') continue;
     var uid3 = ssText(v[d][0]);
+    if (iSrc >= 0 && ssText(v[d][iSrc]) === '자동발급' && ssText(v[d][5])) 전화건++;
+    if (!ssIsSabangnetUid(uid3)) continue;
+    회차사방넷[uid3] = true;
+    if (seenReg[uid3]) continue;          // 주문번호당 한 줄
+    seenReg[uid3] = true;
     if (!invByUid[uid3]) { 무송장++; continue; }
     regRows.push([uid3, invByUid[uid3], carByUid[uid3] || '']);
   }
   ssio_write(SSIO_TABS.사방넷등록, SS_REG_HEADER, regRows, { bg: '#2c4f6b' });
 
   var msg = '송장 전파 완료' + NL + NL +
-    '  · 롯데 송장탭 ' + Object.keys(lotte).length + '건 / 대리공급 임시기록 ' + Object.keys(temp).length + '건' + NL +
-    '  · 사방넷송장 · 롯데 ' + 롯데직접 + ' / 대리공급 ' + 대리공급건 +
-    ' / 합포장 전파 ' + 전파 + ' / 미매칭 ' + 미매칭 + NL +
-    '  · 원장 기록 · 직접 ' + 원장직접 + ' / 합포장 전파 ' + 원장전파 + NL +
-    '  · 사방넷등록 ' + regRows.length + '건 (전화주문 ' + 전화건 + '건 제외' +
-    (무송장 ? ' · 송장 없는 주문 ' + 무송장 + '건 대기' : '') + ')';
+    '  · 원천 · 롯데 ' + Object.keys(lotte).length + ' / 임시기록 ' + Object.keys(temp).length +
+    ' / 발주허브 ' + Object.keys(hub).length + NL +
+    '  · 사방넷송장 · 롯데 ' + 롯데직접 + ' / 대리공급 ' + 대리공급건 + ' / 대리판매 ' + 대리판매건 +
+    ' / 합포장 전파 ' + 전파 + ' / 미매칭 ' + 미매칭 +
+    (전화미매칭 ? ' (+전화주문 ' + 전화미매칭 + ')' : '') + NL +
+    '  · 원장 기록 · 신규 ' + (원장직접 + 원장전파) +
+    ' · 이미 채워짐 ' + 원장기채움 + NL +
+    '  · 사방넷등록 ' + regRows.length + '건' +
+    ' / 이 회차 사방넷 주문 ' + Object.keys(회차사방넷).length + '건' +
+    (무송장 ? ' · 송장 없음 ' + 무송장 : '') +
+    (전화건 ? ' · 전화주문 ' + 전화건 + ' 제외' : '') + NL +
+    '    (이 회차 판매현황에 있는 주문만 등록 대상입니다 — 하루 전체는 허브 메뉴)';
+  if (미매칭목록.length) {
+    msg += NL + NL + '[미매칭 — 아직 송장이 안 붙은 주문]' + NL +
+      '  주문번호 · 받는분 · 경로 · 품목' + NL +
+      '  ' + 미매칭목록.join(NL + '  ');
+    msg += NL + '  → 대리발송 건이면 5️⃣ 송장 수집 후 다시 전파하면 채워집니다.';
+  }
+  if (전화미매칭) {
+    msg += NL + NL + '※ 전화주문 ' + 전화미매칭 + '건은 매칭 대기입니다.' + NL +
+      '  구 세트분리로 출고되는 동안은 롯데에 P-ID 가 없어 못 맞습니다 — 병행 운영 중엔 정상.' + NL +
+      '  V2 롯데택배 탭으로 업로드를 시작하면 자동으로 매칭됩니다.';
+  }
   if (lotteErr) {
     msg += NL + NL + '⚠ 롯데 송장탭을 읽지 못했습니다 — 임시기록만으로 매칭했습니다.' + NL + '  ' + lotteErr;
+  }
+  if (hubErr) {
+    msg += NL + NL + '⚠ 발주허브를 읽지 못했습니다 — 대리판매 송장이 빠졌습니다.' + NL + '  ' + hubErr;
   }
   if (tempErr) {
     msg += NL + NL + '⚠ 대리공급 임시기록을 읽지 못했습니다 — 롯데만으로 매칭했습니다.' + NL + '  ' + tempErr;

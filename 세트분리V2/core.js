@@ -1090,6 +1090,20 @@ var SS_INVOICE_HEADER = ['주문번호', '품목코드', '구분', '합포장키
   '운송장번호', '경로', '받는분', '품목명', '주문출처', '사방넷등록', '택배사'];
 
 /**
+ * 사방넷이 아는 주문번호인가.
+ * 사방넷 번호는 숫자뿐이다. 시스템이 발급한 ID 는 전부 걸러야 한다:
+ *   0902-ds-e158   상품정보 발주수집 발급 (허브 _po_isGeneratedUid_ 와 같은 판별)
+ *   260903-PH-…    세트분리 전화주문 발급
+ */
+function ssIsSabangnetUid(uid) {
+  var u = ssText(uid);
+  if (!u) return false;
+  if (/^\d{4}-[A-Za-z]{2}-/.test(u)) return false;   // MMdd-ds- 형
+  if (/^\d{6}-PH-/.test(u)) return false;            // YYMMDD-PH- 형
+  return /^\d+$/.test(u);
+}
+
+/**
  * 사방넷에 송장번호를 대량 등록할 때 쓰는 목록.
  *
  * 롯데에는 합포장 대표 하나만 올라가므로 송장번호도 대표 주문번호로만 돌아온다.
@@ -1113,7 +1127,7 @@ function ssInvoiceRows(units) {
     // 사방넷 대량등록은 주문번호당 한 줄이면 된다. 첫 줄에만 표시를 남긴다.
     // 전화주문(자동발급 ID)은 사방넷이 모르는 번호라 등록 대상이 아니다.
     var 등록 = '';
-    if (출처 === '사방넷' && uid && !seenReg[uid]) { seenReg[uid] = true; 등록 = 'Y'; }
+    if (ssIsSabangnetUid(uid) && !seenReg[uid]) { seenReg[uid] = true; 등록 = 'Y'; }
     out.push([
       uid, ssText(v.품목코드), 구분,
       ssText(v.합포장그룹), v.합포장흡수 ? (대표번호[v.합포장그룹] || '') : '',
@@ -1315,7 +1329,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow,
     ssPartnerRow: ssPartnerRow, ssHoldRow: ssHoldRow, ssVendorOf: ssVendorOf,
-    ssInvoiceRows: ssInvoiceRows, SS_INVOICE_HEADER: SS_INVOICE_HEADER,
+    ssInvoiceRows: ssInvoiceRows, ssIsSabangnetUid: ssIsSabangnetUid, SS_INVOICE_HEADER: SS_INVOICE_HEADER,
     ssNonshipRow: ssNonshipRow, ssNonShipReason: ssNonShipReason, SS_NONSHIP_HEADER: SS_NONSHIP_HEADER,
     SS_PARTNER_HEADER: SS_PARTNER_HEADER, SS_MANUAL_HEADER: SS_MANUAL_HEADER, SS_VENDOR_HEADER: SS_VENDOR_HEADER, ssLedgerRow: ssLedgerRow, ssDisplayName: ssDisplayName,
     ssStripName: ssStripName, ssNormAddr: ssNormAddr, ssPad6: ssPad6
