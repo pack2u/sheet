@@ -386,3 +386,75 @@ function csLotteSelfTest() {
   out.quota = csLotteQuotaUsed();
   return out;
 }
+
+/**
+ * 거래관리시스템송장 — 롯데 송장 탭 구조 확인
+ * 파일: csLotte.gs  ★ 2026-09-03 신규
+ *
+ * 반품 회수 송장을 사람이 손으로 넣지 않고 이 탭에서 읽어오려면, 먼저
+ * 회수분이 어떤 모양으로 들어오는지 알아야 한다. 출고분과 같은 탭에 섞여
+ * 있다면 무엇으로 구분하는지(열·값·집하일자)를 봐야 잘못 붙이지 않는다.
+ *
+ * 개인정보는 마스킹해서 찍는다 — 구조만 보면 되고 로그에 남길 이유가 없다.
+ */
+var _CS_TRADE_INVOICE_SS_ID_ = "1KIBSmjpMVKLGoAkbrcKyTr4LOflszwS_xtMzmRuvYWs";
+var _CS_TRADE_LOTTE_GID_ = 1575029201;
+
+function _cs_colLetterOf_(i) {
+  var n = Number(i) + 1, s = "";
+  while (n > 0) { var r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+function _cs_maskCell_(v) {
+  var s = String(v == null ? "" : v).trim();
+  if (!s) return "";
+  // 전화번호 꼴은 뒤 4자리만
+  if (/^[\d\-]{9,14}$/.test(s) && /-/.test(s)) return "***-****-" + s.slice(-4);
+  // 사람 이름 꼴(한글 2~4자)은 첫 글자만
+  if (/^[가-힣]{2,4}$/.test(s)) return s.charAt(0) + "*".repeat(s.length - 1);
+  return s.length > 28 ? s.slice(0, 28) + "…" : s;
+}
+
+function csDiagnoseTradeInvoiceSheet() {
+  var out = { 시트: "", 탭목록: [], 대상탭: "", 행수: 0, 헤더: [], 표본: [], 오류: "" };
+  try {
+    var ss = SpreadsheetApp.openById(_CS_TRADE_INVOICE_SS_ID_);
+    out.시트 = ss.getName();
+
+    var sheets = ss.getSheets();
+    var target = null;
+    for (var i = 0; i < sheets.length; i++) {
+      out.탭목록.push(sheets[i].getName() + " (gid " + sheets[i].getSheetId() + ")");
+      if (sheets[i].getSheetId() === _CS_TRADE_LOTTE_GID_) target = sheets[i];
+    }
+    if (!target) { out.오류 = "gid " + _CS_TRADE_LOTTE_GID_ + " 탭을 못 찾음"; Logger.log(JSON.stringify(out, null, 2)); return out; }
+
+    out.대상탭 = target.getName();
+    var lr = target.getLastRow(), lc = Math.min(target.getLastColumn(), 40);
+    out.행수 = lr;
+    if (lr < 1) { out.오류 = "빈 탭"; Logger.log(JSON.stringify(out, null, 2)); return out; }
+
+    var vals = target.getRange(1, 1, Math.min(lr, 6), lc).getDisplayValues();
+    var hdr = vals[0] || [];
+    for (var c = 0; c < lc; c++) {
+      var h = String(hdr[c] || "").trim();
+      if (h) out.헤더.push(_cs_colLetterOf_(c) + ": " + h);
+    }
+    // 최근 행이 궁금하다 — 맨 아래 3줄
+    var from = Math.max(2, lr - 2);
+    var recent = target.getRange(from, 1, Math.min(3, lr - from + 1), lc).getDisplayValues();
+    for (var r = 0; r < recent.length; r++) {
+      var cells = [];
+      for (var c2 = 0; c2 < lc; c2++) {
+        var v = _cs_maskCell_(recent[r][c2]);
+        if (v) cells.push(_cs_colLetterOf_(c2) + "=" + v);
+      }
+      out.표본.push((from + r) + "행: " + cells.join(" | "));
+    }
+  } catch (e) {
+    out.오류 = e.message;
+  }
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}

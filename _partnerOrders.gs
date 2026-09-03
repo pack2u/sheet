@@ -5078,13 +5078,44 @@ function partnerExportSabangnetBulkExcel() {
     ui = SpreadsheetApp.getUi();
   } catch (eUi) {}
   var ss = _po_getProductInfoSs_();
+
+  /* ★ 2026-09-03: 내보내기 전에 먼저 갱신한다.
+     전에는 탭에 있는 걸 그대로 내보내기만 했다. 갱신은 관리 메뉴에 따로 있어서,
+     매일 이 메뉴만 누르면 탭이 비었거나 어제 것이 그대로 나갔다. 그래서 송장을
+     손으로 넣게 됐다.
+
+     갱신이 모으는 곳 — 손으로 넣을 이유가 없다:
+       · 대리공급_임시기록  (P열 고유ID · X열 송장 · 업체별 택배사코드)
+       · 롯데 자사출고      (거래관리시스템송장 롯데탭 J열 고유ID · G열 송장 · 코드 002)
+       · 사방넷_송장매칭    (합배송·세트분리 등 롯데탭에 없는 건)
+       · 발주허브           (C열 고유ID · N열 송장)
+     갱신이 실패해도 내보내기는 계속한다 — 옛 탭이라도 있는 게 아무것도 없는 것보다 낫다. */
+  var _refresh = null;
+  try {
+    var _hubTab = _po_getHubTab();
+    var _hubLr = _hubTab ? _hubTab.getLastRow() : 0;
+    var _hubData = _hubLr >= 2
+      ? _hubTab.getRange(2, 1, _hubLr - 1, Math.max(_hubTab.getLastColumn(), 15)).getValues()
+      : [];
+    var _logs = [];
+    _refresh = _po_rebuildSabangnetBulkUpload_(_hubData, _logs);
+    Logger.log("[SABANG_BULK] 내보내기 전 갱신 — 기록 " + _refresh.written + "행 " +
+      "(임시기록 " + (_refresh.tempWithInv || 0) + " · 롯데 " + (_refresh.lotteOwn || 0) +
+      " · 송장매칭 " + (_refresh.matchTab || 0) + ")");
+  } catch (eRefresh) {
+    Logger.log("[SABANG_BULK] 갱신 실패, 기존 탭으로 내보냅니다: " + String(eRefresh.message || eRefresh));
+  }
+
   var tab = ss.getSheetByName(_PO_SABANG_BULK_TAB_NAME);
   if (!tab) tab = _po_ensureSabangnetBulkTab_(ss);
   if (tab.getLastRow() < 2) {
     if (ui) {
       ui.alert(
         "사방넷_송장대량등록",
-        "탭에 자료가 없습니다.\n먼저 「📋 사방넷 송장대량등록 탭 갱신」을 실행하세요.",
+        "갱신했지만 내보낼 자료가 없습니다.\n\n" +
+        "송장이 아직 안 들어온 상태입니다. 확인할 곳:\n" +
+        "· 대리공급_임시기록 X열(송장번호) — 비어 있으면 5️⃣ 송장 수집 먼저\n" +
+        "· 거래관리시스템송장 롯데탭 — 오늘 집하분이 올라왔는지",
         ui.ButtonSet.OK,
       );
     }
