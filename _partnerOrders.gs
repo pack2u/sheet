@@ -4816,6 +4816,42 @@ function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
       scannedLogs.push("[사방넷대량등록] 사방넷_송장매칭 보강 오류: " + String(eMt.message || eMt));
     }
 
+    // ── 세트분리(뉴) 「사방넷등록」 보강: V2 송장전파 결과 (A주문번호 B운송장 C택배사)
+    //    합포장 동봉·대리공급 전파까지 끝난 값이라 그대로 얹으면 된다.
+    //    구 세트분리와 병행 운영 중 겹치는 건은 seen(주문번호|송장)이 걸러 준다.
+    try {
+      var v2SS = SpreadsheetApp.openById("1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo");
+      var v2Tab = v2SS.getSheetByName("사방넷등록");
+      if (v2Tab && v2Tab.getLastRow() >= 2) {
+        var v2Data = v2Tab.getRange(2, 1, v2Tab.getLastRow() - 1, 3).getDisplayValues();
+        var v2Added = 0;
+        for (var vi = 0; vi < v2Data.length; vi++) {
+          var vUid = String(v2Data[vi][0] || "").trim();
+          var vInv = String(v2Data[vi][1] || "").trim();
+          var vCar = String(v2Data[vi][2] || "").trim();
+          if (!vUid || !_po_hasRealInvoice_(vInv)) continue;
+          if (typeof _po_isGeneratedUid_ === "function" && _po_isGeneratedUid_(vUid)) continue;
+          if (/^d{6}-PH-/.test(vUid)) continue; // V2 전화주문 ID — 사방넷 주문번호가 아니다
+          var vCode = LOTTE_CODE;
+          if (vCar && vCar !== "롯데택배") {
+            vCode = typeof _pep_sabangCodeForCarrier_ === "function"
+              ? _pep_sabangCodeForCarrier_(vCar)
+              : "";
+            if (!vCode) {
+              result.skipNoCode++;
+              continue;
+            }
+          }
+          var nV2 = _po_addSabangBulkRowCoded_(rows, seen, vUid, vInv, vCode, result);
+          if (nV2) v2Added += nV2;
+        }
+        result.setsplitV2 = v2Added;
+        scannedLogs.push("[사방넷대량등록] 세트분리(뉴) 보강 " + v2Added + "건");
+      }
+    } catch (eV2) {
+      scannedLogs.push("[사방넷대량등록] 세트분리(뉴) 보강 건너뜀: " + String(eV2.message || eV2));
+    }
+
     if (tab.getLastRow() >= 2) {
       tab.getRange(2, 1, tab.getLastRow() - 1, 5).clearContent();
     }

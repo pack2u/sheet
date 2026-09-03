@@ -128,7 +128,7 @@ function ssz_zipOf(address, apiKey) {
  */
 function ssz_addrCandidates(addr) {
   var out = [], seen = {};
-  var base = ssText(addr).replace(/([^)]*)/g, ' ').replace(/s+/g, ' ').trim();
+  var base = ssText(addr).replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   function add(s) {
     s = ssText(s);
     if (s && s !== addr && !seen[s]) { seen[s] = true; out.push(s); }
@@ -136,11 +136,11 @@ function ssz_addrCandidates(addr) {
   add(base);
 
   // 도로명 + 건물번호까지만  (…로/길 12 또는 12-3)
-  var road = base.match(/^(.*?(?:로|길)s*[0-9]+(?:-[0-9]+)?)(?:s|$)/);
+  var road = base.match(/^(.*?(?:로|길)\s*[0-9]+(?:-[0-9]+)?)(?:\s|$)/);
   if (road) add(road[1]);
 
   // 지번형  (…동/리 123 또는 123-4)
-  var jibun = base.match(/^(.*?(?:동|리|가)s*[0-9]+(?:-[0-9]+)?)(?:s|$)/);
+  var jibun = base.match(/^(.*?(?:동|리|가)\s*[0-9]+(?:-[0-9]+)?)(?:\s|$)/);
   if (jibun) add(jibun[1]);
 
   return out;
@@ -217,6 +217,21 @@ function ssz_isPermanentFail(memo) {
   var s = ssText(memo);
   if (s.indexOf('조회 실패') < 0 && s.indexOf('실패') < 0) return false;
   return s.indexOf('검색 결과 없음') >= 0 || s.indexOf('우편번호 없는 결과') >= 0 || s.indexOf('주소가 비어 있음') >= 0;
+}
+
+/**
+ * 오늘 아직 「실패분 재시도」를 안 했으면 true 를 돌려주고 표시해 둔다.
+ * 주소 정규화 규칙이 나아지면 어제 못 찾던 주소가 오늘 풀릴 수 있다.
+ * 그렇다고 매 실행 다시 두드리면 낭비라 하루 한 번으로 잡는다.
+ */
+function ssz_shouldRetryToday() {
+  var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
+  try {
+    var p = PropertiesService.getScriptProperties();
+    if (p.getProperty('ZIP_RETRY_DATE') === today) return false;
+    p.setProperty('ZIP_RETRY_DATE', today);
+    return true;
+  } catch (e) { return false; }
 }
 
 /** 사전에 조회 대기 중인 행이 남아 있나 (영구 실패는 제외) */

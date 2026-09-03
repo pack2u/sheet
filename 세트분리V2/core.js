@@ -24,7 +24,8 @@ var SS_ROUTE = {
   LOTTE_ISLAND_CONSIGN: '롯데택배-도서산간(위탁배송)',
   LOTTE_LOCAL: '롯데택배-동네배송',
   PARTNER: '대리발송',
-  MERGED: '합배송',
+  MERGED: '합포장동봉',
+  NONSHIP: '비배송',
   HOLD: '보류'
 };
 
@@ -35,10 +36,35 @@ var SS_OUT_HEADER = [
   '적요', '사방넷주문번호', '보내는분', '보내는분전화', '보내는주소(팩투유)'
 ];
 
-var SS_HOLD_HEADER = SS_OUT_HEADER.concat(['보류사유', '상세']);
+/**
+ * 보류 탭 — 뒤 2열은 사람이 적는 칸이다.
+ *   조치   「발송」 이라고 적으면 자체 출고, 업체코드(JH·HP…)를 적으면 그 업체로 대리발송
+ *   메모   왜 그렇게 판단했는지
+ * 칸을 나눌 이유가 없어 하나로 합쳤다. 무엇을 적었는지로 뜻이 갈린다.
+ */
+var SS_HOLD_HEADER = SS_OUT_HEADER.concat(['보류사유', '상세', '조치', '메모']);
+
+/**
+ * 대리발송 탭 — 앞 19열은 다른 출력 탭과 똑같이 두고 뒤에 업체 정보를 붙인다.
+ * 그래야 업체 양식으로 복사할 때 열 위치가 어긋나지 않는다. (T=업체코드)
+ */
+var SS_PARTNER_HEADER = SS_OUT_HEADER.concat(['업체코드', '업체명', '조치']);
+
+/**
+ * 비배송 탭 — 물건이 아니라 금액만 오가는 줄.
+ * 적립금·반품배송비·할인 같은 것들이다. 송장은 안 나가지만
+ * 일일마감 매출 집계에 쓰이므로 버리지 않고 여기에 모아 원장에도 그대로 남긴다.
+ */
+var SS_NONSHIP_HEADER = SS_OUT_HEADER.concat(['비배송사유']);
+
+/** 수동조치 이력 — 보류를 사람이 되살린 기록. 지우지 않는다 */
+var SS_MANUAL_HEADER = ['등록일', '고유ID', '원본코드', '조치', '업체코드', '메모',
+  '등록회차', '등록시각', '최근적용회차'];
+
+var SS_VENDOR_HEADER = ['업체코드', '업체명'];
 
 /** 합배송 탭 — 대표행과 동봉행을 한자리에 모아 박스 구성이 보이게 한다 */
-var SS_MERGED_HEADER = ['구분', '실제경로', '합포장키'].concat(SS_OUT_HEADER);
+var SS_MERGED_HEADER = ['구분', '조건ID', '실제경로', '합포장키'].concat(SS_OUT_HEADER);
 
 /** 도서산간 탭 — 롯데 요금 구분(제주연계 / 도선료·산간료)에 맞춘 권역을 앞에 붙인다 */
 var SS_ISLAND_HEADER = ['권역', '우편번호', '판정'].concat(SS_OUT_HEADER);
@@ -47,9 +73,10 @@ var SS_LEDGER_HEADER = [
   '회차키', '라인ID', '고유ID', '주문번호출처', '실행시각', '경로', '보류사유', '출고지', '순번', '일자-No.',
   '원본품목코드', '품목코드', '품목명', '출력품목명', '택배박스수량', '주문수량', '소요량', '수량',
   '조건ID', '합포장그룹', '합포장대표', '배송비', '배송비산출', '부족수량',
-  '도서권역', '우편번호', '도서판정',
+  '도서권역', '우편번호', '도서판정', '주소변경', '원받는분', '원주소', '원연락처',
   '거래처명', '전화', '모바일', '주소1', '배송메시지', '합계',
-  '적요', '사방넷주문번호', '보내는분', '보내는분전화'
+  '적요', '사방넷주문번호', '보내는분', '보내는분전화',
+  '운송장번호', '송장매칭'
 ];
 
 var SS_WARN_HEADER = ['심각도', '코드', '대상', '내용'];
@@ -66,7 +93,10 @@ var SS_DEFAULT_CONFIG = {
   동네배송_사용: '중단',
   도서산간_미확인: '보류',
   도서산간_판정: '우편번호우선',
-  전화주문_고유ID: '주문번호칸에채움'
+  전화주문_고유ID: '주문번호칸에채움',
+  재고부족_자동대리발송: '사용',
+  합포장_최대건수: '0',
+  비배송_품목패턴: '적립금|반품배송비|배송비|할인|쿠폰|수수료|차감'
 };
 
 /* ── 작은 도구들 ──────────────────────────────────────── */
@@ -119,6 +149,54 @@ function ssWarn(list, level, code, target, msg) {
   list.push({ level: level, code: code, target: ssText(target), msg: msg });
 }
 
+/* ── 적요의 배송지 변경 ───────────────────────────────── */
+
+/**
+ * 전화주문은 배송지가 바뀌면 적요에 「전화번호/주소」 로 적어 둔다.
+ *   010-8711-4550/세종특별자치시 도움8로 11-11, 1층 120호(어진동,어진프라자)
+ *
+ * 배송지를 자동으로 바꾸는 건 위험하므로 조건을 좁게 잡는다.
+ *   · 앞부분이 0으로 시작하는 9~12자리 전화번호
+ *   · 뒷부분이 6자 이상이고 한국 주소 낱말(시·군·구·읍·면·동·리·로·길)을 포함
+ * 하나라도 어긋나면 손대지 않는다.
+ *
+ * "09/02 출고요청" · "2개-3000/3개-3000" · "2026/09/02" 같은 건 걸리지 않는다.
+ *
+ * 전화주문(이카운트 출처)에만 쓴다. 사방넷·주문서 주문은 쇼핑몰이 준 배송지가 정답이다.
+ */
+function ssLooksPhone(s) {
+  var t = ssText(s);
+  if (!t) return false;
+  if (t.replace(/[0-9\-\s]/g, '') !== '') return false;   // 숫자·하이픈·공백만
+  var d = t.replace(/[^0-9]/g, '');
+  return d.length >= 9 && d.length <= 12 && d.charAt(0) === '0';
+}
+
+function ssParseAddrOverride(memo) {
+  var s = ssText(memo);
+  if (!s || s.indexOf('/') < 0) return null;
+  var parts = s.split('/');
+
+  // 전화번호가 어디 있느냐로 형식을 가른다
+  //   이름/전화/주소  → parts[1] 이 전화
+  //   전화/주소       → parts[0] 이 전화
+  var pi = -1;
+  if (parts.length >= 3 && ssLooksPhone(parts[1])) pi = 1;
+  else if (ssLooksPhone(parts[0])) pi = 0;
+  else if (parts.length >= 2 && ssLooksPhone(parts[1])) pi = 1;
+  if (pi < 0) return null;
+
+  var addr = parts.slice(pi + 1).join('/').trim();   // 주소 안에 / 가 있어도 살린다
+  if (addr.length < 6) return null;
+  if (!/(시|도|군|구|읍|면|동|리|로|길)/.test(addr)) return null;
+
+  var name = pi === 1 ? ssText(parts[0]) : '';
+  if (name.length > 25) return null;                 // 이름치고 너무 길면 이 형식이 아니다
+  if (name && /(로|길)\s*[0-9]/.test(name)) return null;   // 주소 조각이 앞에 온 경우
+
+  return { name: name, phone: ssText(parts[pi]), addr: addr };
+}
+
 /* ── 고유ID ───────────────────────────────────────────── */
 
 /** FNV-1a 32bit — 짧고 결정적이면 충분하다 (암호용 아님) */
@@ -162,9 +240,12 @@ function ssMakeOrderId(L) {
   var digits = ssText(parts[0]).replace(/[^0-9]/g, '');
   var ymd = digits.length >= 8 ? digits.slice(2, 8) : digits;
   var no = ssText(parts[1]).replace(/[^0-9]/g, '') || '0';
+  // 배송지가 바뀌어도 같은 주문이므로 원래 값으로 계산한다.
+  // 그래야 오전에 발급한 ID가 오후 회차에서도 그대로다.
   var seed = [
-    no, ssNorm(L.받는분), ssText(L.모바일) || ssText(L.전화),
-    ssNorm(L.주소1), ssText(L.원본코드), ssText(L.주문수량)
+    no, ssNorm(L.원받는분 || L.받는분),
+    ssText(L.원연락처) || ssText(L.모바일) || ssText(L.전화),
+    ssNorm(L.원주소1 || L.주소1), ssText(L.원본코드), ssText(L.주문수량)
   ].join('|');
   return ymd + '-PH-' + ssHashN(seed, 5);
 }
@@ -297,6 +378,23 @@ function ssNormalize(grid, cfg, warnings) {
       판매처표기: /인\//.test(거래처) ? 거래처.replace('대리발송-', '') : '',
       거래처명원본: 거래처
     };
+
+    // 적요에 배송지 변경이 적혀 있으면 갈아 끼운다. 원래 값은 남겨 둔다.
+    // 전화주문(이카운트 직접 입력)에만 적용한다.
+    // 사방넷·주문서 주문은 배송지가 쇼핑몰에서 확정되어 오므로 적요로 덮어쓰지 않는다.
+    var ovAddr = (출처 === '이카운트') ? ssParseAddrOverride(line.적요) : null;
+    if (ovAddr) {
+      line.원받는분 = line.받는분;
+      line.원주소1 = line.주소1;
+      line.원연락처 = line.모바일 || line.전화;
+      line.주소1 = ovAddr.addr;
+      line.모바일 = ovAddr.phone;
+      if (ovAddr.name) line.받는분 = ovAddr.name.slice(0, 25);
+      line.주소변경 = ovAddr.name ? '적요(이름·연락처·주소)' : '적요(연락처·주소)';
+      ssWarn(warnings, '주의', 'ADDR_OVERRIDE', line.순번,
+        '적요대로 바꿨습니다: ' + ssText(line.원받는분).slice(0, 12) + ' / ' + ssText(line.원주소1).slice(0, 24) +
+        '  →  ' + ssText(line.받는분).slice(0, 12) + ' / ' + ovAddr.addr.slice(0, 34));
+    }
     line.고유ID = ssText(line.사방넷주문번호) || ssMakeOrderId(line);
     if (line.주문번호출처 !== undefined) { /* noop */ }
     if (!ssText(line.사방넷주문번호)) {
@@ -405,6 +503,17 @@ function ssDisplayName(u) {
   return name;
 }
 
+/**
+ * 품목명 첫 토큰이 협력업체 코드다.  "JH 실링 23189…" → JH
+ * 대리발송업체 표에 있는 코드만 인정한다.
+ */
+function ssVendorOf(u, vendors) {
+  var name = ssText(u.품목명) || ssText(u.원본품목명);
+  var head = name.split(' ')[0];
+  if (head && vendors && vendors[head]) return head;
+  return '';
+}
+
 /* ── 4단계 · 합배송 조건ID 판정 ───────────────────────── */
 
 function ssDeliveryKey(u) {
@@ -494,6 +603,11 @@ function ssShippingFee(u, masters, warnings) {
  * 조정배송비 = 묶음 안 최대 배송비, 박스수 = 1.
  */
 function ssMerge(units, cfg) {
+  // 0 이면 제한 없음 — 구 시트와 같은 동작이다.
+  // 박스당 건수를 제한하고 싶으면 설정에서 숫자를 넣는다.
+  var cap = ssNum(cfg && cfg.합포장_최대건수);
+  if (!(cap > 0)) cap = 0;
+
   var groups = {};
   for (var i = 0; i < units.length; i++) {
     var u = units[i];
@@ -505,28 +619,52 @@ function ssMerge(units, cfg) {
     var key = u.출고지 + '♦' + ssDeliveryKey(u) + '♦' + u.조건ID;
     (groups[key] || (groups[key] = [])).push(u);
   }
+
   for (var key in groups) {
     if (!Object.prototype.hasOwnProperty.call(groups, key)) continue;
     var g = groups[key];
     if (g.length < 2) continue;
-    var maxFee = 0, sample = false, names = [];
-    for (var j = 0; j < g.length; j++) {
-      g[j].합포장그룹 = key;
-      if (g[j].배송비 > maxFee) maxFee = g[j].배송비;
-      if (/^\[샘플\]/.test(g[j].품목명)) sample = true;
-      names.push(ssStripName(g[j].품목명));
-    }
-    var rep = g[0];
-    rep.합포장대표 = true;
-    rep.배송비 = maxFee;
-    rep.박스수 = 1;
-    rep.배송비산출 = '합포장 최대 ' + maxFee + ' (' + g.length + '건)';
-    rep.출력품목명 = (sample ? '[샘플] ' : '') + ssCompressNames(names) + ' ===합배송';
-    for (var k = 1; k < g.length; k++) g[k].합포장흡수 = true;
-    // 이 묶음은 물리적으로 한 박스다. 대표행도 동봉행도 합배송 탭에서 함께 본다.
-    for (var q = 0; q < g.length; q++) {
-      g[q].실경로 = g[q].route;
-      g[q].route = SS_ROUTE.MERGED;
+
+    // 한 박스에 담기는 건수에 한계가 있다 (기본 10건).
+    // 넘치면 잘라서 박스를 나누고, 박스마다 대표를 따로 둔다.
+    var boxes = [];
+    if (cap > 0) { for (var st = 0; st < g.length; st += cap) boxes.push(g.slice(st, st + cap)); }
+    else boxes.push(g);
+
+    for (var b = 0; b < boxes.length; b++) {
+      var box = boxes[b];
+      if (box.length < 2) continue;          // 남은 1건은 단독 출고
+
+      var boxKey = key + (boxes.length > 1 ? ' #' + (b + 1) : '');
+      var maxFee = 0, sample = false, names = [];
+      for (var j = 0; j < box.length; j++) {
+        box[j].합포장그룹 = boxKey;
+        if (box[j].배송비 > maxFee) maxFee = box[j].배송비;
+        if (/^\[샘플\]/.test(box[j].품목명)) sample = true;
+        names.push(ssStripName(box[j].품목명));
+      }
+
+      var rep = box[0];
+      rep.합포장대표 = true;
+      rep.배송비 = maxFee;
+      rep.박스수 = 1;
+      rep.배송비산출 = '합포장 최대 ' + maxFee + ' (' + box.length + '건' +
+        (boxes.length > 1 ? ' · ' + (b + 1) + '/' + boxes.length + '박스' : '') + ')';
+      rep.출력품목명 = (sample ? '[샘플] ' : '') + ssCompressNames(names) + ' ===합배송' +
+        (boxes.length > 1 ? '(' + (b + 1) + '/' + boxes.length + ')' : '');
+      for (var k = 1; k < box.length; k++) box[k].합포장흡수 = true;
+
+      // 롯데 업로드에는 대표 하나만 올라가야 인식된다. 동봉행은 출력에서 뺀다.
+      // 「사방넷송장」 탭이 동봉 주문번호를 들고 있다가 대표의 송장번호를 그대로 받는다.
+      for (var q = 0; q < box.length; q++) {
+        box[q].실경로 = box[q].route;
+        if (box[q].합포장흡수) {
+          box[q].배송비 = 0;
+          box[q].박스수 = 0;
+          box[q].배송비산출 = '합포장 동봉 (대표행에 청구)';
+          box[q].route = SS_ROUTE.MERGED;
+        }
+      }
     }
   }
   return units;
@@ -635,6 +773,29 @@ function ssAllocateStock(units, masters) {
   return units;
 }
 
+/**
+ * 물건이 오가지 않는 줄인가.
+ *   · 합계가 음수 (반품·차감)
+ *   · 품목명이 설정한 패턴에 걸림 (적립금·반품배송비·할인…)
+ *   · 품목코드가 숫자뿐 (이카운트 회계 코드)
+ * 매출에는 잡히지만 송장은 안 나간다.
+ */
+function ssNonShipReason(u, cfg) {
+  var name = ssText(u.품목명) || ssText(u.원본품목명);
+  var code = ssText(u.원본코드) || ssText(u.품목코드);
+  if (ssNum(u.합계) < 0) return '금액 음수 (' + u.합계 + ')';
+  var pat = ssText(cfg && cfg.비배송_품목패턴);
+  if (pat) {
+    var words = pat.split('|');
+    for (var i = 0; i < words.length; i++) {
+      var w = ssText(words[i]);
+      if (w && name.indexOf(w) >= 0) return '품목명에 「' + w + '」';
+    }
+  }
+  if (code && /^[0-9]+$/.test(code)) return '품목코드가 숫자뿐 (' + code + ')';
+  return '';
+}
+
 /* ── 8단계 · 라우팅 (배타적 단일 값) ──────────────────── */
 
 function ssRoute(units, masters, cfg, warnings) {
@@ -657,12 +818,63 @@ function ssRoute(units, masters, cfg, warnings) {
     }
   }
 
+  var override = masters.override || {};
+  var vendors = masters.vendors || {};
+
   for (var i = 0; i < units.length; i++) {
     var u = units[i];
     u.보류사유 = ''; u.보류상세 = '';
+    u.업체코드 = ssVendorOf(u, vendors);
+    u.업체명 = u.업체코드 ? vendors[u.업체코드] : '';
 
-    if (u.품목누락) { u.route = SS_ROUTE.HOLD; u.보류사유 = '품목누락'; u.보류상세 = u.품목코드; continue; }
-    if (!ssStatusOk(u.상태, allow)) {
+    // 사람이 보류 탭에서 되살린 건
+    var ov = override[ssText(u.고유ID) + '|' + ssText(u.원본코드)];
+    // 조치를 비워 두고 업체코드만 적었으면 대리발송으로 본다 (타이핑 한 번 줄이기)
+    if (ov && !ssText(ov.조치) && ssText(ov.업체코드)) ov = { 조치: '대리발송', 업체코드: ov.업체코드, 메모: ov.메모 };
+    // 입력 칸은 매 실행 비운다.
+    // 되비춰 주면 지워서 취소하려 해도 다음 실행에 다시 채워져 취소할 방법이 없다.
+    // 내린 결정은 「수동조치」 탭에 남으므로 여기서 다시 보여 줄 필요가 없다.
+    u.수동조치 = '';
+    u.조치입력 = ''; u.업체코드입력 = ''; u.메모입력 = '';
+    if (ov) {
+      u.수동조치 = ov.조치;
+      if (ov.업체코드) { u.업체코드 = ov.업체코드; u.업체명 = vendors[ov.업체코드] || ''; }
+      if (ov.조치 === '대리발송') {
+        // 「대리발송업체」 표에 등록된 코드일 때만 넘긴다.
+        // 없는 코드로 넘기면 어느 업체로 갔는지 아무도 모르는 건이 생긴다.
+        var vc = ssText(ov.업체코드) || u.업체코드;
+        if (!vc || !vendors[vc]) {
+          u.route = SS_ROUTE.HOLD;
+          u.보류사유 = '업체코드확인';
+          u.보류상세 = vc ? ('「대리발송업체」에 없는 코드: ' + vc) : '업체코드가 비어 있음';
+          var codes = [];
+          for (var vk in vendors) if (Object.prototype.hasOwnProperty.call(vendors, vk)) codes.push(vk);
+          codes.sort();
+          ssWarn(warnings, '오류', 'MANUAL_NO_VENDOR', u.고유ID + ' / ' + (vc || '(없음)'),
+            '등록된 업체코드가 아닙니다. 「대리발송업체」 탭에 추가하거나 다음 중에서 고르세요 — ' +
+            codes.join(', '));
+          continue;
+        }
+        u.업체코드 = vc;
+        u.업체명 = vendors[vc];
+        u.route = SS_ROUTE.PARTNER;
+        continue;
+      }
+    }
+    var 면제 = ov && ov.조치 === '발송';
+
+    // 물건이 아닌 줄은 보류가 아니라 비배송으로 뺀다. 매출 집계에는 그대로 남는다.
+    if (!면제) {
+      var ns = ssNonShipReason(u, cfg);
+      if (ns) { u.route = SS_ROUTE.NONSHIP; u.비배송사유 = ns; continue; }
+    }
+
+    if (u.품목누락) {
+      if (!면제) { u.route = SS_ROUTE.HOLD; u.보류사유 = '품목누락'; u.보류상세 = u.품목코드; continue; }
+      ssWarn(warnings, '주의', 'MANUAL_MISSING_ITEM', u.품목코드,
+        '품목정보가 없는데 수동으로 발송 처리했습니다. 품목명·배송비가 비어 있을 수 있습니다.');
+    }
+    if (!면제 && !ssStatusOk(u.상태, allow)) {
       u.route = SS_ROUTE.HOLD; u.보류사유 = '상태보류';
       u.보류상세 = u.상태 || '(상태 없음)';
       continue;
@@ -670,11 +882,23 @@ function ssRoute(units, masters, cfg, warnings) {
     var 자사 = u.출고지.indexOf(cfg.자사출고지접두) === 0;
     var 위탁 = (u.출고지 === cfg.위탁출고지);
     if (!자사 && !위탁) {
-      u.route = SS_ROUTE.HOLD; u.보류사유 = '출고지미정';
-      u.보류상세 = u.출고지 || '(출고지 없음)';
+      if (!면제) {
+        u.route = SS_ROUTE.HOLD; u.보류사유 = '출고지미정';
+        u.보류상세 = u.출고지 || '(출고지 없음)';
+        continue;
+      }
+      자사 = true;   // 수동 발송 지정이면 자사 출고로 본다
+    }
+    if (위탁 && u.부족수량 > 0) {
+      // 「사용」이면 구 시트처럼 자동으로 협력업체 발주로 넘긴다.
+      // 「안함」이면 미발송에 세워 두고, 사람이 업체코드를 적어 필요한 건만 토스한다.
+      if (ssText(cfg.재고부족_자동대리발송) !== '안함') { u.route = SS_ROUTE.PARTNER; continue; }
+      u.route = SS_ROUTE.HOLD;
+      u.보류사유 = '재고부족';
+      u.보류상세 = '부족 ' + u.부족수량 + '개 (필요 ' + u.총필요수량 + ' / 재고 ' + u.현재고 + ')' +
+        (u.업체코드 ? ' · 기본업체 ' + u.업체코드 : '');
       continue;
     }
-    if (위탁 && u.부족수량 > 0) { u.route = SS_ROUTE.PARTNER; continue; }
 
     var addr = ssNormAddr(u.주소1);
     u.정규주소 = addr;
@@ -712,7 +936,7 @@ function ssRoute(units, masters, cfg, warnings) {
       continue;
     }
     if (후보) {
-      if (holdIsland) {
+      if (holdIsland && !면제) {
         u.route = SS_ROUTE.HOLD; u.보류사유 = '도서산간미확인';
         u.보류상세 = addr;
         ssWarn(warnings, '주의', 'ISLAND_UNKNOWN', addr,
@@ -724,6 +948,13 @@ function ssRoute(units, masters, cfg, warnings) {
     }
     u.route = SS_ROUTE.LOTTE;
   }
+
+  // 지정이 실제로 결과를 바꿨는지 표시한다.
+  // 업체코드가 틀려 보류에 남은 건은 「쓰지 못한 것」이므로 소진시키지 않는다.
+  for (var z = 0; z < units.length; z++) {
+    units[z].수동조치적용 = !!(units[z].수동조치 && units[z].route !== SS_ROUTE.HOLD);
+  }
+
   return units;
 }
 
@@ -749,8 +980,21 @@ function ssIslandRow(u) {
   return [u.도서권역 || '', u.우편번호 || '', u.도서판정 || ''].concat(ssOutRow(u));
 }
 
+function ssNonshipRow(u) {
+  return ssOutRow(u).concat([u.비배송사유 || '']);
+}
+
+function ssPartnerRow(u) {
+  return ssOutRow(u).concat([u.업체코드 || '', u.업체명 || '', u.수동조치 || '']);
+}
+
+function ssHoldRow(u) {
+  return ssOutRow(u).concat([u.보류사유 || '', u.보류상세 || '', u.조치입력 || '', u.메모입력 || '']);
+}
+
 function ssMergedRow(u) {
-  return [u.합포장대표 ? '대표' : '동봉', u.실경로 || '', u.합포장그룹 || ''].concat(ssOutRow(u));
+  return [u.합포장대표 ? '대표' : '동봉', u.조건ID || '', u.실경로 || '', u.합포장그룹 || '']
+    .concat(ssOutRow(u));
 }
 
 function ssLedgerRow(u, runKey, at) {
@@ -761,8 +1005,10 @@ function ssLedgerRow(u, runKey, at) {
     u.조건ID || '', u.합포장그룹 || '', u.합포장대표 ? 'Y' : '',
     u.배송비, u.배송비산출, u.부족수량,
     u.도서권역 || '', u.우편번호 || '', u.도서판정 || '',
+    u.주소변경 || '', u.원받는분 || '', u.원주소1 || '', u.원연락처 || '',
     u.받는분, u.전화, u.모바일, u.주소1, u.배송메시지, u.합계,
-    u.적요, u.사방넷주문번호, u.보내는분, u.보내는분전화
+    u.적요, u.사방넷주문번호, u.보내는분, u.보내는분전화,
+    '', ''
   ];
 }
 
@@ -796,8 +1042,15 @@ function ssRun(grid, masters, cfg) {
     if (u.합포장흡수) 흡수건수++;
     buckets[u.route].push(u);
   }
-  // 합배송 탭은 박스 단위로 읽히도록 묶음키 → 대표 먼저 순으로 정렬
   buckets[SS_ROUTE.MERGED].sort(function (a, b) {
+    return a.합포장그룹 < b.합포장그룹 ? -1 : (a.합포장그룹 > b.합포장그룹 ? 1 : 0);
+  });
+
+  // 「합배송」 확인용 뷰 — 대표행(송장 나감) + 동봉행(같은 박스)을 묶음 단위로 모은다.
+  // 대표행은 롯데택배 등에도 그대로 있으므로 이 목록은 탭 합계에 넣지 않는다.
+  var 합배송뷰 = [];
+  for (var vi = 0; vi < units.length; vi++) if (units[vi].합포장그룹) 합배송뷰.push(units[vi]);
+  합배송뷰.sort(function (a, b) {
     if (a.합포장그룹 !== b.합포장그룹) return a.합포장그룹 < b.합포장그룹 ? -1 : 1;
     return (a.합포장대표 ? 0 : 1) - (b.합포장대표 ? 0 : 1);
   });
@@ -808,7 +1061,9 @@ function ssRun(grid, masters, cfg) {
     분해행: units.length,
     합포장흡수: 흡수건수,
     출력행: 출력건수,
-    송장건수: units.length - 흡수건수 - buckets[SS_ROUTE.HOLD].length,
+    // 송장이 실제로 나가는 건수 — 합포장 동봉·보류·비배송은 빠진다
+    // 실제로 발행되는 송장 수 — 합포장 동봉분은 대표와 같은 송장을 쓴다
+    송장건수: units.length - 흡수건수 - buckets[SS_ROUTE.HOLD].length - buckets[SS_ROUTE.NONSHIP].length,
     보류: buckets[SS_ROUTE.HOLD].length,
     경고: warnings.length,
     지문: 지문,
@@ -826,7 +1081,47 @@ function ssRun(grid, masters, cfg) {
       ' ≠ 탭 합계 ' + 탭합계);
   }
 
-  return { buckets: buckets, warnings: warnings, units: units, stats: stats };
+  return { buckets: buckets, warnings: warnings, units: units, stats: stats, 합배송뷰: 합배송뷰 };
+}
+
+/* ── 사방넷 송장 등록용 ───────────────────────────────── */
+
+var SS_INVOICE_HEADER = ['주문번호', '품목코드', '구분', '합포장키', '대표주문번호',
+  '운송장번호', '경로', '받는분', '품목명', '주문출처', '사방넷등록', '택배사'];
+
+/**
+ * 사방넷에 송장번호를 대량 등록할 때 쓰는 목록.
+ *
+ * 롯데에는 합포장 대표 하나만 올라가므로 송장번호도 대표 주문번호로만 돌아온다.
+ * 동봉된 주문들은 같은 박스에 들어갔으니 같은 송장번호를 받아야 하는데,
+ * 롯데 실적에는 그 주문번호가 아예 없다.
+ * 그래서 여기에 「어느 대표를 따라가면 되는지」를 미리 적어 둔다.
+ */
+function ssInvoiceRows(units) {
+  var 대표번호 = {};
+  for (var i = 0; i < units.length; i++) {
+    var u = units[i];
+    if (u.합포장대표 && u.합포장그룹) 대표번호[u.합포장그룹] = ssText(u.사방넷주문번호);
+  }
+  var out = [], seenReg = {};
+  for (var j = 0; j < units.length; j++) {
+    var v = units[j];
+    if (v.route === SS_ROUTE.HOLD || v.route === SS_ROUTE.NONSHIP) continue;
+    var 구분 = v.합포장대표 ? '대표' : (v.합포장흡수 ? '동봉' : '단독');
+    var uid = ssText(v.사방넷주문번호);
+    var 출처 = ssText(v.주문번호출처);
+    // 사방넷 대량등록은 주문번호당 한 줄이면 된다. 첫 줄에만 표시를 남긴다.
+    // 전화주문(자동발급 ID)은 사방넷이 모르는 번호라 등록 대상이 아니다.
+    var 등록 = '';
+    if (출처 === '사방넷' && uid && !seenReg[uid]) { seenReg[uid] = true; 등록 = 'Y'; }
+    out.push([
+      uid, ssText(v.품목코드), 구분,
+      ssText(v.합포장그룹), v.합포장흡수 ? (대표번호[v.합포장그룹] || '') : '',
+      '', ssText(v.실경로 || v.route), ssText(v.받는분),
+      ssText(v.출력품목명 || v.품목명), 출처, 등록, ''
+    ]);
+  }
+  return out;
 }
 
 /* ── 중복발주 의심 ────────────────────────────────────── */
@@ -845,27 +1140,37 @@ function ssAddrKey(s) { return ssNormAddr(s).replace(/\s+/g, '').replace(/[()\[\
  */
 function ssDupLevels() {
   return [
-    { grade: '🔴 확실', reason: '동일 고유ID',
-      keyFn: function (r) { return r.고유ID ? 'U|' + r.고유ID : ''; } },
-    { grade: '🔴 확실', reason: '수취인+전화+품목코드 일치',
+    // 한 주문번호에 품목이 여럿일 수 있다. 품목까지 같아야 같은 건이다.
+    { grade: '🔴 확실', reason: '동일 고유ID + 품목',
       keyFn: function (r) {
-        var n = ssNameKey(r.받는분), p = ssPhoneDigits(r.전화);
-        if (!n || !r.품목코드 || p.length < 10) return '';
-        return 'NP|' + n + '|' + p + '|' + r.품목코드;
+        if (!r.고유ID || !r.품목코드) return '';
+        return 'U|' + r.고유ID + '|' + r.품목코드;
       } },
-    { grade: '🟡 의심', reason: '수취인+품목코드 일치 (전화 다름/없음)',
+
+    // 배송지까지 같아야 같은 출고다.
+    // 주소를 빼면 한 거래처가 여러 지점으로 보내는 정상 주문이 전부 걸린다.
+    { grade: '🔴 확실', reason: '수취인+전화+주소+품목 일치',
+      keyFn: function (r) {
+        var n = ssNameKey(r.받는분), p = ssPhoneDigits(r.전화), a = ssAddrKey(r.주소);
+        if (!n || !r.품목코드 || !a || p.length < 10) return '';
+        return 'NPA|' + n + '|' + p + '|' + a + '|' + r.품목코드;
+      } },
+
+    { grade: '🟡 의심', reason: '수취인+주소+품목 일치 (전화 다름/없음)',
+      keyFn: function (r) {
+        var n = ssNameKey(r.받는분), a = ssAddrKey(r.주소);
+        if (!n || !a || !r.품목코드) return '';
+        return 'NA|' + n + '|' + a + '|' + r.품목코드;
+      } },
+
+    // 주소가 다르면 대개 정상이다 — 동명이인이거나 여러 지점으로 보내는 것.
+    // 그래도 눈에는 걸어 둔다.
+    { grade: '⚪ 참고', reason: '수취인+품목 일치 (주소 다름)',
       keyFn: function (r) {
         var n = ssNameKey(r.받는분);
         if (!n || !r.품목코드) return '';
         return 'N|' + n + '|' + r.품목코드;
-      } },
-    { grade: '⚪ 참고', reason: '주소+품목코드 일치 (수취인 다름)',
-      keyFn: function (r) {
-        var a = ssAddrKey(r.주소);
-        if (!a || !r.품목코드) return '';
-        return 'A|' + a + '|' + r.품목코드;
       },
-      // 창고 한 곳으로 같은 품목을 여러 건 보내는 곳이 있다. 덩어리가 크면 정상 패턴이다.
       maxMembers: 5 }
   ];
 }
@@ -884,6 +1189,8 @@ function ssFindDuplicates(rows) {
   var byLine = {}, records = [];
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
+    // 적립금·반품배송비 같은 정산 항목은 물건이 아니므로 중복을 따질 대상이 아니다
+    if (ssText(r.경로) === SS_ROUTE.NONSHIP) continue;
     var k = ssText(r.회차) + '|' + ssText(r.고유ID) + '|' + ssText(r.원본코드);
     if (byLine[k] !== undefined) {
       var prev = records[byLine[k]];
@@ -1004,9 +1311,13 @@ if (typeof module !== 'undefined' && module.exports) {
     ssAssignCondition: ssAssignCondition, ssAllocateStock: ssAllocateStock,
     ssRoute: ssRoute, ssMerge: ssMerge, ssShippingFee: ssShippingFee,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssMakeOrderId: ssMakeOrderId, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint,
+    ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint,
     ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
-    ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssLedgerRow: ssLedgerRow, ssDisplayName: ssDisplayName,
+    ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow,
+    ssPartnerRow: ssPartnerRow, ssHoldRow: ssHoldRow, ssVendorOf: ssVendorOf,
+    ssInvoiceRows: ssInvoiceRows, SS_INVOICE_HEADER: SS_INVOICE_HEADER,
+    ssNonshipRow: ssNonshipRow, ssNonShipReason: ssNonShipReason, SS_NONSHIP_HEADER: SS_NONSHIP_HEADER,
+    SS_PARTNER_HEADER: SS_PARTNER_HEADER, SS_MANUAL_HEADER: SS_MANUAL_HEADER, SS_VENDOR_HEADER: SS_VENDOR_HEADER, ssLedgerRow: ssLedgerRow, ssDisplayName: ssDisplayName,
     ssStripName: ssStripName, ssNormAddr: ssNormAddr, ssPad6: ssPad6
   };
 }

@@ -16,13 +16,19 @@ var SSM_ISL_DICT_HEADER = ['정규주소', '우편번호', '권역', '최초확�
 var SSM_LOCAL_HEADER = ['정규주소', '동네', '일자'];
 
 function ssm_open(id, tab, label) {
-  var ss;
-  try { ss = SpreadsheetApp.openById(id); }
-  catch (e) { throw new Error(label + ' 스프레드시트를 열 수 없습니다 (ID: ' + id + '). 공유 권한을 확인하세요. — ' + e.message); }
-  var sh = ss.getSheetByName(tab);
-  if (!sh) throw new Error(label + ' 시트에 「' + tab + '」 탭이 없습니다.');
-  if (sh.getLastRow() < 2) throw new Error(label + ' 「' + tab + '」 탭에 데이터가 없습니다 (' + sh.getLastRow() + '행).');
-  return sh.getDataRange().getValues();
+  // 열기뿐 아니라 읽기까지 감싼다.
+  // 구글은 열 때는 통과시키고 실제로 값을 읽을 때 권한 오류를 내는 경우가 있어,
+  // 그러면 「요청한 문서를 액세스할 권한이 없습니다」 만 덩그러니 남고 어느 시트인지 알 수 없다.
+  var where = label + ' / ' + tab + ' (ID: ' + id + ')';
+  try {
+    var ss = SpreadsheetApp.openById(id);
+    var sh = ss.getSheetByName(tab);
+    if (!sh) throw new Error('「' + tab + '」 탭이 없습니다.');
+    if (sh.getLastRow() < 2) throw new Error('데이터가 없습니다 (' + sh.getLastRow() + '행).');
+    return sh.getDataRange().getValues();
+  } catch (e) {
+    throw new Error(where + ' — ' + e.message);
+  }
 }
 
 /**
@@ -317,7 +323,7 @@ function ssm_refreshAll() {
 /**
  * 로컬 마스터 탭 → core.js 가 쓰는 자료구조
  */
-function ssm_load() {
+function ssm_load(회차키) {
   var M = {
     items: {}, stock: {}, bom: {}, splitExcept: {},
     cond: {}, condCodes: {}, feeRules: {},
@@ -388,6 +394,14 @@ function ssm_load() {
 
   var lo = ssio_body(SSIO_TABS.동네배송);
   for (var l = 0; l < lo.length; l++) { var la = ssText(lo[l][0]); if (la) M.localAddrs[la] = true; }
+
+  M.vendors = {};
+  var vd = ssio_body(SSIO_TABS.업체);
+  for (var v2 = 0; v2 < vd.length; v2++) {
+    var vc = ssText(vd[v2][0]).toUpperCase();
+    if (vc) M.vendors[vc] = ssText(vd[v2][1]) || vc;
+  }
+  M.override = ssm_loadManual(ssio_config(), 회차키);
 
   return M;
 }
@@ -616,4 +630,184 @@ function ss_입력시트준비() {
     '  ' + ss.getUrl() + '\n\n' +
     '이카운트 판매현황 엑셀을 1행부터 그대로 붙여넣으세요.\n' +
     '(1행 회사명, 2행 헤더인 원본 그대로도 됩니다)');
+}
+
+/* ── 수동조치 · 협력업체 ───────────────────────────────── */
+
+var SSM_VENDOR_SEED = [
+  ['NK', '냅킨코리아'], ['TY', '태양효성'], ['KR', '코라마'], ['HP', '하나팩'],
+  ['WD', '월드유명'], ['AP', '올팩코리아'], ['GD', '성우포장'], ['GW', '그린우드'],
+  ['BW', '부원'], ['IW', '인터웍스'], ['HR', '허브로스팅'], ['HU', '후아코리아'],
+  ['LG', '로엔그린'], ['AJ', '아주팩'], ['OC', '부엉이'], ['YS', '와이에스'],
+  ['SW', '선우'], ['JH', '준테크'], ['BF', '준테크'], ['NS', '준테크']
+];
+
+/** 협력업체 표가 비어 있으면 구 시트 목록으로 채운다 */
+function ssm_seedVendors() {
+  var sh = ssio_sheet(SSIO_TABS.업체, SS_VENDOR_HEADER);
+  if (sh.getLastRow() > 1) return 0;
+  sh.getRange(2, 1, SSM_VENDOR_SEED.length, 2).setValues(SSM_VENDOR_SEED);
+  return SSM_VENDOR_SEED.length;
+}
+
+/**
+ * 보류 탭에 사람이 적어 넣은 조치를 「수동조치」 탭에 옮겨 담는다.
+ * 보류 탭은 실행할 때마다 다시 쓰이므로, 쓰기 전에 먼저 걷어와야 입력이 살아남는다.
+ *
+ * @return {number} 새로 담은 건수
+ */
+function ssm_captureManual(회차키) {
+  var hold = ssio_ss().getSheetByName(SSIO_TABS.보류);
+  if (!hold || hold.getLastRow() < 2) return 0;
+
+  var idx = {};
+  for (var h = 0; h < SS_HOLD_HEADER.length; h++) idx[SS_HOLD_HEADER[h]] = h;
+  var v = hold.getRange(2, 1, hold.getLastRow() - 1, SS_HOLD_HEADER.length).getValues();
+
+  // 보류 탭에는 원본코드가 없다. 원장에서 (고유ID, 품목코드) → 원본코드를 찾는다.
+  // 원장은 「그 시트에 적힌 헤더」로 읽는다. 코드 상수로 읽으면 열이 늘어난 뒤 어긋난다.
+  var back = {};
+  var lg = ssio_ss().getSheetByName(SSIO_TABS.원장);
+  if (lg && lg.getLastRow() > 1) {
+    var lcols = lg.getLastColumn();
+    var lhead = lg.getRange(1, 1, 1, lcols).getValues()[0];
+    var li = {};
+    for (var q = 0; q < lhead.length; q++) {
+      var ln = ssText(lhead[q]);
+      if (ln && li[ln] === undefined) li[ln] = q;
+    }
+    if (li['고유ID'] !== undefined && li['품목코드'] !== undefined && li['원본품목코드'] !== undefined) {
+      var lv = lg.getRange(2, 1, lg.getLastRow() - 1, lcols).getValues();
+      for (var r = 0; r < lv.length; r++) {
+        back[ssText(lv[r][li['고유ID']]) + '|' + ssText(lv[r][li['품목코드']])] = ssText(lv[r][li['원본품목코드']]);
+      }
+    }
+  }
+
+  var vendors = {};
+  var vd = ssio_body(SSIO_TABS.업체);
+  for (var vi = 0; vi < vd.length; vi++) {
+    var vc = ssText(vd[vi][0]).toUpperCase();
+    if (vc) vendors[vc] = ssText(vd[vi][1]);
+  }
+
+  var sh = ssio_sheet(SSIO_TABS.수동조치, SS_MANUAL_HEADER);
+  // 같은 줄에 대한 기록이 이미 있으면 「새로 넣지 않고 고쳐 쓴다」.
+  // 예전에는 건너뛰었는데, 그러면 JT 로 한 번 잘못 적은 뒤에는 무엇을 적어도 반영되지 않았다.
+  var at = {};
+  var body = ssio_body(SSIO_TABS.수동조치);
+  for (var b = 0; b < body.length; b++) {
+    at[ssm_dateKey(body[b][0]) + '|' + ssText(body[b][1]) + '|' + ssText(body[b][2])] = b;
+  }
+
+  var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
+  var now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+  var add = [], updated = 0;
+  for (var i = 0; i < v.length; i++) {
+    var 적은값 = ssText(v[i][idx['조치']]);
+    var 사유 = ssText(v[i][idx['보류사유']]);
+    var 상세 = ssText(v[i][idx['상세']]);
+    var 메모 = ssText(v[i][idx['메모']]);
+
+    // 조치 칸 하나로 뜻이 갈린다.
+    //   「발송」        → 자체 출고
+    //   등록된 업체코드 → 그 업체로 대리발송
+    //   「대리발송」     → 업체는 품목명에서 추론
+    var 조치 = '', 업체 = '';
+    var up = 적은값.toUpperCase();
+    if (적은값 === '발송') 조치 = '발송';
+    else if (적은값 === '대리발송') 조치 = '대리발송';
+    else if (up && vendors[up]) { 조치 = '대리발송'; 업체 = up; }
+    else if (적은값) { 조치 = '대리발송'; 업체 = up; }   // 미등록 코드 — 반영 단계에서 걸러 알려 준다
+    // 상세(사유 내용)를 지웠으면 그 사유가 해소된 것으로 보고 발송한다.
+    // 보류사유가 붙는 행은 상세가 항상 채워지므로, 비었다는 건 사람이 지웠다는 뜻이다.
+    if (!조치 && 사유 && !상세) { 조치 = '발송'; if (!메모) 메모 = '상세 지움 → 해소'; }
+
+    if (조치 !== '발송' && 조치 !== '대리발송') continue;
+    var uid = ssText(v[i][idx['사방넷주문번호']]);
+    var code = ssText(v[i][idx['품목코드']]);
+    var 원본 = back[uid + '|' + code] || code;
+    var k = today + '|' + uid + '|' + 원본;
+    if (!uid) continue;
+
+    if (at[k] !== undefined) {
+      var b0 = at[k];
+      var 옛조치 = ssText(body[b0][3]);
+      var 옛업체 = ssText(body[b0][4]).toUpperCase();
+      var 옛회차 = ssText(body[b0][6]);
+      // 값도 회차도 그대로면 손댈 것이 없다. 하나라도 다르면 새 값으로 되살린다.
+      if (옛조치 === 조치 && 옛업체 === 업체 && 옛회차 === (회차키 || '')) continue;
+      sh.getRange(b0 + 2, 4, 1, 6).setValues([[조치, 업체, 메모, 회차키 || '', now, '']]);
+      updated++;
+      continue;
+    }
+    at[k] = body.length + add.length;
+    add.push([today, uid, 원본, 조치, 업체, 메모, 회차키 || '', now, '']);
+  }
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, SS_MANUAL_HEADER.length).setValues(add);
+  return add.length + updated;
+}
+
+/**
+ * 날짜 칸을 'yyyy-MM-dd' 로 통일한다.
+ * 시트는 문자열로 적어 넣어도 날짜 값으로 바꿔 저장할 때가 있어서,
+ * 읽을 때 Date 일 수도 있고 '2026/09/02' 일 수도 있고 '2026-09-02' 일 수도 있다.
+ */
+function ssm_dateKey(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Seoul', 'yyyy-MM-dd');
+  var s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  s = s.replace(/\s+/g, '').replace(/[.\/]/g, '-');
+  var m = s.match(/^(d{4})-(d{1,2})-(d{1,2})/);
+  if (!m) return s;
+  var p = function (x) { return (x.length < 2 ? '0' : '') + x; };
+  return m[1] + '-' + p(m[2]) + '-' + p(m[3]);
+}
+
+/** 유효한 수동조치만 골라 {고유ID|원본코드: {조치, 업체코드}} 로 만든다 */
+function ssm_loadManual(cfg, 회차키) {
+  // 조치는 「그 회차 안에서」 유효하다.
+  //
+  // 미발송 건은 여기저기 연락해 가며 하나씩 풀린다.
+  // 되는 것부터 반영하고 나머지를 나중에 처리하는데,
+  // 반영할 때마다 전체를 다시 계산하므로 앞서 처리한 건도 함께 다시 판정된다.
+  // 그래서 회차가 바뀌기 전까지는 이미 내린 조치가 계속 살아 있어야 한다.
+  // 새 판매현황이 들어와 회차가 바뀌면 그때 전부 무효가 된다.
+  var out = {};
+  if (!회차키) return out;
+  var body = ssio_body(SSIO_TABS.수동조치);
+  for (var i = 0; i < body.length; i++) {
+    if (ssText(body[i][6]) !== 회차키) continue;      // 등록회차가 다르면 무효
+    var uid = ssText(body[i][1]), code = ssText(body[i][2]);
+    var 조치 = ssText(body[i][3]);
+    if (!uid || (조치 !== '발송' && 조치 !== '대리발송')) continue;
+    out[uid + '|' + code] = {
+      조치: 조치,
+      업체코드: ssText(body[i][4]).toUpperCase(),
+      메모: ssText(body[i][5])
+    };
+  }
+  return out;
+}
+
+/** 적용된 수동조치에 이번 회차를 기록해 둔다 */
+function ssm_stampManual(units, 회차키) {
+  var sh = ssio_ss().getSheetByName(SSIO_TABS.수동조치);
+  if (!sh || sh.getLastRow() < 2) return 0;
+  var used = {};
+  for (var i = 0; i < units.length; i++) {
+    // 결과를 바꾼 것만 소진시킨다. 업체코드가 틀려 보류에 남은 건은 다시 쓸 수 있어야 한다.
+    if (units[i].수동조치적용) used[ssText(units[i].고유ID) + '|' + ssText(units[i].원본코드)] = true;
+  }
+  var n = sh.getLastRow() - 1;
+  var v = sh.getRange(2, 2, n, 8).getValues();   // 고유ID … 최근적용회차
+  var changed = false, cnt = 0;
+  for (var r = 0; r < v.length; r++) {
+    var k = ssText(v[r][0]) + '|' + ssText(v[r][1]);
+    if (!used[k]) continue;
+    cnt++;
+    if (ssText(v[r][7]) !== 회차키) { v[r][7] = 회차키; changed = true; }
+  }
+  if (changed) sh.getRange(2, 2, n, 8).setValues(v);
+  return cnt;
 }
