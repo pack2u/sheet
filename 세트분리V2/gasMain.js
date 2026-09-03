@@ -57,7 +57,6 @@ function ss_설치() {
   ssio_sheet(SSIO_TABS.합배송, SS_MERGED_HEADER);
   ssio_sheet(SSIO_TABS.비배송, SS_NONSHIP_HEADER);
   ssio_sheet(SSIO_TABS.사방넷송장, SS_INVOICE_HEADER);
-  ssio_sheet(SSIO_TABS.송장회수, SS_INVRECV_HEADER);
   ssio_sheet(SSIO_TABS.사방넷등록, SS_REG_HEADER);
   ssio_styleHeader(ssio_ss().getSheetByName(SSIO_TABS.비배송), SS_NONSHIP_HEADER.length, { bg: '#4a4a4a' });
   ssio_styleHeader(ssio_ss().getSheetByName(SSIO_TABS.합배송), SS_MERGED_HEADER.length, { bg: '#2c4f6b' });
@@ -111,7 +110,7 @@ function ss_설치() {
 
 function ss_탭정렬() {
   var order = [SSIO_TABS.입력].concat(SSIO_TABS.출력).concat([
-    SSIO_TABS.합배송, SSIO_TABS.사방넷송장, SSIO_TABS.사방넷등록, SSIO_TABS.송장회수, SSIO_TABS.비배송, SSIO_TABS.보류, SSIO_TABS.경고, SSIO_TABS.요약,
+    SSIO_TABS.합배송, SSIO_TABS.사방넷송장, SSIO_TABS.사방넷등록, SSIO_TABS.비배송, SSIO_TABS.보류, SSIO_TABS.경고, SSIO_TABS.요약,
     SSIO_TABS.합배송조건, SSIO_TABS.분리예외, SSIO_TABS.업체, SSIO_TABS.수동조치, SSIO_TABS.도서산간사전,
     SSIO_TABS.설정,
     SSIO_TABS.M품목, SSIO_TABS.M배송비, SSIO_TABS.M재고, SSIO_TABS.MBOM,
@@ -770,19 +769,18 @@ function ss_보류조치진단() {
 
 /* ── 송장 회수 · 사방넷 등록용 ─────────────────────────── */
 
-var SS_INVRECV_HEADER = ['주문번호', '운송장번호'];
+
 
 /** 사방넷 대량 송장등록에 그대로 붙여넣는 두 열 */
 var SS_REG_HEADER = ['주문번호', '운송장번호', '택배사'];
 
 /**
- * 롯데 실적을 붙여넣은 「송장회수」 탭을 읽어 「사방넷송장」 탭의 운송장번호를 채운다.
+ * 거래관리시스템송장 롯데 탭과 대리공급_임시기록을 직접 읽어 「사방넷송장」의 운송장번호를 채운다.
  *
  * 롯데에는 합포장 대표만 올라가므로 송장번호도 대표 주문번호로만 돌아온다.
  * 동봉 주문은 대표를 따라가게 해 같은 번호를 넣는다 — 그래야 사방넷에서 빠지는 게 없다.
  */
 function ss_송장전파() {
-  var recv = ssio_sheet(SSIO_TABS.송장회수, SS_INVRECV_HEADER);
   var inv = ssio_ss().getSheetByName(SSIO_TABS.사방넷송장);
   if (!inv || inv.getLastRow() < 2) {
     return ssio_alert('「사방넷송장」 탭이 비어 있습니다. 세트분리를 먼저 실행하세요.');
@@ -790,29 +788,42 @@ function ss_송장전파() {
   var NL = String.fromCharCode(10);
   var cfg = ssio_config();
 
-  // ── 1a) 롯데 실적 → { 주문번호: 운송장번호 } ──
-  // 롯데에는 합포장 대표만 올라갔으므로 대표·단독·전화주문 번호만 있다.
-  var lotte = {};
-  if (recv.getLastRow() > 1) {
-    var rc = recv.getLastColumn();
-    var rh = recv.getRange(1, 1, 1, rc).getValues()[0].map(function (x) {
-      return ssText(x).replace(/\s/g, '');
-    });
-    var ci = -1, cw = -1;
-    for (var h = 0; h < rh.length; h++) {
-      if (ci < 0 && (rh[h] === '주문번호' || rh[h] === '고객주문번호')) ci = h;
-      if (cw < 0 && (rh[h] === '운송장번호' || rh[h] === '송장번호')) cw = h;
+  // ── 1a) 거래관리시스템송장 롯데 탭 → { 주문번호: 운송장번호 } ──
+  //    5️⃣ 송장수집이 채워 두는 곳이라 붙여넣기가 필요 없다.
+  //    허브와 같은 기준: J열 주문번호(=사방넷/고유ID) · G열 운송장번호.
+  //    헤더 이름으로 먼저 찾고, 못 찾으면 그 고정 위치를 쓴다.
+  var lotte = {}, lotteErr = '';
+  try {
+    var lId = ssText(cfg['롯데송장시트ID']) || '1KIBSmjpMVKLGoAkbrcKyTr4LOflszwS_xtMzmRuvYWs';
+    var lGid = ssNum(cfg['롯데송장탭GID']) || 1575029201;
+    var lSS = SpreadsheetApp.openById(lId);
+    var lTab = null, shs = lSS.getSheets();
+    for (var si = 0; si < shs.length; si++) {
+      if (shs[si].getSheetId() === lGid) { lTab = shs[si]; break; }
     }
-    if (ci < 0 || cw < 0) {
-      return ssio_alert('「송장회수」 탭에서 열을 찾지 못했습니다.' + NL +
-        '「주문번호」(또는 고객주문번호)와 「운송장번호」 열이 있어야 합니다.' + NL +
-        '롯데 실적 파일을 헤더째 붙여넣으면 됩니다.');
+    if (!lTab) throw new Error('GID ' + lGid + ' 탭을 찾지 못했습니다 (' + lSS.getName() + ')');
+    if (lTab.getLastRow() >= 2) {
+      var lrc = lTab.getLastColumn();
+      var lrh = lTab.getRange(1, 1, 1, lrc).getDisplayValues()[0].map(function (x) {
+        return ssText(x).replace(/\s/g, '');
+      });
+      var ci = -1, cw = -1;
+      for (var h = 0; h < lrh.length; h++) {
+        if (ci < 0 && (lrh[h] === '주문번호' || lrh[h] === '고객주문번호')) ci = h;
+        if (cw < 0 && (lrh[h] === '운송장번호' || lrh[h] === '송장번호')) cw = h;
+      }
+      if (ci < 0) ci = 9;   // J
+      if (cw < 0) cw = 6;   // G
+      var rv = lTab.getRange(2, 1, lTab.getLastRow() - 1, Math.max(ci, cw) + 1).getDisplayValues();
+      for (var r = 0; r < rv.length; r++) {
+        var o = ssText(rv[r][ci]), w = ssText(rv[r][cw]);
+        if (!o || !w) continue;
+        if (o.indexOf('주문번호') >= 0 || w.indexOf('운송장') >= 0) continue;
+        lotte[o] = w;
+      }
     }
-    var rv = recv.getRange(2, 1, recv.getLastRow() - 1, rc).getValues();
-    for (var r = 0; r < rv.length; r++) {
-      var o = ssText(rv[r][ci]), w = ssText(rv[r][cw]);
-      if (o && w) lotte[o] = w;
-    }
+  } catch (eL) {
+    lotteErr = String(eL.message || eL);
   }
 
   // ── 1b) 대리공급_임시기록 → 협력업체가 보낸 건의 송장 ──
@@ -828,6 +839,11 @@ function ss_송장전파() {
     }
   } else {
     tempErr = tRes.why;
+  }
+
+  if (lotteErr && tempErr) {
+    return ssio_alert('송장 원천을 하나도 읽지 못했습니다.' + NL + NL +
+      '롯데 송장탭: ' + lotteErr + NL + '임시기록: ' + tempErr);
   }
 
   // 통합 조회 — 롯데가 먼저, 없으면 임시기록
@@ -933,22 +949,23 @@ function ss_송장전파() {
   ssio_write(SSIO_TABS.사방넷등록, SS_REG_HEADER, regRows, { bg: '#2c4f6b' });
 
   var msg = '송장 전파 완료' + NL + NL +
-    '  · 롯데 실적 ' + Object.keys(lotte).length + '건 / 대리공급 임시기록 ' + Object.keys(temp).length + '건' + NL +
+    '  · 롯데 송장탭 ' + Object.keys(lotte).length + '건 / 대리공급 임시기록 ' + Object.keys(temp).length + '건' + NL +
     '  · 사방넷송장 · 롯데 ' + 롯데직접 + ' / 대리공급 ' + 대리공급건 +
     ' / 합포장 전파 ' + 전파 + ' / 미매칭 ' + 미매칭 + NL +
     '  · 원장 기록 · 직접 ' + 원장직접 + ' / 합포장 전파 ' + 원장전파 + NL +
     '  · 사방넷등록 ' + regRows.length + '건 (전화주문 ' + 전화건 + '건 제외' +
     (무송장 ? ' · 송장 없는 주문 ' + 무송장 + '건 대기' : '') + ')';
+  if (lotteErr) {
+    msg += NL + NL + '⚠ 롯데 송장탭을 읽지 못했습니다 — 임시기록만으로 매칭했습니다.' + NL + '  ' + lotteErr;
+  }
   if (tempErr) {
-    msg += NL + NL + '⚠ 대리공급 임시기록을 읽지 못했습니다 — 롯데 실적만으로 매칭했습니다.' + NL +
-      '  ' + tempErr;
+    msg += NL + NL + '⚠ 대리공급 임시기록을 읽지 못했습니다 — 롯데만으로 매칭했습니다.' + NL + '  ' + tempErr;
   }
   if (conflicts.length) {
     msg += NL + NL + '⚠ 한 주문번호에 송장이 두 개 이상 (첫 번째만 등록됩니다):' + NL +
       '  ' + conflicts.join(NL + '  ');
   }
-  msg += NL + NL + '「사방넷등록」 탭(주문번호·운송장번호·택배사)을 사방넷 대량 송장등록에 붙여넣으세요.' + NL +
-    '일일마감·대시보드는 「주문라인원장」의 운송장번호 열을 읽으면 됩니다.';
+  msg += NL + NL + '「사방넷등록」 확인 후 「📊 사방넷 대량등록 엑셀 저장」을 실행하세요.';
   return ssio_alert(msg);
 }
 

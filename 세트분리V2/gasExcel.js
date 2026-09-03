@@ -54,7 +54,7 @@ function ss_사방넷엑셀저장() {
   var reg = ssio_ss().getSheetByName(SSIO_TABS.사방넷등록);
   if (!reg || reg.getLastRow() < 2) {
     return ssio_alert('「사방넷등록」 탭이 비어 있습니다.' + NL + NL +
-      '순서: 롯데 실적을 「송장회수」에 붙여넣기 → 🔁 송장 전파 → 이 메뉴');
+      '순서: 🔁 송장 전파 → 이 메뉴  (롯데 송장탭·임시기록은 자동으로 읽습니다)');
   }
 
   var codes = ssx_carrierCodes();

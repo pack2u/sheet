@@ -105,6 +105,73 @@
     }
     :root[data-theme="light"] .cs-pulse-bar .dot { background: #b46a00; }
 
+    /* 어두운 배경에 맞춰 고른 옅은 글자색들. 흰 면 위에서는 안 읽힌다.
+       ★ 라이트박스(.hb-lb-*)·토스트·사진 썸네일 위의 옅은 색은 손대지 않는다 —
+         그것들은 밝은 테마에서도 어두운 면 위에 있어서 지금이 맞다. */
+    :root[data-theme="light"] .os-val.big { color: var(--text-primary); }
+    :root[data-theme="light"] .os-trk-run { color: #1d5fa8; border-color: rgba(29, 95, 168, 0.40); }
+    :root[data-theme="light"] .os-trk-done { color: #10714b; border-color: rgba(16, 113, 75, 0.40); }
+    :root[data-theme="light"] .os-tag.hub,
+    :root[data-theme="light"] .os-tag.pack,
+    :root[data-theme="light"] .manual-check { color: #10714b; }
+    :root[data-theme="light"] .os-tag.miss,
+    :root[data-theme="light"] .os-tag.case,
+    :root[data-theme="light"] .os-tag.return-active,
+    :root[data-theme="light"] .hb-limit { color: #8a5300; }
+    :root[data-theme="light"] .manual-caution { color: #b3261e; }
+
+    /* 반품 진행 표시(노랑) — 카드·패널 제목·모바일 탭에서 같은 색을 쓴다 */
+    :root[data-theme="light"] #pane-returns .ws-pane-label,
+    :root[data-theme="light"] .ws-mobile-tabs button[data-pane="1"].on,
+    :root[data-theme="light"] .os-return-card .rs,
+    :root[data-theme="light"] .ret-focus-badge,
+    :root[data-theme="light"] .ret-left .rn .rs,
+    :root[data-theme="light"] .dash-chip:active { color: #8a5300; }
+    :root[data-theme="light"] #pane-manual .ws-pane-label { color: #10714b; }
+
+    :root[data-theme="light"] .ret-act,
+    :root[data-theme="light"] .ret-photo-pick .pk,
+    :root[data-theme="light"] .ret-proc-thumbs .thumb-alt,
+    :root[data-theme="light"] .ret-share.on,
+    :root[data-theme="light"] .ret-more-btn { color: var(--text-bright); }
+    :root[data-theme="light"] .ret-act.active { color: var(--text-primary); }
+    :root[data-theme="light"] .ret-proc-del { color: #b3261e; }
+
+    :root[data-theme="light"] .hb-act.done,
+    :root[data-theme="light"] .hb-rd { color: #10714b; }
+    :root[data-theme="light"] .hb-act.danger { color: #b3261e; }
+    :root[data-theme="light"] .hb-lv-btn.lv-urgent.on { color: #b3261e; }
+    :root[data-theme="light"] .hb-lv-btn.lv-warn.on { color: #8a5300; }
+
+    /* 검색 실행 단추 — 배경까지 #2f2f2f 로 박혀 있다 */
+    :root[data-theme="light"] .os-search button.go { background: #e4e7eb; color: #2f343b; }
+
+    /* 반품 카드 안의 처리과정 칩 — 불투명한 어두운 rgba 라 테마를 안 탔다.
+       색이 뜻을 지고 있으므로(상태=노랑, 상담=갈색, 업체공개=초록, 메모=회색)
+       톤은 유지한 채 밝은 쪽으로 뒤집는다. */
+    :root[data-theme="light"] .ret-proc {
+      background: #f3efe9; border-color: rgba(0, 0, 0, 0.10); color: var(--text-primary);
+    }
+    :root[data-theme="light"] .ret-proc.status {
+      background: #fdf3d8; border-color: rgba(180, 140, 0, 0.28);
+    }
+    :root[data-theme="light"] .ret-proc.consult { background: #f3efe9; }
+    :root[data-theme="light"] .ret-proc.access {
+      background: #e4f3ea; border-color: rgba(26, 158, 104, 0.30);
+    }
+    :root[data-theme="light"] .ret-proc.note { background: #f1f2f4; }
+    :root[data-theme="light"] .ret-proc.photo {
+      background: #eef0f3; border-color: rgba(0, 0, 0, 0.12);
+    }
+    :root[data-theme="light"] .ret-proc-link {
+      background: rgba(26, 158, 104, 0.16); color: #10714b;
+    }
+    :root[data-theme="light"] .ret-pop-save { background: #e4e7eb; color: #2f343b; }
+    :root[data-theme="light"] .ret-tl-track::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.18); }
+
+    /* ＋ 새 카드 단추 — #2f2f2f 로 박혀 있어 밝은 화면에서 검은 덩어리로 남았다 */
+    :root[data-theme="light"] .hb-new { background: #e4e7eb; color: #2f343b; }
+
     /* 테마 전환 단추 — 화면 왼쪽 아래 구석. 위쪽은 즐겨찾기·배포 알림이 쓴다 */
     .cs-theme-btn {
       position: fixed; left: 12px; bottom: 12px; z-index: 8500;
