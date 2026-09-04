@@ -2256,20 +2256,11 @@
         <div class="mn-sec lb-box" id="lbBox">
           <div class="mn-sec-head">🚚 물류 커뮤니티 보드 <span id="lbCount"></span></div>
           <div class="os-toolbar" style="margin-top:8px">
-            <button type="button" class="os-chip" onclick="lbToggleForm()">글쓰기</button>
+            <button type="button" class="os-chip" onclick="openHbModal('logi')">글쓰기</button>
             <button type="button" class="os-chip ghost" onclick="lbLoad()">↻</button>
           </div>
-          <div class="lb-form" id="lbForm" style="display:none">
-            <input type="text" id="lbTitle" placeholder="제목 (필수)">
-            <input type="text" id="lbBody" placeholder="내용">
-            <div class="os-toolbar" style="margin-top:8px">
-              <button type="button" class="os-chip" data-lblv="공지" onclick="lbSetLevel('공지')">📌 공지</button>
-              <button type="button" class="os-chip" data-lblv="긴급" onclick="lbSetLevel('긴급')">긴급</button>
-              <button type="button" class="os-chip" data-lblv="주의" onclick="lbSetLevel('주의')">주의</button>
-              <button type="button" class="os-chip on" data-lblv="일반" onclick="lbSetLevel('일반')">일반</button>
-              <button type="button" class="os-chip" onclick="lbSave()">등록</button>
-            </div>
-          </div>
+<!-- 물류 글쓰기도 CS 와 같은 모달(hbModal)을 쓴다. 여기 있던 간단 폼은 걷어냈다 —
+               같은 일을 하는 화면이 둘이면 고칠 때마다 한쪽을 빠뜨린다. -->
           <div id="lbList" class="os-status" style="margin-top:8px">불러오는 중…</div>
         </div>
       </div>
@@ -4145,7 +4136,17 @@
       toast('임시저장을 지우고 새로 시작합니다');
     }
 
-    function openHbModal() {
+    /* 카드 작성 모달은 두 보드가 함께 쓴다.
+       ★ 2026-09-04: 물류는 제목·내용만 받는 간단한 폼을 따로 갖고 있었다.
+         같은 일을 하는 화면이 둘이면 고칠 때마다 한쪽을 빠뜨린다.
+         여기에 어느 보드로 올릴지만 기억해 두고 나머지는 그대로 쓴다. */
+    var HB_MODAL_BOARD = 'cs';
+
+    function openHbModal(board) {
+      HB_MODAL_BOARD = (board === 'logi') ? 'logi' : 'cs';
+      var t0 = document.querySelector('#hbModal .modal-title');
+      if (t0) t0.textContent = (HB_MODAL_BOARD === 'logi') ? '물류 카드 작성' : 'CS 전달 카드 작성';
+
       DRAFT_QUIET = true;
       HB_NEW_LEVEL = '일반';
       pickHbLevel('일반');
@@ -4198,7 +4199,7 @@
         closeHbModal();
         draftClear('hb');
         toast(msg, ms);
-        loadHandoffBoard(false);
+        hbReloadBoards();   // 어느 보드로 올렸든 둘 다 새로 받는다
       }
 
       google.script.run
@@ -4226,6 +4227,7 @@
           toast(String((err && err.message) || '통신 실패'), 2600);
         })
         .csCreateHandoffCard({
+          board: HB_MODAL_BOARD,
           level: HB_NEW_LEVEL,
           title: title,
           body: hbVal('hbBody'),
@@ -7627,15 +7629,10 @@
     //  · 물류 커뮤니티 보드 — CS 보드와 같은 서버 코드.
     //    board:"logi" 를 반드시 넘긴다. 빠뜨리면 CS 보드에 글이 올라간다.
     //  · 입고 촬영 — 모바일 전용 4번째 패널. 물류팀은 여기로 먼저 떨어진다.
-    var LB_LEVEL = '일반';
     var LG_PENDING = [];
     var LG_LAST = null;
     var LG_PICKED = null;
 
-    function lbToggleForm() {
-      var f = document.getElementById('lbForm');
-      if (f) f.style.display = (f.style.display === 'none') ? 'block' : 'none';
-    }
 
     /* CS 보드의 hbSyncNoticeSpan 과 같은 이유 — 한 칸짜리 폭에서 두 칸을 쓰면
        없는 칸으로 삐져나간다. 물류 보드는 세로 3분할 안에 있어 더 좁다. */
@@ -7653,47 +7650,8 @@
       new ResizeObserver(lbSyncNoticeSpan).observe(el);
     })();
 
-    function lbSetLevel(v) {
-      LB_LEVEL = v;
-      var btns = document.querySelectorAll('[data-lblv]');
-      for (var i = 0; i < btns.length; i++) {
-        btns[i].classList.toggle('on', btns[i].getAttribute('data-lblv') === v);
-      }
-    }
 
-    function lbSave() {
-      var staff = hbRequireStaff();
-      if (!staff) return;
-      var t = String((document.getElementById('lbTitle') || {}).value || '').trim();
-      if (!t) { toast('제목을 입력하세요', 2200); return; }
-      google.script.run
-        .withSuccessHandler(function (r) {
-          if (!r || !r.ok) { toast((r && r.error) || '등록 실패', 3200); return; }
-          document.getElementById('lbTitle').value = '';
-          document.getElementById('lbBody').value = '';
-          document.getElementById('lbForm').style.display = 'none';
-          toast('등록했습니다');
-          lbLoad();
-        })
-        .withFailureHandler(function (e) { toast(String((e && e.message) || e), 3200); })
-        .csCreateHandoffCard({
-          board: 'logi', staff: staff, level: LB_LEVEL, title: t,
-          body: String((document.getElementById('lbBody') || {}).value || '').trim()
-        });
-    }
 
-    function lbDone(id) {
-      var staff = hbRequireStaff();
-      if (!staff) return;
-      google.script.run
-        .withSuccessHandler(function (r) {
-          if (!r || !r.ok) { toast((r && r.error) || '실패', 3000); return; }
-          toast('완료 처리했습니다');
-          lbLoad();
-        })
-        .withFailureHandler(function () { toast('실패', 3000); })
-        .csCompleteHandoffCard({ board: 'logi', id: id, staff: staff });
-    }
 
     /* ★ 2026-09-04: 물류 카드를 CS 카드와 같은 렌더러(hbCardHtml)로 그린다.
        전에는 제목·본문·완료만 있는 축약판이었다. 서버 데이터는 원래부터 같은
