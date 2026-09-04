@@ -70,6 +70,9 @@ const ui = {
   esc: (x) => String(x == null ? '' : x),
   js: (x) => String(x == null ? '' : x),
   hbTimeline: () => '',
+  HB_STAFF: ['김진수', '고윤서', '박상식'],
+  HB_LEVELS: ['공지', '긴급', '주의', '일반'],
+  hbLevelName: (x) => String(x),
   String, Math, Date, console,
 };
 vm.createContext(ui);
@@ -138,6 +141,72 @@ ok('모달을 열 때 지목을 비운다', /'hbItem',\s*'hbToVal'\]\.forEach/.t
 ok('되살린 뒤에 칩을 그린다',
   whole.indexOf("draftRestore('hb')") < whole.indexOf('hbToRender();'));
 ok('등록할 때 to 를 보낸다', /to:\s*hbToList\(\),/.test(whole));
+
+/* ── 이미 올라간 카드에 지목 걸기 ── */
+// 시트를 흉내 낸다. withCard 는 잠금·탭조회까지 하므로 통째로 바꿔 끼운다.
+function mkTab(rowArr) {
+  const w = {};
+  return {
+    _row: rowArr, _w: w,
+    getRange(r, c) { return { setValue(v) { w[c - 1] = v; } }; },
+  };
+}
+gs._cs_ac_guard_ = () => null;
+gs._cs_hb_now_ = () => '26-09-04 16:00';
+let TAB = null;
+gs._cs_hb_withCard_ = (ref, fn) => fn(TAB, 2, TAB._row);
+
+function setMention(before, read, to) {
+  const r = [];
+  r[C.id] = 'HB1'; r[C.notes] = '';
+  r[C.mention] = before; r[C.read] = read;
+  TAB = mkTab(r);
+  return gs.csSetHandoffMention({ id: 'HB1', to: to, staff: '박상식' });
+}
+
+console.log('\n[카드에 지목 걸기]');
+let res = setMention('', '고윤서', ['김진수']);
+ok('지목이 저장된다', TAB._w[C.mention] === '김진수');
+ok('to 를 돌려준다', res.to.join('|') === '김진수');
+ok('진행 과정에 남는다', String(TAB._w[C.notes] || '').indexOf('지목: 김진수') !== -1);
+
+res = setMention('김진수', '김진수, 고윤서', ['김진수', '박상식']);
+ok('원래 지목된 사람의 읽음은 그대로', String(TAB._w[C.read] === undefined ? '김진수, 고윤서' : TAB._w[C.read]).indexOf('김진수') !== -1);
+
+console.log('\n[이미 읽은 사람을 새로 지목하면 다시 깜박여야 한다]');
+res = setMention('', '김진수, 고윤서', ['김진수']);
+ok('새로 지목된 사람은 읽음에서 빠진다', TAB._w[C.read] === '고윤서');
+ok('돌려주는 read 도 같다', res.read.join('|') === '고윤서');
+ok('지목 안 된 사람은 읽음 유지', res.read.indexOf('고윤서') !== -1);
+
+console.log('\n[지목 해제]');
+res = setMention('김진수', '고윤서', []);
+ok('빈 값으로 지운다', TAB._w[C.mention] === '');
+ok('해제도 진행 과정에 남는다', String(TAB._w[C.notes] || '').indexOf('지목 해제') !== -1);
+ok('해제 때는 읽음을 안 건드린다', TAB._w[C.read] === undefined);
+
+console.log('\n[같은 값이면 아무것도 안 쓴다]');
+res = setMention('김진수', '김진수', ['김진수']);
+ok('changed 가 false', res.changed === false);
+ok('시트에 쓰지 않는다', Object.keys(TAB._w).length === 0);
+
+/* ── 펼친 카드의 지목 줄 ── */
+console.log('\n[펼친 카드]');
+ui.HB_OPEN_ID = 'HB1';
+ui.hbTimeline = () => [{ kind: 'new', by: '박상식', at: '26-09-04 12:00', text: '' }];
+const openHtml = ui.hbCardHtml(mk({ to: ['김진수'] }), '박상식');
+ok('지목 칩 자리가 있다', openHtml.indexOf('hb-to-pick card') !== -1);
+ok('카드 ID 를 달고 있다', openHtml.indexOf('data-card="HB1"') !== -1);
+ok('현재 지목을 달고 있다', openHtml.indexOf('data-to="김진수"') !== -1);
+ok('카드 클릭으로 접히지 않게 막았다', openHtml.indexOf('hb-to-row" onclick="event.stopPropagation()') !== -1);
+const doneHtml = ui.hbCardHtml(mk({ to: ['김진수'], done: true }), '박상식');
+ok('완료된 카드에는 지목 줄이 없다', doneHtml.indexOf('hb-to-pick card') === -1);
+ui.HB_OPEN_ID = null;
+
+console.log('\n[배선]');
+ok('렌더 뒤에 칩을 채운다', /hbToCardFill\(\);\s*\/\/ 펼친 카드/.test(whole));
+ok('토글이 서버를 부른다', /\.csSetHandoffMention\(\{ id: id, to: list, staff: me \}\)/.test(whole));
+ok('실패하면 서버 값으로 되돌린다', /toast\(String\(\(res && res\.error\)[\s\S]{0,120}hbReloadBoards\(\)/.test(whole));
 
 console.log('\n' + (fail ? `실패 ${fail}건 / 통과 ${pass}건` : `모두 통과 (${pass}건)`));
 process.exit(fail ? 1 : 0);

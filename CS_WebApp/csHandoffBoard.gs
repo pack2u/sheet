@@ -624,6 +624,60 @@ function csMarkHandoffRead(payload) {
 }
 
 /**
+ * 지목 바꾸기 — 이미 올라간 카드에 담당자를 지목하거나 해제한다.
+ * 2026-09-04 신규.
+ *
+ * 새로 지목된 사람은 **읽음에서 뺀다.** 안 그러면 이미 읽은 카드라
+ * 지목해도 그 사람 화면에서 깜박이지 않는다 — 지목한 보람이 없다.
+ *
+ * @param {Object} payload {id, board, to, staff}
+ */
+function csSetHandoffMention(payload) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  payload = payload || {};
+  var staff = _cs_hb_staff_(payload.staff);
+  if (!staff) return { ok: false, error: "담당자를 먼저 선택하세요." };
+
+  return _cs_hb_withCard_(payload, function (tab, sheetRow, row) {
+    var before = _cs_hb_readList_(row[_CS_HB_COL_.mention]);
+    var after = _cs_hb_readList_(payload.to);
+    var read = _cs_hb_readList_(row[_CS_HB_COL_.read]);
+    if (before.join(", ") === after.join(", ")) {
+      return { ok: true, to: after, read: read, changed: false };
+    }
+
+    tab.getRange(sheetRow, _CS_HB_COL_.mention + 1).setValue(after.join(", "));
+
+    // 이번에 새로 지목된 사람만 읽음에서 뺀다. 원래 지목돼 있던 사람은 건드리지 않는다.
+    var kept = [];
+    for (var i = 0; i < read.length; i++) {
+      var nm = read[i];
+      var newlyPinged = (after.indexOf(nm) !== -1 && before.indexOf(nm) === -1);
+      if (!newlyPinged) kept.push(nm);
+    }
+    if (kept.length !== read.length) {
+      tab.getRange(sheetRow, _CS_HB_COL_.read + 1).setValue(kept.join(", "));
+    }
+
+    // 누가 누구를 지목했는지 진행 과정에 남긴다
+    tab.getRange(sheetRow, _CS_HB_COL_.notes + 1).setValue(
+      _cs_hb_appendNoteLine_(
+        row[_CS_HB_COL_.notes],
+        _cs_hb_stamp_(staff) + (after.length ? " 지목: " + after.join(", ") : " 지목 해제"),
+      ),
+    );
+
+    return {
+      ok: true,
+      to: after,
+      read: kept,
+      changed: true,
+      message: after.length ? "지목: " + after.join(", ") : "지목 해제",
+    };
+  });
+}
+
+/**
  * 완료 처리 — 보드에서 내리고 시트에는 남긴다 (보관)
  * @param {Object} payload {id, staff}
  */

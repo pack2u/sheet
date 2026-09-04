@@ -1482,6 +1482,20 @@
       font-weight: 700;
     }
 
+    /* 펼친 카드 안의 지목 줄 — 누르면 바로 저장된다 */
+    .hb-to-row {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+      margin: 8px 0 2px;
+    }
+    .hb-to-lb {
+      font-size: calc(11px * var(--hb-text-scale));
+      font-weight: 700; color: var(--text-secondary); margin-right: 2px;
+    }
+    .hb-to-pick.card .hb-to-chip {
+      padding: 3px 10px;
+      font-size: calc(11px * var(--hb-text-scale));
+    }
+
     /* 배지는 제목과 다른 줄에 둔다. 좁은 타일에서 제목이 짜부라지지 않게 */
     .hb-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 5px; }
     .hb-badge {
@@ -3730,6 +3744,15 @@
       }
       h += '</div>';
 
+      // 펼친 카드에서 바로 지목을 바꾼다. 이름 목록은 그린 뒤에 hbToCardFill 이 채운다
+      // — 카드 HTML 은 문자열로 만들어지므로 여기서 서버를 기다릴 수 없다.
+      if (!c.done) {
+        h += '<div class="hb-to-row" onclick="event.stopPropagation()">' +
+          '<span class="hb-to-lb">지목</span>' +
+          '<span class="hb-to-pick card" data-card="' + esc(c.id) + '"' +
+          ' data-to="' + esc(toList.join(', ')) + '"></span></div>';
+      }
+
       if ((c.att || []).length) {
         h += '<div class="hb-tl-head">첨부 <span>' + c.att.length + '</span></div>';
         h += '<div class="hb-thumbs" onclick="event.stopPropagation()">';
@@ -3897,6 +3920,75 @@
        ★ 2026-09-04: 물류 카드도 CS 카드와 같은 화면·같은 기능을 쓰게 되면서,
          카드를 찾는 자리는 전부 여기를 거쳐야 한다. HB_CARDS 만 뒤지면
          물류 카드를 펼쳤을 때 "없는 카드"가 되어 읽음·완료가 조용히 실패한다. */
+    /* 펼친 카드의 지목 — 누르면 바로 서버에 저장한다.
+       작성 모달과 달리 임시저장이 없다. 이미 올라간 카드라 미룰 이유가 없다. */
+    function hbToCardFill() {
+      var boxes = document.querySelectorAll('.hb-to-pick.card');
+      if (!boxes.length) return;
+      function draw(names) {
+        for (var i = 0; i < boxes.length; i++) {
+          var box = boxes[i];
+          if (box.getAttribute('data-filled') === '1') continue;
+          var chosen = String(box.getAttribute('data-to') || '').split(',')
+            .map(function (x) { return x.trim(); })
+            .filter(function (x) { return !!x; });
+          box.innerHTML = '';
+          for (var k = 0; k < names.length; k++) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'hb-to-chip' + (chosen.indexOf(names[k]) !== -1 ? ' on' : '');
+            b.textContent = names[k];
+            b.setAttribute('data-name', names[k]);
+            b.onclick = hbToCardToggle;
+            box.appendChild(b);
+          }
+          box.setAttribute('data-filled', '1');
+        }
+      }
+      if (STAFF_CACHE) { draw(STAFF_CACHE); return; }
+      google.script.run
+        .withSuccessHandler(function (arr) { STAFF_CACHE = arr || []; draw(STAFF_CACHE); })
+        .withFailureHandler(function () { draw(['김진수', '고윤서', '박상식']); })
+        .getStaffList();
+    }
+
+    function hbToCardToggle(ev) {
+      var el = ev.currentTarget;
+      var box = el.parentNode;
+      var id = box.getAttribute('data-card');
+      var me = hbRequireStaff();
+      if (!me) return;
+
+      var list = String(box.getAttribute('data-to') || '').split(',')
+        .map(function (x) { return x.trim(); })
+        .filter(function (x) { return !!x; });
+      var name = el.getAttribute('data-name');
+      var i = list.indexOf(name);
+      if (i === -1) { list.push(name); el.classList.add('on'); }
+      else { list.splice(i, 1); el.classList.remove('on'); }
+      box.setAttribute('data-to', list.join(', '));
+
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) {
+            toast(String((res && res.error) || '지목을 저장하지 못했습니다'), 2600);
+            hbReloadBoards();   // 화면과 시트가 어긋났다 — 서버 값으로 되돌린다
+            return;
+          }
+          // 목록의 카드도 맞춰 둔다. 안 하면 다시 그릴 때 예전 값으로 돌아간다.
+          var all = hbAllCards();
+          for (var k = 0; k < all.length; k++) {
+            if (all[k].id !== id) continue;
+            all[k].to = res.to || [];
+            if (res.read) all[k].read = res.read;
+          }
+          hbRenderBoards();
+          toast(list.length ? ('지목: ' + list.join(', ')) : '지목 해제', 1400);
+        })
+        .withFailureHandler(function () { toast('통신 실패', 2600); hbReloadBoards(); })
+        .csSetHandoffMention({ id: id, to: list, staff: me });
+    }
+
     function hbAllCards() {
       return (HB_CARDS || []).concat(LB_CARDS || []);
     }
@@ -3905,6 +3997,7 @@
     function hbRenderBoards() {
       renderHandoffBoard();
       if (typeof lbRenderCards === 'function') lbRenderCards();
+      hbToCardFill();   // 펼친 카드의 지목 칩은 HTML 을 넣은 뒤에 채운다
     }
 
     /** 카드를 고친 뒤 — 두 보드를 서버에서 다시 받아온다 */
