@@ -1,79 +1,121 @@
 /**
- * [협력업체] 메뉴 등록  v5.0
+ * [협력업체] 메뉴 등록  v6.0
  * 파일: _partnerMenu.gs
  *
- * v5.0  2026-06-23: 메뉴 2분할 재구성
- *       📦 대리발송 발주시스템 = 일상 실행 메뉴 (독립 최상위)
- *       💼 협력업체 관리 = 시트 관리 / 설정 / 진단 메뉴
+ * v5.0  2026-06-23: 메뉴 2분할
+ * v6.0  2026-08-28: 관리 메뉴를 파트별로 재편
+ *
+ * ── 두 메뉴의 경계 ──
+ * 📦 대리발송 발주시스템 = **매일 순서대로 실행하는 것만.**
+ *    숫자 배지(1️⃣~7️⃣)가 하루의 흐름이고, `└` 항목은 그 단계의 곁가지다.
+ *    진단·설정·정비는 여기 두지 않는다. 매일 쓰지 않는 항목이 섞이면
+ *    직원이 순서를 잃는다.
+ * 💼 협력업체 관리 = 설정·점검·정비. **파트별 서브메뉴로만** 넣는다.
+ *    최상위에 낱개 항목을 늘어놓지 않는다 — 종전에 그렇게 하다가
+ *    「상태 확인 / 진단」 하나에 20개가 쌓여 무엇이 진단이고 무엇이
+ *    데이터를 고치는 것인지 구분이 안 됐다.
  */
 function registerPartnerMenu_() {
   var ui = SpreadsheetApp.getUi();
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  //  📦 대리발송 발주시스템 — 일상 실행 메뉴
+  //  📦 대리발송 발주시스템 — 매일 실행하는 것만
+  //
+  //  ★ 이 메뉴에 넣는 기준 (2026-09-02 정리) ★
+  //    "오늘 하루를 굴리려면 눌러야 하는가?" 하나만 본다.
+  //    점검·감사·복구·월단위 작업은 아무리 자주 써도 여기 두지 않는다.
+  //    → 전부 「💼 협력업체 관리」로 보냈다.
+  //
+  //    번호(1️⃣~7️⃣)는 하루의 순서다. 위에서 아래로 그대로 따라가면 된다.
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ui.createMenu("📦 대리발송 발주시스템")
 
-    // ── 발주 수집 ~ Push ──
+    // ── 아침: 발주 수집 → 업체로 Push ──
     .addItem("1️⃣ 대리판매 발주수집", "partnerCollectOrdersOwner")
     .addItem("2️⃣ 이카운트 업로드용 판매현황 갱신", "partnerRebuildSalesUploadOwner")
     .addItem("   └ 🏝️ 도서산간 추가배송비 확인", "partnerCheckIslandShippingOwner")
     .addItem("3️⃣ 대리공급업체로 발주 Push", "partnerPushOrdersToExclusiveFormsOwner")
+    // Push 가 중간에 끊겼을 때 이어서 밀 때 쓴다. 매일 흐름의 일부라 남긴다.
     .addItem("   └ 📋 임시기록 → 전용양식 Push", "partnerPushFromTempTabToExclusiveOwner")
-    .addItem("   └ 🔧 임시기록 강제 재생성", "partnerRebuildTempRecordsOwner")
-    .addItem("   └ 📮 전용양식 우편번호/택배비 채우기", "partnerJmFillZipAndShipping")
     .addSeparator()
 
-    // ── 송장 ──
+    // ── 오후: 송장 수집 → 배포 ──
     .addItem("5️⃣ 허브로 송장 수집", "partnerFetchInvoicesOwner")
+    .addItem("   └ 📥 사방넷 송장대량등록 엑셀 저장", "partnerExportSabangnetBulkExcel")
     .addItem("   └ 📬 송장매칭/엑셀저장", "openInvoiceMatchSidebar")
     .addItem("   └ 📧 냅킨코리아 Gmail 송장 수집", "partnerFetchInvoiceFromGmail_NK_Manual")
     .addItem("6️⃣ 폐기송장 적용", "partnerApplyVoidedInvoicesOwner")
     .addItem("7️⃣ 대리판매업체로 송장 배포", "partnerPushInvoicesOwner")
     .addSeparator()
 
-    // ── 취소/반품 ──
+    // ── 수시: 취소/반품 ──
     .addItem("🚫 취소/반품 수집 (접수탭→허브·발주·마감)", "partnerCollectCancelsOwner")
     .addItem("🚫 취소/반품 배포 (허브→업체시트)", "partnerPushCancelStatusOwner")
     .addSeparator()
 
-    // ── 검증 ──
-    .addItem("🔍 중복 발주 감지 (발주탭+전용양식)", "partnerCheckDuplicateOrdersOwner")
+    // ── 밤: 마감 ──
+    // 평소에는 트리거가 22:00 에 자동으로 돈다. 여기 있는 건 자동이 걸렀을 때
+    // 사람이 직접 돌리는 용도다 — 그래서 매일 메뉴에 남긴다.
+    .addItem("📋 통합 일일마감 (수동)", "partnerUnifiedDailyArchiveManual")
+    .addItem("🗂️ 통합조회 재생성 (CS 조회용)", "partnerRebuildUnifiedView")
     .addSeparator()
-    // ── 마감 ──
-    .addSubMenu(
-      ui.createMenu("📋 마감탭 정리")
-        .addItem("📦 대리판매 발주 마감이동", "partnerArchiveToMonthlySettleOwner")
-        .addItem("🏭 대리공급 발주 마감이동", "partnerArchiveExclusiveFormOwner")
-        .addSeparator()
-        .addItem("📋 통합 일일마감 (수동)", "partnerUnifiedDailyArchiveManual")
-        .addSeparator()
-        .addItem("🔄 취소/반품 수식 갱신", "partnerRefreshCancelReturnFormulas")
-        .addItem("🔧 월별 마감 탭 레이아웃 보정", "partnerRepairMonthlySettleTabs")
-    )
+    .addItem("📞 CS 주문/송장 검색 웹앱", "partnerOpenCsOrderSearchApp")
     .addToUi();
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  //  💼 협력업체 관리 — 시트 관리 / 설정 / 진단
+  //  💼 협력업체 관리 — 설정 · 점검 · 정비
+  //
+  //  파트 순서는 「무엇을 다루는가」로 잡았다.
+  //    업체 시트 → 단가 → 명세서 → 반품포털   (업체를 향한 것)
+  //    송장·택배사 → 송장 매칭                (마감을 향한 것)
+  //    진단 → 데이터 보정                     (문제를 볼 때 / 고칠 때)
+  //    정산 검증 → DB → 자동화 → 권한         (그 밖)
+  //
+  //  ★ 진단과 보정을 갈라 두었다. 「진단」은 읽기만 하고 「보정」은 쓴다.
+  //    섞여 있으면 눈으로 보려다 데이터를 고치게 된다.
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ui.createMenu("💼 협력업체 관리")
 
-    // ── 시트 생성/관리 ──
-    .addItem("➕ 시트 생성 (표준)", "partnerCreateSheet")
-    .addItem("➕ 시트 생성 (소비자용)", "partnerCreateConsumerSheet")
-    .addItem("➕ 시트 생성 (단가조회 전용)", "partnerCreateViewerOnlySheet")
-    .addItem("🔄 일반 → 소비자용 전환", "partnerConvertToConsumer")
+    // ─────────── 매일 흐름에서 문제가 났을 때 ───────────
+    // 2026-09-02: 발주시스템 메뉴에 섞여 있던 점검·복구를 여기로 모았다.
+    // 매일 쓰는 것과 가끔 쓰는 것이 한 줄에 있으면 매일 쓰는 걸 못 찾는다.
+    .addSubMenu(
+      ui.createMenu("🩺 발주·Push 점검")
+        // ── 왜 안 갔나 (읽기 전용) ──
+        .addItem("🛬 푸시 착지 확인", "partnerVerifyPushLanded")
+        .addItem("   └ 🕵 수집 누락 점검", "partnerFindUncollectedOrders")
+        .addItem("🔁 중복 발주 점검 (임시기록 차수)", "partnerCheckDuplicateOrders")
+        .addItem("🔍 중복 발주 감지 (발주탭+전용양식)", "partnerCheckDuplicateOrdersOwner")
+        .addItem("🕵️ 오전/오후 판매현황 중복 점검", "partnerCheckSalesDuplicatesOwner")
+        .addItem("   └ 📅 날짜 지정 점검", "partnerCheckSalesDuplicatesForDate")
+        .addSeparator()
+        // ── 고치기 (쓴다) ──
+        .addItem("🔧 임시기록 강제 재생성", "partnerRebuildTempRecordsOwner")
+        .addItem("📮 전용양식 우편번호/택배비 채우기", "partnerJmFillZipAndShipping")
+        .addItem("🧹 잘못 찍힌 회차 도장 청소", "partnerCleanBadPushStamps")
+    )
     .addSeparator()
 
-    // ── 복구/보정 ──
-    .addItem("🔧 업체시트 관리·복구", "openRepairDialog")
-    .addItem("🔄 검색입력 탭만 갱신", "partnerRefreshSearchInputOnly")
-    .addItem("💰 단가 새로고침 (빠른)", "partnerRefreshViewerPrices")
-    .addItem("✂️ 발주탭 행 트림 (250행)", "partnerTrimOrderTabs")
-    .addItem("🧹 발주탭 자동 정리 (빈행+복원)", "partnerCleanupOrderTabsOwner")
-    .addSeparator()
-
-    // ── 통합 허브 단가 관리 ──
+    // ─────────── 업체를 향한 것 ───────────
+    .addSubMenu(
+      ui.createMenu("🏢 업체 시트")
+        .addItem("➕ 시트 생성 (표준)", "partnerCreateSheet")
+        .addItem("➕ 시트 생성 (소비자용)", "partnerCreateConsumerSheet")
+        .addItem("➕ 시트 생성 (단가조회 전용)", "partnerCreateViewerOnlySheet")
+        .addItem("🔄 일반 → 소비자용 전환", "partnerConvertToConsumer")
+        .addSeparator()
+        .addItem("🔧 업체시트 관리·복구 (증상별)", "openRepairDialog")
+        .addItem("📝 발주탭 수식 복구 (업체 선택)", "partnerMigrateToNewArrayFormulaOwner")
+        // 명세서 **운영**(①②③·Gmail 수집·사전점검)은 발주시스템 메뉴에 있다.
+        // 여기에는 전체 업체를 한 번에 세팅하는 것만 둔다 — 같은 항목을 두 메뉴에
+        // 걸어 두면 직원이 어느 쪽을 눌러야 하는지 매번 고민한다.
+        .addItem("📋 명세서 탭 일괄 생성 (전체 업체)", "partnerCreateStatementTabsAll")
+        .addSeparator()
+        .addItem("🔄 검색입력 탭만 갱신", "partnerRefreshSearchInputOnly")
+        .addItem("💰 단가 새로고침 (빠른)", "partnerRefreshViewerPrices")
+        .addItem("✂️ 발주탭 행 트림 (250행)", "partnerTrimOrderTabs")
+        .addItem("🧹 발주탭 자동 정리 (빈행+복원)", "partnerCleanupOrderTabsOwner")
+    )
     .addSubMenu(
       ui.createMenu("💰 통합 허브 단가 관리")
         .addItem("1️⃣ [허브] 데이터 허브 구축/재구성", "createStaticHub")
@@ -85,20 +127,72 @@ function registerPartnerMenu_() {
         .addItem("🔍 내 허브 주소 찾기", "findMyHub")
         .addItem("✨ 시스템 설정 전체 초기화", "resetSystem")
     )
+    .addSubMenu(
+      ui.createMenu("🔁 협력업체 반품 포털")
+        .addItem("⚙️ 포털 URL 등록", "partnerPortalSetUrl")
+        .addItem("📋 업체명 목록 확인", "partnerPortalListVendors")
+        .addItem("🔄 업체 목록 동기화 (체크 선택)", "partnerPortalSyncVendors")
+        .addItem("🔑 접속 링크 발급 / 재발급", "partnerPortalIssueLink")
+        .addItem("🗑 계정 행 삭제 (토큰 미발급만)", "partnerPortalRemoveAccounts")
+        .addSeparator()
+        .addItem("🚦 접속 차단 / 해제", "partnerPortalToggleActive")
+        .addItem("📊 포털 활동 보기", "partnerPortalShowActivity")
+        .addItem("🧪 포털 설정 점검", "partnerPortalDiagnose")
+        .addSeparator()
+        .addItem("🧱 반품송장번호 열 추가 (맨 끝)", "partnerPortalEnsureReturnInvoiceColumn")
+        .addItem("📤 과거 반품송장 이관 (미리보기)", "partnerPortalMigrateReturnInvoicePreview")
+        .addItem("📤 과거 반품송장 이관 (반영)", "partnerPortalMigrateReturnInvoiceApply")
+        .addItem("🔽 업체명 드롭다운 적용", "partnerPortalApplyVendorValidation")
+    )
     .addSeparator()
 
-    // ── 진단 / 현황 ──
+    // ─────────── 마감을 향한 것 ───────────
+    .addSubMenu(
+      ui.createMenu("🚚 송장·택배사 설정")
+        .addItem("🚚 업체 택배사 표 생성/점검", "partnerEnsureVendorCarrierTable")
+        .addItem("📦 일일마감 택배사 채움률 점검", "partnerDiagnoseArchiveCarrier")
+        .addItem("🏭 출고지 마스터 점검 (평택=롯데 / 대리발송=업체)", "partnerDiagnoseShipOrigin")
+        .addItem("⏪ 지난 일일마감에 택배사 채우기", "partnerBackfillArchiveCarrier")
+        .addSeparator()
+        .addItem("📋 사방넷 송장대량등록 탭 갱신", "partnerRebuildSabangnetBulkUpload")
+        .addItem("🔧 사방넷_송장매칭 열배열(롯데) 적용", "partnerApplySabangnetLotteHeaders")
+        .addItem("🚚 롯데 송장탭 열 위치 확인", "partnerInspectLotteInvoiceColumns")
+        .addSeparator()
+        .addItem("📒 송장원장 재수집 (커서 초기화)", "partnerResetInvoiceLedgerCursors")
+    )
+    .addSubMenu(
+      ui.createMenu("🧭 송장 매칭 점검·정비")
+        // ── 왜 안 붙었나 (읽기 전용) ──
+        .addItem("🪪 고유ID 인식 점검", "partnerDiagnoseUidRecognition")
+        .addItem("🔎 일일마감 미매칭 원인 진단", "partnerDiagnoseUnifiedUnmatched")
+        .addItem("🔑 보조키(이름·전화앞7·주소·품목) 매칭 진단", "partnerDiagnoseAuxKeys")
+        .addItem("⚖️ 허브 송장 배정 근거 점검", "partnerDiagnoseCollectEvidence")
+        .addItem("📋 대리공급_임시기록 송장 점검", "partnerDiagnoseTempInvoiceData")
+        .addSeparator()
+        // ── 남의 송장이 붙었나 (읽기 전용) ──
+        .addItem("🧭 송장 소유권 점검 (남의 송장 붙었는지)", "partnerDiagnoseInvoiceOwnership")
+        .addItem("   └ 📅 기간 지정 점검", "partnerDiagnoseInvoiceOwnershipForDays")
+        .addSeparator()
+        // ── 고치기 (쓴다) ──
+        .addItem("1️⃣ 일일마감 송장 재매칭 미리보기 (2주)", "partnerPreviewArchiveInvoiceRefix")
+        .addItem("2️⃣ 일일마감 송장 재매칭 반영 (2주)", "partnerApplyArchiveInvoiceRefix")
+        .addItem("3️⃣ 지정일 송장 재매칭", "partnerFillUnmatchedArchiveForDate")
+        .addItem("🧹 일일마감 수량초과 송장 정리", "partnerPurgeArchiveQtyOverflow")
+        .addSeparator()
+        // 2026-09-02: 발주시스템 메뉴에 있던 감사·보강을 옮겼다.
+        .addItem("📊 송장 매칭 감사", "partnerAuditInvoiceMatching")
+        .addItem("⏪ 미매칭 소급 보강 (14일)", "partnerBackfillRecentArchives")
+        .addItem("🔍 미매칭 성격 분석", "partnerAnalyzeUnmatched")
+        .addItem("⏳ 송장 없이 남은 행", "partnerListStaleNoInvoice")
+    )
+    .addSeparator()
+
+    // ─────────── 문제를 볼 때 / 고칠 때 ───────────
     .addSubMenu(
       ui.createMenu("📊 상태 확인 / 진단")
         .addItem("🩺 Push 시스템 통합 진단", "partnerDiagnosePushSystem")
-        .addItem("🔧 뷰어 3행 수식 일괄 복구", "partnerRepairAllViewerRow3Formulas")
-        .addItem("📋 뷰어탭 이름 통일 + A열 마이그레이션", "partnerUnifyViewerTabNameOwner")
-        .addItem("📊 발주탭 ARRAYFORMULA 일괄 전환 (속도 개선)", "partnerMigrateToNewArrayFormulaOwner")
-        .addItem("🔧 전용양식 헤더 일괄 업데이트", "partnerRepairExclusiveFormHeaders")
+        .addItem("🧪 오전/오후 중복 점검 진단", "partnerDiagnoseSalesDuplicates")
         .addItem("📋 월별 정산 Dry-run (미리보기)", "partnerDiagnoseMonthlyArchive")
-        .addSeparator()
-        .addItem("🔧 허브 발주업체명 일괄 보정 (B5 기준)", "partnerFixHubVendorLabels")
-        .addItem("🔧 허브 단가 보정 (수량×단가→개별단가)", "partnerFixHubUnitPrices")
         .addSeparator()
         .addItem("📊 협력업체 상태 대시보드 갱신", "partnerShowStatusDashboard")
         .addItem("📈 발주 현황 보기", "partnerShowOrderSummary")
@@ -106,9 +200,106 @@ function registerPartnerMenu_() {
         .addSeparator()
         .addItem("🔔 Google Chat 알림 테스트", "chatNotifyTest")
     )
+    .addSubMenu(
+      ui.createMenu("🔧 데이터 보정 / 서식")
+        // ★ 여기 있는 것은 전부 **데이터를 고친다.** 보기만 하려면 위 진단으로.
+        .addItem("🔧 허브 발주업체명 일괄 보정 (B5 기준)", "partnerFixHubVendorLabels")
+        .addItem("🔧 허브 단가 보정 (수량×단가→개별단가)", "partnerFixHubUnitPrices")
+        .addItem("🧹 허브 상태열 드롭다운 정리 (잔여 규칙 제거)", "partnerClearHubStatusDropdowns")
+        .addSeparator()
+        .addItem("🔧 전용양식 헤더 일괄 업데이트", "partnerRepairExclusiveFormHeaders")
+        .addItem("🔧 뷰어 3행 수식 일괄 복구", "partnerRepairAllViewerRow3Formulas")
+        .addItem("📋 뷰어탭 이름 통일 + A열 마이그레이션", "partnerUnifyViewerTabNameOwner")
+        .addSeparator()
+        .addItem("🎨 발주탭 상태색 재적용 (전체 업체)", "partnerReapplyOrderTabCFR")
+        .addItem("🔎 허브 상태색 점검 (왜 초록이 안 되나)", "partnerDiagnoseHubGreen")
+        .addItem("🎨 허브 상태색 재적용", "partnerReapplyHubCFOwner")
+        .addItem("🎨 조건부서식 중복 정리 (허브+전체 업체)", "partnerDedupConditionalFormatsAll")
+    )
     .addSeparator()
 
-    // ── ★ 2026-07-01: DB 동기화 (Supabase) ──
+    // ─────────── 마감 · 월 단위 ───────────
+    // 2026-09-02: 발주시스템에 있던 것을 옮겼다. 매일 하는 일이 아니다.
+    .addSubMenu(
+      ui.createMenu("📋 명세서 정리")
+        .addItem("① 명세서 탭 생성 (현재 파일)", "partnerCreateStatementTabs")
+        .addItem("② 원본 → 파싱", "partnerParseStatementFromRaw")
+        .addItem("③ 비교·정리 실행", "partnerRunStatementReconcile")
+        .addSeparator()
+        .addItem("📧 Gmail 첨부 수집 (현재 파일)", "partnerFetchStatementFromGmail")
+        .addItem("🧪 명세서 사전점검", "partnerDiagnoseStatementReconcile")
+        .addItem("🧪 Gmail 미처리 점검", "partnerDiagnoseStatementGmail")
+    )
+    // 「명세서 정리」는 **받은** 명세를 대사하고,
+    // 「거래명세표 발행」은 우리가 **보낼** 명세를 만든다. 방향이 반대다.
+    .addSubMenu(
+      ui.createMenu("🧾 거래명세표 발행")
+        .addItem("🗂️ 마감탭에서 골라 발행", "partnerOpenTaxStatementPicker")
+        .addItem("🖱️ 선택한 행으로 발행 (현재 탭)", "partnerIssueTaxStatementFromSelection")
+        .addItem("📅 날짜 구간으로 발행 (현재 파일)", "partnerIssueTaxStatementByDateRange")
+        .addItem("📄 월 단위 발행 (현재 파일)", "partnerIssueTaxStatementHere")
+        .addSeparator()
+        .addItem("📤 전체 거래처 일괄 발행 + 메일", "partnerIssueTaxStatementsAll")
+        .addItem("🧪 거래명세표 사전점검", "partnerDiagnoseTaxStatement")
+        .addSeparator()
+        .addItem("⚙️ 설정 탭 생성 (허브)", "partnerCreateTaxStatementTabs")
+        .addItem("🔄 거래처 목록 동기화", "partnerSyncTaxStatementVendors")
+        // 사업자정보 손입력을 줄이는 3단계 — 코드 채우기 → 진단 → 자동 채우기
+        .addItem("   └ ① 거래처코드 채우기 (업체 설정탭에서)", "partnerFillVendorCustCodes")
+        .addItem("   └ ② 🧪 이카운트 거래처 조회 진단", "partnerProbeEcountCustomers")
+        .addItem("   └ ③ 🏢 이카운트에서 사업자정보 채우기", "partnerFillVendorInfoFromEcount")
+        .addItem("♻️ 일괄 발행 진행기록 초기화", "partnerResetTaxStatementProgress")
+    )
+    .addSubMenu(
+      ui.createMenu("📋 마감탭 정리")
+        .addItem("📦 대리판매 발주 마감이동", "partnerArchiveToMonthlySettle")
+        .addItem("🏭 대리공급 발주 마감이동", "partnerArchiveExclusiveForm")
+        .addSeparator()
+        .addItem("📋 일일마감 재처리 (날짜 지정)", "partnerUnifiedDailyArchiveForDate")
+        .addItem("🗂️ 일일마감 파일 폴더 정리 (일회성)", "partnerMoveDailyCloseFilesToSubFolder")
+        .addItem("📒 송장원장 갱신", "partnerRefreshInvoiceLedger")
+        .addSeparator()
+        .addItem("🔄 취소/반품 수식 갱신", "partnerRefreshCancelReturnFormulas")
+        .addItem("🔧 월별 마감 탭 레이아웃 보정", "partnerRepairMonthlySettleTabs")
+        .addItem("🔧 마감 정산금액 보정 (단가×수량)", "partnerRepairArchiveLineTotals")
+    )
+    .addSeparator()
+
+    // ─────────── 그 밖 ───────────
+    .addSubMenu(
+      ui.createMenu("📑 정산 비교 검증")
+        .addSubMenu(
+          ui.createMenu("📦 롯데택배 배송비 비교")
+            .addItem("① 비교시트 만들기/열기", "partnerOpenLotteShipCompareSheet")
+            .addItem("② 비교 실행", "partnerRunLotteShipCompare")
+            .addSeparator()
+            .addItem("🔧 비교시트 로컬메뉴 설치", "partnerInstallLotteShipCompareMenu")
+        )
+        .addSubMenu(
+          ui.createMenu("📑 월마감↔이카운트 비교")
+            .addItem("⚙ 설정(대상월) 열기", "partnerOpenSettleCompareSettings")
+            .addItem("⚙ 전달로 맞추기(자동)", "partnerResetSettleCompareMonthToPrev")
+            .addSeparator()
+            .addSubMenu(
+              ui.createMenu("📂 독립시트 검증")
+                .addItem("① 비교시트 만들기/열기 (복수)", "partnerCreateSettleReconcileSheets")
+                .addItem("② 월마감 불러오기 (복수)", "partnerCollectSettleForReconcile")
+                .addItem("③ 비교 실행 (복수)", "partnerRunSettleReconcile")
+                .addItem("④ 이카운트 기준 월마감 수정 (복수)", "partnerApplyEcountFixToArchiveBatch")
+                .addSeparator()
+                .addItem("🔧 비교시트에 로컬메뉴 설치(복수)", "partnerInstallCompareSheetMenus")
+            )
+            .addSubMenu(
+              ui.createMenu("📋 상품정보시트 검증")
+                .addItem("① 비교 탭 준비", "partnerHubPrepareCompareTabs")
+                .addItem("② 월마감 불러오기", "partnerHubCollectSettleForReconcile")
+                .addItem("③ 비교 실행", "partnerHubRunSettleReconcile")
+                .addItem("④ 이카운트 기준 월마감 수정", "partnerHubApplyEcountFixToArchive")
+                .addSeparator()
+                .addItem("🔧 탭이름 정리(대사→비교)", "partnerRenameHubCompareTabs")
+            )
+        )
+    )
     .addSubMenu(
       ui.createMenu("🗄️ DB 동기화 (Supabase)")
         .addItem("🔗 DB 연결 테스트", "testDbConnectionOwner")
@@ -122,21 +313,24 @@ function registerPartnerMenu_() {
         .addItem("🔍 DB 품목 검색", "searchProductFromDbOwner")
         .addItem("📊 단가 이력 조회", "viewPriceHistoryOwner")
     )
-    .addSeparator()
-
-    // ── 자동화 설정 ──
     .addSubMenu(
       ui.createMenu("⚙️ 자동화 설정")
         .addItem("⏰ 통합 자동 트리거 설치 (전체)", "setupAllScheduledTriggers")
         .addItem("⏸ 통합 자동 트리거 제거 (전체)", "removeAllScheduledTriggers")
         .addItem("📋 자동 트리거 상태 확인", "showAllScheduledTriggerStatus")
+        .addItem("🗓️ 주말·공휴일 차단 상태 확인", "partnerShowBlackoutStatus")
+        .addSeparator()
+        .addItem("✅ 허브 상태동기화 트리거 설치 (출고가능/품절)", "partnerSetupShipApprovalTrigger")
+        .addItem("⏸ 허브 상태동기화 트리거 제거", "partnerRemoveShipApprovalTrigger")
     )
-    .addSeparator()
-
-    // ── 권한/락 ──
-    .addItem("🔑 스크립트 권한 승인 (직원 최초 1회)", "partnerAuthorizeForStaff")
-    .addItem("🔓 동기화 락 강제 해제", "adminForceReleaseSyncLock_")
-    .addItem("🛑 재설치 중단", "stopRepairScriptBatchOwner")
+    .addSubMenu(
+      ui.createMenu("🔑 권한 / 잠금 해제")
+        .addItem("🔑 스크립트 권한 승인 (직원 최초 1회)", "partnerAuthorizeForStaff")
+        .addSeparator()
+        .addItem("🔓 동기화 락 강제 해제", "adminForceReleaseSyncLock_")
+        .addItem("🛑 마감 백그라운드 강제 초기화", "partnerForceClearArchiveJobs_")
+        .addItem("🛑 재설치 중단", "stopRepairScriptBatchOwner")
+    )
     .addToUi();
 }
 
@@ -155,6 +349,8 @@ function openRepairDialog_script() { _openRepairDialog_("스크립트"); }
 function openRepairDialog_tabs() { _openRepairDialog_("탭"); }
 function openRepairDialog_data() { _openRepairDialog_("헤더"); }
 
+function openRepairDialog_order() { _openRepairDialog_("발주"); }
+
 function _openRepairDialog_(preselect) {
   var html = HtmlService.createHtmlOutputFromFile("repairDialog")
     .setWidth(720)
@@ -164,7 +360,7 @@ function _openRepairDialog_(preselect) {
     "헤더": "📋 양식·디자인 초기화",
     "스크립트": "🔧 상품검색 스크립트 재설치",
     "탭": "📑 탭 처음부터 다시 만들기",
-    "발주": "📝 발주탭 자동입력 복구",
+    "발주": "📝 발주탭 수식 복구",
   };
   var defaultTitle = "🔧 업체시트 관리·복구";
   html.setTitle(titles[preselect] || defaultTitle);
@@ -301,7 +497,7 @@ function _repairBatch_viewerFormula_(fileIds) {
   return results;
 }
 
-/** 1-B. 📝 발주탭 수식 복원 (발주탭 + 뷰어탭만) */
+/** 1-B. 📝 발주탭 자동입력 복구 (수집 직전 채움 모드) */
 function _repairBatch_orderFormula_(fileIds) {
   var results = [];
   for (var i = 0; i < fileIds.length; i++) {
@@ -309,31 +505,12 @@ function _repairBatch_orderFormula_(fileIds) {
     try {
       var ss = SpreadsheetApp.openById(fid);
       var nm = ss.getName().replace("[협력업체] ", "").trim();
-      var logs = [];
-
-      var ot = ss.getSheetByName("발주 및 송장조회");
-      if (!ot) { results.push("⏭ " + nm + " (발주탭 없음)"); continue; }
-
-      var viewer = _pt_findViewerSheet(ss);
-      var viewerName = viewer ? viewer.getName() : "단가조회";
-
-      // L열 헤더 보정
-      var lHeader = String(ot.getRange(1, 12).getValue() || "").trim();
-      if (lHeader === "정산금액") { ot.getRange(1, 12).setValue("단가"); logs.push("L헤더"); }
-
-      // spill heal
-      var healResult = _pt_healOrderSpillFormulas(ot, viewerName);
-      if (healResult.aFixed || healResult.lFixed || healResult.dFixed || healResult.nFixed) {
-        logs.push("spill수식");
+      var r = _pt_repairOrderTabCollectMode_(ss);
+      if (!r.ok) {
+        results.push("⏭ " + nm + " (" + (r.msg || "발주탭 없음") + ")");
+      } else {
+        results.push("✅ " + nm + " (" + r.msg + ")");
       }
-
-      // D/L 백필
-      if (viewer) {
-        var bfResult = _pt_backfillOrderDL(ot, viewer);
-        if (bfResult.filled > 0) logs.push("백필" + bfResult.filled + "행");
-      }
-
-      results.push("✅ " + nm + " (" + (logs.length > 0 ? logs.join(", ") : "이상없음") + ")");
     } catch (e) {
       results.push("❌ " + fid.substring(0, 10) + "...: " + String(e.message || "").substring(0, 40));
     }
@@ -341,7 +518,7 @@ function _repairBatch_orderFormula_(fileIds) {
   return results;
 }
 
-/** ★ 2026-06-30: 빠른 품목명·단가 백필 전용 (수식 복구 없이 D/L만 채움) */
+/** ★ 품목명·단가 빈칸 채우기 (수집과 동일 로직) */
 function _repairBatch_backfillDL_(fileIds) {
   var results = [];
   for (var i = 0; i < fileIds.length; i++) {
@@ -349,17 +526,11 @@ function _repairBatch_backfillDL_(fileIds) {
     try {
       var ss = SpreadsheetApp.openById(fid);
       var nm = ss.getName().replace("[협력업체] ", "").trim();
-      var ot = ss.getSheetByName("발주 및 송장조회");
-      if (!ot) { results.push("⏭ " + nm + " (발주탭 없음)"); continue; }
-
-      var vTab = null;
-      try { vTab = _pt_findViewerSheet(ss); } catch(e) {}
-      if (!vTab) vTab = ss.getSheetByName("단가조회");
-      if (!vTab) { results.push("⏭ " + nm + " (뷰어탭 없음)"); continue; }
-
-      var bfResult = _pt_backfillOrderDL(ot, vTab);
-      if (bfResult.filled > 0) {
-        results.push("✅ " + nm + " (" + bfResult.filled + "행 채움)");
+      var r = _pt_repairOrderTabCollectMode_(ss);
+      if (!r.ok) {
+        results.push("⏭ " + nm + " (" + (r.msg || "발주탭 없음") + ")");
+      } else if (r.filled > 0) {
+        results.push("✅ " + nm + " (" + r.filled + "칸 채움)");
       } else {
         results.push("✔ " + nm + " (빈 항목 없음)");
       }
@@ -373,12 +544,17 @@ function _repairBatch_backfillDL_(fileIds) {
 /** 2. 헤더·양식 복구 */
 function _repairBatch_header_(fileIds) {
   var results = [];
-  var defaultH = [
-    "거래처명(자동)", "주문일자(자동)", "이카운트코드", "품목명(자동)",
-    "수량", "수취인", "수취인전화번호", "수취인주소",
-    "배송메시지", "적요", "송장번호", "단가",
-    "고유ID(자동)", "상태(자동)", "도서산간배송비",
-  ];
+  // ★ 2026-08-07: 헤더 텍스트만 덮어쓰면 열 밀림 시 데이터가 오라벨됨
+  //   → _pt_normalizeOrderTabStructure_ + 수식복구가 열삽입·헤더·수식을 일괄 처리
+  var defaultH =
+    typeof _PT_ORDER_TAB_HEADERS_ !== "undefined"
+      ? _PT_ORDER_TAB_HEADERS_
+      : [
+          "거래처명(자동)", "주문일자(자동)", "이카운트코드", "품목명(자동)",
+          "수량", "수취인", "수취인전화번호", "수취인주소",
+          "배송메시지", "적요", "송장번호", "정산금액(자동)",
+          "고유ID(자동)", "상태(자동)", "도서산간배송비",
+        ];
 
   for (var i = 0; i < fileIds.length; i++) {
     var fid = fileIds[i];
@@ -387,29 +563,26 @@ function _repairBatch_header_(fileIds) {
       var nm = ss.getName().replace("[협력업체] ", "").trim();
       var logs = [];
 
-      // ① 발주탭 헤더 복구
+      // ① 발주탭: 열 구조 정상화 → 수식·서식 복구
       var ot = ss.getSheetByName("발주 및 송장조회");
       if (ot) {
-        ot.getRange(1, 1, 1, defaultH.length).setValues([defaultH]);
-        ot.getRange("1:1").setBackground("#1f4e78").setFontColor("white").setFontWeight("bold");
-        ot.setFrozenRows(1);
-        logs.push("발주헤더");
-
-        // ② 조건부서식 재적용
         try {
-          if (typeof _pt_applyOrderTabDesign === "function") {
-            _pt_applyOrderTabDesign(ot);
-            logs.push("조건부서식");
-          }
-        } catch (eCfr) {}
-
-        // ★ 2026-07-15: ARRAYFORMULA 수식 재주입
-        try {
-          if (typeof _pt_injectOrderSpillFormulas === "function") {
-            _pt_injectOrderSpillFormulas(ot);
-            logs.push("수식복구");
-          }
-        } catch (eInj) {}
+          var rOrd = _pt_repairOrderTabCollectMode_(ss);
+          if (rOrd.ok) logs.push("발주탭복구(" + (rOrd.msg || "") + ")");
+          else logs.push("발주탭스킵");
+        } catch (eInj) {
+          // fallback: 헤더만이라도
+          try {
+            ot.getRange(1, 1, 1, defaultH.length).setValues([defaultH]);
+            ot.getRange("1:1").setBackground("#1f4e78").setFontColor("white").setFontWeight("bold");
+            ot.setFrozenRows(1);
+            logs.push("발주헤더(폴백)");
+            if (typeof _pt_applyOrderTabDesign === "function") {
+              _pt_applyOrderTabDesign(ot);
+              logs.push("조건부서식");
+            }
+          } catch (_) {}
+        }
       }
 
       // ③ 전용양식 헤더 + 조건부서식 복구
@@ -533,6 +706,8 @@ function _repairBatch_script_core_(fileIds) {
 
       if (typeof _pd_installVendorAutofillScript_ === "function") {
         _pd_installVendorAutofillScript_(ss, fid);
+        // ★ 2026-07-16: 구버전 입력차단 제거 후 발주탭도 수집모드로 정리
+        try { _pt_repairOrderTabCollectMode_(ss); } catch (_) {}
         results.push("✅ " + nm);
       } else {
         results.push("⚠️ " + nm + " (설치 함수 없음)");
@@ -545,6 +720,7 @@ function _repairBatch_script_core_(fileIds) {
           var ss2 = SpreadsheetApp.openById(fid);
           var nm2 = ss2.getName().replace("[협력업체] ", "").trim();
           _pd_installVendorAutofillScript_(ss2, fid);
+          try { _pt_repairOrderTabCollectMode_(ss2); } catch (_) {}
           results.push("✅ " + nm2 + " (재시도)");
         } catch (e2) {
           results.push("❌ " + fid.substring(0, 10) + "...: " + String(e2.message || "").substring(0, 60));
@@ -816,8 +992,8 @@ function _repairBatch_tabs_(fileIds, opts) {
           orderTab.getRange("1:1").setBackground("#1f4e78").setFontColor("white").setFontWeight("bold");
           orderTab.setFrozenRows(1);
           _pt_applyOrderTabDesign(orderTab);
-          // ★ 2026-07-03: D/L값 기반 전환 이후 수식→값 정리만 수행 (안전)
-          try { _pt_injectOrderSpillFormulas(orderTab, viewerTabName); } catch (eSpill) {}
+          // ★ 2026-07-16: 수집 직전 채움 모드 (실시간 차단/ARRAYFORMULA 없음)
+          try { _pt_repairOrderTabCollectMode_(ss); } catch (eSpill) {}
           logs.push("발주탭 복구");
         }
       }

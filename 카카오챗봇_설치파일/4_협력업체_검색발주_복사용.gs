@@ -282,11 +282,11 @@ function submitSearchOrders() {
     }
   }
 
-  // Pass 1: B~K (col 2~11) — today, ecCode, itemName, qty, recipient, phone, addr, msg, 적요, 송장번호
+  // Pass 1: B~K (품목명 D 포함 — onEdit 캐시 방식과 동일하게 값으로 기록)
   var pass1 = rows.map(function(r) { return r.slice(1, 11); });
   orderTab.getRange(nextRow, 2, pass1.length, pass1[0].length).setValues(pass1);
 
-  // Pass 2: M~N (col 13~14) — 고유ID, 상태 (L열 단가는 L1 수식이 자동 채움)
+  // Pass 2: M~N (고유ID, 상태)
   var pass2 = rows.map(function(r) { return [r[12], r[13]]; });
   orderTab.getRange(nextRow, 13, pass2.length, 2).setValues(pass2);
 

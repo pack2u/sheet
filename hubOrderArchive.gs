@@ -515,3 +515,91 @@ function buildHubDeleteGroups_(sortedDescIndices) {
 
   return groups;
 }
+
+/**
+ * 허브 월별 아카이브 파일을 invoiceMap에 넣는다.
+ * 월마감 뒤 허브에서 빠진 대리판매 송장을 재매칭이 찾게 한다.
+ */
+function _ha_addHubArchiveToInvoiceMap_(invoiceMap, throughDateStr) {
+  var out = { read: 0, files: 0, errors: [] };
+  if (!invoiceMap) return out;
+
+  var months = [];
+  var now = new Date();
+  if (throughDateStr) {
+    var d = String(throughDateStr).replace(/[^0-9]/g, "");
+    if (d.length >= 6) {
+      var y = parseInt(d.substring(0, 4), 10);
+      var m = parseInt(d.substring(4, 6), 10);
+      if (y && m) now = new Date(y, m - 1, 1);
+    }
+  }
+  months.push(Utilities.formatDate(now, "Asia/Seoul", "yyyy-MM"));
+  var prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  months.push(Utilities.formatDate(prev, "Asia/Seoul", "yyyy-MM"));
+
+  var props = PropertiesService.getScriptProperties();
+  var namePrefix = typeof HUB_ARCHIVE_SS_NAME_PREFIX !== "undefined"
+    ? HUB_ARCHIVE_SS_NAME_PREFIX : "[Pack2U 통합발주 아카이브] ";
+
+  for (var mi = 0; mi < months.length; mi++) {
+    var yyyymm = months[mi];
+    var ss = null;
+    try {
+      if (typeof _pil_findHubArchiveSs_ === "function") {
+        ss = _pil_findHubArchiveSs_(props, namePrefix, yyyymm);
+      } else {
+        var it = DriveApp.getFilesByName(namePrefix + yyyymm);
+        if (it.hasNext()) ss = SpreadsheetApp.openById(it.next().getId());
+      }
+    } catch (eFind) {
+      out.errors.push(yyyymm + ": " + eFind.message);
+      continue;
+    }
+    if (!ss) continue;
+    var tab = ss.getSheetByName("발주 아카이브") || ss.getSheets()[0];
+    if (!tab || tab.getLastRow() < 2) continue;
+    var data;
+    try {
+      data = tab.getRange(2, 1, tab.getLastRow() - 1, Math.max(tab.getLastColumn(), 15)).getDisplayValues();
+    } catch (eRead) {
+      out.errors.push(yyyymm + " 읽기: " + eRead.message);
+      continue;
+    }
+    var fileRead = 0;
+    for (var i = 0; i < data.length; i++) {
+      var hInv = String(data[i][13] || "").trim();
+      if (!hInv) continue;
+      if (typeof _po_hasRealInvoice_ === "function" && !_po_hasRealInvoice_(hInv)) continue;
+      var hUid = String(data[i][2] || "").trim();
+      var hCr = typeof _pep_carrierForVendor_ === "function"
+        ? _pep_carrierForVendor_(data[i][1]) : "";
+      if (hUid && typeof _pep_uidFromOrdererCell_ === "function") {
+        hUid = _pep_uidFromOrdererCell_(hUid) || hUid;
+      }
+      if (hUid && !(invoiceMap[hUid] && invoiceMap[hUid].source === "롯데")) {
+        _pep_addInvoiceMap_(invoiceMap, hUid, hInv, "대리판매", hCr);
+      }
+      if (typeof _pt_deriveHubRowPepUid_ === "function") {
+        try {
+          var pep = _pt_deriveHubRowPepUid_(data[i]);
+          if (pep && pep !== hUid && !(invoiceMap[pep] && invoiceMap[pep].source === "롯데")) {
+            _pep_addInvoiceMap_(invoiceMap, pep, hInv, "대리판매", hCr);
+          }
+        } catch (ePep) {}
+      }
+      if (typeof _pep_addNamePhoneInvoiceKeys_ === "function") {
+        _pep_addNamePhoneInvoiceKeys_(invoiceMap, data[i][7], data[i][8], hInv, "대리판매", {
+          skipName: true, addr: data[i][9], item: data[i][5],
+          carrier: hCr,
+          stat: typeof _pep_keyStat_ === "function" ? _pep_keyStat_("허브아카이브") : null,
+        });
+      }
+      out.read++;
+      fileRead++;
+    }
+    if (fileRead) out.files++;
+  }
+  Logger.log("[UNIFIED] 허브아카이브 송장맵: " + out.read + "건 / " + out.files + "파일");
+  return out;
+}

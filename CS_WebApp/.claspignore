@@ -1,0 +1,9 @@
+**/*.png
+**/node_modules/**
+**/_favicon_b64.txt
+
+# 로컬 검증용 Node 테스트 (GAS 에 올리지 않는다)
+*_test.js
+
+# 브라우저로 눈으로 확인하려고 만든 임시 미리보기 (GAS 에 올리지 않는다)
+_preview_*.html

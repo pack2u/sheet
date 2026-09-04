@@ -8,8 +8,13 @@
       font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
       font-size: 13px; background: #f5f5f5; padding: 16px;
     }
-    h2 { font-size: 16px; margin-bottom: 6px; color: #1a73e8; }
-    .subtitle { font-size: 11px; color: #888; margin-bottom: 14px; }
+    h2 { font-size: 16px; margin-bottom: 4px; color: #1a73e8; }
+    .subtitle { font-size: 11px; color: #888; margin-bottom: 12px; }
+    .step-guide {
+      font-size: 11px; color: #5f6368; background: #e8f0fe; border-radius: 6px;
+      padding: 8px 10px; margin-bottom: 12px; line-height: 1.6;
+    }
+    .step-guide b { color: #1a73e8; }
 
     .category {
       background: white; border-radius: 8px; padding: 12px 14px;
@@ -22,16 +27,24 @@
     .category .top-row {
       display: flex; align-items: center; gap: 8px;
     }
+    .category .step-num {
+      font-size: 11px; font-weight: bold; color: white;
+      background: #aaa; border-radius: 50%; width: 20px; height: 20px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .step-green .step-num { background: #34a853; }
+    .step-blue .step-num { background: #4285f4; }
+    .step-orange .step-num { background: #ff9800; }
+    .step-red .step-num { background: #ea4335; }
     .category .icon { font-size: 18px; }
     .category .title {
-      font-size: 14px; font-weight: bold; color: #333; flex: 1;
+      font-size: 13px; font-weight: bold; color: #333; flex: 1;
     }
     .category .badge {
       font-size: 9px; padding: 2px 6px; border-radius: 10px;
       color: white; font-weight: bold;
     }
-    .badge-quick { background: #34a853; }
-    .badge-full { background: #ea4335; }
 
     .category .symptoms {
       margin-top: 8px; padding: 8px 10px;
@@ -40,10 +53,13 @@
     }
     .category .symptoms b { color: #d93025; }
     .category .symptoms .when { color: #1a73e8; font-weight: bold; }
+    .category .symptoms .time-info {
+      margin-top: 4px; color: #888; font-size: 10px;
+    }
 
     .cat-grid {
-      display: grid; grid-template-columns: 1fr 1fr;
-      gap: 10px; margin-bottom: 12px;
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px; margin-bottom: 12px;
     }
 
     .vendor-section {
@@ -109,78 +125,122 @@
   </style>
 </head>
 <body>
-  <h2>🔧 복구 도구</h2>
-  <div class="subtitle">증상에 맞는 도구를 선택하세요</div>
+  <h2>🔧 업체시트 관리·복구</h2>
+  <div class="subtitle">문제 증상에 맞는 도구를 선택하세요</div>
+
+  <div class="step-guide">
+    <b>💡 사용 순서:</b> 가벼운 도구부터 먼저 시도하세요!<br>
+    ❶ 품목·단가 빈칸 → ❷ 단가조회 에러 → ❸ 발주탭 수식복구 → ❹ 디자인 깨짐 → ❺ 입력차단 toast → ❻ 최종수단<br>
+    <span style="opacity:.85">※ 품목명·단가·상태는 발주탭 1행 수식(ARRAYFORMULA/MAP)으로 즉시 표시됩니다. onEdit 실시간 차단은 사용하지 않습니다.</span>
+  </div>
 
   <div class="cat-grid">
-  <!-- ① 수식·단가 복구 -->
-  <div class="category" data-cat="formula" onclick="selectCategory(this)">
+  <!-- ① 품목명·단가 빈칸 채우기 -->
+  <div class="category step-green" data-cat="backfillDL" onclick="selectCategory(this)">
     <div class="top-row">
+      <span class="step-num">1</span>
+      <span class="icon">⚡</span>
+      <span class="title">품목명·단가 빈칸 채우기</span>
+      <span class="badge" style="background:#34a853;">가장 안전</span>
+    </div>
+    <div class="symptoms">
+      <span class="when">▸ 이럴 때 사용:</span><br>
+      · 이카운트코드(C열)는 있는데 <b>품목명/단가가 비어있을 때</b><br>
+      · 발주 수집 전에 <b>빈칸을 미리 채우고 싶을 때</b><br>
+      <div class="time-info">⏱ 약 2분 | 수집과 동일 로직으로 빈칸만 채움</div>
+    </div>
+  </div>
+
+  <!-- ② 단가조회 탭 복구 -->
+  <div class="category step-blue" data-cat="viewerFormula" onclick="selectCategory(this)">
+    <div class="top-row">
+      <span class="step-num">2</span>
       <span class="icon">📊</span>
-      <span class="title">수식·단가 복구</span>
-      <span class="badge badge-quick">빠름</span>
+      <span class="title">단가조회 화면 복구</span>
+      <span class="badge" style="background:#4285f4;">안전</span>
     </div>
     <div class="symptoms">
       <span class="when">▸ 이럴 때 사용:</span><br>
-      · 코드를 넣어도 <b>품목명/단가가 안 나올 때</b><br>
-      · A열(거래처명)에 <b>#REF 에러</b>가 뜰 때<br>
-      · 단가조회 탭에 <b>데이터가 안 보일 때</b>
+      · 단가조회 탭에 <b>#REF! 에러</b>가 뜰 때<br>
+      · 단가조회 화면에 <b>데이터가 안 보일 때</b><br>
+      <div class="time-info">⏱ 약 5분 | 단가조회 탭만 수정됨</div>
     </div>
   </div>
 
-  <!-- ② 헤더·양식 복구 -->
-  <div class="category" data-cat="header" onclick="selectCategory(this)">
+  <!-- ③ 발주탭 복구 -->
+  <div class="category step-blue" data-cat="orderFormula" onclick="selectCategory(this)">
     <div class="top-row">
-      <span class="icon">📋</span>
-      <span class="title">헤더·양식 복구</span>
-      <span class="badge badge-quick">빠름</span>
-    </div>
-    <div class="symptoms">
-      <span class="when">▸ 이럴 때 사용:</span><br>
-      · 발주탭 <b>1행 헤더가 깨지거나 바뀌었을 때</b><br>
-      · <b>조건부서식</b>(색상 구분)이 사라졌을 때<br>
-      · 거래처코드(B6) <b>앞자리 0이 빠질 때</b>
-    </div>
-  </div>
-
-  <!-- ③ 스크립트 재설치 -->
-  <div class="category" data-cat="script" onclick="selectCategory(this)">
-    <div class="top-row">
+      <span class="step-num">3</span>
       <span class="icon">📝</span>
-      <span class="title">스크립트 재설치</span>
-      <span class="badge badge-quick">빠름</span>
+      <span class="title">발주탭 수식 복구</span>
+      <span class="badge" style="background:#4285f4;">안전</span>
     </div>
     <div class="symptoms">
       <span class="when">▸ 이럴 때 사용:</span><br>
-      · 이카운트코드 입력해도 <b>자동완성이 안 될 때</b><br>
-      · 단가/품목명 <b>수정해도 원복이 안 될 때</b><br>
-      · 보호된 열 편집 시 <b>차단 메시지가 안 뜰 때</b>
+      · 코드 입력해도 <b>품목명/단가가 안 나올 때</b><br>
+      · 고유ID 있는데 <b>접수완료가 안 뜰 때</b><br>
+      · D/L/N 수식이 깨졌거나 <b>#REF!</b>일 때<br>
+      · 주문일자/수량이 사라지고 <b>열이 밀려 양식이 꼬였을 때</b><br>
+      <div class="time-info">⏱ 약 1~3분 | 열 정상화 후 D/L/N 수식 재주입</div>
     </div>
   </div>
 
-  <!-- ④ 탭 재생성 -->
-  <div class="category" data-cat="tabs" onclick="selectCategory(this)">
+  <!-- ④ 양식·디자인 초기화 -->
+  <div class="category step-blue" data-cat="header" onclick="selectCategory(this)">
     <div class="top-row">
+      <span class="step-num">4</span>
+      <span class="icon">📋</span>
+      <span class="title">양식·디자인 초기화</span>
+      <span class="badge" style="background:#4285f4;">안전</span>
+    </div>
+    <div class="symptoms">
+      <span class="when">▸ 이럴 때 사용:</span><br>
+      · 1행 <b>헤더(제목줄)가 깨졌을 때</b><br>
+      · <b>색상이나 서식</b>이 사라졌을 때<br>
+      <div class="time-info">⏱ 약 5분 | 디자인만 수정 (데이터 안전)</div>
+    </div>
+  </div>
+
+  <!-- ⑤ 자동완성 스크립트 재설치 -->
+  <div class="category step-orange" data-cat="script" onclick="selectCategory(this)">
+    <div class="top-row">
+      <span class="step-num">5</span>
+      <span class="icon">🔧</span>
+      <span class="title">상품검색 스크립트 재설치</span>
+      <span class="badge" style="background:#ff9800;">느림</span>
+    </div>
+    <div class="symptoms">
+      <span class="when">▸ 이럴 때 사용:</span><br>
+      · 칸마다 <b>「입력 차단」toast</b>가 뜰 때 (구버전 onEdit)<br>
+      · <b>상품 검색</b> 메뉴/사이드바가 안 열릴 때<br>
+      <div class="time-info">⏱ 10개씩 자동 실행 | no-op onEdit으로 교체</div>
+    </div>
+  </div>
+
+  <!-- ⑥ 탭 처음부터 다시 만들기 -->
+  <div class="category step-red" data-cat="tabs" onclick="selectCategory(this)">
+    <div class="top-row">
+      <span class="step-num">6</span>
       <span class="icon">📑</span>
-      <span class="title">탭 재생성</span>
-      <span class="badge badge-full">전체 복구</span>
+      <span class="title">탭 처음부터 다시 만들기</span>
+      <span class="badge" style="background:#ea4335;">⚠ 최종수단</span>
     </div>
     <div class="symptoms">
       <span class="when">▸ 이럴 때 사용:</span><br>
       · 탭이 <b>삭제되거나 통째로 망가졌을 때</b><br>
-      · 위 3개 도구로도 <b>해결이 안 될 때</b><br>
-      · ⚠️ <b>모든 복구를 포함</b>하는 최종 수단
+      · 위 1~5번으로 <b>해결이 안 될 때</b><br>
+      <div class="time-info">⏱ 약 10분 | ⚠️ 기존 데이터 덮어씀!</div>
     </div>
   </div>
   </div><!-- /cat-grid -->
 
   <!-- 탭 재생성 옵션 -->
   <div class="tab-options" id="tabOptions">
-    <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:8px;">재생성할 항목 선택:</div>
-    <label><input type="checkbox" id="opt_viewer" checked> 📊 단가조회(뷰어) 탭</label>
+    <div style="font-size:12px; font-weight:bold; color:#555; margin-bottom:8px;">🔧 다시 만들 항목을 선택하세요:</div>
+    <label><input type="checkbox" id="opt_viewer" checked> 📊 단가조회 탭</label>
     <label><input type="checkbox" id="opt_order" checked> 📦 발주 및 송장조회 탭</label>
     <label><input type="checkbox" id="opt_search" checked> 🔍 검색입력 탭</label>
-    <label><input type="checkbox" id="opt_script" checked> 📝 상품검색 스크립트</label>
+    <label><input type="checkbox" id="opt_script" checked> 🔧 상품검색 스크립트</label>
   </div>
 
   <!-- 업체 선택 -->
@@ -198,7 +258,7 @@
 
   <!-- 실행 버튼 -->
   <div class="btn-row">
-    <button class="btn btn-secondary" onclick="google.script.host.close()">취소</button>
+    <button class="btn btn-secondary" onclick="google.script.host.close()">닫기</button>
     <button class="btn btn-primary" id="runBtn" onclick="runRepair()" disabled>🔧 복구 실행</button>
   </div>
 
@@ -209,8 +269,18 @@
     var _selectedCat = null;
     var _vendors = [];
 
+    // 카테고리별 한글 이름 (결과 메시지용)
+    var _catNames = {
+      backfillDL: "품목명·단가 채우기",
+      viewerFormula: "단가조회 복구",
+      orderFormula: "발주탭 수식 복구",
+      header: "양식·디자인 초기화",
+      script: "스크립트 재설치",
+      tabs: "탭 재생성"
+    };
+
     // 타이틀에서 사전 선택 카테고리 감지
-    var _catMap = { "수식": "formula", "헤더": "header", "스크립트": "script", "탭": "tabs" };
+    var _catMap = { "수식": "viewerFormula", "헤더": "header", "스크립트": "script", "탭": "tabs", "단가": "viewerFormula", "발주": "orderFormula", "수집모드": "orderFormula" };
     function autoSelectFromTitle() {
       var title = document.title || "";
       for (var key in _catMap) {
@@ -222,6 +292,12 @@
       }
     }
 
+    // 발주/수집모드로 열면 업체는 직접 고르게 (기본 체크 해제)
+    function _shouldDefaultCheckVendors_() {
+      var title = document.title || "";
+      return title.indexOf("발주") === -1 && title.indexOf("수집모드") === -1;
+    }
+
     // 카테고리 선택
     function selectCategory(el) {
       document.querySelectorAll('.category').forEach(function(c) { c.classList.remove('selected'); });
@@ -229,6 +305,11 @@
       _selectedCat = el.getAttribute('data-cat');
       document.getElementById('vendorSection').style.display = 'block';
       document.getElementById('runBtn').disabled = false;
+
+      // 버튼 텍스트 업데이트
+      var name = _catNames[_selectedCat] || "복구";
+      document.getElementById('runBtn').textContent = '🔧 ' + name + ' 실행';
+
       // 탭 재생성 옵션 표시/숨김
       var tabOpts = document.getElementById('tabOptions');
       if (tabOpts) tabOpts.style.display = (_selectedCat === 'tabs') ? 'block' : 'none';
@@ -257,15 +338,21 @@
         .withSuccessHandler(function(list) {
           _vendors = list;
           var html = '';
+          var defaultChecked = _shouldDefaultCheckVendors_();
           list.forEach(function(v, i) {
             html += '<div class="vendor-item">' +
-              '<input type="checkbox" id="v' + i + '" value="' + v.id + '" onchange="updateCount()" checked>' +
+              '<input type="checkbox" id="v' + i + '" value="' + v.id + '" onchange="updateCount()"' +
+              (defaultChecked ? ' checked' : '') + '>' +
               '<label for="v' + i + '">[' + v.pfx + '] ' + v.name + '</label></div>';
           });
           document.getElementById('vendorList').innerHTML = html || '<div style="color:#888; text-align:center;">업체 없음</div>';
-          document.getElementById('selectAll').checked = true;
+          document.getElementById('selectAll').checked = defaultChecked && list.length > 0;
           updateCount();
           autoSelectFromTitle();
+          if (!defaultChecked) {
+            var st = document.getElementById('status');
+            if (st) st.innerHTML = '<span style="color:#1565c0;">업체를 선택한 뒤 「실행」을 누르세요. (한 번에 5~10개 권장)</span>';
+          }
         })
         .withFailureHandler(function(e) {
           document.getElementById('vendorList').innerHTML =
@@ -287,9 +374,10 @@
         return;
       }
 
+      var catName = _catNames[_selectedCat] || _selectedCat;
       var btn = document.getElementById('runBtn');
-      btn.disabled = true; btn.textContent = '⏳ 복구 중...';
-      setStatus('running', '복구 실행 중... (' + selected.length + '개 업체)\n예상 소요: 약 ' + Math.ceil(selected.length * 18 / 60) + '분');
+      btn.disabled = true; btn.textContent = '⏳ ' + catName + ' 진행 중...';
+      setStatus('running', '🔧 ' + catName + ' 실행 중... (' + selected.length + '개 업체)\n예상 소요: 약 ' + Math.ceil(selected.length * 18 / 60) + '분');
       showProgress(0);
 
       // 탭 재생성일 때 옵션 전달
@@ -305,13 +393,13 @@
 
       google.script.run
         .withSuccessHandler(function(result) {
-          btn.disabled = false; btn.textContent = '🔧 복구 실행';
-          setStatus('done', result.msg);
+          btn.disabled = false; btn.textContent = '🔧 ' + catName + ' 실행';
+          setStatus('done', '✅ ' + catName + ' 완료!\n\n' + result.msg);
           showProgress(100);
         })
         .withFailureHandler(function(e) {
-          btn.disabled = false; btn.textContent = '🔧 복구 실행';
-          setStatus('error', '❌ 오류: ' + (e.message || e));
+          btn.disabled = false; btn.textContent = '🔧 ' + catName + ' 실행';
+          setStatus('error', '❌ 오류 발생: ' + (e.message || e));
         })
         .executeRepairBatch(_selectedCat, selected, extraOpts);
     }

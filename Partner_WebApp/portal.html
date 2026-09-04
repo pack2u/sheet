@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="format-detection" content="telephone=no">
+  <title>반품 현황 · Pack2U</title>
+  <?!= include('prpFavicon') ?>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; width: 100%;
+      min-height: 100vh; min-height: 100dvh;
+      background: #0f1117; color: #f0f0f5;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+    button, input, select, textarea { font-family: inherit; font-size: 14px; }
+
+    /* ── 상단 ── */
+    .top {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 14px 12px;
+      padding-top: calc(14px + env(safe-area-inset-top, 0px));
+      background: #1a1d28; border-bottom: 1px solid rgba(255,255,255,0.06);
+      position: sticky; top: 0; z-index: 40;
+    }
+    .top-title { font-size: 15px; font-weight: 700; flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .top-title small { display: block; font-size: 11px; color: #7a7f96; font-weight: 500; margin-top: 2px; }
+    .icon-btn {
+      width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px;
+      border: 1px solid #2c3040; background: #222533; color: #cfd3e0;
+      font-size: 16px; cursor: pointer;
+    }
+    .icon-btn:active { background: #2b2f40; }
+
+    .wrap { padding: 14px; max-width: 720px; margin: 0 auto; }
+
+    /* ── KPI ── */
+    .kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+    .kpi div {
+      background: #1a1d28; border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 12px; padding: 10px 8px; text-align: center;
+    }
+    .kpi b { display: block; font-size: 19px; font-weight: 700; line-height: 1.2; }
+    .kpi span { font-size: 10.5px; color: #7a7f96; }
+    .kpi .k-act b { color: #f0b45e; }
+    .kpi .k-done b { color: #5ecf8a; }
+    .kpi .k-fee b { font-size: 14px; color: #7fb2e8; }
+
+    /* ── 필터 ── */
+    .bar { display: flex; gap: 8px; margin-bottom: 12px; }
+    .segs { display: flex; gap: 4px; background: #1a1d28; border-radius: 10px; padding: 4px; flex: 1; }
+    .segs button {
+      flex: 1; padding: 8px 4px; border: 0; border-radius: 7px;
+      background: transparent; color: #8b90a6; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    }
+    .segs button.on { background: #2f6feb; color: #fff; }
+    .search {
+      width: 100%; padding: 11px 12px; border-radius: 10px;
+      border: 1px solid #2c3040; background: #171a24; color: #f0f0f5; margin-bottom: 12px;
+    }
+    .btn-new {
+      width: 100%; padding: 13px; border-radius: 11px; border: 0;
+      background: #2f6feb; color: #fff; font-size: 14px; font-weight: 700;
+      cursor: pointer; margin-bottom: 14px;
+    }
+    .btn-new:active { background: #2a61ce; }
+
+    /* ── 카드 ── */
+    .card {
+      background: #1a1d28; border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 14px; padding: 13px; margin-bottom: 10px;
+    }
+    .c-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+    .c-name { font-size: 15px; font-weight: 700; flex: 1; min-width: 0; }
+    .badge {
+      flex-shrink: 0; padding: 4px 9px; border-radius: 999px;
+      font-size: 11px; font-weight: 700; white-space: nowrap;
+    }
+    .b-new { background: rgba(47,111,235,0.18); color: #7fb2e8; }
+    .b-mid { background: rgba(240,180,94,0.18); color: #f0b45e; }
+    .b-in  { background: rgba(160,120,230,0.18); color: #b39ae8; }
+    .b-ok  { background: rgba(94,207,138,0.18); color: #5ecf8a; }
+    .b-off { background: rgba(255,255,255,0.08); color: #9aa0b4; }
+
+    .c-body { display: flex; gap: 12px; flex-wrap: wrap; }
+    .c-left { flex: 1 1 190px; min-width: 0; }
+    .c-right { flex: 1 1 190px; min-width: 0; }
+    .meta { font-size: 12.5px; color: #a8adc0; line-height: 1.65; word-break: break-all; }
+    .meta em { color: #6f748a; font-style: normal; }
+    .sub { font-size: 11px; color: #6f748a; margin-top: 6px; }
+    .fee { color: #7fb2e8; font-weight: 600; }
+    .inv-link { color: #7fb2e8; text-decoration: none; border-bottom: 1px dotted rgba(127,178,232,0.5); }
+    .inv-link:active { color: #a8cdf5; }
+
+    /* 타임라인 */
+    .tl-h { font-size: 11px; color: #6f748a; margin-bottom: 5px; }
+    .tl { border-left: 2px solid #2c3040; padding-left: 10px; }
+    .ev { margin-bottom: 8px; }
+    .ev:last-child { margin-bottom: 0; }
+    .ev-when { font-size: 10.5px; color: #6f748a; }
+    .ev-tag {
+      display: inline-block; font-size: 10px; font-weight: 700;
+      padding: 1px 6px; border-radius: 5px; margin-left: 4px;
+    }
+    .t-status  { background: rgba(47,111,235,0.18); color: #7fb2e8; }
+    .t-access  { background: rgba(255,255,255,0.07); color: #9aa0b4; }
+    .t-mine    { background: rgba(240,180,94,0.18); color: #f0b45e; }
+    .t-consult { background: rgba(160,132,232,0.18); color: #b49af0; }
+    .t-photo   { background: rgba(100,181,246,0.18); color: #7cc0f5; }
+    .ev-body { font-size: 12.5px; color: #d6d9e3; margin-top: 2px; word-break: break-word; }
+    .ev-body a { color: #7fb2e8; }
+
+    /* 사진 썸네일 — 눌러 같은 화면 팝업으로 연다 (새 탭 아님) */
+    .ev-thumbs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+    .ev-thumbs button {
+      display: block; width: 52px; height: 52px; border-radius: 7px; overflow: hidden;
+      border: 1px solid #2c3040; background: #171a24; position: relative;
+      padding: 0; cursor: pointer;
+    }
+    .ev-thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .ev-thumbs .alt {
+      display: none; position: absolute; inset: 0; align-items: center; justify-content: center;
+      font-size: 9.5px; color: #8b90a6; text-align: center; line-height: 1.3;
+    }
+    .ev-thumbs button.fail .alt { display: flex; }
+
+    /* 처리 단계 — "어디까지 됐나" 를 한눈에 보여 문의를 줄인다 */
+    .steps { display: flex; gap: 3px; margin: 9px 0 2px; }
+    .steps .st {
+      flex: 1; min-width: 0; text-align: center; font-size: 9.5px; font-weight: 600;
+      padding: 4px 2px 5px; border-radius: 6px; background: #1c1f2b; color: #5d6276;
+      border-top: 2px solid #2c3040; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .steps .st.done { color: #8b90a6; border-top-color: #3a4a6b; }
+    .steps .st.now  { color: #cfe0fb; background: rgba(47,111,235,0.16); border-top-color: #2f6feb; }
+    .steps.off .st  { color: #5d6276; border-top-color: #2c3040; }
+    .steps-off-note { font-size: 10.5px; color: #6f748a; margin: 9px 0 2px; }
+
+    /* 액션 */
+    .c-foot { display: flex; gap: 6px; margin-top: 11px; padding-top: 11px;
+      border-top: 1px solid rgba(255,255,255,0.05); }
+    .act {
+      flex: 1; padding: 9px 6px; border-radius: 9px; border: 1px solid #2c3040;
+      background: #222533; color: #cfd3e0; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .act:active { background: #2b2f40; }
+    .pop { display: none; margin-top: 9px; }
+    .pop.on { display: block; }
+    .pop textarea {
+      width: 100%; min-height: 68px; padding: 10px; border-radius: 9px;
+      border: 1px solid #2c3040; background: #171a24; color: #f0f0f5; resize: vertical;
+    }
+    .pop-row { display: flex; gap: 6px; margin-top: 6px; }
+
+    .empty { text-align: center; padding: 44px 20px; color: #6f748a; font-size: 13px; line-height: 1.8; }
+
+    /* ── 정산 ── */
+    .fee-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .fee-tbl th, .fee-tbl td { padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); text-align: left; }
+    .fee-tbl th { color: #7a7f96; font-size: 11px; font-weight: 600; }
+    .fee-tbl td.num { text-align: right; }
+
+    /* ── 모달 ── */
+    .modal {
+      display: none; position: fixed; inset: 0; z-index: 200;
+      background: rgba(8,9,13,0.72); padding: 16px; overflow-y: auto;
+    }
+    .modal.on { display: block; }
+    .sheet {
+      max-width: 480px; margin: 24px auto; background: #1a1d28;
+      border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; padding: 18px;
+    }
+    .sheet h2 { font-size: 16px; margin: 0 0 4px; font-weight: 700; }
+    .sheet .hint { font-size: 11.5px; color: #7a7f96; line-height: 1.6; margin-bottom: 14px; }
+    .fld { margin-bottom: 11px; }
+    .fld label { display: block; font-size: 11.5px; color: #8b90a6; margin-bottom: 5px; font-weight: 600; }
+    .fld input, .fld select, .fld textarea {
+      width: 100%; padding: 11px; border-radius: 10px;
+      border: 1px solid #2c3040; background: #171a24; color: #f0f0f5;
+    }
+    .fld textarea { min-height: 62px; resize: vertical; }
+    .fld2 { display: flex; gap: 8px; }
+    .fld2 > * { flex: 1; min-width: 0; }
+    .req::after { content: ' *'; color: #e7607a; }
+    .scan-row { display: flex; gap: 8px; }
+    .scan-row input { flex: 1; min-width: 0; }
+    .scan-btn {
+      flex: 0 0 auto; padding: 11px 13px; border-radius: 10px; border: 1px solid #2c3040;
+      background: #222533; color: #cfd3e0; font-weight: 600; cursor: pointer;
+    }
+    .sheet-foot { display: flex; gap: 8px; margin-top: 16px; }
+    .sheet-foot button { flex: 1; padding: 13px; border-radius: 11px; border: 0; font-weight: 700; cursor: pointer; }
+    .b-primary { background: #2f6feb; color: #fff; }
+    .b-ghost { background: #222533; color: #cfd3e0; border: 1px solid #2c3040 !important; }
+    .b-warn { background: #c9524f; color: #fff; }
+    .msg { font-size: 12px; line-height: 1.6; margin-top: 10px; min-height: 16px; }
+    .msg.err { color: #f5a0a8; }
+    .msg.ok { color: #6ee7a8; }
+    .hidden-file { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+    /* ── 로딩 ── */
+    .load { display: none; position: fixed; inset: 0; z-index: 300;
+      background: rgba(15,17,23,0.86); align-items: center; justify-content: center;
+      flex-direction: column; gap: 12px; }
+    .load.on { display: flex; }
+    .spin { width: 34px; height: 34px; border: 3px solid rgba(255,255,255,0.09);
+      border-top-color: #2f6feb; border-radius: 50%; animation: rot .8s linear infinite; }
+    @keyframes rot { to { transform: rotate(360deg); } }
+    .ver { text-align: center; font-size: 11px; color: #4f5468; padding: 20px 0 30px; }
+
+    .photo-pick { display: flex; gap: 6px; flex-wrap: wrap; }
+    .photo-pick .pk {
+      flex: 1; min-width: 72px; text-align: center; padding: 10px 8px;
+      border-radius: 9px; border: 1px solid #2c3040; background: #222533;
+      color: #cfd3e0; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    }
+    .photo-pick .pk input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .photo-prev { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .photo-prev .pend {
+      position: relative; width: 56px; height: 56px; border-radius: 8px; overflow: hidden;
+      border: 1px solid #2c3040; background: #171a24;
+    }
+    .photo-prev .pend img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .photo-prev .pend button {
+      position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; padding: 0;
+      border: 0; border-radius: 50%; background: rgba(8,9,13,0.72); color: #fff;
+      font-size: 12px; line-height: 18px; cursor: pointer;
+    }
+    .photo-help { font-size: 11px; color: #6f748a; margin-top: 6px; }
+
+    .hits { margin-top: 6px; }
+    .hit {
+      display: block; width: 100%; text-align: left; padding: 9px 10px; margin-bottom: 5px;
+      border-radius: 9px; border: 1px solid #2c3040; background: #171a24;
+      color: #d6d9e3; font-size: 12.5px; line-height: 1.5; cursor: pointer;
+    }
+    .hit:active, .hit.on { border-color: #2f6feb; background: rgba(47,111,235,0.14); }
+    .hit b { display: block; font-size: 13px; margin-bottom: 2px; }
+
+    .lb {
+      display: none; position: fixed; inset: 0; z-index: 260;
+      background: rgba(8,9,13,0.88); padding: 16px;
+      align-items: center; justify-content: center;
+    }
+    .lb.on { display: flex; }
+    .lb img {
+      max-width: min(92vw, 880px); max-height: 82vh;
+      border-radius: 10px; object-fit: contain; background: #111;
+    }
+    .lb-x {
+      position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 14px;
+      width: 40px; height: 40px; border: 0; border-radius: 50%;
+      background: #222533; color: #fff; font-size: 22px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top">
+    <div class="top-title" id="topTitle">
+      반품 현황
+      <small id="topSub">불러오는 중…</small>
+    </div>
+    <button class="icon-btn" type="button" id="btnFee" title="반품비 정산">&#8361;</button>
+    <button class="icon-btn" type="button" id="btnReload" title="새로고침">&#8635;</button>
+  </div>
+
+  <div class="wrap">
+    <div class="kpi">
+      <div class="k-act"><b id="kAct">-</b><span>진행 중</span></div>
+      <div class="k-done"><b id="kDone">-</b><span>완료</span></div>
+      <div><b id="kToday">-</b><span>오늘 접수</span></div>
+      <div class="k-fee"><b id="kFee">-</b><span>반품비 합계</span></div>
+    </div>
+
+    <button class="btn-new" type="button" id="btnNew">＋ 새 반품 접수</button>
+
+    <div class="bar">
+      <div class="segs">
+        <button type="button" class="on" data-f="active">진행 중</button>
+        <button type="button" data-f="done">완료</button>
+        <button type="button" data-f="all">전체</button>
+      </div>
+    </div>
+
+    <input class="search" type="search" id="q" placeholder="이름 · 송장 · 상품명 검색" autocomplete="off">
+
+    <div id="list"></div>
+    <div class="ver">Pack2U 협력업체 반품 포털 <?= version ?></div>
+  </div>
+
+  <!-- 새 반품 접수 -->
+  <div class="modal" id="mNew">
+    <div class="sheet">
+      <h2>새 반품 접수</h2>
+      <div class="hint">
+        접수하면 CS팀 반품관리대장에 바로 등록됩니다.<br>
+        반품비는 CS팀이 확인 후 입력합니다.
+      </div>
+
+      <div class="fld">
+        <label>고유아이디</label>
+        <div class="scan-row">
+          <input type="text" id="nUid" autocomplete="off" placeholder="발주 마감 고유ID">
+          <button class="scan-btn" type="button" id="nLookup">불러오기</button>
+        </div>
+        <div class="hits" id="nHits"></div>
+      </div>
+      <div class="fld">
+        <label class="req">반품신청자 (수취인)</label>
+        <input type="text" id="nName" autocomplete="off">
+      </div>
+      <div class="fld fld2">
+        <div>
+          <label>연락처</label>
+          <input type="tel" id="nPhone" inputmode="numeric" autocomplete="off">
+        </div>
+        <div>
+          <label>수량</label>
+          <input type="text" id="nQty" value="1" inputmode="numeric">
+        </div>
+      </div>
+      <div class="fld">
+        <label>원송장번호</label>
+        <div class="scan-row">
+          <input type="text" id="nInv" inputmode="numeric" autocomplete="off" placeholder="직접 입력 또는 촬영">
+          <button class="scan-btn" type="button" id="nScan">&#128247;</button>
+        </div>
+        <input type="file" class="hidden-file" id="nScanFile" accept="image/*" capture="environment">
+      </div>
+      <div class="fld">
+        <label class="req">상품명</label>
+        <input type="text" id="nItem" autocomplete="off">
+      </div>
+      <div class="fld fld2">
+        <div>
+          <label>반품 유형</label>
+          <select id="nType"></select>
+        </div>
+        <div>
+          <label>수거 택배사</label>
+          <select id="nPickup"></select>
+        </div>
+      </div>
+      <div class="fld">
+        <label>전달 사항</label>
+        <textarea id="nMemo" placeholder="반품 사유, 특이사항 등 · 스크린샷은 Ctrl+V"></textarea>
+      </div>
+      <div class="fld">
+        <label>사진 (여러 장 · 파일 / 촬영 / 붙여넣기)</label>
+        <div class="photo-pick">
+          <label class="pk">파일<input type="file" id="nPhotoFile" accept="image/*" multiple></label>
+          <label class="pk">촬영<input type="file" id="nPhotoCam" accept="image/*" capture="environment"></label>
+        </div>
+        <div class="photo-prev" id="nPhotoPrev"></div>
+        <div class="photo-help" id="nPhotoHelp">최대 6장. 접수할 때 함께 올라갑니다.</div>
+      </div>
+
+      <div class="msg" id="nMsg"></div>
+      <div class="sheet-foot">
+        <button class="b-ghost" type="button" id="nCancel">닫기</button>
+        <button class="b-primary" type="button" id="nSubmit">접수</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 중복 확인 -->
+  <div class="modal" id="mDup">
+    <div class="sheet">
+      <h2>중복 확인</h2>
+      <div class="hint" id="dupMsg"></div>
+      <div class="sheet-foot">
+        <button class="b-ghost" type="button" id="dupNo">취소</button>
+        <button class="b-warn" type="button" id="dupYes">그래도 접수</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 반품비 정산 -->
+  <div class="modal" id="mFee">
+    <div class="sheet">
+      <h2>월별 반품비</h2>
+      <div class="hint">최근 1년 기준. 금액은 CS팀이 확정한 값입니다.</div>
+      <div id="feeBody"></div>
+      <div class="sheet-foot">
+        <button class="b-ghost" type="button" id="feeClose">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="lb" id="mPhoto" role="dialog" aria-label="사진 보기">
+    <button class="lb-x" type="button" id="photoClose" aria-label="닫기">×</button>
+    <img id="photoFull" alt="반품 사진">
+  </div>
+
+  <div class="load" id="load">
+    <div class="spin"></div>
+    <div id="loadTxt">불러오는 중…</div>
+  </div>
+
+  <input type="file" class="hidden-file" id="attFile" accept="image/*" multiple>
+
+  <?!= include('prpDecode') ?>
+
+  <script>
+  (function () {
+    // 아래 두 줄은 반드시 force-print 스크립틀릿(느낌표 붙은 것)이어야 한다.
+    // 인쇄 스크립틀릿(느낌표 없는 것)은 script 안에서도 이스케이프해서 따옴표가
+    // 값 안으로 들어가고, SID 가 틀려 모든 호출이 인증 만료로 떨어진다.
+    // 자세한 내용은 Code.gs 의 prpJsonForScript_ 주석에 있다.
+    var SID = <?!= sidJson ?>;
+    var VENDOR = <?!= vendorJson ?>;
+    var ROWS = [];
+    var FILTER = 'active';
+    var OPEN_POP = '';        // 열려 있는 문의창 (카드 idx)
+    var ATT_TARGET = null;    // 사진 첨부 대상 {tab, row}
+    var DUP_PENDING = null;   // 중복 확인 대기 중인 접수 payload
+    var NEW_PHOTOS = [];      // 새 접수 대기 사진 {preview, base64, mimeType}
+    var PHOTO_MAX = 6;
+    var LOOKUP_HITS = [];     // 고유ID 조회 결과
+
+    function el(id) { return document.getElementById(id); }
+    function show(id, on) { el(id).classList.toggle('on', !!on); }
+    function load(msg) { el('loadTxt').textContent = msg || '처리 중…'; show('load', true); }
+    function unload() { show('load', false); }
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    /**
+     * 세션 만료 처리.
+     *
+     * **`location.reload()` 를 부르면 안 된다.** 이 화면은 Apps Script 샌드박스
+     * iframe 안이고, 그 iframe 의 주소는 토큰이 없는 내부 주소
+     * (googleusercontent/userCodeAppPanel) 다. 그것을 다시 열면 빈 문서가 떠서
+     * **백색화면**이 된다. 토큰이 붙은 원본 링크는 최상위 프레임에만 있다.
+     *
+     * 최상위 프레임은 다른 출처라 `top.location.reload()` 가 막힌다(예외).
+     * 그래서 시도해 보고, 막히면 사용자에게 새로고침을 안내한다.
+     * 브라우저 새로고침은 원본 링크를 다시 열므로 항상 성공한다.
+     */
+    function handled(res) {
+      if (!(res && res.authExpired)) return false;
+      try {
+        if (window.top && window.top !== window) {
+          window.top.location.reload();
+          return true;
+        }
+      } catch (e) { /* 다른 출처 — 아래 안내로 넘어간다 */ }
+      expired();
+      return true;
+    }
+
+    function expired() {
+      unload();
+      el('topSub').textContent = '접속 만료';
+      el('list').innerHTML =
+        '<div class="empty">접속 유효시간이 지났습니다.' +
+        '<br><br>브라우저를 <b>새로고침</b>하면 다시 열립니다.' +
+        '<br>받으신 링크를 다시 열어도 됩니다.</div>';
+    }
+
+    function fail(err) {
+      unload();
+      alert('오류: ' + (err && err.message ? err.message : err));
+    }
+
+    // ── 상태 배지 ──
+    function badgeClass(status) {
+      var s = String(status || '').replace(/\s/g, '');
+      if (/완료|이카운트ok/i.test(s)) return 'b-ok';
+      if (/철회|취소/.test(s)) return 'b-off';
+      if (/입고|검수/.test(s)) return 'b-in';
+      if (/수거/.test(s)) return 'b-mid';
+      return 'b-new';
+    }
+
+    // ── 목록 ──
+    function loadRows(refresh) {
+      load(refresh ? '새로 불러오는 중…' : '반품 현황을 불러오는 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          unload();
+          if (handled(res)) return;
+          if (!res || !res.ok) {
+            el('list').innerHTML = '<div class="empty">' +
+              esc((res && res.error) || '목록을 불러오지 못했습니다.') + '</div>';
+            return;
+          }
+          ROWS = res.rows || [];
+          el('topSub').textContent = VENDOR + ' · 최근 ' + res.days + '일';
+          var s = res.summary || {};
+          el('kAct').textContent = s.active || 0;
+          el('kDone').textContent = s.done || 0;
+          el('kToday').textContent = s.today || 0;
+          el('kFee').textContent = s.feeSumText || '0원';
+          render();
+        })
+        .withFailureHandler(fail)
+        .prpMyReturns(SID, { refresh: !!refresh });
+    }
+
+    function visible() {
+      var q = el('q').value.replace(/\s/g, '').toLowerCase();
+      return ROWS.filter(function (c) {
+        if (FILTER === 'active' && c.done) return false;
+        if (FILTER === 'done' && !c.done) return false;
+        if (!q) return true;
+        var hay = [c.name, c.item, c.invoice, c.returnInvoice, c.phone, c.status, c.type]
+          .join('').replace(/\s/g, '').toLowerCase();
+        return hay.indexOf(q) >= 0;
+      });
+    }
+
+    function render() {
+      var rows = visible();
+      if (!rows.length) {
+        el('list').innerHTML = '<div class="empty">' +
+          (el('q').value ? '검색 결과가 없습니다.' :
+            (FILTER === 'done' ? '완료된 반품이 없습니다.' : '진행 중인 반품이 없습니다.')) +
+          '</div>';
+        return;
+      }
+      el('list').innerHTML = rows.map(cardHtml).join('');
+    }
+
+    /**
+     * 카드 식별은 화면 순번이 아니라 탭·행으로 한다.
+     * 검색어를 바꾸면 순번이 밀리므로 순번을 쓰면 엉뚱한 건에 문의가 달린다.
+     */
+    function keyOf(c) { return c.tab + ':' + c.row; }
+
+    /**
+     * 처리 단계 — "어디까지 됐나요" 문의를 줄이는 것이 목적이다.
+     * CS 상태 옵션(_CS_RETURN_STATUS_OPTS_) 중 흐름을 이루는 것만 순서대로 둔다.
+     * 철회·취소는 흐름을 벗어나므로 바를 그리지 않고 문장으로 알린다.
+     */
+    var STEPS = ['접수', '수거요청', '수거중', '반품입고', '입고검수', '환불처리', '완료'];
+
+    function stepIndex(status) {
+      var s = String(status || '').replace(/\s/g, '');
+      if (/철회|취소/.test(s)) return -1;
+      if (/이카운트ok/i.test(s)) return STEPS.length - 1; // 완료 뒤 단계라 완료로 본다
+      // 뒤에서부터 찾는다 — '입고검수' 가 '반품입고' 보다 먼저 걸려야 한다
+      for (var i = STEPS.length - 1; i >= 0; i--) {
+        if (s.indexOf(STEPS[i]) >= 0) return i;
+      }
+      return 0;
+    }
+
+    function stepsHtml(c) {
+      var idx = stepIndex(c.status);
+      if (idx < 0) {
+        return '<div class="steps-off-note">철회된 건입니다. 아래 진행 내역을 확인해 주세요.</div>';
+      }
+      var h = '<div class="steps">';
+      for (var i = 0; i < STEPS.length; i++) {
+        h += '<div class="st' + (i < idx ? ' done' : (i === idx ? ' now' : '')) + '">' +
+          esc(STEPS[i]) + '</div>';
+      }
+      return h + '</div>';
+    }
+
+    function driveId(u) {
+      var s = String(u || '');
+      var m = s.match(/\/d\/([-\w]{20,})/) || s.match(/[?&]id=([-\w]{20,})/);
+      return m ? m[1] : '';
+    }
+
+    /**
+     * 이력 한 줄에서 드라이브 사진을 뽑아 썸네일로 만든다.
+     * 첨부 파일은 ANYONE_WITH_LINK 로 공유되므로 업체 화면에서도 썸네일이 뜬다.
+     * 드라이브 링크가 없으면 빈 문자열을 돌려 호출부가 일반 본문으로 처리한다.
+     */
+    function thumbsHtml(text) {
+      var urls = String(text || '').match(/https?:\/\/[^\s]+/g) || [];
+      var h = '', n = 0;
+      for (var i = 0; i < urls.length; i++) {
+        var id = driveId(urls[i]);
+        if (!id) continue;
+        n++;
+        h += '<button type="button" class="thumb" data-id="' + esc(id) + '" title="사진 크게 보기">' +
+          '<img src="https://drive.google.com/thumbnail?id=' + esc(id) + '&amp;sz=w480"' +
+          ' alt="반품 사진" loading="lazy"' +
+          ' onerror="this.parentNode.classList.add(\'fail\');this.remove()">' +
+          '<span class="alt">사진<br>열기</span></button>';
+      }
+      return n ? '<div class="ev-thumbs">' + h + '</div>' : '';
+    }
+
+    /**
+     * 송장 배송조회 링크.
+     *
+     * CS앱 home.html 의 URL 과 같아야 한다 — 한쪽만 바꾸면 업체와 CS가
+     * 서로 다른 화면을 보며 통화하게 된다.
+     * 택배사를 모를 때는 네이버 검색으로 보낸다 (CS앱과 같은 폴백).
+     */
+    var TRACK = [
+      [/로젠/,          function (d) { return 'https://www.ilogen.com/web/personal/trace/' + d; }],
+      [/CJ|대한통운/,   function (d) { return 'https://trace.cjlogistics.com/next/tracking.html?wblNo=' + d; }],
+      [/한진/,          function (d) { return 'https://www.hanjin.com/kor/CMS/DeliveryMgr/WaybillResult.do?mCode=MN038&wblnum=' + d; }],
+      [/롯데/,          function (d) { return 'https://www.lotteglogis.com/home/reservation/tracking/linkView?InvNo=' + d; }],
+      [/우체국|우편/,   function (d) { return 'https://service.epost.go.kr/trace.RetrieveDomRigiTraceList.comm?displayHeader=N&sid1=' + d; }],
+      [/대신/,          function (d) { return 'https://www.ds3211.co.kr/freight/internalFreightSearch.ht?billno=' + d; }],
+      [/경동/,          function (d) { return 'https://kdexp.com/newDeliverySearch.kd?barcode=' + d; }]
+    ];
+
+    function trackUrl(invRaw, carrierHint) {
+      var d = String(invRaw || '').replace(/[^0-9]/g, '');
+      if (d.length < 8) return '';
+      var c = String(carrierHint || '').replace(/\s/g, '');
+      for (var i = 0; i < TRACK.length; i++) {
+        if (c && TRACK[i][0].test(c)) return TRACK[i][1](d);
+      }
+      return 'https://search.naver.com/search.naver?query=' + encodeURIComponent(d + ' 배송조회');
+    }
+
+    /** 송장 한 줄 — 눌러서 배송조회로 보낸다. 업체가 가장 자주 묻는 항목이다. */
+    function invLine(label, invRaw, carrierHint) {
+      if (!invRaw) return '';
+      var u = trackUrl(invRaw, carrierHint);
+      var txt = esc(invRaw);
+      return '<br><em>' + esc(label) + '</em> ' + (u
+        ? '<a class="inv-link" href="' + esc(u) + '" target="_blank" rel="noopener" ' +
+          'title="배송조회 열기">' + txt + '</a>'
+        : txt);
+    }
+
+    function tagClass(kind) {
+      if (kind === 'status') return 't-status';
+      if (kind === 'mine') return 't-mine';
+      if (kind === 'photo') return 't-photo';
+      if (kind === 'consult') return 't-consult';
+      return 't-access';
+    }
+
+    function cardHtml(c) {
+      var k = keyOf(c);
+      var h = '';
+      h += '<div class="card" data-k="' + esc(k) + '">';
+
+      h += '<div class="c-head">';
+      h += '<div class="c-name">' + esc(c.name || '(이름 없음)') + '</div>';
+      h += '<span class="badge ' + badgeClass(c.status) + '">' + esc(c.status) + '</span>';
+      h += '</div>';
+
+      h += stepsHtml(c);
+
+      h += '<div class="c-body">';
+
+      h += '<div class="c-left"><div class="meta">';
+      h += esc(c.item || '-') + (c.qty ? ' <em>×</em> ' + esc(c.qty) : '');
+      // 원송장은 우리가 보낸 것이라 택배사 힌트가 없다 → 네이버 검색으로 간다.
+      // 반품송장은 수거입력처가 곧 택배사라 그 값을 힌트로 쓴다.
+      h += invLine('원송장', c.invoice, '');
+      h += invLine('반품송장', c.returnInvoice, c.pickup);
+      if (c.pickup) h += '<br><em>수거</em> ' + esc(c.pickup);
+      if (c.phone) h += '<br><em>연락처</em> ' + esc(c.phone);
+      if (c.fee) h += '<br><em>반품비</em> <span class="fee">' + esc(c.fee) + '</span>';
+      h += '</div>';
+      h += '<div class="sub">' + esc(c.date || '') +
+        (c.type ? ' · ' + esc(c.type) : '') +
+        ' · ' + esc(c.openedBy) + ' 접수</div>';
+      h += '</div>';
+
+      h += '<div class="c-right">';
+      h += '<div class="tl-h">처리 경과</div>';
+      h += '<div class="tl">';
+      var ev = c.timeline || [];
+      if (!ev.length) {
+        h += '<div class="ev"><div class="ev-body">진행 내역이 아직 없습니다.</div></div>';
+      } else {
+        // 카운터를 k 로 쓰면 위에서 잡은 카드 키 k 를 덮어쓴다 (var 는 함수 스코프).
+        // 그러면 c-foot 버튼의 data-k 가 숫자가 되어 카드 조회가 실패하고 버튼이 죽는다.
+        for (var i = 0; i < ev.length; i++) {
+          var e = ev[i];
+          h += '<div class="ev">';
+          h += '<div class="ev-when">' + esc(e.date || '') + (e.time ? ' ' + esc(e.time) : '') +
+            '<span class="ev-tag ' + tagClass(e.kind) + '">' + esc(e.who) + '</span></div>';
+          // 사진 줄이면 URL 을 늘어놓지 않고 썸네일로 보여준다.
+          // CS 가 올린 것과 업체가 올린 것을 같은 방식으로 다룬다.
+          var tb = thumbsHtml(e.text);
+          if (tb) {
+            var cap = String(e.text || '').replace(/https?:\/\/[^\s]+/g, '').trim() || '사진 첨부';
+            h += '<div class="ev-body">' + esc(cap) + '</div>' + tb;
+          } else {
+            h += '<div class="ev-body">' + linkify(e.text) + '</div>';
+          }
+          h += '</div>';
+        }
+      }
+      h += '</div></div>';
+
+      h += '</div>'; // c-body
+
+      h += '<div class="c-foot">';
+      h += '<button class="act" type="button" data-act="ask" data-k="' + esc(k) + '">문의</button>';
+      h += '<button class="act" type="button" data-act="photo" data-k="' + esc(k) + '">사진 첨부</button>';
+      h += '</div>';
+
+      h += '<div class="pop' + (OPEN_POP === k ? ' on' : '') + '">';
+      h += '<textarea data-ask="' + esc(k) + '" placeholder="CS팀에 전달할 문의 내용"></textarea>';
+      h += '<div class="pop-row">';
+      h += '<button class="act" type="button" data-act="askCancel" data-k="' + esc(k) + '">취소</button>';
+      h += '<button class="act" type="button" data-act="askSend" data-k="' + esc(k) + '" ' +
+        'style="background:#2f6feb;color:#fff;border-color:#2f6feb">보내기</button>';
+      h += '</div></div>';
+
+      h += '</div>';
+      return h;
+    }
+
+    /** 첨부 사진 링크가 이력에 섞여 들어오므로 눌러서 팝업으로 연다 */
+    function linkify(text) {
+      var s = esc(text || '');
+      return s.replace(/(https?:\/\/[^\s<]+)/g, function (u) {
+        var id = driveId(u);
+        return id
+          ? '<a href="#" class="thumb-link" data-id="' + id + '">사진 열기</a>'
+          : '<a href="' + u + '" target="_blank" rel="noopener">링크 열기</a>';
+      });
+    }
+
+    function openLightbox(id) {
+      if (!id) return;
+      el('photoFull').src = 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(id) + '&sz=w1600';
+      show('mPhoto', true);
+    }
+    function closeLightbox() {
+      show('mPhoto', false);
+      el('photoFull').removeAttribute('src');
+    }
+
+    // ── 카드 액션 ──
+    el('list').addEventListener('click', function (ev) {
+      var thumb = ev.target.closest('.ev-thumbs .thumb, a.thumb-link');
+      if (thumb) {
+        ev.preventDefault();
+        openLightbox(thumb.getAttribute('data-id'));
+        return;
+      }
+      var btn = ev.target.closest('button[data-act]');
+      if (!btn) return;
+      var k = btn.getAttribute('data-k');
+      var act = btn.getAttribute('data-act');
+      var c = null;
+      for (var n = 0; n < ROWS.length; n++) {
+        if (keyOf(ROWS[n]) === k) { c = ROWS[n]; break; }
+      }
+      if (!c) return;
+
+      if (act === 'ask') {
+        OPEN_POP = (OPEN_POP === k) ? '' : k;
+        render();
+        if (OPEN_POP) {
+          var t = document.querySelector('[data-ask="' + k + '"]');
+          if (t) t.focus();
+        }
+        return;
+      }
+      if (act === 'askCancel') { OPEN_POP = ''; render(); return; }
+
+      if (act === 'askSend') {
+        var box = document.querySelector('[data-ask="' + k + '"]');
+        var text = box ? box.value : '';
+        if (!text.trim()) { alert('문의 내용을 입력해 주세요.'); return; }
+        load('문의를 전달하는 중…');
+        google.script.run
+          .withSuccessHandler(function (res) {
+            unload();
+            if (handled(res)) return;
+            if (!res || !res.ok) { alert((res && res.error) || '전달 실패'); return; }
+            OPEN_POP = '';
+            loadRows(true);
+          })
+          .withFailureHandler(fail)
+          .prpAddInquiry(SID, { tab: c.tab, row: c.row, text: text });
+        return;
+      }
+
+      if (act === 'photo') {
+        ATT_TARGET = { tab: c.tab, row: c.row };
+        el('attFile').click();
+      }
+    });
+
+    function shrinkFiles(files, done) {
+      var list = [];
+      var left = files.length;
+      if (!left) { done([]); return; }
+      files.forEach(function (f) {
+        csLoadImage_(f)
+          .then(function (img) {
+            var canvas = csDrawCanvas_(img, 1600, 0);
+            if (!canvas) throw new Error('사진을 처리할 수 없습니다.');
+            var b64 = csCanvasToBase64_(canvas);
+            if (!b64) throw new Error('사진을 변환할 수 없습니다.');
+            var preview = '';
+            try { preview = canvas.toDataURL('image/jpeg', 0.72); } catch (eP) {}
+            list.push({ preview: preview, base64: b64, mimeType: 'image/jpeg' });
+          })
+          .catch(function () {})
+          .then(function () {
+            if (--left === 0) done(list);
+          });
+      });
+    }
+
+    // ── 사진 첨부 (카드) ──
+    el('attFile').addEventListener('change', function (ev) {
+      var files = Array.prototype.slice.call(ev.target.files || []);
+      ev.target.value = '';
+      if (!files.length || !ATT_TARGET) return;
+      if (files.length > PHOTO_MAX) files = files.slice(0, PHOTO_MAX);
+
+      load('사진을 올리는 중…');
+      shrinkFiles(files, function (photos) {
+        if (!photos.length) { unload(); alert('사진을 처리할 수 없습니다.'); return; }
+        google.script.run
+          .withSuccessHandler(function (res) {
+            unload();
+            if (handled(res)) return;
+            if (!res || !res.ok) { alert((res && res.error) || '첨부 실패'); return; }
+            loadRows(true);
+          })
+          .withFailureHandler(fail)
+          .prpAttachPhotos(SID, {
+            tab: ATT_TARGET.tab, row: ATT_TARGET.row,
+            photos: photos
+          });
+      });
+    });
+
+    // ── 새 접수 ──
+    function fillOpts(sel, arr) {
+      el(sel).innerHTML = (arr || []).map(function (v) {
+        return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+      }).join('');
+    }
+
+    function openNew() {
+      ['nName', 'nPhone', 'nInv', 'nItem', 'nMemo', 'nUid'].forEach(function (k) { el(k).value = ''; });
+      el('nQty').value = '1';
+      el('nMsg').textContent = '';
+      el('nMsg').className = 'msg';
+      el('nHits').innerHTML = '';
+      LOOKUP_HITS = [];
+      NEW_PHOTOS = [];
+      renderNewPhotos();
+      show('mNew', true);
+      el('nUid').focus();
+    }
+
+    function newPayload(force) {
+      return {
+        uid: el('nUid').value,
+        name: el('nName').value,
+        phone: el('nPhone').value,
+        qty: el('nQty').value,
+        invoice: el('nInv').value,
+        item: el('nItem').value,
+        type: el('nType').value,
+        pickup: el('nPickup').value,
+        memo: el('nMemo').value,
+        force: !!force
+      };
+    }
+
+    function applyHit(h) {
+      if (!h) return;
+      if (h.uid) el('nUid').value = h.uid;
+      if (h.name) el('nName').value = h.name;
+      if (h.phone) el('nPhone').value = h.phone;
+      if (h.qty) el('nQty').value = h.qty;
+      else if (!el('nQty').value) el('nQty').value = '1';
+      if (h.invoice) el('nInv').value = h.invoice;
+      if (h.item) el('nItem').value = h.item;
+    }
+
+    function renderHits(matches) {
+      LOOKUP_HITS = matches || [];
+      var box = el('nHits');
+      if (!LOOKUP_HITS.length) { box.innerHTML = ''; return; }
+      if (LOOKUP_HITS.length === 1) {
+        applyHit(LOOKUP_HITS[0]);
+        box.innerHTML = '';
+        return;
+      }
+      var h = '';
+      for (var i = 0; i < LOOKUP_HITS.length; i++) {
+        var m = LOOKUP_HITS[i];
+        h += '<button class="hit" type="button" data-hit="' + i + '">' +
+          '<b>' + esc(m.name || '(이름 없음)') + (m.item ? ' · ' + esc(m.item) : '') + '</b>' +
+          (m.qty ? '수량 ' + esc(m.qty) + ' · ' : '') +
+          (m.invoice ? '송장 ' + esc(m.invoice) : '송장 없음') +
+          '</button>';
+      }
+      box.innerHTML = h;
+    }
+
+    function lookupUid() {
+      var uid = el('nUid').value;
+      if (!String(uid || '').trim()) { setNewMsg('고유아이디를 입력해 주세요.', true); return; }
+      load('발주 마감에서 찾는 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          unload();
+          if (handled(res)) return;
+          if (!res || !res.ok) {
+            renderHits([]);
+            setNewMsg((res && res.error) || '조회 실패', true);
+            return;
+          }
+          renderHits(res.matches || []);
+          if ((res.matches || []).length === 1) {
+            setNewMsg('발주 마감에서 불러왔습니다.', false);
+          } else {
+            setNewMsg((res.matches || []).length + '건이 있습니다. 해당하는 주문을 눌러 주세요.', false);
+          }
+        })
+        .withFailureHandler(function (e) { unload(); setNewMsg(String(e && e.message ? e.message : e), true); })
+        .prpLookupByUid(SID, uid);
+    }
+
+    function renderNewPhotos() {
+      var box = el('nPhotoPrev');
+      var help = el('nPhotoHelp');
+      if (!NEW_PHOTOS.length) {
+        box.innerHTML = '';
+        help.textContent = '최대 ' + PHOTO_MAX + '장. 접수할 때 함께 올라갑니다.';
+        return;
+      }
+      var h = '';
+      for (var i = 0; i < NEW_PHOTOS.length; i++) {
+        h += '<span class="pend"><img src="' + NEW_PHOTOS[i].preview + '" alt="">' +
+          '<button type="button" data-drop="' + i + '" title="빼기">×</button></span>';
+      }
+      box.innerHTML = h;
+      help.textContent = NEW_PHOTOS.length + '장 첨부 대기 · 최대 ' + PHOTO_MAX + '장';
+    }
+
+    function stageNewPhotos(fileList) {
+      var files = Array.prototype.slice.call(fileList || []);
+      if (!files.length) return;
+      var room = PHOTO_MAX - NEW_PHOTOS.length;
+      if (room <= 0) { setNewMsg('사진은 ' + PHOTO_MAX + '장까지입니다.', true); return; }
+      if (files.length > room) files = files.slice(0, room);
+      load('사진을 준비하는 중…');
+      shrinkFiles(files, function (photos) {
+        unload();
+        for (var i = 0; i < photos.length; i++) NEW_PHOTOS.push(photos[i]);
+        renderNewPhotos();
+      });
+    }
+
+    function uploadNewPhotos(res, done) {
+      if (!NEW_PHOTOS.length) { done(''); return; }
+      if (!res || !res.tab || !res.row) {
+        done('사진은 올리지 못했습니다');
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function (att) {
+          NEW_PHOTOS = [];
+          done(att && att.ok ? ('사진 ' + (att.count || 0) + '장 첨부됨')
+            : ('사진 첨부 실패: ' + ((att && att.error) || '오류')));
+        })
+        .withFailureHandler(function (err) {
+          done('사진 첨부 실패: ' + String((err && err.message) || err));
+        })
+        .prpAttachPhotos(SID, {
+          tab: res.tab, row: res.row,
+          photos: NEW_PHOTOS.map(function (p) {
+            return { base64: p.base64, mimeType: p.mimeType };
+          })
+        });
+    }
+
+    function submitNew(force) {
+      var payload = newPayload(force);
+      if (!payload.name.trim()) { setNewMsg('반품신청자 이름을 입력해 주세요.', true); return; }
+      if (!payload.item.trim()) { setNewMsg('상품명을 입력해 주세요.', true); return; }
+
+      load('접수하는 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (handled(res)) { unload(); return; }
+          if (res && res.duplicate) {
+            unload();
+            DUP_PENDING = payload;
+            el('dupMsg').textContent = res.message;
+            show('mDup', true);
+            return;
+          }
+          if (!res || !res.ok) { unload(); setNewMsg((res && res.error) || '접수 실패', true); return; }
+          uploadNewPhotos(res, function (photoMsg) {
+            unload();
+            show('mNew', false);
+            loadRows(true);
+            setTimeout(function () {
+              alert((res.message || '접수되었습니다.') + (photoMsg ? '\n' + photoMsg : ''));
+            }, 200);
+          });
+        })
+        .withFailureHandler(function (e) { unload(); setNewMsg(String(e && e.message ? e.message : e), true); })
+        .prpSubmitReturn(SID, payload);
+    }
+
+    function setNewMsg(t, isErr) {
+      var m = el('nMsg');
+      m.textContent = t;
+      m.className = 'msg' + (isErr ? ' err' : ' ok');
+    }
+
+    // ── 송장 촬영 인식 ──
+    el('nScan').addEventListener('click', function () { el('nScanFile').click(); });
+    el('nScanFile').addEventListener('change', function (ev) {
+      var f = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!f) return;
+      load('사진 분석 중…');
+      csDecodeImageFile(f, {
+        minDigits: 8,
+        ocr: true,
+        onStage: function (m) { if (m) load(m); }
+      })
+        .then(function (r) {
+          unload();
+          el('nInv').value = r.value;
+          setNewMsg('송장번호를 인식했습니다: ' + r.value, false);
+        })
+        .catch(function (e) {
+          unload();
+          setNewMsg(String(e && e.message ? e.message : e), true);
+        });
+    });
+
+    // ── 반품비 정산 ──
+    function openFee() {
+      load('집계 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          unload();
+          if (handled(res)) return;
+          if (!res || !res.ok) { alert((res && res.error) || '집계 실패'); return; }
+          var months = res.months || [];
+          if (!months.length) {
+            el('feeBody').innerHTML = '<div class="empty">집계할 내역이 없습니다.</div>';
+          } else {
+            var h = '<table class="fee-tbl"><tr><th>월</th><th class="num">건수</th><th class="num">반품비</th></tr>';
+            var tc = 0, tf = 0;
+            months.forEach(function (m) {
+              tc += m.count; tf += m.fee;
+              var label = /^\d{6}$/.test(m.month)
+                ? m.month.substring(0, 4) + '. ' + m.month.substring(4)
+                : m.month;
+              h += '<tr><td>' + esc(label) + '</td><td class="num">' + m.count +
+                '</td><td class="num">' + esc(m.feeText || '-') + '</td></tr>';
+            });
+            h += '<tr><td><b>합계</b></td><td class="num"><b>' + tc +
+              '</b></td><td class="num"><b>' + esc(fmtWon(tf)) + '</b></td></tr>';
+            h += '</table>';
+            el('feeBody').innerHTML = h;
+          }
+          show('mFee', true);
+        })
+        .withFailureHandler(fail)
+        .prpFeeSummary(SID, { days: 365 });
+    }
+
+    function fmtWon(n) {
+      return String(Math.round(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '원';
+    }
+
+    // ── 바인딩 ──
+    el('btnReload').addEventListener('click', function () { loadRows(true); });
+    el('btnNew').addEventListener('click', openNew);
+    el('nCancel').addEventListener('click', function () { show('mNew', false); });
+    el('nSubmit').addEventListener('click', function () { submitNew(false); });
+    el('nLookup').addEventListener('click', lookupUid);
+    el('nUid').addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); lookupUid(); }
+    });
+    el('nHits').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-hit]');
+      if (!b) return;
+      var i = parseInt(b.getAttribute('data-hit'), 10);
+      if (LOOKUP_HITS[i]) {
+        applyHit(LOOKUP_HITS[i]);
+        el('nHits').innerHTML = '';
+        setNewMsg('선택한 주문을 채웠습니다.', false);
+      }
+    });
+    el('nPhotoFile').addEventListener('change', function (ev) {
+      stageNewPhotos(ev.target.files);
+      ev.target.value = '';
+    });
+    el('nPhotoCam').addEventListener('change', function (ev) {
+      stageNewPhotos(ev.target.files);
+      ev.target.value = '';
+    });
+    el('nPhotoPrev').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-drop]');
+      if (!b) return;
+      NEW_PHOTOS.splice(parseInt(b.getAttribute('data-drop'), 10), 1);
+      renderNewPhotos();
+    });
+    el('photoClose').addEventListener('click', closeLightbox);
+    el('mPhoto').addEventListener('click', function (ev) {
+      if (ev.target === el('mPhoto')) closeLightbox();
+    });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && el('mPhoto').classList.contains('on')) closeLightbox();
+    });
+    document.addEventListener('paste', function (ev) {
+      if (!el('mNew').classList.contains('on')) return;
+      var cd = ev.clipboardData || window.clipboardData;
+      if (!cd) return;
+      var blobs = [];
+      var items = cd.items || [];
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file' && /^image\//i.test(items[i].type)) {
+          var b = items[i].getAsFile();
+          if (b) blobs.push(b);
+        }
+      }
+      if (!blobs.length) return;
+      ev.preventDefault();
+      stageNewPhotos(blobs);
+    });
+    el('btnFee').addEventListener('click', openFee);
+    el('feeClose').addEventListener('click', function () { show('mFee', false); });
+    el('dupNo').addEventListener('click', function () { DUP_PENDING = null; show('mDup', false); });
+    el('dupYes').addEventListener('click', function () {
+      show('mDup', false);
+      if (DUP_PENDING) { DUP_PENDING = null; submitNew(true); }
+    });
+    el('q').addEventListener('input', render);
+
+    document.querySelectorAll('.segs button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.segs button').forEach(function (x) { x.classList.remove('on'); });
+        b.classList.add('on');
+        FILTER = b.getAttribute('data-f');
+        OPEN_POP = '';
+        render();
+      });
+    });
+
+    // 작성 중인 접수창은 바깥을 눌러도 닫지 않는다 (적던 내용이 사라진다).
+    // 정산·중복확인만 바깥 클릭으로 닫는다.
+    ['mFee', 'mDup'].forEach(function (id) {
+      el(id).addEventListener('click', function (ev) {
+        if (ev.target === el(id)) show(id, false);
+      });
+    });
+
+    // ── 시작 ──
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (handled(res)) return;
+        if (res && res.ok) {
+          fillOpts('nType', res.types);
+          fillOpts('nPickup', res.pickups);
+          if (res.photoMax) PHOTO_MAX = res.photoMax;
+        }
+        loadRows(false);
+      })
+      .withFailureHandler(function () { loadRows(false); })
+      .prpBootstrap(SID);
+  })();
+  </script>
+</body>
+</html>
