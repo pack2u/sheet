@@ -1925,7 +1925,8 @@
        안 먹는 경우가 있어 클래스로 가른다. */
     #lbList.grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      /* CS 보드와 같은 변수를 쓴다 — 카드 크기 슬라이더가 두 보드를 함께 움직인다 */
+      grid-template-columns: repeat(auto-fill, minmax(var(--hb-card-w, 180px), 1fr));
       gap: 8px;
       align-items: start;
     }
@@ -1962,20 +1963,13 @@
     .lb-lv.p { background: rgba(90,160,240,.22); color: #9ec8f5; }
     :root[data-theme="light"] .lb-lv.p { color: #1d5fa8; }
 
-    /* 공지 카드 — CS 보드와 같은 규칙: 두 칸을 쓰고 내용을 접지 않는다.
-       한 칸짜리 폭에서는 lbSyncNoticeSpan 이 .one-col 을 붙여 되돌린다. */
-    #lbList.grid > .lb-card.lb-notice { grid-column: span 2; }
-    #lbList.grid.one-col > .lb-card.lb-notice { grid-column: auto; }
-    .lb-card.lb-notice {
-      border-color: rgba(90, 160, 240, 0.45);
-      border-left: 3px solid #5aa0f0;
-      background: linear-gradient(180deg, rgba(90, 160, 240, 0.10), transparent 70%), var(--bg-card);
-    }
-    .lb-card.lb-notice .t { font-size: 15px; }
-    .lb-card.lb-notice .b {
-      display: block; -webkit-line-clamp: none; overflow: visible;
-      font-size: 13px; color: var(--text-primary); white-space: pre-wrap;
-    }
+    /* ★ 2026-09-04: 물류 보드도 CS 카드(.hb-card)를 그대로 그린다.
+       공지 두 칸·펼친 카드 한 줄 규칙을 CS 보드와 똑같이 적용한다.
+       위 .lb-card / .lb-lv 규칙은 이제 쓰이지 않지만, 다른 데서 참조할 수
+       있어 남겨 둔다. */
+    #lbList.grid > .hb-card.hb-notice { grid-column: span 2; }
+    #lbList.grid.one-col > .hb-card.hb-notice { grid-column: auto; }
+    #lbList.grid > .hb-card.open { grid-column: 1 / -1; }
     .lb-act { text-align: right; margin-top: 8px; }
     .lb-act button {
       background: transparent; border: 1px solid var(--border); color: var(--text-bright);
@@ -2964,7 +2958,7 @@
         .withSuccessHandler(function(res) {
           if (!res || !res.ok) { toast(String((res && res.error) || '삭제 실패'), 2600); return; }
           toast('첨부 삭제됨');
-          loadHandoffBoard(false);
+          hbReloadBoards();
         })
         .withFailureHandler(function(err) { toast(String((err && err.message) || '통신 실패'), 2600); })
         .csDeleteHandoffAttachment({ id: cardId, fileId: fileId, staff: hbStaffName() });
@@ -3035,7 +3029,8 @@
 
     /** 지금 화면에 있는 카드들의 묵음 표시를 다시 계산한다 */
     function hbRefreshStale() {
-      var cards = document.querySelectorAll('#hbList .hb-card[data-at]');
+      // 두 보드를 함께 본다 — 물류 카드도 같은 규칙으로 깜박인다
+      var cards = document.querySelectorAll('#hbList .hb-card[data-at], #lbList .hb-card[data-at]');
       for (var i = 0; i < cards.length; i++) {
         var el = cards[i];
         // 완료된 카드는 묵어도 상관없다. 깜박이면 눈만 아프다.
@@ -3065,6 +3060,13 @@
       if (!(v > 0)) v = HB_CARD_W_BASE;
       v = Math.max(110, Math.min(420, v));
       HB_CARD_W = v;
+      // 물류 보드도 같은 카드를 쓰므로 함께 움직인다
+      var lb = document.getElementById('lbList');
+      if (lb) {
+        lb.style.setProperty('--hb-card-w', v + 'px');
+        lb.style.setProperty('--hb-text-scale', String(Math.max(1, v / HB_CARD_W_BASE)));
+        if (typeof lbSyncNoticeSpan === 'function') lbSyncNoticeSpan();
+      }
       var list = document.getElementById('hbList');
       if (list) {
         list.style.setProperty('--hb-card-w', v + 'px');
@@ -3827,22 +3829,44 @@
       }, 0);
     }, true);
 
+    /* 두 보드의 카드를 한 묶음으로 본다.
+       카드 ID 는 보드가 달라도 겹치지 않으므로(HB… / LB…) 그냥 이어 붙이면 된다.
+       ★ 2026-09-04: 물류 카드도 CS 카드와 같은 화면·같은 기능을 쓰게 되면서,
+         카드를 찾는 자리는 전부 여기를 거쳐야 한다. HB_CARDS 만 뒤지면
+         물류 카드를 펼쳤을 때 "없는 카드"가 되어 읽음·완료가 조용히 실패한다. */
+    function hbAllCards() {
+      return (HB_CARDS || []).concat(LB_CARDS || []);
+    }
+
+    /** 어느 보드의 카드를 건드렸든 두 목록을 함께 다시 그린다 (서버 호출 없음) */
+    function hbRenderBoards() {
+      renderHandoffBoard();
+      if (typeof lbRenderCards === 'function') lbRenderCards();
+    }
+
+    /** 카드를 고친 뒤 — 두 보드를 서버에서 다시 받아온다 */
+    function hbReloadBoards() {
+      loadHandoffBoard(false);
+      if (typeof lbLoad === 'function') lbLoad();
+    }
+
     function toggleHbCard(id, ev) {
       if (hbClickWasDrag_(ev)) return; // 글자 긁는 중이었다 — 접지 않는다
       var wasOpen = (HB_OPEN_ID === id);
       HB_OPEN_ID = wasOpen ? '' : id;
-      renderHandoffBoard();
+      hbRenderBoards();
       if (wasOpen) return;
 
       // 펼쳐서 읽은 것 → 읽음 기록. 실패해도 화면은 그대로 둔다.
       var me = hbStaffName();
       if (!me) return;
       var card = null;
-      for (var i = 0; i < HB_CARDS.length; i++) if (HB_CARDS[i].id === id) card = HB_CARDS[i];
+      var all = hbAllCards();
+      for (var i = 0; i < all.length; i++) if (all[i].id === id) card = all[i];
       if (!card || card.done || (card.read || []).indexOf(me) !== -1) return;
       google.script.run
         .withSuccessHandler(function(res) {
-          if (res && res.ok && res.read) { card.read = res.read; renderHandoffBoard(); }
+          if (res && res.ok && res.read) { card.read = res.read; hbRenderBoards(); }
         })
         .withFailureHandler(function() {})
         .csMarkHandoffRead({ id: id, staff: me });
@@ -3867,7 +3891,7 @@
             if (ta) { ta.disabled = false; ta.value = ''; }
             toast(fail ? ('첨부 ' + ok + '개 완료, ' + fail + '개 실패') : '전달 내용 추가됨',
               fail ? 2800 : 1400);
-            loadHandoffBoard(false);
+            hbReloadBoards();
           });
       }
 
@@ -3882,7 +3906,7 @@
           else {
             if (ta) { ta.disabled = false; ta.value = ''; }
             toast('전달 내용 추가됨');
-            loadHandoffBoard(false);
+            hbReloadBoards();
           }
         })
         .withFailureHandler(function(err) {
@@ -3900,7 +3924,7 @@
           if (!res || !res.ok) { toast(String((res && res.error) || '완료 처리 실패'), 2600); return; }
           HB_OPEN_ID = '';
           toast('완료 처리됨 · 보관함에서 볼 수 있어요', 2200);
-          loadHandoffBoard(false);
+          hbReloadBoards();
         })
         .withFailureHandler(function(err) { toast(String((err && err.message) || '통신 실패'), 2600); })
         .csCompleteHandoffCard({ id: id, staff: staff });
@@ -3913,7 +3937,7 @@
         .withSuccessHandler(function(res) {
           if (!res || !res.ok) { toast(String((res && res.error) || '되돌리기 실패'), 2600); return; }
           toast('보드로 되돌렸습니다');
-          loadHandoffBoard(false);
+          hbReloadBoards();
         })
         .withFailureHandler(function(err) { toast(String((err && err.message) || '통신 실패'), 2600); })
         .csReopenHandoffCard({ id: id, staff: staff });
@@ -3927,7 +3951,7 @@
           if (!res || !res.ok) { toast(String((res && res.error) || '삭제 실패'), 2600); return; }
           HB_OPEN_ID = '';
           toast('카드 삭제됨');
-          loadHandoffBoard(false);
+          hbReloadBoards();
         })
         .withFailureHandler(function(err) { toast(String((err && err.message) || '통신 실패'), 2600); })
         .csDeleteHandoffCard({ id: id, staff: staff });
@@ -7671,6 +7695,28 @@
         .csCompleteHandoffCard({ board: 'logi', id: id, staff: staff });
     }
 
+    /* ★ 2026-09-04: 물류 카드를 CS 카드와 같은 렌더러(hbCardHtml)로 그린다.
+       전에는 제목·본문·완료만 있는 축약판이었다. 서버 데이터는 원래부터 같은
+       모양이라, 그리는 쪽만 바꾸면 펼침·전달내역·첨부·읽음·묵은표시가 전부
+       따라온다. 두 보드가 다르게 동작할 이유가 없다. */
+    function lbRenderCards() {
+      var el = document.getElementById('lbList');
+      if (!el) return;
+      var rows = LB_CARDS || [];
+      if (!rows.length) {
+        el.className = '';
+        el.textContent = '진행 중인 글이 없습니다.';
+        return;
+      }
+      var me = hbStaffName();
+      var h = '';
+      for (var i = 0; i < rows.length; i++) h += hbCardHtml(rows[i], me);
+      el.className = 'grid';
+      el.innerHTML = h;
+      lbSyncNoticeSpan();
+      hbRefreshStale();
+    }
+
     function lbLoad() {
       var el = document.getElementById('lbList');
       if (!el) return;
@@ -7686,26 +7732,7 @@
           renderNoticeTicker();
           var cnt = document.getElementById('lbCount');
           if (cnt) cnt.textContent = rows.length ? '(' + rows.length + ')' : '';
-          if (!rows.length) { el.className = ''; el.textContent = '진행 중인 글이 없습니다.'; return; }
-          var h = '';
-          for (var i = 0; i < rows.length; i++) {
-            var c = rows[i];
-            var lv = c.level === '공지' ? 'p'
-              : (c.level === '긴급' ? 'u' : (c.level === '주의' ? 'w' : 'n'));
-            // 공지는 두 칸을 쓰고 내용을 펼친다 (CS 보드와 같은 규칙)
-            h += '<div class="lb-card' + (c.level === '공지' ? ' lb-notice' : '') + '">';
-            h += '<span class="lb-lv ' + lv + '">' + esc(c.level) + '</span>';
-            h += '<div class="t">' + esc(c.title) + '</div>';
-            if (c.body) h += '<div class="b">' + esc(c.body) + '</div>';
-            h += '<div class="m">' + esc(c.author) + ' · ' + esc(c.at) +
-                 (c.noteCount ? ' · 댓글 ' + c.noteCount : '') + '</div>';
-            h += '<div class="lb-act"><button type="button" onclick="lbDone(&quot;' +
-                 esc(c.id) + '&quot;)">완료</button></div>';
-            h += '</div>';
-          }
-          el.className = 'grid';
-          el.innerHTML = h;
-          lbSyncNoticeSpan();
+          lbRenderCards();
         })
         .withFailureHandler(function () { el.className = ''; el.textContent = '보드를 불러오지 못했습니다.'; })
         .csListHandoffCards({ board: 'logi' });

@@ -393,10 +393,31 @@ function _cs_hb_rowToCard_(row, sheetRow) {
  * ref 는 payload 객체(권장) 또는 카드ID 문자열.
  * 객체면 board 까지 같이 읽는다 — 호출부가 보드를 따로 넘길 필요가 없다.
  */
+/**
+ * 카드 ID 앞자리로 어느 보드인지 알아낸다 (HB… = CS, LB… = 물류).
+ * ★ 2026-09-04 신규
+ *
+ * 카드를 다루는 함수들은 board 를 따로 받아야 탭을 찾을 수 있었다. 그래서
+ * 클라이언트가 호출마다 board 를 같이 보내야 했고, 빠뜨리면 CS 탭에서 물류
+ * 카드를 찾다가 "카드를 찾을 수 없습니다"로 끝났다.
+ * ID 가 이미 어느 보드인지 말하고 있으니 서버가 읽으면 된다.
+ */
+function _cs_hb_boardOfId_(id) {
+  var s = String(id == null ? "" : id).trim().toUpperCase();
+  if (!s) return "";
+  for (var k in _CS_HB_BOARDS_) {
+    if (!Object.prototype.hasOwnProperty.call(_CS_HB_BOARDS_, k)) continue;
+    if (s.indexOf(String(_CS_HB_BOARDS_[k].prefix).toUpperCase()) === 0) return k;
+  }
+  return "";
+}
+
 function _cs_hb_withCard_(ref, fn) {
   var isObj = (ref && typeof ref === "object");
   var id = isObj ? ref.id : ref;
   var board = isObj ? ref.board : "";
+  // 안 넘어왔으면 ID 에서 읽는다. 넘어온 값이 있으면 그쪽을 존중한다.
+  if (!board) board = _cs_hb_boardOfId_(id);
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(_CS_HB_LOCK_MS_)) {
     return { ok: false, error: "다른 담당자가 보드를 수정 중입니다. 잠시 후 다시 시도하세요." };
