@@ -2204,14 +2204,28 @@ function _cs_mapReturnLedgerCols_(header) {
     else if (col.qty < 0 && (h === "수량" || h.indexOf("수량") === 0)) col.qty = i;
     else if (col.invoice < 0 && /원송장|송장번호/.test(h) && !/회수|재발송|반품송장/.test(h)) col.invoice = i;
     else if (col.returnInvoice < 0 && /반품송장|회수송장/.test(h)) col.returnInvoice = i;
-    else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유/.test(h)) col.type = i;
-    else if (col.fee < 0 && /반품비|반품운임|반품배송비/.test(h)) col.fee = i;
+    // 2026-09-04: 실제 헤더 문구를 넣는다.
+    //   시트는 「재출고/단순/오주문입력/오배송」이라고 적혀 있는데 정규식에 없어서
+    //   지금껏 K열 위치 폴백으로만 맞고 있었다. 9월에 열이 한 칸 밀리자 바로 깨졌다.
+    else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유|재출고|오주문입력/.test(h)) col.type = i;
+    // 「반품/환불비용」이 실제 헤더다. 슬래시 때문에 /반품비/ 로는 안 걸린다.
+    else if (col.fee < 0 && /반품비|반품운임|반품배송비|환불비용/.test(h)) col.fee = i;
     else if (col.notice < 0 && /고객요청|유의사항|비고/.test(h)) col.notice = i;
   }
   // A열 = 처리상태 (접수/수거중/완료 …). 헤더명이 비어도 A를 쓴다.
   col.status = 0;
-  // M열 = 반품비 (헤더명이 비어 있거나 다를 때)
-  if (col.fee < 0) col.fee = 12;
+
+  /* M열 = 반품비 폴백.
+     ★ 2026-09-04: **헤더가 비었거나 옛 문구일 때만** 쓴다.
+       전에는 무조건 M을 금액으로 읽었다. 9월에 열이 한 칸 밀려 M이
+       「회수신청」이 되자 Y/N 값이 반품비로 들어왔다. 조용히 틀렸고,
+       사람은 금액이 안 적힌 줄 알았다.
+       옛 탭(202604~07)은 헤더가 「선출고/입고검수후출고」인데 칸에는
+       실제로 반품비가 적혀 있다 — 그 경우는 계속 읽어야 한다. */
+  if (col.fee < 0) {
+    var mHdr = String(header[12] || "").replace(/\s/g, "");
+    if (!mHdr || /선출고|입고검수후출고/.test(mHdr)) col.fee = 12;
+  }
 
   /* K열 = 유형 (재출고/단순/오주문입력/오배송).
      ★ 2026-09-02: 헤더명으로 못 찾으면 K열을 쓴다.
@@ -2221,11 +2235,15 @@ function _cs_mapReturnLedgerCols_(header) {
        다른 항목이 이미 K를 가져갔으면 건드리지 않는다 — 덮어쓰는 게 더 나쁘다. */
   if (col.type < 0) {
     var K = 10;
+    var kHdr = String(header[K] || "").replace(/\s/g, "");
     var taken = false;
     for (var k in col) {
       if (Object.prototype.hasOwnProperty.call(col, k) && col[k] === K) { taken = true; break; }
     }
-    if (!taken) col.type = K;
+    // ★ 2026-09-04: 헤더가 있는 열은 건드리지 않는다.
+    //   9월 탭은 K가 「원송장번호」라 이미 다른 항목이 가져갔다. 그때 억지로
+     //   K를 유형으로 쓰면 송장번호가 유형이 된다.
+    if (!taken && !kHdr) col.type = K;
   }
   return col;
 }
