@@ -50,7 +50,7 @@ ok('지목이 비면 빈 배열', gs._cs_hb_rowToCard_([], 2).to.length === 0);
 
 /* ── 화면: home.html 의 hbCardHtml ── */
 const src = fs.readFileSync(path.join(DIR, 'home.html'), 'utf8').split(/\r?\n/);
-const a = src.findIndex(l => l.indexOf('function hbCardHtml(c, me)') !== -1);
+const a = src.findIndex(l => l.indexOf('function hbCardHtml(c, me, asDetail)') !== -1);
 if (a < 0) { console.error('home.html 에서 hbCardHtml 을 못 찾았습니다'); process.exit(1); }
 // 함수 끝을 중괄호로 센다 — 뒤에 다른 코드가 딸려 오면 vm 에서 터진다
 let depth = 0, b = -1;
@@ -191,17 +191,31 @@ ok('changed 가 false', res.changed === false);
 ok('시트에 쓰지 않는다', Object.keys(TAB._w).length === 0);
 
 /* ── 펼친 카드의 지목 줄 ── */
-console.log('\n[펼친 카드]');
-ui.HB_OPEN_ID = 'HB1';
+console.log('\n[팝업 카드]');
 ui.hbTimeline = () => [{ kind: 'new', by: '박상식', at: '26-09-04 12:00', text: '' }];
-const openHtml = ui.hbCardHtml(mk({ to: ['김진수'] }), '박상식');
+// 세 번째 인자가 true 일 때만 펼친 모양이다. 목록에서는 항상 접힌다.
+const openHtml = ui.hbCardHtml(mk({ to: ['김진수'] }), '박상식', true);
+const listHtml = ui.hbCardHtml(mk({ to: ['김진수'] }), '박상식');
+ok('목록 카드는 접혀 있다', listHtml.indexOf('hb-to-pick card') === -1);
+ok('목록 카드는 눌러서 연다', listHtml.indexOf('onclick="toggleHbCard(') !== -1);
+ok('팝업 카드는 눌러도 안 닫힌다', openHtml.indexOf('onclick="toggleHbCard(') === -1);
+ok('id 가 겹치지 않는다', listHtml.indexOf('id="hb-card-HB1"') !== -1 && openHtml.indexOf('id="hb-detail-HB1"') !== -1);
 ok('지목 칩 자리가 있다', openHtml.indexOf('hb-to-pick card') !== -1);
 ok('카드 ID 를 달고 있다', openHtml.indexOf('data-card="HB1"') !== -1);
 ok('현재 지목을 달고 있다', openHtml.indexOf('data-to="김진수"') !== -1);
 ok('카드 클릭으로 접히지 않게 막았다', openHtml.indexOf('hb-to-row" onclick="event.stopPropagation()') !== -1);
-const doneHtml = ui.hbCardHtml(mk({ to: ['김진수'], done: true }), '박상식');
+const doneHtml = ui.hbCardHtml(mk({ to: ['김진수'], done: true }), '박상식', true);
 ok('완료된 카드에는 지목 줄이 없다', doneHtml.indexOf('hb-to-pick card') === -1);
-ui.HB_OPEN_ID = null;
+
+console.log('\n[팝업 — 배선]');
+ok('여는 조건은 HB_OPEN_ID 하나', whole.indexOf('function hbRenderCardModal()') !== -1);
+ok('렌더 경로에 물려 있다', whole.indexOf('hbRenderCardModal();' + '\r\n      hbToCardFill();') !== -1 || /hbRenderCardModal\(\);\s*[\r\n]+\s*hbToCardFill\(\);/.test(whole));
+ok('바깥을 눌러야 닫힌다', whole.indexOf("ev.target.id === 'hbCardModal'") !== -1);
+ok('Esc 로 닫힌다', whole.indexOf("if (e.key !== 'Escape' || !HB_OPEN_ID) return;") !== -1);
+ok('첨부 확대가 떠 있으면 Esc 를 양보한다', /hbLb[\s\S]{0,80}classList\.contains\('on'\)\) return;[\s\S]{0,40}closeHbCardModal/.test(whole));
+ok('주문 검색 전에 닫는다', whole.indexOf('closeHbCardModal();   // 검색 결과를 가리면 안 된다') !== -1);
+ok('완료·삭제 뒤 바로 닫는다', whole.split('hbRenderCardModal();').length - 1 >= 3);
+ok('사라진 카드는 조용히 닫는다', /if \(!card\) \{[\s\S]{0,120}classList\.remove\('active'\)/.test(whole));
 
 console.log('\n[배선]');
 ok('렌더 뒤에 칩을 채운다', /hbToCardFill\(\);\s*\/\/ 펼친 카드/.test(whole));

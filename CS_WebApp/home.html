@@ -1349,6 +1349,58 @@
       gap: 8px;
       align-items: start;
     }
+    /* 2026-09-04: 카드를 누르면 가운데 팝업으로 뜬다.
+       전에는 목록 안에서 펼쳐졌는데, 펼칠 때마다 아래 카드가 밀려
+       훑던 자리를 잃었다. 팝업은 목록을 건드리지 않는다. */
+    .modal-overlay.hb-card-overlay {
+      align-items: center;
+      padding: 16px;
+    }
+    .hb-card-modal {
+      width: min(760px, 100%);
+      max-height: 88vh;
+      overflow-y: auto;
+      background: var(--bg-card);
+      border-radius: 14px;
+      padding: 10px 14px 16px;
+      animation: hbCardPop 0.16s ease-out;
+      /* 목록의 카드 크기 슬라이더와 무관하게 읽기 좋은 크기로 고정한다 */
+      --hb-text-scale: 1;
+    }
+    @keyframes hbCardPop {
+      from { transform: scale(0.97); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    /* 팝업 안의 카드는 클릭 대상이 아니다 — 테두리도 배경도 겹치지 않게 벗긴다 */
+    .hb-card-modal > .hb-card {
+      cursor: default;
+      border: none;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      animation: none;
+      box-shadow: none;
+    }
+    .hb-card-modal-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; margin-bottom: 8px;
+      position: sticky; top: -10px;
+      background: var(--bg-card); padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .hb-card-modal-t {
+      font-size: 12px; font-weight: 700; color: var(--text-secondary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .hb-card-modal-x {
+      flex-shrink: 0;
+      width: 30px; height: 30px; line-height: 1;
+      border: 1px solid var(--border); background: var(--bg-secondary);
+      color: var(--text-primary); border-radius: 8px;
+      font-size: 15px; cursor: pointer;
+    }
+    .hb-card-modal-x:hover { background: var(--bg-primary); }
+
     /* 안내문·빈목록·펼친 카드는 한 줄 전체를 쓴다 */
     #hbList > .hb-limit,
     #hbList > .os-empty,
@@ -2477,6 +2529,11 @@
     </div>
   </div>
 
+  <!-- 카드 상세 — 목록에서 펼치지 않고 가운데 팝업으로 띄운다 -->
+  <div class="modal-overlay hb-card-overlay" id="hbCardModal" onclick="hbCardOverlayClick(event)">
+    <div class="hb-card-modal" id="hbCardModalBody"></div>
+  </div>
+
   <!-- 첨부 이미지 확대보기 — 새 탭으로 나가지 않고 앱 안에서 본다 -->
   <div class="hb-lb" id="hbLb">
     <div class="hb-lb-bar">
@@ -3328,7 +3385,7 @@
 
       if (wsPaneCount() === 1) wsGoToPane(2);
       HB_OPEN_ID = id;
-      renderHandoffBoard();
+      hbRenderBoards();   // 목록을 다시 그리고 그 카드를 팝업으로 띄운다
       setTimeout(function () {
         var el = document.getElementById('hb-card-' + id);
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -3736,9 +3793,14 @@
       return out;
     }
 
-    function hbCardHtml(c, me) {
+    /**
+     * 카드 HTML.
+     * asDetail 이 true 면 팝업 안에 들어갈 펼친 모양으로 그린다.
+     * 목록에서는 항상 접힌 모양이다 — 펼치기는 팝업이 맡는다.
+     */
+    function hbCardHtml(c, me, asDetail) {
       var lvCls = hbLevelCls(c.level);
-      var isOpen = (c.id === HB_OPEN_ID);
+      var isOpen = (asDetail === true);
       var isUnread = !c.done && me && (c.read || []).indexOf(me) === -1;
 
       // 5시간 넘게 완료되지 않은 카드는 외곽이 깜박인다 (hbRefreshStale 참고)
@@ -3756,9 +3818,11 @@
       var cls = 'hb-card ' + lvCls + (c.done ? ' hb-done' : '') +
         (notice ? ' hb-notice' : '') + (pinged ? ' hb-ping' : '') +
         (stale ? ' hb-stale' : '') + (isOpen ? ' open' : '');
-      var h = '<div id="hb-card-' + esc(c.id) + '" class="' + cls + '"' +
-        ' data-at="' + esc(c.at) + '"' +
-        ' onclick="toggleHbCard(\'' + js(c.id) + '\', event)">';
+      // 팝업 안의 카드는 목록의 카드와 id 가 겹치면 안 된다 —
+      // getElementById 가 엉뚱한 쪽을 집는다.
+      var h = '<div id="' + (isOpen ? 'hb-detail-' : 'hb-card-') + esc(c.id) + '"' +
+        ' class="' + cls + '" data-at="' + esc(c.at) + '"' +
+        (isOpen ? '' : ' onclick="toggleHbCard(\'' + js(c.id) + '\', event)"') + '>';
 
       h += '<div class="hb-card-top">';
       h += '<span class="hb-badge ' + lvCls + '">' + esc(c.level) + '</span>';
@@ -4061,6 +4125,57 @@
         .csSetHandoffMention({ id: id, to: list, staff: me });
     }
 
+    /* 카드 팝업 — 여는 조건은 HB_OPEN_ID 하나뿐이다.
+       그래서 어디서든 HB_OPEN_ID 를 비우고 다시 그리면 팝업이 닫힌다. */
+    function hbRenderCardModal() {
+      var ov = document.getElementById('hbCardModal');
+      var body = document.getElementById('hbCardModalBody');
+      if (!ov || !body) return;
+
+      var card = null;
+      if (HB_OPEN_ID) {
+        var all = hbAllCards();
+        for (var i = 0; i < all.length; i++) {
+          if (all[i].id === HB_OPEN_ID) { card = all[i]; break; }
+        }
+      }
+
+      // 남이 완료했거나 지운 카드 — 조용히 닫는다
+      if (!card) {
+        HB_OPEN_ID = '';
+        ov.classList.remove('active');
+        body.innerHTML = '';
+        return;
+      }
+
+      body.innerHTML =
+        '<div class="hb-card-modal-bar">' +
+        '<span class="hb-card-modal-t">' + esc(card.level) + ' · ' + esc(card.author) +
+        ' · ' + esc(card.at) + '</span>' +
+        '<button type="button" class="hb-card-modal-x" onclick="closeHbCardModal()" ' +
+        'title="닫기 (Esc)">✕</button></div>' +
+        hbCardHtml(card, hbStaffName(), true);
+      ov.classList.add('active');
+    }
+
+    function closeHbCardModal() {
+      HB_OPEN_ID = '';
+      hbRenderCardModal();
+    }
+
+    /** 바깥 어두운 곳을 눌렀을 때만 닫는다 — 안쪽 클릭으로 닫히면 글을 읽다 말고 튕긴다 */
+    function hbCardOverlayClick(ev) {
+      if (ev && ev.target && ev.target.id === 'hbCardModal') closeHbCardModal();
+    }
+
+    /* Esc — 첨부 확대가 떠 있으면 그쪽이 먼저 닫힌다 (그쪽이 위에 있다) */
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' || !HB_OPEN_ID) return;
+      var lb = document.getElementById('hbLb');
+      if (lb && lb.classList.contains('on')) return;
+      closeHbCardModal();
+    });
+
     function hbAllCards() {
       return (HB_CARDS || []).concat(LB_CARDS || []);
     }
@@ -4070,6 +4185,7 @@
       hbSyncMineChips();
       renderHandoffBoard();
       if (typeof lbRenderCards === 'function') lbRenderCards();
+      hbRenderCardModal();
       hbToCardFill();   // 펼친 카드의 지목 칩은 HTML 을 넣은 뒤에 채운다
     }
 
@@ -4152,6 +4268,7 @@
         .withSuccessHandler(function(res) {
           if (!res || !res.ok) { toast(String((res && res.error) || '완료 처리 실패'), 2600); return; }
           HB_OPEN_ID = '';
+          hbRenderCardModal();   // 보드를 다시 받기 전에 팝업부터 닫는다
           toast('완료 처리됨 · 보관함에서 볼 수 있어요', 2200);
           hbReloadBoards();
         })
@@ -4179,6 +4296,7 @@
         .withSuccessHandler(function(res) {
           if (!res || !res.ok) { toast(String((res && res.error) || '삭제 실패'), 2600); return; }
           HB_OPEN_ID = '';
+          hbRenderCardModal();
           toast('카드 삭제됨');
           hbReloadBoards();
         })
@@ -4191,6 +4309,7 @@
       if (ev) ev.stopPropagation();
       var q = document.getElementById('q');
       if (!q) return;
+      closeHbCardModal();   // 검색 결과를 가리면 안 된다
       q.value = String(keyword || '');
       if (isWsMobile()) wsGoToPane(0);
       doSearch(true);
