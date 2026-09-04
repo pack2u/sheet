@@ -21,7 +21,32 @@
  *   그래서 이 값을 pulse 에 실어 보내 프런트가 스스로 알아채게 한다.
  *   안 올리면 사람들은 옛 화면을 쓰면서 고쳐진 줄 안다.
  */
-var CS_BUILD_ = "193";
+var CS_BUILD_ = "194";
+
+/**
+ * 폴링 응답 캐시.
+ * 2026-09-04 신규.
+ *
+ * 이 함수는 20초마다 사람 수만큼 불린다. 그때마다 보드 탭을 통째로
+ * 읽고 있었으므로, 5명이 켜두면 1분에 15번 시트를 읽었다. 사람이 늘면
+ * 그대로 늘어난다.
+ *
+ * 응답에는 지문과 건수뿐이라 **사람마다 다른 값이 없다.** 그래서
+ * 스크립트 캐시(전 사용자 공용)에 담아 한 번 읽은 것을 모두가 나눠 쓴다.
+ *
+ * 다만 TTL 만으로는 남의 변경이 최대 10초 늦게 보인다. 그래서 카드를
+ * 쓰는 쪽에서 _cs_pulse_bust_() 로 캐시를 지운다 —
+ * **평소에는 싸고, 실제로 바뀌면 바로 보인다.**
+ */
+var _CS_PULSE_CACHE_SEC_ = 10;
+var _CS_PULSE_CACHE_KEY_ = "cs_pulse_v1";
+
+/** 보드에 뭔가 쓴 쪽에서 부른다. 실패해도 무시한다 — 그래봐야 10초 늦을 뿐이다 */
+function _cs_pulse_bust_() {
+  try {
+    CacheService.getScriptCache().remove(_CS_PULSE_CACHE_KEY_);
+  } catch (e) {}
+}
 
 /** 문자열 → 짧은 지문. djb2 변형, 36진수 */
 function _cs_pulse_hash_(s) {
@@ -104,8 +129,27 @@ function _cs_pulse_returns_() {
  * @return {{ok:boolean, board:Object|null, ret:Object|null, errors:string[]}}
  */
 function csGetCsPulse(opt) {
+  // 접근 검사는 캐시보다 먼저다. 캐시에 담긴 것은 데이터지 권한이 아니다.
   var _acg_ = _cs_ac_guard_();
   if (_acg_) return _acg_;
+
+  opt = opt || {};
+  var cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (eC) {}
+
+  if (cache && !opt.fresh) {
+    try {
+      var hit = cache.get(_CS_PULSE_CACHE_KEY_);
+      if (hit) {
+        var got = JSON.parse(hit);
+        // 배포가 바뀌었으면 버린다 — 새 빌드 알림이 캐시 때문에 늦으면 안 된다
+        if (got && got.build === CS_BUILD_) {
+          got.cached = true;
+          return got;
+        }
+      }
+    } catch (eH) {}
+  }
 
   var out = { ok: true, build: CS_BUILD_, board: null, ret: null, errors: [] };
 
@@ -119,6 +163,14 @@ function csGetCsPulse(opt) {
     out.ret = _cs_pulse_returns_();
   } catch (eR) {
     out.errors.push("반품: " + String((eR && eR.message) || eR));
+  }
+
+  // 실패한 응답은 담지 않는다. 한 번의 일시적 오류를 10초 동안
+  // 모든 사람에게 물려주면 그쪽이 더 나쁘다.
+  if (cache && !out.errors.length) {
+    try {
+      cache.put(_CS_PULSE_CACHE_KEY_, JSON.stringify(out), _CS_PULSE_CACHE_SEC_);
+    } catch (eP) {}
   }
 
   return out;

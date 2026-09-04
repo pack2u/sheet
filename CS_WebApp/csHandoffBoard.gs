@@ -439,7 +439,10 @@ function _cs_hb_withCard_(ref, fn) {
       Math.max(tab.getLastColumn(), _CS_HB_HEADERS_.length), tab.getMaxColumns(),
     );
     var row = tab.getRange(sheetRow, 1, 1, lastCol).getDisplayValues()[0];
-    return fn(tab, sheetRow, row);
+    var res = fn(tab, sheetRow, row);
+    // 뭔가 바뀌었으면 폴링 캐시를 지운다 — 남들이 10초를 안 기다리게
+    if (res && res.ok) { try { _cs_pulse_bust_(); } catch (eP) {} }
+    return res;
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e) };
   } finally {
@@ -563,6 +566,7 @@ function csCreateHandoffCard(payload) {
     }
 
     tab.getRange(tab.getLastRow() + 1, 1, 1, _CS_HB_HEADERS_.length).setValues([row]);
+    try { _cs_pulse_bust_(); } catch (eP) {}
     return { ok: true, id: id, message: "카드 등록됨" };
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e) };
