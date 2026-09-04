@@ -1358,7 +1358,10 @@
        한 줄을 통째로 쓰고 본문을 접지 않는다 — "금일 판매불가 상품"처럼
        제목만 봐서는 소용없고 내용을 읽어야 하는 글을 위한 자리다.
        서버 정렬(_CS_HB_LEVELS_ 첫 칸)이 이미 맨 위로 올려 준다. */
-    #hbList > .hb-card.hb-notice { grid-column: 1 / -1; }
+    /* 두 칸 폭. 한 줄을 다 쓰면 목록이 아니라 배너로 보인다.
+       칸이 하나뿐인 좁은 폭에서는 hbSyncNoticeSpan 이 .one-col 을 붙여 되돌린다. */
+    #hbList > .hb-card.hb-notice { grid-column: span 2; }
+    #hbList.one-col > .hb-card.hb-notice { grid-column: auto; }
     .hb-card.hb-notice {
       border-color: rgba(90, 160, 240, 0.45);
       background: linear-gradient(180deg, rgba(90, 160, 240, 0.10), transparent 70%), var(--bg-card);
@@ -3281,8 +3284,27 @@
       }
       for (var i = 0; i < rows.length; i++) html += hbCardHtml(rows[i], me);
       list.innerHTML = html;
+      hbSyncNoticeSpan();
       csSyncScrollbars();
     }
+
+    /* 공지 카드는 두 칸을 쓴다.
+       다만 한 칸짜리 폭에서 두 칸을 쓰면 없는 칸으로 삐져나가 가로 스크롤이 생긴다.
+       패널 폭은 사람이 드래그로 바꾸니 화면 크기만으로는 못 정한다 —
+       실제 칸 수를 세서 한 칸이면 공지도 한 칸으로 돌린다. */
+    function hbSyncNoticeSpan() {
+      var list = document.getElementById('hbList');
+      if (!list) return;
+      var cols = String(getComputedStyle(list).gridTemplateColumns || '')
+        .trim().split(/\s+/).filter(Boolean).length;
+      list.classList.toggle('one-col', cols < 2);
+    }
+
+    (function watchNoticeSpan() {
+      var list = document.getElementById('hbList');
+      if (!list || typeof ResizeObserver === 'undefined') return;
+      new ResizeObserver(hbSyncNoticeSpan).observe(list);
+    })();
 
     /* ══════════════════════════════════════════════════
        첨부 확대보기
