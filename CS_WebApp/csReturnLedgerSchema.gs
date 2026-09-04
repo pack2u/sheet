@@ -192,3 +192,18 @@ function csDumpReturnLedgerSchema(months) {
   Logger.log(JSON.stringify(out));
   return out;
 }
+
+/**
+ * 최근 2개월만 — 지금 쓰는 양식을 자세히 본다.
+ *
+ * 편집기의 ▶ 실행은 **인자를 못 넘긴다.** 그래서 인자 없는 이름을 따로 둔다.
+ * 6개월치는 로그가 잘리므로, 현행 양식만 볼 때는 이쪽을 쓴다.
+ */
+function csDumpReturnLedgerSchemaRecent() {
+  return csDumpReturnLedgerSchema(2);
+}
+
+/** 최근 12개월 — 옛 양식까지 훑을 때. 로그가 길어 잘릴 수 있다. */
+function csDumpReturnLedgerSchemaYear() {
+  return csDumpReturnLedgerSchema(12);
+}
