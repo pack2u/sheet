@@ -1958,6 +1958,24 @@
     .lb-lv.u { background: rgba(231,76,95,.18); color: #e74c5f; }
     .lb-lv.w { background: rgba(240,160,48,.18); color: #f0a030; }
     .lb-lv.n { background: rgba(173,173,173,.18); color: var(--text-bright); }
+    /* 공지 — CS 보드와 같은 파랑. 빨강·주황은 "처리해 달라"는 뜻으로 임자가 있다 */
+    .lb-lv.p { background: rgba(90,160,240,.22); color: #9ec8f5; }
+    :root[data-theme="light"] .lb-lv.p { color: #1d5fa8; }
+
+    /* 공지 카드 — CS 보드와 같은 규칙: 두 칸을 쓰고 내용을 접지 않는다.
+       한 칸짜리 폭에서는 lbSyncNoticeSpan 이 .one-col 을 붙여 되돌린다. */
+    #lbList.grid > .lb-card.lb-notice { grid-column: span 2; }
+    #lbList.grid.one-col > .lb-card.lb-notice { grid-column: auto; }
+    .lb-card.lb-notice {
+      border-color: rgba(90, 160, 240, 0.45);
+      border-left: 3px solid #5aa0f0;
+      background: linear-gradient(180deg, rgba(90, 160, 240, 0.10), transparent 70%), var(--bg-card);
+    }
+    .lb-card.lb-notice .t { font-size: 15px; }
+    .lb-card.lb-notice .b {
+      display: block; -webkit-line-clamp: none; overflow: visible;
+      font-size: 13px; color: var(--text-primary); white-space: pre-wrap;
+    }
     .lb-act { text-align: right; margin-top: 8px; }
     .lb-act button {
       background: transparent; border: 1px solid var(--border); color: var(--text-bright);
@@ -2251,6 +2269,7 @@
             <input type="text" id="lbTitle" placeholder="제목 (필수)">
             <input type="text" id="lbBody" placeholder="내용">
             <div class="os-toolbar" style="margin-top:8px">
+              <button type="button" class="os-chip" data-lblv="공지" onclick="lbSetLevel('공지')">📌 공지</button>
               <button type="button" class="os-chip" data-lblv="긴급" onclick="lbSetLevel('긴급')">긴급</button>
               <button type="button" class="os-chip" data-lblv="주의" onclick="lbSetLevel('주의')">주의</button>
               <button type="button" class="os-chip on" data-lblv="일반" onclick="lbSetLevel('일반')">일반</button>
@@ -7594,6 +7613,22 @@
       if (f) f.style.display = (f.style.display === 'none') ? 'block' : 'none';
     }
 
+    /* CS 보드의 hbSyncNoticeSpan 과 같은 이유 — 한 칸짜리 폭에서 두 칸을 쓰면
+       없는 칸으로 삐져나간다. 물류 보드는 세로 3분할 안에 있어 더 좁다. */
+    function lbSyncNoticeSpan() {
+      var el = document.getElementById('lbList');
+      if (!el || !el.classList.contains('grid')) return;
+      var cols = String(getComputedStyle(el).gridTemplateColumns || '')
+        .trim().split(/\s+/).filter(Boolean).length;
+      el.classList.toggle('one-col', cols < 2);
+    }
+
+    (function watchLbNoticeSpan() {
+      var el = document.getElementById('lbList');
+      if (!el || typeof ResizeObserver === 'undefined') return;
+      new ResizeObserver(lbSyncNoticeSpan).observe(el);
+    })();
+
     function lbSetLevel(v) {
       LB_LEVEL = v;
       var btns = document.querySelectorAll('[data-lblv]');
@@ -7655,8 +7690,10 @@
           var h = '';
           for (var i = 0; i < rows.length; i++) {
             var c = rows[i];
-            var lv = c.level === '긴급' ? 'u' : (c.level === '주의' ? 'w' : 'n');
-            h += '<div class="lb-card">';
+            var lv = c.level === '공지' ? 'p'
+              : (c.level === '긴급' ? 'u' : (c.level === '주의' ? 'w' : 'n'));
+            // 공지는 두 칸을 쓰고 내용을 펼친다 (CS 보드와 같은 규칙)
+            h += '<div class="lb-card' + (c.level === '공지' ? ' lb-notice' : '') + '">';
             h += '<span class="lb-lv ' + lv + '">' + esc(c.level) + '</span>';
             h += '<div class="t">' + esc(c.title) + '</div>';
             if (c.body) h += '<div class="b">' + esc(c.body) + '</div>';
@@ -7668,6 +7705,7 @@
           }
           el.className = 'grid';
           el.innerHTML = h;
+          lbSyncNoticeSpan();
         })
         .withFailureHandler(function () { el.className = ''; el.textContent = '보드를 불러오지 못했습니다.'; })
         .csListHandoffCards({ board: 'logi' });
