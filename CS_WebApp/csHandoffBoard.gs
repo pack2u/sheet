@@ -71,6 +71,10 @@ var _CS_HB_HEADERS_ = [
   "전화",        // P
   "송장",        // Q
   "품목",        // R
+  // 2026-09-04: 특정 담당자에게 보라고 지목한다. 쉼표로 여러 명.
+  //   지목된 사람 화면에서만 그 카드가 빨갛게 깜박인다. 읽으면 멈춘다.
+  //   「읽음」(I열)과 같은 형식이라 _cs_hb_readList_ 를 그대로 쓴다.
+  "지목",        // S
 ];
 
 var _CS_HB_COL_ = {
@@ -78,6 +82,7 @@ var _CS_HB_COL_ = {
   link: 6, notes: 7, read: 8, status: 9, doneAt: 10, doneBy: 11,
   att: 12, srcKey: 13,
   custName: 14, phone: 15, invoice: 16, item: 17,
+  mention: 18,
 };
 
 /**
@@ -238,6 +243,9 @@ function _cs_hb_appendNoteLine_(raw, line) {
 }
 
 function _cs_hb_readList_(raw) {
+  // 지목은 배열로 넘어온다. String(배열)도 쉼표로 이어지지만 그건 우연이라
+  //   여기서 명시적으로 풀어 둔다.
+  if (Object.prototype.toString.call(raw) === "[object Array]") raw = raw.join(",");
   var out = [];
   var parts = String(raw == null ? "" : raw).split(/[,\n]/);
   for (var i = 0; i < parts.length; i++) {
@@ -385,6 +393,7 @@ function _cs_hb_rowToCard_(row, sheetRow) {
     phone: String(row[c.phone] || "").trim(),
     invoice: String(row[c.invoice] || "").trim(),
     item: String(row[c.item] || "").trim(),
+    to: _cs_hb_readList_(row[c.mention]),
   };
 }
 
@@ -547,6 +556,8 @@ function csCreateHandoffCard(payload) {
     row[_CS_HB_COL_.phone] = String(payload.phone || "").trim();
     row[_CS_HB_COL_.invoice] = String(payload.invoice || "").trim();
     row[_CS_HB_COL_.item] = String(payload.item || "").trim();
+    // 지목 — 배열로 와도 쉼표 문자열로 와도 같은 형태로 저장한다
+    row[_CS_HB_COL_.mention] = _cs_hb_readList_(payload.to).join(", ");
     for (var i = 0; i < _CS_HB_HEADERS_.length; i++) {
       if (row[i] == null) row[i] = "";
     }

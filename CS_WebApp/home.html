@@ -1429,6 +1429,59 @@
       }
     }
 
+    /* 2026-09-04: 나를 지목한 카드 — 빨간 외곽이 빠르게 깜박인다.
+       지목된 사람 화면에서만 붙는다 (hbCardHtml 의 pinged). 남에게는 안 보인다.
+       내가 읽으면 멈춘다 — 안 멈추면 영영 깜박여서 곧 무시하게 된다.
+       묵은 카드(파랑, 2.4s)보다 빠르게 둔 것은 "급한 것"과 "오래된 것"을
+       한눈에 구분하기 위해서다. */
+    .hb-card.hb-ping:not(.open) {
+      animation: hbPingGlow 1.1s ease-in-out infinite;
+    }
+    @keyframes hbPingGlow {
+      0%, 100% {
+        border-color: rgba(232, 93, 93, 0.45);
+        box-shadow: 0 0 0 0 rgba(232, 93, 93, 0);
+      }
+      50% {
+        border-color: rgba(232, 93, 93, 1);
+        box-shadow: 0 0 14px 3px rgba(232, 93, 93, 0.6);
+      }
+    }
+    /* 깜박임을 꺼 둔 사람에게는 정지된 빨간 테두리로 같은 정보를 준다 */
+    @media (prefers-reduced-motion: reduce) {
+      .hb-card.hb-ping:not(.open) {
+        animation: none;
+        border-color: rgba(232, 93, 93, 0.9);
+        box-shadow: 0 0 10px 2px rgba(232, 93, 93, 0.45);
+      }
+    }
+    /* 지목 배지 — 누구더러 보라는 카드인지는 모두에게 보인다.
+       내가 지목된 경우에만 꽉 찬 빨강이 된다. */
+    .hb-badge.hb-to {
+      background: rgba(232, 93, 93, 0.16);
+      color: #e85d5d;
+      border: 1px solid rgba(232, 93, 93, 0.4);
+    }
+    .hb-badge.hb-to.me { background: #e85d5d; color: #fff; border-color: #e85d5d; }
+
+    /* 작성 모달의 지목 고르기 */
+    .hb-to-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+    .hb-to-chip {
+      border: 1px solid var(--border);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border-radius: 999px;
+      padding: 5px 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .hb-to-chip.on {
+      background: #e85d5d;
+      border-color: #e85d5d;
+      color: #fff;
+      font-weight: 700;
+    }
+
     /* 배지는 제목과 다른 줄에 둔다. 좁은 타일에서 제목이 짜부라지지 않게 */
     .hb-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 5px; }
     .hb-badge {
@@ -2364,6 +2417,12 @@
         <label>연결 (주문 검색어 · 선택)</label>
         <input id="hbLink" type="text" maxlength="60" placeholder="송장번호 · 고객명 · 전화번호">
         <div class="hb-help">입력하면 카드에서 바로 왼쪽 주문 검색으로 넘어갑니다.</div>
+      </div>
+      <div class="ledger-field">
+        <label>지목 (선택)</label>
+        <div class="hb-to-pick" id="hbToPick"></div>
+        <input type="hidden" id="hbToVal">
+        <div class="hb-help">고른 사람 화면에서만 이 카드가 빨갛게 깜박입니다. 그 사람이 읽으면 멈춥니다.</div>
       </div>
       <div class="ledger-field">
         <label>작성자</label>
@@ -3599,9 +3658,17 @@
       // 5시간 넘게 완료되지 않은 카드는 외곽이 깜박인다 (hbRefreshStale 참고)
       // 공지는 원래 오래 붙어 있는 글이라 깜박이지 않는다 — 묵은 게 아니다.
       var notice = hbIsNotice(c);
-      var stale = !c.done && !notice && hbAgeHours(c.at) >= HB_STALE_HOURS;
+
+      // 나를 지목한 카드 — 내 화면에서만 빨갛게 깜박인다.
+      // 읽은 뒤에는 멈춘다. 남의 화면에서는 배지만 보이고 깜박이지 않는다.
+      var toList = c.to || [];
+      var pinged = !c.done && me && toList.indexOf(me) !== -1 &&
+        (c.read || []).indexOf(me) === -1;
+
+      // 묵은 카드 표시는 지목에 양보한다 — 두 색이 같이 깜박이면 둘 다 안 읽힌다
+      var stale = !c.done && !notice && !pinged && hbAgeHours(c.at) >= HB_STALE_HOURS;
       var cls = 'hb-card ' + lvCls + (c.done ? ' hb-done' : '') +
-        (notice ? ' hb-notice' : '') +
+        (notice ? ' hb-notice' : '') + (pinged ? ' hb-ping' : '') +
         (stale ? ' hb-stale' : '') + (isOpen ? ' open' : '');
       var h = '<div id="hb-card-' + esc(c.id) + '" class="' + cls + '"' +
         ' data-at="' + esc(c.at) + '"' +
@@ -3610,6 +3677,11 @@
       h += '<div class="hb-card-top">';
       h += '<span class="hb-badge ' + lvCls + '">' + esc(c.level) + '</span>';
       if (isUnread) h += '<span class="hb-badge hb-unread">NEW</span>';
+      // 지목 배지는 모두에게 보인다 — 누가 봐야 하는 건인지 옆 사람도 알아야 한다
+      if (toList.length) {
+        h += '<span class="hb-badge hb-to' + (pinged ? ' me' : '') + '">→ ' +
+          esc(toList.join(', ')) + '</span>';
+      }
       // 협력업체 포털이 만든 카드 — CS가 쓴 것과 구분한다 (작성자가 "업체:{업체명}")
       if (/^업체:/.test(String(c.author || ''))) {
         h += '<span class="hb-badge hb-partner">업체 문의</span>';
@@ -3991,7 +4063,7 @@
       hb: {
         modal: 'hbModal', bar: 'hbDraftBar',
         fields: ['hbStaff', 'hbTitle', 'hbCustName', 'hbPhone', 'hbInvoice',
-                 'hbItem', 'hbBody', 'hbLink'],
+                 'hbItem', 'hbBody', 'hbLink', 'hbToVal'],
         // 중요도는 입력칸이 아니라 버튼이라 따로 담고 따로 되살린다
         save: function(v) { v._lv = HB_NEW_LEVEL || '일반'; },
         load: function(v) { if (v._lv) pickHbLevel(v._lv); }
@@ -4140,6 +4212,51 @@
        ★ 2026-09-04: 물류는 제목·내용만 받는 간단한 폼을 따로 갖고 있었다.
          같은 일을 하는 화면이 둘이면 고칠 때마다 한쪽을 빠뜨린다.
          여기에 어느 보드로 올릴지만 기억해 두고 나머지는 그대로 쓴다. */
+    /* 지목 고르기
+       고른 이름은 숨은 입력칸(hbToVal)에 쉼표로 담는다.
+       칩이 아니라 입력칸에 담아야 임시저장이 그대로 따라온다. */
+    function hbToList() {
+      var v = document.getElementById('hbToVal');
+      return String((v && v.value) || '').split(',')
+        .map(function (x) { return x.trim(); })
+        .filter(function (x) { return !!x; });
+    }
+
+    function hbToToggle(ev) {
+      var el = ev.currentTarget;
+      var name = el.getAttribute('data-name');
+      var list = hbToList();
+      var i = list.indexOf(name);
+      if (i === -1) { list.push(name); el.classList.add('on'); }
+      else { list.splice(i, 1); el.classList.remove('on'); }
+      var v = document.getElementById('hbToVal');
+      if (v) { v.value = list.join(', '); }
+      try { draftTouch('hb'); } catch (e) {}
+    }
+
+    function hbToRender() {
+      var box = document.getElementById('hbToPick');
+      if (!box) return;
+      var chosen = hbToList();
+      function draw(names) {
+        box.innerHTML = '';
+        for (var i = 0; i < names.length; i++) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'hb-to-chip' + (chosen.indexOf(names[i]) !== -1 ? ' on' : '');
+          b.textContent = names[i];
+          b.setAttribute('data-name', names[i]);
+          b.onclick = hbToToggle;
+          box.appendChild(b);
+        }
+      }
+      if (STAFF_CACHE) { draw(STAFF_CACHE); return; }
+      google.script.run
+        .withSuccessHandler(function (arr) { STAFF_CACHE = arr || []; draw(STAFF_CACHE); })
+        .withFailureHandler(function () { draw(['김진수', '고윤서', '박상식']); })
+        .getStaffList();
+    }
+
     var HB_MODAL_BOARD = 'cs';
 
     function openHbModal(board) {
@@ -4154,7 +4271,7 @@
       var b = document.getElementById('hbBody'); if (b) b.value = '';
       var l = document.getElementById('hbLink'); if (l) l.value = '';
       // 항목칸도 비운다 — 안 비우면 직전 카드 값이 그대로 남아 잘못 등록된다
-      ['hbCustName', 'hbPhone', 'hbInvoice', 'hbItem'].forEach(function (id) {
+      ['hbCustName', 'hbPhone', 'hbInvoice', 'hbItem', 'hbToVal'].forEach(function (id) {
         var el = document.getElementById(id);
         if (el) el.value = '';
       });
@@ -4164,6 +4281,8 @@
       document.getElementById('hbModal').classList.add('active');
       draftWatch('hb');
       draftRestore('hb');
+      // 임시저장을 되살린 뒤에 칩을 그려야 고른 상태가 그대로 보인다
+      hbToRender();
       DRAFT_QUIET = false;
       setTimeout(function(){ if (t) t.focus(); }, 120);
     }
@@ -4238,6 +4357,7 @@
           phone: hbVal('hbPhone'),
           invoice: hbVal('hbInvoice'),
           item: hbVal('hbItem'),
+          to: hbToList(),
           staff: staff
         });
     }
