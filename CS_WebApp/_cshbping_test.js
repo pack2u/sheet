@@ -208,5 +208,37 @@ ok('렌더 뒤에 칩을 채운다', /hbToCardFill\(\);\s*\/\/ 펼친 카드/.te
 ok('토글이 서버를 부른다', /\.csSetHandoffMention\(\{ id: id, to: list, staff: me \}\)/.test(whole));
 ok('실패하면 서버 값으로 되돌린다', /toast\(String\(\(res && res\.error\)[\s\S]{0,120}hbReloadBoards\(\)/.test(whole));
 
+/* ── 내 것만 보기 ── */
+const m1 = src.findIndex(l => l.indexOf('function hbIsMine(c, me)') !== -1);
+const m2 = src.findIndex((l, i) => i > m1 && l.indexOf('function hbFiltered()') !== -1);
+if (m1 < 0 || m2 < 0) { console.error('내 것만 보기 함수를 못 찾았습니다'); process.exit(1); }
+const mineCtx = {
+  hbIsNotice: (c) => c.level === '공지',
+  document: { getElementById: () => null },
+  localStorage: { getItem: () => null, setItem: () => {} },
+  hbRenderBoards: () => {},
+  String, console,
+};
+vm.createContext(mineCtx);
+vm.runInContext(src.slice(m1, m2).join('\n'), mineCtx);
+
+console.log('\n[내 것만 — 무엇이 남는가]');
+ok('나를 지목한 카드는 보인다', mineCtx.hbIsMine({ to: ['김진수'], level: '일반' }, '김진수'));
+ok('남을 지목한 카드는 가린다', !mineCtx.hbIsMine({ to: ['고윤서'], level: '일반' }, '김진수'));
+ok('지목 없는 카드는 가린다', !mineCtx.hbIsMine({ to: [], level: '일반' }, '김진수'));
+ok('공지는 지목과 무관하게 보인다', mineCtx.hbIsMine({ to: ['고윤서'], level: '공지' }, '김진수'));
+ok('지목 없는 공지도 보인다', mineCtx.hbIsMine({ to: [], level: '공지' }, '김진수'));
+ok('이름을 모르면 아무것도 안 가린다', mineCtx.hbIsMine({ to: ['고윤서'], level: '일반' }, ''));
+ok('to 가 없어도 안 터진다', mineCtx.hbIsMine({ level: '일반' }, '김진수') === false);
+
+console.log('\n[내 것만 — 배선]');
+ok('두 보드가 같은 값을 쓴다', /var HB_MINE = /.test(whole) && whole.indexOf('HB_MINE && !hbIsMine(all[i], me)') !== -1);
+ok('브라우저에 기억한다', whole.indexOf("localStorage.setItem('pack2u_hb_mine'") !== -1);
+ok('가린 건수를 센다', whole.indexOf('HB_MINE_HIDDEN++') !== -1 && whole.indexOf('LB_MINE_HIDDEN++') !== -1);
+ok('켜져 있으면 안내바를 띄운다', whole.indexOf('if (HB_MINE) html += hbMineBar(HB_MINE_HIDDEN)') !== -1);
+ok('안내바에 전체 보기 버튼', whole.indexOf('onclick="toggleHbMine()">전체 보기') !== -1);
+ok('비었을 때 문구가 따로 있다', whole.indexOf('나를 지목한 카드가 없습니다') !== -1 && whole.indexOf('나를 지목한 글이 없습니다') !== -1);
+ok('지목 필터는 검색 뒤에 온다', whole.indexOf('hay.indexOf(q)') < whole.indexOf('HB_MINE && !hbIsMine(c, me)'));
+
 console.log('\n' + (fail ? `실패 ${fail}건 / 통과 ${pass}건` : `모두 통과 (${pass}건)`));
 process.exit(fail ? 1 : 0);

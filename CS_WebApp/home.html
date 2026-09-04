@@ -1352,7 +1352,31 @@
     /* 안내문·빈목록·펼친 카드는 한 줄 전체를 쓴다 */
     #hbList > .hb-limit,
     #hbList > .os-empty,
+    #hbList > .hb-mine-bar,
+    #lbList.grid > .hb-mine-bar,
     #hbList > .hb-card.open { grid-column: 1 / -1; }
+
+    /* 「내 것만 보기」가 켜져 있다는 표시.
+       켜 둔 걸 잊으면 "카드가 사라졌다"가 된다. 숨긴 건수까지 같이 보여
+       없는 것과 가린 것을 구분하게 한다. */
+    .hb-mine-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; flex-wrap: wrap;
+      margin-bottom: 8px; padding: 7px 12px;
+      border: 1px solid rgba(253, 184, 19, 0.5);
+      background: rgba(253, 184, 19, 0.12);
+      border-radius: 8px;
+      font-size: 12px; font-weight: 700; color: #fdb813;
+    }
+    .hb-mine-bar button {
+      border: 1px solid rgba(253, 184, 19, 0.6);
+      background: transparent; color: #fdb813;
+      border-radius: 999px; padding: 3px 12px;
+      font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .hb-mine-bar button:hover { background: rgba(253, 184, 19, 0.2); }
+    :root[data-theme="light"] .hb-mine-bar { color: #8a5300; }
+    :root[data-theme="light"] .hb-mine-bar button { color: #8a5300; border-color: rgba(138, 83, 0, 0.5); }
 
     /* ★ 2026-09-04: 공지 카드.
        한 줄을 통째로 쓰고 본문을 접지 않는다 — "금일 판매불가 상품"처럼
@@ -2272,6 +2296,8 @@
             <button type="button" class="os-chip" data-lv="긴급" onclick="setHbLevel('긴급')">긴급</button>
             <button type="button" class="os-chip" data-lv="주의" onclick="setHbLevel('주의')">주의</button>
             <button type="button" class="os-chip" data-lv="일반" onclick="setHbLevel('일반')">일반</button>
+            <button type="button" class="os-chip" id="hbMineChip" onclick="toggleHbMine()"
+                    title="나를 지목한 카드만 봅니다 (공지는 항상 보입니다)">내 것만</button>
             <button type="button" class="os-chip" id="hbDoneChip" onclick="toggleHbDone()">보관함</button>
             <span class="hb-size" title="카드 크기 조절">
               <span class="hb-size-ic">↔</span>
@@ -2324,6 +2350,8 @@
           <div class="mn-sec-head">🚚 물류 커뮤니티 보드 <span id="lbCount"></span></div>
           <div class="os-toolbar" style="margin-top:8px">
             <button type="button" class="os-chip" onclick="openHbModal('logi')">글쓰기</button>
+            <button type="button" class="os-chip" id="lbMineChip" onclick="toggleHbMine()"
+                    title="나를 지목한 글만 봅니다 (공지는 항상 보입니다)">내 것만</button>
             <button type="button" class="os-chip ghost" onclick="lbLoad()">↻</button>
           </div>
 <!-- 물류 글쓰기도 CS 와 같은 모달(hbModal)을 쓴다. 여기 있던 간단 폼은 걷어냈다 —
@@ -2779,6 +2807,14 @@
     var HB_STAFF = [];   // 미확인자 계산용 — 목록 조회 응답에 함께 실려온다
     var HB_LEVEL = '';
     var HB_SHOW_DONE = false;
+
+    /* 「내 것만 보기」 — 나를 지목한 카드만 본다. 두 보드가 같은 값을 쓴다.
+       사람마다 다르게 두고 싶어 하므로 브라우저에 기억시킨다. */
+    var HB_MINE = (function () {
+      try { return localStorage.getItem('pack2u_hb_mine') === '1'; } catch (e) { return false; }
+    })();
+    var HB_MINE_HIDDEN = 0;   // CS 보드에서 이 필터가 가린 건수
+    var LB_MINE_HIDDEN = 0;   // 물류 보드
     var HB_OPEN_ID = '';
     var HB_LOADING = false;
     var HB_SOFT_LIMIT = 20;
@@ -3315,9 +3351,41 @@
       loadHandoffBoard(false); // 보관 카드는 서버에서 따로 받아온다
     }
 
+    /* 이 카드가 「내 것」인가.
+       공지는 전원 대상이라 필터를 켜도 계속 보인다 — 「금일 판매불가 상품」 같은
+       글이 사라지면 필터를 켠 사람만 모르게 된다.
+       이름을 모르면 아무것도 거르지 않는다. 빈 화면보다 전체가 낫다. */
+    function hbIsMine(c, me) {
+      if (!me) return true;
+      if (hbIsNotice(c)) return true;
+      return (c.to || []).indexOf(me) !== -1;
+    }
+
+    function toggleHbMine() {
+      HB_MINE = !HB_MINE;
+      try { localStorage.setItem('pack2u_hb_mine', HB_MINE ? '1' : '0'); } catch (e) {}
+      hbRenderBoards();
+    }
+
+    function hbSyncMineChips() {
+      var ids = ['hbMineChip', 'lbMineChip'];
+      for (var i = 0; i < ids.length; i++) {
+        var el = document.getElementById(ids[i]);
+        if (el) el.classList.toggle('on', HB_MINE);
+      }
+    }
+
+    function hbMineBar(hidden) {
+      return '<div class="hb-mine-bar">' +
+        '<span>내 것만 보는 중' + (hidden ? ' · 숨긴 카드 ' + hidden + '건' : '') + '</span>' +
+        '<button type="button" onclick="toggleHbMine()">전체 보기</button></div>';
+    }
+
     function hbFiltered() {
       var q = String((document.getElementById('hbq') || {}).value || '').trim().toLowerCase();
+      var me = hbStaffName();
       var out = [];
+      HB_MINE_HIDDEN = 0;
       for (var i = 0; i < HB_CARDS.length; i++) {
         var c = HB_CARDS[i];
         if (HB_LEVEL && c.level !== HB_LEVEL) continue;
@@ -3329,6 +3397,8 @@
             (c.notes || []).map(function(n){ return n.by + ' ' + n.text; }).join(' ')).toLowerCase();
           if (hay.indexOf(q) === -1) continue;
         }
+        // 지목 필터는 맨 뒤에 둔다 — 앞 조건을 통과한 것 중 몇 개를 가렸는지 세야 한다
+        if (HB_MINE && !hbIsMine(c, me)) { HB_MINE_HIDDEN++; continue; }
         out.push(c);
       }
       return out;
@@ -3359,9 +3429,11 @@
         html += '<div class="hb-limit">진행 카드가 ' + HB_ACTIVE_CNT + '건입니다. ' +
           '권장은 ' + HB_SOFT_LIMIT + '건 이하예요. 처리된 건은 완료로 내려 보드를 가볍게 유지하세요.</div>';
       }
+      if (HB_MINE) html += hbMineBar(HB_MINE_HIDDEN);
       if (!rows.length) {
         html += '<div class="os-empty">' +
-          (HB_CARDS.length ? '조건에 맞는 카드가 없습니다.' : '전달할 카드가 없습니다.<br>오른쪽 위 ＋ 버튼으로 등록하세요.') +
+          (HB_MINE ? '나를 지목한 카드가 없습니다.'
+            : HB_CARDS.length ? '조건에 맞는 카드가 없습니다.' : '전달할 카드가 없습니다.<br>오른쪽 위 ＋ 버튼으로 등록하세요.') +
           '</div>';
         list.innerHTML = html;
         csSyncScrollbars();
@@ -3995,6 +4067,7 @@
 
     /** 어느 보드의 카드를 건드렸든 두 목록을 함께 다시 그린다 (서버 호출 없음) */
     function hbRenderBoards() {
+      hbSyncMineChips();
       renderHandoffBoard();
       if (typeof lbRenderCards === 'function') lbRenderCards();
       hbToCardFill();   // 펼친 카드의 지목 칩은 HTML 을 넣은 뒤에 채운다
@@ -7873,15 +7946,23 @@
     function lbRenderCards() {
       var el = document.getElementById('lbList');
       if (!el) return;
-      var rows = LB_CARDS || [];
+      var me = hbStaffName();
+      var all = LB_CARDS || [];
+      var rows = [];
+      LB_MINE_HIDDEN = 0;
+      for (var i = 0; i < all.length; i++) {
+        if (HB_MINE && !hbIsMine(all[i], me)) { LB_MINE_HIDDEN++; continue; }
+        rows.push(all[i]);
+      }
+      var bar = HB_MINE ? hbMineBar(LB_MINE_HIDDEN) : '';
       if (!rows.length) {
-        el.className = '';
-        el.textContent = '진행 중인 글이 없습니다.';
+        el.className = HB_MINE ? 'grid' : '';
+        el.innerHTML = bar + '<div class="os-empty">' +
+          (HB_MINE ? '나를 지목한 글이 없습니다.' : '진행 중인 글이 없습니다.') + '</div>';
         return;
       }
-      var me = hbStaffName();
-      var h = '';
-      for (var i = 0; i < rows.length; i++) h += hbCardHtml(rows[i], me);
+      var h = bar;
+      for (var k = 0; k < rows.length; k++) h += hbCardHtml(rows[k], me);
       el.className = 'grid';
       el.innerHTML = h;
       lbSyncNoticeSpan();
