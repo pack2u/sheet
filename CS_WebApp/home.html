@@ -537,6 +537,8 @@
     .nt-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
     .nt-dot.u { background: var(--accent-red); box-shadow: 0 0 7px rgba(255,95,86,0.75); }
     .nt-dot.w { background: var(--accent-orange); }
+    /* 공지 — 파랑. 빨강·주황과 뜻이 다르므로 색도 다르다 */
+    .nt-dot.n { background: #5aa0f0; box-shadow: 0 0 7px rgba(90,160,240,0.7); }
     .nt-tag {
       font-size: 9px; font-weight: 700; letter-spacing: 0.4px; color: var(--text-muted);
       border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px;
@@ -1352,6 +1354,27 @@
     #hbList > .os-empty,
     #hbList > .hb-card.open { grid-column: 1 / -1; }
 
+    /* ★ 2026-09-04: 공지 카드.
+       한 줄을 통째로 쓰고 본문을 접지 않는다 — "금일 판매불가 상품"처럼
+       제목만 봐서는 소용없고 내용을 읽어야 하는 글을 위한 자리다.
+       서버 정렬(_CS_HB_LEVELS_ 첫 칸)이 이미 맨 위로 올려 준다. */
+    #hbList > .hb-card.hb-notice { grid-column: 1 / -1; }
+    .hb-card.hb-notice {
+      border-color: rgba(90, 160, 240, 0.45);
+      background: linear-gradient(180deg, rgba(90, 160, 240, 0.10), transparent 70%), var(--bg-card);
+      border-left: 3px solid #5aa0f0;
+    }
+    /* 접힌 타일의 3줄 자르기·본문 숨김을 공지에서는 풀어 준다 */
+    .hb-card.hb-notice:not(.open) .hb-title {
+      display: block; -webkit-line-clamp: none; overflow: visible;
+      font-size: calc(15px * var(--hb-text-scale));
+    }
+    .hb-card.hb-notice:not(.open) .hb-body {
+      display: block; -webkit-line-clamp: none; overflow: visible;
+      font-size: calc(13px * var(--hb-text-scale));
+      color: var(--text-primary); margin-top: 6px; white-space: pre-wrap;
+    }
+
     /* 크기 조절은 필터 칩 줄 오른쪽에 얹어 한 줄을 아낀다 */
     .hb-size {
       display: inline-flex; align-items: center; gap: 5px;
@@ -1409,6 +1432,9 @@
       flex-shrink: 0; font-size: calc(9px * var(--hb-text-scale)); font-weight: 700; padding: 1px 6px;
       border-radius: 999px; letter-spacing: 0.02em;
     }
+    /* 공지 — 파랑. 빨강·주황은 "처리해 달라"는 뜻이라 이미 임자가 있다.
+       공지는 "알고 일해 달라"라서 색이 겹치면 안 된다. */
+    .hb-badge.lv-notice { background: rgba(90,160,240,0.22); color: #9ec8f5; }
     .hb-badge.lv-urgent { background: rgba(232,93,93,0.2); color: #ff9e9e; }
     .hb-badge.lv-warn   { background: rgba(240,160,48,0.2); color: #ffca7a; }
     .hb-badge.lv-normal { background: rgba(173, 173, 173,0.18); color: var(--text-bright); }
@@ -1675,6 +1701,7 @@
       border: 1px solid var(--border); background: var(--bg-secondary);
       color: var(--text-secondary); font-size: 13px; font-family: inherit;
     }
+    .hb-lv-btn.lv-notice.on { background: rgba(90,160,240,0.22); color: #9ec8f5; border-color: rgba(90,160,240,0.5); }
     .hb-lv-btn.lv-urgent.on { background: rgba(232,93,93,0.2); color: #ff9e9e; border-color: rgba(232,93,93,0.45); }
     .hb-lv-btn.lv-warn.on   { background: rgba(240,160,48,0.2); color: #ffca7a; border-color: rgba(240,160,48,0.45); }
     .hb-lv-btn.lv-normal.on { background: rgba(173, 173, 173,0.2); color: var(--text-bright); border-color: rgba(173, 173, 173,0.45); }
@@ -2276,6 +2303,7 @@
       <div class="ledger-field">
         <label>중요도</label>
         <div class="hb-lv-pick" id="hbLvPick">
+          <button type="button" class="hb-lv-btn lv-notice" data-lv="공지" onclick="pickHbLevel('공지')">📌 공지</button>
           <button type="button" class="hb-lv-btn lv-urgent" data-lv="긴급" onclick="pickHbLevel('긴급')">🔴 긴급</button>
           <button type="button" class="hb-lv-btn lv-warn" data-lv="주의" onclick="pickHbLevel('주의')">🟠 주의</button>
           <button type="button" class="hb-lv-btn lv-normal on" data-lv="일반" onclick="pickHbLevel('일반')">🔵 일반</button>
@@ -2722,9 +2750,15 @@
     }
 
     function hbLevelCls(lv) {
+      if (lv === '공지') return 'lv-notice';
       if (lv === '긴급') return 'lv-urgent';
       if (lv === '주의') return 'lv-warn';
       return 'lv-normal';
+    }
+
+    /** 공지 카드인가 — 맨 위 한 줄을 통째로 쓰고 본문을 펼쳐 보여준다 */
+    function hbIsNotice(c) {
+      return !!c && !c.done && String(c.level || '') === '공지';
     }
 
     /* ── 첨부: 수집 → 축소 → 순차 업로드 ──
@@ -3090,17 +3124,16 @@
         for (var i = 0; i < (list || []).length; i++) {
           var c = list[i];
           if (!c || c.done) continue;                                  // 완료된 건 공지가 아니다
-          if (c.level !== '긴급' && c.level !== '주의') continue;
+          if (c.level !== '공지' && c.level !== '긴급' && c.level !== '주의') continue;
           out.push({ id: c.id, tag: tag, level: c.level,
                      title: String(c.title || ''), body: String(c.body || '') });
         }
       }
       take(HB_CARDS, 'CS');
       take(LB_CARDS, '물류');
-      // 흘러가는 순서가 곧 우선순위다 — 긴급이 먼저 지나가야 한다
-      out.sort(function (a, b) {
-        return (a.level === '긴급' ? 0 : 1) - (b.level === '긴급' ? 0 : 1);
-      });
+      // 흘러가는 순서가 곧 우선순위다 — 공지 → 긴급 → 주의
+      var ntRank = function (lv) { return lv === '공지' ? 0 : (lv === '긴급' ? 1 : 2); };
+      out.sort(function (a, b) { return ntRank(a.level) - ntRank(b.level); });
       return out;
     }
 
@@ -3116,7 +3149,7 @@
       var one = '';
       for (var i = 0; i < items.length; i++) {
         var it = items[i];
-        var lv = (it.level === '긴급') ? 'u' : 'w';
+        var lv = (it.level === '공지') ? 'n' : (it.level === '긴급' ? 'u' : 'w');
         // 본문은 한 줄로 눌러서 앞부분만 — 티커는 미리보기지 본문이 아니다
         var b = it.body.replace(/\s+/g, ' ').trim();
         if (b.length > 48) b = b.slice(0, 48) + '…';
@@ -3530,8 +3563,11 @@
       var isUnread = !c.done && me && (c.read || []).indexOf(me) === -1;
 
       // 5시간 넘게 완료되지 않은 카드는 외곽이 깜박인다 (hbRefreshStale 참고)
-      var stale = !c.done && hbAgeHours(c.at) >= HB_STALE_HOURS;
+      // 공지는 원래 오래 붙어 있는 글이라 깜박이지 않는다 — 묵은 게 아니다.
+      var notice = hbIsNotice(c);
+      var stale = !c.done && !notice && hbAgeHours(c.at) >= HB_STALE_HOURS;
       var cls = 'hb-card ' + lvCls + (c.done ? ' hb-done' : '') +
+        (notice ? ' hb-notice' : '') +
         (stale ? ' hb-stale' : '') + (isOpen ? ' open' : '');
       var h = '<div id="hb-card-' + esc(c.id) + '" class="' + cls + '"' +
         ' data-at="' + esc(c.at) + '"' +

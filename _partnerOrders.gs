@@ -12,6 +12,17 @@
  */
 
 var _PO_HUB_SHEET_NAME = "협력업체_발주허브";
+
+/**
+ * 마지막 발주 수집 결과. 자동 실행 알림이 이걸 읽어 사람에게 보여준다.
+ *
+ * ★ 왜 필요한가 (2026-09-04) ★
+ *   수집은 필수 항목이 빈 행을 조용히 건너뛴다. 그런데 자동 실행 알림에는
+ *   "판매현황 갱신 ✅ / 소요시간" 뿐이라 몇 건이 빠졌는지 알 길이 없었다.
+ *   허브에 안 들어간 주문은 송장 수집·배포에서도 통째로 빠진다.
+ *   빠뜨렸다는 사실만이라도 그날 알아야 한다.
+ */
+var _PO_LAST_COLLECT_STAT_ = null;
 var _PO_HUB_HEADERS = [
   "수집일시",
   "발주업체",
@@ -1451,6 +1462,13 @@ function partnerCollectOrders(opt_noWriteBack) {
   // 여기서는 단순히 현재 시간으로 갱신 (오류난 파일은 다음 수집 시 다시 감지됨 - modified가 여전히 lastCollectTime보다 클 것이므로)
   props.setProperty("LAST_ORDER_COLLECT_TIME", String(Date.now()));
 
+  _PO_LAST_COLLECT_STAT_ = {
+    newCount: newOrders.length,
+    skipped: skipped,
+    missing: skippedByMissing,
+    codeErr: skippedByCodeErr,
+    errors: errors.length,
+  };
   Logger.log(msg);
   // ★ Google Chat 알림
   try { _chat_notifyCollectOrders_(newOrders.length, skipped, errors); } catch (eChat) {}
@@ -3383,7 +3401,21 @@ function partnerCollectOrdersSilent_() {
   var now = Utilities.formatDate(startTime, "Asia/Seoul", "HH:mm");
   try {
     if (collectOk) {
+      var _s_ = _PO_LAST_COLLECT_STAT_;
+      // 필수정보 미입력은 조용히 넘어가면 안 된다 — 허브에 안 들어가면
+      // 송장 수집·배포에서도 통째로 빠진다. 그날 바로 알려야 한다.
+      if (_s_ && _s_.missing > 0) {
+        try {
+          _chat_sendText_("⚠️ 발주 수집에서 " + _s_.missing + "건이 빠졌습니다\n" +
+            "수취인·전화·주소·수량 중 빈 칸이 있는 행입니다.\n" +
+            "허브에 안 들어가서 송장 수집·배포에서도 빠집니다.\n" +
+            "확인: 메뉴 [🕵 수집 누락 점검] — partnerFindUncollectedOrders");
+        } catch (eW) {}
+      }
       _chat_sendCard_("📦 발주 수집 완료", now, [
+        { label: "✅ 신규 수집", value: (_s_ ? _s_.newCount : "?") + "건" },
+        { label: "⏭ 스킵", value: (_s_ ? _s_.skipped : "?") + "건" },
+        { label: "⚠ 필수정보 미입력", value: (_s_ ? _s_.missing : "?") + "건" },
         { label: "판매현황 갱신", value: salesOk ? "✅" : "❌" },
         { label: "⏱ 소요시간", value: elapsed + "초" },
       ]);
@@ -3676,6 +3708,13 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
   } catch (eP) {}
 
   // 4) 데이터 변환 (날짜 제한 없이 전체 처리)
+  // ★ 2026-09-04: 출고일자는 "갱신을 돌린 날"이다 ★
+  //   종전에는 허브의 주문일자를 그대로 출고일자에 넣었다. 그래서 어제 들어온
+  //   주문을 오늘 갱신해도 어제 날짜로 판매현황에 올라갔다. 실제 출고는 오늘인데
+  //   장부는 어제로 잡히니 재고·매출 시점이 하루씩 어긋난다.
+  //   루프 밖에서 한 번만 구한다 — 자정을 넘겨 도는 회차에서 행마다 날짜가
+  //   갈리면 한 번의 갱신이 이틀에 걸쳐 기록된다.
+  var _shipYmd_ = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd");
   var colCount = _PO_SALES_UPLOAD_HEADERS.length;
   var out = [];
   var skipCount = 0;
@@ -3798,7 +3837,7 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
     var line = new Array(colCount);
     for (var c = 0; c < colCount; c++) line[c] = "";
 
-    line[0] = orderDate; // 출고일자
+    line[0] = _shipYmd_; // 출고일자 = 갱신 실행일 (주문일자 아님)
     line[2] = custCd; // 거래처코드
     line[7] = "100"; // 출하창고
     line[15] = code; // 품목코드

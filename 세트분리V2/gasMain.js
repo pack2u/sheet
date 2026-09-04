@@ -283,6 +283,11 @@ function ss_실행(opts) {
     var at = Utilities.formatDate(now, 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
     var 지운행 = ss_원장회차삭제(runKey);   // 같은 회차 기록은 항상 갈아 끼운다
 
+    // 판매현황 O열「주문자명(사방넷)」에 전화주문 고유아이디를 채운다.
+    // 사방넷·대리판매는 이미 「이름/ID」로 들어오므로 전화주문만 같은 형식으로 맞춘다.
+    // 그러면 O열 하나로 전 주문이 통일되고, 송장매칭·일일마감이 이 열만 보면 된다.
+    var 아이디채움 = ss_판매현황아이디채움(res.idCells);
+
     // 출력 탭
     for (var i = 0; i < SSIO_TABS.출력.length; i++) {
       var name = SSIO_TABS.출력[i];
@@ -339,6 +344,7 @@ function ss_실행(opts) {
       ['회차 구분', 회차.재실행 ? '재실행 — 원장 ' + 지운행 + '행 교체' : '신규 ' + 회차.no + '회차'],
       ['실행시각', at],
       ['판매현황 원천', sales.원천], ['소요(초)', sec.toFixed(1)],
+      ['전화주문 고유ID 부여', 아이디채움 + '건 (판매현황 O열)'],
       ['입력행(판매현황)', res.stats.입력행],
       ['세트분해 후 행', res.stats.분해행],
       ['합포장으로 흡수된 행', res.stats.합포장흡수],
@@ -1115,4 +1121,35 @@ function ss_합배송진단() {
     String.fromCharCode(10) + L.join(String.fromCharCode(10) + String.fromCharCode(10)) +
     String.fromCharCode(10) + String.fromCharCode(10) +
     '한 박스로 묶으려면 「합배송조건」 탭에서 그 품목들을 같은 조건ID로 맞추세요.');
+}
+
+/**
+ * 판매현황 O열「주문자명(사방넷)」에 전화주문 고유아이디를 써넣는다.
+ *
+ * 쓰는 곳은 이 시트의 「판매현황」 탭(원천 미러)이다. 팀이 붙여넣는 원천 시트는
+ * 건드리지 않는다 — 다음 붙여넣기에서 열이 밀려 어긋나면 그게 더 위험하다.
+ * 미러는 매 회차 다시 쓰이지만 고유ID 는 내용에서 계산되므로 같은 값이 다시 나온다.
+ *
+ * cells: [{ 행: 0기준 원본 행번호, 값: 이름/ID }]
+ */
+function ss_판매현황아이디채움(cells) {
+  if (!cells || !cells.length) return 0;
+  var sh = ssio_ss().getSheetByName(SSIO_TABS.입력);
+  if (!sh) return 0;
+  var col = SS_SALES_COLS.indexOf('주문자명(사방넷)') + 1;   // 1-기준
+  if (col < 1) col = 15;   // O열
+  if (sh.getMaxColumns() < col) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), col - sh.getMaxColumns());
+  }
+  var last = sh.getLastRow();
+  var n = 0;
+  for (var i = 0; i < cells.length; i++) {
+    var row = cells[i].행 + 1;          // 시트 행번호
+    if (row < 1 || row > last) continue;
+    var cur = ssText(sh.getRange(row, col).getValue());
+    if (cur) continue;                  // 이미 값이 있으면 손대지 않는다
+    sh.getRange(row, col).setValue(cells[i].값);
+    n++;
+  }
+  return n;
 }

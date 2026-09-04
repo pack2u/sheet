@@ -83,6 +83,7 @@ function registerPartnerMenu_() {
       ui.createMenu("🩺 발주·Push 점검")
         // ── 왜 안 갔나 (읽기 전용) ──
         .addItem("🛬 푸시 착지 확인", "partnerVerifyPushLanded")
+        .addItem("   └ 🕵 수집 누락 점검", "partnerFindUncollectedOrders")
         .addItem("🔁 중복 발주 점검 (임시기록 차수)", "partnerCheckDuplicateOrders")
         .addItem("🔍 중복 발주 감지 (발주탭+전용양식)", "partnerCheckDuplicateOrdersOwner")
         .addItem("🕵️ 오전/오후 판매현황 중복 점검", "partnerCheckSalesDuplicatesOwner")

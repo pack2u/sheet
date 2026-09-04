@@ -252,6 +252,33 @@ function ssMakeOrderId(L) {
 
 
 /**
+ * 판매현황 O열「주문자명(사방넷)」을 채울 값을 만든다.
+ *
+ * 사방넷·대리판매는 이미 「이름/고유아이디」 형식으로 들어온다. 전화주문만 비어 있으니
+ * 같은 형식으로 채워 O열 하나로 전 주문이 통일되게 한다.
+ *   거래처명 「행주국수 김순해」 + PH-ID  →  「행주국수 김순해/260902-PH-303d4」
+ *
+ * 이미 값이 있는 행은 손대지 않는다. 쇼핑몰이 확정해 보낸 값이 사실이다.
+ * 반환: [{ 행: 0기준 행번호, 값: 이름/ID }]
+ */
+function ssSalesIdCells(lines) {
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var L = lines[i];
+    if (L._행 === undefined) continue;
+    // 판정은 주문번호출처로 한다. 사방넷주문번호 칸은 설정에 따라 PH-ID 로
+    // 덮어써지므로 그것만 보면 전화주문을 사방넷으로 오인한다.
+    if (L.주문번호출처 !== '자동발급') continue;   // 사방넷·대리판매는 그대로 둔다
+    var id = ssText(L.고유ID);
+    if (!id) continue;
+    // 상호와 이름이 거래처명에 있다. 비어 있으면 받는분으로 대신한다.
+    var who = ssNorm(L.거래처명원본) || ssNorm(L.받는분);
+    out.push({ 행: L._행, 값: who ? who + '/' + id : id });
+  }
+  return out;
+}
+
+/**
  * 판매현황 내용의 지문. 같은 자료를 다시 돌리면 같은 값이 나온다.
  * 이걸로 「같은 회차 재실행」과 「새 회차」를 구분한다.
  */
@@ -395,6 +422,7 @@ function ssNormalize(grid, cfg, warnings) {
         '적요대로 바꿨습니다: ' + ssText(line.원받는분).slice(0, 12) + ' / ' + ssText(line.원주소1).slice(0, 24) +
         '  →  ' + ssText(line.받는분).slice(0, 12) + ' / ' + ovAddr.addr.slice(0, 34));
     }
+    line._행 = r;   // 판매현황 원본의 몇 번째 행인가 (0-기준). O열 되쓰기에 쓴다
     line.고유ID = ssText(line.사방넷주문번호) || ssMakeOrderId(line);
     if (line.주문번호출처 !== undefined) { /* noop */ }
     if (!ssText(line.사방넷주문번호)) {
@@ -1081,7 +1109,8 @@ function ssRun(grid, masters, cfg) {
       ' ≠ 탭 합계 ' + 탭합계);
   }
 
-  return { buckets: buckets, warnings: warnings, units: units, stats: stats, 합배송뷰: 합배송뷰 };
+  return { buckets: buckets, warnings: warnings, units: units, stats: stats,
+    합배송뷰: 합배송뷰, idCells: ssSalesIdCells(lines) };
 }
 
 /* ── 사방넷 송장 등록용 ───────────────────────────────── */
@@ -1325,7 +1354,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssAssignCondition: ssAssignCondition, ssAllocateStock: ssAllocateStock,
     ssRoute: ssRoute, ssMerge: ssMerge, ssShippingFee: ssShippingFee,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint,
+    ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow,
     ssPartnerRow: ssPartnerRow, ssHoldRow: ssHoldRow, ssVendorOf: ssVendorOf,
