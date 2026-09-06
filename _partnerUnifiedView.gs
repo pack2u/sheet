@@ -286,6 +286,22 @@ function _puv_collectDaily_(out, stat, started) {
     var dt = new Date(today.getTime());
     dt.setDate(dt.getDate() - d);
     var dateStr = Utilities.formatDate(dt, "Asia/Seoul", "yyyy-MM-dd");
+
+    /* ★ 2026-09-07: 토·일·공휴일은 아예 찾지 않는다.
+       그날은 마감을 안 돌리므로 파일이 없다. 그런데도 매번 드라이브에서
+       이름으로 찾아봤다 — **없는 파일을 찾는 검색이 제일 비싸다.**
+       찾으면 파일 ID를 속성에 캐시하지만, 못 찾으면 매번 폴더를 통째로 훑는다.
+       10일 창에 주말이 서너 번 들어가니 그만큼 헛일을 했다.
+       시간의 대부분을 여기서 쓰는 구조라(위 _PUV_DAYS_ 주석 참고) 그냥 낭비였다.
+
+       ※ 공휴일에 마감을 돌린 날이 있으면 이 건너뛰기에 걸려 안 들어온다.
+         그때는 메뉴 「🩹 통합조회 하루치 채우기」로 그 날짜를 지정해 넣는다.
+         그쪽은 사람이 날짜를 직접 주는 것이라 이 검사를 하지 않는다. */
+    if (typeof _pt_isNonBusinessDate_ === "function" && _pt_isNonBusinessDate_(dateStr)) {
+      stat.skippedDays = (stat.skippedDays || 0) + 1;
+      continue;
+    }
+
     try {
       var ss = _unified_findExistingArchiveSs_(_UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")");
       if (!ss) continue;

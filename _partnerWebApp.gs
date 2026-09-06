@@ -464,10 +464,16 @@ function _pep_unifiedDailyArchiveScheduled_() {
     for (var d = 1; d <= 7; d++) {
       var pastDate = new Date(now.getTime() - d * 24 * 60 * 60 * 1000);
       var pastStr = Utilities.formatDate(pastDate, "Asia/Seoul", "yyyy-MM-dd");
-      var pastDay = pastDate.getDay();
-
-      // 주말은 미생성이 정상
-      if (pastDay === 0 || pastDay === 6) continue;
+      /* ★ 2026-09-07: 주말만 걸렀는데 공휴일도 걸러야 한다.
+         공휴일에는 마감을 안 돌리므로 파일이 없는 게 정상인데, 여기서
+         「미생성」으로 잡혔다. 그러면 아래 블랙아웃 검사가
+         「미생성이 있으니 돌려야 한다」고 판단해 공휴일에도 마감이 돌았다. */
+      if (typeof _pt_isNonBusinessDate_ === "function") {
+        if (_pt_isNonBusinessDate_(pastStr)) continue;
+      } else {
+        var pastDay = pastDate.getDay();
+        if (pastDay === 0 || pastDay === 6) continue;
+      }
 
       var pastFileName = "일일마감_(" + pastStr + ")";
       try {
@@ -1803,8 +1809,11 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
   { fn: "runDailyEcountBatch",                           h: 6,  m: 0,  label: "이카운트 전체동기화 1" },
 
   // ─── 오전 1회전 ───
-  { fn: "partnerCollectOrdersSilent_",                   h: 8,  m: 0,  label: "발주 수집 + 판매현황 갱신 (1회전)" },
-  { fn: "partnerPushOrdersToExclusiveFormsSilent_",      h: 9,  m: 20, label: "대리공급 Push + 우편번호 (1회전)" },
+  //   ★ 2026-09-07: 08:00/09:20 → 09:30/10:30 ★
+  //     수집~푸시 사이가 80분에서 60분으로 줄었지만, 시작이 늦어져
+  //     사람이 출근해 세트분리를 끝낼 시간이 오히려 넉넉해졌다.
+  { fn: "partnerCollectOrdersSilent_",                   h: 9,  m: 30, label: "발주 수집 + 판매현황 갱신 (1회전)" },
+  { fn: "partnerPushOrdersToExclusiveFormsSilent_",      h: 10, m: 30, label: "대리공급 Push + 우편번호 (1회전)" },
 
   // ─── 점심: 이카운트 + Supabase + 허브 ───
   { fn: "runDailyEcountBatch",                           h: 12, m: 0,  label: "이카운트 전체동기화 2" },

@@ -91,6 +91,28 @@ function _pt_koreanHolidayName_(ymd) {
  * - 월요일(1) 05:30 이전
  * - ★ 2026-07-17: 한국 공휴일(대체공휴일 포함) 전체 + 공휴일 다음날 05:30 이전
  */
+/**
+ * 그 **날짜**가 영업일이 아닌가. (_pt_isWeekendBlackout_ 은 「지금」을 본다)
+ * ★ 2026-09-07 신규
+ *
+ * 지난 날짜를 훑는 곳에서 쓴다 — 소급 마감 확인, 통합조회 수집.
+ * 토·일·공휴일에는 마감을 돌리지 않으므로 파일도 없다. 그런데도 매번
+ * 드라이브에서 이름으로 찾아보고 있었다. **없는 파일을 찾는 검색이
+ * 제일 비싸다** — 폴더를 통째로 훑기 때문이다.
+ *
+ * @param {string} dateStr "2026-09-05" 또는 "20260905"
+ */
+function _pt_isNonBusinessDate_(dateStr) {
+  var s = String(dateStr || "").replace(/[^0-9]/g, "");
+  if (s.length !== 8) return false;   // 모르면 영업일로 본다 — 빼먹는 것이 더 나쁘다
+  var y = parseInt(s.slice(0, 4), 10);
+  var m = parseInt(s.slice(4, 6), 10);
+  var d = parseInt(s.slice(6, 8), 10);
+  var dow = new Date(y, m - 1, d).getDay();   // 0=일, 6=토
+  if (dow === 0 || dow === 6) return true;
+  return !!_pt_koreanHolidayName_(s);
+}
+
 function _pt_isWeekendBlackout_() {
   var now = new Date();
   var parts = Utilities.formatDate(now, "Asia/Seoul", "u:HH:mm:yyyyMMdd").split(":");
