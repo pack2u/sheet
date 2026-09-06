@@ -163,6 +163,30 @@ function csDiagnoseUnifiedView() {
   out.verdict = uv.found
     ? "통합조회 사용 중 (파일 1개). 미매칭 " + noInv + "건"
     : "통합조회 미사용 → 일일마감 14파일 폴백" + (uv.error ? " (" + uv.error + ")" : "");
+
+  /* ★ 2026-09-07: 날짜별 건수를 같이 낸다.
+     「일부만 들어온다」가 10일 제한 때문인지, 야간 재생성이 멈춰서인지는
+     **날짜별로 갈라 봐야** 안다. 총 건수만 보면 둘이 구분되지 않는다.
+     · 오래된 날이 통째로 없다 → 10일 제한
+     · 최근 며칠이 비었거나 적다 → 재생성이 멈춤 */
+  var byDate = {};
+  for (var d = 0; d < uv.rows.length; d++) {
+    var k = String(uv.rows[d].date || uv.rows[d].dateYmd || "(날짜없음)").slice(0, 10);
+    byDate[k] = (byDate[k] || 0) + 1;
+  }
+  var keys = Object.keys(byDate).sort();
+  out.dates = keys.length;
+  out.byDate = [];
+  for (var k2 = 0; k2 < keys.length; k2++) {
+    out.byDate.push(keys[k2] + " : " + byDate[keys[k2]] + "건");
+  }
+  out.oldest = keys[0] || null;
+  out.newest = keys[keys.length - 1] || null;
+  out.daysSetting = _CS_DAILY_DAYS_DEFAULT_;
+
+  /* ★ 돌려주기만 하면 실행 로그가 빈 채로 남는다.
+     편집기에서 실행하는 진단은 **반드시 로그로 찍어야** 사람이 볼 수 있다. */
+  Logger.log(JSON.stringify(out));
   return out;
 }
 
