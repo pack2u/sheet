@@ -335,7 +335,11 @@ function _cs_hb_parseAtt_(raw) {
       by: String(p[4] || "").trim(),
       isImage: /^image\//i.test(mime),
       // 썸네일·원본 주소는 파일 ID로 만들 수 있어 시트에 담지 않는다
-      thumbUrl: "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w480",
+      /* ★ 2026-09-07: w480 → w200.
+         카드의 첨부는 화면에서 50px(모바일 60px)로 그린다. 480px 를 받고 있었으니
+         가로만 9배, 넓이로는 80배 넘게 컸다. 레티나(2~3배)를 감안해도 200 이면 남는다.
+         카드가 스무 장이면 그만큼 곱해진다 — 첫 화면이 무거웠던 큰 몫이다. */
+      thumbUrl: "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w200",
       // 앱 안 확대보기용 큰 이미지. viewUrl 은 Drive 페이지라 <img> 로 못 쓴다
       bigUrl: "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w2048",
       viewUrl: "https://drive.google.com/file/d/" + fileId + "/view",

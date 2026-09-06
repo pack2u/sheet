@@ -3900,7 +3900,8 @@
           if (a.isImage) {
             h += '<button type="button" class="hb-thumb-open" title="' + tip + '" ' +
               'onclick="openHbLb(\'' + js(c.id) + '\', ' + imgN + ')">' +
-              '<img src="' + esc(a.thumbUrl) + '" alt="' + esc(a.name) + '" loading="lazy">' +
+              '<img src="' + esc(a.thumbUrl) + '" alt="' + esc(a.name) + '" ' +
+          'loading="lazy" decoding="async" fetchpriority="low">' +
               '</button>';
             imgN++;
           } else {
@@ -5984,7 +5985,8 @@
           by: (ev && ev.staff) || '',
           at: formatProcWhen(ev || {}) || '',
           isImage: true,
-          thumbUrl: 'https://drive.google.com/thumbnail?id=' + id + '&sz=w480',
+          // 34px(포커스 44px)로 그린다. w480 은 14배였다.
+          thumbUrl: 'https://drive.google.com/thumbnail?id=' + id + '&sz=w160',
           bigUrl: 'https://drive.google.com/thumbnail?id=' + id + '&sz=w2048',
           viewUrl: urls[i]
         });
@@ -6004,7 +6006,8 @@
       for (var i = 0; i < items.length; i++) {
         html += '<button type="button" title="사진 크게 보기"' +
           ' onclick="openRetPhotoLb(' + cardIdx + ',' + evIdx + ',' + i + ', event)">' +
-          '<img src="' + esc(items[i].thumbUrl) + '" alt="첨부 사진" loading="lazy"' +
+          '<img src="' + esc(items[i].thumbUrl) + '" alt="첨부 사진"' +
+          ' loading="lazy" decoding="async" fetchpriority="low"' +
           ' onerror="this.parentNode.classList.add(\'thumb-fail\');this.remove()">' +
           '<span class="thumb-alt">사진</span></button>';
       }
