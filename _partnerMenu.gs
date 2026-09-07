@@ -241,6 +241,7 @@ function registerPartnerMenu_() {
         .addItem("🏷 업체 사전 새로 만들기", "partnerRebuildStatementDirectory")
         .addItem("📥 명세서 수집 → 업체별 분배 (16:40 자동)", "partnerCollectStatementsNow")
         .addItem("🤖 AI 판독 시험 (PDF·이미지)", "partnerTestStatementVision")
+        .addItem("🔌 이카운트 구매조회 API 탐색", "partnerProbeEcountPurchaseApi")
         .addSeparator()
         .addItem("📧 Gmail 첨부 수집 (현재 파일)", "partnerFetchStatementFromGmail")
         .addItem("🧪 명세서 사전점검", "partnerDiagnoseStatementReconcile")
