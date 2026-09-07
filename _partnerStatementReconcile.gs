@@ -153,7 +153,8 @@ function partnerRunStatementReconcile() {
         "전용양식 매칭: " + _pstmt_countMatch_(results, "양식") + "\n" +
         "마감 매칭: " + _pstmt_countMatch_(results, "마감") + "\n" +
         "미매핑: " + _pstmt_countNote_(results, "UNMAPPED") + "\n\n" +
-        "[구매입력 대조] " + purch.files + "일치 " + purch.rows + "행 읽음\n" +
+        "[구매입력 대조] " + purch.files + "일치 " + purch.rows + "행 읽음" +
+        (purch.zeroAmt ? " (파레트 등 금액0 " + purch.zeroAmt + "행 제외)" : "") + "\n" +
         "  장부에 없음: " + _pstmt_countNote_(results, "NO_PURCHASE") + "\n" +
         "  수량 다름: " + _pstmt_countNote_(results, "PUR_QTY_DIFF") + "\n" +
         "  품목 다름: " + _pstmt_countNote_(results, "PUR_CODE_DIFF") + "\n" +

@@ -48,7 +48,8 @@ var _PSTMTP_MAX_MS_ = 150000;
  * @return {lines[], byInv{}, byCode{}, files, rows, warn[]}
  */
 function _pstmt_loadPurchaseLines_(custCd, monthStr) {
-  var out = { lines: [], byInv: {}, byCode: {}, files: 0, rows: 0, warn: [] };
+  // zeroAmt: 금액 0 이라 대조에서 뺀 줄 (파레트 등 순환 자산·무상분)
+  var out = { lines: [], byInv: {}, byCode: {}, files: 0, rows: 0, zeroAmt: 0, warn: [] };
   var t0 = new Date().getTime();
 
   var ym = String(monthStr || "").replace(/[^\d]/g, "");
@@ -110,6 +111,19 @@ function _pstmt_loadPurchaseLines_(custCd, monthStr) {
       var code = String(row[_PSTMTP_C_CODE_] || "").trim();
       var name = String(row[_PSTMTP_C_NAME_] || "").trim();
       if (!code && !name) continue;
+
+      // ★ 금액 0 인 줄은 명세서 대조에서 뺀다 (2026-09-07) ★
+      //   파레트가 그렇다. 물건이 파레트에 실려 나가고 나중에 모아서 반납한다 —
+      //   돌고 도는 자산이지 매입이 아니다. 그래서 구매입력에는 수량만 있고
+      //   금액이 0 이고, 업체 거래명세서에는 아예 안 올라온다.
+      //   빼지 않으면 "명세서에 없음" 으로 뜬다. 정상인 줄이 계속 경고를 낸다.
+      //
+      //   품목코드로 거르지 않는 이유: 파레트 품목이 늘 때마다 코드를 고쳐야 한다.
+      //   「금액 0 = 청구되지 않는 줄」이 원칙이고, 무상 제공분도 같은 이유로
+      //   명세서에 없으므로 같은 규칙이 맞다.
+      var amt0 = _pstmt_parseNumber_(row[_PSTMTP_C_AMT_]);
+      var prc0 = _pstmt_parseNumber_(row[_PSTMTP_C_PRICE_]);
+      if (amt0 === 0 && prc0 === 0) { out.zeroAmt++; continue; }
 
       var ln = {
         date: String(row[_PSTMTP_C_DATE_] || "").trim(),
