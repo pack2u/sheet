@@ -118,6 +118,19 @@
   .card .row.mini .btn { flex: 0 0 auto; padding: 7px 16px; font-size: 12px; }
 
   /* ── 현황 타일 ── */
+  /* 찾기 — 화면에서 가장 먼저 만나는 것.
+     물류팀의 실제 순서가 「대장에서 찾고 → 사진을 붙인다」라서,
+     촬영 버튼보다 위에 둔다. 전에는 찍어야만 검색칸이 나왔다. */
+  .find { margin-bottom: 12px; }
+  .find input {
+    width: 100%; box-sizing: border-box;
+    padding: 16px 14px; font-size: 17px;
+    border-radius: 12px; border: 2px solid var(--line);
+    background: var(--bg2); color: var(--tx);
+  }
+  .find input:focus { outline: none; border-color: #fdb913; }
+  .find .hint { font-size: 12px; color: var(--tx2); margin-top: 6px; }
+  .find .busy { color: #fdb913; }
   .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 14px; }
   .stat { background: var(--card); border: 1px solid var(--bd); border-radius: var(--r); padding: 12px 14px; }
   .stat b { display: block; font-size: 22px; font-weight: 700; color: var(--acs); line-height: 1.15; }
@@ -155,10 +168,16 @@
 <div class="wrap">
 <div class="col-left">
 
+<div class="find">
+  <input type="search" id="q" autocomplete="off" enterkeyhint="search"
+         placeholder="김*동 1234  ·  전화 뒤4  ·  송장 뒤4">
+  <div class="hint" id="qHint">라벨 이름이 가려져 있으면 <b>김*동</b> 그대로 치세요. 전화 뒤 4자리를 같이 주면 한 건으로 좁혀집니다.</div>
+</div>
+
 <button class="shot" type="button" id="btnShot">
   <span class="big">📷</span>
-  송장·입고 사진 촬영
-  <span class="hint">촬영하면 바코드 → 글자 순서로 번호를 찾습니다</span>
+  라벨이 깨끗하면 바로 촬영
+  <span class="hint">바코드 → 글자 순서로 번호를 찾습니다</span>
 </button>
 <input type="file" id="fileCap" accept="image/*" capture="environment" multiple>
 
@@ -254,11 +273,72 @@
     document.getElementById("fileCap").click();
   });
 
+  /* 사진을 「새로 찍는 것」과 「찾아둔 건에 붙이는 것」을 구분한다.
+     붙이는 경우에 handleFiles 를 그냥 부르면 LAST·PICKED 를 지워
+     방금 검색해 고른 건이 날아간다. */
+  var ATTACH_ONLY = false;
+
   document.getElementById("fileCap").addEventListener("change", function (ev) {
     var files = Array.prototype.slice.call(ev.target.files || []);
     if (!files.length) return;
+    if (ATTACH_ONLY) { attachFiles(files); return; }
     handleFiles(files);
   });
+
+  /** 검색으로 찾은 건에 사진만 더한다. 번호 인식은 하지 않는다 —
+      어느 건인지 이미 사람이 골랐다. */
+  function attachFiles(files) {
+    ATTACH_ONLY = false;
+    var keepMatch = LAST, keepPick = PICKED;
+    stage("사진 준비 중…");
+    Promise.all(files.map(shrink)).then(function (list) {
+      PENDING = list;
+      LAST = keepMatch; PICKED = keepPick;
+      render();
+    }).catch(function (e) {
+      LAST = keepMatch; PICKED = keepPick;
+      toast("사진 처리 실패: " + (e && e.message ? e.message : e), 3200);
+      render();
+    });
+  }
+
+  /* ── 찾기 ──
+     물류팀의 주 경로다. 두 글자부터 찾고, 치는 동안 기다렸다 보낸다. */
+  var Q_TIMER = null;
+  function doSearch(q) {
+    var hint = document.getElementById("qHint");
+    if (hint) { hint.textContent = "찾는 중…"; hint.className = "hint busy"; }
+    google.script.run
+      .withSuccessHandler(function (m) {
+        if (hint) { hint.textContent = "대장에서 찾아 사진을 붙입니다"; hint.className = "hint"; }
+        PENDING = []; PICKED = null;
+        LAST = { raw: q, via: "검색", fields: {}, match: m || { tier: "none", matches: [], note: "조회 실패" } };
+        render();
+      })
+      .withFailureHandler(function (e) {
+        if (hint) { hint.textContent = "찾기 실패 — 다시 시도해 주세요"; hint.className = "hint"; }
+        toast("찾기 실패: " + (e && e.message ? e.message : e), 3200);
+      })
+      .csLogisticsSearch(q);
+  }
+
+  (function () {
+    var qEl = document.getElementById("q");
+    if (!qEl) return;
+    qEl.addEventListener("input", function () {
+      var v = qEl.value.trim();
+      clearTimeout(Q_TIMER);
+      if (v.length < 2) return;
+      Q_TIMER = setTimeout(function () { doSearch(v); }, 350);
+    });
+    qEl.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      clearTimeout(Q_TIMER);
+      var v = qEl.value.trim();
+      if (v.length >= 2) doSearch(v);
+    });
+  })();
 
   function stage(msg) {
     document.getElementById("result").innerHTML =
@@ -367,6 +447,13 @@
     h += '<input type="text" id="manualInv" inputmode="numeric" ' +
          'placeholder="송장 뒤 4자리만 입력해도 찾습니다">';
 
+    /* 검색으로 찾아온 경우 사진이 아직 없다. 여기서 바로 찍게 한다 —
+       위로 올라가 촬영 버튼을 누르면 방금 고른 건이 날아간다. */
+    if (!PENDING.length) {
+      h += '<button class="btn" type="button" id="btnAddPhoto" ' +
+           'style="width:100%;margin-top:10px">📷 사진 찍어 붙이기</button>';
+    }
+
     h += '<div class="row">';
     h += '<button class="btn ghost" type="button" id="btnCancel">취소</button>';
     h += '<button class="btn ' + (tier === "sure" ? "green" : "") + '" type="button" id="btnSave">' +
@@ -386,6 +473,16 @@
     });
     document.getElementById("btnCancel").addEventListener("click", reset);
     document.getElementById("btnSave").addEventListener("click", save);
+
+    var addBtn = document.getElementById("btnAddPhoto");
+    if (addBtn) {
+      addBtn.addEventListener("click", function () {
+        ATTACH_ONLY = true;
+        var f = document.getElementById("fileCap");
+        f.value = "";
+        f.click();
+      });
+    }
 
     // 4자리 이상 치면 바로 대장에서 찾는다. 버튼을 또 누르게 하지 않는다.
     var mi = document.getElementById("manualInv");

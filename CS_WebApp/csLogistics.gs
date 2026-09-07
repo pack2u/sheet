@@ -247,6 +247,177 @@ function csLogisticsMatch(raw, fields) {
   };
 }
 
+/**
+ * 대장에서 **글자로** 찾는다 — 이름·전화·송장 아무거나.
+ * ★ 2026-09-07 신규
+ *
+ * csLogisticsMatch 는 「사진에서 읽은 값」으로 찾는다. 그래서 찾으려면
+ * 일단 찍어야 했다. 그런데 물류팀의 실제 순서는 반대다 —
+ * **대장에서 그 건을 먼저 찾고, 거기에 사진을 붙인다.**
+ *
+ * 이름은 부분일치로 본다. 검색창에 전체 이름을 정확히 치게 하면
+ * 그냥 안 쓰게 된다. 매칭용(csLogisticsMatch)은 완전일치 그대로 둔다 —
+ * 그쪽은 자동 처리로 이어지므로 느슨하면 위험하다.
+ *
+ * 돌려주는 모양은 csLogisticsMatch 와 같다. 화면이 같은 코드로 그린다.
+ */
+/** 라벨의 가림 문자. 택배사마다 다르게 쓴다. */
+var _CSL_MASK_RE_ = /[*＊○◯ㅇ·・∙xX]/;
+
+/**
+ * 「김*동」처럼 가려진 이름을 자리 대조 패턴으로 바꾼다.
+ *
+ * 택배 송장은 개인정보 때문에 이름 가운데를 가린다. 반품대장에는 전체 이름이
+ * 들어 있으므로, 가린 자리는 아무 글자로 보고 나머지 자리가 같으면 후보로 올린다.
+ *
+ * **글자 수가 같아야 한다.** 「김*동」은 세 글자 이름만 본다.
+ * 느슨하게 풀면 김씨가 전부 걸려 고르는 것이 더 오래 걸린다.
+ *
+ * @returns {RegExp|null} 가림 문자가 없으면 null
+ */
+function _csl_maskPattern_(nm) {
+  var t = String(nm == null ? "" : nm);
+  if (t.length < 2 || t.length > 8) return null;
+  if (!_CSL_MASK_RE_.test(t)) return null;
+  var re = "";
+  for (var i = 0; i < t.length; i++) {
+    var ch = t.charAt(i);
+    re += _CSL_MASK_RE_.test(ch) ? "." : ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  try { return new RegExp("^" + re + "$"); } catch (e) { return null; }
+}
+
+/**
+ * 대장에서 **글자로** 찾는다 — 이름·전화·송장 아무거나, 섞어서도.
+ * ★ 2026-09-07 신규
+ *
+ * csLogisticsMatch 는 「사진에서 읽은 값」으로 찾는다. 그래서 찾으려면 일단
+ * 찍어야 했다. 그런데 물류팀의 실제 순서는 반대다 —
+ * **대장에서 그 건을 먼저 찾고, 거기에 사진을 붙인다.**
+ *
+ * ★ 라벨 이름은 가려져 있다 ★
+ *   택배 송장에는 「김*동」처럼 나온다. 그대로 찾으면 하나도 안 걸린다.
+ *   가림 문자가 보이면 자리 대조로 바꿔서 찾는다.
+ *
+ * ★ 가장 확실한 건 「이름 + 전화 뒤4」를 같이 치는 것 ★
+ *   라벨에는 전화도 가려져 있지만 **뒤 4자리는 대개 보인다.**
+ *   둘을 같이 주면 한 건으로 좁혀진다. 그래서 둘 다 맞으면 점수를 제일 높게 준다.
+ *
+ * 이름 부분일치를 허용한다. 검색창에 전체 이름을 정확히 치게 하면 그냥 안 쓴다.
+ * 매칭용(csLogisticsMatch)은 완전일치 그대로 둔다 — 그쪽은 자동 처리로
+ * 이어지므로 느슨하면 위험하다.
+ *
+ * 돌려주는 모양은 csLogisticsMatch 와 같다. 화면이 같은 코드로 그린다.
+ */
+function csLogisticsSearch(q) {
+  q = String(q == null ? "" : q).trim();
+  var empty = { tier: "none", digits: "", checksumOk: false, matches: [] };
+  if (q.length < 2) {
+    empty.note = "두 글자 이상 입력하세요";
+    return empty;
+  }
+
+  /* 「김*동 1234」처럼 섞어 칠 수 있게 글자와 숫자를 나눈다.
+     숫자는 4자리 이상 덩어리만 본다 — 이름에 붙은 한두 자리는 뜻이 없다. */
+  var digitRun = (q.match(/\d{4,}/g) || []).sort(function (x, y) { return y.length - x.length; });
+  var d = digitRun.length ? digitRun[0] : "";
+  var nmRaw = q.replace(/\d{4,}/g, " ");
+  var nm = _csl_norm_(nmRaw);
+  var maskRe = _csl_maskPattern_(nm);
+  var hasName = nm.length >= 2;
+
+  var rows = [];
+  try {
+    rows = _cs_loadReturnLedgerCases_(_CSL_LOOKBACK_, true, false) || [];
+  } catch (e) {
+    empty.note = "대장 조회 실패: " + e.message;
+    return empty;
+  }
+
+  var hits = {}, out = [];
+  function add(c, via, score) {
+    var k = c.tab + "|" + c.row;
+    if (hits[k]) {
+      if (score > hits[k].score) { hits[k].matchVia = via; hits[k].score = score; }
+      return;
+    }
+    hits[k] = {
+      tab: c.tab, row: c.row, name: c.name, item: c.item, phone: c.phone,
+      status: c.status, invoice: c.invoice, returnInvoice: c.returnInvoice,
+      matchVia: via, score: score
+    };
+    out.push(hits[k]);
+  }
+
+  for (var i = 0; i < rows.length; i++) {
+    var c = rows[i];
+    var cn = _csl_norm_(c.name);
+    var ph = _csl_digits_(c.phone);
+    var rv = c.returnInvDigits || "";
+    var ov = c.invDigits || "";
+
+    /* 이름이 맞는가 — 가려졌으면 자리 대조, 아니면 부분일치 */
+    var nameHit = "";
+    if (hasName && cn) {
+      if (maskRe) { if (maskRe.test(cn)) nameHit = "가린 이름"; }
+      else if (cn === nm) nameHit = "이름 일치";
+      else if (cn.indexOf(nm) !== -1) nameHit = "이름 포함";
+    }
+
+    /* 숫자가 맞는가 — 송장 뒤자리 · 전화 뒤4 */
+    var numHit = "";
+    if (d.length >= _CSL_TAIL_MIN_) {
+      if (rv && rv.slice(-d.length) === d) numHit = "반품송장 뒤" + d.length + "자리";
+      else if (ov && ov.slice(-d.length) === d) numHit = "원송장 뒤" + d.length + "자리";
+      else if (ph && ph.slice(-4) === d.slice(-4)) numHit = "전화 뒤4자리";
+      else if (ph && d.length >= 6 && ph.indexOf(d) !== -1) numHit = "전화 포함";
+    }
+
+    /* 둘 다 주고 둘 다 맞으면 사실상 확정이다 */
+    if (nameHit && numHit) { add(c, nameHit + " + " + numHit, 100); continue; }
+
+    /* 둘 다 줬는데 한쪽만 맞으면 올리지 않는다 —
+       조건을 더 준 사람에게 더 넓은 결과를 주는 건 말이 안 된다. */
+    if (hasName && d.length >= _CSL_TAIL_MIN_) continue;
+
+    if (numHit) {
+      add(c, numHit,
+        numHit.indexOf("반품송장") === 0 ? 95 :
+        numHit.indexOf("원송장") === 0 ? 90 : 70);
+      continue;
+    }
+    if (nameHit) {
+      add(c, nameHit,
+        nameHit === "이름 일치" ? 80 :
+        nameHit === "가린 이름" ? 75 : 60);
+      continue;
+    }
+    if (hasName && !maskRe && _csl_norm_(c.item).indexOf(nm) !== -1) add(c, "품목 포함", 40);
+  }
+
+  out.sort(function (a2, b2) { return b2.score - a2.score; });
+
+  /* 검색은 하나만 걸려도 **자동 처리하지 않는다.**
+     사람이 친 글자로 찾은 것이라 오타 한 글자면 남의 건이 걸린다.
+     반드시 눌러서 고르게 한다(tier=maybe). */
+  var note;
+  if (out.length) {
+    note = out.length + "건 찾음 — 해당 건을 누르세요";
+  } else if (maskRe) {
+    note = "못 찾았습니다. 가린 이름은 글자 수가 같아야 합니다 (김*동 = 세 글자). " +
+           "전화 뒤 4자리를 같이 쳐 보세요.";
+  } else {
+    note = "대장에서 못 찾았습니다 (최근 " + _CSL_LOOKBACK_ + "일)";
+  }
+
+  return {
+    tier: out.length ? "maybe" : "none",
+    digits: d.length >= 8 ? d : "",
+    checksumOk: false,
+    matches: out.slice(0, 12),
+    note: note
+  };
+}
 // ── 적재 ────────────────────────────────────────────────
 /**
  * 사진 + 인식결과 저장.
