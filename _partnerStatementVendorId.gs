@@ -208,10 +208,27 @@ function _pstmtv_rebuildDirectory_() {
         var st = vss.getSheetByName("설정");
         if (st) {
           setNm = String(st.getRange("B5").getValue() || "").trim();
-          // getValue() 는 셀이 숫자면 앞자리 0 을 잃는다 — 표시값을 먼저 본다
+
+          // ★ 거래처코드는 두 방향으로 망가진다 (2026-09-07) ★
+          //   getValue()        → 셀이 숫자면 앞자리 0 이 없다
+          //   getDisplayValue() → 열이 좁으면 "2.5488E+09" 로 준다.
+          //                       이건 이미 정밀도를 잃은 값이라 되돌릴 수 없다
+          //                       (2.5488E+09 → 2548800000, 뒤 네 자리가 날아간다).
+          //
+          //   그래서 어느 쪽을 쓸지는 **셀의 자료형**으로 정한다.
+          //     숫자 셀 → 앞자리 0 이 애초에 없다. 원값이 정확하다.
+          //     텍스트 셀 → 표시값이 원본 그대로다. 앞자리 0 이 살아 있다.
+          //   한쪽만 쓰면 반드시 한쪽이 깨진다.
           var c = st.getRange("B6");
-          setCd = String(c.getDisplayValue() || "").trim();
-          if (!setCd) setCd = String(c.getValue() || "").trim();
+          var rawCd = c.getValue();
+          var clean = (typeof _epx_cleanCustCd_ === "function")
+            ? _epx_cleanCustCd_
+            : function (v) { return String(v == null ? "" : v).trim(); };
+          if (typeof rawCd === "number" && isFinite(rawCd)) {
+            setCd = String(Math.round(rawCd));
+          } else {
+            setCd = clean(c.getDisplayValue()) || clean(rawCd);
+          }
           // 거래처명이 코드칸과 같으면 코드로 인정하지 않는다(설정 검증식과 동일 취지)
           if (setCd && setNm && setCd === setNm) setCd = "";
         }
@@ -264,6 +281,32 @@ function _pstmtv_writeDirectory_(built) {
     .setValues([head])
     .setFontWeight("bold")
     .setBackground("#f1f3f4");
+
+  // ★ 앞자리 0 을 지키려면 값을 넣기 전에 텍스트로 잠가야 한다 (2026-09-07) ★
+  //   시트는 "0123456789" 를 숫자 123456789 로 삼킨다. 거래처코드·사업자번호가
+  //   0 으로 시작하면 한 자리가 날아가고, 그 코드로는 아무것도 못 찾는다.
+  //   이 프로젝트가 구매입력에서 같은 함정을 이미 겪었다(_EPX_TEXT_COLS_).
+  //
+  //   ★ flush 를 try 안에서 부른다 ★
+  //     GAS 는 서식 적용을 미뤄 뒀다가 나중에 던진다. try 밖에서 터지면
+  //     사전 만들기가 통째로 죽는다. 오늘 푸시에서 겪은 것과 같은 함정이다.
+  var _lockRows_ = Math.max(built.rows.length, 1);
+  try {
+    tab.getRange(2, 4, _lockRows_, 2).setNumberFormat("@"); // D 거래처코드 · E 사업자번호
+    SpreadsheetApp.flush();
+  } catch (eFmt) {
+    // 열 유형이 걸린 열에는 서식을 못 준다. 그때는 값 앞에 작은따옴표로 잠근다.
+    Logger.log("[PSTMTV] 텍스트 서식 실패, 따옴표로 대체: " + eFmt.message);
+    for (var q = 0; q < built.rows.length; q++) {
+      if (built.rows[q][3] && String(built.rows[q][3]).charAt(0) === "0") {
+        built.rows[q][3] = "'" + built.rows[q][3];
+      }
+      if (built.rows[q][4] && String(built.rows[q][4]).charAt(0) === "0") {
+        built.rows[q][4] = "'" + built.rows[q][4];
+      }
+    }
+  }
+
   if (built.rows.length) {
     tab.getRange(2, 1, built.rows.length, head.length).setValues(built.rows);
   }

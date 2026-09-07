@@ -233,7 +233,6 @@ function registerPartnerMenu_() {
         .addItem("② 원본 → 파싱", "partnerParseStatementFromRaw")
         .addItem("③ 비교·정리 실행", "partnerRunStatementReconcile")
         .addSeparator()
-        .addSeparator()
         // ★ 업체별 자동 수집 (2026-09-07) ★
         //   Gmail 은 업체를 구분하지 않는다. 아래 「현재 파일」 수집을 업체마다
         //   돌리면 먼저 도는 업체가 남의 명세서까지 가져가고 라벨까지 붙인다.
