@@ -233,20 +233,9 @@ function registerPartnerMenu_() {
         .addItem("② 원본 → 파싱", "partnerParseStatementFromRaw")
         .addItem("③ 비교·정리 실행", "partnerRunStatementReconcile")
         .addSeparator()
-        // ★ 업체별 자동 수집 (2026-09-07) ★
-        //   Gmail 은 업체를 구분하지 않는다. 아래 「현재 파일」 수집을 업체마다
-        //   돌리면 먼저 도는 업체가 남의 명세서까지 가져가고 라벨까지 붙인다.
-        //   그래서 수집은 한 번만 하고 여기서 업체별로 나눠 넣는다.
-        .addItem("🏷 업체 사전 새로 만들기", "partnerRebuildStatementDirectory")
-        .addItem("📥 명세서 수집 → 업체별 분배 (16:40 자동)", "partnerCollectStatementsNow")
-        .addItem("🤖 AI 판독 시험 (PDF·이미지)", "partnerTestStatementVision")
-        .addItem("🔌 이카운트 구매조회 API 탐색", "partnerProbeEcountPurchaseApi")
-        .addItem("🔌 이카운트 경로 직접 시험", "partnerTryEcountPath")
-        .addSeparator()
         .addItem("📧 Gmail 첨부 수집 (현재 파일)", "partnerFetchStatementFromGmail")
         .addItem("🧪 명세서 사전점검", "partnerDiagnoseStatementReconcile")
         .addItem("🧪 Gmail 미처리 점검", "partnerDiagnoseStatementGmail")
-        .addItem("🔎 명세서 발신처 조사", "partnerSurveyStatementSenders")
     )
     // 「명세서 정리」는 **받은** 명세를 대사하고,
     // 「거래명세표 발행」은 우리가 **보낼** 명세를 만든다. 방향이 반대다.

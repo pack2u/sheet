@@ -1,8 +1,13 @@
 /**
  * ══════════════════════════════════════════════════════════════
- *  [협력업체] 명세서 — PDF·이미지 첨부를 AI 로 읽는다
+ *  [협력업체] 명세서 — PDF·이미지를 AI 로 읽는다 (판독 전용 라이브러리)
  *  파일: _partnerStatementVision.gs
  *  2026-09-07
+ *
+ *  ★ 2026-09-08: Gmail 자동수집은 걷어냈다 ★
+ *    받는 명세서에 읽을 수 없는 형식이 너무 많았다. 메일에서 자동으로
+ *    걷어 오는 길은 접고, 웹앱에서 사람이 이미지를 붙여 넣는 방식으로 간다.
+ *    이 파일은 그때 부를 판독기만 남긴 것이다. 진입점은 웹앱이 갖는다.
  *
  *  ★ 왜 필요한가 ★
  *    실제로 받는 명세서 첨부가 엑셀이 아니었다.
@@ -255,67 +260,4 @@ function _pstmtvis_num_(v) {
   if (!s) return 0;
   var n = parseFloat(s);
   return isNaN(n) ? 0 : n;
-}
-
-// ───────────────────────────────────────────────────────────
-//  단독 시험
-// ───────────────────────────────────────────────────────────
-
-/**
- * [메뉴] 안 읽힌 명세서 첨부 하나를 AI 로 시험 삼아 읽어 본다.
- * 아무것도 쓰지 않는다 — 읽히는지만 본다.
- */
-function partnerTestStatementVision() {
-  var L = ["═══ 명세서 AI 판독 시험 ═══", ""];
-  try {
-    if (!_pstmtvis_key_()) {
-      L.push("★ Gemini API 키가 없습니다.");
-      return _pstmtvis_show_(L);
-    }
-    var threads = GmailApp.search(_PSTMT_GMAIL_SEARCH_BASE_, 0, 10);
-    var done = 0;
-    for (var t = 0; t < threads.length && done < 2; t++) {
-      var msgs = threads[t].getMessages();
-      for (var m = 0; m < msgs.length && done < 2; m++) {
-        var atts = msgs[m].getAttachments();
-        for (var a = 0; a < atts.length && done < 2; a++) {
-          var nm = atts[a].getName();
-          if (!_pstmtvis_canRead_(nm, atts[a].getContentType())) continue;
-
-          L.push("[" + nm + "]");
-          var t0 = new Date().getTime();
-          var r = _pstmtvis_read_(atts[a], nm);
-          var secs = Math.round((new Date().getTime() - t0) / 1000);
-          if (!r.ok) {
-            L.push("  ★ " + r.error + "  (" + secs + "초)");
-          } else {
-            L.push("  공급자: " + r.meta.vendor + "  사업자 " + (r.meta.bizNo || "(없음)"));
-            L.push("  작성일: " + r.meta.date + "  · 거래 " + (r.rows.length - 1) + "줄" +
-              (r.meta.dropped ? " (카탈로그 " + r.meta.dropped + "줄 제외)" : "") +
-              "  (" + secs + "초)");
-            L.push("  합계 " + r.meta.supply + " / 라인합 " + r.meta.lineSum +
-              (r.meta.mismatch ? "  ★ 불일치" : "  ✔"));
-            for (var k = 1; k < Math.min(r.rows.length, 4); k++) {
-              L.push("    " + r.rows[k].slice(0, 6).join(" | "));
-            }
-          }
-          L.push("");
-          done++;
-        }
-      }
-    }
-    if (!done) L.push("읽을 만한 PDF·이미지 첨부를 못 찾았습니다.");
-  } catch (e) {
-    L.push("★ 실패: " + e.message);
-  }
-  return _pstmtvis_show_(L);
-}
-
-function _pstmtvis_show_(L) {
-  var text = L.join("\n");
-  Logger.log(text);
-  try {
-    SpreadsheetApp.getUi().alert("명세서 AI 판독", text, SpreadsheetApp.getUi().ButtonSet.OK);
-  } catch (e) {}
-  return text;
 }
