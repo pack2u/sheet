@@ -245,6 +245,11 @@ function _epd_readTemp_(ss, ymd) {
     var pfx = _epd_pfxFromCell_(row[_EPD_C_VENDOR_]);
     var vendorNm = pfx ? (pfxMap.byPfx[pfx] || "") : "";
     var custCd = vendorNm ? _epd_custCdOf_(custMap, vendorNm) : "";
+    // 정상 경로가 비면 최후 폴백. 비어 나가면 사람이 손으로 채우게 되고,
+    // 그러다 셀을 끌어 채워 코드가 한 줄씩 증가하는 사고가 실제로 났다.
+    if (!custCd && typeof _pvc_codeFor_ === "function") {
+      custCd = _pvc_codeFor_(pfx, vendorNm);
+    }
     if (pfx && !vendorNm) { out.stats.noVendor++; status = status || ("⚠ 업체접두 미등록: " + pfx); }
 
     out.rows.push({

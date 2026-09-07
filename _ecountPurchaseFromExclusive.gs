@@ -940,6 +940,22 @@ function _epx_readVendorIdentity_(vss, fileInfo, maps) {
       }
     }
   }
+
+  // ⑤ 최후 폴백 — 업체별 거래처코드 표 (_partnerVendorCustCode.gs)
+  //    여기까지 비면 사람이 손으로 채우게 된다. 그러다 셀을 끌어 채워
+  //    코드가 한 줄씩 증가하는 사고가 실제로 났다(2026-09-03 아주팩).
+  //    빈칸만 메운다. 위에서 찾은 값은 건드리지 않는다.
+  if (!custCd && typeof _pvc_codeFor_ === "function") {
+    var pfxGuess = "";
+    try {
+      if (typeof _pep_getPrefixFromFileName_ === "function") {
+        pfxGuess = _pep_getPrefixFromFileName_(fileName) || "";
+      }
+    } catch (eP) {}
+    var c5 = _pvc_codeFor_(pfxGuess, custNm);
+    if (c5) { custCd = c5; src = "업체코드표"; }
+  }
+
   return { custNm: custNm, custCd: custCd, src: src };
 }
 
