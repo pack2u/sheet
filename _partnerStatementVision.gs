@@ -185,15 +185,25 @@ function _pstmtvis_read_(blob, fileName) {
 
   var rows = [_PSTMTVIS_HEADERS_.slice()];
   var lineSum = 0;
+  var dropped = 0;
   for (var i = 0; i < lines.length; i++) {
     var ln = lines[i] || {};
     var sup = _pstmtvis_num_(ln.supplyAmt);
+    var qv = _pstmtvis_num_(ln.qty);
+
+    // ★ 수량 0 · 금액 0 인 줄은 거래가 아니다 (2026-09-07) ★
+    //   인터웍스 명세서를 보니 취급 품목을 매번 전부 찍고 실제 거래분에만
+    //   수량이 있다. 7줄 중 3줄만 실제 거래였다.
+    //   그대로 넣으면 비교표가 "구매입력 없음" 으로 뒤덮여 진짜 문제가 묻힌다.
+    //   단가는 있어도 수량·금액이 둘 다 0 이면 카탈로그 줄이다.
+    if (qv === 0 && sup === 0) { dropped++; continue; }
+
     lineSum += sup;
     rows.push([
       String(ln.date || data.date || ""),
       String(ln.itemName || ""),
       String(ln.spec || ""),
-      _pstmtvis_num_(ln.qty),
+      qv,
       _pstmtvis_num_(ln.unitPrice),
       sup,
       _pstmtvis_num_(ln.vatAmt),
@@ -211,10 +221,18 @@ function _pstmtvis_read_(blob, fileName) {
     vat: _pstmtvis_num_(totals.vat),
     total: _pstmtvis_num_(totals.total),
     lineSum: lineSum,
+    dropped: dropped, // 수량·금액 0 인 카탈로그 줄
     // 라인 합과 문서 합계가 다르면 줄을 빠뜨렸거나 잘못 읽은 것이다.
     // 조용히 넘기면 안 되는 신호라 그대로 실어 보낸다.
     mismatch: !!(declared && Math.abs(declared - lineSum) > 1),
   };
+  // 머리글만 남았다 = 실제 거래 줄이 하나도 없다.
+  // 카탈로그만 찍힌 명세서이거나 판독이 어긋난 것이다. 넣지 않는다.
+  if (rows.length < 2) {
+    out.error = "실제 거래 줄이 없습니다 (수량·금액 0 인 줄만 " + dropped + "개)";
+    return out;
+  }
+
   out.rows = rows;
   out.ok = true;
   return out;
@@ -261,7 +279,9 @@ function partnerTestStatementVision() {
             L.push("  ★ " + r.error + "  (" + secs + "초)");
           } else {
             L.push("  공급자: " + r.meta.vendor + "  사업자 " + (r.meta.bizNo || "(없음)"));
-            L.push("  작성일: " + r.meta.date + "  · 품목 " + (r.rows.length - 1) + "줄  (" + secs + "초)");
+            L.push("  작성일: " + r.meta.date + "  · 거래 " + (r.rows.length - 1) + "줄" +
+              (r.meta.dropped ? " (카탈로그 " + r.meta.dropped + "줄 제외)" : "") +
+              "  (" + secs + "초)");
             L.push("  합계 " + r.meta.supply + " / 라인합 " + r.meta.lineSum +
               (r.meta.mismatch ? "  ★ 불일치" : "  ✔"));
             for (var k = 1; k < Math.min(r.rows.length, 4); k++) {

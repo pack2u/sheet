@@ -202,29 +202,55 @@ function _pstmtd_run_(isManual) {
         //   업체는 가려졌는데 표가 안 읽혔다 = 명세서인데 형식이 PDF·이미지다.
         //   Gemini 로 읽어 「명세서_원본」에 넣을 행렬로 바꾼다.
         //   성공하면 아래 일반 경로로 흘려보낸다 — 엑셀로 온 것과 똑같이 처리된다.
+        //   ★ 첨부를 전부 읽는다 — 여러 장짜리가 있다 (2026-09-07) ★
+        //     인터웍스 명세서는 Page 1/2 였고, 웹캐시 첨부는 ..._1.JPG 였다.
+        //     한 장만 읽고 멈추면 뒷장 거래가 통째로 빠진다. 그러면 "구매입력에는
+        //     있는데 명세서에 없다" 로 보여서 원인을 엉뚱한 데서 찾게 된다.
         var vis = null;
-        if (stat.vision < _PSTMTD_MAX_VISION_ && typeof _pstmtvis_read_ === "function") {
-          for (var av = 0; av < atts0.length && !vis; av++) {
+        var visRows = null;      // 머리글 1줄 + 모든 장의 거래 줄
+        var visSup = 0;          // 문서가 밝힌 공급가 (장마다 같은 값이 찍힌다 → 최대값)
+        var visLineSum = 0;
+        var visDropped = 0;
+        var visFiles = [];
+        if (typeof _pstmtvis_read_ === "function") {
+          for (var av = 0; av < atts0.length; av++) {
+            if (stat.vision >= _PSTMTD_MAX_VISION_) {
+              stat.errors.push("[" + who0.name + "] AI 판독 한도(" + _PSTMTD_MAX_VISION_ +
+                ") 도달 — 남은 첨부는 다음 실행에서 읽습니다");
+              visRows = null; // 반쪽만 넣지 않는다
+              break;
+            }
             var aName = "";
             try { aName = atts0[av].getName(); } catch (eAn) { continue; }
             if (!_pstmtvis_canRead_(aName, atts0[av].getContentType())) continue;
+
             stat.vision++;
             var vr = _pstmtvis_read_(atts0[av], aName);
-            if (vr.ok) {
-              vis = vr;
-              if (vr.meta.mismatch) {
-                // 라인 합이 문서 합계와 다르다 — 줄을 빠뜨렸을 수 있다.
-                // 넣기는 하되 반드시 사람이 보게 남긴다.
-                stat.visionMismatch++;
-                stat.errors.push(
-                  "[" + who0.name + "] AI 판독 합계 불일치: 문서 " + vr.meta.supply +
-                  " vs 라인합 " + vr.meta.lineSum + " (" + aName + ")"
-                );
-              }
-            } else {
-              stat.errors.push("[" + who0.name + "] AI 판독 실패: " + vr.error);
+            if (!vr.ok) {
+              stat.errors.push("[" + who0.name + "] AI 판독 실패: " + vr.error + " (" + aName + ")");
+              continue;
             }
+            if (!visRows) visRows = [vr.rows[0].slice()];       // 머리글은 한 번만
+            for (var vq = 1; vq < vr.rows.length; vq++) visRows.push(vr.rows[vq]);
+            visLineSum += vr.meta.lineSum;
+            visDropped += vr.meta.dropped || 0;
+            if (vr.meta.supply > visSup) visSup = vr.meta.supply;
+            if (!vis) vis = vr;                                 // 공급자·일자는 첫 장 것
+            visFiles.push(aName);
           }
+        }
+
+        if (visRows && visRows.length > 1) {
+          // 모든 장을 합친 뒤에 합계를 견준다. 장별로 보면 늘 어긋난다.
+          if (visSup && Math.abs(visSup - visLineSum) > 1) {
+            stat.visionMismatch++;
+            stat.errors.push(
+              "[" + who0.name + "] AI 판독 합계 불일치: 문서 " + visSup +
+              " vs 라인합 " + visLineSum + " (" + visFiles.join(", ") + ")"
+            );
+          }
+        } else {
+          vis = null;
         }
 
         if (!vis) {
@@ -242,12 +268,14 @@ function _pstmtd_run_(isManual) {
         // AI 가 읽은 것을 일반 경로에 태운다
         stat.visionOk++;
         parsed = {
-          rows: vis.rows,
+          rows: visRows,
           meta: {
             from: meta0.from || msg.getFrom(),
             subject: subj0,
             date: msg.getDate(),
-            fileName: names0.join(", ") + " [AI판독]",
+            fileName: visFiles.join(", ") +
+              " [AI판독 " + visFiles.length + "장 · 거래 " + (visRows.length - 1) + "줄" +
+              (visDropped ? " · 카탈로그 " + visDropped + "줄 제외" : "") + "]",
           },
         };
       }
