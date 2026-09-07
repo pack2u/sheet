@@ -2311,6 +2311,51 @@ function _pt_colInvoiceHits_(rows, start, idx) {
 }
 
 /**
+ * 고정 UID 열에 실제 고유ID 가 몇 건이나 있나.
+ *
+ * ★ 왜 필요한가 (2026-09-07) ★
+ *   롯데 다운로드 양식이 바뀌어 J열이 「주문번호」에서 「취소사유」가 됐다.
+ *   송장열(G)은 멀쩡해서 로그에는 "송장 1044건 읽음"으로 나왔고,
+ *   UID 키만 0개가 되어 자사출고(고유ID 전용) 행이 전부 미매칭이 됐다.
+ *   숫자만 세면 안 보이는 고장이라 값의 생김새로 확인한다.
+ *
+ *   _pep_isRealUid_ 는 한글이 든 값을 UID 로 보지 않는다.
+ *   그래서 「취소사유」 같은 한글 열은 여기서 0건이 된다.
+ */
+function _pt_colUidHits_(rows, start, idx) {
+  if (!(idx >= 0)) return 0;
+  if (typeof _pep_isRealUid_ !== "function") return 1; // 판정 못하면 건드리지 않는다
+  var hits = 0;
+  var end = Math.min(rows.length, start + 200);
+  for (var r = start; r < end; r++) {
+    if (!rows[r]) continue;
+    var v = String(rows[r][idx] == null ? "" : rows[r][idx]).trim();
+    if (v && _pep_isRealUid_(v)) hits++;
+  }
+  return hits;
+}
+
+/** 헤더 이름으로 UID 열을 찾는다. 취소사유·취소일자 같은 열은 제외한다. */
+function _pt_findUidColByHeader_(headers) {
+  if (!headers || !headers.length) return -1;
+  var want = ["고유id", "고유아이디", "주문번호", "주문자명", "sabangnet", "사방넷"];
+  var deny = ["취소", "반품", "교환", "사유", "일자", "날짜"];
+  for (var c = 0; c < headers.length; c++) {
+    var h = String(headers[c] || "").replace(/\s/g, "").toLowerCase();
+    if (!h) continue;
+    var bad = false;
+    for (var d = 0; d < deny.length; d++) {
+      if (h.indexOf(deny[d]) !== -1) { bad = true; break; }
+    }
+    if (bad) continue;
+    for (var w = 0; w < want.length; w++) {
+      if (h.indexOf(want[w]) !== -1) return c;
+    }
+  }
+  return -1;
+}
+
+/**
  * 헤더 행 찾기. 원천마다 제목·안내문이 위에 붙어 1행이 헤더가 아닐 수 있다.
  * 일일마감은 이 처리를 하는데(_pep_findLotteHeaderRow_) 수집은 1행을 고정으로
  * 가정해, 같은 시트를 두 시스템이 다르게 읽고 있었다.
@@ -2454,6 +2499,41 @@ function _pt_ingestInvoiceSheetTabIntoMap(
         "[송장인제스트] [" + labelForLog + "] 고정열 " + _fcL_ + " 송장 0건 → fixedColIdx 해제",
       );
       fixedColIdx = null;
+    }
+  }
+
+  // ── ★ 고정 UID 열 검증 (2026-09-07) ──
+  //   송장열과 같은 이유로 UID 열도 조용히 틀린다. 실제로 롯데 양식이 바뀌어
+  //   J열이 「주문번호」에서 「취소사유」가 됐고, invoiceMap 의 UID 키가 0개가 됐다.
+  //   그러면 고유ID 로만 매칭하는 행(자사출고)은 전부 미매칭이 된다.
+  //   로그에는 "송장 1044건 읽음"으로 나와서 원인이 안 보인다.
+  //
+  //   ★ 송장열과 달리 fixedColIdx 를 통째로 버리지 않는다 ★
+  //     송장열은 멀쩡하기 때문이다. 버리면 멀쩡한 열까지 추측으로 바뀐다.
+  //     UID 열만 헤더로 다시 찾고, 찾은 열도 실제 값으로 확인한 뒤에 쓴다.
+  if (fixedColIdx && fixedColIdx.uid >= 0) {
+    if (_pt_colUidHits_(invData, 1, fixedColIdx.uid) === 0) {
+      var _ucL_ = _pt_colLetter_(fixedColIdx.uid + 1);
+      var _hdrName_ = String((invData[0] || [])[fixedColIdx.uid] || "");
+      var _newUid_ = _pt_findUidColByHeader_(invData[0]);
+      var _ok_ = _newUid_ >= 0 && _pt_colUidHits_(invData, 1, _newUid_) > 0;
+
+      // ★ 전역 상수를 그대로 받았을 수 있다 — 복사해서 고친다 ★
+      //   _PT_LOTTE_FIXED_COL 을 직접 만지면 이후 모든 원천이 오염된다.
+      var _fc2_ = {};
+      for (var _k_ in fixedColIdx) _fc2_[_k_] = fixedColIdx[_k_];
+      _fc2_.uid = _ok_ ? _newUid_ : -1;
+      fixedColIdx = _fc2_;
+
+      var _msg_ = "[" + labelForLog + "] ⚠ 고정 UID열 " + _ucL_ +
+        "(머리글 [" + _hdrName_ + "])에 고유ID가 없습니다 → " +
+        (_ok_
+          ? "헤더로 " + _pt_colLetter_(_newUid_ + 1) +
+            "(머리글 [" + String(invData[0][_newUid_] || "") + "]) 재탐지"
+          : "대체 열을 못 찾음 — 고유ID 매칭 불가 (원천 서식 변경)");
+      scannedLogs.push(_msg_);
+      _ingestNote_.push(_ok_ ? "UID열 재탐지" : "UID열 없음");
+      Logger.log("[송장인제스트] " + _msg_);
     }
   }
 
