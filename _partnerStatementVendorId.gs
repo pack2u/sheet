@@ -56,6 +56,42 @@ function _pstmtv_normBizNo_(v) {
   return s.length === 10 ? s : "";
 }
 
+/**
+ * ★ 전자문서 중계사 도메인 — 여기서 온 주소는 학습하지 않는다 (2026-09-07) ★
+ *
+ *   실제 받은 메일을 확인해 보니 발신 주소가 업체 것이 아니었다.
+ *     (주)로엔그린          → no-reply@webcash.co.kr   (웹캐시 비즈메일)
+ *     주식회사준테크피에스와이 → joontech2018@magicbill.co.kr (매직빌)
+ *
+ *   webcash 의 no-reply 주소는 **여러 업체가 함께 쓴다**. 이걸 로엔그린으로
+ *   학습하면 다음에 다른 업체가 같은 경로로 보낼 때 그 업체 명세서가
+ *   로엔그린 파일로 들어간다. 충돌 감지가 있긴 하지만 그건 사후에 알려줄 뿐이고,
+ *   그 사이 한 번은 잘못 들어간다.
+ *
+ *   중계사를 거치는 건은 본문·제목에 상호가 또렷하게 찍히므로 학습이 필요 없다.
+ *   학습은 업체가 자기 주소로 직접 보내는 경우에만 값이 있다.
+ */
+var _PSTMTV_RELAY_DOMAINS_ = [
+  "webcash.co.kr",     // 웹캐시 비즈메일  (확인함)
+  "magicbill.co.kr",   // 매직빌          (확인함)
+  "barobill.co.kr",
+  "smartbill.co.kr",
+  "hometax.go.kr",
+  "bill36524.com",
+];
+
+/** 중계사 발신인가 — 맞으면 학습하지 않는다 */
+function _pstmtv_isRelay_(addr) {
+  var a = String(addr || "").toLowerCase();
+  if (!a) return false;
+  for (var i = 0; i < _PSTMTV_RELAY_DOMAINS_.length; i++) {
+    if (a.indexOf("@") !== -1 && a.split("@")[1].indexOf(_PSTMTV_RELAY_DOMAINS_[i]) !== -1) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** "홍길동 <a@b.com>" → "a@b.com" */
 function _pstmtv_addrOf_(from) {
   var s = String(from || "");
@@ -306,6 +342,8 @@ function _pstmtv_loadLearn_() {
 function _pstmtv_learn_(addr, pfx, name, basis) {
   addr = String(addr || "").trim().toLowerCase();
   if (!addr || !pfx) return;
+  // 중계사 주소는 여러 업체가 공유한다 — 학습하면 남의 명세서를 끌어온다
+  if (_pstmtv_isRelay_(addr)) return;
   var tab = _pstmtv_ensureLearnTab_();
   var cur = _pstmtv_loadLearn_();
   var today = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
@@ -386,7 +424,9 @@ function _pstmtv_identify_(ctx, dir, learn) {
   }
 
   // ① 학습표 — 본문으로 못 가렸을 때의 구제책
-  if (addr && learn[addr]) {
+  //    중계사 주소는 여러 업체가 공유하므로 학습값이 있어도 쓰지 않는다
+  //    (가드를 넣기 전에 들어간 줄이 남아 있을 수 있다)
+  if (addr && learn[addr] && !_pstmtv_isRelay_(addr)) {
     var l = learn[addr];
     return {
       pfx: l.pfx, name: l.name,

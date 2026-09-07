@@ -68,10 +68,12 @@ function _pstmtd_run_(isManual) {
     placed: 0,       // 업체 파일에 넣은 메일
     rows: 0,         // 넣은 행
     unknown: 0,      // 업체 못 가림
+    unreadable: 0,   // 명세서인데 PDF·JPG 라 표로 못 읽음
     noFile: 0,       // 업체는 가렸으나 파일이 없음
     learned: 0,      // 발신주소 학습
     byVendor: {},    // 접두 → 행수
     unknownList: [],
+    unreadableList: [],
     errors: [],
   };
 
@@ -153,7 +155,49 @@ function _pstmtd_run_(isManual) {
         stat.errors.push("첨부 읽기: " + eP.message);
         continue;
       }
-      if (!parsed || !parsed.rows || !parsed.rows.length) continue; // 명세서가 아니다
+      if (!parsed || !parsed.rows || !parsed.rows.length) {
+        // ★ 표로 안 읽히는 명세서를 조용히 넘기지 않는다 (2026-09-07) ★
+        //   실제 메일을 보니 첨부가 PDF·JPG 였다(웹캐시 비즈메일 JPG,
+        //   매직빌 PDF). 지금 파서는 xlsx·xls·텍스트만 읽어서 rows 가 0이다.
+        //   그냥 넘기면 "배정 0통"만 남고 왜 0인지 알 수 없다.
+        //
+        //   그래서 제목·첨부파일명으로 업체를 한 번 더 가려 본다.
+        //   업체가 잡히면 그건 "명세서인데 못 읽은 것"이다 — 반드시 보고한다.
+        //   안 잡히면 명세서가 아닌 첨부(도면·송장 등)이므로 조용히 넘긴다.
+        var meta0 = (parsed && parsed.meta) || {};
+        var names0 = [];
+        try {
+          var atts0 = msg.getAttachments();
+          for (var an = 0; an < atts0.length; an++) names0.push(atts0[an].getName());
+        } catch (eAt) {}
+        var subj0 = "";
+        try { subj0 = msg.getSubject() || ""; } catch (eSb) {}
+
+        var who0 = null;
+        try {
+          who0 = _pstmtv_identify_(
+            {
+              from: meta0.from || msg.getFrom(),
+              subject: subj0,
+              fileName: names0.join(" "),
+              text: subj0 + " " + names0.join(" "),
+            },
+            dir, learn
+          );
+        } catch (eI0) {}
+
+        if (who0 && who0.pfx) {
+          stat.unreadable++;
+          stat.unreadableList.push({
+            pfx: who0.pfx,
+            name: who0.name,
+            from: who0.addr,
+            subject: subj0,
+            file: names0.join(", "),
+          });
+        }
+        continue;
+      }
       stat.tabled++;
 
       // ③ 판별
@@ -356,6 +400,15 @@ function _pstmtd_finish_(stat, t0, fatal) {
     L.push("★ 업체는 가렸으나 파일 없음 " + stat.noFile + "통 — 사전의 파일ID 확인");
     L.push("");
   }
+  if (stat.unreadable) {
+    L.push("★ 명세서인데 표로 못 읽음 " + stat.unreadable + "통 (첨부가 PDF·JPG)");
+    for (var v = 0; v < Math.min(stat.unreadableList.length, 8); v++) {
+      var y = stat.unreadableList[v];
+      L.push("    " + y.pfx + " " + y.name + " · " + String(y.file).substring(0, 40));
+    }
+    L.push("  → 파서가 xlsx·xls·텍스트만 읽습니다. 이 업체들은 아직 수동입니다.");
+    L.push("");
+  }
   if (stat.learned) {
     L.push("발신주소 학습 " + stat.learned + "건 (쌓일수록 판별이 빨라집니다)");
     L.push("");
@@ -375,6 +428,7 @@ function _pstmtd_finish_(stat, t0, fatal) {
       { label: "📥 배정", value: stat.placed + "통 / " + stat.rows + "행" },
       { label: "🏢 업체", value: pfxs.length ? pfxs.join(", ") : "없음" },
     ];
+    if (stat.unreadable) kv.push({ label: "📄 못 읽은 명세서", value: stat.unreadable + "통 (PDF·JPG)" });
     if (stat.unknown) kv.push({ label: "❓ 업체 못 가림", value: stat.unknown + "통 (라벨 미부착)" });
     if (stat.noFile) kv.push({ label: "📁 파일 없음", value: stat.noFile + "통" });
     if (stat.errors.length) kv.push({ label: "❌ 오류", value: stat.errors.length + "건" });
