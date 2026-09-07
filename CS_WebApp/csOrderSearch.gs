@@ -2395,6 +2395,41 @@ var _CS_RETURN_STATUS_OPTS_ = [
   "접수", "반품송장", "입고검수", "이카운트OK"
 ];
 
+/** 주문검색 뱃지가 훑는 기간. 뱃지는 "이 주문 반품된 적 있나"를 답해야 하므로 완료건까지 본다. */
+var _CS_RETURN_BADGE_DAYS_ = 90;
+
+/**
+ * 상태 → 진행 단계 0~3.
+ *
+ * 주문검색 뱃지의 색과 아이콘이 이 숫자로 갈린다. 글자는 시트 원값을 그대로
+ * 보여준다 — 화면이 시트와 다른 말을 쓰면 둘을 대조할 때 사람이 헷갈린다.
+ *
+ * 옛 값(수거요청·수거중·반품입고·입고 …)도 같이 잡는다. 드롭다운만 4개로
+ * 줄였을 뿐 기존 행에는 옛 글자가 그대로 남아 있다.
+ *
+ *   0 접수      아직 물건이 안 움직였다
+ *   1 회수      회수 송장이 나갔다 (반품송장·수거요청·수거중)
+ *   2 입고      물류팀이 받아서 사진을 올렸다 (입고검수·반품입고·입고)
+ *   3 완료      _cs_isReturnDoneMark_ 가 완료로 본 건
+ */
+function _cs_returnStage_(status, active) {
+  if (!active) return 3;
+  var s = String(status || "").replace(/s/g, "");
+  if (!s) return 0;
+  if (/입고|검수/.test(s)) return 2;
+  if (/반품송장|회수|수거/.test(s)) return 1;
+  return 0;
+}
+
+/** 상담이력에 붙은 사진 장수 (물류팀이 올린 입고 사진 포함) */
+function _cs_returnPhotoCount_(timeline) {
+  var n = 0;
+  for (var i = 0; i < (timeline || []).length; i++) {
+    if (timeline[i] && timeline[i].kind === "photo") n++;
+  }
+  return n;
+}
+
 function _cs_ledgerStamp_(staff) {
   var d = Utilities.formatDate(new Date(), "Asia/Seoul", "yyMMdd HH:mm");
   return "[" + d + " " + String(staff || "CS").trim() + "]";
@@ -2931,10 +2966,13 @@ function csGetReturnLedgerBadgeIndex(opt) {
   var refresh = !!opt.refresh;
   try {
     var active = _cs_loadReturnLedgerCases_(30, true, refresh);
-    var allRecent = _cs_loadReturnLedgerCases_(90, false, refresh);
+    var allRecent = _cs_loadReturnLedgerCases_(_CS_RETURN_BADGE_DAYS_, false, refresh);
     var slim = [];
     for (var i = 0; i < allRecent.length; i++) {
       var r = allRecent[i];
+      /* 주문 카드 옆 뱃지 하나를 그리는 데 필요한 만큼만 싣는다.
+         상담이력(timeline)은 뺀다 — 90일치면 몇 배로 무거워진다.
+         눌러서 펼칠 때 csGetReturnCaseAt 이 그 한 건만 가져온다. */
       slim.push({
         invDigits: r.invDigits,
         returnInvDigits: r.returnInvDigits,
@@ -2943,7 +2981,19 @@ function csGetReturnLedgerBadgeIndex(opt) {
         status: r.status,
         active: r.active,
         tab: r.tab,
-        row: r.row
+        row: r.row,
+        stage: _cs_returnStage_(r.status, r.active),
+        photos: _cs_returnPhotoCount_(r.timeline),
+        date: r.date,
+        item: r.item,
+        qty: r.qty,
+        phone: r.phone,
+        invoice: r.invoice,
+        returnInvoice: r.returnInvoice,
+        staff: r.staff,
+        vendor: r.vendor,
+        type: r.type,
+        fee: r.fee
       });
     }
     return {
@@ -2955,6 +3005,37 @@ function csGetReturnLedgerBadgeIndex(opt) {
     };
   } catch (e) {
     return { ok: false, error: e.message || String(e), rows: [] };
+  }
+}
+
+/**
+ * 반품 한 건 전체 (상담이력 포함) — 주문검색에서 뱃지를 눌렀을 때.
+ * ★ 2026-09-07 신규
+ *
+ * 진행 중인 건은 화면의 「진행 반품」 목록에 이미 있으므로 서버를 부르지 않는다.
+ * 이 함수가 필요한 건 **완료됐거나 30일보다 오래된 건**이다 — 목록에 없는 것들.
+ * "이 주문 예전에 반품된 적 있었나"에 답하려면 그것도 열려야 한다.
+ *
+ * 시트를 새로 읽지 않는다. 뱃지 인덱스가 이미 채워 둔 캐시를 그대로 탄다.
+ */
+function csGetReturnCaseAt(opt) {
+  opt = opt || {};
+  var tabName = String(opt.tab || "").trim();
+  var rowNum = parseInt(opt.row, 10);
+  if (!tabName || !(rowNum > 0)) return { ok: false, error: "반품 위치가 없습니다" };
+  try {
+    var rows = _cs_loadReturnLedgerCases_(_CS_RETURN_BADGE_DAYS_, false, !!opt.refresh) || [];
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].tab === tabName && rows[i].row === rowNum) {
+        return { ok: true, row: rows[i] };
+      }
+    }
+    return {
+      ok: false,
+      error: "대장에서 그 건을 찾지 못했습니다 (" + tabName + " " + rowNum + "행)"
+    };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
   }
 }
 

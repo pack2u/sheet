@@ -116,8 +116,12 @@
     :root[data-theme="light"] .manual-check { color: #10714b; }
     :root[data-theme="light"] .os-tag.miss,
     :root[data-theme="light"] .os-tag.case,
-    :root[data-theme="light"] .os-tag.return-active,
+    :root[data-theme="light"] .os-tag.ret-s2,
     :root[data-theme="light"] .hb-limit { color: #8a5300; }
+    :root[data-theme="light"] .os-tag.ret-s1 { color: #1b5fa8; }
+    /* 접수 단계는 흰 바탕 위에서 칩이 안 보인다 — 밝은 화면에서는 바탕을 뒤집는다 */
+    :root[data-theme="light"] .os-tag.ret-s0 { background: rgba(0,0,0,0.06); }
+    :root[data-theme="light"] .os-tag.ret-s3 { color: #10714b; }
     :root[data-theme="light"] .manual-caution { color: #b3261e; }
 
     /* 반품 진행 표시(노랑) — 카드·패널 제목·모바일 탭에서 같은 색을 쓴다 */
@@ -937,8 +941,20 @@
     .manual-cats .os-chip { font-size: 11px; padding: 4px 8px; }
     .os-body { font-size: 13px; line-height: 1.55; color: var(--text-secondary); margin-top: 8px; word-break: break-word; }
     .os-actions { display: flex; gap: 8px; margin-top: 12px; }
-    .os-tag.return-active { background: rgba(255,193,7,0.18); color: #ffc107; }
-    .os-tag.return-done { background: rgba(129,199,132,0.15); color: #81c784; }
+    /* 반품 진행 뱃지 — 주문 카드에서 누르면 반품 조회로 이어진다.
+       색은 단계를 뜻한다: 접수(조용함) → 회수중(파랑) → 입고(노랑, 물류가 잡음) → 완료(초록).
+       지금 손이 가야 할 단계인 「입고」에만 브랜드 노랑을 준다. */
+    .os-tag-btn {
+      border: 0; font: inherit; line-height: 1.5; cursor: pointer;
+      appearance: none; -webkit-appearance: none;
+    }
+    .os-tag-btn:hover { filter: brightness(1.25); }
+    .os-tag-btn:active { transform: translateY(1px); }
+    .os-tag-btn:focus-visible { outline: 2px solid var(--accent, #ffc107); outline-offset: 1px; }
+    .os-tag.ret-s0 { background: rgba(255,255,255,0.09); color: var(--text-secondary); }
+    .os-tag.ret-s1 { background: rgba(79,158,255,0.18); color: #8cc0ff; }
+    .os-tag.ret-s2 { background: rgba(255,193,7,0.18); color: #ffc107; }
+    .os-tag.ret-s3 { background: rgba(129,199,132,0.15); color: #81c784; }
     .os-return-card {
       background: var(--bg-secondary); border: 1px solid var(--border);
       border-radius: 9px; padding: 9px 10px; margin-bottom: 7px; font-size: 12px;
@@ -1112,6 +1128,9 @@
       overflow-x: auto; overflow-y: hidden; padding: 2px 2px 4px;
       -webkit-overflow-scrolling: touch; align-items: stretch;
     }
+    /* 반품 조회 팝업의 진행 이력 — 카드 안(.ret-right)은 58% 로 묶여 있지만
+       팝업에서는 폭을 다 써야 오래된 이력까지 옆으로 밀어 볼 수 있다. */
+    .ret-case-tl { margin-top: 12px; }
     .ret-tl-track::-webkit-scrollbar { height: 4px; }
     .ret-tl-track::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
     .ret-proc {
@@ -2270,7 +2289,7 @@
     </div>
   </div>
 
-  <div class="version">v3.68 · 팩투유(Pack2U) CS 웹앱
+  <div class="version">v3.69 · 팩투유(Pack2U) CS 웹앱
     · <a target="_top" rel="noopener" href="<?= webAppUrl ?>?page=diag" style="color:#707070;text-decoration:underline">주소 진단</a>
   </div>
   </div>
@@ -2280,7 +2299,7 @@
       <button class="os-back" onclick="showHome()" aria-label="홈">‹</button>
       <span class="ws-title">팩투유<span class="ws-title-long">(Pack2U) CS 웹앱</span></span>
       <div class="nt" id="ntWrap" hidden aria-label="공지"><div class="nt-track" id="ntTrack"></div></div>
-      <span class="ws-ver" id="wsVerBadge">v3.68</span>
+      <span class="ws-ver" id="wsVerBadge">v3.69</span>
       <span class="ws-me" id="wsMe" title="로그인 계정"></span>
     </div>
     <div class="ws-mobile-tabs" id="wsMobileTabs" aria-label="패널 이동">
@@ -2532,6 +2551,13 @@
   <!-- 카드 상세 — 목록에서 펼치지 않고 가운데 팝업으로 띄운다 -->
   <div class="modal-overlay hb-card-overlay" id="hbCardModal" onclick="hbCardOverlayClick(event)">
     <div class="hb-card-modal" id="hbCardModalBody"></div>
+  </div>
+
+  <!-- 반품 조회 팝업 — 주문 카드의 반품 뱃지를 눌렀는데 그 건이
+       「진행 반품」 목록에 없을 때(완료됐거나 30일보다 오래된 건) 여기 뜬다.
+       목록에 있는 건은 팝업 대신 그 패널에서 열어 준다. 거기서는 처리까지 된다. -->
+  <div class="modal-overlay hb-card-overlay" id="retCaseModal" onclick="retCaseOverlayClick(event)">
+    <div class="hb-card-modal" id="retCaseModalBody"></div>
   </div>
 
   <!-- 첨부 이미지 확대보기 — 새 탭으로 나가지 않고 앱 안에서 본다 -->
@@ -5757,7 +5783,13 @@
           orderNo: row.orderNo, vendor: row.vendor, carrier: row.carrier || '',
           status: row.status || '',
           origin: row.origin || 'daily', match: scored[s].why.join(' · '),
-          invOverflow: !!row.invOverflow, invOverflowN: row.invOverflowN || 0
+          invOverflow: !!row.invOverflow, invOverflowN: row.invOverflowN || 0,
+          /* ★ 2026-09-07 ★  반품 뱃지가 이 두 값으로 대장과 맞춘다.
+             여기서 안 넘겨 주는 바람에 returnBadgeFor 가 늘 null 을 돌려줬고,
+             그래서 반품 표시가 **한 번도 뜬 적이 없었다.** 서버는 처음부터 주고 있었다.
+             invDigits 는 합포장이면 공백으로 이어 붙은 여러 개다. 그대로 넘긴다. */
+          phoneDigits: row.phoneDigits || String(row.phone || '').replace(/[^0-9]/g, ''),
+          invDigits: row.invDigits || String(row.invoice || '').replace(/[^0-9]/g, '')
         });
       }
       markCombinedPack(out);
@@ -5828,7 +5860,7 @@
     var RET_PHOTO_MAX = 6;
     var RET_PHOTO_PEND = {};    // 카드 index → 업로드 대기 사진
     var RET_MODAL_PHOTOS = {};  // 'retNew' | 'ledger' → 업로드 대기 사진
-    var CS_RET_UI_VER = 'v3.68';
+    var CS_RET_UI_VER = 'v3.69';
 
     /** 접두 → 업체명. 허브 `_PEP_VENDOR_LABELS_` / 포털 `PRP_VENDOR_LABELS` 와 맞춘다. */
     var RET_VENDOR_LABELS = {
@@ -6105,6 +6137,9 @@
       if (mode === 'delete') {
         return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
       }
+      if (mode === 'goorder') {
+        return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
+      }
       if (mode === 'photo') {
         return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.4"/></svg>';
       }
@@ -6115,6 +6150,13 @@
       var id = 'ret-act-' + mode + '-' + idx;
       return '<button type="button" class="ret-act" id="' + id + '" title="' + esc(label) + '" aria-label="' + esc(label) + '" onclick="toggleReturnCompose(' + idx + ',\'' + mode + '\')">' +
         returnActIconSvg(mode) + '<span class="ret-act-lbl">' + esc(label) + '</span></button>';
+    }
+
+    /** 반품 → 원주문. 다른 버튼과 달리 입력창을 열지 않고 바로 주문 검색을 돌린다. */
+    function returnGoOrderBtnHtml(idx) {
+      return '<button type="button" class="ret-act" title="원주문 조회" aria-label="원주문 조회" ' +
+        'onclick="openOrderFromReturn(' + idx + ', event)">' +
+        returnActIconSvg('goorder') + '<span class="ret-act-lbl">원주문</span></button>';
     }
 
     function returnDeleteBtnHtml(idx) {
@@ -6246,6 +6288,7 @@
             returnActBtnHtml(idx, 'consult', '상담') +
             returnActBtnHtml(idx, 'note', '메모') +
             returnActBtnHtml(idx, 'photo', '사진') +
+            returnGoOrderBtnHtml(idx) +
           '</div>' +
           returnComposePopHtml(idx, c) +
         '</div>' +
@@ -6695,6 +6738,29 @@
       return pa.length && pb.length && (a.indexOf(pb[0]) >= 0 || b.indexOf(pa[0]) >= 0);
     }
 
+    /* ══════════════════════════════════════════════════
+       주문 ↔ 반품 ↔ 물류 잇기
+       ★ 2026-09-07 신규
+
+       세 화면이 같은 건을 다루면서 서로를 몰랐다. 주문을 찾은 사람이
+       「이거 반품 들어온 거 아닌가」를 확인하려면 반품 패널로 가서 다시 쳐야 했다.
+
+       잇는 열쇠는 **전화번호와 송장번호**다. 반품대장에는 주문번호 열이 없다.
+
+       물류는 따로 이을 것이 없다 — 물류팀이 사진을 올리면 반품대장 상태가
+       「입고검수」로 바뀐다. 그 상태를 그대로 보여주면 그게 곧 물류 현황이다.
+       없는 연결을 새로 만드는 것보다, 이미 있는 연결을 화면에 드러내는 편이 맞다.
+       ══════════════════════════════════════════════════ */
+
+    /** 단계별 아이콘 — 0 접수 · 1 회수중 · 2 입고 · 3 완료 */
+    var RET_STAGE_ICON = ['🔄', '🚚', '📦', '✔'];
+
+    function returnStageOf(c) {
+      if (!c) return 0;
+      if (typeof c.stage === 'number') return c.stage;
+      return c.active ? 0 : 3;   // 서버가 아직 옛 인덱스를 주는 동안의 대비
+    }
+
     function returnBadgeFor(r) {
       if (!RETURN_CASES.length || !r) return null;
       var phone = String(r.phoneDigits || '').replace(/[^0-9]/g, '');
@@ -6706,15 +6772,201 @@
         if (phone && c.phoneDigits && phone === c.phoneDigits) hit = true;
         if (!hit && inv && (invDigitsOverlap(inv, c.invDigits) || invDigitsOverlap(inv, c.returnInvDigits))) hit = true;
         if (!hit) continue;
-        if (!best) best = c;
-        else if (c.active && !best.active) best = c;
+        if (!best) { best = c; continue; }
+        /* 같은 사람의 반품이 여러 건일 수 있다. 진행 중인 것을 먼저 보여준다 —
+           지난달 완료건보다 지금 처리해야 할 건이 급하다.
+           둘 다 진행 중이면 더 나아간 단계를 보여준다. */
+        if (c.active !== best.active) { if (c.active) best = c; continue; }
+        if (returnStageOf(c) > returnStageOf(best)) best = c;
       }
       if (!best) return null;
-      if (best.active) {
-        return { cls: 'return-active', label: '🔄 반품 진행' + (best.status ? ' · ' + best.status : '') };
-      }
-      return { cls: 'return-done', label: '✔ 반품 완료' };
+
+      var stage = returnStageOf(best);
+      var st = String(best.status || '').trim();
+      /* 글자는 시트 원값 그대로 둔다. 화면이 시트와 다른 말을 쓰면
+         둘을 나란히 놓고 볼 때 사람이 헷갈린다. */
+      var txt = stage === 3 ? '반품 완료'
+        : !st ? '반품 접수'
+        : (st.indexOf('반품') >= 0 ? st : '반품 ' + st);
+      var photos = parseInt(best.photos, 10) || 0;
+
+      return {
+        cls: 'ret-s' + stage,
+        label: RET_STAGE_ICON[stage] + ' ' + txt + (photos ? ' · 📷' + photos : ''),
+        key: best.tab + '|' + best.row,
+        title: '눌러서 반품 조회' + (photos ? ' · 입고 사진 ' + photos + '장' : '')
+      };
     }
+
+    function wsIsMobileMode() {
+      var split = document.getElementById('wsSplit');
+      return !!(split && split.classList.contains('mobile-mode'));
+    }
+
+    /**
+     * 주문 카드의 반품 뱃지 → 반품 조회.
+     *
+     * 진행 중인 건은 **팝업이 아니라 「진행 반품」 패널에서** 연다.
+     * 팝업으로 띄우면 보기만 되고 상태 변경·상담 입력을 다시 못 한다.
+     * PC 는 두 패널이 나란히 있으므로 그 자리에서 바로 처리가 이어진다.
+     */
+    function openReturnFromOrder(key, ev) {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      var p = String(key || '').split('|');
+      var tab = p[0], row = parseInt(p[1], 10);
+      if (!tab || !(row > 0)) return;
+
+      var inList = null;
+      for (var i = 0; i < RETURN_ALL_ROWS.length; i++) {
+        var c = RETURN_ALL_ROWS[i];
+        if (c.tab === tab && c.row === row) { inList = c; break; }
+      }
+
+      if (inList && !isReturnCardDone(inList)) {
+        /* 반품 검색창을 그 건으로 채운다 — 「반품 조회」가 실제로 일어나야 한다.
+           반품송장이 제일 좁게 걸린다. */
+        var q = inList.returnInvDigits || inList.invDigits ||
+                inList.phoneDigits || inList.name || '';
+        var rq = document.getElementById('rq');
+        if (rq) rq.value = q;
+        RETURN_QUERY = q;
+        renderReturnActiveList();
+        if (wsIsMobileMode()) wsGoToPane(1);
+        for (var j = 0; j < RETURN_ACTIVE_ROWS.length; j++) {
+          if (RETURN_ACTIVE_ROWS[j].tab === tab && RETURN_ACTIVE_ROWS[j].row === row) {
+            focusReturnCard(j);
+            return;
+          }
+        }
+        return;   // 한 건으로 못 좁혔어도 목록에는 보인다
+      }
+
+      /* 완료됐거나 30일보다 오래된 건 — 진행 목록에 없다.
+         「예전에 반품된 적 있나」에도 답해야 하므로 그 한 건만 받아 팝업으로 보여준다. */
+      openRetCaseModal({ tab: tab, row: row, loading: true });
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) {
+            closeRetCaseModal();
+            toast(String((res && res.error) || '반품 건을 불러오지 못했습니다'), 2800);
+            return;
+          }
+          openRetCaseModal(res.row);
+        })
+        .withFailureHandler(function (err) {
+          closeRetCaseModal();
+          toast(String((err && err.message) || err), 2800);
+        })
+        .csGetReturnCaseAt({ tab: tab, row: row });
+    }
+
+    /**
+     * 반품 카드 → 원주문 조회.
+     *
+     * **원송장으로 찾는다. 반품송장으로는 못 찾는다** — 회수용 번호라
+     * 주문·출고 자료에는 아예 없다. 원송장이 없으면 전화로 내려간다.
+     */
+    function openOrderFromReturnCase(c) {
+      if (!c) return;
+      var q = String(c.invoice || '').replace(/[^0-9]/g, '') ||
+              String(c.phoneDigits || '') ||
+              String(c.phone || '').replace(/[^0-9]/g, '') ||
+              String(c.name || '');
+      if (!q) { toast('원송장·전화가 없어 주문을 찾을 수 없습니다', 2600); return; }
+      var el = document.getElementById('q');
+      if (!el) return;
+      el.value = q;
+      if (wsIsMobileMode()) wsGoToPane(0);
+      doSearch(true);
+    }
+
+    function openOrderFromReturn(idx, ev) {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      openOrderFromReturnCase(RETURN_ACTIVE_ROWS[idx]);
+    }
+
+    /* ── 반품 조회 팝업 (완료·오래된 건 전용, 읽기만) ──
+       진행 이력을 목록과 같은 모양으로 보여주되 **삭제 버튼은 달지 않는다.**
+       이 팝업의 건은 RETURN_ACTIVE_ROWS 에 없어서, 목록용 삭제 함수에
+       index 를 넘기면 엉뚱한 행을 지운다. */
+    var RET_CASE_OPEN = null;
+
+    function retCaseTimelineHtml(events) {
+      events = events || [];
+      var h = '', n = 0;
+      for (var i = 0; i < events.length; i++) {
+        var ev = events[i];
+        if (!ev || ev.kind === 'meta') continue;
+        n++;
+        var cls = ev.kind || 'note';
+        var body = String(ev.text || ev.raw || '').trim().replace(RET_INTERNAL_MARK, '');
+        var when = formatProcWhen(ev);
+        var tag = procKindLabel(cls);
+        h += '<div class="ret-proc ' + cls + '">' +
+          (when ? '<div class="ret-proc-when">' + esc(when) + '</div>' : '') +
+          (tag ? '<div class="ret-proc-tag">' + esc(tag) +
+            (ev.staff ? ' · ' + esc(ev.staff) : '') + '</div>' : '') +
+          '<div class="ret-proc-body">' + linkifyProcBody(body || '—') + '</div></div>';
+      }
+      if (!n) return '<div class="ret-proc empty">진행 이력 없음</div>';
+      return '<div class="ret-tl-track">' + h + '</div>';
+    }
+
+    function retCaseRowHtml(lab, val) {
+      if (!val) return '';
+      return '<div class="os-row"><div class="os-lab">' + esc(lab) +
+        '</div><div class="os-val">' + esc(val) + '</div></div>';
+    }
+
+    function openRetCaseModal(c) {
+      RET_CASE_OPEN = c || null;
+      var ov = document.getElementById('retCaseModal');
+      var body = document.getElementById('retCaseModalBody');
+      if (!ov || !body) return;
+      if (!c) { ov.classList.remove('active'); body.innerHTML = ''; return; }
+
+      var head = '<div class="hb-card-modal-bar"><span class="hb-card-modal-t">반품 조회 · ' +
+        esc(c.tab || '') + ' ' + esc(String(c.row || '')) + '행</span>' +
+        '<button type="button" class="hb-card-modal-x" onclick="closeRetCaseModal()" ' +
+        'title="닫기 (Esc)">✕</button></div>';
+
+      if (c.loading) {
+        body.innerHTML = head + '<div class="os-empty">불러오는 중…</div>';
+        ov.classList.add('active');
+        return;
+      }
+
+      var stage = returnStageOf(c);
+      var st = String(c.status || '').trim();
+      body.innerHTML = head +
+        '<div class="os-card-head"><div class="os-name">' + esc(c.name || '(이름 없음)') +
+        '<span class="os-tag ret-s' + stage + '">' + esc(RET_STAGE_ICON[stage] + ' ' + (st || '접수')) +
+        '</span></div></div>' +
+        retCaseRowHtml('접수일', c.date) +
+        retCaseRowHtml('품목', (c.item || '') + (c.qty ? ' × ' + c.qty : '')) +
+        retCaseRowHtml('원송장', c.invoice) +
+        retCaseRowHtml('반품송장', c.returnInvoice) +
+        retCaseRowHtml('전화', c.phone) +
+        retCaseRowHtml('업체', c.vendor) +
+        retCaseRowHtml('유형', c.type) +
+        retCaseRowHtml('반품비', /^[0₩,.\s원]*$/.test(String(c.fee || '')) ? '' : c.fee) +
+        retCaseRowHtml('담당', c.staff) +
+        '<div class="os-actions"><button class="os-reply" type="button" ' +
+        'onclick="openOrderFromReturnCase(RET_CASE_OPEN); closeRetCaseModal();">원주문 조회</button></div>' +
+        '<div class="ret-case-tl">' + retCaseTimelineHtml(c.timeline) + '</div>';
+      ov.classList.add('active');
+    }
+
+    function closeRetCaseModal() { openRetCaseModal(null); }
+
+    function retCaseOverlayClick(ev) {
+      if (ev && ev.target && ev.target.id === 'retCaseModal') closeRetCaseModal();
+    }
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' || !RET_CASE_OPEN) return;
+      closeRetCaseModal();
+    });
 
     function returnSearchHaystack(c) {
       if (!c) return '';
@@ -7894,7 +8146,9 @@
       var rb = returnBadgeFor(r);
       return '<div class="os-card"><div class="os-card-head"><div class="os-name">' + esc(r.name || '(이름 없음)') +
         (r.combinedPack ? '<span class="os-tag pack" title="동일 송장 합포장">📦합포장</span>' : '') +
-        (rb ? '<span class="os-tag ' + rb.cls + '">' + esc(rb.label) + '</span>' : '') +
+        (rb ? '<button type="button" class="os-tag os-tag-btn ' + rb.cls + '" title="' +
+          esc(rb.title) + '" onclick="openReturnFromOrder(\'' + js(rb.key) + '\', event)">' +
+          esc(rb.label) + '</button>' : '') +
         (src ? '<span class="os-tag ' + tagClass(r.source, r.origin) + '">' + esc(src) + '</span>' : '') +
         '</div><div class="os-meta"><span class="date-line">' + dateHtml(r.date) + '</span>' +
         (r.match ? '<span class="match-line">' + esc(r.match) + '</span>' : '') + '</div></div>' +
