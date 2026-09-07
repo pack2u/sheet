@@ -759,6 +759,37 @@ function _epx_cleanCustCd_(v) {
   return s;
 }
 
+/**
+ * 설정 B6 같은 「거래처코드 셀」을 안전하게 읽는다.
+ *
+ * ★ 어느 한쪽만 쓰면 반드시 한쪽이 깨진다 (2026-09-07) ★
+ *   getValue()        → 셀이 숫자면 앞자리 0 이 없다 ("0123…" 이 못 나온다)
+ *   getDisplayValue() → 열이 좁으면 "2.5488E+09" 로 준다.
+ *                       이건 이미 정밀도를 잃은 값이라 되돌릴 수 없다.
+ *                       실측: 2.5488E+09 → 2548800000 (뒤 네 자리 유실)
+ *
+ *   종전 코드는 표시값을 먼저 보고 비었을 때만 원값으로 물러났다.
+ *   그래서 숫자 셀 + 좁은 열이면 **잘린 코드를 그대로 썼다**.
+ *   빈칸이 아니라 틀린 값이라 「거래처코드 없음」 경고도 안 떴다.
+ *
+ *   그래서 셀의 **자료형**으로 정한다.
+ *     숫자 셀   → 앞자리 0 이 애초에 없다. 원값이 정확하다.
+ *     텍스트 셀 → 표시값이 원본 그대로다. 앞자리 0 이 살아 있다.
+ *
+ *   B6 를 텍스트로 잠그는 복구가 메뉴에 있지만(_partnerMenu.gs),
+ *   아직 안 돈 시트가 있을 수 있어 읽는 쪽에서도 막는다.
+ */
+function _epx_readCustCdCell_(range) {
+  if (!range) return "";
+  var raw;
+  try { raw = range.getValue(); } catch (e) { return ""; }
+  if (typeof raw === "number" && isFinite(raw)) return String(Math.round(raw));
+  var s = "";
+  try { s = _epx_cleanCustCd_(range.getDisplayValue()); } catch (e2) {}
+  if (!s) s = _epx_cleanCustCd_(raw);
+  return s;
+}
+
 /** 「거래처정보」 거래처명 → 거래처코드 (최후 폴백) */
 function _epx_loadCustMap_(hub) {
   var out = { byName: {}, count: 0 };
@@ -851,11 +882,7 @@ function _epx_readVendorIdentity_(vss, fileInfo, maps) {
     var setTab = vss.getSheetByName(_EPX_SET_TAB_);
     if (setTab) {
       custNm = String(setTab.getRange(_EPX_SET_NAME_CELL_).getValue() || "").trim();
-      // getValue() 는 셀이 숫자면 앞자리 0 을 잃는다.
-      // 표시값을 먼저 보고, 비어 있을 때만 원값으로 물러난다.
-      var cdCell = setTab.getRange(_EPX_SET_CUST_CELL_);
-      custCd = _epx_cleanCustCd_(cdCell.getDisplayValue());
-      if (!custCd) custCd = _epx_cleanCustCd_(cdCell.getValue());
+      custCd = _epx_readCustCdCell_(setTab.getRange(_EPX_SET_CUST_CELL_));
       if (custCd) src = "설정B6";
     }
   } catch (e) {}
@@ -880,8 +907,38 @@ function _epx_readVendorIdentity_(vss, fileInfo, maps) {
     if (byName) { custCd = byName.custCd; src = "매핑탭(거래처명)"; }
   }
   if (!custCd && custNm) {
-    var c4 = maps.custMap.byName[_epx_norm_(custNm)];
+    var key4 = _epx_norm_(custNm);
+    var c4 = maps.custMap.byName[key4];
     if (c4) { custCd = c4; src = "거래처정보"; }
+
+    // ★ 완전일치가 실패하면 부분일치로 한 번 더 본다 (2026-09-07) ★
+    //   「업체_택배사」·설정 B5 와 「거래처정보」의 표기가 조금씩 다르다
+    //   (㈜·공백·별칭·법인명). 완전일치만 보면 멀쩡한 업체가 빈칸으로 나간다.
+    //   일일 구매입력(_epd_custCdOf_)은 이미 이렇게 하고 있었다.
+    //   같은 자료를 두 경로가 다르게 읽고 있었던 것이다.
+    //
+    //   ★ 길이로 막지 않는다. 애매한 것만 막는다 ★
+    //     처음엔 세 글자 이상만 봤는데 「부원」이 빠졌다. 실제 업체다.
+    //     짧은 게 위험한 게 아니라 **후보가 둘 이상인 게** 위험하다.
+    //     그래서 다 훑어 보고 딱 하나일 때만 붙인다. 둘 이상이면 빈칸으로 두고
+    //     이유를 남긴다 — 조용히 아무거나 고르는 것보다 낫다.
+    if (!custCd) {
+      var hits4 = [];
+      for (var nm4 in maps.custMap.byName) {
+        if (!nm4) continue;
+        if (nm4.indexOf(key4) !== -1 || key4.indexOf(nm4) !== -1) {
+          hits4.push(nm4);
+          if (hits4.length > 3) break; // 애매한 건 이미 확정이다
+        }
+      }
+      if (hits4.length === 1) {
+        custCd = maps.custMap.byName[hits4[0]];
+        src = "거래처정보(부분일치:" + hits4[0] + ")";
+      } else if (hits4.length > 1) {
+        src = "거래처정보 부분일치 후보 " + hits4.length + "개 — " +
+          hits4.slice(0, 3).join(" / ") + " (모호해서 비움)";
+      }
+    }
   }
   return { custNm: custNm, custCd: custCd, src: src };
 }
