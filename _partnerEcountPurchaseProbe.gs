@@ -39,6 +39,103 @@ var _PEPR_PATHS_ = [
 var _PEPR_PATH_PROP_ = "PEPR_ECOUNT_PURCHASE_PATH";
 
 /**
+ * ★ 후보를 더 찍지 않는다 (2026-09-07) ★
+ *   위 8개가 전부 404 였다. 경로 이름은 **계정마다 다르다** —
+ *   이카운트가 그 계정에 열어 준 OpenAPI 만 존재한다.
+ *   그러니 밖에서 이름을 맞히는 건 운에 맡기는 일이다.
+ *
+ *   실제 목록은 이카운트 안에 있다:
+ *     Self-Customizing → 정보관리 → API 인증키발급 (OpenAPI 안내)
+ *
+ *   거기서 본 이름을 아래 함수에 그대로 넣어 시험한다.
+ *   되는 것이 확인되면 그때 대조를 그 경로로 옮긴다.
+ */
+
+/** [메뉴] 경로를 직접 넣어 시험한다 — 이카운트에서 확인한 이름을 그대로 */
+function partnerTryEcountPath() {
+  var ui;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) { return "UI 없음"; }
+
+  var ans = ui.prompt(
+    "이카운트 OpenAPI 경로 시험",
+    "이카운트에서 확인한 경로를 넣으세요 (예: Purchases/GetPurchases)\n\n" +
+      "Self-Customizing → 정보관리 → API 인증키발급 에서 볼 수 있습니다.\n" +
+      "조회(Get) 경로만 넣으세요 — 저장(Save) 경로는 데이터를 바꿉니다.",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (ans.getSelectedButton() !== ui.Button.OK) return "취소";
+  var path = String(ans.getResponseText() || "").trim().replace(/^\/+|\/+$/g, "");
+  if (!path) return "빈 값";
+
+  // 저장 경로를 실수로 넣는 것을 막는다. 조회 시험이 데이터를 바꾸면 안 된다.
+  if (/save|delete|update|insert|remove/i.test(path)) {
+    ui.alert("중단", "저장·삭제로 보이는 경로입니다:\n" + path +
+      "\n\n조회(Get) 경로만 시험합니다.", ui.ButtonSet.OK);
+    return "저장 경로 거부";
+  }
+
+  var L = ["═══ 경로 시험: " + path + " ═══", ""];
+  var tz = "Asia/Seoul";
+  var to = Utilities.formatDate(new Date(), tz, "yyyyMMdd");
+  var from = Utilities.formatDate(
+    new Date(new Date().getTime() - 7 * 24 * 3600 * 1000), tz, "yyyyMMdd");
+
+  var auth;
+  try { auth = _pts_ecLogin_(); }
+  catch (e) { L.push("★ 로그인 실패: " + e.message); return _pepr_show_(L); }
+
+  var url = "https://oapi" + auth.zone + ".ecount.com/OAPI/V2/" + path +
+    "?SESSION_ID=" + encodeURIComponent(auth.sid);
+
+  // 날짜 키 이름을 모르니 몇 가지로 시도하고, 빈 payload 도 한 번 던진다.
+  // 빈 payload 의 에러 메시지가 필요한 필드 이름을 알려주는 경우가 많다.
+  var tries = [{}];
+  for (var t = 0; t < _PEPR_PAYLOADS_.length; t++) {
+    var k = Object.keys(_PEPR_PAYLOADS_[t]);
+    var b = {};
+    b[k[0]] = from; b[k[1]] = to;
+    tries.push(b);
+  }
+
+  for (var i = 0; i < tries.length; i++) {
+    var label = Object.keys(tries[i]).length ? Object.keys(tries[i])[0] : "(빈 payload)";
+    var code = 0, text = "";
+    try {
+      var res = UrlFetchApp.fetch(url, {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify(tries[i]),
+        headers: { Accept: "application/json", Expect: "" },
+        muteHttpExceptions: true,
+      });
+      code = res.getResponseCode();
+      text = res.getContentText();
+    } catch (eF) { text = "예외: " + eF.message; }
+
+    L.push("[" + label + "] HTTP " + code);
+    if (code === 404) { L.push("  경로 없음 — 이름을 다시 확인하세요."); break; }
+
+    // 응답을 그대로 보여준다. 여기에 필요한 필드 이름이 들어 있다.
+    L.push("  " + String(text).substring(0, 600));
+    try {
+      var j = JSON.parse(text);
+      if (j && j.Data && j.Data.Result && j.Data.Result.length) {
+        L.push("  ★ 자료 " + j.Data.Result.length + "건");
+        L.push("  필드: " + Object.keys(j.Data.Result[0]).slice(0, 20).join(", "));
+        try {
+          PropertiesService.getScriptProperties()
+            .setProperty(_PEPR_PATH_PROP_, path + "|" + label);
+          L.push("  경로를 저장했습니다.");
+        } catch (eS) { L.push("  경로 저장 실패: " + eS.message); }
+        break;
+      }
+    } catch (eJ) {}
+    L.push("");
+  }
+  return _pepr_show_(L);
+}
+
+/**
  * 날짜 키 이름도 계정마다 다르다. 한 경로가 열려 있어도 키가 틀리면
  * "필수값 없음" 으로 돌아온다. 그 메시지가 곧 답이라 그대로 보여준다.
  */
