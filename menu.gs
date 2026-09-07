@@ -72,6 +72,9 @@ function registerPack2UMenu_() {
         .addItem("🧾 미등록 코드 목록", "reportEcountMissingCodesOwner")
         .addSeparator()
         .addItem("📤 당일 구매입력 시트 만들기", "buildDailyEcountPurchaseSheetOwner")
+        // 변환분에는 있는데 일자별 파일에 없는 것을 날짜별로 뽑는다.
+        // 반드시 위 「전용마감 → 구매입력 변환」 을 먼저 돌린 뒤에 쓴다.
+        .addItem("📅 이카운트 누락분 → 날짜별 구매입력", "partnerBuildMissingPurchaseByDate")
         .addItem("⏰ 당일 구매입력 자동생성 켜기(17시)", "installDailyEcountPurchaseTrigger")
         .addItem("⏹️ 당일 구매입력 자동생성 끄기", "removeDailyEcountPurchaseTrigger")
         .addSeparator()
