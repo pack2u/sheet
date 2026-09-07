@@ -39,8 +39,22 @@
 var _PSTMTV_DIR_TAB_ = "명세서_업체사전";
 var _PSTMTV_LEARN_TAB_ = "명세서_발신학습";
 
-/** 사업자등록번호: 123-45-67890 / 1234567890 둘 다 */
-var _PSTMTV_BIZNO_RE_ = /(\d{3})\s*-?\s*(\d{2})\s*-?\s*(\d{5})/g;
+/**
+ * 사업자등록번호.
+ *
+ * ★ 두 벌로 나눈 이유 (2026-09-07) ★
+ *   실제 명세서에 이런 게 있다 —
+ *     승인번호 : 20260907-09071925815281971
+ *   경계 없이 10자리를 찾으면 저 숫자 덩어리 **안에서** 잘라 잡는다.
+ *   그게 어느 업체 사업자번호와 우연히 겹치면 남의 파일로 들어간다.
+ *
+ *   그래서 하이픈이 있는 형태(3-2-5)를 먼저 본다. 문서의 「등록번호」 칸은
+ *   늘 이 모양이다(243-86-01181, 101-86-45056 — 실측).
+ *   그걸로 못 찾았을 때만 하이픈 없는 10자리를 보되, 앞뒤가 숫자가 아닌
+ *   것만 인정한다.
+ */
+var _PSTMTV_BIZNO_HYPHEN_RE_ = /(\d{3})\s*-\s*(\d{2})\s*-\s*(\d{5})/g;
+var _PSTMTV_BIZNO_BARE_RE_ = /(?:^|[^\d])(\d{3})(\d{2})(\d{5})(?![\d])/g;
 
 /** 표기 흔들림 흡수 — ㈜·(주)·공백·특수문자를 걷어낸다 */
 function _pstmtv_norm_(v) {
@@ -383,17 +397,22 @@ function _pstmtv_identify_(ctx, dir, learn) {
   var text = String(ctx.text || "");
   var hay = _pstmtv_norm_(text + " " + (ctx.subject || "") + " " + (ctx.fileName || ""));
 
-  // ② 사업자등록번호 — 가장 확실하다
-  _PSTMTV_BIZNO_RE_.lastIndex = 0;
-  var m;
-  while ((m = _PSTMTV_BIZNO_RE_.exec(text)) !== null) {
-    var bz = m[1] + m[2] + m[3];
-    if (dir.byBiz[bz]) {
-      var e2 = dir.byBiz[bz];
-      return {
-        pfx: e2.pfx, name: e2.name,
-        basis: "사업자번호 " + bz, confident: true, addr: addr,
-      };
+  // ② 사업자등록번호 — 가장 확실하다.
+  //    하이픈 있는 형태를 먼저, 못 찾으면 하이픈 없는 형태를 본다.
+  var res = [_PSTMTV_BIZNO_HYPHEN_RE_, _PSTMTV_BIZNO_BARE_RE_];
+  for (var ri = 0; ri < res.length; ri++) {
+    res[ri].lastIndex = 0;
+    var m;
+    while ((m = res[ri].exec(text)) !== null) {
+      var bz = m[1] + m[2] + m[3];
+      if (dir.byBiz[bz]) {
+        var e2 = dir.byBiz[bz];
+        return {
+          pfx: e2.pfx, name: e2.name,
+          basis: "사업자번호 " + bz + (ri ? "(무하이픈)" : ""),
+          confident: true, addr: addr,
+        };
+      }
     }
   }
 
