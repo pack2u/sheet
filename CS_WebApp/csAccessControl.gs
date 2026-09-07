@@ -442,3 +442,47 @@ function csDiagnoseAccess() {
   Logger.log(text);
   return text;
 }
+
+/**
+ * 지금 **실제로** 통하는 접근 명단을 찍는다 (읽기 전용).
+ * ★ 2026-09-07 신규 — v2(Vercel) 계정 이관용
+ *
+ * 하드코딩된 _CS_AC_DEFAULT_ALLOWED_ 를 그냥 옮기면 안 된다.
+ * 스크립트 속성(CS_ALLOWED_EMAILS · CS_ACCOUNT_NAMES · CS_LOGISTICS_EMAILS)이
+ * 설정돼 있으면 **그쪽이 이긴다.** 배포 없이 명단을 늘려 왔다면 코드와 실제가 다르다.
+ *
+ * 아무것도 바꾸지 않는다. 편집기에서 ▶ 실행하고 실행로그를 보면 된다.
+ */
+function csDumpAccessRoster() {
+  var props = {};
+  try {
+    var sp = PropertiesService.getScriptProperties();
+    props[_CS_AC_PROP_] = sp.getProperty(_CS_AC_PROP_) || "";
+    props[_CS_AC_NAME_PROP_] = sp.getProperty(_CS_AC_NAME_PROP_) || "";
+    props[_CS_AC_LOGISTICS_PROP_] = sp.getProperty(_CS_AC_LOGISTICS_PROP_) || "";
+  } catch (e) {}
+
+  var allowed = _cs_ac_allowed_();
+  var lines = [];
+  lines.push("── CS 웹앱 접근 명단 (실제 적용값) ──");
+  lines.push("허용 계정 " + allowed.length + "명");
+  lines.push("");
+  lines.push("이메일,이름,물류");
+  for (var i = 0; i < allowed.length; i++) {
+    var em = allowed[i];
+    lines.push([
+      em,
+      _cs_ac_displayName_(em) || "",
+      _cs_ac_isLogistics_(em) ? "물류" : ""
+    ].join(","));
+  }
+  lines.push("");
+  lines.push("── 스크립트 속성 (비어 있으면 코드 기본값이 쓰인다) ──");
+  lines.push(_CS_AC_PROP_ + " = " + (props[_CS_AC_PROP_] || "(없음)"));
+  lines.push(_CS_AC_NAME_PROP_ + " = " + (props[_CS_AC_NAME_PROP_] || "(없음)"));
+  lines.push(_CS_AC_LOGISTICS_PROP_ + " = " + (props[_CS_AC_LOGISTICS_PROP_] || "(없음)"));
+
+  var out = lines.join("\n");
+  Logger.log(out);
+  return out;
+}
