@@ -144,6 +144,39 @@
      PC 는 그리드로 두 열을 만들면 되므로 순서를 건드릴 필요가 없다. */
   .wrap { display: grid; grid-template-columns: 1fr; gap: 0 20px; }
 
+  /* ── PC 현황판 ──
+     한 대를 CS·물류가 같이 본다. 그래서 어느 팀 것도 숨기지 않고 나란히 둔다.
+     서로 무슨 일이 도는지 보이는 게 이 화면의 목적이다.
+
+     폰과 같은 파일이다. 화면 폭으로만 갈린다 —
+     주소를 두 개로 나누면 어느 쪽을 북마크했는지에 따라 다른 걸 보게 된다. */
+  .pcOnly { display: none; }
+  .notices { display: none; }
+
+  @media (min-width: 900px) {
+    .pcOnly { display: block; }
+    .mobileOnly { display: none; }
+
+    /* 여럿이 지나가며 본다. 앉아서 보는 화면보다 커야 한다. */
+    .stat b { font-size: 34px; }
+    .stat span { font-size: 13px; }
+
+    /* 공지는 맨 위에 통째로. 「금일 판매불가」 같은 건 놓치면 안 된다. */
+    .notices { display: block; margin-bottom: 16px; }
+    .notice {
+      border-left: 4px solid #fdb913; background: var(--bg2);
+      border-radius: 0 10px 10px 0; padding: 12px 16px; margin-bottom: 8px;
+    }
+    .notice .t { font-weight: 700; font-size: 16px; }
+    .notice .b { font-size: 14px; color: var(--tx2); margin-top: 4px; white-space: pre-line; }
+    .notice .w { font-size: 11px; color: var(--tx2); margin-top: 6px; }
+
+    #boardCs .card, #board .card { padding: 12px }
+
+
+    .freshness { font-size: 12px; color: var(--tx2); text-align: right; margin-top: 18px; }
+  }
+
   @media (min-width: 900px) {
     body { max-width: 1240px; padding: 0 22px 48px; }
     .stats { grid-template-columns: repeat(4, 1fr); gap: 12px; }
@@ -159,11 +192,13 @@
 <body>
 
 <header>
-  <h1>반품 입고 촬영</h1>
-  <div class="sub" id="who">물류팀 · 사진을 찍으면 송장번호를 자동으로 읽습니다</div>
+  <h1 class="mobileOnly">반품 입고</h1>
+  <h1 class="pcOnly">팩투유 현황판</h1>
+  <div class="sub" id="who">불러오는 중…</div>
 </header>
 
 <div class="stats" id="stats"></div>
+<div class="notices" id="notices"></div>
 
 <div class="wrap">
 <div class="col-left">
@@ -187,7 +222,12 @@
 <div class="log" id="log"><div class="empty">불러오는 중…</div></div>
 
 </div>
-<div class="col-right">
+<div class="col-right" id="colRight">
+
+<div class="pcOnly">
+  <h2>CS 커뮤니티 보드</h2>
+  <div class="log" id="boardCs"><div class="empty">불러오는 중…</div></div>
+</div>
 
 <h2 style="display:flex;align-items:center;gap:8px">
   물류 커뮤니티 보드
@@ -636,7 +676,7 @@
         document.getElementById("cLink").value = "";
         document.getElementById("cardForm").style.display = "none";
         toast("등록했습니다");
-        loadBoard();
+        loadBoard("logi", "board", true);
       })
       .withFailureHandler(function (e) {
         btn.disabled = false; btn.textContent = "등록";
@@ -650,12 +690,53 @@
       });
   });
 
-  function loadBoard() {
+  /* 넓은 화면인가. CS·물류가 같이 보는 현황판으로 바뀐다.
+     같은 파일을 폭으로만 가른다 — 주소를 둘로 나누면 어느 쪽을 북마크했는지에
+     따라 다른 걸 보게 된다. */
+  function isPc() { return window.innerWidth >= 900; }
+
+  /* 두 보드의 공지를 맨 위에 모은다.
+     「금일 판매불가 상품」 같은 건 양쪽 팀이 다 봐야 한다.
+     보드 목록 안에 섞여 있으면 스크롤 아래로 밀려 안 읽힌다. */
+  var NOTICE = { cs: [], logi: [] };
+  function renderNotices() {
+    var el = document.getElementById("notices");
+    if (!el) return;
+    var all = NOTICE.cs.concat(NOTICE.logi);
+    if (!all.length) { el.innerHTML = ""; return; }
+    var h = "";
+    all.forEach(function (c) {
+      h += '<div class="notice"><div class="t">📌 ' + esc(c.title) + '</div>';
+      if (c.body) h += '<div class="b">' + esc(c.body) + '</div>';
+      h += '<div class="w">' + esc(c.from) + ' · ' + esc(c.author) + ' · ' + esc(c.at) + '</div></div>';
+    });
+    el.innerHTML = h;
+  }
+
+  /**
+   * @param {string} key   'logi' | 'cs'
+   * @param {string} elId  그릴 곳
+   * @param {boolean} canDone  완료 버튼을 줄 것인가
+   *   물류 화면에서 CS 카드를 완료 처리하면 안 된다. 남의 팀 일이다. 보기만 한다.
+   */
+  function loadBoard(key, elId, canDone) {
+    key = key || BOARD; elId = elId || "board";
     google.script.run
       .withSuccessHandler(function (r) {
-        var el = document.getElementById("board");
+        var el = document.getElementById(elId);
+        if (!el) return;
         if (!r || !r.ok) { el.className = ''; el.innerHTML = '<div class="empty">보드를 불러오지 못했습니다</div>'; return; }
-        var rows = (r.rows || []).filter(function (c) { return !c.done; });
+        var live = (r.rows || []).filter(function (c) { return !c.done; });
+        NOTICE[key === "cs" ? "cs" : "logi"] = isPc()
+          ? live.filter(function (c) { return c.level === "공지"; })
+              .map(function (c) {
+                return { title: c.title, body: c.body, author: c.author, at: c.at,
+                         from: key === "cs" ? "CS" : "물류" };
+              })
+          : [];
+        renderNotices();
+        // 공지는 위에 따로 보여주므로 목록에서는 뺀다
+        var rows = isPc() ? live.filter(function (c) { return c.level !== "공지"; }) : live;
         if (!rows.length) { el.className = ''; el.innerHTML = '<div class="empty">진행 중인 글이 없습니다</div>'; return; }
         var h = "";
         rows.forEach(function (c) {
@@ -667,7 +748,7 @@
           h += '<div class="via" style="margin-top:6px">' + esc(c.author) + ' · ' + esc(c.at);
           if (c.noteCount) h += ' · 댓글 ' + c.noteCount;
           h += '</div>';
-          h += '<div class="row mini"><button class="btn ghost" type="button" data-done="' + esc(c.id) + '">완료</button></div>';
+          if (canDone) h += '<div class="row mini"><button class="btn ghost" type="button" data-done="' + esc(c.id) + '">완료</button></div>';
           h += '</div>';
         });
         el.className = 'grid';
@@ -678,20 +759,45 @@
             google.script.run
               .withSuccessHandler(function (x) {
                 if (!x || !x.ok) { b.disabled = false; toast((x && x.error) || "실패", 3000); return; }
-                toast("완료 처리했습니다"); loadBoard();
+                toast("완료 처리했습니다"); loadBoard("logi", "board", true);
               })
               .withFailureHandler(function () { b.disabled = false; toast("실패", 3000); })
-              .csCompleteHandoffCard({ board: BOARD, id: b.getAttribute("data-done"), staff: STAFF || "물류" });
+              .csCompleteHandoffCard({ board: key, id: b.getAttribute("data-done"), staff: STAFF || "물류" });
           });
         });
       })
       .withFailureHandler(function () {
-        var bd = document.getElementById("board");
+        var bd = document.getElementById(elId);
+        if (!bd) return;
         bd.className = '';
         bd.innerHTML = '<div class="empty">보드를 불러오지 못했습니다</div>';
       })
-      .csListHandoffCards({ board: BOARD });
+      .csListHandoffCards({ board: key });
   }
+
+  /* 현황판 새로고침.
+     조작 없이 띄워 두는 화면이라 스스로 갱신해야 한다.
+     60초 — 서버 폴링 캐시가 10초라 이 정도면 부담이 없다. */
+  function refreshBoardAll() {
+    loadToday();
+    loadBoard("logi", "board", true);
+    if (isPc()) loadBoard("cs", "boardCs", false);
+    var who = document.getElementById("who");
+    if (who) {
+      var d = new Date();
+      var hh = ("0" + d.getHours()).slice(-2), mm = ("0" + d.getMinutes()).slice(-2);
+      who.textContent = isPc()
+        ? "CS · 물류 공용 · " + (d.getMonth() + 1) + "월 " + d.getDate() + "일 " + hh + ":" + mm + " 기준"
+        : "물류팀 · 대장에서 찾아 사진을 붙입니다";
+    }
+  }
+
+  if (isPc()) setInterval(refreshBoardAll, 60000);
+  window.addEventListener("resize", function () {
+    // 창을 넓히거나 좁히면 화면이 바뀐다. 보드를 다시 그려 맞춘다.
+    clearTimeout(window.__rzT);
+    window.__rzT = setTimeout(refreshBoardAll, 400);
+  });
 
   // ── 카드에서 긁으면 바로 복사 ─────────────────────────
   //   home.html 과 같은 동작. 송장번호를 손으로 옮겨 적을 일이 없게 한다.
@@ -737,7 +843,7 @@
   }
 
   loadToday();
-  loadBoard();
+  refreshBoardAll();   // 현황판이면 CS 보드·공지까지 함께
 </script>
 </body>
 </html>
