@@ -470,3 +470,170 @@ function partnerRefreshInvoiceLedger() {
   if (ui) ui.alert("송장원장 갱신 완료", text + "\n\n탭: " + _PIL_TAB_NAME_, ui.ButtonSet.OK);
   return stat;
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  마감 전 원장 전체 갱신 (21:30)
+ *  파일: _partnerInvoiceLedger.gs
+ *
+ *  ★ 왜 마감 밖으로 뺐나 (2026-09-07) ★
+ *    마감(22:00) 안에서 도는 갱신은 `skipArchives: true` 다 — 각 업체의
+ *    「전용발주 마감」·「발주 마감」탭을 건너뛴다. 마감 본체도 그 탭들을
+ *    안 읽는다(6분 제한 때문). 그래서 **마감 시점에 그 송장들은 어느
+ *    경로로도 맵에 안 들어온다.** 그게 미매칭의 구조적 원인이다.
+ *
+ *    지금까지는 그걸 다음날 소급 보강으로 메웠다. 하지만 마감이 제때
+ *    붙이면 뒤돌아볼 일이 없다. 마감 30분 전에 원장을 온전히 채워 두면,
+ *    마감은 업체 파일을 열지 않고 원장 한 탭만 읽어도 다 붙는다.
+ *
+ *  커서 기반이라 최초 1회만 무겁고 이후는 새 행만 읽는다.
+ *  마감 밖이므로 시간 예산을 넉넉히 준다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pil_refreshScheduled_() {
+  if (typeof _pt_isWeekendBlackout_ === "function" && _pt_isWeekendBlackout_()) {
+    Logger.log("[LEDGER 21:30] 주말 차단 → 스킵");
+    return;
+  }
+  var saved = _PIL_TIME_BUDGET_MS_;
+  try {
+    // 마감 안이 아니므로 4분까지 쓴다 (GAS 6분 한도 앞에서 멈춘다)
+    _PIL_TIME_BUDGET_MS_ = 240000;
+    var stat = _pil_refresh_({});   // ★ skipArchives 없음 — 마감탭까지 전부
+    Logger.log("[LEDGER 21:30] 적재=" + stat.appended +
+      " 임시=" + stat.temp + " 마감탭=" + stat.archive +
+      " 중복스킵=" + stat.skippedDup +
+      (stat.timedOut ? " ⏳시간초과(다음 회차에 이어서)" : "") +
+      (stat.errors.length ? " 오류=" + stat.errors.length : ""));
+  } catch (e) {
+    Logger.log("[LEDGER 21:30] 실패: " + e.message);
+  } finally {
+    _PIL_TIME_BUDGET_MS_ = saved;
+  }
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  송장 지연 측정 — 주문일로부터 며칠 뒤에 송장이 눈에 들어오나
+ *  파일: _partnerInvoiceLedger.gs
+ *
+ *  ★ 왜 재나 ★
+ *    대리공급 업체는 자기 마감시간에 맞춰 출고한다. 당일분만 송장이 찍히고
+ *    나머지는 다음날·출고 가능한 날에 들어온다. 그래서 일일마감은 당일 발주를
+ *    전부 적어 두고, 늦게 온 송장을 **이전 일일마감에 이식**해야 한다.
+ *
+ *    이식 창(소급 보강 일수)을 며칠로 잡을지는 "업체가 실제로 며칠 늦나"에
+ *    달렸다. 짧으면 영영 못 붙이고, 길면 매일 파일을 헛되이 연다.
+ *    감으로 정하지 않으려고 원장에서 실측한다.
+ *
+ *  원장은 행마다 관측일시(A)와 주문일(G)을 갖고 있다. 그 차이가 곧 지연이다.
+ *  롯데는 원장에 안 담긴다 — 당일 나오므로 지연이 없다.
+ *
+ *  읽기만 한다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function partnerMeasureInvoiceLag() {
+  var L = ["═══ 송장 지연 측정 (주문일 → 관측일) ═══",
+    Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"), ""];
+  try {
+    var tab = _pil_openLedgerSs_().getSheetByName(_PIL_TAB_NAME_);
+    if (!tab) { L.push("★ 송장원장 탭이 없습니다. 먼저 원장을 갱신하세요."); return _pil_lagOut_(L); }
+    var lr = tab.getLastRow();
+    if (lr < 2) { L.push("원장이 비어 있습니다."); return _pil_lagOut_(L); }
+
+    var data = tab.getRange(2, 1, lr - 1, _PIL_HEADERS_.length).getDisplayValues();
+    var BUCKETS = [
+      { max: 0,  name: "당일" },
+      { max: 1,  name: "1일" },
+      { max: 3,  name: "2~3일" },
+      { max: 7,  name: "4~7일" },
+      { max: 14, name: "8~14일" },
+      { max: 30, name: "15~30일" },
+      { max: 9999, name: "31일 이상" },
+    ];
+    var all = {}, bySrc = {}, noDate = 0, total = 0, worst = [];
+
+    for (var i = 0; i < data.length; i++) {
+      var seen = _pil_lagYmd_(data[i][0]);   // A 관측일시
+      var ord = _pil_lagYmd_(data[i][6]);    // G 주문일
+      if (!seen || !ord) { noDate++; continue; }
+      var lag = _pil_lagDays_(ord, seen);
+      if (lag < 0) lag = 0;                   // 시계 어긋남은 당일로 본다
+      total++;
+
+      var b = "";
+      for (var k = 0; k < BUCKETS.length; k++) {
+        if (lag <= BUCKETS[k].max) { b = BUCKETS[k].name; break; }
+      }
+      all[b] = (all[b] || 0) + 1;
+
+      // 출처는 "전용마감:올팩" 처럼 온다 — 앞부분(종류)만 센다
+      var src = String(data[i][1] || "(빈칸)").split(":")[0].trim();
+      if (!bySrc[src]) bySrc[src] = {};
+      bySrc[src][b] = (bySrc[src][b] || 0) + 1;
+
+      if (lag >= 8 && worst.length < 12) {
+        worst.push("      " + lag + "일  " + data[i][6] + " → " + String(data[i][0]).substring(0, 10) +
+          "  " + String(data[i][1] || "").substring(0, 16) +
+          "  " + String(data[i][4] || "").substring(0, 12));
+      }
+    }
+
+    L.push("원장 " + data.length + "행 · 날짜 둘 다 있는 " + total + "행 (날짜 없음 " + noDate + ")");
+    L.push("");
+    L.push("[전체 지연 분포]");
+    var cum = 0;
+    for (var k2 = 0; k2 < BUCKETS.length; k2++) {
+      var nm = BUCKETS[k2].name, v = all[nm] || 0;
+      cum += v;
+      var pct = total ? Math.round(v / total * 1000) / 10 : 0;
+      var cpct = total ? Math.round(cum / total * 1000) / 10 : 0;
+      L.push("      " + _pia_pad_(nm, 10) + _pia_padL_(v, 6) + "건  " +
+        _pia_padL_(pct, 5) + "%   누적 " + cpct + "%");
+    }
+    L.push("");
+    L.push("[출처별]");
+    var srcs = Object.keys(bySrc).sort();
+    for (var s = 0; s < srcs.length; s++) {
+      var row = [];
+      for (var k3 = 0; k3 < BUCKETS.length; k3++) {
+        var n2 = bySrc[srcs[s]][BUCKETS[k3].name] || 0;
+        if (n2) row.push(BUCKETS[k3].name + " " + n2);
+      }
+      L.push("      " + _pia_pad_(srcs[s], 16) + row.join(" · "));
+    }
+    if (worst.length) {
+      L.push("");
+      L.push("[8일 넘게 걸린 예시]");
+      for (var w = 0; w < worst.length; w++) L.push(worst[w]);
+    }
+    L.push("");
+    L.push("[소급 보강 창은 며칠이어야 하나]");
+    L.push("      누적 비율이 99% 를 넘는 구간까지 잡으면 됩니다.");
+    L.push("      지금 설정: 22:45 자동 7일 · 메뉴 수동 14일");
+  } catch (e) {
+    L.push("★ 실패: " + e.message);
+  }
+  return _pil_lagOut_(L);
+}
+
+function _pil_lagYmd_(v) {
+  var d = String(v == null ? "" : v).replace(/[^0-9]/g, "");
+  return d.length >= 8 ? parseInt(d.substring(0, 8), 10) : 0;
+}
+
+/** yyyymmdd 두 개의 날짜 차이 (일) */
+function _pil_lagDays_(a, b) {
+  function toDate(n) {
+    var s = String(n);
+    return new Date(+s.substring(0, 4), +s.substring(4, 6) - 1, +s.substring(6, 8));
+  }
+  return Math.round((toDate(b).getTime() - toDate(a).getTime()) / 86400000);
+}
+
+function _pil_lagOut_(L) {
+  var text = L.join("\n");
+  Logger.log(text);
+  try { SpreadsheetApp.getUi().alert("송장 지연 측정", text, SpreadsheetApp.getUi().ButtonSet.OK); } catch (eU) {}
+  return text;
+}

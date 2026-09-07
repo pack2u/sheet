@@ -1841,17 +1841,33 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
   { fn: "_trigger_fetchInvoices_",                       h: 16, m: 5,  label: "송장 수집" },
   { fn: "_trigger_pushInvoices_",                        h: 16, m: 20, label: "송장 배포" },
 
+  // ─── 거래명세서 수집 (★ 2026-09-07 신규) ───
+  //   Gmail 에서 업체 명세서를 한 번에 걷어 업체 파일로 나눠 넣는다.
+  //   업체별로 따로 돌리면 안 된다 — 라벨(P2U_명세처리완료) 때문에 먼저 도는
+  //   업체가 남의 명세서까지 가져간다. 그래서 중앙 수집 한 자리만 쓴다.
+  //
+  //   ★ 이 자리로 트리거가 20/20 이다 (구글 상한) ★
+  //     이제부터 새 스케줄을 넣으려면 기존 것을 빼거나 두 개를 한 함수로 묶어야 한다.
+  //     17:00 구매입력처럼 묶는 방식이 앞서 한 자리를 아꼈다.
+  { fn: "partnerCollectStatementsDaily",                 h: 16, m: 40, label: "거래명세서 수집 → 업체별 분배" },
+
   // ─── 저녁: 구매입력 → DB 동기화 (★ 2026-08-31: 두 개를 하나로 묶음) ───
   //   전에는 17:00 동기화 / 17:30 구매입력 으로 따로 돌았고 순서도 뒤집혀 있었다.
   //   구글 시간 트리거는 nearMinute 이 ±15분이라 따로 두면 순서가 어긋날 수 있다.
   //   한 함수로 묶어 구매입력 → 동기화 순서를 보장한다. 트리거 자리도 하나 아낀다.
   { fn: "runEveningPurchaseAndSync",                     h: 17, m: 0,  label: "당일 구매입력 → DB 동기화 [Supabase]" },
-  { fn: "_pep_unifiedDailyArchiveScheduled_",            h: 22, m: 0,  label: "통합 일일마감" },
+  // ★ 2026-09-07: 마감 30분 전 송장원장 전체 갱신 ★
+  //   마감 안에서 도는 갱신은 업체 마감탭을 건너뛴다(skipArchives).
+  //   마감 본체도 6분 제한 때문에 그 탭들을 안 읽는다. 그래서 마감 시점에
+  //   그 송장이 맵에 없었고, 다음날 소급 보강으로 메우고 있었다.
+  //   여기서 미리 채워 두면 마감이 원장만 읽어도 제때 붙는다.
+  { fn: "_pil_refreshScheduled_",                      h: 19, m: 0,  label: "송장원장 전체 갱신 (마감 준비)" },
+  { fn: "_pep_unifiedDailyArchiveScheduled_",            h: 20, m: 0,  label: "통합 일일마감" },
   // ★ 2026-08-25: 일일마감(22:00) 이후, 마감 정리(23:00·23:30)가 임시기록을 비우기 전에
   //   통합조회를 통째로 재생성한다. CS는 이 탭 하나만 읽는다.
-  { fn: "_puv_rebuildScheduled_",                        h: 22, m: 45, label: "통합조회 재생성 [CS 조회용]" },
-  { fn: "_trigger_monthlySettle_",                       h: 23, m: 0,  label: "대리판매 마감" },
-  { fn: "_trigger_exclusiveArchive_",                    h: 23, m: 30, label: "대리공급 마감" },
+  { fn: "_puv_rebuildScheduled_",                        h: 21, m: 0,  label: "통합조회 재생성 [CS 조회용]" },
+  { fn: "_trigger_monthlySettle_",                       h: 22, m: 0,  label: "대리판매 마감" },
+  { fn: "_trigger_exclusiveArchive_",                    h: 23, m: 0,  label: "대리공급 마감" },
 ];
 
 

@@ -805,7 +805,16 @@ function _puv_rebuildScheduled_() {
       var _elapsed_ = new Date().getTime() - _startedAt_;
       // 재생성이 오래 끌었으면 보강을 건너뛴다. GAS 는 6분에서 실행을 자르는데,
       // 그때 잘리면 보강이 파일을 반만 고친 채로 끝난다 — 그게 제일 나쁘다.
-      if (_elapsed_ > 210000) {
+      // ★ 시계로도 막는다 (2026-09-07) ★
+      //   경과시간만 보면 재생성이 빨리 끝난 날에 보강이 시작되고,
+      //   그게 23:00 대리판매 마감과 겹칠 수 있다. 트리거는 ±15분
+      //   흔들리므로 22:45 가 23:00 에 뜨는 날도 있다.
+      //   22:52 를 넘겼으면 시작하지 않는다 — 다음 날 또는 메뉴에서 돌린다.
+      var _hm_ = parseInt(Utilities.formatDate(new Date(), "Asia/Seoul", "HHmm"), 10);
+      if (_hm_ >= 2252) {
+        Logger.log("[UNIFIED_VIEW 22:45] 현재 " + _hm_ +
+          " — 23:00 마감과 겹칠 수 있어 소급 보강 건너뜀 (메뉴에서 수동 실행하세요)");
+      } else if (_elapsed_ > 210000) {
         Logger.log("[UNIFIED_VIEW 22:45] 재생성에 " + Math.round(_elapsed_ / 1000) +
           "초 — 남은 시간이 부족해 소급 보강 건너뜀 (메뉴에서 수동 실행하세요)");
       } else if (_PUV_LAST_INVOICE_MAP_) {

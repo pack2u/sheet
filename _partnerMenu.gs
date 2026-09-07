@@ -37,6 +37,7 @@ function registerPartnerMenu_() {
     .addItem("3️⃣ 대리공급업체로 발주 Push", "partnerPushOrdersToExclusiveFormsOwner")
     // Push 가 중간에 끊겼을 때 이어서 밀 때 쓴다. 매일 흐름의 일부라 남긴다.
     .addItem("   └ 📋 임시기록 → 전용양식 Push", "partnerPushFromTempTabToExclusiveOwner")
+    .addItem("   └ 🧪 임시기록 Push 예행 점검", "partnerDiagnoseTempPush")
     .addSeparator()
 
     // ── 오후: 송장 수집 → 배포 ──
@@ -186,6 +187,9 @@ function registerPartnerMenu_() {
         .addItem("📊 송장 매칭 감사", "partnerAuditInvoiceMatching")
         .addItem("⏪ 미매칭 소급 보강 (14일)", "partnerBackfillRecentArchives")
         .addItem("🔍 미매칭 성격 분석", "partnerAnalyzeUnmatched")
+        .addItem("   └ 🆔 고유ID 미매칭 판정", "partnerDiagnoseUidUnmatched")
+        .addItem("   └ ⏱ 송장 지연 측정 (회수창 산정)", "partnerMeasureInvoiceLag")
+        .addItem("   └ 🧮 이름단독 매칭 예행측정", "partnerSimulateNameOnlyMatch")
         .addItem("⏳ 송장 없이 남은 행", "partnerListStaleNoInvoice")
     )
     .addSeparator()
@@ -229,9 +233,18 @@ function registerPartnerMenu_() {
         .addItem("② 원본 → 파싱", "partnerParseStatementFromRaw")
         .addItem("③ 비교·정리 실행", "partnerRunStatementReconcile")
         .addSeparator()
+        .addSeparator()
+        // ★ 업체별 자동 수집 (2026-09-07) ★
+        //   Gmail 은 업체를 구분하지 않는다. 아래 「현재 파일」 수집을 업체마다
+        //   돌리면 먼저 도는 업체가 남의 명세서까지 가져가고 라벨까지 붙인다.
+        //   그래서 수집은 한 번만 하고 여기서 업체별로 나눠 넣는다.
+        .addItem("🏷 업체 사전 새로 만들기", "partnerRebuildStatementDirectory")
+        .addItem("📥 명세서 수집 → 업체별 분배 (16:40 자동)", "partnerCollectStatementsNow")
+        .addSeparator()
         .addItem("📧 Gmail 첨부 수집 (현재 파일)", "partnerFetchStatementFromGmail")
         .addItem("🧪 명세서 사전점검", "partnerDiagnoseStatementReconcile")
         .addItem("🧪 Gmail 미처리 점검", "partnerDiagnoseStatementGmail")
+        .addItem("🔎 명세서 발신처 조사", "partnerSurveyStatementSenders")
     )
     // 「명세서 정리」는 **받은** 명세를 대사하고,
     // 「거래명세표 발행」은 우리가 **보낼** 명세를 만든다. 방향이 반대다.
@@ -309,6 +322,9 @@ function registerPartnerMenu_() {
         .addSeparator()
         .addItem("📦 상품정보 → DB 동기화", "syncProductsToDbOwner")
         .addItem("📋 발주허브 → DB 동기화", "syncOrdersToDbOwner")
+        .addItem("🔑 v2 키 넣기", "partnerSetV2Key")
+        .addItem("🧪 v2 미러 점검", "partnerDiagnoseV2Mirror")
+        .addItem("📦 기존 → v2 이력 복사 (30일)", "partnerBackfillV2FromLegacy")
         .addItem("🏢 협력업체 → DB 동기화", "syncVendorsToDbOwner")
         .addSeparator()
         .addItem("🔄 통합 DB 동기화 (발주+업체)", "syncAllToDbOwner")

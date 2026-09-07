@@ -16,8 +16,9 @@
  *    바로 드러난다. 그래서 판단은 사람에게 남긴다.
  *
  *  ★ 판정 두 단계 ★
- *    확실 — 사방넷주문번호(P열)가 같은 줄이 2개 이상.
+ *    확실 — 사방넷주문번호·품목코드·품목명이 모두 같은 줄이 2개 이상.
  *           같은 소스 주문이 두 번 푸시된 것이다. 변명의 여지가 없다.
+ *           품목이 다르면 세트(몸통·뚜껑)라 중복이 아니다 — 안 잡는다.
  *    의심 — 주문번호는 다른데 수취인·전화·품목코드가 같고 차수가 다름.
  *           표기 차이로 고유ID가 갈려 중복 판정을 빠져나간 경우다.
  *           진짜 추가 주문일 수도 있으니 사람이 봐야 한다.
@@ -84,19 +85,24 @@ function _pdc_scan_() {
         inv: String(r[_PDC_C_INV_] || "").trim()
       };
 
+      // ★ 2026-09-07: 주문번호만으로 묶지 않는다 ★
+      //   세트 상품은 몸통과 뚜껑이 따로 나가서, 한 주문번호에 품목이
+      //   다른 줄이 여럿 생긴다. 그건 중복이 아니라 정상이다.
+      //   주문번호·품목코드·품목명이 모두 같을 때만 같은 건으로 본다.
       if (info.orderNo) {
-        (byOrder[info.orderNo] = byOrder[info.orderNo] || []).push(info);
+        var ok2 = info.orderNo + "|" + _pdc_key_(code) + "|" + _pdc_key_(info.item);
+        (byOrder[ok2] = byOrder[ok2] || []).push(info);
       }
       var pk = _pdc_key_(name) + "|" + info.phone + "|" + _pdc_key_(code);
       (byPerson[pk] = byPerson[pk] || []).push(info);
     }
 
-    // ── 확실: 같은 사방넷주문번호가 2줄 이상 ──
+    // ── 확실: 주문번호+품목이 같은 줄이 2개 이상 (세트는 품목이 달라 안 걸린다) ──
     var sureRows = {};
     for (var o in byOrder) {
       var g = byOrder[o];
       if (g.length < 2) continue;
-      out.sure.push({ key: o, hits: g });
+      out.sure.push({ key: g[0].orderNo, hits: g });
       for (var s = 0; s < g.length; s++) sureRows[g[s].row] = true;
     }
 
@@ -147,7 +153,7 @@ function partnerCheckDuplicateOrders() {
     L.push("✔ 중복 의심 건이 없습니다.");
   } else {
     if (res.sure.length) {
-      L.push("★ 확실 — 같은 사방넷주문번호가 두 번 들어왔습니다 (" + res.sure.length + "건)");
+      L.push("★ 확실 — 같은 주문번호·같은 품목이 두 번 들어왔습니다 (" + res.sure.length + "건)");
       for (var i = 0; i < Math.min(res.sure.length, 20); i++) {
         L.push("    주문번호 " + res.sure[i].key);
         for (var j = 0; j < res.sure[i].hits.length; j++) {
@@ -191,7 +197,7 @@ function _pdc_checkAfterPush_() {
     if (!res.sure.length) return;
 
     var lines = ["⚠️ 중복 발주 의심 " + res.sure.length + "건",
-      "같은 사방넷주문번호가 두 차수에 들어왔습니다.", ""];
+      "같은 주문번호·같은 품목이 두 차수에 들어왔습니다.", ""];
     for (var i = 0; i < Math.min(res.sure.length, 5); i++) {
       var g = res.sure[i].hits;
       var rounds = [];

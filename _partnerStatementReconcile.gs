@@ -49,6 +49,9 @@ function partnerRunStatementReconcile() {
     var viewerMap = _pstmt_loadViewerPriceMap_(ss);
     var formLines = _pstmt_loadExclusiveLines_(ss, "form");
     var archLines = _pstmt_loadExclusiveLines_(ss, "archive", settings.month);
+    // 「구매입력」 폴더의 일자별 파일에서 이 업체 행만 모은다.
+    // 허브 「이카운트-구매입력변환」 탭은 실행마다 초기화돼 최근분만 남으므로 못 쓴다.
+    var purch = _pstmt_loadPurchaseLines_(settings.custCd, settings.month);
 
     var results = [];
     var mirror = [];
@@ -64,7 +67,8 @@ function partnerRunStatementReconcile() {
       var amtDiff = quoteAmt ? quoteAmt - row.amountIncVat : 0;
 
       var match = _pstmt_matchOrderLines_(row, formLines, archLines);
-      var status = _pstmt_buildStatus_(row, mapped, priceDiff, amtDiff, match, settings);
+      var pur = _pstmt_matchPurchase_(row, mapped, purch);
+      var status = _pstmt_buildStatus_(row, mapped, priceDiff, amtDiff, match, settings, pur);
 
       results.push([
         status.icon,
@@ -77,6 +81,7 @@ function partnerRunStatementReconcile() {
         row.qty,
         match.qtyForm,
         match.qtyArch,
+        pur.qty,
         row.unitPriceIncVat,
         quoteInc,
         priceDiff,
@@ -85,6 +90,7 @@ function partnerRunStatementReconcile() {
         amtDiff,
         row.recipient || "",
         match.sourceLabel,
+        pur.hit ? pur.by : "없음",
         status.note,
       ]);
 
@@ -147,7 +153,12 @@ function partnerRunStatementReconcile() {
         "전용양식 매칭: " + _pstmt_countMatch_(results, "양식") + "\n" +
         "마감 매칭: " + _pstmt_countMatch_(results, "마감") + "\n" +
         "미매핑: " + _pstmt_countNote_(results, "UNMAPPED") + "\n\n" +
-        "「" + _PSTMT_TAB_MIRROR + "」「" + _PSTMT_TAB_ECOUNT + "」 확인",
+        "[구매입력 대조] " + purch.files + "일치 " + purch.rows + "행 읽음\n" +
+        "  장부에 없음: " + _pstmt_countNote_(results, "NO_PURCHASE") + "\n" +
+        "  수량 다름: " + _pstmt_countNote_(results, "PUR_QTY_DIFF") + "\n" +
+        "  품목 다름: " + _pstmt_countNote_(results, "PUR_CODE_DIFF") + "\n" +
+        (purch.warn.length ? "  ※ " + purch.warn.join("\n  ※ ") + "\n" : "") +
+        "\n「" + _PSTMT_TAB_MIRROR + "」「" + _PSTMT_TAB_ECOUNT + "」 확인",
       ui.ButtonSet.OK
     );
   } catch (e) {
@@ -307,7 +318,7 @@ function _pstmt_matchOrderLines_(row, formLines, archLines) {
   };
 }
 
-function _pstmt_buildStatus_(row, mapped, priceDiff, amtDiff, match, settings) {
+function _pstmt_buildStatus_(row, mapped, priceDiff, amtDiff, match, settings, pur) {
   var notes = [];
   var icon = "✅";
   if (!mapped.mapped) {
@@ -322,6 +333,20 @@ function _pstmt_buildStatus_(row, mapped, priceDiff, amtDiff, match, settings) {
     notes.push("NO_ORDER");
     if (icon === "✅") icon = "⚠️";
   }
+
+  // 구매입력 대조.
+  //   우리 품목으로 해석된 줄만 본다. 미매핑 줄은 애초에 구매입력에 있을 수 없어
+  //   NO_PURCHASE 를 띄우면 UNMAPPED 와 겹쳐 시끄럽기만 하다.
+  if (pur && mapped.mapped && pur.note) {
+    notes.push(pur.note);
+    if (pur.note === "NO_PURCHASE") {
+      // 업체는 청구했는데 우리 장부에 없다 — 결산이 어긋나는 쪽이다
+      if (icon === "✅") icon = "⚠️";
+    } else if (icon === "✅") {
+      icon = "⚠️";
+    }
+  }
+
   return { icon: icon, note: notes.join(",") };
 }
 

@@ -10554,9 +10554,15 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
           return {
             source: getVal(["출처"]),
             recorded_at: nowStr,
-            order_no: getVal(["주문번호", "사방넷주문번호"]),
+            // ★ 2026-09-07: 실제 헤더는 「주문자명(사방넷)」이다 ★
+            //   전에는 "주문번호"·"사방넷주문번호"만 찾아 늘 빈 값이었다.
+            //   그 칸에 「이름/고유ID」가 실려 오는데 통째로 버려졌고,
+            //   그래서 DB 쪽에서는 고유ID 매칭을 아예 할 수 없었다.
+            order_no: getVal(["주문자명(사방넷)", "주문번호", "사방넷주문번호", "고유ID"]),
             invoice_no: getVal(["운송장번호"]),
-            recipient: getVal(["수취인명", "수취인", "거래처명"]),
+            // 수취인은 「주문자명(사방넷)」의 앞부분이 더 정확하다.
+            //   거래처명 칸에는 "법인/배민상회" 같은 판매처가 들어 있다.
+            recipient: getVal(["수취인명", "수취인", "받는사람", "거래처명"]),
             phone: getVal(["전화번호", "전화"]),
             mobile: getVal(["휴대폰", "핸드폰"]),
             address: getVal(["주소", "배송지", "배송지주소"]),
@@ -10564,10 +10570,12 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
             item_name: getVal(["품목명", "상품명"]),
             qty: parseInt(getVal(["수량"])) || 0,
             delivery_msg: getVal(["배송메시지", "배송메세지"]),
-            vendor_or_seller: getVal(["판매처", "업체명"]),
+            vendor_or_seller: getVal(["판매처", "업체명", "거래처명"]),
             shipping_fee: parseFloat(getVal(["배송비", "단품배송비"])) || 0,
             note: getVal(["비고", "적요"]),
-            vendor_name: getVal(["출처"]),  // 출처를 vendor로도 사용
+            // 업체와 출처는 다른 값이다. 출처를 업체 자리에 넣으면
+            //   화면 업체 칸에 "합포장"·"롯데"가 뜬다 — 업체가 아니다.
+            vendor_name: getVal(["발주업체", "업체", "거래처명"]),
             order_type: getVal(["출처"]),
             unit_price: parseFloat(getVal(["판매단가", "단가"])) || 0,
             settle_amount: parseFloat(getVal(["정산금액", "금액"])) || 0
@@ -10575,6 +10583,14 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
         });
 
         _sb_syncDailyArchive_(dbRows);
+        // ★ 2026-09-07: v2 프로젝트에 한 벌 더 (이중 기록) ★
+        //   새 웹앱은 다른 Supabase 를 본다. 기존 흐름을 끊지 않고
+        //   실데이터로 검증하려고 양쪽에 쓴다. 미러가 실패해도
+        //   마감은 이미 끝났으므로 예외를 올리지 않는다.
+        //   끄려면 스크립트 속성 V2_MIRROR = off.
+        try {
+          if (typeof sbv2MirrorDailyArchive === "function") sbv2MirrorDailyArchive(dbRows);
+        } catch (eV2) { Logger.log("[V2] 미러 오류: " + eV2.message); }
         Logger.log("[UNIFIED_ARCHIVE] DB 동기화 완료: " + dbRows.length + "건");
       }
     } catch (eDb) {
