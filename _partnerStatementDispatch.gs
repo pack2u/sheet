@@ -38,6 +38,13 @@ var _PSTMTD_SCAN_MANUAL_ = 60;
 /** 판별용 본문은 앞쪽만 본다. 사업자번호·상호는 머리글 근처에 있다. */
 var _PSTMTD_ID_ROWS_ = 40;
 
+/**
+ * 한 번 실행에 AI 판독을 몇 번까지 하나.
+ *   한 건에 5~20초가 걸린다. 6분 제한 안에서 다른 일도 해야 하므로 묶어 둔다.
+ *   넘친 메일은 라벨이 안 붙어 다음 실행에서 그대로 잡힌다.
+ */
+var _PSTMTD_MAX_VISION_ = 8;
+
 // ───────────────────────────────────────────────────────────
 //  진입점
 // ───────────────────────────────────────────────────────────
@@ -68,7 +75,10 @@ function _pstmtd_run_(isManual) {
     placed: 0,       // 업체 파일에 넣은 메일
     rows: 0,         // 넣은 행
     unknown: 0,      // 업체 못 가림
-    unreadable: 0,   // 명세서인데 PDF·JPG 라 표로 못 읽음
+    unreadable: 0,   // 명세서인데 AI 로도 못 읽음
+    vision: 0,       // AI 판독 호출 횟수
+    visionOk: 0,     // AI 로 읽어 낸 명세서
+    visionMismatch: 0, // AI 판독 결과 합계가 안 맞은 건
     noFile: 0,       // 업체는 가렸으나 파일이 없음
     learned: 0,      // 발신주소 학습
     byVendor: {},    // 접두 → 행수
@@ -186,7 +196,38 @@ function _pstmtd_run_(isManual) {
           );
         } catch (eI0) {}
 
-        if (who0 && who0.pfx) {
+        if (!who0 || !who0.pfx) continue; // 명세서가 아닌 첨부(도면·택배송장 등)
+
+        // ── AI 판독 ──
+        //   업체는 가려졌는데 표가 안 읽혔다 = 명세서인데 형식이 PDF·이미지다.
+        //   Gemini 로 읽어 「명세서_원본」에 넣을 행렬로 바꾼다.
+        //   성공하면 아래 일반 경로로 흘려보낸다 — 엑셀로 온 것과 똑같이 처리된다.
+        var vis = null;
+        if (stat.vision < _PSTMTD_MAX_VISION_ && typeof _pstmtvis_read_ === "function") {
+          for (var av = 0; av < atts0.length && !vis; av++) {
+            var aName = "";
+            try { aName = atts0[av].getName(); } catch (eAn) { continue; }
+            if (!_pstmtvis_canRead_(aName, atts0[av].getContentType())) continue;
+            stat.vision++;
+            var vr = _pstmtvis_read_(atts0[av], aName);
+            if (vr.ok) {
+              vis = vr;
+              if (vr.meta.mismatch) {
+                // 라인 합이 문서 합계와 다르다 — 줄을 빠뜨렸을 수 있다.
+                // 넣기는 하되 반드시 사람이 보게 남긴다.
+                stat.visionMismatch++;
+                stat.errors.push(
+                  "[" + who0.name + "] AI 판독 합계 불일치: 문서 " + vr.meta.supply +
+                  " vs 라인합 " + vr.meta.lineSum + " (" + aName + ")"
+                );
+              }
+            } else {
+              stat.errors.push("[" + who0.name + "] AI 판독 실패: " + vr.error);
+            }
+          }
+        }
+
+        if (!vis) {
           stat.unreadable++;
           stat.unreadableList.push({
             pfx: who0.pfx,
@@ -195,8 +236,20 @@ function _pstmtd_run_(isManual) {
             subject: subj0,
             file: names0.join(", "),
           });
+          continue;
         }
-        continue;
+
+        // AI 가 읽은 것을 일반 경로에 태운다
+        stat.visionOk++;
+        parsed = {
+          rows: vis.rows,
+          meta: {
+            from: meta0.from || msg.getFrom(),
+            subject: subj0,
+            date: msg.getDate(),
+            fileName: names0.join(", ") + " [AI판독]",
+          },
+        };
       }
       stat.tabled++;
 
@@ -400,13 +453,18 @@ function _pstmtd_finish_(stat, t0, fatal) {
     L.push("★ 업체는 가렸으나 파일 없음 " + stat.noFile + "통 — 사전의 파일ID 확인");
     L.push("");
   }
+  if (stat.visionOk) {
+    L.push("🤖 AI 판독 " + stat.visionOk + "통 (PDF·이미지 첨부)" +
+      (stat.visionMismatch ? "  ★ 합계 불일치 " + stat.visionMismatch + "통 — 확인 필요" : ""));
+    L.push("");
+  }
   if (stat.unreadable) {
-    L.push("★ 명세서인데 표로 못 읽음 " + stat.unreadable + "통 (첨부가 PDF·JPG)");
+    L.push("★ 명세서인데 못 읽음 " + stat.unreadable + "통");
     for (var v = 0; v < Math.min(stat.unreadableList.length, 8); v++) {
       var y = stat.unreadableList[v];
       L.push("    " + y.pfx + " " + y.name + " · " + String(y.file).substring(0, 40));
     }
-    L.push("  → 파서가 xlsx·xls·텍스트만 읽습니다. 이 업체들은 아직 수동입니다.");
+    L.push("  → AI 판독도 실패했습니다. 위 [오류] 줄에 이유가 있습니다.");
     L.push("");
   }
   if (stat.learned) {
@@ -428,7 +486,9 @@ function _pstmtd_finish_(stat, t0, fatal) {
       { label: "📥 배정", value: stat.placed + "통 / " + stat.rows + "행" },
       { label: "🏢 업체", value: pfxs.length ? pfxs.join(", ") : "없음" },
     ];
-    if (stat.unreadable) kv.push({ label: "📄 못 읽은 명세서", value: stat.unreadable + "통 (PDF·JPG)" });
+    if (stat.visionOk) kv.push({ label: "🤖 AI 판독", value: stat.visionOk + "통" +
+      (stat.visionMismatch ? " (합계 불일치 " + stat.visionMismatch + ")" : "") });
+    if (stat.unreadable) kv.push({ label: "📄 못 읽은 명세서", value: stat.unreadable + "통" });
     if (stat.unknown) kv.push({ label: "❓ 업체 못 가림", value: stat.unknown + "통 (라벨 미부착)" });
     if (stat.noFile) kv.push({ label: "📁 파일 없음", value: stat.noFile + "통" });
     if (stat.errors.length) kv.push({ label: "❌ 오류", value: stat.errors.length + "건" });
