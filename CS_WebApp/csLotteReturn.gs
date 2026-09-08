@@ -100,23 +100,53 @@ function csLotteReturnReady() {
   };
 }
 
-/** 편집기에서 한 번 실행해 받는 곳을 정한다. */
+/**
+ * 편집기에서 한 번 실행해 받는 곳을 정한다.
+ *
+ * ★ 우편번호는 안 적어도 된다 ★
+ *   비워 두면 롯데 주소정제(csLotteRefineAddress)로 채운다. 사람이 우편번호를
+ *   찾아 오는 수고를 덜고, **주소와 어긋난 우편번호가 들어가는 것**도 막는다.
+ *   정제가 실패하면 그때는 적어 달라고 말한다 — 몰래 빈 채로 두지 않는다.
+ */
 function csLotteReturnSetTo(json) {
   if (!json) {
-    return "사용법:\n" +
-      "csLotteReturnSetTo('{\"name\":\"주식회사 팩투유\",\"tel\":\"031-000-0000\"," +
-      "\"zip\":\"10380\",\"addr\":\"경기도 고양시 …\"}')";
+    return "사용법 (우편번호는 비워도 됩니다 — 주소로 찾아 넣습니다):\n" +
+      "csLotteReturnSetTo('{\"name\":\"주식회사 팩투유\",\"tel\":\"031-923-7795\"," +
+      "\"addr\":\"경기 평택시 포승읍 석정리 369\"}')";
   }
   var o;
   try { o = typeof json === "string" ? JSON.parse(json) : json; }
   catch (e) { return "JSON 을 못 읽었습니다: " + e.message; }
+  o = o || {};
+
+  var addr = String(o.addr || "").trim();
+  var zip = String(o.zip || "").replace(/[^0-9]/g, "");
+  var note = "";
+
+  if (!zip && addr) {
+    var ref = csLotteRefineAddress({ address: addr, name: o.name, tel: o.tel });
+    if (ref && ref.ok && ref.zipNo) {
+      zip = String(ref.zipNo).replace(/[^0-9]/g, "");
+      note = "\n  (우편번호는 롯데 주소정제로 찾았습니다" +
+        (ref.branchNm ? " · 담당 " + ref.branchNm : "") + ")";
+      /* 배송불가 지역이면 회수도 못 온다. 설정 단계에서 말해 준다 —
+         접수를 눌렀을 때 알게 되면 이미 늦다. */
+      if (!ref.deliverable) note += "\n  ⚠ 배송불가 안내: " + ref.dlvMsg;
+    } else {
+      return "우편번호를 못 찾았습니다 (" + ((ref && ref.error) || "주소정제 실패") + ").\n" +
+        "zip 을 직접 넣어 다시 실행해 주세요.";
+    }
+  }
+
+  o.zip = zip;
+  o.addr = addr;
   PropertiesService.getScriptProperties()
     .setProperty(_LRT_TO_PROP_, JSON.stringify(o));
   var chk = _lrt_to_();
   if (!chk) return "네 칸(name·tel·zip·addr)이 모두 있어야 합니다. 지금 값: " + JSON.stringify(o);
   return "받는 곳 설정됨\n" +
     "  이름  " + chk.name + "\n  전화  " + chk.tel + "\n" +
-    "  우편  " + chk.zip + "\n  주소  " + chk.addr;
+    "  우편  " + chk.zip + "\n  주소  " + chk.addr + note;
 }
 
 /** 지금 설정을 사람이 읽는 형태로 */

@@ -73,5 +73,15 @@ console.log("\n[5] 권한 · 쿼터");
 ok("접근제어를 통과해야 한다", /_cs_ac_guard_\(\)/.test(src));
 ok("공용 호출기를 쓴다 (쿼터·캐시가 거기 있다)", /_lotte_call_\("post"/.test(src));
 
+console.log("\n[6] 우편번호는 주소로 찾아 넣는다 (2026-09-08)");
+/* 사람이 우편번호를 찾아 오는 수고를 덜고, 주소와 어긋난 우편번호가 들어가는
+   것도 막는다. 못 찾으면 몰래 빈 채로 두지 않고 적어 달라고 말한다. */
+ok("비어 있으면 주소정제를 부른다", /if \(!zip && addr\)[\s\S]{0,120}csLotteRefineAddress/.test(src));
+ok("찾은 우편번호를 쓴다", /zip = String\(ref\.zipNo\)/.test(src));
+ok("★ 못 찾으면 조용히 넘어가지 않는다 ★",
+   /zip 을 직접 넣어 다시 실행해 주세요/.test(src));
+ok("배송불가 지역이면 설정 단계에서 알린다",
+   /!ref\.deliverable[\s\S]{0,80}배송불가 안내/.test(src));
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);
