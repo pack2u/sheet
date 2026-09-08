@@ -912,6 +912,28 @@
     .os-copy:active { background: rgba(255,255,255,0.04); color: var(--text-secondary); }
     /* 롯데 화물추적 결과 배지 — 눌러서 조회한 뒤 그 자리에 상태가 남는다 */
     .os-trk[disabled] { opacity: 0.55; cursor: default; }
+
+    /* 배송상태 판 — 2026-09-08.
+       전에는 btn.title(브라우저 툴팁)이었다. 마우스만 움직여도 사라지고
+       글자를 고를 수도 없어, 고객에게 붙여넣을 수가 없었다.
+       카드 안에 남는 판으로 바꾼다 — 긁으면 그대로 복사된다. */
+    .os-trk-panel {
+      margin: 6px 0 2px; padding: 8px 10px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--bg-secondary);
+      -webkit-user-select: text; user-select: text;
+    }
+    .os-trk-emp {
+      font-size: 13px; margin-bottom: 4px;
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    }
+    .os-trk-emp b { font-size: 14px; }
+    .os-trk-branch { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+    .os-trk-hist { margin: 0; padding: 0; list-style: none; font-size: 12px; line-height: 1.55; }
+    .os-trk-hist li { display: flex; gap: 6px; flex-wrap: wrap; }
+    .os-trk-hist .t { min-width: 84px; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+    .os-trk-hist .b, .os-trk-hist .m { color: var(--text-muted); }
+    .os-trk-foot { margin-top: 7px; display: flex; gap: 6px; }
     .os-trk-run { border-color: rgba(90,160,240,0.45); color: #8fbdf0; }
     .os-trk-done { border-color: rgba(52,199,123,0.45); color: #7ee0ad; }
     .os-tag { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 6px; margin-left: 6px; background: rgba(255,255,255,0.06); color: var(--text-secondary); }
@@ -2289,7 +2311,7 @@
     </div>
   </div>
 
-  <div class="version">v3.69 · 팩투유(Pack2U) CS 웹앱
+  <div class="version">v3.70 · 팩투유(Pack2U) CS 웹앱
     · <a target="_top" rel="noopener" href="<?= webAppUrl ?>?page=diag" style="color:#707070;text-decoration:underline">주소 진단</a>
   </div>
   </div>
@@ -2299,7 +2321,7 @@
       <button class="os-back" onclick="showHome()" aria-label="홈">‹</button>
       <span class="ws-title">팩투유<span class="ws-title-long">(Pack2U) CS 웹앱</span></span>
       <div class="nt" id="ntWrap" hidden aria-label="공지"><div class="nt-track" id="ntTrack"></div></div>
-      <span class="ws-ver" id="wsVerBadge">v3.69</span>
+      <span class="ws-ver" id="wsVerBadge">v3.70</span>
       <span class="ws-me" id="wsMe" title="로그인 계정"></span>
     </div>
     <div class="ws-mobile-tabs" id="wsMobileTabs" aria-label="패널 이동">
@@ -5860,7 +5882,7 @@
     var RET_PHOTO_MAX = 6;
     var RET_PHOTO_PEND = {};    // 카드 index → 업로드 대기 사진
     var RET_MODAL_PHOTOS = {};  // 'retNew' | 'ledger' → 업로드 대기 사진
-    var CS_RET_UI_VER = 'v3.69';
+    var CS_RET_UI_VER = 'v3.70';
 
     /** 접두 → 업체명. 허브 `_PEP_VENDOR_LABELS_` / 포털 `PRP_VENDOR_LABELS` 와 맞춘다. */
     var RET_VENDOR_LABELS = {
@@ -7582,12 +7604,28 @@
      *   금세 는다. CS 가 실제로 궁금해하는 건만 누르게 둔다.
      *   서버(csLotte.gs)에서 30분 캐시와 일일 상한도 함께 걸어뒀다.
      *
-     *   결과는 버튼 자리에 그대로 남는다. 전체 이력은 title 로 붙여
-     *   마우스를 올리면 보이게 했다 — 목록 화면을 밀어내지 않으려는 것이다.
+     * ★ 2026-09-08: title 툴팁을 걷어냈다 ★
+     *   전체 이력을 btn.title 로 붙였더니 **마우스를 조금만 움직여도 사라져
+     *   내용을 복사할 수가 없었다.** 브라우저 기본 툴팁은 글자를 고를 수도 없다.
+     *   CS 는 이 이력을 그대로 고객에게 붙여넣는다 — 못 고르면 쓸모가 없다.
+     *
+     *   그래서 버튼 아래에 **남는 판**을 편다. 다시 누르면 접힌다.
+     *   판 안의 글자는 고를 수 있고, 카드 안이라 긁으면 그대로 복사된다
+     *   (HB_COPY_SEL_ 이 .os-card 를 포함한다). 「전체 복사」도 따로 둔다.
      */
     function lotteTrack(btn) {
       var inv = btn.getAttribute('data-inv');
       if (!inv || btn.disabled) return;
+
+      /* 한 번 조회한 뒤로는 서버를 다시 부르지 않는다 — 판만 접었다 폈다 한다.
+         쿼터가 하루치라 같은 송장을 두 번 누른다고 또 부를 이유가 없다. */
+      var had = _trkPanel_(btn, false);
+      if (had) {
+        var showing = had.style.display !== 'none';
+        had.style.display = showing ? 'none' : '';
+        btn.setAttribute('aria-expanded', showing ? 'false' : 'true');
+        return;
+      }
       var old = btn.textContent;
       btn.disabled = true;
       btn.textContent = '조회중';
@@ -7601,14 +7639,8 @@
           }
           btn.textContent = r.statusName + (r.lastAt ? ' · ' + r.lastAt : '');
           btn.classList.add(r.delivered ? 'os-trk-done' : 'os-trk-run');
-          var lines = [];
-          for (var i = 0; i < (r.history || []).length; i++) {
-            var h = r.history[i];
-            lines.push(h.at + '  ' + h.name +
-              (h.branch ? ' (' + h.branch + ')' : '') +
-              (h.msg ? '  ' + h.msg : ''));
-          }
-          btn.title = lines.join('\n') || r.lastMsg || '';
+          btn.setAttribute('aria-expanded', 'true');
+          _trkRender_(btn, r);
         })
         .withFailureHandler(function (e) {
           btn.disabled = false;
@@ -7616,6 +7648,108 @@
           toast(String((e && e.message) || '통신 실패'), 3200);
         })
         .csLotteTrack(inv, {});
+    }
+
+    /**
+     * 배송상태 판을 찾는다. create 면 없을 때 만들어 버튼 뒤에 붙인다.
+     *
+     * 버튼은 송장 줄 안에 있어 폭이 좁다. 판은 **송장 줄 다음**에 통째로 놓아야
+     * 이력 한 줄이 안 접힌다. 그래서 버튼의 부모(줄) 뒤에 넣는다.
+     */
+    function _trkPanel_(btn, create) {
+      var line = btn.parentNode;
+      var next = line ? line.nextSibling : null;
+      if (next && next.nodeType === 1 && next.classList &&
+          next.classList.contains('os-trk-panel')) return next;
+      if (!create || !line || !line.parentNode) return null;
+      var div = document.createElement('div');
+      div.className = 'os-trk-panel';
+      line.parentNode.insertBefore(div, line.nextSibling);
+      return div;
+    }
+
+    /**
+     * 배송 이력을 판에 그린다.
+     *
+     * ★ 담당기사를 맨 위에 크게 ★
+     *   2026-09-08 사장님 요청. 롯데 홈페이지 조회에는 나오는데 우리 화면에는
+     *   없어서 기사 번호를 물으면 그쪽을 다시 찾아봐야 했다.
+     *   응답의 empNm·empTel 은 **배달전·배달완료 단계에서만** 채워져 온다 —
+     *   아직 그 단계가 아니면 자리 자체를 안 만든다(빈 줄이 더 헷갈린다).
+     */
+    function _trkRender_(btn, r) {
+      var panel = _trkPanel_(btn, true);
+      if (!panel) return;
+
+      var hist = r.history || [];
+      var lines = [];
+      for (var i = 0; i < hist.length; i++) {
+        var h = hist[i];
+        lines.push(h.at + '  ' + h.name +
+          (h.branch ? ' (' + h.branch + ')' : '') +
+          (h.msg ? '  ' + h.msg : ''));
+      }
+      var text = lines.join('\n') || r.lastMsg || '';
+
+      var html = '';
+      if (r.empNm || r.empTel) {
+        html += '<div class="os-trk-emp">🚚 담당기사 <b>' + esc(r.empNm || '(이름 없음)') + '</b>';
+        if (r.empTel) {
+          html += ' <a class="os-copy" href="tel:' + esc(r.empTel.replace(/[^0-9+]/g, '')) + '">' +
+            esc(r.empTel) + '</a>' +
+            '<button class="os-copy" onclick="copyText(\'' + js(r.empTel) + '\', true, \'기사 번호 복사됨\')">복사</button>';
+        }
+        html += '</div>';
+      }
+      if (r.branch) {
+        html += '<div class="os-trk-branch">' + esc(r.branch);
+        if (r.branchTel) {
+          html += ' <a class="os-copy" href="tel:' + esc(r.branchTel.replace(/[^0-9+]/g, '')) + '">' +
+            esc(r.branchTel) + '</a>';
+        }
+        html += '</div>';
+      }
+
+      /* 최근 것이 위로. CS 가 먼저 보는 것은 「지금 어디냐」다. */
+      html += '<ol class="os-trk-hist">';
+      for (var k = hist.length - 1; k >= 0; k--) {
+        var e = hist[k];
+        html += '<li><span class="t">' + esc(e.at || '-') + '</span> ' +
+          '<b>' + esc(e.name) + '</b>' +
+          (e.branch ? ' <span class="b">' + esc(e.branch) + '</span>' : '') +
+          (e.msg ? ' <span class="m">' + esc(e.msg) + '</span>' : '') + '</li>';
+      }
+      html += '</ol>';
+
+      /* ★ 복사할 원문은 onclick 에 넣지 않는다 ★
+         js() 가 줄바꿈을 **공백으로 바꾼다.** 그대로 두면 이력이 한 줄로 뭉쳐
+         고객에게 붙여넣을 수가 없다 — 여러 줄인 것이 이 기능의 요점이다.
+         원문은 숨긴 칸에 그대로 담고, 복사할 때 거기서 읽는다. */
+      html += '<textarea class="os-trk-raw" hidden>' + esc(text) + '</textarea>';
+      html += '<div class="os-trk-foot">' +
+        '<button class="os-copy" onclick="_trkCopy_(this)">전체 복사</button>' +
+        '<button class="os-copy" onclick="_trkClose_(this)">닫기</button>' +
+        '</div>';
+
+      panel.innerHTML = html;
+      panel.style.display = '';
+    }
+
+    /** 숨긴 칸의 원문을 그대로 복사한다 — 줄바꿈이 살아 있다. */
+    function _trkCopy_(el) {
+      var panel = el.closest ? el.closest('.os-trk-panel') : null;
+      var raw = panel ? panel.querySelector('.os-trk-raw') : null;
+      copyText(raw ? raw.value : '', true, '배송이력 복사됨');
+    }
+
+    /** 판을 접는다. 버튼의 펼침 표시도 같이 되돌린다. */
+    function _trkClose_(el) {
+      var panel = el.closest ? el.closest('.os-trk-panel') : null;
+      if (!panel) return;
+      panel.style.display = 'none';
+      var line = panel.previousSibling;
+      var btn = line && line.querySelector ? line.querySelector('.os-trk') : null;
+      if (btn) btn.setAttribute('aria-expanded', 'false');
     }
 
     function lotteTrackUrl(d) {

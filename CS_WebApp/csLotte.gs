@@ -288,6 +288,12 @@ function csLotteTrack(invoice, opt) {
                ("00" + i).slice(-3), // 동시각이면 응답 순서를 유지한다
       branch: String(t.brnshpNm || ""),
       branchTel: String(t.brnshpTel || "").trim(),
+      /* ★ 2026-09-08: 담당기사 ★
+         응답에 empNm·empTel 이 오는데 여태 버리고 있었다. 롯데 홈페이지 조회에는
+         나오는 값이라 CS 가 "기사님 번호 좀" 하면 그쪽을 다시 찾아봐야 했다.
+         배달전·배달완료 단계에서만 채워져 온다. */
+      empNm: String(t.empNm || "").trim(),
+      empTel: String(t.empTel || "").trim(),
       msg: String(t.status || "")
     });
   }
@@ -302,6 +308,13 @@ function csLotteTrack(invoice, opt) {
   }
   var last = done || (hist.length ? hist[hist.length - 1] : null);
 
+  /* 담당기사는 **가장 최근에 이름이 찍힌 이벤트**에서 가져온다.
+     마지막 이벤트(45:인수자등록 등)에는 비어 있는 일이 많아 last 만 보면 놓친다. */
+  var emp = null;
+  for (var e = hist.length - 1; e >= 0; e--) {
+    if (hist[e].empNm || hist[e].empTel) { emp = hist[e]; break; }
+  }
+
   var out = {
     ok: true,
     invoice: inv,
@@ -312,6 +325,8 @@ function csLotteTrack(invoice, opt) {
     lastMsg: last ? last.msg : "",
     branch: last ? last.branch : "",
     branchTel: last ? last.branchTel : "",
+    empNm: emp ? emp.empNm : "",
+    empTel: emp ? emp.empTel : "",
     itemNm: j.user ? String(j.user.itemNm || "") : "",
     history: hist,
     cached: false,
