@@ -63,18 +63,32 @@ ok("DB 행에 archive_date 를 싣는다",
    /archive_date: _pep_rowDate_\.get\(row\) \|\| archiveDate/.test(push));
 
 console.log("\n[5] ★ 미러는 그 날짜를 통째로 갈아 끼운다 ★");
-ok("지우는 함수가 있다", /function _sbv2_deleteDay_\(dateStr\)/.test(mirror));
-ok("delete 로 그 날짜만 지운다",
-   /daily_archive\?archive_date=eq\./.test(mirror) && /method: "delete"/.test(mirror));
 ok("날짜별로 나눠 처리한다", /var byDate = \{\};/.test(mirror));
 ok("행이 들고 온 날짜를 먼저 쓴다",
    /archive_date: _sbv2_ymd_\(row\.archive_date\) \|\| today/.test(mirror));
-ok("★ 지우기가 실패하면 넣지 않는다 ★",
-   /if \(!del\.ok\) \{[\s\S]{0,200}continue;/.test(mirror));
 ok("날짜 모양이 아니면 안 받는다 (엉뚱한 날을 지우지 않게)",
    /function _sbv2_ymd_/.test(mirror) && /\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$/.test(mirror));
 
-console.log("\n[6] 원래 있던 안전장치를 안 없앴다");
+console.log("\n[6] ★★ 순서: 넣고 → 옛것 지우기 ★★");
+/* 「지우고 → 넣기」면 넣기가 실패했을 때 그날 자료가 통째로 사라진다.
+   순서를 뒤집으면 실패해도 남는 것이 「중복」이고, 중복은 다시 돌리면 없어진다.
+   이 시험은 순서가 되돌려지지 않게 지킨다. */
+ok("넣기 전 제일 큰 id 를 적어 둔다", /function _sbv2_maxIdOfDay_\(dateStr\)/.test(mirror));
+ok("★ 날짜를 통째로 지우는 함수가 없다 ★",
+   !/function _sbv2_deleteDay_\s*\(/.test(mirror));
+ok("옛것만 지운다 (id 이하)",
+   /function _sbv2_deleteDayBefore_\(dateStr, beforeId\)/.test(mirror) &&
+   /&id=lte\./.test(mirror));
+ok("beforeId 가 0 이면 아무것도 안 지운다", /if \(!beforeId\) return \{ ok: true, skipped: true \};/.test(mirror));
+ok("★ 다 못 넣으면 옛것을 안 지운다 ★",
+   /if \(!out\.ok \|\| out\.count < byDate\[day\]\.length\)[\s\S]{0,400}continue;/.test(mirror));
+ok("기존 확인이 실패하면 아예 안 건드린다",
+   /if \(!before\.ok\)[\s\S]{0,200}continue;/.test(mirror));
+ok("지우기가 삽입 뒤에 온다",
+   mirror.indexOf("_sbv2_upsert_(\"daily_archive\"") < mirror.indexOf("_sbv2_deleteDayBefore_(day"));
+ok("자료를 안 잃는다는 것을 로그로도 말한다", /자료는 안 잃습니다/.test(mirror));
+
+console.log("\n[7] 원래 있던 안전장치를 안 없앴다");
 ok("미러 실패가 마감을 죽이지 않는다",
    /catch \(eV2\) \{ Logger\.log\("\[V2\] 미러 오류/.test(push));
 ok("옛 Supabase 동기화도 그대로 부른다", /_sb_syncDailyArchive_\(dbRows\);/.test(push));

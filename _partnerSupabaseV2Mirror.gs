@@ -111,14 +111,45 @@ function _sbv2_ymd_(v) {
 }
 
 /**
- * 그 날짜의 일일마감 행을 v2 에서 지운다. 다시 넣기 직전에만 부른다.
- * ★ 2026-09-09 신규 — 아래 sbv2MirrorDailyArchive 설명 참고 ★
+ * 그 날짜에 지금 들어 있는 행 중 **가장 큰 id**. 없으면 0.
+ * id 는 늘기만 하므로, 이 값 이하가 「이번에 넣기 전부터 있던 것」이다.
+ * ★ 2026-09-09 신규 ★
  */
-function _sbv2_deleteDay_(dateStr) {
+function _sbv2_maxIdOfDay_(dateStr) {
+  if (!_sbv2_enabled_()) return { ok: true, maxId: 0, skipped: true };
+  var key = _sbv2_key_();
+  var url = _SBV2_URL_ + "/rest/v1/daily_archive?select=id&archive_date=eq." +
+            encodeURIComponent(dateStr) + "&order=id.desc&limit=1";
+  try {
+    var res = UrlFetchApp.fetch(url, {
+      method: "get",
+      headers: { "apikey": key, "Authorization": "Bearer " + key },
+      muteHttpExceptions: true,
+    });
+    var code = res.getResponseCode();
+    if (code < 200 || code >= 300) {
+      return { ok: false, error: code + " " + res.getContentText().substring(0, 160) };
+    }
+    var arr = JSON.parse(res.getContentText() || "[]");
+    return { ok: true, maxId: (arr[0] && arr[0].id) || 0 };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e).substring(0, 160) };
+  }
+}
+
+/**
+ * 그 날짜의 **옛 행만** 지운다 (id 가 beforeId 이하인 것). 0 이면 지울 것이 없다.
+ *
+ * ★ 「날짜를 통째로 지우는」 함수를 두지 않는다 ★
+ *   그런 함수가 있으면 언젠가 넣기 **전에** 불린다. 그러면 넣기가 실패했을 때
+ *   그날 자료가 통째로 사라진다. 지우는 길은 **넣은 뒤 옛것만** 하나로 좁혀 둔다.
+ */
+function _sbv2_deleteDayBefore_(dateStr, beforeId) {
   if (!_sbv2_enabled_()) return { ok: true, skipped: true };
+  if (!beforeId) return { ok: true, skipped: true };
   var key = _sbv2_key_();
   var url = _SBV2_URL_ + "/rest/v1/daily_archive?archive_date=eq." +
-            encodeURIComponent(dateStr);
+            encodeURIComponent(dateStr) + "&id=lte." + encodeURIComponent(beforeId);
   try {
     var res = UrlFetchApp.fetch(url, {
       method: "delete",
@@ -153,8 +184,16 @@ function _sbv2_deleteDay_(dateStr) {
  *  품목·수량이 하루에 두 줄인 경우가 실제로 있다(합배송 #1·#2). 컬럼 조합으로는
  *  행을 구분할 수 없고, 구분하려 들면 진짜 줄이 사라진다.
  *
- *  그래서 행이 아니라 **날짜**를 단위로 삼는다: 넣기 전에 그 날짜를 지우고 넣는다.
+ *  그래서 행이 아니라 **날짜**를 단위로 삼는다: 그 날짜를 통째로 갈아 끼운다.
  *  몇 번을 돌려도 결과가 같고, 시트를 고친 뒤 다시 돌리면 여기도 따라온다.
+ *
+ *  ★ 순서는 「넣고 → 옛것 지우기」다 ★
+ *    「지우고 → 넣기」로 하면 넣기가 실패했을 때 **그날 자료가 통째로 사라진다.**
+ *    돈이 걸린 기록에서 그건 되돌릴 수 없다. 순서를 뒤집으면 실패했을 때
+ *    남는 것이 「중복」이고, 중복은 다시 돌리면 없어진다.
+ *      ① 지금 들어 있는 것 중 제일 큰 id 를 적어 둔다
+ *      ② 새로 넣는다 (새 행은 반드시 그보다 큰 id 를 받는다)
+ *      ③ **다 들어갔을 때만** ① 이하를 지운다
  *
  *  ★ 그래서 하루치 **전부**를 넘겨야 한다 ★
  *    일부만 넘기면 나머지가 사라진다. 마감 본체(_pep_archiveUnifiedDaily_)는
@@ -215,21 +254,42 @@ function sbv2MirrorDailyArchive(archiveRows) {
     for (var di = 0; di < dates.length; di++) {
       var day = dates[di];
 
-      /* ★ 지우고 넣는다 ★ 지우기가 실패하면 **넣지 않는다** —
-         넣기만 하면 예전 그대로 두 벌이 된다. 그 날짜는 건너뛰고 다음 날짜로 간다.
-         마감 자체는 이미 끝났으므로 여기서 예외를 올리지 않는다. */
-      var del = _sbv2_deleteDay_(day);
-      if (!del.ok) {
-        failed.push(day + " 지우기 실패: " + del.error);
-        Logger.log("[V2] " + day + " 지우기 실패 → 넣지 않음: " + del.error);
+      /* ★ 넣고 나서 옛것을 지운다 ★ (2026-09-09 — 순서가 중요하다)
+         처음엔 「지우고 넣기」로 짰다. 그런데 지우기는 됐는데 넣기가 실패하면
+         **그날 자료가 통째로 사라진다.** 돈이 걸린 기록에서 그건 되돌릴 수 없다.
+         순서를 뒤집으면 실패했을 때 남는 것이 「중복」이다 —
+         중복은 다시 돌리면 없어지고, 사라진 것은 못 되살린다.
+
+           ① 지금 들어 있는 것 중 제일 큰 id 를 적어 둔다
+           ② 새로 넣는다  (새 행은 반드시 그보다 큰 id 를 받는다)
+           ③ 넣기가 성공했을 때만 ① 이하를 지운다 */
+      var before = _sbv2_maxIdOfDay_(day);
+      if (!before.ok) {
+        failed.push(day + " 기존 확인 실패: " + before.error);
+        Logger.log("[V2] " + day + " 기존 id 확인 실패 → 건드리지 않음: " + before.error);
         continue;
       }
 
       var out = _sbv2_upsert_("daily_archive", byDate[day], "");
       total += out.count;
-      if (!out.ok) failed.push(day + " 넣기 실패");
+
+      if (!out.ok || out.count < byDate[day].length) {
+        /* 다 못 넣었다. 옛것을 지우면 그만큼이 빈다 — 그냥 둔다.
+           결과는 「중복이 남음」이고, 다음 마감이나 사람이 다시 돌리면 정리된다. */
+        failed.push(day + " 넣기 실패 (" + out.count + "/" + byDate[day].length + ") → 옛 자료 그대로 둠");
+        Logger.log("[V2] " + day + " 넣기 실패 " + out.count + "/" + byDate[day].length +
+                   " → 옛 행을 안 지웠습니다. 중복이 남습니다 (자료는 안 잃습니다).");
+        continue;
+      }
+
+      var del = _sbv2_deleteDayBefore_(day, before.maxId);
+      if (!del.ok) {
+        failed.push(day + " 옛 자료 지우기 실패: " + del.error);
+        Logger.log("[V2] " + day + " 옛 행 지우기 실패 → 중복이 남습니다: " + del.error);
+      }
       Logger.log("[V2] daily_archive " + day + " 갈아끼움 " +
-                 out.count + "/" + byDate[day].length + "건");
+                 out.count + "/" + byDate[day].length + "건" +
+                 (before.maxId ? " (옛 " + before.maxId + " 이하 정리)" : " (처음 넣음)"));
     }
 
     return { ok: !failed.length, count: total, errors: failed };
