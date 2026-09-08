@@ -1317,6 +1317,9 @@
     /* 끈 줄은 흐리게 — 남은 것이 무엇인지 한눈에 보여야 한다 */
     .ledger-item:has(input:not(:checked)) { opacity: 0.45; }
 
+    /* 반품비 자동 계산 근거 — 2026-09-08 */
+    .ledger-fee-why { margin-top: 4px; font-size: 11px; color: var(--text-muted); }
+
     /* 롯데 회수 접수 — 2026-09-08 */
     .lrt-opt { border: 1px solid rgba(240,150,20,0.45); border-radius: var(--radius-sm); padding: 8px 10px; }
     .lrt-opt[hidden] { display: none; }
@@ -2363,7 +2366,7 @@
     </div>
   </div>
 
-  <div class="version">v3.75 · 팩투유(Pack2U) CS 웹앱
+  <div class="version">v3.76 · 팩투유(Pack2U) CS 웹앱
     · <a target="_top" rel="noopener" href="<?= webAppUrl ?>?page=diag" style="color:#707070;text-decoration:underline">주소 진단</a>
   </div>
   </div>
@@ -2373,7 +2376,7 @@
       <button class="os-back" onclick="showHome()" aria-label="홈">‹</button>
       <span class="ws-title">팩투유<span class="ws-title-long">(Pack2U) CS 웹앱</span></span>
       <div class="nt" id="ntWrap" hidden aria-label="공지"><div class="nt-track" id="ntTrack"></div></div>
-      <span class="ws-ver" id="wsVerBadge">v3.75</span>
+      <span class="ws-ver" id="wsVerBadge">v3.76</span>
       <span class="ws-me" id="wsMe" title="로그인 계정"></span>
     </div>
     <div class="ws-mobile-tabs" id="wsMobileTabs" aria-label="패널 이동">
@@ -2807,6 +2810,14 @@
         <label>수거입력처 (대리공급은 택배사 자동)</label>
         <input id="ledgerPickup" type="text" placeholder="예: 로젠택배 / 롯데택배">
       </div>
+      <div class="ledger-field">
+        <label>반품비</label>
+        <input id="ledgerFee" type="text" inputmode="numeric" placeholder="예: 3000">
+        <!-- 주소를 보고 미리 채우지만 **고칠 수 있다.** 계산이 늘 맞을 수는 없고,
+             현장에서 깎아 주기도 한다. 자동값은 출발점이지 결론이 아니다. -->
+        <div class="ledger-fee-why" id="ledgerFeeWhy"></div>
+      </div>
+
       <!-- 회수 접수 — 받는 곳이 설정돼 있을 때만 보인다 (2026-09-08) -->
       <div class="ledger-field lrt-opt" id="lrtOpt" hidden>
         <label class="lrt-check">
@@ -4510,7 +4521,7 @@
       // 송장이 없으면 아예 담지 않는다 — 엉뚱한 건에 남의 메모가 붙는 게 더 나쁘다.
       ledger: {
         modal: 'ledgerModal', bar: 'ledgerDraftBar', requireScope: true,
-        fields: ['ledgerStaff', 'ledgerType', 'ledgerPickup', 'ledgerAccount', 'ledgerMemo'],
+        fields: ['ledgerStaff', 'ledgerType', 'ledgerPickup', 'ledgerFee', 'ledgerAccount', 'ledgerMemo'],
         scope: function() {
           var r = CS_ROWS[LEDGER_IDX] || {};
           return String(r.invoice || '').replace(/[^0-9]/g, '');
@@ -5986,7 +5997,7 @@
     var RET_PHOTO_MAX = 6;
     var RET_PHOTO_PEND = {};    // 카드 index → 업로드 대기 사진
     var RET_MODAL_PHOTOS = {};  // 'retNew' | 'ledger' → 업로드 대기 사진
-    var CS_RET_UI_VER = 'v3.75';
+    var CS_RET_UI_VER = 'v3.76';
 
     /** 접두 → 업체명. 허브 `_PEP_VENDOR_LABELS_` / 포털 `PRP_VENDOR_LABELS` 와 맞춘다. */
     var RET_VENDOR_LABELS = {
@@ -8219,6 +8230,39 @@
     /** 지금 무엇을 고르는 중인가 — '' | 'item' | 'invoice' */
     var LEDGER_PICK_MODE = '';
 
+    /**
+     * 반품비를 주소로 미리 채운다.
+     * ★ 2026-09-08 — 롯데 도선료 표 기준 + 박스비 1,000
+     *
+     * ★ 채워 놓되 고칠 수 있다 ★
+     *   사장님 지시: "붙이되 수정가능하게".
+     *   계산이 늘 맞을 수는 없다 — 현장에서 깎아 주기도 하고, 표에 없는 곳도 있다.
+     *   **자동값은 출발점이지 결론이 아니다.** 그래서 칸을 잠그지 않는다.
+     *
+     * ★ 사람이 이미 적었으면 안 덮는다 ★
+     *   임시저장에서 되살아난 값이 있을 수 있다. 덮으면 적어 둔 것이 사라진다.
+     */
+    function ledgerFillFee(r) {
+      var el = document.getElementById('ledgerFee');
+      var why = document.getElementById('ledgerFeeWhy');
+      if (!el) return;
+      if (String(el.value || '').trim()) return;   // 이미 있으면 그대로
+      var addr = String((r && r.addr) || '').trim();
+      if (!addr) { if (why) why.textContent = '주소가 없어 자동 계산을 못 했습니다.'; return; }
+
+      why.textContent = '계산 중…';
+      google.script.run
+        .withSuccessHandler(function (f) {
+          if (!f || !f.ok) { why.textContent = ''; return; }
+          // 그 사이 사람이 적었으면 건드리지 않는다
+          if (String(el.value || '').trim()) { why.textContent = ''; return; }
+          el.value = String(f.합계);
+          why.textContent = f.근거 + (f.표없음 ? ' · ⚠ 도선료 표를 못 읽어 박스비만' : '');
+        })
+        .withFailureHandler(function () { why.textContent = ''; })
+        .csReturnFeeFor(addr);
+    }
+
     /* ── 롯데 회수 접수 ──────────────────────────────────────
        ★ 받는 곳이 설정돼 있을 때만 칸이 나온다 ★
        주소가 없으면 접수가 어차피 실패한다. 눌렀다가 실패하는 것보다
@@ -8361,6 +8405,7 @@
       for (var k = 0; k < ins.length; k++) ins[k].checked = !anyOn;
       ledgerSyncPick();
       lrtInit();
+      ledgerFillFee(r);
     }
 
     /** 고른 개수를 단추와 「전체 해제/선택」 글자에 반영한다. */
@@ -8431,6 +8476,8 @@
         (r.vendor ? '<br>업체 ' + esc(r.vendor) : '');
       document.getElementById('ledgerType').value = '단순반품';
       document.getElementById('ledgerPickup').value = resolveCarrier(r) || '';
+      document.getElementById('ledgerFee').value = '';
+      document.getElementById('ledgerFeeWhy').textContent = '';
       document.getElementById('ledgerAccount').value = '';
       document.getElementById('ledgerMemo').value = '';
       retModalPhotoClear('ledger');
@@ -8552,6 +8599,7 @@
           pickup: document.getElementById('ledgerPickup').value,
           memo: document.getElementById('ledgerMemo').value,
           account: document.getElementById('ledgerAccount').value,
+          fee: document.getElementById('ledgerFee').value,
           returnInvoice: pickedInv || '',
           name: r.name,
           phone: r.phone,
@@ -8582,6 +8630,7 @@
       var pickup = document.getElementById('ledgerPickup').value;
       var memo = document.getElementById('ledgerMemo').value;
       var account = document.getElementById('ledgerAccount').value;
+      var fee = document.getElementById('ledgerFee').value;
       var done = 0;
       var first = null;
 
@@ -8635,7 +8684,7 @@
               (done ? ' — ' + done + '건까지는 들어갔습니다' : ''), 4200);
           })
           .submitReturnLedger({
-            staff: staff, type: type, pickup: pickup, memo: memo, account: account,
+            staff: staff, type: type, pickup: pickup, memo: memo, account: account, fee: fee,
             name: r.name, phone: r.phone, vendor: r.vendor,
             source: r.source, origin: r.origin, carrier: resolveCarrier(r),
             orderNo: r.orderNo, item: r.item, qty: r.qty, invoice: r.invoice,

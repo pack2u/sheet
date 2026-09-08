@@ -121,7 +121,9 @@ ok("열 때 비운다",
    /getElementById\('ledgerAccount'\)\.value = ''/.test(html) &&
    /getElementById\('retNewAccount'\)\.value = ''/.test(html));
 ok("임시저장에도 들어간다 — 적다 만 계좌가 날아가면 다시 물어봐야 한다",
-   /'ledgerPickup', 'ledgerAccount'/.test(html) && /'retNewAccount'/.test(html));
+   /* 자리(붙어 있는지)가 아니라 **있는지**를 본다. 사이에 다른 칸이 들어오면
+      자리로 잡은 검사는 기능이 멀쩡한데도 깨진다 — 실제로 반품비가 들어오며 깨졌다. */
+   /fields: \[[^\]]*'ledgerAccount'/.test(html) && /'retNewAccount'/.test(html));
 ok("한 건 기록에 실어 보낸다", /account: document\.getElementById\('ledgerAccount'\)/.test(html));
 ok("여러 건 기록에도 실어 보낸다", /memo: memo, account: account,/.test(html));
 ok("새 반품 카드도 실어 보낸다", /account: document\.getElementById\('retNewAccount'\)/.test(html));
