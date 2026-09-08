@@ -272,6 +272,18 @@
       background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
       pointer-events: none;
     }
+    /* ★ 팩투유 심벌 ★ 2026-09-08
+       원본 D:LOGO_p.PNG 를 잰 값으로 그린 SVG 다. 그림 파일을 안 쓰는 이유:
+       Apps Script 웹앱은 정적 파일을 못 내주고, 작게 줄이면 고리가 뭉갠다.
+       SVG 는 어느 크기에서도 또렷하고 500자면 끝난다. */
+    .p2u-mark {
+      display: inline-block;
+      width: 1em; height: 1em;
+      vertical-align: -0.14em;
+      margin-right: 0.34em;
+      background: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20390%20390%22%3E%3Cpath%20fill%3D%22%23FDB913%22%20fill-rule%3D%22evenodd%22%20d%3D%22M0%2C195%20A195%2C195%200%201%201%20195%2C390%20L0%2C390%20Z%20M70%2C195%20A125%2C125%200%201%201%20109%2C285.7%20L109%2C318%20L70%2C318%20Z%20M195%2C109%20A86%2C86%200%201%200%20195%2C281%20A86%2C86%200%201%200%20195%2C109%20Z%22%2F%3E%3Cpath%20fill%3D%22%233C2F2F%22%20d%3D%22M0%2C0%20H104%20L0%2C104%20Z%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;
+      flex: none;
+    }
     .header .logo {
       font-size: 28px;
       font-weight: 700;
@@ -2274,7 +2286,7 @@
   <div id="view-home">
   <!-- 헤더 -->
   <div class="header">
-    <div class="logo"><span>팩투유</span>(Pack2U) CS 웹앱</div>
+    <div class="logo"><i class="p2u-mark" aria-hidden="true"></i><span>팩투유</span>(Pack2U) CS 웹앱</div>
     <div class="subtitle">주문 검색 · 반품 · CS 매뉴얼 · 현장 스캔</div>
   </div>
 
@@ -2374,7 +2386,7 @@
   <div id="view-workspace">
     <div class="ws-bar">
       <button class="os-back" onclick="showHome()" aria-label="홈">‹</button>
-      <span class="ws-title">팩투유<span class="ws-title-long">(Pack2U) CS 웹앱</span></span>
+      <span class="ws-title"><i class="p2u-mark" aria-hidden="true"></i>팩투유<span class="ws-title-long">(Pack2U) CS 웹앱</span></span>
       <div class="nt" id="ntWrap" hidden aria-label="공지"><div class="nt-track" id="ntTrack"></div></div>
       <span class="ws-ver" id="wsVerBadge">v3.76</span>
       <span class="ws-me" id="wsMe" title="로그인 계정"></span>
