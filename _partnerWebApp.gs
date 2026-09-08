@@ -505,12 +505,19 @@ function _pep_unifiedDailyArchiveScheduled_() {
     }
 
     // ── ④ 마감 실행 (당일 날짜 전달) ──
+    /* ★ 2026-09-09: 당일이 이미 있으면 당일은 다시 쓰지 않는다 ★
+       전에는 소급분 때문에 다시 돌 때 **오늘 자료가 오늘 파일 끝에 한 번 더**
+       붙었다. 2026-09-07 에 실제로 그렇게 411행이 늘었고, 시트와 Supabase
+       양쪽에서 손으로 골라내야 했다 (v2 저장소 sql/41·42).
+       소급분은 그대로 채우고, 이미 기록된 오늘만 건너뛴다. */
+    var archOpts = null;
     if (todayExists) {
+      archOpts = { skipDates: [todayStr] };
       Logger.log("[SCHEDULED] 당일(" + todayStr + ") 마감 이미 존재하나 미생성 과거(" +
-        missedDays.join(", ") + ") 있음 → 데이터 추가 아카이브");
+        missedDays.join(", ") + ") 있음 → 소급분만 아카이브 (당일은 건너뜀)");
     }
 
-    var result = _pep_archiveUnifiedDaily_(todayStr);
+    var result = _pep_archiveUnifiedDaily_(todayStr, archOpts);
     // ★ 2026-06-25: 스냅샷+송장매칭 단일 포맷 로그
     // ★ 2026-06-29: 로젠(전화) 건수 추가
     var logMsg = "[SCHEDULED] 통합 일일마감 완료: " +

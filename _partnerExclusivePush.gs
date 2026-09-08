@@ -9769,7 +9769,14 @@ function _pep_addAllPartnerArchivesToInvoiceMap_(invoiceMap, throughDateStr, sta
  * 2단계: 바로 이전 일일마감 파일의 미매칭만 오늘 송장맵으로 기입
  * @return {Object} { archived, tabName, detail, error }
  */
-function _pep_archiveUnifiedDaily_(targetDateStr) {
+/**
+ * @param {string=} targetDateStr 저장 기준 날짜 (없으면 당일)
+ * @param {{skipDates?: string[]}=} opts
+ *   skipDates — **이미 기록된 날짜**. 그 날짜 행은 시트에도 DB 에도 안 보낸다.
+ *   예약 마감이 소급분 때문에 다시 돌 때, 당일 자료가 두 번 붙는 것을 막는다.
+ *   (2026-09-09 — 실제로 09-07 에 411행이 그렇게 늘었다)
+ */
+function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
   // ★ 2026-06-25: 대리공급/대리판매 별도 수집 제거 → 스냅샷+송장매칭 단일 포맷
   // ★ 2026-06-29: targetDateStr 파라미터 추가 — 전달 시 해당 날짜로 저장 (자동실행→전날 매출일)
   var result = {
@@ -9785,6 +9792,8 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
     var archiveDate = targetDateStr || Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
     var matchedRows = [];   // ★ 스냅샷 매칭 결과 (판매현황 C~Q + 운송장번호 + 출처)
     var matchedByDate = {}; // ★ 주문일(스냅샷 A열)별 → 해당 날짜 일일마감 파일에 기록
+    /* 행 → 그 행이 속한 날짜. DB 동기화가 날짜를 잃지 않게 (2026-09-09) */
+    var _pep_rowDate_ = new Map();
     var matchedHeaders = []; // ★ 헤더
     // ★ 2026-06-24: 스냅샷 기반 매칭 — 판매현황 직접 읽기 대신 스냅샷에서 미매칭 행 처리
     // ── ⓪ 송장원장 갱신 (★ 2026-08-25) ──
@@ -10124,6 +10133,12 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
         matchedRows.push(row);
         if (!matchedByDate[dateKey]) matchedByDate[dateKey] = [];
         matchedByDate[dateKey].push(row);
+        /* ★ 2026-09-09: 이 행이 어느 날짜 것인지 기억해 둔다 ★
+           아래 DB 동기화는 matchedRows 를 평평하게 훑어서 날짜를 알 수 없었고,
+           그래서 **전부 오늘 날짜로** 보냈다. 소급 마감이 돌면 지난 날짜 자료가
+           오늘 날짜로 들어간다. 행 배열에 칸을 더하면 시트 열이 늘어나므로
+           옆에 지도를 따로 둔다. */
+        try { _pep_rowDate_.set(row, dateKey); } catch (eRD) {}
       }
 
       // 헤더 구성: 스냅샷의 C~Q 헤더 + 택배사 + 운송장번호 + 출처
@@ -10503,6 +10518,19 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
         var dKey = dateKeys[dki];
         var batchRows = matchedByDate[dKey];
         if (!batchRows || !batchRows.length) continue;
+
+        /* ★ 2026-09-09: 이미 쓴 날짜는 다시 안 쓴다 ★
+           예약 마감은 「당일 마감이 있어도 최근 7일에 미생성 날이 있으면」 다시 돈다.
+           그때 오늘 자료가 오늘 파일 끝에 **한 번 더 붙었다.**
+           2026-09-07 에 실제로 그렇게 411행이 늘었고, 시트와 Supabase 양쪽을
+           손으로 골라내야 했다.
+           소급분(그 날 파일이 아직 없는 날짜)만 쓰고, 이미 있는 날은 건너뛴다. */
+        if (opts && opts.skipDates && opts.skipDates.indexOf(dKey) >= 0) {
+          result.detail.skippedExistingDates = (result.detail.skippedExistingDates || 0) + 1;
+          Logger.log("[UNIFIED_ARCHIVE] " + dKey + " 은 이미 기록됨 → 건너뜀 (" +
+                     batchRows.length + "건)");
+          continue;
+        }
         // 샘플은 본 주문 상자에 같이 나간다 — 같은 수취인 송장을 옮겨 적는다
         // (파일: _partnerTraceItem.gs). 같은 수취인이 없으면 손대지 않는다.
         try {
@@ -10536,14 +10564,25 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
 
     // ★ 2026-07-04: DB 동기화 — daily_archive 테이블
     try {
-      if (matchedRows.length > 0 && matchedHeaders.length > 0) {
+      /* ★ 2026-09-09: 건너뛴 날짜는 DB 에도 안 보낸다 ★
+         시트에 이미 기록된 날짜다. v2 미러는 「그 날짜를 통째로 갈아 끼우는」
+         방식이라, 두 번째 실행이 (임시기록이 비워진 뒤라) 더 적은 행을 만들면
+         멀쩡한 자료를 적은 것으로 덮어쓸 수 있다. 아예 안 건드리는 편이 안전하다. */
+      var _skip_ = (opts && opts.skipDates) || [];
+      /* ★ matchedRows 를 갈아치우지 않는다 ★ 지금은 아래에서 안 쓰지만,
+         원본 변수를 조용히 줄여 놓으면 나중에 그 아래에 코드를 더한 사람이
+         「전부」인 줄 알고 쓴다. 새 이름으로 둔다. */
+      var syncRows = _skip_.length
+        ? matchedRows.filter(function (r) { return _skip_.indexOf(_pep_rowDate_.get(r)) < 0; })
+        : matchedRows;
+      if (syncRows.length > 0 && matchedHeaders.length > 0) {
         // 헤더 기반 열 인덱스 매핑 (동적 헤더 대응)
         var _hMap_ = {};
         for (var _hi_ = 0; _hi_ < matchedHeaders.length; _hi_++) {
           _hMap_[String(matchedHeaders[_hi_]).trim()] = _hi_;
         }
 
-        var dbRows = matchedRows.map(function(row) {
+        var dbRows = syncRows.map(function(row) {
           // 열 이름으로 접근 (인덱스 하드코딩 방지)
           var getVal = function(names) {
             for (var ni = 0; ni < names.length; ni++) {
@@ -10554,6 +10593,11 @@ function _pep_archiveUnifiedDaily_(targetDateStr) {
           return {
             source: getVal(["출처"]),
             recorded_at: nowStr,
+            /* ★ 2026-09-09: 그 행이 실제로 속한 날짜 ★
+               v2 미러가 이 값으로 날짜를 정하고, 그 날짜를 통째로 갈아 끼운다.
+               옛 동기화(_sb_syncDailyArchive_)는 이름으로만 필드를 뽑으므로
+               이 칸이 늘어도 영향이 없다. */
+            archive_date: _pep_rowDate_.get(row) || archiveDate,
             // ★ 2026-09-07: 실제 헤더는 「주문자명(사방넷)」이다 ★
             //   전에는 "주문번호"·"사방넷주문번호"만 찾아 늘 빈 값이었다.
             //   그 칸에 「이름/고유ID」가 실려 오는데 통째로 버려졌고,

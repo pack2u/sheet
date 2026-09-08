@@ -97,10 +97,76 @@ function _sbv2_upsert_(table, rows, onConflict) {
 }
 
 /**
+ * yyyy-MM-dd 만 통과시킨다. 문자열로도 Date 로도 올 수 있다.
+ * ★ 모양이 아니면 빈 문자열 ★ 이상한 값이 그대로 날짜 칸에 들어가면
+ *   그 날짜를 통째로 지우는 아래 동작이 엉뚱한 곳을 건드린다.
+ */
+function _sbv2_ymd_(v) {
+  if (!v) return "";
+  if (Object.prototype.toString.call(v) === "[object Date]") {
+    return Utilities.formatDate(v, "Asia/Seoul", "yyyy-MM-dd");
+  }
+  var s = String(v).trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+/**
+ * 그 날짜의 일일마감 행을 v2 에서 지운다. 다시 넣기 직전에만 부른다.
+ * ★ 2026-09-09 신규 — 아래 sbv2MirrorDailyArchive 설명 참고 ★
+ */
+function _sbv2_deleteDay_(dateStr) {
+  if (!_sbv2_enabled_()) return { ok: true, skipped: true };
+  var key = _sbv2_key_();
+  var url = _SBV2_URL_ + "/rest/v1/daily_archive?archive_date=eq." +
+            encodeURIComponent(dateStr);
+  try {
+    var res = UrlFetchApp.fetch(url, {
+      method: "delete",
+      headers: {
+        "apikey": key,
+        "Authorization": "Bearer " + key,
+        "Prefer": "return=minimal",
+      },
+      muteHttpExceptions: true,
+    });
+    var code = res.getResponseCode();
+    if (code >= 200 && code < 300) return { ok: true };
+    return { ok: false, error: code + " " + res.getContentText().substring(0, 160) };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e).substring(0, 160) };
+  }
+}
+
+/**
  * 일일마감 미러. 기존 `_sb_syncDailyArchive_` 와 **같은 행 배열**을 받는다.
  * 보내는 쪽을 고치지 않으려고 모양을 그대로 맞췄다.
  *
- * @param {Array<Object>} archiveRows 19열 구조
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 2026-09-09 — 「그 날짜를 통째로 갈아 끼운다」로 바꿨다 ★
+ *
+ *  전에는 중복 방지 키 없이 그냥 INSERT 했다. 그래서 마감이 하루에 두 번
+ *  돌면 같은 자료가 두 벌 쌓였고, **시트에서 지워도 여기는 그대로 남았다.**
+ *  실제로 2026-09-07 에 411행이 그렇게 쌓여 사람이 손으로 골라냈다
+ *  (v2 저장소 sql/41·42).
+ *
+ *  키를 만들려고도 해 봤지만 안 된다 — 미매칭 행은 송장이 없고, 같은 수취인·
+ *  품목·수량이 하루에 두 줄인 경우가 실제로 있다(합배송 #1·#2). 컬럼 조합으로는
+ *  행을 구분할 수 없고, 구분하려 들면 진짜 줄이 사라진다.
+ *
+ *  그래서 행이 아니라 **날짜**를 단위로 삼는다: 넣기 전에 그 날짜를 지우고 넣는다.
+ *  몇 번을 돌려도 결과가 같고, 시트를 고친 뒤 다시 돌리면 여기도 따라온다.
+ *
+ *  ★ 그래서 하루치 **전부**를 넘겨야 한다 ★
+ *    일부만 넘기면 나머지가 사라진다. 마감 본체(_pep_archiveUnifiedDaily_)는
+ *    그 회차에 처리한 행을 전부 넘기므로 조건을 만족한다.
+ *    새로 부르는 곳을 만들 때는 이 약속을 지킬 것.
+ *
+ *  ★ 날짜는 행이 들고 온다 ★
+ *    전에는 모든 행을 「오늘」로 찍었다. 소급 마감이 돌면 지난 날짜 자료가
+ *    오늘 날짜로 들어갔다. 이제 row.archive_date 를 먼저 보고, 없을 때만 오늘로 둔다.
+ * ══════════════════════════════════════════════════════════════
+ *
+ * @param {Array<Object>} archiveRows 19열 구조 (+ 선택 archive_date)
  */
 function sbv2MirrorDailyArchive(archiveRows) {
   try {
@@ -110,7 +176,8 @@ function sbv2MirrorDailyArchive(archiveRows) {
     var today = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
     var payload = archiveRows.map(function (row) {
       return {
-        archive_date: today,
+        // 행이 자기 날짜를 들고 오면 그것을 쓴다 (소급 마감분)
+        archive_date: _sbv2_ymd_(row.archive_date) || today,
         recorded_at: row.recorded_at || null,
         source: row.source || null,
         order_type: row.order_type || null,
@@ -135,13 +202,37 @@ function sbv2MirrorDailyArchive(archiveRows) {
       };
     });
 
-    // ★ 여기서는 on_conflict 를 쓰지 않는다 ★
-    //   같은 수취인·품목·수량이 하루에 두 줄인 경우가 실제로 있다(합배송 #1·#2).
-    //   컬럼 조합으로는 행을 구분할 수 없고, 구분하려 들면 진짜 줄이 사라진다.
-    //   기존 프로젝트도 이 자리에서 그냥 insert 한다 — 동작을 맞춘다.
-    var out = _sbv2_upsert_("daily_archive", payload, "");
-    Logger.log("[V2] daily_archive 미러 " + out.count + "/" + payload.length + "건");
-    return out;
+    /* 날짜별로 나눈다. 보통은 하루치지만, 소급 마감이 돌면 여러 날이 섞여 온다. */
+    var byDate = {};
+    for (var i = 0; i < payload.length; i++) {
+      var d = payload[i].archive_date;
+      if (!byDate[d]) byDate[d] = [];
+      byDate[d].push(payload[i]);
+    }
+
+    var dates = Object.keys(byDate).sort();
+    var total = 0, failed = [];
+    for (var di = 0; di < dates.length; di++) {
+      var day = dates[di];
+
+      /* ★ 지우고 넣는다 ★ 지우기가 실패하면 **넣지 않는다** —
+         넣기만 하면 예전 그대로 두 벌이 된다. 그 날짜는 건너뛰고 다음 날짜로 간다.
+         마감 자체는 이미 끝났으므로 여기서 예외를 올리지 않는다. */
+      var del = _sbv2_deleteDay_(day);
+      if (!del.ok) {
+        failed.push(day + " 지우기 실패: " + del.error);
+        Logger.log("[V2] " + day + " 지우기 실패 → 넣지 않음: " + del.error);
+        continue;
+      }
+
+      var out = _sbv2_upsert_("daily_archive", byDate[day], "");
+      total += out.count;
+      if (!out.ok) failed.push(day + " 넣기 실패");
+      Logger.log("[V2] daily_archive " + day + " 갈아끼움 " +
+                 out.count + "/" + byDate[day].length + "건");
+    }
+
+    return { ok: !failed.length, count: total, errors: failed };
   } catch (e) {
     Logger.log("[V2] daily_archive 미러 실패: " + e.message);
     return { ok: false, error: e.message };
