@@ -2304,16 +2304,29 @@
     <!-- ★ 2026-09-09: 발주는 v2 가 맡는다 ★
          여기서 또 만들면 두 벌이 되고 한쪽만 고쳐진다 (17_발주시스템.md).
          홈에서 그리로 가는 길만 낸다.
-         새 창으로 여는 것은, CS 웹앱이 GAS 샌드박스 iframe 안이라
-         같은 창에서 열면 로그인 쿠키가 안 붙기 때문이다. -->
-    <div class="menu-card" onclick="csOpenV2('/po')" style="border-color: rgba(56,132,255,0.25);">
+
+         ★ onclick 이 아니라 <a> 다 ★
+           처음엔 window.open 으로 짰다가 **팝업 차단에 막혔다** (2026-09-09 확인).
+           CS 웹앱은 GAS 샌드박스 iframe 안이라 스크립트가 여는 창은 막힌다.
+           사람이 직접 누르는 <a target="_blank"> 는 열린다 —
+           아래 「주소 진단」 링크가 같은 방식으로 이미 돌고 있다.
+
+         ★ 새 창인 이유 ★
+           같은 창에서 열면 v2 로그인 쿠키가 iframe 안이라 안 붙고,
+           열자마자 로그인 화면이 뜬다.
+
+         ★ 담당자를 안 붙인다 ★
+           v2 는 구글 계정으로 스스로 누군지 안다. 여기서 이름을 넘기면
+           두 곳이 다른 사람을 가리킬 수 있다. -->
+    <a class="menu-card" href="<?= v2Url ?>/po" target="_blank" rel="noopener"
+       style="border-color: rgba(56,132,255,0.25); text-decoration:none; color:inherit;">
       <div class="menu-icon" style="background: linear-gradient(135deg, rgba(56,132,255,0.18), rgba(56,132,255,0.06)); border: 1px solid rgba(56,132,255,0.25); color: #3884ff;">📦</div>
       <div class="menu-text">
         <div class="menu-title">발주 <span style="font-size:10px;color:#3884ff;background:rgba(56,132,255,0.12);padding:2px 6px;border-radius:6px;margin-left:6px;">v2</span></div>
         <div class="menu-desc">대리판매 주문 모아 대리공급업체로 발주 · 송장 회수</div>
       </div>
       <div class="menu-arrow">›</div>
-    </div>
+    </a>
 
     <div class="menu-card cs" onclick="openPage('return_intake')" style="border-color: rgba(52,199,123,0.25);">
       <div class="menu-icon" style="background: linear-gradient(135deg, rgba(52,199,123,0.18), rgba(52,199,123,0.06)); border: 1px solid rgba(52,199,123,0.25); color: #34c77b;">📥</div>
@@ -2984,24 +2997,6 @@
       csGoTo(CS_EXEC_URL + '?page=' + page + '&staff=' + encodeURIComponent(currentStaff));
     }
 
-    /**
-     * v2(협력업체 시스템)로 나간다.
-     * ★ 2026-09-09
-     *
-     * ★ 새 창이어야 한다 ★
-     *   CS 웹앱은 GAS 샌드박스 iframe 안에서 돈다. 같은 창에서 열면
-     *   v2 의 로그인 쿠키가 iframe 안이라 안 붙고, 열자마자 로그인 화면이 뜬다.
-     *
-     * ★ 담당자를 안 붙인다 ★
-     *   v2 는 구글 계정으로 스스로 누군지 안다. 여기서 이름을 넘기면
-     *   두 곳이 다른 사람을 가리킬 수 있다.
-     */
-    var V2_URL = '<?= v2Url ?>';
-    function csOpenV2(path) {
-      var base = String(V2_URL || '').replace(/\/+$/, '');
-      if (!base) { toast('v2 주소가 설정되어 있지 않습니다 (_secrets.gs V2_URL)', 2600); return; }
-      window.open(base + (path || ''), '_blank', 'noopener');
-    }
 
     // 허브 _PUV_DAYS_ · 서버 _CS_DAILY_DAYS_DEFAULT_ 와 같은 값이어야 한다.
     // 크면 대시보드에 데이터 없는 날짜가 0건으로 찍혀 고장난 것처럼 보인다.
