@@ -962,7 +962,10 @@ function ssRoute(units, masters, cfg, warnings) {
     if (fh) {
       u.도서권역 = fh.권역;
       u.도서판정 = '도선료표';
-      u.도선료 = fh.료;
+      /* ★ 우도·추자는 항공료가 더 붙는다 ★
+         비행기로 제주까지 간 뒤 배로 한 번 더 나간다. 도선료만 적으면
+         제주 왕복분이 통째로 빠진다 (2026-09-08 사장님 확인). */
+      u.도선료 = ssSurcharge(addr, fh.권역, ferry).합계;
       u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
       continue;
     }
@@ -972,6 +975,8 @@ function ssRoute(units, masters, cfg, warnings) {
       if (islandZip[zip]) {
         u.도서권역 = islandZip[zip];
         u.도서판정 = '우편번호';
+        /* 제주 본섬은 도선료표에 없다(우도·추자만 있다). 항공료 정액만 붙는다. */
+        u.도선료 = ssSurcharge(addr, islandZip[zip], ferry).합계;
         u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
         continue;
       }
@@ -1033,6 +1038,67 @@ function ssOutRow(u) {
     u.박스수, u.수량, u.전화, u.모바일, u.주소1, u.배송메시지, u.합계,
     u.받는분, u.배송비, u.적요, u.사방넷주문번호, u.보내는분, u.보내는분전화, u.보내는주소
   ];
+}
+
+/**
+ * 제주 항공료 — 롯데는 제주를 「제주연계」로 정액 청구한다.
+ * 도선료 표에는 제주 본섬이 없다(우도·추자만 있다). 본섬은 이 정액만 붙는다.
+ * ★ 2026-09-08 사장님이 정해 주신 값 ★
+ */
+var SS_AIR_FEE_JEJU = 3000;
+
+/**
+ * 반품 박스비 — 반품은 상자를 새로 써야 해서 도서·육지를 가리지 않고 붙는다.
+ * ★ 2026-09-08 사장님 지시: "반품시에는 +1000(박스비용)원을 더해서" ★
+ */
+var SS_RETURN_BOX_FEE = 1000;
+
+/**
+ * 도서·제주 추가운임.
+ *
+ * ★ 항공료와 도선료는 **더한다** ★
+ *   사장님 확인 (2026-09-08): "제주도 항공료 3000원 / 우도면, 추자면 항공료외 도선추가".
+ *   제주 본섬은 항공료만, 우도·추자는 항공료 + 배편 삯이다. 둘 중 큰 것을 고르는
+ *   것이 아니라 둘 다 든다 — 비행기로 제주까지 간 뒤 배로 한 번 더 나간다.
+ *
+ * @param addr  정규화된 주소
+ * @param zone  이미 판정된 권역('제주'|'도서'|''). 없으면 도선료표에서 본다.
+ * @param ferry 롯데 도선료 표
+ */
+function ssSurcharge(addr, zone, ferry, opts) {
+  opts = opts || {};
+  var air = opts.항공료 == null ? SS_AIR_FEE_JEJU : (Number(opts.항공료) || 0);
+  var fh = ssFerryMatch(addr, ferry);
+  var 도선료 = fh ? (Number(fh.료) || 0) : 0;
+  /* 권역은 부르는 쪽이 이미 정했으면 그것을 믿는다 — 우편번호 판정이
+     도선료표보다 넓다(제주 본섬은 표에 없고 우편번호로만 잡힌다). */
+  var z = ssText(zone) || (fh ? fh.권역 : '');
+  var 항공료 = z === '제주' ? air : 0;
+  return {
+    권역: z,
+    항공료: 항공료,
+    도선료: 도선료,
+    합계: 항공료 + 도선료,
+    근거: fh ? ('도선료표 ' + fh.읍면동) : (z ? (z + ' 권역') : '')
+  };
+}
+
+/**
+ * 반품비 — 추가운임에 박스비를 더한 것.
+ * 육지 반품도 박스비는 든다. 그래서 도서가 아니어도 0 이 아니다.
+ */
+function ssReturnFee(addr, zone, ferry, opts) {
+  opts = opts || {};
+  var s = ssSurcharge(addr, zone, ferry, opts);
+  var box = opts.박스비 == null ? SS_RETURN_BOX_FEE : (Number(opts.박스비) || 0);
+  return {
+    권역: s.권역,
+    항공료: s.항공료,
+    도선료: s.도선료,
+    박스비: box,
+    합계: s.합계 + box,
+    근거: s.근거
+  };
 }
 
 /**
@@ -1417,6 +1483,8 @@ if (typeof module !== 'undefined' && module.exports) {
     ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,
+    ssSurcharge: ssSurcharge, ssReturnFee: ssReturnFee,
+    SS_AIR_FEE_JEJU: SS_AIR_FEE_JEJU, SS_RETURN_BOX_FEE: SS_RETURN_BOX_FEE,
     ssPartnerRow: ssPartnerRow, ssHoldRow: ssHoldRow, ssVendorOf: ssVendorOf,
     ssInvoiceRows: ssInvoiceRows, ssIsSabangnetUid: ssIsSabangnetUid, SS_INVOICE_HEADER: SS_INVOICE_HEADER,
     ssNonshipRow: ssNonshipRow, ssNonShipReason: ssNonShipReason, SS_NONSHIP_HEADER: SS_NONSHIP_HEADER,
