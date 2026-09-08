@@ -2341,7 +2341,7 @@
     </div>
   </div>
 
-  <div class="version">v3.72 · 팩투유(Pack2U) CS 웹앱
+  <div class="version">v3.73 · 팩투유(Pack2U) CS 웹앱
     · <a target="_top" rel="noopener" href="<?= webAppUrl ?>?page=diag" style="color:#707070;text-decoration:underline">주소 진단</a>
   </div>
   </div>
@@ -2351,7 +2351,7 @@
       <button class="os-back" onclick="showHome()" aria-label="홈">‹</button>
       <span class="ws-title">팩투유<span class="ws-title-long">(Pack2U) CS 웹앱</span></span>
       <div class="nt" id="ntWrap" hidden aria-label="공지"><div class="nt-track" id="ntTrack"></div></div>
-      <span class="ws-ver" id="wsVerBadge">v3.72</span>
+      <span class="ws-ver" id="wsVerBadge">v3.73</span>
       <span class="ws-me" id="wsMe" title="로그인 계정"></span>
     </div>
     <div class="ws-mobile-tabs" id="wsMobileTabs" aria-label="패널 이동">
@@ -2746,7 +2746,7 @@
            전부 켠 채로 열고, 반품 안 하는 것만 꺼서 접수한다. -->
       <div class="ledger-items" id="ledgerItems" hidden>
         <div class="ledger-items-head">
-          <span>같은 송장에 품목이 <b id="ledgerItemsCnt">0</b>개입니다 — 반품할 것만 남기세요</span>
+          <span id="ledgerItemsHead"></span>
           <button type="button" class="os-copy" id="ledgerItemsAll"
                   onclick="ledgerToggleAll()">전체 해제</button>
         </div>
@@ -5922,7 +5922,7 @@
     var RET_PHOTO_MAX = 6;
     var RET_PHOTO_PEND = {};    // 카드 index → 업로드 대기 사진
     var RET_MODAL_PHOTOS = {};  // 'retNew' | 'ledger' → 업로드 대기 사진
-    var CS_RET_UI_VER = 'v3.72';
+    var CS_RET_UI_VER = 'v3.73';
 
     /** 접두 → 업체명. 허브 `_PEP_VENDOR_LABELS_` / 포털 `PRP_VENDOR_LABELS` 와 맞춘다. */
     var RET_VENDOR_LABELS = {
@@ -8150,6 +8150,9 @@
      * 전부 켠 채로 여는 이유 — 대개 한 상자를 통째로 돌려보내고,
      * 일부만 돌려보내는 쪽이 예외라서다.
      */
+    /** 지금 무엇을 고르는 중인가 — '' | 'item' | 'invoice' */
+    var LEDGER_PICK_MODE = '';
+
     function ledgerSiblings(i) {
       var r = CS_ROWS[i] || {};
       var key = String(r.invoice || '').replace(/[^0-9]/g, '');
@@ -8164,16 +8167,20 @@
       return out.length ? out : [i];
     }
 
-    /** 접수에 넣을 행 번호들 — 체크된 것만. 목록이 없으면 누른 카드 하나. */
-    function ledgerPicked() {
+    /** 체크된 값들. 품목 고르기면 행 번호, 송장 고르기면 송장 문자열. */
+    function ledgerChecked() {
       var box = document.getElementById('ledgerItemsList');
       var ins = box ? box.querySelectorAll('input[type=checkbox]') : [];
-      if (!ins.length) return [LEDGER_IDX];
       var out = [];
-      for (var i = 0; i < ins.length; i++) {
-        if (ins[i].checked) out.push(parseInt(ins[i].value, 10));
-      }
+      for (var i = 0; i < ins.length; i++) if (ins[i].checked) out.push(ins[i].value);
       return out;
+    }
+
+    /** 접수에 넣을 행 번호들. 송장 고르기일 때는 누른 카드 하나뿐이다. */
+    function ledgerPicked() {
+      if (LEDGER_PICK_MODE !== 'item') return [LEDGER_IDX];
+      var v = ledgerChecked();
+      return v.map(function (x) { return parseInt(x, 10); });
     }
 
     /** 전체 해제 ↔ 전체 선택. 켠 것이 하나라도 있으면 「해제」로 동작한다. */
@@ -8188,7 +8195,7 @@
 
     /** 고른 개수를 단추와 「전체 해제/선택」 글자에 반영한다. */
     function ledgerSyncPick() {
-      var n = ledgerPicked().length;
+      var n = LEDGER_PICK_MODE === 'invoice' ? ledgerChecked().length : ledgerPicked().length;
       var box = document.getElementById('ledgerItemsList');
       var total = box ? box.querySelectorAll('input[type=checkbox]').length : 0;
       var all = document.getElementById('ledgerItemsAll');
@@ -8205,13 +8212,25 @@
       LEDGER_IDX = i;
       var r = CS_ROWS[i] || {};
 
-      /* 같은 송장의 품목들 — 둘 이상일 때만 고르는 칸을 보여준다.
-         하나뿐인데 목록이 뜨면 누를 것만 하나 더 느는 셈이다. */
+      /* 고를 것이 있으면 보여준다. 두 가지 경우가 있다 —
+           ① 같은 송장에 **품목이 여럿** (합포장)      → 품목을 고른다
+           ② 품목은 하나인데 **송장이 여럿** (여러 박스) → 박스를 고른다
+         둘 다 하나뿐이면 고를 것이 없으니 칸을 안 만든다 — 누를 것만 는다.
+
+         ★ ②를 빠뜨렸었다 ★
+           품목만 보고 만들어서, 「캐리어 200개 × 3 · 송장 3장」 같은 카드에서는
+           체크가 아예 안 떴다. 한 박스만 돌려받는 일이 흔한데 고를 방법이 없었다.
+           (2026-09-08 실사용에서 나옴) */
       var sibs = ledgerSiblings(i);
+      var invs = invoiceDigitsList(r.invoice);
       var wrap = document.getElementById('ledgerItems');
       var list = document.getElementById('ledgerItemsList');
+      var head = document.getElementById('ledgerItemsHead');
+      LEDGER_PICK_MODE = '';
+      var h = '';
+
       if (sibs.length > 1) {
-        var h = '';
+        LEDGER_PICK_MODE = 'item';
         for (var s = 0; s < sibs.length; s++) {
           var x = CS_ROWS[sibs[s]] || {};
           h += '<label class="ledger-item"><input type="checkbox" checked value="' + sibs[s] +
@@ -8220,13 +8239,20 @@
             (x.ecountCode ? '<span class="li-code">' + esc(x.ecountCode) + '</span>' : '') +
             '</label>';
         }
-        list.innerHTML = h;
-        document.getElementById('ledgerItemsCnt').textContent = String(sibs.length);
-        wrap.hidden = false;
-      } else {
-        list.innerHTML = '';
-        wrap.hidden = true;
+        head.innerHTML = '같은 송장에 품목이 <b>' + sibs.length + '</b>개입니다 — 반품할 것만 남기세요';
+      } else if (invs.length > 1) {
+        LEDGER_PICK_MODE = 'invoice';
+        for (var v = 0; v < invs.length; v++) {
+          h += '<label class="ledger-item"><input type="checkbox" checked value="' + esc(invs[v]) +
+            '" onchange="ledgerSyncPick()"><span class="li-name">' + esc(invs[v]) +
+            '</span></label>';
+        }
+        head.innerHTML = '송장이 <b>' + invs.length + '</b>장입니다 — 돌아오는 것만 남기세요' +
+          (r.qty ? ' <span class="li-code">수량 ' + esc(r.qty) + '</span>' : '');
       }
+
+      if (h) { list.innerHTML = h; wrap.hidden = false; }
+      else { list.innerHTML = ''; wrap.hidden = true; }
       document.getElementById('ledgerPreview').innerHTML =
         esc(r.name || '-') + ' · ' + esc(r.phone || '-') + '<br>' +
         esc(r.item || '-') + (r.qty ? ' × ' + esc(r.qty) : '') + '<br>' +
@@ -8283,6 +8309,9 @@
      *     나머지는 그 답을 따른다 — 품목마다 같은 것을 세 번 묻지 않는다.
      */
     function submitLedger(force) {
+      if (LEDGER_PICK_MODE === 'invoice' && !ledgerChecked().length) {
+        toast('돌아오는 송장을 하나는 남겨 주세요'); return;
+      }
       var picked = ledgerPicked().filter(function (n) { return n >= 0 && CS_ROWS[n]; });
       if (!picked.length) { toast('반품할 품목을 하나는 남겨 주세요'); return; }
       var staff = document.getElementById('ledgerStaff').value;
@@ -8295,6 +8324,22 @@
       var btn = document.getElementById('ledgerSubmitBtn');
       btn.disabled = true;
       btn.textContent = '기록 중…';
+
+      /* 송장을 골랐으면 그것만 적는다.
+         ★ 수량은 근거가 있을 때만 바꾼다 ★
+           송장 장수와 수량이 같으면 「한 박스에 하나」로 보고 고른 장수를 수량으로 쓴다.
+           (캐리어 3개 · 송장 3장에서 한 박스만 오면 수량 1)
+           맞아떨어지지 않으면 **원래 수량을 그대로 둔다** — 나눠떨어지지 않는 것을
+           멋대로 계산하면 정산이 어긋난다. 그때는 사람이 메모로 적는 편이 낫다. */
+      var useInv = r.invoice, useQty = r.qty;
+      if (LEDGER_PICK_MODE === 'invoice') {
+        var chosen = ledgerChecked();
+        var allInv = invoiceDigitsList(r.invoice);
+        useInv = chosen.join(' ');
+        var qn = parseInt(String(r.qty || '').replace(/[^0-9]/g, ''), 10);
+        if (allInv.length && qn === allInv.length) useQty = String(chosen.length);
+      }
+
       google.script.run
         .withSuccessHandler(function(res) {
           if (res && res.duplicate && !force) {
@@ -8337,8 +8382,8 @@
           carrier: resolveCarrier(r),
           orderNo: r.orderNo,
           item: r.item,
-          qty: r.qty,
-          invoice: r.invoice,
+          qty: useQty,
+          invoice: useInv,
           force: !!force
         });
     }

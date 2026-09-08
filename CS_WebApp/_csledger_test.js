@@ -81,5 +81,37 @@ ok("사진은 첫 줄에만 붙인다",
    /retModalPhotoUpload\('ledger', first \|\| \{\}/.test(html));
 ok("진행 상황을 단추에 보여준다", /기록 중… \(' \+ \(n \+ 1\)/.test(html));
 
+console.log("\n[5] ★ 품목 하나 · 송장 여럿 — 박스를 고른다 ★ (2026-09-08 실사용)");
+/* 「캐리어 200개 × 3 · 송장 3장」 같은 카드에서 체크가 아예 안 떴다.
+   품목만 보고 만든 탓이다. 한 박스만 돌려받는 일이 흔한데 고를 방법이 없었다. */
+ok("고르는 방식을 기억한다", html.indexOf("LEDGER_PICK_MODE") > -1);
+ok("송장이 여럿이면 송장을 고른다",
+   /LEDGER_PICK_MODE = 'invoice'/.test(html));
+ok("머리말을 갈아 끼운다 (품목/송장)", html.indexOf('id="ledgerItemsHead"') > -1);
+ok("송장 목록도 켠 채로 만든다",
+   /LEDGER_PICK_MODE = 'invoice'[\s\S]{0,400}checkbox" checked/.test(html));
+ok("하나도 안 남기면 막는다", html.indexOf("돌아오는 송장을 하나는 남겨 주세요") > -1);
+ok("고른 송장만 대장에 적는다", /useInv = chosen\.join\(' '\)/.test(html));
+
+console.log("\n[6] ★ 수량은 근거가 있을 때만 바꾼다 ★");
+/* 송장 장수 == 수량이면 「한 박스에 하나」로 보고 고른 장수를 수량으로 쓴다.
+   나눠떨어지지 않으면 원래 수량을 그대로 둔다 — 멋대로 계산하면 정산이 어긋난다. */
+ok("장수와 수량이 같을 때만 고쳐 쓴다",
+   /qn === allInv\.length\) useQty = String\(chosen\.length\)/.test(html));
+ok("아니면 원래 수량 그대로", /var useInv = r\.invoice, useQty = r\.qty;/.test(html));
+ok("보내는 값에 반영된다", /qty: useQty,[\s\S]{0,40}invoice: useInv,/.test(html));
+
+// 규칙을 실제로 돌려 본다 — 조건식만 떼어 확인
+function pickQty(qty, invTotal, chosen) {
+  var useQty = qty;
+  var qn = parseInt(String(qty || "").replace(/[^0-9]/g, ""), 10);
+  if (invTotal && qn === invTotal) useQty = String(chosen);
+  return useQty;
+}
+ok("송장3·수량3 에서 1장만 고르면 수량 1", pickQty(3, 3, 1) === "1", pickQty(3, 3, 1));
+ok("송장3·수량3 에서 3장 다 고르면 수량 3", pickQty(3, 3, 3) === "3");
+ok("★ 송장3·수량10 이면 수량을 안 건드린다 ★", pickQty(10, 3, 1) === 10, pickQty(10, 3, 1));
+ok("수량이 비어 있으면 안 건드린다", pickQty("", 3, 1) === "");
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);
