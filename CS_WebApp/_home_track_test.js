@@ -123,5 +123,18 @@ ok("결과에 empNm·empTel 을 담는다",
 ok("화면이 담당기사를 그린다", html.indexOf("os-trk-emp") > -1);
 ok("기사 번호로 바로 걸 수 있다", /os-trk-emp[\s\S]{0,500}href="tel:/.test(html));
 
+console.log("\n[7] ★ 송장이 여럿이면 판도 따로 ★ (2026-09-08 실사용에서 나옴)");
+/* 「상태」 단추들은 전부 같은 줄(os-val) 안에 있다. 처음에는 「줄 다음 것」으로
+   판을 찾았더니 어느 단추를 눌러도 첫 판이 잡혀, 두 번째 송장은 조회가 안 되고
+   앞엣것만 접혔다 폈다 했다. 판에 송장을 적고 그것으로 짝을 지어야 한다. */
+ok("판에 송장을 적는다", /div\.setAttribute\('data-inv'/.test(html));
+ok("송장으로 짝지어 찾는다",
+   /getAttribute\('data-inv'\) === inv/.test(html));
+ok("이미 열린 판 뒤에 쌓는다", /insertBefore\(div, last\.nextSibling\)/.test(html));
+ok("★ 줄 다음 것으로 찾지 않는다 ★", html.indexOf("line.nextSibling;\n      if (next") === -1);
+ok("닫을 때도 그 송장의 단추만 되돌린다",
+   /querySelector\('\.os-trk\[data-inv="' \+ inv/.test(html));
+ok("어느 송장의 판인지 보여준다", html.indexOf("os-trk-head") > -1);
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);
