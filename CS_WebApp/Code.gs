@@ -81,6 +81,13 @@ function doGet(e) {
     tpl.userName = acc.name || "";
     // 물류팀이면 모바일에서 입고촬영 패널로 먼저 떨어진다 (권한과 무관, 시작 위치만)
     tpl.isLogistics = !!acc.logistics;
+    // ★ 2026-09-09: v2 주소를 화면에 넘긴다 ★
+    //   발주는 v2 가 맡는다 (17_발주시스템.md). 여기서 또 만들면 두 벌이 되고
+    //   한쪽만 고쳐진다. 홈에서 그리로 가는 길만 낸다.
+    //   주소를 화면에 박지 않는 것은 배포처가 바뀔 수 있어서다 — _secrets.gs 한 곳.
+    //   주소 푸는 함수는 명세서가 쓰던 것을 그대로 쓴다 (csStatement.gs) —
+    //   두 벌로 두면 배포처를 옮길 때 한쪽만 고쳐진다.
+    tpl.v2Url = _cst_v2url_();
     var out = tpl.evaluate();
     return _cs_withFavicon_(out)
       .setTitle(title)
