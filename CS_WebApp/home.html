@@ -2341,7 +2341,7 @@
     </div>
   </div>
 
-  <div class="version">v3.73 · 팩투유(Pack2U) CS 웹앱
+  <div class="version">v3.74 · 팩투유(Pack2U) CS 웹앱
     · <a target="_top" rel="noopener" href="<?= webAppUrl ?>?page=diag" style="color:#707070;text-decoration:underline">주소 진단</a>
   </div>
   </div>
@@ -2351,7 +2351,7 @@
       <button class="os-back" onclick="showHome()" aria-label="홈">‹</button>
       <span class="ws-title">팩투유<span class="ws-title-long">(Pack2U) CS 웹앱</span></span>
       <div class="nt" id="ntWrap" hidden aria-label="공지"><div class="nt-track" id="ntTrack"></div></div>
-      <span class="ws-ver" id="wsVerBadge">v3.73</span>
+      <span class="ws-ver" id="wsVerBadge">v3.74</span>
       <span class="ws-me" id="wsMe" title="로그인 계정"></span>
     </div>
     <div class="ws-mobile-tabs" id="wsMobileTabs" aria-label="패널 이동">
@@ -2717,6 +2717,14 @@
         </div>
       </div>
       <div class="ledger-field">
+        <label>환불계좌 (선택)</label>
+        <input id="retNewAccount" type="text"
+               placeholder="예: 농협 302-0578-9806-91 조명숙"
+               autocomplete="off" spellcheck="false">
+        <!-- 은행·번호·예금주를 한 칸에 그대로 받는다. 쪼개면 은행 표기가
+             제각각이라 반드시 틀린다. 돈이 걸린 값은 원문이 안전하다. -->
+      </div>
+      <div class="ledger-field">
         <label>메모 (고객요청/유의사항)</label>
         <textarea id="retNewMemo" placeholder="필요하면 적고, 없으면 비워 두세요"></textarea>
       </div>
@@ -2776,6 +2784,14 @@
       <div class="ledger-field">
         <label>수거입력처 (대리공급은 택배사 자동)</label>
         <input id="ledgerPickup" type="text" placeholder="예: 로젠택배 / 롯데택배">
+      </div>
+      <div class="ledger-field">
+        <label>환불계좌 (선택)</label>
+        <input id="ledgerAccount" type="text"
+               placeholder="예: 농협 302-0578-9806-91 조명숙"
+               autocomplete="off" spellcheck="false">
+        <!-- 은행·번호·예금주를 한 칸에 그대로 받는다. 쪼개면 은행 표기가
+             제각각이라 반드시 틀린다. 돈이 걸린 값은 원문이 안전하다. -->
       </div>
       <div class="ledger-field">
         <label>메모 (고객요청/유의사항)</label>
@@ -4432,7 +4448,7 @@
         modal: 'retNewModal', bar: 'retNewDraftBar',
         fields: ['retNewStaff', 'retNewName', 'retNewPhone', 'retNewInvoice', 'retNewQty',
                  'retNewItem', 'retNewVendor', 'retNewPickup', 'retNewRetInvoice',
-                 'retNewFee', 'retNewType', 'retNewStatus', 'retNewMemo']
+                 'retNewFee', 'retNewType', 'retNewStatus', 'retNewAccount', 'retNewMemo']
       },
       hb: {
         modal: 'hbModal', bar: 'hbDraftBar',
@@ -4446,7 +4462,7 @@
       // 송장이 없으면 아예 담지 않는다 — 엉뚱한 건에 남의 메모가 붙는 게 더 나쁘다.
       ledger: {
         modal: 'ledgerModal', bar: 'ledgerDraftBar', requireScope: true,
-        fields: ['ledgerStaff', 'ledgerType', 'ledgerPickup', 'ledgerMemo'],
+        fields: ['ledgerStaff', 'ledgerType', 'ledgerPickup', 'ledgerAccount', 'ledgerMemo'],
         scope: function() {
           var r = CS_ROWS[LEDGER_IDX] || {};
           return String(r.invoice || '').replace(/[^0-9]/g, '');
@@ -5922,7 +5938,7 @@
     var RET_PHOTO_MAX = 6;
     var RET_PHOTO_PEND = {};    // 카드 index → 업로드 대기 사진
     var RET_MODAL_PHOTOS = {};  // 'retNew' | 'ledger' → 업로드 대기 사진
-    var CS_RET_UI_VER = 'v3.73';
+    var CS_RET_UI_VER = 'v3.74';
 
     /** 접두 → 업체명. 허브 `_PEP_VENDOR_LABELS_` / 포털 `PRP_VENDOR_LABELS` 와 맞춘다. */
     var RET_VENDOR_LABELS = {
@@ -8015,6 +8031,7 @@
       document.getElementById('retNewFee').value = '';
       document.getElementById('retNewType').value = '단순반품';
       document.getElementById('retNewStatus').value = '접수';
+      document.getElementById('retNewAccount').value = '';
       document.getElementById('retNewMemo').value = '';
       retModalPhotoClear('retNew');
       var btn = document.getElementById('retNewSubmitBtn');
@@ -8125,6 +8142,7 @@
           type: document.getElementById('retNewType').value,
           pickup: document.getElementById('retNewPickup').value,
           memo: document.getElementById('retNewMemo').value,
+          account: document.getElementById('retNewAccount').value,
           status: document.getElementById('retNewStatus').value || '접수',
           name: name,
           phone: document.getElementById('retNewPhone').value,
@@ -8261,6 +8279,7 @@
         (r.vendor ? '<br>업체 ' + esc(r.vendor) : '');
       document.getElementById('ledgerType').value = '단순반품';
       document.getElementById('ledgerPickup').value = resolveCarrier(r) || '';
+      document.getElementById('ledgerAccount').value = '';
       document.getElementById('ledgerMemo').value = '';
       retModalPhotoClear('ledger');
       fillStaffSelect(currentStaff);
@@ -8374,6 +8393,7 @@
           type: document.getElementById('ledgerType').value,
           pickup: document.getElementById('ledgerPickup').value,
           memo: document.getElementById('ledgerMemo').value,
+          account: document.getElementById('ledgerAccount').value,
           name: r.name,
           phone: r.phone,
           vendor: r.vendor,
@@ -8402,6 +8422,7 @@
       var type = document.getElementById('ledgerType').value;
       var pickup = document.getElementById('ledgerPickup').value;
       var memo = document.getElementById('ledgerMemo').value;
+      var account = document.getElementById('ledgerAccount').value;
       var done = 0;
       var first = null;
 
@@ -8455,7 +8476,7 @@
               (done ? ' — ' + done + '건까지는 들어갔습니다' : ''), 4200);
           })
           .submitReturnLedger({
-            staff: staff, type: type, pickup: pickup, memo: memo,
+            staff: staff, type: type, pickup: pickup, memo: memo, account: account,
             name: r.name, phone: r.phone, vendor: r.vendor,
             source: r.source, origin: r.origin, carrier: resolveCarrier(r),
             orderNo: r.orderNo, item: r.item, qty: r.qty, invoice: r.invoice,

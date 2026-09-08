@@ -113,5 +113,31 @@ ok("송장3·수량3 에서 3장 다 고르면 수량 3", pickQty(3, 3, 3) === "
 ok("★ 송장3·수량10 이면 수량을 안 건드린다 ★", pickQty(10, 3, 1) === 10, pickQty(10, 3, 1));
 ok("수량이 비어 있으면 안 건드린다", pickQty("", 3, 1) === "");
 
+console.log("\n[7] 환불계좌 칸 (2026-09-08 요청)");
+const search = fs.readFileSync(__dirname + "/csOrderSearch.gs", "utf8");
+ok("두 모달 다 계좌 칸이 있다",
+   html.indexOf('id="ledgerAccount"') > -1 && html.indexOf('id="retNewAccount"') > -1);
+ok("열 때 비운다",
+   /getElementById\('ledgerAccount'\)\.value = ''/.test(html) &&
+   /getElementById\('retNewAccount'\)\.value = ''/.test(html));
+ok("임시저장에도 들어간다 — 적다 만 계좌가 날아가면 다시 물어봐야 한다",
+   /'ledgerPickup', 'ledgerAccount'/.test(html) && /'retNewAccount'/.test(html));
+ok("한 건 기록에 실어 보낸다", /account: document\.getElementById\('ledgerAccount'\)/.test(html));
+ok("여러 건 기록에도 실어 보낸다", /memo: memo, account: account,/.test(html));
+ok("새 반품 카드도 실어 보낸다", /account: document\.getElementById\('retNewAccount'\)/.test(html));
+
+console.log("\n[8] ★ 시트에 열이 생기면 저절로 쓰인다 ★");
+/* 대장에 환불계좌 열이 아직 없다. 시트를 코드가 함부로 바꾸지 않는다 —
+   열이 생기는 순간 헤더 이름으로 잡히고, 그전까지는 비고에 남는다.
+   반품송장이 걸어온 길과 같다. */
+ok("열 지도에 account 가 있다", /account: -1/.test(search));
+ok("헤더 이름으로 찾는다 (환불계좌·입금계좌·계좌번호)",
+   /환불계좌\|입금계좌\|계좌번호/.test(search));
+ok("전용 열이 있으면 열에 쓴다", /col\.account >= 0\) row\[col\.account\] = acct/.test(search));
+ok("없으면 비고에 「계좌: …」로 남긴다", /acctToNotice = "계좌: " \+ acct/.test(search));
+ok("비고 줄에 실제로 붙는다", /if \(acctToNotice\) noticeLines\.push\(acctToNotice\)/.test(search));
+ok("★ 원문 그대로 둔다 (쪼개지 않는다) ★",
+   !/split\([^)]*\)[\s\S]{0,40}acct/.test(search) && /String\(data\.account \|\| ""\)\.trim\(\)/.test(search));
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

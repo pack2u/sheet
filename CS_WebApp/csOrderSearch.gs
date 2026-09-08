@@ -2052,10 +2052,22 @@ function submitReturnLedger(data) {
       else retInvToNotice = "반품송장: " + retInv;
     }
 
+    /* 환불계좌 — 반품송장과 같은 방식. 전용 열이 있으면 열에, 없으면 비고에.
+       ★ 사람이 적은 그대로 둔다 ★ 「농협 302-0578-9806-91 조명숙」처럼
+       은행·번호·예금주가 한 덩어리로 온다. 쪼개려 들면 은행 이름 표기가
+       제각각이라 반드시 틀린다. 돈이 걸린 값은 원문이 안전하다. */
+    var acct = String(data.account || "").trim();
+    var acctToNotice = "";
+    if (acct) {
+      if (col.account >= 0) row[col.account] = acct;
+      else acctToNotice = "계좌: " + acct;
+    }
+
     if (col.notice >= 0) {
       var noticeLines = [];
       if (data.memo) noticeLines.push(_cs_ledgerStamp_(data.staff) + " " + String(data.memo || "").trim());
       if (retInvToNotice) noticeLines.push(retInvToNotice);
+      if (acctToNotice) noticeLines.push(acctToNotice);
       row[col.notice] = noticeLines.join("\n");
     }
 
@@ -2213,7 +2225,11 @@ function _cs_mapReturnLedgerCols_(header) {
     date: -1, staff: -1, vendor: -1, name: -1, phone: -1,
     pickup: -1, item: -1, qty: -1, invoice: -1, type: -1, fee: -1, status: -1, notice: -1,
     // 반품송장번호 — 대장 맨 끝에 추가한 열. 없으면 -1 이고 N열 비고 파싱으로 폴백한다.
-    returnInvoice: -1
+    returnInvoice: -1,
+    /* 환불계좌 — 아직 대장에 없는 열이다 (2026-09-08).
+       시트에 「환불계좌」 열을 만들면 **코드를 안 고쳐도** 여기로 잡힌다.
+       그전까지는 비고에 「계좌: …」로 남는다. 반품송장이 걸어온 길과 같다. */
+    account: -1
   };
   for (var i = 0; i < header.length; i++) {
     var h = String(header[i] || "").replace(/\s/g, "");
@@ -2228,6 +2244,7 @@ function _cs_mapReturnLedgerCols_(header) {
     else if (col.qty < 0 && (h === "수량" || h.indexOf("수량") === 0)) col.qty = i;
     else if (col.invoice < 0 && /원송장|송장번호/.test(h) && !/회수|재발송|반품송장/.test(h)) col.invoice = i;
     else if (col.returnInvoice < 0 && /반품송장|회수송장/.test(h)) col.returnInvoice = i;
+    else if (col.account < 0 && /환불계좌|입금계좌|계좌번호|^계좌$/.test(h)) col.account = i;
     // 2026-09-04: 실제 헤더 문구를 넣는다.
     //   시트는 「재출고/단순/오주문입력/오배송」이라고 적혀 있는데 정규식에 없어서
     //   지금껏 K열 위치 폴백으로만 맞고 있었다. 9월에 열이 한 칸 밀리자 바로 깨졌다.
