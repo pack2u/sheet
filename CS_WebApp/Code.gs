@@ -44,6 +44,11 @@ function doGet(e) {
       file = "logistics";
       title = "반품 입고 촬영";
       break;
+    case "statement":
+      // 명세서 올리기 — 판독은 v2 가 한다 (csStatement.gs)
+      file = "statement";
+      title = "명세서 올리기";
+      break;
     case "scan_test":
       file = "scan_test";
       title = "택배 바코드 스캔 테스트";
