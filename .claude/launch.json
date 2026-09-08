@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "v2",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d D:\\Pack2U_협력업체시스템_v2\\app && npm run dev"],
+      "port": 3000
+    }
+  ]
+}
