@@ -22,8 +22,14 @@
  */
 
 // ── 환경 ────────────────────────────────────────────────
-/** 운영 전환 시 true. 운영 키(LOTTE_API_KEY_PROD)를 먼저 채워야 한다. */
-var _LOTTE_USE_PROD_ = false;
+/**
+ * 운영 사용 여부.
+ * ★ 2026-09-08 운영 전환 ★
+ *   운영 앱 C017229 로 실제 우리 송장 조회를 확인했다.
+ *   개발(C011308)은 화물추적 연계 등록이 안 돼 있어 쓸 수 없다 —
+ *   되돌리려면 그 등록부터 받아야 한다.
+ */
+var _LOTTE_USE_PROD_ = true;
 
 var _LOTTE_HOST_DEV_ = "https://devapigw.llogis.com:10100";
 var _LOTTE_HOST_PROD_ = "https://apigw.llogis.com:10100";
@@ -32,12 +38,12 @@ var _LOTTE_HOST_PROD_ = "https://apigw.llogis.com:10100";
 var _LOTTE_CUST_CD_ = "348782";
 
 /**
- * 화물추적 전용 거래처코드.
- * ★ 연계 등록이 끝나면 _LOTTE_CUST_CD_ 와 같은 값으로 바꿀 것 ★
- *   지금 348782 로 부르면 전부 아래 오류로 떨어진다.
- *     "영업담당자에게 문의하여 화물추적 연계 등록을 해주시기 바랍니다."
+ * 화물추적 거래처코드.
+ * ★ 2026-09-08 ★ 운영에서는 우리 코드가 그대로 통한다(연계 등록 완료 확인).
+ *   개발 환경으로 되돌릴 때는 이 값을 테스트코드 "101000" 으로 바꿔야 한다.
+ *   개발에는 348782 의 화물추적 연계 등록이 없다.
  */
-var _LOTTE_TRACK_CUST_CD_ = "101000";
+var _LOTTE_TRACK_CUST_CD_ = _LOTTE_CUST_CD_;
 
 // ── 쿼터·캐시 ────────────────────────────────────────────
 var _LOTTE_QUOTA_PER_DAY_ = 10000;
@@ -45,15 +51,31 @@ var _LOTTE_QUOTA_PER_DAY_ = 10000;
 var _LOTTE_QUOTA_SOFT_CAP_ = 9000;
 var _LOTTE_CACHE_SEC_ = 1800; // 30분
 
-/** 화물상태 코드 → 표시명 (롯데 전산 담당자 회신 2026-08-31) */
+/**
+ * 화물상태 코드 → 표시명.
+ *
+ * ★ 이 표는 최후의 수단이다 ★
+ *   응답이 주는 godsStatNm 을 우선 쓴다(_lotte_statusName_ 참조).
+ *   이유는 운영 실데이터에서 드러났다.
+ *     - 표에 없는 코드가 나온다 : 02 출력, 05 집하출발, 45 인수자등록
+ *     - 같은 코드가 상황별로 다른 이름을 쓴다
+ *         20 → "구간발송" / "셔틀발송"   (표에는 그냥 "발송")
+ *         21 → "구간도착" / "셔틀도착"   (표에는 그냥 "도착")
+ *   표를 우선하면 이 구분이 뭉개진다. 롯데도 "코드는 통보 없이 추가될 수 있다"고 했다.
+ *
+ *   출처: 롯데 전산 담당자 회신(2026-08-31) + 운영 실호출 관측(2026-09-08)
+ */
 var _LOTTE_STATUS_ = {
+  "02": "출력",       // 관측 (표에 없음)
+  "05": "집하출발",   // 관측 (표에 없음)
   "09": "취소",
   "10": "집하",
   "12": "운송장등록",
   "20": "발송",
   "21": "도착",
   "40": "배달전",
-  "41": "배달완료"
+  "41": "배달완료",
+  "45": "인수자등록"  // 관측 (표에 없음)
 };
 
 /** 배달이 끝났다고 볼 코드 — 이것만 신뢰한다 */
@@ -173,15 +195,18 @@ function _lotte_call_(method, path, body) {
 // ── 화물추적 ────────────────────────────────────────────
 /**
  * 상태코드 → 표시명.
- * ★ 코드표는 불완전하다 ★
- *   실제로 표에 없는 02(출력)가 온다. 롯데도 "통보 없이 추가될 수 있다"고 못박았다.
- *   그러니 매핑에 없으면 응답이 준 이름을 그대로 쓴다. "알 수 없음"으로 덮지 않는다.
+ *
+ * ★ 응답이 준 이름을 먼저 쓴다 ★
+ *   롯데 코드표보다 응답의 godsStatNm 이 더 정확하고 구체적이다.
+ *   운영 실데이터에서 21 이 "셔틀도착"과 "구간도착"으로 갈리는데,
+ *   표를 우선하면 둘 다 "도착"으로 뭉개진다. CS 가 화물 위치를 못 읽는다.
+ *   표는 응답에 이름이 비어 있을 때만 쓴다.
  */
-function _lotte_statusName_(code, fallbackNm) {
+function _lotte_statusName_(code, respNm) {
+  var nm = String(respNm == null ? "" : respNm).trim();
+  if (nm) return nm;
   var c = String(code == null ? "" : code);
-  if (_LOTTE_STATUS_[c]) return _LOTTE_STATUS_[c];
-  var nm = String(fallbackNm == null ? "" : fallbackNm).trim();
-  return nm || ("코드 " + c);
+  return _LOTTE_STATUS_[c] || ("코드 " + c);
 }
 
 /** yyyymmdd + hh24miss → "MM-dd HH:mm" */
@@ -238,16 +263,22 @@ function csLotteTrack(invoice, opt) {
     return { ok: false, invoice: inv, error: String(j.message || "조회 실패") };
   }
 
-  // 이력을 시간순으로 세운다. 응답 순서를 믿지 않는다.
+  // 이력을 시간순으로 세운다. 응답 순서는 시간순이 아니다.
+  //   운영 실데이터에서 10:집하(17:31) 다음에 12:운송장등록(21:00)이 오고
+  //   그 다음에 21:셔틀도착(18:26)이 온다. 그대로 보여주면 CS 가 헷갈린다.
   var raw = j.tracking || [];
   var hist = [];
   for (var i = 0; i < raw.length; i++) {
     var t = raw[i];
+    // ★ 시각이 "------" 로 오는 이벤트가 있다 (45:인수자등록에서 관측) ★
+    //   비면 그 날의 끝으로 본다. 시각 없는 이벤트는 성격상 그날 마지막 처리다.
+    var tm = _lotte_digits_(t.scanTme);
     hist.push({
       code: String(t.godsStatCd || ""),
       name: _lotte_statusName_(t.godsStatCd, t.godsStatNm),
       at: _lotte_when_(t.scanYmd, t.scanTme),
-      sortKey: _lotte_digits_(t.scanYmd) + _lotte_digits_(t.scanTme),
+      sortKey: _lotte_digits_(t.scanYmd) + (tm.length === 6 ? tm : "999999") +
+               ("00" + i).slice(-3), // 동시각이면 응답 순서를 유지한다
       branch: String(t.brnshpNm || ""),
       branchTel: String(t.brnshpTel || "").trim(),
       msg: String(t.status || "")
@@ -255,13 +286,21 @@ function csLotteTrack(invoice, opt) {
   }
   hist.sort(function (a, b) { return a.sortKey < b.sortKey ? -1 : (a.sortKey > b.sortKey ? 1 : 0); });
 
-  var last = hist.length ? hist[hist.length - 1] : null;
+  // 대표 상태 — 배달완료(41)가 있으면 그것을 쓴다.
+  //   마지막 이벤트를 그대로 쓰면 45:인수자등록 같은 후속 처리가 대표가 되어
+  //   "배달됐나?" 만 알고 싶은 CS 에게 오히려 불친절하다.
+  var done = null;
+  for (var d = 0; d < hist.length; d++) {
+    if (hist[d].code === _LOTTE_STATUS_DONE_) done = hist[d];
+  }
+  var last = done || (hist.length ? hist[hist.length - 1] : null);
+
   var out = {
     ok: true,
     invoice: inv,
     statusCode: last ? last.code : "",
     statusName: last ? last.name : "이력 없음",
-    delivered: !!(last && last.code === _LOTTE_STATUS_DONE_),
+    delivered: !!done,
     lastAt: last ? last.at : "",
     lastMsg: last ? last.msg : "",
     branch: last ? last.branch : "",
