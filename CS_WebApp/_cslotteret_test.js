@@ -27,15 +27,58 @@ ok("박스크기 기본값은 A~F 중 하나", /_LRT_BOX_DEFAULT_ = "[A-F]"/.tes
 ok("주문접수 경로가 맞다", src.indexOf("/api/pid/cus/714a/apiSndOut") > -1);
 ok("송장은 비워 보낸다 (롯데가 채번)", !/invNo:\s*String\(p\./.test(src));
 
-console.log("\n[2] ★ 받는 주소를 코드에 안 박는다 ★");
-/* 실제로 기사가 찾아가는 주소다. 코드에 박으면 창고가 바뀔 때 배포를 해야 하고
-   그 사이 물건이 엉뚱한 데로 간다. 속성에 두고, 없으면 접수를 막는다. */
-ok("속성에서 읽는다", /getProperty\(_LRT_TO_PROP_\)/.test(src));
+console.log("\n[2] ★ 받는 주소 — 기본값은 코드에, 속성이 그걸 덮는다 ★");
+/* 2026-09-08 앞의 결정을 뒤집었다.
+   처음엔 「코드에 안 박고 속성에만 둔다, 없으면 접수를 막는다」였다. 창고가 바뀔 때
+   배포 없이 고치려던 것인데, 그 대가로 사장님이 편집기에서 설정 함수를 세 번
+   실행하셔야 했다. 창고는 몇 해에 한 번 바뀌고 그때는 어차피 배포가 붙는다.
+   없는 위험을 막느라 있는 수고를 매번 시킨 셈이라 되돌렸다.
+   안전판은 남긴다 — 속성이 온전하면 언제나 속성이 이긴다. */
+ok("속성을 먼저 본다", /getProperty\(_LRT_TO_PROP_\)/.test(src));
 ok("네 칸이 다 있어야 한다", /need = \["name", "tel", "zip", "addr"\]/.test(src));
-ok("없으면 접수를 막는다", /받는 곳\(창고\)이 설정되지 않았습니다/.test(src));
 ok("화면이 물어볼 수 있다 (csLotteReturnReady)", src.indexOf("function csLotteReturnReady") > -1);
-ok("주소가 코드에 안 박혀 있다",
-   !/(경기|서울|인천|부산|대구|광주|대전|울산|세종|강원|충청|전라|경상|제주)[^\n]{0,40}(로|길)\s*[0-9]/.test(src));
+
+ok("★ 기본 회수지가 코드에 있다 ★", /_LRT_TO_DEFAULT_ = \{/.test(src));
+ok("사장님이 준 주소 그대로 (송장에 적는 주소)",
+   src.indexOf("경기도 평택시 포승읍 성해홍원로 91") > -1);
+ok("우편번호는 지어낸 게 아니라 롯데 주소정제가 준 값 (451824 · 안중대리점)",
+   /zip: "451824"/.test(src));
+ok("설정이 없어도 기본값으로 떨어진다",
+   /var def = _lrt_clean_\(_LRT_TO_DEFAULT_\)/.test(src));
+
+ok("★ 속성이 기본값을 덮는다 ★", /got\.source = "속성"; return got;/.test(src));
+ok("어느 쪽을 썼는지 설정 화면에 보인다", /to\.source/.test(src));
+ok("되돌리는 길이 있다 (csLotteReturnClearTo)",
+   src.indexOf("function csLotteReturnClearTo") > -1);
+
+/* 말만 맞추지 않고 실제로 돌려 본다 — 우선순위 규칙만 떼어 확인 */
+const clean = (o) => {
+  if (!o) return null;
+  for (const k of ["name", "tel", "zip", "addr"]) if (!String(o[k] || "").trim()) return null;
+  return { name: o.name, tel: o.tel, zip: String(o.zip).replace(/[^0-9]/g, ""), addr: o.addr };
+};
+const DEF = { name: "팩투유", tel: "031-923-7795", zip: "451824",
+              addr: "경기도 평택시 포승읍 성해홍원로 91" };
+const pick = (propRaw) => {
+  if (propRaw) {
+    let o = null;
+    try { o = JSON.parse(propRaw); } catch (e) { o = null; }
+    const got = clean(o);
+    if (got) { got.source = "속성"; return got; }
+  }
+  const d = clean(DEF);
+  if (d) d.source = "기본값";
+  return d;
+};
+ok("속성이 없으면 기본값", pick("").source === "기본값");
+ok("속성이 깨져 있으면 기본값 (접수가 멈추지 않는다)",
+   pick("{이건 JSON 이 아니다").source === "기본값");
+ok("속성에 전화가 빠졌으면 기본값 — 반쪽짜리는 안 쓴다",
+   pick('{"name":"창고","zip":"12345","addr":"어딘가"}').source === "기본값");
+ok("★ 온전한 속성은 속성이 이긴다 ★",
+   pick('{"name":"새창고","tel":"031-000-0000","zip":"18471","addr":"화성시 어딘가"}')
+     .addr === "화성시 어딘가");
+ok("기본값 우편번호는 숫자만", pick("").zip === "451824");
 
 console.log("\n[3] ★ 고객 정보가 없으면 안 보낸다 ★");
 // 주소가 빈 채로 접수하면 기사가 헛걸음한다. 지어내지 않는다.

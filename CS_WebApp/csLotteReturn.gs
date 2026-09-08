@@ -19,12 +19,20 @@
  *    집하요청 다음 영업일
  *    확인창   필수 · 하단에 접수자(로그인 이름) 표시
  *
- *  ★ 받는 주소는 코드에 안 박는다 ★
- *    실제로 기사가 찾아가는 주소다. 코드에 박아 두면 창고가 바뀌었을 때
- *    배포를 해야 하고, 그 사이 물건이 엉뚱한 데로 간다.
- *    **스크립트 속성**에 두고, 없으면 접수 자체를 막는다.
- *      설정:  csLotteReturnSetTo('{"name":"…","tel":"…","zip":"…","addr":"…"}')
- *      확인:  csLotteReturnConfig()
+ *  ── 받는 곳(회수지) ─────────────────────────────────────────
+ *    ★ 2026-09-08 앞서의 결정을 뒤집었다 ★
+ *    처음엔 「주소는 코드에 안 박고 스크립트 속성에만 둔다, 없으면 접수를 막는다」로
+ *    했다. 창고가 바뀌었을 때 배포 없이 고치려던 것이다. 그런데 그 대가로
+ *    **사장님이 편집기에서 설정 함수를 세 번 실행**하셔야 했고, 세 번 다 엉뚱한
+ *    함수가 돌았다. 창고는 몇 해에 한 번 바뀌고 그때는 어차피 배포가 붙는다.
+ *    없는 위험을 막느라 매번 있는 수고를 시킨 셈이라 되돌린다.
+ *
+ *    지금:  코드에 기본값(_LRT_TO_DEFAULT_)을 둔다. 그래서 설정 없이 바로 된다.
+ *           **스크립트 속성이 있으면 그쪽이 이긴다** — 창고가 바뀌면 속성만
+ *           고치면 배포 없이 반영된다. 안전판은 그대로 남는다.
+ *      바꾸기:  csLotteReturnSetTo('{"name":"…","tel":"…","zip":"…","addr":"…"}')
+ *      되돌리기: csLotteReturnClearTo()   (기본값으로 복귀)
+ *      확인:    csLotteReturnConfig()
  * ══════════════════════════════════════════════════════════════
  */
 
@@ -43,7 +51,21 @@ var _LRT_ORD_SCT_ = "1";
 /** 박스크기 기본값. A~F 중 하나여야 한다. */
 var _LRT_BOX_DEFAULT_ = "C";
 
-/** 받는 곳(우리) 설정을 담는 속성 이름 */
+/**
+ * ★ 기본 회수지 — 팩투유 평택 창고 ★
+ *   사장님이 준 주소: "경기도 평택시 포승읍 성해홍원로 91 팩투유" (송장에 적는 주소)
+ *   우편번호 451824 는 지어낸 것이 아니라 **롯데 주소정제 API가 준 값**이다
+ *   (2026-09-08 조회 · 담당 지점 「안중(대)」). 그래서 롯데가 다시 볼 때도 어긋나지 않는다.
+ *   창고가 바뀌면 여기를 고치지 말고 csLotteReturnSetTo 로 속성을 넣으면 된다.
+ */
+var _LRT_TO_DEFAULT_ = {
+  name: "팩투유",
+  tel: "031-923-7795",
+  zip: "451824",
+  addr: "경기도 평택시 포승읍 성해홍원로 91"
+};
+
+/** 받는 곳(우리) 설정을 담는 속성 이름 — 있으면 기본값을 덮는다 */
 var _LRT_TO_PROP_ = "LOTTE_RETURN_TO";
 
 /** 임시공휴일을 더 넣는 속성 (yyyyMMdd 를 쉼표로) */
@@ -65,15 +87,8 @@ var _LRT_HOLIDAYS_ = {
   "20261003": 1, "20261009": 1, "20261225": 1
 };
 
-/** 받는 곳 설정을 읽는다. 없거나 모자라면 null. */
-function _lrt_to_() {
-  var raw = "";
-  try {
-    raw = PropertiesService.getScriptProperties().getProperty(_LRT_TO_PROP_) || "";
-  } catch (e) { return null; }
-  if (!raw) return null;
-  var o;
-  try { o = JSON.parse(raw); } catch (e) { return null; }
+/** 네 칸이 다 있는지 보고 다듬는다. 모자라면 null — 반쪽짜리는 안 쓴다. */
+function _lrt_clean_(o) {
   if (!o) return null;
   var need = ["name", "tel", "zip", "addr"];
   for (var i = 0; i < need.length; i++) {
@@ -88,8 +103,32 @@ function _lrt_to_() {
 }
 
 /**
+ * 받는 곳을 읽는다.
+ * ★ 스크립트 속성이 먼저, 없으면 코드 기본값 ★
+ *   속성이 깨져 있어도 기본값으로 돈다 — 회수 접수가 통째로 멈추는 것보다 낫다.
+ *   어느 쪽을 썼는지는 source 로 알려 준다 (설정 화면에서 보여 준다).
+ */
+function _lrt_to_() {
+  var raw = "";
+  try {
+    raw = PropertiesService.getScriptProperties().getProperty(_LRT_TO_PROP_) || "";
+  } catch (e) { raw = ""; }
+  if (raw) {
+    var o = null;
+    try { o = JSON.parse(raw); } catch (e) { o = null; }
+    var got = _lrt_clean_(o);
+    if (got) { got.source = "속성"; return got; }
+  }
+  var def = _lrt_clean_(_LRT_TO_DEFAULT_);
+  if (def) def.source = "기본값";
+  return def;
+}
+
+/**
  * 회수 접수를 쓸 수 있는 상태인가. 화면이 단추를 보일지 정할 때 부른다.
- * ★ 받는 주소가 없으면 아예 안 보여준다 ★ — 눌렀다가 실패하는 것보다 낫다.
+ * 기본 회수지가 코드에 있어 보통은 늘 준비돼 있다. 그래도 검사는 남긴다 —
+ * 누군가 속성에 반쪽짜리를 넣고 기본값까지 지웠을 때 조용히 틀린 주소로
+ * 나가는 것보다, 단추가 안 보이는 편이 낫다.
  */
 function csLotteReturnReady() {
   var to = _lrt_to_();
@@ -149,6 +188,27 @@ function csLotteReturnSetTo(json) {
     "  우편  " + chk.zip + "\n  주소  " + chk.addr + note;
 }
 
+/**
+ * 속성을 지워 코드 기본값(_LRT_TO_DEFAULT_)으로 되돌린다.
+ * 임시로 다른 창고를 쓰다가 원래대로 돌아올 때 쓴다. 지우는 것은 이 속성 하나뿐이다.
+ */
+function csLotteReturnClearTo() {
+  try {
+    PropertiesService.getScriptProperties().deleteProperty(_LRT_TO_PROP_);
+  } catch (e) { return "속성을 못 지웠습니다: " + e.message; }
+  var to = _lrt_to_();
+  var L = ["기본 회수지로 되돌렸습니다"];
+  if (to) {
+    L.push("  " + to.name + " / " + to.tel);
+    L.push("  (" + to.zip + ") " + to.addr);
+  } else {
+    L.push("  ★ 기본값도 비어 있습니다 — 코드를 확인하세요.");
+  }
+  var out = L.join("\n");
+  Logger.log(out);
+  return out;
+}
+
 /** 지금 설정을 사람이 읽는 형태로 */
 function csLotteReturnConfig() {
   var to = _lrt_to_();
@@ -161,8 +221,10 @@ function csLotteReturnConfig() {
     L.push("★ 받는 곳이 없습니다 — 접수 단추가 안 나옵니다.");
     L.push("  csLotteReturnSetTo('{\"name\":…,\"tel\":…,\"zip\":…,\"addr\":…}') 로 넣으세요.");
   } else {
-    L.push("받는 곳  " + to.name + " / " + to.tel);
+    L.push("받는 곳  " + to.name + " / " + to.tel + "   [" + (to.source || "?") + "]");
     L.push("         (" + to.zip + ") " + to.addr);
+    if (to.source === "기본값") L.push("         ※ 코드에 내장된 창고 주소입니다. 바꾸려면 csLotteReturnSetTo.");
+    else L.push("         ※ 스크립트 속성이 기본값을 덮고 있습니다. csLotteReturnClearTo 로 되돌립니다.");
   }
   L.push("");
   L.push("다음 영업일  " + _lrt_nextBusinessDay_());
