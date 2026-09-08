@@ -1287,6 +1287,32 @@
       padding: 8px 12px; border-radius: 8px; background: rgba(193, 193, 193,0.12);
     }
     .prod-links a:active { opacity: 0.85; }
+    /* 합포장 품목 고르기 — 2026-09-08.
+       같은 송장에 품목이 여럿일 때만 나온다. 전부 켠 채로 열고 뺄 것만 끈다. */
+    .ledger-items {
+      margin: 8px 0 4px; padding: 8px 10px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--bg-secondary);
+    }
+    .ledger-items[hidden] { display: none; }
+    .ledger-items-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; font-size: 12px; color: var(--text-muted); margin-bottom: 6px;
+    }
+    .ledger-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 2px; font-size: 13px; cursor: pointer;
+      border-top: 1px solid var(--border);
+    }
+    .ledger-item:first-child { border-top: 0; }
+    /* 손가락으로 끄고 켜는 칸이다. 기본 크기로는 옆줄이 눌린다. */
+    .ledger-item input { width: 18px; height: 18px; flex: none; accent-color: #7ee0ad; }
+    .ledger-item .li-name { flex: 1; min-width: 0; word-break: break-word; }
+    .ledger-item .li-qty { flex: none; font-variant-numeric: tabular-nums; }
+    .ledger-item .li-code { flex: none; font-size: 11px; color: var(--text-muted); }
+    /* 끈 줄은 흐리게 — 남은 것이 무엇인지 한눈에 보여야 한다 */
+    .ledger-item:has(input:not(:checked)) { opacity: 0.45; }
+
     .ledger-preview {
       font-size: 13px; color: var(--text-secondary); line-height: 1.55;
       background: var(--bg-secondary); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px;
@@ -2311,7 +2337,7 @@
     </div>
   </div>
 
-  <div class="version">v3.70 · 팩투유(Pack2U) CS 웹앱
+  <div class="version">v3.71 · 팩투유(Pack2U) CS 웹앱
     · <a target="_top" rel="noopener" href="<?= webAppUrl ?>?page=diag" style="color:#707070;text-decoration:underline">주소 진단</a>
   </div>
   </div>
@@ -2321,7 +2347,7 @@
       <button class="os-back" onclick="showHome()" aria-label="홈">‹</button>
       <span class="ws-title">팩투유<span class="ws-title-long">(Pack2U) CS 웹앱</span></span>
       <div class="nt" id="ntWrap" hidden aria-label="공지"><div class="nt-track" id="ntTrack"></div></div>
-      <span class="ws-ver" id="wsVerBadge">v3.70</span>
+      <span class="ws-ver" id="wsVerBadge">v3.71</span>
       <span class="ws-me" id="wsMe" title="로그인 계정"></span>
     </div>
     <div class="ws-mobile-tabs" id="wsMobileTabs" aria-label="패널 이동">
@@ -2712,6 +2738,16 @@
       <div class="modal-handle"></div>
       <div class="modal-title">반품관리대장 기록</div>
       <div class="ledger-preview" id="ledgerPreview"></div>
+      <!-- 합포장 — 같은 송장에 품목이 여럿일 때만 나온다 (2026-09-08).
+           전부 켠 채로 열고, 반품 안 하는 것만 꺼서 접수한다. -->
+      <div class="ledger-items" id="ledgerItems" hidden>
+        <div class="ledger-items-head">
+          <span>같은 송장에 품목이 <b id="ledgerItemsCnt">0</b>개입니다 — 반품할 것만 남기세요</span>
+          <button type="button" class="os-copy" id="ledgerItemsAll"
+                  onclick="ledgerToggleAll()">전체 해제</button>
+        </div>
+        <div id="ledgerItemsList"></div>
+      </div>
       <div class="draft-bar" id="ledgerDraftBar">
         <span class="dm"></span>
         <button type="button" class="dx" onclick="draftDiscard('ledger')">새로 작성</button>
@@ -5882,7 +5918,7 @@
     var RET_PHOTO_MAX = 6;
     var RET_PHOTO_PEND = {};    // 카드 index → 업로드 대기 사진
     var RET_MODAL_PHOTOS = {};  // 'retNew' | 'ledger' → 업로드 대기 사진
-    var CS_RET_UI_VER = 'v3.70';
+    var CS_RET_UI_VER = 'v3.71';
 
     /** 접두 → 업체명. 허브 `_PEP_VENDOR_LABELS_` / 포털 `PRP_VENDOR_LABELS` 와 맞춘다. */
     var RET_VENDOR_LABELS = {
@@ -8077,11 +8113,95 @@
         });
     }
 
+    /**
+     * 같은 송장에 걸린 형제 행을 찾는다 — 합포장이면 품목이 여럿이다.
+     * ★ 2026-09-08
+     *
+     * 검색 결과는 **품목 한 줄이 한 카드**다. 합포장 주문은 같은 송장으로
+     * 여러 카드가 뜨는데, 그중 아무 카드에서나 접수를 열면 그 한 품목만
+     * 대장에 들어갔다. 나머지는 CS 가 카드를 하나씩 찾아 또 눌러야 했다.
+     *
+     * 여기서 같은 송장을 다 모아 놓고, **반품 안 하는 것만 끄게** 한다.
+     * 전부 켠 채로 여는 이유 — 대개 한 상자를 통째로 돌려보내고,
+     * 일부만 돌려보내는 쪽이 예외라서다.
+     */
+    function ledgerSiblings(i) {
+      var r = CS_ROWS[i] || {};
+      var key = String(r.invoice || '').replace(/[^0-9]/g, '');
+      if (key.length < 8) return [i];          // 송장이 없으면 묶을 근거가 없다
+      var out = [];
+      for (var k = 0; k < CS_ROWS.length; k++) {
+        var d = String((CS_ROWS[k] || {}).invoice || '').replace(/[^0-9]/g, '');
+        if (d === key) out.push(k);
+      }
+      /* 누른 카드가 맨 위로. 사람이 그걸 보고 눌렀으므로 목록에서도 먼저 보여야 한다. */
+      out.sort(function (a, b) { return (a === i ? -1 : b === i ? 1 : a - b); });
+      return out.length ? out : [i];
+    }
+
+    /** 접수에 넣을 행 번호들 — 체크된 것만. 목록이 없으면 누른 카드 하나. */
+    function ledgerPicked() {
+      var box = document.getElementById('ledgerItemsList');
+      var ins = box ? box.querySelectorAll('input[type=checkbox]') : [];
+      if (!ins.length) return [LEDGER_IDX];
+      var out = [];
+      for (var i = 0; i < ins.length; i++) {
+        if (ins[i].checked) out.push(parseInt(ins[i].value, 10));
+      }
+      return out;
+    }
+
+    /** 전체 해제 ↔ 전체 선택. 켠 것이 하나라도 있으면 「해제」로 동작한다. */
+    function ledgerToggleAll() {
+      var box = document.getElementById('ledgerItemsList');
+      var ins = box ? box.querySelectorAll('input[type=checkbox]') : [];
+      var anyOn = false;
+      for (var i = 0; i < ins.length; i++) if (ins[i].checked) { anyOn = true; break; }
+      for (var k = 0; k < ins.length; k++) ins[k].checked = !anyOn;
+      ledgerSyncPick();
+    }
+
+    /** 고른 개수를 단추와 「전체 해제/선택」 글자에 반영한다. */
+    function ledgerSyncPick() {
+      var n = ledgerPicked().length;
+      var box = document.getElementById('ledgerItemsList');
+      var total = box ? box.querySelectorAll('input[type=checkbox]').length : 0;
+      var all = document.getElementById('ledgerItemsAll');
+      if (all) all.textContent = n > 0 ? '전체 해제' : '전체 선택';
+      var btn = document.getElementById('ledgerSubmitBtn');
+      if (btn && !btn.disabled) {
+        btn.textContent = total > 1 ? ('기록 (' + n + '건)') : '기록';
+      }
+    }
+
     function openLedger(i) {
       DRAFT_QUIET = true;
       RET_NEW_PENDING = false;
       LEDGER_IDX = i;
       var r = CS_ROWS[i] || {};
+
+      /* 같은 송장의 품목들 — 둘 이상일 때만 고르는 칸을 보여준다.
+         하나뿐인데 목록이 뜨면 누를 것만 하나 더 느는 셈이다. */
+      var sibs = ledgerSiblings(i);
+      var wrap = document.getElementById('ledgerItems');
+      var list = document.getElementById('ledgerItemsList');
+      if (sibs.length > 1) {
+        var h = '';
+        for (var s = 0; s < sibs.length; s++) {
+          var x = CS_ROWS[sibs[s]] || {};
+          h += '<label class="ledger-item"><input type="checkbox" checked value="' + sibs[s] +
+            '" onchange="ledgerSyncPick()"><span class="li-name">' + esc(x.item || '(품목 없음)') +
+            '</span>' + (x.qty ? '<span class="li-qty">× ' + esc(x.qty) + '</span>' : '') +
+            (x.ecountCode ? '<span class="li-code">' + esc(x.ecountCode) + '</span>' : '') +
+            '</label>';
+        }
+        list.innerHTML = h;
+        document.getElementById('ledgerItemsCnt').textContent = String(sibs.length);
+        wrap.hidden = false;
+      } else {
+        list.innerHTML = '';
+        wrap.hidden = true;
+      }
       document.getElementById('ledgerPreview').innerHTML =
         esc(r.name || '-') + ' · ' + esc(r.phone || '-') + '<br>' +
         esc(r.item || '-') + (r.qty ? ' × ' + esc(r.qty) : '') + '<br>' +
@@ -8100,6 +8220,7 @@
       draftWatch('ledger');
       draftRestore('ledger');
       DRAFT_QUIET = false;
+      ledgerSyncPick();
     }
 
     function closeLedger(fromCancel) {
@@ -8124,12 +8245,28 @@
       else submitLedger(true);
     }
 
+    /**
+     * 반품대장 기록.
+     *
+     * ★ 2026-09-08: 고른 품목마다 한 줄씩 넣는다 ★
+     *   합포장이면 같은 송장에 품목이 여럿이다. 반품비·정산은 품목 단위로 도니
+     *   한 줄에 뭉쳐 넣으면 나중에 못 가른다.
+     *
+     *   ★ 두 번째부터는 force 다 ★
+     *     같은 원송장이라 서버가 「중복」이라고 되묻는데, 여기서는 **일부러**
+     *     같은 송장으로 여러 줄을 넣는 것이다. 첫 줄에서 한 번만 사람에게 묻고
+     *     나머지는 그 답을 따른다 — 품목마다 같은 것을 세 번 묻지 않는다.
+     */
     function submitLedger(force) {
-      var r = CS_ROWS[LEDGER_IDX] || {};
+      var picked = ledgerPicked().filter(function (n) { return n >= 0 && CS_ROWS[n]; });
+      if (!picked.length) { toast('반품할 품목을 하나는 남겨 주세요'); return; }
       var staff = document.getElementById('ledgerStaff').value;
       if (!staff) { toast('접수자를 선택하세요'); return; }
       currentStaff = staff;
       try { localStorage.setItem('pack2u_staff', staff); } catch (eS) {}
+      if (picked.length > 1) { submitLedgerMany(picked, staff, force); return; }
+
+      var r = CS_ROWS[picked[0]] || {};
       var btn = document.getElementById('ledgerSubmitBtn');
       btn.disabled = true;
       btn.textContent = '기록 중…';
@@ -8179,6 +8316,83 @@
           invoice: r.invoice,
           force: !!force
         });
+    }
+
+    /**
+     * 여러 품목을 차례로 기록한다.
+     *
+     * ★ 한 번에 몰아 보내지 않는다 ★
+     *   서버(submitReturnLedger)는 한 건씩 받는다. 여러 건을 받게 고치면
+     *   중복 판정·시트 잠금까지 다시 짜야 한다. 건수는 많아야 서넛이라
+     *   차례로 보내는 편이 훨씬 안전하다. 중간에 실패하면 **거기서 멈추고**
+     *   몇 건까지 들어갔는지 말해 준다 — 조용히 반만 들어가면 안 된다.
+     */
+    function submitLedgerMany(picked, staff, force) {
+      var btn = document.getElementById('ledgerSubmitBtn');
+      var type = document.getElementById('ledgerType').value;
+      var pickup = document.getElementById('ledgerPickup').value;
+      var memo = document.getElementById('ledgerMemo').value;
+      var done = 0;
+      var first = null;
+
+      function step(n, useForce) {
+        if (n >= picked.length) {
+          btn.disabled = false;
+          ledgerSyncPick();
+          closeLedger();
+          closeLedgerDup();
+          draftClear('ledger');
+          var head = CS_ROWS[picked[0]] || {};
+          var pend = retModalList('ledger').length;
+          if (pend) toast(done + '건 기록됨 · 사진 ' + pend + '장 올리는 중…', 2600);
+          /* 사진은 첫 줄에만 붙인다. 같은 상자를 찍은 것이라 품목마다 복사하면
+             저장소만 늘고 보는 사람은 같은 사진을 여러 번 본다. */
+          retModalPhotoUpload('ledger', first || {}, staff, head.name, function (photoMsg) {
+            toast(photoMsg || (done + '건 기록됨'), 2600);
+            loadReturnActive(true, false);
+          });
+          return;
+        }
+        var r = CS_ROWS[picked[n]] || {};
+        btn.disabled = true;
+        btn.textContent = '기록 중… (' + (n + 1) + '/' + picked.length + ')';
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.duplicate && !useForce) {
+              // 첫 줄에서만 묻는다. 「그래도 추가」를 누르면 전부 force 로 다시 돈다.
+              btn.disabled = false;
+              ledgerSyncPick();
+              showLedgerDup(res.message);
+              return;
+            }
+            if (!res || !res.success) {
+              btn.disabled = false;
+              ledgerSyncPick();
+              toast('(' + (n + 1) + '/' + picked.length + ') ' +
+                ((res && (res.error || res.message)) || '기록 실패') +
+                (done ? ' — ' + done + '건까지는 들어갔습니다' : ''), 4200);
+              return;
+            }
+            if (!first) first = res;
+            done++;
+            step(n + 1, true);   // 두 번째부터는 같은 송장이라 되묻지 않는다
+          })
+          .withFailureHandler(function (err) {
+            btn.disabled = false;
+            ledgerSyncPick();
+            toast('(' + (n + 1) + '/' + picked.length + ') ' +
+              String((err && err.message) || err || '기록 실패') +
+              (done ? ' — ' + done + '건까지는 들어갔습니다' : ''), 4200);
+          })
+          .submitReturnLedger({
+            staff: staff, type: type, pickup: pickup, memo: memo,
+            name: r.name, phone: r.phone, vendor: r.vendor,
+            source: r.source, origin: r.origin, carrier: resolveCarrier(r),
+            orderNo: r.orderNo, item: r.item, qty: r.qty, invoice: r.invoice,
+            force: !!useForce
+          });
+      }
+      step(0, !!force);
     }
 
     function guessEcountCode(item, code) {

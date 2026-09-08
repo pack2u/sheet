@@ -84,6 +84,7 @@ function ss_설치() {
   ssio_sheet(SSIO_TABS.분리예외, SSM_EXCEPT_HEADER);
   ssio_sheet(SSIO_TABS.도서산간시군, SSM_ISL_KW_HEADER);
   ssio_sheet(SSIO_TABS.도서산간우편, SSM_ISL_ZIP_HEADER);
+  ssio_sheet(SSIO_TABS.도선료, SS_FERRY_HEADER);
   ssio_sheet(SSIO_TABS.도서산간사전, SSM_ISL_DICT_HEADER);
   ssio_sheet(SSIO_TABS.동네배송, SSM_LOCAL_HEADER);
 

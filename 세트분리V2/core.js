@@ -67,13 +67,16 @@ var SS_VENDOR_HEADER = ['업체코드', '업체명'];
 var SS_MERGED_HEADER = ['구분', '조건ID', '실제경로', '합포장키'].concat(SS_OUT_HEADER);
 
 /** 도서산간 탭 — 롯데 요금 구분(제주연계 / 도선료·산간료)에 맞춘 권역을 앞에 붙인다 */
-var SS_ISLAND_HEADER = ['권역', '우편번호', '판정'].concat(SS_OUT_HEADER);
+var SS_ISLAND_HEADER = ['권역', '우편번호', '판정', '도선료'].concat(SS_OUT_HEADER);
+
+/** 롯데 도선료 표 — 택배사 청구 기준 그대로다 */
+var SS_FERRY_HEADER = ['시도', '시군구', '읍면동', '리조건', '도선료', '권역'];
 
 var SS_LEDGER_HEADER = [
   '회차키', '라인ID', '고유ID', '주문번호출처', '실행시각', '경로', '보류사유', '출고지', '순번', '일자-No.',
   '원본품목코드', '품목코드', '품목명', '출력품목명', '택배박스수량', '주문수량', '소요량', '수량',
   '조건ID', '합포장그룹', '합포장대표', '배송비', '배송비산출', '부족수량',
-  '도서권역', '우편번호', '도서판정', '주소변경', '원받는분', '원주소', '원연락처',
+  '도서권역', '우편번호', '도서판정', '도선료', '주소변경', '원받는분', '원주소', '원연락처',
   '거래처명', '전화', '모바일', '주소1', '배송메시지', '합계',
   '적요', '사방넷주문번호', '보내는분', '보내는분전화',
   '운송장번호', '송장매칭'
@@ -96,6 +99,7 @@ var SS_DEFAULT_CONFIG = {
   전화주문_고유ID: '주문번호칸에채움',
   재고부족_자동대리발송: '사용',
   합포장_최대건수: '0',
+  고유ID_짧은날짜_전환일: SS_ID_SHORT_FROM,
   비배송_품목패턴: '적립금|반품배송비|배송비|할인|쿠폰|수수료|차감'
 };
 
@@ -228,17 +232,30 @@ function ssHashN(s, n) {
  * 그래서 순번 기반이나 랜덤(UUID)은 쓸 수 없다 — 회차마다 값이 달라진다.
  * 전표번호와 주문 내용만으로 계산해 **같은 주문이면 언제 계산해도 같은 값**이 나온다.
  *
- *   260902-PH-a3f19
+ *   0902-PH-a3f19   (전환일 이전 주문은 260902-PH-a3f19)
  *    └날짜   └표식 └전표·수취인·연락처·주소·품목·수량 해시
  *
  * 상품정보 시트의 「MMdd-ds-xxxx」(발주수집이 발급)와 나란한 형태지만
  * 뒷자리가 랜덤이 아니라 내용 해시다 — 랜덤이면 회차마다 값이 달라진다.
  */
-function ssMakeOrderId(L) {
+/**
+ * 고유ID 날짜를 MMdd 로 줄이기 시작하는 날. 이 날짜 이전 주문은 YYMMDD 로 남는다.
+ * 오늘 이미 롯데에 올라간 ID 가 바뀌면 송장이 안 맞으므로 날짜로 끊는다.
+ */
+var SS_ID_SHORT_FROM = '20260909';
+
+function ssMakeOrderId(L, cfg) {
   var 일자 = ssText(L.일자);
   var parts = 일자.split('-');
   var digits = ssText(parts[0]).replace(/[^0-9]/g, '');
-  var ymd = digits.length >= 8 ? digits.slice(2, 8) : digits;
+  // 전환일부터 상품정보 시트의 「MMdd-ds-xxxx」 와 자리수를 맞춘다.
+  // 오늘 날짜가 아니라 「주문 일자」로 판정한다 — 지난 회차를 다시 돌려도
+  // 그때 발급한 ID 가 그대로 나와야 원장·송장매칭이 어긋나지 않는다.
+  var 전환일 = (cfg && ssText(cfg.고유ID_짧은날짜_전환일)) || SS_ID_SHORT_FROM;
+  var ymd = digits;
+  if (digits.length >= 8) {
+    ymd = (digits.slice(0, 8) >= 전환일) ? digits.slice(4, 8) : digits.slice(2, 8);
+  }
   var no = ssText(parts[1]).replace(/[^0-9]/g, '') || '0';
   // 배송지가 바뀌어도 같은 주문이므로 원래 값으로 계산한다.
   // 그래야 오전에 발급한 ID가 오후 회차에서도 그대로다.
@@ -256,7 +273,7 @@ function ssMakeOrderId(L) {
  *
  * 사방넷·대리판매는 이미 「이름/고유아이디」 형식으로 들어온다. 전화주문만 비어 있으니
  * 같은 형식으로 채워 O열 하나로 전 주문이 통일되게 한다.
- *   거래처명 「행주국수 김순해」 + PH-ID  →  「행주국수 김순해/260902-PH-303d4」
+ *   거래처명 「행주국수 김순해」 + PH-ID  →  「행주국수 김순해/0902-PH-303d4」
  *
  * 이미 값이 있는 행은 손대지 않는다. 쇼핑몰이 확정해 보낸 값이 사실이다.
  * 반환: [{ 행: 0기준 행번호, 값: 이름/ID }]
@@ -423,7 +440,7 @@ function ssNormalize(grid, cfg, warnings) {
         '  →  ' + ssText(line.받는분).slice(0, 12) + ' / ' + ovAddr.addr.slice(0, 34));
     }
     line._행 = r;   // 판매현황 원본의 몇 번째 행인가 (0-기준). O열 되쓰기에 쓴다
-    line.고유ID = ssText(line.사방넷주문번호) || ssMakeOrderId(line);
+    line.고유ID = ssText(line.사방넷주문번호) || ssMakeOrderId(line, cfg);
     if (line.주문번호출처 !== undefined) { /* noop */ }
     if (!ssText(line.사방넷주문번호)) {
       var base = line.고유ID, n = 1;
@@ -830,6 +847,7 @@ function ssRoute(units, masters, cfg, warnings) {
   var allow = [];
   ssText(cfg.허용상태).split(',').forEach(function (s) { if (s.trim()) allow.push(s.trim()); });
   var islandKw = masters.islandKeywords || [];
+  var ferry = masters.ferry || [];
   var islandZip = masters.islandZips || {};
   var addrZip = masters.addrZip || {};
   var localAddr = (ssText(cfg.동네배송_사용) === '사용') ? (masters.localAddrs || {}) : {};
@@ -936,6 +954,19 @@ function ssRoute(units, masters, cfg, warnings) {
     var zip = ssText(addrZip[addr]);
     u.우편번호 = zip;
 
+    // 0) 롯데 도선료 표 — 택배사가 실제로 청구하는 기준이라 가장 정확하다.
+    //    읍·면은 도로명주소에도 그대로 들어가므로 주소 문자열만으로 확정된다.
+    //    「리조건」이 붙은 곳은 그 읍·면 안에서 적힌 리만 대상이라, 리가 주소에
+    //    없으면 확정하지 않고 아래 우편번호 판정으로 넘긴다.
+    var fh = ssFerryMatch(addr, ferry);
+    if (fh) {
+      u.도서권역 = fh.권역;
+      u.도서판정 = '도선료표';
+      u.도선료 = fh.료;
+      u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
+      continue;
+    }
+
     // 1) 우편번호가 있으면 그것만으로 끝난다. 도시 이름은 보지 않는다.
     if (zip) {
       if (islandZip[zip]) {
@@ -1004,8 +1035,37 @@ function ssOutRow(u) {
   ];
 }
 
+/**
+ * 롯데 도선료 표에서 주소에 맞는 행을 찾는다.
+ *
+ * 시군구와 읍면동이 둘 다 주소에 있어야 한다. 읍면동만 보면 「남면」처럼
+ * 여러 시군에 있는 이름이 엉뚱한 곳을 잡는다.
+ * 리조건이 있으면 그 리까지 주소에 있어야 확정이다 — 없으면 null 을 돌려
+ * 우편번호 판정에 맡긴다. 그 읍·면 전체가 도선료 대상은 아니기 때문이다.
+ */
+function ssFerryMatch(addr, ferry) {
+  if (!addr || !ferry || !ferry.length) return null;
+  for (var i = 0; i < ferry.length; i++) {
+    var f = ferry[i];
+    if (!f.시군 || !f.읍면동) continue;
+    if (addr.indexOf(f.시군) < 0) continue;
+    if (addr.indexOf(f.읍면동) < 0) continue;
+    if (f.리 && f.리.length) {
+      var hit = false;
+      for (var j = 0; j < f.리.length; j++) {
+        // 「매화리1구~3구」 같은 표기는 앞의 리 이름만 본다
+        var ri = ssText(f.리[j]).split(/[0-9(]/)[0].trim();
+        if (ri && addr.indexOf(ri) >= 0) { hit = true; break; }
+      }
+      if (!hit) continue;
+    }
+    return { 권역: f.권역 || '도서', 료: f.료 || 0, 읍면동: f.읍면동 };
+  }
+  return null;
+}
+
 function ssIslandRow(u) {
-  return [u.도서권역 || '', u.우편번호 || '', u.도서판정 || ''].concat(ssOutRow(u));
+  return [u.도서권역 || '', u.우편번호 || '', u.도서판정 || '', u.도선료 || ''].concat(ssOutRow(u));
 }
 
 function ssNonshipRow(u) {
@@ -1032,7 +1092,7 @@ function ssLedgerRow(u, runKey, at) {
     u.박스수, u.주문수량, u.소요량, u.수량,
     u.조건ID || '', u.합포장그룹 || '', u.합포장대표 ? 'Y' : '',
     u.배송비, u.배송비산출, u.부족수량,
-    u.도서권역 || '', u.우편번호 || '', u.도서판정 || '',
+    u.도서권역 || '', u.우편번호 || '', u.도서판정 || '', u.도선료 || '',
     u.주소변경 || '', u.원받는분 || '', u.원주소1 || '', u.원연락처 || '',
     u.받는분, u.전화, u.모바일, u.주소1, u.배송메시지, u.합계,
     u.적요, u.사방넷주문번호, u.보내는분, u.보내는분전화,
@@ -1122,13 +1182,13 @@ var SS_INVOICE_HEADER = ['주문번호', '품목코드', '구분', '합포장키
  * 사방넷이 아는 주문번호인가.
  * 사방넷 번호는 숫자뿐이다. 시스템이 발급한 ID 는 전부 걸러야 한다:
  *   0902-ds-e158   상품정보 발주수집 발급 (허브 _po_isGeneratedUid_ 와 같은 판별)
- *   260903-PH-…    세트분리 전화주문 발급
+ *   0903-PH-…      세트분리 전화주문 발급
  */
 function ssIsSabangnetUid(uid) {
   var u = ssText(uid);
   if (!u) return false;
-  if (/^\d{4}-[A-Za-z]{2}-/.test(u)) return false;   // MMdd-ds- 형
-  if (/^\d{6}-PH-/.test(u)) return false;            // YYMMDD-PH- 형
+  if (/^\d{4}-[A-Za-z]{2}-/.test(u)) return false;   // MMdd-ds- · MMdd-PH- 형
+  if (/^\d{6}-PH-/.test(u)) return false;            // 구 YYMMDD-PH- 형 (과거 발급분)
   return /^\d+$/.test(u);
 }
 
@@ -1354,9 +1414,9 @@ if (typeof module !== 'undefined' && module.exports) {
     ssAssignCondition: ssAssignCondition, ssAllocateStock: ssAllocateStock,
     ssRoute: ssRoute, ssMerge: ssMerge, ssShippingFee: ssShippingFee,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
+    ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
-    ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow,
+    ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,
     ssPartnerRow: ssPartnerRow, ssHoldRow: ssHoldRow, ssVendorOf: ssVendorOf,
     ssInvoiceRows: ssInvoiceRows, ssIsSabangnetUid: ssIsSabangnetUid, SS_INVOICE_HEADER: SS_INVOICE_HEADER,
     ssNonshipRow: ssNonshipRow, ssNonShipReason: ssNonShipReason, SS_NONSHIP_HEADER: SS_NONSHIP_HEADER,

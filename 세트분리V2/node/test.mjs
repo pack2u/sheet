@@ -41,7 +41,13 @@ eq('순번 포맷 TEXT(n,"100000")', C.ssPad6(35), '100035');
 
 console.log('\n[고유ID] 결정적이어야 한다');
 const _L = { 일자: '2026/09/02 -8', 받는분: '김대선', 모바일: '010-5415-4432', 주소1: '서울 강동구 양재대로89가길 34', 원본코드: 'BFTANG00001', 주문수량: 2 };
-eq('형식 YYMMDD-PH-xxxxx', /^260902-PH-[0-9a-f]{5}$/.test(C.ssMakeOrderId(_L)), true);
+eq('전환일 이전은 YYMMDD-PH-', /^260902-PH-[0-9a-f]{5}$/.test(C.ssMakeOrderId(_L)), true);
+{
+  const _L2 = Object.assign({}, _L, { 일자: '2026/09/09 -11' });
+  eq('전환일부터 MMdd-PH-', /^0909-PH-[0-9a-f]{5}$/.test(C.ssMakeOrderId(_L2)), true);
+  const _L3 = Object.assign({}, _L, { 일자: '2026/09/08 -11' });
+  eq('전환일 하루 전은 YYMMDD-PH-', /^260908-PH-[0-9a-f]{5}$/.test(C.ssMakeOrderId(_L3)), true);
+}
 eq('재계산해도 동일', C.ssMakeOrderId(_L), C.ssMakeOrderId(_L));
 eq('전표 다르면 다른 ID', C.ssMakeOrderId(Object.assign({}, _L, { 일자: '2026/09/02 -12' })) !== C.ssMakeOrderId(_L), true);
 eq('상품정보 -ds- 와 형식 구분', /-ds-/.test(C.ssMakeOrderId(_L)), false);
@@ -345,10 +351,24 @@ console.log('\n[사방넷 번호 판별] 시스템 발급 ID는 등록 제외');
 {
   eq('사방넷 숫자 번호', C.ssIsSabangnetUid('2159711511'), true);
   eq('상품정보 발급 -ds-', C.ssIsSabangnetUid('0902-ds-e158'), false);
-  eq('세트분리 전화주문 -PH-', C.ssIsSabangnetUid('260903-PH-4bdf'), false);
+  eq('세트분리 전화주문 MMdd-PH-', C.ssIsSabangnetUid('0903-PH-4bdf'), false);
+  eq('과거 발급 YYMMDD-PH- 도 제외', C.ssIsSabangnetUid('260903-PH-4bdf'), false);
   eq('빈 값', C.ssIsSabangnetUid(''), false);
   eq('문자 섞임', C.ssIsSabangnetUid('ABC123'), false);
 }
 
+
+console.log('\n[도선료 표] 롯데 공식 표로 도서산간 확정');
+{
+  const F = [{시군:'통영시',읍면동:'산양읍',리:['연곡리','저림리'],료:4000,권역:'도서'},{시군:'통영시',읍면동:'욕지면',리:[],료:4000,권역:'도서'},{시군:'울릉군',읍면동:'울릉읍',리:[],료:6500,권역:'도서'},{시군:'신안군',읍면동:'압해면',리:['매화리1구~3구','고이리'],료:5000,권역:'도서'},{시군:'목포시',읍면동:'달동',리:[],료:5000,권역:'도서'}];
+  const hit = (a) => { const r = C.ssFerryMatch(a, F); return r ? r.읍면동 + ' ' + r.료 : ''; };
+  eq('면 전체 대상', hit('경남 통영시 욕지면 동항리 100'), '욕지면 4000');
+  eq('리조건 — 해당 리', hit('경남 통영시 산양읍 연곡리 12'), '산양읍 4000');
+  eq('리조건 — 다른 리는 제외', hit('경남 통영시 산양읍 삼덕리 5'), '');
+  eq('구간 표기 리도 잡는다', hit('전남 신안군 압해면 매화리 2구'), '압해면 5000');
+  eq('동 단위', hit('전남 목포시 달동 100'), '달동 5000');
+  eq('같은 면 이름 다른 시군은 제외', hit('경기 화성시 남면 1'), '');
+  eq('시군만 맞고 읍면 다르면 제외', hit('경남 통영시 도산면 1'), '');
+}
 console.log('\n' + (fail ? `실패 ${fail}건 / ` : '') + `통과 ${pass}건`);
 process.exit(fail ? 1 : 0);

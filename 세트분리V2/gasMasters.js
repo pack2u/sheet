@@ -234,6 +234,10 @@ function ssm_refreshAll() {
              : '원천도 못 읽고 로컬 목록도 비었습니다. 「도서산간 목록 심기」를 실행하세요. ' + kwRes.why]);
   }
 
+  // 도선료 표는 롯데가 준 파일을 사람이 심어 두는 것이라 원천에서 당겨오지 않는다.
+  // 요금이 바뀌면 「도서산간 목록 심기」를 다시 돌리거나 탭에서 직접 고친다.
+  report.push(['도서산간 도선료', ssm_localRows(SSIO_TABS.도선료) + '행 (수동 관리)']);
+
   var zpRes = ssm_openOptional(cfg['도서산간시트ID'], cfg['도서산간_우편번호탭'], '도서산간');
   if (zpRes.ok) {
     var zips = [];
@@ -327,7 +331,7 @@ function ssm_load(회차키) {
   var M = {
     items: {}, stock: {}, bom: {}, splitExcept: {},
     cond: {}, condCodes: {}, feeRules: {},
-    islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {}
+    islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {}, ferry: []
   };
 
   var it = ssio_body(SSIO_TABS.M품목);
@@ -402,6 +406,8 @@ function ssm_load(회차키) {
     if (vc) M.vendors[vc] = ssText(vd[v2][1]) || vc;
   }
   M.override = ssm_loadManual(ssio_config(), 회차키);
+
+  M.ferry = ssm_ferryRows();   // 롯데 도선료 표 (주소 문자열로 확정)
 
   return M;
 }
@@ -824,4 +830,24 @@ function ssm_stampManual(units, 회차키) {
   }
   if (changed) sh.getRange(2, 2, n, 8).setValues(v);
   return cnt;
+}
+
+/** 「도서산간_도선료」 탭 → core 가 쓰는 모양으로 */
+function ssm_ferryRows() {
+  var out = [];
+  var body = ssio_body(SSIO_TABS.도선료);
+  for (var i = 0; i < body.length; i++) {
+    var 읍면동 = ssText(body[i][2]);
+    if (!읍면동) continue;
+    var 리raw = ssText(body[i][3]);
+    out.push({
+      시도: ssText(body[i][0]),
+      시군: ssText(body[i][1]),
+      읍면동: 읍면동,
+      리: 리raw ? 리raw.split(String.fromCharCode(124)) : [],
+      료: ssNum(body[i][4]),
+      권역: ssText(body[i][5]) || '도서'
+    });
+  }
+  return out;
 }

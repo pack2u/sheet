@@ -18,7 +18,7 @@ function empty() {
   return {
     items: {}, stock: {}, bom: {}, splitExcept: {},
     cond: {}, condCodes: {}, feeRules: {},
-    islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {}
+    islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {}, ferry: []
   };
 }
 
@@ -119,6 +119,13 @@ export function loadMasters(wb, layout = detectLayout(wb)) {
     const a = T(r[0]), z = T(r[1]); if (a && z) M.addrZip[a] = z;
   }
   for (const r of body('동네배송_금일')) { const a = T(r[0]); if (a) M.localAddrs[a] = true; }
+  if (has('도서산간_도선료')) {
+    for (const r of body('도서산간_도선료')) {
+      const 읍면동 = T(r[2]); if (!읍면동) continue;
+      M.ferry.push({ 시도: T(r[0]), 시군: T(r[1]), 읍면동,
+        리: T(r[3]) ? T(r[3]).split('|') : [], 료: N(r[4]), 권역: T(r[5]) || '도서' });
+    }
+  }
   return { masters: M, stat };
 }
 
