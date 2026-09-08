@@ -83,5 +83,35 @@ ok("★ 못 찾으면 조용히 넘어가지 않는다 ★",
 ok("배송불가 지역이면 설정 단계에서 알린다",
    /!ref\.deliverable[\s\S]{0,80}배송불가 안내/.test(src));
 
+console.log("\n[7] 화면 — 확인창과 접수자 (사장님 지시 5번)");
+ok("접수 칸이 있다", html.indexOf('id="lrtOpt"') > -1);
+ok("★ 받는 곳이 없으면 안 보인다 ★",
+   /LRT_READY && LRT_READY\.ready\) && lotte/.test(html));
+ok("롯데 건이 아니면 안 보인다", /isLotteTrack\(r\.source, resolveCarrier\(r\)\)/.test(html));
+ok("확인창이 있다", html.indexOf('id="lrtModal"') > -1);
+ok("★ 되돌릴 수 없다고 알린다 ★", /취소는 롯데에 직접 연락해야 합니다/.test(html));
+ok("무엇이 어디로 가는지 보여준다",
+   /보내는 분[\s\S]{0,300}받는 곳/.test(html));
+ok("★ 맨 아래에 접수자 이름 ★", html.indexOf('id="lrtBy"') > -1);
+ok("접수자는 로그인 정보에서 온다",
+   /lrtBy'\)\.textContent =[\s\S]{0,80}CS_USER_NAME/.test(html));
+
+console.log("\n[8] 순서 — 접수 먼저, 기록 나중");
+/* 대장을 먼저 쓰면 반품송장 칸이 비고, 채우려면 그 줄을 다시 찾아야 한다.
+   접수가 먼저면 채번된 송장을 그대로 들고 기록한다. */
+ok("기록을 누르면 먼저 확인창을 띄운다",
+   /want\.checked && !pickedInv\) \{ lrtAsk\(\); return; \}/.test(html));
+ok("접수 성공 뒤에 기록으로 넘어간다", /submitLedger\(false, res\.invoice\)/.test(html));
+ok("채번된 송장을 대장에 싣는다", /returnInvoice: pickedInv \|\| ''/.test(html));
+ok("접수 실패는 삼키지 않는다", /회수 접수 실패 —/.test(html));
+ok("박스를 골랐으면 고른 송장만 쓴다",
+   /LEDGER_PICK_MODE === 'invoice'\) return ledgerChecked\(\)/.test(html));
+
+console.log("\n[9] 고객 우편번호 — 주문에 없으니 찾아 쓴다");
+ok("주소로 찾는다", /if \(!pZip && pAddr\)[\s\S]{0,140}csLotteRefineAddress/.test(src));
+ok("찾은 값을 요청에 쓴다", /snperZipcd: pZip/.test(src));
+ok("★ 회수 불가 지역이면 보내기 전에 막는다 ★",
+   /회수 불가 지역입니다/.test(src));
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

@@ -219,13 +219,40 @@ function csLotteReturnPickup(p) {
 
   /* 보내는 사람 = 고객. 이 넷이 없으면 기사가 못 간다.
      ★ 지어내지 않는다 ★ 주소가 비었는데 접수하면 기사가 헛걸음한다. */
+  var pZip = String(p.zip || "").replace(/[^0-9]/g, "");
+  var pAddr = String(p.addr || "").trim();
+
+  /* ★ 주문에는 우편번호가 없다 ★
+     검색 결과 행(CS_ROWS)에 주소는 있어도 우편번호 칸이 아예 없다.
+     그대로 두면 **모든 접수가 「우편번호 없음」으로 막힌다.**
+     주소로 찾아 채운다 — 설정 때 우리 주소에 쓴 것과 같은 방법이다.
+     찾아온 값은 롯데가 준 것이라 롯데가 다시 볼 때도 어긋나지 않는다. */
+  var refined = null;
+  if (!pZip && pAddr) {
+    refined = csLotteRefineAddress({ address: pAddr, name: p.name, tel: p.phone });
+    if (refined && refined.ok && refined.zipNo) {
+      pZip = String(refined.zipNo).replace(/[^0-9]/g, "");
+    }
+  }
+
   var miss = [];
   if (!String(p.name || "").trim()) miss.push("고객명");
   if (!String(p.phone || "").trim()) miss.push("전화");
-  if (!String(p.zip || "").replace(/[^0-9]/g, "")) miss.push("우편번호");
-  if (!String(p.addr || "").trim()) miss.push("주소");
+  if (!pAddr) miss.push("주소");
+  if (!pZip) miss.push("우편번호");
   if (miss.length) {
-    return { ok: false, error: "고객 " + miss.join("·") + " 이(가) 없어 접수할 수 없습니다." };
+    return {
+      ok: false,
+      error: "고객 " + miss.join("·") + " 이(가) 없어 접수할 수 없습니다." +
+        (!pZip && pAddr && refined && refined.error
+          ? " (주소로 우편번호를 못 찾았습니다: " + refined.error + ")" : "")
+    };
+  }
+
+  /* 배송불가 지역이면 기사가 회수하러 못 간다. 접수를 보내기 전에 막는다 —
+     보내 놓고 나중에 알면 고객에게 두 번 말해야 한다. */
+  if (refined && refined.ok && !refined.deliverable) {
+    return { ok: false, error: "회수 불가 지역입니다 — " + refined.dlvMsg };
   }
 
   var pickYmd = _lrt_nextBusinessDay_();
@@ -246,8 +273,8 @@ function csLotteReturnPickup(p) {
     snperNm: String(p.name).trim(),
     snperTel: String(p.phone).trim(),
     snperCpno: String(p.phone).trim(),
-    snperZipcd: String(p.zip).replace(/[^0-9]/g, ""),
-    snperAdr: String(p.addr).trim(),
+    snperZipcd: pZip,
+    snperAdr: pAddr,
 
     // 받는 사람 = 우리
     acperNm: to.name,

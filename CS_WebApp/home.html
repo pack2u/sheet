@@ -1317,6 +1317,28 @@
     /* 끈 줄은 흐리게 — 남은 것이 무엇인지 한눈에 보여야 한다 */
     .ledger-item:has(input:not(:checked)) { opacity: 0.45; }
 
+    /* 롯데 회수 접수 — 2026-09-08 */
+    .lrt-opt { border: 1px solid rgba(240,150,20,0.45); border-radius: var(--radius-sm); padding: 8px 10px; }
+    .lrt-opt[hidden] { display: none; }
+    .lrt-check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+    .lrt-check input { width: 18px; height: 18px; flex: none; accent-color: #f0961e; }
+    .lrt-hint { margin-top: 4px; font-size: 11px; color: var(--text-muted); }
+    .lrt-warn {
+      margin: 6px 0 10px; padding: 8px 10px; font-size: 12px; line-height: 1.5;
+      border-radius: var(--radius-sm);
+      background: rgba(228,70,70,0.10); color: #ffb3b3;
+    }
+    .lrt-row { display: flex; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
+    .lrt-row:first-child { border-top: 0; }
+    .lrt-lab { width: 68px; flex: none; color: var(--text-muted); font-size: 12px; }
+    .lrt-val { flex: 1; min-width: 0; word-break: break-word; }
+    /* 누가 접수하는지 — 사장님 지시로 확인창 맨 아래에 둔다 */
+    .lrt-by {
+      margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border);
+      font-size: 13px; text-align: right; color: var(--text-muted);
+    }
+    .lrt-by b { color: var(--text-primary); }
+
     .ledger-preview {
       font-size: 13px; color: var(--text-secondary); line-height: 1.55;
       background: var(--bg-secondary); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px;
@@ -2341,7 +2363,7 @@
     </div>
   </div>
 
-  <div class="version">v3.74 · 팩투유(Pack2U) CS 웹앱
+  <div class="version">v3.75 · 팩투유(Pack2U) CS 웹앱
     · <a target="_top" rel="noopener" href="<?= webAppUrl ?>?page=diag" style="color:#707070;text-decoration:underline">주소 진단</a>
   </div>
   </div>
@@ -2351,7 +2373,7 @@
       <button class="os-back" onclick="showHome()" aria-label="홈">‹</button>
       <span class="ws-title">팩투유<span class="ws-title-long">(Pack2U) CS 웹앱</span></span>
       <div class="nt" id="ntWrap" hidden aria-label="공지"><div class="nt-track" id="ntTrack"></div></div>
-      <span class="ws-ver" id="wsVerBadge">v3.74</span>
+      <span class="ws-ver" id="wsVerBadge">v3.75</span>
       <span class="ws-me" id="wsMe" title="로그인 계정"></span>
     </div>
     <div class="ws-mobile-tabs" id="wsMobileTabs" aria-label="패널 이동">
@@ -2785,6 +2807,14 @@
         <label>수거입력처 (대리공급은 택배사 자동)</label>
         <input id="ledgerPickup" type="text" placeholder="예: 로젠택배 / 롯데택배">
       </div>
+      <!-- 회수 접수 — 받는 곳이 설정돼 있을 때만 보인다 (2026-09-08) -->
+      <div class="ledger-field lrt-opt" id="lrtOpt" hidden>
+        <label class="lrt-check">
+          <input type="checkbox" id="lrtWant">
+          <span>롯데 회수 접수도 같이 보냅니다 <b id="lrtWhen"></b></span>
+        </label>
+        <div class="lrt-hint">체크하면 기록 전에 한 번 더 확인합니다.</div>
+      </div>
       <div class="ledger-field">
         <label>환불계좌 (선택)</label>
         <input id="ledgerAccount" type="text"
@@ -2810,6 +2840,24 @@
       <div class="ledger-btns">
         <button class="ledger-cancel" type="button" onclick="closeLedger(true)">취소</button>
         <button class="ledger-ok" type="button" id="ledgerSubmitBtn" onclick="submitLedger(false)">기록</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 롯데 회수 접수 확인 — 2026-09-08.
+       ★ 되돌릴 수 없는 일이라 반드시 한 번 묻는다 ★
+       접수 취소 API 는 규격에 없다. 잘못 누르면 기사가 실제로 간다.
+       그래서 무엇이 어디로 가는지 다 보여주고, 맨 아래에 **누가 접수하는지**를 적는다. -->
+  <div class="modal-overlay" id="lrtModal">
+    <div class="modal-content" style="max-height:88vh;overflow-y:auto;">
+      <div class="modal-handle"></div>
+      <div class="modal-title">🚚 롯데 회수 접수</div>
+      <div class="lrt-warn">접수하면 기사가 방문합니다. <b>취소는 롯데에 직접 연락해야 합니다.</b></div>
+      <div class="lrt-body" id="lrtBody"></div>
+      <div class="lrt-by">접수자 <b id="lrtBy"></b></div>
+      <div class="ledger-btns">
+        <button class="ledger-cancel" type="button" onclick="lrtClose()">취소</button>
+        <button class="ledger-ok" type="button" id="lrtOkBtn" onclick="lrtConfirm()">접수</button>
       </div>
     </div>
   </div>
@@ -5938,7 +5986,7 @@
     var RET_PHOTO_MAX = 6;
     var RET_PHOTO_PEND = {};    // 카드 index → 업로드 대기 사진
     var RET_MODAL_PHOTOS = {};  // 'retNew' | 'ledger' → 업로드 대기 사진
-    var CS_RET_UI_VER = 'v3.74';
+    var CS_RET_UI_VER = 'v3.75';
 
     /** 접두 → 업체명. 허브 `_PEP_VENDOR_LABELS_` / 포털 `PRP_VENDOR_LABELS` 와 맞춘다. */
     var RET_VENDOR_LABELS = {
@@ -8171,6 +8219,109 @@
     /** 지금 무엇을 고르는 중인가 — '' | 'item' | 'invoice' */
     var LEDGER_PICK_MODE = '';
 
+    /* ── 롯데 회수 접수 ──────────────────────────────────────
+       ★ 받는 곳이 설정돼 있을 때만 칸이 나온다 ★
+       주소가 없으면 접수가 어차피 실패한다. 눌렀다가 실패하는 것보다
+       아예 안 보이는 편이 낫다. 한 번만 물어보고 답을 기억한다. */
+    var LRT_READY = null;   // null=아직 모름 · {ready, to}
+
+    function lrtInit() {
+      if (LRT_READY !== null) { lrtSyncOpt(); return; }
+      google.script.run
+        .withSuccessHandler(function (r) { LRT_READY = r || { ready: false }; lrtSyncOpt(); })
+        .withFailureHandler(function () { LRT_READY = { ready: false }; lrtSyncOpt(); })
+        .csLotteReturnReady();
+    }
+
+    /** 접수 칸을 보일지 정한다. 롯데 건이 아니면 안 보여준다. */
+    function lrtSyncOpt() {
+      var box = document.getElementById('lrtOpt');
+      if (!box) return;
+      var r = CS_ROWS[LEDGER_IDX] || {};
+      var lotte = isLotteTrack(r.source, resolveCarrier(r));
+      var on = !!(LRT_READY && LRT_READY.ready) && lotte;
+      box.hidden = !on;
+      if (!on) { var w = document.getElementById('lrtWant'); if (w) w.checked = false; }
+    }
+
+    /** 확인창을 띄운다. 무엇이 어디로 가는지 다 보여준다. */
+    function lrtAsk() {
+      var r = CS_ROWS[LEDGER_IDX] || {};
+      var to = (LRT_READY && LRT_READY.to) || {};
+      var invs = ledgerReturnInvoices();
+      var rows = [
+        ['보내는 분', (r.name || '-') + ' · ' + (r.phone || '-')],
+        ['주소', r.addr || '★ 주소가 없습니다 — 접수가 안 됩니다'],
+        ['품목', (r.item || '-') + (r.qty ? ' × ' + r.qty : '')],
+        ['원송장', invs.join(', ') || '-'],
+        ['받는 곳', (to.name || '-') + '<br>' + (to.addr || '-')]
+      ];
+      var h = '';
+      for (var i = 0; i < rows.length; i++) {
+        h += '<div class="lrt-row"><div class="lrt-lab">' + rows[i][0] + '</div>' +
+             '<div class="lrt-val">' + rows[i][1] + '</div></div>';
+      }
+      document.getElementById('lrtBody').innerHTML = h;
+      // 접수자는 **로그인 정보**에서 온다 — 사장님 지시 (2026-09-08)
+      document.getElementById('lrtBy').textContent =
+        CS_USER_NAME || currentStaff || CS_USER_EMAIL || '(모름)';
+      var b = document.getElementById('lrtOkBtn');
+      b.disabled = false; b.textContent = '접수';
+      document.getElementById('lrtModal').classList.add('active');
+    }
+
+    function lrtClose() {
+      document.getElementById('lrtModal').classList.remove('active');
+    }
+
+    /** 접수에 쓸 원송장들 — 박스를 골랐으면 고른 것만. */
+    function ledgerReturnInvoices() {
+      var r = CS_ROWS[LEDGER_IDX] || {};
+      if (LEDGER_PICK_MODE === 'invoice') return ledgerChecked();
+      return invoiceDigitsList(r.invoice);
+    }
+
+    /**
+     * 접수 → 성공하면 그 반품송장으로 대장에 기록한다.
+     *
+     * ★ 접수를 먼저 한다 ★
+     *   대장을 먼저 쓰면 반품송장 칸이 비고, 나중에 채우려면 그 줄을 다시 찾아야 한다.
+     *   접수가 먼저면 채번된 송장을 그대로 들고 기록할 수 있다.
+     *   대장 쓰기가 실패해도 **접수는 이미 됐다** — 그때는 송장을 화면에 띄워
+     *   손으로 적을 수 있게 한다. 조용히 삼키지 않는다.
+     */
+    function lrtConfirm() {
+      var r = CS_ROWS[LEDGER_IDX] || {};
+      var b = document.getElementById('lrtOkBtn');
+      b.disabled = true; b.textContent = '접수 중…';
+      var invs = ledgerReturnInvoices();
+      google.script.run
+        .withSuccessHandler(function (res) {
+          b.disabled = false; b.textContent = '접수';
+          if (!res || !res.ok) {
+            toast('회수 접수 실패 — ' + ((res && res.error) || '알 수 없음'), 4200);
+            return;
+          }
+          lrtClose();
+          toast('회수 접수됨 · 반품송장 ' + res.invoice + ' · 집하 ' + res.pickReqYmd, 3600);
+          LRT_PICKED_INV = res.invoice;
+          submitLedger(false, res.invoice);
+        })
+        .withFailureHandler(function (e) {
+          b.disabled = false; b.textContent = '접수';
+          toast('회수 접수 실패 — ' + String((e && e.message) || e), 4200);
+        })
+        .csLotteReturnPickup({
+          name: r.name, phone: r.phone, addr: r.addr,
+          item: r.item, qty: r.qty, orderNo: r.orderNo,
+          orglInvNo: invs[0] || '',
+          memo: document.getElementById('ledgerMemo').value
+        });
+    }
+
+    /** 접수로 받은 반품송장 — 기록에 실어 보낸다 */
+    var LRT_PICKED_INV = '';
+
     function ledgerSiblings(i) {
       var r = CS_ROWS[i] || {};
       var key = String(r.invoice || '').replace(/[^0-9]/g, '');
@@ -8209,6 +8360,7 @@
       for (var i = 0; i < ins.length; i++) if (ins[i].checked) { anyOn = true; break; }
       for (var k = 0; k < ins.length; k++) ins[k].checked = !anyOn;
       ledgerSyncPick();
+      lrtInit();
     }
 
     /** 고른 개수를 단추와 「전체 해제/선택」 글자에 반영한다. */
@@ -8327,7 +8479,13 @@
      *     같은 송장으로 여러 줄을 넣는 것이다. 첫 줄에서 한 번만 사람에게 묻고
      *     나머지는 그 답을 따른다 — 품목마다 같은 것을 세 번 묻지 않는다.
      */
-    function submitLedger(force) {
+    function submitLedger(force, pickedInv) {
+      /* 회수 접수를 같이 하겠다고 했으면 **먼저 묻는다.**
+         되돌릴 수 없는 일이라 기록보다 앞에 둔다. 접수가 끝나면
+         그 반품송장(pickedInv)을 들고 이 함수가 다시 불린다. */
+      var want = document.getElementById('lrtWant');
+      if (want && want.checked && !pickedInv) { lrtAsk(); return; }
+
       if (LEDGER_PICK_MODE === 'invoice' && !ledgerChecked().length) {
         toast('돌아오는 송장을 하나는 남겨 주세요'); return;
       }
@@ -8394,6 +8552,7 @@
           pickup: document.getElementById('ledgerPickup').value,
           memo: document.getElementById('ledgerMemo').value,
           account: document.getElementById('ledgerAccount').value,
+          returnInvoice: pickedInv || '',
           name: r.name,
           phone: r.phone,
           vendor: r.vendor,
