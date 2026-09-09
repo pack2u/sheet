@@ -485,26 +485,41 @@ function csLotteReturnPickupFromCard(p) {
   var col = ctx.col, row = ctx.row;
   var cell = function (f) { return col[f] >= 0 ? String(row[col[f]] || "").trim() : ""; };
 
-  // 이미 접수된 줄인가
-  var already = cell("returnInvoice");
-  if (already) {
-    return { ok: false, already: true, error: "이미 접수된 건입니다 — 반품송장 " + already };
-  }
-
   // 롯데 건인가. 수거입력처가 비었으면 사람이 판단할 일이라 막지 않는다.
   var pickup = cell("pickup");
   if (pickup && pickup.replace(/\s/g, "").indexOf("롯데") === -1) {
     return { ok: false, error: "롯데택배 건이 아닙니다 (수거입력처: " + pickup + ")" };
   }
 
-  var origs = [];
-  var rawInv = cell("invoice");
-  var parts = rawInv.split(/[^0-9]+/);
-  for (var i = 0; i < parts.length; i++) {
-    if (parts[i] && parts[i].length >= 8) origs.push(parts[i]);
+  var allOrigs = _lrt_digitsList_(cell("invoice"));
+  if (!allOrigs.length) {
+    return { ok: false, error: "원송장이 없어 접수할 수 없습니다 — 카드에 원송장을 먼저 넣어 주세요" };
+  }
+
+  /* ★ 어느 박스가 이미 접수됐는지 ★  (2026-09-09)
+     반품송장 칸 하나로는 「어느 원송장의 회수송장인지」를 알 수 없다.
+     그래서 접수할 때 비고에 짝을 적어 두고, 여기서 그것을 읽는다.
+     이게 있어야 두 박스 중 하나만 접수한 뒤 나머지만 다시 접수할 수 있다. */
+  var notice = cell("notice");
+  var done = _lrt_doneMap_(notice);
+
+  /* 무엇을 접수할지. only 를 주면 그것만, 안 주면 아직 안 된 것 전부.
+     이미 된 것은 언제나 뺀다 — 기사가 두 번 가고 라벨이 두 장 나온다. */
+  var want = (p.only && p.only.length) ? _lrt_digitsList_(p.only.join(" ")) : allOrigs;
+  var origs = [], skipped = [];
+  for (var w = 0; w < want.length; w++) {
+    var d = want[w];
+    if (allOrigs.indexOf(d) === -1) continue;       // 이 줄의 송장이 아니다
+    if (done[d]) { skipped.push(d + "→" + done[d]); continue; }
+    if (origs.indexOf(d) === -1) origs.push(d);
   }
   if (!origs.length) {
-    return { ok: false, error: "원송장이 없어 접수할 수 없습니다 — 카드에 원송장을 먼저 넣어 주세요" };
+    return {
+      ok: false, already: true,
+      error: skipped.length
+        ? "이미 접수된 박스입니다 — " + skipped.join(" · ")
+        : "접수할 원송장이 없습니다"
+    };
   }
 
   /* ★ 주소를 원송장으로 되짚는다 ★
@@ -542,18 +557,101 @@ function csLotteReturnPickupFromCard(p) {
   });
 
   /* 하나라도 접수됐으면 대장에 적는다. 실패한 것이 있어도 적는다 —
-     적어야 다음 사람이 「이미 접수됨」을 보고 두 번 안 누른다. */
-  if (res.invoices && res.invoices.length && col.returnInvoice >= 0) {
+     적어야 다음 사람이 「이미 접수됨」을 보고 두 번 안 누른다.
+
+     ★ 덮어쓰지 않고 뒤에 붙인다 ★
+       박스를 나눠 접수할 수 있으므로, 먼저 접수한 박스의 회수송장을
+       지우면 그 박스를 영영 못 찾는다. 입고 스캔도 그 번호로 매칭한다. */
+  var okRows = [];
+  for (var q = 0; q < res.results.length; q++) {
+    if (res.results[q].ok && res.results[q].invoice) okRows.push(res.results[q]);
+  }
+
+  if (okRows.length) {
     try {
-      ctx.tab.getRange(ctx.rowNum, col.returnInvoice + 1).setValue(res.invoices.join(" "));
+      if (col.returnInvoice >= 0) {
+        var prev = _lrt_digitsList_(cell("returnInvoice"));
+        for (var a = 0; a < okRows.length; a++) {
+          var d2 = String(okRows[a].invoice).replace(/[^0-9]/g, "");
+          if (d2 && prev.indexOf(d2) === -1) prev.push(d2);
+        }
+        ctx.tab.getRange(ctx.rowNum, col.returnInvoice + 1).setValue(prev.join(" "));
+      }
+      /* ★ 짝을 남긴다 ★ 어느 원송장의 회수송장인지 여기에만 남는다.
+         사람이 읽을 수 있는 한 줄이고, 다음 접수 때 이 줄을 읽어
+         「이미 된 박스」를 가려낸다. */
+      if (col.notice >= 0) {
+        var nx = notice;
+        for (var b2 = 0; b2 < okRows.length; b2++) {
+          nx = _cs_appendNoticeLine_(nx,
+            "회수접수 · 원송장 " + okRows[b2].orglInvNo +
+            " → 반품송장 " + okRows[b2].invoice +
+            " · 집하 " + res.pickReqYmd);
+        }
+        ctx.tab.getRange(ctx.rowNum, col.notice + 1).setValue(nx);
+      }
     } catch (e) {
       res.error = (res.error ? res.error + " · " : "") +
-        "접수는 됐는데 대장에 못 적었습니다(" + e.message + ") — 반품송장 " + res.invoices.join(", ");
+        "접수는 됐는데 대장에 못 적었습니다(" + e.message + ") — 반품송장 " +
+        res.invoices.join(", ") + " · 손으로 적어 주세요";
       res.ok = false;
     }
   }
 
   res.origs = origs;
+  res.skipped = skipped;
   res.usedAddr = addr;
   return res;
+}
+
+/** 문자열에서 8자리 이상 숫자만 뽑는다 (중복 제거) */
+function _lrt_digitsList_(raw) {
+  var parts = String(raw || "").split(/[^0-9]+/);
+  var out = [], seen = {};
+  for (var i = 0; i < parts.length; i++) {
+    var d = parts[i];
+    if (!d || d.length < 8 || seen[d]) continue;
+    seen[d] = true;
+    out.push(d);
+  }
+  return out;
+}
+
+/**
+ * 비고에 남긴 짝을 읽는다 — { 원송장: 반품송장 }.
+ *
+ * 적는 쪽(csLotteReturnPickupFromCard)과 **같은 문장**을 본다.
+ * 문구를 고치면 여기도 같이 고쳐야 한다. 그래서 정규식을 느슨하게 둔다 —
+ * 「원송장 …」과 「반품송장 …」이 한 줄에 있으면 짝으로 본다.
+ */
+function _lrt_doneMap_(notice) {
+  var map = {};
+  var lines = String(notice || "").split(/\r?\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var m = /원송장\s*([0-9]{8,})[^0-9]+반품송장\s*([0-9-]{8,})/.exec(lines[i]);
+    if (m) map[m[1]] = String(m[2]).replace(/[^0-9]/g, "");
+  }
+  return map;
+}
+
+/**
+ * 이 대장 줄의 박스별 접수 상태를 알려준다 — 카드가 단추를 그릴 때 쓴다.
+ * @return {{ok:boolean, boxes:Array<{orglInvNo:string, returnInvoice:string}>}}
+ */
+function csLotteReturnBoxState(tabName, rowNum) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return { ok: false, error: "권한이 없습니다." };
+  try {
+    var ctx = _cs_openReturnLedgerRow_(tabName, rowNum);
+    var col = ctx.col, row = ctx.row;
+    var cell = function (f) { return col[f] >= 0 ? String(row[col[f]] || "").trim() : ""; };
+    var done = _lrt_doneMap_(cell("notice"));
+    var origs = _lrt_digitsList_(cell("invoice"));
+    var boxes = [];
+    for (var i = 0; i < origs.length; i++) {
+      boxes.push({ orglInvNo: origs[i], returnInvoice: done[origs[i]] || "" });
+    }
+    return { ok: true, boxes: boxes, returnInvoice: cell("returnInvoice") };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 }
