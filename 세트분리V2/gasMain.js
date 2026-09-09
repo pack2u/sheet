@@ -12,36 +12,50 @@ var SS_RUNLOG_HEADER = ['회차키', '실행시각', '입력행', '분해행', '
   '롯데택배', '도서산간', '도서산간(위탁)', '동네배송', '대리발송', '합배송', '보류', '경고', '소요(초)', '버전'];
 
 function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('🧩 세트분리 V2')
+  var ui = SpreadsheetApp.getUi();
+
+  /* ★ 위에는 하루에 실제로 누르는 것만 ★
+     스물한 개가 한 줄로 늘어서 있으니 매일 쓰는 것을 눈으로 찾아야 했다.
+     나머지는 넷으로 묶어 접는다 — 자료 준비 · 송장 매칭 · 점검 · 설정. */
+  ui.createMenu('🧩 세트분리 V2')
     .addItem('▶ 세트분리 실행', 'ss_실행')
+    .addItem('✅ 조치 적용 (보류 → 발송·대리발송)', 'ss_보류조치반영')
     .addSeparator()
-    .addItem('① 마스터 새로고침', 'ss_마스터새로고침')
-    .addItem('② 판매현황 비우기', 'ss_판매현황비우기')
-    .addItem('📥 판매현황 입력 시트 준비 / 링크', 'ss_입력시트준비')
-    .addItem('🏝 도서산간 목록 심기 (1회)', 'ss_도서산간심기')
-    .addItem('🧹 합배송조건 정리 / 검증', 'ss_합배송조건정리')
-    .addSeparator()
-    .addItem('📮 우편번호 자동조회 (카카오)', 'ss_우편번호채우기')
-    .addItem('🔑 카카오 API 키 설정', 'ss_카카오키설정')
-    .addItem('🩺 카카오 진단', 'ss_카카오진단')
-    .addSeparator()
-    .addItem('✅ 보류 조치 반영', 'ss_보류조치반영')
-    .addItem('🔎 보류 조치 진단', 'ss_보류조치진단')
-    .addItem('🔎 합배송 진단', 'ss_합배송진단')
     .addItem('🔁 송장 전파 (롯데 → 사방넷)', 'ss_송장전파')
-    .addItem('⏰ 아침 재매칭 트리거 설치 (1회)', 'ss_아침재매칭트리거설치')
-    .addItem('🔍 미매칭 점검 (안 고침)', 'ss_미매칭점검')
-    .addItem('🧭 고아 송장 점검 (안 고침)', 'ss_고아송장점검')
-    .addItem('🧩 미매칭 메꾸기 (후보 찾기)', 'ss_미매칭메꾸기')
-    .addItem('✅ 메꾸기 반영', 'ss_메꾸기반영')
-    .addItem('📊 사방넷 송장대량등록 (오늘 전체)', 'ss_사방넷엑셀저장')
-    .addItem('🔎 사방넷 진단 (저장 안 함)', 'ss_사방넷진단')
-    .addItem('🕵️ 중복발주 의심 점검', 'ss_중복점검')
-    .addItem('🔍 검증 (행수 대조)', 'ss_검증')
-    .addItem('🛠 시트 설치 / 복구', 'ss_설치')
+    .addItem('📊 사방넷 송장대량등록', 'ss_사방넷엑셀저장')
+    .addSeparator()
+
+    .addSubMenu(ui.createMenu('📦 자료 준비')
+      .addItem('① 마스터 새로고침', 'ss_마스터새로고침')
+      .addItem('② 판매현황 비우기', 'ss_판매현황비우기')
+      .addItem('📮 우편번호 자동조회 (카카오)', 'ss_우편번호채우기'))
+
+    .addSubMenu(ui.createMenu('🔗 송장 매칭')
+      .addItem('🔍 미매칭 점검 (주문은 있는데 송장 없음)', 'ss_미매칭점검')
+      .addItem('🧭 고아 송장 점검 (송장은 있는데 주문 없음)', 'ss_고아송장점검')
+      .addSeparator()
+      .addItem('🧩 미매칭 메꾸기 (후보 찾기)', 'ss_미매칭메꾸기')
+      .addItem('✅ 메꾸기 반영 (확인 Y 만)', 'ss_메꾸기반영')
+      .addSeparator()
+      .addItem('⏰ 아침 재매칭 트리거 설치 (1회)', 'ss_아침재매칭트리거설치'))
+
+    .addSubMenu(ui.createMenu('🔎 점검 · 진단')
+      .addItem('보류 조치 진단', 'ss_보류조치진단')
+      .addItem('합배송 진단', 'ss_합배송진단')
+      .addItem('사방넷 진단 (저장 안 함)', 'ss_사방넷진단')
+      .addItem('중복발주 의심 점검', 'ss_중복점검')
+      .addItem('검증 (행수 대조)', 'ss_검증'))
+
+    .addSubMenu(ui.createMenu('⚙ 설정 · 설치')
+      .addItem('🔑 카카오 API 키 설정', 'ss_카카오키설정')
+      .addItem('🩺 카카오 진단', 'ss_카카오진단')
+      .addItem('🧹 합배송조건 정리 / 검증', 'ss_합배송조건정리')
+      .addItem('🏝 도서산간 목록 심기 (1회)', 'ss_도서산간심기')
+      .addItem('🛠 시트 설치 / 복구', 'ss_설치'))
+
     .addToUi();
 }
+
 
 /* ── 설치 ─────────────────────────────────────────────── */
 
