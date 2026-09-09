@@ -111,7 +111,7 @@ function ss_설치() {
 }
 
 function ss_탭정렬() {
-  var order = [SSIO_TABS.입력].concat(SSIO_TABS.출력).concat([
+  var order = [SSIO_TABS.입력, SSIO_TABS.입력아이디].concat(SSIO_TABS.출력).concat([
     SSIO_TABS.합배송, SSIO_TABS.사방넷송장, SSIO_TABS.사방넷등록, SSIO_TABS.비배송, SSIO_TABS.보류, SSIO_TABS.경고, SSIO_TABS.요약,
     SSIO_TABS.합배송조건, SSIO_TABS.분리예외, SSIO_TABS.업체, SSIO_TABS.수동조치, SSIO_TABS.도서산간사전,
     SSIO_TABS.설정,
@@ -1134,23 +1134,48 @@ function ss_합배송진단() {
  * cells: [{ 행: 0기준 원본 행번호, 값: 이름/ID }]
  */
 function ss_판매현황아이디채움(cells) {
-  if (!cells || !cells.length) return 0;
-  var sh = ssio_ss().getSheetByName(SSIO_TABS.입력);
-  if (!sh) return 0;
+  /* ★ 2026-09-09: 붙여넣는 칸을 건드리지 않는다 ★
+     > "맨앞텝(판매현황)에 판매현황을 복붙하고 … 판매현황_고유아이디 라는
+     >  텝으로 … 시트내에서 다 처리되면 좋겠어"
+
+     전에는 판매현황 탭의 O열에 직접 아이디를 적었다. 그러면
+     붙여넣는 칸과 결과가 한 탭에 섞여, 다음 회차에 지우고 붙이기 전까지
+     옛 아이디가 남아 있는다. 사람이 그걸 보고 이미 처리된 줄로 오해한다.
+
+     이제 판매현황은 **읽기만** 하고, 아이디를 채운 사본을 따로 낸다.
+     회차마다 덮어쓴다 (사장님 확인) — 지난 회차는 「주문라인원장」·「회차」에
+     이미 남아 있다.
+
+     아이디가 하나도 없어도 사본은 만든다. 그래야 「이번 회차엔 전화주문이
+     없었다」와 「기능이 안 돌았다」가 구분된다. */
+  var src = ssio_ss().getSheetByName(SSIO_TABS.입력);
+  if (!src || src.getLastRow() < 2) return 0;
+
   var col = SS_SALES_COLS.indexOf('주문자명(사방넷)') + 1;   // 1-기준
   if (col < 1) col = 15;   // O열
-  if (sh.getMaxColumns() < col) {
-    sh.insertColumnsAfter(sh.getMaxColumns(), col - sh.getMaxColumns());
+
+  var grid = src.getDataRange().getValues();
+  var width = 0;
+  for (var g = 0; g < grid.length; g++) if (grid[g].length > width) width = grid[g].length;
+  if (width < col) width = col;
+  for (var g2 = 0; g2 < grid.length; g2++) {
+    while (grid[g2].length < width) grid[g2].push('');
   }
-  var last = sh.getLastRow();
+
   var n = 0;
-  for (var i = 0; i < cells.length; i++) {
-    var row = cells[i].행 + 1;          // 시트 행번호
-    if (row < 1 || row > last) continue;
-    var cur = ssText(sh.getRange(row, col).getValue());
-    if (cur) continue;                  // 이미 값이 있으면 손대지 않는다
-    sh.getRange(row, col).setValue(cells[i].값);
+  for (var i = 0; i < (cells || []).length; i++) {
+    var r = cells[i].행;                 // 0-기준 (판매현황 그리드 기준)
+    if (r < 0 || r >= grid.length) continue;
+    //  이미 값이 있으면 손대지 않는다 — 사방넷 주문번호를 덮으면 안 된다
+    if (ssText(grid[r][col - 1])) continue;
+    grid[r][col - 1] = cells[i].값;
     n++;
   }
+
+  var out = ssio_sheet(SSIO_TABS.입력아이디, grid[0]);
+  ssio_clearBody(out);
+  if (out.getMaxColumns() < width) out.insertColumnsAfter(out.getMaxColumns(), width - out.getMaxColumns());
+  if (out.getMaxRows() < grid.length) out.insertRowsAfter(out.getMaxRows(), grid.length - out.getMaxRows() + 10);
+  out.getRange(1, 1, grid.length, width).setValues(grid);
   return n;
 }
