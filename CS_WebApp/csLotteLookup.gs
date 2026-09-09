@@ -38,6 +38,52 @@
 /** 이름 한 번에 물어볼 최대 건수 — 쿼터 보호 */
 var _LOTTE_LOOKUP_MAX_ = 8;
 
+/** 한 줄에서 주문번호 후보를 몇 개까지 시도할지 — 헛방도 쿼터를 먹는다 */
+var _LOTTE_ORD_TRIES_ = 3;
+
+/**
+ * 롯데의 「주문번호」로 쓸 후보를 뽑는다.
+ *
+ * ★ 2026-09-09 ALPS 화면에서 확인한 사실 ★
+ *   롯데 「화물추적(거래처용)(신)」의 주문번호 칸에 **「송미경원장님」** 이 들어 있었다.
+ *   숫자가 아니라 **사방넷 주문자명**이다. 사장님이 ALPS 에서 이름으로 찾을 수
+ *   있었던 이유가 이것이다 — 롯데가 이름을 검색해 주는 게 아니라, 우리가 넘긴
+ *   주문번호가 애초에 이름이었다.
+ *
+ *   우리 주문 칸은 「기관명 /주문자명/주문번호」 꼴로 붙어 온다.
+ *     대경노인요양공동생활가정 /송미경원장님/2160626355
+ *   여태 맨 뒤(2160626355)만 주문번호로 썼다. 롯데가 아는 건 **가운데**다.
+ *   그래서 가운데 토막부터 물어보고, 안 되면 이름·맨뒤 순으로 내려간다.
+ *
+ * @param {Object} rec 검색 색인의 한 줄
+ * @return {Array<string>} 물어볼 순서대로
+ */
+function _lotte_ordCandidates_(rec) {
+  var out = [];
+  var seen = {};
+  function add(v) {
+    v = String(v == null ? "" : v).trim();
+    if (!v || seen[v]) return;
+    seen[v] = true;
+    out.push(v);
+  }
+
+  var segs = String((rec && rec.orderNo) || "")
+    .split(/[\/|／]/)
+    .map(function (s) { return String(s).trim(); })
+    .filter(Boolean);
+
+  // 가운데 토막들 — 「기관명 /주문자명/주문번호」의 주문자명
+  for (var i = 1; i < segs.length - 1; i++) add(segs[i]);
+  // 두 토막뿐이면 앞이 이름이다 (「주문자명/주문번호」)
+  if (segs.length === 2) add(segs[0]);
+  add(rec && rec.name);
+  // 맨 뒤(사방넷 주문번호). 롯데가 이걸 아는 건도 있을 수 있어 마지막으로 남긴다.
+  if (segs.length) add(segs[segs.length - 1]);
+
+  return out.slice(0, _LOTTE_ORD_TRIES_);
+}
+
 /**
  * 웹앱 진입점. 이름이든 번호든 한 칸으로 받는다.
  *
@@ -135,32 +181,60 @@ function _lotteLookupName_(q, opts) {
     if (used) continue;
 
     /* ★ 이 갈래가 이 기능의 이유다 ★
-       일일마감에 송장이 안 붙은 건. 주문번호로 롯데에 묻는다. */
-    var uid = _cs_rowUid_(r);
-    uid = String(uid || "").trim();
-    if (!uid || seen["o" + uid]) continue;
-    seen["o" + uid] = true;
-    picks.push({ by: "주문번호", inv: "", ord: uid, rec: r });
+       일일마감에 송장이 안 붙은 건. 주문번호로 롯데에 묻는다.
+       그 「주문번호」가 사실은 이름이다 — _lotte_ordCandidates_ 참조. */
+    var ords = _lotte_ordCandidates_(r);
+    if (!ords.length || seen["o" + ords[0]]) continue;
+    seen["o" + ords[0]] = true;
+    picks.push({ by: "주문번호", inv: "", ords: ords, rec: r });
   }
 
   if (!picks.length) {
+    /* ★ 색인에 없어도 롯데에는 있을 수 있다 ★
+       롯데의 주문번호 칸이 곧 주문자명이므로, 친 글자를 그대로 주문번호로 물어본다.
+       ALPS 화면에서 사장님이 하던 일이 사실 이것이다.
+       다만 롯데는 **정확히 일치**해야 찾아 준다 — 「송미경」이 아니라
+       「송미경원장님」처럼 끝까지 적어야 나온다. 그래서 안내를 같이 붙인다. */
+    var direct = csLotteTrack("", { ordNo: q }) || { ok: false, error: "응답 없음" };
+    if (direct.ok) {
+      direct.askedBy = "주문번호";
+      direct.asked = q;
+      direct.rec = { name: q, item: "", date: "", qty: "", vendor: "", source: "롯데 직접", carrier: "롯데택배" };
+      return { ok: true, kind: "이름", rows: [direct], error: "", matched: matched, asked: 1, skipped: 0, days: days };
+    }
     return {
       ok: false, kind: "이름", rows: [], matched: matched,
-      error: matched
+      error: (matched
         ? "「" + q + "」 카드는 " + matched + "건 있는데 송장번호도 주문번호도 없습니다."
-        : "최근 " + days + "일 주문에서 「" + q + "」 을(를) 못 찾았습니다."
+        : "최근 " + days + "일 주문에서 「" + q + "」 을(를) 못 찾았습니다.") +
+        " 롯데에도 그 이름으로는 없습니다 — 롯데는 주문자명이 정확히 같아야 찾습니다(예: 송미경 → 송미경원장님)."
     };
   }
 
   var out = [];
   for (var p = 0; p < picks.length; p++) {
     var pk = picks[p];
-    var t = pk.by === "송장번호"
-      ? csLotteTrack(pk.inv, {})
-      : csLotteTrack("", { ordNo: pk.ord });
-    t = t || { ok: false, error: "응답 없음" };
+    var t, tried;
+    if (pk.by === "송장번호") {
+      t = csLotteTrack(pk.inv, {}) || { ok: false, error: "응답 없음" };
+      tried = pk.inv;
+    } else {
+      /* 후보를 순서대로 물어보고 **처음 맞는 것에서 멈춘다.**
+         헛방도 쿼터를 먹으므로 세 개까지만 시도한다(_LOTTE_ORD_TRIES_). */
+      var fails = [];
+      for (var c = 0; c < pk.ords.length; c++) {
+        tried = pk.ords[c];
+        t = csLotteTrack("", { ordNo: tried }) || { ok: false, error: "응답 없음" };
+        if (t.ok) break;
+        fails.push(tried);
+      }
+      // 다 헛방이면 무엇 무엇을 물어봤는지 밝힌다 — 안 그러면 왜 없는지 알 수 없다
+      if (t && !t.ok && fails.length > 1) {
+        t.error = String(t.error || "") + " (물어본 주문번호: " + fails.join(", ") + ")";
+      }
+    }
     t.askedBy = pk.by;
-    t.asked = pk.inv || pk.ord;
+    t.asked = tried;
     // 어느 카드에서 나온 번호인지 — 결과만 보면 누구 것인지 알 수 없다
     t.rec = {
       date: pk.rec.date || "",
