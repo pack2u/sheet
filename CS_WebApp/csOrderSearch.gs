@@ -1134,7 +1134,7 @@ function _cs_mapArchiveHeaders_(hdr) {
     if (m.qty < 0 && (h === "수량" || /수량/.test(h)) && !/합계|박스/.test(h)) m.qty = i;
     if (m.src < 0 && h === "출처") m.src = i;
     if (m.oid < 0 && /주문번호|사방넷|고유ID|고유Id/.test(h)) m.oid = i;
-    if (m.vendor < 0 && h !== "거래처명" && /발주업체|거래처|업체명|판매처/.test(h)) m.vendor = i;
+    if (m.vendor < 0 && h !== "거래처명" && /발주업체|거래처|업체명|주문지|판매처/.test(h)) m.vendor = i;
     if (m.date < 0 && /주문일자|발송일|매출일/.test(h)) m.date = i;
     if (m.shipMsg < 0 && _cs_isShipMsgHeader_(h)) m.shipMsg = i;
     // 일일마감이 기록한 택배사. "택배박스" 부분일치를 배제하려고 완전일치만 본다
@@ -1233,7 +1233,7 @@ function _cs_mapSnapshotDailyHeaders_(hdr) {
     if (m.code < 0 && /이카운트코드|품목코드|물품코드|PROD_CD|상품코드/.test(h)) m.code = i;
     if (m.qty < 0 && (h === "수량" || /판매수량|주문수량/.test(h)) && !/합계|박스/.test(h)) m.qty = i;
     if (m.oid < 0 && /주문번호|사방넷|고유ID|고유Id|일자-No/.test(h)) m.oid = i;
-    if (m.vendor < 0 && h !== "거래처명" && /발주업체|거래처|업체명|판매처/.test(h)) m.vendor = i;
+    if (m.vendor < 0 && h !== "거래처명" && /발주업체|거래처|업체명|주문지|판매처/.test(h)) m.vendor = i;
     if (m.date < 0 && /주문일자|발송일|매출일/.test(h)) m.date = i;
     if (m.shipMsg < 0 && _cs_isShipMsgHeader_(h)) m.shipMsg = i;
     // 택배사 — "택배박스" 부분일치를 배제하려고 완전일치만 본다
@@ -2236,7 +2236,11 @@ function _cs_mapReturnLedgerCols_(header) {
     if (!h) continue;
     if (col.date < 0 && /반품접수날짜|접수날짜|접수일자/.test(h)) col.date = i;
     else if (col.staff < 0 && h === "접수자") col.staff = i;
-    else if (col.vendor < 0 && /업체명|판매처|발주업체/.test(h)) col.vendor = i;
+    /* 2026-09-09: 9월 탭에서 D열이 「업체명」 → 「주문지」로 바뀌었다.
+       뜻은 같다 — 「법인/쿠팡」·「대리발송-리바이」처럼 주문이 어디서 왔나다.
+       여기는 못 찾아도 안 막고 빈칸으로 두던 자리라 조용히 업체명이 사라지고
+       있었다. 협력업체 포털(prpLedger.gs)은 같은 이유로 접수를 막았다. */
+    else if (col.vendor < 0 && /업체명|주문지|판매처|발주업체/.test(h)) col.vendor = i;
     else if (col.name < 0 && /반품신청자|수취인명|수취인|받는분/.test(h) && !/전화|주소/.test(h)) col.name = i;
     else if (col.phone < 0 && /연락처|전화|휴대폰/.test(h) && !/주소/.test(h)) col.phone = i;
     else if (col.pickup < 0 && /수거입력처/.test(h)) col.pickup = i;
