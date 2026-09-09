@@ -794,6 +794,44 @@ var SS_REG_HEADER = ['주문번호', '운송장번호', '택배사'];
 // 송장 셀 파싱용 — 공백·쉼표·슬래시·줄바꿈으로 쪼개고, 숫자만 남은 토큰을 송장으로 본다
 var ssInvSplitRe_ = new RegExp("[" + String.fromCharCode(92) + "s,/]+");
 var ssDigitsRe_ = new RegExp("^[0-9]+$");
+
+/**
+ * 칸에서 운송장번호를 **전부** 뽑는다.
+ * 한 칸에 여러 장이 쉼표·공백·줄바꿈으로 붙어 오는 일이 흔하다.
+ * 9자리 미만은 송장이 아니다(메모·수량이 섞여 온다).
+ */
+function ssInvAll_(raw) {
+  var out = [], seen = {};
+  var toks = String(raw == null ? '' : raw).split(/[^0-9]+/);
+  for (var i = 0; i < toks.length; i++) {
+    var d = toks[i];
+    if (!d || d.length < 9 || seen[d]) continue;
+    seen[d] = true;
+    out.push(d);
+  }
+  return out;
+}
+
+/**
+ * 주문번호 → 송장들. 덮지 않고 **모은다.**
+ * 여기가 이번 고침의 핵심이다 — 예전에는 map[key] = w 라 마지막 1장만 남았다.
+ */
+function ssInvPut_(map, key, raw, carrier) {
+  if (!key) return;
+  var got = ssInvAll_(raw);
+  if (!got.length) return;
+  var cur = map[key] || { list: [], c: '' };
+  for (var i = 0; i < got.length; i++) {
+    if (cur.list.indexOf(got[i]) === -1) cur.list.push(got[i]);
+  }
+  if (!cur.c && carrier) cur.c = carrier;
+  map[key] = cur;
+}
+
+/** 화면·원장에 적을 꼴 — 공백으로 잇는다. 일일마감·CS 검색이 읽는 형식이다. */
+function ssInvJoin_(entry) {
+  return entry && entry.list ? entry.list.join(' ') : '';
+}
 function ss_송장전파() {
   var inv = ssio_ss().getSheetByName(SSIO_TABS.사방넷송장);
   if (!inv || inv.getLastRow() < 2) {
@@ -833,7 +871,8 @@ function ss_송장전파() {
         var o = ssText(rv[r][ci]), w = ssText(rv[r][cw]);
         if (!o || !w) continue;
         if (o.indexOf('주문번호') >= 0 || w.indexOf('운송장') >= 0) continue;
-        lotte[o] = w;
+        //  같은 주문번호가 또 오면 **덮지 말고 더한다** (20박스 주문이 있다)
+        ssInvPut_(lotte, o, w, '롯데택배');
       }
     }
   } catch (eL) {
@@ -849,7 +888,7 @@ function ss_송장전파() {
     for (var t = 1; t < tRes.values.length; t++) {
       var tu = ssText(tRes.values[t][15]);
       var tw = ssText(tRes.values[t][23]);
-      if (tu && tw) temp[tu] = { w: tw, c: ssText(tRes.values[t][21]) || '' };
+      if (tu && tw) ssInvPut_(temp, tu, tw, ssText(tRes.values[t][21]) || '');
     }
   } else {
     tempErr = tRes.why;
@@ -887,7 +926,7 @@ function ss_송장전파() {
       }
       if (!hw) continue;
       var hv = ssText(hRes.values[hh][1]).toUpperCase();
-      hub[hu] = { w: hw, c: pfxCarrier[hv] || '' };
+      ssInvPut_(hub, hu, hwRaw, pfxCarrier[hv] || '');
     }
   } else {
     hubErr = hRes.why;
@@ -899,10 +938,12 @@ function ss_송장전파() {
   }
 
   // 통합 조회 — 롯데가 먼저, 없으면 임시기록
+  /* 송장이 여러 장이면 공백으로 이어 준다. 한 장만 주면 CS 가 나머지 박스를
+     조회할 수 없다 — 실측에서 74장이 그렇게 사라지고 있었다. */
   function find(uid) {
-    if (lotte[uid]) return { w: lotte[uid], c: '롯데택배', src: '롯데' };
-    if (temp[uid]) return { w: temp[uid].w, c: temp[uid].c, src: '대리공급' };
-    if (hub[uid]) return { w: hub[uid].w, c: hub[uid].c, src: '대리판매' };
+    if (lotte[uid]) return { w: ssInvJoin_(lotte[uid]), c: '롯데택배', src: '롯데' };
+    if (temp[uid]) return { w: ssInvJoin_(temp[uid]), c: temp[uid].c, src: '대리공급' };
+    if (hub[uid]) return { w: ssInvJoin_(hub[uid]), c: hub[uid].c, src: '대리판매' };
     return null;
   }
 
@@ -1002,7 +1043,7 @@ function ss_송장전파() {
     var w3 = ssText(v[c2][5]);
     if (!uid2 || !w3) continue;
     if (invByUid[uid2] === undefined) {
-      invByUid[uid2] = w3;
+      invByUid[uid2] = w3;   // 첫 값 (뒤에서 ssInvAll_ 로 다시 편다)
       carByUid[uid2] = iCar >= 0 ? ssText(v[c2][iCar]) : '';
     } else if (invByUid[uid2] !== w3 && conflicts.length < 8) {
       // 한 주문의 품목이 서로 다른 박스·업체로 갈린 경우 — 사방넷엔 첫 번째만 들어간다
@@ -1022,7 +1063,16 @@ function ss_송장전파() {
     if (seenReg[uid3]) continue;          // 주문번호당 한 줄
     seenReg[uid3] = true;
     if (!invByUid[uid3]) { 무송장++; continue; }
-    regRows.push([uid3, invByUid[uid3], carByUid[uid3] || '']);
+    /* ★ 송장마다 한 줄 ★
+       사방넷은 「주문번호 + 송장」 짝으로 받는다. 20박스면 20줄이어야
+       스무 장이 다 등록된다. 한 줄에 이어 붙여 보내면 그 칸이 통째로
+       하나의 송장번호로 읽혀 전부 실패한다.
+       허브의 대량등록 조립기도 같은 규칙이다(주문번호|송장 로 중복만 거른다). */
+    var invsOne = ssInvAll_(invByUid[uid3]);
+    if (!invsOne.length) invsOne = [ssText(invByUid[uid3])];
+    for (var q3 = 0; q3 < invsOne.length; q3++) {
+      regRows.push([uid3, invsOne[q3], carByUid[uid3] || '']);
+    }
   }
   ssio_write(SSIO_TABS.사방넷등록, SS_REG_HEADER, regRows, { bg: '#2c4f6b' });
 
