@@ -17,7 +17,69 @@
 
 var _PAR_TAB_NAME_ = "일일마감_송장재매칭";
 var _PAR_DEFAULT_DAYS_ = 14;
+/* 읽기와 판정을 합쳐 이만큼 안에서 멈춘다. 6분 한도까지 1.5분을 남긴다 —
+   리포트를 쓰고 커서를 저장하고 다음 트리거를 거는 데 그만큼이 든다. */
 var _PAR_TIME_BUDGET_MS_ = 4.5 * 60 * 1000;
+
+/** 어디까지 했는지 — 이어달리기 (6분 한도 회피) */
+var _PAR_CURSOR_KEY_ = "_PAR_REFIX_CURSOR";
+/** 이어달리기용 일회성 트리거가 부르는 함수 이름 */
+var _PAR_RESUME_FN_ = "_par_resume_";
+
+function _par_saveCursor_(state) {
+  try {
+    PropertiesService.getScriptProperties().setProperty(_PAR_CURSOR_KEY_, JSON.stringify(state));
+  } catch (e) {}
+}
+function _par_loadCursor_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(_PAR_CURSOR_KEY_);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function _par_clearCursor_() {
+  try { PropertiesService.getScriptProperties().deleteProperty(_PAR_CURSOR_KEY_); } catch (e) {}
+}
+
+/** 제 이어달리기 트리거만 지운다 — 남의 트리거를 건드리면 안 된다 */
+function _par_dropResumeTriggers_() {
+  var all = ScriptApp.getProjectTriggers();
+  var k = 0;
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].getHandlerFunction() === _PAR_RESUME_FN_) { ScriptApp.deleteTrigger(all[i]); k++; }
+  }
+  return k;
+}
+
+/** 1분 뒤에 스스로 잇는다. 사람이 다시 누를 필요가 없게. */
+function _par_scheduleResume_() {
+  _par_dropResumeTriggers_();
+  try {
+    ScriptApp.newTrigger(_PAR_RESUME_FN_).timeBased().after(60 * 1000).create();
+    return true;
+  } catch (e) {
+    Logger.log("[재매칭] 이어달리기 트리거를 못 걸었습니다: " + (e && e.message ? e.message : e));
+    return false;
+  }
+}
+
+/**
+ * 트리거가 부르는 이어달리기.
+ * 커서에 적힌 모드(미리보기/반영)와 남은 날짜로 계속한다.
+ */
+function _par_resume_() {
+  var cur = _par_loadCursor_();
+  if (!cur || !cur.left || !cur.left.length) {
+    _par_dropResumeTriggers_();
+    _par_clearCursor_();
+    return;
+  }
+  try {
+    _par_run_(!!cur.dryRun, cur.days || _PAR_DEFAULT_DAYS_, null);
+  } catch (e) {
+    Logger.log("[재매칭] 이어달리기 실패: " + (e && e.message ? e.message : e));
+  }
+}
 
 var _PAR_HEADERS_ = [
   "점검일시",   // A
@@ -499,6 +561,18 @@ function _par_run_(dryRun, days, targetDateStr) {
   var rows = [];
   var today = new Date();
 
+  /* ★ 이어달리기 ★
+     앞 실행이 시간에 걸려 멈췄으면 남은 날짜만 이어서 한다.
+     처음 실행이면 커서를 새로 만든다. */
+  var cur = _par_loadCursor_();
+  var 이어감 = !!(cur && cur.left && cur.left.length && !targetDateStr &&
+                 cur.dryRun === !!dryRun);
+  var 남은날짜 = null;
+  if (이어감) {
+    남은날짜 = cur.left.slice();
+    res.resumed = cur.done || 0;
+  }
+
   // ── 1단계: 기간 읽기 ──
   // 오늘 파일도 본다. 매출일이 실행일 파일에 들어간 28일 분이 여기 있을 수 있다.
   var loaded = [];
@@ -513,18 +587,30 @@ function _par_run_(dryRun, days, targetDateStr) {
         "읽기 실패 — " + String(e.message || e)]);
     }
   }
+  /* 할 날짜 목록을 먼저 만든다. 그래야 「어디까지 했는지」를 커서에 적을 수 있다. */
+  var 할날짜 = [];
   if (targetDateStr && /^\d{4}-\d{2}-\d{2}$/.test(targetDateStr)) {
-    _par_loadOne_(targetDateStr);
+    할날짜 = [targetDateStr];
+  } else if (남은날짜) {
+    할날짜 = 남은날짜;
   } else {
-    for (var d = 0; d <= days; d++) {
-      if (new Date().getTime() - started > _PAR_TIME_BUDGET_MS_) {
-        res.stopped = "시간 예산 초과 — 읽기 " + d + "일차에서 중단. 기간을 줄여 다시 실행하세요.";
-        break;
-      }
-      var dt = new Date(today.getTime());
-      dt.setDate(dt.getDate() - d);
-      _par_loadOne_(Utilities.formatDate(dt, "Asia/Seoul", "yyyy-MM-dd"));
+    for (var d0 = 0; d0 <= days; d0++) {
+      var dt0 = new Date(today.getTime());
+      dt0.setDate(dt0.getDate() - d0);
+      할날짜.push(Utilities.formatDate(dt0, "Asia/Seoul", "yyyy-MM-dd"));
     }
+  }
+
+  /* ★ 읽기와 판정을 하루씩 붙여서 한다 ★
+     예전에는 14일을 다 읽은 **뒤에** 판정했다. 읽기가 예산을 다 쓰면
+     판정은 남은 시간에 무방비로 들어가 6분 한도에 그대로 죽었다 —
+     그러면 리포트도 커서도 안 남아 한 일이 통째로 사라진다.
+     하루를 읽고 바로 판정하면, 멈춰도 거기까지는 남는다. */
+  var 처리한날 = 0;
+  for (var d = 0; d < 할날짜.length; d++) {
+    if (new Date().getTime() - started > _PAR_TIME_BUDGET_MS_) break;
+    _par_loadOne_(할날짜[d]);
+    처리한날++;
   }
 
   // ── 2단계: 기간 전체에서 송장 중복 표시 ──
@@ -538,6 +624,25 @@ function _par_run_(dryRun, days, targetDateStr) {
       rows.push([res.now, "오류", loaded[li].dateStr, "", "", "", "", "", "", "", "", "", "",
         "판정 실패 — " + String(e2.message || e2)]);
     }
+  }
+
+  /* ★ 남은 날짜를 커서에 적고 스스로 잇는다 ★
+     사람이 「기간을 줄여 다시 실행」하게 만들면, 어디까지 했는지 기억해야 하고
+     겹치거나 빠뜨린다. 기계가 기억하는 편이 낫다. */
+  var 남음 = 할날짜.slice(처리한날);
+  if (남음.length && !targetDateStr) {
+    _par_saveCursor_({
+      dryRun: !!dryRun, days: days, left: 남음,
+      done: (res.resumed || 0) + 처리한날,
+      at: Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss")
+    });
+    var ok = _par_scheduleResume_();
+    res.stopped = "시간이 다 되어 " + 처리한날 + "일치까지 하고 멈췄습니다. 남은 " +
+      남음.length + "일(" + 남음[남음.length - 1] + " ~ " + 남음[0] + ")은 " +
+      (ok ? "1분 뒤 저절로 이어집니다." : "메뉴를 다시 누르면 이어서 합니다.");
+  } else {
+    _par_clearCursor_();
+    _par_dropResumeTriggers_();
   }
 
   var written = _par_writeTab_(rows, dryRun);
