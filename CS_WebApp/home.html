@@ -1991,6 +1991,19 @@
     }
     .os-dash-refresh:active { color: var(--accent-soft); }
 
+    /* 반품 카드 — 회수 접수됨 표시 · 접수 단추 */
+    .ret-done {
+      display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 8px;
+      font-size: 10px; font-weight: 700;
+      background: rgba(52,199,123,0.16); color: var(--accent-green);
+    }
+    .ret-pickup-btn {
+      border: 1px solid rgba(240,160,48,0.5); background: rgba(240,160,48,0.10);
+      color: var(--accent-orange); font-family: inherit; font-size: 11px; font-weight: 700;
+      border-radius: 8px; padding: 3px 9px; cursor: pointer;
+    }
+    .ret-pickup-btn:disabled { opacity: 0.5; cursor: default; }
+
     /* 카드에서 펴는 ALPS 안내 판 — 롯데 API 로는 이름으로 못 찾는다 */
     .os-alps-panel { margin: 6px 0 2px; }
     /* 롯데 API 로 못 찾았을 때 — ALPS 에서 찾는 법 */
@@ -6451,7 +6464,14 @@
     }
 
     function returnCardHtml(c, idx) {
-      var invLine = (c.invoice ? '원송장 ' + esc(c.invoice) : '') +
+      /* ★ 접수됐는지 한눈에 ★  (2026-09-09)
+         반품송장이 적혀 있으면 회수 접수가 끝난 것이다. 표시가 없으면
+         다음 사람이 또 누르고, 기사가 두 번 간다. */
+      var picked = String(c.returnInvoice || '').replace(/[^0-9]/g, '').length >= 8;
+      var origCnt = retOrigInvoices(c).length;
+      var invLine = (c.invoice ? '원송장 ' + esc(c.invoice) +
+          //  박스가 여럿이면 몇 개인지 밝힌다 — 한 개만 접수되던 사고가 있었다
+          (origCnt > 1 ? ' <b style="color:var(--accent-orange)">(' + origCnt + '박스)</b>' : '') : '') +
         (c.returnInvoice ? ((c.invoice ? ' · ' : '') + '반품송장 ' + esc(c.returnInvoice)) : '');
       var statusBadge = c.status ? '<span class="rs">' + esc(c.status) + '</span>' : '';
       return '<div class="ret-card" id="ret-card-' + idx + '" onclick="onReturnCardTap(' + idx + ', event)">' +
@@ -6460,7 +6480,8 @@
           '<div class="ret-left">' +
             '<div class="rn">' + retVendorIconHtml(c.vendor) +
               '<span class="ret-name">' + esc(c.name || '(이름 없음)') + '</span>' +
-              statusBadge + '</div>' +
+              statusBadge +
+              (picked ? '<span class="ret-done">회수 접수됨</span>' : '') + '</div>' +
             '<div>' + esc(c.item || '-') + (c.qty ? ' × ' + esc(c.qty) : '') + '</div>' +
             (invLine ? '<div class="ret-meta">' + invLine + '</div>' : '') +
             (c.fee ? '<div class="ret-meta">반품비 ' + esc(c.fee) + '</div>' : '') +
@@ -6478,10 +6499,86 @@
             returnActBtnHtml(idx, 'note', '메모') +
             returnActBtnHtml(idx, 'photo', '사진') +
             returnGoOrderBtnHtml(idx) +
+            retPickupBtnHtml(idx, c, picked) +
           '</div>' +
           returnComposePopHtml(idx, c) +
         '</div>' +
       '</div>';
+    }
+
+    /** 이 카드의 원송장들 — 8자리 이상 숫자만 */
+    function retOrigInvoices(c) {
+      var parts = String((c && c.invoice) || '').split(/[^0-9]+/);
+      var out = [], seen = {};
+      for (var i = 0; i < parts.length; i++) {
+        var d = parts[i];
+        if (!d || d.length < 8 || seen[d]) continue;
+        seen[d] = true;
+        out.push(d);
+      }
+      return out;
+    }
+
+    /**
+     * 「반품접수」 단추.
+     *
+     * ★ 언제 보이나 ★
+     *   아직 접수 안 됐고, 원송장이 있고, 롯데 건일 때.
+     *   수거입력처가 **비어 있어도 보여준다** — 업체가 직접 올린 건은 그 칸이
+     *   대개 비어 있어서(대장의 94%가 그랬다) 「롯데인 것만」으로 좁히면
+     *   정작 필요한 건에서 단추가 안 나온다. 눌렀을 때 서버가 다시 본다.
+     *   수거입력처에 다른 택배사가 적혀 있으면 그때는 안 보여준다.
+     */
+    function retPickupBtnHtml(idx, c, picked) {
+      if (picked) return '';
+      if (!(LRT_READY && LRT_READY.ready)) return '';
+      if (!retOrigInvoices(c).length) return '';
+      var pu = String(c.pickup || '').replace(/\s/g, '');
+      if (pu && pu.indexOf('롯데') === -1) return '';
+      return '<button type="button" class="ret-pickup-btn" id="ret-pick-' + idx + '"' +
+        ' title="롯데에 회수 접수를 보냅니다' + (pu ? '' : ' (수거입력처가 비어 있어 롯데 건인지는 접수할 때 확인합니다)') + '"' +
+        ' onclick="event.stopPropagation(); retPickupFromCard(' + idx + ')">반품접수</button>';
+    }
+
+    /**
+     * 카드에서 바로 회수 접수.
+     *
+     * 주소는 서버가 원송장으로 주문을 되짚어 찾는다 — 반품대장에는 주소 칸이 없다.
+     * 박스가 여럿이면 그 수만큼 접수된다.
+     */
+    function retPickupFromCard(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      if (!c) return;
+      var origs = retOrigInvoices(c);
+      var msg = '롯데에 회수 접수를 보냅니다.\n\n' +
+        (c.name || '(이름 없음)') + ' · ' + (c.item || '-') + '\n' +
+        '원송장 ' + origs.join(', ') +
+        (origs.length > 1 ? '\n\n★ 박스가 ' + origs.length + '개라 접수도 ' + origs.length + '건 나갑니다 ★' : '') +
+        '\n\n보낼까요?';
+      if (!confirm(msg)) return;
+
+      var b = document.getElementById('ret-pick-' + idx);
+      if (b) { b.disabled = true; b.textContent = '접수 중…'; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (b) { b.disabled = false; b.textContent = '반품접수'; }
+          var got = (res && res.invoices) || [];
+          if (!got.length) {
+            toast('회수 접수 실패 — ' + ((res && res.error) || '알 수 없음'), 6000);
+            return;
+          }
+          toast(res.ok
+            ? ('회수 접수됨 · 반품송장 ' + got.join(', ') +
+               (got.length > 1 ? ' (' + got.length + '박스)' : '') + ' · 집하 ' + res.pickReqYmd)
+            : ('★ 일부만 접수됨 ★ ' + res.error), res.ok ? 4200 : 9000);
+          //  대장에 적혔으니 새로 읽어 「회수 접수됨」이 뜨게 한다
+          loadReturnActive(true, false, true);
+        })
+        .withFailureHandler(function (e) {
+          if (b) { b.disabled = false; b.textContent = '반품접수'; }
+          toast('회수 접수 실패 — ' + String((e && e.message) || e), 6000);
+        })
+        .csLotteReturnPickupFromCard({ tab: c.tab, row: c.row });
     }
 
     function closeReturnCompose(idx) {
@@ -8446,7 +8543,15 @@
         ['보내는 분', (r.name || '-') + ' · ' + (r.phone || '-')],
         ['주소', r.addr || '★ 주소가 없습니다 — 접수가 안 됩니다'],
         ['품목', (r.item || '-') + (r.qty ? ' × ' + r.qty : '')],
-        ['원송장', invs.join(', ') || '-'],
+        /* ★ 몇 건이 나가는지 숫자로 말한다 ★  (2026-09-09)
+           원송장만 나열하면 사람은 「두 개니까 두 개 다 되겠지」 하고 누른다.
+           실제로는 한 건만 나가고 있었다. 이제는 정말 그 수만큼 나가고,
+           나간다는 사실을 화면이 먼저 말한다. */
+        ['원송장', (invs.join(', ') || '-') +
+          (invs.length > 1
+            ? '<br><b style="color:var(--accent-orange)">박스 ' + invs.length +
+              '개 → 회수 접수 ' + invs.length + '건이 나갑니다</b>'
+            : '')],
         ['받는 곳', (to.name || '-') + '<br>' + (to.addr || '-')]
       ];
       var h = '';
@@ -8491,14 +8596,26 @@
       google.script.run
         .withSuccessHandler(function (res) {
           b.disabled = false; b.textContent = '접수';
-          if (!res || !res.ok) {
-            toast('회수 접수 실패 — ' + ((res && res.error) || '알 수 없음'), 4200);
+          var got = (res && res.invoices) || (res && res.invoice ? [res.invoice] : []);
+
+          /* ★ 하나도 안 됐을 때만 되돌린다 ★
+             일부라도 됐으면 그 송장을 반드시 대장에 남긴다. 안 남기면
+             사람이 다시 눌러 **이미 접수된 박스를 두 번 접수한다.** */
+          if (!got.length) {
+            toast('회수 접수 실패 — ' + ((res && res.error) || '알 수 없음'), 4600);
             return;
           }
           lrtClose();
-          toast('회수 접수됨 · 반품송장 ' + res.invoice + ' · 집하 ' + res.pickReqYmd, 3600);
-          LRT_PICKED_INV = res.invoice;
-          submitLedger(false, res.invoice);
+          if (!res.ok) {
+            //  반쯤 됐다 — 조용히 넘기면 안 된다. 길게 띄운다.
+            toast('★ 일부만 접수됨 ★ ' + res.error + ' · 된 것: ' + got.join(', '), 9000);
+          } else {
+            toast('회수 접수됨 · 반품송장 ' + got.join(', ') +
+              (got.length > 1 ? ' (' + got.length + '박스)' : '') +
+              ' · 집하 ' + res.pickReqYmd, 4200);
+          }
+          LRT_PICKED_INV = got.join(' ');
+          submitLedger(false, LRT_PICKED_INV);
         })
         .withFailureHandler(function (e) {
           b.disabled = false; b.textContent = '접수';
@@ -8507,6 +8624,10 @@
         .csLotteReturnPickup({
           name: r.name, phone: r.phone, addr: r.addr,
           item: r.item, qty: r.qty, orderNo: r.orderNo,
+          /* ★ 박스마다 접수한다 ★  (2026-09-09)
+             여태 invs[0] 하나만 넘겨, 원송장이 둘이어도 한 박스만 회수됐다.
+             회수 운송장은 박스마다 붙으므로 원송장 수만큼 접수해야 한다. */
+          orglInvNos: invs,
           orglInvNo: invs[0] || '',
           memo: document.getElementById('ledgerMemo').value
         });

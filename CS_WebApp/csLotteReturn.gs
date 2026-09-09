@@ -264,11 +264,33 @@ function _lrt_nextBusinessDay_(from) {
 }
 
 /**
- * 회수 접수 한 건.
+ * 회수 접수.
  *
- * @param {Object} p {name, phone, zip, addr, item, qty, orderNo, orglInvNo, memo, boxType}
+ * ★ 2026-09-09: 원송장이 여럿이면 **그 수만큼 접수한다** ★
+ *   여태 orglInvNo 를 하나만 받아 한 건만 보냈다. 그런데 확인창은
+ *   원송장 두 개를 다 보여 줬다 —
+ *     김순숙 / JH 샐러드 203 투명 600세트
+ *     원송장 268334465991 · 268334466013  (2박스)
+ *   사람은 두 박스가 다 회수된다고 믿고 눌렀는데 **한 박스만 접수됐다.**
+ *   나머지 한 박스는 고객 집에 그대로 남는다. 화면이 약속한 것과
+ *   실제로 한 일이 달랐다 — 조용히 물건을 잃는 종류의 오류다.
+ *
+ *   회수 운송장은 박스마다 하나씩 붙는다. 그러니 원송장 하나에 접수 하나다.
+ *
+ * ★ 한 건씩 따로 보낸다 ★
+ *   snd_list 에 여럿을 담아 한 번에 보낼 수도 있지만, 그러면 rtn_list 의
+ *   순서에 기대어 결과를 짝지어야 한다. **어느 박스가 실패했는지**를
+ *   순서로 짐작하고 싶지 않다. 한 건씩 보내면 짝이 확실하다.
+ *   반품 접수는 하루 몇 건이라 호출 수는 문제가 안 된다.
+ *
+ * ★ 반쯤 성공을 숨기지 않는다 ★
+ *   둘 중 하나만 됐으면 그대로 돌려준다. 「실패」로 뭉뚱그리면 사람이
+ *   다시 눌러 **이미 접수된 박스를 두 번 접수한다.**
+ *
+ * @param {Object} p {name, phone, zip, addr, item, qty, orderNo, orglInvNo, orglInvNos, memo, boxType}
  *   name·phone·zip·addr 는 **고객**(보내는 사람) 것이다.
- * @return {{ok:boolean, invoice:string, error:string, pickReqYmd:string}}
+ *   orglInvNos 가 있으면 그것을, 없으면 orglInvNo 하나를 쓴다.
+ * @return {{ok:boolean, invoice:string, invoices:Array, results:Array, error:string, pickReqYmd:string}}
  */
 function csLotteReturnPickup(p) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return { ok: false, error: "권한이 없습니다." };
@@ -321,54 +343,217 @@ function csLotteReturnPickup(p) {
   var box = String(p.boxType || _LRT_BOX_DEFAULT_).toUpperCase();
   if (!/^[A-F]$/.test(box)) box = _LRT_BOX_DEFAULT_;
 
-  var one = {
-    jobCustCd: _LRT_CUST_CD_,
-    ustRtgSctCd: _LRT_SCT_RETURN_,   // 02 = 반품
-    ordSct: _LRT_ORD_SCT_,
-    fareSctCd: _LRT_FARE_CREDIT_,    // 03 = 신용
-    ordNo: String(p.orderNo || "").trim() ||
-           ("RT" + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMddHHmmss")),
-    // invNo 는 비워 보낸다 — 롯데가 채번해 돌려준다
-    orglInvNo: String(p.orglInvNo || "").replace(/[^0-9]/g, "").slice(0, 12),
+  /* 접수할 원송장들. 중복은 지운다 — 같은 박스를 두 번 부르면 기사도 헷갈리고
+     회수 라벨도 두 장 나온다. 원송장을 하나도 못 받으면 빈 것 하나로 간다
+     (원송장 없이 회수하는 건도 있다 — 업체가 송장을 모르는 경우). */
+  var srcList = [];
+  if (p.orglInvNos && p.orglInvNos.length) srcList = p.orglInvNos;
+  else if (p.orglInvNo) srcList = [p.orglInvNo];
 
-    // 보내는 사람 = 고객
-    snperNm: String(p.name).trim(),
-    snperTel: String(p.phone).trim(),
-    snperCpno: String(p.phone).trim(),
-    snperZipcd: pZip,
-    snperAdr: pAddr,
+  var origs = [];
+  var seen = {};
+  for (var s = 0; s < srcList.length; s++) {
+    var d = String(srcList[s] || "").replace(/[^0-9]/g, "").slice(0, 12);
+    if (!d || seen[d]) continue;
+    seen[d] = true;
+    origs.push(d);
+  }
+  if (!origs.length) origs = [""];
 
-    // 받는 사람 = 우리
-    acperNm: to.name,
-    acperTel: to.tel,
-    acperZipcd: to.zip,
-    acperAdr: to.addr,
+  var stamp = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMddHHmmss");
+  var baseOrd = String(p.orderNo || "").trim() || ("RT" + stamp);
 
-    boxTypCd: box,
-    gdsNm: String(p.item || "반품").trim().slice(0, 750),
-    ispdQty: parseInt(String(p.qty || "1").replace(/[^0-9]/g, ""), 10) || 1,
-    dlvMsgCont: String(p.memo || "").trim().slice(0, 200),
-    pickReqYmd: pickYmd
-  };
+  var results = [];
+  var invoices = [];
+  var fails = [];
 
-  var res = _lotte_call_("post", "/api/pid/cus/714a/apiSndOut", { snd_list: [one] });
-  if (!res.ok) return { ok: false, error: res.error || "접수 실패", pickReqYmd: pickYmd };
+  for (var k = 0; k < origs.length; k++) {
+    /* ★ 주문번호는 박스마다 달라야 한다 ★
+       같은 ordNo 로 두 번 보내면 롯데가 중복으로 보고 거절하거나,
+       받아 주더라도 둘이 한 건으로 묶인다. 박스 번호를 뒤에 붙인다. */
+    var ordNo = origs.length > 1 ? (baseOrd + "-" + (k + 1)) : baseOrd;
 
-  var j = res.json || {};
-  var list = j.rtn_list || [];
-  var r0 = list[0] || {};
-  if (String(r0.rtnCd || "") !== "S") {
-    return {
-      ok: false,
-      error: String(r0.rtnMsg || j.message || "접수 거부"),
+    var one = {
+      jobCustCd: _LRT_CUST_CD_,
+      ustRtgSctCd: _LRT_SCT_RETURN_,   // 02 = 반품
+      ordSct: _LRT_ORD_SCT_,
+      fareSctCd: _LRT_FARE_CREDIT_,    // 03 = 신용
+      ordNo: ordNo,
+      // invNo 는 비워 보낸다 — 롯데가 채번해 돌려준다
+      orglInvNo: origs[k],
+
+      // 보내는 사람 = 고객
+      snperNm: String(p.name).trim(),
+      snperTel: String(p.phone).trim(),
+      snperCpno: String(p.phone).trim(),
+      snperZipcd: pZip,
+      snperAdr: pAddr,
+
+      // 받는 사람 = 우리
+      acperNm: to.name,
+      acperTel: to.tel,
+      acperZipcd: to.zip,
+      acperAdr: to.addr,
+
+      boxTypCd: box,
+      /* 박스가 여럿이면 라벨에 몇 번째인지 적는다 — 창고에서 두 박스가
+         따로 도착하므로, 한 짝이 덜 왔는지 알 수 있어야 한다. */
+      gdsNm: (String(p.item || "반품").trim() +
+              (origs.length > 1 ? " (" + (k + 1) + "/" + origs.length + ")" : "")).slice(0, 750),
+      /* ★ 수량은 박스마다 1 로 둔다 ★
+         품목 수량(예: 600세트)이 두 박스에 어떻게 나뉘었는지 우리는 모른다.
+         양쪽에 600 을 적으면 1200 처럼 보인다. 라벨의 수량은 박스 수를
+         뜻하는 자리라, 한 박스면 1 이다. 진짜 수량은 gdsNm 과 대장에 남는다. */
+      ispdQty: origs.length > 1
+        ? 1
+        : (parseInt(String(p.qty || "1").replace(/[^0-9]/g, ""), 10) || 1),
+      dlvMsgCont: String(p.memo || "").trim().slice(0, 200),
       pickReqYmd: pickYmd
     };
+
+    var res = _lotte_call_("post", "/api/pid/cus/714a/apiSndOut", { snd_list: [one] });
+    var row = { orglInvNo: origs[k], ordNo: ordNo, ok: false, invoice: "", error: "" };
+
+    if (!res.ok) {
+      row.error = res.error || "접수 실패";
+    } else {
+      var j = res.json || {};
+      var r0 = (j.rtn_list || [])[0] || {};
+      if (String(r0.rtnCd || "") !== "S") {
+        row.error = String(r0.rtnMsg || j.message || "접수 거부");
+      } else {
+        row.ok = true;
+        row.invoice = String(r0.invNo || "").trim();
+        invoices.push(row.invoice);
+      }
+    }
+    if (!row.ok) fails.push((row.orglInvNo || "(원송장없음)") + " — " + row.error);
+    results.push(row);
   }
+
+  /* 반쯤 성공했으면 그대로 말한다. 성공한 송장을 반드시 함께 돌려줘야
+     사람이 다시 눌러 같은 박스를 두 번 접수하는 일이 없다. */
   return {
-    ok: true,
-    invoice: String(r0.invNo || "").trim(),
-    ordNo: one.ordNo,
+    ok: fails.length === 0,
+    invoice: invoices[0] || "",     // 예전 호출부 호환
+    invoices: invoices,
+    results: results,
+    ordNo: baseOrd,
     pickReqYmd: pickYmd,
-    error: ""
+    error: fails.length
+      ? (invoices.length
+          ? "일부만 접수됐습니다 (" + invoices.length + "/" + origs.length + "). 실패: " + fails.join(" · ")
+          : fails.join(" · "))
+      : ""
   };
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  반품 카드에서 바로 회수 접수 — 2026-09-09
+ *
+ *  > "반품 카드에서 업체가 등록한거라 반품접수(롯데택배일경우만) 클릭해서
+ *  >  반품접수해야 될꺼 같아. 우리가 하던 업체에서 바로 하던..
+ *  >  반품 접수가 된건 표시도 되어야 할꺼 같고"
+ *
+ *  ★ 왜 따로 만드나 ★
+ *    기존 접수는 **주문 카드**에서 시작한다. 거기에는 주소가 있다.
+ *    그런데 업체가 직접 올린 반품은 주문 카드를 안 거치고 대장에 바로 꽂힌다.
+ *    반품대장에는 **주소 칸이 없다.** 그래서 카드만 보고는 접수를 못 했다.
+ *    여기서 원송장으로 주문을 되짚어 주소를 찾아 준다.
+ *
+ *  ★ 두 번 접수하지 않는다 ★
+ *    반품송장이 이미 적혀 있으면 접수된 것이다. 거절한다.
+ *    기사가 두 번 가고 회수 라벨이 두 장 나오는 일을 막는다.
+ *
+ *  ★ 접수하고 나면 대장에 바로 적는다 ★
+ *    안 적으면 화면에 「접수됨」이 안 뜨고, 다음 사람이 또 누른다.
+ * ══════════════════════════════════════════════════════════════
+ *
+ * @param {Object} p {tab, row, memo, boxType}
+ */
+function csLotteReturnPickupFromCard(p) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return { ok: false, error: "권한이 없습니다." };
+  p = p || {};
+
+  var ctx;
+  try {
+    ctx = _cs_openReturnLedgerRow_(p.tab, p.row);
+  } catch (e) {
+    return { ok: false, error: "대장 줄을 못 열었습니다: " + e.message };
+  }
+  var col = ctx.col, row = ctx.row;
+  var cell = function (f) { return col[f] >= 0 ? String(row[col[f]] || "").trim() : ""; };
+
+  // 이미 접수된 줄인가
+  var already = cell("returnInvoice");
+  if (already) {
+    return { ok: false, already: true, error: "이미 접수된 건입니다 — 반품송장 " + already };
+  }
+
+  // 롯데 건인가. 수거입력처가 비었으면 사람이 판단할 일이라 막지 않는다.
+  var pickup = cell("pickup");
+  if (pickup && pickup.replace(/\s/g, "").indexOf("롯데") === -1) {
+    return { ok: false, error: "롯데택배 건이 아닙니다 (수거입력처: " + pickup + ")" };
+  }
+
+  var origs = [];
+  var rawInv = cell("invoice");
+  var parts = rawInv.split(/[^0-9]+/);
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i] && parts[i].length >= 8) origs.push(parts[i]);
+  }
+  if (!origs.length) {
+    return { ok: false, error: "원송장이 없어 접수할 수 없습니다 — 카드에 원송장을 먼저 넣어 주세요" };
+  }
+
+  /* ★ 주소를 원송장으로 되짚는다 ★
+     반품대장에는 주소 칸이 없다. 주문 색인에서 같은 송장을 찾아 가져온다.
+     못 찾으면 지어내지 않고 그대로 말한다 — 주소 없이 접수하면 기사가 헛걸음한다. */
+  var addr = "", name = cell("name"), phone = cell("phone");
+  var found = null;
+  try {
+    var hit = csSearchOrders(origs[0], {});
+    var rows = (hit && hit.results) || [];
+    for (var r = 0; r < rows.length; r++) {
+      if (String(rows[r].addr || "").trim()) { found = rows[r]; break; }
+    }
+  } catch (e) { /* 색인을 못 읽어도 아래에서 「주소 못 찾음」으로 말한다 */ }
+
+  if (found) {
+    addr = String(found.addr || "").trim();
+    if (!name) name = String(found.name || "").trim();
+    if (!phone) phone = String(found.phone || "").trim();
+  }
+  if (!addr) {
+    return {
+      ok: false,
+      error: "원송장 " + origs[0] + " 로 주문을 못 찾아 주소를 모릅니다. " +
+             "주문·송장에서 찾아 그 카드로 접수해 주세요."
+    };
+  }
+
+  var res = csLotteReturnPickup({
+    name: name, phone: phone, addr: addr,
+    item: cell("item"), qty: cell("qty"),
+    orderNo: found ? found.orderNo : "",
+    orglInvNos: origs,
+    memo: p.memo, boxType: p.boxType
+  });
+
+  /* 하나라도 접수됐으면 대장에 적는다. 실패한 것이 있어도 적는다 —
+     적어야 다음 사람이 「이미 접수됨」을 보고 두 번 안 누른다. */
+  if (res.invoices && res.invoices.length && col.returnInvoice >= 0) {
+    try {
+      ctx.tab.getRange(ctx.rowNum, col.returnInvoice + 1).setValue(res.invoices.join(" "));
+    } catch (e) {
+      res.error = (res.error ? res.error + " · " : "") +
+        "접수는 됐는데 대장에 못 적었습니다(" + e.message + ") — 반품송장 " + res.invoices.join(", ");
+      res.ok = false;
+    }
+  }
+
+  res.origs = origs;
+  res.usedAddr = addr;
+  return res;
 }
