@@ -18,6 +18,20 @@ var SS_VERSION = '2.0.0';
 
 /* ── 상수 ─────────────────────────────────────────────── */
 
+/**
+ * 합배송 품목명에서 **한 품목이 끝나는 자리**를 알리는 표시.
+ * ★ 2026-09-09 (사장님 지정)
+ *
+ * 접어 놓은 「300/400 - (50*1팩) 50세트」는 박스를 싸는 사람에게 한 품목처럼
+ * 보인다 — 300 짜리 하나만 넣고 끝낼 수 있다. 그래서 품목마다 제 꼬리를
+ * 붙여 적고, 끝나는 자리를 이 표시로 못 박는다.
+ *
+ * ★ 눈에 띄는 글자여야 한다 ★
+ *   품목명에는 -, /, *, (), 숫자가 잔뜩 들어간다. 그 사이에서 구분자가
+ *   묻히면 없느니만 못하다. ★ 는 품목명에 절대 안 나오는 글자다.
+ */
+var SS_ITEM_MARK = '★★';
+
 var SS_ROUTE = {
   LOTTE: '롯데택배',
   LOTTE_ISLAND: '롯데택배-도서산간',
@@ -695,7 +709,10 @@ function ssMerge(units, cfg) {
       rep.박스수 = 1;
       rep.배송비산출 = '합포장 최대 ' + maxFee + ' (' + box.length + '건' +
         (boxes.length > 1 ? ' · ' + (b + 1) + '/' + boxes.length + '박스' : '') + ')';
-      rep.출력품목명 = (sample ? '[샘플] ' : '') + ssCompressNames(names) + ' ===합배송' +
+      /* 샘플이 낀 박스는 예전처럼 접어 둔다 (사장님 확인).
+         ===합배송 은 그대로 남긴다 — 롯데 배송비 비교가 이 말을 보고
+         책정배송비 1,900 원을 잡는다 (_partnerLotteShipCompare.gs). */
+      rep.출력품목명 = (sample ? '[샘플] ' : '') + ssCompressNames(names, !sample) + ' ===합배송' +
         (boxes.length > 1 ? '(' + (b + 1) + '/' + boxes.length + ')' : '');
       for (var k = 1; k < box.length; k++) box[k].합포장흡수 = true;
 
@@ -732,7 +749,7 @@ function ssStripName(name) {
  * 합칠 조건: 공통 앞 토큰 2개 이상 + 가운데 남는 토큰 수가 서로 같음.
  * (구 시트의 커스텀 함수 groupItemNamesWithCondition 을 실제 출력에서 역설계해 재구현)
  */
-function ssCompressNames(names) {
+function ssCompressNames(names, spellOut) {
   var uniq = [], seen = {};
   for (var i = 0; i < names.length; i++) {
     var n = ssNorm(names[i]);
@@ -768,6 +785,34 @@ function ssCompressNames(names) {
     var cq = clusters[q];
     if (cq.members.length === 1) { parts.push(cq.members[0].join(' ')); continue; }
     var pre = cq.pre.length, suf = cq.suf.length;
+
+    /* ★ 2026-09-09: 펼쳐 적기 ★
+       > "JH 반죽사각 300/ (50*1팩) 50세트-★★400 - … ★★ 이렇게 표시 되게 해줘"
+
+       접어 놓은 「300/400 - (50*1팩) 50세트」는 박스를 싸는 사람에게
+       **한 품목처럼 보인다.** 300 짜리 하나를 넣고 끝낼 수 있다.
+       그래서 뒷말을 나눠 갖지 않고 품목마다 제 꼬리를 붙여 적는다.
+
+         접어서:  JH 반죽사각 300/400 - (50*1팩) 50세트--/소분
+         펼쳐서:  JH 반죽사각 300 - (50*1팩) 50세트--/소분 ★★400 - (50*1팩) 50세트--/소분 ★★
+
+       앞말(JH 반죽사각)은 한 번만 적는다 — 사장님 확인.
+       ★★ 는 품목이 끝나는 자리다. 마지막 것 뒤에도 붙는다.
+
+       ★ 샘플이 낀 박스는 접어 둔다 ★  (사장님 확인)
+         샘플은 이름이 이미 길고, 그 박스는 어차피 사람이 따로 본다. */
+    if (spellOut) {
+      var each = [];
+      for (var e = 0; e < cq.members.length; e++) {
+        each.push(cq.members[e].slice(pre).join(' '));
+      }
+      parts.push(
+        (cq.pre.join(' ') + ' ' + each.join(' ' + SS_ITEM_MARK) + ' ' + SS_ITEM_MARK)
+          .replace(/\s+/g, ' ').trim()
+      );
+      continue;
+    }
+
     var mids = [];
     for (var w = 0; w < cq.members.length; w++) {
       mids.push(cq.members[w].slice(pre, cq.members[w].length - suf).join(' '));
