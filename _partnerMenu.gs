@@ -133,6 +133,14 @@ function registerPartnerMenu_() {
     )
     .addSubMenu(
       ui.createMenu("🔁 협력업체 반품 포털")
+        /* ★ 2026-09-09: 반품대장 → v2 미러 ★
+           v2 반품대장이 9/4 에서 멈춰 있었다 — 한 번 옮겨 놓고 아무것도
+           안 따라왔다. 밤 21:30 에 최근 두 달치를 v2 로 보낸다.
+           「걸기」는 이 트리거 하나만 건다 — 전체 트리거 재설치가 아니다. */
+        .addItem("🌙 v2 미러 트리거 걸기", "partnerInstallReturnsMirrorTrigger")
+        .addItem("   └ 🔎 걸려 있나 확인", "partnerCheckReturnsMirrorTrigger")
+        .addItem("   └ ▶ 지금 전체 한 번 보내기", "partnerMirrorReturnsAll")
+        .addSeparator()
         .addItem("⚙️ 포털 URL 등록", "partnerPortalSetUrl")
         .addItem("📋 업체명 목록 확인", "partnerPortalListVendors")
         .addItem("🔄 업체 목록 동기화 (체크 선택)", "partnerPortalSyncVendors")
