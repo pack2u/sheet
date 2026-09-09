@@ -2025,6 +2025,15 @@
     }
     .os-lk-hist .t { color: var(--text-muted); }
     .os-lk-foot { margin-top: 8px; display: flex; gap: 6px; }
+    /* 롯데 API 로 못 찾았을 때 — ALPS 에서 찾는 법 */
+    .os-lk-alps {
+      margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+    }
+    .os-lk-alps > a { font-size: 12px; font-weight: 600; color: var(--accent-orange); text-decoration: none; }
+    .os-lk-alps > a:hover { text-decoration: underline; }
+    .os-lk-how { font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.6; }
+    .os-lk-how b { color: var(--text-primary); }
     .dash-kpi-grid {
       display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px;
     }
@@ -8082,6 +8091,7 @@
 
       if (!t.ok) {
         h += '<div class="os-lk-stat fail">✕ ' + esc(String(t.error || '조회 실패')) + '</div>';
+        h += alpsHintHtml(rec);
         h += '</div>';
         return h;
       }
@@ -8127,6 +8137,49 @@
 
       h += '</div>';
       return h;
+    }
+
+    /**
+     * 롯데 API 로는 이름으로 못 찾는다 — ALPS 에서 찾는 법을 적어 준다.
+     *
+     * ★ 2026-09-09 확인 ★
+     *   화물추적 API 는 우리 화물에 대해 **운송장번호만** 통한다.
+     *   주문번호(ordNo)는 셋 다 헛방이었다 — 주문접수 API 로 등록한 적이 없어서다.
+     *   이름으로 찾는 길은 ALPS 「고객명/전화번호」 탭뿐인데, 헷갈리는 점이 있다.
+     *
+     *     운송장·주문번호 탭  → 주문번호 (예: 송미경원장님)
+     *     고객명/전화번호 탭  → **수하인 성명** (예: 대경노인요양공동생활가정)
+     *
+     *   같은 건인데 탭마다 넣어야 할 값이 다르다. 그래서 **어느 값을 어디에**
+     *   넣어야 하는지를 화면에 박아 둔다. 매번 헤매지 않게.
+     */
+    function alpsHintHtml(rec) {
+      var who = String((rec && rec.name) || '').trim();
+      if (!who) return '';
+      var range = alpsDateRange(rec && rec.date);
+      var h = '<div class="os-lk-alps">';
+      h += '<a href="https://partner.alps.llogis.com/" target="_blank" rel="noopener"' +
+        ' onclick="return openTrack(event,this.href)">롯데 ALPS 에서 찾기 →</a>';
+      h += '<div class="os-lk-how">화물추적 › 화물추적(거래처용)(신) › <b>고객명/전화번호</b> 탭 · 고객구분 <b>수하인</b></div>';
+      h += '<div class="os-lk-how">고객성명 <b>' + esc(who) + '</b> ' +
+        '<button class="os-copy" onclick="copyText(\'' + js(who) + '\', true, \'수하인명 복사됨\')">복사</button></div>';
+      if (range) h += '<div class="os-lk-how">접수일자 <b>' + esc(range) + '</b></div>';
+      h += '</div>';
+      return h;
+    }
+
+    /** ALPS 접수일자 칸에 넣을 범위. 주문일 앞뒤 사흘 — 접수가 하루이틀 밀리기도 한다. */
+    function alpsDateRange(dateStr) {
+      var m = String(dateStr || '').match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (!m) return '';
+      var base = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      if (isNaN(base.getTime())) return '';
+      function fmt(x) {
+        return x.getFullYear() + '-' +
+          ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2);
+      }
+      return fmt(new Date(base.getTime() - 3 * 86400000)) + ' ~ ' +
+             fmt(new Date(base.getTime() + 3 * 86400000));
     }
 
     /** 숨긴 칸의 원문을 그대로 복사한다 — 줄바꿈이 살아 있다 */
