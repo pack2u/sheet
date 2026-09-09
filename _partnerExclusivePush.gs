@@ -971,6 +971,7 @@ function _pep_buildPushSummaryHtml_(opts) {
   var skipUid = opts.skipUid || 0;
   var skipNoMap = opts.skipNoMap || 0;
   var skipNoCode = opts.skipNoCode || 0;
+  var skipNoCodeList = opts.skipNoCodeList || [];
   var skipNoFile = opts.skipNoFile || 0;
   var skipNoMapList = opts.skipNoMapList || [];
   var aliasCnt = opts.aliasCnt || 0;
@@ -1049,7 +1050,8 @@ function _pep_buildPushSummaryHtml_(opts) {
   h += "<div class=\"detail-row\"><span class=\"detail-label\">이미 Push (고유ID 중복)</span><span class=\"detail-val\">" + skipUid + "건</span></div>";
   h += "<div class=\"detail-row\"><span class=\"detail-label\">매핑 없음</span><span class=\"detail-val\">" + skipNoMap + "건" +
     (skipNoMapList.length ? " (" + _pep_escapeHtml_(skipNoMapList.join(", ")) + ")" : "") + "</span></div>";
-  h += "<div class=\"detail-row\"><span class=\"detail-label\">품목코드 없음 (D열)</span><span class=\"detail-val\">" + skipNoCode + "건</span></div>";
+  h += "<div class=\"detail-row\"><span class=\"detail-label\">업체 접두 못 읽음 (D/E열)</span><span class=\"detail-val\">" + skipNoCode + "건" +
+    (skipNoCodeList.length ? " (" + _pep_escapeHtml_(skipNoCodeList.join(", ")) + ")" : "") + "</span></div>";
   h += "<div class=\"detail-row\"><span class=\"detail-label\">업체 파일 없음</span><span class=\"detail-val\">" + skipNoFile + "건</span></div>";
   h += "</div>";
 
@@ -1496,6 +1498,10 @@ function _pep_pushCore_(silent) {
   var skipUid = 0; // 이미 Push된 행 (협력Push 있음)
   var skipNoMap = 0; // _PEP_VENDOR_COL_OVERRIDES_ 미등록 접두
   var skipNoCode = 0; // 소스 D열(코드) 비어있는 행
+  /* ★ 2026-09-09: 몇 건인지 말고 어느 줄인지 ★
+     사람이 손으로 넣은 줄의 접두가 틀리면 여기로 빠진다.
+     숫자만 보여 주면 탭을 눈으로 훑어야 해서, 줄번호까지 남긴다. */
+  var skipNoCodeList = [];
   var skipNoFile = 0; // 접두→파일 매핑 없음
   var skipNoMapList = [];
   var errorLogs = [];
@@ -1526,6 +1532,11 @@ function _pep_pushCore_(silent) {
 
     if (!pfx) {
       skipNoCode++;
+      // 코드도 품목명도 없으면 그냥 빈 줄이다 — 표 아래 여백까지 담으면 진짜가 묻힌다
+      if ((rawCode || rawName) && skipNoCodeList.length < 20) {
+        skipNoCodeList.push("R" + (ri + 1) + " " +
+          (rawCode || "(코드없음)") + " " + rawName.substring(0, 20));
+      }
       continue;
     }
 
@@ -2043,6 +2054,7 @@ function _pep_pushCore_(silent) {
           skipUid: skipUid,
           skipNoMap: skipNoMap,
           skipNoCode: skipNoCode,
+          skipNoCodeList: skipNoCodeList,
           skipNoFile: skipNoFile,
           skipNoMapList: skipNoMapList,
           aliasCnt: aliasCnt,
