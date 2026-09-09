@@ -780,39 +780,53 @@ function ssCompressNames(names, spellOut) {
     }
     if (!placed) clusters.push({ pre: toks.slice(), suf: [], members: [toks] });
   }
+  /* ★ 2026-09-09: 펼쳐 적기 ★
+     > "JH 반죽사각 300/ (50*1팩) 50세트-★★400 - … ★★ 이렇게 표시 되게 해줘"
+
+     접어 놓은 「300/400 - (50*1팩) 50세트」는 박스를 싸는 사람에게
+     **한 품목처럼 보인다.** 300 짜리 하나를 넣고 끝낼 수 있다.
+     그래서 뒷말을 나눠 갖지 않고 품목마다 제 꼬리를 붙여 적는다.
+
+       접어서:  JH 반죽사각 300/400 - (50*1팩) 50세트--/소분
+       펼쳐서:  JH 반죽사각 300 - (50*1팩) 50세트--/소분 ★★400 - (50*1팩) 50세트--/소분 ★★
+
+     같은 계열의 앞말(JH 반죽사각)은 한 번만 적는다 — 사장님 확인.
+     ★★ 는 품목이 끝나는 자리다. 마지막 것 뒤에도 붙는다.
+
+     ★ 안 묶이는 품목에도 붙인다 ★  (2026-09-09 사장님 시험에서 나옴)
+       처음엔 묶인 덩어리 안에서만 ★★ 를 붙였다. 그래서
+
+         BW 2166 사출 중화면용기 중 검정 (100*2팩), BW 2145 … 소 검정 (100*1팩)
+
+       처럼 **안 묶인 것들은 쉼표로만** 이어져 ★★ 가 안 나왔다.
+       (묶는 조건이 「공통 앞 토큰 2개 이상」인데 이 둘은 BW 하나뿐이다.)
+       박스에 품목이 둘인 건 마찬가지라 표시도 같아야 한다.
+       그래서 묶였든 아니든 **품목 하나하나를 한 줄로 펴서** ★★ 로 끊는다.
+
+     ★ 샘플이 낀 박스는 접어 둔다 ★  (사장님 확인)
+       샘플은 이름이 이미 길고, 그 박스는 어차피 사람이 따로 본다. */
+  if (spellOut) {
+    var items = [];
+    for (var s = 0; s < clusters.length; s++) {
+      var cs = clusters[s];
+      if (cs.members.length === 1) { items.push(cs.members[0].join(' ')); continue; }
+      var csPre = cs.pre.length;
+      for (var e = 0; e < cs.members.length; e++) {
+        var rest = cs.members[e].slice(csPre).join(' ');
+        //  같은 계열 안에서만 앞말을 아낀다. 첫 놈이 그 앞말을 갖는다.
+        items.push(e === 0 ? cs.pre.join(' ') + ' ' + rest : rest);
+      }
+    }
+    if (!items.length) return '';
+    return (items.join(' ' + SS_ITEM_MARK) + ' ' + SS_ITEM_MARK)
+      .replace(/\s+/g, ' ').trim();
+  }
+
   var parts = [];
   for (var q = 0; q < clusters.length; q++) {
     var cq = clusters[q];
     if (cq.members.length === 1) { parts.push(cq.members[0].join(' ')); continue; }
     var pre = cq.pre.length, suf = cq.suf.length;
-
-    /* ★ 2026-09-09: 펼쳐 적기 ★
-       > "JH 반죽사각 300/ (50*1팩) 50세트-★★400 - … ★★ 이렇게 표시 되게 해줘"
-
-       접어 놓은 「300/400 - (50*1팩) 50세트」는 박스를 싸는 사람에게
-       **한 품목처럼 보인다.** 300 짜리 하나를 넣고 끝낼 수 있다.
-       그래서 뒷말을 나눠 갖지 않고 품목마다 제 꼬리를 붙여 적는다.
-
-         접어서:  JH 반죽사각 300/400 - (50*1팩) 50세트--/소분
-         펼쳐서:  JH 반죽사각 300 - (50*1팩) 50세트--/소분 ★★400 - (50*1팩) 50세트--/소분 ★★
-
-       앞말(JH 반죽사각)은 한 번만 적는다 — 사장님 확인.
-       ★★ 는 품목이 끝나는 자리다. 마지막 것 뒤에도 붙는다.
-
-       ★ 샘플이 낀 박스는 접어 둔다 ★  (사장님 확인)
-         샘플은 이름이 이미 길고, 그 박스는 어차피 사람이 따로 본다. */
-    if (spellOut) {
-      var each = [];
-      for (var e = 0; e < cq.members.length; e++) {
-        each.push(cq.members[e].slice(pre).join(' '));
-      }
-      parts.push(
-        (cq.pre.join(' ') + ' ' + each.join(' ' + SS_ITEM_MARK) + ' ' + SS_ITEM_MARK)
-          .replace(/\s+/g, ' ').trim()
-      );
-      continue;
-    }
-
     var mids = [];
     for (var w = 0; w < cq.members.length; w++) {
       mids.push(cq.members[w].slice(pre, cq.members[w].length - suf).join(' '));
