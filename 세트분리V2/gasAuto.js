@@ -175,3 +175,109 @@ function ss_미매칭점검() {
   }
   return ssio_alert(msg);
 }
+
+/**
+ * 고아 송장 점검 — **송장은 왔는데 붙일 주문이 원장에 없는 것**
+ *
+ * > "송장매칭시 송장번호가 남는경우 역으로 고유아이디를 일일마감에서 찾아
+ *  >  매치이키는게 더 효율적일수도 있어"
+ *
+ * ★ 두 방향은 서로 다른 실패를 잡는다 ★
+ *   정방향(ss_송장전파) : 주문은 있는데 송장이 없다 → 매일 다시 시도하면 붙는다
+ *   역방향(여기)        : 송장은 있는데 주문이 없다 → 다시 시도해도 영영 안 붙는다
+ *
+ *   실측(2026-09-09): 고아 124건이 전부 원장보다 **번호가 새것**이었다.
+ *   판매현황에 아직 안 들어온 주문의 송장이라, 다음 회차에 저절로 붙는다.
+ *   그러니 지금 당장 역매칭을 붙일 이유는 없다 —
+ *   **다만 며칠이 지나도 안 없어지는 고아는 다르다.** 그건 판매현황에서
+ *   빠진 주문이고, 출고는 됐는데 우리 장부에 없는 것이다. 그게 제일 위험하다.
+ *   그래서 「몇 건인가」가 아니라 **「며칠째인가」**를 본다.
+ *
+ * 아무것도 고치지 않는다. 보기만 한다.
+ */
+function ss_고아송장점검() {
+  var cfg = ssio_config();
+  var NL = String.fromCharCode(10);
+
+  // ── 원장의 고유ID 모으기 ──
+  var lg = ssio_ss().getSheetByName(SSIO_TABS.원장);
+  if (!lg || lg.getLastRow() < 2) return ssio_alert('원장이 비어 있습니다.');
+  var lcols = lg.getLastColumn();
+  var lhead = lg.getRange(1, 1, 1, lcols).getValues()[0];
+  var li = {};
+  for (var q = 0; q < lhead.length; q++) {
+    var ln = ssText(lhead[q]);
+    if (ln && li[ln] === undefined) li[ln] = q;
+  }
+  if (li['고유ID'] === undefined) return ssio_alert('원장에 고유ID 열이 없습니다.');
+  var lv = lg.getRange(2, 1, lg.getLastRow() - 1, lcols).getValues();
+  var known = {};
+  for (var a = 0; a < lv.length; a++) {
+    var u = ssText(lv[a][li['고유ID']]);
+    if (u) known[u] = true;
+  }
+
+  // ── 롯데 실적 읽기 (ss_송장전파 와 같은 자리) ──
+  var lId = ssText(cfg['롯데송장시트ID']) || '1KIBSmjpMVKLGoAkbrcKyTr4LOflszwS_xtMzmRuvYWs';
+  var lGid = ssNum(cfg['롯데송장탭GID']) || 1575029201;
+  var 고아 = [], 총송장 = 0;
+  try {
+    var lSS = SpreadsheetApp.openById(lId);
+    var lTab = null, sheets = lSS.getSheets();
+    for (var s = 0; s < sheets.length; s++) if (sheets[s].getSheetId() === lGid) { lTab = sheets[s]; break; }
+    if (!lTab) return ssio_alert('롯데 송장탭(GID ' + lGid + ')을 못 찾았습니다.');
+    if (lTab.getLastRow() < 2) return ssio_alert('롯데 송장탭이 비어 있습니다.');
+
+    var lrc = lTab.getLastColumn();
+    var lrh = lTab.getRange(1, 1, 1, lrc).getDisplayValues()[0].map(function (x) {
+      return ssText(x).replace(/\s/g, '');
+    });
+    var ci = -1, cw = -1, cd = -1;
+    for (var h = 0; h < lrh.length; h++) {
+      if (ci < 0 && (lrh[h] === '주문번호' || lrh[h] === '고객주문번호')) ci = h;
+      if (cw < 0 && (lrh[h] === '운송장번호' || lrh[h] === '송장번호')) cw = h;
+      if (cd < 0 && (lrh[h] === '자료등록일' || lrh[h] === '등록일' || lrh[h] === '일자')) cd = h;
+    }
+    if (ci < 0) ci = 9;
+    if (cw < 0) cw = 6;
+
+    var rv = lTab.getRange(2, 1, lTab.getLastRow() - 1, lrc).getDisplayValues();
+    for (var r = 0; r < rv.length; r++) {
+      var o = ssText(rv[r][ci]), w = ssText(rv[r][cw]);
+      if (!o || !w) continue;
+      if (o.indexOf('주문번호') >= 0 || w.indexOf('운송장') >= 0) continue;
+      총송장++;
+      if (known[o]) continue;
+      고아.push({ o: o, w: w, d: cd >= 0 ? ssText(rv[r][cd]) : '' });
+    }
+  } catch (e) {
+    return ssio_alert('롯데 송장탭을 못 읽었습니다: ' + (e && e.message ? e.message : e));
+  }
+
+  // ── 날짜별로 묶는다. 오래된 고아가 진짜 문제다. ──
+  var byDay = {};
+  for (var g = 0; g < 고아.length; g++) {
+    var d2 = 고아[g].d ? 고아[g].d.slice(0, 10) : '(날짜없음)';
+    byDay[d2] = (byDay[d2] || 0) + 1;
+  }
+  var days = Object.keys(byDay).sort();
+
+  var msg = '롯데 송장 ' + 총송장 + '건 중 원장에 짝이 없는 것 ' + 고아.length + '건' +
+    '  (' + (총송장 ? (고아.length * 100 / 총송장).toFixed(1) : '0') + '%)' + NL + NL;
+  if (!고아.length) {
+    msg += '고아 송장이 없습니다 — 모든 송장이 원장의 주문과 짝이 맞습니다.';
+    return ssio_alert(msg);
+  }
+
+  msg += '[등록일별]' + NL;
+  for (var k = 0; k < days.length; k++) msg += '  ' + days[k] + '  ' + byDay[days[k]] + '건' + NL;
+  msg += NL +
+    '※ 오늘·어제 것은 대개 정상입니다 — 판매현황에 아직 안 들어온 주문입니다.' + NL +
+    '  **이틀이 지나도 남아 있으면 판매현황에서 빠진 주문**입니다.' + NL +
+    '  출고는 됐는데 우리 장부에 없는 것이라, 정산·재고가 어긋납니다.' + NL + NL +
+    '[고아 송장 (최대 25)]' + NL + '  주문번호 · 운송장 · 등록일' + NL;
+  for (var m = 0; m < 고아.length && m < 25; m++) {
+    msg += '  ' + 고아[m].o + '  ' + 고아[m].w + '  ' + 고아[m].d + NL;
+  }
+  return ssio_alert(msg);
+}
