@@ -315,9 +315,24 @@ function csLotteTrack(invoice, opt) {
     if (hist[e].empNm || hist[e].empTel) { emp = hist[e]; break; }
   }
 
+  /* ★ 2026-09-09: 주문번호로 물었으면 송장번호를 응답에서 꺼낸다 ★
+     result[].invNo 를 여태 버리고 있었다. 송장으로 물을 때는 우리가 넣은 값을
+     그대로 돌려주면 그만이라 티가 안 났는데, 주문번호로 물으면 inv 가 비어
+     **알고 싶은 송장번호가 안 온다.** 그게 주문번호 조회의 목적인데도.
+     (일일마감에 송장이 안 붙은 건 — csLotteLookup.gs 참조) */
+  var resInv = "";
+  var resSummary = "";
+  var rl = j.result || [];
+  for (var q = 0; q < rl.length; q++) {
+    if (!resInv) resInv = _lotte_digits_(rl[q].invNo);
+    if (!resSummary) resSummary = String(rl[q].cdNm || "").trim();
+  }
+
   var out = {
     ok: true,
-    invoice: inv,
+    invoice: inv || resInv,
+    ordNo: ordNo,
+    summary: resSummary,
     statusCode: last ? last.code : "",
     statusName: last ? last.name : "이력 없음",
     delivered: !!done,

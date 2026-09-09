@@ -1990,6 +1990,41 @@
       font-size: 11px; font-family: inherit; cursor: pointer; padding: 2px 6px;
     }
     .os-dash-refresh:active { color: var(--accent-soft); }
+
+    /* ── 롯데 직접조회 (주문·송장 맨 아래) ──
+       우리 일일마감에 송장이 없을 때 롯데에 바로 묻는 자리. */
+    .os-lk {
+      margin-top: 14px; padding-top: 12px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .os-lk-head {
+      display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;
+    }
+    .os-lk-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); letter-spacing: 0.03em; }
+    .os-lk-hint { font-size: 11px; color: var(--text-muted); }
+    .os-lk-status { font-size: 11px; color: var(--text-muted); min-height: 15px; margin-bottom: 8px; }
+    .os-lk-row {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 8px;
+    }
+    .os-lk-top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+    .os-lk-inv { font-size: 14px; font-weight: 700; letter-spacing: 0.02em; }
+    .os-lk-by {
+      font-size: 10px; padding: 1px 6px; border-radius: 6px;
+      background: rgba(173,173,173,0.18); color: var(--text-secondary);
+    }
+    .os-lk-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; line-height: 1.5; }
+    .os-lk-stat { font-size: 13px; font-weight: 600; color: var(--accent-orange); }
+    .os-lk-stat.done { color: var(--accent-green); }
+    .os-lk-stat.fail { color: var(--accent-red); font-weight: 500; font-size: 12px; }
+    .os-lk-when { font-size: 11px; color: var(--text-muted); font-weight: 400; margin-left: 6px; }
+    .os-lk-emp { font-size: 12px; margin-top: 6px; }
+    .os-lk-hist {
+      margin: 8px 0 0; padding-left: 18px; max-height: 190px; overflow-y: auto;
+      font-size: 11px; color: var(--text-secondary); line-height: 1.7;
+    }
+    .os-lk-hist .t { color: var(--text-muted); }
+    .os-lk-foot { margin-top: 8px; display: flex; gap: 6px; }
     .dash-kpi-grid {
       display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px;
     }
@@ -2441,6 +2476,25 @@
           <div class="os-status" id="status">불러오는 중…</div>
           <div id="list"></div>
           <div id="orderDash" class="os-dash loading"></div>
+          <!-- 롯데 직접조회 — 2026-09-09.
+               일일마감에 송장이 없으면 여기서 롯데에 바로 묻는다.
+               이름을 넣으면 우리 색인에서 번호를 찾아 롯데에 묻고,
+               송장번호·주문번호를 그대로 넣어도 된다.
+               (롯데 API 에는 이름으로 찾는 창구가 없다 — csLotteLookup.gs) -->
+          <div class="os-lk" id="osLookup">
+            <div class="os-lk-head">
+              <span class="os-lk-title">🚚 롯데 직접조회</span>
+              <span class="os-lk-hint">일일마감에 송장이 없을 때</span>
+            </div>
+            <div class="os-search">
+              <input id="lkq" type="search" autocomplete="off"
+                     placeholder="이름 · 송장번호 · 주문번호"
+                     onkeydown="if(event.key==='Enter'){ event.preventDefault(); lotteLookup(); }">
+              <button class="go" onclick="lotteLookup()">조회</button>
+            </div>
+            <div class="os-lk-status" id="lkStatus"></div>
+            <div id="lkList"></div>
+          </div>
         </div>
       </div>
       <div class="ws-resizer" id="wsResizer1" aria-label="주문·반품 폭 조절" title="드래그하여 폭 조절"></div>
@@ -7928,6 +7982,160 @@
       if (btn) btn.setAttribute('aria-expanded', 'false');
     }
 
+    /* ── 롯데 직접조회 ────────────────────────────────────────
+       우리 일일마감에 송장이 없을 때 롯데에 바로 묻는다.
+
+       ★ 롯데 API 에는 이름 조회가 없다 ★
+         화물추적이 받는 것은 운송장번호 아니면 주문번호뿐이다.
+         그래서 이름은 서버가 우리 색인에서 번호로 바꾼 뒤 롯데에 묻는다.
+         송장이 없는 건은 **주문번호로** 묻고, 롯데가 알고 있으면
+         송장번호를 돌려준다. (csLotteLookup.gs)
+
+       ★ 자동으로 부르지 않는다 ★
+         쿼터가 하루치다. 카드의 「상태」와 마찬가지로 사람이 누를 때만 나간다. */
+
+    /** 카드의 「롯데송장조회」 — 그 카드 이름을 아래 칸에 넣고 바로 조회한다 */
+    function lotteLookupFromCard(btn) {
+      var name = btn.getAttribute('data-name') || '';
+      var box = document.getElementById('lkq');
+      if (!box) return;
+      box.value = name;
+      var wrap = document.getElementById('osLookup');
+      /* 결과가 화면 밖에서 나오면 아무 일도 안 일어난 것처럼 보인다.
+         조회칸을 먼저 보여 준 다음 부른다. */
+      if (wrap && wrap.scrollIntoView) {
+        try { wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+        catch (e) { wrap.scrollIntoView(); }
+      }
+      lotteLookup();
+    }
+
+    function lotteLookup() {
+      var el = document.getElementById('lkq');
+      var st = document.getElementById('lkStatus');
+      var list = document.getElementById('lkList');
+      if (!el || !st || !list) return;
+      var q = String(el.value || '').trim();
+      if (!q) {
+        st.textContent = '이름이나 번호를 넣어 주세요.';
+        list.innerHTML = '';
+        return;
+      }
+      st.textContent = '롯데에 묻는 중…';
+      list.innerHTML = '';
+      google.script.run
+        .withSuccessHandler(function (r) { renderLotteLookup(r, q); })
+        .withFailureHandler(function (e) {
+          st.textContent = '통신 실패 — ' + String((e && e.message) || '');
+        })
+        .csLotteLookup(q, { days: DAYS });
+    }
+
+    function renderLotteLookup(r, q) {
+      var st = document.getElementById('lkStatus');
+      var list = document.getElementById('lkList');
+      if (!st || !list) return;
+      r = r || {};
+      var rows = r.rows || [];
+
+      if (!r.ok && !rows.length) {
+        st.textContent = String(r.error || '조회 실패');
+        list.innerHTML = '';
+        return;
+      }
+
+      /* 몇 건을 물었고 몇 건을 안 물었는지 밝힌다.
+         쿼터 때문에 자른 것을 안 밝히면 "왜 하나만 나오지" 로 오해한다. */
+      var note = '「' + q + '」 ' + rows.length + '건 조회';
+      if (r.skipped) note += ' · 색인에 ' + r.matched + '건이라 ' + r.skipped + '건은 안 물음';
+      if (r.days) note += ' · 최근 ' + r.days + '일';
+      st.textContent = note;
+
+      var html = '';
+      for (var i = 0; i < rows.length; i++) html += lotteLookupRowHtml(rows[i]);
+      list.innerHTML = html;
+    }
+
+    function lotteLookupRowHtml(t) {
+      var inv = String(t.invoice || '');
+      var rec = t.rec || {};
+      var h = '<div class="os-lk-row">';
+
+      h += '<div class="os-lk-top">';
+      h += '<span class="os-lk-inv">' + esc(inv || '송장 없음') + '</span>';
+      if (t.askedBy) {
+        h += '<span class="os-lk-by">' + esc(t.askedBy) + ' ' + esc(String(t.asked || '')) + '</span>';
+      }
+      if (inv) {
+        h += '<button class="os-copy" onclick="copyText(\'' + js(inv) + '\', true, \'송장번호 복사됨\')">복사</button>';
+        h += '<a class="os-copy" href="' + lotteTrackUrl(inv) + '" target="_blank" rel="noopener"' +
+          ' onclick="return openTrack(event,this.href)">롯데</a>';
+      }
+      h += '</div>';
+
+      if (rec.name || rec.item || rec.date) {
+        h += '<div class="os-lk-meta">' +
+          esc([rec.date, rec.name, rec.item].filter(Boolean).join(' · ')) +
+          (rec.vendor ? ' <span>(' + esc(rec.vendor) + ')</span>' : '') +
+          '</div>';
+      }
+
+      if (!t.ok) {
+        h += '<div class="os-lk-stat fail">✕ ' + esc(String(t.error || '조회 실패')) + '</div>';
+        h += '</div>';
+        return h;
+      }
+
+      h += '<div class="os-lk-stat' + (t.delivered ? ' done' : '') + '">' +
+        esc(String(t.statusName || '')) +
+        (t.lastAt ? '<span class="os-lk-when">' + esc(t.lastAt) + '</span>' : '') +
+        '</div>';
+
+      if (t.empNm || t.empTel) {
+        h += '<div class="os-lk-emp">🚚 ' + esc(t.empNm || '(이름 없음)');
+        if (t.empTel) {
+          h += ' <a class="os-copy" href="tel:' + esc(String(t.empTel).replace(/[^0-9+]/g, '')) + '">' +
+            esc(t.empTel) + '</a>';
+        }
+        h += '</div>';
+      }
+
+      var hist = t.history || [];
+      if (hist.length) {
+        /* 최근 것이 위로 — CS 가 먼저 보는 것은 「지금 어디냐」다.
+           카드의 이력 판과 같은 순서로 맞춘다. */
+        var lines = [];
+        h += '<ol class="os-lk-hist">';
+        for (var k = hist.length - 1; k >= 0; k--) {
+          var e = hist[k];
+          h += '<li><span class="t">' + esc(e.at || '-') + '</span> <b>' + esc(e.name) + '</b>' +
+            (e.branch ? ' ' + esc(e.branch) : '') +
+            (e.msg ? ' <span class="t">' + esc(e.msg) + '</span>' : '') + '</li>';
+        }
+        h += '</ol>';
+        for (var m = 0; m < hist.length; m++) {
+          lines.push(hist[m].at + '  ' + hist[m].name +
+            (hist[m].branch ? ' (' + hist[m].branch + ')' : '') +
+            (hist[m].msg ? '  ' + hist[m].msg : ''));
+        }
+        /* ★ 원문은 onclick 에 넣지 않는다 ★ js() 가 줄바꿈을 공백으로 바꿔
+           고객에게 붙여넣을 수 없게 된다. 카드 이력 판과 같은 이유다. */
+        h += '<textarea class="os-trk-raw" hidden>' + esc(lines.join('\n')) + '</textarea>';
+        h += '<div class="os-lk-foot">' +
+          '<button class="os-copy" onclick="_lkCopy_(this)">이력 복사</button></div>';
+      }
+
+      h += '</div>';
+      return h;
+    }
+
+    /** 숨긴 칸의 원문을 그대로 복사한다 — 줄바꿈이 살아 있다 */
+    function _lkCopy_(el) {
+      var row = el.closest ? el.closest('.os-lk-row') : null;
+      var raw = row ? row.querySelector('.os-trk-raw') : null;
+      copyText(raw ? raw.value : '', true, '배송이력 복사됨');
+    }
+
     function lotteTrackUrl(d) {
       return 'https://www.lotteglogis.com/home/reservation/tracking/linkView?InvNo=' + d;
     }
@@ -7981,7 +8189,20 @@
         return '<span class="os-inv-warn">송장 ' + n + '장 · 수량 ' + esc(q) +
           ' · 남의 송장 의심 (표시 안 함)</span>';
       }
-      if (!invs.length) return esc(s || '-');
+      if (!invs.length) {
+        /* ★ 2026-09-09: 송장이 없으면 롯데에 직접 물을 수 있게 ★
+           물건은 나갔는데 일일마감이 송장을 못 붙인 건(미매칭)이다.
+           여기서 막히면 CS 는 롯데 홈페이지를 따로 열어 헤매야 했다.
+           단추는 이 카드의 **이름을 아래 조회칸에 넣고 바로 실행**한다 —
+           칸에 이름이 남으니 다시 눌러 보거나 고쳐 볼 수 있다. */
+        var who = (r && r.name) ? String(r.name) : '';
+        var html0 = esc(s || '-');
+        if (who) {
+          html0 += '<button class="os-copy" title="이 이름으로 롯데에 직접 물어봅니다"' +
+            ' data-name="' + esc(who) + '" onclick="lotteLookupFromCard(this)">롯데송장조회</button>';
+        }
+        return html0;
+      }
       var html = '';
       // 택배사를 알면 보조 링크를 늘어놓을 이유가 없다 — 바로 그 택배사로 간다
       var proxy = !carrierTrackBuilder(carrier) && isProxySource(source);
