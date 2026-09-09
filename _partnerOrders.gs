@@ -1617,8 +1617,19 @@ function partnerFetchInvoices() {
         .getRange(1, 1, _csTab.getLastRow(), _csLc)
         .getValues();
       var _csHeaders = _csData[0];
-      var _csNameIdx = -1,
-        _csPhoneIdx = -1;
+      /* ★ 2026-09-09: 번호가 든 열을 **전부** 모은다 ★
+         전에는 「전화」·「모바일」 중 **먼저 나오는 한 열**만 봤다.
+         이 탭은 열 순서가 「받는분 | 전화 | 모바일」이라 「전화」가 잡히는데,
+         실측(2026-09-09) 결과 **전화는 23줄 전부 비어 있고 번호는 모바일에**
+         들어 있었다. 그래서 키가 「이름_」만 만들어져 허브 행과 하나도 안 맞았고,
+         합포장이 통째로 안 붙었다 — 적요에 「합포장」도, 같은 송장도 안 적혔다.
+
+         한 열만 고르는 것이 애초에 틀렸다. 사람이 어느 칸에 적을지는
+         그때그때 다르다. 번호처럼 생긴 열을 다 읽고, 줄마다 **있는 번호마다**
+         키를 하나씩 만든다. 허브 행이 둘 중 무엇을 갖고 있든 맞는다.
+         키는 「이름_뒤4자리」라 번호가 여럿이어도 서로 안 부딪힌다. */
+      var _csNameIdx = -1;
+      var _csPhoneIdxs = [];
       for (var _ci = 0; _ci < _csHeaders.length; _ci++) {
         var _ch = String(_csHeaders[_ci]).replace(/\s/g, "");
         if (
@@ -1626,23 +1637,24 @@ function partnerFetchInvoices() {
           _ch.match(/이름|고객명|수취인|수령인|받는분|받는사람|수하인/)
         )
           _csNameIdx = _ci;
-        if (
-          _csPhoneIdx === -1 &&
-          _ch.match(
-            /연락처|전화번호|모바일|핸드폰|휴대폰|수하인전화|받는전화|전화/,
-          )
-        )
-          _csPhoneIdx = _ci;
+        //  보내는분 전화는 우리 번호다 — 받는 사람 키에 섞이면 안 된다
+        if (/보내는|발송|송하인|출고지/.test(_ch)) continue;
+        if (_ch.match(/연락처|전화번호|모바일|핸드폰|휴대폰|수하인전화|받는전화|전화/)) {
+          _csPhoneIdxs.push(_ci);
+        }
       }
-      if (_csNameIdx !== -1 && _csPhoneIdx !== -1) {
+      if (_csNameIdx !== -1 && _csPhoneIdxs.length) {
         for (var _cr = 1; _cr < _csData.length; _cr++) {
           var _csName = String(_csData[_cr][_csNameIdx] || "").trim();
-          var _csPh = String(_csData[_cr][_csPhoneIdx] || "").replace(
-            /[^0-9]/g,
-            "",
-          );
-          var _csKey = normalizeHubRecipientPhoneKey_(_csName, _csPh);
-          if (_csKey && _csKey !== "_") combinedShipmentKeySet[_csKey] = true;
+          if (!_csName) continue;
+          for (var _pi = 0; _pi < _csPhoneIdxs.length; _pi++) {
+            var _csPh = String(_csData[_cr][_csPhoneIdxs[_pi]] || "").replace(/[^0-9]/g, "");
+            //  번호가 없으면 키를 만들지 않는다. 「이름_」만으로 잡으면
+            //  동명이인의 남의 주문까지 합포장으로 묶인다.
+            if (_csPh.length < 4) continue;
+            var _csKey = normalizeHubRecipientPhoneKey_(_csName, _csPh);
+            if (_csKey && _csKey !== "_") combinedShipmentKeySet[_csKey] = true;
+          }
         }
       }
       // ★ Q열(index 16) 고유ID 수집
