@@ -26,8 +26,8 @@ function onOpen() {
     .addSeparator()
 
     .addSubMenu(ui.createMenu('📦 자료 준비')
-      .addItem('① 마스터 새로고침', 'ss_마스터새로고침')
-      .addItem('② 판매현황 비우기', 'ss_판매현황비우기')
+      .addItem('판매현황 비우기', 'ss_판매현황비우기')
+      .addItem('판매현황 입력 시트 열기 / 링크', 'ss_입력시트준비')
       .addItem('📮 우편번호 자동조회 (카카오)', 'ss_우편번호채우기'))
 
     .addSubMenu(ui.createMenu('🔗 송장 매칭')
@@ -50,6 +50,9 @@ function onOpen() {
       .addItem('🔑 카카오 API 키 설정', 'ss_카카오키설정')
       .addItem('🩺 카카오 진단', 'ss_카카오진단')
       .addItem('🧹 합배송조건 정리 / 검증', 'ss_합배송조건정리')
+      /* 실행이 알아서 다시 읽으므로 평소엔 누를 일이 없다.
+         마스터가 깨졌을 때 손으로 되돌리는 자리로 남긴다. */
+      .addItem('🔄 마스터 새로고침 (평소엔 불필요)', 'ss_마스터새로고침')
       .addItem('🏝 도서산간 목록 심기 (1회)', 'ss_도서산간심기')
       .addItem('🛠 시트 설치 / 복구', 'ss_설치'))
 
