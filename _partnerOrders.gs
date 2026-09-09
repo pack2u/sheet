@@ -4882,7 +4882,9 @@ function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
           var vCar = String(v2Data[vi][2] || "").trim();
           if (!vUid || !_po_hasRealInvoice_(vInv)) continue;
           if (typeof _po_isGeneratedUid_ === "function" && _po_isGeneratedUid_(vUid)) continue;
-          if (/^d{6}-PH-/.test(vUid)) continue; // V2 전화주문 ID — 사방넷 주문번호가 아니다
+          /* 옛 「260902-PH-」 형태를 막으려던 줄이 여기 있었는데 정규식에 \ 가 빠져
+             아무것도 안 걸렸다. 이제 바로 위 _po_isGeneratedUid_ 가 두 형태를 다 잡는다.
+             여기만 막아 봐야 나머지 네 갈래는 그대로 새는 것이기도 했다. */
           var vCode = LOTTE_CODE;
           if (vCar && vCar !== "롯데택배") {
             vCode = typeof _pep_sabangCodeForCarrier_ === "function"
@@ -5513,8 +5515,23 @@ function _po_collectExistingUidSet_(tab, uidCol) {
 }
 
 /** 결정론적 UID (MMDD-ph-XXXX / MMDD-ds-xxxx). 사방넷 원본 주문번호는 false */
+/**
+ * 우리가 만들어 붙인 UID 인가 — **사방넷 주문번호가 아니다.**
+ *
+ *   0908-ds-3768      발주수집이 발급
+ *   0909-PH-a3f19     세트분리(뉴) 전화주문
+ *   260902-PH-a3f19   세트분리(뉴) 전화주문 — 2026-09-09 이전 주문
+ *
+ * ★ 날짜 자리가 두 가지다 ★  (2026-09-09)
+ *   세트분리(뉴)가 이 날부터 고유ID 날짜를 YYMMDD → MMdd 로 줄였다
+ *   (세트분리V2/core.js SS_ID_SHORT_FROM). **그 이전 주문은 6자리로 남는다.**
+ *   4자리만 보면 옛 전화주문 ID 가 사방넷 주문번호로 오인돼
+ *   **사방넷 송장대량등록 파일에 들어간다** — 사방넷이 모르는 번호라
+ *   업로드가 실패하고 결국 사람이 건별로 손대게 된다.
+ *   실제로 그랬다. 두 자리 형태를 다 본다.
+ */
 function _po_isGeneratedUid_(uid) {
-  return /^\d{4}-[A-Za-z]{2}-/.test(String(uid || "").trim());
+  return /^\d{4}(?:\d{2})?-[A-Za-z]{2}-/.test(String(uid || "").trim());
 }
 
 function _po_isSabangnetUid_(uid) {
