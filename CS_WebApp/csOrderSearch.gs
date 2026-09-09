@@ -3160,6 +3160,90 @@ function csDiagnoseDayCount(dateStr) {
 }
 
 /**
+ * 대시보드 막대가 왜 그 숫자인지 — 인자 없이 한 번에 본다.
+ * 파일: csOrderSearch.gs  ★ 2026-09-10 신규
+ *
+ * ★ 왜 또 만드나 ★
+ *   csDiagnoseDayCount(dateStr) 가 이미 같은 일을 하는데 **편집기 ▶ 실행은
+ *   인자를 못 넘긴다.** 날짜를 손으로 넣으려면 코드를 고쳐야 하고, 그러면
+ *   급할 때 안 쓴다. 인자 없는 문을 따로 낸다.
+ *
+ * ★ 무엇을 보여 주나 ★
+ *   ① 통합조회가 날짜별로 몇 건을 들고 있나 — **대시보드 막대와 같은 수**다.
+ *   ② 그중 날짜를 못 읽은 행이 몇 건인가 — 이 행들은 막대에서 통째로 빠진다.
+ *   ③ 어제 날짜에 대해 일일마감 **파일**은 몇 건인가.
+ *   ④ 통합조회가 마지막으로 갱신된 시각.
+ *
+ *   ①과 ③을 나란히 보면 갈린다:
+ *     ③ ≫ ① 이면 통합조회가 덜 담은 것 (재생성이 늦었거나 빠졌다).
+ *     ① ≈ ③ 인데 화면만 적으면 브라우저에 남은 옛 인덱스다.
+ *     ②가 크면 자료는 있는데 날짜를 못 읽어 집계에서 빠지는 것이다.
+ *
+ * ★ 캐시를 무시하고 새로 읽는다 ★
+ *   지금 시트에 무엇이 들어 있는지를 묻는 자리다. 캐시된 값을 보여 주면
+ *   물어본 것과 다른 것을 답하게 된다.
+ */
+function csDiagnoseDashboardDays() {
+  var out = { 어제날짜: "", 통합조회: {}, 어제파일: {}, 판정: "", 다음: "" };
+
+  /* 대시보드는 **어제**를 마지막 막대로 삼는다 (home.html shipDateList 는
+     오늘이 아니라 어제부터 센다). 그래서 물어볼 날짜도 어제다. */
+  var y = new Date();
+  y.setDate(y.getDate() - 1);
+  var yStr = Utilities.formatDate(y, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  out.어제날짜 = yStr;
+
+  try {
+    var uv = _cs_loadUnifiedView_(_CS_DAILY_DAYS_DEFAULT_, true);
+    var byDate = {}, blank = 0, noInv = 0;
+    for (var i = 0; i < uv.rows.length; i++) {
+      var r = uv.rows[i];
+      var d = String(r.date || "");
+      if (!d) blank++;
+      else byDate[d] = (byDate[d] || 0) + 1;
+      if (String(r.invDigits || "").replace(/[^0-9]/g, "").length < 8) noInv++;
+    }
+    out.통합조회 = {
+      사용중: uv.found,
+      전체행: uv.rows.length,
+      날짜별: byDate,
+      날짜없는행: blank,
+      송장미확인: noInv,
+      갱신시각: uv.updatedAt || "",
+      오류: uv.error || ""
+    };
+  } catch (eU) {
+    out.통합조회 = { 오류: eU.message };
+  }
+
+  try {
+    var day = _cs_loadDay_(yStr, true, false);
+    out.어제파일 = { 파일찾음: day.found, 행수: (day.rows || []).length, 오류: day.error || "" };
+  } catch (eD) {
+    out.어제파일 = { 오류: eD.message };
+  }
+
+  var u = (out.통합조회.날짜별 || {})[yStr] || 0;
+  var f = out.어제파일.행수 || 0;
+  out.판정 = "어제(" + yStr + ") — 통합조회 " + u + "건 · 일일마감 파일 " + f + "건";
+
+  if (out.통합조회.날짜없는행) {
+    out.다음 = "★ 통합조회에 날짜를 못 읽은 행이 " + out.통합조회.날짜없는행 +
+      "건 있다. 이 행들은 막대에서 통째로 빠진다 — 통합조회 날짜 열 서식을 볼 것.";
+  } else if (f - u > 30 && f > u * 1.5) {
+    out.다음 = "일일마감 파일이 " + (f - u) + "건 더 많다. 통합조회가 그만큼 덜 담았다 — " +
+      "메뉴 「🩹 통합조회 하루치 채우기」로 " + yStr + " 을 지정해 넣거나, " +
+      "「🗂️ 통합조회 재생성」을 다시 돌린다.";
+  } else {
+    out.다음 = "두 쪽이 비슷하다. 그런데도 대시보드가 적게 보이면 브라우저에 남은 " +
+      "옛 인덱스다 — 대시보드 오른쪽 위 ↻ 갱신을 누르거나 새로고침한다.";
+  }
+
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
+
+/**
  * 일일마감 파일이 실제로 어디에 어떤 이름으로 있는지 훑는다.
  * 파일: csOrderSearch.gs  ★ 2026-09-02 신규
  *
