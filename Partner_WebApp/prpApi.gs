@@ -133,6 +133,19 @@ function prpSubmitReturn(sid, data) {
     if (col.vendor >= 0) row[col.vendor] = sess.vendor;
     if (col.name >= 0) row[col.name] = name;
     if (col.phone >= 0) row[col.phone] = prpFormatPhone_(data.phone);
+    /* ★ 2026-09-09: 실 전화번호 ★
+       고유아이디로 불러오면 주문에 적힌 번호가 딸려 오는데 안심번호(0504-…)인
+       경우가 많다. 안심번호는 배송이 끝나면 끊겨서, 회수 기사가 걸면 안 받는
+       번호가 된다. 업체가 아는 실제 번호를 여기 적는다.
+
+       ★ 주 연락처를 덮지 않는다 ★
+         둘 다 남긴다. 안심번호로 걸어야 하는 건도 있고, 나중에 「그때 어떤
+         번호를 받았나」를 봐야 할 때가 있다. 대장의 「추가연락처」 열이 그 자리다.
+
+       열이 없는 옛 탭이면 조용히 버리지 않고 비고에 남긴다 (아래 memo). */
+    if (col.phone2 >= 0 && String(data.phone2 || "").trim()) {
+      row[col.phone2] = prpFormatPhone_(data.phone2);
+    }
     if (col.pickup >= 0) row[col.pickup] = String(data.pickup || "").trim();
     if (col.item >= 0) row[col.item] = item;
     if (col.qty >= 0) row[col.qty] = String(data.qty || "1").trim();
@@ -141,10 +154,16 @@ function prpSubmitReturn(sid, data) {
 
     var memo = String(data.memo || "").replace(/\s+/g, " ").trim();
     var uid = prpUidFromCell_(data.uid);
+    /* 추가연락처 열이 없는 옛 탭에서는 비고에 남긴다.
+       조용히 버리면 업체는 적었는데 아무 데도 없는 번호가 된다. */
+    var p2 = String(data.phone2 || "").trim();
+    var p2Lost = p2 && col.phone2 < 0;
+
     if (col.notice >= 0) {
       row[col.notice] = prpStamp_(PRP_STAFF_PREFIX + sess.vendor) +
         " 업체 포털 접수." +
         (uid ? " 고유ID " + uid + "." : "") +
+        (p2Lost ? " 실번호 " + prpFormatPhone_(p2) + "." : "") +
         (memo ? " " + memo : "");
     }
 

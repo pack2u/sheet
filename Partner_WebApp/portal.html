@@ -318,11 +318,24 @@
         <div>
           <label>연락처</label>
           <input type="tel" id="nPhone" inputmode="numeric" autocomplete="off">
+          <!-- 불러오기로 딸려온 번호가 안심번호면 여기서 알려 준다.
+               사람이 0504 를 알아보고 판단하기를 바라지 않는다. -->
+          <div class="hint" id="nPhoneHint" hidden></div>
         </div>
         <div>
           <label>수량</label>
           <input type="text" id="nQty" value="1" inputmode="numeric">
         </div>
+      </div>
+      <!-- ★ 2026-09-09: 실 전화번호 ★
+           고유아이디로 불러오면 주문에 적힌 번호가 딸려 오는데 안심번호(0504-…)
+           인 경우가 많다. 안심번호는 배송이 끝나면 끊겨서 회수 기사가 걸면
+           안 받는 번호가 된다. 업체가 아는 실제 번호를 여기 적는다.
+           대장의 「추가연락처」 열로 들어간다 — 위 연락처를 덮지 않는다. -->
+      <div class="fld">
+        <label>실 전화번호 (선택)</label>
+        <input type="tel" id="nPhone2" inputmode="numeric" autocomplete="off"
+               placeholder="안심번호 말고 실제로 통화되는 번호">
       </div>
       <div class="fld">
         <label>원송장번호</label>
@@ -846,7 +859,8 @@
     }
 
     function openNew() {
-      ['nName', 'nPhone', 'nInv', 'nItem', 'nMemo', 'nUid'].forEach(function (k) { el(k).value = ''; });
+      ['nName', 'nPhone', 'nPhone2', 'nInv', 'nItem', 'nMemo', 'nUid'].forEach(function (k) { el(k).value = ''; });
+      el('nPhoneHint').hidden = true;
       el('nQty').value = '1';
       el('nMsg').textContent = '';
       el('nMsg').className = 'msg';
@@ -863,6 +877,7 @@
         uid: el('nUid').value,
         name: el('nName').value,
         phone: el('nPhone').value,
+        phone2: el('nPhone2').value,
         qty: el('nQty').value,
         invoice: el('nInv').value,
         item: el('nItem').value,
@@ -873,11 +888,40 @@
       };
     }
 
+    /**
+     * 불러온 번호가 안심번호면 알려 준다.
+     * ★ 2026-09-09
+     *
+     * ★ 사람이 0504 를 알아보게 두지 않는다 ★
+     *   안심번호는 배송이 끝나면 끊긴다. 그 번호만 적힌 채로 회수를 넣으면
+     *   기사가 걸어도 안 받는 번호가 되고, 그때는 이미 물건이 나간 뒤다.
+     *   화면이 먼저 말해 준다.
+     *
+     * ★ 막지는 않는다 ★
+     *   실 번호를 모를 수도 있다. 안내만 하고 접수는 그대로 된다 —
+     *   막으면 급한 건을 못 넣는다.
+     */
+    /* v2 의 is_safe_number 와 **같은 규칙**이다 (sql/04_reorder.sql 35행).
+       두 곳이 다르게 판정하면 포털은 안심번호라 하고 v2 는 아니라 한다. */
+    var SAFE_PREFIX = /^050[0-9]/;
+    function showSafeHint(phone) {
+      var box = el('nPhoneHint');
+      if (!box) return;
+      var d = String(phone || '').replace(/[^0-9]/g, '');
+      var safe = SAFE_PREFIX.test(d);
+      box.hidden = !safe;
+      if (safe) box.textContent = '안심번호입니다 — 배송이 끝나면 끊깁니다. 아래에 실 번호를 적어 주세요.';
+    }
+
     function applyHit(h) {
       if (!h) return;
       if (h.uid) el('nUid').value = h.uid;
       if (h.name) el('nName').value = h.name;
-      if (h.phone) el('nPhone').value = h.phone;
+      if (h.phone) {
+        el('nPhone').value = h.phone;
+        showSafeHint(h.phone);
+      }
+      if (h.phone2) el('nPhone2').value = h.phone2;
       if (h.qty) el('nQty').value = h.qty;
       else if (!el('nQty').value) el('nQty').value = '1';
       if (h.invoice) el('nInv').value = h.invoice;

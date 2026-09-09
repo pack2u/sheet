@@ -39,7 +39,7 @@ function prpFindHeaderRow_(values) {
 
 function prpMapCols_(header) {
   var col = {
-    date: -1, staff: -1, vendor: -1, name: -1, phone: -1,
+    date: -1, staff: -1, vendor: -1, name: -1, phone: -1, phone2: -1,
     pickup: -1, item: -1, qty: -1, invoice: -1, type: -1, fee: -1, status: -1, notice: -1,
     returnInvoice: -1
   };
@@ -62,7 +62,20 @@ function prpMapCols_(header) {
          되돌리면 다음 사람이 또 고치고 또 깨진다. 코드가 두 이름을 다 안다. */
     else if (col.vendor < 0 && /업체명|주문지|판매처|발주업체/.test(h)) col.vendor = i;
     else if (col.name < 0 && /반품신청자|수취인명|수취인|받는분/.test(h) && !/전화|주소/.test(h)) col.name = i;
-    else if (col.phone < 0 && /연락처|전화|휴대폰/.test(h) && !/주소/.test(h)) col.phone = i;
+    /* ★ 2026-09-09: 연락처를 둘로 나눈다 ★
+       고유아이디로 불러오면 주문에 적힌 번호가 딸려 오는데, 그게
+       안심번호(0504-…)인 경우가 많다. 안심번호는 배송이 끝나면 끊긴다 —
+       회수 기사가 걸면 안 받는 번호가 된다.
+       그래서 실제 번호를 적을 자리를 하나 더 연다.
+
+       대장에는 「추가연락처」 열이 진작부터 있었다(F열). 포털만 안 쓰고 있었다.
+       CS 웹앱도 v2 이관(colMap.js phone2)도 이미 이 열을 안다.
+
+       ★ 「추가」를 먼저 걸러야 한다 ★
+         /연락처/ 는 「추가연락처」에도 걸린다. 순서에 기대면 언젠가
+         열 순서가 바뀌는 날 추가연락처가 주 연락처 자리로 들어간다. */
+    else if (col.phone2 < 0 && /추가연락처|추가전화|비상연락|실번호/.test(h)) col.phone2 = i;
+    else if (col.phone < 0 && /연락처|전화|휴대폰/.test(h) && !/주소|추가/.test(h)) col.phone = i;
     else if (col.pickup < 0 && /수거입력처/.test(h)) col.pickup = i;
     else if (col.item < 0 && /상품명|품목명/.test(h) && !/코드/.test(h)) col.item = i;
     else if (col.qty < 0 && (h === "수량" || h.indexOf("수량") === 0)) col.qty = i;
@@ -394,6 +407,8 @@ function prpReadTabCases_(tab, tabName, cutoffYmd, sess) {
       openedBy: staffVal.indexOf(PRP_STAFF_PREFIX) === 0 ? "우리" : "CS팀",
       name: col.name >= 0 ? String(row[col.name] || "").trim() : "",
       phone: col.phone >= 0 ? prpFormatPhone_(row[col.phone]) : "",
+      //  실 전화번호 (추가연락처). 안심번호만 보이면 회수 기사가 못 건다.
+      phone2: col.phone2 >= 0 ? prpFormatPhone_(row[col.phone2]) : "",
       item: col.item >= 0 ? String(row[col.item] || "").trim() : "",
       qty: col.qty >= 0 ? String(row[col.qty] || "").trim() : "",
       invoice: invRaw,
