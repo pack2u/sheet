@@ -252,3 +252,126 @@ function _pepr_show_(L) {
   } catch (e) {}
   return text;
 }
+
+/* ══════════════════════════════════════════════════════════════
+ *  [진단] 이카운트 **판매(매출) 조회** API 를 찾는다 — 읽기 전용
+ *  ★ 2026-09-09
+ *
+ *  > "이카운트 API로 불가능한거로 아는데 다시 한번 확인해줘..
+ *  >  된다면 1번 메뉴가 필요하겠찌"
+ *
+ *  ★ 지금 아는 것 ★
+ *    이 프로젝트가 실제로 쓰는 이카운트 경로는 일곱 개뿐이고,
+ *    그중 **조회는 둘**이다.
+ *        InventoryBasic/GetBasicProductsList        품목
+ *        InventoryBalance/GetListInventoryBalanceStatus  재고
+ *    나머지 다섯은 전부 저장(Save…)이다. **판매 조회는 없다.**
+ *    구매 조회는 2026-09-07 에 여덟 이름을 찔러 봤고 전부 404 였다.
+ *
+ *  ★ 그래서 짐작하지 말고 찔러 본다 ★
+ *    이카운트 OpenAPI 는 **계정마다 열린 경로가 다르다.** 밖에서 이름을
+ *    맞히는 건 운이다. 그래도 흔한 이름 몇 개는 값이 싸니 한 번에 훑고,
+ *    다 404 면 그때는 「이카운트 안의 목록을 봐야 한다」가 답이 된다.
+ *
+ *  ★ 아무것도 쓰지 않는다 ★
+ *    Get 만 후보에 넣는다. 저장·삭제 경로는 넣지 않는다.
+ * ══════════════════════════════════════════════════════════════ */
+
+/** 찔러 볼 판매(매출) 조회 경로 후보 — 조회만 */
+var _PEPS_PATHS_ = [
+  "Sale/GetSaleList",
+  "Sales/GetSalesList",
+  "Sale/GetListSale",
+  "Sales/GetListSales",
+  "Sale/GetSaleSlipList",
+  "Sale/GetListSaleSlip",
+  "SaleBasic/GetSalesList",
+  "Sale/GetSales",
+  "Sales/GetSales",
+  "Sale/GetListSales",
+];
+
+/**
+ * 판매 조회 경로를 훑는다. 되는 것이 있으면 그 이름과 줄 수를 보여 준다.
+ * 되는 것이 없으면 이카운트 안에서 목록을 보는 길을 알려 준다.
+ */
+function partnerProbeEcountSalesApi() {
+  var L = ["═══ 이카운트 판매(매출) 조회 API 탐색 ═══",
+    Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"), ""];
+  var tz = "Asia/Seoul";
+  var to = Utilities.formatDate(new Date(), tz, "yyyyMMdd");
+  var from = Utilities.formatDate(
+    new Date(new Date().getTime() - 3 * 24 * 3600 * 1000), tz, "yyyyMMdd");
+
+  var auth;
+  try { auth = _pts_ecLogin_(); }
+  catch (e) { L.push("★ 로그인 실패: " + e.message); return _pepr_show_(L); }
+  L.push("로그인 OK · zone=" + auth.zone + " · 기간 " + from + "~" + to);
+  L.push("");
+
+  var found = "";
+  for (var p = 0; p < _PEPS_PATHS_.length; p++) {
+    var path = _PEPS_PATHS_[p];
+    var url = "https://oapi" + auth.zone + ".ecount.com/OAPI/V2/" + path +
+      "?SESSION_ID=" + encodeURIComponent(auth.sid);
+
+    var best = "", bestRows = -1;
+    for (var q = 0; q < _PEPR_PAYLOADS_.length; q++) {
+      var body = {};
+      var keys = Object.keys(_PEPR_PAYLOADS_[q]);
+      body[keys[0]] = from;
+      body[keys[1]] = to;
+
+      var code = 0, text = "";
+      try {
+        var res = UrlFetchApp.fetch(url, {
+          method: "post",
+          contentType: "application/json",
+          payload: JSON.stringify(body),
+          headers: { Accept: "application/json", Expect: "" },
+          muteHttpExceptions: true
+        });
+        code = res.getResponseCode();
+        text = res.getContentText();
+      } catch (eF) { text = "호출 예외: " + eF.message; }
+
+      var rows = -1, msg = "";
+      try {
+        var j = JSON.parse(text);
+        if (j && j.Data && j.Data.Result) rows = j.Data.Result.length;
+        msg = String((j && j.Error && (j.Error.Message || j.Error.MessageKey)) ||
+          (j && j.Status) || "").substring(0, 80);
+      } catch (eJ) { msg = String(text).substring(0, 80); }
+
+      if (rows >= 0 && rows > bestRows) { bestRows = rows; best = keys.join('/'); }
+      if (code !== 404 && !best) best = "HTTP " + code + " " + msg;
+    }
+    if (bestRows >= 0) {
+      found = path;
+      L.push("★ 됩니다 — " + path + "  (" + bestRows + "줄, 날짜키 " + best + ")");
+    } else {
+      L.push("  ✕ " + path + "  " + (best || "404"));
+    }
+  }
+
+  L.push("");
+  if (found) {
+    L.push("판매 조회가 열려 있습니다: " + found);
+    L.push("이 경로로 판매현황을 자동으로 불러올 수 있습니다.");
+    L.push("응답의 열 이름을 확인한 뒤 세트분리 입력 형식에 맞추면 됩니다.");
+  } else {
+    L.push("★ 열려 있는 판매 조회 경로를 못 찾았습니다.");
+    L.push("");
+    L.push("이카운트 OpenAPI 는 **계정마다 열린 경로가 다릅니다.**");
+    L.push("밖에서 이름을 맞히는 것은 여기까지가 한계입니다.");
+    L.push("");
+    L.push("확실한 길은 이카운트 안에 있습니다:");
+    L.push("  Self-Customizing → 정보관리 → API 인증키발급 → OpenAPI 안내");
+    L.push("거기 목록에 판매(매출) 조회가 있으면 그 이름을 그대로");
+    L.push("「이카운트 경로 직접 시험」 에 넣어 확인하면 됩니다.");
+    L.push("");
+    L.push("목록에 없으면 이카운트가 그 계정에 안 열어 준 것이라,");
+    L.push("지금처럼 엑셀을 내려받아 붙여넣는 것이 맞습니다.");
+  }
+  return _pepr_show_(L);
+}

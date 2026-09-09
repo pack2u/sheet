@@ -21,6 +21,7 @@ function onOpen() {
     .addItem('▶ 세트분리 실행', 'ss_실행')
     .addItem('✅ 조치 적용 (보류 → 발송·대리발송)', 'ss_보류조치반영')
     .addSeparator()
+    .addItem('🖨 롯데 송장출력 엑셀', 'ss_롯데출력엑셀')
     .addItem('🔁 송장 전파 (롯데 → 사방넷)', 'ss_송장전파')
     .addItem('📊 사방넷 송장대량등록', 'ss_사방넷엑셀저장')
     .addSeparator()

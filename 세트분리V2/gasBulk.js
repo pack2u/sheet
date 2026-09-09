@@ -467,3 +467,134 @@ function ssb_keepDate(cell, allowed, res) {
   res.skipOld++;
   return false;
 }
+
+/* ══════════════════════════════════════════════════════════════
+ *  롯데 송장출력 엑셀 — 출력 탭을 그대로 파일로
+ *  ★ 2026-09-09
+ *
+ *  > "세트분리를 하는 이유중 하나는 미리 롯데택배 송장만 출력을 하기 위함이야..
+ *  >  롯데택배 텝의 내용을 복사해서 엑셀화일을 만들어 롯데 출력으로 넘겨
+ *  >  송장을 프린트 하기위함인거야"
+ *
+ *  여태 사람이 탭을 열어 범위를 끌어 복사하고, 새 엑셀을 만들어 붙여넣고,
+ *  이름을 붙여 저장했다. 매 회차마다. 그 손을 덜어 준다.
+ *
+ *  ★ 손대지 않고 그대로 낸다 ★
+ *    열 순서·이름은 롯데 자체출력 양식과의 약속이다(SS_OUT_HEADER 19열).
+ *    여기서 고치면 업로드가 통째로 튕긴다. 보이는 그대로 옮긴다.
+ *
+ *  ★ 「@」 서식으로 넣는다 ★
+ *    우편번호·전화·송장은 앞자리 0 이 살아 있어야 한다. 숫자로 들어가면
+ *    「01012345678」이 「1012345678」이 된다 — 기사가 전화를 못 건다.
+ *
+ *  ★ 대리발송은 안 낸다 ★
+ *    출력 탭 다섯 중 대리발송은 협력업체로 가는 것이라 롯데 출력 대상이 아니다.
+ *    같이 내면 남의 물건 송장을 우리가 뽑게 된다.
+ * ══════════════════════════════════════════════════════════════ */
+
+/** 롯데로 넘길 출력 탭들 — 대리발송은 뺀다 */
+function _sslp_tabs_() {
+  var out = [];
+  for (var i = 0; i < SSIO_TABS.출력.length; i++) {
+    var n = SSIO_TABS.출력[i];
+    if (n.indexOf('롯데') === 0) out.push(n);
+  }
+  return out;
+}
+
+/**
+ * 롯데택배 출력 탭들을 엑셀 한 파일로 저장한다.
+ * 탭마다 시트를 하나씩 만든다 — 도서산간은 운임이 달라 따로 올리기 때문이다.
+ */
+function ss_롯데출력엑셀() {
+  var NL = String.fromCharCode(10);
+  var names = _sslp_tabs_();
+  var ss = ssio_ss();
+
+  var packs = [], 총행 = 0;
+  for (var i = 0; i < names.length; i++) {
+    var sh = ss.getSheetByName(names[i]);
+    if (!sh || sh.getLastRow() < 2) continue;      // 빈 탭은 시트를 만들지 않는다
+    var cols = Math.max(sh.getLastColumn(), SS_OUT_HEADER.length);
+    var vals = sh.getRange(1, 1, sh.getLastRow(), cols).getDisplayValues();
+    packs.push({ name: names[i], vals: vals, rows: vals.length - 1 });
+    총행 += vals.length - 1;
+  }
+  if (!packs.length) {
+    return ssio_alert('롯데 출력 탭이 모두 비어 있습니다.' + NL +
+      '먼저 「▶ 세트분리 실행」 을 하세요.');
+  }
+
+  var ymd = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd_HHmmss');
+  var fileName = '롯데송장출력_' + ymd + '.xlsx';
+  var tmp = SpreadsheetApp.create('tmp_lotte_print_' + ymd);
+
+  for (var p = 0; p < packs.length; p++) {
+    var dest = (p === 0) ? tmp.getSheets()[0] : tmp.insertSheet();
+    dest.setName(packs[p].name);
+    var v = packs[p].vals;
+    var w = 0;
+    for (var r = 0; r < v.length; r++) if (v[r].length > w) w = v[r].length;
+    for (var r2 = 0; r2 < v.length; r2++) while (v[r2].length < w) v[r2].push('');
+    if (dest.getMaxColumns() < w) dest.insertColumnsAfter(dest.getMaxColumns(), w - dest.getMaxColumns());
+    if (dest.getMaxRows() < v.length) dest.insertRowsAfter(dest.getMaxRows(), v.length - dest.getMaxRows() + 5);
+    /* 앞자리 0 이 살아 있어야 한다 — 우편번호·전화·송장 */
+    dest.getRange(1, 1, v.length, w).setNumberFormat('@');
+    dest.getRange(1, 1, v.length, w).setValues(v);
+    dest.getRange(1, 1, 1, w).setFontWeight('bold').setBackground('#1f4e78').setFontColor('white');
+  }
+  SpreadsheetApp.flush();
+
+  var blob = null, xerr = '';
+  try {
+    var resp = UrlFetchApp.fetch(
+      'https://docs.google.com/spreadsheets/d/' + tmp.getId() + '/export?format=xlsx',
+      { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (resp.getResponseCode() === 200 && resp.getBlob().getBytes().length > 64) {
+      blob = resp.getBlob().setName(fileName).setContentType(MimeType.MICROSOFT_EXCEL);
+    } else { xerr = 'HTTP ' + resp.getResponseCode(); }
+  } catch (e) { xerr = e && e.message ? e.message : String(e); }
+
+  var fileUrl = '', fileId = '';
+  if (blob) {
+    var parent = null;
+    try {
+      var ps = DriveApp.getFileById(ss.getId()).getParents();
+      if (ps.hasNext()) parent = ps.next();
+    } catch (e2) {}
+    if (!parent) parent = DriveApp.getRootFolder();
+    var it = parent.getFoldersByName('롯데송장출력');
+    var folder = it.hasNext() ? it.next() : parent.createFolder('롯데송장출력');
+    var f = folder.createFile(blob);
+    fileUrl = f.getUrl(); fileId = f.getId();
+  }
+  //  임시 시트는 지운다. 안 지우면 드라이브에 회차마다 쌓인다.
+  try { DriveApp.getFileById(tmp.getId()).setTrashed(true); } catch (e3) {}
+
+  var lines = [];
+  for (var q = 0; q < packs.length; q++) lines.push('  · ' + packs[q].name + '  ' + packs[q].rows + '행');
+  var msg = '롯데 송장출력 엑셀' + NL + NL + lines.join(NL) + NL +
+    '  합계 ' + 총행 + '행' + NL + NL;
+
+  if (!blob) {
+    return ssio_alert(msg + '⚠ 엑셀 내보내기 실패 (' + xerr + ')' + NL +
+      '탭을 직접 복사해 쓰세요.');
+  }
+
+  var dl = 'https://drive.google.com/uc?export=download&id=' + fileId;
+  try {
+    SpreadsheetApp.getUi().showModalDialog(
+      HtmlService.createHtmlOutput(
+        '<div style="font-family:Malgun Gothic,sans-serif;font-size:13px;line-height:1.7">' +
+        '<b>' + fileName + '</b><br>' + lines.join('<br>').split('  · ').join('· ') +
+        '<br>합계 ' + 총행 + '행<br><br>' +
+        '<a href="' + dl + '" target="_blank" style="font-size:15px;font-weight:bold">⬇ 엑셀 다운로드</a>' +
+        '&nbsp;&nbsp;<a href="' + fileUrl + '" target="_blank">드라이브에서 열기</a>' +
+        '<br><br><span style="color:#666">받은 파일을 롯데 자체출력에 올려 송장을 뽑습니다.<br>' +
+        '도서산간은 운임이 달라 시트가 나뉘어 있습니다.</span></div>')
+        .setWidth(520).setHeight(240), '롯데 송장출력');
+    return msg + fileUrl;
+  } catch (eUi) {
+    return ssio_alert(msg + '저장했습니다.' + NL + '  ' + fileUrl + NL + NL + '다운로드: ' + dl);
+  }
+}
