@@ -113,14 +113,20 @@ function ssb_isPlaceholder(v) {
 }
 
 /** 한 셀의 송장을 여러 행으로 편다. 중복은 주문번호|송장 으로 막는다. */
-function ssb_addRows(rows, seen, orderNo, invCell, code, res, uidSeen) {
+function ssb_addRows(rows, seen, orderNo, invCell, code, res, uidSeen, seenOrd) {
   var o = ssText(orderNo);
   var c = ssText(code);
   if (!o || !c) return 0;
   if (!ssIsSabangnetUid(o)) { res.skipGen++; return 0; }
   if (uidSeen) uidSeen[o] = true;
+  /* ★ 사방넷은 주문번호당 송장 하나만 받는다 ★
+     한 주문이 여러 박스로 나가도 올리는 것은 대표 한 장이다.
+     여기서 두 줄을 만들면 사방넷이 그 주문을 안 받는다.
+     (여러 **주문번호**가 같은 송장을 나눠 갖는 합포장은 정상이고 각각 나간다 —
+      막는 것은 그 반대 방향이다.)
+     원장·일일마감에는 스무 장이 다 들어간다. 거기와 여기는 쓰임이 다르다. */
+  if (seenOrd && seenOrd[o]) return 0;
   var parts = ssText(invCell).split(SSB_INV_SPLIT);
-  var added = 0;
   for (var i = 0; i < parts.length; i++) {
     var inv = ssText(parts[i]);
     if (!inv || ssb_isPlaceholder(inv)) continue;
@@ -129,11 +135,12 @@ function ssb_addRows(rows, seen, orderNo, invCell, code, res, uidSeen) {
     var key = o + '|' + inv;
     if (seen[key]) continue;
     seen[key] = true;
+    if (seenOrd) seenOrd[o] = true;
     rows.push([o, inv, '', '', c]);
     res.byCode[c] = (res.byCode[c] || 0) + 1;
-    added++;
+    return 1;              // 첫 장만 — 사방넷 제약
   }
-  return added;
+  return 0;
 }
 
 function ssb_noCode(res, name) {
@@ -155,6 +162,9 @@ function ssb_collect() {
   var errs = [];
   var scan = { s1: 0, s2: 0, s3: 0, s4: 0 };
   var uidSeen = {};
+  /* 한 주문번호는 사방넷에 한 줄만 — 여러 원천에서 다른 송장이 와도 첫 것만 쓴다.
+     (여러 주문번호가 같은 송장을 나눠 갖는 합포장·샘플은 각각 나간다 — 반대 방향이다.) */
+  var seenOrd = {};
   // 원천 표는 여러 날치가 쌓여 있다. 지난 날짜 주문을 사방넷에 다시 올리면
   // 이미 처리된 건이라 「건별 미매칭」으로 거부된다. 대상일만 남긴다.
   var allowed = ssb_allowedDates(cfg);
@@ -173,7 +183,7 @@ function ssb_collect() {
       if (!pfx) pfx = ssText(r1.values[i][3]).substring(0, 2);   // D열 품목코드 앞 두 글자
       var code = ssb_codeForVendor(t, pfx);
       if (!code) { if (ssIsSabangnetUid(uid)) ssb_noCode(res, pfx); continue; }
-      scan.s1++; n1 += ssb_addRows(rows, seen, uid, invc, code, res, uidSeen);
+      scan.s1++; n1 += ssb_addRows(rows, seen, uid, invc, code, res, uidSeen, seenOrd);
     }
   } else { errs.push('임시기록: ' + r1.why); }
 
@@ -189,7 +199,7 @@ function ssb_collect() {
       var vendor = ssText(r2.values[j][1]);
       var code2 = ssb_codeForVendor(t, vendor);
       if (!code2) { if (ssIsSabangnetUid(uid2)) ssb_noCode(res, vendor); continue; }
-      scan.s2++; n2 += ssb_addRows(rows, seen, uid2, inv2, code2, res, uidSeen);
+      scan.s2++; n2 += ssb_addRows(rows, seen, uid2, inv2, code2, res, uidSeen, seenOrd);
     }
   } else { errs.push('발주허브: ' + r2.why); }
 
@@ -231,7 +241,7 @@ function ssb_collect() {
         if (!ssText(lv[k][9]) || !ssText(lv[k][6])) continue;
         if (!ssb_keepDate(lv[k][dCol], allowed, res)) continue;
         scan.s3++;
-        n3 += ssb_addRows(rows, seen, lv[k][9], lv[k][6], SSB_LOTTE_CODE, res, uidSeen);
+        n3 += ssb_addRows(rows, seen, lv[k][9], lv[k][6], SSB_LOTTE_CODE, res, uidSeen, seenOrd);
       }
     }
   } catch (eL) { errs.push('롯데 송장탭: ' + String(eL.message || eL)); }
@@ -262,7 +272,7 @@ function ssb_collect() {
         var m4 = ix['송장매칭'] !== undefined ? ssText(gv[g][ix['송장매칭']]) : '';
         if (m4 !== '롯데 직접' && m4 !== '합포장 전파') continue;
         var code4 = SSB_LOTTE_CODE;
-        scan.s4++; n4 += ssb_addRows(rows, seen, uid4, inv4, code4, res, uidSeen);
+        scan.s4++; n4 += ssb_addRows(rows, seen, uid4, inv4, code4, res, uidSeen, seenOrd);
       }
     }
   }

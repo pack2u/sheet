@@ -1063,16 +1063,14 @@ function ss_송장전파() {
     if (seenReg[uid3]) continue;          // 주문번호당 한 줄
     seenReg[uid3] = true;
     if (!invByUid[uid3]) { 무송장++; continue; }
-    /* ★ 송장마다 한 줄 ★
-       사방넷은 「주문번호 + 송장」 짝으로 받는다. 20박스면 20줄이어야
-       스무 장이 다 등록된다. 한 줄에 이어 붙여 보내면 그 칸이 통째로
-       하나의 송장번호로 읽혀 전부 실패한다.
-       허브의 대량등록 조립기도 같은 규칙이다(주문번호|송장 로 중복만 거른다). */
+    /* ★ 사방넷은 주문번호당 송장을 **하나만** 받는다 ★  (사장님 확인 2026-09-09)
+       한 주문이 20박스로 나가도 사방넷에 올리는 것은 대표 송장 한 장이다.
+       여러 줄로 올리면 시스템이 안 받는다.
+       ★ 원장은 반대다 ★ 거기에는 스무 장이 다 들어가야 CS 가 택배조회를 한다.
+       그래서 원장은 공백으로 이어 적고, 여기서는 첫 장만 꺼내 쓴다. */
     var invsOne = ssInvAll_(invByUid[uid3]);
-    if (!invsOne.length) invsOne = [ssText(invByUid[uid3])];
-    for (var q3 = 0; q3 < invsOne.length; q3++) {
-      regRows.push([uid3, invsOne[q3], carByUid[uid3] || '']);
-    }
+    var 대표송장 = invsOne.length ? invsOne[0] : ssText(invByUid[uid3]);
+    if (대표송장) regRows.push([uid3, 대표송장, carByUid[uid3] || '']);
   }
   ssio_write(SSIO_TABS.사방넷등록, SS_REG_HEADER, regRows, { bg: '#2c4f6b' });
 
