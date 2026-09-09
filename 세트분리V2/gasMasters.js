@@ -851,3 +851,99 @@ function ssm_ferryRows() {
   }
   return out;
 }
+/* ══════════════════════════════════════════════════════════════
+ *  판매현황을 어디서 읽을까 — 바깥 시트 / 이 시트
+ *  ★ 2026-09-09
+ *
+ *  > "이 시트 안으로 옮겨줘"
+ *
+ *  코드는 처음부터 둘 다 된다. 설정의 「판매현황_원천시트ID」가
+ *    있으면  그 시트에서 읽고 이 시트의 판매현황 탭에 비춘다
+ *    비었으면 이 시트의 판매현황 탭을 그대로 읽는다
+ *  옮기는 일은 그 한 칸을 비우는 것이 전부다. 그런데 설정 탭에서 그 줄을
+ *  찾아 지우게 하는 건 손이 간다 — 메뉴 한 번으로 끝내고, **바꾸기 전에
+ *  무엇이 바뀌는지 보여 준 뒤** 확인을 받는다.
+ *
+ *  ★ 되돌릴 수 있게 옛 ID 를 남긴다 ★
+ *    비우기만 하면 그 시트 주소를 잃는다. 설명 칸에 적어 두어
+ *    다시 쓰고 싶을 때 찾을 수 있게 한다.
+ * ══════════════════════════════════════════════════════════════ */
+
+/** 설정 한 줄의 값(과 설명)을 고쳐 쓴다. 없으면 만든다. */
+function _sssrc_setConfig_(key, value, note) {
+  var sh = ssio_sheet(SSIO_TABS.설정, SSIO_CONFIG_HEADER);
+  var last = sh.getLastRow();
+  if (last >= 2) {
+    var rows = sh.getRange(2, 1, last - 1, 3).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      if (ssText(rows[i][0]) === key) {
+        sh.getRange(i + 2, 2).setValue(value);
+        if (note) sh.getRange(i + 2, 3).setValue(note);
+        return true;
+      }
+    }
+  }
+  sh.getRange(sh.getLastRow() + 1, 1, 1, 3).setValues([[key, value, note || '']]);
+  return false;
+}
+
+/**
+ * 판매현황 원천을 확인하고, 바깥 시트를 쓰고 있으면 이 시트로 바꾼다.
+ * 아무것도 안 지운다 — 설정 한 칸만 비우고 옛 주소는 설명에 남긴다.
+ */
+function ss_판매현황원천() {
+  var NL = String.fromCharCode(10);
+  var ui;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) { ui = null; }
+  var cfg = ssio_config();
+  var srcId = ssText(cfg['판매현황_원천시트ID']);
+
+  var 이탭 = ssio_ss().getSheetByName(SSIO_TABS.입력);
+  var 이탭행 = 이탭 ? Math.max(0, 이탭.getLastRow() - 1) : 0;
+
+  if (!srcId) {
+    return ssio_alert('판매현황은 **이 시트**에서 읽습니다.' + NL + NL +
+      '  탭 「' + SSIO_TABS.입력 + '」  현재 ' + 이탭행 + '행' + NL + NL +
+      '이카운트 판매현황을 그 탭에 붙여넣고 「▶ 세트분리 실행」을 누르면 됩니다.' + NL + NL +
+      '바깥 시트에서 가져오려면 「설정」의 판매현황_원천시트ID 에 그 시트 ID 를 적으세요.');
+  }
+
+  //  바깥 시트를 쓰는 중 — 무엇이 바뀌는지 먼저 보여 준다
+  var 이름 = '(열 수 없음)', 행 = 0, url = '';
+  try {
+    var ss = SpreadsheetApp.openById(srcId);
+    이름 = ss.getName();
+    url = ss.getUrl();
+    var tab = ss.getSheetByName(ssText(cfg['판매현황_원천탭']) || '판매현황') || ss.getSheets()[0];
+    if (tab) 행 = Math.max(0, tab.getLastRow() - 1);
+  } catch (e) { 이름 = '(열 수 없음: ' + (e && e.message ? e.message : e) + ')'; }
+
+  var msg = '지금은 **바깥 시트**에서 판매현황을 읽습니다.' + NL + NL +
+    '  바깥  ' + 이름 + '  ' + 행 + '행' + NL +
+    '  여기  ' + SSIO_TABS.입력 + ' 탭  ' + 이탭행 + '행 (실행할 때마다 비춰 둔 것)' + NL + NL +
+    '이 시트로 옮기면' + NL +
+    '  · 「' + SSIO_TABS.입력 + '」 탭에 직접 붙여넣고 바로 실행합니다' + NL +
+    '  · 바깥 시트는 더 안 읽습니다 (지우지는 않습니다)' + NL +
+    '  · 지금 비춰 둔 ' + 이탭행 + '행이 그대로 남아 있어, 다음 붙여넣기 전까지 그 자료로 돕니다' + NL + NL +
+    '옮길까요?';
+
+  if (ui) {
+    var ans = ui.alert('판매현황을 이 시트로', msg, ui.ButtonSet.YES_NO);
+    if (ans !== ui.Button.YES) return '취소했습니다.';
+  }
+
+  /* 되돌릴 수 있게 옛 주소를 설명 칸에 남긴다. 비우기만 하면 주소를 잃는다. */
+  _sssrc_setConfig_('판매현황_원천시트ID', '',
+    '비면 이 시트의 「' + SSIO_TABS.입력 + '」 탭을 쓴다. ' +
+    '(2026-09-09 이 시트로 옮김 · 옛 원천 ' + 이름 + ' ' + srcId + ')');
+
+  //  탭이 없으면 만들어 둔다 — 붙여넣을 자리가 없으면 옮긴 뜻이 없다
+  ssio_sheet(SSIO_TABS.입력, SS_SALES_COLS);
+
+  return ssio_alert('판매현황을 이 시트에서 읽습니다.' + NL + NL +
+    '  탭 「' + SSIO_TABS.입력 + '」 에 이카운트 판매현황을 붙여넣고' + NL +
+    '  「▶ 세트분리 실행」 을 누르세요.' + NL + NL +
+    '옛 원천 시트 주소는 「설정」의 설명 칸에 적어 두었습니다 —' + NL +
+    '되돌리려면 그 ID 를 값 칸에 다시 넣으면 됩니다.' +
+    (url ? NL + NL + '옛 시트: ' + url : ''));
+}
