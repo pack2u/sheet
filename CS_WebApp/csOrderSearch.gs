@@ -3160,6 +3160,92 @@ function csDiagnoseDayCount(dateStr) {
 }
 
 /**
+ * 대시보드용 날짜별 건수 — **일일마감 파일에서 바로 센다.**
+ * 파일: csOrderSearch.gs  ★ 2026-09-10 신규
+ *
+ * > "갯수는.. 일일마감을 기준으로 하면 좋겠어 통합조회는 왜 하는지 모르겠네.."
+ *
+ * ★ 통합조회를 왜 안 보나 ★
+ *   통합조회는 **검색을 빠르게 하려고** 만든 한 장짜리 사본이다. 이름·전화로
+ *   찾을 때 열흘치 마감 파일을 열 개 여는 대신 탭 하나만 읽게 하는 것,
+ *   그게 그 탭의 존재 이유다. 그런데 사본은 원본과 어긋날 수 있다 —
+ *   2026-09-09 은 마감 파일에 702행이 있는데 통합조회엔 109행뿐이었다.
+ *   **세는 자리에서는 사본을 볼 이유가 없다.** 원본을 센다.
+ *   (검색은 그대로 통합조회를 쓴다. 행 전체가 필요해 값이 다르다.)
+ *
+ * ★ 주말·공휴일은 자리를 안 준다 ★
+ *   토·일은 요일로 뺀다 — 확실하고 공짜다.
+ *   공휴일은 표를 두지 않는다. **마감을 안 돌린 날은 파일이 없다**는
+ *   사실 하나로 판별한다. 표를 두면 해마다 사람이 고쳐야 하고,
+ *   안 고치면 조용히 틀린다.
+ *
+ * ★ 없는 파일을 찾는 것이 제일 비싸다 ★
+ *   못 찾으면 폴더를 통째로 훑는다 (_cs_findDailyFile_). 그래서 주말을
+ *   먼저 걸러 내는 것이 그냥 예쁘게 보이려는 것이 아니라 실제로 값을 아낀다.
+ *   찾은 날은 _cs_loadDay_ 가 캐시에 담아 두므로 두 번째부터는 싸다.
+ *
+ * @param {number=} days 거슬러 볼 영업일 수 (기본 10)
+ * @return {{ok:boolean, days:Array, skipped:Array, ms:number}}
+ *   days[i] = { date, rows, noInv, gapBefore }
+ *     gapBefore — 이 날 앞에 건너뛴 날(주말·마감없음)이 몇이나 되나.
+ *                 화면은 그 자리에 얇은 줄 하나만 긋는다.
+ */
+function csDailyDashCounts(days) {
+  var t0 = Date.now();
+  var want = Math.max(1, Math.min(31, parseInt(days, 10) || _CS_DAILY_DAYS_DEFAULT_));
+  var out = { ok: true, days: [], skipped: [], ms: 0 };
+
+  /* 대시보드는 **어제**를 마지막으로 삼는다 (오늘 출고는 20시 마감 뒤라야
+     온전하다). home.html shipDateList 와 같은 시작점이다. */
+  var d = new Date();
+  d.setDate(d.getDate() - 1);
+
+  var gap = 0;
+  var guard = 0;
+  while (out.days.length < want && guard < 80) {
+    guard++;
+    var ymd = Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    var dow = d.getDay();   // 0=일 6=토
+    d.setDate(d.getDate() - 1);
+
+    if (dow === 0 || dow === 6) {
+      out.skipped.push({ date: ymd, why: "주말" });
+      gap++;
+      continue;
+    }
+
+    var day;
+    try {
+      day = _cs_loadDay_(ymd, false, false);
+    } catch (e) {
+      out.skipped.push({ date: ymd, why: "읽기실패 · " + e.message });
+      gap++;
+      continue;
+    }
+
+    if (!day.found) {
+      //  마감을 안 돌린 날 — 공휴일이거나 쉰 날이다. 0 막대를 그리지 않는다.
+      out.skipped.push({ date: ymd, why: "마감 없음" });
+      gap++;
+      continue;
+    }
+
+    var rows = day.rows || [];
+    var noInv = 0;
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i].invDigits || "").replace(/[^0-9]/g, "").length < 8) noInv++;
+    }
+    out.days.push({ date: ymd, rows: rows.length, noInv: noInv, gapBefore: gap });
+    gap = 0;
+  }
+
+  //  최신이 마지막에 오게 뒤집는다 — 막대는 왼쪽이 오래된 날이다
+  out.days.reverse();
+  out.ms = Date.now() - t0;
+  return out;
+}
+
+/**
  * 대시보드 막대가 왜 그 숫자인지 — 인자 없이 한 번에 본다.
  * 파일: csOrderSearch.gs  ★ 2026-09-10 신규
  *

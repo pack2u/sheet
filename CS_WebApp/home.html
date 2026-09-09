@@ -2044,6 +2044,16 @@
     }
     .dash-bar.today { background: linear-gradient(180deg, #34c77b, rgba(52,199,123,0.35)); }
     .dash-bar-lab { font-size: 9px; color: var(--text-muted); white-space: nowrap; }
+    /* 주말·공휴일 자리 — 막대를 그리지 않고 얇은 줄 하나만 긋는다.
+       0 막대를 세워 두면 「그날 장사를 못 했다」로 읽히고, 자리도 뺏는다. */
+    .dash-bar-gap {
+      flex: 0 0 9px; align-self: stretch; display: flex;
+      align-items: center; justify-content: center;
+    }
+    .dash-bar-gap i {
+      display: block; width: 1px; height: 34px;
+      background: rgba(173, 173, 173, 0.28);
+    }
     .dash-bar-n { font-size: 9px; color: var(--text-secondary); font-weight: 600; }
     .dash-chips { display: flex; flex-wrap: wrap; gap: 5px; }
     .dash-chip {
@@ -5685,6 +5695,39 @@
       wsGoToPane(1);
     }
 
+    /**
+     * 일일마감에서 센 날짜별 건수. csDailyDashCounts 가 채운다.
+     * 비어 있으면 대시보드는 예전 방식(INDEX)으로 그린다 — 화면이 비지 않게.
+     */
+    var DASH_DAYS = [];
+    var DASH_DAYS_AT = 0;
+    var dashDaysBusy = false;
+
+    /**
+     * 날짜별 건수를 서버에서 받아 온다.
+     * 마감 파일은 지난 날짜면 안 바뀌므로 자주 부를 이유가 없다 — 10분에 한 번.
+     * refresh 를 주면 그 간격을 무시한다 (↻ 갱신).
+     */
+    function loadDashDays(refresh) {
+      if (dashDaysBusy) return;
+      if (!refresh && DASH_DAYS.length && (Date.now() - DASH_DAYS_AT) < 600000) return;
+      dashDaysBusy = true;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          dashDaysBusy = false;
+          if (r && r.days && r.days.length) {
+            DASH_DAYS = r.days;
+            DASH_DAYS_AT = Date.now();
+            renderOrderDashboard();
+          }
+        })
+        .withFailureHandler(function () {
+          //  실패해도 조용히 둔다. 예전 방식으로 이미 그려져 있다.
+          dashDaysBusy = false;
+        })
+        .csDailyDashCounts(DAYS);
+    }
+
     function renderOrderDashboard() {
       var el = document.getElementById('orderDash');
       if (!el) return;
@@ -5695,6 +5738,7 @@
         return;
       }
       el.className = 'os-dash';
+      loadDashDays(false);
       var s = computeOrderDashStats();
 
       var kpiHtml =
@@ -5704,14 +5748,37 @@
         '<div class="dash-kpi accent"><div class="dash-kpi-val">' + s.retNewYday.toLocaleString() + '</div><div class="dash-kpi-lab">어제 반품접수 · 오늘 ' + s.retNewToday.toLocaleString() + '</div></div>' +
         '<div class="dash-kpi wide"><div class="dash-kpi-val">' + s.noInv.toLocaleString() + '</div><div class="dash-kpi-lab">송장 미확인</div></div>';
 
+      /* ★ 막대는 일일마감에서 온다 ★  (2026-09-10)
+         전에는 통합조회로 만든 INDEX 를 날짜별로 셌다. 그런데 통합조회는
+         검색을 빠르게 하려고 둔 **사본**이라 원본과 어긋날 수 있다 —
+         2026-09-09 은 마감 파일에 702행인데 통합조회엔 109행뿐이었고
+         막대가 그 109를 그렸다. 세는 자리에서는 원본을 본다.
+
+         DASH_DAYS 가 아직 안 왔으면 예전 방식(INDEX)으로 그린다 —
+         화면이 비어 있는 것보다는 낫고, 오면 저절로 바뀐다. */
+      var barSrc = DASH_DAYS.length
+        ? DASH_DAYS
+        : s.bars.map(function (b) {
+            return { date: b.date, rows: b.n, gapBefore: 0, label: b.label, isToday: b.isToday };
+          });
+
+      var barMax = 1;
+      for (var mi = 0; mi < barSrc.length; mi++) {
+        if (barSrc[mi].rows > barMax) barMax = barSrc[mi].rows;
+      }
+
       var barsHtml = '';
-      for (var i = 0; i < s.bars.length; i++) {
-        var b = s.bars[i];
-        var h = Math.max(4, Math.round((b.n / s.maxBar) * 44));
+      for (var i = 0; i < barSrc.length; i++) {
+        var b = barSrc[i];
+        //  건너뛴 날(주말·마감없음)이 있으면 그 자리에 얇은 줄 하나
+        if (b.gapBefore) barsHtml += '<span class="dash-bar-gap" title="주말 · 휴무"><i></i></span>';
+        var h = Math.max(4, Math.round((b.rows / barMax) * 44));
+        var lab = b.label || String(b.date || '').slice(5).replace('-', '/');
+        var isLast = (i === barSrc.length - 1);
         barsHtml += '<div class="dash-bar-col">' +
-          '<div class="dash-bar-n">' + (b.n || '') + '</div>' +
-          '<div class="dash-bar' + (b.isToday ? ' today' : '') + '" style="height:' + h + 'px"></div>' +
-          '<div class="dash-bar-lab">' + esc(b.label) + '</div></div>';
+          '<div class="dash-bar-n">' + (b.rows || '') + '</div>' +
+          '<div class="dash-bar' + (isLast ? ' today' : '') + '" style="height:' + h + 'px"></div>' +
+          '<div class="dash-bar-lab">' + esc(lab) + '</div></div>';
       }
 
       var chipsHtml = '';
@@ -5731,7 +5798,7 @@
       el.innerHTML =
         '<div class="os-dash-head">' +
           '<span class="os-dash-title">📊 CS 대시보드</span>' +
-          '<button type="button" class="os-dash-refresh" onclick="warm(true);loadReturnActive(true,false)">↻ 갱신</button>' +
+          '<button type="button" class="os-dash-refresh" onclick="warm(true);loadReturnActive(true,false);loadDashDays(true)">↻ 갱신</button>' +
         '</div>' +
         '<div class="dash-kpi-grid">' + kpiHtml + '</div>' +
         '<div class="dash-section">' +
