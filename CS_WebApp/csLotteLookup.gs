@@ -168,19 +168,28 @@ function _lotteLookupName_(q, opts) {
     };
   }
 
-  var rows = pack.rows || [];
+  /* ★ 검색 규칙은 화면의 검색칸과 **같은 것**을 쓴다 ★
+     2026-09-09: 여기만 _cs_nameMatch_(이름 칸만 본다)를 쓰고 있었다. 그래서
+     카드의 「롯데송장조회」 단추로는 되는데 — 그건 카드의 이름을 통째로 넣으니까 —
+     손으로 「송미경」이라 치면 안 됐다. 그 글자는 이름 칸에 없기 때문이다.
+
+       이름 칸 : 대경노인요양공동생활가정
+       주문 칸 : 대경노인요양공동생활가정 /송미경원장님/2160626355
+                                          └ 「송미경」은 여기 있다
+
+     위쪽 검색칸(_cs_filterRows_)은 주문 칸·품목·주소까지 본다. 규칙이 둘이면
+     「화면에선 나오는데 여기선 안 나온다」가 계속 생긴다. 하나로 합친다.
+     점수순으로 정렬돼 오므로 제일 그럴듯한 것부터 물어보게 된다. */
+  var hits = _cs_filterRows_(pack.rows || [], q);
   var picks = [];
   var seen = {};
-  var matched = 0;
+  var matched = hits.length;
 
-  for (var i = 0; i < rows.length; i++) {
-    var r = rows[i];
-    if (!_cs_nameMatch_(r.name, q)) continue;
-    matched++;
-    if (picks.length >= _LOTTE_LOOKUP_MAX_) continue;
+  for (var i = 0; i < hits.length && picks.length < _LOTTE_LOOKUP_MAX_; i++) {
+    var r = hits[i];
 
-    // 송장이 있으면 그것부터. invDigits 는 여러 장이면 공백으로 붙어 온다.
-    var parts = String(r.invDigits || "").split(/\s+/);
+    // _cs_filterRows_ 는 invDigits 를 안 돌려준다 — 송장 원문에서 직접 뽑는다
+    var parts = String(r.invoice || "").split(/[\s,;\/|]+/);
     var used = false;
     for (var k = 0; k < parts.length; k++) {
       var d = String(parts[k] || "").replace(/[^0-9]/g, "");
