@@ -190,6 +190,13 @@ function registerPartnerMenu_() {
         .addItem("2️⃣ 일일마감 송장 재매칭 반영 (2주)", "partnerApplyArchiveInvoiceRefix")
         .addItem("3️⃣ 지정일 송장 재매칭", "partnerFillUnmatchedArchiveForDate")
         .addItem("🧹 일일마감 수량초과 송장 정리", "partnerPurgeArchiveQtyOverflow")
+        // ★ 일회성 (2026-09-09) ★
+        //   전화주문에 고유아이디가 없던 시절의 미매칭을 「1주출고」 롯데 자료로
+        //   소급해 채운다. 계획표는 밖에서 계산해 _partnerWeeklyShipBackfill.gs
+        //   안에 박아 두었다 — 시트 안에서 매번 계산하면 6분을 넘긴다.
+        //   내일부터는 전화주문에도 고유아이디가 붙으므로 다 쓰면 지워도 된다.
+        .addItem("📦 1주출고 소급 채우기 — 미리보기", "partnerWeeklyShipBackfillPreview")
+        .addItem("   └ ✍ 소급 채우기 반영", "partnerWeeklyShipBackfillApply")
         .addSeparator()
         // 2026-09-02: 발주시스템 메뉴에 있던 감사·보강을 옮겼다.
         .addItem("📊 송장 매칭 감사", "partnerAuditInvoiceMatching")
