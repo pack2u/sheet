@@ -131,51 +131,90 @@ function ss_미매칭점검() {
   if (ix['고유ID'] === undefined || ix['운송장번호'] === undefined) {
     return ssio_alert('원장에 고유ID·운송장번호 열이 없습니다.');
   }
+  var g = function (row, name) {
+    return ix[name] === undefined ? '' : ssText(row[ix[name]]);
+  };
 
   var v = lg.getRange(2, 1, lg.getLastRow() - 1, cols).getValues();
-  var byRun = {}, 미매칭 = [], 총 = 0, 안붙음 = 0;
+
+  /* ★ 「무엇을 기다리는 중인가」로 가른다 ★  (2026-09-09)
+     안 붙은 줄을 한 덩어리로 세면 손을 못 댄다. 기다리는 대상이 다르기 때문이다.
+       업체 송장 대기(조치) — 재고 부족으로 조치에서 대리발송으로 뺀 건.
+                            **롯데를 아무리 기다려도 안 온다.**
+       전화주문           — 롯데에 P-ID 가 없다. V2 롯데 업로드로 전환하면 풀린다.
+       롯데 송장 대기      — 자사출고. 실적이 들어오면 붙는다.
+     그리고 **며칠째인가**가 제일 중요하다. 오늘 것은 정상, 이틀 넘으면 미발송이다. */
+  function 갈래(row) {
+    var 조치 = g(row, '조치');
+    if (조치 === '대리발송') return '업체 송장 대기(조치)';
+    var 경로 = g(row, '경로');
+    if (경로 === '대리발송') return '업체 송장 대기';
+    if (g(row, '주문번호출처') === '자동발급') return '전화주문 (롯데에 번호 없음)';
+    return '롯데 송장 대기';
+  }
+
+  var 갈래별 = {}, byRun = {}, 목록 = [], 총 = 0, 안붙음 = 0;
+  var runsSeen = {};
   for (var i = 0; i < v.length; i++) {
-    var uid = ssText(v[i][ix['고유ID']]);
+    var uid = g(v[i], '고유ID');
     if (!uid) continue;
-    var route = ix['경로'] !== undefined ? ssText(v[i][ix['경로']]) : '';
+    var route = g(v[i], '경로');
     if (route === '보류' || route === '비배송') continue;   // 애초에 출고 대상이 아니다
     총++;
-    if (ssText(v[i][ix['운송장번호']])) continue;
+    var run = g(v[i], '회차키') || '?';
+    runsSeen[run] = true;
+    if (g(v[i], '운송장번호')) continue;
     안붙음++;
-    var run = ix['회차키'] !== undefined ? ssText(v[i][ix['회차키']]) : '?';
-    byRun[run] = byRun[run] || { 안붙음: 0, 경로: {} };
-    byRun[run].안붙음++;
-    byRun[run].경로[route] = (byRun[run].경로[route] || 0) + 1;
-    if (미매칭.length < 30) {
-      미매칭.push(run + '  ' + uid + '  ' + route + '  ' +
-        (ix['받는분'] !== undefined ? ssText(v[i][ix['받는분']]).slice(0, 12) : '') + '  ' +
-        (ix['품목명'] !== undefined ? ssText(v[i][ix['품목명']]).slice(0, 22) : ''));
+
+    var k = 갈래(v[i]);
+    갈래별[k] = (갈래별[k] || 0) + 1;
+    byRun[run] = byRun[run] || {};
+    byRun[run][k] = (byRun[run][k] || 0) + 1;
+
+    if (목록.length < 30) {
+      목록.push(run + '  ' + uid + '  ' + k +
+        (g(v[i], '조치업체') ? '(' + g(v[i], '조치업체') + ')' : '') + '  ' +
+        g(v[i], '거래처명').slice(0, 10) + '  ' + g(v[i], '품목명').slice(0, 20));
     }
   }
 
   var NL = String.fromCharCode(10);
-  var msg = '원장 ' + 총 + '줄(출고 대상) 중 아직 송장이 안 붙은 줄 ' + 안붙음 + '줄' +
-    '  (' + (총 ? (안붙음 * 100 / 총).toFixed(1) : '0') + '%)' + NL + NL + '[회차별]' + NL;
   var runs = Object.keys(byRun).sort();
+  var allRuns = Object.keys(runsSeen).sort();
+  var 최신 = allRuns.length ? allRuns[allRuns.length - 1] : '';
+
+  var msg = '원장 ' + 총 + '줄(출고 대상) 중 아직 송장이 안 붙은 줄 ' + 안붙음 + '줄' +
+    '  (' + (총 ? (안붙음 * 100 / 총).toFixed(1) : '0') + '%)' + NL + NL;
+
+  msg += '[무엇을 기다리는 중인가]' + NL;
+  var ks = Object.keys(갈래별).sort();
+  for (var a = 0; a < ks.length; a++) msg += '  ' + ks[a] + '  ' + 갈래별[ks[a]] + '줄' + NL;
+
+  msg += NL + '[회차별]' + NL;
   for (var r = 0; r < runs.length; r++) {
-    var b = byRun[runs[r]];
-    var 경로들 = [];
-    for (var k in b.경로) if (Object.prototype.hasOwnProperty.call(b.경로, k)) 경로들.push(k + ' ' + b.경로[k]);
-    msg += '  ' + runs[r] + '  ' + b.안붙음 + '줄   ' + 경로들.join(' · ') + NL;
+    var parts = [];
+    for (var kk in byRun[runs[r]]) {
+      if (Object.prototype.hasOwnProperty.call(byRun[runs[r]], kk)) {
+        parts.push(kk + ' ' + byRun[runs[r]][kk]);
+      }
+    }
+    var 오래됨 = (runs[r] !== 최신);
+    msg += '  ' + runs[r] + (오래됨 ? '  ★' : '   ') + '  ' + parts.join(' · ') + NL;
   }
-  /* 오래된 회차가 남아 있으면 그건 「아직 안 온 송장」이 아니라
-     품절이거나 출고가 빠진 것이다. 다음날 미발송 체크가 볼 자리다. */
-  if (runs.length > 2) {
-    msg += NL + '※ 회차가 셋 이상 남아 있습니다. 오래된 회차는 송장 대기가 아니라' + NL +
-      '  품절·미발송일 가능성이 큽니다 — 미발송 체크에서 확인하세요.';
-  }
-  if (미매칭.length) {
-    msg += NL + NL + '[미매칭 줄 (최대 30)]' + NL + '  회차 · 고유ID · 경로 · 받는분 · 품목' + NL +
-      '  ' + 미매칭.join(NL + '  ');
+
+  msg += NL +
+    '※ ★ 표시는 최신 회차가 아닙니다 — 하루가 지났는데 아직 안 붙은 줄입니다.' + NL +
+    '  「업체 송장 대기(조치)」는 재고가 없어 다른 업체로 뺀 건입니다.' + NL +
+    '   롯데를 기다려도 안 옵니다 — 그 업체 송장을 수집해야 붙습니다.' + NL +
+    '  「전화주문」은 롯데에 그 번호가 없어 못 맞습니다.' + NL +
+    '   V2 롯데택배 탭으로 업로드를 시작하면 저절로 붙습니다.' + NL;
+
+  if (목록.length) {
+    msg += NL + '[미매칭 줄 (최대 30)]' + NL +
+      '  회차 · 고유ID · 기다리는 것 · 거래처 · 품목' + NL + '  ' + 목록.join(NL + '  ');
   }
   return ssio_alert(msg);
 }
-
 /**
  * 고아 송장 점검 — **송장은 왔는데 붙일 주문이 원장에 없는 것**
  *
