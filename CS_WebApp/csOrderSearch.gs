@@ -3235,12 +3235,20 @@ function csDailyDashCounts(days) {
     for (var i = 0; i < rows.length; i++) {
       if (String(rows[i].invDigits || "").replace(/[^0-9]/g, "").length < 8) noInv++;
     }
-    out.days.push({ date: ymd, rows: rows.length, noInv: noInv, gapBefore: gap });
+    /* ★ 건너뛴 날은 «바로 앞서 담은 날»의 것이다 ★  (2026-09-10 바로잡음)
+       여기는 최신에서 과거로 걷는다. 08-31 을 담고 → 주말 둘을 건너뛰고 →
+       08-28 을 담는 순서다. 그런데 화면은 왼쪽이 오래된 날이라, 그 주말은
+       **08-28 다음(오른쪽)** 에 와야 한다 — 즉 먼저 담은 08-31 의 몫이다.
+       처음엔 지금 담는 날에 붙였더니 줄이 한 칸 왼쪽으로 밀려
+       09-03 과 09-04 사이에 그어졌다. 실제로 화면에서 그렇게 보였다. */
+    if (gap && out.days.length) out.days[out.days.length - 1].gapBefore = gap;
     gap = 0;
+    out.days.push({ date: ymd, rows: rows.length, noInv: noInv, gapBefore: 0 });
   }
 
   //  최신이 마지막에 오게 뒤집는다 — 막대는 왼쪽이 오래된 날이다
   out.days.reverse();
+  if (out.days.length) out.days[0].gapBefore = 0;   // 맨 앞의 줄은 뜻이 없다
   out.ms = Date.now() - t0;
   return out;
 }
