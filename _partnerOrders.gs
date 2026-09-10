@@ -4869,8 +4869,19 @@ function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
 
     // ── 세트분리(뉴) 「사방넷등록」 보강: V2 송장전파 결과 (A주문번호 B운송장 C택배사)
     //    합포장 동봉·대리공급 전파까지 끝난 값이라 그대로 얹으면 된다.
-    //    구 세트분리와 병행 운영 중 겹치는 건은 seen(주문번호|송장)이 걸러 준다.
+    //    겹치는 건은 seen(주문번호|송장)이 걸러 준다.
+    //
+    // ★ 2026-09-10: 꺼 두었다 ★
+    //   > "새로운 세트분리를 연결을 아직 안한다는뜻이야.. 어제처럼 기존
+    //   >  세트분리에서 대리발송을 읽어 푸시한다는 뜻이야.."
+    //
+    //   뉴에서 일하지 않는 동안 그 탭은 **지난 회차 값이 남은 채로 멈춰 있다.**
+    //   seen 은 한 번의 실행 안에서만 겹침을 막으므로, 멈춘 값은 날마다 다시
+    //   얹혀 사방넷에 같은 등록이 되풀이될 수 있다.
+    //   뉴로 옮길 때 이 줄을 true 로 바꾸면 그대로 살아난다.
+    var _PO_V2_SABANG_SUPPLEMENT_ = false;
     try {
+      if (!_PO_V2_SABANG_SUPPLEMENT_) throw new Error("세트분리(뉴) 미연결 — 보강 안 함");
       var v2SS = SpreadsheetApp.openById("1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo");
       var v2Tab = v2SS.getSheetByName("사방넷등록");
       if (v2Tab && v2Tab.getLastRow() >= 2) {
