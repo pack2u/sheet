@@ -28,6 +28,8 @@ InvoiceMatchWebApp/**
 세트분리V2/**
 # 파일보관소도 자체 프로젝트다 — 같은 이유로 뺀다.
 FileStore/**
+# 업체품목수집도 자체 프로젝트다.
+VendorItems/**
 
 # 문서 및 비코드 파일
 *.md

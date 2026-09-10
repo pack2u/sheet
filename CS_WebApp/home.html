@@ -1991,16 +1991,22 @@
          한 줄이 다섯 줄 높이가 됐다 — 여덟 건 보는 데 화면을 다 썼다.
          그래서 한 건을 «두 줄»로 눕힌다. 첫 줄에 품목과 상태, 둘째 줄에
          입고·대체·급발송. 전화받으며 훑는 데는 이 편이 빠르다. */
-    .so-grp { margin-bottom: 10px; }
-    .so-grp-h { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; margin:0 0 5px; }
+    /* ★ 덩어리마다 «상자»로 가른다 (2026-09-11) ★
+       품절 · 대리공급 품절 · 품절 예상이 줄만 바뀐 채 이어져 있어서
+       어디까지가 무엇인지 헷갈렸다. 상자로 묶고 왼쪽에 색 띠를 둔다. */
+    .so-grp { margin-bottom: 10px; padding: 8px 10px 4px;
+              border:1px solid rgba(255,255,255,0.10); border-left-width:3px;
+              border-radius:10px; background:rgba(255,255,255,0.02); }
+    .so-grp-h { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; margin:0 0 6px; }
     .so-grp-n { color: var(--text-muted); font-weight:400; }
-    .so-row { padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.06); }
+    .so-row { padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06); }
     .so-row:last-child { border-bottom:none; }
     .so-l1 { display:flex; align-items:baseline; gap:6px; }
-    .so-nm { font-size:11.5px; font-weight:600; flex:1 1 auto; min-width:0; }
-    .so-cd { font-size:10px; color:var(--text-muted); font-weight:400; margin-left:4px; }
-    .so-st { font-size:10.5px; font-weight:700; white-space:nowrap; flex:0 0 auto; }
-    .so-l2 { font-size:10.5px; color:var(--text-muted); margin-top:1px; }
+    /* 제품명은 1.5배 — 전화받으며 훑는 글자다 (사장님) */
+    .so-nm { font-size:13.5px; font-weight:600; flex:1 1 auto; min-width:0; line-height:1.35; }
+    .so-cd { font-size:11px; color:var(--text-muted); font-weight:400; margin-left:5px; }
+    .so-st { font-size:12px; font-weight:700; white-space:nowrap; flex:0 0 auto; }
+    .so-l2 { font-size:11.5px; color:var(--text-muted); margin-top:2px; }
     .so-l2 b { color:var(--text-secondary); font-weight:600; }
     .so-foot { font-size:10.5px; color:var(--text-muted); margin-top:4px; }
     .os-dash-refresh {
@@ -5792,7 +5798,8 @@
         var 무리 = res.rows.filter(function (r) { return r.kind === k; });
         if (!무리.length) continue;
 
-        html += '<div class="so-grp"><div class="so-grp-h">' +
+        html += '<div class="so-grp" style="border-left-color:' + SO_TONE[k] + '">' +
+          '<div class="so-grp-h">' +
           '<span style="color:' + SO_TONE[k] + '">' + SO_LABEL[k] + '</span>' +
           '<span class="so-grp-n">' + 무리.length + '</span></div>';
 
