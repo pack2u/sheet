@@ -27,10 +27,9 @@
  *    표가 비면 발주 화면이 그 업체를 안 거른다(sql/57) — 비는 편이
  *    거짓으로 막는 것보다 낫지만, 「모았는데 0개」로 남으면 안 된다.
  *
- *  ★ 단가조회 탭의 모양 ★
- *    3행부터 자료. A=상태 · C=이카운트코드 · D=품목명 · G=단가.
- *    (priceManager.gs 가 이 탭을 그렇게 만든다 — 3643행)
- * ══════════════════════════════════════════════════════════════
+ *  ★ 읽기만 한다 ★
+ *    Sheets REST API 를 spreadsheets.readonly 로 부른다. 47개 «업체» 시트를
+ *    여는 일이라, 버그 하나가 남의 장부를 망가뜨리는 길을 아예 막아 둔다.
  */
 
 var VI_PATH_ = "/api/vendor-items/ingest";
@@ -51,11 +50,25 @@ function vi_runKey_() {
   return "";
 }
 
+/**
+ * ★ 왜 SpreadsheetApp 인가 (2026-09-11) ★
+ *   처음엔 Sheets REST API 를 «읽기 전용» 권한으로 부르려 했다. 47개 «업체»
+ *   시트를 여는 일이라 읽기만 되는 편이 안전하기 때문이다.
+ *   그런데 스크립트가 쓰는 숨은 GCP 프로젝트에 Sheets API 가 꺼져 있었고
+ *   (HTTP 403 "has not been used in project 114319581234 before"),
+ *   그 프로젝트는 우리가 만질 수 없다.
+ *
+ *   그래서 SpreadsheetApp 으로 돌아왔다. 권한이 한 칸 넓다(보기 및 관리).
+ *   ★ 대신 이 파일에는 «쓰는 명령이 한 줄도 없다» ★
+ *     getSheets · getName · getRange().getValues() 뿐이다.
+ *     고칠 때도 이 약속을 지킨다 — 남의 장부다.
+ */
+
 /** 단가조회 탭 찾기 — _partnerLibrary.gs 의 _p2uLib_findViewer_ 와 같은 규칙 */
 function vi_findViewer_(ss) {
-  var names = ["단가조회", "팩투유 단가조회", "뷰어"];
-  for (var i = 0; i < names.length; i++) {
-    var t = ss.getSheetByName(names[i]);
+  var want = ["단가조회", "팩투유 단가조회", "뷰어"];
+  for (var i = 0; i < want.length; i++) {
+    var t = ss.getSheetByName(want[i]);
     if (t) return t;
   }
   var all = ss.getSheets();
@@ -68,33 +81,30 @@ function vi_findViewer_(ss) {
         n.indexOf("팩투유") !== -1) return all[j];
   }
   /* ★ 못 찾으면 첫 탭으로 «떨어지지 않는다» ★
-     엉뚱한 탭을 읽으면 엉뚱한 취급 품목 목록이 만들어진다.
-     그건 아무것도 없는 것보다 나쁘다. */
+     엉뚱한 탭을 읽으면 엉뚱한 취급 목록이 만들어진다. 없는 것보다 나쁘다. */
   return null;
 }
 
 function vi_txt_(v) {
   if (v === null || v === undefined) return "";
   if (Object.prototype.toString.call(v) === "[object Date]") return "";
-  return String(v).replace(/[ \t　]+/g, " ").trim();
+  return String(v).replace(/[ 	　]+/g, " ").trim();
 }
 
 /**
  * 한 업체의 단가조회 탭을 읽는다.
  *
  * ★ 행·열을 «이름»으로 찾는다 ★
- *   처음엔 「3행부터 · C열 코드」로 박아 뒀다. 실제로 열어 보니 당장드림 시트는
- *   1행 공지사항 · 3행 머리글 · 4행부터 자료였다. 박아 두면 시트마다 어긋난다.
- *   위 여덟 줄 안에서 「이카운트코드」가 있는 줄을 머리글로 보고, 그 아래를 읽는다.
- *   못 찾으면 «멈춘다» — 엉뚱한 자리를 읽어 엉뚱한 취급 목록을 만드는 것이
- *   아무것도 없는 것보다 나쁘다.
+ *   시트마다 위에 붙은 안내 줄 수가 다르다. 당장드림은 1행 공지 · 3행 머리글 ·
+ *   4행부터 자료였다. 박아 두면 시트마다 어긋난다.
+ *   위 여덟 줄에서 「이카운트코드」와 「품목명」이 같이 있는 줄을 머리글로 본다.
  */
 function vi_readOne_(sheetId) {
   var ss = SpreadsheetApp.openById(sheetId);
   var tab = vi_findViewer_(ss);
   if (!tab) {
     return { ok: false, tab: "", rows: [], msg: "단가조회 탭을 못 찾았습니다 (" +
-      ss.getSheets().map(function (s) { return s.getName(); }).slice(0, 12).join(" · ") + ")" };
+      ss.getSheets().map(function (x) { return x.getName(); }).slice(0, 12).join(" · ") + ")" };
   }
 
   var last = tab.getLastRow();
@@ -106,7 +116,7 @@ function vi_readOne_(sheetId) {
   for (var r = 0; r < head.length; r++) {
     var m = {};
     for (var c = 0; c < head[r].length; c++) {
-      var t = vi_txt_(head[r][c]).replace(/[ 	　]/g, "");
+      var t = vi_txt_(head[r][c]).replace(/[ 　]/g, "");
       if (t === "이카운트코드" || t === "품목코드") m.code = c;
       else if (t === "품목명" || t === "상품명") m.name = c;
       else if (t === "상태") m.status = c;
@@ -123,12 +133,14 @@ function vi_readOne_(sheetId) {
   }
 
   var data = tab.getRange(hr + 1, 1, last - hr, wide).getValues();
-  var rows = [], 이상 = 0;
+  var rows = [], 이상 = 0, seen = {};
   for (var i = 0; i < data.length; i++) {
     var code = vi_txt_(data[i][col.code]);
     if (!code) continue;
     /* 코드처럼 안 생긴 것은 세어만 둔다 — 자리가 밀렸는지 알려면 필요하다 */
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/.test(code)) { 이상++; continue; }
+    if (seen[code]) continue;
+    seen[code] = true;
     rows.push({
       ecount_code: code,
       item_name: (col.name !== undefined ? vi_txt_(data[i][col.name]) : "") || null,
