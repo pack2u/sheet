@@ -511,12 +511,43 @@ function ss_롯데출력엑셀() {
   var names = _sslp_tabs_();
   var ss = ssio_ss();
 
-  var packs = [], 총행 = 0;
+  var packs = [], 총행 = 0, 도서보류 = 0, 도서나감 = 0, 조치열없음 = [];
   for (var i = 0; i < names.length; i++) {
     var sh = ss.getSheetByName(names[i]);
     if (!sh || sh.getLastRow() < 2) continue;      // 빈 탭은 시트를 만들지 않는다
     var cols = Math.max(sh.getLastColumn(), SS_OUT_HEADER.length);
     var vals = sh.getRange(1, 1, sh.getLastRow(), cols).getDisplayValues();
+
+    /* ★ 도서산간은 체크한 것만 내보낸다 ★  (2026-09-10)
+       > "도서산간분리 된것중 체크한것만 보내야되는데 … 조치 열을 만들어서"
+
+       도서산간은 추가운임이 붙는다. 고객이 그걸 알고 동의했는지 확인하기 전에
+       내보내면 나중에 운임을 못 받거나 반품이 된다. 그래서 사람이 한 번 본다.
+       보류 탭의 「조치」와 같은 손버릇을 쓴다 — 새 개념을 만들지 않는다.
+
+       ★ 조치 열이 없으면 거르지 않는다 ★
+         옛 탭에는 그 열이 없다. 없는데 걸러 버리면 **도서산간이 하나도 안 나간다.**
+         발주 직전에 그런 일이 나면 그게 제일 나쁘다. 열이 있을 때만 거른다. */
+    var isIsland = (names[i] === SS_ROUTE.LOTTE_ISLAND ||
+                    names[i] === SS_ROUTE.LOTTE_ISLAND_CONSIGN);
+    if (isIsland) {
+      var actCol = -1;
+      for (var h = 0; h < vals[0].length; h++) {
+        if (String(vals[0][h] || '').trim() === '조치') { actCol = h; break; }
+      }
+      if (actCol < 0) {
+        조치열없음.push(names[i]);
+      } else {
+        var kept = [vals[0]];
+        for (var r = 1; r < vals.length; r++) {
+          if (String(vals[r][actCol] || '').trim()) { kept.push(vals[r]); 도서나감++; }
+          else 도서보류++;
+        }
+        vals = kept;
+        if (vals.length < 2) continue;             // 체크된 것이 하나도 없으면 시트를 안 만든다
+      }
+    }
+
     packs.push({ name: names[i], vals: vals, rows: vals.length - 1 });
     총행 += vals.length - 1;
   }
@@ -575,6 +606,19 @@ function ss_롯데출력엑셀() {
   for (var q = 0; q < packs.length; q++) lines.push('  · ' + packs[q].name + '  ' + packs[q].rows + '행');
   var msg = '롯데 송장출력 엑셀' + NL + NL + lines.join(NL) + NL +
     '  합계 ' + 총행 + '행' + NL + NL;
+
+  /* ★ 빠진 것은 크게 알린다 ★
+     조용히 빠지면 「다 나간 줄」 알고 넘어간다. 도서산간은 건수가 적어서
+     더 그렇다 — 몇 건 빠진 것을 아무도 못 알아챈다. */
+  if (도서보류) {
+    msg = '⚠ 도서산간 ' + 도서보류 + '건은 안 실었습니다 (조치 칸이 비어 있음)' + NL +
+      '   확인한 건의 「조치」 칸에 아무거나 적고 다시 누르세요.' + NL +
+      (도서나감 ? '   실은 도서산간: ' + 도서나감 + '건' + NL : '') + NL + msg;
+  }
+  if (조치열없음.length) {
+    msg = '※ ' + 조치열없음.join(', ') + ' 탭에 「조치」 열이 없어 거르지 않았습니다.' + NL +
+      '   세트분리를 한 번 돌리면 열이 생깁니다.' + NL + NL + msg;
+  }
 
   if (!blob) {
     return ssio_alert(msg + '⚠ 엑셀 내보내기 실패 (' + xerr + ')' + NL +
