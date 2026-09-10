@@ -163,25 +163,34 @@ function ssm_stampAgeHours(name) {
 }
 
 /**
- * 실행 직전 갱신. 설정 「실행전_마스터갱신」 에 따라 범위가 달라진다.
+ * 실행 직전 갱신 — **늘 전부 읽는다.** 고를 것이 없다.  (2026-09-10)
+ *
+ * > "이전 시트에서는 임포트로 자동으로 불러오게 되있었는데 굳이 설정을
+ * >  누르는 불편함을 감수해야 할까? 안누르면 오류가 발생하는데"
+ *
+ * 전에는 「실행전_마스터갱신」 으로 범위를 골랐다. 빠르라고 만든 손잡이인데
+ * 안 돌려 놓으면 조용히 틀렸다 — 신상품이 들어온 날 「재고만」이면 그 주문이
+ * 품목누락으로 보류에 빠진다. 구 시트는 IMPORTRANGE 라 그런 일이 없었다.
+ * 사람이 기억해야만 맞는 구조는 언젠가 틀린다. 골라야 할 일을 없앴다.
+ *
+ * 읽다가 실패해도 멈추지 않는다 — 직전 값으로 계산하고 경고를 남긴다.
+ * 발주 직전에 마스터 하나 때문에 통째로 못 도는 것이 더 나쁘다.
  *   재고만(기본) · 재고+품목 · 전체 · 안함
  */
 function ssm_refreshBeforeRun(cfg) {
-  var mode = ssText(cfg['실행전_마스터갱신']) || '재고만';
-  var report = [], warn = [];
-  if (mode === '안함') return { mode: mode, report: report, warnings: warn };
+  var t0 = Date.now();
   try {
-    if (mode === '전체') {
-      var r = ssm_refreshAll();
-      return { mode: mode, report: r.report, warnings: r.warnings };
-    }
-    if (mode === '재고+품목') ssm_refreshItems(cfg, report, warn);
-    ssm_refreshStock(cfg, report, warn);
+    var r = ssm_refreshAll();
+    //  얼마나 걸리는지 남긴다. 느려지면 «읽는 것»을 빠르게 하지,
+    //  사람에게 고르게 하지 않는다 — 그러려면 시간을 알아야 한다.
+    return { mode: '전체 (자동 · ' + Math.round((Date.now() - t0) / 1000) + '초)',
+             report: r.report, warnings: r.warnings };
   } catch (e) {
-    warn.push(['오류', 'PRERUN_REFRESH', mode,
-      '실행 전 마스터 갱신에 실패해 직전 값으로 계산합니다. ' + e.message]);
+    return { mode: '전체 (실패 — 직전 값으로 계산)', report: [], warnings: [
+      ['오류', 'PRERUN_REFRESH', '전체',
+       '실행 전 마스터 갱신에 실패해 직전 값으로 계산합니다. ' + e.message]
+    ] };
   }
-  return { mode: mode, report: report, warnings: warn };
 }
 
 /**
