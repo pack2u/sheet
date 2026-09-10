@@ -2243,7 +2243,12 @@ function _cs_mapReturnLedgerCols_(header) {
     else if (col.vendor < 0 && /업체명|주문지|판매처|발주업체/.test(h)) col.vendor = i;
     else if (col.name < 0 && /반품신청자|수취인명|수취인|받는분/.test(h) && !/전화|주소/.test(h)) col.name = i;
     else if (col.phone < 0 && /연락처|전화|휴대폰/.test(h) && !/주소/.test(h)) col.phone = i;
-    else if (col.pickup < 0 && /수거입력처/.test(h)) col.pickup = i;
+    /* ★ 2026-09-10: 「회수신청」을 더한다 (포털 prpLedger.gs 와 쌍) ★
+       9월 탭 M열 머리글이 「수거입력처」 → 「회수신청」 이라 수거 택배사가
+       어느 화면에도 안 나오고 있었다. 아래 M열 반품비 폴백은 이 열을
+       이미 알고 있었는데(자동회수가 금액으로 들어갔던 사고), 수거 쪽에는
+       반영이 안 돼 있었다. */
+    else if (col.pickup < 0 && /수거입력처|회수신청|수거택배|회수택배|수거요청/.test(h)) col.pickup = i;
     else if (col.item < 0 && /상품명|품목명/.test(h) && !/코드/.test(h)) col.item = i;
     else if (col.qty < 0 && (h === "수량" || h.indexOf("수량") === 0)) col.qty = i;
     else if (col.invoice < 0 && /원송장|송장번호/.test(h) && !/회수|재발송|반품송장/.test(h)) col.invoice = i;

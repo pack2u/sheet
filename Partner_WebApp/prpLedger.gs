@@ -76,12 +76,25 @@ function prpMapCols_(header) {
          열 순서가 바뀌는 날 추가연락처가 주 연락처 자리로 들어간다. */
     else if (col.phone2 < 0 && /추가연락처|추가전화|비상연락|실번호/.test(h)) col.phone2 = i;
     else if (col.phone < 0 && /연락처|전화|휴대폰/.test(h) && !/주소|추가/.test(h)) col.phone = i;
-    else if (col.pickup < 0 && /수거입력처/.test(h)) col.pickup = i;
+    /* ★ 2026-09-10: 「회수신청」을 더한다 ★
+       9월 탭(202609)의 M열 머리글이 「수거입력처」 → 「회수신청」 이다.
+       그래서 접수창에서 고른 수거 택배사(CJ대한통운 등)가 **아무 데도 안 적혔다.**
+       업체는 골랐으니 적힌 줄 알고, CS 는 빈칸을 보고 안 골랐다고 안다.
+       (당장드림 260910 내허쉬·방혜희 두 건 실측 — M 이 비어 있었다)
+       ★ 반품비를 뺏지 않는다 ★  「회수신청」은 여기서 먼저 잡히므로 아래
+         col.fee 로 안 내려간다. 전에 이 열의 「자동회수」가 반품비로 들어간
+         적이 있는데(M열 폴백), 그 사고가 다시 날 길을 막는 셈이다. */
+    else if (col.pickup < 0 && /수거입력처|회수신청|수거택배|회수택배|수거요청/.test(h)) col.pickup = i;
     else if (col.item < 0 && /상품명|품목명/.test(h) && !/코드/.test(h)) col.item = i;
     else if (col.qty < 0 && (h === "수량" || h.indexOf("수량") === 0)) col.qty = i;
     else if (col.invoice < 0 && /원송장|송장번호/.test(h) && !/회수|재발송|반품송장/.test(h)) col.invoice = i;
     else if (col.returnInvoice < 0 && /반품송장|회수송장/.test(h)) col.returnInvoice = i;
-    else if (col.type < 0 && /교환.?반품|반품구분/.test(h)) col.type = i;
+    /* ★ 2026-09-10: CS 웹앱과 낱말을 맞춘다 ★
+       9월 탭의 L열은 「재출고/단순/오주문입력/오배송」 이라 /교환.?반품/ 로는
+       안 걸렸다. 접수창에서 고른 「단순반품」이 조용히 버려지고 있었다.
+       CS_WebApp/csOrderSearch.gs 는 9/4 에 이미 고쳤는데 여기만 안 고쳐졌다 —
+       같은 규칙이 두 파일에 따로 적혀 있어서 그렇다. **쌍으로 고친다.** */
+    else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유|재출고|오주문입력/.test(h)) col.type = i;
     /* 2026-09-09: 「환불비용」을 더한다. 9월 탭 머리글이 「반품/환불비용」인데
        가운데 「/」 때문에 「반품비」로 안 걸렸다. CS 웹앱은 9/4 에 이미 넣었고
        (csOrderSearch.gs 2257행) 여기만 안 고쳐져 있었다. */
