@@ -326,6 +326,7 @@ function registerPartnerMenu_() {
             .addItem("   └ 🔎 반품 미러 걸렸나", "partnerCheckReturnsMirrorTrigger")
             .addItem("   └ ▶ 반품 지금 보내기 (전체)", "partnerMirrorReturnsAll")
             .addSeparator()
+            .addItem("📥 업체발주 지금 옮기기 (v2 → 허브)", "partnerBridgeV2OrdersNow")
             .addItem("🗂 커뮤니티 보드 미러 걸기", "partnerInstallBoardMirrorTrigger")
             .addItem("   └ 🔎 보드 미러 걸렸나", "partnerCheckBoardMirrorTrigger")
             .addItem("   └ ▶ 보드 지금 보내기", "partnerMirrorBoardNow")

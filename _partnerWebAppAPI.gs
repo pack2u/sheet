@@ -447,7 +447,13 @@ function _api_runTask_(params) {
       checkBoardMirror:     { label: "보드 미러 트리거 확인", fn: function() { return partnerCheckBoardMirrorTrigger(); } },
       installReturnsMirror: { label: "반품 미러 트리거 설치", fn: function() { return partnerInstallReturnsMirrorTrigger(); } },
       checkReturnsMirror:   { label: "반품 미러 트리거 확인", fn: function() { return partnerCheckReturnsMirrorTrigger(); } },
-      mirrorBoardNow:       { label: "보드 지금 보내기",     fn: function() { return partnerMirrorBoardNow(); } }
+      mirrorBoardNow:       { label: "보드 지금 보내기",     fn: function() { return partnerMirrorBoardNow(); } },
+
+      /* ★ 2026-09-10: v2 업체발주 → 허브 다리 ★
+         평소엔 발주 수집이 돌 때 알아서 같이 돈다. 이 문은 «지금 당장» 옮겨야
+         할 때와, 다리가 진짜 도는지 밖에서 확인할 때를 위한 것이다.
+         두 번 눌러도 두 번 안 나간다 — 먼저 찜하고 넣기 때문이다. */
+      bridgeV2Orders:       { label: "v2 업체발주 옮기기",   fn: function() { return partnerBridgeV2Orders(); } }
     };
 
     var spec = taskMap[task];

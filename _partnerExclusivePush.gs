@@ -2794,6 +2794,20 @@ function partnerPushOrdersToExclusiveFormsSilent_() {
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말/공휴일 차단 → 대리공급 Push 스킵"); return; }
   var startTime = new Date();
   var pushOk = false, errorMsg = "";
+  /* ★ 2026-09-10: v2 업체발주를 «Push 직전에» 한 번 더 건넨다 ★
+     다리는 발주 수집(09:30·13:00·15:00)에서도 돌지만, 그것만으로는
+     15:00 이후 v2 로 들어온 발주가 그날 Push 를 못 탄다.
+     여기서 한 번 더 돌리면 10:30·13:50·15:40 도 잡아 하루 여섯 번이 된다.
+
+     새 트리거를 안 만드는 이유: 이 프로젝트의 시간 트리거는 이미 20개로
+     구글 한도에 닿아 있다. 하나 더 만들면 다른 하나가 안 걸린다.
+     두 번 돌아도 두 번 안 나간다 — 다리가 먼저 찜하고 넣기 때문이다. */
+  try {
+    if (typeof partnerBridgeV2Orders === "function") partnerBridgeV2Orders();
+  } catch (eB2) {
+    Logger.log("[V2발주다리] Push 전 실행 실패(무시): " + (eB2 && eB2.message ? eB2.message : eB2));
+  }
+
   // ① 대리공급 Push
   try {
     partnerPushOrdersToExclusiveForms(true);

@@ -3380,6 +3380,24 @@ var _PO_TRIGGER_MINUTES = 5;
 function partnerCollectOrdersSilent_() {
   // ★ 2026-06-27: 주말 차단
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 발주 수집 스킵"); return; }
+
+  /* ★ v2 업체 발주를 허브로 먼저 옮긴다 ★  (2026-09-10)
+     업체가 v2 화면(/v/order)에서 넣은 발주는 접수함에만 쌓인다. 출고는 허브를
+     보고 돌기 때문에, 옮기지 않으면 업체는 넣은 줄 아는데 아무도 안 보낸다.
+
+     ★ 왜 여기인가 ★
+       트리거를 새로 걸지 않는다. 발주 수집이 하루 세 번(09:30·13:00·15:00) 도는데,
+       그 **바로 앞**에 붙이면 같은 회차에 함께 나간다. 트리거가 하나 늘면
+       「걸렸나 안 걸렸나」를 또 확인해야 한다 — 오늘 그것 때문에 이틀을 놓쳤다.
+
+     곁다리라 예외를 밖으로 내보내지 않는다. 다리가 막혔다고 발주 수집이
+     통째로 못 도는 일은 있어서는 안 된다. */
+  try {
+    if (typeof partnerBridgeV2Orders === "function") partnerBridgeV2Orders();
+  } catch (eB) {
+    Logger.log("[V2발주다리] 수집 전 실행 실패(무시): " + (eB && eB.message ? eB.message : eB));
+  }
+
   var startTime = new Date();
   var collectOk = false, salesOk = false, errorMsg = "";
   // ① 발주 수집 (협력업체 발주탭 → 허브) — 업체시트에 "접수완료" 역기록 포함
