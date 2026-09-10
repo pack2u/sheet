@@ -1985,6 +1985,19 @@
       margin-bottom: 10px;
     }
     .os-dash-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); letter-spacing: 0.03em; }
+    /* ── 팩투유 품절상품 (2026-09-11) ──
+       전화를 받으면서 보는 표다. 대체상품·급발송대안이 품목명 옆에 있어야
+       그 자리에서 답한다. 눌러 들어가면 늦다. */
+    .so-grp { margin-bottom: 10px; }
+    .so-grp-h { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; margin:0 0 4px; }
+    .so-grp-n { color: var(--text-muted); font-weight:400; }
+    .so-tbl { width:100%; border-collapse:collapse; font-size:11.5px; }
+    .so-tbl th, .so-tbl td { padding:4px 6px; border-bottom:1px solid rgba(255,255,255,0.06); text-align:left; vertical-align:top; }
+    .so-tbl th { font-size:10.5px; font-weight:700; color:var(--text-muted); white-space:nowrap; }
+    .so-tbl td.nm { font-weight:600; }
+    .so-tbl td.cd { font-size:10px; color:var(--text-muted); }
+    .so-nowrap { white-space:nowrap; }
+    .so-foot { font-size:10.5px; color:var(--text-muted); margin-top:4px; }
     .os-dash-refresh {
       border: none; background: transparent; color: var(--text-muted);
       font-size: 11px; font-family: inherit; cursor: pointer; padding: 2px 6px;
@@ -2481,6 +2494,7 @@
           <div class="os-status" id="status">불러오는 중…</div>
           <div id="list"></div>
           <div id="orderDash" class="os-dash loading"></div>
+          <div id="stockoutBox" class="os-dash"></div>
         </div>
       </div>
       <div class="ws-resizer" id="wsResizer1" aria-label="주문·반품 폭 조절" title="드래그하여 폭 조절"></div>
@@ -3082,6 +3096,7 @@
       }
       loadReturnActive(false);
       renderOrderDashboard();
+      loadStockout();   /* 팩투유 품절상품 — 화면 열 때 한 번 (2026-09-11) */
       startCsPulse();
       setTimeout(function() { initWsSplitter(); csInstallScrollbars(); }, 80);
       setTimeout(function() { initWsSplitter(); csInstallScrollbars(); }, 400);
@@ -5728,6 +5743,85 @@
         .csDailyDashCounts(DAYS);
     }
 
+    /* ══ 팩투유 품절상품 ══════════════════════════════════════
+       2026-09-11
+       > "웹앱 좌측 하단 … 이 내용들이 보이면 좋겠어.. 이카운트 코드는 옵션이고"
+
+       ★ 한 번만 부른다 ★
+         화면을 열 때 한 번 받아 그린다. 서버 쪽(csStockout.gs)에 3분 캐시가
+         있어 여러 사람이 열어도 시트를 계속 두드리지 않는다.
+
+       ★ 못 받으면 «조용히» 접는다 ★
+         품절 표가 없다고 CS 화면이 못 쓰이면 안 된다. 칸을 감춘다.
+         다만 아무 말 없이 사라지면 「없는 줄」 알므로 한 줄 남긴다.
+       ══════════════════════════════════════════════════════ */
+    var SO_LABEL = { '품절': '품절', '대리공급': '대리공급 품절', '예상': '품절 예상' };
+    var SO_TONE  = { '품절': 'var(--danger, #e5484d)', '대리공급': 'var(--danger, #e5484d)', '예상': 'var(--warn, #f5a524)' };
+    /* 급한 순서 — 지금 못 파는 것이 먼저다 */
+    var SO_ORDER = ['품절', '대리공급', '예상'];
+
+    function soVal(v) {
+      var t = String(v || '').trim();
+      if (!t) return '—';
+      /* 「????」는 사람이 «아직 모른다»고 적어 둔 것이다. 그대로 두면
+         오류처럼 보이므로 말로 바꾼다. 시트는 안 건드린다. */
+      if (/^[?]+$/.test(t)) return '미정';
+      return esc(t);
+    }
+
+    function renderStockout(res) {
+      var el = document.getElementById('stockoutBox');
+      if (!el) return;
+
+      if (!res || !res.ok || !res.rows || !res.rows.length) {
+        el.innerHTML = '<div class="os-dash-head"><span class="os-dash-title">🚫 팩투유 품절상품</span></div>' +
+          '<div class="so-foot">' + (res && res.msg ? '표를 못 읽었습니다: ' + esc(res.msg) : '품절 목록이 비어 있습니다.') + '</div>';
+        return;
+      }
+
+      var html = '<div class="os-dash-head"><span class="os-dash-title">🚫 팩투유 품절상품</span>' +
+                 '<span class="so-foot">' + esc(res.at) + ' 기준</span></div>';
+
+      for (var g = 0; g < SO_ORDER.length; g++) {
+        var k = SO_ORDER[g];
+        var 무리 = res.rows.filter(function (r) { return r.kind === k; });
+        if (!무리.length) continue;
+
+        html += '<div class="so-grp">' +
+          '<div class="so-grp-h"><span style="color:' + SO_TONE[k] + '">' + SO_LABEL[k] + '</span>' +
+          '<span class="so-grp-n">' + 무리.length + '</span></div>' +
+          '<table class="so-tbl"><thead><tr>' +
+            '<th>품목</th><th>입고 예정</th><th>' + (k === '예상' ? '재고' : '상태') + '</th>' +
+            '<th>대체상품</th><th>급발송</th></tr></thead><tbody>';
+
+        for (var i = 0; i < 무리.length; i++) {
+          var r = 무리[i];
+          html += '<tr>' +
+            '<td class="nm">' + esc(r.name) +
+              (r.code ? '<div class="cd">' + esc(r.code) + '</div>' : '') + '</td>' +
+            '<td class="so-nowrap">' + soVal(r.eta) + '</td>' +
+            '<td style="color:' + SO_TONE[k] + '">' + soVal(r.note) + '</td>' +
+            '<td>' + soVal(r.alt) + '</td>' +
+            '<td style="color:var(--text-muted)">' + soVal(r.urgent) + '</td>' +
+          '</tr>';
+        }
+        html += '</tbody></table></div>';
+      }
+      el.innerHTML = html;
+    }
+
+    function loadStockout() {
+      var el = document.getElementById('stockoutBox');
+      if (el) el.innerHTML = '<div class="os-dash-head"><span class="os-dash-title">🚫 팩투유 품절상품</span></div>' +
+                             '<div class="so-foot">불러오는 중…</div>';
+      google.script.run
+        .withSuccessHandler(renderStockout)
+        .withFailureHandler(function (e) {
+          renderStockout({ ok: false, msg: (e && e.message) ? e.message : '불러오지 못했습니다' });
+        })
+        .csStockoutList();
+    }
+
     function renderOrderDashboard() {
       var el = document.getElementById('orderDash');
       if (!el) return;
@@ -5798,7 +5892,7 @@
       el.innerHTML =
         '<div class="os-dash-head">' +
           '<span class="os-dash-title">📊 CS 대시보드</span>' +
-          '<button type="button" class="os-dash-refresh" onclick="warm(true);loadReturnActive(true,false);loadDashDays(true)">↻ 갱신</button>' +
+          '<button type="button" class="os-dash-refresh" onclick="warm(true);loadReturnActive(true,false);loadDashDays(true);loadStockout()">↻ 갱신</button>' +
         '</div>' +
         '<div class="dash-kpi-grid">' + kpiHtml + '</div>' +
         '<div class="dash-section">' +

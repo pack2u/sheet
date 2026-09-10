@@ -3398,6 +3398,15 @@ function partnerCollectOrdersSilent_() {
     Logger.log("[V2발주다리] 수집 전 실행 실패(무시): " + (eB && eB.message ? eB.message : eB));
   }
 
+  /* ★ 2026-09-11: 팩투유 품절상품 표도 같이 보낸다 ★
+     사람이 손으로 고치는 표라 자주 바뀐다. 발주 수집이 도는 김에 얹으면
+     하루 세 번 따라온다 — 트리거를 새로 만들지 않아도 된다(이미 20개다). */
+  try {
+    if (typeof _so_scheduled_ === "function") _so_scheduled_();
+  } catch (eS) {
+    Logger.log("[품절미러] 수집 전 실행 실패(무시): " + (eS && eS.message ? eS.message : eS));
+  }
+
   var startTime = new Date();
   var collectOk = false, salesOk = false, errorMsg = "";
   // ① 발주 수집 (협력업체 발주탭 → 허브) — 업체시트에 "접수완료" 역기록 포함
