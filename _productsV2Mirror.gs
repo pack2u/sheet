@@ -141,7 +141,10 @@ function _pv2_readStock_(ss) {
   }
   var map = _pv2_header_(tab, [
     { key: "code", names: ["품목코드", "이카운트코드", "코드"], required: true },
-    { key: "qty", names: ["재고수량", "재고"], required: true }
+    /* ★ 「가용수량」이 먼저다 ★
+       세트분리V2 의 설정이 이 탭을 «A=코드 B=가용수량» 으로 읽는다
+       (세트분리V2/gasIO.js 139행). 매일 도는 쪽이 보는 이름이 맞는 이름이다. */
+    { key: "qty", names: ["가용수량", "재고수량", "재고"], required: true }
   ]);
   if (!map) {
     Logger.log("[품목미러] 재고 탭 머리글을 못 찾았습니다 — 재고 없이 상태만 보냅니다");
