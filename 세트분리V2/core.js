@@ -490,18 +490,51 @@ function ssNormalize(grid, cfg, warnings) {
   return out;
 }
 
+/**
+ * 「쪼개야 하는 이름인가」 — 한글 「세트」면 그렇다.
+ *
+ * 영문 SET 은 한 박스에 다 들어 있는 완제품이라 쪼개지 않는다
+ * (「AJ 소스 95파이 소 화이트 1000 SET 합포장」).
+ * 이 규칙은 사장님이 쓰시는 이름 규칙 그대로다 — 우리가 만든 것이 아니다.
+ */
+function ssNeedsBom_(name) {
+  var n = ssText(name);
+  if (!n) return false;
+  return n.indexOf('세트') !== -1;
+}
+
 /* ── 2단계 · 세트 분해 (BOM 소요량 반영) ──────────────── */
 
 function ssExplode(lines, masters, warnings) {
   var bom = masters.bom || {};
   var except = masters.splitExcept || {};
   var out = [];
+  var warnedNoBom = {};   // 같은 코드로 여러 줄이 와도 주의는 한 번만
   for (var i = 0; i < lines.length; i++) {
     var L = lines[i];
     var parts = bom[L.원본코드];
     var 분해 = parts && parts.length > 1 && !except[L.원본코드];
 
     if (!분해) {
+      /* ★ 2026-09-10: 「쪼개야 할 것 같은데 BOM 이 없다」를 알린다 ★
+         여태는 BOM 이 없으면 세트 코드 그대로 조용히 나갔다. 그러면
+         창고는 몸통·뚜껑을 집어야 하는데 종이에는 「1000세트」만 적힌다.
+         2026-09-10 확인: 세트여부=1 품목 중 109개가 BOM현황에 없었고
+         그중 37개가 판매중이었다 — 아무도 모르고 있었다.
+
+         판단은 **품목명의 한글 「세트」** 로 한다 (사장님 규칙):
+           한글 「세트」 = 몸통+뚜껑을 조합해 나간다 → 쪼개야 한다
+           영문 「SET」  = 한 박스에 다 들어 있다   → 안 쪼갠다
+         「수저세트」처럼 낱말 일부인 것이 잘못 걸릴 수 있지만, 그래 봐야
+         주의 한 줄이다. 못 쪼갠 채 나가는 쪽이 훨씬 비싸다.
+
+         분리예외에 들어 있으면 사람이 정한 것이므로 조용히 넘어간다. */
+      if (!parts && !except[L.원본코드] && ssNeedsBom_(L.원본품목명) && !warnedNoBom[L.원본코드]) {
+        warnedNoBom[L.원본코드] = true;
+        ssWarn(warnings, '주의', 'BOM_MISSING', L.원본코드,
+          '「' + ssText(L.원본품목명) + '」 는 세트인데 BOM현황에 구성이 없습니다. ' +
+          '쪼개지 않고 그대로 내보냅니다 — BOM 을 등록하거나 분리예외에 넣어 주세요.');
+      }
       out.push(ssMakeUnit(L, L.원본코드, 1, 0));
       continue;
     }
