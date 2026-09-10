@@ -32,6 +32,12 @@ function registerPartnerMenu_() {
 
     // ── 아침: 발주 수집 → 업체로 Push ──
     .addItem("1️⃣ 대리판매 발주수집", "partnerCollectOrdersOwner")
+    /* v2 로 들어온 업체 발주를 허브로 끌어온다.
+       평소엔 수집·Push 가 돌 때 알아서 같이 돈다(하루 여섯 번).
+       여기 있는 건 «지금 당장» 끌어와야 할 때 쓰는 손잡이다.
+       밤 미러 밑에 뒀다가 옮겼다 — 거기는 밤에 v2 로 «보내는» 자리고
+       이건 낮에 v2 에서 «받는» 것이라 성격이 반대였다. */
+    .addItem("   └ 📥 v2 업체발주 지금 가져오기", "partnerBridgeV2OrdersNow")
     .addItem("2️⃣ 이카운트 업로드용 판매현황 갱신", "partnerRebuildSalesUploadOwner")
     .addItem("   └ 🏝️ 도서산간 추가배송비 확인", "partnerCheckIslandShippingOwner")
     .addItem("3️⃣ 대리공급업체로 발주 Push", "partnerPushOrdersToExclusiveFormsOwner")
@@ -326,8 +332,6 @@ function registerPartnerMenu_() {
             .addItem("   └ 🔎 반품 미러 걸렸나", "partnerCheckReturnsMirrorTrigger")
             .addItem("   └ ▶ 반품 지금 보내기 (전체)", "partnerMirrorReturnsAll")
             .addSeparator()
-            .addItem("📥 업체발주 지금 옮기기 (v2 → 허브)", "partnerBridgeV2OrdersNow")
-            .addItem("🗂 커뮤니티 보드 미러 걸기", "partnerInstallBoardMirrorTrigger")
             .addItem("   └ 🔎 보드 미러 걸렸나", "partnerCheckBoardMirrorTrigger")
             .addItem("   └ ▶ 보드 지금 보내기", "partnerMirrorBoardNow")
         )
