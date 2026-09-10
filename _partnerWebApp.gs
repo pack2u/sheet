@@ -441,6 +441,11 @@ function partnerDiagnosePriceMatch() {
  *   3) 최근 7일간 미생성 마감을 소급 확인 → 데이터 있으면 오늘 날짜로 통합 생성
  */
 function _pep_unifiedDailyArchiveScheduled_() {
+  /* 밤 미러 트리거 점검 — 낮(12:30)에도 보지만 여기가 마지막 관문이다.
+     이 뒤 21:30·21:40 에 미러가 돌아야 하므로, 빠져 있으면 지금 걸어야
+     오늘 밤 것이 넘어간다. (2026-09-10) */
+  _pt_ensureMirrorTriggers_();
+
   try {
     var now = new Date();
     // ★ 2026-08-03: 당일 22:00 실행 → 당일 날짜 그대로 사용 (yesterday 계산 불필요)
@@ -1782,6 +1787,12 @@ function _trigger_pushInvoices_() {
 
 /** ★ 2026-07-02: Supabase DB 동기화 (17:00) — Silent */
 function _trigger_syncDb_() {
+  /* ★ 밤 미러 트리거가 빠져 있으면 여기서 챙긴다 ★  (2026-09-10)
+     보드 미러를 만들어 놓고 «거는 일»을 사람에게 넘겼다가 이틀을 놓쳤다.
+     낮에 도는 이 자리에서 한 번 보면 그날 밤에는 돈다. 곁다리라 절대
+     예외를 밖으로 내보내지 않는다 (_pt_ensureMirrorTriggers_ 안에서 삼킨다). */
+  _pt_ensureMirrorTriggers_();
+
   // 주말 차단
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → DB 동기화 스킵"); return; }
   try {

@@ -436,7 +436,18 @@ function _api_runTask_(params) {
       fetchInvoices:  { label: "송장 수집",      fn: function() { partnerFetchInvoices(); } },
       pushInvoices:   { label: "송장 배포",      fn: function() { partnerPushInvoices(); } },
       exclusivePush:  { label: "대리공급 Push",  fn: function() { partnerPushOrdersToExclusiveForms(); } },
-      syncDb:         { label: "DB 동기화",      fn: function() { var o = _sb_syncOrders_(); var v = _sb_syncVendors_(); return { orders: o, vendors: v }; } }
+      syncDb:         { label: "DB 동기화",      fn: function() { var o = _sb_syncOrders_(); var v = _sb_syncVendors_(); return { orders: o, vendors: v }; } },
+
+      /* ★ 2026-09-10: 트리거를 원격으로 건다 ★
+         밤 미러 트리거는 여태 «사람이 시트 메뉴에서 눌러야» 걸렸다. 그래서
+         보드 미러가 9/8 이후로 안 걸린 채 방치됐다 — 만들어 놓고 거는 일을
+         넘긴 내 잘못이다. 여기 문을 내면 원격에서 걸 수 있다.
+         트리거는 몇 해에 한 번 거는 것이라 문이 늘어도 위험이 늘지 않는다. */
+      installBoardMirror:   { label: "보드 미러 트리거 설치", fn: function() { return partnerInstallBoardMirrorTrigger(); } },
+      checkBoardMirror:     { label: "보드 미러 트리거 확인", fn: function() { return partnerCheckBoardMirrorTrigger(); } },
+      installReturnsMirror: { label: "반품 미러 트리거 설치", fn: function() { return partnerInstallReturnsMirrorTrigger(); } },
+      checkReturnsMirror:   { label: "반품 미러 트리거 확인", fn: function() { return partnerCheckReturnsMirrorTrigger(); } },
+      mirrorBoardNow:       { label: "보드 지금 보내기",     fn: function() { return partnerMirrorBoardNow(); } }
     };
 
     var spec = taskMap[task];

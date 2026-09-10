@@ -246,6 +246,68 @@ function partnerCheckBoardMirrorTrigger() {
   return { count: found.length, msg: msg };
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  밤 미러 트리거가 빠져 있으면 **스스로 건다**
+ *  ★ 2026-09-10
+ *
+ *  ★ 왜 만드나 ★
+ *    보드 미러를 9/9 에 만들어 놓고 «거는 일»을 사람에게 넘겼다. 그래서
+ *    9/8 이후로 안 걸린 채 이틀이 지났고, v2 의 보드가 그동안 멈춰 있었다.
+ *    만든 사람만 알고 있는 「메뉴를 한 번 눌러야 한다」는 절차는 반드시
+ *    잊힌다. 잊혀도 도는 쪽으로 만든다.
+ *
+ *    새 미러를 붙일 때마다 이 표에 한 줄만 더하면 된다.
+ *
+ *  ★ 한 번 걸린 것은 다시 안 건다 ★
+ *    이미 있으면 아무것도 안 한다. 매번 지웠다 다시 걸면 트리거 id 가
+ *    바뀌어 실행 기록이 끊기고, 하루 두 번 도는 사고도 난다.
+ *
+ *  ★ 절대 밖으로 던지지 않는다 ★
+ *    이건 «곁다리»다. 여기서 예외가 나서 밤 마감이 통째로 못 도는 일은
+ *    있어서는 안 된다.
+ *
+ *  @return {Object} {건 것:[], 이미:[], 오류:[]}
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pt_ensureMirrorTriggers_() {
+  var 표 = [
+    { fn: "_pbv_scheduled_", h: 21, m: 40, label: "커뮤니티 보드 → v2" },
+    { fn: "_prv_scheduled_", h: 21, m: 30, label: "반품대장 → v2" }
+  ];
+  var out = { 건것: [], 이미: [], 오류: [] };
+  try {
+    var have = {};
+    var all = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < all.length; i++) have[all[i].getHandlerFunction()] = true;
+
+    for (var t = 0; t < 표.length; t++) {
+      var s = 표[t];
+      if (have[s.fn]) { out.이미.push(s.label); continue; }
+      try {
+        ScriptApp.newTrigger(s.fn).timeBased().everyDays(1)
+          .atHour(s.h).nearMinute(s.m).create();
+        out.건것.push(s.label + " (" + s.h + ":" + (s.m < 10 ? "0" + s.m : s.m) + ")");
+      } catch (e1) {
+        out.오류.push(s.label + " — " + (e1 && e1.message ? e1.message : e1));
+      }
+    }
+
+    if (out.건것.length) {
+      Logger.log("[미러트리거] 빠져 있어 걸었습니다: " + out.건것.join(", "));
+      /* 조용히 걸면 아무도 모른다. 걸었을 때만 알린다 — 이미 있을 때는 조용하다. */
+      try {
+        _chat_sendCard_("⏰ 밤 미러 트리거를 자동으로 걸었습니다",
+          Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"),
+          [{ label: "건 것", value: out.건것.join(" · ") }]);
+      } catch (eC) {}
+    }
+  } catch (e) {
+    Logger.log("[미러트리거] 점검 실패(무시): " + (e && e.message ? e.message : e));
+  }
+  return out;
+}
+
 /** 트리거가 부르는 자리. 예외를 절대 밖으로 내보내지 않는다. */
 function _pbv_scheduled_() {
   try {
