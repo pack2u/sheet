@@ -788,14 +788,26 @@ function csAttachHandoffFile(payload) {
     var name = _cs_hb_attSafe_(payload.name) || ("첨부_" + _cs_hb_now_("yyMMdd_HHmmss"));
     var blob = Utilities.newBlob(bytes, mime, name);
 
-    var file = _cs_hb_attFolder_().createFile(blob);
-    // 링크를 아는 사람은 볼 수 있게 — 카드 썸네일이 각자 브라우저에서 바로 뜨도록
-    try {
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    } catch (eS) {}
+    /* ★ 2026-09-10: 파일은 «회사 계정»이 만든다 ★
+       여기서 직접 만들면 소유자가 «올린 사람»이 된다. 실제로 보드 첨부는
+       폴더 자체가 직원 개인 드라이브였고 안의 파일은 개인 계정 다섯 곳에
+       흩어져 있었다. 파일 만드는 일만 팩투유 권한으로 도는 보관소에
+       맡긴다 (csFileStore.gs). 안 되면 옛 방식으로 가되 로그를 남긴다. */
+    var fileId, put = csFileStorePut("board", bytes, mime, name);
+    if (put.ok) {
+      fileId = put.fileId;
+    } else {
+      Logger.log("[보드첨부] 보관소 실패 → 예전 방식으로 올립니다: " + put.error);
+      var file = _cs_hb_attFolder_().createFile(blob);
+      // 링크를 아는 사람은 볼 수 있게 — 카드 썸네일이 각자 브라우저에서 바로 뜨도록
+      try {
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (eS) {}
+      fileId = file.getId();
+    }
 
     var item = {
-      fileId: file.getId(), name: name, mime: mime,
+      fileId: fileId, name: name, mime: mime,
       at: _cs_hb_now_("yyMMdd HH:mm"), by: staff,
     };
     list.push(item);

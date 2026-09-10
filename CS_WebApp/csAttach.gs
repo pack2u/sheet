@@ -178,6 +178,22 @@ function csAttachReturnPhotos(payload) {
       var one = blobs[i];
       var fname = who + "_" + tabName + "_" + rowNum + "_" + stampName +
         (blobs.length > 1 ? "_" + (i + 1) : "") + "." + _cs_attExt_(one.mime, one.name);
+      /* ★ 2026-09-10: 파일은 «회사 계정»이 만든다 ★
+         여기서 직접 만들면 소유자가 «올린 사람»이 된다. 이 웹앱은 접속한 사람
+         권한으로 돌기 때문이다. 실제로 2주치 반품 사진이 전부 직원 개인 지메일
+         소유였고, 그 사람이 계정을 정리하면 대장의 링크가 통째로 죽는다.
+         그래서 파일 만드는 일만 팩투유 권한으로 도는 보관소에 맡긴다.
+         (csFileStore.gs) */
+      var put = csFileStorePut("return", one.bytes, one.mime, fname);
+      if (put.ok) {
+        saved.push({ fileId: put.fileId, fileName: fname, url: put.url });
+        continue;
+      }
+
+      /* 보관소가 안 되면 옛 방식으로 간다 — **사진은 올라가야 한다.**
+         CS 가 고객과 통화하면서 올리는 것이라 여기서 막히면 일이 멈춘다.
+         다만 왜 그랬는지는 남긴다. 조용히 옛날로 돌아가면 아무도 모른다. */
+      Logger.log("[CS_ATTACH] 보관소 실패 → 예전 방식으로 올립니다: " + put.error);
       var file = folder.createFile(Utilities.newBlob(one.bytes, one.mime, fname));
       // 링크를 아는 사람은 볼 수 있게 — 각자 브라우저에서 썸네일이 바로 뜨도록
       try {
