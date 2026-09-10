@@ -10,59 +10,46 @@
  *    그런데 출고는 **협력업체_발주허브**를 보고 돈다 — 세트분리도, 송장수집도,
  *    마감도 전부 그 탭이다. 옮기지 않으면 업체는 넣은 줄 아는데 아무도 안 보낸다.
  *
- *    지금까지는 직원이 손으로 시트에 넣고 v2 에서 「반영」을 눌렀다.
- *    그 손을 없애는 것이 이 파일이다.
- *
  *  ★ 두 번 넣지 않는 것이 제일 중요하다 ★
  *    발주가 두 번 들어가면 물건이 두 번 나간다. 되돌리는 데 돈이 든다.
  *    그래서 **먼저 찜하고(claim) 나중에 넣는다.**
- *      ① PostgREST 로 `status=eq.접수` 인 행만 골라 `반영` 으로 바꾼다.
- *         조건이 붙어 있으므로 두 번 돌아도 두 번째는 0건을 가져간다.
+ *      ① v2 에 「접수인 것을 반영으로 바꾸고 그 행들을 달라」고 한다.
+ *         두 번 물어도 두 번째는 0건이다 — 조건이 상태를 보고 있다.
  *      ② 찜한 것만 허브에 넣는다.
- *      ③ 넣다가 실패하면 **되돌린다**(status 를 접수로) — 그래야 다음에 다시 온다.
+ *      ③ 넣다가 실패하면 **되돌린다** — 그래야 다음에 다시 온다.
  *
- *    반대로 「넣고 나서 표시」하면, 넣은 뒤 표시가 실패했을 때 다음 회차에
- *    또 넣는다. 그 실패가 더 비싸다.
+ *  ★ Supabase 를 직접 안 부른다 ★
+ *    처음엔 PostgREST 를 바로 불렀다. 401 이 왔다 —
+ *      "Forbidden use of secret API key in browser"
+ *    UrlFetchApp 의 User-Agent 가 `Mozilla/5.0 (compatible; Google-Apps-Script…)`
+ *    로 시작해서 Supabase 가 브라우저로 본다 (UA 만 바꿔 가며 확인했다).
+ *    UA 를 속일 수도 있지만 그러지 않는다. secret 키가 시트 스크립트에 있는 것
+ *    자체가 옳지 않다 — 편집기는 직원 여럿이 연다.
+ *    그래서 키는 Vercel 에만 두고, 여기서는 미러들과 **같은 토큰**으로 문을 연다.
+ *      → app/src/app/api/vendor-requests/bridge/route.ts
  *
- *  ★ 조용히 실패하지 않는다 ★
- *    오늘 하루에만 「매일 실패하면서 ✅ 로 보고하던」 동기화를 하나 찾았다.
- *    여기서는 넣은 건수·못 넣은 건수를 로그와 구글 챗에 남긴다.
- *    아무 일도 없었으면 조용하다 — 매번 알리면 아무도 안 본다.
+ *  ★ 이 파일은 «한시적»이다 ★
+ *    발주가 v2 안에서 끝나 허브 탭이 필요 없어지면 이 다리도 없어진다.
+ *    지울 것을 알고 만든 것이라 얇게 만든다.
  * ══════════════════════════════════════════════════════════════
  */
 
-/**
- * v2 의 **Supabase** 주소 — PostgREST 를 직접 부른다.
- *
- * ★ V2_URL 을 쓰면 안 된다 ★
- *   V2_URL 은 웹앱(pack2u-partner.vercel.app)이다. 거기에 /rest/v1 을 붙이면
- *   404 가 오고, 다리는 「옮길 것 없음」처럼 조용히 지나간다. 처음에 그렇게
- *   짰다가 올리기 전에 잡았다.
- *   _partnerSupabase.gs 의 _SB_URL(bmlbe…) 도 **다른 프로젝트**라 못 쓴다.
- */
+/** v2 웹앱 주소·토큰 — 반품/보드 미러가 쓰는 것과 같다 (_secrets.gs) */
 function _v2ob_url_() {
-  try { if (typeof V2_SUPABASE_URL !== "undefined" && V2_SUPABASE_URL) return String(V2_SUPABASE_URL).replace(/[/]+$/, ""); } catch (e) {}
-  try { return (PropertiesService.getScriptProperties().getProperty("V2_SUPABASE_URL") || "").replace(/[/]+$/, ""); } catch (e) {}
+  try { if (typeof V2_URL !== "undefined" && V2_URL) return String(V2_URL).replace(/[/]+$/, ""); } catch (e) {}
+  try { return (PropertiesService.getScriptProperties().getProperty("V2_URL") || "").replace(/[/]+$/, ""); } catch (e) {}
   return "";
 }
-function _v2ob_key_() {
-  /* PostgREST 를 직접 부르므로 service_role 키가 필요하다.
-     ingest 토큰(V2_INGEST_TOKEN)은 우리 API 라우트용이라 여기서는 못 쓴다. */
-  try { if (typeof V2_SERVICE_KEY !== "undefined" && V2_SERVICE_KEY) return String(V2_SERVICE_KEY); } catch (e) {}
-  try { return PropertiesService.getScriptProperties().getProperty("V2_SERVICE_KEY") || ""; } catch (e) {}
+function _v2ob_token_() {
+  try { if (typeof V2_INGEST_TOKEN !== "undefined" && V2_INGEST_TOKEN) return String(V2_INGEST_TOKEN); } catch (e) {}
+  try { return PropertiesService.getScriptProperties().getProperty("V2_INGEST_TOKEN") || ""; } catch (e) {}
   return "";
 }
 
-/** 한 번에 옮길 최대 건수. 많아도 나눠서 여러 번 돌면 된다. */
-var _V2OB_MAX_ = 200;
+var _V2OB_PATH_ = "/api/vendor-requests/bridge";
 
 function _v2ob_ready_() {
-  return !!(_v2ob_url_() && _v2ob_key_());
-}
-
-function _v2ob_headers_() {
-  var k = _v2ob_key_();
-  return { apikey: k, Authorization: "Bearer " + k, "Content-Type": "application/json" };
+  return !!(_v2ob_url_() && _v2ob_token_());
 }
 
 /** MMdd-ds-xxxx — 발주 수집이 쓰는 것과 같은 형식이다 (_partnerOrders.gs 1109행) */
@@ -71,60 +58,43 @@ function _v2ob_uid_() {
     "-ds-" + Utilities.getUuid().substring(0, 4);
 }
 
-/**
- * ① 찜한다 — 「접수」인 것을 「반영」으로 바꾸면서 그 행들을 돌려받는다.
- *
- * PostgREST 의 PATCH + `Prefer: return=representation` 이라 **바꾼 행이 그대로 온다.**
- * 조건에 `status=eq.접수` 가 붙어 있으므로, 두 번 돌아도 두 번째는 아무것도 못 가져간다.
- * 이것이 이 다리의 자물쇠다.
- */
-function _v2ob_claim_() {
-  var url = _v2ob_url_() + "/rest/v1/vendor_order_requests" +
-    "?status=eq.%EC%A0%91%EC%88%98&order=created_at.asc&limit=" + _V2OB_MAX_;
-  var h = _v2ob_headers_();
-  h["Prefer"] = "return=representation";
-
-  var res = UrlFetchApp.fetch(url, {
-    method: "patch",
-    headers: h,
+/** 문 하나로 세 가지를 다 한다 (op: claim | unclaim | uid) */
+function _v2ob_call_(payload) {
+  var res = UrlFetchApp.fetch(_v2ob_url_() + _V2OB_PATH_, {
+    method: "post",
+    contentType: "application/json",
+    headers: { "x-ingest-token": _v2ob_token_() },
+    payload: JSON.stringify(payload),
     muteHttpExceptions: true,
-    payload: JSON.stringify({
-      status: "반영",
-      handled_at: new Date().toISOString(),
-      handled_memo: "허브로 자동 반영",
-    }),
   });
-  if (res.getResponseCode() !== 200) {
-    throw new Error("찜하기 실패 HTTP " + res.getResponseCode() + " " +
-      res.getContentText().substring(0, 200));
+  var code = res.getResponseCode();
+  var text = res.getContentText();
+  if (code !== 200) {
+    throw new Error("HTTP " + code + " " + String(text).substring(0, 200));
   }
-  return JSON.parse(res.getContentText() || "[]");
+  var j;
+  try { j = JSON.parse(text); } catch (e) { throw new Error("응답을 못 읽었습니다: " + String(text).substring(0, 120)); }
+  if (!j || j.ok !== true) throw new Error(String((j && j.error) || "알 수 없는 실패"));
+  return j;
 }
 
-/** ③ 되돌린다 — 허브에 못 넣었으면 다음에 다시 오게 한다. */
+/** ① 찜한다 — 「접수」를 「반영」으로 바꾸면서 그 행들을 받아 온다. 이게 자물쇠다. */
+function _v2ob_claim_() {
+  return _v2ob_call_({ op: "claim" }).rows || [];
+}
+
+/** ③ 되돌린다 — 허브에 못 넣었으면 다음 회차에 다시 오게 한다. */
 function _v2ob_unclaim_(ids) {
   if (!ids || !ids.length) return;
-  var inList = "(" + ids.map(function (x) { return '"' + x + '"'; }).join(",") + ")";
-  var url = _v2ob_url_() + "/rest/v1/vendor_order_requests?id=in." + encodeURIComponent(inList);
-  UrlFetchApp.fetch(url, {
-    method: "patch",
-    headers: _v2ob_headers_(),
-    muteHttpExceptions: true,
-    payload: JSON.stringify({
-      status: "접수", handled_at: null, hub_uid: null,
-      handled_memo: "허브 넣기 실패 — 다시 시도합니다",
-    }),
-  });
+  try { _v2ob_call_({ op: "unclaim", ids: ids }); }
+  catch (e) { Logger.log("[V2발주다리] 되돌리기 실패: " + (e && e.message ? e.message : e)); }
 }
 
-/** 찜한 행에 고유ID 를 적어 둔다. 나중에 「그 발주가 어느 주문이 됐나」를 잇는 값이다. */
-function _v2ob_setUid_(id, uid) {
-  UrlFetchApp.fetch(_v2ob_url_() + "/rest/v1/vendor_order_requests?id=eq." + id, {
-    method: "patch",
-    headers: _v2ob_headers_(),
-    muteHttpExceptions: true,
-    payload: JSON.stringify({ hub_uid: uid }),
-  });
+/** 찜한 행에 고유ID 를 적어 둔다. 「그 발주가 어느 주문이 됐나」를 잇는 값이다. */
+function _v2ob_setUids_(pairs) {
+  if (!pairs || !pairs.length) return 0;
+  try { return _v2ob_call_({ op: "uid", pairs: pairs }).n || 0; }
+  catch (e) { Logger.log("[V2발주다리] 고유ID 쓰기 실패: " + (e && e.message ? e.message : e)); return 0; }
 }
 
 /**
@@ -134,7 +104,7 @@ function _v2ob_setUid_(id, uid) {
  */
 function partnerBridgeV2Orders() {
   if (!_v2ob_ready_()) {
-    var m = "v2 주소나 service_role 키가 없습니다 (_secrets.gs V2_SUPABASE_URL · V2_SERVICE_KEY)";
+    var m = "v2 주소나 토큰이 없습니다 (_secrets.gs V2_URL · V2_INGEST_TOKEN)";
     Logger.log("[V2발주다리] " + m);
     return { ok: false, moved: 0, failed: 0, msg: m };
   }
@@ -162,32 +132,13 @@ function partnerBridgeV2Orders() {
     Logger.log("[V2발주다리] " + m2);
     return { ok: false, moved: 0, failed: claimed.length, msg: m2 };
   }
-
-  /* ★ 업체 이름은 따로 받아 온다 ★
-     찜하기(PATCH)는 «표»를 고치므로 돌려주는 것도 표의 열뿐이다 — 업체 이름은
-     뷰(vendor_order_requests_v)에만 있다. 그래서 vendor_id 로 한 번 더 묻는다.
-     이름이 비면 허브의 「발주업체」가 비고, 그러면 뒤가 통째로 안 이어진다. */
-  var names = {};
-  try {
-    var ids = claimed.map(function (r) { return r.vendor_id; })
-      .filter(function (v, i, a) { return v && a.indexOf(v) === i; });
-    var inList = "(" + ids.map(function (x) { return '"' + x + '"'; }).join(",") + ")";
-    var vres = UrlFetchApp.fetch(
-      _v2ob_url_() + "/rest/v1/vendors?select=id,name&id=in." + encodeURIComponent(inList),
-      { headers: _v2ob_headers_(), muteHttpExceptions: true });
-    if (vres.getResponseCode() === 200) {
-      JSON.parse(vres.getContentText() || "[]").forEach(function (v) { names[v.id] = v.name; });
-    }
-  } catch (eN) {
-    Logger.log("[V2발주다리] 업체 이름 조회 실패: " + eN.message);
-  }
-
-  /* 이름을 못 구한 것이 있으면 **넣지 않고 되돌린다.**
-     업체명 없이 들어간 발주는 세트분리에서 길을 잃고, 나중에 찾기가 훨씬 어렵다. */
-  var 이름없음 = claimed.filter(function (r) { return !names[r.vendor_id]; });
+  /* ★ 업체 이름은 v2 가 채워서 보낸다 ★
+     이름이 비면 허브의 「발주업체」가 비고, 그러면 뒤가 통째로 안 이어진다.
+     그래서 하나라도 비면 **넣지 않고 통째로 되돌린다.** */
+  var 이름없음 = claimed.filter(function (r) { return !r.vendor_name; });
   if (이름없음.length) {
     _v2ob_unclaim_(claimed.map(function (x) { return x.id; }));
-    var mN = "업체 이름을 못 구해 " + claimed.length + "건을 되돌렸습니다";
+    var mN = "업체 이름이 비어 " + claimed.length + "건을 되돌렸습니다";
     Logger.log("[V2발주다리] " + mN);
     return { ok: false, moved: 0, failed: claimed.length, msg: mN };
   }
@@ -202,7 +153,7 @@ function partnerBridgeV2Orders() {
     uids.push({ id: r.id, uid: uid });
     rows.push([
       now,                                   // A 수집일시
-      String(names[r.vendor_id] || ""),      // B 발주업체
+      String(r.vendor_name || ""),           // B 발주업체
       uid,                                   // C 고유ID
       today,                                 // D 주문일자
       String(r.ecount_code || ""),           // E 이카운트코드
@@ -235,10 +186,7 @@ function partnerBridgeV2Orders() {
 
   /* 고유ID 를 v2 에 적는다. 실패해도 발주는 이미 들어갔으므로 되돌리지 않는다 —
      이어 보는 값이 없을 뿐이다. 로그에는 남긴다. */
-  var uidFail = 0;
-  for (var u = 0; u < uids.length; u++) {
-    try { _v2ob_setUid_(uids[u].id, uids[u].uid); } catch (eU) { uidFail++; }
-  }
+  var uidFail = uids.length - _v2ob_setUids_(uids);
 
   var msg = "업체발주 " + rows.length + "건을 허브로 옮겼습니다" +
     (uidFail ? " (고유ID 표시 실패 " + uidFail + "건)" : "");
