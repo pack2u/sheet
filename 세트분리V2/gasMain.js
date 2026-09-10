@@ -28,7 +28,7 @@ function onOpen() {
 
     .addSubMenu(ui.createMenu('📦 자료 준비')
       .addItem('판매현황 비우기', 'ss_판매현황비우기')
-      .addItem('판매현황 원천 확인 / 이 시트로 옮기기', 'ss_판매현황원천')
+      .addItem('판매현황 원천 확인', 'ss_판매현황원천')
       .addItem('📮 우편번호 자동조회 (카카오)', 'ss_우편번호채우기'))
 
     .addSubMenu(ui.createMenu('🔗 송장 매칭')
