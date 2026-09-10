@@ -454,8 +454,7 @@ function _api_runTask_(params) {
          할 때와, 다리가 진짜 도는지 밖에서 확인할 때를 위한 것이다.
          두 번 눌러도 두 번 안 나간다 — 먼저 찜하고 넣기 때문이다. */
       bridgeV2Orders:       { label: "v2 업체발주 옮기기",   fn: function() { return partnerBridgeV2Orders(); } },
-      mirrorProductsV2:     { label: "품목 상태·재고 → v2", fn: function() { return partnerMirrorProductsToV2(); } },
-      mirrorStockoutsV2:    { label: "품절상품 → v2",      fn: function() { return partnerMirrorStockoutsToV2(); } }
+      mirrorProductsV2:     { label: "품목 상태·재고 → v2", fn: function() { return partnerMirrorProductsToV2(); } }
     };
 
     var spec = taskMap[task];

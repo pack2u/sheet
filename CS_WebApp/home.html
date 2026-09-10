@@ -1986,17 +1986,22 @@
     }
     .os-dash-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); letter-spacing: 0.03em; }
     /* ── 팩투유 품절상품 (2026-09-11) ──
-       전화를 받으면서 보는 표다. 대체상품·급발송대안이 품목명 옆에 있어야
-       그 자리에서 답한다. 눌러 들어가면 늦다. */
+       ★ 표를 쓰지 않는다 ★
+         이 칸은 주문 칸 안이라 좁다. 여섯 칸짜리 표를 넣었더니 글자가 접혀
+         한 줄이 다섯 줄 높이가 됐다 — 여덟 건 보는 데 화면을 다 썼다.
+         그래서 한 건을 «두 줄»로 눕힌다. 첫 줄에 품목과 상태, 둘째 줄에
+         입고·대체·급발송. 전화받으며 훑는 데는 이 편이 빠르다. */
     .so-grp { margin-bottom: 10px; }
-    .so-grp-h { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; margin:0 0 4px; }
+    .so-grp-h { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; margin:0 0 5px; }
     .so-grp-n { color: var(--text-muted); font-weight:400; }
-    .so-tbl { width:100%; border-collapse:collapse; font-size:11.5px; }
-    .so-tbl th, .so-tbl td { padding:4px 6px; border-bottom:1px solid rgba(255,255,255,0.06); text-align:left; vertical-align:top; }
-    .so-tbl th { font-size:10.5px; font-weight:700; color:var(--text-muted); white-space:nowrap; }
-    .so-tbl td.nm { font-weight:600; }
-    .so-tbl td.cd { font-size:10px; color:var(--text-muted); }
-    .so-nowrap { white-space:nowrap; }
+    .so-row { padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.06); }
+    .so-row:last-child { border-bottom:none; }
+    .so-l1 { display:flex; align-items:baseline; gap:6px; }
+    .so-nm { font-size:11.5px; font-weight:600; flex:1 1 auto; min-width:0; }
+    .so-cd { font-size:10px; color:var(--text-muted); font-weight:400; margin-left:4px; }
+    .so-st { font-size:10.5px; font-weight:700; white-space:nowrap; flex:0 0 auto; }
+    .so-l2 { font-size:10.5px; color:var(--text-muted); margin-top:1px; }
+    .so-l2 b { color:var(--text-secondary); font-weight:600; }
     .so-foot { font-size:10.5px; color:var(--text-muted); margin-top:4px; }
     .os-dash-refresh {
       border: none; background: transparent; color: var(--text-muted);
@@ -5787,25 +5792,27 @@
         var 무리 = res.rows.filter(function (r) { return r.kind === k; });
         if (!무리.length) continue;
 
-        html += '<div class="so-grp">' +
-          '<div class="so-grp-h"><span style="color:' + SO_TONE[k] + '">' + SO_LABEL[k] + '</span>' +
-          '<span class="so-grp-n">' + 무리.length + '</span></div>' +
-          '<table class="so-tbl"><thead><tr>' +
-            '<th>품목</th><th>입고 예정</th><th>' + (k === '예상' ? '재고' : '상태') + '</th>' +
-            '<th>대체상품</th><th>급발송</th></tr></thead><tbody>';
+        html += '<div class="so-grp"><div class="so-grp-h">' +
+          '<span style="color:' + SO_TONE[k] + '">' + SO_LABEL[k] + '</span>' +
+          '<span class="so-grp-n">' + 무리.length + '</span></div>';
 
         for (var i = 0; i < 무리.length; i++) {
           var r = 무리[i];
-          html += '<tr>' +
-            '<td class="nm">' + esc(r.name) +
-              (r.code ? '<div class="cd">' + esc(r.code) + '</div>' : '') + '</td>' +
-            '<td class="so-nowrap">' + soVal(r.eta) + '</td>' +
-            '<td style="color:' + SO_TONE[k] + '">' + soVal(r.note) + '</td>' +
-            '<td>' + soVal(r.alt) + '</td>' +
-            '<td style="color:var(--text-muted)">' + soVal(r.urgent) + '</td>' +
-          '</tr>';
+          /* 둘째 줄 — 있는 것만 적는다. 「—」가 줄줄이 늘어서면 읽을 것이 늘기만 한다. */
+          var bits = [];
+          if (r.eta) bits.push('입고 <b>' + soVal(r.eta) + '</b>');
+          if (r.alt && r.alt !== '없음') bits.push('대체 <b>' + esc(r.alt) + '</b>');
+          if (r.urgent && r.urgent !== '없음') bits.push(esc(r.urgent));
+
+          html += '<div class="so-row"><div class="so-l1">' +
+            '<span class="so-nm">' + esc(r.name) +
+              (r.code ? '<span class="so-cd">' + esc(r.code) + '</span>' : '') + '</span>' +
+            '<span class="so-st" style="color:' + SO_TONE[k] + '">' + soVal(r.note) + '</span>' +
+          '</div>' +
+          (bits.length ? '<div class="so-l2">' + bits.join(' · ') + '</div>' : '') +
+          '</div>';
         }
-        html += '</tbody></table></div>';
+        html += '</div>';
       }
       el.innerHTML = html;
     }

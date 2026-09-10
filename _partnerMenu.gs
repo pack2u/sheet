@@ -321,7 +321,6 @@ function registerPartnerMenu_() {
         /* 위 항목은 «옛» Supabase 로 간다. 이건 v2 로 간다 — 다른 곳이다.
            평소엔 이카운트 배치(06:00·12:00) 직후에 저절로 돈다. */
         .addItem("📦 품목 상태·재고 → v2 지금 보내기", "partnerMirrorProductsNow")
-        .addItem("🚫 팩투유 품절상품 → v2 지금 보내기", "partnerMirrorStockoutsNow")
         .addItem("📋 발주허브 → DB 동기화", "syncOrdersToDbOwner")
         .addItem("🔑 v2 키 넣기", "partnerSetV2Key")
         .addItem("🧪 v2 미러 점검", "partnerDiagnoseV2Mirror")
