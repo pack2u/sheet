@@ -50,32 +50,67 @@ function _pv2_token_() {
   return "";
 }
 
-/** 머리글 줄을 찾아 이름 → 열번호(0부터) 를 만든다. 1~4행 안에서 찾는다. */
+/**
+ * 머리글을 찾아 이름 → 열번호(0부터) 를 만든다.
+ *
+ * ★ 머리글이 한 «줄»에 다 있지 않다 ★
+ *   상품정보 탭은 머리글이 1~3행에 걸쳐 있고 병합된 칸도 있다.
+ *   한 줄만 보고 찾으면 「머리글을 못 찾았습니다」로 멈춘다 — 실제로 그랬다.
+ *   priceManager.gs 도 1행·2행을 섞어 읽는다(1638~1650행). 같은 방식으로 한다:
+ *   **열마다 위에서부터 처음 값이 있는 칸**을 그 열의 이름으로 본다.
+ *
+ * ★ 못 찾으면 «무엇을 봤는지» 보여 준다 ★
+ *   이름만 대고 멈추면 시트를 열어 눈으로 뒤져야 한다. 본 것을 같이 준다.
+ */
 function _pv2_header_(tab, wanted) {
   var rows = Math.min(4, tab.getLastRow());
   if (rows < 1) return null;
-  var head = tab.getRange(1, 1, rows, tab.getLastColumn()).getValues();
-  for (var r = 0; r < rows; r++) {
-    var map = {}, found = 0;
-    for (var c = 0; c < head[r].length; c++) {
-      var v = String(head[r][c] || "").replace(/\s/g, "");
-      for (var w = 0; w < wanted.length; w++) {
-        var key = wanted[w].key;
-        if (map[key] !== undefined) continue;
-        var names = wanted[w].names;
-        for (var n = 0; n < names.length; n++) {
-          if (v === names[n]) { map[key] = c; found++; break; }
+  var lastCol = tab.getLastColumn();
+  var head = tab.getRange(1, 1, rows, lastCol).getValues();
+
+  /* ★ 한 열에 «1~4행 값을 모두» 후보로 둔다 ★
+     「위에서 처음 값」만 보면 안 된다 — 상품정보 A1 에는 갱신 시각이
+     들어 있어서(ThuSep10 2026 12:06:00…) 그걸 열 이름으로 잡았다.
+     실제 「상태」는 그 아래 행에 있다. 그래서 행을 가리지 않고 다 본다. */
+  var cand = [], rowOf = [];
+  for (var c = 0; c < lastCol; c++) {
+    var list = [], first = 0;
+    for (var r = 0; r < rows; r++) {
+      var t = String(head[r][c] || "").replace(/[ 	　]/g, "");
+      if (t) { list.push({ v: t, r: r + 1 }); if (!first) first = r + 1; }
+    }
+    cand.push(list); rowOf.push(first);
+  }
+
+  var map = {}, lastHeaderRow = 1;
+  for (var w = 0; w < wanted.length; w++) {
+    var key = wanted[w].key, want = wanted[w].names;
+    for (var c2 = 0; c2 < cand.length && map[key] === undefined; c2++) {
+      for (var q = 0; q < cand[c2].length && map[key] === undefined; q++) {
+        for (var n = 0; n < want.length; n++) {
+          if (cand[c2][q].v === want[n]) {
+            map[key] = c2;
+            if (cand[c2][q].r > lastHeaderRow) lastHeaderRow = cand[c2][q].r;
+            break;
+          }
         }
       }
     }
-    /* 꼭 있어야 하는 것이 다 있는 줄을 머리글로 본다 */
-    var okAll = true;
-    for (var w2 = 0; w2 < wanted.length; w2++) {
-      if (wanted[w2].required && map[wanted[w2].key] === undefined) { okAll = false; break; }
-    }
-    if (okAll && found > 0) { map._row = r + 1; return map; }
   }
-  return null;
+
+  for (var w2 = 0; w2 < wanted.length; w2++) {
+    if (wanted[w2].required && map[wanted[w2].key] === undefined) {
+      /* 본 것을 남긴다. 이게 없으면 다음 사람이 또 시트를 뒤진다. */
+      map._missing = wanted[w2].key;
+      var seen = [];
+      for (var sc = 0; sc < cand.length; sc++)
+        for (var sq = 0; sq < cand[sc].length; sq++) seen.push(cand[sc][sq].v);
+      map._seen = seen.slice(0, 60).join(" · ");
+      return map;
+    }
+  }
+  map._row = lastHeaderRow;
+  return map;
 }
 
 /** 열 번호를 사람이 읽는 글자로 — 로그에서 눈으로 확인하려고 */
@@ -86,26 +121,55 @@ function _pv2_col_(i) {
   return s;
 }
 
+/** 숫자로 — 빈칸·글자는 null. 0 과 «모름» 을 가르려고 따로 둔다. */
+function _pv2_num_(v) {
+  if (v === null || v === undefined || v === "") return null;
+  var n = Number(String(v).replace(/[, ]/g, ""));
+  return isNaN(n) ? null : n;
+}
+
+/**
+ * 「몸통+뚜껑을 조합해 나가는 세트」인가 — 세트분리와 «같은 규칙»이다
+ * (세트분리V2/core.js ssNeedsBom_).
+ *
+ *   숫자 바로 앞의 한글 「세트」  → 조합 세트  (1000세트 · 100 세트 · 전각 １세트)
+ *   영문 「SET」                 → 한 박스 완제품, 재고를 그대로 믿는다
+ *   「수저세트」·「바디세트」      → 낱말 일부. 조합이 아니다
+ *
+ * 두 곳에 같은 규칙이 있는 것이 마음에 걸리지만, 프로젝트가 달라 함수를
+ * 나눠 쓸 수 없다. 고칠 때는 **반드시 둘 다** 고친다.
+ */
+function _pv2_isComboSet_(name) {
+  var n = String(name || "");
+  if (!n) return false;
+  if (n.indexOf("샘플") !== -1) return false;
+  return /[0-9０-９][ 　]*세트/.test(n);
+}
+
 /** 상품정보 탭 → { code: {item_name, status, retail_price, supplier_name, warehouse} } */
 function _pv2_readMaster_(ss) {
   var tab = ss.getSheetByName(_PV2_MASTER_TAB_);
   if (!tab) throw new Error("「" + _PV2_MASTER_TAB_ + "」 탭이 없습니다");
 
   var map = _pv2_header_(tab, [
+    /* 2026-09-10 실제 머리글을 눈으로 확인하고 맞췄다 —
+       「이카운트상품명/옵션명」이 품목명이고, 재고도 이 탭에 있다. */
     { key: "code", names: ["이카운트코드", "품목코드", "코드"], required: true },
-    { key: "name", names: ["품목명", "상품명"], required: true },
-    { key: "status", names: ["상태"], required: true },
-    { key: "retail", names: ["소비자가", "판매가"], required: false },
+    { key: "name", names: ["이카운트상품명/옵션명", "품목명", "상품명", "품명"], required: true },
+    { key: "status", names: ["상태", "판매상태", "상품상태"], required: true },
+    { key: "stock", names: ["재고수량", "가용수량", "재고"], required: false },
+    { key: "shopname", names: ["쇼핑몰판매상품명"], required: false },
     { key: "supplier", names: ["구매처", "구매처명"], required: false },
     { key: "warehouse", names: ["출고지"], required: false }
   ]);
-  if (!map) {
-    throw new Error("「" + _PV2_MASTER_TAB_ +
-      "」에서 머리글(이카운트코드·품목명·상태)을 못 찾았습니다 — 열이 바뀌었는지 봐 주세요");
+  if (!map || map._missing) {
+    throw new Error("「" + _PV2_MASTER_TAB_ + "」에서 «" + (map && map._missing || "머리글") +
+      "» 을 못 찾았습니다. 본 머리글 → " + ((map && map._seen) || "(없음)"));
   }
   Logger.log("[품목미러] 상품정보 머리글 " + map._row + "행 · 코드=" + _pv2_col_(map.code) +
     " 품목명=" + _pv2_col_(map.name) + " 상태=" + _pv2_col_(map.status) +
-    " 소비자가=" + _pv2_col_(map.retail) + " 출고지=" + _pv2_col_(map.warehouse));
+    " 재고=" + _pv2_col_(map.stock) + " 출고지=" + _pv2_col_(map.warehouse) +
+    " · 머리글 마지막 " + map._row + "행");
 
   var last = tab.getLastRow();
   if (last <= map._row) return {};
@@ -115,16 +179,25 @@ function _pv2_readMaster_(ss) {
   for (var i = 0; i < data.length; i++) {
     var code = String(data[i][map.code] || "").trim();
     if (!code) continue;
+    /* 머리글이 여러 줄이면 그 아래 한두 줄이 아직 부머리글일 수 있다.
+       코드 칸에 「이카운트코드」 같은 낱말이 있으면 그 줄은 자료가 아니다. */
+    if (/^(이카운트코드|품목코드|코드|이카운트)$/.test(code)) continue;
     var name = String(data[i][map.name] || "").trim();
     if (!name) continue;
     out[code] = {
       ecount_code: code,
       item_name: name,
       status: String(data[i][map.status] || "").trim(),
-      retail_price: map.retail !== undefined ? data[i][map.retail] : null,
+      retail_price: null,
       supplier_name: map.supplier !== undefined ? String(data[i][map.supplier] || "").trim() : null,
       warehouse: map.warehouse !== undefined ? String(data[i][map.warehouse] || "").trim() : null,
-      stock_qty: null
+      /* ★ 조합 세트의 재고 숫자는 «뜻이 없다» ★
+         몸통·뚜껑을 따로 갖고 조합해 나가므로 이카운트가 세트 재고를
+         관리하지 않는다. 시트에는 0 으로 보이는데 그 0 은 품절이 아니라
+         「모른다」다. 0 으로 보내면 화면이 품절이라고 말하게 된다.
+         그래서 숫자를 버리고 비운다 — 화면은 「구성품으로 확인」이라 한다. */
+      stock_qty: _pv2_isComboSet_(name) ? null :
+        (map.stock !== undefined ? _pv2_num_(data[i][map.stock]) : null)
     };
     n++;
   }
@@ -146,8 +219,9 @@ function _pv2_readStock_(ss) {
        (세트분리V2/gasIO.js 139행). 매일 도는 쪽이 보는 이름이 맞는 이름이다. */
     { key: "qty", names: ["가용수량", "재고수량", "재고"], required: true }
   ]);
-  if (!map) {
-    Logger.log("[품목미러] 재고 탭 머리글을 못 찾았습니다 — 재고 없이 상태만 보냅니다");
+  if (!map || map._missing) {
+    Logger.log("[품목미러] 재고 탭에서 «" + ((map && map._missing) || "머리글") +
+      "» 을 못 찾았습니다 — 재고 없이 상태만 보냅니다. 본 머리글: " + ((map && map._seen) || "(없음)"));
     return {};
   }
   var last = tab.getLastRow();
