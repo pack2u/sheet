@@ -903,6 +903,17 @@ function runDailyEcountBatch() {
       // ecountStep4() 내부에 10초 대기가 적용되어 있습니다.
       ecountStep4(); 
       SpreadsheetApp.flush();
+
+      /* ★ 2026-09-10: 품목 상태·재고를 v2 로 보낸다 ★
+         **여기서만** 보낸다. 이카운트에서 막 받아온 직후라야 v2 의
+         updated_at 이 「이카운트 기준 시각」과 같은 뜻이 된다.
+         아무 때나 돌리면 시각만 새것이 되고 숫자는 옛것이 된다.
+         실패해도 이카운트 배치는 이미 끝났다 — 삼키고 로그만 남긴다. */
+      try {
+        if (typeof _pv2_scheduled_ === "function") _pv2_scheduled_();
+      } catch (ePv) {
+        Logger.log("[품목미러] 배치 뒤 실행 실패(무시): " + (ePv && ePv.message ? ePv.message : ePv));
+      }
       var elapsed = new Date().getTime() - started;
       appendEcountAutomationLog_("BATCH_ECOUNT", true, "실행 완료 (" + elapsed + "ms)");
       // ★ 2026-06-24: Google Chat 알림 추가
