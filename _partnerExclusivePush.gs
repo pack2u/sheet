@@ -10624,8 +10624,13 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
             //   거래처명 칸에는 "법인/배민상회" 같은 판매처가 들어 있다.
             recipient: getVal(["수취인명", "수취인", "받는사람", "거래처명"]),
             phone: getVal(["전화번호", "전화"]),
-            mobile: getVal(["휴대폰", "핸드폰"]),
-            address: getVal(["주소", "배송지", "배송지주소"]),
+            mobile: getVal(["모바일", "휴대폰", "핸드폰"]),
+            /* ★ 2026-09-10: 「주소1」을 더한다 ★
+               일일마감 헤더는 「주소1」 인데(3437행 배열) 여기서는 「주소」만
+               찾고 있었다. 그래서 v2 daily_archive 26,096행의 **주소가 전부
+               비어 있었다.** 조용히 비어서, v2 는 반품 회수접수를 할 수가 없다
+               (고객 주소를 못 구한다). 「모바일」도 같은 이유로 빠져 있었다. */
+            address: getVal(["주소1", "주소", "배송지", "배송지주소"]),
             ecount_code: getVal(["품목코드", "이카운트코드"]),
             item_name: getVal(["품목명", "상품명"]),
             qty: parseInt(getVal(["수량"])) || 0,
