@@ -497,9 +497,15 @@ function ssNormalize(grid, cfg, warnings) {
  * (「AJ 소스 95파이 소 화이트 1000 SET 합포장」).
  * 이 규칙은 사장님이 쓰시는 이름 규칙 그대로다 — 우리가 만든 것이 아니다.
  */
-function ssNeedsBom_(name) {
+function ssNeedsBom_(name, code) {
   var n = ssText(name);
   if (!n) return false;
+  /* ★ 샘플은 뺀다 (사장님) ★
+     소분해 한두 개씩 조합해 파는 것이 맞지만, 여기서 알릴 대상은 아니다.
+     양이 적어 BOM 을 올릴 값이 없고, 주의만 시끄러워진다.
+     시끄러운 주의는 안 보게 되고, 안 보는 주의는 없느니만 못하다. */
+  if (n.indexOf('샘플') !== -1) return false;
+  if (/^SAMPLE-/i.test(ssText(code))) return false;
   /* ★ 숫자 «바로 앞»에 붙은 「세트」만 본다 ★
      그냥 「세트」가 들어갔는지 보면 낱말 일부인 것까지 걸린다 —
      「KR 수저세트」는 몸통+뚜껑이 아니라 «1000개 묶음» 이라는 뜻이고,
@@ -539,7 +545,7 @@ function ssExplode(lines, masters, warnings) {
          주의 한 줄이다. 못 쪼갠 채 나가는 쪽이 훨씬 비싸다.
 
          분리예외에 들어 있으면 사람이 정한 것이므로 조용히 넘어간다. */
-      if (!parts && !except[L.원본코드] && ssNeedsBom_(L.원본품목명) && !warnedNoBom[L.원본코드]) {
+      if (!parts && !except[L.원본코드] && ssNeedsBom_(L.원본품목명, L.원본코드) && !warnedNoBom[L.원본코드]) {
         warnedNoBom[L.원본코드] = true;
         ssWarn(warnings, '주의', 'BOM_MISSING', L.원본코드,
           '「' + ssText(L.원본품목명) + '」 는 세트인데 BOM현황에 구성이 없습니다. ' +
