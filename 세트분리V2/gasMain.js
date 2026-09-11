@@ -48,6 +48,7 @@ function onOpen() {
       .addItem('검증 (행수 대조)', 'ss_검증'))
 
     .addSubMenu(ui.createMenu('⚙ 설정 · 설치')
+      .addItem('📅 대량등록 대상일수', 'ss_대량등록일수설정')
       .addItem('🔑 카카오 API 키 설정', 'ss_카카오키설정')
       .addItem('🩺 카카오 진단', 'ss_카카오진단')
       .addItem('🧹 합배송조건 정리 / 검증', 'ss_합배송조건정리')
