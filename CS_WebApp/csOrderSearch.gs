@@ -2533,10 +2533,22 @@ var _CS_RETURN_BADGE_DAYS_ = 90;
  *   2 입고      물류팀이 받아서 사진을 올렸다 (입고검수·반품입고·입고)
  *   3 완료      _cs_isReturnDoneMark_ 가 완료로 본 건
  */
+/*
+ * ★ 2026-09-11: 두 군데를 고친다 ★
+ *   ① replace(/s/g) 는 «알파벳 s»를 지운다. 공백을 지우려던 것인데
+ *     역슬래시가 먹혔다. 한글 상태에는 해가 없었지만 뜻이 틀렸다.
+ *   ② 「환불처리」가 어디에도 안 걸려 0(접수)으로 떨어졌다. 옛 값이라
+ *     드롭다운에는 없지만 지난 행에는 남아 있다 — 완료로 본다.
+ *
+ *   ★ 협력업체 포털 portal.html stepIndex 와 «같은 규칙»이다 ★
+ *     한쪽만 고치면 같은 건이 두 화면에서 다른 단계로 보인다.
+ *     실제로 그 일이 있었다 — 포털이 「반품송장」을 몰라 계속 접수였다.
+ */
 function _cs_returnStage_(status, active) {
   if (!active) return 3;
-  var s = String(status || "").replace(/s/g, "");
+  var s = String(status || "").replace(/[ 	]/g, "");
   if (!s) return 0;
+  if (/완료|환불/.test(s)) return 3;
   if (/입고|검수/.test(s)) return 2;
   if (/반품송장|회수|수거/.test(s)) return 1;
   return 0;

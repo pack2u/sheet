@@ -146,6 +146,12 @@ function prpSubmitReturn(sid, data) {
     if (col.phone2 >= 0 && String(data.phone2 || "").trim()) {
       row[col.phone2] = prpFormatPhone_(data.phone2);
     }
+    /* 실번호의 주인 이름. 전용 열이 있을 때만 여기서 적고,
+       없으면 아래 비고에 번호와 함께 따라 붙는다 — 조용히 버리지 않는다. */
+    var p2NameIn = String(data.phone2Name || "").trim().substring(0, 20);
+    if (col.phone2Name >= 0 && p2NameIn) {
+      row[col.phone2Name] = p2NameIn;
+    }
     if (col.pickup >= 0) row[col.pickup] = String(data.pickup || "").trim();
     if (col.item >= 0) row[col.item] = item;
     if (col.qty >= 0) row[col.qty] = String(data.qty || "1").trim();
@@ -158,12 +164,17 @@ function prpSubmitReturn(sid, data) {
        조용히 버리면 업체는 적었는데 아무 데도 없는 번호가 된다. */
     var p2 = String(data.phone2 || "").trim();
     var p2Lost = p2 && col.phone2 < 0;
+    //  이름도 적을 열이 없으면 비고로 흘린다
+    var p2NameLost = p2NameIn && col.phone2Name < 0;
 
     if (col.notice >= 0) {
       row[col.notice] = prpStamp_(PRP_STAFF_PREFIX + sess.vendor) +
         " 업체 포털 접수." +
         (uid ? " 고유ID " + uid + "." : "") +
-        (p2Lost ? " 실번호 " + prpFormatPhone_(p2) + "." : "") +
+        (p2Lost ? " 실번호 " + prpFormatPhone_(p2) +
+           (p2NameIn ? " (" + p2NameIn + ")" : "") + "." : "") +
+        (!p2Lost && p2NameLost ? " 실번호 " + prpFormatPhone_(p2) +
+           " (" + p2NameIn + ")." : "") +
         (memo ? " " + memo : "");
     }
 

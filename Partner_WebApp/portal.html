@@ -99,6 +99,9 @@
     .sub { font-size: 11px; color: #6f748a; margin-top: 6px; }
     /* 전화번호 딱지 — 작고 조용하게. 「안심번호뿐」일 때만 색을 준다
        (2026-09-11 · CS home.html · v2 returns.css 와 같은 규칙) */
+    /* 이름은 번호에 딸린 것이라 번호보다 조용하게, 다만 읽히게
+       (CS home.html · v2 returns.css 의 .ret-ph-who 와 같은 무게) */
+    .ph-who { font-size: 0.92em; font-weight: 600; opacity: 0.85; }
     .ph-tag { font-size: 0.85em; font-weight: 600; opacity: 0.7; }
     .ph-sub { font-size: 0.9em; opacity: 0.55; }
     .ph-warn { font-size: 0.85em; font-weight: 600; color: #e7707f; }
@@ -364,6 +367,16 @@
         <input type="tel" id="nPhone2" inputmode="numeric" autocomplete="off"
                placeholder="안심번호 말고 실제로 통화되는 번호">
       </div>
+      <!-- ★ 그 번호의 주인 ★  (2026-09-11)
+           > "주문자와 상담자가 다른경우가 있어"
+           주문은 며느리가 하고 전화는 시어머니가 받는 식이다.
+           회수 기사가 걸 때 «누구를 찾으면 되는지»가 이 한 낱말이다.
+           대장의 「실번호 이름」 열로 들어간다. -->
+      <div class="fld">
+        <label>실 번호 주인 (선택)</label>
+        <input type="text" id="nPhone2Name" maxlength="20" autocomplete="off"
+               placeholder="주문자와 다르면 적어 주세요">
+      </div>
       <div class="fld">
         <label>원송장번호</label>
         <div class="scan-row">
@@ -553,7 +566,7 @@
         if (FILTER === 'active' && c.done) return false;
         if (FILTER === 'done' && !c.done) return false;
         if (!q) return true;
-        var hay = [c.name, c.item, c.invoice, c.returnInvoice, c.phone, c.phone2, c.status, c.type]
+        var hay = [c.name, c.item, c.invoice, c.returnInvoice, c.phone, c.phone2, c.phone2Name, c.status, c.type]
           .join('').replace(/\s/g, '').toLowerCase();
         return hay.indexOf(q) >= 0;
       });
@@ -582,21 +595,47 @@
      * CS 상태 옵션(_CS_RETURN_STATUS_OPTS_) 중 흐름을 이루는 것만 순서대로 둔다.
      * 철회·취소는 흐름을 벗어나므로 바를 그리지 않고 문장으로 알린다.
      */
-    var STEPS = ['접수', '수거요청', '수거중', '반품입고', '입고검수', '환불처리', '완료'];
+    /* ══════════════════════════════════════════════════════════
+     *  진행 단계 — CS 웹앱과 «같은 규칙»이라야 한다
+     *  2026-09-11
+     *
+     *  > "반품현황에 상태값이 우리 웹앱 반품카드 상황과 안맞고
+     *     서로 같이 반응도 안되"
+     *
+     *  ★ 무엇이 어긋나 있었나 ★
+     *    CS 웹앱은 상태를 넷으로 줄였다 —
+     *      접수 · 반품송장 · 입고검수 · 이카운트OK
+     *    그런데 여기는 옛 일곱 단계(수거요청·수거중·반품입고·환불처리…)를
+     *    그대로 두고 «그 낱말이 들어 있나»로 찾고 있었다.
+     *    「반품송장」은 그 일곱 중 어디에도 안 걸려 맨 아래 return 0 으로
+     *    떨어졌다 — CS 가 회수 송장을 냈는데 업체 화면은 계속 「접수」였다.
+     *    오류가 아니라 «폴백»이라 아무도 몰랐다.
+     *
+     *  ★ 그래서 CS 의 _cs_returnStage_ 와 규칙을 맞춘다 ★
+     *    (CS_WebApp/csOrderSearch.gs) 낱말은 업체가 읽을 말로 바꾸되
+     *    «몇 단계인가»는 두 화면이 반드시 같아야 한다.
+     *    한쪽만 고치면 또 조용히 갈라진다 — 쌍으로 고칠 것.
+     *
+     *  ★ 옛 낱말도 계속 받는다 ★
+     *    드롭다운만 줄었을 뿐 지난 행에는 옛 글자가 그대로 남아 있다.
+     *    수거요청·수거중 → 회수 / 반품입고 → 입고 / 환불처리 → 완료.
+     * ══════════════════════════════════════════════════════════ */
+    var STEPS = ['접수', '회수중', '입고검수', '처리완료'];
 
-    function stepIndex(status) {
-      var s = String(status || '').replace(/\s/g, '');
+    function stepIndex(status, done) {
+      var s = String(status || '').replace(/[ 	]/g, '');
       if (/철회|취소/.test(s)) return -1;
-      if (/이카운트ok/i.test(s)) return STEPS.length - 1; // 완료 뒤 단계라 완료로 본다
-      // 뒤에서부터 찾는다 — '입고검수' 가 '반품입고' 보다 먼저 걸려야 한다
-      for (var i = STEPS.length - 1; i >= 0; i--) {
-        if (s.indexOf(STEPS[i]) >= 0) return i;
-      }
+      if (done) return 3;
+      if (/이카운트ok/i.test(s)) return 3;
+      if (/완료|환불/.test(s)) return 3;
+      /* 「입고」를 먼저 본다 — 「반품입고」가 「반품송장」보다 뒤 단계다 */
+      if (/입고|검수/.test(s)) return 2;
+      if (/반품송장|회수|수거/.test(s)) return 1;
       return 0;
     }
 
     function stepsHtml(c) {
-      var idx = stepIndex(c.status);
+      var idx = stepIndex(c.status, c.done);
       if (idx < 0) {
         return '<div class="steps-off-note">철회된 건입니다. 아래 진행 내역을 확인해 주세요.</div>';
       }
@@ -734,7 +773,11 @@
       if (ph.main) {
         h += '<br><em>연락처</em> ' + esc(ph.main) +
           (ph.mainTag ? ' <span class="ph-tag">' + esc(ph.mainTag) + '</span>' : '') +
-          (ph.sub ? ' <span class="ph-sub">· ' + esc(ph.subTag) + ' ' + esc(ph.sub) + '</span>' : '') +
+          /* 이름은 «실번호» 옆에만 붙는다 — 안심번호의 주인이 아니다.
+             회수 기사가 걸 때 누구를 찾으면 되는지가 이 한 낱말이다. */
+          (c.phone2Name && !ph.mainTag ? ' <span class="ph-who">' + esc(c.phone2Name) + '</span>' : '') +
+          (ph.sub ? ' <span class="ph-sub">· ' + esc(ph.subTag) + ' ' + esc(ph.sub) +
+            (c.phone2Name && ph.subTag === '추가' ? ' ' + esc(c.phone2Name) : '') + '</span>' : '') +
           (ph.onlySafe ? ' <span class="ph-warn">기간이 지나면 끊깁니다</span>' : '');
       }
       if (c.fee) h += '<br><em>반품비</em> <span class="fee">' + esc(c.fee) + '</span>';
@@ -936,7 +979,8 @@
     }
 
     function openNew() {
-      ['nName', 'nPhone', 'nPhone2', 'nInv', 'nItem', 'nMemo', 'nUid'].forEach(function (k) { el(k).value = ''; });
+      ['nName', 'nPhone', 'nPhone2', 'nPhone2Name', 'nInv', 'nItem', 'nMemo', 'nUid']
+        .forEach(function (k) { el(k).value = ''; });
       el('nPhoneHint').hidden = true;
       el('nQty').value = '1';
       el('nMsg').textContent = '';
@@ -955,6 +999,7 @@
         name: el('nName').value,
         phone: el('nPhone').value,
         phone2: el('nPhone2').value,
+        phone2Name: el('nPhone2Name').value,
         qty: el('nQty').value,
         invoice: el('nInv').value,
         item: el('nItem').value,

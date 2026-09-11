@@ -39,7 +39,7 @@ function prpFindHeaderRow_(values) {
 
 function prpMapCols_(header) {
   var col = {
-    date: -1, staff: -1, vendor: -1, name: -1, phone: -1, phone2: -1,
+    date: -1, staff: -1, vendor: -1, name: -1, phone: -1, phone2: -1, phone2Name: -1,
     pickup: -1, item: -1, qty: -1, invoice: -1, type: -1, fee: -1, status: -1, notice: -1,
     returnInvoice: -1
   };
@@ -74,6 +74,16 @@ function prpMapCols_(header) {
        ★ 「추가」를 먼저 걸러야 한다 ★
          /연락처/ 는 「추가연락처」에도 걸린다. 순서에 기대면 언젠가
          열 순서가 바뀌는 날 추가연락처가 주 연락처 자리로 들어간다. */
+    /* ★ 실번호의 «주인 이름» ★  (2026-09-11)
+       > "주문자와 상담자가 다른경우가 있어"
+       대장에 열을 새로 만들었다(9탭 전부, 맨 뒤).
+
+       ★ 「이름」을 먼저 걸러야 한다 ★
+         /실번호/ 는 「실번호 이름」에도 걸린다. 이 줄이 위에 있어야
+         이름 열이 번호 열 자리를 뺏지 않는다 — 그러면 회수 기사에게
+         전화번호 대신 사람 이름을 건네게 된다.
+       CS 웹앱 _cs_mapReturnLedgerCols_ 와 «같은 규칙»이다. */
+    else if (col.phone2Name < 0 && /(실번호|추가연락처|연락처)(이름|성함)|상담자|통화자/.test(h)) col.phone2Name = i;
     else if (col.phone2 < 0 && /추가연락처|추가전화|비상연락|실번호/.test(h)) col.phone2 = i;
     else if (col.phone < 0 && /연락처|전화|휴대폰/.test(h) && !/주소|추가/.test(h)) col.phone = i;
     /* ★ 2026-09-10: 「회수신청」을 더한다 ★
@@ -422,6 +432,8 @@ function prpReadTabCases_(tab, tabName, cutoffYmd, sess) {
       phone: col.phone >= 0 ? prpFormatPhone_(row[col.phone]) : "",
       //  실 전화번호 (추가연락처). 안심번호만 보이면 회수 기사가 못 건다.
       phone2: col.phone2 >= 0 ? prpFormatPhone_(row[col.phone2]) : "",
+      //  그 번호의 주인. 주문자와 통화 상대가 다를 때 적힌다.
+      phone2Name: col.phone2Name >= 0 ? String(row[col.phone2Name] || "").trim() : "",
       item: col.item >= 0 ? String(row[col.item] || "").trim() : "",
       qty: col.qty >= 0 ? String(row[col.qty] || "").trim() : "",
       invoice: invRaw,
