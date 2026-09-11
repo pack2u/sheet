@@ -82,6 +82,7 @@ function ss_설치() {
   ssio_sheet(SSIO_TABS.비배송, SS_NONSHIP_HEADER);
   ssio_sheet(SSIO_TABS.사방넷송장, SS_INVOICE_HEADER);
   ssio_sheet(SSIO_TABS.사방넷등록, SS_REG_HEADER);
+  ssio_sheet(SSIO_TABS.사방넷대량등록, SSB_HEADERS);   // 엑셀 저장 결과 확인용
   ssio_styleHeader(ssio_ss().getSheetByName(SSIO_TABS.비배송), SS_NONSHIP_HEADER.length, { bg: '#4a4a4a' });
   ssio_styleHeader(ssio_ss().getSheetByName(SSIO_TABS.합배송), SS_MERGED_HEADER.length, { bg: '#2c4f6b' });
   var oldHold = ssio_ss().getSheetByName('보류');

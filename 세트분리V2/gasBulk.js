@@ -374,7 +374,8 @@ function ss_사방넷엑셀저장() {
   }
 
   // 확인용으로 시트에도 남긴다
-  ssio_write(SSIO_TABS.사방넷등록, SSB_HEADERS, rows, { bg: '#2c4f6b' });
+  //  «제 탭»에 남긴다 — 「사방넷등록」은 송장 전파의 것이다(gasIO 주석)
+  ssio_write(SSIO_TABS.사방넷대량등록, SSB_HEADERS, rows, { bg: '#2c4f6b' });
 
   var codeLines = [];
   for (var c in res.byCode) if (Object.prototype.hasOwnProperty.call(res.byCode, c)) {
@@ -383,8 +384,32 @@ function ss_사방넷엑셀저장() {
   var msg = '사방넷 송장대량등록' + NL + NL +
     '  · 저장 행 : ' + rows.length + '건' + NL + codeLines.join(NL) + NL +
     '  · 원천 · 임시기록 ' + n1 + ' / 발주허브 ' + n2 +
-    ' / 롯데자사 ' + n3 + ' / 원장(오늘) ' + n4 + NL +
+    ' / 자사출고 ' + n3 + ' / 원장(오늘) ' + n4 +
+    (res.자사탭 && res.자사탭.length ? '  [' + res.자사탭.join(' · ') + ']' : '') + NL +
     '    (중복은 주문번호+송장 기준으로 이미 뺀 숫자입니다)';
+
+  /* ★ 「전파는 385건인데 저장은 91건」에 그 자리에서 답한다 ★  (2026-09-11)
+       송장 전파가 만든 「사방넷등록」 탭과 견준다. 두 기능은 보는 범위가
+       다르다 — 전파는 «이 회차 판매현황», 저장은 «원천 네 곳 + 대상일수».
+       숫자가 다른 게 당연한데, 그 사실이 어디에도 안 적혀 있어서
+       볼 때마다 이유를 찾아야 했다. */
+  try {
+    var regTab = ssio_ss().getSheetByName(SSIO_TABS.사방넷등록);
+    var regN = regTab ? Math.max(0, regTab.getLastRow() - 1) : 0;
+    if (regN) {
+      msg += NL + '  · 「사방넷등록」 탭(송장 전파 결과) : ' + regN + '행' +
+        (regN !== rows.length
+          ? '  ← 여기와 다른 것이 정상입니다 (전파는 이 회차, 저장은 원천 네 곳 + 대상일수)'
+          : '');
+    }
+  } catch (eReg) {}
+  /* 대상일수는 «늘» 적는다. 기본이 「오늘만」이라 지난 주문이 통째로 빠지는데,
+     제외된 게 하나도 없는 날에는 그 설명조차 안 나와 더 헷갈렸다. */
+  var 일수 = ssText(ssio_config()['대량등록_대상일수']) || '1';
+  msg += NL + '  · 대상일수 설정 : ' + 일수 +
+    (일수 === '전체' || 일수 === '0' ? ' (제한 없음)'
+      : 일수 === '1' ? ' (오늘 집하분만)' : ' (오늘부터 ' + 일수 + '일)') +
+    '   ← 설정 탭 「대량등록_대상일수」';
   if (res.skipOld) {
     msg += NL + '  · 대상일 아닌 지난 주문 제외 : ' + res.skipOld + '건' +
       (res.noDate ? ' (날짜 못 읽은 행 ' + res.noDate + '건은 포함)' : '');
@@ -409,14 +434,19 @@ function ss_사방넷엑셀저장() {
     var html = HtmlService.createHtmlOutput(
       '<div style="font-family:sans-serif;padding:8px 4px">' +
       '<p style="margin:0 0 6px"><b>' + fileName + '</b></p>' +
-      '<p style="margin:0 0 14px;color:#555">' + rows.length + '행 · 임시기록 ' + n1 +
-      ' / 발주허브 ' + n2 + ' / 롯데자사 ' + n3 + ' / 원장 ' + n4 + '</p>' +
+      /* ★ 성공했을 때도 «왜 이 숫자인지»를 보여 준다 ★  (2026-09-11)
+         여태 빠진 이유(대상일수·전화주문·택배사코드 미지정)는 «엑셀 저장에
+         실패했을 때만» 보였다. 성공하면 건수만 떠서, 385건인 줄 알았는데
+         91건이 나오면 이유를 물어볼 데가 없었다. */
+      '<pre style="margin:0 0 14px;color:#555;white-space:pre-wrap;' +
+      'font:12px/1.5 -apple-system,sans-serif;max-height:300px;overflow:auto">' +
+      msg.split('&').join('&amp;').split('<').join('&lt;') + '</pre>' +
       '<p style="margin:0">' +
       '<a href="' + dl + '" target="_blank" style="display:inline-block;background:#1f4e78;' +
       'color:#fff;padding:10px 18px;border-radius:4px;text-decoration:none;font-weight:bold">' +
       '⬇ 엑셀 다운로드</a>&nbsp;&nbsp;' +
       '<a href="' + fileUrl + '" target="_blank" style="color:#1f4e78">드라이브에서 열기</a>' +
-      '</p></div>').setWidth(470).setHeight(160);
+      '</p></div>').setWidth(560).setHeight(480);
     SpreadsheetApp.getUi().showModalDialog(html, '사방넷 송장대량등록');
     return;
   } catch (eUi) {
