@@ -341,6 +341,35 @@ function ssio_migrateHeader(name, headers) {
     return '';
   }
 
+  /* ★ 칸 수가 같으면 «이름만 바뀐 것»이다 — 자료를 두고 오지 않는다 ★
+     (2026-09-11)
+
+     실행이력 머리글에 택배사 이름이 박혀 있었다(…'롯데택배'…).
+     오늘 롯데 → 로젠으로 바꾸자 머리글이 달라졌다고 보고 탭을 통째로
+     «구버전»으로 밀어낸 뒤 빈 탭을 새로 만들었다. 그래서 오전 1차(10:05)가
+     현재 실행이력에서 사라져 보였다 — 자료는 옛 탭에 있지만, 이어서 읽는
+     코드는 옛 탭을 안 본다. 그게 더 나쁘다.
+
+     칸 수가 그대로면 자리도 그대로다. 머리글 줄만 새로 쓰면 이어진다.
+     칸 수가 «달라졌을 때»만 옛 탭으로 밀어낸다 — 그때는 자리가 어긋나
+     위치로 옮기면 엉뚱한 칸에 값이 들어간다.
+
+     ★ 칸 수만 보면 안 된다 ★
+       전혀 다른 16칸 표도 「이름만 바뀐 것」으로 보게 된다. 몇 칸이나
+       그대로인지도 함께 본다 — 이름 하나 둘 바꾼 것이면 나머지는 같다.
+       절반도 안 같으면 다른 표로 보고 옛 탭으로 밀어낸다. */
+  if (cur.length === headers.length) {
+    var 같은칸 = 0;
+    for (var q = 0; q < headers.length; q++) {
+      if (ssText(cur[q]) === headers[q]) 같은칸++;
+    }
+    if (같은칸 * 2 > headers.length) {
+      sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+      ssio_styleHeader(sh, headers.length);
+      return '';
+    }
+  }
+
   var old = name + '_구버전_' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd-HHmm');
   sh.setName(old);
   var fresh = ss.insertSheet(name);

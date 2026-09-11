@@ -8,8 +8,18 @@
  */
 
 var SS_SUMMARY_HEADER = ['항목', '값'];
+/* ★ 머리글에 «택배사 이름»을 쓰지 않는다 ★  (2026-09-11)
+     여기 '롯데택배' 가 박혀 있었다. 택배사를 로젠으로 바꾸자 머리글이
+     달라졌고, ssio_migrateHeader 가 «다른 표»로 보고 탭을 통째로
+     실행이력_구버전_… 으로 밀어낸 뒤 빈 탭을 새로 만들었다.
+     그날 오전 1차가 현재 탭에서 사라져 보였다.
+
+     머리글은 «무엇을 세는 칸인가»를 적는 자리지 «지금 어느 택배사인가»가
+     아니다. 자사출고로 적으면 택배사를 또 바꿔도 흔들리지 않는다.
+     (migrateHeader 도 이름만 바뀐 것은 안 밀어내게 고쳤지만, 애초에
+      흔들릴 이름을 안 쓰는 것이 먼저다.) */
 var SS_RUNLOG_HEADER = ['회차키', '실행시각', '입력행', '분해행', '합포장흡수', '출력행',
-  '로젠택배', '도서산간', '도서산간(위탁)', '동네배송', '대리발송', '합배송', '보류', '경고', '소요(초)', '버전'];
+  '자사출고', '도서산간', '도서산간(위탁)', '동네배송', '대리발송', '합배송', '보류', '경고', '소요(초)', '버전'];
 
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
@@ -45,7 +55,8 @@ function onOpen() {
       .addItem('합배송 진단', 'ss_합배송진단')
       .addItem('사방넷 진단 (저장 안 함)', 'ss_사방넷진단')
       .addItem('중복발주 의심 점검', 'ss_중복점검')
-      .addItem('검증 (행수 대조)', 'ss_검증'))
+      .addItem('검증 (행수 대조)', 'ss_검증')
+      .addItem('🧾 밀려난 구버전 탭 점검', 'ss_구버전점검'))
 
     .addSubMenu(ui.createMenu('⚙ 설정 · 설치')
       .addItem('📅 대량등록 대상일수', 'ss_대량등록일수설정')
@@ -600,6 +611,46 @@ function ss_회차확정(지문, 입력행) {
 }
 
 /** 원장에서 이 회차 기록을 걷어낸다 (재실행 시 중복 방지) */
+/**
+ * 🧾 머리글이 바뀌어 «밀려난» 탭들을 보여 준다.
+ *
+ * ★ 왜 필요한가 ★  (2026-09-11)
+ *   ssio_migrateHeader 는 머리글이 달라지면 탭을 <이름>_구버전_yymmdd-HHmm
+ *   으로 바꾸고 빈 탭을 새로 만든다. 자료는 남지만 «읽는 코드는 옛 탭을
+ *   안 본다». 조용히 어제까지가 사라진 것처럼 된다.
+ *   실제로 오늘 실행이력이 그렇게 밀렸다 — 택배사 이름이 머리글에 있어서.
+ *
+ *   이제 이름만 바뀐 것은 안 밀어내지만, 이미 밀려난 탭은 남아 있다.
+ *   무엇이 어디에 얼마나 있는지 한눈에 보여 준다.
+ */
+function ss_구버전점검() {
+  var NL = String.fromCharCode(10);
+  var ss = ssio_ss();
+  var shs = ss.getSheets();
+  var 밀림 = [], 현재 = {};
+  for (var i = 0; i < shs.length; i++) {
+    var nm = shs[i].getName();
+    var 행 = Math.max(0, shs[i].getLastRow() - 1);
+    var at = nm.indexOf('_구버전_');
+    if (at > 0) 밀림.push({ 원래: nm.substring(0, at), 이름: nm, 행: 행 });
+    else 현재[nm] = 행;
+  }
+  if (!밀림.length) {
+    return ssio_alert('밀려난 구버전 탭이 없습니다.' + NL + NL +
+      '머리글이 바뀌어도 이름만 달라진 것은 이제 안 밀어냅니다.');
+  }
+  밀림.sort(function (a, b) { return b.행 - a.행; });
+  var 줄 = 밀림.map(function (x) {
+    var 지금 = 현재[x.원래];
+    return '  ' + x.이름 + '  ' + x.행 + '행' +
+      (지금 === undefined ? '   (지금 탭 없음)' : '   → 지금 「' + x.원래 + '」 ' + 지금 + '행');
+  });
+  return ssio_alert('밀려난 구버전 탭 ' + 밀림.length + '개' + NL + NL + 줄.join(NL) + NL + NL +
+    '자료는 그대로 있지만 «읽는 코드는 옛 탭을 안 봅니다».' + NL +
+    '행이 많은 것부터 보세요 — 옮겨야 할 것이 있으면 알려 주세요.' + NL +
+    '옮길 필요가 없다고 판단되면 그냥 지우셔도 됩니다.');
+}
+
 function ss_원장회차삭제(회차키) {
   var sh = ssio_ss().getSheetByName(SSIO_TABS.원장);
   if (!sh || sh.getLastRow() < 2) return 0;
