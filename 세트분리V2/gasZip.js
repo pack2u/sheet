@@ -28,49 +28,6 @@ function ssz_key() {
   catch (e) { return ''; }
 }
 
-/**
- * 📅 사방넷 대량등록에 몇 날치를 넣을지.
- *
- * > "대량등록_대상일수 전체로 바꿔줘"  (2026-09-11)
- *
- * ★ 왜 메뉴가 필요한가 ★
- *   이 값은 설정 탭에 적혀 있고, 코드의 기본값은 «비어 있을 때만» 쓰인다.
- *   기본값만 고치면 이미 1 이 적힌 시트는 그대로 1 이다.
- *
- * ★ 「전체」가 무슨 뜻인지 먼저 말한다 ★
- *   날짜로 안 거르므로 원천에 남아 있는 옛 송장까지 매번 파일에 들어간다.
- *   같은 주문을 다시 올려도 사방넷은 송장을 덮어쓸 뿐이라 해는 없지만,
- *   파일이 커지고 무엇이 새로 올라간 건지 눈으로 가리기 어려워진다.
- *   빠뜨리는 것보다는 낫다는 판단이라 기본을 전체로 두었다.
- */
-function ss_대량등록일수설정() {
-  var NL = String.fromCharCode(10);
-  var ui;
-  try { ui = SpreadsheetApp.getUi(); } catch (e) { return ssio_alert('UI 없이는 못 바꿉니다.'); }
-  var cur = ssText(ssio_config()['대량등록_대상일수']) || '1';
-  var resp = ui.prompt('📅 사방넷 대량등록 · 대상일수',
-    '지금: ' + cur + NL + NL +
-    '  1      오늘 집하분만' + NL +
-    '  2      어제까지' + NL +
-    '  7      일주일' + NL +
-    '  전체   날짜로 안 거름' + NL + NL +
-    '「전체」는 원천에 남은 옛 송장까지 매번 넣습니다.' + NL +
-    '같은 주문을 다시 올려도 사방넷은 송장을 덮어쓸 뿐이라 해는 없지만,' + NL +
-    '파일이 커지고 새로 올라간 것을 눈으로 가리기 어려워집니다.',
-    ui.ButtonSet.OK_CANCEL);
-  if (resp.getSelectedButton() !== ui.Button.OK) return;
-  var v = ssText(resp.getResponseText());
-  if (!v) return ui.alert('비워 두면 안 바꿉니다.');
-  if (v !== '전체' && !(ssNum(v) > 0)) {
-    return ui.alert('숫자 아니면 「전체」만 됩니다. 넣으신 값: ' + v);
-  }
-  ssio_setConfig('대량등록_대상일수', v);
-  return ui.alert('대상일수를 「' + v + '」(으)로 바꿨습니다.' + NL + NL +
-    (v === '전체' ? '이제 날짜로 거르지 않습니다.'
-      : '오늘부터 ' + v + '일치만 넣습니다.') + NL +
-    '설정 탭에서도 확인할 수 있습니다.');
-}
-
 function ss_카카오키설정() {
   var ui;
   try { ui = SpreadsheetApp.getUi(); } catch (e) { return ssio_alert('UI 없이는 키를 설정할 수 없습니다.'); }

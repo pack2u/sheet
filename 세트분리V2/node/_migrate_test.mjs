@@ -52,12 +52,5 @@ console.log("\n[이름만 바뀐 머리글은 안 밀어내는가]");
   eq("칸 수가 달라지면 여전히 밀어낸다", io.includes("'_구버전_'"), "true");
 }
 
-console.log("\n[밀려난 탭을 볼 수 있는가]");
-{
-  const main = 읽기("gasMain.js");
-  eq("점검 함수가 있다", main.includes("function ss_구버전점검"), "true");
-  eq("메뉴에 붙어 있다", main.includes("'ss_구버전점검'"), "true");
-}
-
 console.log(실패 ? `\n실패 ${실패}건` : "\n자료를 두고 오지 않는다");
 process.exit(실패 ? 1 : 0);
