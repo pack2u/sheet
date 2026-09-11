@@ -1544,11 +1544,23 @@
     #hbList > .os-empty,
     #hbList > .hb-mine-bar,
     #lbList.grid > .hb-mine-bar,
+    #hbList > .hb-unread-bar,
+    #lbList.grid > .hb-unread-bar,
     #hbList > .hb-card.open { grid-column: 1 / -1; }
 
     /* 「내 것만 보기」가 켜져 있다는 표시.
        켜 둔 걸 잊으면 "카드가 사라졌다"가 된다. 숨긴 건수까지 같이 보여
        없는 것과 가린 것을 구분하게 한다. */
+    /* 미확인 숫자 — 글자처럼 보이되 누를 수 있다는 것이 보여야 한다 */
+    .hb-unread-btn {
+      border: 1px solid rgba(255, 158, 158, 0.45); border-radius: 999px;
+      background: rgba(255, 158, 158, 0.10); color: #ff9e9e;
+      font: inherit; font-weight: 700; padding: 1px 9px; cursor: pointer;
+    }
+    .hb-unread-btn:hover { background: rgba(255, 158, 158, 0.22); }
+    .hb-unread-btn.on { background: #ff9e9e; color: #1a1c24; border-color: #ff9e9e; }
+    .hb-unread-bar { border-color: rgba(255, 158, 158, 0.5) !important; }
+
     .hb-mine-bar {
       display: flex; align-items: center; justify-content: space-between;
       gap: 10px; flex-wrap: wrap;
@@ -3186,6 +3198,18 @@
     var HB_MINE = (function () {
       try { return localStorage.getItem('pack2u_hb_mine') === '1'; } catch (e) { return false; }
     })();
+    /* ★ 「미확인만 보기」 ★  (2026-09-11)
+       > "미확인 몇개가 뜨는데.. 그걸 클릭하면 미확인 카드만 보이게"
+
+       숫자만 보이면 «어느 것»인지 찾으러 스무 장을 훑어야 한다.
+       숫자가 곧 그리로 가는 문이어야 한다.
+
+       ★ 이것은 기억하지 않는다 ★
+         「내 것만 보기」(HB_MINE)는 사람마다 다른 «취향»이라 기억한다.
+         이건 지금 이 순간의 «할 일»이다 — 다 읽고 나면 뜻이 없어진다.
+         켜 둔 채 새로고침해서 빈 보드를 보고 놀라는 편이 더 나쁘다. */
+    var HB_UNREAD = false;
+    var HB_UNREAD_HIDDEN = 0;   // 이 필터가 가린 건수
     var HB_MINE_HIDDEN = 0;   // CS 보드에서 이 필터가 가린 건수
     var LB_MINE_HIDDEN = 0;   // 물류 보드
     var HB_OPEN_ID = '';
@@ -3739,6 +3763,17 @@
       return (c.to || []).indexOf(me) !== -1;
     }
 
+    /** 이 카드를 내가 아직 안 봤나. 진행 카드만 센다 — 보관은 지난 일이다. */
+    function hbIsUnread(c, me) {
+      if (!c || c.done || !me) return false;
+      return (c.read || []).indexOf(me) === -1;
+    }
+
+    function toggleHbUnread() {
+      HB_UNREAD = !HB_UNREAD;
+      hbRenderBoards();
+    }
+
     function toggleHbMine() {
       HB_MINE = !HB_MINE;
       try { localStorage.setItem('pack2u_hb_mine', HB_MINE ? '1' : '0'); } catch (e) {}
@@ -3759,11 +3794,19 @@
         '<button type="button" onclick="toggleHbMine()">전체 보기</button></div>';
     }
 
+    /* 켜 둔 걸 잊으면 "카드가 사라졌다"가 된다 — hbMineBar 와 같은 손버릇. */
+    function hbUnreadBar(hidden) {
+      return '<div class="hb-mine-bar hb-unread-bar">' +
+        '<span>미확인만 보는 중' + (hidden ? ' · 숨긴 카드 ' + hidden + '건' : '') + '</span>' +
+        '<button type="button" onclick="toggleHbUnread()">전체 보기</button></div>';
+    }
+
     function hbFiltered() {
       var q = String((document.getElementById('hbq') || {}).value || '').trim().toLowerCase();
       var me = hbStaffName();
       var out = [];
       HB_MINE_HIDDEN = 0;
+      HB_UNREAD_HIDDEN = 0;
       for (var i = 0; i < HB_CARDS.length; i++) {
         var c = HB_CARDS[i];
         if (HB_LEVEL && c.level !== HB_LEVEL) continue;
@@ -3777,6 +3820,7 @@
         }
         // 지목 필터는 맨 뒤에 둔다 — 앞 조건을 통과한 것 중 몇 개를 가렸는지 세야 한다
         if (HB_MINE && !hbIsMine(c, me)) { HB_MINE_HIDDEN++; continue; }
+        if (HB_UNREAD && !hbIsUnread(c, me)) { HB_UNREAD_HIDDEN++; continue; }
         out.push(c);
       }
       return out;
@@ -3790,12 +3834,17 @@
 
       var unread = 0;
       for (var u = 0; u < HB_CARDS.length; u++) {
-        var cu = HB_CARDS[u];
-        if (!cu.done && me && (cu.read || []).indexOf(me) === -1) unread++;
+        if (hbIsUnread(HB_CARDS[u], me)) unread++;
       }
 
       var head = '진행 ' + HB_ACTIVE_CNT + '건';
-      if (unread > 0) head += ' · <span style="color:#ff9e9e">미확인 ' + unread + '</span>';
+      /* 숫자가 곧 문이다 — 누르면 그 카드들만 남는다.
+         다 읽어 0 이 되어도, 걸러 놓은 상태라면 끄는 길은 남겨 둔다. */
+      if (unread > 0 || HB_UNREAD) {
+        head += ' · <button type="button" class="hb-unread-btn' + (HB_UNREAD ? ' on' : '') +
+          '" onclick="toggleHbUnread()" title="' +
+          (HB_UNREAD ? '전체 보기' : '미확인 카드만 보기') + '">미확인 ' + unread + '</button>';
+      }
       if (HB_SHOW_DONE) head += ' · 보관 ' + HB_DONE_CNT + '건';
       if (HB_LEVEL || String((document.getElementById('hbq') || {}).value || '').trim()) {
         head += ' · 표시 ' + rows.length + '건';
@@ -3808,9 +3857,11 @@
           '권장은 ' + HB_SOFT_LIMIT + '건 이하예요. 처리된 건은 완료로 내려 보드를 가볍게 유지하세요.</div>';
       }
       if (HB_MINE) html += hbMineBar(HB_MINE_HIDDEN);
+      if (HB_UNREAD) html += hbUnreadBar(HB_UNREAD_HIDDEN);
       if (!rows.length) {
         html += '<div class="os-empty">' +
-          (HB_MINE ? '나를 지목한 카드가 없습니다.'
+          (HB_UNREAD ? '미확인 카드가 없습니다 — 다 보셨습니다.'
+            : HB_MINE ? '나를 지목한 카드가 없습니다.'
             : HB_CARDS.length ? '조건에 맞는 카드가 없습니다.' : '전달할 카드가 없습니다.<br>오른쪽 위 ＋ 버튼으로 등록하세요.') +
           '</div>';
         list.innerHTML = html;
@@ -9640,15 +9691,19 @@
       var all = LB_CARDS || [];
       var rows = [];
       LB_MINE_HIDDEN = 0;
+      var lbUnreadHidden = 0;
       for (var i = 0; i < all.length; i++) {
         if (HB_MINE && !hbIsMine(all[i], me)) { LB_MINE_HIDDEN++; continue; }
+        if (HB_UNREAD && !hbIsUnread(all[i], me)) { lbUnreadHidden++; continue; }
         rows.push(all[i]);
       }
-      var bar = HB_MINE ? hbMineBar(LB_MINE_HIDDEN) : '';
+      var bar = (HB_MINE ? hbMineBar(LB_MINE_HIDDEN) : '') +
+                (HB_UNREAD ? hbUnreadBar(lbUnreadHidden) : '');
       if (!rows.length) {
-        el.className = HB_MINE ? 'grid' : '';
+        el.className = (HB_MINE || HB_UNREAD) ? 'grid' : '';
         el.innerHTML = bar + '<div class="os-empty">' +
-          (HB_MINE ? '나를 지목한 글이 없습니다.' : '진행 중인 글이 없습니다.') + '</div>';
+          (HB_UNREAD ? '미확인 글이 없습니다 — 다 보셨습니다.'
+            : HB_MINE ? '나를 지목한 글이 없습니다.' : '진행 중인 글이 없습니다.') + '</div>';
         return;
       }
       var h = bar;
