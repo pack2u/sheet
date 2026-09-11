@@ -89,10 +89,23 @@ function csParseCourierBarcode(raw) {
     };
   }
 
-  // CJ(3/4/6), 로젠(8~9), 한진 등 — 10~14자리
+  // CJ · 로젠 · 한진 등 — 10~14자리
+  //
+  //  ★ 11자리는 «자리수»로 로젠을 본다 ★  (2026-09-11 · 롯데 → 로젠)
+  //    앞자리로 택배사를 맞히는 건 약한 짐작이다. 우리가 쓰는 택배사 중
+  //    11자리는 로젠뿐이다 — CJ 는 10·12, 롯데는 12, 한진은 10·12.
+  //    그래서 자리수를 앞자리보다 «먼저» 본다.
+  //
+  //    앞자리 표(^[346] 등)는 짐작이라 로젠 번호가 3 으로 시작하면
+  //    CJ 로 잘못 적힌다. 자리수를 먼저 보면 그 일이 없다.
+  //
+  //  ※ 이 courier 값은 지금 scan_test.html 의 «표시»에만 쓴다.
+  //    실제 입고·물류는 invoice(숫자)만 본다 — 11자리도 종전부터
+  //    번호 자체는 제대로 넘어갔다. 여기는 이름표를 바로잡는 것이다.
   if (digits.length >= 10 && digits.length <= 14) {
     var courier = "unknown";
-    if (/^[346]/.test(digits)) courier = "cj";
+    if (digits.length === 11) courier = "logen";
+    else if (/^[346]/.test(digits)) courier = "cj";
     else if (/^[89]/.test(digits)) courier = "logen";
     else if (/^[45]/.test(digits)) courier = "hanjin";
     return {

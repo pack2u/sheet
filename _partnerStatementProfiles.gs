@@ -3,6 +3,31 @@
  * 파일: _partnerStatementProfiles.gs
  */
 
+/**
+ * 품목명 안에 섞여 있는 «택배 송장번호».
+ *
+ * ★ 11자리도 받는다 ★  (2026-09-11 · 롯데 → 로젠)
+ *   종전에는 12자리만 봤다. 롯데 송장이 12자리였기 때문이다.
+ *   2026-09-11 부터 로젠으로 바꿨고 로젠은 «11자리»다.
+ *   그대로 뒀으면 배송비 줄을 못 알아보고 「상품」으로 세어
+ *   명세서 대조가 조용히 어긋났을 것이다 — 오류는 안 난다.
+ *
+ * ★ 앞뒤에 숫자가 더 붙으면 안 된다 ★
+ *   그냥 11~12자리를 찾으면 13자리 숫자의 «앞 12자리»가 걸린다.
+ *   앞은 숫자 아닌 것(또는 처음)으로, 뒤는 숫자 아닌 것으로 막는다.
+ *   실제 번호는 2번 묶음에 들어온다.
+ *
+ *   ※ \d 대신 [0-9] 를 쓴다 — 이 파일을 스크립트로 고칠 때
+ *     역슬래시가 조용히 먹히는 사고가 여러 번 있었다.
+ */
+var _PSTMT_INVOICE_RE_ = /(^|[^0-9])([0-9]{11,12})(?![0-9])/;
+
+/** 품목명에서 송장번호를 걷어낸다. 앞 글자는 살려 둔다. */
+function _pstmt_stripInvoices_(text) {
+  return String(text == null ? '' : text)
+    .replace(/(^|[^0-9])([0-9]{11,12})(?![0-9])/g, function (_m, pre) { return pre; });
+}
+
 var _PSTMT_PROFILES_ = {
   GENERIC_거래명세서_v1: {
     id: "GENERIC_거래명세서_v1",
@@ -34,7 +59,7 @@ var _PSTMT_PROFILES_ = {
       supplyAmt: ["공급가액"],
       vatAmt: ["부가세"],
     },
-    invoiceInName: /\d{12}/,
+    invoiceInName: _PSTMT_INVOICE_RE_,
     vatFromColumns: true,
   },
 };
@@ -105,9 +130,12 @@ function _pstmt_parseQty_(v) {
 
 function _pstmt_extractInvoice_(text, profile) {
   var s = String(text || "");
-  var re = (profile && profile.invoiceInName) || /\d{12}/;
+  var re = (profile && profile.invoiceInName) || _PSTMT_INVOICE_RE_;
   var m = s.match(re);
-  return m ? m[0] : "";
+  if (!m) return "";
+  /* 우리 규칙은 번호를 2번 묶음에 담는다. 프로필이 제 규칙을 쓰면
+     묶음이 없을 수 있으니 그때는 통째로 쓴다. */
+  return m[2] != null ? m[2] : m[0];
 }
 
 function _pstmt_detectRowType_(row, profile) {
@@ -164,7 +192,7 @@ function _pstmt_parseRawSheet_(ss, settings) {
     var invoice = _pstmt_extractInvoice_(itemName, profile);
     var recipient = "";
     if (invoice) {
-      recipient = itemName.replace(invoice, "").replace(/\d{12}/g, "").trim();
+      recipient = _pstmt_stripInvoices_(itemName.replace(invoice, "")).trim();
     }
 
     var row = {
@@ -298,7 +326,7 @@ function _pstmt_loadVendorNameMap_(prefix) {
 
 function _pstmt_resolvePack2UItem_(row, prefix, vendorMap, viewerMap) {
   var name = String(row.itemName || "");
-  var norm = name.replace(/\d{12}/g, "").replace(/\s/g, "").toLowerCase();
+  var norm = _pstmt_stripInvoices_(name).replace(/\s/g, "").toLowerCase();
 
   var best = null;
   var bestLen = 0;
