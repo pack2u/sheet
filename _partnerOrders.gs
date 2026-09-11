@@ -1678,15 +1678,10 @@ function partnerFetchInvoices() {
   // ── ★ [최우선] 입력_로젠주문실적 (GID: 548505068) ──
   // E열(idx4)=주문번호(고유ID), F열(idx5)=운송장번호, J열(idx9)=명(수취인)
   // M열(idx12)=전화번호, W열(idx22)=물품명
-  var _ROZEN_FIXED_COL = {
-    name: 9,
-    phone: 12,
-    invoice: 5,
-    uid: 4,
-    item: 22,
-    icode: 21,
-    qty: 14,
-  };
+  //  칸 자리는 _partnerHelpers.gs 한 군데에 있다 (탭 서식이 바뀌면 거기만 고친다)
+  var _ROZEN_FIXED_COL = (typeof _PT_ROZEN_FIXED_COL !== "undefined")
+    ? _PT_ROZEN_FIXED_COL
+    : { name: 9, phone: 12, invoice: 5, uid: 4, item: 22, icode: 21, qty: 14 };
   try {
     var invSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
     var primaryTab = _pt_getSheetByGid(invSS, _PT_PRIMARY_INVOICE_GID);
@@ -4690,6 +4685,38 @@ var _PO_SABANG_BULK_HEADERS = ["주문번호", "송장번호", "", "", "택배�
  * 택배사를 모르거나 그 택배사의 사방넷 코드가 미지정이면 빈 문자열 →
  * 호출부(_po_addSabangBulkRow_)가 해당 행을 제외하고 "택배사코드 미지정"으로 보고한다.
  */
+/**
+ * 택배사 이름 → 사방넷 코드. 「업체_택배사」 탭이 SSOT 이고, 못 읽으면 준 값을 쓴다.
+ * 코드를 코드에 박아 두면 사방넷 계정이 바뀌는 날 찾아다녀야 한다.
+ */
+function _po_sabangCode_(carrier, fallback) {
+  try {
+    if (typeof _pep_sabangCodeForCarrier_ === "function") {
+      var c = String(_pep_sabangCodeForCarrier_(carrier) || "").trim();
+      if (c) return c;
+    }
+  } catch (e) {}
+  return fallback;
+}
+
+/**
+ * 자사출고 송장번호 → 사방넷 택배사코드.
+ *
+ * ★ 여기서만 «자리수»로 가른다 ★  (2026-09-11)
+ *   자사출고 송장이 담긴 탭은 택배사를 알지만, 세트분리가 내놓는
+ *   「사방넷_송장매칭」 탭은 번호만 있고 택배사가 없다.
+ *   우리 자사출고는 롯데(12자리) 아니면 로젠(11자리) 둘뿐이라 이 둘은 갈린다.
+ *   대리공급·대리판매 건은 업체로 택배사를 아니까 이 길로 안 온다.
+ *
+ *   길이가 둘 다 아니면 «지금 쓰는 택배사»로 본다. 빈 코드를 돌려주면
+ *   그 줄이 조용히 빠지는데, 사방넷에 안 올라간 송장은 아무도 못 찾는다.
+ */
+function _po_ownCarrierCodeByInvoice_(inv, rozenCode, lotteCode) {
+  var d = String(inv || "").replace(/[^0-9]/g, "");
+  if (d.length === 12) return lotteCode;
+  return rozenCode;   // 11자리(로젠)와 그 밖의 것
+}
+
 function _po_courierCodeForVendor_(vendorName) {
   if (typeof _pep_carrierForVendor_ !== "function") return "";
   var carrier = _pep_carrierForVendor_(vendorName);
@@ -4789,7 +4816,8 @@ function _po_addSabangBulkRowCoded_(rows, seen, orderNo, invCell, code, result) 
 function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
   scannedLogs = scannedLogs || [];
     var result = { written: 0, skipGen: 0, skipNoCode: 0, skipNoInv: 0, tempWithInv: 0, lotteOwn: 0, matchTab: 0, byCode: {} };
-    var LOTTE_CODE = "002";
+    var LOTTE_CODE = _po_sabangCode_("롯데택배", "002");
+    var ROZEN_CODE = _po_sabangCode_("로젠택배", "007");
   try {
     var ss = _po_getProductInfoSs_();
     var tab = _po_ensureSabangnetBulkTab_(ss);
@@ -4828,31 +4856,56 @@ function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
       }
     }
 
-    // ── 롯데 자사출고: 송장취합 롯데탭 J=사방넷주문번호 G=운송장 (대리공급과 중복은 seen으로 제외)
-    try {
-      var invSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
-      var lotteTab = typeof _pt_getSheetByGid === "function"
-        ? _pt_getSheetByGid(invSS, _PT_SECONDARY_INVOICE_GID)
-        : null;
-      if (lotteTab && lotteTab.getLastRow() >= 2) {
-        var _uidIdx = (typeof _PT_LOTTE_FIXED_COL !== "undefined" && _PT_LOTTE_FIXED_COL.uid >= 0)
-          ? _PT_LOTTE_FIXED_COL.uid : 9;
-        var _invIdx = (typeof _PT_LOTTE_FIXED_COL !== "undefined" && _PT_LOTTE_FIXED_COL.invoice >= 0)
-          ? _PT_LOTTE_FIXED_COL.invoice : 6;
-        var ltLc = Math.max(lotteTab.getLastColumn(), Math.max(_uidIdx, _invIdx) + 1);
-        var ltData = lotteTab.getRange(2, 1, lotteTab.getLastRow() - 1, ltLc).getDisplayValues();
+    /* ── 자사출고 송장 — «탭이 곧 택배사다» ──────────────────────
+       ★ 2026-09-11: 로젠으로 바꿨다 ★
+         > "우리가 택배사를 바꿨고 거래관리대장송장의 입력_로젠주문실적에서
+            송장번호를 불러와야되"
+
+       ★ 두 탭을 다 읽는다 ★
+         9월 10일까지 나간 건은 롯데 탭에, 11일부터는 로젠 탭에 쌓인다.
+         한쪽만 읽게 바꾸면 «갈아탄 날 앞뒤»가 통째로 빠진다 —
+         그것도 오류 없이 조용히 빠진다. 날짜로 가르지 않고 둘 다 읽는다.
+         롯데 탭은 더 안 늘어나므로 시간이 지나면 저절로 뜻이 없어진다.
+
+         겹치는 건은 seen(주문번호|송장)이 막는다.
+         택배사 코드는 «어느 탭에서 왔나»로 정한다 — 송장 자리수로 짐작하지
+         않는다. 탭이 원천이고, 원천이 아는 것을 짐작으로 덮으면 안 된다. */
+    var 자사원천 = [
+      { 이름: "로젠", gid: _PT_PRIMARY_INVOICE_GID, code: ROZEN_CODE,
+        col: (typeof _PT_ROZEN_FIXED_COL !== "undefined")
+          ? _PT_ROZEN_FIXED_COL : { uid: 4, invoice: 5 } },
+      { 이름: "롯데", gid: _PT_SECONDARY_INVOICE_GID, code: LOTTE_CODE,
+        col: (typeof _PT_LOTTE_FIXED_COL !== "undefined")
+          ? _PT_LOTTE_FIXED_COL : { uid: 9, invoice: 6 } },
+    ];
+    for (var si = 0; si < 자사원천.length; si++) {
+      var src = 자사원천[si];
+      try {
+        var invSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
+        var ownTab = typeof _pt_getSheetByGid === "function"
+          ? _pt_getSheetByGid(invSS, src.gid) : null;
+        if (!ownTab || ownTab.getLastRow() < 2) {
+          scannedLogs.push("[사방넷대량등록] " + src.이름 + " 탭 없음/비었음 (GID " + src.gid + ")");
+          continue;
+        }
+        var _uidIdx = src.col.uid >= 0 ? src.col.uid : 9;
+        var _invIdx = src.col.invoice >= 0 ? src.col.invoice : 6;
+        var ltLc = Math.max(ownTab.getLastColumn(), Math.max(_uidIdx, _invIdx) + 1);
+        var ltData = ownTab.getRange(2, 1, ownTab.getLastRow() - 1, ltLc).getDisplayValues();
+        var nTab = 0;
         for (var lti = 0; lti < ltData.length; lti++) {
           var ltUid = String(ltData[lti][_uidIdx] || "").trim();
           var ltInv = String(ltData[lti][_invIdx] || "").trim();
           if (!ltUid || !_po_hasRealInvoice_(ltInv)) continue;
           if (typeof _po_isGeneratedUid_ === "function" && _po_isGeneratedUid_(ltUid)) continue;
-          if (/주문번호/.test(ltUid.replace(/\s/g, ""))) continue;
-          var nAdd = _po_addSabangBulkRowCoded_(rows, seen, ltUid, ltInv, LOTTE_CODE, result);
-          if (nAdd) result.lotteOwn += nAdd;
+          if (/주문번호/.test(ltUid.replace(/[ 	]/g, ""))) continue;
+          var nAdd = _po_addSabangBulkRowCoded_(rows, seen, ltUid, ltInv, src.code, result);
+          if (nAdd) { result.lotteOwn += nAdd; nTab += nAdd; }
         }
+        scannedLogs.push("[사방넷대량등록] 자사출고 " + src.이름 + " " + nTab + "행");
+      } catch (eLt) {
+        scannedLogs.push("[사방넷대량등록] 자사출고 " + src.이름 + " 오류: " + String(eLt.message || eLt));
       }
-    } catch (eLt) {
-      scannedLogs.push("[사방넷대량등록] 롯데 자사출고 오류: " + String(eLt.message || eLt));
     }
 
     // ── 사방넷_송장매칭(세트분리) 보강: 합배송 샘플 등 롯데탭에 없는 사방넷 UID
@@ -4878,7 +4931,9 @@ function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
           var mv = String(mData[mi][mInv] || "").trim();
           if (!mu || !_po_hasRealInvoice_(mv)) continue;
           if (typeof _po_isGeneratedUid_ === "function" && _po_isGeneratedUid_(mu)) continue;
-          var nM = _po_addSabangBulkRowCoded_(rows, seen, mu, mv, LOTTE_CODE, result);
+          //  이 탭에는 택배사가 없다 — 번호 자리수로 가른다(위 도우미 설명)
+          var mCode = _po_ownCarrierCodeByInvoice_(mv, ROZEN_CODE, LOTTE_CODE);
+          var nM = _po_addSabangBulkRowCoded_(rows, seen, mu, mv, mCode, result);
           if (nM) result.matchTab += nM;
         }
       }
@@ -4915,15 +4970,22 @@ function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
           /* 옛 「260902-PH-」 형태를 막으려던 줄이 여기 있었는데 정규식에 \ 가 빠져
              아무것도 안 걸렸다. 이제 바로 위 _po_isGeneratedUid_ 가 두 형태를 다 잡는다.
              여기만 막아 봐야 나머지 네 갈래는 그대로 새는 것이기도 했다. */
-          var vCode = LOTTE_CODE;
-          if (vCar && vCar !== "롯데택배") {
+          /* ★ 2026-09-11: 「적혀 있으면 그것이 맞다」로 바꾼다 ★
+               종전에는 롯데를 기본으로 두고 «롯데가 아닐 때만» 표를 봤다.
+               자사출고가 로젠으로 바뀐 지금 그 기본값은 틀린 값이다.
+               C열에 택배사가 적혀 있으면 그것을 쓰고, 비었을 때만
+               송장 자리수로 자사 택배사를 가린다. */
+          var vCode = "";
+          if (vCar) {
             vCode = typeof _pep_sabangCodeForCarrier_ === "function"
-              ? _pep_sabangCodeForCarrier_(vCar)
+              ? String(_pep_sabangCodeForCarrier_(vCar) || "").trim()
               : "";
             if (!vCode) {
               result.skipNoCode++;
               continue;
             }
+          } else {
+            vCode = _po_ownCarrierCodeByInvoice_(vInv, ROZEN_CODE, LOTTE_CODE);
           }
           var nV2 = _po_addSabangBulkRowCoded_(rows, seen, vUid, vInv, vCode, result);
           if (nV2) v2Added += nV2;

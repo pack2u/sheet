@@ -192,9 +192,25 @@ function partnerShowBlackoutStatus() {
 //  상수 (송장 시트 ID — 기존 orderSyncManager.gs에서 이식)
 // ═══════════════════════════════════════════
 var _PT_INVOICE_SHEET_ID = "1KIBSmjpMVKLGoAkbrcKyTr4LOflszwS_xtMzmRuvYWs";
-// ★ [레거시] 입력_로젠주문실적 — E열(주문번호=고유ID/사방넷) + F열(운송장번호)
-//   ★ 2026-08-07: 일일마감 주송장은 롯데(_PT_SECONDARY)로 전환. 로젠은 폴백·송장수집 병행용.
+// 입력_로젠주문실적 — E열(주문번호=고유ID/사방넷) + F열(운송장번호)
+//   ★ 2026-08-07: 일일마감 주송장을 롯데(_PT_SECONDARY)로 옮겼었다.
+//   ★ 2026-09-11: 택배사를 로젠으로 바꿨다 — 자사출고 송장이 다시 여기로 들어온다.
 var _PT_PRIMARY_INVOICE_GID = 548505068;
+/**
+ * 입력_로젠주문실적 탭의 칸 자리.
+ * 여러 곳에서 같은 숫자를 제각기 적고 있었다(_partnerOrders 안의 지역변수,
+ * _partnerCollectEvidenceDiag 의 인라인 표). 한 군데에 둔다 —
+ * 탭 서식이 바뀌는 날 고칠 자리가 하나여야 한다.
+ */
+var _PT_ROZEN_FIXED_COL = {
+  name: 9,     // J 수취인명
+  phone: 12,   // M 전화번호
+  invoice: 5,  // F 운송장번호
+  uid: 4,      // E 주문번호(=사방넷/고유ID)
+  item: 22,    // W 물품명
+  icode: 21,   // V
+  qty: 14,     // O
+};
 // ★ 2026-07-22: 롯데택배 송장 탭 — G열(운송장번호) + J열(주문번호=고유ID/사방넷)
 //   ★ 2026-08-07: 통합 일일마감의 주 송장 소스
 var _PT_SECONDARY_INVOICE_GID = 1575029201;

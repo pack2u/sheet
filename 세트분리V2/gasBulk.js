@@ -7,7 +7,7 @@
  * 원천 넷 (허브와 같은 순서·같은 우선순위):
  *   1. 대리공급_임시기록   상품정보  P=주문번호 X=송장 W=업체prefix
  *   2. 협력업체_발주허브   상품정보  C=주문번호 N=송장  B=업체
- *   3. 롯데 자사출고       거래관리  J=주문번호 G=송장  → 코드 002 고정
+ *   3. 자사출고            거래관리  로젠 E/F · 롯데 J/G  → 탭이 곧 택배사
  *   4. 주문라인원장        오늘 전체 회차 — 전파가 채운 운송장번호 (합포장 동봉 포함)
  *
  * 규칙도 허브와 같다:
@@ -19,7 +19,25 @@
  */
 
 var SSB_HEADERS = ['주문번호', '송장번호', '', '', '택배사코드'];
-var SSB_LOTTE_CODE = '002';
+/* ★ 자사출고 택배사 코드 ★  (2026-09-11 롯데 → 로젠)
+   탭이 곧 택배사라 탭마다 제 코드를 쓴다. 「002 고정」이던 자리를 없앤다. */
+var SSB_LOTTE_CODE = '002';   // 2026-09-10 까지의 옛 건
+var SSB_ROZEN_CODE = '007';   // 지금 쓰는 택배사
+
+/**
+ * 자사출고 송장번호 → 택배사 코드.
+ *
+ * ★ 원장에는 택배사가 안 적힌다 ★
+ *   원장이 보태는 건 「합포장 동봉」인데, 그 줄은 대표의 송장을 물려받을 뿐
+ *   택배사 칸이 없다. 우리 자사출고는 롯데(12자리) 아니면 로젠(11자리)
+ *   둘뿐이라 번호 길이로 갈린다.
+ *   길이가 둘 다 아니면 «지금 택배사»로 본다 — 빈 코드를 주면 그 줄이
+ *   조용히 빠지고, 사방넷에 안 올라간 송장은 아무도 못 찾는다.
+ */
+function ssb_ownCode(inv) {
+  var d = ssText(inv).replace(new RegExp('[^0-9]', 'g'), '');
+  return d.length === 12 ? SSB_LOTTE_CODE : SSB_ROZEN_CODE;
+}
 /** 한 셀 안의 송장 구분자 — 줄바꿈·쉼표·세미콜론 */
 /* ★ 2026-09-09: 공백도 분리자다 ★
    원장·사방넷송장의 운송장번호 칸은 송장이 여러 장이면 **공백으로 이어** 적는다
@@ -207,19 +225,28 @@ function ssb_collect() {
     }
   } else { errs.push('발주허브: ' + r2.why); }
 
-  // ── 3. 롯데 자사출고 — 거래관리시스템송장 (J=9 주문번호 · G=6 송장) ──
-  try {
-    var lId = ssText(cfg['롯데송장시트ID']) || '1KIBSmjpMVKLGoAkbrcKyTr4LOflszwS_xtMzmRuvYWs';
-    var lGid = ssNum(cfg['롯데송장탭GID']) || 1575029201;
-    var lSS = SpreadsheetApp.openById(lId);
-    var lTab = null, shs = lSS.getSheets();
-    for (var s = 0; s < shs.length; s++) {
-      if (shs[s].getSheetId() === lGid) { lTab = shs[s]; break; }
-    }
-    if (!lTab) throw new Error('GID ' + lGid + ' 탭 없음');
-    if (lTab.getLastRow() >= 2) {
-      var lwid = Math.max(lTab.getLastColumn(), 10);
-      // 집하일자 열은 헤더로 찾는다. 못 찾으면 허브가 쓰는 고정 위치(D열)로.
+  // ── 3. 자사출고 — 거래관리시스템송장. 로젠(E=4·F=5) + 롯데(J=9·G=6) ──
+  //    둘 다 읽는다. 한쪽만 보면 갈아탄 날 앞뒤가 조용히 빠진다.
+  var 자사탭 = [
+    { 이름: '로젠', gid: ssNum(cfg['로젠송장탭GID']) || 548505068, uid: 4, inv: 5, code: SSB_ROZEN_CODE },
+    { 이름: '롯데', gid: ssNum(cfg['롯데송장탭GID']) || 1575029201, uid: 9, inv: 6, code: SSB_LOTTE_CODE },
+  ];
+  res.자사탭 = [];
+  for (var oi = 0; oi < 자사탭.length; oi++) {
+    var 편 = 자사탭[oi];
+    //  한 탭이 안 읽혀도 나머지는 읽는다 — try 를 «탭마다» 둔다
+    try {
+      var lId = ssText(cfg['롯데송장시트ID']) || '1KIBSmjpMVKLGoAkbrcKyTr4LOflszwS_xtMzmRuvYWs';
+      var lSS = SpreadsheetApp.openById(lId);
+      var lTab = null, shs = lSS.getSheets();
+      for (var sx = 0; sx < shs.length; sx++) {
+        if (shs[sx].getSheetId() === 편.gid) { lTab = shs[sx]; break; }
+      }
+      if (!lTab) throw new Error('GID ' + 편.gid + ' 탭 없음');
+      if (lTab.getLastRow() < 2) { res.자사탭.push(편.이름 + ' 비었음'); continue; }
+
+      var lwid = Math.max(lTab.getLastColumn(), Math.max(편.uid, 편.inv) + 1, 10);
+      // 집하일자 열은 헤더로 찾는다. 못 찾으면 롯데가 쓰던 고정 위치(D열)로.
       var lhd = lTab.getRange(1, 1, 1, lwid).getDisplayValues()[0];
       var dCol = -1;
       for (var dh = 0; dh < lhd.length; dh++) {
@@ -228,27 +255,35 @@ function ssb_collect() {
             hn.indexOf('출고일') >= 0 || hn.indexOf('등록일') >= 0) { dCol = dh; break; }
       }
       if (dCol < 0) dCol = 3;
-      res.lotteCols = [];
-      var probe = lTab.getRange(2, 1, Math.min(4, lTab.getLastRow() - 1), lwid)
-        .getDisplayValues();
+
+      /* 어느 칸을 읽었는지 남긴다 — 탭 서식이 바뀌면 여기부터 본다.
+         탭이 둘이 됐으니 이름을 붙여 구분한다. */
+      if (oi === 0) res.lotteCols = [];
+      var probe = lTab.getRange(2, 1, Math.min(4, lTab.getLastRow() - 1), lwid).getDisplayValues();
       for (var lc = 0; lc < Math.min(lwid, 16); lc++) {
         var sample = '';
         for (var pr = 0; pr < probe.length; pr++) {
           if (ssText(probe[pr][lc])) { sample = ssText(probe[pr][lc]); break; }
         }
-        res.lotteCols.push(lc + ':' + (ssText(lhd[lc]) || '(무제)') +
+        res.lotteCols.push(편.이름 + ' ' + lc + ':' + (ssText(lhd[lc]) || '(무제)') +
           ' = ' + (sample.length > 16 ? sample.substring(0, 16) : sample || '(빈칸)') +
-          (lc === dCol ? '   ← 날짜열로 선택됨' : ''));
+          (lc === dCol ? '   ← 날짜열' : '') +
+          (lc === 편.uid ? '   ← 주문번호' : '') +
+          (lc === 편.inv ? '   ← 운송장' : ''));
       }
+
       var lv = lTab.getRange(2, 1, lTab.getLastRow() - 1, lwid).getDisplayValues();
+      var n편 = 0;
       for (var k = 0; k < lv.length; k++) {
-        if (!ssText(lv[k][9]) || !ssText(lv[k][6])) continue;
+        if (!ssText(lv[k][편.uid]) || !ssText(lv[k][편.inv])) continue;
         if (!ssb_keepDate(lv[k][dCol], allowed, res)) continue;
         scan.s3++;
-        n3 += ssb_addRows(rows, seen, lv[k][9], lv[k][6], SSB_LOTTE_CODE, res, uidSeen, seenOrd);
+        var n어 = ssb_addRows(rows, seen, lv[k][편.uid], lv[k][편.inv], 편.code, res, uidSeen, seenOrd);
+        n3 += n어; n편 += n어;
       }
-    }
-  } catch (eL) { errs.push('롯데 송장탭: ' + String(eL.message || eL)); }
+      res.자사탭.push(편.이름 + ' ' + n편 + '행');
+    } catch (eL) { errs.push('자사출고 ' + 편.이름 + ' 탭: ' + String(eL.message || eL)); }
+  }
 
   // ── 4. 주문라인원장 — 오늘 전체 회차 (전파가 채운 운송장번호, 합포장 동봉 포함) ──
   //    회차키는 YYMMDD-N 이라 앞 6자리로 오늘치만 고른다.
@@ -274,8 +309,11 @@ function ssb_collect() {
         // 롯데에 올라간 적이 없어 롯데탭에 없지만, 대표의 송장을 그대로 써야 한다.
         // 대리공급·대리판매 건은 이미 원천 1·2 에서 잡히므로 여기서는 건너뛴다(오류 아님).
         var m4 = ix['송장매칭'] !== undefined ? ssText(gv[g][ix['송장매칭']]) : '';
-        if (m4 !== '롯데 직접' && m4 !== '합포장 전파') continue;
-        var code4 = SSB_LOTTE_CODE;
+        /* 「자사 직접」이 지금 쓰는 글자다. 옛 원장 줄에는 「롯데 직접」이
+           남아 있어 둘 다 받는다 — 지난 회차를 버리면 그날 것이 통째로 빠진다. */
+        if (m4 !== '자사 직접' && m4 !== '롯데 직접' && m4 !== '합포장 전파') continue;
+        //  원장에는 택배사 칸이 없다 — 송장 자리수로 가린다(ssb_ownCode 설명)
+        var code4 = ssb_ownCode(inv4);
         scan.s4++; n4 += ssb_addRows(rows, seen, uid4, inv4, code4, res, uidSeen, seenOrd);
       }
     }

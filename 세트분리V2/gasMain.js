@@ -860,44 +860,72 @@ function ss_송장전파() {
   var NL = String.fromCharCode(10);
   var cfg = ssio_config();
 
-  // ── 1a) 거래관리시스템송장 롯데 탭 → { 주문번호: 운송장번호 } ──
-  //    5️⃣ 송장수집이 채워 두는 곳이라 붙여넣기가 필요 없다.
-  //    허브와 같은 기준: J열 주문번호(=사방넷/고유ID) · G열 운송장번호.
-  //    헤더 이름으로 먼저 찾고, 못 찾으면 그 고정 위치를 쓴다.
+  /* ── 1a) 자사출고 송장 — «탭이 곧 택배사다» ────────────────────
+     5️⃣ 송장수집이 채워 두는 곳이라 붙여넣기가 필요 없다.
+
+     ★ 2026-09-11: 로젠으로 바꿨다 ★
+       > "거래관리대장송장의 입력_로젠주문실적에서 송장번호를 불러와야되"
+
+       종전에는 롯데 탭만 읽으면서 택배사만 「로젠택배」로 적고 있었다 —
+       이름이 거짓말을 하는 상태였다. 이제 탭에서 온 이름을 그대로 쓴다.
+
+     ★ 두 탭을 다 읽는다 ★
+       9/10 까지는 롯데 탭, 9/11 부터는 로젠 탭. 한쪽만 보면 갈아탄 날
+       앞뒤가 조용히 빠진다. 같은 주문번호가 양쪽에 있으면 «먼저 읽은 쪽»이
+       택배사를 갖는데, 로젠을 앞에 둬서 지금 것이 이기게 한다.
+
+     칸은 머리글 이름으로 먼저 찾고, 못 찾으면 탭마다 정해진 자리를 쓴다. */
   var lotte = {}, lotteErr = '';
-  try {
-    var lId = ssText(cfg['롯데송장시트ID']) || '1KIBSmjpMVKLGoAkbrcKyTr4LOflszwS_xtMzmRuvYWs';
-    var lGid = ssNum(cfg['롯데송장탭GID']) || 1575029201;
-    var lSS = SpreadsheetApp.openById(lId);
-    var lTab = null, shs = lSS.getSheets();
-    for (var si = 0; si < shs.length; si++) {
-      if (shs[si].getSheetId() === lGid) { lTab = shs[si]; break; }
-    }
-    if (!lTab) throw new Error('GID ' + lGid + ' 탭을 찾지 못했습니다 (' + lSS.getName() + ')');
-    if (lTab.getLastRow() >= 2) {
-      var lrc = lTab.getLastColumn();
-      var lrh = lTab.getRange(1, 1, 1, lrc).getDisplayValues()[0].map(function (x) {
-        return ssText(x).replace(/\s/g, '');
-      });
-      var ci = -1, cw = -1;
-      for (var h = 0; h < lrh.length; h++) {
-        if (ci < 0 && (lrh[h] === '주문번호' || lrh[h] === '고객주문번호')) ci = h;
-        if (cw < 0 && (lrh[h] === '운송장번호' || lrh[h] === '송장번호')) cw = h;
+  var 자사원천 = [
+    { 이름: '로젠', 택배사: '로젠택배',
+      gid: ssNum(cfg['로젠송장탭GID']) || 548505068, uid: 4, inv: 5 },
+    { 이름: '롯데', 택배사: '롯데택배',
+      gid: ssNum(cfg['롯데송장탭GID']) || 1575029201, uid: 9, inv: 6 },
+  ];
+  var 읽은탭 = [];
+  for (var oi = 0; oi < 자사원천.length; oi++) {
+    var o편 = 자사원천[oi];
+    try {
+      var lId = ssText(cfg['롯데송장시트ID']) || '1KIBSmjpMVKLGoAkbrcKyTr4LOflszwS_xtMzmRuvYWs';
+      var lSS = SpreadsheetApp.openById(lId);
+      var lTab = null, shs = lSS.getSheets();
+      for (var si = 0; si < shs.length; si++) {
+        if (shs[si].getSheetId() === o편.gid) { lTab = shs[si]; break; }
       }
-      if (ci < 0) ci = 9;   // J
-      if (cw < 0) cw = 6;   // G
-      var rv = lTab.getRange(2, 1, lTab.getLastRow() - 1, Math.max(ci, cw) + 1).getDisplayValues();
-      for (var r = 0; r < rv.length; r++) {
-        var o = ssText(rv[r][ci]), w = ssText(rv[r][cw]);
-        if (!o || !w) continue;
-        if (o.indexOf('주문번호') >= 0 || w.indexOf('운송장') >= 0) continue;
-        //  같은 주문번호가 또 오면 **덮지 말고 더한다** (20박스 주문이 있다)
-        ssInvPut_(lotte, o, w, '로젠택배');
+      if (!lTab) throw new Error('GID ' + o편.gid + ' 탭을 찾지 못했습니다 (' + lSS.getName() + ')');
+      if (lTab.getLastRow() >= 2) {
+        var lrc = lTab.getLastColumn();
+        var lrh = lTab.getRange(1, 1, 1, lrc).getDisplayValues()[0].map(function (x) {
+          return ssText(x).split(' ').join('').split(String.fromCharCode(9)).join('');
+        });
+        var ci = -1, cw = -1;
+        for (var h = 0; h < lrh.length; h++) {
+          if (ci < 0 && (lrh[h] === '주문번호' || lrh[h] === '고객주문번호')) ci = h;
+          if (cw < 0 && (lrh[h] === '운송장번호' || lrh[h] === '송장번호')) cw = h;
+        }
+        if (ci < 0) ci = o편.uid;
+        if (cw < 0) cw = o편.inv;
+        var rv = lTab.getRange(2, 1, lTab.getLastRow() - 1, Math.max(ci, cw) + 1).getDisplayValues();
+        var n편 = 0;
+        for (var r = 0; r < rv.length; r++) {
+          var o = ssText(rv[r][ci]), w = ssText(rv[r][cw]);
+          if (!o || !w) continue;
+          if (o.indexOf('주문번호') >= 0 || w.indexOf('운송장') >= 0) continue;
+          //  같은 주문번호가 또 오면 **덮지 말고 더한다** (20박스 주문이 있다)
+          ssInvPut_(lotte, o, w, o편.택배사);
+          n편++;
+        }
+        읽은탭.push(o편.이름 + ' ' + n편 + '줄');
+      } else {
+        읽은탭.push(o편.이름 + ' 비었음');
       }
+    } catch (eL) {
+      //  한 탭이 안 읽혀도 나머지는 읽는다. 둘 다 실패했을 때만 진짜 실패다.
+      lotteErr = (lotteErr ? lotteErr + ' / ' : '') + o편.이름 + ': ' + String(eL.message || eL);
     }
-  } catch (eL) {
-    lotteErr = String(eL.message || eL);
   }
+  //  한 탭이라도 읽혔으면 실패가 아니다
+  if (읽은탭.length) lotteErr = '';
 
   // ── 1b) 대리공급_임시기록 → 협력업체가 보낸 건의 송장 ──
   // 상품정보 시트에 살고, P열 사방넷주문번호 · V열 택배사 · X열 송장번호다.
@@ -954,14 +982,15 @@ function ss_송장전파() {
 
   if (lotteErr && tempErr && hubErr) {
     return ssio_alert('송장 원천을 하나도 읽지 못했습니다.' + NL + NL +
-      '롯데 송장탭: ' + lotteErr + NL + '임시기록: ' + tempErr + NL + '발주허브: ' + hubErr);
+      '자사출고 송장탭: ' + lotteErr + NL + '임시기록: ' + tempErr + NL + '발주허브: ' + hubErr);
   }
 
   // 통합 조회 — 롯데가 먼저, 없으면 임시기록
   /* 송장이 여러 장이면 공백으로 이어 준다. 한 장만 주면 CS 가 나머지 박스를
      조회할 수 없다 — 실측에서 74장이 그렇게 사라지고 있었다. */
   function find(uid) {
-    if (lotte[uid]) return { w: ssInvJoin_(lotte[uid]), c: '로젠택배', src: '롯데' };
+    //  택배사는 «읽은 탭»이 알려 준 것을 그대로 쓴다 — 박아 두면 또 거짓말이 된다
+    if (lotte[uid]) return { w: ssInvJoin_(lotte[uid]), c: lotte[uid].c || '로젠택배', src: '자사' };
     if (temp[uid]) return { w: ssInvJoin_(temp[uid]), c: temp[uid].c, src: '대리공급' };
     if (hub[uid]) return { w: ssInvJoin_(hub[uid]), c: hub[uid].c, src: '대리판매' };
     return null;
@@ -982,7 +1011,7 @@ function ss_송장전파() {
       v[i][5] = hit.w;
       if (iCar >= 0) v[i][iCar] = hit.c;
       if (direct) {
-        if (hit.src === '롯데') 롯데직접++;
+        if (hit.src === '자사') 롯데직접++;
         else if (hit.src === '대리공급') 대리공급건++;
         else 대리판매건++;
       }
@@ -1031,7 +1060,9 @@ function ss_송장전파() {
           if (hit2) {
             lv[a][li['운송장번호']] = hit2.w;
             if (li['송장매칭'] !== undefined) {
-              lv[a][li['송장매칭']] = hit2.src === '롯데' ? '롯데 직접' : hit2.src;
+              /* 「자사 직접」 — 종전에는 「롯데 직접」이었다. 옛 원장 줄에는
+                 그 글자가 남아 있으므로 읽는 쪽(gasBulk)이 둘 다 받는다. */
+              lv[a][li['송장매칭']] = hit2.src === '자사' ? '자사 직접' : hit2.src;
             }
             원장직접++;
           }
@@ -1119,17 +1150,23 @@ function ss_송장전파() {
       '  V2 롯데택배 탭으로 업로드를 시작하면 자동으로 매칭됩니다.';
   }
   if (lotteErr) {
-    msg += NL + NL + '⚠ 롯데 송장탭을 읽지 못했습니다 — 임시기록만으로 매칭했습니다.' + NL + '  ' + lotteErr;
+    msg += NL + NL + '⚠ 자사출고 송장탭을 읽지 못했습니다 — 임시기록만으로 매칭했습니다.' + NL + '  ' + lotteErr;
   }
   if (hubErr) {
     msg += NL + NL + '⚠ 발주허브를 읽지 못했습니다 — 대리판매 송장이 빠졌습니다.' + NL + '  ' + hubErr;
   }
   if (tempErr) {
-    msg += NL + NL + '⚠ 대리공급 임시기록을 읽지 못했습니다 — 롯데만으로 매칭했습니다.' + NL + '  ' + tempErr;
+    msg += NL + NL + '⚠ 대리공급 임시기록을 읽지 못했습니다 — 자사출고만으로 매칭했습니다.' + NL + '  ' + tempErr;
   }
   if (conflicts.length) {
     msg += NL + NL + '⚠ 한 주문번호에 송장이 두 개 이상 (첫 번째만 등록됩니다):' + NL +
       '  ' + conflicts.join(NL + '  ');
+  }
+  /* 어느 탭에서 몇 줄을 읽었는지 적는다.  (2026-09-11)
+     로젠으로 갈아탄 날에 「로젠 0줄」이 보이면 그 자리에서 안다 —
+     안 보이면 송장이 안 붙은 뒤에야 거꾸로 찾아야 한다. */
+  if (읽은탭 && 읽은탭.length) {
+    msg += NL + NL + '자사출고 송장탭: ' + 읽은탭.join(' · ');
   }
   msg += NL + NL + '「사방넷등록」 확인 후 「📊 사방넷 대량등록 엑셀 저장」을 실행하세요.';
   return ssio_alert(msg);
