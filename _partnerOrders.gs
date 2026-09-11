@@ -4717,6 +4717,35 @@ function _po_ownCarrierCodeByInvoice_(inv, rozenCode, lotteCode) {
   return rozenCode;   // 11자리(로젠)와 그 밖의 것
 }
 
+/**
+ * 자사출고 송장탭의 «머리글 줄»을 찾는다.
+ *
+ * ★ 머리글이 1행에 있다고 믿으면 안 된다 ★  (2026-09-11)
+ *   입력_로젠주문실적은 1행이 제목이고 머리글은 2행이다.
+ *   1행만 보면 이름을 못 찾아 고정 자리로 떨어지는데, 그 자리가 로젠에서는
+ *   엉뚱한 칸이라 한 줄도 안 걸린다. 오류는 안 나고 0행만 나온다.
+ *   (세트분리 gasBulk.js ssb_findHeader 와 같은 규칙)
+ *
+ * @return {{row:number, uid:number, inv:number}} row 은 1부터. 못 찾으면 0.
+ */
+function _po_findInvoiceHeader_(tab, 볼줄) {
+  볼줄 = 볼줄 || 6;
+  var lastRow = tab.getLastRow();
+  if (lastRow < 2) return { row: 0, uid: -1, inv: -1 };
+  var v = tab.getRange(1, 1, Math.min(볼줄, lastRow), tab.getLastColumn()).getDisplayValues();
+  for (var r = 0; r < v.length; r++) {
+    var uid = -1, inv = -1;
+    for (var c = 0; c < v[r].length; c++) {
+      var hh = String(v[r][c] || "").replace(/[ 	]/g, "");
+      if (!hh) continue;
+      if (uid < 0 && (hh === "주문번호" || hh === "고객주문번호")) uid = c;
+      if (inv < 0 && (hh === "운송장번호" || hh === "송장번호")) inv = c;
+    }
+    if (uid >= 0 && inv >= 0) return { row: r + 1, uid: uid, inv: inv };
+  }
+  return { row: 0, uid: -1, inv: -1 };
+}
+
 function _po_courierCodeForVendor_(vendorName) {
   if (typeof _pep_carrierForVendor_ !== "function") return "";
   var carrier = _pep_carrierForVendor_(vendorName);
@@ -4888,10 +4917,13 @@ function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
           scannedLogs.push("[사방넷대량등록] " + src.이름 + " 탭 없음/비었음 (GID " + src.gid + ")");
           continue;
         }
-        var _uidIdx = src.col.uid >= 0 ? src.col.uid : 9;
-        var _invIdx = src.col.invoice >= 0 ? src.col.invoice : 6;
+        /* 머리글을 «찾는다». 이름으로 못 찾을 때만 고정 자리로 떨어진다. */
+        var H = _po_findInvoiceHeader_(ownTab);
+        var _uidIdx = H.row ? H.uid : (src.col.uid >= 0 ? src.col.uid : 9);
+        var _invIdx = H.row ? H.inv : (src.col.invoice >= 0 ? src.col.invoice : 6);
+        var _from = H.row ? H.row + 1 : 2;
         var ltLc = Math.max(ownTab.getLastColumn(), Math.max(_uidIdx, _invIdx) + 1);
-        var ltData = ownTab.getRange(2, 1, ownTab.getLastRow() - 1, ltLc).getDisplayValues();
+        var ltData = ownTab.getRange(_from, 1, ownTab.getLastRow() - _from + 1, ltLc).getDisplayValues();
         var nTab = 0;
         for (var lti = 0; lti < ltData.length; lti++) {
           var ltUid = String(ltData[lti][_uidIdx] || "").trim();
@@ -4902,7 +4934,8 @@ function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
           var nAdd = _po_addSabangBulkRowCoded_(rows, seen, ltUid, ltInv, src.code, result);
           if (nAdd) { result.lotteOwn += nAdd; nTab += nAdd; }
         }
-        scannedLogs.push("[사방넷대량등록] 자사출고 " + src.이름 + " " + nTab + "행");
+        scannedLogs.push("[사방넷대량등록] 자사출고 " + src.이름 + " " + nTab + "행" +
+          " (머리글 " + (H.row || "못찾음") + "행 · 주문 " + _uidIdx + " · 송장 " + _invIdx + ")");
       } catch (eLt) {
         scannedLogs.push("[사방넷대량등록] 자사출고 " + src.이름 + " 오류: " + String(eLt.message || eLt));
       }

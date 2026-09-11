@@ -7,7 +7,7 @@
  * 원천 넷 (허브와 같은 순서·같은 우선순위):
  *   1. 대리공급_임시기록   상품정보  P=주문번호 X=송장 W=업체prefix
  *   2. 협력업체_발주허브   상품정보  C=주문번호 N=송장  B=업체
- *   3. 자사출고            거래관리  로젠 E/F · 롯데 J/G  → 탭이 곧 택배사
+ *   3. 자사출고            거래관리  머리글을 찾아 읽는다 → 탭이 곧 택배사
  *   4. 주문라인원장        오늘 전체 회차 — 전파가 채운 운송장번호 (합포장 동봉 포함)
  *
  * 규칙도 허브와 같다:
@@ -84,6 +84,59 @@ function ssb_allowedDates(cfg) {
 }
 
 /** 택배사 코드 표 — 상품정보 「업체_택배사」 (A=업체prefix B=업체명 C=택배사 D=코드) */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  자사출고 송장탭의 «머리글 줄»을 찾는다
+ *  2026-09-11
+ *
+ *  ★ 머리글이 1행에 있다고 믿으면 안 된다 ★
+ *    입력_로젠주문실적은 1행이 제목이다 —
+ *      「주문등록_출력(복수건)_출력완료(645)건」
+ *    머리글은 2행이고 자료는 3행부터다.
+ *    1행만 보면 이름을 못 찾아 «고정 자리»로 떨어지는데, 그 고정 자리가
+ *    로젠에서는 엉뚱한 칸이라 한 줄도 안 걸렸다. 오류는 안 나고
+ *    「0행」만 나온다 — 그래서 385건이 91건이 됐다.
+ *
+ *    롯데 탭도 머리글이 1~2행에 걸쳐 병합돼 있다. 이름으로 찾으면 둘 다 맞다.
+ *
+ *  @return {{row:number, head:Array, uid:number, inv:number, date:number}}
+ *          row 은 1부터 센 시트 행번호. 못 찾으면 row = 0.
+ */
+/** 0 → A, 18 → S */
+function ssb_col(i) {
+  if (i < 0) return '-';
+  var n = i + 1, o = '';
+  while (n > 0) { var r = (n - 1) % 26; o = String.fromCharCode(65 + r) + o; n = Math.floor((n - 1) / 26); }
+  return o + '(' + i + ')';
+}
+
+function ssb_findHeader(tab, 볼줄) {
+  볼줄 = 볼줄 || 6;
+  var lastRow = tab.getLastRow();
+  if (lastRow < 2) return { row: 0, head: [], uid: -1, inv: -1, date: -1 };
+  var wid = tab.getLastColumn();
+  var v = tab.getRange(1, 1, Math.min(볼줄, lastRow), wid).getDisplayValues();
+  for (var r = 0; r < v.length; r++) {
+    var uid = -1, inv = -1, date = -1;
+    for (var c = 0; c < v[r].length; c++) {
+      var h = ssText(v[r][c]).split(' ').join('');
+      if (!h) continue;
+      if (uid < 0 && (h === '주문번호' || h === '고객주문번호')) uid = c;
+      if (inv < 0 && (h === '운송장번호' || h === '송장번호')) inv = c;
+      /* 날짜 — 롯데는 「집하일자」, 로젠은 그런 칸이 아예 없고
+         「파일명」이 20260911.xls 처럼 날짜를 담고 있다. */
+      if (date < 0 && (h.indexOf('집하일') >= 0 || h.indexOf('발송일') >= 0 ||
+                       h.indexOf('출고일') >= 0 || h.indexOf('등록일') >= 0 ||
+                       h === '파일명')) date = c;
+    }
+    //  둘 다 있어야 머리글이다. 하나만 있으면 자료 줄일 수 있다.
+    if (uid >= 0 && inv >= 0) {
+      return { row: r + 1, head: v[r], uid: uid, inv: inv, date: date };
+    }
+  }
+  return { row: 0, head: [], uid: -1, inv: -1, date: -1 };
+}
+
 function ssb_carrierTable() {
   var t = { byPfx: {}, byLabel: {}, code: {} };
   /* ★ 이름→코드 대응이라 롯데도 남는다 ★  (2026-09-11)
@@ -228,8 +281,8 @@ function ssb_collect() {
   // ── 3. 자사출고 — 거래관리시스템송장. 로젠(E=4·F=5) + 롯데(J=9·G=6) ──
   //    둘 다 읽는다. 한쪽만 보면 갈아탄 날 앞뒤가 조용히 빠진다.
   var 자사탭 = [
-    { 이름: '로젠', gid: ssNum(cfg['로젠송장탭GID']) || 548505068, uid: 4, inv: 5, code: SSB_ROZEN_CODE },
-    { 이름: '롯데', gid: ssNum(cfg['롯데송장탭GID']) || 1575029201, uid: 9, inv: 6, code: SSB_LOTTE_CODE },
+    { 이름: '로젠', gid: ssNum(cfg['로젠송장탭GID']) || 548505068, uid: 18, inv: 3, code: SSB_ROZEN_CODE },
+    { 이름: '롯데', gid: ssNum(cfg['롯데송장탭GID']) || 1575029201, uid: 8, inv: 6, code: SSB_LOTTE_CODE },
   ];
   res.자사탭 = [];
   for (var oi = 0; oi < 자사탭.length; oi++) {
@@ -245,40 +298,31 @@ function ssb_collect() {
       if (!lTab) throw new Error('GID ' + 편.gid + ' 탭 없음');
       if (lTab.getLastRow() < 2) { res.자사탭.push(편.이름 + ' 비었음'); continue; }
 
-      var lwid = Math.max(lTab.getLastColumn(), Math.max(편.uid, 편.inv) + 1, 10);
-      // 집하일자 열은 헤더로 찾는다. 못 찾으면 롯데가 쓰던 고정 위치(D열)로.
-      var lhd = lTab.getRange(1, 1, 1, lwid).getDisplayValues()[0];
-      var dCol = -1;
-      for (var dh = 0; dh < lhd.length; dh++) {
-        var hn = ssText(lhd[dh]).split(' ').join('');
-        if (hn.indexOf('집하일') >= 0 || hn.indexOf('발송일') >= 0 ||
-            hn.indexOf('출고일') >= 0 || hn.indexOf('등록일') >= 0) { dCol = dh; break; }
+      /* 머리글을 «찾는다». 1행에 있다고 믿지 않는다 (ssb_findHeader 설명) */
+      var H = ssb_findHeader(lTab);
+      if (!H.row) {
+        res.자사탭.push(편.이름 + ' 머리글 못 찾음');
+        errs.push('자사출고 ' + 편.이름 + ' 탭: 「주문번호」·「운송장번호」 머리글을 못 찾았습니다');
+        continue;
       }
-      if (dCol < 0) dCol = 3;
+      var ci = H.uid, cw = H.inv, dCol = H.date;
+      var lwid = Math.max(lTab.getLastColumn(), Math.max(ci, cw) + 1);
 
-      /* 어느 칸을 읽었는지 남긴다 — 탭 서식이 바뀌면 여기부터 본다.
-         탭이 둘이 됐으니 이름을 붙여 구분한다. */
+      /* 어느 칸을 읽었는지 남긴다 — 탭 서식이 바뀌면 여기부터 본다 */
       if (oi === 0) res.lotteCols = [];
-      var probe = lTab.getRange(2, 1, Math.min(4, lTab.getLastRow() - 1), lwid).getDisplayValues();
-      for (var lc = 0; lc < Math.min(lwid, 16); lc++) {
-        var sample = '';
-        for (var pr = 0; pr < probe.length; pr++) {
-          if (ssText(probe[pr][lc])) { sample = ssText(probe[pr][lc]); break; }
-        }
-        res.lotteCols.push(편.이름 + ' ' + lc + ':' + (ssText(lhd[lc]) || '(무제)') +
-          ' = ' + (sample.length > 16 ? sample.substring(0, 16) : sample || '(빈칸)') +
-          (lc === dCol ? '   ← 날짜열' : '') +
-          (lc === 편.uid ? '   ← 주문번호' : '') +
-          (lc === 편.inv ? '   ← 운송장' : ''));
-      }
+      res.lotteCols.push(편.이름 + ' 머리글 ' + H.row + '행 · 주문번호 ' + ssb_col(ci) +
+        ' · 운송장 ' + ssb_col(cw) +
+        ' · 날짜 ' + (dCol >= 0 ? ssb_col(dCol) + '(' + ssText(H.head[dCol]) + ')' : '없음 → 날짜로 안 거름'));
 
-      var lv = lTab.getRange(2, 1, lTab.getLastRow() - 1, lwid).getDisplayValues();
+      var lv = lTab.getRange(H.row + 1, 1, lTab.getLastRow() - H.row, lwid).getDisplayValues();
       var n편 = 0;
       for (var k = 0; k < lv.length; k++) {
-        if (!ssText(lv[k][편.uid]) || !ssText(lv[k][편.inv])) continue;
-        if (!ssb_keepDate(lv[k][dCol], allowed, res)) continue;
+        if (!ssText(lv[k][ci]) || !ssText(lv[k][cw])) continue;
+        /* 날짜 칸이 없는 탭은 날짜로 거르지 않는다 — 엉뚱한 칸을 날짜로
+           읽느니 다 넣고 중복 제거에 맡기는 편이 낫다. */
+        if (dCol >= 0 && !ssb_keepDate(lv[k][dCol], allowed, res)) continue;
         scan.s3++;
-        var n어 = ssb_addRows(rows, seen, lv[k][편.uid], lv[k][편.inv], 편.code, res, uidSeen, seenOrd);
+        var n어 = ssb_addRows(rows, seen, lv[k][ci], lv[k][cw], 편.code, res, uidSeen, seenOrd);
         n3 += n어; n편 += n어;
       }
       res.자사탭.push(편.이름 + ' ' + n편 + '행');

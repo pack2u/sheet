@@ -879,9 +879,9 @@ function ss_송장전파() {
   var lotte = {}, lotteErr = '';
   var 자사원천 = [
     { 이름: '로젠', 택배사: '로젠택배',
-      gid: ssNum(cfg['로젠송장탭GID']) || 548505068, uid: 4, inv: 5 },
+      gid: ssNum(cfg['로젠송장탭GID']) || 548505068, uid: 18, inv: 3 },
     { 이름: '롯데', 택배사: '롯데택배',
-      gid: ssNum(cfg['롯데송장탭GID']) || 1575029201, uid: 9, inv: 6 },
+      gid: ssNum(cfg['롯데송장탭GID']) || 1575029201, uid: 8, inv: 6 },
   ];
   var 읽은탭 = [];
   for (var oi = 0; oi < 자사원천.length; oi++) {
@@ -894,32 +894,25 @@ function ss_송장전파() {
         if (shs[si].getSheetId() === o편.gid) { lTab = shs[si]; break; }
       }
       if (!lTab) throw new Error('GID ' + o편.gid + ' 탭을 찾지 못했습니다 (' + lSS.getName() + ')');
-      if (lTab.getLastRow() >= 2) {
-        var lrc = lTab.getLastColumn();
-        var lrh = lTab.getRange(1, 1, 1, lrc).getDisplayValues()[0].map(function (x) {
-          return ssText(x).split(' ').join('').split(String.fromCharCode(9)).join('');
-        });
-        var ci = -1, cw = -1;
-        for (var h = 0; h < lrh.length; h++) {
-          if (ci < 0 && (lrh[h] === '주문번호' || lrh[h] === '고객주문번호')) ci = h;
-          if (cw < 0 && (lrh[h] === '운송장번호' || lrh[h] === '송장번호')) cw = h;
-        }
-        if (ci < 0) ci = o편.uid;
-        if (cw < 0) cw = o편.inv;
-        var rv = lTab.getRange(2, 1, lTab.getLastRow() - 1, Math.max(ci, cw) + 1).getDisplayValues();
-        var n편 = 0;
-        for (var r = 0; r < rv.length; r++) {
-          var o = ssText(rv[r][ci]), w = ssText(rv[r][cw]);
-          if (!o || !w) continue;
-          if (o.indexOf('주문번호') >= 0 || w.indexOf('운송장') >= 0) continue;
-          //  같은 주문번호가 또 오면 **덮지 말고 더한다** (20박스 주문이 있다)
-          ssInvPut_(lotte, o, w, o편.택배사);
-          n편++;
-        }
-        읽은탭.push(o편.이름 + ' ' + n편 + '줄');
-      } else {
-        읽은탭.push(o편.이름 + ' 비었음');
+      /* 머리글을 «찾는다» — 1행에 있다고 믿지 않는다.
+         로젠 탭은 1행이 제목이고 머리글은 2행이다. 규칙은 gasBulk 의
+         ssb_findHeader 한 곳에 있다 — 두 곳에 적으면 또 갈라진다. */
+      var H = ssb_findHeader(lTab);
+      if (!H.row) throw new Error('「주문번호」·「운송장번호」 머리글을 못 찾았습니다');
+      var ci = H.uid, cw = H.inv;
+      var rv = lTab.getRange(H.row + 1, 1, lTab.getLastRow() - H.row,
+        Math.max(ci, cw) + 1).getDisplayValues();
+      var n편 = 0;
+      for (var r = 0; r < rv.length; r++) {
+        var o = ssText(rv[r][ci]), w = ssText(rv[r][cw]);
+        if (!o || !w) continue;
+        if (o.indexOf('주문번호') >= 0 || w.indexOf('운송장') >= 0) continue;
+        //  같은 주문번호가 또 오면 **덮지 말고 더한다** (20박스 주문이 있다)
+        ssInvPut_(lotte, o, w, o편.택배사);
+        n편++;
       }
+      읽은탭.push(o편.이름 + ' ' + n편 + '줄(머리글 ' + H.row + '행 · 주문 ' +
+        ssb_col(ci) + ' · 송장 ' + ssb_col(cw) + ')');
     } catch (eL) {
       //  한 탭이 안 읽혀도 나머지는 읽는다. 둘 다 실패했을 때만 진짜 실패다.
       lotteErr = (lotteErr ? lotteErr + ' / ' : '') + o편.이름 + ': ' + String(eL.message || eL);
