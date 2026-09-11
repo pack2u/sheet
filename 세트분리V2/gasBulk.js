@@ -68,6 +68,10 @@ function ssb_allowedDates(cfg) {
 /** 택배사 코드 표 — 상품정보 「업체_택배사」 (A=업체prefix B=업체명 C=택배사 D=코드) */
 function ssb_carrierTable() {
   var t = { byPfx: {}, byLabel: {}, code: {} };
+  /* ★ 이름→코드 대응이라 롯데도 남는다 ★  (2026-09-11)
+     탭 이름을 로젠으로 바꾸면서 여기까지 같이 바꿨다가 되돌렸다.
+     지난 송장·반품에 롯데가 남아 있고, 코드표는 «그 이름이 무슨 코드인가»지
+     «지금 어느 택배사를 쓰는가»가 아니다. */
   var fallback = { 'CJ대한통운': '001', '롯데택배': '002', '로젠택배': '007', '대신택배': '037' };
   for (var k in fallback) {
     if (Object.prototype.hasOwnProperty.call(fallback, k)) t.code[k] = fallback[k];
@@ -497,7 +501,10 @@ function _sslp_tabs_() {
   var out = [];
   for (var i = 0; i < SSIO_TABS.출력.length; i++) {
     var n = SSIO_TABS.출력[i];
-    if (n.indexOf('롯데') === 0) out.push(n);
+    /* ★ 이름으로 비교하지 않는다 ★  (2026-09-11 택배사 바뀜)
+       전에는 indexOf('롯데') === 0 이었다. 탭 이름을 로젠으로 바꾸는 순간
+       아무것도 안 걸려 «조용히 0건»이 된다. 대리발송만 빼면 되는 자리다. */
+    if (n !== SS_ROUTE.PARTNER) out.push(n);
   }
   return out;
 }

@@ -9,7 +9,7 @@
 
 var SS_SUMMARY_HEADER = ['항목', '값'];
 var SS_RUNLOG_HEADER = ['회차키', '실행시각', '입력행', '분해행', '합포장흡수', '출력행',
-  '롯데택배', '도서산간', '도서산간(위탁)', '동네배송', '대리발송', '합배송', '보류', '경고', '소요(초)', '버전'];
+  '로젠택배', '도서산간', '도서산간(위탁)', '동네배송', '대리발송', '합배송', '보류', '경고', '소요(초)', '버전'];
 
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
@@ -892,7 +892,7 @@ function ss_송장전파() {
         if (!o || !w) continue;
         if (o.indexOf('주문번호') >= 0 || w.indexOf('운송장') >= 0) continue;
         //  같은 주문번호가 또 오면 **덮지 말고 더한다** (20박스 주문이 있다)
-        ssInvPut_(lotte, o, w, '롯데택배');
+        ssInvPut_(lotte, o, w, '로젠택배');
       }
     }
   } catch (eL) {
@@ -961,7 +961,7 @@ function ss_송장전파() {
   /* 송장이 여러 장이면 공백으로 이어 준다. 한 장만 주면 CS 가 나머지 박스를
      조회할 수 없다 — 실측에서 74장이 그렇게 사라지고 있었다. */
   function find(uid) {
-    if (lotte[uid]) return { w: ssInvJoin_(lotte[uid]), c: '롯데택배', src: '롯데' };
+    if (lotte[uid]) return { w: ssInvJoin_(lotte[uid]), c: '로젠택배', src: '롯데' };
     if (temp[uid]) return { w: ssInvJoin_(temp[uid]), c: temp[uid].c, src: '대리공급' };
     if (hub[uid]) return { w: ssInvJoin_(hub[uid]), c: hub[uid].c, src: '대리판매' };
     return null;

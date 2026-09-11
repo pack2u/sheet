@@ -54,7 +54,7 @@ function ssm_localRows(tabName) {
  */
 function ssm_setLocalTabVisible(show) {
   var ss = ssio_ss();
-  var names = [SSIO_TABS.동네배송, '롯데택배-동네배송'];
+  var names = [SSIO_TABS.동네배송, '로젠택배-동네배송'];
   for (var i = 0; i < names.length; i++) {
     var sh = ss.getSheetByName(names[i]);
     if (!sh) continue;

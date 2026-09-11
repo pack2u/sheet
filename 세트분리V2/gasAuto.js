@@ -409,7 +409,10 @@ function ss_미매칭메꾸기() {
   for (var i = 0; i < lv.length; i++) {
     if (G(lv[i], '주문번호출처') !== '자동발급') continue;
     var route = G(lv[i], '경로');
-    if (route.indexOf('롯데') !== 0) continue;      // 대리발송은 롯데에 없다
+    /* ★ 이름으로 비교하지 않는다 ★  (2026-09-11 택배사 바뀜)
+       전에는 indexOf('롯데') !== 0 으로 걸렀다. 이름을 바꾸면 전부 걸러져
+       «조용히 0건»이 된다. 빼야 할 것은 대리발송 하나뿐이다. */
+    if (route === SS_ROUTE.PARTNER) continue;
     if (G(lv[i], '운송장번호')) continue;
     var uid = G(lv[i], '고유ID');
     if (!uid) continue;
