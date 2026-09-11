@@ -1035,7 +1035,19 @@
     .ret-card.ret-focus .ret-focus-badge { display: block; }
     .ret-body { display: flex; gap: 8px; align-items: stretch; min-width: 0; transition: flex-direction 0.2s ease; }
     .ret-card.ret-focus .ret-body { flex-direction: column; gap: 12px; }
-    .ret-left { flex: 0 0 42%; min-width: 118px; max-width: 48%; font-size: 12px; transition: font-size 0.2s ease; }
+    /* ★ 왼쪽:오른쪽 = 1:2 ★  (2026-09-11)
+       > "카드가 좌우 반으로 쪼개져있는데 1:2 비율로 나눠서
+          진행과정등이 더 잘보이게 해줘"
+    
+       반반이면 오른쪽 진행 이력이 두세 칸에서 잘려 가로로 밀어 봐야 했다.
+       왼쪽(이름·품목·번호)은 «한 번 읽고 마는» 것이고, 오른쪽은 «매일 보는»
+       것이다. 자리는 자주 보는 쪽에 준다.
+    
+       min-width 118px 은 그대로 둔다 — 좁은 화면에서 1/3 이 이름 한 줄도
+       못 담으면 오히려 두 줄로 터진다. 거기서는 비율보다 이 바닥이 이긴다.
+       ★ 두 파일이 같은 화면을 그린다 ★  CS_WebApp/home.html 과
+         v2 app/returns.css — 한쪽만 고치면 화면이 갈라진다. */
+    .ret-left { flex: 0 0 33.33%; min-width: 118px; max-width: 36%; font-size: 12px; transition: font-size 0.2s ease; }
     .ret-card.ret-focus .ret-left {
       flex: none; width: 100%; max-width: none; min-width: 0; font-size: 15px;
     }
@@ -1064,6 +1076,14 @@
     .ret-card.ret-focus .ret-left .rn { font-size: 19px; line-height: 1.32; margin-bottom: 8px; }
     .ret-card.ret-focus .ret-vendor { min-width: 30px; height: 26px; font-size: 12px; border-radius: 8px; }
     .ret-card.ret-focus .ret-vendor-name { display: inline; }
+    /* ── 전화번호 딱지 ──  (2026-09-11 · v2 app/returns.css 와 쌍)
+       딱지는 작고 조용하게. 번호보다 눈에 띄면 읽는 순서가 뒤집힌다.
+       「안심번호뿐」일 때만 색을 준다 — 모르고 걸었다가 끊긴 걸
+       확인하는 일이 실제 손해라서. */
+    .ret-safe-hint { margin-top: 4px; font-size: 11px; font-weight: 600; color: #e74c5f; line-height: 1.4; }
+    .ret-ph-tag { font-size: 0.85em; font-weight: 600; opacity: 0.75; }
+    .ret-ph-sub { font-size: 0.9em; opacity: 0.6; }
+    .ret-ph-warn { font-size: 0.85em; font-weight: 600; color: #e74c5f; }
     .ret-meta { color: var(--text-secondary); margin-top: 3px; line-height: 1.45; font-size: 11px; transition: font-size 0.2s ease; }
     .ret-card.ret-focus .ret-meta { font-size: 14px; margin-top: 5px; color: var(--text-primary); }
     .ret-card.ret-focus .ret-left > div:nth-child(2) { font-size: 15px; font-weight: 500; }
@@ -1153,7 +1173,7 @@
       font-size: 12px; line-height: 17px; cursor: pointer;
     }
     .ret-right {
-      flex: 1; min-width: 0; max-width: 58%;
+      flex: 1; min-width: 0; max-width: 66.67%;
       display: flex; flex-direction: column; justify-content: center;
       overflow: hidden;
       transition: max-width 0.2s ease;
@@ -1166,7 +1186,7 @@
       overflow-x: auto; overflow-y: hidden; padding: 2px 2px 4px;
       -webkit-overflow-scrolling: touch; align-items: stretch;
     }
-    /* 반품 조회 팝업의 진행 이력 — 카드 안(.ret-right)은 58% 로 묶여 있지만
+    /* 반품 조회 팝업의 진행 이력 — 카드 안(.ret-right)은 2/3 로 묶여 있지만
        팝업에서는 폭을 다 써야 오래된 이력까지 옆으로 밀어 볼 수 있다. */
     .ret-case-tl { margin-top: 12px; }
     .ret-tl-track::-webkit-scrollbar { height: 4px; }
@@ -2782,8 +2802,22 @@
         </div>
         <div class="ledger-field">
           <label>전화</label>
-          <input id="retNewPhone" type="tel" placeholder="010-0000-0000" onblur="retNewLookup(false)">
+          <input id="retNewPhone" type="tel" placeholder="010-0000-0000"
+                 onblur="retNewLookup(false); retSafeHint();" oninput="retSafeHint()">
+          <div id="retNewPhoneHint" class="ret-safe-hint" hidden></div>
         </div>
+      </div>
+      <!-- ★ 실번호 칸 ★  (2026-09-11)
+           > "쿠팡의 경우 안심번호라 기간이 지나면 연락이 안되"
+           대장에는 「추가연락처」 열이 진작부터 있었고 협력업체 포털은 쓰고
+           있었는데, 이 접수창에만 칸이 없었다. 그래서 전화로 받아 낸 실번호를
+           적을 데가 없어 비고에 흘리거나 그냥 버려졌다. -->
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>실번호</label>
+          <input id="retNewPhone2" type="tel" placeholder="안심번호면 실제 번호를 받아 적으세요">
+        </div>
+        <div class="ledger-field"></div>
       </div>
       <div class="ledger-row2">
         <div class="ledger-field">
@@ -4616,7 +4650,7 @@
     var DRAFT_SPECS = {
       retNew: {
         modal: 'retNewModal', bar: 'retNewDraftBar',
-        fields: ['retNewStaff', 'retNewName', 'retNewPhone', 'retNewInvoice', 'retNewQty',
+        fields: ['retNewStaff', 'retNewName', 'retNewPhone', 'retNewPhone2', 'retNewInvoice', 'retNewQty',
                  'retNewItem', 'retNewVendor', 'retNewPickup', 'retNewRetInvoice',
                  'retNewFee', 'retNewType', 'retNewStatus', 'retNewAccount', 'retNewMemo']
       },
@@ -6677,7 +6711,15 @@
             '<div>' + esc(c.item || '-') + (c.qty ? ' × ' + esc(c.qty) : '') + '</div>' +
             (invLine ? '<div class="ret-meta">' + invLine + '</div>' : '') +
             (c.fee ? '<div class="ret-meta">반품비 ' + esc(c.fee) + '</div>' : '') +
-            (c.phone ? '<div class="ret-meta">' + esc(c.phone) + '</div>' : '') +
+            /* ★ 걸 수 있는 번호를 앞에 ★  (2026-09-11)
+               c.phone 은 이제 «실번호가 있으면 실번호»다 (csOrderSearch _cs_pickPhones_).
+               안심번호는 곁에 작게 남긴다 — 주문을 되짚을 때 그게 열쇠다. */
+            (c.phone ? '<div class="ret-meta">' + esc(c.phone) +
+              (c.phoneTag ? '<span class="ret-ph-tag"> ' + esc(c.phoneTag) + '</span>' : '') +
+              (c.phoneSub ? '<span class="ret-ph-sub"> · ' + esc(c.phoneSubTag) + ' ' +
+                 esc(c.phoneSub) + '</span>' : '') +
+              (c.phoneOnlySafe ? '<span class="ret-ph-warn"> 기간이 지나면 끊깁니다</span>' : '') +
+              '</div>' : '') +
             '<div class="ret-sub">' + esc(c.tab) + ' ' + c.row + '행 · ' + esc(c.date || '') +
               (c.staff ? ' · ' + esc(c.staff) : '') + '</div>' +
           '</div>' +
@@ -7466,6 +7508,19 @@
       return '<div class="ret-tl-track">' + h + '</div>';
     }
 
+    /* 안심번호를 적으면 바로 알려 준다 — 지금 고객과 통화 중일 때
+       실번호를 물어보는 것이 가장 싸다. 나중엔 걸 방법이 없다.
+       (협력업체 포털 portal.html showSafeHint 와 같은 규칙) */
+    function retSafeHint() {
+      var box = document.getElementById('retNewPhoneHint');
+      var inp = document.getElementById('retNewPhone');
+      if (!box || !inp) return;
+      var d = String(inp.value || '').replace(/[^0-9]/g, '');
+      var safe = /^050[0-9]/.test(d);
+      box.hidden = !safe;
+      if (safe) box.textContent = '안심번호입니다 — 배송이 끝나면 끊깁니다. 아래 실번호를 받아 적어 주세요.';
+    }
+
     function retCaseRowHtml(lab, val) {
       if (!val) return '';
       return '<div class="os-row"><div class="os-lab">' + esc(lab) +
@@ -7500,7 +7555,9 @@
         retCaseRowHtml('품목', (c.item || '') + (c.qty ? ' × ' + c.qty : '')) +
         retCaseRowHtml('원송장', c.invoice) +
         retCaseRowHtml('반품송장', c.returnInvoice) +
-        retCaseRowHtml('전화', c.phone) +
+        retCaseRowHtml('전화', (c.phone || '') + (c.phoneTag ? ' (' + c.phoneTag + ')' : '') +
+          (c.phoneOnlySafe ? '  — 기간이 지나면 끊깁니다' : '')) +
+        retCaseRowHtml(c.phoneSubTag === '안심' ? '안심번호' : '주문서 번호', c.phoneSub) +
         retCaseRowHtml('업체', c.vendor) +
         retCaseRowHtml('유형', c.type) +
         retCaseRowHtml('반품비', /^[0₩,.\s원]*$/.test(String(c.fee || '')) ? '' : c.fee) +
@@ -7525,7 +7582,10 @@
     function returnSearchHaystack(c) {
       if (!c) return '';
       return [
-        c.name, c.item, c.qty, c.phone, c.phoneDigits, c.invoice, c.invDigits,
+        /* 안심번호·실번호 «둘 다» 걸려야 한다 — 고객은 주문서의 안심번호를
+           대고, 직원은 받아 적은 실번호로 찾는다 */
+        c.name, c.item, c.qty, c.phone, c.phoneDigits, c.phoneSub, c.phone2Digits,
+        c.invoice, c.invDigits,
         c.returnInvoice, c.returnInvDigits, c.status, c.staff, c.tab, c.type,
         c.vendor, c.notice, c.fee, c.row, c.date
       ].join(' ').toLowerCase();
@@ -8595,6 +8655,8 @@
       fillStaffSelect(currentStaff, 'retNewStaff');
       document.getElementById('retNewName').value = '';
       document.getElementById('retNewPhone').value = '';
+      document.getElementById('retNewPhone2').value = '';
+      retSafeHint();
       document.getElementById('retNewInvoice').value = '';
       document.getElementById('retNewQty').value = '';
       document.getElementById('retNewItem').value = '';
@@ -8719,6 +8781,7 @@
           status: document.getElementById('retNewStatus').value || '접수',
           name: name,
           phone: document.getElementById('retNewPhone').value,
+          phone2: document.getElementById('retNewPhone2').value,
           vendor: document.getElementById('retNewVendor').value,
           item: document.getElementById('retNewItem').value,
           qty: document.getElementById('retNewQty').value,

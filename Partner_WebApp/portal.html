@@ -92,6 +92,11 @@
     .meta { font-size: 12.5px; color: #a8adc0; line-height: 1.65; word-break: break-all; }
     .meta em { color: #6f748a; font-style: normal; }
     .sub { font-size: 11px; color: #6f748a; margin-top: 6px; }
+    /* 전화번호 딱지 — 작고 조용하게. 「안심번호뿐」일 때만 색을 준다
+       (2026-09-11 · CS home.html · v2 returns.css 와 같은 규칙) */
+    .ph-tag { font-size: 0.85em; font-weight: 600; opacity: 0.7; }
+    .ph-sub { font-size: 0.9em; opacity: 0.55; }
+    .ph-warn { font-size: 0.85em; font-weight: 600; color: #e7707f; }
     .fee { color: #7fb2e8; font-weight: 600; }
     .inv-link { color: #7fb2e8; text-decoration: none; border-bottom: 1px dotted rgba(127,178,232,0.5); }
     .inv-link:active { color: #a8cdf5; }
@@ -526,7 +531,7 @@
         if (FILTER === 'active' && c.done) return false;
         if (FILTER === 'done' && !c.done) return false;
         if (!q) return true;
-        var hay = [c.name, c.item, c.invoice, c.returnInvoice, c.phone, c.status, c.type]
+        var hay = [c.name, c.item, c.invoice, c.returnInvoice, c.phone, c.phone2, c.status, c.type]
           .join('').replace(/\s/g, '').toLowerCase();
         return hay.indexOf(q) >= 0;
       });
@@ -675,7 +680,13 @@
       h += invLine('원송장', c.invoice, '');
       h += invLine('반품송장', c.returnInvoice, c.pickup);
       if (c.pickup) h += '<br><em>수거</em> ' + esc(c.pickup);
-      if (c.phone) h += '<br><em>연락처</em> ' + esc(c.phone);
+      var ph = pickPhones(c.phone, c.phone2);
+      if (ph.main) {
+        h += '<br><em>연락처</em> ' + esc(ph.main) +
+          (ph.mainTag ? ' <span class="ph-tag">' + esc(ph.mainTag) + '</span>' : '') +
+          (ph.sub ? ' <span class="ph-sub">· ' + esc(ph.subTag) + ' ' + esc(ph.sub) + '</span>' : '') +
+          (ph.onlySafe ? ' <span class="ph-warn">기간이 지나면 끊깁니다</span>' : '');
+      }
       if (c.fee) h += '<br><em>반품비</em> <span class="fee">' + esc(c.fee) + '</span>';
       h += '</div>';
       h += '<div class="sub">' + esc(c.date || '') +
@@ -904,6 +915,32 @@
     /* v2 의 is_safe_number 와 **같은 규칙**이다 (sql/04_reorder.sql 35행).
        두 곳이 다르게 판정하면 포털은 안심번호라 하고 v2 는 아니라 한다. */
     var SAFE_PREFIX = /^050[0-9]/;
+    /* ★ 걸 수 있는 번호를 앞에 ★  (2026-09-11)
+         > "쿠팡의 경우 안심번호라 기간이 지나면 연락이 안되"
+       접수창은 진작부터 실번호를 받고 있었는데(nPhone2), 정작 «카드»는
+       안심번호만 보여 주고 있었다. 받아 적은 값이 화면에 안 돌아온 셈이다.
+
+       CS 웹앱 _cs_pickPhones_ · v2 lib/returns pickPhones 와 같은 규칙.
+       셋 중 하나만 고치면 같은 건이 화면마다 다른 번호로 보인다. */
+    /* 딱지 모양은 CSS 에. 아래 규칙과 한 쌍이다 */
+    function pickPhones(phone, phone2) {
+      var 주 = String(phone || '').trim();
+      var 실 = String(phone2 || '').trim();
+      var 주가안심 = SAFE_PREFIX.test(주.replace(/[^0-9]/g, ''));
+      var 실이안심 = SAFE_PREFIX.test(실.replace(/[^0-9]/g, ''));
+      if (실 && !실이안심) {
+        return { main: 실, mainTag: '',
+                 sub: (주 && 주 !== 실) ? 주 : '',
+                 subTag: (주 && 주 !== 실) ? (주가안심 ? '안심' : '주문서') : '',
+                 onlySafe: false };
+      }
+      return { main: 주 || 실,
+               mainTag: 주 ? (주가안심 ? '안심' : '') : (실 ? '안심' : ''),
+               sub: (주 && 실 && 주 !== 실) ? 실 : '',
+               subTag: (주 && 실 && 주 !== 실) ? '추가' : '',
+               onlySafe: !!(주 || 실) && (주 ? 주가안심 : true) };
+    }
+
     function showSafeHint(phone) {
       var box = el('nPhoneHint');
       if (!box) return;

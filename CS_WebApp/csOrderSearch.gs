@@ -2015,6 +2015,11 @@ function submitReturnLedger(data) {
     if (col.vendor >= 0) row[col.vendor] = String(data.vendor || "").trim();
     if (col.name >= 0) row[col.name] = String(data.name || "").trim();
     if (col.phone >= 0) row[col.phone] = _cs_formatLedgerPhone_(data.phone);
+    /* 실번호는 「추가연락처」 열에 따로 적는다 — 주 연락처를 덮지 않는다.
+       주문서의 안심번호도 남아 있어야 쇼핑몰 자료와 맞춰 볼 수 있다. */
+    if (col.phone2 >= 0 && String(data.phone2 || "").trim()) {
+      row[col.phone2] = _cs_formatLedgerPhone_(data.phone2);
+    }
     if (col.pickup >= 0) {
       var pickupVal = String(data.pickup || "").trim();
       if (!pickupVal && data.carrier) pickupVal = String(data.carrier).trim();
@@ -2143,7 +2148,8 @@ function csDiagnoseReturnLedger() {
     if (colMap) {
       var label = {
         status: "처리상태", date: "반품접수날짜", staff: "접수자", vendor: "업체명",
-        name: "반품신청자", phone: "연락처", pickup: "수거입력처", item: "상품명",
+        name: "반품신청자", phone: "연락처", phone2: "추가연락처(실번호)",
+        pickup: "수거입력처", item: "상품명",
         qty: "수량", invoice: "원송장", type: "유형", fee: "반품비",
         notice: "고객요청/비고", returnInvoice: "반품송장"
       };
@@ -2222,7 +2228,7 @@ function _cs_colLetter_(idx) {
 
 function _cs_mapReturnLedgerCols_(header) {
   var col = {
-    date: -1, staff: -1, vendor: -1, name: -1, phone: -1,
+    date: -1, staff: -1, vendor: -1, name: -1, phone: -1, phone2: -1,
     pickup: -1, item: -1, qty: -1, invoice: -1, type: -1, fee: -1, status: -1, notice: -1,
     // 반품송장번호 — 대장 맨 끝에 추가한 열. 없으면 -1 이고 N열 비고 파싱으로 폴백한다.
     returnInvoice: -1,
@@ -2242,7 +2248,15 @@ function _cs_mapReturnLedgerCols_(header) {
        있었다. 협력업체 포털(prpLedger.gs)은 같은 이유로 접수를 막았다. */
     else if (col.vendor < 0 && /업체명|주문지|판매처|발주업체/.test(h)) col.vendor = i;
     else if (col.name < 0 && /반품신청자|수취인명|수취인|받는분/.test(h) && !/전화|주소/.test(h)) col.name = i;
-    else if (col.phone < 0 && /연락처|전화|휴대폰/.test(h) && !/주소/.test(h)) col.phone = i;
+    /* ★ 「추가」를 «먼저» 걸러야 한다 ★  (2026-09-11)
+       /연락처/ 는 「추가연락처」에도 걸린다. 지금은 E(연락처)가 F(추가연락처)보다
+       앞이라 우연히 맞고 있었을 뿐이다 — 열 순서가 바뀌는 날 추가연락처가
+       주 연락처 자리로 들어간다. 포털(prpLedger.gs:77)은 이미 이렇게 막아 뒀다.
+
+       그리고 종전에는 phone2 항목 자체가 없어서 실번호가 «어디에도 안 나왔다».
+       대장 F열에 적어 둔 실번호가 조용히 버려지고 있었다. */
+    else if (col.phone2 < 0 && /추가연락처|추가전화|비상연락|실번호/.test(h)) col.phone2 = i;
+    else if (col.phone < 0 && /연락처|전화|휴대폰/.test(h) && !/주소|추가/.test(h)) col.phone = i;
     /* ★ 2026-09-10: 「회수신청」을 더한다 (포털 prpLedger.gs 와 쌍) ★
        9월 탭 M열 머리글이 「수거입력처」 → 「회수신청」 이라 수거 택배사가
        어느 화면에도 안 나오고 있었다. 아래 M열 반품비 폴백은 이 열을
@@ -2365,6 +2379,61 @@ function _cs_formatLedgerPhone_(raw) {
   if (d.length === 11) return d.substring(0, 3) + "-" + d.substring(3, 7) + "-" + d.substring(7);
   if (d.length === 10) return d.substring(0, 3) + "-" + d.substring(3, 6) + "-" + d.substring(6);
   return String(raw || "").trim();
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  걸 수 있는 번호를 앞에 세운다
+ *  2026-09-11
+ *
+ *  > "반품접수 또는 반품 카드에 실번호가 입력되있으면 실번호 위주로
+ *     나오게 해줘.. 쿠팡의 경우 안심번호라 기간이 지나면 연락이 안되"
+ *
+ *  ★ 이 웹앱은 「추가연락처」 열을 «아예 안 읽고 있었다» ★
+ *    대장 F열에 실번호를 적어 두면 협력업체 포털(prpLedger.gs)은 읽는데,
+ *    CS 웹앱의 열 찾기에는 그 항목 자체가 없었다. 그래서 직원이 힘들게
+ *    받아 적은 실번호가 이 화면 어디에도 안 나왔다.
+ *
+ *  ★ 안심번호는 시한부다 ★
+ *    050 으로 시작하는 번호는 쇼핑몰이 만들어 준 가림막이라 배송이 끝나면
+ *    끊긴다. 반품은 그 뒤에 움직이는 일이라, 회수 기사가 걸 즈음엔 이미
+ *    안 받는 번호인 경우가 많다. 쿠팡 건이 특히 그렇다.
+ *
+ *  v2 의 lib/returns.ts pickPhones 와 «같은 규칙»이다. 한쪽만 고치면
+ *  같은 건이 두 화면에서 다른 번호로 보인다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _cs_isSafePhone_(v) {
+  return /^050[0-9]/.test(String(v || "").replace(/[^0-9]/g, ""));
+}
+
+/**
+ * @param phone   대장의 「연락처」 (쿠팡 건이면 안심번호인 경우가 많다)
+ * @param phone2  대장의 「추가연락처」 (접수할 때 받아 적은 실번호)
+ * @return {{main:string, mainTag:string, sub:string, subTag:string, onlySafe:boolean}}
+ */
+function _cs_pickPhones_(phone, phone2) {
+  var 주 = String(phone || "").trim();
+  var 실 = String(phone2 || "").trim();
+  var 주가안심 = _cs_isSafePhone_(주);
+
+  /* 실번호 칸에도 «안심번호»를 적어 둔 경우가 있다. 그때까지 앞세우면
+     거꾸로가 된다 — 둘 다 안심이라 순서를 바꿔 봐야 나아질 게 없다. */
+  if (실 && !_cs_isSafePhone_(실)) {
+    return {
+      main: 실, mainTag: "",
+      sub: (주 && 주 !== 실) ? 주 : "",
+      subTag: (주 && 주 !== 실) ? (주가안심 ? "안심" : "주문서") : "",
+      onlySafe: false
+    };
+  }
+  return {
+    main: 주 || 실,
+    mainTag: 주 ? (주가안심 ? "안심" : "") : (실 ? "안심" : ""),
+    sub: (주 && 실 && 주 !== 실) ? 실 : "",
+    subTag: (주 && 실 && 주 !== 실) ? "추가" : "",
+    onlySafe: !!(주 || 실) && (주 ? 주가안심 : true)
+  };
 }
 
 function _cs_formatLedgerInvoice_(raw) {
@@ -2879,6 +2948,8 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
     var invDigits = invRaw.replace(/[^0-9]/g, "");
     var retDigits = returnInv.replace(/[^0-9]/g, "");
     var phoneRaw = col.phone >= 0 ? String(row[col.phone] || "").trim() : "";
+    var phone2Raw = col.phone2 >= 0 ? String(row[col.phone2] || "").trim() : "";
+    var ph = _cs_pickPhones_(phoneRaw, phone2Raw);
     var staffVal = col.staff >= 0 ? String(row[col.staff] || "").trim() : "";
     var dateVal = col.date >= 0 ? String(row[col.date] || "").trim() : "";
     var typeVal = col.type >= 0 ? String(row[col.type] || "").trim() : "";
@@ -2891,8 +2962,17 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
       staff: staffVal,
       vendor: col.vendor >= 0 ? String(row[col.vendor] || "").trim() : "",
       name: col.name >= 0 ? String(row[col.name] || "").trim() : "",
-      phone: _cs_formatLedgerPhone_(phoneRaw),
+      /* 걸 수 있는 번호가 phone 이다 — 화면은 이것만 크게 쓴다 */
+      phone: _cs_formatLedgerPhone_(ph.main),
+      phoneTag: ph.mainTag,
+      phoneSub: ph.sub ? _cs_formatLedgerPhone_(ph.sub) : "",
+      phoneSubTag: ph.subTag,
+      phoneOnlySafe: ph.onlySafe,
+      /* ★ 찾기는 둘 다 걸려야 한다 ★
+         고객이 주문서에 적힌 안심번호를 대고 전화할 수도, 직원이 실번호로
+         찾을 수도 있다. 보여 주는 번호만 색인하면 나머지로는 못 찾는다. */
       phoneDigits: _cs_phoneDigits_(phoneRaw),
+      phone2Digits: _cs_phoneDigits_(phone2Raw),
       item: col.item >= 0 ? String(row[col.item] || "").trim() : "",
       qty: col.qty >= 0 ? String(row[col.qty] || "").trim() : "",
       invoice: invRaw,
