@@ -87,8 +87,13 @@
     .b-off { background: rgba(255,255,255,0.08); color: #9aa0b4; }
 
     .c-body { display: flex; gap: 12px; flex-wrap: wrap; }
+    /* ★ 왼쪽:오른쪽 = 1:2 ★  (2026-09-11)
+       왼쪽(품목·송장·연락처)은 한 번 읽고 마는 것이고, 오른쪽 처리 경과는
+       업체가 «매일 들여다보는» 것이다. 반반이면 오른쪽이 좁아 사진과 글이
+       세로로만 쌓이고 옆이 비어 있었다. 자리는 자주 보는 쪽에 준다.
+       190/280 은 «접히는 바닥»이다 — 폰에서는 여기서 위아래로 접힌다. */
     .c-left { flex: 1 1 190px; min-width: 0; }
-    .c-right { flex: 1 1 190px; min-width: 0; }
+    .c-right { flex: 2 1 280px; min-width: 0; }
     .meta { font-size: 12.5px; color: #a8adc0; line-height: 1.65; word-break: break-all; }
     .meta em { color: #6f748a; font-style: normal; }
     .sub { font-size: 11px; color: #6f748a; margin-top: 6px; }
@@ -102,6 +107,21 @@
     .inv-link:active { color: #a8cdf5; }
 
     /* 타임라인 */
+    /* ★ 반품송장은 따로 세운다 ★  (2026-09-11)
+       > "반품송장번호는 카드안에 넣어서 잘보이게 해줘"
+       한 줄로 흘려 두면 원송장·수거·연락처 사이에 묻힌다. 업체가 카드를
+       여는 «이유»가 대개 이 번호라, 눈이 먼저 닿는 자리에 둔다.
+       아직 없을 때도 칸을 지운다 — 「없다」가 보여야 기다릴지 물어볼지 안다. */
+    .ret-inv-box {
+      margin-top: 8px; padding: 7px 9px; border-radius: 8px;
+      background: #171a24; border: 1px solid #2c3040;
+    }
+    .ret-inv-box .lab { font-size: 10.5px; color: #6f748a; margin-bottom: 2px; }
+    .ret-inv-box .val { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
+    .ret-inv-box .val a { color: #8fc6ff; text-decoration: none; }
+    .ret-inv-box .val a:hover { text-decoration: underline; }
+    .ret-inv-box.none { border-style: dashed; }
+    .ret-inv-box.none .val { font-size: 12px; font-weight: 500; color: #6f748a; }
     .tl-h { font-size: 11px; color: #6f748a; margin-bottom: 5px; }
     .tl { border-left: 2px solid #2c3040; padding-left: 10px; }
     .ev { margin-bottom: 8px; }
@@ -121,8 +141,10 @@
 
     /* 사진 썸네일 — 눌러 같은 화면 팝업으로 연다 (새 탭 아님) */
     .ev-thumbs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+    /* 송장 사진은 «읽으려고» 보는 것이다. 52px 로는 글자가 안 보여
+       매번 크게 열어야 했다. 칸이 넓어진 만큼 키운다. */
     .ev-thumbs button {
-      display: block; width: 52px; height: 52px; border-radius: 7px; overflow: hidden;
+      display: block; width: 92px; height: 92px; border-radius: 7px; overflow: hidden;
       border: 1px solid #2c3040; background: #171a24; position: relative;
       padding: 0; cursor: pointer;
     }
@@ -651,6 +673,35 @@
         : txt);
     }
 
+    /**
+     * 반품송장 상자.
+     * 아직 없으면 «없다고» 적는다 — 빈 자리는 「안 보여주는 것」인지
+     * 「아직 안 나온 것」인지 구분이 안 된다. 그 차이로 전화가 온다.
+     */
+    function retInvBoxHtml(c) {
+      var inv = String(c.returnInvoice || '').trim();
+      if (!inv) {
+        return '<div class="ret-inv-box none"><div class="lab">반품송장</div>' +
+          '<div class="val">아직 없습니다 — 수거 접수 후 나옵니다</div></div>';
+      }
+      var u = trackUrl(inv, c.pickup);
+      return '<div class="ret-inv-box"><div class="lab">반품송장' +
+        (c.pickup ? ' · ' + esc(c.pickup) : '') + '</div>' +
+        '<div class="val">' + (u
+          ? '<a href="' + esc(u) + '" target="_blank" rel="noopener" title="배송조회 열기">' +
+            esc(inv) + '</a>'
+          : esc(inv)) + '</div></div>';
+    }
+
+    /** 같은 순간·같은 사람이 올린 것인가 (사진 여러 장을 한 칸으로 묶는 기준) */
+    function sameMoment(a, b) {
+      if (!a || !b) return false;
+      if (a.kind !== b.kind) return false;
+      if (String(a.who || '') !== String(b.who || '')) return false;
+      if (String(a.date || '') !== String(b.date || '')) return false;
+      return String(a.time || '') === String(b.time || '');
+    }
+
     function tagClass(kind) {
       if (kind === 'status') return 't-status';
       if (kind === 'mine') return 't-mine';
@@ -678,7 +729,6 @@
       // 원송장은 우리가 보낸 것이라 택배사 힌트가 없다 → 네이버 검색으로 간다.
       // 반품송장은 수거입력처가 곧 택배사라 그 값을 힌트로 쓴다.
       h += invLine('원송장', c.invoice, '');
-      h += invLine('반품송장', c.returnInvoice, c.pickup);
       if (c.pickup) h += '<br><em>수거</em> ' + esc(c.pickup);
       var ph = pickPhones(c.phone, c.phone2);
       if (ph.main) {
@@ -689,6 +739,7 @@
       }
       if (c.fee) h += '<br><em>반품비</em> <span class="fee">' + esc(c.fee) + '</span>';
       h += '</div>';
+      h += retInvBoxHtml(c);
       h += '<div class="sub">' + esc(c.date || '') +
         (c.type ? ' · ' + esc(c.type) : '') +
         ' · ' + esc(c.openedBy) + ' 접수</div>';
@@ -712,7 +763,22 @@
           // CS 가 올린 것과 업체가 올린 것을 같은 방식으로 다룬다.
           var tb = thumbsHtml(e.text);
           if (tb) {
+            /* ★ 같은 순간에 올린 사진은 한 칸에 모은다 ★  (2026-09-11)
+               사진 한 장마다 카드가 따로 생겨 「260911 13:05 · 사진 첨부」가
+               세로로 줄줄이 쌓였다. 같은 말이 반복되고 사진 옆은 비어 있었다.
+               날짜·시각·올린 사람이 같으면 한 칸으로 본다 —
+               한 번에 여러 장 올린 것이라 실제로 한 사건이다. */
+            var urls = String(e.text || '');
+            var j = i + 1;
+            while (j < ev.length && sameMoment(e, ev[j]) && thumbsHtml(ev[j].text)) {
+              urls += ' ' + String(ev[j].text || '');
+              j++;
+            }
+            tb = thumbsHtml(urls);
+            var 장수 = j - i;
+            i = j - 1;
             var cap = String(e.text || '').replace(/https?:\/\/[^\s]+/g, '').trim() || '사진 첨부';
+            if (장수 > 1) cap += ' ' + 장수 + '장';
             h += '<div class="ev-body">' + esc(cap) + '</div>' + tb;
           } else {
             h += '<div class="ev-body">' + linkify(e.text) + '</div>';

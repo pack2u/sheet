@@ -454,7 +454,16 @@ function _api_runTask_(params) {
          할 때와, 다리가 진짜 도는지 밖에서 확인할 때를 위한 것이다.
          두 번 눌러도 두 번 안 나간다 — 먼저 찜하고 넣기 때문이다. */
       bridgeV2Orders:       { label: "v2 업체발주 옮기기",   fn: function() { return partnerBridgeV2Orders(); } },
-      mirrorProductsV2:     { label: "품목 상태·재고 → v2", fn: function() { return partnerMirrorProductsToV2(); } }
+      mirrorProductsV2:     { label: "품목 상태·재고 → v2", fn: function() { return partnerMirrorProductsToV2(); } },
+
+      /* ★ 2026-09-11: 한 번 돌리고 끝나는 일 ★
+         반품관리대장에 「실번호 이름」 열을 맨 뒤로 붙인다.
+         > "주문자와 상담자가 다른경우가 있어"
+         가운데 끼우면 위치로 읽는 자리(M열 반품비·K열 유형)가 어긋난다 —
+         그래서 뒤에 붙인다. 두 번 눌러도 안 늘어난다(이미 있으면 건너뛴다).
+         먼저 preview 로 무엇을 할지 보고 나서 add 를 누르는 것이 맞다. */
+      previewPhone2NameCol: { label: "실번호이름 열 미리보기", fn: function() { return partnerPreviewReturnPhone2NameColumn(); } },
+      addPhone2NameCol:     { label: "실번호이름 열 붙이기",   fn: function() { return partnerAddReturnPhone2NameColumn(false); } }
     };
 
     var spec = taskMap[task];
