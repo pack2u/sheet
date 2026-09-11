@@ -200,7 +200,12 @@ function ssb_addRows(rows, seen, orderNo, invCell, code, res, uidSeen, seenOrd) 
      (여러 **주문번호**가 같은 송장을 나눠 갖는 합포장은 정상이고 각각 나간다 —
       막는 것은 그 반대 방향이다.)
      원장·일일마감에는 스무 장이 다 들어간다. 거기와 여기는 쓰임이 다르다. */
-  if (seenOrd && seenOrd[o]) return 0;
+  if (seenOrd && seenOrd[o]) {
+    /* 「645장인데 477줄」의 답이 여기다. 세어서 화면에 보여 주지 않으면
+       볼 때마다 무엇이 없어졌는지 찾아야 한다. */
+    res.skipMultiBox = (res.skipMultiBox || 0) + 1;
+    return 0;
+  }
   var parts = ssText(invCell).split(SSB_INV_SPLIT);
   for (var i = 0; i < parts.length; i++) {
     var inv = ssText(parts[i]);
@@ -426,7 +431,9 @@ function ss_사방넷엑셀저장() {
     codeLines.push('      코드 ' + c + ' : ' + res.byCode[c] + '건');
   }
   var msg = '사방넷 송장대량등록' + NL + NL +
-    '  · 저장 행 : ' + rows.length + '건' + NL + codeLines.join(NL) + NL +
+    '  · 저장 행 : ' + rows.length + '건' +
+    (res.skipMultiBox ? '   (송장 ' + (rows.length + res.skipMultiBox) + '장 → 주문 ' +
+      rows.length + '건)' : '') + NL + codeLines.join(NL) + NL +
     '  · 원천 · 임시기록 ' + n1 + ' / 발주허브 ' + n2 +
     ' / 자사출고 ' + n3 + ' / 원장(오늘) ' + n4 +
     (res.자사탭 && res.자사탭.length ? '  [' + res.자사탭.join(' · ') + ']' : '') + NL +
@@ -457,6 +464,11 @@ function ss_사방넷엑셀저장() {
   if (res.skipOld) {
     msg += NL + '  · 대상일 아닌 지난 주문 제외 : ' + res.skipOld + '건' +
       (res.noDate ? ' (날짜 못 읽은 행 ' + res.noDate + '건은 포함)' : '');
+  }
+  if (res.skipMultiBox) {
+    msg += NL + '  · 같은 주문의 둘째 박스부터 제외 : ' + res.skipMultiBox + '장' + NL +
+      '    사방넷은 주문 하나에 송장 하나만 받습니다 — 대표 한 장만 올립니다.' + NL +
+      '    (원장·일일마감·CS 조회에는 스무 장이 다 들어 있습니다)';
   }
   if (res.skipGen) {
     msg += NL + '  · 사방넷 번호가 아닌 ID 제외 : ' + res.skipGen + '건 (전화주문·발주수집 발급)';
@@ -531,6 +543,7 @@ function ss_사방넷진단() {
     '    롯데자사   ' + C.scan.s3 + ' → ' + C.n3 + NL +
     '    원장(오늘) ' + C.scan.s4 + ' → ' + C.n4 + NL +
     '    ※ 채택이 적은 건 앞 원천에서 이미 잡힌 중복입니다.' + NL + NL +
+    '  · 같은 주문의 둘째 박스부터 제외 : ' + (C.res.skipMultiBox || 0) + '장  (사방넷은 주문당 송장 하나)' + NL +
     '  · 사방넷 번호 아닌 ID 제외 : ' + C.res.skipGen + '건' + NL +
     '  · 대상일 아닌 지난 주문 제외 : ' + C.res.skipOld + '건' +
     (C.res.noDate ? ' · 날짜 못 읽어 포함한 행 ' + C.res.noDate + '건' +
