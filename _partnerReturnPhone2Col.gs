@@ -145,3 +145,102 @@ function _rpc_colLetter_(idx) {
 function partnerPreviewReturnPhone2NameColumn() {
   return partnerAddReturnPhone2NameColumn(true);
 }
+
+/* ══════════════════════════════════════════════════════════════
+ *  겹쳐 있는 「반품송장번호」 열 치우기
+ *  ★ 2026-09-11 · 한 번 돌리고 끝나는 일
+ *
+ *  > "뒤쪽 빈 반품송장번호 열 지워줘"
+ *
+ *  ★ 「다 지우기」가 아니다 ★
+ *    아홉 탭을 다 세어 보니 겹친 탭은 202609 «하나»뿐이고, 나머지 여덟은
+ *    뒤쪽 것이 그 탭의 «유일한» 반품송장번호였다. 눈에 보이는 대로
+ *    뒤쪽 것을 다 지웠으면 여덟 탭이 통째로 깨진다.
+ *    그래서 «두 개 이상인 탭»에서 «뒤엣것»만 본다.
+ *
+ *  ★ 비었을 때만 지운다 ★
+ *    코드는 먼저 나오는 열을 읽는다. 그래서 뒤엣칸에 누가 적어 뒀다면
+ *    그 값은 «여태 아무도 안 읽은 값»이다 — 지우면 영영 없어진다.
+ *    한 칸이라도 차 있으면 지우지 않고 알린다.
+ *
+ *  ★ 지우면 뒤가 당겨진다 ★
+ *    「실번호 이름」이 한 칸 앞으로 온다. 읽는 쪽은 전부 머리글로 찾으니
+ *    괜찮다. 위치로 읽는 자리(K열 유형·M열 반품비)는 이 칸보다 앞이라
+ *    영향이 없다 — 그래서 «뒤엣것»만 지우는 것이 중요하다.
+ * ══════════════════════════════════════════════════════════════ */
+
+function _rpc_isRetInvHeader_(h) {
+  var s = String(h || "").replace(/[ \t]/g, "");
+  if (!s) return false;
+  return /반품송장|회수송장/.test(s);
+}
+
+/**
+ * @param {boolean} dryRun  true 면 무엇을 지울지만 돌려주고 안 고친다
+ */
+function partnerDropDupReturnInvoiceColumn(dryRun) {
+  var ss = SpreadsheetApp.openById(_RPC_LEDGER_ID_);
+  var sheets = ss.getSheets();
+  var out = { dryRun: !!dryRun, dropped: [], kept: [], skipped: [], problems: [] };
+
+  for (var i = 0; i < sheets.length; i++) {
+    var tab = sheets[i];
+    var name = tab.getName();
+    if (!_rpc_isMonthTab_(name) && String(name).indexOf("템플릿") < 0) continue;
+
+    try {
+      var lastCol = Math.max(tab.getLastColumn(), 1);
+      var lastRow = Math.max(tab.getLastRow(), 1);
+      var scan = Math.min(lastRow, 40);
+      var values = tab.getRange(1, 1, scan, lastCol).getDisplayValues();
+      var hr = _rpc_findHeaderRow_(values);
+      if (hr < 0) { out.problems.push(name + ": 머리글 줄을 못 찾음"); continue; }
+
+      var header = values[hr];
+      var hits = [];
+      for (var c = 0; c < header.length; c++) if (_rpc_isRetInvHeader_(header[c])) hits.push(c);
+
+      if (hits.length < 2) {
+        out.skipped.push(name + ": 하나뿐 (" + (hits.length ? _rpc_colLetter_(hits[0]) + "열" : "없음") + ")");
+        continue;
+      }
+
+      /* 뒤엣것만 본다. 앞엣것이 코드가 읽는 열이라 건드리면 안 된다. */
+      var dup = hits[hits.length - 1];
+
+      /* 값이 한 칸이라도 있으면 안 지운다 */
+      var 찬칸 = [];
+      if (lastRow > hr + 1) {
+        var col = tab.getRange(hr + 2, dup + 1, lastRow - hr - 1, 1).getDisplayValues();
+        for (var r = 0; r < col.length; r++) {
+          if (String(col[r][0] || "").trim()) 찬칸.push(hr + 2 + r);
+          if (찬칸.length >= 5) break;
+        }
+      }
+      if (찬칸.length) {
+        out.kept.push(name + ": " + _rpc_colLetter_(dup) + "열에 값이 있어 안 지움 (행 " +
+          찬칸.join(", ") + (찬칸.length >= 5 ? " …" : "") + ")");
+        continue;
+      }
+
+      if (!dryRun) tab.deleteColumn(dup + 1);
+      out.dropped.push(name + ": " + _rpc_colLetter_(dup) + "열 지움 (앞엣것 " +
+        _rpc_colLetter_(hits[0]) + "열은 그대로)");
+
+    } catch (e) {
+      out.problems.push(name + ": " + e.message);
+    }
+  }
+
+  out.message = (dryRun ? "[미리보기] " : "") +
+    "지움 " + out.dropped.length + " · 값 있어 남김 " + out.kept.length +
+    " · 하나뿐이라 건너뜀 " + out.skipped.length +
+    (out.problems.length ? " · 문제 " + out.problems.length : "");
+  Logger.log("[겹친송장열] " + out.message);
+  return out;
+}
+
+/** 미리보기 — 무엇을 지울지만 본다 */
+function partnerPreviewDupReturnInvoiceColumn() {
+  return partnerDropDupReturnInvoiceColumn(true);
+}

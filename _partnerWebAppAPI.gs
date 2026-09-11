@@ -463,7 +463,11 @@ function _api_runTask_(params) {
          그래서 뒤에 붙인다. 두 번 눌러도 안 늘어난다(이미 있으면 건너뛴다).
          먼저 preview 로 무엇을 할지 보고 나서 add 를 누르는 것이 맞다. */
       previewPhone2NameCol: { label: "실번호이름 열 미리보기", fn: function() { return partnerPreviewReturnPhone2NameColumn(); } },
-      addPhone2NameCol:     { label: "실번호이름 열 붙이기",   fn: function() { return partnerAddReturnPhone2NameColumn(false); } }
+      addPhone2NameCol:     { label: "실번호이름 열 붙이기",   fn: function() { return partnerAddReturnPhone2NameColumn(false); } },
+
+      /* 겹쳐 있는 「반품송장번호」 열 치우기 — 뒤엣것이 비었을 때만 */
+      previewDupRetInvCol:  { label: "겹친 송장열 미리보기", fn: function() { return partnerPreviewDupReturnInvoiceColumn(); } },
+      dropDupRetInvCol:     { label: "겹친 송장열 지우기",   fn: function() { return partnerDropDupReturnInvoiceColumn(false); } }
     };
 
     var spec = taskMap[task];
