@@ -1284,7 +1284,11 @@
     .ret-more-row { display: flex; gap: 6px; margin: 2px 0 10px; }
     .ret-more-row .ret-more-btn { margin: 0; flex: 1; }
     .ws-pane .ret-card { flex-wrap: nowrap; }
-    .ws-pane .ret-left { flex: 0 0 40%; min-width: 110px; max-width: 46%; }
+    /* 좁은 칸도 1:2 로 맞춘다  (2026-09-11)
+       작업화면은 폭이 절반뿐이라 종전엔 넓은 카드보다 조금 더 왼쪽을 줬었다.
+       그래도 「진행과정이 잘 보이게」가 이 화면의 목적이라 비율을 맞춘다.
+       min-width 110px 은 그대로 — 여기서는 비율보다 이 바닥이 이긴다. */
+    .ws-pane .ret-left { flex: 0 0 33.33%; min-width: 110px; max-width: 36%; }
     .ws-pane .ret-proc { width: 118px; min-height: 70px; }
     .os-reply, .os-ledger {
       flex: 1;
@@ -6590,6 +6594,15 @@
       return c.timeline.filter(function(ev) { return ev.kind !== 'meta'; });
     }
 
+    /* 카드가 든 번호 둘 중 «실번호»만 꺼낸다.
+       주가 실번호면 main, 아니면 「추가」 딱지가 붙은 sub 가 그것이다.
+       (csOrderSearch _cs_pickPhones_ 가 세운 순서) */
+    function retCardPhone2(c) {
+      if (!c) return '';
+      if (c.phoneSubTag === '추가') return c.phoneSub || '';
+      return c.phoneTag ? '' : (c.phone || '');
+    }
+
     function returnComposePopHtml(idx, c) {
       return '<div class="ret-act-pop" id="ret-pop-status-' + idx + '" data-mode="status">' +
           '<div class="pop-label">처리상태 변경</div>' +
@@ -6597,6 +6610,16 @@
           '<div class="pop-label" style="margin-top:8px">반품송장 (선택)</div>' +
           '<input type="text" class="ret-pop-input" id="ret-retinv-' + idx + '" inputmode="numeric"' +
             ' placeholder="수거 송장번호" value="' + esc(c.returnInvoice || '') + '">' +
+          /* ★ 실번호도 여기서 ★  (2026-09-11)
+             > "반품 카드에서 상태 변경, 실전화번호, 반품송장번호를 입력할수 있게"
+             셋은 «같은 순간»에 안다 — 고객과 통화하며 상태를 바꾸고, 그 김에
+             실번호를 받고, 회수 접수하면 반품송장이 나온다.
+             버튼을 따로 만들지 않고 한 창에 모은다. 손버릇이 하나로 끝난다. */
+          '<div class="pop-label" style="margin-top:8px">실번호 (선택)' +
+            (c.phoneOnlySafe ? ' <span class="ret-ph-warn">지금은 안심번호뿐</span>' : '') +
+            '</div>' +
+          '<input type="tel" class="ret-pop-input" id="ret-ph2-' + idx + '"' +
+            ' placeholder="010-0000-0000" value="' + esc(retCardPhone2(c)) + '">' +
           '<div class="ret-pop-btns">' +
             '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
             '<button type="button" class="ret-pop-save" id="ret-save-status-' + idx + '" onclick="submitReturnCompose(' + idx + ',\'status\')">저장</button>' +
@@ -6934,6 +6957,18 @@
         if (!status) { toast('상태를 선택하세요'); return; }
         var retInvEl = document.getElementById('ret-retinv-' + idx);
         var retInvVal = retInvEl ? String(retInvEl.value || '').trim() : '';
+        var ph2El = document.getElementById('ret-ph2-' + idx);
+        var ph2Val = ph2El ? String(ph2El.value || '').trim() : '';
+        /* 실번호 칸에 «안심번호»를 넣는 것은 막는다 — 그러라고 만든 칸이 아니고,
+           넣어 두면 다음 사람이 「실번호가 있구나」 하고 걸었다가 허탕 친다. */
+        if (ph2Val && /^050[0-9]/.test(ph2Val.replace(/[^0-9]/g, ''))) {
+          toast('실번호 칸에는 안심번호(050…) 말고 실제 번호를 넣어 주세요', 4200);
+          return;
+        }
+        if (ph2Val && ph2Val.replace(/[^0-9]/g, '').length < 9) {
+          toast('전화번호가 짧습니다 — 다시 확인해 주세요', 3200);
+          return;
+        }
         if (retInvVal && retInvVal.replace(/[^0-9]/g, '').length < 8) {
           toast('반품송장은 숫자 8자리 이상 입력하세요');
           return;
@@ -6957,7 +6992,8 @@
             row: c.row,
             status: status,
             staff: staff,
-            returnInvoice: retInvVal
+            returnInvoice: retInvVal,
+            phone2: ph2Val
           });
         return;
       }

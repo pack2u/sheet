@@ -2625,6 +2625,7 @@ function updateReturnLedgerStatus(payload) {
   var status = String(payload.status || "").trim();
   var staff = String(payload.staff || "").trim();
   var retInvIn = String(payload.returnInvoice || "").trim();
+  var phone2In = String(payload.phone2 || "").trim();
   if (!tabName || !(rowNum > 0) || !status) {
     return { ok: false, error: "탭·행·상태가 필요합니다." };
   }
@@ -2660,6 +2661,33 @@ function updateReturnLedgerStatus(payload) {
       }
     }
 
+    /* ★ 실번호 ★  (2026-09-11)
+       > "반품 카드에서 상태 변경, 실전화번호, 반품송장번호를 입력할수 있게"
+       「추가연락처」 열에 적는다 — 주 연락처(주문서의 안심번호)를 덮지 않는다.
+       안심번호도 남아 있어야 쇼핑몰 자료와 맞춰 볼 수 있다.
+
+       바뀐 때만 적고, 바뀐 때만 비고에 남긴다. 같은 값을 다시 저장했다고
+       이력이 늘면 정작 «언제 알아냈나»를 못 읽는다. */
+    var phone2Saved = "";
+    if (phone2In) {
+      var p2new = phone2In.replace(/[^0-9]/g, "");
+      if (p2new.length < 9) {
+        return { ok: false, error: "전화번호가 짧습니다 (숫자 9자리 이상)." };
+      }
+      if (_cs_isSafePhone_(phone2In)) {
+        return { ok: false, error: "실번호 칸에는 안심번호(050…) 말고 실제 번호를 넣어 주세요." };
+      }
+      if (ctx.col.phone2 < 0) {
+        return { ok: false, error: "대장에 「추가연락처」 열이 없습니다. 열을 만들어 주세요." };
+      }
+      var p2cur = String(ctx.row[ctx.col.phone2] || "").replace(/[^0-9]/g, "");
+      if (p2cur !== p2new) {
+        phone2Saved = _cs_formatLedgerPhone_(phone2In);
+        ctx.tab.getRange(rowNum, ctx.col.phone2 + 1).setValue(phone2Saved);
+        notice = _cs_appendNoticeLine_(notice, _cs_ledgerStamp_(staff) + " 실번호 " + phone2Saved);
+      }
+    }
+
     if (status !== oldStatus) {
       notice = _cs_appendNoticeLine_(notice, _cs_ledgerStamp_(staff) + " 상태→" + status);
       ctx.tab.getRange(rowNum, ctx.col.status + 1).setValue(status);
@@ -2678,6 +2706,7 @@ function updateReturnLedgerStatus(payload) {
       status: status,
       notice: notice,
       returnInvoice: retInvSaved,
+      phone2: phone2Saved,
       message: tabName + " " + rowNum + "행 · " + status +
         (retInvSaved ? " · 반품송장 " + retInvSaved : "")
     };
