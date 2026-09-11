@@ -99,5 +99,64 @@ console.log("\n[머리글을 찾는가] 1행에 있다고 믿으면 로젠은 0�
   eq("날짜 칸으로 파일명도 본다", 읽기(path.join(뿌리, "gasBulk.js")).includes("h === 0x27파일명0x27".split("0x27").join(String.fromCharCode(39))), "true");
 }
 
+
+/* ═══════════════════════════════════════════════════════════════
+   마감이 옮겨 놓은 원천 둘 (2026-09-12)
+
+   > "사방넷 송신 엑셀에서 대리공급 마감으로 넘어간건 인식 안하지?"
+
+   대리공급 마감은 매일 23:30 에 «송장이 찍힌 행»만 골라
+   대리공급_임시기록과 협력업체_발주허브에서 지운다.
+   올려야 할 행만 사라지는데, 읽는 쪽은 원본 탭만 보고 있었다.
+
+   보관탭은 앞에 2열이 더 붙어 있다. 그 오프셋이 두 파일에서 갈라지면
+   운송장 자리에서 엉뚱한 칸을 읽는다 — 오류는 안 나고 쓰레기가 올라간다.
+   그래서 «파일에 적힌 값»을 직접 꺼내 맞대 본다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[원천 5] 대리공급_임시기록_보관 — 앞 2열 오프셋");
+{
+  const bulk = 읽기(path.join(뿌리, "gasBulk.js"));
+  const hub = 읽기(path.join(허브, "_partnerOrders.gs"));
+
+  eq("세트분리가 보관탭을 읽는다", bulk.includes("대리공급_임시기록_보관"), "true");
+  eq("허브가 보관탭을 읽는다", hub.includes("_po_getTempArchiveTab_(ss)"), "true");
+
+  //  세트분리는 값을 박아 쓰고, 허브는 상수를 쓴다 — 둘이 같아야 한다
+  const 세트오프 = bulk.match(/보관오프셋 = ([0-9]+)/);
+  const 허브오프 = hub.match(/_PO_TEMP_ARCHIVE_COL_OFFSET_ = ([0-9]+)/);
+  eq("세트분리 오프셋", 세트오프 && 세트오프[1], 2);
+  eq("허브 오프셋", 허브오프 && 허브오프[1], 2);
+  eq("★ 두 파일의 오프셋이 같다", 세트오프[1] === 허브오프[1], "true");
+
+  //  원본 칸 자리 (P=15 주문번호 · X=23 송장 · W=22 업체prefix · C=2 일자)
+  eq("주문번호 15+오프셋", bulk.includes("[15 + 보관오프셋]"), "true");
+  eq("송장 23+오프셋", bulk.includes("[23 + 보관오프셋]"), "true");
+  eq("업체prefix 22+오프셋", bulk.includes("[22 + 보관오프셋]"), "true");
+  eq("일자 2+오프셋", bulk.includes("[2 + 보관오프셋]"), "true");
+  eq("허브도 주문번호 uidCol+오프셋", hub.includes("[uidCol + archOff]"), "true");
+  eq("허브도 송장 invCol+오프셋", hub.includes("[invCol + archOff]"), "true");
+  eq("허브도 업체prefix 22+오프셋", hub.includes("[22 + archOff]"), "true");
+}
+
+console.log("\n[원천 6] 송장원장 — 출처에서 업체명을 읽는다");
+{
+  const bulk = 읽기(path.join(뿌리, "gasBulk.js"));
+  const hub = 읽기(path.join(허브, "_partnerOrders.gs"));
+
+  eq("세트분리가 송장원장을 읽는다", bulk.includes("'송장원장'"), "true");
+  eq("허브가 송장원장을 읽는다", hub.includes("_PIL_TAB_NAME_"), "true");
+
+  /* 출처는 「전용마감:올팩」·「발주마감:올팩」 꼴이다.
+     임시기록·임시기록보관 줄은 콜론이 없어 저절로 빠지고,
+     허브아카이브는 업체명이 없어 택배사를 못 정한다 — 세기만 한다. */
+  for (const [이름, src] of [["세트분리", bulk], ["허브", hub]]) {
+    eq(이름 + " 전용마감을 본다", src.includes("전용마감"), "true");
+    eq(이름 + " 발주마감을 본다", src.includes("발주마감"), "true");
+    eq(이름 + " 업체 못 정한 건 세어 둔다", src.includes("ledgerNoVendor"), "true");
+    //  원장은 60일치다. 그대로 얹으면 두 달치가 사방넷에 다시 올라간다.
+    eq(이름 + " ★ 15일 하한이 있다", /15 [*] 86400000/.test(src), "true");
+  }
+}
+
 console.log(실패 ? `\n실패 ${실패}건` : "\n세 파일이 같은 표를 쓴다");
 process.exit(실패 ? 1 : 0);

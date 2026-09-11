@@ -4,11 +4,16 @@
  * 회차 하나가 아니라 원천을 직접 훑어 (주문번호, 송장) 쌍을 전부 뽑는다.
  * 세트분리 한 회차의 결과만 고르면 하루치가 안 나온다.
  *
- * 원천 넷 (허브와 같은 순서·같은 우선순위):
+ * 원천 여섯 (허브와 같은 순서·같은 우선순위):
  *   1. 대리공급_임시기록   상품정보  P=주문번호 X=송장 W=업체prefix
  *   2. 협력업체_발주허브   상품정보  C=주문번호 N=송장  B=업체
  *   3. 자사출고            거래관리  머리글을 찾아 읽는다 → 탭이 곧 택배사
  *   4. 주문라인원장        오늘 전체 회차 — 전파가 채운 운송장번호 (합포장 동봉 포함)
+ *   5. 대리공급_임시기록_보관  상품정보  R=주문번호 Z=송장 Y=업체prefix — 마감이 옮긴 것
+ *   6. 송장원장            상품정보  출처(전용마감:업체·발주마감:업체) + 송장 + 고유ID
+ *
+ * ★ 5·6 이 없으면 «마감이 먼저 돈 날» 이 통째로 빠진다 ★  (2026-09-12)
+ *   마감은 송장이 찍힌 행만 골라 1·2 에서 지운다 — 올려야 할 것만 사라진다.
  *
  * 규칙도 허브와 같다:
  *   - 한 셀에 송장이 여러 개일 수 있다 (줄바꿈·쉼표·세미콜론) → 전부 행으로 편다
@@ -238,9 +243,9 @@ function ssb_collect() {
   var t = ssb_carrierTable();
   var rows = [], seen = {};
   var res = { skipNoCode: 0, skipGen: 0, byCode: {}, noCodeNames: {} };
-  var n1 = 0, n2 = 0, n3 = 0, n4 = 0;
+  var n1 = 0, n2 = 0, n3 = 0, n4 = 0, n5 = 0, n6 = 0;
   var errs = [];
-  var scan = { s1: 0, s2: 0, s3: 0, s4: 0 };
+  var scan = { s1: 0, s2: 0, s3: 0, s4: 0, s5: 0, s6: 0 };
   var uidSeen = {};
   /* 한 주문번호는 사방넷에 한 줄만 — 여러 원천에서 다른 송장이 와도 첫 것만 쓴다.
      (여러 주문번호가 같은 송장을 나눠 갖는 합포장·샘플은 각각 나간다 — 반대 방향이다.) */
@@ -368,21 +373,104 @@ function ssb_collect() {
     }
   }
 
+  /* ── 5. 대리공급_임시기록_보관 — «마감이 옮겨 놓은» 대리공급 건 ──────
+     ★ 마감이 먼저 돌면 1번 원천이 비어 있다 ★  (2026-09-12)
+       > "사방넷 송신 엑셀에서 대리공급 마감으로 넘어간건 인식 안하지?"
+
+       대리공급 마감(허브 _po_clearTempTabInvoicedRowsOnly_)은 «송장이 찍힌
+       행»을 임시기록에서 지우고 보관탭으로 옮긴다. 지우는 조건이 「송장이
+       있는 것」이라, 정작 사방넷에 올려야 할 행만 골라 사라진다.
+       읽는 쪽이 원본만 보면 그 건은 오류 한 줄 없이 0건으로 빠진다.
+
+       보관탭은 앞에 2열(보관일시·보관사유)이 더 붙었을 뿐 나머지는 같다.
+       중복은 주문번호+송장으로 이미 막혀 있어 겹쳐 읽어도 안전하다.
+       보관은 14일치만 남으므로 이 표가 커질 일도 없다. */
+  var 보관오프셋 = 2;   // 허브 _PO_TEMP_ARCHIVE_COL_OFFSET_ 과 같은 값
+  var r5 = ssm_openOptional(cfg['이카운트시트ID'],
+    cfg['대리공급_보관탭'] || '대리공급_임시기록_보관', '상품정보');
+  if (r5.ok) {
+    for (var m = 1; m < r5.values.length; m++) {
+      var uid5 = ssText(r5.values[m][15 + 보관오프셋]);
+      var inv5 = ssText(r5.values[m][23 + 보관오프셋]);
+      if (!uid5 || !inv5) continue;
+      if (!ssb_keepDate(r5.values[m][2 + 보관오프셋], allowed, res)) continue;
+      var pfx5 = ssText(r5.values[m][22 + 보관오프셋]);
+      if (!pfx5) pfx5 = ssText(r5.values[m][3 + 보관오프셋]).substring(0, 2);
+      var code5 = ssb_codeForVendor(t, pfx5);
+      if (!code5) { if (ssIsSabangnetUid(uid5)) ssb_noCode(res, pfx5); continue; }
+      scan.s5++; n5 += ssb_addRows(rows, seen, uid5, inv5, code5, res, uidSeen, seenOrd);
+    }
+  } else { errs.push('임시기록보관: ' + r5.why); }
+
+  /* ── 6. 송장원장 — 마감돼 «발주허브에서 사라진» 협력업체 발주 건 ──────
+     발주허브(2번)도 같은 일을 당한다. 아카이브될 때
+     허브 _pea_clearHubRowsByUids_ 가 그 행을 지운다.
+     다만 옮겨 간 곳이 업체 파일 여러 개 + 월별 아카이브라 여기서 직접
+     훑을 수가 없다 — 열어야 할 스프레드시트가 수십 개다.
+
+     대신 허브의 「송장원장」(_partnerInvoiceLedger.gs)이 «사라지는 것»만
+     골라 60일치 누적해 둔다. 만들어 둔 이유가 바로 이것이다.
+
+     택배사는 «출처»에서 읽는다 — 「전용마감:올팩」·「발주마감:올팩」 처럼
+     업체명이 콜론 뒤에 붙는다.
+       임시기록 · 임시기록보관 → 1·5 가 이미 본다 (콜론이 없다)
+       허브아카이브:202609    → 업체명이 없어 택배사를 못 정한다. 세기만 한다. */
+  /* ★ 송장원장만은 대상일수와 별개로 최근 15일까지만 본다 ★
+     원장은 60일치다. 대상일수가 「전체」일 때 그것을 다 얹으면 이미 올라간
+     두 달치가 통째로 다시 올라가고, 사방넷은 그것을 「건별 미매칭」으로
+     되돌린다 — 없는 것만 못한 결과다. 마감과 저장 사이의 틈은 하루이틀이지
+     두 달이 아니다. 15일은 보관탭 보존(14일)과 같은 눈금이다. */
+  var 원장하한 = Utilities.formatDate(
+    new Date(new Date().getTime() - 15 * 86400000), 'Asia/Seoul', 'yyyyMMdd');
+  var r6 = ssm_openOptional(cfg['이카운트시트ID'],
+    cfg['송장원장탭'] || '송장원장', '상품정보');
+  res.ledgerNoVendor = 0;
+  if (r6.ok && r6.values.length > 1) {
+    var h6 = r6.values[0], i6 = {};
+    for (var z = 0; z < h6.length; z++) {
+      var hn6 = ssText(h6[z]);
+      if (hn6 && i6[hn6] === undefined) i6[hn6] = z;
+    }
+    if (i6['출처'] === undefined || i6['송장번호'] === undefined || i6['고유ID'] === undefined) {
+      errs.push('송장원장: 「출처·송장번호·고유ID」 머리글을 못 찾았습니다');
+    } else {
+      for (var y = 1; y < r6.values.length; y++) {
+        var src6 = ssText(r6.values[y][i6['출처']]);
+        var 콜론 = src6.indexOf(':');
+        if (콜론 < 0) continue;                       // 임시기록 계열 — 1·5 가 본다
+        var 종류6 = src6.substring(0, 콜론);
+        var 업체6 = src6.substring(콜론 + 1);
+        if (종류6 !== '전용마감' && 종류6 !== '발주마감') { res.ledgerNoVendor++; continue; }
+        var uid6 = ssText(r6.values[y][i6['고유ID']]);
+        var inv6 = ssText(r6.values[y][i6['송장번호']]);
+        if (!uid6 || !inv6) continue;
+        if (i6['주문일'] !== undefined) {
+          var dk6 = ssb_dateKey(r6.values[y][i6['주문일']]);
+          if (dk6 && dk6 < 원장하한) { res.skipOld++; continue; }
+          if (!ssb_keepDate(r6.values[y][i6['주문일']], allowed, res)) continue;
+        }
+        var code6 = ssb_codeForVendor(t, 업체6);
+        if (!code6) { if (ssIsSabangnetUid(uid6)) ssb_noCode(res, 업체6); continue; }
+        scan.s6++; n6 += ssb_addRows(rows, seen, uid6, inv6, code6, res, uidSeen, seenOrd);
+      }
+    }
+  } else if (!r6.ok) { errs.push('송장원장: ' + r6.why); }
+
   var uidCount = 0;
   for (var uk in uidSeen) if (Object.prototype.hasOwnProperty.call(uidSeen, uk)) uidCount++;
   return { rows: rows, res: res, errs: errs, scan: scan, uidCount: uidCount,
     allowed: allowed,
-    n1: n1, n2: n2, n3: n3, n4: n4 };
+    n1: n1, n2: n2, n3: n3, n4: n4, n5: n5, n6: n6 };
 }
 
 function ss_사방넷엑셀저장() {
   var NL = String.fromCharCode(10);
   var C = ssb_collect();
   var rows = C.rows, res = C.res, errs = C.errs;
-  var n1 = C.n1, n2 = C.n2, n3 = C.n3, n4 = C.n4;
+  var n1 = C.n1, n2 = C.n2, n3 = C.n3, n4 = C.n4, n5 = C.n5, n6 = C.n6;
   if (!rows.length) {
     return ssio_alert('저장할 자료가 없습니다.' + NL + NL +
-      (errs.length ? errs.join(NL) : '원천 네 곳 모두에서 송장을 찾지 못했습니다.'));
+      (errs.length ? errs.join(NL) : '원천 여섯 곳 모두에서 송장을 찾지 못했습니다.'));
   }
 
   // ── 엑셀로 내보내 드라이브에 저장 (허브와 같은 형식·같은 폴더 규칙) ──
@@ -436,6 +524,7 @@ function ss_사방넷엑셀저장() {
       rows.length + '건)' : '') + NL + codeLines.join(NL) + NL +
     '  · 원천 · 임시기록 ' + n1 + ' / 발주허브 ' + n2 +
     ' / 자사출고 ' + n3 + ' / 원장(오늘) ' + n4 +
+    ' / 임시기록보관 ' + n5 + ' / 송장원장 ' + n6 +
     (res.자사탭 && res.자사탭.length ? '  [' + res.자사탭.join(' · ') + ']' : '') + NL +
     '    (중복은 주문번호+송장 기준으로 이미 뺀 숫자입니다)';
 
@@ -542,6 +631,8 @@ function ss_사방넷진단() {
     '    발주허브   ' + C.scan.s2 + ' → ' + C.n2 + NL +
     '    롯데자사   ' + C.scan.s3 + ' → ' + C.n3 + NL +
     '    원장(오늘) ' + C.scan.s4 + ' → ' + C.n4 + NL +
+    '    임시기록보관 ' + C.scan.s5 + ' → ' + C.n5 + '   ← 마감이 옮긴 대리공급' + NL +
+    '    송장원장   ' + C.scan.s6 + ' → ' + C.n6 + '   ← 마감된 협력업체 발주' + NL +
     '    ※ 채택이 적은 건 앞 원천에서 이미 잡힌 중복입니다.' + NL + NL +
     '  · 같은 주문의 둘째 박스부터 제외 : ' + (C.res.skipMultiBox || 0) + '장  (사방넷은 주문당 송장 하나)' + NL +
     '  · 사방넷 번호 아닌 ID 제외 : ' + C.res.skipGen + '건' + NL +

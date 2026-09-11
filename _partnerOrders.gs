@@ -4841,10 +4841,19 @@ function _po_addSabangBulkRowCoded_(rows, seen, orderNo, invCell, code, result) 
 /**
  * 대리공급_임시기록(P=사방넷주문번호, X=송장, W=업체) → 상품정보「사방넷_송장대량등록」
  * 허브 C열 생성UID(MMdd-xx-)는 사방넷 주문번호가 아니라 쓰지 않음
+ *
+ * 원천 여섯:
+ *   1. 대리공급_임시기록        2. 협력업체_발주허브
+ *   3. 자사출고(로젠·롯데)      4. 사방넷_송장매칭
+ *   5. 대리공급_임시기록_보관   6. 송장원장    ← «마감이 옮긴 것» (2026-09-12)
+ *
+ * 5·6 이 없으면 마감(매일 23:30)이 먼저 돈 건이 통째로 빠진다.
+ * 마감은 «송장이 찍힌 행»만 골라 1·2 에서 지우기 때문이다.
  */
 function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
   scannedLogs = scannedLogs || [];
-    var result = { written: 0, skipGen: 0, skipNoCode: 0, skipNoInv: 0, tempWithInv: 0, lotteOwn: 0, matchTab: 0, byCode: {} };
+    var result = { written: 0, skipGen: 0, skipNoCode: 0, skipNoInv: 0, tempWithInv: 0, lotteOwn: 0, matchTab: 0,
+      tempArch: 0, ledger: 0, skipOldArch: 0, ledgerNoVendor: 0, byCode: {} };
     var LOTTE_CODE = _po_sabangCode_("롯데택배", "002");
     var ROZEN_CODE = _po_sabangCode_("로젠택배", "007");
   try {
@@ -4883,6 +4892,115 @@ function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
         if (typeof _po_isGeneratedUid_ === "function" && _po_isGeneratedUid_(uid)) continue;
         _po_addSabangBulkRow_(rows, seen, uid, invCell, vendor, result);
       }
+    }
+
+    /* ── 마감이 옮겨 놓은 것 둘 ─────────────────────────────────
+       ★ 마감이 먼저 돌면 위 두 원천이 비어 있다 ★  (2026-09-12)
+         > "사방넷 송신 엑셀에서 대리공급 마감으로 넘어간건 인식 안하지?"
+
+         대리공급 마감은 «매일 23:30 트리거»로 돈다(_partnerWebApp.gs).
+         그때 _po_clearTempTabInvoicedRowsOnly_ 가 «송장이 찍힌 행»을
+         대리공급_임시기록에서 지워 보관탭으로 옮기고, 이어서
+         _pea_clearHubRowsByUids_ 가 그 UID 행을 협력업체_발주허브에서 지운다.
+
+         지우는 조건이 「송장이 있는 것」이다 — 정작 사방넷에 올려야 할 행만
+         골라 사라진다. 위 두 원천만 보면 그 건은 오류 한 줄 없이 0건이 된다.
+
+       ★ 둘 다 최근 15일까지만 본다 ★
+         보관탭은 14일치, 송장원장은 60일치다. 그보다 오래된 건은 이미
+         사방넷에 올라가 있고, 다시 올리면 「건별 미매칭」으로 되돌아온다.
+         마감과 저장 사이의 틈은 하루이틀이지 두 달이 아니다. */
+    var _ARCH_FLOOR_ = Utilities.formatDate(
+      new Date(new Date().getTime() - 15 * 86400000), "Asia/Seoul", "yyyyMMdd");
+    var _po_bulkDateKey_ = function (v) {
+      if (v instanceof Date) return Utilities.formatDate(v, "Asia/Seoul", "yyyyMMdd");
+      var m = String(v || "").match(/(\d{4})\D{0,3}(\d{1,2})\D{0,3}(\d{1,2})/);
+      if (!m) return "";
+      var mo = parseInt(m[2], 10), d = parseInt(m[3], 10);
+      if (!(mo >= 1 && mo <= 12) || !(d >= 1 && d <= 31)) return "";
+      return m[1] + ("0" + mo).slice(-2) + ("0" + d).slice(-2);
+    };
+    //  날짜를 못 읽은 행은 «남긴다». 조용히 버리면 그 건을 아무도 못 찾는다.
+    var _po_bulkTooOld_ = function (v) {
+      var k = _po_bulkDateKey_(v);
+      return !!k && k < _ARCH_FLOOR_;
+    };
+
+    // ── 대리공급_임시기록_보관 (앞 2열 오프셋: R=주문번호 Z=송장 Y=업체prefix) ──
+    try {
+      var archOff = (typeof _PO_TEMP_ARCHIVE_COL_OFFSET_ !== "undefined")
+        ? _PO_TEMP_ARCHIVE_COL_OFFSET_ : 2;
+      var archTab = (typeof _po_getTempArchiveTab_ === "function")
+        ? _po_getTempArchiveTab_(ss) : null;
+      if (archTab && archTab.getLastRow() >= 2) {
+        var aLc = Math.max(archTab.getLastColumn(), invCol + archOff + 1);
+        var aData = archTab.getRange(2, 1, archTab.getLastRow() - 1, aLc).getDisplayValues();
+        for (var ai = 0; ai < aData.length; ai++) {
+          var aUid = String(aData[ai][uidCol + archOff] || "").trim();
+          var aInv = String(aData[ai][invCol + archOff] || "").trim();
+          if (!aUid || !_po_hasRealInvoice_(aInv)) continue;
+          if (_po_bulkTooOld_(aData[ai][2 + archOff])) { result.skipOldArch++; continue; }
+          if (typeof _po_isGeneratedUid_ === "function" && _po_isGeneratedUid_(aUid)) {
+            result.skipGen++;
+            continue;
+          }
+          var aPfx = String(aData[ai][22 + archOff] || "").trim();
+          if (!aPfx) aPfx = String(aData[ai][3 + archOff] || "").replace(/\s/g, "").substring(0, 2);
+          result.tempArch += _po_addSabangBulkRow_(rows, seen, aUid, aInv, aPfx, result);
+        }
+      }
+    } catch (eArch) {
+      scannedLogs.push("[사방넷대량등록] 임시기록보관 오류: " + String(eArch.message || eArch));
+    }
+
+    /* ── 송장원장 — 마감돼 발주허브에서 사라진 «협력업체 발주» 건 ──
+       발주허브가 옮겨 간 곳은 업체 파일 수십 개 + 월별 아카이브라 여기서
+       직접 훑을 수가 없다. 대신 송장원장(_partnerInvoiceLedger.gs)이
+       «사라지는 것»만 골라 60일치 누적해 둔다 — 만들어 둔 이유가 이것이다.
+
+       택배사는 «출처»에서 읽는다 — 「전용마감:올팩」·「발주마감:올팩」 처럼
+       업체명이 콜론 뒤에 붙는다.
+         임시기록 · 임시기록보관 → 위에서 이미 본다 (콜론이 없다)
+         허브아카이브:202609    → 업체명이 없어 택배사를 못 정한다. 세기만 한다. */
+    try {
+      var pilName = (typeof _PIL_TAB_NAME_ !== "undefined") ? _PIL_TAB_NAME_ : "송장원장";
+      var pilTab = ss.getSheetByName(pilName);
+      if (pilTab && pilTab.getLastRow() >= 2) {
+        var pLc = Math.max(pilTab.getLastColumn(), 8);
+        var pHdr = pilTab.getRange(1, 1, 1, pLc).getValues()[0];
+        var pIx = {};
+        for (var ph = 0; ph < pHdr.length; ph++) {
+          var pn = String(pHdr[ph] || "").trim();
+          if (pn && pIx[pn] === undefined) pIx[pn] = ph;
+        }
+        if (pIx["출처"] === undefined || pIx["송장번호"] === undefined || pIx["고유ID"] === undefined) {
+          scannedLogs.push("[사방넷대량등록] 송장원장: 「출처·송장번호·고유ID」 머리글을 못 찾음");
+        } else {
+          var pData = pilTab.getRange(2, 1, pilTab.getLastRow() - 1, pLc).getDisplayValues();
+          for (var pi = 0; pi < pData.length; pi++) {
+            var pSrc = String(pData[pi][pIx["출처"]] || "").trim();
+            var pCut = pSrc.indexOf(":");
+            if (pCut < 0) continue;
+            var pKind = pSrc.substring(0, pCut);
+            var pVendor = pSrc.substring(pCut + 1);
+            if (pKind !== "전용마감" && pKind !== "발주마감") { result.ledgerNoVendor++; continue; }
+            var pUid = String(pData[pi][pIx["고유ID"]] || "").trim();
+            var pInv = String(pData[pi][pIx["송장번호"]] || "").trim();
+            if (!pUid || !_po_hasRealInvoice_(pInv)) continue;
+            if (pIx["주문일"] !== undefined && _po_bulkTooOld_(pData[pi][pIx["주문일"]])) {
+              result.skipOldArch++;
+              continue;
+            }
+            if (typeof _po_isGeneratedUid_ === "function" && _po_isGeneratedUid_(pUid)) {
+              result.skipGen++;
+              continue;
+            }
+            result.ledger += _po_addSabangBulkRow_(rows, seen, pUid, pInv, pVendor, result);
+          }
+        }
+      }
+    } catch (ePil) {
+      scannedLogs.push("[사방넷대량등록] 송장원장 오류: " + String(ePil.message || ePil));
     }
 
     /* ── 자사출고 송장 — «탭이 곧 택배사다» ──────────────────────
@@ -5110,10 +5228,13 @@ function partnerRebuildSabangnetBulkUpload() {
     (result.lotteOwn || 0) +
     "건" +
     ((result.matchTab || 0) ? " + 송장매칭 " + result.matchTab + "건" : "") +
+    ((result.tempArch || 0) ? " + 임시기록보관 " + result.tempArch + "건" : "") +
+    ((result.ledger || 0) ? " + 송장원장 " + result.ledger + "건" : "") +
     "\n" +
     (codeLines.length ? codeLines.join("\n") + "\n" : "") +
     (result.skipGen ? "생성UID(사방넷번호 아님) 제외: " + result.skipGen + "건\n" : "") +
     (result.skipNoCode ? "택배사코드 미지정: " + result.skipNoCode + "건\n" : "") +
+    (result.skipOldArch ? "보관·원장에서 15일 넘은 건 제외: " + result.skipOldArch + "건\n" : "") +
     (result.written === 0
       ? "\n임시기록 X열(송장번호)이 비어 있으면 5️⃣ 송장 수집을 먼저 실행하세요."
       : "") +
