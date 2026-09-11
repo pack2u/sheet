@@ -1081,6 +1081,12 @@
        「안심번호뿐」일 때만 색을 준다 — 모르고 걸었다가 끊긴 걸
        확인하는 일이 실제 손해라서. */
     .ret-safe-hint { margin-top: 4px; font-size: 11px; font-weight: 600; color: #e74c5f; line-height: 1.4; }
+    /* 번호와 이름은 한 줄에 나란히 — 같이 적는 것이라서 */
+    .ret-ph2-row { display: flex; gap: 6px; }
+    .ret-ph2-row .ret-pop-input { flex: 1 1 0; min-width: 0; }
+    .ret-ph2-row .ret-ph2-name { flex: 0 0 40%; }
+    /* 이름은 번호에 딸린 것이라 번호보다 조용하게, 다만 읽히게 */
+    .ret-ph-who { font-size: 0.92em; font-weight: 600; opacity: 0.85; }
     .ret-ph-tag { font-size: 0.85em; font-weight: 600; opacity: 0.75; }
     .ret-ph-sub { font-size: 0.9em; opacity: 0.6; }
     .ret-ph-warn { font-size: 0.85em; font-weight: 600; color: #e74c5f; }
@@ -2821,7 +2827,10 @@
           <label>실번호</label>
           <input id="retNewPhone2" type="tel" placeholder="안심번호면 실제 번호를 받아 적으세요">
         </div>
-        <div class="ledger-field"></div>
+        <div class="ledger-field">
+          <label>실번호 이름</label>
+          <input id="retNewPhone2Name" type="text" maxlength="20" placeholder="주문자와 다르면 적어 주세요">
+        </div>
       </div>
       <div class="ledger-row2">
         <div class="ledger-field">
@@ -4654,7 +4663,7 @@
     var DRAFT_SPECS = {
       retNew: {
         modal: 'retNewModal', bar: 'retNewDraftBar',
-        fields: ['retNewStaff', 'retNewName', 'retNewPhone', 'retNewPhone2', 'retNewInvoice', 'retNewQty',
+        fields: ['retNewStaff', 'retNewName', 'retNewPhone', 'retNewPhone2', 'retNewPhone2Name', 'retNewInvoice', 'retNewQty',
                  'retNewItem', 'retNewVendor', 'retNewPickup', 'retNewRetInvoice',
                  'retNewFee', 'retNewType', 'retNewStatus', 'retNewAccount', 'retNewMemo']
       },
@@ -6618,8 +6627,17 @@
           '<div class="pop-label" style="margin-top:8px">실번호 (선택)' +
             (c.phoneOnlySafe ? ' <span class="ret-ph-warn">지금은 안심번호뿐</span>' : '') +
             '</div>' +
-          '<input type="tel" class="ret-pop-input" id="ret-ph2-' + idx + '"' +
-            ' placeholder="010-0000-0000" value="' + esc(retCardPhone2(c)) + '">' +
+          '<div class="ret-ph2-row">' +
+            '<input type="tel" class="ret-pop-input" id="ret-ph2-' + idx + '"' +
+              ' placeholder="010-0000-0000" value="' + esc(retCardPhone2(c)) + '">' +
+            /* ★ 번호 주인 이름 ★  (2026-09-11)
+               > "주문자와 상담자가 다른경우가 있어"
+               주문은 며느리가 하고 전화는 시어머니가 받는 식이다.
+               번호만 적어 두면 다음 사람이 걸어서 「누구세요」를 두 번 한다.
+               한 줄에 나란히 둔다 — 번호와 이름은 «같이» 적는 것이다. */
+            '<input type="text" class="ret-pop-input ret-ph2-name" id="ret-ph2n-' + idx + '"' +
+              ' maxlength="20" placeholder="이름 (주문자와 다르면)" value="' + esc(c.phone2Name || '') + '">' +
+          '</div>' +
           '<div class="ret-pop-btns">' +
             '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
             '<button type="button" class="ret-pop-save" id="ret-save-status-' + idx + '" onclick="submitReturnCompose(' + idx + ',\'status\')">저장</button>' +
@@ -6739,8 +6757,12 @@
                안심번호는 곁에 작게 남긴다 — 주문을 되짚을 때 그게 열쇠다. */
             (c.phone ? '<div class="ret-meta">' + esc(c.phone) +
               (c.phoneTag ? '<span class="ret-ph-tag"> ' + esc(c.phoneTag) + '</span>' : '') +
+              /* 이름은 «실번호» 옆에만 붙는다. 안심번호 주인이 아니다.
+                 주가 실번호면 여기, 아니면 아래 sub 쪽에 붙인다. */
+              (c.phone2Name && !c.phoneTag ? '<span class="ret-ph-who"> ' + esc(c.phone2Name) + '</span>' : '') +
               (c.phoneSub ? '<span class="ret-ph-sub"> · ' + esc(c.phoneSubTag) + ' ' +
-                 esc(c.phoneSub) + '</span>' : '') +
+                 esc(c.phoneSub) +
+                 (c.phone2Name && c.phoneSubTag === '추가' ? ' ' + esc(c.phone2Name) : '') + '</span>' : '') +
               (c.phoneOnlySafe ? '<span class="ret-ph-warn"> 기간이 지나면 끊깁니다</span>' : '') +
               '</div>' : '') +
             '<div class="ret-sub">' + esc(c.tab) + ' ' + c.row + '행 · ' + esc(c.date || '') +
@@ -6959,6 +6981,10 @@
         var retInvVal = retInvEl ? String(retInvEl.value || '').trim() : '';
         var ph2El = document.getElementById('ret-ph2-' + idx);
         var ph2Val = ph2El ? String(ph2El.value || '').trim() : '';
+        var ph2nEl = document.getElementById('ret-ph2n-' + idx);
+        var ph2nVal = ph2nEl ? String(ph2nEl.value || '').trim() : '';
+        /* 이름만 적고 번호를 안 적으면 어디에도 못 붙는다 — 미리 말한다 */
+        if (ph2nVal && !ph2Val) { toast('실번호를 같이 적어 주세요 — 이름만으로는 못 겁니다', 3600); return; }
         /* 실번호 칸에 «안심번호»를 넣는 것은 막는다 — 그러라고 만든 칸이 아니고,
            넣어 두면 다음 사람이 「실번호가 있구나」 하고 걸었다가 허탕 친다. */
         if (ph2Val && /^050[0-9]/.test(ph2Val.replace(/[^0-9]/g, ''))) {
@@ -6993,7 +7019,8 @@
             status: status,
             staff: staff,
             returnInvoice: retInvVal,
-            phone2: ph2Val
+            phone2: ph2Val,
+            phone2Name: ph2nVal
           });
         return;
       }
@@ -7592,6 +7619,7 @@
         retCaseRowHtml('원송장', c.invoice) +
         retCaseRowHtml('반품송장', c.returnInvoice) +
         retCaseRowHtml('전화', (c.phone || '') + (c.phoneTag ? ' (' + c.phoneTag + ')' : '') +
+          (c.phone2Name && !c.phoneTag ? '  ' + c.phone2Name : '') +
           (c.phoneOnlySafe ? '  — 기간이 지나면 끊깁니다' : '')) +
         retCaseRowHtml(c.phoneSubTag === '안심' ? '안심번호' : '주문서 번호', c.phoneSub) +
         retCaseRowHtml('업체', c.vendor) +
@@ -8692,6 +8720,7 @@
       document.getElementById('retNewName').value = '';
       document.getElementById('retNewPhone').value = '';
       document.getElementById('retNewPhone2').value = '';
+      document.getElementById('retNewPhone2Name').value = '';
       retSafeHint();
       document.getElementById('retNewInvoice').value = '';
       document.getElementById('retNewQty').value = '';
@@ -8818,6 +8847,7 @@
           name: name,
           phone: document.getElementById('retNewPhone').value,
           phone2: document.getElementById('retNewPhone2').value,
+          phone2Name: document.getElementById('retNewPhone2Name').value,
           vendor: document.getElementById('retNewVendor').value,
           item: document.getElementById('retNewItem').value,
           qty: document.getElementById('retNewQty').value,

@@ -2020,6 +2020,21 @@ function submitReturnLedger(data) {
     if (col.phone2 >= 0 && String(data.phone2 || "").trim()) {
       row[col.phone2] = _cs_formatLedgerPhone_(data.phone2);
     }
+    /* 실번호 주인 이름 — 전용 열이 있을 때만 여기서 적는다.
+       없으면 아래 비고 줄에 «(이름)» 으로 따라 붙는다. */
+    var p2NameIn = String(data.phone2Name || "").trim().substring(0, 20);
+    var p2NameToNotice = "";
+    if (p2NameIn) {
+      if (col.phone2Name >= 0) {
+        row[col.phone2Name] = p2NameIn;
+      } else {
+        /* 전용 열이 없는 탭 — 비고에 «실번호 010-… (이름)» 으로 남긴다.
+           반품송장이 걸어온 길과 같다. 시트에 「실번호 이름」 열을 만들면
+           코드를 안 고쳐도 그쪽으로 옮겨 간다. */
+        p2NameToNotice = _cs_ledgerStamp_(data.staff) + " 실번호 " +
+          _cs_formatLedgerPhone_(data.phone2) + " (" + p2NameIn + ")";
+      }
+    }
     if (col.pickup >= 0) {
       var pickupVal = String(data.pickup || "").trim();
       if (!pickupVal && data.carrier) pickupVal = String(data.carrier).trim();
@@ -2073,6 +2088,7 @@ function submitReturnLedger(data) {
       if (data.memo) noticeLines.push(_cs_ledgerStamp_(data.staff) + " " + String(data.memo || "").trim());
       if (retInvToNotice) noticeLines.push(retInvToNotice);
       if (acctToNotice) noticeLines.push(acctToNotice);
+      if (p2NameToNotice) noticeLines.push(p2NameToNotice);
       row[col.notice] = noticeLines.join("\n");
     }
 
@@ -2149,6 +2165,7 @@ function csDiagnoseReturnLedger() {
       var label = {
         status: "처리상태", date: "반품접수날짜", staff: "접수자", vendor: "업체명",
         name: "반품신청자", phone: "연락처", phone2: "추가연락처(실번호)",
+        phone2Name: "실번호 이름",
         pickup: "수거입력처", item: "상품명",
         qty: "수량", invoice: "원송장", type: "유형", fee: "반품비",
         notice: "고객요청/비고", returnInvoice: "반품송장"
@@ -2228,7 +2245,7 @@ function _cs_colLetter_(idx) {
 
 function _cs_mapReturnLedgerCols_(header) {
   var col = {
-    date: -1, staff: -1, vendor: -1, name: -1, phone: -1, phone2: -1,
+    date: -1, staff: -1, vendor: -1, name: -1, phone: -1, phone2: -1, phone2Name: -1,
     pickup: -1, item: -1, qty: -1, invoice: -1, type: -1, fee: -1, status: -1, notice: -1,
     // 반품송장번호 — 대장 맨 끝에 추가한 열. 없으면 -1 이고 N열 비고 파싱으로 폴백한다.
     returnInvoice: -1,
@@ -2255,6 +2272,15 @@ function _cs_mapReturnLedgerCols_(header) {
 
        그리고 종전에는 phone2 항목 자체가 없어서 실번호가 «어디에도 안 나왔다».
        대장 F열에 적어 둔 실번호가 조용히 버려지고 있었다. */
+    /* ★ 실번호의 «주인 이름» ★  (2026-09-11)
+       > "실번호에 이름 넣는 칸도 만들어줘... 주문자와 상담자가 다른경우가 있어"
+       주문은 며느리가 하고 전화는 시어머니가 받는 식이다. 번호만 적어 두면
+       다음 사람이 걸어서 "누구세요"를 두 번 한다.
+
+       ★ 「이름」을 먼저 걸러야 한다 ★
+         /실번호/ 는 「실번호 이름」에도 걸린다. 이 줄이 위에 있어야
+         이름 열이 번호 열 자리를 뺏지 않는다. */
+    else if (col.phone2Name < 0 && /(실번호|추가연락처|연락처)(이름|성함)|상담자|통화자/.test(h)) col.phone2Name = i;
     else if (col.phone2 < 0 && /추가연락처|추가전화|비상연락|실번호/.test(h)) col.phone2 = i;
     else if (col.phone < 0 && /연락처|전화|휴대폰/.test(h) && !/주소|추가/.test(h)) col.phone = i;
     /* ★ 2026-09-10: 「회수신청」을 더한다 (포털 prpLedger.gs 와 쌍) ★
@@ -2626,6 +2652,7 @@ function updateReturnLedgerStatus(payload) {
   var staff = String(payload.staff || "").trim();
   var retInvIn = String(payload.returnInvoice || "").trim();
   var phone2In = String(payload.phone2 || "").trim();
+  var phone2NameIn = String(payload.phone2Name || "").trim().substring(0, 20);
   if (!tabName || !(rowNum > 0) || !status) {
     return { ok: false, error: "탭·행·상태가 필요합니다." };
   }
@@ -2668,7 +2695,7 @@ function updateReturnLedgerStatus(payload) {
 
        바뀐 때만 적고, 바뀐 때만 비고에 남긴다. 같은 값을 다시 저장했다고
        이력이 늘면 정작 «언제 알아냈나»를 못 읽는다. */
-    var phone2Saved = "";
+    var phone2Saved = "", phone2NameSaved = "";
     if (phone2In) {
       var p2new = phone2In.replace(/[^0-9]/g, "");
       if (p2new.length < 9) {
@@ -2681,10 +2708,21 @@ function updateReturnLedgerStatus(payload) {
         return { ok: false, error: "대장에 「추가연락처」 열이 없습니다. 열을 만들어 주세요." };
       }
       var p2cur = String(ctx.row[ctx.col.phone2] || "").replace(/[^0-9]/g, "");
-      if (p2cur !== p2new) {
+      var nameCur = ctx.col.phone2Name >= 0
+        ? String(ctx.row[ctx.col.phone2Name] || "").trim()
+        : _cs_parseReturnPhone2NameFromNotice_(notice);
+      if (p2cur !== p2new || phone2NameIn !== nameCur) {
         phone2Saved = _cs_formatLedgerPhone_(phone2In);
         ctx.tab.getRange(rowNum, ctx.col.phone2 + 1).setValue(phone2Saved);
-        notice = _cs_appendNoticeLine_(notice, _cs_ledgerStamp_(staff) + " 실번호 " + phone2Saved);
+        /* ★ 이름은 전용 열이 있으면 그 열에 ★
+           없으면 비고에 «(이름)» 으로 남긴다 — 반품송장이 걸어온 길과 같다.
+           나중에 시트에 「실번호 이름」 열을 만들면 코드를 안 고쳐도 옮겨 간다. */
+        if (ctx.col.phone2Name >= 0) {
+          ctx.tab.getRange(rowNum, ctx.col.phone2Name + 1).setValue(phone2NameIn);
+        }
+        notice = _cs_appendNoticeLine_(notice, _cs_ledgerStamp_(staff) + " 실번호 " + phone2Saved +
+          (phone2NameIn ? " (" + phone2NameIn + ")" : ""));
+        phone2NameSaved = phone2NameIn;
       }
     }
 
@@ -2707,6 +2745,7 @@ function updateReturnLedgerStatus(payload) {
       notice: notice,
       returnInvoice: retInvSaved,
       phone2: phone2Saved,
+      phone2Name: phone2NameSaved,
       message: tabName + " " + rowNum + "행 · " + status +
         (retInvSaved ? " · 반품송장 " + retInvSaved : "")
     };
@@ -2911,6 +2950,30 @@ function _cs_parseReturnInvFromNotice_(text) {
   return "";
 }
 
+/**
+ * 비고에 남긴 실번호 주인 이름을 읽는다.
+ *
+ * ★ 전용 열이 있으면 그 열이 먼저다. 이건 «없을 때»의 길이다 ★
+ *   반품송장이 걸어온 길과 같다 — 시트에 「실번호 이름」 열을 만들면
+ *   코드를 안 고쳐도 그쪽으로 옮겨 간다.
+ *
+ * ★ «마지막» 것을 쓴다 ★
+ *   비고는 쌓이는 자리다. 나중에 바로잡은 이름이 뒤에 붙으므로
+ *   첫 줄을 집으면 고친 것이 안 보인다.
+ *   (반품송장 파서는 첫 줄을 집는다 — 거긴 번호가 안 바뀌어서 그렇다.)
+ */
+function _cs_parseReturnPhone2NameFromNotice_(text) {
+  var s = String(text || "");
+  /* ※ 역슬래시(\n)를 안 쓴다 — 이 파일을 스크립트로 고칠 때
+       역슬래시가 조용히 먹혀 정규식이 쪼개진 사고가 실제로 났다.
+       줄바꿈은 문자코드로 만들어 붙인다. */
+  var NLCH = String.fromCharCode(10);
+  var re = new RegExp('실번호[^()' + NLCH + ']*[(（]([^)）' + NLCH + ']{1,20})[)）]', 'g');
+  var m, last = "";
+  while ((m = re.exec(s))) last = String(m[1] || "").trim();
+  return last;
+}
+
 function _cs_returnLedgerRowHasData_(row, col) {
   if (!row) return false;
   var keys = [col.date, col.name, col.item, col.phone, col.invoice, col.status];
@@ -2979,6 +3042,9 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
     var phoneRaw = col.phone >= 0 ? String(row[col.phone] || "").trim() : "";
     var phone2Raw = col.phone2 >= 0 ? String(row[col.phone2] || "").trim() : "";
     var ph = _cs_pickPhones_(phoneRaw, phone2Raw);
+    /* 실번호 주인 — 전용 열이 먼저, 없으면 비고에서 */
+    var phone2Name = col.phone2Name >= 0 ? String(row[col.phone2Name] || "").trim() : "";
+    if (!phone2Name) phone2Name = _cs_parseReturnPhone2NameFromNotice_(notice);
     var staffVal = col.staff >= 0 ? String(row[col.staff] || "").trim() : "";
     var dateVal = col.date >= 0 ? String(row[col.date] || "").trim() : "";
     var typeVal = col.type >= 0 ? String(row[col.type] || "").trim() : "";
@@ -2997,6 +3063,7 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
       phoneSub: ph.sub ? _cs_formatLedgerPhone_(ph.sub) : "",
       phoneSubTag: ph.subTag,
       phoneOnlySafe: ph.onlySafe,
+      phone2Name: phone2Name,
       /* ★ 찾기는 둘 다 걸려야 한다 ★
          고객이 주문서에 적힌 안심번호를 대고 전화할 수도, 직원이 실번호로
          찾을 수도 있다. 보여 주는 번호만 색인하면 나머지로는 못 찾는다. */
