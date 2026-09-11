@@ -56,7 +56,8 @@ function onOpen() {
       .addItem('사방넷 진단 (저장 안 함)', 'ss_사방넷진단')
       .addItem('중복발주 의심 점검', 'ss_중복점검')
       .addItem('검증 (행수 대조)', 'ss_검증')
-      .addItem('🧾 밀려난 구버전 탭 점검', 'ss_구버전점검'))
+      .addItem('🧾 밀려난 구버전 탭 점검', 'ss_구버전점검')
+      .addItem('📄 오늘 판매현황 되살리기 (원장 → 판매현황)', 'ss_오늘판매현황복원'))
 
     .addSubMenu(ui.createMenu('⚙ 설정 · 설치')
       .addItem('📅 대량등록 대상일수', 'ss_대량등록일수설정')
@@ -623,6 +624,162 @@ function ss_회차확정(지문, 입력행) {
  *   이제 이름만 바뀐 것은 안 밀어내지만, 이미 밀려난 탭은 남아 있다.
  *   무엇이 어디에 얼마나 있는지 한눈에 보여 준다.
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  📄 오늘 판매현황 되살리기 — 원장 → 판매현황 양식
+ *  2026-09-11
+ *
+ *  > "오늘 날짜만 뽑아서 판매현황 양식으로 바꿔서 시트를 만들어줘..
+ *     회차정보가 다 있어서 오늘의 판매현황이 나올꺼 같아"
+ *
+ *  ★ 원장은 «분해된 뒤»의 자료다 ★
+ *    한 주문 줄이 세트 구성품만큼 여러 행으로 늘어나 있다.
+ *    라인ID 가 「순번-분해번호」라서 «순번»으로 묶으면 원래 한 줄이 된다.
+ *    (판매현황에서도 순번은 줄마다 유일하다 — ssParseSales 가 중복 순번을
+ *     버리는 것이 그 증거다.)
+ *
+ *  ★ 그대로 되살아나지 «않는» 칸이 있다 ★
+ *    원장은 판매현황의 사본이 아니라 «처리 결과»다.
+ *      · 품목명   → 원장에는 분해된 구성품 이름이 들어 있다.
+ *                   원본 이름은 품목정보 마스터에서 가져온다.
+ *      · 거래처명 → 원장의 그 칸에는 «받는분»이 들어 있다(ssLedgerRow).
+ *                   보내는분으로 되살린다 — 대리발송·개인은 거기서 갈렸다.
+ *      · 주문서 출처 → 사방넷인지 아닌지는 알지만, 「주문서」로 들어온 건은
+ *                   자동발급과 구분이 안 된다. 그 건은 이카운트 모양으로 나간다.
+ *      · 배송비 세 칸 → 세트분리가 «안 읽는다». 품목 마스터에서 계산한다.
+ *                   비워도 결과가 같다.
+ *
+ *    그래서 이 탭은 «대조·보기»용이 먼저다. 그대로 다시 돌리기 전에
+ *    알림에 적힌 「되살리지 못한 것」을 보고 판단해야 한다.
+ *    말없이 완전한 척하지 않는 것이 이 함수의 절반이다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function ss_오늘판매현황복원() {
+  var NL = String.fromCharCode(10);
+  var ss = ssio_ss();
+  var lg = ss.getSheetByName(SSIO_TABS.원장);
+  if (!lg || lg.getLastRow() < 2) return ssio_alert('원장이 비어 있습니다.');
+
+  var cols = lg.getLastColumn();
+  var head = lg.getRange(1, 1, 1, cols).getValues()[0];
+  var ix = {};
+  for (var h = 0; h < head.length; h++) {
+    var hn = ssText(head[h]);
+    if (hn && ix[hn] === undefined) ix[hn] = h;
+  }
+  var 필수 = ['회차키', '순번', '원본품목코드', '주문수량'];
+  for (var f = 0; f < 필수.length; f++) {
+    if (ix[필수[f]] === undefined) {
+      return ssio_alert('원장에 「' + 필수[f] + '」 칸이 없습니다.' + NL +
+        '이 탭이 원장이 맞는지 확인해 주세요.');
+    }
+  }
+  var G = function (row, name) { return ix[name] === undefined ? '' : ssText(row[ix[name]]); };
+
+  var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
+  var v = lg.getRange(2, 1, lg.getLastRow() - 1, cols).getDisplayValues();
+
+  /* 품목 마스터 — 원본코드의 «원래 이름»은 여기에만 있다 */
+  var 이름 = {};
+  try {
+    var M = ssm_load();
+    for (var c in M.items) {
+      if (Object.prototype.hasOwnProperty.call(M.items, c)) 이름[c] = M.items[c].name;
+    }
+  } catch (eM) {}
+
+  var 본순번 = {}, rows = [], 회차수 = {}, 주문서의심 = 0, 이름없음 = 0;
+  for (var i = 0; i < v.length; i++) {
+    var r = v[i];
+    var rk = G(r, '회차키');
+    if (rk.substring(0, 6) !== today) continue;
+    var 순번 = G(r, '순번');
+    if (!순번) continue;
+    if (본순번[순번]) continue;          // 분해로 늘어난 둘째 줄부터는 버린다
+    본순번[순번] = true;
+    회차수[rk] = (회차수[rk] || 0) + 1;
+
+    var 원본코드 = G(r, '원본품목코드');
+    var 원본명 = 이름[원본코드] || '';
+    if (!원본명) { 원본명 = G(r, '품목명'); 이름없음++; }
+
+    /* 원장의 「거래처명」 칸에는 받는분이 들어 있다. 원래 거래처명은
+       보내는분에서 되살린다 — 대리발송·개인 판정이 거기서 나왔다. */
+    var 보내는분 = G(r, '보내는분');
+    var 받는분 = G(r, '거래처명');
+    var 거래처명 = 보내는분 === '팩투유' ? 받는분
+      : 보내는분 === '팩투유(개인)' ? (받는분 + ' 개인')
+      : ('대리발송-' + 보내는분);
+
+    var 사방넷번호 = G(r, '사방넷주문번호');
+    var 주소 = G(r, '원주소') || G(r, '주소1');
+    var 메시지 = G(r, '배송메시지');
+    var 전화 = G(r, '원연락처') || G(r, '전화');
+    var 모바일 = G(r, '모바일');
+    if (!사방넷번호 && 보내는분 && 보내는분 !== '팩투유' && 보내는분 !== '팩투유(개인)') {
+      주문서의심++;   // 주문서 출처였을 수 있다 — 자동발급과 구분이 안 된다
+    }
+
+    var 줄 = [];
+    for (var z = 0; z < SS_SALES_COLS.length; z++) 줄.push('');
+    var P = function (name, val) {
+      var at = SS_SALES_COLS.indexOf(name);
+      if (at >= 0) 줄[at] = val === undefined ? '' : val;
+    };
+    P('순번', 순번.replace(new RegExp('^0+'), '') || 순번);
+    P('일자-No.', G(r, '일자-No.'));
+    P('품목코드', 원본코드);
+    P('품목명', 원본명);
+    P('수량', G(r, '주문수량'));
+    P('합계', G(r, '합계'));
+    P('거래처명', 거래처명);
+    P('적요', G(r, '적요'));
+    if (사방넷번호) {
+      //  사방넷 건 — 이름/번호, 주소/메시지 두 칸으로 도로 접어 넣는다
+      P('주문자명(사방넷)', 받는분 + '/' + 사방넷번호);
+      P('전화번호(사방넷)', 모바일);
+      P('추가장문형식1', 주소 + (메시지 ? '/' + 메시지 : ''));
+    } else {
+      P('전화', 전화);
+      P('모바일', 모바일);
+      P('주소1', 주소);
+    }
+    rows.push(줄);
+  }
+
+  if (!rows.length) {
+    return ssio_alert('원장에 오늘(' + today + ') 회차가 없습니다.' + NL + NL +
+      '「🧾 밀려난 구버전 탭 점검」으로 원장이 밀려나지 않았는지 보세요.');
+  }
+
+  var 탭 = '판매현황_복원_' + today;
+  var sh = ss.getSheetByName(탭);
+  if (!sh) sh = ss.insertSheet(탭);
+  sh.clear();
+  sh.getRange(1, 1, 1, SS_SALES_COLS.length).setValues([SS_SALES_COLS]);
+  sh.getRange(2, 1, rows.length, SS_SALES_COLS.length).setValues(rows);
+  ssio_styleHeader(sh, SS_SALES_COLS.length, { bg: '#3b3b3b' });
+  sh.setFrozenRows(1);
+
+  var 회차줄 = [];
+  var ks = [];
+  for (var k in 회차수) if (Object.prototype.hasOwnProperty.call(회차수, k)) ks.push(k);
+  ks.sort();
+  for (var q = 0; q < ks.length; q++) 회차줄.push('    ' + ks[q] + ' : ' + 회차수[ks[q]] + '줄');
+
+  return ssio_alert('오늘 판매현황을 되살렸습니다 — 탭 「' + 탭 + '」' + NL + NL +
+    '  · 모두 ' + rows.length + '줄 (순번 기준, 분해 전)' + NL + 회차줄.join(NL) + NL + NL +
+    '  [그대로 되살아나지 않은 것]' + NL +
+    '    · 품목명은 품목 마스터에서 가져왔습니다' +
+      (이름없음 ? ' — ' + 이름없음 + '줄은 마스터에 없어 분해된 이름이 들어갔습니다' : '') + NL +
+    '    · 거래처명은 보내는분에서 되살린 값입니다 (원본은 원장에 없습니다)' + NL +
+    '    · 배송비 세 칸은 비었습니다 — 세트분리가 안 읽고 품목 마스터로 계산합니다' + NL +
+    (주문서의심 ? '    · 「주문서」로 들어온 건이 ' + 주문서의심 + '줄 섞였을 수 있습니다.' + NL +
+      '      자동발급과 구분이 안 돼 이카운트 모양으로 나갔습니다.' + NL : '') + NL +
+    '  이 탭은 «대조·보기»가 먼저입니다. 그대로 다시 돌리기 전에' + NL +
+    '  위 항목을 눈으로 확인해 주세요.');
+}
+
 function ss_구버전점검() {
   var NL = String.fromCharCode(10);
   var ss = ssio_ss();
