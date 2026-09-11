@@ -628,13 +628,42 @@ function ssDisplayName(u) {
 }
 
 /**
- * 품목명 첫 토큰이 협력업체 코드다.  "JH 실링 23189…" → JH
- * 대리발송업체 표에 있는 코드만 인정한다.
+ * 협력업체 코드를 찾는다.
+ *
+ * ① 품목명 첫 토큰   "JH 실링 23189…" → JH   (원래 규칙, 그대로 둔다)
+ * ② ①이 없으면 이카운트코드 앞글자  "JMPSPTB0014" → JM
+ *
+ * ★ ②를 «예비»로만 두는 이유 ★  (2026-09-11)
+ *   품목명으로 이미 정해진 건은 건드리지 않는다. 코드 앞글자를 먼저 보면
+ *   JH75SAUCE·AJ00011 처럼 «이미 잘 잡히던» 수천 건의 판정이 한꺼번에 바뀐다.
+ *   ②는 지금 빈칸인 것만 채운다 — 없던 것을 넣을 뿐 있던 것을 바꾸지 않는다.
+ *
+ * ★ 왜 필요했나 ★
+ *   제이엠 품목은 코드가 JM 으로 시작하는데 품목명은 「PSP 트레이 …」 로 시작한다.
+ *   141개 전부 그렇다 (2026-09-11 확인). 그래서 업체코드가 빈칸이었고,
+ *   재고가 부족해도 제이엠으로 넘길 대상으로 안 잡혔다.
+ *
+ * ★ 등록된 코드만 인정한다 ★
+ *   「대리발송업체」 표에 없는 앞글자는 무시한다. 없는 업체로 토스하면
+ *   그 건은 아무도 안 보낸다. JM 이 안 잡히면 그 표에 JM/제이엠이 있는지 본다.
+ *
+ *   앞글자 길이를 4→3→2 로 좁혀 가며 «가장 긴 것»을 고른다.
+ *   두 글자 코드(JM·JH)와 세 글자 코드가 섞여 있어도 긴 쪽이 이긴다.
  */
 function ssVendorOf(u, vendors) {
+  if (!vendors) return '';
+
   var name = ssText(u.품목명) || ssText(u.원본품목명);
   var head = name.split(' ')[0];
-  if (head && vendors && vendors[head]) return head;
+  if (head && vendors[head]) return head;
+
+  var code = ssText(u.품목코드) || ssText(u.원본코드);
+  if (!code) return '';
+  for (var len = 4; len >= 2; len--) {
+    if (code.length < len) continue;
+    var pre = code.substring(0, len).toUpperCase();
+    if (vendors[pre]) return pre;
+  }
   return '';
 }
 
