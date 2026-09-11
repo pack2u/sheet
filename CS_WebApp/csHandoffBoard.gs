@@ -111,7 +111,8 @@ var _CS_HB_ATT_FOLDER_LEGACY_ = "CS_전달보드_첨부";
 /** 폴더 ID를 기억해두는 스크립트 속성 키 */
 var _CS_HB_ATT_FOLDER_PROP_ = "CS_HB_ATT_FOLDER_ID";
 /** 파일 1개 최대 크기 (디코딩 후) */
-var _CS_HB_ATT_MAX_BYTES_ = 8 * 1024 * 1024;
+/* ★ 2026-09-11: 8MB → 20MB ★ 송장 사진을 크게 보내기로 했다(2400px·0.88). */
+var _CS_HB_ATT_MAX_BYTES_ = 20 * 1024 * 1024;
 /** 카드 1장당 첨부 최대 개수 */
 var _CS_HB_ATT_MAX_PER_CARD_ = 8;
 

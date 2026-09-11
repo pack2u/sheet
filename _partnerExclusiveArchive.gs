@@ -514,6 +514,30 @@ function _pea_core_(tabName, silent) {
   while (state.queue.length > 0) {
     if (processed > 0 && Date.now() - _startMs_ > _MAX_EXEC_MS_) break;
     var fileInfo = state.queue.shift();
+
+    /* ★ 한 업체에서 영영 멈추던 것을 막는다 (2026-09-11) ★
+       한 업체가 6분 안에 안 끝나면 구글이 실행을 끊는다. 그런데 상태는
+       «이 반복이 끝날 때» 저장되므로, 끊긴 뒤 남아 있는 상태에는 그 업체가
+       아직 큐에 들어 있다. 5.5분 안전망이 재개하면 같은 업체를 또 집는다.
+       그래서 마감이 그 업체에서 영원히 맴돌았다.
+
+       ① 꺼내자마자 시도 횟수를 세고 **바로 저장한다.** 도중에 끊겨도
+          「한 번 해 봤다」가 남는다.
+       ② 세 번 끊기면 건너뛴다. 한 업체 때문에 나머지 전부가 안 도는 것이
+          훨씬 비싸다. 건너뛴 업체는 오류 목록에 남아 Chat 으로 나간다. */
+    if (!state.tries) state.tries = {};
+    var _tryKey_ = String(fileInfo.id);
+    state.tries[_tryKey_] = (state.tries[_tryKey_] || 0) + 1;
+    _pea_saveResumeState_(state);
+
+    if (state.tries[_tryKey_] > 3) {
+      result.errors.push("[" + fileInfo.name + "] 세 번 시도했는데 매번 중단됐습니다 — " +
+        "건너뜁니다. 전용양식이 너무 길어 6분 안에 못 끝내는 것일 수 있습니다.");
+      Logger.log("[PEA] 건너뜀(3회 중단): " + fileInfo.name);
+      processed++;
+      continue;
+    }
+
     try {
       var ss   = SpreadsheetApp.openById(fileInfo.id);
       var tabs = ss.getSheets();
@@ -827,6 +851,84 @@ function _pea_continueResume_() {
   } finally {
     try { props.deleteProperty("_PEA_BATCH_RUNNING_"); } catch (_) {}
   }
+}
+
+/**
+ * ★ 대리공급 마감이 어디서 멈춰 있나 ★  (2026-09-11)
+ *
+ * > "특정업체에서 계속 멈추고 있는거 같아.. 임의로 마감실행하면
+ *    백그라운드에서 실행중이라고..나오네"
+ *
+ * 「진행 중」이라는 말만 보고는 무엇이 걸렸는지 알 수 없었다.
+ * 남은 업체 · 몇 번 시도했나 · 예약된 재개 트리거를 그대로 보여 준다.
+ * 읽기만 한다 — 아무것도 고치지 않는다.
+ */
+function partnerDiagnoseExclusiveArchive() {
+  var props = PropertiesService.getScriptProperties();
+  var L = [];
+
+  var state = _pea_loadResumeState_();
+  var pending = props.getProperty(_PEA_PENDING_KEY_);
+  var running = props.getProperty("_PEA_BATCH_RUNNING_");
+
+  L.push("■ 대리공급 마감 상태");
+  L.push("");
+
+  if (running) {
+    var age = Math.round((Date.now() - Number(running)) / 1000);
+    L.push("배치 표시: " + age + "초 전에 켜짐" +
+      (age > 360 ? "  ← 6분이 넘었습니다. 죽은 표시입니다." : "  (도는 중)"));
+  } else {
+    L.push("배치 표시: 없음 (도는 중이 아님)");
+  }
+  L.push("시작 예약(tabName): " + (pending || "없음"));
+  L.push("");
+
+  if (!state) {
+    L.push("남은 작업이 없습니다.");
+  } else {
+    L.push("마감 탭: " + (state.tabName || "?"));
+    L.push("옮긴 행: " + (state.moved || 0) + " · 남긴 행: " + (state.kept || 0));
+    var q = state.queue || [];
+    L.push("남은 업체: " + q.length + "곳");
+    var tries = state.tries || {};
+    for (var i = 0; i < Math.min(q.length, 15); i++) {
+      var t = tries[String(q[i].id)] || 0;
+      L.push("   " + (i + 1) + ". " + q[i].name + (t ? "  ← " + t + "번 시도" : ""));
+    }
+    /* 이미 큐에서 빠졌는데 시도 횟수가 남아 있는 것 = 걸렸던 업체 */
+    var 걸린것 = [];
+    for (var k in tries) {
+      if (tries[k] >= 2) {
+        var nm = k;
+        for (var j = 0; j < q.length; j++) if (String(q[j].id) === k) nm = q[j].name;
+        걸린것.push(nm + " (" + tries[k] + "번)");
+      }
+    }
+    if (걸린것.length) {
+      L.push("");
+      L.push("★ 두 번 넘게 시도한 업체:");
+      for (var b = 0; b < 걸린것.length; b++) L.push("   " + 걸린것[b]);
+    }
+    if (state.errors && state.errors.length) {
+      L.push("");
+      L.push("남긴 오류 " + state.errors.length + "개:");
+      for (var e = 0; e < Math.min(8, state.errors.length); e++) L.push("   " + state.errors[e]);
+    }
+  }
+
+  var trs = ScriptApp.getProjectTriggers();
+  var n = 0;
+  for (var ti = 0; ti < trs.length; ti++) {
+    if (trs[ti].getHandlerFunction() === _PEA_RESUME_TRIGGER_) n++;
+  }
+  L.push("");
+  L.push("재개 트리거: " + n + "개");
+
+  var msg = L.join(String.fromCharCode(10));   // 역슬래시를 안 쓴다 — 쓰다가 날아간 적이 있다
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert("대리공급 마감 진단", msg, SpreadsheetApp.getUi().ButtonSet.OK); } catch (e) {}
+  return msg;
 }
 
 function _pea_saveResumeState_(state) {

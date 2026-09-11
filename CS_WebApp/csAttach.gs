@@ -23,7 +23,11 @@ var _CS_ATT_HEADER_ = ["등록시각", "담당자", "탭", "행", "수취인", "
 
 /** 한 번에 올릴 수 있는 장수 · 총 용량(디코드 후 기준) */
 var _CS_ATT_MAX_FILES_ = 6;
-var _CS_ATT_MAX_BYTES_ = 12 * 1024 * 1024;
+/* ★ 2026-09-11: 12MB → 25MB ★
+   올리는 사진이 대부분 송장이다. 글자가 읽혀야 해서 화면 축소값을
+   2400px·0.88 로 올렸고(한 장 1MB 안팎), 그러면 여섯 장에 6MB 쯤 된다.
+   12MB 는 그 위에 여유가 없다. 보관소가 25MB 까지 받으므로 맞춘다. */
+var _CS_ATT_MAX_BYTES_ = 25 * 1024 * 1024;
 
 /**
  * 첨부 폴더.
@@ -174,6 +178,8 @@ function csAttachReturnPhotos(payload) {
       (ctx.col.name >= 0 ? ctx.row[ctx.col.name] : "")) || "반품";
 
     var saved = [];
+    /* 보관소가 실패했을 때 그 까닭. 한 장이라도 떨어졌으면 화면에 알린다. */
+    var fsWarn = "";
     for (var i = 0; i < blobs.length; i++) {
       var one = blobs[i];
       var fname = who + "_" + tabName + "_" + rowNum + "_" + stampName +
@@ -192,9 +198,33 @@ function csAttachReturnPhotos(payload) {
 
       /* 보관소가 안 되면 옛 방식으로 간다 — **사진은 올라가야 한다.**
          CS 가 고객과 통화하면서 올리는 것이라 여기서 막히면 일이 멈춘다.
-         다만 왜 그랬는지는 남긴다. 조용히 옛날로 돌아가면 아무도 모른다. */
+
+         ★ 2026-09-11: 왜 떨어졌는지 화면에 내보낸다 ★
+           이 웹앱은 «접속한 사람» 권한으로 돈다. 그래서 보관소 실패는
+           사람마다 다르게 난다 — 한 직원만 안 되는 일이 생긴다.
+           옛 방식은 그 사람 «개인 드라이브»에 쓰므로, 그 사람 용량이 차면
+           「저장용량 초과」만 뜨고 진짜 까닭(보관소가 왜 안 됐나)은 묻힌다.
+           실제로 그렇게 신고가 들어왔다. 로그에만 남기면 아무도 안 본다. */
       Logger.log("[CS_ATTACH] 보관소 실패 → 예전 방식으로 올립니다: " + put.error);
-      var file = folder.createFile(Utilities.newBlob(one.bytes, one.mime, fname));
+      if (!fsWarn) fsWarn = String(put.error || "보관소를 쓰지 못했습니다");
+
+      var file;
+      try {
+        file = folder.createFile(Utilities.newBlob(one.bytes, one.mime, fname));
+      } catch (eMake) {
+        /* 개인 드라이브까지 막혔다 — 여기서 멈추되, 두 까닭을 «둘 다» 말한다.
+           「용량초과」만 보면 사진을 줄이려 들지만, 진짜 문제는 보관소다. */
+        return {
+          ok: false,
+          error: [
+            "사진을 올리지 못했습니다.", "",
+            "① 파일보관소: " + fsWarn,
+            "② 개인 드라이브: " + ((eMake && eMake.message) || eMake), "",
+            "보관소가 되면 개인 드라이브를 안 씁니다.",
+            "관리자에게 이 두 줄을 그대로 알려 주세요."
+          ].join(String.fromCharCode(10))
+        };
+      }
       // 링크를 아는 사람은 볼 수 있게 — 각자 브라우저에서 썸네일이 바로 뜨도록
       try {
         file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
@@ -234,7 +264,11 @@ function csAttachReturnPhotos(payload) {
       ok: true,
       files: saved,
       notice: notice,
-      message: saved.length + "장 첨부했습니다."
+      /* ★ 성공해도 «개인 드라이브로 떨어졌으면» 말한다 ★
+         조용히 성공하면 다음에 그 사람 용량이 차서 멈출 때까지 아무도 모른다.
+         실제로 그렇게 됐다 (2026-09-11). */
+      message: saved.length + "장 첨부했습니다." +
+        (fsWarn ? "  ※ 파일보관소를 못 써서 개인 드라이브에 올렸습니다 — " + fsWarn : "")
     };
   } catch (e) {
     return { ok: false, error: e.message || String(e) };

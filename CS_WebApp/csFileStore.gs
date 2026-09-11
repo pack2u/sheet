@@ -35,50 +35,39 @@
  * ══════════════════════════════════════════════════════════════
  */
 
-/** 보관소 주소. _secrets.gs 가 없으면 빈 값 → 옛 방식으로 간다. */
-function _cs_fs_url_() {
-  try { if (typeof CS_FILESTORE_URL !== "undefined" && CS_FILESTORE_URL) return String(CS_FILESTORE_URL); } catch (e) {}
-  return "";
-}
-
-function _cs_fs_token_() {
-  try { if (typeof CS_FILESTORE_TOKEN !== "undefined" && CS_FILESTORE_TOKEN) return String(CS_FILESTORE_TOKEN); } catch (e) {}
-  return "";
-}
-
-function _cs_fs_ready_() {
-  return !!(_cs_fs_url_() && _cs_fs_token_());
-}
+/* 옛 파일보관소(별도 GAS 프로젝트)로 가던 길은 2026-09-11 에 걷어냈다.
+   드라이브는 어느 계정에 붙이든 «그 사람» 용량을 쓴다 — v2 저장소로 옮겼다.
+   _secrets.gs 의 CS_FILESTORE_URL·TOKEN 은 이제 안 쓴다. */
 
 /**
- * 파일 하나를 보관소에 맡긴다.
+ * 파일 하나를 맡긴다.
  *
- * @param {string} kind      "return" (반품 사진) | "board" (보드 첨부)
+ * ★ 2026-09-11: 구글 드라이브에서 «우리 쪽»으로 옮겼다 ★
+ *   > "구글 드라이브 말고 우리 웹앱에 올리면 안될까?"
+ *
+ *   드라이브는 «사람»에게 붙은 저장소다. 접속자 권한으로 만들면 그 직원
+ *   소유가 되고, 회사 계정으로 만들게 고쳤더니 이번엔 그 계정 용량에 걸렸다.
+ *   누구에게 붙이든 한 사람 몫을 쓴다.
+ *
+ *   v2 의 저장소는 시스템 것이다. 소유자도 용량도 한 사람에게 매이지 않는다.
+ *   돌려주는 모양은 그대로다(ok · fileId · url · owner) — 부르는 자리
+ *   (반품·보드)를 안 고쳐도 된다.
+ *
+ * @param {string} kind      "return" | "board"
  * @param {Array<number>} bytes  Utilities.base64Decode 로 얻은 바이트
- * @param {string} mime
- * @param {string} name
  * @return {{ok:boolean, fileId:string, url:string, owner:string, error:string}}
- *   ok:false 면 부르는 쪽이 옛 방식(직접 createFile)으로 넘어가면 된다.
  */
 function csFileStorePut(kind, bytes, mime, name) {
-  if (!_cs_fs_ready_()) {
-    return { ok: false, error: "보관소 설정 없음 (_secrets.gs)" };
-  }
+  var url = _cs_v2_url_(), tok = _cs_v2_token_();
+  if (!url || !tok) return { ok: false, error: "v2 주소나 토큰이 없습니다 (_secrets.gs V2_URL · V2_INGEST_TOKEN)" };
+
   try {
-    var res = UrlFetchApp.fetch(_cs_fs_url_(), {
+    var res = UrlFetchApp.fetch(url + "/api/files/upload", {
       method: "post",
       contentType: "application/json",
       muteHttpExceptions: true,
-      /* ★ 로그인한 사람의 토큰을 실어 보낸다 ★  (2026-09-10)
-         보관소를 «누구나(익명)» 로 열려고 했는데 Workspace 정책이 막았다.
-         그래서 «구글 계정이 있으면 됨» 으로 두고, 부르는 쪽이 신원을 실어 준다.
-         받는 쪽은 그래도 pack2u 권한으로 도므로(executeAs USER_DEPLOYING)
-         **파일 소유자는 여전히 회사**다. 신원은 문을 여는 데만 쓴다.
-         진짜 자물쇠는 본문의 토큰이다. */
-      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
-      /* 사진 한 장이 몇 MB 라 넉넉히 준다. 기본 60초로는 큰 장에서 끊긴다. */
       payload: JSON.stringify({
-        token: _cs_fs_token_(),
+        token: tok,
         kind: kind,
         name: name,
         mimeType: mime,
@@ -87,21 +76,24 @@ function csFileStorePut(kind, bytes, mime, name) {
     });
     var code = res.getResponseCode();
     var text = res.getContentText();
-    if (code !== 200) {
-      return { ok: false, error: "보관소 HTTP " + code + " " + text.substring(0, 200) };
-    }
+    if (code !== 200) return { ok: false, error: "v2 저장소 HTTP " + code + " " + text.substring(0, 200) };
     var j;
-    try {
-      j = JSON.parse(text);
-    } catch (eJ) {
-      /* 로그인 화면(HTML)이 오면 여기로 온다 — 배포 권한이 안 열린 것이다. */
-      return { ok: false, error: "보관소 응답을 읽지 못했습니다 (권한 미승인?) " + text.substring(0, 120) };
-    }
-    if (!j.ok) return { ok: false, error: "보관소: " + (j.error || "알 수 없는 오류") };
+    try { j = JSON.parse(text); }
+    catch (eJ) { return { ok: false, error: "v2 저장소 응답을 읽지 못했습니다: " + text.substring(0, 120) }; }
+    if (!j.ok) return { ok: false, error: "v2 저장소: " + (j.error || "알 수 없는 오류") };
     return j;
   } catch (e) {
-    return { ok: false, error: "보관소 호출 실패: " + ((e && e.message) || e) };
+    return { ok: false, error: "v2 저장소 호출 실패: " + ((e && e.message) || e) };
   }
+}
+
+function _cs_v2_url_() {
+  try { if (typeof V2_URL !== "undefined" && V2_URL) return String(V2_URL).replace(/[/]+$/, ""); } catch (e) {}
+  return "";
+}
+function _cs_v2_token_() {
+  try { if (typeof V2_INGEST_TOKEN !== "undefined" && V2_INGEST_TOKEN) return String(V2_INGEST_TOKEN); } catch (e) {}
+  return "";
 }
 
 /**
@@ -110,9 +102,9 @@ function csFileStorePut(kind, bytes, mime, name) {
  */
 function csDiagnoseFileStore() {
   var out = ["파일보관소 점검", ""];
-  out.push("주소   " + (_cs_fs_url_() ? "있음" : "★ 없음 (_secrets.gs CS_FILESTORE_URL)"));
-  out.push("토큰   " + (_cs_fs_token_() ? "있음" : "★ 없음 (_secrets.gs CS_FILESTORE_TOKEN)"));
-  if (_cs_fs_ready_()) {
+  out.push("v2 주소  " + (_cs_v2_url_() ? "있음" : "★ 없음 (_secrets.gs V2_URL)"));
+  out.push("토큰     " + (_cs_v2_token_() ? "있음" : "★ 없음 (_secrets.gs V2_INGEST_TOKEN)"));
+  if (_cs_v2_url_() && _cs_v2_token_()) {
     var r = csFileStorePut("board", Utilities.base64Decode(Utilities.base64Encode("ping")),
       "text/plain", "보관소점검_" + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd_HHmmss") + ".txt");
     if (r.ok) {
@@ -120,9 +112,9 @@ function csDiagnoseFileStore() {
       out.push("올라감 ✅  소유자 " + r.owner);
       out.push("       " + r.url);
       out.push("");
-      out.push(String(r.owner).indexOf("@pack2u.co.kr") > 0
-        ? "→ 회사 계정 소유입니다. 제대로 돌고 있습니다."
-        : "→ ★ 소유자가 회사 계정이 아닙니다. 보관소 설정을 봐야 합니다.");
+      out.push(String(r.owner).indexOf("v2") >= 0
+        ? "→ v2 저장소입니다. 개인 용량을 안 씁니다."
+        : "→ ★ 소유자가 v2 가 아닙니다. 설정을 봐야 합니다.");
       out.push("(이 시험 파일은 지우셔도 됩니다)");
     } else {
       out.push("");

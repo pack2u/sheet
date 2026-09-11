@@ -61,7 +61,8 @@ var FS_SUBFOLDER_ETC = "기타";
 var FS_TOKEN_PROP = "FS_TOKEN";
 
 /** 한 번에 받을 수 있는 크기. CS 웹앱 쪽 제한(12MB)보다 넉넉히 둔다. */
-var FS_MAX_BYTES = 20 * 1024 * 1024;
+/* ★ 2026-09-11: 20MB → 25MB ★ 송장 사진을 크게 받기로 했다. */
+var FS_MAX_BYTES = 25 * 1024 * 1024;
 
 function _fs_json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o))

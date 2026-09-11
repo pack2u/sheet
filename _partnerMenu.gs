@@ -361,6 +361,7 @@ function registerPartnerMenu_() {
         .addItem("🔑 스크립트 권한 승인 (직원 최초 1회)", "partnerAuthorizeForStaff")
         .addSeparator()
         .addItem("🔓 동기화 락 강제 해제", "adminForceReleaseSyncLock_")
+        .addItem("🔎 대리공급 마감 어디서 멈췄나", "partnerDiagnoseExclusiveArchive")
         .addItem("🛑 마감 백그라운드 강제 초기화", "partnerForceClearArchiveJobs_")
         .addItem("🛑 재설치 중단", "stopRepairScriptBatchOwner")
     )

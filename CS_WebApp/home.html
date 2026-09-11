@@ -3206,8 +3206,13 @@
     /* ── 첨부: 수집 → 축소 → 순차 업로드 ──
        올리기 전에 반드시 축소한다. 폰 사진은 3~6MB이고 base64로 1.33배 불어나
        그대로 보내면 느리고 실패도 잦다. 1600px/0.8이면 300~500KB로 준다. */
-    var HB_ATT_MAXDIM = 1600;
-    var HB_ATT_QUALITY = 0.8;
+    /* ★ 송장 사진이라 크게 보낸다 (2026-09-11) ★
+       1600px·0.8 로 줄였더니 송장 글자가 뭉개졌다 — 사장님 확인.
+       올리는 사진 대부분이 송장이라, 읽히지 않으면 올리는 뜻이 없다.
+       2400px·0.88 이면 한 장 600KB~1MB 쯤이다. 여섯 장이라도 6MB 안쪽이라
+       보관소(25MB)와 서버 한도 안에 든다. */
+    var HB_ATT_MAXDIM = 2400;
+    var HB_ATT_QUALITY = 0.88;
     var HB_ATT_MAX = 8;
     var HB_PEND = { create: [], note: {} };
 
@@ -3233,7 +3238,7 @@
         img.onerror = function() { done(file); };
         img.onload = function() {
           var w = img.width, h = img.height;
-          if (w <= HB_ATT_MAXDIM && h <= HB_ATT_MAXDIM && file.size <= 900 * 1024) {
+          if (w <= HB_ATT_MAXDIM && h <= HB_ATT_MAXDIM && file.size <= 1400 * 1024) {
             done(file); return;
           }
           var ratio = Math.min(1, HB_ATT_MAXDIM / Math.max(w, h));
