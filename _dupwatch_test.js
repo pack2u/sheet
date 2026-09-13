@@ -560,6 +560,56 @@ run("전화 자릿수 부족 → 의심", [
   all = all && ok;
 })();
 
+
+/* ═══════════════════════════════════════════════════════════════
+   송장원장 — 안 바뀐 업체 파일은 열지도 않는다 (2026-09-14)
+
+   > "상품정보 스크립트 실행 시간을 줄이는 방법은 없을까?"
+
+   협력업체 파일이 48곳. 하나 여는 데 1초쯤이라 여는 데만 50초가 넘는데
+   예산은 2분이다. 그래서 이 일은 거의 매번 중간에 끊겼고, 송장원장은 늘
+   반쪽이었다 — 그 반쪽을 사방넷 대량등록이 원천으로 읽는다.
+
+   2026-09-13 「업체_휴면」 기준 48곳 중 36곳(75%)이 이틀 넘게 조용하다.
+   커서로 «새 줄만» 읽는 구조라, 안 바뀐 파일은 열어 봐야 0건이다.
+   ═══════════════════════════════════════════════════════════════ */
+(function () {
+  const src = fs.readFileSync("_partnerInvoiceLedger.gs", "utf8");
+  let ok = true;
+  const t = (label, got, want) => {
+    const p = JSON.stringify(got) === JSON.stringify(want);
+    if (!p) { ok = false; console.log("   FAIL " + label + " → " + JSON.stringify(got) +
+      " (기대 " + JSON.stringify(want) + ")"); }
+  };
+
+  t("수정시각 기록 키가 있다", src.includes('_PIL_MOD_PREFIX_ = "PIL_MOD:"'), true);
+  t("★ 안 바뀐 파일은 건너뛴다",
+    /_mod_ > 0 && _mod_ <= _pil_lastSeenMod_\(props, files\[fi\]\.id\)/.test(src), true);
+  t("건너뛴 수를 센다", src.includes("stat.skippedQuiet++"), true);
+  t("★ 화면에도 적는다", src.includes("안 바뀌어 안 연 업체 파일"), true);
+
+  /* ★ 다 읽은 «뒤»에 적어야 한다 ★
+     중간에 예산이 끊겨 덜 읽고 적으면, 다음 실행이 그 파일을 건너뛰어
+     그 줄들이 영영 안 들어온다. */
+  const 달루프 = src.indexOf('mLabel + "발주 마감", "발주마감:" + vendor, "order");');
+  const 적기 = src.indexOf("_pil_setSeenMod_(props, files[fi].id, _mod_);");
+  t("★ 두 달을 다 읽은 뒤에 적는다", 달루프 > 0 && 적기 > 달루프, true);
+
+  /* 커서를 초기화하면 수정시각도 같이 지워야 한다.
+     안 그러면 「처음부터 다시 읽어라」가 «안 바뀌었으니 건너뛴다»에 막힌다. */
+  const 초기화 = src.slice(src.indexOf("function partnerResetInvoiceLedgerCursors("));
+  t("★ 초기화가 수정시각도 지운다",
+    초기화.slice(0, 600).includes("_PIL_MOD_PREFIX_"), true);
+
+  //  파일 목록이 최종수정 시각을 들고 있어야 이게 성립한다
+  const dep = fs.readFileSync("_partnerDeploy.gs", "utf8");
+  t("★ 파일 목록이 최종수정 시각을 준다",
+    /modified: f\.getLastUpdated\(\)\.getTime\(\)/.test(dep), true);
+
+  console.log((ok ? "PASS " : "FAIL ") + "송장원장 — 조용한 파일 건너뛰기");
+  all = all && ok;
+})();
+
 console.log("");
 console.log(all ? "ALL PASS" : "SOME FAILED");
 process.exit(all ? 0 : 1);

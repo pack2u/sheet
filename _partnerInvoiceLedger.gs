@@ -100,13 +100,53 @@ function _pil_setCursor_(props, fileId, tabName, lastRow) {
   props.setProperty(_pil_cursorKey_(fileId, tabName), String(lastRow));
 }
 
-/** 커서 전체 초기화 — 다음 실행에서 마감탭을 처음부터 재수집한다 */
+/* ═══════════════════════════════════════════════════════════
+ *  안 바뀐 파일은 «열지도 않는다»  (2026-09-14)
+ *
+ *  > "상품정보 스크립트 실행 시간을 줄이는 방법은 없을까?"
+ *
+ *  ★ 시간의 대부분이 파일 여는 데 든다 ★
+ *    협력업체 파일이 48곳이다. 하나 여는 데 1초쯤 걸리니 여는 데만
+ *    50초가 넘고, 예산은 2분이다. 그래서 이 일은 «거의 매번» 중간에
+ *    끊겼고, 송장원장은 늘 반쪽이었다.
+ *    (그 반쪽을 사방넷 대량등록이 원천으로 읽는다 — 같이 반쪽이 된다)
+ *
+ *  ★ 그런데 48곳 중 36곳(75%)은 이틀 넘게 조용하다 ★
+ *    2026-09-13 「업체_휴면」 기준: 0일 11곳 · 1일 1곳 · 2일 35곳 · 3일 1곳.
+ *
+ *  ★ 건너뛰어도 안전한 이유 ★
+ *    이 모듈은 파일·탭별 커서로 «새 줄만» 읽는다. 파일이 지난번 이후
+ *    한 번도 안 바뀌었으면 새 줄이 있을 수가 없다 — 열어 봐야 0건이다.
+ *    파일 목록(_pt_listFiles)이 이미 최종수정 시각을 들고 있어서
+ *    새 자료원도 필요 없다.
+ *
+ *    커서를 초기화하면(partnerResetInvoiceLedgerCursors) 이 기록도
+ *    같이 지워져 전부 다시 읽는다.
+ * ═══════════════════════════════════════════════════════════ */
+var _PIL_MOD_PREFIX_ = "PIL_MOD:";
+
+/** 지난번에 본 그 파일의 최종수정 시각(ms). 없으면 0 */
+function _pil_lastSeenMod_(props, fileId) {
+  var raw = props.getProperty(_PIL_MOD_PREFIX_ + fileId);
+  var n = raw ? parseInt(raw, 10) : 0;
+  return n > 0 ? n : 0;
+}
+function _pil_setSeenMod_(props, fileId, ms) {
+  if (!(ms > 0)) return;
+  props.setProperty(_PIL_MOD_PREFIX_ + fileId, String(ms));
+}
+
+/** 커서 전체 초기화 — 다음 실행에서 마감탭을 처음부터 재수집한다 (수정시각 기록도 같이) */
 function partnerResetInvoiceLedgerCursors() {
   var props = PropertiesService.getScriptProperties();
   var all = props.getProperties();
   var removed = 0;
   for (var k in all) {
-    if (k.indexOf(_PIL_CURSOR_PREFIX_) === 0) { props.deleteProperty(k); removed++; }
+    /*  수정시각 기록도 같이 지운다. 커서만 지우면 «안 바뀐 파일»로 보여
+        건너뛰므로, 처음부터 다시 읽으라는 말이 안 지켜진다. */
+    if (k.indexOf(_PIL_CURSOR_PREFIX_) === 0 || k.indexOf(_PIL_MOD_PREFIX_) === 0) {
+      props.deleteProperty(k); removed++;
+    }
   }
   var msg = "송장원장 읽기 커서 " + removed + "건 초기화. 다음 갱신에서 마감탭을 처음부터 다시 읽습니다.";
   Logger.log("[LEDGER] " + msg);
@@ -196,9 +236,18 @@ function _pil_harvestPartnerArchives_(out, stat, started) {
   var months = _pil_recentMonths_(1);
   var exSuffix = (typeof _PEA_TAB_SUFFIX !== "undefined") ? _PEA_TAB_SUFFIX : "전용발주 마감";
 
+  stat.skippedQuiet = 0;
   for (var fi = 0; fi < files.length; fi++) {
     if (new Date().getTime() - started > _PIL_TIME_BUDGET_MS_) { stat.timedOut = true; return; }
     var vendor = String(files[fi].name || "").replace("[협력업체] ", "").trim();
+    /* ★ 지난번 이후 한 번도 안 바뀐 파일은 열지 않는다 ★
+       커서로 새 줄만 읽는 구조라, 안 바뀐 파일은 열어 봐야 0건이다.
+       여는 데 1초씩 드니 이것만으로 48곳이 10여 곳으로 준다. */
+    var _mod_ = Number(files[fi].modified || 0);
+    if (_mod_ > 0 && _mod_ <= _pil_lastSeenMod_(props, files[fi].id)) {
+      stat.skippedQuiet++;
+      continue;
+    }
     var ss;
     try { ss = SpreadsheetApp.openById(files[fi].id); }
     catch (e) { stat.errors.push(vendor + " 열기 실패: " + e.message); continue; }
@@ -210,6 +259,9 @@ function _pil_harvestPartnerArchives_(out, stat, started) {
       _pil_readArchiveTab_(out, stat, props, files[fi].id, ss,
         mLabel + "발주 마감", "발주마감:" + vendor, "order");
     }
+    /*  달 두 개를 다 본 뒤에 적는다. 중간에 예산이 끊겨 덜 읽고 적으면
+        다음 실행이 그 파일을 건너뛰어 그 줄들이 영영 안 들어온다. */
+    _pil_setSeenMod_(props, files[fi].id, _mod_);
   }
 }
 
@@ -456,6 +508,8 @@ function partnerRefreshInvoiceLedger() {
     "",
     "임시기록·보관에서 읽음: " + stat.temp + "건",
     "마감탭·아카이브에서 읽음: " + stat.archive + "건",
+    //  안 열어서 아낀 시간을 눈에 보이게 — 안 보이면 다시 느려져도 모른다
+    "안 바뀌어 안 연 업체 파일: " + (stat.skippedQuiet || 0) + "곳",
     "보존기간 초과 정리: " + stat.trimmed + "건",
   ];
   if (stat.timedOut) {
