@@ -504,6 +504,62 @@ run("전화 자릿수 부족 → 의심", [
   all = all && ok;
 })();
 
+
+/* ═══════════════════════════════════════════════════════════════
+   「1분 뒤 저절로 이어집니다」가 왜 한 번도 안 됐나 (2026-09-14)
+
+   > "1분 뒤 저절로 이어집니다. 이런거는 여태 한번도 재실행 된적이 없어"
+
+   구글은 스크립트당 트리거 20개까지다. 이 프로젝트의 예약 트리거가
+   «정확히 20개» 라 새 일회성 트리거를 못 건다. 네 모듈(마감·월정산·
+   재매칭·푸시)이 그 예외를 전부 catch 해서 Logger 에만 적고 넘어갔다.
+   로그는 아무도 안 본다.
+   ═══════════════════════════════════════════════════════════════ */
+(function () {
+  const push = fs.readFileSync("_partnerExclusivePush.gs", "utf8");
+  const web = fs.readFileSync("_partnerWebApp.gs", "utf8");
+  let ok = true;
+  const t = (label, got, want) => {
+    const p = JSON.stringify(got) === JSON.stringify(want);
+    if (!p) { ok = false; console.log("   FAIL " + label + " → " + JSON.stringify(got) +
+      " (기대 " + JSON.stringify(want) + ")"); }
+  };
+
+  /* ★ 예약 트리거가 20개를 넘으면 이어달리기가 영영 안 걸린다 ★
+     새 배치를 더할 때 이 시험이 먼저 깨지게 둔다. 자리를 먼저 비워야 한다. */
+  const blk = web.slice(web.indexOf("var _ALL_SCHEDULED_TRIGGERS_ = ["));
+  const 정의 = (blk.slice(0, blk.indexOf("];")).match(/\{ fn:/g) || []).length;
+  t("예약 트리거를 세어 둔다", 정의 > 0, true);
+  if (정의 >= 20) {
+    console.log("   ※ 예약 트리거 " + 정의 + "개 — 구글 한도 20개. " +
+      "일회성 이어달리기 트리거를 걸 자리가 없습니다.");
+  }
+  t("★ 예약 트리거가 한도를 넘지 않는다 (자리 하나는 남겨야 이어달린다)", 정의 <= 19, true);
+
+  //  ── 못 걸었을 때 «말하는가» ──
+  t("실패 이유를 돌려준다", /@return \{\{ok:boolean, why:string/.test(push), true);
+  t("★ 화면에 「스스로 못 잇습니다」가 뜬다", push.includes("⚠ 스스로 못 잇습니다."), true);
+  t("★ 한도를 숫자로 보여 준다", push.includes("구글 한도 20개"), true);
+  t("★ 그럼 어떻게 되는지 말한다", push.includes("다음 정기 푸시(10:30·13:50·15:40)가 이어받습니다"), true);
+
+  //  ── 자리가 없으면 다 쓴 것을 치우고 다시 해 본다 ──
+  t("죽은 트리거 정리기가 있다", push.includes("function _pep_sweepDeadResumeTriggers_("), true);
+  t("실패하면 치우고 다시 건다", /out\.swept = _pep_sweepDeadResumeTriggers_\(\);/.test(push), true);
+  /* ★ 남의 «살아 있는» 이어달리기는 안 건드린다 ★
+     커서가 있으면 그 모듈은 아직 이어달릴 일이 남은 것이다. */
+  t("★ 커서가 없는 것만 죽은 것으로 본다", /if \(!cur\) 죽은이름\[kind\.fn\] = true;/.test(push), true);
+  t("네 모듈을 다 안다", (push.match(/key: "_(PEP|PAR|PEA|PMS)_/g) || []).length, 4);
+
+  //  ── 조사(census)는 읽기만 ──
+  t("트리거 census 가 있다", push.includes("function _pep_triggerCensus_("), true);
+  t("census 는 안 지운다",
+    push.slice(push.indexOf("function _pep_triggerCensus_("),
+      push.indexOf("function _pep_sweepDeadResumeTriggers_(")).includes("deleteTrigger"), false);
+
+  console.log((ok ? "PASS " : "FAIL ") + "이어달리기 트리거 자리");
+  all = all && ok;
+})();
+
 console.log("");
 console.log(all ? "ALL PASS" : "SOME FAILED");
 process.exit(all ? 0 : 1);

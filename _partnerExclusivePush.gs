@@ -1491,6 +1491,86 @@ function _pep_clearCursor_() {
   try { PropertiesService.getScriptProperties().deleteProperty(_PEP_CURSOR_KEY_); } catch (e) {}
 }
 
+/* ═══════════════════════════════════════════════════════════════
+ *  트리거 자리 — 「1분 뒤 저절로 이어집니다」가 왜 한 번도 안 됐나
+ *  2026-09-14
+ *
+ *  > "1분 뒤 저절로 이어집니다. 이런거는 여태 한번도 재실행 된적이 없어"
+ *
+ *  ★ 자리가 없다 ★
+ *    구글은 스크립트당 트리거 20개까지만 준다.
+ *    이 프로젝트의 예약 트리거가 «정확히 20개» 다 (_ALL_SCHEDULED_TRIGGERS_).
+ *    거기에 설치형 onEdit(_pt_onEditSpillGuard_) 까지 있으니 이미 넘친다.
+ *    그래서 newTrigger().create() 는 예외를 던지고, 네 모듈(마감·월정산·
+ *    재매칭·푸시)이 그 예외를 전부 catch 해서 Logger 에만 적고 넘어갔다.
+ *    로그는 아무도 안 본다. 그래서 한 번도 이어달리지 못했다.
+ *
+ *  ★ 죽은 일회성 트리거가 자리를 더 먹는다 ★
+ *    .after() 로 만든 일회성 트리거는 «한 번 돈 뒤에도 목록에 남는다».
+ *    거는 쪽이 다음에 걸 때 제 것을 지우지만, 중간에 하드하게 죽으면
+ *    영영 안 지워진다. 몇 주 지나면 그것들이 자리를 갉아먹는다.
+ *
+ *    그래서 자리가 없으면 «확실히 죽은 것»만 골라 치우고 다시 해 본다.
+ *    판단은 커서로 한다 — 그 모듈에 커서가 없으면 이어달릴 일이 없으므로
+ *    남아 있는 트리거는 이미 제 할 일을 끝낸 것이다.
+ *    남의 «살아 있는» 이어달리기는 절대 안 건드린다.
+ *
+ *  ★ 그래도 못 걸면 «말한다» ★
+ *    조용히 넘어가면 오늘 일이 그대로 되풀이된다.
+ *    커서는 그대로 남으므로 다음 정기 푸시가 이어받는다 — 그 말도 같이 한다.
+ * ═══════════════════════════════════════════════════════════════ */
+
+/** 일회성 이어달리기 트리거들 — 핸들러 이름과 그 모듈의 커서 키 */
+var _PEP_RESUME_KINDS_ = [
+  { fn: "_pep_resume_", key: "_PEP_PUSH_CURSOR" },      // 대리공급 푸시 (이 파일)
+  { fn: "_par_resume_", key: "_PAR_REFIX_CURSOR" },     // 일일마감 재매칭
+  { fn: "_pea_continueResume_", key: "_PEA_RESUME_STATE" }, // 대리공급 마감
+  { fn: "_pms_continueResume_", key: "_PMS_RESUME_STATE" }, // 월정산
+];
+
+/** 지금 트리거가 몇 개인가 — 읽기만 한다 */
+function _pep_triggerCensus_() {
+  var out = { total: 0, byFn: {}, err: "" };
+  try {
+    var all = ScriptApp.getProjectTriggers();
+    out.total = all.length;
+    for (var i = 0; i < all.length; i++) {
+      var fn = all[i].getHandlerFunction();
+      out.byFn[fn] = (out.byFn[fn] || 0) + 1;
+    }
+  } catch (e) { out.err = e.message; }
+  return out;
+}
+
+/**
+ * 다 쓰고 남은 일회성 이어달리기 트리거를 치운다.
+ * 커서가 없는 모듈의 것만 지운다 — 살아 있는 남의 이어달리기는 안 건드린다.
+ * @return {number} 치운 개수
+ */
+function _pep_sweepDeadResumeTriggers_() {
+  var 치움 = 0;
+  var props = null;
+  try { props = PropertiesService.getScriptProperties(); } catch (e) { return 0; }
+  var 죽은이름 = {};
+  for (var k = 0; k < _PEP_RESUME_KINDS_.length; k++) {
+    var kind = _PEP_RESUME_KINDS_[k];
+    var cur = null;
+    try { cur = props.getProperty(kind.key); } catch (_) {}
+    //  커서가 없다 = 이어달릴 일이 없다 = 남아 있는 트리거는 다 쓴 것
+    if (!cur) 죽은이름[kind.fn] = true;
+  }
+  try {
+    var all = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < all.length; i++) {
+      if (죽은이름[all[i].getHandlerFunction()]) {
+        ScriptApp.deleteTrigger(all[i]); 치움++;
+      }
+    }
+  } catch (e) { Logger.log("[PEP] 죽은 트리거 정리 실패: " + e.message); }
+  if (치움) Logger.log("[PEP] 다 쓴 이어달리기 트리거 " + 치움 + "개 치움");
+  return 치움;
+}
+
 /** 제 이어달리기 트리거만 지운다 — 남의 트리거는 안 건드린다 */
 function _pep_dropResumeTriggers_() {
   var k = 0;
@@ -1505,16 +1585,37 @@ function _pep_dropResumeTriggers_() {
   return k;
 }
 
-/** 1분 뒤에 스스로 잇는다. 사람이 다시 누를 필요가 없게. */
+/**
+ * 1분 뒤에 스스로 잇는다. 사람이 다시 누를 필요가 없게.
+ *
+ * 한 번에 안 되면 다 쓴 일회성 트리거를 치우고 한 번 더 해 본다.
+ * 그래도 안 되면 «왜 안 됐는지»를 돌려준다 — 조용히 false 만 주면
+ * 「1분 뒤 이어집니다」가 거짓말인 채로 화면에 남는다.
+ *
+ * @return {{ok:boolean, why:string, swept:number, total:number}}
+ */
 function _pep_scheduleResume_() {
   _pep_dropResumeTriggers_();
-  try {
+  var out = { ok: false, why: "", swept: 0, total: 0 };
+  function 걸기() {
     ScriptApp.newTrigger(_PEP_RESUME_FN_).timeBased().after(60 * 1000).create();
-    return true;
-  } catch (e) {
-    Logger.log("[PEP] 이어달리기 트리거를 못 걸었습니다: " + (e && e.message ? e.message : e));
-    return false;
   }
+  try { 걸기(); out.ok = true; return out; }
+  catch (e1) {
+    out.why = String(e1 && e1.message ? e1.message : e1);
+    Logger.log("[PEP] 이어달리기 트리거 1차 실패: " + out.why);
+  }
+  //  자리가 없을 때가 대부분이다 — 다 쓴 것을 치우고 다시 해 본다
+  out.swept = _pep_sweepDeadResumeTriggers_();
+  if (out.swept > 0) {
+    try { 걸기(); out.ok = true; out.why = ""; return out; }
+    catch (e2) { out.why = String(e2 && e2.message ? e2.message : e2); }
+  }
+  var c = _pep_triggerCensus_();
+  out.total = c.total;
+  Logger.log("[PEP] 이어달리기 트리거를 못 걸었습니다 (트리거 " + c.total +
+    "개 · 치운 것 " + out.swept + "개): " + out.why);
+  return out;
 }
 
 /**
@@ -2192,10 +2293,23 @@ function _pep_pushCore_(silent) {
       done: (_멈춘행_ - _시작행_),
       at: Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss"),
     });
-    var _ok이어_ = _pep_scheduleResume_();
+    var _이어_ = _pep_scheduleResume_();
     _이어붙임_ = "\n⏳ 시간이 다 되어 " + (_멈춘행_ - _시작행_) + "줄까지 하고 멈췄습니다." +
-      "\n   남은 " + (srcAll.length - _멈춘행_) + "줄(" + _멈춘주문_ + " 부터)은 " +
-      (_ok이어_ ? "1분 뒤 저절로 이어집니다." : "메뉴를 다시 누르면 이어서 합니다.");
+      "\n   남은 " + (srcAll.length - _멈춘행_) + "줄(" + _멈춘주문_ + " 부터)은 ";
+    if (_이어_.ok) {
+      _이어붙임_ += "1분 뒤 저절로 이어집니다." +
+        (_이어_.swept ? " (다 쓴 트리거 " + _이어_.swept + "개를 치우고 걸었습니다)" : "");
+    } else {
+      /* ★ 여기서 조용히 넘어가면 안 된다 ★
+           구글은 스크립트당 트리거 20개까지다. 이 프로젝트의 예약 트리거가
+           이미 20개라 새로 못 건다. 그 말을 로그에만 적어 두면 「1분 뒤
+           이어집니다」가 거짓말인 채로 몇 달이 간다 — 실제로 그랬다. */
+      _이어붙임_ += "⚠ 스스로 못 잇습니다." +
+        "\n   트리거 자리가 없습니다 (지금 " + _이어_.total + "개 · 구글 한도 20개)." +
+        "\n   → 다음 정기 푸시(10:30·13:50·15:40)가 이어받습니다." +
+        "\n   → 지금 끝내려면 메뉴에서 푸시를 한 번 더 누르세요." +
+        (_이어_.why ? "\n   (" + _이어_.why + ")" : "");
+    }
     Logger.log("[PEP] 시간예산 초과 — " + _멈춘행_ + "행에서 멈춤. 남은 " +
       (srcAll.length - _멈춘행_) + "줄");
   } else {
