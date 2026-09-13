@@ -110,6 +110,29 @@ function _p2uLib_findViewer_(ss) {
 //    편집 범위와 겹치는 D/L 값만 조용히 걷어냄 (토스트·알림·차단창 일절 없음).
 //    → 스필이 즉시 재계산되어 코드 기준 품목명·단가가 수초 내 표시됨.
 // ═══════════════════════════════════════════════════════════════════
+/**
+ * 발주 및 송장조회 — 「자동」 열에 손으로 쓴 값을 걷어내 스필 수식을 되살린다.
+ *
+ * ★ 왜 열 전체가 사라지나 ★  (2026-09-14)
+ *   > "업체들이 자꾸 품목명에 붙여넣기를 한다던가 텍스트를 쓰려고해..
+ *      그럴떄 위쪽에 품목명이 다 사라져.. 단가도 같은 문제"
+ *
+ *   D1 에 =ARRAYFORMULA(...) 가 있어 D2 아래로 «펼쳐집니다». 그런데 업체가
+ *   D5 에 한 글자라도 쓰면 펼칠 자리가 막혀 수식이 통째로 «#REF!» 가 되고
+ *   **그 위 줄까지 전부 사라집니다.** 한 칸 때문에 열 하나가 날아갑니다.
+ *
+ *   그래서 들어온 값을 즉시 걷어내면 수식이 다시 펼쳐진다 — 이 함수의 일이다.
+ *
+ * ★ 자동 열은 넷인데 둘만 보고 있었다 ★  (2026-09-14 고침)
+ *   A 거래처명(자동) · D 품목명(자동) · L 정산금액(자동) · N 상태(자동)
+ *   종전에는 D·L 만 봤다. A·N 에 붙여넣으면 그 열은 사라진 채로 남았다.
+ *   헤더 정의(_PT_ORDER_TAB_HEADERS_)도 「수식 주입(A/D/L/N)」이라 적혀 있다.
+ *
+ * ★ 조용히 지우면 업체가 또 붙여넣는다 ★  (2026-09-14 고침)
+ *   여태 말없이 걷어냈다. 업체 눈에는 「썼는데 사라졌다」로만 보이니
+ *   다시 쓰고, 또 사라지고, 결국 전화가 온다.
+ *   무엇을 왜 걷어냈는지 toast 로 알린다. 걷어낸 게 없으면 조용하다.
+ */
 function p2u_partnerOnEdit(e) {
   try {
     if (!e || !e.range) return;
@@ -125,36 +148,60 @@ function p2u_partnerOnEdit(e) {
     if (endRow < 2) return;
     if (startRow < 2) startRow = 2;
 
-    // D(4)/L(12)열과 겹치는지 확인
-    var touchesD = startCol <= 4 && endCol >= 4;
-    var touchesL = startCol <= 12 && endCol >= 12;
-    if (!touchesD && !touchesL) return;
+    /* 헤더에 「(자동)」이라고 적힌 열 «전부».
+       _PT_ORDER_TAB_HEADERS_ 와 짝이다 — 열이 밀리면 여기도 밀린다.
+       (_spillguard_test.js 가 둘이 같은지 지킨다)
 
-    // D1/L1이 스필 수식 모드일 때만 동작 (값 모드 파일은 건드리지 않음)
+       여섯 중 지금 스필 수식이 들어가는 것은 A·D·L·N 넷이고
+       B(주문일자)·M(고유ID)는 스크립트가 값으로 채운다. 그래도 여섯을
+       다 적어 둔다 — 아래에서 «1행이 ARRAYFORMULA 일 때만» 손대므로
+       값으로 채우는 열은 저절로 건너뛴다. 나중에 어느 열이 수식으로
+       바뀌어도 여기를 안 고쳐도 된다. */
+    var 자동열 = [
+      { c: 1, a1: "A1", 이름: "거래처명" },
+      { c: 2, a1: "B1", 이름: "주문일자" },
+      { c: 4, a1: "D1", 이름: "품목명" },
+      { c: 12, a1: "L1", 이름: "정산금액" },
+      { c: 13, a1: "M1", 이름: "고유ID" },
+      { c: 14, a1: "N1", 이름: "상태" },
+    ];
+
     var n = endRow - startRow + 1;
-    var cleared = false;
-    if (touchesD) {
-      if (String(sheet.getRange("D1").getFormula() || "").indexOf("ARRAYFORMULA") !== -1) {
-        var dRng = sheet.getRange(startRow, 4, n, 1);
-        // 편집 범위에 실제 값이 들어왔을 때만 clear (빈 셀 clear는 불필요한 재계산 유발)
-        var dVals = dRng.getValues();
-        for (var i = 0; i < dVals.length; i++) {
-          if (String(dVals[i][0] || "") !== "") { dRng.clearContent(); cleared = true; break; }
+    var 걷어낸것 = [];
+    for (var k = 0; k < 자동열.length; k++) {
+      var col = 자동열[k];
+      if (!(startCol <= col.c && endCol >= col.c)) continue;
+      //  1행이 스필 수식일 때만 손댄다 (값으로 굳혀 쓰는 파일은 안 건드린다)
+      var f = "";
+      try { f = String(sheet.getRange(col.a1).getFormula() || ""); } catch (_) {}
+      if (f.indexOf("ARRAYFORMULA") === -1) continue;
+
+      var rng = sheet.getRange(startRow, col.c, n, 1);
+      var vals = rng.getValues();
+      for (var i = 0; i < vals.length; i++) {
+        if (String(vals[i][0] || "") !== "") {
+          rng.clearContent();
+          걷어낸것.push(col.이름);
+          break;
         }
       }
     }
-    if (touchesL) {
-      if (String(sheet.getRange("L1").getFormula() || "").indexOf("ARRAYFORMULA") !== -1) {
-        var lRng = sheet.getRange(startRow, 12, n, 1);
-        var lVals = lRng.getValues();
-        for (var j = 0; j < lVals.length; j++) {
-          if (String(lVals[j][0] || "") !== "") { lRng.clearContent(); cleared = true; break; }
-        }
-      }
-    }
-    if (cleared) SpreadsheetApp.flush();
+
+    if (!걷어낸것.length) return;
+    SpreadsheetApp.flush();
+
+    /*  왜 사라졌는지 말해 준다. 이 말이 없으면 업체는 같은 일을 되풀이한다.
+        toast 는 실패해도 걷어내기는 이미 끝났으므로 삼킨다. */
+    try {
+      SpreadsheetApp.getActiveSpreadsheet().toast(
+        걷어낸것.join(" · ") + " 칸은 이카운트코드(C열)로 자동 채워집니다.\n" +
+        "여기에 직접 쓰면 열 전체가 사라져서, 방금 쓰신 값을 걷어냈습니다.\n" +
+        "C열에 코드를 넣으시면 자동으로 채워집니다.",
+        "자동으로 채워지는 칸입니다", 8);
+    } catch (_) {}
   } catch (_) {}
 }
+
 
 // ═══════════════════════════════════════════════════════════════════
 //  ★ 공개 API: 업체 시트 onOpen 핸들러
