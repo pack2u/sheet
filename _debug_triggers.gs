@@ -215,3 +215,74 @@ function triggerListSafe() {
   try { SpreadsheetApp.getUi().alert("트리거 점검", text, SpreadsheetApp.getUi().ButtonSet.OK); } catch (eU) {}
   return text;
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  [운영 도구] 트리거 census — «세기만» 한다. 아무것도 안 지운다.
+ *  2026-09-14
+ *
+ *  > "정확히 멀하려는건지 의도를 알려줘"
+ *
+ *  구글은 스크립트당 트리거 20개까지 준다. 지금 이 프로젝트는 예약 트리거만
+ *  20개라, 일회성 「이어달리기」 트리거를 걸 자리가 없다. 그래서 마감·월정산·
+ *  재매칭·푸시 넷이 시간초과로 멈춰도 스스로 잇지 못하고 그냥 끝난다
+ *  (실패는 Logger 에만 적혀 몇 달 아무도 몰랐다).
+ *
+ *  지우기 전에 «무엇이 자리를 먹고 있는지» 눈으로 보려고 만든 것이다.
+ *  같은 파일의 debugTriggers() 는 푸시 트리거를 «지우고» 자동푸시를 끄므로
+ *  헷갈리지 않게 이름을 따로 두었다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function partnerShowTriggerCensus() {
+  var all = ScriptApp.getProjectTriggers();
+  var byFn = {};
+  var order = [];
+  for (var i = 0; i < all.length; i++) {
+    var fn = all[i].getHandlerFunction();
+    if (byFn[fn] === undefined) { byFn[fn] = { n: 0, kind: {} }; order.push(fn); }
+    byFn[fn].n++;
+    var kind = "시간";
+    try {
+      //  스프레드시트에 붙은 트리거면 어느 문서인지까지 본다
+      var src = all[i].getTriggerSourceId();
+      if (src) kind = "문서:" + String(src).substring(0, 8) + "…";
+    } catch (_) {}
+    byFn[fn].kind[kind] = (byFn[fn].kind[kind] || 0) + 1;
+  }
+  order.sort(function (a, b) { return byFn[b].n - byFn[a].n; });
+
+  var L = ["═══ 트리거 census ═══",
+    "지금 " + all.length + "개 · 구글 한도 20개" +
+    (all.length >= 20 ? "   ★ 꽉 찼습니다 — 이어달리기를 걸 자리가 없습니다" : ""),
+    ""];
+  for (var k = 0; k < order.length; k++) {
+    var fn2 = order[k];
+    var kinds = [];
+    for (var kk in byFn[fn2].kind) {
+      if (Object.prototype.hasOwnProperty.call(byFn[fn2].kind, kk)) {
+        kinds.push(kk + "×" + byFn[fn2].kind[kk]);
+      }
+    }
+    L.push("  " + String(byFn[fn2].n).padStart(3) + "개  " + fn2 +
+      (kinds.length > 1 || kinds[0] !== "시간×" + byFn[fn2].n ? "   [" + kinds.join(" ") + "]" : ""));
+  }
+
+  //  ── 지워도 되는 것을 짚어 준다 ──
+  var 죽은것 = byFn["_pt_onEditSpillGuard_"] ? byFn["_pt_onEditSpillGuard_"].n : 0;
+  L.push("");
+  if (죽은것) {
+    L.push("★ _pt_onEditSpillGuard_ 가 " + 죽은것 + "개 있습니다.");
+    L.push("   이 함수는 2026-07-15 부터 몸통이 «return;» 뿐인 빈 함수입니다.");
+    L.push("   (ARRAYFORMULA 수식 잠금으로 바뀌면서 할 일이 없어졌습니다)");
+    L.push("   아무 일도 안 하면서 자리만 " + 죽은것 + "개 먹고 있습니다.");
+    L.push("   → partnerRemoveSpillGuards() 를 실행하면 이것만 골라 지웁니다.");
+  } else {
+    L.push("· _pt_onEditSpillGuard_ 는 없습니다 (이미 정리됨).");
+  }
+
+  var text = L.join("\n");
+  Logger.log(text);
+  try { SpreadsheetApp.getUi().alert("트리거 census", text, SpreadsheetApp.getUi().ButtonSet.OK); } catch (e) {}
+  return text;
+}
+
