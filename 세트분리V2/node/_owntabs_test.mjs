@@ -158,5 +158,110 @@ console.log("\n[원천 6] 송장원장 — 출처에서 업체명을 읽는다")
   }
 }
 
+
+/* ═══════════════════════════════════════════════════════════════
+   합포장 전파 — 동봉 형제에게 대표의 송장 (2026-09-13)
+
+   > "대표의 송장번호가 나머지 사방넷 번호에도 같이 붙어 줘야
+      사방넷 번호마다 송장번호 대량등록이 가능해"
+
+   2026-09-12: 합포장 동봉 83줄이 통째로 빠졌다. 원장의 송장매칭이
+   전부 빈칸 — 「송장 전파」를 안 돌렸기 때문이다. 대표 17건만 올라갔다.
+   이제는 전파를 돌렸든 말든 저장이 스스로 짝을 짓는다.
+
+   여기서는 «시트 없이» 그 함수를 직접 돌려 본다. 원천 표를 읽는 부분과
+   달리 이건 순수 계산이라 진짜로 돌려 볼 수 있고, 그래야 의미가 있다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[합포장 전파] 대표 송장이 동봉 아홉에게 붙는가");
+{
+  const core = 읽기(path.join(뿌리, "core.js"));
+  const bulk = 읽기(path.join(뿌리, "gasBulk.js"));
+  //  GAS 전역은 안 쓰는 함수만 꺼내 쓴다 — 쓰면 그 자리에서 터진다
+  const 꺼내기 = new Function(
+    "Utilities", "SpreadsheetApp", "Logger", "module",
+    core + "\n" + bulk + "\n" +
+    "return { ssb_spreadMerged: ssb_spreadMerged, ssb_addRows: ssb_addRows };",
+  );
+  const { ssb_spreadMerged } = 꺼내기(null, null, { log() {} }, undefined);
+
+  const 새판 = () => ({ rows: [], seen: {}, uidSeen: {}, seenOrd: {},
+    res: { skipNoCode: 0, skipGen: 0, byCode: {}, noCodeNames: {} } });
+
+  //  열 건 한 박스 — 대표 하나만 로젠에서 송장을 받아 왔다
+  {
+    const p = 새판();
+    p.rows.push(["2161996128", "45141526102", "", "", "007"]);
+    p.seen["2161996128|45141526102"] = true;
+    p.seenOrd["2161996128"] = true;
+    const 박스 = { "평택S-1♦김산♦양평♦팩투유♦샘플": {
+      rep: "2161996128",
+      kids: ["2161996129", "2161996130", "2161996131", "2161996132",
+             "2161996133", "2161996134", "2161996135"],
+    } };
+    const n = ssb_spreadMerged(p.rows, p.seen, 박스, p.res, p.uidSeen, p.seenOrd);
+    eq("동봉 일곱이 다 붙는다", n, 7);
+    eq("줄 수 = 대표1 + 동봉7", p.rows.length, 8);
+    eq("★ 전부 대표와 같은 송장", p.rows.every((r) => r[1] === "45141526102"), "true");
+    eq("★ 주문번호는 저마다 다르다", new Set(p.rows.map((r) => r[0])).size, 8);
+    eq("택배사 코드도 대표 것", p.rows.every((r) => r[4] === "007"), "true");
+  }
+
+  //  대표 송장이 아직 안 왔다 — 조용히 빠지지 않고 «세어서» 알린다
+  {
+    const p = 새판();
+    const 박스 = { g1: { rep: "2161996128", kids: ["2161996129", "2161996130"] } };
+    const n = ssb_spreadMerged(p.rows, p.seen, 박스, p.res, p.uidSeen, p.seenOrd);
+    eq("붙인 것 없음", n, 0);
+    eq("★ 못 붙인 동봉을 센다", p.res.mergeNoRep, 2);
+    eq("박스는 세어 둔다", p.res.mergeBoxes, 1);
+  }
+
+  //  제 송장으로 이미 잡힌 동봉은 덮지 않는다
+  {
+    const p = 새판();
+    p.rows.push(["2161996128", "45141526102", "", "", "007"]);
+    p.seenOrd["2161996128"] = true;
+    p.rows.push(["2161996129", "99999999999", "", "", "007"]);
+    p.seenOrd["2161996129"] = true;
+    const 박스 = { g1: { rep: "2161996128", kids: ["2161996129", "2161996130"] } };
+    const n = ssb_spreadMerged(p.rows, p.seen, 박스, p.res, p.uidSeen, p.seenOrd);
+    eq("새로 붙은 것은 하나", n, 1);
+    eq("★ 제 송장을 안 덮는다", p.rows[1][1], "99999999999");
+  }
+
+  //  사방넷 번호가 아닌 동봉(전화주문)은 못 올린다 — 그것도 세어 둔다
+  {
+    const p = 새판();
+    p.rows.push(["2161996128", "45141526102", "", "", "007"]);
+    p.seenOrd["2161996128"] = true;
+    const 박스 = { g1: { rep: "2161996128", kids: ["0913-PH-abcde"] } };
+    const n = ssb_spreadMerged(p.rows, p.seen, 박스, p.res, p.uidSeen, p.seenOrd);
+    eq("전화주문 ID 는 안 올라간다", n, 0);
+    eq("제외로 센다", p.res.skipGen, 1);
+  }
+
+  //  대표만 있고 동봉이 없는 박스는 아무 일도 안 한다
+  {
+    const p = 새판();
+    p.rows.push(["2161996128", "45141526102", "", "", "007"]);
+    const 박스 = { g1: { rep: "2161996128", kids: [] } };
+    eq("혼자면 그대로", ssb_spreadMerged(p.rows, p.seen, 박스, p.res, p.uidSeen, p.seenOrd), 0);
+    eq("줄도 안 는다", p.rows.length, 1);
+  }
+}
+
+console.log("\n[합포장 짝짓기] 송장이 없어도 짝은 모은다");
+{
+  const src = 읽기(path.join(뿌리, "gasBulk.js"));
+  /* 동봉 줄은 전파 전에는 운송장번호가 비어 있다. 짝을 모으는 자리가
+     「송장 없으면 continue」 아래로 내려가면 영영 못 짓는다. */
+  const 짝 = src.indexOf("박스[grp4] = { rep: '', kids: [] }");
+  const 거름 = src.indexOf("if (!uid4 || !inv4) continue;");
+  eq("짝 모으기가 있다", 짝 > 0, "true");
+  eq("★ 짝을 «송장 거르기보다 먼저» 모은다", 짝 < 거름, "true");
+  eq("전파 결과를 화면에 적는다", src.includes("합포장 전파 "), "true");
+  eq("못 붙인 동봉을 알린다", src.includes("mergeNoRep"), "true");
+}
+
 console.log(실패 ? `\n실패 ${실패}건` : "\n세 파일이 같은 표를 쓴다");
 process.exit(실패 ? 1 : 0);

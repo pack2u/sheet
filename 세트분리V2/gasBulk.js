@@ -8,12 +8,19 @@
  *   1. 대리공급_임시기록   상품정보  P=주문번호 X=송장 W=업체prefix
  *   2. 협력업체_발주허브   상품정보  C=주문번호 N=송장  B=업체
  *   3. 자사출고            거래관리  머리글을 찾아 읽는다 → 탭이 곧 택배사
- *   4. 주문라인원장        오늘 전체 회차 — 전파가 채운 운송장번호 (합포장 동봉 포함)
+ *   4. 주문라인원장        전파가 채운 운송장번호 (대상일수를 따른다)
  *   5. 대리공급_임시기록_보관  상품정보  R=주문번호 Z=송장 Y=업체prefix — 마감이 옮긴 것
  *   6. 송장원장            상품정보  출처(전용마감:업체·발주마감:업체) + 송장 + 고유ID
  *
  * ★ 5·6 이 없으면 «마감이 먼저 돈 날» 이 통째로 빠진다 ★  (2026-09-12)
  *   마감은 송장이 찍힌 행만 골라 1·2 에서 지운다 — 올려야 할 것만 사라진다.
+ *
+ * 그리고 원천을 다 모은 뒤 한 단계가 더 있다:
+ *   7. 합포장 전파 — 대표의 송장을 «동봉 형제의 사방넷 번호»에도 붙인다
+ *
+ * ★ 7 이 없으면 한 박스에 담은 열 건 중 «대표 하나»만 올라간다 ★  (2026-09-13)
+ *   로젠에 올리는 건 대표뿐이라 송장도 대표에게만 온다. 사방넷 주문번호는
+ *   열 건이 저마다 다르니 같은 송장을 아홉 번 더 적어 줘야 등록이 된다.
  *
  * 규칙도 허브와 같다:
  *   - 한 셀에 송장이 여러 개일 수 있다 (줄바꿈·쉼표·세미콜론) → 전부 행으로 편다
@@ -228,6 +235,43 @@ function ssb_addRows(rows, seen, orderNo, invCell, code, res, uidSeen, seenOrd) 
   return 0;
 }
 
+/**
+ * 합포장 동봉에게 대표의 송장을 붙인다.
+ *
+ * @param {Array}  rows   지금까지 모은 [주문번호, 송장, '', '', 코드] 들
+ * @param {Object} 박스   합포장그룹 → { rep: 대표주문번호, kids: [동봉…] }
+ * @returns {number} 새로 붙인 행 수
+ *
+ * 시트를 안 만진다 — 받은 것만 보고 판단한다. 그래야 시험할 수 있다.
+ */
+function ssb_spreadMerged(rows, seen, 박스, res, uidSeen, seenOrd) {
+  var 송장of = {}, n7 = 0;
+  for (var ri = 0; ri < rows.length; ri++) {
+    if (송장of[rows[ri][0]] === undefined) {
+      송장of[rows[ri][0]] = { inv: rows[ri][1], code: rows[ri][4] };
+    }
+  }
+  res.mergeSpread = 0; res.mergeNoRep = 0; res.mergeBoxes = 0;
+  for (var gk in 박스) {
+    if (!Object.prototype.hasOwnProperty.call(박스, gk)) continue;
+    var 박 = 박스[gk];
+    if (!박.rep || !박.kids.length) continue;
+    res.mergeBoxes++;
+    var 대표송장 = 송장of[박.rep];
+    /* 로젠이 아직 대표 송장을 안 줬으면 동봉도 붙일 데가 없다.
+       조용히 빠지면 2026-09-12 이 그대로 되풀이된다 — 세어서 알린다. */
+    if (!대표송장) { res.mergeNoRep += 박.kids.length; continue; }
+    for (var ki = 0; ki < 박.kids.length; ki++) {
+      var 아이 = 박.kids[ki];
+      if (seenOrd && seenOrd[아이]) continue;   // 제 송장으로 이미 잡혔다
+      var 붙음 = ssb_addRows(rows, seen, 아이, 대표송장.inv, 대표송장.code,
+        res, uidSeen, seenOrd);
+      n7 += 붙음; res.mergeSpread += 붙음;
+    }
+  }
+  return n7;
+}
+
 function ssb_noCode(res, name) {
   var n = ssText(name) || '(업체없음)';
   res.skipNoCode++;
@@ -243,9 +287,12 @@ function ssb_collect() {
   var t = ssb_carrierTable();
   var rows = [], seen = {};
   var res = { skipNoCode: 0, skipGen: 0, byCode: {}, noCodeNames: {} };
-  var n1 = 0, n2 = 0, n3 = 0, n4 = 0, n5 = 0, n6 = 0;
+  var n1 = 0, n2 = 0, n3 = 0, n4 = 0, n5 = 0, n6 = 0, n7 = 0;
   var errs = [];
   var scan = { s1: 0, s2: 0, s3: 0, s4: 0, s5: 0, s6: 0 };
+  /* 합포장그룹 → { rep: 대표주문번호, kids: [동봉주문번호…] }
+     원장을 훑으며 채우고, 마지막에 대표의 송장을 동봉에게 붙인다(7). */
+  var 박스 = {};
   var uidSeen = {};
   /* 한 주문번호는 사방넷에 한 줄만 — 여러 원천에서 다른 송장이 와도 첫 것만 쓴다.
      (여러 주문번호가 같은 송장을 나눠 갖는 합포장·샘플은 각각 나간다 — 반대 방향이다.) */
@@ -339,9 +386,21 @@ function ssb_collect() {
     } catch (eL) { errs.push('자사출고 ' + 편.이름 + ' 탭: ' + String(eL.message || eL)); }
   }
 
-  // ── 4. 주문라인원장 — 오늘 전체 회차 (전파가 채운 운송장번호, 합포장 동봉 포함) ──
-  //    회차키는 YYMMDD-N 이라 앞 6자리로 오늘치만 고른다.
-  var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
+  /* ── 4. 주문라인원장 — 전파가 채운 운송장번호 (합포장 동봉 포함) ──
+     ★ 「오늘 회차만」이었다 ★  (2026-09-13 고침)
+       회차키는 YYMMDD-N 이다. 여태 앞 6자리로 «오늘»만 골랐는데,
+       로젠 송장을 밤에 받아 다음 날 아침에 저장하면 어제 회차가 통째로
+       빠졌다 — 다른 원천은 전부 「대량등록_대상일수」를 따르는데
+       여기만 혼자 달랐고, 그 말이 어디에도 없었다.
+       이제 같은 설정을 따른다. 「전체」일 때만 최근 15일로 자른다
+       (원장은 날마다 쌓이므로 두 달치를 다시 올릴 이유가 없다). */
+  var 원장하한6 = Utilities.formatDate(
+    new Date(new Date().getTime() - 15 * 86400000), 'Asia/Seoul', 'yyMMdd');
+  var 회차볼까 = function (rk) {
+    var day = ssText(rk).substring(0, 6);
+    if (!day) return true;                    // 회차키가 없으면 거르지 않는다
+    return allowed ? !!allowed['20' + day] : (day >= 원장하한6);
+  };
   var lg = ssio_ss().getSheetByName(SSIO_TABS.원장);
   if (lg && lg.getLastRow() > 1) {
     var lc = lg.getLastColumn();
@@ -355,9 +414,20 @@ function ssb_collect() {
       var gv = lg.getRange(2, 1, lg.getLastRow() - 1, lc).getDisplayValues();
       for (var g = 0; g < gv.length; g++) {
         var rk = ix['회차키'] !== undefined ? ssText(gv[g][ix['회차키']]) : '';
-        if (rk && rk.substring(0, 6) !== today) continue;   // 오늘 회차만
+        if (rk && !회차볼까(rk)) continue;
         var uid4 = ssText(gv[g][ix['고유ID']]);
         var inv4 = ssText(gv[g][ix['운송장번호']]);
+        /* ★ 합포장 짝은 «송장이 없어도» 모은다 ★
+           동봉 줄은 전파를 안 돌리면 운송장번호가 비어 있다. 아래 줄에서
+           같이 걸러 버리면 짝을 영영 못 짓는다 — 7번이 이것을 쓴다. */
+        if (uid4 && ix['합포장그룹'] !== undefined) {
+          var grp4 = ssText(gv[g][ix['합포장그룹']]);
+          if (grp4) {
+            var 박4 = 박스[grp4] || (박스[grp4] = { rep: '', kids: [] });
+            if (ix['합포장대표'] !== undefined && ssText(gv[g][ix['합포장대표']]) === 'Y') 박4.rep = uid4;
+            else 박4.kids.push(uid4);
+          }
+        }
         if (!uid4 || !inv4) continue;
         // 원장이 유일하게 보태는 건 「합포장 동봉」이다. 동봉 주문은 자기 번호로
         // 롯데에 올라간 적이 없어 롯데탭에 없지만, 대표의 송장을 그대로 써야 한다.
@@ -456,18 +526,43 @@ function ssb_collect() {
     }
   } else if (!r6.ok) { errs.push('송장원장: ' + r6.why); }
 
+  /* ── 7. 합포장 전파 — 동봉 형제에게 «대표의 송장»을 붙인다 ──────────
+     ★ 「전파를 먼저 눌렀겠지」에 기대면 안 된다 ★  (2026-09-13)
+       > "대표의 송장번호가 나머지 사방넷 번호에도 같이 붙어 줘야
+          사방넷 번호마다 송장번호 대량등록이 가능해"
+       > "송장번호도 10개 모두 대표 송장 번호로 입력시켜줘야 되는거야"
+
+       합포장은 열 건까지 한 박스에 담아 송장 «한 장»으로 내보낸다.
+       로젠에 올라가는 것은 대표 한 건뿐이라, 로젠이 돌려주는 송장도
+       대표 주문번호에만 붙는다. 그런데 사방넷 주문번호는 열 건이 저마다
+       다르다 — 같은 송장을 아홉 번 더 적어 줘야 등록이 된다.
+
+       원장에 그 짝(합포장그룹·합포장대표)이 이미 있다. 「송장 전파」를
+       돌리면 원장의 동봉 줄에도 송장이 채워지지만, 안 돌리면 안 채워진다.
+       2026-09-12 이 정확히 그랬다 — 동봉 83줄, 송장매칭 전부 빈칸.
+       대표 17건만 사방넷에 올라가고 나머지 83건이 통째로 빠졌는데
+       어디에도 그 말이 없었다.
+
+       그래서 여기서 «그 자리에서» 짝을 지어 붙인다. 전파를 돌렸든 말든
+       결과가 같아진다. 겹치면 주문번호+송장이 이미 막는다.
+
+     ★ 대표 송장을 못 찾으면 «세어서 알린다» ★
+       로젠이 아직 대표 송장을 안 줬으면 동봉도 붙일 데가 없다.
+       그때 조용히 빠지면 오늘 일이 그대로 되풀이된다. */
+  n7 = ssb_spreadMerged(rows, seen, 박스, res, uidSeen, seenOrd);
+
   var uidCount = 0;
   for (var uk in uidSeen) if (Object.prototype.hasOwnProperty.call(uidSeen, uk)) uidCount++;
   return { rows: rows, res: res, errs: errs, scan: scan, uidCount: uidCount,
     allowed: allowed,
-    n1: n1, n2: n2, n3: n3, n4: n4, n5: n5, n6: n6 };
+    n1: n1, n2: n2, n3: n3, n4: n4, n5: n5, n6: n6, n7: n7 };
 }
 
 function ss_사방넷엑셀저장() {
   var NL = String.fromCharCode(10);
   var C = ssb_collect();
   var rows = C.rows, res = C.res, errs = C.errs;
-  var n1 = C.n1, n2 = C.n2, n3 = C.n3, n4 = C.n4, n5 = C.n5, n6 = C.n6;
+  var n1 = C.n1, n2 = C.n2, n3 = C.n3, n4 = C.n4, n5 = C.n5, n6 = C.n6, n7 = C.n7;
   if (!rows.length) {
     return ssio_alert('저장할 자료가 없습니다.' + NL + NL +
       (errs.length ? errs.join(NL) : '원천 여섯 곳 모두에서 송장을 찾지 못했습니다.'));
@@ -523,8 +618,9 @@ function ss_사방넷엑셀저장() {
     (res.skipMultiBox ? '   (송장 ' + (rows.length + res.skipMultiBox) + '장 → 주문 ' +
       rows.length + '건)' : '') + NL + codeLines.join(NL) + NL +
     '  · 원천 · 임시기록 ' + n1 + ' / 발주허브 ' + n2 +
-    ' / 자사출고 ' + n3 + ' / 원장(오늘) ' + n4 +
+    ' / 자사출고 ' + n3 + ' / 원장 ' + n4 +
     ' / 임시기록보관 ' + n5 + ' / 송장원장 ' + n6 +
+    ' / 합포장 전파 ' + n7 +
     (res.자사탭 && res.자사탭.length ? '  [' + res.자사탭.join(' · ') + ']' : '') + NL +
     '    (중복은 주문번호+송장 기준으로 이미 뺀 숫자입니다)';
 
@@ -553,6 +649,10 @@ function ss_사방넷엑셀저장() {
   if (res.skipOld) {
     msg += NL + '  · 대상일 아닌 지난 주문 제외 : ' + res.skipOld + '건' +
       (res.noDate ? ' (날짜 못 읽은 행 ' + res.noDate + '건은 포함)' : '');
+  }
+  if (res.mergeNoRep) {
+    msg += NL + '  ⚠ 대표 송장이 아직 없어 못 붙인 합포장 동봉 : ' + res.mergeNoRep + '건' + NL +
+      '    로젠에서 그 박스의 송장이 돌아온 뒤 다시 저장하세요.';
   }
   if (res.skipMultiBox) {
     msg += NL + '  · 같은 주문의 둘째 박스부터 제외 : ' + res.skipMultiBox + '장' + NL +
@@ -630,9 +730,11 @@ function ss_사방넷진단() {
     '    임시기록   ' + C.scan.s1 + ' → ' + C.n1 + NL +
     '    발주허브   ' + C.scan.s2 + ' → ' + C.n2 + NL +
     '    롯데자사   ' + C.scan.s3 + ' → ' + C.n3 + NL +
-    '    원장(오늘) ' + C.scan.s4 + ' → ' + C.n4 + NL +
+    '    원장       ' + C.scan.s4 + ' → ' + C.n4 + NL +
     '    임시기록보관 ' + C.scan.s5 + ' → ' + C.n5 + '   ← 마감이 옮긴 대리공급' + NL +
     '    송장원장   ' + C.scan.s6 + ' → ' + C.n6 + '   ← 마감된 협력업체 발주' + NL +
+    '    합포장 전파 ' + (C.res.mergeBoxes || 0) + '박스 → ' + C.n7 +
+    '   ← 대표 송장을 동봉 형제에게' + NL +
     '    ※ 채택이 적은 건 앞 원천에서 이미 잡힌 중복입니다.' + NL + NL +
     '  · 같은 주문의 둘째 박스부터 제외 : ' + (C.res.skipMultiBox || 0) + '장  (사방넷은 주문당 송장 하나)' + NL +
     '  · 사방넷 번호 아닌 ID 제외 : ' + C.res.skipGen + '건' + NL +
