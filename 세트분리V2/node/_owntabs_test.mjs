@@ -255,7 +255,7 @@ console.log("\n[합포장 짝짓기] 송장이 없어도 짝은 모은다");
   const src = 읽기(path.join(뿌리, "gasBulk.js"));
   /* 동봉 줄은 전파 전에는 운송장번호가 비어 있다. 짝을 모으는 자리가
      「송장 없으면 continue」 아래로 내려가면 영영 못 짓는다. */
-  const 짝 = src.indexOf("박스[grp4] = { rep: '', kids: [] }");
+  const 짝 = src.indexOf("박스[grp4] = { rep: '', kids: [], rk: '' }");
   const 거름 = src.indexOf("if (!uid4 || !inv4) continue;");
   eq("짝 모으기가 있다", 짝 > 0, "true");
   eq("★ 짝을 «송장 거르기보다 먼저» 모은다", 짝 < 거름, "true");

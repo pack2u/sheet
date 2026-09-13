@@ -269,13 +269,17 @@ function ssb_spreadMerged(rows, seen, 박스, res, uidSeen, seenOrd) {
     res.mergeKids += 박.kids.length;
     if (!대표송장) {
       res.mergeNoRep += 박.kids.length; res.mergeNoRepBoxes++;
+      if (!res.mergeNoRepByRound) res.mergeNoRepByRound = {};
+      var rkk = 박.rk || '(회차없음)';
+      res.mergeNoRepByRound[rkk] = (res.mergeNoRepByRound[rkk] || 0) + 박.kids.length;
       /* ★ «어느» 박스인지 말한다 ★  (2026-09-14)
          「8박스」라고만 하면 사람이 원장을 처음부터 훑어야 한다. 이 기능이
          없애려던 수고가 정확히 그것이다. 대표 주문번호를 몇 개 들려 보낸다 —
          그것으로 원장·로젠탭을 바로 찾을 수 있다. */
       if (!res.mergeNoRepSamples) res.mergeNoRepSamples = [];
       if (res.mergeNoRepSamples.length < 5) {
-        res.mergeNoRepSamples.push(박.rep + '(동봉' + 박.kids.length + ')');
+        res.mergeNoRepSamples.push(박.rep + '(동봉' + 박.kids.length +
+          (박.rk ? ' · ' + 박.rk + '회차' : '') + ')');
       }
       continue;
     }
@@ -311,6 +315,16 @@ function ssb_mergeLines(res, NL) {
   if (res.mergeNoRep) {
       L.push('    ⚠ 대표 송장이 아직 없음 : ' + res.mergeNoRep + '명' +
              ' (' + (res.mergeNoRepBoxes || 0) + '박스)   ← 이 만큼이 사방넷에서 빠집니다');
+    if (res.mergeNoRepByRound) {
+      var rl = [];
+      for (var rr in res.mergeNoRepByRound) {
+        if (Object.prototype.hasOwnProperty.call(res.mergeNoRepByRound, rr)) {
+          rl.push(rr + ' ' + res.mergeNoRepByRound[rr] + '명');
+        }
+      }
+      rl.sort();
+      if (rl.length) L.push('        회차별 : ' + rl.join(' · '));
+    }
     if (res.mergeNoRepSamples && res.mergeNoRepSamples.length) {
       L.push('        그 대표 주문번호 : ' + res.mergeNoRepSamples.join(' · ') +
              (res.mergeNoRepBoxes > res.mergeNoRepSamples.length ? ' …' : ''));
@@ -473,7 +487,12 @@ function ssb_collect() {
         if (uid4 && ix['합포장그룹'] !== undefined) {
           var grp4 = ssText(gv[g][ix['합포장그룹']]);
           if (grp4) {
-            var 박4 = 박스[grp4] || (박스[grp4] = { rep: '', kids: [] });
+            var 박4 = 박스[grp4] || (박스[grp4] = { rep: '', kids: [], rk: '' });
+            /* ★ 회차를 들고 다닌다 ★  (2026-09-14)
+               대표 송장이 없다고 알려도, 그게 «오늘 아직 안 온 것»인지
+               «지난 회차에서 빠진 것»인지 모르면 사람이 또 원장을 찾아야 한다.
+               앞의 것은 기다리면 되고 뒤의 것은 사고다 — 전혀 다른 이야기다. */
+            if (!박4.rk && rk) 박4.rk = rk;
             if (ix['합포장대표'] !== undefined && ssText(gv[g][ix['합포장대표']]) === 'Y') 박4.rep = uid4;
             else 박4.kids.push(uid4);
           }
