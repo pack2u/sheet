@@ -1388,6 +1388,167 @@ function _pep_stripPushStamp_(s) {
   return out.join("\n").trim();
 }
 
+/* ═══════════════════════════════════════════════════════════════
+ *  푸시 이어달리기 — 6분 한도에 통째로 죽지 않게  (2026-09-14)
+ *
+ *  > "요즘 상품정보 스크립트 시간초과 현상이 자주 발생하는데"
+ *  > "푸시에도 이어달리기 붙여줘"
+ *
+ *  ★ 여태 푸시만 빠져 있었다 ★
+ *    대리공급 마감(_pea_core_) · 월정산(_pms_) · 일일마감 재매칭(_par_) 은
+ *    2026-07-16 과 09-09 두 차례에 걸쳐 「시간예산 + 커서 + 제 트리거」를
+ *    받았다. 푸시만 두 번 다 빠져서, 끝까지 가다가 6분에 그냥 죽는다.
+ *
+ *    쓰기가 전부 루프 «끝»의 배치라 중간에 죽으면 한 줄도 안 나간다.
+ *    업체는 발주를 못 받았는데 화면에는 아무 말도 안 남는다.
+ *
+ *  ★ 끊는 자리는 «주문이 바뀌는 곳» 이다 ★
+ *    한 주문이 중간에 잘리면 안 된다. 전용양식 dedup 은 고유ID 발생횟수로
+ *    세는데, 앞 조각이 두 줄을 써 두면 뒤 조각의 셋째 품목이
+ *    「occurrence 1 <= 기존 2」 로 «스킵»돼 영영 안 나간다.
+ *    그래서 일자-No. 가 바뀌는 자리에서만 끊는다.
+ *
+ *  ★ 이어달려도 안전하다 ★
+ *    다음 조각은 전용양식 AX 를 다시 읽어 이미 나간 줄을 센다.
+ *    임시기록도 고유ID+품목코드로 접는다. 같은 줄을 두 번 쓰지 않는다.
+ *
+ *  ★ 회차 도장은 조각이 나뉘어도 하나다 ★
+ *    도장이 갈리면 업체도 우리도 한 발주가 두 회차로 보인다.
+ *    커서에 도장을 적어 두고 이어달릴 때 그대로 쓴다.
+ * ═══════════════════════════════════════════════════════════════ */
+
+/* 6분 한도까지 1.5분을 남긴다 — 배치 쓰기와 커서 저장, 트리거 걸기에 그만큼 든다 */
+var _PEP_TIME_BUDGET_MS_ = 4.5 * 60 * 1000;
+var _PEP_CURSOR_KEY_ = "_PEP_PUSH_CURSOR";
+var _PEP_RESUME_FN_ = "_pep_resume_";
+/** 마지막 실행이 시간이 모자라 멈췄나 — 중복 점검을 마지막 조각에서만 돌리려고 본다 */
+var _PEP_LAST_INCOMPLETE_ = false;
+
+/**
+ * 이어달릴 때 «어느 줄부터» 다시 볼까.
+ *
+ * 줄번호만 믿으면 안 된다. 두 조각 사이에 소스탭이 바뀌면(줄이 늘거나
+ * 줄면) 그 번호는 엉뚱한 주문을 가리킨다 — 그러면 한 주문이 통째로
+ * 빠지거나 두 번 지나간다.
+ * 그래서 «멈춘 주문의 일자-No.»로 찾는다.
+ *
+ * ★ 못 찾으면 줄번호로 «돌아가지 않는다» ★
+ *   못 찾았다는 것은 소스탭이 갈렸다는 뜻이다 — 다음 날 자료로 바뀌었거나
+ *   마감이 치웠거나. 그때 옛 줄번호(예: 500)를 믿으면 새 자료의 앞 499줄이
+ *   통째로 «안 나가고» 아무 말도 안 남는다. 처음부터 다시 본다.
+ *   두 번 지나가는 것은 dedup 이 막는다 — 안 나가는 쪽이 훨씬 비싸다.
+ *
+ * ★ 오래된 커서는 버린다 ★
+ *   이어달리기 트리거가 못 걸렸거나 중간에 끊기면 커서만 남는다.
+ *   그 커서를 며칠 뒤에 믿으면 엉뚱한 데서 시작한다.
+ *
+ * 시트를 안 만진다 — 받은 것만 보고 정한다. 그래야 시험할 수 있다.
+ *
+ * @param {Array} srcAll 소스탭 전체 (0행은 머리글)
+ * @param {Object} cur   커서 { stopAt, next } · 없으면 1
+ * @return {number} 시작할 줄 번호
+ */
+function _pep_resumeStartRow_(srcAll, cur) {
+  if (!srcAll || !srcAll.length) return 1;
+  if (!cur || !cur.stopAt) return 1;
+  //  12시간이 넘은 커서는 소스탭이 갈렸다고 본다
+  var 지남 = _pep_cursorAgeMs_(cur.at);
+  if (지남 !== null && 지남 > 12 * 60 * 60 * 1000) return 1;
+  var want = String(cur.stopAt).trim();
+  if (!want) return 1;
+  for (var i = 1; i < srcAll.length; i++) {
+    if (String((srcAll[i] || [])[2] || "").trim() === want) return i;
+  }
+  //  못 찾았다 = 소스탭이 갈렸다. 줄번호는 더 못 믿는다.
+  return 1;
+}
+
+/** 커서를 적은 뒤 얼마나 지났나 (ms). 못 읽으면 null — 그때는 안 버린다 */
+function _pep_cursorAgeMs_(at) {
+  var s = String(at || "").trim();
+  if (!s) return null;
+  //  "yyyy-MM-dd HH:mm:ss" — 사파리·구글 어디서나 읽히게 손으로 가른다
+  var m = s.match(/^([0-9]{4})-([0-9]{2})-([0-9]{2})[ T]([0-9]{2}):([0-9]{2}):([0-9]{2})/);
+  if (!m) return null;
+  var d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  if (isNaN(d.getTime())) return null;
+  return new Date().getTime() - d.getTime();
+}
+
+function _pep_saveCursor_(state) {
+  try {
+    PropertiesService.getScriptProperties()
+      .setProperty(_PEP_CURSOR_KEY_, JSON.stringify(state));
+  } catch (e) { Logger.log("[PEP] 커서 저장 실패: " + e.message); }
+}
+function _pep_loadCursor_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(_PEP_CURSOR_KEY_);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function _pep_clearCursor_() {
+  try { PropertiesService.getScriptProperties().deleteProperty(_PEP_CURSOR_KEY_); } catch (e) {}
+}
+
+/** 제 이어달리기 트리거만 지운다 — 남의 트리거는 안 건드린다 */
+function _pep_dropResumeTriggers_() {
+  var k = 0;
+  try {
+    var all = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].getHandlerFunction() === _PEP_RESUME_FN_) {
+        ScriptApp.deleteTrigger(all[i]); k++;
+      }
+    }
+  } catch (e) { Logger.log("[PEP] 이어달리기 트리거 정리 실패: " + e.message); }
+  return k;
+}
+
+/** 1분 뒤에 스스로 잇는다. 사람이 다시 누를 필요가 없게. */
+function _pep_scheduleResume_() {
+  _pep_dropResumeTriggers_();
+  try {
+    ScriptApp.newTrigger(_PEP_RESUME_FN_).timeBased().after(60 * 1000).create();
+    return true;
+  } catch (e) {
+    Logger.log("[PEP] 이어달리기 트리거를 못 걸었습니다: " + (e && e.message ? e.message : e));
+    return false;
+  }
+}
+
+/**
+ * 트리거가 부르는 이어달리기.
+ * 잠금도 회차 도장도 첫 조각과 같은 것을 쓴다.
+ */
+function _pep_resume_() {
+  var cur = _pep_loadCursor_();
+  if (!cur) { _pep_dropResumeTriggers_(); return; }
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    //  아직 앞 조각이 돌고 있다. 트리거는 그대로 두고 다음 차례를 기다린다.
+    Logger.log("[PEP] 이어달리기 — 앞 조각이 아직 돈다. 다음에 잇는다.");
+    _pep_scheduleResume_();
+    return;
+  }
+  try {
+    _PEP_PUSH_STAMP_ = String(cur.stamp || "");
+    _PEP_TEMP_BATCH_COLOR_ = null;
+    Logger.log("[PEP] 이어달리기 시작 — 회차 " + _PEP_PUSH_STAMP_ +
+      " · 소스 " + cur.stopAt + " 부터");
+    _pep_pushCore_(true);
+    if (!_PEP_LAST_INCOMPLETE_) {
+      try { _pdc_checkAfterPush_(); } catch (ePdc) { Logger.log("[DUP] " + ePdc.message); }
+    }
+  } catch (e) {
+    Logger.log("[PEP] 이어달리기 실패: " + (e && e.message ? e.message : e));
+  } finally {
+    try { _pep_zipCacheSave_(); } catch (_) {}
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
 function partnerPushOrdersToExclusiveForms(silent) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) {
@@ -1399,14 +1560,22 @@ function partnerPushOrdersToExclusiveForms(silent) {
     return;
   }
   try {
-    // 이번 실행분 전체가 같은 도장을 쓴다 — 업체별로 번호가 갈리면 안 된다
-    _PEP_PUSH_STAMP_ = _pep_nextPushStamp_();
+    /* 이번 실행분 전체가 같은 도장을 쓴다 — 업체별로 번호가 갈리면 안 된다.
+       이어달리기로 나뉜 조각들도 «한 회차»다. 커서에 적힌 도장이 있으면
+       새로 뽑지 않고 그대로 잇는다 (번호를 건너뛰지도 않는다). */
+    var _pepCur_ = _pep_loadCursor_();
+    _PEP_PUSH_STAMP_ = (_pepCur_ && _pepCur_.stamp)
+      ? String(_pepCur_.stamp) : _pep_nextPushStamp_();
     _PEP_TEMP_BATCH_COLOR_ = null; // 이번 회차 색은 첫 기록 때 정해진다
     Logger.log("[PEP_STAMP] 이번 푸시 회차: " + _PEP_PUSH_STAMP_);
     _pep_pushCore_(silent);
-    // 푸시가 끝난 뒤 중복 발주 점검 (파일: _partnerDupOrderCheck.gs).
-    // 점검이 실패해도 발주는 이미 끝났다 — 여기서 예외를 올리면 안 된다.
-    try { _pdc_checkAfterPush_(); } catch (ePdc) { Logger.log("[DUP] " + ePdc.message); }
+    /* 푸시가 끝난 뒤 중복 발주 점검 (파일: _partnerDupOrderCheck.gs).
+       점검이 실패해도 발주는 이미 끝났다 — 여기서 예외를 올리면 안 된다.
+       조각이 남았으면 아직 「끝」이 아니다. 반쪽 상태로 점검하면 없는
+       중복이 보이고, 업체 파일을 여느라 남은 시간까지 먹는다. */
+    if (!_PEP_LAST_INCOMPLETE_) {
+      try { _pdc_checkAfterPush_(); } catch (ePdc) { Logger.log("[DUP] " + ePdc.message); }
+    }
   } finally {
     try { _pep_zipCacheSave_(); } catch (_) {} // ★ M4: 우편번호 영구 캐시 저장
     try { lock.releaseLock(); } catch (_) {}
@@ -1512,8 +1681,36 @@ function _pep_pushCore_(silent) {
   var errorLogs = [];
   var srcUidWrites = []; // 미사용
 
-  for (var ri = 1; ri < srcAll.length; ri++) {
+  /* ── 이어달리기 ────────────────────────────────────────────
+     커서에 «멈춘 일자-No.»를 적어 둔다. 줄번호만 적으면 그 사이에
+     소스탭이 바뀌었을 때 엉뚱한 자리부터 잇는다 — 이름으로 찾고,
+     못 찾으면 적어 둔 줄번호로 돌아간다.
+     (두 번 지나가도 dedup 이 막으므로 넉넉히 잡는 편이 안전하다) */
+  var _pepCur2_ = _pep_loadCursor_();
+  var _시작행_ = _pep_resumeStartRow_(srcAll, _pepCur2_);
+  var _시작ms_ = new Date().getTime();
+  var _멈춘행_ = -1;
+  var _멈춘주문_ = "";
+  var _직전일자No_ = null;
+  _PEP_LAST_INCOMPLETE_ = false;
+
+  for (var ri = _시작행_; ri < srcAll.length; ri++) {
     var row = srcAll[ri];
+    /* ★ 끊는 자리는 «주문이 바뀌는 곳» 이다 ★
+       한 주문이 중간에 잘리면 안 된다. 전용양식 dedup 은 고유ID
+       발생횟수로 세는데, 앞 조각이 두 줄을 써 두면 뒤 조각의 셋째 품목이
+       「occurrence 1 <= 기존 2」 로 스킵돼 영영 안 나간다.
+       그래서 일자-No. 가 바뀌는 자리에서만 시간을 본다.
+       첫 주문은 무슨 일이 있어도 한 번은 지나간다 — 안 그러면 영영 못 나아간다. */
+    var _일자No_ = String(row[2] || "").trim();
+    if (_일자No_ !== _직전일자No_) {
+      if (ri > _시작행_ &&
+          new Date().getTime() - _시작ms_ > _PEP_TIME_BUDGET_MS_) {
+        _멈춘행_ = ri; _멈춘주문_ = _일자No_;
+        break;
+      }
+      _직전일자No_ = _일자No_;
+    }
     var rawCode = String(row[_PEP_CODE_COL] || "").trim();
     var rawName = String(row[_PEP_ITEM_COL] || "").trim();
 
@@ -1984,6 +2181,28 @@ function _pep_pushCore_(silent) {
     }
   }
 
+  /* ── 남았으면 커서를 적고 스스로 잇는다 ──────────────────────
+     여기까지 온 것은 배치 쓰기가 끝났다는 뜻이다. 쓴 뒤에 적어야
+     「썼는데 커서엔 안 적힌」 조각이 안 생긴다. */
+  var _이어붙임_ = "";
+  if (_멈춘행_ > 0) {
+    _PEP_LAST_INCOMPLETE_ = true;
+    _pep_saveCursor_({
+      next: _멈춘행_, stopAt: _멈춘주문_, stamp: _PEP_PUSH_STAMP_,
+      done: (_멈춘행_ - _시작행_),
+      at: Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss"),
+    });
+    var _ok이어_ = _pep_scheduleResume_();
+    _이어붙임_ = "\n⏳ 시간이 다 되어 " + (_멈춘행_ - _시작행_) + "줄까지 하고 멈췄습니다." +
+      "\n   남은 " + (srcAll.length - _멈춘행_) + "줄(" + _멈춘주문_ + " 부터)은 " +
+      (_ok이어_ ? "1분 뒤 저절로 이어집니다." : "메뉴를 다시 누르면 이어서 합니다.");
+    Logger.log("[PEP] 시간예산 초과 — " + _멈춘행_ + "행에서 멈춤. 남은 " +
+      (srcAll.length - _멈춘행_) + "줄");
+  } else {
+    _pep_clearCursor_();
+    _pep_dropResumeTriggers_();
+  }
+
   // ★ 진단: Push 전후 소스 탭 행 수 비교 (소스 탭 초기화 여부 감지용)
   var _srcRowsAfterPush_ = srcTab.getLastRow();
   Logger.log("[PEP] 소스 탭 행 수 — Push 전: " + srcLr + " / Push 후: " + _srcRowsAfterPush_ +
@@ -1995,7 +2214,7 @@ function _pep_pushCore_(silent) {
 
   var totalSkip = skipUid + skipSameRow + skipNoMap + skipNoCode + skipNoFile;
   var msg =
-    "📋 대리공급업체 발주 Push 완료\n" +
+    "📋 대리공급업체 발주 Push " + (_멈춘행_ > 0 ? "(이어서 진행 중)" : "완료") + "\n" +
     "- Push: " +
     pushed +
     "건\n" +
@@ -2024,7 +2243,9 @@ function _pep_pushCore_(silent) {
     (aliasCnt === 0 ? " ⚠️ 별칭이 없으면 코드/품목명 변환이 안 됩니다!" : "") +
     (errorLogs.length
       ? "\n\n⚠ 오류(최대10건):\n" + errorLogs.slice(0, 10).join("\n")
-      : "");
+      : "") +
+    //  남은 조각이 있으면 «맨 끝»에 적는다 — 이게 지금 가장 중요한 말이다
+    _이어붙임_;
   Logger.log(msg);
   if (Object.keys(pushedByPfx).length > 0) {
     var pfxLogLines = [];

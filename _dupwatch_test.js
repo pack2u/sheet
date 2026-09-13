@@ -405,6 +405,105 @@ run("전화 자릿수 부족 → 의심", [
   all = all && ok;
 })();
 
+
+/* ═══════════════════════════════════════════════════════════════
+   푸시 이어달리기 — 6분 한도에 통째로 죽지 않게 (2026-09-14)
+
+   > "요즘 상품정보 스크립트 시간초과 현상이 자주 발생하는데"
+   > "푸시에도 이어달리기 붙여줘"
+
+   마감·월정산·재매칭은 2026-07-16 과 09-09 두 차례에 걸쳐
+   「시간예산 + 커서 + 제 트리거」를 받았는데 푸시만 두 번 다 빠졌다.
+   쓰기가 전부 루프 끝의 배치라, 6분에 걸리면 한 줄도 안 나가고 죽는다.
+   ═══════════════════════════════════════════════════════════════ */
+(function () {
+  const src = fs.readFileSync("_partnerExclusivePush.gs", "utf8");
+  let ok = true;
+  const t = (label, got, want) => {
+    const p = JSON.stringify(got) === JSON.stringify(want);
+    if (!p) { ok = false; console.log("   FAIL " + label + " → " + JSON.stringify(got) +
+      " (기대 " + JSON.stringify(want) + ")"); }
+  };
+
+  const ctx = { console };
+  vm.createContext(ctx);
+  vm.runInContext(extract(src, "function _pep_resumeStartRow_(") + "\n" +
+    extract(src, "function _pep_cursorAgeMs_("), ctx);
+  const start = (rows, cur) =>
+    vm.runInContext("_pep_resumeStartRow_(" + JSON.stringify(rows) + "," +
+      JSON.stringify(cur) + ")", ctx);
+
+  //  소스탭 흉내 — [2] 가 일자-No.
+  const 소스 = (...일자들) =>
+    [["머리글", "", "일자-No."]].concat(일자들.map((d) => ["", "", d]));
+
+  //  커서가 없으면 처음부터
+  t("커서 없으면 1행", start(소스("A", "B", "C"), null), 1);
+  t("stopAt 없으면 1행", start(소스("A", "B"), { next: 5 }), 1);
+
+  //  멈춘 주문을 «이름»으로 찾는다
+  t("★ 멈춘 주문을 이름으로 찾는다", start(소스("A", "B", "C", "D"), { stopAt: "C", next: 99 }), 3);
+  t("첫 주문에서 멈췄으면 1행", start(소스("A", "B"), { stopAt: "A", next: 1 }), 1);
+
+  /* ★ 줄번호만 믿으면 안 된다 ★
+     두 조각 사이에 소스탭이 바뀌면 그 번호는 엉뚱한 주문을 가리킨다.
+     앞에 줄이 끼어들어도 이름으로 찾으므로 자리가 밀리지 않는다. */
+  t("★ 앞에 줄이 끼어도 제자리를 찾는다",
+    start(소스("새주문", "A", "B", "C"), { stopAt: "C", next: 3 }), 4);
+
+  //  이름을 못 찾으면 줄번호로 돌아간다
+  /* ★ 못 찾으면 줄번호로 «돌아가지 않는다» ★
+     못 찾았다 = 소스탭이 갈렸다는 뜻이다. 옛 줄번호(500)를 믿으면
+     새 자료의 앞 499줄이 통째로 안 나가고 아무 말도 안 남는다. */
+  t("★ 이름 못 찾으면 «처음부터» — 줄번호를 안 믿는다",
+    start(소스("A", "B", "C", "D"), { stopAt: "없음", next: 3 }), 1);
+  //  줄번호도 못 믿으면 처음부터 — 두 번 지나가도 dedup 이 막는다
+  t("줄번호가 범위 밖이어도 1행", start(소스("A", "B"), { stopAt: "없음", next: 999 }), 1);
+  //  ★ 오래된 커서는 버린다 — 트리거가 끊겨 커서만 남은 경우
+  t("★ 12시간 넘은 커서는 안 믿는다",
+    start(소스("A", "B", "C"), { stopAt: "C", next: 3, at: "2020-01-01 00:00:00" }), 1);
+  t("방금 적은 커서는 믿는다",
+    start(소스("A", "B", "C"), { stopAt: "C", next: 3,
+      at: new Date().toISOString().slice(0, 19).replace("T", " ") }), 3);
+  t("시각을 못 읽으면 그냥 믿는다",
+    start(소스("A", "B", "C"), { stopAt: "C", next: 3, at: "알수없음" }), 3);
+  t("줄번호가 0이면 1행", start(소스("A", "B"), { stopAt: "없음", next: 0 }), 1);
+  t("빈 소스에 안 넘어진다", start([], { stopAt: "A", next: 2 }), 1);
+
+  //  ── 구조 ──
+  t("시간 예산이 있다", /_PEP_TIME_BUDGET_MS_ = 4\.5 \* 60 \* 1000/.test(src), true);
+  t("커서 키가 있다", src.includes('_PEP_CURSOR_KEY_ = "_PEP_PUSH_CURSOR"'), true);
+  t("이어달리기 함수가 있다", src.includes("function _pep_resume_()"), true);
+  t("제 트리거만 지운다", /getHandlerFunction\(\) === _PEP_RESUME_FN_/.test(src), true);
+  t("1분 뒤에 잇는다", /newTrigger\(_PEP_RESUME_FN_\)[\s\S]{0,60}after\(60 \* 1000\)/.test(src), true);
+
+  /* ★ 끊는 자리는 주문이 바뀌는 곳 ★
+     한 주문이 중간에 잘리면, 뒤 조각의 셋째 품목이 「occurrence <= 기존」 으로
+     스킵돼 영영 안 나간다. 시간을 «일자-No. 가 바뀔 때만» 본다. */
+  const 시간검사 = src.indexOf("new Date().getTime() - _시작ms_ > _PEP_TIME_BUDGET_MS_");
+  const 경계 = src.indexOf("if (_일자No_ !== _직전일자No_) {");
+  t("★ 시간 검사가 주문 경계 «안»에 있다", 경계 > 0 && 시간검사 > 경계, true);
+  t("★ 첫 주문은 무조건 한 번 지나간다", /ri > _시작행_ &&/.test(src), true);
+
+  /* ★ 커서는 «쓴 뒤»에 적는다 ★
+     쓰기 전에 적으면 「커서엔 적혔는데 안 써진」 조각이 생긴다. */
+  const 임시쓰기 = src.indexOf("[PEP] 임시탭 배치 쓰기: ");
+  const 커서저장 = src.indexOf("_pep_saveCursor_({");
+  t("★ 배치 쓰기가 커서 저장보다 먼저", 임시쓰기 > 0 && 임시쓰기 < 커서저장, true);
+
+  //  회차 도장은 조각이 나뉘어도 하나 — 커서 것을 그대로 쓴다
+  t("★ 도장을 커서에서 잇는다",
+    /_PEP_PUSH_STAMP_ = \(_pepCur_ && _pepCur_\.stamp\)/.test(src), true);
+  //  반쪽 상태에서 중복 점검을 돌리면 없는 중복이 보인다
+  t("★ 마지막 조각에서만 중복 점검", /if \(!_PEP_LAST_INCOMPLETE_\) \{/.test(src), true);
+  //  끝났으면 커서도 트리거도 치운다 — 남으면 다음에 엉뚱한 데서 시작한다
+  t("끝나면 커서를 지운다", src.includes("_pep_clearCursor_();"), true);
+  t("끝나면 트리거도 지운다", src.includes("_pep_dropResumeTriggers_();"), true);
+
+  console.log((ok ? "PASS " : "FAIL ") + "푸시 이어달리기");
+  all = all && ok;
+})();
+
 console.log("");
 console.log(all ? "ALL PASS" : "SOME FAILED");
 process.exit(all ? 0 : 1);
