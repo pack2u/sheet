@@ -875,7 +875,7 @@ function ssb_keepDate(cell, allowed, res) {
 }
 
 /* ══════════════════════════════════════════════════════════════
- *  롯데 송장출력 엑셀 — 출력 탭을 그대로 파일로
+ *  로젠 송장출력 엑셀 — 출력 탭을 그대로 파일로
  *  ★ 2026-09-09
  *
  *  > "세트분리를 하는 이유중 하나는 미리 롯데택배 송장만 출력을 하기 위함이야..
@@ -1003,7 +1003,17 @@ function ssb_islandKeep(vals) {
            확인: 확인, 사람못가림: 사람못가림 };
 }
 
-function ss_롯데출력엑셀() {
+/**
+ * ★ 옛 이름은 남겨 둔다 ★  (2026-09-14)
+ *   시트 위 버튼·그림에 물려 있는 함수 이름은 **코드 어디에도 안 나온다.**
+ *   이름만 바꾸면 그 버튼은 「스크립트 함수를 찾을 수 없습니다」로 죽는데,
+ *   누르기 전까지 아무도 모른다. 한 줄 남기는 값으로 그 사고를 막는다.
+ *
+ *   지우려면 먼저 시트의 버튼·그림이 무엇을 부르는지 확인할 것.
+ */
+function ss_롯데출력엑셀() { return ss_로젠출력엑셀(); }
+
+function ss_로젠출력엑셀() {
   var NL = String.fromCharCode(10);
   var names = _sslp_tabs_();
   var ss = ssio_ss();
@@ -1053,7 +1063,7 @@ function ss_롯데출력엑셀() {
   }
 
   var ymd = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd_HHmmss');
-  var fileName = '롯데송장출력_' + ymd + '.xlsx';
+  var fileName = '로젠송장출력_' + ymd + '.xlsx';
   var tmp = SpreadsheetApp.create('tmp_lotte_print_' + ymd);
 
   for (var p = 0; p < packs.length; p++) {
@@ -1090,8 +1100,19 @@ function ss_롯데출력엑셀() {
       if (ps.hasNext()) parent = ps.next();
     } catch (e2) {}
     if (!parent) parent = DriveApp.getRootFolder();
-    var it = parent.getFoldersByName('롯데송장출력');
-    var folder = it.hasNext() ? it.next() : parent.createFolder('롯데송장출력');
+    /* ★ 폴더는 «새로 만들지 않고 이름만» 바꾼다 ★  (2026-09-14 롯데 → 로젠)
+       새 이름으로 새 폴더를 만들면 지난 출력물이 옛 폴더에 남아 둘로 갈린다.
+       찾을 때마다 두 군데를 봐야 하고, 그건 이름을 바꾼 이유와 정반대다.
+       옛 폴더가 있으면 그 이름을 고쳐 그대로 쓴다 — 한 번만 일어난다. */
+    var 폴더이름 = '로젠송장출력';
+    var it = parent.getFoldersByName(폴더이름);
+    var folder = null;
+    if (it.hasNext()) { folder = it.next(); }
+    else {
+      var 옛폴더 = parent.getFoldersByName('롯데송장출력');
+      if (옛폴더.hasNext()) { folder = 옛폴더.next(); folder.setName(폴더이름); }
+      else { folder = parent.createFolder(폴더이름); }
+    }
     var f = folder.createFile(blob);
     fileUrl = f.getUrl(); fileId = f.getId();
   }
@@ -1100,7 +1121,7 @@ function ss_롯데출력엑셀() {
 
   var lines = [];
   for (var q = 0; q < packs.length; q++) lines.push('  · ' + packs[q].name + '  ' + packs[q].rows + '행');
-  var msg = '롯데 송장출력 엑셀' + NL + NL + lines.join(NL) + NL +
+  var msg = '로젠 송장출력 엑셀' + NL + NL + lines.join(NL) + NL +
     '  합계 ' + 총행 + '행' + NL + NL;
 
   /* ★ 빠진 것은 크게 알린다 ★
@@ -1154,7 +1175,7 @@ function ss_롯데출력엑셀() {
         '&nbsp;&nbsp;<a href="' + fileUrl + '" target="_blank">드라이브에서 열기</a>' +
         '<br><br><span style="color:#666">받은 파일을 롯데 자체출력에 올려 송장을 뽑습니다.<br>' +
         '도서산간은 운임이 달라 시트가 나뉘어 있습니다.</span></div>')
-        .setWidth(520).setHeight(240), '롯데 송장출력');
+        .setWidth(520).setHeight(240), '로젠 송장출력');
     return msg + fileUrl;
   } catch (eUi) {
     return ssio_alert(msg + '저장했습니다.' + NL + '  ' + fileUrl + NL + NL + '다운로드: ' + dl);
