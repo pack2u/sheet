@@ -268,7 +268,16 @@ function ssb_spreadMerged(rows, seen, 박스, res, uidSeen, seenOrd) {
        조용히 빠지면 2026-09-12 이 그대로 되풀이된다 — 세어서 알린다. */
     res.mergeKids += 박.kids.length;
     if (!대표송장) {
-      res.mergeNoRep += 박.kids.length; res.mergeNoRepBoxes++; continue;
+      res.mergeNoRep += 박.kids.length; res.mergeNoRepBoxes++;
+      /* ★ «어느» 박스인지 말한다 ★  (2026-09-14)
+         「8박스」라고만 하면 사람이 원장을 처음부터 훑어야 한다. 이 기능이
+         없애려던 수고가 정확히 그것이다. 대표 주문번호를 몇 개 들려 보낸다 —
+         그것으로 원장·로젠탭을 바로 찾을 수 있다. */
+      if (!res.mergeNoRepSamples) res.mergeNoRepSamples = [];
+      if (res.mergeNoRepSamples.length < 5) {
+        res.mergeNoRepSamples.push(박.rep + '(동봉' + 박.kids.length + ')');
+      }
+      continue;
     }
     for (var ki = 0; ki < 박.kids.length; ki++) {
       var 아이 = 박.kids[ki];
@@ -302,6 +311,10 @@ function ssb_mergeLines(res, NL) {
   if (res.mergeNoRep) {
       L.push('    ⚠ 대표 송장이 아직 없음 : ' + res.mergeNoRep + '명' +
              ' (' + (res.mergeNoRepBoxes || 0) + '박스)   ← 이 만큼이 사방넷에서 빠집니다');
+    if (res.mergeNoRepSamples && res.mergeNoRepSamples.length) {
+      L.push('        그 대표 주문번호 : ' + res.mergeNoRepSamples.join(' · ') +
+             (res.mergeNoRepBoxes > res.mergeNoRepSamples.length ? ' …' : ''));
+    }
   }
   if (res.mergeDrop) {
       L.push('    ⚠ 사방넷 번호가 아니거나 택배사 코드를 모름 : ' + res.mergeDrop + '명');
