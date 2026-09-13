@@ -1757,25 +1757,44 @@ function partnerRemoveSpillGuards() {
   try {
     ui = SpreadsheetApp.getUi();
   } catch (e) {}
-  var files = _pt_listFiles();
-  if (!files || !files.length) return;
 
+  /* ★ 파일을 열 필요가 없다 ★  (2026-09-14 고침)
+       종전에는 협력업체 파일 48개를 하나씩 openById 로 열고 그 파일의
+       트리거를 뒤졌다. 파일 하나 여는 데 1초씩 드니 여는 데만 1분이
+       넘었고, 실제로 5분을 넘겨 6분 한도에 걸렸다.
+
+       그런데 이 트리거들은 «이 스크립트가 만든 것»이다. 다른 문서에
+       붙어 있어도 ScriptApp.getProjectTriggers() 에 그대로 들어 있다.
+       (그래서 20개 한도를 먹는 것이기도 하다)
+       목록 한 번이면 끝난다 — 파일은 한 개도 안 연다. */
   var removed = 0;
-  for (var i = 0; i < files.length; i++) {
-    try {
-      var ss = SpreadsheetApp.openById(files[i].id);
-      var triggers = ScriptApp.getUserTriggers(ss);
-      for (var t = 0; t < triggers.length; t++) {
-        if (triggers[t].getHandlerFunction() === "_pt_onEditSpillGuard_") {
-          ScriptApp.deleteTrigger(triggers[t]);
-          removed++;
-        }
+  var scanned = 0;
+  try {
+    var all = ScriptApp.getProjectTriggers();
+    scanned = all.length;
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].getHandlerFunction() === "_pt_onEditSpillGuard_") {
+        ScriptApp.deleteTrigger(all[i]);
+        removed++;
       }
-    } catch (e) {}
+    }
+  } catch (e) {
+    var err = "Spill Guard 제거 실패: " + (e && e.message ? e.message : e);
+    Logger.log(err);
+    if (ui) ui.alert(err);
+    return 0;
   }
 
-  var msg = "Spill Guard 트리거 제거: " + removed + "개";
+  var 남음 = scanned - removed;
+  var msg = "Spill Guard 트리거 제거: " + removed + "개" +
+    "\n트리거 " + scanned + "개 → " + 남음 + "개 (구글 한도 20개)" +
+    (남음 < 20
+      ? "\n\n✅ 자리가 " + (20 - 남음) + "개 비었습니다 — 이어달리기가 걸립니다."
+      : "\n\n⚠ 아직 " + 남음 + "개라 자리가 없습니다." +
+        "\n   _debug_triggers.gs 의 partnerShowTriggerCensus 로 무엇이 남았는지 보세요.");
+  Logger.log("[SpillGuard] " + msg);
   if (ui) ui.alert(msg);
+  return removed;
 }
 
 function _pt_healOrderSpillFormulas(orderTab, viewerTabName) {
