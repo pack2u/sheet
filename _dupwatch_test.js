@@ -331,6 +331,80 @@ run("전화 자릿수 부족 → 의심", [
   all = all && ok;
 })();
 
+
+/* ═══════════════════════════════════════════════════════════════
+   중복검사가 «물건이 나간 자리»를 본다 (2026-09-14)
+
+   > "중복검사도 전용양식 보게 고쳐줘"
+
+   여태 중복검사는 대리공급_임시기록만 읽었다. 그런데 임시기록에 쓰는
+   쪽이 고유ID+품목코드로 접어 두 줄이 생길 수가 없어, 「확실」 가지는
+   켜질 수 없는 가지였다. 2026-09-10 아주팩 이지원 건(임시기록 2줄 ·
+   전용양식 6줄 · 물건 6번)이 그래서 그냥 지나갔다.
+
+   이제 양쪽을 맞댄다:
+     기대 = 임시기록(+보관)에서 그 고유ID의 품목코드 가짓수
+     실제 = 전용양식 AX + 당월·전월 마감탭의 그 고유ID 줄 수
+   ═══════════════════════════════════════════════════════════════ */
+(function () {
+  const src = fs.readFileSync("_partnerDupOrderCheck.gs", "utf8");
+  let ok = true;
+  const t = (label, got, want) => {
+    const p = JSON.stringify(got) === JSON.stringify(want);
+    if (!p) { ok = false; console.log("   FAIL " + label + " → " + JSON.stringify(got) +
+      " (기대 " + JSON.stringify(want) + ")"); }
+  };
+
+  const ctx = { console };
+  vm.createContext(ctx);
+  vm.runInContext(extract(src, "function _pdc_overOf_(") + "\n" +
+    extract(src, "function _pdc_overLineOf_("), ctx);
+  const over = (box, ax, arch) =>
+    vm.runInContext("_pdc_overOf_(" + JSON.stringify(box) + "," +
+      JSON.stringify(ax) + "," + JSON.stringify(arch) + ")", ctx);
+
+  //  세트 한 건 — 몸통·뚜껑 두 줄이 정상이다. 조용해야 한다.
+  const 세트 = { "2161234567": { uid: "2161234567", codes: { BODY: true, LID: true }, hits: [] } };
+  t("세트 몸통+뚜껑은 정상", over(세트, { "2161234567": 2 }, {}).length, 0);
+
+  //  아주팩 이지원 — 기대 2, 실제 6
+  const r = over(세트, { "2161234567": 6 }, {});
+  t("★ 초과를 잡는다", r.length, 1);
+  t("실제 6", r[0].실제, 6);
+  t("기대 2", r[0].기대, 2);
+  t("★ 4줄 더 나갔다", r[0].초과, 4);
+
+  //  마감이 옮겨 간 줄도 «나간 것»이다 — 합쳐서 센다
+  const r2 = over(세트, { "2161234567": 2 }, { "2161234567": 4 });
+  t("★ 마감탭 줄도 합쳐 센다", r2.length && r2[0].초과, 4);
+  t("전용양식에만 있어도 같은 결과", over(세트, { "2161234567": 6 }, {})[0].초과, 4);
+
+  //  실제가 기대보다 «적은» 것은 안 잡는다 (아직 안 나갔거나 업체가 지운 것)
+  t("덜 나간 것은 안 잡는다", over(세트, { "2161234567": 1 }, {}).length, 0);
+  t("아예 안 나간 것도 안 잡는다", over(세트, {}, {}).length, 0);
+
+  //  한 주문에 품목 셋 — 기대 3. 셋이 나간 건 정상.
+  const 셋 = { u1: { uid: "u1", codes: { A: true, B: true, C: true }, hits: [] } };
+  t("품목 셋은 셋까지 정상", over(셋, { u1: 3 }, {}).length, 0);
+  t("품목 셋인데 넷이면 잡는다", over(셋, { u1: 4 }, {})[0].초과, 1);
+
+  //  빈 입력에 안 넘어진다
+  t("box 없으면 빈 배열", over(null, {}, {}).length, 0);
+
+  //  ── 붙어 있는가 ──
+  t("메뉴가 전용양식을 본다", /var ex = _pdc_scanExclusive_\(\);/.test(src), true);
+  t("푸시 직후에도 본다", /_pdc_scanExclusive_\(45000\)/.test(src), true);
+  /* 점검이 업체 파일을 고치면 안 된다. _pep_loadExclusiveDedupCounts_ 는
+     50열이 모자라면 칸을 «만든다» — 그래서 쓰지 않고 읽기만 하는 것을 따로 뒀다. */
+  t("★ 칸을 만드는 로더를 «부르지» 않는다", src.includes("_pep_loadExclusiveDedupCounts_("), false);
+  t("★ 전용양식 탭을 만드는 것도 «부르지» 않는다", src.includes("_pep_initVendorCache_("), false);
+  t("읽기 전용 AX 세기가 있다", src.includes("function _pdc_axCounts_("), true);
+  t("50열 모자라면 그냥 못 봤다고 한다", /getLastColumn\(\) < _PDC_AX_COL_/.test(src), true);
+
+  console.log((ok ? "PASS " : "FAIL ") + "중복검사가 전용양식을 본다");
+  all = all && ok;
+})();
+
 console.log("");
 console.log(all ? "ALL PASS" : "SOME FAILED");
 process.exit(all ? 0 : 1);

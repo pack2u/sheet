@@ -137,15 +137,257 @@ function _pdc_lineOf_(h) {
     "  (" + h.row + "행)";
 }
 
+
+/* ═══════════════════════════════════════════════════════════════
+ *  전용양식 대조 — «물건이 나간 자리»를 본다  (2026-09-14)
+ *
+ *  > "중복검사를 통과한것도 문제네"
+ *
+ *  ★ 왜 여태 못 잡았나 ★
+ *    위 _pdc_scan_ 은 대리공급_임시기록만 읽는다. 「확실」 판정은
+ *    주문번호·품목코드·품목명이 같은 줄이 «2개 이상» 일 때인데,
+ *    임시기록에 쓰는 쪽(_pep_appendToNonPartnerTempTab_)이 이미
+ *    고유ID+품목코드로 접어 두 줄이 생길 수가 없다.
+ *    켜질 수 없는 가지였다.
+ *
+ *    2026-09-10 아주팩 이지원 건이 그래서 그냥 지나갔다 —
+ *    임시기록 2줄(몸통·뚜껑), 전용양식 6줄, 물건 6번.
+ *    두 자리 중 «접히는 쪽»만 보고 있었다.
+ *
+ *  ★ 그래서 양쪽을 맞대 본다 ★
+ *    기대 = 임시기록(+보관)에서 그 고유ID의 «품목코드 가짓수»
+ *    실제 = 업체 파일 전용양식 AX열 + 당월·전월 마감탭의 그 고유ID 줄 수
+ *    실제 > 기대 면 그만큼 더 나간 것이다.
+ *
+ *    세트는 몸통·뚜껑이라 기대 2, 실제 2 → 조용하다.
+ *    같은 줄이 세 벌이면 기대 2, 실제 6 → 4줄 초과로 잡힌다.
+ *
+ *  ★ 아무것도 안 쓴다 ★
+ *    _pep_initVendorCache_ 와 _pep_loadExclusiveDedupCounts_ 는 칸을
+ *    만들고 수식을 지운다. 점검이 업체 파일을 고치면 안 되므로 쓰지 않고,
+ *    읽기만 하는 것을 따로 둔다. 50열이 없으면 «없는 대로» 둔다.
+ *
+ *  ★ 임시기록에 있는 고유ID만 본다 ★
+ *    임시기록+보관은 대략 14일치, 전용양식·마감탭은 당월+전월이다.
+ *    범위가 달라 전체를 맞대면 옛 주문이 전부 「초과」로 뜬다.
+ *    최근에 들어온 고유ID로 한정하면 그 어긋남이 사라진다.
+ * ═══════════════════════════════════════════════════════════════ */
+
+var _PDC_ARCH_OFF_ = 2;      // 보관탭 앞 두 칸 (보관일시·보관사유)
+var _PDC_AX_COL_ = 50;       // 전용양식 고유ID 열 (AX)
+var _PDC_BUDGET_MS_ = 90000; // 업체 파일 열기에 쓸 시간 한도
+
+/** 전용양식 탭을 «찾기만» 한다 — 없어도 만들지 않는다 */
+function _pdc_findFormTab_(ss) {
+  var tab = null;
+  try { tab = ss.getSheetByName("전용양식"); } catch (_) {}
+  if (tab) return tab;
+  try {
+    var tabs = ss.getSheets();
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].getName().indexOf("전용양식") !== -1) return tabs[i];
+    }
+  } catch (_) {}
+  return null;
+}
+
+/** 전용양식 AX(50열) 고유ID별 줄 수 — 읽기만 한다 */
+function _pdc_axCounts_(tab) {
+  var counts = { _ok: false };
+  if (!tab || tab.getLastRow() < 2) { counts._ok = true; return counts; }
+  //  칸이 모자라면 «만들지 않고» 못 봤다고 말한다
+  if (tab.getLastColumn() < _PDC_AX_COL_) return counts;
+  try {
+    var vals = tab.getRange(2, _PDC_AX_COL_, tab.getLastRow() - 1, 1).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      var key = _pep_dedupKey_(vals[i][0], "");
+      if (!key) continue;
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    counts._ok = true;
+  } catch (_) {}
+  return counts;
+}
+
+/**
+ * 임시기록 + 보관 을 훑어 고유ID별 «기대 줄 수»(품목코드 가짓수)를 만든다.
+ * @return {{byPfx:Object, rows:number, archRows:number}}
+ *         byPfx[업체prefix][고유ID키] = { codes:{}, info:{...} }
+ */
+function _pdc_expectedByVendor_(ss) {
+  var byPfx = {}, rows = 0, archRows = 0;
+
+  function 훑기(tab, off, 보관인가) {
+    if (!tab || tab.getLastRow() < 2) return 0;
+    var need = Math.max(_PDC_C_INV_, _PDC_C_VENDOR_, _PDC_C_ORDERNO_) + off + 1;
+    var lc = Math.max(tab.getLastColumn(), need);
+    var data = tab.getRange(2, 1, tab.getLastRow() - 1, lc).getDisplayValues();
+    for (var i = 0; i < data.length; i++) {
+      var r = data[i];
+      var uid = String(r[_PDC_C_ORDERNO_ + off] || "").trim();
+      var code = _pdc_key_(r[_PDC_C_CODE_ + off]);
+      if (!uid || !code) continue;
+      var key = _pep_dedupKey_(uid, "");
+      if (!key) continue;
+      var pfx = String(r[_PDC_C_VENDOR_ + off] || "").trim().toUpperCase();
+      if (!pfx) continue;
+      var box = byPfx[pfx] || (byPfx[pfx] = {});
+      var ent = box[key] || (box[key] = { codes: {}, uid: uid, hits: [] });
+      ent.codes[code] = true;
+      if (ent.hits.length < 6) {
+        ent.hits.push({
+          row: i + 2, 보관: 보관인가,
+          round: String(r[_PDC_C_ROUND_ + off] || "").trim(),
+          date: String(r[_PDC_C_DATE_ + off] || "").trim(),
+          code: code,
+          item: String(r[_PDC_C_ITEM_ + off] || "").trim(),
+          name: String(r[_PDC_C_NAME_ + off] || "").trim(),
+          qty: String(r[_PDC_C_QTY_ + off] || "").trim(),
+          vendor: pfx,
+          inv: String(r[_PDC_C_INV_ + off] || "").trim(),
+        });
+      }
+    }
+    return data.length;
+  }
+
+  try { rows = 훑기(ss.getSheetByName(_PEP_NON_PARTNER_TEMP_TAB_NAME_), 0, false); } catch (_) {}
+  try {
+    var at = (typeof _po_getTempArchiveTab_ === "function") ? _po_getTempArchiveTab_(ss) : null;
+    archRows = 훑기(at, _PDC_ARCH_OFF_, true);
+  } catch (_) {}
+  return { byPfx: byPfx, rows: rows, archRows: archRows };
+}
+
+/**
+ * 전용양식·마감탭과 맞대 본다. 읽기만 한다.
+ * @return {{ok:boolean, over:Array, vendors:number, noAx:Array, skipped:Array, error:string}}
+ */
+function _pdc_scanExclusive_(opt_budgetMs) {
+  var out = { ok: false, over: [], vendors: 0, noAx: [], skipped: [], error: "",
+    rows: 0, archRows: 0 };
+  var 시작 = new Date().getTime();
+  var 예산 = opt_budgetMs || _PDC_BUDGET_MS_;
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var exp = _pdc_expectedByVendor_(ss);
+    out.rows = exp.rows; out.archRows = exp.archRows;
+
+    var files = [];
+    try { files = _pt_listFiles() || []; }
+    catch (e) { out.error = "업체 파일 목록: " + e.message; return out; }
+    var map = _pep_buildPrefixToFileMap_(files);
+
+    for (var pfx in exp.byPfx) {
+      if (!Object.prototype.hasOwnProperty.call(exp.byPfx, pfx)) continue;
+      if (new Date().getTime() - 시작 > 예산) { out.skipped.push(pfx); continue; }
+      var fi = map[pfx];
+      if (!fi) continue;               // 비협력업체 — 전용양식이 없다
+      var vss = null;
+      try { vss = SpreadsheetApp.openById(fi.id); } catch (e) { out.skipped.push(pfx); continue; }
+      out.vendors++;
+
+      var ax = _pdc_axCounts_(_pdc_findFormTab_(vss));
+      if (!ax._ok) out.noAx.push(pfx);
+      var arch = {};
+      try { arch = _pep_loadArchiveDedupCounts_(vss) || {}; } catch (_) {}
+
+      var 초과들 = _pdc_overOf_(exp.byPfx[pfx], ax, arch);
+      for (var oi = 0; oi < 초과들.length; oi++) {
+        초과들[oi].vendor = pfx;
+        초과들[oi].파일 = String(fi.name || "").replace("[협력업체] ", "");
+        out.over.push(초과들[oi]);
+      }
+    }
+    out.over.sort(function (a, b) { return b.초과 - a.초과; });
+    out.ok = true;
+    return out;
+  } catch (e) {
+    out.error = e.message;
+    return out;
+  }
+}
+
+/**
+ * 기대(임시기록의 품목코드 가짓수)와 실제(전용양식 + 마감탭 줄 수)를 맞댄다.
+ *
+ * 시트를 안 만진다 — 받은 것만 보고 센다. 그래야 시험할 수 있다.
+ *
+ * @param {Object} box   고유ID키 → { codes:{코드:true}, uid, hits }
+ * @param {Object} ax    고유ID키 → 전용양식 줄 수
+ * @param {Object} arch  고유ID키 → 마감탭 줄 수
+ * @return {Array} 초과분만
+ */
+function _pdc_overOf_(box, ax, arch) {
+  var out = [];
+  if (!box) return out;
+  ax = ax || {}; arch = arch || {};
+  for (var key in box) {
+    if (!Object.prototype.hasOwnProperty.call(box, key)) continue;
+    var 기대 = 0;
+    for (var c in box[key].codes) {
+      if (Object.prototype.hasOwnProperty.call(box[key].codes, c)) 기대++;
+    }
+    /* 세트는 몸통·뚜껑이라 기대 2 · 실제 2 → 조용하다.
+       같은 줄이 세 벌이면 기대 2 · 실제 6 → 4줄 초과로 잡힌다.
+       실제가 기대보다 «적은» 것은 안 잡는다 — 아직 안 나갔거나
+       업체가 손으로 지운 것이고, 그건 중복 발주가 아니다. */
+    var 실제 = (ax[key] || 0) + (arch[key] || 0);
+    if (실제 <= 기대) continue;
+    out.push({ uid: box[key].uid, 기대: 기대, 실제: 실제,
+      초과: 실제 - 기대, hits: box[key].hits || [] });
+  }
+  return out;
+}
+
+/** 전용양식 초과 한 건을 사람이 읽을 줄로 */
+function _pdc_overLineOf_(o) {
+  var L = ["    [" + o.vendor + "] 주문 " + o.uid +
+    " — 나간 줄 " + o.실제 + " / 있어야 할 줄 " + o.기대 +
+    "  → ★ " + o.초과 + "줄 더 나갔습니다"];
+  for (var i = 0; i < o.hits.length; i++) {
+    var h = o.hits[i];
+    L.push("        " + (h.보관 ? "(보관) " : "") + "[" + (h.round || "차수없음") + "] " +
+      h.name + " · " + h.item + " ×" + h.qty + " · " + h.code);
+  }
+  return L.join("\n");
+}
+
 /**
  * [메뉴/편집기] 중복 발주 점검 — 읽기만 한다.
  * 파일: _partnerDupOrderCheck.gs
  */
 function partnerCheckDuplicateOrders() {
   var res = _pdc_scan_();
+  //  «물건이 나간 자리»도 본다. 임시기록만 보면 접힌 뒤라 못 본다.
+  var ex = _pdc_scanExclusive_();
   var L = ["═══ 중복 발주 점검 ═══",
     Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm") +
-    " · 대리공급_임시기록 " + res.rows + "행", ""];
+    " · 대리공급_임시기록 " + res.rows + "행" +
+    (ex.ok ? " · 전용양식 대조 업체 " + ex.vendors + "곳" : ""), ""];
+
+  //  ── 전용양식 대조 — 실제로 몇 줄이 나갔나 ──
+  if (!ex.ok) {
+    L.push("⚠ 전용양식 대조 실패: " + ex.error);
+    L.push("");
+  } else if (ex.over.length) {
+    L.push("★★ 더 나간 발주 — 전용양식에 있어야 할 줄보다 많습니다 (" + ex.over.length + "건)");
+    L.push("   임시기록은 고유ID+품목코드로 접히므로 여기서만 보입니다.");
+    for (var v = 0; v < Math.min(ex.over.length, 20); v++) {
+      L.push(_pdc_overLineOf_(ex.over[v]));
+    }
+    if (ex.over.length > 20) L.push("    … 외 " + (ex.over.length - 20) + "건");
+    L.push("");
+  } else {
+    L.push("✔ 전용양식 대조 — 더 나간 발주 없음 (업체 " + ex.vendors + "곳)");
+    L.push("");
+  }
+  if (ex.noAx.length) {
+    L.push("※ 전용양식에 고유ID(AX) 칸이 없어 못 본 업체: " + ex.noAx.join(", "));
+  }
+  if (ex.skipped.length) {
+    L.push("※ 시간이 모자라 못 본 업체: " + ex.skipped.join(", ") + " — 다시 실행하면 이어서 봅니다.");
+  }
 
   if (!res.ok) {
     L.push("★ 실패: " + res.error);
@@ -191,9 +433,31 @@ function partnerCheckDuplicateOrders() {
 function _pdc_checkAfterPush_() {
   try {
     var res = _pdc_scan_();
+    /*  푸시 끝난 직후다. 업체 파일을 여는 값이 있으므로 시간을 넉넉히 안 준다 —
+        점검이 푸시를 붙잡으면 본말전도다. 못 본 업체는 메뉴에서 다시 본다. */
+    var ex = _pdc_scanExclusive_(45000);
     if (!res.ok) { Logger.log("[DUP] 점검 실패: " + res.error); return; }
     Logger.log("[DUP] 점검 " + res.rows + "행 — 확실 " + res.sure.length +
-      " / 의심 " + res.maybe.length);
+      " / 의심 " + res.maybe.length +
+      " / 더 나간 발주 " + (ex.ok ? ex.over.length : "?"));
+
+    /*  ★ 더 나간 발주가 먼저다 ★
+        이건 «이미 물건이 나간» 것이라 되돌리려면 회수해야 한다.
+        임시기록 쪽 의심보다 급하다. */
+    if (ex.ok && ex.over.length) {
+      var oL = ["🚨 더 나간 발주 " + ex.over.length + "건",
+        "전용양식에 있어야 할 줄보다 많이 나갔습니다 — 물건이 더 나갔을 수 있습니다.", ""];
+      for (var oi = 0; oi < Math.min(ex.over.length, 5); oi++) {
+        var o = ex.over[oi];
+        oL.push("· [" + o.vendor + "] " + (o.hits[0] ? o.hits[0].name : "") +
+          " / 주문 " + o.uid + " — " + o.실제 + "줄 나감 (있어야 할 줄 " + o.기대 + ") ★ " + o.초과 + "줄 초과");
+      }
+      if (ex.over.length > 5) oL.push("… 외 " + (ex.over.length - 5) + "건");
+      oL.push("");
+      oL.push("확인: 메뉴 [🔁 중복 발주 점검] — partnerCheckDuplicateOrders");
+      try { _chat_sendText_(oL.join("\n")); } catch (eO) {}
+    }
+
     if (!res.sure.length) return;
 
     var lines = ["⚠️ 중복 발주 의심 " + res.sure.length + "건",
