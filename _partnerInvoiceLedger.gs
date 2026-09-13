@@ -544,23 +544,29 @@ function partnerRefreshInvoiceLedger() {
  *  마감 밖이므로 시간 예산을 넉넉히 준다.
  * ══════════════════════════════════════════════════════════════
  */
-function _pil_refreshScheduled_() {
+/**
+ * @param {number=} opt_budgetMs 이 실행에 쓸 시간 한도.
+ *   2026-09-14 부터 일일마감(20:00) 이 자기 앞에서 이걸 부른다. 그때는
+ *   마감 몫(평일 실측 165초)을 남겨야 하므로 90초만 준다.
+ *   혼자 돌 때(사람이 메뉴에서)는 종전대로 4분.
+ */
+function _pil_refreshScheduled_(opt_budgetMs) {
   if (typeof _pt_isWeekendBlackout_ === "function" && _pt_isWeekendBlackout_()) {
-    Logger.log("[LEDGER 21:30] 주말 차단 → 스킵");
+    Logger.log("[LEDGER] 주말 차단 → 스킵");
     return;
   }
   var saved = _PIL_TIME_BUDGET_MS_;
   try {
-    // 마감 안이 아니므로 4분까지 쓴다 (GAS 6분 한도 앞에서 멈춘다)
-    _PIL_TIME_BUDGET_MS_ = 240000;
+    // GAS 6분 한도 앞에서 멈춘다. 부르는 쪽이 정해 주면 그 값을 쓴다.
+    _PIL_TIME_BUDGET_MS_ = (opt_budgetMs > 0) ? opt_budgetMs : 240000;
     var stat = _pil_refresh_({});   // ★ skipArchives 없음 — 마감탭까지 전부
-    Logger.log("[LEDGER 21:30] 적재=" + stat.appended +
+    Logger.log("[LEDGER] 적재=" + stat.appended +
       " 임시=" + stat.temp + " 마감탭=" + stat.archive +
       " 중복스킵=" + stat.skippedDup +
       (stat.timedOut ? " ⏳시간초과(다음 회차에 이어서)" : "") +
       (stat.errors.length ? " 오류=" + stat.errors.length : ""));
   } catch (e) {
-    Logger.log("[LEDGER 21:30] 실패: " + e.message);
+    Logger.log("[LEDGER] 실패: " + e.message);
   } finally {
     _PIL_TIME_BUDGET_MS_ = saved;
   }
