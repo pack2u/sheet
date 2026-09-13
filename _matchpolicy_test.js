@@ -56,6 +56,8 @@ const src = [
   extract(pushSrc, "function _pep_invCount_("),
   extract(pushSrc, "function _pep_lookupInvoiceMap_("),
   extract(pushSrc, "function _pep_resolveRowInvoice_("),
+  extract(pushSrc, "function _pep_ymdNum_("),      // 아래 함수들이 부른다
+  extract(pushSrc, "function _pep_ymdPack_("),
   extract(pushSrc, "function _pep_addNamePhoneInvoiceKeys_("),
   extract(pushSrc, "function _pep_lookupNamePhoneInvoice_("),
   'var _PT_MATCH_SINGLE_FIELD_PROP_ = "INVOICE_MATCH_ALLOW_SINGLE_FIELD";',

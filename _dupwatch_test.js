@@ -227,6 +227,110 @@ run("전화 자릿수 부족 → 의심", [
   all = all && pass;
 })();
 
+
+/* ═══════════════════════════════════════════════════════════════
+   같은 회차에 겹친 줄 막기 (2026-09-13)
+
+   > "같은 주문이 3개가 중복출고가 되는 상황"
+   > "합배송이 아니야 세트상품이라 2개로 분리되는... 그래서 결국 6개"
+   > "중복검사를 통과한것도 문제네"
+
+   2026-09-10 아주팩: 소스에 같은 주문이 세 줄, 세트가 몸통·뚜껑으로
+   쪼개져 전용양식에 여섯 줄 → 물건이 여섯 번 나갔다.
+
+   못 막은 이유: 전용양식 dedup 은 «UID 발생횟수»만 센다.
+   「한 주문에 품목 셋」과 「같은 줄이 셋」이 둘 다 3회라 구분이 안 된다.
+   임시기록은 UID+품목코드로 접고 있어 멀쩡했고, 중복검사는 임시기록만
+   보고 있어 통과시켰다 — 두 결함이 서로를 가렸다.
+   ═══════════════════════════════════════════════════════════════ */
+(function () {
+  const src = fs.readFileSync("_partnerExclusivePush.gs", "utf8");
+  let ok = true;
+  const t = (label, got, want) => {
+    const p = JSON.stringify(got) === JSON.stringify(want);
+    if (!p) { ok = false; console.log("   FAIL " + label + " → " + JSON.stringify(got) +
+      " (기대 " + JSON.stringify(want) + ")"); }
+  };
+
+  // ── 두 푸시 경로에 다 있는가 ──
+  const 자리 = [];
+  let at = -1;
+  while ((at = src.indexOf("if (_runRowSeen_[_runRowKey_])", at + 1)) >= 0) 자리.push(at);
+  t("두 푸시 경로에 모두 있다", 자리.length, 2);
+
+  // ── «세기»보다 먼저 있는가 ──
+  //    버릴 줄까지 세면 재푸시 때 「이미 있는 수」와 비교가 어긋나
+  //    다음 회차가 통째로 스킵된다. 순서가 곧 정확성이다.
+  const 셈 = [];
+  at = -1;
+  while ((at = src.indexOf("_dedupOccurrenceInRun_[_dedupKey_] =", at + 1)) >= 0) 셈.push(at);
+  t("발생횟수 세는 곳도 둘", 셈.length, 2);
+  t("경로1 — 막기가 세기보다 먼저", 자리[0] < 셈[0], true);
+  t("경로2 — 막기가 세기보다 먼저", 자리[1] < 셈[1], true);
+
+  // ── 임시기록과 «같은 기준»인가 ──
+  //    이 둘이 갈라지면 또 「임시기록엔 1개인데 발주는 3개」가 된다.
+  t("막기 키 = 고유ID + 품목코드",
+    /_runRowKey_ = _rowUid_ \? _rowUid_ \+ "\|" \+ rawCode : ""/.test(src), true);
+  t("임시기록 키도 고유ID + 품목코드",
+    /var compositeKey = uid \+ "\|" \+ code;/.test(src), true);
+
+  // ── 화면에 숫자가 뜨는가 (조용히 버리지 않는다) ──
+  t("스킵 합계에 들어간다", (src.match(/skipUid \+ skipSameRow \+/g) || []).length, 3);
+  t("모달에 줄이 있다", src.includes("같은 회차에 겹친 줄 (주문+품목 동일)"), true);
+
+  /* ── 실제로 몇 줄이 나가는가 ──
+     소스의 판단 순서를 그대로 흉내 낸다. 위에서 «순서»와 «키»를 이미
+     소스에서 확인했으므로, 이 흉내가 소스와 갈라지면 위 시험이 먼저 깨진다. */
+  function 푸시(소스줄, 전용양식기존) {
+    const 본줄 = {}, 발생 = {}, 나간것 = [];
+    let 겹침 = 0, 이미 = 0;
+    for (const r of 소스줄) {
+      const 줄키 = r.uid ? r.uid + "|" + r.code : "";
+      if (줄키) {
+        if (본줄[줄키]) { 겹침++; continue; }
+        본줄[줄키] = true;
+      }
+      발생[r.uid] = (발생[r.uid] || 0) + 1;
+      if (발생[r.uid] <= (전용양식기존[r.uid] || 0)) { 이미++; continue; }
+      나간것.push(r);
+    }
+    return { 나간것, 겹침, 이미 };
+  }
+
+  //  아주팩 그날 — 같은 주문 셋 × 세트 2분해
+  const 세트 = [];
+  for (let i = 0; i < 3; i++) {
+    세트.push({ uid: "2161234567", code: "AJ00011-BODY" });
+    세트.push({ uid: "2161234567", code: "AJ00011-LID" });
+  }
+  const r1 = 푸시(세트, {});
+  t("★ 여섯 줄이 두 줄로", r1.나간것.length, 2);
+  t("몸통·뚜껑이 둘 다 남는다",
+    r1.나간것.map((x) => x.code), ["AJ00011-BODY", "AJ00011-LID"]);
+  t("겹쳐서 버린 줄 넷", r1.겹침, 4);
+
+  //  한 주문에 품목 셋 — 이건 중복이 아니다. 다 나가야 한다.
+  const 셋품목 = [
+    { uid: "2169999999", code: "A1" },
+    { uid: "2169999999", code: "B2" },
+    { uid: "2169999999", code: "C3" },
+  ];
+  t("★ 서로 다른 품목 셋은 다 나간다", 푸시(셋품목, {}).나간것.length, 3);
+
+  //  재푸시 — 이미 전용양식에 두 줄이 있으면 하나도 더 안 나간다
+  const r2 = 푸시(세트, { "2161234567": 2 });
+  t("★ 재푸시는 0건", r2.나간것.length, 0);
+  t("이미 나간 것으로 센다", r2.이미, 2);
+
+  //  고유ID 가 없는 줄은 막기에서 건드리지 않는다 (확신 없이 버리지 않는다)
+  const 무UID = [{ uid: "", code: "A1" }, { uid: "", code: "A1" }];
+  t("고유ID 없으면 그대로 둔다", 푸시(무UID, {}).겹침, 0);
+
+  console.log((ok ? "PASS " : "FAIL ") + "겹친 줄 막기 (중복 발주)");
+  all = all && ok;
+})();
+
 console.log("");
 console.log(all ? "ALL PASS" : "SOME FAILED");
 process.exit(all ? 0 : 1);

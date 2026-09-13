@@ -969,6 +969,7 @@ function _pep_buildPushSummaryHtml_(opts) {
   var pushedByPfx = opts.pushedByPfx || {};
   var tempNew = opts.tempNew || 0;
   var skipUid = opts.skipUid || 0;
+  var skipSameRow = opts.skipSameRow || 0;
   var skipNoMap = opts.skipNoMap || 0;
   var skipNoCode = opts.skipNoCode || 0;
   var skipNoCodeList = opts.skipNoCodeList || [];
@@ -979,7 +980,7 @@ function _pep_buildPushSummaryHtml_(opts) {
   var vendorLabels =
     typeof _PEP_VENDOR_LABELS_ !== "undefined" ? _PEP_VENDOR_LABELS_ : {};
 
-  var totalSkip = skipUid + skipNoMap + skipNoCode + skipNoFile;
+  var totalSkip = skipUid + skipSameRow + skipNoMap + skipNoCode + skipNoFile;
 
   var h = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><style>";
   h += "body{font-family:'Noto Sans KR','Segoe UI',sans-serif;margin:0;padding:22px 24px;background:#f4f6f9;color:#1e293b;font-size:13px;line-height:1.5}";
@@ -1048,6 +1049,7 @@ function _pep_buildPushSummaryHtml_(opts) {
 
   h += "<h3>⏭ 스킵 내역</h3><div class=\"detail-box\">";
   h += "<div class=\"detail-row\"><span class=\"detail-label\">이미 Push (고유ID 중복)</span><span class=\"detail-val\">" + skipUid + "건</span></div>";
+  h += "<div class=\"detail-row\"><span class=\"detail-label\">같은 회차에 겹친 줄 (주문+품목 동일)</span><span class=\"detail-val\">" + skipSameRow + "건</span></div>";
   h += "<div class=\"detail-row\"><span class=\"detail-label\">매핑 없음</span><span class=\"detail-val\">" + skipNoMap + "건" +
     (skipNoMapList.length ? " (" + _pep_escapeHtml_(skipNoMapList.join(", ")) + ")" : "") + "</span></div>";
   h += "<div class=\"detail-row\"><span class=\"detail-label\">업체 접두 못 읽음 (D/E열)</span><span class=\"detail-val\">" + skipNoCode + "건" +
@@ -1477,6 +1479,8 @@ function _pep_pushCore_(silent) {
   var _tempFpOccInRun_ = {};
   var _tempPendingRows_ = []; // ★ 성능최적화: 임시탭 배치 쓰기 버퍼
   var _dedupOccurrenceInRun_ = {}; // UID|코드 복합키 N번째 행 (전용양식 중복 판별)
+  //  한 회차에 이미 내보낸 (고유ID|품목코드) — 같은 줄이 두 번 나가는 것을 막는다
+  var _runRowSeen_ = {};
   var _nowStr_ = Utilities.formatDate(
     new Date(),
     "Asia/Seoul",
@@ -1496,6 +1500,7 @@ function _pep_pushCore_(silent) {
   var pushed = 0;
   var pushedByPfx = {}; // 업체별 Push 건수
   var skipUid = 0; // 이미 Push된 행 (협력Push 있음)
+  var skipSameRow = 0; // 한 회차 안에서 같은 주문·같은 품목이 겹친 행
   var skipNoMap = 0; // _PEP_VENDOR_COL_OVERRIDES_ 미등록 접두
   var skipNoCode = 0; // 소스 D열(코드) 비어있는 행
   /* ★ 2026-09-09: 몇 건인지 말고 어느 줄인지 ★
@@ -1646,6 +1651,33 @@ function _pep_pushCore_(silent) {
       }
     } catch (eA) {}
 
+    /* ★ 한 회차에 «같은 주문의 같은 품목»은 한 번만 ★  (2026-09-13)
+         > "같은 주문이 3개가 중복출고가 되는 상황..."
+         > "합배송이 아니야 세트상품이라 2개로 분리되는... 그래서 결국 6개"
+
+       2026-09-10 아주팩: 소스에 같은 주문이 세 줄 있었고, 세트가 몸통·뚜껑
+       두 줄로 쪼개져 전용양식에 여섯 줄이 나갔다. 물건도 여섯 번 나갔다.
+
+       아래 dedup 은 «UID 발생횟수»로 센다. 그것은 「한 주문에 품목 셋」과
+       「같은 줄이 셋」을 구분하지 못한다 — 둘 다 3회다. 그래서 못 막았다.
+
+       임시기록은 이미 UID+품목코드로 접고 있다(_pep_appendToNonPartnerTempTab_).
+       그래서 그날 임시기록은 멀쩡했고 전용양식만 여섯이었으며, 중복검사는
+       임시기록만 보고 있어 통과시켰다. 두 결함이 서로를 가렸다.
+
+       여기서 같은 기준(UID+품목코드)을 한 회차 안에 적용한다.
+         세트 몸통·뚜껑  → 품목코드가 다르다  → 둘 다 나간다
+         한 주문 품목 셋 → 품목코드가 다르다  → 셋 다 나간다
+         같은 줄이 셋    → 키가 같다          → 하나만 나간다
+
+       ★ «세기»보다 먼저 둔다 ★
+         발생횟수는 재푸시 때 「이미 전용양식에 있는 수」와 맞대 보는 값이다.
+         버릴 줄까지 세어 버리면 그 비교가 어긋나 다음 회차가 통째로 스킵된다. */
+    var _runRowKey_ = _rowUid_ ? _rowUid_ + "|" + rawCode : "";
+    if (_runRowKey_) {
+      if (_runRowSeen_[_runRowKey_]) { skipSameRow++; continue; }
+      _runRowSeen_[_runRowKey_] = true;
+    }
     // ★ 전용양식 중복 방지: UID만으로 판별 (업체 간 일관성 보장)
     var _dedupKey_ = _pep_dedupKey_(_rowUid_, "");
     _dedupOccurrenceInRun_[_dedupKey_] =
@@ -1961,7 +1993,7 @@ function _pep_pushCore_(silent) {
 
   SpreadsheetApp.flush();
 
-  var totalSkip = skipUid + skipNoMap + skipNoCode + skipNoFile;
+  var totalSkip = skipUid + skipSameRow + skipNoMap + skipNoCode + skipNoFile;
   var msg =
     "📋 대리공급업체 발주 Push 완료\n" +
     "- Push: " +
@@ -1972,6 +2004,8 @@ function _pep_pushCore_(silent) {
     "건\n" +
     "    ├ 이미Push(협력Push있음): " +
     skipUid +
+    "건\n    ├ 같은 회차에 겹친 줄(주문+품목 동일): " +
+    skipSameRow +
     "건\n" +
     "    ├ 매핑없음(_PEP_VENDOR_DIRECT_MAP_): " +
     skipNoMap +
@@ -2052,6 +2086,7 @@ function _pep_pushCore_(silent) {
           pushedByPfx: pushedByPfx,
           tempNew: _tempPendingRows_.length,
           skipUid: skipUid,
+          skipSameRow: skipSameRow,
           skipNoMap: skipNoMap,
           skipNoCode: skipNoCode,
           skipNoCodeList: skipNoCodeList,
@@ -2194,12 +2229,14 @@ function partnerPushFromTempTabToExclusive() {
   var pushed = 0;
   var pushedByPfx = {};
   var skipUid = 0;
+  var skipSameRow = 0;
   var skipNoMap = 0;
   var skipNoCode = 0;
   var skipNoFile = 0;
   var skipDone = 0;
   var errorLogs = [];
   var _dedupOccurrenceInRun_ = {};
+  var _runRowSeen_ = {};   // 경로 A 와 같은 규칙 — 설명은 그쪽 주석에 있다
   var pushedSrcRows = []; // Push 성공한 임시기록 행 번호 (1-indexed)
   var uidWriteBack = []; // 생성한 UID → P열 기록
 
@@ -2280,6 +2317,13 @@ function partnerPushFromTempTabToExclusive() {
         vendorName = ae.name || "";
       }
     } catch (eA) {}
+
+    //  같은 회차에 같은 주문·같은 품목이 겹치면 하나만 (경로 A 주석 참고)
+    var _runRowKey_ = _rowUid_ ? _rowUid_ + "|" + rawCode : "";
+    if (_runRowKey_) {
+      if (_runRowSeen_[_runRowKey_]) { skipSameRow++; continue; }
+      _runRowSeen_[_runRowKey_] = true;
+    }
 
     // dedup 체크 — UID만으로 판별 (메인 Push와 동일)
     var _dedupKey_ = _pep_dedupKey_(_rowUid_, "");
@@ -2559,7 +2603,7 @@ function partnerPushFromTempTabToExclusive() {
   // 결과 표시 (HTML 팝업)
   var pfxList = Object.keys(pushedByPfx).sort(function(a,b){ return (pushedByPfx[b]||0)-(pushedByPfx[a]||0); });
   var pfxDetail = pfxList.map(function(k) { return k + ": " + pushedByPfx[k] + "건"; }).join(", ");
-  var totalSkip = skipUid + skipNoMap + skipNoCode + skipNoFile + skipDone;
+  var totalSkip = skipUid + skipSameRow + skipNoMap + skipNoCode + skipNoFile + skipDone;
   Logger.log("[PEP-TEMP] Push=" + pushed + " Skip=" + totalSkip + " (" + pfxDetail + ")");
 
   // ★ Google Chat 알림
@@ -2600,6 +2644,7 @@ function partnerPushFromTempTabToExclusive() {
         html += '<div style="background:#fff3e0;border-radius:8px;padding:10px;margin-bottom:10px;">';
         html += '<b>⏭ 스킵: ' + totalSkip + '건</b><br>';
         if (skipUid > 0) html += '&nbsp;&nbsp;├ 중복(이미Push): ' + skipUid + '건<br>';
+        if (skipSameRow > 0) html += '&nbsp;&nbsp;├ 같은 회차 겹친 줄(주문+품목 동일): ' + skipSameRow + '건<br>';
         if (skipDone > 0) html += '&nbsp;&nbsp;├ 이미완료(Y열): ' + skipDone + '건<br>';
         if (skipNoMap > 0) html += '&nbsp;&nbsp;├ 미등록업체: ' + skipNoMap + '건<br>';
         if (skipNoCode > 0) html += '&nbsp;&nbsp;├ 코드/접두없음: ' + skipNoCode + '건<br>';

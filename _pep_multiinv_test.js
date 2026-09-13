@@ -80,6 +80,7 @@ vm.runInContext([
   grabFn("_pep_lookupNamePhoneInvoice_"),
   grabFn("_pep_resolveRowInvoice_"),
   grabFn("_pep_ymdNum_"),
+  grabFn("_pep_ymdPack_"),   // ymdNum 이 부른다 — 없으면 시험이 통째로 죽는다
   grabFn("_pep_ymdLagDays_"),
   grabFn("_pep_carrierWithLag_"),
   grabFn("_pep_applyOrderDateFilter_"),
