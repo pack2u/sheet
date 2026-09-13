@@ -378,6 +378,53 @@ function _ssf_key_(s) {
   return String(s == null ? '' : s).replace(/[\s()\[\]{}.,\-_\/·]/g, '').toLowerCase();
 }
 /** 이름이 같은가. 상호가 붙었다 말았다 해서 서로 품는 것도 같은 것으로 본다. */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  자사출고 실적 탭에서 «메꿀 재료» 칸을 찾는다
+ *  2026-09-14
+ *
+ *  ★ 두 탭의 머리글이 다르다 ★
+ *    롯데 : 운송장번호 · 주문번호 · 수하인명 · 상품명
+ *    로젠 : 운송장번호 · 주문번호 · 명(둘) · …
+ *
+ *  ★ 로젠의 「명」이 두 개다 ★
+ *    앞의 것은 «보내는» 쪽(주식회사 팩투유)이고 뒤의 것이 받는분이다.
+ *    앞을 집으면 모든 줄이 「주식회사 팩투유」가 되어 아무와도 안 맞는다 —
+ *    오류 없이 0건이 된다. 그래서 이름표가 분명한 후보를 먼저 찾고,
+ *    「명」밖에 없으면 **마지막** 것을 쓴다.
+ *
+ *  ★ 못 찾으면 -1 을 준다. 자리로 떨어지지 않는다 ★
+ *    옛 코드는 못 찾으면 15번 칸으로 떨어졌다. 로젠 탭에서 그 자리는
+ *    우편번호다. 이름 대신 우편번호로 사람을 맞추게 되는데 그것도 조용하다.
+ *    부르는 쪽이 -1 을 보고 그 탭을 통째로 건너뛴다.
+ *
+ *  @param rh 공백을 턴 머리글 배열
+ *  @return {{inv:number, ord:number, nm:number, it:number}}  없으면 -1
+ * ══════════════════════════════════════════════════════════════
+ */
+function _ssf_freeCols_(rh) {
+  var 하나 = function (names) {
+    for (var i = 0; i < names.length; i++) {
+      var k = rh.indexOf(names[i]);
+      if (k >= 0) return k;
+    }
+    return -1;
+  };
+  var nm = 하나(['수하인명', '받는분', '수취인명', '수하인', '받는사람']);
+  if (nm < 0) {
+    //  로젠처럼 「명」밖에 없으면 마지막 것 — 앞의 것은 보내는 쪽이다
+    for (var j = rh.length - 1; j >= 0; j--) {
+      if (rh[j] === '명') { nm = j; break; }
+    }
+  }
+  return {
+    inv: 하나(['운송장번호', '송장번호']),
+    ord: 하나(['주문번호', '고객주문번호']),
+    nm: nm,
+    it: 하나(['상품명', '품목명', '품명']),
+  };
+}
+
 function _ssf_nameHit_(a, b) {
   var A = _ssf_key_(a), B = _ssf_key_(b);
   if (!A || !B || A.length < 2 || B.length < 2) return false;
@@ -426,31 +473,64 @@ function ss_미매칭메꾸기() {
   }
   if (!order.length) return ssio_alert('메꿀 전화주문이 없습니다 — 다 붙었습니다.');
 
+  /* ★ 두 탭을 «다» 읽는다 ★  (2026-09-14)
+     > "응 두 탭 다 읽게 고쳐줘"
+
+     여태 롯데 탭 하나만 읽었다. 2026-09-11 에 로젠으로 갈아탄 뒤로 그 탭은
+     비어 있어서, 이 기능은 «늘» 「메꿀 재료가 없습니다」만 뱉었다. 오류는
+     안 나고 그렇게만 말하니 진짜 없는 줄 알게 된다 — 조용히 죽어 있었다.
+     사방넷 쪽(gasBulk 원천 3)은 이미 두 탭을 다 읽는다. 여기만 안 따라왔다.
+
+     ★ 이름 칸을 못 찾으면 그 탭은 «건너뛴다» ★
+       자리로 떨어지면(옛 기본값 15) 로젠 탭에서는 우편번호 칸을 이름으로
+       읽는다. 그러면 아무와도 안 맞거나 엉뚱한 사람과 맞는다. 둘 다 조용하다.
+       못 찾으면 안 쓰고, «왜 안 썼는지»를 화면에 적는다. */
   var lId = ssText(cfg['롯데송장시트ID']) || '1KIBSmjpMVKLGoAkbrcKyTr4LOflszwS_xtMzmRuvYWs';
-  var lGid = ssNum(cfg['롯데송장탭GID']) || 1575029201;
-  var free = [];
-  try {
-    var lSS = SpreadsheetApp.openById(lId), tabs = lSS.getSheets(), lTab = null;
-    for (var s = 0; s < tabs.length; s++) if (tabs[s].getSheetId() === lGid) { lTab = tabs[s]; break; }
-    if (!lTab) return ssio_alert('롯데 송장탭(GID ' + lGid + ')을 못 찾았습니다.');
-    var rc = lTab.getLastColumn();
-    var rh = lTab.getRange(1, 1, 1, rc).getDisplayValues()[0].map(function (x) {
-      return ssText(x).replace(/\s/g, '');
-    });
-    var f = function (name, dflt) { var k = rh.indexOf(name); return k >= 0 ? k : dflt; };
-    var cInv = f('운송장번호', 6), cOrd = f('주문번호', 9),
-        cNm = f('수하인명', 15), cIt = f('상품명', 28);
-    var rv = lTab.getRange(2, 1, lTab.getLastRow() - 1, rc).getDisplayValues();
-    for (var r = 0; r < rv.length; r++) {
-      var inv = ssText(rv[r][cInv]);
-      if (!inv || ssText(rv[r][cOrd])) continue;      // 번호가 있는 줄은 이미 붙는다
-      if (inv.indexOf('운송장') >= 0) continue;
-      free.push({ inv: inv, nm: ssText(rv[r][cNm]), it: ssText(rv[r][cIt]) });
+  var 원천 = [
+    { 이름: '로젠', gid: ssNum(cfg['로젠송장탭GID']) || 548505068 },
+    { 이름: '롯데', gid: ssNum(cfg['롯데송장탭GID']) || 1575029201 },
+  ];
+  var free = [], 읽음 = [], 못읽음 = [];
+  for (var oi = 0; oi < 원천.length; oi++) {
+    var 편 = 원천[oi];
+    try {
+      var lSS = SpreadsheetApp.openById(lId), tabs = lSS.getSheets(), lTab = null;
+      for (var s = 0; s < tabs.length; s++) {
+        if (tabs[s].getSheetId() === 편.gid) { lTab = tabs[s]; break; }
+      }
+      if (!lTab) { 못읽음.push(편.이름 + ' 탭(GID ' + 편.gid + ')을 못 찾음'); continue; }
+      if (lTab.getLastRow() < 2) { 못읽음.push(편.이름 + ' 탭이 비어 있음'); continue; }
+      var rc = lTab.getLastColumn();
+      var rh = lTab.getRange(1, 1, 1, rc).getDisplayValues()[0].map(function (x) {
+        return ssText(x).replace(/s/g, '');
+      });
+      var 골라 = _ssf_freeCols_(rh);
+      if (골라.nm < 0) {
+        못읽음.push(편.이름 + ' 탭에서 받는분 칸을 못 찾음 (' + rh.slice(0, 12).join('·') + ')');
+        continue;
+      }
+      var rv = lTab.getRange(2, 1, lTab.getLastRow() - 1, rc).getDisplayValues();
+      var n0 = free.length;
+      for (var r = 0; r < rv.length; r++) {
+        var inv = ssText(rv[r][골라.inv]);
+        if (!inv || ssText(rv[r][골라.ord])) continue;   // 번호가 있는 줄은 이미 붙는다
+        if (inv.indexOf('운송장') >= 0) continue;
+        free.push({ inv: inv, nm: ssText(rv[r][골라.nm]),
+                    it: 골라.it >= 0 ? ssText(rv[r][골라.it]) : '', 탭: 편.이름 });
+      }
+      읽음.push(편.이름 + ' ' + (free.length - n0) + '줄 [받는분 ' + ssb_col(골라.nm) +
+        '·운송장 ' + ssb_col(골라.inv) + ']');
+    } catch (e) {
+      못읽음.push(편.이름 + ' 탭을 못 읽음: ' + (e && e.message ? e.message : e));
     }
-  } catch (e) {
-    return ssio_alert('롯데 송장탭을 못 읽었습니다: ' + (e && e.message ? e.message : e));
   }
-  if (!free.length) return ssio_alert('롯데 실적에 주문번호가 빈 줄이 없습니다 — 메꿀 재료가 없습니다.');
+  var 읽은말 = (읽음.length ? '읽은 탭 : ' + 읽음.join(' · ') : '') +
+    (못읽음.length ? (읽음.length ? String.fromCharCode(10) : '') +
+      '못 읽은 탭 : ' + 못읽음.join(String.fromCharCode(10) + '             ') : '');
+  if (!free.length) {
+    return ssio_alert('자사출고 실적에 주문번호가 빈 줄이 없습니다 — 메꿀 재료가 없습니다.' +
+      String.fromCharCode(10) + String.fromCharCode(10) + 읽은말);
+  }
 
   var rows = [], 확인필요 = 0, 못찾음 = 0;
   for (var o = 0; o < order.length; o++) {
@@ -463,7 +543,7 @@ function ss_미매칭메꾸기() {
     }
     if (!cands.length) {
       못찾음++;
-      rows.push(['', t.run, t.uid, t.거래처, t.품목[0] || '', 박스, 0, '', '', '롯데 실적에 이 이름이 없음']);
+      rows.push(['', t.run, t.uid, t.거래처, t.품목[0] || '', 박스, 0, '', '', '자사출고 실적에 이 이름이 없음']);
       continue;
     }
 
@@ -521,9 +601,10 @@ function ss_미매칭메꾸기() {
     '  ★★★ 이름+품목+박스수 일치    ' + cnt('★★★') + '건' + NL +
     '  ★★  이름+박스수 일치         ' + cnt('★★') + '건' + NL +
     '  ★   개수가 안 맞아 골라야 함  ' + 확인필요 + '건' + NL +
-    '  —   롯데 실적에 이름 없음     ' + 못찾음 + '건' + NL + NL +
+    '  —   자사출고 실적에 이름 없음 ' + 못찾음 + '건' + NL + NL +
     '★★★·★★ 는 그대로 써도 됩니다. 확인 칸에 「Y」를 적으면 반영됩니다.' + NL +
     '★ 은 송장 칸에서 쓸 것만 남기고 나머지를 지운 뒤 「Y」를 적으세요.' + NL + NL +
+    읽은말 + NL + NL +
     '다 표시했으면 「✅ 메꾸기 반영」을 실행하세요. 원장에만 적습니다.');
 }
 
