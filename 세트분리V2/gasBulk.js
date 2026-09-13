@@ -251,7 +251,13 @@ function ssb_spreadMerged(rows, seen, 박스, res, uidSeen, seenOrd) {
       송장of[rows[ri][0]] = { inv: rows[ri][1], code: rows[ri][4] };
     }
   }
+  /* ★ 동봉 형제의 «행방»을 전부 센다 ★  (2026-09-14)
+       「17박스 → 39」만 찍어 놓으니, 동봉이 83명인데 39명만 붙은 날
+       나머지 44명이 어디로 갔는지 화면이 답을 못 했다. 사람이 또 원장을
+       손으로 열어 봐야 했다 — 이 기능이 없애려던 바로 그 수고다.
+       kids = noRep + own + drop + spread 로 «반드시 맞아떨어지게» 센다. */
   res.mergeSpread = 0; res.mergeNoRep = 0; res.mergeBoxes = 0;
+  res.mergeKids = 0; res.mergeOwn = 0; res.mergeDrop = 0; res.mergeNoRepBoxes = 0;
   for (var gk in 박스) {
     if (!Object.prototype.hasOwnProperty.call(박스, gk)) continue;
     var 박 = 박스[gk];
@@ -260,16 +266,47 @@ function ssb_spreadMerged(rows, seen, 박스, res, uidSeen, seenOrd) {
     var 대표송장 = 송장of[박.rep];
     /* 로젠이 아직 대표 송장을 안 줬으면 동봉도 붙일 데가 없다.
        조용히 빠지면 2026-09-12 이 그대로 되풀이된다 — 세어서 알린다. */
-    if (!대표송장) { res.mergeNoRep += 박.kids.length; continue; }
+    res.mergeKids += 박.kids.length;
+    if (!대표송장) {
+      res.mergeNoRep += 박.kids.length; res.mergeNoRepBoxes++; continue;
+    }
     for (var ki = 0; ki < 박.kids.length; ki++) {
       var 아이 = 박.kids[ki];
-      if (seenOrd && seenOrd[아이]) continue;   // 제 송장으로 이미 잡혔다
+      if (seenOrd && seenOrd[아이]) { res.mergeOwn++; continue; }   // 제 송장으로 이미 잡혔다
       var 붙음 = ssb_addRows(rows, seen, 아이, 대표송장.inv, 대표송장.code,
         res, uidSeen, seenOrd);
+      /* 붙음이 0 이면 ssb_addRows 가 걸렀다 — 사방넷 번호가 아니거나
+         택배사 코드를 모르는 것이다. 어느 쪽인지는 skipGen·skipNoCode 가 센다. */
+      if (!붙음) res.mergeDrop++;
       n7 += 붙음; res.mergeSpread += 붙음;
     }
   }
   return n7;
+}
+
+/**
+ * 동봉 형제의 행방을 «네 줄»로 적는다. 진단과 저장이 같은 문장을 쓴다.
+ *
+ * ★ 왜 함수로 빼나 ★
+ *   진단에는 이 표가 아예 없었고 저장에는 mergeNoRep 한 줄만 있었다.
+ *   두 화면이 다른 말을 하면, 진단에서 멀쩡해 보이던 것이 저장에서 달라진다.
+ *   한 곳에서 만들어 둘 다 쓰면 어긋날 수가 없다.
+ */
+function ssb_mergeLines(res, NL) {
+  if (!res || !res.mergeKids) return '';
+  var L = [];
+      L.push('      붙었다              : ' + (res.mergeSpread || 0) + '명');
+  if (res.mergeOwn) {
+      L.push('      제 송장으로 이미 잡힘 : ' + res.mergeOwn + '명   (빠진 게 아닙니다)');
+  }
+  if (res.mergeNoRep) {
+      L.push('    ⚠ 대표 송장이 아직 없음 : ' + res.mergeNoRep + '명' +
+             ' (' + (res.mergeNoRepBoxes || 0) + '박스)   ← 이 만큼이 사방넷에서 빠집니다');
+  }
+  if (res.mergeDrop) {
+      L.push('    ⚠ 사방넷 번호가 아니거나 택배사 코드를 모름 : ' + res.mergeDrop + '명');
+  }
+  return L.join(NL) + NL;
 }
 
 function ssb_noCode(res, name) {
@@ -650,9 +687,12 @@ function ss_사방넷엑셀저장() {
     msg += NL + '  · 대상일 아닌 지난 주문 제외 : ' + res.skipOld + '건' +
       (res.noDate ? ' (날짜 못 읽은 행 ' + res.noDate + '건은 포함)' : '');
   }
+  if (res.mergeKids) {
+    msg += NL + '  [합포장 동봉 ' + res.mergeKids + '명의 행방]' + NL +
+      ssb_mergeLines(res, NL);
+  }
   if (res.mergeNoRep) {
-    msg += NL + '  ⚠ 대표 송장이 아직 없어 못 붙인 합포장 동봉 : ' + res.mergeNoRep + '건' + NL +
-      '    로젠에서 그 박스의 송장이 돌아온 뒤 다시 저장하세요.';
+    msg += NL + '    로젠에서 그 박스의 대표 송장이 돌아온 뒤 다시 저장하세요.';
   }
   if (res.skipMultiBox) {
     msg += NL + '  · 같은 주문의 둘째 박스부터 제외 : ' + res.skipMultiBox + '장' + NL +
@@ -735,6 +775,7 @@ function ss_사방넷진단() {
     '    송장원장   ' + C.scan.s6 + ' → ' + C.n6 + '   ← 마감된 협력업체 발주' + NL +
     '    합포장 전파 ' + (C.res.mergeBoxes || 0) + '박스 → ' + C.n7 +
     '   ← 대표 송장을 동봉 형제에게' + NL +
+    ssb_mergeLines(C.res, NL) +
     '    ※ 채택이 적은 건 앞 원천에서 이미 잡힌 중복입니다.' + NL + NL +
     '  · 같은 주문의 둘째 박스부터 제외 : ' + (C.res.skipMultiBox || 0) + '장  (사방넷은 주문당 송장 하나)' + NL +
     '  · 사방넷 번호 아닌 ID 제외 : ' + C.res.skipGen + '건' + NL +
