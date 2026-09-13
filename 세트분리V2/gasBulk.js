@@ -915,12 +915,101 @@ function _sslp_tabs_() {
  * 롯데택배 출력 탭들을 엑셀 한 파일로 저장한다.
  * 탭마다 시트를 하나씩 만든다 — 도서산간은 운임이 달라 따로 올리기 때문이다.
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  도서산간 — «같은 분이 2건 이상일 때만» 조치를 받는다
+ *  2026-09-14
+ *
+ *  > "도서산간에서 2건 이상일때만 조치.."
+ *
+ *  ★ 왜 1건은 그냥 보내나 ★
+ *    조치를 받는 이유는 추가운임이다. 한 분에게 한 박스면 운임도 한 번이라
+ *    확인해서 달라질 것이 없다. 그런데 여태 그 한 건까지 칸을 채우게 했다.
+ *    날마다 별 뜻 없이 칸을 채우다 보면 손이 먼저 움직이고, 정작 봐야 할
+ *    2건짜리도 같이 채워진다 — 확인이 습관이 되면 확인이 아니다.
+ *
+ *  ★ 왜 2건 이상은 봐야 하나 ★
+ *    줄 하나가 송장 하나고, 도서산간은 송장마다 운임이 붙는다. 같은 분에게
+ *    두 줄이 남았다는 건 **합포장이 안 됐다**는 뜻이다(ssMerge 는 조건ID·수량1·
+ *    같은 출고지일 때만 합친다). 합쳐야 할 것이 안 합쳐졌는지, 정말 따로
+ *    보내야 하는지는 기계가 못 정한다.
+ *
+ *  ★ 자리는 이름으로 찾는다 ★
+ *    도서산간 탭은 앞에 네 칸(권역·우편번호·판정·도선료)이 더 있다. 자리로
+ *    읽으면 그 네 칸만큼 어긋난다 — 오늘 로젠 송장에서 겪은 그대로다.
+ *
+ *  ★ 못 찾으면 «예전처럼» 전부 조치를 받는다 ★
+ *    이름이 바뀌어 사람을 못 가리면, 조용히 다 내보내는 것보다 다 붙드는
+ *    편이 낫다. 운임은 나중에 못 받지만 안 보낸 것은 보내면 된다.
+ *
+ *  @return {{ok:boolean, kept:Array, 나감:number, 보류:number, 자동:number,
+ *            확인:Array, 사람못가림:boolean}}  ok=false 면 「조치」 열이 없다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function ssb_islandKeep(vals) {
+  var head = (vals && vals[0]) || [];
+  var 찾기 = function (name) {
+    for (var h = 0; h < head.length; h++) {
+      if (String(head[h] || '').trim() === name) return h;
+    }
+    return -1;
+  };
+  var actCol = 찾기('조치');
+  if (actCol < 0) return { ok: false };
+
+  var nameCol = 찾기('거래처명');   // ssOutRow 가 여기에 받는분을 넣는다
+  var addrCol = 찾기('주소1');
+  var fromCol = 찾기('보내는분');
+  var 사람못가림 = (nameCol < 0 || addrCol < 0);
+
+  var 칸 = function (row, c) { return c < 0 ? '' : ssNorm(row[c]); };
+  var 키of = function (row) {
+    return 칸(row, nameCol) + '♦' + 칸(row, addrCol) + '♦' + 칸(row, fromCol);
+  };
+
+  //  같은 분이 몇 줄인지 «먼저» 센다. 세고 나서 골라야 첫 줄도 제대로 판단된다.
+  var 줄수 = {};
+  if (!사람못가림) {
+    for (var c1 = 1; c1 < vals.length; c1++) {
+      var k1 = 키of(vals[c1]);
+      줄수[k1] = (줄수[k1] || 0) + 1;
+    }
+  }
+
+  var kept = [head], 나감 = 0, 보류 = 0, 자동 = 0, 확인표 = {};
+  for (var r = 1; r < vals.length; r++) {
+    var row = vals[r];
+    var 적음 = String(row[actCol] || '').trim();
+    var k = 키of(row);
+    var 혼자 = !사람못가림 && 줄수[k] === 1;
+
+    if (적음) { kept.push(row); 나감++; continue; }
+    if (혼자) { kept.push(row); 나감++; 자동++; continue; }
+
+    보류++;
+    var 이름 = 칸(row, nameCol) || '(이름없음)';
+    확인표[이름] = (확인표[이름] || 0) + 1;
+  }
+
+  var 확인 = [];
+  for (var nm in 확인표) {
+    if (Object.prototype.hasOwnProperty.call(확인표, nm)) {
+      확인.push({ 이름: nm, 건수: 확인표[nm] });
+    }
+  }
+  확인.sort(function (a, b) { return b.건수 - a.건수 || (a.이름 < b.이름 ? -1 : 1); });
+
+  return { ok: true, kept: kept, 나감: 나감, 보류: 보류, 자동: 자동,
+           확인: 확인, 사람못가림: 사람못가림 };
+}
+
 function ss_롯데출력엑셀() {
   var NL = String.fromCharCode(10);
   var names = _sslp_tabs_();
   var ss = ssio_ss();
 
   var packs = [], 총행 = 0, 도서보류 = 0, 도서나감 = 0, 조치열없음 = [];
+  var 도서자동 = 0, 도서확인 = {}, 사람못가림 = false;
   for (var i = 0; i < names.length; i++) {
     var sh = ss.getSheetByName(names[i]);
     if (!sh || sh.getLastRow() < 2) continue;      // 빈 탭은 시트를 만들지 않는다
@@ -940,20 +1029,18 @@ function ss_롯데출력엑셀() {
     var isIsland = (names[i] === SS_ROUTE.LOTTE_ISLAND ||
                     names[i] === SS_ROUTE.LOTTE_ISLAND_CONSIGN);
     if (isIsland) {
-      var actCol = -1;
-      for (var h = 0; h < vals[0].length; h++) {
-        if (String(vals[0][h] || '').trim() === '조치') { actCol = h; break; }
-      }
-      if (actCol < 0) {
+      var 골라 = ssb_islandKeep(vals);
+      if (!골라.ok) {
         조치열없음.push(names[i]);
       } else {
-        var kept = [vals[0]];
-        for (var r = 1; r < vals.length; r++) {
-          if (String(vals[r][actCol] || '').trim()) { kept.push(vals[r]); 도서나감++; }
-          else 도서보류++;
+        vals = 골라.kept;
+        도서나감 += 골라.나감; 도서보류 += 골라.보류; 도서자동 += 골라.자동;
+        if (골라.사람못가림) 사람못가림 = true;
+        for (var ci = 0; ci < 골라.확인.length; ci++) {
+          var cn = 골라.확인[ci];
+          도서확인[cn.이름] = (도서확인[cn.이름] || 0) + cn.건수;
         }
-        vals = kept;
-        if (vals.length < 2) continue;             // 체크된 것이 하나도 없으면 시트를 안 만든다
+        if (vals.length < 2) continue;             // 실을 것이 하나도 없으면 시트를 안 만든다
       }
     }
 
@@ -1020,9 +1107,31 @@ function ss_롯데출력엑셀() {
      조용히 빠지면 「다 나간 줄」 알고 넘어간다. 도서산간은 건수가 적어서
      더 그렇다 — 몇 건 빠진 것을 아무도 못 알아챈다. */
   if (도서보류) {
-    msg = '⚠ 도서산간 ' + 도서보류 + '건은 안 실었습니다 (조치 칸이 비어 있음)' + NL +
-      '   확인한 건의 「조치」 칸에 아무거나 적고 다시 누르세요.' + NL +
-      (도서나감 ? '   실은 도서산간: ' + 도서나감 + '건' + NL : '') + NL + msg;
+    /*  ★ «누구»를 봐야 하는지 적는다 ★  (2026-09-14)
+        「3건 안 실었습니다」만 보면 탭을 처음부터 훑어야 한다. 도서산간은
+        건수가 적어 더 그렇다 — 이름만 알면 바로 그 줄로 간다. */
+    var 확인줄 = [];
+    for (var vn in 도서확인) {
+      if (Object.prototype.hasOwnProperty.call(도서확인, vn)) {
+        확인줄.push(vn + ' ' + 도서확인[vn] + '건');
+      }
+    }
+    확인줄.sort();
+    msg = '⚠ 도서산간 ' + 도서보류 + '건은 안 실었습니다' + NL +
+      '   같은 분에게 2건 이상이라 확인이 필요합니다 — 합포장이 안 된 건이면' + NL +
+      '   운임이 두 번 붙습니다. 「조치」 칸에 아무거나 적고 다시 누르세요.' + NL +
+      (확인줄.length ? '   볼 분 : ' + 확인줄.join(' · ') + NL : '') +
+      (도서나감 ? '   실은 도서산간: ' + 도서나감 + '건' : '') +
+      (도서자동 ? '  (그중 ' + 도서자동 + '건은 1건씩이라 확인 없이 실었습니다)' : '') +
+      NL + NL + msg;
+  } else if (도서자동) {
+    /*  조용히 넘어가지 않는다. 확인을 안 받았을 뿐 «안 본 것»이 되면 안 된다. */
+    msg = '· 도서산간 ' + 도서나감 + '건을 실었습니다' +
+      '  (' + 도서자동 + '건은 한 분에게 1건씩이라 확인 없이 나갑니다)' + NL + NL + msg;
+  }
+  if (사람못가림) {
+    msg = '※ 도서산간 탭에서 「거래처명」·「주소1」을 못 찾아 같은 분을 못 가렸습니다.' + NL +
+      '   예전처럼 «전부» 조치를 받았습니다 — 열 이름이 바뀌었는지 보세요.' + NL + NL + msg;
   }
   if (조치열없음.length) {
     msg = '※ ' + 조치열없음.join(', ') + ' 탭에 「조치」 열이 없어 거르지 않았습니다.' + NL +
