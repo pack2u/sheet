@@ -1132,3 +1132,61 @@ console.log("\n[송장출력] 한 시트로 합치는가");
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n출력 합치기도 그대로");
 if (실패) process.exit(1);
+
+/* ═══════════════════════════════════════════════════════════════
+   송장출력 파일 이름·저장 폴더
+
+   > "화일명을 260914_1,2,3 이런식으로 처리되면 좋겠어"
+   > "저장폴더 선택도 되면 좋겠어"
+
+   115531 같은 시각은 사람에게 아무 뜻이 없다. 로젠에 올릴 때 필요한 것은
+   「오늘 몇 번째 것」인데, 시각으로는 두 파일 중 어느 게 나중인지 한눈에
+   안 보인다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[송장출력] 파일 이름과 폴더");
+{
+  const bulk = 읽기(path.join(뿌리, "gasBulk.js"));
+  const io = 읽기(path.join(뿌리, "gasIO.js"));
+  const 꺼내기 = new Function(
+    "Utilities", "SpreadsheetApp", "Logger", "DriveApp", "module",
+    읽기(path.join(뿌리, "core.js")) + "\n" + bulk + "\n" +
+    "return { ssb_nextPrintName_: ssb_nextPrintName_ };",
+  );
+  const { ssb_nextPrintName_ } = 꺼내기(null, null, { log() {} }, null, undefined);
+
+  //  가짜 폴더 — 이름만 돌려주면 된다
+  const 폴더 = (이름들) => ({
+    getFiles() {
+      let i = 0;
+      return { hasNext: () => i < 이름들.length, next: () => ({ getName: () => 이름들[i++] }) };
+    },
+  });
+
+  eq("★ 빈 폴더면 _1", ssb_nextPrintName_(폴더([]), "260914"), "260914_1.xlsx");
+  eq("★ 하나 있으면 _2",
+    ssb_nextPrintName_(폴더(["260914_1.xlsx"]), "260914"), "260914_2.xlsx");
+  eq("★ 가장 큰 번호 + 1 (개수가 아니다)",
+    ssb_nextPrintName_(폴더(["260914_1.xlsx", "260914_3.xlsx"]), "260914"), "260914_4.xlsx");
+  eq("다른 날 것은 안 센다",
+    ssb_nextPrintName_(폴더(["260913_7.xlsx", "260914_1.xlsx"]), "260914"), "260914_2.xlsx");
+  eq("옛 이름은 안 센다",
+    ssb_nextPrintName_(폴더(["로젠송장출력_20260914_115531.xlsx"]), "260914"), "260914_1.xlsx");
+  eq("열 번째도 제대로",
+    ssb_nextPrintName_(폴더(["260914_9.xlsx", "260914_10.xlsx"]), "260914"), "260914_11.xlsx");
+  {
+    //  폴더를 못 읽어도 이름은 나와야 한다 — 이름 때문에 출력이 막히면 안 된다
+    const 터짐 = { getFiles() { throw new Error("권한 없음"); } };
+    eq("★ 못 세면 _1 로 물러선다", ssb_nextPrintName_(터짐, "260914"), "260914_1.xlsx");
+  }
+
+  //  ── 폴더 선택 ──
+  eq("★ 설정으로 폴더를 고른다", bulk.includes("ssio_config()['송장출력_폴더']"), "true");
+  eq("★ 주소든 ID 든 받는다", bulk.includes("[-A-Za-z0-9_]{25,}"), "true");
+  eq("★ 못 열면 조용히 안 넘어간다", bulk.includes("폴더를 못 열어 기본 자리에 저장합니다"), "true");
+  eq("설정 키가 있다", io.includes("'송장출력_폴더'"), "true");
+  eq("폴더를 «먼저» 찾는다",
+    bulk.indexOf("var 폴더 = ssb_printFolder_(ss);") < bulk.indexOf("var fileName = 폴더 ?"), "true");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n이름·폴더도 그대로");
+if (실패) process.exit(1);

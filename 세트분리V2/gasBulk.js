@@ -965,6 +965,82 @@ var SSB_ISLAND_OK = '발송';
  *   가운데 19칸만 꺼내면 일반 탭과 같은 모양이 된다.
  *   자리는 머리글 «이름»으로 찾는다 — 앞 칸이 늘면 자리로는 조용히 어긋난다.
  */
+/**
+ * 송장출력 파일을 담을 폴더. 못 찾으면 null.
+ *
+ * ★ 폴더는 «새로 만들지 않고 이름만» 바꾼다 ★  (2026-09-14 롯데 → 로젠)
+ *   새 이름으로 새 폴더를 만들면 지난 출력물이 옛 폴더에 남아 둘로 갈린다.
+ *   찾을 때마다 두 군데를 봐야 하고, 그건 이름을 바꾼 이유와 정반대다.
+ */
+function ssb_printFolder_(ss) {
+  /* ★ 설정으로 폴더를 고를 수 있다 ★  (2026-09-14)
+     > "저장폴더 선택도 되면 좋겠어"
+
+     설정 「송장출력_폴더」에 폴더 주소를 통째로 붙여넣어도 되고 ID 만 적어도
+     된다 — 주소창에서 복사한 것을 그대로 쓸 수 있어야 한다. 사람에게 ID 만
+     골라 내라고 시키면 언젠가 반드시 잘못 자른다.
+
+     못 열면 «조용히» 옛 자리로 물러서지 않는다. 골라 둔 폴더에 안 들어가는데
+     아무 말이 없으면, 파일이 어디 갔는지 찾아 헤매게 된다. */
+  try {
+    var 적은값 = '';
+    try { 적은값 = ssText(ssio_config()['송장출력_폴더']); } catch (eC) {}
+    if (적은값) {
+      //  주소든 ID 든 «긴 토큰»이 곧 ID 다. 역슬래시 없는 정규식으로 뽑는다.
+      var m = 적은값.match(/[-A-Za-z0-9_]{25,}/);
+      var id = m ? m[0] : '';
+      if (id) {
+        try { return DriveApp.getFolderById(id); } catch (eF) {
+          try {
+            SpreadsheetApp.getActiveSpreadsheet().toast(
+              '설정 「송장출력_폴더」의 폴더를 못 열어 기본 자리에 저장합니다.' +
+              String.fromCharCode(10) + String(eF && eF.message ? eF.message : eF),
+              '송장출력', 10);
+          } catch (eT) {}
+        }
+      }
+    }
+    var parent = null;
+    var ps = DriveApp.getFileById(ss.getId()).getParents();
+    if (ps.hasNext()) parent = ps.next();
+    if (!parent) parent = DriveApp.getRootFolder();
+    var 이름 = '로젠송장출력';
+    var it = parent.getFoldersByName(이름);
+    if (it.hasNext()) return it.next();
+    var 옛 = parent.getFoldersByName('롯데송장출력');
+    if (옛.hasNext()) { var f = 옛.next(); f.setName(이름); return f; }
+    return parent.createFolder(이름);
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 그날 몇 번째 출력인가.  260914_1 · 260914_2 · …
+ *
+ * ★ 폴더 안의 «가장 큰 번호 + 1» ★
+ *   파일을 지웠다 다시 뽑아도 번호가 겹치지 않는다. 개수를 세면 하나 지운
+ *   뒤에 같은 번호가 또 나와 어느 것이 나중인지 알 수 없게 된다.
+ *
+ *   정규식에 역슬래시를 안 쓴다 — [0-9] 로 적는다.
+ */
+function ssb_nextPrintName_(folder, yy) {
+  var 최대 = 0;
+  try {
+    var re = new RegExp('^' + yy + '_([0-9]+)');
+    var it = folder.getFiles();
+    while (it.hasNext()) {
+      var m = re.exec(it.next().getName());
+      if (!m) continue;
+      var k = Number(m[1]);
+      if (k > 최대) 최대 = k;
+    }
+  } catch (e) {
+    //  못 세면 1 부터. 겹치면 드라이브가 사본으로 만들어 주니 잃지는 않는다.
+  }
+  return yy + '_' + (최대 + 1) + '.xlsx';
+}
+
 function ssb_mergePacks_(packs) {
   var head = SS_OUT_HEADER.slice();
   var out = [head];
@@ -1161,7 +1237,19 @@ function ss_로젠출력엑셀() {
   }
 
   var ymd = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd_HHmmss');
-  var fileName = '로젠송장출력_' + ymd + '.xlsx';
+
+  /* ★ 파일 이름은 「260914_1」 꼴 ★  (2026-09-14)
+     > "화일명을 260914_1,2,3 이런식으로 처리되면 좋겠어"
+
+     115531 같은 시각은 사람에게 아무 뜻이 없다. 로젠에 올릴 때 「오늘 몇
+     번째 것」인지가 필요한데, 시각으로는 두 파일 중 어느 게 나중인지
+     한눈에 안 보인다. 그날 몇 번째인지 세어 붙인다.
+
+     ★ 폴더를 «먼저» 찾는다 ★ 몇 번째인지 알려면 폴더 안을 세야 한다.
+     못 찾으면 시각 이름으로 물러선다 — 이름 때문에 출력이 막히면 안 된다. */
+  var 폴더 = ssb_printFolder_(ss);
+  var yy = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
+  var fileName = 폴더 ? ssb_nextPrintName_(폴더, yy) : ('로젠송장출력_' + ymd + '.xlsx');
   var tmp = SpreadsheetApp.create('tmp_lotte_print_' + ymd);
 
   for (var p = 0; p < packs.length; p++) {
@@ -1192,25 +1280,7 @@ function ss_로젠출력엑셀() {
 
   var fileUrl = '', fileId = '';
   if (blob) {
-    var parent = null;
-    try {
-      var ps = DriveApp.getFileById(ss.getId()).getParents();
-      if (ps.hasNext()) parent = ps.next();
-    } catch (e2) {}
-    if (!parent) parent = DriveApp.getRootFolder();
-    /* ★ 폴더는 «새로 만들지 않고 이름만» 바꾼다 ★  (2026-09-14 롯데 → 로젠)
-       새 이름으로 새 폴더를 만들면 지난 출력물이 옛 폴더에 남아 둘로 갈린다.
-       찾을 때마다 두 군데를 봐야 하고, 그건 이름을 바꾼 이유와 정반대다.
-       옛 폴더가 있으면 그 이름을 고쳐 그대로 쓴다 — 한 번만 일어난다. */
-    var 폴더이름 = '로젠송장출력';
-    var it = parent.getFoldersByName(폴더이름);
-    var folder = null;
-    if (it.hasNext()) { folder = it.next(); }
-    else {
-      var 옛폴더 = parent.getFoldersByName('롯데송장출력');
-      if (옛폴더.hasNext()) { folder = 옛폴더.next(); folder.setName(폴더이름); }
-      else { folder = parent.createFolder(폴더이름); }
-    }
+    var folder = 폴더 || DriveApp.getRootFolder();
     var f = folder.createFile(blob);
     fileUrl = f.getUrl(); fileId = f.getId();
   }
