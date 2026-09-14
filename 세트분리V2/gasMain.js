@@ -32,7 +32,7 @@ function onOpen() {
     .addItem('✅ 조치 적용 (보류 → 발송·대리발송)', 'ss_보류조치반영')
     .addSeparator()
     .addItem('🖨 로젠 송장출력 엑셀', 'ss_로젠출력엑셀')
-    .addItem('🔁 송장 전파 (롯데 → 사방넷)', 'ss_송장전파')
+    .addItem('🔁 송장 전파 (자사출고 → 사방넷)', 'ss_송장전파')
     .addItem('📊 사방넷 송장대량등록', 'ss_사방넷엑셀저장')
     .addSeparator()
 
@@ -481,7 +481,7 @@ function ss_실행(opts) {
       '입력 ' + res.stats.입력행 + '행 → 분해 ' + res.stats.분해행 + '행\n' +
       '실제 송장 ' + res.stats.송장건수 + '건   (탭 합계 ' + res.stats.출력행 +
       ' = 분해행 ' + (res.stats.분해행 === res.stats.출력행 ? '✔' : '✘') + ')\n\n' +
-      '  롯데택배 ' + res.stats['탭_' + SS_ROUTE.LOTTE] + '\n' +
+      '  ' + SS_ROUTE.LOTTE + ' ' + res.stats['탭_' + SS_ROUTE.LOTTE] + '\n' +
       '  도서산간 ' + res.stats['탭_' + SS_ROUTE.LOTTE_ISLAND] + ss_권역요약(res) +
       ' · 도서산간(위탁) ' + res.stats['탭_' + SS_ROUTE.LOTTE_ISLAND_CONSIGN] +
       ' · 동네배송 ' + res.stats['탭_' + SS_ROUTE.LOTTE_LOCAL] + '\n' +
