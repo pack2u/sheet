@@ -1577,6 +1577,53 @@ function partnerFixHubUnitPrices() {
  * 매칭 우선순위: 고유ID 전용 (이름 단독 매칭 제거 — 동명이인 오매칭 방지)
  * ★ 2026-06-18: 적요(M열)에 내용이 있어도 송장 수집 진행하도록 변경
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 「마감」 탭에도 송장이 적힌다 ★
+ *  2026-09-15
+ *
+ *  > "어림지해장국 송장이 있는데 일일 마감에 못들어 온 이유를 찾아줘..
+ *  >  그리고 대리판매 마감이 일부 업체만 되는 이유도 찾아줘"
+ *
+ *  둘은 같은 한 줄에서 갈렸다. 송장 수집이 탭 이름에 「마감」이 들어 있으면
+ *  통째로 건너뛰고 있었다.
+ *
+ *      if ( … || ptName.indexOf("마감") !== -1 ) continue;
+ *
+ *  「전용양식」에 적는 업체는 수집되고, 줄이 이미 「(2026년 9월) 발주 마감」
+ *  으로 넘어간 뒤에 송장을 적는 업체는 «영영 안 읽힌다». 어느 탭에 적느냐로
+ *  되고 안 되고가 갈리는데, 그건 업체마다 다르다 —
+ *  「일부 업체만 된다」의 정체가 이것이다.
+ *
+ *  ★ 그렇다고 마감 탭을 다 읽을 수는 없다 ★
+ *    마감 탭은 달마다 쌓인다. 업체가 열다섯이면 수십 장을 매번 훑어야 하고,
+ *    6분 안에 못 끝낸다. 송장이 새로 적히는 것은 «최근 것»뿐이다 —
+ *    이번 달과 지난달만 본다. 달을 넘긴 주문에 송장이 새로 붙는 일은 없다.
+ *
+ *  ★ 읽은 마감 탭을 로그에 남긴다 ★
+ *    안 읽히는 탭이 있으면 그 자리에서 알아야 한다. 오늘 하루의 교훈이다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _po_isRecentClosingTab_(name) {
+  var s = String(name || "");
+  //  「발주 마감」 계열만 본다. 취소/반품·정산 같은 다른 마감 탭은 송장원이 아니다.
+  if (s.indexOf("발주 마감") === -1) return false;
+
+  var m = s.match(/\((\d{4})년\s*(\d{1,2})월\)/);
+  if (!m) return false;
+  var y = parseInt(m[1], 10), mo = parseInt(m[2], 10);
+  if (!(y > 2000) || !(mo >= 1 && mo <= 12)) return false;
+
+  var now = new Date();
+  var ty = parseInt(Utilities.formatDate(now, "Asia/Seoul", "yyyy"), 10);
+  var tm = parseInt(Utilities.formatDate(now, "Asia/Seoul", "MM"), 10);
+
+  //  이번 달 · 지난달 (해를 넘길 때도 맞게)
+  var 이번 = ty * 12 + tm;
+  var 그것 = y * 12 + mo;
+  return 그것 === 이번 || 그것 === 이번 - 1;
+}
+
 function partnerFetchInvoices() {
   var ui = null;
   try {
@@ -1803,7 +1850,11 @@ function partnerFetchInvoices() {
             ptName.indexOf("공급가") !== -1 ||
             ptName.indexOf("단가") !== -1 ||
             ptName.indexOf("설정") !== -1 ||
-            ptName.indexOf("마감") !== -1
+            /* ★ 최근 「발주 마감」은 읽는다 ★  (2026-09-15)
+               줄이 마감으로 넘어간 뒤에 송장을 적는 업체가 있다. 통째로
+               건너뛰면 그 업체 송장은 영영 안 들어온다 — 「일부 업체만
+               된다」의 정체가 이것이었다. 달을 넘긴 것은 안 본다. */
+            (ptName.indexOf("마감") !== -1 && !_po_isRecentClosingTab_(ptName))
           ) {
             continue;
           }
@@ -1814,7 +1865,8 @@ function partnerFetchInvoices() {
             ptName.indexOf("양식") !== -1 ||
             ptName.indexOf("뉴파츠") !== -1 ||
             ptName.indexOf("NEW") !== -1 ||
-            ptName.indexOf("HR") !== -1;
+            ptName.indexOf("HR") !== -1 ||
+            _po_isRecentClosingTab_(ptName);   // 최근 발주 마감도 송장원이다
           if (!isFormTab && ptabs.length > 2) {
             // 탭이 여러 개인데 위 키워드가 전혀 없으면 제외
             continue;
@@ -1838,6 +1890,13 @@ function partnerFetchInvoices() {
             ptData, // preloadedData 전달 → getValues() 재호출 없음
           );
           partnerInvCount += Object.keys(invoiceMap).length - prevSize;
+          /*  ★ 마감 탭에서 읽은 것은 따로 적는다 ★  (2026-09-15)
+              여태 안 읽던 자리다. 몇 줄이 들어왔는지 보이면, 다음에 또
+              「왜 이 업체만 안 되나」를 물을 일이 없다. */
+          if (_po_isRecentClosingTab_(ptName)) {
+            scannedLogs.push("[마감탭 송장] " + vendorLabelForLog + " : " +
+              (Object.keys(invoiceMap).length - prevSize) + "키");
+          }
 
           // ★ 2026-07-08: B열(이슈) 수집 — 송장번호가 아직 없는 행에서만
           // 전용양식 구조: A=송장번호(0), B=이슈(1), AX열(49)=고유ID
