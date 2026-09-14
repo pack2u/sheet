@@ -322,12 +322,26 @@ function ss_실행(opts) {
     // 그러면 O열 하나로 전 주문이 통일되고, 송장매칭·일일마감이 이 열만 보면 된다.
     var 아이디채움 = ss_판매현황아이디채움(res.idCells);
 
+    /* ★ 도서산간 「조치」는 같은 회차 안에서 살아남아야 한다 ★  (2026-09-14)
+       > "도서산간 발송처리했는데 조치를 취해서 계속뜨네"
+
+       ✅ 조치 적용은 ss_실행(mirrorOnly) 이라 출력 탭을 통째로 다시 쓴다.
+       그때 도서산간에 적어 둔 「발송」이 같이 지워져서, 보류 조치를 한 번
+       반영할 때마다 도서산간을 처음부터 다시 체크해야 했다. 미발송 건은
+       하나씩 풀리는 것이라 반영을 여러 번 하는데, 그때마다 지워진다.
+
+       ★ 회차가 바뀌면 안 지킨다 ★
+         새 판매현황이면 「전에 봤으니 됐겠지」가 되면 안 된다. 보류 조치가
+         회차 안에서만 유효한 것과 같은 규칙이다. */
+    var 섬조치 = 회차.재실행 ? ss_섬조치걷기_() : {};
+
     // 출력 탭
     for (var i = 0; i < SSIO_TABS.출력.length; i++) {
       var name = SSIO_TABS.출력[i];
       var bucket = res.buckets[name] || [];
       if (name === SS_ROUTE.LOTTE_ISLAND || name === SS_ROUTE.LOTTE_ISLAND_CONSIGN) {
-        ssio_write(name, SS_ISLAND_HEADER, bucket.map(ssIslandRow), { bg: '#4a3a6b' });
+        ssio_write(name, SS_ISLAND_HEADER,
+          ss_섬조치되돌리기_(bucket.map(ssIslandRow), 섬조치), { bg: '#4a3a6b' });
       } else if (name === SS_ROUTE.PARTNER) {
         ssio_write(name, SS_PARTNER_HEADER, bucket.map(ssPartnerRow), { bg: '#3a5a3a' });
       } else {
@@ -601,6 +615,55 @@ var SS_ROUND_HEADER = ['회차키', '지문', '일자', '회차', '입력행', '
  *   다른 지문  → 그날의 다음 회차 (260902-1 → 260902-2)
  * 실행 버튼을 몇 번 누르든 원장에는 회차당 한 벌만 남는다.
  */
+/**
+ * 도서산간 두 탭에서 「조치」를 걷는다.  { 순번|품목코드 : 적은값 }
+ *
+ * ★ 순번 + 품목코드로 잡는다 ★
+ *   순번은 판매현황 한 줄에 하나뿐이고(ssNormalize 가 중복을 막는다),
+ *   세트가 쪼개지면 품목코드가 갈린다. 고유ID 는 세트 두 줄이 같아서 못 쓴다.
+ *
+ * ★ 자리는 이름으로 찾는다 ★ SS_ISLAND_HEADER 앞에 네 칸이 더 있다.
+ */
+function ss_섬조치걷기_() {
+  var out = {};
+  var 탭들 = [SS_ROUTE.LOTTE_ISLAND, SS_ROUTE.LOTTE_ISLAND_CONSIGN];
+  var iSeq = SS_ISLAND_HEADER.indexOf('순번');
+  var iCode = SS_ISLAND_HEADER.indexOf('품목코드');
+  var iAct = SS_ISLAND_HEADER.indexOf('조치');
+  if (iSeq < 0 || iCode < 0 || iAct < 0) return out;
+  for (var t = 0; t < 탭들.length; t++) {
+    try {
+      var sh = ssio_ss().getSheetByName(탭들[t]);
+      if (!sh || sh.getLastRow() < 2) continue;
+      var w = Math.max(sh.getLastColumn(), SS_ISLAND_HEADER.length);
+      var v = sh.getRange(2, 1, sh.getLastRow() - 1, w).getDisplayValues();
+      for (var r = 0; r < v.length; r++) {
+        var a = ssText(v[r][iAct]);
+        if (!a) continue;
+        var k = ssText(v[r][iSeq]) + '|' + ssText(v[r][iCode]);
+        if (k !== '|') out[k] = a;
+      }
+    } catch (e) {
+      //  못 읽어도 실행은 계속한다. 조치를 한 번 더 적는 수고일 뿐이다.
+    }
+  }
+  return out;
+}
+
+/** 걷어 둔 조치를 같은 줄에 되돌린다. 없으면 빈칸 그대로. */
+function ss_섬조치되돌리기_(rows, 섬조치) {
+  if (!섬조치) return rows;
+  var iSeq = SS_ISLAND_HEADER.indexOf('순번');
+  var iCode = SS_ISLAND_HEADER.indexOf('품목코드');
+  var iAct = SS_ISLAND_HEADER.indexOf('조치');
+  if (iSeq < 0 || iCode < 0 || iAct < 0) return rows;
+  for (var i = 0; i < rows.length; i++) {
+    var k = ssText(rows[i][iSeq]) + '|' + ssText(rows[i][iCode]);
+    if (섬조치[k]) rows[i][iAct] = 섬조치[k];
+  }
+  return rows;
+}
+
 function ss_회차확정(지문, 입력행) {
   var sh = ssio_sheet(SSIO_TABS.회차, SS_ROUND_HEADER);
   var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');

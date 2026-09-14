@@ -960,3 +960,68 @@ console.log("\n[보류 탭] 원본코드 칸이 열쇠를 지킨다");
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n원본코드 열쇠도 그대로");
 if (실패) process.exit(1);
+
+/* ═══════════════════════════════════════════════════════════════
+   도서산간 조치 — 같은 회차 재실행에서 살아남는가
+
+   > "도서산간 발송처리했는데 조치를 취해서 계속뜨네"
+
+   ✅ 조치 적용은 ss_실행(mirrorOnly) 이라 출력 탭을 통째로 다시 쓴다.
+   그때 도서산간에 적어 둔 「발송」이 같이 지워졌다. 미발송 건은 하나씩
+   풀리는 것이라 반영을 여러 번 하는데, 그때마다 처음부터 다시 체크해야 했다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[도서산간 조치] 재실행에서 살아남는가");
+{
+  const core = 읽기(path.join(뿌리, "core.js"));
+  const main = 읽기(path.join(뿌리, "gasMain.js"));
+  const 꺼내기 = new Function(
+    "Utilities", "SpreadsheetApp", "Logger", "module",
+    core + "\n" + main + "\n" +
+    "return { ss_섬조치되돌리기_: ss_섬조치되돌리기_, SS_ISLAND_HEADER: SS_ISLAND_HEADER };",
+  );
+  const { ss_섬조치되돌리기_, SS_ISLAND_HEADER } = 꺼내기(null, null, { log() {} }, undefined);
+
+  const iSeq = SS_ISLAND_HEADER.indexOf("순번");
+  const iCode = SS_ISLAND_HEADER.indexOf("품목코드");
+  const iAct = SS_ISLAND_HEADER.indexOf("조치");
+  const 줄 = (순번, 코드, 조치) => {
+    const r = new Array(SS_ISLAND_HEADER.length).fill("");
+    r[iSeq] = 순번; r[iCode] = 코드; r[iAct] = 조치 || "";
+    return r;
+  };
+
+  {
+    const rows = [줄("100028", "AAA"), 줄("100029", "BBB")];
+    ss_섬조치되돌리기_(rows, { "100028|AAA": "발송" });
+    eq("★ 적어 둔 조치가 돌아온다", rows[0][iAct], "발송");
+    eq("적은 적 없는 줄은 빈칸", rows[1][iAct], "");
+  }
+
+  {
+    //  ★ 세트가 쪼개져 순번이 같아도 품목코드로 갈린다 ★
+    const rows = [줄("100028", "몸통"), 줄("100028", "뚜껑")];
+    ss_섬조치되돌리기_(rows, { "100028|뚜껑": "발송" });
+    eq("★ 같은 순번이라도 코드로 가른다", rows[0][iAct] + "/" + rows[1][iAct], "/발송");
+  }
+
+  {
+    //  이번 회차에 없어진 줄의 조치는 그냥 안 쓰인다
+    const rows = [줄("100030", "CCC")];
+    ss_섬조치되돌리기_(rows, { "999999|ZZZ": "발송" });
+    eq("없는 줄은 안 건드린다", rows[0][iAct], "");
+  }
+
+  {
+    eq("빈 맵이면 그대로", ss_섬조치되돌리기_([줄("1", "A", "")], {})[0][iAct], "");
+    eq("맵이 없어도 안 터진다", ss_섬조치되돌리기_([줄("1", "A", "X")], null)[0][iAct], "X");
+  }
+
+  //  ── 배선: «재실행일 때만» 걷는다 ──
+  eq("★ 재실행일 때만 걷는다",
+    main.includes("var 섬조치 = 회차.재실행 ? ss_섬조치걷기_() : {};"), "true");
+  eq("★ 쓸 때 되돌린다", main.includes("ss_섬조치되돌리기_(bucket.map(ssIslandRow), 섬조치)"), "true");
+  eq("자리는 이름으로 찾는다", main.includes("SS_ISLAND_HEADER.indexOf('순번')"), "true");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n도서산간 조치도 그대로");
+if (실패) process.exit(1);
