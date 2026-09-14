@@ -1781,91 +1781,157 @@ function ss_그날판매현황메우기() {
     return;
   }
 
-  /*  머리글은 어디서 오나. 그날 탭이 이미 있으면 그것을 그대로 쓴다 —
-      바꾸면 옛 줄이 어긋난다. 없으면 「판매현황_고유아이디」의 머리글로 만든다. */
+  /*  머리글은 「판매현황_고유아이디」에서 «찾아» 온다.
+      그 탭이 이 하루의 칸 생김새를 그대로 들고 있다. */
+  var idSh = ssio_ss().getSheetByName(SSIO_TABS.입력아이디);
+  if (!idSh || idSh.getLastRow() < 2) {
+    ui.alert('「' + SSIO_TABS.입력아이디 + '」이 비어 있어 머리글을 가져올 데가 없습니다.');
+    return;
+  }
+  var idGrid = idSh.getDataRange().getValues();
+  var idFound = ssFindSalesHeader(idGrid);
+  if (!idFound) {
+    ui.alert('「' + SSIO_TABS.입력아이디 + '」에서 머리글 줄(순번·품목코드)을 못 찾았습니다.');
+    return;
+  }
+  var 머리줄 = idFound.headerRow;
+  var width = 0;
+  for (var w = 머리줄; w < idGrid.length; w++) {
+    if (idGrid[w] && idGrid[w].length > width) width = idGrid[w].length;
+  }
+  var 머리 = idGrid[머리줄].slice(0, width);
+  while (머리.length < width) 머리.push('');
+  var head = 머리.concat([SS_DAILY_SRC_COL, '회차키']);
+
+  var 순번자리 = -1;
+  for (var p = 0; p < head.length; p++) if (ssText(head[p]) === '순번') { 순번자리 = p; break; }
+
   var sh = ssio_ss().getSheetByName(이름);
-  var head = null;
-  if (sh && sh.getLastRow() >= 1) {
-    head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-  } else {
-    var idSh = ssio_ss().getSheetByName(SSIO_TABS.입력아이디);
-    if (!idSh || idSh.getLastRow() < 1) {
-      ui.alert('머리글을 가져올 데가 없습니다.\n\n' +
-        '「' + 이름 + '」도 「' + SSIO_TABS.입력아이디 + '」도 비어 있습니다.\n' +
-        '세트분리를 한 번 돌리면 그때 자동으로 메웁니다.');
-      return;
+  var 살린줄 = [], 있는키 = {}, 버린줄 = 0;
+
+  if (sh && sh.getLastRow() > 1) {
+    var 옛폭 = Math.max(sh.getLastColumn(), head.length);
+    var 옛머리 = sh.getRange(1, 1, 1, 옛폭).getValues()[0];
+
+    var 옛키자리 = -1;
+    for (var h = 옛머리.length - 1; h >= 0; h--) {
+      if (ssText(옛머리[h]) === '회차키') { 옛키자리 = h; break; }
     }
-    var idFound = ssFindSalesHeader(idSh.getDataRange().getValues());
-    if (!idFound) {
-      ui.alert('「' + SSIO_TABS.입력아이디 + '」에서 머리글 줄(순번·품목코드)을 못 찾았습니다.');
-      return;
+    /*  회차키 칸조차 못 찾으면 어느 줄이 어느 회차인지 알 수가 없다.
+        옛 줄은 통째로 버리고 원장으로 다시 세운다. */
+    if (옛키자리 >= 0) {
+      var 옛머리쓸만 = false;
+      for (var v = 0; v < 옛머리.length; v++) {
+        if (ssText(옛머리[v]) === '순번') { 옛머리쓸만 = true; break; }
+      }
+      var 새자리 = {};
+      for (var n = 0; n < head.length; n++) {
+        var hn = ssText(head[n]);
+        if (hn && 새자리[hn] === undefined) 새자리[hn] = n;
+      }
+
+      var body = sh.getRange(2, 1, sh.getLastRow() - 1, 옛폭).getValues();
+      for (var b = 0; b < body.length; b++) {
+        var k = ssText(body[b][옛키자리]);
+        if (!k) continue;
+
+        var moved = [];
+        for (var z = 0; z < head.length; z++) moved.push('');
+
+        if (옛머리쓸만) {
+          //  이름 대 이름으로 옮긴다 — 칸이 늘거나 줄어도 안 어긋난다
+          for (var c = 0; c < 옛머리.length; c++) {
+            var cn = ssText(옛머리[c]);
+            if (!cn || 새자리[cn] === undefined) continue;
+            moved[새자리[cn]] = body[b][c];
+          }
+        } else {
+          /* ★ 머리글이 회사명 머리말인 탭 ★
+             이름으로는 옮길 수가 없다. 그런데 이 탭의 줄은 판매현황을 «그대로»
+             복사해 넣은 것이라 칸 «자리»는 맞다. 같은 이카운트 내보내기니까.
+             그러니 자리로 옮긴다 — 이름을 모를 때만 쓰는 마지막 수단이다. */
+          var 끝 = Math.min(옛키자리, head.length - 2);
+          for (var c2 = 0; c2 < 끝; c2++) moved[c2] = body[b][c2];
+        }
+
+        /*  ★ 빈 껍데기는 버린다 ★
+            지난번 되살리기가 자리를 못 찾아 «회차키만 있고 나머지는 빈» 줄을
+            잔뜩 남겼다. 그런 줄을 그대로 두면 그 회차가 「이미 있다」고 세어져
+            영영 안 메워진다. 순번이 숫자가 아니면 자료가 아니다. */
+        if (순번자리 >= 0 && !/^[0-9]+$/.test(ssText(moved[순번자리]))) { 버린줄++; continue; }
+
+        moved[head.length - 1] = k;
+        if (!ssText(moved[head.length - 2])) moved[head.length - 2] = SS_DAILY_SRC_PASTE;
+        살린줄.push(moved);
+        있는키[k] = true;
+      }
     }
-    var idHead = idSh.getDataRange().getValues()[idFound.headerRow];
-    head = idHead.concat([SS_DAILY_SRC_COL, '회차키']);
-    sh = ssio_sheet(이름, head);
-  }
-  /*  머리글이 회사명 머리말인 탭은 손대면 더 나빠진다. 세트분리를 한 번
-      돌리면 그때 제 머리글로 다시 세우고 원장으로 메운다. */
-  var 쓸만 = false;
-  for (var v = 0; v < head.length; v++) if (ssText(head[v]) === '순번') { 쓸만 = true; break; }
-  if (!쓸만) {
-    ui.alert('「' + 이름 + '」의 머리글이 판매현황 머리글이 아닙니다.\n\n' +
-      '맨 윗줄에 「순번·품목코드」가 없습니다 — 회사명 머리말이 머리글로 들어가 있는 옛 탭입니다.\n' +
-      '세트분리를 한 번 돌리면 제 머리글로 다시 세우고 원장으로 메웁니다.');
-    return;
-  }
-  if (ssText(head[head.length - 1]) !== '회차키') {
-    ui.alert('「' + 이름 + '」의 맨 뒤 칸이 「회차키」가 아닙니다 (' +
-      ssText(head[head.length - 1]) + ').\n' +
-      '손을 대면 무엇을 남길지 알 수 없으므로 그만둡니다.');
-    return;
   }
 
-  var 있는키 = {}, 옛줄수 = 0;
-  if (sh.getLastRow() > 1) {
-    var body = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues();
-    for (var b = 0; b < body.length; b++) {
-      var kv = ssText(body[b][head.length - 1]);
-      if (kv) { 있는키[kv] = true; 옛줄수++; }
+  /*  마지막 회차는 원장보다 「판매현황_고유아이디」가 온전하다 — 스무 칸이 다 있다.
+      그 회차가 탭에서 사라졌으면 여기서 도로 채운다. */
+  var 마지막키 = '', 큰번호 = 0;
+  var 회차줄 = ssio_body(SSIO_TABS.회차);
+  for (var r = 0; r < 회차줄.length; r++) {
+    if (ssText(회차줄[r][2]).replace(/-/g, '').slice(-6) !== 오늘 &&
+        ssText(회차줄[r][0]).substring(0, 6) !== 오늘) continue;
+    var no = ssNum(회차줄[r][3]);
+    if (no >= 큰번호) { 큰번호 = no; 마지막키 = ssText(회차줄[r][0]); }
+  }
+  var 붙임 = [];
+  if (마지막키 && !있는키[마지막키]) {
+    for (var g = 머리줄 + 1; g < idGrid.length; g++) {
+      var row = (idGrid[g] || []).slice(0, width);
+      while (row.length < width) row.push('');
+      if (순번자리 >= 0 && !/^[0-9]+$/.test(ssText(row[순번자리]))) continue;
+      붙임.push(row.concat([SS_DAILY_SRC_PASTE, 마지막키]));
     }
+    if (붙임.length) 있는키[마지막키] = true;
   }
 
   var 복원 = ss_원장에서그날복원_(lgSh.getDataRange().getValues(), 오늘, 있는키, head);
-  if (!복원.rows.length) {
-    var 이미 = [];
-    for (var k in 있는키) if (Object.prototype.hasOwnProperty.call(있는키, k)) 이미.push(k);
-    이미.sort();
-    ui.alert('메울 것이 없습니다.\n\n' +
-      '「' + 이름 + '」에 이미 있는 회차: ' + (이미.join(', ') || '(없음)') + '\n' +
-      '원장에 ' + 오늘 + ' 회차가 더 없거나, 이미 다 들어 있습니다.');
-    return;
-  }
 
-  var all = 복원.rows;
-  if (sh.getLastRow() > 1) {
-    all = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues().concat(복원.rows);
+  var all = 살린줄.concat(붙임).concat(복원.rows);
+  if (!all.length) {
+    ui.alert('메울 것이 없습니다.\n\n' +
+      '원장에 ' + 오늘 + ' 회차가 없고, 「' + SSIO_TABS.입력아이디 + '」에도 쓸 줄이 없습니다.');
+    return;
   }
   all.sort(function (x, y) {
     var a1 = ssText(x[head.length - 1]), b1 = ssText(y[head.length - 1]);
     return a1 < b1 ? -1 : a1 > b1 ? 1 : 0;
   });
 
+  sh = ssio_sheet(이름, head);
   ssio_clearBody(sh);
+  if (sh.getMaxColumns() < head.length) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), head.length - sh.getMaxColumns());
+  }
   if (sh.getMaxRows() < all.length + 1) {
     sh.insertRowsAfter(sh.getMaxRows(), all.length + 1 - sh.getMaxRows() + 10);
   }
+  sh.getRange(1, 1, 1, head.length).setValues([head]);
   ssio_textFormat(sh, head, all.length);
   sh.getRange(2, 1, all.length, head.length).setValues(all);
   ssio_styleHeader(sh, head.length, { bg: '#2c4f6b' });
 
-  ui.alert('「' + 이름 + '」을 메웠습니다.\n\n' +
-    '되살린 회차 : ' + 복원.회차들.join(', ') + '\n' +
-    '되살린 줄   : ' + 복원.rows.length + '행\n' +
-    '원래 있던 줄 : ' + 옛줄수 + '행\n' +
-    '합계        : ' + all.length + '행\n\n' +
-    '★ 되살린 줄은 「' + SS_DAILY_SRC_COL + '」 칸이 「' + SS_DAILY_SRC_LEDGER + '」입니다.\n' +
-    '원장에 안 남는 칸(배송비 3칸 · 상호 · 주문서/사방넷 칸)은 비어 있습니다 —\n' +
-    '원래 비어 있던 것이 아니라 되살릴 수 없는 칸입니다.');
+  var 회차본 = {};
+  for (var q = 0; q < all.length; q++) 회차본[ssText(all[q][head.length - 1])] = (회차본[ssText(all[q][head.length - 1])] || 0) + 1;
+  var 줄글 = [];
+  for (var kk in 회차본) if (Object.prototype.hasOwnProperty.call(회차본, kk)) 줄글.push(kk + ' ' + 회차본[kk] + '행');
+  줄글.sort();
+
+  ui.alert('「' + 이름 + '」을 다시 세웠습니다.\n\n' +
+    줄글.join('\n') + '\n' +
+    '───────────────\n' +
+    '합계 ' + all.length + '행\n\n' +
+    (복원.rows.length
+      ? '★ 원장에서 되살린 회차 : ' + 복원.회차들.join(', ') + ' (' + 복원.rows.length + '행)\n' +
+        '  「' + SS_DAILY_SRC_COL + '」 칸이 「' + SS_DAILY_SRC_LEDGER + '」인 줄입니다.\n' +
+        '  배송비 3칸 · 상호 · 주문서/사방넷 칸은 원장에 안 남아 비어 있습니다 —\n' +
+        '  원래 비어 있던 것이 아니라 되살릴 수 없는 칸입니다.\n'
+      : '원장에서 되살릴 회차는 없었습니다 (다 들어 있습니다).\n') +
+    (버린줄 ? '\n빈 껍데기 ' + 버린줄 + '행은 버렸습니다 (회차키만 있고 자료가 없던 줄).' : ''));
 }
 
 /**

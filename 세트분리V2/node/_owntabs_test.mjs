@@ -1433,11 +1433,52 @@ console.log("\n[0914판매현황] 머리글을 찾는가 — 첫 줄이 아니�
     main.includes("var head = grid[0].slice(0, width)"), "false");
   eq("★ 첫 줄부터 읽던 옛 코드도 사라졌다",
     main.includes("for (var g = 1; g < grid.length; g++) {\n    var row = grid[g].slice"), "false");
-  eq("★ 옛 머리글이 진짜일 때만 옛 줄을 믿는다",
+  eq("★ 옛 머리글이 진짜일 때만 옛 줄을 «이름»으로 믿는다",
     main.includes("var 옛머리쓸만 = false;") &&
     main.includes("if (sh.getLastRow() > 1 && 옛키자리 >= 0 && 옛머리쓸만) {"), "true");
   eq("★ 못 믿을 옛 줄은 원장이 대신한다 (있는키에 안 넣는다)",
     main.includes("for (var kk = 0; kk < keep.length; kk++) {"), "true");
   eq("머리글 줄이 짧아도 폭을 맞춘다",
     main.includes("while (머리.length < width) 머리.push('');"), "true");
+}
+
+/* ══════════════════════════════════════════════════════════════
+ *  [메우기 메뉴] 세트분리를 안 돌리고 그 탭만 다시 세운다
+ *  2026-09-14
+ *
+ *  > "세트분리를 실행하면 문제생기는거 아닌가?"
+ *
+ *  맞는 걱정이다. 세트분리 재실행은 원장의 그 회차를 지우고 다시 쓰므로,
+ *  송장 전파가 이미 붙여 둔 운송장번호가 같이 지워진다. 탭 하나 고치자고
+ *  치를 값이 아니다. 메뉴는 그 탭 하나만 건드려야 한다.
+ * ══════════════════════════════════════════════════════════════ */
+console.log("\n[메우기 메뉴] 세트분리 없이 그 탭만 다시 세운다");
+{
+  const main = 읽기(path.join(뿌리, "gasMain.js"));
+  const 메뉴 = main.slice(main.indexOf("function ss_그날판매현황메우기"));
+
+  eq("★ 머리글을 입력아이디에서 «찾아» 온다",
+    메뉴.includes("var idFound = ssFindSalesHeader(idGrid);"), "true");
+  eq("★ 머리글이 성치 않다고 그만두지 않는다 (다시 세운다)",
+    메뉴.includes("세트분리를 한 번 돌리면 제 머리글로 다시 세우고"), "false");
+  eq("★ 이름을 모르면 «자리»로 옮긴다 (같은 이카운트 내보내기라 자리는 맞다)",
+    메뉴.includes("var 끝 = Math.min(옛키자리, head.length - 2);"), "true");
+  eq("★ 빈 껍데기 줄은 버린다",
+    메뉴.includes("if (순번자리 >= 0 && !/^[0-9]+$/.test(ssText(moved[순번자리]))) { 버린줄++; continue; }"), "true");
+  eq("★ 버린 회차는 «있는키»에 안 들어간다 → 원장이 되살린다",
+    메뉴.includes("있는키[k] = true;"), "true");
+  eq("★ 마지막 회차는 원장 말고 입력아이디에서 채운다 (스무 칸이 다 있다)",
+    메뉴.includes("if (마지막키 && !있는키[마지막키]) {"), "true");
+  eq("★ 원장은 «읽기»만 한다",
+    메뉴.includes("lgSh.getDataRange().getValues()") && !메뉴.includes("lgSh.getRange") , "true");
+  eq("★ 출력 탭은 하나도 안 건드린다",
+    메뉴.includes("SSIO_TABS.출력") || 메뉴.includes("ss_실행"), "false");
+  eq("★ 회차 탭도 안 건드린다 (읽기만)",
+    메뉴.includes("ssio_body(SSIO_TABS.회차)") && !메뉴.includes("ss_회차확정"), "true");
+  eq("★ 머리글을 제 것으로 갈아 끼운다",
+    메뉴.includes("sh.getRange(1, 1, 1, head.length).setValues([head]);"), "true");
+  eq("★ 회차별 줄수를 알려 준다",
+    메뉴.includes("줄글.join('\\n')"), "true");
+  eq("★ 버린 줄이 몇인지도 말한다",
+    메뉴.includes("빈 껍데기 ' + 버린줄 + '행은 버렸습니다"), "true");
 }
