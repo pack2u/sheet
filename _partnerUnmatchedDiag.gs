@@ -182,6 +182,57 @@ function _pud_buildCandidateIndex_() {
     }
   }
 
+  /**
+   * ══════════════════════════════════════════════════════════
+   *  ★ 택배사 탭은 «마감과 같은 눈»으로 읽는다 ★
+   *  2026-09-14
+   *
+   *  > 로젠: 0건        (진단)
+   *  > 로젠 887건 …     (같은 날 같은 탭, 마감)
+   *
+   *  마감은 887줄을 읽는데 진단은 0건이라고 했다. 읽는 길이 둘이었기
+   *  때문이다 — 마감은 머리글을 «이름»으로 찾고, 진단은 표에 적힌 «숫자»를
+   *  썼다. 그 표(_PT_ROZEN_FIXED_COL)는 44칸짜리 옛 양식 기준이라 지금
+   *  탭과 안 맞는다. 오늘 오전에 내가 고친다고 하고 그렇게 만들었다.
+   *
+   *  진단이 원천을 «다르게» 읽으면, 진단 결과는 진단이 아니라 또 하나의
+   *  추측이다. 마감이 쓰는 함수를 그대로 부른다 — 자리표를 여기 또 적지
+   *  않는다. 둘이 갈라질 길 자체를 없앤다.
+   * ══════════════════════════════════════════════════════════
+   */
+  function readCarrier(src, tab) {
+    if (!tab) { idx.state[src] = "탭없음"; return; }
+    if (tab.getLastRow() < 2) { idx.state[src] = "빈탭"; return; }
+
+    var H = (typeof _po_findInvoiceHeader_ === "function")
+      ? _po_findInvoiceHeader_(tab) : { row: 0, uid: -1, inv: -1 };
+    if (!H.row) {
+      //  머리글을 못 찾으면 «못 찾았다»고 적는다. 자리로 넘겨짚지 않는다.
+      idx.state[src] = "머리글못찾음";
+      idx.notes.push(src + ": 「주문번호」·「운송장번호」 머리글을 못 찾았습니다");
+      return;
+    }
+    var lc = tab.getLastColumn();
+    var hv = tab.getRange(H.row, 1, 1, lc).getDisplayValues()[0];
+    var m = (typeof _pep_mapCarrierCols_ === "function") ? _pep_mapCarrierCols_(hv) : {};
+    var nameIdx = (m.name === undefined) ? -1 : m.name;
+    var phoneIdx = (m.phone === undefined) ? -1 : m.phone;
+
+    idx.state[src] = "읽음";
+    var data = tab.getRange(H.row + 1, 1, tab.getLastRow() - H.row, lc).getDisplayValues();
+    for (var i = 0; i < data.length; i++) {
+      push(src, data[i][H.uid], data[i][H.inv],
+        nameIdx >= 0 ? data[i][nameIdx] : "",
+        phoneIdx >= 0 ? data[i][phoneIdx] : "");
+    }
+    idx.notes.push(src + " 칸: " +
+      (typeof _pep_colDesc_ === "function"
+        ? ("송장=" + _pep_colDesc_(hv, H.inv) + " 주문번호=" + _pep_colDesc_(hv, H.uid) +
+           " 이름=" + _pep_colDesc_(hv, nameIdx) + " 전화=" + _pep_colDesc_(hv, phoneIdx))
+        : ("송장열=" + H.inv + " 주문열=" + H.uid)) +
+      " (머리글 " + H.row + "행)");
+  }
+
   var invSS = null;
   try { invSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID); }
   catch (e) { idx.notes.push("거래관리시스템 시트 열기 실패: " + e.message); }
@@ -216,16 +267,17 @@ function _pud_buildCandidateIndex_() {
       readFixed("1주출고", _pt_getSheetByGid(invSS, _PT_WEEKLY_SHIP_GID), _PT_WEEKLY_SHIP_FIXED_COL, 1);
     } catch (e) { idx.notes.push("1주출고 읽기 오류: " + e.message); }
 
-    // ── 로젠 (★ 일일마감 미사용 — 송장수집은 1순위로 씀) ──
+    // ── 로젠 (2026-09-11 부터 자사출고 주 소스) ──
     try {
-      /* ★ 칸 자리는 _PT_ROZEN_FIXED_COL 한 곳에서 온다 ★  (2026-09-14)
-         여기 적혀 있던 {name:9, phone:12, invoice:5, uid:4} 는 «옛 로젠
-         양식»이다. 지금 탭은 44칸짜리라 자리가 통째로 다르고, 머리글도
-         2행이다. 그대로 두면 한 줄도 안 걸리는데 오류는 안 난다. */
-      readFixed("로젠", _pt_getSheetByGid(invSS, _PT_PRIMARY_INVOICE_GID),
-        (typeof _PT_ROZEN_FIXED_COL !== "undefined")
-          ? _PT_ROZEN_FIXED_COL
-          : { name: 6, phone: 9, invoice: 3, uid: 18 }, 2);
+      /* ★ 자리표를 여기 적지 않는다 ★  (2026-09-14, 두 번째 고침)
+         처음엔 {name:9, phone:12, invoice:5, uid:4} 라는 «옛 로젠 양식»이
+         적혀 있었다. 그걸 _PT_ROZEN_FIXED_COL 로 바꿨는데, 그 표는 44칸짜리
+         「주문등록_출력」 기준이라 역시 지금 탭과 안 맞아 «0건»이 됐다.
+         같은 날 마감은 887줄을 읽고 있었다 — 읽는 길이 둘이었던 탓이다.
+
+         숫자를 어디에 적든, 두 군데에 적는 한 언젠가 갈라진다.
+         마감이 쓰는 함수를 그대로 부른다. */
+      readCarrier("로젠", _pt_getSheetByGid(invSS, _PT_PRIMARY_INVOICE_GID));
     } catch (e) { idx.notes.push("로젠 읽기 오류: " + e.message); }
 
     // ── 3-3_병합 (이름+전화 폴백) ──

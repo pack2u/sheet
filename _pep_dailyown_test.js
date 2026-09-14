@@ -87,8 +87,8 @@ check("★ 로젠이 usedByDaily:true 가 됐다",
   diag.includes('{ key: "로젠",            usedByDaily: true },'), true);
 check("★ 옛 false 가 사라졌다",
   diag.includes('{ key: "로젠",            usedByDaily: false },'), false);
-check("★ 칸 자리를 _PT_ROZEN_FIXED_COL 에서 가져온다",
-  diag.includes("? _PT_ROZEN_FIXED_COL"), true);
+check("★ 진단은 자리표 대신 «이름 찾기»를 쓴다 (2차 고침)",
+  diag.includes("readCarrier(") && !diag.includes("? _PT_ROZEN_FIXED_COL"), true);
 check("★ 옛 로젠 양식 숫자가 사라졌다",
   diag.includes("{ name: 9, phone: 12, invoice: 5, uid: 4 }, 1)"), false);
 
@@ -258,6 +258,26 @@ console.log("\n[이름] 뭉쳐 세면 숫자가 거짓말을 한다");
   const web3 = fs.readFileSync("_partnerWebApp.gs", "utf8");
   check("★ 화면이 넷을 갈라 보여 준다",
     web3.includes("· 1주출고 ") && web3.includes("· 합포장 "), true);
+}
+
+
+console.log("\n[진단] 마감과 «같은 눈»으로 읽는다");
+{
+  //  같은 날 같은 탭인데 마감은 887줄, 진단은 0건이었다. 읽는 길이 둘이었다.
+  check("★ 진단이 마감의 머리글 찾기를 쓴다",
+    diag.includes("_po_findInvoiceHeader_(tab)"), true);
+  check("★ 칸 자리도 마감의 이름표를 쓴다",
+    diag.includes("_pep_mapCarrierCols_(hv)"), true);
+  check("★ 로젠은 readCarrier 로 읽는다",
+    diag.includes("readCarrier(\"로젠\", _pt_getSheetByGid(invSS, _PT_PRIMARY_INVOICE_GID));"), true);
+  check("★ 자리표를 진단에 또 적지 않는다",
+    diag.includes("? _PT_ROZEN_FIXED_COL"), false);
+  check("★ 옛 로젠 양식 숫자도 없다",
+    diag.includes("{ name: 9, phone: 12, invoice: 5, uid: 4 }"), false);
+  check("★ 머리글을 못 찾으면 «못 찾았다»고 적는다 (자리로 넘겨짚지 않는다)",
+    diag.includes("idx.state[src] = \"머리글못찾음\";"), true);
+  check("★ 고른 칸을 진단 메모에 남긴다",
+    diag.includes("idx.notes.push(src + \" 칸: \" +"), true);
 }
 
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
