@@ -235,7 +235,16 @@ function partnerUnifiedDailyArchiveManual() {
          없어 (c) 합배송 보강이 0건이던 것을 이것으로 대신한다. */
       (result.detail.ledgerSetsplitNote
         ? "    세트분리 원장: " + (result.detail.ledgerSetsplitRead || 0) + "건 — " +
-          result.detail.ledgerSetsplitNote + "\n"
+          result.detail.ledgerSetsplitNote + "\n" +
+          /* ★ 0 이면 까닭이 거의 하나다 ★  (2026-09-14)
+             원장의 운송장번호는 「🔁 송장 전파」가 채운다. 그리고 세트분리를
+             다시 실행하면 그 회차 줄을 지우고 다시 쓰면서 «빈칸»으로 되돌린다
+             (core.js ssLedgerRow). 그래서 순서가 「세트분리 → 송장 전파」다.
+             숫자만 0 으로 두면 사람은 무엇을 해야 할지 모른다. 적어 준다. */
+          (!(result.detail.ledgerSetsplitRead > 0)
+            ? "    ⚠ 원장에 송장이 없습니다 — 세트분리에서 「🔁 송장 전파」를 먼저 돌리세요." +
+              "\n       (세트분리를 다시 실행하면 그 회차 송장이 지워집니다. 실행 뒤에는 전파를 다시.)\n"
+            : "")
         : "") +
       (result.detail.rozenRead
         ? "    로젠 " + result.detail.rozenRead + "건 — " + (result.detail.rozenCols || "") + "\n"

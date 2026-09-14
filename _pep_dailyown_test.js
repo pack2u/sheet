@@ -310,5 +310,20 @@ console.log("\n[합포장 동봉·샘플] 원장에서 데려온다");
     web4.includes("세트분리 원장: "), true);
 }
 
+
+console.log("\n[원장 0건] 무엇을 해야 하는지 말한다");
+{
+  //  「세트분리 원장: 0건 — 1162줄 중 송장 0건」 — 칸은 찾았는데 값이 없다.
+  //  원장의 운송장번호는 송장 전파가 채우고, 세트분리를 다시 실행하면
+  //  그 회차 줄이 «빈칸»으로 되돌아간다(core.js ssLedgerRow 의 '', '').
+  const web5 = fs.readFileSync("_partnerWebApp.gs", "utf8");
+  check("★ 0 이면 할 일을 적어 준다",
+    web5.includes("⚠ 원장에 송장이 없습니다 — 세트분리에서 「🔁 송장 전파」를 먼저 돌리세요."), true);
+  check("★ 재실행하면 지워진다는 것도 적는다",
+    web5.includes("세트분리를 다시 실행하면 그 회차 송장이 지워집니다"), true);
+  check("★ 0 일 때만 뜬다",
+    web5.includes("!(result.detail.ledgerSetsplitRead > 0)"), true);
+}
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);
