@@ -770,3 +770,97 @@ console.log("\n[대리발송] 출고지 규칙 · 코드로 자동 채우기");
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n대리발송 규칙도 그대로");
 if (실패) process.exit(1);
+
+/* ═══════════════════════════════════════════════════════════════
+   보류 탭에서 고친 코드·품목명이 실제로 반영되는가
+
+   > "미발송으로 빠지는 제품의 경우 우리가 코드와 품목명을 수정하고
+   >  발송 이라고 적으면 그 내용으로 수정되어 넘어가면 좋겠어"
+
+   미발송의 큰 몫이 「품목누락」이다 — 판매현황의 코드가 M_품목정보에 없다.
+   그때 사람이 올바른 코드를 아는데, 여태 적을 자리가 없어 코드를 고쳐 봐야
+   무시됐다. 오히려 키가 코드로 잡히니 조치 자체가 안 먹었다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[보류 조치] 고친 코드·품목명이 반영되는가");
+{
+  const core = 읽기(path.join(뿌리, "core.js"));
+  const masters = 읽기(path.join(뿌리, "gasMasters.js"));
+  const 꺼내기 = new Function(
+    "Utilities", "SpreadsheetApp", "Logger", "module",
+    core + "\n" + "return { ssApplyManualEdits: ssApplyManualEdits };",
+  );
+  const { ssApplyManualEdits } = 꺼내기(null, null, { log() {} }, undefined);
+
+  const 판 = () => ({
+    items: { "GOOD1": { name: "제대로 된 이름" }, "SET1": { name: "세트" } },
+    bom: { "SET1": [{ code: "A", qty: 1 }, { code: "B", qty: 1 }] },
+    override: {},
+  });
+  const u = (고유ID, 원본코드, 품목코드) =>
+    ({ 고유ID, 원본코드, 품목코드, 품목누락: true });
+
+  {
+    const m = 판();
+    m.override["U1|OLD"] = { 조치: "발송", 새코드: "GOOD1", 새이름: "" };
+    const units = [u("U1", "OLD", "OLD")];
+    const w = [];
+    eq("★ 코드를 바꾼다", ssApplyManualEdits(units, m, w), 1);
+    eq("새 코드가 들어갔다", units[0].품목코드, "GOOD1");
+    eq("★ 품목누락이 풀린다", units[0].품목누락, "false");
+    eq("★ 원본코드는 안 바꾼다 (조치의 열쇠다)", units[0].원본코드, "OLD");
+    eq("경고 없음", w.length, 0);
+  }
+
+  {
+    //  M_품목정보에 없는 코드로 고치면 «안 바꾸고» 말해 준다
+    const m = 판();
+    m.override["U1|OLD"] = { 조치: "발송", 새코드: "없는코드", 새이름: "" };
+    const units = [u("U1", "OLD", "OLD")];
+    const w = [];
+    eq("★ 모르는 코드는 안 바꾼다", ssApplyManualEdits(units, m, w), 0);
+    eq("옛 코드 그대로", units[0].품목코드, "OLD");
+    eq("오류로 알린다", w.length && w[0].code, "MANUAL_CODE_UNKNOWN");
+  }
+
+  {
+    //  세트로 고치면 바꾸되 «쪼개지지 않는다»고 알린다
+    const m = 판();
+    m.override["U1|OLD"] = { 조치: "발송", 새코드: "SET1", 새이름: "" };
+    const units = [u("U1", "OLD", "OLD")];
+    const w = [];
+    ssApplyManualEdits(units, m, w);
+    eq("세트로도 바꾼다", units[0].품목코드, "SET1");
+    eq("★ 세트라는 걸 알린다", w.length && w[0].code, "MANUAL_CODE_IS_SET");
+  }
+
+  {
+    //  이름만 고친 경우
+    const m = 판();
+    m.override["U1|OLD"] = { 조치: "발송", 새코드: "", 새이름: "손으로 적은 이름" };
+    const units = [u("U1", "OLD", "OLD")];
+    eq("이름만도 반영된다", ssApplyManualEdits(units, m, []), 1);
+    eq("수정이름에 담긴다", units[0].수정이름, "손으로 적은 이름");
+    eq("코드는 그대로", units[0].품목코드, "OLD");
+  }
+
+  {
+    //  조치는 있는데 고친 것이 없으면 아무 일도 안 한다
+    const m = 판();
+    m.override["U1|OLD"] = { 조치: "발송", 새코드: "", 새이름: "" };
+    eq("고친 게 없으면 안 건드린다",
+      ssApplyManualEdits([u("U1", "OLD", "OLD")], m, []), 0);
+  }
+
+  //  ── 자리와 배선 ──
+  eq("★ Enrich «앞»에서 돈다",
+    core.indexOf("ssApplyManualEdits(units, masters, warnings);") <
+    core.indexOf("ssEnrich(units, masters, warnings);"), "true");
+  eq("★ 고친 이름이 품목명을 이긴다", core.includes("if (ssText(u.수정이름)) u.품목명"), "true");
+  eq("수동조치 탭에 새 칸 둘", core.includes("'최근적용회차', '새코드', '새품목명'"), "true");
+  eq("★ 코드를 고쳐도 원본코드를 찾는다 (byUid)", masters.includes("byUid[uid]"), "true");
+  eq("못 걸었으면 말해 준다", masters.includes("바뀐코드못품"), "true");
+  eq("override 에 새코드가 실린다", masters.includes("새코드: ssText(body[i][9])"), "true");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n보류 조치도 그대로");
+if (실패) process.exit(1);

@@ -81,8 +81,21 @@ var SS_PARTNER_HEADER = SS_OUT_HEADER.concat(['업체코드', '업체명', '조�
 var SS_NONSHIP_HEADER = SS_OUT_HEADER.concat(['비배송사유']);
 
 /** 수동조치 이력 — 보류를 사람이 되살린 기록. 지우지 않는다 */
+/**
+ * 수동조치 기록.
+ *
+ * ★ 맨 뒤의 「새코드·새품목명」 ★  (2026-09-14)
+ *   > "미발송으로 빠지는 제품의 경우 우리가 코드와 품목명을 수정하고
+ *   >  발송 이라고 적으면 그 내용으로 수정되어 넘어가면 좋겠어"
+ *
+ *   미발송의 큰 몫이 「품목누락」이다 — 판매현황의 코드가 M_품목정보에 없다.
+ *   그때 사람이 올바른 코드를 아는데, 여태 그걸 적을 자리가 없어 코드를 고쳐
+ *   봐야 무시됐다(오히려 조치 자체가 안 먹었다 — 키가 코드로 잡히니까).
+ *
+ *   앞이 아니라 맨 뒤에 붙인다. 앞 열이 밀리면 자리로 읽는 곳이 조용히 어긋난다.
+ */
 var SS_MANUAL_HEADER = ['등록일', '고유ID', '원본코드', '조치', '업체코드', '메모',
-  '등록회차', '등록시각', '최근적용회차'];
+  '등록회차', '등록시각', '최근적용회차', '새코드', '새품목명'];
 
 var SS_VENDOR_HEADER = ['업체코드', '업체명'];
 
@@ -659,6 +672,11 @@ function ssEnrich(units, masters, warnings) {
     u.품목명 = m.name || u.원본품목명;
     u.단품배송비 = ssNum(m.unitFee);
     u.배송비규칙원문 = ssText(m.feeRuleRaw);
+    /*  ★ 사람이 보류 탭에서 고쳐 적은 품목명이 이긴다 ★  (2026-09-14)
+        마스터 이름이 실제 보낼 것과 다를 때가 있다(묶음·증정·특판). 사람이
+        고쳐 적었다면 그 줄에 한해 그 이름으로 나가야 한다 — 송장에 찍히는
+        것이 그 이름이고, 업체가 그걸 보고 담는다. */
+    if (ssText(u.수정이름)) u.품목명 = ssText(u.수정이름);
   }
   return units;
 }
@@ -1494,6 +1512,63 @@ function ssAutofillPartner(code, items, 기존) {
   return { ok: true, why: '', 채움: 채움 };
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  보류 탭에서 고친 코드·품목명을 실제로 반영한다
+ *  2026-09-14
+ *
+ *  > "미발송으로 빠지는 제품의 경우 우리가 코드와 품목명을 수정하고
+ *  >  발송 이라고 적으면 그 내용으로 수정되어 넘어가면 좋겠어"
+ *
+ *  ★ ssEnrich «앞»에서 돈다 ★
+ *    품목명·배송비·재고는 전부 품목코드로 끌어온다. 코드를 바꿔 놓고
+ *    Enrich 를 돌려야 새 코드의 것이 붙는다. 뒤에서 바꾸면 이름만 바뀌고
+ *    배송비는 옛 코드 것이 남는다 — 그게 제일 나쁘다. 맞아 보이는데 틀리니까.
+ *
+ *  ★ 원본코드는 «안» 바꾼다 ★
+ *    조치를 거는 열쇠가 원본코드다. 그것까지 바꾸면 다음 실행에서 자기가
+ *    건 조치를 자기가 못 찾는다.
+ *
+ *  ★ 새 코드가 세트면 말해 준다 ★
+ *    세트 분해(ssExplode)는 이미 끝난 뒤다. 세트 코드로 바꾸면 쪼개지지 않고
+ *    한 줄로 나간다 — 조용히 그러면 몸통만 나가고 뚜껑이 빠진다.
+ *
+ *  @return {number} 바꾼 줄 수
+ * ══════════════════════════════════════════════════════════════
+ */
+function ssApplyManualEdits(units, masters, warnings) {
+  var override = (masters && masters.override) || {};
+  var items = (masters && masters.items) || {};
+  var bom = (masters && masters.bom) || {};
+  var n = 0;
+  for (var i = 0; i < units.length; i++) {
+    var u = units[i];
+    var ov = override[ssText(u.고유ID) + '|' + ssText(u.원본코드)];
+    if (!ov) continue;
+    var 새코드 = ssText(ov.새코드), 새이름 = ssText(ov.새이름);
+    if (!새코드 && !새이름) continue;
+
+    if (새코드 && 새코드 !== ssText(u.품목코드)) {
+      if (!items[새코드]) {
+        ssWarn(warnings, '오류', 'MANUAL_CODE_UNKNOWN', u.고유ID + ' → ' + 새코드,
+          '보류 탭에서 고친 코드가 M_품목정보에 없습니다. 코드를 확인하세요 — 그대로 두면 옛 코드로 나갑니다.');
+        continue;
+      }
+      if (bom[새코드] && bom[새코드].length) {
+        ssWarn(warnings, '주의', 'MANUAL_CODE_IS_SET', u.고유ID + ' → ' + 새코드,
+          '고친 코드가 «세트»입니다. 세트 분해는 이미 끝난 뒤라 쪼개지지 않고 한 줄로 나갑니다 — ' +
+          '몸통·뚜껑을 따로 적어 주시거나, 판매현황을 고쳐 다시 실행하세요.');
+      }
+      u.품목코드 = 새코드;
+      u.품목누락 = false;
+      u.수정코드 = true;
+      n++;
+    }
+    if (새이름) { u.수정이름 = 새이름; n++; }
+  }
+  return n;
+}
+
 function ssSortForPick(list) {
   if (!list || list.length < 2) return list;
   for (var i = 0; i < list.length; i++) list[i].__자리 = i;
@@ -1521,6 +1596,9 @@ function ssRun(grid, masters, cfg) {
   var lines = ssNormalize(grid, cfg, warnings);
   var 지문 = ssFingerprint(lines);
   var units = ssExplode(lines, masters, warnings);
+  /*  보류 탭에서 고친 코드·품목명을 «Enrich 앞»에서 반영한다.
+      품목명·배송비·재고가 전부 코드로 끌려오므로 여기서 바꿔야 새 코드 것이 붙는다. */
+  ssApplyManualEdits(units, masters, warnings);
   ssEnrich(units, masters, warnings);
   ssAssignCondition(units, masters, cfg);
   ssAllocateStock(units, masters);

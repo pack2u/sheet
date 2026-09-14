@@ -641,7 +641,7 @@ function ssm_captureManual(회차키) {
 
   // 보류 탭에는 원본코드가 없다. 원장에서 (고유ID, 품목코드) → 원본코드를 찾는다.
   // 원장은 「그 시트에 적힌 헤더」로 읽는다. 코드 상수로 읽으면 열이 늘어난 뒤 어긋난다.
-  var back = {};
+  var back = {}, byUid = {};
   var lg = ssio_ss().getSheetByName(SSIO_TABS.원장);
   if (lg && lg.getLastRow() > 1) {
     var lcols = lg.getLastColumn();
@@ -654,7 +654,16 @@ function ssm_captureManual(회차키) {
     if (li['고유ID'] !== undefined && li['품목코드'] !== undefined && li['원본품목코드'] !== undefined) {
       var lv = lg.getRange(2, 1, lg.getLastRow() - 1, lcols).getValues();
       for (var r = 0; r < lv.length; r++) {
-        back[ssText(lv[r][li['고유ID']]) + '|' + ssText(lv[r][li['품목코드']])] = ssText(lv[r][li['원본품목코드']]);
+        var _u = ssText(lv[r][li['고유ID']]);
+        var _o = ssText(lv[r][li['원본품목코드']]);
+        back[_u + '|' + ssText(lv[r][li['품목코드']])] = _o;
+        /*  ★ 코드를 고치면 back 이 안 맞는다 ★  (2026-09-14)
+            사람이 보류 탭에서 품목코드를 올바른 것으로 고치면 (고유ID|새코드)
+            조합이 원장에 없다. 그러면 원본코드를 못 찾아 키가 어긋나고,
+            **조치 자체가 통째로 무시된다.** 고친 사람은 이유를 알 길이 없다.
+            그래서 고유ID 만으로도 원본코드를 찾을 수 있게 따로 모아 둔다.
+            한 주문에 품목이 여럿이면 어느 줄인지 모르므로 그때는 안 쓴다. */
+        if (_u) (byUid[_u] || (byUid[_u] = [])).push({ 원본: _o, 이름: li['품목명'] !== undefined ? ssText(lv[r][li['품목명']]) : '' });
       }
     }
   }
@@ -677,7 +686,7 @@ function ssm_captureManual(회차키) {
 
   var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
   var now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
-  var add = [], updated = 0;
+  var add = [], updated = 0, 바뀐코드못품 = [];
   for (var i = 0; i < v.length; i++) {
     var 적은값 = ssText(v[i][idx['조치']]);
     var 사유 = ssText(v[i][idx['보류사유']]);
@@ -701,25 +710,67 @@ function ssm_captureManual(회차키) {
     if (조치 !== '발송' && 조치 !== '대리발송') continue;
     var uid = ssText(v[i][idx['사방넷주문번호']]);
     var code = ssText(v[i][idx['품목코드']]);
-    var 원본 = back[uid + '|' + code] || code;
-    var k = today + '|' + uid + '|' + 원본;
+    var 이름 = ssText(v[i][idx['품목명']]);
     if (!uid) continue;
+
+    /*  ★ 사람이 코드를 고쳤는가 ★
+        원장에 (고유ID|그 코드) 가 있으면 안 고친 것이다. 없으면 고친 것인데,
+        그때 원본코드를 모르면 조치가 통째로 무시된다 — 고친 사람은 이유를 모른다.
+        그 고유ID 의 원장 줄이 «하나뿐»이면 그 줄에 건다. 여럿이면 어느 줄인지
+        기계가 정할 수 없으니 건드리지 않고 말해 준다. */
+    var 원본 = back[uid + '|' + code];
+    var 새코드 = '', 새이름 = '';
+    if (원본 === undefined) {
+      var 줄들 = byUid[uid] || [];
+      if (줄들.length === 1) {
+        원본 = 줄들[0].원본;
+        새코드 = code;
+        if (이름 && 이름 !== 줄들[0].이름) 새이름 = 이름;
+      } else {
+        원본 = code;   // 예전 그대로 — 아래에서 키가 안 맞아 조용히 빠진다
+        if (줄들.length > 1) {
+          바뀐코드못품.push(uid + ' → ' + code + ' (그 주문에 품목 ' + 줄들.length + '개)');
+        }
+      }
+    } else {
+      //  코드는 그대로고 이름만 고쳤을 수 있다
+      var 원이름 = '';
+      var L0 = byUid[uid] || [];
+      for (var li2 = 0; li2 < L0.length; li2++) if (L0[li2].원본 === 원본) { 원이름 = L0[li2].이름; break; }
+      if (이름 && 원이름 && 이름 !== 원이름) 새이름 = 이름;
+    }
+    var k = today + '|' + uid + '|' + 원본;
 
     if (at[k] !== undefined) {
       var b0 = at[k];
       var 옛조치 = ssText(body[b0][3]);
       var 옛업체 = ssText(body[b0][4]).toUpperCase();
       var 옛회차 = ssText(body[b0][6]);
+      var 옛새코드 = ssText(body[b0][9]);
+      var 옛새이름 = ssText(body[b0][10]);
       // 값도 회차도 그대로면 손댈 것이 없다. 하나라도 다르면 새 값으로 되살린다.
-      if (옛조치 === 조치 && 옛업체 === 업체 && 옛회차 === (회차키 || '')) continue;
-      sh.getRange(b0 + 2, 4, 1, 6).setValues([[조치, 업체, 메모, 회차키 || '', now, '']]);
+      if (옛조치 === 조치 && 옛업체 === 업체 && 옛회차 === (회차키 || '') &&
+          옛새코드 === 새코드 && 옛새이름 === 새이름) continue;
+      sh.getRange(b0 + 2, 4, 1, 8).setValues([[조치, 업체, 메모, 회차키 || '', now, '', 새코드, 새이름]]);
       updated++;
       continue;
     }
     at[k] = body.length + add.length;
-    add.push([today, uid, 원본, 조치, 업체, 메모, 회차키 || '', now, '']);
+    add.push([today, uid, 원본, 조치, 업체, 메모, 회차키 || '', now, '', 새코드, 새이름]);
   }
   if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, SS_MANUAL_HEADER.length).setValues(add);
+  /*  ★ 못 건 것은 «조용히» 두지 않는다 ★
+      한 주문에 품목이 여럿인데 코드를 고치면 어느 줄인지 기계가 못 정한다.
+      그때 아무 말도 안 하면 사람은 고쳤는데 안 먹는 이유를 영영 모른다. */
+  if (바뀐코드못품.length) {
+    try {
+      SpreadsheetApp.getActiveSpreadsheet().toast(
+        '코드를 고쳤지만 어느 줄인지 정할 수 없었습니다 (' + 바뀐코드못품.length + '건)' +
+        String.fromCharCode(10) + 바뀐코드못품.slice(0, 3).join(String.fromCharCode(10)) +
+        String.fromCharCode(10) + '한 주문에 품목이 여럿입니다 — 코드는 그대로 두고 조치만 적어 주세요.',
+        '수동조치', 12);
+    } catch (eT) {}
+  }
   return add.length + updated;
 }
 
@@ -759,7 +810,9 @@ function ssm_loadManual(cfg, 회차키) {
     out[uid + '|' + code] = {
       조치: 조치,
       업체코드: ssText(body[i][4]).toUpperCase(),
-      메모: ssText(body[i][5])
+      메모: ssText(body[i][5]),
+      새코드: ssText(body[i][9]),
+      새이름: ssText(body[i][10])
     };
   }
   return out;
