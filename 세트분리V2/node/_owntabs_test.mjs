@@ -1086,6 +1086,35 @@ console.log("\n[송장출력] 한 시트로 합치는가");
   eq("무엇을 합쳤는지 남긴다", merged.합친것.join(" + "), "로젠택배 2 + 로젠택배-도서산간 1");
 
   {
+    //  ★ 합친 뒤 «출고지 → 품목» 으로 다시 센다 ★
+    //    맨 뒤에 뭉쳐 서면 그 한 줄 때문에 창고를 한 번 더 돌아야 한다.
+    const 줄 = (출고지, 코드, 표) => {
+      const r = new Array(SS_OUT_HEADER.length).fill('');
+      r[SS_OUT_HEADER.indexOf('출고지')] = 출고지;
+      r[SS_OUT_HEADER.indexOf('품목코드')] = 코드;
+      r[SS_OUT_HEADER.indexOf('순번')] = 표;
+      return r;
+    };
+    const 섬줄 = (출고지, 코드, 표) => {
+      const r = new Array(SS_ISLAND_HEADER.length).fill('');
+      r[0] = '제주';
+      r[4 + SS_OUT_HEADER.indexOf('출고지')] = 출고지;
+      r[4 + SS_OUT_HEADER.indexOf('품목코드')] = 코드;
+      r[4 + SS_OUT_HEADER.indexOf('순번')] = 표;
+      return r;
+    };
+    const m3 = ssb_mergePacks_([
+      { name: '로젠택배', vals: [SS_OUT_HEADER.slice(), 줄('평택', 'B', 1), 줄('평택', 'A', 2)], rows: 2 },
+      { name: '로젠택배-도서산간', vals: [SS_ISLAND_HEADER.slice(), 섬줄('평택', 'A', 3)], rows: 1 },
+    ]);
+    const iS = SS_OUT_HEADER.indexOf('순번');
+    const iC = SS_OUT_HEADER.indexOf('품목코드');
+    const 펴 = m3.vals.slice(1).map((r) => r[iC] + r[iS]).join(' ');
+    eq('★ 도서산간이 제 자리로 들어간다', 펴, 'A2 A3 B1');
+    eq('맨 뒤에 안 붙는다', m3.vals[m3.vals.length - 1][iC], 'B');
+  }
+
+  {
     //  빈 탭은 건너뛴다
     const m2 = ssb_mergePacks_([
       { name: "로젠택배", vals: 일반, rows: 2 },

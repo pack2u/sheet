@@ -982,6 +982,33 @@ function ssb_mergePacks_(packs) {
       out.push(v[r].slice(off, off + head.length));
     }
   }
+
+  /* ★ 합친 뒤에 «다시» 정렬한다 ★  (2026-09-14)
+     > "맨 하단에 붙어 있네.."
+
+     탭을 차례로 이어 붙이면 도서산간 몇 줄이 맨 뒤에 뭉쳐 선다. 그러면
+     그 한 줄 때문에 창고를 한 번 더 돌아야 한다 — 정렬을 넣은 이유가
+     바로 그것이었는데 합치면서 되돌아간 셈이다.
+     탭 안에서는 이미 출고지→품목 순이니, 합친 뒤 같은 규칙으로 한 번 더 센다.
+
+     들어온 차례를 자리표로 들고 비교한다 — 엔진이 안정 정렬이 아니어도
+     결과가 안 흔들린다. 회차마다 순서가 달라지면 어제 것과 못 견준다. */
+  var i출고지 = head.indexOf('출고지');
+  var i품목 = head.indexOf('품목코드');
+  if (i출고지 >= 0 && i품목 >= 0 && out.length > 2) {
+    var 몸통 = out.slice(1);
+    for (var z = 0; z < 몸통.length; z++) 몸통[z].__자리 = z;
+    몸통.sort(function (a, b) {
+      var x = ssText(a[i출고지]), y = ssText(b[i출고지]);
+      if (x !== y) return x < y ? -1 : 1;
+      var m = ssText(a[i품목]), n = ssText(b[i품목]);
+      if (m !== n) return m < n ? -1 : 1;
+      return a.__자리 - b.__자리;
+    });
+    for (var z2 = 0; z2 < 몸통.length; z2++) delete 몸통[z2].__자리;
+    out = [head].concat(몸통);
+  }
+
   return { name: '로젠택배', vals: out, rows: out.length - 1, 합친것: 이름들 };
 }
 
