@@ -1043,6 +1043,106 @@ function _pep_escapeHtml_(text) {
 }
 
 /** 대리발송 Push 완료 HTML 요약 (모달 다이얼로그용) */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  줄 하나에서 업체 접두를 읽는다 — 대조와 푸시가 «같은 눈»으로 본다
+ *  2026-09-14
+ *
+ *  > "대리공급 푸시시 구번젼 세트분리의 대리발송탭의 주문건이 누락되는
+ *  >  경우가 있었어 금요일에"
+ *
+ *  원본과 푸시를 맞대 보려면 원본 줄을 세야 하는데, 세는 규칙과 푸시하는
+ *  규칙이 «따로» 있으면 그 차이 자체가 새 거짓말이 된다. 한 군데서 읽는다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pep_rowPrefix_(row) {
+  var rawCode = String(row[_PEP_CODE_COL] || "").trim();
+  var rawName = String(row[_PEP_ITEM_COL] || "").trim();
+
+  var codePfx =
+    rawCode.length >= 2 ? _pep_resolvePrefixAlias_(rawCode.substring(0, 2)) : "";
+  var namePfx = "";
+  var m = rawName.replace(/^[^a-zA-Z]*/, "").match(/^([a-zA-Z]{2})/);
+  if (m) namePfx = _pep_resolvePrefixAlias_(m[1]);
+
+  var pfx = "";
+  if (codePfx && (_PEP_VENDOR_DIRECT_MAP_[codePfx] || _PEP_VENDOR_LABELS_[codePfx])) {
+    pfx = codePfx;
+  } else if (namePfx && (_PEP_VENDOR_DIRECT_MAP_[namePfx] || _PEP_VENDOR_LABELS_[namePfx])) {
+    pfx = namePfx;
+  }
+  return { pfx: pfx, rawCode: rawCode, rawName: rawName, 빈줄: !rawCode && !rawName };
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  원본(세트분리 「대리발송」 탭)을 업체별로 센다
+ *
+ *  ★ 왜 세는가 ★
+ *    푸시는 여러 이유로 줄을 건너뛴다 — 이미 올렸다, 겹쳤다, 매핑이 없다,
+ *    파일이 없다, 시간이 다 돼 멈췄다. 이유가 있는 건 괜찮다. 무서운 것은
+ *    «이유 없이 사라진 줄»이다. 그건 아무도 모른다 — 금요일이 그랬다.
+ *
+ *    그래서 원본을 먼저 세어 두고, 끝나고 나서
+ *      원본 = 푸시 + (이유 있는 스킵) + (아직 안 지나간 줄) + ★미확인★
+ *    이 맞는지 본다. 미확인이 0 이 아니면 그 줄을 화면에 이름째로 적는다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pep_censusSource_(srcAll) {
+  var byPfx = {}, 접두없음 = 0, 빈줄 = 0, 총 = 0;
+  for (var i = 0; i < srcAll.length; i++) {
+    var p = _pep_rowPrefix_(srcAll[i]);
+    if (p.빈줄) { 빈줄++; continue; }
+    총++;
+    if (!p.pfx) { 접두없음++; continue; }
+    byPfx[p.pfx] = (byPfx[p.pfx] || 0) + 1;
+  }
+  return { byPfx: byPfx, 접두없음: 접두없음, 빈줄: 빈줄, 총: 총 };
+}
+
+/**
+ * 원본과 결과를 맞대 본다.
+ *
+ * @param census   _pep_censusSource_ 결과
+ * @param 결과     줄번호 → 사유 ('푸시' / '이미' / '겹침' / …). 안 적힌 줄이 곧 미확인
+ * @param srcAll   원본 줄들 (미확인 줄의 이름을 적기 위해)
+ * @return {{rows: Array, 미확인: number, 미확인줄: Array}}
+ */
+function _pep_reconcile_(census, 결과, srcAll) {
+  var 사유들 = ["푸시", "이미", "겹침", "매핑없음", "파일없음", "쓰기실패", "앞서처리", "아직", "접두없음"];
+  var 표 = {}, 미확인줄 = [];
+
+  for (var i = 0; i < srcAll.length; i++) {
+    var p = _pep_rowPrefix_(srcAll[i]);
+    if (p.빈줄 || !p.pfx) continue;
+    if (!표[p.pfx]) {
+      표[p.pfx] = { 원본: 0, 미확인: 0 };
+      for (var s = 0; s < 사유들.length; s++) 표[p.pfx][사유들[s]] = 0;
+    }
+    표[p.pfx].원본++;
+    var why = 결과[i] || "";
+    if (why && 표[p.pfx][why] !== undefined) {
+      표[p.pfx][why]++;
+    } else {
+      표[p.pfx].미확인++;
+      if (미확인줄.length < 30) {
+        미확인줄.push("R" + (i + 1) + " [" + p.pfx + "] " +
+          (p.rawCode || "(코드없음)") + " " + p.rawName.substring(0, 24));
+      }
+    }
+  }
+
+  var rows = [], 미확인 = 0;
+  var keys = Object.keys(표).sort();
+  for (var k = 0; k < keys.length; k++) {
+    var v = 표[keys[k]];
+    v.접두 = keys[k];
+    미확인 += v.미확인;
+    rows.push(v);
+  }
+  return { rows: rows, 미확인: 미확인, 미확인줄: 미확인줄 };
+}
+
 function _pep_buildPushSummaryHtml_(opts) {
   var pushed = opts.pushed || 0;
   var pushedByPfx = opts.pushedByPfx || {};
@@ -1056,6 +1156,8 @@ function _pep_buildPushSummaryHtml_(opts) {
   var skipNoMapList = opts.skipNoMapList || [];
   var aliasCnt = opts.aliasCnt || 0;
   var errorLogs = opts.errorLogs || [];
+  var 대조 = opts.대조 || null;
+  var 원본센 = opts.원본센 || null;
   var vendorLabels =
     typeof _PEP_VENDOR_LABELS_ !== "undefined" ? _PEP_VENDOR_LABELS_ : {};
 
@@ -1089,6 +1191,11 @@ function _pep_buildPushSummaryHtml_(opts) {
   h += ".err-line{padding:4px 0;border-bottom:1px solid #fee2e2}";
   h += ".err-line:last-child{border:0}";
   h += ".empty{padding:20px;text-align:center;color:#94a3b8;background:#fff;border:1px dashed #cbd5e1;border-radius:10px}";
+  h += ".bad{font-weight:800;font-size:15px;color:#fff;background:#dc2626;text-align:right;border-radius:6px}";
+  h += ".sum td{background:#f8fafc;font-weight:700;border-top:2px solid #cbd5e1}";
+  h += ".alarm{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:11px 14px;margin-bottom:10px;font-weight:700}";
+  h += ".okbar{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:10px;padding:11px 14px;margin-bottom:10px;font-weight:600}";
+  h += ".note{color:#64748b;font-size:12px;margin:8px 2px 0}";
   h += ".btn{display:block;width:140px;margin:20px auto 4px;padding:11px 0;background:#2563eb;color:#fff;border:0;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600}";
   h += ".btn:hover{background:#1d4ed8}";
   h += "</style></head><body>";
@@ -1101,6 +1208,77 @@ function _pep_buildPushSummaryHtml_(opts) {
   h += "<div class=\"card c-temp\"><span class=\"num\">" + tempNew + "</span><span class=\"lbl\">임시기록 신규</span></div>";
   h += "<div class=\"card c-alias\"><span class=\"num\">" + aliasCnt + "</span><span class=\"lbl\">별칭 로드</span></div>";
   h += "</div>";
+
+  /* ══════════════════════════════════════════════════════════════
+   *  ★ 원본 대조 — 「대리발송 탭에 있던 것」과 「나간 것」을 맞대 본다 ★
+   *  2026-09-14
+   *
+   *  > "대리발송 텝의 업체별 갯수와 푸시된 갯수를 확인하여 결과값을 알려주는
+   *  >  기능을 추가해줘"
+   *
+   *  Push 건수만 보면 「많이 나갔네」로 끝난다. 원본이 몇이었는지를 모르니
+   *  덜 나간 것을 알 길이 없다. 금요일에 그렇게 묻혔다.
+   *
+   *  ★ 미확인이 이 표의 전부다 ★
+   *    까닭이 있는 건 괜찮다 — 이미 올렸다, 겹쳤다, 매핑이 없다, 아직 안 갔다.
+   *    미확인은 «까닭 없이 빠진 줄»이다. 0 이 아니면 붉게 칠하고 줄까지 적는다.
+   * ══════════════════════════════════════════════════════════════ */
+  if (대조 && 대조.rows && 대조.rows.length) {
+    var 미확인총 = 대조.미확인 || 0;
+    h += "<h3>🧾 원본 대조 (대리발송 탭 ↔ Push)</h3>";
+    if (미확인총 > 0) {
+      h += "<div class=\"alarm\">★ 까닭 없이 빠진 줄이 " + 미확인총 + "건 있습니다. 아래 붉은 칸과 목록을 확인하세요.</div>";
+    } else {
+      h += "<div class=\"okbar\">✔ 원본의 모든 줄이 까닭과 함께 설명됩니다 — 말없이 빠진 줄 없음</div>";
+    }
+    h += "<table class=\"vendor-table\"><thead><tr>";
+    h += "<th>접두</th><th>업체명</th>";
+    h += "<th style=\"text-align:right\">원본</th>";
+    h += "<th style=\"text-align:right\">Push</th>";
+    h += "<th style=\"text-align:right\">이미</th>";
+    h += "<th style=\"text-align:right\">겹침</th>";
+    h += "<th style=\"text-align:right\">매핑·파일</th>";
+    h += "<th style=\"text-align:right\">아직</th>";
+    h += "<th style=\"text-align:right\">미확인</th>";
+    h += "</tr></thead><tbody>";
+    var 합 = { 원본: 0, 푸시: 0, 이미: 0, 겹침: 0, 못감: 0, 아직: 0, 미확인: 0 };
+    for (var ci = 0; ci < 대조.rows.length; ci++) {
+      var v = 대조.rows[ci];
+      var 못감 = (v["매핑없음"] || 0) + (v["파일없음"] || 0) + (v["쓰기실패"] || 0);
+      var 아직 = (v["아직"] || 0) + (v["앞서처리"] || 0);
+      합.원본 += v.원본; 합.푸시 += v["푸시"] || 0; 합.이미 += v["이미"] || 0;
+      합.겹침 += v["겹침"] || 0; 합.못감 += 못감; 합.아직 += 아직; 합.미확인 += v.미확인;
+      h += "<tr>";
+      h += "<td><span class=\"pfx\">" + _pep_escapeHtml_(v.접두) + "</span></td>";
+      h += "<td>" + _pep_escapeHtml_(vendorLabels[v.접두] || "(미등록)") + "</td>";
+      h += "<td class=\"cnt\">" + v.원본 + "</td>";
+      h += "<td class=\"cnt\">" + (v["푸시"] || 0) + "</td>";
+      h += "<td class=\"cnt" + ((v["이미"] || 0) ? "" : " zero") + "\">" + (v["이미"] || 0) + "</td>";
+      h += "<td class=\"cnt" + ((v["겹침"] || 0) ? "" : " zero") + "\">" + (v["겹침"] || 0) + "</td>";
+      h += "<td class=\"cnt" + (못감 ? "" : " zero") + "\">" + 못감 + "</td>";
+      h += "<td class=\"cnt" + (아직 ? "" : " zero") + "\">" + 아직 + "</td>";
+      h += "<td class=\"" + (v.미확인 ? "bad" : "cnt zero") + "\">" + v.미확인 + "</td>";
+      h += "</tr>";
+    }
+    h += "<tr class=\"sum\"><td colspan=\"2\">합계</td>";
+    h += "<td class=\"cnt\">" + 합.원본 + "</td><td class=\"cnt\">" + 합.푸시 + "</td>";
+    h += "<td class=\"cnt\">" + 합.이미 + "</td><td class=\"cnt\">" + 합.겹침 + "</td>";
+    h += "<td class=\"cnt\">" + 합.못감 + "</td><td class=\"cnt\">" + 합.아직 + "</td>";
+    h += "<td class=\"" + (합.미확인 ? "bad" : "cnt") + "\">" + 합.미확인 + "</td></tr>";
+    h += "</tbody></table>";
+
+    if (원본센 && 원본센.접두없음) {
+      h += "<div class=\"note\">업체 접두를 못 읽은 줄 " + 원본센.접두없음 +
+        "건은 위 표에 없습니다 (어느 업체 것인지 알 수 없는 줄입니다). 「스킵 내역」에서 줄번호를 보세요.</div>";
+    }
+    if (대조.미확인줄 && 대조.미확인줄.length) {
+      h += "<h3>★ 까닭 없이 빠진 줄</h3><div class=\"err-box\">";
+      for (var mi = 0; mi < 대조.미확인줄.length; mi++) {
+        h += "<div class=\"err-line\">" + _pep_escapeHtml_(대조.미확인줄[mi]) + "</div>";
+      }
+      h += "</div>";
+    }
+  }
 
   h += "<h3>🏭 업체별 Push 건수</h3>";
   var pfxKeys = Object.keys(pushedByPfx).sort(function (a, b) {
@@ -1876,6 +2054,16 @@ function _pep_pushCore_(silent) {
   var errorLogs = [];
   var srcUidWrites = []; // 미사용
 
+  /* ★ 원본을 먼저 세어 둔다 ★  (2026-09-14)
+     > "대리발송 텝의 업체별 갯수와 푸시된 갯수를 확인하여 결과값을 알려주는"
+
+     푸시는 여러 까닭으로 줄을 건너뛴다 — 이미 올렸다, 겹쳤다, 매핑이 없다,
+     파일이 없다, 시간이 다 돼 멈췄다. 까닭이 있는 건 괜찮다. 무서운 것은
+     «까닭 없이 사라진 줄»이다. 그건 아무도 모른다 — 금요일이 그랬다.
+     줄마다 무슨 일이 있었는지 적어 두고, 끝나고 원본과 맞대 본다. */
+  var _원본센_ = _pep_censusSource_(srcAll);
+  var _줄결과_ = {};
+
   /* ── 이어달리기 ────────────────────────────────────────────
      커서에 «멈춘 일자-No.»를 적어 둔다. 줄번호만 적으면 그 사이에
      소스탭이 바뀌었을 때 엉뚱한 자리부터 잇는다 — 이름으로 찾고,
@@ -1906,29 +2094,16 @@ function _pep_pushCore_(silent) {
       }
       _직전일자No_ = _일자No_;
     }
-    var rawCode = String(row[_PEP_CODE_COL] || "").trim();
-    var rawName = String(row[_PEP_ITEM_COL] || "").trim();
-
-    // ★ 2026-08-25: 보조 접두(JH/BF 등)는 대표 접두(JT)로 환산 후 판정
-    var codePfx =
-      rawCode.length >= 2 ? _pep_resolvePrefixAlias_(rawCode.substring(0, 2)) : "";
-    var namePfx = "";
-    // ★ 2026-07-14: 품목명 앞 영문 2글자 인식 보완 (한글/공백/대괄호 등 제외한 가장 처음에 등장하는 영문 2글자)
-    var m = rawName.replace(/^[^a-zA-Z]*/, "").match(/^([a-zA-Z]{2})/);
-    if (m) namePfx = _pep_resolvePrefixAlias_(m[1]);
-
-    var pfx = "";
-    // 1순위: 이카운트코드 앞 2자리(codePfx)가 유효한 대리공급업체 코드(DIRECT_MAP 또는 LABELS)인 경우
-    if (codePfx && (_PEP_VENDOR_DIRECT_MAP_[codePfx] || _PEP_VENDOR_LABELS_[codePfx])) {
-      pfx = codePfx;
-    }
-    // 2순위: 1순위 코드 제외 시 품목명 앞 영문 2글자(namePfx)가 유효한 대리공급업체 코드인 경우
-    else if (namePfx && (_PEP_VENDOR_DIRECT_MAP_[namePfx] || _PEP_VENDOR_LABELS_[namePfx])) {
-      pfx = namePfx;
-    }
+    /*  ★ 접두는 _pep_rowPrefix_ 한 군데서 읽는다 ★  (2026-09-14)
+        원본 대조가 «다른 눈»으로 세면 그 차이 자체가 새 거짓말이 된다. */
+    var _pfxInfo_ = _pep_rowPrefix_(row);
+    var rawCode = _pfxInfo_.rawCode;
+    var rawName = _pfxInfo_.rawName;
+    var pfx = _pfxInfo_.pfx;
 
     if (!pfx) {
       skipNoCode++;
+      _줄결과_[ri] = "접두없음";
       // 코드도 품목명도 없으면 그냥 빈 줄이다 — 표 아래 여백까지 담으면 진짜가 묻힌다
       if ((rawCode || rawName) && skipNoCodeList.length < 20) {
         skipNoCodeList.push("R" + (ri + 1) + " " +
@@ -2008,6 +2183,7 @@ function _pep_pushCore_(silent) {
 
     if (!directMap) {
       skipNoMap++;
+      _줄결과_[ri] = "매핑없음";
       if (skipNoMapList.indexOf(pfx) === -1) skipNoMapList.push(pfx);
       continue; // 비협력업체 → 임시탭 기록만
     }
@@ -2015,6 +2191,7 @@ function _pep_pushCore_(silent) {
     if (!prefixToFile[pfx]) {
       errorLogs.push("R" + (ri + 1) + " [" + pfx + "] 파일 없음");
       skipNoFile++;
+      _줄결과_[ri] = "파일없음";
       continue;
     }
 
@@ -2028,6 +2205,7 @@ function _pep_pushCore_(silent) {
     }
     if (cache[pfx].err) {
       skipNoFile++;
+      _줄결과_[ri] = "파일없음";
       continue;
     }
 
@@ -2067,7 +2245,7 @@ function _pep_pushCore_(silent) {
          버릴 줄까지 세어 버리면 그 비교가 어긋나 다음 회차가 통째로 스킵된다. */
     var _runRowKey_ = _rowUid_ ? _rowUid_ + "|" + rawCode : "";
     if (_runRowKey_) {
-      if (_runRowSeen_[_runRowKey_]) { skipSameRow++; continue; }
+      if (_runRowSeen_[_runRowKey_]) { skipSameRow++; _줄결과_[ri] = "겹침"; continue; }
       _runRowSeen_[_runRowKey_] = true;
     }
     // ★ 전용양식 중복 방지: UID만으로 판별 (업체 간 일관성 보장)
@@ -2081,6 +2259,7 @@ function _pep_pushCore_(silent) {
       0;
     if (_dedupOccurrence_ <= _existingDedupCount_) {
       skipUid++;
+      _줄결과_[ri] = "이미";
       continue; // 이미 발주된 UID → 스킵
     }
 
@@ -2275,11 +2454,13 @@ function _pep_pushCore_(silent) {
       cache[pfx].pendingRows.push({ outRow: outRow, dmCols: dmCols });
       cache[pfx].nextRow = nextRow + 1;
       pushed++;
+      _줄결과_[ri] = "푸시";
       pushedByPfx[pfx] = (pushedByPfx[pfx] || 0) + 1;
       if (!cache[pfx].existingDedupCounts) cache[pfx].existingDedupCounts = {};
       cache[pfx].existingDedupCounts[_dedupKey_] =
         (cache[pfx].existingDedupCounts[_dedupKey_] || 0) + 1;
     } catch (eW) {
+      _줄결과_[ri] = "쓰기실패";
       errorLogs.push(
         "R" + (ri + 1) + " [" + pfx + "] 쓰기 실패: " + eW.message,
       );
@@ -2379,6 +2560,45 @@ function _pep_pushCore_(silent) {
   /* ── 남았으면 커서를 적고 스스로 잇는다 ──────────────────────
      여기까지 온 것은 배치 쓰기가 끝났다는 뜻이다. 쓴 뒤에 적어야
      「썼는데 커서엔 안 적힌」 조각이 안 생긴다. */
+  /* ★ 지나가지도 못한 줄에도 «이름»을 붙인다 ★  (2026-09-14)
+     이어달리기로 앞 조각이 이미 지나간 줄(ri < 시작행)과, 시간이 다 돼
+     못 간 줄(ri >= 멈춘행)이다. 둘 다 «사라진» 것이 아니라서 따로 센다.
+     이 이름이 없으면 그 줄들이 통째로 「미확인」에 섞여, 진짜 사고가 묻힌다. */
+  for (var _nz = 0; _nz < srcAll.length; _nz++) {
+    if (_줄결과_[_nz]) continue;
+    if (_nz < _시작행_) { _줄결과_[_nz] = "앞서처리"; continue; }
+    if (_멈춘행_ > 0 && _nz >= _멈춘행_) _줄결과_[_nz] = "아직";
+  }
+  var _대조_ = _pep_reconcile_(_원본센_, _줄결과_, srcAll);
+  try {
+    Logger.log("[PEP] 원본 대조 — 업체 " + _대조_.rows.length + "곳 · 미확인 " + _대조_.미확인 + "건");
+    for (var _rc = 0; _rc < _대조_.미확인줄.length; _rc++) Logger.log("[PEP] ★미확인 " + _대조_.미확인줄[_rc]);
+  } catch (eRc) {}
+
+  /* ★ 대조 결과는 말로도 남긴다 ★  (2026-09-14)
+     트리거로 조용히 돌면 요약 화면이 안 뜬다. 그때도 「원본 몇, 나간 몇,
+     까닭 없이 빠진 몇」은 반드시 어딘가 적혀 있어야 한다. */
+  var _대조글_ = "";
+  try {
+    var _cl_ = [];
+    for (var _cr = 0; _cr < _대조_.rows.length; _cr++) {
+      var _v_ = _대조_.rows[_cr];
+      var _못_ = (_v_["매핑없음"] || 0) + (_v_["파일없음"] || 0) + (_v_["쓰기실패"] || 0);
+      var _아_ = (_v_["아직"] || 0) + (_v_["앞서처리"] || 0);
+      _cl_.push("    " + _v_.접두 + " 원본 " + _v_.원본 + " → Push " + (_v_["푸시"] || 0) +
+        " (이미 " + (_v_["이미"] || 0) + " · 겹침 " + (_v_["겹침"] || 0) +
+        " · 매핑/파일 " + _못_ + " · 아직 " + _아_ +
+        (_v_.미확인 ? " · ★미확인 " + _v_.미확인 : "") + ")");
+    }
+    _대조글_ = "\n\n🧾 원본 대조 (대리발송 탭 ↔ Push)\n" + _cl_.join("\n") +
+      (_대조_.미확인
+        ? "\n\n★★ 까닭 없이 빠진 줄 " + _대조_.미확인 + "건 ★★\n" +
+          _대조_.미확인줄.slice(0, 10).join("\n")
+        : "\n  ✔ 말없이 빠진 줄 없음");
+  } catch (e대조) {
+    _대조글_ = "\n\n(원본 대조를 못 했습니다: " + e대조.message + ")";
+  }
+
   var _이어붙임_ = "";
   if (_멈춘행_ > 0) {
     _PEP_LAST_INCOMPLETE_ = true;
@@ -2452,6 +2672,7 @@ function _pep_pushCore_(silent) {
     (errorLogs.length
       ? "\n\n⚠ 오류(최대10건):\n" + errorLogs.slice(0, 10).join("\n")
       : "") +
+    _대조글_ +
     //  남은 조각이 있으면 «맨 끝»에 적는다 — 이게 지금 가장 중요한 말이다
     _이어붙임_;
   Logger.log(msg);
@@ -2523,10 +2744,12 @@ function _pep_pushCore_(silent) {
           skipNoMapList: skipNoMapList,
           aliasCnt: aliasCnt,
           errorLogs: errorLogs,
+          대조: _대조_,
+          원본센: _원본센_,
         }),
       )
-        .setWidth(780)
-        .setHeight(680);
+        .setWidth(860)
+        .setHeight(760);
       ui.showModalDialog(htmlOut, "📋 대리발송 Push 결과");
     } catch (eHtml) {
       ui.alert(msg);
