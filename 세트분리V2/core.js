@@ -1399,6 +1399,42 @@ function ssLedgerRow(u, runKey, at) {
 /* ── 전체 실행 ────────────────────────────────────────── */
 
 /**
+ * ══════════════════════════════════════════════════════════════
+ *  출력 탭을 «집는 차례»로 정렬한다
+ *  2026-09-14
+ *
+ *  출고지 → 품목코드 → 들어온 차례.
+ *
+ *  ★ 품목«코드»로 묶는다, 이름이 아니라 ★
+ *    합포장 대표행의 출력품목명은 「A+B+C ===합배송」처럼 합쳐진 이름이다.
+ *    이름으로 묶으면 그 박스만 엉뚱한 자리에 홀로 선다. 코드는 안 변한다.
+ *
+ *  ★ 들어온 차례를 끝까지 남긴다 ★
+ *    같은 출고지·같은 품목 안에서는 판매현황 차례 그대로다. 자리표를 따로
+ *    들고 비교한다 — 엔진이 안정 정렬이 아니어도 결과가 흔들리지 않게.
+ *    회차마다 순서가 달라지면 「어제 것과 같은지」를 사람이 못 본다.
+ *
+ *  ★ 제자리에서 고친다 ★  buckets 를 그대로 쓰는 곳이 많다.
+ *
+ *  @param {Array} list 한 탭의 units
+ *  @return {Array} 같은 배열
+ * ══════════════════════════════════════════════════════════════
+ */
+function ssSortForPick(list) {
+  if (!list || list.length < 2) return list;
+  for (var i = 0; i < list.length; i++) list[i].__자리 = i;
+  list.sort(function (a, b) {
+    var x = ssText(a.출고지), y = ssText(b.출고지);
+    if (x !== y) return x < y ? -1 : 1;
+    var p = ssText(a.품목코드), q = ssText(b.품목코드);
+    if (p !== q) return p < q ? -1 : 1;
+    return a.__자리 - b.__자리;
+  });
+  for (var j = 0; j < list.length; j++) delete list[j].__자리;
+  return list;
+}
+
+/**
  * @param {Array<Array>} grid  판매현황 원본 (헤더 포함)
  * @param {Object} masters     마스터 묶음
  * @param {Object} cfg         설정
@@ -1429,6 +1465,20 @@ function ssRun(grid, masters, cfg) {
   buckets[SS_ROUTE.MERGED].sort(function (a, b) {
     return a.합포장그룹 < b.합포장그룹 ? -1 : (a.합포장그룹 > b.합포장그룹 ? 1 : 0);
   });
+
+  /* ★ 로젠택배 탭은 «출고지 → 같은 품목끼리» 모은다 ★  (2026-09-14)
+     > "로젠택배 정렬을 출고지 순서대로.. 그리고 같은 품목끼리 뭉쳐서
+     >  정리가 되게 해줘...기존 세트분리가 그렇게 처리 되있음"
+
+     이 탭은 그대로 송장 인쇄로 넘어간다. 인쇄 차례가 곧 «집는 차례»다.
+     판매현황에 들어온 순서대로 두면 같은 물건을 창고에서 몇 번씩 다시 집으러
+     간다. 구 세트분리가 그렇게 하고 있었고, 뉴로 오면서 그것만 빠졌다.
+
+     대리발송은 안 건드린다 — 업체별로 나가는 표라 성격이 다르고,
+     지금 대리공급 푸시가 그 탭을 읽는다(_partnerExclusivePush.gs). */
+  var 정렬대상 = [SS_ROUTE.LOTTE, SS_ROUTE.LOTTE_ISLAND,
+    SS_ROUTE.LOTTE_ISLAND_CONSIGN, SS_ROUTE.LOTTE_LOCAL];
+  for (var si = 0; si < 정렬대상.length; si++) ssSortForPick(buckets[정렬대상[si]]);
 
   // 「합배송」 확인용 뷰 — 대표행(송장 나감) + 동봉행(같은 박스)을 묶음 단위로 모은다.
   // 대표행은 롯데택배 등에도 그대로 있으므로 이 목록은 탭 합계에 넣지 않는다.

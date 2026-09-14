@@ -580,3 +580,77 @@ console.log("\n[중복점검] 이어진 블록을 잡는가");
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n이어짐도 그대로");
 if (실패) process.exit(1);
+
+/* ═══════════════════════════════════════════════════════════════
+   출력 정렬 — 출고지 → 같은 품목끼리
+
+   > "로젠택배 정렬을 출고지 순서대로.. 그리고 같은 품목끼리 뭉쳐서
+   >  정리가 되게 해줘...기존 세트분리가 그렇게 처리 되있음"
+
+   이 탭은 그대로 송장 인쇄로 넘어간다. 인쇄 차례가 곧 집는 차례다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[출력 정렬] 출고지 → 품목 → 들어온 차례");
+{
+  const core = 읽기(path.join(뿌리, "core.js"));
+  const 꺼내기 = new Function(
+    "Utilities", "SpreadsheetApp", "Logger", "module",
+    core + "\n" + "return { ssSortForPick: ssSortForPick };",
+  );
+  const { ssSortForPick } = 꺼내기(null, null, { log() {} }, undefined);
+
+  const u = (출고지, 품목코드, 표) => ({ 출고지, 품목코드, 표 });
+  const 펴기 = (xs) => xs.map((x) => x.출고지 + "/" + x.품목코드 + "/" + x.표).join(" ");
+
+  {
+    const list = [
+      u("평택", "B", 1), u("가평", "A", 2), u("평택", "A", 3),
+      u("가평", "B", 4), u("평택", "A", 5),
+    ];
+    ssSortForPick(list);
+    eq("★ 출고지 먼저, 그다음 품목",
+      펴기(list), "가평/A/2 가평/B/4 평택/A/3 평택/A/5 평택/B/1");
+  }
+
+  {
+    //  같은 출고지·같은 품목 안에서는 «들어온 차례» 그대로
+    const list = [u("평택", "A", 9), u("평택", "A", 8), u("평택", "A", 7)];
+    ssSortForPick(list);
+    eq("★ 들어온 차례를 지킨다", 펴기(list), "평택/A/9 평택/A/8 평택/A/7");
+  }
+
+  {
+    //  두 번 돌려도 같은 답 — 회차마다 순서가 흔들리면 어제 것과 못 견준다
+    const 만들기 = () => [
+      u("평택", "B", 1), u("가평", "A", 2), u("평택", "A", 3), u("가평", "A", 4)];
+    const a = 펴기(ssSortForPick(만들기()));
+    const b = 펴기(ssSortForPick(ssSortForPick(만들기())));
+    eq("★ 몇 번을 돌려도 같다", a, b);
+  }
+
+  {
+    //  자리표는 흔적을 안 남긴다 — 출력 열에 섞이면 안 된다
+    const list = [u("평택", "B", 1), u("가평", "A", 2)];
+    ssSortForPick(list);
+    eq("★ 자리표를 지운다", Object.prototype.hasOwnProperty.call(list[0], "__자리"), "false");
+  }
+
+  {
+    //  빈칸 출고지도 터지지 않는다
+    const list = [u("", "B", 1), u("평택", "A", 2), u(undefined, "A", 3)];
+    ssSortForPick(list);
+    eq("빈 출고지가 앞에 온다", list[0].품목코드, "A");
+    eq("줄 수는 그대로", list.length, 3);
+  }
+
+  {
+    eq("한 줄이면 그대로", 펴기(ssSortForPick([u("평택", "A", 1)])), "평택/A/1");
+    eq("빈 배열도 괜찮다", ssSortForPick([]).length, 0);
+  }
+
+  //  실제로 로젠 네 탭에만 걸었는가 — 대리발송은 손대지 않는다
+  eq("★ 로젠 네 탭에 건다", core.includes("정렬대상 = [SS_ROUTE.LOTTE, SS_ROUTE.LOTTE_ISLAND"), "true");
+  eq("★ 대리발송은 안 건드린다", core.includes("SS_ROUTE.PARTNER]);"), "false");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n정렬도 그대로");
+if (실패) process.exit(1);
