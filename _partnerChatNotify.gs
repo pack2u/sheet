@@ -6,8 +6,18 @@
  * Webhook 방식 (별도 인증 불필요)
  */
 
+/**
+ * ★ 웹훅 주소는 _secrets.gs 에 있다 ★  (2026-09-14)
+ *
+ *   이 파일은 깃에 올라간다. URL 안의 key·token 이 곧 «그 방에 글을 올릴
+ *   권한»이라, 저장소를 읽을 수 있는 사람이면 누구나 팀 방에 글을 넣을 수
+ *   있었다. CS_WebApp/_secrets_guard_test 가 그걸 잡아 줬다.
+ *
+ *   못 읽으면 «빈 문자열»을 준다 — 알림은 조용히 안 가고, _chat_diagnose_
+ *   가 그 사실을 말한다. 여기에 값을 다시 적으면 안 된다.
+ */
 var _CHAT_WEBHOOK_URL_ =
-  "https://chat.googleapis.com/v1/spaces/AAQA-mgg-f0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=6eJY5mRml0dM-bYOS3BvlAGC_Jk0Eaiz7K1Ds7bIS1I";
+  (typeof CHAT_WEBHOOK_URL === "string" && CHAT_WEBHOOK_URL) ? CHAT_WEBHOOK_URL : "";
 
 // ══════════════════════════════════════════════
 //  핵심: 메시지 전송
