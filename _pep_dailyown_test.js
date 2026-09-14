@@ -197,8 +197,16 @@ check("★ 뭉뚱그린 「없음/비어있음」이 사라졌다",
 console.log("[진단 도구] 부를 데가 없으면 없는 것과 같다");
 {
   const menu = fs.readFileSync("_partnerMenu.gs", "utf8");
-  check("★ 미매칭 진단이 메뉴에 있다",
-    menu.includes(`.addItem("🔎 일일마감 미매칭 원인 진단", "partnerDiagnoseUnifiedUnmatched")`), true);
+  /*  ★ 진작부터 메뉴에 있었다 ★  (2026-09-14)
+      나는 없는 줄 알고 하나 더 달았다가 되물렀다. grep 을
+      「diagnoseUnmatched」로 걸어서 partnerDiagnose«Unified»Unmatched 를
+      못 봤다. 「한 번만」이 이 시험의 요점이다 — 같은 항목이 두 곳에 있으면
+      직원이 어느 쪽을 눌러야 하는지 매번 고민한다. */
+  check("★ 미매칭 진단이 메뉴에 «한 번만» 있다",
+    (menu.match(/일일마감 미매칭 원인 진단/g) || []).length, 1);
+  check("★ 「🧭 송장 매칭 점검·정비」 아래에 있다",
+    menu.slice(menu.indexOf("송장 매칭 점검·정비"), menu.indexOf("송장 매칭 점검·정비") + 900)
+      .includes("partnerDiagnoseUnifiedUnmatched"), true);
   check("★ 그 함수가 실제로 있다",
     diag.includes("function partnerDiagnoseUnifiedUnmatched() {"), true);
   check("★ 읽기만 한다 (결과 탭만 만든다)",
