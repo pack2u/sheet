@@ -1307,7 +1307,7 @@ console.log("\n[그날 판매현황] 회차별로 쌓이는가");
     main.includes("var 이름 = rk.substring(2, 6) + SS_DAILY_SUFFIX;"), "true");
   eq("★ 맨 뒤에 회차키 칸", main.includes("grid[0].slice(0, width).concat(['회차키'])"), "true");
   eq("★ 같은 회차는 갈아 끼운다", main.includes("if (k === rk) continue;"), "true");
-  eq("★ 다른 회차는 남긴다", main.includes("keep.push(old[o]);"), "true");
+  eq("★ 다른 회차는 남긴다", main.includes("keep.push(moved);"), "true");
   eq("★ 이레 지난 탭은 지운다", main.includes("var SS_DAILY_KEEP_DAYS = 7;"), "true");
   eq("★ 날짜는 회차키에서 읽는다 (이름 아님)",
     main.includes("//  회차키는 맨 뒤 칸이다"), "true");
@@ -1324,6 +1324,41 @@ console.log("\n[그날 판매현황] 회차별로 쌓이는가");
   eq("판매현황은 대상 아님", re.test("판매현황"), "false");
   eq("판매현황_고유아이디는 대상 아님", re.test("판매현황_고유아이디"), "false");
   eq("판매현황_회차원장은 대상 아님", re.test("판매현황_회차원장"), "false");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n그날 판매현황도 그대로");
+if (실패) process.exit(1);
+
+/* ═══════════════════════════════════════════════════════════════
+   「0914판매현황」 — 옛 회차가 조용히 버려지지 않는가
+
+   > "0914판매현황은 1차부터 오늘 판매현황을 모으는 텝아닌가?
+   >  마지막꺼만 붙어 있네?"
+
+   처음엔 머리글부터 새로 쓰고 옛 줄의 회차키를 «맨 뒤 자리»로 읽었다.
+   판매현황 열 수는 회차마다 달라질 수 있다(getDataRange 는 자료가 뻗은
+   만큼만 준다). 그러면 맨 뒤가 회차키가 아니어서 빈칸으로 읽히고,
+   `if (!k) continue` 가 그 줄을 통째로 버렸다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[0914판매현황] 옛 회차가 살아남는가");
+{
+  const main = 읽기(path.join(뿌리, "gasMain.js"));
+
+  eq("★ 회차키를 «이름»으로 찾는다",
+    main.includes("if (ssText(옛머리[h0]) === '회차키') { 옛키자리 = h0; break; }"), "true");
+  eq("★ 머리글은 옛 줄을 «다 읽은 뒤»에 갈아 끼운다",
+    main.indexOf("var oldRows = sh.getRange(2, 1, sh.getLastRow() - 1, 옛폭)") <
+    main.indexOf("sh.getRange(1, 1, 1, head.length).setValues([head]);"), "true");
+  eq("★ 옛 줄을 이름으로 새 자리에 옮겨 담는다",
+    main.includes("moved[새자리[cn]] = oldRows[o][c0];"), "true");
+  eq("회차키는 늘 맨 뒤", main.includes("moved[head.length - 1] = k;"), "true");
+  eq("이번 회차만 갈아 끼운다", main.includes("if (k === rk) continue;"), "true");
+  eq("회차키 칸을 못 찾으면 옛 줄을 안 건드린다",
+    main.includes("if (sh.getLastRow() > 1 && 옛키자리 >= 0) {"), "true");
+
+  //  ★ 옛 자리로 읽던 코드가 남아 있으면 잡는다 ★
+  eq("★ 맨 뒤 자리로 읽던 옛 코드는 사라졌다",
+    main.includes("var k = ssText(old[o][head.length - 1]);"), "false");
 }
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n그날 판매현황도 그대로");

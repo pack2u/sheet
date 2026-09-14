@@ -1474,19 +1474,55 @@ function ss_그날판매현황쌓기(runKey) {
   var 이름 = rk.substring(2, 6) + SS_DAILY_SUFFIX;   // 260914-1 → 0914판매현황
   var head = grid[0].slice(0, width).concat(['회차키']);
   var sh = ssio_sheet(이름, head);
-  sh.getRange(1, 1, 1, head.length).setValues([head]);
 
-  //  같은 회차 줄을 먼저 걷어낸다 (재실행이면 갈아 끼운다)
-  var keep = [];
-  if (sh.getLastRow() > 1) {
-    var old = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues();
-    for (var o = 0; o < old.length; o++) {
-      var k = ssText(old[o][head.length - 1]);
-      if (!k) continue;                 // 빈 줄은 버린다
-      if (k === rk) continue;           // 이번 회차 것은 새로 쓴다
-      keep.push(old[o]);
+  /* ★ 옛 줄을 «머리글을 갈아 끼우기 전»에 읽는다 ★  (2026-09-14 고침)
+     처음엔 머리글부터 새로 쓰고, 옛 줄의 회차키를 «맨 뒤 자리»로 읽었다.
+     판매현황 열 수는 회차마다 달라질 수 있다 — getDataRange 는 자료가
+     뻗은 만큼만 준다. 그러면 맨 뒤가 회차키가 아니어서 빈칸으로 읽히고,
+     `if (!k) continue` 가 그 줄을 «조용히» 버렸다. 오전 회차가 통째로
+     사라지고 마지막 것만 남는다 — 오늘 실제로 그랬다.
+
+     자리가 아니라 이름으로 찾는다. 오늘 하루 종일 고친 그 병이다. */
+  var 옛머리 = [], 옛키자리 = -1, 옛폭 = 0;
+  if (sh.getLastRow() >= 1) {
+    옛폭 = Math.max(sh.getLastColumn(), head.length);
+    옛머리 = sh.getRange(1, 1, 1, 옛폭).getValues()[0];
+    for (var h0 = 옛머리.length - 1; h0 >= 0; h0--) {
+      if (ssText(옛머리[h0]) === '회차키') { 옛키자리 = h0; break; }
     }
   }
+
+  var keep = [];
+  if (sh.getLastRow() > 1 && 옛키자리 >= 0) {
+    /*  옛 줄은 «옛 머리글 이름»을 보고 새 자리로 옮겨 담는다.
+        열이 하나 늘거나 줄어도 값이 어긋나지 않는다. */
+    var 새자리 = {};
+    for (var n0 = 0; n0 < head.length; n0++) {
+      var hn = ssText(head[n0]);
+      if (hn && 새자리[hn] === undefined) 새자리[hn] = n0;
+    }
+    var oldRows = sh.getRange(2, 1, sh.getLastRow() - 1, 옛폭).getValues();
+    for (var o = 0; o < oldRows.length; o++) {
+      var k = ssText(oldRows[o][옛키자리]);
+      if (!k) continue;                 // 회차키가 없는 줄은 원장 줄이 아니다
+      if (k === rk) continue;           // 이번 회차 것은 새로 쓴다
+      var moved = [];
+      for (var m0 = 0; m0 < head.length; m0++) moved.push('');
+      for (var c0 = 0; c0 < 옛머리.length; c0++) {
+        var cn = ssText(옛머리[c0]);
+        if (!cn || 새자리[cn] === undefined) continue;
+        moved[새자리[cn]] = oldRows[o][c0];
+      }
+      moved[head.length - 1] = k;       // 회차키는 늘 맨 뒤
+      keep.push(moved);
+    }
+  }
+
+  //  머리글은 옛 줄을 다 읽은 «뒤»에 갈아 끼운다
+  if (sh.getMaxColumns() < head.length) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), head.length - sh.getMaxColumns());
+  }
+  sh.getRange(1, 1, 1, head.length).setValues([head]);
 
   var add = [];
   for (var g = 1; g < grid.length; g++) {
