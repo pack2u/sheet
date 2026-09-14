@@ -230,6 +230,13 @@ function partnerUnifiedDailyArchiveManual() {
           " · 합포장 " + (result.detail.packMatched || 0) + ")"
         : "") + "\n" +
       "    읽은 탭: " + (result.detail.ownTabs || "(없음)") + "\n" +
+      /* ★ 합포장 동봉·샘플이 붙는 자리 ★  (2026-09-14)
+         0 이면 동봉 건이 통째로 미매칭이 된다. 뉴 합배송 탭에 송장 칸이
+         없어 (c) 합배송 보강이 0건이던 것을 이것으로 대신한다. */
+      (result.detail.ledgerSetsplitNote
+        ? "    세트분리 원장: " + (result.detail.ledgerSetsplitRead || 0) + "건 — " +
+          result.detail.ledgerSetsplitNote + "\n"
+        : "") +
       (result.detail.rozenRead
         ? "    로젠 " + result.detail.rozenRead + "건 — " + (result.detail.rozenCols || "") + "\n"
         : "    ⚠ 로젠탭 송장 0건 — 탭/열 확인 필요\n") +

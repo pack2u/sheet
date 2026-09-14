@@ -9132,6 +9132,104 @@ function _pep_colDesc_(hdr, i) {
   return (nm ? nm : "(이름없음)") + "(" + _pep_colLetter_(i) + ")";
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 세트분리 「주문라인원장」 — 합포장 동봉·샘플이 사는 곳 ★
+ *  2026-09-14
+ *
+ *  > "샘플, 합배송의 송장 매칭이 안된것들이 몇개 보이더라"
+ *
+ *  진단이 이미 말하고 있었다 —  합배송: 0건.
+ *
+ *  ★ 왜 0 인가 ★
+ *    허브의 「(c) 합배송 탭 송장 보강」은 «구» 세트분리의 합배송 탭에
+ *    송장 칸이 있던 시절의 코드다. 뉴의 합배송 탭 머리글은
+ *      SS_MERGED_HEADER = [구분·조건ID·실제경로·합포장키] + SS_OUT_HEADER
+ *    이고 SS_OUT_HEADER 에는 운송장 칸이 «없다». 뉴의 그 탭은 「어떤 줄이
+ *    한 박스로 묶였나」를 보는 탭이지 송장 탭이 아니다. 오류는 안 난다.
+ *    송장 칸을 못 찾아 빈 문자열을 밀어 넣고, 0건이 된다.
+ *
+ *  ★ 합포장 동봉은 «제 송장»이 없다 ★
+ *    대표 한 줄만 송장을 받고, 동봉된 줄들은 그 송장을 물려받아야 한다.
+ *    그 전파가 이미 끝나 있는 곳이 세트분리의 주문라인원장이다 —
+ *    ss_송장전파 가 「합포장 전파」라고 적어 두고 간다. 샘플도 같다.
+ *    제 송장이 없고 딸려 나가므로, 원장 말고는 붙을 데가 없다.
+ *
+ *  ★ 그래서 원장을 읽는다 ★
+ *    고유ID 와 운송장번호가 한 줄에 있다. 자사출고·대리발송·합포장 동봉이
+ *    한자리에 있고, 맞추는 일은 세트분리가 이미 끝냈다. 옮겨 담기만 한다.
+ *
+ *    ★ 로젠 «뒤»에 부른다 ★ 같은 송장이 양쪽에 있으면 먼저 넣은 쪽이
+ *      출처를 갖는다. 로젠에서 직접 온 것은 「로젠」으로 남는 편이 맞고,
+ *      원장은 그 나머지(동봉·샘플·대리발송)를 메우는 자리다.
+ *
+ *    ★ 이름 열쇠는 만들지 않는다 ★ 원장의 「거래처명」 칸은 받는분인데,
+ *      대리발송은 그게 업체 자기 이름이다. 이름 열쇠를 만들면 한 업체
+ *      밑에 수십 건이 쌓여 남의 송장이 붙는다 — 8월에 겪은 그 사고다.
+ *      고유ID 하나로만 붙인다. 확실한 열쇠만 쓴다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pep_loadSetsplitLedgerInvoices_(invoiceMap, result, srcSS) {
+  var 셈 = { 줄: 0, 송장: 0, 담음: 0 };
+  try {
+    var tab = srcSS.getSheetByName("주문라인원장");
+    if (!tab || tab.getLastRow() < 2) {
+      result.detail.ledgerSetsplitRead = 0;
+      result.detail.ledgerSetsplitNote = tab ? "탭은 있는데 비었음" : "「주문라인원장」 탭 없음";
+      Logger.log("[UNIFIED] 세트분리 원장: " + result.detail.ledgerSetsplitNote);
+      return 셈;
+    }
+
+    var lc = tab.getLastColumn();
+    var hv = tab.getRange(1, 1, 1, lc).getDisplayValues()[0];
+    var ix = {};
+    for (var h = 0; h < hv.length; h++) {
+      var n = String(hv[h] == null ? "" : hv[h]).replace(/[\s]/g, "");
+      if (n && ix[n] === undefined) ix[n] = h;
+    }
+    //  ★ 자리로 넘겨짚지 않는다 ★ 없으면 «없다»고 말하고 그만둔다
+    if (ix["고유ID"] === undefined || ix["운송장번호"] === undefined) {
+      result.detail.ledgerSetsplitRead = 0;
+      result.detail.ledgerSetsplitNote =
+        "「고유ID」·「운송장번호」 칸을 못 찾음 (머리글: " + hv.slice(0, 12).join(",") + ")";
+      Logger.log("[UNIFIED] 세트분리 원장: " + result.detail.ledgerSetsplitNote);
+      return 셈;
+    }
+
+    var 매칭칸 = ix["송장매칭"];
+    var data = tab.getRange(2, 1, tab.getLastRow() - 1, lc).getDisplayValues();
+    var 갈래 = {};
+    for (var i = 0; i < data.length; i++) {
+      셈.줄++;
+      var uid = String(data[i][ix["고유ID"]] || "").trim();
+      var inv = _pep_normInvoiceNo_(data[i][ix["운송장번호"]]);
+      if (!uid || !inv) continue;
+      셈.송장++;
+      //  날짜를 안 넘긴다 — 원장에는 집하일이 없다. 0 이면 날짜 관문이 안 걸린다.
+      _pep_addInvoiceMap_(invoiceMap, uid, inv, "세트분리원장", "", 0);
+      셈.담음++;
+      if (매칭칸 !== undefined) {
+        var w = String(data[i][매칭칸] || "").trim() || "(빈칸)";
+        갈래[w] = (갈래[w] || 0) + 1;
+      }
+    }
+
+    var 갈래글 = [];
+    for (var k in 갈래) if (Object.prototype.hasOwnProperty.call(갈래, k)) 갈래글.push(k + " " + 갈래[k]);
+    갈래글.sort();
+    result.detail.ledgerSetsplitRead = 셈.담음;
+    result.detail.ledgerSetsplitNote = 셈.줄 + "줄 중 송장 " + 셈.송장 + "건" +
+      (갈래글.length ? " (" + 갈래글.join(" · ") + ")" : "");
+    Logger.log("[UNIFIED] 세트분리 원장: " + result.detail.ledgerSetsplitNote +
+      " 합계키=" + Object.keys(invoiceMap).length + "건");
+  } catch (e) {
+    result.detail.ledgerSetsplitRead = -1;
+    result.detail.ledgerSetsplitNote = "오류: " + (e && e.message ? e.message : e);
+    Logger.log("[UNIFIED] 세트분리 원장 오류: " + result.detail.ledgerSetsplitNote);
+  }
+  return 셈;
+}
+
 function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
   var 자사원천 = [
     {
@@ -10815,7 +10913,7 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
   // ★ 2026-06-29: targetDateStr 파라미터 추가 — 전달 시 해당 날짜로 저장 (자동실행→전날 매출일)
   var result = {
     archived: 0, tabName: "", error: "",
-    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", rozenRead: 0, rozenCols: "", ownRead: 0, ownTabs: "", rozenMatched: 0, lotteMatched: 0, weeklyMatched: 0, packMatched: 0, snapFrom: "", snapSaved: 0, snapSkipped: 0, hubRead: 0, backfill: 0, backfillDate: "", uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0 }
+    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", rozenRead: 0, rozenCols: "", ownRead: 0, ownTabs: "", rozenMatched: 0, lotteMatched: 0, weeklyMatched: 0, packMatched: 0, ledgerSetsplitRead: 0, ledgerSetsplitNote: "", snapFrom: "", snapSaved: 0, snapSkipped: 0, hubRead: 0, backfill: 0, backfillDate: "", uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0 }
   };
 
   try {
@@ -10855,6 +10953,17 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
       _pep_loadOwnCarrierInvoices_(invoiceMap, result);
     } catch (eOwn) {
       Logger.log("[UNIFIED] 자사출고 송장맵 오류: " + eOwn.message);
+    }
+
+    /* (a4) ★ 세트분리 주문라인원장 ★  (2026-09-14)
+       합포장 «동봉»과 샘플은 제 송장이 없다. 대표의 송장을 물려받아야 하는데,
+       그 전파가 끝나 있는 곳은 세트분리 원장뿐이다. 뉴의 합배송 탭에는
+       송장 칸이 아예 없어서 (c) 합배송 보강이 0건이 되어 있었다. */
+    try {
+      var _lgSS_ = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
+      _pep_loadSetsplitLedgerInvoices_(invoiceMap, result, _lgSS_);
+    } catch (eLg) {
+      Logger.log("[UNIFIED] 세트분리 원장 열기 실패: " + eLg.message);
     }
 
 

@@ -280,5 +280,35 @@ console.log("\n[진단] 마감과 «같은 눈»으로 읽는다");
     diag.includes("idx.notes.push(src + \" 칸: \" +"), true);
 }
 
+
+console.log("\n[합포장 동봉·샘플] 원장에서 데려온다");
+{
+  //  > "샘플, 합배송의 송장 매칭이 안된것들이 몇개 보이더라"
+  //  진단은 이미 「합배송: 0건」이라고 말하고 있었다. 뉴의 합배송 탭
+  //  (SS_MERGED_HEADER) 에는 운송장 칸이 아예 없다 — 구 세트분리 모양에
+  //  기대던 (c) 합배송 보강이 통째로 죽어 있었다.
+  check("★ 세트분리 원장을 송장원으로 읽는다",
+    push.includes("function _pep_loadSetsplitLedgerInvoices_(invoiceMap, result, srcSS) {"), true);
+  check("★ 마감이 그것을 부른다",
+    push.includes("_pep_loadSetsplitLedgerInvoices_(invoiceMap, result, _lgSS_);"), true);
+  check("★ 자사출고(로젠) «뒤»에 부른다 — 출처는 로젠이 갖는다",
+    push.indexOf("_pep_loadOwnCarrierInvoices_(invoiceMap, result);") <
+    push.indexOf("_pep_loadSetsplitLedgerInvoices_(invoiceMap, result, _lgSS_);"), true);
+  check("★★ 이름 열쇠는 만들지 않는다 (대리발송은 수취인이 업체다)",
+    push.slice(push.indexOf("function _pep_loadSetsplitLedgerInvoices_"))
+      .slice(0, 4000).includes("_pep_addNamePhoneInvoiceKeys_"), false);
+  check("★ 고유ID 하나로만 붙인다",
+    push.includes("_pep_addInvoiceMap_(invoiceMap, uid, inv, \"세트분리원장\", \"\", 0);"), true);
+  check("★ 칸을 이름으로 찾는다",
+    push.includes("if (ix[\"고유ID\"] === undefined || ix[\"운송장번호\"] === undefined) {"), true);
+  check("★ 못 찾으면 «못 찾았다»고 적는다",
+    push.includes("칸을 못 찾음 (머리글: "), true);
+  check("★ 송장매칭 갈래(직접/합포장 전파)를 세어 남긴다",
+    push.includes("갈래[w] = (갈래[w] || 0) + 1;"), true);
+  const web4 = fs.readFileSync("_partnerWebApp.gs", "utf8");
+  check("★ 화면에 적는다 — 0 이면 그 자리에서 보인다",
+    web4.includes("세트분리 원장: "), true);
+}
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);
