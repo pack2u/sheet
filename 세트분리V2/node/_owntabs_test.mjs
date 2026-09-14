@@ -1289,3 +1289,42 @@ console.log("\n[사방넷 주소] 칸을 못 찾아도 알아채는가");
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n사방넷 주소도 그대로");
 if (실패) process.exit(1);
+
+/* ═══════════════════════════════════════════════════════════════
+   「0914판매현황」 — 그날치를 회차별로 이어 쌓는다
+
+   > "판매현황(고유아이디 붙은것) 회차별로 합쳐서 일일마감, 송장매칭,
+   >  사방넷 대량등록에 사용될수 있게 0914판매현황 이런식으로 텝이 생성"
+
+   「판매현황_고유아이디」는 회차마다 덮어쓴다. 오전·오후 두 번 돌리면 마지막
+   것만 남아서 오전 건을 나중에 되짚을 데가 없었다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[그날 판매현황] 회차별로 쌓이는가");
+{
+  const main = 읽기(path.join(뿌리, "gasMain.js"));
+
+  eq("★ 탭 이름은 MMDD판매현황",
+    main.includes("var 이름 = rk.substring(2, 6) + SS_DAILY_SUFFIX;"), "true");
+  eq("★ 맨 뒤에 회차키 칸", main.includes("grid[0].slice(0, width).concat(['회차키'])"), "true");
+  eq("★ 같은 회차는 갈아 끼운다", main.includes("if (k === rk) continue;"), "true");
+  eq("★ 다른 회차는 남긴다", main.includes("keep.push(old[o]);"), "true");
+  eq("★ 이레 지난 탭은 지운다", main.includes("var SS_DAILY_KEEP_DAYS = 7;"), "true");
+  eq("★ 날짜는 회차키에서 읽는다 (이름 아님)",
+    main.includes("//  회차키는 맨 뒤 칸이다"), "true");
+  eq("★ 회차키를 못 읽으면 안 지운다",
+    main.includes("if (!/^[0-9]{6}$/.test(yy)) continue;   // 모르면 안 지운다"), "true");
+  eq("★ 실패해도 실행은 계속한다", main.includes("'DAILY_SALES_TAB'"), "true");
+  eq("실행요약에 적는다", main.includes("'판매현황 탭'"), "true");
+  eq("회차키 꼴이 아니면 안 만든다",
+    main.includes("if (!/^[0-9]{6}-[0-9]+$/.test(rk)) return 0;"), "true");
+
+  //  ★ 「MMDD판매현황」 무늬가 다른 탭을 안 지우는가 ★
+  const re = /^[0-9]{4}판매현황$/;
+  eq("0914판매현황은 대상", re.test("0914판매현황"), "true");
+  eq("판매현황은 대상 아님", re.test("판매현황"), "false");
+  eq("판매현황_고유아이디는 대상 아님", re.test("판매현황_고유아이디"), "false");
+  eq("판매현황_회차원장은 대상 아님", re.test("판매현황_회차원장"), "false");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n그날 판매현황도 그대로");
+if (실패) process.exit(1);

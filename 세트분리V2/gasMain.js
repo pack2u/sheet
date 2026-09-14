@@ -324,6 +324,18 @@ function ss_실행(opts) {
     // 그러면 O열 하나로 전 주문이 통일되고, 송장매칭·일일마감이 이 열만 보면 된다.
     var 아이디채움 = ss_판매현황아이디채움(res.idCells);
 
+    /*  ★ 그날치를 회차별로 이어 쌓는다 — 「0914판매현황」 ★  (2026-09-14)
+        「판매현황_고유아이디」는 회차마다 덮어쓰므로 오전 건을 나중에 되짚을
+        데가 없었다. 일일마감·송장매칭·사방넷 대량등록이 하루를 통째로 볼 수
+        있어야 한다. 실패해도 실행은 계속한다 — 곁다리다. */
+    var 그날쌓음 = 0;
+    try {
+      그날쌓음 = ss_그날판매현황쌓기(runKey);
+    } catch (eD) {
+      ssWarn(res.warnings, '주의', 'DAILY_SALES_TAB', String(eD && eD.message ? eD.message : eD),
+        '그날 판매현황 탭을 못 만들었습니다. 실행 자체는 끝났습니다.');
+    }
+
     /* ★ 도서산간 「조치」는 같은 회차 안에서 살아남아야 한다 ★  (2026-09-14)
        > "도서산간 발송처리했는데 조치를 취해서 계속뜨네"
 
@@ -446,6 +458,9 @@ function ss_실행(opts) {
     if (dup.이어짐 || dup.cross) {
       ssio_write(SSIO_TABS.경고, SS_WARN_HEADER,
         res.warnings.map(function (w) { return [w.level, w.code, w.target, w.msg]; }), { bg: '#7a5b12' });
+    }
+    if (그날쌓음) {
+      sum.push([runKey.substring(2, 6) + '판매현황 탭', 그날쌓음 + '행 (회차별 누적)']);
     }
     sum.push(['중복의심 그룹 (회차간)', dup.groups + ' (' + dup.cross + ')']);
     if (dup.이어짐) {
@@ -1417,4 +1432,120 @@ function ss_판매현황아이디채움(cells) {
   if (out.getMaxRows() < grid.length) out.insertRowsAfter(out.getMaxRows(), grid.length - out.getMaxRows() + 10);
   out.getRange(1, 1, grid.length, width).setValues(grid);
   return n;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  그날치 판매현황을 «회차별로 이어» 한 탭에 쌓는다 — 「0914판매현황」
+ *  2026-09-14
+ *
+ *  > "판매현황(고유아이디 붙은것) 회차별로 합쳐서 일일마감, 송장매칭,
+ *  >  사방넷 대량등록에 사용될수 있게 0914판매현황 이런식으로 텝이 생성"
+ *
+ *  ★ 「판매현황_고유아이디」는 회차마다 덮어쓴다 ★
+ *    하루에 오전·오후 두 번 돌리면 마지막 것만 남는다. 그래서 오전 건을
+ *    나중에 되짚을 데가 없었다. 여기는 «이어 붙인다».
+ *
+ *  ★ 같은 회차를 다시 돌리면 그 회차 줄만 갈아 끼운다 ★
+ *    원장과 같은 손버릇이다. 맨 뒤에 회차키 한 칸을 두는 이유가 그것이다 —
+ *    그게 없으면 무엇을 지우고 무엇을 남길지 알 수가 없다.
+ *
+ *  ★ 이레 지난 탭은 지운다 ★  (사장님 선택)
+ *    날마다 하나씩 늘면 한 달에 서른 개다. 원장에 같은 내용이 다 남아 있으므로
+ *    여기 것은 「요즘 것을 손에 들고 보는」 용도다. 날짜는 탭 이름이 아니라
+ *    회차키에서 읽는다 — 이름의 MMDD 만 보면 연말에 해를 넘기며 꼬인다.
+ *
+ *  @param runKey 회차키 (yyMMdd-N)
+ *  @return {number} 이번에 쌓은 줄 수
+ * ══════════════════════════════════════════════════════════════
+ */
+var SS_DAILY_KEEP_DAYS = 7;
+var SS_DAILY_SUFFIX = '판매현황';
+
+function ss_그날판매현황쌓기(runKey) {
+  var rk = ssText(runKey);
+  if (!/^[0-9]{6}-[0-9]+$/.test(rk)) return 0;
+
+  var src = ssio_ss().getSheetByName(SSIO_TABS.입력아이디);
+  if (!src || src.getLastRow() < 2) return 0;
+  var grid = src.getDataRange().getValues();
+  var width = grid[0].length;
+
+  var 이름 = rk.substring(2, 6) + SS_DAILY_SUFFIX;   // 260914-1 → 0914판매현황
+  var head = grid[0].slice(0, width).concat(['회차키']);
+  var sh = ssio_sheet(이름, head);
+  sh.getRange(1, 1, 1, head.length).setValues([head]);
+
+  //  같은 회차 줄을 먼저 걷어낸다 (재실행이면 갈아 끼운다)
+  var keep = [];
+  if (sh.getLastRow() > 1) {
+    var old = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues();
+    for (var o = 0; o < old.length; o++) {
+      var k = ssText(old[o][head.length - 1]);
+      if (!k) continue;                 // 빈 줄은 버린다
+      if (k === rk) continue;           // 이번 회차 것은 새로 쓴다
+      keep.push(old[o]);
+    }
+  }
+
+  var add = [];
+  for (var g = 1; g < grid.length; g++) {
+    var row = grid[g].slice(0, width);
+    var 빔 = true;
+    for (var c = 0; c < row.length; c++) if (ssText(row[c])) { 빔 = false; break; }
+    if (빔) continue;
+    while (row.length < width) row.push('');
+    add.push(row.concat([rk]));
+  }
+
+  var all = keep.concat(add);
+  ssio_clearBody(sh);
+  if (sh.getMaxColumns() < head.length) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), head.length - sh.getMaxColumns());
+  }
+  if (all.length) {
+    if (sh.getMaxRows() < all.length + 1) {
+      sh.insertRowsAfter(sh.getMaxRows(), all.length + 1 - sh.getMaxRows() + 10);
+    }
+    sh.getRange(2, 1, all.length, head.length).setValues(all);
+  }
+  ssio_styleHeader(sh, head.length, { bg: '#2c4f6b' });
+
+  ss_옛판매현황탭정리(rk);
+  return add.length;
+}
+
+/**
+ * 이레 지난 「MMDD판매현황」 탭을 지운다.
+ *
+ * ★ 날짜는 «회차키»에서 읽는다 ★
+ *   탭 이름의 MMDD 만 보면 해를 넘길 때 0102 가 1230 보다 «작아» 보여
+ *   엉뚱한 것을 지운다. 탭 안의 회차키는 yyMMdd 라 그런 일이 없다.
+ *   회차키를 못 읽으면 «안 지운다» — 모르면 두는 편이 낫다.
+ */
+function ss_옛판매현황탭정리(오늘회차키) {
+  var 오늘 = ssText(오늘회차키).substring(0, 6);
+  if (!/^[0-9]{6}$/.test(오늘)) return 0;
+  var 기준 = new Date(2000 + Number(오늘.substring(0, 2)),
+    Number(오늘.substring(2, 4)) - 1, Number(오늘.substring(4, 6)));
+  var 지운다 = [];
+  var shs = ssio_ss().getSheets();
+  for (var i = 0; i < shs.length; i++) {
+    var nm = shs[i].getName();
+    if (!/^[0-9]{4}판매현황$/.test(nm)) continue;
+    if (shs[i].getLastRow() < 2) continue;
+    //  회차키는 맨 뒤 칸이다
+    var lc = shs[i].getLastColumn();
+    var k = ssText(shs[i].getRange(2, lc).getDisplayValue());
+    var yy = k.substring(0, 6);
+    if (!/^[0-9]{6}$/.test(yy)) continue;   // 모르면 안 지운다
+    var d = new Date(2000 + Number(yy.substring(0, 2)),
+      Number(yy.substring(2, 4)) - 1, Number(yy.substring(4, 6)));
+    var 며칠 = Math.round((기준.getTime() - d.getTime()) / 86400000);
+    if (며칠 > SS_DAILY_KEEP_DAYS) 지운다.push(shs[i]);
+  }
+  for (var z = 0; z < 지운다.length; z++) {
+    try { ssio_ss().deleteSheet(지운다[z]); } catch (e) {}
+  }
+  return 지운다.length;
 }
