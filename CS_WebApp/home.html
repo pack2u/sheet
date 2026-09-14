@@ -1737,6 +1737,34 @@
     .hb-badge.hb-unread { background: rgba(232,93,93,0.9); color: #fff; }
     .hb-badge.hb-partner { background: rgba(240,180,94,0.9); color: #2a2216; }
     .hb-badge.hb-note { background: rgba(255,255,255,0.07); color: var(--text-secondary); }
+    /* ── 올린 글 고치기 (2026-09-14) ── */
+    .hb-tl-edit { margin-top: 4px; }
+    .hb-tl-edit button {
+      background: none; border: 0; padding: 2px 0; cursor: pointer;
+      color: var(--text-muted); font-size: 0.78em; font-family: inherit;
+    }
+    .hb-tl-edit button:hover { color: var(--text-secondary); text-decoration: underline; }
+    .hb-editbox, .hb-noteedit {
+      margin: 10px 0; padding: 12px 14px; border-radius: var(--radius-sm);
+      background: var(--bg-secondary); border: 1px solid var(--border);
+    }
+    .hb-edit-h { font-weight: 600; margin-bottom: 10px; color: var(--text-bright); }
+    .hb-editbox label {
+      display: block; margin: 8px 0 3px; font-size: 0.78em; color: var(--text-muted);
+    }
+    .hb-editbox input, .hb-editbox select, .hb-editbox textarea, .hb-noteedit textarea {
+      width: 100%; box-sizing: border-box; padding: 8px 10px;
+      border-radius: var(--radius-sm); border: 1px solid var(--border);
+      background: var(--bg-card); color: var(--text-primary);
+      font-family: inherit; font-size: 0.92em;
+    }
+    .hb-editbox textarea, .hb-noteedit textarea { resize: vertical; min-height: 64px; }
+    .hb-edit-note {
+      margin-top: 10px; font-size: 0.76em; line-height: 1.5; color: var(--text-muted);
+    }
+    .hb-edit-btns {
+      display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px;
+    }
 
     /* 카드 항목칸 — 고객명·전화·송장·품목을 한 줄로 */
     .hb-facts {
@@ -3217,6 +3245,7 @@
     var HB_SOFT_LIMIT = 20;
     var HB_ACTIVE_CNT = 0;
     var HB_DONE_CNT = 0;
+    var HB_LEVELS = [];   // 서버(_CS_HB_LEVELS_)가 채운다
     var HB_NEW_LEVEL = '일반';
     var HB_ACC_KEY = 'pack2u_hb_guide_open';
     var HB_SIZE_KEY = 'pack2u_hb_card_w';
@@ -3614,6 +3643,10 @@
           HB_ACTIVE_CNT = res.activeCount || 0;
           HB_DONE_CNT = res.doneCount || 0;
           if (res.softLimit) HB_SOFT_LIMIT = res.softLimit;
+          /*  중요도 목록은 «서버가 주는 것»을 쓴다 (_CS_HB_LEVELS_).
+              화면에 한 벌 더 적어 두면 언젠가 갈라진다 — 순서가 곧 정렬
+              우선순위라, 갈라지면 공지가 맨 위에 안 선다. */
+          if (res.levels && res.levels.length) HB_LEVELS = res.levels;
           renderHandoffBoard();
           renderNoticeTicker();
           if (silent) csScrollRestore(snap);
@@ -4159,7 +4192,10 @@
         } else if (t === '보드로 되돌림') {
           out.push({ kind: 'reopen', by: nt.by, at: nt.at, tag: '보드로 되돌림', text: '' });
         } else {
-          out.push({ kind: 'note', by: nt.by, at: nt.at, tag: '', text: t });
+          /*  raw 를 같이 싣는다 — 서버가 «그 글자와 똑같은 줄»을 찾는다.
+              몇 번째 줄인지로 가리키면, 그 사이 누가 한 줄 더 붙였을 때
+              엉뚱한 줄을 고친다. */
+          out.push({ kind: 'note', by: nt.by, at: nt.at, tag: '', text: t, raw: nt.raw || '' });
         }
       }
       return out;
@@ -4299,7 +4335,15 @@
           '<span class="hb-tl-at">' + esc(ev.at) + '</span>' +
           (ev.tag ? '<span class="hb-tl-tag">' + esc(ev.tag) + '</span>' : '') +
           '</div>';
-        if (ev.text) h += '<div class="hb-tl-text">' + esc(ev.text) + '</div>';
+        if (ev.text) {
+          h += '<div class="hb-tl-text">' + esc(ev.text) + '</div>';
+          /*  본인이 쓴 줄에만 연필을 보인다. 남의 글에 연필이 보이면 눌러
+              보고 거절당한다 — 안 되는 것은 애초에 안 보이는 편이 낫다. */
+          if (!c.done && ev.kind === 'note' && ev.raw && me && ev.by === me) {
+            h += '<div class="hb-tl-edit"><button type="button" onclick="event.stopPropagation();hbEditNote(\'' +
+              js(c.id) + '\',' + n + ')">✏ 고치기</button></div>';
+          }
+        }
         h += '</div>';
       }
       if (tl.length === 1) {
@@ -4354,6 +4398,12 @@
         h += '<button type="button" class="hb-act" onclick="hbReopen(\'' + js(c.id) + '\')">보드로 되돌리기</button>';
       } else {
         h += '<button type="button" class="hb-act done" onclick="hbComplete(\'' + js(c.id) + '\')">✔ 처리 완료</button>';
+      }
+      /*  ★ 올린 글을 고친다 ★  (2026-09-14)
+          여태 못 고쳐서, 오타 하나에 카드를 지우고 다시 올렸다. 그러면
+          전달내역·읽음·첨부가 같이 날아간다. 작성자 본인에게만 보인다. */
+      if (me && c.author === me) {
+        h += '<button type="button" class="hb-act" onclick="hbEditCard(\'' + js(c.id) + '\')">✏ 글 고치기</button>';
       }
       h += '<button type="button" class="hb-act danger ghost" onclick="hbDelete(\'' + js(c.id) + '\')">삭제</button>';
       h += '</div>';
@@ -4548,6 +4598,169 @@
       if (lb && lb.classList.contains('on')) return;
       closeHbCardModal();
     });
+
+    /**
+     * ══════════════════════════════════════════════════════
+     *  올린 글 고치기
+     *  2026-09-14
+     *
+     *  > "반품 카드나 CS커뮤니티 보드에서 올린 내용이 수정가능하게 해줘"
+     *
+     *  여태 못 고쳐서, 오타 하나에 카드를 지우고 다시 올렸다. 그러면
+     *  전달내역·읽음·첨부가 같이 날아간다.
+     *
+     *  ★ 팝업을 새로 만들지 않는다 ★
+     *    카드 팝업 «안»에서 그 자리를 입력칸으로 바꾼다. 창이 하나 더 뜨면
+     *    무엇을 고치는 중인지 놓친다. 저장하면 보드를 다시 받아 그린다.
+     * ══════════════════════════════════════════════════════
+     */
+    var HB_EDIT_ID = '';      // 지금 고치는 중인 카드
+    var HB_EDIT_NOTE = -1;    // 지금 고치는 중인 전달내역 줄 (타임라인 순번)
+
+    function hbFindCard(id) {
+      var all = hbAllCards();
+      for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i];
+      return null;
+    }
+
+    function hbEditCard(id) {
+      var staff = hbRequireStaff();
+      if (!staff) return;
+      var c = hbFindCard(id);
+      if (!c) { toast('카드를 찾을 수 없습니다. 새로고침 해주세요.', 2600); return; }
+      if (c.author !== staff) { toast('본인이 올린 글만 고칠 수 있습니다.', 2600); return; }
+
+      var body = document.getElementById('hbCardModalBody');
+      if (!body) return;
+      var lv = '';
+      var levels = HB_LEVELS && HB_LEVELS.length ? HB_LEVELS : ['공지', '긴급', '주의', '일반'];
+      for (var i = 0; i < levels.length; i++) {
+        lv += '<option value="' + esc(levels[i]) + '"' +
+          (levels[i] === c.level ? ' selected' : '') + '>' + esc(levels[i]) + '</option>';
+      }
+      var box = document.createElement('div');
+      box.className = 'hb-editbox';
+      box.onclick = function (e) { e.stopPropagation(); };
+      box.innerHTML =
+        '<div class="hb-edit-h">✏ 글 고치기</div>' +
+        '<label>중요도</label><select id="hbEdLevel">' + lv + '</select>' +
+        '<label>제목</label><input id="hbEdTitle" type="text" value="' + esc(c.title) + '">' +
+        '<label>내용</label><textarea id="hbEdBody" rows="5">' + esc(c.body) + '</textarea>' +
+        '<label>연결 (주문번호·송장·고객명)</label>' +
+        '<input id="hbEdLink" type="text" value="' + esc(c.link || '') + '">' +
+        '<div class="hb-edit-note">고치면 전달내역에 「무엇을 고쳤는지」가 남고, ' +
+        '읽음 표시가 지워집니다 — 다른 사람이 바뀐 내용을 다시 보게 하려는 것입니다.</div>' +
+        '<div class="hb-edit-btns">' +
+        '<button type="button" class="hb-act" onclick="hbCancelEdit()">취소</button>' +
+        '<button type="button" class="hb-act done" onclick="hbSaveCard(\'' + js(id) + '\')">저장</button>' +
+        '</div>';
+      hbCancelEdit();
+      HB_EDIT_ID = id;
+      body.appendChild(box);
+      box.scrollIntoView({ block: 'nearest' });
+      var t = document.getElementById('hbEdTitle');
+      if (t) t.focus();
+    }
+
+    function hbCancelEdit() {
+      HB_EDIT_ID = '';
+      HB_EDIT_NOTE = -1;
+      var old = document.querySelectorAll('.hb-editbox');
+      for (var i = 0; i < old.length; i++) old[i].parentNode.removeChild(old[i]);
+      var on = document.querySelectorAll('.hb-noteedit');
+      for (var j = 0; j < on.length; j++) on[j].parentNode.removeChild(on[j]);
+    }
+
+    function hbSaveCard(id) {
+      var staff = hbRequireStaff();
+      if (!staff) return;
+      var g = function (k) { var e = document.getElementById(k); return e ? e.value : undefined; };
+      var title = String(g('hbEdTitle') || '').trim();
+      if (!title) { toast('제목은 비울 수 없습니다.', 2400); return; }
+      var btns = document.querySelectorAll('.hb-edit-btns button');
+      for (var b = 0; b < btns.length; b++) btns[b].disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function (res) {
+          for (var b2 = 0; b2 < btns.length; b2++) btns[b2].disabled = false;
+          if (!res || !res.ok) { toast(String((res && res.error) || '수정 실패'), 3000); return; }
+          hbCancelEdit();
+          toast(String(res.message || '고쳤습니다'));
+          hbReloadBoards();
+        })
+        .withFailureHandler(function (err) {
+          for (var b3 = 0; b3 < btns.length; b3++) btns[b3].disabled = false;
+          toast(String((err && err.message) || '통신 실패'), 2600);
+        })
+        .csEditHandoffCard({
+          id: id, staff: staff,
+          title: title, body: g('hbEdBody'), level: g('hbEdLevel'), link: g('hbEdLink'),
+        });
+    }
+
+    /**
+     * 전달내역 한 줄 고치기.
+     * n 은 타임라인에서 그린 순번이고, 서버에는 «원문 줄»을 보낸다 —
+     * 순번으로 가리키면 그 사이 누가 한 줄 더 붙였을 때 엉뚱한 줄을 고친다.
+     */
+    function hbEditNote(id, n) {
+      var staff = hbRequireStaff();
+      if (!staff) return;
+      var c = hbFindCard(id);
+      if (!c) { toast('카드를 찾을 수 없습니다. 새로고침 해주세요.', 2600); return; }
+      var tl = hbTimeline(c);
+      var ev = tl[n];
+      if (!ev || !ev.raw) { toast('그 줄을 찾을 수 없습니다. 새로고침 해주세요.', 2600); return; }
+      if (ev.by !== staff) { toast('본인이 쓴 줄만 고칠 수 있습니다.', 2600); return; }
+
+      hbCancelEdit();
+      HB_EDIT_NOTE = n;
+      var host = document.getElementById('hbNoteT_' + id + '_' + n);
+      var box = document.createElement('div');
+      box.className = 'hb-noteedit';
+      box.onclick = function (e) { e.stopPropagation(); };
+      box.innerHTML =
+        '<textarea id="hbEdNote" rows="3">' + esc(String(ev.text || '').replace(/^(?:✏\s*)+/, '')) + '</textarea>' +
+        '<div class="hb-edit-btns">' +
+        '<button type="button" class="hb-act" onclick="hbCancelEdit()">취소</button>' +
+        '<button type="button" class="hb-act done" onclick="hbSaveNote(\'' + js(id) + '\',' + n + ')">저장</button>' +
+        '</div>';
+      if (host && host.parentNode) host.parentNode.insertBefore(box, host.nextSibling);
+      else {
+        var body = document.getElementById('hbCardModalBody');
+        if (body) body.appendChild(box);
+      }
+      var ta = document.getElementById('hbEdNote');
+      if (ta) { ta.focus(); ta.selectionStart = ta.value.length; }
+    }
+
+    function hbSaveNote(id, n) {
+      var staff = hbRequireStaff();
+      if (!staff) return;
+      var c = hbFindCard(id);
+      if (!c) { toast('카드를 찾을 수 없습니다.', 2600); return; }
+      var ev = hbTimeline(c)[n];
+      if (!ev || !ev.raw) { toast('그 줄을 찾을 수 없습니다. 새로고침 해주세요.', 2600); return; }
+      var ta = document.getElementById('hbEdNote');
+      var text = ta ? String(ta.value || '').trim() : '';
+      if (!text) { toast('내용을 비울 수 없습니다.', 2400); return; }
+      var btns = document.querySelectorAll('.hb-noteedit button');
+      for (var b = 0; b < btns.length; b++) btns[b].disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function (res) {
+          for (var b2 = 0; b2 < btns.length; b2++) btns[b2].disabled = false;
+          if (!res || !res.ok) { toast(String((res && res.error) || '수정 실패'), 3000); return; }
+          hbCancelEdit();
+          toast(String(res.message || '고쳤습니다'));
+          hbReloadBoards();
+        })
+        .withFailureHandler(function (err) {
+          for (var b3 = 0; b3 < btns.length; b3++) btns[b3].disabled = false;
+          toast(String((err && err.message) || '통신 실패'), 2600);
+        })
+        .csEditHandoffNote({ id: id, staff: staff, raw: ev.raw, text: text });
+    }
 
     function hbAllCards() {
       return (HB_CARDS || []).concat(LB_CARDS || []);

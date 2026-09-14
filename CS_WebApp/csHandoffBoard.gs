@@ -617,6 +617,157 @@ function csAddHandoffNote(payload) {
  * 읽음 표시
  * @param {Object} payload {id, staff}
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 올린 글을 고친다 ★
+ *  2026-09-14
+ *
+ *  > "반품 카드나 CS커뮤니티 보드에서 올린 내용이 수정가능하게 해줘"
+ *
+ *  여태 카드는 올리고 나면 못 고쳤다. 오타 하나 때문에 카드를 지우고 다시
+ *  올리면 전달내역·읽음·첨부가 같이 날아간다. 그래서 사람들은 「※ 위 내용
+ *  정정」 같은 줄을 밑에 붙인다 — 읽는 사람이 무엇이 맞는지 헷갈린다.
+ *
+ *  ★ 본인 것만 고친다 ★
+ *    남의 글을 고칠 수 있으면 보드가 못 믿을 것이 된다. 여럿이 같이 보는
+ *    판에서 「누가 무엇을 썼나」가 흔들리면 보드 자체가 뜻을 잃는다.
+ *
+ *  ★ 고친 흔적을 반드시 남긴다 ★
+ *    전달내역에 「✏ 제목을 고쳤습니다」 한 줄을 자동으로 붙인다.
+ *    이미 읽은 사람이 그 뒤에 바뀐 것을 모르면, 고칠 수 있게 한 것이
+ *    오히려 사고를 만든다. 무엇을 고쳤는지까지 적는다.
+ *
+ *  ★ 지우기와 다르다 ★
+ *    csDeleteHandoffCard 는 그대로 둔다. 잘못 올린 것은 지우는 게 맞고,
+ *    고치는 것은 «내용이 살아 있는데 틀렸을 때»다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function csEditHandoffCard(payload) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  payload = payload || {};
+  var staff = _cs_hb_staff_(payload.staff);
+  if (!staff) return { ok: false, error: "담당자를 먼저 선택하세요." };
+
+  //  넘어온 칸만 고친다. 안 넘어온 칸은 «그대로 둔다» — 빈 문자열로 지우지 않는다.
+  var 온것 = {};
+  if (payload.title !== undefined) 온것.title = String(payload.title || "").trim();
+  if (payload.body !== undefined) 온것.body = String(payload.body || "").trim();
+  if (payload.level !== undefined) 온것.level = _cs_hb_normLevel_(payload.level);
+  if (payload.link !== undefined) 온것.link = String(payload.link || "").trim();
+  if (온것.title !== undefined && !온것.title) {
+    return { ok: false, error: "제목은 비울 수 없습니다." };
+  }
+  var 칸수 = 0;
+  for (var _k in 온것) if (Object.prototype.hasOwnProperty.call(온것, _k)) 칸수++;
+  if (!칸수) return { ok: false, error: "고칠 내용이 없습니다." };
+
+  return _cs_hb_withCard_(payload, function (tab, sheetRow, row) {
+    var 쓴이 = String(row[_CS_HB_COL_.author] || "").trim();
+    if (쓴이 && 쓴이 !== staff) {
+      return {
+        ok: false,
+        error: "본인이 올린 글만 고칠 수 있습니다 (작성자: " + 쓴이 + ").\n" +
+          "내용이 틀렸다면 전달 내용으로 알려 주세요.",
+      };
+    }
+
+    var 이름 = { title: "제목", body: "내용", level: "중요도", link: "연결" };
+    var 바뀜 = [];
+    for (var k in 온것) {
+      if (!Object.prototype.hasOwnProperty.call(온것, k)) continue;
+      var c = _CS_HB_COL_[k];
+      if (c === undefined) continue;
+      var 전 = String(row[c] == null ? "" : row[c]).trim();
+      if (전 === 온것[k]) continue;               // 같은 값이면 손대지 않는다
+      tab.getRange(sheetRow, c + 1).setValue(온것[k]);
+      바뀜.push(이름[k] || k);
+    }
+    if (!바뀜.length) return { ok: true, id: payload.id, message: "바뀐 것이 없습니다." };
+
+    /*  ★ 흔적 ★ 이미 읽은 사람이 「무엇이 바뀌었나」를 알아야 한다.
+        내용까지 적지는 않는다 — 전달내역이 본문을 두 번 담게 되면 길어지고,
+        지금 본문이 곧 맞는 내용이다. 무엇을 고쳤는지만 남긴다. */
+    var next = _cs_hb_appendNoteLine_(
+      row[_CS_HB_COL_.notes],
+      _cs_hb_stamp_(staff) + " ✏ " + 바뀜.join("·") + " 고침",
+    );
+    tab.getRange(sheetRow, _CS_HB_COL_.notes + 1).setValue(next);
+
+    /*  고친 글은 «다시 읽어야» 한다. 읽음 표시를 작성자만 남기고 지운다 —
+        안 그러면 옛 내용을 읽고 체크한 사람이 바뀐 것을 영영 안 본다. */
+    tab.getRange(sheetRow, _CS_HB_COL_.read + 1).setValue(staff);
+
+    try { _cs_pulse_bust_(); } catch (eP) {}
+    return { ok: true, id: payload.id, changed: 바뀜, message: 바뀜.join("·") + " 고쳤습니다" };
+  });
+}
+
+/**
+ * 전달내역 한 줄 고치기.
+ *
+ * ★ 줄을 «원문 그대로»로 찾는다 ★
+ *   전달내역은 「[yyMMdd HH:mm 작성자] 내용」 줄들이 쌓인 한 칸이다.
+ *   몇 번째 줄인지로 찾으면, 그 사이 누가 한 줄 더 붙였을 때 엉뚱한 줄을
+ *   고친다. 프런트가 _cs_hb_parseNotes_ 에서 받은 `raw`(그 줄 전체)를
+ *   그대로 돌려보내면, 그 글자와 똑같은 줄을 찾는다.
+ *   똑같은 줄이 둘이면 손대지 않는다 — 어느 것인지 모르면 안 고치는 편이 낫다.
+ *
+ * @param {Object} payload {id, board, raw, text, staff}
+ *   raw  = 고칠 줄의 원문 (parseNotes 가 준 raw)
+ *   text = 새 내용 (머리는 그대로 둔다)
+ */
+function csEditHandoffNote(payload) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  payload = payload || {};
+  var staff = _cs_hb_staff_(payload.staff);
+  if (!staff) return { ok: false, error: "담당자를 먼저 선택하세요." };
+  var want = String(payload.raw || "").trim();
+  if (!want) return { ok: false, error: "어느 줄인지 알 수 없습니다." };
+  /*  이미 고친 줄이면 프런트가 보여 준 글에 ✏ 가 들어 있다. 그대로 다시
+      받으면 ✏ 가 겹쳐 쌓인다 — 앞의 것을 털어 낸다. */
+  var text = String(payload.text || "").trim().replace(/^(?:✏\s*)+/, "").trim();
+  if (!text) return { ok: false, error: "내용을 비울 수 없습니다. 지우려면 삭제를 쓰세요." };
+
+  return _cs_hb_withCard_(payload, function (tab, sheetRow, row) {
+    var raw = String(row[_CS_HB_COL_.notes] == null ? "" : row[_CS_HB_COL_.notes]);
+    var lines = raw.split(/\r?\n/);
+    var 찾음 = -1, 여럿 = false;
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].trim() !== want) continue;
+      if (찾음 >= 0) { 여럿 = true; break; }
+      찾음 = i;
+    }
+    if (찾음 < 0) {
+      return { ok: false, error: "그 줄을 못 찾았습니다 — 그 사이 누가 고쳤을 수 있습니다. 새로고침 후 다시 시도하세요." };
+    }
+    if (여럿) {
+      return { ok: false, error: "똑같은 줄이 둘 이상이라 어느 것인지 알 수 없습니다." };
+    }
+
+    /*  머리 「[yyMMdd HH:mm 작성자]」를 떼어 본인 것인지 본다.
+        머리가 없는 줄(옛 자료)은 누가 썼는지 알 수 없으므로 손대지 않는다. */
+    var m = lines[찾음].match(/^\[(\d{6})\s+(\d{1,2}:\d{2})\s+([^\]]+)\]/);
+    if (!m) {
+      return { ok: false, error: "작성자를 알 수 없는 줄이라 고칠 수 없습니다." };
+    }
+    var 쓴이 = String(m[3] || "").trim();
+    if (쓴이 && 쓴이 !== staff) {
+      return { ok: false, error: "본인이 쓴 줄만 고칠 수 있습니다 (작성자: " + 쓴이 + ")." };
+    }
+
+    /*  머리는 그대로 둔다 — 시각이 바뀌면 대화 순서가 흐트러진다.
+        고쳤다는 표시(✏)를 머리 뒤에 붙여, 읽는 사람이 원문이 아님을 안다. */
+    var 새줄 = m[0] + " ✏ " + text;
+    if (lines[찾음] === 새줄) return { ok: true, id: payload.id, message: "바뀐 것이 없습니다." };
+    lines[찾음] = 새줄;
+    tab.getRange(sheetRow, _CS_HB_COL_.notes + 1)
+      .setValue(lines.join(String.fromCharCode(10)));
+
+    try { _cs_pulse_bust_(); } catch (eP) {}
+    return { ok: true, id: payload.id, message: "전달 내용을 고쳤습니다" };
+  });
+}
+
 function csMarkHandoffRead(payload) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   payload = payload || {};
