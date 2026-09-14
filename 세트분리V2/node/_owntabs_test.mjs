@@ -654,3 +654,47 @@ console.log("\n[출력 정렬] 출고지 → 품목 → 들어온 차례");
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n정렬도 그대로");
 if (실패) process.exit(1);
+
+/* ═══════════════════════════════════════════════════════════════
+   이름 비교 — 남의 송장이 붙지 않는가
+
+   > "송장번호가 없는것이 다른 송장번호를 입력해버림.. 그래서 송장번호가
+   >  있으니 마감처리되서 넘어감.. 그래서 늦게 상황을 알게됨..고객전화로.."
+
+   여태 «서로 품기만 해도» 같은 이름이라 했다. 한국 사람 이름은 2~3글자라
+   김민 ⊂ 김민수 가 그대로 성립한다. 조용하고, 늦고, 그때는 이미 물건이
+   남에게 가 있다 — 제일 나쁜 종류의 오류다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[이름 비교] 남의 송장이 붙지 않는가");
+{
+  const auto = 읽기(path.join(뿌리, "gasAuto.js"));
+  const 꺼내기 = new Function(
+    "Utilities", "SpreadsheetApp", "Logger", "module",
+    auto + "\n" + "return { _ssf_nameHit_: _ssf_nameHit_ };",
+  );
+  const { _ssf_nameHit_ } = 꺼내기(null, null, { log() {} }, undefined);
+
+  //  ★ 이것이 사고의 모양이다 ★
+  eq("★ 김민 ≠ 김민수", _ssf_nameHit_("김민", "김민수"), "false");
+  eq("★ 이수 ≠ 이수민", _ssf_nameHit_("이수", "이수민"), "false");
+  eq("★ 박정 ≠ 박정호", _ssf_nameHit_("박정", "박정호"), "false");
+  eq("★ 김철수 ≠ 김철수민", _ssf_nameHit_("김철수", "김철수민"), "false");
+
+  //  같으면 같다
+  eq("같은 이름은 맞다", _ssf_nameHit_("김철수", "김철수"), "true");
+  eq("공백·괄호는 털고 본다", _ssf_nameHit_(" 김 철수 ", "(김철수)"), "true");
+
+  //  상호는 여전히 품는다 — 짧은 쪽이 5글자 이상
+  eq("상호는 품어도 된다", _ssf_nameHit_("팩투유물류", "주팩투유물류센터"), "true");
+  eq("다섯 글자부터 품는다", _ssf_nameHit_("가나다라마", "가나다라마바사"), "true");
+  eq("네 글자는 안 품는다", _ssf_nameHit_("가나다라", "가나다라마바"), "false");
+
+  //  빈칸·한 글자는 애초에 안 본다
+  eq("빈칸은 false", _ssf_nameHit_("", "김철수"), "false");
+  eq("한 글자는 false", _ssf_nameHit_("김", "김철수"), "false");
+
+  eq("문턱이 코드에 적혀 있다", auto.includes("_SSF_LOOSE_MIN_ = 5"), "true");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n이름 비교도 그대로");
+if (실패) process.exit(1);
