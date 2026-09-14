@@ -913,3 +913,50 @@ console.log("\n[전화번호] 앞의 0 이 살아남는가");
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n전화번호도 그대로");
 if (실패) process.exit(1);
+
+/* ═══════════════════════════════════════════════════════════════
+   보류 탭의 「원본코드」 — 세트가 두 줄이어도 열쇠가 안 깨진다
+
+   사장님 화면: 순번 100028 · 사방넷주문번호 0914-PH-1aefe 가 «두 줄»이다
+   (세트가 몸통·뚜껑으로 쪼개졌다). 고유ID 도 순번도 같아서, 코드를 고치면
+   어느 줄인지 기계가 못 정한다 — 그게 흔한 모양이다.
+   그래서 열쇠(원본코드)를 아예 적어 둔다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[보류 탭] 원본코드 칸이 열쇠를 지킨다");
+{
+  const core = 읽기(path.join(뿌리, "core.js"));
+  const masters = 읽기(path.join(뿌리, "gasMasters.js"));
+  const 꺼내기 = new Function(
+    "Utilities", "SpreadsheetApp", "Logger", "module",
+    core + "\n" +
+    "return { SS_HOLD_HEADER: SS_HOLD_HEADER, SS_OUT_HEADER: SS_OUT_HEADER, ssHoldRow: ssHoldRow };",
+  );
+  const { SS_HOLD_HEADER, SS_OUT_HEADER, ssHoldRow } = 꺼내기(null, null, { log() {} }, undefined);
+
+  eq("★ 맨 뒤가 원본코드", SS_HOLD_HEADER[SS_HOLD_HEADER.length - 1], "원본코드");
+  eq("★ 조치·메모 자리는 안 밀렸다",
+    SS_HOLD_HEADER.indexOf("조치") + "/" + SS_HOLD_HEADER.indexOf("메모"),
+    (SS_OUT_HEADER.length + 2) + "/" + (SS_OUT_HEADER.length + 3));
+
+  const u = {
+    출고지: "평택D-6", 순번: "100028", 일자: "2026/09/14 -14",
+    품목코드: "BF105PSFTP0003", 품목명: "BF 105파이", 박스수: 1, 수량: 1,
+    고유ID: "0914-PH-1aefe", 사방넷주문번호: "0914-PH-1aefe",
+    원본코드: "BF105PSFTP0003_ORIG",
+    보류사유: "상태보류", 보류상세: "단종품", 조치입력: "", 메모입력: "",
+  };
+  const row = ssHoldRow(u);
+  eq("줄 길이가 머리글과 맞는다", row.length, SS_HOLD_HEADER.length);
+  eq("★ 원본코드가 실린다", row[row.length - 1], "BF105PSFTP0003_ORIG");
+
+  //  ── 담는 쪽이 그 칸을 «먼저» 보는가 ──
+  eq("★ 적힌 원본코드를 먼저 쓴다",
+    masters.includes("var 원본 = 적힌원본 || back[uid + '|' + code];"), "true");
+  eq("★ 옛 탭(칸 없음)도 여전히 돈다", masters.includes("} else if (원본 === undefined) {"), "true");
+  eq("원장의 지금 코드와 견준다", masters.includes("코드: ssText(lv[r][li['품목코드']])"), "true");
+  eq("코드가 다르면 새코드로 담는다",
+    masters.includes("if (code && code !== 적힌원본 && (!원줄 || code !== 원줄.코드)) 새코드 = code;"), "true");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n원본코드 열쇠도 그대로");
+if (실패) process.exit(1);
