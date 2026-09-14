@@ -893,6 +893,18 @@ function ss_기초데이터자동() {
   }
 
   var 총초 = ((new Date().getTime() - t0) / 1000).toFixed(1);
+
+  /*  ★ 돌았다는 «흔적»을 설정 탭에 남긴다 ★  (2026-09-14)
+      로그는 사람도 v2 도 못 본다. 이 한 줄이 있어야 밖에서 「오늘 차려졌나」를
+      물을 수 있다. 시트에 두면 사람 눈에도 보인다 — 로그보다 낫다. */
+  try {
+    ssio_setConfig('기초데이터_최근실행',
+      Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss') +
+      '  (' + 총초 + '초' + (실패 ? ' · 실패 ' + 실패 : '') + ')');
+  } catch (eStamp) {
+    Logger.log('[기초데이터] 흔적 남기기 실패: ' + (eStamp && eStamp.message ? eStamp.message : eStamp));
+  }
+
   var msg = '기초 데이터 ' + 총초 + '초' + (실패 ? '  (실패 ' + 실패 + ')' : '') +
     String.fromCharCode(10) + 줄.join(String.fromCharCode(10));
   Logger.log(msg);
