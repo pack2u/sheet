@@ -864,3 +864,52 @@ console.log("\n[보류 조치] 고친 코드·품목명이 반영되는가");
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n보류 조치도 그대로");
 if (실패) process.exit(1);
+
+/* ═══════════════════════════════════════════════════════════════
+   전화번호 앞의 0
+
+   > "대리발송 전화번호 앞에 0이 빠지네"
+
+   판매현황을 getValues 로 읽는다. 그 칸이 숫자로 저장돼 있으면 구글이
+   01012345678 을 1012345678 이라는 수로 준다 — 읽는 순간 이미 0 이 없다.
+   그리고 쓸 때도 칸 서식이 자동이면 다시 수로 해석돼 0 이 사라진다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[전화번호] 앞의 0 이 살아남는가");
+{
+  const core = 읽기(path.join(뿌리, "core.js"));
+  const io = 읽기(path.join(뿌리, "gasIO.js"));
+  const 꺼내기 = new Function(
+    "Utilities", "SpreadsheetApp", "Logger", "module",
+    core + "\n" + "return { ssPhoneFix: ssPhoneFix };",
+  );
+  const { ssPhoneFix } = 꺼내기(null, null, { log() {} }, undefined);
+
+  eq("★ 휴대폰 10자리 → 0 붙임", ssPhoneFix(1012345678), "01012345678");
+  eq("★ 경기 9자리 → 0 붙임", ssPhoneFix(312345678), "0312345678");
+  eq("★ 서울 9자리 → 0 붙임", ssPhoneFix("212345678"), "0212345678");
+
+  eq("이미 0 이면 그대로", ssPhoneFix("01012345678"), "01012345678");
+  eq("★ - 가 있으면 안 건드린다", ssPhoneFix("010-1234-5678"), "010-1234-5678");
+  eq("공백이 섞여도 안 건드린다", ssPhoneFix(" 010 1234 5678 "), "010 1234 5678");
+  eq("빈칸은 빈칸", ssPhoneFix(""), "");
+  eq("null 도 빈칸", ssPhoneFix(null), "");
+
+  //  ★ 엉뚱한 길이엔 손대지 않는다 ★ 무엇이 원본인지 알 수 없게 되면 안 된다
+  eq("8자리는 그대로", ssPhoneFix("12345678"), "12345678");
+  eq("11자리는 그대로", ssPhoneFix("12345678901"), "12345678901");
+  eq("문자가 섞이면 그대로", ssPhoneFix("010a1234"), "010a1234");
+
+  //  ── 배선 ──
+  eq("★ 읽을 때 쓴다 (전화)", core.includes("ssPhoneFix(g(row, '전화'))"), "true");
+  eq("★ 읽을 때 쓴다 (모바일)", core.includes("모바일: ssPhoneFix("), "true");
+  eq("보내는분전화도", core.includes("위탁표기 ? ssPhoneFix("), "true");
+  eq("★ 쓸 때 텍스트 서식", io.includes("setNumberFormat('@')"), "true");
+  eq("★ 값 넣기 «전»에 서식", io.indexOf("ssio_textFormat(sh, headers, rows.length);") <
+    io.indexOf("sh.getRange(2, 1, rows.length, headers.length).setValues(rows);"), "true");
+  eq("수량·합계는 텍스트로 안 만든다",
+    io.includes("'수량'") || io.includes("'합계'"), "false");
+  eq("머리글 이름으로 찾는다", io.includes("SSIO_TEXT_COLS.indexOf(ssText(headers[i]))"), "true");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n전화번호도 그대로");
+if (실패) process.exit(1);

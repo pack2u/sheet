@@ -97,15 +97,44 @@ function ssio_clearBody(sh) {
 }
 
 /** 헤더 아래로 값 덮어쓰기 */
+/**
+ * 앞자리 0 이 살아 있어야 하는 칸들.
+ *
+ * ★ 2026-09-14: 「대리발송 전화번호 앞에 0이 빠지네」 ★
+ *   값이 멀쩡한 문자열 '01012345678' 이어도, 칸 서식이 «자동»이면 구글이
+ *   수로 알아듣고 앞 0 을 지워 보여 준다. 사람 눈에는 값이 틀린 것으로 보이고,
+ *   그 탭을 복사해 업체에 보내면 «실제로» 틀린 번호가 간다.
+ *   ss_로젠출력엑셀 은 파일로 낼 때 이미 이 처리를 한다 — 탭에는 없었다.
+ *
+ *   수량·합계·배송비는 넣지 않는다. 텍스트로 굳으면 더하기가 안 된다.
+ */
+var SSIO_TEXT_COLS = ['전화', '모바일', '보내는분전화', '원연락처', '우편번호',
+  '운송장번호', '송장번호', '사방넷주문번호', '고유ID', '주문번호'];
+
 function ssio_write(name, headers, rows, style) {
   var sh = ssio_sheet(name, headers);
   sh.getRange(1, 1, 1, headers.length).setValues([headers]);
   ssio_clearBody(sh);
   if (rows && rows.length) {
+    /*  ★ 값을 넣기 «전»에 서식을 잡는다 ★
+        넣고 나서 바꾸면 이미 수로 해석된 뒤라 0 이 안 돌아온다. */
+    ssio_textFormat(sh, headers, rows.length);
     sh.getRange(2, 1, rows.length, headers.length).setValues(rows);
   }
   ssio_styleHeader(sh, headers.length, style);
   return sh;
+}
+
+/** 머리글 이름으로 찾아 그 열만 텍스트 서식으로. 자리로 박지 않는다. */
+function ssio_textFormat(sh, headers, rowCount) {
+  try {
+    for (var i = 0; i < headers.length; i++) {
+      if (SSIO_TEXT_COLS.indexOf(ssText(headers[i])) < 0) continue;
+      sh.getRange(2, i + 1, rowCount, 1).setNumberFormat('@');
+    }
+  } catch (e) {
+    //  서식은 곁다리다. 실패해도 자료는 들어가야 한다.
+  }
 }
 
 /** 맨 아래에 이어붙이기 (이력용) */
