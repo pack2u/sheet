@@ -3242,6 +3242,7 @@
     var HB_MINE_HIDDEN = 0;   // CS 보드에서 이 필터가 가린 건수
     var LB_MINE_HIDDEN = 0;   // 물류 보드
     var HB_OPEN_ID = '';
+    var HB_MODAL_SIG = '';   // 팝업에 지금 그려진 카드의 자국 (안 바뀌면 다시 안 그린다)
     var HB_LOADING = false;
     var HB_SOFT_LIMIT = 20;
     var HB_ACTIVE_CNT = 0;
@@ -4572,11 +4573,35 @@
 
       // 남이 완료했거나 지운 카드 — 조용히 닫는다
       if (!card) {
+        HB_MODAL_SIG = '';
         HB_OPEN_ID = '';
         ov.classList.remove('active');
         body.innerHTML = '';
         return;
       }
+
+      /* ══════════════════════════════════════════════════
+       *  ★ 안 바뀌었으면 다시 안 그린다 ★  (2026-09-14)
+       *
+       *  > "더 가볍게도 가능한가?"
+       *
+       *  목록 카드는 글자뿐이다. 팝업은 전달내역·첨부까지 그리는데, 첨부는
+       *  «썸네일»이라 그림 자체는 무겁지 않다 — 원본은 눌렀을 때 연다.
+       *  무거운 건 innerHTML 로 통째로 갈아 끼우는 일 «그 자체»다. DOM 을 다
+       *  버리고 새로 만들면 브라우저가 다시 배치하고, <img> 는 지워졌다 다시
+       *  붙으며 깜박인다. 읽던 자리와 긁어 둔 글자도 같이 날아간다.
+       *
+       *  그런데 hbRenderBoards() 는 목록이 바뀔 때마다 이 함수를 부른다.
+       *  남이 올린 카드 하나 때문에 목록을 새로 그렸을 뿐인데, 내가 보고
+       *  있던 팝업의 사진까지 다시 그려졌다.
+       *
+       *  카드 내용이 그대로면 그리지 않는다. 견주는 값은 카드 통째로 —
+       *  칸을 골라 적으면 언젠가 하나를 빠뜨리고, 그 칸만 화면에 안 뜬다.
+       *  카드 한 장은 작다(글자 몇 줄), 다시 그리는 값이 훨씬 크다.
+       * ══════════════════════════════════════════════════ */
+      var 지금 = HB_OPEN_ID + '|' + hbStaffName() + '|' + JSON.stringify(card);
+      if (HB_MODAL_SIG === 지금 && ov.classList.contains('active')) return;
+      HB_MODAL_SIG = 지금;
 
       body.innerHTML =
         '<div class="hb-card-modal-bar">' +
@@ -4829,7 +4854,13 @@
         for (var i = 0; i < arr.length; i++) {
           if (arr[i] && arr[i].id === card.id) {
             arr[i] = card;
-            hbRenderBoards();
+            /*  ★ 바뀐 보드 «하나»만 그린다 ★
+                hbRenderBoards() 는 CS·물류 두 목록을 다 그린다. 카드 한 장이
+                바뀌었을 뿐인데 남의 보드까지 새로 만들 까닭이 없다. */
+            if (l === 0) renderHandoffBoard();
+            else if (typeof lbRenderCards === 'function') lbRenderCards();
+            hbRenderCardModal();   // 안 바뀌었으면 스스로 건너뛴다
+            hbToCardFill();
             hbReloadSoon();
             return true;
           }
