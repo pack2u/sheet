@@ -6552,6 +6552,9 @@ function _po_checkNonPartnerTempTabMatches_(invoiceMap, scannedLogs, hubInvoiceB
   // 이름은 같지만 자사출고 송장이라 버린 건수 — 종전에는 이게 그대로 붙었다
   var fbBlocked = 0;
   var fbBlockedEg = [];
+  //  고유ID 가 있어 이름 폴백을 아예 안 한 건 — 「아직 송장이 없다」가 답이다
+  var fbUidOnly = 0;
+  var fbUidOnlyEg = [];
   if (unresolved.length && _po_execElapsedMs_() > _PO_FB_BUDGET_MS_) {
     scannedLogs.push(
       "[비협력임시탭] 2차 폴백 생략 — 실행시간 " +
@@ -6598,10 +6601,30 @@ function _po_checkNonPartnerTempTabMatches_(invoiceMap, scannedLogs, hubInvoiceB
           if (byUid && byUid.inv) { hit = byUid; via.via = "UID"; }
         }
 
-        // 고유ID로 못 찾으면 이름·전화로 내려간다. 단, 전용양식 계열 출처만 받는다.
-        // 대리공급 송장의 원천은 공급처가 적는 전용양식이다. 입력_롯데택배는
-        // 우리 자사출고 송장이므로 이 행의 후보가 될 수 없다.
-        if (!hit || !hit.inv) {
+        /* ★ 고유ID 가 있으면 «거기서 끝낸다» ★  (2026-09-14)
+           > "가장큰 문제는 고유아이디가 있는데 그게 무시 된다는게 문제야"
+
+           2026-08-27 에 «순서»는 고쳤다 — 고유ID 를 먼저 본다. 그런데 고유ID 로
+           못 찾았을 때 이름으로 내려가는 길을 그대로 뒀다. 그 길이 문제였다.
+
+           고유ID 가 있는데 그 ID 로 송장이 안 나온다는 건 «아직 송장이 없다»는
+           뜻이다. 그때 이름이 비슷한 남의 송장을 가져오면 —
+             · 송장이 붙었으니 마감으로 넘어가고
+             · 사람은 고객 전화를 받고서야 안다
+           못 찾은 채로 두면 미매칭으로 남아 눈에 띈다. 조용히 틀리는 것보다
+           시끄럽게 비어 있는 편이 언제나 낫다.
+
+           _pep_resolveRowInvoice_ 는 처음부터 이렇게 하고 있었다(UID미매칭 →
+           null). 여기만 안 따라왔다. 이름 폴백은 «고유ID 가 없는 줄»의 것이다. */
+        var _uidReal_ = uUid && typeof _pep_isRealUid_ === "function"
+          ? _pep_isRealUid_(uUid) : !!uUid;
+        if ((!hit || !hit.inv) && _uidReal_) {
+          fbUidOnly++;
+          if (fbUidOnlyEg.length < 5) {
+            fbUidOnlyEg.push(uUid + " " + String(uRow[12] || "").substring(0, 10));
+          }
+        }
+        if ((!hit || !hit.inv) && !_uidReal_) {
           var npHit = _pep_lookupNamePhoneInvoice_(
             fbMap, uRow[12], uRow[8] || uRow[7], uRow[9], uRow[4], via,
           );
@@ -6638,6 +6661,16 @@ function _po_checkNonPartnerTempTabMatches_(invoiceMap, scannedLogs, hubInvoiceB
         scannedLogs.push(
           "[비협력임시탭] 2차 폴백(일일마감 송장맵 " + (fbStat.keys || 0) + "키) 회수 " +
           fbMatched + "건 — " + vparts.join(", "),
+        );
+      }
+      /*  조용히 안 붙은 것도 «말한다». 이름 폴백을 막은 결과로 미매칭이 늘 텐데,
+          그 늘어남을 설명하지 않으면 「전보다 나빠졌다」로만 보인다. */
+      if (fbUidOnly > 0) {
+        scannedLogs.push(
+          "[비협력임시탭] 고유ID 가 있어 이름으로는 안 찾음: " + fbUidOnly + "건" + String.fromCharCode(10) +
+            "  (고유ID 로 송장이 안 나오면 «아직 송장이 없다»는 뜻입니다." + String.fromCharCode(10) +
+            "   이름이 비슷한 남의 송장을 붙이면 마감으로 넘어가 버립니다)" + String.fromCharCode(10) +
+            (fbUidOnlyEg.length ? "  " + fbUidOnlyEg.join(String.fromCharCode(10) + "  ") : ""),
         );
       }
       if (fbBlocked > 0) {

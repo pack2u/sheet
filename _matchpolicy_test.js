@@ -266,5 +266,36 @@ const decide = vm.runInContext("_par_decideRow_", ctx);
     d.verdict + "/" + d.apply, "검토필요/false");
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   고유ID 가 있으면 이름으로 «안» 내려간다
+
+   > "가장큰 문제는 고유아이디가 있는데 그게 무시 된다는게 문제야"
+
+   2026-08-27 에 «순서»는 고쳤다(고유ID 먼저). 그런데 고유ID 로 못 찾았을 때
+   이름으로 내려가는 길을 그대로 뒀다. 고유ID 가 있는데 그 ID 로 송장이
+   안 나온다는 건 «아직 송장이 없다»는 뜻이지, 이름이 비슷한 남의 송장을
+   가져오라는 뜻이 아니다. 붙으면 마감으로 넘어가고 고객 전화로 알게 된다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[고유ID 우선] 있으면 이름 폴백을 안 탄다");
+{
+  const po = fs.readFileSync("_partnerOrders.gs", "utf8");
+
+  check("★ 고유ID 가 진짜면 이름 폴백을 막는다",
+    po.indexOf("if ((!hit || !hit.inv) && !_uidReal_) {") > 0, true);
+  check("★ 옛 무조건 폴백은 사라졌다",
+    po.indexOf("if (!hit || !hit.inv) {" + String.fromCharCode(10) +
+      "          var npHit = _pep_lookupNamePhoneInvoice_(") > 0, false);
+  check("막은 건수를 센다", po.indexOf("fbUidOnly++") > 0, true);
+  check("화면에 적는다", po.indexOf("고유ID 가 있어 이름으로는 안 찾음") > 0, true);
+  check("어느 건인지 예시도 남긴다", po.indexOf("fbUidOnlyEg") > 0, true);
+
+  //  본래 이렇게 하고 있던 함수 — 여기와 규칙이 같아야 한다
+  const pep = fs.readFileSync("_partnerExclusivePush.gs", "utf8");
+  check("_pep_resolveRowInvoice_ 는 UID미매칭이면 null",
+    pep.indexOf(String.fromCharCode(34) + "UID미매칭" + String.fromCharCode(34) + ";") > 0 ||
+    pep.indexOf("outVia.via = " + String.fromCharCode(34) + "UID미매칭") > 0, true);
+}
+
+
 console.log(`\n═══ 결과: ${pass} 통과 / ${fail} 실패 ═══`);
 process.exit(fail ? 1 : 0);
