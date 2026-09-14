@@ -1482,3 +1482,24 @@ console.log("\n[메우기 메뉴] 세트분리 없이 그 탭만 다시 세운�
   eq("★ 버린 줄이 몇인지도 말한다",
     메뉴.includes("빈 껍데기 ' + 버린줄 + '행은 버렸습니다"), "true");
 }
+
+console.log("\n[메우기] 지난 날짜도 메운다 — 남의 날짜에 오늘 주문을 넣지 않는다");
+{
+  const main = 읽기(path.join(뿌리, "gasMain.js"));
+  const 메뉴 = main.slice(main.indexOf("function ss_그날판매현황메우기"));
+
+  eq("★ 날짜를 받는다",
+    메뉴.includes("function ss_그날판매현황메우기(날앞) {"), true);
+  eq("★ 안 주면 물어본다",
+    메뉴.includes("ui.ButtonSet.OK_CANCEL"), true);
+  eq("★ 비워 두면 오늘",
+    메뉴.includes("if (!오늘) 오늘 = Utilities.formatDate"), true);
+  eq("★ yyMMdd 가 아니면 그만둔다",
+    메뉴.includes("if (!/^[0-9]{6}$/.test(오늘)) {"), true);
+  eq("★★ 지난 날짜면 「판매현황_고유아이디」를 안 쓴다",
+    메뉴.includes("var 회차줄 = (오늘 === 진짜오늘) ? ssio_body(SSIO_TABS.회차) : [];"), true);
+  eq("★ 그 사실을 화면에 말한다",
+    메뉴.includes("지난 날짜라 「"), true);
+  eq("★ 오늘일 때는 예전처럼 입력아이디를 쓴다",
+    메뉴.includes("if (마지막키 && !있는키[마지막키]) {"), true);
+}

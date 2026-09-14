@@ -1771,9 +1771,37 @@ function ss_그날판매현황쌓기(runKey) {
  *  읽기만 한다. 원장은 안 건드리고, 그날 탭에 빠진 회차만 보태 넣는다.
  * ══════════════════════════════════════════════════════════════
  */
-function ss_그날판매현황메우기() {
+function ss_그날판매현황메우기(날앞) {
   var ui = SpreadsheetApp.getUi();
-  var 오늘 = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
+  var 오늘 = ssText(날앞);
+
+  /* ★ 지난 날짜도 메운다 ★  (2026-09-14)
+     > "허브에서는 구 세트분리 판매현황을 읽는거 아니야?"
+
+     맞는 말이었고, 그것이 사고의 나머지 절반이었다. 9/11~9/13 사이 허브는
+     «구»를 보는데 사장님은 «뉴»에 붙여넣고 계셨다 — 그 사흘 마감이 2건·29건
+     이다. 오늘 소스를 뉴로 옮겨 앞은 풀렸지만, 그날 마감은 여전히 비어 있다.
+
+     그날 주문은 원장에 그대로 있다. 날짜만 받으면 「0911판매현황」을 만들 수
+     있고, 허브 마감을 그 날짜로 다시 돌리면 복구된다.
+
+     ★ 비워 두면 오늘이다 ★ 날마다 쓰는 길은 묻지 않고 지나가야 한다. */
+  if (!오늘) {
+    var 답 = ui.prompt('그날 판매현황 메우기',
+      '어느 날짜를 메울까요?\n\n' +
+      '  · 비워 두고 확인 → 오늘\n' +
+      '  · 「260911」 처럼 yyMMdd 여섯 자리\n\n' +
+      '원장에서 그 날짜 회차를 찾아 「MMDD판매현황」 탭을 세웁니다.\n' +
+      '원장은 읽기만 하고, 출력 탭은 건드리지 않습니다.',
+      ui.ButtonSet.OK_CANCEL);
+    if (답.getSelectedButton() !== ui.Button.OK) return;
+    오늘 = ssText(답.getResponseText()).split(' ').join('');
+  }
+  if (!오늘) 오늘 = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
+  if (!/^[0-9]{6}$/.test(오늘)) {
+    ui.alert('날짜는 yyMMdd 여섯 자리로 적어 주세요 (예: 260911).\n\n받은 값: ' + 오늘);
+    return;
+  }
   var 이름 = 오늘.substring(2) + SS_DAILY_SUFFIX;
 
   var lgSh = ssio_ss().getSheetByName(SSIO_TABS.원장);
@@ -1870,9 +1898,16 @@ function ss_그날판매현황메우기() {
   }
 
   /*  마지막 회차는 원장보다 「판매현황_고유아이디」가 온전하다 — 스무 칸이 다 있다.
-      그 회차가 탭에서 사라졌으면 여기서 도로 채운다. */
+      그 회차가 탭에서 사라졌으면 여기서 도로 채운다.
+
+      ★ 지난 날짜를 메울 때는 «절대» 이 길로 오면 안 된다 ★  (2026-09-14)
+        「판매현황_고유아이디」에는 «오늘» 것이 들어 있다. 지난 날짜를 메우면서
+        이 줄들을 가져오면, 오늘 주문이 9/11 회차키를 달고 그날 마감에 섞인다.
+        마감은 돈이 걸린 기록이다. 남의 날짜에 오늘 주문을 넣느니 그 회차는
+        원장에서만 되살리는 편이 백 번 낫다. */
+  var 진짜오늘 = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
   var 마지막키 = '', 큰번호 = 0;
-  var 회차줄 = ssio_body(SSIO_TABS.회차);
+  var 회차줄 = (오늘 === 진짜오늘) ? ssio_body(SSIO_TABS.회차) : [];
   for (var r = 0; r < 회차줄.length; r++) {
     if (ssText(회차줄[r][2]).replace(/-/g, '').slice(-6) !== 오늘 &&
         ssText(회차줄[r][0]).substring(0, 6) !== 오늘) continue;
@@ -1923,6 +1958,7 @@ function ss_그날판매현황메우기() {
   줄글.sort();
 
   ui.alert('「' + 이름 + '」을 다시 세웠습니다.\n\n' +
+    (오늘 === 진짜오늘 ? '' : '★ 지난 날짜라 「' + SSIO_TABS.입력아이디 + '」는 안 썼습니다 — 원장에서만 되살렸습니다.\n\n') +
     줄글.join('\n') + '\n' +
     '───────────────\n' +
     '합계 ' + all.length + '행\n\n' +
