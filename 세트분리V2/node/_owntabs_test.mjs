@@ -1354,7 +1354,7 @@ console.log("\n[0914판매현황] 옛 회차가 살아남는가");
   eq("회차키는 늘 맨 뒤", main.includes("moved[head.length - 1] = k;"), "true");
   eq("이번 회차만 갈아 끼운다", main.includes("if (k === rk) continue;"), "true");
   eq("회차키 칸을 못 찾으면 옛 줄을 안 건드린다",
-    main.includes("if (sh.getLastRow() > 1 && 옛키자리 >= 0) {"), "true");
+    main.includes("if (sh.getLastRow() > 1 && 옛키자리 >= 0 && 옛머리쓸만) {"), "true");
 
   //  ★ 옛 자리로 읽던 코드가 남아 있으면 잡는다 ★
   eq("★ 맨 뒤 자리로 읽던 옛 코드는 사라졌다",
@@ -1405,4 +1405,39 @@ console.log("\n[0914판매현황] 빠진 회차를 원장에서 되살리는가"
     main.includes("line[head.length - 1] = it.rk;"), "true");
   eq("원장 머리글도 이름으로 찾는다",
     main.includes("if (L['회차키'] === undefined || L['순번'] === undefined) return 빈답;"), "true");
+}
+
+/* ══════════════════════════════════════════════════════════════
+ *  [0914판매현황] 머리글을 「찾는가」 — 첫 줄이 아니다
+ *  2026-09-14
+ *
+ *  > "회차만 나오고 내용은 하나도 안나오네.."
+ *
+ *  이카운트 판매현황은 맨 위에 「회사명 : … / 2026/09/14 ~ …」 머리말이 붙어
+ *  온다. 그 줄을 머리글로 삼으면 칸 이름이 하나도 안 맞아, 원장에서 되살린
+ *  줄이 회차키만 있고 나머지는 전부 빈 꼴이 된다.
+ * ══════════════════════════════════════════════════════════════ */
+console.log("\n[0914판매현황] 머리글을 찾는가 — 첫 줄이 아니다");
+{
+  const main = 읽기(path.join(뿌리, "gasMain.js"));
+
+  eq("★ ssFindSalesHeader 로 찾는다",
+    main.includes("var found = ssFindSalesHeader(grid);"), "true");
+  eq("★ 못 찾으면 아무것도 안 한다",
+    main.includes("if (!found) return 0;\n  var 머리줄 = found.headerRow;"), "true");
+  eq("★ 머리글은 찾은 줄에서 뜬다",
+    main.includes("var 머리 = grid[머리줄].slice(0, width);"), "true");
+  eq("★ 자료는 머리글 아래부터 읽는다",
+    main.includes("for (var g = 머리줄 + 1; g < grid.length; g++) {"), "true");
+  eq("★ 첫 줄을 머리글로 삼던 옛 코드는 사라졌다",
+    main.includes("var head = grid[0].slice(0, width)"), "false");
+  eq("★ 첫 줄부터 읽던 옛 코드도 사라졌다",
+    main.includes("for (var g = 1; g < grid.length; g++) {\n    var row = grid[g].slice"), "false");
+  eq("★ 옛 머리글이 진짜일 때만 옛 줄을 믿는다",
+    main.includes("var 옛머리쓸만 = false;") &&
+    main.includes("if (sh.getLastRow() > 1 && 옛키자리 >= 0 && 옛머리쓸만) {"), "true");
+  eq("★ 못 믿을 옛 줄은 원장이 대신한다 (있는키에 안 넣는다)",
+    main.includes("for (var kk = 0; kk < keep.length; kk++) {"), "true");
+  eq("머리글 줄이 짧아도 폭을 맞춘다",
+    main.includes("while (머리.length < width) 머리.push('');"), "true");
 }

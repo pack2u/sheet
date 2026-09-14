@@ -1620,10 +1620,25 @@ function ss_그날판매현황쌓기(runKey) {
   var src = ssio_ss().getSheetByName(SSIO_TABS.입력아이디);
   if (!src || src.getLastRow() < 2) return 0;
   var grid = src.getDataRange().getValues();
-  var width = grid[0].length;
+
+  /* ★ 머리글은 «찾아야» 한다 — 첫 줄이 아니다 ★  (2026-09-14)
+     이카운트 판매현황은 맨 위에 「회사명 : 주식회사 팩투유 / 2026/09/14 ~ …」
+     같은 머리말이 붙어 온다. 진짜 칸 이름(순번·품목코드…)은 그 아래에 있다.
+     첫 줄을 머리글로 삼으면 이름이 하나도 안 맞아, 원장에서 되살린 줄이
+     «회차키만 있고 나머지는 전부 빈» 꼴이 된다 — 오늘 실제로 그랬다.
+     세트분리 본체는 처음부터 ssFindSalesHeader 로 찾고 있었다. 여기만 안 했다. */
+  var found = ssFindSalesHeader(grid);
+  if (!found) return 0;
+  var 머리줄 = found.headerRow;
+  var width = 0;
+  for (var w0 = 머리줄; w0 < grid.length; w0++) {
+    if (grid[w0] && grid[w0].length > width) width = grid[w0].length;
+  }
+  var 머리 = grid[머리줄].slice(0, width);
+  while (머리.length < width) 머리.push('');
 
   var 이름 = rk.substring(2, 6) + SS_DAILY_SUFFIX;   // 260914-1 → 0914판매현황
-  var head = grid[0].slice(0, width).concat([SS_DAILY_SRC_COL, '회차키']);
+  var head = 머리.concat([SS_DAILY_SRC_COL, '회차키']);
   var sh = ssio_sheet(이름, head);
 
   /* ★ 옛 줄을 «머리글을 갈아 끼우기 전»에 읽는다 ★  (2026-09-14 고침)
@@ -1643,8 +1658,18 @@ function ss_그날판매현황쌓기(runKey) {
     }
   }
 
+  /* ★ 옛 머리글이 «진짜 머리글»일 때만 옛 줄을 믿는다 ★  (2026-09-14)
+     이 탭이 한동안 첫 줄(회사명 머리말)을 머리글로 쓰고 있었다. 그런 탭의
+     옛 줄을 이름으로 옮겨 담으면 맞는 이름이 하나도 없어 «전부 빈 줄»이 된다.
+     그럴 때는 옛 줄을 버린다 — 버려도 괜찮다. 그 회차는 원장에 그대로 있고,
+     바로 아래에서 되살린다. 반쯤 살아 있는 줄보다 되살린 줄이 낫다. */
+  var 옛머리쓸만 = false;
+  for (var v0 = 0; v0 < 옛머리.length; v0++) {
+    if (ssText(옛머리[v0]) === '순번') { 옛머리쓸만 = true; break; }
+  }
+
   var keep = [];
-  if (sh.getLastRow() > 1 && 옛키자리 >= 0) {
+  if (sh.getLastRow() > 1 && 옛키자리 >= 0 && 옛머리쓸만) {
     /*  옛 줄은 «옛 머리글 이름»을 보고 새 자리로 옮겨 담는다.
         열이 하나 늘거나 줄어도 값이 어긋나지 않는다. */
     var 새자리 = {};
@@ -1676,8 +1701,8 @@ function ss_그날판매현황쌓기(runKey) {
   sh.getRange(1, 1, 1, head.length).setValues([head]);
 
   var add = [];
-  for (var g = 1; g < grid.length; g++) {
-    var row = grid[g].slice(0, width);
+  for (var g = 머리줄 + 1; g < grid.length; g++) {
+    var row = (grid[g] || []).slice(0, width);
     var 빔 = true;
     for (var c = 0; c < row.length; c++) if (ssText(row[c])) { 빔 = false; break; }
     if (빔) continue;
@@ -1770,9 +1795,24 @@ function ss_그날판매현황메우기() {
         '세트분리를 한 번 돌리면 그때 자동으로 메웁니다.');
       return;
     }
-    var idHead = idSh.getRange(1, 1, 1, idSh.getLastColumn()).getValues()[0];
+    var idFound = ssFindSalesHeader(idSh.getDataRange().getValues());
+    if (!idFound) {
+      ui.alert('「' + SSIO_TABS.입력아이디 + '」에서 머리글 줄(순번·품목코드)을 못 찾았습니다.');
+      return;
+    }
+    var idHead = idSh.getDataRange().getValues()[idFound.headerRow];
     head = idHead.concat([SS_DAILY_SRC_COL, '회차키']);
     sh = ssio_sheet(이름, head);
+  }
+  /*  머리글이 회사명 머리말인 탭은 손대면 더 나빠진다. 세트분리를 한 번
+      돌리면 그때 제 머리글로 다시 세우고 원장으로 메운다. */
+  var 쓸만 = false;
+  for (var v = 0; v < head.length; v++) if (ssText(head[v]) === '순번') { 쓸만 = true; break; }
+  if (!쓸만) {
+    ui.alert('「' + 이름 + '」의 머리글이 판매현황 머리글이 아닙니다.\n\n' +
+      '맨 윗줄에 「순번·품목코드」가 없습니다 — 회사명 머리말이 머리글로 들어가 있는 옛 탭입니다.\n' +
+      '세트분리를 한 번 돌리면 제 머리글로 다시 세우고 원장으로 메웁니다.');
+    return;
   }
   if (ssText(head[head.length - 1]) !== '회차키') {
     ui.alert('「' + 이름 + '」의 맨 뒤 칸이 「회차키」가 아닙니다 (' +
