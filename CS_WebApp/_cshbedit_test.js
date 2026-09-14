@@ -256,5 +256,44 @@ console.log("\n[전달내역 삭제] 흔적 없이 사라지지 않는다");
   check("★ 작성자를 모르는 줄은 안 지운다", r.ok, false);
 }
 
+
+console.log("\n[빠르기] 한 번 누르면 한 번만 다녀온다");
+{
+  //  > "CS웹앱이 바로 반응을 안하고 한박자 느린데" / "클릭시 반응 자체가 느려"
+  const hb = fs.readFileSync(path.join(뿌리, "csHandoffBoard.gs"), "utf8");
+  const home = fs.readFileSync(path.join(뿌리, "home.html"), "utf8");
+
+  check("★ 쓰기가 «바뀐 카드»를 함께 돌려준다",
+    hb.includes("res.card = _cs_hb_rowToCard_(after, sheetRow);"), true);
+  check("★ 한 곳(_cs_hb_withCard_)에 둔다 — 부르는 쪽마다 붙이면 하나는 빠진다",
+    (hb.match(/res.card = _cs_hb_rowToCard_/g) || []).length, 1);
+  check("★★ 지운 카드는 되읽지 않는다 (옆 카드가 올라온다)",
+    hb.includes("if (res && res.ok && !res.deleted) {") && hb.includes("deleted: true,"), true);
+
+  check("★ 화면은 그 한 장만 갈아 끼운다",
+    home.includes("function hbApplyCard(card) {"), true);
+  check("★ 못 갈아 끼우면 옛길(전체 새로고침)로 간다",
+    home.includes("if (!hbApplyCard(res && res.card)) hbReloadBoards();"), true);
+  check("★ 전체 새로고침은 뒤에서 조용히",
+    home.includes("loadHandoffBoard(false, true);   // silent"), true);
+  check("★ 연달아 눌러도 마지막 한 번만 돈다",
+    home.includes("if (HB_RELOAD_T) clearTimeout(HB_RELOAD_T);"), true);
+  check("★ 카드 «삭제»는 빠른 길을 안 탄다",
+    home.includes("hbReloadBoards();   // 카드가 통째로 사라졌다"), true);
+
+  const 토글전체 = home.slice(home.indexOf("function toggleHbCard("),
+    home.indexOf("function toggleHbCard(") + 2000);
+  //  클릭 즉시 도는 부분만 본다. 그 뒤(읽음 기록 성공 처리)는 서버를 다녀온
+  //  뒤라 클릭 반응과 상관이 없고, 거기선 읽음 표시가 실제로 바뀐다.
+  const 토글 = 토글전체.slice(0, 토글전체.indexOf("if (wasOpen) return;"));
+  check("★★ 카드를 열 때 목록을 다시 안 그린다",
+    토글.indexOf("hbRenderCardModal();") >= 0 && 토글.indexOf("hbRenderBoards();") < 0, true);
+  check("★ 필터 토글은 목록이 실제로 바뀌니 전체 렌더가 맞다",
+    home.includes("      HB_UNREAD = !HB_UNREAD;"), true);
+  check("★ 목록 렌더러는 HB_OPEN_ID 를 안 본다 (그래서 다시 그릴 까닭이 없다)",
+    home.slice(home.indexOf("function renderHandoffBoard()"),
+      home.indexOf("function renderHandoffBoard()") + 6000).includes("HB_OPEN_ID"), false);
+}
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

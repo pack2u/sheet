@@ -3490,7 +3490,7 @@
         .withSuccessHandler(function(res) {
           if (!res || !res.ok) { toast(String((res && res.error) || '삭제 실패'), 2600); return; }
           toast('첨부 삭제됨');
-          hbReloadBoards();
+          if (!hbApplyCard(res && res.card)) hbReloadBoards();
         })
         .withFailureHandler(function(err) { toast(String((err && err.message) || '통신 실패'), 2600); })
         .csDeleteHandoffAttachment({ id: cardId, fileId: fileId, staff: hbStaffName() });
@@ -4693,7 +4693,7 @@
           if (!res || !res.ok) { toast(String((res && res.error) || '수정 실패'), 3000); return; }
           hbCancelEdit();
           toast(String(res.message || '고쳤습니다'));
-          hbReloadBoards();
+          if (!hbApplyCard(res && res.card)) hbReloadBoards();
         })
         .withFailureHandler(function (err) {
           for (var b3 = 0; b3 < btns.length; b3++) btns[b3].disabled = false;
@@ -4760,7 +4760,7 @@
           if (!res || !res.ok) { toast(String((res && res.error) || '수정 실패'), 3000); return; }
           hbCancelEdit();
           toast(String(res.message || '고쳤습니다'));
-          hbReloadBoards();
+          if (!hbApplyCard(res && res.card)) hbReloadBoards();
         })
         .withFailureHandler(function (err) {
           for (var b3 = 0; b3 < btns.length; b3++) btns[b3].disabled = false;
@@ -4795,7 +4795,7 @@
           if (!res || !res.ok) { toast(String((res && res.error) || '삭제 실패'), 3000); return; }
           hbCancelEdit();
           toast(String(res.message || '지웠습니다'));
-          hbReloadBoards();
+          if (!hbApplyCard(res && res.card)) hbReloadBoards();
         })
         .withFailureHandler(function (err) {
           toast(String((err && err.message) || '통신 실패'), 2600);
@@ -4805,6 +4805,55 @@
 
     function hbAllCards() {
       return (HB_CARDS || []).concat(LB_CARDS || []);
+    }
+
+    /**
+     * 서버가 돌려준 «바뀐 카드 한 장»을 그 자리에 갈아 끼운다.
+     *
+     * > "CS웹앱이 바로 반응을 안하고 한박자 느린데 빠르게 안되나?"
+     *
+     * 여태 한 번 누를 때마다 서버를 세 번 다녀왔다 — 쓰기 한 번, 그리고
+     * 두 보드를 통째로 다시 읽기 두 번. 셋이 다 끝나야 화면이 바뀌었다.
+     * 이제 쓰기가 바뀐 카드를 함께 돌려주므로, 그것만 갈아 끼우고 바로
+     * 그린다. 전체 새로고침은 뒤에서 조용히 따라온다.
+     *
+     * 못 갈아 끼웠으면 false — 부르는 쪽이 옛길(전체 새로고침)로 간다.
+     */
+    function hbApplyCard(card) {
+      if (!card || !card.id) return false;
+      var lists = [HB_CARDS];
+      if (typeof LB_CARDS !== 'undefined' && LB_CARDS) lists.push(LB_CARDS);
+      for (var l = 0; l < lists.length; l++) {
+        var arr = lists[l];
+        if (!arr || !arr.length) continue;
+        for (var i = 0; i < arr.length; i++) {
+          if (arr[i] && arr[i].id === card.id) {
+            arr[i] = card;
+            hbRenderBoards();
+            hbReloadSoon();
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    /**
+     * 잠시 뒤 조용히 전체를 다시 받아온다.
+     *
+     * 갈아 끼운 카드 한 장은 그 카드에 관해서는 맞다. 그런데 진행/완료
+     * 건수, 남이 그 사이에 올린 카드 같은 것은 그 한 장이 모른다.
+     * 화면은 이미 바뀌어 있으므로 사람은 안 기다린다 — 뒤에서 맞춘다.
+     * 연달아 누르면 마지막 한 번만 돈다.
+     */
+    var HB_RELOAD_T = null;
+    function hbReloadSoon() {
+      if (HB_RELOAD_T) clearTimeout(HB_RELOAD_T);
+      HB_RELOAD_T = setTimeout(function () {
+        HB_RELOAD_T = null;
+        loadHandoffBoard(false, true);   // silent — 「불러오는 중…」을 안 띄운다
+        if (typeof lbLoad === 'function') lbLoad();
+      }, 600);
     }
 
     /** 어느 보드의 카드를 건드렸든 두 목록을 함께 다시 그린다 (서버 호출 없음) */
@@ -4826,7 +4875,16 @@
       if (hbClickWasDrag_(ev)) return; // 글자 긁는 중이었다 — 접지 않는다
       var wasOpen = (HB_OPEN_ID === id);
       HB_OPEN_ID = wasOpen ? '' : id;
-      hbRenderBoards();
+      /* ★ 목록은 다시 안 그린다 ★  (2026-09-14)
+         > "클릭시 반응 자체가 느려"
+
+         카드를 열 때마다 hbRenderBoards() 로 «두 보드 전체»를 다시 그리고
+         있었다. 그런데 목록 렌더러는 HB_OPEN_ID 를 «보지도 않는다» —
+         열렸는지 여부로 목록의 모양이 달라지는 데가 한 곳도 없다.
+         카드 스무 장의 HTML 을 새로 만들고 innerHTML 로 갈아 끼우는 값을
+         아무 얻는 것 없이 치르고 있었고, 그게 클릭이 굼뜨던 까닭이다.
+         팝업만 그린다. */
+      hbRenderCardModal();
       if (wasOpen) return;
 
       // 펼쳐서 읽은 것 → 읽음 기록. 실패해도 화면은 그대로 둔다.
@@ -4897,7 +4955,7 @@
           HB_OPEN_ID = '';
           hbRenderCardModal();   // 보드를 다시 받기 전에 팝업부터 닫는다
           toast('완료 처리됨 · 보관함에서 볼 수 있어요', 2200);
-          hbReloadBoards();
+          if (!hbApplyCard(res && res.card)) hbReloadBoards();
         })
         .withFailureHandler(function(err) { toast(String((err && err.message) || '통신 실패'), 2600); })
         .csCompleteHandoffCard({ id: id, staff: staff });
@@ -4910,7 +4968,7 @@
         .withSuccessHandler(function(res) {
           if (!res || !res.ok) { toast(String((res && res.error) || '되돌리기 실패'), 2600); return; }
           toast('보드로 되돌렸습니다');
-          hbReloadBoards();
+          if (!hbApplyCard(res && res.card)) hbReloadBoards();
         })
         .withFailureHandler(function(err) { toast(String((err && err.message) || '통신 실패'), 2600); })
         .csReopenHandoffCard({ id: id, staff: staff });
@@ -4925,7 +4983,7 @@
           HB_OPEN_ID = '';
           hbRenderCardModal();
           toast('카드 삭제됨');
-          hbReloadBoards();
+          hbReloadBoards();   // 카드가 통째로 사라졌다 — 갈아 끼울 것이 없다
         })
         .withFailureHandler(function(err) { toast(String((err && err.message) || '통신 실패'), 2600); })
         .csDeleteHandoffCard({ id: id, staff: staff });

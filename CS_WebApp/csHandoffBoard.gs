@@ -447,6 +447,33 @@ function _cs_hb_withCard_(ref, fn) {
     var res = fn(tab, sheetRow, row);
     // 뭔가 바뀌었으면 폴링 캐시를 지운다 — 남들이 10초를 안 기다리게
     if (res && res.ok) { try { _cs_pulse_bust_(); } catch (eP) {} }
+
+    /* ══════════════════════════════════════════════════════
+     *  ★ 바뀐 카드를 «그대로 돌려준다» ★
+     *  2026-09-14
+     *
+     *  > "CS웹앱이 바로 반응을 안하고 한박자 느린데 빠르게 안되나?"
+     *
+     *  여태 화면은 한 번 누를 때마다 서버를 «세 번» 다녀왔다.
+     *    ① 쓰기(여기)  ② CS 보드 통째로 다시 읽기  ③ 물류 보드도 통째로
+     *  셋이 다 끝나야 화면이 바뀌었다. 쓰기는 ① 에서 이미 끝났는데
+     *  두 번을 더 기다린 셈이다.
+     *
+     *  이제 쓴 «그 줄»만 다시 읽어 카드 한 장을 함께 돌려준다. 화면은 그걸로
+     *  즉시 갈아 끼우고, 전체 새로고침은 뒤에서 조용히 돈다.
+     *  한 줄 더 읽는 값으로 두 번의 왕복을 없앤다.
+     *
+     *  ★ 여기 한 곳에 둔다 ★
+     *    노트 추가·완료·되돌리기·지목·읽음·고치기·삭제가 전부 이 함수를
+     *    거친다. 부르는 쪽마다 붙이면 어느 하나는 빠지고, 그 화면만 느리다.
+     *    실패해도 그냥 넘어간다 — 곁다리가 본줄기를 막으면 안 된다.
+     * ══════════════════════════════════════════════════════ */
+    if (res && res.ok && !res.deleted) {
+      try {
+        var after = tab.getRange(sheetRow, 1, 1, lastCol).getDisplayValues()[0];
+        res.card = _cs_hb_rowToCard_(after, sheetRow);
+      } catch (eC) { /* 못 줘도 화면은 전체 새로고침으로 따라온다 */ }
+    }
     return res;
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e) };
@@ -953,6 +980,12 @@ function csDeleteHandoffCard(payload) {
     var trashed = _cs_hb_trashAtt_(_cs_hb_parseAtt_(row[_CS_HB_COL_.att]));
     tab.deleteRow(sheetRow);
     return {
+      /*  ★ 지웠다고 말한다 ★  (2026-09-14)
+          _cs_hb_withCard_ 는 쓰기가 끝나면 그 줄을 되읽어 카드를 돌려준다.
+          그런데 이 함수는 «줄을 지웠다». 되읽으면 아래에서 올라온 «남의
+          카드»를 집는다. 그러면 화면이 지운 카드 자리에 엉뚱한 것을 그린다.
+          이 표식을 보고 되읽기를 건너뛴다. */
+      deleted: true,
       ok: true, title: title, trashed: trashed,
       message: "카드 삭제됨" + (trashed ? " (첨부 " + trashed + "개 휴지통)" : ""),
     };
