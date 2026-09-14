@@ -34,6 +34,7 @@ function onOpen() {
     .addItem('🖨 로젠 송장출력 엑셀', 'ss_로젠출력엑셀')
     .addItem('🔁 송장 전파 (자사출고 → 사방넷)', 'ss_송장전파')
     .addItem('📊 사방넷 송장대량등록', 'ss_사방넷엑셀저장')
+    .addItem('📋 일일마감 (원장 → 마감표)', 'ss_일일마감')
     .addSeparator()
 
     .addSubMenu(ui.createMenu('📦 자료 준비')
@@ -1932,6 +1933,339 @@ function ss_그날판매현황메우기() {
         '  원래 비어 있던 것이 아니라 되살릴 수 없는 칸입니다.\n'
       : '원장에서 되살릴 회차는 없었습니다 (다 들어 있습니다).\n') +
     (버린줄 ? '\n빈 껍데기 ' + 버린줄 + '행은 버렸습니다 (회차키만 있고 자료가 없던 줄).' : ''));
+}
+
+
+var SS_CLOSE_SUFFIX = '마감';
+var SS_CLOSE_MISS_SUFFIX = '_미매칭';
+var SS_CLOSE_WAIT_SUFFIX = '_업체대기';
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  일일마감 — 원장이 그날 하루다
+ *  2026-09-14
+ *
+ *  > "일일 마감 미매칭건이 열라 많아…
+ *  >  세트분리에서 일일 마감을 만들어 실행해보자."
+ *
+ *  ★ 허브 일일마감이 왜 반을 놓쳤나 ★
+ *    _pep_archiveUnifiedDaily_ 는 송장을 「롯데 탭」에서 가져온다. 소스 표에
+ *    로젠은 usedByDaily:false 로 적혀 있다 — 자사출고를 롯데로 못박아 둔
+ *    시절의 글이다. 9월 11일에 로젠으로 갈아탔으니 그날부터 주 송장원이
+ *    통째로 비었다. 「롯데 송장 4건 · 미매칭 475건」이 그 숫자다.
+ *    고장난 것이 아니라 «옛 사실»을 믿고 있는 것이다. 오늘 하루 종일 고친
+ *    네 가지와 똑같은 병이고, 이것이 다섯 번째다.
+ *
+ *  ★ 왜 세트분리가 하면 나은가 ★
+ *    ① 원장에는 이미 운송장번호가 붙어 있다. ss_송장전파 가 로젠·롯데 두
+ *       탭을 다 읽고, 발주허브·대리공급 임시기록까지 읽어 채운다.
+ *       즉 «매칭이 이미 끝난 자료»다. 여기서 또 맞출 일이 없다.
+ *    ② 합포장 동봉은 대표 송장을 물려받아 있다.
+ *    ③ 고유ID 가 처음부터 한 줄에 하나다. 이름·전화로 더듬을 일이 없다.
+ *
+ *    그래서 이 마감은 «맞추는 일»이 아니라 «옮겨 적는 일»이다.
+ *    맞추는 데서 지는 싸움을, 맞출 필요가 없는 자리로 옮긴다.
+ *
+ *  ★ 칸은 허브 것과 똑같이 낸다 ★
+ *    _UNIFIED_HEADERS_ 19칸 그대로다. CS 웹앱 검색과 v2 가 이미 이 모양을
+ *    읽는다. 새 모양을 만들면 읽는 쪽을 다 고쳐야 한다.
+ *
+ *  ★ 아무것도 쓰지 않는다 ★
+ *    원장도 출력 탭도 안 건드린다. 읽어서 두 탭에 적을 뿐이다.
+ *    몇 번을 돌려도 달라지는 것은 그 두 탭뿐이다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var SS_CLOSE_HEADER = [
+  '출처', '기록일시', '주문번호', '운송장번호', '수취인명', '전화번호', '휴대폰',
+  '주소', '품목코드', '품목명', '수량', '배송메시지', '업체/판매처', '운임/배송비',
+  '비고', '발주업체', '주문유형', '단가', '정산금액'
+];
+
+/** 마감에 안 담는 경로 — 나간 물건이 아니다 */
+var SS_CLOSE_SKIP_ROUTES = [SS_ROUTE.NONSHIP, SS_ROUTE.HOLD];
+
+/**
+ * 원장 한 줄 → 마감 한 줄 (19칸).
+ *
+ * @param g   이름으로 칸을 읽는 함수
+ * @param at  기록일시
+ */
+function ss_마감줄_(g, at) {
+  var inv = ssText(g('운송장번호'));
+  var 경로 = ssText(g('경로'));
+  var 업체 = ssText(g('조치업체'));
+  if (!업체 && 경로 === SS_ROUTE.PARTNER) 업체 = ssText(g('출고지'));
+
+  /*  출처는 「어디서 나갔나」다. 대리발송이면 업체, 자사출고면 택배사.
+      원장에 택배사 칸이 없으므로 송장 자릿수로 가린다 — 그 규칙은
+      ssb_ownCode 한 곳에 있다. 여기 또 적으면 언젠가 둘이 갈라진다. */
+  var 출처;
+  if (경로 === SS_ROUTE.PARTNER) {
+    출처 = '대리공급' + (업체 ? '(' + 업체 + ')' : '');
+  } else if (inv) {
+    출처 = (ssb_ownCode(inv) === SSB_LOTTE_CODE) ? '롯데' : '로젠';
+  } else {
+    출처 = '자사출고';
+  }
+
+  return [
+    출처,
+    at,
+    ssText(g('고유ID')),
+    inv,
+    ssText(g('거래처명')),          // 원장의 이 칸은 «받는분»이다
+    ssText(g('전화')),
+    ssText(g('모바일')),
+    ssText(g('주소1')),
+    ssText(g('품목코드')),
+    ssText(g('출력품목명')) || ssText(g('품목명')),
+    ssNum(g('수량')),
+    ssText(g('배송메시지')),
+    ssText(g('보내는분')),
+    ssNum(g('배송비')),
+    ssText(g('적요')),
+    업체,
+    경로,
+    '', ''                          // 단가·정산금액은 원장이 모른다
+  ];
+}
+
+/**
+ * 그날 마감을 만든다.
+ *
+ * @param 날앞  yyMMdd. 없으면 오늘
+ * @param 조용  true 면 화면을 안 띄운다 (트리거용)
+ * @return {object} 센 것
+ */
+function ss_일일마감(날앞, 조용) {
+  var 오늘 = ssText(날앞) || Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
+  var at = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+  var NL = String.fromCharCode(10);
+
+  var lg = ssio_ss().getSheetByName(SSIO_TABS.원장);
+  if (!lg || lg.getLastRow() < 2) {
+    if (!조용) ssio_alert('「' + SSIO_TABS.원장 + '」이 비어 있습니다.');
+    return { 총: 0, 매칭: 0, 미매칭: 0 };
+  }
+
+  var cols = lg.getLastColumn();
+  var head = lg.getRange(1, 1, 1, cols).getValues()[0];
+  var ix = {};
+  for (var h = 0; h < head.length; h++) {
+    var hn = ssText(head[h]);
+    if (hn && ix[hn] === undefined) ix[hn] = h;
+  }
+
+  /*  ★ 자리로 넘겨짚지 않는다 ★
+      없는 칸은 «없다»고 말하고 멈춘다. 조용히 빈칸을 읽으면 마감이
+      「미매칭 475건」 같은 거짓 숫자를 내놓는다 — 그게 오늘의 문제다. */
+  var 없는칸 = [], 꼭필요 = ['회차키', '고유ID', '운송장번호', '경로', '품목코드', '수량'];
+  for (var q = 0; q < 꼭필요.length; q++) if (ix[꼭필요[q]] === undefined) 없는칸.push(꼭필요[q]);
+  if (없는칸.length) {
+    if (!조용) ssio_alert('원장에 「' + 없는칸.join('」·「') + '」 칸이 없습니다.' + NL +
+      '메뉴 「🛠 시트 설치 / 복구」를 한 번 돌리세요.');
+    return { 총: 0, 매칭: 0, 미매칭: 0, 오류: '칸없음' };
+  }
+
+  var 늦은회차 = ss_마감늦은회차_(오늘);
+
+  var lv = lg.getRange(2, 1, lg.getLastRow() - 1, cols).getValues();
+  var rows = [], 미매칭 = [], 대기 = [];
+  var 센다 = { 총: 0, 매칭: 0, 미매칭: 0, 대기: 0, 제외: 0 };
+  var 경로별 = {}, 출처별 = {}, 회차별 = {};
+
+  for (var r = 0; r < lv.length; r++) {
+    var v = lv[r];
+    var rk = ssText(v[ix['회차키']]);
+    if (rk.substring(0, 6) !== 오늘) continue;
+
+    var 경로 = ssText(v[ix['경로']]);
+    if (SS_CLOSE_SKIP_ROUTES.indexOf(경로) >= 0) { 센다.제외++; continue; }
+
+    var g = ss_마감읽기_(v, ix);
+    var 줄 = ss_마감줄_(g, at);
+    rows.push(줄);
+    센다.총++;
+
+    회차별[rk] = (회차별[rk] || 0) + 1;
+    if (!경로별[경로]) 경로별[경로] = { 총: 0, 매칭: 0, 대기: 0 };
+    경로별[경로].총++;
+
+    if (ssText(줄[3])) {
+      센다.매칭++;
+      경로별[경로].매칭++;
+      출처별[줄[0]] = (출처별[줄[0]] || 0) + 1;
+      continue;
+    }
+
+    /* ★ 「아직 안 온 것」과 「사라진 것」을 가른다 ★  (2026-09-14)
+       > "3차 오후3시 발주건들은 대리공급업체에서 송장번호를 다음날 기입하게 되
+       >  택배마감시간이 지나서"
+
+       늦은 회차의 대리발송 건은 오늘 송장이 없는 것이 «정상»이다. 업체가
+       내일 아침에 적는다. 그걸 미매칭으로 세면 매칭률이 매일 저녁 거짓으로
+       낮게 나오고, 사람은 곧 그 숫자를 안 보게 된다 — 숫자가 못 믿을 것이
+       되는 순간 그 숫자로 사고를 잡을 수 없다.
+
+       반대로 «이른 회차»의 대리발송이 비어 있으면 그건 진짜 미매칭이다.
+       오늘 왔어야 할 것이 안 온 것이다. */
+    if (경로 === SS_ROUTE.PARTNER && 늦은회차[rk]) {
+      센다.대기++;
+      경로별[경로].대기++;
+      줄[14] = ssText(줄[14]);
+      대기.push(줄);
+    } else {
+      센다.미매칭++;
+      미매칭.push(줄);
+    }
+  }
+
+  var 이름 = 오늘.substring(2) + SS_CLOSE_SUFFIX;
+  ssio_write(이름, SS_CLOSE_HEADER, rows, { bg: '#1f4e78' });
+  ssio_write(이름 + SS_CLOSE_MISS_SUFFIX, SS_CLOSE_HEADER, 미매칭, { bg: '#7a2e22' });
+  ssio_write(이름 + SS_CLOSE_WAIT_SUFFIX, SS_CLOSE_HEADER, 대기, { bg: '#7a5b12' });
+
+  /* ★ 매칭률의 분모에서 「대기」를 뺀다 ★
+     오늘 받을 수 없는 것을 못 받았다고 세면 안 된다. 대신 뺀 사실과 그
+     건수를 «같은 줄에» 적어, 숨긴 것이 아니라 갈라 놓은 것임을 보인다. */
+  var 볼수있음 = 센다.총 - 센다.대기;
+  var 율 = 볼수있음 > 0 ? Math.round((센다.매칭 / 볼수있음) * 1000) / 10 : 0;
+  var 전체율 = 센다.총 ? Math.round((센다.매칭 / 센다.총) * 1000) / 10 : 0;
+
+  var L = [];
+  L.push('📋 일일마감 ' + 오늘 + '  —  「' + 이름 + '」');
+  L.push('');
+  L.push('  마감 줄   : ' + 센다.총 + '건' + (센다.제외 ? '   (비배송·보류 ' + 센다.제외 + '건 제외)' : ''));
+  L.push('  송장 붙음 : ' + 센다.매칭 + '건');
+  L.push('  미매칭    : ' + 센다.미매칭 + '건');
+  if (센다.대기) {
+    L.push('  업체 대기 : ' + 센다.대기 + '건   (늦은 회차 대리발송 — 내일 업체가 적습니다)');
+  }
+  L.push('  ★ 매칭률  : ' + 율 + '%' +
+    (센다.대기 ? '   (대기 ' + 센다.대기 + '건 뺀 ' + 볼수있음 + '건 기준 · 전체로는 ' + 전체율 + '%)' : ''));
+
+  var rkList = ss_마감키_(회차별);
+  if (rkList.length) {
+    var 회차글 = [];
+    for (var k2 = 0; k2 < rkList.length; k2++) 회차글.push(rkList[k2] + ' ' + 회차별[rkList[k2]] + '건');
+    L.push('');
+    L.push('  회차 : ' + 회차글.join(' · '));
+  }
+
+  L.push('');
+  L.push('  ── 경로별 ──────────────────');
+  var pk = ss_마감키_(경로별);
+  for (var k4 = 0; k4 < pk.length; k4++) {
+    var p = 경로별[pk[k4]];
+    var 볼수 = p.총 - p.대기;
+    var pr = 볼수 > 0 ? Math.round((p.매칭 / 볼수) * 1000) / 10 : 0;
+    L.push('  ' + pk[k4] + ' : ' + p.매칭 + ' / ' + 볼수 + '  (' + pr + '%)' +
+      (p.대기 ? '   + 대기 ' + p.대기 : ''));
+  }
+
+  var sk = ss_마감키_(출처별);
+  if (sk.length) {
+    var 출처글 = [];
+    for (var k6 = 0; k6 < sk.length; k6++) 출처글.push(sk[k6] + ' ' + 출처별[sk[k6]]);
+    L.push('');
+    L.push('  송장 출처 : ' + 출처글.join(' · '));
+  }
+
+  if (센다.미매칭) {
+    L.push('');
+    L.push('  ⚠ 미매칭 ' + 센다.미매칭 + '건은 「' + 이름 + SS_CLOSE_MISS_SUFFIX + '」 탭에 있습니다.');
+    L.push('     ① 「🔁 송장 전파」를 먼저 돌려 보세요 — 그 사이 들어온 송장이 붙습니다.');
+    L.push('     ② 그래도 남으면 「🧩 미매칭 메꾸기」로 후보를 찾습니다.');
+  }
+  if (센다.대기) {
+    L.push('');
+    L.push('  ⏳ 업체 대기 ' + 센다.대기 + '건은 「' + 이름 + SS_CLOSE_WAIT_SUFFIX + '」 탭에 있습니다.');
+    L.push('     늦은 회차 대리발송입니다 — 택배 마감이 지나 업체가 내일 송장을 적습니다.');
+    L.push('     내일 「🔁 송장 전파」 뒤에 이 마감을 다시 돌리면 채워집니다.');
+  }
+
+  Logger.log(L.join(NL));
+  if (!조용) ssio_alert(L.join(NL));
+  센다.율 = 율;
+  센다.탭 = 이름;
+  return 센다;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 「택배 마감 뒤」 회차를 가린다 ★
+ *  2026-09-14
+ *
+ *  > "3차 오후3시 발주건들은 대리공급업체에서 송장번호를 다음날 기입하게 되..
+ *  >  택배마감시간이 지나서"
+ *
+ *  원장에는 이 사정이 안 적혀 있다. 적혀 있는 것은 회차키뿐이고, 회차가
+ *  «몇 시에» 돌았는지는 「회차」 탭의 최초실행에 있다. 그걸 본다.
+ *
+ *  ★ 회차 번호로 가리지 않는다 ★
+ *    「3차부터」로 못박으면 회차를 네 번 돌린 날 2차가 오후가 되고, 두 번만
+ *    돌린 날 3차가 아예 없다. 세는 방식이 그날 사정에 따라 달라지면 그
+ *    숫자로는 아무것도 못 잡는다. 시각으로 가른다.
+ *
+ *  ★ 모르면 늦은 것으로 안 본다 ★
+ *    회차 탭을 못 읽으면 빈 표를 준다 — 그러면 모두 미매칭으로 잡힌다.
+ *    조용히 「대기」로 넘겨 사고를 숨기는 것보다, 시끄럽게 틀리는 편이 낫다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function ss_마감늦은회차_(날앞) {
+  var 늦음 = {};
+  try {
+    var cfg = ssio_config();
+    var 기준 = ssText(cfg['마감_업체송장_기준시각']) || '14:00';
+    var mm = 기준.split(':');
+    var 기준분 = (ssNum(mm[0]) * 60) + ssNum(mm[1] || 0);
+
+    var sh = ssio_ss().getSheetByName(SSIO_TABS.회차);
+    if (!sh || sh.getLastRow() < 2) return 늦음;
+    var hd = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    var ci = {};
+    for (var h = 0; h < hd.length; h++) {
+      var n = ssText(hd[h]);
+      if (n && ci[n] === undefined) ci[n] = h;
+    }
+    if (ci['회차키'] === undefined || ci['최초실행'] === undefined) return 늦음;
+
+    var rows = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+    for (var r = 0; r < rows.length; r++) {
+      var rk = ssText(rows[r][ci['회차키']]);
+      if (rk.substring(0, 6) !== 날앞) continue;
+      var t = rows[r][ci['최초실행']];
+      var 분 = -1;
+      if (t instanceof Date) {
+        분 = (t.getHours() * 60) + t.getMinutes();
+      } else {
+        //  「2026-09-14 15:02:11」 같은 글자에서 시:분만 집는다
+        var g = ssText(t).match(new RegExp('([0-9]{1,2}):([0-9]{2})'));
+        if (g) 분 = (ssNum(g[1]) * 60) + ssNum(g[2]);
+      }
+      if (분 >= 기준분) 늦음[rk] = true;
+    }
+  } catch (e) {
+    //  모르면 «늦지 않은 것»으로 둔다 — 사고를 숨기는 쪽으로 기울지 않는다
+    Logger.log('[마감] 회차 시각을 못 읽음: ' + (e && e.message ? e.message : e));
+  }
+  return 늦음;
+}
+
+/** 원장 한 줄을 «이름»으로 읽는 함수를 만든다 */
+function ss_마감읽기_(row, ix) {
+  return function (name) {
+    var c = ix[name];
+    return c === undefined ? '' : row[c];
+  };
+}
+
+/** 객체의 열쇠를 정렬해 돌려준다 */
+function ss_마감키_(o) {
+  var out = [];
+  for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) out.push(k);
+  out.sort();
+  return out;
 }
 
 /**
