@@ -819,3 +819,151 @@ function ssa_partnerItems_() {
     return null;
   }
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  기초 데이터 자동 만들기 — 매칭에 필요한 «재료»를 날마다 스스로 차린다
+ *  2026-09-14
+ *
+ *  > "기능만 만들고 그게 자동 실행이 안되면 직원은 매일 하나씩 눌러야 되자나..
+ *  >  이런 부분을 자동으로 돌게 만드는게 자동화의 한걸음이지"
+ *  > "지금 기초 데이타들은 자동 생성되게 하자"
+ *
+ *  ★ 왜 날마다여야 하나 ★
+ *    자사출고 실적 탭은 «그날 것만» 들고 있다(위 ss_아침재매칭 설명). 오늘
+ *    안 붙이면 그 송장은 영영 사라진다. 재료를 손으로 차리게 두면 바쁜 날
+ *    건너뛰고, 건너뛴 날의 건은 되찾을 수가 없다.
+ *
+ *  ★ 한 곳이 죽어도 나머지는 돈다 ★
+ *    넷을 차례로 돌리되 서로 붙들지 않는다. 하나가 실패했다고 나머지 재료가
+ *    안 차려지면, 사람은 아무것도 없는 화면을 보게 된다.
+ *
+ *  ★ 「0건」도 말한다 ★
+ *    2026-09-11 로젠 전환 뒤 미매칭 메꾸기·고아 송장 점검·합배송 수집이
+ *    조용히 죽어 있었다. 셋 다 «돌긴 돌았고» 아무 일도 안 했다. 아무도 몰랐다.
+ *    그래서 숫자를 남긴다 — 0 이 며칠 이어지는 것 자체가 신호가 되게.
+ *
+ *  끄려면 스크립트 속성 SS_AUTO_BASE = off
+ *  챗으로 받으려면 스크립트 속성 SS_CHAT_WEBHOOK 에 구글 챗 주소
+ *  (시트 설정 탭에 두지 않는다 — 그 주소가 곧 그 방에 글 쓸 권한이다)
+ * ══════════════════════════════════════════════════════════════
+ */
+var SSAUTO_BASE_BUDGET_MS = 5 * 60 * 1000;   // 5분. GAS 6분 한도 앞에서 멈춘다
+
+function ss_기초데이터자동() {
+  var prop = null;
+  try { prop = PropertiesService.getScriptProperties(); } catch (e) {}
+  try {
+    if (prop && String(prop.getProperty('SS_AUTO_BASE') || '').toLowerCase() === 'off') {
+      Logger.log('[기초데이터] 꺼져 있음 (SS_AUTO_BASE=off)');
+      return '꺼져 있음';
+    }
+  } catch (e2) {}
+
+  var t0 = new Date().getTime();
+  var 남은 = function () { return SSAUTO_BASE_BUDGET_MS - (new Date().getTime() - t0); };
+
+  /*  차례가 중요하다. 전파가 원장에 송장을 채워야 그 뒤의 셋이 «채워진 뒤»를
+      보고 센다. 거꾸로 돌면 이미 붙은 것까지 미매칭으로 잡힌다. */
+  /*  함수를 «이름»이 아니라 그대로 넘긴다. 이름으로 부르면 오타가 나도
+      돌려보기 전까지 모르고, 이름이 바뀌면 조용히 건너뛴다. */
+  var 할일 = [
+    { 이름: '송장 전파', fn: ss_송장전파 },
+    { 이름: '미매칭 점검', fn: ss_미매칭점검 },
+    { 이름: '고아 송장 점검', fn: ss_고아송장점검 },
+    { 이름: '메꾸기 후보', fn: ss_미매칭메꾸기 }
+  ];
+
+  var 줄 = [], 실패 = 0;
+  for (var i = 0; i < 할일.length; i++) {
+    var it = 할일[i];
+    if (남은() < 30000) {
+      줄.push('· ' + it.이름 + ' : 건너뜀 (시간 모자람)');
+      continue;
+    }
+    var s0 = new Date().getTime();
+    try {
+      var r = it.fn();
+      var 초 = ((new Date().getTime() - s0) / 1000).toFixed(1);
+      줄.push('· ' + it.이름 + ' ' + 초 + '초  ' + ssauto_한줄_(r));
+    } catch (e3) {
+      실패++;
+      줄.push('· ' + it.이름 + ' ★ 실패 — ' + (e3 && e3.message ? e3.message : e3));
+    }
+  }
+
+  var 총초 = ((new Date().getTime() - t0) / 1000).toFixed(1);
+  var msg = '기초 데이터 ' + 총초 + '초' + (실패 ? '  (실패 ' + 실패 + ')' : '') +
+    String.fromCharCode(10) + 줄.join(String.fromCharCode(10));
+  Logger.log(msg);
+  ssauto_챗_(msg, 실패 > 0);
+  return msg;
+}
+
+/** 결과 문자열에서 «숫자가 든 첫 줄»만 뽑는다. 화면 문구를 통째로 실으면 못 읽는다. */
+function ssauto_한줄_(r) {
+  var s = String(r == null ? '' : r).split(String.fromCharCode(10));
+  for (var i = 0; i < s.length; i++) {
+    var t = s[i].trim();
+    if (t && /[0-9]/.test(t)) return t.substring(0, 90);
+  }
+  return (s[0] || '').trim().substring(0, 90);
+}
+
+/**
+ * 구글 챗으로 한 줄. 주소가 없으면 아무 일도 안 한다.
+ *
+ * ★ 조용할 때도 보낸다 ★
+ *   여기는 「이상할 때만」이 아니다. 재료가 날마다 차려지는지 자체를 보는
+ *   것이라, 0 이 며칠 이어지는 것이 곧 신호다. 그 신호는 «오는 글»에서만
+ *   보인다 — 안 오면 잘 도는 줄 안다.
+ */
+function ssauto_챗_(text, 급함) {
+  var url = '';
+  try {
+    url = String(PropertiesService.getScriptProperties()
+      .getProperty('SS_CHAT_WEBHOOK') || '').trim();
+  } catch (e) {}
+  if (!url || url.indexOf('https://chat.googleapis.com/') !== 0) return false;
+  try {
+    UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json; charset=utf-8',
+      muteHttpExceptions: true,
+      payload: JSON.stringify({ text: (급함 ? '⚠ ' : '') + text })
+    });
+    return true;
+  } catch (e2) {
+    Logger.log('[기초데이터] 챗 실패: ' + (e2 && e2.message ? e2.message : e2));
+    return false;
+  }
+}
+
+/**
+ * 기초 데이터 트리거 설치 (1회).
+ *
+ * 17:00 — 송장 배포(16:50)가 끝난 뒤다. 배포가 덜 끝난 채로 재료를 차리면
+ * 그 회차 것이 미매칭으로 잡혀 사람을 헷갈리게 한다.
+ *
+ * ★ 같은 이름의 트리거를 먼저 지운다 ★ 누를 때마다 늘면 20개 한도를 먹는다.
+ */
+function ss_기초데이터트리거설치() {
+  var all = ScriptApp.getProjectTriggers();
+  var 지움 = 0;
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].getHandlerFunction() === 'ss_기초데이터자동') {
+      ScriptApp.deleteTrigger(all[i]);
+      지움++;
+    }
+  }
+  ScriptApp.newTrigger('ss_기초데이터자동')
+    .timeBased().atHour(17).nearMinute(0).everyDays(1).create();
+
+  var 남은 = ScriptApp.getProjectTriggers().length;
+  return ssio_alert('기초 데이터 트리거 설치' + String.fromCharCode(10) + String.fromCharCode(10) +
+    '  17:00 날마다 — 송장 전파 → 미매칭 → 고아 송장 → 메꾸기 후보' + String.fromCharCode(10) +
+    '  (같은 트리거 ' + 지움 + '개를 지우고 새로 걸었습니다)' + String.fromCharCode(10) +
+    '  이 프로젝트 트리거 ' + 남은 + '개 / 한도 20' + String.fromCharCode(10) + String.fromCharCode(10) +
+    '끄려면 스크립트 속성 SS_AUTO_BASE = off' + String.fromCharCode(10) +
+    '챗으로 받으려면 SS_CHAT_WEBHOOK 에 구글 챗 주소');
+}
