@@ -413,13 +413,28 @@ function ss_실행(opts) {
 
     단계 = '중복 점검';
     var dup = ss_중복점검(true);
+    /*  ★ 「연속으로 이어진 것」은 따로, 더 크게 말한다 ★  (2026-09-14)
+        여러 줄이 지난 회차와 같은 차례로 이어졌다면 그건 재주문이 아니라
+        붙여넣기 범위가 겹친 것이다. 그대로 두면 «이미 나간 것»이 또 나간다.
+        그냥 「중복 의심」에 섞어 두면 날마다 뜨는 의심들 속에 묻힌다. */
+    if (dup.이어짐) {
+      ssWarn(res.warnings, '오류', 'DUP_RUN',
+        dup.이어짐 + '덩이 ' + dup.이어짐줄 + '줄',
+        '이전 회차와 연속으로 같은 줄이 있습니다 — 판매현황에 지난 회차가 딸려온 듯합니다. ' +
+        '「중복의심」 탭 맨 위 묶음을 보고 지운 뒤 다시 실행하세요.');
+    }
     if (dup.cross) {
       ssWarn(res.warnings, '오류', 'DUP_CROSS', String(dup.cross) + '그룹',
         '회차 간 중복 의심이 있습니다. 오전에 출고한 건이 다시 올라왔을 수 있습니다. 「중복의심」 탭 확인.');
+    }
+    if (dup.이어짐 || dup.cross) {
       ssio_write(SSIO_TABS.경고, SS_WARN_HEADER,
         res.warnings.map(function (w) { return [w.level, w.code, w.target, w.msg]; }), { bg: '#7a5b12' });
     }
     sum.push(['중복의심 그룹 (회차간)', dup.groups + ' (' + dup.cross + ')']);
+    if (dup.이어짐) {
+      sum.push(['★ 이전 회차와 연속 일치', dup.이어짐 + '덩이 ' + dup.이어짐줄 + '줄']);
+    }
     var 유효조치 = 0;
     for (var ok in masters.override) if (Object.prototype.hasOwnProperty.call(masters.override, ok)) 유효조치++;
     sum.push(['수동조치 · 걷음 / 이 회차 유효 / 적용', 걷은조치 + ' / ' + 유효조치 + ' / ' + 적용조치]);
@@ -674,11 +689,27 @@ function ss_중복점검(quiet) {
   }
 
   var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
+
+  /* ★ 어제까지 본다 ★  (2026-09-14)
+     > "회차별 중복감지를 전날까지 확장을 시켜줘"
+
+     여태 «오늘 회차»만 담았다. 그래서 어제 것이 판매현황에 딸려 들어와도
+     견줄 상대가 없어 통째로 지나갔다 — 오류도 경고도 없이.
+     날마다 쌓이는 표라 넓게 잡을 이유는 없다. 기본 2일(오늘+어제)이고,
+     연휴 뒤처럼 더 봐야 하면 설정 「중복점검_대상일수」를 올린다. */
+  var 볼일수 = ssNum(ssio_config()['중복점검_대상일수']);
+  if (!(볼일수 >= 1)) 볼일수 = 2;
+  var 볼날 = {};
+  for (var d = 0; d < 볼일수; d++) {
+    볼날[Utilities.formatDate(new Date(new Date().getTime() - d * 86400000),
+      'Asia/Seoul', 'yyMMdd')] = true;
+  }
+
   var all = sh.getRange(2, 1, sh.getLastRow() - 1, cols).getValues();
   var rows = [];
   for (var i = 0; i < all.length; i++) {
     var r = all[i];
-    if (ssText(r[idx['회차키']]).indexOf(today) !== 0) continue;   // 오늘 회차만
+    if (!볼날[ssText(r[idx['회차키']]).substring(0, 6)]) continue;
     rows.push({
       회차: ssText(r[idx['회차키']]),
       고유ID: ssText(r[idx['고유ID']]),
@@ -695,6 +726,24 @@ function ss_중복점검(quiet) {
   }
 
   var found = ssFindDuplicates(rows);
+
+  /*  ★ 오늘이 안 낀 묶음은 버린다 ★
+      어제 것끼리 겹친 건 어제 이미 본 이야기다. 창을 넓힌 값으로 지난 회차의
+      묶음까지 매번 다시 띄우면, 정작 오늘 것이 그 속에 묻힌다. */
+  var 오늘낌 = function (G) {
+    for (var m = 0; m < G.members.length; m++) {
+      if (ssText(found.records[G.members[m]].회차).substring(0, 6) === today) return true;
+    }
+    return false;
+  };
+  found.groups = found.groups.filter(오늘낌);
+
+  /*  ★ «연속 블록»은 따로 찾는다 ★
+      한 줄씩 보면 정상 재주문과 구분이 안 된다. 붙여넣기 범위가 겹쳐
+      딸려온 것은 여러 줄이 지난 회차와 같은 차례로 이어진다. */
+  var 이어짐 = ssDupRunGroups(found.records, today, 2);
+  found.groups = 이어짐.concat(found.groups);
+
   var out = ssDupRows(found);
   var tab = ssio_write(SSIO_TABS.중복의심, SS_DUP_HEADER, out, { bg: '#6b3a2c' });
   if (out.length) {
@@ -707,17 +756,31 @@ function ss_중복점검(quiet) {
 
   var cross = 0;
   for (var k = 0; k < found.groups.length; k++) if (found.groups[k].회차간) cross++;
-  var res = { groups: found.groups.length, rows: out.length, cross: cross, 주문라인: found.records.length };
+  var 이어짐줄 = 0;
+  for (var k2 = 0; k2 < 이어짐.length; k2++) 이어짐줄 += 이어짐[k2].길이;
+  var res = { groups: found.groups.length, rows: out.length, cross: cross,
+    주문라인: found.records.length, 이어짐: 이어짐.length, 이어짐줄: 이어짐줄 };
 
   if (!quiet) {
     var msg = '중복발주 의심 점검 (' + today + ')\n\n' +
-      '  · 오늘 주문라인 : ' + res.주문라인 + '건\n' +
+      '  · 견준 회차 : 최근 ' + 볼일수 + '일 (오늘 포함)\n' +
+      '  · 주문라인 : ' + res.주문라인 + '건\n' +
       '  · 의심 그룹 : ' + res.groups + '건 (그중 회차 간 ' + res.cross + '건)\n' +
-      '  · 표시 행 : ' + res.rows + '\n\n';
-    msg += res.cross
-      ? '⚠ 회차 간 중복이 있습니다. 오전에 이미 출고한 건이 오후에 다시 올라왔을 수 있습니다.\n「중복의심」 탭을 확인하세요.'
-      : (res.groups ? '회차 간 중복은 없습니다. 같은 회차 안 반복 주문일 수 있으니 탭에서 확인하세요.'
-                    : '의심 건이 없습니다.');
+      '  · 표시 행 : ' + res.rows + '\n';
+    if (res.이어짐) {
+      msg += '  · ★ 이전 회차와 «연속으로» 같은 묶음 : ' + res.이어짐 + '덩이 ' +
+        res.이어짐줄 + '줄\n';
+    }
+    msg += '\n';
+    msg += res.이어짐
+      ? '⚠ 여러 줄이 이전 회차와 «같은 차례로» 이어집니다.\n' +
+        '   판매현황을 붙여넣을 때 지난 회차 범위가 같이 딸려온 모양입니다.\n' +
+        '   「중복의심」 탭 맨 위 묶음을 보고, 딸려온 줄을 판매현황에서 지운 뒤\n' +
+        '   다시 실행하세요.'
+      : (res.cross
+        ? '⚠ 회차 간 중복이 있습니다. 오전에 이미 출고한 건이 오후에 다시 올라왔을 수 있습니다.\n「중복의심」 탭을 확인하세요.'
+        : (res.groups ? '회차 간 중복은 없습니다. 같은 회차 안 반복 주문일 수 있으니 탭에서 확인하세요.'
+                      : '의심 건이 없습니다.'));
     ssio_alert(msg);
   }
   return res;

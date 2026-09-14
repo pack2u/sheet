@@ -1653,6 +1653,104 @@ function ssIsSubset(small, big) {
 }
 
 /** 그룹 → 시트 행 */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  «연속 블록»으로 딸려온 지난 회차 건을 찾는다
+ *  2026-09-14
+ *
+ *  > "판매현황에서 이전회차건이 실수로 같이 딸려오는경우
+ *  >  (확실한건 고유아이디인데.. 전화주문은 고유아이디가 없다보니)"
+ *
+ *  ★ 한 줄씩 보면 못 가린다 ★
+ *    같은 사람이 같은 물건을 다시 시키는 일은 늘 있다. 한 줄만 겹쳤다고
+ *    중복이라 하면 정상 재주문이 매번 걸리고, 매번 걸리면 안 보게 된다.
+ *    붙여넣기 범위가 겹쳐 딸려온 것은 다르다 — **여러 줄이 지난 회차와
+ *    같은 차례로 줄줄이 이어진다.** 그 «이어짐»이 곧 증거다.
+ *
+ *  ★ 고유ID 를 안 쓴다 ★
+ *    고유ID 가 있으면 애초에 🔴 확실 등급이 잡는다. 여기서 가리려는 것은
+ *    **전화주문처럼 고유ID 가 없는 줄**이다. 그래서 이름+주소+품목으로만 센다.
+ *
+ *  ★ 두 줄부터 본다 ★
+ *    한 줄은 위 등급 검사의 몫이다. 여기서 또 세면 같은 것을 두 번 말한다.
+ *
+ *  @param records ssFindDuplicates 가 접은 주문라인. **원장에 쌓인 차례** 그대로다.
+ *  @param 오늘접두 오늘 회차키 앞 6자리 (yyMMdd)
+ *  @param 최소 몇 줄부터 볼 것인가 (기본 2)
+ *  @return Array<{grade,reason,회차간,members,sig,이전회차,길이}>
+ * ══════════════════════════════════════════════════════════════
+ */
+function ssDupRunGroups(records, 오늘접두, 최소) {
+  최소 = 최소 > 0 ? 최소 : 2;
+  var 키of = function (r) {
+    var n = ssNameKey(r.받는분), a = ssAddrKey(r.주소), c = ssText(r.품목코드);
+    if (!n || !a || !c) return '';          // 못 가리는 줄은 안 센다
+    return n + '|' + a + '|' + c + '|' + ssNum(r.수량);
+  };
+
+  //  회차별로 «쌓인 차례» 그대로 나눈다. 차례가 곧 증거라 정렬하지 않는다.
+  var 오늘 = [], 지난 = {};
+  for (var i = 0; i < records.length; i++) {
+    var rk = ssText(records[i].회차);
+    if (!rk) continue;
+    if (rk.substring(0, 6) === 오늘접두) 오늘.push(i);
+    else (지난[rk] || (지난[rk] = [])).push(i);
+  }
+  if (오늘.length < 최소) return [];
+
+  var 오늘키 = 오늘.map(function (ix) { return 키of(records[ix]); });
+  var 결과 = [];
+
+  for (var rk2 in 지난) {
+    if (!Object.prototype.hasOwnProperty.call(지난, rk2)) continue;
+    var 그때 = 지난[rk2];
+    if (그때.length < 최소) continue;
+    var 그때키 = 그때.map(function (ix) { return 키of(records[ix]); });
+
+    /*  이어진 길이를 재는 표를 두 줄만 들고 굴린다.
+        dp[j] = 「오늘 i 번째와 그때 j 번째에서 끝나는 이어짐의 길이」.
+        다음 칸으로 못 이어지면 그 자리가 «가장 긴 이어짐»의 끝이다. */
+    var 앞 = new Array(그때키.length + 1);
+    for (var z = 0; z <= 그때키.length; z++) 앞[z] = 0;
+    for (var a1 = 0; a1 < 오늘키.length; a1++) {
+      var 이번 = new Array(그때키.length + 1);
+      이번[0] = 0;
+      for (var b1 = 0; b1 < 그때키.length; b1++) {
+        var 같나 = 오늘키[a1] && 오늘키[a1] === 그때키[b1];
+        이번[b1 + 1] = 같나 ? 앞[b1] + 1 : 0;
+        if (!같나) continue;
+        var L = 이번[b1 + 1];
+        if (L < 최소) continue;
+        //  다음 칸으로 더 이어지면 여기서 끊지 않는다 — 가장 긴 것만 남긴다
+        var 더 = (a1 + 1 < 오늘키.length && b1 + 1 < 그때키.length &&
+                  오늘키[a1 + 1] && 오늘키[a1 + 1] === 그때키[b1 + 1]);
+        if (더) continue;
+        var mem = [];
+        for (var m = L - 1; m >= 0; m--) mem.push(오늘[a1 - m]);
+        결과.push({
+          grade: '🔴 확실', 회차간: true, 이전회차: rk2, 길이: L,
+          reason: '이전 회차(' + rk2 + ')와 연속 ' + L + '줄이 같음 — 딸려온 듯',
+          members: mem, sig: mem.join(','),
+        });
+      }
+      앞 = 이번;
+    }
+  }
+
+  /*  같은 줄이 여러 지난 회차와 겹칠 수 있다. 긴 것부터 두고, 이미 잡힌 줄만으로
+      이뤄진 것은 버린다 — 같은 사실을 두 번 말하지 않는다. */
+  결과.sort(function (x, y) { return y.길이 - x.길이; });
+  var 쓴줄 = {}, 남김 = [];
+  for (var g = 0; g < 결과.length; g++) {
+    var G = 결과[g], 새것 = false;
+    for (var k = 0; k < G.members.length; k++) if (!쓴줄[G.members[k]]) { 새것 = true; break; }
+    if (!새것) continue;
+    for (var k2 = 0; k2 < G.members.length; k2++) 쓴줄[G.members[k2]] = true;
+    남김.push(G);
+  }
+  return 남김;
+}
+
 function ssDupRows(found) {
   var out = [];
   for (var g = 0; g < found.groups.length; g++) {
