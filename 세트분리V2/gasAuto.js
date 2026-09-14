@@ -265,46 +265,67 @@ function ss_고아송장점검() {
     if (u) known[u] = true;
   }
 
-  // ── 롯데 실적 읽기 (ss_송장전파 와 같은 자리) ──
+  /* ── 자사출고 실적 읽기 — «두 탭 다» ──  (2026-09-14)
+     여기도 롯데 탭 하나만 읽었다. 2026-09-11 에 로젠으로 갈아탄 뒤 그 탭은
+     비어서 「롯데 송장탭이 비어 있습니다」로 끝났다 — 고아 송장이 몇 건이든
+     이 점검은 «아무 말도 못 했다». 미매칭 메꾸기와 똑같은 병이다. */
   var lId = ssText(cfg['롯데송장시트ID']) || '1KIBSmjpMVKLGoAkbrcKyTr4LOflszwS_xtMzmRuvYWs';
-  var lGid = ssNum(cfg['롯데송장탭GID']) || 1575029201;
-  var 고아 = [], 총송장 = 0;
-  try {
-    var lSS = SpreadsheetApp.openById(lId);
-    var lTab = null, sheets = lSS.getSheets();
-    for (var s = 0; s < sheets.length; s++) if (sheets[s].getSheetId() === lGid) { lTab = sheets[s]; break; }
-    if (!lTab) return ssio_alert('롯데 송장탭(GID ' + lGid + ')을 못 찾았습니다.');
-    if (lTab.getLastRow() < 2) return ssio_alert('롯데 송장탭이 비어 있습니다.');
+  var 원천2 = [
+    { 이름: '로젠', gid: ssNum(cfg['로젠송장탭GID']) || 548505068 },
+    { 이름: '롯데', gid: ssNum(cfg['롯데송장탭GID']) || 1575029201 },
+  ];
+  var 고아 = [], 총송장 = 0, 읽은탭2 = [], 못읽은탭2 = [];
+  for (var oi2 = 0; oi2 < 원천2.length; oi2++) {
+    var 편2 = 원천2[oi2];
+    try {
+      var lSS = SpreadsheetApp.openById(lId);
+      var lTab = null, sheets = lSS.getSheets();
+      for (var s = 0; s < sheets.length; s++) {
+        if (sheets[s].getSheetId() === 편2.gid) { lTab = sheets[s]; break; }
+      }
+      if (!lTab) { 못읽은탭2.push(편2.이름 + ' 탭(GID ' + 편2.gid + ')을 못 찾음'); continue; }
+      if (lTab.getLastRow() < 2) { 못읽은탭2.push(편2.이름 + ' 탭이 비어 있음'); continue; }
 
-    var lrc = lTab.getLastColumn();
-    var lrh = lTab.getRange(1, 1, 1, lrc).getDisplayValues()[0].map(function (x) {
-      return ssText(x).replace(/\s/g, '');
-    });
-    var ci = -1, cw = -1, cd = -1;
-    for (var h = 0; h < lrh.length; h++) {
-      if (ci < 0 && (lrh[h] === '주문번호' || lrh[h] === '고객주문번호')) ci = h;
-      if (cw < 0 && (lrh[h] === '운송장번호' || lrh[h] === '송장번호')) cw = h;
-      /* ★ 자료등록일은 비어 있다 ★  (2026-09-09 실측 651줄 전부 빈칸)
-         머리글은 있는데 값이 없다. 그것만 보면 고아가 전부 「(날짜없음)」이 되어
-         **며칠째인지**를 알 수 없다 — 이 점검의 요점이 바로 그건데.
-         실제로 채워지는 것은 집하일자다. 그것을 먼저 본다. */
-      if (cd < 0 && (lrh[h] === '집하일자' || lrh[h] === '최초지시일자' ||
-                     lrh[h] === '자료등록일' || lrh[h] === '등록일' || lrh[h] === '일자')) cd = h;
-    }
-    if (ci < 0) ci = 9;
-    if (cw < 0) cw = 6;
+      var lrc = lTab.getLastColumn();
+      var lrh = lTab.getRange(1, 1, 1, lrc).getDisplayValues()[0].map(function (x) {
+        return ssText(x).replace(/s/g, '');
+      });
+      var ci = -1, cw = -1, cd = -1;
+      for (var h = 0; h < lrh.length; h++) {
+        if (ci < 0 && (lrh[h] === '주문번호' || lrh[h] === '고객주문번호')) ci = h;
+        if (cw < 0 && (lrh[h] === '운송장번호' || lrh[h] === '송장번호')) cw = h;
+        /* ★ 자료등록일은 비어 있다 ★  (2026-09-09 실측 651줄 전부 빈칸)
+           머리글은 있는데 값이 없다. 그것만 보면 고아가 전부 「(날짜없음)」이 되어
+           **며칠째인지**를 알 수 없다 — 이 점검의 요점이 바로 그건데.
+           ※ 로젠 탭은 «집하일자»가 통째로 비어 있다. 접수일자도 후보에 넣는다. */
+        if (cd < 0 && (lrh[h] === '집하일자' || lrh[h] === '접수일자' ||
+                       lrh[h] === '최초지시일자' || lrh[h] === '자료등록일' ||
+                       lrh[h] === '등록일' || lrh[h] === '일자')) cd = h;
+      }
+      //  ★ 자리로 떨어지지 않는다 ★ 못 찾으면 그 탭은 건너뛰고 «왜»를 말한다.
+      //    옛 코드는 ci=9, cw=6 으로 떨어졌다 — 로젠 탭에서 그 자리는 다른 칸이다.
+      if (ci < 0 || cw < 0) {
+        못읽은탭2.push(편2.이름 + ' 탭에서 주문번호·운송장 칸을 못 찾음');
+        continue;
+      }
 
-    var rv = lTab.getRange(2, 1, lTab.getLastRow() - 1, lrc).getDisplayValues();
-    for (var r = 0; r < rv.length; r++) {
-      var o = ssText(rv[r][ci]), w = ssText(rv[r][cw]);
-      if (!o || !w) continue;
-      if (o.indexOf('주문번호') >= 0 || w.indexOf('운송장') >= 0) continue;
-      총송장++;
-      if (known[o]) continue;
-      고아.push({ o: o, w: w, d: cd >= 0 ? ssText(rv[r][cd]) : '' });
+      var rv = lTab.getRange(2, 1, lTab.getLastRow() - 1, lrc).getDisplayValues();
+      var n2 = 총송장;
+      for (var r = 0; r < rv.length; r++) {
+        var o = ssText(rv[r][ci]), w = ssText(rv[r][cw]);
+        if (!o || !w) continue;
+        if (o.indexOf('주문번호') >= 0 || w.indexOf('운송장') >= 0) continue;
+        총송장++;
+        if (known[o]) continue;
+        고아.push({ o: o, w: w, d: cd >= 0 ? ssText(rv[r][cd]) : '', 탭: 편2.이름 });
+      }
+      읽은탭2.push(편2.이름 + ' ' + (총송장 - n2) + '건');
+    } catch (e) {
+      못읽은탭2.push(편2.이름 + ' 탭을 못 읽음: ' + (e && e.message ? e.message : e));
     }
-  } catch (e) {
-    return ssio_alert('롯데 송장탭을 못 읽었습니다: ' + (e && e.message ? e.message : e));
+  }
+  if (!읽은탭2.length) {
+    return ssio_alert('자사출고 실적을 한 탭도 못 읽었습니다.' + NL + NL + 못읽은탭2.join(NL));
   }
 
   // ── 날짜별로 묶는다. 오래된 고아가 진짜 문제다. ──
@@ -316,7 +337,12 @@ function ss_고아송장점검() {
   var days = Object.keys(byDay).sort();
 
   var msg = '자사출고 송장 ' + 총송장 + '건 중 원장에 짝이 없는 것 ' + 고아.length + '건' +
-    '  (' + (총송장 ? (고아.length * 100 / 총송장).toFixed(1) : '0') + '%)' + NL + NL;
+    '  (' + (총송장 ? (고아.length * 100 / 총송장).toFixed(1) : '0') + '%)' + NL;
+  /*  어느 탭에서 몇 건을 읽었는지 «늘» 적는다. 한 탭이 조용히 비면
+      「고아 없음」과 「아무것도 못 읽음」이 똑같아 보인다 — 그게 이 점검을
+      며칠간 쓸모없게 만들었다. */
+  msg += '  읽은 탭 : ' + 읽은탭2.join(' · ') +
+    (못읽은탭2.length ? NL + '  못 읽은 탭 : ' + 못읽은탭2.join(' · ') : '') + NL + NL;
   if (!고아.length) {
     msg += '고아 송장이 없습니다 — 모든 송장이 원장의 주문과 짝이 맞습니다.';
     return ssio_alert(msg);
