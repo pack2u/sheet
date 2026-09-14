@@ -208,6 +208,16 @@ function partnerUnifiedDailyArchiveManual() {
       "저장 위치: 구글드라이브 시트\n" +
       "파일명: " + (result.tabName || "(없음)") + "\n\n" +
       "매칭 기록: " + result.archived + "건\n" +
+      /* ★ 어느 탭에서 판매현황을 떠 왔는지 ★  (2026-09-14)
+         「판매현황(한 회차분)」이면 그날 마감은 회차 하나만 담은 것이다.
+         09/14 마감이 169건이던 까닭이 바로 그것이었다 — 회차는 다섯이었다. */
+      (result.detail.snapFrom
+        ? "  ├ 판매현황 원천: " + result.detail.snapFrom +
+          " (새로 담음 " + (result.detail.snapSaved || 0) + " · 이미 있음 " +
+          (result.detail.snapSkipped || 0) + ")" +
+          (result.detail.snapFrom.indexOf("한 회차분") >= 0
+            ? "  ⚠ 그날 탭(MMDD판매현황)이 없어 한 회차만 담겼습니다" : "") + "\n"
+        : "") +
       /* ★ 2026-09-14: 「롯데 송장」이 아니라 「자사출고 송장」이다 ★
          9/11 에 로젠으로 갈아탔는데 이 줄은 롯데만 세고 있었다. 4건이 찍혀도
          이름이 「롯데」라 이상해 보이지 않았다 — 그래서 아무도 안 물었다.

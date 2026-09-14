@@ -8615,13 +8615,51 @@ function _pep_detectPhoneColumns_(headers) {
  * @return {Object} { saved, skipped, error }
  */
 function _pep_saveSnapshotToHub_(srcSS, fallbackDateStr) {
-  var result = { saved: 0, skipped: 0, error: "" };
+  var result = { saved: 0, skipped: 0, error: "", 읽은탭: "" };
   try {
-    var salesTab = srcSS.getSheetByName("판매현황");
+    /* ══════════════════════════════════════════════════════════
+     *  ★ 「판매현황」은 «붙여넣는 칸»이라 하루를 못 담는다 ★
+     *  2026-09-14
+     *
+     *  일일마감 건수가 이렇게 무너져 있었다.
+     *      09-10  507건   ←  로젠 전환 전
+     *      09-11    2건
+     *      09-12   29건
+     *      09-14  169건   ←  이날 회차는 다섯이었다
+     *
+     *  미매칭이 많은 게 아니라 «담긴 줄 자체»가 없었다. 이 함수가 읽는
+     *  「판매현황」은 사람이 회차마다 지우고 새로 붙이는 칸이다. 스냅샷은
+     *  대리공급 Push 때 한 번 뜨므로, 그 순간에 올라와 있던 «한 회차»만
+     *  담긴다. 하루에 다섯 번 돌리면 네 번치가 통째로 사라진다.
+     *
+     *  ★ 그래서 「MMDD판매현황」을 먼저 본다 ★
+     *    오늘 만든 탭이다. 세트분리가 회차마다 그날치를 이어 쌓고, 빠진
+     *    회차는 원장에서 되살린다. 하루가 통째로 들어 있는 유일한 탭이다.
+     *    없으면 옛길(「판매현황」)로 간다 — 한 회차라도 담는 편이 낫다.
+     *
+     *  ★ 어느 탭을 읽었는지 반드시 말한다 ★
+     *    오늘 하루 종일 고친 병이 전부 「조용히 다른 것을 읽고 있었다」였다.
+     * ══════════════════════════════════════════════════════════ */
+    var 날 = _pep_ymdNum_(fallbackDateStr) ||
+      parseInt(Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd"), 10);
+    var 날탭 = String(날).slice(4) + "판매현황";   // 20260914 → 0914판매현황
+
+    var salesTab = srcSS.getSheetByName(날탭);
+    if (salesTab && salesTab.getLastRow() >= 2) {
+      result.읽은탭 = 날탭;
+    } else {
+      salesTab = srcSS.getSheetByName("판매현황");
+      result.읽은탭 = "판매현황(한 회차분)";
+      if (날탭 && !srcSS.getSheetByName(날탭)) {
+        Logger.log("[SNAPSHOT] 「" + 날탭 + "」이 없어 「판매현황」을 읽습니다 — " +
+          "그 회차만 담깁니다. 세트분리를 한 번 돌리면 그 탭이 생깁니다.");
+      }
+    }
     if (!salesTab || salesTab.getLastRow() < 2) {
-      result.error = "판매현황 탭 없거나 비어있음";
+      result.error = "판매현황 탭 없거나 비어있음 (" + 날탭 + " · 판매현황 둘 다)";
       return result;
     }
+    Logger.log("[SNAPSHOT] 원천 탭: " + result.읽은탭 + " (" + salesTab.getLastRow() + "행)");
 
     var sLr = salesTab.getLastRow();
     var sLc = Math.max(salesTab.getLastColumn(), 17);
@@ -10777,7 +10815,7 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
   // ★ 2026-06-29: targetDateStr 파라미터 추가 — 전달 시 해당 날짜로 저장 (자동실행→전날 매출일)
   var result = {
     archived: 0, tabName: "", error: "",
-    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", rozenRead: 0, rozenCols: "", ownRead: 0, ownTabs: "", rozenMatched: 0, lotteMatched: 0, hubRead: 0, backfill: 0, backfillDate: "", uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0 }
+    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", rozenRead: 0, rozenCols: "", ownRead: 0, ownTabs: "", rozenMatched: 0, lotteMatched: 0, snapFrom: "", snapSaved: 0, snapSkipped: 0, hubRead: 0, backfill: 0, backfillDate: "", uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0 }
   };
 
   try {
@@ -11034,7 +11072,14 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
     try {
       var srcSS = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
       var snapResult = _pep_saveSnapshotToHub_(srcSS, archiveDate);
-      Logger.log("[UNIFIED] 판매현황→스냅샷: saved=" + snapResult.saved +
+      /*  ★ 어느 탭을 읽었는지 화면까지 올린다 ★  (2026-09-14)
+          「판매현황(한 회차분)」이 찍혀 있으면 그날 마감은 회차 하나만
+          담은 것이다. 마감 건수가 왜 169건인지 그 한 줄이 말해 준다. */
+      result.detail.snapFrom = snapResult.읽은탭 || "";
+      result.detail.snapSaved = snapResult.saved || 0;
+      result.detail.snapSkipped = snapResult.skipped || 0;
+      Logger.log("[UNIFIED] 판매현황→스냅샷: 원천=" + (snapResult.읽은탭 || "?") +
+        " saved=" + snapResult.saved +
         " skipped=" + snapResult.skipped +
         (snapResult.error ? " error=" + snapResult.error : ""));
       // 스냅샷 탭 갱신 (신규 생성되었을 수 있음)

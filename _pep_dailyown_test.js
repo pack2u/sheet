@@ -217,5 +217,28 @@ console.log("[계측] 주문번호가 몇 줄에 있었나");
 check("★ 주문번호 있는 줄 수를 적는다",
   push.includes("[\" + nUid + \"/\" + nInv + \"줄]"), true);
 
+
+console.log("\n[스냅샷] 하루가 통째로 담기는가");
+{
+  //  09-10 507건 → 09-11 2건 → 09-12 29건 → 09-14 169건.
+  //  미매칭이 많았던 게 아니라 «담긴 줄 자체»가 없었다. 「판매현황」은
+  //  회차마다 지우고 붙이는 칸이라, Push 때 올라와 있던 한 회차만 담긴다.
+  check("★ 그날 탭(MMDD판매현황)을 «먼저» 본다",
+    push.includes("var 날탭 = String(날).slice(4) + \"판매현황\";"), true);
+  check("★ 없으면 「판매현황」으로 떨어진다 (한 회차라도 담는다)",
+    push.includes("result.읽은탭 = \"판매현황(한 회차분)\";"), true);
+  check("★ 어느 탭을 읽었는지 돌려준다",
+    push.includes("읽은탭: \"\""), true);
+  check("★ 마감이 그 값을 detail 에 담는다",
+    push.includes("result.detail.snapFrom = snapResult.읽은탭 || \"\";"), true);
+  check("★ detail 초기값에 자리가 있다",
+    push.includes("snapFrom: \"\", snapSaved: 0"), true);
+  const web2 = fs.readFileSync("_partnerWebApp.gs", "utf8");
+  check("★ 화면에 원천 탭을 적는다",
+    web2.includes("├ 판매현황 원천: "), true);
+  check("★ 한 회차만 담겼으면 «경고»한다",
+    web2.includes("⚠ 그날 탭(MMDD판매현황)이 없어 한 회차만 담겼습니다"), true);
+}
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);
