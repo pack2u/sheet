@@ -9199,12 +9199,36 @@ function _pep_loadSetsplitLedgerInvoices_(invoiceMap, result, srcSS) {
     var 매칭칸 = ix["송장매칭"];
     var data = tab.getRange(2, 1, tab.getLastRow() - 1, lc).getDisplayValues();
     var 갈래 = {};
+    셈.건너뜀 = 0;
     for (var i = 0; i < data.length; i++) {
       셈.줄++;
       var uid = String(data[i][ix["고유ID"]] || "").trim();
       var inv = _pep_normInvoiceNo_(data[i][ix["운송장번호"]]);
       if (!uid || !inv) continue;
       셈.송장++;
+
+      /* ══════════════════════════════════════════════════════
+       *  ★ «빈 자리»만 메운다 ★  (2026-09-14, 같은 날 두 번째 판)
+       *
+       *  처음엔 원장 송장을 그냥 다 담았다. 그랬더니 마감이 «나빠졌다» —
+       *      자사출고 613 → 580 · 로젠 431 → 398 · 미매칭 402 → 441
+       *
+       *  _pep_addInvoiceMap_ 은 같은 열쇠에 송장을 «쌓는다». 허브는 이미
+       *  발주허브에서 대리판매 송장을 읽고 있는데, 원장이 같은 주문에 조금
+       *  다른 송장(장수·표기)을 하나 더 얹으면 그 열쇠가 「복수송장」이 되고,
+       *  복수면 자동 확정을 거부한다. 멀쩡히 붙어 있던 것이 떨어진다.
+       *
+       *  이 원천을 넣은 까닭은 «합포장 동봉·샘플이 붙을 데가 없어서»였다.
+       *  그건 «빈 자리»다. 메우러 온 것이 이미 찬 자리를 흔들면 안 된다.
+       *  이미 송장이 있는 열쇠는 손대지 않는다.
+       * ══════════════════════════════════════════════════════ */
+      var 열쇠 = uid;
+      if (typeof _pep_normalizeMatchUid_ === "function") {
+        var nk = _pep_normalizeMatchUid_(uid);
+        if (nk) 열쇠 = nk;
+      }
+      if (invoiceMap[열쇠] && invoiceMap[열쇠].inv) { 셈.건너뜀++; continue; }
+
       //  날짜를 안 넘긴다 — 원장에는 집하일이 없다. 0 이면 날짜 관문이 안 걸린다.
       _pep_addInvoiceMap_(invoiceMap, uid, inv, "세트분리원장", "", 0);
       셈.담음++;
@@ -9218,7 +9242,11 @@ function _pep_loadSetsplitLedgerInvoices_(invoiceMap, result, srcSS) {
     for (var k in 갈래) if (Object.prototype.hasOwnProperty.call(갈래, k)) 갈래글.push(k + " " + 갈래[k]);
     갈래글.sort();
     result.detail.ledgerSetsplitRead = 셈.담음;
-    result.detail.ledgerSetsplitNote = 셈.줄 + "줄 중 송장 " + 셈.송장 + "건" +
+    /*  「메운 N · 이미 있어 건너뜀 M」을 나란히 적는다. 메운 것이 0 이고
+        건너뜀만 크면 이 원천은 «할 일이 없다»는 뜻이고, 그건 좋은 소식이다 —
+        다른 원천이 이미 다 붙였다는 말이니까. */
+    result.detail.ledgerSetsplitNote = 셈.줄 + "줄 중 송장 " + 셈.송장 + "건 · " +
+      "메움 " + 셈.담음 + " · 이미 있어 건너뜀 " + (셈.건너뜀 || 0) +
       (갈래글.length ? " (" + 갈래글.join(" · ") + ")" : "");
     Logger.log("[UNIFIED] 세트분리 원장: " + result.detail.ledgerSetsplitNote +
       " 합계키=" + Object.keys(invoiceMap).length + "건");

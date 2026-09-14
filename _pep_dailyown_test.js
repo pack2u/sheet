@@ -325,5 +325,20 @@ console.log("\n[원장 0건] 무엇을 해야 하는지 말한다");
     web5.includes("!(result.detail.ledgerSetsplitRead > 0)"), true);
 }
 
+
+console.log("\n[원장] 메우러 온 것이 이미 찬 자리를 흔들면 안 된다");
+{
+  //  원장 송장을 그냥 다 담았더니 마감이 «나빠졌다»:
+  //    자사출고 613 → 580 · 로젠 431 → 398 · 미매칭 402 → 441
+  //  _pep_addInvoiceMap_ 은 같은 열쇠에 송장을 쌓는다. 복수가 되면 자동
+  //  확정을 거부하므로, 멀쩡히 붙어 있던 것이 떨어진다.
+  check("★ 이미 송장이 있는 열쇠는 건너뛴다",
+    push.includes("if (invoiceMap[열쇠] && invoiceMap[열쇠].inv) { 셈.건너뜀++; continue; }"), true);
+  check("★ 열쇠를 같은 규칙으로 정규화한 뒤 견준다",
+    push.includes("var nk = _pep_normalizeMatchUid_(uid);"), true);
+  check("★ 메운 수와 건너뛴 수를 나란히 적는다",
+    push.includes("메움 ") && push.includes("이미 있어 건너뜀 "), true);
+}
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);
