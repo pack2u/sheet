@@ -715,3 +715,107 @@ function ss_메꾸기반영() {
     (건너뜀 ? '  이미 붙어 있어 건너뛴 줄  ' + 건너뜀 + '줄' + NL : '') + NL +
     '송장매칭 칸에 「되찾음(수동확인)」으로 남습니다 — 나중에 구분할 수 있게.');
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  대리발송 탭 자동 채우기 — 코드만 넣으면 나머지가 붙는다
+ *  2026-09-14
+ *
+ *  > "대리발송에 하단에 추가하고싶은 발송을 넣으면 추가될수 있게 해줘
+ *  >  이카운트 코드로 자동으로.. 그외는 업체 코드를 넣을께"
+ *
+ *  ★ 단순 트리거다 — 설치가 필요 없다 ★
+ *    onEdit 라는 이름이면 구글이 알아서 부른다. 트리거 스무 개 한도와
+ *    상관이 없다. 그래서 여기 둔다.
+ *
+ *  ★ 스프레드시트의 «모든» 편집에서 불린다 ★
+ *    남의 탭을 고칠 때도 이 함수가 돈다. 아닌 것은 첫 몇 줄에서 바로 빠진다 —
+ *    여기서 무거운 일을 하면 시트 전체가 굼떠진다.
+ *
+ *  ★ 터져도 조용히 넘어간다 ★
+ *    단순 트리거가 예외를 내면 사람 눈에는 「편집이 안 먹는다」로 보인다.
+ *    자동 채우기는 곁다리다 — 실패해도 사람이 손으로 적으면 된다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    var sh = e.range.getSheet();
+    if (sh.getName() !== SS_ROUTE.PARTNER) return;      // 대리발송 탭만
+
+    //  D열(품목코드)만 본다. SS_OUT_HEADER 의 3번 자리 → 4번째 칸.
+    var c1 = e.range.getColumn(), c2 = c1 + e.range.getNumColumns() - 1;
+    var 코드칸 = 4;
+    if (코드칸 < c1 || 코드칸 > c2) return;
+
+    var r1 = e.range.getRow();
+    if (r1 < 2) return;                                  // 머리글은 안 건드린다
+    var 줄수 = e.range.getNumRows();
+
+    var items = ssa_partnerItems_();
+    if (!items) return;
+
+    var 폭 = Math.max(sh.getLastColumn(), SS_PARTNER_HEADER.length);
+    var 판 = sh.getRange(r1, 1, 줄수, 폭).getValues();
+    var 바뀜 = false, 못찾음 = [];
+
+    for (var i = 0; i < 줄수; i++) {
+      var code = ssText(판[i][코드칸 - 1]);
+      if (!code) continue;
+      var r = ssAutofillPartner(code, items, 판[i]);
+      if (!r.ok) { if (r.why) 못찾음.push(r.why); continue; }
+      for (var k in r.채움) {
+        if (Object.prototype.hasOwnProperty.call(r.채움, k)) {
+          판[i][Number(k)] = r.채움[k];
+          바뀜 = true;
+        }
+      }
+    }
+    if (바뀜) sh.getRange(r1, 1, 줄수, 폭).setValues(판);
+
+    /*  ★ 못 찾았으면 «말해 준다» ★
+        조용히 안 채워지면 사람은 기능이 없는 줄 안다. 그리고 품목명이 빈 채로
+        발주가 나가면 업체가 무엇을 보낼지 모른다. */
+    if (못찾음.length) {
+      try {
+        SpreadsheetApp.getActiveSpreadsheet().toast(
+          못찾음.slice(0, 3).join(String.fromCharCode(10)), '대리발송 자동 채우기', 8);
+      } catch (eT) {}
+    }
+  } catch (err) {
+    //  조용히 넘어간다 — 편집 자체를 막으면 안 된다
+    try { Logger.log('[onEdit] ' + (err && err.message ? err.message : err)); } catch (e2) {}
+  }
+}
+
+/**
+ * M_품목정보 → { 코드: {name} }. 5분만 들고 있는다.
+ *
+ * 편집 한 번에 표를 통째로 다시 읽으면 타자 칠 때마다 시트가 멈춘다.
+ * 품목 표는 하루에 몇 번 안 바뀌므로 5분이면 충분하고, 바꾼 직후에 안 맞으면
+ * 5분 뒤에 맞는다 — 그 정도는 자동 채우기의 값으로 치를 만하다.
+ */
+function ssa_partnerItems_() {
+  var cache = null, key = 'SSA_PARTNER_ITEMS_V1';
+  try { cache = CacheService.getScriptCache(); } catch (e) {}
+  if (cache) {
+    try {
+      var hit = cache.get(key);
+      if (hit) return JSON.parse(hit);
+    } catch (e2) {}
+  }
+  try {
+    var sh = ssio_ss().getSheetByName(SSIO_TABS.M품목);
+    if (!sh || sh.getLastRow() < 2) return null;
+    var v = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues();
+    var out = {};
+    for (var i = 0; i < v.length; i++) {
+      var c = ssText(v[i][0]);
+      if (c && out[c] === undefined) out[c] = { name: ssText(v[i][1]) };
+    }
+    if (cache) { try { cache.put(key, JSON.stringify(out), 300); } catch (e3) {} }
+    return out;
+  } catch (e4) {
+    return null;
+  }
+}

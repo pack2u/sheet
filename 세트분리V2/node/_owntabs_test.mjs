@@ -698,3 +698,75 @@ console.log("\n[이름 비교] 남의 송장이 붙지 않는가");
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n이름 비교도 그대로");
 if (실패) process.exit(1);
+
+/* ═══════════════════════════════════════════════════════════════
+   출고지 「대리발송」 · 대리발송 탭 자동 채우기
+
+   > "출고지가 대리발송인 경우 무조건 대리발송으로 빠지게 해줘."
+   > "대리발송에 하단에 추가하고싶은 발송을 넣으면 추가될수 있게 해줘
+   >  이카운트 코드로 자동으로.. 그외는 업체 코드를 넣을께"
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[대리발송] 출고지 규칙 · 코드로 자동 채우기");
+{
+  const core = 읽기(path.join(뿌리, "core.js"));
+  const auto = 읽기(path.join(뿌리, "gasAuto.js"));
+  const 꺼내기 = new Function(
+    "Utilities", "SpreadsheetApp", "Logger", "module",
+    core + "\n" + "return { ssAutofillPartner: ssAutofillPartner, SS_ROUTE: SS_ROUTE };",
+  );
+  const { ssAutofillPartner, SS_ROUTE } = 꺼내기(null, null, { log() {} }, undefined);
+
+  const items = { "AB1234": { name: "아주팩 도시락용기 500" }, "CD9": { name: "뚜껑" } };
+  //  SS_PARTNER_HEADER 자리 — 0 출고지 · 3 품목코드 · 4 품목명 · 5 박스 · 6 수량
+  const 빈줄 = () => new Array(22).fill("");
+
+  {
+    const r = ssAutofillPartner("AB1234", items, 빈줄());
+    eq("★ 코드를 알면 채운다", r.ok, "true");
+    eq("출고지는 대리발송", r.채움[0], "대리발송");
+    eq("★ 품목명을 채운다", r.채움[4], "아주팩 도시락용기 500");
+    eq("박스 1", r.채움[5], 1);
+    eq("수량 1", r.채움[6], 1);
+    eq("★ 업체코드는 안 건드린다", r.채움[19] === undefined, "true");
+  }
+
+  {
+    //  사람이 적어 둔 값은 안 덮는다
+    const 줄 = 빈줄();
+    줄[4] = "손으로 적은 품목명";
+    줄[6] = 5;
+    const r = ssAutofillPartner("AB1234", items, 줄);
+    eq("★ 적어 둔 품목명을 안 덮는다", r.채움[4] === undefined, "true");
+    eq("★ 적어 둔 수량도 안 덮는다", r.채움[6] === undefined, "true");
+    eq("빈 칸만 채운다", r.채움[0], "대리발송");
+  }
+
+  {
+    const r = ssAutofillPartner("없는코드", items, 빈줄());
+    eq("★ 모르는 코드는 안 채운다", r.ok, "false");
+    eq("왜 안 됐는지 말한다", r.why.indexOf("M_품목정보에 없는 코드") >= 0, "true");
+    eq("아무것도 안 건드린다", Object.keys(r.채움).length, 0);
+  }
+
+  {
+    const r = ssAutofillPartner("", items, 빈줄());
+    eq("빈 코드는 조용히 지나간다", r.ok + "/" + r.why, "false/");
+  }
+
+  //  ── 출고지 규칙이 코드에 들어갔는가 ──
+  eq("★ 출고지 대리발송 규칙이 있다",
+    core.includes("=== SS_ROUTE.PARTNER) {") && core.includes("PARTNER_BY_ORIGIN"), "true");
+  eq("★ 사람이 「발송」이라 한 건 존중한다",
+    core.includes("if (!면제 && ssNorm(u.출고지)"), "true");
+  eq("업체코드가 비면 알린다", core.includes("PARTNER_BY_ORIGIN"), "true");
+
+  //  ── onEdit 이 대리발송 탭만 보는가 ──
+  eq("★ onEdit 이 있다", auto.includes("function onEdit(e)"), "true");
+  eq("★ 대리발송 탭만 본다", auto.includes("!== SS_ROUTE.PARTNER) return;"), "true");
+  eq("★ D열만 본다", auto.includes("var 코드칸 = 4;"), "true");
+  eq("머리글은 안 건드린다", auto.includes("if (r1 < 2) return;"), "true");
+  eq("품목 표를 캐시한다", auto.includes("SSA_PARTNER_ITEMS_V1"), "true");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n대리발송 규칙도 그대로");
+if (실패) process.exit(1);
