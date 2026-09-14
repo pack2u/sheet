@@ -340,5 +340,56 @@ console.log("\n[원장] 메우러 온 것이 이미 찬 자리를 흔들면 안 
     push.includes("메움 ") && push.includes("이미 있어 건너뜀 "), true);
 }
 
+
+console.log("\n[빈 칸] 업체로 나가는 줄에서 빠진 칸을 잡는가");
+{
+  //  > "품목, 주소등 중요사항들이 빠지는 경우가 있는지 다시 한번 체크해줘"
+  //  여기에도 점검이 있었지만 ① Logger 로만 가고 ② 유효값 1개 이하일 때만
+  //  떴다 — 주소 하나가 빈 줄은 안 잡혔다. 09/14 사고가 그 문턱을 통과했다.
+  const vm2 = require("vm");
+  const c2 = {};
+  vm2.createContext(c2);
+  function g2(n) {
+    const s = push.indexOf("function " + n + "(");
+    let d = 0, seen = false;
+    for (let i = s; i < push.length; i++) {
+      if (push[i] === "{") { d++; seen = true; }
+      else if (push[i] === "}") { d--; if (seen && d === 0) return push.slice(s, i + 1); }
+    }
+  }
+  function v2(n) {
+    const a = push.indexOf("var " + n + " = [");
+    let d = 0;
+    for (let i = push.indexOf("[", a); i < push.length; i++) {
+      if (push[i] === "[") d++;
+      else if (push[i] === "]") { d--; if (d === 0) return push.slice(a, i + 1) + ";"; }
+    }
+  }
+  vm2.runInContext([v2("_PEP_MUST_COLS_"), v2("_PEP_PHONE_COLS_"), g2("_pep_rowMissing_")].join("\n"), c2);
+
+  const 온전 = () => { const r = []; r[4] = "JH 실링 1000개"; r[7] = ""; r[8] = "01012345678";
+    r[9] = "경기도 평택시"; r[12] = "김다영"; return r; };
+  check("★ 온전한 줄은 아무것도 안 잡는다", c2._pep_rowMissing_(온전()), []);
+  const 없애 = (i) => { const r = 온전(); r[i] = ""; return r; };
+  check("★ 받는분(M열) 없음", c2._pep_rowMissing_(없애(12)), ["받는분"]);
+  check("★ 주소(J열) 없음", c2._pep_rowMissing_(없애(9)), ["주소"]);
+  check("★ 품목명(E열) 없음", c2._pep_rowMissing_(없애(4)), ["품목명"]);
+  const 전화둘다 = 온전(); 전화둘다[7] = ""; 전화둘다[8] = "";
+  check("★ 전화·모바일 «둘 다» 비어야 잡는다", c2._pep_rowMissing_(전화둘다), ["연락처"]);
+  const 집전화 = 온전(); 집전화[8] = ""; 집전화[7] = "0319237795";
+  check("집전화라도 있으면 안 잡는다", c2._pep_rowMissing_(집전화), []);
+
+  check("★ 나가기 «전»에 센다",
+    push.includes("var _빠진칸_ = _pep_rowMissing_(row);"), true);
+  check("★ 어느 줄인지 남긴다",
+    push.includes("_빈칸셈_[_kn_].줄.push("), true);
+  check("★ 화면 맨 앞에 세운다",
+    push.includes("⚠ 비어 있는 채로 나간 줄"), true);
+  check("★ 빠진 게 없으면 그 칸 자체가 안 뜬다",
+    push.includes("if (빈칸이름.length) {"), true);
+  check("★ 조용히 도는 길(트리거)에도 말한다",
+    push.includes("var _빈칸글_ = ") && push.includes("_빈칸글_ +"), true);
+}
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

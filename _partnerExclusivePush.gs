@@ -1055,6 +1055,57 @@ function _pep_escapeHtml_(text) {
  *  규칙이 «따로» 있으면 그 차이 자체가 새 거짓말이 된다. 한 군데서 읽는다.
  * ══════════════════════════════════════════════════════════════
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 업체로 나가는 줄에서 빠진 칸을 잡는다 ★
+ *  2026-09-15
+ *
+ *  > "세트분리, 상품정보등에서 품목, 주소등 중요사항들이 빠지는 경우가
+ *  >  있는지 다시 한번 체크해줘."
+ *
+ *  여기에도 점검이 하나 있었다(_mappedCount_). 그런데 두 가지가 약했다.
+ *    ① Logger.log 로만 간다 — 아무도 Apps Script 로그를 안 본다.
+ *    ② 유효값이 «1개 이하»일 때만 뜬다 — 주소 하나가 빈 줄은 안 잡힌다.
+ *       09/14 에 주소가 87% 빠진 채로 발주가 나간 그 사고가 이 문턱을
+ *       그대로 통과했다.
+ *
+ *  업체가 받는 발주서에 이 넷 중 하나라도 비면 그 건은 못 나간다.
+ *    받는분(거래처명) · 주소 · 연락처 · 품목명
+ *  세트분리의 ss출고점검 과 같은 잣대다 — 나가는 길이 둘이니 그물도 둘이다.
+ *
+ *  ★ 소스 줄을 본다 ★
+ *    업체마다 칸 자리가 다르므로(sourceToTarget) 결과를 보면 업체별로 다 달라
+ *    견주기 어렵다. 소스는 하나다 — 거기서 보면 업체가 몇이든 같은 잣대다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var _PEP_MUST_COLS_ = [
+  { 이름: "받는분", col: 12, 왜: "발주서에 받는 사람이 없습니다" },
+  { 이름: "주소", col: 9, 왜: "주소 없이 나가면 그 건은 배송이 안 됩니다" },
+  { 이름: "품목명", col: 4, 왜: "업체가 무엇을 보낼지 모릅니다" },
+];
+/** 연락처는 둘 중 하나만 있으면 된다 — H(7) 전화 · I(8) 모바일 */
+var _PEP_PHONE_COLS_ = [7, 8];
+
+/**
+ * 소스 줄 하나에서 «비어 있는 필수 칸» 이름들을 돌려준다.
+ * 빈 배열이면 온전한 줄이다.
+ */
+function _pep_rowMissing_(row) {
+  var out = [];
+  if (!row) return out;
+  for (var i = 0; i < _PEP_MUST_COLS_.length; i++) {
+    var m = _PEP_MUST_COLS_[i];
+    if (!String(row[m.col] == null ? "" : row[m.col]).trim()) out.push(m.이름);
+  }
+  var 연락 = "";
+  for (var p = 0; p < _PEP_PHONE_COLS_.length; p++) {
+    var v = String(row[_PEP_PHONE_COLS_[p]] == null ? "" : row[_PEP_PHONE_COLS_[p]]).trim();
+    if (v) { 연락 = v; break; }
+  }
+  if (!연락) out.push("연락처");
+  return out;
+}
+
 function _pep_rowPrefix_(row) {
   var rawCode = String(row[_PEP_CODE_COL] || "").trim();
   var rawName = String(row[_PEP_ITEM_COL] || "").trim();
@@ -1223,6 +1274,31 @@ function _pep_buildPushSummaryHtml_(opts) {
    *    까닭이 있는 건 괜찮다 — 이미 올렸다, 겹쳤다, 매핑이 없다, 아직 안 갔다.
    *    미확인은 «까닭 없이 빠진 줄»이다. 0 이 아니면 붉게 칠하고 줄까지 적는다.
    * ══════════════════════════════════════════════════════════════ */
+  /* ★ 빈 칸은 맨 앞에 세운다 ★  (2026-09-15)
+     업체가 받는 발주서에 받는분·주소·연락처·품목명 중 하나라도 비면 그 건은
+     못 나간다. 여러 건이 묻힌 뒤에 찾는 것보다, 나가자마자 보이는 편이 낫다.
+     빠진 게 없으면 이 칸 자체가 안 뜬다 — 늘 뜨는 경고는 안 보게 된다. */
+  var 빈칸 = opts.빈칸 || {};
+  var 빈칸이름 = Object.keys(빈칸);
+  if (빈칸이름.length) {
+    var 빈총 = 0;
+    for (var bz = 0; bz < 빈칸이름.length; bz++) 빈총 += (빈칸[빈칸이름[bz]].n || 0);
+    h += "<h3>⚠ 비어 있는 채로 나간 줄</h3>";
+    h += "<div class=\"alarm\">발주서에 꼭 있어야 할 칸이 빈 줄이 " + 빈총 + "건 있습니다. " +
+      "이대로면 그 건은 업체가 못 보냅니다.</div>";
+    h += "<table class=\"vendor-table\"><thead><tr><th>빈 칸</th>" +
+      "<th style=\"text-align:right\">건수</th><th>줄</th></tr></thead><tbody>";
+    for (var bi = 0; bi < 빈칸이름.length; bi++) {
+      var bn = 빈칸이름[bi], bv = 빈칸[bn] || { n: 0, 줄: [] };
+      h += "<tr><td><span class=\"pfx\">" + _pep_escapeHtml_(bn) + "</span></td>" +
+        "<td class=\"bad\">" + bv.n + "</td><td>" +
+        _pep_escapeHtml_((bv.줄 || []).join(" · ")) +
+        (bv.n > (bv.줄 || []).length ? " 외 " + (bv.n - bv.줄.length) + "건" : "") +
+        "</td></tr>";
+    }
+    h += "</tbody></table>";
+  }
+
   if (대조 && 대조.rows && 대조.rows.length) {
     var 미확인총 = 대조.미확인 || 0;
     h += "<h3>🧾 원본 대조 (대리발송 탭 ↔ Push)</h3>";
@@ -2062,6 +2138,7 @@ function _pep_pushCore_(silent) {
      «까닭 없이 사라진 줄»이다. 그건 아무도 모른다 — 금요일이 그랬다.
      줄마다 무슨 일이 있었는지 적어 두고, 끝나고 원본과 맞대 본다. */
   var _원본센_ = _pep_censusSource_(srcAll);
+  var _빈칸셈_ = {};   // 필수 칸이 빈 줄 — 칸이름 → {n, 줄[]}
   var _줄결과_ = {};
 
   /* ── 이어달리기 ────────────────────────────────────────────
@@ -2110,6 +2187,18 @@ function _pep_pushCore_(silent) {
           (rawCode || "(코드없음)") + " " + rawName.substring(0, 20));
       }
       continue;
+    }
+
+    /* ★ 빠진 칸을 «나가기 전에» 센다 ★  (2026-09-15)
+       업체가 받는 발주서에 받는분·주소·연락처·품목명 중 하나라도 비면 그
+       건은 못 나간다. 여기서 안 세면 아무도 모르고 나간다 — 09/14 에
+       주소가 87% 빈 채로 나간 그 사고다. */
+    var _빠진칸_ = _pep_rowMissing_(row);
+    for (var _mk_ = 0; _mk_ < _빠진칸_.length; _mk_++) {
+      var _kn_ = _빠진칸_[_mk_];
+      if (!_빈칸셈_[_kn_]) _빈칸셈_[_kn_] = { n: 0, 줄: [] };
+      _빈칸셈_[_kn_].n++;
+      if (_빈칸셈_[_kn_].줄.length < 8) _빈칸셈_[_kn_].줄.push("R" + (ri + 1) + "[" + pfx + "]");
     }
 
     var directMap = _PEP_VENDOR_DIRECT_MAP_[pfx] || null;
@@ -2570,6 +2659,7 @@ function _pep_pushCore_(silent) {
     if (_멈춘행_ > 0 && _nz >= _멈춘행_) _줄결과_[_nz] = "아직";
   }
   var _대조_ = _pep_reconcile_(_원본센_, _줄결과_, srcAll);
+  result.detail.pushMissing = _빈칸셈_;
   try {
     Logger.log("[PEP] 원본 대조 — 업체 " + _대조_.rows.length + "곳 · 미확인 " + _대조_.미확인 + "건");
     for (var _rc = 0; _rc < _대조_.미확인줄.length; _rc++) Logger.log("[PEP] ★미확인 " + _대조_.미확인줄[_rc]);
@@ -2578,6 +2668,20 @@ function _pep_pushCore_(silent) {
   /* ★ 대조 결과는 말로도 남긴다 ★  (2026-09-14)
      트리거로 조용히 돌면 요약 화면이 안 뜬다. 그때도 「원본 몇, 나간 몇,
      까닭 없이 빠진 몇」은 반드시 어딘가 적혀 있어야 한다. */
+  /*  화면이 안 뜨는 길(트리거)로 돌 때도 빈 칸은 말해야 한다 */
+  var _빈칸글_ = "";
+  try {
+    var _bk_ = Object.keys(_빈칸셈_);
+    if (_bk_.length) {
+      var _bl_ = [];
+      for (var _bi_ = 0; _bi_ < _bk_.length; _bi_++) {
+        var _bv_ = _빈칸셈_[_bk_[_bi_]];
+        _bl_.push("    " + _bk_[_bi_] + " 없음 " + _bv_.n + "건 : " + (_bv_.줄 || []).join(" · "));
+      }
+      _빈칸글_ = "\n\n⚠ 비어 있는 채로 나간 줄 (업체가 못 보냅니다)\n" + _bl_.join("\n");
+    }
+  } catch (eBk) {}
+
   var _대조글_ = "";
   try {
     var _cl_ = [];
@@ -2672,6 +2776,7 @@ function _pep_pushCore_(silent) {
     (errorLogs.length
       ? "\n\n⚠ 오류(최대10건):\n" + errorLogs.slice(0, 10).join("\n")
       : "") +
+    _빈칸글_ +
     _대조글_ +
     //  남은 조각이 있으면 «맨 끝»에 적는다 — 이게 지금 가장 중요한 말이다
     _이어붙임_;
@@ -2746,6 +2851,7 @@ function _pep_pushCore_(silent) {
           errorLogs: errorLogs,
           대조: _대조_,
           원본센: _원본센_,
+          빈칸: _빈칸셈_,
         }),
       )
         .setWidth(860)
