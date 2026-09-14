@@ -242,9 +242,27 @@ var _PT_LOTTE_FIXED_COL = {
 };
 // ★ [폴백] 3-3_병합 — A열(고객명) + B열(전화번호) + D열(운송장번호) → 이름+전화 매칭
 var _PT_NAME_PHONE_FALLBACK_GID = 656421383;
-var _PT_COMBINED_INVOICE_SHEET_ID =
-  "1vWdJgmbW_Gwm_2b1pP8mVBxpfYBbUiAduSwkStXxs0Y";
-var _PT_COMBINED_INVOICE_SHEET_GID = 1403770726;
+/* ★ 합배송 전용 시트 — 구 세트분리 → 뉴 ★  (2026-09-14)
+   > "송장 수집시 합배송이 적요에 합배송 표시도 안되고 합배송건에 대한
+   >  송장번호도 안들어와.. 대리판매업체 건이야"
+
+   여기가 「세트분리(사용중)」(구)을 가리키고 있었다. 뉴로 옮긴 뒤 그 시트의
+   합배송 탭은 더 이상 안 채워지므로, 합배송 키가 «하나도» 안 만들어졌다.
+   그러면 같은 사람의 여러 줄을 묶을 근거가 없어 —
+     · 적요에 「합배송」이 안 적히고
+     · 대표의 송장을 나머지 줄에 못 복사한다
+   오류는 안 난다. 조용히 «합배송이 없는 날»처럼 보인다.
+
+   옛 값 — 되돌릴 일이 있으면 이 두 줄:
+     var _PT_COMBINED_INVOICE_SHEET_ID = "1vWdJgmbW_Gwm_2b1pP8mVBxpfYBbUiAduSwkStXxs0Y";
+     var _PT_COMBINED_INVOICE_SHEET_GID = 1403770726;
+
+   ★ GID 대신 «탭 이름»으로 찾는다 ★
+     뉴 합배송 탭의 GID 는 시트를 다시 만들면 바뀐다. 이름 「합배송」은
+     코드(SSIO_TABS.합배송)가 정하므로 사람이 바꿀 일이 없다. */
+var _PT_COMBINED_INVOICE_SHEET_ID = "1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo"; // 세트분리(뉴)
+var _PT_COMBINED_INVOICE_SHEET_GID = -1;   // 안 쓴다 — 이름으로 찾는다
+var _PT_COMBINED_INVOICE_TAB_NAME = "합배송";
 // 사방넷 전용 탭 GID (보조 소스)
 var _PT_SABANGNET_GID = 1445333640;
 var _PT_DEPLOY_LOCAL_SETTINGS_TAB_NAME = "설정";

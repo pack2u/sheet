@@ -1610,7 +1610,11 @@ function partnerFetchInvoices() {
   var combinedUidSet = {};  // ★ Q열 고유ID 기반 합배송 판정용
   try {
     var _csSS = SpreadsheetApp.openById(_PT_COMBINED_INVOICE_SHEET_ID);
-    var _csTab = _pt_getSheetByGid(_csSS, _PT_COMBINED_INVOICE_SHEET_GID);
+    /*  GID 가 -1 이면 이름으로 찾는다. 뉴 합배송 탭 이름은 코드가 정한다. */
+    var _csTab = (_PT_COMBINED_INVOICE_SHEET_GID >= 0)
+      ? _pt_getSheetByGid(_csSS, _PT_COMBINED_INVOICE_SHEET_GID)
+      : _csSS.getSheetByName(typeof _PT_COMBINED_INVOICE_TAB_NAME !== "undefined"
+          ? _PT_COMBINED_INVOICE_TAB_NAME : "합배송");
     if (_csTab && _csTab.getLastRow() > 1) {
       var _csLc = Math.max(_csTab.getLastColumn(), 17); // Q열(17)까지 보장
       var _csData = _csTab
@@ -1634,7 +1638,7 @@ function partnerFetchInvoices() {
         var _ch = String(_csHeaders[_ci]).replace(/\s/g, "");
         if (
           _csNameIdx === -1 &&
-          _ch.match(/이름|고객명|수취인|수령인|받는분|받는사람|수하인/)
+          _ch.match(/이름|고객명|수취인|수령인|받는분|받는사람|수하인|거래처명/)
         )
           _csNameIdx = _ci;
         //  보내는분 전화는 우리 번호다 — 받는 사람 키에 섞이면 안 된다
@@ -1657,16 +1661,29 @@ function partnerFetchInvoices() {
           }
         }
       }
-      // ★ Q열(index 16) 고유ID 수집
-      var _csUidCol = 16; // Q열 = 0-based 16
+      /* ★ 고유ID 는 «이름»으로 찾는다 ★  (2026-09-14)
+         구 시트는 Q열(16)이었다. 뉴 합배송 탭은 앞에 네 칸(구분·조건ID·실제경로·
+         합포장키)이 더 있어 자리가 다르다. 자리를 박아 두면 엉뚱한 칸을 UID 로
+         읽고, 그러면 합배송이 «하나도» 안 잡히거나 남의 것이 잡힌다.
+         못 찾으면 옛 자리(16)로 돌아간다 — 구 시트로 되돌려도 돈다. */
+      var _csUidCol = -1;
+      for (var _ui = 0; _ui < _csHeaders.length; _ui++) {
+        var _uh = String(_csHeaders[_ui]).replace(/s/g, "");
+        if (_uh === "사방넷주문번호" || _uh === "고유ID" || _uh === "고유아이디") {
+          _csUidCol = _ui;
+          break;
+        }
+      }
+      if (_csUidCol < 0) _csUidCol = 16; // Q열 = 0-based 16 (구 시트)
       for (var _cr2 = 1; _cr2 < _csData.length; _cr2++) {
         var _csUid = String(_csData[_cr2][_csUidCol] || "").trim();
         if (_csUid) combinedUidSet[_csUid] = true;
       }
       scannedLogs.push(
-        "[합배송 전용] 이름+전화 키 " +
+        "[합배송 전용] " + _csTab.getName() + " — 이름+전화 키 " +
           Object.keys(combinedShipmentKeySet).length +
-          "개, UID " + Object.keys(combinedUidSet).length + "개 로드됨",
+          "개, UID " + Object.keys(combinedUidSet).length + "개 로드됨" +
+          "  (이름칸 " + _csNameIdx + " · UID칸 " + _csUidCol + ")",
       );
     }
   } catch (_csErr) {
@@ -1742,7 +1759,10 @@ function partnerFetchInvoices() {
   // ── 합배송 전용 시트 읽기 ──
   try {
     var combSS = SpreadsheetApp.openById(_PT_COMBINED_INVOICE_SHEET_ID);
-    var combTab = _pt_getSheetByGid(combSS, _PT_COMBINED_INVOICE_SHEET_GID);
+    var combTab = (_PT_COMBINED_INVOICE_SHEET_GID >= 0)
+      ? _pt_getSheetByGid(combSS, _PT_COMBINED_INVOICE_SHEET_GID)
+      : combSS.getSheetByName(typeof _PT_COMBINED_INVOICE_TAB_NAME !== "undefined"
+          ? _PT_COMBINED_INVOICE_TAB_NAME : "합배송");
     if (combTab && combTab.getLastRow() > 1) {
       _pt_ingestInvoiceSheetTabIntoMap(
         combTab,
