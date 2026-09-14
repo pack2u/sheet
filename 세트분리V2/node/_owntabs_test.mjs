@@ -1389,8 +1389,8 @@ console.log("\n[0914판매현황] 빠진 회차를 원장에서 되살리는가"
     main.includes("SS_DAILY_SRC_LEDGER") && main.includes("var SS_DAILY_SRC_COL = '자료출처';"), "true");
   eq("★ 붙여넣은 줄에도 표식을 찍는다",
     main.includes("add.push(row.concat([SS_DAILY_SRC_PASTE, rk]));"), "true");
-  eq("★ 품목명은 안 쪼개진 줄에서만 믿는다",
-    main.includes("it.줄수 === 1 &&"), "true");
+  eq("★ 품목명은 «M품목»에서 원본코드로 찾는다",
+    main.includes("var 이름 = 원코드 ? ssText(품목이름[원코드]) : '';"), true);
   eq("★ 주소는 원주소를 먼저 본다",
     main.includes("ssText(got('원주소')) || got('주소1')"), "true");
   eq("★ 되살리다 넘어져도 쌓기는 계속한다",
@@ -1502,4 +1502,34 @@ console.log("\n[메우기] 지난 날짜도 메운다 — 남의 날짜에 오�
     메뉴.includes("지난 날짜라 「"), true);
   eq("★ 오늘일 때는 예전처럼 입력아이디를 쓴다",
     메뉴.includes("if (마지막키 && !있는키[마지막키]) {"), true);
+}
+
+/* ══════════════════════════════════════════════════════════════
+ *  [원장복원] 품목명을 비워 두지 않는다
+ *  2026-09-15
+ *
+ *  > "일일 마감에 품목명이 빠진것들이 있는데 이유가..?"
+ *
+ *  세트가 구성품으로 쪼개진 줄은 원장의 품목명이 «구성품» 이름이라 쓸 수
+ *  없다. 그래서 비웠는데, 그 빈칸이 마감까지 흘러가 사람이 무슨 물건인지
+ *  못 읽었다. 「M품목」이 원본품목코드의 이름을 그대로 들고 있다 —
+ *  모르는 것은 비우되, 알 수 있는 것을 비워 두면 안 된다.
+ * ══════════════════════════════════════════════════════════════ */
+console.log("\n[원장복원] 품목명을 비워 두지 않는다");
+{
+  const main = 읽기(path.join(뿌리, "gasMain.js"));
+  const 복원 = main.slice(main.indexOf("function ss_원장에서그날복원_"));
+
+  eq("★ 품목 마스터를 읽는다",
+    복원.includes("var mSh = ssio_ss().getSheetByName(SSIO_TABS.M품목);"), true);
+  eq("★ 원본품목코드로 찾는다",
+    복원.includes("var 이름 = 원코드 ? ssText(품목이름[원코드]) : '';"), true);
+  eq("★ 마스터에 없으면 «안 쪼개진 줄»의 원장 품목명으로",
+    복원.includes("if (!이름 && it.줄수 === 1 && ssText(got('라인ID')) === ssText(got('순번'))) {"), true);
+  eq("★ 쪼개진 줄의 «구성품» 이름은 그대로 쓰지 않는다",
+    복원.includes("line[새자리['품목명']] = got('품목명');"), false);
+  eq("★ 마스터를 못 읽어도 되살리기는 계속한다",
+    복원.includes("//  마스터를 못 읽어도 되살리기는 계속한다 — 이름만 빈다"), true);
+  eq("코드가 없으면 빈칸 (없는 것은 없다고 둔다)",
+    복원.includes("원코드 ? ssText(품목이름[원코드]) : ''"), true);
 }
