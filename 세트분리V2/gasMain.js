@@ -39,6 +39,7 @@ function onOpen() {
     .addSubMenu(ui.createMenu('📦 자료 준비')
       .addItem('판매현황 비우기', 'ss_판매현황비우기')
       .addItem('판매현황 원천 확인', 'ss_판매현황원천')
+      .addItem('🧩 그날 판매현황 메우기 (원장에서)', 'ss_그날판매현황메우기')
       .addItem('📮 우편번호 자동조회 (카카오)', 'ss_우편번호채우기'))
 
     .addSubMenu(ui.createMenu('🔗 송장 매칭')
@@ -461,6 +462,13 @@ function ss_실행(opts) {
     }
     if (그날쌓음) {
       sum.push([runKey.substring(2, 6) + '판매현황 탭', 그날쌓음 + '행 (회차별 누적)']);
+    }
+    if (SS_DAILY_복원결과_ && SS_DAILY_복원결과_.줄수) {
+      /*  되살렸다는 사실은 «반드시» 눈에 보여야 한다. 원장에서 온 줄은 판매현황
+          몇 칸이 비어 있고, 그게 정상이라는 걸 아는 사람만 알면 안 된다. */
+      sum.push(['  └ 원장에서 되살림',
+        SS_DAILY_복원결과_.줄수 + '행 · 회차 ' + SS_DAILY_복원결과_.회차들.join(', ') +
+        ' (배송비 3칸·상호·주문서/사방넷 칸은 원장에 안 남아 빕니다)']);
     }
     sum.push(['중복의심 그룹 (회차간)', dup.groups + ' (' + dup.cross + ')']);
     if (dup.이어짐) {
@@ -1459,6 +1467,149 @@ function ss_판매현황아이디채움(cells) {
  *  @return {number} 이번에 쌓은 줄 수
  * ══════════════════════════════════════════════════════════════
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 빠진 회차는 「주문라인원장」에서 되살린다 ★
+ *  2026-09-14
+ *
+ *  > "이전 판매현황은 어디서 가져오지?"
+ *
+ *  판매현황이 남는 데는 셋뿐인데, 둘은 하루를 못 넘긴다.
+ *    ① 「판매현황」            — 사람이 회차마다 지우고 붙인다.      없다.
+ *    ② 「판매현황_고유아이디」  — 회차마다 덮어쓴다. 마지막 것뿐.    없다.
+ *    ③ 「주문라인원장」        — 회차키를 달고 전부 쌓인다.      ★ 여기뿐 ★
+ *
+ *  그래서 이 탭이 「제 몸에 남은 것」에만 기대면, 한 번 빠진 회차는 영영 못
+ *  돌아온다. 오늘 오전 네 회차가 그랬다 — 이 기능이 오후에 생겼으니까.
+ *  고쳐도 과거가 안 돌아오는 고침은 반쪽이다. 이제는 돌 때마다 원장을 보고
+ *  「빠진 회차」를 스스로 메운다.
+ *
+ *  ★ 원장은 판매현황이 아니다 ★
+ *    세트가 구성품으로 쪼개져 있으므로 순번으로 도로 뭉친다. 그리고 판매현황
+ *    스무 칸 중 몇 칸은 원장에 아예 안 남는다.
+ *      · 세트구성및배송비 · 단품배송비 · 묶음배송비  — 계산에 쓰고 버린다
+ *      · 전화번호(사방넷) · 추가문자형7 · 주문서 세 칸 — 주소1 로 합쳐진다
+ *      · 거래처명(상호)                              — 원장은 받는분만 남긴다
+ *    빈 칸을 채운 척하지 않는다. 되살린 줄에는 「자료출처 = 원장복원」을 찍어
+ *    빈칸이 「원래 비어 있던 것」인지 「못 되살린 것」인지 헷갈리지 않게 한다.
+ *
+ *  ★ 주소는 원주소를 먼저 본다 ★
+ *    적요로 배송지를 갈아 끼운 건은 원장에 「원주소」로 원래 값이 남는다.
+ *    그게 판매현황에 있던 그 값이다. 없으면 주소1 을 쓴다 — 사방넷·주문서
+ *    건은 판매현황에서 다른 칸에 있었으므로, 되살린 것은 제자리가 아니다.
+ *    그래도 주소를 버리는 것보다는 낫다. 표식이 그 사정을 말해 준다.
+ * ══════════════════════════════════════════════════════════════
+ */
+/** 마지막 쌓기에서 원장으로 되살린 결과. 실행요약이 읽는다. */
+var SS_DAILY_복원결과_ = { 줄수: 0, 회차들: [] };
+var SS_DAILY_SRC_COL = '자료출처';
+var SS_DAILY_SRC_PASTE = '판매현황';
+var SS_DAILY_SRC_LEDGER = '원장복원';
+
+/** 판매현황 칸 ← 원장 칸. 이름 대 이름으로만 옮긴다. */
+var SS_DAILY_FROM_LEDGER = {
+  '순번': '순번',
+  '일자-No.': '일자-No.',
+  '품목코드': '원본품목코드',
+  '수량': '주문수량',
+  '전화': '전화',
+  '모바일': '모바일',
+  '합계': '합계',
+  '적요': '적요',
+  '거래처명': '거래처명'
+};
+
+/**
+ * 원장에서 「그날·빠진 회차」의 판매현황 줄을 되살린다.
+ *
+ * @param 원장그리드 원장 전체 (머리글 포함)
+ * @param 날앞       yyMMdd
+ * @param 있는키     이미 탭에 있는 회차키 {키: true}
+ * @param head       목표 머리글 (맨 뒤가 회차키)
+ * @return {{rows: Array, 회차들: Array}}
+ */
+function ss_원장에서그날복원_(원장그리드, 날앞, 있는키, head) {
+  var 빈답 = { rows: [], 회차들: [] };
+  if (!원장그리드 || 원장그리드.length < 2) return 빈답;
+
+  var lh = 원장그리드[0], L = {};
+  for (var i = 0; i < lh.length; i++) {
+    var n = ssText(lh[i]);
+    if (n && L[n] === undefined) L[n] = i;
+  }
+  if (L['회차키'] === undefined || L['순번'] === undefined) return 빈답;
+
+  var 새자리 = {};
+  for (var h = 0; h < head.length; h++) {
+    var hn = ssText(head[h]);
+    if (hn && 새자리[hn] === undefined) 새자리[hn] = h;
+  }
+
+  var 뭉침 = {}, 차례 = [], 본회차 = {};
+  for (var r = 1; r < 원장그리드.length; r++) {
+    var row = 원장그리드[r];
+    var rk = ssText(row[L['회차키']]);
+    if (rk.substring(0, 6) !== 날앞) continue;
+    if (있는키 && 있는키[rk]) continue;
+    var 순번 = ssText(row[L['순번']]);
+    if (!순번) continue;
+    var key = rk + '|' + 순번;
+    if (뭉침[key]) { 뭉침[key].줄수++; continue; }   // 세트 구성품은 첫 줄만
+    뭉침[key] = { rk: rk, row: row, 줄수: 1 };
+    차례.push(key);
+    본회차[rk] = true;
+  }
+
+  var out = [];
+  for (var c = 0; c < 차례.length; c++) {
+    var it = 뭉침[차례[c]];
+    var src = it.row;
+    var got = function (name) {
+      var ci = L[name];
+      return ci === undefined ? '' : src[ci];
+    };
+
+    var line = [];
+    for (var z = 0; z < head.length; z++) line.push('');
+
+    for (var 판 in SS_DAILY_FROM_LEDGER) {
+      if (!Object.prototype.hasOwnProperty.call(SS_DAILY_FROM_LEDGER, 판)) continue;
+      if (새자리[판] === undefined) continue;
+      line[새자리[판]] = got(SS_DAILY_FROM_LEDGER[판]);
+    }
+
+    /*  품목명은 「세트가 안 쪼개진 줄」에서만 믿는다.
+        쪼개졌으면 첫 줄의 품목명은 구성품 이름이라 판매현황의 그것이 아니다.
+        모르면 비운다 — 틀린 이름을 적는 것보다 낫다. */
+    if (새자리['품목명'] !== undefined && it.줄수 === 1 &&
+        ssText(got('라인ID')) === ssText(got('순번'))) {
+      line[새자리['품목명']] = got('품목명');
+    }
+
+    //  주소는 원주소(적요로 바뀌기 전)를 먼저 본다
+    if (새자리['주소1'] !== undefined) {
+      line[새자리['주소1']] = ssText(got('원주소')) || got('주소1');
+    }
+
+    /*  O열 「주문자명(사방넷)」은 이 탭을 읽는 쪽이 전부 보는 칸이다.
+        원장에는 이름과 고유ID 가 따로 있으니 같은 모양으로 다시 붙인다. */
+    if (새자리['주문자명(사방넷)'] !== undefined) {
+      var 누구 = ssText(got('거래처명'));   // 원장의 이 칸은 받는분이다
+      var 아이디 = ssText(got('고유ID'));
+      line[새자리['주문자명(사방넷)']] = 아이디 ? (누구 ? 누구 + '/' + 아이디 : 아이디) : 누구;
+    }
+
+    if (새자리[SS_DAILY_SRC_COL] !== undefined) line[새자리[SS_DAILY_SRC_COL]] = SS_DAILY_SRC_LEDGER;
+    line[head.length - 1] = it.rk;
+    out.push(line);
+  }
+
+  var 회차들 = [];
+  for (var k2 in 본회차) if (Object.prototype.hasOwnProperty.call(본회차, k2)) 회차들.push(k2);
+  회차들.sort();
+  return { rows: out, 회차들: 회차들 };
+}
+
 var SS_DAILY_KEEP_DAYS = 7;
 var SS_DAILY_SUFFIX = '판매현황';
 
@@ -1472,7 +1623,7 @@ function ss_그날판매현황쌓기(runKey) {
   var width = grid[0].length;
 
   var 이름 = rk.substring(2, 6) + SS_DAILY_SUFFIX;   // 260914-1 → 0914판매현황
-  var head = grid[0].slice(0, width).concat(['회차키']);
+  var head = grid[0].slice(0, width).concat([SS_DAILY_SRC_COL, '회차키']);
   var sh = ssio_sheet(이름, head);
 
   /* ★ 옛 줄을 «머리글을 갈아 끼우기 전»에 읽는다 ★  (2026-09-14 고침)
@@ -1531,10 +1682,39 @@ function ss_그날판매현황쌓기(runKey) {
     for (var c = 0; c < row.length; c++) if (ssText(row[c])) { 빔 = false; break; }
     if (빔) continue;
     while (row.length < width) row.push('');
-    add.push(row.concat([rk]));
+    add.push(row.concat([SS_DAILY_SRC_PASTE, rk]));
   }
 
-  var all = keep.concat(add);
+
+  /* ★ 빠진 회차는 원장에서 메운다 ★  (2026-09-14)
+     이 탭이 «제 몸에 남은 것»에만 기대면, 한 번 빠진 회차는 영영 못 돌아온다.
+     원장에 회차키가 있는데 여기 없으면 그건 잃어버린 것이다. 되살린다.
+     실패해도 이번 회차 쌓기는 계속한다 — 곁다리가 본줄기를 막으면 안 된다. */
+  SS_DAILY_복원결과_ = { 줄수: 0, 회차들: [] };
+  var 되살림 = [], 되살린회차 = [];
+  try {
+    var 있는키 = {};
+    있는키[rk] = true;                    // 이번 회차는 방금 새로 쓴다
+    for (var kk = 0; kk < keep.length; kk++) {
+      var kv = ssText(keep[kk][head.length - 1]);
+      if (kv) 있는키[kv] = true;
+    }
+    var lgSh = ssio_ss().getSheetByName(SSIO_TABS.원장);
+    if (lgSh && lgSh.getLastRow() > 1) {
+      var 복원 = ss_원장에서그날복원_(lgSh.getDataRange().getValues(), rk.substring(0, 6), 있는키, head);
+      되살림 = 복원.rows;
+      되살린회차 = 복원.회차들;
+    }
+  } catch (eR) {
+    되살림 = [];
+  }
+
+  //  하루가 «시간 순»으로 읽히도록 회차키로 줄 세운다
+  var all = 되살림.concat(keep).concat(add);
+  all.sort(function (x, y) {
+    var a1 = ssText(x[head.length - 1]), b1 = ssText(y[head.length - 1]);
+    return a1 < b1 ? -1 : a1 > b1 ? 1 : 0;
+  });
   ssio_clearBody(sh);
   if (sh.getMaxColumns() < head.length) {
     sh.insertColumnsAfter(sh.getMaxColumns(), head.length - sh.getMaxColumns());
@@ -1548,7 +1728,104 @@ function ss_그날판매현황쌓기(runKey) {
   ssio_styleHeader(sh, head.length, { bg: '#2c4f6b' });
 
   ss_옛판매현황탭정리(rk);
+  SS_DAILY_복원결과_ = { 줄수: 되살림.length, 회차들: 되살린회차 };
   return add.length;
+}
+
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  지금 당장 「그날 판매현황」을 원장으로 메운다
+ *  2026-09-14
+ *
+ *  자동 복원은 세트분리를 돌 때만 걸린다. 오늘 오전 회차처럼 «이미 지나간»
+ *  것을 지금 보고 싶을 때가 있다. 세트분리를 한 번 더 돌리는 건 답이 아니다 —
+ *  출력 탭이 다 바뀌고, 회차가 하나 더 생긴다.
+ *
+ *  읽기만 한다. 원장은 안 건드리고, 그날 탭에 빠진 회차만 보태 넣는다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function ss_그날판매현황메우기() {
+  var ui = SpreadsheetApp.getUi();
+  var 오늘 = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
+  var 이름 = 오늘.substring(2) + SS_DAILY_SUFFIX;
+
+  var lgSh = ssio_ss().getSheetByName(SSIO_TABS.원장);
+  if (!lgSh || lgSh.getLastRow() < 2) {
+    ui.alert('「' + SSIO_TABS.원장 + '」이 비어 있습니다. 되살릴 데가 없습니다.');
+    return;
+  }
+
+  /*  머리글은 어디서 오나. 그날 탭이 이미 있으면 그것을 그대로 쓴다 —
+      바꾸면 옛 줄이 어긋난다. 없으면 「판매현황_고유아이디」의 머리글로 만든다. */
+  var sh = ssio_ss().getSheetByName(이름);
+  var head = null;
+  if (sh && sh.getLastRow() >= 1) {
+    head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  } else {
+    var idSh = ssio_ss().getSheetByName(SSIO_TABS.입력아이디);
+    if (!idSh || idSh.getLastRow() < 1) {
+      ui.alert('머리글을 가져올 데가 없습니다.\n\n' +
+        '「' + 이름 + '」도 「' + SSIO_TABS.입력아이디 + '」도 비어 있습니다.\n' +
+        '세트분리를 한 번 돌리면 그때 자동으로 메웁니다.');
+      return;
+    }
+    var idHead = idSh.getRange(1, 1, 1, idSh.getLastColumn()).getValues()[0];
+    head = idHead.concat([SS_DAILY_SRC_COL, '회차키']);
+    sh = ssio_sheet(이름, head);
+  }
+  if (ssText(head[head.length - 1]) !== '회차키') {
+    ui.alert('「' + 이름 + '」의 맨 뒤 칸이 「회차키」가 아닙니다 (' +
+      ssText(head[head.length - 1]) + ').\n' +
+      '손을 대면 무엇을 남길지 알 수 없으므로 그만둡니다.');
+    return;
+  }
+
+  var 있는키 = {}, 옛줄수 = 0;
+  if (sh.getLastRow() > 1) {
+    var body = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues();
+    for (var b = 0; b < body.length; b++) {
+      var kv = ssText(body[b][head.length - 1]);
+      if (kv) { 있는키[kv] = true; 옛줄수++; }
+    }
+  }
+
+  var 복원 = ss_원장에서그날복원_(lgSh.getDataRange().getValues(), 오늘, 있는키, head);
+  if (!복원.rows.length) {
+    var 이미 = [];
+    for (var k in 있는키) if (Object.prototype.hasOwnProperty.call(있는키, k)) 이미.push(k);
+    이미.sort();
+    ui.alert('메울 것이 없습니다.\n\n' +
+      '「' + 이름 + '」에 이미 있는 회차: ' + (이미.join(', ') || '(없음)') + '\n' +
+      '원장에 ' + 오늘 + ' 회차가 더 없거나, 이미 다 들어 있습니다.');
+    return;
+  }
+
+  var all = 복원.rows;
+  if (sh.getLastRow() > 1) {
+    all = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues().concat(복원.rows);
+  }
+  all.sort(function (x, y) {
+    var a1 = ssText(x[head.length - 1]), b1 = ssText(y[head.length - 1]);
+    return a1 < b1 ? -1 : a1 > b1 ? 1 : 0;
+  });
+
+  ssio_clearBody(sh);
+  if (sh.getMaxRows() < all.length + 1) {
+    sh.insertRowsAfter(sh.getMaxRows(), all.length + 1 - sh.getMaxRows() + 10);
+  }
+  ssio_textFormat(sh, head, all.length);
+  sh.getRange(2, 1, all.length, head.length).setValues(all);
+  ssio_styleHeader(sh, head.length, { bg: '#2c4f6b' });
+
+  ui.alert('「' + 이름 + '」을 메웠습니다.\n\n' +
+    '되살린 회차 : ' + 복원.회차들.join(', ') + '\n' +
+    '되살린 줄   : ' + 복원.rows.length + '행\n' +
+    '원래 있던 줄 : ' + 옛줄수 + '행\n' +
+    '합계        : ' + all.length + '행\n\n' +
+    '★ 되살린 줄은 「' + SS_DAILY_SRC_COL + '」 칸이 「' + SS_DAILY_SRC_LEDGER + '」입니다.\n' +
+    '원장에 안 남는 칸(배송비 3칸 · 상호 · 주문서/사방넷 칸)은 비어 있습니다 —\n' +
+    '원래 비어 있던 것이 아니라 되살릴 수 없는 칸입니다.');
 }
 
 /**

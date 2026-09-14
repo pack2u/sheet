@@ -1305,7 +1305,7 @@ console.log("\n[그날 판매현황] 회차별로 쌓이는가");
 
   eq("★ 탭 이름은 MMDD판매현황",
     main.includes("var 이름 = rk.substring(2, 6) + SS_DAILY_SUFFIX;"), "true");
-  eq("★ 맨 뒤에 회차키 칸", main.includes("grid[0].slice(0, width).concat(['회차키'])"), "true");
+  eq("★ 맨 뒤에 회차키 칸", main.includes("concat([SS_DAILY_SRC_COL, '회차키'])"), "true");
   eq("★ 같은 회차는 갈아 끼운다", main.includes("if (k === rk) continue;"), "true");
   eq("★ 다른 회차는 남긴다", main.includes("keep.push(moved);"), "true");
   eq("★ 이레 지난 탭은 지운다", main.includes("var SS_DAILY_KEEP_DAYS = 7;"), "true");
@@ -1363,3 +1363,46 @@ console.log("\n[0914판매현황] 옛 회차가 살아남는가");
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n그날 판매현황도 그대로");
 if (실패) process.exit(1);
+
+/* ══════════════════════════════════════════════════════════════
+ *  [0914판매현황] 빠진 회차를 원장에서 되살리는가
+ *  2026-09-14
+ *
+ *  > "이전 판매현황은 어디서 가져오지?"
+ *
+ *  탭이 제 몸에 남은 것에만 기대면, 한 번 빠진 회차는 영영 안 돌아온다.
+ *  원장은 회차키를 달고 전부 쌓이니 거기서 되살릴 수 있다.
+ * ══════════════════════════════════════════════════════════════ */
+console.log("\n[0914판매현황] 빠진 회차를 원장에서 되살리는가");
+{
+  const main = 읽기(path.join(뿌리, "gasMain.js"));
+
+  eq("★ 원장을 원천으로 삼는다",
+    main.includes("ss_원장에서그날복원_(lgSh.getDataRange().getValues()"), "true");
+  eq("★ 이미 있는 회차는 건너뛴다",
+    main.includes("if (있는키 && 있는키[rk]) continue;"), "true");
+  eq("★ 이번 회차는 되살리지 않는다 (방금 새로 쓴다)",
+    main.includes("있는키[rk] = true;"), "true");
+  eq("★ 세트는 순번으로 도로 뭉친다",
+    main.includes("if (뭉침[key]) { 뭉침[key].줄수++; continue; }"), "true");
+  eq("★ 되살린 줄에 표식을 찍는다",
+    main.includes("SS_DAILY_SRC_LEDGER") && main.includes("var SS_DAILY_SRC_COL = '자료출처';"), "true");
+  eq("★ 붙여넣은 줄에도 표식을 찍는다",
+    main.includes("add.push(row.concat([SS_DAILY_SRC_PASTE, rk]));"), "true");
+  eq("★ 품목명은 안 쪼개진 줄에서만 믿는다",
+    main.includes("it.줄수 === 1 &&"), "true");
+  eq("★ 주소는 원주소를 먼저 본다",
+    main.includes("ssText(got('원주소')) || got('주소1')"), "true");
+  eq("★ 되살리다 넘어져도 쌓기는 계속한다",
+    main.includes("} catch (eR) {"), "true");
+  eq("★ 하루를 회차키 순으로 줄 세운다",
+    main.includes("var all = 되살림.concat(keep).concat(add);"), "true");
+  eq("★ 되살렸다는 사실을 실행요약에 적는다",
+    main.includes("'  └ 원장에서 되살림'"), "true");
+  eq("★ 못 되살린 칸이 무엇인지 말한다",
+    main.includes("배송비 3칸·상호·주문서/사방넷 칸은 원장에 안 남아 빕니다"), "true");
+  eq("회차키는 여전히 맨 뒤",
+    main.includes("line[head.length - 1] = it.rk;"), "true");
+  eq("원장 머리글도 이름으로 찾는다",
+    main.includes("if (L['회차키'] === undefined || L['순번'] === undefined) return 빈답;"), "true");
+}
