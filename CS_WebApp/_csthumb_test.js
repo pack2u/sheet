@@ -48,7 +48,9 @@ ok("4배를 넘게 받지 않는다", reqA <= drawA * 4, reqA + " <= " + drawA *
 
 console.log("\n[반품 사진 — .ret-proc-thumbs]");
 const drawB = cssWidth(home, ".ret-proc-thumbs button {");
-const reqB = reqWidth(home, "thumbUrl: 'https://drive.google.com/thumbnail");
+/* 2026-09-14: 사진이 v2 보관소로 옮겨지면서 thumbUrl 은 변수로 담는다.
+   드라이브 사진은 여전히 같은 방식이라 그 줄을 기준으로 잰다. */
+const reqB = reqWidth(home, "thumb = 'https://drive.google.com/thumbnail");
 ok("그리는 크기를 찾았다", drawB !== null, String(drawB));
 ok("받는 크기를 찾았다", reqB !== null, String(reqB));
 ok("받는 크기가 그리는 크기보다 크다", reqB > drawB, reqB + " vs " + drawB);
@@ -70,6 +72,19 @@ ok("카드 첨부는 우선순위 낮음", /esc\(a\.thumbUrl\)[\s\S]{0,220}fetch
 ok("반품 사진은 lazy", /items\[i\]\.thumbUrl[\s\S]{0,160}loading="lazy"/.test(home));
 ok("반품 사진은 decoding=async", /items\[i\]\.thumbUrl[\s\S]{0,200}decoding="async"/.test(home));
 ok("반품 사진은 우선순위 낮음", /items\[i\]\.thumbUrl[\s\S]{0,220}fetchpriority="low"/.test(home));
+
+
+console.log("\n[v2 보관소 사진]");
+/* 2026-09-14: 사진이 드라이브 → v2(Supabase) 로 옮겨졌다. 화면이 드라이브
+   주소만 사진으로 알아봐서 새로 올린 것은 전부 맨 링크로 떨어졌다.
+   올라갔는데 안 보이면 안 올라간 것과 같다. */
+ok("우리 보관소 주소를 알아본다", home.indexOf("function retStoreUrl") > 0);
+ok("★ 작게 받는 주소를 만든다", home.indexOf("/storage/v1/render/image/sign/") > 0);
+ok("★ 폭을 지정한다", home.indexOf("width=") > 0 && home.indexOf("quality=70") > 0);
+ok("썸네일은 작은 주소로", home.indexOf("thumb = retStoreThumb(urls[i], 160);") > 0);
+ok("확대보기는 원본으로", home.indexOf("big = urls[i];") > 0);
+ok("★ 작은 주소가 안 되면 원본으로 물러선다", home.indexOf("data-full") > 0);
+ok("남의 서버 주소는 안 받는다", home.indexOf("object/sign/") > 0);
 
 console.log("\n" + (fail ? `실패 ${fail}건 / 통과 ${pass}건` : `모두 통과 (${pass}건)`));
 process.exit(fail ? 1 : 0);

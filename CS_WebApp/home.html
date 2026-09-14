@@ -6484,6 +6484,34 @@
       return out;
     }
 
+    /** v2 보관소(Supabase) 사진 주소인가. 그 주소는 <img> 에 그대로 쓴다. */
+    function retStoreUrl(url) {
+      var s = String(url || '');
+      //  우리 보관소 주소만 받는다. 아무 주소나 <img> 에 넣으면 남의 서버를 부른다.
+      if (s.indexOf('/storage/v1/object/sign/') < 0 &&
+          s.indexOf('/storage/v1/render/image/sign/') < 0) return '';
+      return s;
+    }
+
+    /**
+     * 보관소 사진을 «작게» 받는 주소.
+     *
+     * ★ 34px 로 그리면서 1MB 를 받으면 안 된다 ★
+     *   올리는 사진은 2400px 로 줄여 보내 한 장 1MB 안팎이다. 썸네일로 원본을
+     *   받으면 카드 하나 펼 때마다 5~6MB 가 나간다. 밖에서 폰으로 보는 화면이라
+     *   그게 곧 「안 뜬다」가 된다.
+     *
+     * ★ 안 되면 원본으로 물러선다 ★
+     *   작게 주는 기능(이미지 변환)은 요금제에 따라 없을 수 있다. 그때 사진이
+     *   아예 안 보이면 본전도 못 찾는다 — <img> 의 onerror 가 원본으로 바꾼다.
+     */
+    function retStoreThumb(url, w) {
+      var s = String(url || '');
+      if (s.indexOf('/storage/v1/object/sign/') < 0) return s;
+      var r = s.replace('/storage/v1/object/sign/', '/storage/v1/render/image/sign/');
+      return r + (r.indexOf('?') >= 0 ? '&' : '?') + 'width=' + w + '&quality=70';
+    }
+
     function retDriveId(url) {
       var s = String(url || '');
       var m = s.match(/\/d\/([-\w]{20,})/) || s.match(/[?&]id=([-\w]{20,})/);
@@ -6496,15 +6524,30 @@
       var out = [];
       for (var i = 0; i < urls.length; i++) {
         var id = retDriveId(urls[i]);
-        if (!id) continue;
+        var thumb = '', big = '';
+        if (id) {
+          // 34px(포커스 44px)로 그린다. w480 은 14배였다.
+          thumb = 'https://drive.google.com/thumbnail?id=' + id + '&sz=w160';
+          big = 'https://drive.google.com/thumbnail?id=' + id + '&sz=w2048';
+        } else if (retStoreUrl(urls[i])) {
+          /* ★ 2026-09-14: 사진이 v2 보관소로 옮겨졌다 ★
+             2026-09-10 부터 파일은 드라이브가 아니라 v2(Supabase)에 올라간다.
+             여기는 «드라이브 주소»만 사진으로 알아봐서, 새로 올린 것은 전부
+             사진 카드가 아니라 맨 링크로 떨어졌다. 올라가긴 했는데 안 보인다 —
+             CS 가 고객과 통화하며 보는 화면이라 그게 곧 안 올라간 것과 같다.
+             서명 주소는 그대로 <img> 에 쓸 수 있다(열 해짜리다). */
+          thumb = retStoreThumb(urls[i], 160);
+          big = urls[i];
+        } else {
+          continue;
+        }
         out.push({
           name: '반품 사진 ' + (i + 1),
           by: (ev && ev.staff) || '',
           at: formatProcWhen(ev || {}) || '',
           isImage: true,
-          // 34px(포커스 44px)로 그린다. w480 은 14배였다.
-          thumbUrl: 'https://drive.google.com/thumbnail?id=' + id + '&sz=w160',
-          bigUrl: 'https://drive.google.com/thumbnail?id=' + id + '&sz=w2048',
+          thumbUrl: thumb,
+          bigUrl: big,
           viewUrl: urls[i]
         });
       }
@@ -6525,7 +6568,10 @@
           ' onclick="openRetPhotoLb(' + cardIdx + ',' + evIdx + ',' + i + ', event)">' +
           '<img src="' + esc(items[i].thumbUrl) + '" alt="첨부 사진"' +
           ' loading="lazy" decoding="async" fetchpriority="low"' +
-          ' onerror="this.parentNode.classList.add(\'thumb-fail\');this.remove()">' +
+          ' data-full="' + esc(items[i].viewUrl) + '"' +
+          /*  작게 받는 주소가 안 되면 «원본»으로 한 번 더 해 본다.
+              그래도 안 되면 그때 자리를 접는다 — 안 보이는 것보다 무거운 편이 낫다. */
+          ' onerror="var f=this.getAttribute(\'data-full\');if(f&&this.src!==f){this.src=f;return;}this.parentNode.classList.add(\'thumb-fail\');this.remove()">' +
           '<span class="thumb-alt">사진</span></button>';
       }
       return html + '</div>';
