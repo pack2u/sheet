@@ -211,6 +211,11 @@ function registerPartnerMenu_() {
         .addItem("📍 발주서 주소 맞대보기 (원장 대조)", "partnerCheckVendorAddress")
         .addItem("🧷 빠진 주소 메우기 (임시기록)", "partnerFillMissingAddress")
         .addItem("🧷 빠진 주소 메우기 (업체 발주서)", "partnerFillMissingAddressVendors")
+        /* ★ 2026-09-14: 메뉴에 없어 아무도 못 쓰고 있었다 ★
+           일일마감 미매칭이 388건인데, 「송장이 어디 있었고 어느 단계에서
+           키가 끊겼는지」를 줄마다 말해 주는 도구가 진작부터 있었다.
+           부를 데가 없으면 없는 것과 같다. 읽기만 하고 결과 탭만 만든다. */
+        .addItem("🔎 일일마감 미매칭 원인 진단", "partnerDiagnoseUnifiedUnmatched")
         .addItem("🧪 오전/오후 중복 점검 진단", "partnerDiagnoseSalesDuplicates")
         .addItem("📋 월별 정산 Dry-run (미리보기)", "partnerDiagnoseMonthlyArchive")
         .addSeparator()

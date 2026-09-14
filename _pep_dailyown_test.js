@@ -193,5 +193,21 @@ check("★ 비었으면 탭 이름을 적는다",
 check("★ 뭉뚱그린 「없음/비어있음」이 사라졌다",
   push.includes("송장탭 없음/비어있음"), false);
 
+
+console.log("[진단 도구] 부를 데가 없으면 없는 것과 같다");
+{
+  const menu = fs.readFileSync("_partnerMenu.gs", "utf8");
+  check("★ 미매칭 진단이 메뉴에 있다",
+    menu.includes(`.addItem("🔎 일일마감 미매칭 원인 진단", "partnerDiagnoseUnifiedUnmatched")`), true);
+  check("★ 그 함수가 실제로 있다",
+    diag.includes("function partnerDiagnoseUnifiedUnmatched() {"), true);
+  check("★ 읽기만 한다 (결과 탭만 만든다)",
+    diag.includes("운영 데이터는 쓰지 않는다"), true);
+}
+
+console.log("[계측] 주문번호가 몇 줄에 있었나");
+check("★ 주문번호 있는 줄 수를 적는다",
+  push.includes("[\" + nUid + \"/\" + nInv + \"줄]"), true);
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

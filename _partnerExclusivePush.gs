@@ -9229,9 +9229,13 @@ function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
       /*  고른 칸을 «이름째로» 적는다. 09/14 두 번째 판은 「이름=O」라고만
           했는데, O 가 무슨 이름의 칸인지 몰라 또 한 판을 돌려야 했다.
           자리는 무엇을 집었는지 말해 주지 않는다. 이름이 말해 준다. */
+      /*  ★ 주문번호가 «몇 줄에» 있었는지도 적는다 ★  (2026-09-14)
+          887줄을 읽었다는 말은 「송장이 887개」라는 뜻일 뿐이다. 그 중 몇 줄이
+          우리 주문번호를 달고 있었는지는 다른 숫자다. 둘이 크게 벌어지면
+          탭에 남의 출고가 섞여 있거나 주문번호 칸이 비어 오는 것이다. */
       var 칸글 =
         "송장=" + _pep_colDesc_(hv, invIdx) +
-        " 주문번호=" + _pep_colDesc_(hv, uidIdx) +
+        " 주문번호=" + _pep_colDesc_(hv, uidIdx) + "[" + nUid + "/" + nInv + "줄]" +
         " 이름=" + _pep_colDesc_(hv, nameIdx) +
         " 전화=" + _pep_colDesc_(hv, phoneIdx) +
         " 날짜=" + _pep_colDesc_(hv, dateIdx) +
