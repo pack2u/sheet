@@ -957,6 +957,34 @@ function _sslp_tabs_() {
  */
 var SSB_ISLAND_OK = '발송';
 
+/**
+ * 출력 탭 여러 장을 «한 장»으로 합친다. 열은 SS_OUT_HEADER 19열로 맞춘다.
+ *
+ * ★ 도서산간은 앞 네 칸·뒤 한 칸을 뗀다 ★
+ *   SS_ISLAND_HEADER = [권역·우편번호·판정·도선료] + SS_OUT_HEADER + [조치].
+ *   가운데 19칸만 꺼내면 일반 탭과 같은 모양이 된다.
+ *   자리는 머리글 «이름»으로 찾는다 — 앞 칸이 늘면 자리로는 조용히 어긋난다.
+ */
+function ssb_mergePacks_(packs) {
+  var head = SS_OUT_HEADER.slice();
+  var out = [head];
+  var 이름들 = [];
+  for (var p = 0; p < packs.length; p++) {
+    var v = packs[p].vals;
+    if (!v || v.length < 2) continue;
+    이름들.push(packs[p].name + ' ' + (v.length - 1));
+    //  그 탭의 머리글에서 19열이 어디부터인지 찾는다
+    var off = 0;
+    for (var h = 0; h < v[0].length; h++) {
+      if (String(v[0][h] || '').trim() === head[0]) { off = h; break; }
+    }
+    for (var r = 1; r < v.length; r++) {
+      out.push(v[r].slice(off, off + head.length));
+    }
+  }
+  return { name: '로젠택배', vals: out, rows: out.length - 1, 합친것: 이름들 };
+}
+
 function ssb_islandKeep(vals) {
   var head = (vals && vals[0]) || [];
   var 찾기 = function (name) {
@@ -1081,8 +1109,24 @@ function ss_로젠출력엑셀() {
       }
     }
 
-    packs.push({ name: names[i], vals: vals, rows: vals.length - 1 });
+    packs.push({ name: names[i], vals: vals, rows: vals.length - 1, isIsland: isIsland });
     총행 += vals.length - 1;
+  }
+
+  /* ★ 한 시트로 합친다 ★  (2026-09-14)
+     > "도서산간으로 따로 분리되지 않고 같이 나와야되.. 텝이 따로 있는데.."
+
+     탭은 그대로 갈라 둔다 — 도선료·권역을 보려면 따로 봐야 하니까. 다만
+     로젠에 올리는 «파일»은 한 장이어야 한다. 시트가 갈려 있으면 사람이
+     두 번 올려야 하고, 한 번 잊으면 그 건이 통째로 안 나간다.
+
+     도서산간 탭은 앞에 네 칸(권역·우편번호·판정·도선료)이 더 있고 맨 뒤에
+     조치가 있다. 그 다섯을 떼면 정확히 SS_OUT_HEADER 19열 — 로젠 양식 그대로다.
+     양식이 어긋나면 인쇄가 깨지므로 열은 손대지 않는다.
+
+     설정 「출력엑셀_시트나누기」를 '나눔' 으로 두면 예전처럼 시트를 가른다. */
+  if (packs.length > 1 && ssText(ssio_config()['출력엑셀_시트나누기']) !== '나눔') {
+    packs = [ssb_mergePacks_(packs)];
   }
   if (!packs.length) {
     return ssio_alert('롯데 출력 탭이 모두 비어 있습니다.' + NL +
@@ -1147,7 +1191,14 @@ function ss_로젠출력엑셀() {
   try { DriveApp.getFileById(tmp.getId()).setTrashed(true); } catch (e3) {}
 
   var lines = [];
-  for (var q = 0; q < packs.length; q++) lines.push('  · ' + packs[q].name + '  ' + packs[q].rows + '행');
+  for (var q = 0; q < packs.length; q++) {
+    lines.push('  · ' + packs[q].name + '  ' + packs[q].rows + '행');
+    /*  합쳤으면 «무엇을» 합쳤는지 적는다. 한 줄로 뭉뚱그리면 도서산간이
+        들어갔는지 안 들어갔는지 눈으로 알 수가 없다 — 오늘 그것 때문에 찾았다. */
+    if (packs[q].합친것 && packs[q].합친것.length > 1) {
+      lines.push('      (합침: ' + packs[q].합친것.join(' + ') + ')');
+    }
+  }
   var msg = '로젠 송장출력 엑셀' + NL + NL + lines.join(NL) + NL +
     '  합계 ' + 총행 + '행' + NL + NL;
 

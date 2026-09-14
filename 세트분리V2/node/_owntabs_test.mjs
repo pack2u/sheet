@@ -1025,3 +1025,81 @@ console.log("\n[도서산간 조치] 재실행에서 살아남는가");
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n도서산간 조치도 그대로");
 if (실패) process.exit(1);
+
+/* ═══════════════════════════════════════════════════════════════
+   송장출력 엑셀 — 한 시트로 합친다
+
+   > "도서산간으로 따로 분리되지 않고 같이 나와야되.. 텝이 따로 있는데.."
+
+   탭은 그대로 갈라 둔다 — 도선료·권역을 보려면 따로 봐야 한다. 다만 로젠에
+   올리는 «파일»은 한 장이어야 한다. 시트가 갈려 있으면 두 번 올려야 하고,
+   한 번 잊으면 그 건이 통째로 안 나간다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[송장출력] 한 시트로 합치는가");
+{
+  const core = 읽기(path.join(뿌리, "core.js"));
+  const bulk = 읽기(path.join(뿌리, "gasBulk.js"));
+  const 꺼내기 = new Function(
+    "Utilities", "SpreadsheetApp", "Logger", "module",
+    core + "\n" + bulk + "\n" +
+    "return { ssb_mergePacks_: ssb_mergePacks_, SS_OUT_HEADER: SS_OUT_HEADER," +
+    "         SS_ISLAND_HEADER: SS_ISLAND_HEADER };",
+  );
+  const { ssb_mergePacks_, SS_OUT_HEADER, SS_ISLAND_HEADER } = 꺼내기(null, null, { log() {} }, undefined);
+
+  //  일반 탭 두 줄
+  const 일반 = [SS_OUT_HEADER.slice()];
+  for (const s of ["A", "B"]) {
+    const r = new Array(SS_OUT_HEADER.length).fill("");
+    r[SS_OUT_HEADER.indexOf("순번")] = s;
+    r[SS_OUT_HEADER.indexOf("품목코드")] = "CODE" + s;
+    일반.push(r);
+  }
+  //  도서산간 탭 한 줄 — 앞 네 칸 + 19열 + 조치
+  const 섬 = [SS_ISLAND_HEADER.slice()];
+  {
+    const r = new Array(SS_ISLAND_HEADER.length).fill("");
+    r[0] = "제주"; r[1] = "63133"; r[2] = "우편번호"; r[3] = 3000;
+    r[4 + SS_OUT_HEADER.indexOf("순번")] = "C";
+    r[4 + SS_OUT_HEADER.indexOf("품목코드")] = "CODEC";
+    r[SS_ISLAND_HEADER.length - 1] = "발송";
+    섬.push(r);
+  }
+
+  const merged = ssb_mergePacks_([
+    { name: "로젠택배", vals: 일반, rows: 2 },
+    { name: "로젠택배-도서산간", vals: 섬, rows: 1 },
+  ]);
+
+  eq("★ 시트는 하나", merged.name, "로젠택배");
+  eq("★ 줄이 다 들어간다", merged.rows, 3);
+  eq("★ 열은 로젠 양식 19열 그대로", merged.vals[0].length, SS_OUT_HEADER.length);
+  eq("머리글이 출고지로 시작", merged.vals[0][0], "출고지");
+
+  const iSeq = SS_OUT_HEADER.indexOf("순번");
+  const iCode = SS_OUT_HEADER.indexOf("품목코드");
+  eq("일반 줄 그대로", merged.vals[1][iSeq] + "/" + merged.vals[1][iCode], "A/CODEA");
+  eq("★ 도서산간 줄이 «같은 자리»로 맞춰진다",
+    merged.vals[3][iSeq] + "/" + merged.vals[3][iCode], "C/CODEC");
+  eq("★ 권역·도선료·조치는 안 실린다",
+    merged.vals[3].join("").indexOf("제주") >= 0 || merged.vals[3].join("").indexOf("발송") >= 0, "false");
+  eq("무엇을 합쳤는지 남긴다", merged.합친것.join(" + "), "로젠택배 2 + 로젠택배-도서산간 1");
+
+  {
+    //  빈 탭은 건너뛴다
+    const m2 = ssb_mergePacks_([
+      { name: "로젠택배", vals: 일반, rows: 2 },
+      { name: "빈탭", vals: [SS_OUT_HEADER.slice()], rows: 0 },
+    ]);
+    eq("빈 탭은 안 센다", m2.rows, 2);
+    eq("이름도 안 남긴다", m2.합친것.length, 1);
+  }
+
+  //  ── 배선 ──
+  eq("★ 기본은 합침", bulk.includes("!== '나눔'"), "true");
+  eq("설정으로 되돌릴 수 있다", 읽기(path.join(뿌리, "gasIO.js")).includes("출력엑셀_시트나누기"), "true");
+  eq("결과창에 합친 내역", bulk.includes("'      (합침: '"), "true");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n출력 합치기도 그대로");
+if (실패) process.exit(1);
