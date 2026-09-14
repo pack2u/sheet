@@ -352,6 +352,12 @@ function ss_실행(opts) {
     var 섬조치 = 회차.재실행 ? ss_섬조치걷기_() : {};
 
     // 출력 탭
+    /*  ★ 나가기 직전에 한 번 본다 ★  (2026-09-15)
+        받는분·주소·연락처·품목명·수량 — 송장 한 장이 되기 위한 최소다.
+        여기서 못 잡으면 그 줄은 그대로 출력 탭에 앉고, 아무도 모른 채
+        송장이 나간다. 어제 주소가 그렇게 87% 빠졌다. */
+    var 출고빔 = ss출고점검(res.buckets, res.warnings);
+
     for (var i = 0; i < SSIO_TABS.출력.length; i++) {
       var name = SSIO_TABS.출력[i];
       var bucket = res.buckets[name] || [];
@@ -439,6 +445,15 @@ function ss_실행(opts) {
     sum.push([SSIO_TABS.비배송 + ' (매출 집계용)', nonship.length + '행 · ' + 비배송금액.toLocaleString() + '원']);
     sum.push([SSIO_TABS.보류, res.stats.보류]);
     sum.push(['경고', res.warnings.length]);
+    /*  ★ 빠진 칸은 «실행요약 맨 앞줄»에 세운다 ★  (2026-09-15)
+        경고 탭에만 적으면 사람이 안 연다. 어제 주소 87% 가 그렇게 지나갔다.
+        나갈 줄에 받는분·주소·연락처·품목명·수량이 빈 것이 하나라도 있으면
+        여기서 먼저 눈에 걸린다. 없으면 이 줄 자체가 안 뜬다. */
+    var 빔글 = [];
+    for (var bk in 출고빔) {
+      if (Object.prototype.hasOwnProperty.call(출고빔, bk)) 빔글.push(bk + ' ' + 출고빔[bk]);
+    }
+    if (빔글.length) sum.push(['★★ 나갈 줄에 빠진 칸', 빔글.join(' · ') + '  — 경고 탭에 순번이 있습니다']);
     var 적용조치 = ssm_stampManual(res.units, runKey);
 
     단계 = '중복 점검';
@@ -1644,6 +1659,84 @@ function ss_원장에서그날복원_(원장그리드, 날앞, 있는키, head) 
 
 var SS_DAILY_KEEP_DAYS = 7;
 var SS_DAILY_SUFFIX = '판매현황';
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 나가기 직전 점검 — 송장이 될 수 없는 줄을 잡는다 ★
+ *  2026-09-15
+ *
+ *  > "세트분리, 상품정보등에서 품목, 주소등 중요사항들이 빠지는 경우가
+ *  >  있는지 다시 한번 체크해줘."
+ *
+ *  찾아보니 그물은 «주소 하나»뿐이었다 (ADDR_EMPTY). 받는분이 비어도,
+ *  전화가 둘 다 비어도, 품목명이 비어도 아무 말 없이 출력 탭으로 갔다.
+ *  그 넷은 «송장 한 장이 되기 위한 최소»다. 하나라도 비면 그 건은 못 간다.
+ *
+ *  ★ 나갈 줄만 본다 ★
+ *    비배송·보류는 물건이 안 나가므로 비어 있어도 사고가 아니다.
+ *    res.buckets 의 출력 탭 것만 센다.
+ *
+ *  ★ 주소와 달리 «한 건»부터 말한다 ★
+ *    ADDR_EMPTY 는 「다섯 줄 넘고 20% 이상」일 때만 말한다. 주소는 비배송·
+ *    적립금처럼 원래 빈 줄이 늘 섞이기 때문이다.
+ *    그런데 여기는 이미 «나가는 줄»만 남은 뒤다. 나가는 줄에 받는분이 없으면
+ *    그건 한 건이라도 사고다. 늘 뜨는 경고가 아니라 «날 일이 없는» 경고다.
+ *
+ *  ★ 순번을 같이 적는다 ★
+ *    「3건 빠졌습니다」만으로는 탭을 눈으로 훑어야 한다. 어느 줄인지 적는다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var SS_SHIP_MUST = [
+  { 이름: '받는분', 봄: function (u) { return ssText(u.받는분); },
+    왜: '송장에 받는 사람 이름이 없으면 택배가 못 갑니다.' },
+  { 이름: '주소', 봄: function (u) { return ssText(u.주소1); },
+    왜: '주소 없이 송장을 만들면 그 건은 배송이 안 됩니다.' },
+  { 이름: '연락처', 봄: function (u) { return ssText(u.모바일) || ssText(u.전화); },
+    왜: '전화·모바일이 둘 다 비었습니다. 택배사가 연락할 데가 없습니다.' },
+  { 이름: '품목명', 봄: function (u) { return ssText(u.출력품목명) || ssText(u.품목명); },
+    왜: '품목명이 없으면 창고에서 무엇을 담을지 모릅니다.' },
+  { 이름: '수량', 봄: function (u) { return ssNum(u.수량) > 0 ? '1' : ''; },
+    왜: '수량이 0 이거나 비었습니다.' }
+];
+
+/**
+ * 출고 직전 점검.
+ *
+ * @param buckets  res.buckets — 경로별 줄
+ * @param warnings 경고 담는 곳
+ * @return {object} 칸이름 → 빠진 건수
+ */
+function ss출고점검(buckets, warnings) {
+  var 셈 = {};
+  if (!buckets) return 셈;
+
+  //  나가는 줄만 모은다 — 비배송·보류는 물건이 안 나간다
+  var 나갈것 = [];
+  for (var i = 0; i < SSIO_TABS.출력.length; i++) {
+    var b = buckets[SSIO_TABS.출력[i]] || [];
+    for (var j = 0; j < b.length; j++) 나갈것.push(b[j]);
+  }
+  if (!나갈것.length) return 셈;
+
+  for (var m = 0; m < SS_SHIP_MUST.length; m++) {
+    var 칸 = SS_SHIP_MUST[m];
+    var 빈줄 = [];
+    for (var r = 0; r < 나갈것.length; r++) {
+      if (칸.봄(나갈것[r])) continue;
+      if (빈줄.length < 8) {
+        빈줄.push(ssText(나갈것[r].순번) + (ssText(나갈것[r].받는분)
+          ? '(' + ssText(나갈것[r].받는분).slice(0, 8) + ')' : ''));
+      }
+      셈[칸.이름] = (셈[칸.이름] || 0) + 1;
+    }
+    if (!셈[칸.이름]) continue;
+    ssWarn(warnings, '오류', 'SHIP_MISSING_' + m,
+      칸.이름 + ' 없음 ' + 셈[칸.이름] + '/' + 나갈것.length + '줄',
+      칸.왜 + '  순번: ' + 빈줄.join(' · ') +
+      (셈[칸.이름] > 빈줄.length ? ' 외 ' + (셈[칸.이름] - 빈줄.length) + '건' : ''));
+  }
+  return 셈;
+}
 
 function ss_그날판매현황쌓기(runKey) {
   var rk = ssText(runKey);
