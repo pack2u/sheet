@@ -208,10 +208,21 @@ function partnerUnifiedDailyArchiveManual() {
       "저장 위치: 구글드라이브 시트\n" +
       "파일명: " + (result.tabName || "(없음)") + "\n\n" +
       "매칭 기록: " + result.archived + "건\n" +
-      " └ 롯데 송장: " + (result.detail.lotte || result.detail.lozen || 0) + "건\n" +
+      /* ★ 2026-09-14: 「롯데 송장」이 아니라 「자사출고 송장」이다 ★
+         9/11 에 로젠으로 갈아탔는데 이 줄은 롯데만 세고 있었다. 4건이 찍혀도
+         이름이 「롯데」라 이상해 보이지 않았다 — 그래서 아무도 안 물었다.
+         두 탭을 몇 줄씩 읽었는지 늘 적는다. 0 이면 그 자리에서 보인다. */
+      " └ 자사출고 송장: " + (result.detail.lotte || 0) + "건" +
+      ((result.detail.rozenMatched || result.detail.lotteMatched)
+        ? "  (로젠 " + (result.detail.rozenMatched || 0) + " · 롯데 " + (result.detail.lotteMatched || 0) + ")"
+        : "") + "\n" +
+      "    읽은 탭: " + (result.detail.ownTabs || "(없음)") + "\n" +
+      (result.detail.rozenRead
+        ? "    로젠 " + result.detail.rozenRead + "건 — " + (result.detail.rozenCols || "") + "\n"
+        : "    ⚠ 로젠탭 송장 0건 — 탭/열 확인 필요\n") +
       (result.detail.lotteRead
-        ? "    (롯데탭에서 송장 " + result.detail.lotteRead + "건 읽음, " + (result.detail.lotteCols || "") + ")\n"
-        : "    (롯데탭 송장 0건 — 탭/열 확인 필요)\n") +
+        ? "    롯데 " + result.detail.lotteRead + "건 — " + (result.detail.lotteCols || "") + "\n"
+        : "") +
       (result.detail.weeklyRead
         ? " └ 1주출고(이력): " + (result.detail.weeklyPrimary || 0) + "건 (탭 " + result.detail.weeklyRead + "행)\n"
         : "") +

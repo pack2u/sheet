@@ -44,7 +44,11 @@ var _PUD_SOURCES_ = [
   { key: "발주허브",         usedByDaily: true, skipsNameKey: true },
   { key: "합배송",           usedByDaily: true },
   { key: "3-3_병합",         usedByDaily: true },
-  { key: "로젠",            usedByDaily: false },
+  /* ★ 2026-09-14: 로젠도 일일마감이 읽는다 ★
+     9/11 에 자사출고를 로젠으로 바꿨는데 이 표는 「안 읽는다」로 남아,
+     진단이 「소스제외」라고 답했다 — 사실은 마감이 못 읽고 있던 것이다.
+     읽는 쪽을 고쳤으니 이 표도 같이 고친다. 표가 거짓이면 진단도 거짓이다. */
+  { key: "로젠",            usedByDaily: true },
   { key: "사방넷_송장매칭",  usedByDaily: false },
 ];
 
@@ -214,8 +218,14 @@ function _pud_buildCandidateIndex_() {
 
     // ── 로젠 (★ 일일마감 미사용 — 송장수집은 1순위로 씀) ──
     try {
+      /* ★ 칸 자리는 _PT_ROZEN_FIXED_COL 한 곳에서 온다 ★  (2026-09-14)
+         여기 적혀 있던 {name:9, phone:12, invoice:5, uid:4} 는 «옛 로젠
+         양식»이다. 지금 탭은 44칸짜리라 자리가 통째로 다르고, 머리글도
+         2행이다. 그대로 두면 한 줄도 안 걸리는데 오류는 안 난다. */
       readFixed("로젠", _pt_getSheetByGid(invSS, _PT_PRIMARY_INVOICE_GID),
-        { name: 9, phone: 12, invoice: 5, uid: 4 }, 1);
+        (typeof _PT_ROZEN_FIXED_COL !== "undefined")
+          ? _PT_ROZEN_FIXED_COL
+          : { name: 6, phone: 9, invoice: 3, uid: 18 }, 2);
     } catch (e) { idx.notes.push("로젠 읽기 오류: " + e.message); }
 
     // ── 3-3_병합 (이름+전화 폴백) ──

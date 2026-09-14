@@ -9006,6 +9006,146 @@ function _pep_resolveRowInvoice_(map, row, outVia) {
 }
 
 /** 화면값·Date → yyyymmdd 숫자. 못 읽거나 연도가 이상하면 0 */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 자사출고 송장맵 — 로젠과 롯데를 «둘 다» 읽는다 ★
+ *  2026-09-14
+ *
+ *  > "니말대로라면 상품정보의 롯데 송장이 아닌 로젠으로 연결시켜
+ *  >  일일 마감을 다시 해보는게 맞는거 같은데?"
+ *
+ *  맞는 말이다. 여태 이 자리에는 롯데 탭만 있었고, 그 아래에 한 줄이 남아
+ *  있었다 — 「(a2) 로젠 입력_로젠주문실적 — 일일마감 송장 소스로 사용하지
+ *  않음 (자사출고=롯데)」. 2026-08-07 에 맞던 말이다.
+ *
+ *  2026-09-11 에 택배사를 로젠으로 바꿨다. 그날부터 자사출고 송장은 로젠
+ *  탭에만 쌓인다. 그런데 마감은 롯데 탭만 봤다 —— 오류 없이, 0건에 가깝게,
+ *  조용히. 09/14 마감이 「롯데 송장 4건 · 미매칭 475건」인 이유가 이것이다.
+ *
+ *  ★ 날짜로 가르지 않고 둘 다 읽는다 ★
+ *    9월 10일까지 나간 건은 롯데 탭에, 11일부터는 로젠 탭에 쌓인다.
+ *    「이제 로젠만」으로 바꾸면 갈아탄 날 앞쪽이 이번엔 반대로 빠진다.
+ *    롯데 탭은 더 안 늘어나므로 시간이 지나면 저절로 뜻이 없어진다.
+ *    _partnerOrders 의 사방넷 대량등록이 이미 이 손버릇이다 — 같게 맞춘다.
+ *
+ *  ★ 머리글은 «찾는다» ★
+ *    로젠 탭은 1행이 제목이고 머리글이 2행이다. 1행을 믿으면 한 줄도 안
+ *    걸리는데 오류는 안 난다. _po_findInvoiceHeader_ 로 이름을 찾고,
+ *    못 찾을 때만 _PT_ROZEN_FIXED_COL 로 떨어진다.
+ *
+ *  ★ 읽은 것을 반드시 말한다 ★
+ *    탭마다 몇 줄을 읽었고 어느 칸을 골랐는지 result.detail 에 남긴다.
+ *    오늘 일이 다시 나면, 마감 알림의 그 숫자가 0 인 것으로 바로 안다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
+  var 자사원천 = [
+    {
+      이름: "로젠",
+      gid: _PT_PRIMARY_INVOICE_GID,
+      col: (typeof _PT_ROZEN_FIXED_COL !== "undefined")
+        ? _PT_ROZEN_FIXED_COL
+        : { name: 6, phone: 9, invoice: 3, uid: 18, item: 14, addr: -1, date: -1 },
+      키: "rozen",
+    },
+    {
+      이름: "롯데",
+      gid: _PT_SECONDARY_INVOICE_GID,
+      col: (typeof _PT_LOTTE_FIXED_COL !== "undefined")
+        ? _PT_LOTTE_FIXED_COL
+        : { name: 5, phone: -1, invoice: 6, uid: 9, item: 28, addr: -1, date: 3 },
+      키: "lotte",
+    },
+  ];
+
+  var invSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
+  var 읽음 = [];
+
+  for (var si = 0; si < 자사원천.length; si++) {
+    var 편 = 자사원천[si];
+    try {
+      var tab = _pt_getSheetByGid(invSS, 편.gid);
+      if (!tab || tab.getLastRow() < 2) {
+        Logger.log("[UNIFIED] " + 편.이름 + " 송장탭 없음/비어있음 (GID " + 편.gid + ")");
+        result.detail[편.키 + "Read"] = 0;
+        result.detail[편.키 + "Cols"] = "탭없음";
+        읽음.push(편.이름 + " 탭없음");
+        continue;
+      }
+
+      /*  머리글을 이름으로 찾는다. 못 찾을 때만 정해진 자리로 떨어진다.
+          어느 쪽으로 갔는지도 남긴다 — 「고정자리」가 찍혀 있으면 탭 서식이
+          바뀐 것이고, 그때 조용히 0건이 되는 것을 막아야 한다. */
+      var H = (typeof _po_findInvoiceHeader_ === "function")
+        ? _po_findInvoiceHeader_(tab) : { row: 0, uid: -1, inv: -1 };
+      var uidIdx = H.row ? H.uid : 편.col.uid;
+      var invIdx = H.row ? H.inv : 편.col.invoice;
+      var from = H.row ? H.row + 1 : 2;
+      var 어떻게 = H.row ? ("머리글 " + H.row + "행") : "고정자리";
+
+      var nameIdx = (편.col.name === undefined) ? -1 : 편.col.name;
+      var phoneIdx = (편.col.phone === undefined) ? -1 : 편.col.phone;
+      var addrIdx = (편.col.addr === undefined) ? -1 : 편.col.addr;
+      var itemIdx = (편.col.item === undefined) ? -1 : 편.col.item;
+      var dateIdx = (편.col.date === undefined) ? -1 : 편.col.date;
+
+      var need = Math.max(uidIdx, invIdx, nameIdx, phoneIdx, addrIdx, itemIdx, dateIdx) + 1;
+      var lc = Math.max(tab.getLastColumn(), need);
+      //  주문번호가 긴 숫자면 getValues 가 지수로 깨져 매칭이 전부 실패한다 → 화면값
+      var all = tab.getRange(from, 1, tab.getLastRow() - from + 1, lc).getDisplayValues();
+
+      var nInv = 0, nUid = 0, nName = 0;
+      for (var i = 0; i < all.length; i++) {
+        var row = all[i];
+        var inv = _pep_normInvoiceNo_(row[invIdx]);
+        if (!inv) continue;
+        var uid = String(row[uidIdx] || "").trim();
+        //  머리글이 한 번 더 나오는 탭이 있다 — 그 줄은 자료가 아니다
+        if (/주문번호|운송장/.test(uid)) continue;
+        nInv++;
+
+        var picked = (dateIdx >= 0) ? _pep_ymdNum_(row[dateIdx]) : 0;
+        if (uid) {
+          _pep_addInvoiceMap_(invoiceMap, uid, inv, 편.이름, "", picked);
+          nUid++;
+        }
+        var phone = (phoneIdx >= 0) ? row[phoneIdx] : "";
+        _pep_addNamePhoneInvoiceKeys_(invoiceMap, row[nameIdx >= 0 ? nameIdx : 0], phone, inv, 편.이름, {
+          addr: (addrIdx >= 0) ? row[addrIdx] : "",
+          item: (itemIdx >= 0) ? row[itemIdx] : "",
+          picked: picked,
+          stat: _pep_keyStat_(편.이름),
+        });
+        if (nameIdx >= 0 && _pep_normRecipName_(row[nameIdx])) nName++;
+      }
+
+      var 칸글 =
+        "송장=" + _pep_colLetter_(invIdx) +
+        " 주문번호=" + _pep_colLetter_(uidIdx) +
+        " 이름=" + (nameIdx >= 0 ? _pep_colLetter_(nameIdx) : "-") +
+        " (" + 어떻게 + ")";
+      result.detail[편.키 + "Read"] = nInv;
+      result.detail[편.키 + "Cols"] = 칸글;
+      읽음.push(편.이름 + " " + nInv + "줄");
+      Logger.log("[UNIFIED] " + 편.이름 + " 송장맵: 송장행=" + nInv +
+        " 주문번호=" + nUid + " 수취인명=" + nName + " " + 칸글 +
+        " 합계키=" + Object.keys(invoiceMap).length + "건");
+    } catch (e) {
+      Logger.log("[UNIFIED] " + 편.이름 + " 송장맵 오류: " + (e && e.message ? e.message : e));
+      result.detail[편.키 + "Read"] = -1;
+      result.detail[편.키 + "Cols"] = "오류: " + (e && e.message ? e.message : e);
+      읽음.push(편.이름 + " 오류");
+    }
+  }
+
+  /*  옛 이름을 그대로 둔다 — 화면·알림이 lotteRead 를 읽고 있다.
+      이제 그 숫자는 «자사출고 전체»다. 로젠이 주고 롯데는 옛 건이다. */
+  result.detail.ownRead =
+    Math.max(0, result.detail.rozenRead || 0) + Math.max(0, result.detail.lotteRead || 0);
+  result.detail.ownTabs = 읽음.join(" · ");
+  return result.detail.ownRead;
+}
+
 function _pep_ymdNum_(raw) {
   if (raw && typeof raw.getFullYear === "function" && !isNaN(raw.getTime())) {
     return _pep_ymdPack_(raw.getFullYear(), raw.getMonth() + 1, raw.getDate());
@@ -10520,7 +10660,7 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
   // ★ 2026-06-29: targetDateStr 파라미터 추가 — 전달 시 해당 날짜로 저장 (자동실행→전날 매출일)
   var result = {
     archived: 0, tabName: "", error: "",
-    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", hubRead: 0, backfill: 0, backfillDate: "", uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0 }
+    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", rozenRead: 0, rozenCols: "", ownRead: 0, ownTabs: "", rozenMatched: 0, lotteMatched: 0, hubRead: 0, backfill: 0, backfillDate: "", uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0 }
   };
 
   try {
@@ -10548,82 +10688,20 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
       Logger.log("[UNIFIED] 송장원장 갱신 오류: " + eLedger.message);
     }
 
-    // ── ① 송장맵 구축 (롯데 + 1주출고 + 허브 + 임시기록 + 송장원장. 로젠 입력탭은 사용하지 않음) ──
+    // ── ① 송장맵 구축 (로젠 + 롯데 + 1주출고 + 허브 + 임시기록 + 송장원장) ──
+    //    ★ 2026-09-14: 로젠을 넣었다. 9/11 갈아탄 뒤 여기가 비어 있었다. ──
     var invoiceMap = {}; // { 매칭키(주문번호/사방넷ID/NAME:/NP:): { inv, source } }
 
-    // (a) ★ 2026-08-07: 롯데 송장맵 (주) — J열(주문번호=사방넷/고유ID) → G열(운송장번호)
-    // ★ 2026-08-20: 같은 주문번호·같은 수취인의 송장을 덮어쓰지 않고 누적
-    // ★ 2026-08-20: 고유ID 없는 건은 수취인명(+전화가 있으면 전화)으로 매칭. 로젠탭은 쓰지 않음.
+    /* (a) ★ 자사출고 송장맵 — 로젠(지금) + 롯데(9/10 까지의 옛 건) ★
+       2026-09-14: 여기가 롯데 탭만 보고 있었다. 9/11 에 로젠으로 갈아탄 뒤
+       주 송장원이 통째로 비어, 마감이 「롯데 4건 · 미매칭 475건」을 냈다.
+       읽는 일은 _pep_loadOwnCarrierInvoices_ 한 곳에 모았다. */
     try {
-      var invSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
-      var lotteSrcTab = _pt_getSheetByGid(invSS, _PT_SECONDARY_INVOICE_GID);
-      if (lotteSrcTab && lotteSrcTab.getLastRow() >= 2) {
-        var ltLr = lotteSrcTab.getLastRow();
-        var ltLc = Math.max(lotteSrcTab.getLastColumn(), 29);
-        // 주문번호가 긴 숫자면 getValues가 지수로 깨져 매칭이 전부 실패함 → 화면값 사용
-        var ltAll = lotteSrcTab.getRange(1, 1, ltLr, ltLc).getDisplayValues();
-        var hdrIdx = _pep_findLotteHeaderRow_(ltAll);
-        var ltCols = _pep_resolveLotteCols_(ltAll[hdrIdx]);
-        var dataStart = hdrIdx + 1;
-        if (_pep_countInvoiceCol_(ltAll, dataStart, ltCols.invoice) === 0) {
-          ltCols = { name: 5, invoice: 6, uid: 9, phone: -1, addr: -1, item: 28, date: 3 };
-          dataStart = (hdrIdx === 0) ? 1 : hdrIdx + 1;
-          if (_pep_countInvoiceCol_(ltAll, dataStart, 6) === 0 && _pep_countInvoiceCol_(ltAll, 1, 6) > 0) {
-            dataStart = 1;
-          }
-        }
-        var _uidIdx = ltCols.uid;
-        var _invIdx = ltCols.invoice;
-        var _nameIdx = ltCols.name;
-        var _phoneIdx = ltCols.phone;
-        var _ltPrimary = 0, _ltName = 0, _ltPhone = 0, _ltInvRows = 0;
-        for (var lti = dataStart; lti < ltAll.length; lti++) {
-          var ltOrdNo = String(ltAll[lti][_uidIdx] || "").trim();
-          var ltInvNo = _pep_normInvoiceNo_(ltAll[lti][_invIdx]);
-          if (!ltInvNo) continue;
-          _ltInvRows++;
-          var ltPicked = (ltCols.date >= 0) ? _pep_ymdNum_(ltAll[lti][ltCols.date]) : 0;
-          if (ltOrdNo) {
-            _pep_addInvoiceMap_(invoiceMap, ltOrdNo, ltInvNo, "롯데", "", ltPicked);
-            _ltPrimary++;
-          }
-          var ltPhone = (_phoneIdx >= 0) ? ltAll[lti][_phoneIdx] : "";
-          if (ltPhone) _ltPhone++;
-          _pep_addNamePhoneInvoiceKeys_(invoiceMap, ltAll[lti][_nameIdx], ltPhone, ltInvNo, "롯데",
-            {
-              addr: (ltCols.addr >= 0) ? ltAll[lti][ltCols.addr] : "",
-              item: (ltCols.item >= 0) ? ltAll[lti][ltCols.item] : "",
-              picked: ltPicked,
-              stat: _pep_keyStat_("롯데")
-            });
-          if (_pep_normRecipName_(ltAll[lti][_nameIdx])) _ltName++;
-        }
-        result.detail.lotteRead = _ltInvRows;
-        result.detail.lotteCols =
-          "송장=" + _pep_colLetter_(_invIdx) +
-          " 주문번호=" + _pep_colLetter_(_uidIdx) +
-          " 이름=" + _pep_colLetter_(_nameIdx) +
-          " 헤더행=" + (hdrIdx + 1);
-        Logger.log("[UNIFIED] 롯데 송장맵: 송장행=" + _ltInvRows +
-          " 주문번호=" + _ltPrimary +
-          " 수취인명=" + _ltName +
-          " " + result.detail.lotteCols +
-          " 합계키=" + Object.keys(invoiceMap).length + "건");
-      } else {
-        Logger.log("[UNIFIED] 롯데 송장탭 없음/비어있음 (GID " + _PT_SECONDARY_INVOICE_GID + ")");
-      }
-    } catch (eLT) {
-      Logger.log("[UNIFIED] 롯데 송장맵 오류: " + eLT.message);
+      _pep_loadOwnCarrierInvoices_(invoiceMap, result);
+    } catch (eOwn) {
+      Logger.log("[UNIFIED] 자사출고 송장맵 오류: " + eOwn.message);
     }
 
-    // (a3) ★ 2026-08-24: 1주출고 — 최근 7일 택배 출고 이력 (지연·익일 발송 보강)
-    try {
-      _pep_loadWeeklyShipInvoiceMap_(invoiceMap, result);
-    } catch (eWs) {
-      Logger.log("[UNIFIED] 1주출고 송장맵 오류: " + eWs.message);
-    }
-
-    // (a2) 로젠 입력_로젠주문실적 — 일일마감 송장 소스로 사용하지 않음 (자사출고=롯데)
 
     // (b) 대리공급 송장맵: 대리공급_임시기록 P열(주문번호) → X열(송장번호)
     try {
@@ -11199,8 +11277,14 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
       }
 
       result.detail.matched = matchedRows.length;
-      result.detail.lotte = _lotteCount_;
-      result.detail.lozen = _lotteCount_;
+      /* ★ 2026-09-14: 자사출고는 «로젠 + 롯데» 다 ★
+         여태 lotte 에 롯데 계열만 담겨, 로젠으로 갈아탄 뒤 화면 숫자가
+         4건 같은 것으로 떨어졌다. 숫자가 일을 안 하면 아무도 안 본다.
+         갈라 본 값도 같이 남긴다 — 어느 탭이 일하고 있는지 보이게. */
+      result.detail.rozenMatched = _lozenCount_;
+      result.detail.lotteMatched = _lotteCount_;
+      result.detail.lotte = _lotteCount_ + _lozenCount_;
+      result.detail.lozen = result.detail.lotte;
       result.detail.lozenPhone = _lozenPhoneCount_;
       result.detail.lozenFallback = _lozenCount_;
       result.detail.hub = _hubCount_;
