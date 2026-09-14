@@ -224,7 +224,10 @@ function partnerUnifiedDailyArchiveManual() {
          두 탭을 몇 줄씩 읽었는지 늘 적는다. 0 이면 그 자리에서 보인다. */
       " └ 자사출고 송장: " + (result.detail.lotte || 0) + "건" +
       ((result.detail.rozenMatched || result.detail.lotteMatched)
-        ? "  (로젠 " + (result.detail.rozenMatched || 0) + " · 롯데 " + (result.detail.lotteMatched || 0) + ")"
+        ? "  (로젠 " + (result.detail.rozenMatched || 0) +
+          " · 롯데 " + (result.detail.lotteMatched || 0) +
+          " · 1주출고 " + (result.detail.weeklyMatched || 0) +
+          " · 합포장 " + (result.detail.packMatched || 0) + ")"
         : "") + "\n" +
       "    읽은 탭: " + (result.detail.ownTabs || "(없음)") + "\n" +
       (result.detail.rozenRead

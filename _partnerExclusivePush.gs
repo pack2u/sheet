@@ -10815,7 +10815,7 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
   // ★ 2026-06-29: targetDateStr 파라미터 추가 — 전달 시 해당 날짜로 저장 (자동실행→전날 매출일)
   var result = {
     archived: 0, tabName: "", error: "",
-    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", rozenRead: 0, rozenCols: "", ownRead: 0, ownTabs: "", rozenMatched: 0, lotteMatched: 0, snapFrom: "", snapSaved: 0, snapSkipped: 0, hubRead: 0, backfill: 0, backfillDate: "", uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0 }
+    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", rozenRead: 0, rozenCols: "", ownRead: 0, ownTabs: "", rozenMatched: 0, lotteMatched: 0, weeklyMatched: 0, packMatched: 0, snapFrom: "", snapSaved: 0, snapSkipped: 0, hubRead: 0, backfill: 0, backfillDate: "", uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0 }
   };
 
   try {
@@ -11098,6 +11098,11 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
       var statusCol = snapLc; // 1-based 마지막 열 (상태열)
       var _matchCount_ = 0, _skipAlready_ = 0, _skipNoInv_ = 0, _multiInv_ = 0;
       var _lozenCount_ = 0, _lozenPhoneCount_ = 0, _lotteCount_ = 0, _supplyCount_ = 0, _hubCount_ = 0;
+      /* ★ 2026-09-14: 롯데·1주출고·합포장을 갈라 센다 ★
+         한 칸에 뭉쳐 두었더니 「롯데 탭 0줄(빈 탭)」인데 화면엔 「롯데 143」이
+         떴다. 보는 사람은 롯데 탭이 도는 줄 안다. 이름이 틀리면 숫자가
+         일을 못 한다 — 오늘 「롯데 송장 4건」으로 한 번 겪은 일이다. */
+      var _weeklyCount_ = 0, _packSrcCount_ = 0;
       var _namePhoneCount_ = 0;
       var _carrierFilled_ = 0; // 택배사 열이 채워진 건수 — 웹앱 택배조회 링크의 근거
       var _carrierVia_ = {};   // 무엇을 근거로 판정했나 (송장맵/출처/업체명/출고지…)
@@ -11422,8 +11427,9 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
         if (_pep_splitInvNos_(item.inv).length > 1) _multiInv_++;
 
         if (item.usedNamePhone || item.source === "이름+전화") _namePhoneCount_++;
-        if (item.source === "롯데" || item.source === "1주출고") _lotteCount_++;
-        else if (item.source === "합포장") { /* 합포장은 롯데 계열 */ _lotteCount_++; }
+        if (item.source === "롯데") _lotteCount_++;
+        else if (item.source === "1주출고") _weeklyCount_++;
+        else if (item.source === "합포장") _packSrcCount_++;
         else if (item.source === "대리판매") _hubCount_++;
         else if (item.source === "로젠") _lozenCount_++;
         else if (item.source === "로젠(전화)") _lozenPhoneCount_++;
@@ -11445,7 +11451,9 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
          갈라 본 값도 같이 남긴다 — 어느 탭이 일하고 있는지 보이게. */
       result.detail.rozenMatched = _lozenCount_;
       result.detail.lotteMatched = _lotteCount_;
-      result.detail.lotte = _lotteCount_ + _lozenCount_;
+      result.detail.weeklyMatched = _weeklyCount_;
+      result.detail.packMatched = _packSrcCount_;
+      result.detail.lotte = _lotteCount_ + _lozenCount_ + _weeklyCount_ + _packSrcCount_;
       result.detail.lozen = result.detail.lotte;
       result.detail.lozenPhone = _lozenPhoneCount_;
       result.detail.lozenFallback = _lozenCount_;
@@ -11468,7 +11476,9 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
         "건 판정" + (_viaTxt_ ? " [근거 " + _viaTxt_ + "]" : "") + ". 빈칸은 업체 택배사 미등록이다 — " +
         "'💼 협력업체 관리 → 🚚 업체 택배사 표 생성/점검' 확인.");
       Logger.log("[UNIFIED] 스냅샷 매칭 결과: 매칭=" + _matchCount_ +
-        " (롯데:" + _lotteCount_ + " 대리판매:" + _hubCount_ + " 대리공급:" + _supplyCount_ +
+        " (로젠:" + _lozenCount_ + " 롯데:" + _lotteCount_ +
+        " 1주출고:" + _weeklyCount_ + " 합포장:" + _packSrcCount_ +
+        " 대리판매:" + _hubCount_ + " 대리공급:" + _supplyCount_ +
         " 로젠폴백:" + _lozenCount_ +
         " 로젠(전화):" + _lozenPhoneCount_ +
         " 이름+전화:" + _namePhoneCount_ +

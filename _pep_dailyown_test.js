@@ -68,8 +68,8 @@ check("★ 탭이 없거나 터져도 나머지 탭은 읽는다",
   push.includes('읽음.push(편.이름 + " 오류");'), true);
 
 console.log("\n[일일마감] 화면 숫자가 진실을 말하는가");
-check("★ 자사출고 = 로젠 + 롯데",
-  push.includes("result.detail.lotte = _lotteCount_ + _lozenCount_;"), true);
+check("★ 자사출고 = 로젠 + 롯데 + 1주출고 + 합포장",
+  push.includes("result.detail.lotte = _lotteCount_ + _lozenCount_ + _weeklyCount_ + _packSrcCount_;"), true);
 check("★ 갈라 본 값도 남긴다",
   push.includes("result.detail.rozenMatched = _lozenCount_;") &&
   push.includes("result.detail.lotteMatched = _lotteCount_;"), true);
@@ -238,6 +238,26 @@ console.log("\n[스냅샷] 하루가 통째로 담기는가");
     web2.includes("├ 판매현황 원천: "), true);
   check("★ 한 회차만 담겼으면 «경고»한다",
     web2.includes("⚠ 그날 탭(MMDD판매현황)이 없어 한 회차만 담겼습니다"), true);
+}
+
+
+console.log("\n[이름] 뭉쳐 세면 숫자가 거짓말을 한다");
+{
+  //  「롯데 탭 0줄(빈 탭)」인데 화면엔 「롯데 143」이 떴다.
+  //  _lotteCount_ 가 롯데·1주출고·합포장을 한 칸에 담고 있었기 때문이다.
+  check("★ 롯데만 센다",
+    push.includes("if (item.source === \"롯데\") _lotteCount_++;"), true);
+  check("★ 1주출고는 따로 센다",
+    push.includes("else if (item.source === \"1주출고\") _weeklyCount_++;"), true);
+  check("★ 합포장도 따로 센다",
+    push.includes("else if (item.source === \"합포장\") _packSrcCount_++;"), true);
+  check("★ 뭉쳐 세던 옛 코드는 사라졌다",
+    push.includes("/* 합포장은 롯데 계열 */ _lotteCount_++;"), false);
+  check("★ 자사출고 합계는 넷을 다 더한다",
+    push.includes("result.detail.lotte = _lotteCount_ + _lozenCount_ + _weeklyCount_ + _packSrcCount_;"), true);
+  const web3 = fs.readFileSync("_partnerWebApp.gs", "utf8");
+  check("★ 화면이 넷을 갈라 보여 준다",
+    web3.includes("· 1주출고 ") && web3.includes("· 합포장 "), true);
 }
 
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
