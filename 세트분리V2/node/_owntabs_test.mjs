@@ -1179,11 +1179,9 @@ console.log("\n[송장출력] 파일 이름과 폴더");
     eq("★ 못 세면 _1 로 물러선다", ssb_nextPrintName_(터짐, "260914"), "260914_1.xlsx");
   }
 
-  //  ── 폴더 선택 ──
-  eq("★ 설정으로 폴더를 고른다", bulk.includes("ssio_config()['송장출력_폴더']"), "true");
-  eq("★ 주소든 ID 든 받는다", bulk.includes("[-A-Za-z0-9_]{25,}"), "true");
-  eq("★ 못 열면 조용히 안 넘어간다", bulk.includes("폴더를 못 열어 기본 자리에 저장합니다"), "true");
-  eq("설정 키가 있다", io.includes("'송장출력_폴더'"), "true");
+  //  ── 폴더는 «고르지 않는다» ──  로컬 폴더는 구글이 막는다
+  eq("★ 폴더 설정을 안 본다", bulk.includes("송장출력_폴더"), "false");
+  eq("죽은 설정으로 적어 둔다", io.includes("'송장출력_폴더':"), "true");
   eq("폴더를 «먼저» 찾는다",
     bulk.indexOf("var 폴더 = ssb_printFolder_(ss);") < bulk.indexOf("var fileName = 폴더 ?"), "true");
 }

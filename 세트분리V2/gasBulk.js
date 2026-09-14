@@ -973,33 +973,11 @@ var SSB_ISLAND_OK = '발송';
  *   찾을 때마다 두 군데를 봐야 하고, 그건 이름을 바꾼 이유와 정반대다.
  */
 function ssb_printFolder_(ss) {
-  /* ★ 설정으로 폴더를 고를 수 있다 ★  (2026-09-14)
-     > "저장폴더 선택도 되면 좋겠어"
-
-     설정 「송장출력_폴더」에 폴더 주소를 통째로 붙여넣어도 되고 ID 만 적어도
-     된다 — 주소창에서 복사한 것을 그대로 쓸 수 있어야 한다. 사람에게 ID 만
-     골라 내라고 시키면 언젠가 반드시 잘못 자른다.
-
-     못 열면 «조용히» 옛 자리로 물러서지 않는다. 골라 둔 폴더에 안 들어가는데
-     아무 말이 없으면, 파일이 어디 갔는지 찾아 헤매게 된다. */
+  /*  ★ 폴더를 고르게 하지 않는다 ★  (2026-09-14 넣었다 도로 걷음)
+      드라이브 폴더는 고를 수 있지만 «로컬 폴더»는 구글이 막는다. 반쪽만
+      되는 설정은 헷갈리기만 한다 — 결과창의 ⬇ 엑셀 다운로드로 고르는 편이
+      낫다(크롬 설정에서 「저장 위치 확인」을 켜면 매번 물어본다). */
   try {
-    var 적은값 = '';
-    try { 적은값 = ssText(ssio_config()['송장출력_폴더']); } catch (eC) {}
-    if (적은값) {
-      //  주소든 ID 든 «긴 토큰»이 곧 ID 다. 역슬래시 없는 정규식으로 뽑는다.
-      var m = 적은값.match(/[-A-Za-z0-9_]{25,}/);
-      var id = m ? m[0] : '';
-      if (id) {
-        try { return DriveApp.getFolderById(id); } catch (eF) {
-          try {
-            SpreadsheetApp.getActiveSpreadsheet().toast(
-              '설정 「송장출력_폴더」의 폴더를 못 열어 기본 자리에 저장합니다.' +
-              String.fromCharCode(10) + String(eF && eF.message ? eF.message : eF),
-              '송장출력', 10);
-          } catch (eT) {}
-        }
-      }
-    }
     var parent = null;
     var ps = DriveApp.getFileById(ss.getId()).getParents();
     if (ps.hasNext()) parent = ps.next();
