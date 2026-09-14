@@ -1188,3 +1188,53 @@ console.log("\n[송장출력] 파일 이름과 폴더");
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n이름·폴더도 그대로");
 if (실패) process.exit(1);
+
+/* ═══════════════════════════════════════════════════════════════
+   내보낸 사본 — 「로젠택배_출력」 탭
+
+   > "엑셀 출력하면 로젠택배_출력 텝도 같이 생기면 좋겠어"
+
+   출력 탭은 로젠택배와 도서산간으로 갈려 있다. 실제로 로젠에 올린 «한 장»이
+   무엇이었는지 시트에서는 볼 수가 없었다 — 오늘 「파일에 도서산간이 없다」고
+   한참 찾은 것도 그래서다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[출력 사본] 내보낸 그대로가 시트에 남는가");
+{
+  const bulk = 읽기(path.join(뿌리, "gasBulk.js"));
+  const io = 읽기(path.join(뿌리, "gasIO.js"));
+  const main = 읽기(path.join(뿌리, "gasMain.js"));
+  const 꺼내기 = new Function(
+    "Utilities", "SpreadsheetApp", "Logger", "DriveApp", "module",
+    읽기(path.join(뿌리, "core.js")) + "\n" + bulk + "\n" +
+    "return { sub사본push_: sub사본push_, SS_OUT_HEADER: SS_OUT_HEADER };",
+  );
+  const { sub사본push_, SS_OUT_HEADER } = 꺼내기(null, null, { log() {} }, null, undefined);
+
+  {
+    //  긴 줄(도서산간 24열)은 잘라서 19열로
+    const out = [];
+    const 긴줄 = new Array(24).fill("x");
+    sub사본push_(out, 긴줄);
+    eq("★ 로젠 양식 19열로 자른다", out[0].length, SS_OUT_HEADER.length);
+  }
+  {
+    //  짧은 줄은 채워서 19열로 — 줄마다 길이가 다르면 setValues 가 터진다
+    const out = [];
+    sub사본push_(out, ["a", "b"]);
+    eq("★ 짧으면 채운다", out[0].length, SS_OUT_HEADER.length);
+    eq("값은 그대로", out[0][0] + out[0][1], "ab");
+    eq("나머지는 빈칸", out[0][2], "");
+  }
+
+  //  ── 배선 ──
+  eq("★ 탭 이름이 등록돼 있다", io.includes("출력사본: '로젠택배_출력'"), "true");
+  eq("★ 출력할 때 쓴다", bulk.includes("ssio_write(SSIO_TABS.출력사본, SS_OUT_HEADER, 사본"), "true");
+  eq("★ 파일 이름·시각을 메모로 남긴다", bulk.includes("사본탭.getRange(1, 1).setNote("), "true");
+  eq("★ 실패해도 출력은 이미 끝났다", bulk.includes("//  사본은 곁다리다"), "true");
+  eq("탭 차례에 들어 있다", main.includes("SSIO_TABS.출력사본,"), "true");
+  //  ★ 세트분리 실행이 이 탭을 건드리면 «마지막으로 내보낸 것»이 아니게 된다
+  eq("★ 실행은 이 탭을 안 건드린다", main.includes("ssio_write(SSIO_TABS.출력사본"), "false");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n출력 사본도 그대로");
+if (실패) process.exit(1);

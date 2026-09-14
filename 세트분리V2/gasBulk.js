@@ -1019,6 +1019,13 @@ function ssb_nextPrintName_(folder, yy) {
   return yy + '_' + (최대 + 1) + '.xlsx';
 }
 
+/** 사본에 한 줄 담기 — 로젠 양식 19열로 잘라 맞춘다 */
+function sub사본push_(out, row) {
+  var r = row.slice(0, SS_OUT_HEADER.length);
+  while (r.length < SS_OUT_HEADER.length) r.push('');
+  out.push(r);
+}
+
 function ssb_mergePacks_(packs) {
   var head = SS_OUT_HEADER.slice();
   var out = [head];
@@ -1264,6 +1271,33 @@ function ss_로젠출력엑셀() {
   }
   //  임시 시트는 지운다. 안 지우면 드라이브에 회차마다 쌓인다.
   try { DriveApp.getFileById(tmp.getId()).setTrashed(true); } catch (e3) {}
+
+  /* ★ 내보낸 그대로를 시트에도 남긴다 ★  (2026-09-14)
+     > "엑셀 출력하면 로젠택배_출력 텝도 같이 생기면 좋겠어"
+
+     출력 탭은 로젠택배와 도서산간으로 갈려 있다. 실제로 로젠에 올린 «한 장»이
+     무엇이었는지 시트에서는 볼 수가 없었다 — 오늘 「파일에 도서산간이 없다」고
+     한참 찾은 것도 그래서다. 나중에 「이 건이 나갔나」를 물을 데가 필요하다.
+
+     ★ 세트분리 실행은 이 탭을 안 건드린다 ★
+       출력했을 때만 갈아 끼운다. 그래야 «마지막으로 내보낸 것»이 남는다.
+       실행 때마다 지워지면 증거가 아니라 그때그때의 예상일 뿐이다. */
+  try {
+    var 사본 = [];
+    for (var cp = 0; cp < packs.length; cp++) {
+      var pv = packs[cp].vals;
+      for (var cr = 1; cr < pv.length; cr++) sub사본push_(사본, pv[cr]);
+    }
+    var 사본탭 = ssio_write(SSIO_TABS.출력사본, SS_OUT_HEADER, 사본, { bg: '#1f4e78' });
+    //  «언제 어느 파일로» 나갔는지는 메모로 남긴다 — 열을 더하면 로젠 양식이 깨진다
+    사본탭.getRange(1, 1).setNote(
+      fileName + String.fromCharCode(10) +
+      Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss') +
+      String.fromCharCode(10) + 총행 + '행');
+  } catch (eCopy) {
+    //  사본은 곁다리다. 실패해도 파일은 이미 만들어졌다.
+    Logger.log('[출력사본] ' + (eCopy && eCopy.message ? eCopy.message : eCopy));
+  }
 
   var lines = [];
   for (var q = 0; q < packs.length; q++) {

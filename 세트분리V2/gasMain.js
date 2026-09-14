@@ -145,6 +145,8 @@ function ss_설치() {
 
 function ss_탭정렬() {
   var order = [SSIO_TABS.입력, SSIO_TABS.입력아이디].concat(SSIO_TABS.출력).concat([
+    //  내보낸 사본은 출력 탭 바로 뒤에 둔다 — 견줘 볼 일이 많다
+    SSIO_TABS.출력사본,
     SSIO_TABS.합배송, SSIO_TABS.사방넷송장, SSIO_TABS.사방넷등록, SSIO_TABS.비배송, SSIO_TABS.보류, SSIO_TABS.경고, SSIO_TABS.요약,
     SSIO_TABS.합배송조건, SSIO_TABS.분리예외, SSIO_TABS.업체, SSIO_TABS.수동조치, SSIO_TABS.도서산간사전,
     SSIO_TABS.설정,
