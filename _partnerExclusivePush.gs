@@ -11700,7 +11700,14 @@ function partnerFillMissingAddressVendors() {
   var 줄 = [], 총고침 = 0;
   for (var pfx in pfxToFile) {
     if (!Object.prototype.hasOwnProperty.call(pfxToFile, pfx)) continue;
-    var map = _PEP_VENDOR_DIRECT_MAP_[pfx];
+    /*  ★ 보조 접두는 대표 접두로 환산한다 ★  (2026-09-14)
+        JH·BF·NS 는 준테크(JT)의 보조 코드다(_PEP_VENDOR_PREFIX_ALIAS_).
+        푸시는 _pep_resolvePrefixAlias_ 로 환산해 쓰는데 여기만 원본 접두로
+        표를 찾아 「짝표가 없다」고 건너뛰었다. 푸시는 되는데 보수만 안 되면
+        사람은 「왜 이 업체만」 하고 헤맨다 — 오늘 탭 이름에서 겪은 그대로다. */
+    var pfxA = (typeof _pep_resolvePrefixAlias_ === "function")
+      ? _pep_resolvePrefixAlias_(pfx) : pfx;
+    var map = _PEP_VENDOR_DIRECT_MAP_[pfxA] || _PEP_VENDOR_DIRECT_MAP_[pfx];
     if (!map || !map.sourceToTarget) {
       줄.push(pfx + " : 열 짝표가 없어 건너뜀 (_PEP_VENDOR_DIRECT_MAP_)");
       continue;
@@ -11898,7 +11905,10 @@ function partnerCheckVendorAddress() {
   var 같음 = 0, 빔 = 0, 다름 = [], 원장없음 = 0, 줄 = [];
   for (var pfx in pfxToFile) {
     if (!Object.prototype.hasOwnProperty.call(pfxToFile, pfx)) continue;
-    var map = _PEP_VENDOR_DIRECT_MAP_[pfx];
+    //  보조 접두(JH·BF·NS → JT)도 대표 표를 쓴다
+    var pfxA2 = (typeof _pep_resolvePrefixAlias_ === "function")
+      ? _pep_resolvePrefixAlias_(pfx) : pfx;
+    var map = _PEP_VENDOR_DIRECT_MAP_[pfxA2] || _PEP_VENDOR_DIRECT_MAP_[pfx];
     if (!map || !map.sourceToTarget) continue;
     var 주소자리 = -1;
     for (var s2 = 0; s2 < map.sourceToTarget.length; s2++) {
