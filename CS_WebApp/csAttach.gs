@@ -172,7 +172,29 @@ function csAttachReturnPhotos(payload) {
     }
 
     var ctx = _cs_openReturnLedgerRow_(tabName, rowNum);
-    var folder = _cs_attFolder_();
+
+    /* ★ 드라이브 폴더는 «뒷길»이다 — 미리 열지 않는다 ★  (2026-09-14)
+       > "CS웹앱에 이미지 첨부가 안된다고 하네"
+       > 화면: 「지정된 첨부 폴더를 열 수 없습니다…」
+
+       사진은 2026-09-10 부터 v2 보관소로 올린다. 드라이브 폴더는 보관소가
+       안 될 때만 쓰는 자리다. 그런데 여기서 «맨 앞»에 폴더를 열어 봤다.
+       폴더가 지워졌거나 그 사람에게 권한이 없으면, 보관소가 멀쩡해도
+       한 장도 못 올리고 죽는다 — 실제로 그렇게 막혔다.
+
+       필요할 때 연다. 그때도 못 열면 그 까닭을 «보관소 실패와 나란히» 말한다. */
+    var _folder = null, _folderErr = "";
+    var 폴더 = function () {
+      if (_folder) return _folder;
+      if (_folderErr) throw new Error(_folderErr);
+      try {
+        _folder = _cs_attFolder_();
+        return _folder;
+      } catch (eFolder) {
+        _folderErr = String((eFolder && eFolder.message) || eFolder);
+        throw eFolder;
+      }
+    };
     var stampName = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd_HHmmss");
     var who = _cs_attSafeName_(payload.name ||
       (ctx.col.name >= 0 ? ctx.row[ctx.col.name] : "")) || "반품";
@@ -210,7 +232,7 @@ function csAttachReturnPhotos(payload) {
 
       var file;
       try {
-        file = folder.createFile(Utilities.newBlob(one.bytes, one.mime, fname));
+        file = 폴더().createFile(Utilities.newBlob(one.bytes, one.mime, fname));
       } catch (eMake) {
         /* 개인 드라이브까지 막혔다 — 여기서 멈추되, 두 까닭을 «둘 다» 말한다.
            「용량초과」만 보면 사진을 줄이려 들지만, 진짜 문제는 보관소다. */
