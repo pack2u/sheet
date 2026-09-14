@@ -30,6 +30,41 @@ var _CS_SEARCH_LIMIT_ = 80;
 
 /** 허브가 만들어 주는 통합조회 탭 — 열 순서가 허브와의 계약이다 */
 var _CS_UNIFIED_TAB_ = "통합조회";
+
+/* ══════════════════════════════════════════════════════════════
+ *  세트분리(뉴) 「주문라인원장」 — 통합조회를 대신할 후보
+ *  2026-09-14
+ *
+ *  > "통합조회를 위해 재매칭을 하는데 이부분의 에러가 제일큰거 같아..
+ *  >  그래서 통합조회를 없애려고 하는거고"
+ *
+ *  ★ 왜 원장이 나은가 ★
+ *    통합조회는 여러 원천을 «이름·전화·주소로 이어 붙이는» 것이 본업이다.
+ *    추측이 본질이라 틀릴 수 있고, 실제로 틀렸다 — 송장 없던 줄에 남의
+ *    송장이 붙고, 붙었으니 마감으로 넘어가 고객 전화로 알았다.
+ *    원장은 고유ID 를 처음부터 들고 있다. 이어 붙일 일이 없다.
+ *
+ *  ★ 지금은 «꺼져 있다» ★
+ *    스크립트 속성 CS_USE_LEDGER 를 "1" 로 넣어야 쓴다. 넣기 전까지
+ *    이 파일이 하는 일은 하나도 안 바뀐다 — 되돌릴 것이 없다.
+ *    켜도 원장에서 못 찾으면 통합조회로, 그것도 없으면 일일마감으로 내려간다.
+ *
+ *  ★ 자리가 아니라 «이름»으로 읽는다 ★
+ *    원장은 46열이고 사람이 계속 손댄다. 자리를 박아 두면 한 칸만 밀려도
+ *    오류 없이 엉뚱한 칸을 읽는다.
+ * ══════════════════════════════════════════════════════════════ */
+var _CS_LEDGER_SS_ID_ = "1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo"; // 세트분리(뉴)
+var _CS_LEDGER_TAB_ = "주문라인원장";
+var _CS_LEDGER_CACHE_TTL_ = 3600;
+
+/** 원장 경로는 «명시적으로 켤 때만» 쓴다. 기본값은 꺼짐이다. */
+function _cs_ledgerViewEnabled_() {
+  try {
+    return PropertiesService.getScriptProperties().getProperty("CS_USE_LEDGER") === "1";
+  } catch (e) {
+    return false;
+  }
+}
 var _CS_UV_CACHE_TTL_ = 3600; // 1시간. 야간 갱신이지만 수동 재생성도 빨리 반영되게
 /** 통합조회 고정 열 (_PUV_HEADERS_ 와 1:1) */
 var _CS_UV_COL_ = {
@@ -136,6 +171,109 @@ function csWarmPlan(days) {
   } catch (e) {
     return { ok: false, unified: false, days: days, dates: _cs_dateList_(days), error: e.message };
   }
+}
+
+/**
+ * 원장 경로 상태 진단. csDiagnoseUnifiedView 와 짝이다.
+ * 편집기에서 이 함수를 실행하고 로그를 본다.
+ */
+function csDiagnoseLedgerView() {
+  var out = { enabled: _cs_ledgerViewEnabled_(), ss: _CS_LEDGER_SS_ID_, tab: _CS_LEDGER_TAB_ };
+  try {
+    var ss = SpreadsheetApp.openById(_CS_LEDGER_SS_ID_);
+    var tab = ss.getSheetByName(_CS_LEDGER_TAB_);
+    out.tabExists = !!tab;
+    out.lastRow = tab ? tab.getLastRow() : 0;
+    out.lastCol = tab ? tab.getLastColumn() : 0;
+  } catch (e) {
+    out.openError = e.message;
+  }
+  var lg = _cs_loadLedgerView_(_CS_DAILY_DAYS_DEFAULT_, true);
+  out.loaded = lg.found;
+  out.rows = lg.rows.length;
+  out.updatedAt = lg.updatedAt;
+  out.loadError = lg.error;
+
+  var noInv = 0, byDate = {};
+  for (var i = 0; i < lg.rows.length; i++) {
+    if (String(lg.rows[i].invDigits || "").replace(/[^0-9]/g, "").length < 8) noInv++;
+    var k = String(lg.rows[i].date || "(날짜없음)").slice(0, 10);
+    byDate[k] = (byDate[k] || 0) + 1;
+  }
+  out.noInvoice = noInv;
+  out.byDate = byDate;
+  out.verdict = out.enabled
+    ? (lg.found ? "원장 사용 중. 미매칭 " + noInv + "건" : "원장을 못 읽음 → 통합조회로 폴백")
+    : "원장 경로 꺼짐 (CS_USE_LEDGER 가 \"1\" 이 아님) — 지금은 통합조회를 씁니다";
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
+
+/**
+ * ★ 두 경로가 «같은 답»을 주는가 ★
+ *
+ *  통합조회를 없애기 전에 반드시 해야 하는 일이다. 같은 주문을 양쪽에서
+ *  찾아 송장번호를 맞대 본다. 다르면 그 줄이 곧 답이다 —
+ *  통합조회가 이름으로 엉뚱한 송장을 주웠거나, 원장에 아직 안 붙었거나.
+ *
+ *  편집기에서 실행: csCompareLedgerVsUnified("김철수")
+ *  아무것도 안 주면 최근 며칠을 통째로 맞대 본다.
+ */
+function csCompareLedgerVsUnified(query) {
+  var days = _CS_DAILY_DAYS_DEFAULT_;
+  var lg = _cs_loadLedgerView_(days, true);
+  var uv = _cs_loadUnifiedView_(days, true);
+  var q = String(query || "").trim();
+
+  var 키of = function (r) {
+    return String(r.orderNo || "") + "|" + String(r.ecountCode || "");
+  };
+  var 걸림 = function (r) {
+    if (!q) return true;
+    return (String(r.name || "") + " " + String(r.orderNo || "") + " " +
+      String(r.invoice || "") + " " + String(r.phone || "")).indexOf(q) >= 0;
+  };
+
+  var U = {};
+  for (var a = 0; a < uv.rows.length; a++) if (걸림(uv.rows[a])) U[키of(uv.rows[a])] = uv.rows[a];
+  var Lg = {};
+  for (var b = 0; b < lg.rows.length; b++) if (걸림(lg.rows[b])) Lg[키of(lg.rows[b])] = lg.rows[b];
+
+  var 송장다름 = [], 원장만 = [], 통합만 = [], 같음 = 0;
+  for (var k in Lg) {
+    if (!Object.prototype.hasOwnProperty.call(Lg, k)) continue;
+    if (!U[k]) { 원장만.push(k); continue; }
+    var i1 = String(Lg[k].invDigits || "").replace(/[^0-9]/g, "");
+    var i2 = String(U[k].invDigits || "").replace(/[^0-9]/g, "");
+    if (i1 === i2) { 같음++; continue; }
+    송장다름.push({
+      키: k, 이름: Lg[k].name,
+      원장: Lg[k].invoice || "(없음)", 통합조회: U[k].invoice || "(없음)",
+      통합조회매칭: U[k].match
+    });
+  }
+  for (var k2 in U) {
+    if (Object.prototype.hasOwnProperty.call(U, k2) && !Lg[k2]) 통합만.push(k2);
+  }
+
+  var out = {
+    질의: q || "(전체)",
+    원장줄: Object.keys(Lg).length,
+    통합조회줄: Object.keys(U).length,
+    송장같음: 같음,
+    송장다름: 송장다름.slice(0, 30),
+    송장다름수: 송장다름.length,
+    원장에만: 원장만.slice(0, 20),
+    통합조회에만: 통합만.slice(0, 20),
+    원장오류: lg.error,
+    통합조회오류: uv.error
+  };
+  /*  ★ 「통합조회에만 있다」가 제일 중요하다 ★
+      원장에 없는 줄에 통합조회가 송장을 붙여 뒀다는 뜻이다. 그게 이름으로
+      주워 온 것이면 바로 그 사고다. 반대로 「원장에만」은 대개 정상이다 —
+      통합조회는 10일치뿐이고 야간 기준이라 당일 건이 없다. */
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
 }
 
 /** 통합조회 상태 진단 — 전환이 실제로 먹었는지 확인용 */
@@ -271,7 +409,7 @@ function _cs_searchDailyArchiveByInvoice_(invDigits) {
     if (String(r.invDigits || "").indexOf(needle) !== -1) {
       return {
         found: true,
-        source: (pack.indexSource === "unified" ? "통합조회" : "일일마감")
+        source: (pack.indexSource === "ledger" ? "원장" : pack.indexSource === "unified" ? "통합조회" : "일일마감")
           + "(" + r.date + ")" + (r.source ? " · " + r.source : ""),
         invoiceNumber: r.invoice || needle,
         vendor: r.vendor || "",
@@ -386,6 +524,127 @@ function _cs_loadUnifiedView_(days, refresh) {
   return out;
 }
 
+/**
+ * 세트분리(뉴) 주문라인원장 → 검색 행. 통합조회와 «같은 모양»으로 낸다.
+ *
+ *  ★ 같은 모양이어야 하는 이유 ★
+ *    아래 오버레이·정렬·화면이 전부 이 모양을 전제한다. 모양이 다르면
+ *    바꿔 끼우는 순간 그 모두를 같이 고쳐야 하고, 그러면 되돌릴 수가 없다.
+ *
+ *  ★ 한 주문이 여러 줄이다 ★
+ *    원장은 «주문라인» 단위다. 세트가 둘로 쪼개지면 두 줄이다. 통합조회도
+ *    품목 단위라 결이 같다 — 합치지 않고 그대로 낸다.
+ */
+function _cs_loadLedgerView_(days, refresh) {
+  var out = { found: false, rows: [], updatedAt: "", error: "", fromCache: false };
+  var cache = CacheService.getScriptCache();
+  var key = _CS_DA_CACHE_VER_ + "_lg_" + days;
+
+  if (!refresh) {
+    try {
+      var hit = cache.get(key);
+      if (hit) {
+        var pk = JSON.parse(hit);
+        out.found = true;
+        out.rows = pk.rows || [];
+        out.updatedAt = pk.updatedAt || "";
+        out.fromCache = true;
+        return out;
+      }
+    } catch (e) {}
+  }
+
+  try {
+    var ss = SpreadsheetApp.openById(_CS_LEDGER_SS_ID_);
+    var tab = ss.getSheetByName(_CS_LEDGER_TAB_);
+    if (!tab || tab.getLastRow() < 2) return out;
+
+    var cols = tab.getLastColumn();
+    var data = tab.getRange(1, 1, tab.getLastRow(), cols).getDisplayValues();
+
+    //  ★ 이름으로 찾는다 ★ 원장은 46열이고 사람이 계속 손댄다.
+    var ix = {};
+    for (var h = 0; h < data[0].length; h++) {
+      var hn = String(data[0][h] || "").trim();
+      if (hn && ix[hn] === undefined) ix[hn] = h;
+    }
+    var 필요 = ["회차키", "고유ID", "거래처명", "품목명", "운송장번호"];
+    for (var nq = 0; nq < 필요.length; nq++) {
+      if (ix[필요[nq]] === undefined) {
+        out.error = "원장 머리글에 「" + 필요[nq] + "」 열이 없습니다";
+        return out;
+      }
+    }
+    var G = function (row, name) { return ix[name] === undefined ? "" : String(row[ix[name]] || "").trim(); };
+
+    var fromN = _cs_dateList_(days);
+    var minN = fromN[fromN.length - 1].replace(/-/g, "");
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var rk = G(row, "회차키");
+      //  회차키는 YYMMDD-N 이다. 이 꼴이 아니면 원장 줄이 아니다.
+      if (!/^[0-9]{6}-[0-9]+$/.test(rk)) continue;
+      var ymd8 = "20" + rk.substring(0, 6);
+      if (ymd8 < minN) continue;
+      var d = ymd8.substring(0, 4) + "-" + ymd8.substring(4, 6) + "-" + ymd8.substring(6, 8);
+
+      var nm = _cs_nameOnly_(G(row, "거래처명"));
+      var item = G(row, "품목명");
+      var invRaw = G(row, "운송장번호");
+      if (!nm && !item && !invRaw) continue;
+
+      var addr = G(row, "주소1");
+      var tel = G(row, "전화") || G(row, "모바일");
+      var uid = G(row, "사방넷주문번호") || G(row, "고유ID");
+      var 경로 = G(row, "경로");
+      var 보류 = G(row, "보류사유");
+
+      out.rows.push({
+        date: d,
+        invoice: invRaw.replace(/\n/g, " ").trim(),
+        invDigits: _cs_allInvDigits_(invRaw),
+        phone: _cs_phoneDisplay_(tel),
+        phoneDigits: _cs_phoneDigits_(tel),
+        name: nm,
+        item: item,
+        ecountCode: _cs_readEcountCodeCell_(G(row, "원본품목코드") || G(row, "품목코드")),
+        qty: G(row, "수량"),
+        addr: addr,
+        shipMsg: _cs_sanitizeShipMsg_(G(row, "배송메시지"), addr),
+        source: G(row, "송장매칭") || 경로,
+        orderNo: uid,
+        vendor: G(row, "조치업체"),
+        carrier: _cs_ledgerCarrier_(invRaw, 경로),
+        status: 보류 ? 경로 + "(" + 보류 + ")" : 경로,
+        origin: "ledger",
+        match: G(row, "주문번호출처") === "자동발급" ? "자동발급" : "UID",
+        combinedPack: !!G(row, "합포장그룹")
+      });
+      var 갱신 = G(row, "실행시각");
+      if (갱신 > out.updatedAt) out.updatedAt = 갱신;
+    }
+    out.found = out.rows.length > 0;
+    if (out.found) _cs_putUvCache_(cache, key, out.rows, out.updatedAt);
+  } catch (e) {
+    out.error = e.message;
+  }
+  return out;
+}
+
+/**
+ * 원장에는 택배사 칸이 없다. 송장 자릿수로 가린다 —
+ * 세트분리 gasBulk.js ssb_ownCode 와 «같은 규칙»이다(12자리 롯데, 그 밖 로젠).
+ * 대리발송이면 우리 택배사가 아니므로 비워 둔다 — 모르면 모른다고 한다.
+ */
+function _cs_ledgerCarrier_(invRaw, 경로) {
+  if (String(경로 || "").indexOf("대리발송") === 0) return "";
+  var d = String(invRaw || "").replace(/[^0-9]/g, "");
+  if (d.length === 12) return "롯데택배";
+  if (d.length >= 9) return "로젠택배";
+  return "";
+}
+
 function _cs_putUvCache_(cache, key, rows, updatedAt) {
   try {
     cache.put(key, JSON.stringify({ rows: rows, updatedAt: updatedAt }), _CS_UV_CACHE_TTL_);
@@ -405,8 +664,25 @@ function _cs_loadSearchIndex_(days, refresh, cacheOnly) {
   var indexSource = "daily";
   var viewUpdatedAt = "";
 
+  /* ── 원장 우선 (켰을 때만) ──  (2026-09-14)
+     통합조회는 이름·전화로 «이어 붙인» 결과다. 원장은 고유ID 를 처음부터
+     들고 있어 이어 붙일 일이 없다. 다만 바로 갈아타지 않는다 —
+     스크립트 속성 CS_USE_LEDGER="1" 일 때만 쓰고, 못 읽으면 아래로 내려간다.
+     그래서 켜기 전까지 이 함수의 동작은 하나도 안 바뀐다. */
+  var lgv = _cs_ledgerViewEnabled_() ? _cs_loadLedgerView_(days, refresh) : { found: false };
+  if (lgv.found) {
+    indexSource = "ledger";
+    viewUpdatedAt = lgv.updatedAt;
+    rows = lgv.rows;
+    loadedDays = days;
+    if (lgv.fromCache) cachedDays = days;
+    if (lgv.error) errors.push("원장: " + lgv.error);
+  }
+
   // ── 통합조회 우선 (파일 1개) ──
-  var uv = _cs_unifiedViewEnabled_() ? _cs_loadUnifiedView_(days, refresh) : { found: false };
+  var uv = (!lgv.found && _cs_unifiedViewEnabled_())
+    ? _cs_loadUnifiedView_(days, refresh) : { found: false };
+  if (lgv.error && !lgv.found) errors.push("원장: " + lgv.error + " → 통합조회로 폴백");
   if (uv.found) {
     indexSource = "unified";
     viewUpdatedAt = uv.updatedAt;
