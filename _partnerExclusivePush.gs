@@ -9045,30 +9045,53 @@ function _pep_resolveRowInvoice_(map, row, outVia) {
  *   로젠은 「수하인」·「수하인 전화」, 롯데는 「수하인명」·「상품명」,
  *   1주출고는 「수취인」이다. 한 이름만 보면 탭 하나가 조용히 빈다.
  *   못 찾은 칸은 -1 로 둔다 — 아무 자리나 집는 것보다 «없다»가 낫다.
- *   특히 날짜 칸을 잘못 집으면 「주문일보다 이른 송장」으로 걸러져,
- *   송장이 멀쩡히 있는데도 미매칭이 된다. 09/14 에 그렇게 됐다.
+ *
+ * ★ 09/14 두 번째 판에서 배운 것 ★
+ *   「명」을 이름 후보에 넣었더니 로젠 탭의 «첫» 「명」이 걸렸다(O열).
+ *   로젠 탭에는 「명」이 둘인데, 수하인 쪽은 «뒤엣것»이다 — 세트분리의
+ *   _ssf_freeCols_ 가 이미 그 규칙을 쓰고 있었다. 그래서 약한 이름은
+ *   따로 모아 두었다가, 강한 이름이 하나도 없을 때만 «마지막»을 쓴다.
+ *
+ *   날짜에는 「등록일」·「파일명」을 뺐다. 그 둘은 «보낸 날»이 아니다.
+ *   날짜를 잘못 집으면 「주문일보다 이른 송장」으로 걸러져, 송장이 멀쩡히
+ *   있는데도 미매칭이 된다 — 로젠 매칭이 46 에서 24 로 떨어진 이유다.
+ *   모르면 안 쓴다. 날짜 없이도 맞출 수 있지만, 틀린 날짜는 못 맞춘다.
  */
+var _PEP_CARRIER_COL_RULES_ = [
+  ["name", ["수하인", "수하인명", "수취인", "수취인명", "받는분", "받는사람", "고객명"]],
+  ["phone", ["수하인전화", "수하인전화번호", "수취인전화", "수하인연락처",
+    "전화번호", "휴대폰", "휴대폰번호", "연락처", "전화"]],
+  ["addr", ["수하인주소", "수취인주소", "주소", "배송지", "도착지주소"]],
+  ["item", ["물품명", "상품명", "품목명", "내품명"]],
+  //  «보낸 날»만 쓴다. 등록일·파일명은 보낸 날이 아니다.
+  ["date", ["집하일자", "집하일", "발송일", "발송일자", "출고일", "출고일자"]],
+];
+/** 약한 이름 — 강한 이름이 하나도 없을 때만, 그것도 «마지막» 것을 쓴다 */
+var _PEP_CARRIER_WEAK_NAME_ = ["명", "성명"];
+
 function _pep_mapCarrierCols_(hdr) {
-  var out = {};
-  var 규칙 = [
-    ["name", ["수하인", "수하인명", "수취인", "수취인명", "받는분", "받는사람", "고객명", "명"]],
-    ["phone", ["수하인전화", "수하인전화번호", "수취인전화", "전화번호", "휴대폰", "연락처", "전화"]],
-    ["addr", ["수하인주소", "수취인주소", "주소", "배송지"]],
-    ["item", ["물품명", "상품명", "품목명", "내품명"]],
-    ["date", ["집하일자", "발송일", "발송일자", "출고일", "출고일자", "등록일", "등록일자", "파일명"]],
-  ];
+  var out = {}, 약한이름 = -1;
   for (var c = 0; c < hdr.length; c++) {
     var h = String(hdr[c] == null ? "" : hdr[c]).replace(/[\s]/g, "");
     if (!h) continue;
-    for (var k = 0; k < 규칙.length; k++) {
-      var 키 = 규칙[k][0], 후보 = 규칙[k][1];
+    if (_PEP_CARRIER_WEAK_NAME_.indexOf(h) >= 0) 약한이름 = c;   // 마지막이 이긴다
+    for (var k = 0; k < _PEP_CARRIER_COL_RULES_.length; k++) {
+      var 키 = _PEP_CARRIER_COL_RULES_[k][0], 후보 = _PEP_CARRIER_COL_RULES_[k][1];
       if (out[키] !== undefined) continue;
       for (var n = 0; n < 후보.length; n++) {
         if (h === 후보[n]) { out[키] = c; break; }
       }
     }
   }
+  if (out.name === undefined && 약한이름 >= 0) out.name = 약한이름;
   return out;
+}
+
+/** 고른 칸을 「이름(자리)」 꼴로 적는다 — 자리만 적으면 무엇을 집었는지 모른다 */
+function _pep_colDesc_(hdr, i) {
+  if (i < 0 || i === undefined) return "-";
+  var nm = String((hdr && hdr[i]) == null ? "" : hdr[i]).replace(/[\s]/g, "");
+  return (nm ? nm : "(이름없음)") + "(" + _pep_colLetter_(i) + ")";
 }
 
 function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
@@ -9138,10 +9161,17 @@ function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
 
          찾은 것과 못 찾은 것을 갈라 두 벌을 섞지 않는다 — 반은 이름,
          반은 자리로 읽는 것이 가장 나쁘다. 둘 다 맞을 때만 맞는다. */
-      var 이름표 = {};
+      var 이름표 = {}, hv = [];
       if (H.row) {
-        var hv = tab.getRange(H.row, 1, 1, tab.getLastColumn()).getDisplayValues()[0];
+        hv = tab.getRange(H.row, 1, 1, tab.getLastColumn()).getDisplayValues()[0];
         이름표 = _pep_mapCarrierCols_(hv);
+        /*  머리글을 통째로 한 번 찍는다. 칸을 잘못 집었을 때, 무엇이 있었는지
+            묻지 않고 바로 알 수 있어야 한다 — 오늘 두 판을 그것 때문에 돌렸다. */
+        Logger.log("[UNIFIED] " + 편.이름 + " 머리글(" + H.row + "행): " +
+          hv.map(function (x, i) {
+            var s = String(x == null ? "" : x).replace(/[\s]/g, "");
+            return s ? (_pep_colLetter_(i) + "=" + s) : "";
+          }).filter(function (s) { return !!s; }).join(" · "));
       }
       var 뽑기 = function (키, 바닥) {
         if (H.row) return (이름표[키] === undefined) ? -1 : 이름표[키];
@@ -9158,7 +9188,7 @@ function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
       //  주문번호가 긴 숫자면 getValues 가 지수로 깨져 매칭이 전부 실패한다 → 화면값
       var all = tab.getRange(from, 1, tab.getLastRow() - from + 1, lc).getDisplayValues();
 
-      var nInv = 0, nUid = 0, nName = 0;
+      var nInv = 0, nUid = 0, nName = 0, nDated = 0;
       for (var i = 0; i < all.length; i++) {
         var row = all[i];
         var inv = _pep_normInvoiceNo_(row[invIdx]);
@@ -9168,7 +9198,14 @@ function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
         if (/주문번호|운송장/.test(uid)) continue;
         nInv++;
 
+        /*  ★ 날짜가 몇 줄에 붙었는지 센다 ★  (2026-09-14)
+            _pep_applyOrderDateFilter_ 는 「집하가 주문보다 3일 이상 이르면」
+            그 송장을 뺀다. 날짜 칸을 잘못 집으면 멀쩡한 송장이 통째로 빠진다 —
+            로젠 매칭이 46 에서 24 로 떨어진 것이 그 일이다.
+            날짜가 붙은 줄 수를 늘 적어 두면, 그 관문이 열려 있는지 닫혀 있는지
+            한 줄로 안다. 0 이면 날짜는 아무것도 안 막고 있다는 뜻이다. */
         var picked = (dateIdx >= 0) ? _pep_ymdNum_(row[dateIdx]) : 0;
+        if (picked) nDated++;
         if (uid) {
           _pep_addInvoiceMap_(invoiceMap, uid, inv, 편.이름, "", picked);
           nUid++;
@@ -9189,16 +9226,16 @@ function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
         }
       }
 
-      /*  고른 칸을 «전부» 적는다. 09/14 에는 「송장=K 주문번호=J 이름=G」만
-          찍혀서, 이름 G 가 이름 칸이 아니고 날짜 칸이 엉뚱하다는 것을
-          알 길이 없었다. 못 찾은 칸은 「-」로 눈에 띄게 둔다. */
-      var 자리글 = function (i) { return i >= 0 ? _pep_colLetter_(i) : "-"; };
+      /*  고른 칸을 «이름째로» 적는다. 09/14 두 번째 판은 「이름=O」라고만
+          했는데, O 가 무슨 이름의 칸인지 몰라 또 한 판을 돌려야 했다.
+          자리는 무엇을 집었는지 말해 주지 않는다. 이름이 말해 준다. */
       var 칸글 =
-        "송장=" + 자리글(invIdx) +
-        " 주문번호=" + 자리글(uidIdx) +
-        " 이름=" + 자리글(nameIdx) +
-        " 전화=" + 자리글(phoneIdx) +
-        " 날짜=" + 자리글(dateIdx) +
+        "송장=" + _pep_colDesc_(hv, invIdx) +
+        " 주문번호=" + _pep_colDesc_(hv, uidIdx) +
+        " 이름=" + _pep_colDesc_(hv, nameIdx) +
+        " 전화=" + _pep_colDesc_(hv, phoneIdx) +
+        " 날짜=" + _pep_colDesc_(hv, dateIdx) +
+        (dateIdx >= 0 ? "[" + nDated + "/" + nInv + "줄]" : "") +
         " (" + 어떻게 + ")";
       result.detail[편.키 + "Read"] = nInv;
       result.detail[편.키 + "Cols"] = 칸글;

@@ -107,40 +107,83 @@ function grab(n) {
     else if (push[i] === "}") { d--; if (seen && d === 0) return push.slice(s, i + 1); }
   }
 }
+function grabArr(n) {
+  const a = push.indexOf("var " + n + " = [");
+  let d = 0;
+  for (let i = push.indexOf("[", a); i < push.length; i++) {
+    if (push[i] === "[") d++;
+    else if (push[i] === "]") { d--; if (d === 0) return push.slice(a, i + 1) + ";"; }
+  }
+}
 const ctx = {};
 vm.createContext(ctx);
-vm.runInContext(grab("_pep_mapCarrierCols_"), ctx);
+vm.runInContext([grabArr("_PEP_CARRIER_COL_RULES_"), grabArr("_PEP_CARRIER_WEAK_NAME_"),
+  grab("_pep_mapCarrierCols_")].join("\n"), ctx);
 const 맵 = (h) => ctx._pep_mapCarrierCols_(h);
-
-//  09/14 에 실제로 읽힌 꼴 — 머리글 1행, 주문번호 J(9)·운송장 K(10)
-const 로젠1행 = ["번호", "", "", "", "", "", "수하인", "", "", "주문번호", "운송장번호", "",
-  "수하인 전화", "물품명", "", "등록일자"];
-check("★ 로젠(1행) 이름은 G(6) — 이름으로 찾는다", 맵(로젠1행).name, 6);
-check("★ 로젠(1행) 전화는 M(12) — 고정표의 J(9)가 아니다", 맵(로젠1행).phone, 12);
-check("★ 로젠(1행) 날짜는 P(15) — 고정표의 AL(37)이 아니다", 맵(로젠1행).date, 15);
-
-//  44칸 「주문등록_출력」 양식 — _PT_ROZEN_FIXED_COL 이 가리키던 그것
-const 로젠44 = ["", "", "", "운송장번호", "", "내품수량", "수하인", "", "", "수하인 전화",
-  "", "", "", "", "물품명", "", "", "", "주문번호"];
-check("로젠(44칸) 이름 G(6)", 맵(로젠44).name, 6);
-check("로젠(44칸) 전화 J(9)", 맵(로젠44).phone, 9);
-check("★ 로젠(44칸)엔 날짜 칸이 없다 — 없으면 «없다»", 맵(로젠44).date, undefined);
-
-const 롯데 = ["", "", "", "집하일자", "", "수하인명", "운송장번호", "", "", "주문번호"];
-check("롯데 집하일자 D(3)", 맵(롯데).date, 3);
-check("롯데 수하인명 F(5)", 맵(롯데).name, 5);
-
-check("★ 모르는 탭이면 아무것도 안 집는다", 맵(["가", "나", "다"]), {});
+const 줄 = (o) => { const a = []; Object.keys(o).forEach((k) => { a[+k] = o[k]; }); return a; };
 
 check("★ 머리글을 찾았으면 나머지 칸도 이름으로 찾는다",
   push.includes("이름표 = _pep_mapCarrierCols_(hv);") &&
   push.includes('var nameIdx = 뽑기("name", 편.col.name);'), true);
 check("★ 이름을 못 찾으면 이름 열쇠를 «안 만든다» (row[0] 을 이름 삼지 않는다)",
   push.includes("if (nameIdx >= 0) {") && !push.includes("row[nameIdx >= 0 ? nameIdx : 0]"), true);
-check("★ 고른 칸을 전부 적는다 (이름·전화·날짜까지)",
-  push.includes('" 전화=" + 자리글(phoneIdx) +') && push.includes('" 날짜=" + 자리글(dateIdx) +'), true);
-check("★ 못 찾은 칸은 「-」로 눈에 띈다",
-  push.includes('var 자리글 = function (i) { return i >= 0 ? _pep_colLetter_(i) : "-"; };'), true);
+
+console.log("\n[칸 찾기] 로젠의 「명」은 둘이다 — 뒤엣것이 수하인");
+{
+  //  09/14 두 번째 판: 이름=O 로 «첫» 「명」이 걸렸다. 세트분리 _ssf_freeCols_ 는
+  //  진작부터 «마지막»을 쓰고 있었다. 같은 규칙으로 맞춘다.
+  check("★ 「명」이 둘이면 마지막을 쓴다", 맵(줄({ 9: "주문번호", 10: "운송장번호", 14: "명", 20: "명" })).name, 20);
+  check("★ 강한 이름이 있으면 그것이 이긴다",
+    맵(줄({ 14: "명", 16: "수하인명", 20: "명" })).name, 16);
+  check("「명」이 하나면 그것", 맵(줄({ 14: "명" })).name, 14);
+  check("이름이 아예 없으면 없다", 맵(줄({ 9: "주문번호" })).name, undefined);
+}
+
+console.log("\n[칸 찾기] 날짜는 «보낸 날»만 쓴다");
+{
+  //  09/14 두 번째 판: 날짜=D 가 걸리면서 로젠 매칭이 46 → 24 로 떨어졌다.
+  //  날짜를 잘못 집으면 「주문일보다 이른 송장」으로 걸러진다.
+  check("★ 등록일자는 날짜가 아니다", 맵(줄({ 3: "등록일자" })).date, undefined);
+  check("★ 파일명도 날짜가 아니다", 맵(줄({ 5: "파일명" })).date, undefined);
+  check("집하일자는 날짜다", 맵(줄({ 3: "집하일자" })).date, 3);
+  check("발송일자도 날짜다", 맵(줄({ 7: "발송일자" })).date, 7);
+  check("출고일자도 날짜다", 맵(줄({ 2: "출고일자" })).date, 2);
+}
+
+console.log("\n[칸 찾기] 나머지");
+{
+  const 로젠44 = 줄({ 3: "운송장번호", 6: "수하인", 9: "수하인 전화", 14: "물품명", 18: "주문번호" });
+  check("로젠(44칸) 이름 G(6)", 맵(로젠44).name, 6);
+  check("로젠(44칸) 전화 J(9)", 맵(로젠44).phone, 9);
+  check("★ 로젠(44칸)엔 보낸 날 칸이 없다", 맵(로젠44).date, undefined);
+  const 롯데 = 줄({ 3: "집하일자", 5: "수하인명", 6: "운송장번호", 9: "주문번호", 28: "상품명" });
+  check("롯데 집하일자 D(3)", 맵(롯데).date, 3);
+  check("롯데 수하인명 F(5)", 맵(롯데).name, 5);
+  check("롯데 상품명 AC(28)", 맵(롯데).item, 28);
+  check("★ 모르는 탭이면 아무것도 안 집는다", 맵(["가", "나", "다"]), {});
+}
+
+console.log("\n[말하기] 무엇을 집었는지 «이름째로» 말한다");
+{
+  vm.runInContext([grab("_pep_colLetter_"), grab("_pep_colDesc_")].join("\n"), ctx);
+  const hv = 줄({ 9: "주문번호", 10: "운송장번호", 20: "명" });
+  check("★ 이름(자리) 꼴로 적는다", ctx._pep_colDesc_(hv, 10), "운송장번호(K)");
+  check("★ 못 찾은 칸은 「-」", ctx._pep_colDesc_(hv, -1), "-");
+  check("이름 없는 칸도 자리는 말한다", ctx._pep_colDesc_(hv, 5), "(이름없음)(F)");
+  check("★ 보고에 이름이 들어간다",
+    push.includes('"송장=" + _pep_colDesc_(hv, invIdx) +'), true);
+  check("★ 자리만 찍던 옛 코드는 사라졌다",
+    push.includes('var 자리글 = function (i) { return i >= 0 ? _pep_colLetter_(i) : "-"; };'), false);
+  check("★ 머리글을 통째로 한 번 찍는다 (다음엔 안 물어보게)",
+    push.includes('Logger.log("[UNIFIED] " + 편.이름 + " 머리글(" + H.row + "행): " +'), true);
+}
+
+console.log("\n[계측] 날짜 관문이 열려 있는지 한 줄로 안다");
+check("★ 날짜가 붙은 줄 수를 센다", push.includes("if (picked) nDated++;"), true);
+check("★ 보고에 [N/N줄] 로 적는다",
+  push.includes("nDated + " ) && push.includes(" + nInv + "), true);
+check("★ 날짜 칸이 없으면 그 표시도 없다 (0 을 0 으로 오해하지 않게)",
+  push.includes("dateIdx >= 0 ?"), true);
 
 console.log("\n[탭 상태] 「없다」와 「비었다」를 가른다");
 check("★ 탭을 못 찾으면 GID 를 적는다",
