@@ -86,6 +86,7 @@ vm.runInContext([
   "function _cs_hb_withCard_(ref, fn) { return fn(_테스트카드_.tab, 2, _테스트카드_.row); }",
   grab("csEditHandoffCard"),
   grab("csEditHandoffNote"),
+  grab("csDeleteHandoffNote"),
 ].join("\n"), ctx);
 
 const C = ctx._CS_HB_COL_;
@@ -217,6 +218,42 @@ const 두줄 = "[260914 10:00 홍길동] 첫 줄\n[260914 11:00 김철수] 둘�
     id: "HB001", staff: "홍길동", raw: "[260914 10:00 홍길동] 첫 줄", text: "  ",
   });
   check("★ 내용을 비울 수 없다 (지우기는 따로)", r.ok, false);
+}
+
+
+console.log("\n[전달내역 삭제] 흔적 없이 사라지지 않는다");
+{
+  const 두줄2 = "[260914 10:00 홍길동] 첫 줄\n[260914 11:00 김철수] 둘째 줄";
+  const c = 카드({ author: "홍길동", notes: 두줄2 });
+  const r = ctx.csDeleteHandoffNote({
+    id: "HB001", staff: "홍길동", raw: "[260914 10:00 홍길동] 첫 줄",
+  });
+  check("★ 본인 줄은 지워진다", r.ok, true);
+  const n = ctx._cs_hb_parseNotes_(c.row[C.notes]);
+  check("★ 줄 자체는 남는다 (본 사람과 안 본 사람이 갈리지 않게)", n.length, 2);
+  check("★ 내용은 지워지고 자국만", n[0].text, "🗑 지운 글");
+  check("★ 누가 언제 썼는지는 남는다", n[0].by, "홍길동");
+  check("★ 다른 줄은 안 건드린다", n[1].text, "둘째 줄");
+}
+{
+  카드({ author: "홍길동", notes: "[260914 11:00 김철수] 둘째 줄" });
+  const r = ctx.csDeleteHandoffNote({
+    id: "HB001", staff: "홍길동", raw: "[260914 11:00 김철수] 둘째 줄",
+  });
+  check("★ 남이 쓴 줄은 못 지운다", r.ok, false);
+}
+{
+  카드({ author: "홍길동", notes: "[260914 10:00 홍길동] 🗑 지운 글" });
+  const r = ctx.csDeleteHandoffNote({
+    id: "HB001", staff: "홍길동", raw: "[260914 10:00 홍길동] 🗑 지운 글",
+  });
+  check("★ 이미 지운 줄을 또 지워도 탈 없다", r.ok, true);
+  check("그렇다고 말해 준다", /이미 지운/.test(r.message || ""), true);
+}
+{
+  카드({ author: "홍길동", notes: "머리 없는 옛 줄" });
+  const r = ctx.csDeleteHandoffNote({ id: "HB001", staff: "홍길동", raw: "머리 없는 옛 줄" });
+  check("★ 작성자를 모르는 줄은 안 지운다", r.ok, false);
 }
 
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");

@@ -1744,6 +1744,7 @@
       color: var(--text-muted); font-size: 0.78em; font-family: inherit;
     }
     .hb-tl-edit button:hover { color: var(--text-secondary); text-decoration: underline; }
+    .hb-tl-edit button.del:hover { color: var(--accent-red); }
     .hb-editbox, .hb-noteedit {
       margin: 10px 0; padding: 12px 14px; border-radius: var(--radius-sm);
       background: var(--bg-secondary); border: 1px solid var(--border);
@@ -4339,9 +4340,15 @@
           h += '<div class="hb-tl-text">' + esc(ev.text) + '</div>';
           /*  본인이 쓴 줄에만 연필을 보인다. 남의 글에 연필이 보이면 눌러
               보고 거절당한다 — 안 되는 것은 애초에 안 보이는 편이 낫다. */
-          if (!c.done && ev.kind === 'note' && ev.raw && me && ev.by === me) {
-            h += '<div class="hb-tl-edit"><button type="button" onclick="event.stopPropagation();hbEditNote(\'' +
-              js(c.id) + '\',' + n + ')">✏ 고치기</button></div>';
+          if (!c.done && ev.kind === 'note' && ev.raw && me && ev.by === me &&
+              //  이미 지운 줄에는 단추를 안 보인다 — 되살릴 일이 아니다
+              String(ev.text || '').indexOf('🗑') !== 0) {
+            h += '<div class="hb-tl-edit">' +
+              '<button type="button" onclick="event.stopPropagation();hbEditNote(\'' +
+              js(c.id) + '\',' + n + ')">✏ 고치기</button>' +
+              '<button type="button" class="del" onclick="event.stopPropagation();hbDeleteNote(\'' +
+              js(c.id) + '\',' + n + ')">🗑 삭제</button>' +
+              '</div>';
           }
         }
         h += '</div>';
@@ -4760,6 +4767,40 @@
           toast(String((err && err.message) || '통신 실패'), 2600);
         })
         .csEditHandoffNote({ id: id, staff: staff, raw: ev.raw, text: text });
+    }
+
+    /**
+     * 전달내역 한 줄 지우기.
+     *
+     * ★ 줄이 흔적 없이 사라지지 않는다 ★
+     *   보드는 여럿이 같이 읽고 읽음 표시까지 붙는 판이다. 누가 이미 읽은
+     *   줄이 통째로 없어지면, 본 사람과 안 본 사람이 서로 다른 이야기를
+     *   하게 된다. 내용은 지우되 「여기 무언가 있었다」는 자국은 남긴다.
+     */
+    function hbDeleteNote(id, n) {
+      var staff = hbRequireStaff();
+      if (!staff) return;
+      var c = hbFindCard(id);
+      if (!c) { toast('카드를 찾을 수 없습니다. 새로고침 해주세요.', 2600); return; }
+      var ev = hbTimeline(c)[n];
+      if (!ev || !ev.raw) { toast('그 줄을 찾을 수 없습니다. 새로고침 해주세요.', 2600); return; }
+      if (ev.by !== staff) { toast('본인이 쓴 줄만 지울 수 있습니다.', 2600); return; }
+      var 물음 = '이 줄을 지울까요?' + '\n\n' +
+        '내용은 지워지고 「🗑 지운 글」 자국만 남습니다.' + '\n' +
+        '(되돌릴 수 없습니다)';
+      if (!confirm(물음)) return;
+
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) { toast(String((res && res.error) || '삭제 실패'), 3000); return; }
+          hbCancelEdit();
+          toast(String(res.message || '지웠습니다'));
+          hbReloadBoards();
+        })
+        .withFailureHandler(function (err) {
+          toast(String((err && err.message) || '통신 실패'), 2600);
+        })
+        .csDeleteHandoffNote({ id: id, staff: staff, raw: ev.raw });
     }
 
     function hbAllCards() {

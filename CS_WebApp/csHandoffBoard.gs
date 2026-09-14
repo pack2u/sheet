@@ -768,6 +768,63 @@ function csEditHandoffNote(payload) {
   });
 }
 
+/**
+ * 전달내역 한 줄 지우기.
+ *
+ * > "삭제 버튼도 있으면 좋겠는데"
+ *
+ * ★ 줄을 없애지 않고 «지웠다는 자국»을 남긴다 ★
+ *   보드는 여럿이 같이 읽는 판이고, 읽음 표시까지 붙는다. 읽은 사람이
+ *   있는 줄이 «흔적 없이» 사라지면, 본 사람과 안 본 사람이 서로 다른
+ *   이야기를 하게 된다. 무엇이 있었는지는 안 남기되, 여기 무언가 있었고
+ *   누가 언제 지웠는지는 남긴다.
+ *
+ *   카드 통째로 지우는 csDeleteHandoffCard 와 다른 점이 이것이다 —
+ *   그건 「이 건 자체가 없던 일」이고, 이건 대화 중 한 마디다.
+ *
+ * @param {Object} payload {id, board, raw, staff}
+ */
+function csDeleteHandoffNote(payload) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  payload = payload || {};
+  var staff = _cs_hb_staff_(payload.staff);
+  if (!staff) return { ok: false, error: "담당자를 먼저 선택하세요." };
+  var want = String(payload.raw || "").trim();
+  if (!want) return { ok: false, error: "어느 줄인지 알 수 없습니다." };
+
+  return _cs_hb_withCard_(payload, function (tab, sheetRow, row) {
+    var raw = String(row[_CS_HB_COL_.notes] == null ? "" : row[_CS_HB_COL_.notes]);
+    var lines = raw.split(/\r?\n/);
+    var 찾음 = -1, 여럿 = false;
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].trim() !== want) continue;
+      if (찾음 >= 0) { 여럿 = true; break; }
+      찾음 = i;
+    }
+    if (찾음 < 0) {
+      return { ok: false, error: "그 줄을 못 찾았습니다 — 그 사이 누가 고쳤을 수 있습니다. 새로고침 후 다시 시도하세요." };
+    }
+    if (여럿) return { ok: false, error: "똑같은 줄이 둘 이상이라 어느 것인지 알 수 없습니다." };
+
+    var m = lines[찾음].match(/^\[(\d{6})\s+(\d{1,2}:\d{2})\s+([^\]]+)\]/);
+    if (!m) return { ok: false, error: "작성자를 알 수 없는 줄이라 지울 수 없습니다." };
+    var 쓴이 = String(m[3] || "").trim();
+    if (쓴이 && 쓴이 !== staff) {
+      return { ok: false, error: "본인이 쓴 줄만 지울 수 있습니다 (작성자: " + 쓴이 + ")." };
+    }
+    if (lines[찾음] === m[0] + " 🗑 지운 글") {
+      return { ok: true, id: payload.id, message: "이미 지운 줄입니다." };
+    }
+
+    lines[찾음] = m[0] + " 🗑 지운 글";
+    tab.getRange(sheetRow, _CS_HB_COL_.notes + 1)
+      .setValue(lines.join(String.fromCharCode(10)));
+
+    try { _cs_pulse_bust_(); } catch (eP) {}
+    return { ok: true, id: payload.id, message: "전달 내용을 지웠습니다" };
+  });
+}
+
 function csMarkHandoffRead(payload) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   payload = payload || {};
