@@ -9038,6 +9038,39 @@ function _pep_resolveRowInvoice_(map, row, outVia) {
  *    오늘 일이 다시 나면, 마감 알림의 그 숫자가 0 인 것으로 바로 안다.
  * ══════════════════════════════════════════════════════════════
  */
+/**
+ * 택배사 송장탭 머리글 한 줄 → 칸 자리표.
+ *
+ * ★ 이름은 탭마다 다르다 ★
+ *   로젠은 「수하인」·「수하인 전화」, 롯데는 「수하인명」·「상품명」,
+ *   1주출고는 「수취인」이다. 한 이름만 보면 탭 하나가 조용히 빈다.
+ *   못 찾은 칸은 -1 로 둔다 — 아무 자리나 집는 것보다 «없다»가 낫다.
+ *   특히 날짜 칸을 잘못 집으면 「주문일보다 이른 송장」으로 걸러져,
+ *   송장이 멀쩡히 있는데도 미매칭이 된다. 09/14 에 그렇게 됐다.
+ */
+function _pep_mapCarrierCols_(hdr) {
+  var out = {};
+  var 규칙 = [
+    ["name", ["수하인", "수하인명", "수취인", "수취인명", "받는분", "받는사람", "고객명", "명"]],
+    ["phone", ["수하인전화", "수하인전화번호", "수취인전화", "전화번호", "휴대폰", "연락처", "전화"]],
+    ["addr", ["수하인주소", "수취인주소", "주소", "배송지"]],
+    ["item", ["물품명", "상품명", "품목명", "내품명"]],
+    ["date", ["집하일자", "발송일", "발송일자", "출고일", "출고일자", "등록일", "등록일자", "파일명"]],
+  ];
+  for (var c = 0; c < hdr.length; c++) {
+    var h = String(hdr[c] == null ? "" : hdr[c]).replace(/[\s]/g, "");
+    if (!h) continue;
+    for (var k = 0; k < 규칙.length; k++) {
+      var 키 = 규칙[k][0], 후보 = 규칙[k][1];
+      if (out[키] !== undefined) continue;
+      for (var n = 0; n < 후보.length; n++) {
+        if (h === 후보[n]) { out[키] = c; break; }
+      }
+    }
+  }
+  return out;
+}
+
 function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
   var 자사원천 = [
     {
@@ -9065,11 +9098,22 @@ function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
     var 편 = 자사원천[si];
     try {
       var tab = _pt_getSheetByGid(invSS, 편.gid);
-      if (!tab || tab.getLastRow() < 2) {
-        Logger.log("[UNIFIED] " + 편.이름 + " 송장탭 없음/비어있음 (GID " + 편.gid + ")");
+      /*  ★ 「탭이 없다」와 「탭은 있는데 비었다」는 다른 일이다 ★
+          앞은 GID 가 틀렸거나 탭이 지워진 것이고 — 고칠 사람이 있어야 한다.
+          뒤는 그냥 그날 실적이 없는 것이다. 한 덩이로 뭉뚱그려 적으면
+          어느 쪽인지 몰라 아무도 안 움직인다. */
+      if (!tab) {
+        Logger.log("[UNIFIED] " + 편.이름 + " 송장탭을 못 찾음 (GID " + 편.gid + ")");
         result.detail[편.키 + "Read"] = 0;
-        result.detail[편.키 + "Cols"] = "탭없음";
-        읽음.push(편.이름 + " 탭없음");
+        result.detail[편.키 + "Cols"] = "탭을 못 찾음 (GID " + 편.gid + ")";
+        읽음.push(편.이름 + " ⚠탭없음");
+        continue;
+      }
+      if (tab.getLastRow() < 2) {
+        Logger.log("[UNIFIED] " + 편.이름 + " 송장탭 비어있음 (" + tab.getName() + ")");
+        result.detail[편.키 + "Read"] = 0;
+        result.detail[편.키 + "Cols"] = "탭은 있는데 비었음 (" + tab.getName() + ")";
+        읽음.push(편.이름 + " 0줄(빈 탭)");
         continue;
       }
 
@@ -9083,11 +9127,31 @@ function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
       var from = H.row ? H.row + 1 : 2;
       var 어떻게 = H.row ? ("머리글 " + H.row + "행") : "고정자리";
 
-      var nameIdx = (편.col.name === undefined) ? -1 : 편.col.name;
-      var phoneIdx = (편.col.phone === undefined) ? -1 : 편.col.phone;
-      var addrIdx = (편.col.addr === undefined) ? -1 : 편.col.addr;
-      var itemIdx = (편.col.item === undefined) ? -1 : 편.col.item;
-      var dateIdx = (편.col.date === undefined) ? -1 : 편.col.date;
+      /* ★ 이름으로 찾았으면 «나머지 칸도» 이름으로 찾는다 ★  (2026-09-14)
+         처음 판에서는 주문번호·운송장만 이름으로 찾고 이름·전화·날짜는
+         _PT_ROZEN_FIXED_COL 의 «숫자»를 그대로 썼다. 그 표는 44칸짜리
+         「주문등록_출력」 양식(머리글 2행) 기준인데, 실제 탭은 머리글이
+         1행이고 주문번호가 J·운송장이 K 였다 — 다른 양식이다.
+         그러니 이름은 엉뚱한 칸을 가리키고, 날짜 칸(AL 파일명 자리)은
+         아무 글자나 읽혀 «주문일보다 이른 송장»으로 걸러졌다.
+         09/14 에 887줄을 읽고 46건만 붙은 이유가 이것이다.
+
+         찾은 것과 못 찾은 것을 갈라 두 벌을 섞지 않는다 — 반은 이름,
+         반은 자리로 읽는 것이 가장 나쁘다. 둘 다 맞을 때만 맞는다. */
+      var 이름표 = {};
+      if (H.row) {
+        var hv = tab.getRange(H.row, 1, 1, tab.getLastColumn()).getDisplayValues()[0];
+        이름표 = _pep_mapCarrierCols_(hv);
+      }
+      var 뽑기 = function (키, 바닥) {
+        if (H.row) return (이름표[키] === undefined) ? -1 : 이름표[키];
+        return (바닥 === undefined) ? -1 : 바닥;
+      };
+      var nameIdx = 뽑기("name", 편.col.name);
+      var phoneIdx = 뽑기("phone", 편.col.phone);
+      var addrIdx = 뽑기("addr", 편.col.addr);
+      var itemIdx = 뽑기("item", 편.col.item);
+      var dateIdx = 뽑기("date", 편.col.date);
 
       var need = Math.max(uidIdx, invIdx, nameIdx, phoneIdx, addrIdx, itemIdx, dateIdx) + 1;
       var lc = Math.max(tab.getLastColumn(), need);
@@ -9109,20 +9173,32 @@ function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
           _pep_addInvoiceMap_(invoiceMap, uid, inv, 편.이름, "", picked);
           nUid++;
         }
-        var phone = (phoneIdx >= 0) ? row[phoneIdx] : "";
-        _pep_addNamePhoneInvoiceKeys_(invoiceMap, row[nameIdx >= 0 ? nameIdx : 0], phone, inv, 편.이름, {
-          addr: (addrIdx >= 0) ? row[addrIdx] : "",
-          item: (itemIdx >= 0) ? row[itemIdx] : "",
-          picked: picked,
-          stat: _pep_keyStat_(편.이름),
-        });
-        if (nameIdx >= 0 && _pep_normRecipName_(row[nameIdx])) nName++;
+        /*  ★ 이름 칸을 못 찾았으면 이름 열쇠를 아예 안 만든다 ★
+            전에는 못 찾으면 row[0] 을 이름으로 넘겼다. 첫 칸이 무엇이든
+            이름 행세를 하게 되고, 그 열쇠에 남의 송장이 걸린다.
+            모르면 안 만드는 편이 낫다 — 틀린 열쇠는 없느니만 못하다. */
+        if (nameIdx >= 0) {
+          var phone = (phoneIdx >= 0) ? row[phoneIdx] : "";
+          _pep_addNamePhoneInvoiceKeys_(invoiceMap, row[nameIdx], phone, inv, 편.이름, {
+            addr: (addrIdx >= 0) ? row[addrIdx] : "",
+            item: (itemIdx >= 0) ? row[itemIdx] : "",
+            picked: picked,
+            stat: _pep_keyStat_(편.이름),
+          });
+          if (_pep_normRecipName_(row[nameIdx])) nName++;
+        }
       }
 
+      /*  고른 칸을 «전부» 적는다. 09/14 에는 「송장=K 주문번호=J 이름=G」만
+          찍혀서, 이름 G 가 이름 칸이 아니고 날짜 칸이 엉뚱하다는 것을
+          알 길이 없었다. 못 찾은 칸은 「-」로 눈에 띄게 둔다. */
+      var 자리글 = function (i) { return i >= 0 ? _pep_colLetter_(i) : "-"; };
       var 칸글 =
-        "송장=" + _pep_colLetter_(invIdx) +
-        " 주문번호=" + _pep_colLetter_(uidIdx) +
-        " 이름=" + (nameIdx >= 0 ? _pep_colLetter_(nameIdx) : "-") +
+        "송장=" + 자리글(invIdx) +
+        " 주문번호=" + 자리글(uidIdx) +
+        " 이름=" + 자리글(nameIdx) +
+        " 전화=" + 자리글(phoneIdx) +
+        " 날짜=" + 자리글(dateIdx) +
         " (" + 어떻게 + ")";
       result.detail[편.키 + "Read"] = nInv;
       result.detail[편.키 + "Cols"] = 칸글;

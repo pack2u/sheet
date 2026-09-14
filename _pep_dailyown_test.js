@@ -97,5 +97,58 @@ check("_PT_ROZEN_FIXED_COL 이 있다", help.includes("var _PT_ROZEN_FIXED_COL =
 check("로젠 운송장 = D열(3)", /invoice:\s*3,/.test(help.slice(help.indexOf("_PT_ROZEN_FIXED_COL"), help.indexOf("_PT_ROZEN_FIXED_COL") + 700)), true);
 check("로젠 주문번호 = S열(18)", /uid:\s*18,/.test(help.slice(help.indexOf("_PT_ROZEN_FIXED_COL"), help.indexOf("_PT_ROZEN_FIXED_COL") + 700)), true);
 
+console.log("\n[칸 찾기] 반은 이름 반은 자리로 읽지 않는다");
+const vm = require("vm");
+function grab(n) {
+  const s = push.indexOf("function " + n + "(");
+  let d = 0, seen = false;
+  for (let i = s; i < push.length; i++) {
+    if (push[i] === "{") { d++; seen = true; }
+    else if (push[i] === "}") { d--; if (seen && d === 0) return push.slice(s, i + 1); }
+  }
+}
+const ctx = {};
+vm.createContext(ctx);
+vm.runInContext(grab("_pep_mapCarrierCols_"), ctx);
+const 맵 = (h) => ctx._pep_mapCarrierCols_(h);
+
+//  09/14 에 실제로 읽힌 꼴 — 머리글 1행, 주문번호 J(9)·운송장 K(10)
+const 로젠1행 = ["번호", "", "", "", "", "", "수하인", "", "", "주문번호", "운송장번호", "",
+  "수하인 전화", "물품명", "", "등록일자"];
+check("★ 로젠(1행) 이름은 G(6) — 이름으로 찾는다", 맵(로젠1행).name, 6);
+check("★ 로젠(1행) 전화는 M(12) — 고정표의 J(9)가 아니다", 맵(로젠1행).phone, 12);
+check("★ 로젠(1행) 날짜는 P(15) — 고정표의 AL(37)이 아니다", 맵(로젠1행).date, 15);
+
+//  44칸 「주문등록_출력」 양식 — _PT_ROZEN_FIXED_COL 이 가리키던 그것
+const 로젠44 = ["", "", "", "운송장번호", "", "내품수량", "수하인", "", "", "수하인 전화",
+  "", "", "", "", "물품명", "", "", "", "주문번호"];
+check("로젠(44칸) 이름 G(6)", 맵(로젠44).name, 6);
+check("로젠(44칸) 전화 J(9)", 맵(로젠44).phone, 9);
+check("★ 로젠(44칸)엔 날짜 칸이 없다 — 없으면 «없다»", 맵(로젠44).date, undefined);
+
+const 롯데 = ["", "", "", "집하일자", "", "수하인명", "운송장번호", "", "", "주문번호"];
+check("롯데 집하일자 D(3)", 맵(롯데).date, 3);
+check("롯데 수하인명 F(5)", 맵(롯데).name, 5);
+
+check("★ 모르는 탭이면 아무것도 안 집는다", 맵(["가", "나", "다"]), {});
+
+check("★ 머리글을 찾았으면 나머지 칸도 이름으로 찾는다",
+  push.includes("이름표 = _pep_mapCarrierCols_(hv);") &&
+  push.includes('var nameIdx = 뽑기("name", 편.col.name);'), true);
+check("★ 이름을 못 찾으면 이름 열쇠를 «안 만든다» (row[0] 을 이름 삼지 않는다)",
+  push.includes("if (nameIdx >= 0) {") && !push.includes("row[nameIdx >= 0 ? nameIdx : 0]"), true);
+check("★ 고른 칸을 전부 적는다 (이름·전화·날짜까지)",
+  push.includes('" 전화=" + 자리글(phoneIdx) +') && push.includes('" 날짜=" + 자리글(dateIdx) +'), true);
+check("★ 못 찾은 칸은 「-」로 눈에 띈다",
+  push.includes('var 자리글 = function (i) { return i >= 0 ? _pep_colLetter_(i) : "-"; };'), true);
+
+console.log("\n[탭 상태] 「없다」와 「비었다」를 가른다");
+check("★ 탭을 못 찾으면 GID 를 적는다",
+  push.includes('result.detail[편.키 + "Cols"] = "탭을 못 찾음 (GID " + 편.gid + ")";'), true);
+check("★ 비었으면 탭 이름을 적는다",
+  push.includes('"탭은 있는데 비었음 (" + tab.getName() + ")"'), true);
+check("★ 뭉뚱그린 「없음/비어있음」이 사라졌다",
+  push.includes("송장탭 없음/비어있음"), false);
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);
