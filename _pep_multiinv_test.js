@@ -404,5 +404,61 @@ check("재매칭 맵이 허브아카이브를 읽는다", /_ha_addHubArchiveToIn
 const pepSrc = fs.readFileSync("_partnerExclusivePush.gs", "utf8");
 check("일일마감 본기록도 발주마감을 읽는다", /_pms_addOrderArchiveToInvoiceMap_/.test(pepSrc), true);
 
+
+/* ═══════════════════════════════════════════════════════════════
+   [19] 소스가 «뉴 세트분리»를 가리키는가 + 열 자리 확인
+
+   > "대리공급 푸시시 구 세트분리에서 가저오는데 뉴 세트분리에서 가저오게 해줘"
+
+   이 푸시는 D(3)·E(4)·P(15) 를 «자리»로 읽는다. 소스를 옮겼으니 자리가
+   맞는지 실제로 확인해야 하고, 앞으로 누가 뉴 출력 탭에 열을 하나 끼우면
+   전부 밀린다 — 오류 없이 엉뚱한 발주가 나간다. 그 가드를 여기서 돌려 본다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[19] 소스 — 뉴 세트분리 「대리발송」");
+{
+  check("뉴 세트분리를 가리킨다",
+    src.indexOf('_PEP_SOURCE_SHEET_ID = "1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo"') > 0, true);
+  check('탭 이름은 대리발송', src.indexOf('_PEP_SOURCE_TAB_NAME = "대리발송"') > 0, true);
+  check("GID 로는 안 찾는다", src.indexOf("_PEP_SOURCE_TAB_GID = -1") > 0, true);
+  check("저장된 이름이 막으면 상수로 한 번 더 찾는다",
+    src.indexOf("getSheetByName(_PEP_SOURCE_TAB_NAME)") > 0, true);
+  check("읽기 전에 열 자리를 본다", src.indexOf("_pep_checkSourceCols_(srcHdr)") > 0, true);
+
+  ctx._PEP_CODE_COL = 3;
+  ctx._PEP_ITEM_COL = 4;
+  vm.runInContext(grabFn("_pep_colLetter_"), ctx);
+  vm.runInContext(grabFn("_pep_checkSourceCols_"), ctx);
+
+  //  뉴 「대리발송」 머리글 그대로 (SS_PARTNER_HEADER)
+  const 뉴 = ["출고지", "순번", "일자-No.", "품목코드", "품목명", "택배박스수량", "수량",
+    "전화", "모바일", "주소1", "배송메시지", "합계", "거래처명", "단품배송비",
+    "적요", "사방넷주문번호", "보내는분", "보내는분전화", "보내는주소(팩투유)",
+    "업체코드", "업체명", "조치"];
+  check("★ 뉴 대리발송 열 자리가 맞는다",
+    call("_pep_checkSourceCols_(" + JSON.stringify(뉴) + ")").ok, true);
+
+  //  누가 앞에 열을 하나 끼우면 전부 한 칸씩 밀린다
+  const 밀림 = ["새열"].concat(뉴);
+  const r19 = call("_pep_checkSourceCols_(" + JSON.stringify(밀림) + ")");
+  check("★ 열이 끼면 멈춘다", r19.ok, false);
+  check("품목코드가 어디로 갔는지 말한다",
+    r19.why.indexOf("품목코드 : D열에 있어야 하는데 E열") >= 0, true);
+  check("고유ID 도 짚는다",
+    r19.why.indexOf("고유ID : P열에 있어야 하는데 Q열") >= 0, true);
+
+  //  옛 이름(이카운트코드·고유ID)도 알아본다 — 구 탭으로 되돌려도 안 멈춘다
+  const 구19 = 뉴.slice();
+  구19[3] = "이카운트코드"; 구19[15] = "고유ID";
+  check("옛 이름도 알아본다",
+    call("_pep_checkSourceCols_(" + JSON.stringify(구19) + ")").ok, true);
+
+  //  이름을 아예 못 찾으면 «그것만으로는» 안 멈춘다
+  check("모르는 머리글이면 그냥 지나간다",
+    call("_pep_checkSourceCols_(" + JSON.stringify(["a", "b", "c"]) + ")").ok, true);
+
+  check("P 는 16번째 칸", call("_pep_colLetter_(15)"), "P");
+  check("D 는 4번째 칸", call("_pep_colLetter_(3)"), "D");
+}
+
 console.log("\n" + (fail === 0 ? "전부 통과" : "실패 " + fail + "건") + " (통과 " + pass + ")");
 process.exit(fail === 0 ? 0 : 1);

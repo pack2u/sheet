@@ -745,12 +745,91 @@ function getExclusiveFormDataForDownload(fileId) {
   }
 }
 
-// ── 소스: 외부 스프레드시트 (대리공급업체 발주 데이터)
-var _PEP_SOURCE_SHEET_ID = "1vWdJgmbW_Gwm_2b1pP8mVBxpfYBbUiAduSwkStXxs0Y";
-var _PEP_SOURCE_TAB_GID = 1981160530; // 대리공급업체 발주 탭 GID
-var _PEP_SOURCE_TAB_NAME = "대리공급업체 발주"; // GID 불일치 시 이름 폴백
-var _PEP_CODE_COL = 3; // D열 (0-based): 이카운트코드
+// ── 소스: 세트분리(뉴) 「대리발송」 탭
+//
+// ★ 2026-09-14: 구 세트분리에서 뉴로 옮겼다 ★
+//   > "대리공급 푸시시 구 세트분리에서 가저오는데 뉴 세트분리에서 가저오게 해줘"
+//
+//   옛 값 — 되돌릴 일이 있으면 이 두 줄만 되살린다:
+//     var _PEP_SOURCE_SHEET_ID = "1vWdJgmbW_Gwm_2b1pP8mVBxpfYBbUiAduSwkStXxs0Y";  // 세트분리(사용중)
+//     var _PEP_SOURCE_TAB_NAME = "대리공급업체 발주";  (GID 1981160530)
+//
+//   ★ 칸 자리는 둘이 같다 ★  (옮기기 전에 맞대 봤다)
+//     뉴 「대리발송」 은 SS_PARTNER_HEADER = SS_OUT_HEADER + 업체코드·업체명·조치 다.
+//     D(3) 품목코드 · E(4) 품목명 · H(7) 전화 · I(8) 모바일 · J(9) 주소1 ·
+//     M(12) 거래처명 · P(15) 사방넷주문번호 — 아래 상수가 가리키는 자리와 그대로 맞는다.
+//     그래도 «믿지 않고» 실행할 때마다 머리글로 확인한다 (_pep_checkSourceCols_).
+var _PEP_SOURCE_SHEET_ID = "1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo"; // 세트분리(뉴)
+// GID 로는 안 찾는다(-1). 뉴 탭 이름 「대리발송」 은 코드(SSIO_TABS.출력)가 정하므로 안 바뀐다.
+var _PEP_SOURCE_TAB_GID = -1;
+var _PEP_SOURCE_TAB_NAME = "대리발송";
+var _PEP_CODE_COL = 3; // D열 (0-based): 품목코드(이카운트코드)
 var _PEP_ITEM_COL = 4; // E열 (0-based): 품목명
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  소스 탭의 «칸 자리»가 아직 맞는지 확인한다
+ *  2026-09-14
+ *
+ *  ★ 자리로 읽으면서 확인을 안 하면 조용히 틀린다 ★
+ *    이 푸시는 D(3)·E(4)·P(15) 를 «자리»로 읽는다. 소스를 구 세트분리에서
+ *    뉴로 옮기면서 자리가 같다는 것은 맞대 봤지만, 앞으로 누군가 뉴 출력
+ *    탭에 열을 하나 끼우면 전부 한 칸씩 밀린다. 그러면 품목코드 자리에서
+ *    수량을 읽고, 고유ID 자리에서 적요를 읽는다 — **오류는 안 난다.**
+ *    엉뚱한 발주가 업체로 나간 뒤에야 안다.
+ *
+ *  ★ 그래서 이름으로 «확인만» 한다 ★
+ *    이름으로 찾아 자리를 바꾸지 않는다. 바꾸면 이 함수가 조용히 고쳐 주는
+ *    셈이라, 정작 사람이 열을 잘못 끼운 사실을 아무도 모르게 된다.
+ *    틀리면 멈추고 «무엇이 어디로 갔는지» 말한다.
+ *
+ *  @param hdr 소스 탭 1행
+ *  @return {{ok:boolean, why:string}}
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pep_checkSourceCols_(hdr) {
+  var 이름 = [];
+  for (var h = 0; h < hdr.length; h++) 이름.push(String(hdr[h] || "").trim());
+  var 자리of = function (후보들) {
+    for (var c = 0; c < 후보들.length; c++) {
+      var k = 이름.indexOf(후보들[c]);
+      if (k >= 0) return k;
+    }
+    return -1;
+  };
+
+  var 볼것 = [
+    { 무엇: "품목코드", 자리: _PEP_CODE_COL, 후보: ["품목코드", "이카운트코드", "코드"] },
+    { 무엇: "품목명", 자리: _PEP_ITEM_COL, 후보: ["품목명"] },
+    { 무엇: "고유ID", 자리: 15, 후보: ["사방넷주문번호", "고유ID", "고유아이디"] },
+  ];
+  var 어긋남 = [];
+  for (var v = 0; v < 볼것.length; v++) {
+    var B = 볼것[v];
+    var 실제 = 자리of(B.후보);
+    //  이름을 아예 못 찾으면 «옛 탭»일 수 있다 — 그것만으로 멈추진 않는다
+    if (실제 < 0) continue;
+    if (실제 !== B.자리) {
+      어긋남.push(B.무엇 + " : " + _pep_colLetter_(B.자리) + "열에 있어야 하는데 " +
+        _pep_colLetter_(실제) + "열에 있습니다");
+    }
+  }
+  if (어긋남.length) {
+    var NL = String.fromCharCode(10);
+    return { ok: false, why: "소스 탭의 열이 밀렸습니다." + NL + "  " + 어긋남.join(NL + "  ") +
+      NL + NL + "열을 끼우거나 지웠다면 되돌리고 다시 실행하세요." +
+      NL + "(자리로 읽는 곳이라 이대로 두면 엉뚱한 값으로 발주가 나갑니다)" };
+  }
+  return { ok: true, why: "" };
+}
+
+/** 0 → A, 15 → P */
+function _pep_colLetter_(i) {
+  if (i < 0) return "-";
+  var n = i + 1, o = "";
+  while (n > 0) { var r = (n - 1) % 26; o = String.fromCharCode(65 + r) + o; n = (n - 1 - r) / 26; }
+  return o;
+}
 
 /**
  * P열(고유ID) 없는 행에만 UID 생성.
@@ -1704,6 +1783,10 @@ function _pep_pushCore_(silent) {
   }
   // 이름 폴백 — PropertiesService 저장값 우선, 없으면 상수
   if (!srcTab) srcTab = srcSS.getSheetByName(_pep_getSourceTabName_());
+  /*  저장해 둔 이름이 «이 시트에는» 없을 수 있다 — 소스를 옮기면 그렇다.
+      그럴 때 상수 이름으로 한 번 더 찾는다. 안 그러면 「탭을 못 찾음」만
+      뜨고, 사람은 스크립트 속성에 옛 이름이 남아 있는 줄을 모른다. */
+  if (!srcTab) srcTab = srcSS.getSheetByName(_PEP_SOURCE_TAB_NAME);
   if (!srcTab) {
     if (!silent && ui)
       ui.alert(
@@ -1762,6 +1845,17 @@ function _pep_pushCore_(silent) {
   var srcLc = Math.max(srcTab.getLastColumn(), 20);
   var srcAll = srcTab.getRange(1, 1, srcLr, srcLc).getValues();
   var srcHdr = srcAll[0];
+
+  /*  ★ 자리로 읽기 전에 «자리가 맞는지» 본다 ★  (2026-09-14)
+      D·E·P 를 자리로 읽는다. 열이 하나 끼면 전부 밀리는데 오류는 안 난다 —
+      엉뚱한 발주가 업체로 나간 뒤에야 안다. 그 전에 멈춘다. */
+  var _colChk_ = _pep_checkSourceCols_(srcHdr);
+  if (!_colChk_.ok) {
+    var _NL_ = String.fromCharCode(10);
+    Logger.log("[PEP] 소스 열 어긋남 — 푸시 중단" + _NL_ + _colChk_.why);
+    if (!silent && ui) ui.alert("대리공급 푸시를 멈췄습니다" + _NL_ + _NL_ + _colChk_.why);
+    return;
+  }
 
   var today = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
 
@@ -4199,6 +4293,10 @@ function partnerDiagnosePushSystem() {
       }
     }
     if (!srcTab) srcTab = srcSS.getSheetByName(_pep_getSourceTabName_());
+    /*  저장해 둔 이름이 «이 시트에는» 없을 수 있다 — 소스를 옮기면 그렇다.
+        그럴 때 상수 이름으로 한 번 더 찾는다. 안 그러면 「탭을 못 찾음」만
+        뜨고, 사람은 스크립트 속성에 옛 이름이 남아 있는 줄을 모른다. */
+    if (!srcTab) srcTab = srcSS.getSheetByName(_PEP_SOURCE_TAB_NAME);
     if (srcTab && srcTab.getLastRow() >= 2) {
       var hdr = srcTab.getRange(1, 1, 1, srcTab.getLastColumn()).getValues()[0];
       var uidCol = -1,
@@ -7100,6 +7198,10 @@ function partnerAfternoonResetAndPush() {
     }
   }
   if (!srcTab) srcTab = srcSS.getSheetByName(_pep_getSourceTabName_());
+  /*  저장해 둔 이름이 «이 시트에는» 없을 수 있다 — 소스를 옮기면 그렇다.
+      그럴 때 상수 이름으로 한 번 더 찾는다. 안 그러면 「탭을 못 찾음」만
+      뜨고, 사람은 스크립트 속성에 옛 이름이 남아 있는 줄을 모른다. */
+  if (!srcTab) srcTab = srcSS.getSheetByName(_PEP_SOURCE_TAB_NAME);
   var pCleared = 0;
   if (srcTab && srcTab.getLastRow() >= 2) {
     var srcLr = srcTab.getLastRow();
@@ -7156,6 +7258,10 @@ function partnerRebuildTempRecords() {
     }
   }
   if (!srcTab) srcTab = srcSS.getSheetByName(_pep_getSourceTabName_());
+  /*  저장해 둔 이름이 «이 시트에는» 없을 수 있다 — 소스를 옮기면 그렇다.
+      그럴 때 상수 이름으로 한 번 더 찾는다. 안 그러면 「탭을 못 찾음」만
+      뜨고, 사람은 스크립트 속성에 옛 이름이 남아 있는 줄을 모른다. */
+  if (!srcTab) srcTab = srcSS.getSheetByName(_PEP_SOURCE_TAB_NAME);
   if (!srcTab || srcTab.getLastRow() < 2) {
     if (ui) ui.alert("소스 탭에 데이터가 없습니다.");
     return;
