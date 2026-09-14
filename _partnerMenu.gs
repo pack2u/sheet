@@ -204,6 +204,13 @@ function registerPartnerMenu_() {
     .addSubMenu(
       ui.createMenu("📊 상태 확인 / 진단")
         .addItem("🩺 Push 시스템 통합 진단", "partnerDiagnosePushSystem")
+        /* ★ 2026-09-14: 발주서 주소가 원장과 같은지 맞대 본다 ★
+           사방넷 건의 주소가 통째로 빈 채 발주가 나간 날이 있었다. 「빈 것」과
+           「틀린 것」은 다른데, 그날은 그걸 가릴 데가 없어 사람이 하루를 태웠다.
+           고치지 않는다 — 읽고 세어서 «다른 줄»만 짚는다. */
+        .addItem("📍 발주서 주소 맞대보기 (원장 대조)", "partnerCheckVendorAddress")
+        .addItem("🧷 빠진 주소 메우기 (임시기록)", "partnerFillMissingAddress")
+        .addItem("🧷 빠진 주소 메우기 (업체 발주서)", "partnerFillMissingAddressVendors")
         .addItem("🧪 오전/오후 중복 점검 진단", "partnerDiagnoseSalesDuplicates")
         .addItem("📋 월별 정산 Dry-run (미리보기)", "partnerDiagnoseMonthlyArchive")
         .addSeparator()

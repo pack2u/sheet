@@ -11528,3 +11528,443 @@ function partnerMoveDailyCloseFilesToSubFolder() {
   );
   Logger.log("[UNIFIED] 일일마감 이동: " + moved + "개 (실패 " + failed + ", 남음 " + left + ")");
 }
+
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  주소 없이 나간 발주를 «뒤에서» 메운다
+ *  2026-09-14
+ *
+ *  > "상품정보 임시기록..발주 시트에 주소들이 빠졌어"
+ *  > "세트분리에서는 다 있는데"
+ *
+ *  ★ 왜 생겼나 ★
+ *    세트분리가 사방넷 건의 주소를 「추가문자형7」 칸에서 읽는데, 코드가
+ *    옛 이름을 찾고 있어 빈칸이 됐다. 그 상태로 푸시가 돌아 임시기록과
+ *    업체 발주 파일에 주소 없는 줄이 들어갔다. 세트분리는 이제 고쳤지만
+ *    이미 나간 줄은 스스로 고쳐지지 않는다.
+ *
+ *  ★ 다시 푸시하면 안 된다 ★
+ *    중복방지가 막아서 아무 일도 안 일어나거나, 막히지 않으면 두 번 나간다.
+ *    이미 있는 줄의 «빈 칸만» 채우는 것이 맞다.
+ *
+ *  ★ 비어 있을 때만 채운다 ★
+ *    사람이 손으로 적어 둔 주소를 기계가 덮으면 되돌릴 방법이 없다.
+ *
+ *  세트분리(뉴) 주문라인원장을 고유ID로 찾아 채운다 — 그것이 원본이다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var _PEP_FIX_SRC_SS_ = "1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo"; // 세트분리(뉴)
+var _PEP_FIX_SRC_TAB_ = "주문라인원장";
+
+function partnerFillMissingAddress() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  var NLx = String.fromCharCode(10);
+  var 줄 = [];
+
+  // ── 1) 원본: 세트분리 원장에서 고유ID → 주소·전화·받는분 ──
+  var 원본 = {};
+  try {
+    var sss = SpreadsheetApp.openById(_PEP_FIX_SRC_SS_);
+    var lg = sss.getSheetByName(_PEP_FIX_SRC_TAB_);
+    if (!lg || lg.getLastRow() < 2) throw new Error("원장이 비어 있습니다");
+    var lc = lg.getLastColumn();
+    var lh = lg.getRange(1, 1, 1, lc).getDisplayValues()[0];
+    var ix = {};
+    for (var h = 0; h < lh.length; h++) {
+      var hn = String(lh[h] || "").trim();
+      if (hn && ix[hn] === undefined) ix[hn] = h;
+    }
+    var G = function (r, n) { return ix[n] === undefined ? "" : String(r[ix[n]] || "").trim(); };
+    var lv = lg.getRange(2, 1, lg.getLastRow() - 1, lc).getDisplayValues();
+    for (var r = 0; r < lv.length; r++) {
+      var uid = G(lv[r], "사방넷주문번호") || G(lv[r], "고유ID");
+      var addr = G(lv[r], "주소1");
+      if (!uid || !addr) continue;
+      if (원본[uid]) continue;   // 한 주문의 여러 줄은 배송지가 같다
+      원본[uid] = {
+        주소: addr,
+        전화: G(lv[r], "전화"),
+        모바일: G(lv[r], "모바일"),
+        받는분: G(lv[r], "거래처명"),
+        메시지: G(lv[r], "배송메시지")
+      };
+    }
+  } catch (e1) {
+    var m1 = "세트분리 원장을 못 읽었습니다: " + (e1 && e1.message ? e1.message : e1);
+    if (ui) ui.alert(m1); else Logger.log(m1);
+    return;
+  }
+  var 원본수 = 0;
+  for (var k0 in 원본) if (Object.prototype.hasOwnProperty.call(원본, k0)) 원본수++;
+  줄.push("원장에서 읽은 주문 : " + 원본수 + "건");
+
+  // ── 2) 임시기록의 빈 주소를 채운다 ──
+  var 고침 = 0, 못찾음 = 0, 못찾은예 = [];
+  var tempSS = SpreadsheetApp.openById(_PT.INFO_SS_ID);
+  var tempTab = _pep_ensureNonPartnerTempTab_(tempSS);
+  if (tempTab && tempTab.getLastRow() > 1) {
+    var tc = Math.max(tempTab.getLastColumn(), 24);
+    var tv = tempTab.getRange(2, 1, tempTab.getLastRow() - 1, tc).getValues();
+    var 바뀜 = false;
+    for (var t = 0; t < tv.length; t++) {
+      var tu = String(tv[t][15] || "").trim();      // P열 = 사방넷주문번호
+      if (!tu) continue;
+      var 지금주소 = String(tv[t][9] || "").trim();   // J열 = 주소1
+      if (지금주소) continue;                          // 이미 있으면 안 건드린다
+      var o = 원본[tu];
+      if (!o) {
+        못찾음++;
+        if (못찾은예.length < 5) 못찾은예.push(tu);
+        continue;
+      }
+      tv[t][9] = o.주소;
+      if (!String(tv[t][7] || "").trim()) tv[t][7] = o.전화;
+      if (!String(tv[t][8] || "").trim()) tv[t][8] = o.모바일;
+      if (!String(tv[t][12] || "").trim()) tv[t][12] = o.받는분;
+      if (!String(tv[t][10] || "").trim()) tv[t][10] = o.메시지;
+      고침++; 바뀜 = true;
+    }
+    if (바뀜) tempTab.getRange(2, 1, tv.length, tc).setValues(tv);
+  }
+  줄.push("임시기록 주소 채움 : " + 고침 + "건" +
+    (못찾음 ? "  (원장에서 못 찾음 " + 못찾음 + "건" +
+      (못찾은예.length ? " — " + 못찾은예.join(", ") : "") + ")" : ""));
+
+  var msg = "주소 메우기" + NLx + NLx + 줄.join(NLx) + NLx + NLx +
+    "업체 발주 파일은 「partnerFillMissingAddressVendors」 로 이어서 메웁니다.";
+  Logger.log(msg);
+  if (ui) ui.alert(msg);
+  return { 고침: 고침, 못찾음: 못찾음 };
+}
+
+/**
+ * 업체 발주 파일의 «빈 주소»를 메운다. partnerFillMissingAddress 다음에 돌린다.
+ *
+ * ★ 업체마다 주소 칸이 다르다 ★
+ *   _PEP_VENDOR_DIRECT_MAP_ 의 sourceToTarget 이 이미 그 짝을 들고 있다.
+ *   sourceCol 9 = J(주소1) 인 항목의 targetCol 이 그 업체의 주소 칸이다.
+ *   표를 새로 만들지 않는다 — 두 벌이 되면 한쪽이 늦게 고쳐지고 조용히 틀린다.
+ *
+ * ★ 비어 있을 때만 채운다 ★ 사람이 적어 둔 것을 덮으면 되돌릴 수 없다.
+ * ★ 이번 달·지난달 탭만 본다 ★ 더 거슬러 갈 이유가 없고, 넓게 열면 느리다.
+ */
+function partnerFillMissingAddressVendors() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  var NLx = String.fromCharCode(10);
+
+  // ── 원본: 세트분리 원장 ──
+  var 원본 = {};
+  try {
+    var sss = SpreadsheetApp.openById(_PEP_FIX_SRC_SS_);
+    var lg = sss.getSheetByName(_PEP_FIX_SRC_TAB_);
+    var lc = lg.getLastColumn();
+    var lh = lg.getRange(1, 1, 1, lc).getDisplayValues()[0];
+    var ix = {};
+    for (var h = 0; h < lh.length; h++) {
+      var hn = String(lh[h] || "").trim();
+      if (hn && ix[hn] === undefined) ix[hn] = h;
+    }
+    var G = function (r, n) { return ix[n] === undefined ? "" : String(r[ix[n]] || "").trim(); };
+    var lv = lg.getRange(2, 1, lg.getLastRow() - 1, lc).getDisplayValues();
+    for (var r = 0; r < lv.length; r++) {
+      var uid = G(lv[r], "사방넷주문번호") || G(lv[r], "고유ID");
+      var addr = G(lv[r], "주소1");
+      if (!uid || !addr || 원본[uid]) continue;
+      원본[uid] = { 9: addr, 7: G(lv[r], "전화"), 8: G(lv[r], "모바일"),
+        12: G(lv[r], "거래처명"), 10: G(lv[r], "배송메시지") };
+    }
+  } catch (e1) {
+    var m1 = "세트분리 원장을 못 읽었습니다: " + (e1 && e1.message ? e1.message : e1);
+    if (ui) ui.alert(m1); else Logger.log(m1);
+    return;
+  }
+
+  var files = _pt_listFiles();
+  var pfxToFile = _pep_buildPrefixToFileMap_(files);
+
+  /*  ★ 푸시가 쓰는 곳은 「전용양식」이다 ★  (2026-09-14 바로잡음)
+      처음엔 「전용발주 마감」 탭을 봤는데, 거기는 마감이 옮겨 «간 뒤»의 자리다.
+      아직 안 나간 줄은 전용양식에 있다. 둘 다 본다 — 마감이 이미 돌았으면
+      마감 탭에 있고, 아니면 전용양식에 있다. 어느 쪽이든 채워야 한다. */
+  var now = new Date();
+  var 탭이름들 = ["전용양식"];
+  for (var b = 0; b <= 1; b++) {
+    var d = new Date(now.getFullYear(), now.getMonth() - b, 1);
+    탭이름들.push("(" + d.getFullYear() + "년 " + (d.getMonth() + 1) + "월) " +
+      (typeof _PEA_TAB_SUFFIX !== "undefined" ? _PEA_TAB_SUFFIX : "전용발주 마감"));
+  }
+
+  var 줄 = [], 총고침 = 0;
+  for (var pfx in pfxToFile) {
+    if (!Object.prototype.hasOwnProperty.call(pfxToFile, pfx)) continue;
+    var map = _PEP_VENDOR_DIRECT_MAP_[pfx];
+    if (!map || !map.sourceToTarget) {
+      줄.push(pfx + " : 열 짝표가 없어 건너뜀 (_PEP_VENDOR_DIRECT_MAP_)");
+      continue;
+    }
+
+    //  이 업체의 «어느 칸»이 주소·전화·받는분인가 — 기존 표에서 그대로 꺼낸다
+    //  우리가 채울 줄 아는 칸은 다섯뿐이다 — 주소·전화·모바일·배송메시지·받는분
+    var 채울수있는 = { 7: 1, 8: 1, 9: 1, 10: 1, 12: 1 };
+    var 짝 = {};
+    for (var s = 0; s < map.sourceToTarget.length; s++) {
+      var st = map.sourceToTarget[s];
+      if (채울수있는[st.sourceCol]) 짝[st.sourceCol] = st.targetCol;
+    }
+    if (짝[9] === undefined) {
+      줄.push(pfx + " : 주소 칸이 짝표에 없어 건너뜀");
+      continue;
+    }
+
+    var 고침 = 0, 본탭 = [], 못본탭 = [];
+    var 빈주소 = 0, 못찾은ID = 0, 못찾은예 = [], 이미참 = 0, 치움 = 0;
+    try {
+      var vss = SpreadsheetApp.openById(pfxToFile[pfx].id);
+      for (var ti = 0; ti < 탭이름들.length; ti++) {
+        var t = vss.getSheetByName(탭이름들[ti]);
+        /*  ★ 탭 이름이 업체마다 조금씩 다르다 ★  (2026-09-14)
+            푸시(_pep_initVendorCache)는 「전용양식」을 못 찾으면 «이름에 그 말이
+            들어간» 탭을 찾는 폴백이 있다. 보수에는 그게 빠져서 로엔그린·와이에스·
+            인터웍스·제이엠이 통째로 건너뛰어졌다 — 푸시는 되는데 보수만 안 되면
+            사람은 「왜 이 업체만」 하고 헤맨다. 같은 규칙을 쓴다. */
+        if (!t) {
+          var 후보 = vss.getSheets();
+          for (var fi = 0; fi < 후보.length; fi++) {
+            if (후보[fi].getName().indexOf(탭이름들[ti]) !== -1) { t = 후보[fi]; break; }
+          }
+        }
+        if (!t && 탭이름들[ti] === "전용양식") {
+          //  「전용양식」이 이름의 일부로도 없으면, 「양식」이 든 탭까지 본다
+          var 후보2 = vss.getSheets();
+          for (var f2 = 0; f2 < 후보2.length; f2++) {
+            var nm2 = 후보2[f2].getName();
+            if (nm2.indexOf("양식") !== -1 && nm2.indexOf("마감") === -1) { t = 후보2[f2]; break; }
+          }
+        }
+        if (!t) { 못본탭.push(탭이름들[ti] + "(없음)"); continue; }
+        //  찾은 «실제» 이름을 적는다. 다른 탭을 봤는데 같은 이름으로 적으면 또 헤맨다.
+        탭이름들[ti + 1000] = t.getName();
+        if (t.getLastRow() < 2) { 못본탭.push(탭이름들[ti] + "(빈 탭)"); continue; }
+        var vc = t.getLastColumn(), vr = t.getLastRow();
+        var hdr = t.getRange(1, 1, 1, vc).getValues()[0];
+        var uidCol = -1;
+        for (var hi = hdr.length - 1; hi >= 0; hi--) {
+          if (String(hdr[hi] || "").replace(/\s/g, "") === "고유ID") { uidCol = hi; break; }
+        }
+        /*  전용양식은 AX열(50번째, 0기준 49)에 고유ID 를 적는다 — 머리글이
+            아직 없는 옛 파일도 있어 자리로 한 번 더 본다. */
+        if (uidCol < 0 && vc >= 50) uidCol = 49;
+        if (uidCol < 0) { 못본탭.push(탭이름들[ti] + "(고유ID 열 없음, " + vc + "열)"); continue; }
+        본탭.push(t.getName());
+        var vv = t.getRange(2, 1, vr - 1, vc).getValues();
+        var 바뀜 = false;
+        /*  ★ 마감 탭은 «한 칸» 밀린다 ★  (2026-09-14 실측)
+            전용양식 : 0 송장번호 · 1 이슈 · 2 고객명 · 4 수하인주소
+            마감 탭  : 0 이동일시 · 1 송장번호 · 2 이슈 · 3 고객명 · 5 수하인주소
+            마감이 옮겨 적을 때 맨 앞에 「이동일시」를 하나 붙이기 때문이다.
+            _PEP_VENDOR_DIRECT_MAP_ 의 자리는 «전용양식» 기준이라, 마감 탭에는
+            그대로 쓰면 한 칸 왼쪽 — 이름도 없는 빈 칸에 주소를 써 넣게 된다.
+            머리글 첫 칸이 「이동일시」면 그만큼 민다. 자리로 짐작하지 않는다. */
+        var off = (String(hdr[0] || "").replace(/\s/g, "") === "이동일시") ? 1 : 0;
+        var 주소칸 = 짝[9] + off;
+        for (var v = 0; v < vv.length; v++) {
+          var u = String(vv[v][uidCol] || "").trim();
+          if (!u) continue;
+          /*  ★ 「빈 주소가 없었다」와 「고유ID를 못 찾았다」를 갈라 센다 ★
+              한 문장으로 뭉쳐 두면 어느 쪽인지 알 수가 없어 또 물어봐야 한다. */
+          var 주소빔 = (주소칸 < vc) && !String(vv[v][주소칸] || "").trim();
+          if (!주소빔) { 이미참++; continue; }
+          빈주소++;
+          if (!원본[u]) {
+            못찾은ID++;
+            if (못찾은예.length < 5) 못찾은예.push(u);
+            continue;
+          }
+          for (var sc in 짝) {
+            if (!Object.prototype.hasOwnProperty.call(짝, sc)) continue;
+            var tc = 짝[sc] + off;
+            /*  ★ 어제 한 칸 밀려 쓴 것을 치운다 ★
+                오프셋을 모르던 판이 마감 탭의 tc-1 자리에 값을 넣었다.
+                그 자리에 «원장과 똑같은» 값이 있을 때만 지운다 — 다른 값이면
+                사람이 적은 것일 수 있으므로 건드리지 않는다. */
+            if (off && tc - 1 >= 0 && 원본[u][sc] &&
+                String(vv[v][tc - 1] || "").trim() === String(원본[u][sc]).trim()) {
+              vv[v][tc - 1] = "";
+              치움++;
+              바뀜 = true;
+            }
+            if (tc >= vc) continue;
+            if (String(vv[v][tc] || "").trim()) continue;   // 있으면 안 덮는다
+            var val = 원본[u][sc];
+            if (!val) continue;
+            vv[v][tc] = val;
+            if (Number(sc) === 9) 고침++;
+            바뀜 = true;
+          }
+        }
+        if (바뀜) t.getRange(2, 1, vv.length, vc).setValues(vv);
+      }
+    } catch (eV) {
+      줄.push(pfx + " : 못 읽음 — " + (eV && eV.message ? eV.message : eV));
+      continue;
+    }
+    /*  ★ 0 건이어도 말한다 ★
+        「채울 것이 없었다」와 「탭을 못 찾았다」가 똑같이 조용하면, 안 채워진
+        업체를 사람이 눈으로 찾아야 한다. 실제로 로엔그린이 그렇게 빠졌다. */
+    if (고침) {
+      줄.push(pfx + " : " + 고침 + "건" + (치움 ? " · 밀려 쓴 것 치움 " + 치움 + "칸" : "") +
+        (못찾은ID ? "  ⚠ 원장에 없는 고유ID " + 못찾은ID + "건 (" + 못찾은예.join(", ") + ")" : ""));
+      총고침 += 고침;
+    } else {
+      줄.push(pfx + " : 0건" +
+        (본탭.length ? "  [본 탭 " + 본탭.join(", ") + "]" : "") +
+        "  주소 있던 줄 " + 이미참 + " · 빈 줄 " + 빈주소 + (치움 ? " · 밀려 쓴 것 치움 " + 치움 : "") +
+        (못찾은ID ? " · 원장에 없는 고유ID " + 못찾은ID + "건 (" + 못찾은예.join(", ") + ")" : "") +
+        (못본탭.length ? "  (못 본 탭: " + 못본탭.join(", ") + ")" : ""));
+    }
+  }
+
+  var msg = "업체 발주 파일 주소 메우기" + NLx + NLx +
+    (줄.length ? 줄.join(NLx) : "채울 것이 없었습니다") + NLx + NLx +
+    "합계 " + 총고침 + "건";
+  Logger.log(msg);
+  if (ui) ui.alert(msg);
+  return 총고침;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  업체 발주서의 주소가 «원장과 같은가»
+ *  2026-09-14
+ *
+ *  > "다 다른곳으로 배송이 ㅜㅜ 끔찍하네"
+ *
+ *  ★ 안심시키는 말 대신 세어서 보여 준다 ★
+ *    「빈 것」과 「틀린 것」은 다르다. 빈 것은 업체가 못 보내고 물어본다 —
+ *    시끄럽지만 안전하다. 틀린 것은 조용히 남에게 간다.
+ *    그러니 «다른 줄이 몇 개인가»만 정확히 세면 된다. 0 이면 끝난 이야기다.
+ *
+ *  ★ 아무것도 고치지 않는다 ★  읽고 맞대어 볼 뿐이다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function partnerCheckVendorAddress() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  var NLx = String.fromCharCode(10);
+
+  var 원본 = {};
+  try {
+    var sss = SpreadsheetApp.openById(_PEP_FIX_SRC_SS_);
+    var lg = sss.getSheetByName(_PEP_FIX_SRC_TAB_);
+    var lc = lg.getLastColumn();
+    var lh = lg.getRange(1, 1, 1, lc).getDisplayValues()[0];
+    var ix = {};
+    for (var h = 0; h < lh.length; h++) {
+      var hn = String(lh[h] || "").trim();
+      if (hn && ix[hn] === undefined) ix[hn] = h;
+    }
+    var G = function (r, n) { return ix[n] === undefined ? "" : String(r[ix[n]] || "").trim(); };
+    var lv = lg.getRange(2, 1, lg.getLastRow() - 1, lc).getDisplayValues();
+    for (var r = 0; r < lv.length; r++) {
+      var uid = G(lv[r], "사방넷주문번호") || G(lv[r], "고유ID");
+      var addr = G(lv[r], "주소1");
+      if (!uid || !addr || 원본[uid]) continue;
+      원본[uid] = addr;
+    }
+  } catch (e1) {
+    var m1 = "세트분리 원장을 못 읽었습니다: " + (e1 && e1.message ? e1.message : e1);
+    if (ui) ui.alert(m1); else Logger.log(m1);
+    return;
+  }
+
+  //  주소를 비교할 때는 «자잘한 차이»를 턴다. 괄호·공백까지 같아야 할 이유는 없다.
+  var 납작 = function (v) {
+    return String(v == null ? "" : v).replace(/[\s()\[\]{},.\-_\/]/g, "");
+  };
+
+  var files = _pt_listFiles();
+  var pfxToFile = _pep_buildPrefixToFileMap_(files);
+  var now = new Date();
+  var 탭이름들 = ["전용양식"];
+  for (var b = 0; b <= 1; b++) {
+    var d = new Date(now.getFullYear(), now.getMonth() - b, 1);
+    탭이름들.push("(" + d.getFullYear() + "년 " + (d.getMonth() + 1) + "월) " +
+      (typeof _PEA_TAB_SUFFIX !== "undefined" ? _PEA_TAB_SUFFIX : "전용발주 마감"));
+  }
+
+  var 같음 = 0, 빔 = 0, 다름 = [], 원장없음 = 0, 줄 = [];
+  for (var pfx in pfxToFile) {
+    if (!Object.prototype.hasOwnProperty.call(pfxToFile, pfx)) continue;
+    var map = _PEP_VENDOR_DIRECT_MAP_[pfx];
+    if (!map || !map.sourceToTarget) continue;
+    var 주소자리 = -1;
+    for (var s2 = 0; s2 < map.sourceToTarget.length; s2++) {
+      if (map.sourceToTarget[s2].sourceCol === 9) { 주소자리 = map.sourceToTarget[s2].targetCol; break; }
+    }
+    if (주소자리 < 0) continue;
+
+    var p같음 = 0, p빔 = 0, p다름 = 0;
+    try {
+      var vss = SpreadsheetApp.openById(pfxToFile[pfx].id);
+      for (var ti = 0; ti < 탭이름들.length; ti++) {
+        var t = vss.getSheetByName(탭이름들[ti]);
+        if (!t) {
+          var 후보 = vss.getSheets();
+          for (var fi = 0; fi < 후보.length; fi++) {
+            if (후보[fi].getName().indexOf(탭이름들[ti]) !== -1) { t = 후보[fi]; break; }
+          }
+        }
+        if (!t || t.getLastRow() < 2) continue;
+        var vc = t.getLastColumn();
+        var hdr = t.getRange(1, 1, 1, vc).getValues()[0];
+        var uidCol = -1;
+        for (var hi = hdr.length - 1; hi >= 0; hi--) {
+          if (String(hdr[hi] || "").replace(/\s/g, "") === "고유ID") { uidCol = hi; break; }
+        }
+        if (uidCol < 0 && vc >= 50) uidCol = 49;
+        if (uidCol < 0) continue;
+        var off = (String(hdr[0] || "").replace(/\s/g, "") === "이동일시") ? 1 : 0;
+        var ac = 주소자리 + off;
+        if (ac >= vc) continue;
+        var vv = t.getRange(2, 1, t.getLastRow() - 1, vc).getValues();
+        for (var v = 0; v < vv.length; v++) {
+          var u = String(vv[v][uidCol] || "").trim();
+          if (!u) continue;
+          var 있는주소 = String(vv[v][ac] || "").trim();
+          if (!원본[u]) { 원장없음++; continue; }
+          if (!있는주소) { 빔++; p빔++; continue; }
+          if (납작(있는주소) === 납작(원본[u])) { 같음++; p같음++; continue; }
+          //  앞부분이 같으면 잘려 들어간 것이다 — 틀린 곳이 아니다
+          var a = 납작(있는주소), b2 = 납작(원본[u]);
+          if (a.length >= 8 && b2.indexOf(a) === 0) { 같음++; p같음++; continue; }
+          다름++;
+          p다름++;
+          if (다름.length < 20) {
+            다름.push(pfx + " " + t.getName() + " " + (v + 2) + "행  " + u +
+              NLx + "    발주서: " + 있는주소.substring(0, 40) +
+              NLx + "    원장  : " + String(원본[u]).substring(0, 40));
+          }
+        }
+      }
+    } catch (eV) { 줄.push(pfx + " : 못 읽음 — " + (eV && eV.message ? eV.message : eV)); continue; }
+    줄.push(pfx + " : 같음 " + p같음 + " · 빔 " + p빔 + (p다름 ? "  ⚠ 다름 " + p다름 : ""));
+  }
+
+  var 다름수 = 0;
+  for (var z = 0; z < 줄.length; z++) { }
+  다름수 = 다름.length;
+  var 머리 = 다름수
+    ? "⚠ 원장과 «다른» 주소가 " + 다름수 + "줄 있습니다 — 아래를 보세요"
+    : "✅ 원장과 다른 주소는 «한 줄도» 없습니다. 엉뚱한 곳으로 간 건 없습니다.";
+  var msg = "업체 발주서 주소 맞대보기" + NLx + NLx + 머리 + NLx + NLx +
+    줄.join(NLx) + NLx + NLx +
+    "합계 : 같음 " + 같음 + " · 빈 줄 " + 빔 + " · 다름 " + 다름수 +
+    " · 원장에 없는 고유ID " + 원장없음 +
+    (다름.length ? NLx + NLx + 다름.join(NLx) : "");
+  Logger.log(msg);
+  if (ui) ui.alert(msg);
+  return { 같음: 같음, 빔: 빔, 다름: 다름수 };
+}
