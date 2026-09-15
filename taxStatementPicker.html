@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: "맑은 고딕", "Malgun Gothic", Apple SD Gothic Neo, sans-serif;
+    font-size: 13px; margin: 0; padding: 12px 14px;
+    color: #222; background: #fff;
+    display: flex; flex-direction: column; height: 100vh;
+  }
+  #wrap, table { background: #fff; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .bar label { font-weight: bold; color: #444; }
+  select, input[type=text] {
+    font: inherit; padding: 5px 7px; border: 1px solid #bbb; border-radius: 4px;
+  }
+  select { min-width: 220px; }
+  input#month { width: 100px; }
+  input#q { width: 200px; }
+  button {
+    font: inherit; padding: 6px 12px; border: 1px solid #1f4e78; border-radius: 4px;
+    background: #1f4e78; color: #fff; cursor: pointer;
+  }
+  button.ghost { background: #fff; color: #1f4e78; }
+  button:disabled { opacity: .45; cursor: default; }
+  .hint { color: #777; font-size: 12px; }
+  #wrap { flex: 1; overflow: auto; border: 1px solid #d5d5d5; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 4px 7px; border-bottom: 1px solid #eee; white-space: nowrap; }
+  th {
+    position: sticky; top: 0; background: #1f4e78; color: #fff; font-weight: bold;
+    text-align: left; z-index: 1;
+  }
+  td.num, th.num { text-align: right; }
+  tr.on { background: #e8f0fa; }
+  tr:hover { background: #f4f7fb; }
+  td.nm { white-space: normal; max-width: 320px; }
+  .tag {
+    display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 11px;
+    background: #eceff1; color: #546e7a;
+  }
+  .tag.live { background: #fff3e0; color: #e65100; }
+  #foot {
+    display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap;
+  }
+  #sum { font-weight: bold; }
+  #msg { margin-top: 6px; font-size: 12px; min-height: 16px; }
+  #msg.err { color: #c62828; }
+  #msg.ok { color: #1b5e20; }
+  a { color: #1565c0; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <label>거래처</label>
+  <select id="vendor"></select>
+  <label>대상월</label>
+  <input type="text" id="month" placeholder="yyyy-MM">
+  <label><input type="checkbox" id="live"> 마감 전 건도 포함</label>
+  <button id="load" onclick="load()">불러오기</button>
+  <button class="ghost" id="sync" onclick="syncVendors()" title="[협력업체] 폴더를 다시 훑어 거래처 목록을 채웁니다">🔄 거래처 목록 동기화</button>
+  <span class="hint" id="src"></span>
+</div>
+
+<div class="bar">
+  <button class="ghost" onclick="setAll(true)">전체 선택</button>
+  <button class="ghost" onclick="setAll(false)">전체 해제</button>
+  <button class="ghost" onclick="selectFiltered()">검색결과만 선택</button>
+  <label>검색</label>
+  <input type="text" id="q" placeholder="품목명·코드" oninput="applyFilter()">
+</div>
+
+<div id="wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:34px"></th>
+        <th style="width:52px">일자</th>
+        <th style="width:96px">품목코드</th>
+        <th>품 목 명</th>
+        <th style="width:80px">규격</th>
+        <th class="num" style="width:64px">수량</th>
+        <th class="num" style="width:80px">단가</th>
+        <th class="num" style="width:92px">금액</th>
+        <th style="width:110px">출처</th>
+      </tr>
+    </thead>
+    <tbody id="body"></tbody>
+  </table>
+</div>
+
+<div id="foot">
+  <span id="sum">선택 0건 · 0원</span>
+  <button id="btnTab" onclick="issue(false)" disabled>탭만 생성</button>
+  <button id="btnPdf" onclick="issue(true)" disabled>탭 + PDF 저장</button>
+  <span class="hint">명세표 탭은 해당 협력업체 파일 안에 생깁니다.</span>
+</div>
+<div id="msg"></div>
+
+<script>
+var ROWS = [];       // 전체 줄
+var PICK = {};       // 선택된 키
+var SHOWN = [];      // 필터 통과한 인덱스
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function comma(n) {
+  return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+function say(text, cls) {
+  var m = document.getElementById("msg");
+  m.className = cls || "";
+  m.innerHTML = text;
+}
+
+function fillVendors(list) {
+  var sel = document.getElementById("vendor");
+  sel.innerHTML = "";
+  if (!list.length) {
+    sel.innerHTML = '<option value="">거래처 없음 — 오른쪽 「🔄 거래처 목록 동기화」를 누르세요</option>';
+    document.getElementById("load").disabled = true;
+    return;
+  }
+  document.getElementById("load").disabled = false;
+  list.forEach(function (v) {
+    var o = document.createElement("option");
+    o.value = v.id;
+    o.textContent = v.name + (v.biz ? "" : "  (등록번호 미입력)");
+    sel.appendChild(o);
+  });
+}
+
+google.script.run.withSuccessHandler(function (json) {
+  var d = JSON.parse(json);
+  document.getElementById("month").value = d.month;
+  fillVendors(d.vendors);
+  if (!d.vendors.length) {
+    say("거래처 목록이 비어 있습니다. 「🔄 거래처 목록 동기화」를 먼저 누르세요.", "err");
+  }
+}).withFailureHandler(function (e) {
+  say("초기화 실패: " + esc(e.message), "err");
+}).ptsPickerInit();
+
+function syncVendors() {
+  var b = document.getElementById("sync");
+  b.disabled = true;
+  say("[협력업체] 폴더를 훑는 중… 30초쯤 걸릴 수 있습니다.");
+  google.script.run.withSuccessHandler(function (json) {
+    b.disabled = false;
+    var d = JSON.parse(json);
+    fillVendors(d.vendors);
+    say("폴더 파일 " + d.files + "건 · 추가 " + d.added +
+      " · 파일명 갱신 " + d.renamed + " → 거래처 " + d.vendors.length + "곳", "ok");
+  }).withFailureHandler(function (e) {
+    b.disabled = false;
+    say("동기화 실패: " + esc(e.message), "err");
+  }).ptsPickerSyncVendors();
+}
+
+function load() {
+  var fileId = document.getElementById("vendor").value;
+  var ym = document.getElementById("month").value.trim();
+  if (!fileId) { say("거래처를 고르세요.", "err"); return; }
+  if (!/^\d{4}-\d{1,2}$/.test(ym)) { say("대상월을 yyyy-MM 으로 입력하세요.", "err"); return; }
+
+  document.getElementById("load").disabled = true;
+  say("불러오는 중… (협력업체 파일을 여는 중이라 몇 초 걸립니다)");
+  ROWS = []; PICK = {}; render();
+
+  google.script.run.withSuccessHandler(function (json) {
+    document.getElementById("load").disabled = false;
+    var d = JSON.parse(json);
+    ROWS = d.rows || [];
+    PICK = {};
+    document.getElementById("src").textContent =
+      "원천 " + (d.tabs.join(" + ") || "없음") +
+      (d.skipped ? " · 취소반품 " + d.skipped + "행 제외" : "") +
+      (d.noInvoice ? " · 송장미발행 " + d.noInvoice + "행 제외" : "");
+    applyFilter();
+    if (!ROWS.length) {
+      say("해당 월에 금액이 있는 줄이 없습니다. 마감이 안 됐다면 「마감 전 건도 포함」을 켜 보세요.", "err");
+    } else {
+      var ex = (d.extras || []).map(function (e) { return e.n + " " + comma(e.a) + "원"; });
+      say(ROWS.length + "줄을 불러왔습니다." +
+        (ex.length ? " · 선택한 행에 딸린 정산항목(" + esc(ex.join(", ")) + ")은 자동 가산됩니다." : ""), "ok");
+    }
+  }).withFailureHandler(function (e) {
+    document.getElementById("load").disabled = false;
+    say("불러오기 실패: " + esc(e.message), "err");
+  }).ptsPickerLoad(fileId, ym, document.getElementById("live").checked);
+}
+
+function applyFilter() {
+  var q = document.getElementById("q").value.replace(/\s+/g, "").toLowerCase();
+  SHOWN = [];
+  for (var i = 0; i < ROWS.length; i++) {
+    if (!q) { SHOWN.push(i); continue; }
+    var hay = (ROWS[i].n + " " + ROWS[i].c).replace(/\s+/g, "").toLowerCase();
+    if (hay.indexOf(q) !== -1) SHOWN.push(i);
+  }
+  render();
+}
+
+function render() {
+  var out = [];
+  for (var j = 0; j < SHOWN.length; j++) {
+    var i = SHOWN[j];
+    var r = ROWS[i];
+    var on = PICK[r.k] ? " class='on'" : "";
+    var live = r.t.indexOf("마감") === -1;
+    out.push(
+      "<tr" + on + " data-i='" + i + "'>" +
+      "<td><input type='checkbox' " + (PICK[r.k] ? "checked" : "") +
+        " onchange='toggle(" + i + ", this.checked)'></td>" +
+      "<td>" + esc(r.d) + "</td>" +
+      "<td>" + esc(r.c) + "</td>" +
+      "<td class='nm'>" + esc(r.n) + "</td>" +
+      "<td>" + esc(r.s) + "</td>" +
+      "<td class='num'>" + comma(r.q) + "</td>" +
+      "<td class='num'>" + comma(r.u) + "</td>" +
+      "<td class='num'>" + comma(r.a) + "</td>" +
+      "<td><span class='tag" + (live ? " live" : "") + "'>" +
+        esc(live ? r.t : r.t.replace(/^\(\d+년 \d+월\) /, "")) + "</span></td>" +
+      "</tr>"
+    );
+  }
+  document.getElementById("body").innerHTML =
+    out.join("") ||
+    "<tr><td colspan='9' style='padding:18px;color:#888'>줄이 없습니다.</td></tr>";
+  updateSum();
+}
+
+function toggle(i, on) {
+  var k = ROWS[i].k;
+  if (on) PICK[k] = true; else delete PICK[k];
+  var tr = document.querySelector("tr[data-i='" + i + "']");
+  if (tr) tr.className = on ? "on" : "";
+  updateSum();
+}
+
+function setAll(on) {
+  for (var j = 0; j < SHOWN.length; j++) {
+    var k = ROWS[SHOWN[j]].k;
+    if (on) PICK[k] = true; else delete PICK[k];
+  }
+  render();
+}
+
+function selectFiltered() {
+  PICK = {};
+  setAll(true);
+}
+
+function updateSum() {
+  var n = 0, amt = 0;
+  for (var i = 0; i < ROWS.length; i++) {
+    if (PICK[ROWS[i].k]) { n++; amt += Number(ROWS[i].a) || 0; }
+  }
+  document.getElementById("sum").textContent =
+    "선택 " + n + "건 · " + comma(amt) + "원 (VAT 포함 기준)";
+  document.getElementById("btnTab").disabled = n === 0;
+  document.getElementById("btnPdf").disabled = n === 0;
+}
+
+function issue(wantPdf) {
+  var keys = Object.keys(PICK);
+  if (!keys.length) return;
+  document.getElementById("btnTab").disabled = true;
+  document.getElementById("btnPdf").disabled = true;
+  say("발행 중…");
+
+  google.script.run.withSuccessHandler(function (json) {
+    var d = JSON.parse(json);
+    say(
+      "✅ " + esc(d.name) + " · " + esc(d.period) + " · " + esc(d.docNo) + "<br>" +
+      "품목 " + d.rows + "줄 · 공급가액 " + comma(d.supply) +
+      " · 세액 " + comma(d.vat) + " · 합계 <b>" + comma(d.total) + "</b>원<br>" +
+      "<a href='" + d.sheetUrl + "' target='_blank'>거래명세표 탭 열기</a>" +
+      (d.pdfUrl ? " · <a href='" + d.pdfUrl + "' target='_blank'>PDF 열기</a>" : ""),
+      "ok"
+    );
+    updateSum();
+  }).withFailureHandler(function (e) {
+    say("발행 실패: " + esc(e.message), "err");
+    updateSum();
+  }).ptsPickerIssue(
+    document.getElementById("vendor").value,
+    document.getElementById("month").value.trim(),
+    JSON.stringify(keys),
+    wantPdf
+  );
+}
+</script>
+</body>
+</html>

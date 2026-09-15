@@ -148,12 +148,18 @@ function detectIntent_(text) {
         it.p.adjPct = parseFloat(adjMatch[1]) / 100 * (adjMatch[2].match(/내려|인하/) ? -1 : 1);
       }
 
-      // ③ 고정값: "90000으로"
+      // ③ 정액 조정 추가: "1000원 올려줘" / "500원씩 내려줘"
+      var adjValMatch = text.match(/([0-9,]+)\s*(?:원)?\s*(?:씩)?\s*(올려|내려|인상|인하)/);
+      if (adjValMatch && !adjMatch && !it.p.targetMargin) {
+        it.p.adjVal = parseFloat(adjValMatch[1].replace(/,/g,'')) * (adjValMatch[2].match(/내려|인하/) ? -1 : 1);
+      }
+
+      // ④ 고정값: "90000으로"
       var fixMatch = text.match(/([0-9,]+)\s*(?:원)?\s*으로\s*(?:설정|변경|수정|일괄)?/);
-      if (fixMatch && !adjMatch && !it.p.targetMargin)
+      if (fixMatch && !adjMatch && !adjValMatch && !it.p.targetMargin)
         it.p.fixVal = parseFloat(fixMatch[1].replace(/,/g,''));
 
-      // ④ 수정 컬럼 (targetMargin은 이미 판매가로 고정)
+      // ⑤ 수정 컬럼 (targetMargin은 이미 판매가로 고정)
       if (!it.p.col) {
         if (t.indexOf('판매가')!==-1) it.p.col='판매가';
         else if (t.indexOf('매입가')!==-1) it.p.col='개당매입가';
@@ -164,7 +170,7 @@ function detectIntent_(text) {
       var stMatch = text.match(/(판매중|품절|단종품|재고까지만)\s*(?:으로|로)/);
       if (stMatch) { it.p.col='상태'; it.p.fixVal=stMatch[1]; }
 
-      // ⑤ 필터 조건
+      // ⑥ 필터 조건
       if (it.p.codes && it.p.codes.length > 1) {
         it.p.filter = 'CODE_LIST'; // 다중 코드 → 코드 목록 필터
       } else if (t.match(/마진.*미만|미만.*마진/)) {
@@ -181,6 +187,24 @@ function detectIntent_(text) {
         it.p.filter='STATUS_EQ'; it.p.filterVal='품절';
       } else if (t.match(/판매중/)) {
         it.p.filter='STATUS_EQ'; it.p.filterVal='판매중';
+      } else {
+        // 특정 코드 접두사 필터 감지 (예: "NK 제품", "GW 품목")
+        var pfxMatch = text.match(/([a-zA-Z]{2})\s*(?:제품|품목|코드|업체|회사)/);
+        if (pfxMatch) {
+          it.p.filter = 'PREFIX';
+          it.p.filterVal = pfxMatch[1].toUpperCase();
+        } else {
+          // 특정 품목명 키워드 필터 감지 (예: "빨대 제품", "컵 품목")
+          var kwMatch = text.match(/(.+?)\s*(?:제품|품목|종류|라인|들|을|를)\s*(?:의)?\s*(?:판매가|매입가|재고|단가)?\s*(?:수정|변경|올려|내려|인상|인하|바꿔)/);
+          if (kwMatch) {
+            var kw = kwMatch[1].replace(/식/g,'').trim();
+            var stopWords = ["일괄", "모두", "전부", "전체", "가격", "단가", "판매가", "매입가", "재고", "상태", "마진", "이카운트"];
+            if (kw && stopWords.indexOf(kw) === -1 && kw.length >= 1) {
+              it.p.filter = 'KEYWORD';
+              it.p.filterVal = kw;
+            }
+          }
+        }
       }
       return it;
     }
@@ -454,6 +478,8 @@ function handleBulkEdit_(sh, cm, it) {
     if (f === 'STOCK_ZERO') pass = (st !== '단종품') && skv <= 0;
     if (f === 'PRICE_ZERO') pass = (st !== '단종품') && sp <= 0;
     if (f === 'STATUS_EQ') pass = (st === it.p.filterVal);
+    if (f === 'PREFIX')     pass = (st !== '단종품') && String(r[ks.cd]||'').toUpperCase().indexOf(it.p.filterVal) === 0;
+    if (f === 'KEYWORD')    pass = (st !== '단종품') && String(r[ks.nm]||'').indexOf(it.p.filterVal) !== -1;
     if (!pass) return;
 
     var curVal = r[colIdx-1];
@@ -469,6 +495,9 @@ function handleBulkEdit_(sh, cm, it) {
     } else if (it.p.adjPct !== undefined && it.p.adjPct !== null) {
       if (curNum <= 0) return;
       newVal = Math.round(curNum * (1 + it.p.adjPct));
+    } else if (it.p.adjVal !== undefined && it.p.adjVal !== null) {
+      // 정액 인상/인하 (음수 방지 최소 0)
+      newVal = Math.max(0, Math.round(curNum + it.p.adjVal));
     } else if (it.p.fixVal !== undefined) {
       newVal = it.p.fixVal;
     } else {
@@ -501,12 +530,18 @@ function handleBulkEdit_(sh, cm, it) {
     adjLabel = '목표마진 ' + Math.round(it.p.targetMargin*100) + '%';
   } else if (it.p.adjPct !== undefined) {
     adjLabel = (it.p.adjPct > 0 ? '+' : '') + Math.round(it.p.adjPct*100) + '%';
+  } else if (it.p.adjVal !== undefined) {
+    adjLabel = (it.p.adjVal > 0 ? '+' : '') + it.p.adjVal.toLocaleString() + '원';
   } else {
     adjLabel = String(it.p.fixVal);
   }
 
   var filterLabel = (it.p.filter === 'CODE_LIST')
     ? '지정 ' + it.p.codes.length + '개 코드'
+    : (it.p.filter === 'PREFIX')
+    ? '접두사 ' + it.p.filterVal
+    : (it.p.filter === 'KEYWORD')
+    ? '키워드 "' + it.p.filterVal + '"'
     : (it.p.filter || '전체');
 
   return JSON.stringify({
@@ -550,8 +585,8 @@ function callGemini_(msg, sh, cm) {
   try {
     var report = buildSystemReportContext_(sh, cm);
     
-    // ★ 2026-06-18: gemini-3.5-flash로 업그레이드 (복잡 추론 향상)
-    var model = "gemini-3.5-flash";
+    // ★ 2026-07-24: gemini-3.6-flash로 업그레이드
+    var model = "gemini-3.6-flash";
     var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + GEMINI_API_KEY;
     
     var prompt = "당신은 Pack2U 상품정보 분석 전문가 및 수정 제안 AI입니다.\n" +

@@ -1,0 +1,191 @@
+/**
+ * 협력업체 반품 포털 — 대장 열 찾기
+ * ★ 2026-09-09
+ *
+ *   node --test Partner_WebApp/_prpcols_test.js
+ *
+ * ★ 왜 있나 ★
+ *   9월 탭(202609)에서 대장 머리글이 두 군데 바뀌었다 —
+ *     D열  「업체명」        → 「주문지」
+ *     H열  (없던 것)         → 「반품송장번호」가 끼어 뒤가 한 칸씩 밀림
+ *   포털은 「주문지」를 몰라 col.vendor 가 -1 이 되었고,
+ *   **협력업체가 반품 접수를 아예 못 했다** (당장드림 신고, 2026-09-09).
+ *
+ *   반품비도 같이 틀렸다. 머리글이 「반품/환불비용」인데 가운데 「/」 때문에
+ *   「반품비」로 안 걸려 M열 폴백으로 떨어졌고, 9월의 M열은 「회수신청」이라
+ *   「자동회수」 같은 글자를 금액으로 읽었다. 업체 화면의 「반품비 합계」가
+ *   0원이던 것이 이것이다.
+ *
+ * ★ 머리글은 앞으로도 바뀐다 ★
+ *   사람이 쓰는 시트다. 그러니 「지금 맞다」가 아니라 **달마다 다른 머리글을
+ *   다 넣어 두고** 돌린다. 다음에 누가 또 바꾸면 여기가 먼저 운다.
+ */
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("fs");
+const path = require("path");
+
+/* prpLedger.gs 에서 매핑 함수만 떼어 온다. GAS 파일이라 require 가 안 된다. */
+function loadMapper() {
+  const src = fs.readFileSync(path.join(__dirname, "prpLedger.gs"), "utf8");
+  const from = src.indexOf("function prpMapCols_");
+  assert.ok(from >= 0, "prpMapCols_ 를 못 찾았습니다");
+  const end = src.indexOf("\n}", src.indexOf("return col;", from));
+  assert.ok(end > from, "prpMapCols_ 의 끝을 못 찾았습니다");
+  const fn = { prpMapCols_: null };
+  new Function("out", src.slice(from, end + 2) + "\nout.prpMapCols_ = prpMapCols_;")(fn);
+  return fn.prpMapCols_;
+}
+const prpMapCols_ = loadMapper();
+
+const split = (s) => s.split("|");
+
+/** 2026-09-09 실측 — D열이 「주문지」, H열에 반품송장번호가 끼어 있다 */
+const H202609 = split(
+  "|반품접수날짜|접수자|주문지|반품신청자/수취인명|연락처|추가연락처|반품송장번호|" +
+  "상품명|수량|원송장번호|재출고/단순/오주문입력/오배송|회수신청|반품/환불비용|" +
+  "이카운트 반영|비고 및추가처리사항|||||반품송장번호"
+);
+
+/** 8월 — 예전 모양 */
+const H202608 = split(
+  "|반품접수날짜|접수자|업체명|반품신청자/수취인명|연락처|추가연락처|상품명|수량|" +
+  "원송장번호|교환/반품|고객오주문/오배송|선출고/입고검수후출고|처리상태|" +
+  "비고 및추가처리사항|이카운트 반영|반품송장번호"
+);
+
+test("★ 9월 「주문지」를 업체 열로 읽는다 ★ — 접수를 막던 그것", () => {
+  const c = prpMapCols_(H202609);
+  assert.equal(c.vendor, 3, "col.vendor 가 -1 이면 협력업체가 접수를 못 한다");
+  assert.equal(H202609[c.vendor], "주문지");
+});
+
+test("8월 「업체명」도 그대로 읽는다 — 옛 탭을 깨지 않는다", () => {
+  const c = prpMapCols_(H202608);
+  assert.equal(c.vendor, 3);
+  assert.equal(H202608[c.vendor], "업체명");
+});
+
+test("★ 9월에 한 칸 밀린 열들이 제자리를 찾는다 ★", () => {
+  const c = prpMapCols_(H202609);
+  assert.equal(H202609[c.item], "상품명");
+  assert.equal(H202609[c.qty], "수량");
+  assert.equal(H202609[c.invoice], "원송장번호");
+  //  H열에 새로 끼어든 반품송장번호를 원송장으로 잘못 잡으면 안 된다
+  assert.notEqual(c.invoice, 7);
+});
+
+test("★ 9월 반품비는 「반품/환불비용」이다 ★ — M열 폴백이 회수신청을 읽던 것", () => {
+  const c = prpMapCols_(H202609);
+  assert.equal(H202609[c.fee], "반품/환불비용");
+  assert.notEqual(c.fee, 12, "12번은 「회수신청」이다 — 금액이 아니다");
+});
+
+test("옛 탭은 M열 폴백을 그대로 쓴다 — 거기엔 실제로 반품비가 적혀 있다", () => {
+  const c = prpMapCols_(H202608);
+  //  머리글이 「선출고/입고검수후출고」라 이름으로는 못 찾는다. 그래도 M(12)이다.
+  assert.equal(c.fee, 12);
+});
+
+test("머리글이 아예 비어도 M열로 떨어진다 — 옛 자료가 죽지 않게", () => {
+  const c = prpMapCols_(["", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+  assert.equal(c.fee, 12);
+});
+
+test("반품송장번호를 원송장으로 잡지 않는다", () => {
+  const c = prpMapCols_(H202609);
+  assert.ok(c.returnInvoice >= 0);
+  assert.equal(H202609[c.returnInvoice], "반품송장번호");
+  assert.notEqual(c.returnInvoice, c.invoice);
+});
+
+test("A열은 늘 처리상태다 — 머리글이 뭐든 자리로 못 박는다", () => {
+  assert.equal(prpMapCols_(H202609).status, 0);
+  assert.equal(prpMapCols_(H202608).status, 0);
+});
+
+/* ─────────────────────────────────────────────────────────────
+   실 전화번호 (추가연락처) — 2026-09-09
+   > "안심번호외에 실 전화번호입력을 할수 있게"
+   ───────────────────────────────────────────────────────────── */
+
+test("★ 추가연락처를 따로 찾는다 ★ — 실 전화번호가 들어갈 자리", () => {
+  const c = prpMapCols_(H202609);
+  assert.equal(H202609[c.phone2], "추가연락처");
+  assert.equal(H202609[c.phone], "연락처");
+  assert.notEqual(c.phone, c.phone2, "둘이 같은 열이면 하나가 다른 하나를 덮는다");
+});
+
+test("★ 「추가연락처」가 주 연락처 자리를 뺏지 않는다 ★", () => {
+  //  /연락처/ 는 「추가연락처」에도 걸린다. 순서에 기대면 열 순서가 바뀌는 날
+  //  추가연락처가 주 연락처가 된다 — 그러면 고객에게 못 건다.
+  const 뒤바뀜 = ["", "반품접수날짜", "접수자", "주문지", "반품신청자/수취인명",
+                  "추가연락처", "연락처", "반품송장번호", "상품명", "수량", "원송장번호"];
+  const c = prpMapCols_(뒤바뀜);
+  assert.equal(뒤바뀜[c.phone], "연락처");
+  assert.equal(뒤바뀜[c.phone2], "추가연락처");
+});
+
+test("8월 탭에도 추가연락처가 있다 — 옛 접수도 실 번호를 적을 수 있다", () => {
+  const c = prpMapCols_(H202608);
+  assert.equal(H202608[c.phone2], "추가연락처");
+});
+
+test("추가연락처 열이 없으면 -1 — 부르는 쪽이 비고로 돌린다", () => {
+  const 없음 = ["", "반품접수날짜", "접수자", "업체명", "반품신청자/수취인명",
+                "연락처", "상품명", "수량", "원송장번호"];
+  const c = prpMapCols_(없음);
+  assert.equal(c.phone2, -1);
+  assert.equal(없음[c.phone], "연락처");
+});
+
+/* ─────────────────────────────────────────────────────────────
+   실번호의 주인 이름 — 2026-09-11
+   > "실번호에 이름 넣는 칸도 만들어줘... 주문자와 상담자가 다른경우가 있어"
+
+   대장 9탭 전부에 「실번호 이름」 열을 맨 뒤로 만들었다.
+   CS 웹앱(_cs_mapReturnLedgerCols_)과 «같은 규칙»이라야 한다 —
+   한쪽만 알면 열은 생겼는데 다른 쪽은 못 읽고, 오류는 안 난다.
+   ───────────────────────────────────────────────────────────── */
+
+const H실이름 = ["", "반품접수날짜", "접수자", "주문지", "반품신청자/수취인명",
+                 "연락처", "추가연락처", "반품송장번호", "상품명", "수량",
+                 "원송장번호", "재출고/단순/오주문입력/오배송", "회수신청",
+                 "반품/환불비용", "이카운트 반영", "비고 및추가처리사항", "실번호 이름"];
+
+test("★ 「실번호 이름」을 제 열로 찾는다 ★", () => {
+  const c = prpMapCols_(H실이름);
+  assert.equal(H실이름[c.phone2Name], "실번호 이름");
+});
+
+test("★ 이름 열이 실번호 자리를 뺏지 않는다 ★ — 기사에게 번호 대신 이름을 줄 뻔", () => {
+  //  /실번호/ 는 「실번호 이름」에도 걸린다. 이름 쪽을 먼저 거르지 않으면
+  //  phone2 에 사람 이름이 들어가고, 회수 기사는 걸 번호를 못 받는다.
+  const c = prpMapCols_(H실이름);
+  assert.equal(H실이름[c.phone2], "추가연락처");
+  assert.equal(H실이름[c.phone], "연락처");
+  assert.notEqual(c.phone2, c.phone2Name);
+});
+
+test("이름 열이 «먼저» 와도 마찬가지다", () => {
+  const 앞에 = ["", "반품접수날짜", "접수자", "주문지", "반품신청자/수취인명",
+                "실번호 이름", "추가연락처", "연락처", "상품명"];
+  const c = prpMapCols_(앞에);
+  assert.equal(앞에[c.phone2Name], "실번호 이름");
+  assert.equal(앞에[c.phone2], "추가연락처");
+  assert.equal(앞에[c.phone], "연락처");
+});
+
+test("다른 이름도 같은 열로 본다 — 상담자 · 통화자", () => {
+  ["상담자", "통화자", "추가연락처 이름"].forEach((낱말) => {
+    const h = ["", "반품접수날짜", "접수자", "주문지", "반품신청자/수취인명",
+               "연락처", "추가연락처", 낱말, "상품명"];
+    const c = prpMapCols_(h);
+    assert.equal(h[c.phone2Name], 낱말, 낱말 + " 를 못 찾았다");
+    assert.equal(h[c.phone2], "추가연락처", 낱말 + " 가 실번호 자리를 뺏었다");
+  });
+});
+
+test("이름 열이 없는 옛 탭은 -1 — 그때는 비고로 흘린다", () => {
+  assert.equal(prpMapCols_(H202609).phone2Name, -1);
+});

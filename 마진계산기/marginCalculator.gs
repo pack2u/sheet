@@ -42,7 +42,7 @@ function setupMarginCalculatorTab() {
     
     // 헤더 작성
     var headers = [
-      ["이카운트 코드", "상품명(F)", "기존 판매가(X)", "적용될 신규판매가(X)", "계산된 기본원가(N*V+O+S)", "연동(반영) 결과"]
+      ["이카운트 코드", "상품명(F)", "기존 판매가(X)", "적용될 신규판매가(X)", "계산된 기본원가(N*V+Q+S)", "연동(반영) 결과"]
     ];
     sheet.getRange("A3:F3").setValues(headers)
          .setBackground("#4a86e8").setFontColor("white").setFontWeight("bold").setHorizontalAlignment("center");
@@ -167,14 +167,14 @@ function runMarginCalculationCore(isCommit) {
       // 각 열별 데이터 파싱 (1-indexed 열번호 -> 0-indexed 인덱스로 매칭)
       let itmName = mmRow[2] || "이름없음"; // C열 (상품명, idx 2)
       let N = parseFloat(mmRow[13]) || 0; // N열 (박스입수량, idx 13)
-      let O = parseFloat(mmRow[14]) || 0; // O열 (박스배송비, idx 14)
+      let Q = parseFloat(mmRow[16]) || 0; // Q열 (박스배송비, idx 16)
       let S = parseFloat(mmRow[18]) || 0; // S열 (포장비, idx 18)
       let V = parseFloat(mmRow[21]) || 0; // V열 (원가/매입가, idx 21)
       let oldX = parseFloat(mmRow[23]) || 0; // X열 (기존 오프라인판매가, idx 23)
       
-      // 핵심 함수: ROUNDUP(((N*V)+O+S) / (1-마진율), -3 등)
+      // 핵심 함수: ROUNDUP(((N*V)+Q+S) / (1-마진율), -3 등)
       let denom = 1 - marginRate;
-      let baseCost = (N * V) + O + S;
+      let baseCost = (N * V) + Q + S;
       let rawNewX = denom > 0 ? (baseCost / denom) : 0;
       
       // 사용자 지정 올림 로직 (100원 단위면 /100 * 100, 1000원 단위면 /1000 * 1000)

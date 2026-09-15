@@ -17,7 +17,7 @@ var _PT = {
   INFO_SS_ID: "1Lz-ykUAQBpeEnZU1T_qdJeX9d9L10h6z6qYwHQna2QE",
   FOLDER_ID: "1IqqPLKxBNrqh-u14Op6jKNN7khzE13Cl",
   FOLDER_ID2: "1J0f8HjtartQwixF3xKQf0p7fvr04Ef7v",
-  TEMPLATE_ID: "1ZT9hqXXOSuSYRS6gYaJUhvVpTHDql6HokqExJdPcbiA",
+  TEMPLATE_ID: "1UL96S9_mNpJF4Yyxye1fIljOp0pInx-ps03N-NrILho", // ★ 2026-07-15: 신규 템플릿으로 교체
   PREFIX: "[협력업체] ",
 };
 
@@ -97,7 +97,7 @@ function _pt_listFiles(opt_forceRefresh) {
         seen[id] = true;
         // "[협력업체]_" → "[협력업체] " 로 정규화 (일관성 유지)
         var normalizedName = nm.replace(PREFIX_UNDERSCORE, _PT.PREFIX);
-        out.push({ id: id, name: normalizedName });
+        out.push({ id: id, name: normalizedName, modified: f.getLastUpdated().getTime() });
       }
     } catch (e) {
       // ★ 2026-06-22: 에러 로깅 추가 (무음 삼킴 방지)
@@ -123,141 +123,342 @@ function _pt_listFiles(opt_forceRefresh) {
 }
 
 // ═══════════════════════════════════════════
-//  유틸: Row 3 수식 적용 (6단계 정본 복사)
+//  유틸: _data 숨김 탭 생성/확인
+//  ★ 2026-07-07: IMPORTRANGE 1회 통합 — 단가조회 속도 개선
+//  기존: 8개 열 × 2회 = 16회 IMPORTRANGE → 시트 열 때 10~30초
+//  개선: _data 탭에 1회 IMPORTRANGE → 뷰어 수식은 로컬 참조 → 3~8초
 // ═══════════════════════════════════════════
+var _PT_DATA_TAB_NAME = "_data";
+
+function _pt_ensureDataTab(ss, hubId) {
+  var dt = ss.getSheetByName(_PT_DATA_TAB_NAME);
+  if (!dt) {
+    dt = ss.insertSheet(_PT_DATA_TAB_NAME);
+  }
+
+  // ★ 2026-08-02: 허브 상품 3000+개 → _data 기본(~1000행)에서 잘리던 문제
+  //   뷰어와 동일하게 5000행 확보 (스필 상한 = 시트 maxRows)
+  _pt_ensureMinRows(dt, 5000);
+
+  // ★ 항상 현재 hubId로 수식 갱신 (템플릿 복사본의 잘못된/빈 IMPORTRANGE 잔재 제거)
+  //   A:AZ — 그룹 단가 열이 Z를 넘는 경우 대비 (목록 C열 + 다수 그룹 단가)
+  var want =
+    '=IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!A:AZ")';
+  var cur = String(dt.getRange("A1").getFormula() || "");
+  if (cur !== want) {
+    dt.getRange("A1").setFormula(want);
+  }
+
+  try { dt.hideSheet(); } catch (e) {}
+  try {
+    var p = dt.protect().setDescription("_data_가격캐시_자동생성");
+    p.setWarningOnly(true);
+  } catch (e2) {}
+  return dt;
+}
+
+// ═══════════════════════════════════════════
+//  유틸: Row 3 수식 적용
+//  ★ 2026-07-07 14:00: _data 탭 방식 롤백 → 기존 IMPORTRANGE 방식 복원
+//  (_data 탭이 A:Z 전체를 임포트하여 오히려 느려지는 문제)
+//  캐시 프리워밍(Phase 1)은 유지
+// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+//  유틸: Row 3 수식 적용 (로컬 _data 탭 참조 방식 적용 — IMPORTRANGE 17회 중복 타임아웃 차단)
+// ═══════════════════════════════════════════
+/**
+ * ★ 2026-08-02: 허브「전체 그룹 단가표」를 스크립트로 읽어 뷰어 A~J에 값으로 채움
+ * IMPORTRANGE 액세스 허용이 없어도 생성 직후 전체 상품이 표시됨
+ * @returns {number} 채운 품목 수
+ */
+function _pt_seedViewerFromHub_(sheet, hubId, isConsumer, dcMul) {
+  if (!sheet || !hubId) return 0;
+  var hubSS = SpreadsheetApp.openById(hubId);
+  var hubTab = hubSS.getSheetByName("전체 그룹 단가표");
+  if (!hubTab) throw new Error("허브에 '전체 그룹 단가표' 탭 없음");
+
+  var hubLr = hubTab.getLastRow();
+  if (hubLr < 3) return 0;
+
+  var K2 = parseInt(sheet.getRange("K2").getValue(), 10) || 7;
+  var gCol = K2; // 1-based
+  var iCol = K2 + 2;
+  var jCol = K2 + 4;
+  var hubLc = Math.max(hubTab.getLastColumn(), jCol, 10);
+  var numHub = hubLr - 2;
+  var hubData = hubTab.getRange(3, 1, numHub, hubLc).getValues();
+
+  var mul = dcMul != null && !isNaN(dcMul) ? Number(dcMul) : 1;
+  function roundUp100_(v) {
+    var n = Number(v);
+    if (!isFinite(n) || n === 0) return n === 0 ? 0 : "-";
+    return n > 0 ? Math.ceil(n / 100) * 100 : Math.floor(n / 100) * 100;
+  }
+
+  var rows = [];
+  for (var r = 0; r < hubData.length; r++) {
+    var code = String(hubData[r][2] || "").replace(/\s/g, "");
+    if (!code || code.indexOf("#") !== -1) continue;
+
+    var a = hubData[r][0];
+    var b = hubData[r][1];
+    var d = hubData[r][3];
+    var e = hubData[r][4];
+    var f = hubData[r][5];
+    var g = "-";
+    var h = "-";
+    var iVal = "-";
+    var jVal = "-";
+
+    if (isConsumer) {
+      g = f === "" || f === "-" || f == null ? "-" : roundUp100_(Number(f) * mul);
+    } else {
+      g = gCol <= hubLc && hubData[r][gCol - 1] !== "" ? hubData[r][gCol - 1] : "-";
+      iVal = iCol <= hubLc && hubData[r][iCol - 1] !== "" ? hubData[r][iCol - 1] : "-";
+      jVal = jCol <= hubLc && hubData[r][jCol - 1] !== "" ? hubData[r][jCol - 1] : "-";
+      var gN = parseFloat(g);
+      var iN = parseFloat(iVal);
+      if (isFinite(gN) && isFinite(iN) && gN !== iN) h = gN - iN;
+      if (jVal === "" || jVal === g || jVal == null) jVal = "-";
+    }
+
+    rows.push([
+      a == null ? "" : a,
+      b == null ? "" : b,
+      code,
+      d == null ? "" : d,
+      e == null ? "" : e,
+      f == null || f === "" ? "-" : f,
+      g == null || g === "" ? "-" : g,
+      h,
+      iVal,
+      jVal,
+    ]);
+  }
+
+  _pt_ensureMinRows(sheet, Math.max(rows.length + 20, 5000));
+
+  // 기존 수식/잔재 제거 후 값 기록 (스필 충돌 방지)
+  var clearN = Math.max(sheet.getMaxRows() - 2, rows.length);
+  if (clearN >= 1) {
+    try {
+      sheet.getRange(3, 1, clearN, 10).clearContent();
+    } catch (_) {}
+  }
+
+  if (rows.length === 0) return 0;
+  sheet.getRange(3, 1, rows.length, 10).setValues(rows);
+  SpreadsheetApp.flush();
+  Logger.log("[뷰어시드] hub→뷰어 " + rows.length + "건 (consumer=" + !!isConsumer + ")");
+  return rows.length;
+}
+
 function _pt_applyRow3Formulas(sheet, hubId, isConsumer, dcMul) {
+  // ★ 2026-08-02: IMPORTRANGE 수식 대신 허브 직접 읽기(값 시드)가 기본
+  //   → 새 시트에서 '액세스 허용' 전에도 단가조회에 전체 상품이 즉시 표시됨
+  try {
+    if (sheet.getMaxColumns() < 26) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), 26 - sheet.getMaxColumns());
+    }
+    // Z1은 선택적 연동 표시용(허용 클릭 유도) — 목록 표시의 SSOT는 아님
+    try {
+      sheet
+        .getRange("Z1")
+        .setFormula('=IFERROR(IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!A1"),"")')
+        .setFontColor("white");
+    } catch (_) {}
+
+    var n = _pt_seedViewerFromHub_(sheet, hubId, isConsumer, dcMul);
+    if (n > 0) return;
+
+    // 시드 0건이면 구 수식 경로 폴백
+    Logger.log("[뷰어시드] 0건 → 수식 폴백");
+    var ss = sheet.getParent();
+    _pt_ensureDataTab(ss, hubId);
+    _pt_applyRow3FormulasLocal_(sheet, hubId, isConsumer, dcMul);
+  } catch (eSeed) {
+    Logger.log("[뷰어시드] 실패: " + eSeed.message + " → Legacy 폴백");
+    try {
+      _pt_applyRow3FormulasLegacy_(sheet, hubId, isConsumer, dcMul);
+    } catch (e2) {
+      throw eSeed;
+    }
+  }
+}
+
+// ── [NEW] v2: _data 탭 로컬 참조 수식 ──
+function _pt_applyRow3FormulasLocal_(sheet, hubId, isConsumer, dcMul) {
+  var d = "'" + _PT_DATA_TAB_NAME + "'!";
+  var ids = d + "C:C"; // lookup key
+
+  // K2 값 읽어서 컬럼 문자로 변환 (INDIRECT 대신 직접 참조)
+  var K2 = parseInt(sheet.getRange("K2").getValue(), 10);
+  var gLetter = _pt_colLetter_(K2);       // 최종단가 열
+  var iLetter = _pt_colLetter_(K2 + 2);   // 지난단가 열
+  var jLetter = _pt_colLetter_(K2 + 4);   // 익월변동 열
+
+  // ★ 2026-08-02: 표준·소비자·단가전용 모두 C3에 허브 전체 이카운트코드 연동
+  //   (소비자용도 전체 목록 — G열만 할인율 계산 유지)
+  //   C3 = 허브 직결 IMPORTRANGE (뷰어 표출 셀 → 액세스 허용 클릭 가능, 목록 빈 화면 방지)
+  if (hubId) {
+    sheet.getRange("C3").setFormula(
+      '=IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!C3:C")',
+    );
+  } else {
+    sheet.getRange("C3").setFormula("=" + d + "C3:C");
+  }
+
+  // A3: 상태
+  sheet.getRange("A3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ', ' + d + 'A:A), "-")))'
+  );
+  // B3: 출고지
+  sheet.getRange("B3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ', ' + d + 'B:B), "-")))'
+  );
+  // D3: 품목명
+  sheet.getRange("D3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ', ' + d + 'D:D), "-")))'
+  );
+  // E3: 재고
+  sheet.getRange("E3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ', ' + d + 'E:E), "-")))'
+  );
+  // F3: 소비자가
+  sheet.getRange("F3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ', ' + d + 'F:F), "-")))'
+  );
+
+  // G3: 최종단가
+  if (isConsumer) {
+    sheet.getRange("G3").setFormula(
+      '=ARRAYFORMULA(IF(C3:C="", "", IFERROR(IF(F3:F="-", "-", ROUNDUP(F3:F*' + dcMul + ', -2)), "-")))'
+    );
+    // 소비자용 K2는 DC율 코드(NNN)라 그룹단가 열이 아님 → I/H/J는 비표시
+    sheet.getRange("I3").setFormula('=ARRAYFORMULA(IF(C3:C="","",""))');
+    sheet.getRange("H3").setFormula('=ARRAYFORMULA(IF(C3:C="","",""))');
+    sheet.getRange("J3").setFormula('=ARRAYFORMULA(IF(C3:C="","",""))');
+  } else {
+    sheet.getRange("G3").setFormula(
+      '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ', ' + d + gLetter + ':' + gLetter + '), "-")))'
+    );
+    // I3: 지난단가
+    sheet.getRange("I3").setFormula(
+      '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ', ' + d + iLetter + ':' + iLetter + '), "-")))'
+    );
+    // H3: 단가변동
+    sheet.getRange("H3").setFormula(
+      '=ARRAYFORMULA(IF(C3:C="", "", IFERROR(IF(G3:G=I3:I, "-", G3:G-I3:I), "-")))'
+    );
+    // J3: 익월변동단가
+    sheet.getRange("J3").setFormula(
+      '=ARRAYFORMULA(IF(C3:C="", "", LET(nxt, IFNA(XLOOKUP(C3:C, ' + ids + ', ' + d + jLetter + ':' + jLetter +
+        '), "-"), IF((nxt="-")+(nxt="")+(nxt=G3:G), "-", nxt))))'
+    );
+  }
+}
+
+// ── 유틸: 열 번호 → 열 문자 변환 (1→A, 7→G, 26→Z, 27→AA) ──
+function _pt_colLetter_(col) {
+  var letter = '';
+  while (col > 0) {
+    var mod = (col - 1) % 26;
+    letter = String.fromCharCode(65 + mod) + letter;
+    col = Math.floor((col - 1) / 26);
+  }
+  return letter;
+}
+
+// ── [기존] v1: IMPORTRANGE 직접 참조 (폴백) ──
+function _pt_applyRow3FormulasLegacy_(sheet, hubId, isConsumer, dcMul) {
   var hubLink = 'IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!';
   var ids = 'IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!C:C")';
 
-  // A3: 상태
-  sheet
-    .getRange("A3")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-        ids +
-        ", " +
-        hubLink +
-        'A:A")), "-")))',
-    );
-  // B3: 출고지
-  sheet
-    .getRange("B3")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-        ids +
-        ", " +
-        hubLink +
-        'B:B")), "-")))',
-    );
-  // C3: 이카운트코드 (수동 모드 전용 — 사용자가 직접 입력/삭제, 수식 미개입)
-  // D3: 품목명
-  sheet
-    .getRange("D3")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-        ids +
-        ", " +
-        hubLink +
-        'D:D")), "-")))',
-    );
-  // E3: 재고
-  sheet
-    .getRange("E3")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-        ids +
-        ", " +
-        hubLink +
-        'E:E")), "-")))',
-    );
-  // F3: 소비자가
-  sheet
-    .getRange("F3")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-        ids +
-        ", " +
-        hubLink +
-        'F:F")), "-")))',
-    );
+  // ★ 2026-08-02: 표준·소비자·단가전용 모두 C3에 허브 전체 이카운트코드 자동 연동
+  sheet.getRange("C3").setFormula(
+    '=IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!C3:C")',
+  );
 
-  // G3: 최종단가 (K2 동적 참조)
-  var gRange =
-    'SUBSTITUTE(ADDRESS(1, K2, 4), "1", "") & ":" & SUBSTITUTE(ADDRESS(1, K2, 4), "1", "")';
+  sheet.getRange("A3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ", " + hubLink + 'A:A")), "-")))'
+  );
+  sheet.getRange("B3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ", " + hubLink + 'B:B")), "-")))'
+  );
+  sheet.getRange("D3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ", " + hubLink + 'D:D")), "-")))'
+  );
+  sheet.getRange("E3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ", " + hubLink + 'E:E")), "-")))'
+  );
+  sheet.getRange("F3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ", " + hubLink + 'F:F")), "-")))'
+  );
+
+  var gRange = 'SUBSTITUTE(ADDRESS(1, K2, 4), "1", "") & ":" & SUBSTITUTE(ADDRESS(1, K2, 4), "1", "")';
   if (isConsumer) {
-    sheet
-      .getRange("G3")
-      .setFormula(
-        '=ARRAYFORMULA(IF(C3:C="", "", IFERROR(IF(F3:F="-", "-", ROUNDUP(F3:F*' +
-          dcMul +
-          ', -2)), "-")))',
-      );
+    sheet.getRange("G3").setFormula(
+      '=ARRAYFORMULA(IF(C3:C="", "", IFERROR(IF(F3:F="-", "-", ROUNDUP(F3:F*' + dcMul + ', -2)), "-")))'
+    );
   } else {
-    sheet
-      .getRange("G3")
-      .setFormula(
-        '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-          ids +
-          ', IMPORTRANGE("' +
-          hubId +
-          '", "전체 그룹 단가표!" & ' +
-          gRange +
-          ')), "-")))',
-      );
+    sheet.getRange("G3").setFormula(
+      '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids +
+        ', IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!" & ' + gRange + ')), "-")))'
+    );
   }
 
-  // I3: 지난단가 (K2+2)
-  var iRange =
-    'SUBSTITUTE(ADDRESS(1, K2+2, 4), "1", "") & ":" & SUBSTITUTE(ADDRESS(1, K2+2, 4), "1", "")';
-  sheet
-    .getRange("I3")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-        ids +
-        ', IMPORTRANGE("' +
-        hubId +
-        '", "전체 그룹 단가표!" & ' +
-        iRange +
-        ')), "-")))',
-    );
+  var iRange = 'SUBSTITUTE(ADDRESS(1, K2+2, 4), "1", "") & ":" & SUBSTITUTE(ADDRESS(1, K2+2, 4), "1", "")';
+  sheet.getRange("I3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids +
+      ', IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!" & ' + iRange + ')), "-")))'
+  );
 
-  // H3: 단가변동 ← 6단계 정본: G=I면 "-"
-  sheet
-    .getRange("H3")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C3:C="", "", IFERROR(IF(G3:G=I3:I, "-", G3:G-I3:I), "-")))',
-    );
+  sheet.getRange("H3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFERROR(IF(G3:G=I3:I, "-", G3:G-I3:I), "-")))'
+  );
 
-  // J3: 익월변동단가 (K2+4) ← 6단계 정본
-  var jRange =
-    'SUBSTITUTE(ADDRESS(1, K2+4, 4), "1", "") & ":" & SUBSTITUTE(ADDRESS(1, K2+4, 4), "1", "")';
-  sheet
-    .getRange("J3")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C3:C="", "", LET(nxt, IFNA(XLOOKUP(C3:C, ' +
-        ids +
-        ', IMPORTRANGE("' +
-        hubId +
-        '", "전체 그룹 단가표!" & ' +
-        jRange +
-        ')), "-"), IF((nxt="-")+(nxt="")+(nxt=G3:G), "-", nxt))))',
-    );
+  var jRange = 'SUBSTITUTE(ADDRESS(1, K2+4, 4), "1", "") & ":" & SUBSTITUTE(ADDRESS(1, K2+4, 4), "1", "")';
+  sheet.getRange("J3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", LET(nxt, IFNA(XLOOKUP(C3:C, ' + ids +
+      ', IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!" & ' + jRange +
+      ')), "-"), IF((nxt="-")+(nxt="")+(nxt=G3:G), "-", nxt))))'
+  );
+}
+
+// ═══════════════════════════════════════════
+//  유틸: 최소 행 수 확보 (IMPORTRANGE 3450+개 스필 공간 확보)
+// ═══════════════════════════════════════════
+function _pt_ensureMinRows(sheet, minRows) {
+  if (!sheet) return;
+  minRows = minRows || 5000;
+  var curMax = sheet.getMaxRows();
+  if (curMax < minRows) {
+    try {
+      sheet.insertRowsAfter(curMax, minRows - curMax);
+    } catch (e) {}
+  }
 }
 
 // ═══════════════════════════════════════════
 //  유틸: ARRAYFORMULA 스필 공간 확보
 // ═══════════════════════════════════════════
 function _pt_clearSpillArea(sheet, isConsumer) {
-  var lr = Math.max(sheet.getLastRow(), 4);
-  if (lr < 4) return;
-  var rows = lr - 3;
+  // ★ 2026-08-02: 템플릿 행 수(2905행) 부족으로 IMPORTRANGE가 잘리는 문제 방지 → 5000행까지 자동 확장
+  _pt_ensureMinRows(sheet, 5000);
+
+  var maxR = Math.max(sheet.getMaxRows(), 4);
+  if (maxR < 4) return;
+  var rows = maxR - 3;
   try {
     sheet.getRange(4, 1, rows, 2).clearContent();
   } catch (e) {} // A~B
+  // ★ 2026-08-02: 표준·소비자 모두 C열 클리어 — 전체 상품 스필 공간 확보
+  try {
+    sheet.getRange(4, 3, rows, 1).clearContent();
+  } catch (e) {} // C
   try {
     sheet.getRange(4, 4, rows, 7).clearContent();
   } catch (e) {} // D~J
-  // C열(이카운트코드)은 수동 입력값이므로 절대 클리어하지 않음
 }
 
 // ═══════════════════════════════════════════
@@ -288,7 +489,8 @@ function _pt_protectAndHide(sheet) {
 //  유틸: Row 2 헤더 + 스타일 적용
 // ═══════════════════════════════════════════
 function _pt_applyRow2(sheet, hubId, isConsumer, K2) {
-  var codeHeader = isConsumer ? "이카운트코드(입력👇)" : "이카운트코드";
+  // ★ 2026-08-02: 소비자용도 C열 자동연동 → 헤더를 입력 유도에서 자동으로 변경
+  var codeHeader = "이카운트코드";
   try {
     sheet.getRange("A2:Z2").breakApart();
   } catch (e) {}
@@ -317,7 +519,7 @@ function _pt_applyRow2(sheet, hubId, isConsumer, K2) {
     .setFontColor("#000000")
     .setFontWeight("bold")
     .setHorizontalAlignment("center");
-  if (isConsumer) sheet.getRange("C2").setBackground("#fff2cc");
+  // 소비자용 C2 노란 하이라이트 제거 (수동입력 정책 폐기 — 전체 자동연동)
   sheet.setFrozenRows(2);
   sheet.getRange("K2").setValue(K2).setFontColor("white");
 }
@@ -365,9 +567,79 @@ function _pt_applyDesign(sheet) {
 // ═══════════════════════════════════════════
 function _pt_applyOrderTabDesign(tab) {
   try {
-    var oRange = tab.getRange("A2:N250");
+    // ★ 2026-07-28: 범위 복구 — 기존 A2:O120 고정이 상태 스필(500행)보다 짧아
+    //   121행 이후는 접수완료/발송완료 색이 안 먹는 "행마다 들쑥날쑥" 증상 원인.
+    //   상태 스필 상한·실데이터 행 중 큰 값으로 맞춤 (최대 1000).
+    var spillEnd =
+      typeof _PT_ORDER_SPILL_ROWS_ !== "undefined" ? _PT_ORDER_SPILL_ROWS_ : 500;
+    var endRow = Math.max(spillEnd, Math.max(tab.getLastRow(), 2), 120);
+    if (endRow > 1000) endRow = 1000;
+
+    // ★ N열 스필이 값에 막혀 #REF!면 상태 텍스트가 비어 CF가 전부 실패
+    //   (어떤 파일/행만 되는 증상의 또 다른 원인) → 무음으로 막힘 해제
+    try {
+      var n1f = String(tab.getRange("N1").getFormula() || "");
+      if (
+        n1f &&
+        (n1f.indexOf("ARRAYFORMULA") !== -1 || n1f.indexOf("{") === 0) &&
+        String(tab.getRange("N1").getDisplayValue() || "").indexOf("#REF") !== -1
+      ) {
+        var nClrEnd = Math.min(endRow, spillEnd);
+        if (nClrEnd >= 2) tab.getRange(2, 14, nClrEnd - 1, 1).clearContent();
+        SpreadsheetApp.flush();
+      }
+    } catch (_) {}
+
+    var oRange = tab.getRange("A2:O" + endRow);
+    var oColRange = tab.getRange("O2:O" + endRow);
+    var hRange = tab.getRange("H2:H" + endRow);
+
+    // ★ 2026-07-28: 수동/잔류 배경색 제거 후 CF만 보이게
+    //   (그린우드 사례: 같은 접수완료인데 어떤 행만 하늘·어떤 행은 흰·O값 행은 통째 보라
+    //    → 구 CF가 행전체에 칠하거나, clearFormat 이후 남은 수동 배경이 섞인 상태)
+    try {
+      oRange.setBackground(null);
+    } catch (_) {}
+
     var rules = [];
-    // 1) 송장번호 입력 (K열이 비어있지 않고 "-"가 아님) → 연두색
+
+    // ★ 2026-07-20: 헤더행 #REF! 마스크
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied("=ISERROR(A1)")
+        .setBackground("#1f4e78")
+        .setFontColor("#1f4e78")
+        .setRanges([tab.getRange("A1:P1")])
+        .build(),
+    );
+    // ★ O열 도서산간 — 반드시 O열만 (행전체 칠하기 금지)
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied('=AND($O2<>"", $O2>0)')
+        .setBackground("#e8d5f5")
+        .setRanges([oColRange])
+        .build(),
+    );
+    // ★ 상태 규칙 — 완전일치 + SEARCH (스필 셀에서 SEARCH만 쓰면 행마다 들쑥날쑥할 수 있음)
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied(
+          '=OR($N2="발송완료",$P2="발송완료",ISNUMBER(SEARCH("발송완료",$N2)),ISNUMBER(SEARCH("발송완료",$P2)))',
+        )
+        .setBackground("#d9ead3")
+        .setRanges([oRange])
+        .build(),
+    );
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied(
+          '=OR($N2="접수완료",$P2="접수완료",ISNUMBER(SEARCH("접수완료",$N2)),ISNUMBER(SEARCH("접수완료",$P2)))',
+        )
+        .setBackground("#cfe2f3")
+        .setRanges([oRange])
+        .build(),
+    );
+    // K열 송장 있음 — 상태 문구가 비어도 초록 (폴백)
     rules.push(
       SpreadsheetApp.newConditionalFormatRule()
         .whenFormulaSatisfied('=AND($K2<>"", $K2<>"-")')
@@ -375,63 +647,48 @@ function _pt_applyOrderTabDesign(tab) {
         .setRanges([oRange])
         .build(),
     );
-    // 2) 발송완료 (N열 상태) → 연두색
     rules.push(
       SpreadsheetApp.newConditionalFormatRule()
-        .whenFormulaSatisfied('=ISNUMBER(SEARCH("발송완료", $N2))')
-        .setBackground("#d9ead3")
-        .setRanges([oRange])
-        .build(),
-    );
-    // 3) 접수완료 (N열 상태) → 하늘색
-    rules.push(
-      SpreadsheetApp.newConditionalFormatRule()
-        .whenFormulaSatisfied('=ISNUMBER(SEARCH("접수완료", $N2))')
-        .setBackground("#cfe2f3")
-        .setRanges([oRange])
-        .build(),
-    );
-    // 4) 품절/품절임박 경고 (J열 적요 OR N열 상태) → 연핑크
-    rules.push(
-      SpreadsheetApp.newConditionalFormatRule()
-        .whenFormulaSatisfied('=OR(ISNUMBER(SEARCH("품절", $J2)), ISNUMBER(SEARCH("품절임박", $J2)), ISNUMBER(SEARCH("품절", $N2)))')
+        .whenFormulaSatisfied(
+          '=OR(ISNUMBER(SEARCH("품절",$N2)),ISNUMBER(SEARCH("품절",$P2)),ISNUMBER(SEARCH("품절",$J2)))',
+        )
         .setBackground("#f4cccc")
         .setRanges([oRange])
         .build(),
     );
-    // 5) 단종 경고 (J열 적요 OR N열 상태) → 회색
     rules.push(
       SpreadsheetApp.newConditionalFormatRule()
-        .whenFormulaSatisfied('=OR(ISNUMBER(SEARCH("단종", $J2)), ISNUMBER(SEARCH("단종", $N2)))')
+        .whenFormulaSatisfied(
+          '=OR(ISNUMBER(SEARCH("단종",$N2)),ISNUMBER(SEARCH("단종",$P2)),ISNUMBER(SEARCH("단종",$J2)))',
+        )
         .setBackground("#d9d9d9")
         .setRanges([oRange])
         .build(),
     );
-    // 6) 재고까지만 경고 (J열 적요 OR N열 상태) → 노랑
     rules.push(
       SpreadsheetApp.newConditionalFormatRule()
-        .whenFormulaSatisfied('=OR(ISNUMBER(SEARCH("재고까지만", $J2)), ISNUMBER(SEARCH("재고까지만", $N2)))')
+        .whenFormulaSatisfied(
+          '=OR(ISNUMBER(SEARCH("재고까지만",$N2)),ISNUMBER(SEARCH("재고까지만",$P2)),ISNUMBER(SEARCH("재고까지만",$J2)))',
+        )
         .setBackground("#ffe599")
         .setRanges([oRange])
         .build(),
     );
-    // 7) 🏝️ 도서산간 의심 주소 (H열 수취인주소) → 글씨색 진한 자홍색2
-    var hRange = tab.getRange("H2:H250");
     rules.push(
       SpreadsheetApp.newConditionalFormatRule()
         .whenFormulaSatisfied(
-          '=REGEXMATCH($H2,"제주|서귀포|울릉|옹진|신안' +
-          '|백령|연평|덕적|자월|흑산|비금|도초|추자|우도|무의' +
-          '|거문|청산|보길|소안|조도' +
-          '|욕지|사량|한산|위도|낙월|가파|마라|금오|거금|노화")'
+          '=OR(ISNUMBER(SEARCH("제주",$H2)),ISNUMBER(SEARCH("서귀포",$H2)),ISNUMBER(SEARCH("울릉",$H2)),ISNUMBER(SEARCH("옹진",$H2)),ISNUMBER(SEARCH("신안",$H2)))',
         )
         .setFontColor("#a64d79")
         .setBold(true)
         .setRanges([hRange])
         .build(),
     );
+    // set = 전체 교체 (누적 push 금지) — 깨진/짧은 범위 구규칙 제거
     tab.setConditionalFormatRules(rules);
-  } catch (e) {}
+  } catch (e) {
+    Logger.log("[발주탭서식] " + (e.message || e));
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -592,7 +849,9 @@ function partnerCreateSheet() {
       groupName +
       " (K2=" +
       K2 +
-      ")",
+      ")\n\n" +
+      "※ 단가조회에는 허브 전체 상품이 바로 채워집니다.\n" +
+      "   (비어 있으면: 단가 새로고침 / 업체시트 복구)",
   );
 }
 
@@ -688,7 +947,8 @@ function partnerCreateViewerOnlySheet() {
       " (K2=" +
       K2 +
       ")\n\n" +
-      "이 시트는 단가조회만 가능하며,\n발주/검색입력/검색발주 탭이 없습니다.",
+      "이 시트는 단가조회만 가능하며,\n발주/검색입력/검색발주 탭이 없습니다.\n\n" +
+      "※ 단가조회에는 허브 전체 상품이 바로 채워집니다.",
   );
 }
 
@@ -758,7 +1018,15 @@ function partnerCreateConsumerSheet() {
   _pt_protectAndHide(sheet);
   _pt_createOrderTab(ss, vendorName, "", sheet.getName());
 
-  ui.alert("✅ " + fullName + " 생성 완료 (DC " + dcRate + "%)");
+  ui.alert(
+    "✅ " +
+      fullName +
+      " 생성 완료 (DC " +
+      dcRate +
+      "%)\n\n" +
+      "※ 단가조회에는 허브 전체 상품이 바로 채워집니다.\n" +
+      "   (G열 = 소비자가 × 할인율)",
+  );
 }
 
 // ═══════════════════════════════════════════
@@ -772,22 +1040,27 @@ function _pt_createOrderTab(
   exclusiveHeaders,
   exclusiveTabName,
 ) {
-  var defaultHeaders = [
-    "거래처명(자동)",
-    "주문일자(자동)",
-    "이카운트코드",
-    "품목명",
-    "수량",
-    "수취인",
-    "수취인전화번호",
-    "수취인주소",
-    "배송메시지",
-    "적요",
-    "송장번호",
-    "정산금액(자동)",
-    "고유ID(자동)",
-    "상태(자동)",
-  ];
+  // ★ 2026-08-07: 표준 15열(_PT_ORDER_TAB_HEADERS_)과 동일 — 열 누락 시 수식복구가 양식을 붕괴시킴
+  var defaultHeaders =
+    typeof _PT_ORDER_TAB_HEADERS_ !== "undefined"
+      ? _PT_ORDER_TAB_HEADERS_.slice()
+      : [
+          "거래처명(자동)",
+          "주문일자(자동)",
+          "이카운트코드",
+          "품목명(자동)",
+          "수량",
+          "수취인",
+          "수취인전화번호",
+          "수취인주소",
+          "배송메시지",
+          "적요",
+          "송장번호",
+          "정산금액(자동)",
+          "고유ID(자동)",
+          "상태(자동)",
+          "도서산간배송비",
+        ];
 
   // ★ 발주 및 송장조회 탭은 항상 표준 헤더 고정
   var orderTabHeaders = defaultHeaders;
@@ -986,9 +1259,10 @@ function _pt_clearSearchInputTab_(ss) {
   try {
     var tab = ss.getSheetByName(_SEARCH_TAB_NAME);
     if (!tab || tab.getLastRow() < 2) return;
-    tab
-      .getRange(2, 1, tab.getLastRow() - 1, _SEARCH_TAB_HEADERS.length)
-      .clearContent();
+    // ★ 2026-07-24: 값+서식 동시 제거
+    _pt_clearContentAndFormat_(
+      tab.getRange(2, 1, tab.getLastRow() - 1, _SEARCH_TAB_HEADERS.length),
+    );
     Logger.log("[검색입력] 탭 초기화 완료");
   } catch (e) {}
 }
@@ -1165,8 +1439,8 @@ function _pt_repairViewerSheetCore_(ss, fileName, sheet, K2, hubId) {
       var tn = allTabs[ti].getName();
       if (tn === "발주 및 송장조회") {
         _pt_applyOrderTabDesign(allTabs[ti]);
-        // ★ 발주탭 spill 수식 복구 (품목명 자동완성 포함)
-        try { _pt_healOrderSpillFormulas(allTabs[ti], sheet.getName()); } catch (eSpill) {}
+        // ★ 2026-07-16: 수집모드 정리 (스필수식 제거 + 빈칸채움)
+        try { _pt_repairOrderTabCollectMode_(ss); } catch (eSpill) {}
       } else if (tn.indexOf("전용양식") !== -1) {
         // ★ 전용양식은 조건부서식 불필요 → 기존 잔류 규칙 정리만
         try { allTabs[ti].clearConditionalFormatRules(); } catch (eCfr) {}
@@ -1292,10 +1566,9 @@ function partnerForceUpdateAll() {
       }
       // ── 복구 시퀀스 (공통 헬퍼 사용) ──
       var K2Info = _pt_repairViewerSheetCore_(ss, f.name, sheet, K2, hubId);
-      // ★ 2026-06-16: 발주탭 spill 수식도 함께 heal (뷰어탭 이름 불일치 #REF! 방지)
+      // ★ 2026-07-16: 발주탭 수집모드 정리 (뷰어 복구와 함께)
       try {
-        var ot = ss.getSheetByName("발주 및 송장조회");
-        if (ot) _pt_healOrderSpillFormulas(ot, sheet.getName());
+        _pt_repairOrderTabCollectMode_(ss);
       } catch (eHeal) {}
       results.push(f.name + ": ✅ " + K2Info);
     } catch (e) {
@@ -1608,11 +1881,15 @@ function partnerRepairAll() {
 //  — 수식만 재세팅하여 캐시를 강제 무효화
 //  — partnerForceUpdateAll보다 빠름 (디자인/보호 건너뜀)
 // ═══════════════════════════════════════════
-function partnerRefreshViewerPrices() {
+function partnerRefreshViewerPrices(opts) {
+  opts = opts || {};
+  var isSilent = !!opts.silent;
   var ui = null;
-  try {
-    ui = SpreadsheetApp.getUi();
-  } catch (e) {}
+  if (!isSilent) {
+    try {
+      ui = SpreadsheetApp.getUi();
+    } catch (e) {}
+  }
   var hubId = _PT.HUB_ID;
   var files = _pt_listFiles();
   var refreshed = 0,
@@ -1948,6 +2225,19 @@ function partnerViewerCodeToManual() {
  */
 function _pt_sortViewerByEcountCode_(sheet, skipProtect) {
   if (!sheet) return;
+
+  // ★ 2026-08-02: C3가 허브/_data 스필 수식이면 정렬 스킵 (값으로 굳으면 목록이 일부·전부 사라짐)
+  try {
+    var c3f = String(sheet.getRange("C3").getFormula() || "");
+    if (
+      c3f.indexOf("IMPORTRANGE") !== -1 ||
+      c3f.indexOf("_data") !== -1 ||
+      /C3:C\d*/i.test(c3f)
+    ) {
+      return;
+    }
+  } catch (eFormulaCheck) {}
+
   var lastRow = sheet.getLastRow();
   if (lastRow < 4) return;
 
@@ -2099,36 +2389,25 @@ function partnerRenameViewerTabToDankaJohoe() {
       // ① 뷰어탭 이름 변경
       viewerTab.setName(TARGET_NAME);
 
-      // ② 발주탭 A/L열 spill 수식 재연결 (heal 함수가 구버전 감지 후 새 탭명으로 교체)
+      // ② 발주탭 spill 수식 재연결
+      // ★ 2026-07-17 (H9): 구버전 무한열 빌더(_pt_build*SpillFormula) 폐기
+      //   → SSOT inject(_pt_injectOrderSpillFormulas, bounded 500행/조회 3700행)로 통일
       var orderTab = ss.getSheetByName("발주 및 송장조회");
       if (orderTab) {
         try {
-          // 현재 A1 수식에 구 탭명이 있으면 강제 교체
           var a1F = String(orderTab.getRange("A1").getFormula() || "");
           var l1F = String(orderTab.getRange("L1").getFormula() || "");
+          var d1F = String(orderTab.getRange("D1").getFormula() || "");
           var oldSafe = oldName.replace(/'/g, "''");
 
-          if (a1F.indexOf(oldSafe) !== -1) {
-            orderTab.getRange("A1:A").clearContent();
-            orderTab
-              .getRange("A1")
-              .setFormula(_pt_buildOrderVendorNameSpillFormula(TARGET_NAME));
+          if (
+            a1F.indexOf(oldSafe) !== -1 ||
+            l1F.indexOf(oldSafe) !== -1 ||
+            d1F.indexOf(oldSafe) !== -1 ||
+            !d1F
+          ) {
+            _pt_injectOrderSpillFormulas(orderTab, TARGET_NAME);
           }
-          if (l1F.indexOf(oldSafe) !== -1) {
-            orderTab.getRange("L1:L").clearContent();
-            orderTab
-              .getRange("L1")
-              .setFormula(_pt_buildOrderUnitPriceSpillFormula(TARGET_NAME));
-          }
-          try {
-            var d1F = String(orderTab.getRange("D1").getFormula() || "");
-            if (d1F.indexOf(oldSafe) !== -1 || !d1F) {
-              orderTab.getRange("D1:D").clearContent();
-              orderTab
-                .getRange("D1")
-                .setFormula(_pt_buildOrderItemNameSpillFormula(TARGET_NAME));
-            }
-          } catch(eD) {}
         } catch (eSpill) {}
       }
 
@@ -2154,162 +2433,6 @@ function partnerRenameViewerTabToDankaJohoe() {
       : "");
   Logger.log(msg);
   if (ui) ui.alert(msg);
-}
-
-// ═══════════════════════════════════════════
-//  기존 시트에서 마이그레이션
-// ═══════════════════════════════════════════
-function partnerMigrateFromExisting() {
-  var ui = SpreadsheetApp.getUi();
-  var confirm = ui.alert(
-    "기존 [독립 배포] → [협력업체] 마이그레이션",
-    "기존 [독립 배포] 시트에서 직접 K2, 업체명, 소비자용 여부를 읽어\n[협력업체] 시트를 새로 생성합니다.\n\n기존 시트는 그대로 유지됩니다.\n\n진행하시겠습니까?",
-    ui.ButtonSet.YES_NO,
-  );
-  if (confirm !== ui.Button.YES) return;
-
-  // 기존 [독립 배포] 파일 목록 가져오기
-  var folderIds = [
-    "1IqqPLKxBNrqh-u14Op6jKNN7khzE13Cl",
-    "1J0f8HjtartQwixF3xKQf0p7fvr04Ef7v",
-  ];
-  var seen = {},
-    srcFiles = [];
-  for (var fi = 0; fi < folderIds.length; fi++) {
-    try {
-      var folder = DriveApp.getFolderById(folderIds[fi]);
-      var iter = folder.getFiles();
-      while (iter.hasNext()) {
-        var f = iter.next();
-        var nm = f.getName();
-        if (nm.indexOf("[독립 배포]") === -1 && nm.indexOf("[독립배포]") === -1)
-          continue;
-        if (seen[f.getId()]) continue;
-        seen[f.getId()] = true;
-        srcFiles.push({ id: f.getId(), name: nm });
-      }
-    } catch (e) {}
-  }
-
-  if (srcFiles.length === 0)
-    return ui.alert("기존 [독립 배포] 시트를 찾을 수 없습니다.");
-
-  var created = 0,
-    skipped = 0,
-    errors = [];
-  var hubId = _PT.HUB_ID;
-
-  for (var i = 0; i < srcFiles.length; i++) {
-    var src = srcFiles[i];
-    try {
-      var srcSS = SpreadsheetApp.openById(src.id);
-      // 뷰어 탭 찾기
-      var srcSheet = null;
-      try {
-        srcSheet = _pt_findViewerSheet(srcSS);
-      } catch (e) {}
-      if (!srcSheet) srcSheet = srcSS.getSheets()[0];
-
-      // K2 읽기
-      var K2 = parseInt(srcSheet.getRange("K2").getValue(), 10);
-      if (!K2 || isNaN(K2) || K2 < 7) {
-        K2 = 7;
-      }
-
-      var isConsumer = src.name.indexOf("(소비자용)") !== -1;
-
-      // 업체명 추출 ([독립 배포] 제거, (소비자용) 등 제거)
-      var shortName = src.name
-        .replace(/\[독립\s*배포\]/g, "")
-        .replace(/\(소비자용\)/g, "")
-        .replace(/\d+(\.\d+)?%DC/gi, "")
-        .trim();
-
-      var fileName = _PT.PREFIX + shortName;
-      var dcRate = 5,
-        dcMul = 1;
-      if (isConsumer) {
-        dcRate = _pt_parseConsumerDcRateFromName(src.name);
-        dcMul = (100 - dcRate) / 100;
-        fileName += " (소비자용) " + dcRate + "%DC";
-      }
-
-      // 설정탭에서 공식 업체명 읽기
-      var officialName = shortName;
-      try {
-        var settingTab = srcSS.getSheetByName("설정");
-        if (settingTab) {
-          var sv = settingTab.getRange("B5").getValue();
-          if (sv) officialName = String(sv).trim();
-        }
-      } catch (e) {}
-
-      var newFile = _pt_createTemplateCopy(_PT.TEMPLATE_ID, fileName);
-      var ss = SpreadsheetApp.openById(newFile.getId());
-      var sheet = ss.getSheets()[0];
-      sheet.setName(shortName + " 뷰어");
-
-      try {
-        _pt_ensureLocalSettingsTab(ss, officialName, "");
-      } catch (e) {}
-      _pt_ensureNoticeRowLinked(sheet, hubId);
-      _pt_applyRow2(sheet, hubId, isConsumer, K2);
-      _pt_clearSpillArea(sheet, isConsumer);
-      _pt_applyRow3Formulas(sheet, hubId, isConsumer, dcMul);
-      _pt_applyDesign(sheet);
-      _pt_applyMetaCells(sheet, hubId, newFile.getId());
-      _pt_protectAndHide(sheet);
-
-      // 기존 전용양식 탭 감지 및 복사
-      var exclusiveTabName = "";
-      var exclusiveHeaders = null;
-      var srcAllTabs = srcSS.getSheets();
-      for (var ti = 0; ti < srcAllTabs.length; ti++) {
-        var tName = srcAllTabs[ti].getName();
-        if (tName.indexOf("전용양식") !== -1) {
-          exclusiveTabName = tName;
-          var lr = srcAllTabs[ti].getLastRow();
-          if (lr >= 1) {
-            exclusiveHeaders = srcAllTabs[ti]
-              .getRange(1, 1, 1, srcAllTabs[ti].getLastColumn())
-              .getValues()[0];
-          }
-          break;
-        }
-      }
-
-      _pt_createOrderTab(
-        ss,
-        shortName,
-        "",
-        sheet.getName(),
-        exclusiveHeaders,
-        exclusiveTabName,
-      );
-      created++;
-      Logger.log(
-        "생성: " +
-          fileName +
-          " K2=" +
-          K2 +
-          (exclusiveTabName ? " 전용양식:" + exclusiveTabName : ""),
-      );
-    } catch (e) {
-      errors.push(src.name + ": " + e.message);
-    }
-  }
-
-  var msg =
-    "마이그레이션 완료\n생성: " +
-    created +
-    "개 / 전체: " +
-    srcFiles.length +
-    "개\n" +
-    (errors.length > 0
-      ? "\n오류 " + errors.length + "건:\n" + errors.join("\n")
-      : "");
-  Logger.log(msg);
-  ui.alert(msg);
 }
 
 // ═══════════════════════════════════════════
@@ -2473,23 +2596,24 @@ var VENDOR_EXCLUSIVE_TEMPLATE_MASTER_SHEET_NAME = "업체전용양식마스터";
  * 허브 시트에 별도 마스터 탭이 없어도 이 목록을 우선 사용.
  */
 var EMBEDDED_VENDOR_EXCLUSIVE_MASTER_ROWS_ = [
-  { label: "올팩",    prefix: "AP", headerCsv: "송장번호|적요|보내는사람(지정)|전화번호1(지정)|전화번호2(지정)|우편번호(지정)|주소(지정)|받는사람|전화번호1|전화번호2|우편번호|주소|상품명1|상품상세1|수량(A타입)|배송메시지|운임구분|운임|운송장번호" },
-  { label: "아주팩",  prefix: "AJ", headerCsv: "송장번호|적요|보내는분 성명|보내는분 전화번호|보내는분 주소(전체, 분할)|받는분 성명|받는분 전화번호|받는분 주소(전체, 분할)|품목명|박스수량|박스타입|배송메세지1" },
-  { label: "코라마",  prefix: "KR", headerCsv: "송장번호|적요|받으시는 분|받는분총주소|받으시는 분 전화|받는분핸드폰|품번|품목명|수량|특기사항|보내시는 분|보내시는 분 전화|지불조건" },
-  { label: "태양",    prefix: "TY", headerCsv: "송장번호|적요|고객명|수하인주소|수하인번호|박스수량|택배운임(합계)|운임구분|품목명|배송메세지|송하인명|송하인주소|송하인번호" },
+  { label: "올팩",    prefix: "AP", headerCsv: "송장번호|이슈|보내는사람(지정)|전화번호1(지정)|전화번호2(지정)|우편번호(지정)|주소(지정)|받는사람|전화번호1|전화번호2|우편번호|주소|상품명1|상품상세1|수량(A타입)|배송메시지|운임구분|운임|운송장번호" },
+  { label: "아주팩",  prefix: "AJ", headerCsv: "송장번호|이슈|보내는분 성명|보내는분 전화번호|보내는분 주소(전체, 분할)|받는분 성명|받는분 전화번호|받는분 주소(전체, 분할)|품목명|박스수량|박스타입|배송메세지1" },
+  { label: "코라마",  prefix: "KR", headerCsv: "송장번호|이슈|받으시는 분|받는분총주소|받으시는 분 전화|받는분핸드폰|품번|품목명|수량|특기사항|보내시는 분|보내시는 분 전화|지불조건" },
+  { label: "태양",    prefix: "TY", headerCsv: "송장번호|이슈|고객명|수하인주소|수하인번호|박스수량|택배운임(합계)|운임구분|품목명|배송메세지|송하인명|송하인주소|송하인번호" },
   { label: "팩시스",  prefix: "PS", headerCsv: "주문번호|받는사람|전화번호1|전화번호2|우편번호|주소|상품명1|상품상세1|수량(A타입)|배송메시지|운임구분|운임|운송장번호|송하인명|송하인전화번호|송하인주소" },
   { label: "제이씨",  prefix: "JC", headerCsv: "월/일 (필수입력)|거래처명(주문번호) (필수입력)|품목명 (필수입력)|수량 (필수입력)|수령인 (필수입력)|수령인연락처 (필수입력)|배송지주소 (필수입력)|적요(배송메시지)|보내는분성명 (고정)|보내는분전화번호 (고정)|보내는분주소(전체, 분할) (고정)" },
-  { label: "하나팩",  prefix: "HP", headerCsv: "송장번호|적요|보내는사람|전화번호|보내는사람주소|상품명|수량|받는사람|연락처|주소|배송메시지" },
-  { label: "뉴파츠_NEW", prefix: "HR", headerCsv: "송장번호|적요|일자|순번|거래처코드|거래처명|담당자|출하창고|거래유형|통화|환율|참조|결제조건|유효기간|납기일자|검색창내용|배송방식|수령인|수령인연락처|배송지주소|적요(배송메시지)|변환품목코드|변환품목명|규격|수량|단가|금액1|외화금액|공급가액|부가세|납기일자|적요" },
-  { label: "부원",    prefix: "BW", headerCsv: "송장번호|적요|받는사람|전화번호|주소|우편번호|상품명|수량|배송메세지|보내는사람|주소|전화" },
-  { label: "부엉이커피", prefix: "OC", headerCsv: "송장번호|적요|받는사람|전화번호|주소|우편번호|상품명|수량|배송메세지|보내는사람|주소|전화" },
-  { label: "지에스",  prefix: "GS", headerCsv: "송장번호|적요|순번|일자-No.|품목코드|품목명|택배박스수량|판매수량|전화|모바일|주소1|배송메시지|합계|거래처명|단품배송비|적요|사방넷주문번호|보내는분|보내는분전화|보내는주소(팩투유)" },
-  { label: "그린우드", prefix: "GW", headerCsv: "송장번호|적요|순번|일자-No.|품목코드|품목명|택배박스수량|판매수량|전화|모바일|주소1|배송메시지|합계|거래처명|단품배송비|적요|사방넷주문번호|보내는분|보내는분전화|보내는주소(팩투유)" },
-  { label: "냅킨코리아", prefix: "NK", headerCsv: "송장번호|적요|받는사람|전화번호|주소|우편번호|상품명|수량|배송메세지|보내는사람|주소|전화" },
-  { label: "인터웍스", prefix: "IW", headerCsv: "송장번호|적요|받는사람|전화번호|주소|우편번호|상품명|박스타입|수량|배송메세지|보내는사람|주소|전화" },
-  { label: "후아코리아", prefix: "HU", headerCsv: "송장번호|적요|받는분(필수)|받는분전화번호|휴대폰번호(필수입력)|받는분주소(전체, 분할)필수입력|품목(필수)|배송메세지1|택배수량(필수입력)|운임구분 (신용/착불) 필수입력|운임|보내는분성명(필수)|보내는분전화번호(필수)" },
-  { label: "선우",    prefix: "SW", headerCsv: "송장번호|적요|사용안함|보내는분성명|보내는분전화번호|보내는분기타연락처|보내는분우편번호|보내는분주소(전체, 분할)|받는분성명|받는분전화번호|받는분기타연락처|받는분우편번호|받는분주소(전체, 분할)|품목명|내품명|박스수량|배송메세지1|박스타입|운임구분" },
-  { label: "로엔그린", prefix: "LG", headerCsv: "송장번호|보내는사람(지정)|전화번호1(지정)|전화번호2(지정)|우편번호(지정)|주소(지정)|받는사람|전화번호1|전화번호2|우편번호|주소|상품명1|상품상세1|수량(A타입)|배송메시지|운임구분 신용.선불.착불|운임|운송장번호|운송장번호" },
+  { label: "하나팩",  prefix: "HP", headerCsv: "송장번호|이슈|보내는사람|전화번호|보내는사람주소|상품명|수량|받는사람|연락처|주소|배송메시지" },
+  { label: "뉴파츠_NEW", prefix: "HR", headerCsv: "송장번호|이슈|일자|순번|거래처코드|거래처명|담당자|출하창고|거래유형|통화|환율|참조|결제조건|유효기간|납기일자|검색창내용|배송방식|수령인|수령인연락처|배송지주소|적요(배송메시지)|변환품목코드|변환품목명|규격|수량|단가|금액1|외화금액|공급가액|부가세|납기일자|적요" },
+  { label: "부원",    prefix: "BW", headerCsv: "송장번호|이슈|받는사람|전화번호|주소||상품명|수량|B2750|C3200|D5500|E6500|배송메세지|운임구분|운임|보내는사람|주소|전화" },
+  { label: "부엉이커피", prefix: "OC", headerCsv: "송장번호|이슈|받는사람|전화번호|주소|우편번호|상품명|수량|배송메세지|보내는사람|주소|전화" },
+  { label: "지에스",  prefix: "GS", headerCsv: "송장번호|이슈|순번|일자-No.|품목코드|품목명|택배박스수량|판매수량|전화|모바일|주소1|배송메시지|합계|거래처명|단품배송비|적요|사방넷주문번호|보내는분|보내는분전화|보내는주소(팩투유)" },
+  { label: "그린우드", prefix: "GW", headerCsv: "송장번호|이슈|순번|일자-No.|품목코드|품목명|택배박스수량|판매수량|전화|모바일|주소1|배송메시지|합계|거래처명|단품배송비|적요|사방넷주문번호|보내는분|보내는분전화|보내는주소(팩투유)" },
+  { label: "냅킨코리아", prefix: "NK", headerCsv: "송장번호|이슈|받는사람|전화번호|주소|우편번호|상품명|수량|배송메세지|보내는사람|주소|전화" },
+  { label: "인터웍스", prefix: "IW", headerCsv: "송장번호|이슈|받는사람|전화번호|주소|우편번호|상품명|박스타입|수량|배송메세지|보내는사람|주소|전화" },
+  { label: "후아코리아", prefix: "HU", headerCsv: "송장번호|이슈|받는분(필수)|받는분전화번호|휴대폰번호(필수입력)|받는분주소(전체, 분할)필수입력|품목(필수)|배송메세지1|택배수량(필수입력)|운임구분 (신용/착불) 필수입력|운임|보내는분성명(필수)|보내는분전화번호(필수)" },
+  // ★ 2026-08-25: 업체 제공 신 양식 16열 반영 (구 양식의 '사용안함' 열 제거) — _PEP_EXCLUSIVE_FORM_HEADERS_.SW와 동일하게 유지
+  { label: "선우",    prefix: "SW", headerCsv: "송장번호|이슈|보내는분성명|보내는분전화번호|보내는분기타연락처|보내는분우편번호|보내는분주소(전체, 분할)|받는분성명|받는분전화번호|받는분기타연락처|받는분우편번호|받는분주소(전체, 분할)|품목명|내품명|박스수량|배송메세지1|박스타입|운임구분" },
+  { label: "로엔그린", prefix: "LG", headerCsv: "송장번호|이슈|보내는사람(지정)|전화번호1(지정)|전화번호2(지정)|우편번호(지정)|주소(지정)|받는사람|전화번호1|전화번호2|우편번호|주소|상품명1|상품상세1|수량(A타입)|배송메시지|운임구분 신용.선불.착불|운임|운송장번호|택배수량" },
 ];
 
 /** 헤더 문자열 정규화 (공백 제거) */
@@ -2568,73 +2692,4 @@ function loadVendorExclusiveTemplateHeadersFromHub_(hubSs, supplierFormatName) {
     if (headers.length) return headers;
   }
   return null;
-}
-
-// ═══════════════════════════════════════════
-//  기존 배포 시트 보호 일괄 변환: 강제 잠금 → 경고만(warningOnly)
-//  ★ 필터 사용을 위해 1회 실행 필요 (메뉴: AS/진단 > 복구도구)
-// ═══════════════════════════════════════════
-function partnerMigrateProtectionToWarning() {
-  var ui = SpreadsheetApp.getUi();
-  var files = _pt_listFiles();
-  if (!files || files.length === 0) {
-    return ui.alert("협력업체 파일이 없습니다.");
-  }
-
-  var ok = 0, fail = 0, details = [];
-
-  for (var fi = 0; fi < files.length; fi++) {
-    try {
-      var ss = SpreadsheetApp.openById(files[fi].id);
-      var shortName = files[fi].name.replace("[협력업체] ", "").trim();
-      var tabs = ss.getSheets();
-      var converted = [];
-
-      for (var ti = 0; ti < tabs.length; ti++) {
-        var tab = tabs[ti];
-        var tabName = tab.getName();
-
-        // 단가조회(뷰어) 탭 감지: "뷰어" 포함 또는 첫 번째 탭
-        var isViewer = tabName.indexOf("뷰어") !== -1 || ti === 0;
-        if (!isViewer) continue;
-
-        // ① 시트 전체 보호(SHEET) → 경고만으로 변환
-        var sheetProts = tab.getProtections(SpreadsheetApp.ProtectionType.SHEET);
-        for (var si = 0; si < sheetProts.length; si++) {
-          if (!sheetProts[si].isWarningOnly()) {
-            sheetProts[si].setWarningOnly(true);
-            converted.push("시트보호→경고");
-          }
-        }
-
-        // ② 범위 보호(RANGE) → 경고만으로 변환
-        var rangeProts = tab.getProtections(SpreadsheetApp.ProtectionType.RANGE);
-        for (var ri = 0; ri < rangeProts.length; ri++) {
-          if (!rangeProts[ri].isWarningOnly()) {
-            rangeProts[ri].setWarningOnly(true);
-            converted.push("범위보호→경고");
-          }
-        }
-      }
-
-      if (converted.length > 0) {
-        details.push("✅ " + shortName + " (" + converted.length + "건 변환)");
-      } else {
-        details.push("⏭ " + shortName + " (변환 불필요)");
-      }
-      ok++;
-    } catch (e) {
-      fail++;
-      details.push(
-        "❌ " + files[fi].name.replace("[협력업체] ", "") +
-        ": " + String(e.message || "").substring(0, 40),
-      );
-    }
-  }
-
-  var msg =
-    "🔓 단가조회 보호 → 경고만 일괄 변환 완료\n\n" +
-    "성공: " + ok + "개" + (fail > 0 ? ", 실패: " + fail + "개" : "") +
-    "\n\n" + details.join("\n");
-  ui.alert("보호 변환 결과", msg, ui.ButtonSet.OK);
 }

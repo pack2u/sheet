@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>명세서 올리기</title>
+<style>
+  /* CS 웹앱의 다른 화면과 같은 결로 맞춘다 — 직원들이 이미 익힌 모양이다 */
+  :root{
+    --brand:#FDB813; --ink:#1a1a1a; --muted:#6b7280;
+    --line:#e5e7eb; --bg:#f7f7f8; --card:#fff;
+    --bad:#b91c1c; --warn:#b45309; --good:#166534;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Malgun Gothic","맑은 고딕",sans-serif}
+  .wrap{max-width:820px;margin:0 auto;padding:16px 14px 40px}
+  /* 팩투유 심벌 — home.html 의 .p2u-mark 와 같은 그림 */
+  .p2u-mark{display:inline-block;width:1em;height:1em;vertical-align:-0.14em;margin-right:.34em;
+            background:url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20390%20390%22%3E%3Cpath%20fill%3D%22%23FDB913%22%20fill-rule%3D%22evenodd%22%20d%3D%22M0%2C195%20A195%2C195%200%201%201%20195%2C390%20L0%2C390%20Z%20M70%2C195%20A125%2C125%200%201%201%20109%2C285.7%20L109%2C318%20L70%2C318%20Z%20M195%2C109%20A86%2C86%200%201%200%20195%2C281%20A86%2C86%200%201%200%20195%2C109%20Z%22%2F%3E%3Cpath%20fill%3D%22%233C2F2F%22%20d%3D%22M0%2C0%20H104%20L0%2C104%20Z%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat}
+  h1{font-size:20px;margin:6px 0 2px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+
+  #drop{background:var(--card);border:2px dashed var(--line);border-radius:16px;
+        padding:34px 16px;text-align:center;cursor:pointer;transition:.15s}
+  #drop.over{border-color:var(--brand);background:#fffbeb}
+  #drop.busy{opacity:.7;cursor:progress}
+  .icon{font-size:34px;line-height:1}
+  .big{font-weight:800;font-size:17px;margin-top:8px}
+  .hint{color:var(--muted);font-size:13px;margin-top:4px}
+  .tiny{color:var(--muted);font-size:12px;margin-top:8px}
+
+  .btn{display:inline-block;background:var(--brand);color:#1a1a1a;font-weight:800;
+       border:0;border-radius:12px;padding:13px 20px;font-size:15px;cursor:pointer;
+       min-height:46px}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
+
+  #list{margin-top:14px}
+  .row{background:var(--card);border:1px solid var(--line);border-radius:12px;
+       padding:11px 13px;margin-bottom:8px}
+  .row .nm{font-weight:700;word-break:break-all}
+  .row .msg{font-size:13px;margin-top:3px}
+  .ok{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  .msg a{color:inherit}
+
+  .note{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;
+        padding:12px 14px;font-size:13px;color:#7c2d12;margin-top:16px}
+  .off{background:#fef2f2;border:1px solid #fecaca;color:#7f1d1d;
+       border-radius:12px;padding:14px;font-size:14px;margin-bottom:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><i class="p2u-mark"></i>명세서 올리기</h1>
+  <p class="sub">업체에서 받은 거래명세서를 정산으로 보냅니다</p>
+
+  <div id="off" class="off" style="display:none"></div>
+
+  <div id="drop">
+    <div class="icon">📄</div>
+    <div class="big" id="dropTitle">여기에 끌어다 놓으세요</div>
+    <div class="hint" id="dropHint">붙여넣기(Ctrl+V)도 됩니다 · 눌러서 고를 수도 있습니다</div>
+    <div class="tiny">엑셀 · CSV · PDF · 사진 &nbsp;|&nbsp; 한 개 20MB 까지</div>
+    <input id="pick" type="file" multiple accept=".xlsx,.xls,.xlsm,.csv,.tsv,.pdf,image/*" hidden>
+  </div>
+
+  <div id="list"></div>
+
+  <div class="note">
+    <b>읽은 결과는 정산 화면에서 봅니다.</b><br>
+    여기서는 보내기만 합니다. 줄이 제대로 읽혔는지, 합계가 맞는지는
+    정산 화면에서 확인하고 고칩니다.
+    <div style="margin-top:6px"><a id="goV2" href="#" target="_blank" rel="noopener">정산 화면 열기 →</a></div>
+  </div>
+</div>
+
+<script>
+/* ★ 한 개씩 보낸다 ★
+   PDF 를 AI 가 읽는 데 몇십 초가 걸린다. 여러 개를 한꺼번에 보내면
+   구글 스크립트 쪽에서 먼저 끊긴다. 하나씩 보내고 진행 상황을 보여준다. */
+var BUSY = false;
+var READY = false;
+
+function el(id){ return document.getElementById(id); }
+
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+function addRow(name){
+  var d = document.createElement('div');
+  d.className = 'row';
+  d.innerHTML = '<div class="nm">' + esc(name) + '</div><div class="msg">보내는 중…</div>';
+  el('list').appendChild(d);
+  return d;
+}
+
+function setBusy(on, text){
+  BUSY = on;
+  el('drop').className = on ? 'busy' : '';
+  el('dropTitle').textContent = on ? (text || '보내는 중…') : '여기에 끌어다 놓으세요';
+  el('dropHint').textContent = on
+    ? 'PDF·사진은 AI 가 읽습니다. 몇십 초 걸릴 수 있습니다.'
+    : '붙여넣기(Ctrl+V)도 됩니다 · 눌러서 고를 수도 있습니다';
+}
+
+function send(files){
+  if (!READY || BUSY || !files || !files.length) return;
+  var arr = Array.prototype.slice.call(files);
+  setBusy(true, '보내는 중… (1/' + arr.length + ')');
+
+  var i = 0;
+  function step(){
+    if (i >= arr.length) { setBusy(false); return; }
+    var f = arr[i];
+    setBusy(true, '보내는 중… (' + (i + 1) + '/' + arr.length + ')');
+    var row = addRow(f.name);
+
+    var rd = new FileReader();
+    rd.onerror = function(){
+      row.querySelector('.msg').innerHTML = '<span class="bad">파일을 못 읽었습니다</span>';
+      i++; step();
+    };
+    rd.onload = function(){
+      // data:...;base64,XXXX 에서 뒷부분만
+      var b64 = String(rd.result).split(',')[1] || '';
+      google.script.run
+        .withSuccessHandler(function(r){
+          var m = row.querySelector('.msg');
+          if (r && r.duplicate) {
+            m.innerHTML = '<span class="warn">이미 올린 명세서입니다</span>';
+          } else if (r && r.ok) {
+            var s = '<span class="ok">' + (r.vendor ? esc(r.vendor) + ' · ' : '')
+                  + r.lines + '줄 읽었습니다</span>';
+            if (r.mismatch) s += ' <span class="warn">— 합계가 안 맞습니다. 확인하세요</span>';
+            if (r.viewUrl) s += ' <a href="' + esc(r.viewUrl) + '" target="_blank" rel="noopener">보기 →</a>';
+            m.innerHTML = s;
+          } else {
+            m.innerHTML = '<span class="bad">' + esc((r && r.error) || '실패') + '</span>';
+          }
+          i++; step();
+        })
+        .withFailureHandler(function(e){
+          row.querySelector('.msg').innerHTML =
+            '<span class="bad">' + esc(e && e.message ? e.message : e) + '</span>';
+          i++; step();
+        })
+        .csStatementUpload(f.name, f.type || '', b64);
+    };
+    rd.readAsDataURL(f);
+  }
+  step();
+}
+
+/* 끌어다 놓기 */
+var drop = el('drop');
+['dragenter','dragover'].forEach(function(ev){
+  drop.addEventListener(ev, function(e){ e.preventDefault(); drop.className = BUSY ? 'busy over' : 'over'; });
+});
+['dragleave','drop'].forEach(function(ev){
+  drop.addEventListener(ev, function(e){ e.preventDefault(); drop.className = BUSY ? 'busy' : ''; });
+});
+drop.addEventListener('drop', function(e){ send(e.dataTransfer && e.dataTransfer.files); });
+
+/* 눌러서 고르기 */
+drop.addEventListener('click', function(){ if (!BUSY && READY) el('pick').click(); });
+el('pick').addEventListener('change', function(e){ send(e.target.files); e.target.value = ''; });
+
+/* ★ 붙여넣기는 화면 전체에서 받는다 ★
+   캡처하고 Ctrl+V 를 눌렀는데 「먼저 칸을 클릭하세요」가 뜨면
+   그 순간 이 기능은 없는 것과 같다. */
+window.addEventListener('paste', function(e){
+  var f = e.clipboardData && e.clipboardData.files;
+  if (f && f.length) { e.preventDefault(); send(f); }
+});
+
+/* 표가 없으면 아예 못 쓴다고 먼저 말한다 */
+google.script.run.withSuccessHandler(function(st){
+  READY = !!(st && st.ready);
+  if (st && st.url) el('goV2').href = st.url + '/settlement';
+  if (!READY) {
+    el('off').style.display = 'block';
+    el('off').textContent = (st && st.reason) || '아직 쓸 수 없습니다.';
+    el('drop').style.opacity = .5;
+  }
+}).csStatementReady();
+</script>
+</body>
+</html>
