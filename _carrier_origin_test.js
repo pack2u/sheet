@@ -1,7 +1,7 @@
 /**
  * 로컬 검증: 품목코드 → 출고지 → 택배사 판정
  *
- *   · 출고지 평택 계열  → 롯데택배 (자사출고)
+ *   · 출고지 평택 계열  → 빈칸 (자사 택배사는 송장이 나온 탭이 안다)
  *   · 출고지 대리발송    → 접두로 업체 택배사
  *   · 출고지 모름        → 출처가 업체출고라고 말할 때만 접두
  *
@@ -118,17 +118,25 @@ setOrigins({
   "JH0001": "대리발송",   // 보조 접두 JH → JT (준테크)
 });
 
-console.log("\n[1] 출고지 평택 계열 → 무조건 롯데택배");
-check("평택 / 출처없음", ctx._pep_carrierFromItemCode_("PT1000", "").carrier, "롯데택배");
-check("평택A-1",         ctx._pep_carrierFromItemCode_("PTA1", "").carrier, "롯데택배");
-check("평택 / 출처 대리판매", ctx._pep_carrierFromItemCode_("PT1000", "대리판매").carrier, "롯데택배");
-check("근거 표기",       ctx._pep_carrierFromItemCode_("PT1000", "").via, "출고지(평택)");
+console.log("\n[1] 출고지 평택 계열 → «빈칸» (2026-09-15 규칙 바뀜)");
+/*  전에는 「평택이면 무조건 롯데」였다. 2026-09-11 에 자사출고가 로젠으로
+    바뀌었는데 이 줄만 그대로여서, 로젠으로 나간 건에 계속 롯데가 찍혔다.
+
+    자사출고 송장의 택배사는 «그 송장이 나온 탭»이 안다 (①송장맵 · ②출처).
+    거기서 못 얻었으면 품목코드로 지어내지 않고 비운다 — 그래야
+    「택배사 채움률 점검」에 걸려 사람이 본다.
+    틀린 택배사는 빈칸보다 나쁘다. 조회 링크가 엉뚱한 데로 간다. */
+check("평택 / 출처없음", ctx._pep_carrierFromItemCode_("PT1000", "").carrier, "");
+check("평택A-1",         ctx._pep_carrierFromItemCode_("PTA1", "").carrier, "");
+check("평택 / 출처 대리판매 → 업체가 보낸다 → 접두 (PT 접두 미등록이라 빈칸)",
+  ctx._pep_carrierFromItemCode_("PT1000", "대리판매").carrier, "");
+check("근거도 안 남긴다",  ctx._pep_carrierFromItemCode_("PT1000", "").via, "");
 
 console.log("\n[2] 출고지 대리발송 → 접두로 업체 택배사");
 check("HR → 로젠",      ctx._pep_carrierFromItemCode_("HR1234", "").carrier, "로젠택배");
 check("TY-100 → 로젠",  ctx._pep_carrierFromItemCode_("TY-100", "").carrier, "로젠택배");
 check("JH → JT → CJ",   ctx._pep_carrierFromItemCode_("JH0001", "").carrier, "CJ대한통운");
-check("근거 표기",       ctx._pep_carrierFromItemCode_("HR1234", "").via, "출고지(대리발송)+접두");
+check("근거 표기",       ctx._pep_carrierFromItemCode_("HR1234", "").via, "업체출고+접두");
 check("접두 미등록 → 빈칸", ctx._pep_carrierFromItemCode_("ZZ9999", "대리판매").carrier, "");
 
 console.log("\n[3] 출고지가 답을 주지 않을 때");
@@ -155,8 +163,8 @@ check("③ 업체명",
 // ④ 출고지
 check("④ 대리판매 + 출고지 대리발송",
   ctx._pep_carrierForArchiveRow_(null, "대리판매", "", "HR1234"), "로젠택배");
-check("④ 대리공급 + 출고지 평택",
-  ctx._pep_carrierForArchiveRow_(null, "대리공급", "", "PT1000"), "롯데택배");
+check("④ 대리공급 + 출고지 평택 → 빈칸 (업체가 보내는데 PT 접두가 없다)",
+  ctx._pep_carrierForArchiveRow_(null, "대리공급", "", "PT1000"), "");
 // 다 비면 빈칸
 check("근거 없음 → 빈칸",
   ctx._pep_carrierForArchiveRow_(null, "대리판매", "", ""), "");
@@ -166,7 +174,7 @@ check("출처 미매칭 + 미등록 → 빈칸",
 console.log("\n[5] via 전달 (진단 로그용)");
 const box = {};
 ctx._pep_carrierForArchiveRow_(null, "대리판매", "", "HR1234", box);
-check("via", box.via, "출고지(대리발송)+접두");
+check("via", box.via, "업체출고+접두");
 const box2 = {};
 ctx._pep_carrierForArchiveRow_({ carrier: "롯데택배" }, "대리판매", "", "", box2);
 check("via 송장맵", box2.via, "송장맵");
@@ -197,8 +205,8 @@ check("출고지 대리발송 + NS → CJ",
   ctx._pep_carrierForArchiveRow_(null, "대리판매", "", "NS0001"), "CJ대한통운");
 check("출고지 없는 NS + 출처 대리판매 → CJ",
   ctx._pep_carrierForArchiveRow_(null, "대리판매", "", "NS9999"), "CJ대한통운");
-check("출고지 평택인 NS → 롯데 (자사출고가 이긴다)",
-  ctx._pep_carrierForArchiveRow_(null, "대리판매", "", "NS0002"), "롯데택배");
+check("출고지 평택인 NS + 출처 대리판매 → CJ (누가 보내는가가 먼저다)",
+  ctx._pep_carrierForArchiveRow_(null, "대리판매", "", "NS0002"), "CJ대한통운");
 check("업체명 '준테크' → CJ",
   ctx._pep_carrierForArchiveRow_(null, "대리판매", "준테크", ""), "CJ대한통운");
 

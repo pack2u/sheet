@@ -191,8 +191,12 @@ t("송장맵이 비면 출처로 판정", function () {
   eq(call("_pep_carrierWithLag_", ["롯데택배", 0]), "롯데택배");
   eq(call("_pep_carrierWithLag_", ["한진택배(03)", 0]), "한진택배");
   eq(call("_pep_carrierForArchiveRow_", [null, "로젠", ""]), "로젠택배");
-  eq(call("_pep_carrierForArchiveRow_", [null, "합포장", ""]), "롯데택배");
-  eq(call("_pep_carrierForArchiveRow_", [null, "1주출고", ""]), "롯데택배");
+  /*  ★ 「합포장」은 택배사가 아니다 ★  (2026-09-15)
+      «어떻게 묶였나»를 말하는 이름표다. 동봉 줄은 대표의 송장을 물려받고,
+      그 대표는 택배사 탭에서 걷힌다 — 택배사는 거기서 온다.
+      여기서 롯데로 치면 갈아탈 때마다 같은 사고가 난다. 모르면 빈칸. */
+  eq(call("_pep_carrierForArchiveRow_", [null, "합포장", ""]), "");
+  eq(call("_pep_carrierForArchiveRow_", [null, "1주출고", ""]), "");   // 같은 까닭
 });
 
 t("출처가 대리판매면 업체로 판정 (핵심 시나리오)", function () {

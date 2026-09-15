@@ -50,13 +50,21 @@ check("돌고 있는지는 트리거로 본다 (_pms_runState_)",
   pms.indexOf("var st = _pms_runState_();") >= 0, true);
 
 console.log("");
-console.log("[밤에 부른다] 새 트리거 없이");
-check("★ 22시 통합마감이 부른다", web.indexOf("pmsStartBackground()") >= 0, true);
-check("★ 실패해도 일일마감은 계속",
-  web.indexOf("대리판매 마감 시작 실패(일일마감은 계속)") >= 0, true);
-check("무슨 일이 있었는지 로그에 남긴다",
-  web.indexOf('Logger.log("[SCHEDULED] 대리판매 마감: " + pmsStartBackground());') >= 0, true);
+console.log("[밤에 부르지 «않는다»]  ★ 2026-09-16 되돌림 ★");
+/*  9/15 에 「일일마감이 대리판매 마감을 시작한다」를 넣었다가 하루 만에 뺐다.
 
+    ① 22:00 에 이미 제 트리거가 있다 (_trigger_monthlySettle_). 두 번 돈다.
+    ② 시작 절차가 임시기록의 «송장 찍힌 행»을 지운다. 그런데 바로 뒤에 도는
+       일일마감이 그 임시기록을 원천으로 읽는다. 20:00 에 비우고 20:00 에
+       읽으니 대리공급 송장이 통째로 빠졌다 — 「마감 제대로 안됨」이 이것이다.
+
+    그래서 이 검사는 «없음»을 지킨다. 다시 넣으면 여기서 걸린다. */
+check("★ 일일마감은 대리판매 마감을 시작하지 않는다",
+  web.indexOf("pmsStartBackground()") < 0, true);
+check("왜 뺐는지가 코드에 적혀 있다",
+  web.indexOf("여기서 대리판매 마감을 시작시키지 않는다") >= 0, true);
+check("대리판매 마감은 22:00 제 트리거로 돈다",
+  web.indexOf(mkKey()) >= 0, true);
 console.log("");
 console.log("[완료 알림] 끝나면 사람이 안다");
 check("★ 백그라운드로 끝나면 Chat 카드를 보낸다",
@@ -75,3 +83,7 @@ check("재개 트리거는 일회용(after)",
 console.log("");
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);
+
+
+/** 스케줄 표의 22:00 대리판매 마감 줄을 찾는 열쇠 */
+function mkKey() { return "_trigger_monthlySettle_"; }

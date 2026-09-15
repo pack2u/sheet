@@ -272,8 +272,11 @@ function partnerCheckBoardMirrorTrigger() {
  */
 function _pt_ensureMirrorTriggers_() {
   var 표 = [
-    { fn: "_pbv_scheduled_", h: 21, m: 40, label: "커뮤니티 보드 → v2" },
-    { fn: "_prv_scheduled_", h: 21, m: 30, label: "반품대장 → v2" }
+    /*  ★ 보드는 제 트리거를 안 쓴다 ★  (2026-09-16)
+        트리거 20개가 꽉 차서 이어달리기가 죽었다. 반품 미러(21:30)가
+        끝에서 보드도 부른다 — 하는 일이 같고 10분 차이였다.
+        자리 하나를 비우고, 「⚠ 스케줄 외」 경고도 없앤다. */
+    { fn: "_prv_scheduled_", h: 21, m: 30, label: "반품대장 + 보드 → v2" }
   ];
   var out = { 건것: [], 이미: [], 오류: [] };
   try {

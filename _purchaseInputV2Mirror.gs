@@ -225,14 +225,17 @@ function _piv_scheduled_() {
 }
 
 /**
- * 밤 트리거를 단다 (하루 한 번).
+ * 제 트리거를 «지운다». 더 이상 따로 걸지 않는다.
  *
- * ★ 22:10 에 둔다 ★
- *   구매입력 변환(_ecountPurchaseDaily.gs)이 17:30 에 돌고,
- *   반품 미러가 21:30 이다. 그 뒤라야 그날 것이 다 담긴다.
+ * ★ 2026-09-16: 22:10 자리를 21:30 반품미러로 합쳤다 ★
+ *   > "이 두개 합치면 좋을듯"
+ *   트리거가 20/20 으로 꽉 차서 마감·월정산·재매칭·푸시의 이어달리기
+ *   (.after 트리거)가 한 번도 안 걸렸다. v2 로 미는 일이 셋이나
+ *   따로 자리를 쓰고 있었기에 _prv_scheduled_ 하나로 묶었다.
+ *   실제 미러는 _partnerReturnsV2Mirror.gs 의 _prv_scheduled_ 가 부른다.
  *
- * ★ 제 트리거만 지운다 ★
- *   ScriptApp.getProjectTriggers() 를 통째로 지우면 남의 트리거까지 날아간다.
+ *   이 함수는 옛 22:10 트리거가 남아 있는 계정을 치우는 용도로만 남긴다.
+ *   두 번 눌러도 안전하다.
  */
 function partnerInstallPurchaseMirrorTrigger() {
   var all = ScriptApp.getProjectTriggers();
@@ -242,11 +245,12 @@ function partnerInstallPurchaseMirrorTrigger() {
       ScriptApp.deleteTrigger(all[i]); removed++;
     }
   }
-  ScriptApp.newTrigger("_piv_scheduled_")
-    .timeBased().atHour(22).nearMinute(10).everyDays(1).create();
-  var msg = "구매입력 미러 트리거 설치됨 — 매일 22:10" +
-    (removed ? " (옛 트리거 " + removed + "개 정리)" : "");
-  Logger.log(msg);
+  var msg = removed
+    ? "옛 22:10 구매입력 미러 트리거 " + removed + "개를 지웠습니다." + "\n" +
+      "이제 21:30 「반품대장 + 보드 + 구매입력 → v2 미러」가 같이 돌립니다."
+    : "따로 걸린 트리거가 없습니다 — 21:30 미러가 같이 돌립니다.";
+  Logger.log("[구매입력미러] " + msg.split("\n").join(" "));
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
   return msg;
 }
 

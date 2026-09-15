@@ -16,8 +16,31 @@
  *   못 읽으면 «빈 문자열»을 준다 — 알림은 조용히 안 가고, _chat_diagnose_
  *   가 그 사실을 말한다. 여기에 값을 다시 적으면 안 된다.
  */
-var _CHAT_WEBHOOK_URL_ =
-  (typeof CHAT_WEBHOOK_URL === "string" && CHAT_WEBHOOK_URL) ? CHAT_WEBHOOK_URL : "";
+/**
+ * ★ 2026-09-16: 여기가 「알림이 안 오는」 까닭이었다 ★
+ *
+ *   > "그리고 챗알림 안옴... 확인해줘"
+ *
+ *   전에는 파일 맨 위에서 웹훅 주소를 «한 번» 읽어 두었다.
+ *   Apps Script 는 프로젝트의 모든 .gs 를 «파일 차례대로» 훑으며 맨 위
+ *   코드를 실행한다. _partnerChatNotify 는 _secrets 보다 앞이다 (p < s).
+ *   그래서 그 줄이 돌 때 _secrets.gs 의 값은 아직 «담기지 않은» 상태고,
+ *   typeof 는 "undefined" 였다. 결국 빈 문자열이 박히고, 그 뒤로는 무엇을
+ *   보내려 해도 맨 앞의 if (!주소) return 에 걸려 «조용히» 안 갔다.
+ *   오류도 안 났으니 아무도 몰랐다.
+ *
+ *   9/14 에 웹훅을 _secrets.gs 로 옮긴 그날부터 알림이 끊긴 것이 이것이다.
+ *
+ *   ★ 고치는 법: «보낼 때» 읽는다 ★
+ *     함수 안에서 읽으면 그때는 모든 파일이 다 돈 뒤라 값이 들어 있다.
+ *     앞으로 _secrets.gs 의 값을 파일 맨 위에서 읽지 말 것.
+ *     (V2_URL · V2_INGEST_TOKEN 은 이미 함수 안에서 읽고 있어 무사했다)
+ */
+function _chat_url_() {
+  try {
+    return (typeof CHAT_WEBHOOK_URL === "string" && CHAT_WEBHOOK_URL) ? CHAT_WEBHOOK_URL : "";
+  } catch (e) { return ""; }
+}
 
 // ══════════════════════════════════════════════
 //  핵심: 메시지 전송
@@ -74,9 +97,9 @@ function chatLastFailure() {
 }
 
 function _chat_sendText_(text) {
-  if (!_CHAT_WEBHOOK_URL_) return;
+  if (!_chat_url_()) return;
   try {
-    var res = UrlFetchApp.fetch(_CHAT_WEBHOOK_URL_, {
+    var res = UrlFetchApp.fetch(_chat_url_(), {
       method: "post",
       contentType: "application/json; charset=utf-8",
       payload: JSON.stringify({ text: text }),
@@ -130,7 +153,7 @@ function _chat_triggerPressure_() {
 }
 
 function _chat_sendCard_(title, subtitle, keyValues, footerText) {
-  if (!_CHAT_WEBHOOK_URL_) return;
+  if (!_chat_url_()) return;
   var 압박 = _chat_triggerPressure_();
   if (압박) footerText = footerText ? (footerText + ' · ' + 압박) : 압박;
   try {
@@ -165,7 +188,7 @@ function _chat_sendCard_(title, subtitle, keyValues, footerText) {
         },
       ],
     };
-    var res = UrlFetchApp.fetch(_CHAT_WEBHOOK_URL_, {
+    var res = UrlFetchApp.fetch(_chat_url_(), {
       method: "post",
       contentType: "application/json; charset=utf-8",
       payload: JSON.stringify(card),

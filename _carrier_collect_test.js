@@ -113,16 +113,19 @@ console.log("\n[2] 원천 탭 이름이 곧 택배사");
 check("롯데택배 탭", collect([{ invRaw: "1", src: "롯데택배" }], hubRow()).carrier, "롯데택배");
 check("★최우선(로젠주문실적)",
   collect([{ invRaw: "2", src: "★최우선(로젠주문실적)" }], hubRow()).carrier, "로젠택배");
-check("합포장 → 자사출고(롯데)",
-  collect([{ invRaw: "3", src: "합포장" }], hubRow()).carrier, "롯데택배");
+/*  ★ 「합포장」은 택배사가 아니다 ★  (2026-09-15)
+    «어떻게 묶였나»를 말하는 이름표다. 여기엔 「합포장·1주출고면 롯데」가
+    박혀 있었고, 2026-09-11 로젠 전환 뒤로 계속 틀렸다. 이제 빈칸이다. */
+check("합포장 → 빈칸 (묶음 이름표는 택배사가 아니다)",
+  collect([{ invRaw: "3", src: "합포장" }], hubRow()).carrier, "");
 
 console.log("\n[3] 출처가 답을 못 줄 때 — 발주업체명 → 품목코드 순");
 ctx._ORIGIN_MAP_ = { PT1000: "평택", HR1234: "대리발송" };
 vm.runInContext("_ORIGIN_MAP_ = " + JSON.stringify(ctx._ORIGIN_MAP_) + ";", ctx);
 check("업체명 '준테크' → CJ",
   collect([{ invRaw: "4", src: "대리공급" }], hubRow("준테크", "")).carrier, "CJ대한통운");
-check("업체명 없음 + 출고지 평택 → 롯데",
-  collect([{ invRaw: "5", src: "" }], hubRow("", "PT1000")).carrier, "롯데택배");
+check("업체명 없음 + 출고지 평택 → 빈칸 (자사 택배사는 탭이 안다)",
+  collect([{ invRaw: "5", src: "" }], hubRow("", "PT1000")).carrier, "");
 check("근거 전무 → 빈칸 (추측 금지)",
   collect([{ invRaw: "6", src: "" }], hubRow("", "")).carrier, "");
 
@@ -138,8 +141,8 @@ console.log("\n[5] 임시기록 행 (W열 접두 → 택배사)");
 const tempRow = (code, pfx) => { const r = new Array(26).fill(""); r[3] = code; r[22] = pfx; return r; };
 check("W열 'HR' → 로젠", ctx._po_carrierForTempRow_(tempRow("", "HR")), "로젠택배");
 check("W열 'NS' → JT → CJ", ctx._po_carrierForTempRow_(tempRow("", "NS")), "CJ대한통운");
-check("W열 비고 품목코드 PT1000 → 롯데",
-  ctx._po_carrierForTempRow_(tempRow("PT1000", "")), "롯데택배");
+check("W열 비고 품목코드 PT1000 → 빈칸 (PT 접두는 업체표에 없다)",
+  ctx._po_carrierForTempRow_(tempRow("PT1000", "")), "");
 check("둘 다 비면 빈칸", ctx._po_carrierForTempRow_(tempRow("", "")), "");
 
 console.log("\n[6] 방어 — 잘못 부른 경우에도 던지지 않는다");
