@@ -23,6 +23,65 @@ var _PTI_SNAP_PHONE_ = 15; // P 전화
  * @param {string=} optKeyword 품목명/코드/매칭키에서 찾을 말. 기본 "샘플"
  * @param {number=} optLimit 최대 몇 건까지 자세히 볼지. 기본 15
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  메뉴에서 부르는 품목 추적 — 찾을 말을 물어본다
+ *  2026-09-15
+ *
+ *  > "어림지해장국 송장이 있는데 일일 마감에 못들어 온 이유를 찾아줘"
+ *
+ *  partnerTraceItem 은 바로 이 물음에 답하려고 만든 도구인데, 메뉴에 없어
+ *  스크립트 편집기에서 인자를 적어 실행해야 했다. 부를 수 없으면 없는 것과
+ *  같다 — 어제도 같은 이유로 미매칭 진단을 못 쓰고 있었다.
+ *
+ *  ★ 짐작하지 말고 이걸 먼저 돌린다 ★
+ *    수취인 이름·고유ID·품목코드 아무거나 넣으면, 그 건이
+ *      판매현황_임시기록 → 판정 → 송장맵 조회 → 일일마감 존재 여부
+ *    를 «실제 값»으로 찍어 준다. 오늘 내가 틀린 짐작을 두 번 했다.
+ *    도구가 있는데 안 쓴 탓이다.
+ *
+ *  읽기만 한다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function partnerTraceItemPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var 답 = ui.prompt(
+    "품목 추적 — 이 건이 왜 송장을 못 받았나",
+    "수취인 이름 · 고유ID · 품목코드 · 품목명 아무거나 적으세요.\n" +
+      "  예)  어림지해장국      0914-ds-b2ec      MATYG0076\n\n" +
+      "판매현황_임시기록 → 판정 → 송장맵 → 일일마감 순서로\n" +
+      "실제 값을 찍어 봅니다. 읽기만 하고 아무것도 안 고칩니다.",
+    ui.ButtonSet.OK_CANCEL);
+  if (답.getSelectedButton() !== ui.Button.OK) return;
+  var kw = String(답.getResponseText() || "").trim();
+  if (!kw) { ui.alert("찾을 말을 적어 주세요."); return; }
+  return partnerTraceItem(kw, 15);
+}
+
+/**
+ * 같은 말을 «일일마감 파일»에서 찾아 본다 — 「정말 빠졌는가」 확인용.
+ * 날짜를 비우면 어제다.
+ */
+function partnerTraceItemInDailyClosePrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var 답 = ui.prompt(
+    "일일마감에서 찾기",
+    "찾을 말과 날짜를 적으세요. 날짜를 비우면 «어제»입니다.\n" +
+      "  예)  어림지해장국\n" +
+      "       어림지해장국 | 2026-09-14\n\n" +
+      "그 말이 든 줄을 일일마감 파일에서 뽑아 보여 줍니다.",
+    ui.ButtonSet.OK_CANCEL);
+  if (답.getSelectedButton() !== ui.Button.OK) return;
+  var raw = String(답.getResponseText() || "").trim();
+  if (!raw) { ui.alert("찾을 말을 적어 주세요."); return; }
+  var 조각 = raw.split("|");
+  var kw = String(조각[0] || "").trim();
+  var d = String(조각[1] || "").trim();
+  if (!kw) { ui.alert("찾을 말을 적어 주세요."); return; }
+  return partnerTraceItemInDailyClose(kw, d);
+}
+
+
 function partnerTraceItem(optKeyword, optLimit) {
   var kw = String(optKeyword || "샘플").trim();
   var limit = parseInt(optLimit, 10) || 15;
