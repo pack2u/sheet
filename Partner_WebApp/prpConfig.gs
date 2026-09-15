@@ -120,7 +120,7 @@ var PRP_RETURN_TYPES = ["단순반품", "교환", "불량반품", "오배송", "
 var PRP_PICKUP_OPTS = ["CJ대한통운", "롯데택배", "한진택배", "로젠택배", "우체국", "직접반송", "미정"];
 
 /** 화면 표기 버전 */
-var PRP_VERSION = "v1.9";
+var PRP_VERSION = "v2.0";
 
 /** 새 접수·카드 첨부 사진 상한 */
 var PRP_PHOTO_MAX = 6;

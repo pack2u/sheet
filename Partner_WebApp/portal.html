@@ -58,6 +58,13 @@
       background: transparent; color: #8b90a6; font-size: 12.5px; font-weight: 600; cursor: pointer;
     }
     .segs button.on { background: #2f6feb; color: #fff; }
+    /* 나열 차례 고르는 칸 — 진행중/완료/전체 오른쪽에 조용히 선다 */
+    .sortsel {
+      flex: 0 0 auto; margin-left: 6px; height: 36px; padding: 0 8px;
+      font-size: 13px; color: #c9d1de; background: #1a1d28;
+      border: 1px solid #2a2f3d; border-radius: 10px; cursor: pointer;
+    }
+    .sortsel:focus { outline: 2px solid #2f6feb; outline-offset: 1px; }
     .search {
       width: 100%; padding: 11px 12px; border-radius: 10px;
       border: 1px solid #2c3040; background: #171a24; color: #f0f0f5; margin-bottom: 12px;
@@ -315,6 +322,11 @@
         <button type="button" data-f="done">완료</button>
         <button type="button" data-f="all">전체</button>
       </div>
+      <select id="sortSel" class="sortsel" title="나열 차례" aria-label="나열 차례">
+        <option value="new">최신순</option>
+        <option value="old">오래된순</option>
+        <option value="stage">상태순</option>
+      </select>
     </div>
 
     <input class="search" type="search" id="q" placeholder="이름 · 송장 · 상품명 검색" autocomplete="off">
@@ -560,6 +572,53 @@
         .prpMyReturns(SID, { refresh: !!refresh });
     }
 
+    /* ══════════════════════════════════════════════════════════
+       나열 차례
+
+       > "반품현황에서 카드 나열을 선택할수 있게 해줘.. 최신순. 오래된순"
+
+       ★ 서버가 쓰는 열쇠를 그대로 쓴다 ★
+         sortKey 는 dateYmd_역순번 이다(prpLedger.gs). 여기서 날짜를 다시
+         해석하면 차례를 정하는 규칙이 두 군데가 되고 언젠가 어긋난다.
+       ★ 상태순도 stepIndex 를 그대로 쓴다 ★
+         카드에 그리는 단계와 나열 차례가 다르면 사람이 못 믿는다.
+       ★ 고른 것은 그 사람 브라우저에만 ★
+         업체마다·사람마다 보는 차례가 다르다. 서버에 둘 일이 아니다.
+       ══════════════════════════════════════════════════════════ */
+    var SORT = 'new';
+    try { SORT = localStorage.getItem('PRP_SORT') || 'new'; } catch (e) {}
+
+    function setSort(v) {
+      SORT = String(v || 'new');
+      try { localStorage.setItem('PRP_SORT', SORT); } catch (e) {}
+      render();
+    }
+
+    function sortRows(rows) {
+      var key = function (c) { return String((c && c.sortKey) || ''); };
+      var out = rows.slice();
+      if (SORT === 'old') {
+        out.sort(function (a, b) { return key(a).localeCompare(key(b)); });
+      } else if (SORT === 'stage') {
+        /*  손이 안 간 것부터 — 접수 → 회수중 → 입고검수 → 처리완료.
+            철회(-1)는 흐름 밖이라 맨 뒤로 보낸다.
+            같은 단계면 오래된 것이 위다 — 묵은 건이 밀려 안 보이면
+            이 차례를 고른 뜻이 없다. */
+        var st = function (c) {
+          var i = stepIndex(c && c.status, c && c.done);
+          return i < 0 ? 9 : i;
+        };
+        out.sort(function (a, b) {
+          var sa = st(a), sb = st(b);
+          if (sa !== sb) return sa - sb;
+          return key(a).localeCompare(key(b));
+        });
+      } else {
+        out.sort(function (a, b) { return key(b).localeCompare(key(a)); });
+      }
+      return out;
+    }
+
     function visible() {
       var q = el('q').value.replace(/\s/g, '').toLowerCase();
       return ROWS.filter(function (c) {
@@ -573,7 +632,9 @@
     }
 
     function render() {
-      var rows = visible();
+      var rows = sortRows(visible());
+      var _ss = el('sortSel');
+      if (_ss && _ss.value !== SORT) _ss.value = SORT;
       if (!rows.length) {
         el('list').innerHTML = '<div class="empty">' +
           (el('q').value ? '검색 결과가 없습니다.' :
@@ -1335,6 +1396,8 @@
       if (DUP_PENDING) { DUP_PENDING = null; submitNew(true); }
     });
     el('q').addEventListener('input', render);
+    //  나열 차례를 바꾸면 바로 다시 그린다 (고른 값은 그 사람 브라우저에 남는다)
+    el('sortSel').addEventListener('change', function () { setSort(this.value); });
 
     document.querySelectorAll('.segs button').forEach(function (b) {
       b.addEventListener('click', function () {
