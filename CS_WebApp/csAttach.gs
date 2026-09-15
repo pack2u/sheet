@@ -49,14 +49,27 @@ function _cs_attFolder_() {
       var f = DriveApp.getFolderById(saved);
       if (f && !f.isTrashed()) return f;
     } catch (eF) {
-      throw new Error(
-        "지정된 첨부 폴더를 열 수 없습니다. 관리자에게 csSetupReturnAttachFolder() 실행을 요청하세요."
-      );
+      /* ★ 사람을 부르지 말고 스스로 낫는다 ★  (2026-09-15)
+         > 화면: 「지정된 첨부 폴더를 열 수 없습니다. 관리자에게 … 실행을 요청하세요」
+
+         이 웹앱은 «접속한 사람» 권한으로 돈다. 그래서 누군가의 개인 드라이브에
+         자리가 잡히면 다른 사람은 그 폴더를 못 연다. 여태는 거기서 던졌다 —
+         CS 가 고객과 통화하는 중에 사진이 한 장도 안 올라가고, 관리자가 편집기에서
+         함수를 돌려 줄 때까지 멈춰 있었다. 멈출 일이 아니다.
+
+         낡은 지정을 버리고 자리를 다시 잡는다. csSetupReturnAttachFolder(true) 가
+         손으로 하던 일을 그대로 한다. 못 고치면 그때 진짜 까닭을 들고 던진다. */
+      Logger.log("[CS_ATTACH] 지정 폴더를 못 엽니다 (" + saved + "): " + eF.message);
     }
   }
 
   var folder = _cs_attCreateFolder_();
   props.setProperty(_CS_ATT_FOLDER_PROP_, folder.getId());
+  /*  자리를 새로 잡았으면 «전원»에게 다시 나눠 준다 — 안 그러면 다음 사람이
+      같은 데서 또 막힌다. 나눠 주기가 실패해도 올리는 일은 계속한다. */
+  try { _cs_attShareFolder_(folder); } catch (eShare) {
+    Logger.log("[CS_ATTACH] 폴더 공유 실패: " + eShare.message);
+  }
   return folder;
 }
 
