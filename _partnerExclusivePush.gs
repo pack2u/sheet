@@ -765,6 +765,11 @@ var _PEP_SOURCE_TAB_GID = -1;
 var _PEP_SOURCE_TAB_NAME = "대리발송";
 var _PEP_CODE_COL = 3; // D열 (0-based): 품목코드(이카운트코드)
 var _PEP_ITEM_COL = 4; // E열 (0-based): 품목명
+/*  ★ 사람이 적은 업체코드 ★  (2026-09-15)
+    세트분리 「대리발송」 탭은 SS_OUT_HEADER(19칸) 뒤에 업체코드·업체명·조치가
+    붙는다. 그 첫 칸이 T열(19)이다. 세트분리 「대리발송품목」 탭에 사장님이
+    업체코드를 적으면 여기까지 실려 온다. */
+var _PEP_VENDOR_CODE_COL = 19; // T열 (0-based): 업체코드
 
 /**
  * ══════════════════════════════════════════════════════════════
@@ -1109,6 +1114,22 @@ function _pep_rowMissing_(row) {
 function _pep_rowPrefix_(row) {
   var rawCode = String(row[_PEP_CODE_COL] || "").trim();
   var rawName = String(row[_PEP_ITEM_COL] || "").trim();
+
+  /*  ★ 사람이 적은 업체코드가 이긴다 ★  (2026-09-15)
+      > "업체코드열을 만들어 업체코드를 입력.. 해당 업체 대리발송으로 분류"
+
+      여태 업체는 «이카운트코드 앞 두 자»로만 가렸다. 그래서 우리 코드로
+      된 품목(A100 …)을 업체로 넘기면 앞 두 자가 A1 이라 아무 데도 안 걸리고
+      미분류로 남았다. 재고가 없어 남에게 맡기는 물건일수록 코드가 우리 것이다.
+      사람이 「JT 로 보내라」고 적었으면 그 말이 짐작보다 앞선다. */
+  var 적은코드 = String(row[_PEP_VENDOR_CODE_COL] || "").trim().toUpperCase();
+  if (적은코드) {
+    var 적은pfx = _pep_resolvePrefixAlias_(적은코드);
+    if (_PEP_VENDOR_DIRECT_MAP_[적은pfx] || _PEP_VENDOR_LABELS_[적은pfx]) {
+      return { pfx: 적은pfx, rawCode: rawCode, rawName: rawName,
+               빈줄: !rawCode && !rawName, 적힘: true };
+    }
+  }
 
   var codePfx =
     rawCode.length >= 2 ? _pep_resolvePrefixAlias_(rawCode.substring(0, 2)) : "";

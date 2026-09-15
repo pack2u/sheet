@@ -42,7 +42,7 @@ function grabFn(name) {
 const ctx = { Logger: { log() {} } };
 vm.createContext(ctx);
 vm.runInContext([
-  "var _PEP_CODE_COL = 3, _PEP_ITEM_COL = 4;",
+  "var _PEP_CODE_COL = 3, _PEP_ITEM_COL = 4, _PEP_VENDOR_CODE_COL = 19;",
   "var _PEP_VENDOR_DIRECT_MAP_ = { JT: {}, HR: {}, TY: {} };",
   "var _PEP_VENDOR_LABELS_ = { JT: '제이티', HR: '한라', TY: '태영', NK: '엔케이' };",
   "var _PEP_PREFIX_ALIAS_ = { JH: 'JT', BF: 'JT', NS: 'JT' };",
@@ -62,6 +62,17 @@ check("코드가 없으면 품목명 앞 영문 두 자", ctx._pep_rowPrefix_(�
 check("품목명 앞 한글·대괄호는 건너뛴다", ctx._pep_rowPrefix_(줄("", "[샘플] BF 실링")).pfx, "JT");
 check("모르는 접두는 빈칸", ctx._pep_rowPrefix_(줄("ZZ001", "없는업체")).pfx, "");
 check("코드도 품목명도 없으면 빈 줄", ctx._pep_rowPrefix_(줄("", "")).빈줄, true);
+
+console.log("");
+console.log("[업체코드 칸] 사람이 적은 것이 짐작보다 앞선다");
+//  T열(19) = 업체코드. 세트분리 「대리발송품목」에 적은 값이 여기까지 온다
+const 줄V = (code, name, vc) => { const r = 줄(code, name); r[19] = vc; return r; };
+check("우리 코드여도 적은 업체로 간다", ctx._pep_rowPrefix_(줄V("A100", "감자탕", "HR")).pfx, "HR");
+check("적힌 것이 짐작을 이긴다", ctx._pep_rowPrefix_(줄V("HR001", "한라 족발", "TY")).pfx, "TY");
+check("적은 코드도 보조 접두 환산 (JH→JT)", ctx._pep_rowPrefix_(줄V("A100", "감자탕", "JH")).pfx, "JT");
+check("소문자로 적어도 된다", ctx._pep_rowPrefix_(줄V("A100", "감자탕", "hr")).pfx, "HR");
+check("모르는 업체코드면 종전대로 코드로", ctx._pep_rowPrefix_(줄V("HR001", "한라 족발", "ZZ")).pfx, "HR");
+check("칸이 비면 종전 그대로", ctx._pep_rowPrefix_(줄V("HR001", "한라 족발", "")).pfx, "HR");
 
 console.log("\n[원본 세기] 대리발송 탭을 업체별로");
 const 원본 = [
