@@ -2559,6 +2559,40 @@ function partnerFetchInvoices() {
     }
   }
 
+  /*  ══════════════════════════════════════════════════════════════
+      ★ 이미 송장이 찍힌 줄의 택배사도 다시 계산한다 ★  (2026-09-15)
+
+      위 매칭 루프는 «송장이 이미 있는 줄»을 건너뛴다(_po_hasRealInvoice_).
+      맞는 동작이다 — 송장을 다시 쓸 일이 없으니까. 그런데 그 바람에
+      택배사도 같이 건너뛴다. 판정 규칙을 고쳐도 옛 줄은 틀린 채로 남았다.
+
+      실제로 2026-09-11 로젠 전환 전에 박아 둔 「평택이면 롯데」·「합포장은
+      롯데」 때문에 아주팩(한진) 건에 롯데가 찍혀 있었다. 수집을 아무리
+      돌려도 그 줄은 안 고쳐진다 — 사장님이 「2」 를 고르셔서 고치게 한다.
+
+      ★ 지우지는 않는다 ★
+        다시 계산해서 «값이 나온 것»만 덮는다. 빈 판정으로 기존 값을 지우면
+        돌릴수록 정보가 줄어든다. 위 배포 루프와 같은 손버릇이다.
+      ★ 출처는 안 넘긴다 ★
+        옛 줄이 어느 탭에서 걷혔는지는 이제 알 수 없다. 모르는 것을
+        아는 척하지 않는다 — 발주업체와 품목코드로만 판정한다.
+        허브는 전부 대리발송 건이라 «발주업체의 택배사»가 사실이다.
+      ══════════════════════════════════════════════════════════════ */
+  var _carrierFixed = 0;
+  for (var _ci = 0; _ci < hubData.length; _ci++) {
+    if (!_po_hasRealInvoice_(hubData[_ci][13])) continue;
+    var _newCar = _po_carrierForHubRow_("", hubData[_ci]);
+    if (!_newCar) continue;
+    if (String(hubData[_ci][_PO_HUB_CARRIER_COL_] || "").trim() === _newCar) continue;
+    hubData[_ci][_PO_HUB_CARRIER_COL_] = _newCar;
+    _carrierFixed++;
+    carrierChanged = true;
+    hubChanged = true;
+  }
+  if (_carrierFixed > 0) {
+    scannedLogs.push("[택배사] 이미 찍힌 줄 다시 계산: " + _carrierFixed + "건 고침");
+  }
+
   // ★ 2026-07-09: M/N/O열 배치 쓰기 (열당 1회 setValues = 총 3회 API 호출)
   if (hubChanged) {
     var _mVals = [], _nVals = [], _oVals = [];
