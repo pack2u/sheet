@@ -16,7 +16,6 @@ var SSM_PARTNER_ITEM_HEADER = ['이카운트코드', '업체코드', '사유'];
 var SSM_ISL_KW_HEADER = ['시/군', '권역', '확정'];
 var SSM_ISL_ZIP_HEADER = ['우편번호', '권역'];
 var SSM_ISL_DICT_HEADER = ['정규주소', '우편번호', '권역', '최초확인', '메모'];
-var SSM_LOCAL_HEADER = ['정규주소', '동네', '일자'];
 
 function ssm_open(id, tab, label) {
   // 열기뿐 아니라 읽기까지 감싼다.
@@ -37,7 +36,7 @@ function ssm_open(id, tab, label) {
 /**
  * 없어도 실행은 되는 원천용. 실패하면 던지지 않고 사유를 돌려준다.
  * 이카운트(품목·재고·BOM)는 필수라 ssm_open 을 그대로 쓰고,
- * 도서산간·동네배송은 이걸 써서 "못 읽었다"와 "0건이다"를 구분한다.
+ * 도서산간은 이걸 써서 "못 읽었다"와 "0건이다"를 구분한다.
  */
 function ssm_openOptional(id, tab, label) {
   if (!ssText(id) || !ssText(tab)) return { ok: false, why: label + ' 원천이 설정 탭에 비어 있습니다.' };
@@ -51,19 +50,6 @@ function ssm_localRows(tabName) {
   return sh ? Math.max(0, sh.getLastRow() - 1) : 0;
 }
 
-/**
- * 동네배송이 중단이면 관련 탭 2개를 숨긴다. 「사용」으로 되돌리면 다시 보인다.
- * 지우지 않으므로 언제든 설정 한 줄로 복구된다.
- */
-function ssm_setLocalTabVisible(show) {
-  var ss = ssio_ss();
-  var names = [SSIO_TABS.동네배송, '로젠택배-동네배송'];
-  for (var i = 0; i < names.length; i++) {
-    var sh = ss.getSheetByName(names[i]);
-    if (!sh) continue;
-    try { if (show) sh.showSheet(); else sh.hideSheet(); } catch (e) {}
-  }
-}
 
 
 /* ── 조각 갱신 — 실행 때마다 다시 읽을 수 있게 따로 뺐다 ─────── */
@@ -268,57 +254,12 @@ function ssm_refreshAll() {
     }
   }
 
-  // 6) 금일 동네배송 — 설정에서 「중단」이면 통째로 건너뛴다 (경고도 안 낸다)
-  var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
-  var 동네사용 = (ssText(cfg['동네배송_사용']) === '사용');
-  if (!동네사용) {
-    ssio_write(SSIO_TABS.동네배송, SSM_LOCAL_HEADER, []);
-    ssm_setLocalTabVisible(false);
-    report.push(['금일 동네배송', '중단 (설정)']);
-    // 7) 합배송조건 표 정리 + 검증 (구 시트에서 붙여넣은 #REF! 수식을 값으로 덮어쓴다)
-  var tc = ssm_tidyCond();
-  report.push(['합배송조건', tc.rows]);
-  report.push(['  조건 수', tc.conds]);
-  if (tc.missing.length) {
-    warn.push(['오류', 'COND_CODE', tc.missing.slice(0, 5).join(', '),
-      '합배송조건에 품목정보에 없는 코드가 ' + tc.missing.length + '건 있습니다. 「합배송조건」 D열 비고를 보세요.']);
-  }
-  if (tc.dup.length) {
-    warn.push(['주의', 'COND_DUP', String(tc.dup.length) + '건',
-      '두 개 이상 조건에 걸친 코드가 있습니다. 배송키 묶음 안에서 전용 코드가 많은 조건으로 자동 결정됩니다.']);
-  }
+  /*  ★ 동네배송을 지웠다 ★  (2026-09-15)
+      > "동네배송관련 시스템은 삭제해줘.. 시간만 더 걸리는거 같아.."
 
-  return { report: report, warnings: warn };
-  }
-  ssm_setLocalTabVisible(true);
-
-  var loRes = ssm_openOptional(cfg['동네배송시트ID'], cfg['동네배송_탭'], '동네배송');
-  if (loRes.ok) {
-    var lo = loRes.values;
-    var locals = [], seenL = {}, newest = '';
-    for (var l = 1; l < lo.length; l++) {
-      var d = lo[l][2];
-      var ds = (d instanceof Date) ? Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd') : ssText(d);
-      if (ds > newest) newest = ds;
-      if (ds.indexOf(today) !== 0) continue;
-      var a = ssNormAddr(lo[l][8]);
-      if (!a || seenL[a]) continue;
-      seenL[a] = true;
-      locals.push([a, ssText(lo[l][1]), today]);
-    }
-    ssio_write(SSIO_TABS.동네배송, SSM_LOCAL_HEADER, locals);
-    report.push(['금일 동네배송', locals.length]);
-    if (!locals.length) {
-      warn.push(['주의', 'LOCAL_STALE', cfg['동네배송_탭'],
-        '오늘(' + today + ') 동네배송 자료가 없습니다. 원천의 최신 일자는 ' + (newest || '없음') +
-        ' 입니다. 동네배송 건은 전부 일반 롯데 출고로 나갑니다.']);
-    }
-  } else {
-    ssio_write(SSIO_TABS.동네배송, SSM_LOCAL_HEADER, []);
-    report.push(['금일 동네배송', '건너뜀 — 원천 접근 불가']);
-    warn.push(['주의', 'LOCAL_SRC', cfg['동네배송_탭'],
-      '동네배송 원천을 못 읽어 동네배송 분류를 건너뜁니다. 해당 건은 일반 롯데 출고로 나갑니다. ' + loRes.why]);
-  }
+      설정이 이미 「중단」이라 분류는 안 하고 있었는데, 그래도 매 실행마다
+      바깥 시트를 열어 보고 탭을 비우고 숨기는 일을 했다. 안 쓰는 길에
+      시간을 쓰고 있었다. 원천 시트·탭·경고·출력 탭까지 한 번에 뺀다. */
 
   // 7) 합배송조건 표 정리 + 검증 (구 시트에서 붙여넣은 #REF! 수식을 값으로 덮어쓴다)
   var tc = ssm_tidyCond();
@@ -343,7 +284,7 @@ function ssm_load(회차키) {
   var M = {
     items: {}, stock: {}, bom: {}, splitExcept: {},
     cond: {}, condCodes: {}, feeRules: {},
-    islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {}, ferry: []
+    islandKeywords: [], islandZips: {}, addrZip: {}, ferry: []
   };
 
   var it = ssio_body(SSIO_TABS.M품목);
@@ -408,8 +349,6 @@ function ssm_load(회차키) {
     var zip = ssText(dc[y][1]); if (zip) M.addrZip[a] = zip;
   }
 
-  var lo = ssio_body(SSIO_TABS.동네배송);
-  for (var l = 0; l < lo.length; l++) { var la = ssText(lo[l][0]); if (la) M.localAddrs[la] = true; }
 
   M.vendors = {};
   var vd = ssio_body(SSIO_TABS.업체);

@@ -42,7 +42,6 @@ var SS_ROUTE = {
   LOTTE: '로젠택배',
   LOTTE_ISLAND: '로젠택배-도서산간',
   LOTTE_ISLAND_CONSIGN: '로젠택배-도서산간(위탁배송)',
-  LOTTE_LOCAL: '로젠택배-동네배송',
   PARTNER: '대리발송',
   MERGED: '합포장동봉',
   NONSHIP: '비배송',
@@ -177,7 +176,6 @@ var SS_DEFAULT_CONFIG = {
   허용상태: '판매중,임박,특판',
   보내는주소: '경기도 평택시 포승읍 성해홍원로 91 팩투유',
   대표전화: '031-923-7795',
-  동네배송_사용: '중단',
   /* 도선료 표가 «어느 택배사» 기준인지.
      표 자체는 「도서산간_도선료」 탭에 사람이 심는다. 로젠 표로 갈아 넣은 뒤
      이 값을 '로젠' 으로 바꾸면 아래 경고가 멎는다. */
@@ -1222,7 +1220,6 @@ function ssRoute(units, masters, cfg, warnings) {
   var ferry = masters.ferry || [];
   var islandZip = masters.islandZips || {};
   var addrZip = masters.addrZip || {};
-  var localAddr = (ssText(cfg.동네배송_사용) === '사용') ? (masters.localAddrs || {}) : {};
   var holdIsland = ssText(cfg.도서산간_미확인) !== '일반출고';
 
   // 한 글자 키워드는 시/군을 가려내지 못한다.
@@ -1399,7 +1396,6 @@ function ssRoute(units, masters, cfg, warnings) {
     var addr = ssNormAddr(u.주소1);
     u.정규주소 = addr;
 
-    if (localAddr[addr]) { u.route = SS_ROUTE.LOTTE_LOCAL; continue; }
 
     var zip = ssText(addrZip[addr]);
     u.우편번호 = zip;
@@ -1837,7 +1833,7 @@ function ssRun(grid, masters, cfg) {
      대리발송은 안 건드린다 — 업체별로 나가는 표라 성격이 다르고,
      지금 대리공급 푸시가 그 탭을 읽는다(_partnerExclusivePush.gs). */
   var 정렬대상 = [SS_ROUTE.LOTTE, SS_ROUTE.LOTTE_ISLAND,
-    SS_ROUTE.LOTTE_ISLAND_CONSIGN, SS_ROUTE.LOTTE_LOCAL];
+    SS_ROUTE.LOTTE_ISLAND_CONSIGN];
   for (var si = 0; si < 정렬대상.length; si++) ssSortForPick(buckets[정렬대상[si]]);
 
   // 「합배송」 확인용 뷰 — 대표행(송장 나감) + 동봉행(같은 박스)을 묶음 단위로 모은다.

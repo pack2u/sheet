@@ -1191,8 +1191,12 @@ console.log("\n[송장출력] 파일 이름과 폴더");
   //  ── 폴더는 «고르지 않는다» ──  로컬 폴더는 구글이 막는다
   eq("★ 폴더 설정을 안 본다", bulk.includes("송장출력_폴더"), "false");
   eq("죽은 설정으로 적어 둔다", io.includes("'송장출력_폴더':"), "true");
-  eq("폴더를 «먼저» 찾는다",
-    bulk.indexOf("var 폴더 = ssb_printFolder_(ss);") < bulk.indexOf("var fileName = 폴더 ?"), "true");
+  /*  2026-09-15: 엑셀 만들기를 지웠다 — 이제 「로젠택배_출력」 탭에만 담는다.
+      > "조치사항을 눈으로 확인하는게 더 나아... 로젠송장출력탭을 복붙하는게 더 편하네"
+      폴더·파일 이름을 찾던 코드가 통째로 사라졌으므로 그 줄을 지키면 안 된다. */
+  eq("★ 엑셀을 안 만든다", bulk.includes("var fileName = 폴더 ?"), "false");
+  eq("★ 탭에 담고 그 탭을 연다",
+    bulk.includes("ss.setActiveSheet(ss.getSheetByName(SSIO_TABS.출력사본))"), "true");
 }
 
 console.log(실패 ? "\n실패 " + 실패 + "건" : "\n이름·폴더도 그대로");

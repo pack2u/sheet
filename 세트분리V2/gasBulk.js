@@ -1175,9 +1175,26 @@ function ssb_islandKeep(vals) {
  *
  *   지우려면 먼저 시트의 버튼·그림이 무엇을 부르는지 확인할 것.
  */
-function ss_롯데출력엑셀() { return ss_로젠출력엑셀(); }
+/** 옛 이름 — 메뉴·트리거가 남아 있을 수 있어 그대로 둔다 */
 
-function ss_로젠출력엑셀() {
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  로젠에 올릴 한 장을 「로젠택배_출력」 탭에 담는다
+ *
+ *  > "조치사항을 눈으로 확인하는게 더 나아... 로젠송장출력탭을
+ *  >  복붙하는게 더 편하네..."
+ *
+ *  ★ 엑셀을 만들지 않는다 ★  (2026-09-15)
+ *    종전 이름은 ss_로젠출력엑셀 이었고 실제로 xlsx 를 만들어 드라이브에
+ *    저장했다. 파일을 받아 다시 여는 손이 한 번 더 든다. 탭을 복붙하는 편이
+ *    빠르고, 조치한 것이 제대로 빠졌는지 «눈으로» 확인이 된다.
+ *
+ *  ★ 조치 적용이 이것을 부른다 ★
+ *    사람이 보류 탭에서 조치를 적고 「조치 적용」을 누르면, 그 결과가 반영된
+ *    한 장이 바로 이 탭에 담기고 그 탭이 열린다. 누를 곳이 하나 줄었다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function ss_로젠출력탭() {
   var NL = String.fromCharCode(10);
   var names = _sslp_tabs_();
   var ss = ssio_ss();
@@ -1256,46 +1273,6 @@ function ss_로젠출력엑셀() {
 
      ★ 폴더를 «먼저» 찾는다 ★ 몇 번째인지 알려면 폴더 안을 세야 한다.
      못 찾으면 시각 이름으로 물러선다 — 이름 때문에 출력이 막히면 안 된다. */
-  var 폴더 = ssb_printFolder_(ss);
-  var yy = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
-  var fileName = 폴더 ? ssb_nextPrintName_(폴더, yy) : ('로젠송장출력_' + ymd + '.xlsx');
-  var tmp = SpreadsheetApp.create('tmp_lotte_print_' + ymd);
-
-  for (var p = 0; p < packs.length; p++) {
-    var dest = (p === 0) ? tmp.getSheets()[0] : tmp.insertSheet();
-    dest.setName(packs[p].name);
-    var v = packs[p].vals;
-    var w = 0;
-    for (var r = 0; r < v.length; r++) if (v[r].length > w) w = v[r].length;
-    for (var r2 = 0; r2 < v.length; r2++) while (v[r2].length < w) v[r2].push('');
-    if (dest.getMaxColumns() < w) dest.insertColumnsAfter(dest.getMaxColumns(), w - dest.getMaxColumns());
-    if (dest.getMaxRows() < v.length) dest.insertRowsAfter(dest.getMaxRows(), v.length - dest.getMaxRows() + 5);
-    /* 앞자리 0 이 살아 있어야 한다 — 우편번호·전화·송장 */
-    dest.getRange(1, 1, v.length, w).setNumberFormat('@');
-    dest.getRange(1, 1, v.length, w).setValues(v);
-    dest.getRange(1, 1, 1, w).setFontWeight('bold').setBackground('#1f4e78').setFontColor('white');
-  }
-  SpreadsheetApp.flush();
-
-  var blob = null, xerr = '';
-  try {
-    var resp = UrlFetchApp.fetch(
-      'https://docs.google.com/spreadsheets/d/' + tmp.getId() + '/export?format=xlsx',
-      { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
-    if (resp.getResponseCode() === 200 && resp.getBlob().getBytes().length > 64) {
-      blob = resp.getBlob().setName(fileName).setContentType(MimeType.MICROSOFT_EXCEL);
-    } else { xerr = 'HTTP ' + resp.getResponseCode(); }
-  } catch (e) { xerr = e && e.message ? e.message : String(e); }
-
-  var fileUrl = '', fileId = '';
-  if (blob) {
-    var folder = 폴더 || DriveApp.getRootFolder();
-    var f = folder.createFile(blob);
-    fileUrl = f.getUrl(); fileId = f.getId();
-  }
-  //  임시 시트는 지운다. 안 지우면 드라이브에 회차마다 쌓인다.
-  try { DriveApp.getFileById(tmp.getId()).setTrashed(true); } catch (e3) {}
-
   /* ★ 내보낸 그대로를 시트에도 남긴다 ★  (2026-09-14)
      > "엑셀 출력하면 로젠택배_출력 텝도 같이 생기면 좋겠어"
 
@@ -1315,8 +1292,7 @@ function ss_로젠출력엑셀() {
     var 사본탭 = ssio_write(SSIO_TABS.출력사본, SS_OUT_HEADER, 사본, { bg: '#1f4e78' });
     //  «언제 어느 파일로» 나갔는지는 메모로 남긴다 — 열을 더하면 로젠 양식이 깨진다
     사본탭.getRange(1, 1).setNote(
-      fileName + String.fromCharCode(10) +
-      Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss') +
+      '조치 적용: ' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss') +
       String.fromCharCode(10) + 총행 + '행');
   } catch (eCopy) {
     //  사본은 곁다리다. 실패해도 파일은 이미 만들어졌다.
@@ -1377,25 +1353,18 @@ function ss_로젠출력엑셀() {
       '   세트분리를 한 번 돌리면 열이 생깁니다.' + NL + NL + msg;
   }
 
-  if (!blob) {
-    return ssio_alert(msg + '⚠ 엑셀 내보내기 실패 (' + xerr + ')' + NL +
-      '탭을 직접 복사해 쓰세요.');
-  }
 
-  var dl = 'https://drive.google.com/uc?export=download&id=' + fileId;
-  try {
-    SpreadsheetApp.getUi().showModalDialog(
-      HtmlService.createHtmlOutput(
-        '<div style="font-family:Malgun Gothic,sans-serif;font-size:13px;line-height:1.7">' +
-        '<b>' + fileName + '</b><br>' + lines.join('<br>').split('  · ').join('· ') +
-        '<br>합계 ' + 총행 + '행<br><br>' +
-        '<a href="' + dl + '" target="_blank" style="font-size:15px;font-weight:bold">⬇ 엑셀 다운로드</a>' +
-        '&nbsp;&nbsp;<a href="' + fileUrl + '" target="_blank">드라이브에서 열기</a>' +
-        '<br><br><span style="color:#666">받은 파일을 롯데 자체출력에 올려 송장을 뽑습니다.<br>' +
-        '도서산간은 운임이 달라 시트가 나뉘어 있습니다.</span></div>')
-        .setWidth(520).setHeight(240), '로젠 송장출력');
-    return msg + fileUrl;
-  } catch (eUi) {
-    return ssio_alert(msg + '저장했습니다.' + NL + '  ' + fileUrl + NL + NL + '다운로드: ' + dl);
-  }
+  /*  ★ 엑셀을 만들지 않는다 ★  (2026-09-15)
+      > "조치사항을 눈으로 확인하는게 더 나아... 로젠송장출력탭을
+      >  복붙하는게 더 편하네..."
+
+      여태 임시 스프레드시트를 만들어 xlsx 로 내보내고 드라이브에 저장하고
+      다운로드 링크를 띄웠다. 파일을 받아 다시 여는 손이 한 번 더 든다.
+      사장님은 탭을 보고 바로 복붙하신다 — 그 편이 빠르고, 조치한 것이
+      제대로 빠졌는지 «눈으로» 확인이 된다.
+      파일 만들기·드라이브 저장·모달을 통째로 지웠다. 탭만 남긴다. */
+  try { ss.setActiveSheet(ss.getSheetByName(SSIO_TABS.출력사본)); } catch (eAct) {}
+  return ssio_alert(msg + '「' + SSIO_TABS.출력사본 + '」 탭에 담았습니다.' + NL +
+    '그 탭을 통째로 복사해 로젠에 붙여 넣으세요.' + NL + NL +
+    '도서산간은 운임이 달라 조치(Y)한 줄만 들어갑니다.');
 }

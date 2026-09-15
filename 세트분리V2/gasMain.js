@@ -19,7 +19,7 @@ var SS_SUMMARY_HEADER = ['항목', '값'];
      (migrateHeader 도 이름만 바뀐 것은 안 밀어내게 고쳤지만, 애초에
       흔들릴 이름을 안 쓰는 것이 먼저다.) */
 var SS_RUNLOG_HEADER = ['회차키', '실행시각', '입력행', '분해행', '합포장흡수', '출력행',
-  '자사출고', '도서산간', '도서산간(위탁)', '동네배송', '대리발송', '합배송', '보류', '경고', '소요(초)', '버전'];
+  '자사출고', '도서산간', '도서산간(위탁)', '대리발송', '합배송', '보류', '경고', '소요(초)', '버전'];
 
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
@@ -31,7 +31,7 @@ function onOpen() {
     .addItem('▶ 세트분리 실행', 'ss_실행')
     .addItem('✅ 조치 적용 (보류 → 발송·대리발송)', 'ss_보류조치반영')
     .addSeparator()
-    .addItem('🖨 로젠 송장출력 엑셀', 'ss_로젠출력엑셀')
+
     .addItem('🔁 송장 전파 (자사출고 → 사방넷)', 'ss_송장전파')
     .addItem('📊 사방넷 송장대량등록', 'ss_사방넷엑셀저장')
     .addItem('📋 일일마감 (원장 → 마감표)', 'ss_일일마감')
@@ -122,7 +122,6 @@ function ss_설치() {
   ssio_sheet(SSIO_TABS.도서산간우편, SSM_ISL_ZIP_HEADER);
   ssio_sheet(SSIO_TABS.도선료, SS_FERRY_HEADER);
   ssio_sheet(SSIO_TABS.도서산간사전, SSM_ISL_DICT_HEADER);
-  ssio_sheet(SSIO_TABS.동네배송, SSM_LOCAL_HEADER);
 
   // 기본 시트1 정리
   var junk = ssio_ss().getSheetByName('시트1') || ssio_ss().getSheetByName('Sheet1');
@@ -154,7 +153,7 @@ function ss_탭정렬() {
     SSIO_TABS.합배송조건, SSIO_TABS.분리예외, SSIO_TABS.대리발송품목, SSIO_TABS.업체, SSIO_TABS.수동조치, SSIO_TABS.도서산간사전,
     SSIO_TABS.설정,
     SSIO_TABS.M품목, SSIO_TABS.M배송비, SSIO_TABS.M재고, SSIO_TABS.MBOM,
-    SSIO_TABS.도서산간시군, SSIO_TABS.도서산간우편, SSIO_TABS.동네배송,
+    SSIO_TABS.도서산간시군, SSIO_TABS.도서산간우편,
     SSIO_TABS.회차, SSIO_TABS.원장, SSIO_TABS.실행이력
   ]);
   var ss = ssio_ss();
@@ -198,7 +197,29 @@ function ss_판매현황비우기() {
 /* ── 실행 ─────────────────────────────────────────────── */
 
 /** 보류 탭에 적은 조치만 반영해 다시 계산한다 (원천을 다시 읽지 않아 회차가 그대로다) */
-function ss_보류조치반영() { return ss_실행({ mirrorOnly: true }); }
+/**
+ * 조치 적용 — 보류 탭에 적은 조치를 반영하고, 나갈 한 장을 탭에 담는다.
+ *
+ * > "세트분리시 조치적용시 시트가 로젠송장출력을 누른 상태로 바뀌게 해줘"
+ * > "조치사항을 눈으로 확인하는게 더 나아"
+ *
+ * 여태 조치를 적용한 뒤 「로젠 송장출력」을 따로 눌러야 했다. 두 단추가
+ * 늘 붙어 다니는데 나눠 둘 까닭이 없다. 적용하면 바로 그 탭이 열린다 —
+ * 조치한 것이 제대로 빠졌는지 그 자리에서 눈으로 본다.
+ *
+ * 탭 만들기가 실패해도 조치 적용은 이미 끝났다. 그 사실을 덮지 않는다.
+ */
+function ss_보류조치반영() {
+  var r = ss_실행({ mirrorOnly: true });
+  try {
+    ss_로젠출력탭();
+  } catch (e) {
+    ssio_alert('조치는 적용했습니다.' + String.fromCharCode(10) +
+      '「' + SSIO_TABS.출력사본 + '」 탭 만들기는 실패했습니다: ' +
+      (e && e.message ? e.message : e));
+  }
+  return r;
+}
 
 function ss_실행(opts) {
   opts = opts || {};
@@ -218,7 +239,6 @@ function ss_실행(opts) {
       보내는주소: cfgRaw['보내는주소'] || SS_DEFAULT_CONFIG.보내는주소,
       대표전화: cfgRaw['대표전화'] || SS_DEFAULT_CONFIG.대표전화,
       도서산간_미확인: cfgRaw['도서산간_미확인'] || SS_DEFAULT_CONFIG.도서산간_미확인,
-      동네배송_사용: cfgRaw['동네배송_사용'] || SS_DEFAULT_CONFIG.동네배송_사용,
       도서산간_판정: cfgRaw['도서산간_판정'] || SS_DEFAULT_CONFIG.도서산간_판정,
       전화주문_고유ID: cfgRaw['전화주문_고유ID'] || SS_DEFAULT_CONFIG.전화주문_고유ID,
       재고부족_자동대리발송: cfgRaw['재고부족_자동대리발송'] || SS_DEFAULT_CONFIG.재고부족_자동대리발송,
@@ -402,7 +422,7 @@ function ss_실행(opts) {
     ssio_append(SSIO_TABS.실행이력, SS_RUNLOG_HEADER, [[
       runKey, at, res.stats.입력행, res.stats.분해행, res.stats.합포장흡수, res.stats.출력행,
       res.stats['탭_' + SS_ROUTE.LOTTE], res.stats['탭_' + SS_ROUTE.LOTTE_ISLAND],
-      res.stats['탭_' + SS_ROUTE.LOTTE_ISLAND_CONSIGN], res.stats['탭_' + SS_ROUTE.LOTTE_LOCAL],
+      res.stats['탭_' + SS_ROUTE.LOTTE_ISLAND_CONSIGN],
       res.stats['탭_' + SS_ROUTE.PARTNER], res.stats['탭_' + SS_ROUTE.MERGED],
       res.stats.보류, res.warnings.length,
       sec.toFixed(1), SS_VERSION
@@ -558,7 +578,6 @@ function ss_실행(opts) {
       '  ' + SS_ROUTE.LOTTE + ' ' + res.stats['탭_' + SS_ROUTE.LOTTE] + '\n' +
       '  도서산간 ' + res.stats['탭_' + SS_ROUTE.LOTTE_ISLAND] + ss_권역요약(res) +
       ' · 도서산간(위탁) ' + res.stats['탭_' + SS_ROUTE.LOTTE_ISLAND_CONSIGN] +
-      ' · 동네배송 ' + res.stats['탭_' + SS_ROUTE.LOTTE_LOCAL] + '\n' +
       '  대리발송 ' + res.stats['탭_' + SS_ROUTE.PARTNER] + '\n' +
       '  합배송 ' + 대표 + '박스 · 동봉 ' + res.stats.합포장흡수 + '행 (모두 출력 탭에 포함)\n' +
       '  비배송 ' + nonship.length + '행 (적립금·배송비 등, 매출엔 포함)' + String.fromCharCode(10) +
