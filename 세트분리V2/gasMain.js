@@ -1052,11 +1052,28 @@ var ssDigitsRe_ = new RegExp("^[0-9]+$");
  * 한 칸에 여러 장이 쉼표·공백·줄바꿈으로 붙어 오는 일이 흔하다.
  * 9자리 미만은 송장이 아니다(메모·수량이 섞여 온다).
  */
+/**
+ * 한 칸의 글자 → 송장번호들.
+ *
+ * ★ 하이픈은 «구분자가 아니다» ★  (2026-09-16)
+ *   여태 숫자가 아닌 글자를 모두 구분자로 봤다(split(/[^0-9]+/)).
+ *   그런데 로젠은 송장을 「451-6945-9705」 처럼 찍는다. 그러면
+ *   451 · 6945 · 9705 세 토막이 되고 전부 9자리 미만이라 «다 버려진다».
+ *
+ *   실제로 그랬다 — 전파가 로젠 탭 816줄을 읽고도 표가 비어 있었고
+ *   (「원천 · 롯데 0」) 자사출고 송장이 한 건도 안 붙었다.
+ *   오류는 안 났다. 읽은 줄 수만 세고 있어서 816 으로 보였다.
+ *
+ *   진짜 구분자는 줄바꿈·공백·쉼표·세미콜론·/·| 다 — 한 칸에 송장이
+ *   여러 장일 때 그것들로 이어 적는다. 그 규칙은 gasBulk 의
+ *   SSB_INV_SPLIT 에 이미 있다. 여기에 또 적지 않는다.
+ *   토막마다 숫자만 남겨 9자리 이상이면 송장으로 본다.
+ */
 function ssInvAll_(raw) {
   var out = [], seen = {};
-  var toks = String(raw == null ? '' : raw).split(/[^0-9]+/);
+  var toks = String(raw == null ? '' : raw).split(SSB_INV_SPLIT);
   for (var i = 0; i < toks.length; i++) {
-    var d = toks[i];
+    var d = String(toks[i]).replace(new RegExp('[^0-9]', 'g'), '');
     if (!d || d.length < 9 || seen[d]) continue;
     seen[d] = true;
     out.push(d);
