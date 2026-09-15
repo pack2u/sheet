@@ -1104,6 +1104,20 @@
       margin-top: 10px; padding-top: 10px;
       border-top-color: rgba(255,255,255,0.1);
     }
+    /* 반품 카드 나열 차례 고르는 칸 — 검색칸 옆에 조용히 선다 */
+    .ret-sort {
+      flex: 0 0 auto;
+      height: 28px;
+      padding: 0 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      background: var(--bg-input, rgba(255,255,255,0.06));
+      border: 1px solid var(--border-color, rgba(255,255,255,0.14));
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .ret-sort:focus { outline: 2px solid var(--accent, #FDB813); outline-offset: 1px; }
+
     .ret-act-bar { display: flex; gap: 3px; flex-wrap: nowrap; justify-content: flex-start; }
     .ret-act {
       width: 20px; height: 20px; flex: none; border-radius: 6px;
@@ -2588,6 +2602,13 @@
               <input id="rq" type="search" autocomplete="off" placeholder="이름·전화·송장·품목·상태"
                      onkeydown="if(event.key==='Enter'){ event.preventDefault(); doReturnSearch(true); }">
             </div>
+            <select id="retSort" class="ret-sort" title="카드 나열 차례"
+                    aria-label="카드 나열 차례" onchange="setReturnSort(this.value)">
+              <option value="new">최신순</option>
+              <option value="old">오래된순</option>
+              <option value="vendor">업체순</option>
+              <option value="stage">상태순</option>
+            </select>
             <button type="button" class="hb-icon" title="새로고침" aria-label="새로고침"
                     onclick="loadReturnActive(true, true)">↻</button>
             <button type="button" class="hb-new" title="새 반품 카드" aria-label="새 반품 카드"
@@ -8107,6 +8128,57 @@
       return false;
     }
 
+    /* ══════════════════════════════════════════════════════════
+       카드 나열 차례
+
+       > "반품현황에서 카드 나열을 선택할수 있게 해줘.. 최신순. 오래된순"
+
+       ★ 서버가 쓰는 열쇠를 그대로 쓴다 ★
+         sortKey 는 dateYmd_역순번 이다. 여기서 날짜를 다시 파싱하면
+         차례를 정하는 규칙이 두 군데가 되고, 언젠가 반드시 어긋난다.
+
+       ★ 고른 것은 그 사람 브라우저에만 남는다 ★
+         사람마다 보는 차례가 다르다. 서버에 둘 일이 아니다.
+       ══════════════════════════════════════════════════════════ */
+    var RETURN_SORT = 'new';
+    try {
+      var _rs = localStorage.getItem('CS_RET_SORT');
+      if (_rs) RETURN_SORT = _rs;
+    } catch (e) {}
+
+    function setReturnSort(v) {
+      RETURN_SORT = String(v || 'new');
+      try { localStorage.setItem('CS_RET_SORT', RETURN_SORT); } catch (e) {}
+      renderReturnActiveList();
+    }
+
+    function sortReturnRows(rows) {
+      var key = function(c) { return String((c && c.sortKey) || ''); };
+      var out = rows.slice();
+      if (RETURN_SORT === 'old') {
+        out.sort(function(a, b) { return key(a).localeCompare(key(b)); });
+      } else if (RETURN_SORT === 'vendor') {
+        //  업체가 같으면 최신순 — 한 업체 것을 모아 놓고 그 안에서 새 것부터
+        out.sort(function(a, b) {
+          var va = String((a && a.vendor) || '힣'), vb = String((b && b.vendor) || '힣');
+          if (va !== vb) return va.localeCompare(vb);
+          return key(b).localeCompare(key(a));
+        });
+      } else if (RETURN_SORT === 'stage') {
+        /*  stage 는 숫자다 — 0 접수 · 1 회수 · 2 입고 · 3 완료.
+            «손이 안 간 것부터» 올린다. 같은 단계면 오래된 것이 위다 —
+            묵은 건이 아래로 밀려 안 보이면 이 차례를 고른 뜻이 없다. */
+        out.sort(function(a, b) {
+          var sa = Number((a && a.stage) || 0), sb = Number((b && b.stage) || 0);
+          if (sa !== sb) return sa - sb;
+          return key(a).localeCompare(key(b));
+        });
+      } else {
+        out.sort(function(a, b) { return key(b).localeCompare(key(a)); });
+      }
+      return out;
+    }
+
     function filterReturnRows(all, q) {
       all = (all || []).filter(function(c) { return !isReturnCardDone(c); });
       q = String(q || '').trim();
@@ -8164,8 +8236,10 @@
       if (!list) return;
       if (sourceRows) RETURN_ALL_ROWS = sourceRows.slice();
       RET_PHOTO_PEND = {};   // 카드 index 가 다시 매겨지므로 대기 사진도 비운다
-      var filtered = filterReturnRows(RETURN_ALL_ROWS, RETURN_QUERY);
+      var filtered = sortReturnRows(filterReturnRows(RETURN_ALL_ROWS, RETURN_QUERY));
       RETURN_ACTIVE_ROWS = filtered;
+      var _sortSel = document.getElementById('retSort');
+      if (_sortSel && _sortSel.value !== RETURN_SORT) _sortSel.value = RETURN_SORT;
       clearReturnFocus();
       if (head) {
         head.textContent = RETURN_QUERY

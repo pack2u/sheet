@@ -3475,6 +3475,10 @@ function csGetReturnLedgerBadgeIndex(opt) {
          상담이력(timeline)은 뺀다 — 90일치면 몇 배로 무거워진다.
          눌러서 펼칠 때 csGetReturnCaseAt 이 그 한 건만 가져온다. */
       slim.push({
+        /*  서버가 쓰는 정렬 열쇠를 그대로 실어 보낸다 (dateYmd_역순번).
+            화면에서 「오래된순」을 고를 때 날짜를 다시 파싱하지 않게 —
+            차례를 정하는 규칙이 두 군데로 갈리면 반드시 어긋난다. */
+        sortKey: r.sortKey,
         invDigits: r.invDigits,
         returnInvDigits: r.returnInvDigits,
         phoneDigits: r.phoneDigits,

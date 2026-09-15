@@ -26,7 +26,17 @@ const REQUIRED = [
 ];
 
 /** 있어도 되고 없어도 되는 값 */
-const OPTIONAL = [["LOTTE_API_KEY_DEV", "롯데 개발 환경 (지금은 안 씀)"]];
+const OPTIONAL = [
+  ["LOTTE_API_KEY_DEV", "롯데 개발 환경 (지금은 안 씀)"],
+  // 로젠 — 2026-09-15 자리만 만들어 뒀다. 인증키 발급 전이라 비어 있는 게 정상이다.
+  // 키를 받고 운영에 올린 뒤에는 LOGEN_SECRET_KEY_PROD 를 REQUIRED 로 올릴 것.
+  ["LOGEN_SECRET_KEY_DEV", "배송조회(로젠) 개발계 — 발급 대기"],
+  ["LOGEN_SECRET_KEY_PROD", "배송조회(로젠) 운영 — 발급 대기"],
+  ["LOGEN_USER_ID", "로젠 연동업체코드"],
+  ["LOGEN_CUST_CD", "로젠 거래처코드"],
+  ["LOGEN_PROXY_URL", "로젠 중계 서버 (IP 면제되면 불필요)"],
+  ["LOGEN_PROXY_TOKEN", "로젠 중계 서버 토큰"],
+];
 
 let src;
 try {
