@@ -1607,7 +1607,10 @@ function partnerFetchInvoices() {
 
   // ── ★ 합배송 전용 시트: 이름+전화 키 + Q열(고유ID) 수집 ──
   var combinedShipmentKeySet = {};
-  var combinedUidSet = {};  // ★ Q열 고유ID 기반 합배송 판정용
+  var combinedUidSet = {};  // ★ 고유ID 기반 합배송 판정용
+  /*  고유ID → 합포장키. 뉴 합배송 탭이 «묶음 이름»을 적어 준다.
+      이름으로 묶던 것을 이것으로 바꾼다 — 짐작이 아니라 적힌 것이다. */
+  var combinedKeyByUid = {};
   try {
     var _csSS = SpreadsheetApp.openById(_PT_COMBINED_INVOICE_SHEET_ID);
     /*  GID 가 -1 이면 이름으로 찾는다. 뉴 합배송 탭 이름은 코드가 정한다. */
@@ -1667,17 +1670,31 @@ function partnerFetchInvoices() {
          읽고, 그러면 합배송이 «하나도» 안 잡히거나 남의 것이 잡힌다.
          못 찾으면 옛 자리(16)로 돌아간다 — 구 시트로 되돌려도 돈다. */
       var _csUidCol = -1;
+      var _csGrpCol = -1;
       for (var _ui = 0; _ui < _csHeaders.length; _ui++) {
-        var _uh = String(_csHeaders[_ui]).replace(/s/g, "");
-        if (_uh === "사방넷주문번호" || _uh === "고유ID" || _uh === "고유아이디") {
+        /*  ★ 공백 지우기가 망가져 있었다 ★  (2026-09-15)
+            replace(/s/g, "") 는 «영문 s» 를 지운다. 공백을 지우려면
+            역슬래시가 있어야 하는데 어딘가에서 한 겹 벗겨졌다.
+            머리글에 공백이 하나라도 있으면 못 찾고 옛 자리로 떨어진다.
+            역슬래시를 안 쓰는 꼴로 바꾼다 — 다시 벗겨질 것이 없다. */
+        var _uh = String(_csHeaders[_ui]).split(" ").join("");
+        if (_csUidCol < 0 &&
+            (_uh === "사방넷주문번호" || _uh === "고유ID" || _uh === "고유아이디")) {
           _csUidCol = _ui;
-          break;
+        }
+        if (_csGrpCol < 0 && (_uh === "합포장키" || _uh === "합포장그룹")) {
+          _csGrpCol = _ui;
         }
       }
       if (_csUidCol < 0) _csUidCol = 16; // Q열 = 0-based 16 (구 시트)
       for (var _cr2 = 1; _cr2 < _csData.length; _cr2++) {
         var _csUid = String(_csData[_cr2][_csUidCol] || "").trim();
-        if (_csUid) combinedUidSet[_csUid] = true;
+        if (!_csUid) continue;
+        combinedUidSet[_csUid] = true;
+        if (_csGrpCol >= 0) {
+          var _csGrp = String(_csData[_cr2][_csGrpCol] || "").trim();
+          if (_csGrp) combinedKeyByUid[_csUid] = _csGrp;
+        }
       }
       scannedLogs.push(
         "[합배송 전용] " + _csTab.getName() + " — 이름+전화 키 " +
@@ -2107,15 +2124,34 @@ function partnerFetchInvoices() {
   // 같은 이름 그룹 내에서 송장 있는 행 → 없는 행에 동일 송장 복사
   var combinedUidMatched = 0;
   if (Object.keys(combinedUidSet).length > 0) {
-    var combNameGroups = {}; // name → [rowIndex]
+    /*  ★ 적힌 「합포장키」로 묶는다 ★  (2026-09-15)
+        > "합배송이 발주허브에는 대표만 송장이 들어가고 나머지는 안 들어가네"
+
+        여태 «수취인 이름»으로 묶었다. 이름은 짐작이다 — 동명이인이면
+        남의 주문이 한 박스로 묶이고, 이름이 조금만 달라도(괄호·별칭)
+        같은 박스가 갈라져 대표만 송장을 받는다.
+
+        뉴 합배송 탭은 「합포장키」를 «적어 준다». 세트분리가 실제로 한
+        박스에 담은 묶음의 이름이다. 그걸 쓰면 짐작할 일이 없다.
+        키가 없는 줄(구 시트)만 종전대로 이름으로 묶는다. */
+    var combNameGroups = {}; // 묶음키 → [rowIndex]
+    var _grpByKey = 0, _grpByName = 0;
     for (var cr = 0; cr < hubData.length; cr++) {
       var cUid = String(hubData[cr][2] || "").trim();
       if (!cUid || !combinedUidSet[cUid]) continue;
-      var cName = String(hubData[cr][7] || "").trim();
-      if (!cName) continue;
-      if (!combNameGroups[cName]) combNameGroups[cName] = [];
-      combNameGroups[cName].push(cr);
+      var cKey = combinedKeyByUid[cUid] || "";
+      if (cKey) { cKey = "키:" + cKey; _grpByKey++; }
+      else {
+        var cName = String(hubData[cr][7] || "").trim();
+        if (!cName) continue;
+        cKey = "이름:" + cName;
+        _grpByName++;
+      }
+      if (!combNameGroups[cKey]) combNameGroups[cKey] = [];
+      combNameGroups[cKey].push(cr);
     }
+    scannedLogs.push("[합배송] 묶음 " + Object.keys(combNameGroups).length +
+      "개 (합포장키 " + _grpByKey + "줄 · 이름으로 " + _grpByName + "줄)");
 
     for (var cGrpName in combNameGroups) {
       var cGrpRows = combNameGroups[cGrpName];

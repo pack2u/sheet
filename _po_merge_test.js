@@ -1,0 +1,80 @@
+/**
+ * 합배송 — 대표의 송장을 동봉 형제에게도 붙이는가
+ *
+ *  > "합배송이 발주허브에는 합배송은 대표만 송장이 들어가고 송장번호가
+ *  >  안들어가네.. 대표 송장번호가 들어가고 나머지 주문건 적요에
+ *  >  합배송이라고 적혀야 되는데.."
+ *
+ *  ★ 이름으로 묶는 것이 문제였다 ★
+ *    여태 «수취인 이름»으로 묶었다. 이름은 짐작이다 —
+ *      · 동명이인이면 남의 주문이 한 박스로 묶이고
+ *      · 이름이 조금만 달라도(괄호·별칭) 같은 박스가 갈라져 대표만 송장을 받는다
+ *    뉴 합배송 탭은 「합포장키」를 «적어 준다». 세트분리가 실제로 한 박스에
+ *    담은 묶음의 이름이다. 적힌 것을 쓰면 짐작할 일이 없다.
+ *
+ * 실행: node _po_merge_test.js
+ */
+const fs = require("fs");
+
+let pass = 0, fail = 0;
+function check(label, got, want) {
+  const ok = JSON.stringify(got) === JSON.stringify(want);
+  ok ? pass++ : fail++;
+  console.log((ok ? "  ok   " : "  FAIL ") + label + "  ->  " + JSON.stringify(got) +
+    (ok ? "" : "   (기대: " + JSON.stringify(want) + ")"));
+}
+
+const src = fs.readFileSync("_partnerOrders.gs", "utf8");
+const core = fs.readFileSync("세트분리V2/core.js", "utf8");
+
+console.log("");
+console.log("[읽기] 합배송 탭에서 무엇을 읽는가");
+check("★ 합포장키 칸을 찾는다", src.indexOf('_uh === "합포장키"') >= 0, true);
+check("고유ID 칸도 이름으로 찾는다", src.indexOf('_uh === "사방넷주문번호"') >= 0, true);
+check("★ 고유ID → 합포장키 를 담아 둔다", src.indexOf("combinedKeyByUid[_csUid] = _csGrp;") >= 0, true);
+
+console.log("");
+console.log("[공백] 머리글 공백 지우기가 살아 있는가");
+check("★ replace(/s/g) 가 사라졌다 — 영문 s 만 지우던 것",
+  src.indexOf('String(_csHeaders[_ui]).replace(/s/g, "")') >= 0, false);
+check("역슬래시 없는 꼴로 지운다",
+  src.indexOf('String(_csHeaders[_ui]).split(" ").join("")') >= 0, true);
+
+console.log("");
+console.log("[묶기] 적힌 키가 이름보다 앞선다");
+check("★ 합포장키가 있으면 그것으로 묶는다", src.indexOf('cKey = "키:" + cKey;') >= 0, true);
+check("없을 때만 이름으로", src.indexOf('cKey = "이름:" + cName;') >= 0, true);
+check("★ 어느 쪽으로 몇 줄 묶었는지 말한다",
+  src.indexOf("합포장키 \" + _grpByKey + \"줄 · 이름으로 \" + _grpByName") >= 0, true);
+
+console.log("");
+console.log("[동봉] 대표의 송장을 나머지에 붙인다");
+check("그룹이 2줄 이상일 때만 합배송", src.indexOf("if (cGrpRows.length < 2) continue;") >= 0, true);
+check("★ 송장 있는 줄을 대표로 삼는다", src.indexOf("sourceInv = cInv;") >= 0, true);
+check("★ 송장 없는 줄에 같은 송장을 넣는다", src.indexOf("hubData[ridx][13] = sourceInv;") >= 0, true);
+check("★ 그 줄 상태를 「합배송」으로", src.indexOf('status: "합배송",') >= 0, true);
+check("★ 적요에 「합발송완료」를 적는다",
+  src.indexOf('hubData[hubIdx][12] = "합발송완료";') >= 0, true);
+check("이미 송장이 있으면 안 덮는다", src.indexOf("if (_po_hasRealInvoice_(existInv)) continue;") >= 0, true);
+
+console.log("");
+console.log("[원천] 뉴 합배송 탭에 그 칸이 정말 있는가");
+check("★ 세트분리 합배송 머리글에 합포장키가 있다",
+  core.indexOf("var SS_MERGED_HEADER = ['구분', '조건ID', '실제경로', '합포장키']") >= 0, true);
+check("사방넷주문번호도 있다 (SS_OUT_HEADER)",
+  core.indexOf("'적요', '사방넷주문번호'") >= 0, true);
+{
+  //  SS_MERGED_HEADER = 앞 4칸 + SS_OUT_HEADER → 자리를 세어 둔다
+  const m = core.match(/var SS_OUT_HEADER = \[([\s\S]*?)\];/);
+  const cols = (m[1].match(/'[^']+'/g) || []).map((x) => x.replace(/'/g, ""));
+  const 앞 = ["구분", "조건ID", "실제경로", "합포장키"];
+  const 전체 = 앞.concat(cols);
+  check("합포장키 = 4번째 칸(D)", 전체.indexOf("합포장키"), 3);
+  check("★ 사방넷주문번호는 Q(16)가 아니다 — 옛 자리로 읽으면 안 된다",
+    전체.indexOf("사방넷주문번호") === 16, false);
+  check("실제 자리", 전체.indexOf("사방넷주문번호"), 19);
+}
+
+console.log("");
+console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");
+process.exit(fail ? 1 : 0);
