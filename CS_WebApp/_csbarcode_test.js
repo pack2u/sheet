@@ -90,5 +90,18 @@ console.log("\n[7] 종전 구현이 쓰던 가짜 샘플 — 이제 걸러져야
 ok("212345678905 는 채번규칙 위반 → 체크섬 실패",
    csValidateLotteChecksum_("212345678905") === false);
 
+console.log("\n[8] 현장 라벨 실물 — 로젠 451-6521-9654 (2026-09-15 촬영)");
+//  라벨에 이 번호가 네 가지 꼴로 인쇄돼 있다. 어느 것을 찍어도 같아야 한다.
+[["45165219654", "바코드 숫자 그대로"],
+ ["451-6521-9654", "하이픈"],
+ ["451 6521 9654", "공백"],
+ ["[45165219654]", "대괄호 (라벨 하단)"]].forEach(([v, 설명]) => {
+  const r = csParseCourierBarcode(v);
+  ok(설명 + " → " + r.invoice + " / " + r.courier,
+     r.ok && r.invoice === "45165219654" && r.courier === "logen");
+});
+//  주문번호(0914-PH-b5c52)를 잘못 찍으면 «읽었다»고 하면 안 된다
+ok("주문번호를 찍으면 거부한다", csParseCourierBarcode("0914-PH-b5c52").ok === false);
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);
