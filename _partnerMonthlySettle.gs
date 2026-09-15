@@ -163,6 +163,69 @@ function _pms_parseDateStr_(orderDate) {
  *  확인창 → 빠른 초기화(임시기록/큐 저장) → 백그라운드 트리거로 실제 처리.
  *  ★ ScriptLock을 시작 단계에서 잡지 않음 — 백그라운드 배치가 락을 잡는 동안
  *    「다른 작업 진행 중」으로 막히던 문제 해결. */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  밤에 스스로 시작한다 — 사람이 누르고 기다릴 일이 아니다
+ *  2026-09-15
+ *
+ *  > "그럼 이기능을 어떻게 쓰라는거지?"
+ *
+ *  17개 파일을 배치로 나눠 도니 끝까지 몇십 분이 걸린다. 사람이 누르고
+ *  기다리면 그동안 아무것도 못 하고, 끝났는지도 모른다. 쓸 수가 없다.
+ *
+ *  ★ 밤 22시 통합마감이 «시작만» 시킨다 ★
+ *    큐를 담고 재개 트리거 하나를 걸면 그 뒤는 저절로 이어진다.
+ *    22시 작업은 6분 예산이 있으므로 여기서 배치를 돌리지 않는다 —
+ *    시작만 하고 바로 빠진다.
+ *    아침에 Chat 알림으로 결과만 본다. 사람이 누를 일이 없어진다.
+ *
+ *  ★ 새 트리거를 만들지 않는다 ★
+ *    한 프로젝트에 트리거는 20개까지다. 재개 트리거는 일회용이라
+ *    자리를 늘리지 않는다 — 돌고 나면 스스로 지운다.
+ * ══════════════════════════════════════════════════════════════
+ *
+ * @return {string} 무슨 일이 있었는지 한 줄 (밤 작업 로그에 남긴다)
+ */
+function pmsStartBackground() {
+  //  이미 돌고 있으면 건드리지 않는다 — 두 번 돌면 같은 파일을 두 번 옮긴다
+  var 남은 = _pms_loadResumeState_();
+  if (남은 && 남은.queue && 남은.queue.length > 0) {
+    var st = _pms_runState_();
+    if (st.돌고있나) return '이미 진행 중 (남은 파일 ' + 남은.queue.length + '개)';
+    //  깃발만 남고 멈춰 있다 — 처음부터 다시 건다
+    _pms_clearResumeState_();
+  }
+
+  var files = _pt_listFiles();
+  if (!files || !files.length) return '협력업체 파일 없음';
+
+  var todayNum = parseInt(
+    Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd"), 10);
+  var errMsgs = [], tempCleared = 0, tempKept = 0;
+  try {
+    var _hubSS_ = SpreadsheetApp.openById(_PT.INFO_SS_ID);
+    var _tempTab_ = _po_getNonPartnerTempTab_(_hubSS_);
+    if (_tempTab_) {
+      var _c_ = _po_clearTempTabInvoicedRowsOnly_(_tempTab_);
+      tempCleared = _c_.cleared;
+      tempKept = _c_.kept;
+    }
+  } catch (e) { errMsgs.push("[임시기록초기화] " + e.message); }
+
+  _pms_saveResumeState_({
+    queue: files.map(function (f) { return { id: f.id, name: f.name }; }),
+    todayNum: todayNum,
+    archived: 0, failed: 0, errMsgs: errMsgs,
+    tempCleared: tempCleared, tempKept: tempKept
+  });
+  var ok = _pms_scheduleResume_(5 * 1000);
+  if (!ok) {
+    _pms_clearResumeState_();
+    return '예약 실패 — ' + _pt_triggerFailWhy_(_PMS_LAST_TRIGGER_ERR_).split(String.fromCharCode(10)).join(' / ');
+  }
+  return '시작함 (' + files.length + '개 파일)';
+}
+
 function partnerArchiveToMonthlySettle() {
   var ui = SpreadsheetApp.getUi();
 

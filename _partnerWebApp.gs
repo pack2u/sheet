@@ -500,6 +500,20 @@ function _pep_unifiedDailyArchiveScheduled_() {
      오늘 밤 것이 넘어간다. (2026-09-10) */
   _pt_ensureMirrorTriggers_();
 
+  /*  ★ 대리판매 마감을 «시작»만 시킨다 ★  (2026-09-15)
+      > "그럼 이기능을 어떻게 쓰라는거지?"
+      17개 파일을 배치로 도니 몇십 분이 걸린다. 사람이 누르고 기다릴 일이
+      아니다. 여기서 큐만 담고 재개 트리거 하나를 걸면 그 뒤는 저절로
+      이어지고, 아침에 Chat 알림으로 결과만 보면 된다.
+      배치는 여기서 안 돌린다 — 이 작업도 6분 예산이 있다. */
+  try {
+    if (typeof pmsStartBackground === "function") {
+      Logger.log("[SCHEDULED] 대리판매 마감: " + pmsStartBackground());
+    }
+  } catch (ePms) {
+    Logger.log("[SCHEDULED] 대리판매 마감 시작 실패(일일마감은 계속): " + ePms.message);
+  }
+
   /* ── 송장원장 전체 갱신 — 19:00 트리거를 여기로 옮겼다 ──  (2026-09-14)
 
      ★ 왜 옮겼나 ★
