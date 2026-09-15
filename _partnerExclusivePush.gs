@@ -4838,7 +4838,7 @@ var _PEP_CARRIER_SABANG_CODE_ = {
   "롯데택배": "002",
   "로젠택배": "007",
   "대신택배": "037",
-  "한진택배": "", // ← 사방넷 계정의 한진 코드 확인 후 기입
+  "한진택배": "004", //  업체_택배사 표에서 확인 (AJ 아주팩, 2026-09-15)
 };
 
 // ─────────────────────────────────────────────────────
@@ -4852,6 +4852,41 @@ var _PEP_VC_HEADERS_ = ["접두", "업체명", "택배사", "사방넷코드", "
 var _pep_vcMem_ = null;
 
 /** 「업체_택배사」탭 → { byPfx, byLabel, code, conflicts, rows } */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 택배사 이름을 한 가지로 맞춘다 ★  (2026-09-15)
+ *
+ *  > "한진택배라는거지"
+ *
+ *  「업체_택배사」 표는 사람이 손으로 적는다. 그래서 같은 택배사가
+ *  여러 이름으로 들어와 있다 —
+ *    AJ 아주팩 → 「한진」      OC 부엉이커피 → 「한진택배」
+ *    JT 준테크 → 「대한통운」   GS 지에스     → 「CJ대한통운」
+ *
+ *  그 글자가 화면까지 그대로 나간다. 같은 택배사인데 줄마다 달리 보이고,
+ *  「택배사별」로 세는 자리에서는 둘로 갈려 세어진다.
+ *
+ *  ★ 읽는 자리에서 한 번만 맞춘다 ★
+ *    쓰는 쪽을 고치면 열 군데를 고쳐야 하고, 표를 고치라고 하면 사람이
+ *    다음에 또 짧게 적는다. 들어오는 문에서 맞추면 그 뒤는 전부 따라온다.
+ *    맞추는 이름은 _pep_carrierFromSource_ 가 내놓는 것과 같게 둔다 —
+ *    두 길에서 온 값이 서로 다른 글자면 또 갈린다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pep_normalizeCarrierName_(name) {
+  var c = String(name == null ? "" : name).replace(/s/g, "");
+  if (!c) return "";
+  if (c.indexOf("로젠") >= 0) return "로젠택배";
+  if (c.indexOf("한진") >= 0) return "한진택배";
+  if (c.indexOf("대한통운") >= 0 || c.indexOf("CJ") >= 0) return "CJ대한통운";
+  if (c.indexOf("롯데") >= 0) return "롯데택배";
+  if (c.indexOf("대신") >= 0) return "대신택배";
+  if (c.indexOf("경동") >= 0) return "경동택배";
+  if (c.indexOf("우체국") >= 0) return "우체국";
+  //  모르는 이름은 손대지 않는다. 새 택배사를 조용히 뭉개면 안 된다.
+  return String(name).trim();
+}
+
 function _pep_loadVendorCarrierTable_(refresh) {
   if (!refresh && _pep_vcMem_) return _pep_vcMem_;
 
@@ -4866,7 +4901,8 @@ function _pep_loadVendorCarrierTable_(refresh) {
       for (var i = 0; i < data.length; i++) {
         var pfx = String(data[i][0] || "").trim().toUpperCase();
         var label = String(data[i][1] || "").replace(/\s/g, "");
-        var carrier = String(data[i][2] || "").trim();
+        //  「한진」도 「한진택배」도 같은 택배사다 — 들어오는 문에서 맞춘다
+        var carrier = _pep_normalizeCarrierName_(data[i][2]);
         var code = String(data[i][3] || "").trim();
         if (!carrier) continue;
         if (pfx) t.byPfx[pfx] = carrier;

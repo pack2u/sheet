@@ -55,7 +55,7 @@ const 표 = { HP: "롯데택배", HR: "로젠택배", JT: "대한통운", GS: "C
              OC: "한진택배", AJ: "한진" };
 const 이름표 = { 하나팩: "롯데택배", 뉴파츠: "로젠택배", 부엉이커피: "한진택배" };
 const 출고지 = { HRACM0001: "평택", JHSGJJIM00102: "대리발송",
-                 AJ158TANG00003: "대리발송" };
+                 AJ158TANG00003: "대리발송", GSVNBT0001: "대리발송" };
 
 const ctx = { Logger: { log() {} } };
 vm.createContext(ctx);
@@ -67,7 +67,14 @@ vm.runInContext([
   "var _표_ = " + JSON.stringify(표) + ";",
   "var _이름표_ = " + JSON.stringify(이름표) + ";",
   "var _출고지_ = " + JSON.stringify(출고지) + ";",
-  "function _pep_loadVendorCarrierTable_() { return { byPfx: _표_, byLabel: _이름표_ }; }",
+  //  ★ 시트에 적힌 그대로 두고, 읽는 문에서 맞춰지는지 본다 ★
+  //     실제 _pep_loadVendorCarrierTable_ 과 같은 자리에서 같은 함수를 부른다.
+  "function _pep_loadVendorCarrierTable_() {" +
+  "  var p = {}, l = {};" +
+  "  for (var k in _표_) p[k] = _pep_normalizeCarrierName_(_표_[k]);" +
+  "  for (var m in _이름표_) l[m] = _pep_normalizeCarrierName_(_이름표_[m]);" +
+  "  return { byPfx: p, byLabel: l };" +
+  "}",
   "function _pep_loadItemShipOriginIndex_() { return { map: _출고지_ }; }",
   "function _pep_carrierWithLag_(c) { return c || ''; }",
   "function _pep_normalizeTempVendorPrefix_(v) {",
@@ -75,6 +82,7 @@ vm.runInContext([
   "  for (var k in _PEP_VENDOR_LABELS_) if (c === k) return k;",
   "  return '';",
   "}",
+  grabFn("_pep_normalizeCarrierName_"),
   grabFn("_pep_carrierFromSource_"),
   grabFn("_pep_isPartnerShipSource_"),
   grabFn("_pep_isOwnWarehouseOrigin_"),
@@ -114,16 +122,18 @@ check("뉴파츠 발주 → 로젠", 판정(null, "대리공급", "뉴파츠", "
 
 줄();
 console.log("[④ 품목코드] 발주업체를 모를 때의 마지막 보루");
-check("JH 물건 → 준테크 (JH→JT)", 판정(null, "대리공급", "", "JHSGJJIM00102"), "대한통운");
+check("JH 물건 → 준테크 (JH→JT)", 판정(null, "대리공급", "", "JHSGJJIM00102"), "CJ대한통운");
 
 //  ★ 실제로 틀렸던 줄 ★  AJ158TANG00003 / 송장 463273768403 (12자리)
 //     > "AJ로 시작되는 아주팩 출고 한진이야"
 //     12자리라 「롯데택배」로 찍혀 있었다. 자릿수는 택배사를 못 가른다.
-check("★ AJ158TANG00003 → 아주팩 → 한진", 판정(null, "", "", "AJ158TANG00003"), "한진");
+check("★ AJ158TANG00003 → 아주팩 → 한진택배", 판정(null, "", "", "AJ158TANG00003"), "한진택배");
 check("★ 12자리 송장이어도 롯데가 아니다",
   판정(null, "", "", "AJ158TANG00003") !== "롯데택배", true);
-check("표에 「한진택배」가 아니라 「한진」으로 적혀 있어도 읽는다",
-  판정(null, "대리공급", "아주팩", "AJ158TANG00003"), "한진");
+check("★ 표에 「한진」으로 적혀 있어도 「한진택배」로 맞춰 나온다",
+  판정(null, "대리공급", "아주팩", "AJ158TANG00003"), "한진택배");
+check("★ 「대한통운」과 「CJ대한통운」이 한 이름으로 모인다",
+  판정(null, "대리공급", "", "JHSGJJIM00102"), 판정(null, "대리공급", "", "GSVNBT0001"));
 
 줄();
 console.log("[근거가 없으면] 지어내지 않는다");
