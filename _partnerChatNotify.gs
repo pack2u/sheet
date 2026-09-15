@@ -48,8 +48,40 @@ function _chat_sendText_(text) {
  * @param {Array} keyValues - [{label, value}] 배열
  * @param {string} [footerText] - 하단 텍스트
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 트리거 자리가 차 가면 «밤 알림이» 먼저 말한다 ★  (2026-09-15)
+ *
+ *  > "업무시간에 이런 오류 발생하면 함부로 실행을 못해.. 루틴이 있는데"
+ *  > "그렇다고 또 일회성 검증 메뉴를 만들면 메뉴만 수백개..."
+ *
+ *  한 스크립트 프로젝트에 트리거는 20개까지다. 다 차면 백그라운드 예약이
+ *  실패하고, 마감이 즉시 처리로 떨어져 6분 한도에 걸려 죽는다.
+ *  2026-09-10 부터 대리판매 마감이 그렇게 막혀 있었다.
+ *
+ *  ★ 알아내려고 «실행»해야 한다면 그건 진단이 아니다 ★
+ *    업무시간에 마감을 눌러 봐야만 알 수 있다면 못 쓴다. 루틴이 꼬인다.
+ *  ★ 그렇다고 점검 메뉴를 만들지 않는다 ★
+ *    메뉴가 수백 개가 된다. 찾는 것부터 일이 된다.
+ *
+ *  이미 밤마다 오는 알림에 «문제일 때만» 한 줄을 얹는다. 평소엔 아무 말도
+ *  안 한다. 자리가 차 가면 사람이 누르지 않아도 저절로 눈에 들어온다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var _CHAT_TRIGGER_WARN_AT_ = 18;   // 20 자리 중 이만큼 차면 미리 말한다
+
+function _chat_triggerPressure_() {
+  try {
+    var n = ScriptApp.getProjectTriggers().length;
+    if (n < _CHAT_TRIGGER_WARN_AT_) return '';
+    return '⚠ 트리거 ' + n + '/20 — 다 차면 마감의 백그라운드 예약이 막힙니다';
+  } catch (e) { return ''; }
+}
+
 function _chat_sendCard_(title, subtitle, keyValues, footerText) {
   if (!_CHAT_WEBHOOK_URL_) return;
+  var 압박 = _chat_triggerPressure_();
+  if (압박) footerText = footerText ? (footerText + ' · ' + 압박) : 압박;
   try {
     var widgets = [];
     for (var i = 0; i < keyValues.length; i++) {
