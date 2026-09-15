@@ -4903,10 +4903,17 @@ function _pep_carrierFromSource_(src) {
   if (s.indexOf("우체국") >= 0) return "우체국";
   if (s.indexOf("대신") >= 0) return "대신택배";
   if (s.indexOf("CJ") >= 0 || s.indexOf("대한통운") >= 0) return "CJ대한통운";
-  // 합포장·1주출고는 우리 자사출고(롯데) 계열이다
-  if (s === "롯데" || s === "합포장" || s === "1주출고" || s.indexOf("롯데") >= 0) {
-    return "롯데택배";
-  }
+  if (s.indexOf("롯데") >= 0) return "롯데택배";
+
+  /* ★ 「합포장」·「1주출고」는 택배사가 아니다 ★  (2026-09-15)
+     여기엔 이 둘을 롯데로 치는 줄이 있었다. 2026-09-11 에 자사출고를
+     로젠으로 바꾼 뒤로 그 줄들은 계속 롯데로 찍혔다 — 일일마감 「합포장」
+     행이 전부 롯데택배로 나온 까닭이다.
+
+     둘은 «어느 탭에서 걷었나»가 아니라 «어떻게 묶였나»를 말하는 이름표다.
+     동봉 줄은 대표의 송장을 물려받고, 그 대표는 택배사 탭에서 걷힌다 —
+     택배사는 거기서 와야 한다(송장 전파가 원장 택배사 칸에 적어 둔다).
+     여기서 지어내면 갈아탈 때마다 같은 사고가 난다. 모르면 빈칸이다. */
   return "";
 }
 
@@ -5089,34 +5096,36 @@ function _pep_carrierForArchiveRow_(invInfo, source, vendor, itemCode, outVia) {
   }
   if (invInfo && invInfo.carrier) return done(invInfo.carrier, "송장맵");
 
-  /* ★ 보내는 것은 «품목을 대는 업체»다 ★  (2026-09-15)
-     > "하나팩이 발송하는게 아니자나.. 하나팩에서 주문한거자나.."
-     > "발송 업체의 택배사를 따라가는거지.."
+  /* ★ 택배사는 «송장을 어디서 수집했나»가 말해 준다 ★  (2026-09-15)
+     > "대리판매업체외에는 자사출고지.. 중요한건 송장수집시 어디에서"
+     > " 수집했냐가 중요한거지.."
 
-     거래처명이 「대리발송-하나팩 유채정」이라고 해서 하나팩이 보내는 게
-     아니다. 하나팩은 «주문한 쪽»이다. 실제로 박스를 부치는 것은 그 물건을
-     대는 업체이고, 그 업체는 이카운트코드 앞 두 글자가 가리킨다
-     (HRACM0001→HR, JHSGJJIM00102→JH, GSVNBT0001→GS).
+     출고지로는 못 가른다 — 대리판매업체 것을 빼면 전부 자사출고지라
+     아무 말도 안 해 준다. 「평택이면 롯데」라고 박아 뒀던 것이 그래서
+     2026-09-11 로젠 전환 뒤로 계속 틀렸다. 그 줄은 지웠다.
 
-     그래서 품목코드가 «출처보다 앞»이다. 출처가 「로젠」이라는 건 그 번호가
-     우리 로젠 탭에서 눈에 띄었다는 뜻일 뿐, 누가 보냈는지를 말해 주지 않는다.
+     송장은 택배사 탭에서 걷어 온다. 로젠 탭에서 나온 번호는 로젠이 부친
+     것이다 — 그보다 확실한 근거가 없다. 그래서 출처가 앞이다.
+     ①송장맵도 같은 사실이다(걷어 온 탭이 실어 준 값).
 
-     자사출고 줄에는 이 갈래가 답하지 않는다 — _pep_carrierFromItemCode_ 는
-     업체 출고일 때만 값을 내놓는다. 그때는 아래 출처가 답한다. */
-  if (itemCode) {
-    var byCode = _pep_carrierFromItemCode_(itemCode, source);
-    if (byCode.carrier) return done(byCode.carrier, byCode.via);
-  }
-
+     아래 둘은 «수집처를 모를 때»만 본다. 짐작이므로 뒤에 둔다. */
   var fromSrc = _pep_carrierFromSource_(source);
   if (fromSrc) return done(fromSrc, "출처");
 
-  /*  거래처명은 «마지막»이다. 부르는 자리에 따라 여기 들어오는 것이
-      발주업체일 때도 있고 주문한 거래처일 때도 있어서, 앞에 두면
-      하나팩 같은 «주문한 쪽»의 택배사로 잘못 나간다. */
+  /*  ③ 발주업체 — 우리가 «발주를 넣은» 업체다(허브 B열 / 임시기록 W열).
+      그 업체 파일에서 송장을 걷어 왔다는 것은 그 업체가 부쳤다는 뜻이고,
+      그 업체가 무슨 택배사를 쓰는지는 「업체_택배사」 표에 적혀 있다.
+      대리공급·대리판매 줄에서 실제로 답하는 자리가 여기다. */
   if (vendor) {
     var byVendor = _pep_carrierForVendor_(vendor);
     if (byVendor) return done(byVendor, "업체명");
+  }
+
+  /*  ④ 품목코드 접두 — 마지막 보루다. 한 업체 파일에 다른 업체 접두의
+      물건이 섞여 들어오므로(조치·대리발송품목) 앞에 두면 틀린다. */
+  if (itemCode) {
+    var byCode = _pep_carrierFromItemCode_(itemCode, source);
+    if (byCode.carrier) return done(byCode.carrier, byCode.via);
   }
   return done("", "");
 }
