@@ -57,12 +57,24 @@ var _CS_LEDGER_SS_ID_ = "1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo"; // 세�
 var _CS_LEDGER_TAB_ = "주문라인원장";
 var _CS_LEDGER_CACHE_TTL_ = 3600;
 
-/** 원장 경로는 «명시적으로 켤 때만» 쓴다. 기본값은 꺼짐이다. */
+/**
+ * 원장 경로 — «기본이 켜짐»이다.  (2026-09-15)
+ *
+ * 전에는 CS_USE_LEDGER="1" 을 넣어야 켜졌다. 그래서 만들어 놓고 한 번도
+ * 안 쓰였다 — 켤 사람이 그 속성을 알아야 켜지는 스위치는 꺼진 것과 같다.
+ *
+ * 이제 «끄려면» CS_USE_LEDGER="off" 를 넣는다. 되돌리기는 그 한 칸이다.
+ *
+ * ★ 못 읽으면 저절로 옛길로 내려간다 ★
+ *   원장을 못 읽으면 통합조회, 그것도 없으면 일일마감 14파일.
+ *   그래서 켜도 «나빠질 자리»가 없다 — 잘되면 추측이 사라지고,
+ *   안 되면 어제까지와 똑같다.
+ */
 function _cs_ledgerViewEnabled_() {
   try {
-    return PropertiesService.getScriptProperties().getProperty("CS_USE_LEDGER") === "1";
+    return PropertiesService.getScriptProperties().getProperty("CS_USE_LEDGER") !== "off";
   } catch (e) {
-    return false;
+    return true;
   }
 }
 var _CS_UV_CACHE_TTL_ = 3600; // 1시간. 야간 갱신이지만 수동 재생성도 빨리 반영되게
@@ -204,7 +216,7 @@ function csDiagnoseLedgerView() {
   out.byDate = byDate;
   out.verdict = out.enabled
     ? (lg.found ? "원장 사용 중. 미매칭 " + noInv + "건" : "원장을 못 읽음 → 통합조회로 폴백")
-    : "원장 경로 꺼짐 (CS_USE_LEDGER 가 \"1\" 이 아님) — 지금은 통합조회를 씁니다";
+    : "원장 경로 꺼짐 (CS_USE_LEDGER 가 \"off\") — 지금은 통합조회를 씁니다";
   Logger.log(JSON.stringify(out, null, 2));
   return out;
 }
