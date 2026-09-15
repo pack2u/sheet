@@ -53,8 +53,10 @@ check("그룹이 2줄 이상일 때만 합배송", src.indexOf("if (cGrpRows.len
 check("★ 송장 있는 줄을 대표로 삼는다", src.indexOf("sourceInv = cInv;") >= 0, true);
 check("★ 송장 없는 줄에 같은 송장을 넣는다", src.indexOf("hubData[ridx][13] = sourceInv;") >= 0, true);
 check("★ 그 줄 상태를 「합배송」으로", src.indexOf('status: "합배송",') >= 0, true);
-check("★ 적요에 「합발송완료」를 적는다",
-  src.indexOf('hubData[hubIdx][12] = "합발송완료";') >= 0, true);
+/*  옛 문구 「합발송완료」를 사실로 못 박던 줄이었다. 2026-09-15 에
+    「합배송 · 몸통만」 처럼 사람이 읽는 말로 바꿨다. */
+check("★ 적요에 「합배송」을 적는다",
+  src.indexOf('hubData[hubIdx][12] = "합배송"') >= 0, true);
 check("이미 송장이 있으면 안 덮는다", src.indexOf("if (_po_hasRealInvoice_(existInv)) continue;") >= 0, true);
 
 console.log("");
@@ -105,6 +107,49 @@ console.log("[지움] 일일마감에서 뺀 두 원천이 다시 안 들어왔�
     push.indexOf("_PT_NAME_PHONE_FALLBACK_GID") >= 0, false);
   check("왜 지웠는지 적어 두었다",
     push.indexOf("이름과 전화로 사람을 짚는 것은 짐작이다") >= 0, true);
+}
+
+console.log("");
+console.log("[적요] 사람이 읽고 바로 아는 말인가");
+check("★ 「합발송완료」가 아니라 「합배송」", src.indexOf('"합발송완료"') >= 0, false);
+check("합배송이라고 적는다", src.indexOf('hubData[hubIdx][12] = "합배송"') >= 0, true);
+check("★ 세트 상세를 함께 적는다", src.indexOf('(_det ? " · " + _det : "")') >= 0, true);
+check("합배송이 아니어도 세트 상세는 적는다", src.indexOf("} else if (_det) {") >= 0, true);
+
+console.log("");
+console.log("[세트] 몸통·뚜껑을 어디서 얻는가");
+check("★ 송장맵이 실어 온 것이 먼저", src.indexOf("upd.setDetail || setDetailByUid[") >= 0, true);
+check("없으면 원장에서 모은 것", src.indexOf("var setDetailByUid = {};") >= 0, true);
+check("품목명의 --- 꼬리표를 본다", src.indexOf('var _dash = _nm.indexOf("---");') >= 0, true);
+/*  이 줄은 «걸러 내는 것»을 사실로 못 박고 있었다. 2026-09-15:
+    "===합배송도 ---합포장도.." — 가르지 않고 다 적는다. */
+check("★ === 를 --- 보다 먼저 본다 (둘 다 붙은 줄)",
+  src.indexOf("if (_eq >= 0 && (_dash < 0 || _eq < _dash))") >= 0, true);
+check("한 주문에 둘이면 / 로 잇는다", src.indexOf('setDetailByUid[_su] + " / " + _tail') >= 0, true);
+check("같은 꼬리를 두 번 안 적는다", src.indexOf("if (_setSeen[_sk]) continue;") >= 0, true);
+
+{
+  //  꼬리표 떼기 — 코드와 «같은 규칙»을 여기에 옮겨 적는다
+  const 떼기 = (nm) => {
+    let t = "";
+    const eq = nm.indexOf("===");
+    const dash = nm.indexOf("---");
+    if (eq >= 0 && (dash < 0 || eq < dash)) {
+      t = nm.substring(eq + 3).trim().split("---").join(" · ").trim();
+    } else if (dash >= 0) {
+      t = nm.substring(dash + 3).trim().split("===").join(" · ").trim();
+    }
+    if (!t || t.length > 24) return "";
+    return t;
+  };
+  check("세트 — ---몸통만", 떼기("JH 300파이 소 백색 ---몸통만"), "몸통만");
+  check("세트 — ---뚜껑만", 떼기("JH 300파이 소 백색 ---뚜껑만"), "뚜껑만");
+  check("★ 합포장도 적는다", 떼기("무언가 ---2개 합포장(완박스)"), "2개 합포장(완박스)");
+  check("★ 합배송도 적는다", 떼기("무언가 ===합배송"), "합배송");
+  check("★ 둘 다 붙은 줄", 떼기("무언가 ===합배송---뚜껑만"), "합배송 · 뚜껑만");
+  check("꼬리 없으면 빈칸", 떼기("그냥 품목명"), "");
+  check("품목명을 통째로 물면 안 적는다",
+    떼기("무언가 ---" + "가".repeat(30)), "");
 }
 
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");

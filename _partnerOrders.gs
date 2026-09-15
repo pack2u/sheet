@@ -1611,6 +1611,8 @@ function partnerFetchInvoices() {
   /*  고유ID → 합포장키. 뉴 합배송 탭이 «묶음 이름»을 적어 준다.
       이름으로 묶던 것을 이것으로 바꾼다 — 짐작이 아니라 적힌 것이다. */
   var combinedKeyByUid = {};
+  /*  고유ID → 세트 상세(「몸통만 / 뚜껑만」). 원장의 품목명 꼬리표에서 모은다. */
+  var setDetailByUid = {};
   try {
     var _csSS = SpreadsheetApp.openById(_PT_COMBINED_INVOICE_SHEET_ID);
     /*  GID 가 -1 이면 이름으로 찾는다. 뉴 합배송 탭 이름은 코드가 정한다. */
@@ -1731,6 +1733,18 @@ function partnerFetchInvoices() {
           var _cUid = _lgH["사방넷주문번호"];
           var _cGrp = _lgH["합포장그룹"];
           var _cRk = _lgH["회차키"];
+          var _cItem = _lgH["품목명"];
+          var _cOut = _lgH["출력품목명"];
+
+          /*  ★ 세트는 몸통·뚜껑으로 갈려 나간다 ★  (2026-09-15)
+              > "세트의 경우 몸통, 뚜껑으로 송장이 분리되있는데
+              >  이부분도 적요에 적히게 해줘"
+
+              품목명에 「…---뚜껑만」 처럼 꼬리표가 붙는다. 한 주문이
+              두 줄로 갈려 서로 다른 송장을 받으면, 적요에 무엇이 무엇인지
+              안 적히면 사람이 박스를 열어 봐야 안다.
+              원장은 회차별로 쌓이므로 지난 차수 것도 여기서 나온다. */
+          var _setSeen = {};
           if (_cUid !== undefined && _cGrp !== undefined) {
             var _lgAdd = 0;
             for (var _lr = 1; _lr < _lgAll.length; _lr++) {
@@ -1745,6 +1759,45 @@ function partnerFetchInvoices() {
                 combinedKeyByUid[_u] = (_rk ? _rk + "/" : "") + _g;
                 _lgAdd++;
               }
+            }
+
+            /*  세트 상세는 «합포장그룹이 없는 줄»에도 있다 — 따로 훑는다 */
+            for (var _sr = 1; _sr < _lgAll.length; _sr++) {
+              var _su = String(_lgAll[_sr][_cUid] || "").trim();
+              if (!_su) continue;
+              var _nm = "";
+              if (_cItem !== undefined) _nm = String(_lgAll[_sr][_cItem] || "");
+              if (!_nm && _cOut !== undefined) _nm = String(_lgAll[_sr][_cOut] || "");
+              /*  ★ 꼬리표는 «다» 적는다 ★  (2026-09-15)
+                  > "===합배송도 ---합포장도.."
+
+                  품목명 뒤에 붙는 꼬리는 「이 줄이 어떻게 나갔는가」를 말한다 —
+                    ---몸통만 / ---뚜껑만        세트가 갈려 나갔다
+                    ---2개 합포장(완박스)        한 박스에 여러 개를 담았다
+                    ===합배송                    다른 주문과 한 박스로 묶였다
+                  처음엔 앞의 둘만 두고 뒤를 걸렀는데, 그것도 사람이 알아야 할
+                  사실이다. 적요는 그걸 적는 칸이다. 가르지 않고 다 담는다.
+
+                  === 가 --- 보다 앞에 있으면 === 를 먼저 본다 —
+                  「…===합배송---뚜껑만」 처럼 둘 다 붙는 줄이 있다. */
+              var _tail = "";
+              var _eq = _nm.indexOf("===");
+              var _dash = _nm.indexOf("---");
+              if (_eq >= 0 && (_dash < 0 || _eq < _dash)) {
+                _tail = _nm.substring(_eq + 3).trim();
+                _tail = _tail.split("---").join(" · ").trim();
+              } else if (_dash >= 0) {
+                _tail = _nm.substring(_dash + 3).trim();
+                _tail = _tail.split("===").join(" · ").trim();
+              }
+              //  꼬리가 없거나 품목명을 통째로 문 것이면 안 적는다
+              if (!_tail || _tail.length > 24) continue;
+              var _sk = _su + "|" + _tail;
+              if (_setSeen[_sk]) continue;
+              _setSeen[_sk] = true;
+              setDetailByUid[_su] = setDetailByUid[_su]
+                ? setDetailByUid[_su] + " / " + _tail
+                : _tail;
             }
             scannedLogs.push("[합배송] 원장(차수별 누적)에서 묶음키 " + _lgAdd +
               "건 — 합배송 탭은 회차마다 덮어써지므로 지난 차수는 여기서 온다");
@@ -2615,12 +2668,21 @@ function partnerFetchInvoices() {
         hubData[hubIdx][14] = upd.status; // O열(15): 상태
         hubChanged = true;
       }
-      // ★ 적요(M열=13열) 기록
+      /*  ★ 적요(M열) — 사람이 읽고 바로 아는 말로 ★  (2026-09-15)
+          > "합배송(적요) 표시와 각각 대표송장이 들어가게"
+          > "세트의 경우 몸통, 뚜껑으로 송장이 분리되있는데 이부분도 적요에"
+
+          여태 「합발송완료」라고만 적었다. 무엇과 묶였는지, 이 줄이
+          몸통인지 뚜껑인지는 안 적혔다. 둘 다 적는다.
+          세트 상세는 송장맵이 실어 온 것(upd.setDetail)이 먼저고,
+          없으면 원장에서 모은 것을 쓴다 — 로젠 탭에는 품목명 칸이 없다. */
+      var _uidForDetail = String(hubData[hubIdx][2] || "").trim();
+      var _det = upd.setDetail || setDetailByUid[_uidForDetail] || "";
       if (upd.status === "합배송") {
-        hubData[hubIdx][12] = "합발송완료";
+        hubData[hubIdx][12] = "합배송" + (_det ? " · " + _det : "");
         hubChanged = true;
-      } else if (upd.setDetail) {
-        hubData[hubIdx][12] = upd.setDetail;
+      } else if (_det) {
+        hubData[hubIdx][12] = _det;
         hubChanged = true;
       }
       // ★ 2026-08-31: R열(18) 택배사 — 판정이 된 건만 덮는다.
