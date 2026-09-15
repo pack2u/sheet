@@ -428,6 +428,7 @@ function ssm_load(회차키) {
     var pc = ssText(pi[p2][0]).toUpperCase();
     if (!pc) continue;
     M.partnerItems[pc] = {
+      코드: pc,
       업체코드: ssText(pi[p2][1]).toUpperCase(),
       사유: ssText(pi[p2][2])
     };

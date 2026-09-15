@@ -455,6 +455,24 @@ function ss_실행(opts) {
       if (Object.prototype.hasOwnProperty.call(출고빔, bk)) 빔글.push(bk + ' ' + 출고빔[bk]);
     }
     if (빔글.length) sum.push(['★★ 나갈 줄에 빠진 칸', 빔글.join(' · ') + '  — 경고 탭에 순번이 있습니다']);
+    /*  ★ 「대리발송품목」은 저절로 안 꺼진다 — 사람이 지워야 꺼진다 ★  (2026-09-15)
+        그러니 매 회차 «무엇이 걸렸는지»를 눈앞에 둔다. 그중 재고가 다시
+        찬 것은 따로 표시한다 — 그게 지울 때가 됐다는 신호다. */
+    var 예외셈 = {};
+    for (var pk = 0; pk < res.units.length; pk++) {
+      var pu = res.units[pk];
+      if (!pu.대리품목적용) continue;
+      예외셈[pu.대리품목적용] = (예외셈[pu.대리품목적용] || 0) + 1;
+    }
+    var 예외글 = [];
+    for (var pc2 in 예외셈) {
+      if (!Object.prototype.hasOwnProperty.call(예외셈, pc2)) continue;
+      예외글.push(pc2 + ' ' + 예외셈[pc2] + '건');
+    }
+    if (예외글.length) {
+      sum.push(['대리발송품목으로 뺀 건', 예외글.join(' · ') +
+        '  — 입고되면 「대리발송품목」 탭에서 그 줄을 지우세요']);
+    }
     var 적용조치 = ssm_stampManual(res.units, runKey);
 
     단계 = '중복 점검';
