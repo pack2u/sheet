@@ -9,7 +9,20 @@
  * 이 모듈은 "사라지는 것"만 원장에 누적한다.
  *   롯데·1주출고는 이미 영구 누적되므로 담지 않는다. 원장을 작게 유지하는 게 목적이다.
  *
+ * ★ 2026-09-15: 로젠 자사출고를 담기 시작한다 ★
+ *   > "판매현황을 전체분을 안넣으면 마지막 차수 판매현황 내용의 송장만 들어오더라구"
+ *
+ *   2026-09-11 에 자사출고를 로젠으로 바꿨다. 그런데 「입력_로젠주문실적」 탭은
+ *   회차마다 «덮어써진다» — 그날 것만, 마지막 차수 것만 남는다.
+ *   즉 롯데와 달리 로젠은 «사라지는 원천»이다. 이 모듈이 담아야 할 바로 그것인데
+ *   목록에 없었다. 그래서 1·2차 송장은 3차 파일이 덮는 순간 영영 사라졌고,
+ *   사람이 판매현황을 «전체분» 다시 넣어 억지로 되살리고 있었다.
+ *
+ *   여기에 담아 두면 덮어써져도 남는다. 사방넷 대량등록(원천 6)과
+ *   일일마감이 이 원장을 읽으므로 지난 차수가 저절로 따라온다.
+ *
  * 수집 대상:
+ *   0) 입력_로젠주문실적 (거래관리)                   ★ 덮어써지는 자사출고
  *   1) 대리공급_임시기록 / _보관                     (현재값)
  *   2) 각 협력업체 (YYYY년 M월) 전용발주 마감        (당월+전월)
  *   3) 각 협력업체 (YYYY년 M월) 발주 마감            (당월+전월)
@@ -220,6 +233,51 @@ function _pil_harvestTemp_(out, stat) {
 }
 
 /**
+ * 로젠 자사출고 — 덮어써지기 전에 담아 둔다.
+ *
+ * ★ 이 탭에는 머리글이 «없다» ★  「집하」 양식이라 1행부터 바로 자료다.
+ *   자리는 허브 _PT_ROZEN_FIXED_COL 과 «같은 값»을 쓴다 —
+ *   두 군데가 다르면 한쪽만 고쳐지고 또 조용히 갈린다.
+ *     J(9) 주문번호 · K(10) 운송장 · O(14) 수하인 · C(2) 집하일자
+ *
+ * 중복은 바깥에서 «송장|고유ID» 로 거른다. 같은 줄을 여러 번 담아도 안전하다.
+ */
+function _pil_harvestRozen_(out, stat) {
+  var C = (typeof _PT_ROZEN_FIXED_COL !== "undefined") ? _PT_ROZEN_FIXED_COL : null;
+  if (!C) { stat.errors.push("로젠: 자리표(_PT_ROZEN_FIXED_COL)가 없습니다"); return; }
+  var ssId = (typeof _PT_INVOICE_SHEET_ID !== "undefined") ? _PT_INVOICE_SHEET_ID : "";
+  var gid = (typeof _PT_PRIMARY_INVOICE_GID !== "undefined") ? _PT_PRIMARY_INVOICE_GID : 0;
+  if (!ssId || !gid) { stat.errors.push("로젠: 시트 ID/GID 가 없습니다"); return; }
+
+  var ss = SpreadsheetApp.openById(ssId);
+  var tab = (typeof _pt_getSheetByGidOrName_ === "function")
+    ? _pt_getSheetByGidOrName_(ss, gid, "입력_로젠주문실적", "송장원장", stat.errors)
+    : _pt_getSheetByGid(ss, gid);
+  if (!tab || tab.getLastRow() < 1) { stat.errors.push("로젠: 탭 없음/비어 있음"); return; }
+
+  var wid = Math.max(tab.getLastColumn(), Math.max(C.invoice, C.uid) + 1);
+  var data = tab.getRange(1, 1, tab.getLastRow(), wid).getDisplayValues();
+  stat.rozen = 0;
+  for (var i = 0; i < data.length; i++) {
+    var uid = String(data[i][C.uid] || "").trim();
+    var invs = _pil_splitInv_(data[i][C.invoice]);
+    if (!uid || !invs.length) continue;
+    //  머리글 글자가 섞여 들어오면 걸러 낸다 (양식이 또 바뀔 수 있다)
+    if (uid.indexOf("주문번호") >= 0) continue;
+    for (var k = 0; k < invs.length; k++) {
+      out.push({
+        src: "로젠", inv: invs[k], uid: uid,
+        name: C.name >= 0 ? String(data[i][C.name] || "").trim() : "",
+        phone: "",   // P 열은 「14***」로 가려져 있다 — 담지 않는다
+        date: C.date >= 0 ? String(data[i][C.date] || "").trim() : "",
+        item: "",
+      });
+      stat.rozen++;
+    }
+  }
+}
+
+/**
  * 각 협력업체 파일의 마감탭 — 커서 기반 증분 읽기
  *
  * 전용발주 마감 = ["이동일시"] + 전용양식 헤더
@@ -386,7 +444,7 @@ function _pil_findHubArchiveSs_(props, namePrefix, yyyymm) {
 function _pil_refresh_(opt) {
   opt = opt || {};
   var started = new Date().getTime();
-  var stat = { temp: 0, archive: 0, appended: 0, skippedDup: 0, timedOut: false, errors: [], trimmed: 0 };
+  var stat = { rozen: 0, temp: 0, archive: 0, appended: 0, skippedDup: 0, timedOut: false, errors: [], trimmed: 0 };
 
   try {
     var ss = _pil_openLedgerSs_();
@@ -403,6 +461,10 @@ function _pil_refresh_(opt) {
     }
 
     var harvested = [];
+    /*  로젠이 먼저다 — 덮어써지기 전에 담는 것이 이 모듈의 존재 이유다.
+        한 원천이 실패해도 나머지는 담는다. */
+    try { _pil_harvestRozen_(harvested, stat); }
+    catch (eRz) { stat.errors.push("로젠: " + eRz.message); }
     _pil_harvestTemp_(harvested, stat);
     if (opt.skipArchives !== true) {
       _pil_harvestPartnerArchives_(harvested, stat, started);
@@ -429,7 +491,7 @@ function _pil_refresh_(opt) {
     stat.errors.push(String(e.message || e));
   }
   Logger.log("[LEDGER] 적재=" + stat.appended + " 중복스킵=" + stat.skippedDup +
-    " 임시=" + stat.temp + " 마감=" + stat.archive +
+    " 로젠=" + stat.rozen + " 임시=" + stat.temp + " 마감=" + stat.archive +
     (stat.timedOut ? " (시간초과 — 다음 실행에서 이어짐)" : "") +
     (stat.errors.length ? " 오류=" + stat.errors.length : ""));
   return stat;
@@ -506,6 +568,7 @@ function partnerRefreshInvoiceLedger() {
     "신규 적재: " + stat.appended + "건",
     "중복 스킵: " + stat.skippedDup + "건",
     "",
+    "로젠 자사출고에서 읽음: " + stat.rozen + "건  (덮어써지기 전에 담아 둔다)",
     "임시기록·보관에서 읽음: " + stat.temp + "건",
     "마감탭·아카이브에서 읽음: " + stat.archive + "건",
     //  안 열어서 아낀 시간을 눈에 보이게 — 안 보이면 다시 느려져도 모른다
@@ -561,7 +624,7 @@ function _pil_refreshScheduled_(opt_budgetMs) {
     _PIL_TIME_BUDGET_MS_ = (opt_budgetMs > 0) ? opt_budgetMs : 240000;
     var stat = _pil_refresh_({});   // ★ skipArchives 없음 — 마감탭까지 전부
     Logger.log("[LEDGER] 적재=" + stat.appended +
-      " 임시=" + stat.temp + " 마감탭=" + stat.archive +
+      " 로젠=" + stat.rozen + " 임시=" + stat.temp + " 마감탭=" + stat.archive +
       " 중복스킵=" + stat.skippedDup +
       (stat.timedOut ? " ⏳시간초과(다음 회차에 이어서)" : "") +
       (stat.errors.length ? " 오류=" + stat.errors.length : ""));
