@@ -589,6 +589,63 @@ function _pt_findViewerSheet(ss) {
 // ═══════════════════════════════════════════
 //  이식: getSheetByGid_ → _pt_getSheetByGid
 // ═══════════════════════════════════════════
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ GID 가 빗나가면 «이름»으로도 찾는다 ★  (2026-09-15)
+ *
+ *  > "허브에서 송장 수집시 로젠이 수집이 안되지?"  "지금 안되고 있다고."
+ *  > "대리공급 송장은 다 들어왔는데"
+ *
+ *  GID 는 탭의 «태어난 번호»다. 사람이 탭을 지우고 새 파일을 붙여넣으면
+ *  같은 이름이어도 GID 가 바뀐다. 그러면 _pt_getSheetByGid 가 null 을 주고,
+ *  수집은 「탭 없음」 한 줄만 남기고 그 원천을 통째로 건너뛴다 —
+ *  오류는 안 난다. 대리공급은 멀쩡한데 자사출고만 0건이 되는 모양이 된다.
+ *
+ *  ★ 이름으로 찾았으면 그 사실을 말한다 ★
+ *    조용히 다른 탭을 집으면 더 나쁘다. 어느 탭을 왜 집었는지 남긴다.
+ *    GID 가 바뀌었다는 것은 원천이 갈렸다는 뜻이라 사람이 알아야 한다.
+ * ══════════════════════════════════════════════════════════════
+ *
+ * @param {Spreadsheet} ss
+ * @param {number} gid        먼저 찾을 번호
+ * @param {string} name       못 찾으면 이 이름으로 (정확히 → 없으면 포함)
+ * @param {string} label      로그에 쓸 이름표
+ * @param {Array=} logs       scannedLogs
+ * @return {?Sheet}
+ */
+function _pt_getSheetByGidOrName_(ss, gid, name, label, logs) {
+  var byGid = _pt_getSheetByGid(ss, gid);
+  if (byGid) return byGid;
+  if (!ss || !name) return null;
+
+  var want = String(name);
+  var hit = null;
+  try { hit = ss.getSheetByName(want); } catch (e) {}
+  var how = "이름";
+  if (!hit) {
+    //  정확한 이름도 없다 — 이름이 «들어 있는» 탭을 찾는다. 하나뿐일 때만 쓴다.
+    var cand = [];
+    try {
+      var all = ss.getSheets();
+      for (var i = 0; i < all.length; i++) {
+        if (String(all[i].getName()).indexOf(want) >= 0) cand.push(all[i]);
+      }
+    } catch (e2) {}
+    if (cand.length === 1) { hit = cand[0]; how = "이름 일부"; }
+    else if (cand.length > 1 && logs) {
+      logs.push("[" + label + "] ⚠ GID " + gid + " 없음 · 「" + want +
+        "」 이 들어간 탭이 " + cand.length + "개라 고르지 않았습니다");
+    }
+  }
+  if (!hit) return null;
+
+  if (logs) {
+    logs.push("[" + label + "] ⚠ GID " + gid + " 를 못 찾아 " + how + "으로 찾았습니다 → 「" + hit.getName() + "」 (GID " + hit.getSheetId() +
+      "). 탭을 새로 만드셨다면 코드의 GID 를 이 번호로 바꿔야 합니다");
+  }
+  return hit;
+}
+
 function _pt_getSheetByGid(ss, gid) {
   if (!ss || !gid) return null;
   var target = parseInt(gid, 10);

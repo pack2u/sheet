@@ -1701,7 +1701,9 @@ function partnerFetchInvoices() {
     : { name: 9, phone: 12, invoice: 5, uid: 4, item: 22, icode: 21, qty: 14 };
   try {
     var invSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
-    var primaryTab = _pt_getSheetByGid(invSS, _PT_PRIMARY_INVOICE_GID);
+    //  GID 가 빗나가도 이름으로 찾는다 — 탭을 새로 붙여넣으면 GID 가 바뀐다
+    var primaryTab = _pt_getSheetByGidOrName_(
+      invSS, _PT_PRIMARY_INVOICE_GID, "입력_로젠주문실적", "최우선", scannedLogs);
     if (primaryTab && primaryTab.getLastRow() > 1) {
       _pt_ingestInvoiceSheetTabIntoMap(
         primaryTab,
@@ -1712,7 +1714,9 @@ function partnerFetchInvoices() {
       );
     } else {
       scannedLogs.push(
-        "[최우선] GID " + _PT_PRIMARY_INVOICE_GID + " 탭 없음 또는 비어있음",
+        "[최우선] ⛔ 로젠 자사출고 송장을 한 건도 못 읽었습니다 — GID " +
+          _PT_PRIMARY_INVOICE_GID + " 탭이 없거나 비어 있습니다." +
+          " (거래관리시스템송장 시트의 「입력_로젠주문실적」 탭을 확인하세요)",
       );
     }
   } catch (ePri) {
@@ -1738,7 +1742,8 @@ function partnerFetchInvoices() {
         };
   try {
     var invSS2 = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
-    var secondaryTab = _pt_getSheetByGid(invSS2, _PT_SECONDARY_INVOICE_GID);
+    var secondaryTab = _pt_getSheetByGidOrName_(
+      invSS2, _PT_SECONDARY_INVOICE_GID, "롯데", "롯데택배", scannedLogs);
     if (secondaryTab && secondaryTab.getLastRow() > 1) {
       _pt_ingestInvoiceSheetTabIntoMap(
         secondaryTab,
