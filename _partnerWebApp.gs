@@ -1918,6 +1918,45 @@ function _trigger_syncDb_() {
   }
 }
 
+/**
+ * 점심 묶음 — 통합 DB 동기화 → 통합허브 상태/재고.
+ *
+ * ★ 왜 묶었나 ★  (2026-09-16)
+ *   전에는 12:30 동기화 / 12:40 허브 로 따로 돌았다. 10분 차이인데
+ *   구글 시간 트리거는 nearMinute 이 ±15분이라 순서가 뒤집힐 수도 있었다.
+ *   무엇보다 트리거 20개가 꽉 차서 「1분 뒤 저절로 이어집니다」가 한 번도
+ *   안 걸렸다 — 마감·월정산·재매칭·푸시 넷이 시간초과로 멈춰도 그냥 끝났다.
+ *   저녁(runEveningPurchaseAndSync)이 이미 같은 방식이다.
+ *
+ * ★ 앞이 실패해도 뒤는 돈다 ★
+ *   둘은 서로 의존하지 않는다. 동기화가 자빠졌다고 허브 재고까지
+ *   하루 묵히면 오후 발주가 옛 재고를 보고 나간다. 따로 감싼다.
+ */
+function runNoonSyncAndHub() {
+  var log = [];
+
+  try {
+    _trigger_syncDb_();          // 주말 차단·에러 처리·Chat 알림을 스스로 한다
+    log.push("DB 동기화 호출");
+  } catch (e) {
+    log.push("DB 동기화 실패: " + (e && e.message ? e.message : e));
+  }
+
+  try {
+    if (typeof runDailyHubBatch === "function") {
+      runDailyHubBatch();        // 얘도 주말 차단·잠금·Chat 알림을 스스로 한다
+      log.push("허브 상태/재고 호출");
+    } else {
+      log.push("허브 배치 함수 없음");
+    }
+  } catch (e2) {
+    log.push("허브 상태/재고 실패: " + (e2 && e2.message ? e2.message : e2));
+  }
+
+  Logger.log("[NOON] " + log.join(" / "));
+  return log.join("\n");
+}
+
 // ─────────────────────────────────────────────────────
 //  통합 트리거 설정/제거/상태 확인
 // ─────────────────────────────────────────────────────
@@ -1939,8 +1978,10 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
 
   // ─── 점심: 이카운트 + Supabase + 허브 ───
   { fn: "runDailyEcountBatch",                           h: 12, m: 0,  label: "이카운트 전체동기화 2" },
-  { fn: "_trigger_syncDb_",                              h: 12, m: 30, label: "통합 DB 동기화 [Supabase]" },
-  { fn: "runDailyHubBatch",                              h: 12, m: 40, label: "통합허브 상태/재고 업데이트" },
+  /*  ★ 2026-09-16: 12:30 동기화 + 12:40 허브 → 한 자리 ★
+      10분 차이인데 nearMinute 이 ±15분이라 순서가 뒤집힐 수 있었다.
+      저녁 17:00 이 이미 같은 방식이다. 트리거 자리도 하나 아낀다. */
+  { fn: "runNoonSyncAndHub",                             h: 12, m: 30, label: "통합 DB 동기화 [Supabase] + 통합허브 상태/재고" },
 
   // ─── 오후 2회전 (★ 2026-08-31: 14:05/14:20 → 13:00/13:50) ───
   { fn: "partnerCollectOrdersSilent_",                   h: 13, m: 0,  label: "발주 수집 + 판매현황 갱신 (2회전)" },
