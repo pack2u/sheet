@@ -2799,6 +2799,25 @@ function partnerFetchInvoices() {
     hubTab.getRange(2, 13, hubData.length, 1).setValues(_mVals);
     hubTab.getRange(2, 14, hubData.length, 1).setValues(_nVals);
     hubTab.getRange(2, 15, hubData.length, 1).setValues(_oVals);
+
+    /*  ★ 색이 안 바뀌던 까닭 ★  (2026-09-15)
+        > "발주허브에 송장입력되면 셀칼라 바뀌는거 안되고"
+
+        조건부 서식은 _po_applyHubDesign 이 건다. 그런데 그 함수는
+        _po_getHubTab 의 «탭을 처음 만들 때»(if (!tab)) 안에서만 불렸다.
+        허브 탭은 이미 오래전에 만들어졌으니 그 뒤로 한 번도 안 걸렸다.
+        게다가 규칙 범위가 «그때의 행 수»라, 줄이 늘면 새 줄은 덮이지도 않는다.
+        「전에는 됐는데 언제부터 안 된다」의 정체다.
+
+        송장을 쓴 «직후»에 다시 건다 — 색이 바뀌어야 할 바로 그 시점이다.
+        규칙은 통째로 다시 세우므로 여러 번 걸어도 쌓이지 않는다.
+        실패해도 송장은 이미 써 놓았다. 색 때문에 수집을 멈추지 않는다. */
+    try {
+      _po_applyHubDesign(hubTab);
+      scannedLogs.push("[서식] 허브 조건부 서식을 " + hubData.length + "줄에 다시 걸었습니다");
+    } catch (eDesign) {
+      scannedLogs.push("[서식] 조건부 서식 실패(송장은 저장됨): " + eDesign.message);
+    }
     // ★ 2026-08-31: R열(택배사) — 판정이 바뀐 건이 있을 때만 1회 추가 쓰기
     if (carrierChanged) {
       var _rVals = [], _rFilled = 0;
