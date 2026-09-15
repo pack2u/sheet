@@ -43,6 +43,89 @@ var _PTI_SNAP_PHONE_ = 15; // P 전화
  *  읽기만 한다.
  * ══════════════════════════════════════════════════════════════
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 판매현황 스냅샷 «밖»도 뒤진다 ★
+ *  2026-09-15
+ *
+ *  > 품목 추적 결과: 판매현황_임시기록 557행 · 품목명 열 = D
+ *  >                 → "어림지해장국" 포함 0건
+ *
+ *  0건이 나온 것은 없어서가 아니라 «안 뒤져서»다. 두 가지가 좁았다.
+ *    ① 한 줄에서 세 칸(매칭키·D·품목명)만 봤다. 「어림지해장국」은
+ *       수취인이라 그 셋에 없다.
+ *    ② 판매현황_임시기록만 봤다. 그런데 «대리발송 건은 거기 안 산다» —
+ *       대리공급_임시기록(과 _보관), 협력업체_발주허브에 있다.
+ *       사장님 화면에 바로 그 탭이 떠 있었다.
+ *
+ *  「없습니다」는 가장 위험한 답이다. 사람이 그 말을 믿고 다른 데를 찾는다.
+ *  못 찾았으면 «어디를 찾아봤는지»까지 말해야 한다.
+ * ══════════════════════════════════════════════════════════════
+ */
+
+/** 이 말이 줄 어딘가에 있나 — 칸을 고르지 않는다 */
+function _pti_rowHas_(row, kwUpper) {
+  for (var c = 0; c < row.length; c++) {
+    var v = row[c];
+    if (v === "" || v === null || v === undefined) continue;
+    if (String(v).toUpperCase().indexOf(kwUpper) !== -1) return true;
+  }
+  return false;
+}
+
+/**
+ * 스냅샷 밖의 탭들에서 그 말을 찾아 본다.
+ * 대리발송 건이 사는 곳 — 대리공급_임시기록 · 그 보관 · 협력업체_발주허브.
+ *
+ * @return {Array<string>} 화면에 붙일 줄들
+ */
+function _pti_lookOutside_(kw) {
+  var out = [];
+  var kwU = String(kw || "").toUpperCase();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var 볼탭 = [
+    { 이름: "대리공급_임시기록", 왜: "대리발송 건이 먼저 앉는 곳" },
+    { 이름: "대리공급_임시기록_보관", 왜: "마감정리로 넘어간 뒤" },
+    { 이름: "협력업체_발주허브", 왜: "대리판매 발주·송장" },
+  ];
+
+  for (var t = 0; t < 볼탭.length; t++) {
+    var tab = ss.getSheetByName(볼탭[t].이름);
+    if (!tab) { out.push("  · " + 볼탭[t].이름 + " — 탭 없음"); continue; }
+    var lr = tab.getLastRow();
+    if (lr < 2) { out.push("  · " + 볼탭[t].이름 + " — 비어 있음"); continue; }
+    var lc = tab.getLastColumn();
+    var hdr = tab.getRange(1, 1, 1, lc).getDisplayValues()[0];
+
+    //  송장 칸을 «이름»으로 찾는다. 못 찾으면 못 찾았다고 적는다.
+    var invCol = -1;
+    for (var h = 0; h < hdr.length; h++) {
+      var hn = String(hdr[h] || "").replace(/\s/g, "");
+      if (invCol < 0 && (hn.indexOf("송장") !== -1 || hn.indexOf("운송장") !== -1) &&
+          hn.indexOf("반품") === -1) { invCol = h; }
+    }
+
+    var data = tab.getRange(2, 1, lr - 1, lc).getDisplayValues();
+    var 찾음 = 0, 송장있음 = 0, 보기 = [];
+    for (var i = 0; i < data.length; i++) {
+      if (!_pti_rowHas_(data[i], kwU)) continue;
+      찾음++;
+      var inv = invCol >= 0 ? String(data[i][invCol] || "").trim() : "";
+      if (inv) 송장있음++;
+      if (보기.length < 6) {
+        보기.push("      R" + (i + 2) + "  송장=" + (inv || "(빈칸)"));
+      }
+    }
+    out.push("  · " + 볼탭[t].이름 + " (" + 볼탭[t].왜 + ") — " +
+      찾음 + "건" + (찾음 ? " · 송장 있는 줄 " + 송장있음 + "건" : "") +
+      (invCol < 0 ? "  ⚠ 송장 칸을 못 찾음" : "  [송장칸=" + _pti_colLetter_(invCol + 1) +
+        "(" + (hdr[invCol] || "") + ")]"));
+    for (var b = 0; b < 보기.length; b++) out.push(보기[b]);
+  }
+  return out;
+}
+
+
 function partnerTraceItemPrompt() {
   var ui = SpreadsheetApp.getUi();
   var 답 = ui.prompt(
@@ -111,8 +194,10 @@ function partnerTraceItem(optKeyword, optLimit) {
 
     var hits = [];
     for (var i = 0; i < sData.length; i++) {
-      var joined = [sData[i][1], sData[i][3], sData[i][itemCol]].join(" ");
-      if (joined.toUpperCase().indexOf(kw.toUpperCase()) === -1) continue;
+      /*  ★ 칸을 고르지 않는다 ★  (2026-09-15)
+          전에는 매칭키·D열·품목명 «셋»만 봤다. 「어림지해장국」은 수취인이라
+          그 셋에 없어서 0건이 나왔다 — 없어서가 아니라 안 뒤져서다. */
+      if (!_pti_rowHas_(sData[i], kw.toUpperCase())) continue;
       hits.push({
         row: i + 2,
         date: String(sData[i][0] || "").trim(),
@@ -127,8 +212,19 @@ function partnerTraceItem(optKeyword, optLimit) {
     L.push("");
 
     if (!hits.length) {
-      L.push("판매현황_임시기록에 해당 건이 없습니다.");
+      L.push("판매현황_임시기록에는 없습니다.");
       L.push("※ 매칭이 끝난 건은 이 탭에서 지워집니다. 오늘 미매칭 건만 남습니다.");
+      L.push("");
+      /*  ★ 「없습니다」로 끝내지 않는다 ★
+          대리발송 건은 이 탭에 애초에 안 산다. 어디를 더 찾아봤는지까지
+          말해야, 사람이 그 말을 믿고 엉뚱한 데를 뒤지지 않는다. */
+      L.push("── 다른 데도 찾아봤습니다 ──");
+      try {
+        var 밖 = _pti_lookOutside_(kw);
+        for (var ob = 0; ob < 밖.length; ob++) L.push(밖[ob]);
+      } catch (eOut) {
+        L.push("  (밖을 못 읽었습니다: " + (eOut && eOut.message ? eOut.message : eOut) + ")");
+      }
       return _pti_out_(L);
     }
 
