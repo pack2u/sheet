@@ -51,8 +51,12 @@ console.log("\n[gasBulk] 원천 3 — 자사출고 두 탭");
   const src = 읽기(path.join(뿌리, "gasBulk.js"));
   const 로젠 = 편찾기(src, "로젠", "uid", "inv");
   const 롯데 = 편찾기(src, "롯데", "uid", "inv");
-  eq("로젠 주문번호 = S(18)", 로젠.uid, 18);
-  eq("로젠 운송장 = D(3)", 로젠.inv, 3);
+  /*  ★ 2026-09-15: 실제 시트를 보고 바로잡았다 ★
+      로젠 탭이 「집하」 양식으로 바뀌었다 — 머리글이 없고 자리가 다르다.
+      이 시험이 옛 자리(S·D)를 «사실»로 못 박고 있어서, 고치면 시험이
+      깨지는 모양이었다. 시험은 지금 코드가 아니라 지금 사실을 지켜야 한다. */
+  eq("로젠 주문번호 = J(9)", 로젠.uid, 9);
+  eq("로젠 운송장 = K(10)", 로젠.inv, 10);
   eq("로젠 탭 GID", 로젠.gid, 548505068);
   eq("로젠 코드는 로젠 것", 로젠.code, "SSB_ROZEN_CODE");
   eq("롯데 주문번호 = I(8)", 롯데.uid, 8);
@@ -88,8 +92,8 @@ console.log("\n[_partnerHelpers.gs] 로젠 칸 자리는 한 군데");
   const src = 읽기(path.join(허브, "_partnerHelpers.gs"));
   const m = src.match(/_PT_ROZEN_FIXED_COL[^{]*[{]([^}]*)[}]/);
   eq("상수가 있다", !!m, "true");
-  eq("주문번호 S(18)", /uid:[ ]*18/.test(m[1]), "true");
-  eq("운송장 D(3)", /invoice:[ ]*3/.test(m[1]), "true");
+  eq("주문번호 J(9)", m[1].indexOf("uid: 9") >= 0, "true");
+  eq("운송장 K(10)", m[1].indexOf("invoice: 10") >= 0, "true");
 }
 
 console.log("\n[머리글을 찾는가] 1행에 있다고 믿으면 로젠은 0행이 된다");

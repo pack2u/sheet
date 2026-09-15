@@ -410,11 +410,24 @@ function ssb_collect() {
     }
   } else { errs.push('발주허브: ' + r2.why); }
 
-  // ── 3. 자사출고 — 거래관리시스템송장. 로젠(E=4·F=5) + 롯데(J=9·G=6) ──
+  // ── 3. 자사출고 — 거래관리시스템송장. 로젠 + 롯데 ──
   //    둘 다 읽는다. 한쪽만 보면 갈아탄 날 앞뒤가 조용히 빠진다.
+  /*  ★ 로젠 탭에는 머리글이 «없다» ★  (2026-09-15 시트 직접 확인)
+      > "3번째 판매현황을 넣었다면 1,2,3차 다 포함돼서 만들어져야 되는거 아닌가?"
+
+      맞다. 이 기능은 회차가 아니라 «원천»을 훑는다. 그런데 자사출고 원천이
+      통째로 빠지고 있었다 — 로젠 탭이 「집하」 양식이라 1행부터 바로 자료고,
+      ssb_findHeader 가 「머리글 못 찾음」으로 그 탭을 건너뛴다.
+      그러면 1·2차든 3차든 자사출고는 한 줄도 안 올라간다.
+
+      실제 한 줄: A 1 · B 집하 · C 2026-09-15 · J 2162784744 · K 451-6945-9705 · O 최유찬
+      머리글을 못 찾으면 이 자리로 읽는다. 허브 _PT_ROZEN_FIXED_COL 과 같은 값이다 —
+      두 군데가 다르면 한쪽만 고쳐지고 또 조용히 갈린다. */
   var 자사탭 = [
-    { 이름: '로젠', gid: ssNum(cfg['로젠송장탭GID']) || 548505068, uid: 18, inv: 3, code: SSB_ROZEN_CODE },
-    { 이름: '롯데', gid: ssNum(cfg['롯데송장탭GID']) || 1575029201, uid: 8, inv: 6, code: SSB_LOTTE_CODE },
+    { 이름: '로젠', gid: ssNum(cfg['로젠송장탭GID']) || 548505068,
+      uid: 9, inv: 10, date: 2, code: SSB_ROZEN_CODE },   // J 주문번호 · K 운송장 · C 집하일자
+    { 이름: '롯데', gid: ssNum(cfg['롯데송장탭GID']) || 1575029201,
+      uid: 8, inv: 6, date: -1, code: SSB_LOTTE_CODE },
   ];
   res.자사탭 = [];
   for (var oi = 0; oi < 자사탭.length; oi++) {
@@ -432,20 +445,31 @@ function ssb_collect() {
 
       /* 머리글을 «찾는다». 1행에 있다고 믿지 않는다 (ssb_findHeader 설명) */
       var H = ssb_findHeader(lTab);
-      if (!H.row) {
-        res.자사탭.push(편.이름 + ' 머리글 못 찾음');
-        errs.push('자사출고 ' + 편.이름 + ' 탭: 「주문번호」·「운송장번호」 머리글을 못 찾았습니다');
-        continue;
+      var 머리없음 = !H.row;
+      if (머리없음) {
+        /*  ★ 포기하지 않는다 ★  머리글이 없는 양식이 실제로 있다(로젠 집하).
+            여태는 여기서 그 탭을 통째로 버렸고, 자사출고가 한 줄도 안 올라갔다.
+            적어 둔 자리로 읽되 «머리글 없이 자리로 읽었다»고 반드시 말한다 —
+            양식이 또 바뀌면 이 줄이 첫 단서가 된다. */
+        if (!(편.uid >= 0 && 편.inv >= 0)) {
+          res.자사탭.push(편.이름 + ' 머리글 못 찾음 · 예비 자리도 없음');
+          errs.push('자사출고 ' + 편.이름 + ' 탭: 머리글도 예비 자리도 없습니다');
+          continue;
+        }
+        H = { row: 0, head: [], uid: 편.uid, inv: 편.inv,
+              date: (편.date === undefined ? -1 : 편.date) };
       }
       var ci = H.uid, cw = H.inv, dCol = H.date;
       var lwid = Math.max(lTab.getLastColumn(), Math.max(ci, cw) + 1);
 
       /* 어느 칸을 읽었는지 남긴다 — 탭 서식이 바뀌면 여기부터 본다 */
       if (oi === 0) res.lotteCols = [];
-      res.lotteCols.push(편.이름 + ' 머리글 ' + H.row + '행 · 주문번호 ' + ssb_col(ci) +
+      res.lotteCols.push(편.이름 + (머리없음 ? ' 머리글 없음 → 자리로' : ' 머리글 ' + H.row + '행') +
+        ' · 주문번호 ' + ssb_col(ci) +
         ' · 운송장 ' + ssb_col(cw) +
         ' · 날짜 ' + (dCol >= 0 ? ssb_col(dCol) + '(' + ssText(H.head[dCol]) + ')' : '없음 → 날짜로 안 거름'));
 
+      //  머리글이 없으면 1행도 자료다 — H.row 가 0 이라 자연히 1행부터 읽는다
       var lv = lTab.getRange(H.row + 1, 1, lTab.getLastRow() - H.row, lwid).getDisplayValues();
       var n편 = 0;
       for (var k = 0; k < lv.length; k++) {
