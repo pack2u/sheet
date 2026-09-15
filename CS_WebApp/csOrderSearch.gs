@@ -627,8 +627,8 @@ function _cs_loadLedgerView_(days, refresh) {
         source: G(row, "송장매칭") || 경로,
         orderNo: uid,
         vendor: G(row, "조치업체"),
-        //  원장이 적어 준 택배사가 «사실»이다. 아직 안 적힌 옛 줄만 자릿수로 가린다.
-        carrier: G(row, "택배사") || _cs_ledgerCarrier_(invRaw, 경로),
+        //  택배사는 «적힌 것»만 쓴다. 지어내지 않는다.
+        carrier: G(row, "택배사"),
         status: 보류 ? 경로 + "(" + 보류 + ")" : 경로,
         origin: "ledger",
         match: G(row, "주문번호출처") === "자동발급" ? "자동발급" : "UID",
@@ -645,18 +645,16 @@ function _cs_loadLedgerView_(days, refresh) {
   return out;
 }
 
-/**
- * 원장에는 택배사 칸이 없다. 송장 자릿수로 가린다 —
- * 세트분리 gasBulk.js ssb_ownCode 와 «같은 규칙»이다(12자리 롯데, 그 밖 로젠).
- * 대리발송이면 우리 택배사가 아니므로 비워 둔다 — 모르면 모른다고 한다.
- */
-function _cs_ledgerCarrier_(invRaw, 경로) {
-  if (String(경로 || "").indexOf("대리발송") === 0) return "";
-  var d = String(invRaw || "").replace(/[^0-9]/g, "");
-  if (d.length === 12) return "롯데택배";
-  if (d.length >= 9) return "로젠택배";
-  return "";
-}
+/*  ★ 자릿수로 택배사를 가르던 함수를 지웠다 ★  (2026-09-15)
+    > "자릿수로 택배사는 못구별해.. 택배사 정보를 읽게 만들어줘"
+
+    12자리면 롯데, 그 밖은 로젠이라고 했다. 자사출고 둘만 볼 때는 맞았지만
+    대리발송은 업체가 제 택배사로 보낸다 — 한진도 CJ도 대신도 그 자릿수다.
+    한진으로 나간 건에 롯데가 찍혔다.
+
+    이제 원장에 「택배사」 칸이 있고 송장 전파가 «송장을 읽은 탭»이 알려 준
+    값을 그대로 적는다(gasMain.js ss_송장전파). 짐작할 자리가 없어졌다.
+    아직 안 적힌 옛 줄은 빈칸으로 둔다 — 틀린 택배사보다 빈칸이 낫다. */
 
 function _cs_putUvCache_(cache, key, rows, updatedAt) {
   try {

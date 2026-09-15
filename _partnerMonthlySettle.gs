@@ -169,14 +169,37 @@ function partnerArchiveToMonthlySettle() {
   // ★ 이미 백그라운드 진행 중이면 재시작 여부만 확인 (ScriptLock 불필요)
   var existing = _pms_loadResumeState_();
   if (existing && existing.queue && existing.queue.length > 0) {
-    var cfBusy = ui.alert(
-      "⏳ 대리판매 마감 진행 중",
-      "이미 백그라운드에서 처리 중입니다.\n" +
-      "남은 파일: " + existing.queue.length + "개\n\n" +
-      "· 예 = 강제 재시작 (현재 진행 취소 후 처음부터)\n" +
-      "· 아니오 = 그대로 두기 (완료 시 Chat 알림)",
-      ui.ButtonSet.YES_NO
-    );
+    /* ★ 깃발이 아니라 «트리거»를 본다 ★  (2026-09-15)
+       > "마감이동을 할수가 없네.. 백그라운드에서 하지도 못하는거 같은데.."
+
+       여태 큐에 남은 파일이 있으면 「진행 중」이라 했다. 그런데 백그라운드는
+       재개 트리거가 굴린다 — 트리거가 죽으면 큐만 남고, 시스템이 «없는 일»을
+       있다고 말한다. 그러면 사람은 영영 다시 못 돌린다. */
+    var 상태 = _pms_runState_();
+    var cfBusy;
+    if (상태.돌고있나) {
+      cfBusy = ui.alert(
+        "⏳ 대리판매 마감 진행 중",
+        "백그라운드에서 처리 중입니다.\n" +
+        "시작: " + 상태.시작 + " (" + _pms_ago_(상태.지난분) + ")\n" +
+        "남은 파일: " + existing.queue.length + "개\n\n" +
+        "· 예 = 강제 재시작 (현재 진행 취소 후 처음부터)\n" +
+        "· 아니오 = 그대로 두기 (완료 시 Chat 알림)",
+        ui.ButtonSet.YES_NO
+      );
+    } else {
+      /*  돌고 있지 않다. 「진행 중」이라 하면 사람이 하염없이 기다린다.
+          멈췄다고 «그 까닭과 함께» 말하고 바로 이어 준다. */
+      cfBusy = ui.alert(
+        "⚠ 대리판매 마감이 멈춰 있습니다",
+        상태.왜 + "\n\n" +
+        "시작: " + 상태.시작 + " (" + _pms_ago_(상태.지난분) + ")\n" +
+        "남은 파일: " + existing.queue.length + "개\n\n" +
+        "· 예 = 처음부터 다시 시작\n" +
+        "· 아니오 = 그대로 두기",
+        ui.ButtonSet.YES_NO
+      );
+    }
     if (cfBusy !== ui.Button.YES) return;
     _pms_clearResumeState_();
   }
@@ -233,7 +256,9 @@ function partnerArchiveToMonthlySettle() {
       "이 창은 닫으셔도 됩니다.\n\n" +
       "※ 다시 누르면 '진행 중' 안내가 뜹니다. 완료 Chat을 기다려 주세요.");
   } else {
-    ui.alert("⚠ 백그라운드 예약 실패 → 즉시 처리합니다.\n(파일이 많으면 시간이 걸릴 수 있습니다.)");
+    ui.alert("⚠ 백그라운드 예약 실패 → 즉시 처리합니다.\n" +
+      "(파일이 많으면 6분 한도에 걸려 또 멈출 수 있습니다.)\n\n" +
+      _pt_triggerFailWhy_(_PMS_LAST_TRIGGER_ERR_));
     var lock2 = LockService.getScriptLock();
     if (lock2.tryLock(5000)) {
       try { _pms_runBatch_(true); }
@@ -339,6 +364,8 @@ function partnerDiagnoseMonthlyArchive() {
 var _PMS_RESUME_KEY_ = "_PMS_RESUME_STATE";       // ScriptProperties 상태 저장 키
 var _PMS_RESUME_TRIGGER_ = "_pms_continueResume_"; // 재개 트리거 핸들러명
 var _PMS_TIME_BUDGET_MS_ = 4.5 * 60 * 1000;        // 배치당 시간 예산(4.5분, 6분 한도 안전마진)
+/** 마지막 트리거 생성 실패 — 화면에 까닭을 그대로 보여 주려고 담아 둔다 */
+var _PMS_LAST_TRIGGER_ERR_ = null;
 
 function _pms_core_(ui, silent) {
   var files = _pt_listFiles();
@@ -540,13 +567,170 @@ function _pms_loadFinalSummary_() {
   try { return PropertiesService.getScriptProperties().getProperty(_PMS_RESUME_KEY_ + "_FINAL"); }
   catch(e) { return null; }
 }
+/**
+ * ★ 「예약 실패」로 끝내지 않는다 ★  (2026-09-15)
+ *
+ *   > 마감이동을 할수가 없네.. 백그라운드에서 하지도 못하는거 같은데..
+ *
+ *   트리거 생성이 실패하면 여태 까닭을 Logger 에만 남기고 화면엔
+ *   「예약 실패 → 즉시 처리합니다」만 띄웠다. 그러면 즉시 처리가 6분에
+ *   걸려 또 죽고, 사람은 무엇이 문제인지 끝내 모른다.
+ *
+ *   ★ 가장 흔한 까닭은 트리거 20개 한도다 ★
+ *     한 스크립트 프로젝트에 트리거는 20개까지다. 다 차 있으면 새 예약이
+ *     안 된다. 몇 개가 걸려 있는지 같이 보여 주면 바로 안다.
+ *
+ * @param {*} e 트리거 생성이 던진 것 (없으면 null)
+ * @return {string} 화면에 덧붙일 설명
+ */
+/**
+ * ★ 자리가 없으면 «찌꺼기»를 걷어내고 다시 해 본다 ★  (2026-09-15)
+ *
+ *   > 10일부터 마감처리가 못되고 있으니
+ *
+ *   9월 8~12 일에 밤 미러(반품·구매입력·보드)와 이어달리기 트리거가 늘었다.
+ *   한 프로젝트에 트리거는 20개까지다. 자리가 차자 대리판매 마감이 재개
+ *   트리거를 못 만들었고, 즉시 처리로 떨어져 6분에 걸려 죽었다. 그날부터다.
+ *
+ *   ★ 일회용 트리거는 돌고 나면 사라져야 한다 ★
+ *     아래 것들은 «한 번 쓰고 버리는» 예약이다(after 방식). 일이 중간에
+ *     끊기면 지워지지 않고 자리만 먹는다. 그런 찌꺼기부터 걷어낸다.
+ *
+ *   ★ 매일 도는 정규 트리거는 손대지 않는다 ★
+ *     그건 사람이 정한 일정이다. 기계가 지울 것이 아니다.
+ */
+var _PT_ONESHOT_HANDLERS_ = [
+  "_pbv_scheduled_",
+  "_piv_scheduled_",
+  "_prv_scheduled_",
+  "_pep_collectPriceMapDelayed_",
+  "_pep_patchUnmatchedArchiveScheduled_",
+  "_pep_unifiedDailyArchiveScheduled_",
+  "_repairScript_continueAuto_",
+  "partnerShowStatusDashboard"
+];
+
+/**
+ * 남아 있는 일회용 트리거를 지운다.
+ * @param {string=} 빼고 이 핸들러는 건드리지 않는다 (지금 돌고 있는 일)
+ * @return {number} 지운 개수
+ */
+function _pt_reclaimOneShotTriggers_(빼고) {
+  var n = 0;
+  try {
+    var trs = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < trs.length; i++) {
+      var h = trs[i].getHandlerFunction();
+      if (빼고 && h === 빼고) continue;
+      if (_PT_ONESHOT_HANDLERS_.indexOf(h) < 0) continue;
+      try { ScriptApp.deleteTrigger(trs[i]); n++; } catch (e2) {}
+    }
+  } catch (e) {}
+  if (n) Logger.log("[PT] 남아 있던 일회용 트리거 " + n + "개를 걷어냈습니다");
+  return n;
+}
+
+function _pt_triggerFailWhy_(e) {
+  var 몇 = -1;
+  try { 몇 = ScriptApp.getProjectTriggers().length; } catch (e2) {}
+  var msg = e && e.message ? e.message : (e ? String(e) : '');
+  var out = [];
+  out.push('현재 트리거 ' + (몇 >= 0 ? 몇 + '개' : '(셀 수 없음)') + ' — 한 프로젝트에 20개까지');
+  if (msg) out.push('까닭: ' + msg);
+  if (몇 >= 20) out.push('→ 20개가 다 찼습니다. 안 쓰는 트리거를 지우면 바로 됩니다.');
+  return out.join('\n');
+}
+
 function _pms_scheduleResume_(delayMs) {
   _pms_deleteResumeTriggers_(); // 중복 방지 (안전망 트리거 포함 교체)
+  _pms_markStarted_();          // 언제 시작했는지 — 「11시간 전」을 말할 수 있게
   try {
     ScriptApp.newTrigger(_PMS_RESUME_TRIGGER_).timeBased().after(delayMs || 60 * 1000).create();
     return true;
-  } catch(e) { Logger.log("[PMS] 재개 트리거 생성 실패: " + e.message); return false; }
+  } catch(e) {
+    Logger.log("[PMS] 재개 트리거 생성 실패: " + e.message);
+    _PMS_LAST_TRIGGER_ERR_ = e;
+    /*  자리가 없어서일 수 있다. 찌꺼기를 걷어내고 «한 번만» 더 해 본다.
+        무한히 되풀이하지 않는다 — 안 되면 까닭을 들고 화면에 나간다. */
+    if (_pt_reclaimOneShotTriggers_(_PMS_RESUME_TRIGGER_) > 0) {
+      try {
+        ScriptApp.newTrigger(_PMS_RESUME_TRIGGER_).timeBased()
+          .after(delayMs || 60 * 1000).create();
+        _PMS_LAST_TRIGGER_ERR_ = null;
+        Logger.log("[PMS] 자리를 비우고 재개 트리거를 걸었습니다");
+        return true;
+      } catch (e3) { _PMS_LAST_TRIGGER_ERR_ = e3; }
+    }
+    return false;
+  }
 }
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 「진행 중」이 정말 진행 중인지 본다 ★  (2026-09-15)
+ *
+ *  큐에 남은 파일이 있으면 돌고 있는 것으로 쳤다. 그런데 백그라운드는
+ *  재개 트리거가 굴린다 — 트리거가 6분을 넘겨 죽거나 오류로 끊기면
+ *  큐만 남고, 시스템이 «없는 일»을 있다고 말한다. 사람은 영영 못 돌린다.
+ *
+ *  재개 트리거가 실제로 걸려 있는가 — 그것만이 믿을 수 있는 사실이다.
+ *  (대리공급 마감의 _pea_runState_ 와 같은 생각이다. 같은 병이 두 군데 있었다.)
+ * ══════════════════════════════════════════════════════════════
+ */
+var _PMS_STARTED_KEY_ = _PMS_RESUME_KEY_ + "_STARTED";
+/** 이만큼 지났는데 안 끝났으면 죽은 것으로 본다 (재개는 1분마다 잇는다) */
+var _PMS_STALE_MIN_ = 30;
+
+/** 재개 트리거가 실제로 걸려 있나 */
+function _pms_resumeTriggerAlive_() {
+  try {
+    var trs = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < trs.length; i++) {
+      if (trs[i].getHandlerFunction() === _PMS_RESUME_TRIGGER_) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function _pms_markStarted_() {
+  try {
+    PropertiesService.getScriptProperties()
+      .setProperty(_PMS_STARTED_KEY_, String(new Date().getTime()));
+  } catch (e) {}
+}
+
+/** @return {{돌고있나:boolean, 지난분:number, 시작:string, 왜:string}} */
+function _pms_runState_() {
+  var started = 0;
+  try {
+    started = parseInt(PropertiesService.getScriptProperties()
+      .getProperty(_PMS_STARTED_KEY_), 10) || 0;
+  } catch (e) {}
+  var 지난분 = started ? Math.floor((new Date().getTime() - started) / 60000) : -1;
+  var 살아있음 = _pms_resumeTriggerAlive_();
+  var 왜 = "";
+  if (!살아있음) {
+    왜 = "재개 트리거가 없습니다 — 돌고 있지 않습니다.";
+  } else if (지난분 >= _PMS_STALE_MIN_) {
+    왜 = "트리거는 있는데 " + 지난분 + "분째 안 끝났습니다 — 멈춘 것으로 봅니다.";
+  }
+  return {
+    돌고있나: 살아있음 && !(지난분 >= _PMS_STALE_MIN_),
+    지난분: 지난분,
+    시작: started
+      ? Utilities.formatDate(new Date(started), "Asia/Seoul", "MM-dd HH:mm")
+      : "(모름)",
+    왜: 왜
+  };
+}
+
+/** 「3시간 20분 전」처럼 사람이 읽는 꼴 */
+function _pms_ago_(분) {
+  if (!(분 >= 0)) return "(언제인지 모름)";
+  if (분 < 60) return 분 + "분 전";
+  var h = Math.floor(분 / 60), m = 분 % 60;
+  return h + "시간" + (m ? " " + m + "분" : "") + " 전";
+}
+
 function _pms_deleteResumeTriggers_() {
   try {
     var trs = ScriptApp.getProjectTriggers();

@@ -428,7 +428,9 @@ function partnerArchiveExclusiveForm() {
 
   // ── 트리거 예약 실패 → 인라인 폴백(차단 방식) ──
   try { PropertiesService.getScriptProperties().deleteProperty(_PEA_PENDING_KEY_); } catch(_) {}
-  ui.alert("⚠ 백그라운드 예약 실패 → 즉시 처리합니다.\n(업체가 많으면 시간이 걸릴 수 있습니다.)");
+  ui.alert("⚠ 백그라운드 예약 실패 → 즉시 처리합니다.\n" +
+    "(업체가 많으면 6분 한도에 걸려 또 멈출 수 있습니다.)\n\n" +
+    _pt_triggerFailWhy_(_PEA_LAST_TRIGGER_ERR_));
   var result = _pea_core_(tabName, false);
 
   if (result.incomplete) {
@@ -1053,12 +1055,30 @@ function _pea_clearResumeState_() {
 function _pea_saveFinalSummary_(result) {
   try { PropertiesService.getScriptProperties().setProperty(_PEA_RESUME_KEY_ + "_FINAL", JSON.stringify(result)); } catch(e) {}
 }
+/** 마지막 트리거 생성 실패 — 화면에 까닭을 그대로 보여 주려고 담아 둔다 */
+var _PEA_LAST_TRIGGER_ERR_ = null;
+
 function _pea_scheduleResume_(delayMs) {
   _pea_deleteResumeTriggers_(); // 중복 방지 (안전망 트리거 포함 교체)
   try {
     ScriptApp.newTrigger(_PEA_RESUME_TRIGGER_).timeBased().after(delayMs || 60 * 1000).create();
     return true;
-  } catch(e) { Logger.log("[PEA] 재개 트리거 생성 실패: " + e.message); return false; }
+  } catch(e) {
+    Logger.log("[PEA] 재개 트리거 생성 실패: " + e.message);
+    _PEA_LAST_TRIGGER_ERR_ = e;
+    /*  자리가 없어서일 수 있다 — 트리거는 한 프로젝트에 20개까지다.
+        남아 있는 일회용 찌꺼기를 걷어내고 «한 번만» 더 해 본다. */
+    if (typeof _pt_reclaimOneShotTriggers_ === "function" &&
+        _pt_reclaimOneShotTriggers_(_PEA_RESUME_TRIGGER_) > 0) {
+      try {
+        ScriptApp.newTrigger(_PEA_RESUME_TRIGGER_).timeBased()
+          .after(delayMs || 60 * 1000).create();
+        _PEA_LAST_TRIGGER_ERR_ = null;
+        return true;
+      } catch (e3) { _PEA_LAST_TRIGGER_ERR_ = e3; }
+    }
+    return false;
+  }
 }
 function _pea_deleteResumeTriggers_() {
   try {

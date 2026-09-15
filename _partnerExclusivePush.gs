@@ -5035,23 +5035,31 @@ function _pep_carrierFromItemCode_(code, source) {
 
   var origin = _pep_loadItemShipOriginIndex_(false).map[raw] || "";
 
-  // 평택에서 나가면 우리가 보낸 것이다 — 무조건 롯데
-  if (_pep_isOwnWarehouseOrigin_(origin)) {
-    return { carrier: "롯데택배", via: "출고지(" + origin + ")" };
-  }
-  // 대리발송이면 업체가 자기 택배사로 보낸다 — 접두로 업체를 짚는다
-  if (_pep_isProxyShipOrigin_(origin)) {
+  /* ★ 업체가 보내는 줄에 «우리» 출고지는 근거가 못 된다 ★  (2026-09-15)
+     > "택배사 정보가 다르게 나오네.. 여기는 한진인데.."
+
+     HRACM0001 의 출고지는 평택이다 — 평소엔 우리가 보낸다. 그런데 그 줄이
+     하나팩에 넘어간 대리발송이면 하나팩이 «자기 택배사(한진)»로 보낸다.
+     여태는 출고지만 보고 「평택이니까 우리 것」이라 판정해 버렸다. 그래서
+     한진으로 나간 건에 롯데가 찍혔다. 누가 보내는가를 «먼저» 본다.
+
+     업체 것이면 접두로 업체를 짚고, 못 짚으면 빈칸이다 —
+     틀린 택배사가 빈칸보다 나쁘다. */
+  if (_pep_isPartnerShipSource_(source) || _pep_isProxyShipOrigin_(origin)) {
     var byPfx = _pep_carrierFromItemCodePrefix_(raw);
-    if (byPfx) return { carrier: byPfx, via: "출고지(대리발송)+접두" };
-    return { carrier: "", via: "" }; // 업체를 못 짚었다 — 추측하지 않는다
+    return byPfx
+      ? { carrier: byPfx, via: "업체출고+접두" }
+      : { carrier: "", via: "" };
   }
 
-  // 출고지를 못 읽었다(미등록·일산 등). 출처가 업체 출고라고 말해 줄 때만 접두를 쓴다.
-  // 자사출고 건에 접두를 쓰면 그 업체 택배사로 잘못 나간다.
-  if (_pep_isPartnerShipSource_(source)) {
-    var pfxOnly = _pep_carrierFromItemCodePrefix_(raw);
-    if (pfxOnly) return { carrier: pfxOnly, via: "접두(출고지없음)" };
-  }
+  /* ★ 자사출고 택배사를 여기 박아 두지 않는다 ★  (2026-09-15)
+     > "자릿수로 택배사는 못구별해.. 택배사 정보를 읽게 만들어줘"
+
+     여기엔 「평택이면 무조건 롯데」가 박혀 있었다. 2026-09-11 에 로젠으로
+     갈아탔는데 이 줄만 그대로여서, 로젠으로 나간 건에 계속 롯데가 찍혔다.
+     자사출고 송장의 택배사는 «그 송장이 나온 탭»이 안다(①송장맵·②출처).
+     거기서 못 얻었다면 여기서 지어낼 것이 아니라 비워 둔다 — 그래야
+     「택배사 채움률 점검」에 걸려 사람이 본다. 조용히 틀리는 것보다 낫다. */
   return { carrier: "", via: "" };
 }
 
@@ -5080,12 +5088,24 @@ function _pep_carrierForArchiveRow_(invInfo, source, vendor, itemCode, outVia) {
     return out;
   }
   if (invInfo && invInfo.carrier) return done(invInfo.carrier, "송장맵");
-  var fromSrc = _pep_carrierFromSource_(source);
-  if (fromSrc) return done(fromSrc, "출처");
+
+  /* ★ 업체를 알면 업체가 먼저다 ★  (2026-09-15)
+     > "택배사 정보가 다르게 나오네.. 여기는 한진인데.."
+
+     여태는 «출처»가 앞이었다. 그런데 출처가 「로젠」이라는 건 그 번호가
+     우리 로젠 탭에서 눈에 띄었다는 뜻일 뿐이다. 하나팩이 한진으로 보낸
+     건인데도 로젠이라고 찍힌 까닭이 이것이다.
+
+     택배사를 정하는 것은 «누가 보내는가»다. 발주업체를 알면 그 업체가
+     쓰는 택배사가 사실이고, 그 사실은 「업체_택배사」 표에 적혀 있다.
+     자사출고 줄은 발주업체가 없으므로 종전대로 출처가 답한다. */
   if (vendor) {
     var byVendor = _pep_carrierForVendor_(vendor);
     if (byVendor) return done(byVendor, "업체명");
   }
+
+  var fromSrc = _pep_carrierFromSource_(source);
+  if (fromSrc) return done(fromSrc, "출처");
   if (itemCode) {
     var byCode = _pep_carrierFromItemCode_(itemCode, source);
     if (byCode.carrier) return done(byCode.carrier, byCode.via);
