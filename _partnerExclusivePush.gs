@@ -5089,26 +5089,34 @@ function _pep_carrierForArchiveRow_(invInfo, source, vendor, itemCode, outVia) {
   }
   if (invInfo && invInfo.carrier) return done(invInfo.carrier, "송장맵");
 
-  /* ★ 업체를 알면 업체가 먼저다 ★  (2026-09-15)
-     > "택배사 정보가 다르게 나오네.. 여기는 한진인데.."
+  /* ★ 보내는 것은 «품목을 대는 업체»다 ★  (2026-09-15)
+     > "하나팩이 발송하는게 아니자나.. 하나팩에서 주문한거자나.."
+     > "발송 업체의 택배사를 따라가는거지.."
 
-     여태는 «출처»가 앞이었다. 그런데 출처가 「로젠」이라는 건 그 번호가
-     우리 로젠 탭에서 눈에 띄었다는 뜻일 뿐이다. 하나팩이 한진으로 보낸
-     건인데도 로젠이라고 찍힌 까닭이 이것이다.
+     거래처명이 「대리발송-하나팩 유채정」이라고 해서 하나팩이 보내는 게
+     아니다. 하나팩은 «주문한 쪽»이다. 실제로 박스를 부치는 것은 그 물건을
+     대는 업체이고, 그 업체는 이카운트코드 앞 두 글자가 가리킨다
+     (HRACM0001→HR, JHSGJJIM00102→JH, GSVNBT0001→GS).
 
-     택배사를 정하는 것은 «누가 보내는가»다. 발주업체를 알면 그 업체가
-     쓰는 택배사가 사실이고, 그 사실은 「업체_택배사」 표에 적혀 있다.
-     자사출고 줄은 발주업체가 없으므로 종전대로 출처가 답한다. */
-  if (vendor) {
-    var byVendor = _pep_carrierForVendor_(vendor);
-    if (byVendor) return done(byVendor, "업체명");
+     그래서 품목코드가 «출처보다 앞»이다. 출처가 「로젠」이라는 건 그 번호가
+     우리 로젠 탭에서 눈에 띄었다는 뜻일 뿐, 누가 보냈는지를 말해 주지 않는다.
+
+     자사출고 줄에는 이 갈래가 답하지 않는다 — _pep_carrierFromItemCode_ 는
+     업체 출고일 때만 값을 내놓는다. 그때는 아래 출처가 답한다. */
+  if (itemCode) {
+    var byCode = _pep_carrierFromItemCode_(itemCode, source);
+    if (byCode.carrier) return done(byCode.carrier, byCode.via);
   }
 
   var fromSrc = _pep_carrierFromSource_(source);
   if (fromSrc) return done(fromSrc, "출처");
-  if (itemCode) {
-    var byCode = _pep_carrierFromItemCode_(itemCode, source);
-    if (byCode.carrier) return done(byCode.carrier, byCode.via);
+
+  /*  거래처명은 «마지막»이다. 부르는 자리에 따라 여기 들어오는 것이
+      발주업체일 때도 있고 주문한 거래처일 때도 있어서, 앞에 두면
+      하나팩 같은 «주문한 쪽»의 택배사로 잘못 나간다. */
+  if (vendor) {
+    var byVendor = _pep_carrierForVendor_(vendor);
+    if (byVendor) return done(byVendor, "업체명");
   }
   return done("", "");
 }
