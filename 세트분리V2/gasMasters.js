@@ -10,6 +10,9 @@ var SSM_STOCK_HEADER = ['품목코드', '가용수량'];
 var SSM_BOM_HEADER = ['세트코드', '세트명', '구성품코드', '소요량'];
 var SSM_COND_HEADER = ['조건ID', '품목코드', '품목명(참고)', '비고'];
 var SSM_EXCEPT_HEADER = ['품목코드', '사유'];
+/*  이카운트코드 한 줄이면 그 품목은 늘 대리발송이다.
+    업체코드는 비워도 된다 — 푸시가 품목 앞 두 글자로도 업체를 가린다. */
+var SSM_PARTNER_ITEM_HEADER = ['이카운트코드', '업체코드', '사유'];
 var SSM_ISL_KW_HEADER = ['시/군', '권역', '확정'];
 var SSM_ISL_ZIP_HEADER = ['우편번호', '권역'];
 var SSM_ISL_DICT_HEADER = ['정규주소', '우편번호', '권역', '최초확인', '메모'];
@@ -414,6 +417,22 @@ function ssm_load(회차키) {
     var vc = ssText(vd[v2][0]).toUpperCase();
     if (vc) M.vendors[vc] = ssText(vd[v2][1]) || vc;
   }
+  /*  ★ 늘 대리발송으로 보낼 품목 ★
+      주문마다 「조치」를 적는 대신, 품목 하나를 표에 적어 두면 그 품목은
+      매 회차 저절로 빠진다. 사람이 회차마다 같은 손질을 반복하지 않는다. */
+  M.partnerItems = {};
+  //  탭이 없으면 만들어 둔다 — 설치를 따로 돌릴 일이 없게
+  ssio_sheet(SSIO_TABS.대리발송품목, SSM_PARTNER_ITEM_HEADER);
+  var pi = ssio_body(SSIO_TABS.대리발송품목);
+  for (var p2 = 0; p2 < pi.length; p2++) {
+    var pc = ssText(pi[p2][0]).toUpperCase();
+    if (!pc) continue;
+    M.partnerItems[pc] = {
+      업체코드: ssText(pi[p2][1]).toUpperCase(),
+      사유: ssText(pi[p2][2])
+    };
+  }
+
   M.override = ssm_loadManual(ssio_config(), 회차키);
 
   M.ferry = ssm_ferryRows();   // 롯데 도선료 표 (주소 문자열로 확정)
