@@ -49,15 +49,19 @@ function grabFn(name) {
 }
 
 //  실제 「업체_택배사」 표 모양
-const 표 = { HP: "롯데택배", HR: "로젠택배", JT: "대한통운", GS: "CJ대한통운", OC: "한진택배" };
+//  ★ 실제 「업체_택배사」 표 그대로 ★ AJ 는 「한진택배」가 아니라 「한진」이다.
+//     글자를 정확히 비교하는 코드가 있으면 여기서 걸린다.
+const 표 = { HP: "롯데택배", HR: "로젠택배", JT: "대한통운", GS: "CJ대한통운",
+             OC: "한진택배", AJ: "한진" };
 const 이름표 = { 하나팩: "롯데택배", 뉴파츠: "로젠택배", 부엉이커피: "한진택배" };
-const 출고지 = { HRACM0001: "평택", JHSGJJIM00102: "대리발송" };
+const 출고지 = { HRACM0001: "평택", JHSGJJIM00102: "대리발송",
+                 AJ158TANG00003: "대리발송" };
 
 const ctx = { Logger: { log() {} } };
 vm.createContext(ctx);
 vm.runInContext([
   "var _PEP_VENDOR_CARRIER_ = {};",
-  "var _PEP_VENDOR_LABELS_ = { HP: '하나팩', HR: '뉴파츠', JT: '준테크', GS: '지에스', OC: '부엉이커피' };",
+  "var _PEP_VENDOR_LABELS_ = { HP: '하나팩', HR: '뉴파츠', JT: '준테크', GS: '지에스', OC: '부엉이커피', AJ: '아주팩' };",
   "var _PEP_PREFIX_ALIAS_ = { JH: 'JT', BF: 'JT', NS: 'JT' };",
   "function _pep_resolvePrefixAlias_(p) { return _PEP_PREFIX_ALIAS_[p] || p; }",
   "var _표_ = " + JSON.stringify(표) + ";",
@@ -111,6 +115,15 @@ check("뉴파츠 발주 → 로젠", 판정(null, "대리공급", "뉴파츠", "
 줄();
 console.log("[④ 품목코드] 발주업체를 모를 때의 마지막 보루");
 check("JH 물건 → 준테크 (JH→JT)", 판정(null, "대리공급", "", "JHSGJJIM00102"), "대한통운");
+
+//  ★ 실제로 틀렸던 줄 ★  AJ158TANG00003 / 송장 463273768403 (12자리)
+//     > "AJ로 시작되는 아주팩 출고 한진이야"
+//     12자리라 「롯데택배」로 찍혀 있었다. 자릿수는 택배사를 못 가른다.
+check("★ AJ158TANG00003 → 아주팩 → 한진", 판정(null, "", "", "AJ158TANG00003"), "한진");
+check("★ 12자리 송장이어도 롯데가 아니다",
+  판정(null, "", "", "AJ158TANG00003") !== "롯데택배", true);
+check("표에 「한진택배」가 아니라 「한진」으로 적혀 있어도 읽는다",
+  판정(null, "대리공급", "아주팩", "AJ158TANG00003"), "한진");
 
 줄();
 console.log("[근거가 없으면] 지어내지 않는다");
