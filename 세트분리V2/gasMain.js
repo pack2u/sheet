@@ -1221,7 +1221,7 @@ function ss_송장전파() {
     if (li['고유ID'] !== undefined && li['운송장번호'] !== undefined) {
       var lv = lg.getRange(2, 1, lg.getLastRow() - 1, lcols).getValues();
 
-      var groupInv = {};
+      var groupInv = {}, groupCar = {};
       for (var a = 0; a < lv.length; a++) {
         var uid = ssText(lv[a][li['고유ID']]);
         if (ssText(lv[a][li['운송장번호']])) 원장기채움++;
@@ -1229,6 +1229,8 @@ function ss_송장전파() {
           var hit2 = find(uid);
           if (hit2) {
             lv[a][li['운송장번호']] = hit2.w;
+            //  택배사도 같이 — 읽는 쪽이 자릿수로 짐작할 일이 없어진다
+            if (li['택배사'] !== undefined) lv[a][li['택배사']] = hit2.c || '';
             if (li['송장매칭'] !== undefined) {
               /* 「자사 직접」 — 종전에는 「롯데 직접」이었다. 옛 원장 줄에는
                  그 글자가 남아 있으므로 읽는 쪽(gasBulk)이 둘 다 받는다. */
@@ -1240,13 +1242,17 @@ function ss_송장전파() {
         var grp = li['합포장그룹'] !== undefined ? ssText(lv[a][li['합포장그룹']]) : '';
         var isRep = li['합포장대표'] !== undefined && ssText(lv[a][li['합포장대표']]) === 'Y';
         var wRep = ssText(lv[a][li['운송장번호']]);
-        if (grp && isRep && wRep) groupInv[grp] = wRep;
+        if (grp && isRep && wRep) {
+          groupInv[grp] = wRep;
+          groupCar[grp] = li['택배사'] !== undefined ? ssText(lv[a][li['택배사']]) : '';
+        }
       }
       for (var b = 0; b < lv.length; b++) {
         if (ssText(lv[b][li['운송장번호']])) continue;
         var g2 = li['합포장그룹'] !== undefined ? ssText(lv[b][li['합포장그룹']]) : '';
         if (g2 && groupInv[g2]) {
           lv[b][li['운송장번호']] = groupInv[g2];
+          if (li['택배사'] !== undefined) lv[b][li['택배사']] = groupCar[g2] || '';
           if (li['송장매칭'] !== undefined) lv[b][li['송장매칭']] = '합포장 전파';
           원장전파++;
         }

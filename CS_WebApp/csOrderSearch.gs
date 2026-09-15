@@ -627,7 +627,8 @@ function _cs_loadLedgerView_(days, refresh) {
         source: G(row, "송장매칭") || 경로,
         orderNo: uid,
         vendor: G(row, "조치업체"),
-        carrier: _cs_ledgerCarrier_(invRaw, 경로),
+        //  원장이 적어 준 택배사가 «사실»이다. 아직 안 적힌 옛 줄만 자릿수로 가린다.
+        carrier: G(row, "택배사") || _cs_ledgerCarrier_(invRaw, 경로),
         status: 보류 ? 경로 + "(" + 보류 + ")" : 경로,
         origin: "ledger",
         match: G(row, "주문번호출처") === "자동발급" ? "자동발급" : "UID",

@@ -9012,7 +9012,8 @@
       }
       var html = '';
       // 택배사를 알면 보조 링크를 늘어놓을 이유가 없다 — 바로 그 택배사로 간다
-      var proxy = !carrierTrackBuilder(carrier) && isProxySource(source);
+      var 앎 = carrierTrackBuilder(carrier);
+      var proxy = !앎 && isProxySource(source);
       for (var i = 0; i < invs.length; i++) {
         var d = invs[i];
         var url = trackingUrl(d, source, carrier);
@@ -9022,15 +9023,18 @@
           html += '<button class="os-copy os-trk" data-inv="' + esc(d) +
             '" onclick="lotteTrack(this)">상태</button>';
         } else {
-          /* ★ 택배사를 모르는 줄에도 길을 준다 ★  (2026-09-09)
-             isLotteTrack 은 출처가 대리판매·허브·미매칭이면 막는다. 택배사를
-             모르니 쿼터를 함부로 쓰지 않으려는 것인데, 그 바람에 **그 줄들은
-             배송상태를 볼 길이 아예 없었다.** 자동으로 부르지는 않되,
-             사람이 작정하고 누를 단추 하나는 둔다. 롯데 것이 아니면
-             롯데가 「없다」고 답해 준다 — 그것도 답이다. */
-          html += '<button class="os-copy os-trk" data-inv="' + esc(d) +
-            '" title="택배사가 안 적힌 줄입니다. 롯데에 물어봅니다"' +
-            ' onclick="lotteTrack(this)">롯데조회</button>';
+          /* ★ 아는 택배사를 「롯데조회」라 부르지 않는다 ★  (2026-09-15)
+             > "택배사 상관없이 다 롯데 조회라고 뜨니"
+             링크는 로젠으로 제대로 갔는데 옆 단추 글자가 늘 「롯데조회」였다.
+             읽는 사람은 글자를 본다. 아는 줄이면 그 택배사 이름으로 보낸다.
+             모르는 줄에만 롯데에 물어본다 — 「없다」는 답도 답이다. */
+          html += 앎
+            ? '<a class="os-copy os-trk" href="' + url + '" target="_blank" rel="noopener"' +
+              ' onclick="return openTrack(event,this.href)">' +
+              esc(String(carrier).split(' ').join('').replace(/택배$/, '')) + '조회</a>'
+            : '<button class="os-copy os-trk" data-inv="' + esc(d) +
+              '" title="택배사가 안 적힌 줄입니다. 롯데에 물어봅니다"' +
+              ' onclick="lotteTrack(this)">롯데조회</button>';
         }
         if (proxy) {
           html += '<a class="os-copy" href="' + naverTrackUrl(d) + '" target="_blank" rel="noopener" onclick="return openTrack(event,this.href)">네이버</a>';
