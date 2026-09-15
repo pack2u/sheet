@@ -441,10 +441,30 @@ function csLogisticsSubmit(payload) {
     return { ok: false, error: "한 번에 " + _CSL_MAX_FILES_ + "장까지 올릴 수 있습니다." };
   }
 
-  // 1) 사진 저장 — 기존 반품 첨부 폴더를 그대로 쓴다
+  /* ══════════════════════════════════════════════════════════════
+     1) 사진 저장
+
+     ★ 파일은 «회사 계정»이 만든다 ★  (2026-09-15)
+       이 웹앱은 «접속한 사람» 권한으로 돈다. 여기서 바로 만들면 소유자가
+       «찍은 물류팀원»이 된다. 반품 첨부가 2026-09-10 에 그 일을 겪었다 —
+       2주치 사진이 전부 직원 개인 지메일 소유였고, 그 사람이 계정을
+       정리하면 대장의 링크가 통째로 죽는다.
+       csAttach 는 그때 고쳤는데 이 화면은 남아 있었다. 같게 맞춘다.
+
+     ★ 보관소가 안 되면 옛 방식으로 간다 ★
+       물류팀은 물건을 손에 든 채로 찍는다. 여기서 막히면 일이 멈춘다.
+       다만 «개인 드라이브로 떨어졌다»는 사실은 반드시 화면에 말한다 —
+       조용히 성공하면 그 사람 용량이 찰 때까지 아무도 모른다.
+     ══════════════════════════════════════════════════════════════ */
   var links = [], totalBytes = 0;
+  var fsWarn = "";
+  //  폴더는 «뒷길»이다 — 보관소가 실패했을 때만 연다
+  var _folder = null;
+  var 폴더 = function () {
+    if (!_folder) _folder = _cs_attFolder_();
+    return _folder;
+  };
   try {
-    var folder = _cs_attFolder_();
     var stamp = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd_HHmmss");
     for (var i = 0; i < photos.length; i++) {
       var p = photos[i] || {};
@@ -457,7 +477,34 @@ function csLogisticsSubmit(payload) {
       var mime = String(p.mimeType || "image/jpeg");
       var base = "입고_" + stamp + "_" + (digits || "무번호") + "_" + (i + 1) +
         _cs_attExt_(mime, p.name);
-      var f = folder.createFile(Utilities.newBlob(bytes, mime, base));
+
+      var put = csFileStorePut("intake", bytes, mime, base);
+      if (put.ok) { links.push(put.url); continue; }
+
+      Logger.log("[CSL] 보관소 실패 → 예전 방식으로 올립니다: " + put.error);
+      if (!fsWarn) fsWarn = String(put.error || "보관소를 쓰지 못했습니다");
+      var f;
+      try {
+        f = 폴더().createFile(Utilities.newBlob(bytes, mime, base));
+      } catch (eMake) {
+        /*  개인 드라이브까지 막혔다 — 두 까닭을 «둘 다» 말한다.
+            「용량초과」만 보면 사진을 줄이려 들지만 진짜 문제는 보관소다. */
+        return {
+          ok: false,
+          error: [
+            "사진을 올리지 못했습니다.", "",
+            "① 파일보관소: " + fsWarn,
+            "② 개인 드라이브: " + ((eMake && eMake.message) || eMake), "",
+            "보관소가 되면 개인 드라이브를 안 씁니다.",
+            "관리자에게 이 두 줄을 그대로 알려 주세요."
+          ].join(String.fromCharCode(10))
+        };
+      }
+      try {
+        f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (eS) {
+        Logger.log("[CSL] 공유 설정 실패: " + eS.message);
+      }
       links.push(f.getUrl());
     }
   } catch (eUp) {
@@ -515,7 +562,10 @@ function csLogisticsSubmit(payload) {
 
   return {
     ok: true, photos: links, result: result,
-    message: links.length + "장 저장 · " + result
+    /*  성공해도 «개인 드라이브로 떨어졌으면» 말한다 — 조용히 넘어가면
+        그 사람 용량이 차서 멈출 때까지 아무도 모른다 (2026-09-11 반품첨부). */
+    message: links.length + "장 저장 · " + result +
+      (fsWarn ? "  ※ 파일보관소를 못 써서 개인 드라이브에 올렸습니다 — " + fsWarn : "")
   };
 }
 
