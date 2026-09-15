@@ -638,6 +638,17 @@ function _pt_triggerFailWhy_(e) {
   out.push('현재 트리거 ' + (몇 >= 0 ? 몇 + '개' : '(셀 수 없음)') + ' — 한 프로젝트에 20개까지');
   if (msg) out.push('까닭: ' + msg);
   if (몇 >= 20) out.push('→ 20개가 다 찼습니다. 안 쓰는 트리거를 지우면 바로 됩니다.');
+
+  /*  ★ 알림이 죽으면 알림으로 알릴 수 없다 ★  (2026-09-15)
+      > "오늘부터 알림이 안오네..확인해줘"
+      Chat 전송이 실패하면 _chat_checkSend_ 가 그 사실을 남겨 둔다.
+      사람이 창을 보는 이 자리에서 대신 말해 준다 — 새 메뉴 없이. */
+  try {
+    if (typeof chatLastFailure === 'function') {
+      var 실패 = chatLastFailure();
+      if (실패) out.push('⚠ Chat 알림이 마지막에 실패했습니다 — ' + 실패);
+    }
+  } catch (e3) {}
   return out.join('\n');
 }
 

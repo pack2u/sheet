@@ -27,17 +27,68 @@ var _CHAT_WEBHOOK_URL_ =
  * Google Chat으로 텍스트 메시지 전송
  * @param {string} text - 전송할 메시지 (마크다운 지원)
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 보냈는지 «확인»한다 ★  (2026-09-15)
+ *
+ *  > "오늘부터 알림이 안오네..확인해줘"
+ *
+ *  여태 두 전송 함수 모두 muteHttpExceptions 로 부르고 «응답 코드를
+ *  보지 않았다». 웹훅이 지워졌든 방에서 쫓겨났든 403·404 가 와도
+ *  성공한 것처럼 지나갔다. 알림이 안 오는데 아무도 까닭을 모른다.
+ *
+ *  ★ 알림이 죽으면 알림으로 알릴 수 없다 ★
+ *    그래서 «마지막 실패»를 스크립트 속성에 남긴다. 사람이 메뉴를
+ *    눌렀을 때 그 자리에서 말해 줄 수 있게. 새 메뉴는 안 만든다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var _CHAT_FAIL_KEY_ = "_CHAT_LAST_FAIL";
+
+/** 보낸 결과를 본다. 실패면 까닭을 남기고 false */
+function _chat_checkSend_(res, what) {
+  var props = null;
+  try { props = PropertiesService.getScriptProperties(); } catch (e) {}
+  var code = 0;
+  try { code = res.getResponseCode(); } catch (e2) {}
+  if (code >= 200 && code < 300) {
+    try { if (props) props.deleteProperty(_CHAT_FAIL_KEY_); } catch (e3) {}
+    return true;
+  }
+  var body = "";
+  try { body = String(res.getContentText() || "").substring(0, 200); } catch (e4) {}
+  var line = Utilities.formatDate(new Date(), "Asia/Seoul", "MM-dd HH:mm") +
+    " · " + what + " HTTP " + code + " " + body;
+  Logger.log("[CHAT] 전송 실패: " + line);
+  try { if (props) props.setProperty(_CHAT_FAIL_KEY_, line); } catch (e5) {}
+  return false;
+}
+
+/**
+ * 마지막으로 알림을 못 보낸 기록. 없으면 빈 문자열.
+ * 알림이 죽었을 때 «다른 화면»이 대신 말해 주라고 있는 것이다.
+ */
+function chatLastFailure() {
+  try {
+    return String(PropertiesService.getScriptProperties().getProperty(_CHAT_FAIL_KEY_) || "");
+  } catch (e) { return ""; }
+}
+
 function _chat_sendText_(text) {
   if (!_CHAT_WEBHOOK_URL_) return;
   try {
-    UrlFetchApp.fetch(_CHAT_WEBHOOK_URL_, {
+    var res = UrlFetchApp.fetch(_CHAT_WEBHOOK_URL_, {
       method: "post",
       contentType: "application/json; charset=utf-8",
       payload: JSON.stringify({ text: text }),
       muteHttpExceptions: true,
     });
+    _chat_checkSend_(res, "글");
   } catch (e) {
     Logger.log("[CHAT] 전송 실패: " + e.message);
+    try {
+      PropertiesService.getScriptProperties().setProperty(_CHAT_FAIL_KEY_,
+        Utilities.formatDate(new Date(), "Asia/Seoul", "MM-dd HH:mm") + " · 글 " + e.message);
+    } catch (e2) {}
   }
 }
 
@@ -114,14 +165,19 @@ function _chat_sendCard_(title, subtitle, keyValues, footerText) {
         },
       ],
     };
-    UrlFetchApp.fetch(_CHAT_WEBHOOK_URL_, {
+    var res = UrlFetchApp.fetch(_CHAT_WEBHOOK_URL_, {
       method: "post",
       contentType: "application/json; charset=utf-8",
       payload: JSON.stringify(card),
       muteHttpExceptions: true,
     });
+    _chat_checkSend_(res, "카드");
   } catch (e) {
     Logger.log("[CHAT] 카드 전송 실패: " + e.message);
+    try {
+      PropertiesService.getScriptProperties().setProperty(_CHAT_FAIL_KEY_,
+        Utilities.formatDate(new Date(), "Asia/Seoul", "MM-dd HH:mm") + " · 카드 " + e.message);
+    } catch (e2) {}
   }
 }
 
