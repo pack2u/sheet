@@ -94,8 +94,24 @@ check("★ 옛 로젠 양식 숫자가 사라졌다",
 
 console.log("\n[상수] 자리는 한 군데에만 적는다");
 check("_PT_ROZEN_FIXED_COL 이 있다", help.includes("var _PT_ROZEN_FIXED_COL = {"), true);
-check("로젠 운송장 = D열(3)", /invoice:\s*3,/.test(help.slice(help.indexOf("_PT_ROZEN_FIXED_COL"), help.indexOf("_PT_ROZEN_FIXED_COL") + 700)), true);
-check("로젠 주문번호 = S열(18)", /uid:\s*18,/.test(help.slice(help.indexOf("_PT_ROZEN_FIXED_COL"), help.indexOf("_PT_ROZEN_FIXED_COL") + 700)), true);
+/*  ★ 이 시험이 «틀린 자리»를 사실로 못 박고 있었다 ★  (2026-09-15)
+    D=운송장 · S=주문번호 는 44칸 「주문등록_출력」 양식의 자리다.
+    탭이 「집하」 양식으로 바뀌었는데 시험은 옛 자리를 지키고 있었고,
+    그래서 «고치면 시험이 깨지는» 모양이 됐다. 실제 시트를 따라간다.
+    (2026-09-15 사장님 화면: K 451-6945-9705 · J 2162784744 · O 최유찬) */
+const 로젠표 = help.slice(help.indexOf("_PT_ROZEN_FIXED_COL"),
+                          help.indexOf("_PT_ROZEN_FIXED_COL") + 1600);
+function 로젠칸(name) {
+  const key = name + ":";
+  const p = 로젠표.indexOf(key);
+  if (p < 0) return null;
+  const t = 로젠표.slice(p + key.length).split(",")[0].split("//")[0].trim();
+  const v = parseInt(t, 10);
+  return isNaN(v) ? null : v;
+}
+check("로젠 운송장 = K열(10)", 로젠칸("invoice"), 10);
+check("로젠 주문번호 = J열(9)", 로젠칸("uid"), 9);
+check("★ 마스킹된 전화는 안 쓴다", 로젠칸("phone"), -1);
 
 console.log("\n[칸 찾기] 반은 이름 반은 자리로 읽지 않는다");
 const vm = require("vm");
