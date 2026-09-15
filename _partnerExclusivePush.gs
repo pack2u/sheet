@@ -10217,6 +10217,12 @@ function _pep_backfillRecentArchives_(invoiceMap, maxDays) {
       var phone = cols.phone >= 0 ? all[ri][cols.phone] : "";
       var addr = cols.addr >= 0 ? all[ri][cols.addr] : "";
       var itemNm = cols.item >= 0 ? all[ri][cols.item] : "";
+      /* ★ 지난 마감은 «고유ID로 맞은 것»만 채운다 ★  (2026-09-15)
+         _pep_resolveRowInvoice_ 는 고유ID 가 없는 줄이면 이름·전화로 더듬는다.
+         그 길이 8월에 남의 송장을 붙인 그 길이다. 오늘 이 보강을 마감마다
+         자동으로 돌게 했는데, 추측까지 14일치 과거 기록에 자동으로 쓰면
+         틀렸을 때 아무도 모르고 굳는다. 확실한 것만 채운다. */
+      var 어떻게 = {};
       var invInfo = _pep_resolveRowInvoice_(invoiceMap, {
         uid: matchKey,
         name: recipName,
@@ -10224,8 +10230,9 @@ function _pep_backfillRecentArchives_(invoiceMap, maxDays) {
         addr: addr,
         item: itemNm,
         orderDate: dateStr
-      });
+      }, 어떻게);
       if (!invInfo || !invInfo.inv) continue;
+      if (어떻게.via !== "UID") continue;   // 이름·전화로 더듬은 것은 안 쓴다
       if (_pep_qtyOverMax_(cols.qty >= 0 ? all[ri][cols.qty] : "", itemNm, invInfo.inv)) continue;
       all[ri][cols.inv] = invInfo.inv;
       all[ri][cols.src] = invInfo.source || "대리공급";
