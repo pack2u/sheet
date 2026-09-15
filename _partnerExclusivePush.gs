@@ -11083,15 +11083,11 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
     // 열면 6분을 넘기고 1단계 파일이 안 만들어진다. 송장은 롯데·임시기록·허브에서 붙이고,
     // 못 붙인 건 내일 2단계(바로 이전 일일마감)에서 채운다.
 
-    // (b1d) 허브 월별 아카이브 — 허브에서 빠진 대리판매 송장
-    try {
-      if (typeof _ha_addHubArchiveToInvoiceMap_ === "function") {
-        var haArch = _ha_addHubArchiveToInvoiceMap_(invoiceMap, archiveDate);
-        result.detail.hubArchiveRead = haArch.read || 0;
-      }
-    } catch (eHa) {
-      Logger.log("[UNIFIED] 허브아카이브 송장맵 오류: " + eHa.message);
-    }
+    /*  ★ 허브 월별 아카이브(b1d)를 지웠다 ★  (2026-09-15)
+        > "b1d, d 는 지워주고"
+
+        같은 송장을 (b2) 협력업체_발주허브와 (b3) 송장원장이 이미 담는다.
+        원천이 겹치면 파일을 하나 더 열어 6분 예산만 깎아 먹는다. */
 
     // (b2) 협력업체_발주허브 — C열(고유ID) → N열(송장번호). 대리판매·협력 출고 (롯데와 무관)
     try {
@@ -11190,47 +11186,15 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
       Logger.log("[UNIFIED] 합배송 송장맵 오류: " + eHap.message);
     }
 
-    // (d) 3-3_병합 — 이름+전화 폴백 (일일마감 전용. 송장수집은 사용하지 않음)
-    //     롯데탭에 전화번호가 없어 고유ID 없는 주문은 여기서 맞춘다.
-    try {
-      var npTab = null;
-      try {
-        var npInvSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
-        npTab = _pt_getSheetByGid(npInvSS, _PT_NAME_PHONE_FALLBACK_GID);
-      } catch (eNpInv) {}
-      if (!npTab) {
-        try {
-          var npCombSS = SpreadsheetApp.openById(_PT_COMBINED_INVOICE_SHEET_ID);
-          npTab = _pt_getSheetByGid(npCombSS, _PT_NAME_PHONE_FALLBACK_GID);
-        } catch (eNpComb) {}
-      }
-      if (npTab && npTab.getLastRow() >= 2) {
-        var npLc = Math.max(npTab.getLastColumn(), 4);
-        var npData = npTab.getRange(1, 1, npTab.getLastRow(), npLc).getValues();
-        // ★ 2026-08-25: 주소 열이 있으면 동명이인 구분에 쓴다 (없으면 무시)
-        // ★ 2026-08-26: 품목명 열이 있으면 한 사람의 여러 주문을 구분하는 데 쓴다
-        var npAddrIdx = -1, npItemIdx = -1;
-        for (var nhc = 0; nhc < npLc; nhc++) {
-          var nhh = String(npData[0][nhc] || "").replace(/\s/g, "");
-          if (!nhh) continue;
-          if (npAddrIdx < 0 && /주소/.test(nhh) && !/배송메|우편|보내는|송하인/.test(nhh)) npAddrIdx = nhc;
-          if (npItemIdx < 0 && /품목명|상품명|제품명|품명/.test(nhh) && !/코드|수량|옵션/.test(nhh)) npItemIdx = nhc;
-        }
-        var npAdded = 0;
-        for (var npi = 1; npi < npData.length; npi++) {
-          var npName = npData[npi][0];
-          var npPhone = npData[npi][1];
-          var npInv = String(npData[npi][3] || "").trim();
-          if (!npInv) continue;
-          npAdded++;
-        }
-        Logger.log("[UNIFIED] 3-3_병합 이름+전화 송장맵: " + npAdded + "건");
-      } else {
-        Logger.log("[UNIFIED] 3-3_병합 탭 없음/비어있음 (GID " + _PT_NAME_PHONE_FALLBACK_GID + ")");
-      }
-    } catch (eNp) {
-      Logger.log("[UNIFIED] 3-3_병합 송장맵 오류: " + eNp.message);
-    }
+    /*  ★ 이름+전화 폴백(3-3_병합)을 지웠다 ★  (2026-09-15)
+        > "b1d, d 는 지워주고"
+        > (같은 날, 다른 이름·전화 경로에 대해) "여태 한개도 못찾음…
+        >  찾아도 엉뚱한 매칭..데이타만 불순하게 만듬"
+
+        이름과 전화로 사람을 짚는 것은 짐작이다. 동명이인, 가족 주문,
+        안심번호, 마스킹된 번호 — 맞을 근거보다 틀릴 까닭이 많다.
+        틀리면 남의 송장이 붙고, 그건 안 붙은 것보다 나쁘다.
+        고유ID 로 붙는 길은 그대로 있다. 못 붙은 건은 내일 2단계가 채운다. */
 
     // 2단계(이전 일일마감 미매칭)는 1단계 파일을 쓴 뒤에 한다.
 

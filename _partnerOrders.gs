@@ -1702,6 +1702,59 @@ function partnerFetchInvoices() {
           "개, UID " + Object.keys(combinedUidSet).length + "개 로드됨" +
           "  (이름칸 " + _csNameIdx + " · UID칸 " + _csUidCol + ")",
       );
+
+      /*  ══════════════════════════════════════════════════════════
+          ★ 합배송은 «차수별»로 쌓인 원장에서도 읽는다 ★  (2026-09-15)
+
+          > "합배송은 합배송도 차수별로 저장이 되어야 의미가 있을꺼 같아"
+
+          맞는 말이다. 세트분리의 「합배송」 탭은 ssio_write 로 쓰므로
+          «회차마다 통째로 덮어써진다» — 3차를 돌리면 1·2차 묶음이 사라진다.
+          그러면 1·2차 동봉 형제는 묶일 근거를 잃고 대표만 송장을 받는다.
+
+          ★ 그런데 새 탭을 만들 필요가 없다 ★
+            「주문라인원장」은 ssio_append 로 «회차별 누적»이고,
+            거기에 회차키·합포장그룹·합포장대표·사방넷주문번호가 다 있다.
+            차수별 합배송은 이미 거기 저장돼 있다. 읽기만 하면 된다.
+            탭을 새로 만들면 또 하나의 원천이 되고, 언젠가 둘이 어긋난다.
+          ══════════════════════════════════════════════════════════ */
+      try {
+        var _lgTab = _csSS.getSheetByName("주문라인원장");
+        if (_lgTab && _lgTab.getLastRow() > 1) {
+          var _lgW = _lgTab.getLastColumn();
+          var _lgAll = _lgTab.getRange(1, 1, _lgTab.getLastRow(), _lgW).getDisplayValues();
+          var _lgH = {};
+          for (var _lh = 0; _lh < _lgAll[0].length; _lh++) {
+            var _lhn = String(_lgAll[0][_lh] || "").trim();
+            if (_lhn && _lgH[_lhn] === undefined) _lgH[_lhn] = _lh;
+          }
+          var _cUid = _lgH["사방넷주문번호"];
+          var _cGrp = _lgH["합포장그룹"];
+          var _cRk = _lgH["회차키"];
+          if (_cUid !== undefined && _cGrp !== undefined) {
+            var _lgAdd = 0;
+            for (var _lr = 1; _lr < _lgAll.length; _lr++) {
+              var _u = String(_lgAll[_lr][_cUid] || "").trim();
+              var _g = String(_lgAll[_lr][_cGrp] || "").trim();
+              if (!_u || !_g) continue;
+              /*  회차키를 묶음 이름에 붙인다 — 다른 날 같은 그룹번호가
+                  우연히 겹쳐 남의 주문과 묶이는 일을 막는다. */
+              var _rk = _cRk !== undefined ? String(_lgAll[_lr][_cRk] || "").trim() : "";
+              combinedUidSet[_u] = true;
+              if (!combinedKeyByUid[_u]) {
+                combinedKeyByUid[_u] = (_rk ? _rk + "/" : "") + _g;
+                _lgAdd++;
+              }
+            }
+            scannedLogs.push("[합배송] 원장(차수별 누적)에서 묶음키 " + _lgAdd +
+              "건 — 합배송 탭은 회차마다 덮어써지므로 지난 차수는 여기서 온다");
+          } else {
+            scannedLogs.push("[합배송] 원장에 「사방넷주문번호」·「합포장그룹」 칸이 없습니다");
+          }
+        }
+      } catch (_lgErr) {
+        scannedLogs.push("[합배송 원장] " + String(_lgErr.message || _lgErr));
+      }
     }
   } catch (_csErr) {
     scannedLogs.push(

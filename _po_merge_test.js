@@ -76,5 +76,36 @@ check("사방넷주문번호도 있다 (SS_OUT_HEADER)",
 }
 
 console.log("");
+console.log("");
+console.log("[차수] 합배송이 차수별로 잡히는가");
+//  세트분리 「합배송」 탭은 ssio_write 라 회차마다 덮어써진다.
+//  「주문라인원장」은 ssio_append 라 회차별로 쌓인다 — 거기서 읽어야 1·2차가 산다.
+check("★ 원장에서도 묶음키를 읽는다",
+  src.indexOf('_csSS.getSheetByName("주문라인원장")') >= 0, true);
+check("합포장그룹 칸을 이름으로 찾는다", src.indexOf('_lgH["합포장그룹"]') >= 0, true);
+check("사방넷주문번호 칸도", src.indexOf('_lgH["사방넷주문번호"]') >= 0, true);
+check("★ 회차키를 묶음 이름에 붙인다 — 다른 날 같은 그룹번호와 안 섞이게",
+  src.indexOf('(_rk ? _rk + "/" : "") + _g') >= 0, true);
+check("몇 건 읽었는지 말한다", src.indexOf("원장(차수별 누적)에서 묶음키 ") >= 0, true);
+{
+  const setsplit = fs.readFileSync("세트분리V2/gasMain.js", "utf8");
+  check("★ 합배송 탭은 정말 덮어써진다 (ssio_write)",
+    setsplit.indexOf("ssio_write(SSIO_TABS.합배송") >= 0, true);
+  check("★ 원장은 정말 쌓인다 (ssio_append)",
+    setsplit.indexOf("ssio_append(SSIO_TABS.원장") >= 0, true);
+}
+
+console.log("");
+console.log("[지움] 일일마감에서 뺀 두 원천이 다시 안 들어왔는가");
+{
+  const push = fs.readFileSync("_partnerExclusivePush.gs", "utf8");
+  check("★ 허브 월별 아카이브(b1d) 없음",
+    push.indexOf("_ha_addHubArchiveToInvoiceMap_") >= 0, false);
+  check("★ 이름+전화 폴백(d, 3-3_병합) 없음",
+    push.indexOf("_PT_NAME_PHONE_FALLBACK_GID") >= 0, false);
+  check("왜 지웠는지 적어 두었다",
+    push.indexOf("이름과 전화로 사람을 짚는 것은 짐작이다") >= 0, true);
+}
+
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);
