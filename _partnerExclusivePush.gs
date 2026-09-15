@@ -11236,6 +11236,8 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
          일을 못 한다 — 오늘 「롯데 송장 4건」으로 한 번 겪은 일이다. */
       var _weeklyCount_ = 0, _packSrcCount_ = 0;
       var _namePhoneCount_ = 0;
+      /*  원천 이름 → 붙인 건수. 무엇을 지워도 되는지 이 표가 말해 준다. */
+      var _srcTally_ = {};
       var _carrierFilled_ = 0; // 택배사 열이 채워진 건수 — 웹앱 택배조회 링크의 근거
       var _carrierVia_ = {};   // 무엇을 근거로 판정했나 (송장맵/출처/업체명/출고지…)
 
@@ -11558,6 +11560,19 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
 
         if (_pep_splitInvNos_(item.inv).length > 1) _multiInv_++;
 
+        /*  ★ 원천마다 갈라 센다 ★  (2026-09-15)
+            > "매칭을 전파 한 곳으로 몰자"
+
+            합치려면 «어느 원천이 실제로 무엇을 붙이는지»부터 알아야 한다.
+            여태 마지막 else 가 catch-all 이라 대리공급·보관·세트분리원장·
+            송장원장·전용마감·발주마감이 전부 한 칸(_supplyCount_)에 뭉쳐
+            있었다. 그래서 원장이 몇 건을 붙이는지 볼 수가 없었다.
+
+            숫자가 0 인 원천은 지워도 안전하다는 «증거»가 된다.
+            앞서 원장을 제한 없이 올렸다가 마감이 나빠진 적이 있다
+            (자사출고 613→580 · 미매칭 402→441). 재고 보고 지운다. */
+        _srcTally_[item.source] = (_srcTally_[item.source] || 0) + 1;
+
         if (item.usedNamePhone || item.source === "이름+전화") _namePhoneCount_++;
         if (item.source === "롯데") _lotteCount_++;
         else if (item.source === "1주출고") _weeklyCount_++;
@@ -11591,6 +11606,19 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
       result.detail.lozenFallback = _lozenCount_;
       result.detail.hub = _hubCount_;
       result.detail.supply = _supplyCount_;
+      /*  ★ 원천별 내역 ★ 「매칭을 전파 한 곳으로」의 근거가 될 숫자다.
+      많은 것부터 적는다 — 0 인 원천이 지워도 되는 것이다. */
+      var _srcKeys_ = [];
+      for (var _sk in _srcTally_) {
+        if (Object.prototype.hasOwnProperty.call(_srcTally_, _sk)) _srcKeys_.push(_sk);
+      }
+      _srcKeys_.sort(function (a, b) { return _srcTally_[b] - _srcTally_[a]; });
+      var _srcLines_ = [];
+      for (var _si = 0; _si < _srcKeys_.length; _si++) {
+        _srcLines_.push(_srcKeys_[_si] + " " + _srcTally_[_srcKeys_[_si]]);
+      }
+      result.detail.srcBreakdown = _srcLines_.join(" · ");
+      result.detail.srcTally = _srcTally_;
       result.detail.skipped = _skipAlready_;
       result.detail.noInvoice = _skipNoInv_;
       result.detail.multiInvoice = _multiInv_;

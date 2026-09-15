@@ -236,6 +236,12 @@ function partnerUnifiedDailyArchiveManual() {
           " · 1주출고 " + (result.detail.weeklyMatched || 0) +
           " · 합포장 " + (result.detail.packMatched || 0) + ")"
         : "") + "\n" +
+      /*  ★ 원천별 내역 ★  (2026-09-15)
+          > "매칭을 전파 한 곳으로 몰자"
+          합치려면 «어느 원천이 실제로 무엇을 붙이는지»부터 봐야 한다.
+          0 인 원천이 지워도 되는 것이다. 숫자를 보고 지운다. */
+      (result.detail.srcBreakdown
+        ? " └ 원천별: " + result.detail.srcBreakdown + "\n" : "") +
       "    읽은 탭: " + (result.detail.ownTabs || "(없음)") + "\n" +
       /* ★ 합포장 동봉·샘플이 붙는 자리 ★  (2026-09-14)
          0 이면 동봉 건이 통째로 미매칭이 된다. 뉴 합배송 탭에 송장 칸이
