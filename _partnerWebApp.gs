@@ -208,6 +208,13 @@ function partnerUnifiedDailyArchiveManual() {
       "저장 위치: 구글드라이브 시트\n" +
       "파일명: " + (result.tabName || "(없음)") + "\n\n" +
       "매칭 기록: " + result.archived + "건\n" +
+      /* ★ 지난 마감을 몇 줄 채웠는지 ★  (2026-09-15)
+         대리발송 송장은 다음날 들어온다. 그날 못 채운 줄을 며칠 뒤에라도
+         채운 것이 몇인지 보여야, 사장님이 지난 마감을 다시 안 뒤진다. */
+      (result.detail.backfillDays
+        ? "  ↺ 지난 마감 채움: " + result.detail.backfillDays + "건 (" +
+          (result.detail.backfillDaysList || "") + ")\n"
+        : "") +
       /* ★ 어느 탭에서 판매현황을 떠 왔는지 ★  (2026-09-14)
          「판매현황(한 회차분)」이면 그날 마감은 회차 하나만 담은 것이다.
          09/14 마감이 169건이던 까닭이 바로 그것이었다 — 회차는 다섯이었다. */
@@ -338,6 +345,13 @@ function partnerUnifiedDailyArchiveForDate() {
     ui.alert(
       "📋 일일마감 재처리 완료 (" + dateStr + ")",
       "매칭 기록: " + result.archived + "건\n" +
+      /* ★ 지난 마감을 몇 줄 채웠는지 ★  (2026-09-15)
+         대리발송 송장은 다음날 들어온다. 그날 못 채운 줄을 며칠 뒤에라도
+         채운 것이 몇인지 보여야, 사장님이 지난 마감을 다시 안 뒤진다. */
+      (result.detail.backfillDays
+        ? "  ↺ 지난 마감 채움: " + result.detail.backfillDays + "건 (" +
+          (result.detail.backfillDaysList || "") + ")\n"
+        : "") +
         " └ 롯데 송장: " + (result.detail.lotte || 0) + "건\n" +
         " └ 대리공급 송장: " + (result.detail.supply || 0) + "건\n" +
         (result.detail.uidMatched ? " └ 고유ID 매칭: " + result.detail.uidMatched + "건\n" : "") +

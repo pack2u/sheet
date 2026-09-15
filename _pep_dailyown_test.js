@@ -391,5 +391,31 @@ console.log("\n[빈 칸] 업체로 나가는 줄에서 빠진 칸을 잡는가")
     push.includes("var _빈칸글_ = ") && push.includes("_빈칸글_ +"), true);
 }
 
+
+console.log("\n[지난 마감 채우기] 만들어 놓고 안 부르던 것");
+{
+  //  > "저녁 일일 마감때 이전 일일마감을 채워주는 식으로 수정해줘"
+  //  _pep_backfillRecentArchives_ 는 이미 있었다. 지난 마감 파일의 «빈 송장
+  //  줄»만 골라 그 자리에 채운다(새 줄을 안 더한다). 그런데 일일마감이
+  //  안 불렀다 — 바로 앞 하루치만 봤다. 대리발송 송장은 다음날 들어온다.
+  check("★ 일일마감이 14일치 보강을 부른다",
+    push.includes("var bfAll = _pep_backfillRecentArchives_(invoiceMap, _PEP_BACKFILL_DAYS_);"), true);
+  check("★ 직전 하루치 보강도 그대로 둔다",
+    push.includes("_pep_backfillPreviousArchive_(invoiceMap, step2Before)"), true);
+  check("★ 실패해도 마감은 끝난다",
+    push.includes("} catch (eBf2) {"), true);
+  check("★ 며칠치를 보는지 상수로 둔다",
+    push.includes("var _PEP_BACKFILL_DAYS_ = 14;"), true);
+  check("★ 새 줄을 더하지 않는다 — 그 자리에 쓴다",
+    push.includes("all[ri][cols.inv] = invInfo.inv;"), true);
+  check("★ 송장이 이미 있는 줄은 안 건드린다",
+    push.includes("if (inv && _pep_normInvoiceNo_(inv)) continue;"), true);
+  check("★ 송장을 채우면 택배사도 같이",
+    push.includes("_pep_carrierForArchiveRow_(invInfo, all[ri][cols.src], bfVendor, bfCode)"), true);
+  const web6 = fs.readFileSync("_partnerWebApp.gs", "utf8");
+  check("★ 몇 줄 채웠는지 화면에 적는다 (수동·자동 둘 다)",
+    (web6.match(/↺ 지난 마감 채움/g) || []).length, 2);
+}
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

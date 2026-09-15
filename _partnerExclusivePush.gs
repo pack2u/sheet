@@ -11047,7 +11047,7 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
   // ★ 2026-06-29: targetDateStr 파라미터 추가 — 전달 시 해당 날짜로 저장 (자동실행→전날 매출일)
   var result = {
     archived: 0, tabName: "", error: "",
-    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", rozenRead: 0, rozenCols: "", ownRead: 0, ownTabs: "", rozenMatched: 0, lotteMatched: 0, weeklyMatched: 0, packMatched: 0, ledgerSetsplitRead: 0, ledgerSetsplitNote: "", snapFrom: "", snapSaved: 0, snapSkipped: 0, hubRead: 0, backfill: 0, backfillDate: "", uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0 }
+    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", rozenRead: 0, rozenCols: "", ownRead: 0, ownTabs: "", rozenMatched: 0, lotteMatched: 0, weeklyMatched: 0, packMatched: 0, ledgerSetsplitRead: 0, ledgerSetsplitNote: "", snapFrom: "", snapSaved: 0, snapSkipped: 0, hubRead: 0, backfill: 0, backfillDate: "", backfillDays: 0, backfillDaysList: "", backfillFiles: 0, uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0 }
   };
 
   try {
@@ -11798,6 +11798,33 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
       result.detail.backfillDate = bfResult.date || "";
     } catch (eBf) {
       Logger.log("[UNIFIED] 2단계 이전마감 보강 오류: " + eBf.message);
+    }
+
+    /* ── 2b단계: «지난 14일» 마감의 빈 송장 줄을 오늘 송장맵으로 채운다 ──
+       2026-09-15
+
+       > "지금 일일 마감을 돌리지 말고 저녁 일일 마감때 이전 일일마감을
+       >  채워주는 식으로 수정해줘.. 내가 오류값만 맨날 찾는 사람도 아니고"
+
+       _pep_backfillRecentArchives_ 는 «이미 있었다». 지난 마감 파일을 열어
+       송장이 빈 줄만 골라 그 자리에 채운다 — 새 줄을 더하지 않으므로 두 번
+       들어갈 일이 없다. 그런데 일일마감이 이 함수를 «안 불렀다».
+       부르는 데는 감사 도구와 통합조회 재생성 둘뿐이었고, 마감은 바로
+       앞 하루치(_pep_backfillPreviousArchive_)만 봤다.
+
+       대리발송 송장은 다음날 들어온다. 하루만 보면 그 이틀 뒤 들어온 것은
+       영영 안 채워진다. 기능을 만들어 놓고 안 부르면 없는 것과 같다 —
+       사장님이 오류값을 매일 찾아야 하는 까닭이 이것이었다.
+
+       ★ 실패해도 마감은 끝난다 ★ 보강은 곁다리다. */
+    try {
+      var bfAll = _pep_backfillRecentArchives_(invoiceMap, _PEP_BACKFILL_DAYS_);
+      result.detail.backfillDays = bfAll.patched || 0;
+      result.detail.backfillDaysList = (bfAll.days || []).join(", ");
+      result.detail.backfillFiles = bfAll.files || 0;
+    } catch (eBf2) {
+      Logger.log("[UNIFIED] 지난 14일 보강 오류: " + eBf2.message);
+      result.detail.backfillDaysList = "오류: " + eBf2.message;
     }
 
     // ★ 2026-07-04: DB 동기화 — daily_archive 테이블
