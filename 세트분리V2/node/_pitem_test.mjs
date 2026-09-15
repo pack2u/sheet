@@ -87,12 +87,25 @@ console.log('\n[대리발송품목] 사람이 내린 결정이 이긴다');
   eq('「발송」이라 뒤집으면 표를 무시', u.route !== C.SS_ROUTE.PARTNER, true);
 }
 
-console.log('\n[대리발송품목] 업체코드가 이상하면 말해 준다');
+console.log('\n[대리발송품목] 적어 넣은 업체코드를 그대로 쓴다');
 {
-  const u = unit({ 원본코드: 'ZZ9', 품목코드: 'ZZ9' });
-  const w = route([u], { ZZ9: { 업체코드: 'XX', 사유: '' } });
-  eq('없는 업체코드는 경고', w.some((x) => x.code === 'PITEM_BAD_VENDOR'), true);
-  eq('그래도 대리발송으로는 간다', u.route, C.SS_ROUTE.PARTNER);
+  //  ★ 실제 사례 ★ MATYG0007 / JT — 우리 이카운트 코드에 준테크를 지정
+  //  JT 는 허브 푸시가 아는 코드다. 세트분리 이름표에 없다고 버리면
+  //  업체코드가 빈칸이 되고 푸시는 'MA' 로 되돌아가 미분류가 된다.
+  const u = unit({ 원본코드: 'MATYG0007', 품목코드: 'MATYG0007' });
+  const w = route([u], { MATYG0007: { 코드: 'MATYG0007', 업체코드: 'JT', 사유: '재고부족' } });
+  eq('MATYG0007 → 대리발송', u.route, C.SS_ROUTE.PARTNER);
+  eq('★ 업체코드가 JT 로 실린다', u.업체코드, 'JT');
+  eq('이름표에 없으면 업체명은 빈칸', u.업체명, '');
+  eq('이름표에 없다고 말은 해 준다', w.some((x) => x.code === 'PITEM_NEW_VENDOR'), true);
+  eq('업체코드가 비었다는 경고는 안 뜬다', w.some((x) => x.code === 'PITEM_NO_VENDOR'), false);
+}
+{
+  //  이름표에 있으면 이름까지 붙는다
+  const u2 = unit();
+  const w2 = route([u2], { A100: { 코드: 'A100', 업체코드: 'JH', 사유: '' } });
+  eq('아는 코드는 이름도 붙는다', u2.업체명, '정화식품');
+  eq('그때는 아무 말 안 한다', w2.length, 0);
 }
 
 console.log('\n' + (fail ? 'FAIL ' + fail + '건' : '통과 ' + pass + '건'));

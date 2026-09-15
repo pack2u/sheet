@@ -16,7 +16,12 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const 뿌리 = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const 읽기 = (p) => fs.readFileSync(p, "utf8");
+/*  ★ 줄바꿈에 휘둘리지 않는다 ★  (2026-09-15)
+    이 시험들은 소스를 «글자 그대로» 맞춰 본다. 그런데 윈도우 git 이
+    체크아웃할 때 LF 를 CRLF 로 바꿔 놓는다 — 코드는 하나도 안 바뀌었는데
+    여러 줄짜리 대조가 통째로 어긋나 「없다」고 나온다. 실제로 오늘
+    git stash 한 번에 일일마감 검사가 거짓으로 실패했다. 한 가지로 맞춰 읽는다. */
+const 읽기 = (p) => fs.readFileSync(p, "utf8").split(String.fromCharCode(13) + String.fromCharCode(10)).join(String.fromCharCode(10));
 let 실패 = 0;
 function eq(설명, 받은, 바란) {
   const ok = JSON.stringify(받은) === JSON.stringify(바란);
