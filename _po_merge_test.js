@@ -152,5 +152,20 @@ check("같은 꼬리를 두 번 안 적는다", src.indexOf("if (_setSeen[_sk]) 
     떼기("무언가 ---" + "가".repeat(30)), "");
 }
 
+console.log("");
+console.log("[속도] 원장을 통째로 읽지 않는다");
+check("★ 머리글만 먼저 읽는다",
+  src.indexOf("_lgTab.getRange(1, 1, 1, _lgW).getDisplayValues()[0]") >= 0, true);
+check("★ 쓸 칸까지만 읽는다", src.indexOf("var _need = 0;") >= 0, true);
+check("★ 끝에서부터 정해진 줄만",
+  src.indexOf("var _from = Math.max(2, _lgLast - _tail + 1);") >= 0, true);
+check("통째로 읽던 줄이 사라졌다",
+  src.indexOf("_lgTab.getRange(1, 1, _lgTab.getLastRow(), _lgW)") >= 0, false);
+check("몇 줄 × 몇 칸 읽었는지 말한다", src.indexOf("칸만 읽음 (전체 ") >= 0, true);
+check("줄 수는 한 군데 상수로 둔다", src.indexOf("var _PO_LEDGER_TAIL_ = 4000;") >= 0, true);
+check("★ 필요한 칸 다섯을 다 챙긴다",
+  src.indexOf("[" + String.fromCharCode(34) + "사방넷주문번호") >= 0 ||
+  src.indexOf("사방넷주문번호" + String.fromCharCode(34) + ", ") >= 0, true);
+
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

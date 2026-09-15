@@ -14,6 +14,16 @@
 var _PO_HUB_SHEET_NAME = "협력업체_발주허브";
 
 /**
+ * 송장 수집이 「주문라인원장」에서 «끝에서부터» 읽을 줄 수.
+ *
+ * 합배송 묶음키와 적요 꼬리표를 얻으려고 읽는다. 오늘 붙일 송장을 위한
+ * 것이므로 최근 회차면 충분하다. 통째로 읽으면 수천 줄 × 46칸이라
+ * 수집이 느려지고 6분 한도에 가까워진다.
+ * 회차 하나가 수백 줄이니 4000 이면 최근 여러 날이 들어온다.
+ */
+var _PO_LEDGER_TAIL_ = 4000;
+
+/**
  * 마지막 발주 수집 결과. 자동 실행 알림이 이걸 읽어 사람에게 보여준다.
  *
  * ★ 왜 필요한가 (2026-09-04) ★
@@ -1723,13 +1733,42 @@ function partnerFetchInvoices() {
       try {
         var _lgTab = _csSS.getSheetByName("주문라인원장");
         if (_lgTab && _lgTab.getLastRow() > 1) {
+          /*  ★ 원장을 통째로 읽지 않는다 ★  (2026-09-15)
+              > "읽어 들이는 시트가 줄어들면 수집시간도 줄어 들겠지?"
+
+              원장은 회차별 누적이라 수천 줄 × 46칸이 된다. 통째로 읽으면
+              송장 수집이 그만큼 느려지고, 6분 한도에 가까워진다.
+              여기서 필요한 건 «최근 회차»의 묶음키와 꼬리표뿐이다 —
+              오늘 붙일 송장을 위한 것이지 옛날 것을 뒤지는 일이 아니다.
+
+              ★ 두 번 나눠 읽는다 ★
+                ① 머리글 한 줄 — 어느 칸이 필요한지 안다
+                ② 그 칸까지만, 최근 줄만 — 읽는 양이 몇 분의 일로 준다
+              모자라면 _PO_LEDGER_TAIL_ 을 올린다. 늘려도 «끝에서부터»라 안전하다. */
+          var _lgLast = _lgTab.getLastRow();
           var _lgW = _lgTab.getLastColumn();
-          var _lgAll = _lgTab.getRange(1, 1, _lgTab.getLastRow(), _lgW).getDisplayValues();
+          var _lgHead = _lgTab.getRange(1, 1, 1, _lgW).getDisplayValues()[0];
           var _lgH = {};
-          for (var _lh = 0; _lh < _lgAll[0].length; _lh++) {
-            var _lhn = String(_lgAll[0][_lh] || "").trim();
+          for (var _lh = 0; _lh < _lgHead.length; _lh++) {
+            var _lhn = String(_lgHead[_lh] || "").trim();
             if (_lhn && _lgH[_lhn] === undefined) _lgH[_lhn] = _lh;
           }
+          //  쓸 칸 중 가장 오른쪽까지만 읽는다
+          var _need = 0;
+          var _wantCols = ["사방넷주문번호", "합포장그룹", "회차키", "품목명", "출력품목명"];
+          for (var _wc = 0; _wc < _wantCols.length; _wc++) {
+            var _wi = _lgH[_wantCols[_wc]];
+            if (_wi !== undefined && _wi + 1 > _need) _need = _wi + 1;
+          }
+          if (!_need) _need = _lgW;
+
+          var _tail = (typeof _PO_LEDGER_TAIL_ !== "undefined") ? _PO_LEDGER_TAIL_ : 4000;
+          var _from = Math.max(2, _lgLast - _tail + 1);
+          var _lgBody = _lgTab.getRange(_from, 1, _lgLast - _from + 1, _need).getDisplayValues();
+          //  아래 루프가 0행을 머리글로 보므로 앞에 한 줄을 끼워 맞춘다
+          var _lgAll = [_lgHead.slice(0, _need)].concat(_lgBody);
+          scannedLogs.push("[합배송] 원장 " + _lgBody.length + "줄 × " + _need +
+            "칸만 읽음 (전체 " + (_lgLast - 1) + "줄 · 끝에서부터)");
           var _cUid = _lgH["사방넷주문번호"];
           var _cGrp = _lgH["합포장그룹"];
           var _cRk = _lgH["회차키"];
