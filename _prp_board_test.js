@@ -182,8 +182,20 @@ console.log("\n[9] CS 보드 헤더와 포털이 찾는 헤더명이 일치");
 const hbSrc = fs.readFileSync("CS_WebApp/csHandoffBoard.gs", "utf8");
 const hbHdr = JSON.parse("[" + hbSrc.match(/var _CS_HB_HEADERS_ = \[([\s\S]*?)\];/)[1]
   .replace(/\/\/[^\n]*/g, "").replace(/,\s*$/, "").trim().replace(/,\s*$/, "") + "]");
-check("CS 보드 헤더 개수", hbHdr.length, 14);
-check("CS 보드 마지막 열이 출처키", hbHdr[13], "출처키");
+/*  ★ 칸 «개수»를 못 박지 않는다 ★  (2026-09-16)
+    전에는 14개라고 적어 두었다. 8/31 에 고객명·전화·송장·품목이, 9/04 에
+    지목이 뒤에 붙어 19개가 됐고, 이 검사는 그날부터 빨간 채로 남았다.
+    개수를 고정하면 칸을 «늘릴 때마다» 이유 없이 깨진다.
+
+    지켜야 할 것은 개수가 아니라 «앞의 열넷이 그 자리에 있는가»다 —
+    협력업체 포털(prpBoard.gs)이 헤더명으로 열을 찾으므로 중간에 끼우면
+    그쪽 열 위치가 밀린다. 그래서 뒤에 붙이는 것만 허용한다. */
+const 처음열넷 = ["카드ID", "등록일시", "작성자", "중요도", "제목", "내용", "연결",
+                  "전달내역", "읽음", "상태", "완료일시", "완료자", "첨부", "출처키"];
+check("앞의 열넷이 순서 그대로 있다", hbHdr.slice(0, 14), 처음열넷);
+check("칸은 늘기만 한다 (줄면 포털이 못 찾는다)", hbHdr.length >= 14, true);
+check("출처키는 여전히 열네째(N)", hbHdr.indexOf("출처키"), 13);
+check("이름이 겹치는 칸이 없다", new Set(hbHdr).size, hbHdr.length);
 const portalSrc = fs.readFileSync("Partner_WebApp/prpBoard.gs", "utf8");
 const needed = ["카드ID", "등록일시", "작성자", "중요도", "제목", "내용", "연결", "전달내역", "읽음", "상태"];
 check("포털이 찾는 헤더명이 모두 CS 헤더에 있다",

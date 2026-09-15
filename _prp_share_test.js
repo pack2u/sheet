@@ -161,20 +161,35 @@ vm.runInContext([
 ].join("\n"), cliCtx);
 const stepIdx = s => vm.runInContext("stepIndex(" + JSON.stringify(s) + ")", cliCtx);
 
-console.log("\n[7] 처리 단계 — '어디까지 됐나요' 를 대신 답한다");
+console.log("\n[7] 처리 단계 — 「어디까지 됐나요」 를 대신 답한다");
+/*  ★ 단계가 여섯에서 넷으로 줄었다 ★
+      STEPS = ['접수', '회수중', '입고검수', '처리완료']   (0~3)
+
+    「수거요청·수거중」이 한 칸(회수중)으로, 「반품입고·입고검수」가 한 칸
+    (입고검수)으로, 「환불처리·완료·이카운트 ok」가 한 칸(처리완료)으로 묶였다.
+    업체가 보는 화면에서 여섯 칸은 너무 잘아 진행이 안 보였다.
+
+    이 검사는 «지금 몇 칸인가»를 소스에서 읽어 맞춘다 — 숫자를 베껴 적으면
+    칸이 또 바뀔 때 조용히 어긋난다. */
+const 칸수 = vm.runInContext("STEPS.length", cliCtx);
+check("칸은 넷", 칸수, 4);
+const 끝칸 = 칸수 - 1;
+
 check("접수", stepIdx("접수"), 0);
-check("수거요청", stepIdx("수거요청"), 1);
-check("수거중", stepIdx("수거중"), 2);
-check("반품입고", stepIdx("반품입고"), 3);
-check("입고검수 (반품입고보다 뒤로 잡혀야 한다)", stepIdx("입고검수"), 4);
-check("환불처리", stepIdx("환불처리"), 5);
-check("완료", stepIdx("완료"), 6);
-check("이카운트 ok → 완료로 본다", stepIdx("이카운트 ok"), 6);
+check("수거요청 → 회수중", stepIdx("수거요청"), 1);
+check("수거중 → 회수중", stepIdx("수거중"), 1);
+check("반품입고 → 입고검수", stepIdx("반품입고"), 2);
+check("입고검수", stepIdx("입고검수"), 2);
+check("환불처리 → 처리완료", stepIdx("환불처리"), 끝칸);
+check("완료 → 처리완료", stepIdx("완료"), 끝칸);
+check("이카운트 ok → 처리완료", stepIdx("이카운트 ok"), 끝칸);
 check("철회 → 흐름 밖", stepIdx("철회"), -1);
 check("모르는 값 → 접수로 본다", stepIdx("듣보잡상태"), 0);
+
 const stepHtml = vm.runInContext('stepsHtml({status:"반품입고"})', cliCtx);
 check("현재 단계가 하나만 표시된다", (stepHtml.match(/ now/g) || []).length, 1);
-check("지난 단계 3개가 done", (stepHtml.match(/ done/g) || []).length, 3);
+check("지난 단계 둘이 done (반품입고는 셋째 칸)",
+  (stepHtml.match(/ done/g) || []).length, stepIdx("반품입고"));
 check("철회는 바 대신 문장",
   /steps-off-note/.test(vm.runInContext('stepsHtml({status:"철회"})', cliCtx)), true);
 

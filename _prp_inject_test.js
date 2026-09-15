@@ -153,6 +153,37 @@ function grabFn(src, name) {
   }
   throw new Error(name + " 본문이 안 닫힘");
 }
+
+/**
+ * cardHtml 이 부르는 것을 «따라가며» 모은다.
+ *
+ * 전에는 이름을 손으로 적어 두었다. portal.html 에 도우미가 하나 생길
+ * 때마다 여기 적는 것을 잊었고, 그러면 ReferenceError 로 파일이 통째로
+ * 죽었다 — 그런데 죽은 자리는 실패로 «세지도» 않아서 화면에는 통과만
+ * 보였다. 두 번 겪었다 (pickPhones · retInvBoxHtml).
+ *
+ * 그래서 사람이 적지 않는다. 함수 본문에서 이름을 훑어 소스에 같은 이름의
+ * 함수가 있으면 그것도 끌어오고, 그 안을 또 훑는다.
+ */
+function 딸린것까지(src, 시작들) {
+  const 있는이름 = {};
+  const re = /function\s+([A-Za-z_$][\w$]*)\s*\(/g;
+  let m;
+  while ((m = re.exec(src))) 있는이름[m[1]] = true;
+
+  const 담음 = {}, 차례 = [];
+  const 큐 = 시작들.slice();
+  while (큐.length) {
+    const n = 큐.shift();
+    if (담음[n] || !있는이름[n]) continue;
+    담음[n] = true;
+    const 몸 = grabFn(src, n);
+    차례.push(몸);
+    const 낱말 = 몸.match(/[A-Za-z_$][\w$]*/g) || [];
+    for (const w of 낱말) if (있는이름[w] && !담음[w]) 큐.push(w);
+  }
+  return 차례;
+}
 const cardCtx = { OPEN_POP: "" };
 vm.createContext(cardCtx);
 const stepsDecl = portalSrc.match(/^[ \t]*var\s+STEPS\s*=.*?;[ \t]*$/m);
@@ -170,11 +201,16 @@ if (trackAt >= 0) {
     }
   }
 } else { console.log("  FAIL var TRACK 을 못 찾음"); fail++; }
+/*  pickPhones 가 쓰는 표 — 소스에서 그대로 가져온다.
+    여기에 베껴 적으면 portal.html 이 바뀔 때 조용히 어긋난다. */
+const safeDecl = (portalSrc.match(/var\s+SAFE_PREFIX\s*=[^;]+;/) || ["var SAFE_PREFIX=/^050[0-9]/;"])[0];
 vm.runInContext(
-  [stepsDecl ? stepsDecl[0].trim() : "var STEPS=[];", trackDecl].concat(
-    ["esc", "badgeClass", "keyOf", "linkify", "stepIndex", "stepsHtml",
-      "driveId", "thumbsHtml", "trackUrl", "invLine", "tagClass", "cardHtml"]
-      .map(function (n) { return grabFn(portalSrc, n); })
+  [stepsDecl ? stepsDecl[0].trim() : "var STEPS=[];", trackDecl, safeDecl].concat(
+    /*  cardHtml 이 부르는 것은 «하나도 빠짐없이» 여기 있어야 한다.
+        빠지면 ReferenceError 로 터지는데, 이 파일은 그 순간 그냥 죽어서
+        실패로 «세지도» 못한 채 끝났다 — 화면에는 통과만 보였다.
+        (2026-09-16: portal.html 에 pickPhones 가 생겼는데 여기 없었다) */
+    딸린것까지(portalSrc, ["cardHtml"])
   ).join("\n"),
   cardCtx
 );
@@ -194,8 +230,24 @@ function dataKOf(act) {
 check("사진 첨부 버튼의 data-k", dataKOf("photo"), "202608:5");
 check("문의 버튼의 data-k", dataKOf("ask"), "202608:5");
 check("타임라인 2건이 모두 그려짐", (html.match(/class="ev"/g) || []).length, 2);
-check("원송장·반품송장 두 줄이 링크가 된다", (html.match(/class="inv-link"/g) || []).length, 2);
-check("사진 썸네일이 새 탭 링크가 아니다", /target="_blank"/.test(html.replace(/inv-link[\s\S]*?<\/a>/g, "")), false);
+/*  ★ 두 송장은 «모양이 다르다» ★  (2026-09 반품상자 도입)
+    원송장은 한 줄짜리 inv-link 이고, 반품송장은 ret-inv-box 안에 들어간다.
+    아직 없으면 「아직 없습니다」라고 «적는다» — 빈 자리는 안 보여주는 것인지
+    아직 안 나온 것인지 구분이 안 되고, 그 차이로 업체가 전화를 건다. */
+check("원송장이 조회 링크가 된다", (html.match(/class="inv-link"/g) || []).length, 1);
+check("반품송장은 상자 안에서 조회 링크가 된다",
+  /<div class="ret-inv-box">[\s\S]*?<a href=/.test(html), true);
+check("반품송장이 없으면 «아직 없습니다»라고 적는다",
+  /ret-inv-box none/.test(vm.runInContext(
+    "cardHtml(" + JSON.stringify(Object.assign({}, sample, { returnInvoice: "" })) + ")",
+    cardCtx)), true);
+/*  썸네일은 팝업으로 연다 — 새 탭으로 튀면 업체가 카드로 못 돌아온다.
+    송장 링크 둘은 새 탭이 맞으므로 걷어내고 본다. */
+check("사진 썸네일이 새 탭 링크가 아니다",
+  /target="_blank"/.test(html
+    .replace(/<a class="inv-link"[\s\S]*?<\/a>/g, "")
+    .replace(/<div class="ret-inv-box">[\s\S]*?<\/div><\/div>/g, "")),
+  false);
 
 console.log("\n" + (fail === 0 ? "전부 통과" : "실패 " + fail + "건") + " (통과 " + pass + ")");
 process.exit(fail === 0 ? 0 : 1);
