@@ -358,7 +358,7 @@ function partnerUnifiedDailyArchiveForDate() {
         ? "  ↺ 지난 마감 채움: " + result.detail.backfillDays + "건 (" +
           (result.detail.backfillDaysList || "") + ")\n"
         : "") +
-        " └ 롯데 송장: " + (result.detail.lotte || 0) + "건\n" +
+        " └ 자사출고 송장: " + (result.detail.lotte || 0) + "건\n" +
         " └ 대리공급 송장: " + (result.detail.supply || 0) + "건\n" +
         (result.detail.uidMatched ? " └ 고유ID 매칭: " + result.detail.uidMatched + "건\n" : "") +
         (result.detail.noUidMatched ? " └ 고유ID없음 매칭: " + result.detail.noUidMatched + "건\n" : "") +
@@ -628,7 +628,7 @@ function _pep_unifiedDailyArchiveScheduled_() {
     // ★ 2026-06-25: 스냅샷+송장매칭 단일 포맷 로그
     // ★ 2026-06-29: 로젠(전화) 건수 추가
     var logMsg = "[SCHEDULED] 통합 일일마감 완료: " +
-      result.archived + "건 (롯데:" + (result.detail.lotte || result.detail.lozen || 0) +
+      result.archived + "건 (자사출고:" + (result.detail.lotte || result.detail.lozen || 0) +
       " 대리판매:" + (result.detail.hub || 0) +
       " 로젠폴백:" + (result.detail.lozenFallback || 0) +
       " 로젠(전화):" + (result.detail.lozenPhone || 0) +
@@ -650,7 +650,7 @@ function _pep_unifiedDailyArchiveScheduled_() {
     try {
       var kvItems = [
         { label: "📊 매칭 기록", value: result.archived + "건" },
-        { label: "🚚 롯데 송장", value: (result.detail.lotte || result.detail.lozen || 0) + "건" },
+        { label: "🚚 자사출고 송장", value: (result.detail.lotte || result.detail.lozen || 0) + "건" },
         { label: "🏭 대리판매(허브)", value: (result.detail.hub || 0) + "건" },
         { label: "🏭 대리공급 송장", value: (result.detail.supply || 0) + "건" },
         { label: "⏳ 미매칭", value: (result.detail.noInvoice || 0) + "건" },

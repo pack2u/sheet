@@ -10562,7 +10562,7 @@ function _pep_appendArchiveRows_(ss, dateStr, headers, rows, detail) {
     sumRow[6] = gSum;
     sumRow[9] = jSum;
     var srcIdx = colCount - 1;
-    sumRow[srcIdx] = "롯데:" + (detail.lotte || 0) +
+    sumRow[srcIdx] = "자사출고:" + (detail.lotte || 0) +
       " 대리판매:" + (detail.hub || 0) +
       " 대리공급:" + (detail.supply || 0) +
       " 이름+전화:" + (detail.namePhone || 0) +
@@ -11830,7 +11830,7 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
 
     Logger.log("[UNIFIED_ARCHIVE] 소요 " + Math.round(_pep_udaElapsed_(udaStarted) / 1000) + "초");
     Logger.log("[UNIFIED_ARCHIVE] " + result.tabName + " (구글드라이브 시트) → 매칭:" + result.detail.matched +
-      " (롯데:" + (result.detail.lotte || result.detail.lozen || 0) +
+      " (자사출고:" + (result.detail.lotte || result.detail.lozen || 0) +
       " 대리판매:" + (result.detail.hub || 0) +
       " 로젠폴백:" + (result.detail.lozenFallback || 0) +
       " 대리공급:" + result.detail.supply +
