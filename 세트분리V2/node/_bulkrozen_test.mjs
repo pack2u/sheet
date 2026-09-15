@@ -73,6 +73,27 @@ eq("머리주석이 그 뜻을 적고 있다",
   bulk.includes("회차 하나가 아니라 원천을 직접 훑어"), true);
 eq("원장도 원천에 있다 (지난 회차를 여기서 건진다)",
   bulk.includes("4. 주문라인원장"), true);
+console.log("\n[세 군데] 로젠 자리표가 한 값인가");
+//  실제 전파 결과: 자사출고 송장탭을 읽지 못했습니다 — 머리글을 못 찾았습니다
+//  대량등록만 고치고 전파를 안 고쳐서 자사출고가 0건이었다. 셋을 맞대 본다.
+const main = readFileSync("../gasMain.js", "utf8");
+eq("전파 — 주문번호 J(9)", 칸(main, "var 자사원천 = [", "uid"), 9);
+eq("전파 — 운송장 K(10)", 칸(main, "var 자사원천 = [", "inv"), 10);
+eq("★ 전파 = 대량등록 (주문번호)",
+  칸(main, "var 자사원천 = [", "uid"), 칸(bulk, "var 자사탭 = [", "uid"));
+eq("★ 전파 = 대량등록 (운송장)",
+  칸(main, "var 자사원천 = [", "inv"), 칸(bulk, "var 자사탭 = [", "inv"));
+eq("★ 전파 = 허브 (주문번호)",
+  칸(main, "var 자사원천 = [", "uid"), 칸(hub, "var _PT_ROZEN_FIXED_COL", "uid"));
+eq("★ 전파 = 허브 (운송장)",
+  칸(main, "var 자사원천 = [", "inv"), 칸(hub, "var _PT_ROZEN_FIXED_COL", "invoice"));
+
+console.log("\n[전파] 머리글이 없어도 버리지 않는다");
+eq("★ throw 로 원천을 버리던 줄이 사라졌다",
+  main.includes("머리글을 못 찾았습니다') ;".replace(" ;", ";")) , false);
+eq("예비 자리로 바꿔 쓴다", main.includes("H = { row: 0, uid: o편.uid, inv: o편.inv };"), true);
+eq("자리로 읽었으면 그렇게 말한다", main.includes("머리글 없음 → 자리로"), true);
+
 
 console.log("\n" + (fail ? "실패 " + fail + "건" : "통과 " + pass + "건"));
 process.exit(fail ? 1 : 0);

@@ -1108,9 +1108,21 @@ function ss_송장전파() {
 
      칸은 머리글 이름으로 먼저 찾고, 못 찾으면 탭마다 정해진 자리를 쓴다. */
   var lotte = {}, lotteErr = '';
+  /*  ★ 로젠 탭에는 머리글이 «없다» ★  (2026-09-15)
+      > "⚠ 자사출고 송장탭을 읽지 못했습니다 — 임시기록만으로 매칭했습니다"
+      > "로젠: 「주문번호」·「운송장번호」 머리글을 못 찾았습니다"
+
+      실제 전파 결과가 그렇게 나왔다. 탭이 「집하」 양식이라 1행부터 바로
+      자료고, ssb_findHeader 가 못 찾으면 여기서 throw 로 그 원천을 버렸다.
+      그래서 자사출고 송장이 «0건»이고 미매칭이 571 로 남았다.
+
+      예비 자리도 옛 44칸 양식(uid:18·inv:3)이라 살릴 수도 없었다.
+      실제 양식에 맞추고, 머리글을 못 찾으면 이 자리로 읽는다.
+      대량등록(gasBulk 자사탭)과 «같은 값»이다 — 두 군데가 다르면
+      한쪽만 고쳐지고 또 조용히 갈린다. */
   var 자사원천 = [
     { 이름: '로젠', 택배사: '로젠택배',
-      gid: ssNum(cfg['로젠송장탭GID']) || 548505068, uid: 18, inv: 3 },
+      gid: ssNum(cfg['로젠송장탭GID']) || 548505068, uid: 9, inv: 10 },
     { 이름: '롯데', 택배사: '롯데택배',
       gid: ssNum(cfg['롯데송장탭GID']) || 1575029201, uid: 8, inv: 6 },
   ];
@@ -1129,7 +1141,15 @@ function ss_송장전파() {
          로젠 탭은 1행이 제목이고 머리글은 2행이다. 규칙은 gasBulk 의
          ssb_findHeader 한 곳에 있다 — 두 곳에 적으면 또 갈라진다. */
       var H = ssb_findHeader(lTab);
-      if (!H.row) throw new Error('「주문번호」·「운송장번호」 머리글을 못 찾았습니다');
+      var 머리없음 = !H.row;
+      if (머리없음) {
+        /*  포기하지 않는다 — 머리글이 없는 양식이 실제로 있다(로젠 집하).
+            적어 둔 자리로 읽되 «자리로 읽었다»고 반드시 말한다. */
+        if (!(o편.uid >= 0 && o편.inv >= 0)) {
+          throw new Error('머리글도 예비 자리도 없습니다');
+        }
+        H = { row: 0, uid: o편.uid, inv: o편.inv };
+      }
       var ci = H.uid, cw = H.inv;
       var rv = lTab.getRange(H.row + 1, 1, lTab.getLastRow() - H.row,
         Math.max(ci, cw) + 1).getDisplayValues();
@@ -1142,8 +1162,9 @@ function ss_송장전파() {
         ssInvPut_(lotte, o, w, o편.택배사);
         n편++;
       }
-      읽은탭.push(o편.이름 + ' ' + n편 + '줄(머리글 ' + H.row + '행 · 주문 ' +
-        ssb_col(ci) + ' · 송장 ' + ssb_col(cw) + ')');
+      읽은탭.push(o편.이름 + ' ' + n편 + '줄(' +
+        (머리없음 ? '머리글 없음 → 자리로' : '머리글 ' + H.row + '행') +
+        ' · 주문 ' + ssb_col(ci) + ' · 송장 ' + ssb_col(cw) + ')');
     } catch (eL) {
       //  한 탭이 안 읽혀도 나머지는 읽는다. 둘 다 실패했을 때만 진짜 실패다.
       lotteErr = (lotteErr ? lotteErr + ' / ' : '') + o편.이름 + ': ' + String(eL.message || eL);
