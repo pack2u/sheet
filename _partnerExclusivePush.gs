@@ -9145,8 +9145,21 @@ function _pep_resolveRowInvoice_(map, row, outVia) {
     if (outVia) outVia.via = "UID미매칭";
     return null;
   }
-  var np = _pep_lookupNamePhoneInvoice_(map, row.name, row.phone, row.addr, row.item, outVia);
-  return _pep_applyOrderDateFilter_(np, row.orderDate);
+  /* ★ 이름·전화로는 안 찾는다 ★  (2026-09-15)
+     > "찾아도 엉뚱한 매칭.. 데이타만 불순하게 만듬"
+     > "여태 한개도 못찾음"
+
+     고유ID 가 없는 줄을 이름·전화·주소로 더듬던 길이다. 어제 실적은
+     1102건 중 31건이고, 그 대가로 8월에 「수량 1개 행에 송장 40개」가
+     붙었다. 진단의 「동명이인 424건」도 이 길이 거부한 것들이다.
+     맞을 때보다 틀릴 때가 많고, 틀리면 마감에 굳어 아무도 모른다.
+
+     ★ 못 찾으면 «빈칸으로 둔다» ★
+       빈칸은 나중에 고유ID 로 채울 수 있다. 잘못 채운 것은 못 고친다.
+       송장이 없는 것이 아니라 «아직 못 이은 것»이고, 이으려면 ID 가
+       필요하다 — 추측으로 메우면 그 사실이 가려진다. */
+  if (outVia) outVia.via = "고유ID없음";
+  return null;
 }
 
 /** 화면값·Date → yyyymmdd 숫자. 못 읽거나 연도가 이상하면 0 */
@@ -9486,12 +9499,6 @@ function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
             모르면 안 만드는 편이 낫다 — 틀린 열쇠는 없느니만 못하다. */
         if (nameIdx >= 0) {
           var phone = (phoneIdx >= 0) ? row[phoneIdx] : "";
-          _pep_addNamePhoneInvoiceKeys_(invoiceMap, row[nameIdx], phone, inv, 편.이름, {
-            addr: (addrIdx >= 0) ? row[addrIdx] : "",
-            item: (itemIdx >= 0) ? row[itemIdx] : "",
-            picked: picked,
-            stat: _pep_keyStat_(편.이름),
-          });
           if (_pep_normRecipName_(row[nameIdx])) nName++;
         }
       }
@@ -9805,73 +9812,6 @@ function _pep_phoneDigits_(phone) {
   return p;
 }
 
-/**
- * 일일마감 전용: 수취인+전화 보조키를 invoiceMap에 누적
- * (송장수집 partnerFetchInvoices 는 이 키를 쓰지 않음)
- */
-function _pep_addNamePhoneInvoiceKeys_(map, name, phone, inv, source, opt) {
-  if (!map || !inv) return;
-  var n = _pep_normRecipName_(name);
-  var p = _pep_phoneDigits_(phone);
-  var masked = _pep_isMaskedPhone_(phone);
-  var p7 = _pep_phone7_(phone);
-  var ak = _pep_addrKey_(opt && opt.addr);
-  var st = opt && opt.stat ? opt.stat : null;
-  // 택배사는 출처만으로 알 수 없는 원천(업체 출고)이 넘긴다. 일일마감 택배사 열이 쓴다.
-  var cr = (opt && opt.carrier) || "";
-  var pk = opt && opt.picked;
-
-  if (n && !(opt && opt.skipName)) {
-    _pep_addInvoiceMap_(map, "NAME:" + n, inv, source, cr, pk);
-    if (st) st.name = (st.name || 0) + 1;
-  }
-
-  // ★ 마스킹 전화는 "앞자리만 남은 값"이므로 전체번호·뒷4자리 키를 만들면 안 된다.
-  //   (예: "010-1234-****" → 숫자 "0101234", 뒷4자리 "1234"는 실제 뒷자리가 아님)
-  if (p && !masked) {
-    _pep_addInvoiceMap_(map, "TEL:" + p, inv, source, cr, pk);
-    if (p.length >= 8) _pep_addInvoiceMap_(map, "PH:" + p, inv, source, cr, pk);
-    if (n && p.length >= 4) {
-      _pep_addInvoiceMap_(map, "NP:" + n + "|" + p.substring(p.length - 4), inv, source, cr, pk);
-    }
-  }
-  if (n && p7) {
-    _pep_addInvoiceMap_(map, "NP7:" + n + "|P" + p7, inv, source, cr, pk);
-    if (st) st.np7 = (st.np7 || 0) + 1;
-  }
-  if (n && ak) {
-    _pep_addInvoiceMap_(map, "NA:" + n + "|" + ak, inv, source, cr, pk);
-    if (st) st.na = (st.na || 0) + 1;
-    if (p7) {
-      _pep_addInvoiceMap_(map, "NPA:" + n + "|P" + p7 + "|" + ak, inv, source, cr, pk);
-      if (st) st.npa = (st.npa || 0) + 1;
-    }
-  }
-
-  // ★ 2026-08-26: 품목키.
-  //   위 키들은 사람만 가리키므로, 한 사람이 여러 건을 주문하면 한 키에 송장이
-  //   여러 개 쌓이고 그 사람의 모든 행이 같은 목록을 받아간다. 품목명을 끼워
-  //   주문 행마다 자기 송장을 집어오게 한다.
-  var ik = _pep_itemKey_(opt && opt.item);
-  if (n && ik) {
-    if (p7) {
-      _pep_addInvoiceMap_(map, "NPI:" + n + "|P" + p7 + "|" + ik, inv, source, cr, pk);
-      if (st) st.npi = (st.npi || 0) + 1;
-    }
-    if (ak) {
-      _pep_addInvoiceMap_(map, "NAI:" + n + "|" + ak + "|" + ik, inv, source, cr, pk);
-      if (st) st.nai = (st.nai || 0) + 1;
-    }
-    // 롯데탭처럼 전화·주소가 없는 원천은 이 키만 만들 수 있다
-    _pep_addInvoiceMap_(map, "NI:" + n + "|" + ik, inv, source, cr, pk);
-    if (st) { st.ni = (st.ni || 0) + 1; st.item = (st.item || 0) + 1; }
-  }
-
-  if (st) {
-    st.rows = (st.rows || 0) + 1;
-    if (masked) st.masked = (st.masked || 0) + 1;
-  }
-}
 
 /**
  * 고유ID가 없거나 UID 매칭 실패 시 보조 조회.
@@ -9890,86 +9830,7 @@ function _pep_addNamePhoneInvoiceKeys_(map, name, phone, inv, source, opt) {
  * @param {Object=} outVia 진단용 — 맞은 키 종류를 outVia.via,
  *                  송장이 하나로 확정되지 않았으면 outVia.multi 에 담아준다
  */
-/**
- * 사람만 가리키는 조회 키.
- *
- * 품목이 안 들어가 있어서 한 사람의 **서로 다른 주문**이 같은 키에 쌓인다.
- * 송장맵에는 날짜가 없어 과거 출고분까지 함께 쌓인다. 그래서 이 키들이
- * 송장을 여러 개 들고 있으면 「분할 출고」가 아니라 「충돌」로 본다.
- *
- * 품목까지 맞는 NPI·NAI·NI 는 여기 넣지 않는다 — 같은 사람이 같은 품목을
- * 두 박스로 나눠 받는 경우가 실제로 있고, 그때는 둘 다 그 주문의 송장이다.
- */
-var _PEP_PERSON_ONLY_VIA_ = {
-  NP7: 1, NA: 1, NPA: 1, NP: 1,
-  NAME: 1, "NAME(롯데)": 1, TEL: 1, PH: 1
-};
 
-function _pep_lookupNamePhoneInvoice_(map, name, phone, addr, item, outVia) {
-  if (!map) return null;
-  var n = _pep_normRecipName_(name);
-  var p = _pep_phoneDigits_(phone);
-  var masked = _pep_isMaskedPhone_(phone);
-  var p7 = _pep_phone7_(phone);
-  var ak = _pep_addrKey_(addr);
-  var ik = _pep_itemKey_(item);
-
-  // 구체적인 키부터. 품목키는 한 사람의 여러 주문을 행 단위로 갈라주므로 앞에 둔다.
-  var tries = [];
-  if (n && ik && p7) tries.push(["NPI", "NPI:" + n + "|P" + p7 + "|" + ik]);
-  if (n && ik && ak) tries.push(["NAI", "NAI:" + n + "|" + ak + "|" + ik]);
-  if (n && ak && p7) tries.push(["NPA", "NPA:" + n + "|P" + p7 + "|" + ak]);
-  if (n && p7) tries.push(["NP7", "NP7:" + n + "|P" + p7]);
-  if (n && ak) tries.push(["NA", "NA:" + n + "|" + ak]);
-  // 롯데탭은 전화·주소가 없어 이름·품목 키만 만든다. 이름 단독보다 품목까지 맞는 쪽이 낫다.
-  if (n && ik) tries.push(["NI", "NI:" + n + "|" + ik]);
-  if (n && !masked && p.length >= 4) {
-    tries.push(["NP", "NP:" + n + "|" + p.substring(p.length - 4)]);
-  }
-
-  // ★ 2026-08-27: 단일 필드 키(이름 단독 NAME, 전화 단독 TEL·PH)를 사다리에서 뺐다.
-  //   위 키들은 모두 두 개 이상의 필드가 맞아야 성립하지만, 아래 셋은 하나만 맞으면
-  //   걸린다. 송장맵에는 날짜가 없으므로 재구매 고객은 과거 출고분과 새 주문이
-  //   같은 이름·전화 키를 공유한다. 그래서 이 셋이 과거 송장을 주워오는 통로였다.
-  //   매칭률이 크게 떨어져 되돌려야 하면 _pt_allowSingleFieldMatch_() 를 켠다.
-  if (typeof _pt_allowSingleFieldMatch_ === "function" && _pt_allowSingleFieldMatch_()) {
-    if (n) tries.push(["NAME(롯데)", "NAME:" + n, "롯데"]);
-    if (!masked && p.length >= 8) {
-      tries.push(["TEL", "TEL:" + p]);
-      tries.push(["TEL", "PH:" + p]);
-    }
-    if (n) tries.push(["NAME", "NAME:" + n]);
-  }
-
-  // 송장이 하나로 확정되는 키를 우선한다.
-  // 확정되지 않으면 품목까지 맞는 키에 한해 여러 개를 그대로 돌려준다 (분할 출고).
-  var first = null, firstVia = "";
-  for (var t = 0; t < tries.length; t++) {
-    var via = tries[t][0];
-    var info = map[tries[t][1]];
-    if (!info || !info.inv) continue;
-    if (tries[t][2] && info.source !== tries[t][2]) continue;
-    if (_pep_invCount_(info) === 1) {
-      if (outVia) outVia.via = via;
-      return info;
-    }
-    // ★ 2026-08-28: 사람만 가리키는 키가 송장을 여러 개 들고 있으면
-    //   그것은 분할 출고가 아니라 **서로 다른 주문이 한 키에 쌓인 것**이다.
-    //   대리발송처럼 수취인·전화·주소가 업체 자기 것이면 한 키에 수십 건이 모인다.
-    //   그대로 쓰면 수량 1개 행이 송장 수십 개를 받는다. 후보에서 뺀다.
-    if (_PEP_PERSON_ONLY_VIA_[via]) {
-      if (outVia) outVia.ambiguous = (outVia.ambiguous || 0) + 1;
-      continue;
-    }
-    if (!first) { first = info; firstVia = via; }
-  }
-  if (first) {
-    if (outVia) { outVia.via = firstVia; outVia.multi = true; }
-    return first;
-  }
-  if (outVia) outVia.via = "";
-  return null;
-}
 
 /** 판매현황 전체 헤더에서 일자 열 (0-based). B열 `일자-No.` 가 정본이다. */
 function _pep_findSalesDateCol_(fullHdr) {
@@ -10685,17 +10546,6 @@ function _pep_loadWeeklyShipInvoiceMap_(invoiceMap, result) {
       }
       var wsName = _pep_normRecipName_(all[i][cols.name]);
       if (wsName) {
-        _pep_addNamePhoneInvoiceKeys_(
-          invoiceMap, all[i][cols.name],
-          cols.phone >= 0 ? all[i][cols.phone] : "",
-          invNo, srcLabel,
-          {
-            addr: cols.addr >= 0 ? all[i][cols.addr] : "",
-            item: cols.item >= 0 ? all[i][cols.item] : "",
-            picked: wsPicked,
-            stat: _pep_keyStat_(srcLabel)
-          }
-        );
         out.name++;
       }
     }
@@ -11181,20 +11031,6 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
               }
             } catch (ePepUid) {}
           }
-          _pep_addNamePhoneInvoiceKeys_(
-            invoiceMap,
-            hubData[hbi][7],
-            hubData[hbi][8],
-            hInv,
-            "대리판매",
-            {
-              skipName: true,
-              addr: hubData[hbi][9],
-              item: hubData[hbi][5],
-              carrier: hCarrier,
-              stat: _pep_keyStat_("대리판매")
-            }
-          );
         }
         result.detail.hubRead = _hubInvRows;
         Logger.log("[UNIFIED] 허브 송장맵: 송장행=" + _hubInvRows +
@@ -11252,12 +11088,6 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
             hapAdded++;
           }
           if (hv) {
-            _pep_addNamePhoneInvoiceKeys_(invoiceMap, hn, hp, hv, "합배송",
-              {
-                addr: hAddr >= 0 ? hapData[hi][hAddr] : "",
-                item: hItem >= 0 ? hapData[hi][hItem] : "",
-                stat: _pep_keyStat_("합배송")
-              });
           }
         }
         Logger.log("[UNIFIED] 합배송 송장맵 보강: " + hapAdded + "건");
@@ -11298,12 +11128,6 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
           var npPhone = npData[npi][1];
           var npInv = String(npData[npi][3] || "").trim();
           if (!npInv) continue;
-          _pep_addNamePhoneInvoiceKeys_(invoiceMap, npName, npPhone, npInv, "롯데",
-            {
-              addr: npAddrIdx >= 0 ? npData[npi][npAddrIdx] : "",
-              item: npItemIdx >= 0 ? npData[npi][npItemIdx] : "",
-              stat: _pep_keyStat_("3-3_병합")
-            });
           npAdded++;
         }
         Logger.log("[UNIFIED] 3-3_병합 이름+전화 송장맵: " + npAdded + "건");
