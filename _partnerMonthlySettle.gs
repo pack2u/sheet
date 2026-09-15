@@ -599,15 +599,23 @@ function _pms_loadFinalSummary_() {
  *   ★ 매일 도는 정규 트리거는 손대지 않는다 ★
  *     그건 사람이 정한 일정이다. 기계가 지울 것이 아니다.
  */
+/*  ★★ 여기에 «매일 도는» 핸들러를 넣으면 밤일이 통째로 죽는다 ★★
+
+    2026-09-15 에 내가 여덟 개를 넣었는데 그중 넷이 정규 트리거였다 —
+      _prv_scheduled_ 21:30 반품 미러
+      _pbv_scheduled_ 21:40 보드 미러
+      _pep_unifiedDailyArchiveScheduled_ 22:00 통합 마감
+      _piv_scheduled_ 22:10 구매입력 미러
+    지웠으면 밤 미러와 마감이 서고, 거기서 나가는 Chat 알림도 같이 끊긴다.
+    사장님이 「오늘부터 알림이 안오네」 하신 그 모양이 된다.
+
+    ★ 넣기 전에 반드시 확인할 것 ★
+      그 핸들러가 «.after(…)» 로만 만들어지는가. everyDays 가 한 번이라도
+      쓰이면 넣으면 안 된다. _pt_oneshot_test.js 가 소스를 뒤져 이걸 막는다. */
 var _PT_ONESHOT_HANDLERS_ = [
-  "_pbv_scheduled_",
-  "_piv_scheduled_",
-  "_prv_scheduled_",
-  "_pep_collectPriceMapDelayed_",
-  "_pep_patchUnmatchedArchiveScheduled_",
-  "_pep_unifiedDailyArchiveScheduled_",
-  "_repairScript_continueAuto_",
-  "partnerShowStatusDashboard"
+  "_pep_collectPriceMapDelayed_",        // after(10분)
+  "_pep_patchUnmatchedArchiveScheduled_", // after(15초)
+  "_repairScript_continueAuto_"           // after(3분)
 ];
 
 /**
