@@ -352,14 +352,38 @@ function partnerArchiveExclusiveForm() {
   try { pending = PropertiesService.getScriptProperties().getProperty(_PEA_PENDING_KEY_); } catch (_) {}
   if ((existing && existing.queue && existing.queue.length > 0) || pending) {
     var remain = (existing && existing.queue) ? existing.queue.length : "(시작 대기)";
-    var cfBusy = ui.alert(
-      "⏳ 대리공급 마감 진행 중",
-      "이미 백그라운드에서 처리 중입니다.\n" +
-      "남은 업체: " + remain + "\n\n" +
-      "· 예 = 강제 재시작 (현재 진행 취소 후 처음부터)\n" +
-      "· 아니오 = 그대로 두기 (완료 시 Chat 알림)",
-      ui.ButtonSet.YES_NO
-    );
+    /* ★ 깃발이 아니라 «트리거»를 본다 ★  (2026-09-15)
+       > "다시 실행하면 백그라운드에서 실행중이라고.. 11시간전에 실행된건데"
+
+       여태 남은 목록이나 예약 키가 있으면 「진행 중」이라고 했다. 그런데
+       백그라운드는 트리거가 굴린다 — 트리거가 6분을 넘겨 죽거나 오류로
+       끊기면 깃발만 남고, 시스템이 «없는 일»을 있다고 말한다. 11시간 동안.
+       트리거가 실제로 걸려 있는가 — 그것만이 믿을 수 있는 사실이다. */
+    var 상태 = _pea_runState_();
+    var cfBusy;
+    if (상태.돌고있나) {
+      cfBusy = ui.alert(
+        "⏳ 대리공급 마감 진행 중",
+        "백그라운드에서 처리 중입니다." + "\n" +
+        "시작: " + 상태.시작 + " (" + _pea_ago_(상태.지난분) + ")" + "\n" +
+        "남은 업체: " + remain + "\n\n" +
+        "· 예 = 강제 재시작 (현재 진행 취소 후 처음부터)" + "\n" +
+        "· 아니오 = 그대로 두기 (완료 시 Chat 알림)",
+        ui.ButtonSet.YES_NO
+      );
+    } else {
+      /*  돌고 있지 않다. 「진행 중」이라고 말하면 안 된다 — 사람이 하염없이
+          기다리게 된다. 멈췄다고 «그 까닭과 함께» 말하고 바로 이어 준다. */
+      cfBusy = ui.alert(
+        "⚠ 대리공급 마감이 멈춰 있습니다",
+        상태.왜 + "\n\n" +
+        "시작: " + 상태.시작 + " (" + _pea_ago_(상태.지난분) + ")" + "\n" +
+        "남은 업체: " + remain + "\n\n" +
+        "· 예 = 처음부터 다시 시작" + "\n" +
+        "· 아니오 = 그대로 두기",
+        ui.ButtonSet.YES_NO
+      );
+    }
     if (cfBusy !== ui.Button.YES) return;
     _pea_clearResumeState_();
     try { PropertiesService.getScriptProperties().deleteProperty(_PEA_PENDING_KEY_); } catch (_) {}
@@ -391,6 +415,7 @@ function partnerArchiveExclusiveForm() {
   // ★ 비차단: 이전 미완료 정리 → tabName 예약 → 백그라운드 트리거 시작
   _pea_clearResumeState_();
   try { PropertiesService.getScriptProperties().setProperty(_PEA_PENDING_KEY_, tabName); } catch(_) {}
+  _pea_markStarted_();   // 언제 시작했는지 — 「11시간 전」을 말할 수 있어야 한다
   var scheduled = _pea_scheduleResume_(5 * 1000); // 5초 후 백그라운드 시작
 
   if (scheduled) {
@@ -929,6 +954,86 @@ function partnerDiagnoseExclusiveArchive() {
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert("대리공급 마감 진단", msg, SpreadsheetApp.getUi().ButtonSet.OK); } catch (e) {}
   return msg;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 「진행 중」이 정말 진행 중인지 본다 ★
+ *  2026-09-15
+ *
+ *  > "대리판매 마감도 중간에 멈추고 다시 실행하면 백그라운드에서
+ *  >  실행중이라고.. 11시간전에 실행된건데.."
+ *
+ *  여태 「진행 중」 판정은 «깃발만» 봤다. 남은 업체 목록이 있거나 예약 키가
+ *  있으면 돌고 있는 것으로 쳤다. 그런데 백그라운드는 트리거가 굴린다 —
+ *  트리거가 6분을 넘겨 죽거나, 오류로 끊기거나, 누가 지우면 깃발만 남는다.
+ *  그러면 시스템이 «없는 일»을 있다고 말한다. 11시간 동안.
+ *
+ *  ★ 깃발이 아니라 트리거를 본다 ★
+ *    재개 트리거가 «실제로 걸려 있는가»가 유일하게 믿을 수 있는 사실이다.
+ *    없으면 돌고 있지 않다. 짐작할 것이 없다.
+ *
+ *  ★ 언제 시작했는지도 적어 둔다 ★
+ *    사람이 「기다릴까 다시 돌릴까」를 정하려면 얼마나 됐는지를 알아야 한다.
+ *    「11시간 전에 멈춤」과 「방금 시작」은 같은 화면이면 안 된다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var _PEA_STARTED_KEY_ = "_PEA_STARTED_AT";
+/** 이만큼 지났는데 아직 안 끝났으면 죽은 것으로 본다 (트리거는 5분마다 잇는다) */
+var _PEA_STALE_MIN_ = 30;
+
+/** 재개 트리거가 실제로 걸려 있나 — 유일하게 믿을 수 있는 사실 */
+function _pea_resumeTriggerAlive_() {
+  try {
+    var trs = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < trs.length; i++) {
+      if (trs[i].getHandlerFunction() === _PEA_RESUME_TRIGGER_) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function _pea_markStarted_() {
+  try {
+    PropertiesService.getScriptProperties()
+      .setProperty(_PEA_STARTED_KEY_, String(new Date().getTime()));
+  } catch (e) {}
+}
+
+/**
+ * 지금 「진행 중」이 어떤 상태인가.
+ *
+ * @return {{돌고있나: boolean, 지난분: number, 시작: string, 왜: string}}
+ */
+function _pea_runState_() {
+  var props = PropertiesService.getScriptProperties();
+  var started = 0;
+  try { started = parseInt(props.getProperty(_PEA_STARTED_KEY_), 10) || 0; } catch (e) {}
+  var 지난분 = started ? Math.floor((new Date().getTime() - started) / 60000) : -1;
+  var 살아있음 = _pea_resumeTriggerAlive_();
+
+  var 왜 = "";
+  if (!살아있음) {
+    왜 = "재개 트리거가 없습니다 — 돌고 있지 않습니다.";
+  } else if (지난분 >= 0 && 지난분 >= _PEA_STALE_MIN_) {
+    왜 = "트리거는 있는데 " + 지난분 + "분째 안 끝났습니다 — 멈춘 것으로 봅니다.";
+  }
+  return {
+    돌고있나: 살아있음 && !(지난분 >= 0 && 지난분 >= _PEA_STALE_MIN_),
+    지난분: 지난분,
+    시작: started
+      ? Utilities.formatDate(new Date(started), "Asia/Seoul", "MM-dd HH:mm")
+      : "(모름)",
+    왜: 왜,
+  };
+}
+
+/** 「3시간 20분 전」처럼 사람이 읽는 꼴 */
+function _pea_ago_(분) {
+  if (!(분 >= 0)) return "(언제인지 모름)";
+  if (분 < 60) return 분 + "분 전";
+  var h = Math.floor(분 / 60), m = 분 % 60;
+  return h + "시간" + (m ? " " + m + "분" : "") + " 전";
 }
 
 function _pea_saveResumeState_(state) {

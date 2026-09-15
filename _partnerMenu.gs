@@ -175,12 +175,6 @@ function registerPartnerMenu_() {
         // ── 왜 안 붙었나 (읽기 전용) ──
         .addItem("🪪 고유ID 인식 점검", "partnerDiagnoseUidRecognition")
         .addItem("🔎 일일마감 미매칭 원인 진단", "partnerDiagnoseUnifiedUnmatched")
-        /* ★ 2026-09-15: 한 건을 끝까지 따라간다 ★
-           _partnerTraceItem.gs 는 바로 이 물음에 답하려고 만든 도구인데
-           메뉴에 없어 스크립트 편집기에서 인자를 적어 실행해야 했다.
-           부를 수 없으면 없는 것과 같다. */
-        .addItem("🔬 이 건이 왜 송장을 못 받았나 (한 건 추적)", "partnerTraceItemPrompt")
-        .addItem("   └ 일일마감에서 찾기", "partnerTraceItemInDailyClosePrompt")
         .addItem("🔑 보조키(이름·전화앞7·주소·품목) 매칭 진단", "partnerDiagnoseAuxKeys")
         .addItem("⚖️ 허브 송장 배정 근거 점검", "partnerDiagnoseCollectEvidence")
         .addItem("📋 대리공급_임시기록 송장 점검", "partnerDiagnoseTempInvoiceData")
