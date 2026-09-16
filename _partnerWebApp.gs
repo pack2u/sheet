@@ -1984,6 +1984,7 @@ function _trigger_syncDb_() {
  */
 function runNoonSyncAndHub() {
   var log = [];
+  var _noonT0_ = new Date().getTime();
 
   try {
     _trigger_syncDb_();          // 주말 차단·에러 처리·Chat 알림을 스스로 한다
@@ -2001,6 +2002,24 @@ function runNoonSyncAndHub() {
     }
   } catch (e2) {
     log.push("허브 상태/재고 실패: " + (e2 && e2.message ? e2.message : e2));
+  }
+
+  /*  ★ 낮에도 한 번 — 오전에 품절된 것이 오후 주문에 보여야 한다 ★  (2026-09-16)
+      자리를 새로 쓰지 않고 여기 붙인다. 다만 업체 파일을 여럿 여는 일이라
+      남은 시간을 재서 모자라면 «건너뛰었다고 말한다» — 조용히 거르지 않는다.
+      (아침 7:00 은 전용 자리로 따로 돈다)  */
+  try {
+    var 남음 = 5 * 60 * 1000 - (new Date().getTime() - _noonT0_);
+    if (남음 < 90 * 1000) {
+      log.push("★ 상태 반영 건너뜀 — 남은 시간 " + Math.round(남음 / 1000) + "초");
+    } else if (typeof syncStatusOnly === "function") {
+      syncStatusOnly(true);
+      log.push("상태 반영 → 단가조회");
+    } else {
+      log.push("상태 반영 함수 없음");
+    }
+  } catch (e3) {
+    log.push("상태 반영 실패: " + (e3 && e3.message ? e3.message : e3));
   }
 
   Logger.log("[NOON] " + log.join(" / "));
@@ -2023,6 +2042,20 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
   //   ★ 2026-09-07: 08:00/09:20 → 09:30/10:30 ★
   //     수집~푸시 사이가 80분에서 60분으로 줄었지만, 시작이 늦어져
   //     사람이 출근해 세트분리를 끝낼 시간이 오히려 넉넉해졌다.
+  /*  ★ 07:00 판매 상태/재고 → 단가조회 ★  (2026-09-16)
+
+      > "통합허브가 바뀌어도 대리판매업체 단가조회까지 동기화 되는데
+      >  한시간 넘는 시간이 걸려"
+      > "요즘 품절상품이 많아 주문시 상태값이 안보여 취소하는 일들이 많이 생겨"
+
+      1시간의 정체는 이것이었다 — syncStatusOnly 가 업체 시트의 수식을
+      지웠다 다시 써서 IMPORTRANGE 를 강제로 다시 가져오게 하는데,
+      그걸 부르는 이 트리거가 표에 없어 «아예 안 돌고 있었다».
+      그래서 구글의 IMPORTRANGE 자동 갱신(최대 1시간)에 맡겨져 있었다.
+
+      6:00 이카운트 전체동기화 → 7:00 상태 반영 → 9:30 첫 수집.
+      업체가 아침에 보는 화면이 그날 것이어야 한다.  */
+  { fn: "runMorningSyncStatusBatch",                     h: 7,  m: 0,  label: "판매 상태/재고 → 단가조회 (아침)" },
   { fn: "partnerCollectOrdersSilent_",                   h: 9,  m: 30, label: "발주 수집 + 판매현황 갱신 (1회전)" },
   { fn: "partnerPushOrdersToExclusiveFormsSilent_",      h: 10, m: 30, label: "대리공급 Push + 우편번호 (1회전)" },
 

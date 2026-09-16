@@ -1881,6 +1881,52 @@ function partnerRepairAll() {
 //  — 수식만 재세팅하여 캐시를 강제 무효화
 //  — partnerForceUpdateAll보다 빠름 (디자인/보호 건너뜀)
 // ═══════════════════════════════════════════
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 날마다 주문이 들어오는 업체부터 ★  (2026-09-16)
+ *
+ *  > "대리판매 주요 업체는 당장드림, 하나팩, 냅킨코리아, 올팩, 그린우드,
+ *  >  쉬움, 뉴파츠, 엠케이테크, 리바이가 매일주문이 들어오고 나머지는
+ *  >  거의 안들어오는 업체야"      + "하나더 용기창고"
+ *
+ *  업체 파일을 전부 여는 일이라 6분 한도에 닿을 수 있다. 차례를 안 정하면
+ *  거의 주문이 없는 업체를 먼저 훑다가 시간이 끝나고, 정작 날마다 주문이
+ *  들어오는 곳이 옛 단가·옛 재고를 그대로 보여 준다 — 품절인 줄 모르고
+ *  주문했다가 취소하는 일이 거기서 난다.
+ *
+ *  이름은 «들어 있으면» 맞다고 본다 — 파일 이름이 「대리발송-당장드림/탁기선」
+ *  처럼 사람이 붙인 꼬리를 달고 있어 완전일치로는 못 찾는다.
+ *  냅킨/넵킨처럼 표기가 갈리는 것은 둘 다 적는다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var _PT_PRIORITY_VENDORS_ = [
+  "당장드림", "하나팩", "냅킨", "넵킨", "올팩", "그린우드",
+  "쉬움", "뉴파츠", "엠케이테크", "리바이", "용기창고"
+];
+
+/** 이 파일이 «날마다 주문 들어오는» 업체인가 */
+function _pt_isPriorityVendor_(name) {
+  var n = String(name || "").replace(/[ 	]/g, "");
+  if (!n) return false;
+  for (var i = 0; i < _PT_PRIORITY_VENDORS_.length; i++) {
+    if (n.indexOf(_PT_PRIORITY_VENDORS_[i]) !== -1) return true;
+  }
+  return false;
+}
+
+/** 주요 업체를 앞으로 — 원본 배열은 건드리지 않는다 */
+function _pt_priorityFirst_(files) {
+  var 앞 = [], 뒤 = [];
+  for (var i = 0; i < files.length; i++) {
+    if (_pt_isPriorityVendor_(files[i] && files[i].name)) 앞.push(files[i]);
+    else 뒤.push(files[i]);
+  }
+  return 앞.concat(뒤);
+}
+
+/** 단가 새로고침에 쓸 시간 한도 (6분 앞에서 멈춘다) */
+var _PT_REFRESH_BUDGET_MS_ = 4 * 60 * 1000;
+
 function partnerRefreshViewerPrices(opts) {
   opts = opts || {};
   var isSilent = !!opts.silent;
@@ -1891,13 +1937,23 @@ function partnerRefreshViewerPrices(opts) {
     } catch (e) {}
   }
   var hubId = _PT.HUB_ID;
-  var files = _pt_listFiles();
+  /*  ★ 날마다 주문 들어오는 곳부터 ★ 시간이 끝나도 중요한 것은 끝나 있다.  */
+  var files = _pt_priorityFirst_(_pt_listFiles());
   var refreshed = 0,
     failed = 0,
     errors = [];
+  var _t0_ = new Date().getTime();
+  var 남긴것 = [];
+  var 주요완료 = 0;
 
   for (var i = 0; i < files.length; i++) {
     var f = files[i];
+    /*  ★ 시간이 모자라면 «건너뛰었다고 말한다» ★
+        조용히 멈추면 「새로고침 완료」라고 적어 두고도 옛 단가가 남는다.  */
+    if (new Date().getTime() - _t0_ > _PT_REFRESH_BUDGET_MS_) {
+      남긴것.push(f.name);
+      continue;
+    }
     try {
       var ss = SpreadsheetApp.openById(f.id);
       var sheet = null;
@@ -1924,6 +1980,7 @@ function partnerRefreshViewerPrices(opts) {
       _pt_clearSpillArea(sheet, isConsumer);
       _pt_applyRow3Formulas(sheet, hubId, isConsumer, dcMul);
       refreshed++;
+      if (_pt_isPriorityVendor_(f.name)) 주요완료++;
     } catch (e) {
       failed++;
       if (errors.length < 5) errors.push(f.name + ": " + e.message);
@@ -1931,17 +1988,21 @@ function partnerRefreshViewerPrices(opts) {
   }
 
   SpreadsheetApp.flush();
+  var 주요수 = 0;
+  for (var pi = 0; pi < files.length; pi++) {
+    if (_pt_isPriorityVendor_(files[pi] && files[pi].name)) 주요수++;
+  }
   var msg =
     "🔄 단가 새로고침 완료\n\n" +
-    "- 전체: " +
-    files.length +
-    "개\n" +
-    "- 새로고침: " +
-    refreshed +
-    "개\n" +
-    "- 실패: " +
-    failed +
-    "개" +
+    "- ★ 주요 업체: " + 주요완료 + "/" + 주요수 + "개\n" +
+    "- 전체: " + files.length + "개\n" +
+    "- 새로고침: " + refreshed + "개\n" +
+    "- 실패: " + failed + "개" +
+    (남긴것.length > 0
+      ? "\n\n⏱ 시간이 모자라 " + 남긴것.length + "개를 건너뛰었습니다:\n  " +
+        남긴것.slice(0, 8).join(", ") +
+        (남긴것.length > 8 ? " 외 " + (남긴것.length - 8) + "개" : "")
+      : "") +
     (errors.length > 0 ? "\n\n⚠ 오류:\n" + errors.join("\n") : "");
   Logger.log(msg);
   if (ui) ui.alert(msg);
