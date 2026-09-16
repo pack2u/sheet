@@ -32,6 +32,9 @@
 
 var _IOD_TAB_ = "송장소유권_점검";
 var _IOD_DEFAULT_DAYS_ = 14;
+
+/** 마지막 점검 결과 — 밤에 도는 쪽이 읽는다 */
+var _IOD_LAST_ = null;
 var _IOD_TIME_BUDGET_MS_ = 4.5 * 60 * 1000;
 var _IOD_TZ_ = "Asia/Seoul";
 
@@ -591,6 +594,12 @@ function partnerDiagnoseInvoiceOwnership(days) {
   lines.push("상세 " + written + "행은 '" + _IOD_TAB_ + "' 탭을 확인하세요.");
 
   var msg = lines.join("\n");
+  /*  ★ 셈을 남겨 둔다 ★  (2026-09-16)
+      밤에 스스로 도는 쪽(_iod_nightly_)이 「찾았나」를 알아야 한다.
+      돌려주는 것은 사람이 읽는 글이라, 그 글을 다시 뜯어 세면 문구를
+      바꿀 때마다 조용히 틀린다. 숫자는 숫자로 남긴다.  */
+  _IOD_LAST_ = { sure: counts.sure, doubt: counts.doubt,
+                 groups: groups.length, at: new Date().getTime() };
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
   return msg;
@@ -613,3 +622,57 @@ function partnerDiagnoseInvoiceOwnershipForDays() {
   }
   partnerDiagnoseInvoiceOwnership(n);
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  밤마다 스스로 본다 — 「남의 송장이 붙었나」
+ *  2026-09-16
+ *
+ *  > "사방넷 송장대량등록 도 오류가 많은듯.. 다른 주문번호에 송장이 붙어 버리네.."
+ *  > "현재 이래저래 시스템의 오류가 너무 많아 신뢰가 없네.."
+ *
+ *  ★ 코드를 고치는 것만으로는 부족하다 ★
+ *    오늘 「다른 주문번호에 송장이 붙는」 길을 셋 막았다(배포의 고유ID 겹침,
+ *    업체가 복사한 줄, 사방넷 대량등록의 합포장 열쇠). 그런데 그 셋을 막았다고
+ *    넷째가 없다고 말할 수는 없다. 코드마다 그물을 놓는 것은 «아는 구멍»에만
+ *    듣는다.
+ *
+ *    이 점검은 다르다. 까닭을 묻지 않고 «결과»를 본다 — 한 송장이 여러 주문에
+ *    붙어 있는데 합포장이 아니면 무언가 틀린 것이다. 어느 코드가 그랬든 걸린다.
+ *
+ *  ★ 사람이 눌러야만 도는 것은 없는 것과 같다 ★
+ *    이 도구는 메뉴에 있었다. 그런데 「남의 송장이 붙었을까」를 의심해야만
+ *    누른다 — 의심하지 않으면 영영 안 누른다. 그래서 밤마다 돌린다.
+ *
+ *  ★ 찾았을 때만 말한다 ★
+ *    날마다 「이상 없음」이 오면 사람은 곧 안 보게 된다. 🔴 확실이 있을 때만
+ *    알린다. 의심(🟡)은 오탐이 섞이므로 알리지 않고 로그에만 남긴다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _iod_nightly_() {
+  /*  7일만 본다. 14일은 마감 파일을 그만큼 열어 밤일을 밀어낸다.
+      그날 생긴 것은 그날 밤에 잡히므로 7일이면 넉넉하다. */
+  var msg = "";
+  try {
+    msg = partnerDiagnoseInvoiceOwnership(7);
+  } catch (e) {
+    Logger.log("[송장소유권] 점검 실패(무시): " + (e && e.message ? e.message : e));
+    return;
+  }
+
+  var r = _IOD_LAST_ || { sure: 0, doubt: 0, groups: 0 };
+  Logger.log("[송장소유권] 확실 " + r.sure + " · 의심 " + r.doubt + " · 묶음 " + r.groups);
+  if (!r.sure) return;                 // 찾았을 때만 말한다
+
+  try {
+    _chat_sendCard_("🧭 남의 송장이 붙은 것 같습니다",
+      Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"),
+      [
+        { label: "🔴 확실", value: r.sure + "건" },
+        { label: "🟡 의심", value: r.doubt + "건" },
+        { label: "무엇을 보나", value: "한 송장이 여러 주문에 붙었는데 합포장이 아닌 것" },
+        { label: "어디서 보나", value: "협력업체 관리 → 🧭 송장 매칭 점검 → 송장 소유권 점검" }
+      ]);
+  } catch (eC) {}
+}
+

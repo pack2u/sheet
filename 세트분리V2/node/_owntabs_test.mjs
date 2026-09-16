@@ -267,12 +267,19 @@ console.log("\n[합포장 짝짓기] 송장이 없어도 짝은 모은다");
   const src = 읽기(path.join(뿌리, "gasBulk.js"));
   /* 동봉 줄은 전파 전에는 운송장번호가 비어 있다. 짝을 모으는 자리가
      「송장 없으면 continue」 아래로 내려가면 영영 못 짓는다. */
-  const 짝 = src.indexOf("박스[grp4] = { rep: '', kids: [], rk: '' }");
+  /*  2026-09-16: 열쇠에 회차키가 붙었다(박키4). 같은 사람이 같은 물건을
+      다른 날 시키면 그룹 글자가 똑같아 두 날이 한 박스가 됐다.  */
+  const 짝 = src.indexOf("박스[박키4] = { rep: '', kids: [], rk: '' }");
   const 거름 = src.indexOf("if (!uid4 || !inv4) continue;");
   eq("짝 모으기가 있다", 짝 > 0, "true");
   eq("★ 짝을 «송장 거르기보다 먼저» 모은다", 짝 < 거름, "true");
   eq("전파 결과를 화면에 적는다", src.includes("합포장 전파 "), "true");
   eq("못 붙인 동봉을 알린다", src.includes("mergeNoRep"), "true");
+  /*  ★ 회차가 열쇠에 있어야 한다 ★  (2026-09-16)
+      그룹만으로 묶으면 다른 날 주문이 한 박스가 되고, 동봉에 «남의 날»
+      대표 송장이 붙는다. 허브는 이미 회차키를 붙이고 있었다. */
+  eq("★ 회차키를 열쇠에 붙인다", src.includes("var 박키4 = (rk || '(회차없음)') + '/' + grp4;"), "true");
+  eq("★ 그룹만으로 묶던 자리가 없다", src.includes("박스[grp4]"), "false");
 }
 
 console.log(실패 ? `\n실패 ${실패}건` : "\n세 파일이 같은 표를 쓴다");

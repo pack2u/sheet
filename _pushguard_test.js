@@ -178,6 +178,39 @@ console.log("\n[8] ★ 스마트 수집의 기준은 «시작 시각»이다");
   check("★ 지난 기준을 읽기 전에 잡는다", 시작 >= 0 && 시작 < 읽기, true);
 }
 
+
+console.log("\n[9] ★ 밤마다 «결과»를 본다 — 남의 송장이 붙었나");
+{
+  /*  > "다른 주문번호에 송장이 붙어 버리네.. 시스템의 오류가 너무 많아 신뢰가 없네"
+
+      코드마다 그물을 놓는 것은 «아는 구멍»에만 듣는다. 이 점검은 까닭을 묻지
+      않고 결과를 본다 — 한 송장이 여러 주문에 붙었는데 합포장이 아니면
+      무언가 틀린 것이다. 어느 코드가 그랬든 걸린다.  */
+  const iod = fs.readFileSync("_partnerInvoiceOwnerDiag.gs", "utf8");
+  const mirror = fs.readFileSync("_partnerReturnsV2Mirror.gs", "utf8");
+
+  check("밤에 도는 함수가 있다", iod.indexOf("function _iod_nightly_()") >= 0, true);
+  check("★ 밤일에 물려 있다", mirror.indexOf("_iod_nightly_()") >= 0, true);
+  check("★ 곁다리로 감싼다 (실패해도 미러는 끝났다)",
+    /_iod_nightly_\(\);\s*\}\s*catch \(e4\)/.test(mirror), true);
+
+  check("★ 찾았을 때만 말한다", /if \(!r\.sure\) return;/.test(iod), true);
+  check("의심(🟡)만으로는 안 알린다 (오탐이 섞인다)",
+    /if \(!r\.sure\) return;[\s\S]{0,200}_chat_sendCard_/.test(iod), true);
+  check("무엇을 보는지 카드에 적는다",
+    iod.indexOf("한 송장이 여러 주문에 붙었는데 합포장이 아닌 것") >= 0, true);
+  check("어디서 다시 보는지도 적는다", iod.indexOf("송장 소유권 점검") >= 0, true);
+
+  /*  돌려주는 «글»을 다시 뜯어 세면 문구를 바꿀 때마다 조용히 틀린다.
+      숫자는 숫자로 남긴다.  */
+  check("★ 셈을 숫자로 남긴다", iod.indexOf("_IOD_LAST_ = { sure: counts.sure") >= 0, true);
+  check("★ 글을 뜯어 세지 않는다",
+    /_IOD_LAST_[\s\S]{0,400}msg\.match|msg\.indexOf\("🔴/.test(iod), false);
+
+  //  7일만 본다 — 14일은 마감 파일을 그만큼 열어 밤일을 밀어낸다
+  check("밤에는 좁게 본다", /partnerDiagnoseInvoiceOwnership\(7\)/.test(iod), true);
+}
+
 console.log("");
 console.log(fail === 0 ? "다 통과 (" + pass + "건)" : "실패 " + fail + "건 / 통과 " + pass + "건");
 process.exit(fail === 0 ? 0 : 1);
