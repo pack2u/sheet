@@ -66,7 +66,13 @@ console.log("\n[3] ★ 새로고침해도 다시 «안» 불러온다");
   check("★ 되살림을 먼저 본다", i되살림 >= 0, true);
   //  되살린 갈래 «안»에 warm 이 없어야 한다
   const 갈래 = 뒤.slice(0, 뒤.indexOf("} else {"));
-  check("★ 되살린 갈래는 warm 을 안 부른다", 갈래.indexOf("warm(") < 0, true);
+  /*  ★ 2026-09-16 고침 ★  처음엔 「되살렸으면 아무것도 안 부른다」로 했다.
+      그랬더니 새로고침해도 옛 자료가 그대로였다 — 사장님이 바로 보셨다.
+      이제는 «조용히» 부른다: 화면은 곧바로 뜨고, 새 것은 뒤에서 온다.
+        ① 되살린 것을 곧바로 보여 준다 (기다림 0)
+        ② 그 뒤에 조용히 최신을 받아 합친다 (mergeRows 가 겹치면 건너뛴다)  */
+  check("★ 되살린 갈래는 «조용히» 부른다", 갈래.indexOf("warm(false, true)") >= 0, true);
+  check("★ 시끄럽게(회전판) 부르지 않는다", 갈래.indexOf("warm(false);") < 0, true);
   check("★ 못 되살리면 그때만 부른다", 뒤.indexOf("} else {") >= 0 &&
     뒤.slice(뒤.indexOf("} else {")).indexOf("warm(false)") >= 0, true);
   check("★ 몇 건인지 말한다", 갈래.indexOf("INDEX.length") >= 0, true);
@@ -143,6 +149,35 @@ console.log("\n[8] ★ 대시보드 막대도 «같은 창»이다");
   check("★ 오늘은 뺀다 (어제부터)", 몸.indexOf("=== today) continue") >= 0, true);
   check("★ 공휴일도 뺀다", 몸.indexOf("isKrHoliday(all[i])") >= 0, true);
   check("★ 따로 세지 않는다", 몸.indexOf("guard < 60") < 0, true);
+}
+
+console.log("\n[9] ★ «조용히» 는 회전판을 안 띄운다는 뜻");
+{
+  /*  이미 쓸 수 있는 화면 위에 회전판을 얹으면 못 쓰는 화면처럼 보인다.  */
+  const w = 코드만(grab(html, "warm"));
+  check("★ warm 이 quiet 를 받는다", html.indexOf("function warm(refresh, quiet) {") >= 0, true);
+  check("★ 조용하면 「불러오는 중」을 안 띄운다", w.indexOf("if (!quiet) {") >= 0, true);
+  check("★ 끝나면 「방금 확인」이라 적는다", w.indexOf("메모리 · 방금 확인") >= 0, true);
+
+  const d = 코드만(grab(html, "warmDays"));
+  check("★ warmDays 도 quiet 를 받는다",
+    html.indexOf("function warmDays(dates, refresh, quiet) {") >= 0, true);
+  check("★ 날짜마다 뜨는 회전판도 조용히", d.indexOf("if (!quiet) {") >= 0, true);
+
+  /*  중첩 괄호 때문에 정규식으로 세면 놓친다 — 있는 그대로 센다.
+      warm 안에서 warmDays 를 부르는 세 자리 + warmDays 정의 = 네 곳.  */
+  const 넘김 = (html.split("refresh, quiet)").length - 1) + (html.split("true, quiet)").length - 1);
+  check("★ 모든 자리가 quiet 를 넘긴다  (" + 넘김 + ")", 넘김 >= 4, true);
+}
+
+console.log("\n[10] ★ 합칠 때 겹치면 건너뛴다 (두 벌이 안 된다)");
+{
+  /*  뒤에서 받은 것을 그냥 밀어 넣으면 같은 줄이 두 벌이 된다.
+      날짜·송장·전화·이름·품목으로 같은 줄인지 본다.  */
+  const m = 코드만(grab(html, "mergeRows"));
+  check("★ 이미 있는 줄은 건너뛴다", m.indexOf("if (seen[k]) continue;") >= 0, true);
+  check("★ 합친 뒤 저장한다", m.indexOf("saveLocalIndex()") >= 0, true);
+  check("★ 대시보드도 다시 그린다", m.indexOf("renderOrderDashboard()") >= 0, true);
 }
 
 

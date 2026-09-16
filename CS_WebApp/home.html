@@ -3404,6 +3404,11 @@
             새 자료가 필요하면 사람이 새로고침 단추를 누른다.  */
         if (loadLocalIndex()) {
           setIndexStatus('메모리 ' + INDEX.length.toLocaleString() + '건');
+          /*  ★ 보여 준 «뒤에» 조용히 최신을 받는다 ★
+              되살린 것만 쓰면 새로고침해도 옛 자료가 그대로다.
+              여기서 받아 합치면 기다림 없이 최신이 된다.
+              한 박자 늦춰 부른다 — 화면이 먼저 그려져야 «즉시»로 느껴진다.  */
+          setTimeout(function () { warm(false, true); }, 300);
         } else {
           warm(false);
         }
@@ -7025,21 +7030,38 @@
       renderOrderDashboard();
     }
 
-    function warm(refresh) {
+    /* ══════════════════════════════════════════════════════════════
+       ★ 있는 것을 «먼저 보이고», 새 것은 «뒤에서» 받는다 ★  (2026-09-16)
+
+       > "앱 새로고침시에는 데이타 메모리는 유지할수 있나?"
+       > "앱을 새로고침해도 데이타가 이전게 그대로있네"
+
+       두 말이 서로 다른 것 같지만 하나다 — «기다리기 싫다» 와
+       «옛것 보기 싫다». 둘 다 되게 하려면 순서를 바꾸면 된다.
+         ① 되살린 것을 곧바로 보여 준다 (기다림 0)
+         ② 그 뒤에 조용히 최신을 받아 «합친다» (mergeRows 는 겹치면 건너뛴다)
+
+       ★ 조용히 ★ 라는 것은 «불러오는 중» 을 안 띄운다는 뜻이다.
+         이미 화면에 자료가 떠 있는데 그 위에 회전판을 얹으면,
+         쓸 수 있는 화면을 못 쓰는 화면처럼 보이게 만든다.
+       ══════════════════════════════════════════════════════════════ */
+    function warm(refresh, quiet) {
       if (warming) return;
       warming = true;
       if (refresh) {
         INDEX = [];
         try { sessionStorage.removeItem(IDX_KEY); } catch (e) {}
       }
-      setStatus('<span class="os-spin"></span>서버 캐시에서 불러오는 중… (불러온 뒤엔 즉시 검색)');
+      if (!quiet) {
+        setStatus('<span class="os-spin"></span>서버 캐시에서 불러오는 중… (불러온 뒤엔 즉시 검색)');
+      }
       renderOrderDashboard();
       if (refresh) {
         /*  ★ 통합조회 갈래를 지웠다 ★  (2026-09-16)
             이제 원장(파일 1개) 아니면 일일마감(날짜별)이다.
             원장이 읽히면 아래 csGetSearchIndex 한 번에 다 오고,
             안 읽히면 missingDays 를 보고 날짜별 예열로 내려간다.  */
-        warmDays(dateList(DAYS), true);
+        warmDays(dateList(DAYS), true, quiet);
         return;
       }
       google.script.run
@@ -7048,20 +7070,20 @@
           var missing = (res && res.missingDays) ? res.missingDays : dateList(DAYS);
           if (!missing.length) {
             warming = false;
-            setIndexStatus(refresh ? '시트 재조회' : '서버캐시');   // 통합조회를 지웠다 (2026-09-16)
+            setIndexStatus(quiet ? '메모리 · 방금 확인' : (refresh ? '시트 재조회' : '서버캐시'));
             if (document.getElementById('q').value.trim()) doSearch(true);
             return;
           }
-          warmDays(missing, refresh);
+          warmDays(missing, refresh, quiet);
         })
         .withFailureHandler(function () {
-          warmDays(dateList(DAYS), refresh);
+          warmDays(dateList(DAYS), refresh, quiet);
         })
         .csGetSearchIndex({ days: DAYS, refresh: !!refresh, cacheOnly: !refresh });
     }
 
 
-    function warmDays(dates, refresh) {
+    function warmDays(dates, refresh, quiet) {
       var i = 0;
       function next() {
         if (i >= dates.length) {
@@ -7069,7 +7091,7 @@
             .withSuccessHandler(function (res) {
               warming = false;
               if (res && res.ok && res.rows) mergeRows(res.rows);
-              setIndexStatus('메모리');
+              setIndexStatus(quiet ? '메모리 · 방금 확인' : '메모리');
               if (document.getElementById('q').value.trim()) doSearch(true);
             })
             .withFailureHandler(function () {
@@ -7080,7 +7102,11 @@
           return;
         }
         var day = dates[i++];
-        setStatus('<span class="os-spin"></span>' + day + ' 불러오는 중… (' + i + '/' + dates.length + ') · 이미 ' + INDEX.length.toLocaleString() + '건 검색 가능');
+        /*  조용한 받기에서는 회전판을 안 띄운다 — 이미 쓸 수 있는 화면 위에
+            회전판을 얹으면 못 쓰는 화면처럼 보인다 (2026-09-16)  */
+        if (!quiet) {
+          setStatus('<span class="os-spin"></span>' + day + ' 불러오는 중… (' + i + '/' + dates.length + ') · 이미 ' + INDEX.length.toLocaleString() + '건 검색 가능');
+        }
         google.script.run
           .withSuccessHandler(function (res) {
             if (res && res.data && res.data.length) mergeRows(res.data);
