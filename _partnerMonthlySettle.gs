@@ -356,7 +356,52 @@ function partnerForceClearArchiveJobs_() {
 }
 
 /** [트리거용] 무음 실행 — ScriptLock을 배치 전체 동안 붙잡지 않음 */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 하루에 한 번만 ★  (2026-09-16)
+ *
+ *  > "중복이네?"
+ *  2026-09-16 에 대리판매 마감 완료 카드가 22:20·22:30 두 번 왔다.
+ *  첫 번은 이동 110건, 두 번째는 0건이었다. 두 번째가 0건이라 이번엔
+ *  무해했지만, 그 사이에 송장이 더 들어왔다면 «두 번 이동»했을 수도 있다.
+ *
+ *  막는 장치가 둘 있었는데 둘 다 샜다 —
+ *    _PMS_BATCH_RUNNING_    6분 창. 22:20 에 끝나며 지워져 22:30 은 통과
+ *    _pms_clearResumeState_ 재개 트리거는 지운다. 이 길은 아니었다
+ *  즉 22:00 트리거가 실제로 두 번 발화했거나 트리거가 둘이었다.
+ *  까닭을 못 짚어도 «두 번 도는 것»은 막을 수 있다.
+ *
+ *  ★ 손으로 누르는 길은 안 막는다 ★  사람이 일부러 누른 것이다.
+ *    (partnerArchiveToMonthly 메뉴는 이 함수를 안 거친다)
+ * ══════════════════════════════════════════════════════════════
+ */
+var _PMS_DONE_DATE_KEY_ = "_PMS_DONE_DATE";
+
+/** 오늘 이미 마감을 끝냈나 (yyyy-MM-dd) */
+function _pms_doneToday_() {
+  try {
+    var d = PropertiesService.getScriptProperties().getProperty(_PMS_DONE_DATE_KEY_);
+    if (!d) return false;
+    return d === Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+  } catch (e) { return false; }   // 못 읽으면 «모른다» — 막지 않는다
+}
+
+/** 오늘 끝냈다고 적어 둔다 */
+function _pms_markDoneToday_() {
+  try {
+    PropertiesService.getScriptProperties().setProperty(
+      _PMS_DONE_DATE_KEY_,
+      Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd"));
+  } catch (e) {}
+}
+
 function partnerArchiveToMonthlySilent_() {
+  /*  ★ 오늘 이미 끝냈으면 그냥 돌아간다 ★  조용히 가지 않는다 —
+      로그에 남긴다. 「왜 안 돌았지」를 물을 수 있어야 한다.  */
+  if (_pms_doneToday_()) {
+    Logger.log("[PMS_SILENT] 오늘 이미 마감 완료 → 건너뜀 (중복 발화)");
+    return;
+  }
   var props = PropertiesService.getScriptProperties();
   var running = props.getProperty("_PMS_BATCH_RUNNING_");
   if (running && (Date.now() - Number(running)) < 6 * 60 * 1000) {
@@ -555,6 +600,7 @@ function _pms_runBatch_(silent) {
       + (state.failed > 0 ? "\n⚠ 파일 오류 " + state.failed + "건:\n" + state.errMsgs.slice(0,5).join("\n") : "");
     Logger.log("[PMS] " + msg.replace(/\n/g," | "));
     _pms_saveFinalSummary_(msg);
+    _pms_markDoneToday_();   // ★ 오늘 끝냈다 — 같은 날 또 부르면 건너뛴다
     _pms_clearResumeState_();
     if (silent) {
       try {

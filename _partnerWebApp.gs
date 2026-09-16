@@ -2207,11 +2207,50 @@ function setupAllScheduledTriggers() {
   Logger.log("[TRIGGER_SETUP] " + installed + "개 트리거 설치 완료" +
     (errors.length > 0 ? " (" + errors.length + "개 실패)" : ""));
 
+  /*  ══════════════════════════════════════════════════════════════
+      ★ 같은 함수가 둘 이상 걸려 있나 ★  (2026-09-16)
+
+      > "중복이네?"
+      대리판매 마감 완료 카드가 22:20 · 22:30 두 번 왔다. 코드만 봐서는
+      «트리거가 둘이었는지» «한 트리거가 두 번 발화했는지» 못 가린다.
+      설치 직후에 세어서 적어 두면 다음에 같은 일이 나도 바로 갈린다.
+
+      설치는 「전부 지우고 다시 깐다」이므로 —
+        여기서 둘이면    → 설치 자체가 샌 것
+        여기서 하나인데  → 구글 쪽 중복 발화
+      ══════════════════════════════════════════════════════════════ */
+  var 겹침 = [];
+  try {
+    var 지금 = ScriptApp.getProjectTriggers();
+    var 셈 = {};
+    for (var ci = 0; ci < 지금.length; ci++) {
+      if (지금[ci].getEventType() !== ScriptApp.EventType.CLOCK) continue;
+      var f = 지금[ci].getHandlerFunction();
+      셈[f] = (셈[f] || 0) + 1;
+    }
+    for (var f2 in 셈) {
+      if (!Object.prototype.hasOwnProperty.call(셈, f2)) continue;
+      /*  표에 같은 함수를 여러 시각에 걸어 둔 것은 «정상»이다
+          (발주 수집 3회전 등). 표가 기대하는 수보다 많을 때만 겹침이다.  */
+      var 기대 = 0;
+      for (var k2 = 0; k2 < _ALL_SCHEDULED_TRIGGERS_.length; k2++) {
+        if (_ALL_SCHEDULED_TRIGGERS_[k2].fn === f2) 기대++;
+      }
+      if (셈[f2] > Math.max(1, 기대)) 겹침.push(f2 + " " + 셈[f2] + "개(표 " + 기대 + ")");
+    }
+  } catch (eDup) {
+    겹침.push("세지 못했습니다 — " + (eDup && eDup.message ? eDup.message : eDup));
+  }
+
   // 4) 결과 표시
   if (ui) {
     var msg = "✅ 통합 자동 트리거 설치 완료\n\n" +
       "- 기존 트리거 제거: " + removed + "개\n" +
       "- 신규 설치: " + installed + "/" + _ALL_SCHEDULED_TRIGGERS_.length + "개\n" +
+      (겹침.length > 0
+        ? "\n⚠ 같은 함수가 여러 개 걸렸습니다 — 두 번 돌 수 있습니다:\n  " +
+          겹침.join("\n  ") + "\n"
+        : "- 같은 함수 겹침: 없음\n") +
       (errors.length > 0 ? "\n⚠ 실패:\n" + errors.join("\n") : "") +
       "\n\n※ Google 트리거 특성상 실제 실행은 ±5분 오차 가능";
     ui.alert(msg);
@@ -2223,6 +2262,7 @@ function setupAllScheduledTriggers() {
       [
         { label: "제거", value: removed + "개" },
         { label: "설치", value: installed + "/" + _ALL_SCHEDULED_TRIGGERS_.length + "개" },
+        { label: "같은 함수 겹침", value: 겹침.length ? 겹침.join(" · ") : "없음" },
       ]);
   } catch (_) {}
 }
