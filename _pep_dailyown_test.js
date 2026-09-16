@@ -220,9 +220,14 @@ console.log("[진단 도구] 부를 데가 없으면 없는 것과 같다");
       직원이 어느 쪽을 눌러야 하는지 매번 고민한다. */
   check("★ 미매칭 진단이 메뉴에 «한 번만» 있다",
     (menu.match(/일일마감 미매칭 원인 진단/g) || []).length, 1);
-  check("★ 「🧭 송장 매칭 점검·정비」 아래에 있다",
-    menu.slice(menu.indexOf("송장 매칭 점검·정비"), menu.indexOf("송장 매칭 점검·정비") + 900)
-      .includes("partnerDiagnoseUnifiedUnmatched"), true);
+  /*  서랍 이름을 통째로 적지 않는다 — 2026-09-16 에 「점검·정비」가
+      「점검 (읽기만)」으로 갈리면서 이 검사가 깨졌다. 지켜야 할 것은
+      이름이 아니라 «읽기만 하는 서랍에 들어 있는가»다. 이건 읽기 도구다. */
+  const 읽기서랍 = menu.indexOf("🧭 송장 매칭 점검");
+  check("★ 「🧭 송장 매칭 점검」 서랍이 있다", 읽기서랍 >= 0, true);
+  const 서랍끝 = menu.indexOf("    )", 읽기서랍);
+  check("★ 그 서랍 «안»에 있다",
+    menu.slice(읽기서랍, 서랍끝).includes("partnerDiagnoseUnifiedUnmatched"), true);
   check("★ 그 함수가 실제로 있다",
     diag.includes("function partnerDiagnoseUnifiedUnmatched() {"), true);
   check("★ 읽기만 한다 (결과 탭만 만든다)",

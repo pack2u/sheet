@@ -107,8 +107,12 @@ function registerPartnerMenu_() {
     .addSeparator()
 
     // ─────────── 업체를 향한 것 ───────────
+    /*  ★ 2026-09-16: 「업체 시트」와 「통합 허브 단가 관리」를 한 서랍에 ★
+        둘 다 «업체에게 배포되는 시트»를 만들고 갱신하는 일이다. 시트를 새로
+        내주고 나면 곧바로 단가를 밀어 넣게 되는데, 서랍이 둘이라 매번 메뉴를
+        닫았다 열었다 했다. 항목 이름은 그대로 두고 칸막이만 없앤다. */
     .addSubMenu(
-      ui.createMenu("🏢 업체 시트")
+      ui.createMenu("🏢 업체 시트 · 허브 단가")
         .addItem("➕ 시트 생성 (표준)", "partnerCreateSheet")
         .addItem("➕ 시트 생성 (소비자용)", "partnerCreateConsumerSheet")
         .addItem("➕ 시트 생성 (단가조회 전용)", "partnerCreateViewerOnlySheet")
@@ -119,15 +123,13 @@ function registerPartnerMenu_() {
         // 명세서 **운영**(①②③·Gmail 수집·사전점검)은 발주시스템 메뉴에 있다.
         // 여기에는 전체 업체를 한 번에 세팅하는 것만 둔다 — 같은 항목을 두 메뉴에
         // 걸어 두면 직원이 어느 쪽을 눌러야 하는지 매번 고민한다.
-        .addItem("📋 명세서 탭 일괄 생성 (전체 업체)", "partnerCreateStatementTabsAll")
         .addSeparator()
         .addItem("🔄 검색입력 탭만 갱신", "partnerRefreshSearchInputOnly")
         .addItem("💰 단가 새로고침 (빠른)", "partnerRefreshViewerPrices")
         .addItem("✂️ 발주탭 행 트림 (250행)", "partnerTrimOrderTabs")
         .addItem("🧹 발주탭 자동 정리 (빈행+복원)", "partnerCleanupOrderTabsOwner")
-    )
-    .addSubMenu(
-      ui.createMenu("💰 통합 허브 단가 관리")
+        .addSeparator()
+        // ── 여기서부터 통합 허브 단가 ──
         .addItem("1️⃣ [허브] 데이터 허브 구축/재구성", "createStaticHub")
         .addItem("2️⃣ ⚡ [동기화] 상품정보 → 허브 단가 업데이트", "syncGroupPrices")
         .addItem("3️⃣ [통합] 상태/재고/단가 업데이트 + 배포", "syncStatusOnly")
@@ -157,8 +159,13 @@ function registerPartnerMenu_() {
     .addSeparator()
 
     // ─────────── 마감을 향한 것 ───────────
+    /*  ★ 2026-09-16: 「송장 매칭 점검·정비」가 18개였다 ★
+        한 서랍에 열여덟이면 눈으로 못 훑는다. «읽는 것»과 «쓰는 것»으로 갈랐다.
+          · 고치는 다섯은 아래 「송장·택배사 설정·정비」로 — 거기도 쓰는 곳이다
+          · 나머지 열셋은 「송장 매칭 점검」에 남는다 — 전부 읽기만 한다
+        섞여 있으면 눈으로 보려다 데이터를 고치게 된다. */
     .addSubMenu(
-      ui.createMenu("🚚 송장·택배사 설정")
+      ui.createMenu("🚚 송장·택배사 설정·정비")
         .addItem("🚚 업체 택배사 표 생성/점검", "partnerEnsureVendorCarrierTable")
         .addItem("📦 일일마감 택배사 채움률 점검", "partnerDiagnoseArchiveCarrier")
         .addItem("🏭 출고지 마스터 점검 (평택=롯데 / 대리발송=업체)", "partnerDiagnoseShipOrigin")
@@ -169,9 +176,16 @@ function registerPartnerMenu_() {
         .addItem("🚚 롯데 송장탭 열 위치 확인", "partnerInspectLotteInvoiceColumns")
         .addSeparator()
         .addItem("📒 송장원장 재수집 (커서 초기화)", "partnerResetInvoiceLedgerCursors")
+        .addSeparator()
+        // ── 송장 매칭을 «고친다» (2026-09-16 여기로 옮김) ──
+        .addItem("1️⃣ 일일마감 송장 재매칭 미리보기 (2주)", "partnerPreviewArchiveInvoiceRefix")
+        .addItem("2️⃣ 일일마감 송장 재매칭 반영 (2주)", "partnerApplyArchiveInvoiceRefix")
+        .addItem("3️⃣ 지정일 송장 재매칭", "partnerFillUnmatchedArchiveForDate")
+        .addItem("🧹 일일마감 수량초과 송장 정리", "partnerPurgeArchiveQtyOverflow")
+        .addItem("⏪ 미매칭 소급 보강 (14일)", "partnerBackfillRecentArchives")
     )
     .addSubMenu(
-      ui.createMenu("🧭 송장 매칭 점검·정비")
+      ui.createMenu("🧭 송장 매칭 점검 (읽기만)")
         // ── 왜 안 붙었나 (읽기 전용) ──
         .addItem("🪪 고유ID 인식 점검", "partnerDiagnoseUidRecognition")
         .addItem("🔎 일일마감 미매칭 원인 진단", "partnerDiagnoseUnifiedUnmatched")
@@ -183,15 +197,8 @@ function registerPartnerMenu_() {
         .addItem("🧭 송장 소유권 점검 (남의 송장 붙었는지)", "partnerDiagnoseInvoiceOwnership")
         .addItem("   └ 📅 기간 지정 점검", "partnerDiagnoseInvoiceOwnershipForDays")
         .addSeparator()
-        // ── 고치기 (쓴다) ──
-        .addItem("1️⃣ 일일마감 송장 재매칭 미리보기 (2주)", "partnerPreviewArchiveInvoiceRefix")
-        .addItem("2️⃣ 일일마감 송장 재매칭 반영 (2주)", "partnerApplyArchiveInvoiceRefix")
-        .addItem("3️⃣ 지정일 송장 재매칭", "partnerFillUnmatchedArchiveForDate")
-        .addItem("🧹 일일마감 수량초과 송장 정리", "partnerPurgeArchiveQtyOverflow")
-        .addSeparator()
         // 2026-09-02: 발주시스템 메뉴에 있던 감사·보강을 옮겼다.
         .addItem("📊 송장 매칭 감사", "partnerAuditInvoiceMatching")
-        .addItem("⏪ 미매칭 소급 보강 (14일)", "partnerBackfillRecentArchives")
         .addItem("🔍 미매칭 성격 분석", "partnerAnalyzeUnmatched")
         .addItem("   └ 🆔 고유ID 미매칭 판정", "partnerDiagnoseUidUnmatched")
         .addItem("   └ ⏱ 송장 지연 측정 (회수창 산정)", "partnerMeasureInvoiceLag")
@@ -240,8 +247,28 @@ function registerPartnerMenu_() {
 
     // ─────────── 마감 · 월 단위 ───────────
     // 2026-09-02: 발주시스템에 있던 것을 옮겼다. 매일 하는 일이 아니다.
+    /*  ★ 2026-09-16: 「마감탭 정리」와 「명세서 정리」를 한 서랍에 ★
+        둘 다 달이 끝나고 하는 일이고, 순서도 마감 → 명세서 대사로 이어진다.
+        업체 시트에 있던 「명세서 탭 일괄 생성」도 이리로 옮겼다 — 이름만
+        시트지 하는 일은 명세서다.
+
+        「명세서 정리」는 **받은** 명세를 대사하고,
+        「거래명세표 발행」은 우리가 **보낼** 명세를 만든다. 방향이 반대라
+        이 둘은 끝까지 갈라 둔다. */
     .addSubMenu(
-      ui.createMenu("📋 명세서 정리")
+      ui.createMenu("📋 마감 · 명세서 정리")
+        .addItem("📦 대리판매 발주 마감이동", "partnerArchiveToMonthlySettle")
+        .addItem("🏭 대리공급 발주 마감이동", "partnerArchiveExclusiveForm")
+        .addSeparator()
+        .addItem("📋 일일마감 재처리 (날짜 지정)", "partnerUnifiedDailyArchiveForDate")
+        .addItem("🗂️ 일일마감 파일 폴더 정리 (일회성)", "partnerMoveDailyCloseFilesToSubFolder")
+        .addItem("📒 송장원장 갱신", "partnerRefreshInvoiceLedger")
+        .addSeparator()
+        .addItem("🔄 취소/반품 수식 갱신", "partnerRefreshCancelReturnFormulas")
+        .addItem("🔧 월별 마감 탭 레이아웃 보정", "partnerRepairMonthlySettleTabs")
+        .addItem("🔧 마감 정산금액 보정 (단가×수량)", "partnerRepairArchiveLineTotals")
+        .addSeparator()
+        // ── 여기서부터 명세서 (받은 명세를 대사한다) ──
         .addItem("① 명세서 탭 생성 (현재 파일)", "partnerCreateStatementTabs")
         .addItem("② 원본 → 파싱", "partnerParseStatementFromRaw")
         .addItem("③ 비교·정리 실행", "partnerRunStatementReconcile")
@@ -249,9 +276,8 @@ function registerPartnerMenu_() {
         .addItem("📧 Gmail 첨부 수집 (현재 파일)", "partnerFetchStatementFromGmail")
         .addItem("🧪 명세서 사전점검", "partnerDiagnoseStatementReconcile")
         .addItem("🧪 Gmail 미처리 점검", "partnerDiagnoseStatementGmail")
+        .addItem("📋 명세서 탭 일괄 생성 (전체 업체)", "partnerCreateStatementTabsAll")
     )
-    // 「명세서 정리」는 **받은** 명세를 대사하고,
-    // 「거래명세표 발행」은 우리가 **보낼** 명세를 만든다. 방향이 반대다.
     .addSubMenu(
       ui.createMenu("🧾 거래명세표 발행")
         .addItem("🗂️ 마감탭에서 골라 발행", "partnerOpenTaxStatementPicker")
@@ -269,19 +295,6 @@ function registerPartnerMenu_() {
         .addItem("   └ ② 🧪 이카운트 거래처 조회 진단", "partnerProbeEcountCustomers")
         .addItem("   └ ③ 🏢 이카운트에서 사업자정보 채우기", "partnerFillVendorInfoFromEcount")
         .addItem("♻️ 일괄 발행 진행기록 초기화", "partnerResetTaxStatementProgress")
-    )
-    .addSubMenu(
-      ui.createMenu("📋 마감탭 정리")
-        .addItem("📦 대리판매 발주 마감이동", "partnerArchiveToMonthlySettle")
-        .addItem("🏭 대리공급 발주 마감이동", "partnerArchiveExclusiveForm")
-        .addSeparator()
-        .addItem("📋 일일마감 재처리 (날짜 지정)", "partnerUnifiedDailyArchiveForDate")
-        .addItem("🗂️ 일일마감 파일 폴더 정리 (일회성)", "partnerMoveDailyCloseFilesToSubFolder")
-        .addItem("📒 송장원장 갱신", "partnerRefreshInvoiceLedger")
-        .addSeparator()
-        .addItem("🔄 취소/반품 수식 갱신", "partnerRefreshCancelReturnFormulas")
-        .addItem("🔧 월별 마감 탭 레이아웃 보정", "partnerRepairMonthlySettleTabs")
-        .addItem("🔧 마감 정산금액 보정 (단가×수량)", "partnerRepairArchiveLineTotals")
     )
     .addSeparator()
 
@@ -353,8 +366,11 @@ function registerPartnerMenu_() {
         .addItem("🔍 DB 품목 검색", "searchProductFromDbOwner")
         .addItem("📊 단가 이력 조회", "viewPriceHistoryOwner")
     )
+    /*  ★ 2026-09-16: 「자동화 설정」과 「권한 / 잠금 해제」를 한 서랍에 ★
+        둘 다 «막혔을 때 여는» 곳이다. 여섯 개·다섯 개짜리 서랍을 따로 두면
+        정작 급할 때 어느 쪽이었는지 헷갈린다. */
     .addSubMenu(
-      ui.createMenu("⚙️ 자동화 설정")
+      ui.createMenu("⚙️ 자동화 · 권한")
         .addItem("⏰ 통합 자동 트리거 설치 (전체)", "setupAllScheduledTriggers")
         .addItem("⏸ 통합 자동 트리거 제거 (전체)", "removeAllScheduledTriggers")
         .addItem("📋 자동 트리거 상태 확인", "showAllScheduledTriggerStatus")
@@ -362,9 +378,8 @@ function registerPartnerMenu_() {
         .addSeparator()
         .addItem("✅ 허브 상태동기화 트리거 설치 (출고가능/품절)", "partnerSetupShipApprovalTrigger")
         .addItem("⏸ 허브 상태동기화 트리거 제거", "partnerRemoveShipApprovalTrigger")
-    )
-    .addSubMenu(
-      ui.createMenu("🔑 권한 / 잠금 해제")
+        .addSeparator()
+        // ── 여기서부터 권한 / 잠금 해제 ──
         .addItem("🔑 스크립트 권한 승인 (직원 최초 1회)", "partnerAuthorizeForStaff")
         .addSeparator()
         .addItem("🔓 동기화 락 강제 해제", "adminForceReleaseSyncLock_")
