@@ -674,7 +674,9 @@ function ssm_captureManual(회차키) {
 
   var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
   var now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
-  var add = [], updated = 0, 바뀐코드못품 = [];
+  //  addAt : 이번 실행에서 «새로 담기로 한» 줄의 자리 (수동조치 탭에는 아직 없다)
+  //  명시한키 : 사람이 조치 칸에 직접 적은 열쇠 (짐작이 이것을 못 덮게 한다)
+  var add = [], addAt = {}, 명시한키 = {}, updated = 0, 바뀐코드못품 = [];
   for (var i = 0; i < v.length; i++) {
     var 적은값 = ssText(v[i][idx['조치']]);
     var 사유 = ssText(v[i][idx['보류사유']]);
@@ -740,6 +742,30 @@ function ssm_captureManual(회차키) {
     }
     var k = today + '|' + uid + '|' + 원본;
 
+    /*  ★ 같은 열쇠가 이 실행 안에서 두 번 나온다 ★  (2026-09-17)
+        세트는 보류 탭에 여러 줄로 쪼개져 놓인다. 쪼개진 줄들은 «원본코드가
+        같으므로» (고유ID + 원본코드) 열쇠가 겹친다 — 흔한 일이다.
+
+        예전에는 두 번째 줄에서 아직 «시트에 없는» 줄 번호를 읽으러 가
+        「Cannot read properties of undefined (reading '3')」로
+        세트분리가 통째로 멈췄다. 사장님이 실제로 겪으셨다.
+
+        그리고 겹친 두 줄은 뜻이 다를 수 있다 —
+          · 한 줄은 사람이 조치 칸에 «적은» 것
+          · 다른 한 줄은 상세를 지워 «해소로 짐작한» 것
+        사람이 적은 것이 언제나 이긴다. 짐작이 사람 손을 덮으면 안 된다.  */
+    var 명시 = !!적은값;
+    if (명시한키[k] && !명시) continue;
+    if (명시) 명시한키[k] = true;
+
+    if (addAt[k] !== undefined) {
+      //  아직 시트에 안 쓴 줄이다 — 시트를 읽지 말고 그 줄을 고쳐 쓴다
+      var a0 = add[addAt[k]];
+      a0[3] = 조치; a0[4] = 업체; a0[5] = 메모;
+      a0[6] = 회차키 || ''; a0[7] = now; a0[9] = 새코드; a0[10] = 새이름;
+      continue;
+    }
+
     if (at[k] !== undefined) {
       var b0 = at[k];
       var 옛조치 = ssText(body[b0][3]);
@@ -754,7 +780,7 @@ function ssm_captureManual(회차키) {
       updated++;
       continue;
     }
-    at[k] = body.length + add.length;
+    addAt[k] = add.length;
     add.push([today, uid, 원본, 조치, 업체, 메모, 회차키 || '', now, '', 새코드, 새이름]);
   }
   if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, SS_MANUAL_HEADER.length).setValues(add);
