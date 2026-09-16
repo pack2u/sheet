@@ -21,7 +21,7 @@ var _CS_DAILY_PREFIX_ = "일일마감_";
  * 조회 일수. 원장은 최근 회차만 들고 있고, 일일마감은 날짜별 파일이다.
  * 늘리면 파일을 그만큼 더 연다 — 예열이 느려진다.
  */
-var _CS_DAILY_DAYS_DEFAULT_ = 10;
+var _CS_DAILY_DAYS_DEFAULT_ = 30;   // 2026-09-16: 한 달 (버튼 7·14·30)
 var _CS_DA_CACHE_TTL_ = 21600; // 6시간
 var _CS_DA_CACHE_VER_ = "v15";
 var _CS_SEARCH_LIMIT_ = 80;
@@ -1867,10 +1867,21 @@ function _cs_dateList_(days) {
   return out;
 }
 
+/**
+ * 물어본 일수를 «허용된 값»으로 자른다.
+ *
+ * ★ 30일을 더했다 ★  (2026-09-16)
+ *   > "cs에서는 지금 한달치를 볼수 있게 해달라고 하는데..."
+ *   > "기본 30일로 해줘"
+ *
+ *   30일은 일일마감 파일 30개를 연다. 첫 예열이 느리지만 지난 날짜는
+ *   안 바뀌어서 캐시(6시간)가 잘 먹는다 — 두 번째부터는 빠르다.
+ */
 function _cs_clampDays_(days) {
   var n = Number(days);
   if (n === 7) return 7;
-  return 14;
+  if (n === 14) return 14;
+  return 30;
 }
 
 function _cs_daCacheKey_(dateStr) {

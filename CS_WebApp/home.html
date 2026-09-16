@@ -2667,7 +2667,8 @@
             <button class="go" onclick="doSearch(true)">검색</button>
           </div>
           <div class="os-toolbar">
-            <button class="os-chip on" id="d14" onclick="setDays(14)">2주</button>
+            <button class="os-chip on" id="d30" onclick="setDays(30)">1달</button>
+            <button class="os-chip" id="d14" onclick="setDays(14)">2주</button>
             <button class="os-chip" id="d7" onclick="setDays(7)">1주</button>
             <button class="os-chip ghost" onclick="warm(true)">↻</button>
           </div>
@@ -3290,13 +3291,13 @@
 
     // 허브 _PUV_DAYS_ · 서버 _CS_DAILY_DAYS_DEFAULT_ 와 같은 값이어야 한다.
     // 크면 대시보드에 데이터 없는 날짜가 0건으로 찍혀 고장난 것처럼 보인다.
-    var DAYS = 10;
+    var DAYS = 30;   // 2026-09-16: 기본 한 달
     var timer = null;
     var lastQ = "";
     var warming = false;
     var INDEX = [];
-    var IDX_KEY = 'pack2u_cs_idx_v5';
-    var IDX_TTL = 2 * 60 * 60 * 1000;
+    var IDX_KEY = 'pack2u_cs_idx_v6';   // 30일로 바뀌어 v6
+    var IDX_TTL = 6 * 60 * 60 * 1000;   // 6시간 — 서버 캐시와 같게
 
     var workspaceReady = false;
 
@@ -3306,9 +3307,16 @@
       initWsSplitter();
       if (!workspaceReady) {
         workspaceReady = true;
+        /*  ★ 되살렸으면 «다시 안 부른다» ★  (2026-09-16)
+            > "앱이 업데이트 될때 새로고침을 하는데. 그때 데이타도 다시
+            >  불러오는부분을 막아줘.. 필요시 데이타 새로고침버튼을 누르면 되니까"
+
+            sessionStorage 는 새로고침을 견딘다(탭을 닫을 때만 비워진다).
+            그런데 되살려 놓고 곧바로 warm 을 또 불러서, 30일이면 파일
+            서른 개를 다시 읽었다. 되살렸으면 그것으로 끝낸다 —
+            새 자료가 필요하면 사람이 새로고침 단추를 누른다.  */
         if (loadLocalIndex()) {
-          setIndexStatus('메모리');
-          warm(false);
+          setIndexStatus('메모리 ' + INDEX.length.toLocaleString() + '건');
         } else {
           warm(false);
         }
@@ -6354,6 +6362,7 @@
 
     function setDays(n) {
       DAYS = n;
+      document.getElementById('d30').classList.toggle('on', n === 30);
       document.getElementById('d14').classList.toggle('on', n === 14);
       document.getElementById('d7').classList.toggle('on', n === 7);
       if (INDEX.length) {
@@ -6452,10 +6461,19 @@
       } catch (e) { return false; }
     }
 
+    /*  ★ 저장이 실패하면 조용히 넘기지 않는다 ★  (2026-09-16)
+        30일치는 sessionStorage 한도(대개 5MB)에 닿을 수 있다. 조용히
+        실패하면 「메모리」라고 적어 두고도 새로고침마다 서른 개를 다시
+        읽게 된다 — 사람은 왜 느린지 모른다.  */
+    var IDX_SAVE_FAIL = false;
     function saveLocalIndex() {
       try {
         sessionStorage.setItem(IDX_KEY, JSON.stringify({ at: Date.now(), rows: INDEX }));
-      } catch (e) {}
+        IDX_SAVE_FAIL = false;
+      } catch (e) {
+        IDX_SAVE_FAIL = true;
+        try { sessionStorage.removeItem(IDX_KEY); } catch (e2) {}
+      }
     }
 
     function mergeRows(rows) {
@@ -6797,7 +6815,9 @@
     function setIndexStatus(where) {
       var dates = dateList(DAYS);
       var n = visibleRows().length;
-      setStatus(dates[dates.length - 1] + ' ~ ' + dates[0] + ' · ' + n.toLocaleString() + '건 · ' + where + ' 검색');
+      /*  저장이 안 되면 새로고침마다 다시 읽는다 — 그 사실을 적는다 (2026-09-16)  */
+      var 꼬리 = IDX_SAVE_FAIL ? ' · ⚠ 저장 한도 초과(새로고침하면 다시 불러옵니다)' : '';
+      setStatus(dates[dates.length - 1] + ' ~ ' + dates[0] + ' · ' + n.toLocaleString() + '건 · ' + where + ' 검색' + 꼬리);
       renderOrderDashboard();
     }
 
