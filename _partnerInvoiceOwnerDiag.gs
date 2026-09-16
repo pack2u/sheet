@@ -140,6 +140,10 @@ function _iod_collectLedger_(reg, stat) {
           phone: data[i][5] || "",
           dateStr: String(data[i][6] || "").trim() || String(data[i][0] || "").trim(),
           item: data[i][7] || "",
+          /*  ★ 「합배송이라고 적혀 있는가」 ★  (2026-09-16)
+              허브 12=적요 · 14=상태. 둘 중 하나에 합배송·합포장이 적혀 있으면
+              한 상자로 나간 것이 «사실»이다. 적혀 있지 않으면 짐작하지 않는다. */
+          mark: String(data[i][12] || "") + " " + String(data[i][14] || ""),
           row: i + 2,
         });
         stat.ledger++;
@@ -186,6 +190,9 @@ function _iod_collectArchives_(reg, days, stat, started) {
             phone: cols.phone >= 0 ? all[ri][cols.phone] : "",
             item: cols.item >= 0 ? all[ri][cols.item] : "",
             dateStr: dateStr,
+            /*  마감 표의 적요. 합배송·합포장·세트(몸통/뚜껑)가 여기 적힌다
+                (2026-09-15 «적요에 다 적는다» 작업). */
+            mark: _iod_markOf_(all[0], all[ri]),
             row: ri + 1,
             archDate: dateStr,
           });
@@ -199,6 +206,23 @@ function _iod_collectArchives_(reg, days, stat, started) {
 }
 
 /** 협력업체_발주허브 — 고유ID(C)·주문일자(D)·품목명(F)·수취인(H)·전화(I)·송장(N) */
+/**
+ * 그 줄에 「합배송」이라고 적혀 있나 — 적요 칸을 이름으로 찾아 읽는다.
+ *
+ * 자리로 박지 않는다. 마감 표는 판매현황 C~Q 를 그대로 쓰는데 회차마다
+ * 칸이 늘거나 줄 수 있다. 오늘 하루 종일 고친 병이 전부 「자리로 박은 것」이었다.
+ */
+function _iod_markOf_(hdr, row) {
+  if (!hdr || !row) return "";
+  var out = [];
+  for (var i = 0; i < hdr.length; i++) {
+    var h = String(hdr[i] || "").replace(/[ 	]/g, "");
+    if (!h) continue;
+    if (/^적요$|^비고$|^메모$|^상태$/.test(h)) out.push(String(row[i] || ""));
+  }
+  return out.join(" ");
+}
+
 function _iod_collectHub_(reg, stat) {
   try {
     var tab = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(_PO_HUB_SHEET_NAME);
@@ -321,11 +345,48 @@ function _iod_judge_(claims) {
     };
   }
 
+  /*  ══════════════════════════════════════════════════════════════
+      ★ 합배송인지 «짐작»하지 않는다 ★  (2026-09-16)
+
+      처음엔 「같은 사람 · 같은 날이면 합배송이겠지」로 정상 처리하려 했다.
+      사장님이 바로잡아 주셨다 —
+
+      > "합배송만의 문제가 아니고 개별 주문건에도 문제라"
+
+      맞는 말이다. 개별 주문 둘에 같은 송장이 붙어도 「같은 사람·같은 날」로
+      보인다. 그걸 정상이라 하면 진짜 사고를 내 손으로 덮는 것이다.
+      오늘 하루 고친 것이 전부 «짐작으로 값을 만드는» 병이었는데, 여기서
+      같은 짓을 할 뻔했다.
+
+      ★ 적혀 있으면 정상, 없으면 의심 ★
+        합배송으로 나간 줄에는 그렇게 «적힌다» — 허브 적요·상태, 마감 적요.
+        (2026-09-15 「적요에 합배송·합포장·세트를 다 적는다」 작업)
+        적혀 있으면 한 상자로 나간 것이 사실이다. 없으면 모르는 것이고,
+        모르는 것은 의심으로 둔다.
+
+      > "우리만 거짓말쟁이 되고 전화 상담만 과도하게 받는 중이야"
+        틀린 송장이 나가면 고객은 없는 상자를 기다리다 전화한다.
+        의심을 줄이자고 정상으로 눌러 두면 그 전화가 계속 온다.
+      ══════════════════════════════════════════════════════════════ */
+  var 합배송적힘 = false;
+  for (var mk = 0; mk < claims.length; mk++) {
+    var 글 = String(claims[mk].mark || "").replace(/[ 	]/g, "");
+    if (글.indexOf("합배송") !== -1 || 글.indexOf("합포장") !== -1) { 합배송적힘 = true; break; }
+  }
+  if (합배송적힘) {
+    return {
+      grade: "🟢 합배송",
+      reason: "같은 수취인의 주문 " + ids.length + "건이 같은 송장 · 합배송이라고 «적혀» 있습니다" +
+        (maxGap > 0 ? " · 주문일 " + maxGap + "일 차" : "") + noNameNote,
+      owner: owner,
+    };
+  }
+
   return {
     grade: "🟡 의심",
     reason: "같은 수취인의 주문 " + ids.length + "건에 같은 송장" +
       (maxGap > 0 ? " · 주문일 " + maxGap + "일 차" : " · 같은 날") +
-      " — 같은 날 분할 출고일 수도 있어 확인 필요" + noNameNote,
+      " — 합배송이라는 표시가 «없습니다». 개별 주문이라면 한쪽은 남의 송장입니다" + noNameNote,
     owner: owner,
   };
 }
@@ -479,7 +540,7 @@ function partnerDiagnoseInvoiceOwnership(days) {
 
   // 판정
   var groups = [];
-  var counts = { sure: 0, doubt: 0, byRefix: 0 };
+  var counts = { sure: 0, doubt: 0, merged: 0, byRefix: 0 };
   var invList = Object.keys(reg);
   for (var i = 0; i < invList.length; i++) {
     var inv = invList[i];
@@ -488,6 +549,10 @@ function partnerDiagnoseInvoiceOwnership(days) {
 
     var verdict = _iod_judge_(claims);
     if (!verdict) continue;
+    /*  ★ 합배송은 «정상»이다 — 세기만 하고 목록에 안 넣는다 ★  (2026-09-16)
+        목록에 넣으면 2천 줄이 쌓여 그 속의 진짜 몇 건이 묻힌다.
+        숫자는 보여 준다 — 「안 보고 있다」가 아니라 「보고 정상이라 했다」다. */
+    if (verdict.grade === "🟢 합배송") { counts.merged++; continue; }
 
     var touchedByRefix = false;
     for (var c = 0; c < claims.length; c++) {
@@ -555,6 +620,11 @@ function partnerDiagnoseInvoiceOwnership(days) {
   lines.push("── 충돌 ──");
   lines.push("  🔴 확실: " + counts.sure + "건");
   lines.push("  🟡 의심: " + counts.doubt + "건");
+  lines.push("  🟢 합배송(정상): " + counts.merged + "건 — 같은 사람이 한 상자로 받은 것");
+  if (!counts.sure && !counts.doubt) {
+    lines.push("");
+    lines.push("★ 남의 송장이 붙은 것으로 보이는 건은 없습니다.");
+  }
   lines.push("  그중 「일일마감 송장 재매칭」이 채운 것: " + counts.byRefix + "건");
 
   if (counts.byRefix > 0) {
@@ -598,7 +668,7 @@ function partnerDiagnoseInvoiceOwnership(days) {
       밤에 스스로 도는 쪽(_iod_nightly_)이 「찾았나」를 알아야 한다.
       돌려주는 것은 사람이 읽는 글이라, 그 글을 다시 뜯어 세면 문구를
       바꿀 때마다 조용히 틀린다. 숫자는 숫자로 남긴다.  */
-  _IOD_LAST_ = { sure: counts.sure, doubt: counts.doubt,
+  _IOD_LAST_ = { sure: counts.sure, doubt: counts.doubt, merged: counts.merged,
                  groups: groups.length, at: new Date().getTime() };
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
