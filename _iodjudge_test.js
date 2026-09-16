@@ -52,18 +52,20 @@ vm.createContext(ctx);
 /*  합배송 표시를 읽는 함수는 «본체 것»을 그대로 쓴다 —
     여기서 흉내내면 본체가 바뀔 때 시험만 통과한다.  */
 vm.runInContext(grab("_iod_hasMergeMark_"), ctx);
+vm.runInContext(grab("_iod_samePackGroup_"), ctx);
 vm.runInContext(grab("_iod_judge_"), ctx);
 const 판정 = (claims) => vm.runInContext("_iod_judge_(" + JSON.stringify(claims) + ")", ctx,
   { /* Date 는 JSON 으로 못 넘긴다 — 아래 주장() 에서 문자열로 만들고 되살린다 */ });
 
 /*  Date 를 살려 넘기려면 컨텍스트 안에서 만들어야 한다  */
-function 판정하기(claims) {
+function 판정하기(claims, 링크) {
   ctx.__c = claims.map((c) => ({
     oid: c.oid || "", name: c.name || "", nameKey: c.nameKey === undefined ? (c.name || "") : c.nameKey,
     item: c.item || "", date: c.날 ? new Date(c.날) : null, where: c.where || "원장",
     mark: c.표시 || "",
   }));
-  return vm.runInContext("_iod_judge_(__c)", ctx);
+  ctx.__pack = 링크 || null;
+  return vm.runInContext("_iod_judge_(__c, __pack)", ctx);
 }
 
 console.log("\n[1] ★ 같은 사람 · 같은 날인데 «표시가 없으면» 의심이다");

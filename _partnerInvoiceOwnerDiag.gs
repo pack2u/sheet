@@ -92,6 +92,93 @@ function _iod_dayDiff_(a, b) {
   return Math.round((b.getTime() - a.getTime()) / 86400000);
 }
 
+/*  세트분리 주문라인원장이 «한 상자»를 이미 알고 있다  */
+var _IOD_PACK_ = null;
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 합포장과 합배송은 같은 것이다 — 링크로 잇는다 ★  (2026-09-16)
+ *
+ *  > "참 간단한 링크 개념인데 합포장 합배송을 결합을 못시키네.."
+ *
+ *  맞는 말이다. 세트분리는 「이 여섯 줄이 한 상자다」를 «이미 알고 있다» —
+ *  주문라인원장의 `합포장그룹` 이 그것이고, `합포장대표` 가 누가 송장을
+ *  받는 줄인지까지 적어 둔다. 링크가 이미 있는데 점검은 그걸 안 쓰고
+ *  적요 «글자»에서 「합배송」을 찾고 있었다.
+ *
+ *  글자는 안 적히면 없다. 링크는 적히고 말고가 없다 — 세트분리가 묶은 순간
+ *  거기 있다. 그래서 링크를 먼저 보고, 글자는 그 다음으로 본다.
+ *
+ *  @return {Object} 고유ID(정규화) → 합포장그룹 열쇠
+ * ══════════════════════════════════════════════════════════════
+ */
+function _iod_loadPackGroups_(stat) {
+  if (_IOD_PACK_) return _IOD_PACK_;
+  var map = {};
+  try {
+    var ss = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
+    var tab = ss.getSheetByName("주문라인원장");
+    if (!tab || tab.getLastRow() < 2) {
+      stat.notes.push("세트분리 「주문라인원장」이 비어 합포장 링크를 못 읽었습니다.");
+      _IOD_PACK_ = map; return map;
+    }
+    var lc = tab.getLastColumn();
+    var hv = tab.getRange(1, 1, 1, lc).getDisplayValues()[0];
+    var ix = {};
+    for (var h = 0; h < hv.length; h++) {
+      var n = String(hv[h] == null ? "" : hv[h]).replace(/[ 	]/g, "");
+      if (n && ix[n] === undefined) ix[n] = h;
+    }
+    //  ★ 자리로 넘겨짚지 않는다 ★ 없으면 «없다»고 말하고 그만둔다
+    if (ix["고유ID"] === undefined || ix["합포장그룹"] === undefined) {
+      stat.notes.push("주문라인원장에서 「고유ID」·「합포장그룹」 칸을 못 찾았습니다 " +
+        "(머리글: " + hv.slice(0, 10).join(",") + ") — 합포장 링크를 못 씁니다.");
+      _IOD_PACK_ = map; return map;
+    }
+    var 회차칸 = ix["회차키"];
+    var data = tab.getRange(2, 1, tab.getLastRow() - 1, lc).getDisplayValues();
+    for (var i = 0; i < data.length; i++) {
+      var grp = String(data[i][ix["합포장그룹"]] || "").trim();
+      if (!grp) continue;                     // 묶이지 않은 줄 — 볼 것이 없다
+      var uid = _iod_oidKey_(data[i][ix["고유ID"]]);
+      if (!uid) continue;
+      /*  회차키를 붙인다. 합포장그룹은 «출고지·수취인·조건»이라 날짜가 없다 —
+          여러 날치를 같이 읽는 여기서는 붙이지 않으면 다른 날 주문이
+          한 상자로 보인다. 오늘 사방넷 대량등록에서 그 사고를 고쳤다.  */
+      var rk = 회차칸 === undefined ? "" : String(data[i][회차칸] || "").trim();
+      map[uid] = (rk ? rk + "/" : "") + grp;
+      stat.packRows++;
+    }
+    stat.packUids = 0;
+    for (var k in map) if (map.hasOwnProperty(k)) stat.packUids++;
+  } catch (e) {
+    stat.notes.push("세트분리 원장 열기 실패: " + String(e.message || e) +
+      " — 합포장 링크 없이 판정합니다(글자만 봅니다).");
+  }
+  _IOD_PACK_ = map;
+  return map;
+}
+
+/**
+ * 이 주장들이 «한 상자»인가 — 세트분리가 묶어 둔 것으로 판단한다.
+ * 고유ID 가 없는 주장은 물어볼 수 없으니 «모름»으로 두고 넘어간다.
+ * 물어볼 수 있었던 것이 둘 이상이고 그것들이 모두 같은 그룹이면 한 상자다.
+ */
+function _iod_samePackGroup_(claims, pack) {
+  if (!pack) return "";
+  var 본것 = 0, 그룹 = "";
+  for (var i = 0; i < claims.length; i++) {
+    var uid = claims[i].oid;
+    if (!uid) continue;
+    var g = pack[uid];
+    if (!g) return "";                      // 한 줄이라도 안 묶였으면 한 상자가 아니다
+    if (!그룹) 그룹 = g;
+    else if (그룹 !== g) return "";          // 서로 다른 상자다
+    본것++;
+  }
+  return 본것 >= 2 ? 그룹 : "";
+}
+
 /**
  * 「합배송」이라 적힐 수 있는 칸의 머리글.
  *
@@ -375,7 +462,7 @@ function _iod_refixIndex_(stat) {
  *
  * @return {?{grade:string, reason:string, owner:Object}}
  */
-function _iod_judge_(claims) {
+function _iod_judge_(claims, pack) {
   var idSet = {};
   var ids = [];
   for (var i = 0; i < claims.length; i++) {
@@ -452,6 +539,19 @@ function _iod_judge_(claims) {
         틀린 송장이 나가면 고객은 없는 상자를 기다리다 전화한다.
         의심을 줄이자고 정상으로 눌러 두면 그 전화가 계속 온다.
       ══════════════════════════════════════════════════════════════ */
+  /*  ★ 링크가 글자보다 먼저다 ★
+      세트분리가 한 상자로 묶은 것은 «사실»이다. 적요에 적혔는지와
+      상관없이 그렇다. 글자는 안 적히면 없지만 링크는 묶는 순간 있다.  */
+  var 한상자 = _iod_samePackGroup_(claims, pack);
+  if (한상자) {
+    return {
+      grade: "🟢 합배송",
+      reason: "세트분리가 한 상자로 묶은 주문 " + ids.length + "건 (합포장그룹 " +
+        한상자 + ")" + (maxGap > 0 ? " · 주문일 " + maxGap + "일 차" : "") + noNameNote,
+      owner: owner
+    };
+  }
+
   var 합배송적힘 = false;
   for (var mk = 0; mk < claims.length; mk++) {
     if (_iod_hasMergeMark_(claims[mk].mark)) { 합배송적힘 = true; break; }
@@ -614,10 +714,14 @@ function partnerDiagnoseInvoiceOwnership(days) {
     /*  합배송 표시를 «어느 칸에서» «몇 건» 읽었는지. 0이면 그렇게 말한다 —
         못 읽고 있는 줄 모르면 정상 건을 전부 의심이라 부르게 된다.  */
     markCols: {}, marked: 0,
+    /*  세트분리 원장에서 읽은 합포장 링크 — 몇 줄·몇 주문인지 말한다  */
+    packRows: 0, packUids: 0,
     notes: [], stopped: "",
   };
 
   var reg = {};
+  _IOD_PACK_ = null;                       // 실행마다 새로 읽는다
+  var pack = _iod_loadPackGroups_(stat);
   _iod_collectLedger_(reg, stat);
   _iod_collectHub_(reg, stat);
   _iod_collectArchives_(reg, days, stat, started);
@@ -633,7 +737,7 @@ function partnerDiagnoseInvoiceOwnership(days) {
     var claims = reg[inv];
     if (claims.length < 2) continue;
 
-    var verdict = _iod_judge_(claims);
+    var verdict = _iod_judge_(claims, pack);
     if (!verdict) continue;
     /*  ★ 합배송은 «정상»이다 — 세기만 하고 목록에 안 넣는다 ★  (2026-09-16)
         목록에 넣으면 2천 줄이 쌓여 그 속의 진짜 몇 건이 묻힌다.
@@ -721,6 +825,14 @@ function partnerDiagnoseInvoiceOwnership(days) {
   var 읽은칸 = [];
   for (var mc in stat.markCols) if (stat.markCols.hasOwnProperty(mc)) 읽은칸.push(mc);
   lines.push("");
+  lines.push("── 한 상자인지 «어떻게» 알았나 ──");
+  /*  링크가 먼저다. 이 줄이 0 이면 판정이 글자에만 기대고 있다는 뜻이고,
+      글자는 안 적히면 없으므로 정상 건이 의심으로 올라온다.  */
+  if (stat.packUids) {
+    lines.push("  🔗 세트분리 합포장 링크: 주문 " + stat.packUids + "건 (" + stat.packRows + "줄)");
+  } else {
+    lines.push("  ⚠ 세트분리 합포장 링크를 못 읽었습니다 — 적요 «글자»에만 기대고 있습니다.");
+  }
   lines.push("── 합배송 표시 ──");
   if (!읽은칸.length) {
     lines.push("  ⚠ 일일마감 표에서 적요·비고·메모·상태 칸을 «못 찾았습니다».");

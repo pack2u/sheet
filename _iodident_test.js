@@ -208,6 +208,82 @@ console.log("\n[13] ★ 못 읽으면 «말한다»");
   check("★ 적힌 줄 수를 보여 준다", 몸.indexOf("합배송·합포장이 적힌 줄: ") >= 0, true);
 }
 
+console.log("\n[14] ★ 합포장과 합배송을 «링크»로 잇는다");
+{
+  /*  > "참 간단한 링크 개념인데 합포장 합배송을 결합을 못시키네.."
+      세트분리는 「이 여섯 줄이 한 상자다」를 이미 알고 있다 —
+      주문라인원장의 합포장그룹. 글자는 안 적히면 없지만,
+      링크는 묶는 순간 거기 있다.  */
+  vm.runInContext(grabFrom(iod, "_iod_samePackGroup_"), ctx);
+  const 한상자 = (oids, pack) => {
+    ctx.__cl = oids.map((o) => ({ oid: o }));
+    ctx.__pk = pack;
+    return vm.runInContext("_iod_samePackGroup_(__cl, __pk)", ctx);
+  };
+  const 원장 = { "A1": "260916-1/서울♦김철수♦C3", "A2": "260916-1/서울♦김철수♦C3" };
+
+  check("★ 같은 합포장그룹 → 한 상자", 한상자(["A1", "A2"], 원장), "260916-1/서울♦김철수♦C3");
+  check("★ 한 줄이라도 안 묶였으면 아니다", 한상자(["A1", "B9"], 원장), "");
+  check("★ 그룹이 다르면 아니다",
+    한상자(["A1", "C1"], { "A1": "260916-1/가", "C1": "260916-1/나" }), "");
+  check("고유ID 가 없는 주장은 «모름»으로 넘긴다", 한상자(["A1", "", "A2"], 원장),
+    "260916-1/서울♦김철수♦C3");
+  check("★ 물어볼 수 있었던 것이 하나뿐이면 단정 안 한다", 한상자(["A1", ""], 원장), "");
+  check("원장을 못 읽었으면 «모름»", 한상자(["A1", "A2"], null), "");
+  check("빈 원장이면 «모름»", 한상자(["A1", "A2"], {}), "");
+}
+
+console.log("\n[15] ★ 회차키를 붙인다 — 다른 날이 한 상자로 보이면 안 된다");
+{
+  /*  합포장그룹은 출고지♦수취인♦조건ID 라 «날짜가 없다».
+      여러 날치를 같이 읽는 점검에서 회차를 안 붙이면 어제 주문과
+      오늘 주문이 한 상자가 된다. 오늘 사방넷 대량등록에서 고친 그 사고다.  */
+  const 몸 = grabFrom(iod, "_iod_loadPackGroups_").split(/\r?\n/)
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+  check("★ 회차키를 읽는다", 몸.indexOf('ix["회차키"]') >= 0, true);
+  check("★ 열쇠 앞에 붙인다", /rk \? rk \+ "\/" : ""/.test(몸), true);
+  check("고유ID 를 같은 방식으로 다듬는다", 몸.indexOf("_iod_oidKey_(") >= 0, true);
+  check("★ 칸이 없으면 «없다»고 말한다", 몸.indexOf("못 찾았습니다") >= 0, true);
+}
+
+console.log("\n[16] ★ 링크가 글자보다 «먼저»다");
+{
+  const 몸 = grabFrom(iod, "_iod_judge_");
+  const i링 = 몸.indexOf("_iod_samePackGroup_");
+  const i글 = 몸.indexOf("_iod_hasMergeMark_");
+  check("★ 둘 다 본다", i링 >= 0 && i글 >= 0, true);
+  check("★ 링크를 먼저 본다", i링 < i글, true);
+
+  /*  실제로 그렇게 도는지 — 표시가 «없어도» 링크만으로 🟢 여야 한다  */
+  const pack = { "SB-1001": "260916-1/박스가", "SB-1002": "260916-1/박스가" };
+  ctx.__c2 = [
+    { oid: "SB-1001", name: "김철수", nameKey: "김철수", item: "미니탕",
+      date: new Date("2026-09-16"), mark: "", where: "원장" },
+    { oid: "SB-1002", name: "김철수", nameKey: "김철수", item: "곰탕",
+      date: new Date("2026-09-16"), mark: "", where: "원장" }
+  ];
+  ctx.__p2 = pack;
+  vm.runInContext(grabFrom(iod, "_iod_dayDiff_"), ctx);
+  ctx._IOD_STALE_GAP_DAYS_ = 2;
+  vm.runInContext(grabFrom(iod, "_iod_judge_"), ctx);
+  const v = vm.runInContext("_iod_judge_(__c2, __p2)", ctx);
+  check("★ 표시가 없어도 링크만으로 🟢", v && v.grade, "🟢 합배송");
+  check("★ 무엇으로 알았는지 말한다", v.reason.indexOf("세트분리가 한 상자로 묶은") >= 0, true);
+
+  /*  링크가 없으면 종전대로 🟡 — 묶이지 않은 것을 정상이라 하지 않는다  */
+  const v2 = vm.runInContext("_iod_judge_(__c2, {})", ctx);
+  check("★ 링크가 없으면 의심 그대로", v2.grade, "🟡 의심");
+}
+
+console.log("\n[17] ★ 무엇으로 알았는지 보고에 적는다");
+{
+  const 몸 = grabFrom(iod, "partnerDiagnoseInvoiceOwnership");
+  check("링크 건수를 보여 준다", 몸.indexOf("세트분리 합포장 링크: 주문 ") >= 0, true);
+  check("★ 못 읽었으면 말한다", 몸.indexOf("글자»에만 기대고 있습니다") >= 0, true);
+  check("실행마다 새로 읽는다", 몸.indexOf("_IOD_PACK_ = null;") >= 0, true);
+  check("★ 판정에 넘긴다", 몸.indexOf("_iod_judge_(claims, pack)") >= 0, true);
+}
+
 
 console.log("\n" + (fail ? "❌ " : "✅ ") + "통과 " + pass + " · 실패 " + fail);
 process.exit(fail ? 1 : 0);
