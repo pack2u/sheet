@@ -749,6 +749,55 @@
       overflow-y: auto; overflow-x: hidden;
       padding: 10px 8px 24px; -webkit-overflow-scrolling: touch;
     }
+
+    /* ══════════════════════════════════════════════════════════════
+       ★ 한 칸만 크게 보기 ★  (2026-09-16)
+
+       > "반품 부분만 커뮤니티 보드도 확대 아이콘을 클릭해서 전체 창이
+       >  보이게 하면 좋겠어.. 전체창일떄는 반품텝일경우 가로 3개 배열로
+       >  보이게 하면 많이 볼수 있을꺼 같아"
+
+       세 칸을 나눠 쓰면 반품 카드가 한 줄에 하나뿐이라 한 화면에 서너 장
+       밖에 안 들어온다. 크게 펴면 가로로 셋씩 — 세 배를 한눈에 본다.
+
+       ★ 폭 조절(ws-resizer)은 그대로 둔다 ★ 크게 보기를 끄면 사람이
+         맞춰 둔 폭이 그대로 돌아온다. 크게 보기가 그 설정을 안 건드린다.
+       ══════════════════════════════════════════════════════════════ */
+    .ws-split.has-max > .ws-pane { display: none; }
+    .ws-split.has-max > .ws-resizer { display: none; }
+    .ws-split.has-max > .ws-pane.is-max {
+      display: block;
+      flex: 1 1 100% !important;
+      width: auto !important;
+      min-width: 0 !important;
+      max-width: none !important;
+    }
+
+    /* 반품을 크게 펴면 가로 셋. 화면이 좁아지면 저절로 둘·하나로 준다 —
+       칸 수를 못 박으면 노트북에서 카드가 짜부라진다. */
+    #pane-returns.is-max #returnActiveList {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      align-items: start;
+    }
+    #pane-returns.is-max #returnActiveList > .ret-card { margin-bottom: 0; }
+    @media (max-width: 1180px) {
+      #pane-returns.is-max #returnActiveList { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+      #pane-returns.is-max #returnActiveList { grid-template-columns: 1fr; }
+    }
+    /*  펼쳐 읽는 카드는 한 줄을 통째로 쓴다 — 셋 중 하나만 커지면
+        옆 카드가 같이 늘어나 표가 어긋나 보인다. */
+    #pane-returns.is-max #returnActiveList > .ret-card.ret-focus {
+      grid-column: 1 / -1;
+    }
+
+    .hb-icon.is-on {
+      background: var(--accent, #FDB813);
+      color: #1b1e23; border-color: transparent;
+    }
     .ws-resizer {
       flex-shrink: 0; width: 14px; margin: 0 -7px;
       cursor: col-resize; touch-action: none; z-index: 5;
@@ -2712,6 +2761,9 @@
             </select>
             <button type="button" class="hb-icon" title="새로고침" aria-label="새로고침"
                     onclick="loadReturnActive(true, true)">↻</button>
+            <button type="button" class="hb-icon" id="maxReturns" title="크게 보기 (가로 3줄)"
+                    aria-label="크게 보기" aria-pressed="false"
+                    onclick="wsToggleMax('pane-returns')">⛶</button>
             <button type="button" class="hb-new" title="새 반품 카드" aria-label="새 반품 카드"
                     onclick="openRetNewModal()">＋</button>
           </div>
@@ -2733,6 +2785,9 @@
             </div>
             <button type="button" class="hb-icon" title="새로고침" aria-label="새로고침"
                     onclick="loadHandoffBoard(true)">↻</button>
+            <button type="button" class="hb-icon" id="maxBoard" title="크게 보기"
+                    aria-label="크게 보기" aria-pressed="false"
+                    onclick="wsToggleMax('pane-manual')">⛶</button>
             <button type="button" class="hb-new" title="새 카드 작성" aria-label="새 카드 작성"
                     onclick="openHbModal()">＋</button>
           </div>
@@ -5896,6 +5951,73 @@
       for (var i = 0; i < els.length; i++) if (els[i].offsetParent !== null) n++;
       return n || 3;
     }
+
+    /* ══════════════════════════════════════════════════════════════
+       ★ 한 칸만 크게 보기 ★  (2026-09-16)
+
+       > "확대 아이콘을 클릭해서 전체 창이 보이게 하면 좋겠어..
+       >  전체창일떄는 반품텝일경우 가로 3개 배열로"
+
+       세 칸을 나눠 쓰면 반품 카드가 한 줄에 하나뿐이다. 크게 펴면 셋씩.
+
+       ★ 폭 설정을 안 건드린다 ★  ws-resizer 로 맞춰 둔 폭은 그대로 두고,
+         .has-max 가 붙어 있는 동안만 CSS 로 가린다. 끄면 그대로 돌아온다.
+       ★ 좁은 화면(mobile-mode)에서는 안 켠다 ★  거기서는 이미 한 칸이
+         화면을 다 쓰고 있어 «크게 보기»가 뜻이 없다.
+       ★ Esc 로 닫힌다 ★  모달과 같은 감각이라 사람이 찾지 않아도 안다.
+       ══════════════════════════════════════════════════════════════ */
+    var WS_MAX_PANE = "";
+
+    function wsMaxButtons() {
+      return {
+        "pane-returns": document.getElementById("maxReturns"),
+        "pane-manual": document.getElementById("maxBoard")
+      };
+    }
+
+    function wsToggleMax(paneId) {
+      var split = document.getElementById("wsSplit");
+      if (!split) return;
+      /*  좁은 화면은 이미 한 칸이 화면을 다 쓴다 — 켜 봐야 달라지는 게 없고,
+          스크롤 스냅과 엉킨다.  */
+      if (split.classList.contains("mobile-mode")) return;
+
+      var 켠다 = WS_MAX_PANE !== paneId;
+      /*  다른 칸이 켜져 있으면 그것부터 끈다 — 한 번에 하나만.  */
+      var panes = split.querySelectorAll(".ws-pane");
+      for (var i = 0; i < panes.length; i++) panes[i].classList.remove("is-max");
+
+      WS_MAX_PANE = 켠다 ? paneId : "";
+      split.classList.toggle("has-max", 켠다);
+      if (켠다) {
+        var el = document.getElementById(paneId);
+        if (el) { el.classList.add("is-max"); el.scrollTop = 0; }
+      }
+
+      var btns = wsMaxButtons();
+      for (var k in btns) {
+        if (!Object.prototype.hasOwnProperty.call(btns, k) || !btns[k]) continue;
+        var on = 켠다 && k === paneId;
+        btns[k].classList.toggle("is-on", on);
+        btns[k].setAttribute("aria-pressed", on ? "true" : "false");
+        btns[k].title = on ? "크게 보기 끄기 (Esc)" : (k === "pane-returns" ? "크게 보기 (가로 3줄)" : "크게 보기");
+      }
+    }
+
+    /*  Esc 로 끈다. 모달이 열려 있으면 모달이 먼저다 — 여기서 가로채지 않는다.  */
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape" || !WS_MAX_PANE) return;
+      if (document.querySelector(".modal.open, .modal[style*=\"display: flex\"]")) return;
+      wsToggleMax(WS_MAX_PANE);
+    });
+
+    /*  좁은 화면으로 바뀌면 저절로 끈다 — 켜 둔 채로 모바일이 되면
+        한 칸만 보이고 나머지 탭이 안 나온다.  */
+    window.addEventListener("resize", function () {
+      if (!WS_MAX_PANE) return;
+      var split = document.getElementById("wsSplit");
+      if (split && split.classList.contains("mobile-mode")) wsToggleMax(WS_MAX_PANE);
+    });
 
     function wsGoToPane(idx) {
       idx = Math.max(0, Math.min(wsPaneCount() - 1, parseInt(idx, 10) || 0));
