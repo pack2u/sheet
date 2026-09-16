@@ -92,6 +92,27 @@ ok("★ 모달이 열려 있으면 안 가로챈다",
   /Escape[\s\S]{0,260}querySelector\("\.modal\.open/.test(html));
 ok("★ 좁은 화면으로 바뀌면 저절로 꺼진다",
   /addEventListener\("resize"[\s\S]{0,260}wsToggleMax\(WS_MAX_PANE\)/.test(html));
+console.log("\n[6] ★ 스크롤 막대를 다시 재게 한다");
+{
+  /*  > "스크롤 잔상이 남아"
+      이 앱은 브라우저 스크롤 막대를 감추고 `.cs-sb` 를 직접 그린다.
+      그 위치를 다시 재는 place() 는 «스크롤»과 «창 크기 바뀜»에만 걸려 있어,
+      크게 보기를 켜고 꺼도 아무도 안 불렀다 — 숨긴 칸의 막대가 옛 자리에
+      세로줄로 남았다. place() 는 칸이 안 보이면 스스로 꺼진다. 부르기만 하면 된다.  */
+  const 몸 = 코드만(grab("wsToggleMax"));
+  ok("★ 켜고 끈 뒤 다시 잰다", 몸.indexOf("csSyncScrollbars()") >= 0);
+  ok("★ 자리 잡은 다음 프레임에 한 번 더",
+    몸.indexOf("requestAnimationFrame(csSyncScrollbars)") >= 0);
+  ok("★ 없어도 안 깨진다 (typeof 로 막았다)",
+    몸.indexOf('typeof csSyncScrollbars === "function"') >= 0);
+
+  /*  place() 쪽이 「안 보이면 끈다」를 실제로 하고 있나 — 여기가 무너지면
+      위에서 아무리 불러도 소용없다.  */
+  const 설치 = 코드만(grab("csInstallScrollbars"));
+  ok("★ 칸이 안 보이면 스스로 꺼진다", 설치.indexOf("r.width < 8") >= 0);
+  ok("★ 꺼질 때 opacity 를 0 으로", 설치.indexOf("rail.style.opacity = '0'") >= 0);
+}
+
 
 console.log("\n" + (fail ? "❌ " : "✅ ") + "통과 " + pass + " · 실패 " + fail);
 process.exit(fail ? 1 : 0);
