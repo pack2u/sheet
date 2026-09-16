@@ -74,10 +74,22 @@ ok('조건이 풀리면 꺼진다', !c1.classList.contains('hb-stale'));
 
 console.log('\n[CSS 쪽 준비]');
 const raw = src.join('\n');
-ok('깜박임 애니메이션이 있다', /@keyframes hbStaleGlow/.test(raw));
-ok('펼친 카드는 깜박이지 않는다', /\.hb-card\.hb-stale:not\(\.open\)/.test(raw));
+/*  ★ 2026-09-16: 바깥 빛 → 안쪽 하이라이트 ★
+    > "이팩트 효과가 주변에 빛이 번지는 느낌인데..
+    >  안쪽이 숨을 쉬는 느낌으로" → "안쪽이 숨을 쉰다로 넣어줘"
+    카드가 촘촘히 붙어 있으면 바깥 빛이 옆 카드까지 물들여 «어느 카드가
+    이제 카드 안에서 위쪽 빛이 천천히 밝아졌다 어두워진다.  */
+ok('안쪽에서 숨쉬는 빛이 있다', /@keyframes hbBreathe/.test(raw));
+ok('빛을 카드 안에 가둔다', /position:\s*relative/.test(raw));
+ok('빛이 누르는 것을 막지 않는다', /pointer-events:\s*none/.test(raw));
+ok('펼친 카드는 숨쉬지 않는다', raw.indexOf('.hb-card.hb-stale:not(.open)') >= 0);
+/*  ★ 움직임이 없어도 알아볼 수 있어야 한다 ★
+    움직임을 꺼 둔 사람에게는 테두리 색으로 같은 정보를 준다.
+    숨쉬기는 밝기만 바뀌므로 멈춰도 얼룩이 안 된다 — 중간 밝기로 세워 둔다.  */
 ok('모션 끄기 설정을 존중한다',
-   /prefers-reduced-motion[\s\S]{0,220}hb-stale[\s\S]{0,120}animation:\s*none/.test(raw));
+   /prefers-reduced-motion[\s\S]{0,400}hb-stale[\s\S]{0,200}animation:\s*none/.test(raw));
+ok('숨이 꺼져도 뜻이 남는다 (테두리 색)',
+   /hb-stale:not\(\.\open\)[\s\S]{0,80}border-color/.test(raw));
 ok('카드에 data-at 을 심는다', /data-at="'\s*\+\s*esc\(c\.at\)/.test(raw));
 
 console.log('\n통과 ' + pass + ' · 실패 ' + fail);
