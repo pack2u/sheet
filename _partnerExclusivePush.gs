@@ -9149,8 +9149,79 @@ var _UNIFIED_HEADER_BG_ = "#1a237e";
  * 이전 일일마감 파일을 찾을 때 거슬러 보는 최대 일수.
  * 본체 2단계는 「바로 이전 파일 1개」만 채운다. 주말·휴일로 파일이 비면
  * 그 앞의 마지막 일일마감을 찾는다.
+ *
+ * ★ 14 → 7 ★  (2026-09-16)
+ *   > "매칭(3~7일)정도만 일일 마감시 매칭하고 따로 추가 매칭은 안할꺼야"
+ *   오래 거슬러 볼수록 «틀린 것이 굳을» 시간만 길어진다. 송장은 사흘 안에
+ *   붙거나 안 붙는다. 이레를 넘기면 그건 매칭 문제가 아니라 다른 문제다.
  */
-var _PEP_BACKFILL_DAYS_ = 14;
+var _PEP_BACKFILL_DAYS_ = 7;
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 이 날 이전은 «보지 않는다» ★  (2026-09-16)
+ *
+ *  > "이젠 이전 데이타는 무시할꺼야"
+ *  > "어제만해도 일일마감 데이타 다무너졌고 일주일치는 거의 쓰레기상태라"
+ *  > "어차피 지난주에 데이타는 무너졌고 다시 테이타를 쌓는거야"
+ *
+ *  무너진 기록을 뒤져 고치려 들면 두 가지를 잃는다 — 시간과, 숫자의 뜻.
+ *  쓰레기가 섞인 분모로는 무엇을 고쳐도 좋아지는 게 안 보인다.
+ *
+ *  그러니 시작점을 긋고 «거기서부터» 쌓는다. 그 앞의 마감 파일은 열지
+ *  않는다 — 지우지도 않는다. 그냥 안 본다.
+ *
+ *  ★ 날짜는 스크립트 속성으로 바꿀 수 있다 ★
+ *    MATCH_START_DATE = yyyy-MM-dd. 비워 두면 아래 기본값을 쓴다.
+ *    빈 문자열("없음")로 두면 제한 없이 예전처럼 본다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var _PEP_MATCH_START_DEFAULT_ = "2026-09-16";
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 소급 보강을 «끈다» ★  (2026-09-16)
+ *
+ *  > "돌리지마.. 그거한다고 시간낭비하고 오히려 엉망이 되는데..
+ *  >  당일것도 못하는데 무슨.. 그거도 시간재약있는 시트에서"
+ *
+ *  마감은 6분 안에 끝나야 한다. 그 시간을 지난 마감 파일 여는 데 쓰고
+ *  있었다. 파일 하나 여는 데 몇 초씩 걸리고, 이레치면 그것만으로 절반이다.
+ *  정작 «당일» 것이 덜 맞은 채 끝난다.
+ *
+ *  게다가 과거 기록을 자동으로 고치면, 틀렸을 때 아무도 모르고 굳는다.
+ *  지난주가 쓰레기가 된 길이 이 길이었다.
+ *
+ *  ★ 지우지 않는다 — 안 부를 뿐이다 ★
+ *    함수는 그대로 둔다. 감사 도구와 통합조회 재생성이 손으로 부를 수
+ *    있고, 언젠가 당일 것이 안정되면 그때 다시 켜면 된다.
+ *    켜려면 스크립트 속성 AUTO_BACKFILL = on.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pep_autoBackfillOn_() {
+  try {
+    return String(PropertiesService.getScriptProperties()
+      .getProperty("AUTO_BACKFILL") || "").trim().toLowerCase() === "on";
+  } catch (e) { return false; }
+}
+
+/** 매칭·보강이 거슬러 볼 수 있는 가장 이른 날 (yyyy-MM-dd). 없으면 "" */
+function _pep_matchStart_() {
+  try {
+    var v = String(PropertiesService.getScriptProperties()
+      .getProperty("MATCH_START_DATE") || "").trim();
+    if (v === "없음" || v === "off") return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  } catch (e) {}
+  return _PEP_MATCH_START_DEFAULT_;
+}
+
+/** 이 날짜(yyyy-MM-dd)를 봐도 되나 */
+function _pep_afterStart_(dateStr) {
+  var st = _pep_matchStart_();
+  if (!st) return true;
+  return String(dateStr || "") >= st;
+}
 
 var _UNIFIED_HEADERS_ = [
   "출처",         // A: 로젠 / 대리공급
@@ -10203,6 +10274,8 @@ function _pep_backfillRecentArchives_(invoiceMap, maxDays) {
     var dt = new Date(today.getTime());
     dt.setDate(dt.getDate() - d);
     var dateStr = Utilities.formatDate(dt, "Asia/Seoul", "yyyy-MM-dd");
+    /*  ★ 기준일 이전은 열지 않는다 ★  «무너진 주»를 고치려 들지 않는다.  */
+    if (!_pep_afterStart_(dateStr)) { out.skippedOld = (out.skippedOld || 0) + 1; continue; }
     var fileName = _UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")";
     var archSs = _unified_findExistingArchiveSs_(fileName);
     if (!archSs) continue;
@@ -11883,9 +11956,14 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
         dateKeys.sort();
         step2Before = dateKeys[0];
       }
-      var bfResult = _pep_backfillPreviousArchive_(invoiceMap, step2Before);
-      result.detail.backfill = bfResult.patched || 0;
-      result.detail.backfillDate = bfResult.date || "";
+      /*  ★ 껐다 ★ 위 _pep_autoBackfillOn_ 의 까닭을 보라.  */
+      if (_pep_autoBackfillOn_()) {
+        var bfResult = _pep_backfillPreviousArchive_(invoiceMap, step2Before);
+        result.detail.backfill = bfResult.patched || 0;
+        result.detail.backfillDate = bfResult.date || "";
+      } else {
+        result.detail.backfillOff = true;
+      }
     } catch (eBf) {
       Logger.log("[UNIFIED] 2단계 이전마감 보강 오류: " + eBf.message);
     }
@@ -11908,10 +11986,16 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
 
        ★ 실패해도 마감은 끝난다 ★ 보강은 곁다리다. */
     try {
-      var bfAll = _pep_backfillRecentArchives_(invoiceMap, _PEP_BACKFILL_DAYS_);
-      result.detail.backfillDays = bfAll.patched || 0;
-      result.detail.backfillDaysList = (bfAll.days || []).join(", ");
-      result.detail.backfillFiles = bfAll.files || 0;
+      /*  ★ 껐다 ★  마감의 6분은 «당일» 것에 쓴다.  */
+      if (_pep_autoBackfillOn_()) {
+        var bfAll = _pep_backfillRecentArchives_(invoiceMap, _PEP_BACKFILL_DAYS_);
+        result.detail.backfillDays = bfAll.patched || 0;
+        result.detail.backfillDaysList = (bfAll.days || []).join(", ");
+        result.detail.backfillFiles = bfAll.files || 0;
+      } else {
+        result.detail.backfillOff = true;
+        result.detail.backfillDaysList = "끔 — 당일 것만 맞춥니다";
+      }
     } catch (eBf2) {
       Logger.log("[UNIFIED] 지난 14일 보강 오류: " + eBf2.message);
       result.detail.backfillDaysList = "오류: " + eBf2.message;

@@ -31,7 +31,11 @@
  */
 
 var _IOD_TAB_ = "송장소유권_점검";
-var _IOD_DEFAULT_DAYS_ = 14;
+/*  ★ 14 → 7 ★  (2026-09-16)
+    > "매칭(3~7일)정도만 일일 마감시 매칭하고 따로 추가 매칭은 안할꺼야"
+    > "어차피 지난주에 데이타는 무너졌고 다시 테이타를 쌓는거야"
+    무너진 주를 같이 세면 숫자가 뜻을 잃는다. 쌓는 쪽만 본다.  */
+var _IOD_DEFAULT_DAYS_ = 7;
 
 /** 마지막 점검 결과 — 밤에 도는 쪽이 읽는다 */
 var _IOD_LAST_ = null;
@@ -359,6 +363,13 @@ function _iod_collectArchives_(reg, days, stat, started) {
     var dt = new Date(today.getTime());
     dt.setDate(dt.getDate() - d);
     var dateStr = _iod_dateKey_(dt);
+    /*  ★ 기준일 이전은 열지 않는다 ★  (2026-09-16)
+        「무너진 주」를 같이 세면 🔴·🟡 이 부풀고, 부푼 목록은 사람이
+        안 본다. 고칠 수 없는 과거를 세는 것은 셈이 아니라 소음이다.  */
+    if (typeof _pep_afterStart_ === "function" && !_pep_afterStart_(dateStr)) {
+      stat.skippedOld++;
+      continue;
+    }
 
     try {
       var ss = _unified_findExistingArchiveSs_(_UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")");
@@ -783,7 +794,7 @@ function partnerDiagnoseInvoiceOwnership(days) {
         못 읽고 있는 줄 모르면 정상 건을 전부 의심이라 부르게 된다.  */
     markCols: {}, marked: 0,
     /*  세트분리 원장에서 읽은 합포장 링크 — 몇 줄·몇 주문인지 말한다  */
-    packRows: 0, packUids: 0, knownUids: 0,
+    packRows: 0, packUids: 0, knownUids: 0, skippedOld: 0,
     notes: [], stopped: "",
   };
 
@@ -875,6 +886,12 @@ function partnerDiagnoseInvoiceOwnership(days) {
   lines.push("수집한 소유권 주장: 송장원장 " + stat.ledger + " · 허브 " + stat.hub +
     " · 일일마감 " + stat.archive + "건");
   lines.push("서로 다른 송장번호: " + invList.length + "개");
+  /*  안 본 것을 «안 봤다»고 말한다. 조용히 빼면 숫자가 줄어든 까닭을 모른다.  */
+  if (stat.skippedOld) {
+    var 시작 = (typeof _pep_matchStart_ === "function") ? _pep_matchStart_() : "";
+    lines.push("(" + 시작 + " 이전 " + stat.skippedOld + "일치는 보지 않았습니다 — " +
+      "다시 쌓기 시작한 날 이전입니다)");
+  }
   lines.push("");
   lines.push("── 충돌 ──");
   lines.push("  🔴 확실: " + counts.sure + "건");
