@@ -160,6 +160,27 @@ function _iod_loadPackGroups_(stat) {
 }
 
 /**
+ * 세트분리 원장이 이 주문들을 «알고 있나».
+ *
+ * ★ 왜 이것을 따로 보나 ★  (2026-09-16)
+ *   원장은 최근 회차만 들고 있다. 2주 전 마감 건은 거기 없다. 그러면
+ *   링크가 «아니다»가 아니라 «모른다»인데, 둘을 한데 세면 🟡 의심이
+ *   부풀고 사람은 그 목록을 안 보게 된다.
+ *
+ *   「합배송이 아니다」와 「물어볼 수 없었다」는 다른 말이다.
+ */
+function _iod_packAsked_(claims, pack) {
+  if (!pack) return false;
+  var 물어본것 = 0;
+  for (var i = 0; i < claims.length; i++) {
+    if (!claims[i].oid) continue;
+    if (!pack[claims[i].oid]) return false;   // 한 주문이라도 원장에 없으면 «모른다»
+    물어본것++;
+  }
+  return 물어본것 >= 2;
+}
+
+/**
  * 이 주장들이 «한 상자»인가 — 세트분리가 묶어 둔 것으로 판단한다.
  * 고유ID 가 없는 주장은 물어볼 수 없으니 «모름»으로 두고 넘어간다.
  * 물어볼 수 있었던 것이 둘 이상이고 그것들이 모두 같은 그룹이면 한 상자다.
@@ -180,13 +201,24 @@ function _iod_samePackGroup_(claims, pack) {
 }
 
 /**
- * 「합배송」이라 적힐 수 있는 칸의 머리글.
+ * 「합배송」이라 적힐 수 있는 칸의 머리글 — «우리가 적는» 칸만.
+ *
+ * ★ 배송메시지를 뺀다 ★  (2026-09-16, 같은 날 두 번째 판)
+ *   처음엔 배송메[시세]지도 넣었다. 실제로 돌려 보니 점검이 그 칸을
+ *   읽고 있었다 — 「읽은 칸: 적요 · 배송지(사방넷)/배송메시지」.
+ *
+ *   그런데 그 칸은 «고객이 쓰는» 칸이다. 고객이 「합배송 해주세요」라고
+ *   적어 두면 점검은 그것을 「합배송 되었다」로 읽는다. 요청을 사실로
+ *   바꾸는 것이다 — 오늘 하루 종일 고친 병을 내가 새로 심을 뻔했다.
+ *
+ *   합배송인지는 «우리가 적는» 칸에서만 읽는다: 적요·비고·메모·상태.
+ *   그보다 확실한 것은 세트분리의 합포장그룹 링크다(_iod_samePackGroup_).
  *
  * 자리로 박지 않고 이름으로 찾는다. 완전일치만 보면 「주문상태」·「비고1」·
  * 「배송메세지」 처럼 한 글자 붙은 칸을 통째로 놓친다 — 그러면 표시가
  * 있는데도 «없다»고 판정해 정상 건이 의심으로 올라간다.
  */
-var _IOD_MARK_HEADERS_ = /적요|비고|메모|상태|배송메[\uc2dc\uc138]지|특기사항/;
+var _IOD_MARK_HEADERS_ = /적요|비고|메모|상태|특기사항/;
 
 /** 이 글에 합배송·합포장이 적혀 있나 */
 function _iod_hasMergeMark_(mark) {
@@ -565,12 +597,21 @@ function _iod_judge_(claims, pack) {
     };
   }
 
+  /*  ★ 「아니다」와 「모른다」를 갈라서 말한다 ★  (2026-09-16)
+      원장이 이 주문들을 들고 있는데 다른 상자면 → 정말 의심스럽다.
+      원장에 아예 없으면 → 물어볼 수가 없었던 것이다. 같은 말로 세면
+      의심이 부풀고, 부푼 목록은 사람이 안 본다.  */
+  var 물어봤나 = _iod_packAsked_(claims, pack);
   return {
     grade: "🟡 의심",
     reason: "같은 수취인의 주문 " + ids.length + "건에 같은 송장" +
       (maxGap > 0 ? " · 주문일 " + maxGap + "일 차" : " · 같은 날") +
-      " — 합배송이라는 표시가 «없습니다». 개별 주문이라면 한쪽은 남의 송장입니다" + noNameNote,
+      (물어봤나
+        ? " — 세트분리 원장에 «따로 나간 것»으로 적혀 있습니다. 한쪽은 남의 송장입니다"
+        : " — 세트분리 원장에 없어 한 상자인지 «물어볼 수 없었습니다»(지난 회차)") +
+      noNameNote,
     owner: owner,
+    물어봤나: 물어봤나
   };
 }
 
@@ -730,7 +771,7 @@ function partnerDiagnoseInvoiceOwnership(days) {
 
   // 판정
   var groups = [];
-  var counts = { sure: 0, doubt: 0, merged: 0, byRefix: 0 };
+  var counts = { sure: 0, doubt: 0, merged: 0, byRefix: 0, doubtAsked: 0 };
   var invList = Object.keys(reg);
   for (var i = 0; i < invList.length; i++) {
     var inv = invList[i];
@@ -771,7 +812,8 @@ function partnerDiagnoseInvoiceOwnership(days) {
       claims: claims,
       refixed: touchedByRefix,
     });
-    if (verdict.grade.indexOf("확실") !== -1) counts.sure++; else counts.doubt++;
+    if (verdict.grade.indexOf("확실") !== -1) counts.sure++;
+    else { counts.doubt++; if (verdict.물어봤나) counts.doubtAsked++; }
   }
 
   // 재매칭이 건드린 것 → 확실 → 의심 순
@@ -810,6 +852,9 @@ function partnerDiagnoseInvoiceOwnership(days) {
   lines.push("── 충돌 ──");
   lines.push("  🔴 확실: " + counts.sure + "건");
   lines.push("  🟡 의심: " + counts.doubt + "건");
+  /*  의심을 둘로 갈라 보여 준다. 위쪽이 «지금 볼 것»이다.  */
+  lines.push("     └ 원장이 «따로 나갔다»고 말하는 것: " + counts.doubtAsked + "건 ← 먼저 봅니다");
+  lines.push("     └ 원장에 없어 물어볼 수 없던 것: " + (counts.doubt - counts.doubtAsked) + "건 (지난 회차)");
   lines.push("  🟢 합배송(정상): " + counts.merged + "건 — 같은 사람이 한 상자로 받은 것");
   if (!counts.sure && !counts.doubt) {
     lines.push("");

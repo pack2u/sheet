@@ -147,9 +147,13 @@ console.log("\n[8] ★ 합배송 표시를 읽는 칸 — 한 글자 붙어도 �
   ["_iod_hasMergeMark_", "_iod_markOf_"].forEach((n) => vm.runInContext(grabFrom(iod, n), ctx));
 
   const 읽나 = (h) => vm.runInContext("_IOD_MARK_HEADERS_.test(" + JSON.stringify(h) + ")", ctx);
-  ["적요", "비고", "메모", "상태", "주문상태", "비고1", "배송메시지", "배송메세지", "특기사항"]
+  ["적요", "비고", "메모", "상태", "주문상태", "비고1", "특기사항"]
     .forEach((h) => check("읽는다: " + h, 읽나(h), true));
-  ["수취인", "품목명", "송장번호", "수량"].forEach((h) => check("안 읽는다: " + h, 읽나(h), false));
+  /*  ★ 배송메시지는 «고객의 말»이다 ★  (2026-09-16)
+      고객이 「합배송 해주세요」라고 적어 둔 것을 「합배송 되었다」로 읽으면
+      요청이 사실로 둔갑한다. 우리가 적는 칸에서만 읽는다.  */
+  ["수취인", "품목명", "송장번호", "수량", "배송메시지", "배송메세지", "배송지(사방넷)/배송메시지"]
+    .forEach((h) => check("★ 안 읽는다: " + h, 읽나(h), false));
 }
 
 console.log("\n[9] 합배송·합포장만 표시로 친다");
@@ -214,7 +218,8 @@ console.log("\n[14] ★ 합포장과 합배송을 «링크»로 잇는다");
       세트분리는 「이 여섯 줄이 한 상자다」를 이미 알고 있다 —
       주문라인원장의 합포장그룹. 글자는 안 적히면 없지만,
       링크는 묶는 순간 거기 있다.  */
-  vm.runInContext(grabFrom(iod, "_iod_samePackGroup_"), ctx);
+  vm.runInContext(grabFrom(iod, "_iod_packAsked_"), ctx);
+vm.runInContext(grabFrom(iod, "_iod_samePackGroup_"), ctx);
   const 한상자 = (oids, pack) => {
     ctx.__cl = oids.map((o) => ({ oid: o }));
     ctx.__pk = pack;

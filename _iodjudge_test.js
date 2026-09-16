@@ -52,6 +52,7 @@ vm.createContext(ctx);
 /*  합배송 표시를 읽는 함수는 «본체 것»을 그대로 쓴다 —
     여기서 흉내내면 본체가 바뀔 때 시험만 통과한다.  */
 vm.runInContext(grab("_iod_hasMergeMark_"), ctx);
+vm.runInContext(grab("_iod_packAsked_"), ctx);
 vm.runInContext(grab("_iod_samePackGroup_"), ctx);
 vm.runInContext(grab("_iod_judge_"), ctx);
 const 판정 = (claims) => vm.runInContext("_iod_judge_(" + JSON.stringify(claims) + ")", ctx,
@@ -77,8 +78,20 @@ console.log("\n[1] ★ 같은 사람 · 같은 날인데 «표시가 없으면»
     { oid: "SB-1002", name: "김철수", 날: "2026-09-15" },
   ]);
   check("★ 등급", v && v.grade, "🟡 의심");
-  check("★ 표시가 없다고 말한다", v.reason.indexOf("표시가 «없습니다»") >= 0, true);
-  check("무엇을 뜻하는지 말한다", v.reason.indexOf("한쪽은 남의 송장") >= 0, true);
+  /*  ★ 「아니다」와 「모른다」를 갈라서 말한다 ★  (2026-09-16)
+      원장에 없으면 «물어볼 수 없었던» 것이다. 그것을 「합배송이 아니다」와
+      같은 말로 세면 의심이 부풀고, 부푼 목록은 사람이 안 본다.  */
+  check("★ 물어볼 수 없었다고 말한다", v.reason.indexOf("«물어볼 수 없었습니다»") >= 0, true);
+  check("★ 단정하지 않는다", v.reason.indexOf("한쪽은 남의 송장") < 0, true);
+
+  /*  원장이 들고 있는데 «따로 나갔다»면 그때는 단정한다  */
+  const v2 = 판정하기([
+    { oid: "SB-1001", name: "김철수", 날: "2026-09-15" },
+    { oid: "SB-1002", name: "김철수", 날: "2026-09-15" },
+  ], { "SB-1001": "260915-1/가", "SB-1002": "260915-1/나" });
+  check("★ 원장이 따로라고 하면 단정한다", v2.reason.indexOf("«따로 나간 것»") >= 0, true);
+  check("★ 그때는 남의 송장이라 말한다", v2.reason.indexOf("한쪽은 남의 송장") >= 0, true);
+  check("★ 셈에 표시가 남는다", v2.물어봤나, true);
 }
 
 console.log("\n[1-b] ★ 합배송이라고 «적혀 있으면» 정상이다");
