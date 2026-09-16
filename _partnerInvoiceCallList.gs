@@ -67,6 +67,24 @@ function _icl_mapCols_(hdr) {
   return m;
 }
 
+/**
+ * 이 묶음으로 «전화를 걸 수 있나».
+ *
+ * ★ 모르는 것을 명단에 싣지 않는다 ★  (2026-09-16)
+ *   3일치 점검 결과 —
+ *     🔴 확실 64 · 🟡 «따로 나갔다» 4 · 🟡 «물어볼 수 없음» 40
+ *
+ *   뒤의 40건은 세트분리 원장에 없는 지난 회차라 한 상자인지 «모른다».
+ *   모르는 것을 명단에 실으면 108명에게 전화를 걸게 되고, 그중 40통은
+ *   할 말이 없다. 그런 명단은 한 번 돌려 보고 다시 안 쓴다.
+ *
+ *   판정이 사유에 적어 둔 말로 가른다 — 여기서 다시 짐작하지 않는다.
+ */
+function _icl_actionable_(grade, reason) {
+  if (String(grade || "").indexOf("확실") !== -1) return true;
+  return String(reason || "").indexOf("«물어볼 수 없었습니다»") === -1;
+}
+
 /** 전화번호에서 숫자만 — 같은 사람인지 가리는 데 쓴다 */
 function _icl_phoneKey_(v) {
   return String(v == null ? "" : v).replace(/[^0-9]/g, "");
@@ -84,8 +102,14 @@ function _icl_what_(grade, reason) {
   if (r.indexOf("과거 주문 송장") !== -1) {
     return "지난 주문의 송장이 이번 주문에 붙었습니다 — 조회하면 «배송완료»로 보입니다";
   }
+  /*  ★ 원장이 «따로 나갔다»고 말하는 것 ★  (2026-09-16)
+      세트분리 원장이 이 주문들을 알고 있고, 한 상자로 묶지 «않았다».
+      그런데 송장이 같다 — 짐작이 아니라 기록끼리 어긋나는 것이다.  */
+  if (r.indexOf("«따로 나간 것»") !== -1) {
+    return "세트분리는 «따로» 내보냈는데 송장이 같습니다 — 한 상자는 안 갔습니다";
+  }
   if (String(grade || "").indexOf("의심") !== -1) {
-    return "주문 여럿에 같은 송장 · 합배송이라는 표시가 없습니다 — 한 상자가 안 갔을 수 있습니다";
+    return "주문 여럿에 같은 송장 · 한 상자라는 근거가 없습니다 — 한 상자가 안 갔을 수 있습니다";
   }
   return "한 송장이 여러 주문에 붙어 있습니다";
 }
@@ -98,6 +122,9 @@ function _icl_ask_(grade, reason) {
   }
   if (r.indexOf("과거 주문 송장") !== -1) {
     return "이번 주문이 실제로 도착했는지 (조회에는 지난번 배송이 보일 수 있습니다)";
+  }
+  if (r.indexOf("«따로 나간 것»") !== -1) {
+    return "주문하신 것이 «모두» 도착했는지 — 따로 보낸 쪽이 빠졌을 수 있습니다";
   }
   if (String(grade || "").indexOf("의심") !== -1) {
     return "한 상자로 받으셨는지 · 따로 시키신 것이 아직 안 왔는지";
@@ -159,13 +186,18 @@ function partnerBuildInvoiceCallList(의심도) {
       있지만 그건 «합치는» 쪽이라 빠뜨리지는 않는다.  */
   var 사람 = {};
   var 순서 = [];
-  var 담음 = 0, 건너뜀 = 0;
+  var 담음 = 0, 건너뜀 = 0, 모름 = 0;
 
   for (var gi = 0; gi < 순서묶음.length; gi++) {
     var 줄들 = 묶음[순서묶음[gi]];
     var 등급 = 줄들.length ? 줄들[0].grade : "";
+    var 사유 = 줄들.length ? 줄들[0].reason : "";
     var 확실 = 등급.indexOf("확실") !== -1;
     if (!확실 && !의심도) { 건너뜀 += 줄들.length; continue; }
+    /*  ★ 할 말이 없는 건은 싣지 않는다 ★
+        원장에 없어 한 상자인지 «물어볼 수 없었던» 건은 전화로도 답이 안
+        나온다. 세어서 말하되 명단에서는 뺀다.  */
+    if (!_icl_actionable_(등급, 사유)) { 모름 += 줄들.length; continue; }
 
     for (var i = 0; i < 줄들.length; i++) {
       var d = 줄들[i];
@@ -259,6 +291,10 @@ function partnerBuildInvoiceCallList(의심도) {
   lines.push("");
   lines.push("걸린 주장 " + 담음 + "건을 사람 단위로 접었습니다.");
   if (건너뜀) lines.push("이름이 없어 전화를 못 거는 " + 건너뜀 + "건은 뺐습니다.");
+  if (모름) {
+    lines.push("세트분리 원장에 없어 한 상자인지 «모르는» " + 모름 + "건은 뺐습니다 —");
+    lines.push("  전화를 걸어도 할 말이 없습니다. 점검 탭에는 🟡 로 남아 있습니다.");
+  }
   lines.push("");
   lines.push("★ 「주인추정」은 주문일이 가장 이르다는 뜻일 뿐, 누구 상자인지는");
   lines.push("  단정하지 않았습니다. 통화에서 확인할 것을 J열에 적어 두었습니다.");
