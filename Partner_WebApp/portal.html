@@ -6,13 +6,91 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="format-detection" content="telephone=no">
   <title>반품 현황 · Pack2U</title>
+  <script>
+    /* 저장해 둔 테마를 그리기 전에 입힌다.
+       body 나 onload 에서 하면 어두운 화면이 한 번 번쩍이고 밝게 바뀐다.
+       CS 웹앱과 «같은 열쇠»를 쓴다 — 한 사람이 두 앱을 오가도 한 번만 고르면 된다. */
+    (function () {
+      try {
+        var t = localStorage.getItem("pack2u_theme");
+        if (t === "light" || t === "dark") {
+          document.documentElement.setAttribute("data-theme", t);
+        }
+      } catch (e) {}
+    })();
+  </script>
   <?!= include('prpFavicon') ?>
   <style>
+    /* ══════════════════════════════════════════════════════════════
+       ★ CS 웹앱과 같은 색 · 다크/라이트 ★  (2026-09-16)
+
+       > "칼라도 cs웹앱 칼라로 다크와 라이트 모드 2가지로 되게"
+
+       종전에는 푸른 기가 도는 어두운 색(#0f1117 계열)이 서른 곳 넘게
+       박혀 있었다. 업체가 보는 화면과 우리가 보는 화면이 딴 물건 같았고,
+       밝은 화면에서 일하는 사람은 아예 못 봤다.
+
+       값은 CS_WebApp/home.html 의 :root 와 «같다». 한쪽을 고치면 다른
+       쪽도 봐야 한다 — 두 앱이 같은 물건으로 보이는 것이 그 값의 뜻이다.
+
+       ★ 파랑은 CS 의 묵은 카드 파랑(90,170,255)을 쓴다 ★
+         CS 의 강조색은 회색이라 「접수·정보」를 나타낼 색이 없다.
+         이미 CS 안에서 「알려야 하는 것」에 쓰는 파랑을 그대로 가져온다.
+       ══════════════════════════════════════════════════════════════ */
+    :root {
+      --bg-primary: #111111;
+      --bg-secondary: #1d1d1d;
+      --bg-card: #252525;
+      --bg-sunken: #1a1a1a;
+      --text-primary: #f0f0f0;
+      --text-bright: #c1c1c1;
+      --text-secondary: #909090;
+      --text-muted: #616161;
+      --border: rgba(255, 255, 255, 0.10);
+      --border-soft: rgba(255, 255, 255, 0.06);
+      --accent: #757575;
+      --accent-blue: #5aaaff;
+      --accent-blue-bg: rgba(90, 170, 255, 0.18);
+      --accent-green: #34c77b;
+      --accent-green-bg: rgba(52, 199, 123, 0.18);
+      --accent-orange: #f0a030;
+      --accent-orange-bg: rgba(240, 160, 48, 0.18);
+      --accent-purple: #b39ae8;
+      --accent-purple-bg: rgba(160, 120, 230, 0.18);
+      --accent-red: #ff5f56;
+      --on-accent: #ffffff;
+    }
+    :root[data-theme="light"] {
+      /* 바탕을 흰색 바로 아래로 낮춘다. 카드가 흰색이라 바탕까지 희면
+         경계가 안 보여 화면이 통째로 뿌옇게 읽힌다. (CS 와 같은 판단) */
+      --bg-primary: #e9ebef;
+      --bg-secondary: #ffffff;
+      --bg-card: #ffffff;
+      --bg-sunken: #f2f4f7;
+      --text-primary: #1b1e23;
+      --text-bright: #2f343b;
+      --text-secondary: #5b6169;
+      --text-muted: #868d96;
+      --border: rgba(0, 0, 0, 0.16);
+      --border-soft: rgba(0, 0, 0, 0.10);
+      --accent: #6b7280;
+      /* 흰 바탕에서 흐려지는 강조색만 진하게. 배경 rgba 는 그대로 둔다 */
+      --accent-blue: #1f66c9;
+      --accent-blue-bg: rgba(31, 102, 201, 0.14);
+      --accent-green: #1a9e68;
+      --accent-green-bg: rgba(26, 158, 104, 0.16);
+      --accent-orange: #b46a00;
+      --accent-orange-bg: rgba(180, 106, 0, 0.16);
+      --accent-purple: #6b46c1;
+      --accent-purple-bg: rgba(107, 70, 193, 0.14);
+      --accent-red: #d13b32;
+    }
+
     * { box-sizing: border-box; }
     html, body {
       margin: 0; padding: 0; width: 100%;
       min-height: 100vh; min-height: 100dvh;
-      background: #0f1117; color: #f0f0f5;
+      background: var(--bg-primary); color: var(--text-primary);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
       -webkit-text-size-adjust: 100%;
     }
@@ -23,62 +101,93 @@
       display: flex; align-items: center; gap: 10px;
       padding: 14px 14px 12px;
       padding-top: calc(14px + env(safe-area-inset-top, 0px));
-      background: #1a1d28; border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: var(--bg-secondary); border-bottom: 1px solid var(--border-soft);
       position: sticky; top: 0; z-index: 40;
     }
     .top-title { font-size: 15px; font-weight: 700; flex: 1; min-width: 0;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .top-title small { display: block; font-size: 11px; color: #7a7f96; font-weight: 500; margin-top: 2px; }
+    .top-title small { display: block; font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px; }
     .icon-btn {
       width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px;
-      border: 1px solid #2c3040; background: #222533; color: #cfd3e0;
+      border: 1px solid var(--border); background: var(--bg-card); color: var(--text-bright);
       font-size: 16px; cursor: pointer;
     }
-    .icon-btn:active { background: #2b2f40; }
+    .icon-btn:active { background: var(--bg-card); }
 
     .wrap { padding: 14px; max-width: 720px; margin: 0 auto; }
+
+    /* ══════════════════════════════════════════════════════════════
+       ★ PC 에서는 가로 셋 ★  (2026-09-16)
+
+       > "지금은 모바일 버젼인데 pc에서는 가로 3개 한줄로 전체를 다
+       >  볼수 있게"
+
+       폭을 720px 로 묶어 두어 큰 화면에서도 카드가 한 줄에 하나였다.
+       업체는 진행 중 반품을 «훑어보는» 것이 일이라 한 화면에 많이 들어와야
+       한다. 넓어지면 셋, 더 좁으면 둘, 폰에서는 하나.
+
+       ★ 칸 수를 못 박지 않는다 ★  카드 한 장에 최소 330px 를 주고 남는
+         만큼 채운다. 노트북·태블릿·세로 모니터가 저마다 알맞게 선다.
+       ★ 카드 안은 «안 바꾼다» ★  왼쪽 1 : 오른쪽 2 비율(c-left/c-right)은
+         2026-09-11 에 정한 것이다. 칸이 좁아지면 그 안에서 위아래로 접힌다.
+       ══════════════════════════════════════════════════════════════ */
+    @media (min-width: 900px) {
+      .wrap { max-width: 1560px; padding: 18px 20px 20px; }
+      #list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+        gap: 12px;
+        align-items: start;
+      }
+      #list > .card { margin-bottom: 0; }
+      /* 카드가 셋씩 설 만큼 넓으면 KPI 도 한 줄에 시원하게 */
+      .kpi { max-width: 760px; }
+      .bar, .search, .btn-new { max-width: 760px; }
+      /* 「접수 없음」 같은 안내는 한 줄을 다 쓴다 — 셋 중 하나만 서면 어색하다 */
+      #list > .empty, #list > .err { grid-column: 1 / -1; }
+    }
 
     /* ── KPI ── */
     .kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
     .kpi div {
-      background: #1a1d28; border: 1px solid rgba(255,255,255,0.05);
+      background: var(--bg-secondary); border: 1px solid var(--border-soft);
       border-radius: 12px; padding: 10px 8px; text-align: center;
     }
     .kpi b { display: block; font-size: 19px; font-weight: 700; line-height: 1.2; }
-    .kpi span { font-size: 10.5px; color: #7a7f96; }
-    .kpi .k-act b { color: #f0b45e; }
-    .kpi .k-done b { color: #5ecf8a; }
-    .kpi .k-fee b { font-size: 14px; color: #7fb2e8; }
+    .kpi span { font-size: 10.5px; color: var(--text-muted); }
+    .kpi .k-act b { color: var(--accent-orange); }
+    .kpi .k-done b { color: var(--accent-green); }
+    .kpi .k-fee b { font-size: 14px; color: var(--accent-blue); }
 
     /* ── 필터 ── */
     .bar { display: flex; gap: 8px; margin-bottom: 12px; }
-    .segs { display: flex; gap: 4px; background: #1a1d28; border-radius: 10px; padding: 4px; flex: 1; }
+    .segs { display: flex; gap: 4px; background: var(--bg-secondary); border-radius: 10px; padding: 4px; flex: 1; }
     .segs button {
       flex: 1; padding: 8px 4px; border: 0; border-radius: 7px;
-      background: transparent; color: #8b90a6; font-size: 12.5px; font-weight: 600; cursor: pointer;
+      background: transparent; color: var(--text-secondary); font-size: 12.5px; font-weight: 600; cursor: pointer;
     }
-    .segs button.on { background: #2f6feb; color: #fff; }
+    .segs button.on { background: var(--accent-blue); color: var(--on-accent); }
     /* 나열 차례 고르는 칸 — 진행중/완료/전체 오른쪽에 조용히 선다 */
     .sortsel {
       flex: 0 0 auto; margin-left: 6px; height: 36px; padding: 0 8px;
-      font-size: 13px; color: #c9d1de; background: #1a1d28;
-      border: 1px solid #2a2f3d; border-radius: 10px; cursor: pointer;
+      font-size: 13px; color: var(--text-bright); background: var(--bg-secondary);
+      border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
     }
-    .sortsel:focus { outline: 2px solid #2f6feb; outline-offset: 1px; }
+    .sortsel:focus { outline: 2px solid var(--accent-blue); outline-offset: 1px; }
     .search {
       width: 100%; padding: 11px 12px; border-radius: 10px;
-      border: 1px solid #2c3040; background: #171a24; color: #f0f0f5; margin-bottom: 12px;
+      border: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-primary); margin-bottom: 12px;
     }
     .btn-new {
       width: 100%; padding: 13px; border-radius: 11px; border: 0;
-      background: #2f6feb; color: #fff; font-size: 14px; font-weight: 700;
+      background: var(--accent-blue); color: var(--on-accent); font-size: 14px; font-weight: 700;
       cursor: pointer; margin-bottom: 14px;
     }
-    .btn-new:active { background: #2a61ce; }
+    .btn-new:active { background: var(--accent-blue); }
 
     /* ── 카드 ── */
     .card {
-      background: #1a1d28; border: 1px solid rgba(255,255,255,0.05);
+      background: var(--bg-secondary); border: 1px solid var(--border-soft);
       border-radius: 14px; padding: 13px; margin-bottom: 10px;
     }
     .c-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
@@ -87,11 +196,11 @@
       flex-shrink: 0; padding: 4px 9px; border-radius: 999px;
       font-size: 11px; font-weight: 700; white-space: nowrap;
     }
-    .b-new { background: rgba(47,111,235,0.18); color: #7fb2e8; }
-    .b-mid { background: rgba(240,180,94,0.18); color: #f0b45e; }
-    .b-in  { background: rgba(160,120,230,0.18); color: #b39ae8; }
-    .b-ok  { background: rgba(94,207,138,0.18); color: #5ecf8a; }
-    .b-off { background: rgba(255,255,255,0.08); color: #9aa0b4; }
+    .b-new { background: var(--accent-blue-bg); color: var(--accent-blue); }
+    .b-mid { background: var(--accent-orange-bg); color: var(--accent-orange); }
+    .b-in  { background: var(--accent-purple-bg); color: var(--accent-purple); }
+    .b-ok  { background: var(--accent-green-bg); color: var(--accent-green); }
+    .b-off { background: var(--border); color: var(--text-secondary); }
 
     .c-body { display: flex; gap: 12px; flex-wrap: wrap; }
     /* ★ 왼쪽:오른쪽 = 1:2 ★  (2026-09-11)
@@ -101,9 +210,9 @@
        190/280 은 «접히는 바닥»이다 — 폰에서는 여기서 위아래로 접힌다. */
     .c-left { flex: 1 1 190px; min-width: 0; }
     .c-right { flex: 2 1 280px; min-width: 0; }
-    .meta { font-size: 12.5px; color: #a8adc0; line-height: 1.65; word-break: break-all; }
-    .meta em { color: #6f748a; font-style: normal; }
-    .sub { font-size: 11px; color: #6f748a; margin-top: 6px; }
+    .meta { font-size: 12.5px; color: var(--text-secondary); line-height: 1.65; word-break: break-all; }
+    .meta em { color: var(--text-muted); font-style: normal; }
+    .sub { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
     /* 전화번호 딱지 — 작고 조용하게. 「안심번호뿐」일 때만 색을 준다
        (2026-09-11 · CS home.html · v2 returns.css 와 같은 규칙) */
     /* 이름은 번호에 딸린 것이라 번호보다 조용하게, 다만 읽히게
@@ -111,10 +220,10 @@
     .ph-who { font-size: 0.92em; font-weight: 600; opacity: 0.85; }
     .ph-tag { font-size: 0.85em; font-weight: 600; opacity: 0.7; }
     .ph-sub { font-size: 0.9em; opacity: 0.55; }
-    .ph-warn { font-size: 0.85em; font-weight: 600; color: #e7707f; }
-    .fee { color: #7fb2e8; font-weight: 600; }
-    .inv-link { color: #7fb2e8; text-decoration: none; border-bottom: 1px dotted rgba(127,178,232,0.5); }
-    .inv-link:active { color: #a8cdf5; }
+    .ph-warn { font-size: 0.85em; font-weight: 600; color: var(--accent-red); }
+    .fee { color: var(--accent-blue); font-weight: 600; }
+    .inv-link { color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue-bg); }
+    .inv-link:active { color: var(--accent-blue); }
 
     /* 타임라인 */
     /* ★ 반품송장은 따로 세운다 ★  (2026-09-11)
@@ -124,30 +233,30 @@
        아직 없을 때도 칸을 지운다 — 「없다」가 보여야 기다릴지 물어볼지 안다. */
     .ret-inv-box {
       margin-top: 8px; padding: 7px 9px; border-radius: 8px;
-      background: #171a24; border: 1px solid #2c3040;
+      background: var(--bg-sunken); border: 1px solid var(--border);
     }
-    .ret-inv-box .lab { font-size: 10.5px; color: #6f748a; margin-bottom: 2px; }
+    .ret-inv-box .lab { font-size: 10.5px; color: var(--text-muted); margin-bottom: 2px; }
     .ret-inv-box .val { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
-    .ret-inv-box .val a { color: #8fc6ff; text-decoration: none; }
+    .ret-inv-box .val a { color: var(--accent-blue); text-decoration: none; }
     .ret-inv-box .val a:hover { text-decoration: underline; }
     .ret-inv-box.none { border-style: dashed; }
-    .ret-inv-box.none .val { font-size: 12px; font-weight: 500; color: #6f748a; }
-    .tl-h { font-size: 11px; color: #6f748a; margin-bottom: 5px; }
-    .tl { border-left: 2px solid #2c3040; padding-left: 10px; }
+    .ret-inv-box.none .val { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+    .tl-h { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
+    .tl { border-left: 2px solid var(--border); padding-left: 10px; }
     .ev { margin-bottom: 8px; }
     .ev:last-child { margin-bottom: 0; }
-    .ev-when { font-size: 10.5px; color: #6f748a; }
+    .ev-when { font-size: 10.5px; color: var(--text-muted); }
     .ev-tag {
       display: inline-block; font-size: 10px; font-weight: 700;
       padding: 1px 6px; border-radius: 5px; margin-left: 4px;
     }
-    .t-status  { background: rgba(47,111,235,0.18); color: #7fb2e8; }
-    .t-access  { background: rgba(255,255,255,0.07); color: #9aa0b4; }
-    .t-mine    { background: rgba(240,180,94,0.18); color: #f0b45e; }
-    .t-consult { background: rgba(160,132,232,0.18); color: #b49af0; }
-    .t-photo   { background: rgba(100,181,246,0.18); color: #7cc0f5; }
-    .ev-body { font-size: 12.5px; color: #d6d9e3; margin-top: 2px; word-break: break-word; }
-    .ev-body a { color: #7fb2e8; }
+    .t-status  { background: var(--accent-blue-bg); color: var(--accent-blue); }
+    .t-access  { background: var(--border); color: var(--text-secondary); }
+    .t-mine    { background: var(--accent-orange-bg); color: var(--accent-orange); }
+    .t-consult { background: var(--accent-purple-bg); color: var(--accent-purple); }
+    .t-photo   { background: var(--accent-blue-bg); color: var(--accent-blue); }
+    .ev-body { font-size: 12.5px; color: var(--text-bright); margin-top: 2px; word-break: break-word; }
+    .ev-body a { color: var(--accent-blue); }
 
     /* 사진 썸네일 — 눌러 같은 화면 팝업으로 연다 (새 탭 아님) */
     .ev-thumbs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
@@ -155,13 +264,13 @@
        매번 크게 열어야 했다. 칸이 넓어진 만큼 키운다. */
     .ev-thumbs button {
       display: block; width: 92px; height: 92px; border-radius: 7px; overflow: hidden;
-      border: 1px solid #2c3040; background: #171a24; position: relative;
+      border: 1px solid var(--border); background: var(--bg-sunken); position: relative;
       padding: 0; cursor: pointer;
     }
     .ev-thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .ev-thumbs .alt {
       display: none; position: absolute; inset: 0; align-items: center; justify-content: center;
-      font-size: 9.5px; color: #8b90a6; text-align: center; line-height: 1.3;
+      font-size: 9.5px; color: var(--text-secondary); text-align: center; line-height: 1.3;
     }
     .ev-thumbs button.fail .alt { display: flex; }
 
@@ -169,36 +278,36 @@
     .steps { display: flex; gap: 3px; margin: 9px 0 2px; }
     .steps .st {
       flex: 1; min-width: 0; text-align: center; font-size: 9.5px; font-weight: 600;
-      padding: 4px 2px 5px; border-radius: 6px; background: #1c1f2b; color: #5d6276;
-      border-top: 2px solid #2c3040; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      padding: 4px 2px 5px; border-radius: 6px; background: var(--bg-sunken); color: var(--text-muted);
+      border-top: 2px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .steps .st.done { color: #8b90a6; border-top-color: #3a4a6b; }
-    .steps .st.now  { color: #cfe0fb; background: rgba(47,111,235,0.16); border-top-color: #2f6feb; }
-    .steps.off .st  { color: #5d6276; border-top-color: #2c3040; }
-    .steps-off-note { font-size: 10.5px; color: #6f748a; margin: 9px 0 2px; }
+    .steps .st.done { color: var(--text-secondary); border-top-color: var(--accent-blue); }
+    .steps .st.now  { color: var(--accent-blue); background: var(--accent-blue-bg); border-top-color: var(--accent-blue); }
+    .steps.off .st  { color: var(--text-muted); border-top-color: var(--border); }
+    .steps-off-note { font-size: 10.5px; color: var(--text-muted); margin: 9px 0 2px; }
 
     /* 액션 */
     .c-foot { display: flex; gap: 6px; margin-top: 11px; padding-top: 11px;
-      border-top: 1px solid rgba(255,255,255,0.05); }
+      border-top: 1px solid var(--border-soft); }
     .act {
-      flex: 1; padding: 9px 6px; border-radius: 9px; border: 1px solid #2c3040;
-      background: #222533; color: #cfd3e0; font-size: 12px; font-weight: 600; cursor: pointer;
+      flex: 1; padding: 9px 6px; border-radius: 9px; border: 1px solid var(--border);
+      background: var(--bg-card); color: var(--text-bright); font-size: 12px; font-weight: 600; cursor: pointer;
     }
-    .act:active { background: #2b2f40; }
+    .act:active { background: var(--bg-card); }
     .pop { display: none; margin-top: 9px; }
     .pop.on { display: block; }
     .pop textarea {
       width: 100%; min-height: 68px; padding: 10px; border-radius: 9px;
-      border: 1px solid #2c3040; background: #171a24; color: #f0f0f5; resize: vertical;
+      border: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-primary); resize: vertical;
     }
     .pop-row { display: flex; gap: 6px; margin-top: 6px; }
 
-    .empty { text-align: center; padding: 44px 20px; color: #6f748a; font-size: 13px; line-height: 1.8; }
+    .empty { text-align: center; padding: 44px 20px; color: var(--text-muted); font-size: 13px; line-height: 1.8; }
 
     /* ── 정산 ── */
     .fee-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .fee-tbl th, .fee-tbl td { padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); text-align: left; }
-    .fee-tbl th { color: #7a7f96; font-size: 11px; font-weight: 600; }
+    .fee-tbl th, .fee-tbl td { padding: 10px 8px; border-bottom: 1px solid var(--border-soft); text-align: left; }
+    .fee-tbl th { color: var(--text-muted); font-size: 11px; font-weight: 600; }
     .fee-tbl td.num { text-align: right; }
 
     /* ── 모달 ── */
@@ -208,35 +317,35 @@
     }
     .modal.on { display: block; }
     .sheet {
-      max-width: 480px; margin: 24px auto; background: #1a1d28;
-      border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; padding: 18px;
+      max-width: 480px; margin: 24px auto; background: var(--bg-secondary);
+      border: 1px solid var(--border); border-radius: 16px; padding: 18px;
     }
     .sheet h2 { font-size: 16px; margin: 0 0 4px; font-weight: 700; }
-    .sheet .hint { font-size: 11.5px; color: #7a7f96; line-height: 1.6; margin-bottom: 14px; }
+    .sheet .hint { font-size: 11.5px; color: var(--text-muted); line-height: 1.6; margin-bottom: 14px; }
     .fld { margin-bottom: 11px; }
-    .fld label { display: block; font-size: 11.5px; color: #8b90a6; margin-bottom: 5px; font-weight: 600; }
+    .fld label { display: block; font-size: 11.5px; color: var(--text-secondary); margin-bottom: 5px; font-weight: 600; }
     .fld input, .fld select, .fld textarea {
       width: 100%; padding: 11px; border-radius: 10px;
-      border: 1px solid #2c3040; background: #171a24; color: #f0f0f5;
+      border: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-primary);
     }
     .fld textarea { min-height: 62px; resize: vertical; }
     .fld2 { display: flex; gap: 8px; }
     .fld2 > * { flex: 1; min-width: 0; }
-    .req::after { content: ' *'; color: #e7607a; }
+    .req::after { content: ' *'; color: var(--accent-red); }
     .scan-row { display: flex; gap: 8px; }
     .scan-row input { flex: 1; min-width: 0; }
     .scan-btn {
-      flex: 0 0 auto; padding: 11px 13px; border-radius: 10px; border: 1px solid #2c3040;
-      background: #222533; color: #cfd3e0; font-weight: 600; cursor: pointer;
+      flex: 0 0 auto; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--bg-card); color: var(--text-bright); font-weight: 600; cursor: pointer;
     }
     .sheet-foot { display: flex; gap: 8px; margin-top: 16px; }
     .sheet-foot button { flex: 1; padding: 13px; border-radius: 11px; border: 0; font-weight: 700; cursor: pointer; }
-    .b-primary { background: #2f6feb; color: #fff; }
-    .b-ghost { background: #222533; color: #cfd3e0; border: 1px solid #2c3040 !important; }
-    .b-warn { background: #c9524f; color: #fff; }
+    .b-primary { background: var(--accent-blue); color: var(--on-accent); }
+    .b-ghost { background: var(--bg-card); color: var(--text-bright); border: 1px solid var(--border) !important; }
+    .b-warn { background: var(--accent-red); color: var(--on-accent); }
     .msg { font-size: 12px; line-height: 1.6; margin-top: 10px; min-height: 16px; }
-    .msg.err { color: #f5a0a8; }
-    .msg.ok { color: #6ee7a8; }
+    .msg.err { color: var(--accent-red); }
+    .msg.ok { color: var(--accent-green); }
     .hidden-file { position: absolute; width: 1px; height: 1px; opacity: 0; }
 
     /* ── 로딩 ── */
@@ -245,37 +354,37 @@
       flex-direction: column; gap: 12px; }
     .load.on { display: flex; }
     .spin { width: 34px; height: 34px; border: 3px solid rgba(255,255,255,0.09);
-      border-top-color: #2f6feb; border-radius: 50%; animation: rot .8s linear infinite; }
+      border-top-color: var(--accent-blue); border-radius: 50%; animation: rot .8s linear infinite; }
     @keyframes rot { to { transform: rotate(360deg); } }
-    .ver { text-align: center; font-size: 11px; color: #4f5468; padding: 20px 0 30px; }
+    .ver { text-align: center; font-size: 11px; color: var(--text-muted); padding: 20px 0 30px; }
 
     .photo-pick { display: flex; gap: 6px; flex-wrap: wrap; }
     .photo-pick .pk {
       flex: 1; min-width: 72px; text-align: center; padding: 10px 8px;
-      border-radius: 9px; border: 1px solid #2c3040; background: #222533;
-      color: #cfd3e0; font-size: 12.5px; font-weight: 600; cursor: pointer;
+      border-radius: 9px; border: 1px solid var(--border); background: var(--bg-card);
+      color: var(--text-bright); font-size: 12.5px; font-weight: 600; cursor: pointer;
     }
     .photo-pick .pk input { position: absolute; width: 1px; height: 1px; opacity: 0; }
     .photo-prev { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .photo-prev .pend {
       position: relative; width: 56px; height: 56px; border-radius: 8px; overflow: hidden;
-      border: 1px solid #2c3040; background: #171a24;
+      border: 1px solid var(--border); background: var(--bg-sunken);
     }
     .photo-prev .pend img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .photo-prev .pend button {
       position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; padding: 0;
-      border: 0; border-radius: 50%; background: rgba(8,9,13,0.72); color: #fff;
+      border: 0; border-radius: 50%; background: rgba(8,9,13,0.72); color: var(--on-accent);
       font-size: 12px; line-height: 18px; cursor: pointer;
     }
-    .photo-help { font-size: 11px; color: #6f748a; margin-top: 6px; }
+    .photo-help { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
 
     .hits { margin-top: 6px; }
     .hit {
       display: block; width: 100%; text-align: left; padding: 9px 10px; margin-bottom: 5px;
-      border-radius: 9px; border: 1px solid #2c3040; background: #171a24;
-      color: #d6d9e3; font-size: 12.5px; line-height: 1.5; cursor: pointer;
+      border-radius: 9px; border: 1px solid var(--border); background: var(--bg-sunken);
+      color: var(--text-bright); font-size: 12.5px; line-height: 1.5; cursor: pointer;
     }
-    .hit:active, .hit.on { border-color: #2f6feb; background: rgba(47,111,235,0.14); }
+    .hit:active, .hit.on { border-color: var(--accent-blue); background: rgba(47,111,235,0.14); }
     .hit b { display: block; font-size: 13px; margin-bottom: 2px; }
 
     .lb {
@@ -291,7 +400,7 @@
     .lb-x {
       position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 14px;
       width: 40px; height: 40px; border: 0; border-radius: 50%;
-      background: #222533; color: #fff; font-size: 22px; cursor: pointer;
+      background: var(--bg-card); color: var(--on-accent); font-size: 22px; cursor: pointer;
     }
   </style>
 </head>
@@ -302,6 +411,7 @@
       반품 현황
       <small id="topSub">불러오는 중…</small>
     </div>
+    <button class="icon-btn" type="button" id="btnTheme" title="밝게 보기" aria-label="화면 밝기">&#9728;&#65039;</button>
     <button class="icon-btn" type="button" id="btnFee" title="반품비 정산">&#8361;</button>
     <button class="icon-btn" type="button" id="btnReload" title="새로고침">&#8635;</button>
   </div>
@@ -904,7 +1014,7 @@
       h += '<div class="pop-row">';
       h += '<button class="act" type="button" data-act="askCancel" data-k="' + esc(k) + '">취소</button>';
       h += '<button class="act" type="button" data-act="askSend" data-k="' + esc(k) + '" ' +
-        'style="background:#2f6feb;color:#fff;border-color:#2f6feb">보내기</button>';
+        'style="background:var(--accent-blue);color:var(--on-accent);border-color:var(--accent-blue)">보내기</button>';
       h += '</div></div>';
 
       h += '</div>';
@@ -1333,6 +1443,41 @@
     }
 
     // ── 바인딩 ──
+    /* ══════════════════════════════════════════════════════════════
+       ★ 밝게 / 어둡게 ★  (2026-09-16)
+
+       > "다크와 라이트 모드 2가지로 되게"
+
+       CS 웹앱과 «같은 열쇠»(pack2u_theme)를 쓴다. 한 사람이 두 앱을
+       오가도 한 번만 고르면 된다.
+       단추에는 «지금 무엇인지»가 아니라 «누르면 무엇이 되는지»를 보인다 —
+       어두울 때 ☀️, 밝을 때 🌙. (CS home.html 과 같은 규칙)
+       ══════════════════════════════════════════════════════════════ */
+    var PRP_THEME_KEY = 'pack2u_theme';
+
+    function prpCurrentTheme() {
+      return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    }
+
+    function prpApplyTheme(theme, persist) {
+      var light = (theme === 'light');
+      if (light) document.documentElement.setAttribute('data-theme', 'light');
+      else document.documentElement.removeAttribute('data-theme');
+      var btn = el('btnTheme');
+      if (btn) {
+        btn.textContent = light ? '🌙' : '☀️';
+        btn.title = light ? '어둡게 보기' : '밝게 보기';
+      }
+      if (persist) {
+        try { localStorage.setItem(PRP_THEME_KEY, light ? "light" : "dark"); } catch (eT) {}
+      }
+    }
+
+    prpApplyTheme(prpCurrentTheme(), false);   // 단추 모양을 지금 상태에 맞춘다
+    el('btnTheme').addEventListener('click', function () {
+      prpApplyTheme(prpCurrentTheme() === 'light' ? 'dark' : 'light', true);
+    });
+
     el('btnReload').addEventListener('click', function () { loadRows(true); });
     el('btnNew').addEventListener('click', openNew);
     el('nCancel').addEventListener('click', function () { show('mNew', false); });
