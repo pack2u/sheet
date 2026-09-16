@@ -63,7 +63,18 @@ console.log("\n[3] ★ 사람이 맞춰 둔 폭을 안 건드린다");
   ok("★ style.width 를 안 만진다", 몸.indexOf("style.width") < 0);
   ok("★ style.flex 를 안 만진다", 몸.indexOf("style.flex") < 0);
   ok("★ 클래스만 붙였다 뗀다", 몸.indexOf('classList.toggle("has-max"') >= 0);
-  ok("★ 가리는 일은 CSS 가 한다", html.indexOf(".ws-split.has-max > .ws-pane { display: none; }") >= 0);
+  ok("★ 가리는 일은 CSS 가 한다",
+    html.indexOf(".ws-split.has-max > .ws-pane:not(.is-max),") >= 0 &&
+    html.indexOf("display: none !important;") >= 0);
+  /*  ★ 잔상 지우기 ★  («스크롤 잔상이 남아», 2026-09-16)
+      숨긴 칸의 스크롤 막대가 화면에 세로줄로 남았다. display:none 만으로는
+      부족한 브라우저가 있다 — 자리까지 지우고, 레이아웃을 한 번 강제로
+      다시 계산시킨다. CS 웹앱은 Apps Script 의 iframe 안이라 더 자주 난다.
+      ※ 여기 시험에는 정규식을 안 쓴다 — 오늘 백슬래시가 세 번 먹혔다.  */
+  ok("★ 자리까지 지운다 (width 0)", html.indexOf("width: 0 !important;") >= 0);
+  ok("★ 한 번 강제로 다시 그린다", 몸.indexOf("void split.offsetHeight") >= 0);
+  ok("★ 같은 프레임에서 되돌린다 (안 깜박인다)",
+    몸.indexOf(String.fromCharCode(115,112,108,105,116)+".style.display = ") >= 0);
 }
 
 console.log("\n[4] ★ 한 번에 하나만 · 좁은 화면에서는 안 켠다");
