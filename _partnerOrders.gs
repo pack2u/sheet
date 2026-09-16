@@ -817,6 +817,32 @@ function partnerCollectOrders(opt_noWriteBack) {
     }
   }
 
+  /*  ★ 건너뛴 줄을 «말한다» ★  (2026-09-16)
+
+      > "요즘 주문수집시 한두건씩 수집이 안되는경우가 있어..."
+
+      여태 중복으로 거른 줄은 skipped++ 숫자 하나만 남았다. 어느 업체 어느
+      행인지, 무슨 까닭인지 아무 데도 안 적혔다. 그래서 「한두 건이 안 들어온다」를
+      사람이 눈으로 찾아야 했고, 못 찾으면 그냥 지나갔다.
+
+      거르는 규칙이 둘이다 —
+        ① 고유ID가 이미 허브에 있다
+           업체가 줄을 «복사»해 새 주문을 만들면 고유ID까지 따라온다.
+           그러면 새 주문인데 중복으로 걸러지고, 게다가 그 줄은 남의
+           고유ID를 달고 있어서 배포 때 «남의 송장»이 찍힌다.
+        ② 수취인+전화끝4+품목코드가 허브에 이미 그만큼 있다
+           같은 사람이 같은 물건을 다시 시키면 걸린다. 정상 재주문이다.
+
+      어느 쪽이든 사람이 봐야 한다. 세어서 말한다.  */
+  var _건너뛴_ = [];
+  function _건너뜀_(까닭, 업체, 행, uid, 수취인, 품목) {
+    if (_건너뛴_.length >= 60) return;   //  보고가 끝없이 길어지지 않게
+    _건너뛴_.push({
+      까닭: 까닭, 업체: String(업체 || ''), 행: 행,
+      uid: String(uid || ''), 수취인: String(수취인 || ''), 품목: String(품목 || '')
+    });
+  }
+
   var files = _pt_listFiles();
   var newOrders = [];
 
@@ -1137,6 +1163,7 @@ function partnerCollectOrders(opt_noWriteBack) {
               : phDigits;
           var dupKey = recipient + "_" + shortPh + "_" + code;
           var isDup = existingIds[uid];
+          var _왜_ = isDup ? '고유ID가 이미 허브에 있음' : '';
           if (!isDup && !hubWasEmpty && recipient && code) {
             // 카운트 기반 중복 체크: 허브에 이미 있는 건수 이하이면 중복
             var hubCount = existingKeyCount[dupKey] || 0;
@@ -1144,10 +1171,13 @@ function partnerCollectOrders(opt_noWriteBack) {
               // 아직 허용 잔여분이 남아있지 않으면 중복
               isDup = true;
               existingKeyCount[dupKey] = hubCount - 1; // 차감하여 다음 동일 건은 통과
+              _왜_ = '같은 수취인·전화·품목이 허브에 이미 있음 (재주문일 수 있음)';
             }
           }
           if (isDup) {
             skipped++;
+            /*  숫자만 남기면 「한두 건이 안 들어온다」를 사람이 눈으로 찾아야 한다 */
+            _건너뜀_(_왜_, file.name, r + 1, uid, recipient, code);
             continue;
           }
           existingIds[uid] = true;
@@ -1464,6 +1494,20 @@ function partnerCollectOrders(opt_noWriteBack) {
       : "") +
     (skippedByMissing > 0
       ? "\n  ⚠ 필수정보 미입력 제외: " + skippedByMissing + "건 (수취인/전화/주소/수량)"
+      : "") +
+    /*  ★ 건너뛴 줄을 «적는다» ★  (2026-09-16)
+        > "요즘 주문수집시 한두건씩 수집이 안되는경우가 있어..."
+        여태 skipped 숫자 하나였다. 어느 업체 어느 행인지 알 길이 없어
+        사람이 눈으로 찾아야 했고, 못 찾으면 그냥 지나갔다.  */
+    (_건너뛴_.length
+      ? "\n\n↷ 중복이라 건너뛴 줄 " + _건너뛴_.length + "건\n" +
+        "   «고유ID가 이미 허브에 있음» 은 업체가 줄을 복사했을 때도 납니다 —\n" +
+        "   그 줄은 새 주문인데 안 들어오고, 배포 때 남의 송장이 찍힙니다.\n" +
+        "   그때는 그 줄의 고유ID 칸을 비우고 다시 수집하세요.\n\n" +
+        _건너뛴_.slice(0, 15).map(function (x) {
+          return "   " + x.업체 + " R" + x.행 + "  " + x.수취인 + " / " + x.품목 +
+            "  [" + x.uid + "]  — " + x.까닭;
+        }).join("\n") + "\n"
       : "") +
     (errors.length ? "\n- 오류:\n" + errors.join("\n") : "");
   
@@ -3127,6 +3171,58 @@ function partnerFetchInvoices() {
  *      (또는 '② 송장 수집' 실행 시 자동 매칭)
  *   2) 메뉴 → 💼 협력업체 관리 → 📦 New 발주 시스템 → 송장 배포
  */
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  업체 시트 줄이 «정말 그 주문인가»
+ *  2026-09-16
+ *
+ *  > "송장배포시에 엄한 송장번호를 넣어서 문제가 없는것처럼 보이게 되는데..
+ *  >  완전범죄를 노리는건가? 이런건은 전화가 오게 되있는데..."
+ *
+ *  고유ID 하나만 믿고 쓰면, 그 고유ID가 그 줄의 것이 아닐 때 남의 송장이
+ *  찍힌다. 업체 화면에는 송장이 멀쩡히 있으니 아무도 모른다.
+ *
+ *  ★ 무엇을 맞대나 ★
+ *    품목코드 — 양쪽에 다 있고 다르면 다른 주문이다. 가장 단단한 근거다.
+ *    수취인   — 품목코드가 같아도 받는 사람이 다르면 다른 주문이다.
+ *               표기 차이(공백·괄호·점)는 걷어내고 본다.
+ *
+ *  ★ 모르면 막지 않는다 ★
+ *    한쪽에 값이 없으면 판단할 근거가 없다. 그때는 통과시킨다 —
+ *    근거 없이 막으면 멀쩡한 배포가 멈춘다. 막는 것은 «어긋난 것이
+ *    보일 때»뿐이다.
+ *
+ *  @return {string} 어긋난 까닭. 어긋나지 않으면 빈 문자열.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _po_vendorRowMismatch_(row, cMap, hubInfo) {
+  if (!row || !cMap || !hubInfo) return "";
+
+  var vCode = cMap.code >= 0 ? String(row[cMap.code] || "").trim() : "";
+  var hCode = String(hubInfo.code || "").trim();
+  if (vCode && hCode && vCode.toUpperCase() !== hCode.toUpperCase()) {
+    return "품목코드가 다릅니다 — 업체 " + vCode + " / 허브 " + hCode;
+  }
+
+  var vName = _po_normName_(cMap.recipient >= 0 ? row[cMap.recipient] : "");
+  var hName = _po_normName_(hubInfo.recipient);
+  if (vName && hName && vName !== hName) {
+    return "수취인이 다릅니다 — 업체 " +
+      String(row[cMap.recipient] || "").trim() + " / 허브 " +
+      String(hubInfo.recipient || "").trim();
+  }
+
+  return "";
+}
+
+/** 표기 차이를 걷어낸 이름. 공백·괄호·점 따위는 사람이 아무렇게나 쓴다. */
+function _po_normName_(v) {
+  return String(v == null ? "" : v)
+    .replace(/[\s()[\]{}.,\-_\/]/g, "")
+    .toLowerCase();
+}
+
 function partnerPushInvoices() {
   var ui = null;
   try {
@@ -3185,6 +3281,10 @@ function partnerPushInvoices() {
       // ★ 2026-08-31: 허브 R열을 그대로 배포한다. 업체 파일에서 재판정하지 않는다
       //   — 같은 송장이 파일마다 다른 택배사로 보이면 안 된다
       carrier: String(hubData[i][_PO_HUB_CARRIER_COL_] || "").trim(),
+      /*  ★ 대조용 — 업체 시트 줄이 «정말 이 주문인가» ★  (2026-09-16)
+          허브 4=이카운트코드 · 7=수취인. 아래에서 업체 시트 줄과 맞대 본다.  */
+      code: String(hubData[i][4] || "").trim(),
+      recipient: String(hubData[i][7] || "").trim(),
       memoOnly: !invoice && !isShipApproved,  // 적요만 배포 (출고가능은 상태도 배포)
       statusOnly: isShipApproved && !invoice,  // ★ 출고가능 상태만 배포
     };
@@ -3199,6 +3299,11 @@ function partnerPushInvoices() {
     return;
   }
 
+  /*  ★ 어긋나서 «안 쓴» 줄 ★  (2026-09-16)
+      조용히 건너뛰면 그것도 완전범죄다. 어느 업체 어느 행인지 적어 보고한다.  */
+  var mismatched = [];
+  /*  같은 고유ID가 한 탭에 여러 줄 — 업체가 줄을 복사한 것이다 */
+  var dupUidRows = [];
   var files = _pt_listFiles();
   var pushed = 0,
     errors = [];
@@ -3253,6 +3358,30 @@ function partnerPushInvoices() {
 
         if (cMap.uniqueId === -1) continue;
 
+        /*  ══════════════════════════════════════════════════════════
+            ★ 한 탭에 같은 고유ID가 둘이면 «복사된 줄»이다 ★  (2026-09-16)
+
+            > "합포장,합배송으로 묶듯이 바로 위에 송장을 떡하니 넣어버리네"
+
+            배포는 고유ID로 줄을 찾아 허브의 송장을 적는다. 업체가 주문 줄을
+            복사해 새 주문을 만들면 고유ID까지 따라오고, 그러면 «두 줄이 같은
+            고유ID»가 된다. 배포는 그 둘을 구별할 길이 없어 «둘 다»에 같은
+            송장을 적는다 — 바로 위 줄 송장이 아래에도 떡하니 찍히는 것이
+            이것이다. 합배송처럼 보이지만 합배송이 아니다.
+
+            게다가 그 복사된 줄은 수집에서도 「이미 있는 고유ID」라며 걸러진다.
+            허브에 없으니 정산에도 없고, 업체 화면에는 송장이 멀쩡히 있다.
+            물건을 못 받은 고객이 전화를 걸어서야 드러난다.
+
+            고유ID 하나로 도는 것이 맞다. 그러니 «그 하나가 둘을 가리키면»
+            답이 없는 것이다 — 없으면 없는 대로 두고 사람에게 말한다.
+            ══════════════════════════════════════════════════════════ */
+        var uidSeen = {};
+        for (var ur = 1; ur < data.length; ur++) {
+          var u_ = String(data[ur][cMap.uniqueId] || "").trim();
+          if (u_) uidSeen[u_] = (uidSeen[u_] || 0) + 1;
+        }
+
         var invCol = _po_findInvoiceCol(data[0]);
         var tabChanged = false;
         var carrierPushed = false; // P열 헤더는 실제로 값을 쓸 때만 만든다
@@ -3261,6 +3390,44 @@ function partnerPushInvoices() {
         for (var r = 1; r < data.length; r++) {
           var rowUid = String(data[r][cMap.uniqueId] || "").trim();
           if (!rowUid || !pendingByUid[rowUid]) continue;
+
+          /*  ══════════════════════════════════════════════════════════
+              ★ 고유ID만 믿지 않는다 ★  (2026-09-16)
+
+              > "송장배포시에 엄한 송장번호를 넣어서 문제가 없는것처럼 보이게
+              >  되는데.. 이런건은 전화가 오게 되있는데..."
+
+              배포는 고유ID로 업체 시트 줄을 찾아 허브의 송장을 적는다.
+              그 고유ID가 «그 줄의 것이 아니면» 남의 송장이 찍힌다.
+
+              어떻게 그런 일이 생기나 — 업체가 주문 줄을 «복사»해 새 주문을
+              만들면 고유ID까지 따라온다. 그러면
+                · 수집은 「이미 있는 고유ID」라며 그 줄을 건너뛰고
+                  (그래서 허브에 없다 — 「한두 건씩 수집이 안 된다」가 이것이다)
+                · 배포는 그 고유ID로 «옛 줄의 송장»을 그 자리에 찍는다
+              업체 화면에는 송장이 멀쩡히 있으니 아무도 모르고, 물건을 못 받은
+              고객이 전화를 걸어서야 드러난다.
+
+              그래서 쓰기 전에 한 번 맞대 본다. 품목코드가 다르거나, 품목코드가
+              같아도 수취인이 다르면 «이 줄의 송장이 아니다» — 안 쓰고 말한다.
+              송장을 못 붙이는 것이 남의 송장을 붙이는 것보다 낫다.
+              ══════════════════════════════════════════════════════════ */
+          if (uidSeen[rowUid] > 1) {
+            dupUidRows.push(
+              file.name + " / " + tabName + " R" + (r + 1) +
+              "  [" + rowUid + "] 같은 고유ID가 이 탭에 " + uidSeen[rowUid] + "줄");
+            continue;
+          }
+          var _pv_ = pendingByUid[rowUid];
+          if (_pv_.invoice) {
+            var _어긋남_ = _po_vendorRowMismatch_(data[r], cMap, _pv_);
+            if (_어긋남_) {
+              mismatched.push(
+                file.name + " / " + tabName + " R" + (r + 1) +
+                "  [" + rowUid + "]  " + _어긋남_);
+              continue;
+            }
+          }
 
           var p = pendingByUid[rowUid];
           var curInv =
@@ -3406,6 +3573,26 @@ function partnerPushInvoices() {
     (pushed < pendingCount
       ? "- 미매칭: " + (pendingCount - pushed) + "건 (고유ID 불일치)\n"
       : "") +
+    /*  ★ 어긋난 줄은 «오류»로 말한다 ★  (2026-09-16)
+        「몇 건 배포」만 보면 남의 송장을 안 쓴 것도 성공처럼 보인다.
+        이건 사람이 그 줄을 직접 봐야 하는 일이다.  */
+    /*  ★ 고유ID가 둘을 가리키는 줄 — 제일 위험하다 ★
+        여기서 안 막으면 바로 위 줄 송장이 아래에도 찍히고,
+        업체 화면에는 아무 문제가 없어 보인다.  */
+    (dupUidRows.length
+      ? "\n⛔ 같은 고유ID가 한 탭에 여러 줄 — " + dupUidRows.length + "곳, 송장을 안 썼습니다\n" +
+        "   업체가 주문 줄을 복사하면 고유ID까지 따라옵니다.\n" +
+        "   그대로 두면 바로 위 줄 송장이 아래에도 찍힙니다.\n" +
+        "   아래 줄의 고유ID 칸을 «비우고» 다시 수집하세요 — 새 번호가 붙습니다.\n\n" +
+        "   " + dupUidRows.slice(0, 10).join("\n   ") + "\n"
+      : "") +
+    (mismatched.length
+      ? "\n⛔ 고유ID는 맞는데 «내용이 다른» 줄 " + mismatched.length + "건 — 송장을 안 썼습니다\n" +
+        "   업체가 주문 줄을 복사하면 고유ID까지 따라옵니다.\n" +
+        "   그 줄은 수집도 안 되고, 그대로 두면 남의 송장이 찍힙니다.\n" +
+        "   해당 줄의 고유ID를 지우고 다시 수집하세요.\n\n" +
+        "   " + mismatched.slice(0, 10).join("\n   ") + "\n"
+      : "") +
     (errors.length
       ? "\n오류 " + errors.length + "건:\n" + errors.slice(0, 5).join("\n")
       : "");
@@ -3418,6 +3605,12 @@ function partnerPushInvoices() {
         { label: "✅ 송장 배포", value: invoiceCount + "건" },
         { label: "📋 실제 반영", value: pushed + "건" },
       ].concat(memoOnlyCount > 0 ? [{ label: "📝 적요만", value: memoOnlyCount + "건" }] : [])
+       .concat(mismatched.length
+         ? [{ label: "⛔ 내용이 달라 안 씀", value: mismatched.length + "건 — 업체가 줄을 복사한 듯" }]
+         : [])
+       .concat(dupUidRows.length
+         ? [{ label: "⛔ 고유ID가 겹친 줄", value: dupUidRows.length + "곳 — 줄을 복사한 듯. 고유ID를 비우고 재수집" }]
+         : [])
     );
   } catch (eChat) {}
   if (ui) ui.alert(msg);
