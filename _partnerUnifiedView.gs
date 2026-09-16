@@ -791,43 +791,10 @@ function _puv_rebuildScheduled_() {
     var stat = _puv_rebuild_({});
     Logger.log("[UNIFIED_VIEW 22:45] 재생성 완료 — 행=" + stat.rows +
       " 매칭=" + stat.matched + " 미매칭=" + stat.unmatched);
-
-    // ── 이어서 미매칭 소급 보강 ──
-    //   마감은 "직전 파일 1개"만 채운다. 이틀 넘게 늦게 들어온 송장은
-    //   영영 미매칭으로 남아 있었다(2026-09-01 감사: 1,702건 누적).
-    //   여기서 도는 이유: 방금 만든 송장맵을 그대로 쓸 수 있어 공짜에 가깝다.
-    //
-    //   ★ 날짜 수를 7일로 줄인 이유 ★
-    //     GAS 실행은 6분에서 잘린다. 재생성이 이미 최대 5분을 쓸 수 있으므로
-    //     남은 시간에 파일 14개를 여는 건 무리다. 매일 도니 7일이면 충분하고,
-    //     더 거슬러 올라갈 일이 생기면 메뉴에서 14일로 수동 실행하면 된다.
-    try {
-      var _elapsed_ = new Date().getTime() - _startedAt_;
-      // 재생성이 오래 끌었으면 보강을 건너뛴다. GAS 는 6분에서 실행을 자르는데,
-      // 그때 잘리면 보강이 파일을 반만 고친 채로 끝난다 — 그게 제일 나쁘다.
-      // ★ 시계로도 막는다 (2026-09-07) ★
-      //   경과시간만 보면 재생성이 빨리 끝난 날에 보강이 시작되고,
-      //   그게 23:00 대리판매 마감과 겹칠 수 있다. 트리거는 ±15분
-      //   흔들리므로 22:45 가 23:00 에 뜨는 날도 있다.
-      //   22:52 를 넘겼으면 시작하지 않는다 — 다음 날 또는 메뉴에서 돌린다.
-      var _hm_ = parseInt(Utilities.formatDate(new Date(), "Asia/Seoul", "HHmm"), 10);
-      if (_hm_ >= 2252) {
-        Logger.log("[UNIFIED_VIEW 22:45] 현재 " + _hm_ +
-          " — 23:00 마감과 겹칠 수 있어 소급 보강 건너뜀 (메뉴에서 수동 실행하세요)");
-      } else if (_elapsed_ > 210000) {
-        Logger.log("[UNIFIED_VIEW 22:45] 재생성에 " + Math.round(_elapsed_ / 1000) +
-          "초 — 남은 시간이 부족해 소급 보강 건너뜀 (메뉴에서 수동 실행하세요)");
-      } else if (_PUV_LAST_INVOICE_MAP_) {
-        var _bf_ = _pep_backfillRecentArchives_(_PUV_LAST_INVOICE_MAP_, 7);
-        Logger.log("[UNIFIED_VIEW 22:45] 소급 보강 — 채움=" + _bf_.patched +
-          " 파일=" + _bf_.files + (_bf_.days.length ? " (" + _bf_.days.join(", ") + ")" : ""));
-      } else {
-        Logger.log("[UNIFIED_VIEW 22:45] 송장맵이 없어 소급 보강 건너뜀");
-      }
-    } catch (eBf) {
-      // 보강이 실패해도 통합조회 재생성은 이미 끝났다. 여기서 예외를 올리면 안 된다.
-      Logger.log("[UNIFIED_VIEW 22:45] 소급 보강 실패: " + eBf.message);
-    }
+    /*  ★ 22:45 소급 보강을 «지웠다» ★  (2026-09-16)
+        > "이젠 이전 데이타는 무시할꺼야" / "초기화 한다고 생각해"
+        지난 이레 마감 파일을 열어 빈 송장을 채우던 자리다. 밤에 과거를
+        고치면 틀렸을 때 아무도 모르고 굳는다. 통합조회는 재생성만 한다.  */
   } catch (e) {
     Logger.log("[UNIFIED_VIEW 22:45] 실패: " + e.message);
   }

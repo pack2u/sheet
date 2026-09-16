@@ -176,37 +176,23 @@ function registerPartnerMenu_() {
         .addItem("🚚 롯데 송장탭 열 위치 확인", "partnerInspectLotteInvoiceColumns")
         .addSeparator()
         .addItem("📒 송장원장 재수집 (커서 초기화)", "partnerResetInvoiceLedgerCursors")
-        .addSeparator()
-        // ── 송장 매칭을 «고친다» (2026-09-16 여기로 옮김) ──
-        .addItem("1️⃣ 일일마감 송장 재매칭 미리보기 (2주)", "partnerPreviewArchiveInvoiceRefix")
-        .addItem("2️⃣ 일일마감 송장 재매칭 반영 (2주)", "partnerApplyArchiveInvoiceRefix")
-        .addItem("3️⃣ 지정일 송장 재매칭", "partnerFillUnmatchedArchiveForDate")
-        .addItem("🧹 일일마감 수량초과 송장 정리", "partnerPurgeArchiveQtyOverflow")
-        .addItem("⏪ 미매칭 소급 보강 (14일)", "partnerBackfillRecentArchives")
     )
     .addSubMenu(
       ui.createMenu("🧭 송장 매칭 점검 (읽기만)")
         // ── 왜 안 붙었나 (읽기 전용) ──
         .addItem("🪪 고유ID 인식 점검", "partnerDiagnoseUidRecognition")
         .addItem("🔎 일일마감 미매칭 원인 진단", "partnerDiagnoseUnifiedUnmatched")
-        .addItem("🔑 보조키(이름·전화앞7·주소·품목) 매칭 진단", "partnerDiagnoseAuxKeys")
         .addItem("⚖️ 허브 송장 배정 근거 점검", "partnerDiagnoseCollectEvidence")
         .addItem("📋 대리공급_임시기록 송장 점검", "partnerDiagnoseTempInvoiceData")
         .addSeparator()
         // ── 남의 송장이 붙었나 (읽기 전용) ──
         .addItem("🧭 송장 소유권 점검 (남의 송장 붙었는지)", "partnerDiagnoseInvoiceOwnership")
         .addItem("   └ 📅 기간 지정 점검", "partnerDiagnoseInvoiceOwnershipForDays")
-        /*  점검은 송장 단위로 묶어 준다 — 그대로는 수화기를 못 든다.
-            사람 단위로 접어야 전화가 오기 전에 먼저 걸 수 있다.  */
-        .addItem("   └ 📞 선제 연락 명단 만들기", "partnerBuildInvoiceCallList")
-        .addItem("      └ 🔴 확실한 것만", "partnerBuildInvoiceCallListSureOnly")
         .addSeparator()
         // 2026-09-02: 발주시스템 메뉴에 있던 감사·보강을 옮겼다.
         .addItem("📊 송장 매칭 감사", "partnerAuditInvoiceMatching")
         .addItem("🔍 미매칭 성격 분석", "partnerAnalyzeUnmatched")
         .addItem("   └ 🆔 고유ID 미매칭 판정", "partnerDiagnoseUidUnmatched")
-        .addItem("   └ ⏱ 송장 지연 측정 (회수창 산정)", "partnerMeasureInvoiceLag")
-        .addItem("   └ 🧮 이름단독 매칭 예행측정", "partnerSimulateNameOnlyMatch")
         .addItem("⏳ 송장 없이 남은 행", "partnerListStaleNoInvoice")
     )
     .addSeparator()

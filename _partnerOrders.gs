@@ -7236,26 +7236,12 @@ function _po_checkNonPartnerTempTabMatches_(invoiceMap, scannedLogs, hubInvoiceB
             fbUidOnlyEg.push(uUid + " " + String(uRow[12] || "").substring(0, 10));
           }
         }
-        if ((!hit || !hit.inv) && !_uidReal_) {
-          var npHit = _pep_lookupNamePhoneInvoice_(
-            fbMap, uRow[12], uRow[8] || uRow[7], uRow[9], uRow[4], via,
-          );
-          if (npHit && npHit.inv) {
-            if (_po_isProxySupplySrc_(npHit.source)) {
-              hit = npHit;
-            } else {
-              fbBlocked++;
-              if (fbBlockedEg.length < 5) {
-                fbBlockedEg.push(
-                  String(uRow[12] || "") + " — " + String(npHit.source || "?") +
-                    " 송장(" + String(npHit.inv).replace(/\n/g, ",").substring(0, 24) +
-                    ") 차단, 키=" + (via.via || "?"),
-                );
-              }
-              via.via = "";
-            }
-          }
-        }
+        /*  ★ 이름·전화로 더듬는 길을 «지웠다» ★  (2026-09-16)
+            > "고유아이디가 없는건 이제 무시할꺼야.. 몇달을 해도
+            >  매칭율이 10%도 안되"
+            고유ID 가 없는 줄을 이름·전화·주소로 뒤지던 마지막 자리다.
+            붙는 것보다 «엉뚱한 것이 붙는» 일이 많았고, 그게 고객 전화가
+            되었다. 고유ID 로 못 찾으면 빈칸으로 둔다.  */
         if (!hit || !hit.inv) continue;
         // 소유권 검사를 거쳐야 한다. 넓은 맵은 후보가 많아 검사 없이는 오배정이 늘어난다.
         if (!_po_claimInvoiceMulti_(usedInvSet, hit.inv, uUid)) continue;

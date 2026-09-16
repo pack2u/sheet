@@ -9178,33 +9178,6 @@ var _PEP_BACKFILL_DAYS_ = 7;
  */
 var _PEP_MATCH_START_DEFAULT_ = "2026-09-16";
 
-/**
- * ══════════════════════════════════════════════════════════════
- *  ★ 소급 보강을 «끈다» ★  (2026-09-16)
- *
- *  > "돌리지마.. 그거한다고 시간낭비하고 오히려 엉망이 되는데..
- *  >  당일것도 못하는데 무슨.. 그거도 시간재약있는 시트에서"
- *
- *  마감은 6분 안에 끝나야 한다. 그 시간을 지난 마감 파일 여는 데 쓰고
- *  있었다. 파일 하나 여는 데 몇 초씩 걸리고, 이레치면 그것만으로 절반이다.
- *  정작 «당일» 것이 덜 맞은 채 끝난다.
- *
- *  게다가 과거 기록을 자동으로 고치면, 틀렸을 때 아무도 모르고 굳는다.
- *  지난주가 쓰레기가 된 길이 이 길이었다.
- *
- *  ★ 지우지 않는다 — 안 부를 뿐이다 ★
- *    함수는 그대로 둔다. 감사 도구와 통합조회 재생성이 손으로 부를 수
- *    있고, 언젠가 당일 것이 안정되면 그때 다시 켜면 된다.
- *    켜려면 스크립트 속성 AUTO_BACKFILL = on.
- * ══════════════════════════════════════════════════════════════
- */
-function _pep_autoBackfillOn_() {
-  try {
-    return String(PropertiesService.getScriptProperties()
-      .getProperty("AUTO_BACKFILL") || "").trim().toLowerCase() === "on";
-  } catch (e) { return false; }
-}
-
 /** 매칭·보강이 거슬러 볼 수 있는 가장 이른 날 (yyyy-MM-dd). 없으면 "" */
 function _pep_matchStart_() {
   try {
@@ -10222,126 +10195,6 @@ function _pep_loadArchiveExistPair_(dateStr) {
   return existPair;
 }
 
-/** beforeDateStr 바로 앞에 실제로 있는 일일마감 날짜. 없으면 "" */
-function _pep_findPreviousArchiveDate_(beforeDateStr) {
-  var base;
-  if (beforeDateStr && /^\d{4}-\d{2}-\d{2}$/.test(beforeDateStr)) {
-    base = new Date(beforeDateStr.replace(/-/g, "/") + " 12:00:00");
-  } else {
-    base = new Date();
-  }
-  var lookback = _PEP_BACKFILL_DAYS_ || 14;
-  for (var d = 1; d <= lookback; d++) {
-    var dt = new Date(base.getTime());
-    dt.setDate(dt.getDate() - d);
-    var dateStr = Utilities.formatDate(dt, "Asia/Seoul", "yyyy-MM-dd");
-    var fileName = _UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")";
-    if (_unified_findExistingArchiveSs_(fileName)) return dateStr;
-  }
-  return "";
-}
-
-/**
- * 2단계: 바로 이전 일일마감 파일의 미매칭만 오늘 송장맵으로 기입
- */
-function _pep_backfillPreviousArchive_(invoiceMap, beforeDateStr) {
-  var out = { patched: 0, scanned: 0, files: 0, days: [], date: "" };
-  var prev = _pep_findPreviousArchiveDate_(beforeDateStr);
-  if (!prev) return out;
-  var fileName = _UNIFIED_ARCHIVE_PREFIX_ + "(" + prev + ")";
-  var archSs = _unified_findExistingArchiveSs_(fileName);
-  if (!archSs) return out;
-  var archTab = archSs.getSheetByName("일일마감") || archSs.getSheets()[0];
-  var patch = _pep_patchArchiveTabUnmatched_(archTab, invoiceMap, prev);
-  out.date = prev;
-  out.files = 1;
-  out.scanned = patch.scanned || 0;
-  out.patched = patch.patched || 0;
-  if (out.patched > 0) out.days.push(prev + ":" + out.patched);
-  Logger.log("[UNIFIED] 2단계 이전마감 보강 " + prev +
-    ": 채움=" + out.patched + " 스캔=" + out.scanned);
-  return out;
-}
-
-/**
- * 최근 N일 일일마감에서 미매칭 행을 오늘 송장맵(롯데·허브·임시기록)으로 재매칭
- */
-function _pep_backfillRecentArchives_(invoiceMap, maxDays) {
-  maxDays = maxDays || _PEP_BACKFILL_DAYS_;
-  var out = { patched: 0, scanned: 0, files: 0, days: [] };
-  var today = new Date();
-  for (var d = 1; d <= maxDays; d++) {
-    var dt = new Date(today.getTime());
-    dt.setDate(dt.getDate() - d);
-    var dateStr = Utilities.formatDate(dt, "Asia/Seoul", "yyyy-MM-dd");
-    /*  ★ 기준일 이전은 열지 않는다 ★  «무너진 주»를 고치려 들지 않는다.  */
-    if (!_pep_afterStart_(dateStr)) { out.skippedOld = (out.skippedOld || 0) + 1; continue; }
-    var fileName = _UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")";
-    var archSs = _unified_findExistingArchiveSs_(fileName);
-    if (!archSs) continue;
-    var archTab = archSs.getSheetByName("일일마감") || archSs.getSheets()[0];
-    if (!archTab || archTab.getLastRow() < 2) continue;
-    out.files++;
-    var lr = archTab.getLastRow();
-    var lc = Math.max(archTab.getLastColumn(), 1);
-    var all = archTab.getRange(1, 1, lr, lc).getDisplayValues();
-    var cols = _pep_mapArchiveMatchCols_(all[0]);
-    var dayPatched = 0;
-    for (var ri = 1; ri < all.length; ri++) {
-      if (String(all[ri][0] || "").indexOf("합계") !== -1) continue;
-      out.scanned++;
-      var src = String(all[ri][cols.src] || "").trim();
-      var inv = String(all[ri][cols.inv] || "").trim();
-      if (inv && _pep_normInvoiceNo_(inv)) continue;
-      if (src && src !== "미매칭") continue;
-      var matchKey = _pep_deriveMatchKeyFromArchiveRow_(all[ri], cols);
-      if (!matchKey) continue;
-      var recipName = cols.name >= 0 ? _pep_normRecipName_(all[ri][cols.name]) : "";
-      var phone = cols.phone >= 0 ? all[ri][cols.phone] : "";
-      var addr = cols.addr >= 0 ? all[ri][cols.addr] : "";
-      var itemNm = cols.item >= 0 ? all[ri][cols.item] : "";
-      /* ★ 지난 마감은 «고유ID로 맞은 것»만 채운다 ★  (2026-09-15)
-         _pep_resolveRowInvoice_ 는 고유ID 가 없는 줄이면 이름·전화로 더듬는다.
-         그 길이 8월에 남의 송장을 붙인 그 길이다. 오늘 이 보강을 마감마다
-         자동으로 돌게 했는데, 추측까지 14일치 과거 기록에 자동으로 쓰면
-         틀렸을 때 아무도 모르고 굳는다. 확실한 것만 채운다. */
-      var 어떻게 = {};
-      var invInfo = _pep_resolveRowInvoice_(invoiceMap, {
-        uid: matchKey,
-        name: recipName,
-        phone: phone,
-        addr: addr,
-        item: itemNm,
-        orderDate: dateStr
-      }, 어떻게);
-      if (!invInfo || !invInfo.inv) continue;
-      if (어떻게.via !== "UID") continue;   // 이름·전화로 더듬은 것은 안 쓴다
-      if (_pep_qtyOverMax_(cols.qty >= 0 ? all[ri][cols.qty] : "", itemNm, invInfo.inv)) continue;
-      all[ri][cols.inv] = invInfo.inv;
-      all[ri][cols.src] = invInfo.source || "대리공급";
-      // 송장을 채웠으면 택배사도 같이 채운다. 송장만 있고 택배사가 비면
-      // 웹앱이 어느 택배사로 조회해야 할지 몰라 네이버 검색으로 떨어진다.
-      if (cols.carrier >= 0 && !String(all[ri][cols.carrier] || "").trim()) {
-        var bfVendor = cols.jShop >= 0 ? all[ri][cols.jShop] : "";
-        var bfCode = cols.code >= 0 ? all[ri][cols.code] : "";
-        all[ri][cols.carrier] =
-          _pep_carrierForArchiveRow_(invInfo, all[ri][cols.src], bfVendor, bfCode);
-      }
-      dayPatched++;
-    }
-    if (dayPatched > 0) {
-      archTab.getRange(1, 1, all.length, lc).setValues(all);
-      SpreadsheetApp.flush();
-      out.patched += dayPatched;
-      out.days.push(dateStr + ":" + dayPatched);
-    }
-  }
-  if (out.patched > 0) {
-    Logger.log("[UNIFIED] 이전 일일마감 송장 보강: " + out.patched + "건 / " + out.files + "개 파일 (" + out.days.join(", ") + ")");
-  }
-  return out;
-}
-
 var _PEP_UDA_PATCH_PROP_ = "_PEP_UDA_PATCH_DATE_";
 
 /** 이미 만들어진 일일마감 파일의 미매칭 행만 송장맵으로 채운다. */
@@ -10483,40 +10336,6 @@ function _pep_patchUnmatchedArchiveScheduled_() {
     if (errs.length) items.push({ label: "⚠", value: errs.join(" / ").substring(0, 200) });
     _chat_sendCard_("📋 일일마감 미매칭 재채움", dateStr, items);
   } catch (_) {}
-}
-
-/** [메뉴] 지정일 일일마감만 송장 재매칭 (롯데·1주출고 우선) */
-function partnerFillUnmatchedArchiveForDate() {
-  var ui = SpreadsheetApp.getUi();
-  var now = new Date();
-  var def = new Date(now.getTime());
-  if (def.getDay() === 0) def.setDate(def.getDate() - 2);
-  else if (def.getDay() === 6) def.setDate(def.getDate() - 1);
-  else if (now.getHours() < 6) def.setDate(def.getDate() - 1);
-  var defStr = Utilities.formatDate(def, "Asia/Seoul", "yyyy-MM-dd");
-  var resp = ui.prompt(
-    "지정일 송장 재매칭",
-    "이미 있는 일일마감 파일만 고칩니다. 파일을 새로 만들지 않습니다.\n" +
-      "롯데·1주출고 송장맵으로 비어 있는 칸을 채웁니다.\n\n날짜 yyyy-MM-dd\n기본: " + defStr,
-    ui.ButtonSet.OK_CANCEL
-  );
-  if (!resp || resp.getSelectedButton() !== ui.Button.OK) return;
-  var dateStr = String(resp.getResponseText() || "").trim() || defStr;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    ui.alert("날짜 형식이 아닙니다. yyyy-MM-dd 로 입력하세요.");
-    return;
-  }
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(10 * 1000)) {
-    ui.alert("다른 작업이 실행 중입니다. 잠시 후 다시 시도하세요.");
-    return;
-  }
-  try {
-    var out = _par_run_(false, 1, dateStr);
-    ui.alert(out.msg);
-  } finally {
-    lock.releaseLock();
-  }
 }
 
 /** 헤더 배열에서 택배사 열 위치. 없으면 -1 */
@@ -11949,57 +11768,20 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
       Logger.log("[UNIFIED_ARCHIVE] 1단계 신규 행 없음 (이미 처리됐거나 판매현황 비어 있음)");
     }
 
-    // ── 2단계: 바로 이전 일일마감의 미매칭만 오늘 송장맵으로 기입 ──
-    try {
-      var step2Before = archiveDate;
-      if (dateKeys.length) {
-        dateKeys.sort();
-        step2Before = dateKeys[0];
-      }
-      /*  ★ 껐다 ★ 위 _pep_autoBackfillOn_ 의 까닭을 보라.  */
-      if (_pep_autoBackfillOn_()) {
-        var bfResult = _pep_backfillPreviousArchive_(invoiceMap, step2Before);
-        result.detail.backfill = bfResult.patched || 0;
-        result.detail.backfillDate = bfResult.date || "";
-      } else {
-        result.detail.backfillOff = true;
-      }
-    } catch (eBf) {
-      Logger.log("[UNIFIED] 2단계 이전마감 보강 오류: " + eBf.message);
-    }
+    /*  ══════════════════════════════════════════════════════
+        ★ 2·2b단계(지난 마감 보강)를 «지웠다» ★  (2026-09-16)
 
-    /* ── 2b단계: «지난 14일» 마감의 빈 송장 줄을 오늘 송장맵으로 채운다 ──
-       2026-09-15
+        > "돌리지마.. 그거한다고 시간낭비하고 오히려 엉망이 되는데..
+        >  당일것도 못하는데 무슨.. 그거도 시간재약있는 시트에서"
+        > "이젠 이전 데이타는 무시할꺼야"  /  "초기화 한다고 생각해"
 
-       > "지금 일일 마감을 돌리지 말고 저녁 일일 마감때 이전 일일마감을
-       >  채워주는 식으로 수정해줘.. 내가 오류값만 맨날 찾는 사람도 아니고"
+        여기서 지난 마감 파일을 열어 빈 송장 줄을 채우고 있었다.
+        파일 하나 여는 데 몇 초씩 걸려 6분 한도의 절반을 먹었고,
+        정작 «당일» 것이 덜 맞은 채 끝났다. 게다가 과거를 자동으로
+        고치니 틀렸을 때 아무도 모르고 굳었다.
 
-       _pep_backfillRecentArchives_ 는 «이미 있었다». 지난 마감 파일을 열어
-       송장이 빈 줄만 골라 그 자리에 채운다 — 새 줄을 더하지 않으므로 두 번
-       들어갈 일이 없다. 그런데 일일마감이 이 함수를 «안 불렀다».
-       부르는 데는 감사 도구와 통합조회 재생성 둘뿐이었고, 마감은 바로
-       앞 하루치(_pep_backfillPreviousArchive_)만 봤다.
-
-       대리발송 송장은 다음날 들어온다. 하루만 보면 그 이틀 뒤 들어온 것은
-       영영 안 채워진다. 기능을 만들어 놓고 안 부르면 없는 것과 같다 —
-       사장님이 오류값을 매일 찾아야 하는 까닭이 이것이었다.
-
-       ★ 실패해도 마감은 끝난다 ★ 보강은 곁다리다. */
-    try {
-      /*  ★ 껐다 ★  마감의 6분은 «당일» 것에 쓴다.  */
-      if (_pep_autoBackfillOn_()) {
-        var bfAll = _pep_backfillRecentArchives_(invoiceMap, _PEP_BACKFILL_DAYS_);
-        result.detail.backfillDays = bfAll.patched || 0;
-        result.detail.backfillDaysList = (bfAll.days || []).join(", ");
-        result.detail.backfillFiles = bfAll.files || 0;
-      } else {
-        result.detail.backfillOff = true;
-        result.detail.backfillDaysList = "끔 — 당일 것만 맞춥니다";
-      }
-    } catch (eBf2) {
-      Logger.log("[UNIFIED] 지난 14일 보강 오류: " + eBf2.message);
-      result.detail.backfillDaysList = "오류: " + eBf2.message;
-    }
+        마감은 «오늘 것»만 한다. 되살리지 않는다.
+        ══════════════════════════════════════════════════════ */
 
     // ★ 2026-07-04: DB 동기화 — daily_archive 테이블
     try {

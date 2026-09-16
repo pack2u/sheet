@@ -150,52 +150,41 @@ console.log("\n[7] ★ 「무너진 주」는 보지 않는다");
   check("제한을 풀면 옛날도 본다", 볼까("없음", "2026-09-02"), true);
 }
 
-console.log("\n[8] ★ 창은 이레다 — 안 본 것은 «안 봤다»고 말한다");
+console.log("\n[8] ★ 보는 창은 이레 — 그 앞은 안 본다");
 {
-  const d = pep.slice(pep.indexOf("var _PEP_BACKFILL_DAYS_"), pep.indexOf(";", pep.indexOf("var _PEP_BACKFILL_DAYS_")) + 1);
-  check("★ 소급 보강 창 7일", d.indexOf("= 7") >= 0, true);
-
-  const bf = grab(pep, "_pep_backfillRecentArchives_");
-  check("★ 보강이 기준일을 본다", bf.indexOf("_pep_afterStart_(dateStr)") >= 0, true);
-  check("★ 건너뛴 날을 «센다»", bf.indexOf("skippedOld") >= 0, true);
-
   const iod = fs.readFileSync("_partnerInvoiceOwnerDiag.gs", "utf8");
   check("★ 소유권 점검 기본 7일", /_IOD_DEFAULT_DAYS_ = 7;/.test(iod), true);
-  check("★ 점검도 기준일을 본다", iod.indexOf("_pep_afterStart_(dateStr)") >= 0, true);
-  check("★ 안 봤다고 말한다", iod.indexOf("보지 않았습니다") >= 0, true);
+  check("★ 점검이 기준일을 본다", iod.indexOf("_pep_afterStart_(dateStr)") >= 0, true);
+  check("★ 안 본 것은 «안 봤다»고 말한다", iod.indexOf("보지 않았습니다") >= 0, true);
 }
 
-console.log("\n[9] ★ 소급 보강은 «꺼져» 있다 — 마감의 6분은 당일 것에 쓴다");
+console.log("\n[9] ★ 지난 기록을 살리던 코드는 «없다»");
 {
-  /*  > "돌리지마.. 그거한다고 시간낭비하고 오히려 엉망이 되는데..
-         당일것도 못하는데 무슨.. 그거도 시간재약있는 시트에서"
+  /*  > "돌리지마.. 그거한다고 시간낭비하고 오히려 엉망이 되는데.."
+      > "이전 데이타 살린다고 했던 쓸데없는것들만 지워줘"
+      껐다가 아니라 «지웠다». 꺼 두면 언젠가 누가 다시 켠다.  */
+  ["_pep_backfillRecentArchives_", "_pep_backfillPreviousArchive_",
+   "_pep_findPreviousArchiveDate_", "_pep_autoBackfillOn_", "_par_run_", "_par_decideRow_"]
+    .forEach((n) => check("★ 없다: " + n, pep.indexOf("function " + n) < 0, true));
 
-      파일 하나 여는 데 몇 초씩 걸린다. 이레치면 그것만으로 6분의 절반이다.
-      정작 당일 것이 덜 맞은 채 끝난다. 게다가 과거를 자동으로 고치면
-      틀렸을 때 아무도 모르고 굳는다 — 지난주가 그 길로 무너졌다.  */
-  vm.runInContext(grab(pep, "_pep_autoBackfillOn_"), ctx);
-  const 켜짐 = (v) => { ctx.__prop = v; return vm.runInContext("_pep_autoBackfillOn_()", ctx); };
+  ["_partnerArchiveInvoiceRefix.gs", "_partnerArchiveQtyPurge.gs", "_partnerAuxKeyDiag.gs"]
+    .forEach((f) => check("★ 파일이 없다: " + f, fs.existsSync(f), false));
 
-  check("★ 기본은 꺼짐", 켜짐(""), false);
-  check("★ 아무 값이나 넣어도 안 켜진다", 켜짐("true"), false);
-  check("AUTO_BACKFILL=on 이면 켜진다", 켜짐("on"), true);
-  check("대소문자 상관없다", 켜짐("ON"), true);
+  /*  ★ 다른 데서 쓰는 조각은 «살려 두었다» ★ 지우는 것과 부수는 것은 다르다.
+      _par_slotSpec_ 은 «한 주문에 송장이 몇 장이면 정상인가»를 세는 코드라
+      수집·조회·CS 가 오늘 것에도 쓴다.  */
+  check("★ 송장 장수 셈은 남아 있다", fs.existsSync("_partnerInvoiceSlots.gs"), true);
+  const slots = fs.existsSync("_partnerInvoiceSlots.gs")
+    ? fs.readFileSync("_partnerInvoiceSlots.gs", "utf8") : "";
+  ["_par_qtyNum_", "_par_isSetItem_", "_par_slotSpec_"]
+    .forEach((n) => check("  " + n, slots.indexOf("function " + n) >= 0, true));
 
-  /*  두 부르는 자리가 «둘 다» 스위치 뒤에 있나 — 하나만 막으면 소용없다  */
-  const 본문 = pep.slice(pep.indexOf("── 2단계: 바로 이전 일일마감의 미매칭만"),
-    pep.indexOf("DB 동기화 — daily_archive"));
-  const 앞하루 = 본문.indexOf("_pep_backfillPreviousArchive_(invoiceMap");
-  const 이레 = 본문.indexOf("_pep_backfillRecentArchives_(invoiceMap");
-  check("★ 두 자리 다 있다", 앞하루 >= 0 && 이레 >= 0, true);
-  [["앞 하루", 앞하루], ["지난 이레", 이레]].forEach(function (쌍) {
-    const 앞글 = 본문.slice(Math.max(0, 쌍[1] - 220), 쌍[1]);
-    check("★ " + 쌍[0] + " 는 스위치 뒤에 있다", 앞글.indexOf("_pep_autoBackfillOn_()") >= 0, true);
-  });
-
-  /*  ★ 함수를 «지우지는» 않았다 — 손으로 부를 길은 남긴다  */
-  check("보강 함수는 그대로 있다", pep.indexOf("function _pep_backfillRecentArchives_") >= 0, true);
+  /*  이름·전화로 더듬는 «살아 있는» 길이 남아 있나  */
+  const ord = fs.readFileSync("_partnerOrders.gs", "utf8");
+  check("★ 허브 수집에 이름·전화 더듬기 없음", ord.indexOf("_pep_lookupNamePhoneInvoice_(") < 0, true);
+  const uv = fs.readFileSync("_partnerUnifiedView.gs", "utf8");
+  check("★ 밤 22:45 소급 보강 없음", uv.indexOf("_pep_backfillRecentArchives_") < 0, true);
 }
-
 
 console.log("\n" + (fail ? "❌ " : "✅ ") + "통과 " + pass + " · 실패 " + fail);
 process.exit(fail ? 1 : 0);

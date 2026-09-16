@@ -24,7 +24,6 @@
  *    · 송장원장            — 송장번호·고유ID·수취인·전화·주문일
  *    · 일일마감_(날짜)     — 운송장번호·주문번호·수취인·품목 (최근 N일)
  *    · 협력업체_발주허브   — N열 송장·고유ID·주문일자·수취인
- *    · 일일마감_송장재매칭 — 재매칭이 채운 행 표시 (판정 신규/분리)
  *
  *  결과: `송장소유권_점검` 탭. A열 체크박스로 확인 여부를 관리한다.
  * ══════════════════════════════════════════════════════════════
@@ -63,7 +62,6 @@ var _IOD_HEADERS_ = [
   "품목명",     // L
   "주문일",     // M
   "날짜차이",   // N: 주인추정 대비 며칠 뒤
-  "재매칭기록", // O: 재매칭 도구가 채운 행인지
   "행",         // P
 ];
 
@@ -492,34 +490,6 @@ function _iod_collectHub_(reg, stat) {
   }
 }
 
-/**
- * 재매칭 도구가 채운 송장 표시.
- * `일일마감_송장재매칭` 탭의 판정 신규/분리 행에서 (마감일, 행, 새송장) 을 뽑는다.
- * @return {Object} "마감일|행|송장" → 판정
- */
-function _iod_refixIndex_(stat) {
-  var idx = {};
-  try {
-    var tab = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(_PAR_TAB_NAME_);
-    if (!tab || tab.getLastRow() < 2) return idx;
-    var data = tab.getRange(2, 1, tab.getLastRow() - 1, _PAR_HEADERS_.length).getDisplayValues();
-    for (var i = 0; i < data.length; i++) {
-      var verdict = String(data[i][1] || "").trim();
-      if (verdict !== "신규" && verdict !== "분리") continue;
-      var dateStr = String(data[i][2] || "").trim();
-      var row = String(data[i][3] || "").trim();
-      var invs = _pep_splitInvNos_(data[i][10]);
-      for (var k = 0; k < invs.length; k++) {
-        idx["일일마감_" + dateStr + "|" + row + "|" + invs[k]] = verdict;
-      }
-      stat.refix++;
-    }
-  } catch (e) {
-    stat.notes.push("재매칭 리포트 읽기 실패: " + String(e.message || e));
-  }
-  return idx;
-}
-
 // ─────────────────────────────────────────────────────
 //  판정
 // ─────────────────────────────────────────────────────
@@ -722,7 +692,6 @@ function _iod_writeReport_(ss, groups, meta) {
         String(c.item || ""),
         c.dateStr || "",
         gap === "" ? "" : gap,
-        c.refix || "",
         c.row,
       ]);
     }
@@ -789,7 +758,7 @@ function partnerDiagnoseInvoiceOwnership(days) {
   days = days || _IOD_DEFAULT_DAYS_;
 
   var stat = {
-    ledger: 0, archive: 0, hub: 0, files: 0, refix: 0,
+    ledger: 0, archive: 0, hub: 0, files: 0,
     /*  합배송 표시를 «어느 칸에서» «몇 건» 읽었는지. 0이면 그렇게 말한다 —
         못 읽고 있는 줄 모르면 정상 건을 전부 의심이라 부르게 된다.  */
     markCols: {}, marked: 0,
@@ -805,11 +774,10 @@ function partnerDiagnoseInvoiceOwnership(days) {
   _iod_collectHub_(reg, stat);
   _iod_collectArchives_(reg, days, stat, started);
 
-  var refixIdx = _iod_refixIndex_(stat);
 
   // 판정
   var groups = [];
-  var counts = { sure: 0, doubt: 0, merged: 0, byRefix: 0, doubtAsked: 0 };
+  var counts = { sure: 0, doubt: 0, merged: 0, doubtAsked: 0 };
   var invList = Object.keys(reg);
   for (var i = 0; i < invList.length; i++) {
     var inv = invList[i];
@@ -823,15 +791,6 @@ function partnerDiagnoseInvoiceOwnership(days) {
         숫자는 보여 준다 — 「안 보고 있다」가 아니라 「보고 정상이라 했다」다. */
     if (verdict.grade === "🟢 합배송") { counts.merged++; continue; }
 
-    var touchedByRefix = false;
-    for (var c = 0; c < claims.length; c++) {
-      var hit = refixIdx[claims[c].where + "|" + claims[c].row + "|" + inv];
-      if (hit) {
-        claims[c].refix = hit;
-        touchedByRefix = true;
-      }
-    }
-    if (touchedByRefix) counts.byRefix++;
 
     // 주인추정 먼저, 그다음 주문일 순으로 읽기 편하게 정렬
     claims.sort(function (a, b) {
@@ -848,7 +807,6 @@ function partnerDiagnoseInvoiceOwnership(days) {
       reason: verdict.reason,
       owner: verdict.owner,
       claims: claims,
-      refixed: touchedByRefix,
     });
     if (verdict.grade.indexOf("확실") !== -1) counts.sure++;
     else { counts.doubt++; if (verdict.물어봤나) counts.doubtAsked++; }
@@ -856,7 +814,6 @@ function partnerDiagnoseInvoiceOwnership(days) {
 
   // 재매칭이 건드린 것 → 확실 → 의심 순
   groups.sort(function (a, b) {
-    if (a.refixed !== b.refixed) return a.refixed ? -1 : 1;
     var ga = a.grade.indexOf("확실") !== -1 ? 0 : 1;
     var gb = b.grade.indexOf("확실") !== -1 ? 0 : 1;
     if (ga !== gb) return ga - gb;
@@ -904,7 +861,6 @@ function partnerDiagnoseInvoiceOwnership(days) {
     lines.push("");
     lines.push("★ 남의 송장이 붙은 것으로 보이는 건은 없습니다.");
   }
-  lines.push("  그중 「일일마감 송장 재매칭」이 채운 것: " + counts.byRefix + "건");
 
   /*  ★ 「합배송을 구분할 수 있었나」를 «말한다» ★  (2026-09-16)
       🟢 이 0건으로 나온 두 번 다, 까닭은 합배송이 없어서가 아니라
@@ -938,16 +894,6 @@ function partnerDiagnoseInvoiceOwnership(days) {
   }
 
 
-  if (counts.byRefix > 0) {
-    lines.push("");
-    lines.push("※ 재매칭이 남의 송장을 붙인 건이 " + counts.byRefix + "건 있습니다.");
-    lines.push("  " + _IOD_TAB_ + " 탭 O열(재매칭기록)이 채워진 행이 그것입니다.");
-    lines.push("  되돌릴 근거는 '" + _PAR_TAB_NAME_ + "' 탭 J열(기존송장)에 있습니다.");
-  } else if (stat.refix === 0) {
-    lines.push("");
-    lines.push("※ '" + _PAR_TAB_NAME_ + "' 탭이 없거나 비어 있어 재매칭 기록을 대조하지 못했습니다.");
-    lines.push("  재매칭 미리보기를 먼저 실행하면 어느 행을 채웠는지까지 짚어냅니다.");
-  }
 
   if (counts.sure + counts.doubt === 0) {
     lines.push("");
