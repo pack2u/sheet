@@ -381,6 +381,31 @@ function ssm_load(회차키) {
 }
 
 /**
+ * ★ 주소사전만 다시 읽는다 ★  (2026-09-16)
+ *
+ * > "세트분리 속도 개선해주고"
+ *
+ * 우편번호를 새로 구하고 나면 도서산간 판정이 달라지므로 한 번 더 계산한다.
+ * 그때 예전에는 ssm_load 를 통째로 다시 불렀다 — 품목·재고·BOM·배송비·업체·
+ * 합배송조건·도서산간 세 탭·대리발송품목·수동조치까지 «열세 탭»을 다시 읽었다.
+ *
+ * 그런데 그 사이에 바뀐 것은 「도서산간_주소사전」 하나뿐이다
+ * (ssz_fillDictionary 는 그 탭에만 쓴다). 나머지 열두 탭은 읽으나 마나 같다.
+ *
+ * 시트 한 번 읽기가 결코 싸지 않다. 사전은 영구 캐시라 날마다 길어지기도 한다.
+ */
+function ssm_reloadAddrZip(masters) {
+  var m = masters || {};
+  m.addrZip = {};
+  var dc = ssio_body(SSIO_TABS.도서산간사전);
+  for (var y = 0; y < dc.length; y++) {
+    var a = ssText(dc[y][0]); if (!a) continue;
+    var zip = ssText(dc[y][1]); if (zip) m.addrZip[a] = zip;
+  }
+  return m;
+}
+
+/**
  * 롯데로 나가는 주소 중 사전에 없는 것을 전부 추가한다 (우편번호는 비운 채).
  *
  * 예전에는 「도서산간 후보」만 넣었다. 그런데 후보 판정을 도시 이름으로 하다 보니

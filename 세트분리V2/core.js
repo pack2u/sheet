@@ -321,6 +321,18 @@ function ssParseAddrOverride(memo) {
   return { name: name, phone: ssText(parts[pi]), addr: addr };
 }
 
+/**
+ * 고유ID 를 «어디서 얻었나».
+ *
+ *   사방넷   — 쇼핑몰이 확정해 보낸 주문번호. 다르면 다른 주문이다. 끝.
+ *   자동발급 — 전화주문처럼 번호가 없어 세트분리가 만든 것(ssMakeOrderId).
+ *              내용 해시라 전표번호만 달라져도 값이 달라진다. 근거가 못 된다.
+ *
+ * 중복 판정이 이 둘을 «다르게» 다뤄야 한다. 글자를 여기저기 적어 두면
+ * 한 곳만 고치고 마는 일이 생겨 상수로 둔다.
+ */
+var SS_ORDNO_SRC = { 사방넷: '사방넷', 자동발급: '자동발급' };
+
 /* ── 고유ID ───────────────────────────────────────────── */
 
 /** FNV-1a 32bit — 짧고 결정적이면 충분하다 (암호용 아님) */
@@ -673,7 +685,7 @@ function ssNormalize(grid, cfg, warnings) {
           '같은 회차에 동일한 고유ID가 계산되어 뒤에 순번을 붙였습니다.');
       }
     }
-    line.주문번호출처 = ssText(line.사방넷주문번호) ? '사방넷' : '자동발급';
+    line.주문번호출처 = ssText(line.사방넷주문번호) ? SS_ORDNO_SRC.사방넷 : SS_ORDNO_SRC.자동발급;
     if (line.주문번호출처 === '자동발급' && ssText(cfg.전화주문_고유ID) === '주문번호칸에채움') {
       line.사방넷주문번호 = line.고유ID;
     }
@@ -1931,7 +1943,7 @@ function ssInvoiceRows(units) {
 
 /* ── 중복발주 의심 ────────────────────────────────────── */
 
-var SS_DUP_HEADER = ['확인', '그룹', '등급', '사유', '회차간', '회차', '고유ID', '경로',
+var SS_DUP_HEADER = ['확인', '그룹', '등급', '사유', '회차간', '회차', '고유ID', '번호출처', '경로',
   '받는분', '전화', '품목코드', '품목명', '수량', '금액', '주소'];
 
 function ssNameKey(s) { return ssText(s).replace(/\s+/g, '').replace(/[()\[\]{}.,\-_\/]/g, ''); }
@@ -2000,6 +2012,7 @@ function ssFindDuplicates(rows) {
     byLine[k] = records.length;
     records.push({
       회차: ssText(r.회차), 고유ID: ssText(r.고유ID), 경로: ssText(r.경로),
+      주문번호출처: ssText(r.주문번호출처),
       받는분: ssText(r.받는분), 전화: ssText(r.전화) || ssText(r.모바일),
       품목코드: ssText(r.원본코드) || ssText(r.품목코드), 품목명: ssText(r.품목명),
       수량: ssNum(r.수량), 금액: ssNum(r.금액), 주소: ssText(r.주소)
@@ -2087,9 +2100,29 @@ function ssIsSubset(small, big) {
  */
 function ssDupRunGroups(records, 오늘접두, 최소) {
   최소 = 최소 > 0 ? 최소 : 2;
+  /*  ★ 사방넷 건은 여기서 세지 않는다 ★  (2026-09-16)
+      > "고유아이디가 다른데 중복의심이라고 뜨네..사방넷주문번호일경우.."
+      > "전화주문은 세트분리에서 고유번호를 만들기떄문"
+
+      윗머리 설명에는 「고유ID 를 안 쓴다 — 여기서 가리려는 것은 전화주문처럼
+      고유ID 가 없는 줄」이라고 적어 두고, 정작 코드는 그러지 않았다.
+      사방넷 줄까지 이름·주소·품목으로 세는 바람에 주문번호가 «엄연히 다른»
+      두 건이 중복 의심으로 올라왔다. 적어 둔 뜻대로 코드를 맞춘다.
+
+      사방넷주문번호는 쇼핑몰이 확정해 보낸 것이다. 다르면 다른 주문이고,
+      같으면 위의 🔴 「동일 고유ID + 품목」이 이미 잡는다. 여기서 또 보는 것은
+      «틀릴 때만» 쓸모가 있다.
+
+      ★ 전화주문만 남긴다 ★
+        전화주문의 고유ID 는 우리가 만든다(ssMakeOrderId). 전표번호·이름·
+        연락처·주소·품목·수량을 섞은 해시라, 같은 주문을 전표번호만 달리 해서
+        다시 적으면 다른 값이 나온다. 그래서 ID 로는 못 가린다.
+        대신 이름 + 품목코드 + 수량 (+주소)이 지난 회차와 «줄줄이» 같은가를 본다. */
   var 키of = function (r) {
+    if (ssText(r.주문번호출처) === SS_ORDNO_SRC.사방넷) return '';   // 고유ID 가 답을 준다
     var n = ssNameKey(r.받는분), a = ssAddrKey(r.주소), c = ssText(r.품목코드);
     if (!n || !a || !c) return '';          // 못 가리는 줄은 안 센다
+    //  수량까지 같아야 같은 줄로 본다 — 「주문갯수」가 다르면 다시 시킨 것이다
     return n + '|' + a + '|' + c + '|' + ssNum(r.수량);
   };
 
@@ -2163,7 +2196,7 @@ function ssDupRows(found) {
     for (var m = 0; m < G.members.length; m++) {
       var r = found.records[G.members[m]];
       out.push([false, g + 1, G.grade, G.reason, G.회차간 ? '회차간' : '',
-        r.회차, r.고유ID, r.경로, r.받는분, r.전화,
+        r.회차, r.고유ID, r.주문번호출처 || '', r.경로, r.받는분, r.전화,
         r.품목코드, r.품목명, r.수량, r.금액, r.주소]);
     }
   }
@@ -2211,6 +2244,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
     ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
+    ssDupRunGroups: ssDupRunGroups, SS_ORDNO_SRC: SS_ORDNO_SRC,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,
     ssSurcharge: ssSurcharge, ssReturnFee: ssReturnFee,
     SS_AIR_FEE_JEJU: SS_AIR_FEE_JEJU, SS_RETURN_BOX_FEE: SS_RETURN_BOX_FEE,

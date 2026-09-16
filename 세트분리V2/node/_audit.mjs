@@ -3,7 +3,12 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const C = require('../core.js');
 
-const files = ['core.js', 'gasIO.js', 'gasMasters.js', 'gasMain.js', 'gasSeed.js', 'gasZip.js', 'gasBulk.js'];
+/*  ★ 2026-09-16: gasAuto.js 가 빠져 있었다 ★
+    그래서 메뉴의 「미매칭 점검」 등 다섯 항목이 «없는 함수»로 보였다 —
+    실제로는 gasAuto.js 에 멀쩡히 있는데 감사가 그 파일을 안 읽었다.
+    거짓 경고 다섯이 늘 떠 있으면 진짜 하나가 묻힌다. */
+const files = ['core.js', 'gasIO.js', 'gasMasters.js', 'gasMain.js',
+  'gasSeed.js', 'gasZip.js', 'gasBulk.js', 'gasAuto.js'];
 const src = Object.fromEntries(files.map((f) => [f, readFileSync('../' + f, 'utf8').toString()]));
 const all = files.map((f) => src[f]).join('\n');
 let bad = 0;
@@ -62,6 +67,7 @@ console.log('\n[7] 탭 이름 상수 중복');
 const tabs = [...src['gasIO.js'].matchAll(/^\s{2}([가-힣A-Za-z0-9]+):\s*'([^']+)'/gm)].map((m) => m[2]);
 const dupTab = tabs.filter((t, i) => tabs.indexOf(t) !== i);
 chk(dupTab.length === 0, '탭 이름 중복 없음', dupTab.join(', '));
+
 
 console.log('\n' + (bad ? '문제 ' + bad + '건' : '이상 없음'));
 process.exit(bad ? 1 : 0);

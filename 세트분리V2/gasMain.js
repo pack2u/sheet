@@ -44,6 +44,7 @@ function onOpen() {
      나머지는 넷으로 묶어 접는다 — 자료 준비 · 송장 매칭 · 점검 · 설정. */
   ui.createMenu('🧩 세트분리 V2')
     .addItem('▶ 세트분리 실행', 'ss_실행')
+    .addItem('🔂 세트분리 재실행 (회차 그대로)', 'ss_재실행')
     .addItem('✅ 조치 적용 (보류 → 발송·대리발송)', 'ss_보류조치반영')
     .addSeparator()
 
@@ -236,6 +237,71 @@ function ss_보류조치반영() {
   return r;
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  🔂 세트분리 재실행 — 회차를 올리지 않는다
+ *  2026-09-16
+ *
+ *  > "세트분리 메뉴에 세트분리 재실행을 만들어 회차가 늘어나는 부분을
+ *  >  없애는게 좋겠어 같은 판매현황 재실행으로 회차 추가없이 재실행으로
+ *  >  할경우 쓸수 있도록.."
+ *
+ *  ★ 왜 회차가 늘었나 ★
+ *    회차는 판매현황 «내용의 지문»으로 가른다. 글자 하나라도 다르면 다른
+ *    회차다. 그런데 세트분리는 돌면서 판매현황 O열에 전화주문 고유아이디를
+ *    적는다. 그러고 다시 돌리면 지문이 달라져 «새 회차»가 된다.
+ *    사람 눈에는 같은 판매현황인데 1차가 2차가 되어 버린다.
+ *
+ *  ★ 회차가 늘면 무엇이 문제인가 ★
+ *    원장·실행이력·그날 판매현황·합배송이 전부 회차로 묶인다. 없던 2차가
+ *    생기면 사방넷 대량등록도 일일마감도 그 2차를 실제 출고분으로 친다.
+ *    송장 배포와 정산이 거기서 어긋난다.
+ *
+ *  ★ 언제 쓰나 ★
+ *    같은 판매현황을 다시 돌릴 때만. 새 판매현황을 붙여넣었으면 ▶ 세트분리
+ *    실행을 쓴다 — 그건 «다른 회차»가 맞다.
+ *
+ *  ★ 무엇을 하나 ★
+ *    마지막 회차를 그대로 쓰고, 그 줄의 지문만 이번 내용으로 갈아 끼운다.
+ *    원장의 그 회차분은 늘 그렇듯 통째로 갈아 끼워진다(ss_원장회차삭제).
+ * ══════════════════════════════════════════════════════════════
+ */
+function ss_재실행() {
+  var 마지막 = ss_마지막회차_();
+  if (!마지막) {
+    ssio_alert('아직 회차가 없습니다.' + String.fromCharCode(10) + String.fromCharCode(10) +
+      '처음 한 번은 ▶ 세트분리 실행으로 돌려야 합니다.');
+    return;
+  }
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  if (ui) {
+    var nl2 = String.fromCharCode(10);
+    var ans = ui.alert('🔂 세트분리 재실행',
+      '회차를 «올리지 않고» 다시 돌립니다.' + nl2 + nl2 +
+      '  · 쓰는 회차 : ' + 마지막.key + nl2 +
+      '  · 그 회차의 원장·출력은 이번 결과로 갈아 끼워집니다' + nl2 + nl2 +
+      '새 판매현황을 붙여넣었다면 이걸 쓰면 안 됩니다 —' + nl2 +
+      '그건 ▶ 세트분리 실행으로 돌려야 «다른 회차»가 됩니다.' + nl2 + nl2 +
+      '계속할까요?', ui.ButtonSet.YES_NO);
+    if (ans !== ui.Button.YES) return;
+  }
+  return ss_실행({ 회차유지: 마지막.key });
+}
+
+/**
+ * 가장 최근 회차 한 줄. 없으면 null.
+ * 회차 탭은 아래로 쌓이므로 맨 끝이 가장 최근이다.
+ */
+function ss_마지막회차_() {
+  var rows = ssio_body(SSIO_TABS.회차);
+  for (var i = rows.length - 1; i >= 0; i--) {
+    var k = ssText(rows[i][0]);
+    if (k) return { key: k, 행: i + 2, no: ssNum(rows[i][3]) };
+  }
+  return null;
+}
+
 function ss_실행(opts) {
   opts = opts || {};
   var t0 = new Date().getTime();
@@ -292,7 +358,12 @@ function ss_실행(opts) {
     // 되는 것부터 차례로 처리해도 앞서 반영한 건이 되돌아가지 않는다.
     단계 = '회차 확정';
     var 지문 = ssFingerprint(ssNormalize(grid, cfg, []));
-    var 회차 = ss_회차확정(지문, grid.length);
+    /*  🔂 재실행이면 마지막 회차를 그대로 쓴다 (2026-09-16).
+        판매현황 O열에 고유아이디를 적고 나면 지문이 달라져 새 회차가 되는데,
+        사람 눈에는 같은 판매현황이다. 그 헛 회차를 만들지 않는다. */
+    var 회차 = opts.회차유지
+      ? ss_회차유지확정(opts.회차유지, 지문, grid.length)
+      : ss_회차확정(지문, grid.length);
     var runKey = 회차.key;
 
     단계 = '보류 조치 걷기';
@@ -330,7 +401,11 @@ function ss_실행(opts) {
         ssWarn(res.warnings, '오류', 'ZIP_NOKEY', '',
           '카카오 API 키가 없어 우편번호를 구하지 못했습니다. 메뉴 → 🔑 카카오 API 키 설정');
       } else if (zr.filled) {
-        masters = ssm_load(runKey);
+        /*  ★ 통째로 다시 읽지 않는다 ★  (2026-09-16 — 속도)
+            우편번호를 새로 구했으니 도서산간 판정이 달라져 한 번 더 계산한다.
+            하지만 그 사이 바뀐 것은 「도서산간_주소사전」 하나뿐이다.
+            예전에는 여기서 ssm_load 로 열세 탭을 다시 읽었다. */
+        ssm_reloadAddrZip(masters);
         res = ssRun(grid, masters, cfg);
         재실행 = '신규 주소 ' + zr.filled + '건 우편번호 조회 후 재계산 (도서산간 ' + zr.island + ')';
       }
@@ -444,11 +519,15 @@ function ss_실행(opts) {
       sec.toFixed(1), SS_VERSION
     ]]);
 
+    //  사전 건수는 한 번만 읽는다 — 따로 세면 같은 탭을 두 번 읽는다 (2026-09-16)
+    var 사전수 = ssz_dictCounts();
     // 요약
     var sum = [
       ['상태', '✅ 완료'],
       ['회차키', runKey],
-      ['회차 구분', 회차.재실행 ? '재실행 — 원장 ' + 지운행 + '행 교체' : '신규 ' + 회차.no + '회차'],
+      ['회차 구분', 회차.회차유지
+        ? '🔂 재실행 (회차 그대로) — 원장 ' + 지운행 + '행 교체'
+        : (회차.재실행 ? '재실행 — 원장 ' + 지운행 + '행 교체' : '신규 ' + 회차.no + '회차')],
       ['실행시각', at],
       ['판매현황 원천', sales.원천], ['소요(초)', sec.toFixed(1)],
       ['전화주문 고유ID 부여', 아이디채움 + '건 (판매현황 O열)'],
@@ -462,7 +541,7 @@ function ss_실행(opts) {
       ['  신규 주소 추가', added],
       ['  조회 시도 / 성공 / 실패', zr.tried + ' / ' + zr.filled + ' / ' + (zr.failed ? zr.failed.length : 0)],
       ['  카카오 키', ssz_key() ? '설정됨' : '없음  ← 도서산간 판정 불가'],
-      ['  사전 조회대기 / 영구실패', ssz_pendingCount() + ' / ' + ssz_permanentCount()],
+      ['  사전 조회대기 / 영구실패', 사전수.대기 + ' / ' + 사전수.영구],
       ['마스터 · 품목 / 재고 / BOM',
         Object.keys(masters.items).length + ' / ' + Object.keys(masters.stock).length + ' / ' + Object.keys(masters.bom).length],
       ['마스터 · 합배송조건 코드 / 배송비규칙',
@@ -784,6 +863,29 @@ function ss_회차확정(지문, 입력행) {
  * 회차키(YYMMDD-N)가 며칠 전 것인가. 못 읽으면 0.
  * 「1~7일은 기다리는 중, 20일 넘으면 사람이 봐야 한다」를 가르는 자다.
  */
+/**
+ * 이미 있는 회차를 «그대로 쓰되» 지문만 이번 내용으로 갈아 끼운다.
+ *
+ * 지문을 갱신하는 까닭: 다음에 또 같은 내용으로 ▶ 세트분리 실행을 눌러도
+ * 이 회차에 붙게 하려는 것이다. 안 갈아 끼우면 다음 실행이 새 회차를 판다.
+ *
+ * 회차키가 표에 없으면(사람이 지웠다면) 평소대로 판정한다 —
+ * 없는 회차에 억지로 쌓으면 원장과 회차표가 어긋난다.
+ */
+function ss_회차유지확정(회차키, 지문, 입력행) {
+  var sh = ssio_sheet(SSIO_TABS.회차, SS_ROUND_HEADER);
+  var rows = ssio_body(SSIO_TABS.회차);
+  var now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+  for (var i = 0; i < rows.length; i++) {
+    if (ssText(rows[i][0]) !== ssText(회차키)) continue;
+    sh.getRange(i + 2, 2, 1, 1).setValues([[지문]]);
+    sh.getRange(i + 2, 5, 1, 4).setValues([[입력행, ssText(rows[i][5]) || now, now, ssNum(rows[i][7]) + 1]]);
+    return { key: ssText(rows[i][0]), no: ssNum(rows[i][3]), 재실행: true, 회차유지: true };
+  }
+  //  없는 회차를 가리켰다 — 평소대로 판정한다
+  return ss_회차확정(지문, 입력행);
+}
+
 function ss_회차나이_(회차키) {
   var k = ssText(회차키);
   if (!/^[0-9]{6}-/.test(k)) return 0;
@@ -863,6 +965,13 @@ function ss_중복점검(quiet) {
     }
   }
 
+  /*  ★ 「주문번호출처」 칸이 없으면 말한다 ★  (2026-09-16)
+      이 칸이 있어야 사방넷 건과 전화주문을 갈라 본다. 없으면 옛 판정으로
+      돌아가 사방넷 건이 다시 중복 의심으로 올라온다 — 그런데 «조용히» 그렇다.
+      need 에 넣어 막지는 않는다. 중복점검은 곁다리라 이걸로 못 돌게 하면
+      손해가 더 크다. 대신 결과에 적어 사람이 원장을 갱신하게 한다. */
+  var 출처칸있음 = idx['주문번호출처'] !== undefined;
+
   var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
 
   /* ★ 어제까지 본다 ★  (2026-09-14)
@@ -888,6 +997,9 @@ function ss_중복점검(quiet) {
     rows.push({
       회차: ssText(r[idx['회차키']]),
       고유ID: ssText(r[idx['고유ID']]),
+      /*  사방넷이 준 번호인가, 우리가 만든 것인가.
+         중복 판정이 이 둘을 다르게 다룬다 (2026-09-16). */
+      주문번호출처: 출처칸있음 ? ssText(r[idx['주문번호출처']]) : '',
       원본코드: ssText(r[idx['원본품목코드']]),
       품목명: ssText(r[idx['품목명']]),
       경로: ssText(r[idx['경로']]),
@@ -933,18 +1045,32 @@ function ss_중복점검(quiet) {
   for (var k = 0; k < found.groups.length; k++) if (found.groups[k].회차간) cross++;
   var 이어짐줄 = 0;
   for (var k2 = 0; k2 < 이어짐.length; k2++) 이어짐줄 += 이어짐[k2].길이;
+  /*  사방넷 건과 전화주문이 각각 몇 줄이었나 — 갈라 본 것이 맞는지 눈으로 확인한다 */
+  var 사방넷줄 = 0, 전화줄 = 0;
+  for (var s1 = 0; s1 < found.records.length; s1++) {
+    if (ssText(found.records[s1].주문번호출처) === SS_ORDNO_SRC.사방넷) 사방넷줄++;
+    else 전화줄++;
+  }
   var res = { groups: found.groups.length, rows: out.length, cross: cross,
-    주문라인: found.records.length, 이어짐: 이어짐.length, 이어짐줄: 이어짐줄 };
+    주문라인: found.records.length, 이어짐: 이어짐.length, 이어짐줄: 이어짐줄,
+    사방넷: 사방넷줄, 전화: 전화줄, 출처칸: 출처칸있음 };
 
   if (!quiet) {
     var msg = '중복발주 의심 점검 (' + today + ')\n\n' +
       '  · 견준 회차 : 최근 ' + 볼일수 + '일 (오늘 포함)\n' +
-      '  · 주문라인 : ' + res.주문라인 + '건\n' +
+      '  · 주문라인 : ' + res.주문라인 + '건  (사방넷 ' + res.사방넷 + ' · 전화주문 ' + res.전화 + ')\n' +
       '  · 의심 그룹 : ' + res.groups + '건 (그중 회차 간 ' + res.cross + '건)\n' +
       '  · 표시 행 : ' + res.rows + '\n';
     if (res.이어짐) {
       msg += '  · ★ 이전 회차와 «연속으로» 같은 묶음 : ' + res.이어짐 + '덩이 ' +
         res.이어짐줄 + '줄\n';
+    }
+    /*  사방넷은 주문번호가 다르면 다른 주문이다 — 이어짐 검사에서 아예 뺀다.
+        그 사실을 화면에도 적어 둔다. 「왜 안 잡히지」를 묻지 않게. */
+    msg += '  · 이어짐 검사 대상 : 전화주문만 (사방넷은 주문번호가 다르면 다른 건)\n';
+    if (!res.출처칸) {
+      msg += '\n⚠ 원장에 「주문번호출처」 칸이 없어 사방넷·전화주문을 못 가렸습니다.\n' +
+        '   「🛠 시트 설치 / 복구」를 한 번 돌리면 칸이 생깁니다.\n';
     }
     msg += '\n';
     msg += res.이어짐

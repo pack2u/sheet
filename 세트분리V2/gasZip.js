@@ -45,10 +45,98 @@ function ss_카카오키설정() {
 }
 
 /**
+ * 카카오 주소검색 응답 한 개를 읽는다.
+ *
+ * 한 개씩 부르는 길(ssz_zipOf)과 묶어 부르는 길(ssz_zipBatch_)이 결과를
+ * «같은 눈»으로 읽어야 한다. 따로 적어 두면 한쪽만 고치는 일이 생긴다.
+ *
+ * @return {{zip:string, err:string}}
+ */
+function ssz_readZip_(r) {
+  var code;
+  try { code = r.getResponseCode(); }
+  catch (e) { return { zip: '', err: '응답 없음' }; }
+  if (code !== 200) {
+    return { zip: '', err: 'HTTP ' + code + ' ' + String(r.getContentText()).slice(0, 80) };
+  }
+  var j;
+  try { j = JSON.parse(r.getContentText()); }
+  catch (e2) { return { zip: '', err: '응답 파싱 실패' }; }
+  if (j.documents && j.documents.length) {
+    var d = j.documents[0];
+    if (d.road_address && d.road_address.zone_no) return { zip: d.road_address.zone_no, err: '' };
+    if (d.address && d.address.zip_code) return { zip: d.address.zip_code, err: '' };
+    return { zip: '', err: '우편번호 없는 결과' };
+  }
+  return { zip: '', err: '검색 결과 없음' };
+}
+
+/** 카카오 주소검색 요청 하나 만들기 */
+function ssz_addrReq_(q, apiKey) {
+  return {
+    url: 'https://dapi.kakao.com/v2/local/search/address.json?query=' + encodeURIComponent(q),
+    headers: { Authorization: 'KakaoAK ' + apiKey },
+    muteHttpExceptions: true
+  };
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  주소 여럿을 «한꺼번에» 묻는다
+ *  2026-09-16
+ *
+ *  > "세트분리 속도 개선해주고"
+ *
+ *  ★ 여기가 제일 오래 걸리던 곳이다 ★
+ *    ssz_fillDictionary 는 새 주소를 한 개씩 물어보고 그때마다 120밀리초를
+ *    쉬었다. 한 회차에 최대 300개를 보므로, 쉬는 시간만 36초다. 게다가
+ *    카카오 왕복이 한 번에 0.2~0.3초라 그것만으로 1분이 더 든다.
+ *    새 주소가 많은 날은 이 한 군데서 1~2분을 썼다.
+ *
+ *  ★ fetchAll 은 한 번에 나란히 간다 ★
+ *    구글이 주는 묶음 호출이다. 서른 개를 나란히 보내면 왕복 한 번 값으로
+ *    끝난다. 쉬는 것도 «묶음 사이»에만 짧게 둔다.
+ *
+ *  ★ 첫판만 묶는다 ★
+ *    대부분은 첫 질문에서 맞는다. 못 맞힌 것만 예전 길(정규화 → 도로명만
+ *    → 키워드검색)로 하나씩 더 물어본다. 그 길은 앞 답에 따라 다음 질문이
+ *    달라져서 묶을 수가 없다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function ssz_zipBatch_(addrs, apiKey, 묶음크기) {
+  var out = {};
+  if (!addrs || !addrs.length || !apiKey) return out;
+  var N = 묶음크기 > 0 ? 묶음크기 : 30;
+  for (var i = 0; i < addrs.length; i += N) {
+    var part = addrs.slice(i, i + N);
+    var reqs = [];
+    for (var q = 0; q < part.length; q++) reqs.push(ssz_addrReq_(part[q], apiKey));
+    var res;
+    try {
+      res = UrlFetchApp.fetchAll(reqs);
+    } catch (ex) {
+      /*  권한(script.external_request)이 없으면 여기로 온다. 남은 것을 더
+          두드려도 같은 결과다 — 남김없이 사유를 적고 멈춘다. */
+      for (var e = i; e < addrs.length; e++) {
+        out[addrs[e]] = { zip: '', err: '외부요청 불가: ' + ex.message };
+      }
+      return out;
+    }
+    for (var j = 0; j < part.length; j++) out[part[j]] = ssz_readZip_(res[j]);
+    //  묶음과 묶음 사이에만 잠깐 쉰다 (카카오 rate limit 예의)
+    if (i + N < addrs.length) Utilities.sleep(80);
+  }
+  return out;
+}
+
+/**
  * 주소 → 우편번호 5자리. 못 찾으면 "".
  * 1차 주소검색 → 2차 행정구역명 정규화 후 재시도 → 3차 키워드검색으로 도로명 얻어 재시도
+ *
+ * @param 첫판 묶음 조회(ssz_zipBatch_)가 이미 해 본 «1차»의 결과.
+ *             주면 같은 질문을 다시 하지 않는다. 없으면 여기서 한다.
  */
-function ssz_zipOf(address, apiKey) {
+function ssz_zipOf(address, apiKey, 첫판) {
   var addr = ssText(address);
   if (!addr) return { zip: '', err: '주소가 비어 있음' };
   if (!apiKey) return { zip: '', err: 'API 키 없음' };
@@ -57,34 +145,28 @@ function ssz_zipOf(address, apiKey) {
   function tryAddr(q) {
     var r;
     try {
-      r = UrlFetchApp.fetch(
-        'https://dapi.kakao.com/v2/local/search/address.json?query=' + encodeURIComponent(q),
+      r = UrlFetchApp.fetch(ssz_addrReq_(q, apiKey).url,
         { headers: { Authorization: 'KakaoAK ' + apiKey }, muteHttpExceptions: true });
     } catch (ex) {
       // 권한 부족(script.external_request)이면 여기로 온다. 절대 삼키지 않는다.
       lastErr = '외부요청 불가: ' + ex.message;
       return null;
     }
-    var code = r.getResponseCode();
-    if (code !== 200) {
-      lastErr = 'HTTP ' + code + ' ' + r.getContentText().slice(0, 80);
-      return null;
-    }
-    var j;
-    try { j = JSON.parse(r.getContentText()); }
-    catch (ex2) { lastErr = '응답 파싱 실패'; return null; }
-    if (j.documents && j.documents.length) {
-      var d = j.documents[0];
-      if (d.road_address && d.road_address.zone_no) return d.road_address.zone_no;
-      if (d.address && d.address.zip_code) return d.address.zip_code;
-      lastErr = '우편번호 없는 결과';
-      return null;
-    }
-    lastErr = '검색 결과 없음';
+    var got = ssz_readZip_(r);
+    if (got.zip) return got.zip;
+    lastErr = got.err;
     return null;
   }
 
-  var hit = tryAddr(addr);
+  /*  묶음 조회가 이미 물어본 답이 있으면 그대로 쓴다 (2026-09-16).
+      같은 질문을 두 번 하면 묶어 부른 보람이 없다. */
+  var hit = null;
+  if (첫판 && typeof 첫판 === 'object') {
+    if (첫판.zip) return { zip: 첫판.zip, err: '' };
+    lastErr = ssText(첫판.err);
+  } else {
+    hit = tryAddr(addr);
+  }
   if (hit) return { zip: hit, err: '' };
   if (lastErr.indexOf('외부요청 불가') === 0 || lastErr.indexOf('HTTP 401') === 0 || lastErr.indexOf('HTTP 403') === 0) {
     return { zip: '', err: lastErr };   // 키·권한 문제면 더 시도해도 소용없다
@@ -175,13 +257,43 @@ function ssz_fillDictionary(limit, retryFailed) {
   var changed = false;
 
   var cap = limit > 0 ? limit : 300;
-  for (var r = 0; r < v.length && out.tried < cap; r++) {
-    var addr = ssText(v[r][0]);
-    if (!addr || ssText(v[r][1])) continue;
-    if (!retryFailed && ssz_isPermanentFail(v[r][4])) continue; // 주소 자체 문제만 건너뛴다
+
+  /*  ★ 물어볼 것을 먼저 «모은다» ★  (2026-09-16)
+      > "세트분리 속도 개선해주고"
+
+      예전에는 한 줄씩 카카오에 묻고 그때마다 120밀리초를 쉬었다. 최대 300건이라
+      쉬는 시간만 36초, 왕복까지 합치면 1~2분을 이 한 군데서 썼다.
+      이제 물어볼 주소를 먼저 다 모아 fetchAll 로 «나란히» 보낸다. */
+  var 볼자리 = [], 볼주소 = [];
+  for (var r0 = 0; r0 < v.length && 볼자리.length < cap; r0++) {
+    var a0 = ssText(v[r0][0]);
+    if (!a0 || ssText(v[r0][1])) continue;
+    if (!retryFailed && ssz_isPermanentFail(v[r0][4])) continue; // 주소 자체 문제만 건너뛴다
+    볼자리.push(r0);
+    볼주소.push(a0);
+  }
+  if (!볼자리.length) return out;
+
+  //  첫판은 한꺼번에. 대부분 여기서 맞는다.
+  var 첫판 = ssz_zipBatch_(볼주소, apiKey);
+
+  for (var k = 0; k < 볼자리.length; k++) {
+    var r = 볼자리[k];
+    var addr = 볼주소[k];
     out.tried++;
-    var got = ssz_zipOf(addr, apiKey);
-    Utilities.sleep(120); // 카카오 rate limit 보호
+
+    /*  못 맞힌 것만 예전 길로 하나씩 더 물어본다
+        (정규화 → 도로명 본체 → 키워드검색). 앞 답에 따라 다음 질문이
+        달라져서 묶을 수가 없다. 쉬는 것도 여기서만 한다. */
+    var 첫 = 첫판[addr];
+    var got;
+    if (첫 && 첫.zip) {
+      got = 첫;
+    } else {
+      got = ssz_zipOf(addr, apiKey, 첫);
+      Utilities.sleep(120); // 카카오 rate limit 보호 — 되짚는 줄만
+    }
+
     var zip = got.zip;
     if (!zip) {
       out.failed.push(addr);
@@ -235,30 +347,35 @@ function ssz_shouldRetryToday() {
 }
 
 /** 사전에 조회 대기 중인 행이 남아 있나 (영구 실패는 제외) */
-function ssz_hasPending() {
-  return ssz_pendingCount() > 0;
+/**
+ * ★ 사전을 한 번만 읽는다 ★  (2026-09-16 — 속도)
+ *
+ * 대기 건수와 영구 실패 건수를 따로 세느라 같은 탭을 두 번 읽고 있었다.
+ * 사전은 영구 캐시라 날마다 길어진다 — 읽는 값이 싸지 않다.
+ * 한 번 읽어 둘 다 센다.
+ *
+ * @return {{대기:number, 영구:number}}
+ */
+function ssz_dictCounts() {
+  var body = ssio_body(SSIO_TABS.도서산간사전);
+  var 대기 = 0, 영구 = 0;
+  for (var i = 0; i < body.length; i++) {
+    if (!ssText(body[i][0])) continue;      // 주소 없는 줄
+    if (ssText(body[i][1])) continue;       // 이미 채워진 줄
+    if (ssz_isPermanentFail(body[i][4])) 영구++;
+    else 대기++;
+  }
+  return { 대기: 대기, 영구: 영구 };
 }
 
-/** 대기 건수와 영구 실패 건수 */
-function ssz_pendingCount() {
-  var body = ssio_body(SSIO_TABS.도서산간사전);
-  var n = 0;
-  for (var i = 0; i < body.length; i++) {
-    if (!ssText(body[i][0]) || ssText(body[i][1])) continue;
-    if (ssz_isPermanentFail(body[i][4])) continue;
-    n++;
-  }
-  return n;
-}
+/** 사전에 조회 대기 중인 행이 남아 있나 (영구 실패는 제외) */
+function ssz_hasPending() { return ssz_dictCounts().대기 > 0; }
 
-function ssz_permanentCount() {
-  var body = ssio_body(SSIO_TABS.도서산간사전);
-  var n = 0;
-  for (var i = 0; i < body.length; i++) {
-    if (ssText(body[i][0]) && !ssText(body[i][1]) && ssz_isPermanentFail(body[i][4])) n++;
-  }
-  return n;
-}
+/** 대기 건수 */
+function ssz_pendingCount() { return ssz_dictCounts().대기; }
+
+/** 영구 실패 건수 */
+function ssz_permanentCount() { return ssz_dictCounts().영구; }
 
 /** 메뉴에서 직접 부를 때 */
 function ss_우편번호채우기() {
