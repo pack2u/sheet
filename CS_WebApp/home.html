@@ -3031,7 +3031,7 @@
         </div>
         <div class="ledger-field">
           <label>수거 택배사</label>
-          <input id="retNewPickup" type="text" placeholder="예: 롯데택배">
+          <input id="retNewPickup" type="text" placeholder="예: 로젠택배">
         </div>
       </div>
       <div class="ledger-row2">
@@ -3137,7 +3137,7 @@
       </div>
       <div class="ledger-field">
         <label>수거입력처 (대리공급은 택배사 자동)</label>
-        <input id="ledgerPickup" type="text" placeholder="예: 로젠택배 / 롯데택배">
+        <input id="ledgerPickup" type="text" placeholder="예: 로젠택배 (자사출고) · 한진택배 (대리발송)">
       </div>
       <div class="ledger-field">
         <label>반품비</label>
@@ -9569,8 +9569,26 @@
       if (src.indexOf('CJ') !== -1 || src.indexOf('대한통운') !== -1) return 'CJ대한통운';
       if (src.indexOf('한진') !== -1) return '한진택배';
       if (src.indexOf('대신') !== -1) return '대신택배';
+      if (src.indexOf('우체국') !== -1) return '우체국';
+      if (src.indexOf('경동') !== -1) return '경동택배';
+      /*  롯데는 예비지만 옛 기록에는 남아 있다 — «적혀 있으면» 롯데가 맞다.
+          맨 끝의 「모르면 롯데」와는 다른 이야기다(그건 지웠다).  */
+      if (src.indexOf('롯데') !== -1) return '롯데택배';
       if (isProxySource(src)) return '';
-      return '롯데택배';
+      /*  ★ 모르면 «빈칸»이다 ★  (2026-09-16)
+
+          > "CS 웹앱 반품카드에서 수거택배사가 현재 롯데로 되있는데 로젠으로 바꿔줘"
+
+          여기가 맨 끝에서 «무조건 롯데택배»를 돌려주고 있었다. 어느 패턴에도
+          안 맞으면 전부 롯데가 된다 — 반품 카드의 수거택배사가 롯데로 나온
+          가장 큰 까닭이다. 2026-09-11 에 자사출고가 로젠으로 바뀌었는데
+          이 한 줄이 그대로였다.
+
+          빈칸이어도 화면은 멀쩡하다 — 조회는 네이버가 받아 주고(naverTrackUrl),
+          안내문은 「공급처 출고(택배사가 건마다 다를 수 있습니다)」로 나간다.
+          틀린 택배사는 빈칸보다 나쁘다. 엉뚱한 곳으로 조회를 보내고,
+          엉뚱한 택배사로 회수 접수가 나간다.  */
+      return '';
     }
 
     function resolveCarrier(r) {
