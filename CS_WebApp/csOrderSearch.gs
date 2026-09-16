@@ -622,7 +622,14 @@ function _cs_loadDay_(dateStr, refresh, cacheOnly) {
   if (cacheOnly) return { found: false, fromCache: false, rows: [], error: "" };
 
   var file = _cs_findDailyFile_(dateStr);
-  if (!file) return { found: false, fromCache: false, rows: [], error: "" };
+  if (!file) {
+    /*  ★ 없는 날은 «없다»고 기억한다 ★  (2026-09-16)
+        공휴일·아직 안 만들어진 날은 찾아도 없다. 기억해 두지 않으면
+        새로고침마다 드라이브를 다시 뒤진다 — 늘 헛걸음이다.
+        30분만 기억한다. 오늘치는 곧 생기므로 오래 붙들면 안 된다.  */
+    try { cache.put(key, JSON.stringify({ rows: [] }), 1800); } catch (eN) {}
+    return { found: true, fromCache: false, rows: [], error: "" };
+  }
 
   try {
     var ss = SpreadsheetApp.open(file);
@@ -1852,6 +1859,22 @@ function _cs_normYmd_(v) {
   return m[1] + "-" + mm + "-" + dd;
 }
 
+/**
+ * 조회할 «날짜» 목록 — 토·일은 뺀다.  (2026-09-16)
+ *
+ * > "1달이라면 사실 주 5일...20개~25개 정도야"   "주말 출고는 없어"
+ *
+ * ★ 왜 빼야 하나 ★
+ *   주말엔 마감 파일이 아예 없다. 그런데 날짜 목록에 넣어 두니 늘
+ *   「못 찾은 날」로 남았고, 화면은 그걸 보고 «아직 다 못 불러왔다»고
+ *   판단해 매번 주말을 다시 찾으러 갔다. 있을 리 없는 파일을.
+ *
+ *   공휴일은 표로 두지 않는다 — 해마다 사람이 고쳐야 하고, 안 고치면
+ *   조용히 틀린다. 대신 «한 번 찾아 없으면 없는 날로 기억»한다
+ *   (_cs_loadDay_ 의 빈 캐시).
+ *
+ * days 는 «달력 날수»다. 30 이면 그 안의 영업일 21~22일이 나온다.
+ */
 function _cs_dateList_(days) {
   var n = _cs_clampDays_(days);
   var out = [];
@@ -1862,6 +1885,8 @@ function _cs_dateList_(days) {
   for (var i = 0; i < n; i++) {
     var d = new Date(base.getTime());
     d.setDate(d.getDate() - i);
+    var dow = d.getDay();               // 0=일 6=토
+    if (dow === 0 || dow === 6) continue;
     out.push(Utilities.formatDate(d, "Asia/Seoul", "yyyy-MM-dd"));
   }
   return out;

@@ -6380,11 +6380,18 @@
       el.innerHTML = msg;
     }
 
+    /*  조회할 날짜 — 토·일은 뺀다.  (2026-09-16)
+        > "1달이라면 사실 주 5일...20개~25개 정도야"   "주말 출고는 없어"
+        주말을 넣어 두면 늘 「못 찾은 날」로 남아, 화면이 «아직 다 못
+        불러왔다»고 보고 매번 다시 찾으러 갔다.
+        n 은 «달력 날수»다 — 30 이면 영업일 21~22일이 나온다.  */
     function dateList(n) {
       var out = [];
       var d = new Date();
       for (var i = 0; i < n; i++) {
         var x = new Date(d.getFullYear(), d.getMonth(), d.getDate() - i);
+        var dow = x.getDay();               // 0=일 6=토
+        if (dow === 0 || dow === 6) continue;
         out.push(ymdOf(x));
       }
       return out;
@@ -6412,16 +6419,21 @@
       return !!KR_HOLIDAYS[String(ymd || '').replace(/-/g, '')];
     }
 
+    /*  대시보드 막대의 날짜 — 조회한 날짜와 «같은 창»이어야 한다. (2026-09-16)
+
+        전에는 여기만 따로 셌다. 그래서 dateList 가 토·일을 빼면
+        막대만 주말을 세워 8개가 0으로 서고, 「그날 장사를 못 했다」로 읽혔다.
+        불러온 적 없는 날을 0으로 보여 주는 것은 거짓말이다.
+
+        조회 창(dateList)에서 오늘과 공휴일만 뺀다 — 대시보드는 어제부터다.  */
     function shipDateList(n) {
+      var all = dateList(n);
+      var today = ymdOf(new Date());
       var out = [];
-      var d = new Date();
-      d.setDate(d.getDate() - 1);
-      var guard = 0;
-      while (out.length < n && guard < 60) {
-        var ymd = ymdOf(d);
-        if (!isKrHoliday(ymd)) out.push(ymd);
-        d.setDate(d.getDate() - 1);
-        guard++;
+      for (var i = 0; i < all.length; i++) {
+        if (all[i] === today) continue;
+        if (isKrHoliday(all[i])) continue;
+        out.push(all[i]);
       }
       return out;
     }
