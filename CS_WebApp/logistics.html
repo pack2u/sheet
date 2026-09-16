@@ -187,6 +187,52 @@
     h2 { margin-top: 0; }
     .col-right h2:first-child { margin-top: 0; }
   }
+  /* ══════════════════════════════════════════════════════════
+     올리는 중 팝업 — 다 될 때까지 막아 선다   (2026-09-16)
+
+     > "하단 이미지 업로드 1, 2, 처리완료등 안내메세지가 올라왔다가
+     >  사라지는데 계속 보이면 좋겠어.. 아니면 완료되기전에는 창닫기가
+     >  안되거나.."
+
+     여기는 「저장 중…」이 단추 글씨로만 바뀌었다. 밖에서 폰으로 쓰는
+     화면이라 화면을 끄거나 다른 앱으로 넘어가기 쉽다. 그러면 사진이
+     안 올라간다. 끝날 때까지 덮고, 끝나면 사람이 확인을 누른다.
+     ══════════════════════════════════════════════════════════ */
+  .lg-up {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.8);
+    align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .lg-up.on { display: flex; }
+  .lg-up-box {
+    background: var(--card); border: 1px solid var(--bd);
+    border-radius: 18px; width: calc(100% - 44px); max-width: 340px;
+    padding: 26px 20px 20px; text-align: center;
+  }
+  .lg-up-icon { font-size: 32px; line-height: 1; margin-bottom: 12px; }
+  .lg-up-t { font-size: 16px; font-weight: 700; }
+  .lg-up-s { font-size: 13px; color: var(--tx2); margin-top: 6px; min-height: 18px; word-break: keep-all; }
+  .lg-up-bar {
+    height: 6px; border-radius: 3px; margin: 16px 0 12px;
+    background: var(--bg2); border: 1px solid var(--bd); overflow: hidden;
+  }
+  .lg-up-fill {
+    height: 100%; width: 100%;
+    background: repeating-linear-gradient(90deg, var(--acs) 0 14px, transparent 14px 28px);
+    animation: lgUpFlow 0.9s linear infinite;
+  }
+  @keyframes lgUpFlow { to { background-position: 28px 0; } }
+  .lg-up-warn { font-size: 12px; font-weight: 600; color: var(--orange); word-break: keep-all; }
+  .lg-up-btns { margin-top: 16px; display: none; gap: 8px; }
+  .lg-up-btns.on { display: flex; }
+  .lg-up-btns button {
+    flex: 1; padding: 13px 10px; border-radius: 10px;
+    border: 1px solid var(--bd); font-family: inherit;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  .lg-up-go { background: var(--acs); color: #1b1e23; border-color: transparent; }
+  .lg-up-retry { background: var(--bg2); color: var(--tx); }
 </style>
 </head>
 <body>
@@ -272,6 +318,70 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m];
     });
   }
+
+  /* ══════════════════════════════════════════════════════════
+     올리는 중 팝업 — 다 될 때까지 막아 선다   (2026-09-16)
+
+     > "완료되기전에는 창닫기가 안되거나.. 나가더라고 백그라운드에서 처리를.."
+
+     ★ 백그라운드는 못 한다 ★
+       사진 바이트는 이 화면이 들고 있다가 보낸다. 화면을 닫으면 브라우저가
+       그 요청을 죽인다 — 서버가 이어받을 수가 없다. 할 수 있는 것은
+       «못 닫게 막고, 끝난 것을 확실히 보여 주는 것»이다.
+     ══════════════════════════════════════════════════════════ */
+  var LG_UP_BUSY = false;
+
+  function lgUpEl(id) { return document.getElementById(id); }
+
+  function lgUpOpen(title, sub) {
+    LG_UP_BUSY = true;
+    lgUpEl("lgUpIcon").textContent = "📤";
+    lgUpEl("lgUpT").textContent = String(title || "올리는 중…");
+    lgUpEl("lgUpS").textContent = String(sub || "");
+    lgUpEl("lgUpWarn").style.display = "";
+    lgUpEl("lgUpFill").style.display = "";
+    var b = lgUpEl("lgUpBtns");
+    b.className = "lg-up-btns"; b.innerHTML = "";
+    lgUpEl("lgUp").classList.add("on");
+  }
+
+  /** 끝. 사람이 확인을 눌러야 닫힌다 — 저절로 닫히면 못 본 채 지나간다. */
+  function lgUpDone(성공, 글, 다시, 확인) {
+    LG_UP_BUSY = false;
+    lgUpEl("lgUpIcon").textContent = 성공 ? "✅" : "⚠️";
+    lgUpEl("lgUpT").textContent = 성공 ? "올라갔습니다" : "올리지 못했습니다";
+    lgUpEl("lgUpS").textContent = String(글 || "");
+    lgUpEl("lgUpWarn").style.display = "none";
+    lgUpEl("lgUpFill").style.display = "none";
+
+    var box = lgUpEl("lgUpBtns");
+    box.innerHTML = "";
+    if (다시) {
+      var r = document.createElement("button");
+      r.type = "button"; r.className = "lg-up-retry"; r.textContent = "다시 시도";
+      r.onclick = 다시;
+      box.appendChild(r);
+    }
+    var g = document.createElement("button");
+    g.type = "button"; g.className = "lg-up-go";
+    g.textContent = 성공 ? "확인" : "닫기";
+    g.onclick = function () { lgUpClose(); if (확인) 확인(); };
+    box.appendChild(g);
+    box.className = "lg-up-btns on";
+  }
+
+  function lgUpClose() {
+    LG_UP_BUSY = false;
+    lgUpEl("lgUp").classList.remove("on");
+  }
+
+  /*  올리는 중 새로고침·뒤로가기를 누르면 브라우저가 대신 붙잡아 준다 */
+  window.addEventListener("beforeunload", function (e) {
+    if (!LG_UP_BUSY) return;
+    e.preventDefault();
+    e.returnValue = "";
+    return "";
+  });
   function toast(msg, ms) {
     var t = document.getElementById("toast");
     t.textContent = msg; t.style.display = "block";
@@ -564,6 +674,11 @@
     var btn = document.getElementById("btnSave");
     btn.disabled = true; btn.textContent = "저장 중…";
 
+    /*  ★ 단추 글씨만 바뀌던 것을 팝업으로 ★  (2026-09-16)
+        밖에서 폰으로 쓰는 화면이라 화면을 끄거나 다른 앱으로 넘어가기 쉽다.
+        그러면 사진이 안 올라간다. 끝날 때까지 덮는다.  */
+    lgUpOpen("사진을 올리는 중…", PENDING.length + "장");
+
     var manual = document.getElementById("manualInv");
     var inv = LAST.match.digits;
     var via = LAST.via;
@@ -577,16 +692,16 @@
         btn.disabled = false;
         if (!res || !res.ok) {
           btn.textContent = "사진 저장";
-          toast((res && res.error) || "저장 실패", 3600);
+          //  고른 사진은 그대로 둔다 — 다시 찍게 하지 않는다
+          lgUpDone(false, String((res && res.error) || "저장 실패"), save, function () {});
           return;
         }
-        toast(res.message || "저장했습니다");
-        reset();
-        loadToday();
+        lgUpDone(true, String(res.message || (PENDING.length + "장이 올라갔습니다")),
+          null, function () { reset(); loadToday(); });
       })
       .withFailureHandler(function (err) {
         btn.disabled = false; btn.textContent = "사진 저장";
-        toast(String((err && err.message) || err), 3600);
+        lgUpDone(false, String((err && err.message) || err), save, function () {});
       })
       .csLogisticsSubmit({
         staff: STAFF,
@@ -845,5 +960,17 @@
   loadToday();
   refreshBoardAll();   // 현황판이면 CS 보드·공지까지 함께
 </script>
+
+<!-- 올리는 중 팝업 — 다 될 때까지 막아 선다 (2026-09-16) -->
+<div class="lg-up" id="lgUp">
+  <div class="lg-up-box" role="dialog" aria-modal="true" aria-live="polite">
+    <div class="lg-up-icon" id="lgUpIcon">📤</div>
+    <div class="lg-up-t" id="lgUpT">올리는 중…</div>
+    <div class="lg-up-s" id="lgUpS"></div>
+    <div class="lg-up-bar"><div class="lg-up-fill" id="lgUpFill"></div></div>
+    <div class="lg-up-warn" id="lgUpWarn">⚠ 다 올라갈 때까지 화면을 닫지 마세요</div>
+    <div class="lg-up-btns" id="lgUpBtns"></div>
+  </div>
+</div>
 </body>
 </html>

@@ -3655,28 +3655,10 @@
     }
 
 
-    function hbUploadPending(scope, cardId, staff, onProgress, done) {
-      var list = hbPendList(scope).slice();
-      if (!list.length) { done(0, 0); return; }
-      var ok = 0, fail = 0, i = 0;
-
-      function next() {
-        if (i >= list.length) { hbPendClear(scope); done(ok, fail); return; }
-        var a = list[i++];
-        if (onProgress) onProgress(i, list.length);
-        google.script.run
-          .withSuccessHandler(function(res) {
-            if (res && res.ok) ok++; else { fail++; if (res && res.error) toast(res.error, 2800); }
-            next();
-          })
-          .withFailureHandler(function() { fail++; next(); })
-          .csAttachHandoffFile({
-            id: cardId, staff: staff,
-            name: a.name, mimeType: a.mimeType, dataB64: a.dataB64
-          });
-      }
-      next();
-    }
+    /*  hbUploadPending 은 2026-09-16 에 지웠다.
+        실패한 파일을 버려서 두 장이 실패하면 사진을 다시 찾아 붙여야 했다.
+        실패분을 돌려주는 hbUploadList 가 그 자리를 대신한다 — 둘을 같이
+        두면 어느 쪽이 진짜인지 헷갈린다.  */
 
     /** 카드에 붙은 첨부 삭제 */
     /**
@@ -5216,14 +5198,38 @@
       // 첨부만 올리는 경우에도 흐름이 남게 한 줄 기록한다
       var noteText = text || ('파일 ' + pend.length + '개 첨부');
 
-      function uploadThenDone() {
-        hbUploadPending(id, id, staff,
-          function(i, n) { toast('첨부 올리는 중… ' + i + '/' + n, 1200); },
-          function(ok, fail) {
-            if (ta) { ta.disabled = false; ta.value = ''; }
-            toast(fail ? ('첨부 ' + ok + '개 완료, ' + fail + '개 실패') : '전달 내용 추가됨',
-              fail ? 2800 : 1400);
-            hbReloadBoards();
+      function 풀기() { if (ta) { ta.disabled = false; ta.value = ''; } }
+
+      /*  ★ 하단 토스트로는 부족하다 ★  (2026-09-16)
+          > "하단 이미지 업로드 1, 2, 처리완료등 안내메세지가 올라왔다가
+          >  사라지는데 계속 보이면 좋겠어.. 아니면 완료되기전에는 창닫기가
+          >  안되거나.."
+
+          여기는 1.2초짜리 토스트가 「1/5」「2/5」로 스쳐 지나갔다. 눈을 떼면
+          어디까지 갔는지 알 수 없고, 다 된 줄 알고 화면을 나가면 남은 사진이
+          사라진다. 카드 작성과 «같은 팝업»을 쓴다 — 다 될 때까지 막아 서고,
+          사람이 확인을 눌러야 닫힌다.  */
+      function 올리기(목록) {
+        hbUpOpen('사진을 올리는 중…', '0 / ' + 목록.length);
+        hbUploadList(목록, id, staff,
+          function (i, n, nm) {
+            hbUpStep('사진을 올리는 중…', i + ' / ' + n + '   ' + String(nm || ''), i - 1, n);
+          },
+          function (ok, fail, 실패목록) {
+            if (!fail) {
+              hbPendClear(id);
+              풀기();
+              hbUpDone(true, '전달 내용과 사진 ' + ok + '개가 올라갔습니다',
+                null, function () { hbReloadBoards(); });
+              return;
+            }
+            //  실패분만 남긴다 — 여기서 비우면 다시 올릴 길이 없다
+            hbPendSet(id, 실패목록);
+            hbUpDone(false,
+              '사진 ' + ok + '개는 올라갔고 ' + fail + '개가 남았습니다' +
+              (실패목록[0] && 실패목록[0].왜 ? '  (' + 실패목록[0].왜 + ')' : ''),
+              function () { 올리기(hbPendList(id).slice()); },
+              function () { 풀기(); hbReloadBoards(); });
           });
       }
 
@@ -5234,9 +5240,9 @@
             toast(String((res && res.error) || '추가 실패'), 2600);
             return;
           }
-          if (pend.length) uploadThenDone();
+          if (pend.length) 올리기(pend.slice());
           else {
-            if (ta) { ta.disabled = false; ta.value = ''; }
+            풀기();
             toast('전달 내용 추가됨');
             hbReloadBoards();
           }
@@ -7983,19 +7989,32 @@
 
       var btn = document.getElementById('ret-save-photo-' + idx);
       if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
+
+      /*  ★ 카드 첨부와 같은 팝업을 쓴다 ★  (2026-09-16)
+          > "완료되기전에는 창닫기가 안되거나.."
+          여기는 사진 여러 장을 한 번에 보낸다 — 「몇 장 중 몇 장」이 없다.
+          대신 「N장 올리는 중」으로 막아 서고, 끝나야 확인이 생긴다.  */
+      hbUpOpen('사진을 올리는 중…', list.length + '장');
+
       google.script.run
         .withSuccessHandler(function(res) {
           if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
-          if (!res || !res.ok) { toast((res && res.error) || '첨부 실패', 3000); return; }
+          if (!res || !res.ok) {
+            /*  실패해도 고른 사진은 그대로 둔다 — 다시 고르게 하지 않는다 */
+            hbUpDone(false, String((res && res.error) || '첨부 실패'),
+              function () { submitRetPhotos(idx); }, function () {});
+            return;
+          }
           RET_PHOTO_PEND[idx] = [];
           retPhotoRender(idx);
           closeReturnCompose(idx);
-          toast(res.message || '사진을 첨부했습니다');
-          loadReturnActive(true, false);
+          hbUpDone(true, String(res.message || ('사진 ' + list.length + '장이 올라갔습니다')),
+            null, function () { loadReturnActive(true, false); });
         })
         .withFailureHandler(function(err) {
           if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
-          toast(String((err && err.message) || err), 3000);
+          hbUpDone(false, String((err && err.message) || err),
+            function () { submitRetPhotos(idx); }, function () {});
         })
         .csAttachReturnPhotos({
           tab: c.tab,
@@ -8117,22 +8136,47 @@
      * 기록 성공 직후 대기 사진 업로드.
      * @param {Function} done function(message) — 사진이 없으면 바로 불린다
      */
+    /**
+     * 카드를 만들거나 기록한 «뒤» 사진을 올린다.
+     *
+     * ★ 2026-09-16: 여기도 팝업이 막아 선다 ★
+     *   > "하단 … 안내메세지가 올라왔다가 사라지는데 계속 보이면 좋겠어"
+     *
+     *   작성 창은 이미 닫힌 뒤다(카드는 만들어졌으니 맞다). 그런데 사진은
+     *   아직 올라가는 중인데 화면은 다 끝난 것처럼 보였다 — 토스트 한 줄이
+     *   2.6초 떴다 사라질 뿐이었다. 그 사이에 나가면 사진이 사라진다.
+     *
+     *   여기는 여러 장을 한 번에 보내므로 「몇 장 중 몇 장」이 없다.
+     *   대신 「N장 올리는 중」으로 막아 서고, 끝나야 확인이 생긴다.
+     */
     function retModalPhotoUpload(scope, res, staff, name, done) {
       var list = retModalList(scope);
       if (!list.length) { done(''); return; }
       if (!res || !res.sheet || !res.row) {
-        done('사진은 올리지 못했습니다 (기록 위치를 알 수 없음)');
+        hbUpDone(false, '사진은 올리지 못했습니다 (기록 위치를 알 수 없음)',
+          null, function () { done(''); });
         return;
       }
       var photos = retPhotoPayload(list);
+      hbUpOpen('사진을 올리는 중…', photos.length + '장');
+
       google.script.run
         .withSuccessHandler(function(att) {
-          retModalPhotoClear(scope);
-          done(att && att.ok ? ('사진 ' + photos.length + '장 첨부됨')
-            : ('사진 첨부 실패: ' + ((att && att.error) || '알 수 없는 오류')));
+          if (att && att.ok) {
+            retModalPhotoClear(scope);
+            hbUpDone(true, '사진 ' + photos.length + '장이 올라갔습니다',
+              null, function () { done('사진 ' + photos.length + '장 첨부됨'); });
+            return;
+          }
+          //  고른 사진은 지우지 않는다 — 다시 올릴 수 있어야 한다
+          hbUpDone(false, '사진 첨부 실패: ' + ((att && att.error) || '알 수 없는 오류'),
+            function () { retModalPhotoUpload(scope, res, staff, name, done); },
+            function () { done(''); });
         })
         .withFailureHandler(function(err) {
-          done('사진 첨부 실패: ' + String((err && err.message) || err));
+          hbUpDone(false, '사진 첨부 실패: ' + String((err && err.message) || err),
+            function () { retModalPhotoUpload(scope, res, staff, name, done); },
+            function () { done(''); });
         })
         .csAttachReturnPhotos({
           tab: res.sheet, row: res.row, staff: staff, name: name, photos: photos
@@ -9729,7 +9773,7 @@
           closeLedgerDup();
           draftClear('retNew');
           var pend = retModalList('retNew').length;
-          if (pend) toast('카드 생성됨 · 사진 ' + pend + '장 올리는 중…', 2600);
+          //  사진은 아래 retModalPhotoUpload 의 팝업이 맡는다 (2026-09-16)
           retModalPhotoUpload('retNew', res, staff, name, function(photoMsg) {
             toast(photoMsg || res.message || '반품 카드가 생성되었습니다', 2600);
             loadReturnActive(true, false);
@@ -10152,7 +10196,7 @@
           closeLedgerDup();
           draftClear('ledger');   // LEDGER_IDX 가 아직 살아 있어야 건별 키가 잡힌다
           var pend = retModalList('ledger').length;
-          if (pend) toast('기록됨 · 사진 ' + pend + '장 올리는 중…', 2600);
+          //  사진은 아래 retModalPhotoUpload 의 팝업이 맡는다 (2026-09-16)
           retModalPhotoUpload('ledger', res, staff, r.name, function(photoMsg) {
             toast(photoMsg || res.message || '기록됨', 2600);
             loadReturnActive(true, false);
@@ -10213,7 +10257,7 @@
           draftClear('ledger');
           var head = CS_ROWS[picked[0]] || {};
           var pend = retModalList('ledger').length;
-          if (pend) toast(done + '건 기록됨 · 사진 ' + pend + '장 올리는 중…', 2600);
+          //  사진은 아래 retModalPhotoUpload 의 팝업이 맡는다 (2026-09-16)
           /* 사진은 첫 줄에만 붙인다. 같은 상자를 찍은 것이라 품목마다 복사하면
              저장소만 늘고 보는 사람은 같은 사진을 여러 번 본다. */
           retModalPhotoUpload('ledger', first || {}, staff, head.name, function (photoMsg) {

@@ -164,10 +164,14 @@ console.log("\n[5] 실패한 첨부를 버리지 않는다");
   check("★ 실패 목록을 돌려준다", /done\(ok, 실패\.length, 실패\)/.test(html), true);
   check("왜 실패했는지도 담는다", html.indexOf("a.왜 = String((res && res.error)") >= 0, true);
 
-  //  다 성공했을 때만 비운다 — 아니면 다시 올릴 길이 없다
-  const 성공뒤 = html.indexOf("if (!fail) {");
-  const 비움 = html.indexOf("hbPendClear('create');", 성공뒤);
-  check("★ 다 됐을 때만 비운다", 성공뒤 >= 0 && 비움 > 성공뒤 && 비움 - 성공뒤 < 200, true);
+  /*  다 성공했을 때만 비운다 — 아니면 다시 올릴 길이 없다.
+      올리는 자리가 넷이라 «모든» if (!fail) 를 본다. 한 군데만 보면
+      나머지 셋이 몰래 어긋난다. */
+  const 성공가지 = html.split("if (!fail) {").slice(1);
+  check("성공 가지를 찾았다", 성공가지.length >= 2, true);
+  const 안비우는곳 = 성공가지.filter((t) => t.slice(0, 160).indexOf("hbPendClear(") < 0).length;
+  check("★ 성공 가지마다 대기 목록을 비운다", 안비우는곳, 0);
+  check("★ 실패 가지는 실패분만 남긴다", (html.match(/hbPendSet\(/g) || []).length >= 2, true);
 }
 
 console.log("\n[6] 확인을 누르면 작성 창이 닫히고 올라간 글이 보인다");
@@ -207,6 +211,66 @@ console.log("\n[9] 실행 중엔 등록 단추가 죽어 있다 (두 번 눌러 
   check("누르면 잠근다", /function submitHbCard[\s\S]{0,900}btn\.disabled = true/.test(html), true);
   check("팝업을 연다", /function submitHbCard[\s\S]{0,1100}hbUpOpen\(/.test(html), true);
   check("실패하면 되돌린다", html.indexOf("function 단추되돌리기()") >= 0, true);
+}
+
+
+console.log("\n[11] 사진을 올리는 «모든» 자리가 같은 팝업을 쓴다");
+{
+  /*  > "하단 이미지 업로드 1, 2, 처리완료등 안내메세지가 올라왔다가 사라지는데
+      >  계속 보이면 좋겠어.. 아니면 완료되기전에는 창닫기가 안되거나.."
+
+      카드 작성만 고치고 나머지를 두면, 어떤 화면은 막아 서고 어떤 화면은
+      토스트가 스쳐 간다 — 사람은 어느 쪽이 맞는지 모른다.
+      사진을 올리는 자리는 넷이다. 넷 다 같게 둔다.  */
+  const 자리 = [
+    ["카드 작성", "function submitHbCard()"],
+    ["카드에 전달내용 + 첨부", "function hbAddNote(id)"],
+    ["반품 카드 사진 올리기", "function submitRetPhotos(idx)"],
+    ["반품 기록 뒤 사진", "function retModalPhotoUpload(scope, res, staff, name, done)"],
+  ];
+  for (const [이름, 머리] of 자리) {
+    const i = html.indexOf(머리);
+    const 몸 = i >= 0 ? html.slice(i, i + 3000) : "";
+    check(이름 + " — 팝업을 연다", 몸.indexOf("hbUpOpen(") >= 0, true);
+    check(이름 + " — 끝을 팝업으로 알린다", 몸.indexOf("hbUpDone(") >= 0, true);
+  }
+
+  /*  스쳐 가는 진행 토스트가 남아 있으면 안 된다 */
+  check("★ 「올리는 중」 토스트가 안 남아 있다",
+    /toast\([^)]*올리는 중/.test(html), false);
+  check("★ 「첨부 올리는 중… i/n」 토스트가 없다",
+    html.indexOf("첨부 올리는 중… ") >= 0, false);
+
+  /*  실패분을 버리던 옛 올리기는 지웠다 — 둘이 같이 있으면 헷갈린다 */
+  check("옛 hbUploadPending 은 지웠다",
+    /function hbUploadPending\(/.test(html), false);
+}
+
+console.log("\n[12] 물류 반품입고(logistics.html)도 막아 선다");
+{
+  /*  밖에서 폰으로 쓰는 화면이라 화면을 끄거나 다른 앱으로 넘어가기 쉽다.
+      여기는 「저장 중…」이 단추 글씨로만 바뀌고 있었다.  */
+  const lg = fs.readFileSync("logistics.html", "utf8");
+  check("팝업 자리가 있다", lg.indexOf('id="lgUp"') >= 0, true);
+  check("저장을 누르면 연다", /function save\(\)[\s\S]{0,600}lgUpOpen\(/.test(lg), true);
+  check("★ 끝은 사람이 확인해야 닫힌다", lg.indexOf("function lgUpDone(") >= 0, true);
+  /*  lgUpDone 안에서 lgUpClose 를 부르는 자리는 «확인 단추의 onclick» 하나뿐이어야
+      한다. 몸통에서 바로 부르면 저절로 닫혀 못 본 채 지나간다. */
+  const done몸 = lg.slice(lg.indexOf("function lgUpDone("), lg.indexOf("function lgUpClose("));
+  check("★ 닫기는 확인 단추 안에만 있다",
+    (done몸.match(/lgUpClose\(\)/g) || []).length, 1);
+  check("★ 그 자리가 onclick 이다",
+    /onclick = function \(\) \{ lgUpClose\(\);/.test(done몸), true);
+  check("닫지 말라고 적는다", lg.indexOf("다 올라갈 때까지 화면을 닫지 마세요") >= 0, true);
+  check("나가려 하면 붙잡는다", lg.indexOf('window.addEventListener("beforeunload"') >= 0, true);
+  check("★ 올리는 중일 때만 붙잡는다", /if \(!LG_UP_BUSY\) return;/.test(lg), true);
+  check("실패하면 다시 시도를 준다", /lgUpDone\(false,[^;]*save,/.test(lg), true);
+  check("진행 토스트는 안 남았다", /toast\([^)]*저장했습니다/.test(lg), false);
+
+  /*  팝업이 화면 맨 위에 서야 뒤의 단추가 안 눌린다 */
+  const css = lg.slice(lg.indexOf(".lg-up {"), lg.indexOf(".lg-up.on"));
+  const z = (css.match(/z-index:\s*(\d+)/) || [])[1];
+  check("★ 맨 위에 선다", Number(z) >= 100, true);
 }
 
 console.log("");
