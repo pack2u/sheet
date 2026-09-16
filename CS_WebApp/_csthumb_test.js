@@ -29,17 +29,26 @@ function cssWidth(src, selector) {
   return m ? +m[1] : null;
 }
 
-/** sz=w숫자 를 뽑는다 */
+/**
+ * 받아 오는 가로폭을 뽑는다.
+ *
+ * 두 가지 모양이 있다 (2026-09-16) —
+ *   드라이브   ...thumbnail?id=..&sz=w200
+ *   v2 저장소  _cs_hb_storeThumb_(url, 200)   ← 주소는 함수가 만든다
+ * 어느 쪽이든 «얼마나 큰 것을 받나»가 지켜야 할 값이다.
+ */
 function reqWidth(src, near) {
   const i = src.indexOf(near);
   if (i < 0) return null;
-  const m = src.slice(i, i + 400).match(/sz=w'?\s*\+?\s*(\d+)/);
+  const 조각 = src.slice(i, i + 400);
+  const m = 조각.match(/sz=w'?\s*\+?\s*(\d+)/) ||
+            조각.match(/storeThumb_\([^,]+,\s*(\d+)\)/);
   return m ? +m[1] : null;
 }
 
 console.log("\n[카드 첨부 — .hb-thumb]");
 const drawA = cssWidth(home, ".hb-thumb {");
-const reqA = reqWidth(board, "thumbUrl:");
+const reqA = reqWidth(board, "item.thumbUrl");
 ok("그리는 크기를 찾았다", drawA !== null, String(drawA));
 ok("받는 크기를 찾았다", reqA !== null, String(reqA));
 ok("받는 크기가 그리는 크기보다 크다", reqA > drawA, reqA + " vs " + drawA);
@@ -62,7 +71,7 @@ ok("펼친 카드(44px)의 3배도 감당한다", drawBFocus === null || reqB >=
 ok("5배를 넘게 받지 않는다", reqB <= drawB * 5, reqB + " <= " + drawB * 5);
 
 console.log("\n[확대보기는 크게 받아야 한다]");
-const big = reqWidth(board, "bigUrl:");
+const big = reqWidth(board, "item.bigUrl");
 ok("확대보기는 1024 이상", big >= 1024, String(big));
 
 console.log("\n[늦게·조용히 받는다]");

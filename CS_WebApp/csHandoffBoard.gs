@@ -317,7 +317,34 @@ function _cs_hb_attSafe_(s) {
   return String(s == null ? "" : s).replace(/[|\r\n]+/g, " ").trim();
 }
 
-/** "fileId|name|mime|at|by" 여러 줄 → 객체 배열 */
+/**
+ * 「fileId|name|mime|at|by|url」 여러 줄 → 객체 배열
+ *
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 2026-09-16: 드라이브 주소를 만들고 있었다 ★
+ *
+ *  > "cs웹앱에 이미지를 올리니까 구글 드라이브로 올라가나봐..
+ *  >  다시보려면 이미지를 못보내.. 이미지업로드 확인해줘"
+ *
+ *  2026-09-10 부터 파일은 드라이브가 아니라 v2 저장소로 올라간다.
+ *  그런데 여기는 fileId 를 «드라이브 파일 ID»로 알고 주소를 만들고 있었다 —
+ *
+ *      https://drive.google.com/thumbnail?id=2026-09-16/uuid.jpg
+ *
+ *  그런 파일은 드라이브에 없다. 올라가긴 했는데 다시 볼 수가 없다.
+ *  반품 쪽은 2026-09-14 에 같은 사고를 고쳤는데(retPhotoItems) 보드는
+ *  그대로였다 — 한 군데를 고치면 같은 일을 하는 다른 군데도 봐야 한다.
+ *
+ *  ★ 이제 주소를 «받아 적는다» ★
+ *    v2 가 돌려주는 서명 주소(열 해짜리)를 여섯 번째 칸에 그대로 담는다.
+ *    ID 로 주소를 «만들어» 내는 것은 드라이브일 때만 되는 일이었다.
+ *
+ *  ★ 주소가 없는 옛 줄 ★
+ *    9/10~9/16 에 올린 것은 v2 경로만 있고 주소가 없다. 다시 서명해야
+ *    볼 수 있는데 그건 v2 만 할 수 있다. 여기서는 «잃었다»고 밝힌다 —
+ *    깨진 그림을 보여 주며 아무 말도 안 하는 것이 제일 나쁘다.
+ * ══════════════════════════════════════════════════════════════
+ */
 function _cs_hb_parseAtt_(raw) {
   var out = [];
   var lines = String(raw == null ? "" : raw).split(/\r?\n/);
@@ -328,25 +355,66 @@ function _cs_hb_parseAtt_(raw) {
     var fileId = String(p[0] || "").trim();
     if (!fileId) continue;
     var mime = String(p[2] || "").trim();
-    out.push({
+    var url = String(p[5] || "").trim();
+    var item = {
       fileId: fileId,
       name: String(p[1] || "첨부").trim(),
       mime: mime,
       at: String(p[3] || "").trim(),
       by: String(p[4] || "").trim(),
+      url: url,
       isImage: /^image\//i.test(mime),
-      // 썸네일·원본 주소는 파일 ID로 만들 수 있어 시트에 담지 않는다
-      /* ★ 2026-09-07: w480 → w200.
-         카드의 첨부는 화면에서 50px(모바일 60px)로 그린다. 480px 를 받고 있었으니
-         가로만 9배, 넓이로는 80배 넘게 컸다. 레티나(2~3배)를 감안해도 200 이면 남는다.
-         카드가 스무 장이면 그만큼 곱해진다 — 첫 화면이 무거웠던 큰 몫이다. */
-      thumbUrl: "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w200",
+      lost: false,
+    };
+
+    if (url) {
+      //  v2 저장소 — 받아 적어 둔 서명 주소를 쓴다
+      item.thumbUrl = _cs_hb_storeThumb_(url, 200);
+      item.bigUrl = _cs_hb_storeThumb_(url, 2048);
+      item.viewUrl = url;
+    } else if (_cs_hb_isStorePath_(fileId)) {
+      /*  v2 경로인데 주소가 없다 — 9/10~9/16 에 올린 것.
+          드라이브 주소를 만들어 봐야 없는 파일을 가리킨다. */
+      item.lost = true;
+      item.isImage = false;
+      item.thumbUrl = "";
+      item.bigUrl = "";
+      item.viewUrl = "";
+    } else {
+      /*  드라이브에 있는 옛 파일. 주소를 ID 로 만들 수 있다.
+          ★ 2026-09-07: w480 → w200.
+          카드의 첨부는 화면에서 50px(모바일 60px)로 그린다. 480px 를 받고 있었으니
+          가로만 9배, 넓이로는 80배 넘게 컸다. 레티나(2~3배)를 감안해도 200 이면 남는다. */
+      item.thumbUrl = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w200";
       // 앱 안 확대보기용 큰 이미지. viewUrl 은 Drive 페이지라 <img> 로 못 쓴다
-      bigUrl: "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w2048",
-      viewUrl: "https://drive.google.com/file/d/" + fileId + "/view",
-    });
+      item.bigUrl = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w2048";
+      item.viewUrl = "https://drive.google.com/file/d/" + fileId + "/view";
+    }
+    out.push(item);
   }
   return out;
+}
+
+/**
+ * v2 저장소 경로인가.
+ * 드라이브 파일 ID 는 「-_A-Za-z0-9」뿐이고, v2 경로는 「2026-09-16/uuid.jpg」다.
+ * 빗금이 있으면 드라이브 ID 가 아니다 — 그것만으로 충분히 갈린다.
+ */
+function _cs_hb_isStorePath_(id) {
+  return String(id || "").indexOf("/") >= 0;
+}
+
+/**
+ * 보관소 사진을 «작게» 받는 주소. 반품 쪽 retStoreThumb 와 같은 규칙이다.
+ *
+ * 50px 로 그리면서 1MB 를 받으면 안 된다 — 카드가 스무 장이면 그만큼 곱해진다.
+ * 작게 주는 기능이 요금제에 없을 수 있어, 화면에서 onerror 로 원본으로 물러선다.
+ */
+function _cs_hb_storeThumb_(url, w) {
+  var s = String(url || "");
+  if (s.indexOf("/storage/v1/object/sign/") < 0) return s;
+  var r = s.replace("/storage/v1/object/sign/", "/storage/v1/render/image/sign/");
+  return r + (r.indexOf("?") >= 0 ? "&" : "?") + "width=" + w + "&quality=70";
 }
 
 function _cs_hb_attToLines_(list) {
@@ -356,6 +424,10 @@ function _cs_hb_attToLines_(list) {
     lines.push([
       a.fileId, _cs_hb_attSafe_(a.name), _cs_hb_attSafe_(a.mime),
       _cs_hb_attSafe_(a.at), _cs_hb_attSafe_(a.by),
+      /*  ★ 주소를 «받아 적는다» ★  (2026-09-16)
+          v2 저장소는 ID 로 주소를 만들 수 없다. 돌려준 서명 주소를 담아야
+          나중에 다시 볼 수 있다. 맨 뒤에 붙였으니 옛 줄(다섯 칸)도 그대로 읽힌다. */
+      _cs_hb_attSafe_(a.url || ''),
     ].join("|"));
   }
   return lines.join("\n");
@@ -1035,9 +1107,12 @@ function csAttachHandoffFile(payload) {
        폴더 자체가 직원 개인 드라이브였고 안의 파일은 개인 계정 다섯 곳에
        흩어져 있었다. 파일 만드는 일만 팩투유 권한으로 도는 보관소에
        맡긴다 (csFileStore.gs). 안 되면 옛 방식으로 가되 로그를 남긴다. */
-    var fileId, put = csFileStorePut("board", bytes, mime, name);
+    var fileId, fileUrl = '', put = csFileStorePut("board", bytes, mime, name);
     if (put.ok) {
       fileId = put.fileId;
+      /*  v2 가 준 서명 주소(열 해짜리). 이것을 안 적어 두면 ID 만 남아
+          다시 볼 수 없다 — 9/10~9/16 에 올린 것이 그렇게 됐다. */
+      fileUrl = String(put.url || '');
     } else {
       Logger.log("[보드첨부] 보관소 실패 → 예전 방식으로 올립니다: " + put.error);
       var file = _cs_hb_attFolder_().createFile(blob);
@@ -1049,7 +1124,7 @@ function csAttachHandoffFile(payload) {
     }
 
     var item = {
-      fileId: fileId, name: name, mime: mime,
+      fileId: fileId, url: fileUrl, name: name, mime: mime,
       at: _cs_hb_now_("yyMMdd HH:mm"), by: staff,
     };
     list.push(item);
@@ -1108,3 +1183,76 @@ function csDiagnoseHandoffBoard(board) {
   }
   return out;
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  첨부 점검 — 다시 볼 수 있는 것과 없는 것을 센다
+ *  2026-09-16
+ *
+ *  > "cs웹앱에 이미지를 올리니까 구글 드라이브로 올라가나봐..
+ *  >  다시보려면 이미지를 못보내"
+ *
+ *  2026-09-10 부터 파일은 v2 저장소로 올라가는데, 첨부 줄에는 «경로»만
+ *  적히고 «주소»는 안 적혔다. 화면은 그 경로로 드라이브 주소를 만들었고,
+ *  드라이브에 없는 파일을 가리켰다.
+ *
+ *  얼마나 되는지 세어 본다. 몇 장이 다시 올려야 하는지 알아야 사람이
+ *  움직일 수 있다. 아무것도 안 고친다 — 세기만 한다.
+ *
+ *  실행: Apps Script 편집기에서 이 함수를 골라 ▶
+ * ══════════════════════════════════════════════════════════════
+ */
+function csDiagnoseBoardAttachments() {
+  var 보드 = [];
+  for (var bk in _CS_HB_BOARDS_) {
+    if (!Object.prototype.hasOwnProperty.call(_CS_HB_BOARDS_, bk)) continue;
+    보드.push(bk);
+  }
+
+  var out = ["보드 첨부 점검", ""];
+  var 합 = { 드라이브: 0, v2: 0, 잃음: 0 };
+  var 잃은카드 = [];
+
+  for (var b = 0; b < 보드.length; b++) {
+    var tab = _cs_hb_getTab_(보드[b]);
+    if (!tab || tab.getLastRow() < 2) continue;
+    var rows = tab.getRange(2, 1, tab.getLastRow() - 1, _CS_HB_HEADERS_.length).getDisplayValues();
+    var 셈 = { 드라이브: 0, v2: 0, 잃음: 0 };
+    for (var r = 0; r < rows.length; r++) {
+      var list = _cs_hb_parseAtt_(rows[r][_CS_HB_COL_.att]);
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].lost) {
+          셈.잃음++;
+          if (잃은카드.length < 12) {
+            잃은카드.push(rows[r][_CS_HB_COL_.at] + " " +
+              String(rows[r][_CS_HB_COL_.title]).substring(0, 20) +
+              " (" + rows[r][_CS_HB_COL_.author] + ")");
+          }
+        } else if (list[i].url) 셈.v2++;
+        else 셈.드라이브++;
+      }
+    }
+    out.push(_CS_HB_BOARDS_[보드[b]].tab);
+    out.push("   드라이브(옛것) " + 셈.드라이브 + " · v2 주소 있음 " + 셈.v2 +
+      " · ★ 주소 잃음 " + 셈.잃음);
+    합.드라이브 += 셈.드라이브; 합.v2 += 셈.v2; 합.잃음 += 셈.잃음;
+  }
+
+  out.push("");
+  out.push("합계   다시 볼 수 있음 " + (합.드라이브 + 합.v2) + "장 · ★ 못 봄 " + 합.잃음 + "장");
+  if (합.잃음) {
+    out.push("");
+    out.push("못 보는 것은 9/10~9/16 에 올린 첨부입니다.");
+    out.push("파일은 v2 저장소에 그대로 있지만 주소가 안 적혀 있습니다 —");
+    out.push("다시 서명해야 볼 수 있고, 그건 v2 쪽에서만 할 수 있습니다.");
+    out.push("");
+    out.push("해당 카드 (최대 12건):");
+    for (var k = 0; k < 잃은카드.length; k++) out.push("   " + 잃은카드[k]);
+  }
+
+  var msg = out.join(String.fromCharCode(10));
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
+}
+

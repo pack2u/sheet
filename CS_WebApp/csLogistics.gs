@@ -478,7 +478,16 @@ function csLogisticsSubmit(payload) {
       var base = "입고_" + stamp + "_" + (digits || "무번호") + "_" + (i + 1) +
         _cs_attExt_(mime, p.name);
 
-      var put = csFileStorePut("intake", bytes, mime, base);
+      /*  ★ 2026-09-16: kind 를 "intake" 로 보내고 있었다 ★
+
+          v2 의 /api/files/upload 는 kind 를 return · board «둘»만 받는다.
+          "intake" 를 보내면 400 「kind 는 return 또는 board 입니다」가 떨어지고,
+          그 아래 폴백이 조용히 받아 «그 직원 개인 드라이브»에 만들었다.
+          9/10~9/11 에 개인 드라이브를 떼어내려고 한 일이 여기서만 안 먹었다.
+
+          반품입고 사진은 곧 반품 사진이다 — 같은 통(return-photos)에 넣는다.
+          v2 에 통을 새로 파는 것보다 이게 맞다.  */
+      var put = csFileStorePut("return", bytes, mime, base);
       if (put.ok) { links.push(put.url); continue; }
 
       Logger.log("[CSL] 보관소 실패 → 예전 방식으로 올립니다: " + put.error);

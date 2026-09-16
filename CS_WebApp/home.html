@@ -1987,6 +1987,21 @@
       border: none; background: none; cursor: zoom-in;
     }
     .hb-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    /* 주소를 잃은 첨부 — 깨진 그림 대신 「왜 안 보이는지」를 적는다 (2026-09-16) */
+    .hb-thumb-lost {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      width: 50px; height: 50px;
+      border-radius: 8px;
+      border: 1px dashed var(--border);
+      background: var(--bg-secondary);
+      color: var(--text-muted);
+      font-size: 13px; line-height: 1.1;
+      text-align: center;
+      cursor: help;
+    }
+    .hb-thumb-lost b { font-size: 8px; font-weight: 600; margin-top: 2px; }
+    @media (max-width: 600px) { .hb-thumb-lost { width: 60px; height: 60px; } }
     .hb-thumb-doc {
       display: flex; width: 100%; height: 100%;
       align-items: center; justify-content: center;
@@ -3664,6 +3679,20 @@
     }
 
     /** 카드에 붙은 첨부 삭제 */
+    /**
+     * 작은 그림을 못 받으면 원본으로 한 번만 물러선다.
+     *
+     * v2 의 이미지 변환(render/image)은 요금제에 따라 없을 수 있다.
+     * 그때 깨진 그림만 남으면 「안 올라갔다」로 보인다 — 실제로는 있는데.
+     * 한 번만 바꾼다. 원본도 안 뜨면 또 onerror 가 돌아 무한히 오간다.
+     */
+    function hbThumbFallback(img) {
+      if (!img || img.dataset.fellBack) return;
+      img.dataset.fellBack = '1';
+      var full = img.getAttribute('data-full') || '';
+      if (full) img.src = full;
+    }
+
     function hbDeleteAtt(cardId, fileId) {
       if (!confirm('이 첨부를 삭제할까요?')) return;
       google.script.run
@@ -4166,7 +4195,18 @@
 
       spin.classList.add('on');
       img.onload = function() { spin.classList.remove('on'); hbLbApply(); };
-      img.onerror = function() {
+      /*  ★ 크게 보기도 원본으로 한 번 물러선다 ★  (2026-09-16)
+          bigUrl 은 v2 의 이미지 변환(render/image) 주소다. 그 기능이 없으면
+          여기서 바로 「불러오지 못했습니다」가 뜬다 — 파일은 멀쩡히 있는데.
+          원본(viewUrl)으로 한 번 바꿔 보고, 그것도 안 되면 그때 말한다. */
+      delete img.dataset.lbFellBack;
+      img.onerror = function () {
+        var 원본 = a.viewUrl || '';
+        if (원본 && !img.dataset.lbFellBack) {
+          img.dataset.lbFellBack = '1';
+          img.src = 원본;
+          return;
+        }
         spin.classList.remove('on');
         toast('이미지를 불러오지 못했습니다. 원본 버튼으로 열어보세요.', 2800);
       };
@@ -4487,12 +4527,23 @@
           var tip = esc(a.name + ' · ' + a.by + ' ' + a.at);
           h += '<span class="hb-thumb">';
           if (a.isImage) {
+            /*  ★ 작게 주는 기능이 없으면 원본으로 물러선다 ★  (2026-09-16)
+                v2 의 이미지 변환은 요금제에 따라 없을 수 있다. 그때 사진이
+                아예 안 보이면 본전도 못 찾는다. */
             h += '<button type="button" class="hb-thumb-open" title="' + tip + '" ' +
               'onclick="openHbLb(\'' + js(c.id) + '\', ' + imgN + ')">' +
               '<img src="' + esc(a.thumbUrl) + '" alt="' + esc(a.name) + '" ' +
+              'data-full="' + esc(a.viewUrl || '') + '" onerror="hbThumbFallback(this)" ' +
           'loading="lazy" decoding="async" fetchpriority="low">' +
               '</button>';
             imgN++;
+          } else if (a.lost) {
+            /*  ★ 주소를 잃은 첨부 ★  (2026-09-16)
+                9/10~9/16 사이에 올린 것은 v2 경로만 있고 주소가 없다.
+                깨진 그림을 말없이 보여 주는 것이 제일 나쁘다 — 밝혀 적고,
+                무엇을 해야 하는지(다시 올리기) 말한다. */
+            h += '<span class="hb-thumb-lost" title="' + tip +
+              ' — 주소를 잃었습니다. 다시 올려주세요">✕<b>주소<br>잃음</b></span>';
           } else {
             h += '<a href="' + esc(a.viewUrl) + '" target="_blank" rel="noopener" title="' + tip + '">' +
               '<span class="hb-thumb-doc">' +
