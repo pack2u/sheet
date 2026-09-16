@@ -42,7 +42,7 @@ function _cs_ac_requiredResources_() {
   return [
     { kind: "sheet", id: _CS_RETURN_LEDGER_ID_, need: "편집", what: "반품관리대장 · CS 커뮤니티 보드" },
     { kind: "sheet", id: _cs_getCSSheetId_(), need: "편집", what: "CS목록 (CS 접수)" },
-    { kind: "sheet", id: _CS_MAIN_SHEET_ID, need: "보기", what: "통합조회 · 허브 · 재고" },
+    { kind: "sheet", id: _CS_MAIN_SHEET_ID, need: "보기", what: "허브 · 재고 · 일일마감" },
     { kind: "sheet", id: _CS_MANUAL_SS_ID_, need: "보기", what: "CS 매뉴얼 DB" },
     { kind: "folder", id: _CS_DAILY_FOLDER_IDS_[0], need: "보기", what: "일일마감 보관 폴더 1" },
     { kind: "folder", id: _CS_DAILY_FOLDER_IDS_[1], need: "보기", what: "일일마감 보관 폴더 2" },

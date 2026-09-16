@@ -6811,27 +6811,20 @@
       setStatus('<span class="os-spin"></span>서버 캐시에서 불러오는 중… (불러온 뒤엔 즉시 검색)');
       renderOrderDashboard();
       if (refresh) {
-        // 통합조회 탭이 있으면 파일 1개라 한 번에 다 읽는다.
-        // 없을 때만 날짜별 예열(14회 RPC)로 타임아웃을 피한다.
-        google.script.run
-          .withSuccessHandler(function (plan) {
-            if (plan && plan.unified) {
-              reloadUnified();
-              return;
-            }
-            warmDays(dateList(DAYS), true);
-          })
-          .withFailureHandler(function () { warmDays(dateList(DAYS), true); })
-          .csWarmPlan(DAYS);
+        /*  ★ 통합조회 갈래를 지웠다 ★  (2026-09-16)
+            이제 원장(파일 1개) 아니면 일일마감(날짜별)이다.
+            원장이 읽히면 아래 csGetSearchIndex 한 번에 다 오고,
+            안 읽히면 missingDays 를 보고 날짜별 예열로 내려간다.  */
+        warmDays(dateList(DAYS), true);
         return;
       }
       google.script.run
         .withSuccessHandler(function (res) {
           if (res && res.ok && res.rows && res.rows.length) mergeRows(res.rows);
           var missing = (res && res.missingDays) ? res.missingDays : dateList(DAYS);
-          if ((res && res.unified) || !missing.length) {
+          if (!missing.length) {
             warming = false;
-            setIndexStatus(res && res.unified ? '통합조회' : (refresh ? '시트 재조회' : '서버캐시'));
+            setIndexStatus(refresh ? '시트 재조회' : '서버캐시');   // 통합조회를 지웠다 (2026-09-16)
             if (document.getElementById('q').value.trim()) doSearch(true);
             return;
           }
@@ -6843,21 +6836,6 @@
         .csGetSearchIndex({ days: DAYS, refresh: !!refresh, cacheOnly: !refresh });
     }
 
-    /** 통합조회 단일 탭 재조회 */
-    function reloadUnified() {
-      google.script.run
-        .withSuccessHandler(function (res) {
-          warming = false;
-          if (res && res.ok && res.rows) mergeRows(res.rows);
-          setIndexStatus('통합조회');
-          if (document.getElementById('q').value.trim()) doSearch(true);
-        })
-        .withFailureHandler(function () {
-          warming = false;
-          setIndexStatus(INDEX.length ? '메모리(일부)' : '불러오기 실패');
-        })
-        .csGetSearchIndex({ days: DAYS, refresh: true, cacheOnly: false });
-    }
 
     function warmDays(dates, refresh) {
       var i = 0;

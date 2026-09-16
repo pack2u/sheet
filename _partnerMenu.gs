@@ -64,10 +64,8 @@ function registerPartnerMenu_() {
     // 평소에는 트리거가 22:00 에 자동으로 돈다. 여기 있는 건 자동이 걸렀을 때
     // 사람이 직접 돌리는 용도다 — 그래서 매일 메뉴에 남긴다.
     .addItem("📋 통합 일일마감 (수동)", "partnerUnifiedDailyArchiveManual")
-    .addItem("🗂️ 통합조회 재생성 (CS 조회용)", "partnerRebuildUnifiedView")
     // 야간 재생성이 시간초과로 기록을 포기하면 그 하루가 통째로 빈다.
     // 전체 재생성은 같은 이유로 또 실패하므로, 그 하루만 채우는 길을 둔다.
-    .addItem("🩹 통합조회 하루치 채우기 (빠짐 보정)", "partnerPatchUnifiedDayPrompt")
     .addSeparator()
     .addItem("📞 CS 주문/송장 검색 웹앱", "partnerOpenCsOrderSearchApp")
     .addToUi();

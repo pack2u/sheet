@@ -1,35 +1,31 @@
 /**
  * Pack2U CS 주문/송장 검색
  *
- * ★ 2026-08-25: 조회 원천이 바뀌었다 ★
- *   기존: 일일마감_(YYYY-MM-DD) 파일 14개 + 허브 + 임시기록 + 보관 (최대 17회 파일 열기)
- *   현재: 허브 시트의 `통합조회` 탭 1개 + 허브·임시기록 오버레이 (3회)
+ * ★ 2026-09-16: 통합조회를 지웠다 ★
+ *   > "cs웹앱도 통합 조회가 아닌 일일마감을 불러다 데이타로 쓰게 해줘"
+ *   > "통합조회는 신뢰도가 무너진거라.. 통합조회텝 자체를 삭제할거니까"
  *
- *   `통합조회`는 허브에서 매일 밤 22:45에 주문+송장을 통째로 다시 조인해 만든다
- *   (_partnerUnifiedView.gs). 재생성 방식이므로 늦게 도착한 송장도 자동 반영된다.
- *   야간 1회 생성이라 당일 주문은 아직 없으므로, 허브·임시기록 오버레이는 유지한다.
+ *   통합조회는 여러 원천을 이름·전화·주소로 «이어 붙이는» 것이 본업이라
+ *   추측이 본질이었다. 송장 없던 줄에 남의 송장이 붙고, 붙었으니 마감으로
+ *   넘어가 고객 전화로 알았다.
  *
- *   통합조회 탭이 없거나 비어 있으면 기존 14파일 경로로 자동 폴백한다.
- *   강제로 옛 경로를 쓰려면 스크립트 속성 CS_USE_UNIFIED_VIEW = "0".
+ *   이제 원천은 둘이다 — 둘 다 고유ID 를 처음부터 들고 있다.
+ *     ① 세트분리 「주문라인원장」  (기본. 파일 1개)
+ *     ② 일일마감_(YYYY-MM-DD) 파일  (원장을 못 읽을 때)
+ *   당일 건은 허브·임시기록 오버레이가 보탠다.
  */
 
 var _CS_DAILY_PREFIX_ = "일일마감_";
 
 /**
- * 조회 일수.
- * ★ 허브의 _PUV_DAYS_ (파일: _partnerUnifiedView.gs) 와 같은 값이어야 한다 ★
- *   CS 는 통합조회 탭 하나를 읽으므로, 여기서 14일을 달라고 해도 그 탭에
- *   10일치밖에 없으면 10일치만 온다. 숫자가 어긋나면 대시보드에 빈 날짜가
- *   0건으로 찍혀 고장난 것처럼 보인다.
- *   2026-09-02: 야간 재생성 시간초과 때문에 허브를 10일로 줄이면서 같이 맞췄다.
+ * 조회 일수. 원장은 최근 회차만 들고 있고, 일일마감은 날짜별 파일이다.
+ * 늘리면 파일을 그만큼 더 연다 — 예열이 느려진다.
  */
 var _CS_DAILY_DAYS_DEFAULT_ = 10;
 var _CS_DA_CACHE_TTL_ = 21600; // 6시간
 var _CS_DA_CACHE_VER_ = "v15";
 var _CS_SEARCH_LIMIT_ = 80;
 
-/** 허브가 만들어 주는 통합조회 탭 — 열 순서가 허브와의 계약이다 */
-var _CS_UNIFIED_TAB_ = "통합조회";
 
 /* ══════════════════════════════════════════════════════════════
  *  세트분리(뉴) 「주문라인원장」 — 통합조회를 대신할 후보
@@ -77,13 +73,6 @@ function _cs_ledgerViewEnabled_() {
     return true;
   }
 }
-var _CS_UV_CACHE_TTL_ = 3600; // 1시간. 야간 갱신이지만 수동 재생성도 빨리 반영되게
-/** 통합조회 고정 열 (_PUV_HEADERS_ 와 1:1) */
-var _CS_UV_COL_ = {
-  date: 0, invoice: 1, phone: 2, name: 3, item: 4, code: 5, qty: 6,
-  addr: 7, shipMsg: 8, source: 9, orderNo: 10, vendor: 11, carrier: 12,
-  status: 13, origin: 14, match: 15, combined: 16, updated: 17
-};
 
 /** 일일마감 파일이 있을 수 있는 Drive 폴더 (허브 아카이브 폴백) */
 var _CS_DAILY_FOLDER_IDS_ = [
@@ -155,7 +144,7 @@ function csWarmArchiveCache(opts) {
       loadMs: pack.loadMs,
       errors: pack.errors,
       indexSource: pack.indexSource,
-      unified: pack.indexSource === "unified",
+      unified: false,   // 통합조회를 지웠다 (2026-09-16)
       viewUpdatedAt: pack.viewUpdatedAt
     };
   } catch (e) {
@@ -170,7 +159,7 @@ function csWarmArchiveCache(opts) {
 function csWarmPlan(days) {
   days = _cs_clampDays_(days);
   try {
-    var uv = _cs_unifiedViewEnabled_() ? _cs_loadUnifiedView_(days, false) : { found: false };
+    var uv = { found: false };   // 통합조회를 지웠다 (2026-09-16)
     return {
       ok: true,
       unified: !!uv.found,
@@ -215,128 +204,9 @@ function csDiagnoseLedgerView() {
   out.noInvoice = noInv;
   out.byDate = byDate;
   out.verdict = out.enabled
-    ? (lg.found ? "원장 사용 중. 미매칭 " + noInv + "건" : "원장을 못 읽음 → 통합조회로 폴백")
-    : "원장 경로 꺼짐 (CS_USE_LEDGER 가 \"off\") — 지금은 통합조회를 씁니다";
+    ? (lg.found ? "원장 사용 중. 미매칭 " + noInv + "건" : "원장을 못 읽음 → 일일마감 파일로 폴백")
+    : "원장 경로 꺼짐 (CS_USE_LEDGER 가 \"off\") — 지금은 일일마감 파일을 씁니다";
   Logger.log(JSON.stringify(out, null, 2));
-  return out;
-}
-
-/**
- * ★ 두 경로가 «같은 답»을 주는가 ★
- *
- *  통합조회를 없애기 전에 반드시 해야 하는 일이다. 같은 주문을 양쪽에서
- *  찾아 송장번호를 맞대 본다. 다르면 그 줄이 곧 답이다 —
- *  통합조회가 이름으로 엉뚱한 송장을 주웠거나, 원장에 아직 안 붙었거나.
- *
- *  편집기에서 실행: csCompareLedgerVsUnified("김철수")
- *  아무것도 안 주면 최근 며칠을 통째로 맞대 본다.
- */
-function csCompareLedgerVsUnified(query) {
-  var days = _CS_DAILY_DAYS_DEFAULT_;
-  var lg = _cs_loadLedgerView_(days, true);
-  var uv = _cs_loadUnifiedView_(days, true);
-  var q = String(query || "").trim();
-
-  var 키of = function (r) {
-    return String(r.orderNo || "") + "|" + String(r.ecountCode || "");
-  };
-  var 걸림 = function (r) {
-    if (!q) return true;
-    return (String(r.name || "") + " " + String(r.orderNo || "") + " " +
-      String(r.invoice || "") + " " + String(r.phone || "")).indexOf(q) >= 0;
-  };
-
-  var U = {};
-  for (var a = 0; a < uv.rows.length; a++) if (걸림(uv.rows[a])) U[키of(uv.rows[a])] = uv.rows[a];
-  var Lg = {};
-  for (var b = 0; b < lg.rows.length; b++) if (걸림(lg.rows[b])) Lg[키of(lg.rows[b])] = lg.rows[b];
-
-  var 송장다름 = [], 원장만 = [], 통합만 = [], 같음 = 0;
-  for (var k in Lg) {
-    if (!Object.prototype.hasOwnProperty.call(Lg, k)) continue;
-    if (!U[k]) { 원장만.push(k); continue; }
-    var i1 = String(Lg[k].invDigits || "").replace(/[^0-9]/g, "");
-    var i2 = String(U[k].invDigits || "").replace(/[^0-9]/g, "");
-    if (i1 === i2) { 같음++; continue; }
-    송장다름.push({
-      키: k, 이름: Lg[k].name,
-      원장: Lg[k].invoice || "(없음)", 통합조회: U[k].invoice || "(없음)",
-      통합조회매칭: U[k].match
-    });
-  }
-  for (var k2 in U) {
-    if (Object.prototype.hasOwnProperty.call(U, k2) && !Lg[k2]) 통합만.push(k2);
-  }
-
-  var out = {
-    질의: q || "(전체)",
-    원장줄: Object.keys(Lg).length,
-    통합조회줄: Object.keys(U).length,
-    송장같음: 같음,
-    송장다름: 송장다름.slice(0, 30),
-    송장다름수: 송장다름.length,
-    원장에만: 원장만.slice(0, 20),
-    통합조회에만: 통합만.slice(0, 20),
-    원장오류: lg.error,
-    통합조회오류: uv.error
-  };
-  /*  ★ 「통합조회에만 있다」가 제일 중요하다 ★
-      원장에 없는 줄에 통합조회가 송장을 붙여 뒀다는 뜻이다. 그게 이름으로
-      주워 온 것이면 바로 그 사고다. 반대로 「원장에만」은 대개 정상이다 —
-      통합조회는 10일치뿐이고 야간 기준이라 당일 건이 없다. */
-  Logger.log(JSON.stringify(out, null, 2));
-  return out;
-}
-
-/** 통합조회 상태 진단 — 전환이 실제로 먹었는지 확인용 */
-function csDiagnoseUnifiedView() {
-  var out = { enabled: _cs_unifiedViewEnabled_(), tab: _CS_UNIFIED_TAB_ };
-  try {
-    var ss = SpreadsheetApp.openById(_CS_MAIN_SHEET_ID);
-    var tab = ss.getSheetByName(_CS_UNIFIED_TAB_);
-    out.tabExists = !!tab;
-    out.lastRow = tab ? tab.getLastRow() : 0;
-    out.header = tab ? tab.getRange(1, 1, 1, Math.min(tab.getLastColumn(), 18)).getDisplayValues()[0] : [];
-  } catch (e) {
-    out.openError = e.message;
-  }
-  var uv = _cs_loadUnifiedView_(_CS_DAILY_DAYS_DEFAULT_, true);
-  out.loaded = uv.found;
-  out.rows = uv.rows.length;
-  out.updatedAt = uv.updatedAt;
-  out.loadError = uv.error;
-  var noInv = 0;
-  for (var i = 0; i < uv.rows.length; i++) {
-    if (String(uv.rows[i].invDigits || "").replace(/[^0-9]/g, "").length < 8) noInv++;
-  }
-  out.noInvoice = noInv;
-  out.verdict = uv.found
-    ? "통합조회 사용 중 (파일 1개). 미매칭 " + noInv + "건"
-    : "통합조회 미사용 → 일일마감 14파일 폴백" + (uv.error ? " (" + uv.error + ")" : "");
-
-  /* ★ 2026-09-07: 날짜별 건수를 같이 낸다.
-     「일부만 들어온다」가 10일 제한 때문인지, 야간 재생성이 멈춰서인지는
-     **날짜별로 갈라 봐야** 안다. 총 건수만 보면 둘이 구분되지 않는다.
-     · 오래된 날이 통째로 없다 → 10일 제한
-     · 최근 며칠이 비었거나 적다 → 재생성이 멈춤 */
-  var byDate = {};
-  for (var d = 0; d < uv.rows.length; d++) {
-    var k = String(uv.rows[d].date || uv.rows[d].dateYmd || "(날짜없음)").slice(0, 10);
-    byDate[k] = (byDate[k] || 0) + 1;
-  }
-  var keys = Object.keys(byDate).sort();
-  out.dates = keys.length;
-  out.byDate = [];
-  for (var k2 = 0; k2 < keys.length; k2++) {
-    out.byDate.push(keys[k2] + " : " + byDate[keys[k2]] + "건");
-  }
-  out.oldest = keys[0] || null;
-  out.newest = keys[keys.length - 1] || null;
-  out.daysSetting = _CS_DAILY_DAYS_DEFAULT_;
-
-  /* ★ 돌려주기만 하면 실행 로그가 빈 채로 남는다.
-     편집기에서 실행하는 진단은 **반드시 로그로 찍어야** 사람이 볼 수 있다. */
-  Logger.log(JSON.stringify(out));
   return out;
 }
 
@@ -385,7 +255,7 @@ function csGetSearchIndex(opts) {
       errors: pack.errors,
       cacheOnly: cacheOnly,
       indexSource: pack.indexSource,
-      unified: pack.indexSource === "unified",
+      unified: false,   // 통합조회를 지웠다 (2026-09-16)
       viewUpdatedAt: pack.viewUpdatedAt
     };
   } catch (e) {
@@ -421,7 +291,7 @@ function _cs_searchDailyArchiveByInvoice_(invDigits) {
     if (String(r.invDigits || "").indexOf(needle) !== -1) {
       return {
         found: true,
-        source: (pack.indexSource === "ledger" ? "원장" : pack.indexSource === "unified" ? "통합조회" : "일일마감")
+        source: (pack.indexSource === "ledger" ? "원장" : "일일마감")
           + "(" + r.date + ")" + (r.source ? " · " + r.source : ""),
         invoiceNumber: r.invoice || needle,
         vendor: r.vendor || "",
@@ -445,96 +315,6 @@ function _cs_searchDailyArchiveByInvoice_(invDigits) {
 // ══════════════════════════════════════════════
 //  인덱스 로드
 // ══════════════════════════════════════════════
-
-/** 스크립트 속성으로 통합조회 사용을 끌 수 있다 (문제 시 즉시 옛 경로 복귀) */
-function _cs_unifiedViewEnabled_() {
-  try {
-    return PropertiesService.getScriptProperties().getProperty("CS_USE_UNIFIED_VIEW") !== "0";
-  } catch (e) {
-    return true;
-  }
-}
-
-/**
- * 통합조회 탭 1개를 읽어 검색 행으로 만든다.
- * 파일 열기 1회로 14일치가 다 들어오므로 날짜별 예열이 필요 없다.
- */
-function _cs_loadUnifiedView_(days, refresh) {
-  var out = { found: false, rows: [], updatedAt: "", error: "", fromCache: false };
-  var cache = CacheService.getScriptCache();
-  var key = _CS_DA_CACHE_VER_ + "_uv_" + days;
-
-  if (!refresh) {
-    try {
-      var hit = cache.get(key);
-      if (hit) {
-        var p = JSON.parse(hit);
-        out.found = true;
-        out.rows = p.rows || [];
-        out.updatedAt = p.updatedAt || "";
-        out.fromCache = true;
-        return out;
-      }
-    } catch (e) {}
-  }
-
-  try {
-    var ss = SpreadsheetApp.openById(_CS_MAIN_SHEET_ID);
-    var tab = ss.getSheetByName(_CS_UNIFIED_TAB_);
-    if (!tab || tab.getLastRow() < 2) return out;
-
-    var need = _CS_UV_COL_.updated + 1;
-    var data = tab.getRange(1, 1, tab.getLastRow(), Math.max(tab.getLastColumn(), need)).getDisplayValues();
-
-    // 헤더가 예상과 다르면 계약이 깨진 것 → 폴백에 맡긴다
-    if (String(data[0][_CS_UV_COL_.invoice] || "").replace(/\s/g, "") !== "송장번호") {
-      out.error = "통합조회 헤더 불일치";
-      return out;
-    }
-
-    var C = _CS_UV_COL_;
-    var fromN = _cs_dateList_(days);
-    var minN = fromN[fromN.length - 1].replace(/-/g, "");
-
-    for (var i = 1; i < data.length; i++) {
-      var row = data[i];
-      var d = _cs_normYmd_(row[C.date]);
-      if (d && d.replace(/-/g, "") < minN) continue;
-      var nm = _cs_nameOnly_(row[C.name]);
-      var item = String(row[C.item] || "").trim();
-      var invRaw = String(row[C.invoice] || "");
-      if (!nm && !item && !invRaw) continue;
-      var addr = String(row[C.addr] || "").trim();
-      out.rows.push({
-        date: d || "",
-        invoice: invRaw.replace(/\n/g, " ").trim(),
-        invDigits: _cs_allInvDigits_(invRaw),
-        phone: _cs_phoneDisplay_(row[C.phone]),
-        phoneDigits: _cs_phoneDigits_(row[C.phone]),
-        name: nm,
-        item: item,
-        ecountCode: _cs_readEcountCodeCell_(row[C.code]),
-        qty: String(row[C.qty] || "").trim(),
-        addr: addr,
-        shipMsg: _cs_sanitizeShipMsg_(String(row[C.shipMsg] || "").trim(), addr),
-        source: String(row[C.source] || "").trim(),
-        orderNo: String(row[C.orderNo] || "").trim(),
-        vendor: String(row[C.vendor] || "").trim(),
-        carrier: String(row[C.carrier] || "").trim(),
-        status: String(row[C.status] || "").trim(),
-        origin: String(row[C.origin] || "").trim() || "daily",
-        match: String(row[C.match] || "").trim(),
-        combinedPack: String(row[C.combined] || "").trim() === "Y"
-      });
-      if (!out.updatedAt) out.updatedAt = String(row[C.updated] || "").trim();
-    }
-    out.found = out.rows.length > 0;
-    if (out.found) _cs_putUvCache_(cache, key, out.rows, out.updatedAt);
-  } catch (e) {
-    out.error = e.message;
-  }
-  return out;
-}
 
 /**
  * 세트분리(뉴) 주문라인원장 → 검색 행. 통합조회와 «같은 모양»으로 낸다.
@@ -658,7 +438,7 @@ function _cs_loadLedgerView_(days, refresh) {
 
 function _cs_putUvCache_(cache, key, rows, updatedAt) {
   try {
-    cache.put(key, JSON.stringify({ rows: rows, updatedAt: updatedAt }), _CS_UV_CACHE_TTL_);
+    cache.put(key, JSON.stringify({ rows: rows, updatedAt: updatedAt }), 3600);  // 1시간
   } catch (e) {
     // 100KB 초과. 캐시 실패는 치명적이지 않다 — 파일 1개 읽기라 비용이 낮다.
   }
@@ -690,20 +470,21 @@ function _cs_loadSearchIndex_(days, refresh, cacheOnly) {
     if (lgv.error) errors.push("원장: " + lgv.error);
   }
 
-  // ── 통합조회 우선 (파일 1개) ──
-  var uv = (!lgv.found && _cs_unifiedViewEnabled_())
-    ? _cs_loadUnifiedView_(days, refresh) : { found: false };
-  if (lgv.error && !lgv.found) errors.push("원장: " + lgv.error + " → 통합조회로 폴백");
-  if (uv.found) {
-    indexSource = "unified";
-    viewUpdatedAt = uv.updatedAt;
-    rows = uv.rows;
-    loadedDays = days;
-    if (uv.fromCache) cachedDays = days;
-    if (uv.error) errors.push("통합조회: " + uv.error);
-  } else {
-    // ── 폴백: 기존 일일마감 14파일 경로 ──
-    if (uv.error) errors.push("통합조회: " + uv.error + " → 일일마감 파일로 폴백");
+  /*  ══════════════════════════════════════════════════════════
+      ★ 통합조회 단을 «지웠다» ★  (2026-09-16)
+
+      > "cs웹앱도 통합 조회가 아닌 일일마감을 불러다 데이타로 쓰게 해줘"
+      > "통합조회는 신뢰도가 무너진거라.. 통합조회텝 자체를 삭제할거니까"
+
+      통합조회는 여러 원천을 이름·전화·주소로 «이어 붙이는» 것이 본업이라
+      추측이 본질이었다. 송장 없던 줄에 남의 송장이 붙고, 붙었으니
+      마감으로 넘어가 고객 전화로 알았다.
+
+      이제 두 단이다:  세트분리 주문라인원장  →  일일마감 파일
+      둘 다 고유ID 를 처음부터 들고 있어 이어 붙일 일이 없다.
+      ══════════════════════════════════════════════════════════ */
+  if (!lgv.found) {
+    if (lgv.error) errors.push("원장: " + lgv.error + " → 일일마감 파일로 폴백");
     for (var i = 0; i < dates.length; i++) {
       var day = _cs_loadDay_(dates[i], refresh, cacheOnly);
       if (day.error) errors.push(dates[i] + ": " + day.error);
@@ -3608,9 +3389,9 @@ function csDiagnoseDayCount(dateStr) {
   }
   out.date = dateStr;
 
-  // ── 통합조회 쪽 ──
+  // ── 검색 인덱스 쪽 (원장 또는 일일마감) ──  (2026-09-16 통합조회 지움)
   try {
-    var uv = _cs_loadUnifiedView_(_CS_DAILY_DAYS_DEFAULT_, true);
+    var uv = { rows: _cs_loadSearchIndex_(_CS_DAILY_DAYS_DEFAULT_, false).rows };
     var onDate = 0, blank = 0, byDate = {};
     for (var i = 0; i < uv.rows.length; i++) {
       var d = String(uv.rows[i].date || "");
@@ -3793,7 +3574,7 @@ function csDiagnoseDashboardDays() {
   out.어제날짜 = yStr;
 
   try {
-    var uv = _cs_loadUnifiedView_(_CS_DAILY_DAYS_DEFAULT_, true);
+    var uv = { rows: _cs_loadSearchIndex_(_CS_DAILY_DAYS_DEFAULT_, false).rows };
     var byDate = {}, blank = 0, noInv = 0;
     for (var i = 0; i < uv.rows.length; i++) {
       var r = uv.rows[i];
