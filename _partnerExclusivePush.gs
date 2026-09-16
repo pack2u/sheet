@@ -9749,6 +9749,30 @@ function _pep_qtyOverMax_(qty, itemName, invCell) {
   return _pep_splitInvNos_(invCell).length > slot.max;
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 고유ID 가 아닌 열쇠는 맵에 «안 넣는다» ★  (2026-09-16)
+ *
+ *  > "고유아이디가 없는건 이제 무시할꺼야.. 몇달을 해도 매칭율이 10%도 안되"
+ *
+ *  사장님이 정하셨다. 그대로 한다.
+ *
+ *  ★ 무엇이 달라지나 ★
+ *    찾는 쪽(_pep_resolveRowInvoice_)은 2026-09-15 부터 이미 고유ID 만
+ *    본다. 그래서 TEL:·NAME:·NPI: 같은 조합키는 «넣기만 하고 아무도
+ *    안 읽는» 짐이었다. 맵만 무겁게 하고, 진단은 그것까지 세어
+ *    「매칭 못 한 것」처럼 보이게 했다.
+ *
+ *    문을 여기 하나만 둔다. 열다섯 군데가 각자 넣던 것을 여기서 한 번
+ *    거른다 — 새 원천이 붙어도 이 문을 지나야 한다.
+ *
+ *  ★ 조용히 버리지 않는다 ★
+ *    몇 개를 거절했는지 센다(_PEP_MAP_REFUSED_). 어느 날 갑자기 늘면
+ *    「고유ID 가 안 찍히기 시작했다」는 뜻이고, 그건 큰 신호다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var _PEP_MAP_REFUSED_ = 0;
+
 /** picked = 집하일(yyyymmdd 숫자 또는 화면값). 같은 송장에 이미 날짜가 있으면 유지 */
 function _pep_addInvoiceMap_(map, key, inv, source, carrier, picked) {
   if (!map || !key) return;
@@ -9764,7 +9788,19 @@ function _pep_addInvoiceMap_(map, key, inv, source, carrier, picked) {
     var extracted = _pep_uidFromOrdererCell_(key);
     if (extracted && extracted !== key) {
       _pep_addInvoiceMap_(map, extracted, inv, source, carrier, picked);
+      /*  ★ 한 주문에 열쇠 하나 ★  (2026-09-16)
+          `김철수/ab12` 는 이미 `ab12` 로 들어갔다. 통째 열쇠까지 넣으면
+          같은 주문이 맵에 둘로 앉고, 그중 하나는 «사람 이름이 섞인» 열쇠다.
+          찾는 쪽은 `ab12` 로만 물어보므로 통째 열쇠는 짐일 뿐이다.  */
+      return;
     }
+  }
+  /*  ★ 고유ID 가 아니면 여기서 돌려보낸다 ★
+      슬래시 적재(위)는 먼저 돌려 둔다 — `김철수/ab12` 는 뒤쪽이 진짜
+      고유ID 라 그 이름으로 다시 들어온다. 앞의 통째 열쇠만 막는다.  */
+  if (typeof _pep_isRealUid_ === "function" && !_pep_isRealUid_(key)) {
+    _PEP_MAP_REFUSED_++;
+    return;
   }
   var parts = _pep_splitInvNos_(inv);
   if (!parts.length) return;
@@ -11498,6 +11534,7 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
       }
 
       var _uidTried_ = 0, _uidHit_ = 0, _noUidTried_ = 0, _noUidHit_ = 0;
+      _PEP_MAP_REFUSED_ = 0;   // 실행마다 새로 센다
       // 1단계 가: 고유아이디 있는 주문부터 송장 매칭
       for (var wi1 = 0; wi1 < workItems.length; wi1++) {
         var it1 = workItems[wi1];
@@ -11515,27 +11552,36 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
         }, via1);
         if (_pep_applyInvToWorkItem_(it1, hit1, via1)) _uidHit_++;
       }
-      // 1단계 나: 고유아이디 없는 행 송장 매칭
+      /*  ══════════════════════════════════════════════════════
+          ★ 「1단계 나」를 없앤다 — 헛일이었다 ★  (2026-09-16)
+
+          > "고유아이디가 없는건 이제 무시할꺼야"
+
+          _pep_resolveRowInvoice_ 는 고유ID 가 아니면 맨 앞에서 null 을
+          돌려준다(2026-09-15). 그러니 이 되돌이는 한 건도 못 붙이면서
+          줄 수만큼 돌았다. 로그의 「고유ID없음 0/N」 이 그 뜻이었다.
+
+          이제 «세기만» 한다. 이 건들은 «실패»가 아니라 «대상이 아니다» —
+          그렇게 세야 매칭률이 사실대로 보인다. 분모에 섞어 두면
+          몇 달을 고쳐도 10% 밑으로 보인다.
+          ══════════════════════════════════════════════════════ */
       for (var wi2 = 0; wi2 < workItems.length; wi2++) {
         var it2 = workItems[wi2];
         if (it2.kind === "other") continue;
         if (_pep_isRealUid_(it2.uidCell || it2.matchKey)) continue;
         _noUidTried_++;
-        var via2 = {};
-        var hit2 = _pep_resolveRowInvoice_(invoiceMap, {
-          uid: it2.uidCell || it2.matchKey,
-          name: it2.recipName,
-          phone: it2.snapPhone,
-          addr: it2.snapAddr,
-          item: it2.snapItem,
-          orderDate: it2.snapDate
-        }, via2);
-        if (_pep_applyInvToWorkItem_(it2, hit2, via2)) _noUidHit_++;
       }
       result.detail.uidMatched = _uidHit_;
-      result.detail.noUidMatched = _noUidHit_;
+      result.detail.uidTried = _uidTried_;
+      result.detail.noUidMatched = _noUidHit_;      // 이제 늘 0 이다
+      result.detail.noUidSkipped = _noUidTried_;    // «대상 아님» — 실패가 아니다
+      /*  매칭률은 «고유ID 가 있는 주문»만 분모로 센다.  */
+      result.detail.uidRate = _uidTried_
+        ? Math.round((_uidHit_ * 100) / _uidTried_) : 0;
+      result.detail.mapRefused = _PEP_MAP_REFUSED_;
       Logger.log("[UNIFIED] 1단계 매칭: 고유ID " + _uidHit_ + "/" + _uidTried_ +
-        " 고유ID없음 " + _noUidHit_ + "/" + _noUidTried_);
+        " (" + result.detail.uidRate + "%) · 고유ID없어 건너뜀 " + _noUidTried_ +
+        " · 맵이 거절한 조합키 " + _PEP_MAP_REFUSED_);
 
       // ★ 같은 수취인(+전화)+주문일 그룹 — 합포장·소분은 동일 송장 전파
       var sabangGroups = {};

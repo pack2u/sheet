@@ -301,11 +301,31 @@ function partnerUnifiedDailyArchiveManual() {
         ? " └ 송장원장: " + result.detail.ledgerRead + "건 참조"
           + (result.detail.ledgerAppended ? " (이번에 " + result.detail.ledgerAppended + "건 신규 적재)" : "") + "\n"
         : "") +
-      (result.detail.uidMatched
-        ? " └ 고유ID 매칭: " + result.detail.uidMatched + "건\n"
-        : "") +
-      (result.detail.noUidMatched
-        ? " └ 고유ID없음 매칭: " + result.detail.noUidMatched + "건\n"
+      /*  ══════════════════════════════════════════════════════
+          ★ 매칭률은 «고유ID 가 붙은 주문»만 분모로 센다 ★  (2026-09-16)
+
+          > "판매현황에 고유아이디를 붙이는 작업을 하는거고..
+             고유아이디를 붙였는데도 못하면 포기하는게 맞다고 생각해"
+
+          맞는 셈법이다. 고유ID 가 없는 줄은 «실패»가 아니라 «대상이
+          아니다». 분모에 섞으면 몇 달을 고쳐도 10% 밑으로 보이고,
+          그러면 무엇이 진짜 문제인지 영영 안 보인다.
+
+          셋으로 갈라 적는다 —
+            ① 고유ID 붙은 주문 중 송장을 찾은 것  ← 이것이 매칭률
+            ② 고유ID 붙었는데 못 찾은 것          ← 여기만 파면 된다
+            ③ 고유ID 가 안 붙은 것                ← ID 발급 쪽 일
+          ══════════════════════════════════════════════════════ */
+      (result.detail.uidTried
+        ? " └ 고유ID 매칭: " + result.detail.uidMatched + "/" +
+          result.detail.uidTried + "건 (" + result.detail.uidRate + "%)\n" +
+          ((result.detail.uidTried - result.detail.uidMatched)
+            ? "    └ ★ ID 는 있는데 송장을 못 찾음: " +
+              (result.detail.uidTried - result.detail.uidMatched) + "건 ← 여기만 봅니다\n"
+            : "") +
+          (result.detail.noUidSkipped
+            ? "    └ 고유ID 가 안 붙어 대상 아님: " + result.detail.noUidSkipped + "건\n"
+            : "")
         : "") +
       (result.detail.backfill
         ? "이전 마감 송장 보강: " + result.detail.backfill + "건"
@@ -365,8 +385,15 @@ function partnerUnifiedDailyArchiveForDate() {
         : "") +
         " └ 자사출고 송장: " + (result.detail.lotte || 0) + "건\n" +
         " └ 대리공급 송장: " + (result.detail.supply || 0) + "건\n" +
-        (result.detail.uidMatched ? " └ 고유ID 매칭: " + result.detail.uidMatched + "건\n" : "") +
-        (result.detail.noUidMatched ? " └ 고유ID없음 매칭: " + result.detail.noUidMatched + "건\n" : "") +
+        (result.detail.uidTried
+          ? " └ 고유ID 매칭: " + result.detail.uidMatched + "/" + result.detail.uidTried +
+            "건 (" + result.detail.uidRate + "%)\n" +
+            ((result.detail.uidTried - result.detail.uidMatched)
+              ? "    └ ★ ID 는 있는데 송장을 못 찾음: " +
+                (result.detail.uidTried - result.detail.uidMatched) + "건\n" : "") +
+            (result.detail.noUidSkipped
+              ? "    └ 고유ID 가 안 붙어 대상 아님: " + result.detail.noUidSkipped + "건\n" : "")
+          : "") +
         (result.detail.namePhone ? " └ 이름+전화: " + result.detail.namePhone + "건\n" : "") +
         (result.detail.backfill
           ? "이전 마감 송장 보강: " + result.detail.backfill + "건"
@@ -643,7 +670,8 @@ function _pep_unifiedDailyArchiveScheduled_() {
       " 이름+전화:" + (result.detail.namePhone || 0) +
       " 미매칭:" + (result.detail.noInvoice || 0) +
       " 고유ID:" + (result.detail.uidMatched || 0) +
-      " 고유ID없음:" + (result.detail.noUidMatched || 0) +
+      " ID있는데못찾음:" + ((result.detail.uidTried || 0) - (result.detail.uidMatched || 0)) +
+      " ID없어대상아님:" + (result.detail.noUidSkipped || 0) +
       " 1주출고:" + (result.detail.weeklyPrimary || 0) +
       " 이전마감보강:" + (result.detail.backfill || 0) +
       " 이미있어건너뜀:" + (result.detail.archiveDup || 0) +
