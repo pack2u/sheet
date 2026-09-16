@@ -148,6 +148,36 @@ console.log("\n[7] ★ 수집이 건너뛴 줄도 «말한다»");
   check("끝없이 길어지지 않게 막는다", src.indexOf("if (_건너뛴_.length >= 60) return;") >= 0, true);
 }
 
+
+console.log("\n[8] ★ 스마트 수집의 기준은 «시작 시각»이다");
+{
+  /*  > "이게 시간 제한떄문인건지? 조건이 허술해서인지.. 전에는 안그랬는데.."
+
+      둘 다 아니었다. 스마트 수집이 「마지막 수집 이후 고쳐진 파일」만 읽는데,
+      그 기준 시각을 수집이 «끝난» 뒤에 찍고 있었다.
+
+        09:30:00  수집 시작, 아주팩 파일을 읽는다
+        09:31:20  업체가 주문 한 줄을 넣는다   ← 파일 수정시각 09:31:20
+        09:34:00  수집 끝. 기준 = 09:34:00 저장
+        13:00:00  다음 수집 — 09:31:20 < 09:34:00 이라 «안 고쳐진 파일»로 보고
+                  통째로 건너뛴다
+
+      그 줄은 영영 안 들어온다. 수집이 도는 «그 몇 분» 사이에 들어온 주문만
+      사라지므로 「한두 건씩」이다. 업체가 늘어 수집이 길어질수록 잦아진다.  */
+  check("시작 시각을 잡는다", src.indexOf("var _수집시작_ = Date.now();") >= 0, true);
+  check("★ 저장하는 값이 시작 시각이다",
+    src.indexOf('props.setProperty("LAST_ORDER_COLLECT_TIME", String(_수집시작_));') >= 0, true);
+  check("★ Date.now() 를 그대로 저장하지 않는다",
+    src.indexOf('props.setProperty("LAST_ORDER_COLLECT_TIME", String(Date.now()));') >= 0, false);
+
+  //  시작 시각은 파일을 «읽기 전»에 잡혀야 한다. 뒤에 잡으면 같은 창이 다시 열린다.
+  const 시작 = src.indexOf("var _수집시작_ = Date.now();");
+  const 목록 = src.indexOf("var files = _pt_listFiles();");
+  const 읽기 = src.indexOf("var lastCollectTime = parseInt(props.getProperty");
+  check("★ 파일 목록을 뜨기 전에 잡는다", 시작 >= 0 && 시작 < 목록, true);
+  check("★ 지난 기준을 읽기 전에 잡는다", 시작 >= 0 && 시작 < 읽기, true);
+}
+
 console.log("");
 console.log(fail === 0 ? "다 통과 (" + pass + "건)" : "실패 " + fail + "건 / 통과 " + pass + "건");
 process.exit(fail === 0 ? 0 : 1);
