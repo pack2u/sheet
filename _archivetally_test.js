@@ -139,6 +139,36 @@ console.log("\n[7] ★ 「미매칭」이라고 적지 않는다");
     /if \(_src_ && _src_ !== "미매칭"\) continue;/.test(und), true);
 }
 
+console.log("\n[8] ★ 허브에서 송장을 «가져오지 않는다»");
+{
+  /*  > "대리판매 발주는 허브로 들어오고.. 이것이 판매현황에 입력...
+         다시 세트분리되서 대리발송으로 분리.. 허브에서 송장 가져올일은 전혀 없어"
+
+      허브는 주문의 «입구»다. 송장은 그 뒤에 생기고, 생기는 자리는
+      로젠 실적탭과 대리공급_임시기록이다.
+
+      증거: 2026-09-16 마감에서 「대리판매(허브) 0건」.
+      송장맵은 먼저 넣은 쪽이 출처를 갖는데, 허브가 처음 넣은 것이
+      하루 종일 한 건도 없었다.  */
+  const uv = fs.readFileSync("_partnerUnifiedView.gs", "utf8");
+  const hoa = fs.readFileSync("hubOrderArchive.gs", "utf8");
+
+  [["마감", pep], ["통합조회", uv], ["허브아카이브", hoa]].forEach(function (쌍) {
+    check("★ " + 쌍[0] + " — 허브 송장을 맵에 안 넣는다",
+      쌍[1].indexOf('_pep_addInvoiceMap_(invoiceMap, hUid') < 0 &&
+      쌍[1].indexOf('_pep_addInvoiceMap_(map, hUid') < 0, true);
+  });
+
+  check("★ 허브 월별 아카이브 함수가 없다",
+    hoa.indexOf("function _ha_addHubArchiveToInvoiceMap_") < 0, true);
+
+  /*  ★ 허브 «자체»는 그대로다 ★ 지우는 것과 부수는 것은 다르다.
+      수집이 허브에 쓰고, 세트분리가 그것을 판매현황으로 가져간다.  */
+  const ord = fs.readFileSync("_partnerOrders.gs", "utf8");
+  check("★ 허브 탭 이름은 살아 있다", ord.indexOf('_PO_HUB_SHEET_NAME = "협력업체_발주허브"') >= 0, true);
+  check("★ 수집이 허브에 쓰는 길은 그대로", ord.indexOf("newOrders.push(") >= 0, true);
+}
+
 
 console.log("\n" + (fail ? "❌ " : "✅ ") + "통과 " + pass + " · 실패 " + fail);
 process.exit(fail ? 1 : 0);

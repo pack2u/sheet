@@ -11192,60 +11192,23 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
         같은 송장을 (b2) 협력업체_발주허브와 (b3) 송장원장이 이미 담는다.
         원천이 겹치면 파일을 하나 더 열어 6분 예산만 깎아 먹는다. */
 
-    // (b2) 협력업체_발주허브 — C열(고유ID) → N열(송장번호). 대리판매·협력 출고 (롯데와 무관)
-    try {
-      var hubTab = ss.getSheetByName(typeof _PO_HUB_SHEET_NAME !== "undefined" ? _PO_HUB_SHEET_NAME : "협력업체_발주허브");
-      if (hubTab && hubTab.getLastRow() >= 2) {
-        var hubLc = Math.max(hubTab.getLastColumn(), 15);
-        var hubData = hubTab.getRange(2, 1, hubTab.getLastRow() - 1, hubLc).getDisplayValues();
-        var _hubPrimary = 0, _hubInvRows = 0;
-        for (var hbi = 0; hbi < hubData.length; hbi++) {
-          var hUid = String(hubData[hbi][2] || "").trim();
-          var hInv = String(hubData[hbi][13] || "").trim();
-          if (typeof _po_hasRealInvoice_ === "function" && !_po_hasRealInvoice_(hInv)) continue;
-          if (!hInv) continue;
-          _hubInvRows++;
-          // ★ 2026-08-27: 발주업체(B열)의 택배사를 송장과 함께 싣는다.
-          //   출처는 "대리판매" 뿐이어서 택배사를 알려주지 않는다. 업체가 자기
-          //   택배사로 보내므로 `업체_택배사` 표가 유일한 근거다. 여기서 실어두면
-          //   일일마감 택배사 열이 그대로 쓰고, 웹앱이 해당 택배사 조회로 연결한다.
-          var hCarrier = _pep_carrierForVendor_(hubData[hbi][1]);
-          if (hUid && !(invoiceMap[hUid] && invoiceMap[hUid].source === "롯데")) {
-            _pep_addInvoiceMap_(invoiceMap, hUid, hInv, "대리판매", hCarrier);
-            _hubPrimary++;
-          }
-          // ph UID(대리공급 Push)와 ds UID(허브) 불일치 시 교차 조회
-          if (typeof _pt_deriveHubRowPepUid_ === "function") {
-            try {
-              var hPepUid = _pt_deriveHubRowPepUid_(hubData[hbi]);
-              if (hPepUid && hPepUid !== hUid &&
-                  !(invoiceMap[hPepUid] && invoiceMap[hPepUid].source === "롯데")) {
-                _pep_addInvoiceMap_(invoiceMap, hPepUid, hInv, "대리판매", hCarrier);
-              }
-            } catch (ePepUid) {}
-          }
-        }
-        result.detail.hubRead = _hubInvRows;
-        Logger.log("[UNIFIED] 허브 송장맵: 송장행=" + _hubInvRows +
-          " 고유ID=" + _hubPrimary +
-          " 합계키=" + Object.keys(invoiceMap).length + "건");
-      } else {
-        Logger.log("[UNIFIED] 협력업체_발주허브 없음/비어있음");
-      }
-    } catch (eHub) {
-      Logger.log("[UNIFIED] 허브 송장맵 오류: " + eHub.message);
-    }
-
-    // (b3) ★ 2026-08-25: 송장원장 — 마감으로 임시기록에서 사라진 대리공급 송장 복구
-    try {
-      if (typeof _pil_addToInvoiceMap_ === "function") {
-        var ledgerRead = _pil_addToInvoiceMap_(invoiceMap);
-        result.detail.ledgerRead = ledgerRead;
-        Logger.log("[UNIFIED] 송장원장 송장맵: " + ledgerRead + "건, 합계키=" + Object.keys(invoiceMap).length);
-      }
-    } catch (eLg) {
-      Logger.log("[UNIFIED] 송장원장 송장맵 오류: " + eLg.message);
-    }
+    /*  ══════════════════════════════════════════════════════════════
+        ★ 허브에서 «송장을 가져오지 않는다» ★  (2026-09-16)
+    
+        > "대리판매 발주는 허브로 들어오고.. 이것이 판매현황에 입력...
+        >  다시 세트분리되서 대리발송으로 분리.. 허브에서 송장 가져올일은
+        >  전혀 없어"
+    
+        허브는 주문의 «입구»다. 대리판매 발주가 여기로 들어와 판매현황으로
+        가고, 세트분리를 거쳐 대리발송으로 나간다. 송장은 그 «뒤»에 생기고,
+        생긴 자리는 로젠 실적탭과 대리공급_임시기록이다.
+    
+        ★ 증거 ★  2026-09-16 마감에서 「대리판매(허브) 0건」이 나왔다.
+          송장맵은 먼저 넣은 쪽이 출처를 갖는데, 허브가 «처음» 넣은 것이
+          하루 종일 한 건도 없었다 — 전부 다른 원천에 이미 있었다.
+    
+        파일 하나 여는 데 몇 초가 든다. 마감은 6분 안에 끝나야 한다.
+        ══════════════════════════════════════════════════════════════ */
 
     // (c) 합배송 탭 — 사방넷 UID/수취인 송장 보강 (롯데 J열이 비어 있는 합포장 행 보완)
     try {

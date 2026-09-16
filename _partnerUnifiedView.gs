@@ -148,14 +148,8 @@ function _puv_buildInvoiceMap_(stat) {
     }
   } catch (e) { stat.errors.push("협력업체마감: " + e.message); }
 
-  // 허브 월별 아카이브 — 허브에서 빠진 대리판매 송장
-  try {
-    if (typeof _ha_addHubArchiveToInvoiceMap_ === "function") {
-      var throughHa = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
-      var ha = _ha_addHubArchiveToInvoiceMap_(map, throughHa);
-      stat.hubArchive = (ha && ha.read) || 0;
-    }
-  } catch (e) { stat.errors.push("허브아카이브: " + e.message); }
+  /*  ★ 허브 월별 아카이브도 지웠다 ★  (2026-09-16)
+      같은 까닭이다 — 허브는 주문의 입구지 송장의 자리가 아니다.  */
 
   // 대리공급_임시기록 + 보관
   try {
@@ -175,42 +169,17 @@ function _puv_buildInvoiceMap_(stat) {
     }
   } catch (e) { stat.errors.push("임시기록: " + e.message); }
 
-  // 협력업체_발주허브
-  try {
-    var hubName = typeof _PO_HUB_SHEET_NAME !== "undefined" ? _PO_HUB_SHEET_NAME : "협력업체_발주허브";
-    var hub = ss.getSheetByName(hubName);
-    if (hub && hub.getLastRow() >= 2) {
-      var hData = hub.getRange(2, 1, hub.getLastRow() - 1, Math.max(hub.getLastColumn(), 15)).getDisplayValues();
-      for (var h = 0; h < hData.length; h++) {
-        var hInv = String(hData[h][13] || "").trim();
-        if (!hInv) continue;
-        if (typeof _po_hasRealInvoice_ === "function" && !_po_hasRealInvoice_(hInv)) continue;
-        var hUid = String(hData[h][2] || "").trim();
-        // ★ 2026-08-27: 발주업체(B열)의 택배사를 송장과 함께 싣는다.
-        //   출처 "대리판매" 만으로는 택배사를 알 수 없다.
-        var hCr = typeof _pep_carrierForVendor_ === "function"
-          ? _pep_carrierForVendor_(hData[h][1]) : "";
-        if (hUid && !(map[hUid] && map[hUid].source === "롯데")) {
-          _pep_addInvoiceMap_(map, hUid, hInv, "대리판매", hCr);
-        }
-        if (typeof _pt_deriveHubRowPepUid_ === "function") {
-          try {
-            var pep = _pt_deriveHubRowPepUid_(hData[h]);
-            if (pep && pep !== hUid && !(map[pep] && map[pep].source === "롯데")) {
-              _pep_addInvoiceMap_(map, pep, hInv, "대리판매", hCr);
-            }
-          } catch (_) {}
-        }
-        _pep_addNamePhoneInvoiceKeys_(map, hData[h][7], hData[h][8], hInv, "대리판매",
-          {
-            skipName: true, addr: hData[h][9], item: hData[h][5],
-            carrier: hCr,
-            stat: _pep_keyStat_("대리판매")
-          });
-        stat.hub++;
-      }
-    }
-  } catch (e) { stat.errors.push("허브: " + e.message); }
+  /*  ══════════════════════════════════════════════════════════
+      ★ 허브에서 «송장을 가져오지 않는다» ★  (2026-09-16)
+
+      > "대리판매 발주는 허브로 들어오고.. 이것이 판매현황에 입력...
+      >  다시 세트분리되서 대리발송으로 분리.. 허브에서 송장 가져올일은
+      >  전혀 없어"
+
+      허브는 주문의 «입구»다. 송장은 그 뒤에 생기고, 생기는 자리는
+      로젠 실적탭과 대리공급_임시기록이다.
+      마감에서도 같은 까닭으로 지웠다(_partnerExclusivePush (b2)).
+      ══════════════════════════════════════════════════════════ */
 
   stat.keys = Object.keys(map).length;
   return map;
@@ -736,8 +705,7 @@ function _puv_summaryText_(stat) {
   lines.push("  키 " + stat.keys + "개 (롯데 " + stat.lotte + ", 1주출고 " + stat.weekly +
     ", 원장 " + stat.ledger + ", 전용마감 " + (stat.exclusive || 0) +
     ", 발주마감 " + (stat.orderArchive || 0) +
-    ", 허브아카이브 " + (stat.hubArchive || 0) +
-    ", 임시 " + stat.temp + ", 허브 " + stat.hub + ")");
+    ", 임시 " + stat.temp + ")");   // 허브는 이제 송장 원천이 아니다 (2026-09-16)
   if (stat.timedOut) {
     lines.push("", stat.skippedWrite
       ? "⏳ 시간 제한으로 일부만 모았습니다 → 기존 통합조회를 그대로 유지했습니다."
