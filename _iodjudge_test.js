@@ -49,6 +49,9 @@ const ctx = {
   _IOD_STALE_GAP_DAYS_: 2,
 };
 vm.createContext(ctx);
+/*  합배송 표시를 읽는 함수는 «본체 것»을 그대로 쓴다 —
+    여기서 흉내내면 본체가 바뀔 때 시험만 통과한다.  */
+vm.runInContext(grab("_iod_hasMergeMark_"), ctx);
 vm.runInContext(grab("_iod_judge_"), ctx);
 const 판정 = (claims) => vm.runInContext("_iod_judge_(" + JSON.stringify(claims) + ")", ctx,
   { /* Date 는 JSON 으로 못 넘긴다 — 아래 주장() 에서 문자열로 만들고 되살린다 */ });

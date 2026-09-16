@@ -137,6 +137,77 @@ console.log("\n[7] 원천마다 따로 정규화하지 «않는다»");
     check(n + " 는 날것을 넘긴다", 몸.indexOf("_iod_oidKey_") < 0, true);
   });
 }
+console.log("\n[8] ★ 합배송 표시를 읽는 칸 — 한 글자 붙어도 놓치지 않는다");
+{
+  /*  마감 표는 회차마다 칸 이름이 조금씩 다르다. 완전일치만 보던 때는
+      「주문상태」·「비고1」·「배송메세지」를 통째로 놓쳤다.  */
+  const 상수 = iod.slice(iod.indexOf("var _IOD_MARK_HEADERS_"),
+    iod.indexOf(";", iod.indexOf("var _IOD_MARK_HEADERS_")) + 1);
+  vm.runInContext(상수, ctx);
+  ["_iod_hasMergeMark_", "_iod_markOf_"].forEach((n) => vm.runInContext(grabFrom(iod, n), ctx));
+
+  const 읽나 = (h) => vm.runInContext("_IOD_MARK_HEADERS_.test(" + JSON.stringify(h) + ")", ctx);
+  ["적요", "비고", "메모", "상태", "주문상태", "비고1", "배송메시지", "배송메세지", "특기사항"]
+    .forEach((h) => check("읽는다: " + h, 읽나(h), true));
+  ["수취인", "품목명", "송장번호", "수량"].forEach((h) => check("안 읽는다: " + h, 읽나(h), false));
+}
+
+console.log("\n[9] 합배송·합포장만 표시로 친다");
+{
+  const 표시 = (m) => vm.runInContext("_iod_hasMergeMark_(" + JSON.stringify(m) + ")", ctx);
+  check("합배송", 표시("합배송"), true);
+  check("합포장", 표시("합포장 · 몸통"), true);
+  check("띄어쓰기 섞임", 표시(" 합 배 송 "), true);
+  check("빈 칸", 표시(""), false);
+  check("상관없는 글", 표시("부재시 경비실"), false);
+  check("undefined", 표시(undefined), false);
+}
+
+console.log("\n[10] ★ 어느 칸을 읽었는지 «남긴다»");
+{
+  ctx.__hdr = ["수취인", "품목명", "적요", "운송장번호"];
+  ctx.__row = ["김철수", "미니탕", "합배송(대표)", "1234"];
+  ctx.__seen = {};
+  const m = vm.runInContext("_iod_markOf_(__hdr, __row, __seen)", ctx);
+  check("적요를 읽었다", m.indexOf("합배송") >= 0, true);
+  check("★ 읽은 칸 이름을 남긴다", Object.keys(ctx.__seen), ["적요"]);
+
+  ctx.__hdr2 = ["수취인", "품목명", "운송장번호"];
+  ctx.__seen2 = {};
+  vm.runInContext("_iod_markOf_(__hdr2, __row, __seen2)", ctx);
+  check("★ 못 찾으면 아무것도 안 남는다 (그래서 말할 수 있다)",
+    Object.keys(ctx.__seen2).length, 0);
+}
+
+console.log("\n[11] ★ 송장원장에 «없는» 칸을 읽지 않는다");
+{
+  /*  _PIL_HEADERS_ 는 A~H 여덟 칸뿐인데 허브의 자리번호 12·14 를 읽고 있었다.
+      주장 14134건의 표시가 «항상» 비었고, 그래서 🟢 이 0건이었다.  */
+  const 몸 = grabFrom(iod, "_iod_collectLedger_");
+  check("★ data[i][12] 를 안 읽는다", 몸.indexOf("data[i][12]") < 0, true);
+  check("★ data[i][14] 를 안 읽는다", 몸.indexOf("data[i][14]") < 0, true);
+  check("빈칸이라고 «적어» 둔다", 몸.indexOf('mark: ""') >= 0, true);
+}
+
+console.log("\n[12] ★ 허브는 적요·상태를 «가지고 있으니» 넘긴다");
+{
+  const 몸 = grabFrom(iod, "_iod_collectHub_").split(/\r?\n/)
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+  check("★ 표시를 만든다", 몸.indexOf("String(data[i][12]") >= 0, true);
+  check("★ 주장에 담는다", /mark:\s*표시/.test(몸), true);
+  check("15칸을 가져온다", 몸.indexOf(", 15)") >= 0, true);
+}
+
+console.log("\n[13] ★ 못 읽으면 «말한다»");
+{
+  /*  0건을 조용히 넘기면 정상 건이 통째로 의심이 되고, 사람은 목록을 안 본다.  */
+  const 몸 = grabFrom(iod, "partnerDiagnoseInvoiceOwnership");
+  check("셈 그릇이 있다", /markCols:\s*\{\},\s*marked:\s*0/.test(몸), true);
+  check("★ 못 찾았다고 말한다", 몸.indexOf("«못 찾았습니다»") >= 0, true);
+  check("★ 읽은 칸을 보여 준다", 몸.indexOf("읽은 칸: ") >= 0, true);
+  check("★ 적힌 줄 수를 보여 준다", 몸.indexOf("합배송·합포장이 적힌 줄: ") >= 0, true);
+}
+
 
 console.log("\n" + (fail ? "❌ " : "✅ ") + "통과 " + pass + " · 실패 " + fail);
 process.exit(fail ? 1 : 0);

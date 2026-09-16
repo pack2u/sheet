@@ -93,6 +93,22 @@ function _iod_dayDiff_(a, b) {
 }
 
 /**
+ * 「합배송」이라 적힐 수 있는 칸의 머리글.
+ *
+ * 자리로 박지 않고 이름으로 찾는다. 완전일치만 보면 「주문상태」·「비고1」·
+ * 「배송메세지」 처럼 한 글자 붙은 칸을 통째로 놓친다 — 그러면 표시가
+ * 있는데도 «없다»고 판정해 정상 건이 의심으로 올라간다.
+ */
+var _IOD_MARK_HEADERS_ = /적요|비고|메모|상태|배송메[\uc2dc\uc138]지|특기사항/;
+
+/** 이 글에 합배송·합포장이 적혀 있나 */
+function _iod_hasMergeMark_(mark) {
+  var g = String(mark == null ? "" : mark).replace(/[ \t]/g, "");
+  if (!g) return false;
+  return g.indexOf("합배송") !== -1 || g.indexOf("합포장") !== -1;
+}
+
+/**
  * 세 원천이 «같은 주문»을 같은 이름으로 부르게 한다.
  *
  * 송장원장 D열은 `abc#2` · `abc|A01` · `abc_S1` 로 꼬리가 붙어 오고,
@@ -165,10 +181,17 @@ function _iod_collectLedger_(reg, stat) {
           phone: data[i][5] || "",
           dateStr: String(data[i][6] || "").trim() || String(data[i][0] || "").trim(),
           item: data[i][7] || "",
-          /*  ★ 「합배송이라고 적혀 있는가」 ★  (2026-09-16)
-              허브 12=적요 · 14=상태. 둘 중 하나에 합배송·합포장이 적혀 있으면
-              한 상자로 나간 것이 «사실»이다. 적혀 있지 않으면 짐작하지 않는다. */
-          mark: String(data[i][12] || "") + " " + String(data[i][14] || ""),
+          /*  ★ 송장원장에는 적요 칸이 «없다» ★  (2026-09-16)
+              _PIL_HEADERS_ 는 A~H 여덟 칸뿐이다(관측일시·출처·송장·고유ID·
+              수취인·전화·주문일·품목명). 그런데 여기서 허브의 자리번호
+              12(적요)·14(상태)를 읽고 있었다 — 여덟 칸만 가져왔으니 늘
+              undefined 였고, 표시는 «항상» 비었다. 주장 14134건 전부가.
+              그래서 🟢 합배송이 0건으로 나왔다.
+
+              없는 것을 있는 척 읽지 않는다. 빈칸으로 두고, 같은 송장에
+              걸린 마감·허브 쪽 주장이 표시를 들고 오면 _iod_judge_ 가
+              그것을 본다(한 주장에만 적혀 있어도 그 묶음은 합배송이다). */
+          mark: "",
           row: i + 2,
         });
         stat.ledger++;
@@ -206,6 +229,8 @@ function _iod_collectArchives_(reg, days, stat, started) {
         if (String(all[ri][0] || "").indexOf("합계") !== -1) continue;
         var invs = _pep_splitInvNos_(all[ri][cols.inv]);
         if (!invs.length) continue;
+        var 마감표시 = _iod_markOf_(all[0], all[ri], stat.markCols);
+        if (_iod_hasMergeMark_(마감표시)) stat.marked++;
         for (var k2 = 0; k2 < invs.length; k2++) {
           _iod_claim_(reg, invs[k2], {
             where: "일일마감_" + dateStr,
@@ -242,7 +267,7 @@ function _iod_collectArchives_(reg, days, stat, started) {
             dateStr: dateStr,
             /*  마감 표의 적요. 합배송·합포장·세트(몸통/뚜껑)가 여기 적힌다
                 (2026-09-15 «적요에 다 적는다» 작업). */
-            mark: _iod_markOf_(all[0], all[ri]),
+            mark: 마감표시,
             row: ri + 1,
             archDate: dateStr,
           });
@@ -262,13 +287,17 @@ function _iod_collectArchives_(reg, days, stat, started) {
  * 자리로 박지 않는다. 마감 표는 판매현황 C~Q 를 그대로 쓰는데 회차마다
  * 칸이 늘거나 줄 수 있다. 오늘 하루 종일 고친 병이 전부 「자리로 박은 것」이었다.
  */
-function _iod_markOf_(hdr, row) {
+function _iod_markOf_(hdr, row, seen) {
   if (!hdr || !row) return "";
   var out = [];
   for (var i = 0; i < hdr.length; i++) {
-    var h = String(hdr[i] || "").replace(/[ 	]/g, "");
+    var h = String(hdr[i] || "").replace(/[ \t]/g, "");
     if (!h) continue;
-    if (/^적요$|^비고$|^메모$|^상태$/.test(h)) out.push(String(row[i] || ""));
+    if (!_IOD_MARK_HEADERS_.test(h)) continue;
+    /*  어느 칸을 «적요»로 읽었는지 남긴다. 한 칸도 못 찾으면 합배송을
+        구분할 길이 없는데, 그걸 조용히 넘기면 정상 건이 전부 의심이 된다.  */
+    if (seen) seen[h] = true;
+    out.push(String(row[i] || ""));
   }
   return out.join(" ");
 }
@@ -282,6 +311,10 @@ function _iod_collectHub_(reg, stat) {
       var raw = String(data[i][13] || "").trim();
       if (!_po_hasRealInvoice_(raw)) continue;
       var invs = _pep_splitInvNos_(raw);
+      /*  허브 M열(12)=적요 · O열(14)=상태 — 합배송이 적히는 곳이다.
+          여기서 안 넘기면 허브 주장은 표시를 영영 못 들고 온다.  */
+      var 표시 = String(data[i][12] || "") + " " + String(data[i][14] || "");
+      if (_iod_hasMergeMark_(표시)) stat.marked++;
       for (var k = 0; k < invs.length; k++) {
         _iod_claim_(reg, invs[k], {
           where: "허브",
@@ -290,6 +323,7 @@ function _iod_collectHub_(reg, stat) {
           name: data[i][7] || "",
           phone: data[i][8] || "",
           item: data[i][5] || "",
+          mark: 표시,
           dateStr: String(data[i][3] || "").trim(),
           row: i + 2,
         });
@@ -420,8 +454,7 @@ function _iod_judge_(claims) {
       ══════════════════════════════════════════════════════════════ */
   var 합배송적힘 = false;
   for (var mk = 0; mk < claims.length; mk++) {
-    var 글 = String(claims[mk].mark || "").replace(/[ 	]/g, "");
-    if (글.indexOf("합배송") !== -1 || 글.indexOf("합포장") !== -1) { 합배송적힘 = true; break; }
+    if (_iod_hasMergeMark_(claims[mk].mark)) { 합배송적힘 = true; break; }
   }
   if (합배송적힘) {
     return {
@@ -578,6 +611,9 @@ function partnerDiagnoseInvoiceOwnership(days) {
 
   var stat = {
     ledger: 0, archive: 0, hub: 0, files: 0, refix: 0,
+    /*  합배송 표시를 «어느 칸에서» «몇 건» 읽었는지. 0이면 그렇게 말한다 —
+        못 읽고 있는 줄 모르면 정상 건을 전부 의심이라 부르게 된다.  */
+    markCols: {}, marked: 0,
     notes: [], stopped: "",
   };
 
@@ -676,6 +712,29 @@ function partnerDiagnoseInvoiceOwnership(days) {
     lines.push("★ 남의 송장이 붙은 것으로 보이는 건은 없습니다.");
   }
   lines.push("  그중 「일일마감 송장 재매칭」이 채운 것: " + counts.byRefix + "건");
+
+  /*  ★ 「합배송을 구분할 수 있었나」를 «말한다» ★  (2026-09-16)
+      🟢 이 0건으로 나온 두 번 다, 까닭은 합배송이 없어서가 아니라
+      표시를 «못 읽고 있어서»였다(송장원장의 없는 칸을 읽고 있었다).
+      그걸 조용히 넘기면 정상 건이 통째로 의심이 되고, 사람은 그 목록을
+      안 보게 된다. 읽은 칸과 건수를 늘 함께 적는다.  */
+  var 읽은칸 = [];
+  for (var mc in stat.markCols) if (stat.markCols.hasOwnProperty(mc)) 읽은칸.push(mc);
+  lines.push("");
+  lines.push("── 합배송 표시 ──");
+  if (!읽은칸.length) {
+    lines.push("  ⚠ 일일마감 표에서 적요·비고·메모·상태 칸을 «못 찾았습니다».");
+    lines.push("     합배송인지 구분할 근거가 없어, 정상 건도 🟡 의심으로 올라갑니다.");
+    lines.push("     마감 표의 머리글을 알려 주시면 그 칸을 읽도록 맞추겠습니다.");
+  } else {
+    lines.push("  읽은 칸: " + 읽은칸.join(" · "));
+    lines.push("  합배송·합포장이 적힌 줄: " + stat.marked + "건");
+    if (!stat.marked) {
+      lines.push("  ⚠ 칸은 찾았는데 한 줄도 적혀 있지 않습니다 — 출고 때 표시가 안 남고");
+      lines.push("     있다는 뜻입니다. 그러면 합배송과 오배송을 구분할 수 없습니다.");
+    }
+  }
+
 
   if (counts.byRefix > 0) {
     lines.push("");
