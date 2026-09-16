@@ -138,10 +138,29 @@ function _iod_loadPackGroups_(stat) {
     var 회차칸 = ix["회차키"];
     var data = tab.getRange(2, 1, tab.getLastRow() - 1, lc).getDisplayValues();
     for (var i = 0; i < data.length; i++) {
-      var grp = String(data[i][ix["합포장그룹"]] || "").trim();
-      if (!grp) continue;                     // 묶이지 않은 줄 — 볼 것이 없다
       var uid = _iod_oidKey_(data[i][ix["고유ID"]]);
       if (!uid) continue;
+      /*  ══════════════════════════════════════════════════════
+          ★ 합포장이 «아닌» 줄도 담는다 ★  (2026-09-16, 두 번째 판)
+
+          처음엔 `if (!grp) continue` 로 묶인 줄만 담았다. 「볼 것이
+          없다」고 여겼는데, 그러면 원장이 «아는» 주문인지조차 물어볼 수
+          없게 된다. 합포장이 아닌 주문은 전부 「원장에 없음」이 되고,
+          실제로 그랬다 —
+
+            🟡 의심 178건
+               └ 원장이 «따로 나갔다»고 말하는 것: 0건
+               └ 원장에 없어 물어볼 수 없던 것: 178건
+
+          링크가 207건이나 잡혔는데 하나도 안 걸릴 수는 없다. 그게 실마리였다.
+
+          담되 값을 구분한다:
+            undefined → 원장이 «모르는» 주문 (지난 회차)
+            ""        → 원장이 알고, 합포장이 «아니다» (따로 나갔다)
+            "회차/그룹" → 원장이 알고, 이 상자에 묶였다
+          ══════════════════════════════════════════════════════ */
+      var grp = String(data[i][ix["합포장그룹"]] || "").trim();
+      if (!grp) { if (map[uid] === undefined) map[uid] = ""; continue; }
       /*  회차키를 붙인다. 합포장그룹은 «출고지·수취인·조건»이라 날짜가 없다 —
           여러 날치를 같이 읽는 여기서는 붙이지 않으면 다른 날 주문이
           한 상자로 보인다. 오늘 사방넷 대량등록에서 그 사고를 고쳤다.  */
@@ -149,8 +168,13 @@ function _iod_loadPackGroups_(stat) {
       map[uid] = (rk ? rk + "/" : "") + grp;
       stat.packRows++;
     }
-    stat.packUids = 0;
-    for (var k in map) if (map.hasOwnProperty(k)) stat.packUids++;
+    stat.packUids = 0;   // 합포장으로 묶인 주문
+    stat.knownUids = 0;  // 원장이 «아는» 주문 (묶였든 아니든)
+    for (var k in map) {
+      if (!map.hasOwnProperty(k)) continue;
+      stat.knownUids++;
+      if (map[k]) stat.packUids++;
+    }
   } catch (e) {
     stat.notes.push("세트분리 원장 열기 실패: " + String(e.message || e) +
       " — 합포장 링크 없이 판정합니다(글자만 봅니다).");
@@ -174,7 +198,10 @@ function _iod_packAsked_(claims, pack) {
   var 물어본것 = 0;
   for (var i = 0; i < claims.length; i++) {
     if (!claims[i].oid) continue;
-    if (!pack[claims[i].oid]) return false;   // 한 주문이라도 원장에 없으면 «모른다»
+    /*  "" 는 «안다, 다만 합포장이 아니다» 이다. undefined 만 «모른다».
+        둘을 같이 보면(!pack[uid]) 합포장이 아닌 주문이 전부 「모른다」가
+        되어, 원장이 분명히 아는 것까지 판단을 못 하게 된다.  */
+    if (pack[claims[i].oid] === undefined) return false;
     물어본것++;
   }
   return 물어본것 >= 2;
@@ -756,7 +783,7 @@ function partnerDiagnoseInvoiceOwnership(days) {
         못 읽고 있는 줄 모르면 정상 건을 전부 의심이라 부르게 된다.  */
     markCols: {}, marked: 0,
     /*  세트분리 원장에서 읽은 합포장 링크 — 몇 줄·몇 주문인지 말한다  */
-    packRows: 0, packUids: 0,
+    packRows: 0, packUids: 0, knownUids: 0,
     notes: [], stopped: "",
   };
 
@@ -873,8 +900,9 @@ function partnerDiagnoseInvoiceOwnership(days) {
   lines.push("── 한 상자인지 «어떻게» 알았나 ──");
   /*  링크가 먼저다. 이 줄이 0 이면 판정이 글자에만 기대고 있다는 뜻이고,
       글자는 안 적히면 없으므로 정상 건이 의심으로 올라온다.  */
-  if (stat.packUids) {
+  if (stat.knownUids) {
     lines.push("  🔗 세트분리 합포장 링크: 주문 " + stat.packUids + "건 (" + stat.packRows + "줄)");
+    lines.push("  📖 원장이 아는 주문: " + stat.knownUids + "건 — 이만큼은 «따로 나갔는지»까지 답할 수 있습니다");
   } else {
     lines.push("  ⚠ 세트분리 합포장 링크를 못 읽었습니다 — 적요 «글자»에만 기대고 있습니다.");
   }

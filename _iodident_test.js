@@ -289,6 +289,54 @@ console.log("\n[17] ★ 무엇으로 알았는지 보고에 적는다");
   check("★ 판정에 넘긴다", 몸.indexOf("_iod_judge_(claims, pack)") >= 0, true);
 }
 
+console.log("\n[18] ★ 「모른다」와 「아니다」를 가른다");
+{
+  /*  ══════════════════════════════════════════════════════════
+      2026-09-16 실제 결과 —
+        🟡 의심 178건
+           └ 원장이 «따로 나갔다»고 말하는 것: 0건
+           └ 원장에 없어 물어볼 수 없던 것: 178건
+      링크가 207건이나 잡혔는데 하나도 안 걸릴 수는 없다.
+
+      까닭: _iod_loadPackGroups_ 가 `if (!grp) continue` 로 «묶인 줄만»
+      담았다. 그래서 합포장이 «아닌» 주문은 전부 「원장에 없음」이 되고,
+      원장이 분명히 아는 것까지 판단을 못 했다.
+
+      담되 값으로 가른다:
+        undefined   → 원장이 모르는 주문 (지난 회차)
+        ""          → 원장이 알고, 합포장이 아니다 (따로 나갔다)
+        "회차/그룹"  → 원장이 알고, 이 상자에 묶였다
+      ══════════════════════════════════════════════════════════ */
+  vm.runInContext(grabFrom(iod, "_iod_packAsked_"), ctx);
+  const 물었나 = (oids, pack) => {
+    ctx.__c3 = oids.map((o) => ({ oid: o }));
+    ctx.__p3 = pack;
+    return vm.runInContext("_iod_packAsked_(__c3, __p3)", ctx);
+  };
+
+  check("★ 원장이 둘 다 알면 물어본 것이다", 물었나(["A1", "A2"], { A1: "", A2: "" }), true);
+  check("★ 묶인 것도 아는 것이다", 물었나(["A1", "A2"], { A1: "260916-1/가", A2: "" }), true);
+  check("★ 하나라도 원장에 없으면 «모른다»", 물었나(["A1", "Z9"], { A1: "" }), false);
+  check("원장을 못 읽었으면 «모른다»", 물었나(["A1", "A2"], null), false);
+  check("고유ID 없는 주장은 세지 않는다", 물었나(["A1", ""], { A1: "" }), false);
+
+  /*  ★ 그물을 꺼 보면 빨개진다 ★
+      !pack[uid] 로 되돌리면 "" 가 «모른다»로 빠져 첫 두 줄이 false 가 된다.  */
+  const 몸 = grabFrom(iod, "_iod_packAsked_");
+  check("★ undefined 만 «모른다»로 본다", 몸.indexOf("=== undefined") >= 0, true);
+  check("★ 참/거짓으로 뭉개지 않는다", /if \(!pack\[claims\[i\]\.oid\]\)/.test(몸), false);
+}
+
+console.log("\n[19] ★ 원장에 있는 주문은 «따로 나갔다»고 단정할 수 있다");
+{
+  const 몸 = grabFrom(iod, "_iod_loadPackGroups_").split(/\r?\n/)
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+  check("★ 합포장이 아닌 줄도 담는다", /if \(!grp\) \{ if \(map\[uid\] === undefined\) map\[uid\] = ""/.test(몸), true);
+  check("★ 그냥 건너뛰지 않는다", /if \(!grp\) continue;/.test(몸), false);
+  check("★ 아는 주문 수를 따로 센다", 몸.indexOf("stat.knownUids") >= 0, true);
+  check("묶인 것만 packUids 로 센다", /if \(map\[k\]\) stat\.packUids\+\+/.test(몸), true);
+}
+
 
 console.log("\n" + (fail ? "❌ " : "✅ ") + "통과 " + pass + " · 실패 " + fail);
 process.exit(fail ? 1 : 0);
