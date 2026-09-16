@@ -2064,7 +2064,7 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
   /*  ★ 2026-09-16: 12:30 동기화 + 12:40 허브 → 한 자리 ★
       10분 차이인데 nearMinute 이 ±15분이라 순서가 뒤집힐 수 있었다.
       저녁 17:00 이 이미 같은 방식이다. 트리거 자리도 하나 아낀다. */
-  { fn: "runNoonSyncAndHub",                             h: 12, m: 30, label: "통합 DB 동기화 [Supabase] + 통합허브 상태/재고" },
+  { fn: "runNoonSyncAndHub",                             h: 12, m: 30, label: "통합 DB + 허브 상태/재고 → 단가조회 (낮)" },
 
   // ─── 오후 2회전 (★ 2026-08-31: 14:05/14:20 → 13:00/13:50) ───
   { fn: "partnerCollectOrdersSilent_",                   h: 13, m: 0,  label: "발주 수집 + 판매현황 갱신 (2회전)" },
@@ -2096,7 +2096,7 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
   //   전에는 17:00 동기화 / 17:30 구매입력 으로 따로 돌았고 순서도 뒤집혀 있었다.
   //   구글 시간 트리거는 nearMinute 이 ±15분이라 따로 두면 순서가 어긋날 수 있다.
   //   한 함수로 묶어 구매입력 → 동기화 순서를 보장한다. 트리거 자리도 하나 아낀다.
-  { fn: "runEveningPurchaseAndSync",                     h: 17, m: 0,  label: "당일 구매입력 → DB 동기화 [Supabase]" },
+  { fn: "runEveningPurchaseAndSync",                     h: 17, m: 0,  label: "당일 구매입력 → DB 동기화 → 늦은 송장 채우기" },
   // ★ 2026-09-07: 마감 30분 전 송장원장 전체 갱신 ★
   //   마감 안에서 도는 갱신은 업체 마감탭을 건너뛴다(skipArchives).
   //   마감 본체도 6분 제한 때문에 그 탭들을 안 읽는다. 그래서 마감 시점에
