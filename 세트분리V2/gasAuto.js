@@ -855,6 +855,16 @@ function ss_기초데이터자동() {
   try { prop = PropertiesService.getScriptProperties(); } catch (e) {}
   try {
     if (prop && String(prop.getProperty('SS_AUTO_BASE') || '').toLowerCase() === 'off') {
+      /*  ★ 꺼져 있으면 «꺼져 있다»고 적는다 ★  (2026-09-16)
+          여태 여기서 그냥 돌아갔다. 그래서 설정 칸이 빈칸으로 남고,
+          밖에서 보면 「안 돌았다」와 「꺼 뒀다」가 «같은 모양»이었다.
+          2026-09-16 에 실제로 그 빈칸을 놓고 트리거가 죽은 건지 꺼 둔
+          건지 몰라 시간을 썼다. 상태는 늘 적는다.  */
+      try {
+        ssio_setConfig('기초데이터_최근실행',
+          Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss') +
+          '  (꺼져 있음 · SS_AUTO_BASE=off)');
+      } catch (eOff) {}
       Logger.log('[기초데이터] 꺼져 있음 (SS_AUTO_BASE=off)');
       return '꺼져 있음';
     }
@@ -959,6 +969,35 @@ function ssauto_챗_(text, 급함) {
  *
  * ★ 같은 이름의 트리거를 먼저 지운다 ★ 누를 때마다 늘면 20개 한도를 먹는다.
  */
+/**
+ * 17:00 기초 데이터 트리거가 «걸려 있나».
+ *
+ * ★ 왜 필요한가 ★  (2026-09-16)
+ *   이 시트의 메뉴에 「기초 데이터 트리거 설치」가 «없었다». 아침 재매칭은
+ *   있는데 이것만 빠져 있었고, 그래서 아무도 누른 적이 없다.
+ *   `기초데이터_최근실행` 이 빈칸이었던 까닭이 그것이다 — 한 번도 안 돌았다.
+ *
+ *   그날 세 회차 769줄에 송장이 하나도 안 붙었다. 로젠 실적탭에는 742줄이
+ *   «들어와 있었다». 전파를 아무도 안 돌린 것뿐이었다.
+ *
+ *   없는 것을 조용히 없는 채로 두지 않는다. 사람이 손으로 전파를 누르는
+ *   그 자리에서 「이건 17:00에 저절로 됐어야 합니다」라고 말한다.
+ *
+ * @return {boolean|null} 있으면 true · 없으면 false · 못 물어보면 null
+ */
+function ss_기초트리거있나_() {
+  try {
+    var all = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].getHandlerFunction() === 'ss_기초데이터자동') return true;
+    }
+    return false;
+  } catch (e) {
+    //  권한이 없으면 «모른다». 「없다」로 단정하면 헛경보가 난다.
+    return null;
+  }
+}
+
 function ss_기초데이터트리거설치() {
   var all = ScriptApp.getProjectTriggers();
   var 지움 = 0;
