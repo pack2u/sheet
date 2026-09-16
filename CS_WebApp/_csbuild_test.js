@@ -30,6 +30,8 @@ ok('클릭 확인을 붙였다', /onclick="return csBuildBarClick\(\)"/.test(bar
 /* ── 2. 모듈 동작 검사 ── */
 const a = src.findIndex(l => l.indexOf('var CS_BUILD_SEEN = null;') !== -1);
 const b = src.findIndex(l => l.indexOf('function setPulseBar(which, show, label)') !== -1);
+
+
 if (a < 0 || b < 0 || b <= a) { console.error('home.html 에서 배포 감지 모듈을 못 찾았습니다'); process.exit(1); }
 const body = src.slice(a, b).join('\n');
 
@@ -37,6 +39,41 @@ const body = src.slice(a, b).join('\n');
    줄 앞머리로 주석을 판별하면 블록 주석 가운데 줄을 놓치므로 통째로 지운다. */
 const codeOnly = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 ok('모듈 안에 살아있는 location.reload() 가 없다', !/location\.reload\(/.test(codeOnly));
+
+/* ── 3. 빌드 번호를 «올렸는가» ──
+   ★ 2026-09-16 ★  259·260 을 올리면서 CS_BUILD_ 를 두 번 다 안 올렸다.
+   열어 둔 화면은 옛 HTML 을 계속 돌렸고, 팀은 고쳐진 줄 알았다.
+   > "올린건가? 새버전 안내가 안뜨네"
+
+   앞은 「알림이 도는가」만 봤다. 값이 멈춰 있는 것은 아무도 안 봤다.
+   여기서는 «지금 올라가 있는 배포 번호»와 맞는지 본다. */
+console.log('\n[빌드 번호]');
+{
+  const pulse = fs.readFileSync(require('path').join(__dirname, 'csPulse.gs'), 'utf8');
+  const m = pulse.match(/var CS_BUILD_ = "(\d+)";/);
+  ok('csPulse.gs 에 CS_BUILD_ 가 있다', !!m);
+
+  /* 배포 번호는 clasp 이 안다. 없는 자리(CI·남의 컴퓨터)에서는 건너뛴다 —
+     검사 하나 때문에 전체가 못 돌면 그게 더 나쁘다. */
+  let 배포 = null;
+  try {
+    const out = require('child_process')
+      .execFileSync('clasp', ['deployments'], { encoding: 'utf8', shell: true, cwd: __dirname });
+    const 번호 = [...out.matchAll(/@(\d+)/g)].map((x) => Number(x[1]));
+    if (번호.length) 배포 = Math.max(...번호);
+  } catch (e) { 배포 = null; }
+
+  if (배포 === null) {
+    console.log('  --   clasp 을 못 불러 배포 번호 대조는 건너뜁니다');
+  } else {
+    ok('★ CS_BUILD_ 가 지금 배포판과 같다  (' + (m && m[1]) + ' vs @' + 배포 + ')',
+       !!m && Number(m[1]) === 배포);
+  }
+
+  /* 손으로 올리다 두 번 틀렸으니 도구를 둔다 */
+  ok('배포 도구가 있다 (_csdeploy.mjs)',
+     fs.existsSync(require('path').join(__dirname, '_csdeploy.mjs')));
+}
 
 const bar = { classList: { s: new Set(), toggle(c, on) { on ? this.s.add(c) : this.s.delete(c); },
                            contains(c) { return this.s.has(c); } } };
