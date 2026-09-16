@@ -93,6 +93,27 @@ function _iod_dayDiff_(a, b) {
 }
 
 /**
+ * 세 원천이 «같은 주문»을 같은 이름으로 부르게 한다.
+ *
+ * 송장원장 D열은 `abc#2` · `abc|A01` · `abc_S1` 로 꼬리가 붙어 오고,
+ * 마감 표는 `김철수/abc` 로 이름이 앞에 붙어 온다. 허브 C열은 맨몸이다.
+ * 셋을 그대로 두면 «같은 주문»이 U|abc · F|김철수|... 로 갈라져,
+ * 두 곳에 다 적힌 정상 건이 통째로 충돌로 잡힌다 (2026-09-16, 의심 2253건).
+ *
+ * 머리와 꼬리를 떼는 함수는 이미 있다 — 그것을 «모든» 원천에 똑같이 건다.
+ * 이름만 적힌 칸은 고유ID 가 아니다. 그런 줄은 조합키(F|)로 보낸다 —
+ * 안 그러면 같은 사람의 «다른» 주문 둘이 한 주문으로 뭉쳐 충돌을 숨긴다.
+ */
+function _iod_oidKey_(raw) {
+  var k = (typeof _pep_uidFromOrdererCell_ === "function")
+    ? _pep_uidFromOrdererCell_(raw)
+    : String(raw == null ? "" : raw).trim();
+  if (!k) return "";
+  if (typeof _pep_isRealUid_ === "function" && !_pep_isRealUid_(k)) return "";
+  return k;
+}
+
+/**
  * 이 주장이 가리키는 '주문'의 정체.
  * 고유ID 가 있으면 그것이 정답이다. 없으면 사람+품목+날짜로 대신한다.
  */
@@ -113,6 +134,10 @@ function _iod_claim_(reg, inv, c) {
   inv = _pep_normInvoiceNo_(inv);
   if (!inv) return;
   if (!reg[inv]) reg[inv] = [];
+  /*  표에는 «적혀 있는 그대로»를 보여 준다. 판정에만 다듬은 열쇠를 쓴다 —
+      사장님이 시트에서 그 줄을 찾으려면 적힌 값이 그대로 보여야 한다.  */
+  c.oidRaw = String(c.oid == null ? "" : c.oid).trim();
+  c.oid = _iod_oidKey_(c.oid);
   c.nameKey = _pep_normRecipName_(c.name);
   c.itemKey = _pep_itemKey_(c.item);
   c.date = _iod_toDate_(c.dateStr);
@@ -185,7 +210,32 @@ function _iod_collectArchives_(reg, days, stat, started) {
           _iod_claim_(reg, invs[k2], {
             where: "일일마감_" + dateStr,
             src: cols.src >= 0 ? String(all[ri][cols.src] || "").trim() : "",
-            oid: cols.oid >= 0 ? String(all[ri][cols.oid] || "").trim() : "",
+            /*  ══════════════════════════════════════════════════════════
+                ★ 마감 표에는 「사방넷주문번호」 칸이 «없다» ★  (2026-09-16)
+
+                > "🔴 확실: 101건 / 🟡 의심: 2253건 / 🟢 합배송(정상): 0건"
+
+                마감 표의 주문번호는 「주문자명(사방넷)」 한 칸에
+                «이름/고유아이디» 로 붙어 있다. _pep_mapArchiveMatchCols_ 는
+                그 칸을 orderer·name 으로 잡고 oid 에는 «안 넣는다» —
+                그 칸 전체를 키로 쓰면 송장맵과 안 맞기 때문이다(그건 맞는 판단이다).
+
+                그래서 여기서 oid 가 늘 비었다. 같은 주문인데
+                  송장원장  → U|0916-ds-ab12
+                  일일마감  → F|김철수|미니탕|2026-09-15
+                로 «다른 주문»이 되어, 두 곳에 다 적힌 정상 건이 통째로
+                충돌로 잡혔다. 의심 2253 건의 정체가 이것이다.
+
+                이름/ID 에서 ID 만 떼어 쓴다 — 그 일을 하는 함수가 이미 있다.
+                ══════════════════════════════════════════════════════════ */
+            oid: (function () {
+              if (cols.oid >= 0) {
+                var v = String(all[ri][cols.oid] || "").trim();
+                if (v) return v;
+              }
+              if (cols.orderer >= 0) return all[ri][cols.orderer];
+              return "";
+            })(),
             name: cols.name >= 0 ? all[ri][cols.name] : "",
             phone: cols.phone >= 0 ? all[ri][cols.phone] : "",
             item: cols.item >= 0 ? all[ri][cols.item] : "",
@@ -454,7 +504,7 @@ function _iod_writeReport_(ss, groups, meta) {
         isOwner ? "★ 주인추정" : "",
         c.where,
         c.src,
-        c.oid,
+        c.oidRaw || c.oid,
         String(c.name || ""),
         String(c.phone || ""),
         String(c.item || ""),
