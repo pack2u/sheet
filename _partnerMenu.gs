@@ -196,6 +196,10 @@ function registerPartnerMenu_() {
         // ── 남의 송장이 붙었나 (읽기 전용) ──
         .addItem("🧭 송장 소유권 점검 (남의 송장 붙었는지)", "partnerDiagnoseInvoiceOwnership")
         .addItem("   └ 📅 기간 지정 점검", "partnerDiagnoseInvoiceOwnershipForDays")
+        /*  점검은 송장 단위로 묶어 준다 — 그대로는 수화기를 못 든다.
+            사람 단위로 접어야 전화가 오기 전에 먼저 걸 수 있다.  */
+        .addItem("   └ 📞 선제 연락 명단 만들기", "partnerBuildInvoiceCallList")
+        .addItem("      └ 🔴 확실한 것만", "partnerBuildInvoiceCallListSureOnly")
         .addSeparator()
         // 2026-09-02: 발주시스템 메뉴에 있던 감사·보강을 옮겼다.
         .addItem("📊 송장 매칭 감사", "partnerAuditInvoiceMatching")

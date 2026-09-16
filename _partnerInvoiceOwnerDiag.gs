@@ -778,6 +778,10 @@ function partnerDiagnoseInvoiceOwnership(days) {
       돌려주는 것은 사람이 읽는 글이라, 그 글을 다시 뜯어 세면 문구를
       바꿀 때마다 조용히 틀린다. 숫자는 숫자로 남긴다.  */
   _IOD_LAST_ = { sure: counts.sure, doubt: counts.doubt, merged: counts.merged,
+                 /*  표시를 «읽을 수 있었는지»도 같이 남긴다. 알림 카드가
+                     그것을 보여 줘야, 0건이 「없다」인지 「못 읽었다」인지
+                     시트를 열지 않고도 갈린다.  */
+                 markCols: 읽은칸.length, marked: stat.marked,
                  groups: groups.length, at: new Date().getTime() };
   Logger.log(msg);
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
@@ -849,7 +853,7 @@ function _iod_afterFetch_() {
     return;
   }
 
-  var r = _IOD_LAST_ || { sure: 0, doubt: 0, groups: 0 };
+  var r = _IOD_LAST_ || { sure: 0, doubt: 0, merged: 0, groups: 0, markCols: 0, marked: 0 };
   Logger.log("[송장소유권] 확실 " + r.sure + " · 의심 " + r.doubt + " · 묶음 " + r.groups);
   if (!r.sure) return;                 // 찾았을 때만 말한다
 
@@ -859,6 +863,13 @@ function _iod_afterFetch_() {
       [
         { label: "🔴 확실", value: r.sure + "건" },
         { label: "🟡 의심", value: r.doubt + "건" },
+        { label: "🟢 합배송(정상)", value: r.merged + "건 — 세고 목록에서 뺐습니다" },
+        /*  ★ 그물이 제 상태를 «말한다» ★
+            표시를 못 읽으면 정상 건이 통째로 의심으로 올라온다. 그때
+            숫자만 보여 주면 사람이 헛수고를 한다. 두 번 겪은 일이다.  */
+        { label: "합배송 표시", value: !r.markCols
+            ? "⚠ 적요 칸을 못 찾았습니다 — 위 숫자에 정상 건이 섞여 있습니다"
+            : (r.marked + "건 읽었습니다") },
         { label: "무엇을 보나", value: "한 송장이 여러 주문에 붙었는데 합포장이 아닌 것" },
         { label: "어디서 보나", value: "협력업체 관리 → 🧭 송장 매칭 점검 → 송장 소유권 점검" }
       ]);
