@@ -40,18 +40,26 @@ const eq = (name, got, want) => {
 
 const main = readFileSync("../gasMain.js", "utf8");
 
-/*  거르는 대목만 떼어 내 돌린다. 시트를 붙일 수 없으니 «그 논리»를 본다.
-    소스에서 그대로 오려 내므로, 코드가 바뀌면 이 시험도 같이 바뀐다.  */
-const 시작 = main.indexOf("  var 겹쳐버림 = 0;");
-const 끝 = main.indexOf("  ssio_clearBody(sh);", 시작);
-if (시작 < 0 || 끝 < 0) { console.error("거르는 대목을 못 찾음"); process.exit(1); }
-const 거르기 = main.slice(시작, 끝);
+/*  이제 거르기는 «진짜 함수»다(ss_그날겹침거르기_). 오려 내지 말고 그대로 부른다 —
+    오려 내면 함수 몸통이 바뀔 때마다 이 시험이 엉뚱한 데를 자른다. */
+function 떼어내기(이름) {
+  const i = main.indexOf("function " + 이름 + "(");
+  if (i < 0) throw new Error(이름 + " 를 못 찾음");
+  let d = 0, seen = false;
+  for (let k = i; k < main.length; k++) {
+    if (main[k] === "{") { d++; seen = true; }
+    else if (main[k] === "}") { d--; if (seen && d === 0) return main.slice(i, k + 1); }
+  }
+  throw new Error(이름 + " 본문이 안 닫힘");
+}
 
 const ssText = (v) => (v == null ? "" : String(v).trim());
+const 거르기함수 = new Function("ssText",
+  떼어내기("ss_그날겹침거르기_") + "\nreturn ss_그날겹침거르기_;")(ssText);
+
 function 걸러(all, head) {
-  const fn = new Function("all", "head", "ssText",
-    거르기 + "\nreturn { all: all, 겹쳐버림: 겹쳐버림 };");
-  return fn(all, head, ssText);
+  const r = 거르기함수(all, head);
+  return { all: r.rows, 겹쳐버림: r.버림, 회차글: r.회차글 };
 }
 
 /*  판매현황 한 줄 + [출처, 회차키]  */
@@ -124,7 +132,8 @@ console.log("\n[5] 되살린 줄과 붙여넣은 줄이 겹쳐도 한 벌");
 console.log("\n[6] 거르기가 «합친 뒤·쓰기 전»에 있다");
 {
   const 합침 = main.indexOf("var all = 되살림.concat(keep).concat(add);");
-  const 거름 = main.indexOf("var 겹쳐버림 = 0;");
+  //  거르기는 이제 함수 호출이다 — 그 «부르는 자리»를 본다
+  const 거름 = main.indexOf("var _거른_ = ss_그날겹침거르기_(all, head);");
   const 정렬 = main.indexOf("all.sort(function (x, y) {", 합침);
   const 쓰기 = main.indexOf("ssio_clearBody(sh);", 거름);
   eq("★ 셋을 합친 뒤다", 합침 >= 0 && 거름 > 합침, true);
@@ -137,6 +146,30 @@ console.log("\n[7] 몇 줄 걸렀는지 «말한다»");
   eq("결과에 담는다", main.indexOf("겹쳐버림: 겹쳐버림") >= 0, true);
   eq("요약에 적는다", main.indexOf("↷ 앞 회차와 겹쳐 버린 줄") >= 0, true);
   eq("★ 까닭까지 적는다", main.indexOf("전체분을 붙여넣어 딸려온 것") >= 0, true);
+}
+
+
+console.log("\n[8] ★ 쌓기와 메우기가 «같은» 규칙을 쓴다");
+{
+  /*  쌓기만 고치고 메우기를 두면, 메우기를 돌린 날만 다시 세 벌이 된다.
+      규칙은 한 곳에 있어야 한다.  */
+  //  «정의»가 아니라 «부르는 자리»만 센다 (function 이 앞에 붙은 것은 정의다)
+  const 부름 = (main.match(/= ss_그날겹침거르기_\(/g) || []).length;
+  eq("★ 두 곳에서 부른다 (쌓기·메우기)", 부름, 2);
+
+  function 안에있나(함수이름, 찾을말) {
+    const i = main.indexOf("function " + 함수이름 + "(");
+    if (i < 0) return false;
+    let d = 0, seen = false;
+    for (let k = i; k < main.length; k++) {
+      if (main[k] === "{") { d++; seen = true; }
+      else if (main[k] === "}") { d--; if (seen && d === 0) return main.slice(i, k + 1).indexOf(찾을말) >= 0; }
+    }
+    return false;
+  }
+  eq("쌓기가 부른다", 안에있나("ss_그날판매현황쌓기", "ss_그날겹침거르기_("), true);
+  eq("★ 메우기도 부른다", 안에있나("ss_그날판매현황메우기", "ss_그날겹침거르기_("), true);
+  eq("메우기도 몇 줄 걸렀는지 말한다", main.indexOf("↷ 앞 회차와 겹쳐 버린 줄 ") >= 0, true);
 }
 
 console.log("");

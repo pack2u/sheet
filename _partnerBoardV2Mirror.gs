@@ -271,27 +271,63 @@ function partnerCheckBoardMirrorTrigger() {
  * ══════════════════════════════════════════════════════════════
  */
 function _pt_ensureMirrorTriggers_() {
-  var 표 = [
-    /*  ★ 보드는 제 트리거를 안 쓴다 ★  (2026-09-16)
-        트리거 20개가 꽉 차서 이어달리기가 죽었다. 반품 미러(21:30)가
-        끝에서 보드도 부르고, 구매입력(22:10)까지 같이 부른다 — 셋 다
-        시트를 읽어 v2 에 POST 하는 같은 일이고 서로 기다릴 것이 없다.
-        자리 둘을 비우고, 「⚠ 스케줄 외」 경고도 없앤다. */
-    { fn: "_prv_scheduled_", h: 21, m: 30, label: "반품대장 + 보드 + 구매입력 → v2" }
-  ];
+  /*  ══════════════════════════════════════════════════════════════
+      ★ 표에 있는데 «안 걸린» 트리거는 스스로 건다 ★  (2026-09-16)
+
+      > "자동으로 되야지 매번 사람이 다 눌러줄꺼면 자동화를 왜하는지;;"
+
+      여태는 이 함수가 미러 하나만 챙겼고, 나머지는 「⏰ 통합 자동 트리거
+      설치」를 «사람이 눌러야» 반영됐다. 스케줄 표를 고쳐 놓고 안 누르면
+      코드와 실제가 다른 채로 며칠이 간다 — 오늘 트리거를 18개로 줄여
+      놓고도 실제로는 옛 20개가 그대로 돌고 있을 수 있다.
+
+      이제 _ALL_SCHEDULED_TRIGGERS_ 표 전체를 본다. 표에 있는데 안 걸린
+      것만 건다. 낮(12:30)과 밤(20:00) 두 번 도니 하루 안에 맞춰진다.
+
+      ★ 지우지는 않는다 ★
+        표에 없는데 걸린 것은 «알리기만» 한다. 지우는 것은 되돌릴 수 없고,
+        사람이 일부러 걸어 둔 것일 수도 있다. 9/15 에 「일회용 걷어내기」가
+        매일 도는 트리거 넷을 지울 뻔했다 — 그 교훈이다.
+
+      ★ 스무 자리를 넘기지 않는다 ★
+        꽉 차면 이어달리기(.after)가 막힌다. 남은 자리가 둘 미만이면
+        새로 걸지 않고 알린다.
+      ══════════════════════════════════════════════════════════════ */
+  var 표 = (typeof _ALL_SCHEDULED_TRIGGERS_ !== "undefined" && _ALL_SCHEDULED_TRIGGERS_)
+    ? _ALL_SCHEDULED_TRIGGERS_
+    : [{ fn: "_prv_scheduled_", h: 21, m: 30, label: "반품대장 + 보드 + 구매입력 → v2" }];
   var out = { 건것: [], 이미: [], 오류: [] };
   try {
     var have = {};
     var all = ScriptApp.getProjectTriggers();
     for (var i = 0; i < all.length; i++) have[all[i].getHandlerFunction()] = true;
 
+    /*  스무 자리를 넘기면 이어달리기(.after)가 막힌다. 둘은 남겨 둔다. */
+    var 남은자리 = 20 - all.length;
+
+    /*  표에 없는데 걸린 것 — 지우지 않고 «알리기»만 한다.
+        지우는 것은 되돌릴 수 없고, 사람이 일부러 걸어 둔 것일 수도 있다. */
+    var 표에없음 = [];
+    var 표이름 = {};
+    for (var tn = 0; tn < 표.length; tn++) 표이름[표[tn].fn] = true;
+    for (var ao = 0; ao < all.length; ao++) {
+      var hf = all[ao].getHandlerFunction();
+      if (표이름[hf]) continue;
+      if (표에없음.indexOf(hf) < 0) 표에없음.push(hf);
+    }
+
     for (var t = 0; t < 표.length; t++) {
       var s = 표[t];
       if (have[s.fn]) { out.이미.push(s.label); continue; }
+      if (남은자리 < 2) {
+        out.오류.push(s.label + " — 트리거 자리가 없습니다 (" + all.length + "/20)");
+        continue;
+      }
       try {
         ScriptApp.newTrigger(s.fn).timeBased().everyDays(1)
           .atHour(s.h).nearMinute(s.m).create();
         out.건것.push(s.label + " (" + s.h + ":" + (s.m < 10 ? "0" + s.m : s.m) + ")");
+        남은자리--;
       } catch (e1) {
         out.오류.push(s.label + " — " + (e1 && e1.message ? e1.message : e1));
       }
@@ -301,9 +337,15 @@ function _pt_ensureMirrorTriggers_() {
       Logger.log("[미러트리거] 빠져 있어 걸었습니다: " + out.건것.join(", "));
       /* 조용히 걸면 아무도 모른다. 걸었을 때만 알린다 — 이미 있을 때는 조용하다. */
       try {
-        _chat_sendCard_("⏰ 밤 미러 트리거를 자동으로 걸었습니다",
+        _chat_sendCard_("⏰ 빠진 자동 트리거를 스스로 걸었습니다",
           Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"),
-          [{ label: "건 것", value: out.건것.join(" · ") }]);
+          [{ label: "건 것", value: out.건것.join(" · ") }]
+            .concat(표에없음.length
+              ? [{ label: "표에 없는데 걸려 있음", value: 표에없음.join(" · ") + "  (지우지 않았습니다)" }]
+              : [])
+            .concat(out.오류.length
+              ? [{ label: "못 건 것", value: out.오류.join(" · ") }]
+              : []));
       } catch (eC) {}
     }
   } catch (e) {

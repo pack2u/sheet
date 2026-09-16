@@ -882,8 +882,35 @@ function partnerCollectOrders(opt_noWriteBack) {
   var lastCollectTime = parseInt(props.getProperty("LAST_ORDER_COLLECT_TIME") || "0", 10);
   
   // 수동 실행 시 전체 수집 여부 확인 (속도 체감을 위해 기본은 스마트 수집)
+  /*  ══════════════════════════════════════════════════════════════
+      ★ 하루 첫 수집은 «전체»로 돈다 — 사람이 안 눌러도 된다 ★
+      2026-09-16
+
+      > "자동으로 되야지 매번 사람이 다 눌러줄꺼면 자동화를 왜하는지;;"
+
+      맞는 말이다. 스마트 수집(고쳐진 파일만 읽기)은 빠르지만, 한 번
+      빠진 파일은 스스로 돌아오지 못한다. 그때마다 사람이 「아니오」를
+      눌러 전체 수집을 시켜야 했다.
+
+      그날 첫 수집(09:30)만 전체로 돌린다. 나머지 두 번(13:00·15:00)은
+      그대로 스마트다. 하루 한 번이면 어떤 까닭으로 빠졌든 그날 안에
+      저절로 메워진다 — 사람이 알아채지 못한 것까지.
+
+      ★ 왜 하필 첫 회전인가 ★
+        그때가 제일 한가하다. 오후 회전은 세트분리·푸시와 맞물려 있어
+        느려지면 뒤가 밀린다. 아침은 밀릴 뒤가 없다.
+      ══════════════════════════════════════════════════════════════ */
   var isForce = false;
-  if (ui && !opt_noWriteBack) {
+  try {
+    var _오늘_ = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
+    if (props.getProperty('LAST_FULL_COLLECT_DATE') !== _오늘_) {
+      isForce = true;
+      props.setProperty('LAST_FULL_COLLECT_DATE', _오늘_);
+      Logger.log('[COLLECT] 오늘 첫 수집 — 전체 수집으로 돕니다 (빠진 파일 자동 회수)');
+    }
+  } catch (eFull) {}
+  /*  이미 전체로 돌기로 정해졌으면 묻지 않는다 — 물어 봐야 답이 하나다 (2026-09-16) */
+  if (ui && !opt_noWriteBack && !isForce) {
     var confirmSmart = ui.alert("🔍 스마트 수집", 
       "마지막 수집 이후 변경된 파일만 빠르게 수집할까요?\n\n" +
       "(수집 시간이 5~10배 단축됩니다. '아니오'를 누르면 전체 수집합니다.)", 
