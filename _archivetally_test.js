@@ -107,6 +107,38 @@ console.log("\n[5] ★ 합계줄이 그 셈을 쓴다 (전체 누계가 아니�
   check("★ detail.lotte 를 안 쓴다", 몸.indexOf("detail.lotte") < 0, true);
   check("★ 못 읽으면 그렇게 적는다", 몸.indexOf("못 읽어 세지 못했습니다") >= 0, true);
 }
+console.log("\n[6] ★ 빈 출처 = 아직 송장 없음");
+{
+  /*  > "미매칭이라고 적히는것도 삭재하자.. 이전 화일데 송장 붙일떄
+         굳이 지우고 다시쓰는것도 시간허비다"
+
+      「미매칭」은 판정이다. 실제로는 «아직 안 왔다»일 뿐이고, 송장이 오면
+      그 글자를 지우고 출처를 다시 써야 했다. 빈칸으로 두면 채우기만 하면 된다.  */
+  const r = 세기([
+    ["AJ001", "로젠"],
+    ["AJ002", ""],          // 송장 없음 — 빈칸
+    ["AJ003", ""],
+    ["AJ004", "미매칭"],     // 옛 파일에 남아 있는 글자도 같이 센다
+  ]);
+  check("★ 빈 출처를 미매칭으로 센다", r.미매칭, 3);
+  check("★ 대리공급으로 안 샌다", r.대리공급, 0);
+  check("자사출고", r.자사출고, 1);
+  check("줄 수", r.줄, 4);
+}
+
+console.log("\n[7] ★ 「미매칭」이라고 적지 않는다");
+{
+  check("★ 출처에 「미매칭」을 안 쓴다",
+    pep.indexOf('noInvRow.push("미매칭")') < 0, true);
+  check("★ 빈칸을 쓴다", pep.indexOf('noInvRow.push("")') >= 0, true);
+  check("★ 색칠도 빈칸을 알아본다",
+    pep.indexOf('source === "미매칭" || !source') >= 0, true);
+
+  const und = fs.readFileSync("_partnerUnmatchedDiag.gs", "utf8");
+  check("★ 미매칭 진단이 빈칸을 잡는다",
+    /if \(_src_ && _src_ !== "미매칭"\) continue;/.test(und), true);
+}
+
 
 console.log("\n" + (fail ? "❌ " : "✅ ") + "통과 " + pass + " · 실패 " + fail);
 process.exit(fail ? 1 : 0);

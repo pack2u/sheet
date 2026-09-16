@@ -408,7 +408,9 @@ function _pud_collectArchiveTargets_(targets, notes, days) {
         if (/품목명|상품명|제품명|품명/.test(String(all[0][h] || "").replace(/\s/g, ""))) { itemIdx = h; break; }
       }
       for (var r = 1; r < all.length; r++) {
-        if (String(all[r][cols.src] || "").trim() !== "미매칭") continue;
+        /*  빈 출처 = 송장 없음 (2026-09-16 부터 「미매칭」이라고 안 적는다)  */
+        var _src_ = String(all[r][cols.src] || "").trim();
+        if (_src_ && _src_ !== "미매칭") continue;
         if (_pud_normInv_(all[r][cols.inv])) continue;
         targets.push({
           origin: "일일마감(" + dateStr + ")",

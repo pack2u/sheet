@@ -10465,7 +10465,7 @@ function _pep_archiveTally_(tab, colCount) {
           v === "1주출고" || v === "합포장") out.자사출고++;
       else if (v === "대리판매") out.대리판매++;
       else if (v === "이름+전화") out.이름전화++;
-      else if (v === "미매칭") out.미매칭++;
+      else if (v === "미매칭" || !v) out.미매칭++;   // 빈칸 = 아직 송장 없음
       else out.대리공급++;                       // 나머지 (세트분리원장·송장원장 등)
     }
   } catch (e) {
@@ -10640,7 +10640,7 @@ function _pep_appendArchiveRows_(ss, dateStr, headers, rows, detail) {
     else if (source === "로젠") bgColor = "#e8eaf6";
     else if (source === "로젠(전화)") bgColor = "#e1f5fe";
     else if (source === "이름+전화") bgColor = "#e0f7fa";
-    else if (source === "미매칭") bgColor = "#fff3e0";
+    else if (source === "미매칭" || !source) bgColor = "#fff3e0";  // 빈칸 = 송장 없음
     else if (source === "기타") bgColor = "#f3e5f5";
     archTab.getRange(nextRow + ri, 1, 1, colCount).setBackground(bgColor);
   }
@@ -11637,7 +11637,15 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
           for (var nci2 = 2; nci2 < snapLc - 1; nci2++) { noInvRow.push(snapData[item.si][nci2]); }
           noInvRow.push(""); // 택배사 — 송장이 없으면 조회할 것도 없다
           noInvRow.push("");
-          noInvRow.push("미매칭");
+          /*  ★ 「미매칭」이라고 «안 적는다» ★  (2026-09-16)
+              > "미매칭이라고 적히는것도 삭재하자.. 이전 화일데 송장 붙일떄
+              >  굳이 지우고 다시쓰는것도 시간허비다"
+
+              「미매칭」은 판정이다. 실제로는 «아직 안 왔다»일 뿐이고,
+              송장이 오면 그 글자를 지우고 출처를 다시 써야 했다.
+              빈칸으로 두면 송장이 붙을 때 출처만 채우면 된다.
+              빈 출처 = 송장 없음. 세는 쪽·색칠하는 쪽이 그렇게 읽는다.  */
+          noInvRow.push("");
           _pushMatchedRow_(rowDate, noInvRow);
           _skipNoInv_++;
           _matchCount_++;
