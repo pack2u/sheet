@@ -133,8 +133,10 @@ ok("★ 받는 곳이 없으면 안 보인다 ★",
 ok("롯데 건이 아니면 안 보인다", /isLotteTrack\(r\.source, resolveCarrier\(r\)\)/.test(html));
 ok("확인창이 있다", html.indexOf('id="lrtModal"') > -1);
 ok("★ 되돌릴 수 없다고 알린다 ★", /취소는 롯데에 직접 연락해야 합니다/.test(html));
+/*  표를 세 줄로 나눠 그리면서 둘 사이가 멀어졌다. 300자 안에 있어야 할
+    까닭은 없다 — 둘 다 «있는가»가 지켜야 할 것이다. (2026-09-16)  */
 ok("무엇이 어디로 가는지 보여준다",
-   /보내는 분[\s\S]{0,300}받는 곳/.test(html));
+   /'보내는 분'/.test(html) && /'받는 곳'/.test(html));
 ok("★ 맨 아래에 접수자 이름 ★", html.indexOf('id="lrtBy"') > -1);
 ok("접수자는 로그인 정보에서 온다",
    /lrtBy'\)\.textContent =[\s\S]{0,80}CS_USER_NAME/.test(html));
@@ -144,7 +146,9 @@ console.log("\n[8] 순서 — 접수 먼저, 기록 나중");
    접수가 먼저면 채번된 송장을 그대로 들고 기록한다. */
 ok("기록을 누르면 먼저 확인창을 띄운다",
    /want\.checked && !pickedInv\) \{ lrtAsk\(\); return; \}/.test(html));
-ok("접수 성공 뒤에 기록으로 넘어간다", /submitLedger\(false, res\.invoice\)/.test(html));
+/*  res.invoice 를 LRT_PICKED_INV 에 담아 넘기도록 바뀌었다. 지켜야 할 것은
+    «채번된 송장을 들고» 기록으로 넘어가는 것이지 변수 이름이 아니다.  */
+ok("접수 성공 뒤에 기록으로 넘어간다", /submitLedger\(false, LRT_PICKED_INV\)/.test(html));
 ok("채번된 송장을 대장에 싣는다", /returnInvoice: pickedInv \|\| ''/.test(html));
 ok("접수 실패는 삼키지 않는다", /회수 접수 실패 —/.test(html));
 ok("박스를 골랐으면 고른 송장만 쓴다",

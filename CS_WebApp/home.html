@@ -458,6 +458,75 @@
       backdrop-filter: blur(4px);
     }
     .modal-overlay.active { display: flex; }
+    /* ── 올리는 중 팝업 (2026-09-16) ──
+       작성 창(z-index 100) «위»에 선다. 다 끝나기 전에는 닫을 구멍이 없다. */
+    .modal-overlay.hb-up-overlay {
+      z-index: 120;
+      align-items: center;
+      background: rgba(0,0,0,0.78);
+    }
+    .hb-up-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      width: calc(100% - 40px);
+      max-width: 360px;
+      padding: 28px 22px 22px;
+      text-align: center;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+    }
+    .hb-up-icon { font-size: 34px; line-height: 1; margin-bottom: 14px; }
+    .hb-up-title { font-size: 17px; font-weight: 700; color: var(--text-primary); }
+    .hb-up-sub {
+      font-size: 13px; color: var(--text-muted);
+      margin-top: 6px; min-height: 18px;
+      word-break: keep-all;
+    }
+    .hb-up-bar {
+      height: 6px; border-radius: 3px; margin: 18px 0 12px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .hb-up-fill {
+      height: 100%; width: 0;
+      background: var(--accent, #FDB813);
+      transition: width 0.25s ease;
+    }
+    /* 몇 개인지 모를 때(카드 등록 중)는 흘러가는 줄무늬로 «돌고 있음»만 말한다 */
+    .hb-up-fill.hb-up-idle {
+      width: 100%;
+      background: repeating-linear-gradient(90deg,
+        var(--accent, #FDB813) 0 14px, transparent 14px 28px);
+      animation: hbUpFlow 0.9s linear infinite;
+    }
+    @keyframes hbUpFlow { to { background-position: 28px 0; } }
+    .hb-up-warn {
+      font-size: 12px; font-weight: 600;
+      color: var(--warn, #f5a524);
+      word-break: keep-all;
+    }
+    .hb-up-btns { margin-top: 18px; display: none; gap: 8px; }
+    .hb-up-btns.on { display: flex; }
+    .hb-up-btns button {
+      flex: 1; padding: 13px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      font-family: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer;
+    }
+    .hb-up-go {
+      background: var(--accent, #FDB813);
+      color: #1b1e23; border-color: transparent;
+    }
+    .hb-up-retry { background: var(--bg-secondary); color: var(--text-primary); }
+    /* 올라간 카드를 잠깐 물들여 「이게 방금 그것」임을 보여 준다 */
+    @keyframes hbJustPosted {
+      0%   { box-shadow: 0 0 0 3px var(--accent, #FDB813); }
+      100% { box-shadow: 0 0 0 3px transparent; }
+    }
+    .hb-card.hb-just-posted { animation: hbJustPosted 2.4s ease-out 2; }
+
     .modal-content {
       background: var(--bg-card);
       border-radius: 20px 20px 0 0;
@@ -2821,6 +2890,38 @@
     </div>
   </div>
 
+
+  <!-- ══════════════════════════════════════════════════════════════
+       올리는 중 팝업 — 다 끝날 때까지 «막아 선다»
+       2026-09-16
+
+       > "이미지 업로드 중이라고 하단에 잠깐 뜨고마니까 창을 나가버리면서
+       >  업로드가 완료가 안되.. 글등록이 되어도 등록된 내용이 안뜨꼬
+       >  글쓰기그데로 남아 있으니까 글이 올라간건지 확인이 안되..
+       >  팝업창으로 업로드가 완료되면 글쓰기 창도 새로고침되거나 글이
+       >  올라가야 완료가 된건지 알수가 있자나"
+
+       ★ 여태 무엇이 보였나 ★
+         등록 단추 글씨가 「첨부 올리는 중…」으로 바뀌는 것이 전부였다.
+         작성 창은 그대로 열려 있고, 취소 단추도 그대로 눌린다.
+         사람은 다 된 줄 알고 창을 닫았고, 남은 사진은 안 올라갔다.
+
+       ★ 그래서 막아 선다 ★
+         이 팝업은 작성 창 «위»에 뜬다(z-index 120). 다 끝나기 전에는
+         닫을 구멍이 없다 — 바깥을 눌러도, ESC 를 눌러도 안 닫힌다.
+         끝나야 확인 단추가 생긴다.
+       ══════════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay hb-up-overlay" id="hbUpModal">
+    <div class="hb-up-box" role="dialog" aria-modal="true" aria-live="polite">
+      <div class="hb-up-icon" id="hbUpIcon"><span class="os-spin"></span></div>
+      <div class="hb-up-title" id="hbUpTitle">올리는 중…</div>
+      <div class="hb-up-sub" id="hbUpSub">잠시만 기다려 주세요</div>
+      <div class="hb-up-bar"><div class="hb-up-fill" id="hbUpFill"></div></div>
+      <div class="hb-up-warn" id="hbUpWarn">⚠ 다 올라갈 때까지 창을 닫지 마세요</div>
+      <div class="hb-up-btns" id="hbUpBtns"></div>
+    </div>
+  </div>
+
   <!-- 카드 상세 — 목록에서 펼치지 않고 가운데 팝업으로 띄운다 -->
   <div class="modal-overlay hb-card-overlay" id="hbCardModal" onclick="hbCardOverlayClick(event)">
     <div class="hb-card-modal" id="hbCardModalBody"></div>
@@ -3263,6 +3364,9 @@
     var HB_MINE_HIDDEN = 0;   // CS 보드에서 이 필터가 가린 건수
     var LB_MINE_HIDDEN = 0;   // 물류 보드
     var HB_OPEN_ID = '';
+    /*  방금 올린 카드 id. 보드를 새로 받은 뒤 그 카드를 띄우고 잠깐 물들인다.
+        > "글이 올라가야 완료가 된건지 알수가 있자나"  (2026-09-16)  */
+    var HB_JUST_POSTED = '';
     var HB_MODAL_SIG = '';   // 팝업에 지금 그려진 카드의 자국 (안 바뀌면 다시 안 그린다)
     var HB_LOADING = false;
     var HB_SOFT_LIMIT = 20;
@@ -3344,6 +3448,20 @@
       if (scope === 'create') return HB_PEND.create;
       if (!HB_PEND.note[scope]) HB_PEND.note[scope] = [];
       return HB_PEND.note[scope];
+    }
+
+    /**
+     * 대기 목록을 통째로 갈아 끼운다.
+     *
+     * 실패한 첨부만 남길 때 쓴다 (2026-09-16). 여태는 다 올렸든 반만 올렸든
+     * hbPendClear 로 비워 버려서, 두 장이 실패하면 사람이 사진을 다시 찾아
+     * 처음부터 붙여야 했다.
+     */
+    function hbPendSet(scope, list) {
+      var arr = (list || []).slice();
+      if (scope === 'create') HB_PEND.create = arr;
+      else HB_PEND.note[scope] = arr;
+      hbRenderPending(scope);
     }
 
     function hbPendClear(scope) {
@@ -3482,6 +3600,46 @@
      * 대기목록을 카드에 순차 업로드. 한 번에 몰아 보내면 payload가 커져 실패한다.
      * @param {Function} done (okCount, failCount)
      */
+    /**
+     * 첨부를 하나씩 올린다.
+     *
+     * ★ 2026-09-16: 실패한 것을 «남긴다» ★
+     *   여태 ok/fail 개수만 세고 실패한 파일은 그대로 버렸다. 5장 중 2장이
+     *   안 올라가면 사람이 사진을 다시 찾아 처음부터 붙여야 했다.
+     *   이제 실패분을 돌려주어 「안 올라간 것 다시」로 그것만 다시 올린다.
+     *
+     * @param onProgress (몇번째, 전체, 파일이름)
+     * @param done       (성공수, 실패수, 실패목록)
+     */
+    function hbUploadList(list, cardId, staff, onProgress, done) {
+      var 남은 = (list || []).slice();
+      if (!남은.length) { done(0, 0, []); return; }
+      var ok = 0, 실패 = [], i = 0;
+
+      function next() {
+        if (i >= 남은.length) { done(ok, 실패.length, 실패); return; }
+        var a = 남은[i++];
+        if (onProgress) onProgress(i, 남은.length, a.name);
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.ok) ok++;
+            else { a.왜 = String((res && res.error) || '실패'); 실패.push(a); }
+            next();
+          })
+          .withFailureHandler(function (err) {
+            a.왜 = String((err && err.message) || '통신 실패');
+            실패.push(a);
+            next();
+          })
+          .csAttachHandoffFile({
+            id: cardId, staff: staff,
+            name: a.name, mimeType: a.mimeType, dataB64: a.dataB64
+          });
+      }
+      next();
+    }
+
+
     function hbUploadPending(scope, cardId, staff, onProgress, done) {
       var list = hbPendList(scope).slice();
       if (!list.length) { done(0, 0); return; }
@@ -4909,12 +5067,53 @@
     }
 
     /** 어느 보드의 카드를 건드렸든 두 목록을 함께 다시 그린다 (서버 호출 없음) */
+
+    /**
+     * 방금 올린 카드를 보여 준다.
+     *
+     * > "글등록이 되어도 등록된 내용이 안뜨꼬 글쓰기그데로 남아 있으니까
+     * >  글이 올라간건지 확인이 안되"   (2026-09-16)
+     *
+     * 등록만 하고 화면이 그대로면 올라갔는지 알 수 없다. 보드를 새로 받은
+     * 뒤 그 카드로 스크롤하고 테두리를 잠깐 물들인다.
+     *
+     * ★ 필터가 걸려 있으면 안 보인다 ★
+     *   중요도 칩이나 검색어가 남아 있으면 방금 올린 카드가 걸러진다.
+     *   「올렸는데 왜 없지」가 되므로 먼저 푼다.
+     *
+     * 한 번만 한다 — 목록을 다시 그릴 때마다 깜박이면 눈이 아프다.
+     */
+    function hbShowJustPosted() {
+      var id = HB_JUST_POSTED;
+      if (!id) return;
+
+      var 있나 = false;
+      for (var i = 0; i < HB_CARDS.length; i++) {
+        if (HB_CARDS[i].id === id) { 있나 = true; break; }
+      }
+      if (!있나) return;            // 아직 안 받아왔다 — 다음 렌더에서 다시 본다
+
+      HB_JUST_POSTED = '';
+      if (HB_LEVEL) setHbLevel('');
+      var q = document.getElementById('hbq');
+      if (q && q.value) { q.value = ''; hbRenderBoards(); }
+
+      setTimeout(function () {
+        var el = document.getElementById('hb-card-' + id);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('hb-just-posted');
+        setTimeout(function () { el.classList.remove('hb-just-posted'); }, 5200);
+      }, 80);
+    }
+
     function hbRenderBoards() {
       hbSyncMineChips();
       renderHandoffBoard();
       if (typeof lbRenderCards === 'function') lbRenderCards();
       hbRenderCardModal();
       hbToCardFill();   // 펼친 카드의 지목 칩은 HTML 을 넣은 뒤에 채운다
+      hbShowJustPosted();
     }
 
     /** 카드를 고친 뒤 — 두 보드를 서버에서 다시 받아온다 */
@@ -5323,6 +5522,106 @@
       draftTouch('hb');   // 중요도는 버튼이라 input/change 가 안 뜬다
     }
 
+    /* ══════════════════════════════════════════════════════════════
+       올리는 중 팝업 — 다 끝날 때까지 막아 선다
+       2026-09-16
+
+       > "이미지 업로드 중이라고 하단에 잠깐 뜨고마니까 창을 나가버리면서
+       >  업로드가 완료가 안되.. 글등록이 되어도 등록된 내용이 안뜨꼬
+       >  글쓰기그데로 남아 있으니까 글이 올라간건지 확인이 안되"
+
+       ★ 끝을 «사람이 확인»해야 닫힌다 ★
+         저절로 닫히면 못 본 채 지나간다. 확인 단추를 누르면 그때
+         작성 창이 닫히고, 보드를 새로 받아, 방금 올린 카드를 띄운다.
+       ══════════════════════════════════════════════════════════════ */
+    var HB_UP_BUSY = false;          // 올리는 중인가 (창 닫기를 막는 데도 쓴다)
+
+    function hbUpEl(id) { return document.getElementById(id); }
+
+    /** 팝업을 연다. 몇 개인지 모를 때는 흘러가는 줄무늬로 «돌고 있음»만 말한다. */
+    function hbUpOpen(title, sub) {
+      HB_UP_BUSY = true;
+      var box = hbUpEl('hbUpModal');
+      if (!box) return;
+      hbUpEl('hbUpIcon').innerHTML = '<span class="os-spin"></span>';
+      hbUpEl('hbUpTitle').textContent = String(title || '올리는 중…');
+      hbUpEl('hbUpSub').textContent = String(sub || '');
+      hbUpEl('hbUpWarn').style.display = '';
+      hbUpEl('hbUpBtns').className = 'hb-up-btns';
+      hbUpEl('hbUpBtns').innerHTML = '';
+      hbUpEl('hbUpFill').className = 'hb-up-fill hb-up-idle';
+      hbUpEl('hbUpFill').style.width = '';
+      box.classList.add('active');
+    }
+
+    /** 몇 개 중 몇 개까지 왔는지 */
+    function hbUpStep(title, sub, done, total) {
+      if (!hbUpEl('hbUpModal')) return;
+      if (title) hbUpEl('hbUpTitle').textContent = String(title);
+      hbUpEl('hbUpSub').textContent = String(sub || '');
+      var fill = hbUpEl('hbUpFill');
+      if (total > 0) {
+        fill.className = 'hb-up-fill';
+        fill.style.width = Math.round((done / total) * 100) + '%';
+      }
+    }
+
+    /**
+     * 끝. 사람이 확인을 눌러야 닫힌다.
+     *
+     * @param 성공 다 올라갔나
+     * @param 글  보여 줄 한 줄
+     * @param 다시 실패분이 있으면 「다시 시도」가 부를 함수 (없으면 단추도 없다)
+     * @param 확인 확인을 눌렀을 때 할 일
+     */
+    function hbUpDone(성공, 글, 다시, 확인) {
+      HB_UP_BUSY = false;
+      if (!hbUpEl('hbUpModal')) { if (확인) 확인(); return; }
+      hbUpEl('hbUpIcon').textContent = 성공 ? '✅' : '⚠️';
+      hbUpEl('hbUpTitle').textContent = 성공 ? '올라갔습니다' : '일부가 안 올라갔습니다';
+      hbUpEl('hbUpSub').textContent = String(글 || '');
+      hbUpEl('hbUpWarn').style.display = 'none';
+      var fill = hbUpEl('hbUpFill');
+      fill.className = 'hb-up-fill';
+      fill.style.width = '100%';
+
+      var btns = hbUpEl('hbUpBtns');
+      btns.innerHTML = '';
+      if (다시) {
+        var r = document.createElement('button');
+        r.type = 'button';
+        r.className = 'hb-up-retry';
+        r.textContent = '안 올라간 것 다시';
+        r.onclick = 다시;
+        btns.appendChild(r);
+      }
+      var g = document.createElement('button');
+      g.type = 'button';
+      g.className = 'hb-up-go';
+      /*  실패가 있는데 「확인」이라고 적으면 다 된 줄 안다. 남은 것이 있으면
+          그 사실이 단추에도 보이게 한다 (2026-09-16). */
+      g.textContent = 성공 ? '확인' : '남은 것 포기하고 닫기';
+      g.onclick = function () { hbUpClose(); if (확인) 확인(); };
+      btns.appendChild(g);
+      btns.className = 'hb-up-btns on';
+    }
+
+    function hbUpClose() {
+      HB_UP_BUSY = false;
+      var box = hbUpEl('hbUpModal');
+      if (box) box.classList.remove('active');
+    }
+
+    /*  올리는 중에 새로고침·뒤로가기를 누르면 남은 사진이 사라진다.
+        브라우저가 「나가시겠습니까」를 대신 물어 준다. */
+    window.addEventListener('beforeunload', function (e) {
+      if (!HB_UP_BUSY) return;
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    });
+
+
     function submitHbCard() {
       var title = String((document.getElementById('hbTitle') || {}).value || '').trim();
       if (!title) { toast('제목을 입력하세요'); return; }
@@ -5335,36 +5634,71 @@
       var btn = document.getElementById('hbSubmitBtn');
       if (btn) { btn.disabled = true; btn.textContent = '등록 중…'; }
 
-      function finish(msg, ms) {
+      /*  ★ 여기서부터 팝업이 막아 선다 ★  (2026-09-16)
+          여태는 단추 글씨만 바뀌었다. 작성 창은 그대로 열려 있고 취소도
+          눌렸다. 사람은 다 된 줄 알고 창을 닫았고, 남은 사진은 안 올라갔다. */
+      hbUpOpen('카드를 올리는 중…', title);
+
+      function 단추되돌리기() {
         if (btn) { btn.disabled = false; btn.textContent = '등록'; }
+      }
+
+      /*  ★ 다 끝나고 «확인»을 눌러야 여기로 온다 ★
+          그때 작성 창을 닫고, 초안을 지우고, 보드를 새로 받고,
+          방금 올린 카드를 띄운다 — 「올라간 건지」를 눈으로 본다. */
+      function 마무리(cardId) {
+        단추되돌리기();
         closeHbModal();
         draftClear('hb');
-        toast(msg, ms);
-        hbReloadBoards();   // 어느 보드로 올렸든 둘 다 새로 받는다
+        HB_JUST_POSTED = String(cardId || '');
+        hbReloadBoards();
       }
 
       google.script.run
-        .withSuccessHandler(function(res) {
+        .withSuccessHandler(function (res) {
           if (!res || !res.ok) {
-            if (btn) { btn.disabled = false; btn.textContent = '등록'; }
+            단추되돌리기();
+            hbUpClose();
             toast(String((res && res.error) || '등록 실패'), 2600);
             return;
           }
-          // 카드가 생긴 뒤에 파일을 하나씩 올린다
-          if (hbPendList('create').length) {
-            if (btn) btn.textContent = '첨부 올리는 중…';
-            hbUploadPending('create', res.id, staff,
-              function(i, n) { if (btn) btn.textContent = '첨부 ' + i + '/' + n + '…'; },
-              function(ok, fail) {
-                finish(fail ? ('카드 등록됨 · 첨부 ' + ok + '개 완료, ' + fail + '개 실패')
-                  : '카드 등록됨 · 첨부 ' + ok + '개', fail ? 3000 : 2000);
-              });
-          } else {
-            finish('카드 등록됨', 1400);
+          var cardId = res.id;
+          var 대기 = hbPendList('create').slice();
+          if (!대기.length) {
+            hbPendClear('create');
+            hbUpDone(true, '카드가 올라갔습니다', null, function () { 마무리(cardId); });
+            return;
           }
+
+          /*  카드가 생긴 뒤에 파일을 하나씩 올린다.
+              실패분은 버리지 않고 남겨 「안 올라간 것 다시」로 그것만 다시 올린다. */
+          function 올리기(목록) {
+            hbUpOpen('사진을 올리는 중…', '0 / ' + 목록.length);
+            hbUploadList(목록, cardId, staff,
+              function (i, n, name) {
+                hbUpStep('사진을 올리는 중…', i + ' / ' + n + '   ' + String(name || ''), i - 1, n);
+              },
+              function (ok, fail, 실패목록) {
+                if (!fail) {
+                  hbPendClear('create');
+                  hbUpDone(true, '카드와 사진 ' + ok + '개가 다 올라갔습니다',
+                    null, function () { 마무리(cardId); });
+                  return;
+                }
+                /*  실패분만 남겨 둔다. 여기서 비우면 다시 올릴 길이 없다. */
+                hbPendSet('create', 실패목록);
+                hbUpDone(false,
+                  '사진 ' + ok + '개는 올라갔고 ' + fail + '개가 남았습니다' +
+                  (실패목록[0] && 실패목록[0].왜 ? '  (' + 실패목록[0].왜 + ')' : ''),
+                  function () { 올리기(hbPendList('create').slice()); },
+                  function () { 마무리(cardId); });
+              });
+          }
+          올리기(대기);
         })
-        .withFailureHandler(function(err) {
-          if (btn) { btn.disabled = false; btn.textContent = '등록'; }
+        .withFailureHandler(function (err) {
+          단추되돌리기();
+          hbUpClose();
           toast(String((err && err.message) || '통신 실패'), 2600);
         })
         .csCreateHandoffCard({

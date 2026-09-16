@@ -12,7 +12,12 @@
  * (.claspignore 의 *_test.js 규칙으로 GAS 에는 올라가지 않는다)
  */
 const fs = require("fs");
-const html = fs.readFileSync("home.html", "utf8");
+/*  ★ 줄끝을 LF 로 맞춰 읽는다 ★  (2026-09-16)
+    윈도우에서 파일이 CRLF 로 저장돼 있으면, 아래 「
+ 을 낀 글자 그대로 찾기」가
+    «영원히 못 찾는다». 못 찾는 것을 통과로 치는 검사라 늘 초록이었다 —
+    즉 아무것도 안 지키고 있었다. LF 로 맞춰 읽어 실제로 보게 한다.  */
+const html = fs.readFileSync("home.html", "utf8").split("\\r\\n").join("\\n");
 
 // home.html 의 <script> 에서 필요한 함수만 떼어 온다.
 const NEED = [
