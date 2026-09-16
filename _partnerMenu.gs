@@ -176,6 +176,9 @@ function registerPartnerMenu_() {
         .addItem("🚚 롯데 송장탭 열 위치 확인", "partnerInspectLotteInvoiceColumns")
         .addSeparator()
         .addItem("📒 송장원장 재수집 (커서 초기화)", "partnerResetInvoiceLedgerCursors")
+        /*  늦게 온 송장(2~15일)을 지난 마감의 «빈 칸»에만 채운다.
+            17:00 에 저절로 돈다 — 이건 손으로 한 번 더 돌릴 때 쓴다.  */
+        .addItem("📮 늦은 송장 채우기 (빈 칸만 · 7일)", "partnerFillBlankInvoicesMenu")
     )
     .addSubMenu(
       ui.createMenu("🧭 송장 매칭 점검 (읽기만)")

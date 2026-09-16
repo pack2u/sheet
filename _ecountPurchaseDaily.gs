@@ -600,6 +600,22 @@ function runEveningPurchaseAndSync() {
     log.push("DB 동기화 실패: " + e2.message);
   }
 
+  /*  ★ 늦게 온 송장을 빈 칸에 채운다 ★  (2026-09-16)
+      > "당분간은 미매칭부분에도 들어올 송장이 있으면 송장이 들어오게 해야되"
+      > "나, 7일...."   (나 = 송장 전파 때 · 7일)
+
+      마감(20:00) 안에서 돌면 6분을 나눠 써야 한다. 여기 17:00 에 따로
+      돌면 마감은 «당일» 것에만 집중할 수 있다.
+      송장맵은 송장원장 하나로만 만든다 — 파일을 더 열지 않는다.  */
+  try {
+    if (typeof _pif_scheduled_ === "function") {
+      _pif_scheduled_();
+      log.push("늦은 송장 채우기");
+    }
+  } catch (e3) {
+    log.push("늦은 송장 채우기 실패: " + e3.message);
+  }
+
   Logger.log("[EVENING] " + log.join(" / "));
   return log.join("\n");
 }
