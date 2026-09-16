@@ -7728,7 +7728,18 @@
       if (!(LRT_READY && LRT_READY.ready)) return '';
       if (!retOrigInvoices(c).length) return '';
       var pu = String(c.pickup || '').replace(/\s/g, '');
-      if (pu && pu.indexOf('롯데') === -1) return '';
+      /*  ★ 로젠 건도 접수한다 ★  (2026-09-16)
+          수거입력처가 비면 막지 않는다 — 사람이 판단할 일이고, 서버가
+          접수할 때 다시 본다. 롯데도 로젠도 아니라고 «적혀 있으면» 안 낸다. */
+      var 로젠 = pu.indexOf('로젠') !== -1;
+      if (pu && !로젠 && pu.indexOf('롯데') === -1) return '';
+      /*  로젠인데 아직 못 쓰면 «왜»를 단추에 담는다. 단추가 그냥 없으면
+          기능이 없는 줄 안다 — 인증키를 기다리는 중이라는 것을 알려야 한다. */
+      if (로젠 && !(LGR_READY && LGR_READY.ready)) {
+        var 왜 = (LGR_READY && LGR_READY.reason) || '로젠 회수 접수 준비 중입니다';
+        return '<button type="button" class="ret-pickup-btn" disabled' +
+          ' title="' + esc(왜) + '">반품접수(로젠 준비중)</button>';
+      }
       /* 박스가 하나면 이 단추 하나로 끝난다. 여럿이면 송장 옆에 낱개 단추가
          이미 있으므로, 여기는 「남은 것 전부」로만 쓴다. */
       var left = retLeftBoxes(c);
@@ -9876,6 +9887,11 @@
        주소가 없으면 접수가 어차피 실패한다. 눌렀다가 실패하는 것보다
        아예 안 보이는 편이 낫다. 한 번만 물어보고 답을 기억한다. */
     var LRT_READY = null;   // null=아직 모름 · {ready, to}
+    /*  ★ 로젠도 같이 묻는다 ★  (2026-09-16)
+        자사출고가 로젠이라 회수도 로젠으로 가는 건이 늘었다. 롯데만 묻고
+        있으면 로젠 건에서는 단추가 아예 안 나온다 — 그러면 사람은
+        «기능이 없는 줄» 안다. 못 쓰면 «왜»를 보여 준다. */
+    var LGR_READY = null;   // null=아직 모름 · {ready, to, reason}
 
     function lrtInit() {
       if (LRT_READY !== null) { lrtSyncOpt(); return; }
@@ -9883,6 +9899,10 @@
         .withSuccessHandler(function (r) { LRT_READY = r || { ready: false }; lrtSyncOpt(); })
         .withFailureHandler(function () { LRT_READY = { ready: false }; lrtSyncOpt(); })
         .csLotteReturnReady();
+      google.script.run
+        .withSuccessHandler(function (r) { LGR_READY = r || { ready: false }; lrtSyncOpt(); })
+        .withFailureHandler(function () { LGR_READY = { ready: false, reason: '로젠 준비 상태를 못 읽었습니다' }; })
+        .csLogenReturnReady();
     }
 
     /** 접수 칸을 보일지 정한다. 롯데 건이 아니면 안 보여준다. */

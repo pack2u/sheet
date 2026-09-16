@@ -485,10 +485,28 @@ function csLotteReturnPickupFromCard(p) {
   var col = ctx.col, row = ctx.row;
   var cell = function (f) { return col[f] >= 0 ? String(row[col[f]] || "").trim() : ""; };
 
-  // 롯데 건인가. 수거입력처가 비었으면 사람이 판단할 일이라 막지 않는다.
+  /*  ══════════════════════════════════════════════════════════════
+      ★ 어느 택배사로 접수할지 고른다 ★  (2026-09-16)
+
+      > "로젠 회수 접수 규격 확인해서 붙여줘"
+
+      여태 이 함수는 롯데 전용이었다. 로젠용으로 «복사»해 두 벌을 두면
+      주소 되짚기·박스 가려내기·대장 적기가 두 군데가 되고, 언젠가
+      한쪽만 고치게 된다. 다른 것은 «부르는 API 하나»뿐이므로 거기서만 가른다.
+
+      수거입력처가 비면 막지 않는다 — 사람이 판단할 일이다. 그때는 롯데로
+      본다(여태 그랬다). 로젠이라고 적혀 있으면 로젠으로 간다.
+      ══════════════════════════════════════════════════════════════ */
   var pickup = cell("pickup");
-  if (pickup && pickup.replace(/\s/g, "").indexOf("롯데") === -1) {
-    return { ok: false, error: "롯데택배 건이 아닙니다 (수거입력처: " + pickup + ")" };
+  var pk = pickup.replace(/s/g, "");
+  var 로젠인가 = pk.indexOf("로젠") !== -1;
+  if (pk && !로젠인가 && pk.indexOf("롯데") === -1) {
+    return { ok: false, error: "롯데·로젠 건이 아닙니다 (수거입력처: " + pickup + ")" };
+  }
+  if (로젠인가) {
+    var lgReady = (typeof csLogenReturnReady === "function")
+      ? csLogenReturnReady() : { ready: false, reason: "로젠 회수 접수가 아직 붙지 않았습니다." };
+    if (!lgReady.ready) return { ok: false, error: lgReady.reason };
   }
 
   var allOrigs = _lrt_digitsList_(cell("invoice"));
@@ -548,13 +566,19 @@ function csLotteReturnPickupFromCard(p) {
     };
   }
 
-  var res = csLotteReturnPickup({
-    name: name, phone: phone, addr: addr,
-    item: cell("item"), qty: cell("qty"),
-    orderNo: found ? found.orderNo : "",
-    orglInvNos: origs,
-    memo: p.memo, boxType: p.boxType
-  });
+  /*  다른 것은 여기 하나뿐이다 — 위에서 고른 택배사로 부른다 */
+  var res = 로젠인가
+    ? _lgr_pickupMany_({
+        name: name, phone: phone, addr: addr,
+        item: cell("item"), orglInvNos: origs, memo: p.memo
+      })
+    : csLotteReturnPickup({
+        name: name, phone: phone, addr: addr,
+        item: cell("item"), qty: cell("qty"),
+        orderNo: found ? found.orderNo : "",
+        orglInvNos: origs,
+        memo: p.memo, boxType: p.boxType
+      });
 
   /* 하나라도 접수됐으면 대장에 적는다. 실패한 것이 있어도 적는다 —
      적어야 다음 사람이 「이미 접수됨」을 보고 두 번 안 누른다.
