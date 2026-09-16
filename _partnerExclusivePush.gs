@@ -10502,6 +10502,74 @@ function _pep_fitArchiveCarrierColumn_(archTab, headers, rows) {
  * 일일마감 파일에 매칭 행 일괄 추가 (주문일별 분리 기록용)
  * @return {{ written: number, tabName: string }}
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 이미 그 파일에 있는 줄은 다시 안 쓴다 ★  (2026-09-16)
+ *
+ *  > "일일 마감시 이미지와 같이 하단데 따로 또 붙는 경우는 무슨 상황인지?"
+ *
+ *  사장님이 보낸 화면에는 「★ 합계 (758건)」 아래에 또 줄이 붙고
+ *  「★ 합계 (70건)」이 하나 더 있었다. 그 70줄 안에서도 같은 주문이
+ *  두 번씩 있었다. 까닭이 둘이다 —
+ *
+ *    ① 마감이 그 파일에 «두 번» 붙었다.
+ *       예약 마감(20:00)에는 「당일이 이미 있으면 건너뛴다」가 있다
+ *       (skipDates). 그런데 손으로 누르는 「📋 통합 일일마감」에는 없다.
+ *       한 번 더 누르면 하루치가 통째로 또 붙는다.
+ *
+ *    ② 그날 판매현황에 같은 주문이 두 회차로 쌓였다.
+ *       「MMDD판매현황」은 세트분리가 회차마다 이어 쌓는 탭이다. 같은
+ *       판매현황으로 세트분리를 두 번 돌리면 회차가 하나 더 생기고,
+ *       그 내용이 또 쌓인다. 마감은 그 탭을 그대로 읽는다.
+ *
+ *  둘 다 «부르는 쪽»의 문제지만, 막는 곳은 여기여야 한다. 어느 길로
+ *  들어오든 마지막에 쓰는 자리가 하나이기 때문이다. 2026-09-07 에도
+ *  같은 일로 411행이 늘어 시트와 Supabase 양쪽을 손으로 골라냈다.
+ *
+ *  ★ 무엇을 같은 줄로 보나 ★
+ *    택배사·운송장번호·출처를 뺀 «나머지 전부»가 같으면 같은 줄이다.
+ *    그 셋은 나중에 채워지는 값이라 넣으면 안 된다 — 미매칭으로 적힌
+ *    줄이 다음 마감에서 송장을 얻으면 «다른 줄»이 되어 또 붙는다.
+ *    (송장을 채우는 일은 2단계 보강이 «그 자리에» 한다. 새로 붙이지 않는다.)
+ *
+ *  ★ 조용히 버리지 않는다 ★
+ *    몇 줄을 건너뛰었는지 세어 돌려준다. 「750건 중 70건은 이미 있어서
+ *    건너뜀」이라고 말해야, 사람이 「왜 적게 들어갔지」를 안 묻는다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pep_archiveRowKey_(row, headers) {
+  /*  표의 약속: 판매현황 C~Q · [택배사] · 운송장번호 · 출처.
+      뒤쪽 셋(또는 옛 표는 둘)은 «나중에 채워지는» 값이라 열쇠에서 뺀다.
+      앞쪽은 주문 그 자체라 한 글자도 안 뺀다.
+
+      ★ _pep_mapArchiveMatchCols_ 를 그대로 못 쓴다 ★
+        그 함수에는 「머리글을 못 찾으면 맨 뒤 두 칸을 운송장·출처로 친다」는
+        자리 폴백이 있다. 택배사는 그 폴백에 없어서, 이름을 못 찾으면 택배사만
+        열쇠에 남는다. 그러면 송장이 붙은 줄이 «다른 줄»이 되어 또 붙는다.
+        (2026-09-16 에 실제로 그렇게 걸렸다)  */
+  var 자름 = -1;
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || '').replace(/[ 	]/g, '');
+    if (/^택배사$|^배송사$|^운송사$/.test(h) ||
+        /^운송장번호$|^송장번호$/.test(h) ||
+        h === '출처') {
+      자름 = i;
+      break;          //  «처음 나오는» 것부터 뒤가 전부 뒤쪽 칸이다
+    }
+  }
+  if (자름 < 0) {
+    //  이름을 하나도 못 찾았다 — 자리로 친다 (18칸이면 셋, 17칸이면 둘)
+    자름 = headers.length - (headers.length >= 18 ? 3 : 2);
+  }
+  if (자름 < 1) 자름 = headers.length;   //  이상하면 차라리 다 넣는다
+
+  var 조각 = [];
+  for (var c = 0; c < 자름; c++) {
+    조각.push(String(row[c] == null ? '' : row[c]).trim());
+  }
+  return 조각.join('|');
+}
+
 function _pep_appendArchiveRows_(ss, dateStr, headers, rows, detail) {
   var out = { written: 0, tabName: _UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")" };
   if (!rows || !rows.length || !headers || !headers.length) return out;
@@ -10520,6 +10588,42 @@ function _pep_appendArchiveRows_(ss, dateStr, headers, rows, detail) {
   var fit = _pep_fitArchiveCarrierColumn_(archTab, headers, rows);
   headers = fit.headers;
   rows = fit.rows;
+
+  /*  ★ 이미 있는 줄은 걸러 낸다 ★  (2026-09-16 — 위 _pep_archiveRowKey_ 설명 참고)
+      어느 길(예약·수동)로 들어오든 마지막에 쓰는 자리가 여기 하나다.  */
+  var _있던키_ = {};
+  try {
+    var _lr_ = archTab.getLastRow();
+    if (_lr_ >= 2) {
+      var _있던_ = archTab.getRange(2, 1, _lr_ - 1, headers.length).getDisplayValues();
+      for (var _bi_ = 0; _bi_ < _있던_.length; _bi_++) {
+        //  합계 줄은 건너뛴다 — 그것까지 키로 만들면 쓸데없이 커진다
+        if (String(_있던_[_bi_][0] || '').indexOf('★ 합계') === 0) continue;
+        _있던키_[_pep_archiveRowKey_(_있던_[_bi_], headers)] = true;
+      }
+    }
+  } catch (e있던) {
+    /*  못 읽었으면 «거르지 않는다». 거르다 실패해서 하루치를 통째로
+        빠뜨리는 것이 두 번 붙는 것보다 나쁘다.  */
+    Logger.log('[UNIFIED_ARCHIVE] 기존 행 읽기 실패 — 중복 거르기 건너뜀: ' + e있던.message);
+    _있던키_ = null;
+  }
+
+  if (_있던키_) {
+    var _새행_ = [];
+    for (var _ni_ = 0; _ni_ < rows.length; _ni_++) {
+      var _k_ = _pep_archiveRowKey_(rows[_ni_], headers);
+      if (_있던키_[_k_]) { out.skippedDup = (out.skippedDup || 0) + 1; continue; }
+      _있던키_[_k_] = true;   //  이번에 들어온 것끼리의 겹침도 여기서 걸린다
+      _새행_.push(rows[_ni_]);
+    }
+    if (out.skippedDup) {
+      Logger.log('[UNIFIED_ARCHIVE] ' + dateStr + ' — 이미 있는 줄 ' + out.skippedDup +
+        '건 건너뜀 (남은 ' + _새행_.length + '건)');
+    }
+    rows = _새행_;
+    if (!rows.length) return out;   //  다 이미 있다 — 합계 줄도 새로 만들지 않는다
+  }
 
   var nextRow = archTab.getLastRow() + 1;
   if (nextRow < 2) nextRow = 1;
@@ -11017,7 +11121,7 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
   // ★ 2026-06-29: targetDateStr 파라미터 추가 — 전달 시 해당 날짜로 저장 (자동실행→전날 매출일)
   var result = {
     archived: 0, tabName: "", error: "",
-    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", rozenRead: 0, rozenCols: "", ownRead: 0, ownTabs: "", rozenMatched: 0, lotteMatched: 0, weeklyMatched: 0, packMatched: 0, ledgerSetsplitRead: 0, ledgerSetsplitNote: "", snapFrom: "", snapSaved: 0, snapSkipped: 0, hubRead: 0, backfill: 0, backfillDate: "", backfillDays: 0, backfillDaysList: "", backfillFiles: 0, uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0 }
+    detail: { matched: 0, lozen: 0, lozenPhone: 0, lotte: 0, supply: 0, hub: 0, skipped: 0, noInvoice: 0, namePhone: 0, lotteRead: 0, lotteCols: "", rozenRead: 0, rozenCols: "", ownRead: 0, ownTabs: "", rozenMatched: 0, lotteMatched: 0, weeklyMatched: 0, packMatched: 0, ledgerSetsplitRead: 0, ledgerSetsplitNote: "", snapFrom: "", snapSaved: 0, snapSkipped: 0, hubRead: 0, backfill: 0, backfillDate: "", backfillDays: 0, backfillDaysList: "", backfillFiles: 0, uidMatched: 0, noUidMatched: 0, weeklyRead: 0, weeklyPrimary: 0, combinedPack: 0, skippedEmptyDays: [], tempArchiveRead: 0, ledgerAppended: 0, ledgerRead: 0, exclusiveArchiveRead: 0, exclusiveArchiveFiles: 0, archiveDup: 0 }
   };
 
   try {
@@ -11712,6 +11816,10 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
           if (_sf_) result.detail.sampleCombined = (result.detail.sampleCombined || 0) + _sf_;
         } catch (eSf) { Logger.log("[UNIFIED] 샘플 합포장 보강 오류: " + eSf.message); }
         var appendResult = _pep_appendArchiveRows_(ss, dKey, matchedHeaders, batchRows, result.detail);
+        /*  이미 있어서 건너뛴 줄 — 조용히 버리면 「왜 적게 들어갔지」가 된다 (2026-09-16) */
+        if (appendResult.skippedDup) {
+          result.detail.archiveDup = (result.detail.archiveDup || 0) + appendResult.skippedDup;
+        }
         result.archived += appendResult.written;
         tabNames.push(appendResult.tabName);
       }

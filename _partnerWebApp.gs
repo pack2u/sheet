@@ -208,6 +208,11 @@ function partnerUnifiedDailyArchiveManual() {
       "저장 위치: 구글드라이브 시트\n" +
       "파일명: " + (result.tabName || "(없음)") + "\n\n" +
       "매칭 기록: " + result.archived + "건\n" +
+      /*  이미 있어서 건너뛴 줄 — 「왜 적게 들어갔지」를 안 묻게 한다 (2026-09-16) */
+      (result.detail.archiveDup
+        ? "  ↷ 이미 있어서 건너뜀: " + result.detail.archiveDup + "건\n" +
+          "     (마감을 두 번 눌렀거나, 같은 판매현황으로 세트분리를 두 번 돌린 경우입니다)\n"
+        : "") +
       /* ★ 지난 마감을 몇 줄 채웠는지 ★  (2026-09-15)
          대리발송 송장은 다음날 들어온다. 그날 못 채운 줄을 며칠 뒤에라도
          채운 것이 몇인지 보여야, 사장님이 지난 마감을 다시 안 뒤진다. */
@@ -641,6 +646,7 @@ function _pep_unifiedDailyArchiveScheduled_() {
       " 고유ID없음:" + (result.detail.noUidMatched || 0) +
       " 1주출고:" + (result.detail.weeklyPrimary || 0) +
       " 이전마감보강:" + (result.detail.backfill || 0) +
+      " 이미있어건너뜀:" + (result.detail.archiveDup || 0) +
       (result.detail.backfillDate ? "(" + result.detail.backfillDate + ")" : "") + ")";
     if (missedDays.length > 0) {
       logMsg += " ※ 미생성 과거: " + missedDays.join(", ");
