@@ -10432,6 +10432,51 @@ function _pep_fitArchiveCarrierColumn_(archTab, headers, rows) {
  */
 /**
  * ══════════════════════════════════════════════════════════════
+ *  ★ 합계줄은 «그 파일» 것만 센다 ★  (2026-09-16)
+ *
+ *  여태 마감이 날짜별로 파일을 나눠 쓰면서, 각 파일 맨 아래에
+ *  «마감 실행 전체»의 누계를 똑같이 찍었다. 그래서 2026-09-16 파일을
+ *  열면 미매칭 386건이라고 적혀 있는데 실제로 그 파일에는 26줄뿐이었다.
+ *  나머지 360은 다른 날짜 파일에 있었다.
+ *
+ *  파일 하나만 봐서는 영원히 검증이 안 되는 모양이었다. 어느 파일을
+ *  열어도 같은 숫자가 나오니, 사람이 세어 보면 늘 안 맞는다.
+ *
+ *  이제 그 탭의 「출처」 칸을 직접 읽어 «그 파일»만 센다.
+ *  옛 합계줄(A열에 「합계」)은 건너뛴다.
+ *
+ *  @return {Object} { 줄, 자사출고, 대리판매, 대리공급, 이름전화, 미매칭 }
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pep_archiveTally_(tab, colCount) {
+  var out = { 줄: 0, 자사출고: 0, 대리판매: 0, 대리공급: 0, 이름전화: 0, 미매칭: 0 };
+  try {
+    var lr = tab.getLastRow();
+    if (lr < 2) return out;
+    var col1 = tab.getRange(2, 1, lr - 1, 1).getDisplayValues();
+    var colS = tab.getRange(2, colCount, lr - 1, 1).getDisplayValues();
+    for (var i = 0; i < col1.length; i++) {
+      var a = String(col1[i][0] || "").trim();
+      var v = String(colS[i][0] || "").trim();
+      if (a.indexOf("합계") !== -1) continue;   // 옛 합계줄
+      if (!a && !v) continue;                    // 빈 줄
+      out.줄++;
+      if (v === "롯데" || v === "로젠" || v === "로젠(전화)" ||
+          v === "1주출고" || v === "합포장") out.자사출고++;
+      else if (v === "대리판매") out.대리판매++;
+      else if (v === "이름+전화") out.이름전화++;
+      else if (v === "미매칭") out.미매칭++;
+      else out.대리공급++;                       // 나머지 (세트분리원장·송장원장 등)
+    }
+  } catch (e) {
+    //  못 읽으면 «0» 이 아니라 «모른다» 로 둔다 — 아래에서 그렇게 적는다
+    out.못읽음 = String(e.message || e);
+  }
+  return out;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
  *  ★ 이미 그 파일에 있는 줄은 다시 안 쓴다 ★  (2026-09-16)
  *
  *  > "일일 마감시 이미지와 같이 하단데 따로 또 붙는 경우는 무슨 상황인지?"
@@ -10613,12 +10658,19 @@ function _pep_appendArchiveRows_(ss, dateStr, headers, rows, detail) {
     sumRow[6] = gSum;
     sumRow[9] = jSum;
     var srcIdx = colCount - 1;
-    sumRow[srcIdx] = "자사출고:" + (detail.lotte || 0) +
-      " 대리판매:" + (detail.hub || 0) +
-      " 대리공급:" + (detail.supply || 0) +
-      " 이름+전화:" + (detail.namePhone || 0) +
-      " 미매칭:" + (detail.noInvoice || 0) + "건";
-    sumRow[0] = "★ 합계 (" + rows.length + "건)";
+    /*  ★ 그 «파일» 것만 센다 ★ — 위 _pep_archiveTally_ 의 까닭을 보라.  */
+    var 셈 = _pep_archiveTally_(archTab, colCount);
+    if (셈.못읽음) {
+      sumRow[srcIdx] = "출처 칸을 못 읽어 세지 못했습니다 — " + 셈.못읽음;
+      sumRow[0] = "★ 합계 (이번에 " + rows.length + "건 기록)";
+    } else {
+      sumRow[srcIdx] = "자사출고:" + 셈.자사출고 +
+        " 대리판매:" + 셈.대리판매 +
+        " 대리공급:" + 셈.대리공급 +
+        " 이름+전화:" + 셈.이름전화 +
+        " 미매칭:" + 셈.미매칭 + "건";
+      sumRow[0] = "★ 합계 (" + 셈.줄 + "건)";
+    }
     var sumRowNum = nextRow + rows.length;
     archTab.getRange(sumRowNum, 1, 1, colCount).setValues([sumRow]);
     archTab.getRange(sumRowNum, 1, 1, colCount)
