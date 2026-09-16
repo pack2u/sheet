@@ -1938,7 +1938,13 @@ function partnerFetchInvoices() {
               if (_setSeen[_sk]) continue;
               _setSeen[_sk] = true;
               setDetailByUid[_su] = setDetailByUid[_su]
-                ? setDetailByUid[_su] + " / " + _tail
+                /*  ★ 줄바꿈으로 잇는다 ★  (2026-09-16)
+                    > "-몸통만 / -뚜껑만 … 이렇게 해달라고"
+                    송장은 한 칸에 여러 줄로 쌓이는데 적요만 " / " 로 이어
+                    붙어 눈으로 맞춰 볼 수가 없었다. 줄 수를 맞춘다.
+                    ※ 어느 송장이 몸통인지까지 «짝지어 주는 것은 아니다» —
+                      업체에서도 구분이 안 되는 곳이 있어 짐작하지 않는다.  */
+                ? setDetailByUid[_su] + "\n" + _tail
                 : _tail;
             }
             scannedLogs.push("[합배송] 원장(차수별 누적)에서 묶음키 " + _lgAdd +
