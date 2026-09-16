@@ -302,15 +302,65 @@ function ss_마지막회차_() {
   return null;
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  구간 시계 — 어디서 시간을 쓰는지 «재서» 말한다
+ *  2026-09-16
+ *
+ *  > "재실행 했을떄 속도가 72초로 나왔어"
+ *
+ *  ★ 짐작으로 고치지 않는다 ★
+ *    우편번호 조회를 묶음으로 바꿔 크게 줄였지만, 재실행에는 새 주소가
+ *    없으니 그 길은 애초에 타지도 않는다. 72초가 어디서 났는지 모르는 채
+ *    여기저기 손보면 엉뚱한 데를 고치고 멀쩡한 데를 망가뜨린다.
+ *
+ *    그래서 «재는 것»을 먼저 붙인다. 요약 탭에 오래 걸린 구간부터 적는다.
+ *    다음 실행 한 번이면 어디를 고칠지 사람도 나도 안다.
+ *
+ *  단계 이름을 그대로 쓴다 — 실패했을 때 「어느 단계에서 멈췄나」를 말하는
+ *  그 이름이다. 두 벌로 관리하면 언젠가 어긋난다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var SS_STEP = { 이름: '', at: 0, 목록: [] };
+
+/** 돌던 구간을 닫고 새 구간을 연다. 단계 이름을 그대로 돌려준다. */
+function ss단계_(새이름) {
+  var now = new Date().getTime();
+  if (SS_STEP.이름 && SS_STEP.at) SS_STEP.목록.push([SS_STEP.이름, now - SS_STEP.at]);
+  SS_STEP.이름 = 새이름;
+  SS_STEP.at = now;
+  return 새이름;
+}
+
+/** 시계를 처음부터 다시 */
+function ss시계비우기_() { SS_STEP = { 이름: '', at: 0, 목록: [] }; }
+
+/**
+ * 오래 걸린 구간부터 요약 행으로.
+ * 0.2초 밑은 안 적는다 — 스무 줄이 늘어서면 정작 큰 놈이 안 보인다.
+ */
+function ss시계표_() {
+  ss단계_('');                       // 마지막 구간 닫기
+  var 목 = SS_STEP.목록.slice();
+  목.sort(function (a, b) { return b[1] - a[1]; });
+  var out = [];
+  for (var i = 0; i < 목.length; i++) {
+    if (목[i][1] < 200) continue;
+    out.push(['  · ' + 목[i][0], (목[i][1] / 1000).toFixed(1) + '초']);
+  }
+  return out;
+}
+
 function ss_실행(opts) {
   opts = opts || {};
   var t0 = new Date().getTime();
   var lock = LockService.getDocumentLock();
   if (!lock.tryLock(5000)) { ssio_alert('다른 실행이 진행 중입니다.'); return; }
 
-  var 단계 = '시작';
+  ss시계비우기_();
+  var 단계 = ss단계_('시작');
   try {
-    단계 = '설정 읽기';
+    단계 = ss단계_('설정 읽기');
     var cfgRaw = ssio_config();
     var cfg = {
       자사출고지접두: cfgRaw['자사출고지접두'] || SS_DEFAULT_CONFIG.자사출고지접두,
@@ -327,6 +377,7 @@ function ss_실행(opts) {
       합포장_최대건수: cfgRaw['합포장_최대건수'] || SS_DEFAULT_CONFIG.합포장_최대건수
     };
 
+    단계 = ss단계_('판매현황 읽기');
     var sales;
     try {
       sales = opts.mirrorOnly
@@ -340,7 +391,29 @@ function ss_실행(opts) {
     if (grid.length < 2) { ssio_alert('판매현황이 비어 있습니다. (' + sales.원천 + ')'); return; }
 
     // 재고는 실행 시점 값이어야 한다 (구 시트의 IMPORTRANGE 와 같은 신선도)
-    var pre = ssm_refreshBeforeRun(cfgRaw);
+    단계 = ss단계_('재고 새로고침');
+    /*  ★ 재실행·조치 적용은 마스터를 다시 안 당긴다 ★  (2026-09-16)
+        > "재실행 했을떄 속도가 72초로 나왔어"
+
+        ssm_refreshBeforeRun 은 «외부 이카운트 시트»를 열어 품목·재고·BOM·
+        도서산간을 통째로 다시 받아 각 마스터 탭에 쓴다. 새 판매현황을 돌릴
+        때는 맞다 — 재고는 실행 시점 값이어야 한다.
+
+        그런데 🔂 재실행과 ✅ 조치 적용은 «방금 돌린 그 회차»를 다시 그리는
+        일이다. 몇 분 전에 받아 둔 값이 그대로 있는데 또 받는다.
+
+        ★ 속도만의 문제가 아니다 ★
+          그 사이 이카운트 재고가 줄면 같은 회차인데 판정이 달라진다 —
+          1차에서 자사출고였던 줄이 조치 한 번 반영하고 나니 재고부족으로
+          대리발송이 되어 있는 식이다. 같은 회차는 같은 잣대로 봐야 한다.
+
+        새 재고로 다시 보고 싶으면 ▶ 세트분리 실행을 쓴다 (늘 당겨 온다).
+        재고가 오래됐으면 아래 STOCK_STALE 경고가 그대로 뜬다. */
+    var 갱신건너뜀 = !!(opts.회차유지 || opts.mirrorOnly);
+    var pre = 갱신건너뜀
+      ? { mode: '건너뜀 (재실행 — 직전 값 그대로. 새 재고로 보려면 ▶ 세트분리 실행)',
+          report: [], warnings: [] }
+      : ssm_refreshBeforeRun(cfgRaw);
 
     // 지난 회차 「보류」 탭에 사람이 적어 넣은 조치를 먼저 걷어 온다.
     // 보류 탭은 곧 다시 쓰이므로 여기서 안 걷으면 입력이 사라진다.
@@ -352,11 +425,11 @@ function ss_실행(opts) {
       ['주의', '이 표시가 남아 있으면 출력 탭은 이전 회차 내용입니다']
     ], { bg: '#7a5b12' });
 
-    단계 = '협력업체 표';
+    단계 = ss단계_('협력업체 표');
     ssm_seedVendors();
     // 회차를 먼저 정한다. 조치가 「어느 회차의 것인지」 묶여야
     // 되는 것부터 차례로 처리해도 앞서 반영한 건이 되돌아가지 않는다.
-    단계 = '회차 확정';
+    단계 = ss단계_('회차 확정');
     var 지문 = ssFingerprint(ssNormalize(grid, cfg, []));
     /*  🔂 재실행이면 마지막 회차를 그대로 쓴다 (2026-09-16).
         판매현황 O열에 고유아이디를 적고 나면 지문이 달라져 새 회차가 되는데,
@@ -366,17 +439,17 @@ function ss_실행(opts) {
       : ss_회차확정(지문, grid.length);
     var runKey = 회차.key;
 
-    단계 = '보류 조치 걷기';
+    단계 = ss단계_('보류 조치 걷기');
     var 걷은조치 = ssm_captureManual(runKey);
 
-    단계 = '마스터 읽기';
+    단계 = ss단계_('마스터 읽기');
     var masters = ssm_load(runKey);
     if (!Object.keys(masters.items).length) {
       ssio_alert('품목 마스터가 비어 있습니다. 먼저 「① 마스터 새로고침」을 실행하세요.');
       return;
     }
 
-    단계 = '계산';
+    단계 = ss단계_('계산');
     var res = ssRun(grid, masters, cfg);
 
     for (var pw = 0; pw < pre.warnings.length; pw++) {
@@ -391,6 +464,7 @@ function ss_실행(opts) {
     // 주소마다 우편번호를 한 번씩만 구해 사전에 쌓는다.
     // 사전이 채워지면 파이프라인을 한 번 더 돌려 그 결과로 판정한다.
     var 재실행 = '';
+    단계 = ss단계_('우편번호 조회');
     var added = ssm_addAddresses(res.units, masters, ssNum(cfgRaw['우편번호_최대조회']) || 300);
     var 재시도일 = ssz_shouldRetryToday;   // 참조만 (아래 조건에서 호출)
     var zr = { filled: 0, island: 0, failed: [], noKey: false, tried: 0 };
@@ -430,11 +504,13 @@ function ss_실행(opts) {
 
     var now = new Date();
     var at = Utilities.formatDate(now, 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+    단계 = ss단계_('원장 회차 비우기');
     var 지운행 = ss_원장회차삭제(runKey);   // 같은 회차 기록은 항상 갈아 끼운다
 
     // 판매현황 O열「주문자명(사방넷)」에 전화주문 고유아이디를 채운다.
     // 사방넷·대리판매는 이미 「이름/ID」로 들어오므로 전화주문만 같은 형식으로 맞춘다.
     // 그러면 O열 하나로 전 주문이 통일되고, 송장매칭·일일마감이 이 열만 보면 된다.
+    단계 = ss단계_('판매현황 O열 쓰기');
     var 아이디채움 = ss_판매현황아이디채움(res.idCells);
 
     /*  ★ 그날치를 회차별로 이어 쌓는다 — 「0914판매현황」 ★  (2026-09-14)
@@ -443,6 +519,7 @@ function ss_실행(opts) {
         있어야 한다. 실패해도 실행은 계속한다 — 곁다리다. */
     var 그날쌓음 = 0;
     try {
+    단계 = ss단계_('그날 판매현황 쌓기');
       그날쌓음 = ss_그날판매현황쌓기(runKey);
     } catch (eD) {
       ssWarn(res.warnings, '주의', 'DAILY_SALES_TAB', String(eD && eD.message ? eD.message : eD),
@@ -467,8 +544,10 @@ function ss_실행(opts) {
         받는분·주소·연락처·품목명·수량 — 송장 한 장이 되기 위한 최소다.
         여기서 못 잡으면 그 줄은 그대로 출력 탭에 앉고, 아무도 모른 채
         송장이 나간다. 어제 주소가 그렇게 87% 빠졌다. */
+    단계 = ss단계_('출고 점검');
     var 출고빔 = ss출고점검(res.buckets, res.warnings);
 
+    단계 = ss단계_('출력 탭 쓰기');
     for (var i = 0; i < SSIO_TABS.출력.length; i++) {
       var name = SSIO_TABS.출력[i];
       var bucket = res.buckets[name] || [];
@@ -502,7 +581,7 @@ function ss_실행(opts) {
       res.warnings.map(function (w) { return [w.level, w.code, w.target, w.msg]; }), { bg: '#7a5b12' });
 
     // 이력
-    단계 = '원장 적재';
+    단계 = ss단계_('원장 적재');
     ssio_migrateHeader(SSIO_TABS.원장, SS_LEDGER_HEADER);
     ssio_migrateHeader(SSIO_TABS.실행이력, SS_RUNLOG_HEADER);
     var ledger = res.units.map(function (u) { return ssLedgerRow(u, runKey, at); });
@@ -590,7 +669,7 @@ function ss_실행(opts) {
     }
     var 적용조치 = ssm_stampManual(res.units, runKey);
 
-    단계 = '중복 점검';
+    단계 = ss단계_('중복 점검');
     var dup = ss_중복점검(true);
     /*  ★ 「연속으로 이어진 것」은 따로, 더 크게 말한다 ★  (2026-09-14)
         여러 줄이 지난 회차와 같은 차례로 이어졌다면 그건 재주문이 아니라
@@ -662,10 +741,30 @@ function ss_실행(opts) {
         res.warnings.map(function (w) { return [w.level, w.code, w.target, w.msg]; }), { bg: '#7a5b12' });
     }
 
-        ssio_write(SSIO_TABS.요약, SS_SUMMARY_HEADER, sum);
+    /*  ★ 어디서 시간을 썼는지 적는다 ★  (2026-09-16)
+        > "재실행 했을떄 속도가 72초로 나왔어"
+
+        오래 걸린 구간부터 적는다. 0.2초 밑은 빼서 큰 놈이 묻히지 않게 한다.
+        「소요(초)」는 원장을 적재한 시점 값이라 중복점검 뒤가 빠져 있었다 —
+        사람이 체감하는 시간과 달라 헷갈린다. 전체 시간을 따로 적는다. */
+    var 총초 = (new Date().getTime() - t0) / 1000;
+    sum.push(['소요(초) · 전체', 총초.toFixed(1) + '초  (위 「소요(초)」는 원장 적재까지)']);
+    var 시계 = ss시계표_();
+    if (시계.length) {
+      sum.push(['⏱ 오래 걸린 구간', 시계.length + '개 (0.2초 넘는 것만)']);
+      for (var tk = 0; tk < 시계.length; tk++) sum.push(시계[tk]);
+    }
+    ssio_write(SSIO_TABS.요약, SS_SUMMARY_HEADER, sum);
 
     var 대표 = (res.합배송뷰 || []).length - res.stats.합포장흡수;
-    var msg = '세트분리 완료 · ' + sec.toFixed(1) + '초\n' +
+    /*  사람이 견주는 숫자는 «누른 뒤 뜰 때까지»다. 원장 적재까지만 센 값을
+        보여 주면 「72초라더니 왜 40초라 하나」가 된다 (2026-09-16). */
+    var 구간글 = '';
+    for (var tg = 0; tg < 시계.length && tg < 3; tg++) {
+      구간글 += '\n   ' + 시계[tg][0].replace('  · ', '') + ' ' + 시계[tg][1];
+    }
+    var msg = '세트분리 완료 · ' + 총초.toFixed(1) + '초' +
+      (구간글 ? '   (오래 걸린 곳:' + 구간글 + ')' : '') + '\n' +
       '회차 ' + runKey + (회차.재실행 ? '  (재실행 — 원장 ' + 지운행 + '행 교체)' : '  (신규)') + '\n\n' +
       '입력 ' + res.stats.입력행 + '행 → 분해 ' + res.stats.분해행 + '행\n' +
       '실제 송장 ' + res.stats.송장건수 + '건   (탭 합계 ' + res.stats.출력행 +

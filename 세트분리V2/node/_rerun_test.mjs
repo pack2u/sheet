@@ -145,6 +145,45 @@ console.log("\n[7] 메뉴에 걸려 있다");
   eq("요약에 표시된다", main.indexOf("🔂 재실행 (회차 그대로)") >= 0, true);
 }
 
+
+console.log("\n[8] 재실행·조치 적용은 마스터를 다시 안 당긴다");
+{
+  /*  ssm_refreshBeforeRun 은 «외부 이카운트 시트»를 열어 품목·재고·BOM·
+      도서산간을 통째로 다시 받아 각 마스터 탭에 쓴다. 재실행은 방금 돌린
+      그 회차를 다시 그리는 일이라 그 값이 이미 있다.
+
+      속도만의 문제가 아니다 — 그 사이 재고가 줄면 같은 회차인데 판정이
+      달라진다. 1차에서 자사출고였던 줄이 조치 한 번 반영하고 나니
+      재고부족으로 대리발송이 되어 있는 식이다.  */
+  eq("건너뛰는 갈래가 있다", main.indexOf("var 갱신건너뜀 = !!(opts.회차유지 || opts.mirrorOnly);") >= 0, true);
+  eq("건너뛸 때는 안 부른다",
+    /갱신건너뜀[\s\S]{0,400}?ssm_refreshBeforeRun\(cfgRaw\)/.test(main), true);
+  eq("평소엔 그대로 부른다", main.indexOf(": ssm_refreshBeforeRun(cfgRaw);") >= 0, true);
+  eq("건너뛰었다고 요약에 적는다", main.indexOf("건너뜀 (재실행 — 직전 값 그대로") >= 0, true);
+  eq("빠져나갈 길을 알려 준다", main.indexOf("새 재고로 보려면 ▶ 세트분리 실행") >= 0, true);
+
+  //  ssm_refreshBeforeRun 을 부르는 곳이 ss_실행 안에 «한 군데»뿐이어야 한다.
+  //  두 군데면 한쪽만 건너뛰고 다른 쪽이 그대로 당긴다.
+  const 부름 = (main.match(/ssm_refreshBeforeRun\(/g) || []).length;
+  eq("부르는 곳은 한 군데", 부름, 1);
+}
+
+console.log("\n[9] 구간 시계 — 어디서 시간을 썼는지 적는다");
+{
+  eq("시계가 있다", main.indexOf("function ss단계_(") >= 0, true);
+  eq("요약에 구간을 적는다", main.indexOf("⏱ 오래 걸린 구간") >= 0, true);
+  eq("전체 시간을 따로 적는다", main.indexOf("소요(초) · 전체") >= 0, true);
+
+  /*  단계 이름은 «실패했을 때 어느 단계에서 멈췄나»를 말하는 그 이름이다.
+      시계용으로 따로 두면 언젠가 어긋난다. 그래서 단계 = ss단계_('...') 꼴로
+      한 벌만 쓴다 — 맨 이름만 넣는 곳이 남아 있으면 그 구간이 통째로 빠진다. */
+  const 맨이름 = main.match(/^\s*단계 = '[^']+';/gm) || [];
+  eq("★ 시계에 안 물린 단계가 없다", 맨이름, []);
+
+  const 물린것 = (main.match(/단계 = ss단계_\('/g) || []).length;
+  eq("★ 구간이 넉넉히 잘려 있다 (12개 이상)", 물린것 >= 12, true, 물린것 + "개");
+}
+
 console.log("");
 console.log(fail === 0 ? "✅ 통과 " + pass + "건" : "❌ 실패 " + fail + "건 / 통과 " + pass + "건");
 process.exit(fail === 0 ? 0 : 1);
