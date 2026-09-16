@@ -3282,6 +3282,81 @@ function _po_normName_(v) {
     .toLowerCase();
 }
 
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  나가기 직전에 «같은 송장이 여러 주문에» 붙었는지 본다
+ *  2026-09-16
+ *
+ *  > "오늘 주문건의 송장 입력은 3시 5시쯤에 해야되는데..
+ *  >  밤에 검증을 한다는건 말이 안되"
+ *
+ *  맞는 말이다. 밤에 알아봐야 이미 업체 시트에도 사방넷에도 나간 뒤다.
+ *  고객이 전화를 걸고 나서야 아는 것과 다를 바 없다.
+ *
+ *  ★ 여기가 마지막 문이다 ★
+ *    송장 수집(16:40)이 허브에 적고, 배포(16:50)가 업체 시트로 내보낸다.
+ *    이 검사는 배포가 «내보내기 전»에 돈다. 여기서 막으면 밖으로 안 나간다.
+ *
+ *  ★ 시트를 더 읽지 않는다 ★
+ *    배포가 이미 들고 있는 것(pendingByUid)만 본다. 한 송장을 여러 주문이
+ *    갖고 있으면 그 자리에서 보인다 — 원장을 다시 열 까닭이 없다.
+ *    그래서 배포가 느려지지 않는다.
+ *
+ *  ★ 합배송은 정상이다 ★
+ *    여러 주문이 한 상자로 나가면 송장이 같은 것이 맞다. 그때는 허브의
+ *    상태나 적요에 「합배송」·「합포장」이 적혀 있다. 그 표시가 하나도 없이
+ *    송장만 같으면 그것이 «남의 송장»이다.
+ *
+ *  @return {Array<string>} 막아야 할 고유ID 들. 없으면 빈 배열.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _po_sameInvoiceDifferentOrders_(pendingByUid, out수상) {
+  var 주인 = {};
+  var uids = Object.keys(pendingByUid);
+  for (var i = 0; i < uids.length; i++) {
+    var p = pendingByUid[uids[i]];
+    if (!p || !p.invoice) continue;
+    //  한 칸에 송장이 여럿일 수 있다 (합포장 대표). 낱개로 갈라 본다.
+    var parts = String(p.invoice).split(/[^0-9]+/);
+    for (var q = 0; q < parts.length; q++) {
+      var d = parts[q];
+      if (!d || d.length < 8) continue;
+      (주인[d] || (주인[d] = [])).push(uids[i]);
+    }
+  }
+
+  var 막을것 = [];
+  for (var inv in 주인) {
+    if (!Object.prototype.hasOwnProperty.call(주인, inv)) continue;
+    var 여럿 = 주인[inv];
+    if (여럿.length < 2) continue;
+
+    /*  합배송이라고 «적혀 있는가». 한 줄이라도 적혀 있으면 그 상자는
+        여럿이 같이 나간 것이 맞다 — 막지 않는다. */
+    var 합배송인가 = false;
+    for (var k = 0; k < 여럿.length; k++) {
+      var q2 = pendingByUid[여럿[k]];
+      var 글 = String((q2 && q2.status) || "") + " " + String((q2 && q2.hubMemo) || "");
+      var 짧 = 글.replace(/\s/g, "");
+      if (짧.indexOf("합배송") !== -1 || 짧.indexOf("합포장") !== -1) { 합배송인가 = true; break; }
+    }
+    if (합배송인가) continue;
+
+    /*  표시가 하나도 없다. 남의 송장이 붙은 것이다 — 그 주문들을 다 막는다.
+        어느 쪽이 주인인지 여기서는 알 수 없고, 짐작으로 하나만 내보내면
+        틀린 쪽이 나갈 수 있다. 사람이 보고 정할 일이다. */
+    for (var m = 0; m < 여럿.length; m++) {
+      if (막을것.indexOf(여럿[m]) < 0) 막을것.push(여럿[m]);
+    }
+    if (out수상) {
+      out수상.push("송장 " + inv + " 을(를) 주문 " + 여럿.length + "건이 나눠 갖고 있습니다 — " +
+        여럿.slice(0, 4).join(" · ") + (여럿.length > 4 ? " 외" : ""));
+    }
+  }
+  return 막을것;
+}
+
 function partnerPushInvoices() {
   var ui = null;
   try {
@@ -3348,6 +3423,13 @@ function partnerPushInvoices() {
       statusOnly: isShipApproved && !invoice,  // ★ 출고가능 상태만 배포
     };
   }
+
+  /*  ★ 나가기 직전 마지막 문 ★  (2026-09-16)
+      > "밤에 검증을 한다는건 말이 안되"
+      맞는 말이다. 여기서 막으면 업체 시트에도 사방넷에도 안 나간다. */
+  var 겹친송장 = [];
+  var 막힌uid = _po_sameInvoiceDifferentOrders_(pendingByUid, 겹친송장);
+  for (var mb = 0; mb < 막힌uid.length; mb++) delete pendingByUid[막힌uid[mb]];
 
   var pendingCount = Object.keys(pendingByUid).length;
   if (pendingCount === 0) {
@@ -3638,6 +3720,13 @@ function partnerPushInvoices() {
     /*  ★ 고유ID가 둘을 가리키는 줄 — 제일 위험하다 ★
         여기서 안 막으면 바로 위 줄 송장이 아래에도 찍히고,
         업체 화면에는 아무 문제가 없어 보인다.  */
+    /*  ★ 제일 먼저 말한다 ★  이건 사람이 지금 봐야 하는 일이다 */
+    (겹친송장.length
+      ? "\n⛔ 같은 송장이 «여러 주문»에 붙어 있어 " + 막힌uid.length + "건을 배포하지 않았습니다\n" +
+        "   합배송이라는 표시가 하나도 없습니다 — 남의 송장일 수 있습니다.\n" +
+        "   허브에서 그 줄들을 보고 어느 주문의 송장인지 정한 뒤 다시 배포하세요.\n\n" +
+        "   " + 겹친송장.slice(0, 8).join("\n   ") + "\n"
+      : "") +
     (dupUidRows.length
       ? "\n⛔ 같은 고유ID가 한 탭에 여러 줄 — " + dupUidRows.length + "곳, 송장을 안 썼습니다\n" +
         "   업체가 주문 줄을 복사하면 고유ID까지 따라옵니다.\n" +
@@ -3666,6 +3755,9 @@ function partnerPushInvoices() {
       ].concat(memoOnlyCount > 0 ? [{ label: "📝 적요만", value: memoOnlyCount + "건" }] : [])
        .concat(mismatched.length
          ? [{ label: "⛔ 내용이 달라 안 씀", value: mismatched.length + "건 — 업체가 줄을 복사한 듯" }]
+         : [])
+       .concat(겹친송장.length
+         ? [{ label: "⛔ 같은 송장·여러 주문", value: 막힌uid.length + "건 배포 안 함 — 남의 송장일 수 있음" }]
          : [])
        .concat(dupUidRows.length
          ? [{ label: "⛔ 고유ID가 겹친 줄", value: dupUidRows.length + "곳 — 줄을 복사한 듯. 고유ID를 비우고 재수집" }]

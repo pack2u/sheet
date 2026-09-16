@@ -1873,6 +1873,22 @@ function _trigger_fetchInvoices_() {
     Logger.log("[TRIGGER 16:05] 허브 송장 수집 시작");
     partnerFetchInvoices();
     Logger.log("[TRIGGER 16:05] 허브 송장 수집 완료");
+
+    /*  ★ 걷은 «직후»에 남의 송장이 붙었는지 본다 ★  (2026-09-16)
+
+        > "오늘 주문건의 송장 입력은 3시 5시쯤에 해야되는데..
+        >  밤에 검증을 한다는건 말이 안되"
+
+        처음엔 21:30 밤일에 붙였다가 되돌렸다. 밤에 알아봐야 이미 업체 시트에도
+        사방넷에도 나간 뒤다. 여기서 돌리면 16:50 배포까지 십 분이 남는다 —
+        그 사이에 사람이 손쓸 수 있다.
+
+        곁다리라 실패해도 수집은 이미 끝났다. 예외를 밖으로 내보내지 않는다. */
+    try {
+      if (typeof _iod_afterFetch_ === "function") _iod_afterFetch_();
+    } catch (eIod) {
+      Logger.log("[송장소유권] 점검 실패(무시): " + (eIod && eIod.message ? eIod.message : eIod));
+    }
     try { _chat_sendCard_("✅ 자동 송장 수집 완료", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), []); } catch (_) {}
   } catch (e) {
     Logger.log("[TRIGGER 16:05] 허브 송장 수집 에러: " + e.message);

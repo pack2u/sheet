@@ -179,36 +179,120 @@ console.log("\n[8] ★ 스마트 수집의 기준은 «시작 시각»이다");
 }
 
 
-console.log("\n[9] ★ 밤마다 «결과»를 본다 — 남의 송장이 붙었나");
-{
-  /*  > "다른 주문번호에 송장이 붙어 버리네.. 시스템의 오류가 너무 많아 신뢰가 없네"
 
-      코드마다 그물을 놓는 것은 «아는 구멍»에만 듣는다. 이 점검은 까닭을 묻지
-      않고 결과를 본다 — 한 송장이 여러 주문에 붙었는데 합포장이 아니면
-      무언가 틀린 것이다. 어느 코드가 그랬든 걸린다.  */
+
+console.log("\n[9] ★ 나가기 «직전»에 막는다 — 밤이 아니다");
+{
+  /*  > "오늘 주문건의 송장 입력은 3시 5시쯤에 해야되는데..
+      >  밤에 검증을 한다는건 말이 안되"
+
+      맞는 말이다. 밤에 알아봐야 이미 업체 시트에도 사방넷에도 나간 뒤다.
+      처음엔 21:30 밤일에 붙였다가 되돌렸다.  */
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(grab("_po_sameInvoiceDifferentOrders_"), ctx);
+  const 보기 = (pending) => {
+    ctx.__p = pending; ctx.__w = [];
+    const r = vm.runInContext("_po_sameInvoiceDifferentOrders_(__p, __w)", ctx);
+    return { 막을것: r, 말: ctx.__w };
+  };
+
+  //  ① 같은 송장인데 합배송 표시가 없다 — 남의 송장이다
+  {
+    const r = 보기({
+      "SB-1001": { invoice: "451694597", status: "발송완료", hubMemo: "" },
+      "SB-2002": { invoice: "451694597", status: "발송완료", hubMemo: "" },
+    });
+    check("★ 둘 다 막는다", r.막을것.sort(), ["SB-1001", "SB-2002"]);
+    check("어느 송장인지 말한다", r.말[0].indexOf("451694597") >= 0, true);
+    check("몇 건인지 말한다", r.말[0].indexOf("2건") >= 0, true);
+  }
+
+  //  ② 합배송이라고 적혀 있으면 정상이다
+  {
+    const r = 보기({
+      "SB-1001": { invoice: "451694597", status: "발송완료", hubMemo: "" },
+      "SB-1002": { invoice: "451694597", status: "합배송", hubMemo: "" },
+    });
+    check("★ 안 막는다", r.막을것, []);
+  }
+  {
+    const r = 보기({
+      "SB-1001": { invoice: "451694597", status: "발송완료", hubMemo: "합배송 · 몸통" },
+      "SB-1002": { invoice: "451694597", status: "발송완료", hubMemo: "" },
+    });
+    check("적요에 적혀 있어도 안 막는다", r.막을것, []);
+  }
+
+  //  ③ 송장이 다르면 상관없다
+  {
+    const r = 보기({
+      "SB-1001": { invoice: "451694597", status: "발송완료", hubMemo: "" },
+      "SB-2002": { invoice: "451694598", status: "발송완료", hubMemo: "" },
+    });
+    check("서로 다른 송장은 안 막는다", r.막을것, []);
+  }
+
+  //  ④ 한 칸에 송장이 여럿인 대표 줄 — 낱개로 갈라 본다
+  {
+    const r = 보기({
+      "SB-1001": { invoice: "451694597\n451694598", status: "합배송", hubMemo: "" },
+      "SB-2002": { invoice: "451694598", status: "발송완료", hubMemo: "" },
+    });
+    check("★ 한 칸 여러 송장도 갈라 본다 (합배송이라 통과)", r.막을것, []);
+  }
+  {
+    const r = 보기({
+      "SB-1001": { invoice: "451694597 451694598", status: "발송완료", hubMemo: "" },
+      "SB-2002": { invoice: "451694598", status: "발송완료", hubMemo: "" },
+    });
+    check("★ 표시가 없으면 갈라 보고 막는다", r.막을것.sort(), ["SB-1001", "SB-2002"]);
+  }
+
+  //  ⑤ 송장이 없는 줄(적요만 배포)은 볼 것이 없다
+  {
+    const r = 보기({
+      "SB-1001": { invoice: "", status: "출고가능", hubMemo: "" },
+      "SB-2002": { invoice: "", status: "출고가능", hubMemo: "" },
+    });
+    check("송장 없는 줄은 안 본다", r.막을것, []);
+  }
+}
+
+console.log("\n[10] 막은 것을 «말한다», 그리고 시트를 더 안 읽는다");
+{
+  const i = src.indexOf("function partnerPushInvoices(");
+  const 몸 = src.slice(i, i + 24000);
+  /*  ★ 먼저: 검사를 «부르는가» ★
+      뺀 자리만 보면, 검사를 안 부르고 빈 배열을 넣어도 통과한다 —
+      2026-09-16 에 그물을 시험하다 실제로 그렇게 빠져나갔다. */
+  check("★ 검사를 부른다",
+    몸.indexOf("var 막힌uid = _po_sameInvoiceDifferentOrders_(pendingByUid, 겹친송장);") >= 0, true);
+  check("★ 배포 목록에서 뺀다", /delete pendingByUid\[막힌uid\[mb\]\]/.test(몸), true);
+  check("★ 세기 «전»에 뺀다 (숫자가 맞아야 한다)",
+    몸.indexOf("delete pendingByUid[막힌uid[mb]]") < 몸.indexOf("var pendingCount ="), true);
+  check("보고에 적는다", src.indexOf("같은 송장이 «여러 주문»에 붙어 있어") >= 0, true);
+  check("무엇을 해야 하는지 말한다", src.indexOf("어느 주문의 송장인지 정한 뒤 다시 배포") >= 0, true);
+  check("Chat 카드에도", src.indexOf("⛔ 같은 송장·여러 주문") >= 0, true);
+
+  /*  시트를 더 읽으면 배포가 느려지고, 느려지면 16:50 이 밀린다. */
+  const 검사몸 = grab("_po_sameInvoiceDifferentOrders_");
+  check("★ 시트를 안 읽는다", /getRange|openById|getSheet/.test(검사몸), false);
+}
+
+console.log("\n[11] 전체 점검은 «수집 직후»에 돈다");
+{
   const iod = fs.readFileSync("_partnerInvoiceOwnerDiag.gs", "utf8");
+  const web = fs.readFileSync("_partnerWebApp.gs", "utf8");
   const mirror = fs.readFileSync("_partnerReturnsV2Mirror.gs", "utf8");
 
-  check("밤에 도는 함수가 있다", iod.indexOf("function _iod_nightly_()") >= 0, true);
-  check("★ 밤일에 물려 있다", mirror.indexOf("_iod_nightly_()") >= 0, true);
-  check("★ 곁다리로 감싼다 (실패해도 미러는 끝났다)",
-    /_iod_nightly_\(\);\s*\}\s*catch \(e4\)/.test(mirror), true);
-
-  check("★ 찾았을 때만 말한다", /if \(!r\.sure\) return;/.test(iod), true);
-  check("의심(🟡)만으로는 안 알린다 (오탐이 섞인다)",
-    /if \(!r\.sure\) return;[\s\S]{0,200}_chat_sendCard_/.test(iod), true);
-  check("무엇을 보는지 카드에 적는다",
-    iod.indexOf("한 송장이 여러 주문에 붙었는데 합포장이 아닌 것") >= 0, true);
-  check("어디서 다시 보는지도 적는다", iod.indexOf("송장 소유권 점검") >= 0, true);
-
-  /*  돌려주는 «글»을 다시 뜯어 세면 문구를 바꿀 때마다 조용히 틀린다.
-      숫자는 숫자로 남긴다.  */
-  check("★ 셈을 숫자로 남긴다", iod.indexOf("_IOD_LAST_ = { sure: counts.sure") >= 0, true);
-  check("★ 글을 뜯어 세지 않는다",
-    /_IOD_LAST_[\s\S]{0,400}msg\.match|msg\.indexOf\("🔴/.test(iod), false);
-
-  //  7일만 본다 — 14일은 마감 파일을 그만큼 열어 밤일을 밀어낸다
-  check("밤에는 좁게 본다", /partnerDiagnoseInvoiceOwnership\(7\)/.test(iod), true);
+  check("이름이 «수집 뒤»다", iod.indexOf("function _iod_afterFetch_()") >= 0, true);
+  check("★ 송장 수집 트리거에 물려 있다", web.indexOf("_iod_afterFetch_()") >= 0, true);
+  check("★ 수집이 «끝난 뒤»에 부른다",
+    web.indexOf("허브 송장 수집 완료") < web.indexOf("_iod_afterFetch_()"), true);
+  check("★ 밤일에서는 뺐다", /_iod_nightly_|_iod_afterFetch_/.test(mirror), false);
+  check("곁다리로 감싼다", /_iod_afterFetch_\(\);\s*\}\s*catch \(eIod\)/.test(web), true);
+  check("찾았을 때만 말한다", /if \(!r\.sure\) return;/.test(iod), true);
 }
 
 console.log("");
