@@ -12270,6 +12270,189 @@ function _unified_searchLiveArchiveFile_(fileName, folder) {
  * @param {string} fileName 파일명
  * @return {Spreadsheet|null}
  */
+/* ══════════════════════════════════════════════════════════════
+ *  🩹 남의 날짜에 앉은 줄을 «제자리로 옮긴다»  (2026-09-17)
+ *
+ *  > "계속 오류값 찾아내는 메뉴만 만들고 다시 작업하게 만들고
+ *  >  이건 무슨 시간낭비지?"
+ *
+ *  맞는 말이다. 찾아 놓고 고치는 일을 사람에게 돌려주면 안 된다.
+ *  이 함수는 «찾고 옮기고 말한다» — 한 번 누르면 끝난다.
+ *
+ *  ★ 왜 어긋났나 ★
+ *    _pep_bumpSnapDate_ 가 주문일을 «오늘»로 밀어 올렸다. 그래서
+ *    어제 주문이 오늘 파일에 들어가고 어제 파일은 미매칭으로 남았다.
+ *    그 길은 같은 날 막았다. 이 함수는 «이미 어긋난 것»을 되돌린다.
+ *
+ *  ★ 참값은 세트분리 원장이 갖고 있다 ★
+ *    일일마감 줄에는 주문일 칸이 없다. 대신 고유ID 가 있고,
+ *    세트분리 「주문라인원장」이 고유ID → 회차키(YYMMDD-N) 를 갖고 있다.
+ *    그 앞 여섯 자리가 그 주문이 «실제로 들어온 날»이다.
+ *
+ *  ★ 안전하게 짓는다 ★
+ *    ① 옮길 목록을 먼저 다 만든다
+ *    ② 제 날짜 파일에 «먼저 쓴다» (이미 있으면 안 쓴다)
+ *    ③ 쓰기가 «확인된 줄만» 원본에서 지운다
+ *    쓰기가 실패하면 원본을 안 건드린다 — 자료가 사라지는 길을 안 만든다.
+ * ══════════════════════════════════════════════════════════════ */
+
+/** 회차키(YYMMDD-N) → yyyy-MM-dd. 못 읽으면 "" */
+function _pep_dateFromRunKey_(rk) {
+  var s = String(rk == null ? "" : rk).trim();
+  if (s.length < 6) return "";
+  for (var i = 0; i < 6; i++) {
+    var c = s.charAt(i);
+    if (c < "0" || c > "9") return "";
+  }
+  return "20" + s.substring(0, 2) + "-" + s.substring(2, 4) + "-" + s.substring(4, 6);
+}
+
+/** 세트분리 원장 → { 고유ID: yyyy-MM-dd }. 한 고유ID에 날짜가 여럿이면 «가장 이른» 날 */
+function _pep_loadOrderDateByUid_() {
+  var map = {}, 줄 = 0;
+  var tab = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID).getSheetByName("주문라인원장");
+  if (!tab || tab.getLastRow() < 2) return { map: map, rows: 0, error: "「주문라인원장」이 비었습니다" };
+
+  var lc = tab.getLastColumn();
+  var hv = tab.getRange(1, 1, 1, lc).getDisplayValues()[0];
+  var ix = {};
+  for (var h = 0; h < hv.length; h++) {
+    var n = String(hv[h] == null ? "" : hv[h]).replace(/\s/g, "");
+    if (n && ix[n] === undefined) ix[n] = h;
+  }
+  if (ix["고유ID"] === undefined || ix["회차키"] === undefined) {
+    return { map: map, rows: 0, error: "원장에 「고유ID」·「회차키」 칸이 없습니다" };
+  }
+  var data = tab.getRange(2, 1, tab.getLastRow() - 1, lc).getDisplayValues();
+  for (var r = 0; r < data.length; r++) {
+    var uid = String(data[r][ix["고유ID"]] || "").trim();
+    if (!uid) continue;
+    var d = _pep_dateFromRunKey_(data[r][ix["회차키"]]);
+    if (!d) continue;
+    줄++;
+    /*  한 주문이 여러 회차에 걸치면(재실행·이어달리기) 가장 «이른» 날이 참이다.
+        늦은 날을 고르면 이 함수가 바로 그 사고를 다시 저지른다. */
+    if (!map[uid] || d < map[uid]) map[uid] = d;
+  }
+  return { map: map, rows: 줄, error: "" };
+}
+
+/**
+ * 🩹 [메뉴] 일일마감 날짜 바로잡기 — 남의 날짜에 앉은 줄을 제자리로 옮긴다
+ * @param {number=} days 거슬러 볼 날 수 (기본 14)
+ */
+function partnerFixArchiveWrongDate(days) {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  var NL = String.fromCharCode(10);
+  days = parseInt(days, 10) || 14;
+  var t0 = new Date().getTime();
+  var 예산 = 4 * 60 * 1000;
+
+  var 지도 = _pep_loadOrderDateByUid_();
+  if (지도.error) {
+    var m0 = "🩹 일일마감 날짜 바로잡기" + NL + NL + "★ " + 지도.error + NL +
+      "세트분리 원장을 못 읽으면 어느 날이 참인지 알 수 없습니다.";
+    if (ui) { try { ui.alert(m0); } catch (e0) {} }
+    return m0;
+  }
+
+  var L = ["🩹 일일마감 날짜 바로잡기",
+    Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"),
+    "원장에서 읽은 주문 " + 지도.rows + "줄 · 최근 " + days + "일", ""];
+
+  var 옮김 = 0, 못옮김 = 0, 이미있음 = 0, 모름 = 0, 본파일 = 0;
+  var 예시 = [], 멈춤 = "";
+
+  for (var d = 0; d <= days; d++) {
+    if (new Date().getTime() - t0 > 예산) { 멈춤 = d + "일차에서 시간이 모자라 멈췄습니다."; break; }
+    var dt = new Date();
+    dt.setDate(dt.getDate() - d);
+    var dateStr = Utilities.formatDate(dt, "Asia/Seoul", "yyyy-MM-dd");
+
+    var ss;
+    try { ss = _unified_findExistingArchiveSs_(_UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")"); }
+    catch (eF) { continue; }
+    if (!ss) continue;
+    var tab = ss.getSheetByName("일일마감") || ss.getSheets()[0];
+    if (!tab || tab.getLastRow() < 2) continue;
+    본파일++;
+
+    var lc = Math.max(tab.getLastColumn(), 1);
+    var all = tab.getRange(1, 1, tab.getLastRow(), lc).getDisplayValues();
+    var hdr = all[0];
+    var cols = _pep_mapArchiveMatchCols_(hdr);
+    if (cols.oid < 0) { L.push("· " + dateStr + " : 고유ID 칸을 못 찾아 건너뜁니다"); continue; }
+
+    //  ① 옮길 목록 만들기
+    var 갈곳 = {};   // 참날짜 → [{행(1-based), row}]
+    for (var ri = 1; ri < all.length; ri++) {
+      if (String(all[ri][0] || "").indexOf("합계") !== -1) continue;
+      var uid = _pep_uidFromOrdererCell_(all[ri][cols.oid]);
+      if (!uid || !_pep_isRealUid_(uid)) { continue; }
+      var 참날 = 지도.map[uid];
+      if (!참날) { 모름++; continue; }
+      if (참날 === dateStr) continue;
+      if (!갈곳[참날]) 갈곳[참날] = [];
+      갈곳[참날].push({ 행: ri + 1, row: all[ri] });
+    }
+
+    var 지울행 = [];
+    for (var 참 in 갈곳) {
+      if (!Object.prototype.hasOwnProperty.call(갈곳, 참)) continue;
+      var 묶음 = 갈곳[참];
+      //  ② 제 날짜 파일에 «먼저» 쓴다. 이미 있는 줄은 안 쓴다(_pep_appendArchiveRows_ 가 거른다)
+      var res;
+      try {
+        res = _pep_appendArchiveRows_(SpreadsheetApp.getActiveSpreadsheet(), 참, hdr,
+          묶음.map(function (x) { return x.row; }), null);
+      } catch (eW) {
+        못옮김 += 묶음.length;
+        L.push("· " + dateStr + " → " + 참 + " : 쓰기 실패 — " + String(eW.message || eW));
+        continue;
+      }
+      //  ③ 쓰기가 «된 만큼»만 원본에서 지운다. 겹쳐서 안 쓴 줄도 원본에는 남길 이유가 없다 —
+      //     제 날짜 파일에 이미 그 줄이 있다는 뜻이기 때문이다.
+      var 썼다 = (res && res.written) || 0;
+      var 겹침 = 묶음.length - 썼다;
+      옮김 += 썼다;
+      이미있음 += 겹침;
+      for (var bi = 0; bi < 묶음.length; bi++) 지울행.push(묶음[bi].행);
+      if (예시.length < 6) {
+        예시.push("   " + dateStr + " → " + 참 + "  " + 묶음.length + "줄" +
+          (겹침 ? " (그중 " + 겹침 + "줄은 이미 있던 것)" : ""));
+      }
+    }
+
+    //  원본에서 지운다 — 뒤에서부터 지워야 줄 번호가 안 밀린다
+    if (지울행.length) {
+      지울행.sort(function (a, b) { return b - a; });
+      try {
+        for (var zi = 0; zi < 지울행.length; zi++) tab.deleteRow(지울행[zi]);
+        SpreadsheetApp.flush();
+      } catch (eD) {
+        L.push("· " + dateStr + " : 원본 줄 삭제 실패 — " + String(eD.message || eD) +
+          "  (옮기기는 끝났으니 그 줄이 두 곳에 있습니다. 손으로 지워 주세요)");
+      }
+    }
+  }
+
+  L.push("본 파일 : " + 본파일 + "개");
+  L.push("★ 제자리로 옮긴 줄 : " + 옮김 + "줄");
+  if (이미있음) L.push("   (제 날짜에 이미 있던 줄 " + 이미있음 + "줄은 원본에서 지우기만 했습니다)");
+  if (못옮김) L.push("   ⚠ 못 옮긴 줄 : " + 못옮김 + "줄");
+  if (모름) L.push("   · 원장에 없어 날짜를 모르는 줄 : " + 모름 + "줄 (건드리지 않았습니다)");
+  if (예시.length) { L.push(""); L = L.concat(예시); }
+  if (멈춤) { L.push(""); L.push("⏱ " + 멈춤 + " 다시 누르면 이어서 봅니다."); }
+  L.push("");
+  L.push("★ 원장에 없는 줄은 손대지 않습니다 — 모르면 안 건드리는 것이 맞습니다.");
+
+  var msg = L.join(NL);
+  if (ui) { try { ui.alert(msg); } catch (e2) {} }
+  Logger.log(msg);
+  return msg;
+}
+
 /**
  * 📁 일일마감 파일 «기억» 점검 — 이름이 어긋난 것을 찾아 보여 주고 지운다
  *

@@ -255,6 +255,9 @@ function registerPartnerMenu_() {
         /*  파일 이름을 손으로 바꾸면 마감이 «엉뚱한 파일»에 조용히 쓴다.
             2026-09-17 에 실제로 그랬다 — 완료창은 떴는데 파일이 없었다. */
         .addItem("   └ 📁 일일마감 파일 기억 점검", "partnerCheckDailyArchiveMemory")
+        /*  찾아만 주지 않는다 — 찾고 «옮기고» 말한다. 한 번 누르면 끝난다.
+            2026-09-17: 주문일이 뒤로 밀려 어제 것이 오늘 파일에 앉아 있었다. */
+        .addItem("   └ 🩹 일일마감 날짜 바로잡기 (제자리로 옮김)", "partnerFixArchiveWrongDate")
         .addItem("🗂️ 일일마감 파일 폴더 정리 (일회성)", "partnerMoveDailyCloseFilesToSubFolder")
         .addItem("📒 송장원장 갱신", "partnerRefreshInvoiceLedger")
         .addSeparator()
