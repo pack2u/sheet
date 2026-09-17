@@ -745,15 +745,55 @@ function ssNeedsBom_(name, code) {
 
 /* ── 2단계 · 세트 분해 (BOM 소요량 반영) ──────────────── */
 
+/**
+ * 이 주문 줄이 「대리발송품목」에 걸리는가 — «쪼개기 전»에 본다.
+ * 주문한 코드와 그 세트의 구성품을 다 본다.
+ * @return {string} 걸린 표의 코드 (안 걸리면 '')
+ */
+function ssPartnerItemHit_(원본코드, parts, 대리품목) {
+  var oc = ssText(원본코드).toUpperCase();
+  if (대리품목[oc]) return oc;
+  if (!parts) return '';
+  for (var i = 0; i < parts.length; i++) {
+    var pc = ssText(parts[i].code).toUpperCase();
+    if (대리품목[pc]) return pc;
+  }
+  return '';
+}
+
 function ssExplode(lines, masters, warnings) {
   var bom = masters.bom || {};
   var except = masters.splitExcept || {};
+  var 대리품목 = masters.partnerItems || {};
   var out = [];
   var warnedNoBom = {};   // 같은 코드로 여러 줄이 와도 주의는 한 번만
+  var warnedPI = {};
   for (var i = 0; i < lines.length; i++) {
     var L = lines[i];
     var parts = bom[L.원본코드];
-    var 분해 = parts && parts.length > 1 && !except[L.원본코드];
+
+    /* ★ 업체가 대는 물건은 «쪼개지 않는다» ★  (2026-09-17)
+       > "대리발송품목에서 빠지는것은 몸통뚜껑 세트분리전에 대리발송으로
+       >  빠져야되.. 분리후에 빠지니까 뚜껑만 주문이 대리발송으로 빠지네"
+
+       쪼개는 까닭은 «우리가» 창고에서 몸통과 뚜껑을 따로 꺼내 담기 때문이다.
+       업체가 대는 물건은 우리 창고를 거치지 않는다 — 쪼갤 까닭이 없다.
+
+       쪼갠 뒤에 판정하면 한 주문이 둘로 찢어진다. 뚜껑만 업체로 가고
+       몸통은 로젠으로 간다. 고객은 반쪽을 받고, 업체는 왜 뚜껑만
+       시켰는지 모른다. 그래서 판정을 «쪼개기 앞»으로 옮긴다.
+
+       구성품 하나만 표에 있어도 그 줄 전체를 넘긴다 — 찢지 않는 것이
+       먼저다. 다만 그 경우는 말해 준다(아래 PITEM_NO_SPLIT). */
+    var 대리걸림 = ssPartnerItemHit_(L.원본코드, parts, 대리품목);
+    var 분해 = parts && parts.length > 1 && !except[L.원본코드] && !대리걸림;
+
+    if (대리걸림 && 대리걸림 !== ssText(L.원본코드).toUpperCase() && !warnedPI[L.원본코드]) {
+      warnedPI[L.원본코드] = true;
+      ssWarn(warnings, '주의', 'PITEM_NO_SPLIT', L.원본코드 + ' > ' + 대리걸림,
+        '구성품 「' + 대리걸림 + '」 가 「대리발송품목」에 있어 세트를 쪼개지 않고 ' +
+        '주문한 그대로 업체에 넘깁니다. 그 구성품만 업체 것이라면 표에서 빼 주세요.');
+    }
 
     if (!분해) {
       /* ★ 2026-09-10: 「쪼개야 할 것 같은데 BOM 이 없다」를 알린다 ★
@@ -775,7 +815,10 @@ function ssExplode(lines, masters, warnings) {
           '「' + ssText(L.원본품목명) + '」 는 세트인데 BOM현황에 구성이 없습니다. ' +
           '쪼개지 않고 그대로 내보냅니다 — BOM 을 등록하거나 분리예외에 넣어 주세요.');
       }
-      out.push(ssMakeUnit(L, L.원본코드, 1, 0));
+      var u0 = ssMakeUnit(L, L.원본코드, 1, 0);
+      //  구성품 코드로 걸린 건은 라우팅이 원본코드로는 못 찾는다 — 표식을 남긴다
+      if (대리걸림) u0.대리품목걸림 = 대리걸림;
+      out.push(u0);
       continue;
     }
     for (var k = 0; k < parts.length; k++) {
@@ -1372,7 +1415,10 @@ function ssRoute(units, masters, cfg, warnings) {
          품목에 대한 결정이 이긴다. 대신 조용히 이기지 않는다 — 말한다.
          우리가 보내야 하면 그 품목을 표에서 지우면 된다 (한 칸이면 된다).  */
     {
-      var 예외 = 대리품목[ssText(u.원본코드).toUpperCase()] ||
+      /*  ssExplode 가 «쪼개기 전»에 이미 봤다. 구성품 코드로 걸린 건은
+          원본코드·품목코드 어느 쪽으로도 안 찾아지므로 그 표식을 먼저 본다. */
+      var 예외 = (u.대리품목걸림 ? 대리품목[u.대리품목걸림] : null) ||
+                 대리품목[ssText(u.원본코드).toUpperCase()] ||
                  대리품목[ssText(u.품목코드).toUpperCase()];
       if (예외) {
         if (면제) {
