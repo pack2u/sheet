@@ -83,9 +83,10 @@ function 판만들기(보류행들, 수동조치행들) {
   const 꺼내기 = new Function(
     "Utilities", "SpreadsheetApp", "Logger",
     "ssio_ss", "ssio_sheet", "ssio_body", "SSIO_TABS",
-    core + "\n" + masters + "\nreturn { ssm_captureManual: ssm_captureManual };",
+    core + "\n" + masters +
+      "\nreturn { ssm_captureManual: ssm_captureManual, ssm_dateKey: ssm_dateKey };",
   );
-  const { ssm_captureManual } = 꺼내기(
+  const { ssm_captureManual, ssm_dateKey } = 꺼내기(
     Utilities, SpreadsheetApp, { log() {} },
     () => ({ getSheetByName: (n) => 시트[n] || null }),
     (n) => 시트[n],
@@ -107,7 +108,7 @@ function 판만들기(보류행들, 수동조치행들) {
     return 행;
   };
 
-  return { ssm_captureManual, 시트, 보류줄, MH };
+  return { ssm_captureManual, ssm_dateKey, 시트, 보류줄, MH };
 }
 
 /* ── [1] 겹친 줄에서 터지지 않는다 ──────────────────────── */
@@ -213,5 +214,59 @@ console.log("\n[6] 코드 자리가 시트 줄 번호로 새지 않는가");
   eq("사람이 적은 것을 기억한다", masters.indexOf("명시한키[k] = true") >= 0, "true");
 }
 
-console.log(실패 ? "\n실패 " + 실패 + "건" : "\n겹친 보류 줄도 안전하다");
+/* ═══════════════════════════════════════════════════════════════
+   날짜 열쇠 — 점 찍힌 날짜도 같은 열쇠가 되는가
+
+   수동조치 탭의 등록일이 열쇠의 한 조각이다. 시스템은 2026-09-02 로 적지만
+   사람은 2026.9.2 라고 적는다. 둘이 다른 열쇠가 되면 같은 줄인데 새 줄로
+   담기고, 어느 것이 살아 있는 조치인지 아무도 모르게 된다.
+   ═══════════════════════════════════════════════════════════════ */
+console.log("\n[7] 어떻게 적어도 같은 날은 같은 열쇠");
+{
+  const { ssm_dateKey } = 판만들기([]);
+  const 같다 = (이름, 적은것) => eq(이름 + "  " + 적은것, ssm_dateKey(적은것), "2026-09-17");
+
+  같다("표준", "2026-09-17");
+  같다("빗금", "2026/09/17");
+  같다("★ 점", "2026.09.17");
+  같다("★ 점 + 0 없이", "2026.9.17");
+  같다("빗금 + 0 없이", "2026/9/17");
+  같다("붙여 쓴 것", "20260917");
+  같다("시각이 붙은 것", "2026-09-17 08:00:00");
+  같다("★ 앞뒤 공백", "  2026.9.17  ");
+  eq("한 자리 날도 채운다", ssm_dateKey("2026.9.2"), "2026-09-02");
+
+  //  ── 모르겠으면 손대지 않는다 ──
+  eq("빈 칸은 빈 칸", ssm_dateKey(""), "");
+  eq("null 도 빈 칸", ssm_dateKey(null), "");
+  eq("★ 해가 두 자리면 안 건드린다", ssm_dateKey("26-09-17"), "26-09-17");
+  eq("★ 토막이 모자라면 그대로", ssm_dateKey("2026-09"), "2026-09");
+  eq("★ 13월은 짐작하지 않는다", ssm_dateKey("2026-13-05"), "2026-13-05");
+  eq("★ 32일도 그대로", ssm_dateKey("2026-09-32"), "2026-09-32");
+  eq("날짜가 아니면 그대로", ssm_dateKey("확인필요"), "확인필요");
+
+  //  ── 먹힌 백슬래시가 돌아오지 않게 ──
+  const masters = 읽기(path.join(뿌리, "gasMasters.js"));
+  eq("★ 먹힌 정규식이 사라졌다", masters.indexOf("(d{4})") < 0, "true");
+  eq("정규식 대신 한 글자씩 읽는다",
+    masters.indexOf("if (c >= '0' && c <= '9')") >= 0, "true");
+}
+
+/* ── [8] 점 찍힌 날짜로 담긴 옛 줄도 같은 줄로 본다 ─────── */
+console.log("\n[8] 어제 2026.9.17 로 담긴 줄에 오늘 조치가 얹히는가");
+{
+  const 판 = 판만들기([]);
+  const 옛줄 = ["2026.9.17", "U9", "O9", "발송", "", "",
+    "R0", "2026-09-17 08:00:00", "", "", ""];
+  const t = 판만들기([
+    판.보류줄("U9", "A", "가", "HP", "품목누락", "코드없음", "O9"),
+  ], [옛줄]);
+
+  t.ssm_captureManual("R1");
+  const 담긴 = t.시트.수동조치.rows.slice(1);
+  eq("★ 새 줄이 생기지 않는다", 담긴.length, 1);
+  eq("★ 있던 줄이 고쳐진다", 담긴[0][3] + "/" + 담긴[0][4], "대리발송/HP");
+}
+
+console.log(실패 ? "\n실패 " + 실패 + "건" : "\n겹친 보류 줄도 · 점 찍힌 날짜도 안전하다");
 process.exit(실패 ? 1 : 0);

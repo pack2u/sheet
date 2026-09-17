@@ -808,11 +808,40 @@ function ssm_dateKey(v) {
   if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Seoul', 'yyyy-MM-dd');
   var s = String(v == null ? '' : v).trim();
   if (!s) return '';
-  s = s.replace(/\s+/g, '').replace(/[.\/]/g, '-');
-  var m = s.match(/^(d{4})-(d{1,2})-(d{1,2})/);
-  if (!m) return s;
+
+  /*  ★ 정규식을 쓰지 않는다 ★  (2026-09-17)
+      여기 있던 자는 /^(\d{4})-(\d{1,2})-(\d{1,2})/ 였는데 어느 사이엔가
+      백슬래시가 먹혀 \d 가 맨 d 로 남아 있었다.
+      「숫자 네 개」를 찾던 자가 「d 네 개」를 찾는 자가 된 것이다.
+      어떤 날짜에도 안 맞으니 «맞추기를 통째로 건너뛰고» 있었다.
+
+      그래서 2026.9.2 는 2026-9-2 로 남고, 시스템이 쓰는 2026-09-02 와
+      다른 열쇠가 된다. 같은 줄인데 다른 줄로 보여 조치가 새로 담긴다.
+      터지지 않는다 — 조용히 어긋난다. 그래서 정규식을 아예 걷어낸다.  */
+  var 조각 = [], cur = '';
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charAt(i);
+    if (c >= '0' && c <= '9') { cur += c; continue; }
+    if (cur) { 조각.push(cur); cur = ''; }
+  }
+  if (cur) 조각.push(cur);
+
+  //  20260917 처럼 붙여 쓴 것 — 토막이 하나뿐이면 갈라 본다
+  if (조각.length === 1 && 조각[0].length === 8) {
+    조각 = [조각[0].substring(0, 4), 조각[0].substring(4, 6), 조각[0].substring(6, 8)];
+  }
+
+  /*  ★ 모르겠으면 손대지 않는다 ★
+      해가 네 자리가 아니거나 토막이 모자라면 «적힌 그대로» 돌려준다.
+      짐작해서 바꾸면 틀린 열쇠가 되고, 틀린 열쇠는 빈 열쇠보다 나쁘다.  */
+  if (조각.length < 3) return s;
+  var y = 조각[0], mo = 조각[1], d = 조각[2];
+  if (y.length !== 4 || !mo.length || mo.length > 2 || !d.length || d.length > 2) return s;
+  var mN = Number(mo), dN = Number(d);
+  if (mN < 1 || mN > 12 || dN < 1 || dN > 31) return s;
+
   var p = function (x) { return (x.length < 2 ? '0' : '') + x; };
-  return m[1] + '-' + p(m[2]) + '-' + p(m[3]);
+  return y + '-' + p(mo) + '-' + p(d);
 }
 
 /** 유효한 수동조치만 골라 {고유ID|원본코드: {조치, 업체코드}} 로 만든다 */
