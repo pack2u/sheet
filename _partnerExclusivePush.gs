@@ -12240,6 +12240,74 @@ function _unified_searchLiveArchiveFile_(fileName, folder) {
  * @param {string} fileName 파일명
  * @return {Spreadsheet|null}
  */
+/**
+ * 📁 일일마감 파일 «기억» 점검 — 이름이 어긋난 것을 찾아 보여 주고 지운다
+ *
+ * > "지정일을 9/15일로 수동으로 만들었는데 9/17일자로 만들어지더라.
+ * >  그래서 15일로 바꾸었는데 그게 문제가 되나?"
+ *
+ * 마감은 날짜마다 «파일 ID» 를 기억해 둔다. 사람이 그 파일 이름을 바꾸면
+ * 기억과 실물이 어긋나고, 마감은 조용히 «이름이 다른 파일»에 쓴다.
+ * 여기서 어긋난 것을 눈으로 보고 지운다. 지우면 다음 마감이 새로 만든다.
+ */
+function partnerCheckDailyArchiveMemory() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  var props = PropertiesService.getScriptProperties();
+  var all = props.getProperties();
+  var NL = String.fromCharCode(10);
+  var 줄 = ["📁 일일마감 파일 기억 점검", ""];
+  var 어긋남 = [], 성한것 = 0, 사라짐 = [];
+
+  for (var k in all) {
+    if (!Object.prototype.hasOwnProperty.call(all, k)) continue;
+    if (k.indexOf(_UNIFIED_ARCHIVE_SS_PREFIX_) !== 0) continue;
+    var 기대이름 = k.substring(_UNIFIED_ARCHIVE_SS_PREFIX_.length);
+    var id = String(all[k] || "").trim();
+    if (!id) continue;
+    var 지금이름 = "";
+    try { 지금이름 = String(DriveApp.getFileById(id).getName() || "").trim(); }
+    catch (eF) { 사라짐.push(기대이름); continue; }
+    if (지금이름 === 기대이름) { 성한것++; continue; }
+    어긋남.push({ key: k, 기대: 기대이름, 지금: 지금이름 });
+  }
+
+  줄.push("기억해 둔 날짜 : " + (성한것 + 어긋남.length + 사라짐.length) + "개");
+  줄.push("  ✔ 이름이 맞는 것 : " + 성한것 + "개");
+  if (사라짐.length) {
+    줄.push("  · 파일이 없어진 것 : " + 사라짐.length + "개 (저절로 다시 만들어집니다)");
+  }
+  줄.push("");
+
+  if (!어긋남.length) {
+    줄.push("★ 이름이 어긋난 기억은 없습니다.");
+    var msg0 = 줄.join(NL);
+    if (ui) { try { ui.alert(msg0); } catch (e0) {} }
+    Logger.log(msg0);
+    return msg0;
+  }
+
+  줄.push("★ 이름이 어긋난 기억 " + 어긋남.length + "개 —");
+  for (var i = 0; i < 어긋남.length && i < 10; i++) {
+    줄.push("   「" + 어긋남[i].기대 + "」 로 찾는데");
+    줄.push("     그 파일은 지금 「" + 어긋남[i].지금 + "」 입니다");
+  }
+  줄.push("");
+  줄.push("이 기억을 지울까요? 지우면 다음 마감이 제 이름으로 새로 만듭니다.");
+  줄.push("(파일은 안 지웁니다 — 이름만의 문제입니다)");
+
+  if (ui) {
+    var ans = ui.alert("일일마감 파일 기억 점검", 줄.join(NL), ui.ButtonSet.YES_NO);
+    if (ans !== ui.Button.YES) return "취소했습니다.";
+  }
+  for (var d = 0; d < 어긋남.length; d++) props.deleteProperty(어긋남[d].key);
+  var msg = "지웠습니다 — " + 어긋남.length + "개." + NL +
+    "이제 마감을 다시 돌리면 제 이름의 파일이 만들어집니다.";
+  if (ui) { try { ui.alert(msg); } catch (e2) {} }
+  Logger.log("[UNIFIED] 어긋난 기억 " + 어긋남.length + "개 삭제");
+  return msg;
+}
+
 function _unified_findExistingArchiveSs_(fileName) {
   var props = PropertiesService.getScriptProperties();
   var propKey = _UNIFIED_ARCHIVE_SS_PREFIX_ + fileName;
@@ -12249,11 +12317,32 @@ function _unified_findExistingArchiveSs_(fileName) {
   if (cachedId) {
     try {
       var cachedFile = DriveApp.getFileById(cachedId);
-      if (_unified_isLiveArchiveFile_(cachedFile, folder)) {
+      /* ★ 기억해 둔 파일의 «이름»도 본다 ★  (2026-09-17)
+         > "지정일을 9/15일로 수동으로 만들었는데 9/17일자로 만들어지더라.
+         >  그래서 15일로 바꾸었는데 그게 문제가 되나?"
+
+         문제가 됐다. 여태 여기는 ID 만 보고 열었다 — 사람이 그 파일 이름을
+         바꿔도 모른다. 그래서 이런 일이 났다:
+           ① 9/17 파일이 만들어지고 그 ID 를 «일일마감_(2026-09-17)» 로 기억
+           ② 사람이 그 파일을 «일일마감_(2026-09-15)» 로 이름 바꿈
+           ③ 오늘 마감이 9/17 을 찾다가 그 ID 를 꺼내 «9/15 라 적힌 파일»에 씀
+           ④ 사람은 9/17 파일을 찾는다 → 없다 → 「파일이 안 생겨」
+         완료창은 멀쩡히 떴다. 쓰기는 됐으니까 — 다만 엉뚱한 자리였다.
+
+         이름이 안 맞으면 기억을 버리고 처음부터 다시 찾는다.
+         그리고 «말한다» — 조용히 다시 만들면 왜 두 개가 됐는지 모른다. */
+      var 지금이름 = "";
+      try { 지금이름 = String(cachedFile.getName() || "").trim(); } catch (eN) {}
+      if (지금이름 && 지금이름 !== fileName) {
+        Logger.log("[UNIFIED] ★ 기억해 둔 파일의 이름이 바뀌었습니다 — 「" + fileName +
+          "」 로 찾았는데 그 파일은 지금 「" + 지금이름 + "」 입니다. 기억을 버리고 다시 찾습니다.");
+        props.deleteProperty(propKey);
+      } else if (_unified_isLiveArchiveFile_(cachedFile, folder)) {
         return SpreadsheetApp.openById(cachedId);
+      } else {
+        Logger.log("[UNIFIED] 캐시된 파일이 휴지통/폴더밖 → 캐시 삭제: " + fileName);
+        props.deleteProperty(propKey);
       }
-      Logger.log("[UNIFIED] 캐시된 파일이 휴지통/폴더밖 → 캐시 삭제: " + fileName);
-      props.deleteProperty(propKey);
     } catch (e) {
       props.deleteProperty(propKey);
     }

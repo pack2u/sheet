@@ -252,6 +252,9 @@ function registerPartnerMenu_() {
         .addItem("🏭 대리공급 발주 마감이동", "partnerArchiveExclusiveForm")
         .addSeparator()
         .addItem("📋 일일마감 재처리 (날짜 지정)", "partnerUnifiedDailyArchiveForDate")
+        /*  파일 이름을 손으로 바꾸면 마감이 «엉뚱한 파일»에 조용히 쓴다.
+            2026-09-17 에 실제로 그랬다 — 완료창은 떴는데 파일이 없었다. */
+        .addItem("   └ 📁 일일마감 파일 기억 점검", "partnerCheckDailyArchiveMemory")
         .addItem("🗂️ 일일마감 파일 폴더 정리 (일회성)", "partnerMoveDailyCloseFilesToSubFolder")
         .addItem("📒 송장원장 갱신", "partnerRefreshInvoiceLedger")
         .addSeparator()
