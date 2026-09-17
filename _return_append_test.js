@@ -166,7 +166,7 @@ console.log("\n[7] 캐시 무효화가 days 값과 무관하게 통한다");
   vm.createContext(c2);
   vm.runInContext('var _CS_RETURN_CACHE_VER_ = "v8";', c2);
   [
-    grabFn(csSrc, "_cs_returnCacheKey_"),
+    grabFn(csSrc, "_cs_returnTabCacheKey_"),
     grabFn(csSrc, "csInvalidateReturnLedgerCache_"),
   ].forEach(code => vm.runInContext(code, c2));
   vm.runInContext(
@@ -174,16 +174,25 @@ console.log("\n[7] 캐시 무효화가 days 값과 무관하게 통한다");
     (csSrc.match(/_CS_RETURN_GEN_PROP_\s*=\s*"([^"]+)"/) || [, "_CS_RET_CACHE_GEN_"])[1] +
     '";', c2);
 
-  const key = (d, a) => vm.runInContext("_cs_returnCacheKey_(" + d + "," + a + ")", c2);
-  const before = [30, 60, 90].map(d => key(d, true));
-  check("days 마다 키가 다르다", new Set(before).size, 3);
+  /*  ★ 2026-09-17: 열쇠가 (days, activeOnly) 에서 «월 탭»으로 바뀌었다 ★
+      그 열쇠가 같은 탭을 세 번 읽게 만든 까닭이었다. 요점은 그대로다 —
+      세대 번호 하나 올리면 days 가 몇이든 통째로 무효가 되어야 한다.  */
+  const gen = () => vm.runInContext(
+    'PropertiesService.getScriptProperties().getProperty(_CS_RETURN_GEN_PROP_) || "1"', c2);
+  const key = (tab) => vm.runInContext(
+    '_cs_returnTabCacheKey_("' + gen() + '", "' + tab + '")', c2);
+
+  const 달들 = ["202609", "202608", "202607"];
+  const before = 달들.map(key);
+  check("월 탭마다 키가 다르다", new Set(before).size, 3);
 
   vm.runInContext("csInvalidateReturnLedgerCache_()", c2);
-  const after = [30, 60, 90].map(d => key(d, true));
-  check("무효화 후 30일 키가 바뀐다", after[0] !== before[0], true);
-  check("무효화 후 60일 키도 바뀐다 (종전에 새던 곳)", after[1] !== before[1], true);
-  check("무효화 후 90일 키도 바뀐다", after[2] !== before[2], true);
-  check("activeOnly 가 키를 가른다", key(30, true) !== key(30, false), true);
+  const after = 달들.map(key);
+  check("무효화 후 이번 달 키가 바뀐다", after[0] !== before[0], true);
+  check("무효화 후 지난 달 키도 바뀐다 (종전에 새던 곳)", after[1] !== before[1], true);
+  check("무효화 후 지지난 달 키도 바뀐다", after[2] !== before[2], true);
+  check("★ days 가 열쇠에 없다 (그것이 세 번 읽게 만들었다)",
+    /_\d+_[AX]$/.test(after[0]), false);
 
   // 손으로 적은 키 목록이 되살아나면 같은 구멍이 다시 생긴다
   const inv = grabFn(csSrc, "csInvalidateReturnLedgerCache_");

@@ -3295,6 +3295,15 @@ function _cs_retCacheGet_(cache, key) {
   } catch (e) { return null; }
 }
 
+/**
+ * 월 탭 캐시 열쇠. 세대 번호가 들어가므로 접수 한 번이면 «통째로» 무효가 된다.
+ * 열쇠 규칙은 여기 한 곳에만 둔다 — 손으로 적은 키 목록이 다시 생기면
+ * 그때 못 지운 것만 조용히 살아남는다 (csInvalidateReturnLedgerCache_ 주석 참고).
+ */
+function _cs_returnTabCacheKey_(gen, tabName) {
+  return _CS_RETURN_CACHE_VER_ + "t" + String(gen || "1") + "_" + String(tabName || "");
+}
+
 /** 월 탭 하나 — 자르지 않은 전부. 캐시는 이 단위로만 잡는다. */
 function _cs_loadReturnLedgerTabRows_(ss, tabName, refresh) {
   var gen = "1";
@@ -3308,7 +3317,7 @@ function _cs_loadReturnLedgerTabRows_(ss, tabName, refresh) {
   if (_CS_RET_TAB_MEMO_[memoKey]) return _CS_RET_TAB_MEMO_[memoKey];
 
   var cache = CacheService.getScriptCache();
-  var ck = _CS_RETURN_CACHE_VER_ + "t" + gen + "_" + tabName;
+  var ck = _cs_returnTabCacheKey_(gen, tabName);
   if (!refresh) {
     var hit = _cs_retCacheGet_(cache, ck);
     if (hit) { _CS_RET_TAB_MEMO_[memoKey] = hit; return hit; }

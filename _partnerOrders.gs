@@ -6696,7 +6696,7 @@ function _po_pickInvoiceFromMapCandidates_(found) {
 
 /** 임시기록 행 → 송장번호 (허브매칭·UID·복합키·이름+전화 순) */
 // ★ 2026-06-19: usedInvSet 추가 — 소비형 매칭 (동일인 다른 품목 송장 뒤바뀜 방지)
-function _po_resolveTempTabInvoice_(row, invoiceMap, hubInvoiceByKey, usedInvSet, owner) {
+function _po_resolveTempTabInvoice_(row, invoiceMap, hubInvoiceByKey, usedInvSet, owner, outSrc) {
   hubInvoiceByKey = hubInvoiceByKey || {};
   invoiceMap = invoiceMap || {};
   usedInvSet = usedInvSet || {};
@@ -6708,7 +6708,7 @@ function _po_resolveTempTabInvoice_(row, invoiceMap, hubInvoiceByKey, usedInvSet
     if (_po_claimInvoiceMulti_(usedInvSet, hUid, owner)) return hUid;
   }
   if (tUid && invoiceMap[tUid]) {
-    var inv = _po_pickUnusedInvoice_(invoiceMap[tUid], usedInvSet, owner);
+    var inv = _po_pickUnusedInvoice_(invoiceMap[tUid], usedInvSet, owner, null, outSrc);
     if (inv) return inv;
   }
   // ★ 2026-08-27: 고유ID 가 있으면 여기서 끝낸다.
@@ -6741,12 +6741,12 @@ function _po_resolveTempTabInvoice_(row, invoiceMap, hubInvoiceByKey, usedInvSet
   // 3. 수취인명 + 전화끝4자리 (전용양식 출처만)
   if (tName) {
     var npKey = tName + "_" + shortP;
-    inv = _po_pickUnusedInvoice_(invoiceMap[npKey], usedInvSet, owner, srcOk);
+    inv = _po_pickUnusedInvoice_(invoiceMap[npKey], usedInvSet, owner, srcOk, outSrc);
     if (inv) return inv;
     var nNorm = tName.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9]/g, "");
     var normKey = nNorm + "_" + shortP;
     if (normKey !== npKey) {
-      inv = _po_pickUnusedInvoice_(invoiceMap[normKey], usedInvSet, owner, srcOk);
+      inv = _po_pickUnusedInvoice_(invoiceMap[normKey], usedInvSet, owner, srcOk, outSrc);
       if (inv) return inv;
     }
   }
@@ -6761,14 +6761,14 @@ function _po_resolveTempTabInvoice_(row, invoiceMap, hubInvoiceByKey, usedInvSet
   // 4. 전화번호 단독 (전용양식 출처만) — 이름 오감지 대비
   if (tPhone.length >= 8) {
     var phoneKey = "PH_" + tPhone;
-    inv = _po_pickUnusedInvoice_(invoiceMap[phoneKey], usedInvSet, owner, srcOk);
+    inv = _po_pickUnusedInvoice_(invoiceMap[phoneKey], usedInvSet, owner, srcOk, outSrc);
     if (inv) return inv;
   }
   // 5. 수취인명 단독 (전용양식 출처만)
   //    이름만으로 자사출고 송장을 가져오는 것이 오배정의 주 경로였다.
   if (tName && tName.length >= 2) {
     var nameRawKey = "NR_" + tName;
-    inv = _po_pickUnusedInvoice_(invoiceMap[nameRawKey], usedInvSet, owner, srcOk);
+    inv = _po_pickUnusedInvoice_(invoiceMap[nameRawKey], usedInvSet, owner, srcOk, outSrc);
     if (inv) return inv;
   }
   return "";
@@ -6877,13 +6877,17 @@ function _po_isProxySupplySrc_(src) {
 /**
  * @param {Function=} srcOk 출처 필터. 주면 통과한 엔트리만 후보로 본다.
  */
-function _po_pickUnusedInvoice_(found, usedInvSet, owner, srcOk) {
+function _po_pickUnusedInvoice_(found, usedInvSet, owner, srcOk, outSrc) {
   if (!found || !found.length) return "";
   for (var fi = 0; fi < found.length; fi++) {
     var candidate = String(found[fi].invRaw || "").trim();
     if (!candidate) continue;
     if (srcOk && !srcOk(found[fi].src)) continue;
-    if (_po_claimInvoice_(usedInvSet, candidate, owner)) return candidate;
+    if (_po_claimInvoice_(usedInvSet, candidate, owner)) {
+      //  ★ 어느 탭에서 걷은 송장인지 말해 준다 — 택배사의 «근거»다
+      if (outSrc) outSrc.src = String(found[fi].src || "");
+      return candidate;
+    }
   }
   // ★ 2026-08-25: 남은 후보가 모두 다른 주문 소유면 빈 값을 돌려준다.
   //   기존에는 "첫 번째 유효한 것"을 그대로 반환해 서로 다른 주문에 같은 송장이
@@ -7146,15 +7150,17 @@ function _po_checkNonPartnerTempTabMatches_(invoiceMap, scannedLogs, hubInvoiceB
       }
       continue;
     }
+    var _srcOut = {};
     var bestInv = _po_resolveTempTabInvoice_(
       tempData[ti],
       invoiceMap,
       hubInvoiceByKey,
       usedInvSet,
       tUid,
+      _srcOut,
     );
     if (bestInv) {
-      updates.push({ row: ti + 2, inv: bestInv, updateStatusOnly: false });
+      updates.push({ row: ti + 2, inv: bestInv, updateStatusOnly: false, src: _srcOut.src || "" });
       newlyMatched++;
     } else {
       unresolved.push(ti);
@@ -7251,7 +7257,8 @@ function _po_checkNonPartnerTempTabMatches_(invoiceMap, scannedLogs, hubInvoiceB
         if (!hit || !hit.inv) continue;
         // 소유권 검사를 거쳐야 한다. 넓은 맵은 후보가 많아 검사 없이는 오배정이 늘어난다.
         if (!_po_claimInvoiceMulti_(usedInvSet, hit.inv, uUid)) continue;
-        updates.push({ row: uti + 2, inv: hit.inv, updateStatusOnly: false });
+        updates.push({ row: uti + 2, inv: hit.inv, updateStatusOnly: false,
+          src: String((hit && hit.source) || "") });
         newlyMatched++;
         fbMatched++;
         var vk = via.via || "?";
@@ -7316,7 +7323,22 @@ function _po_checkNonPartnerTempTabMatches_(invoiceMap, scannedLogs, hubInvoiceB
       //   임시기록은 전부 대리공급이라 출처가 택배사를 알려주지 않는다.
       //   W열 업체prefix → 「업체_택배사」표가 1순위, 품목코드 → 출고지가 2순위다.
       if (String(vVals[idx][0] || "").trim() === "") {
-        var _tc = _po_carrierForTempRow_(tempData[idx]);
+        /* ★ 「송장을 어디서 걷었나」가 먼저다 ★  (2026-09-17)
+           > "임시기록에 우리 자사출고들이 택배사가 롯데로 들어가는데"
+
+           여태 이 자리는 출처를 버리고 W열 업체prefix 부터 봤다.
+           그 접두는 «그 물건이 누구 상품인가»일 뿐 «누가 부쳤나»가 아니다.
+           우리가 자사출고한 냅킨코리아(NK) 물건에 「업체_택배사」 표의
+           NK=롯데택배가 찍힌 까닭이 이것이다.
+
+           송장이 「입력_로젠주문실적」에서 걷혔다면 로젠이 부친 것이다 —
+           그보다 확실한 근거가 없다. 허브 줄은 진작 이렇게 하고 있었고
+           (_po_carrierFromPicked_), 임시기록만 빠져 있었다. */
+        var _tc = "";
+        if (updates[ui].src && typeof _pep_carrierFromSource_ === "function") {
+          _tc = _pep_carrierFromSource_(updates[ui].src);
+        }
+        if (!_tc) _tc = _po_carrierForTempRow_(tempData[idx]);
         if (_tc) {
           vVals[idx] = [_tc];
           vChanged = true;
