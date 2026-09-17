@@ -9255,9 +9255,34 @@ function _pep_saveSnapshotToHub_(srcSS, fallbackDateStr) {
         orderDateStr = fromCQ || fromB || todayStr;
       }
 
+      /* ══════════════════════════════════════════════════════════
+       *  ★ 주문일은 «앞으로» 만 고친다. 뒤로 밀지 않는다 ★  (2026-09-17)
+       *
+       *  > "일일마감시 이전날의 송장번호를 찾아 기입을 하는데 오늘날짜 밑에
+       *  >  어제 날짜 송장번호 찾은 내역을 붙여 넣었더라. 결국 오늘꺼에
+       *  >  어제꺼가 기입되는... 어제꺼엔 모두 송장이 미매칭으로 남아있고"
+       *
+       *  여태 이 자리는 날짜를 그냥 덮어썼다. 어제 주문이 오늘 판매현황에
+       *  또 올라오면(아직 안 나간 건은 다음 회차에도 딸려 온다) 그 줄의
+       *  스냅샷날짜가 «오늘»이 되었다. 마감은 그 날짜로 파일을 가르므로 —
+       *      어제 주문 + 어제 송장  →  «오늘» 파일에 들어가고
+       *      어제 파일             →  미매칭인 채로 남는다
+       *  두 날이 동시에 틀린다. 어느 쪽을 봐도 사실이 아니다.
+       *
+       *  ★ 그렇다고 아예 못 고치게 하면 안 된다 ★
+       *    처음 담을 때 일자 칸을 못 찾으면 «오늘»로 적힌다(fallback).
+       *    나중에 진짜 주문일을 알게 되면 그건 «더 이른» 날짜다.
+       *    그러니 앞당기는 것만 허락한다 — 뒤로 미는 것이 곧 이 사고다.
+       * ══════════════════════════════════════════════════════════ */
       function _pep_bumpSnapDate_(hit, newDate) {
         if (!hit || !hit.row || !newDate) return;
-        if (String(hit.date || "") === newDate) return;
+        var 지금 = String(hit.date || "");
+        if (지금 === newDate) return;
+        if (지금 && newDate > 지금) {
+          //  뒤로 미는 것은 사고다. 조용히 넘어가지 않고 «센다».
+          result.dateHeldBack = (result.dateHeldBack || 0) + 1;
+          return;
+        }
         try {
           snapTab.getRange(hit.row, 1).setValue(newDate);
           hit.date = newDate;
@@ -11508,9 +11533,14 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
       result.detail.snapFrom = snapResult.읽은탭 || "";
       result.detail.snapSaved = snapResult.saved || 0;
       result.detail.snapSkipped = snapResult.skipped || 0;
+      result.detail.snapDateHeldBack = snapResult.dateHeldBack || 0;
       Logger.log("[UNIFIED] 판매현황→스냅샷: 원천=" + (snapResult.읽은탭 || "?") +
         " saved=" + snapResult.saved +
         " skipped=" + snapResult.skipped +
+        (snapResult.dateFixed ? " 주문일앞당김=" + snapResult.dateFixed : "") +
+        /*  뒤로 밀 뻔한 줄. 여기가 0 이 아니면 «어제 것이 오늘로 갈 뻔했다»는 뜻이다.
+            2026-09-17 이전에는 이 줄들이 조용히 오늘 파일로 들어갔다. */
+        (snapResult.dateHeldBack ? " ★주문일뒤로밀기막음=" + snapResult.dateHeldBack : "") +
         (snapResult.error ? " error=" + snapResult.error : ""));
       // 스냅샷 탭 갱신 (신규 생성되었을 수 있음)
       snapTab = ss.getSheetByName(_SNAPSHOT_TAB_NAME_);
