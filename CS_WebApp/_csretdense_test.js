@@ -30,21 +30,45 @@ const html = fs.readFileSync("home.html", "utf8");
 const has = (s) => html.indexOf(s) >= 0;
 const 몇곳 = (s) => html.split(s).length - 1;
 
-/* ── [1] 한 장짜리 이력이 폭을 다 쓴다 ──────────────────── */
-console.log("\n[1] 이력이 한 장뿐일 때");
+/* ── [1] 맨 앞(=최신) 한 장이 폭을 다 쓴다 ──────────────── */
+console.log("\n[1] 이력 맨 앞 한 장");
 {
-  ok("★ :only-child 규칙이 있다", has(".ret-tl-track > .ret-proc:only-child"));
-  const i = html.indexOf(".ret-tl-track > .ret-proc:only-child {");
+  //  > "최종 내용이 중요한거라 이전 내용은 스크롤을 이용해서 보면되니까"
+  //  최신이 앞이다 — 서버가 내림차순으로 준다(_cs_parseReturnTimeline_)
+  ok("★ 맨 앞 한 장에 거는 규칙이 있다", has(".ret-tl-track > .ret-proc:first-child"));
+  ok("★ 「한 장뿐일 때만」이 아니다", html.indexOf(".ret-tl-track > .ret-proc:only-child") < 0);
+  const i = html.indexOf(".ret-tl-track > .ret-proc:first-child {");
   const 몸통 = i >= 0 ? html.substring(i, i + 200) : "";
   //  flex-grow 만으로는 부모가 내용만큼만 넓을 때 안 늘어난다 — 바닥을 100% 로 깐다
   ok("★ 늘어나게 되어 있다", 몸통.indexOf("flex: 1 1 100%") >= 0);
   ok("★ 굳은 폭을 푼다 (바닥을 100% 로)", 몸통.indexOf("width: 100%") >= 0);
   ok("★ 그래도 너무 좁아지진 않는다", 몸통.indexOf("min-width: 128px") >= 0);
-  ok("★ 사진이 한 줄로 선다",
-    has(".ret-tl-track > .ret-proc:only-child .ret-proc-thumbs { flex-wrap: nowrap; }"));
+  //  ★ 사진은 오른쪽 칸에 세운다 (2026-09-17) ★
+  const g = html.indexOf(".ret-tl-track > .ret-proc:first-child.photo {");
+  const 격자 = g >= 0 ? html.substring(g, g + 420) : "";
+  ok("★ 사진 이력은 두 칸으로 나눈다", 격자.indexOf("display: grid") >= 0);
+  ok("★ 왼쪽은 글, 오른쪽은 사진", 격자.indexOf("grid-template-columns: minmax(0, 1fr) auto") >= 0);
+  //  시각·구분이 없는 이력도 있다. 줄 번호로 박으면 사진이 엉뚱한 줄에 앉는다
+  ok("★ 자리를 이름으로 준다", 격자.indexOf('"when  pics"') >= 0 && 격자.indexOf('"share share"') >= 0);
+  ok("  사진이 그 자리에 간다",
+    has(".ret-tl-track > .ret-proc:first-child.photo > .ret-proc-thumbs"));
+  ok("  글도 제 자리에 간다",
+    has(".ret-tl-track > .ret-proc:first-child.photo > .ret-proc-body { grid-area: body; }"));
+  ok("  공개 표시는 아래 한 줄을 다 쓴다",
+    has(".ret-tl-track > .ret-proc:first-child.photo > .ret-share { grid-area: share; }"));
+  const t2 = html.indexOf(".ret-tl-track > .ret-proc:first-child.photo > .ret-proc-thumbs {");
+  const 사진칸 = t2 >= 0 ? html.substring(t2, t2 + 320) : "";
+  ok("★ 사진이 많아도 글 칸을 밀어내지 않는다", 사진칸.indexOf("max-width: 55%") >= 0);
 
-  //  여러 장일 때의 규칙은 그대로여야 한다 — 옆으로 밀어 보는 길이 막히면 안 된다
-  ok("★ 여러 장일 때는 여태처럼 128px", has("flex: 0 0 auto; width: 128px;"));
+  //  여러 장일 때 옛것은 그대로여야 한다 — 옆으로 밀어 보는 길이 막히면 안 된다
+  ok("★ 옛 이력은 여태처럼 128px", has("flex: 0 0 auto; width: 128px;"));
+
+  //  밀린 것이 «있다»는 사실은 말해 줘야 한다. 스크롤바는 4px 라 눈에 안 띈다
+  ok("★ 옆에 더 있으면 알려 준다", has("class=\"ret-proc-more\""));
+  ok("  맨 앞에만 붙인다", has("(j === 0 && visible.length > 1)"));
+  ok("  몇 건인지 센다", has("(visible.length - 1) + '건 →</span>'"));
+  ok("  시각이 없는 이력에서도 붙는다", has("(when || moreChip ?"));
+  ok("  그 딱지 CSS 도 있다", has(".ret-proc-more {"));
 }
 
 /* ── [2] 조밀은 «고르는 것» ─────────────────────────────── */
