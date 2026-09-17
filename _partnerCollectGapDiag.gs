@@ -39,6 +39,61 @@ function partnerFindUncollectedOrders(optDateStr, optDays) {
     Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"),
     "기준일: " + base + " 부터 " + days + "일", ""];
 
+  /* ══════════════════════════════════════════════════════════════
+   *  ★ 자동 수집이 «왜 그 파일을 건너뛰었나» ★  (2026-09-17)
+   *
+   *  > "아 돌겠다... 주문이 빠지는건 도대체 머지?"
+   *
+   *  자동 수집은 「마지막 수집 이후 고쳐진 파일」만 읽는다(스마트 수집).
+   *  그 판단은 파일의 «마지막 수정 시각» 하나로 갈리는데, 그 숫자가
+   *  여태 아무 데도 안 보였다. 그래서 빠진 뒤에야 알았고, 왜 빠졌는지는
+   *  끝내 알 수 없었다.
+   *
+   *  아래에 그 두 시각을 나란히 놓는다. 「다음에 걸리나」가 ✗ 인데 그 파일에
+   *  새 주문이 있으면 — 그게 빠지는 주문이다. 원인이 눈에 보인다.
+   * ══════════════════════════════════════════════════════════════ */
+  try {
+    var _props_ = PropertiesService.getScriptProperties();
+    var _last_ = parseInt(_props_.getProperty("LAST_ORDER_COLLECT_TIME") || "0", 10);
+    var _fullDay_ = _props_.getProperty("LAST_FULL_COLLECT_DATE") || "(없음)";
+    var _오늘_ = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+    var _fmt_ = function (ms) {
+      if (!ms) return "(없음)";
+      return Utilities.formatDate(new Date(ms), "Asia/Seoul", "MM-dd HH:mm:ss");
+    };
+    L.push("── 자동 수집이 무엇을 보고 고르나 ──");
+    L.push("마지막 수집 시각 : " + _fmt_(_last_) +
+      (_last_ ? "" : "   ← 0 이면 다음 수집은 «전체»로 돕니다"));
+    L.push("오늘 전체수집 도장 : " + _fullDay_ +
+      (_fullDay_ === _오늘_ ? "   (오늘 첫 수집은 이미 돌았습니다)"
+                            : "   ← 오늘 것이 아니면 다음 수집이 «전체»로 돕니다"));
+    L.push("");
+    var _fl_ = _pt_listFiles(true);   // ★ 캐시 말고 지금 값을 본다
+    var _걸림_ = 0, _안걸림_ = [];
+    for (var _i_ = 0; _i_ < _fl_.length; _i_++) {
+      var _f_ = _fl_[_i_];
+      var _ok_ = _f_.modified > _last_;
+      if (_ok_) _걸림_++;
+      else _안걸림_.push("   ✗ " + _f_.name.replace("[협력업체] ", "") +
+        "   고쳐진 때 " + _fmt_(_f_.modified));
+    }
+    L.push("업체 파일 " + _fl_.length + "개 중 «다음 스마트 수집에 걸리는» 파일 : " + _걸림_ + "개");
+    if (_안걸림_.length) {
+      L.push("걸리지 않는 파일 (마지막 수집 뒤로 안 고쳐짐) :");
+      L = L.concat(_안걸림_.slice(0, 25));
+      if (_안걸림_.length > 25) L.push("   … 외 " + (_안걸림_.length - 25) + "개");
+      L.push("   ★ 이 중에 «새 주문이 든» 파일이 있으면 그것이 빠지는 주문입니다.");
+      L.push("     아래 목록과 맞대 보세요.");
+    }
+    if (_fl_.length === 0) {
+      L.push("★ 업체 파일을 «한 개도» 못 읽었습니다 — 폴더 권한·ID 를 보세요.");
+    }
+    L.push("");
+  } catch (eDiagT) {
+    L.push("(자동 수집 판단 근거를 못 읽었습니다: " + String(eDiagT.message || eDiagT) + ")");
+    L.push("");
+  }
+
   var total = 0, files = 0;
   var byReason = {};
   try {
