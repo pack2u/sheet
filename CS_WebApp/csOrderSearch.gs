@@ -327,6 +327,37 @@ function _cs_searchDailyArchiveByInvoice_(invDigits) {
  *    원장은 «주문라인» 단위다. 세트가 둘로 쪼개지면 두 줄이다. 통합조회도
  *    품목 단위라 결이 같다 — 합치지 않고 그대로 낸다.
  */
+/**
+ * 이 줄이 «방문수령»인가 — 적요에 적힌 말로만 가린다.
+ *
+ * > "자사 직접이라고 나오는데 방문수령이라고 나오게 해줘"
+ *
+ * ★ 「자사 직접」은 방문수령이 아니다 ★
+ *   그것은 «송장을 자사출고 탭에서 찾았다»는 뜻이다(세트분리 gasMain.js:1748).
+ *   택배로 나간 건에도 붙는다. 이름만 바꾸면 택배 주문이 전부
+ *   방문수령으로 보인다 — 그래서 «진짜 방문수령»만 따로 가린다.
+ *
+ * ★ 배송메시지는 안 본다 ★
+ *   그 칸은 고객이 쓴 «요청»이지 우리가 확인한 «사실»이 아니다.
+ *   적요는 우리 쪽이 적는 칸이다. (2026-09-16 에 배송메시지의
+ *   「합배송 해주세요」를 「합배송 되었다」로 읽을 뻔한 일이 있었다.)
+ *
+ * ★ 「방문」이나 「직접」 한 글자로는 안 잡는다 ★
+ *   「직접 전화주세요」·「방문예정」 같은 말이 걸린다.
+ *   허브 _partnerInvoiceAudit.gs 의 집계는 느슨한 자를 쓰지만, 그것은
+ *   «송장 없는 줄»만 세는 참고표다. 카드마다 붙는 딱지는 더 엄해야 한다.
+ */
+function _cs_isPickupMemo_(memo) {
+  var s = String(memo == null ? "" : memo).split(" ").join("");
+  if (!s) return false;
+  if (s.indexOf("방문수령") >= 0) return true;
+  if (s.indexOf("직접수령") >= 0) return true;
+  if (s.indexOf("픽업") >= 0) return true;
+  //  「방문」과 「수령」이 떨어져 적혀도 같은 뜻이다 («방문하셔서 수령»)
+  if (s.indexOf("방문") >= 0 && s.indexOf("수령") >= 0) return true;
+  return false;
+}
+
 function _cs_loadLedgerView_(days, refresh) {
   var out = { found: false, rows: [], updatedAt: "", error: "", fromCache: false };
   var cache = CacheService.getScriptCache();
@@ -405,6 +436,8 @@ function _cs_loadLedgerView_(days, refresh) {
         addr: addr,
         shipMsg: _cs_sanitizeShipMsg_(G(row, "배송메시지"), addr),
         source: G(row, "송장매칭") || 경로,
+        //  적요에 적힌 방문수령. 「자사 직접」(송장을 어디서 찾았나)과는 다른 것이다.
+        pickup: _cs_isPickupMemo_(G(row, "적요")),
         orderNo: uid,
         vendor: G(row, "조치업체"),
         //  택배사는 «적힌 것»만 쓴다. 지어내지 않는다.
