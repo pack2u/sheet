@@ -12365,7 +12365,7 @@ function partnerFixArchiveWrongDate(days) {
   /*  ★ 「0줄」이 무슨 뜻인지 갈리게 «훑은 줄»도 센다 ★
       0 줄 옮김 + 0 줄 훑음 = 못 읽은 것이고,
       0 줄 옮김 + N 줄 훑음 = 어긋난 게 없는 것이다. 둘은 손댈 곳이 다르다. */
-  var 훑음 = 0, 제자리 = 0;
+  var 훑음 = 0, 제자리 = 0, ID없음 = 0;
   var 예시 = [], 멈춤 = "";
 
   for (var d = 0; d <= days; d++) {
@@ -12404,7 +12404,11 @@ function partnerFixArchiveWrongDate(days) {
       if (String(all[ri][0] || "").indexOf("합계") !== -1) continue;
       훑음++;
       var uid = _pep_deriveMatchKeyFromArchiveRow_(all[ri], cols);
-      if (!uid || !_pep_isRealUid_(uid)) { continue; }
+      /*  ★ 조용히 건너뛰지 않는다 ★  (2026-09-17)
+          처음엔 여기서 그냥 continue 했다. 그래서 「훑은 11,637 / 제자리 2,713 /
+          모름 5,847 / 옮김 31」 로 3,046 줄이 어디로 갔는지 말을 안 했다.
+          숫자가 안 맞으면 그 표 전체를 못 믿는다. */
+      if (!uid || !_pep_isRealUid_(uid)) { ID없음++; continue; }
       var 참날 = 지도.map[uid];
       if (!참날) { 모름++; continue; }
       if (참날 === dateStr) { 제자리++; continue; }
@@ -12461,6 +12465,13 @@ function partnerFixArchiveWrongDate(days) {
   if (이미있음) L.push("   (제 날짜에 이미 있던 줄 " + 이미있음 + "줄은 원본에서 지우기만 했습니다)");
   if (못옮김) L.push("   ⚠ 못 옮긴 줄 : " + 못옮김 + "줄");
   if (모름) L.push("   · 원장에 없어 날짜를 모르는 줄 : " + 모름 + "줄 (건드리지 않았습니다)");
+  if (ID없음) L.push("   · 고유ID 가 없어 «볼 수 없는» 줄 : " + ID없음 + "줄");
+  /*  숫자가 «맞아떨어지는지» 스스로 확인한다. 안 맞으면 그 표 전체를 못 믿는다. */
+  var 셈합 = 제자리 + 모름 + ID없음 + 옮김 + 이미있음 + 못옮김;
+  if (셈합 !== 훑음) {
+    L.push("   ★ 숫자가 안 맞습니다 — 훑음 " + 훑음 + " ≠ 셈 " + 셈합 +
+      " (" + (훑음 - 셈합) + "줄이 어디로 갔는지 말을 못 하고 있습니다)");
+  }
   if (예시.length) { L.push(""); L = L.concat(예시); }
   if (멈춤) { L.push(""); L.push("⏱ " + 멈춤 + " 다시 누르면 이어서 봅니다."); }
   L.push("");
