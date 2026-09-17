@@ -2056,7 +2056,12 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
       6:00 이카운트 전체동기화 → 7:00 상태 반영 → 9:30 첫 수집.
       업체가 아침에 보는 화면이 그날 것이어야 한다.  */
   { fn: "runMorningSyncStatusBatch",                     h: 7,  m: 0,  label: "판매 상태/재고 → 단가조회 (아침)" },
-  { fn: "partnerCollectOrdersSilent_",                   h: 9,  m: 30, label: "발주 수집 + 판매현황 갱신 (1회전)" },
+  /*  ★ 2026-09-17: 판매현황 갱신은 «오후 1시 회차에만» ★
+      > "대리판매 수집시에도 수집후 판매현황갱신이 되는데..
+      >  갱신은 오후 1시에만 작동되게해줘"
+      시계로 가르지 않는다 — 구글 트리거는 ±15분이라 13:00 이 12:45 에 돌면
+      「13시인가」 검사를 통과 못 한다. 부르는 함수로 가른다.  */
+  { fn: "partnerCollectOnlySilent_",                     h: 9,  m: 30, label: "발주 수집만 (1회전 · 판매현황 안 건드림)" },
   /*  ★ 2026-09-17: 10:30 · 15:40 은 «임시기록에만» 담는다 ★
       > "10시 30분 발주푸시...임시기록에만 저장하고 발주푸시는 안함"
       > "오후3시 40분 임시기록에만 저장하고 발주 푸시는 안함"
@@ -2075,7 +2080,7 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
   { fn: "runNoonSyncAndHub",                             h: 12, m: 30, label: "통합 DB + 허브 상태/재고 → 단가조회 (낮)" },
 
   // ─── 오후 2회전 (★ 2026-08-31: 14:05/14:20 → 13:00/13:50) ───
-  { fn: "partnerCollectOrdersSilent_",                   h: 13, m: 0,  label: "발주 수집 + 판매현황 갱신 (2회전)" },
+  { fn: "partnerCollectOrdersSilent_",                   h: 13, m: 0,  label: "발주 수집 + 판매현황 갱신 (2회전 · 갱신은 여기서만)" },
   { fn: "partnerPushOrdersToExclusiveFormsSilent_",      h: 13, m: 50, label: "대리공급 Push + 우편번호 (2회전)" },
 
   // ─── 오후 3회전 (★ 2026-08-31 신규, 푸시 15:30 → 15:40) ───
@@ -2087,7 +2092,7 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
   //     3회전 푸시분은 다음 회차 수집에 잡혀도 된다고 정리했다.
   //     그러니 이 간격을 "버그"로 보고 송장수집을 뒤로 미루지 말 것.
   //     당일 수집에 꼭 넣어야 할 사정이 생기면 그때 16:20~16:30 으로 옮긴다.
-  { fn: "partnerCollectOrdersSilent_",                   h: 15, m: 0,  label: "발주 수집 + 판매현황 갱신 (3회전)" },
+  { fn: "partnerCollectOnlySilent_",                     h: 15, m: 0,  label: "발주 수집만 (3회전 · 판매현황 안 건드림)" },
   { fn: "partnerPushTempOnlySilent_",                    h: 15, m: 40, label: "임시기록에만 담기 (3회전 · 발주 안 나감)" },
 
   // ─── 송장 처리 (★ 2026-08-10: 냅킨 16:00 → 송장수집 16:05) ───

@@ -255,12 +255,19 @@ console.log("\n[7] 일정표 — 푸시는 13:50 에만");
   });
   const 찾기 = (h, m) => (표.filter((t) => t.h === h && t.m === m)[0] || {}).fn || "(없음)";
 
-  eq("09:30 발주 수집", 찾기(9, 30), "partnerCollectOrdersSilent_");
+  eq("★ 09:30 수집만 (판매현황 안 건드림)", 찾기(9, 30), "partnerCollectOnlySilent_");
   eq("★ 10:30 임시기록에만", 찾기(10, 30), "partnerPushTempOnlySilent_");
-  eq("13:00 발주 수집", 찾기(13, 0), "partnerCollectOrdersSilent_");
+  eq("★ 13:00 수집 + 판매현황 갱신", 찾기(13, 0), "partnerCollectOrdersSilent_");
   eq("★ 13:50 «진짜» 푸시", 찾기(13, 50), "partnerPushOrdersToExclusiveFormsSilent_");
-  eq("15:00 발주 수집", 찾기(15, 0), "partnerCollectOrdersSilent_");
+  eq("★ 15:00 수집만 (판매현황 안 건드림)", 찾기(15, 0), "partnerCollectOnlySilent_");
   eq("★ 15:40 임시기록에만", 찾기(15, 40), "partnerPushTempOnlySilent_");
+
+  //  > "갱신은 오후 1시에만 작동되게해줘"
+  const 갱신도는것 = 표.filter((t) => t.fn === "partnerCollectOrdersSilent_");
+  eq("★ 판매현황을 갱신하는 회차는 «하루 한 번»", 갱신도는것.length, 1);
+  eq("  그 한 번이 오후 1시다", 갱신도는것[0].h + ":" + 갱신도는것[0].m, "13:0");
+  const 수집만 = 표.filter((t) => t.fn === "partnerCollectOnlySilent_");
+  eq("  나머지 두 회전은 수집만", 수집만.length, 2);
 
   const 진짜푸시 = 표.filter((t) => t.fn === "partnerPushOrdersToExclusiveFormsSilent_");
   eq("★ 진짜 푸시는 하루 «한 번»뿐", 진짜푸시.length, 1);
@@ -275,6 +282,40 @@ console.log("\n[7] 일정표 — 푸시는 13:50 에만");
     PUSH.indexOf("partnerPushOrdersToExclusiveForms(true, true);") >= 0);
   ok("★ 「발주 안 나갔다」고 말해 준다",
     PUSH.indexOf("업체 발주 안 나감") >= 0 && PUSH.indexOf("13:50 에 나갑니다") >= 0);
+}
+
+/* ── [8] 판매현황 갱신은 오후 1시에만 ──────────────────── */
+console.log("\n[8] 판매현황 갱신 가르기");
+{
+  //  > "오후한시 발주 수집시에만 판매현황갱신을 추가"
+  const ORD = fs.readFileSync("_partnerOrders.gs", "utf8");
+
+  ok("★ 수집만 하는 함수가 있다",
+    ORD.indexOf("function partnerCollectOnlySilent_() { _po_collectSilentCore_(false); }") >= 0);
+  ok("★ 갱신까지 하는 함수가 있다",
+    ORD.indexOf("function partnerCollectOrdersSilent_() { _po_collectSilentCore_(true); }") >= 0);
+  ok("★ 몸통은 하나다 (둘로 갈라 놓으면 한쪽만 고쳐진다)",
+    ORD.indexOf("function _po_collectSilentCore_(withSalesRebuild)") >= 0);
+
+  //  ★ 시계로 가르지 않는다 — 구글 트리거는 ±15분이다
+  const 몸통시작 = ORD.indexOf("function _po_collectSilentCore_(withSalesRebuild)");
+  const 몸통 = 몸통시작 >= 0 ? ORD.substring(몸통시작, 몸통시작 + 4000) : "";
+  ok("★ getHours 로 시각을 재지 않는다", 몸통.indexOf("getHours") < 0);
+
+  ok("★ 안 하는 회차는 판매현황을 안 부른다",
+    ORD.indexOf("if (!withSalesRebuild) {") >= 0);
+  ok("  안 한다고 로그에 남긴다",
+    ORD.indexOf("이 회차는 판매현황을 안 건드립니다") >= 0);
+  //  ❌ 는 「돌았는데 깨졌다」는 말이다. 안 한 것을 실패로 보이면 안 된다
+  ok("★ 안 한 것을 «실패»로 안 보인다",
+    ORD.indexOf('!withSalesRebuild ? "— 안 함 (오후 1시에만)"') >= 0);
+
+  //  수집·폐기송장은 세 회차 모두 그대로여야 한다
+  const 갱신자리 = ORD.indexOf("if (!withSalesRebuild) {");
+  const 수집자리 = ORD.indexOf("partnerCollectOrders(false);");
+  const 폐기자리 = ORD.indexOf("partnerApplyVoidedInvoicesSilent_();");
+  ok("★ 발주 수집은 가르지 않는다 (갱신보다 앞)", 수집자리 > 0 && 수집자리 < 갱신자리);
+  ok("★ 폐기송장도 가르지 않는다", 폐기자리 > 0 && 폐기자리 < 갱신자리);
 }
 
 console.log("\n" + (fail ? "FAIL " + fail + "건" : "통과 " + pass + "건"));

@@ -3990,7 +3990,29 @@ var _PO_TRIGGER_MINUTES = 5;
 /** 트리거에서 호출되는 silent 래퍼 (UI 없이 자동 실행) */
 /** ★ 자동 트리거: 허브 수집 + 업체시트에 "접수완료" 역기록 포함 */
 /** ★ 2026-07-03: opt_noWriteBack=false로 변경 — 상태 미기록 시 조건부서식 미작동 문제 해결 */
-function partnerCollectOrdersSilent_() {
+/* ══════════════════════════════════════════════════════════════
+ *  ★ 판매현황 갱신은 «오후 1시에만» ★  (2026-09-17)
+ *
+ *  > "대리판매 수집시에도 수집후 판매현황갱신이 되는데..
+ *  >  갱신은 오후 1시에만 작동되게해줘"
+ *
+ *  ★ 왜 시계를 안 보는가 ★
+ *    구글 시간 트리거는 ±15분이다. 13:00 트리거가 12:45 에 돌면 시(時)가
+ *    12 라 「13시인가」 검사를 통과 못 한다. 반대로 15:00 이 14:45 에 돌면
+ *    14 다 — 어느 쪽이든 조용히 어긋난다.
+ *    그래서 시계 대신 «부르는 함수»로 가른다. 일정표를 보면 눈으로 갈린다.
+ * ══════════════════════════════════════════════════════════════ */
+
+/** 09:30 · 15:00 — 발주만 걷는다. 판매현황은 안 건드린다 */
+function partnerCollectOnlySilent_() { _po_collectSilentCore_(false); }
+
+/** 13:00 — 걷고 판매현황까지 새로 만든다 (13:50 푸시가 그것을 본다) */
+function partnerCollectOrdersSilent_() { _po_collectSilentCore_(true); }
+
+/**
+ * @param {boolean} withSalesRebuild  판매현황을 새로 만들지
+ */
+function _po_collectSilentCore_(withSalesRebuild) {
   // ★ 2026-06-27: 주말 차단
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 발주 수집 스킵"); return; }
 
@@ -4030,12 +4052,17 @@ function partnerCollectOrdersSilent_() {
     try { Logger.log("[VOID_INVOICE_TRIGGER_ERR] " + String(e.message || e)); } catch (_) {}
   }
   // ③ ★ 2026-07-02: 판매현황 갱신 (발주수집 후 자동 실행)
-  try {
-    partnerRebuildSalesUploadSheet(true); // silent=true
-    salesOk = true;
-    Logger.log("[SALES_REFRESH] 판매현황 갱신 완료");
-  } catch (e) {
-    try { Logger.log("[SALES_REFRESH_ERR] " + String(e.message || e)); } catch (_) {}
+  //    ★ 2026-09-17: 오후 1시 회차에서만 돈다 (partnerCollectOrdersSilent_)
+  if (!withSalesRebuild) {
+    Logger.log("[SALES_REFRESH] 이 회차는 판매현황을 안 건드립니다 (오후 1시에만 갱신)");
+  } else {
+    try {
+      partnerRebuildSalesUploadSheet(true); // silent=true
+      salesOk = true;
+      Logger.log("[SALES_REFRESH] 판매현황 갱신 완료");
+    } catch (e) {
+      try { Logger.log("[SALES_REFRESH_ERR] " + String(e.message || e)); } catch (_) {}
+    }
   }
   // ★ 2026-07-02: PEP_AUTO_PUSH 연쇄 호출 제거
   // Push는 별도 트리거(09:20/14:20)에서 실행 → 6분 초과 방지 + 중복 실행 방지
@@ -4060,7 +4087,9 @@ function partnerCollectOrdersSilent_() {
         { label: "✅ 신규 수집", value: (_s_ ? _s_.newCount : "?") + "건" },
         { label: "⏭ 스킵", value: (_s_ ? _s_.skipped : "?") + "건" },
         { label: "⚠ 필수정보 미입력", value: (_s_ ? _s_.missing : "?") + "건" },
-        { label: "판매현황 갱신", value: salesOk ? "✅" : "❌" },
+        /*  안 한 것을 «실패»로 보이면 안 된다. ❌ 는 「돌았는데 깨졌다」는 말이다. */
+        { label: "판매현황 갱신",
+          value: !withSalesRebuild ? "— 안 함 (오후 1시에만)" : (salesOk ? "✅" : "❌") },
         { label: "⏱ 소요시간", value: elapsed + "초" },
       ]);
     } else {
