@@ -12362,6 +12362,10 @@ function partnerFixArchiveWrongDate(days) {
     "원장에서 읽은 주문 " + 지도.rows + "줄 · 최근 " + days + "일", ""];
 
   var 옮김 = 0, 못옮김 = 0, 이미있음 = 0, 모름 = 0, 본파일 = 0;
+  /*  ★ 「0줄」이 무슨 뜻인지 갈리게 «훑은 줄»도 센다 ★
+      0 줄 옮김 + 0 줄 훑음 = 못 읽은 것이고,
+      0 줄 옮김 + N 줄 훑음 = 어긋난 게 없는 것이다. 둘은 손댈 곳이 다르다. */
+  var 훑음 = 0, 제자리 = 0;
   var 예시 = [], 멈춤 = "";
 
   for (var d = 0; d <= days; d++) {
@@ -12382,17 +12386,28 @@ function partnerFixArchiveWrongDate(days) {
     var all = tab.getRange(1, 1, tab.getLastRow(), lc).getDisplayValues();
     var hdr = all[0];
     var cols = _pep_mapArchiveMatchCols_(hdr);
-    if (cols.oid < 0) { L.push("· " + dateStr + " : 고유ID 칸을 못 찾아 건너뜁니다"); continue; }
+    /*  ★ 고유ID 는 «이미 있는 자»로 읽는다 ★  (2026-09-17)
+        처음에 cols.oid 만 봤다가 열두 날을 통째로 건너뛰었다 —
+        일일마감의 ID 칸 이름은 「주문자명(사방넷)」 이고, 그것은
+        _pep_mapArchiveMatchCols_ 에서 oid 가 아니라 orderer 로 들어간다.
+        _pep_deriveMatchKeyFromArchiveRow_ 가 orderer → oid → name 차례로
+        보는 «그 하나»다. 같은 값을 두 자리에서 읽으면 이렇게 어긋난다. */
+    if (cols.orderer < 0 && cols.oid < 0 && cols.name < 0) {
+      L.push("· " + dateStr + " : 주문자명(사방넷)·주문번호 칸을 못 찾아 건너뜁니다" +
+        "  (머리글: " + hdr.slice(0, 8).join(",") + ")");
+      continue;
+    }
 
     //  ① 옮길 목록 만들기
     var 갈곳 = {};   // 참날짜 → [{행(1-based), row}]
     for (var ri = 1; ri < all.length; ri++) {
       if (String(all[ri][0] || "").indexOf("합계") !== -1) continue;
-      var uid = _pep_uidFromOrdererCell_(all[ri][cols.oid]);
+      훑음++;
+      var uid = _pep_deriveMatchKeyFromArchiveRow_(all[ri], cols);
       if (!uid || !_pep_isRealUid_(uid)) { continue; }
       var 참날 = 지도.map[uid];
       if (!참날) { 모름++; continue; }
-      if (참날 === dateStr) continue;
+      if (참날 === dateStr) { 제자리++; continue; }
       if (!갈곳[참날]) 갈곳[참날] = [];
       갈곳[참날].push({ 행: ri + 1, row: all[ri] });
     }
@@ -12437,8 +12452,12 @@ function partnerFixArchiveWrongDate(days) {
     }
   }
 
-  L.push("본 파일 : " + 본파일 + "개");
+  L.push("본 파일 : " + 본파일 + "개 · 훑은 줄 : " + 훑음 + "줄");
+  L.push("   그중 제 날짜에 잘 앉아 있던 줄 : " + 제자리 + "줄");
   L.push("★ 제자리로 옮긴 줄 : " + 옮김 + "줄");
+  if (!훑음 && 본파일) {
+    L.push("   ★ 한 줄도 못 읽었습니다 — 머리글을 못 찾은 것입니다. 위 줄을 보세요.");
+  }
   if (이미있음) L.push("   (제 날짜에 이미 있던 줄 " + 이미있음 + "줄은 원본에서 지우기만 했습니다)");
   if (못옮김) L.push("   ⚠ 못 옮긴 줄 : " + 못옮김 + "줄");
   if (모름) L.push("   · 원장에 없어 날짜를 모르는 줄 : " + 모름 + "줄 (건드리지 않았습니다)");

@@ -91,8 +91,21 @@ console.log("\n[4] 모를 때");
     몸통.indexOf("if (!참날) { 모름++; continue; }") >= 0);
   ok("★ 고유ID 가 아니면 건너뛴다",
     몸통.indexOf("if (!uid || !_pep_isRealUid_(uid))") >= 0);
+  /*  ★ 2026-09-17: 처음에 cols.oid 만 보다가 열두 날을 통째로 건너뛰었다 ★
+      일일마감의 ID 칸 이름은 「주문자명(사방넷)」 이고, 그것은 oid 가 아니라
+      orderer 로 들어간다. 시스템에 이미 그걸 읽는 자가 하나 있다 — 그걸 쓴다. */
+  ok("★ 고유ID 를 «이미 있는 자»로 읽는다 (내 방식으로 또 읽지 않는다)",
+    몸통.indexOf("_pep_deriveMatchKeyFromArchiveRow_(all[ri], cols)") >= 0);
+  ok("  cols.oid 만 보지 않는다", 몸통.indexOf("_pep_uidFromOrdererCell_(all[ri][cols.oid])") < 0);
+  ok("★ 머리글을 못 찾으면 «무엇을 못 찾았는지» 적는다",
+    몸통.indexOf("주문자명(사방넷)·주문번호 칸을 못 찾아 건너뜁니다") >= 0 &&
+    몸통.indexOf("(머리글: ") >= 0);
+  ok("★ 「0줄」이 무슨 뜻인지 갈린다 (훑은 줄을 센다)",
+    몸통.indexOf("훑은 줄 : ") >= 0 && 몸통.indexOf("한 줄도 못 읽었습니다") >= 0);
   ok("★ 합계줄은 안 옮긴다", 몸통.indexOf('indexOf("합계") !== -1') >= 0);
-  ok("★ 제 날짜에 있는 줄은 그대로 둔다", 몸통.indexOf("if (참날 === dateStr) continue;") >= 0);
+  //  제자리인 줄은 «세기만» 하고 그대로 둔다 — 세야 「0줄 옮김」의 뜻이 갈린다
+  ok("★ 제 날짜에 있는 줄은 그대로 둔다",
+    몸통.indexOf("if (참날 === dateStr) { 제자리++; continue; }") >= 0);
   ok("  몇 줄을 모르는지 말한다", 몸통.indexOf("날짜를 모르는 줄") >= 0);
   ok("★ 원장을 못 읽으면 아예 «안 돈다»",
     몸통.indexOf("어느 날이 참인지 알 수 없습니다") >= 0);
