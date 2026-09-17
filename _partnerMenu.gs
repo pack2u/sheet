@@ -92,6 +92,19 @@ function registerPartnerMenu_() {
         // ── 왜 안 갔나 (읽기 전용) ──
         .addItem("🛬 푸시 착지 확인", "partnerVerifyPushLanded")
         .addItem("   └ 🕵 수집 누락 점검", "partnerFindUncollectedOrders")
+        /*  일일마감을 «손보는» 것들을 한 자리에 모은다.
+            2026-09-17 에 둘을 더하면서 이 파트가 17개가 되어 한도(16)를 넘었다.
+            매일 쓰는 것과 탈났을 때 쓰는 것이 한 줄에 섞이면 매일 쓰는 걸 못 찾는다. */
+        .addSubMenu(
+          ui.createMenu("📋 일일마감 손보기")
+            .addItem("📋 재처리 (날짜 지정)", "partnerUnifiedDailyArchiveForDate")
+            /*  파일 이름을 손으로 바꾸면 마감이 «엉뚱한 파일»에 조용히 쓴다.
+                2026-09-17 에 실제로 그랬다 — 완료창은 떴는데 파일이 없었다. */
+            .addItem("📁 파일 기억 점검 (이름이 바뀐 것)", "partnerCheckDailyArchiveMemory")
+            /*  찾아만 주지 않는다 — 찾고 «옮기고» 말한다. 한 번 누르면 끝난다.
+                2026-09-17: 주문일이 뒤로 밀려 어제 것이 오늘 파일에 앉아 있었다. */
+            .addItem("🩹 날짜 바로잡기 (제자리로 옮김)", "partnerFixArchiveWrongDate")
+            .addItem("🗂️ 파일 폴더 정리 (일회성)", "partnerMoveDailyCloseFilesToSubFolder"))
         .addItem("🔁 중복 발주 점검 (임시기록 차수)", "partnerCheckDuplicateOrders")
         .addItem("🔍 중복 발주 감지 (발주탭+전용양식)", "partnerCheckDuplicateOrdersOwner")
         .addItem("🕵️ 오전/오후 판매현황 중복 점검", "partnerCheckSalesDuplicatesOwner")
@@ -251,14 +264,7 @@ function registerPartnerMenu_() {
         .addItem("📦 대리판매 발주 마감이동", "partnerArchiveToMonthlySettle")
         .addItem("🏭 대리공급 발주 마감이동", "partnerArchiveExclusiveForm")
         .addSeparator()
-        .addItem("📋 일일마감 재처리 (날짜 지정)", "partnerUnifiedDailyArchiveForDate")
-        /*  파일 이름을 손으로 바꾸면 마감이 «엉뚱한 파일»에 조용히 쓴다.
-            2026-09-17 에 실제로 그랬다 — 완료창은 떴는데 파일이 없었다. */
-        .addItem("   └ 📁 일일마감 파일 기억 점검", "partnerCheckDailyArchiveMemory")
-        /*  찾아만 주지 않는다 — 찾고 «옮기고» 말한다. 한 번 누르면 끝난다.
-            2026-09-17: 주문일이 뒤로 밀려 어제 것이 오늘 파일에 앉아 있었다. */
-        .addItem("   └ 🩹 일일마감 날짜 바로잡기 (제자리로 옮김)", "partnerFixArchiveWrongDate")
-        .addItem("🗂️ 일일마감 파일 폴더 정리 (일회성)", "partnerMoveDailyCloseFilesToSubFolder")
+
         .addItem("📒 송장원장 갱신", "partnerRefreshInvoiceLedger")
         .addSeparator()
         .addItem("🔄 취소/반품 수식 갱신", "partnerRefreshCancelReturnFormulas")
