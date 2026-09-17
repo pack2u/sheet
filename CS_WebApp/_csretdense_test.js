@@ -104,5 +104,29 @@ console.log("\n[5] 배선");
   eq("★ 토글은 한 곳에서만 만든다", 몇곳("function toggleReturnDense()"), 1);
 }
 
+/* ── [6] 이력이 없으면 빈 상자를 안 그린다 ──────────────── */
+console.log("\n[6] 진행 이력이 없는 카드");
+{
+  //  > "진행이력이 없으면 진행이력없음 카드가 안나오고 내용이 옆으로 빠져서"
+  ok("★ 카드 쪽은 빈 문자열을 돌려준다", has("if (!visible.length) return '';"));
+  ok("★ 「진행 이력 없음」 상자를 카드에 안 그린다",
+    html.indexOf("<div class=\"ret-tl-track\"><div class=\"ret-proc empty\">") < 0);
+
+  ok("★ 오른쪽 칸 자체를 뺀다",
+    has("(tlHtml ? '<div class=\"ret-right\">' + tlHtml + '</div>' : '')"));
+  ok("★ 카드에 표식을 붙인다", has("(tlHtml ? '' : ' ret-noproc')"));
+  ok("★ 왼쪽이 폭을 다 쓴다", has(".ret-card.ret-noproc .ret-left"));
+  const i = html.indexOf(".ret-card.ret-noproc .ret-left {");
+  const 몸통 = i >= 0 ? html.substring(i, i + 160) : "";
+  ok("  1/3 묶임을 푼다", 몸통.indexOf("flex: 1 1 auto") >= 0 && 몸통.indexOf("max-width: none") >= 0);
+
+  //  «있고 없고»를 두 군데서 세면 언젠가 어긋나 빈 칸이 다시 생긴다
+  eq("★ 이력을 그리는 곳은 카드에서 한 번뿐", 몇곳("renderReturnTimeline(c.timeline, idx)"), 1);
+
+  //  팝업(반품 조회)은 다른 함수가 그린다 — 거기 「진행 이력 없음」은 그대로 둔다
+  ok("★ 팝업 쪽 안내는 살아 있다", has("<div class=\"ret-proc empty\">진행 이력 없음</div>"));
+  ok("  그 CSS 도 남아 있다", has(".ret-proc.empty"));
+}
+
 console.log("\n" + (fail ? "FAIL " + fail + "건" : "통과 " + pass + "건"));
 process.exit(fail ? 1 : 0);

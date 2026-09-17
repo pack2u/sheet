@@ -1412,6 +1412,11 @@
     .ret-tl-track > .ret-proc:only-child {
       flex: 1 1 auto; width: auto; min-width: 128px;
     }
+    /* 이력이 없는 카드 — 오른쪽 칸 자체가 없으므로 왼쪽이 폭을 다 쓴다.
+       품목명이 좁은 칸에서 서너 줄로 접히던 것이 한두 줄로 눕는다. */
+    .ret-card.ret-noproc .ret-left {
+      flex: 1 1 auto; max-width: none;
+    }
     .ret-tl-track > .ret-proc:only-child .ret-proc-thumbs { flex-wrap: nowrap; }
 
     /* ── ② 그래도 더 좁게 보고 싶을 때 — 「조밀」 ──────────────
@@ -7660,9 +7665,16 @@
       for (var i = 0; i < events.length; i++) {
         if (events[i].kind !== 'meta') visible.push(events[i]);
       }
-      if (!visible.length) {
-        return '<div class="ret-tl-track"><div class="ret-proc empty">진행 이력 없음</div></div>';
-      }
+      /* ★ 없으면 «아무것도» 내지 않는다 ★  (2026-09-17)
+         > "진행이력이 없으면 진행이력없음 카드가 안나오고 내용이 옆으로
+         >  빠져서 높이를 줄일수 있을꺼 같은데"
+
+         「진행 이력 없음」은 빈 상자 하나를 그리려고 카드 폭의 2/3 를
+         잡아먹었다. 왼쪽 품목명은 그 바람에 좁은 칸에서 서너 줄로 접혔고,
+         카드 키는 «아무 내용도 없는» 상자에 맞춰졌다.
+         없다는 것은 보여 줄 것이 없다는 뜻이다 — 자리를 내준다.
+         부르는 쪽이 빈 문자열을 보고 오른쪽 칸 자체를 빼고, 왼쪽이 폭을 다 쓴다. */
+      if (!visible.length) return '';
       var html = '<div class="ret-tl-track">';
       for (var j = 0; j < visible.length; j++) {
         var ev = visible[j];
@@ -7883,7 +7895,12 @@
       }
       var invLine = retBoxesHtml(idx, c, boxes, doneMap);
       var statusBadge = c.status ? '<span class="rs">' + esc(c.status) + '</span>' : '';
-      return '<div class="ret-card" id="ret-card-' + idx + '" onclick="onReturnCardTap(' + idx + ', event)">' +
+      /*  이력이 없으면 오른쪽 칸을 아예 만들지 않는다 — 왼쪽이 폭을 다 쓴다.
+          «있고 없고»를 한 군데(renderReturnTimeline)서만 가린다. 두 곳에서
+          따로 세면 언젠가 어긋나 빈 칸이 다시 생긴다. */
+      var tlHtml = renderReturnTimeline(c.timeline, idx);
+      return '<div class="ret-card' + (tlHtml ? '' : ' ret-noproc') +
+        '" id="ret-card-' + idx + '" onclick="onReturnCardTap(' + idx + ', event)">' +
         '<div class="ret-focus-badge">집중 보기 · 다시 탭하면 접기</div>' +
         '<div class="ret-body">' +
           '<div class="ret-left">' +
@@ -7910,7 +7927,7 @@
             '<div class="ret-sub">' + esc(c.tab) + ' ' + c.row + '행 · ' + esc(c.date || '') +
               (c.staff ? ' · ' + esc(c.staff) : '') + '</div>' +
           '</div>' +
-          '<div class="ret-right">' + renderReturnTimeline(c.timeline, idx) + '</div>' +
+          (tlHtml ? '<div class="ret-right">' + tlHtml + '</div>' : '') +
         '</div>' +
         '<div class="ret-foot">' +
           '<div class="ret-act-bar">' +
