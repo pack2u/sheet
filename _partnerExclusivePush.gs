@@ -1015,7 +1015,7 @@ function _pep_loadTempTabState_(tab) {
   var uidSet = {};
   var fingerprintRows = {};
   if (!tab || tab.getLastRow() < 2) {
-    return { uidSet: uidSet, fingerprintRows: fingerprintRows };
+    return { uidSet: uidSet, fingerprintRows: fingerprintRows, rows: [] };
   }
   var lastCol = Math.max(tab.getLastColumn(), 16);
   // ★ 2026-07-06: getLastRow()는 행 번호 → 행 수는 getLastRow() - 1
@@ -1036,7 +1036,72 @@ function _pep_loadTempTabState_(tab) {
     if (!fingerprintRows[fp]) fingerprintRows[fp] = [];
     fingerprintRows[fp].push({ uid: uid, code: code, name: name });
   }
-  return { uidSet: uidSet, fingerprintRows: fingerprintRows };
+  //  rows 는 「발주대기」 줄을 되살릴 때 쓴다 (_pep_waitingTempRows_)
+  return { uidSet: uidSet, fingerprintRows: fingerprintRows, rows: vals };
+}
+
+/**
+ * 임시기록에서 «아직 안 나간» 줄을 원천 모양으로 되살린다.
+ *
+ * 임시기록 줄은 원천 줄의 0~21열을 그대로 담고 있고 (B열만 회차 도장으로
+ * 바뀌어 있는데 업체 매핑은 그 열을 안 쓴다), 매핑이 쓰는 열은 3~18 뿐이다.
+ * 그래서 앞 22열만 떼어 오면 원천 줄과 똑같이 태울 수 있다.
+ *
+ * ★ 나이는 «회차 도장»으로 본다 ★
+ *   임시기록에는 등록 시각 칸이 없다. B열 도장이 「0917-1」 꼴이라
+ *   그 MMDD 가 이 줄이 들어온 날이다. 못 읽으면 태우지 않는다 —
+ *   대신 몇 줄인지 말해 준다. 조용히 버리지 않는다.
+ *
+ * @param {Array<Array>} rows  임시기록 본문 (머리글 제외)
+ * @param {number} srcLc       원천 열 수
+ * @return {{rows: Array<Array>, tooOld: number, examples: Array<string>}}
+ */
+function _pep_waitingTempRows_(rows, srcLc) {
+  var out = { rows: [], tooOld: 0, examples: [] };
+  if (!rows || !rows.length) return out;
+
+  var 상태칸 = (typeof _PO_TEMP_STATUS_COL_ !== "undefined") ? _PO_TEMP_STATUS_COL_ : 24;
+  var 송장칸 = (typeof _PO_TEMP_INV_COL_ !== "undefined") ? _PO_TEMP_INV_COL_ : 23;
+
+  //  태워도 되는 날 (오늘 포함 최근 N일) 의 MMDD
+  var 허용 = {};
+  for (var d = 0; d <= _PEP_WAIT_MAX_DAYS_; d++) {
+    var dt = new Date();
+    dt.setDate(dt.getDate() - d);
+    허용[Utilities.formatDate(dt, "Asia/Seoul", "MMdd")] = true;
+  }
+
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[상태칸] || "").trim() !== _PEP_TEMP_WAIT_) continue;
+    //  송장이 이미 붙었으면 어떻게든 나간 줄이다. 다시 보내지 않는다.
+    if (String(r[송장칸] || "").trim()) continue;
+    var uid = String(r[15] || "").trim();
+    var code = String(r[3] || "").trim();
+    if (!uid || !code) continue;
+
+    var 도장 = String(r[1] || "").trim();
+    var mmdd = "";
+    for (var s = 0; s + 4 <= 도장.length; s++) {
+      var 조각 = 도장.substring(s, s + 4);
+      var 숫자만 = true;
+      for (var k = 0; k < 4; k++) {
+        var ch = 조각.charAt(k);
+        if (ch < "0" || ch > "9") { 숫자만 = false; break; }
+      }
+      if (숫자만) { mmdd = 조각; break; }
+    }
+    if (!mmdd || !허용[mmdd]) {
+      out.tooOld++;
+      if (out.examples.length < 3) out.examples.push(uid + " / " + code + " (도장 " + (도장 || "없음") + ")");
+      continue;
+    }
+
+    var 태울줄 = r.slice(0, 22);
+    while (태울줄.length < srcLc) 태울줄.push("");
+    out.rows.push(태울줄);
+  }
+  return out;
 }
 
 function _pep_escapeHtml_(text) {
@@ -1658,6 +1723,34 @@ function _pep_loadAliasMap_() {
  */
 var _PEP_PUSH_STAMP_ = "";
 
+/* ══════════════════════════════════════════════════════════════
+ *  ★ 「임시기록만」 회차 ★  (2026-09-17)
+ *
+ *  > "10시 30분 발주푸시...임시기록에만 저장하고 발주푸시는 안함"
+ *  > "오후3시 40분 임시기록에만 저장하고 발주 푸시는 안함"
+ *  > "결론.. 발주 푸시는 오후 1시50분에만함"
+ *
+ *  업체 파일에는 손대지 않고 임시기록만 남긴다. 그 줄은 진행상태가
+ *  「발주대기」다 — «아직 안 나갔다»는 뜻이고, 13:50 푸시가 그 줄을
+ *  같이 집어 간다(_pep_waitingTempRows_).
+ *
+ *  ★ 왜 「발주완료」라 적지 않는가 ★
+ *    안 나간 것을 나갔다고 적으면 그 거짓말을 되돌릴 방법이 없다.
+ *    송장수집·중복점검·CS 가 다 이 칸을 읽는다.
+ * ══════════════════════════════════════════════════════════════ */
+var _PEP_TEMP_ONLY_ = false;
+
+/** 이번 실행에서 «업체로 내보낸» (고유ID|품목코드) — 임시기록 상태를 지울 근거 */
+var _PEP_LAST_PUSHED_KEYS_ = {};
+
+/** 임시기록만 한 줄이 「아직 안 나갔다」고 적어 두는 말 */
+var _PEP_TEMP_WAIT_ = "발주대기";
+var _PEP_TEMP_DONE_ = "발주완료";
+
+/*  되살려 태우는 줄의 나이 한도. 너무 오래된 «발주대기»는 취소됐거나
+    바뀐 건일 수 있다 — 조용히 내보내지 않는다. */
+var _PEP_WAIT_MAX_DAYS_ = 3;
+
 /**
  * 임시기록 회차 배경색 — 한 번의 Push 가 넣은 행 전체가 같은 색이다.
  *
@@ -2004,7 +2097,14 @@ function _pep_resume_() {
   }
 }
 
-function partnerPushOrdersToExclusiveForms(silent) {
+/**
+ * @param {boolean=} silent  대화상자 없이
+ * @param {boolean=} tempOnly  ★ 임시기록에만 담고 업체 파일은 «안 건드린다»
+ *   10:30 · 15:40 이 이 모드로 돈다 (2026-09-17 사장님 일정 변경).
+ */
+function partnerPushOrdersToExclusiveForms(silent, tempOnly) {
+  _PEP_TEMP_ONLY_ = !!tempOnly;
+  _PEP_LAST_PUSHED_KEYS_ = {};
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) {
     var lockMsg = "⚠ 대리공급 Push가 이미 실행 중입니다. 잠시 후 다시 시도하세요.";
@@ -2029,12 +2129,54 @@ function partnerPushOrdersToExclusiveForms(silent) {
        조각이 남았으면 아직 「끝」이 아니다. 반쪽 상태로 점검하면 없는
        중복이 보이고, 업체 파일을 여느라 남은 시간까지 먹는다. */
     if (!_PEP_LAST_INCOMPLETE_) {
+      /*  ★ 나간 줄의 「발주대기」를 지운다 ★  (2026-09-17)
+          «다 끝났을 때만» 지운다. 조각으로 끊긴 상태에서 지우면 다음
+          조각이 그 줄을 못 되살려 영영 안 나간다. */
+      if (!_PEP_TEMP_ONLY_) {
+        try { _pep_clearWaitingMarks_(_PEP_LAST_PUSHED_KEYS_); }
+        catch (eCw) { Logger.log("[PEP_WAIT] 상태 지우기 실패: " + (eCw.message || eCw)); }
+      }
       try { _pdc_checkAfterPush_(); } catch (ePdc) { Logger.log("[DUP] " + ePdc.message); }
     }
   } finally {
+    _PEP_TEMP_ONLY_ = false;   // 다음 실행이 물려받지 않게 반드시 되돌린다
     try { _pep_zipCacheSave_(); } catch (_) {} // ★ M4: 우편번호 영구 캐시 저장
     try { lock.releaseLock(); } catch (_) {}
   }
+}
+
+/**
+ * 업체로 나간 줄의 임시기록 진행상태를 「발주대기」 → 「발주완료」로 바꾼다.
+ * 빈칸이나 다른 값은 건드리지 않는다 — 사람이 손으로 적은 말일 수 있다.
+ * @param {Object} pushedKeys  {고유ID|품목코드: true}
+ * @return {number} 바꾼 줄 수
+ */
+function _pep_clearWaitingMarks_(pushedKeys) {
+  if (!pushedKeys) return 0;
+  var 몇개 = 0;
+  for (var k in pushedKeys) { if (Object.prototype.hasOwnProperty.call(pushedKeys, k)) { 몇개++; break; } }
+  if (!몇개) return 0;
+
+  var tab = _pep_ensureNonPartnerTempTab_(SpreadsheetApp.openById(_PT.INFO_SS_ID));
+  if (!tab || tab.getLastRow() < 2) return 0;
+
+  var 상태칸 = (typeof _PO_TEMP_STATUS_COL_ !== "undefined") ? _PO_TEMP_STATUS_COL_ : 24;
+  var n = tab.getLastRow() - 1;
+  var lc = Math.max(tab.getLastColumn(), 상태칸 + 1);
+  var vals = tab.getRange(2, 1, n, lc).getValues();
+  var 상태열 = [], 바뀜 = 0;
+  for (var i = 0; i < n; i++) {
+    var 지금 = String(vals[i][상태칸] || "").trim();
+    if (지금 !== _PEP_TEMP_WAIT_) { 상태열.push([vals[i][상태칸]]); continue; }
+    var key = String(vals[i][15] || "").trim() + "|" + String(vals[i][3] || "").trim();
+    if (pushedKeys[key]) { 상태열.push([_PEP_TEMP_DONE_]); 바뀜++; }
+    else 상태열.push([vals[i][상태칸]]);
+  }
+  if (바뀜) {
+    tab.getRange(2, 상태칸 + 1, n, 1).setValues(상태열);
+    Logger.log("[PEP_WAIT] 「" + _PEP_TEMP_WAIT_ + "」 → 「" + _PEP_TEMP_DONE_ + "」 " + 바뀜 + "줄");
+  }
+  return 바뀜;
 }
 
 function _pep_pushCore_(silent) {
@@ -2134,10 +2276,49 @@ function _pep_pushCore_(silent) {
 
   var today = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
 
+  /* ══════════════════════════════════════════════════════════════
+     ★ 「발주대기」 로 남은 줄을 되살려 «원천에 섞는다» ★  (2026-09-17)
+
+     10:30·15:40 은 임시기록만 남기고 업체로는 안 내보낸다.
+     그 줄이 다음 푸시에 나가려면 그때까지 원천(세트분리 대리발송 탭)에
+     남아 있어야 하는데, 그 탭은 세트분리를 돌릴 때마다 판매현황 기준으로
+     통째로 다시 쓰인다. 날이 바뀌면 그 줄은 원천에서 «사라진다».
+     그러면 업체로 영영 안 나간다 — 임시기록에는 남아 있는 채로.
+
+     그래서 푸시가 시작할 때 임시기록의 「발주대기」 줄을 원천 뒤에 붙인다.
+     임시기록 줄은 원천 줄의 0~21열을 그대로 담고 있고, 업체 매핑이 쓰는
+     열은 3~18 뿐이라 그대로 태울 수 있다 (2026-09-17 확인).
+
+     같은 줄이 원천에도 있으면 «원천이 먼저» 처리되고 뒤엣것은
+     _runRowSeen_ 이 걸러 낸다 — 두 번 나가지 않는다.
+
+     ★ 너무 오래된 것은 안 태운다 ★
+       취소됐거나 바뀐 건일 수 있다. 조용히 내보내지 않는다.
+     ══════════════════════════════════════════════════════════════ */
+  if (!_PEP_TEMP_ONLY_) {
+    try {
+      var _wait_ = _pep_waitingTempRows_(_tempTabState_.rows, srcLc);
+      for (var wi = 0; wi < _wait_.rows.length; wi++) srcAll.push(_wait_.rows[wi]);
+      waitingReinjected = _wait_.rows.length;
+      if (waitingReinjected) {
+        Logger.log("[PEP_WAIT] 임시기록의 「" + _PEP_TEMP_WAIT_ + "」 " +
+          waitingReinjected + "줄을 되살려 태웁니다" +
+          (_wait_.tooOld ? " (너무 오래되어 건너뛴 줄 " + _wait_.tooOld + ")" : ""));
+      } else if (_wait_.tooOld) {
+        Logger.log("[PEP_WAIT] 「" + _PEP_TEMP_WAIT_ + "」 줄이 " + _wait_.tooOld +
+          "개 있으나 " + _PEP_WAIT_MAX_DAYS_ + "일이 지나 건너뜁니다 — 손으로 봐 주세요.");
+      }
+    } catch (eW) {
+      Logger.log("[PEP_WAIT] 되살리기 실패(무시하고 계속): " + String(eW.message || eW));
+    }
+  }
+
   var todaySlash = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy/MM/dd"); // HR C열용
   var cache = {}; // prefix → { ss, tab, nextSeq, pushedUids }
   var pushed = 0;
   var pushedByPfx = {}; // 업체별 Push 건수
+  var tempOnlyKept = 0; // 「임시기록만」 회차에서 담아 둔 줄
+  var waitingReinjected = 0; // 되살려 태운 «발주대기» 줄
   var skipUid = 0; // 이미 Push된 행 (협력Push 있음)
   var skipSameRow = 0; // 한 회차 안에서 같은 주문·같은 품목이 겹친 행
   var skipNoMap = 0; // _PEP_VENDOR_COL_OVERRIDES_ 미등록 접두
@@ -2288,7 +2469,17 @@ function _pep_pushCore_(silent) {
       // B열(순번)은 소스에서 온 값인데 우리 쪽에서 쓰임새가 없다.
       // 어느 차수에 들어온 행인지가 훨씬 쓸모 있으므로 회차 도장으로 바꾼다.
       if (_PEP_PUSH_STAMP_) _tRow_[1] = _PEP_PUSH_STAMP_;
-      _tempPendingRows_.push(_tRow_.concat([pfx, "", "발주완료"]));
+      //  안 나간 줄은 «안 나갔다»고 적는다. 13:50 푸시가 이 말을 보고 집어 간다.
+      _tempPendingRows_.push(_tRow_.concat([pfx, "",
+        _PEP_TEMP_ONLY_ ? _PEP_TEMP_WAIT_ : _PEP_TEMP_DONE_]));
+    }
+
+    /*  ★ 임시기록만 하는 회차는 여기서 끝난다 ★
+        업체 파일을 «열지도» 않는다. 열면 순번·중복 상태가 움직인다. */
+    if (_PEP_TEMP_ONLY_) {
+      tempOnlyKept++;
+      _줄결과_[ri] = "임시기록만";
+      continue;
     }
 
     if (!directMap) {
@@ -2564,6 +2755,8 @@ function _pep_pushCore_(silent) {
       cache[pfx].pendingRows.push({ outRow: outRow, dmCols: dmCols });
       cache[pfx].nextRow = nextRow + 1;
       pushed++;
+      //  이 줄은 업체로 나간다 — 임시기록의 「발주대기」를 지울 근거다
+      if (_runRowKey_) _PEP_LAST_PUSHED_KEYS_[_runRowKey_] = true;
       _줄결과_[ri] = "푸시";
       pushedByPfx[pfx] = (pushedByPfx[pfx] || 0) + 1;
       if (!cache[pfx].existingDedupCounts) cache[pfx].existingDedupCounts = {};
@@ -3633,6 +3826,45 @@ function partnerDiagnoseAliasMap() {
 // ─────────────────────────────────────────────────────
 //  트리거용 무음 래퍼 — partnerCollectOrdersSilent_ 에서 호출
 // ─────────────────────────────────────────────────────
+/**
+ * ★ 임시기록에만 담는 회차 ★  (10:30 · 15:40)
+ *
+ * > "10시 30분 발주푸시...임시기록에만 저장하고 발주푸시는 안함"
+ * > "결론.. 발주 푸시는 오후 1시50분에만함"
+ *
+ * 업체 파일은 열지도 않는다. 담긴 줄은 「발주대기」로 남고,
+ * 13:50 푸시가 그 줄을 되살려 태운다(_pep_waitingTempRows_).
+ */
+function partnerPushTempOnlySilent_() {
+  if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말/공휴일 차단 → 임시기록 담기 스킵"); return; }
+  var t0 = new Date();
+  var ok = false, errorMsg = "";
+  /*  v2 업체발주 다리는 그대로 돌린다 — 임시기록에 담으려면 먼저 들어와 있어야 한다. */
+  try {
+    if (typeof partnerBridgeV2Orders === "function") partnerBridgeV2Orders();
+  } catch (eB) {
+    Logger.log("[V2발주다리] 임시기록 담기 전 실행 실패(무시): " + (eB && eB.message ? eB.message : eB));
+  }
+  try {
+    partnerPushOrdersToExclusiveForms(true, true);
+    ok = true;
+  } catch (e) {
+    errorMsg = String(e.message || e);
+    Logger.log("[PEP_TEMPONLY_ERR] " + errorMsg);
+  }
+  try {
+    _chat_sendCard_(
+      ok ? "📥 임시기록에만 담았습니다 (업체 발주 안 나감)" : "🚨 임시기록 담기 실패",
+      Utilities.formatDate(t0, "Asia/Seoul", "HH:mm"),
+      [
+        { label: "무엇을", value: "발주를 임시기록에만 적었습니다" },
+        { label: "업체 발주", value: "안 나갔습니다 — 13:50 에 나갑니다" },
+        { label: "상태값", value: _PEP_TEMP_WAIT_ }
+      ].concat(errorMsg ? [{ label: "오류", value: errorMsg.substring(0, 200) }] : []),
+    );
+  } catch (_) {}
+}
+
 function partnerPushOrdersToExclusiveFormsSilent_() {
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말/공휴일 차단 → 대리공급 Push 스킵"); return; }
   var startTime = new Date();

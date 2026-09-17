@@ -2057,7 +2057,15 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
       업체가 아침에 보는 화면이 그날 것이어야 한다.  */
   { fn: "runMorningSyncStatusBatch",                     h: 7,  m: 0,  label: "판매 상태/재고 → 단가조회 (아침)" },
   { fn: "partnerCollectOrdersSilent_",                   h: 9,  m: 30, label: "발주 수집 + 판매현황 갱신 (1회전)" },
-  { fn: "partnerPushOrdersToExclusiveFormsSilent_",      h: 10, m: 30, label: "대리공급 Push + 우편번호 (1회전)" },
+  /*  ★ 2026-09-17: 10:30 · 15:40 은 «임시기록에만» 담는다 ★
+      > "10시 30분 발주푸시...임시기록에만 저장하고 발주푸시는 안함"
+      > "오후3시 40분 임시기록에만 저장하고 발주 푸시는 안함"
+      > "결론.. 발주 푸시는 오후 1시50분에만함"
+
+      업체 파일은 열지도 않는다. 담긴 줄은 「발주대기」로 남고,
+      13:50 푸시가 그 줄을 되살려 태운다 — 원천(세트분리 대리발송 탭)이
+      다음 날 다시 쓰여 그 줄이 사라져도 발주는 안 사라진다.  */
+  { fn: "partnerPushTempOnlySilent_",                    h: 10, m: 30, label: "임시기록에만 담기 (1회전 · 발주 안 나감)" },
 
   // ─── 점심: 이카운트 + Supabase + 허브 ───
   { fn: "runDailyEcountBatch",                           h: 12, m: 0,  label: "이카운트 전체동기화 2" },
@@ -2080,7 +2088,7 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
   //     그러니 이 간격을 "버그"로 보고 송장수집을 뒤로 미루지 말 것.
   //     당일 수집에 꼭 넣어야 할 사정이 생기면 그때 16:20~16:30 으로 옮긴다.
   { fn: "partnerCollectOrdersSilent_",                   h: 15, m: 0,  label: "발주 수집 + 판매현황 갱신 (3회전)" },
-  { fn: "partnerPushOrdersToExclusiveFormsSilent_",      h: 15, m: 40, label: "대리공급 Push + 우편번호 (3회전)" },
+  { fn: "partnerPushTempOnlySilent_",                    h: 15, m: 40, label: "임시기록에만 담기 (3회전 · 발주 안 나감)" },
 
   // ─── 송장 처리 (★ 2026-08-10: 냅킨 16:00 → 송장수집 16:05) ───
   { fn: "_gmi_triggerFetchNKInvoice_",                   h: 16, m: 0,  label: "냅킨코리아 Gmail 송장수집" },
