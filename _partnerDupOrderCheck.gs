@@ -37,6 +37,82 @@ var _PDC_C_ORDERNO_ = 15; // P 사방넷주문번호
 var _PDC_C_VENDOR_ = 22;  // W 업체prefix
 var _PDC_C_INV_ = 23;     // X 송장번호
 
+/* ══════════════════════════════════════════════════════════════
+ *  ★ 이미 말한 건은 다시 말하지 않는다 ★  (2026-09-17)
+ *
+ *  > "이건 며칠전껀데 계속뜨네"
+ *
+ *  이 점검은 푸시가 끝날 때마다 «처음부터 다시» 세어 알렸다. 날짜도
+ *  기억도 없어서, 한 번 난 「더 나간 발주」는 치울 때까지 날마다 같은
+ *  얼굴로 다시 왔다.
+ *
+ *  ★ 왜 그냥 두면 안 되나 ★
+ *    같은 경고가 날마다 오면 사람은 그 카드를 안 읽게 된다. 그러면
+ *    «다음에 진짜가 왔을 때»도 같이 흘려보낸다. 경고가 스스로를 죽인다.
+ *
+ *  ★ 그렇다고 지우지도 않는다 ★
+ *    새것이 없으면 카드를 안 띄우되, 새것이 있을 때 그 카드에
+ *    「아직 안 치운 옛 건 N건」을 한 줄 붙인다. 잊히지 않는다.
+ *    메뉴 [🔁 중복 발주 점검] 은 여전히 «전부» 보여 준다.
+ * ══════════════════════════════════════════════════════════════ */
+var _PDC_SEEN_PROP_ = "_PDC_SEEN_V1";
+var _PDC_SEEN_DAYS_ = 30;   // 이만큼 지나면 다시 한 번 말한다 (영영 묻히지 않게)
+
+/** 이미 말한 열쇠들 — { 열쇠: "yyyy-MM-dd" } */
+function _pdc_loadSeen_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(_PDC_SEEN_PROP_);
+    if (!raw) return {};
+    var o = JSON.parse(raw);
+    return (o && typeof o === "object") ? o : {};
+  } catch (e) {
+    Logger.log("[DUP] 말한 목록을 못 읽었습니다(무시하고 계속): " + e.message);
+    return {};
+  }
+}
+
+/**
+ * 오래된 것을 버리고 저장한다.
+ * ★ 안 버리면 속성이 9KB 한도에 걸려 «통째로» 저장이 안 된다 —
+ *   그러면 어느 날부터 조용히 다시 매일 알리기 시작한다.
+ */
+function _pdc_saveSeen_(seen) {
+  var 한도 = new Date();
+  한도.setDate(한도.getDate() - _PDC_SEEN_DAYS_);
+  var 한도키 = Utilities.formatDate(한도, "Asia/Seoul", "yyyy-MM-dd");
+  var out = {}, 남은 = 0;
+  for (var k in seen) {
+    if (!Object.prototype.hasOwnProperty.call(seen, k)) continue;
+    if (String(seen[k] || "") >= 한도키) { out[k] = seen[k]; 남은++; }
+  }
+  try {
+    PropertiesService.getScriptProperties().setProperty(_PDC_SEEN_PROP_, JSON.stringify(out));
+  } catch (e) {
+    Logger.log("[DUP] 말한 목록 저장 실패 — 다음에 또 알릴 수 있습니다: " + e.message);
+  }
+  return 남은;
+}
+
+/**
+ * 말할 것과 이미 말한 것을 가른다.
+ * @param {Array} items  알림 후보
+ * @param {Function} keyOf  항목 → 열쇠 (내용이 바뀌면 열쇠도 바뀌어야 한다)
+ * @param {Object} seen  _pdc_loadSeen_() 결과 (여기에 새 열쇠를 적어 넣는다)
+ * @return {{새것: Array, 옛것: number}}
+ */
+function _pdc_splitNew_(items, keyOf, seen) {
+  var 오늘 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+  var out = { 새것: [], 옛것: 0 };
+  for (var i = 0; i < items.length; i++) {
+    var k = keyOf(items[i]);
+    if (!k) { out.새것.push(items[i]); continue; }   // 열쇠를 못 만들면 말한다
+    if (seen[k]) { out.옛것++; continue; }
+    seen[k] = 오늘;
+    out.새것.push(items[i]);
+  }
+  return out;
+}
+
 function _pdc_digits_(v) {
   return String(v == null ? "" : v).replace(/[^0-9]/g, "");
 }
@@ -444,35 +520,64 @@ function _pdc_checkAfterPush_() {
     /*  ★ 더 나간 발주가 먼저다 ★
         이건 «이미 물건이 나간» 것이라 되돌리려면 회수해야 한다.
         임시기록 쪽 의심보다 급하다. */
+    /*  ★ 이미 말한 건은 다시 말하지 않는다 ★  (2026-09-17)
+        > "이건 며칠전껀데 계속뜨네"
+        열쇠에 «초과 줄 수»를 넣는다 — 같은 주문이라도 더 나갔으면 새 사실이다. */
+    var seen = _pdc_loadSeen_();
+
     if (ex.ok && ex.over.length) {
-      var oL = ["🚨 더 나간 발주 " + ex.over.length + "건",
-        "전용양식에 있어야 할 줄보다 많이 나갔습니다 — 물건이 더 나갔을 수 있습니다.", ""];
-      for (var oi = 0; oi < Math.min(ex.over.length, 5); oi++) {
-        var o = ex.over[oi];
-        oL.push("· [" + o.vendor + "] " + (o.hits[0] ? o.hits[0].name : "") +
-          " / 주문 " + o.uid + " — " + o.실제 + "줄 나감 (있어야 할 줄 " + o.기대 + ") ★ " + o.초과 + "줄 초과");
+      var 갈림 = _pdc_splitNew_(ex.over, function (o) {
+        return "OVER|" + o.vendor + "|" + o.uid + "|" + o.초과;
+      }, seen);
+
+      if (갈림.새것.length) {
+        var oL = ["🚨 더 나간 발주 " + 갈림.새것.length + "건",
+          "전용양식에 있어야 할 줄보다 많이 나갔습니다 — 물건이 더 나갔을 수 있습니다.", ""];
+        for (var oi = 0; oi < Math.min(갈림.새것.length, 5); oi++) {
+          var o = 갈림.새것[oi];
+          oL.push("· [" + o.vendor + "] " + (o.hits[0] ? o.hits[0].name : "") +
+            " / 주문 " + o.uid + " — " + o.실제 + "줄 나감 (있어야 할 줄 " + o.기대 + ") ★ " + o.초과 + "줄 초과");
+        }
+        if (갈림.새것.length > 5) oL.push("… 외 " + (갈림.새것.length - 5) + "건");
+        /*  옛 건을 «지우지는» 않는다. 새것이 있을 때 한 줄로 같이 짚어 준다 —
+            그래야 안 치운 것이 잊히지 않는다. */
+        if (갈림.옛것) oL.push("(전에 알린 뒤 아직 안 치운 건 " + 갈림.옛것 + "건이 더 있습니다)");
+        oL.push("");
+        oL.push("확인: 메뉴 [🔁 중복 발주 점검] — partnerCheckDuplicateOrders");
+        try { _chat_sendText_(oL.join("\n")); } catch (eO) {}
+      } else if (갈림.옛것) {
+        Logger.log("[DUP] 더 나간 발주 " + 갈림.옛것 + "건 — 전부 전에 알린 것이라 조용히 넘어갑니다");
       }
-      if (ex.over.length > 5) oL.push("… 외 " + (ex.over.length - 5) + "건");
-      oL.push("");
-      oL.push("확인: 메뉴 [🔁 중복 발주 점검] — partnerCheckDuplicateOrders");
-      try { _chat_sendText_(oL.join("\n")); } catch (eO) {}
     }
 
-    if (!res.sure.length) return;
+    var 의심갈림 = _pdc_splitNew_(res.sure, function (s) {
+      var 차수 = [];
+      for (var z = 0; z < s.hits.length; z++) 차수.push(s.hits[z].round || "?");
+      return "DUP|" + s.key + "|" + 차수.sort().join(",");
+    }, seen);
 
-    var lines = ["⚠️ 중복 발주 의심 " + res.sure.length + "건",
-      "같은 주문번호·같은 품목이 두 차수에 들어왔습니다.", ""];
-    for (var i = 0; i < Math.min(res.sure.length, 5); i++) {
-      var g = res.sure[i].hits;
-      var rounds = [];
-      for (var j = 0; j < g.length; j++) rounds.push(g[j].round || "?");
-      lines.push("· " + g[0].name + " / " + g[0].item +
-        " — 차수 " + rounds.join(", ") + " (주문 " + res.sure[i].key + ")");
+    if (의심갈림.새것.length) {
+      var lines = ["⚠️ 중복 발주 의심 " + 의심갈림.새것.length + "건",
+        "같은 주문번호·같은 품목이 두 차수에 들어왔습니다.", ""];
+      for (var i = 0; i < Math.min(의심갈림.새것.length, 5); i++) {
+        var g = 의심갈림.새것[i].hits;
+        var rounds = [];
+        for (var j = 0; j < g.length; j++) rounds.push(g[j].round || "?");
+        lines.push("· " + g[0].name + " / " + g[0].item +
+          " — 차수 " + rounds.join(", ") + " (주문 " + 의심갈림.새것[i].key + ")");
+      }
+      if (의심갈림.새것.length > 5) lines.push("… 외 " + (의심갈림.새것.length - 5) + "건");
+      if (의심갈림.옛것) lines.push("(전에 알린 뒤 아직 안 치운 건 " + 의심갈림.옛것 + "건이 더 있습니다)");
+      lines.push("");
+      lines.push("확인: 메뉴 [🔁 중복 발주 점검] — partnerCheckDuplicateOrders");
+      try { _chat_sendText_(lines.join("\n")); } catch (eC) {}
+    } else if (의심갈림.옛것) {
+      Logger.log("[DUP] 중복 의심 " + 의심갈림.옛것 + "건 — 전부 전에 알린 것이라 조용히 넘어갑니다");
     }
-    if (res.sure.length > 5) lines.push("… 외 " + (res.sure.length - 5) + "건");
-    lines.push("");
-    lines.push("확인: 메뉴 [🔁 중복 발주 점검] — partnerCheckDuplicateOrders");
-    try { _chat_sendText_(lines.join("\n")); } catch (eC) {}
+
+    //  말한 것을 적어 둔다. 오래된 것은 여기서 버려진다(30일).
+    var 남은 = _pdc_saveSeen_(seen);
+    Logger.log("[DUP] 말한 목록 " + 남은 + "건 보관 (" + _PDC_SEEN_DAYS_ + "일)");
   } catch (e) {
     Logger.log("[DUP] 점검 오류: " + e.message);
   }
