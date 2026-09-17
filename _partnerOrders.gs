@@ -821,8 +821,20 @@ function partnerCollectOrders(opt_noWriteBack) {
       .getRange(2, 1, lastRow - 1, _PO_HUB_HEADERS.length)
       .getValues();
     var phoneFixNeeded = false; // ★ 성능최적화: 전화번호 수정 필요 여부 추적
+    /* ★ «어느 줄과» 겹쳤는지도 기억한다 ★  (2026-09-18)
+       > "중복으로 주문수집에서 뺀것들만 따로 보이게 해줘 체크하고 직접 확인 조치하게"
+       건너뛰었다고만 하면 사람이 허브를 처음부터 뒤져야 한다.
+       짝이 되는 허브 줄을 같이 적어 두면 «같은 주문인지 다른 주문인지»가
+       한 눈에 갈린다. */
+    var existingIdRow = {};
+    var existingKeyRows = {};
     for (var ei = 0; ei < hubAllData.length; ei++) {
-      if (hubAllData[ei][2]) existingIds[String(hubAllData[ei][2])] = true; // C: 고유ID
+      if (hubAllData[ei][2]) {
+        existingIds[String(hubAllData[ei][2])] = true; // C: 고유ID
+        if (existingIdRow[String(hubAllData[ei][2])] === undefined) {
+          existingIdRow[String(hubAllData[ei][2])] = ei + 2;
+        }
+      }
       // ★ 성능최적화: 기존 전화번호 선행 0 복원 → 배열에 사전 반영 (개별 setValue 제거)
       var ePh = String(hubAllData[ei][8] || "").trim();
       if (/^\d{9,10}$/.test(ePh) && ePh[0] !== "0") {
@@ -837,6 +849,8 @@ function partnerCollectOrders(opt_noWriteBack) {
       if (eName && eCd) {
         var eKey = eName + "_" + eShrt + "_" + eCd;
         existingKeyCount[eKey] = (existingKeyCount[eKey] || 0) + 1;
+        if (!existingKeyRows[eKey]) existingKeyRows[eKey] = [];
+        if (existingKeyRows[eKey].length < 5) existingKeyRows[eKey].push(ei + 2);
       }
     }
     // ★ 성능최적화: 전화번호 수정 건이 있을 때만 I열 일괄 기록
@@ -866,11 +880,21 @@ function partnerCollectOrders(opt_noWriteBack) {
 
       어느 쪽이든 사람이 봐야 한다. 세어서 말한다.  */
   var _건너뛴_ = [];
-  function _건너뜀_(까닭, 업체, 행, uid, 수취인, 품목) {
-    if (_건너뛴_.length >= 60) return;   //  보고가 끝없이 길어지지 않게
+  var _의심건수_ = 0;   //  ★ 빠진 게 아니라 «들어온» 의심 줄 (2026-09-18)
+  function _건너뜀_(까닭, 업체, 행, uid, 수취인, 품목, 더) {
+    /* ★ 60건 한도는 «알림 글»의 사정이었다 ★  (2026-09-18)
+       > "중복으로 주문수집에서 뺀것들만 따로 보이게 해줘"
+       탭에 쌓아 두고 사람이 하나씩 보게 됐으니 한도가 훨씬 넉넉해야 한다.
+       60에서 잘리면 61번째부터는 «없는 일»이 된다. */
+    if (_건너뛴_.length >= 500) return;
+    더 = 더 || {};
     _건너뛴_.push({
       까닭: 까닭, 업체: String(업체 || ''), 행: 행,
-      uid: String(uid || ''), 수취인: String(수취인 || ''), 품목: String(품목 || '')
+      uid: String(uid || ''), 수취인: String(수취인 || ''), 품목: String(품목 || ''),
+      파일ID: String(더.파일ID || ''), 탭: String(더.탭 || ''),
+      전화: String(더.전화 || ''), 품목명: String(더.품목명 || ''),
+      수량: String(더.수량 || ''), 짝행: String(더.짝행 || ''),
+      구분: String(더.구분 || _PO_DUP_OUT_),
     });
   }
 
@@ -1219,24 +1243,55 @@ function partnerCollectOrders(opt_noWriteBack) {
             phDigits.length >= 4
               ? phDigits.substring(phDigits.length - 4)
               : phDigits;
+          /*  ══════════════════════════════════════════════════════
+              ★ 두 겹의 규칙이 «하는 일»이 갈렸다 ★  (2026-09-18)
+
+              > "아니 주문수집에서 빼지는 말고 지금처럼 경고만 날려줘..."
+              > "고유아이디가 둘이면 중복이니 빼는게 맞아.."
+
+              ① 고유ID가 이미 허브에 있다  → 여전히 «뺀다»
+                 같은 고유ID가 둘이면 송장 매칭이 어느 줄인지 못 고른다.
+                 태우면 그 줄에 남의 송장이 찍힌다. 빼는 게 맞다.
+
+              ② 수취인+전화끝4+품목이 이미 있다 → 이제 «태운다»
+                 이건 재주문일 수 있다. 여태는 조용히 빠졌고, 빠진 줄은
+                 아무 데도 안 남았다 — 「주문이 빠진다」의 한 갈래였다.
+                 태워 보내고 «의심»으로 적어 둔다. 사람이 보고 지우면 된다.
+                 못 받는 것보다 두 줄이 낫다는 것이 사장님 판단이다.
+              ══════════════════════════════════════════════════════ */
           var dupKey = recipient + "_" + shortPh + "_" + code;
           var isDup = existingIds[uid];
           var _왜_ = isDup ? '고유ID가 이미 허브에 있음' : '';
+          var _짝행_ = isDup && existingIdRow ? (existingIdRow[uid] || '') : '';
+          var _의심_ = '';   //  태우되 «의심»으로 적어 둘 까닭
           if (!isDup && !hubWasEmpty && recipient && code) {
-            // 카운트 기반 중복 체크: 허브에 이미 있는 건수 이하이면 중복
             var hubCount = existingKeyCount[dupKey] || 0;
             if (hubCount > 0) {
-              // 아직 허용 잔여분이 남아있지 않으면 중복
-              isDup = true;
               existingKeyCount[dupKey] = hubCount - 1; // 차감하여 다음 동일 건은 통과
-              _왜_ = '같은 수취인·전화·품목이 허브에 이미 있음 (재주문일 수 있음)';
+              _의심_ = '같은 수취인·전화·품목이 허브에 이미 있음 (재주문일 수 있음)';
+              if (existingKeyRows && existingKeyRows[dupKey]) {
+                _짝행_ = existingKeyRows[dupKey].join(',');
+              }
             }
           }
           if (isDup) {
             skipped++;
             /*  숫자만 남기면 「한두 건이 안 들어온다」를 사람이 눈으로 찾아야 한다 */
-            _건너뜀_(_왜_, file.name, r + 1, uid, recipient, code);
+            _건너뜀_(_왜_, file.name, r + 1, uid, recipient, code, {
+              파일ID: file.id, 탭: tabName, 전화: phoneRaw,
+              품목명: itemName, 수량: qtyStr, 짝행: _짝행_,
+              구분: _PO_DUP_OUT_,
+            });
             continue;
+          }
+          if (_의심_) {
+            //  ★ 빼지 않는다 ★ 태워 보내고 말만 한다
+            _의심건수_++;
+            _건너뜀_(_의심_, file.name, r + 1, uid, recipient, code, {
+              파일ID: file.id, 탭: tabName, 전화: phoneRaw,
+              품목명: itemName, 수량: qtyStr, 짝행: _짝행_,
+              구분: _PO_DUP_IN_,
+            });
           }
           existingIds[uid] = true;
 
@@ -1557,15 +1612,37 @@ function partnerCollectOrders(opt_noWriteBack) {
         > "요즘 주문수집시 한두건씩 수집이 안되는경우가 있어..."
         여태 skipped 숫자 하나였다. 어느 업체 어느 행인지 알 길이 없어
         사람이 눈으로 찾아야 했고, 못 찾으면 그냥 지나갔다.  */
+    /*  ★ 「빠진 줄」과 「들어왔지만 의심되는 줄」은 할 일이 다르다 ★  (2026-09-18)
+        앞은 «없는» 것이라 되살려야 하고, 뒤는 «있는» 것이라 지워야 한다.
+        한 숫자로 뭉치면 어느 쪽을 해야 하는지 사람이 또 따져야 한다.  */
     (_건너뛴_.length
-      ? "\n\n↷ 중복이라 건너뛴 줄 " + _건너뛴_.length + "건\n" +
-        "   «고유ID가 이미 허브에 있음» 은 업체가 줄을 복사했을 때도 납니다 —\n" +
-        "   그 줄은 새 주문인데 안 들어오고, 배포 때 남의 송장이 찍힙니다.\n" +
-        "   그때는 그 줄의 고유ID 칸을 비우고 다시 수집하세요.\n\n" +
-        _건너뛴_.slice(0, 15).map(function (x) {
-          return "   " + x.업체 + " R" + x.행 + "  " + x.수취인 + " / " + x.품목 +
-            "  [" + x.uid + "]  — " + x.까닭;
-        }).join("\n") + "\n"
+      ? (function () {
+          var 빠짐 = [], 들어옴 = [];
+          for (var _di = 0; _di < _건너뛴_.length; _di++) {
+            (_건너뛴_[_di].구분 === _PO_DUP_IN_ ? 들어옴 : 빠짐).push(_건너뛴_[_di]);
+          }
+          var 적기 = function (arr) {
+            return arr.slice(0, 10).map(function (x) {
+              return "   " + x.업체 + " R" + x.행 + "  " + x.수취인 + " / " + x.품목 +
+                "  [" + x.uid + "]  — " + x.까닭;
+            }).join("\n");
+          };
+          var out = "";
+          if (빠짐.length) {
+            out += "\n\n⛔ 고유ID가 겹쳐 «빠진» 줄 " + 빠짐.length + "건\n" +
+              "   업체가 줄을 복사하면 고유ID까지 따라옵니다 — 새 주문인데 안 들어옵니다.\n" +
+              "   메뉴 「↷ 중복의심 목록」 에서 「새 주문 — 다시 수집」 을 고르고\n" +
+              "   「고른 줄 되살리기」 를 누르면 그 줄의 고유ID를 비워 줍니다.\n\n" +
+              적기(빠짐) + "\n";
+          }
+          if (들어옴.length) {
+            out += "\n\n⚠ 같은 사람·같은 물건이라 «의심»되지만 그대로 들어온 줄 " +
+              들어옴.length + "건\n" +
+              "   재주문일 수 있어 빼지 않았습니다. 진짜 중복이면 허브에서 그 줄을 지우세요.\n\n" +
+              적기(들어옴) + "\n";
+          }
+          return out;
+        })()
       : "") +
     (errors.length ? "\n- 오류:\n" + errors.join("\n") : "");
   
@@ -1574,6 +1651,18 @@ function partnerCollectOrders(opt_noWriteBack) {
       통째로 빠진다. 시작 시각이면 그 파일을 한 번 더 읽을 뿐이고,
       이미 들어온 줄은 고유ID로 걸러진다.  */
   props.setProperty("LAST_ORDER_COLLECT_TIME", String(_수집시작_));
+
+  /* ★ 중복이라 뺀 줄을 «탭에» 세운다 ★  (2026-09-18)
+     > "중복으로 주문수집에서 뺀것들만 따로 보이게 해줘 체크하고 직접 확인 조치하게"
+
+     여태 이 자료는 알림 글에만 15줄 실렸다. 자동 수집(09:30·13:00·15:00)
+     에서는 그 글을 아무도 안 본다 — 통째로 사라졌다.
+     수집을 «막지 않는다». 여기서 터져도 수집은 그대로 끝난다. */
+  try {
+    if (typeof _dse_record_ === "function") _dse_record_(_건너뛴_);
+  } catch (eDse) {
+    Logger.log("[수집제외] 탭 적재 실패: " + eDse.message);
+  }
 
   /* ★ 「0건」이 왜 0인지 카드가 말해야 한다 ★  (2026-09-17)
      > "발주 수집완료라고 떠있는데 발주허브에는 데이타가 하나도 없네?"
@@ -1592,6 +1681,11 @@ function partnerCollectOrders(opt_noWriteBack) {
     errors: errors.length,
     filesSeen: processingFiles.length,
     filesAll: files.length,
+    /*  ★ 카드가 둘을 갈라 말해야 한다 ★  (2026-09-18)
+        dupIn  — 들어왔지만 의심되는 줄 (지우면 되는 것)
+        dupOut — 고유ID가 겹쳐 빠진 줄   (되살려야 하는 것) */
+    dupIn: _의심건수_,
+    dupOut: _건너뛴_.length - _의심건수_,
   };
   Logger.log(msg);
   // ★ Google Chat 알림
@@ -4109,7 +4203,21 @@ function _po_collectSilentCore_(withSalesRebuild) {
         { label: "✅ 신규 수집", value: (_s_ ? _s_.newCount : "?") + "건" },
         { label: "⏭ 스킵", value: (_s_ ? _s_.skipped : "?") + "건" },
         { label: "📂 본 파일", value: _파일_ },
-      ].concat(_왜0_ ? [{ label: "왜 0인가", value: _왜0_ }] : []).concat([
+      ].concat(_왜0_ ? [{ label: "왜 0인가", value: _왜0_ }] : []).concat(
+        /*  ★ 자동 수집에서는 알림 «글»을 아무도 안 본다 ★  (2026-09-18)
+            > "아니 주문수집에서 빼지는 말고 지금처럼 경고만 날려줘"
+            경고가 닿는 곳은 이 카드다. 빠진 것과 들어온 것을 갈라 싣는다.
+            할 일이 정반대라서 — 앞은 되살리고, 뒤는 지운다. */
+        (_s_ && _s_.dupOut > 0)
+          ? [{ label: "⛔ 고유ID 겹쳐 빠짐",
+               value: _s_.dupOut + "건 — 「중복의심_수집」 탭에서 되살리세요" }]
+          : []
+      ).concat(
+        (_s_ && _s_.dupIn > 0)
+          ? [{ label: "⚠ 중복의심인데 들어옴",
+               value: _s_.dupIn + "건 — 진짜 중복이면 허브에서 그 줄을 지우세요" }]
+          : []
+      ).concat([
         { label: "⚠ 필수정보 미입력", value: (_s_ ? _s_.missing : "?") + "건" },
         /*  안 한 것을 «실패»로 보이면 안 된다. ❌ 는 「돌았는데 깨졌다」는 말이다. */
         { label: "판매현황 갱신",

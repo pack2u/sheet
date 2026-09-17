@@ -139,13 +139,23 @@ console.log("\n[6] ★ 안 쓴 줄을 «말한다» — 조용한 건너뜀도 �
 console.log("\n[7] ★ 수집이 건너뛴 줄도 «말한다»");
 {
   check("건너뛴 줄을 담는다", src.indexOf("var _건너뛴_ = []") >= 0, true);
-  check("까닭을 함께 담는다", src.indexOf("_건너뜀_(_왜_, file.name, r + 1, uid, recipient, code)") >= 0, true);
+  check("까닭을 함께 담는다", src.indexOf("_건너뜀_(_왜_, file.name, r + 1, uid, recipient, code, {") >= 0, true);
+  /*  ★ 2026-09-18 ★ 되살리려면 «어느 파일 어느 탭»인지가 있어야 한다 */
+  check("★ 파일ID·탭도 담는다", src.indexOf("파일ID: file.id, 탭: tabName,") >= 0, true);
   check("고유ID 중복이라는 까닭", src.indexOf("고유ID가 이미 허브에 있음") >= 0, true);
   check("재주문일 수 있다는 까닭", src.indexOf("재주문일 수 있음") >= 0, true);
-  check("보고에 싣는다", src.indexOf("↷ 중복이라 건너뛴 줄") >= 0, true);
+  /*  ★ 2026-09-18 ★ 한 줄이 둘로 갈렸다 — 할 일이 정반대라서.
+      «빠진» 줄은 되살려야 하고, «들어온» 줄은 지워야 한다. */
+  check("보고에 «빠진» 줄을 싣는다",
+    src.indexOf("⛔ 고유ID가 겹쳐 «빠진» 줄 ") >= 0, true);
+  check("보고에 «들어온 의심» 줄도 싣는다",
+    src.indexOf("⚠ 같은 사람·같은 물건이라 «의심»되지만 그대로 들어온 줄 ") >= 0, true);
   check("★ 업체·행·수취인·품목을 짚는다",
     /x\.업체 \+ " R" \+ x\.행/.test(src), true);
-  check("끝없이 길어지지 않게 막는다", src.indexOf("if (_건너뛴_.length >= 60) return;") >= 0, true);
+  /*  ★ 2026-09-18 ★ 60건은 «알림 글»의 사정이었다. 이제 탭에 쌓아 두고
+      사람이 하나씩 보므로 그 한도에서 잘리면 61번째부터 «없는 일»이 된다. */
+  check("끝없이 길어지지 않게 막는다", src.indexOf("if (_건너뛴_.length >= 500) return;") >= 0, true);
+  check("★ 탭에도 세워 둔다", src.indexOf("_dse_record_(_건너뛴_)") >= 0, true);
 }
 
 

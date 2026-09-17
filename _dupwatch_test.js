@@ -86,8 +86,12 @@ function rec(o) {
 const PM = { batch: 2, batchLabel: "오후", at: "2026-08-27 14:00:00" };
 
 const R_SURE_NP = "수취인+전화+품목코드 일치";
-const R_DOUBT = "수취인+품목코드 일치 (전화 다름/없음)";
-const R_ADDR = "주소+품목코드 일치 (수취인 다름)";
+const R_DOUBT = "수취인+품목코드 일치 (한쪽 전화 없음)";
+/*  ★ 2026-09-18 ★ 「주소+품목만 같으면 수취인이 달라도 낸다」를 버렸다.
+    같은 아파트·같은 회사가 매번 걸렸다. 이제 전화와 주소가 «같은데»
+    이름만 다른 것만 낸다 — 그건 같은 사람이 이름을 달리 적은 것이다. */
+const R_NAMEONLY = "전화+주소+품목 같고 수취인 이름만 다름";
+const R_UID = "같은 고유ID·같은 품목이 두 번";
 
 let all = true;
 
@@ -95,7 +99,10 @@ function run(label, records, expect) {
   const groups = ctx._dw_findSuspects_(records);
   const got = groups.map(g => ({
     grade: g.grade, reason: g.reason, spans: g.spansBatch,
-    rows: g.members.map(m => records[m].hubRow),
+    /*  ★ 허브 행 번호가 아니라 «몇 번째 건»으로 견준다 ★  (2026-09-18)
+        rec() 의 행 번호는 시험 전체에서 이어 붙는다. 그래서 앞에 한 건을
+        끼우면 뒤의 기대값이 통째로 어긋났다 — 고친 데와 상관없이. */
+    idx: g.members.slice(),
   }));
   const pass = JSON.stringify(got) === JSON.stringify(expect);
   console.log((pass ? "PASS " : "FAIL ") + label);
@@ -110,40 +117,55 @@ function run(label, records, expect) {
 run("오전-오후 완전 일치", [
   rec({}),
   rec(Object.assign({}, PM)),
-], [{ grade: "🔴 확실", reason: R_SURE_NP, spans: true, rows: [101, 102] }]);
+], [{ grade: "🔴 확실", reason: R_SURE_NP, spans: true, idx: [0, 1] }]);
 
 // 2) 전화 표기만 다름(하이픈 유무)
 run("전화 표기 차이 흡수", [
   rec({ phone: "010-1234-5678" }),
   rec(Object.assign({ phone: "01012345678" }, PM)),
-], [{ grade: "🔴 확실", reason: R_SURE_NP, spans: true, rows: [103, 104] }]);
+], [{ grade: "🔴 확실", reason: R_SURE_NP, spans: true, idx: [0, 1] }]);
 
 // 3) 이름 뒤 '님' / 공백 차이 흡수
 run("수취인 표기 차이 흡수", [
   rec({ name: "홍 길동" }),
   rec(Object.assign({ name: "홍길동님" }, PM)),
-], [{ grade: "🔴 확실", reason: R_SURE_NP, spans: true, rows: [105, 106] }]);
+], [{ grade: "🔴 확실", reason: R_SURE_NP, spans: true, idx: [0, 1] }]);
 
-// 4) 전화가 다르면 의심으로 내려감
-run("전화 다름 → 의심", [
+/*  4) ★ 전화가 둘 다 있고 다르면 «동명이인»이다 ★  (2026-09-18)
+       여태 이것을 🟡 의심으로 냈다. 김민수·이정훈이 매번 걸렸고,
+       그래서 목록이 길어져 정작 볼 것을 못 봤다.        */
+run("★ 전화 다른 동명이인 → 안 낸다", [
   rec({ phone: "010-1111-2222" }),
   rec(Object.assign({ phone: "010-9999-8888" }, PM)),
-], [{ grade: "🟡 의심", reason: R_DOUBT, spans: true, rows: [107, 108] }]);
+], []);
 
-// 5) 이름 다르고 주소·품목 같음 → 참고 (가족 주문 가능)
-run("이름 다름·주소 같음 → 참고", [
+//  전화가 «한쪽만» 있으면 모르는 것이다 — 그때는 여전히 낸다
+run("한쪽 전화 없음 → 의심", [
+  rec({ phone: "010-1111-2222" }),
+  rec(Object.assign({ phone: "" }, PM)),
+], [{ grade: "🟡 의심", reason: R_DOUBT, spans: true, idx: [0, 1] }]);
+
+/*  5) ★ 주소만 같은 남남은 안 낸다 ★  (2026-09-18)
+       이름도 전화도 다르면 같은 아파트에 사는 남남이다.  */
+run("★ 이름·전화 다르고 주소만 같음 → 안 낸다", [
   rec({ name: "홍길동" }),
   rec(Object.assign({ name: "김영희", phone: "010-5555-6666" }, PM)),
-], [{ grade: "⚪ 참고", reason: R_ADDR, spans: true, rows: [109, 110] }]);
+], []);
+
+//  ★ 전화·주소·품목이 같은데 이름만 다르면 그건 같은 사람이다 ★
+run("전화·주소 같고 이름만 다름 → 의심", [
+  rec({ name: "홍길동" }),
+  rec(Object.assign({ name: "홍길동아빠" }, PM)),
+], [{ grade: "🟡 의심", reason: R_NAMEONLY, spans: true, idx: [0, 1] }]);
 
 // 6) 주소 표기 차이(시도 축약·괄호·쉼표) 흡수
 run("주소 표기 차이 흡수", [
   rec({ name: "홍길동", addr: "서울특별시 강남구 테헤란로 123, 4층" }),
   rec(Object.assign({
-    name: "김영희", phone: "010-5555-6666",
+    name: "김영희",
     addr: "서울 강남구 테헤란로 123 (역삼동)",
   }, PM)),
-], [{ grade: "⚪ 참고", reason: R_ADDR, spans: true, rows: [111, 112] }]);
+], [{ grade: "🟡 의심", reason: R_NAMEONLY, spans: true, idx: [0, 1] }]);
 
 // 7) 품목이 다르면 아무것도 안 잡힘
 run("품목 다름 → 무시", [
@@ -155,26 +177,38 @@ run("품목 다름 → 무시", [
 run("동일 고유ID 단일 그룹", [
   rec({ uid: "SB-999" }),
   rec(Object.assign({ uid: "SB-999" }, PM)),
-], [{ grade: "🔴 확실", reason: "동일 고유ID", spans: true, rows: [115, 116] }]);
+], [{ grade: "🔴 확실", reason: R_UID, spans: true, idx: [0, 1] }]);
 
-// 9) 같은 회차 내 중복은 spans=false 로 구분
-run("같은 회차 내 중복", [
+/*  ★ 한 주문에 품목이 여럿이면 중복이 아니다 ★  (2026-09-18)
+    여태 고유ID만 보고 묶어서 «무조건» 🔴 확실로 나왔다.  */
+run("★ 고유ID 같고 품목 다름 → 안 낸다", [
+  rec({ uid: "SB-777", code: "P001" }),
+  rec(Object.assign({ uid: "SB-777", code: "P002" }, PM)),
+], []);
+
+/*  9) ★ 같은 회차 안의 것은 ⚪ 참고로 내린다 ★  (2026-09-18 사장님 지시)
+       이 도구는 오전↔오후 이중출고를 잡으려고 있다. 회차 안의 겹침까지
+       🔴 로 내면 정작 볼 것이 묻힌다. 목록에서 빼지는 않는다.  */
+run("★ 같은 회차 내 중복 → ⚪ 참고", [
   rec({}),
   rec({}),
-], [{ grade: "🔴 확실", reason: R_SURE_NP, spans: false, rows: [117, 118] }]);
+], [{ grade: "⚪ 참고", reason: R_SURE_NP, spans: false, idx: [0, 1] }]);
 
 // 10) 미업로드 건과 오전 업로드 건이 겹치는 경우 (오후 업로드 전 차단)
 run("오전-미업로드", [
   rec({}),
   rec({ batch: 99, batchLabel: "미업로드", at: "2026-08-27 15:20:00" }),
-], [{ grade: "🔴 확실", reason: R_SURE_NP, spans: true, rows: [119, 120] }]);
+], [{ grade: "🔴 확실", reason: R_SURE_NP, spans: true, idx: [0, 1] }]);
 
 // 11) 같은 주소·품목이 6건 이상이면 대량발송 패턴으로 제외
 (function () {
   const bulk = [];
+  /*  한 창고로 같은 품목이 여러 건 가는 업체가 있다. 그건 중복이 아니다.
+      ★ 2026-09-18 ★ 이 그물은 이제 「전화+주소+품목이 같고 이름만 다름」이다.
+      전화가 열 자리라야 걸린다 — 표본도 그렇게 고친다. */
   for (let i = 0; i < 6; i++) {
     bulk.push(rec({
-      name: "수령인" + i, phone: "010-000-" + i,
+      name: "수령인" + i, phone: "010-7000-0001",
       addr: "경기도 화성시 창고로 1",
     }));
   }
@@ -191,7 +225,7 @@ run("오전-미업로드", [
 run("전화 자릿수 부족 → 의심", [
   rec({ phone: "1234" }),
   rec(Object.assign({ phone: "1234" }, PM)),
-], [{ grade: "🟡 의심", reason: R_DOUBT, spans: true, rows: [127, 128] }]);
+], [{ grade: "🟡 의심", reason: R_DOUBT, spans: true, idx: [0, 1] }]);
 
 // 13) 정렬 — 회차 간이 같은 회차보다 위
 (function () {
@@ -202,9 +236,12 @@ run("전화 자릿수 부족 → 의심", [
     rec(Object.assign({ name: "회차간C", phone: "010-2222-2222" }, PM)),
   ];
   const groups = ctx._dw_findSuspects_(recs);
-  const order = groups.map(g => (g.spansBatch ? "간" : "내") + g.grade.slice(0, 2));
+  /*  ★ slice(0,2) 로 자르면 안 된다 ★ 🔴 는 두 칸, ⚪ 는 한 칸이라
+      같은 규칙으로 잘라도 결과가 다르다. 빈칸으로 가른다. */
+  const order = groups.map(g => (g.spansBatch ? "간" : "내") + g.grade.split(" ")[0]);
+  /*  ★ 2026-09-18 ★ 같은 회차 안의 것은 ⚪ 로 내렸다. */
   const pass = order.length === 3 &&
-    order[0] === "간🔴" && order[1] === "간🟡" && order[2] === "내🔴";
+    order[0] === "간🔴" && order[1] === "간🟡" && order[2] === "내⚪";
   console.log((pass ? "PASS " : "FAIL ") + "정렬 (회차 간 우선 → 등급)");
   if (!pass) console.log("   실제: " + JSON.stringify(order));
   all = all && pass;

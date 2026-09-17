@@ -330,15 +330,96 @@ function _dw_hubStatusIndex_(ss) {
 // ─────────────────────────────────────────────────────
 
 /**
+ * ★ 두 건이 «같은 사람»일 수 있는가 ★  (2026-09-18)
+ *
+ *   > "중복의심이 너무 많은데 허브의 중복의심은 좀더 디테일하게
+ *   >  확실하게 잡아내게 수정해줘"
+ *
+ * 여태 이름과 품목코드만 같으면 묶었다. 그래서 «동명이인»이 매번 걸렸다.
+ * 전화가 둘 다 있는데 다르면 다른 사람이다. 주소도 마찬가지다.
+ * 한쪽이 «비어 있는» 것은 어긋난 것이 아니다 — 모르는 것뿐이다.
+ *
+ * @return {string} 어긋난 까닭. 어긋난 데가 없으면 빈 문자열
+ */
+function _dw_conflict_(a, b) {
+  var pa = _pep_phoneDigits_(a.phone), pb = _pep_phoneDigits_(b.phone);
+  if (pa.length >= 10 && pb.length >= 10 && pa !== pb) return "전화가 다름";
+  var aa = _pep_addrKey_(a.addr), ab = _pep_addrKey_(b.addr);
+  if (aa && ab && aa !== ab) return "주소가 다름";
+  return "";
+}
+
+/**
+ * 한 버킷을 «서로 어긋나지 않는» 덩어리로 가른다.
+ * 동명이인 셋이 한 버킷에 있으면 셋을 한 그룹으로 내지 않고 갈라 낸다.
+ */
+function _dw_splitByConflict_(records, members) {
+  var out = [], used = {};
+  for (var i = 0; i < members.length; i++) {
+    if (used[members[i]]) continue;
+    var cl = [members[i]];
+    used[members[i]] = true;
+    for (var j = i + 1; j < members.length; j++) {
+      if (used[members[j]]) continue;
+      var ok = true;
+      for (var k = 0; k < cl.length; k++) {
+        if (_dw_conflict_(records[cl[k]], records[members[j]])) { ok = false; break; }
+      }
+      if (ok) { cl.push(members[j]); used[members[j]] = true; }
+    }
+    if (cl.length >= 2) out.push(cl);
+  }
+  return out;
+}
+
+/**
+ * 송장으로 «지금 어떤 상태인가»를 가른다.
+ * 상담도 조치도 여기서 갈린다 —
+ *   · 송장이 둘         → 이미 두 번 나갔다. 회수·환불 이야기다
+ *   · 한쪽만 송장       → 나머지는 아직 막을 수 있다
+ *   · 둘 다 송장 없음   → 지금 막으면 끝난다
+ */
+function _dw_invoiceNote_(records, members) {
+  var seen = {}, list = [], 없음 = 0;
+  for (var i = 0; i < members.length; i++) {
+    var v = String(records[members[i]].inv || "");
+    v = v.replace(/[^0-9A-Za-z]/g, "");
+    if (!v) { 없음++; continue; }
+    if (!seen[v]) { seen[v] = true; list.push(v); }
+  }
+  if (list.length >= 2) {
+    return { note: "★ 이미 두 번 나갔습니다 (송장 " + list.length + "개)", shipped: list.length };
+  }
+  if (list.length === 1 && 없음 > 0) {
+    return { note: "한 건만 송장 나감 — 나머지는 아직 막을 수 있음", shipped: 1 };
+  }
+  if (list.length === 1) return { note: "같은 송장 하나 (한 박스로 나감)", shipped: 1 };
+  return { note: "아직 둘 다 안 나감 — 지금 막으면 됩니다", shipped: 0 };
+}
+
+/**
  * 등급 정의. 위에서부터 강한 일치다.
  * key 가 빈 문자열이면 그 레코드는 그 등급 판정에서 제외된다.
+ *
+ * ★ 2026-09-18 ★ 헛것이 나오던 자리를 셋 막았다.
+ *   ① 고유ID만 보고 묶었다   → 한 주문에 품목이 여럿이면 «무조건» 걸렸다.
+ *                              품목코드까지 같아야 같은 줄이다.
+ *   ② 「전화 다름」을 대놓고 허용했다 → 동명이인이 매번 걸렸다.
+ *                              이제 _dw_splitByConflict_ 가 갈라 낸다.
+ *   ③ 주소+품목만 같으면 수취인이 달라도 냈다 → 같은 아파트·같은 회사가 다 걸렸다.
+ *                              이제 «전화와 주소가 같은데 이름만 다른» 건만 낸다.
  */
 function _dw_levels_() {
   return [
     {
       grade: "🔴 확실",
-      reason: "동일 고유ID",
-      keyFn: function (r) { return r.uid ? "U|" + r.uid : ""; },
+      reason: "같은 고유ID·같은 품목이 두 번",
+      keyFn: function (r) {
+        if (!r.uid || !r.code) return "";
+        return "U|" + r.uid + "|" + r.code;
+      },
+      //  고유ID가 같으면 애초에 같은 주문이다. 전화·주소를 또 따질 일이 아니다.
+      skipConflictSplit: true,
     },
     {
       grade: "🔴 확실",
@@ -349,10 +430,11 @@ function _dw_levels_() {
         if (!n || !r.code || p.length < 10) return "";
         return "NP|" + n + "|" + p + "|" + r.code;
       },
+      skipConflictSplit: true,   // 전화가 이미 키에 들어 있다
     },
     {
       grade: "🟡 의심",
-      reason: "수취인+품목코드 일치 (전화 다름/없음)",
+      reason: "수취인+품목코드 일치 (한쪽 전화 없음)",
       keyFn: function (r) {
         var n = _dw_nameKey_(r.name);
         if (!n || !r.code) return "";
@@ -360,13 +442,15 @@ function _dw_levels_() {
       },
     },
     {
-      grade: "⚪ 참고",
-      reason: "주소+품목코드 일치 (수취인 다름)",
+      grade: "🟡 의심",
+      reason: "전화+주소+품목 같고 수취인 이름만 다름",
       keyFn: function (r) {
+        var p = _pep_phoneDigits_(r.phone);
         var a = _pep_addrKey_(r.addr);
-        if (!a || !r.code) return "";
-        return "A|" + a + "|" + r.code;
+        if (p.length < 10 || !a || !r.code) return "";
+        return "PA|" + p + "|" + a + "|" + r.code;
       },
+      skipConflictSplit: true,
       // 창고 한 곳으로 같은 품목을 여러 건 보내는 업체가 있다.
       // 그런 건은 중복이 아니라 정상 패턴이므로 덩어리가 크면 버린다.
       maxMembers: 5,
@@ -381,13 +465,14 @@ function _dw_levels_() {
  * 새로운 정보이므로 남긴다.
  *
  * @param {Array} records
- * @return {Array} [{grade, reason, spansBatch, members:[recordIdx]}]
+ * @return {Array} [{grade, reason, invNote, shipped, spansBatch, members}]
  */
 function _dw_findSuspects_(records) {
   var levels = _dw_levels_();
   var groups = [];
   var emitted = [];   // 이미 낸 그룹의 구성원 집합
   var skippedBulk = 0;
+  var splitApart = 0; // 동명이인 등으로 갈라 낸 버킷 수
 
   for (var li = 0; li < levels.length; li++) {
     var lv = levels[li];
@@ -400,43 +485,76 @@ function _dw_findSuspects_(records) {
     }
 
     for (var bk in buckets) {
-      var members = buckets[bk];
-      if (members.length < 2) continue;
-      if (lv.maxMembers && members.length > lv.maxMembers) {
-        skippedBulk++;
-        continue;
+      var raw = buckets[bk];
+      if (raw.length < 2) continue;
+
+      /* ★ 같은 사람일 수 있는 것끼리만 묶는다 ★
+         여기서 갈라 내지 않으면 동명이인이 한 그룹으로 나온다. */
+      var clusters;
+      if (lv.skipConflictSplit) {
+        clusters = [raw];
+      } else {
+        clusters = _dw_splitByConflict_(records, raw);
+        var 남은수 = 0;
+        for (var cc = 0; cc < clusters.length; cc++) 남은수 += clusters[cc].length;
+        if (남은수 !== raw.length || clusters.length > 1) splitApart++;
       }
 
-      var isSubset = false;
-      for (var ei = 0; ei < emitted.length; ei++) {
-        var covered = true;
-        for (var mi = 0; mi < members.length; mi++) {
-          if (!emitted[ei][members[mi]]) { covered = false; break; }
+      for (var ci = 0; ci < clusters.length; ci++) {
+        var members = clusters[ci];
+        if (members.length < 2) continue;
+        if (lv.maxMembers && members.length > lv.maxMembers) {
+          skippedBulk++;
+          continue;
         }
-        if (covered) { isSubset = true; break; }
-      }
-      if (isSubset) continue;
 
-      var batches = {};
-      for (var mj = 0; mj < members.length; mj++) {
-        batches[records[members[mj]].batch] = true;
-      }
-      groups.push({
-        grade: lv.grade,
-        reason: lv.reason,
-        spansBatch: Object.keys(batches).length > 1,
-        members: members,
-      });
+        var isSubset = false;
+        for (var ei = 0; ei < emitted.length; ei++) {
+          var covered = true;
+          for (var mi = 0; mi < members.length; mi++) {
+            if (!emitted[ei][members[mi]]) { covered = false; break; }
+          }
+          if (covered) { isSubset = true; break; }
+        }
+        if (isSubset) continue;
 
-      var set = {};
-      for (var mk = 0; mk < members.length; mk++) set[members[mk]] = true;
-      emitted.push(set);
+        var batches = {};
+        for (var mj = 0; mj < members.length; mj++) {
+          batches[records[members[mj]].batch] = true;
+        }
+        var spans = Object.keys(batches).length > 1;
+        var inv = _dw_invoiceNote_(records, members);
+
+        /* ★ 같은 회차 안의 것은 «참고»로 내린다 ★  (2026-09-18 사장님 지시)
+           이 도구는 오전↔오후 이중출고를 잡으려고 있다. 같은 회차 안의 겹침은
+           업체가 같은 줄을 두 번 넣었을 수 있다는 뜻이라 보이긴 해야 하지만,
+           🔴 목록을 어지럽히면 정작 볼 것을 못 본다.
+           ★ 다만 송장이 둘이면 이미 두 번 나간 것이다 — 그것은 안 내린다. */
+        var grade = lv.grade;
+        if (!spans && inv.shipped < 2) grade = "⚪ 참고";
+        if (inv.shipped >= 2) grade = "🔴 확실";
+
+        groups.push({
+          grade: grade,
+          reason: lv.reason,
+          invNote: inv.note,
+          shipped: inv.shipped,
+          spansBatch: spans,
+          members: members,
+        });
+
+        var set = {};
+        for (var mk = 0; mk < members.length; mk++) set[members[mk]] = true;
+        emitted.push(set);
+      }
     }
   }
 
-  // 회차 간 → 등급 → 수취인 순. 놓치면 안 되는 것이 위로 온다.
+  // 이미 나간 것 → 회차 간 → 등급 → 수취인 순. 놓치면 안 되는 것이 위로 온다.
   var order = { "🔴 확실": 0, "🟡 의심": 1, "⚪ 참고": 2 };
   groups.sort(function (a, b) {
+    var sa = a.shipped >= 2 ? 0 : 1, sb = b.shipped >= 2 ? 0 : 1;
+    if (sa !== sb) return sa - sb;
     if (a.spansBatch !== b.spansBatch) return a.spansBatch ? -1 : 1;
     var ga = order[a.grade] == null ? 9 : order[a.grade];
     var gb = order[b.grade] == null ? 9 : order[b.grade];
@@ -446,6 +564,7 @@ function _dw_findSuspects_(records) {
     return na.localeCompare(nb);
   });
   groups.skippedBulk = skippedBulk;
+  groups.splitApart = splitApart;
   return groups;
 }
 
@@ -500,11 +619,31 @@ function _dw_writeReport_(ss, records, groups, meta) {
     .setFontWeight("bold").setHorizontalAlignment("center");
   tab.setFrozenRows(1);
 
+  /* ★ 이미 확인한 그룹은 맨 아래로 ★  (2026-09-18 사장님 지시)
+       > "중복의심이 너무 많은데"
+     지운 게 아니라 «내린» 것이다. 지난 것을 늘 눈으로 다시 볼 수 있어야 한다.
+     그룹의 줄이 «전부» 체크돼 있어야 확인한 것으로 본다 — 한 줄만 찍힌
+     그룹은 아직 보고 있는 중이다. */
+  var 남은것 = [], 확인한것 = [];
+  for (var ci2 = 0; ci2 < groups.length; ci2++) {
+    var gg = groups[ci2], 다찍힘 = gg.members.length > 0;
+    for (var cm = 0; cm < gg.members.length; cm++) {
+      if (checked[_dw_recKey_(records[gg.members[cm]])] !== true) { 다찍힘 = false; break; }
+    }
+    gg.confirmed = 다찍힘;
+    (다찍힘 ? 확인한것 : 남은것).push(gg);
+  }
+  groups = 남은것.concat(확인한것);
+  var 확인수 = 확인한것.length;
+
   var rows = [];
   var groupStarts = [];   // 그룹 경계 (배경 교대용)
   for (var gi = 0; gi < groups.length; gi++) {
     var g = groups[gi];
-    groupStarts.push({ start: rows.length, count: g.members.length, grade: g.grade });
+    groupStarts.push({
+      start: rows.length, count: g.members.length,
+      grade: g.grade, confirmed: g.confirmed === true,
+    });
 
     // 어느 회차끼리 겹쳤는지 실제 이름으로 적는다 (오전 ↔ 오후 / 오전 ↔ 미업로드 …)
     var labelSeen = {};
@@ -513,8 +652,12 @@ function _dw_writeReport_(ss, records, groups, meta) {
       var lbl = records[g.members[lb]].batchLabel || "?";
       if (!labelSeen[lbl]) { labelSeen[lbl] = true; labelList.push(lbl); }
     }
+    /* 사유는 «무엇이 같고 · 어디끼리 겹쳤고 · 지금 어떤 상태인가» 셋을 다 적는다.
+       상태(송장)가 빠지면 어느 것을 먼저 손대야 하는지 사람이 또 뒤져야 한다. */
     var reason = g.reason + " · " +
-      (g.spansBatch ? labelList.join(" ↔ ") : "같은 회차 내(" + labelList[0] + ")");
+      (g.spansBatch ? labelList.join(" ↔ ") : "같은 회차 내(" + labelList[0] + ")") +
+      (g.invNote ? " · " + g.invNote : "") +
+      (g.confirmed ? " · [확인함]" : "");
     for (var mi = 0; mi < g.members.length; mi++) {
       var r = records[g.members[mi]];
       rows.push([
@@ -557,7 +700,13 @@ function _dw_writeReport_(ss, records, groups, meta) {
       var bg = si % 2 === 0 ? "#fdecea" : "#ffffff";
       if (gs.grade.indexOf("의심") !== -1) bg = si % 2 === 0 ? "#fff8e1" : "#ffffff";
       if (gs.grade.indexOf("참고") !== -1) bg = si % 2 === 0 ? "#f1f3f4" : "#ffffff";
-      tab.getRange(2 + gs.start, 2, gs.count, colCount - 1).setBackground(bg);
+      //  확인 끝난 그룹은 한 눈에 «지나간 것»으로 보이게 회색으로 눕힌다
+      var rng = tab.getRange(2 + gs.start, 2, gs.count, colCount - 1);
+      if (gs.confirmed) {
+        rng.setBackground("#f8f9fa").setFontColor("#9aa0a6");
+      } else {
+        rng.setBackground(bg).setFontColor(null);
+      }
     }
   }
 
@@ -586,7 +735,7 @@ function _dw_writeReport_(ss, records, groups, meta) {
   tab.setColumnWidth(1, 44);
   tab.setColumnWidth(4, 240);
   tab.setColumnWidth(14, 220);
-  return rows.length;
+  return { rows: rows.length, confirmed: 확인수 };
 }
 
 // ─────────────────────────────────────────────────────
@@ -663,9 +812,16 @@ function partnerCheckSalesDuplicates(dateKey, silent) {
 
   var crossCount = 0;
   var sureCount = 0;
+  var shippedCount = 0;   // 이미 두 번 나간 것 — 여기부터 손대야 한다
+  /* 사유별로도 센다. 다음에 또 「너무 많다」가 나오면 어느 그물이 헛것을
+     내는지 숫자로 바로 보인다 — 다시 코드를 뒤질 일이 없게. */
+  var byReason = {};
   for (var g = 0; g < groups.length; g++) {
     if (groups[g].spansBatch) crossCount++;
     if (groups[g].grade.indexOf("확실") !== -1) sureCount++;
+    if (groups[g].shipped >= 2) shippedCount++;
+    var rk = groups[g].reason || "(사유없음)";
+    byReason[rk] = (byReason[rk] || 0) + 1;
   }
 
   var res = {
@@ -677,8 +833,12 @@ function partnerCheckSalesDuplicates(dateKey, silent) {
     groups: groups.length,
     crossGroups: crossCount,
     sureGroups: sureCount,
+    shippedGroups: shippedCount,
+    confirmedGroups: (written && written.confirmed) || 0,
+    splitApart: groups.splitApart || 0,
+    byReason: byReason,
     skippedBulk: meta.skippedBulk,
-    rows: written,
+    rows: (written && written.rows) || 0,
     tab: _DW_REPORT_TAB,
   };
   res.message = _dw_summaryText_(res, groups, records);
@@ -698,7 +858,35 @@ function _dw_summaryText_(res, groups, records) {
   lines.push("- 검사 건수: " + res.records + "건 (회차 " + res.batchCount + "개)");
   lines.push("- 의심 그룹: " + res.groups + "건 (회차 간 " + res.crossGroups +
     " · 확실 " + res.sureGroups + ")");
+  if (res.shippedGroups) {
+    lines.push("  ★ 이미 두 번 나간 건 " + res.shippedGroups + "건 — 맨 위에 있습니다");
+  }
+  if (res.confirmedGroups) {
+    lines.push("  · 확인 끝난 " + res.confirmedGroups + "건은 맨 아래로 내렸습니다");
+  }
   lines.push("- 결과 탭: " + res.tab + " (A열 체크박스로 확인 관리)");
+
+  /* ★ 어느 그물이 얼마나 내는지 적는다 ★  (2026-09-18)
+     「너무 많다」가 다시 나올 때 코드를 또 뒤지지 않으려고 남긴다. */
+  if (res.byReason) {
+    var keys = [];
+    for (var rk in res.byReason) {
+      if (Object.prototype.hasOwnProperty.call(res.byReason, rk)) keys.push(rk);
+    }
+    if (keys.length) {
+      keys.sort(function (a, b) { return res.byReason[b] - res.byReason[a]; });
+      lines.push("");
+      lines.push("무엇으로 잡혔나:");
+      for (var ki = 0; ki < keys.length; ki++) {
+        lines.push("  · " + keys[ki] + " — " + res.byReason[keys[ki]] + "건");
+      }
+    }
+  }
+  if (res.splitApart) {
+    lines.push("");
+    lines.push("※ 전화·주소가 서로 달라 «다른 사람»으로 갈라 낸 묶음 " +
+      res.splitApart + "건. 여태는 동명이인도 한 그룹으로 나왔습니다.");
+  }
 
   if (res.batchCount < 2) {
     lines.push("");
@@ -777,6 +965,16 @@ function _dw_preCheckBeforePush_() {
 
     out.cross = res.crossGroups;
     out.sure = res.sureGroups;
+
+    /* ★ 이미 나간 것을 먼저 말한다 ★  (2026-09-18)
+       「막을 수 있는 것」과 「이미 벌어진 것」은 할 일이 다르다.
+       앞은 Push 를 멈추고 지우면 되고, 뒤는 회수·환불 이야기다. */
+    if (res.shippedGroups > 0) {
+      out.fields.push({
+        label: "🚨 이미 두 번 나감",
+        value: res.shippedGroups + "건 — 송장이 둘입니다. " + res.tab + " 탭 맨 위",
+      });
+    }
 
     if (res.crossGroups > 0) {
       out.fields.push({

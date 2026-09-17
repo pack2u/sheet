@@ -109,6 +109,11 @@ function registerPartnerMenu_() {
         .addItem("🔍 중복 발주 감지 (발주탭+전용양식)", "partnerCheckDuplicateOrdersOwner")
         .addItem("🕵️ 오전/오후 판매현황 중복 점검", "partnerCheckSalesDuplicatesOwner")
         .addItem("   └ 📅 날짜 지정 점검", "partnerCheckSalesDuplicatesForDate")
+        /*  ★ 2026-09-18 ★ 수집에서 «중복이라 뺀» 줄을 따로 본다.
+            > "중복으로 주문수집에서 뺀것들만 따로 보이게 해줘 체크하고 직접 확인 조치하게"
+            고르기만 하고 끝내지 않는다 — 되살리기가 업체 파일의 고유ID를 비운다. */
+        .addItem("↷ 중복의심 목록 (수집)", "partnerDupSkipOpen")
+        .addItem("   └ ↷ 고른 줄 되살리기", "partnerDupSkipRetry")
         .addSeparator()
         // ── 고치기 (쓴다) ──
         .addItem("🔧 임시기록 강제 재생성", "partnerRebuildTempRecordsOwner")
