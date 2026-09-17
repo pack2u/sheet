@@ -237,7 +237,7 @@ console.log('\n[적요 배송지 변경] 전화주문 주소 갈아끼우기');
 }
 
 
-console.log('\n[비배송] 적립금·배송비는 송장 없이 매출로만');
+console.log('\n[미발송] 제품이 아닌 줄은 보류(미발송) 한 곳으로');
 {
   const H = ['순번','일자-No.','품목코드','품목명','수량','전화','모바일','주소1','합계','거래처명','세트구성및배송비','단품배송비','묶음배송비','적요','주문자명(사방넷)','전화번호(사방넷)','추가장문형식1','주문자명(주문서)','전화번호(주문서)','배송지(주문서)/배송메시지(주문서)'];
   const row = (n, code, name, amt) => [n,'2026/09/02 -1',code,name,1,'010-1111-2222','010-1111-2222','서울 강남구 1',amt,'행주국수','','2500','','','','','','','',''];
@@ -255,15 +255,48 @@ console.log('\n[비배송] 적립금·배송비는 송장 없이 매출로만');
   ], masters, C.SS_DEFAULT_CONFIG);
 
   eq('정상품목만 롯데택배', r.buckets[C.SS_ROUTE.LOTTE].length, 1);
-  eq('적립금·반품배송비는 비배송', r.buckets[C.SS_ROUTE.NONSHIP].length, 2);
-  eq('보류에는 안 들어감', r.buckets[C.SS_ROUTE.HOLD].length, 0);
-  eq('사유가 붙는다', r.buckets[C.SS_ROUTE.NONSHIP][0].비배송사유.indexOf('음수') >= 0, true);
+  /*  ★ 2026-09-18 ★ 여태 「비배송」 탭으로 뺐다.
+      > "코드가 없거나 제품이 아닌 반품비, 값이 -인것등 제품이 아닌것들은
+      >  다 미발송으로 빠지게 해주고"
+      사람이 볼 목록을 둘로 나눠 봐야 손대는 자리는 결국 미발송 하나다.  */
+  eq('★ 적립금·반품배송비는 미발송(보류)', r.buckets[C.SS_ROUTE.HOLD].length, 2);
+  eq('★ 비배송 탭은 비어 있다', r.buckets[C.SS_ROUTE.NONSHIP].length, 0);
+  eq('보류사유가 「제품아님」', r.buckets[C.SS_ROUTE.HOLD][0].보류사유, '제품아님');
+  eq('상세에 까닭이 적힌다',
+    r.buckets[C.SS_ROUTE.HOLD][0].보류상세.indexOf('음수') >= 0, true);
+  //  읽던 쪽이 있을 수 있어 옛 이름도 그대로 남긴다
+  eq('비배송사유도 남아 있다',
+    r.buckets[C.SS_ROUTE.HOLD][0].비배송사유.indexOf('음수') >= 0, true);
+
+  //  ★ 합포장에 안 삼켜진다 ★ 보류사유가 붙으면 ssMerge 가 안 건드린다
+  eq('동봉으로 빨려 들지 않는다',
+    r.units.filter((u) => u.합포장흡수).length, 0);
 
   // 매출 집계에 그대로 남아야 한다
   const 합계 = r.units.reduce((s, u) => s + u.합계, 0);
   eq('원장 매출 합계 보존', 합계, 50000 - 206270 + 3500);
   eq('분해행 = 탭 합계', r.stats.분해행, r.stats.출력행);
-  eq('비배송 행 폭', C.ssNonshipRow(r.buckets[C.SS_ROUTE.NONSHIP][0]).length, C.SS_NONSHIP_HEADER.length);
+  eq('보류 행 폭', C.ssHoldRow(r.buckets[C.SS_ROUTE.HOLD][0]).length, C.SS_HOLD_HEADER.length);
+}
+
+console.log('\n[미발송] 코드가 없는 줄');
+{
+  const H = ['순번','일자-No.','품목코드','품목명','수량','전화','모바일','주소1','합계','거래처명','세트구성및배송비','단품배송비','묶음배송비','적요','주문자명(사방넷)','전화번호(사방넷)','추가장문형식1','주문자명(주문서)','전화번호(주문서)','배송지(주문서)/배송메시지(주문서)'];
+  const row = (n, code, name, amt) => [n,'2026/09/02 -1',code,name,1,'010-1111-2222','010-1111-2222','서울 강남구 1',amt,'행주국수','','2500','','','','','','','',''];
+  const masters = {
+    items: { OK1: { name: '정상품목', status: '판매중', origin: '평택A-1', unitFee: 2500, feeRuleRaw: '' } },
+    stock: { OK1: 99 }, bom: {}, splitExcept: {}, cond: {}, condCodes: {}, feeRules: {},
+    islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {}, vendors: {}, override: {}
+  };
+  const r = C.ssRun([H, row(1, 'OK1', '정상품목', 50000), row(2, '', '무슨 사은품', 0)],
+    masters, C.SS_DEFAULT_CONFIG);
+
+  eq('★ 코드 없는 줄은 미발송', r.buckets[C.SS_ROUTE.HOLD].length, 1);
+  eq('사유가 「코드없음」', r.buckets[C.SS_ROUTE.HOLD][0].보류사유, '코드없음');
+  //  ★ 무엇인지 모를 때 «모른다»고 하지 않고 품목명이라도 적는다 ★
+  eq('품목명이라도 적는다', r.buckets[C.SS_ROUTE.HOLD][0].보류상세, '무슨 사은품');
+  eq('「품목누락」으로 새지 않는다',
+    r.buckets[C.SS_ROUTE.HOLD].filter((u) => u.보류사유 === '품목누락').length, 0);
 }
 
 
@@ -386,7 +419,9 @@ console.log('\n[도선료 표 기준] 표가 아직 롯데 것이면 알린다 �
   const 돌리기 = (주소, 기준) => {
     const w = [];
     /* 상태·출고지가 있어야 보류를 지나 도서산간 판정까지 온다 */
-    C.ssRoute([{ 주소1: 주소, route: '', 상태: '판매중', 출고지: '평택A-1' }], M,
+    /* 품목코드가 있어야 «코드없음» 그물(2026-09-18)을 지나 여기까지 온다 */
+    C.ssRoute([{ 주소1: 주소, route: '', 상태: '판매중', 출고지: '평택A-1',
+      품목코드: 'OK1', 원본코드: 'OK1' }], M,
       Object.assign({}, C.SS_DEFAULT_CONFIG, { 도선료표_기준: 기준 }), w);
     return 옛표경고(w);
   };

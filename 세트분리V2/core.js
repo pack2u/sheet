@@ -589,7 +589,19 @@ function ssNormalize(grid, cfg, warnings) {
     var row = grid[r];
     if (!row) continue;
     var code = g(row, '품목코드');
-    if (!code || code === '품목코드') continue;
+    if (code === '품목코드') continue;
+    /* ★ 코드가 없다고 «조용히» 버리지 않는다 ★  (2026-09-18)
+       > "코드가 없거나 제품이 아닌 ... 다 미발송으로 빠지게 해주고"
+
+       여태 여기서 통째로 버렸다. 그래서 그 줄은 미발송에도 안 나왔고,
+       어디로 갔는지 아무도 모르는 채 «주문이 빠졌다».
+       내용이 있는 줄은 태워 보내고 라우팅이 미발송에 세운다.
+       다만 «정말 빈 줄»(엑셀 꼬리의 빈 행)은 여기서 버린다 — 그건 자료가 아니다. */
+    if (!code) {
+      var 뭐라도 = g(row, '품목명') || g(row, '합계') || g(row, '수량') ||
+        g(row, '거래처명') || g(row, '일자-No.');
+      if (!뭐라도) continue;
+    }
 
     var 주문서 = g(row, '주문자명(주문서)');
     var 사방넷 = g(row, '주문자명(사방넷)');
@@ -1354,10 +1366,32 @@ function ssRoute(units, masters, cfg, warnings) {
     }
     var 면제 = ov && ov.조치 === '발송';
 
-    // 물건이 아닌 줄은 보류가 아니라 비배송으로 뺀다. 매출 집계에는 그대로 남는다.
+    /* ★ 물건이 아닌 줄은 «미발송»으로 세운다 ★  (2026-09-18)
+       > "코드가 없거나 제품이 아닌 반품비, 값이 -인것등 제품이 아닌것들은
+       >  다 미발송으로 빠지게 해주고"
+
+       여태는 「비배송」 탭으로 뺐다. 매출 집계에 남기려던 자리였는데,
+       사람이 보는 목록이 하나 더 늘어날 뿐 손댈 일은 결국 미발송에서 한다.
+       보류(미발송) 한 곳으로 모은다 — 사유는 적어 둔다.
+
+       ★ 곁따라 막히는 것 ★ 보류사유가 붙으면 ssMerge 가 안 건드린다.
+         전에는 적립금·배송비 줄이 합포장 «동봉»으로 빨려 들어갔다. */
     if (!면제) {
+      //  코드가 아예 없는 줄. 어느 물건인지 모르니 내보낼 수 없다.
+      if (!ssText(u.원본코드) && !ssText(u.품목코드)) {
+        u.route = SS_ROUTE.HOLD;
+        u.보류사유 = '코드없음';
+        u.보류상세 = ssText(u.원본품목명) || ssText(u.품목명) || '(품목명도 없음)';
+        continue;
+      }
       var ns = ssNonShipReason(u, cfg);
-      if (ns) { u.route = SS_ROUTE.NONSHIP; u.비배송사유 = ns; continue; }
+      if (ns) {
+        u.route = SS_ROUTE.HOLD;
+        u.보류사유 = '제품아님';
+        u.보류상세 = ns;          // 「품목명에 「반품배송비」」·「금액 음수 (-3000)」 …
+        u.비배송사유 = ns;        // 읽던 쪽이 있으면 그대로 읽히게 남겨 둔다
+        continue;
+      }
     }
 
     /* ★ 출고지가 「대리발송」이면 그대로 대리발송이다 ★  (2026-09-14)
@@ -1510,6 +1544,7 @@ function ssRoute(units, masters, cfg, warnings) {
          비행기로 제주까지 간 뒤 배로 한 번 더 나간다. 도선료만 적으면
          제주 왕복분이 통째로 빠진다 (2026-09-08 사장님 확인). */
       u.도선료 = ssSurcharge(addr, fh.권역, ferry).합계;
+      if (면제) { ssIslandSkipByManual_(u, warnings); continue; }
       u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
       continue;
     }
@@ -1521,6 +1556,7 @@ function ssRoute(units, masters, cfg, warnings) {
         u.도서판정 = '우편번호';
         /* 제주 본섬은 도선료표에 없다(우도·추자만 있다). 항공료 정액만 붙는다. */
         u.도선료 = ssSurcharge(addr, islandZip[zip], ferry).합계;
+        if (면제) { ssIslandSkipByManual_(u, warnings); continue; }
         u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
         continue;
       }
@@ -1540,6 +1576,13 @@ function ssRoute(units, masters, cfg, warnings) {
       // 제주·울릉처럼 시/군 전체가 도서인 곳은 우편번호가 없어도 확정
       u.도서권역 = 확정;
       u.도서판정 = '지역확정';
+      //  «빼는 건»만 금액을 센다 — 얼마를 못 받는지 말하기 위해서다.
+      //  안 빠지는 줄의 도선료 칸은 여태 하던 대로 둔다(이 자리 일이 아니다).
+      if (면제) {
+        u.도선료 = ssSurcharge(addr, 확정, ferry).합계;
+        ssIslandSkipByManual_(u, warnings);
+        continue;
+      }
       u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
       continue;
     }
@@ -1619,6 +1662,28 @@ var SS_AIR_FEE_JEJU = 3000;
  * ★ 2026-09-08 사장님 지시: "반품시에는 +1000(박스비용)원을 더해서" ★
  */
 var SS_RETURN_BOX_FEE = 1000;
+
+/**
+ * ★ 조치 「발송」이면 도서산간에서 뺀다 ★  (2026-09-18)
+ *
+ *   > "조치를 실행하면 도서산간도 발송으로 처리한 것들은 도서산간에서 빠지게 해줘"
+ *
+ * 여태 도서 판정 셋(도선료표 · 우편번호 · 지역확정)은 조치를 «안 봤다».
+ * 사람이 보고 「발송」이라 눌러도 그 줄은 도서산간 탭에 그대로 남았다.
+ *
+ * ★ 대신 잃는 것 ★ 도선료·항공료가 안 붙는다. 진짜 섬이면 그만큼 못 받는다.
+ *   그래서 «조용히» 빼지 않는다 — 얼마가 빠지는지 경고에 적는다.
+ */
+function ssIslandSkipByManual_(u, warnings) {
+  u.route = SS_ROUTE.LOTTE;
+  u.도서면제 = true;
+  var 뺀료 = Number(u.도선료) || 0;
+  ssWarn(warnings, '주의', 'ISLAND_SKIPPED_BY_MANUAL',
+    (u.고유ID || '') + ' / ' + (u.정규주소 || ''),
+    '조치 「발송」이라 도서산간에서 뺐습니다 (' + (u.도서판정 || '판정없음') +
+    ' · ' + (u.도서권역 || '권역없음') + '). 추가운임 ' +
+    (뺀료 > 0 ? 뺀료 + '원' : '(금액 미상)') + '은 못 받습니다.');
+}
 
 /**
  * 도서·제주 추가운임.
