@@ -1575,12 +1575,23 @@ function partnerCollectOrders(opt_noWriteBack) {
       이미 들어온 줄은 고유ID로 걸러진다.  */
   props.setProperty("LAST_ORDER_COLLECT_TIME", String(_수집시작_));
 
+  /* ★ 「0건」이 왜 0인지 카드가 말해야 한다 ★  (2026-09-17)
+     > "발주 수집완료라고 떠있는데 발주허브에는 데이타가 하나도 없네?"
+
+     그때 카드에는 「신규 0 · 스킵 0」뿐이었다. 그 둘만으로는 두 가지가
+     구분되지 않는다 —
+        ① 볼 파일이 아예 안 걸렸다 (스마트 수집이 「고쳐진 파일 없음」이라 봄)
+        ② 파일은 다 봤는데 새 줄이 없었다 (진짜로 발주가 없는 날)
+     ①은 고장이고 ②는 정상인데, 카드가 똑같이 생겼다.
+     대상 파일 수는 진작 로그에만 적히고 있었다. 카드로 올린다. */
   _PO_LAST_COLLECT_STAT_ = {
     newCount: newOrders.length,
     skipped: skipped,
     missing: skippedByMissing,
     codeErr: skippedByCodeErr,
     errors: errors.length,
+    filesSeen: processingFiles.length,
+    filesAll: files.length,
   };
   Logger.log(msg);
   // ★ Google Chat 알림
@@ -4083,15 +4094,28 @@ function _po_collectSilentCore_(withSalesRebuild) {
             "확인: 메뉴 [🕵 수집 누락 점검] — partnerFindUncollectedOrders");
         } catch (eW) {}
       }
+      /*  ★ 아무것도 안 걷혔을 때 «왜»를 같이 적는다 ★  (2026-09-17)
+          파일을 하나도 안 봤으면 그것은 «발주가 없는 날»이 아니라
+          «스마트 수집이 고쳐진 파일을 못 찾은 것»이다. 손댈 곳이 다르다. */
+      var _파일_ = _s_ && _s_.filesAll !== undefined
+        ? _s_.filesSeen + "/" + _s_.filesAll + "개"
+        : "?";
+      var _왜0_ = (_s_ && _s_.newCount === 0 && _s_.skipped === 0)
+        ? (_s_.filesSeen === 0
+            ? "★ 볼 파일이 하나도 안 걸렸습니다 — 업체 파일이 «고쳐진 적 없음»으로 보입니다"
+            : "파일은 다 봤습니다 — 새 발주가 없는 날입니다")
+        : "";
       _chat_sendCard_("📦 발주 수집 완료", now, [
         { label: "✅ 신규 수집", value: (_s_ ? _s_.newCount : "?") + "건" },
         { label: "⏭ 스킵", value: (_s_ ? _s_.skipped : "?") + "건" },
+        { label: "📂 본 파일", value: _파일_ },
+      ].concat(_왜0_ ? [{ label: "왜 0인가", value: _왜0_ }] : []).concat([
         { label: "⚠ 필수정보 미입력", value: (_s_ ? _s_.missing : "?") + "건" },
         /*  안 한 것을 «실패»로 보이면 안 된다. ❌ 는 「돌았는데 깨졌다」는 말이다. */
         { label: "판매현황 갱신",
           value: !withSalesRebuild ? "— 안 함 (오후 1시에만)" : (salesOk ? "✅" : "❌") },
         { label: "⏱ 소요시간", value: elapsed + "초" },
-      ]);
+      ]));
     } else {
       _chat_sendCard_("❌ 발주 수집 에러", now, [
         { label: "오류", value: errorMsg.substring(0, 200) },
