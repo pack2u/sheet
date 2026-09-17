@@ -75,16 +75,58 @@ console.log('\n[대리발송품목] 재고·상태를 안 본다');
   eq('출고지·상태가 비어도 대리발송', u.route, C.SS_ROUTE.PARTNER);
 }
 
-console.log('\n[대리발송품목] 사람이 내린 결정이 이긴다');
+/*  ★ 2026-09-17 에 규칙이 «뒤집혔다» ★
+    > "대리발송품목에 적힌 제품은 우리재고가 있어도 무조건 대리발송으로"
+
+    여태는 수동조치 「발송」이 표를 건너뛰었다. 그래서 보류 탭에서 그 건을
+    먼저 처리하고 «그 뒤에» 표를 만들면, 옛 조치가 회차 내내 이겨서 표가
+    영영 안 먹었다. 게다가 그 「발송」은 사람이 안 적었을 수도 있다 —
+    상세를 지우면 기계가 해소로 보고 발송을 박는다.
+
+    표는 «품목»에 대한 결정, 수동조치는 그 회차 «한 줄»의 처리다.
+    품목에 대한 결정이 이긴다. 대신 조용히 이기지 않는다.  */
+console.log('\n[대리발송품목] 표가 수동조치 「발송」을 이긴다');
 {
   const u = unit();
   const w = [];
   C.ssRoute([u], {
     vendors: vendors,
     override: { 'u1|A100': { 조치: '발송', 업체코드: '', 메모: '' } },
-    partnerItems: { A100: { 업체코드: 'JH', 사유: '' } }
+    partnerItems: { A100: { 코드: 'A100', 업체코드: 'JH', 사유: '' } }
   }, cfg, w);
-  eq('「발송」이라 뒤집으면 표를 무시', u.route !== C.SS_ROUTE.PARTNER, true);
+  eq('★ 「발송」이라 잡혀 있어도 대리발송으로 간다', u.route, C.SS_ROUTE.PARTNER);
+  eq('★ 업체코드도 표 것으로', u.업체코드, 'JH');
+  eq('★ 조용히 이기지 않는다 — 말한다',
+    w.some((x) => x.code === 'PITEM_BEATS_MANUAL'), true);
+  eq('★ 되돌리는 법을 알려 준다',
+    w.some((x) => x.code === 'PITEM_BEATS_MANUAL' && x.msg.indexOf('지우세요') >= 0), true);
+}
+
+console.log('\n[대리발송품목] 표에 없는 품목은 「발송」이 그대로 이긴다');
+{
+  //  표는 그 품목에만 힘을 쓴다. 표에 없는 건까지 덮으면 안 된다.
+  const u = unit();
+  const w = [];
+  C.ssRoute([u], {
+    vendors: vendors,
+    override: { 'u1|A100': { 조치: '발송', 업체코드: '', 메모: '' } },
+    partnerItems: { B200: { 코드: 'B200', 업체코드: 'JH', 사유: '' } }
+  }, cfg, w);
+  eq('★ 표에 없으면 사람 손이 이긴다', u.route !== C.SS_ROUTE.PARTNER, true);
+  eq('엉뚱한 경고를 안 띄운다', w.some((x) => x.code === 'PITEM_BEATS_MANUAL'), false);
+}
+
+console.log('\n[대리발송품목] 표대로 갔을 때는 아무 말 안 한다');
+{
+  const u = unit();
+  const w = [];
+  C.ssRoute([u], {
+    vendors: vendors,
+    override: {},
+    partnerItems: { A100: { 코드: 'A100', 업체코드: 'JH', 사유: '' } }
+  }, cfg, w);
+  eq('대리발송으로 간다', u.route, C.SS_ROUTE.PARTNER);
+  eq('★ 뒤집은 적이 없으면 조용하다', w.some((x) => x.code === 'PITEM_BEATS_MANUAL'), false);
 }
 
 console.log('\n[대리발송품목] 적어 넣은 업체코드를 그대로 쓴다');
