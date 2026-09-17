@@ -36,8 +36,9 @@ console.log("\n[1] 이력이 한 장뿐일 때");
   ok("★ :only-child 규칙이 있다", has(".ret-tl-track > .ret-proc:only-child"));
   const i = html.indexOf(".ret-tl-track > .ret-proc:only-child {");
   const 몸통 = i >= 0 ? html.substring(i, i + 200) : "";
-  ok("★ 늘어나게 되어 있다", 몸통.indexOf("flex: 1 1 auto") >= 0);
-  ok("★ 굳은 폭을 푼다", 몸통.indexOf("width: auto") >= 0);
+  //  flex-grow 만으로는 부모가 내용만큼만 넓을 때 안 늘어난다 — 바닥을 100% 로 깐다
+  ok("★ 늘어나게 되어 있다", 몸통.indexOf("flex: 1 1 100%") >= 0);
+  ok("★ 굳은 폭을 푼다 (바닥을 100% 로)", 몸통.indexOf("width: 100%") >= 0);
   ok("★ 그래도 너무 좁아지진 않는다", 몸통.indexOf("min-width: 128px") >= 0);
   ok("★ 사진이 한 줄로 선다",
     has(".ret-tl-track > .ret-proc:only-child .ret-proc-thumbs { flex-wrap: nowrap; }"));
@@ -126,6 +127,43 @@ console.log("\n[6] 진행 이력이 없는 카드");
   //  팝업(반품 조회)은 다른 함수가 그린다 — 거기 「진행 이력 없음」은 그대로 둔다
   ok("★ 팝업 쪽 안내는 살아 있다", has("<div class=\"ret-proc empty\">진행 이력 없음</div>"));
   ok("  그 CSS 도 남아 있다", has(".ret-proc.empty"));
+}
+
+/* ── [7] 짧은 것은 가로로 흐른다 ────────────────────────── */
+console.log("\n[7] 반품비·전화가 한 줄에 나란히");
+{
+  ok("★ 담는 칸이 있다", has('<div class="ret-metas">'));
+  const i = html.indexOf(".ret-metas {");
+  const 몸통 = i >= 0 ? html.substring(i, i + 200) : "";
+  ok("★ 가로로 흐른다", 몸통.indexOf("display: flex") >= 0);
+  ok("★ 좁아지면 접힌다", 몸통.indexOf("flex-wrap: wrap") >= 0);
+  ok("★ 비면 자리를 안 먹는다", has(".ret-metas:empty { display: none; }"));
+
+  //  div 가 섞이면 flex 한 줄이 깨진다 — 안에 든 것은 span 이어야 한다
+  const j = html.indexOf('<div class="ret-metas">');
+  const 안쪽 = j >= 0 ? html.substring(j, html.indexOf("'</div>' +", j)) : "";
+  ok("★ 반품비가 span 이다", 안쪽.indexOf('<span class="ret-meta">반품비 ') >= 0);
+  ok("★ 전화도 span 이다", 안쪽.indexOf('<span class="ret-meta">\' + esc(c.phone)') >= 0);
+  ok("  줄바꿈을 만드는 div 가 안 남았다", 안쪽.indexOf('<div class="ret-meta">') < 0);
+}
+
+/* ── [8] 「202609 170행」을 안 적는다 ───────────────────── */
+console.log("\n[8] 시트 몇 행인지는 카드에 안 적는다");
+{
+  //  > "굳이 202609 127행 같은 내용은 불필요해"
+  ok("★ 행 번호를 카드에 안 적는다", html.indexOf("esc(c.tab) + ' ' + c.row + '행 · '") < 0);
+  ok("★ 아랫줄을 따로 만든다", has("function retSubLine(c)"));
+  ok("★ 카드가 그것을 쓴다", has("retSubLine(c) +"));
+
+  const i = html.indexOf("function retSubLine(c) {");
+  const 몸통 = i >= 0 ? html.substring(i, i + 420) : "";
+  ok("★ 날짜는 남긴다", 몸통.indexOf("if (c.date)") >= 0);
+  ok("★ 담당자도 남긴다", 몸통.indexOf("if (c.staff)") >= 0);
+  ok("★ 둘 다 없으면 줄 자체를 안 만든다", 몸통.indexOf("if (!bits.length) return '';") >= 0);
+  ok("★ 행 번호는 여기에도 없다", 몸통.indexOf("c.row") < 0 && 몸통.indexOf("c.tab") < 0);
+
+  //  자료에서 지운 것이 아니다 — 서버는 그대로 실어 보낸다 (팝업·진단이 쓴다)
+  ok("★ 자료에서 지운 것은 아니다", has("c.tab") && has("c.row"));
 }
 
 console.log("\n" + (fail ? "FAIL " + fail + "건" : "통과 " + pass + "건"));

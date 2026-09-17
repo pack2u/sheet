@@ -1410,8 +1410,20 @@
           여러 장일 때는 여태처럼 128px 로 서서 옆으로 밀린다.
        ══════════════════════════════════════════════════════════ */
     .ret-tl-track > .ret-proc:only-child {
-      flex: 1 1 auto; width: auto; min-width: 128px;
+      /*  flex-grow 만으로는 부모가 내용만큼만 넓을 때 안 늘어난다.
+          width:100% 로 바닥을 깔고 flex 가 그 위에서 조절하게 한다.  */
+      flex: 1 1 100%; width: 100%; min-width: 128px;
     }
+    /*  반품비·전화처럼 짧은 것은 가로로 흐른다 — 한 줄씩 쌓이면
+        카드만 길어지고 오른쪽은 빈다. 좁아지면 그때 접힌다. */
+    .ret-metas {
+      display: flex; flex-wrap: wrap; align-items: baseline;
+      gap: 1px 14px; margin-top: 3px;
+    }
+    .ret-metas:empty { display: none; }
+    .ret-metas > .ret-meta { margin-top: 0; }
+    .ret-card.ret-focus .ret-metas { gap: 3px 18px; margin-top: 5px; }
+    .ret-card.ret-focus .ret-metas > .ret-meta { margin-top: 0; }
     /* 이력이 없는 카드 — 오른쪽 칸 자체가 없으므로 왼쪽이 폭을 다 쓴다.
        품목명이 좁은 칸에서 서너 줄로 접히던 것이 한두 줄로 눕는다. */
     .ret-card.ret-noproc .ret-left {
@@ -7877,6 +7889,15 @@
       focusReturnCard(idx);
     }
 
+    /** 카드 맨 아랫줄 — 날짜·담당자만. 둘 다 없으면 줄을 안 만든다 */
+    function retSubLine(c) {
+      var bits = [];
+      if (c.date) bits.push(esc(c.date));
+      if (c.staff) bits.push(esc(c.staff));
+      if (!bits.length) return '';
+      return '<div class="ret-sub">' + bits.join(' · ') + '</div>';
+    }
+
     function returnCardHtml(c, idx) {
       /* ★ 박스마다 상태를 보여준다 ★  (2026-09-09)
          한 반품에 박스가 둘이면 하나만 접수하고 나머지는 나중에 하는 일이 생긴다.
@@ -7910,11 +7931,15 @@
               (picked ? '<span class="ret-done">회수 접수됨</span>' : '') + '</div>' +
             '<div>' + esc(c.item || '-') + (c.qty ? ' × ' + esc(c.qty) : '') + '</div>' +
             (invLine ? '<div class="ret-meta">' + invLine + '</div>' : '') +
-            (c.fee ? '<div class="ret-meta">반품비 ' + esc(c.fee) + '</div>' : '') +
+            /* ★ 가로를 쓴다 ★  (2026-09-17)
+               반품비와 전화는 짧다. 한 줄씩 차지하면 카드만 길어지고
+               오른쪽은 빈다. 나란히 놓고, 좁아지면 그때 접히게 한다. */
+            '<div class="ret-metas">' +
+            (c.fee ? '<span class="ret-meta">반품비 ' + esc(c.fee) + '</span>' : '') +
             /* ★ 걸 수 있는 번호를 앞에 ★  (2026-09-11)
                c.phone 은 이제 «실번호가 있으면 실번호»다 (csOrderSearch _cs_pickPhones_).
                안심번호는 곁에 작게 남긴다 — 주문을 되짚을 때 그게 열쇠다. */
-            (c.phone ? '<div class="ret-meta">' + esc(c.phone) +
+            (c.phone ? '<span class="ret-meta">' + esc(c.phone) +
               (c.phoneTag ? '<span class="ret-ph-tag"> ' + esc(c.phoneTag) + '</span>' : '') +
               /* 이름은 «실번호» 옆에만 붙는다. 안심번호 주인이 아니다.
                  주가 실번호면 여기, 아니면 아래 sub 쪽에 붙인다. */
@@ -7923,9 +7948,14 @@
                  esc(c.phoneSub) +
                  (c.phone2Name && c.phoneSubTag === '추가' ? ' ' + esc(c.phone2Name) : '') + '</span>' : '') +
               (c.phoneOnlySafe ? '<span class="ret-ph-warn"> 기간이 지나면 끊깁니다</span>' : '') +
-              '</div>' : '') +
-            '<div class="ret-sub">' + esc(c.tab) + ' ' + c.row + '행 · ' + esc(c.date || '') +
-              (c.staff ? ' · ' + esc(c.staff) : '') + '</div>' +
+              '</span>' : '') +
+            '</div>' +
+            /* ★ 「202609 170행」을 지웠다 ★  (2026-09-17)
+               > "굳이 202609 127행 같은 내용은 불필요해"
+               시트 몇 행인지는 사람이 카드에서 할 일이 아니다. 자리만 먹었다.
+               (자료에는 그대로 있다 — 진단·팝업이 쓴다)
+               날짜·담당자는 남기되, 둘 다 없으면 줄 자체를 안 만든다. */
+            retSubLine(c) +
           '</div>' +
           (tlHtml ? '<div class="ret-right">' + tlHtml + '</div>' : '') +
         '</div>' +
