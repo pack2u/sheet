@@ -386,10 +386,15 @@ function _getInvoiceMatchHtmlSimple_() {
     "  var ok = _matchData || [];",
     "  var no = _unmatched || [];",
     "  var parseInfo = _parseMethod ? ' (' + _parseMethod + ')' : '';",
+    /*  짐작으로 붙은 줄이 몇인지 «표를 훑기 전에» 보여 준다.
+        0 이면 아무 말도 안 한다 — 멀쩡한 날에 잔소리를 더하지 않는다. */
+    "  var guessN = 0;",
+    "  for (var gi = 0; gi < ok.length; gi++) { if (ok[gi].name !== ok[gi].matchedName) guessN++; }",
     "  document.getElementById('sum').innerHTML =",
     "    '<b>수취인 열:</b> ' + _escHtml(_recipientHeader) + '&nbsp;|&nbsp;' +",
     "    '<span class=\"ok\">✅ ' + ok.length + '건</span>&nbsp;' +",
     "    '<span class=\"err\">❌ ' + no.length + '건</span>' + parseInfo +",
+    "    (guessN > 0 ? '<div style=\"margin-top:6px;font-size:11px;background:#ffe8a3;color:#7a4b00;font-weight:700;padding:5px 7px;border-radius:5px\">⚠ 이름이 «정확히 같지 않아» 짐작으로 붙인 줄 ' + guessN + '건 — 노란 줄을 꼭 확인하세요</div>' : '') +",
     "    (no.length > 0 ? '<div style=\"margin-top:6px;font-size:11px;color:#b06000;\">⚠ 미매칭은 아래 후보를 고른 뒤 체크하면 매칭됩니다</div>' : '') +",
     "    _qtyAuditHtml();",
     "  var tb = document.getElementById('mt');",
@@ -397,10 +402,16 @@ function _getInvoiceMatchHtmlSimple_() {
     "  for (var i = 0; i < ok.length; i++) {",
     "    var m = ok[i];",
     "    var rn = m.rows.map(function(r) { return r + 2; }).join(',');",
-    "    var ns = m.name !== m.matchedName ? _escHtml(m.name) + '<span style=\"color:#aaa\">≈</span>' + _escHtml(m.matchedName) : _escHtml(m.name);",
+    /* ★ 짐작으로 붙은 줄은 «눈에 걸려야» 한다 ★  (2026-09-17)
+       여태는 회색(#aaa) ≈ 하나였다. 오십 줄을 훑는 사람은 못 본다.
+       이름이 한 글자만 달라도 붙는 길이 있어서(유사도·부분일치),
+       못 보고 「적용」을 누르면 엉뚱한 사람에게 송장이 간다.
+       노란 바탕에 「짐작」을 적고 줄 전체를 물들인다. */
+    "    var guess = m.name !== m.matchedName;",
+    "    var ns = guess ? '<b>' + _escHtml(m.name) + '</b> <span style=\"color:#b06000\">→</span> ' + _escHtml(m.matchedName) + ' <span style=\"background:#ffe8a3;color:#7a4b00;font-weight:700;font-size:10px;padding:1px 5px;border-radius:4px\">짐작</span>' : _escHtml(m.name);",
     "    var it = m.itemName ? '<span style=\"font-size:10px;color:#666\">' + _escHtml(m.itemName.length > 15 ? m.itemName.substring(0,15) + '...' : m.itemName) + '</span>' : '';",
     "    var st = m.manual ? '<span style=\"color:#1a73e8\">✓수동</span>' : (m.append ? '<span style=\"color:#f29900\">➕추가</span>' : '<span class=\"ok\">✅</span>');",
-    "    tb.innerHTML += '<tr><td>' + ns + '</td><td>' + it + '</td><td class=\"tr\">' + _escHtml(m.tracking) + '</td><td>' + rn + '</td><td>' + st + '</td></tr>';",
+    "    tb.innerHTML += '<tr' + (guess ? ' style=\"background:#fff8e1\"' : '') + '><td>' + ns + '</td><td>' + it + '</td><td class=\"tr\">' + _escHtml(m.tracking) + '</td><td>' + rn + '</td><td>' + st + '</td></tr>';",
     "  }",
     "  var allNames = _remainingNameList();",
     "  for (var j = 0; j < no.length; j++) {",
@@ -1035,9 +1046,25 @@ function parseAndMatchInvoiceTextLocal(rawText) {
             var maxLen = Math.max(inputNorm.length, sheetNorm.length);
             if (maxLen === 0) continue;
             var dist = _levenshteinLocal_(inputNorm, sheetNorm);
+            /* ★ 사람 이름 길이에서는 «정확히» 만 붙인다 ★  (2026-09-17)
+               > "누락건에 송장 엄한거 넣기..이런상황이 발생하는데"
+
+               여태는 3자 이상이면 편집거리 1까지 붙였다. 한국 사람 이름은
+               두세 자다 — 한 글자 차이는 «오타»가 아니라 «다른 사람»이다.
+                 이경훈 ↔ 이정훈   거리 1  → 붙었다
+                 김민수 ↔ 김민주   거리 1  → 붙었다
+               같은 업체 전용양식에 두 사람이 같이 있으면 엉뚱한 사람에게
+               송장이 갔다. 자동 경로에서는 2026-09-16 에 이런 이름 폴백을
+               다 걷어냈는데 여기만 남아 있었다.
+
+               threshold 0 은 «아무것도 안 붙인다»는 뜻이 아니다 —
+               이 단계는 띄어쓰기를 지우고 재므로 「김 민수 ↔ 김민수」는
+               거리 0 으로 여전히 붙는다. 그건 오타가 아니라 같은 이름이다.
+
+               긴 상호(8자 이상)만 한 글자를 봐준다. 길수록 한 글자가
+               우연히 겹칠 일이 적고, 실제로 상호에는 오타가 잦다. */
             var threshold = 0;
-            if (maxLen >= 6) threshold = 2;
-            else if (maxLen >= 3) threshold = 1;
+            if (maxLen >= 8) threshold = 1;
             if (dist > Math.ceil(maxLen * 0.5)) threshold = -1;
             if (dist <= threshold && dist < bestDist) { bestDist = dist; bestKey = nm4; }
           }
