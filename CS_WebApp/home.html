@@ -8400,6 +8400,50 @@
         }
         var saveBtn = document.getElementById('ret-save-status-' + idx);
         if (saveBtn) saveBtn.disabled = true;
+        /*  보내는 꾸러미는 «한 번만» 짓는다 — 두 군데서 따로 지으면
+            언젠가 한쪽만 고쳐져 서로 다른 것이 나간다. */
+        var 꾸러미 = {
+          tab: c.tab,
+          row: c.row,
+          status: status,
+          staff: staff,
+          returnInvoice: retInvVal,
+          phone2: ph2Val,
+          phone2Name: ph2nVal
+        };
+
+        /*  ★ 누르는 즉시 상태가 바뀐다 ★  서버는 뒤에서. 실패하면 되돌린다. */
+        var 즉시 = retOptimistic(c,
+          function (x) {
+            x.status = status;
+            //  완료로 바꾸면 「진행 중」 목록에서 내려가야 한다
+            x.active = !isReturnCardDone({ status: status, doneFlag: status });
+            if (retInvVal) x.returnInvoice = retInvVal;
+            if (ph2Val) { x.phoneSub = ph2Val; x.phoneSubTag = '추가'; }
+            if (ph2nVal) x.phone2Name = ph2nVal;
+            return retPrependEvent(x, 'status', status, staff);
+          },
+          function (성공, 실패) {
+            google.script.run
+              .withSuccessHandler(function (res) {
+                if (saveBtn) saveBtn.disabled = false;
+                if (!res || !res.ok) { 실패(String((res && res.error) || '상태 저장 실패')); return; }
+                성공();
+              })
+              .withFailureHandler(function (err) {
+                if (saveBtn) saveBtn.disabled = false;
+                실패(String((err && err.message) || err));
+              })
+              .updateReturnLedgerStatus(꾸러미);
+          });
+
+        if (즉시) {
+          closeReturnCompose(idx);
+          toast('처리 과정 카드 추가됨');
+          return;
+        }
+
+        //  카드를 못 찾았다 — 옛 길로 (서버 다녀와서 통째로 다시 받는다)
         google.script.run
           .withSuccessHandler(function(res) {
             if (saveBtn) saveBtn.disabled = false;
@@ -8412,15 +8456,7 @@
             if (saveBtn) saveBtn.disabled = false;
             toast(String((err && err.message) || err), 2600);
           })
-          .updateReturnLedgerStatus({
-            tab: c.tab,
-            row: c.row,
-            status: status,
-            staff: staff,
-            returnInvoice: retInvVal,
-            phone2: ph2Val,
-            phone2Name: ph2nVal
-          });
+          .updateReturnLedgerStatus(꾸러미);
         return;
       }
 
@@ -8433,6 +8469,35 @@
       var intBox = document.getElementById('ret-int-' + mode + '-' + idx);
       if (intBox && intBox.checked) text = '[내부] ' + text;
       if (btn) btn.disabled = true;
+
+      /*  ★ 적은 글이 «누르는 즉시» 이력에 붙는다 ★  실패하면 치우고
+          쓴 내용을 칸에 돌려놓는다 — 다시 치라고 할 수는 없다. */
+      var 즉시2 = retOptimistic(c,
+        function (x) { return retPrependEvent(x, mode === 'phone' ? 'consult' : 'note', text, staff); },
+        function (성공, 실패) {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (btn) btn.disabled = false;
+              if (!res || !res.ok) { 실패(String((res && res.error) || '저장 실패')); return; }
+              성공();
+            })
+            .withFailureHandler(function (err) {
+              if (btn) btn.disabled = false;
+              if (ta && !ta.value) ta.value = text;
+              실패(String((err && err.message) || err));
+            })
+            .appendReturnConsultation({ tab: c.tab, row: c.row, text: text, staff: staff });
+        });
+
+      if (즉시2) {
+        if (ta) ta.value = '';
+        if (intBox) intBox.checked = false;
+        closeReturnCompose(idx);
+        toast('처리 과정 카드 추가됨');
+        return;
+      }
+
+      //  카드를 못 찾았다 — 옛 길로
       google.script.run
         .withSuccessHandler(function(res) {
           if (btn) btn.disabled = false;
@@ -9207,6 +9272,72 @@
         }
         return false;
       });
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       ★ 반품도 «누르는 즉시» ★  (2026-09-17)
+       커뮤니티 보드와 같은 틀이다(hbOptimistic). 다만 한 가지가 다르다 —
+
+       ★ 서버가 «바뀐 한 건»을 안 돌려준다 ★
+         보드는 쓴 그 줄만 다시 읽어 카드를 함께 준다(_cs_hb_withCard_).
+         반품은 그 길이 없고, 만들려면 90일치를 다시 읽어야 한다(csGetReturnCaseAt).
+         그러면 왕복을 줄이려다 더 무거워진다.
+         그래서 «맞추는 일»은 20초 펄스에 맡긴다 — 내가 쓴 것도 서명이
+         바뀌므로 다음 틱에 서버 값으로 저절로 덮인다.
+         그때까지 화면에 있는 것은 «내가 방금 한 일»이라 틀릴 수가 없다.
+       ══════════════════════════════════════════════════════════ */
+    var RET_INFLIGHT = {};
+
+    function retKeyOf(c) { return String(c && c.tab) + '|' + String(c && c.row); }
+
+    function retLocate(key) {
+      for (var i = 0; i < RETURN_ALL_ROWS.length; i++) {
+        if (retKeyOf(RETURN_ALL_ROWS[i]) === key) return i;
+      }
+      return -1;
+    }
+
+    /**
+     * @param {Object} c        지금 카드
+     * @param {Function} 바꾸기  (사본) → 바뀐 것 (못 바꾸면 null)
+     * @param {Function} 보내기  (성공, 실패) → 서버 호출
+     * @return {boolean} 낙관적으로 처리했나
+     */
+    function retOptimistic(c, 바꾸기, 보내기) {
+      if (!c) return false;
+      var key = retKeyOf(c);
+      var i = retLocate(key);
+      if (i < 0) return false;
+      if (RET_INFLIGHT[key]) { toast('아직 보내는 중입니다', 1800); return true; }
+
+      var 원본;
+      try { 원본 = JSON.parse(JSON.stringify(RETURN_ALL_ROWS[i])); }
+      catch (e) { return false; }          // 되돌릴 사진을 못 뜨면 옛 길로
+      var 바뀐 = 바꾸기(JSON.parse(JSON.stringify(원본)));
+      if (!바뀐) return false;
+
+      RET_INFLIGHT[key] = true;
+      RETURN_ALL_ROWS[i] = 바뀐;
+      renderReturnActiveList();            // 서버 없이 다시 그린다
+
+      보내기(
+        function () { delete RET_INFLIGHT[key]; },
+        function (why) {
+          delete RET_INFLIGHT[key];
+          var j = retLocate(key);
+          if (j >= 0) { RETURN_ALL_ROWS[j] = 원본; renderReturnActiveList(); }
+          else loadReturnActive(true, false, true);
+          toast('되돌렸습니다 — ' + String(why || '실패'), 4200);
+        }
+      );
+      return true;
+    }
+
+    /** 방금 적은 것을 이력 맨 앞에 미리 얹는다 (최신이 앞이다) */
+    function retPrependEvent(c, kind, text, staff) {
+      var ev = { kind: kind, text: text, raw: '', staff: staff || '', 보내는중: true };
+      c.timeline = [ev].concat(c.timeline || []);
+      return c;
     }
 
     function doReturnSearch(force) {

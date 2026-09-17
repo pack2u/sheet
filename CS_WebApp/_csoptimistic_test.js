@@ -170,5 +170,83 @@ console.log("\n[7] 배선 — 실제로 쓰이는가");
     has("if (!hbApplyCard(res && res.card)) hbReloadBoards();"));
 }
 
+/* ── [8] 반품도 같은 틀 ─────────────────────────────────── */
+console.log("\n[8] 반품 — 누르는 즉시");
+{
+  function 반품판(줄들) {
+    const 그린것 = [];
+    const 말한것 = [];
+    const ctx = {
+      RETURN_ALL_ROWS: 줄들,
+      RET_INFLIGHT: {},
+      renderReturnActiveList: () => 그린것.push("그림"),
+      loadReturnActive: () => 그린것.push("전체"),
+      isReturnCardDone: (c) => String((c && c.status) || "").indexOf("완료") === 0,
+      toast: (m) => 말한것.push(String(m)),
+      JSON, Object, String, console,
+    };
+    vm.createContext(ctx);
+    vm.runInContext([grabFn("retKeyOf"), grabFn("retLocate"),
+      grabFn("retOptimistic"), grabFn("retPrependEvent")].join("\n\n"), ctx);
+    return { ctx, 그린것, 말한것 };
+  }
+  const 줄 = (tab, row, st) => ({ tab: tab, row: row, status: st || "접수", active: true, timeline: [] });
+
+  {
+    const { ctx, 그린것 } = 반품판([줄("202609", 10), 줄("202609", 11)]);
+    const r = ctx.retOptimistic(ctx.RETURN_ALL_ROWS[0],
+      (x) => { x.status = "회수중"; return x; },
+      () => {});                       // 아직 서버가 안 돌아옴
+    eq("★ 낙관적으로 처리했다", r, true);
+    eq("★ 기다리지 않고 바뀌었다", ctx.RETURN_ALL_ROWS[0].status, "회수중");
+    eq("  서버 없이 다시 그렸다", 그린것.join(","), "그림");
+  }
+  {
+    const { ctx, 말한것 } = 반품판([줄("202609", 10, "접수")]);
+    ctx.retOptimistic(ctx.RETURN_ALL_ROWS[0],
+      (x) => { x.status = "회수중"; return x; },
+      (성공, 실패) => 실패("통신 실패"));
+    eq("★ 실패하면 되돌린다", ctx.RETURN_ALL_ROWS[0].status, "접수");
+    ok("★ 되돌렸다고 말한다", 말한것.join(" ").indexOf("되돌렸습니다") >= 0);
+  }
+  {
+    const { ctx, 말한것 } = 반품판([줄("202609", 10)]);
+    let 보낸 = 0;
+    ctx.retOptimistic(ctx.RETURN_ALL_ROWS[0], (x) => x, () => { 보낸++; });
+    ctx.retOptimistic(ctx.RETURN_ALL_ROWS[0], (x) => x, () => { 보낸++; });
+    eq("★ 두 번 눌러도 한 번만 나간다", 보낸, 1);
+    ok("  두 번째는 말해 준다", 말한것.join(" ").indexOf("보내는 중") >= 0);
+  }
+  {
+    //  탭+행이 열쇠다 — 같은 행 번호라도 다른 달이면 남이다
+    const { ctx } = 반품판([줄("202608", 10), 줄("202609", 10)]);
+    ctx.retOptimistic(ctx.RETURN_ALL_ROWS[1], (x) => { x.status = "회수중"; return x; }, () => {});
+    eq("★ 같은 행 번호의 «다른 달»은 안 건드린다", ctx.RETURN_ALL_ROWS[0].status, "접수");
+    eq("  건드릴 것만 건드린다", ctx.RETURN_ALL_ROWS[1].status, "회수중");
+  }
+  {
+    //  이력은 «최신이 앞»이다
+    const { ctx } = 반품판([줄("202609", 10)]);
+    const c = ctx.RETURN_ALL_ROWS[0];
+    c.timeline = [{ kind: "note", text: "옛 글" }];
+    const 바뀐 = ctx.retPrependEvent(JSON.parse(JSON.stringify(c)), "note", "새 글", "김진수");
+    eq("★ 새 글이 맨 앞에 선다", 바뀐.timeline[0].text, "새 글");
+    eq("  옛 글은 뒤로", 바뀐.timeline[1].text, "옛 글");
+    eq("  누가 썼는지 남는다", 바뀐.timeline[0].staff, "김진수");
+  }
+
+  //  배선
+  ok("★ 상태 저장이 낙관적으로 돈다", has("var 즉시 = retOptimistic(c,"));
+  ok("★ 메모·상담도", has("var 즉시2 = retOptimistic(c,"));
+  ok("★ 완료로 바꾸면 진행 목록에서 내려간다",
+    has("x.active = !isReturnCardDone({ status: status, doneFlag: status });"));
+  ok("★ 보내는 꾸러미를 한 번만 짓는다",
+    has("var 꾸러미 = {") && HTML.split(".updateReturnLedgerStatus(꾸러미);").length - 1 === 2);
+  ok("★ 글이 실패하면 쓴 내용을 돌려준다",
+    HTML.indexOf("if (ta && !ta.value) ta.value = text;") >= 0);
+  ok("  사진은 낙관적으로 안 한다 (되돌릴 수 없다)",
+    HTML.indexOf("null, function () { loadReturnActive(true, false); });") >= 0);
+}
+
 console.log("\n" + (fail ? "FAIL " + fail + "건" : "통과 " + pass + "건"));
 process.exit(fail ? 1 : 0);
