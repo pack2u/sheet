@@ -1398,6 +1398,65 @@
       font-size: 13px; line-height: 1.48; color: rgba(255,255,255,0.68);
       -webkit-line-clamp: 8;
     }
+
+    /* ══════════════════════════════════════════════════════════
+       ★ 빈자리를 없앤다 ★  (2026-09-17)
+       > "반품카드 크기 조절이 필요해 지금 너무 많은 빈공간들이 자리를 차지해"
+
+       ① 이력이 «한 장»뿐인 카드가 대부분인데 그 한 장은 128px 로 굳어
+          있었다. 오른쪽 자리의 절반 넘게가 늘 비었고, 사진 넉 장이 좁은
+          폭에 갇혀 두 줄로 접히느라 카드가 세로로도 길어졌다.
+          한 장뿐이면 폭을 다 쓰게 한다 — 사진이 한 줄로 서고 카드가 낮아진다.
+          여러 장일 때는 여태처럼 128px 로 서서 옆으로 밀린다.
+       ══════════════════════════════════════════════════════════ */
+    .ret-tl-track > .ret-proc:only-child {
+      flex: 1 1 auto; width: auto; min-width: 128px;
+    }
+    .ret-tl-track > .ret-proc:only-child .ret-proc-thumbs { flex-wrap: nowrap; }
+
+    /* ── ② 그래도 더 좁게 보고 싶을 때 — 「조밀」 ──────────────
+       한 가지로 못 박지 않는다. 고른 값은 그 사람 브라우저에만 남는다.
+       집중 보기(ret-focus)는 «크게 보려고» 켜는 것이라 건드리지 않는다. */
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) {
+      padding: 6px 8px 5px; margin-bottom: 6px; border-radius: 10px;
+    }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-body { gap: 6px; }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-left { font-size: 11px; }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-left .rn {
+      font-size: 14px; margin-bottom: 2px;
+    }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-meta {
+      margin-top: 1px; line-height: 1.34;
+    }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-sub {
+      margin-top: 3px; font-size: 9px;
+    }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-proc {
+      min-height: 0; padding: 6px 7px;
+    }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-proc-when {
+      font-size: 10px; margin-bottom: 2px;
+    }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-proc-tag { margin-bottom: 1px; }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-proc-body {
+      -webkit-line-clamp: 2; line-height: 1.34;
+    }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-proc-thumbs {
+      gap: 3px; margin-top: 3px;
+    }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-proc-thumbs button {
+      width: 26px; height: 26px;
+    }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-foot {
+      margin-top: 4px; padding-top: 4px; gap: 4px;
+    }
+    #pane-returns.ret-dense .ret-card:not(.ret-focus) .ret-act { width: 22px; height: 22px; }
+    /* 켜져 있다는 것이 단추에 보여야 한다 — 왜 작아졌는지 모르면 고장으로 보인다 */
+    #pane-returns.ret-dense #retDense {
+      color: var(--accent, #FDB813);
+      border-color: rgba(253, 184, 19, 0.55);
+      background: rgba(253, 184, 19, 0.14);
+    }
     #pane-returns.ret-focus-mode { scroll-padding-top: 12px; }
     .ret-proc.empty {
       width: auto; min-width: 100px; justify-content: center; align-items: center;
@@ -2775,6 +2834,9 @@
               <option value="vendor">업체순</option>
               <option value="stage">상태순</option>
             </select>
+            <button type="button" class="hb-icon" id="retDense" title="조밀하게 보기 (빈자리 줄이기)"
+                    aria-label="조밀하게 보기" aria-pressed="false"
+                    onclick="toggleReturnDense()">⇕</button>
             <button type="button" class="hb-icon" title="새로고침" aria-label="새로고침"
                     onclick="loadReturnActive(true, true)">↻</button>
             <button type="button" class="hb-icon" id="maxReturns" title="크게 보기 (가로 3줄)"
@@ -8814,6 +8876,37 @@
       if (_rs) RETURN_SORT = _rs;
     } catch (e) {}
 
+    /* ══════════════════════════════════════════════════════
+       조밀하게 보기 — 빈자리를 줄인다
+       > "반품카드 크기 조절이 필요해 지금 너무 많은 빈공간들이 자리를 차지해"
+
+       고른 값은 «그 사람 브라우저에만» 남는다. 같이 쓰는 화면이라
+       한 사람이 줄이면 모두가 줄어드는 일은 없어야 한다.
+       저장이 막힌 브라우저(사생활 보호 창 등)에서도 화면은 돌아야 하므로
+       읽기·쓰기를 다 감싼다.
+       ══════════════════════════════════════════════════════ */
+    var RET_DENSE_KEY = 'CS_RET_DENSE';
+    var RET_DENSE = false;
+    try { RET_DENSE = localStorage.getItem(RET_DENSE_KEY) === '1'; } catch (e) {}
+
+    function applyReturnDense() {
+      var pane = document.getElementById('pane-returns');
+      if (pane) pane.classList.toggle('ret-dense', !!RET_DENSE);
+      var btn = document.getElementById('retDense');
+      if (btn) {
+        btn.setAttribute('aria-pressed', RET_DENSE ? 'true' : 'false');
+        btn.title = RET_DENSE ? '보통 크기로 보기' : '조밀하게 보기 (빈자리 줄이기)';
+      }
+      //  카드 높이가 바뀌면 커스텀 스크롤바가 옛 길이 그대로 남는다
+      try { if (typeof csSyncScrollbars === 'function') csSyncScrollbars(); } catch (e2) {}
+    }
+
+    function toggleReturnDense() {
+      RET_DENSE = !RET_DENSE;
+      try { localStorage.setItem(RET_DENSE_KEY, RET_DENSE ? '1' : '0'); } catch (e) {}
+      applyReturnDense();
+    }
+
     function setReturnSort(v) {
       RETURN_SORT = String(v || 'new');
       try { localStorage.setItem('CS_RET_SORT', RETURN_SORT); } catch (e) {}
@@ -8945,6 +9038,8 @@
         html += '<div class="os-return-empty">검색 결과 ' + filtered.length + '건 중 ' + limit + '건만 표시 · 검색어를 더 구체적으로</div>';
       }
       list.innerHTML = html;
+      //  고른 밀도를 그릴 때마다 다시 입힌다 — 새로 그린 카드도 같은 옷을 입어야 한다
+      try { applyReturnDense(); } catch (eD) {}
       renderOrderDashboard();
     }
 
