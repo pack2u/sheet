@@ -2614,16 +2614,11 @@ var _CS_RETURN_CACHE_TTL_ = 600; // 10분
 // 캐시 세대 — 기록이 생길 때마다 올라간다. `csInvalidateReturnLedgerCache_` 참고.
 var _CS_RETURN_GEN_PROP_ = "_CS_RET_CACHE_GEN_";
 
-/** 반품대장 캐시 키 — 세대 번호를 포함해 한 번에 무효화할 수 있게 한다 */
-function _cs_returnCacheKey_(days, activeOnly) {
-  var gen = "1";
-  try {
-    gen = PropertiesService.getScriptProperties().getProperty(_CS_RETURN_GEN_PROP_) || "1";
-  } catch (e) {
-    // 속성을 못 읽어도 조회는 되어야 한다 — 캐시가 조금 오래 갈 뿐이다
-  }
-  return _CS_RETURN_CACHE_VER_ + "g" + gen + "_" + days + "_" + (activeOnly ? "A" : "X");
-}
+/*  ★ (days, activeOnly) 별 캐시 키는 없앴다 ★  (2026-09-17)
+    그 열쇠가 바로 같은 탭을 세 번 읽게 만든 까닭이다 —
+    30일·진행만 / 30일·전부 / 90일·전부 가 저마다 다른 열쇠였다.
+    이제 «월 탭 하나»만 캐시하고 날짜·진행 여부는 메모리에서 거른다.
+    _cs_loadReturnLedgerTabRows_ 참고. 세대 번호는 거기서도 쓴다.  */
 /**
  * 반품 상태 — 2026-08-31 9개에서 4개로 줄였다.
  *
@@ -3228,17 +3223,109 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
   return out;
 }
 
+/* ══════════════════════════════════════════════════════════════
+ *  반품대장 읽기 — «월 탭 하나를 한 번만» 읽는다   (2026-09-17)
+ *
+ *  > "속도가 느려서 그래"
+ *
+ *  ★ 느렸던 까닭 둘 ★
+ *
+ *  ① 한 번 띄울 때 같은 탭을 «열한 번» 읽었다.
+ *     csListActiveReturnCases 가 (30일·진행만) 과 (30일·전부) 를 잇달아
+ *     부른다. 캐시 열쇠에 activeOnly 가 들어 있어 «다른 열쇠»라 두 번 다
+ *     시트를 읽었다. 코드 주석에는 「동일 캐시 키라 추가 부담이 적다」고
+ *     적혀 있었는데 사실이 아니었다.
+ *     거기에 뱃지 색인이 (90일·전부) 를 또 부른다.
+ *     월 탭으로 치면  3 + 3 + 5 = 열한 번이다.
+ *
+ *  ② 캐시가 «아예 안 먹고» 있었다.
+ *     CacheService 한 칸은 100KB 까지다. 90일치를 통째로 한 칸에 넣으면
+ *     넘쳐서 put 이 던지는데, 그 try 는 조용히 삼킨다.
+ *     그래서 열한 번을 «매번» 다시 읽었다. 조용히.
+ *
+ *  ★ 그래서 ★
+ *    · 월 탭을 «자르지 않고» 통째로 캐시한다. 날짜·진행 여부는 메모리에서
+ *      거른다 — 30일치는 90일치가 읽어 둔 것을 그대로 쓴다
+ *    · 캐시는 조각내어 넣는다. 넘쳐서 조용히 안 먹는 일이 없게
+ *    · 한 실행 안에서는 같은 탭을 두 번 읽지 않는다 (새로고침이어도)
+ * ══════════════════════════════════════════════════════════════ */
+
+/*  한글은 UTF-8 에서 한 글자가 3바이트다. 100KB 한도에 안 걸리게
+    글자 수로 2만씩 자른다 — 최악(전부 한글)이어도 60KB다.  */
+var _CS_RET_CHUNK_ = 20000;
+
+/** 한 실행 안에서 이미 읽은 월 탭 (GAS 전역은 실행이 끝나면 사라진다) */
+var _CS_RET_TAB_MEMO_ = {};
+
+function _cs_retCachePut_(cache, key, obj, ttl) {
+  var s;
+  try { s = JSON.stringify(obj); } catch (e) { return false; }
+  var n = Math.ceil(s.length / _CS_RET_CHUNK_) || 1;
+  var map = {};
+  for (var i = 0; i < n; i++) {
+    map[key + "_" + i] = s.substring(i * _CS_RET_CHUNK_, (i + 1) * _CS_RET_CHUNK_);
+  }
+  /*  조각을 다 넣은 «뒤»에 개수를 넣는다 — 개수가 먼저 보이면
+      아직 없는 조각을 읽으러 간다. 어차피 한 번에 나가지만 뜻을 남긴다.  */
+  map[key + "_n"] = String(n);
+  try { cache.putAll(map, ttl); return true; } catch (e2) { return false; }
+}
+
+function _cs_retCacheGet_(cache, key) {
+  try {
+    var nRaw = cache.get(key + "_n");
+    if (!nRaw) return null;
+    var n = parseInt(nRaw, 10);
+    if (!(n > 0)) return null;
+    var keys = [];
+    for (var i = 0; i < n; i++) keys.push(key + "_" + i);
+    var got = cache.getAll(keys) || {};
+    var s = "";
+    for (var j = 0; j < n; j++) {
+      var part = got[key + "_" + j];
+      /*  ★ 한 조각만 없어도 통째로 버린다 ★
+          조각은 저마다 따로 말라 죽을 수 있다. 있는 것만 이어 붙이면
+          JSON 이 깨지거나 — 더 나쁘게는 «일부만 맞는 표»가 된다.
+          반쪽짜리 반품 목록은 없는 것보다 나쁘다.  */
+      if (part === null || part === undefined) return null;
+      s += part;
+    }
+    var out = JSON.parse(s);
+    return (out && out.length !== undefined) ? out : null;
+  } catch (e) { return null; }
+}
+
+/** 월 탭 하나 — 자르지 않은 전부. 캐시는 이 단위로만 잡는다. */
+function _cs_loadReturnLedgerTabRows_(ss, tabName, refresh) {
+  var gen = "1";
+  try {
+    gen = PropertiesService.getScriptProperties().getProperty(_CS_RETURN_GEN_PROP_) || "1";
+  } catch (e) {}
+
+  /*  ★ 실행 안 기억이 맨 앞이다 ★ 새로고침이어도 한 실행에서 같은 탭을
+      두 번 읽을 까닭은 없다. 이것이 «열한 번»을 막는 마지막 문이다.  */
+  var memoKey = gen + "|" + tabName;
+  if (_CS_RET_TAB_MEMO_[memoKey]) return _CS_RET_TAB_MEMO_[memoKey];
+
+  var cache = CacheService.getScriptCache();
+  var ck = _CS_RETURN_CACHE_VER_ + "t" + gen + "_" + tabName;
+  if (!refresh) {
+    var hit = _cs_retCacheGet_(cache, ck);
+    if (hit) { _CS_RET_TAB_MEMO_[memoKey] = hit; return hit; }
+  }
+
+  var tab = ss.getSheetByName(tabName);
+  if (!tab) return [];
+  //  자르지 않고 읽는다 — 30일치도 90일치도 이 하나로 만든다
+  var rows = _cs_readReturnLedgerTabCases_(tab, tabName, "", false);
+  _cs_retCachePut_(cache, ck, rows, _CS_RETURN_CACHE_TTL_);
+  _CS_RET_TAB_MEMO_[memoKey] = rows;
+  return rows;
+}
+
 function _cs_loadReturnLedgerCases_(days, activeOnly, refresh) {
   days = days || 30;
   activeOnly = !!activeOnly;
-  var cache = CacheService.getScriptCache();
-  var ck = _cs_returnCacheKey_(days, activeOnly);
-  if (!refresh) {
-    try {
-      var hit = cache.get(ck);
-      if (hit) return JSON.parse(hit) || [];
-    } catch (eC) {}
-  }
 
   var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
   var monthKeys = _cs_returnLedgerMonthsToScan_(days);
@@ -3248,20 +3335,22 @@ function _cs_loadReturnLedgerCases_(days, activeOnly, refresh) {
 
   for (var mi = 0; mi < monthKeys.length; mi++) {
     var mk = monthKeys[mi];
-    var tab = ss.getSheetByName(mk);
-    if (!tab && monthTabs.indexOf(mk) < 0) continue;
-    if (!tab) continue;
-    var chunk = _cs_readReturnLedgerTabCases_(tab, mk, cutoffYmd, activeOnly);
-    for (var ci = 0; ci < chunk.length; ci++) all.push(chunk[ci]);
+    if (monthTabs.indexOf(mk) < 0 && !ss.getSheetByName(mk)) continue;
+    var chunk = _cs_loadReturnLedgerTabRows_(ss, mk, refresh);
+    for (var ci = 0; ci < chunk.length; ci++) {
+      var r = chunk[ci];
+      /*  «읽을 때» 하던 거르기를 여기서 똑같이 한다.
+          _cs_readReturnLedgerTabCases_ 의 두 줄과 글자 그대로 같아야 한다 —
+          하나라도 어긋나면 목록이 조용히 달라진다.  */
+      if (cutoffYmd && r.dateYmd && r.dateYmd < cutoffYmd) continue;
+      if (activeOnly && !r.active) continue;
+      all.push(r);
+    }
   }
 
   all.sort(function(a, b) {
     return String(b.sortKey || "").localeCompare(String(a.sortKey || ""));
   });
-
-  try {
-    cache.put(ck, JSON.stringify(all), _CS_RETURN_CACHE_TTL_);
-  } catch (ePut) {}
   return all;
 }
 
