@@ -75,6 +75,7 @@ function onOpen() {
 
     .addSubMenu(ui.createMenu('🔎 점검 · 진단')
       .addItem('보류 조치 진단', 'ss_보류조치진단')
+      .addItem('📋 대리발송품목 진단 (왜 안 빠졌나)', 'ss_대리품목진단')
       .addItem('합배송 진단', 'ss_합배송진단')
       .addItem('사방넷 진단 (저장 안 함)', 'ss_사방넷진단')
       .addItem('중복발주 의심 점검', 'ss_중복점검')
@@ -1227,13 +1228,13 @@ function ss_보류입력꾸미기(sh, rows) {
   codes.sort();
 
   sh.getRange(1, cA, 1, 2).setBackground('#1f3d3a').setNote(
-    '이 칸 하나로 정합니다.' + "\\n" + "\\n" +
-    '  발송        자체 출고 (보류 해제)' + "\\n" +
-    '  업체코드    그 업체로 대리발송  예) JH, HP' + "\\n" +
-    '  비워 둠     그대로 보류' + "\\n" + "\\n" +
-    'U열 상세를 지워도 해소된 것으로 보고 발송합니다.' + "\\n" +
-    '등록된 업체코드 : ' + codes.join(', ') + "\\n" + "\\n" +
-    '적은 뒤 메뉴 → ✅ 보류 조치 반영' + "\\n" +
+    '이 칸 하나로 정합니다.' + String.fromCharCode(10) + String.fromCharCode(10) +
+    '  발송        자체 출고 (보류 해제)' + String.fromCharCode(10) +
+    '  업체코드    그 업체로 대리발송  예) JH, HP' + String.fromCharCode(10) +
+    '  비워 둠     그대로 보류' + String.fromCharCode(10) + String.fromCharCode(10) +
+    'U열 상세를 지워도 해소된 것으로 보고 발송합니다.' + String.fromCharCode(10) +
+    '등록된 업체코드 : ' + codes.join(', ') + String.fromCharCode(10) + String.fromCharCode(10) +
+    '적은 뒤 메뉴 → ✅ 보류 조치 반영' + String.fromCharCode(10) +
     '조치는 그 회차(같은 판매현황) 동안 유지되므로 나눠서 반영해도 됩니다.');
 
   sh.setColumnWidth(cA, 110);
@@ -1282,16 +1283,208 @@ function ss_보류조치진단() {
     if (!uid) 문제.push('사방넷주문번호(P열)가 비어 어느 주문인지 알 수 없음');
 
     L.push('행 ' + (i + 2) + ' · ' + code + '  [' + uid + ']' +
-      "\\n" + '    적은 값 : ' + (적은값 || '(비움)') + '   상세 : ' + (상세 || '(비움)') +
-      "\\n" + '    판정   : ' + 판정 +
-      (문제.length ? "\\n" + '    ⚠ ' + 문제.join(' / ') : ''));
+      String.fromCharCode(10) + '    적은 값 : ' + (적은값 || '(비움)') + '   상세 : ' + (상세 || '(비움)') +
+      String.fromCharCode(10) + '    판정   : ' + 판정 +
+      (문제.length ? String.fromCharCode(10) + '    ⚠ ' + 문제.join(' / ') : ''));
   }
 
-  return ssio_alert('보류 조치 진단' + "\\n" + "\\n" +
-    '보류 ' + v.length + '행 중 입력된 줄 ' + 입력 + '개' + "\\n" +
-    '등록된 업체코드 : ' + codes.join(', ') + "\\n" + "\\n" +
-    (L.length ? L.join("\\n" + "\\n") : '입력된 줄이 없습니다.') +
-    "\\n" + "\\n" + '문제가 없으면 메뉴 → ✅ 보류 조치 반영');
+  return ssio_alert('보류 조치 진단' + String.fromCharCode(10) + String.fromCharCode(10) +
+    '보류 ' + v.length + '행 중 입력된 줄 ' + 입력 + '개' + String.fromCharCode(10) +
+    '등록된 업체코드 : ' + codes.join(', ') + String.fromCharCode(10) + String.fromCharCode(10) +
+    (L.length ? L.join(String.fromCharCode(10) + String.fromCharCode(10)) : '입력된 줄이 없습니다.') +
+    String.fromCharCode(10) + String.fromCharCode(10) + '문제가 없으면 메뉴 → ✅ 보류 조치 반영');
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════
+ *  📋 대리발송품목 진단 — 적어 둔 품목이 «어디서» 빠졌는가
+ *
+ *  > "우리 재고가 있어.. 하지만 대리발송으로 넘기고 싶을때 대리발송품목을
+ *  >  만드는건데.. 지금 세트분리에서 대리발송으로 분리가 안되고
+ *  >  그냥 로젠출력으로 넘어가네.. 확인해줘"
+ *
+ *  짐작으로 답하지 않는다. 마지막 회차 «원장»에 그 줄이 어디로 갔는지
+ *  이미 적혀 있다. 그것을 읽어서 말한다.
+ *
+ *  갈리는 자리는 넷뿐이다 —
+ *    ① 표를 아예 못 읽는다      (탭 없음 · 머리글 없이 첫 줄부터 적음)
+ *    ② 코드가 안 맞는다          (부호·공백·전각 차이)
+ *    ③ 수동조치가 이긴다         (보류 탭에서 「발송」으로 뒤집은 건)
+ *    ④ 맞는데도 안 갔다          (그러면 그것이 결함이다 — 그대로 말한다)
+ * ═══════════════════════════════════════════════════════════════
+ */
+function ss_대리품목진단() {
+  var NL = String.fromCharCode(10);
+  var 줄 = [];
+
+  /* ── ① 표를 읽는다 ───────────────────────────────────── */
+  var sh = ssio_ss().getSheetByName(SSIO_TABS.대리발송품목);
+  if (!sh) {
+    return ssio_alert('「대리발송품목」 탭이 없습니다.' + NL + NL +
+      '메뉴 → ⚙ 설정 · 설치 → 🛠 시트 설치 / 복구 를 한 번 누르면 만들어집니다.');
+  }
+  var lr = sh.getLastRow();
+  var raw = lr > 0
+    ? sh.getRange(1, 1, lr, Math.max(sh.getLastColumn(), 3)).getValues()
+    : [];
+
+  /*  ★ 머리글이 없으면 첫 줄이 «먹힌다» ★
+      이 표는 첫 줄을 머리글로 보고 건너뛴다. 사람이 머리글 없이 코드부터
+      적으면 그 한 줄이 통째로 읽히지 않는다. 조용히. */
+  var 머리 = raw.length ? ssText(raw[0][0]) : '';
+  if (머리 && 머리 !== SSM_PARTNER_ITEM_HEADER[0]) {
+    줄.push('★ 첫 줄(A1)이 「' + SSM_PARTNER_ITEM_HEADER[0] + '」 가 아니라 「' + 머리 + '」 입니다.');
+    줄.push('   이 표는 첫 줄을 «머리글»로 보고 건너뜁니다 — 그 줄은 지금 읽히지 않습니다.');
+    줄.push('   1행에  ' + SSM_PARTNER_ITEM_HEADER.join(' / ') + '  을 넣고 코드는 2행부터 적어 주세요.');
+    줄.push('');
+  }
+
+  var 표 = [], 표코드 = {};
+  for (var r = 1; r < raw.length; r++) {
+    var c = ssText(raw[r][0]).toUpperCase();
+    if (!c) continue;
+    var e = { 코드: c, 업체: ssText(raw[r][1]).toUpperCase(), 행: r + 1 };
+    표.push(e);
+    표코드[c] = e;
+  }
+
+  if (!표.length) {
+    줄.push('표에 적힌 품목이 «0개» 입니다. 2행부터 이카운트코드를 적어 주세요.');
+    return ssio_alert('📋 대리발송품목 진단' + NL + NL + 줄.join(NL));
+  }
+
+  var vendors = {};
+  var vd = ssio_body(SSIO_TABS.업체);
+  for (var q = 0; q < vd.length; q++) {
+    var vc0 = ssText(vd[q][0]).toUpperCase();
+    if (vc0) vendors[vc0] = ssText(vd[q][1]);
+  }
+
+  줄.push('표에 적힌 품목 : ' + 표.length + '개');
+  for (var t = 0; t < 표.length && t < 10; t++) {
+    줄.push('   ' + 표[t].코드 +
+      (표[t].업체 ? '  →  ' + 표[t].업체 + ' ' + (vendors[표[t].업체] || '(업체표에 없음)') : '  (업체코드 없음)'));
+  }
+  if (표.length > 10) 줄.push('   … 외 ' + (표.length - 10) + '개');
+  줄.push('');
+
+  /* ── ② 마지막 회차 원장을 읽는다 ─────────────────────── */
+  var lg = ssio_ss().getSheetByName(SSIO_TABS.원장);
+  if (!lg || lg.getLastRow() < 2) {
+    줄.push('원장이 비어 있습니다 — 세트분리를 한 번 실행한 뒤에 다시 눌러 주세요.');
+    return ssio_alert('📋 대리발송품목 진단' + NL + NL + 줄.join(NL));
+  }
+  var lc = lg.getLastColumn();
+  var lhead = lg.getRange(1, 1, 1, lc).getValues()[0];
+  var li = {};
+  for (var h = 0; h < lhead.length; h++) {
+    var hn = ssText(lhead[h]);
+    if (hn && li[hn] === undefined) li[hn] = h;
+  }
+  var 필요 = ['회차키', '경로', '원본품목코드', '품목코드', '순번', '고유ID'];
+  var 없는칸 = [];
+  for (var n = 0; n < 필요.length; n++) if (li[필요[n]] === undefined) 없는칸.push(필요[n]);
+  if (없는칸.length) {
+    줄.push('원장에서 칸을 못 찾았습니다 : ' + 없는칸.join(', '));
+    줄.push('메뉴 → 🛠 시트 설치 / 복구 로 머리글을 맞춰 주세요.');
+    return ssio_alert('📋 대리발송품목 진단' + NL + NL + 줄.join(NL));
+  }
+
+  var lv = lg.getRange(2, 1, lg.getLastRow() - 1, lc).getValues();
+  var 마지막회차 = ssText(lv[lv.length - 1][li['회차키']]);
+  var 회차행 = [];
+  for (var y = 0; y < lv.length; y++) {
+    if (ssText(lv[y][li['회차키']]) === 마지막회차) 회차행.push(lv[y]);
+  }
+  줄.push('마지막 회차 : ' + 마지막회차 + '  (' + 회차행.length + '줄)');
+  줄.push('');
+
+  /* ── ③ 수동조치에서 「발송」으로 뒤집은 건 ───────────── */
+  var 뒤집힘 = {};
+  var mb = ssio_body(SSIO_TABS.수동조치);
+  for (var m = 0; m < mb.length; m++) {
+    if (ssText(mb[m][3]) !== '발송') continue;
+    뒤집힘[ssText(mb[m][1]) + '|' + ssText(mb[m][2]).toUpperCase()] = true;
+  }
+
+  /* ── ④ 표의 코드가 이 회차에 나왔는가 ───────────────── */
+  var 만난줄 = [], 경로셈 = {}, 딴데간것 = [];
+  for (var z = 0; z < 회차행.length; z++) {
+    var row = 회차행[z];
+    var oc = ssText(row[li['원본품목코드']]).toUpperCase();
+    var ic = ssText(row[li['품목코드']]).toUpperCase();
+    var hit = 표코드[oc] || 표코드[ic];
+    if (!hit) continue;
+    var 경로 = ssText(row[li['경로']]);
+    만난줄.push(row);
+    경로셈[경로] = (경로셈[경로] || 0) + 1;
+    if (경로 === SS_ROUTE.PARTNER) continue;
+    var uid = ssText(row[li['고유ID']]);
+    var 왜 = 뒤집힘[uid + '|' + oc]
+      ? '보류 탭에서 「발송」으로 뒤집은 건입니다 (사람 손이 이깁니다)'
+      : (경로 === SS_ROUTE.NONSHIP ? '비배송으로 빠졌습니다'
+        : (경로 === SS_ROUTE.HOLD ? '보류 : ' + ssText(row[li['보류사유']])
+          : '★ 코드는 맞는데 대리발송으로 안 갔습니다 — 결함입니다'));
+    딴데간것.push('   순번 ' + ssText(row[li['순번']]) + '  ' + (oc === ic ? oc : oc + '→' + ic) +
+      '  [' + 경로 + ']' + NL + '      ' + 왜);
+  }
+
+  if (!만난줄.length) {
+    줄.push('★ 이 회차에서 그 코드를 «한 줄도» 만나지 못했습니다.');
+    줄.push('');
+    /*  ★ 느슨하게 맞춰 본다 ★
+        부호·공백·전각만 다른 코드는 사람 눈에 같아 보인다.
+        「없다」고만 하면 사람은 표가 왜 안 먹는지 영영 모른다. */
+    var 느슨 = {};
+    for (var w = 0; w < 회차행.length; w++) {
+      var a1 = ssText(회차행[w][li['원본품목코드']]).toUpperCase();
+      var a2 = ssText(회차행[w][li['품목코드']]).toUpperCase();
+      if (a1) 느슨[ss_코드압축_(a1)] = a1;
+      if (a2) 느슨[ss_코드압축_(a2)] = a2;
+    }
+    var 후보 = [];
+    for (var b = 0; b < 표.length; b++) {
+      var 짝 = 느슨[ss_코드압축_(표[b].코드)];
+      if (짝 && 짝 !== 표[b].코드) 후보.push('   표 「' + 표[b].코드 + '」  ↔  판매현황 「' + 짝 + '」');
+    }
+    if (후보.length) {
+      줄.push('부호·공백만 다른 코드를 찾았습니다 — 이것이 원인입니다 :');
+      줄 = 줄.concat(후보.slice(0, 8));
+      줄.push('');
+      줄.push('표의 코드를 판매현황과 «똑같이» 맞춰 주세요.');
+    } else {
+      줄.push('비슷한 코드도 없습니다. 둘 중 하나입니다 —');
+      줄.push('   · 이 회차 판매현황에 그 품목 주문이 아예 없었다');
+      줄.push('   · 표에 적은 것이 이카운트코드가 아니라 품목명이다');
+    }
+    return ssio_alert('📋 대리발송품목 진단' + NL + NL + 줄.join(NL));
+  }
+
+  var 경로글 = [];
+  for (var k in 경로셈) if (Object.prototype.hasOwnProperty.call(경로셈, k)) 경로글.push(k + ' ' + 경로셈[k]);
+  줄.push('그 코드를 만난 줄 : ' + 만난줄.length + '건');
+  줄.push('   ' + 경로글.join('  ·  '));
+  줄.push('');
+  if (!딴데간것.length) {
+    줄.push('✅ 전부 대리발송으로 갔습니다. 표는 제대로 돌고 있습니다.');
+  } else {
+    줄.push('대리발송으로 안 간 줄 ' + 딴데간것.length + '건 —');
+    줄 = 줄.concat(딴데간것.slice(0, 8));
+    if (딴데간것.length > 8) 줄.push('   … 외 ' + (딴데간것.length - 8) + '건');
+  }
+
+  return ssio_alert('📋 대리발송품목 진단' + NL + NL + 줄.join(NL));
+}
+
+/** 코드를 느슨하게 견주기 — 영문·숫자만 남긴다 (정규식을 쓰지 않는다) */
+function ss_코드압축_(s) {
+  var out = '';
+  var t = ssText(s).toUpperCase();
+  for (var i = 0; i < t.length; i++) {
+    var c = t.charAt(i);
+    if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z')) out += c;
+  }
+  return out;
 }
 
 /* ── 송장 회수 · 사방넷 등록용 ─────────────────────────── */
