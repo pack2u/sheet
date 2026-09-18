@@ -3412,13 +3412,27 @@ function ss_중복품목진단() {
   var ui;
   try { ui = SpreadsheetApp.getUi(); } catch (e) { ui = null; }
 
-  var 코드필터 = '';
+  /*  ★ 날짜로도 찾게 한다 ★  (2026-09-18)
+      > "회차가 아니라 17일건이야"
+      사람은 회차키(260917-2)를 외우지 않는다. 날짜로 찾는다.
+      한 칸에 날짜든 품목코드든 넣으면 알아서 가른다 —
+      칸을 둘로 만들면 무엇을 어디 넣어야 하는지부터 헷갈린다. */
+  var 코드필터 = '', 날짜필터 = '';
   if (ui) {
     var r = ui.prompt('🔎 같은 주문에 같은 품목이 두 줄',
-      '품목코드를 넣으면 그것만 봅니다.' + NL + '(비워 두면 전부 훑습니다)',
+      '날짜나 품목코드를 넣으세요.' + NL +
+      '  날짜 예 :  9/17   0917   2026-09-17' + NL +
+      '  품목 예 :  JHMINIJJIM90005' + NL +
+      '(둘 다 걸려면 빈칸으로 띄어 함께 넣으세요. 비워 두면 전부)',
       ui.ButtonSet.OK_CANCEL);
     if (r.getSelectedButton() !== ui.Button.OK) return;
-    코드필터 = ssText(r.getResponseText()).toUpperCase();
+    var 낱말 = ssText(r.getResponseText()).split(/\s+/);
+    for (var t = 0; t < 낱말.length; t++) {
+      var w = ssText(낱말[t]);
+      if (!w) continue;
+      var d = ss_날짜키_(w);
+      if (d) 날짜필터 = d; else 코드필터 = w.toUpperCase();
+    }
   }
 
   var sh = ssio_ss().getSheetByName(SSIO_TABS.원장);
@@ -3438,27 +3452,34 @@ function ss_중복품목진단() {
 
   var vals = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues();
 
-  /*  ★ 가장 최근 회차만 본다 ★ 원장은 회차마다 쌓인다. 전부 보면
-      지난 회차의 같은 주문이 «중복»으로 보인다 — 그건 중복이 아니다. */
-  var 회차목록 = {};
-  for (var v0 = 0; v0 < vals.length; v0++) {
-    var rk = ssText(vals[v0][col['회차키']]);
-    if (rk) 회차목록[rk] = true;
-  }
-  var 회차들 = Object.keys(회차목록).sort();
-  var 최근 = 회차들.length ? 회차들[회차들.length - 1] : '';
+  /*  ★ 회차를 «가르되» 전부 본다 ★  (2026-09-18)
+      > "지금이 아니라 이전꺼라.."
 
+      처음엔 최근 회차만 봤다. 사고는 지난 회차에 났으니 그러면 못 찾는다.
+      그렇다고 회차를 뭉개면 지난 회차의 같은 주문이 «중복»으로 보인다 —
+      그건 중복이 아니다. 그래서 회차키를 묶음 열쇠에 «넣고» 전부 훑는다. */
   var 묶음 = {};
   var 훑음 = 0;
+  var 회차목록 = {};
   for (var i = 0; i < vals.length; i++) {
     var row = vals[i];
-    if (ssText(row[col['회차키']]) !== 최근) continue;
+    var rk = ssText(row[col['회차키']]);
     var uid = ssText(row[col['고유ID']]);
     var code = ssText(row[col['품목코드']]).toUpperCase();
     if (!uid || !code) continue;
     if (코드필터 && code !== 코드필터) continue;
+    /*  회차키는 YYMMDD-차수 꼴이다 (예: 260917-2).
+        실행시각이 있는 회차도 있으니 둘 다 본다 — 하나만 보면
+        옛 회차가 통째로 빠진다. */
+    if (날짜필터) {
+      var 때 = ssText(row[col['실행시각']] === undefined ? '' : row[col['실행시각']]);
+      var 맞나 = (rk.indexOf(날짜필터) === 0) ||
+        (때.replace(/[^0-9]/g, '').indexOf(날짜필터.length === 6 ? '20' + 날짜필터 : 날짜필터) >= 0);
+      if (!맞나) continue;
+    }
+    회차목록[rk] = true;
     훑음++;
-    var key = uid + String.fromCharCode(9679) + code;
+    var key = rk + String.fromCharCode(9679) + uid + String.fromCharCode(9679) + code;
     (묶음[key] || (묶음[key] = [])).push({
       라인ID: ssText(row[col['라인ID']]),
       순번: ssText(row[col['순번']]),
@@ -3473,45 +3494,80 @@ function ss_중복품목진단() {
     if (!Object.prototype.hasOwnProperty.call(묶음, k)) continue;
     if (묶음[k].length > 1) 겹친것.push([k, 묶음[k]]);
   }
-  겹친것.sort(function (a, b) { return b[1].length - a[1].length; });
+  //  최근 회차가 위로 오게 (사고가 언제 것인지 모를 때 훑기 좋다)
+  겹친것.sort(function (a, b) {
+    var ra = a[0].split(String.fromCharCode(9679))[0];
+    var rb = b[0].split(String.fromCharCode(9679))[0];
+    if (ra !== rb) return ra < rb ? 1 : -1;
+    return b[1].length - a[1].length;
+  });
 
+  var 회차수 = Object.keys(회차목록).length;
   var 줄 = [];
   줄.push('🔎 같은 주문에 같은 품목이 두 줄');
   줄.push('');
-  줄.push('회차 : ' + (최근 || '(없음)') + '   훑은 줄 : ' + 훑음);
+  줄.push('훑은 줄 ' + 훑음 + '   회차 ' + 회차수 + '개 (원장에 쌓인 것 전부)');
   if (코드필터) 줄.push('품목 : ' + 코드필터);
   줄.push('');
   if (!겹친것.length) {
     줄.push('겹친 줄이 없습니다.');
     줄.push('');
-    줄.push('※ 이 회차에는 없다는 뜻입니다. 사고가 난 회차를 보려면');
-    줄.push('   원장에서 그 회차키를 확인하고 말씀해 주세요.');
+    줄.push('※ 원장에 남아 있는 «모든» 회차를 봤습니다.');
+    줄.push('   그래도 없다면, 그 줄은 원장에 안 남았거나 (원장 이전의 회차)');
+    줄.push('   출력 탭에서 사람이 손으로 고친 것일 수 있습니다.');
     return ssio_alert(줄.join(NL));
   }
 
-  줄.push('★ 겹친 주문 ' + 겹친것.length + '건');
+  /*  ★ 회차별로 몇 건인지 먼저 적는다 ★
+      사고가 «어느 회차»에 몰려 있는지가 한눈에 보여야 한다. */
+  var 회차별 = {};
+  for (var c = 0; c < 겹친것.length; c++) {
+    var rk2 = 겹친것[c][0].split(String.fromCharCode(9679))[0];
+    회차별[rk2] = (회차별[rk2] || 0) + 1;
+  }
+  var 회차키들 = Object.keys(회차별).sort().reverse();
+  줄.push('★ 겹친 주문 ' + 겹친것.length + '건 — 회차별');
+  for (var rr = 0; rr < Math.min(회차키들.length, 12); rr++) {
+    줄.push('   ' + (회차키들[rr] || '(회차없음)') + '  :  ' + 회차별[회차키들[rr]] + '건');
+  }
+  if (회차키들.length > 12) 줄.push('   ... 그 밖 ' + (회차키들.length - 12) + '개 회차');
   줄.push('');
+
   var 같은순번 = 0, 다른순번 = 0;
-  for (var g = 0; g < Math.min(겹친것.length, 15); g++) {
-    var uidcode = 겹친것[g][0].split(String.fromCharCode(9679));
-    var ls = 겹친것[g][1];
-    var 순번들 = {};
-    for (var m = 0; m < ls.length; m++) 순번들[ls[m].순번] = true;
-    var 한순번 = Object.keys(순번들).length === 1;
-    if (한순번) 같은순번++; else 다른순번++;
-    var 합 = 0;
-    for (var m2 = 0; m2 < ls.length; m2++) 합 += ls[m2].수량;
-    줄.push('  ' + uidcode[0] + '   ' + uidcode[1] + '   ' + ls.length + '줄, 합 ' + 합 + '개' +
-      (한순번 ? '   ← 한 주문줄이 쪼개진 것' : '   ← 서로 다른 주문줄'));
-    for (var m3 = 0; m3 < ls.length; m3++) {
-      줄.push('      라인 ' + ls[m3].라인ID + ' (순번 ' + ls[m3].순번 + ')  ' +
-        ls[m3].수량 + '개  ' + ls[m3].경로 + '  원본 ' + ls[m3].원본);
+  for (var g = 0; g < 겹친것.length; g++) {
+    var ls0 = 겹친것[g][1];
+    var 순번들0 = {};
+    for (var m0 = 0; m0 < ls0.length; m0++) 순번들0[ls0[m0].순번] = true;
+    if (Object.keys(순번들0).length === 1) 같은순번++; else 다른순번++;
+  }
+  줄.push('한 주문줄이 쪼개진 것 : ' + 같은순번 + '건   ← 이것이 «쪼개기 탈»이다');
+  줄.push('서로 다른 주문줄     : ' + 다른순번 + '건   ← 세트를 둘 이상 시킨 것');
+  줄.push('');
+
+  /*  ★ 「한 주문줄이 쪼개진 것」을 먼저 보인다 ★
+      그것만이 코드 탈이다. 나머지는 사람이 판단할 일이라 뒤로 민다. */
+  var 보인수 = 0;
+  for (var pass2 = 0; pass2 < 2 && 보인수 < 15; pass2++) {
+    for (var g2 = 0; g2 < 겹친것.length && 보인수 < 15; g2++) {
+      var uidcode = 겹친것[g2][0].split(String.fromCharCode(9679));
+      var ls = 겹친것[g2][1];
+      var 순번들 = {};
+      for (var m = 0; m < ls.length; m++) 순번들[ls[m].순번] = true;
+      var 한순번 = Object.keys(순번들).length === 1;
+      if (pass2 === 0 ? !한순번 : 한순번) continue;
+      보인수++;
+      var 합 = 0;
+      for (var m2 = 0; m2 < ls.length; m2++) 합 += ls[m2].수량;
+      줄.push('  [' + uidcode[0] + ']  ' + uidcode[1] + '   ' + uidcode[2] +
+        '   ' + ls.length + '줄, 합 ' + 합 + '개' +
+        (한순번 ? '   ★ 한 주문줄이 쪼개진 것' : '   (서로 다른 주문줄)'));
+      for (var m3 = 0; m3 < ls.length; m3++) {
+        줄.push('      라인 ' + ls[m3].라인ID + ' (순번 ' + ls[m3].순번 + ')  ' +
+          ls[m3].수량 + '개  ' + ls[m3].경로 + '  원본 ' + ls[m3].원본);
+      }
     }
   }
-  if (겹친것.length > 15) 줄.push('  ... 그 밖 ' + (겹친것.length - 15) + '건');
-  줄.push('');
-  줄.push('한 주문줄이 쪼개진 것 : ' + 같은순번 + '건');
-  줄.push('서로 다른 주문줄     : ' + 다른순번 + '건');
+  if (겹친것.length > 보인수) 줄.push('  ... 그 밖 ' + (겹친것.length - 보인수) + '건');
   줄.push('');
   줄.push('※ 「서로 다른 주문줄」이면 그 사람이 세트를 둘 이상 시킨 것입니다.');
   줄.push('   같은 뚜껑을 쓰는 세트가 24개나 되니, 두 가지를 시키면');
@@ -3519,4 +3575,28 @@ function ss_중복품목진단() {
 
   ssio_alert(줄.join(NL));
   return 줄.join(NL);
+}
+
+/**
+ * 사람이 적은 날짜를 회차키 앞자리(YYMMDD)로 바꾼다.
+ *   9/17 · 09-17 · 0917 · 260917 · 2026-09-17 · 20260917  → '260917'
+ * 날짜가 아니면 빈 문자열. 그래야 부르는 쪽이 «품목코드로구나» 할 수 있다.
+ *
+ * ★ 올해로 본다 ★ 달·일만 적었으면 올해다. 지난해 것을 보려면
+ *   여섯 자리(260917)로 적으면 된다.
+ */
+function ss_날짜키_(s) {
+  var d = ssText(s).replace(/[^0-9]/g, '');
+  if (!d) return '';
+  if (d.length === 8) return d.substring(2);              // 20260917 → 260917
+  if (d.length === 6) return d;                           // 260917
+  if (d.length === 4) {                                   // 0917 (또는 9/17)
+    var yy = String(new Date().getFullYear()).substring(2);
+    return yy + d;
+  }
+  if (d.length === 3) {                                   // 9/17 → 917
+    var yy2 = String(new Date().getFullYear()).substring(2);
+    return yy2 + '0' + d;
+  }
+  return '';
 }
