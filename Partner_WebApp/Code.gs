@@ -44,7 +44,10 @@ function doGet(e) {
     return prpNoticePage_("일시적인 오류", "잠시 후 다시 시도해 주세요.");
   }
 
-  prpTouchAccount_(account);
+  /*  ★ 덮기 전 값을 받아 둔다 ★  (2026-09-18)
+      「지난번에 본 뒤로 새로 생긴 것」을 가리는 기준이다.
+      여기서 안 받으면 아래 화면에서는 이미 «방금»으로 덮여 있다. */
+  var 지난접속 = prpTouchAccount_(account);
   prpLog_(account.vendor, "접속", "포털 진입");
 
   var tpl = HtmlService.createTemplateFromFile("portal");
@@ -56,6 +59,8 @@ function doGet(e) {
   //   값 안으로 들어간다 (SID 가 `"s123"` 이 되어 세션 조회가 항상 실패했다).
   tpl.sidJson = prpJsonForScript_(sid);
   tpl.vendorJson = prpJsonForScript_(account.vendor);
+  //  지난번 접속 시각 — 화면이 「그 뒤로 새로 온 소식」을 가린다
+  tpl.lastSeenJson = prpJsonForScript_(지난접속 || "");
 
   return tpl.evaluate()
     .setTitle(account.vendor + " 반품 현황 · Pack2U")

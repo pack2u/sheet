@@ -221,6 +221,24 @@
     .ph-tag { font-size: 0.85em; font-weight: 600; opacity: 0.7; }
     .ph-sub { font-size: 0.9em; opacity: 0.55; }
     .ph-warn { font-size: 0.85em; font-weight: 600; color: var(--accent-red); }
+    /* ★ 지난번에 보신 뒤로 CS 가 남긴 것 ★  (2026-09-18)
+       눈에 걸리되 시끄럽지 않게 — 테두리 한 줄과 띠 하나까지만.
+       깜빡임은 안 쓴다. 오래 켜져 있는 것이 깜빡이면 화면을 피하게 된다. */
+    .card.card-fresh {
+      border-color: var(--accent-orange);
+      box-shadow: 0 0 0 1px var(--accent-orange-bg);
+    }
+    .fresh-bar {
+      display: flex; align-items: center; gap: 7px;
+      margin-bottom: 8px; padding: 5px 10px; border-radius: 8px;
+      background: var(--accent-orange-bg); color: var(--accent-orange);
+      font-size: 0.86em; font-weight: 700;
+    }
+    .fresh-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
+      background: var(--accent-orange);
+    }
+
     /* 반품사유 — 품목 바로 밑. 두 테마 다 읽히게 변수로 (2026-09-18) */
     .reason { margin-top: 3px; color: var(--accent-orange); font-size: 0.95em; }
     .fee { color: var(--accent-blue); font-weight: 600; }
@@ -591,6 +609,12 @@
     // 자세한 내용은 Code.gs 의 prpJsonForScript_ 주석에 있다.
     var SID = <?!= sidJson ?>;
     var VENDOR = <?!= vendorJson ?>;
+    /* ★ 지난번에 본 시각 ★  (2026-09-18)
+       > "우리 웹앱의 기본은 원활한 커뮤니케이션이야..
+       >  체크하고 카톡으로 확인했습니다.. 이런 글을 또 남기는 번거로움을 줄이기"
+       CS 가 앱에서 무엇을 해도 업체가 «열어 봐야만» 알면 아직 연락이 아니다.
+       지난번 이후 CS 가 남긴 것이 있으면 그 카드를 눈에 걸리게 한다. */
+    var LAST_SEEN = <?!= lastSeenJson ?>;
     var ROWS = [];
     var FILTER = 'active';
     var OPEN_POP = '';        // 열려 있는 문의창 (카드 idx)
@@ -706,9 +730,57 @@
       render();
     }
 
+    /* ══════════════════════════════════════════════════════════
+       ★ 지난번에 본 뒤로 CS 가 남긴 것 ★  (2026-09-18)
+
+       이벤트의 date 는 YYMMDD, time 은 HH:MM 이다. 지난번 접속은
+       「yyyy-MM-dd HH:mm」 으로 온다. 둘을 «같은 자»로 만들어 견준다 —
+       모양이 다른 채로 문자열 비교를 하면 조용히 늘 참이거나 늘 거짓이 된다.
+
+       ★ 우리 글은 안 센다 ★ 업체가 자기가 쓴 글 때문에 새 소식 표시를
+         보면 그건 소음이다. kind 'mine' 은 건너뛴다.
+       ★ 처음 온 사람은 안 켠다 ★ 지난 기록이 없으면 전부가 새 것이라
+         온 화면이 켜진다. 그건 알림이 아니다.
+       ══════════════════════════════════════════════════════════ */
+    function seenKey(s) {
+      var d = String(s || '').replace(/[^0-9]/g, '');
+      if (d.length >= 12) return d.substring(2, 12);   // yyyyMMddHHmm → yyMMddHHmm
+      return '';
+    }
+    function evKey(e) {
+      var d = String((e && e.date) || '').replace(/[^0-9]/g, '');
+      if (d.length !== 6) return '';
+      var t = String((e && e.time) || '').replace(/[^0-9]/g, '');
+      while (t.length < 4) t += '0';
+      return d + t.substring(0, 4);
+    }
+    var LAST_SEEN_KEY = seenKey(LAST_SEEN);
+
+    /** 이 건에 «지난번 이후 CS 가 남긴 것»이 몇 개인가 */
+    function freshCount(c) {
+      if (!LAST_SEEN_KEY) return 0;
+      var ev = (c && c.timeline) || [];
+      var n = 0;
+      for (var i = 0; i < ev.length; i++) {
+        if (!ev[i] || ev[i].kind === 'mine') continue;   // 우리가 쓴 글은 빼고
+        var k = evKey(ev[i]);
+        if (k && k > LAST_SEEN_KEY) n++;
+      }
+      return n;
+    }
+
     function sortRows(rows) {
       var key = function (c) { return String((c && c.sortKey) || ''); };
       var out = rows.slice();
+      /*  새 소식이 있는 건은 어느 차례로 보든 맨 위 — CS 쪽과 같은 규칙이다 */
+      var 새소식 = [], 나머지 = [];
+      for (var f = 0; f < out.length; f++) {
+        (freshCount(out[f]) > 0 ? 새소식 : 나머지).push(out[f]);
+      }
+      if (새소식.length) {
+        새소식.sort(function (a, b) { return key(b).localeCompare(key(a)); });
+        out = 나머지;
+      }
       if (SORT === 'old') {
         out.sort(function (a, b) { return key(a).localeCompare(key(b)); });
       } else if (SORT === 'stage') {
@@ -728,7 +800,7 @@
       } else {
         out.sort(function (a, b) { return key(b).localeCompare(key(a)); });
       }
-      return out;
+      return 새소식.length ? 새소식.concat(out) : out;
     }
 
     function visible() {
@@ -925,8 +997,19 @@
 
     function cardHtml(c) {
       var k = keyOf(c);
+      var 새것 = freshCount(c);
       var h = '';
-      h += '<div class="card" data-k="' + esc(k) + '">';
+      h += '<div class="card' + (새것 ? ' card-fresh' : '') + '" data-k="' + esc(k) + '">';
+
+      /* ★ 지난번 이후 CS 가 남긴 것 ★  (2026-09-18)
+         여기까지 와야 «앱에서 한 일이 곧 연락»이 된다. 이게 없으면
+         CS 가 확인을 눌러도 업체는 열어 봐야만 알고, 결국 전화를 건다. */
+      if (새것) {
+        h += '<div class="fresh-bar">' +
+          '<span class="fresh-dot"></span>' +
+          '<span>새 소식 ' + 새것 + '건 — 지난번에 보신 뒤로 CS팀이 남겼습니다</span>' +
+          '</div>';
+      }
 
       h += '<div class="c-head">';
       h += '<div class="c-name">' + esc(c.name || '(이름 없음)') + '</div>';

@@ -212,14 +212,31 @@ function prpLog_(vendor, action, detail) {
   }
 }
 
-/** 계정 탭의 최근접속·접속수 갱신 */
+/**
+ * 계정 탭의 최근접속·접속수 갱신.
+ *
+ * ★ «갱신하기 전» 값을 돌려준다 ★  (2026-09-18)
+ *   > "우리 웹앱의 기본은 원활한 커뮤니케이션이야..
+ *   >  체크하고 카톡으로 확인했습니다.. 이런 글을 또 남기는 번거로움을 줄이기"
+ *
+ *   업체가 «지난번에 본 뒤로» 무엇이 늘었는지 알려면 그 시각이 있어야 한다.
+ *   그런데 이 함수는 화면을 열 때 불린다 — 먼저 덮어쓰면 기준이 사라진다.
+ *   그래서 덮기 «전»에 읽어 돌려준다. 부르는 쪽이 화면으로 넘긴다.
+ *
+ * @return {string} 지난번 접속 시각 ("yyyy-MM-dd HH:mm"). 처음이면 빈 문자열.
+ */
 function prpTouchAccount_(account) {
+  var 지난번 = "";
   try {
     var tab = prpEnsureAccountTab_();
+    지난번 = String(
+      tab.getRange(account.row, PRP_AC.lastSeen + 1).getDisplayValue() || ""
+    ).trim();
     tab.getRange(account.row, PRP_AC.lastSeen + 1).setValue(prpToday_("yyyy-MM-dd HH:mm"));
     var cur = parseInt(tab.getRange(account.row, PRP_AC.hits + 1).getDisplayValue(), 10) || 0;
     tab.getRange(account.row, PRP_AC.hits + 1).setValue(cur + 1);
   } catch (e) {
     Logger.log("[PRP] 접속 기록 실패: " + e.message);
   }
+  return 지난번;
 }
