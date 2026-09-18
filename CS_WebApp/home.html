@@ -138,7 +138,6 @@
     :root[data-theme="light"] .ret-act,
     :root[data-theme="light"] .ret-photo-pick .pk,
     :root[data-theme="light"] .ret-proc-thumbs .thumb-alt,
-    :root[data-theme="light"] .ret-share.on,
     :root[data-theme="light"] .ret-more-btn { color: var(--text-bright); }
     :root[data-theme="light"] .ret-act.active { color: var(--text-primary); }
     :root[data-theme="light"] .ret-proc-del { color: #b3261e; }
@@ -1582,7 +1581,8 @@
       display: inline-block; margin-top: 5px; font-size: 9.5px; font-weight: 700;
       padding: 1px 5px; border-radius: 5px; letter-spacing: -0.2px;
     }
-    .ret-share.on  { background: rgba(168, 168, 168,0.16); color: #b5b5b5; }
+    /* .ret-share.on (「업체 공개」) 은 2026-09-18 에 지웠다 — 이제 전부 공개라
+       카드마다 같은 말을 하고 있었다. 「내부」(.off) 만 남는다. */
     .ret-share.off { background: rgba(255,255,255,0.07); color: #919191; }
     /* .ret-pop-share 는 2026-09-18 에 지웠다 — 「업체에 숨김」 체크상자가 없어졌다.
        («커뮤니티라 비밀로 할 이유가 없다». 자세한 까닭은 returnComposePopHtml) */
@@ -7894,13 +7894,24 @@
       return RET_INTERNAL_MARK.test(String((ev && ev.text) || '').trim());
     }
 
-    /** 업체 공개 여부 뱃지. 상태 변경은 늘 공개라 표시하지 않는다 (뱃지가 너무 많아진다) */
+    /**
+     * ★ 「업체 공개」 딱지를 뺐다 ★  (2026-09-18)
+     *
+     *   > "업체 공개 박스가 아직 살아있네...."
+     *
+     * 「업체에 숨김」 체크상자를 없앤 날이다 — 이제 상담·사진은 «전부»
+     * 업체에게 나간다. 그러니 이 딱지는 카드마다 늘 같은 말을 한다.
+     * 늘 같은 말은 알려 주는 것이 없고, 자리와 눈길만 가져간다.
+     *
+     * ★ 「내부」 딱지는 남긴다 ★
+     *   지난날 [내부] 로 적힌 줄이 아직 있고, 그것은 업체에게 «안» 나간다.
+     *   드물게 뜨니까 뜨면 뜻이 있다. 그게 딱지가 할 일이다.
+     */
     function retShareBadge(ev) {
       var cls = (ev && ev.kind) || '';
       if (cls !== 'consult' && cls !== 'photo') return '';
-      return retIsInternal(ev)
-        ? '<span class="ret-share off" title="협력업체 포털에 안 나갑니다">내부</span>'
-        : '<span class="ret-share on" title="협력업체 포털에 그대로 나갑니다">업체 공개</span>';
+      if (!retIsInternal(ev)) return '';
+      return '<span class="ret-share off" title="협력업체 포털에 안 나갑니다">내부</span>';
     }
 
     function renderReturnTimeline(events, cardIdx) {
