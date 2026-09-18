@@ -1988,14 +1988,46 @@ function ssApplyManualEdits(units, masters, warnings) {
   var items = (masters && masters.items) || {};
   var bom = (masters && masters.bom) || {};
   var n = 0;
+
+  /* ★ 한 열쇠에 줄이 여럿이면 코드를 갈지 않는다 ★  (2026-09-18)
+     > "뚜껑만이 세트분리되고 또한번 되었어.. 1개가 2개가 된거야"
+
+     조치의 열쇠는 (고유ID + 원본코드)다. 그런데 세트가 쪼개지면
+     그 열쇠를 가진 줄이 여럿이다 — 몸통 줄, 뚜껑 줄.
+     새코드를 그대로 걸면 «전부» 그 코드가 된다. 몸통이 뚜껑이 되어
+     뚜껑 둘 · 몸통 없음으로 나간다. 2026-09-17 에 실제로 그랬다.
+
+     어느 줄을 가리킨 것인지 기계가 정할 수 없다. 그러면 안 고친다.
+     조용히 넘어가지 않고 «무엇을 해야 하는지»까지 적는다. */
+  var 열쇠줄수 = {};
+  for (var c0 = 0; c0 < units.length; c0++) {
+    var k0 = ssText(units[c0].고유ID) + '|' + ssText(units[c0].원본코드);
+    열쇠줄수[k0] = (열쇠줄수[k0] || 0) + 1;
+  }
+  var 여럿경고 = {};
+
   for (var i = 0; i < units.length; i++) {
     var u = units[i];
-    var ov = override[ssText(u.고유ID) + '|' + ssText(u.원본코드)];
+    var 열쇠 = ssText(u.고유ID) + '|' + ssText(u.원본코드);
+    var ov = override[열쇠];
     if (!ov) continue;
     var 새코드 = ssText(ov.새코드), 새이름 = ssText(ov.새이름);
     if (!새코드 && !새이름) continue;
 
     if (새코드 && 새코드 !== ssText(u.품목코드)) {
+      /*  ★ 쪼개진 세트에는 코드를 갈지 않는다 ★
+          어느 구성품을 가리킨 것인지 알 수 없다. 걸면 전부 갈린다. */
+      if (열쇠줄수[열쇠] > 1) {
+        if (!여럿경고[열쇠]) {
+          여럿경고[열쇠] = true;
+          ssWarn(warnings, '오류', 'MANUAL_CODE_ON_SET', u.고유ID + ' → ' + 새코드,
+            '이 주문은 세트가 ' + 열쇠줄수[열쇠] + '줄로 쪼개져 있어 ' +
+            '어느 구성품의 코드를 고치려는 것인지 알 수 없습니다. ' +
+            '코드는 «고치지 않았습니다» — 걸면 구성품이 전부 그 코드가 되어 ' +
+            '한 가지만 여러 개 나갑니다. 판매현황에서 고치고 다시 실행하세요.');
+        }
+        continue;
+      }
       if (!items[새코드]) {
         ssWarn(warnings, '오류', 'MANUAL_CODE_UNKNOWN', u.고유ID + ' → ' + 새코드,
           '보류 탭에서 고친 코드가 M_품목정보에 없습니다. 코드를 확인하세요 — 그대로 두면 옛 코드로 나갑니다.');
@@ -2472,6 +2504,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssRun: ssRun, ssNormalize: ssNormalize, ssExplode: ssExplode, ssEnrich: ssEnrich,
     ssAssignCondition: ssAssignCondition, ssAllocateStock: ssAllocateStock,
     ssRoute: ssRoute, ssMerge: ssMerge, ssShippingFee: ssShippingFee,
+    ssApplyManualEdits: ssApplyManualEdits,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
     ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
