@@ -3317,6 +3317,35 @@ function ss_BOM진단() {
 
   if (코드) {
     펼치기(코드);
+
+    /*  ★ 거꾸로도 찾는다 ★  (2026-09-18)
+        「뚜껑이 세 개」의 다른 길 — 한 뚜껑을 여러 세트가 나눠 쓰면,
+        그 세트들을 함께 주문한 사람에게는 뚜껑이 세트 수만큼 나간다.
+        그건 «맞는» 것일 수도, 세트 등록이 잘못된 것일 수도 있다.
+        어느 쪽인지는 이 목록을 봐야 안다. */
+    var 쓰는세트 = [];
+    for (var rs in map) {
+      if (!Object.prototype.hasOwnProperty.call(map, rs)) continue;
+      if (rs === 코드) continue;
+      var pp = map[rs];
+      for (var pz = 0; pz < pp.length; pz++) {
+        if (pp[pz].code === 코드) {
+          쓰는세트.push(rs + '  x' + pp[pz].qty + '  ' + (세트명[rs] || ''));
+          break;
+        }
+      }
+    }
+    줄.push('-- 이 코드를 «구성품으로 쓰는» 세트 : ' + 쓰는세트.length + '개');
+    if (쓰는세트.length) {
+      for (var w = 0; w < Math.min(쓰는세트.length, 25); w++) 줄.push('     ' + 쓰는세트[w]);
+      if (쓰는세트.length > 25) 줄.push('     ... 그 밖 ' + (쓰는세트.length - 25) + '개');
+      줄.push('');
+      줄.push('   ★ 이 세트들을 «한 사람이 함께» 주문하면 이 코드가 그만큼 나갑니다.');
+      줄.push('     세 개가 나갔다면, 그 주문에 이 목록의 세트가 셋 있었는지 보세요.');
+    } else {
+      줄.push('     (없음 — 이 코드는 다른 세트에 안 들어갑니다)');
+    }
+    줄.push('');
     //  그 구성품들이 또 세트인지도 한 겹 더 본다
     var ps = map[코드] || [];
     for (var q = 0; q < ps.length; q++) {

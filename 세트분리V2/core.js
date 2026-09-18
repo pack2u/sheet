@@ -780,7 +780,28 @@ function ssExplode(lines, masters, warnings) {
   var out = [];
   var warnedNoBom = {};   // 같은 코드로 여러 줄이 와도 주의는 한 번만
   var warnedPI = {};
-  var warnedDupBom = {}, warnedSelfBom = {};
+  var warnedDupBom = {}, warnedSelfBom = {}, warnedSubPart = {};
+
+  /* ★ 구성품이면서 스스로도 세트인 코드를 미리 안다 ★  (2026-09-18)
+     > "내가 보기에 뚜껑만이 세트분리되고 또한번 되었어..
+     >  그러다보니 1개가 2개가 된거야"
+
+     세트를 주문하면 한 겹만 쪼개니 멀쩡하다(몸통1+뚜껑1).
+     그런데 그 «뚜껑만» 주문하면, 뚜껑이 제 이름으로도 BOM 에 있는 탓에
+     한 번 더 쪼개져 1개가 2개가 된다. 세트로 시킨 사람은 멀쩡하고
+     낱개로 시킨 사람만 틀리니, 한참 뒤에야 알게 된다.
+
+     쪼개는 것을 막지는 않는다 — 진짜 2단 조립품일 수도 있다.
+     다만 그런 코드를 쪼갤 때는 «반드시» 말한다. */
+  var 구성품이기도한코드 = {};
+  for (var bk in bom) {
+    if (!Object.prototype.hasOwnProperty.call(bom, bk)) continue;
+    var bps = bom[bk] || [];
+    for (var bj = 0; bj < bps.length; bj++) {
+      var bc = ssText(bps[bj].code);
+      if (bc && bc !== bk && bom[bc]) 구성품이기도한코드[bc] = bk;
+    }
+  }
   for (var i = 0; i < lines.length; i++) {
     var L = lines[i];
     var parts = bom[L.원본코드];
@@ -848,6 +869,18 @@ function ssExplode(lines, masters, warnings) {
 
        ★ 자기 자신은 버린다 ★ 세트가 제 코드를 구성품으로 갖고 있으면
          그 줄은 «자기를 또 담는» 셈이라 무조건 더 나간다. */
+    /* ★ 낱개로 시킨 사람만 틀리는 자리 ★
+       이 코드는 다른 세트의 «구성품»인데 스스로도 세트로 등록돼 있다.
+       지금 쪼개면 그 사람이 받는 개수가 주문한 개수와 달라진다. */
+    if (구성품이기도한코드[L.원본코드] && !warnedSubPart[L.원본코드]) {
+      warnedSubPart[L.원본코드] = true;
+      ssWarn(warnings, '오류', 'BOM_SUBPART_SPLIT', L.원본코드,
+        '이 코드는 「' + 구성품이기도한코드[L.원본코드] + '」 의 구성품인데 ' +
+        'BOM 에 «세트»로도 등록돼 있어, 낱개로 주문하면 ' + parts.length +
+        '개로 쪼개집니다. 1개가 ' + parts.length + '개가 됩니다. ' +
+        '낱개로 나가야 하는 물건이면 「분리예외」 탭에 이 코드를 넣으세요.');
+    }
+
     var 모음 = [], 자리 = {}, 겹친수 = 0, 자기참조 = 0;
     for (var k = 0; k < parts.length; k++) {
       var p = parts[k];

@@ -108,6 +108,55 @@ console.log("\n[5] 창고가 집는 종이");
     new Set(r.units.map((u) => u.라인ID)).size, r.units.length);
 }
 
+/* ── [6] ★ 뚜껑만 시킨 사람이 두 개를 받던 것 ★ ───────── */
+/*  > "내가 보기에 뚜껑만이 세트분리되고 또한번 되었어..
+ *  >  그러다보니 1개가 2개가 된거야"
+ *
+ *  세트로 시키면 한 겹만 쪼개니 멀쩡하다(몸통1+뚜껑1).
+ *  낱개로 시키면 뚜껑이 제 이름으로도 BOM 에 있어 또 쪼개진다.
+ *  세트로 시킨 사람은 멀쩡하고 «낱개로 시킨 사람만» 틀린다 —
+ *  그래서 한참 뒤에야 알게 된다.                              */
+console.log("");
+console.log("[6] 구성품이 스스로도 세트인 경우");
+{
+  const 뚜껑A = 뚜껑 + "-A", 뚜껑B = 뚜껑 + "-B";
+  const bom = {
+    [세트]: [{ code: 몸통, qty: 1 }, { code: 뚜껑, qty: 1 }],
+    [뚜껑]: [{ code: 뚜껑A, qty: 1 }, { code: 뚜껑B, qty: 1 }],
+  };
+  const 돌리기 = (원본코드) => {
+    const warnings = [];
+    const units = C.ssExplode(
+      [{ 순번: 1, 원본코드, 원본품목명: "JH 미니사각찜", 주문수량: 1 }],
+      { bom, splitExcept: {}, partnerItems: {} }, warnings);
+    const 합 = {};
+    for (const u of units) 합[u.품목코드] = (합[u.품목코드] || 0) + u.수량;
+    return { 합, warnings };
+  };
+
+  const s1 = 돌리기(세트);
+  eq("세트로 시키면 멀쩡하다 — 몸통 1", s1.합[몸통], 1);
+  eq("  뚜껑도 1 (한 겹만 쪼갠다)", s1.합[뚜껑], 1);
+
+  const s2 = 돌리기(뚜껑);
+  //  쪼개는 것 자체를 막지는 않는다 — 진짜 2단 조립품일 수도 있다
+  const w = s2.warnings.filter((x) => x.code === "BOM_SUBPART_SPLIT");
+  eq("★ 낱개로 시키면 «말한다»", w.length, 1);
+  eq("  등급은 오류", w[0].level, "오류");
+  eq("  1개가 몇 개가 되는지 적는다", w[0].msg.indexOf("1개가 2개가 됩니다") >= 0, true);
+  eq("  어느 세트의 구성품인지 적는다", w[0].msg.indexOf(세트) >= 0, true);
+  eq("  무엇을 하면 되는지 적는다", w[0].msg.indexOf("분리예외") >= 0, true);
+
+  //  ★ 분리예외에 넣으면 조용해지고, 낱개 그대로 나간다 ★
+  const warnings3 = [];
+  const u3 = C.ssExplode(
+    [{ 순번: 1, 원본코드: 뚜껑, 원본품목명: "JH 미니사각찜 뚜껑", 주문수량: 1 }],
+    { bom, splitExcept: { [뚜껑]: true }, partnerItems: {} }, warnings3);
+  eq("★ 분리예외에 넣으면 낱개 그대로", u3.length, 1);
+  eq("  그 코드 그대로", u3[0].품목코드, 뚜껑);
+  eq("  경고도 안 뜬다", warnings3.filter((x) => x.code === "BOM_SUBPART_SPLIT").length, 0);
+}
+
 console.log("");
 console.log(fail ? "FAIL " + fail + "건" : "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);
