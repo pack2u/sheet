@@ -1434,6 +1434,29 @@
     }
     /*  반품비·전화처럼 짧은 것은 가로로 흐른다 — 한 줄씩 쌓이면
         카드만 길어지고 오른쪽은 빈다. 좁아지면 그때 접힌다. */
+    /* ★ 반품송장 — 카드에서 바로 적는다 ★  (2026-09-18)
+       한 줄을 넘지 않게 짠다. 카드가 길어지면 한 화면에 드는 건수가 줄고,
+       그러면 이 화면을 안 쓰게 된다(2026-09-17 에 줄여 놓은 것을 되돌리지 않는다). */
+    .ret-retinv {
+      display: flex; align-items: center; gap: 6px;
+      margin-top: 3px; font-size: 12px; color: #5f6368;
+    }
+    .ret-retinv-lbl { flex: 0 0 auto; color: #80868b; }
+    .ret-retinv-val { font-weight: 600; color: #202124; letter-spacing: .2px; }
+    .ret-retinv-in {
+      flex: 1 1 120px; min-width: 0; max-width: 190px;
+      padding: 3px 7px; font-size: 12px;
+      border: 1px solid #dadce0; border-radius: 6px; background: #fff;
+    }
+    .ret-retinv-in:focus { outline: none; border-color: #1a73e8; background: #fff; }
+    .ret-retinv-save, .ret-retinv-edit {
+      flex: 0 0 auto; padding: 3px 9px; font-size: 11.5px; cursor: pointer;
+      border: 1px solid #dadce0; border-radius: 6px; background: #f8f9fa; color: #3c4043;
+    }
+    .ret-retinv-save { border-color: #1a73e8; background: #1a73e8; color: #fff; }
+    .ret-retinv-save[disabled] { opacity: .55; cursor: default; }
+    .ret-retinv-edit:hover { background: #f1f3f4; }
+
     .ret-metas {
       display: flex; flex-wrap: wrap; align-items: baseline;
       gap: 1px 14px; margin-top: 3px;
@@ -8097,6 +8120,103 @@
       return '<div class="ret-sub">' + bits.join(' · ') + '</div>';
     }
 
+    /* ★ 반품송장 입력란을 카드에 «바로» 둔다 ★  (2026-09-18)
+
+       > "CS웹앱 반품카드에서 반품 송장 입력란이 없네 만들어줘"
+
+       실은 있었다 — 「처리상태 변경」 팝업 안에. 송장을 적으려고 상태 변경
+       창을 열어야 한다는 것을 아무도 모른다. 없는 것과 같다.
+
+       ★ 카드가 길어지지 않게 ★  (2026-09-17 「빈공간들이 자리를 차지해」)
+         · 아직 송장이 없을 때만 칸을 편다 — 그때가 적을 때다
+         · 이미 있으면 값만 보이고 「고침」을 누를 때 칸이 된다
+       ★ 저장하는 길은 하나 ★ 팝업과 같은 updateReturnLedgerStatus 를 쓴다.
+         두 길을 만들면 언젠가 한쪽만 고쳐져 서로 다르게 저장된다. */
+    function retInvInputHtml(idx, c) {
+      var has = String((c && c.returnInvoice) || '').replace(/[^0-9]/g, '').length >= 8;
+      if (has) {
+        return '<div class="ret-retinv" id="ret-retinv-row-' + idx + '">' +
+          '<span class="ret-retinv-lbl">반품송장</span>' +
+          '<span class="ret-retinv-val">' + esc(c.returnInvoice) + '</span>' +
+          '<button type="button" class="ret-retinv-edit"' +
+            ' onclick="event.stopPropagation(); retInvEdit(' + idx + ')">고침</button>' +
+          '</div>';
+      }
+      return retInvFieldHtml(idx, (c && c.returnInvoice) || '');
+    }
+
+    /** 칸 + 저장 단추 — 펴진 모습 */
+    function retInvFieldHtml(idx, val) {
+      return '<div class="ret-retinv" id="ret-retinv-row-' + idx + '">' +
+        '<span class="ret-retinv-lbl">반품송장</span>' +
+        '<input type="text" class="ret-retinv-in" id="ret-inv-in-' + idx + '"' +
+          ' inputmode="numeric" placeholder="수거 송장번호" value="' + esc(val) + '"' +
+          ' onclick="event.stopPropagation()"' +
+          ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();event.stopPropagation();retInvSave(' + idx + ');}">' +
+        '<button type="button" class="ret-retinv-save" id="ret-inv-btn-' + idx + '"' +
+          ' onclick="event.stopPropagation(); retInvSave(' + idx + ')">저장</button>' +
+        '</div>';
+    }
+
+    /** 「고침」 — 값을 칸으로 바꾼다 */
+    function retInvEdit(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      var row = document.getElementById('ret-retinv-row-' + idx);
+      if (!c || !row) return;
+      row.outerHTML = retInvFieldHtml(idx, c.returnInvoice || '');
+      var el = document.getElementById('ret-inv-in-' + idx);
+      if (el) { el.focus(); el.select(); }
+    }
+
+    /** 저장 — 상태는 «건드리지 않고» 반품송장만 보낸다 */
+    function retInvSave(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      if (!c) return;
+      var el = document.getElementById('ret-inv-in-' + idx);
+      var val = el ? String(el.value || '').trim() : '';
+      if (!val) { toast('반품송장을 입력하세요'); return; }
+      if (val.replace(/[^0-9]/g, '').length < 8) {
+        toast('반품송장은 숫자 8자리 이상 입력하세요');
+        return;
+      }
+      var staff = returnStaffName();
+      if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
+
+      var btn = document.getElementById('ret-inv-btn-' + idx);
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+
+      /*  ★ 상태는 지금 것을 그대로 돌려보낸다 ★
+          이 칸은 «송장만» 적는 자리다. 상태를 비워 보내면 서버가 거절하고,
+          엉뚱한 상태를 보내면 카드가 조용히 다른 단계로 넘어간다. */
+      var 지금상태 = String(c.status || '').trim() || '접수';
+      var 꾸러미 = {
+        tab: c.tab, row: c.row,
+        status: 지금상태, staff: staff,
+        returnInvoice: val
+      };
+
+      var 즉시 = retOptimistic(c,
+        function (x) {
+          x.returnInvoice = val;
+          return retPrependEvent(x, 'status', 지금상태 + ' · 반품송장 ' + val, staff);
+        },
+        function (성공, 실패) {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              if (!res || !res.ok) { 실패(String((res && res.error) || '반품송장 저장 실패')); return; }
+              성공();
+            })
+            .withFailureHandler(function (err) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              실패(String((err && err.message) || err));
+            })
+            .updateReturnLedgerStatus(꾸러미);
+        });
+
+      if (즉시) toast('반품송장을 적었습니다');
+    }
+
     function returnCardHtml(c, idx) {
       /* ★ 박스마다 상태를 보여준다 ★  (2026-09-09)
          한 반품에 박스가 둘이면 하나만 접수하고 나머지는 나중에 하는 일이 생긴다.
@@ -8130,6 +8250,7 @@
               (picked ? '<span class="ret-done">회수 접수됨</span>' : '') + '</div>' +
             '<div>' + esc(c.item || '-') + (c.qty ? ' × ' + esc(c.qty) : '') + '</div>' +
             (invLine ? '<div class="ret-meta">' + invLine + '</div>' : '') +
+            retInvInputHtml(idx, c) +
             /* ★ 가로를 쓴다 ★  (2026-09-17)
                반품비와 전화는 짧다. 한 줄씩 차지하면 카드만 길어지고
                오른쪽은 빈다. 나란히 놓고, 좁아지면 그때 접히게 한다. */
