@@ -1584,12 +1584,8 @@
     }
     .ret-share.on  { background: rgba(168, 168, 168,0.16); color: #b5b5b5; }
     .ret-share.off { background: rgba(255,255,255,0.07); color: #919191; }
-    /* 상담 입력창의 내부 전환 */
-    .ret-pop-share {
-      display: flex; align-items: center; gap: 6px; margin-top: 7px;
-      font-size: 11px; color: #a0a0a0; cursor: pointer; user-select: none;
-    }
-    .ret-pop-share input { width: 14px; height: 14px; margin: 0; flex: 0 0 auto; cursor: pointer; }
+    /* .ret-pop-share 는 2026-09-18 에 지웠다 — 「업체에 숨김」 체크상자가 없어졌다.
+       («커뮤니티라 비밀로 할 이유가 없다». 자세한 까닭은 returnComposePopHtml) */
     .ret-more-btn {
       display: block; width: 100%; padding: 12px 10px; margin: 2px 0 10px;
       border: 1px dashed rgba(173, 173, 173,0.5); border-radius: 10px;
@@ -8056,10 +8052,22 @@
            하던 일은 글 앞에 「전화 통화. 」를 붙이는 것뿐이었다.
            (submitReturnCompose 의 phone 갈래는 남겨 둔다 — 짧고,
             나중에 단추를 되살릴 때 그대로 쓴다) */
+        /* ★ 「업체에 숨김」 체크상자를 뺐다 ★  (2026-09-18)
+
+           > "굳이 내부 기능이 없어도되 자리만 차지하는거 같아..
+           >  커뮤니티라 비밀로 할 이유가 없을꺼 같아"
+
+           상담·메모는 협력업체 포털에 그대로 나간다. 그것이 이 자리의 뜻이다 —
+           업체가 같은 화면을 보고 있으면 묻는 일이 준다.
+
+           ★ 「[내부]」를 «읽는» 쪽은 그대로 둔다 ★
+             Partner_WebApp/prpConfig.gs 의 PRP_INTERNAL_MARK_ 는 살아 있다.
+               ① 이미 [내부] 로 적힌 옛 줄이 갑자기 업체에게 보이면 안 된다
+               ② 정말 가려야 할 줄이 생기면 비고에 손으로 「[내부] 」를 붙이면 된다
+             체크상자만 없앤다 — 거르는 자를 없애는 것이 아니다. */
         '<div class="ret-act-pop" id="ret-pop-consult-' + idx + '" data-mode="consult">' +
-          '<div class="pop-label">메모</div>' +
+          '<div class="pop-label">메모 · 업체도 봅니다</div>' +
           '<textarea id="ret-consult-' + idx + '" placeholder="상담·메모 내용…"></textarea>' +
-          shareToggleHtml('consult', idx) +
           '<div class="ret-pop-btns">' +
             '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
             '<button type="button" class="ret-pop-save" id="ret-save-consult-' + idx + '" onclick="submitReturnCompose(' + idx + ',\'consult\')">카드 추가</button>' +
@@ -8079,15 +8087,6 @@
           '</div></div>';
     }
 
-    /**
-     * 상담·통화 기록은 협력업체 포털에 그대로 나간다.
-     * 내부 판단이나 다른 업체 얘기를 적을 때 여기를 체크하면 `[내부]` 가 붙어 빠진다.
-     */
-    function shareToggleHtml(mode, idx) {
-      return '<label class="ret-pop-share">' +
-        '<input type="checkbox" id="ret-int-' + mode + '-' + idx + '">' +
-        '업체에 숨김 (내부 기록)</label>';
-    }
 
     function clearReturnFocus() {
       RETURN_FOCUS_IDX = -1;
@@ -8618,9 +8617,9 @@
       var text = ta ? String(ta.value || '').trim() : '';
       if (!text) { toast('내용을 입력하세요'); return; }
       if (mode === 'phone') text = '전화 통화. ' + text;
-      // 체크하면 앞에 [내부] 를 붙인다 — 협력업체 포털이 이 표시를 보고 걸러낸다
-      var intBox = document.getElementById('ret-int-' + mode + '-' + idx);
-      if (intBox && intBox.checked) text = '[내부] ' + text;
+      /*  「업체에 숨김」 체크상자는 2026-09-18 에 뺐다 — 커뮤니티라 가릴 것이 없다.
+          가려야 할 줄이 생기면 반품대장 비고에 손으로 「[내부] 」를 붙인다.
+          포털은 그 표시를 그대로 걸러 낸다 (prpConfig.PRP_INTERNAL_MARK_). */
       if (btn) btn.disabled = true;
 
       /*  ★ 적은 글이 «누르는 즉시» 이력에 붙는다 ★  실패하면 치우고
