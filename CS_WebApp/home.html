@@ -4293,6 +4293,32 @@
       return (c.read || []).indexOf(me) === -1;
     }
 
+    /**
+     * ★ 변한 것부터 보여 준다 ★  (2026-09-18)
+     *
+     *   > "커뮤니티 보드도 같은 방식으로 변한거부터 보여줘"
+     *
+     * 반품 카드(CS·업체 양쪽)와 «같은 규칙»이다 — 내가 아직 안 읽은 것이
+     * 어느 차례로 보든 맨 위. 고른 차례는 그 «아래»에서 그대로 지켜진다.
+     *
+     * ★ 여기서 「변한 것」은 «내가 안 읽은 것»이다 ★
+     *   반품 쪽은 «팀이 확인했나»라 대장에 적었지만, 보드의 읽음은
+     *   사람마다 다르다. 카드의 read 목록에 내 이름이 있느냐로 가른다
+     *   (hbIsUnread — 이미 있던 자다. 새로 세지 않는다).
+     *
+     * ★ 담당자를 안 고르면 아무것도 안 올린다 ★
+     *   me 가 없으면 hbIsUnread 가 전부 false 다. 그때 억지로 올리면
+     *   온 보드가 켜져서 알림이 아니라 소음이 된다.
+     */
+    function hbFreshFirst(rows, me) {
+      if (!me || !rows || rows.length < 2) return rows;
+      var 안읽음 = [], 읽음 = [];
+      for (var i = 0; i < rows.length; i++) {
+        (hbIsUnread(rows[i], me) ? 안읽음 : 읽음).push(rows[i]);
+      }
+      return 안읽음.length ? 안읽음.concat(읽음) : rows;
+    }
+
     function toggleHbUnread() {
       HB_UNREAD = !HB_UNREAD;
       hbRenderBoards();
@@ -4347,7 +4373,7 @@
         if (HB_UNREAD && !hbIsUnread(c, me)) { HB_UNREAD_HIDDEN++; continue; }
         out.push(c);
       }
-      return out;
+      return hbFreshFirst(out, me);
     }
 
     function renderHandoffBoard() {
@@ -11630,6 +11656,8 @@
         if (HB_UNREAD && !hbIsUnread(all[i], me)) { lbUnreadHidden++; continue; }
         rows.push(all[i]);
       }
+      //  물류 보드도 CS 보드와 같은 규칙 — 안 읽은 것이 맨 위 (2026-09-18)
+      rows = hbFreshFirst(rows, me);
       var bar = (HB_MINE ? hbMineBar(LB_MINE_HIDDEN) : '') +
                 (HB_UNREAD ? hbUnreadBar(lbUnreadHidden) : '');
       if (!rows.length) {
