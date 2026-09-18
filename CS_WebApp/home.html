@@ -1437,25 +1437,45 @@
     /* ★ 반품송장 — 카드에서 바로 적는다 ★  (2026-09-18)
        한 줄을 넘지 않게 짠다. 카드가 길어지면 한 화면에 드는 건수가 줄고,
        그러면 이 화면을 안 쓰게 된다(2026-09-17 에 줄여 놓은 것을 되돌리지 않는다). */
+    /* ★ 색을 고정값으로 박지 않는다 ★  (2026-09-18 — 처음에 그렇게 했다가 깨졌다)
+       > "폰트가 입력란의 칼라가 화이트라 입력해도 안보이고...
+       >  입력후엔 블랙이라 어두운 배경에서 거의 안보여"
+       흰 칸에 글자색을 안 주면 어두운 테마의 흰 글자를 물려받아
+       흰 바탕에 흰 글자가 된다. 값도 #202124 로 박아 두면 어두운 카드에서
+       까만 글자가 된다. 두 테마가 이미 변수로 갈려 있다 — 그것을 쓴다. */
     .ret-retinv {
       display: flex; align-items: center; gap: 6px;
-      margin-top: 3px; font-size: 12px; color: #5f6368;
+      margin-top: 3px; font-size: 12px; color: var(--text-secondary);
     }
-    .ret-retinv-lbl { flex: 0 0 auto; color: #80868b; }
-    .ret-retinv-val { font-weight: 600; color: #202124; letter-spacing: .2px; }
+    .ret-retinv-lbl { flex: 0 0 auto; color: var(--text-muted); }
+    .ret-retinv-val {
+      font-weight: 600; color: var(--text-bright); letter-spacing: .2px;
+      /* 송장은 길다 — 좁아지면 줄이 밀리지 않게 줄여서 보여 준다 */
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     .ret-retinv-in {
       flex: 1 1 120px; min-width: 0; max-width: 190px;
       padding: 3px 7px; font-size: 12px;
-      border: 1px solid #dadce0; border-radius: 6px; background: #fff;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--bg-secondary); color: var(--text-primary);
     }
-    .ret-retinv-in:focus { outline: none; border-color: #1a73e8; background: #fff; }
+    .ret-retinv-in::placeholder { color: var(--text-muted); }
+    .ret-retinv-in:focus {
+      outline: none; border-color: var(--accent-green);
+      box-shadow: 0 0 0 2px var(--accent-green-glow);
+    }
     .ret-retinv-save, .ret-retinv-edit {
       flex: 0 0 auto; padding: 3px 9px; font-size: 11.5px; cursor: pointer;
-      border: 1px solid #dadce0; border-radius: 6px; background: #f8f9fa; color: #3c4043;
+      white-space: nowrap;   /* 「고침」이 「침」으로 잘리던 것 */
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--bg-card-hover); color: var(--text-primary);
     }
-    .ret-retinv-save { border-color: #1a73e8; background: #1a73e8; color: #fff; }
+    .ret-retinv-save {
+      border-color: transparent; background: var(--accent-green); color: #fff;
+      font-weight: 600;
+    }
     .ret-retinv-save[disabled] { opacity: .55; cursor: default; }
-    .ret-retinv-edit:hover { background: #f1f3f4; }
+    .ret-retinv-edit:hover { background: var(--bg-secondary); }
 
     .ret-metas {
       display: flex; flex-wrap: wrap; align-items: baseline;
