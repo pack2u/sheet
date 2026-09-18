@@ -1433,6 +1433,13 @@
     }
     /*  반품비·전화처럼 짧은 것은 가로로 흐른다 — 한 줄씩 쌓이면
         카드만 길어지고 오른쪽은 빈다. 좁아지면 그때 접힌다. */
+    /* 반품사유 — 품목 바로 밑. 눈에 걸리되 품목을 가리지 않게 (2026-09-18) */
+    .ret-reason {
+      margin-top: 2px; font-size: 12px; color: var(--accent-orange);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .ret-card.ret-focus .ret-reason { white-space: normal; }
+
     /* ★ 반품송장 — 카드에서 바로 적는다 ★  (2026-09-18)
        한 줄을 넘지 않게 짠다. 카드가 길어지면 한 화면에 드는 건수가 줄고,
        그러면 이 화면을 안 쓰게 된다(2026-09-17 에 줄여 놓은 것을 되돌리지 않는다). */
@@ -8018,6 +8025,29 @@
       return c.timeline.filter(function(ev) { return ev.kind !== 'meta'; });
     }
 
+    /**
+     * ★ 반품사유 ★  (2026-09-18)
+     *
+     *   > "반품대장의 l열에 반품사유가 있는데 그게 나타나야할꺼 같아.."
+     *
+     * 대장 L열에 적혀 있었는데 어느 화면에도 안 나왔다. 읽는 자
+     * (_cs_mapReturnLedgerCols_) 에서 K열이 먼저 type 자리를 채우고 나면
+     * else-if 라 L열이 통째로 버려졌다 — 조용히.
+     *
+     * 「구분(유형)」과 「사유」는 다른 것이다 —
+     *   구분 : 재출고 · 단순 · 오배송      … 우리가 «어떻게 처리하나»
+     *   사유 : 뚜껑 깨짐 · 사이즈 다름      … 고객이 «왜 보냈나»
+     * 상담에서 먼저 묻는 것은 «왜»다. 그래서 카드에 낸다.
+     * 다만 둘이 같은 말이면 두 번 적지 않는다.
+     */
+    function retReasonOf(c) {
+      var r = String((c && c.reason) || '').trim();
+      if (!r) return '';
+      var t = String((c && c.type) || '').trim();
+      if (t && r === t) return '';
+      return r;
+    }
+
     /* 카드가 든 번호 둘 중 «실번호»만 꺼낸다.
        주가 실번호면 main, 아니면 「추가」 딱지가 붙은 sub 가 그것이다.
        (csOrderSearch _cs_pickPhones_ 가 세운 순서) */
@@ -8277,6 +8307,10 @@
               statusBadge +
               (picked ? '<span class="ret-done">회수 접수됨</span>' : '') + '</div>' +
             '<div>' + esc(c.item || '-') + (c.qty ? ' × ' + esc(c.qty) : '') + '</div>' +
+            /* ★ 왜 보냈는지를 품목 바로 밑에 ★  (2026-09-18)
+               상담에서 첫 물음이 「왜 반품이세요」다. 대장에 적혀 있는데
+               화면에 없으면 사람이 시트를 다시 연다. */
+            (retReasonOf(c) ? '<div class="ret-reason">' + esc(retReasonOf(c)) + '</div>' : '') +
             (invLine ? '<div class="ret-meta">' + invLine + '</div>' : '') +
             retInvInputHtml(idx, c) +
             /* ★ 가로를 쓴다 ★  (2026-09-17)
@@ -9289,6 +9323,8 @@
         retCaseRowHtml(c.phoneSubTag === '안심' ? '안심번호' : '주문서 번호', c.phoneSub) +
         retCaseRowHtml('업체', c.vendor) +
         retCaseRowHtml('유형', c.type) +
+        /*  사유가 유형과 같은 말이면 두 번 적지 않는다 (2026-09-18) */
+        retCaseRowHtml('사유', retReasonOf(c)) +
         retCaseRowHtml('반품비', /^[0₩,.\s원]*$/.test(String(c.fee || '')) ? '' : c.fee) +
         retCaseRowHtml('담당', c.staff) +
         '<div class="os-actions"><button class="os-reply" type="button" ' +

@@ -22,6 +22,7 @@ function prpBootstrap(sid) {
     version: PRP_VERSION,
     types: PRP_RETURN_TYPES,
     pickups: PRP_PICKUP_OPTS,
+    pickupDefault: PRP_PICKUP_DEFAULT,   // 2026-09-18 — 처음 골라져 있을 것
     defaultDays: PRP_DEFAULT_DAYS,
     photoMax: PRP_PHOTO_MAX
   };

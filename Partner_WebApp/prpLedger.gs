@@ -41,7 +41,11 @@ function prpMapCols_(header) {
   var col = {
     date: -1, staff: -1, vendor: -1, name: -1, phone: -1, phone2: -1, phone2Name: -1,
     pickup: -1, item: -1, qty: -1, invoice: -1, type: -1, fee: -1, status: -1, notice: -1,
-    returnInvoice: -1
+    returnInvoice: -1,
+    /* 반품사유 — 대장 L열. type(K열 구분)과 «다른» 칸이다.
+       CS_WebApp/csOrderSearch.gs 의 같은 표와 «쌍»이다.
+       한쪽만 고치면 또 어긋난다 — 아래 type 주석이 겪은 그 일이다. */
+    reason: -1
   };
   for (var i = 0; i < header.length; i++) {
     var h = String(header[i] || "").replace(/\s/g, "");
@@ -104,6 +108,16 @@ function prpMapCols_(header) {
        안 걸렸다. 접수창에서 고른 「단순반품」이 조용히 버려지고 있었다.
        CS_WebApp/csOrderSearch.gs 는 9/4 에 이미 고쳤는데 여기만 안 고쳐졌다 —
        같은 규칙이 두 파일에 따로 적혀 있어서 그렇다. **쌍으로 고친다.** */
+    /* ★ 반품사유(L열)를 «따로» 읽는다 ★  (2026-09-18)
+       > "업체 반품 현황에도 같이 적용해줘"
+
+       아래 type 정규식에 「반품사유」가 들어 있지만, K열이 먼저 type 을
+       채우고 나면 else-if 라 L열이 통째로 버려진다. 그래서 대장에 적힌
+       사유가 CS 화면에도 업체 화면에도 안 나왔다 — 조용히.
+
+       ★ type 보다 «앞»에 둔다 ★ 뒤에 두면 또 같은 일이 난다.
+       ★ CS웹앱과 «같은 규칙»이다 — 쌍으로 고친다 ★ */
+    else if (col.reason < 0 && /^반품사유$|^사유$|반품이유|교환반품사유/.test(h)) col.reason = i;
     else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유|재출고|오주문입력/.test(h)) col.type = i;
     /* 2026-09-09: 「환불비용」을 더한다. 9월 탭 머리글이 「반품/환불비용」인데
        가운데 「/」 때문에 「반품비」로 안 걸렸다. CS 웹앱은 9/4 에 이미 넣었고
@@ -442,6 +456,9 @@ function prpReadTabCases_(tab, tabName, cutoffYmd, sess) {
       returnInvoice: (col.returnInvoice >= 0 ? String(row[col.returnInvoice] || "").trim() : "") ||
         prpParseReturnInvFromNotice_(notice),
       type: typeVal,
+      /*  구분(type)은 «어떻게 처리하나», 사유(reason)는 «왜 보냈나».
+          업체도 자기 건이 왜 반품인지 알아야 다음에 안 그런다. */
+      reason: col.reason >= 0 ? String(row[col.reason] || "").trim() : "",
       status: status || "접수",
       pickup: col.pickup >= 0 ? String(row[col.pickup] || "").trim() : "",
       fee: col.fee >= 0 ? prpFormatFee_(row[col.fee]) : "",

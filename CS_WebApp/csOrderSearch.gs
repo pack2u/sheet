@@ -2405,6 +2405,9 @@ function _cs_mapReturnLedgerCols_(header) {
   var col = {
     date: -1, staff: -1, vendor: -1, name: -1, phone: -1, phone2: -1, phone2Name: -1,
     pickup: -1, item: -1, qty: -1, invoice: -1, type: -1, fee: -1, status: -1, notice: -1,
+    /* 반품사유 — 대장 L열. type(K열 구분)과 «다른» 칸이다.
+       2026-09-18 까지 else-if 에 가려 한 번도 안 읽혔다. */
+    reason: -1,
     // 반품송장번호 — 대장 맨 끝에 추가한 열. 없으면 -1 이고 N열 비고 파싱으로 폴백한다.
     returnInvoice: -1,
     /* 환불계좌 — 아직 대장에 없는 열이다 (2026-09-08).
@@ -2452,6 +2455,18 @@ function _cs_mapReturnLedgerCols_(header) {
     else if (col.invoice < 0 && /원송장|송장번호/.test(h) && !/회수|재발송|반품송장/.test(h)) col.invoice = i;
     else if (col.returnInvoice < 0 && /반품송장|회수송장/.test(h)) col.returnInvoice = i;
     else if (col.account < 0 && /환불계좌|입금계좌|계좌번호|^계좌$/.test(h)) col.account = i;
+    /* ★ 반품사유(L열)를 «따로» 읽는다 ★  (2026-09-18)
+       > "반품대장의 l열에 반품사유가 있는데 그게 나타나야할꺼 같아.."
+
+       아래 type 정규식에 이미 「반품사유」가 들어 있었다. 그런데 K열
+       (「재출고/단순/오주문입력/오배송」)이 먼저 type 을 채우고 나면
+       else-if 라 L열은 «아무 데도» 안 들어갔다. 그래서 대장에 적힌
+       사유가 어느 화면에도 안 나왔다 — 조용히.
+
+       ★ type 보다 «앞»에 둔다 ★ 뒤에 두면 또 같은 일이 난다.
+       ★ 좁게 잡는다 ★ /사유/ 만 보면 「취소반품사유」 같은 다른 칸까지
+         빨아들인다. 반품 쪽 사유만 집는다. */
+    else if (col.reason < 0 && /^반품사유$|^사유$|반품이유|교환반품사유/.test(h)) col.reason = i;
     // 2026-09-04: 실제 헤더 문구를 넣는다.
     //   시트는 「재출고/단순/오주문입력/오배송」이라고 적혀 있는데 정규식에 없어서
     //   지금껏 K열 위치 폴백으로만 맞고 있었다. 9월에 열이 한 칸 밀리자 바로 깨졌다.
@@ -3242,6 +3257,11 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
       returnInvDigits: retDigits,
       returnInvFromCol: !!returnInvCell,
       type: typeVal,
+      /* ★ 사유는 «구분»과 다르다 ★  (2026-09-18)
+         구분(type) 은 「재출고/단순/오배송」처럼 처리하는 갈래고,
+         사유(reason) 는 「뚜껑 깨짐」처럼 왜 반품인지다. 상담에서
+         먼저 묻는 것은 «왜»다. 같으면 카드가 한 번만 보여 준다. */
+      reason: col.reason >= 0 ? String(row[col.reason] || "").trim() : "",
       status: status,
       doneFlag: doneFlag,
       notice: notice,
@@ -3467,6 +3487,7 @@ function csGetReturnLedgerBadgeIndex(opt) {
         staff: r.staff,
         vendor: r.vendor,
         type: r.type,
+        reason: r.reason,   // 2026-09-18 — 여기 안 실으면 카드까지 못 간다
         fee: r.fee
       });
     }
