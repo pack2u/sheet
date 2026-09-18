@@ -2762,7 +2762,18 @@ function _cs_parseReturnTimeline_(notice, status, staff, date, type) {
   for (var i = 0; i < lines.length; i++) {
     var ln = String(lines[i] || "").trim();
     if (!ln) continue;
-    if (/^반품송장\s*[:：]|^회수송장\s*[:：]/.test(ln)) {
+    /* ★ CS확인 표시도 meta 다 ★  (2026-09-18)
+       > "업체에서 등록하면.. cs들이 확인을 못할수 있으니까..
+       >  반품카드 최상단에 위치해서 하이라이트.. cs에서 확인하면 꺼지게"
+
+       확인했다는 것을 어딘가 적어야 팀이 같이 안다(브라우저에만 담으면
+       사람마다 따로 논다). 그런데 이력에 보이면 카드마다 군더더기가 된다.
+       그래서 «대괄호 없는» 한 줄로 적는다 —
+         · CS 화면 : 여기서 meta 로 걸러 안 보인다
+         · 업체 포털 : 대괄호 형식이 아니면 아예 안 내보낸다
+                      (prpLedger.prpPublicTimeline_ 의 `if (!m) continue;`)
+       반품송장 줄이 걸어온 길과 같다. */
+    if (/^반품송장\s*[:：]|^회수송장\s*[:：]|^CS확인\s*[:：]/.test(ln)) {
       events.push({ kind: "meta", text: ln, sortKey: "100000000000" });
       continue;
     }
@@ -3262,6 +3273,11 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
          사유(reason) 는 「뚜껑 깨짐」처럼 왜 반품인지다. 상담에서
          먼저 묻는 것은 «왜»다. 같으면 카드가 한 번만 보여 준다. */
       reason: col.reason >= 0 ? String(row[col.reason] || "").trim() : "",
+      /* ★ 업체가 새로 올린 건데 CS 가 아직 안 본 것 ★  (2026-09-18)
+         이 값 하나로 화면이 «맨 위 + 하이라이트»를 정한다.
+         판정은 _cs_needsCsCheck_ 한 곳에서만 한다 — 두 곳에서 따로
+         세면 화면과 숫자가 어긋난다. */
+      needsCheck: _cs_needsCsCheck_(staffVal, notice, status),
       status: status,
       doneFlag: doneFlag,
       notice: notice,
@@ -3488,6 +3504,7 @@ function csGetReturnLedgerBadgeIndex(opt) {
         vendor: r.vendor,
         type: r.type,
         reason: r.reason,   // 2026-09-18 — 여기 안 실으면 카드까지 못 간다
+        needsCheck: r.needsCheck,
         fee: r.fee
       });
     }
@@ -3894,4 +3911,111 @@ function csListDailyFiles() {
 
   Logger.log(JSON.stringify(out, null, 2));
   return out;
+}
+
+/* ══════════════════════════════════════════════════════════════
+ *  업체가 새로 올린 반품을 CS 가 놓치지 않게   (2026-09-18)
+ *
+ *   > "반품 접수가 새로 업체에서 등록하면.. cs들이 확인을 못할수 있으니까..
+ *   >  반품카드 최상단에 위치해서 하이라이트 효과가 들어간다던지..
+ *   >  cs에서 확인하면 꺼지게.."
+ * ══════════════════════════════════════════════════════════════ */
+
+/** 업체가 올린 것인가 — 접수자가 「업체:…」 로 시작한다 (포털 PRP_STAFF_PREFIX) */
+function _cs_filedByVendor_(staff) {
+  return String(staff || "").trim().indexOf("업체:") === 0;
+}
+
+/**
+ * CS 가 확인했다고 적어 둔 표시가 있는가.
+ *
+ * ★ 두 모양을 다 받는다 ★
+ *   ① [260918 14:20 홍길동] CS 확인 …   ← 지금 쓰는 것. 업체에게도 보인다.
+ *   ② CS확인: 260918 14:20 홍길동        ← 2026-09-18 잠깐 쓴 옛 모양.
+ *      업체에게 «안» 보이게 하려던 것인데, 사장님이 보이게 해 달라 하셨다.
+ *      이미 적힌 줄이 있을 수 있으니 계속 읽는다 — 읽는 것은 공짜다.
+ */
+function _cs_hasCheckMark_(notice) {
+  var lines = String(notice || "").split(/\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var ln = String(lines[i] || "").trim();
+    if (!ln) continue;
+    if (/^CS확인\s*[:：]/.test(ln)) return true;              // 옛 모양
+    var m = ln.match(/^\[\d{6}\s+\d{1,2}:\d{2}\s+[^\]]+\]\s*(.*)$/);
+    if (m && /^CS\s*확인/.test(String(m[1] || "").trim())) return true;
+  }
+  return false;
+}
+
+/**
+ * 이 줄이 «CS 가 아직 안 본 새 접수»인가.
+ *
+ * ★ 옛 건이 한꺼번에 켜지지 않게 한다 ★
+ *   표시만으로 가리면, 이 기능을 넣는 순간 지난 업체 접수가 전부
+ *   빨갛게 켜진다. 그건 알림이 아니라 소음이다.
+ *   그래서 «CS 가 이미 손댄 자취»가 있으면 본 것으로 친다 —
+ *     · 상태가 「접수」에서 움직였다        (CS 가 바꾼 것이다)
+ *     · 비고에 CS 이름으로 된 줄이 있다      (메모·사진·상태 기록)
+ *   업체가 쓴 줄(「업체:」)은 자취로 치지 않는다 — 그건 업체가 한 것이다.
+ */
+function _cs_needsCsCheck_(staff, notice, status) {
+  if (!_cs_filedByVendor_(staff)) return false;
+  if (_cs_hasCheckMark_(notice)) return false;
+
+  var st = String(status || "").trim();
+  if (st && st !== "접수") return false;
+
+  var lines = String(notice || "").split(/\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var m = String(lines[i] || "").trim()
+      .match(/^\[(\d{6})\s+(\d{1,2}:\d{2})\s+([^\]]+)\]/);
+    if (!m) continue;
+    if (String(m[3] || "").trim().indexOf("업체:") === 0) continue;  // 업체가 쓴 줄
+    return false;   // CS 가 손댄 자취가 있다
+  }
+  return true;
+}
+
+/**
+ * 「확인했습니다」를 적는다 — 그 카드의 하이라이트가 꺼진다.
+ *
+ * ★ 브라우저에 담지 않는다 ★ 담으면 사람마다 따로 놀아서, 한 사람이
+ *   본 것을 다른 사람은 계속 새 것으로 본다. 대장에 적어 팀이 같이 안다.
+ *
+ * ★ 업체에게도 보인다 ★  (2026-09-18 — 처음엔 숨겼다가 바꿨다)
+ *   > "확인을 누르면 업체에서도 확인이 보이게.."
+ *   업체는 올려 놓고 «봤나 안 봤나»를 모른다. 그래서 전화가 온다.
+ *   보이게 하는 것이 서로 일을 던다.
+ *   그래서 «대괄호 형식»으로 적는다 — 포털이 그 형식만 내보낸다.
+ *   ★ 표시가 곧 이력이다 ★ 숨김용 줄을 따로 두고 보이는 줄을 또 적으면
+ *     한 사실에 주인이 둘이 된다. 한 줄로 둘 다 한다.
+ */
+function markReturnChecked(payload) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  payload = payload || {};
+  var tabName = String(payload.tab || "").trim();
+  var rowNum = parseInt(payload.row, 10);
+  var staff = String(payload.staff || "").trim();
+  if (!tabName || !(rowNum > 0)) return { ok: false, error: "탭·행이 필요합니다." };
+  if (!staff) return { ok: false, error: "담당자를 먼저 선택하세요." };
+
+  try {
+    var ctx = _cs_openReturnLedgerRow_(tabName, rowNum);
+    if (ctx.col.notice < 0) return { ok: false, error: "비고 열을 찾지 못했습니다." };
+
+    var notice = String(ctx.row[ctx.col.notice] || "");
+    if (_cs_hasCheckMark_(notice)) {
+      return { ok: true, already: true };   // 다른 사람이 먼저 봤다 — 탈이 아니다
+    }
+    var 이제 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyMMdd HH:mm");
+    /*  다른 이력과 «같은 모양»으로 적는다 — [날짜 시각 담당자] 글.
+        그래야 포털이 내보내고, CS 이력에도 한 줄로 얌전히 선다. */
+    var 본문 = "CS 확인 — 접수 내용을 확인했습니다";
+    var 줄 = "[" + 이제 + " " + staff + "] " + 본문;
+    var 새비고 = notice ? (notice.replace(/\s+$/, "") + "\n" + 줄) : 줄;
+    ctx.tab.getRange(rowNum, ctx.col.notice + 1).setValue(새비고);
+    return { ok: true, at: 이제, staff: staff, text: 본문 };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
 }

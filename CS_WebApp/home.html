@@ -1433,6 +1433,33 @@
     }
     /*  반품비·전화처럼 짧은 것은 가로로 흐른다 — 한 줄씩 쌓이면
         카드만 길어지고 오른쪽은 빈다. 좁아지면 그때 접힌다. */
+    /* ★ 업체가 새로 올린 카드 ★  (2026-09-18)
+       눈에 걸려야 하되, 화면이 시끄러우면 그것대로 안 본다.
+       테두리 한 줄과 띠 하나까지만. 깜빡임은 안 쓴다 — 오래 켜져 있는
+       것이 깜빡이면 사람이 화면을 피하게 된다. */
+    .ret-card.ret-new {
+      border-color: var(--accent-orange);
+      box-shadow: 0 0 0 1px var(--accent-orange-glow);
+    }
+    .ret-new-bar {
+      display: flex; align-items: center; gap: 7px;
+      margin: -2px 0 7px; padding: 5px 9px; border-radius: 8px;
+      background: var(--accent-orange-glow); color: var(--accent-orange);
+      font-size: 12px; font-weight: 600;
+    }
+    .ret-new-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
+      background: var(--accent-orange);
+    }
+    .ret-new-bar > span:nth-of-type(1) ~ span { min-width: 0; }
+    .ret-new-ok {
+      margin-left: auto; flex: 0 0 auto; white-space: nowrap;
+      padding: 3px 11px; font-size: 11.5px; font-weight: 700; cursor: pointer;
+      border: 0; border-radius: 6px;
+      background: var(--accent-orange); color: #fff;
+    }
+    .ret-new-ok[disabled] { opacity: .55; cursor: default; }
+
     /* 반품사유 — 품목 바로 밑. 눈에 걸리되 품목을 가리지 않게 (2026-09-18) */
     .ret-reason {
       margin-top: 2px; font-size: 12px; color: var(--accent-orange);
@@ -8026,6 +8053,46 @@
     }
 
     /**
+     * 「확인했습니다」 — 띠를 끄고 대장에 적는다.  (2026-09-18)
+     *
+     * ★ 브라우저에만 담지 않는다 ★ 담으면 사람마다 따로 놀아서,
+     *   한 사람이 본 것을 다른 사람은 계속 새 것으로 본다.
+     * 누르는 즉시 꺼지고, 실패하면 되돌리며 왜 그런지 말한다.
+     */
+    function retMarkChecked(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      if (!c) return;
+      var staff = returnStaffName();
+      if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
+      var btn = document.getElementById('ret-new-ok-' + idx);
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+
+      var 즉시 = retOptimistic(c,
+        function (x) {
+          x.needsCheck = false;
+          /*  업체에게도 보이는 이력이다 — 누르는 즉시 우리 화면에도 선다.
+              (서버가 적는 글과 같은 말이어야 새로고침해도 안 바뀐다) */
+          return retPrependEvent(x, 'consult', 'CS 확인 — 접수 내용을 확인했습니다', staff);
+        },
+        function (성공, 실패) {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (btn) { btn.disabled = false; btn.textContent = '확인'; }
+              if (!res || !res.ok) { 실패(String((res && res.error) || '확인 표시 실패')); return; }
+              성공();
+            })
+            .withFailureHandler(function (err) {
+              if (btn) { btn.disabled = false; btn.textContent = '확인'; }
+              실패(String((err && err.message) || err));
+            })
+            .markReturnChecked({ tab: c.tab, row: c.row, staff: staff });
+        });
+
+      //  띠가 사라지면 차례도 바뀐다 — 목록을 다시 그린다
+      if (즉시) renderReturnActiveList();
+    }
+
+    /**
      * ★ 반품사유 ★  (2026-09-18)
      *
      *   > "반품대장의 l열에 반품사유가 있는데 그게 나타나야할꺼 같아.."
@@ -8298,8 +8365,23 @@
           따로 세면 언젠가 어긋나 빈 칸이 다시 생긴다. */
       var tlHtml = renderReturnTimeline(c.timeline, idx);
       return '<div class="ret-card' + (tlHtml ? '' : ' ret-noproc') +
+        (c.needsCheck ? ' ret-new' : '') +
         '" id="ret-card-' + idx + '" onclick="onReturnCardTap(' + idx + ', event)">' +
         '<div class="ret-focus-badge">집중 보기 · 다시 탭하면 접기</div>' +
+        /* ★ 업체가 새로 올린 것 ★  (2026-09-18)
+           > "cs들이 확인을 못할수 있으니까"
+           «확인» 을 누르면 대장에 적히고 이 띠가 꺼진다 — 팀이 같이 안다.
+           누르는 것 말고 상태를 바꾸거나 메모를 달아도 꺼진다
+           (판정은 서버 _cs_needsCsCheck_ 한 곳에서 한다). */
+        (c.needsCheck
+          ? '<div class="ret-new-bar">' +
+              '<span class="ret-new-dot"></span>' +
+              '<span>업체가 새로 올렸습니다' +
+                (c.vendor ? ' · ' + esc(c.vendor) : '') + '</span>' +
+              '<button type="button" class="ret-new-ok" id="ret-new-ok-' + idx + '"' +
+                ' onclick="event.stopPropagation(); retMarkChecked(' + idx + ')">확인</button>' +
+            '</div>'
+          : '') +
         '<div class="ret-body">' +
           '<div class="ret-left">' +
             '<div class="rn">' + retVendorIconHtml(c.vendor) +
@@ -9426,6 +9508,18 @@
     function sortReturnRows(rows) {
       var key = function(c) { return String((c && c.sortKey) || ''); };
       var out = rows.slice();
+      /* ★ 업체가 새로 올린 것은 «어느 차례로 보든» 맨 위 ★  (2026-09-18)
+         > "cs들이 확인을 못할수 있으니까.. 반품카드 최상단에 위치해서"
+         차례를 바꿔 놓고 일하다 새 접수를 놓치면 이 기능이 있으나 마나다.
+         고른 차례는 그 «아래»에서 그대로 지켜진다. */
+      var 새것 = [], 나머지 = [];
+      for (var n = 0; n < out.length; n++) {
+        (out[n] && out[n].needsCheck ? 새것 : 나머지).push(out[n]);
+      }
+      if (새것.length) {
+        새것.sort(function(a, b) { return key(b).localeCompare(key(a)); });
+        out = 나머지;
+      }
       if (RETURN_SORT === 'old') {
         out.sort(function(a, b) { return key(a).localeCompare(key(b)); });
       } else if (RETURN_SORT === 'vendor') {
@@ -9447,7 +9541,7 @@
       } else {
         out.sort(function(a, b) { return key(b).localeCompare(key(a)); });
       }
-      return out;
+      return 새것.length ? 새것.concat(out) : out;
     }
 
     function filterReturnRows(all, q) {
