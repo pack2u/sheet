@@ -2082,6 +2082,19 @@ function ssRun(grid, masters, cfg) {
   ssAssignCondition(units, masters, cfg);
   ssAllocateStock(units, masters);
   ssRoute(units, masters, cfg, warnings);
+
+  /* ★ 나가기 전에 한 번 더 본다 ★  (2026-09-18)
+     > "다시는 이런일이 발생하지 않게 수정해줘"
+
+     원인마다 막는 것으로는 모자란다 — 2026-09-17 사고에서 나는
+     원인을 두 번 잘못 짚었다. 그래서 «결과»를 본다.
+     한 주문줄에서 나온 구성품이 겹치거나 BOM 에 없는 것이면 멈춘다.
+
+     ★ 자리는 라우팅 «뒤», 합포장 «앞» ★
+       뒤여야 보류로 세운 것이 경로에 반영되고,
+       앞이어야 잘못된 줄이 합포장에 빨려 들지 않는다. */
+  ssVerifySplit(units, masters, warnings);
+
   for (var i = 0; i < units.length; i++) ssShippingFee(units[i], masters, warnings);
   ssMerge(units, cfg);
 
@@ -2505,6 +2518,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssAssignCondition: ssAssignCondition, ssAllocateStock: ssAllocateStock,
     ssRoute: ssRoute, ssMerge: ssMerge, ssShippingFee: ssShippingFee,
     ssApplyManualEdits: ssApplyManualEdits,
+    ssVerifySplit: ssVerifySplit,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
     ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
@@ -2518,4 +2532,83 @@ if (typeof module !== 'undefined' && module.exports) {
     SS_PARTNER_HEADER: SS_PARTNER_HEADER, SS_MANUAL_HEADER: SS_MANUAL_HEADER, SS_VENDOR_HEADER: SS_VENDOR_HEADER, ssLedgerRow: ssLedgerRow, ssDisplayName: ssDisplayName,
     ssStripName: ssStripName, ssNormAddr: ssNormAddr, ssPad6: ssPad6
   };
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 나가기 직전 검문 — 주문한 것과 나가는 것이 같은가 ★
+ *  (2026-09-18)
+ *
+ *   > "다시는 이런일이 발생하지 않게 수정해줘"
+ *
+ *  2026-09-17 에 몸통이 뚜껑으로 바뀌어 나갔다. 원인은 수동조치였지만,
+ *  그 전에 나는 BOM 겹침이라 짚었다가 틀렸고, 뚜껑이 세트로 등록된 것이라
+ *  짚었다가 또 틀렸다. 세 번째 길이 없다는 보장이 없다.
+ *
+ *  그래서 «원인마다» 막지 않고 «결과»를 본다.
+ *  한 주문줄(순번)에서 나온 구성품들이 —
+ *    ① 서로 겹치지 않는가      (몸통이 뚜껑이 되면 뚜껑이 둘이 된다)
+ *    ② BOM 에 있는 것들인가     (엉뚱한 코드로 바뀌지 않았는가)
+ *  둘 중 하나라도 어긋나면 그 줄들을 «보류»로 세운다.
+ *
+ *  ★ 왜 보류인가 ★ 경고만 하면 그대로 나간다. 사람은 경고 탭을
+ *    나중에 본다. 잘못 나간 물건은 되돌아오지 않는다 — 멈추는 게 싸다.
+ *
+ *  ★ 안 막는 것 ★
+ *    · 구성품이 «모자란» 것은 막지 않는다 — 재고부족으로 몸통만 보류되고
+ *      뚜껑만 나가는 것은 정상이다.
+ *    · 사람이 일부러 고친 코드(수정코드)는 BOM 에 없어도 된다.
+ *      다만 그런 줄도 «겹치면» 막는다. 겹침은 어떤 경우에도 탈이다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function ssVerifySplit(units, masters, warnings) {
+  var bom = (masters && masters.bom) || {};
+  var 묶음 = {};
+  for (var i = 0; i < units.length; i++) {
+    var u = units[i];
+    if (!u.세트분해) continue;            // 쪼개지 않은 줄은 견줄 것이 없다
+    var key = ssText(u.순번) + '|' + ssText(u.원본코드);
+    (묶음[key] || (묶음[key] = [])).push(u);
+  }
+
+  var 막은건수 = 0;
+  for (var k in 묶음) {
+    if (!Object.prototype.hasOwnProperty.call(묶음, k)) continue;
+    var 줄들 = 묶음[k];
+    var 원본 = ssText(줄들[0].원본코드);
+    var parts = bom[원본] || [];
+    var 허용 = {};
+    for (var p = 0; p < parts.length; p++) 허용[ssText(parts[p].code).toUpperCase()] = true;
+
+    var 본것 = {}, 탈 = '';
+    for (var j = 0; j < 줄들.length; j++) {
+      var code = ssText(줄들[j].품목코드).toUpperCase();
+      if (본것[code]) {
+        탈 = '같은 구성품이 두 줄입니다 (' + code + ')';
+        break;
+      }
+      본것[code] = true;
+      if (!줄들[j].수정코드 && parts.length && !허용[code]) {
+        탈 = 'BOM 에 없는 구성품입니다 (' + code + ')';
+        break;
+      }
+    }
+    if (!탈) continue;
+
+    /*  ★ 멈춘다 ★ 이 주문의 구성품 줄 전부를 보류로 세운다.
+        한 줄만 세우면 반쪽이 나가서 더 나쁘다. */
+    for (var m = 0; m < 줄들.length; m++) {
+      줄들[m].route = SS_ROUTE.HOLD;
+      줄들[m].보류사유 = '구성품어긋남';
+      줄들[m].보류상세 = 탈;
+      막은건수++;
+    }
+    ssWarn(warnings, '오류', 'SPLIT_MISMATCH',
+      ssText(줄들[0].고유ID) + ' / ' + 원본,
+      탈 + ' — 주문한 구성과 나가는 구성이 다릅니다. ' +
+      '이 주문의 ' + 줄들.length + '줄을 모두 «미발송»으로 세웠습니다. ' +
+      '반쪽만 나가는 것보다 멈추는 것이 낫습니다. ' +
+      '보류 탭에서 확인하거나 판매현황을 고쳐 다시 실행하세요.');
+  }
+  return 막은건수;
 }
