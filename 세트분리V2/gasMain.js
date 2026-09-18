@@ -76,6 +76,9 @@ function onOpen() {
     .addSubMenu(ui.createMenu('🔎 점검 · 진단')
       .addItem('보류 조치 진단', 'ss_보류조치진단')
       .addItem('📋 대리발송품목 진단 (왜 안 빠졌나)', 'ss_대리품목진단')
+      /*  ★ 2026-09-18 ★ 「뚜껑이 세 개 나갔다」를 눈으로 보는 자리.
+          쪼개기는 한 겹만 하므로, 더 나갔다면 BOM 자료가 그렇게 생긴 것이다. */
+      .addItem('🔍 BOM 진단 (구성품이 몇 개 나가나)', 'ss_BOM진단')
       .addItem('합배송 진단', 'ss_합배송진단')
       .addItem('사방넷 진단 (저장 안 함)', 'ss_사방넷진단')
       .addItem('중복발주 의심 점검', 'ss_중복점검')
@@ -3214,4 +3217,146 @@ function ss_옛판매현황탭정리(오늘회차키) {
     try { ssio_ss().deleteSheet(지운다[z]); } catch (e) {}
   }
   return 지운다.length;
+}
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  🔍 BOM 진단 — 「뚜껑이 세 개 나갔다」 를 눈으로 본다
+ *
+ *   > "세트메뉴에서 세트분리한거중에 몸통, 뚜껑 분리되고 뚜껑이 또
+ *   >  분리가 되서 뚜껑이 3개가 나가는 상황이 벌어졌어...
+ *   >  특정품목 JHMINIJJIMB00002만 그런거 같아"
+ *
+ *  쪼개는 코드(ssExplode)는 «한 번만» 쪼갠다. 되풀이해 쪼개는 길이
+ *  아예 없다. 그러니 셋이 나갔다면 BOM 자료가 그렇게 생긴 것이다.
+ *  자료를 그대로 펼쳐 보여 준다 — 어림짐작을 없앤다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function ss_BOM진단() {
+  var NL = String.fromCharCode(10);
+  var ui;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) { ui = null; }
+
+  var 코드 = '';
+  if (ui) {
+    var r = ui.prompt('🔍 BOM 진단',
+      '들여다볼 품목코드를 넣으세요.' + NL +
+      '(비워 두면 «수상한 것 전부»를 훑습니다)',
+      ui.ButtonSet.OK_CANCEL);
+    if (r.getSelectedButton() !== ui.Button.OK) return;
+    코드 = ssText(r.getResponseText()).toUpperCase();
+  }
+
+  var sh = ssio_ss().getSheetByName(SSIO_TABS.MBOM);
+  if (!sh || sh.getLastRow() < 2) {
+    return ssio_alert('「' + SSIO_TABS.MBOM + '」 탭이 비어 있습니다.' + NL +
+      '먼저 마스터 새로고침을 한 번 돌리세요.');
+  }
+  var raw = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues();
+
+  //  세트코드 → 구성품 줄
+  var map = {}, 세트명 = {};
+  for (var i = 0; i < raw.length; i++) {
+    var sc = ssText(raw[i][0]).toUpperCase();
+    var comp = ssText(raw[i][2]).toUpperCase();
+    if (!sc || !comp) continue;
+    세트명[sc] = ssText(raw[i][1]);
+    (map[sc] || (map[sc] = [])).push({
+      행: i + 2, code: comp, qty: ssNum(raw[i][3]) || 1, 원문수량: raw[i][3],
+    });
+  }
+
+  var 줄 = [];
+  줄.push('🔍 BOM 진단');
+  줄.push('');
+
+  /** 한 세트코드를 펼쳐 적는다 */
+  function 펼치기(sc) {
+    var parts = map[sc];
+    줄.push('── ' + sc + '  「' + (세트명[sc] || '(이름없음)') + '」');
+    if (!parts) {
+      줄.push('   BOM 에 없습니다 — 쪼개지 않고 그대로 나갑니다.');
+      줄.push('');
+      return;
+    }
+    줄.push('   구성품 ' + parts.length + '줄:');
+    var 합 = {}, 자기참조 = 0;
+    for (var k = 0; k < parts.length; k++) {
+      var p = parts[k];
+      var 꼬리 = '';
+      if (p.code === sc) { 꼬리 = '   ★ 자기 자신입니다 (이러면 안 됩니다)'; 자기참조++; }
+      else if (map[p.code]) 꼬리 = '   ★ 이 구성품도 BOM 에 «세트»로 있습니다';
+      줄.push('     M_BOM ' + p.행 + '행 :  ' + p.code + '  × ' + p.qty + 꼬리);
+      합[p.code] = (합[p.code] || 0) + p.qty;
+    }
+    //  ★ 같은 구성품이 여러 줄이면 그만큼 «더» 나간다 ★
+    var 겹침 = [];
+    for (var c in 합) {
+      if (!Object.prototype.hasOwnProperty.call(합, c)) continue;
+      var n = 0;
+      for (var j = 0; j < parts.length; j++) if (parts[j].code === c) n++;
+      if (n > 1) 겹침.push(c + ' — ' + n + '줄, 합쳐서 ' + 합[c] + '개');
+    }
+    줄.push('');
+    줄.push('   이 세트 1개를 주문하면 실제로 나가는 것:');
+    for (var c2 in 합) {
+      if (!Object.prototype.hasOwnProperty.call(합, c2)) continue;
+      줄.push('     ' + c2 + '  ' + 합[c2] + '개' + (합[c2] > 1 ? '   ← 여기를 보세요' : ''));
+    }
+    if (겹침.length) {
+      줄.push('');
+      줄.push('   ★ 같은 구성품이 여러 줄로 들어 있습니다 ★');
+      for (var g = 0; g < 겹침.length; g++) 줄.push('     ' + 겹침[g]);
+      줄.push('   이카운트 BOM 에 줄이 겹쳐 들어간 것입니다. 그만큼 더 나갑니다.');
+    }
+    if (자기참조) {
+      줄.push('');
+      줄.push('   ★ 자기 자신을 구성품으로 갖고 있습니다 — 이카운트 BOM 을 고쳐야 합니다.');
+    }
+    줄.push('');
+  }
+
+  if (코드) {
+    펼치기(코드);
+    //  그 구성품들이 또 세트인지도 한 겹 더 본다
+    var ps = map[코드] || [];
+    for (var q = 0; q < ps.length; q++) {
+      if (map[ps[q].code]) {
+        줄.push('   ↳ 구성품 「' + ps[q].code + '」 를 한 겹 더 폅니다:');
+        펼치기(ps[q].code);
+      }
+    }
+  } else {
+    /*  ★ 수상한 것만 추린다 ★ 전부 적으면 아무도 안 읽는다 */
+    var 겹친세트 = [], 자기참조세트 = [], 다단계 = [];
+    for (var sc2 in map) {
+      if (!Object.prototype.hasOwnProperty.call(map, sc2)) continue;
+      var ps2 = map[sc2], 본것 = {}, 겹 = false, 자 = false, 다 = false;
+      for (var z = 0; z < ps2.length; z++) {
+        var cc = ps2[z].code;
+        if (본것[cc]) 겹 = true;
+        본것[cc] = true;
+        if (cc === sc2) 자 = true;
+        if (map[cc]) 다 = true;
+      }
+      if (겹) 겹친세트.push(sc2);
+      if (자) 자기참조세트.push(sc2);
+      if (다) 다단계.push(sc2);
+    }
+    줄.push('세트 ' + Object.keys(map).length + '개를 훑었습니다.');
+    줄.push('');
+    줄.push('★ 같은 구성품이 여러 줄인 세트 : ' + 겹친세트.length + '개');
+    줄.push('   ' + (겹친세트.slice(0, 20).join(', ') || '없음'));
+    줄.push('');
+    줄.push('★ 자기 자신을 구성품으로 가진 세트 : ' + 자기참조세트.length + '개');
+    줄.push('   ' + (자기참조세트.slice(0, 20).join(', ') || '없음'));
+    줄.push('');
+    줄.push('구성품이 또 세트인 것(다단계) : ' + 다단계.length + '개');
+    줄.push('   ' + (다단계.slice(0, 20).join(', ') || '없음'));
+    줄.push('');
+    줄.push('※ 쪼개기는 «한 겹»만 합니다. 다단계라도 더 쪼개지지는 않지만,');
+    줄.push('   그 구성품을 그대로 내보내게 되니 BOM 을 손봐야 할 수 있습니다.');
+  }
+
+  ssio_alert(줄.join(NL));
+  return 줄.join(NL);
 }

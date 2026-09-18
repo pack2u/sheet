@@ -780,6 +780,7 @@ function ssExplode(lines, masters, warnings) {
   var out = [];
   var warnedNoBom = {};   // 같은 코드로 여러 줄이 와도 주의는 한 번만
   var warnedPI = {};
+  var warnedDupBom = {}, warnedSelfBom = {};
   for (var i = 0; i < lines.length; i++) {
     var L = lines[i];
     var parts = bom[L.원본코드];
@@ -833,15 +834,61 @@ function ssExplode(lines, masters, warnings) {
       out.push(u0);
       continue;
     }
+    /* ★ 같은 구성품이 여러 줄이면 «합친다» ★  (2026-09-18)
+       > "몸통, 뚜껑 분리되고 뚜껑이 또 분리가 되서 뚜껑이 3개가 나가는
+       >  상황이 벌어졌어... 특정품목 JHMINIJJIMB00002만 그런거 같아"
+
+       쪼개는 코드는 한 겹만 쪼갠다 — 되풀이해 쪼개는 길이 없다.
+       그런데도 뚜껑이 셋 나갔다면 BOM 에 그 줄이 여러 번 들어 있는 것이다.
+       (이카운트 BOM 을 그대로 받아 적기만 하고 겹침을 안 봤다)
+
+       여기서 «조용히» 합치지 않는다 — 합치면 숫자는 맞아도 자료는 그대로
+       썩어 있다. 합치고, 몇 줄이 겹쳤는지 말한다. 사람이 BOM 을 고쳐야
+       다음 회차가 깨끗하다.
+
+       ★ 자기 자신은 버린다 ★ 세트가 제 코드를 구성품으로 갖고 있으면
+         그 줄은 «자기를 또 담는» 셈이라 무조건 더 나간다. */
+    var 모음 = [], 자리 = {}, 겹친수 = 0, 자기참조 = 0;
     for (var k = 0; k < parts.length; k++) {
       var p = parts[k];
+      var pc = ssText(p.code);
       var 소요 = (p.qty === undefined || p.qty === null || p.qty === '') ? 1 : ssNum(p.qty);
       if (!(소요 > 0)) {
-        ssWarn(warnings, '오류', 'BOM_QTY', L.원본코드 + ' > ' + p.code,
+        ssWarn(warnings, '오류', 'BOM_QTY', L.원본코드 + ' > ' + pc,
           '소요량이 ' + p.qty + ' 입니다. 1로 간주했습니다. BOM을 확인하세요.');
         소요 = 1;
       }
-      out.push(ssMakeUnit(L, p.code, 소요, k + 1));
+      if (pc.toUpperCase() === ssText(L.원본코드).toUpperCase()) {
+        자기참조++;
+        continue;
+      }
+      if (자리[pc] === undefined) {
+        자리[pc] = 모음.length;
+        모음.push({ code: pc, 소요: 소요 });
+      } else {
+        모음[자리[pc]].소요 += 소요;
+        겹친수++;
+      }
+    }
+
+    if (겹친수 && !warnedDupBom[L.원본코드]) {
+      warnedDupBom[L.원본코드] = true;
+      var 적기 = [];
+      for (var d = 0; d < 모음.length; d++) 적기.push(모음[d].code + '×' + 모음[d].소요);
+      ssWarn(warnings, '오류', 'BOM_DUP', L.원본코드,
+        'BOM 에 같은 구성품이 ' + 겹친수 + '줄 겹쳐 있습니다. 합쳐서 내보냅니다 — ' +
+        적기.join(', ') + '. 이카운트 BOM 의 겹친 줄을 지우세요. ' +
+        '(메뉴 「🔍 BOM 진단」 에서 몇 행인지 볼 수 있습니다)');
+    }
+    if (자기참조 && !warnedSelfBom[L.원본코드]) {
+      warnedSelfBom[L.원본코드] = true;
+      ssWarn(warnings, '오류', 'BOM_SELF', L.원본코드,
+        '세트가 «자기 자신»을 구성품으로 갖고 있습니다 (' + 자기참조 + '줄). ' +
+        '그 줄은 버리고 쪼갰습니다 — 두면 그만큼 더 나갑니다.');
+    }
+
+    for (var m2 = 0; m2 < 모음.length; m2++) {
+      out.push(ssMakeUnit(L, 모음[m2].code, 모음[m2].소요, m2 + 1));
     }
   }
   return out;
