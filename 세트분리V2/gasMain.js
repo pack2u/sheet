@@ -79,6 +79,7 @@ function onOpen() {
       /*  ★ 2026-09-18 ★ 「뚜껑이 세 개 나갔다」를 눈으로 보는 자리.
           쪼개기는 한 겹만 하므로, 더 나갔다면 BOM 자료가 그렇게 생긴 것이다. */
       .addItem('🔍 BOM 진단 (구성품이 몇 개 나가나)', 'ss_BOM진단')
+      .addItem('🔎 같은 주문에 같은 품목이 두 줄', 'ss_중복품목진단')
       .addItem('합배송 진단', 'ss_합배송진단')
       .addItem('사방넷 진단 (저장 안 함)', 'ss_사방넷진단')
       .addItem('중복발주 의심 점검', 'ss_중복점검')
@@ -3385,6 +3386,136 @@ function ss_BOM진단() {
     줄.push('※ 쪼개기는 «한 겹»만 합니다. 다단계라도 더 쪼개지지는 않지만,');
     줄.push('   그 구성품을 그대로 내보내게 되니 BOM 을 손봐야 할 수 있습니다.');
   }
+
+  ssio_alert(줄.join(NL));
+  return 줄.join(NL);
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  🔎 같은 주문에 같은 품목이 두 줄 — 원장에서 찾아낸다
+ *
+ *   > "내가 보기에 뚜껑만이 세트분리되고 또한번 되었어..
+ *   >  그러다보니 1개가 2개가 된거야"
+ *
+ *  짐작을 두 번 틀렸다. BOM 은 깨끗했고, 뚜껑은 BOM 에 있지도 않았다.
+ *  그러니 자료에서 «실제로 그렇게 된 줄»을 찾아야 한다.
+ *
+ *  한 고유ID 안에 같은 품목코드가 두 줄 이상이면 그 사람은 그 물건을
+ *  그만큼 받는다. 라인ID 를 같이 적으므로 «어디서 생긴 줄인지»가 보인다 —
+ *    같은 순번에서 나왔으면 (예: 12-1, 12-2)  → 한 세트가 쪼개진 것
+ *    다른 순번에서 나왔으면 (예: 12-2, 15-2)  → 두 주문 줄이 겹친 것
+ * ══════════════════════════════════════════════════════════════
+ */
+function ss_중복품목진단() {
+  var NL = String.fromCharCode(10);
+  var ui;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) { ui = null; }
+
+  var 코드필터 = '';
+  if (ui) {
+    var r = ui.prompt('🔎 같은 주문에 같은 품목이 두 줄',
+      '품목코드를 넣으면 그것만 봅니다.' + NL + '(비워 두면 전부 훑습니다)',
+      ui.ButtonSet.OK_CANCEL);
+    if (r.getSelectedButton() !== ui.Button.OK) return;
+    코드필터 = ssText(r.getResponseText()).toUpperCase();
+  }
+
+  var sh = ssio_ss().getSheetByName(SSIO_TABS.원장);
+  if (!sh || sh.getLastRow() < 2) {
+    return ssio_alert('「' + SSIO_TABS.원장 + '」 탭이 비어 있습니다.');
+  }
+  var head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var col = {};
+  for (var h = 0; h < head.length; h++) col[ssText(head[h])] = h;
+  var 필요 = ['회차키', '라인ID', '고유ID', '품목코드', '수량', '경로', '순번', '원본품목코드'];
+  var 없는칸 = [];
+  for (var n = 0; n < 필요.length; n++) if (col[필요[n]] === undefined) 없는칸.push(필요[n]);
+  if (없는칸.length) {
+    return ssio_alert('원장에서 칸을 못 찾았습니다: ' + 없는칸.join(', ') + NL +
+      '(머리글: ' + head.slice(0, 20).join(' / ') + ')');
+  }
+
+  var vals = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues();
+
+  /*  ★ 가장 최근 회차만 본다 ★ 원장은 회차마다 쌓인다. 전부 보면
+      지난 회차의 같은 주문이 «중복»으로 보인다 — 그건 중복이 아니다. */
+  var 회차목록 = {};
+  for (var v0 = 0; v0 < vals.length; v0++) {
+    var rk = ssText(vals[v0][col['회차키']]);
+    if (rk) 회차목록[rk] = true;
+  }
+  var 회차들 = Object.keys(회차목록).sort();
+  var 최근 = 회차들.length ? 회차들[회차들.length - 1] : '';
+
+  var 묶음 = {};
+  var 훑음 = 0;
+  for (var i = 0; i < vals.length; i++) {
+    var row = vals[i];
+    if (ssText(row[col['회차키']]) !== 최근) continue;
+    var uid = ssText(row[col['고유ID']]);
+    var code = ssText(row[col['품목코드']]).toUpperCase();
+    if (!uid || !code) continue;
+    if (코드필터 && code !== 코드필터) continue;
+    훑음++;
+    var key = uid + String.fromCharCode(9679) + code;
+    (묶음[key] || (묶음[key] = [])).push({
+      라인ID: ssText(row[col['라인ID']]),
+      순번: ssText(row[col['순번']]),
+      수량: ssNum(row[col['수량']]),
+      경로: ssText(row[col['경로']]),
+      원본: ssText(row[col['원본품목코드']]),
+    });
+  }
+
+  var 겹친것 = [];
+  for (var k in 묶음) {
+    if (!Object.prototype.hasOwnProperty.call(묶음, k)) continue;
+    if (묶음[k].length > 1) 겹친것.push([k, 묶음[k]]);
+  }
+  겹친것.sort(function (a, b) { return b[1].length - a[1].length; });
+
+  var 줄 = [];
+  줄.push('🔎 같은 주문에 같은 품목이 두 줄');
+  줄.push('');
+  줄.push('회차 : ' + (최근 || '(없음)') + '   훑은 줄 : ' + 훑음);
+  if (코드필터) 줄.push('품목 : ' + 코드필터);
+  줄.push('');
+  if (!겹친것.length) {
+    줄.push('겹친 줄이 없습니다.');
+    줄.push('');
+    줄.push('※ 이 회차에는 없다는 뜻입니다. 사고가 난 회차를 보려면');
+    줄.push('   원장에서 그 회차키를 확인하고 말씀해 주세요.');
+    return ssio_alert(줄.join(NL));
+  }
+
+  줄.push('★ 겹친 주문 ' + 겹친것.length + '건');
+  줄.push('');
+  var 같은순번 = 0, 다른순번 = 0;
+  for (var g = 0; g < Math.min(겹친것.length, 15); g++) {
+    var uidcode = 겹친것[g][0].split(String.fromCharCode(9679));
+    var ls = 겹친것[g][1];
+    var 순번들 = {};
+    for (var m = 0; m < ls.length; m++) 순번들[ls[m].순번] = true;
+    var 한순번 = Object.keys(순번들).length === 1;
+    if (한순번) 같은순번++; else 다른순번++;
+    var 합 = 0;
+    for (var m2 = 0; m2 < ls.length; m2++) 합 += ls[m2].수량;
+    줄.push('  ' + uidcode[0] + '   ' + uidcode[1] + '   ' + ls.length + '줄, 합 ' + 합 + '개' +
+      (한순번 ? '   ← 한 주문줄이 쪼개진 것' : '   ← 서로 다른 주문줄'));
+    for (var m3 = 0; m3 < ls.length; m3++) {
+      줄.push('      라인 ' + ls[m3].라인ID + ' (순번 ' + ls[m3].순번 + ')  ' +
+        ls[m3].수량 + '개  ' + ls[m3].경로 + '  원본 ' + ls[m3].원본);
+    }
+  }
+  if (겹친것.length > 15) 줄.push('  ... 그 밖 ' + (겹친것.length - 15) + '건');
+  줄.push('');
+  줄.push('한 주문줄이 쪼개진 것 : ' + 같은순번 + '건');
+  줄.push('서로 다른 주문줄     : ' + 다른순번 + '건');
+  줄.push('');
+  줄.push('※ 「서로 다른 주문줄」이면 그 사람이 세트를 둘 이상 시킨 것입니다.');
+  줄.push('   같은 뚜껑을 쓰는 세트가 24개나 되니, 두 가지를 시키면');
+  줄.push('   뚜껑이 두 줄로 나갑니다 — 그게 맞는지는 사람이 정해야 합니다.');
 
   ssio_alert(줄.join(NL));
   return 줄.join(NL);
