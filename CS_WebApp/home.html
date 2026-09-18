@@ -8050,17 +8050,15 @@
             '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
             '<button type="button" class="ret-pop-save" id="ret-save-status-' + idx + '" onclick="submitReturnCompose(' + idx + ',\'status\')">저장</button>' +
           '</div></div>' +
-        '<div class="ret-act-pop" id="ret-pop-phone-' + idx + '" data-mode="phone">' +
-          '<div class="pop-label">전화 상담 기록</div>' +
-          '<textarea id="ret-phone-' + idx + '" placeholder="통화 내용…"></textarea>' +
-          shareToggleHtml('phone', idx) +
-          '<div class="ret-pop-btns">' +
-            '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
-            '<button type="button" class="ret-pop-save" id="ret-save-phone-' + idx + '" onclick="submitReturnCompose(' + idx + ',\'phone\')">카드 추가</button>' +
-          '</div></div>' +
+        /* ★ 「전화」 창은 걷어냈다 ★  (2026-09-18)
+           단추를 없앴으니 이 창은 열 길이 없다. 그런데도 두면 카드마다
+           못 여는 덩어리가 하나씩 붙는다 — 카드가 수백이면 그만큼이다.
+           하던 일은 글 앞에 「전화 통화. 」를 붙이는 것뿐이었다.
+           (submitReturnCompose 의 phone 갈래는 남겨 둔다 — 짧고,
+            나중에 단추를 되살릴 때 그대로 쓴다) */
         '<div class="ret-act-pop" id="ret-pop-consult-' + idx + '" data-mode="consult">' +
-          '<div class="pop-label">상담 · 메모</div>' +
-          '<textarea id="ret-consult-' + idx + '" placeholder="상담 내용…"></textarea>' +
+          '<div class="pop-label">메모</div>' +
+          '<textarea id="ret-consult-' + idx + '" placeholder="상담·메모 내용…"></textarea>' +
           shareToggleHtml('consult', idx) +
           '<div class="ret-pop-btns">' +
             '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
@@ -8300,11 +8298,25 @@
           (tlHtml ? '<div class="ret-right">' + tlHtml + '</div>' : '') +
         '</div>' +
         '<div class="ret-foot">' +
+          /* ★ 단추를 넷으로 줄였다 ★  (2026-09-18)
+             > "카드 하단에 아이콘이 많은데 굳이 많을 필요가 없어..
+             >  상태 / 메모 / 사진 / 검색 이렇게만 있으면 될꺼 같아"
+
+             여섯 중 둘은 «같은 일»을 하고 있었다 —
+               · 「상담」과 「메모」는 같은 창(ret-pop-consult)을 열고
+                 같은 종류('note')로 저장했다. 이름만 둘이었다.
+               · 게다가 「메모」로 열면 「내부」 체크가 안 먹었다.
+                 창은 consult 기준으로 만들어지는데 체크상자 id 는
+                 모드를 따라가서 ret-int-note-… 를 찾다 못 찾았다.
+                 적은 사람은 내부인 줄 알았는데 업체가 봤을 수 있다.
+             그래서 「메모」가 consult 창을 그대로 쓰게 했다 — 이름은
+             사장님이 부르시는 대로 「메모」, 속은 멀쩡히 돌던 그 길.
+
+             「전화」는 없앴다. 하던 일은 글 앞에 「전화 통화. 」를 붙이는
+             것뿐이라 메모에 적으면 된다. 실번호 입력은 «상태» 창에 있다. */
           '<div class="ret-act-bar">' +
             returnActBtnHtml(idx, 'status', '상태') +
-            returnActBtnHtml(idx, 'phone', '전화') +
-            returnActBtnHtml(idx, 'consult', '상담') +
-            returnActBtnHtml(idx, 'note', '메모') +
+            returnActBtnHtml(idx, 'consult', '메모') +
             returnActBtnHtml(idx, 'photo', '사진') +
             returnGoOrderBtnHtml(idx) +
             retPickupBtnHtml(idx, c, picked) +
