@@ -1595,7 +1595,12 @@
     #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-new-bar { display: none; }
     /*  이름줄과 품목줄을 한 줄에 앉힌다 — 접는 뜻이 높이를 줄이는 것이다 */
     #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-body { gap: 0; }
+    /*  ★ 접으면 왼쪽 칸이 폭을 다 쓴다 ★  (2026-09-20)
+        .ret-left 는 펼친 카드에서 왼쪽:오른쪽 = 1:2 를 지키려고 33% 로 못박혀
+        있다. 접으면 오른쪽 칸(.ret-right)을 감추는데도 왼쪽은 여전히 3분의
+        1만 써서, 품목이 카드 한복판에서 잘렸다. 감췄으면 그 자리를 내준다.  */
     #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-left {
+      flex: 1 1 auto; max-width: none;
       display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;
     }
     #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-left > div {
@@ -1603,22 +1608,16 @@
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     #pane-returns.ret-fold .ret-card:not(.ret-focus) .rn { flex: 0 0 auto; }
-    /*  ★ 품목은 두 줄까지 ★  (2026-09-20)
-        > "반품카드에 하단라인의 제품명이 너무 짤리네. 지금의 2배 이상이 되면"
-        접기의 뜻은 «덜어내기»지 «못 알아보게 하기»가 아니다. 이름·상태는
-        한 줄로 두고 품목만 두 줄을 준다 — 「JH 실링 2318 (70호…」에서
-        멈추면 어느 건인지 결국 펴 봐야 한다.  */
-    /*  ★ 선택자 무게를 앞 규칙과 맞춘다 ★ 위의 `.ret-left > div` 가 요소
-        선택자를 하나 더 달고 있어, `.ret-item` 만으로는 nowrap 을 못 이긴다.  */
+    /*  ★ 품목은 한 줄, 대신 제 줄을 통째로 ★  (2026-09-20)
+        > "반품카드에 하단라인의 제품명이 너무 짤리네"
+        > "2줄인데 뒤로 더 길게 표현해달라고 한거야"
+        세로로 늘리는 게 아니라 «가로로» 늘리는 것이다. flex-basis 100% 로
+        이름줄과 한 줄을 나눠 쓰지 않게 하고, 넘치면 그때 말줄임표.
+        ★ 선택자 무게 ★ 위의 `.ret-left > div` 가 요소 선택자를 하나 더 달고
+          있어 `.ret-item` 만으로는 못 이긴다 — 처음엔 실제로 안 먹었다.  */
     #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-left > div.ret-item {
       flex: 1 1 100%;
-      white-space: normal;
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-      overflow: hidden; line-height: 1.35;
-      /*  한글은 기본값이면 글자 사이 아무 데서나 꺾인다 — 「BF 19 / 호」처럼
-          끊기면 오히려 못 읽는다. 띄어쓰기에서만 꺾고, 그래도 안 들어가는
-          긴 덩어리만 어쩔 수 없이 쪼갠다.  */
-      word-break: keep-all; overflow-wrap: anywhere;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     /*  접어도 «새로 온 것»은 알아야 한다 — 왼쪽 띠는 남긴다 */
 
