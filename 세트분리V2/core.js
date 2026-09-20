@@ -2668,9 +2668,14 @@ function ssBlockReship(units, masters, cfg, warnings) {
     var u = units[i];
     if (u.route === SS_ROUTE.HOLD || u.route === SS_ROUTE.NONSHIP) continue;
     if (u.보류사유) continue;
+    /*  ★ 원장이 적는 «그 칸»만 본다 ★  (2026-09-21)
+        원장 K열(원본품목코드)은 ssLedgerRow 가 `u.원본코드` 를 그대로 적는다 —
+        품목코드로 폴백하지 않는다. 여기서만 폴백하면 원장에 없는 열쇠를
+        만들게 되고, 운 나쁘면 «다른 줄»의 원본코드와 맞아떨어진다.
+        비면 안 막는다. 못 가리는 줄을 막는 것보다 안 막는 편이 낫다. */
     var uid = ssText(u.고유ID);
-    var code = ssText(u.원본코드) || ssText(u.품목코드);
-    if (!uid || !code) continue;          // 못 가리는 줄은 안 막는다
+    var code = ssText(u.원본코드);
+    if (!uid || !code) continue;
     var 지난회차 = 표[uid + '\u0000' + code];
     if (!지난회차) continue;
 

@@ -439,8 +439,21 @@ function ssm_loadShipped(회차키) {
         'Asia/Seoul', 'yyMMdd')] = true;
     }
 
+    /*  ★ 필요한 칸까지만 읽는다 ★  (2026-09-21)
+        원장은 47열이고 하루 세 회차씩 쌓여 이미 5,000줄이다. 통째로 읽으면
+        23만 칸이고, 그걸 «매 실행마다» 한 번 더 읽는 셈이 된다.
+        여기서 보는 것은 회차키(A)·고유ID(C)·경로(F)·원본품목코드(K) 넷뿐이라
+        K열까지만 읽으면 된다 — 4분의 1이다.
+        자리로 박지 않고 머리글에서 구한 자리의 «가장 오른쪽»을 쓴다.
+        열이 하나 끼어들어도 따라간다. */
+    var 끝칸 = 0;
+    for (var nn = 0; nn < need.length; nn++) {
+      if (idx[need[nn]] + 1 > 끝칸) 끝칸 = idx[need[nn]] + 1;
+    }
+    if (끝칸 > cols) 끝칸 = cols;
+
     var 지금 = ssText(회차키);
-    var all = sh.getRange(2, 1, sh.getLastRow() - 1, cols).getValues();
+    var all = sh.getRange(2, 1, sh.getLastRow() - 1, 끝칸).getValues();
     for (var i = 0; i < all.length; i++) {
       var r = all[i];
       var rk = ssText(r[idx['회차키']]);
@@ -451,7 +464,7 @@ function ssm_loadShipped(회차키) {
       var uid = ssText(r[idx['고유ID']]);
       var code = ssText(r[idx['원본품목코드']]);
       if (!uid || !code) continue;
-      var k = uid + ' ' + code;
+      var k = uid + '\u0000' + code;
       if (표[k] === undefined) 표[k] = rk;              // 가장 먼저 나간 회차를 적는다
     }
   } catch (e) {
