@@ -634,6 +634,13 @@
                   placeholder="찾을 것을 붙여넣으세요.&#10;여러 줄을 붙이면 줄마다 따로 찾습니다.&#10;수량(× 3)이나 괄호 규격이 섞여 있어도 됩니다."></textarea>
         <div class="ord-find-row">
           <button type="button" class="btn-new" id="oGo">찾기</button>
+          <!-- ★ 엑셀도 붙여넣기와 같은 일이다 ★ (2026-09-20)
+               파일을 고르면 제품명 열을 읽어 위 칸을 채우고 바로 찾는다.
+               업체가 열·머리글을 맞춰 줄 필요가 없다 — 우리가 찾아낸다. -->
+          <label class="act" id="oXlsxBtn" style="text-align:center">엑셀 열기
+            <input type="file" id="oXlsx" accept=".xlsx,.xls,.csv,text/csv"
+                   style="position:absolute;width:1px;height:1px;opacity:0">
+          </label>
           <button type="button" class="act" id="oClear">지우기</button>
         </div>
         <div class="hint" id="oHint">검색 없이 열면 아직 마감 안 된 <b>발주 및 송장조회</b>를 보여줍니다.</div>
@@ -1922,6 +1929,12 @@
         .prpListOrders(SID, { q: q, scope: 'live' });
     }
 
+    /*  ★ 바깥으로 낸 통로 하나 ★  (2026-09-20)
+        이 script 는 통째로 IIFE 안이라 밖에서 아무것도 못 부른다. 엑셀 읽기는
+        밖에서 받아오는 도구(XLSX)를 쓰므로 별도 블록에 두었고, 다 읽은 뒤에
+        찾기를 걸어야 한다. 통로는 이 하나만 낸다 — 늘리면 안이 밖이 된다.  */
+    window.prpOrdersSearch = loadOrders;
+
     for (var pi = 0; pi < document.querySelectorAll('.pages button').length; pi++) {
       (function (b) {
         b.addEventListener('click', function () { showPage(b.getAttribute('data-page')); });
@@ -2077,6 +2090,113 @@
       })
       .withFailureHandler(function () { loadRows(false); })
       .prpBootstrap(SID);
+  })();
+  </script>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       엑셀 읽기 — 브라우저에서 곧바로  (2026-09-20)
+
+       파일을 서버로 올리지 않는다. 업체 컴퓨터 안에서 읽고, 뽑아낸 제품명만
+       검색칸에 들어간다. 발주서에는 단가·거래처가 같이 들어 있는 일이 많은데,
+       찾기 하나 하자고 그걸 통째로 올릴 까닭이 없다.
+
+       ★ 못 불러와도 화면은 돈다 ★ 밖에서 받아오는 도구라 막힐 수 있다.
+         그때는 단추가 「붙여넣어 주세요」로 바뀐다 — 조용히 죽지 않는다.
+       ══════════════════════════════════════════════════════════════ -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script>
+  (function () {
+    var btn = document.getElementById('oXlsxBtn');
+    var input = document.getElementById('oXlsx');
+    if (!btn || !input) return;
+
+    if (typeof XLSX === 'undefined') {
+      btn.textContent = '엑셀 열기 (안 됨)';
+      btn.title = '엑셀 읽는 도구를 불러오지 못했습니다. 내용을 붙여넣어 주세요.';
+      btn.style.opacity = '0.5';
+      return;
+    }
+
+    /*  제품명 열을 찾는다.
+        ① 머리글에 「품목명·상품명·제품명」이 있으면 그 열.
+        ② 없으면 «글자가 가장 긴» 열을 고른다 — 발주서에서 품목명은 늘
+           제일 긴 칸이다. 업체가 열 차례를 맞춰 줄 필요가 없게 한다.  */
+    function 제품명열(rows) {
+      var head = rows[0] || [];
+      for (var c = 0; c < head.length; c++) {
+        var h = String(head[c] == null ? '' : head[c]).replace(/\s/g, '');
+        if (/품목명|상품명|제품명|품명/.test(h)) return { col: c, skipHead: true };
+      }
+      var 길이 = [], 셈 = [];
+      for (var r = 0; r < rows.length; r++) {
+        var row = rows[r] || [];
+        for (var k = 0; k < row.length; k++) {
+          var v = String(row[k] == null ? '' : row[k]).trim();
+          if (!v) continue;
+          //  숫자만 있는 칸은 품목명이 아니다 (수량·단가·송장)
+          if (/^[\d,.\-\s]+$/.test(v)) continue;
+          길이[k] = (길이[k] || 0) + v.length;
+          셈[k] = (셈[k] || 0) + 1;
+        }
+      }
+      var best = -1, bestAvg = 0;
+      for (var m = 0; m < 길이.length; m++) {
+        if (!셈[m] || 셈[m] < 2) continue;
+        var avg = 길이[m] / 셈[m];
+        if (avg > bestAvg) { bestAvg = avg; best = m; }
+      }
+      return { col: best, skipHead: false };
+    }
+
+    input.addEventListener('change', function (ev) {
+      var f = (ev.target.files || [])[0];
+      if (!f) return;
+      var oq = document.getElementById('oq');
+      var hint = document.getElementById('oHint');
+      if (hint) hint.textContent = f.name + ' 읽는 중…';
+
+      var fr = new FileReader();
+      fr.onerror = function () {
+        if (hint) hint.textContent = '파일을 읽지 못했습니다. 내용을 붙여넣어 주세요.';
+      };
+      fr.onload = function (e) {
+        try {
+          var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+          var sh = wb.Sheets[wb.SheetNames[0]];
+          var rows = XLSX.utils.sheet_to_json(sh, { header: 1, blankrows: false, defval: '' });
+          if (!rows.length) throw new Error('빈 파일입니다');
+
+          var 고른것 = 제품명열(rows);
+          if (고른것.col < 0) throw new Error('제품명으로 보이는 열을 못 찾았습니다');
+
+          var out = [], seen = {};
+          for (var r = 고른것.skipHead ? 1 : 0; r < rows.length; r++) {
+            var v = String((rows[r] || [])[고른것.col] || '').replace(/\s+/g, ' ').trim();
+            if (!v || v.length < 2) continue;
+            if (/^[\d,.\-\s]+$/.test(v)) continue;
+            if (seen[v]) continue;
+            seen[v] = true;
+            out.push(v);
+            if (out.length >= 30) break;   // 서버가 한 번에 보는 줄 수와 맞춘다
+          }
+          if (!out.length) throw new Error('제품명을 못 뽑았습니다');
+
+          oq.value = out.join('\n');
+          if (hint) {
+            hint.textContent = f.name + ' — ' + out.length + '건을 읽었습니다' +
+              (out.length >= 30 ? ' (30건까지)' : '') + '. 찾는 중…';
+          }
+          if (typeof window.prpOrdersSearch === 'function') window.prpOrdersSearch();
+        } catch (err) {
+          if (hint) {
+            hint.textContent = '엑셀을 읽지 못했습니다 — ' +
+              (err && err.message ? err.message : '알 수 없음') + '. 내용을 붙여넣어 주세요.';
+          }
+        }
+        input.value = '';   // 같은 파일을 다시 골라도 열리게
+      };
+      fr.readAsArrayBuffer(f);
+    });
   })();
   </script>
 </body>
