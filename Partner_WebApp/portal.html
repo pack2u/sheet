@@ -308,6 +308,9 @@
     }
     .ent-row .g { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.4; }
     .ent-row .g i { display: block; font-style: normal; font-size: 11px; color: var(--text-muted); }
+    /*  ⚠ 붙은 줄 — 막지 않고 알린다. 담긴 것이고, 사람이 보고 판단한다 */
+    .ent-row.warn { background: rgba(240,160,48,0.14); }
+    .ent-row .ent-warn-i { color: var(--accent-orange); margin-top: 2px; }
     .ent-row input.q {
       flex: 0 0 62px; width: 62px; padding: 7px 8px; border-radius: 8px;
       border: 1px solid transparent; background: var(--bg-sunken);
@@ -2318,8 +2321,9 @@
           '</div>';
         for (var j = 0; j < idxs.length; j++) {
           var r = ENT_ROWS[idxs[j]];
-          h += '<div class="ent-row"><div class="g">' +
-            esc(r.item || r.code) + (r.item ? '<i>' + esc(r.code) + '</i>' : '') + '</div>' +
+          h += '<div class="ent-row' + (r.warn ? ' warn' : '') + '"><div class="g">' +
+            esc(r.item || r.code) + (r.item ? '<i>' + esc(r.code) + '</i>' : '') +
+            (r.warn ? '<i class="ent-warn-i">⚠ ' + esc(r.warn) + '</i>' : '') + '</div>' +
             '<input class="q" type="text" inputmode="numeric" value="' + esc(r.qty) +
             '" data-q="' + idxs[j] + '" aria-label="수량">' +
             '<button type="button" class="x" data-x="' + idxs[j] + '" title="빼기">×</button></div>';
@@ -2378,6 +2382,21 @@
       ['msg', '배송메시지'],
       ['note', '적요']
     ];
+
+    /**
+     * 품목코드를 견줄 모양으로 다듬는다.
+     *
+     * ★ 보이지 않는 글자가 섞인다 ★  (2026-09-21)
+     *   허브의 발주탭 수식이 TRIM(CLEAN(SUBSTITUTE(C2:C, CHAR(160), ""))) 를
+     *   쓴다 — 줄바꿈 없는 빈칸(NBSP)이 코드에 섞이는 일이 실제로 있다는 뜻이다.
+     *   엑셀에서 긁어 붙이면 더 잘 섞인다. 같은 기준으로 걷어내고 견준다.
+     */
+    function entCodeKey(s) {
+      return String(s == null ? '' : s)
+        .replace(/[ ​-‍﻿]/g, '')   // NBSP·폭 없는 빈칸
+        .replace(/\s/g, '')
+        .toUpperCase();
+    }
 
     /** 한 줄을 칸으로 쪼갠다 — 탭이 있으면 탭, 없으면 쉼표 */
     function entSplitLine(ln) {
@@ -2541,25 +2560,32 @@
           continue;
         }
 
-        /*  ★ 품목명으로 코드를 견준다 ★  (2026-09-21)
-            품목명은 시트에 안 쓴다(자동 열). 대신 «코드가 맞는지» 보는 데 쓴다.
-            엑셀에서 코드 열만 밀리면 이름은 맞는데 딴 물건이 나간다 —
-            그건 넣고 나서는 못 잡는다.  */
+        /* ══════════════════════════════════════════════════════════
+           ★ 견주되 막지 않는다 ★  (2026-09-21 · 처음엔 막았다가 물렸다)
+
+           단가조회는 «전 품목 단가표»지 그 업체 취급 목록이 아니다. 신규
+           품목이 아직 안 올라왔을 수도 있다. 「모른다」를 「틀렸다」로 다뤄
+           발주를 막으면, 업체는 전화로 돌아간다. 그게 더 나쁘다.
+
+           수량 9999 같은 것은 «틀린» 값이라 막는 것이 맞지만, 코드가 표에
+           없는 것은 «모르는» 것이다. 담되 눈에 띄게 표시하고 사람이 본다.
+           ══════════════════════════════════════════════════════════ */
         var 단가표이름 = '';
         for (var t = 0; t < ENT_ITEMS.length; t++) {
-          if (ENT_ITEMS[t].code === one.code) { 단가표이름 = ENT_ITEMS[t].item; break; }
+          if (entCodeKey(ENT_ITEMS[t].code) === entCodeKey(one.code)) {
+            단가표이름 = ENT_ITEMS[t].item;
+            one.code = ENT_ITEMS[t].code;   // 표에 적힌 모양으로 맞춘다
+            break;
+          }
         }
+        one.warn = '';
         if (ENT_ITEMS.length && !단가표이름) {
-          bad.push((i + 1) + '번째 줄: 코드 「' + one.code + '」가 단가조회에 없습니다');
-          continue;
-        }
-        if (단가표이름 && one.item) {
+          one.warn = '단가조회에 없는 코드';
+        } else if (단가표이름 && one.item) {
           var 납작 = function (s) { return String(s).replace(/[\s()\-_]/g, '').toLowerCase(); };
           var a = 납작(단가표이름), b = 납작(one.item);
           if (a.indexOf(b) < 0 && b.indexOf(a) < 0) {
-            bad.push((i + 1) + '번째 줄: 코드와 품목명이 다릅니다 — ' +
-              '「' + one.item + '」로 적혔는데 그 코드는 「' + 단가표이름 + '」입니다');
-            continue;
+            one.warn = '코드는 「' + 단가표이름 + '」인데 「' + one.item + '」로 적혔습니다';
           }
         }
         //  단가조회의 이름으로 채운다 — 화면에서 무엇을 담았는지 보이게
@@ -2823,7 +2849,7 @@
       var r = entParseBulk(ENT_GRID, ENT_MAP, ENT_SKIP_HEAD);
       if (!r.rows.length) {
         entMsg('담을 줄이 없습니다.' +
-          (r.bad.length ? '<br><span class="ent-bad">' + esc(r.bad.join('<br>')) + '</span>' : ''), 'ent-bad');
+          (r.bad.length ? '<br><span class="ent-bad">' + r.bad.map(esc).join('<br>') + '</span>' : ''), 'ent-bad');
         return;
       }
       for (var i = 0; i < r.rows.length; i++) ENT_ROWS.push(r.rows[i]);
@@ -2839,9 +2865,15 @@
         var k = entWho(ENT_ROWS[j]);
         if (!사람[k]) { 사람[k] = 1; n++; }
       }
+      //  ⚠ 붙은 줄이 몇인지 같이 말한다 — 담겼어도 봐야 할 것이 있다
+      var 확인할것 = 0;
+      for (var q = 0; q < ENT_ROWS.length; q++) if (ENT_ROWS[q].warn) 확인할것++;
+
       entMsg(r.rows.length + '줄 담았습니다. 지금 모두 ' + ENT_ROWS.length + '줄 · ' + n + '분.' +
+        (확인할것 ? '<br><span class="ent-bad">⚠ 확인할 줄 ' + 확인할것 + '개 — ' +
+          '아래 담은 것에서 표시된 줄을 봐 주세요. 그대로 넣으셔도 됩니다.</span>' : '') +
         (r.bad.length ? '<br><span class="ent-bad">못 담은 줄<br>' +
-          esc(r.bad.join('<br>')) + '</span>' : ''));
+          r.bad.map(esc).join('<br>') + '</span>' : ''));
     });
     el('eDry').addEventListener('click', function () { entSubmit(true); });
     el('eGo').addEventListener('click', function () {
