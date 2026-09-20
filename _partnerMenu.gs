@@ -160,6 +160,7 @@ function registerPartnerMenu_() {
         .addItem("⚙️ 포털 URL 등록", "partnerPortalSetUrl")
         .addItem("📋 업체명 목록 확인", "partnerPortalListVendors")
         .addItem("🔄 업체 목록 동기화 (체크 선택)", "partnerPortalSyncVendors")
+        .addItem("👀 업체 화면 열어 보기", "partnerPortalOpenVendorView")
         .addItem("🔑 접속 링크 발급 / 재발급", "partnerPortalIssueLink")
         .addItem("🗑 계정 행 삭제 (토큰 미발급만)", "partnerPortalRemoveAccounts")
         .addSeparator()

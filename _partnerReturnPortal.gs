@@ -330,6 +330,131 @@ function _prpShowLink_(vendor, token) {
   );
 }
 
+/**
+ * ★ 업체 화면 열어 보기 ★  (2026-09-20)
+ *
+ * > "업체 화면 열어 보기 메뉴 넣어줘"
+ *
+ * 종전에는 업체 화면을 보려면 「🔑 접속 링크 발급 / 재발급」을 열고,
+ * 「재발급할까요?」에 「아니오」를 눌러야 있던 링크가 나왔다.
+ * 보기만 하려는 사람에게 «재발급» 물음을 들이미는 것은 위험하다 —
+ * 한 번 잘못 누르면 그 업체가 쓰던 링크가 그 자리에서 죽는다.
+ *
+ * 이 메뉴는 토큰을 만들지도 바꾸지도 않는다. 이미 있는 것을 읽어 열 뿐이다.
+ */
+function partnerPortalOpenVendorView() {
+  var ui = SpreadsheetApp.getUi();
+  var tab = _prpAccountTab_();
+  var lastRow = tab.getLastRow();
+  if (lastRow < 2) { ui.alert("등록된 업체가 없습니다."); return; }
+
+  var base = _prpPortalUrl_();
+  if (!base) {
+    ui.alert(
+      "포털 주소가 아직 등록되지 않았습니다.\n\n" +
+      "같은 메뉴의 '⚙️ 포털 URL 등록'을 먼저 실행하세요."
+    );
+    return;
+  }
+
+  var rows = tab.getRange(2, 1, lastRow - 1, _PRP_AC_HEADER_.length).getDisplayValues();
+  var list = [];
+  for (var i = 0; i < rows.length; i++) {
+    var nm = String(rows[i][_PRP_C_VENDOR_ - 1] || "").trim();
+    var tk = String(rows[i][_PRP_C_TOKEN_ - 1] || "").trim();
+    // 토큰이 없으면 열 수 없다 — 목록에 올려 봐야 고르면 막다른 길이다
+    if (!nm || !tk) continue;
+    var act = String(rows[i][_PRP_C_ACTIVE_ - 1] || "").trim().toUpperCase();
+    list.push({
+      name: nm,
+      token: tk,
+      blocked: (act === "FALSE" || act === "N" || act === "0" || act === "비활성"),
+      seen: String(rows[i][_PRP_C_SEEN_ - 1] || "").trim()
+    });
+  }
+
+  if (!list.length) {
+    ui.alert(
+      "열 수 있는 업체가 없습니다.",
+      "아직 접속 링크를 발급한 업체가 없습니다.\n\n" +
+      "같은 메뉴의 '🔑 접속 링크 발급 / 재발급'에서 먼저 발급하세요.\n" +
+      "발급은 그 업체에 링크를 내주는 일이니 전달까지 생각하고 누르세요.",
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
+  if (list.length === 1) {
+    // 하나뿐이면 고르게 할 까닭이 없다
+    _prpShowVendorView_(list[0]);
+    return;
+  }
+
+  var menu = list.map(function (v, idx) {
+    return (idx + 1) + ". " + v.name +
+      (v.blocked ? " (차단됨)" : "") +
+      (v.seen ? " · 최근 " + v.seen : " · 접속 기록 없음");
+  }).join("\n");
+
+  var pick = ui.prompt(
+    "업체 화면 열어 보기",
+    "번호를 입력하세요. 토큰은 건드리지 않습니다.\n\n" + menu,
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (pick.getSelectedButton() !== ui.Button.OK) return;
+
+  var n = parseInt(String(pick.getResponseText() || "").trim(), 10);
+  if (!(n >= 1 && n <= list.length)) { ui.alert("번호가 올바르지 않습니다."); return; }
+
+  _prpShowVendorView_(list[n - 1]);
+}
+
+/** 새 탭으로 여는 단추 하나. 링크를 손으로 옮길 일이 없게 한다. */
+function _prpShowVendorView_(v) {
+  var ui = SpreadsheetApp.getUi();
+  var base = _prpPortalUrl_();
+  var link = base + "?v=" + encodeURIComponent(v.name) + "&t=" + encodeURIComponent(v.token);
+
+  var esc = function (s) {
+    return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  };
+
+  var h = [];
+  h.push('<style>');
+  h.push('body{font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;');
+  h.push('padding:18px;font-size:13px;line-height:1.6;color:#202124;margin:0}');
+  h.push('h3{margin:0 0 4px;font-size:15px}');
+  h.push('p{color:#5f6368;margin:0 0 14px;font-size:12px}');
+  h.push('a.go{display:inline-block;padding:11px 18px;border-radius:9px;background:#1a73e8;');
+  h.push('color:#fff;font-weight:700;text-decoration:none;font-size:13.5px}');
+  h.push('textarea{width:100%;height:62px;margin-top:14px;font-size:11px;padding:8px;');
+  h.push('border:1px solid #dadce0;border-radius:8px;box-sizing:border-box;font-family:monospace}');
+  h.push('.note{margin-top:12px;padding:9px 11px;background:#e8f0fe;border-radius:8px;');
+  h.push('font-size:11.5px;color:#174ea6}');
+  h.push('.warn{margin-top:8px;padding:9px 11px;background:#fce8e6;border-radius:8px;');
+  h.push('font-size:11.5px;color:#a50e0e}');
+  h.push('</style>');
+  h.push('<h3>' + esc(v.name) + ' 화면</h3>');
+  h.push('<p>업체가 보는 화면 그대로입니다. 토큰은 바뀌지 않았습니다.</p>');
+  h.push('<a class="go" target="_blank" rel="noopener" href="' + esc(link) + '">' +
+    esc(v.name) + ' 화면 열기</a>');
+  h.push('<textarea readonly onclick="this.select()">' + esc(link) + '</textarea>');
+  if (v.blocked) {
+    h.push('<div class="warn">이 업체는 <b>접속 차단</b> 상태입니다. ' +
+      '링크를 열면 「접속이 중지된 계정입니다」가 뜹니다. ' +
+      '같은 메뉴의 「🚦 접속 차단 / 해제」에서 풀 수 있습니다.</div>');
+  }
+  h.push('<div class="note">여는 것만으로 업체 쪽 「최근접속」이 갱신됩니다. ' +
+    '업체가 「지난번에 본 뒤로 새로 온 것」을 재는 기준이라, ' +
+    '자주 열면 업체 화면의 새 소식 표시가 지워집니다.</div>');
+
+  ui.showModalDialog(
+    HtmlService.createHtmlOutput(h.join("\n")).setWidth(470).setHeight(v.blocked ? 390 : 330),
+    "업체 화면 열어 보기"
+  );
+}
+
 /** 업체 접속 차단 / 해제 */
 function partnerPortalToggleActive() {
   var ui = SpreadsheetApp.getUi();
