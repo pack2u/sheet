@@ -155,6 +155,27 @@ function registerPartnerMenu_() {
         .addItem("🔍 내 허브 주소 찾기", "findMyHub")
         .addItem("✨ 시스템 설정 전체 초기화", "resetSystem")
     )
+    /*  ★ 뿌리부터 본다 ★  (2026-09-21)
+        상품정보의 이카운트코드 → 허브 전체 그룹 단가표 → 업체 단가조회 →
+        발주탭. 한 줄기다. 위에서 한 글자가 어긋나면 아래가 통째로 다른 물건을
+        가리킨다. 그래서 그 줄기를 «따라가며 보는» 것들만 한 서랍에 둔다.
+
+        처음엔 「협력업체 반품 포털」 안에 넣었다가 옮겼다 — 반품과 아무 상관이
+        없어서 다음 사람이 절대 못 찾는다.
+
+        ★ 읽는 것과 고치는 것을 갈라 둔다 ★ 「끝 열기 (반영)」만 쓴다.  */
+    .addSubMenu(
+      ui.createMenu("🧬 코드·단가 뿌리 점검")
+        .addItem("🔎 상품정보 코드 점검 (읽기만)", "productCodeAudit")
+        .addItem("   └ 📸 오늘 코드 찍어 두기", "productCodeSnapshot")
+        .addItem("   └ 🔍 바뀐 코드 찾기", "productCodeDiff")
+        .addSeparator()
+        .addItem("🔎 코드 한 개 찾아보기 (업체·허브 양쪽)", "partnerPriceCodeTrace")
+        .addItem("🔬 단가조회 수식 보기 (읽기만)", "partnerPriceTabInspect")
+        .addSeparator()
+        .addItem("🧩 발주탭 자동 수식 점검 (보기만)", "partnerOrderSpillCheck")
+        .addItem("🧩 발주탭 자동 수식 끝 열기 (반영)", "partnerOrderSpillOpen")
+    )
     .addSubMenu(
       ui.createMenu("🔁 협력업체 반품 포털")
         .addItem("⚙️ 포털 URL 등록", "partnerPortalSetUrl")
@@ -167,15 +188,6 @@ function registerPartnerMenu_() {
         .addItem("🚦 접속 차단 / 해제", "partnerPortalToggleActive")
         .addItem("📊 포털 활동 보기", "partnerPortalShowActivity")
         .addItem("🧪 포털 설정 점검", "partnerPortalDiagnose")
-        .addSeparator()
-        .addItem("🔎 상품정보 코드 점검 (읽기만)", "productCodeAudit")
-        .addItem("   └ 📸 코드 찍어 두기", "productCodeSnapshot")
-        .addItem("   └ 🔍 바뀐 코드 찾기", "productCodeDiff")
-        .addSeparator()
-        .addItem("🔬 단가조회 수식 보기 (읽기만)", "partnerPriceTabInspect")
-        .addItem("🔎 코드 찾아보기 (업체·허브 양쪽)", "partnerPriceCodeTrace")
-        .addItem("🧩 발주탭 자동 수식 점검 (보기만)", "partnerOrderSpillCheck")
-        .addItem("🧩 발주탭 자동 수식 끝 열기 (반영)", "partnerOrderSpillOpen")
         .addSeparator()
         .addItem("🧱 반품송장번호 열 추가 (맨 끝)", "partnerPortalEnsureReturnInvoiceColumn")
         .addItem("📤 과거 반품송장 이관 (미리보기)", "partnerPortalMigrateReturnInvoicePreview")
