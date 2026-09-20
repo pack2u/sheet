@@ -176,8 +176,17 @@ function _pos_run_(apply) {
     ui.ButtonSet.YES_NO);
   if (ans !== ui.Button.YES) return;
 
-  var 고침 = 0, 건너뜀 = [], 실패 = [];
+  /*  ★ 시간 제한에 걸려도 이어서 할 수 있게 ★  (2026-09-21)
+      38개 파일을 열고 수식을 쓰고 결과까지 견주면 6분을 넘길 수 있다.
+      넘길 것 같으면 «끊고 말한다». 고친 파일은 다음 점검에서 안 걸리므로
+      같은 메뉴를 한 번 더 누르면 남은 것부터 이어 간다.  */
+  var 시작 = new Date().getTime();
+  var 시간다됨 = false;
+
+  var 고침 = 0, 건너뜀 = [], 실패 = [], 남음 = 0;
   for (var v = 0; v < 걸린것.length; v++) {
+    if (시간다됨) { 남음++; continue; }
+    if (new Date().getTime() - 시작 > 260000) { 시간다됨 = true; 남음++; continue; }
     for (var h = 0; h < 걸린것[v].hits.length; h++) {
       var hit = 걸린것[v].hits[h];
       if (hit.blockRow) {
@@ -204,8 +213,13 @@ function _pos_run_(apply) {
   }
   SpreadsheetApp.flush();
 
-  ui.alert("끝 열기 완료",
+  ui.alert(시간다됨 ? "끝 열기 — 이어서 해 주세요" : "끝 열기 완료",
     고침 + "곳을 고쳤습니다." +
+    (시간다됨
+      ? "\n\n★ 시간 제한에 걸려 " + 남음 + "개 파일이 남았습니다.\n" +
+        "   같은 메뉴를 한 번 더 누르면 남은 것부터 이어 갑니다.\n" +
+        "   (고친 파일은 다시 안 걸립니다)"
+      : "") +
     (건너뜀.length ? "\n\n건너뛴 것 (아래에 값이 있어 열면 깨집니다):\n" + 건너뜀.join("\n") : "") +
     (실패.length ? "\n\n못 고친 것:\n" + 실패.join("\n") : "") +
     "\n\n★ 확인 ★ 발주탭 마지막 줄 아래에 이카운트코드를 하나 적어 보시면\n" +
