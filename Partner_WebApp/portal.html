@@ -190,6 +190,64 @@
       #list > .empty, #list > .err { grid-column: 1 / -1; }
     }
 
+    /* ── 쪽 고르기 ── */
+    .pages { display: flex; gap: 6px; margin-bottom: 14px; }
+    .pages button {
+      padding: 9px 16px; border: 1px solid transparent; border-radius: 999px;
+      background: var(--bg-secondary); color: var(--text-secondary);
+      font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .pages button.on { background: var(--accent-blue); color: var(--on-accent); }
+
+    /* ── 발주 · 송장조회 ── */
+    .ord-find { margin-bottom: 14px; }
+    .ord-find label { display: block; font-size: 11.5px; color: var(--text-secondary);
+      font-weight: 600; margin-bottom: 5px; }
+    .ord-find textarea {
+      width: 100%; padding: 11px; border-radius: 10px; border: 1px solid transparent;
+      background: var(--bg-sunken); color: var(--text-primary);
+      font-family: inherit; font-size: 13.5px; line-height: 1.5; resize: vertical;
+    }
+    .ord-find-row { display: flex; gap: 6px; margin-top: 8px; }
+    .ord-find-row .btn-new { flex: 1; margin: 0; padding: 11px; }
+    .ord-find-row .act { flex: 0 0 auto; padding: 11px 16px; }
+
+    /*  붙여넣은 줄 하나가 한 덩어리. 무엇을 찾았는지 줄을 그대로 되비춘다 —
+        열 줄을 붙이면 어느 줄이 안 나왔는지가 제일 궁금하다.  */
+    .ord-grp { margin-bottom: 14px; }
+    .ord-grp-h {
+      display: flex; align-items: baseline; gap: 7px; margin-bottom: 6px;
+      font-size: 12px; color: var(--text-secondary); font-weight: 600;
+    }
+    .ord-grp-q { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; color: var(--text-bright); }
+    .ord-grp-n { flex: 0 0 auto; font-size: 11px; color: var(--text-muted); font-weight: 500; }
+    .ord-grp.none .ord-grp-n { color: var(--accent-orange); }
+
+    .ord-row {
+      background: var(--bg-card); border-radius: 12px; padding: 10px 12px;
+      margin-bottom: 7px;
+    }
+    .ord-row .t { font-size: 13.5px; font-weight: 600; line-height: 1.4; }
+    .ord-row .m {
+      margin-top: 4px; font-size: 11.5px; color: var(--text-muted);
+      display: flex; flex-wrap: wrap; gap: 4px 10px;
+    }
+    .ord-row .m b { color: var(--text-secondary); font-weight: 600; }
+    .ord-inv { color: var(--accent-blue); font-weight: 700; }
+    .ord-src { font-size: 10.5px; color: var(--text-muted); }
+    .ord-copy {
+      margin-top: 7px; padding: 5px 10px; border: 1px solid transparent; border-radius: 8px;
+      background: var(--bg-sunken); color: var(--text-secondary);
+      font-size: 11px; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .ord-copy.done { color: var(--accent-green); }
+    @media (min-width: 900px) {
+      #oList { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; align-items: start; }
+      #oList > .ord-grp { grid-column: 1 / -1; }
+      .wrap .ord-find { max-width: 760px; }
+    }
+
     /* ── KPI ── */
     /*  폰에서는 지금까지처럼 위에서 아래로. 좌우 나누기는 900px 부터다.  */
     .head { display: contents; }
@@ -418,7 +476,11 @@
       border: 1px solid transparent; border-radius: 16px; padding: 18px;
     }
     .sheet h2 { font-size: 16px; margin: 0 0 4px; font-weight: 700; }
-    .sheet .hint { font-size: 11.5px; color: var(--text-muted); line-height: 1.6; margin-bottom: 14px; }
+    /*  안내 글씨는 어디에 있든 같은 크기다 — .sheet 안에서만 작았던 탓에
+        발주 화면에서는 본문만 한 크기로 떴다 (2026-09-20).  */
+    .hint { font-size: 11.5px; color: var(--text-muted); line-height: 1.6; }
+    .sheet .hint { margin-bottom: 14px; }
+    .ord-find .hint { margin-top: 7px; }
     .fld { margin-bottom: 11px; }
     .fld label { display: block; font-size: 11.5px; color: var(--text-secondary); margin-bottom: 5px; font-weight: 600; }
     .fld input, .fld select, .fld textarea {
@@ -516,6 +578,14 @@
   </div>
 
   <div class="wrap">
+    <!-- ★ 쪽 고르기 ★ (2026-09-20)
+         여기가 이 업체의 페이지가 되어 간다. 반품 현황은 그중 한 쪽이다. -->
+    <div class="pages">
+      <button type="button" class="on" data-page="returns">반품 현황</button>
+      <button type="button" data-page="orders">발주 · 송장조회</button>
+    </div>
+
+    <div id="pageReturns">
     <!-- ★ PC 에서 좌우로 나눈다 ★ (2026-09-20) 폰에서는 display:contents 라
          지금까지처럼 위에서 아래로 차례대로 선다. -->
     <div class="head">
@@ -547,7 +617,31 @@
     </div>
 
     <div id="list"></div>
-    <div class="ver">Pack2U 협력업체 반품 포털 <?= version ?></div>
+    </div><!-- /#pageReturns -->
+
+    <!-- ══════════════════════════════════════════════════════════
+         발주 및 송장조회  (2026-09-20)
+
+         ★ 붙여넣기가 기본 동작이다 ★
+           가게업체는 제품명을 손으로 치지 않는다. 주문서·카톡·엑셀에서
+           긁어 붙인다. 그래서 검색칸을 한 줄짜리 input 이 아니라 여러 줄
+           textarea 로 둔다 — 열 줄을 붙이면 열 건을 한 번에 찾는다.
+         ══════════════════════════════════════════════════════════ -->
+    <div id="pageOrders" hidden>
+      <div class="ord-find">
+        <label for="oq">제품명 · 수취인 · 송장번호 · 고유ID</label>
+        <textarea id="oq" rows="3" autocomplete="off" spellcheck="false"
+                  placeholder="찾을 것을 붙여넣으세요.&#10;여러 줄을 붙이면 줄마다 따로 찾습니다.&#10;수량(× 3)이나 괄호 규격이 섞여 있어도 됩니다."></textarea>
+        <div class="ord-find-row">
+          <button type="button" class="btn-new" id="oGo">찾기</button>
+          <button type="button" class="act" id="oClear">지우기</button>
+        </div>
+        <div class="hint" id="oHint">검색 없이 열면 아직 마감 안 된 <b>발주 및 송장조회</b>를 보여줍니다.</div>
+      </div>
+      <div id="oList"></div>
+    </div>
+
+    <div class="ver">Pack2U 협력업체 포털 <?= version ?></div>
   </div>
 
   <!-- 새 반품 접수 -->
@@ -1734,6 +1828,156 @@
     el('nSubmit').addEventListener('click', function () { submitNew(false); });
     el('nLookup').addEventListener('click', lookupUid);
     el('nInvLookup').addEventListener('click', lookupInvoice);
+
+    /* ══════════════════════════════════════════════════════════════
+       발주 및 송장조회  (2026-09-20)
+       ══════════════════════════════════════════════════════════════ */
+    var ORD_LOADED = false;
+
+    function showPage(which) {
+      var btns = document.querySelectorAll('.pages button');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle('on', btns[i].getAttribute('data-page') === which);
+      }
+      el('pageReturns').hidden = (which !== 'returns');
+      el('pageOrders').hidden = (which !== 'orders');
+      //  처음 열 때만 불러온다 — 반품만 보는 사람에게 헛일을 시키지 않는다
+      if (which === 'orders' && !ORD_LOADED) { ORD_LOADED = true; loadOrders(); }
+    }
+
+    function ordEsc(s) { return esc(s == null ? '' : String(s)); }
+
+    /** 한 줄을 그린다. 복사 단추는 카톡·메모로 옮길 때 쓴다. */
+    function ordRowHtml(r) {
+      var 조각 = [];
+      if (r.name) 조각.push('<span><b>' + ordEsc(r.name) + '</b></span>');
+      if (r.qty) 조각.push('<span>수량 ' + ordEsc(r.qty) + '</span>');
+      if (r.invoice) 조각.push('<span class="ord-inv">' + ordEsc(r.invoice) + '</span>');
+      if (r.uid) 조각.push('<span>' + ordEsc(r.uid) + '</span>');
+      if (r.date) 조각.push('<span>' + ordEsc(r.date) + '</span>');
+      조각.push('<span class="ord-src">' + ordEsc(r.source) + '</span>');
+
+      /*  복사할 글은 «사람이 읽을 한 줄»이다. 화면에 보이는 차례 그대로 담는다 */
+      var 복사 = [r.item, r.qty ? '× ' + r.qty : '', r.name, r.invoice, r.uid]
+        .filter(function (x) { return !!String(x || '').trim(); }).join(' · ');
+
+      return '<div class="ord-row">' +
+        '<div class="t">' + ordEsc(r.item || '(품목 없음)') + '</div>' +
+        '<div class="m">' + 조각.join('') + '</div>' +
+        '<button type="button" class="ord-copy" data-copy="' + ordEsc(복사) + '">복사</button>' +
+        '</div>';
+    }
+
+    function renderOrders(res) {
+      var box = el('oList');
+      if (!res || !res.ok) {
+        box.innerHTML = '<div class="empty">' + ordEsc((res && res.error) || '불러오지 못했습니다') + '</div>';
+        return;
+      }
+
+      //  검색어가 있었을 때 — 붙여넣은 줄마다 한 덩어리
+      if (res.groups && res.groups.length) {
+        var h = '';
+        for (var i = 0; i < res.groups.length; i++) {
+          var gp = res.groups[i];
+          var n = (gp.rows || []).length;
+          h += '<div class="ord-grp' + (n ? '' : ' none') + '">' +
+            '<div class="ord-grp-h"><span class="ord-grp-q">' + ordEsc(gp.q) + '</span>' +
+            '<span class="ord-grp-n">' + (n ? n + '건' : '못 찾음') + '</span></div>';
+          for (var j = 0; j < n; j++) h += ordRowHtml(gp.rows[j]);
+          h += '</div>';
+        }
+        box.innerHTML = h;
+        return;
+      }
+
+      var rows = res.rows || [];
+      if (!rows.length) {
+        box.innerHTML = '<div class="empty">아직 마감 안 된 발주가 없습니다.<br>' +
+          '지난 건은 위 칸에 제품명이나 송장번호를 넣어 찾아 주세요.</div>';
+        return;
+      }
+      var h2 = '';
+      for (var k = 0; k < rows.length; k++) h2 += ordRowHtml(rows[k]);
+      if (res.truncated) {
+        h2 += '<div class="hint">' + rows.length + '건까지만 보여 줍니다. ' +
+          '찾으시는 것이 있으면 위 칸에 넣어 주세요.</div>';
+      }
+      box.innerHTML = h2;
+    }
+
+    function loadOrders() {
+      var q = el('oq').value;
+      el('oList').innerHTML = '<div class="empty">' +
+        (String(q).trim() ? '발주 마감까지 훑는 중…' : '불러오는 중…') + '</div>';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (handled(res)) return;
+          renderOrders(res);
+        })
+        .withFailureHandler(function (e) {
+          el('oList').innerHTML = '<div class="empty">' +
+            ordEsc(String(e && e.message ? e.message : e)) + '</div>';
+        })
+        .prpListOrders(SID, { q: q, scope: 'live' });
+    }
+
+    for (var pi = 0; pi < document.querySelectorAll('.pages button').length; pi++) {
+      (function (b) {
+        b.addEventListener('click', function () { showPage(b.getAttribute('data-page')); });
+      })(document.querySelectorAll('.pages button')[pi]);
+    }
+    el('oGo').addEventListener('click', loadOrders);
+    el('oClear').addEventListener('click', function () {
+      el('oq').value = '';
+      loadOrders();
+    });
+    /*  ★ 붙여넣으면 바로 찾는다 ★ 붙여넣고 또 단추를 누르게 하지 않는다.
+        브라우저가 값을 채운 뒤에 읽어야 해서 한 박자 미룬다.  */
+    el('oq').addEventListener('paste', function () { setTimeout(loadOrders, 0); });
+    el('oq').addEventListener('keydown', function (ev) {
+      //  한 줄짜리는 Enter 로 찾는다. 여러 줄을 쓰는 중이면 줄바꿈이 먼저다.
+      if (ev.key === 'Enter' && !ev.shiftKey && el('oq').value.indexOf('\n') < 0) {
+        ev.preventDefault();
+        loadOrders();
+      }
+    });
+
+    /*  복사 — 붙여넣기와 짝이다. 한 줄을 카톡·메모로 옮길 때 쓴다.  */
+    el('oList').addEventListener('click', function (ev) {
+      var b = ev.target.closest ? ev.target.closest('.ord-copy') : null;
+      if (!b) return;
+      var txt = b.getAttribute('data-copy') || '';
+      function 됐다() {
+        b.textContent = '복사됨';
+        b.classList.add('done');
+        setTimeout(function () { b.textContent = '복사'; b.classList.remove('done'); }, 1600);
+      }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).then(됐다, function () { 옛방식(txt, 됐다); });
+        } else { 옛방식(txt, 됐다); }
+      } catch (e) { 옛방식(txt, 됐다); }
+    });
+
+    /*  clipboard API 는 안전한 문맥에서만 된다. 옛 기기·iframe 에서는 안 되므로
+        보이지 않는 칸에 넣고 execCommand 로 복사한다 — 되는 길을 남겨 둔다.  */
+    function 옛방식(txt, 끝) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = txt;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        끝();
+      } catch (e) {
+        alert('복사하지 못했습니다. 글자를 길게 눌러 복사해 주세요.\n\n' + txt);
+      }
+    }
     el('nUid').addEventListener('keydown', function (ev) {
       if (ev.key === 'Enter') { ev.preventDefault(); lookupUid(); }
     });

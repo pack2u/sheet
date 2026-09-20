@@ -93,7 +93,10 @@ function prpMapOrderCols_(hdr) {
     phone: find(/수취인전화|전화번호|연락처/, false),
     item: find(/품목명|상품명/, false),
     qty: find(/^수량$/, false),
-    note: find(/^적요$/, false)
+    note: find(/^적요$/, false),
+    /*  목록으로 볼 때는 「언제 것인가」가 있어야 훑을 수 있다.
+        못 찾으면 -1 로 두고 화면에서 그 줄만 비운다 — 자리를 지어내지 않는다. */
+    date: find(/^발주일$|^주문일$|^일자$|^등록일$|^접수일$/, false)
   };
   if (cols.inv < 0) cols.inv = 10;
   if (cols.uid < 0) cols.uid = 12;
@@ -128,6 +131,7 @@ function prpRowToMatch_(row, cols, source) {
     qty: cols.qty >= 0 ? String(row[cols.qty] || "").trim() : "",
     invoice: cols.inv >= 0 ? prpFormatInvoice_(row[cols.inv]) : "",
     uid: uid,
+    date: cols.date >= 0 ? String(row[cols.date] || "").trim() : "",
     source: source || ""
   };
 }
