@@ -21,7 +21,7 @@
   h1{font-size:20px;margin:6px 0 2px}
   .sub{color:var(--muted);font-size:13px;margin:0 0 16px}
 
-  #drop{background:var(--card);border:2px dashed var(--line);border-radius:16px;
+  #drop{background:var(--card);border:2px dashed rgba(0,0,0,0.12);border-radius:16px;
         padding:34px 16px;text-align:center;cursor:pointer;transition:.15s}
   #drop.over{border-color:var(--brand);background:#fffbeb}
   #drop.busy{opacity:.7;cursor:progress}
@@ -36,16 +36,16 @@
   .btn[disabled]{opacity:.5;cursor:not-allowed}
 
   #list{margin-top:14px}
-  .row{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  .row{background:var(--card);border:1px solid transparent;border-radius:12px;
        padding:11px 13px;margin-bottom:8px}
   .row .nm{font-weight:700;word-break:break-all}
   .row .msg{font-size:13px;margin-top:3px}
   .ok{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
   .msg a{color:inherit}
 
-  .note{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;
+  .note{background:#fff7ed;border:1px solid transparent;border-radius:12px;
         padding:12px 14px;font-size:13px;color:#7c2d12;margin-top:16px}
-  .off{background:#fef2f2;border:1px solid #fecaca;color:#7f1d1d;
+  .off{background:#fef2f2;border:1px solid transparent;color:#7f1d1d;
        border-radius:12px;padding:14px;font-size:14px;margin-bottom:14px}
 </style>
 </head>

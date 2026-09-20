@@ -273,7 +273,7 @@
       margin-top: 12px;
       padding: 10px 14px;
       background: rgba(231,76,95,0.08);
-      border: 1px solid rgba(231,76,95,0.2);
+      border: 1px solid transparent;
       border-radius: 8px;
       font-size: 11px;
       color: var(--accent-red);
@@ -519,7 +519,8 @@
     .loading-overlay.active { display: flex; }
     .spinner {
       width: 40px; height: 40px;
-      border: 3px solid var(--border);
+      /*  고리는 남긴다 — 테두리가 아니라 「도는 것」이다 (2026-09-20) */
+      border: 3px solid rgba(255,255,255,0.12);
       border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;

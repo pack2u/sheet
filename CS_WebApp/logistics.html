@@ -128,7 +128,10 @@
   .find input {
     width: 100%; box-sizing: border-box;
     padding: 16px 14px; font-size: 17px;
-    border-radius: 12px; border: 2px solid var(--line);
+    /*  --line 은 이 파일에 없다 — 정의 없는 var 는 글자색으로 떨어져 오히려
+        굵은 선이 그어졌다. 명시적으로 지운다 (2026-09-20).
+        초점일 때는 아래 규칙이 #fdb913 으로 되살린다.  */
+    border-radius: 12px; border: 2px solid transparent;
     background: var(--bg2); color: var(--tx);
   }
   .find input:focus { outline: none; border-color: #fdb913; }
@@ -167,7 +170,9 @@
     /* 공지는 맨 위에 통째로. 「금일 판매불가」 같은 건 놓치면 안 된다. */
     .notices { display: block; margin-bottom: 16px; }
     .notice {
-      border-left: 4px solid #fdb913; background: var(--bg2);
+      /*  띠 대신 바탕으로 (2026-09-20). 「금일 판매불가」는 여전히 눈에
+          띄어야 하므로, 선을 걷은 자리를 옅은 노랑 바탕이 대신 받는다.  */
+      border-left: 4px solid transparent; background: rgba(253,185,19,0.12);
       border-radius: 0 10px 10px 0; padding: 12px 16px; margin-bottom: 8px;
     }
     .notice .t { font-weight: 700; font-size: 16px; }

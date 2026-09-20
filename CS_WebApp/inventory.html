@@ -145,7 +145,7 @@
     .file-input-hidden { display: none; }
     .camera-error-detail {
       margin-top: 10px; padding: 8px 12px;
-      background: rgba(231,76,95,0.08); border: 1px solid rgba(231,76,95,0.2);
+      background: rgba(231,76,95,0.08); border: 1px solid transparent;
       border-radius: 6px; font-size: 10px; color: var(--accent-red);
       text-align: left; word-break: break-all;
     }
@@ -322,7 +322,8 @@
     .loading-overlay.active { display: flex; }
     .spinner {
       width: 40px; height: 40px;
-      border: 3px solid var(--border); border-top-color: var(--accent-green);
+      /*  고리는 남긴다 — 테두리가 아니라 「도는 것」이다 (2026-09-20) */
+      border: 3px solid rgba(255,255,255,0.12); border-top-color: var(--accent-green);
       border-radius: 50%; animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
