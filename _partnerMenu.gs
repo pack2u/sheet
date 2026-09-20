@@ -158,26 +158,20 @@ function registerPartnerMenu_() {
     /*  ★ 뿌리부터 본다 ★  (2026-09-21)
         상품정보의 이카운트코드 → 허브 전체 그룹 단가표 → 업체 단가조회 →
         발주탭. 한 줄기다. 위에서 한 글자가 어긋나면 아래가 통째로 다른 물건을
-        가리킨다. 그래서 그 줄기를 «따라가며 보는» 것들만 한 서랍에 둔다.
+        가리킨다. 그 줄기를 «따라가며 보는» 것들만 한 서랍에 둔다.
 
-        처음엔 「협력업체 반품 포털」 안에 넣었다가 옮겼다 — 반품과 아무 상관이
-        없어서 다음 사람이 절대 못 찾는다.
-
-        ★ 읽는 것과 고치는 것을 갈라 둔다 ★ 「끝 열기 (반영)」만 쓴다.  */
+        ★ 여기 있는 것은 전부 읽기만 한다 ★
+          2026-09-21 에 단가조회 값→수식 전환과 발주탭 수식 끝 열기를 여기서
+          돌렸고, 끝난 뒤 메뉴·함수를 함께 지웠다. 한 번 쓰고 끝날 것은
+          끝나면 지운다 — 안 지우면 쌓여서 매일 쓰는 걸 못 찾는다.
+          (지운 것: _priceTabToFormula.gs · _partnerOrderSpill.gs)  */
     .addSubMenu(
-      ui.createMenu("🧬 코드·단가 뿌리 점검")
+      ui.createMenu("🧬 상품 코드 점검")
         .addItem("🔎 상품정보 코드 점검 (읽기만)", "productCodeAudit")
         .addItem("   └ 📸 오늘 코드 찍어 두기", "productCodeSnapshot")
         .addItem("   └ 🔍 바뀐 코드 찾기", "productCodeDiff")
         .addSeparator()
         .addItem("🔎 코드 한 개 찾아보기 (업체·허브 양쪽)", "partnerPriceCodeTrace")
-        .addItem("🔬 단가조회 수식 보기 (읽기만)", "partnerPriceTabInspect")
-        .addItem("   └ ♻️ 단가조회를 수식으로 되돌리기 (백업 후)", "partnerPriceTabToFormula")
-        .addItem("   └ ♻️ 모든 업체 한꺼번에 (이어서 가능)", "partnerPriceTabToFormulaAll")
-        .addItem("   └ 📊 전환 상태 한눈에 보기", "partnerPriceTabStatus")
-        .addSeparator()
-        .addItem("🧩 발주탭 자동 수식 점검 (보기만)", "partnerOrderSpillCheck")
-        .addItem("🧩 발주탭 자동 수식 끝 열기 (반영)", "partnerOrderSpillOpen")
     )
     .addSubMenu(
       ui.createMenu("🔁 협력업체 반품 포털")
