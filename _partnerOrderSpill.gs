@@ -28,7 +28,19 @@
  */
 
 var _POS_ORDER_TAB_ = "발주 및 송장조회";
-var _POS_CELLS_ = ["A1", "D1", "L1", "N1"];   // 자동 열 머리 — 스필이 걸리는 자리
+
+/*  ★ D1·L1 만 다룬다 ★  (2026-09-21 · 처음엔 A1·N1 까지 넣었다가 물렸다)
+
+    A1(거래처명)·N1(상태)의 수식은 «빈 문자열을 뿌리는» 것이 일이다.
+      =ARRAYFORMULA(IF(LEN(C2:C500)+LEN(D2:D500)=0, "", …))
+    500행까지면 넉넉하고, 열어 두면 A열이 시트 끝까지 빈 문자열로 차서
+    getLastRow() 가 늘 1000쯤으로 잡힌다 — 더 나빠진다.
+
+    정작 «데이터에 닿아야» 하는 것은 D1(품목명)·L1(정산금액)이다.
+    당장드림은 이 둘이 89행까지였다. 90행부터는 품목명이 안 채워진다.
+    허브도 못 메운다 — _po_refreshAutofillBeforeCollect_ 는 D1 에 수식이
+    있으면(dHasF) 손대지 않기 때문이다.  */
+var _POS_CELLS_ = ["D1", "L1"];
 
 /**
  * 한 수식에서 «자기 탭» 범위의 박힌 끝만 지운다.
@@ -74,7 +86,26 @@ function _pos_scanTab_(tab) {
       var n = parseInt(String(mm[k]).replace(/[^0-9]/g, "").replace(/^2/, ""), 10);
       if (n > 끝) 끝 = n;
     }
-    결과.push({ cell: cell, was: f, now: 새것, end: 끝 });
+    /*  ★ 열기 전에 «아래에 값이 있는지» 본다 ★  (2026-09-21)
+
+        스필은 갈 길에 값이 하나라도 있으면 통째로 #REF! 가 된다. 그러면
+        품목명 열이 그 자리에서 깨지고, 그 탭의 모든 줄이 이름을 잃는다.
+        범위가 89행까지였다는 것은 그 아래에 사람이·스크립트가 값을 넣어
+        막고 있었다는 뜻일 수 있다. 확인하지 않고 열면 안 된다.  */
+    var 막는줄 = 0, 막는값 = "";
+    try {
+      var c = tab.getRange(cell).getColumn();
+      var lr = tab.getLastRow();
+      if (끝 && lr > 끝 + 1) {
+        var 아래 = tab.getRange(끝 + 2, c, lr - (끝 + 1), 1).getDisplayValues();
+        for (var a = 0; a < 아래.length; a++) {
+          var v = String(아래[a][0] || "").trim();
+          if (v) { 막는줄 = 끝 + 2 + a; 막는값 = v.substring(0, 30); break; }
+        }
+      }
+    } catch (eB) {}
+
+    결과.push({ cell: cell, was: f, now: 새것, end: 끝, blockRow: 막는줄, blockVal: 막는값 });
   }
   return 결과;
 }
@@ -116,8 +147,18 @@ function _pos_run_(apply) {
 
   var 줄 = 걸린것.map(function (v) {
     return "· " + v.name + "  —  " +
-      v.hits.map(function (h) { return h.cell + " (" + (h.end || "?") + "행까지)"; }).join(", ");
+      v.hits.map(function (h) {
+        return h.cell + " (" + (h.end || "?") + "행까지)" +
+          (h.blockRow ? " ⚠" + h.blockRow + "행에 값「" + h.blockVal + "」— 못 엽니다" : "");
+      }).join(", ");
   }).join("\n");
+
+  var 막힌수 = 0;
+  for (var q = 0; q < 걸린것.length; q++) {
+    for (var w = 0; w < 걸린것[q].hits.length; w++) {
+      if (걸린것[q].hits[w].blockRow) 막힌수++;
+    }
+  }
 
   if (!apply) {
     ui.alert("끝이 박힌 수식 " + 걸린것.length + "개 파일",
@@ -128,17 +169,33 @@ function _pos_run_(apply) {
   }
 
   var ans = ui.alert("끝 열기 — 반영",
-    줄 + "\n\n위 수식의 «박힌 끝»만 지웁니다 (C2:C500 → C2:C).\n" +
+    줄 + "\n\n품목명(D1)·정산금액(L1)의 «박힌 끝»만 지웁니다 (C2:C89 → C2:C).\n" +
+    (막힌수 ? "⚠ 표시가 붙은 " + 막힌수 + "곳은 아래에 값이 있어 건너뜁니다.\n" +
+      "   그대로 열면 스필이 막혀 품목명 열이 통째로 #REF! 가 됩니다.\n" : "") +
     "그 밖의 내용은 한 글자도 바꾸지 않습니다.\n\n계속할까요?",
     ui.ButtonSet.YES_NO);
   if (ans !== ui.Button.YES) return;
 
-  var 고침 = 0, 실패 = [];
+  var 고침 = 0, 건너뜀 = [], 실패 = [];
   for (var v = 0; v < 걸린것.length; v++) {
     for (var h = 0; h < 걸린것[v].hits.length; h++) {
       var hit = 걸린것[v].hits[h];
+      if (hit.blockRow) {
+        건너뜀.push(걸린것[v].name + " " + hit.cell + " — " + hit.blockRow + "행에 값이 있음");
+        continue;
+      }
       try {
         걸린것[v].tab.getRange(hit.cell).setFormula(hit.now);
+        //  ★ 연 자리를 바로 견준다 ★ #REF! 가 나면 되돌린다.
+        //    「고쳤다」는 말만 하고 깨진 채 두는 것이 가장 나쁘다.
+        SpreadsheetApp.flush();
+        var 결과 = String(걸린것[v].tab.getRange(hit.cell).getDisplayValue() || "");
+        if (결과.indexOf("#REF") >= 0 || 결과.indexOf("#ERROR") >= 0) {
+          걸린것[v].tab.getRange(hit.cell).setFormula(hit.was);
+          SpreadsheetApp.flush();
+          실패.push(걸린것[v].name + " " + hit.cell + ": " + 결과 + " — 되돌렸습니다");
+          continue;
+        }
         고침++;
       } catch (e) {
         실패.push(걸린것[v].name + " " + hit.cell + ": " + e.message);
@@ -149,8 +206,9 @@ function _pos_run_(apply) {
 
   ui.alert("끝 열기 완료",
     고침 + "곳을 고쳤습니다." +
+    (건너뜀.length ? "\n\n건너뛴 것 (아래에 값이 있어 열면 깨집니다):\n" + 건너뜀.join("\n") : "") +
     (실패.length ? "\n\n못 고친 것:\n" + 실패.join("\n") : "") +
-    "\n\n★ 확인 ★ 발주탭에서 마지막 줄 아래에 코드를 하나 적어 보시면\n" +
+    "\n\n★ 확인 ★ 발주탭 마지막 줄 아래에 이카운트코드를 하나 적어 보시면\n" +
     "품목명·정산금액이 바로 채워져야 합니다.",
     ui.ButtonSet.OK);
 }

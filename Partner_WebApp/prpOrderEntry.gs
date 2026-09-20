@@ -65,6 +65,32 @@ function prpOeMapCols_(hdr) {
 /** 업체가 «적는» 칸만 추린다 — 자동 열에는 한 글자도 쓰지 않는다 */
 var PRP_OE_WRITABLE_ = ["code", "qty", "name", "phone", "addr", "msg", "note", "pickup"];
 
+/**
+ * 발주탭에서 «사람이 적은» 마지막 줄의 다음 행.
+ *
+ * getLastRow() 는 못 쓴다 — A열 ARRAYFORMULA 가 빈 문자열을 500행까지
+ * 뿌려 놓아서 늘 500 쯤으로 잡힌다. 자동 열(A·D·L·M·N)은 보지 않고,
+ * 사람이 적는 칸만 본다.
+ */
+function _prpOeNextRow_(tab, col, lc) {
+  var last = tab.getLastRow();
+  if (last < 2) return 2;
+
+  var keys = [col.code, col.name, col.addr, col.phone, col.inv, col.qty]
+    .filter(function (c) { return c >= 0; });
+  if (!keys.length) return last + 1;
+
+  var all = tab.getRange(1, 1, last, lc).getDisplayValues();
+  var 마지막 = 1;   // 1-기반 행 번호. 머리글만 있으면 1
+  for (var r = 1; r < all.length; r++) {
+    for (var k = 0; k < keys.length; k++) {
+      var v = String(all[r][keys[k]] || "").trim();
+      if (v && v !== "-") { 마지막 = r + 1; break; }
+    }
+  }
+  return 마지막 + 1;
+}
+
 function prpOeOpenBook_(sess) {
   var fileId = prpFindVendorFileId_(sess);
   if (!fileId) return { ok: false, error: "이 업체의 배포파일을 찾지 못했습니다. 운영자에게 알려 주세요." };
@@ -208,10 +234,20 @@ function prpSubmitOrders(sid, payload) {
       return { ok: false, error: "발주 탭에서 코드·수량·수취인·주소 열을 못 찾았습니다." };
     }
 
-    /*  ★ 맨 아래 빈 줄을 «잠금 안에서» 다시 읽는다 ★
-        시트로 직접 적는 길이 살아 있다. 읽고 쓰는 사이에 사람이 한 줄
-        적으면, 미리 재어 둔 자리는 이미 남의 줄이다.  */
-    var dest = tab.getLastRow() + 1;
+    /*  ★ getLastRow() 를 믿으면 안 된다 ★  (2026-09-21)
+
+        A1 의 ARRAYFORMULA 가 `IF(LEN(C2:C500)+LEN(D2:D500)=0, "", …)` 라서
+        A2:A500 에 «빈 문자열»이 스필된다. 빈 문자열도 값이라 getLastRow()
+        가 500 으로 잡힌다. 실제 데이터는 89행 근처인데 501행에 넣겠다고
+        했던 것이 이 탓이다. 그러면 90~500행이 빈 줄로 남고, 그 자리는
+        수식도 안 닿아 품목명이 채워지지 않는다.
+
+        사람이 적은 칸(코드·수취인·주소·송장)을 보고 «진짜 마지막 줄»을
+        찾는다. 반품 쪽 prpNextDestRow_ 와 같은 생각이다.
+
+        ★ 잠금 안에서 읽는다 ★ 시트로 직접 적는 길이 살아 있다. 읽고 쓰는
+          사이에 사람이 한 줄 적으면 미리 재어 둔 자리는 이미 남의 줄이다.  */
+    var dest = _prpOeNextRow_(tab, col, lc);
 
     /*  ★ 스필 범위를 확인한다 ★
         D(품목명)·L(정산금액)은 ARRAYFORMULA 로 C 열을 따라간다. 그런데 그
