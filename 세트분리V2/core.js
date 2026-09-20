@@ -180,6 +180,9 @@ var SS_DEFAULT_CONFIG = {
      표 자체는 「도서산간_도선료」 탭에 사람이 심는다. 로젠 표로 갈아 넣은 뒤
      이 값을 '로젠' 으로 바꾸면 아래 경고가 멎는다. */
   도선료표_기준: '롯데',
+  /*  도서산간 도선료를 한 값으로 통일 (2026-09-21).
+      로젠 요율표를 못 받은 동안. 0 이면 표를 그대로 쓴다. */
+  도선료_통일금액: 5000,
   도서산간_미확인: '보류',
   도서산간_판정: '우편번호우선',
   전화주문_고유ID: '주문번호칸에채움',
@@ -1388,6 +1391,10 @@ function ssRoute(units, masters, cfg, warnings) {
   var islandZip = masters.islandZips || {};
   var addrZip = masters.addrZip || {};
   var holdIsland = ssText(cfg.도서산간_미확인) !== '일반출고';
+  /*  ★ 도선료를 한 값으로 통일한다 ★  (2026-09-21 · ssSurcharge 의 긴 설명 참고)
+      로젠 요율표를 못 받은 동안 표의 롯데 금액(1,000~9,900원)을 쓰느니
+      한 값으로 통일한다. 비우거나 0 이면 표를 그대로 쓴다. */
+  var 통일도선료 = ssNum(cfg.도선료_통일금액);
 
   // 한 글자 키워드는 시/군을 가려내지 못한다.
   // 예전 목록의 「중」은 중구·중랑구·중앙로·궁중보쌈까지 전부 후보로 만들었다.
@@ -1623,7 +1630,7 @@ function ssRoute(units, masters, cfg, warnings) {
       /* ★ 우도·추자는 항공료가 더 붙는다 ★
          비행기로 제주까지 간 뒤 배로 한 번 더 나간다. 도선료만 적으면
          제주 왕복분이 통째로 빠진다 (2026-09-08 사장님 확인). */
-      u.도선료 = ssSurcharge(addr, fh.권역, ferry).합계;
+      u.도선료 = ssSurcharge(addr, fh.권역, ferry, { 통일도선료: 통일도선료 }).합계;
       if (면제) { ssIslandSkipByManual_(u, warnings); continue; }
       u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
       continue;
@@ -1635,7 +1642,7 @@ function ssRoute(units, masters, cfg, warnings) {
         u.도서권역 = islandZip[zip];
         u.도서판정 = '우편번호';
         /* 제주 본섬은 도선료표에 없다(우도·추자만 있다). 항공료 정액만 붙는다. */
-        u.도선료 = ssSurcharge(addr, islandZip[zip], ferry).합계;
+        u.도선료 = ssSurcharge(addr, islandZip[zip], ferry, { 통일도선료: 통일도선료 }).합계;
         if (면제) { ssIslandSkipByManual_(u, warnings); continue; }
         u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
         continue;
@@ -1659,7 +1666,7 @@ function ssRoute(units, masters, cfg, warnings) {
       //  «빼는 건»만 금액을 센다 — 얼마를 못 받는지 말하기 위해서다.
       //  안 빠지는 줄의 도선료 칸은 여태 하던 대로 둔다(이 자리 일이 아니다).
       if (면제) {
-        u.도선료 = ssSurcharge(addr, 확정, ferry).합계;
+        u.도선료 = ssSurcharge(addr, 확정, ferry, { 통일도선료: 통일도선료 }).합계;
         ssIslandSkipByManual_(u, warnings);
         continue;
       }
@@ -1687,19 +1694,32 @@ function ssRoute(units, masters, cfg, warnings) {
        아무 오류도 안 나고, 청구서를 받는 다음 달에야 안다.
 
        도서산간 건이 «실제로 나온 회차»에만 알린다. 매번 뜨면 눈이 감긴다.
-       표를 갈아 넣은 뒤 설정의 「도선료표_기준」을 로젠으로 바꾸면 멎는다. */
+       표를 갈아 넣은 뒤 설정의 「도선료표_기준」을 로젠으로 바꾸면 멎는다.
+
+     ★ 2026-09-21 — 무엇이 «실제로» 쓰였는지 적는다 ★
+       도선료를 한 값으로 통일해 두면 표의 금액은 안 쓰인다. 그런데도
+       「표가 롯데 기준입니다」라고만 말하면, 읽는 사람은 여전히 표의
+       제각각인 금액이 나간 줄 안다. 지금 나간 값이 무엇인지부터 말한다. */
   var 표기준 = ssText(cfg.도선료표_기준) || '롯데';
   if (표기준.indexOf('로젠') < 0) {
-    var 도서건 = 0;
+    var 도서건 = 0, 도선료합 = 0;
     for (var f = 0; f < units.length; f++) {
       if (units[f].route === SS_ROUTE.LOTTE_ISLAND ||
-          units[f].route === SS_ROUTE.LOTTE_ISLAND_CONSIGN) 도서건++;
+          units[f].route === SS_ROUTE.LOTTE_ISLAND_CONSIGN) {
+        도서건++;
+        도선료합 += Number(units[f].도선료) || 0;
+      }
     }
     if (도서건) {
-      ssWarn(warnings, '주의', 'FERRY_TABLE_OLD', 표기준 + ' 기준',
-        '도선료 표가 아직 「' + 표기준 + '」 기준입니다. 이번 회차 도서산간 ' + 도서건 +
-        '건의 추가운임이 로젠 청구액과 다를 수 있습니다. ' +
-        '「도서산간_도선료」 탭을 로젠 표로 바꾼 뒤 설정의 「도선료표_기준」을 로젠으로 고치세요.');
+      ssWarn(warnings, '주의', 'FERRY_TABLE_OLD',
+        통일도선료 > 0 ? ('통일 ' + 통일도선료 + '원') : (표기준 + ' 기준'),
+        (통일도선료 > 0
+          ? ('도선료를 한 값(' + 통일도선료 + '원)으로 통일해 쓰고 있습니다 — 표의 금액은 안 씁니다. ')
+          : ('도선료 표가 아직 「' + 표기준 + '」 기준입니다. ')) +
+        '이번 회차 도서산간 ' + 도서건 + '건 · 추가운임 합계 ' +
+        도선료합.toLocaleString() + '원. 로젠 청구액과 다를 수 있습니다. ' +
+        '로젠 요율표를 받으면 「도서산간_도선료」 탭을 갈아 넣고, ' +
+        '설정의 「도선료_통일금액」을 비운 뒤 「도선료표_기준」을 로젠으로 고치세요.');
     }
   }
 
@@ -1782,6 +1802,35 @@ function ssSurcharge(addr, zone, ferry, opts) {
   var air = opts.항공료 == null ? SS_AIR_FEE_JEJU : (Number(opts.항공료) || 0);
   var fh = ssFerryMatch(addr, ferry);
   var 도선료 = fh ? (Number(fh.료) || 0) : 0;
+
+  /* ══════════════════════════════════════════════════════════
+     ★ 도선료 통일 ★  (2026-09-21)
+
+     > "도서산간은 일단 도선료는 5000원으로 통일시켜줘 정확하지가 않으니.."
+
+     9/11 에 롯데 → 로젠으로 갈아탔는데 로젠 요율표를 아직 못 받았다.
+     표에 남아 있는 63줄은 전부 «롯데» 금액이라 1,000원부터 9,900원까지
+     제각각이고, 그 값을 그대로 고객에게 안내하면 로젠 청구액과 다르다.
+     그럴 바에는 한 값으로 통일하는 편이 낫다 — 틀려도 «어떻게» 틀렸는지는
+     안다. 제각각이면 어느 줄이 얼마나 틀렸는지 알 수가 없다.
+
+     ★ 표를 지우지 않는다 ★
+       로젠 표가 오는 날 그 표를 갈아 끼우고 설정만 비우면 된다.
+       지금 표를 밀어 버리면 되돌릴 자료가 없어진다.
+
+     ★ 붙는 줄에만 붙인다 ★
+       표에 없는 주소는 «도서가 아니다»라는 뜻이라 0 그대로 둔다.
+       통일값을 아무 데나 붙이면 육지에도 도선료가 붙는다.
+       다만 우편번호로만 잡힌 도서(표에 없는 섬)는 통일값을 쓴다 —
+       도서라고 판정해 놓고 0 원을 받으면 그게 더 틀린 값이다.
+
+     끄는 법 : 설정 「도선료_통일금액」 을 비우거나 0 으로.
+     ══════════════════════════════════════════════════════════ */
+  var 통일 = Number(opts.통일도선료);
+  if (통일 > 0) {
+    var 섬인가 = !!fh || ssText(zone) === '도서';
+    if (섬인가) 도선료 = 통일;
+  }
   /* 권역은 부르는 쪽이 이미 정했으면 그것을 믿는다 — 우편번호 판정이
      도선료표보다 넓다(제주 본섬은 표에 없고 우편번호로만 잡힌다). */
   var z = ssText(zone) || (fh ? fh.권역 : '');

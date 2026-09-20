@@ -631,6 +631,13 @@ function ss_실행(opts) {
       ['  신규 주소 추가', added],
       ['  조회 시도 / 성공 / 실패', zr.tried + ' / ' + zr.filled + ' / ' + (zr.failed ? zr.failed.length : 0)],
       ['  카카오 키', ssz_key() ? '설정됨' : '없음  ← 도서산간 판정 불가'],
+      /*  ★ 도선료가 «어디서» 나온 값인지 적는다 ★  (2026-09-21)
+          통일값을 쓰면 표의 금액은 안 나간다. 그런데 요약이 아무 말도 안 하면
+          읽는 사람은 여전히 표대로 나간 줄 안다. 지금 쓴 값을 그대로 적는다. */
+      ['도선료 기준',
+        (ssNum(cfgRaw['도선료_통일금액']) > 0
+          ? '통일 ' + ssNum(cfgRaw['도선료_통일금액']).toLocaleString() + '원 (표 대신 · 로젠 요율표 미수령)'
+          : '「도서산간_도선료」 탭 (' + (ssText(cfgRaw['도선료표_기준']) || '롯데') + ' 기준)')],
       ['  사전 조회대기 / 영구실패', 사전수.대기 + ' / ' + 사전수.영구],
       ['마스터 · 품목 / 재고 / BOM',
         Object.keys(masters.items).length + ' / ' + Object.keys(masters.stock).length + ' / ' + Object.keys(masters.bom).length],
