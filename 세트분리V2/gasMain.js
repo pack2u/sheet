@@ -2656,8 +2656,14 @@ function ss_그날판매현황쌓기(runKey) {
   ssio_styleHeader(sh, head.length, { bg: '#2c4f6b' });
 
   ss_옛판매현황탭정리(rk);
+  /*  ★ 여기서 또 join 하면 안 된다 ★  (2026-09-21)
+      ss_그날겹침거르기_ 가 이미 «문자열»로 돌려준다(그 함수 끝의 join).
+      문자열에 .join 을 부르면 TypeError 라 그날 판매현황 탭이 통째로 안 만들어졌다.
+      곁다리 try/catch 안이라 실행은 멀쩡히 끝나고, 경고 탭에
+      「DAILY_SALES_TAB 회차글.join is not a function」 한 줄만 남았다 —
+      아무도 안 열어 보는 곳이다. v2 상태 화면이 켜지자마자 이걸 집어냈다. */
   SS_DAILY_복원결과_ = { 줄수: 되살림.length, 회차들: 되살린회차,
-    겹쳐버림: 겹쳐버림, 회차글: 회차글.join(' · '), 총줄: all.length };
+    겹쳐버림: 겹쳐버림, 회차글: 회차글, 총줄: all.length };
   return add.length;
 }
 
