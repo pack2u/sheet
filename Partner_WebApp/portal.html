@@ -248,6 +248,68 @@
       .wrap .ord-find { max-width: 760px; }
     }
 
+    /* ── 발주 넣기 ── */
+    .ent-warn {
+      margin-bottom: 14px; padding: 10px 12px; border-radius: 10px;
+      background: var(--accent-orange-bg); color: var(--accent-orange);
+      font-size: 12px; line-height: 1.6;
+    }
+    .ent-warn.live { background: rgba(232,93,93,0.16); color: #ff9e9e; }
+    .ent-sec { margin-bottom: 18px; }
+    .ent-h {
+      display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;
+      font-size: 13px; font-weight: 700; color: var(--text-bright);
+    }
+    .ent-h span { font-size: 11px; font-weight: 500; color: var(--text-muted); }
+    .ent-sec .fld, .ent-sec .fld2 { margin-bottom: 9px; }
+    .ent-sec label { display: block; font-size: 11.5px; color: var(--text-secondary);
+      font-weight: 600; margin-bottom: 4px; }
+    .ent-sec input[type="text"], .ent-sec input[type="tel"] {
+      width: 100%; padding: 10px 11px; border-radius: 10px; border: 1px solid transparent;
+      background: var(--bg-sunken); color: var(--text-primary); font-family: inherit; font-size: 13.5px;
+    }
+    .ent-sec textarea {
+      width: 100%; margin-top: 7px; padding: 10px 11px; border-radius: 10px;
+      border: 1px solid transparent; background: var(--bg-sunken); color: var(--text-primary);
+      font-family: inherit; font-size: 13px; line-height: 1.5; resize: vertical;
+    }
+    .ent-items { max-height: 260px; overflow-y: auto; margin-top: 8px; }
+    .ent-item {
+      display: block; width: 100%; text-align: left; margin-bottom: 5px;
+      padding: 8px 10px; border-radius: 9px; border: 1px solid transparent;
+      background: var(--bg-card); color: var(--text-bright);
+      font-family: inherit; font-size: 12.5px; line-height: 1.45; cursor: pointer;
+    }
+    .ent-item b { display: block; font-weight: 600; }
+    .ent-item i {
+      display: block; font-style: normal; margin-top: 2px;
+      font-size: 11px; color: var(--text-muted);
+    }
+    .ent-item .no { color: var(--accent-red); font-weight: 700; }
+    .ent-row {
+      display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+      background: var(--bg-card); border-radius: 9px; margin-bottom: 5px;
+    }
+    .ent-row .g { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.4; }
+    .ent-row .g i { display: block; font-style: normal; font-size: 11px; color: var(--text-muted); }
+    .ent-row input.q {
+      flex: 0 0 62px; width: 62px; padding: 7px 8px; border-radius: 8px;
+      border: 1px solid transparent; background: var(--bg-sunken);
+      color: var(--text-primary); font-family: inherit; font-size: 13px; text-align: center;
+    }
+    .ent-row button.x {
+      flex: 0 0 auto; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px;
+      background: var(--bg-sunken); color: var(--text-muted); cursor: pointer; font-size: 15px;
+    }
+    .ent-empty { padding: 18px; text-align: center; color: var(--text-muted); font-size: 12.5px; }
+    .ent-pre { font-size: 11.5px; line-height: 1.7; }
+    .ent-pre b { color: var(--text-bright); }
+    .ent-bad { color: var(--accent-red); }
+    @media (min-width: 900px) {
+      .wrap #pageEntry { max-width: 760px; }
+      .ent-items { max-height: 340px; }
+    }
+
     /* ── KPI ── */
     /*  폰에서는 지금까지처럼 위에서 아래로. 좌우 나누기는 900px 부터다.  */
     .head { display: contents; }
@@ -583,6 +645,7 @@
     <div class="pages">
       <button type="button" class="on" data-page="returns">반품 현황</button>
       <button type="button" data-page="orders">발주 · 송장조회</button>
+      <button type="button" data-page="entry">발주 넣기</button>
     </div>
 
     <div id="pageReturns">
@@ -646,6 +709,68 @@
         <div class="hint" id="oHint">검색 없이 열면 아직 마감 안 된 <b>발주 및 송장조회</b>를 보여줍니다.</div>
       </div>
       <div id="oList"></div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         발주 넣기  (2026-09-20)
+
+         ★ 시트에 직접 적는 길은 그대로 살아 있다 ★
+           여기는 «또 하나의 입구»다. 넣으면 그 업체 파일의
+           「발주 및 송장조회」 탭에 줄이 더해지고, 그 뒤는 여태 돌던
+           수집·고유ID·송장이 그대로 받는다.
+         ══════════════════════════════════════════════════════════ -->
+    <div id="pageEntry" hidden>
+      <div class="ent-warn" id="entMode">
+        <b>지금은 시험 모드입니다.</b> 「넣어 보기」는 시트에 아무것도 쓰지 않고
+        어느 자리에 어떻게 들어가는지만 보여 줍니다.
+      </div>
+
+      <div class="ent-sec">
+        <div class="ent-h">받는 분 <span>담은 품목이 모두 이 분께 갑니다</span></div>
+        <div class="fld2">
+          <div><label class="req">수취인</label><input type="text" id="eName" autocomplete="off"></div>
+          <div><label>전화번호</label><input type="tel" id="ePhone" inputmode="numeric" autocomplete="off"></div>
+        </div>
+        <div class="fld"><label class="req">주소</label><input type="text" id="eAddr" autocomplete="off"></div>
+        <div class="fld2">
+          <div><label>배송메시지</label><input type="text" id="eMsg" autocomplete="off"></div>
+          <div><label>적요</label><input type="text" id="eNote" autocomplete="off"></div>
+        </div>
+      </div>
+
+      <div class="ent-sec">
+        <div class="ent-h">품목 고르기 <span id="eItemCnt"></span></div>
+        <input class="search" type="search" id="eSearch" autocomplete="off"
+               placeholder="품목명 · 코드로 좁히기">
+        <div id="eItems" class="ent-items">단가조회를 불러오는 중…</div>
+      </div>
+
+      <div class="ent-sec">
+        <div class="ent-h">묶음으로 넣기 <span>줄마다 한 건</span></div>
+        <div class="hint">
+          코드 · 수량 · 수취인 · 전화 · 주소 · 배송메시지 · 적요 차례로,
+          탭이나 쉼표로 나눠 붙여넣으세요. 엑셀에서 긁어 그대로 붙이셔도 됩니다.
+        </div>
+        <textarea id="eBulk" rows="3" spellcheck="false"
+                  placeholder="JHMINIJJIMB00002	3	홍길동	010-1234-5678	서울시 …"></textarea>
+        <div class="ord-find-row">
+          <label class="act" style="text-align:center">엑셀 열기
+            <input type="file" id="eXlsx" accept=".xlsx,.xls,.csv,text/csv"
+                   style="position:absolute;width:1px;height:1px;opacity:0">
+          </label>
+          <button type="button" class="act" id="eBulkAdd">담기</button>
+        </div>
+      </div>
+
+      <div class="ent-sec">
+        <div class="ent-h">담은 것 <span id="eCartCnt">0줄</span></div>
+        <div id="eCart"></div>
+        <div class="ord-find-row">
+          <button type="button" class="btn-new" id="eDry">넣어 보기 (안 씀)</button>
+          <button type="button" class="act" id="eGo">발주 넣기</button>
+        </div>
+        <div id="eMsgBox" class="hint"></div>
+      </div>
     </div>
 
     <div class="ver">Pack2U 협력업체 포털 <?= version ?></div>
@@ -1848,8 +1973,10 @@
       }
       el('pageReturns').hidden = (which !== 'returns');
       el('pageOrders').hidden = (which !== 'orders');
+      el('pageEntry').hidden = (which !== 'entry');
       //  처음 열 때만 불러온다 — 반품만 보는 사람에게 헛일을 시키지 않는다
       if (which === 'orders' && !ORD_LOADED) { ORD_LOADED = true; loadOrders(); }
+      if (which === 'entry' && !ENT_LOADED) { ENT_LOADED = true; entLoadItems(); entRenderCart(); }
     }
 
     function ordEsc(s) { return esc(s == null ? '' : String(s)); }
@@ -1934,6 +2061,254 @@
         밖에서 받아오는 도구(XLSX)를 쓰므로 별도 블록에 두었고, 다 읽은 뒤에
         찾기를 걸어야 한다. 통로는 이 하나만 낸다 — 늘리면 안이 밖이 된다.  */
     window.prpOrdersSearch = loadOrders;
+
+    /* ══════════════════════════════════════════════════════════════
+       발주 넣기  (2026-09-20)
+
+       ★ 넣기 전에 «넣어 보기» ★ 시트에 아무것도 쓰지 않고 어느 자리에
+         어떻게 들어가는지만 보여 준다. 가장 바쁜 업체의 실제 장부를
+         건드리는 일이라, 길부터 눈으로 보고 넣는다.
+       ══════════════════════════════════════════════════════════════ */
+    var ENT_ITEMS = [];     // 단가조회에서 읽은 품목
+    var ENT_CART = [];      // 담은 것 [{code, item, qty}]
+    var ENT_BULK = [];      // 묶음으로 담은 줄 (받는 분이 줄마다 다르다)
+    var ENT_LOADED = false;
+    var ENT_LAST = null;    // 방금 넣은 것 — 되돌리기용
+
+    function entMsg(t, cls) {
+      var b = el('eMsgBox');
+      b.className = 'hint' + (cls ? ' ' + cls : '');
+      b.innerHTML = t || '';
+    }
+
+    function entLoadItems() {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (handled(res)) return;
+          if (!res || !res.ok) {
+            el('eItems').innerHTML = '<div class="ent-empty">' +
+              esc((res && res.error) || '단가조회를 불러오지 못했습니다') + '</div>';
+            return;
+          }
+          ENT_ITEMS = res.items || [];
+          el('eItemCnt').textContent = ENT_ITEMS.length + '개';
+          entRenderItems();
+        })
+        .withFailureHandler(function (e) {
+          el('eItems').innerHTML = '<div class="ent-empty">' + esc(String(e && e.message || e)) + '</div>';
+        })
+        .prpListItems(SID);
+    }
+
+    function entRenderItems() {
+      var q = String(el('eSearch').value || '').toLowerCase().replace(/\s+/g, '');
+      var h = '', n = 0;
+      for (var i = 0; i < ENT_ITEMS.length && n < 80; i++) {
+        var it = ENT_ITEMS[i];
+        if (q) {
+          var hay = (it.item + ' ' + it.code).toLowerCase().replace(/\s+/g, '');
+          if (hay.indexOf(q) < 0) continue;
+        }
+        n++;
+        /*  ★ 품절은 담기 전에 말한다 ★ 담아서 넣고 나서 알면 이미 늦다.
+            상태칸에 「품절」이 적혀 있으면 그대로 보여 준다 — 막지는 않는다.
+            재고가 실시간이 아니라는 것은 서로 안다.  */
+        var 품절 = /품절|중단|단종/.test(it.state || '');
+        h += '<button type="button" class="ent-item" data-i="' + i + '">' +
+          '<b>' + esc(it.item) + '</b><i>' + esc(it.code) +
+          (it.stock ? ' · 재고 ' + esc(it.stock) : '') +
+          (it.price ? ' · ' + esc(it.price) : '') +
+          (품절 ? ' · <span class="no">' + esc(it.state) + '</span>' : '') +
+          '</i></button>';
+      }
+      el('eItems').innerHTML = h || '<div class="ent-empty">찾는 품목이 없습니다.</div>';
+    }
+
+    function entRenderCart() {
+      var 줄수 = ENT_CART.length + ENT_BULK.length;
+      el('eCartCnt').textContent = 줄수 + '줄';
+      var h = '';
+      for (var i = 0; i < ENT_CART.length; i++) {
+        var c = ENT_CART[i];
+        h += '<div class="ent-row"><div class="g">' + esc(c.item) +
+          '<i>' + esc(c.code) + '</i></div>' +
+          '<input class="q" type="text" inputmode="numeric" value="' + esc(c.qty) +
+          '" data-q="' + i + '" aria-label="수량">' +
+          '<button type="button" class="x" data-x="' + i + '" title="빼기">×</button></div>';
+      }
+      for (var j = 0; j < ENT_BULK.length; j++) {
+        var b = ENT_BULK[j];
+        h += '<div class="ent-row"><div class="g">' + esc(b.code) +
+          ' × ' + esc(b.qty) + '<i>' + esc(b.name || '(수취인 없음)') +
+          (b.addr ? ' · ' + esc(b.addr) : '') + '</i></div>' +
+          '<button type="button" class="x" data-xb="' + j + '" title="빼기">×</button></div>';
+      }
+      el('eCart').innerHTML = h ||
+        '<div class="ent-empty">위에서 품목을 고르거나, 묶음으로 붙여넣으세요.</div>';
+    }
+
+    /** 담은 것을 서버가 받는 모양으로 편다 */
+    function entRows() {
+      var out = [];
+      var 받는분 = {
+        name: el('eName').value, phone: el('ePhone').value,
+        addr: el('eAddr').value, msg: el('eMsg').value, note: el('eNote').value
+      };
+      for (var i = 0; i < ENT_CART.length; i++) {
+        out.push({
+          code: ENT_CART[i].code, qty: ENT_CART[i].qty,
+          name: 받는분.name, phone: 받는분.phone, addr: 받는분.addr,
+          msg: 받는분.msg, note: 받는분.note
+        });
+      }
+      for (var j = 0; j < ENT_BULK.length; j++) out.push(ENT_BULK[j]);
+      return out;
+    }
+
+    /*  묶음 한 줄을 읽는다 — 탭·쉼표로 나눈 차례대로.
+        차례: 코드 · 수량 · 수취인 · 전화 · 주소 · 배송메시지 · 적요  */
+    function entParseBulk(text) {
+      var rows = [], bad = [];
+      var lines = String(text || '').split(/[\r\n]+/);
+      for (var i = 0; i < lines.length; i++) {
+        var ln = lines[i].trim();
+        if (!ln) continue;
+        var f = ln.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(function (x) {
+          return String(x || '').replace(/^"|"$/g, '').trim();
+        });
+        if (/^(이카운트코드|품목코드|코드)$/i.test(f[0] || '')) continue;   // 머리글
+        var one = {
+          code: f[0] || '', qty: String(f[1] || '').replace(/[^0-9]/g, ''),
+          name: f[2] || '', phone: f[3] || '', addr: f[4] || '',
+          msg: f[5] || '', note: f[6] || ''
+        };
+        if (!one.code || !one.qty) { bad.push(i + 1 + '번째 줄: 코드나 수량이 없습니다'); continue; }
+        rows.push(one);
+        if (rows.length >= 50) break;
+      }
+      return { rows: rows, bad: bad };
+    }
+
+    function entSubmit(dryRun) {
+      var rows = entRows();
+      if (!rows.length) { entMsg('담은 것이 없습니다.', 'ent-bad'); return; }
+      entMsg(dryRun ? '어디에 들어갈지 보는 중…' : '발주를 넣는 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (handled(res)) return;
+          if (!res || !res.ok) { entMsg(esc((res && res.error) || '실패'), 'ent-bad'); return; }
+          entShowResult(res, dryRun);
+        })
+        .withFailureHandler(function (e) { entMsg(esc(String(e && e.message || e)), 'ent-bad'); })
+        .prpSubmitOrders(SID, { rows: rows, dryRun: !!dryRun });
+    }
+
+    function entShowResult(res, dryRun) {
+      var h = '<div class="ent-pre"><b>' + esc(res.message || '') + '</b>';
+      if (res.spillWarn) h += '<br><span class="ent-bad">⚠ ' + esc(res.spillWarn) + '</span>';
+      if (res.bad && res.bad.length) {
+        h += '<br><span class="ent-bad">못 넣은 줄 ' + res.bad.length + '개 — ';
+        for (var b = 0; b < res.bad.length; b++) {
+          h += (b ? ', ' : '') + res.bad[b].line + '번째(' + esc(res.bad[b].why) + ')';
+        }
+        h += '</span>';
+      }
+      var pv = res.preview || [];
+      for (var i = 0; i < pv.length; i++) {
+        h += '<br>' + pv[i].row + '행 · ' + esc(pv[i].code) + ' × ' + esc(pv[i].qty) +
+          ' · ' + esc(pv[i].name) + (pv[i].addr ? ' · ' + esc(pv[i].addr) : '');
+      }
+      if (!dryRun) {
+        ENT_LAST = pv;
+        h += '<br><br><button type="button" class="act" id="eUndo">방금 넣은 것 지우기</button>';
+      }
+      h += '</div>';
+      entMsg(h);
+
+      if (!dryRun) {
+        //  넣었으면 담은 것을 비운다 — 두 번 눌러 두 번 들어가는 일이 없게
+        ENT_CART = []; ENT_BULK = [];
+        entRenderCart();
+        var u = el('eUndo');
+        if (u) u.addEventListener('click', entUndo);
+      }
+    }
+
+    function entUndo() {
+      if (!ENT_LAST || !ENT_LAST.length) return;
+      entMsg('지우는 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (handled(res)) return;
+          if (!res || !res.ok) { entMsg(esc((res && res.error) || '실패'), 'ent-bad'); return; }
+          var t = res.removed + '줄 지웠습니다.';
+          if (res.skipped && res.skipped.length) {
+            t += '<br><span class="ent-bad">건드리지 않은 줄 — ' +
+              esc(res.skipped.join(' · ')) + '</span>';
+          }
+          ENT_LAST = null;
+          entMsg(t);
+        })
+        .withFailureHandler(function (e) { entMsg(esc(String(e && e.message || e)), 'ent-bad'); })
+        .prpUndoOrders(SID, { rows: ENT_LAST });
+    }
+
+    el('eSearch').addEventListener('input', entRenderItems);
+    el('eItems').addEventListener('click', function (ev) {
+      var b = ev.target.closest ? ev.target.closest('.ent-item') : null;
+      if (!b) return;
+      var it = ENT_ITEMS[parseInt(b.getAttribute('data-i'), 10)];
+      if (!it) return;
+      //  같은 품목을 또 고르면 수량을 올린다 — 같은 줄이 둘 생기지 않게
+      for (var i = 0; i < ENT_CART.length; i++) {
+        if (ENT_CART[i].code === it.code) {
+          ENT_CART[i].qty = String((parseInt(ENT_CART[i].qty, 10) || 0) + 1);
+          entRenderCart();
+          return;
+        }
+      }
+      ENT_CART.push({ code: it.code, item: it.item, qty: '1' });
+      entRenderCart();
+    });
+    el('eCart').addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (t.hasAttribute && t.hasAttribute('data-x')) {
+        ENT_CART.splice(parseInt(t.getAttribute('data-x'), 10), 1);
+        entRenderCart();
+      } else if (t.hasAttribute && t.hasAttribute('data-xb')) {
+        ENT_BULK.splice(parseInt(t.getAttribute('data-xb'), 10), 1);
+        entRenderCart();
+      }
+    });
+    el('eCart').addEventListener('input', function (ev) {
+      var t = ev.target;
+      if (!t.hasAttribute || !t.hasAttribute('data-q')) return;
+      var i = parseInt(t.getAttribute('data-q'), 10);
+      if (ENT_CART[i]) ENT_CART[i].qty = String(t.value || '').replace(/[^0-9]/g, '');
+    });
+    el('eBulkAdd').addEventListener('click', function () {
+      var r = entParseBulk(el('eBulk').value);
+      if (!r.rows.length) {
+        entMsg('읽을 줄이 없습니다.' + (r.bad.length ? ' ' + r.bad.join(' · ') : ''), 'ent-bad');
+        return;
+      }
+      for (var i = 0; i < r.rows.length; i++) ENT_BULK.push(r.rows[i]);
+      el('eBulk').value = '';
+      entRenderCart();
+      entMsg(r.rows.length + '줄 담았습니다.' +
+        (r.bad.length ? '<br><span class="ent-bad">' + esc(r.bad.join(' · ')) + '</span>' : ''));
+    });
+    el('eDry').addEventListener('click', function () { entSubmit(true); });
+    el('eGo').addEventListener('click', function () {
+      if (!confirm('시트의 「발주 및 송장조회」 탭에 실제로 넣습니다. 계속할까요?')) return;
+      entSubmit(false);
+    });
+
+    //  엑셀 → 묶음칸. 발주·송장조회의 엑셀 읽기와 같은 통로를 쓴다
+    window.prpEntryBulkFill = function (text) {
+      el('eBulk').value = text;
+      entMsg('엑셀을 읽었습니다. 「담기」를 눌러 주세요.');
+    };
 
     for (var pi = 0; pi < document.querySelectorAll('.pages button').length; pi++) {
       (function (b) {
@@ -2108,13 +2483,54 @@
   (function () {
     var btn = document.getElementById('oXlsxBtn');
     var input = document.getElementById('oXlsx');
+    var entInput = document.getElementById('eXlsx');
     if (!btn || !input) return;
 
     if (typeof XLSX === 'undefined') {
       btn.textContent = '엑셀 열기 (안 됨)';
       btn.title = '엑셀 읽는 도구를 불러오지 못했습니다. 내용을 붙여넣어 주세요.';
       btn.style.opacity = '0.5';
+      if (entInput && entInput.parentNode) {
+        entInput.parentNode.textContent = '엑셀 열기 (안 됨)';
+        entInput.parentNode.style.opacity = '0.5';
+      }
       return;
+    }
+
+    /*  ★ 발주 넣기 쪽 엑셀 ★
+        여기는 «열 하나»가 아니라 «줄 전체»가 필요하다. 코드·수량·수취인·전화·
+        주소·메시지·적요를 그대로 탭으로 이어 붙여 묶음칸에 넣는다.
+        무엇이 무엇인지는 사람이 보고 판단한다 — 열 차례를 지어내지 않는다. */
+    if (entInput) {
+      entInput.addEventListener('change', function (ev) {
+        var f = (ev.target.files || [])[0];
+        if (!f) return;
+        var fr = new FileReader();
+        fr.onload = function (e) {
+          try {
+            var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+            var sh = wb.Sheets[wb.SheetNames[0]];
+            var rows = XLSX.utils.sheet_to_json(sh, { header: 1, blankrows: false, defval: '' });
+            var lines = [];
+            for (var r = 0; r < rows.length && lines.length < 50; r++) {
+              var cells = (rows[r] || []).map(function (v) {
+                return String(v == null ? '' : v).replace(/[\t\r\n]+/g, ' ').trim();
+              });
+              while (cells.length && !cells[cells.length - 1]) cells.pop();
+              if (!cells.length) continue;
+              lines.push(cells.join('\t'));
+            }
+            if (!lines.length) throw new Error('빈 파일입니다');
+            if (typeof window.prpEntryBulkFill === 'function') {
+              window.prpEntryBulkFill(lines.join('\n'));
+            }
+          } catch (err) {
+            alert('엑셀을 읽지 못했습니다 — ' + (err && err.message ? err.message : '알 수 없음'));
+          }
+          entInput.value = '';
+        };
+        fr.readAsArrayBuffer(f);
+      });
     }
 
     /*  제품명 열을 찾는다.
