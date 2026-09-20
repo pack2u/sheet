@@ -865,8 +865,12 @@
     .os-search { position: relative; margin-bottom: 12px; }
     .os-search input {
       width: 100%; height: 52px; padding: 0 88px 0 16px;
-      border-radius: 14px; border: 1px solid var(--border);
-      background: var(--bg-card); color: var(--text-primary);
+      /* ★ 선 대신 «바탕»으로 ★  (2026-09-20)
+         > "검색창 다른 부분들도 라인삭제해주고"
+         입력칸은 «여기에 쓴다»가 보여야 한다. 선만 지우고 바탕을 그대로
+         두면 칸인 줄 모른다. 그래서 바탕을 한 톤 올려 대신한다. */
+      border-radius: 14px; border: 1px solid transparent;
+      background: var(--bg-card-hover); color: var(--text-primary);
       font-size: 16px; font-family: inherit; outline: none;
     }
     .os-search button.go {
@@ -1018,7 +1022,7 @@
       animation: csPulseDot 1.4s ease-in-out infinite;
     }
     .os-card {
-      background: var(--bg-card); border: 1px solid var(--border);
+      background: var(--bg-card); border: 1px solid transparent;
       border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px;
       -webkit-user-select: text; user-select: text;
       touch-action: pan-y;
@@ -1568,6 +1572,38 @@
     }
     .ret-tl-track > .ret-proc:first-child.photo > .ret-share { grid-area: share; }
 
+    /* ══════════════════════════════════════════════════════
+       ★ 접어 보기 (▤) ★  (2026-09-20)
+       > "반품카드 접기 기능을 넣어 접으면 기본 필요내용만 상태값만 보이게"
+
+       남기는 것 : 업체 아이콘 · 이름 · 상태 · 품목
+       덜어내는 것 : 진행이력 · 원송장줄 · 반품사유 · 반품송장칸 ·
+                     반품비·전화 · 날짜·담당자 · 아래 단추줄
+
+       ★ 집중 보기(.ret-focus)는 건드리지 않는다 ★ 접어 둔 채로도
+         카드를 누르면 그 한 장은 온전히 보인다. 그래서 :not(.ret-focus).
+       ══════════════════════════════════════════════════════ */
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) { padding: 7px 10px; margin-bottom: 6px; }
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-right,
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-foot,
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-metas,
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-meta,
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-reason,
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-retinv,
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-sub,
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-new-bar { display: none; }
+    /*  이름줄과 품목줄을 한 줄에 앉힌다 — 접는 뜻이 높이를 줄이는 것이다 */
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-body { gap: 0; }
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-left {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;
+    }
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) .ret-left > div {
+      margin: 0; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #pane-returns.ret-fold .ret-card:not(.ret-focus) .rn { flex: 0 0 auto; }
+    /*  접어도 «새로 온 것»은 알아야 한다 — 왼쪽 띠는 남긴다 */
+
     /* ── ② 그래도 더 좁게 보고 싶을 때 — 「조밀」 ──────────────
        한 가지로 못 박지 않는다. 고른 값은 그 사람 브라우저에만 남는다.
        집중 보기(ret-focus)는 «크게 보려고» 켜는 것이라 건드리지 않는다. */
@@ -1974,8 +2010,9 @@
     }
 
     /* 중요도는 배지로만 나타낸다 — 카드 왼쪽 띠와 배경 색조는 쓰지 않는다 */
+    /* 카드 경계는 바탕색 차이로 — 반품카드와 같은 규칙 (2026-09-20) */
     .hb-card {
-      background: var(--bg-card); border: 1px solid var(--border);
+      background: var(--bg-card); border: 1px solid transparent;
       border-radius: var(--radius-sm); padding: 9px 10px;
       cursor: pointer; min-width: 0; overflow: hidden;
       -webkit-user-select: text; user-select: text;
@@ -2991,6 +3028,10 @@
             <button type="button" class="hb-icon" id="retDense" title="조밀하게 보기 (빈자리 줄이기)"
                     aria-label="조밀하게 보기" aria-pressed="false"
                     onclick="toggleReturnDense()">⇕</button>
+            <!-- 접기 — 이름·품목·상태만 남긴다. 카드를 눌러 하나씩 펼 수 있다 (2026-09-20) -->
+            <button type="button" class="hb-icon" id="retFold" title="접어 보기 (이름·품목·상태만)"
+                    aria-label="접어 보기" aria-pressed="false"
+                    onclick="toggleReturnFold()">▤</button>
             <button type="button" class="hb-icon" title="새로고침" aria-label="새로고침"
                     onclick="loadReturnActive(true, true)">↻</button>
             <button type="button" class="hb-icon" id="maxReturns" title="크게 보기 (가로 3줄)"
@@ -9542,6 +9583,42 @@
       applyReturnDense();
     }
 
+    /* ══════════════════════════════════════════════════════
+       ★ 접어 보기 ★  (2026-09-20)
+       > "반품카드 접기 기능을 넣어 접으면 기본 필요내용만 상태값만 보이게"
+
+       조밀(⇕)은 «글자와 여백»을 줄인다. 접기(▤)는 «내용을 덜어낸다» —
+       이름 · 품목 · 상태만 남긴다. 한눈에 몇 건인지 훑을 때 쓴다.
+
+       ★ 한 건은 눌러서 편다 ★ 접어 둔 채로도 카드를 누르면 집중 보기가
+         되어 그 카드만 온전히 보인다. 접기를 풀었다 다시 걸 일이 없다.
+       ★ 고른 값은 그 사람 브라우저에만 ★ 같이 쓰는 화면이라 한 사람이
+         접으면 모두가 접히는 일은 없어야 한다.
+       ══════════════════════════════════════════════════════ */
+    var RET_FOLD_KEY = 'CS_RET_FOLD';
+    var RET_FOLD = false;
+    try { RET_FOLD = localStorage.getItem(RET_FOLD_KEY) === '1'; } catch (e) {}
+
+    function applyReturnFold() {
+      var pane = document.getElementById('pane-returns');
+      if (pane) pane.classList.toggle('ret-fold', !!RET_FOLD);
+      var btn = document.getElementById('retFold');
+      if (btn) {
+        btn.setAttribute('aria-pressed', RET_FOLD ? 'true' : 'false');
+        btn.title = RET_FOLD ? '펼쳐 보기' : '접어 보기 (이름·품목·상태만)';
+      }
+      try { if (typeof csSyncScrollbars === 'function') csSyncScrollbars(); } catch (e2) {}
+    }
+
+    function toggleReturnFold() {
+      RET_FOLD = !RET_FOLD;
+      try { localStorage.setItem(RET_FOLD_KEY, RET_FOLD ? '1' : '0'); } catch (e) {}
+      /*  접을 때는 펴 둔 카드를 먼저 접는다 — 안 그러면 접었는데 한 장만
+          덩그러니 펴져 있어 «안 접혔다»고 보인다. */
+      if (RET_FOLD && typeof clearReturnFocus === 'function') clearReturnFocus();
+      applyReturnFold();
+    }
+
     function setReturnSort(v) {
       RETURN_SORT = String(v || 'new');
       try { localStorage.setItem('CS_RET_SORT', RETURN_SORT); } catch (e) {}
@@ -9753,6 +9830,7 @@
       list.innerHTML = html;
       //  고른 밀도를 그릴 때마다 다시 입힌다 — 새로 그린 카드도 같은 옷을 입어야 한다
       try { applyReturnDense(); } catch (eD) {}
+      try { applyReturnFold(); } catch (eF) {}
       renderOrderDashboard();
     }
 
