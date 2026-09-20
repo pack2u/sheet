@@ -227,6 +227,211 @@ function partnerPriceTabToFormula() {
     ui.ButtonSet.OK);
 }
 
+/* ══════════════════════════════════════════════════════════════
+   여러 업체를 이어서  (2026-09-21)
+
+   > "나머지 업체도 다 전환해줘"
+
+   ★ 한 번에 다 못 돈다 ★ 업체마다 3천 줄을 읽고 백업하고 수식을 심고
+     결과까지 견주면 6분을 넘긴다. 넘길 것 같으면 끊고 말한다.
+     이미 수식인 업체는 건너뛰므로, 같은 메뉴를 다시 누르면 남은 것부터 간다.
+
+   ★ 소비자용은 손대지 않는다 ★ 소비자용 시트의 최종단가는 허브에서 끌어오는
+     것이 아니라 소비자가에 DC 를 먹인 값이다. 같은 수식을 심으면 단가가
+     통째로 틀린다. K2(단가그룹 열)가 없는 시트가 그것이라 거기서 걸러진다.
+
+   ★ 허브는 한 번만 읽는다 ★ 업체마다 읽으면 그것만으로 시간이 간다.
+   ══════════════════════════════════════════════════════════════ */
+function partnerPriceTabToFormulaAll() {
+  var ui = SpreadsheetApp.getUi();
+
+  var 묻기 = ui.alert("모든 업체 단가조회를 수식으로",
+    "배포파일을 하나씩 열어 단가조회를 수식으로 되돌립니다.\n\n" +
+    "· 업체마다 먼저 백업 탭을 만듭니다\n" +
+    "· 이미 수식인 업체는 건너뜁니다\n" +
+    "· 소비자용(K2 없음)은 건드리지 않습니다 — 단가 계산이 다릅니다\n" +
+    "· 심고 나서 #REF! 가 보이면 그 업체만 값으로 되돌립니다\n" +
+    "· 시간에 걸리면 끊고 알려 드립니다. 다시 누르면 이어서 갑니다\n\n" +
+    "계속할까요?",
+    ui.ButtonSet.YES_NO);
+  if (묻기 !== ui.Button.YES) return;
+
+  var files = _prpListVendorFilesForSpill_();
+  if (!files.length) { ui.alert("배포파일을 찾지 못했습니다."); return; }
+
+  //  허브 코드는 한 번만 읽는다
+  var hubCodes = null, hubCount = 0, hubId = _POS_HUB_ID_;
+  try {
+    var htab = SpreadsheetApp.openById(hubId).getSheetByName(_PTF_HUB_TAB_);
+    if (!htab || htab.getLastRow() < 3) throw new Error("허브 단가표가 비어 있습니다");
+    hubCodes = {};
+    var hv = htab.getRange(3, 3, htab.getLastRow() - 2, 1).getDisplayValues();
+    for (var i = 0; i < hv.length; i++) {
+      var k = _ptf_key_(hv[i][0]);
+      if (k) { hubCodes[k] = 1; hubCount++; }
+    }
+  } catch (eH) {
+    ui.alert("허브를 못 읽어 멈췄습니다: " + eH.message);
+    return;
+  }
+
+  var 시작 = new Date().getTime();
+  var 된것 = [], 건너뜀 = [], 실패 = [], 남음 = 0, 시간다됨 = false;
+
+  for (var f = 0; f < files.length; f++) {
+    if (시간다됨) { 남음++; continue; }
+    if (new Date().getTime() - 시작 > 240000) { 시간다됨 = true; 남음++; continue; }
+
+    var r = _ptf_convertOne_(files[f], hubCodes, hubId);
+    if (r.skipped) 건너뜀.push(files[f].name + " — " + r.why);
+    else if (r.ok) 된것.push(files[f].name + " — 「-」 " + r.dash + "줄 / " + r.codes + "줄");
+    else 실패.push(files[f].name + " — " + r.why);
+  }
+
+  var 줄 = [];
+  줄.push("허브 단가표 " + hubCount + "줄 기준");
+  줄.push("");
+  줄.push("★ 바꾼 업체 " + 된것.length + "곳");
+  된것.forEach(function (x) { 줄.push("  · " + x); });
+  줄.push("");
+  줄.push("건너뛴 업체 " + 건너뜀.length + "곳");
+  건너뜀.forEach(function (x) { 줄.push("  · " + x); });
+  if (실패.length) {
+    줄.push("");
+    줄.push("★ 되돌린 업체 " + 실패.length + "곳 (값 그대로 · 백업 탭 있음)");
+    실패.forEach(function (x) { 줄.push("  · " + x); });
+  }
+  if (시간다됨) {
+    줄.push("");
+    줄.push("★ 시간에 걸려 " + 남음 + "곳이 남았습니다.");
+    줄.push("  같은 메뉴를 한 번 더 누르면 남은 것부터 이어 갑니다.");
+    줄.push("  (바꾼 업체는 이미 수식이라 다시 안 건드립니다)");
+  }
+  줄.push("");
+  줄.push("「-」는 허브 단가표에 없는 코드입니다. 허브에 넣으면 바로 채워집니다.");
+
+  _pcw_show_(줄.join("\n"), 시간다됨 ? "이어서 해 주세요" : "단가조회 수식 전환 끝");
+}
+
+/**
+ * 한 업체를 바꾼다.
+ * @return {{ok:boolean, skipped:boolean, why:string, dash:number, codes:number}}
+ */
+function _ptf_convertOne_(file, hubCodes, hubIdDefault) {
+  var ss, tab;
+  try {
+    ss = SpreadsheetApp.openById(file.id);
+    tab = ss.getSheetByName(_PTF_TAB_);
+  } catch (e) { return { skipped: true, why: "파일을 못 엶: " + e.message }; }
+  if (!tab) return { skipped: true, why: "단가조회 탭 없음" };
+
+  var last = tab.getLastRow();
+  if (last < 4) return { skipped: true, why: "줄이 없음" };
+
+  //  이미 수식이면 건드리지 않는다 — 이어서 돌릴 때 이 한 줄이 재개를 만든다
+  try {
+    if (String(tab.getRange("A3").getFormula() || "").indexOf("ARRAYFORMULA") >= 0) {
+      return { skipped: true, why: "이미 수식" };
+    }
+  } catch (e2) {}
+
+  //  소비자용은 단가 계산이 다르다 — K2 가 없는 시트가 그것이다
+  var k2 = "";
+  try { k2 = String(tab.getRange("K2").getDisplayValue() || "").trim(); } catch (e3) {}
+  if (!k2 || !/^\d+$/.test(k2) || parseInt(k2, 10) < 1) {
+    return { skipped: true, why: "K2(단가그룹 열) 없음 — 소비자용이거나 설정 전" };
+  }
+
+  var hubId = _ptf_hubId_(tab) || hubIdDefault;
+
+  //  C열만 읽는다 — 되돌릴 값은 백업 탭에서 가져오면 된다
+  var codes = tab.getRange(3, 3, last - 2, 1).getDisplayValues();
+  var 코드수 = 0;
+  for (var i = 0; i < codes.length; i++) if (String(codes[i][0] || "").trim()) 코드수++;
+  if (!코드수) return { skipped: true, why: "C열에 코드가 없음" };
+
+  //  백업
+  var 도장 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyMMdd_HHmm");
+  var 백업이름 = _PTF_TAB_ + "_백업_" + 도장;
+  var bk = null;
+  try {
+    bk = tab.copyTo(ss);
+    bk.setName(백업이름);
+    bk.hideSheet();
+  } catch (eB) { return { skipped: true, why: "백업 실패: " + eB.message }; }
+
+  try {
+    _ptf_writeFormulas_(tab, last, hubId);
+  } catch (eW) {
+    _ptf_restoreFrom_(tab, bk, last);
+    return { ok: false, why: "수식 실패, 되돌림: " + eW.message };
+  }
+
+  //  결과를 견준다
+  var 깨짐 = [];
+  ["A3", "D3", "G3", "I3"].forEach(function (c) {
+    var v = "";
+    try { v = String(tab.getRange(c).getDisplayValue() || ""); } catch (e4) {}
+    if (v.indexOf("#REF") >= 0 || v.indexOf("#ERROR") >= 0 || v.indexOf("#N/A") >= 0) 깨짐.push(c + "=" + v);
+  });
+  if (깨짐.length) {
+    _ptf_restoreFrom_(tab, bk, last);
+    return { ok: false, why: "깨져서 되돌림 (" + 깨짐.join(", ") + ")" };
+  }
+
+  //  「-」 몇 줄인가
+  var 뒤 = tab.getRange(3, 3, last - 2, 2).getDisplayValues();
+  var dash = 0;
+  for (var q = 0; q < 뒤.length; q++) {
+    if (String(뒤[q][0] || "").trim() && String(뒤[q][1] || "").trim() === "-") dash++;
+  }
+  return { ok: true, dash: dash, codes: 코드수 };
+}
+
+/** A·B·D~I 를 걷고 수식을 심는다 (C·J 는 안 건드림) */
+function _ptf_writeFormulas_(tab, last, hubId) {
+  var ids = 'IMPORTRANGE("' + hubId + '", "' + _PTF_HUB_TAB_ + '!C:C")';
+  var hubLink = 'IMPORTRANGE("' + hubId + '", "' + _PTF_HUB_TAB_ + '!';
+  function 뽑기(col) {
+    return '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids + ', ' +
+      hubLink + col + ':' + col + '")), "-")))';
+  }
+  var gRange = 'SUBSTITUTE(ADDRESS(1, K2, 4), "1", "") & ":" & SUBSTITUTE(ADDRESS(1, K2, 4), "1", "")';
+  var iRange = 'SUBSTITUTE(ADDRESS(1, K2+2, 4), "1", "") & ":" & SUBSTITUTE(ADDRESS(1, K2+2, 4), "1", "")';
+
+  tab.getRange(3, 1, last - 2, 2).clearContent();     // A:B
+  tab.getRange(3, 4, last - 2, 6).clearContent();     // D:I
+  SpreadsheetApp.flush();
+
+  tab.getRange("A3").setFormula(뽑기("A"));
+  tab.getRange("B3").setFormula(뽑기("B"));
+  tab.getRange("D3").setFormula(뽑기("D"));
+  tab.getRange("E3").setFormula(뽑기("E"));
+  tab.getRange("F3").setFormula(뽑기("F"));
+  tab.getRange("G3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids +
+    ', IMPORTRANGE("' + hubId + '", "' + _PTF_HUB_TAB_ + '!" & ' + gRange + ')), "-")))');
+  tab.getRange("I3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' + ids +
+    ', IMPORTRANGE("' + hubId + '", "' + _PTF_HUB_TAB_ + '!" & ' + iRange + ')), "-")))');
+  tab.getRange("H3").setFormula(
+    '=ARRAYFORMULA(IF(C3:C="", "", IFERROR(IF(G3:G=I3:I, "-", G3:G-I3:I), "-")))');
+  SpreadsheetApp.flush();
+}
+
+/** 백업 탭의 값을 그대로 도로 쓴다 */
+function _ptf_restoreFrom_(tab, bk, last) {
+  try {
+    if (!bk) return;
+    var 폭 = Math.max(bk.getLastColumn(), 10);
+    var vals = bk.getRange(3, 1, last - 2, 폭).getDisplayValues();
+    tab.getRange(3, 1, vals.length, 폭).setValues(vals);
+    SpreadsheetApp.flush();
+  } catch (e) {
+    //  여기까지 실패해도 백업 탭은 남는다 — 그래서 먼저 만든다
+  }
+}
+
 /** 읽어 둔 값을 그대로 도로 쓴다 */
 function _ptf_rollback_(tab, all, last, 폭) {
   try {

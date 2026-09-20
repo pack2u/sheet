@@ -173,6 +173,7 @@ function registerPartnerMenu_() {
         .addItem("🔎 코드 한 개 찾아보기 (업체·허브 양쪽)", "partnerPriceCodeTrace")
         .addItem("🔬 단가조회 수식 보기 (읽기만)", "partnerPriceTabInspect")
         .addItem("   └ ♻️ 단가조회를 수식으로 되돌리기 (백업 후)", "partnerPriceTabToFormula")
+        .addItem("   └ ♻️ 모든 업체 한꺼번에 (이어서 가능)", "partnerPriceTabToFormulaAll")
         .addSeparator()
         .addItem("🧩 발주탭 자동 수식 점검 (보기만)", "partnerOrderSpillCheck")
         .addItem("🧩 발주탭 자동 수식 끝 열기 (반영)", "partnerOrderSpillOpen")
