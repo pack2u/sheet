@@ -32,7 +32,12 @@
  */
 
 var PRP_PRICE_TAB_ = "단가조회";
-var PRP_OE_MAX_ROWS_ = 50;      // 한 번에 넣을 수 있는 줄
+/*  ★ 200 ★  (2026-09-21)
+    > "당장드림의 경우 많을경우 150개 주문이 들어 올경우가 있어..
+    >  나머지 업체들은 대부분 10개 내외정도.."
+    50 으로 막아 두면 가장 바쁜 날 세 번에 나눠 넣어야 한다. 나눠 넣으면
+    중간에 무엇이 들어갔는지 사람이 세게 되고, 그게 곧 빠뜨림이다.  */
+var PRP_OE_MAX_ROWS_ = 200;
 var PRP_OE_ITEM_LIMIT_ = 1200;  // 품목 목록 최대
 
 /* 업체가 채우는 칸 — 머리글로 찾는다. 열 번호를 박지 않는 까닭은
@@ -64,6 +69,36 @@ function prpOeMapCols_(hdr) {
 
 /** 업체가 «적는» 칸만 추린다 — 자동 열에는 한 글자도 쓰지 않는다 */
 var PRP_OE_WRITABLE_ = ["code", "qty", "name", "phone", "addr", "msg", "note", "pickup"];
+
+/**
+ * 쓸 열을 «붙어 있는 덩어리»로 묶는다.
+ *
+ * ★ 150줄이 들어오는 날이 있다 ★  (2026-09-21)
+ *   칸마다 setValue 하면 150줄 × 8칸 = 1200번이다. 6분 제한에 걸린다.
+ *   자동 열(A·B·D·L·M·N)을 건너뛰면서, 붙어 있는 칸끼리는 한 번에 쓴다.
+ *   당장드림 발주탭이면 C / E~J / P 세 덩어리가 되어 쓰기가 세 번으로 준다.
+ *
+ * @return {Array<{start:number, keys:Array<string>}>} start 는 0-기반 열 번호
+ */
+function _prpOeBlocks_(col) {
+  var 쓸것 = [];
+  for (var i = 0; i < PRP_OE_WRITABLE_.length; i++) {
+    var k = PRP_OE_WRITABLE_[i];
+    if (col[k] >= 0) 쓸것.push({ c: col[k], key: k });
+  }
+  쓸것.sort(function (a, b) { return a.c - b.c; });
+
+  var out = [];
+  for (var j = 0; j < 쓸것.length; j++) {
+    var last = out.length ? out[out.length - 1] : null;
+    if (last && 쓸것[j].c === last.start + last.keys.length) {
+      last.keys.push(쓸것[j].key);
+    } else {
+      out.push({ start: 쓸것[j].c, keys: [쓸것[j].key] });
+    }
+  }
+  return out;
+}
 
 /**
  * 발주탭에서 «사람이 적은» 마지막 줄의 다음 행.
@@ -271,19 +306,9 @@ function prpSubmitOrders(sid, payload) {
     } catch (eSpill) {}
 
     //  ── 쓸 값을 만든다. 자동 열은 손대지 않는다 ──
+    var blocks = _prpOeBlocks_(col);
     var 미리보기 = [];
-    var 덩어리 = [];
     for (var k = 0; k < clean.length; k++) {
-      var line = [];
-      for (var c2 = 0; c2 < lc; c2++) line.push(null);   // null = 그 칸은 안 건드림
-      for (var w = 0; w < PRP_OE_WRITABLE_.length; w++) {
-        var key = PRP_OE_WRITABLE_[w];
-        if (col[key] < 0) continue;
-        var v = clean[k][key];
-        if (v === "" ) continue;
-        line[col[key]] = v;
-      }
-      덩어리.push(line);
       미리보기.push({
         row: dest + k,
         code: clean[k].code, qty: clean[k].qty, name: clean[k].name,
@@ -296,37 +321,41 @@ function prpSubmitOrders(sid, payload) {
       return {
         ok: true, dryRun: true,
         tab: tab.getName(), fileId: b.fileId,
-        firstRow: dest, count: 덩어리.length,
-        cols: col, header: hdr,
+        firstRow: dest, count: clean.length,
+        cols: col, header: hdr, blocks: blocks.length,
         preview: 미리보기, bad: bad, spillWarn: 스필경고,
         message: "실제로는 아무것도 쓰지 않았습니다. " + tab.getName() + " " +
-          dest + "행부터 " + 덩어리.length + "줄이 들어갈 자리입니다."
+          dest + "행부터 " + clean.length + "줄이 들어갈 자리입니다."
       };
     }
 
-    /*  칸마다 따로 쓴다 — 한 줄을 통째로 setValues 하면 null 자리까지
-        지워져 자동 수식이 날아간다. 느리지만 자동 열을 안 건드린다.
-        「데이터만 잘 나오면 로딩 시간은 문제가 안 된다」  */
-    for (var kk = 0; kk < 덩어리.length; kk++) {
-      for (var cc = 0; cc < lc; cc++) {
-        if (덩어리[kk][cc] === null) continue;
-        tab.getRange(dest + kk, cc + 1).setValue(덩어리[kk][cc]);
+    /*  ★ 붙어 있는 칸끼리 한 번에 쓴다 ★
+        덩어리 밖(자동 열)에는 손이 안 간다. 150줄이 들어와도 쓰기는
+        덩어리 수만큼(당장드림이면 셋)이다. 칸마다 쓰면 1200번이 된다.  */
+    for (var bi = 0; bi < blocks.length; bi++) {
+      var blk = blocks[bi];
+      var vals = [];
+      for (var r = 0; r < clean.length; r++) {
+        var one = [];
+        for (var q = 0; q < blk.keys.length; q++) one.push(clean[r][blk.keys[q]]);
+        vals.push(one);
       }
+      tab.getRange(dest, blk.start + 1, vals.length, blk.keys.length).setValues(vals);
     }
     SpreadsheetApp.flush();
 
     prpLog_(g.sess.vendor, "발주",
-      tab.getName() + " " + dest + "행부터 " + 덩어리.length + "줄" +
+      tab.getName() + " " + dest + "행부터 " + clean.length + "줄" +
       (스필경고 ? " · " + 스필경고 : ""));
     prpNotifyChat_("포털 발주", g.sess.vendor,
-      덩어리.length + "줄 · " + tab.getName() + " " + dest + "행부터" +
+      clean.length + "줄 · " + tab.getName() + " " + dest + "행부터" +
       (스필경고 ? "\n⚠ " + 스필경고 : ""));
 
     return {
       ok: true, dryRun: false,
-      tab: tab.getName(), firstRow: dest, count: 덩어리.length,
+      tab: tab.getName(), firstRow: dest, count: clean.length,
       preview: 미리보기, bad: bad, spillWarn: 스필경고,
-      message: tab.getName() + " " + dest + "행부터 " + 덩어리.length + "줄 넣었습니다."
+      message: tab.getName() + " " + dest + "행부터 " + clean.length + "줄 넣었습니다."
     };
   } catch (e) {
     return { ok: false, error: e.message || String(e) };
@@ -362,14 +391,17 @@ function prpUndoOrders(sid, payload) {
     var lc = Math.max(tab.getLastColumn(), 16);
     var col = prpOeMapCols_(tab.getRange(1, 1, 1, lc).getDisplayValues()[0]);
 
-    var 지움 = 0, 건너뜀 = [];
-    //  아래에서 위로 지운다 — 위에서 지우면 아래 행 번호가 밀린다
-    var sorted = rows.slice().sort(function (a, c) { return c.row - a.row; });
-    for (var i = 0; i < sorted.length; i++) {
-      var want = sorted[i];
+    /*  ★ 견주기는 한 번에 읽는다 ★  (2026-09-21)
+        150줄이면 한 줄씩 getRange 하는 것만 150번이다. 통째로 한 번 읽는다.  */
+    var lastRow = tab.getLastRow();
+    var all = lastRow > 1 ? tab.getRange(1, 1, lastRow, lc).getDisplayValues() : [];
+
+    var 지울행 = [], 건너뜀 = [];
+    for (var i = 0; i < rows.length; i++) {
+      var want = rows[i];
       var n = parseInt(want.row, 10);
-      if (!(n > 1) || n > tab.getLastRow()) { 건너뜀.push(want.row + "행: 없음"); continue; }
-      var cur = tab.getRange(n, 1, 1, lc).getDisplayValues()[0];
+      if (!(n > 1) || n > lastRow) { 건너뜀.push(want.row + "행: 없음"); continue; }
+      var cur = all[n - 1] || [];
       var 같나 =
         String(cur[col.code] || "").trim() === String(want.code || "").trim() &&
         String(cur[col.name] || "").trim() === String(want.name || "").trim() &&
@@ -380,8 +412,22 @@ function prpUndoOrders(sid, payload) {
         건너뜀.push(n + "행: 이미 수집되어 고유ID가 붙었습니다");
         continue;
       }
-      tab.deleteRow(n);
-      지움++;
+      지울행.push(n);
+    }
+
+    /*  ★ 붙어 있는 행은 묶어서 지운다 ★
+        포털이 넣은 줄은 대개 잇달아 있으므로 대부분 한 번에 끝난다.
+        아래에서 위로 — 위에서 지우면 아래 행 번호가 밀린다.  */
+    지울행.sort(function (a, c) { return c - a; });
+    var 지움 = 0, j = 0;
+    while (j < 지울행.length) {
+      var 끝행 = 지울행[j];
+      var k = j;
+      while (k + 1 < 지울행.length && 지울행[k + 1] === 지울행[k] - 1) k++;
+      var 시작행 = 지울행[k];
+      tab.deleteRows(시작행, 끝행 - 시작행 + 1);
+      지움 += (끝행 - 시작행 + 1);
+      j = k + 1;
     }
     SpreadsheetApp.flush();
     prpLog_(g.sess.vendor, "발주취소", 지움 + "줄 지움" +

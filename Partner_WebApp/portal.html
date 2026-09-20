@@ -2355,7 +2355,7 @@
         }
         if (!one.code || !one.qty) { bad.push(i + 1 + '번째 줄: 코드나 수량이 없습니다'); continue; }
         rows.push(one);
-        if (rows.length >= 50) break;
+        if (rows.length >= 200) break;
       }
       return { rows: rows, bad: bad };
     }
@@ -2765,7 +2765,7 @@
             var sh = wb.Sheets[wb.SheetNames[0]];
             var rows = XLSX.utils.sheet_to_json(sh, { header: 1, blankrows: false, defval: '' });
             var lines = [];
-            for (var r = 0; r < rows.length && lines.length < 50; r++) {
+            for (var r = 0; r < rows.length && lines.length < 200; r++) {
               var cells = (rows[r] || []).map(function (v) {
                 return String(v == null ? '' : v).replace(/[\t\r\n]+/g, ' ').trim();
               });
@@ -2846,14 +2846,14 @@
             if (seen[v]) continue;
             seen[v] = true;
             out.push(v);
-            if (out.length >= 30) break;   // 서버가 한 번에 보는 줄 수와 맞춘다
+            if (out.length >= 200) break;   // 서버가 한 번에 보는 줄 수와 맞춘다
           }
           if (!out.length) throw new Error('제품명을 못 뽑았습니다');
 
           oq.value = out.join('\n');
           if (hint) {
             hint.textContent = f.name + ' — ' + out.length + '건을 읽었습니다' +
-              (out.length >= 30 ? ' (30건까지)' : '') + '. 찾는 중…';
+              (out.length >= 200 ? ' (200건까지)' : '') + '. 찾는 중…';
           }
           if (typeof window.prpOrdersSearch === 'function') window.prpOrdersSearch();
         } catch (err) {
