@@ -2095,6 +2095,11 @@ function ssRun(grid, masters, cfg) {
        앞이어야 잘못된 줄이 합포장에 빨려 들지 않는다. */
   ssVerifySplit(units, masters, warnings);
 
+  /* ★ 이미 나간 줄은 또 내보내지 않는다 ★  (2026-09-21)
+     자리가 여기인 까닭 — 라우팅 «뒤»여야 보류로 세운 것이 경로에 반영되고,
+     합포장 «앞»이어야 막은 줄이 남의 박스에 빨려 들지 않는다. */
+  ssBlockReship(units, masters, cfg, warnings);
+
   for (var i = 0; i < units.length; i++) ssShippingFee(units[i], masters, warnings);
   ssMerge(units, cfg);
 
@@ -2518,7 +2523,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssAssignCondition: ssAssignCondition, ssAllocateStock: ssAllocateStock,
     ssRoute: ssRoute, ssMerge: ssMerge, ssShippingFee: ssShippingFee,
     ssApplyManualEdits: ssApplyManualEdits,
-    ssVerifySplit: ssVerifySplit,
+    ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
     ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
@@ -2611,4 +2616,75 @@ function ssVerifySplit(units, masters, warnings) {
       '보류 탭에서 확인하거나 판매현황을 고쳐 다시 실행하세요.');
   }
   return 막은건수;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 이미 나간 줄은 또 내보내지 않는다 ★   2026-09-21
+ *
+ *  > "중복출고부터 고쳐줘.. 회차별 중복출고가 이전에 문제가 많았는데"
+ *
+ *  ★ 여태는 «알리기만» 했다 ★
+ *    ss_중복점검 은 출력 탭을 다 «쓴 뒤»에 돈다. 경고 탭과 요약에 적힐 뿐
+ *    그 줄을 출력 탭에서 빼지 않는다. 사람이 경고를 못 보고 인쇄하면
+ *    그대로 두 번 나간다. 막는 것이 아무것도 없었다.
+ *
+ *  ★ 무엇을 근거로 막나 ★
+ *    지난 회차 원장에 같은 (고유ID + 원본품목코드) 가 «나간 경로»로
+ *    앉아 있으면, 이 줄은 이미 처리된 줄이다.
+ *      · 고유ID 는 주문 한 줄에 하나다. 사방넷 것은 쇼핑몰이 확정해 준 번호고,
+ *        전화주문 것은 ssMakeOrderId 해시라 같은 값이면 같은 줄이다.
+ *      · 원본코드까지 보는 까닭 — 한 주문에 품목이 여럿일 수 있다.
+ *      · 세트가 몸통·뚜껑 두 줄로 갈리는 것은 원본코드가 같아 한 건으로 접힌다.
+ *
+ *  ★ 보류·비배송은 «안 나간 것»이라 안 센다 ★
+ *    1차에 재고부족으로 보류된 줄이 2차에 나가는 것은 정상이다.
+ *    그것까지 막으면 멀쩡한 주문이 영영 못 나간다.
+ *
+ *  ★ 같은 회차(재실행)는 안 센다 ★
+ *    회차유지 재실행은 원장의 그 회차를 통째로 갈아 끼운다. 자기 자신을
+ *    보고 막으면 재실행이 통째로 보류가 된다. 맵을 만드는 쪽에서 뺀다.
+ *
+ *  ★ 막지 않고 «보류»로 돌린다 ★
+ *    출력 탭에서 빠지되 보류(미발송) 탭에 사유와 함께 앉는다. 진짜 다시
+ *    보내야 하는 건이면 기존 「조치 적용」으로 풀 수 있다. 조용히 지우면
+ *    주문이 사라진 것처럼 보인다 — 그게 더 나쁘다.
+ *
+ *  ★ 실측 (2026-09-21, 원장 4,955줄 · 주문라인 3,481건) ★
+ *    이 규칙에 걸리는 것 629건 — 전부 260915-3 → 260915-4 한 사고.
+ *    다른 날은 0건. 즉 평상시에는 아무것도 안 잡는다.
+ *
+ *  @param masters.기출고 { '고유ID\u0000원본코드': '지난 회차키' }
+ * ══════════════════════════════════════════════════════════════
+ */
+function ssBlockReship(units, masters, cfg, warnings) {
+  var 표 = (masters && masters.기출고) || null;
+  if (!표) return 0;
+  //  설정으로 끌 수 있다. 끄면 여태처럼 «경고만» 남는다.
+  if (cfg && cfg.중복출고차단 === false) return 0;
+
+  var 막음 = 0;
+  for (var i = 0; i < units.length; i++) {
+    var u = units[i];
+    if (u.route === SS_ROUTE.HOLD || u.route === SS_ROUTE.NONSHIP) continue;
+    if (u.보류사유) continue;
+    var uid = ssText(u.고유ID);
+    var code = ssText(u.원본코드) || ssText(u.품목코드);
+    if (!uid || !code) continue;          // 못 가리는 줄은 안 막는다
+    var 지난회차 = 표[uid + '\u0000' + code];
+    if (!지난회차) continue;
+
+    /*  ★ 사람이 「그래도 보내라」고 한 줄은 안 막는다 ★
+        수동조치는 사람이 그 줄을 보고 내린 판단이다. 기계가 뒤집으면 안 된다. */
+    if (u.수동조치) continue;
+
+    u.route = SS_ROUTE.HOLD;
+    u.보류사유 = '이미출고';
+    u.보류상세 = 지난회차 + ' 회차에 이미 나간 줄입니다';
+    막음++;
+    ssWarn(warnings, '오류', 'RESHIP_BLOCK', uid + ' / ' + code,
+      지난회차 + ' 회차에 이미 나간 줄이라 보류로 세웠습니다. ' +
+      '정말 다시 보내야 하면 「보류(미발송)」 탭에서 조치하세요.');
+  }
+  return 막음;
 }

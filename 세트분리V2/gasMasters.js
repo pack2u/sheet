@@ -377,7 +377,89 @@ function ssm_load(회차키) {
 
   M.ferry = ssm_ferryRows();   // 롯데 도선료 표 (주소 문자열로 확정)
 
+  /* 이미 나간 줄 — core.js ssBlockReship 이 이걸 보고 재출고를 막는다 */
+  M.기출고 = ssm_loadShipped(회차키);
+
   return M;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 지난 회차에 «이미 나간» 줄을 걷는다 ★   2026-09-21
+ *
+ *  > "중복출고부터 고쳐줘.. 회차별 중복출고가 이전에 문제가 많았는데"
+ *
+ *  원장에서 (고유ID + 원본품목코드) → 그 줄이 나갔던 회차키 를 만든다.
+ *  core.js `ssBlockReship` 이 이 표를 보고 같은 줄을 보류로 세운다.
+ *
+ *  ★ 지금 회차는 뺀다 ★
+ *    회차유지 재실행은 원장의 그 회차를 통째로 갈아 끼운다. 자기 자신을
+ *    보고 막으면 재실행이 통째로 보류가 된다.
+ *
+ *  ★ 보류·비배송은 «안 나간 것»이다 ★
+ *    1차에 재고부족으로 보류된 줄이 2차에 나가는 것은 정상이다.
+ *
+ *  ★ 며칠치를 보나 ★
+ *    설정 「중복점검_대상일수」를 같이 쓴다(기본 2 = 오늘+어제). 막는 것과
+ *    세는 것이 «같은 창»을 봐야 한다 — 다르면 「경고는 뜨는데 안 막힌다」가
+ *    생기고, 그게 제일 설명하기 어렵다.
+ *
+ *  ★ 원장은 시트에 적힌 머리글로 읽는다 ★
+ *    코드 상수로 읽으면 열이 하나 늘어난 뒤 옛 행과 어긋나 엉뚱한 칸을 집는다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function ssm_loadShipped(회차키) {
+  var 표 = {};
+  try {
+    var sh = ssio_ss().getSheetByName(SSIO_TABS.원장);
+    if (!sh || sh.getLastRow() < 2) return 표;
+
+    var cols = sh.getLastColumn();
+    var head = sh.getRange(1, 1, 1, cols).getValues()[0];
+    var idx = {};
+    for (var h = 0; h < head.length; h++) {
+      var hn = ssText(head[h]);
+      if (hn && idx[hn] === undefined) idx[hn] = h;
+    }
+    var need = ['회차키', '고유ID', '원본품목코드', '경로'];
+    for (var n = 0; n < need.length; n++) {
+      if (idx[need[n]] === undefined) {
+        /*  못 읽으면 «막지 않는다». 빈 표를 돌려주면 여태처럼 경고만 남는다.
+            읽다 만 표로 막으면 멀쩡한 주문이 보류로 떨어진다 — 그게 더 나쁘다. */
+        Logger.log('[기출고] 원장에 「' + need[n] + '」 열이 없어 재출고 차단을 건너뜁니다');
+        return 표;
+      }
+    }
+
+    var 볼일수 = ssNum(ssio_config()['중복점검_대상일수']);
+    if (!(볼일수 >= 1)) 볼일수 = 2;
+    var 볼날 = {};
+    for (var d = 0; d < 볼일수; d++) {
+      볼날[Utilities.formatDate(new Date(new Date().getTime() - d * 86400000),
+        'Asia/Seoul', 'yyMMdd')] = true;
+    }
+
+    var 지금 = ssText(회차키);
+    var all = sh.getRange(2, 1, sh.getLastRow() - 1, cols).getValues();
+    for (var i = 0; i < all.length; i++) {
+      var r = all[i];
+      var rk = ssText(r[idx['회차키']]);
+      if (!rk || rk === 지금) continue;                 // 자기 자신은 안 본다
+      if (!볼날[rk.substring(0, 6)]) continue;          // 창 밖은 안 본다
+      var 경로 = ssText(r[idx['경로']]);
+      if (!경로 || 경로 === SS_ROUTE.HOLD || 경로 === SS_ROUTE.NONSHIP) continue;
+      var uid = ssText(r[idx['고유ID']]);
+      var code = ssText(r[idx['원본품목코드']]);
+      if (!uid || !code) continue;
+      var k = uid + ' ' + code;
+      if (표[k] === undefined) 표[k] = rk;              // 가장 먼저 나간 회차를 적는다
+    }
+  } catch (e) {
+    //  곁다리다. 못 걷으면 안 막는다 — 세트분리 자체는 돌아야 한다.
+    Logger.log('[기출고] 걷기 실패(차단 안 함): ' + (e && e.message ? e.message : e));
+    return {};
+  }
+  return 표;
 }
 
 /**
