@@ -85,6 +85,37 @@ function prpSubmitReturn(sid, data) {
   if (!name) return { ok: false, error: "반품신청자(수취인) 이름을 입력해 주세요." };
   if (!item) return { ok: false, error: "상품명을 입력해 주세요." };
 
+  /* ══════════════════════════════════════════════════════════════
+     ★ 출처를 서버가 다시 확인한다 ★  (2026-09-20)
+
+     > "오류로 다른 업체 물건이 삽입될수도 있으니"
+
+     화면이 「조회해서 찾았어요」라고 보내는 말은 믿지 않는다. 조회한 뒤에
+     품목칸을 고쳐 적을 수도 있고, 조회를 아예 안 하고 보낼 수도 있다.
+     그 업체 배포파일만 여니, 거기서 찾혔다는 것이 곧 「이 업체 물건」이다.
+
+     ★ 막지 않는다 ★ 막으면 업체는 전화로 돌아간다. 그건 이 앱을 만든
+       까닭을 되돌리는 일이다. 대신 못 찾은 건은 «사진»을 받는다 —
+       CS 가 사진 한 장으로 우리 물건인지 바로 안다.
+     ══════════════════════════════════════════════════════════════ */
+  var 출처 = { level: PRP_ORIGIN_UNKNOWN_, why: "확인하지 못했습니다", hit: null };
+  try { 출처 = prpVerifyOrigin_(sess, data); } catch (eOrg) {}
+
+  if (출처.level !== PRP_ORIGIN_OK_) {
+    var 사진수 = parseInt(data.photoCount, 10) || 0;
+    if (사진수 < 1) {
+      return {
+        ok: false,
+        needPhoto: true,
+        origin: 출처.level,
+        message: (출처.level === PRP_ORIGIN_MISMATCH_
+          ? "발주 마감의 상품과 다릅니다 — " + 출처.why + "."
+          : "발주 마감에서 이 주문을 찾지 못했습니다 — " + 출처.why + ".") +
+          "\n\n상품 사진을 한 장 이상 올려 주시면 접수됩니다. CS팀이 사진으로 확인합니다."
+      };
+    }
+  }
+
   var lock = LockService.getScriptLock();
   try {
     // 두 업체가 같은 순간에 접수하면 같은 행에 겹쳐 쓸 수 있다
@@ -168,9 +199,19 @@ function prpSubmitReturn(sid, data) {
     //  이름도 적을 열이 없으면 비고로 흘린다
     var p2NameLost = p2NameIn && col.phone2Name < 0;
 
+    /*  ★ 출처를 비고에 남긴다 ★
+        대장에 열을 하나 더 만들면 CS웹앱·허브·이관 스크립트가 모두 열 번호를
+        다시 세야 한다. 비고 한 줄이면 이미 그 줄을 읽는 화면들이 그대로 본다.
+        글머리를 고정 문구로 둔다 — CS웹앱이 이 문구로 뱃지를 세운다.  */
+    var 출처줄 = 출처.level === PRP_ORIGIN_OK_
+      ? "[출처 확인됨] " + (출처.why ? 출처.why + "에서 확인" : "장부에서 확인")
+      : (출처.level === PRP_ORIGIN_MISMATCH_
+          ? "[출처 어긋남] " + 출처.why
+          : "[출처 미확인] " + 출처.why);
+
     if (col.notice >= 0) {
       row[col.notice] = prpStamp_(PRP_STAFF_PREFIX + sess.vendor) +
-        " 업체 포털 접수." +
+        " 업체 포털 접수. " + 출처줄 + "." +
         (uid ? " 고유ID " + uid + "." : "") +
         (p2Lost ? " 실번호 " + prpFormatPhone_(p2) +
            (p2NameIn ? " (" + p2NameIn + ")" : "") + "." : "") +
@@ -192,15 +233,22 @@ function prpSubmitReturn(sid, data) {
 
     prpInvalidateVendorCache_(sess.key);
     prpLog_(sess.vendor, "접수", tab.getName() + " " + dest + "행 · " + name + " · " + item);
-    prpNotifyChat_("새 반품 접수", sess.vendor, name + " · " + item +
-      (invoice ? " · 송장 " + invoice : "") +
-      (uid ? " · 고유ID " + uid : ""));
+    prpNotifyChat_(
+      출처.level === PRP_ORIGIN_OK_ ? "새 반품 접수" : "새 반품 접수 · 출처 " + 출처.level,
+      sess.vendor,
+      name + " · " + item +
+        (invoice ? " · 송장 " + invoice : "") +
+        (uid ? " · 고유ID " + uid : "") +
+        (출처.level === PRP_ORIGIN_OK_ ? "" : "\n⚠ " + 출처.why + " — 사진으로 확인해 주세요"));
 
     return {
       ok: true,
       tab: tab.getName(),
       row: dest,
-      message: "접수되었습니다. CS팀이 확인 후 상태를 갱신합니다."
+      origin: 출처.level,
+      message: 출처.level === PRP_ORIGIN_OK_
+        ? "접수되었습니다. CS팀이 확인 후 상태를 갱신합니다."
+        : "접수되었습니다. 발주 마감에서 주문을 못 찾아 CS팀이 사진으로 먼저 확인합니다."
     };
   } catch (e) {
     return { ok: false, error: e.message || String(e) };

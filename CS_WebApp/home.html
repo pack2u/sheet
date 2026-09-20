@@ -1515,6 +1515,14 @@
     }
     .ret-card.ret-focus .ret-reason { white-space: normal; }
 
+    /* 출처 — 섞였을 수 있는 건만 뜬다 (2026-09-20). 선 없이 바탕으로. */
+    .ret-origin {
+      margin-top: 4px; padding: 3px 7px; border-radius: 7px;
+      font-size: 11px; font-weight: 600; line-height: 1.35;
+      color: #ffca7a; background: rgba(240,160,48,0.16);
+    }
+    .ret-origin.bad { color: #ff9e9e; background: rgba(232,93,93,0.18); }
+
     /* ★ 반품송장 — 카드에서 바로 적는다 ★  (2026-09-18)
        한 줄을 넘지 않게 짠다. 카드가 길어지면 한 화면에 드는 건수가 줄고,
        그러면 이 화면을 안 쓰게 된다(2026-09-17 에 줄여 놓은 것을 되돌리지 않는다). */
@@ -8245,6 +8253,22 @@
      * 상담에서 먼저 묻는 것은 «왜»다. 그래서 카드에 낸다.
      * 다만 둘이 같은 말이면 두 번 적지 않는다.
      */
+    /**
+     * 출처 뱃지 — 업체가 올린 건이 그 업체 장부에서 확인됐는지.
+     *
+     * ★ 「확인됨」은 안 띄운다 ★ 잘 된 것까지 알리면 뱃지가 모든 카드에 붙고,
+     *   그러면 붙어 있다는 것이 아무 뜻도 없어진다. 섞였을 수 있는 것만 말한다.
+     * ★ 옛 건은 표시가 없다 ★ 이 기능 전에 들어온 건은 빈 값이라 조용하다.
+     */
+    function retOriginHtml(c) {
+      var o = String((c && c.origin) || '');
+      if (o !== '미확인' && o !== '어긋남') return '';
+      var 말 = o === '어긋남'
+        ? '발주 마감의 상품과 다릅니다 — 사진으로 확인'
+        : '발주 마감에 없는 주문입니다 — 사진으로 확인';
+      return '<div class="ret-origin ' + (o === '어긋남' ? 'bad' : '') + '">⚠ ' + 말 + '</div>';
+    }
+
     function retReasonOf(c) {
       var r = String((c && c.reason) || '').trim();
       if (!r) return '';
@@ -8531,6 +8555,11 @@
                상담에서 첫 물음이 「왜 반품이세요」다. 대장에 적혀 있는데
                화면에 없으면 사람이 시트를 다시 연다. */
             (retReasonOf(c) ? '<div class="ret-reason">' + esc(retReasonOf(c)) + '</div>' : '') +
+            /* ★ 출처 ★  (2026-09-20)
+               업체 포털이 접수할 때 그 업체 장부에서 주문을 찾았는지다.
+               「확인됨」은 안 띄운다 — 잘 된 것을 알릴 자리가 아니다.
+               섞였을 수 있는 것만 말한다. */
+            retOriginHtml(c) +
             (invLine ? '<div class="ret-meta">' + invLine + '</div>' : '') +
             retInvInputHtml(idx, c) +
             /* ★ 가로를 쓴다 ★  (2026-09-17)

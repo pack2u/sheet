@@ -104,9 +104,31 @@
       background: var(--bg-secondary);
       position: sticky; top: 0; z-index: 40;
     }
-    .top-title { font-size: 15px; font-weight: 700; flex: 1; min-width: 0;
+    /* ══════════════════════════════════════════════════════════════
+       ★ 업체 이름이 제목이다 ★  (2026-09-20)
+
+       > "타이틀에 업체 이름이 크게 보여야 할꺼 같아..
+       >  본인 업체 페이지라는 느낌이 강하게 들게"
+
+       여태 큰 글자는 「반품 현황」이었고 업체 이름은 그 밑에 작게 붙어 있었다.
+       업체가 열었을 때 첫눈에 들어와야 하는 것은 «우리 페이지»라는 사실이다.
+       자리를 맞바꾼다 — 업체 이름을 크게, 무엇을 보는 화면인지는 작게.
+
+       ★ 여기는 앞으로 발주·송장조회·마감·단가조회가 붙을 자리다 ★
+         그러면 「반품 현황」은 여러 쪽 중 하나가 된다. 제목이 업체 이름이어야
+         그때 가서 다시 안 고친다.
+       ══════════════════════════════════════════════════════════════ */
+    .top-title { flex: 1; min-width: 0;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .top-title small { display: block; font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px; }
+    .top-title b {
+      display: block; font-size: 19px; font-weight: 700; line-height: 1.25;
+      color: var(--text-bright);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .top-title small { display: block; font-size: 11.5px; color: var(--text-muted); font-weight: 500; margin-top: 1px; }
+    @media (min-width: 900px) {
+      .top-title b { font-size: 22px; }
+    }
     .icon-btn {
       width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px;
       border: 1px solid transparent; background: var(--bg-card); color: var(--text-bright);
@@ -482,8 +504,10 @@
 <body>
 
   <div class="top">
+    <!-- 업체 이름은 서버가 심어 준 값(vendorName)이라 첫 그림부터 제자리에 있다.
+         불러오기를 기다리는 동안 이름이 비어 있으면 「남의 화면」처럼 보인다. -->
     <div class="top-title" id="topTitle">
-      반품 현황
+      <b id="topVendor"><?= vendorName ?></b>
       <small id="topSub">불러오는 중…</small>
     </div>
     <button class="icon-btn" type="button" id="btnTheme" title="밝게 보기" aria-label="화면 밝기">&#9728;&#65039;</button>
@@ -541,6 +565,13 @@
           <input type="text" id="nUid" autocomplete="off" placeholder="발주 마감 고유ID">
           <button class="scan-btn" type="button" id="nLookup">불러오기</button>
         </div>
+        <!-- ★ 송장으로도 찾는다 ★ (2026-09-20)
+             고유ID 를 모르는 건이 적지 않다. 그때 업체는 손으로 적고, 손으로
+             적은 건은 「출처 미확인」이 되어 사진을 받아야 한다.
+             업체 손에 «늘» 있는 것은 송장번호다. -->
+        <div class="hint" style="margin-top:6px">
+          고유ID를 모르시면 아래 <b>원송장번호</b>를 적고 「송장으로 찾기」를 눌러 주세요.
+        </div>
         <div class="hits" id="nHits"></div>
       </div>
       <div class="fld">
@@ -584,6 +615,7 @@
         <label>원송장번호</label>
         <div class="scan-row">
           <input type="text" id="nInv" inputmode="numeric" autocomplete="off" placeholder="직접 입력 또는 촬영">
+          <button class="scan-btn" type="button" id="nInvLookup">송장으로 찾기</button>
           <button class="scan-btn" type="button" id="nScan">&#128247;</button>
         </div>
         <input type="file" class="hidden-file" id="nScanFile" accept="image/*" capture="environment">
@@ -608,7 +640,7 @@
       </div>
       <div class="fld">
         <label>사진 (여러 장 · 파일 / 촬영 / 붙여넣기)</label>
-        <div class="photo-pick">
+        <div class="photo-pick" id="nPhotoPick">
           <label class="pk">파일<input type="file" id="nPhotoFile" accept="image/*" multiple></label>
           <label class="pk">촬영<input type="file" id="nPhotoCam" accept="image/*" capture="environment"></label>
         </div>
@@ -757,7 +789,7 @@
             return;
           }
           ROWS = res.rows || [];
-          el('topSub').textContent = VENDOR + ' · 최근 ' + res.days + '일';
+          el('topSub').textContent = '반품 현황 · 최근 ' + res.days + '일';
           var s = res.summary || {};
           el('kAct').textContent = s.active || 0;
           el('kDone').textContent = s.done || 0;
@@ -1353,6 +1385,11 @@
         type: el('nType').value,
         pickup: el('nPickup').value,
         memo: el('nMemo').value,
+        /*  ★ 사진 장수를 같이 보낸다 ★  (2026-09-20)
+            서버가 장부에서 못 찾은 건은 사진을 받아야 접수된다.
+            사진은 행을 만든 «뒤»에 올라가므로, 서버는 올릴 사진이 있는지를
+            이 숫자로 안다. 막으려는 것이 아니라 빠뜨리지 않게 하려는 것이다. */
+        photoCount: NEW_PHOTOS.length,
         force: !!force
       };
     }
@@ -1442,6 +1479,32 @@
           '</button>';
       }
       box.innerHTML = h;
+    }
+
+    /*  송장으로 찾기 — 고유ID 를 모를 때. 결과를 받는 길은 위와 같다  */
+    function lookupInvoice() {
+      var inv = el('nInv').value;
+      if (String(inv || '').replace(/[^0-9]/g, '').length < 8) {
+        setNewMsg('원송장번호를 숫자 8자리 이상 적어 주세요.', true);
+        return;
+      }
+      load('발주 마감에서 송장으로 찾는 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          unload();
+          if (handled(res)) return;
+          if (!res || !res.ok) {
+            renderHits([]);
+            setNewMsg((res && res.error) || '조회 실패', true);
+            return;
+          }
+          renderHits(res.matches || []);
+          setNewMsg((res.matches || []).length === 1
+            ? '발주 마감에서 불러왔습니다.'
+            : (res.matches || []).length + '건이 있습니다. 해당하는 주문을 눌러 주세요.', false);
+        })
+        .withFailureHandler(function (e) { unload(); setNewMsg(String(e && e.message ? e.message : e), true); })
+        .prpLookupByInvoice(SID, inv);
     }
 
     function lookupUid() {
@@ -1536,6 +1599,17 @@
             DUP_PENDING = payload;
             el('dupMsg').textContent = res.message;
             show('mDup', true);
+            return;
+          }
+          /*  ★ 사진을 받아야 하는 건 ★  (2026-09-20)
+              서버가 이 업체 장부에서 주문을 못 찾았다. 막는 것이 아니라
+              사진 한 장을 받는 것이다 — CS 가 사진으로 바로 판단한다.
+              오류처럼 붉게 띄우지 않는다. 잘못한 것이 아니다.  */
+          if (res && res.needPhoto) {
+            unload();
+            setNewMsg(res.message || '상품 사진을 올려 주세요.', false);
+            var pk = el('nPhotoPick');
+            if (pk && pk.scrollIntoView) pk.scrollIntoView({ block: 'center' });
             return;
           }
           if (!res || !res.ok) { unload(); setNewMsg((res && res.error) || '접수 실패', true); return; }
@@ -1659,6 +1733,7 @@
     el('nCancel').addEventListener('click', function () { show('mNew', false); });
     el('nSubmit').addEventListener('click', function () { submitNew(false); });
     el('nLookup').addEventListener('click', lookupUid);
+    el('nInvLookup').addEventListener('click', lookupInvoice);
     el('nUid').addEventListener('keydown', function (ev) {
       if (ev.key === 'Enter') { ev.preventDefault(); lookupUid(); }
     });

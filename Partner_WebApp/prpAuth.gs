@@ -98,6 +98,33 @@ function prpLoadAccounts_(refresh) {
     });
   }
 
+  /* ══════════════════════════════════════════════════════════════
+     ★ 남의 업체명을 별칭으로 못 쓰게 한다 ★  (2026-09-20)
+
+     별칭은 사람이 시트에 손으로 적는 칸이다. 거기에 다른 업체의 이름이
+     한 번 잘못 들어가면, 그 업체 배포파일이 이 계정에서 열린다 —
+     조회도 오염되고 「출처 확인됨」 도장까지 찍힌다. 조용한 사고다.
+
+     막는 자리는 여기다. 시트 편집을 잡으려면 트리거가 필요하고, 트리거는
+     빠뜨릴 수 있다. 읽어 들이는 길목은 하나뿐이니 여기서 걸러 낸다.
+     ══════════════════════════════════════════════════════════════ */
+  var 업체키 = {};
+  for (var v = 0; v < out.length; v++) 업체키[out[v].key] = out[v].vendor;
+
+  for (var w = 0; w < out.length; w++) {
+    var 살린것 = [];
+    for (var x = 0; x < out[w].aliases.length; x++) {
+      var al = out[w].aliases[x];
+      if (업체키[al] && al !== out[w].key) {
+        Logger.log("[PRP] 별칭 거부 — " + out[w].vendor + " 의 별칭 「" + al +
+          "」 은 다른 업체(" + 업체키[al] + ")의 이름입니다. 계정 탭을 고쳐 주세요.");
+        continue;
+      }
+      살린것.push(al);
+    }
+    out[w].aliases = 살린것;
+  }
+
   try { cache.put(ck, JSON.stringify(out), 300); } catch (e) {}
   return out;
 }

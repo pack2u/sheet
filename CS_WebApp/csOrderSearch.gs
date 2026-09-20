@@ -3305,6 +3305,11 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
          판정은 _cs_needsCsCheck_ 한 곳에서만 한다 — 두 곳에서 따로
          세면 화면과 숫자가 어긋난다. */
       needsCheck: _cs_needsCsCheck_(staffVal, notice, status),
+      /* ★ 출처 ★  (2026-09-20)
+         업체 포털이 접수할 때 그 업체 장부에서 주문을 찾았는지를 비고 첫 줄에
+         적어 둔다. 「미확인·어긋남」이면 다른 업체 물건이 섞였을 수 있다 —
+         사진으로 먼저 보라는 뜻이다. 판정은 포털이 하고 여기서는 읽기만 한다. */
+      origin: _cs_returnOrigin_(notice),
       status: status,
       doneFlag: doneFlag,
       notice: notice,
@@ -3532,6 +3537,7 @@ function csGetReturnLedgerBadgeIndex(opt) {
         type: r.type,
         reason: r.reason,   // 2026-09-18 — 여기 안 실으면 카드까지 못 간다
         needsCheck: r.needsCheck,
+        origin: r.origin,   // 2026-09-20 — 여기 안 실으면 카드까지 못 간다
         fee: r.fee
       });
     }
@@ -3985,6 +3991,19 @@ function _cs_hasCheckMark_(notice) {
  *     · 비고에 CS 이름으로 된 줄이 있다      (메모·사진·상태 기록)
  *   업체가 쓴 줄(「업체:」)은 자취로 치지 않는다 — 그건 업체가 한 것이다.
  */
+/**
+ * 비고에서 「[출처 …]」를 읽는다 — 적는 쪽은 협력업체 포털 `prpSubmitReturn`.
+ *
+ * ★ 문구를 고치면 양쪽을 같이 고친다 ★ 포털이 적고 여기가 읽는다.
+ *   한쪽만 고치면 뱃지가 조용히 사라지고, 사라진 줄도 모른다.
+ *
+ * @return {string} "확인됨" · "미확인" · "어긋남" · "" (옛 건이라 표시가 없음)
+ */
+function _cs_returnOrigin_(notice) {
+  var m = String(notice || "").match(/\[출처\s*(확인됨|미확인|어긋남)\]/);
+  return m ? m[1] : "";
+}
+
 function _cs_needsCsCheck_(staff, notice, status) {
   if (!_cs_filedByVendor_(staff)) return false;
   if (_cs_hasCheckMark_(notice)) return false;

@@ -21,7 +21,12 @@ var PRP_VENDOR_FOLDER_IDS_ = [
 var PRP_VENDOR_FILE_PREFIX_ = "[협력업체]";
 var PRP_ORDER_TAB_NAME_ = "발주 및 송장조회";
 var PRP_ARCHIVE_TAB_SUFFIX_ = "발주 마감";
-var PRP_LOOKUP_MONTHS_ = 6;
+/*  ★ 6 → 12 ★  (2026-09-20)
+    > "12개월로 늘린다"
+    조회에서 안 나오면 업체는 손으로 적는다. 손으로 적은 건이 곧 「출처 미확인」이
+    되므로, 조회 범위를 넓히는 것이 미확인 건을 줄이는 가장 싼 길이다.
+    탭을 더 여느라 느려지지만 — 데이터만 맞으면 로딩 시간은 문제가 아니다. */
+var PRP_LOOKUP_MONTHS_ = 12;
 
 /**
  * 마지막 `/` 뒤가 고유ID. `#n` · `|코드` · `_S숫자` 접미는 뺀다.
@@ -127,7 +132,11 @@ function prpRowToMatch_(row, cols, source) {
   };
 }
 
-function prpScanTabForUid_(tab, want, source, out) {
+/**
+ * 탭 하나를 훑는다. 무엇으로 고를지는 `맞나(row, cols)` 가 정한다.
+ * 고유ID 로 찾을 때와 송장으로 찾을 때가 «같은 길»을 쓰게 하려고 갈라 뒀다.
+ */
+function prpScanTab_(tab, source, out, 맞나) {
   if (!tab || tab.getLastRow() < 2) return;
   var lc = Math.max(Math.min(tab.getLastColumn(), 20), 15);
   var all;
@@ -138,9 +147,24 @@ function prpScanTabForUid_(tab, want, source, out) {
   var start = hi + 1;
   if (hi >= 3) start = Math.max(start, 4);
   for (var i = start; i < all.length; i++) {
-    if (!prpRowMatchesUid_(all[i], cols, want)) continue;
+    if (!맞나(all[i], cols)) continue;
     out.push(prpRowToMatch_(all[i], cols, source));
   }
+}
+
+function prpScanTabForUid_(tab, want, source, out) {
+  prpScanTab_(tab, source, out, function (row, cols) {
+    return prpRowMatchesUid_(row, cols, want);
+  });
+}
+
+/** 송장번호로 고른다 — 숫자만 견준다 (하이픈·공백이 제각각이다) */
+function prpScanTabForInvoice_(tab, wantDigits, source, out) {
+  prpScanTab_(tab, source, out, function (row, cols) {
+    if (cols.inv < 0) return false;
+    var d = prpDigits_(row[cols.inv]);
+    return !!(d && wantDigits && d === wantDigits);
+  });
 }
 
 function prpArchiveTabName_(yyyy, m) {
@@ -293,6 +317,47 @@ function prpListVendorFiles_() {
 }
 
 /**
+ * 그 업체 배포파일의 「발주 마감」 최근 N달 + 「발주 및 송장조회」를 훑는다.
+ * 고유ID·송장 두 갈래가 같은 길을 쓰게 하려고 하나로 모았다 —
+ * 갈라 두면 한쪽만 고치게 되고, 그게 곧 두 화면이 다른 답을 주는 길이다.
+ *
+ * @return {{ok:boolean, matches:Array, error?:string}}
+ */
+function prpScanVendorBook_(sess, 훑기) {
+  var fileId = prpFindVendorFileId_(sess);
+  if (!fileId) {
+    return {
+      ok: false,
+      error: "이 업체의 배포파일을 찾지 못했습니다. 운영자에게 알려 주세요.",
+      matches: []
+    };
+  }
+
+  var ss = SpreadsheetApp.openById(fileId);
+  var matches = [];
+
+  var monthNames = prpRecentArchiveTabNames_(prpNow_(), PRP_LOOKUP_MONTHS_);
+  for (var m = 0; m < monthNames.length; m++) {
+    var arch = ss.getSheetByName(monthNames[m]);
+    if (arch) 훑기(arch, monthNames[m], matches);
+  }
+
+  var live = ss.getSheetByName(PRP_ORDER_TAB_NAME_);
+  if (live) 훑기(live, PRP_ORDER_TAB_NAME_, matches);
+
+  var seen = {};
+  var uniq = [];
+  for (var u = 0; u < matches.length; u++) {
+    var r = matches[u];
+    var k = [prpUidNorm_(r.uid), r.name, r.item, prpDigits_(r.invoice)].join("|");
+    if (seen[k]) continue;
+    seen[k] = true;
+    uniq.push(r);
+  }
+  return { ok: true, matches: uniq };
+}
+
+/**
  * 고유ID 로 이 업체 「발주 마감」·「발주 및 송장조회」에서 주문을 찾는다.
  */
 function prpLookupByUid(sid, uidRaw) {
@@ -303,42 +368,130 @@ function prpLookupByUid(sid, uidRaw) {
   if (!uid) return { ok: false, error: "고유아이디를 입력해 주세요.", matches: [] };
 
   try {
-    var fileId = prpFindVendorFileId_(g.sess);
-    if (!fileId) {
+    var res = prpScanVendorBook_(g.sess, function (tab, src, out) {
+      prpScanTabForUid_(tab, uid, src, out);
+    });
+    if (!res.ok) return res;
+    if (!res.matches.length) {
       return {
         ok: false,
-        error: "이 업체의 배포파일을 찾지 못했습니다. 운영자에게 알려 주세요.",
+        error: "최근 " + PRP_LOOKUP_MONTHS_ + "개월 발주 마감에서 이 고유아이디를 찾지 못했습니다.",
         matches: []
       };
     }
-
-    var ss = SpreadsheetApp.openById(fileId);
-    var matches = [];
-
-    var monthNames = prpRecentArchiveTabNames_(prpNow_(), PRP_LOOKUP_MONTHS_);
-    for (var m = 0; m < monthNames.length; m++) {
-      var arch = ss.getSheetByName(monthNames[m]);
-      if (arch) prpScanTabForUid_(arch, uid, monthNames[m], matches);
-    }
-
-    var live = ss.getSheetByName(PRP_ORDER_TAB_NAME_);
-    if (live) prpScanTabForUid_(live, uid, PRP_ORDER_TAB_NAME_, matches);
-
-    var seen = {};
-    var uniq = [];
-    for (var u = 0; u < matches.length; u++) {
-      var r = matches[u];
-      var k = [prpUidNorm_(r.uid), r.name, r.item, prpDigits_(r.invoice)].join("|");
-      if (seen[k]) continue;
-      seen[k] = true;
-      uniq.push(r);
-    }
-
-    if (!uniq.length) {
-      return { ok: false, error: "발주 마감에서 이 고유아이디를 찾지 못했습니다.", matches: [] };
-    }
-    return { ok: true, uid: uid, matches: uniq };
+    return { ok: true, uid: uid, matches: res.matches };
   } catch (e) {
     return { ok: false, error: e.message || String(e), matches: [] };
   }
+}
+
+/**
+ * ★ 송장번호로도 찾는다 ★  (2026-09-20)
+ *
+ * 고유ID 를 모르는 건이 적지 않다. 그때 업체는 손으로 적고, 손으로 적은 건이
+ * 곧 「출처 미확인」이 된다. 업체 손에 «늘» 있는 것은 송장번호다.
+ */
+function prpLookupByInvoice(sid, invRaw) {
+  var g = prpGuard_(sid);
+  if (g._deny) return g._deny;
+
+  var digits = prpDigits_(invRaw);
+  if (digits.length < 8) {
+    return { ok: false, error: "송장번호를 숫자 8자리 이상 입력해 주세요.", matches: [] };
+  }
+
+  try {
+    var res = prpScanVendorBook_(g.sess, function (tab, src, out) {
+      prpScanTabForInvoice_(tab, digits, src, out);
+    });
+    if (!res.ok) return res;
+    if (!res.matches.length) {
+      return {
+        ok: false,
+        error: "최근 " + PRP_LOOKUP_MONTHS_ + "개월 발주 마감에서 이 송장번호를 찾지 못했습니다.",
+        matches: []
+      };
+    }
+    return { ok: true, invoice: prpFormatInvoice_(invRaw), matches: res.matches };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e), matches: [] };
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 출처 확인 ★  (2026-09-20)
+
+   > "오류로 다른 업체 물건이 삽입될수도 있으니 이부분 기획해줘"
+
+   접수하는 순간 서버가 «다시» 훑는다. 화면이 「조회해서 찾았어요」라고
+   보내는 말은 믿지 않는다 — 조회한 뒤 품목칸을 고쳐 적을 수도 있고,
+   조회를 아예 안 하고 보낼 수도 있다. 한 값의 주인은 하나여야 한다.
+
+   그 업체 «배포파일»만 연다. 그러니 거기서 찾혔다는 것은 곧
+   「이 업체 물건이 맞다」는 뜻이다.
+   ══════════════════════════════════════════════════════════════ */
+
+var PRP_ORIGIN_OK_ = "확인됨";
+var PRP_ORIGIN_UNKNOWN_ = "미확인";
+var PRP_ORIGIN_MISMATCH_ = "어긋남";
+
+/**
+ * @return {{level:string, why:string, hit:(Object|null)}}
+ *   확인됨 — 고유ID 나 송장으로 이 업체 장부에서 찾았고, 품목도 그 줄과 맞는다
+ *   어긋남 — 줄은 찾았는데 적어 보낸 품목이 그 줄과 다르다
+ *   미확인 — 장부에서 못 찾았다 (12개월 밖 · 고유ID·송장 둘 다 없음 등)
+ */
+function prpVerifyOrigin_(sess, data) {
+  var uid = prpUidFromCell_(data && data.uid);
+  var invDigits = prpDigits_(data && data.invoice);
+  var item = String((data && data.item) || "").replace(/\s+/g, "").toLowerCase();
+
+  if (!uid && invDigits.length < 8) {
+    return { level: PRP_ORIGIN_UNKNOWN_, why: "고유ID·송장번호가 없습니다", hit: null };
+  }
+
+  var found = [];
+  try {
+    if (uid) {
+      var a = prpScanVendorBook_(sess, function (tab, src, out) {
+        prpScanTabForUid_(tab, uid, src, out);
+      });
+      if (!a.ok) return { level: PRP_ORIGIN_UNKNOWN_, why: a.error, hit: null };
+      found = a.matches;
+    }
+    if (!found.length && invDigits.length >= 8) {
+      var b = prpScanVendorBook_(sess, function (tab, src, out) {
+        prpScanTabForInvoice_(tab, invDigits, src, out);
+      });
+      if (b.ok) found = b.matches;
+    }
+  } catch (e) {
+    /*  장부를 못 읽은 것과 「없는 것」은 다르다. 접수를 막지는 않되
+        까닭을 그대로 적어 둔다 — CS 가 보고 판단한다.  */
+    return { level: PRP_ORIGIN_UNKNOWN_, why: "장부를 읽지 못했습니다(" + e.message + ")", hit: null };
+  }
+
+  if (!found.length) {
+    return {
+      level: PRP_ORIGIN_UNKNOWN_,
+      why: "최근 " + PRP_LOOKUP_MONTHS_ + "개월 장부에 없습니다",
+      hit: null
+    };
+  }
+
+  /*  품목까지 맞는 줄이 하나라도 있으면 확인됨.
+      업체가 품목명을 줄여 적는 일이 잦아 «들어 있으면» 맞다고 본다. */
+  for (var i = 0; i < found.length; i++) {
+    var f = String(found[i].item || "").replace(/\s+/g, "").toLowerCase();
+    if (!item || !f) continue;
+    if (f === item || f.indexOf(item) >= 0 || item.indexOf(f) >= 0) {
+      return { level: PRP_ORIGIN_OK_, why: found[i].source || "", hit: found[i] };
+    }
+  }
+
+  return {
+    level: PRP_ORIGIN_MISMATCH_,
+    why: "장부에는 「" + String(found[0].item || "").substring(0, 40) + "」로 되어 있습니다",
+    hit: found[0]
+  };
 }
