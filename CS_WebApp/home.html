@@ -1978,7 +1978,6 @@
     #hbList.one-col > .hb-card.hb-notice { grid-column: auto; }
     .hb-card.hb-notice {
       background: linear-gradient(180deg, rgba(90, 160, 240, 0.10), transparent 70%), var(--bg-card);
-      border-left: 3px solid #5aa0f0;
     }
     /* 접힌 타일의 3줄 자르기·본문 숨김을 공지에서는 풀어 준다 */
     .hb-card.hb-notice:not(.open) .hb-title {
@@ -2037,52 +2036,55 @@
          "급한 것"과 "오래된 것"을 한눈에 구분하기 위해서다.
        ══════════════════════════════════════════════════════════════ */
     .hb-card.hb-stale:not(.open),
-    .hb-card.hb-ping:not(.open) {
-      position: relative;   /* 빛을 카드 안에 가둔다 (overflow 는 .hb-card 가 이미 hidden) */
+    .hb-card.hb-ping:not(.open),
+    .hb-card.hb-notice:not(.open) {
+      position: relative;
     }
     .hb-card.hb-stale:not(.open)::after,
-    .hb-card.hb-ping:not(.open)::after {
+    .hb-card.hb-ping:not(.open)::after,
+    .hb-card.hb-notice:not(.open)::after {
       content: "";
       position: absolute;
-      inset: 0;
+      top: 7px; right: 7px;
+      width: 6px; height: 6px;
+      border-radius: 50%;
       pointer-events: none;   /* 글자를 고르고 누르는 데 방해되지 않게 */
+    }
+    /*  숨쉬는 것은 «점»뿐이다. 카드 전체가 밝아지면 열 장이 동시에 일렁인다. */
+    .hb-card.hb-stale:not(.open)::after,
+    .hb-card.hb-ping:not(.open)::after {
       animation: hbBreathe 2.4s ease-in-out infinite;
     }
+    /*  6px 점은 0.12 까지 내려가면 사라진 것처럼 보인다 — 바닥을 올려 둔다 */
     @keyframes hbBreathe {
-      0%, 100% { opacity: 0.12; }
+      0%, 100% { opacity: 0.4; }
       50%      { opacity: 1; }
     }
 
     /* 오래 남아 있는 카드 — 파랑. 빨강/주황은 중요도 배지가 쓰고 있어
        "급한 것"이 아니라 "묵은 것"이라는 뜻으로 파랑을 골랐다.
        펼쳐 놓고 읽는 중인 카드(.open)는 뺀다 — 읽는데 밝아졌다 하면 거슬린다. */
-    .hb-card.hb-stale:not(.open) {
-      border-left: 3px solid rgba(90, 170, 255, 0.7);
-    }
-    .hb-card.hb-stale:not(.open)::after {
-      background: radial-gradient(120% 100% at 50% 0%,
-        rgba(90, 170, 255, 0.22), transparent 70%);
-    }
+    .hb-card.hb-stale:not(.open)::after { background: #5aaaff; }
 
     /* 나를 지목한 카드 — 빨강, 더 빠르게. 지목된 사람 화면에서만 붙는다
        (hbCardHtml 의 pinged). 내가 읽으면 멈춘다 — 안 멈추면 영영 숨 쉬어서
        곧 무시하게 된다. */
-    .hb-card.hb-ping:not(.open) {
-      border-left: 3px solid rgba(232, 93, 93, 0.85);
-    }
     .hb-card.hb-ping:not(.open)::after {
-      animation-duration: 1.1s;
-      background: radial-gradient(120% 100% at 50% 0%,
-        rgba(232, 93, 93, 0.26), transparent 70%);
+      background: #e85d5d; animation-duration: 1.1s;
     }
 
-    /* 움직임을 꺼 둔 사람에게는 «멈춘 빛 + 진한 테두리»로 같은 정보를 준다.
-       숨쉬기는 밝기만 바뀌므로 멈춰도 얼룩이 안 된다 — 중간 밝기로 세워 둔다. */
+    /* 공지 — 가만히 있는 파랑. 오래 붙어 있는 글이라 깜박일 까닭이 없다 */
+    .hb-card.hb-notice:not(.open)::after { background: #5aa0f0; }
+
+    /*  점이 배지 줄과 겹치지 않게 오른쪽을 비워 둔다 (표시 있는 카드만) */
+    .hb-card.hb-stale:not(.open) > .hb-card-top,
+    .hb-card.hb-ping:not(.open) > .hb-card-top,
+    .hb-card.hb-notice:not(.open) > .hb-card-top { padding-right: 12px; }
+
+    /* 움직임을 꺼 둔 사람에게는 «멈춘 점»으로 같은 정보를 준다. */
     @media (prefers-reduced-motion: reduce) {
       .hb-card.hb-stale:not(.open)::after,
-      .hb-card.hb-ping:not(.open)::after { animation: none; opacity: 0.35; }
-      .hb-card.hb-stale:not(.open) { border-left-color: rgba(90, 170, 255, 0.95); }
-      .hb-card.hb-ping:not(.open)  { border-left-color: rgba(232, 93, 93, 1); }
+      .hb-card.hb-ping:not(.open)::after { animation: none; opacity: 1; }
     }
 
     /* 지목 배지 — 누구더러 보라는 카드인지는 모두에게 보인다.
