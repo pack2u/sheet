@@ -2222,6 +2222,7 @@
         들어가고, 화면에서만 받는 분으로 묶어 보여 준다.
         통이 하나면 미리보기·넣기·되돌리기가 갈라지지 않는다.  */
     var ENT_ROWS = [];      // [{code, item, qty, name, phone, addr, msg, note}]
+    var ENT_ITEMS_CUT = false;   // 단가조회 목록이 잘렸나
     var ENT_LOADED = false;
     var ENT_LAST = null;    // 방금 넣은 것 — 되돌리기용
 
@@ -2248,7 +2249,9 @@
             return;
           }
           ENT_ITEMS = res.items || [];
-          el('eItemCnt').textContent = ENT_ITEMS.length + '개';
+          ENT_ITEMS_CUT = !!res.truncated;
+          el('eItemCnt').textContent = ENT_ITEMS.length + '개' +
+            (ENT_ITEMS_CUT ? ' (잘림)' : '');
           entRenderItems();
         })
         .withFailureHandler(function (e) {
@@ -2580,7 +2583,13 @@
         }
         one.warn = '';
         if (ENT_ITEMS.length && !단가표이름) {
-          one.warn = '단가조회에 없는 코드';
+          /*  ★ 「없다」고 단정하지 않는다 ★  (2026-09-21)
+              목록을 1200 에서 자르고 있었던 탓에, 단가조회에 «있는» 코드를
+              없다고 말했다. 사람은 그 말을 믿고 코드를 의심한다.
+              내가 못 본 것과 없는 것은 다르다 — 잘렸으면 그렇게 말한다.  */
+          one.warn = ENT_ITEMS_CUT
+            ? '단가조회에서 못 찾음 (목록이 잘려 있습니다 — 시트에서 확인해 주세요)'
+            : '단가조회에 없는 코드';
         } else if (단가표이름 && one.item) {
           var 납작 = function (s) { return String(s).replace(/[\s()\-_]/g, '').toLowerCase(); };
           var a = 납작(단가표이름), b = 납작(one.item);

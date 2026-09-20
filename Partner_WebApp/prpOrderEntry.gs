@@ -38,7 +38,12 @@ var PRP_PRICE_TAB_ = "단가조회";
     50 으로 막아 두면 가장 바쁜 날 세 번에 나눠 넣어야 한다. 나눠 넣으면
     중간에 무엇이 들어갔는지 사람이 세게 되고, 그게 곧 빠뜨림이다.  */
 var PRP_OE_MAX_ROWS_ = 200;
-var PRP_OE_ITEM_LIMIT_ = 1200;  // 품목 목록 최대
+/*  ★ 1200 에서 자르고 있었다 ★  (2026-09-21)
+    포털이 「단가조회에 없는 코드」라고 한 넷 중 셋은 시트가 품목명을 제대로
+    채워 주고 있었다 — 단가조회에 «있는데» 내가 못 본 것이다. 목록을 1200 에서
+    끊어 놓고, 그 뒤에 있는 코드를 「없다」고 말했다.
+    없는 것과 «내가 못 본 것»은 다르다. 넉넉히 읽고, 그래도 잘리면 잘렸다고 말한다.  */
+var PRP_OE_ITEM_LIMIT_ = 6000;
 
 /* 업체가 채우는 칸 — 머리글로 찾는다. 열 번호를 박지 않는 까닭은
    업체마다 열이 조금씩 다르고, 앞으로도 늘 것이기 때문이다. */
@@ -188,7 +193,12 @@ function prpListItems(sid) {
         price: c.price >= 0 ? String(all[r][c.price] || "").trim() : ""
       });
     }
-    return { ok: true, items: out };
+    /*  ★ 잘렸으면 잘렸다고 말한다 ★
+        목록이 끊긴 채로 「그 코드는 없습니다」라고 하면 사람이 그 말을 믿는다.
+        화면은 이 표를 보고 「없다」 대신 「못 찾았다」로 말해야 한다.  */
+    var 잘림 = (out.length >= PRP_OE_ITEM_LIMIT_) ||
+      (tab.getLastRow() > PRP_OE_ITEM_LIMIT_ + 5);
+    return { ok: true, items: out, truncated: 잘림, lastRow: tab.getLastRow() };
   } catch (e) {
     return { ok: false, error: e.message || String(e), items: [] };
   }
