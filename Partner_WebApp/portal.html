@@ -2361,9 +2361,16 @@
     var ENT_MAP = [];     // 열마다 무엇인가 ['code','qty',…,'']
     var ENT_SKIP_HEAD = false;
 
+    /*  ★ 품목명도 고를 수 있어야 한다 ★  (2026-09-21)
+        > "문제는 두번째가 주소가 아니고 품목명이야.."
+        발주탭의 품목명은 «자동» 열이라 우리가 쓰지 않는다. 그렇다고 목록에서
+        빼 두면 사람이 그 칸을 「안 씀」으로 밖에 못 놓고, 그러면 화면이
+        주소로 잘못 찍은 것을 바로잡기가 헷갈린다.
+        고를 수 있게 두되 시트에는 안 쓴다 — 대신 «코드가 맞는지» 견준다.  */
     var ENT_FIELDS = [
       ['', '— 안 씀 —'],
       ['code', '품목코드'],
+      ['item', '품목명 (확인용)'],
       ['qty', '수량'],
       ['name', '수취인'],
       ['phone', '전화번호'],
@@ -2394,6 +2401,7 @@
       for (var h = 0; h < w; h++) {
         var t = String(head[h] || '').replace(/\s/g, '');
         if (/품목코드|이카운트코드|^코드$/.test(t)) { map[h] = 'code'; 머리글있나 = true; }
+        else if (/품목명|상품명|제품명|^품명$/.test(t)) { map[h] = 'item'; 머리글있나 = true; }
         else if (/^수량$/.test(t)) { map[h] = 'qty'; 머리글있나 = true; }
         else if (/수취인$|받는분|^이름$|^성명$/.test(t)) { map[h] = 'name'; 머리글있나 = true; }
         else if (/전화|연락처|휴대/.test(t)) { map[h] = 'phone'; 머리글있나 = true; }
@@ -2403,37 +2411,82 @@
       }
       if (머리글있나) return { map: map, hasHeader: true };
 
-      //  머리글이 없으면 내용으로 — 몇 줄을 훑어 «대개 그렇다»를 본다
+      /*  머리글이 없으면 내용으로 — 몇 줄을 훑어 «대개 그렇다»를 본다.
+
+          ★ 긴 한글이라고 다 주소가 아니다 ★  (2026-09-21)
+            「BF 220파이 감자탕 소 백색 200세트」를 주소로 찍었다.
+            주소에는 시·도·구·읍·면·로·길·번지가 있고, 품목명에는 규격
+            (파이·호·세트·매·팩)과 색(백색·투명)이 있다. 그 표를 보고 가른다.  */
       var 표본 = grid.slice(0, Math.min(grid.length, 8));
+      /*  ★ 「2호점」이 주소로 걸렸다 ★  (2026-09-21)
+          「[0-9]+호」를 주소 표시로 뒀더니 상호 「마라힐링2호점」이 주소가 됐다.
+          주소를 주소이게 하는 것은 «행정 낱말»이다 — 시·도·군·구·읍·면·동·
+          리·로·길. 그것 하나는 반드시 있어야 주소로 본다.  */
+      var 주소끼 = /(특별자치|특별시|광역시|[가-힣]{2,}\s*(도|시|군|구|읍|면|동|리|로|길)(\s|[0-9]))/;
+      var 품목끼 = /(파이|호\b|세트|매입|개입|팩|박스|백색|투명|흑색|검정|사이즈|[0-9]{2,}\s*(ml|ML|cc|CC|mm|MM))/;
+
+      /*  칸마다 «얼마나 그럴듯한가»를 재어 둔다. 바로 정하지 않는 까닭은
+          같은 뜻이 두 칸에 가는 일이 있기 때문이다 — 실제로 주소가 둘이 됐다.
+          다 재고 나서 «가장 그럴듯한 칸 하나»씩 나눠 준다.  */
+      var 점수 = [];
       for (var c2 = 0; c2 < w; c2++) {
-        var 전화 = 0, 숫자 = 0, 코드 = 0, 긴글 = 0, 값 = 0;
+        var 전화 = 0, 숫자 = 0, 코드 = 0, 주소 = 0, 품목 = 0, 긴글 = 0, 값 = 0;
         for (var r = 0; r < 표본.length; r++) {
           var v = String((표본[r] || [])[c2] || '').trim();
           if (!v) continue;
           값++;
           var d = v.replace(/[^0-9]/g, '');
-          if (/^0\d{1,3}[-\s]?\d{3,4}[-\s]?\d{4}$/.test(v) || (d.length >= 9 && d.length <= 11 && d[0] === '0')) 전화++;
-          else if (/^[0-9]{1,4}$/.test(v)) 숫자++;
-          else if (/^[A-Za-z][A-Za-z0-9_\-]{4,}$/.test(v)) 코드++;
-          else if (v.length >= 8 && /[가-힣]/.test(v)) 긴글++;
+          if (/^0\d{1,3}[-\s]?\d{3,4}[-\s]?\d{4}$/.test(v) || (d.length >= 9 && d.length <= 11 && d[0] === '0')) { 전화++; continue; }
+          if (/^[0-9]{1,4}$/.test(v)) { 숫자++; continue; }
+          if (/^[A-Za-z][A-Za-z0-9_\-]{4,}$/.test(v)) { 코드++; continue; }
+          if (v.length >= 6) {
+            긴글++;
+            if (주소끼.test(v)) 주소++;
+            else if (품목끼.test(v)) 품목++;
+          }
         }
-        if (!값) continue;
-        if (전화 >= 값 * 0.6) map[c2] = 'phone';
-        else if (코드 >= 값 * 0.6) map[c2] = 'code';
-        else if (긴글 >= 값 * 0.6) map[c2] = 'addr';
-        else if (숫자 >= 값 * 0.6) map[c2] = 'qty';
+        점수.push({ c: c2, 값: 값, phone: 전화, qty: 숫자, code: 코드, addr: 주소, item: 품목, 긴글: 긴글 });
       }
-      //  이름은 남은 칸 중 «짧은 한글»이 많은 곳
+
+      //  뚜렷한 것부터 한 칸씩 — 뒤에 오는 것은 남은 칸에서만 고른다
+      ['phone', 'code', 'addr', 'item', 'qty'].forEach(function (f) {
+        var 최고 = null;
+        for (var i2 = 0; i2 < 점수.length; i2++) {
+          var s = 점수[i2];
+          if (!s.값 || map[s.c]) continue;
+          var 몫 = s[f] / s.값;
+          if (몫 < 0.6) continue;
+          if (!최고 || s[f] > 최고[f]) 최고 = s;
+        }
+        if (최고) map[최고.c] = f;
+      });
+
+      /*  주소도 품목명도 아닌 «긴 글»이 남았는데 주소가 아직 없으면 그것이 주소다.
+          주소는 생김새가 제각각이라 표에 다 담을 수 없다.  */
+      if (map.indexOf('addr') < 0) {
+        var 남은긴글 = null;
+        for (var i3 = 0; i3 < 점수.length; i3++) {
+          var s3 = 점수[i3];
+          if (!s3.값 || map[s3.c]) continue;
+          if (s3.긴글 / s3.값 < 0.6) continue;
+          if (!남은긴글 || s3.긴글 > 남은긴글.긴글) 남은긴글 = s3;
+        }
+        if (남은긴글) map[남은긴글.c] = 'addr';
+      }
+      /*  이름은 남은 칸 중 «사람·가게 이름처럼 생긴» 곳.
+          「마라힐링2호점」처럼 숫자가 섞인 상호도 이름이다 — 숫자만 아니면 된다.  */
       if (map.indexOf('name') < 0) {
-        var 후보 = -1, 최고 = 0;
+        var 후보 = -1, 최고n = 0;
         for (var c3 = 0; c3 < w; c3++) {
           if (map[c3]) continue;
           var n = 0;
           for (var r2 = 0; r2 < 표본.length; r2++) {
             var s = String((표본[r2] || [])[c3] || '').trim();
-            if (s && s.length <= 8 && /^[가-힣a-zA-Z().\s]+$/.test(s)) n++;
+            if (!s || s.length > 20) continue;
+            if (/^[0-9\-\s]+$/.test(s)) continue;       // 숫자뿐이면 이름이 아니다
+            if (/[가-힣]/.test(s) && !주소끼.test(s)) n++;
           }
-          if (n > 최고) { 최고 = n; 후보 = c3; }
+          if (n > 최고n) { 최고n = n; 후보 = c3; }
         }
         if (후보 >= 0) map[후보] = 'name';
       }
@@ -2461,7 +2514,7 @@
       var rows = [], bad = [], 앞사람 = null;
       for (var i = skipHeader ? 1 : 0; i < grid.length; i++) {
         var f = grid[i] || [];
-        var one = { code: '', qty: '', name: '', phone: '', addr: '', msg: '', note: '' };
+        var one = { code: '', item: '', qty: '', name: '', phone: '', addr: '', msg: '', note: '' };
         for (var c = 0; c < map.length; c++) {
           if (!map[c]) continue;
           var v = String(f[c] || '').trim();
@@ -2487,6 +2540,31 @@
           bad.push((i + 1) + '번째 줄: 수량이 ' + one.qty + ' — 열을 잘못 짚은 것 같습니다');
           continue;
         }
+
+        /*  ★ 품목명으로 코드를 견준다 ★  (2026-09-21)
+            품목명은 시트에 안 쓴다(자동 열). 대신 «코드가 맞는지» 보는 데 쓴다.
+            엑셀에서 코드 열만 밀리면 이름은 맞는데 딴 물건이 나간다 —
+            그건 넣고 나서는 못 잡는다.  */
+        var 단가표이름 = '';
+        for (var t = 0; t < ENT_ITEMS.length; t++) {
+          if (ENT_ITEMS[t].code === one.code) { 단가표이름 = ENT_ITEMS[t].item; break; }
+        }
+        if (ENT_ITEMS.length && !단가표이름) {
+          bad.push((i + 1) + '번째 줄: 코드 「' + one.code + '」가 단가조회에 없습니다');
+          continue;
+        }
+        if (단가표이름 && one.item) {
+          var 납작 = function (s) { return String(s).replace(/[\s()\-_]/g, '').toLowerCase(); };
+          var a = 납작(단가표이름), b = 납작(one.item);
+          if (a.indexOf(b) < 0 && b.indexOf(a) < 0) {
+            bad.push((i + 1) + '번째 줄: 코드와 품목명이 다릅니다 — ' +
+              '「' + one.item + '」로 적혔는데 그 코드는 「' + 단가표이름 + '」입니다');
+            continue;
+          }
+        }
+        //  단가조회의 이름으로 채운다 — 화면에서 무엇을 담았는지 보이게
+        if (단가표이름) one.item = 단가표이름;
+
         rows.push(one);
         if (rows.length >= 200) break;
       }
