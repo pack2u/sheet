@@ -614,6 +614,23 @@ function csLotteReturnPickupFromCard(p) {
         }
         ctx.tab.getRange(ctx.rowNum, col.notice + 1).setValue(nx);
       }
+      /*  ★ 상태도 같이 올린다 ★  (2026-09-20)
+          여태 이 길은 반품송장만 적고 상태는 그대로 뒀다. 회수 접수가
+          끝났는데 카드도 업체 화면도 「접수」에 멈춰 있었다.
+          상태·비고는 updateReturnLedgerStatus 가 임자이므로 거기로 넘긴다 —
+          여기서 직접 적으면 같은 값에 주인이 둘이 된다.  */
+      if (col.status >= 0 && _cs_isBeforePickup_(cell("status"))) {
+        var 올림 = updateReturnLedgerStatus({
+          tab: p.tab, row: p.row,
+          status: _CS_STATUS_PICKUP_,
+          staff: p.staff || "CS"
+        });
+        if (!올림 || !올림.ok) {
+          res.error = (res.error ? res.error + " · " : "") +
+            "상태를 「반품송장」으로 못 바꿨습니다" +
+            (올림 && 올림.error ? "(" + 올림.error + ")" : "") + " — 손으로 바꿔 주세요";
+        }
+      }
     } catch (e) {
       res.error = (res.error ? res.error + " · " : "") +
         "접수는 됐는데 대장에 못 적었습니다(" + e.message + ") — 반품송장 " +

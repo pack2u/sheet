@@ -2722,6 +2722,25 @@ function _cs_returnStage_(status, active) {
   return 0;
 }
 
+/*
+ * ★ 반품송장이 생기면 「접수」에 머물 까닭이 없다 ★  (2026-09-20)
+ *
+ * > "반품송장이 입력되면 수거중으로 상태값이 바뀌면 좋겠어"
+ *
+ * 대장에 적히는 값은 「반품송장」이고, 협력업체 포털은 그것을 「회수중」으로
+ * 보여준다 (portal.html STEPS). 화면 글자를 대장에 넣으면 두 화면이 갈린다.
+ *
+ * ★ 올리기만 한다 ★ 이미 입고검수·완료로 간 건을 뒤로 끌어내리지 않는다.
+ *   나중에 송장을 하나 더 붙이는 일이 있는데, 그때 카드가 되돌아가면
+ *   물류가 이미 받은 박스를 다시 기다리게 된다.
+ */
+var _CS_STATUS_PICKUP_ = "반품송장";
+
+/** 지금 상태가 아직 「접수」인가 — 그렇다면 회수 단계로 올릴 자리다 */
+function _cs_isBeforePickup_(status) {
+  return _cs_returnStage_(status, true) === 0;
+}
+
 /** 상담이력에 붙은 사진 장수 (물류팀이 올린 입고 사진 포함) */
 function _cs_returnPhotoCount_(timeline) {
   var n = 0;
@@ -2915,6 +2934,14 @@ function updateReturnLedgerStatus(payload) {
           (phone2NameIn ? " (" + phone2NameIn + ")" : ""));
         phone2NameSaved = phone2NameIn;
       }
+    }
+
+    /*  ★ 송장이 생겼으면 단계도 같이 간다 ★  (2026-09-20)
+        여태 이 칸은 «송장만» 적었다. 그래서 회수 송장이 나간 뒤에도 카드가
+        「접수」로 남아, 업체 화면에는 수거가 시작된 줄 모르고 있었다.
+        사람이 상태를 한 번 더 바꿔 줘야 하는 일은 자동화가 아니다.  */
+    if (retInvSaved && _cs_isBeforePickup_(status)) {
+      status = _CS_STATUS_PICKUP_;
     }
 
     if (status !== oldStatus) {
