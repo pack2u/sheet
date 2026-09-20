@@ -186,8 +186,12 @@
     .btn-new:active { background: var(--accent-blue); }
 
     /* ── 카드 ── */
+    /* ★ 바깥선을 걷었다 ★  (2026-09-20)
+       > "외각라인을 삭제하고 심플하게 해줘.. 업체반품현황도 마찬가지이고.."
+       경계는 «바탕색 차이»로 낸다 — 카드는 밝고 바깥은 어둡다.
+       선을 겹쳐 두면 무엇이 한 덩어리인지가 되레 안 보인다. */
     .card {
-      background: var(--bg-secondary); border: 1px solid var(--border-soft);
+      background: var(--bg-secondary); border: 1px solid transparent;
       border-radius: 14px; padding: 13px; margin-bottom: 10px;
     }
     .c-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
@@ -224,9 +228,12 @@
     /* ★ 지난번에 보신 뒤로 CS 가 남긴 것 ★  (2026-09-18)
        눈에 걸리되 시끄럽지 않게 — 테두리 한 줄과 띠 하나까지만.
        깜빡임은 안 쓴다. 오래 켜져 있는 것이 깜빡이면 화면을 피하게 된다. */
+    /* 강조도 «선»이 아니라 결로 — 바깥선을 걷었으니 (2026-09-20).
+       왼쪽에 굵은 띠 한 줄. 눈은 바로 가는데 화면은 조용하다. */
     .card.card-fresh {
-      border-color: var(--accent-orange);
-      box-shadow: 0 0 0 1px var(--accent-orange-bg);
+      background:
+        linear-gradient(90deg, var(--accent-orange) 0 3px, transparent 3px),
+        var(--bg-secondary);
     }
     .fresh-bar {
       display: flex; align-items: center; gap: 7px;
@@ -262,7 +269,9 @@
     .ret-inv-box.none { border-style: dashed; }
     .ret-inv-box.none .val { font-size: 12px; font-weight: 500; color: var(--text-muted); }
     .tl-h { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
-    .tl { border-left: 2px solid var(--border); padding-left: 10px; }
+    /* 이 선은 «세로 흐름»을 읽게 해 주는 선이라 남긴다 — 다만 더 옅게.
+       모든 선을 없애는 것이 목적이 아니라, 뜻 없는 선을 없애는 것이다 (2026-09-20). */
+    .tl { border-left: 2px solid var(--border-soft, var(--border)); padding-left: 10px; }
     .ev { margin-bottom: 8px; }
     .ev:last-child { margin-bottom: 0; }
     .ev-when { font-size: 10.5px; color: var(--text-muted); }
