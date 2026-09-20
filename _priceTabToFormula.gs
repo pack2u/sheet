@@ -313,6 +313,77 @@ function partnerPriceTabToFormulaAll() {
   _pcw_show_(줄.join("\n"), 시간다됨 ? "이어서 해 주세요" : "단가조회 수식 전환 끝");
 }
 
+/* ══════════════════════════════════════════════════════════════
+   전환 상태 한눈에 보기  (2026-09-21)
+
+   전환을 돌리고 나면 결과 창이 한 번 뜨고 사라진다. 그 뒤로 「지금 어떤
+   상태인가」를 볼 길이 없었다. 돌린 사람도 며칠 뒤엔 기억 못 한다.
+
+   파일마다 몇 칸만 읽는다 — A3 가 수식인가, 값이 성한가, K2 가 있는가.
+   3천 줄을 세지 않으므로 빠르다. 읽기만 한다.
+   ══════════════════════════════════════════════════════════════ */
+function partnerPriceTabStatus() {
+  var ui = SpreadsheetApp.getUi();
+  var files = _prpListVendorFilesForSpill_();
+  if (!files.length) { ui.alert("배포파일을 찾지 못했습니다."); return; }
+
+  var 수식 = [], 값 = [], 깨짐 = [], 소비자 = [], 못봄 = [];
+
+  for (var i = 0; i < files.length; i++) {
+    var tab = null;
+    try { tab = SpreadsheetApp.openById(files[i].id).getSheetByName(_PTF_TAB_); }
+    catch (e) { 못봄.push(files[i].name + " — 못 엶"); continue; }
+    if (!tab) { 못봄.push(files[i].name + " — 단가조회 탭 없음"); continue; }
+
+    var a3f = "", a3v = "", d3v = "", g3v = "", k2 = "";
+    try {
+      a3f = String(tab.getRange("A3").getFormula() || "");
+      a3v = String(tab.getRange("A3").getDisplayValue() || "");
+      d3v = String(tab.getRange("D3").getDisplayValue() || "");
+      g3v = String(tab.getRange("G3").getDisplayValue() || "");
+      k2 = String(tab.getRange("K2").getDisplayValue() || "").trim();
+    } catch (e2) { 못봄.push(files[i].name + " — 칸을 못 읽음"); continue; }
+
+    var 나쁨 = [a3v, d3v, g3v].filter(function (v) {
+      return v.indexOf("#REF") >= 0 || v.indexOf("#ERROR") >= 0 || v.indexOf("#N/A") >= 0;
+    });
+    if (나쁨.length) { 깨짐.push(files[i].name + " — " + 나쁨[0]); continue; }
+
+    if (a3f.indexOf("ARRAYFORMULA") >= 0) {
+      수식.push(files[i].name + (g3v === "-" ? "  (G3 가 「-」 — 단가 확인 필요)" : ""));
+    } else if (!k2 || !/^\d+$/.test(k2)) {
+      소비자.push(files[i].name + " — K2 없음 (소비자용이거나 설정 전)");
+    } else {
+      값.push(files[i].name);
+    }
+  }
+
+  var 줄 = [];
+  줄.push("■ 단가조회 전환 상태 — 파일 " + files.length + "개");
+  줄.push("");
+  줄.push("★ 수식으로 도는 곳 " + 수식.length + "곳");
+  수식.forEach(function (x) { 줄.push("  · " + x); });
+  줄.push("");
+  줄.push("아직 값인 곳 " + 값.length + "곳  (다시 돌리면 이것들이 됩니다)");
+  값.forEach(function (x) { 줄.push("  · " + x); });
+  줄.push("");
+  줄.push("건드리지 않는 곳 " + 소비자.length + "곳");
+  소비자.forEach(function (x) { 줄.push("  · " + x); });
+  if (깨짐.length) {
+    줄.push("");
+    줄.push("★ 오류가 보이는 곳 " + 깨짐.length + "곳 — 봐 주세요");
+    깨짐.forEach(function (x) { 줄.push("  · " + x); });
+    줄.push("  #REF! 는 대개 허브 IMPORTRANGE 권한이 끊긴 것입니다.");
+  }
+  if (못봄.length) {
+    줄.push("");
+    줄.push("못 본 곳 " + 못봄.length + "곳");
+    못봄.forEach(function (x) { 줄.push("  · " + x); });
+  }
+
+  _pcw_show_(줄.join("\n"), "단가조회 전환 상태");
+}
+
 /**
  * 한 업체를 바꾼다.
  * @return {{ok:boolean, skipped:boolean, why:string, dash:number, codes:number}}
