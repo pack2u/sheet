@@ -58,10 +58,13 @@ function _pos_openRanges_(formula) {
         (`'단가조회'!A2:G500` 의 A2:G500 이 여기 걸린다)  */
     var 남의탭 = /!\s*\$?$/.test(앞) || /!\s*$/.test(앞);
     out += s.substring(last, m.index);
-    if (남의탭 || m[1] !== m[3] || m[2] !== "2") {
+    /*  ★ 2행뿐 아니라 3행부터도 ★  (2026-09-21)
+        발주탭은 머리글이 1행이라 C2:C 지만, 단가조회는 수식 줄이 3행이라
+        C3:C 다. 2행만 보다가 단가조회를 통째로 놓쳤다.  */
+    if (남의탭 || m[1] !== m[3] || (m[2] !== "2" && m[2] !== "3")) {
       out += m[0];            // 그대로 둔다
     } else {
-      out += m[1] + "2:" + m[3];   // C2:C500 → C2:C
+      out += m[1] + m[2] + ":" + m[3];   // C3:C91 → C3:C
     }
     last = m.index + m[0].length;
   }
@@ -246,6 +249,80 @@ function _prpListVendorFilesForSpill_() {
     }
   }
   return out;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   단가조회 수식 그대로 보기  (2026-09-21)
+
+   > "원래 C열에 코드를 넣으면 나머지 부분이 바로 딸려오는 시스템이었어..
+   >  해당업체가 판매할수 있는 것만 정할수 있게.."
+
+   코드를 넣어도 아무것도 안 딸려온다. 까닭을 «추측하지 않는다» —
+   오늘 두 번 잘못 짚었다. 실제로 그 칸에 무엇이 적혀 있는지 그대로 보고
+   판단한다. 읽기만 하고 아무것도 바꾸지 않는다.
+   ══════════════════════════════════════════════════════════════ */
+function partnerPriceTabInspect() {
+  var ui = SpreadsheetApp.getUi();
+  var files = _prpListVendorFilesForSpill_();
+  if (!files.length) { ui.alert("배포파일을 찾지 못했습니다."); return; }
+
+  var 목록 = files.map(function (f, i) { return (i + 1) + ". " + f.name; }).join("\n");
+  var pick = ui.prompt("단가조회 수식 보기",
+    "번호를 입력하세요. 읽기만 하고 아무것도 바꾸지 않습니다.\n\n" + 목록,
+    ui.ButtonSet.OK_CANCEL);
+  if (pick.getSelectedButton() !== ui.Button.OK) return;
+  var n = parseInt(String(pick.getResponseText() || "").trim(), 10);
+  if (!(n >= 1 && n <= files.length)) { ui.alert("번호가 올바르지 않습니다."); return; }
+
+  var ss, tab;
+  try {
+    ss = SpreadsheetApp.openById(files[n - 1].id);
+    tab = ss.getSheetByName("단가조회");
+  } catch (e) { ui.alert("파일을 못 열었습니다: " + e.message); return; }
+  if (!tab) { ui.alert("「단가조회」 탭이 없습니다."); return; }
+
+  var 줄 = [];
+  줄.push("■ " + files[n - 1].name + " · 단가조회");
+  줄.push("마지막 행: " + tab.getLastRow() + " · 마지막 열: " + tab.getLastColumn());
+  줄.push("");
+
+  //  수식이 걸리는 자리 — 3행 A~J 와 코드열(C)의 아래쪽 몇 칸
+  var 칸 = ["A3", "B3", "C3", "D3", "E3", "F3", "G3", "H3", "I3", "J3"];
+  for (var i = 0; i < 칸.length; i++) {
+    var f = "", v = "";
+    try { f = String(tab.getRange(칸[i]).getFormula() || ""); } catch (e1) {}
+    try { v = String(tab.getRange(칸[i]).getDisplayValue() || ""); } catch (e2) {}
+    if (!f && !v) continue;
+    줄.push(칸[i] + "  값[" + v.substring(0, 28) + "]");
+    if (f) 줄.push("     식 " + f.substring(0, 200));
+  }
+
+  /*  코드열 마지막 값이 몇 행인지 — 새 코드를 어디에 넣어야 하는지가 이것이다  */
+  줄.push("");
+  var lastCode = 0, lastName = 0;
+  try {
+    var all = tab.getRange(1, 1, tab.getLastRow(), 4).getDisplayValues();
+    for (var r = 0; r < all.length; r++) {
+      if (String(all[r][2] || "").trim()) lastCode = r + 1;
+      if (String(all[r][3] || "").trim()) lastName = r + 1;
+    }
+  } catch (e3) {}
+  줄.push("코드(C열) 마지막 행: " + lastCode);
+  줄.push("품목명(D열) 마지막 행: " + lastName);
+  if (lastCode > lastName) {
+    줄.push("★ 코드는 " + lastCode + "행까지 있는데 품목명은 " + lastName +
+      "행에서 끊겼습니다 — 수식이 거기까지만 닿는다는 뜻입니다.");
+  }
+
+  ui.showModalDialog(
+    HtmlService.createHtmlOutput(
+      '<pre style="font-size:11px;line-height:1.6;white-space:pre-wrap;' +
+      'font-family:monospace;padding:12px">' +
+      줄.join("\n").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") +
+      "</pre>"
+    ).setWidth(720).setHeight(520),
+    "단가조회 수식 (읽기만)"
+  );
 }
 
 /** 메뉴 — 보기만 */

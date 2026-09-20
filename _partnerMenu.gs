@@ -168,6 +168,7 @@ function registerPartnerMenu_() {
         .addItem("📊 포털 활동 보기", "partnerPortalShowActivity")
         .addItem("🧪 포털 설정 점검", "partnerPortalDiagnose")
         .addSeparator()
+        .addItem("🔬 단가조회 수식 보기 (읽기만)", "partnerPriceTabInspect")
         .addItem("🧩 발주탭 자동 수식 점검 (보기만)", "partnerOrderSpillCheck")
         .addItem("🧩 발주탭 자동 수식 끝 열기 (반영)", "partnerOrderSpillOpen")
         .addSeparator()
