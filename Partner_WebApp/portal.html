@@ -101,7 +101,7 @@
       display: flex; align-items: center; gap: 10px;
       padding: 14px 14px 12px;
       padding-top: calc(14px + env(safe-area-inset-top, 0px));
-      background: var(--bg-secondary); border-bottom: 1px solid var(--border-soft);
+      background: var(--bg-secondary);
       position: sticky; top: 0; z-index: 40;
     }
     .top-title { font-size: 15px; font-weight: 700; flex: 1; min-width: 0;
@@ -109,7 +109,7 @@
     .top-title small { display: block; font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px; }
     .icon-btn {
       width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px;
-      border: 1px solid var(--border); background: var(--bg-card); color: var(--text-bright);
+      border: 1px solid transparent; background: var(--bg-card); color: var(--text-bright);
       font-size: 16px; cursor: pointer;
     }
     .icon-btn:active { background: var(--bg-card); }
@@ -195,12 +195,23 @@
     .sortsel {
       flex: 0 0 auto; margin-left: 6px; height: 36px; padding: 0 8px;
       font-size: 13px; color: var(--text-bright); background: var(--bg-secondary);
-      border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+      border: 1px solid transparent; border-radius: 10px; cursor: pointer;
     }
-    .sortsel:focus { outline: 2px solid var(--accent-blue); outline-offset: 1px; }
+    /*  ★ 선을 걷었으면 초점은 더 또렷해야 한다 ★  (2026-09-20)
+        테두리가 있을 때는 그것이 흐릿하게나마 「여기가 칸이다」를 말해 줬다.
+        이제 없으니, 커서가 어디 있는지는 초점 테두리가 혼자 말해야 한다.
+        PC 로 쓰는 화면이라 탭 키로 옮겨 다니는 사람이 길을 잃으면 안 된다.  */
+    .sortsel:focus,
+    .search:focus,
+    .fld input:focus, .fld select:focus, .fld textarea:focus,
+    .pop textarea:focus,
+    .act:focus-visible, .scan-btn:focus-visible, .icon-btn:focus-visible,
+    .btn-new:focus-visible, .hit:focus-visible, .photo-pick .pk:focus-within {
+      outline: 2px solid var(--accent-blue); outline-offset: 1px;
+    }
     .search {
       width: 100%; padding: 11px 12px; border-radius: 10px;
-      border: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-primary); margin-bottom: 12px;
+      border: 1px solid transparent; background: var(--bg-sunken); color: var(--text-primary); margin-bottom: 12px;
     }
     .btn-new {
       width: 100%; padding: 13px; border-radius: 11px; border: 0;
@@ -273,7 +284,7 @@
     /* 반품사유 — 품목 바로 밑. 두 테마 다 읽히게 변수로 (2026-09-18) */
     .reason { margin-top: 3px; color: var(--accent-orange); font-size: 0.95em; }
     .fee { color: var(--accent-blue); font-weight: 600; }
-    .inv-link { color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue-bg); }
+    .inv-link { color: var(--accent-blue); text-decoration: none; }
     .inv-link:active { color: var(--accent-blue); }
 
     /* 타임라인 */
@@ -298,7 +309,9 @@
     .tl-h { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
     /* 이 선은 «세로 흐름»을 읽게 해 주는 선이라 남긴다 — 다만 더 옅게.
        모든 선을 없애는 것이 목적이 아니라, 뜻 없는 선을 없애는 것이다 (2026-09-20). */
-    .tl { border-left: 2px solid var(--border-soft, var(--border)); padding-left: 10px; }
+    /*  세로 선도 걷는다 (2026-09-20) — 「앱 느낌으로」.
+        흐름은 들여쓰기와 사이 여백이 대신 읽어 준다.  */
+    .tl { padding-left: 2px; }
     .ev { margin-bottom: 8px; }
     .ev:last-child { margin-bottom: 0; }
     .ev-when { font-size: 10.5px; color: var(--text-muted); }
@@ -358,7 +371,7 @@
     .pop.on { display: block; }
     .pop textarea {
       width: 100%; min-height: 68px; padding: 10px; border-radius: 9px;
-      border: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-primary); resize: vertical;
+      border: 1px solid transparent; background: var(--bg-sunken); color: var(--text-primary); resize: vertical;
     }
     .pop-row { display: flex; gap: 6px; margin-top: 6px; }
 
@@ -366,7 +379,9 @@
 
     /* ── 정산 ── */
     .fee-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .fee-tbl th, .fee-tbl td { padding: 10px 8px; border-bottom: 1px solid var(--border-soft); text-align: left; }
+    .fee-tbl th, .fee-tbl td { padding: 11px 8px; border-bottom: 1px solid transparent; text-align: left; }
+    /*  줄을 긋는 대신 한 줄 걸러 바탕을 살짝 올린다 — 눈이 옆줄로 안 샌다 */
+    .fee-tbl tbody tr:nth-child(odd) td { background: var(--bg-sunken); }
     .fee-tbl th { color: var(--text-muted); font-size: 11px; font-weight: 600; }
     .fee-tbl td.num { text-align: right; }
 
@@ -378,7 +393,7 @@
     .modal.on { display: block; }
     .sheet {
       max-width: 480px; margin: 24px auto; background: var(--bg-secondary);
-      border: 1px solid var(--border); border-radius: 16px; padding: 18px;
+      border: 1px solid transparent; border-radius: 16px; padding: 18px;
     }
     .sheet h2 { font-size: 16px; margin: 0 0 4px; font-weight: 700; }
     .sheet .hint { font-size: 11.5px; color: var(--text-muted); line-height: 1.6; margin-bottom: 14px; }
@@ -386,7 +401,7 @@
     .fld label { display: block; font-size: 11.5px; color: var(--text-secondary); margin-bottom: 5px; font-weight: 600; }
     .fld input, .fld select, .fld textarea {
       width: 100%; padding: 11px; border-radius: 10px;
-      border: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-primary);
+      border: 1px solid transparent; background: var(--bg-sunken); color: var(--text-primary);
     }
     .fld textarea { min-height: 62px; resize: vertical; }
     .fld2 { display: flex; gap: 8px; }
@@ -395,13 +410,13 @@
     .scan-row { display: flex; gap: 8px; }
     .scan-row input { flex: 1; min-width: 0; }
     .scan-btn {
-      flex: 0 0 auto; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--border);
+      flex: 0 0 auto; padding: 11px 13px; border-radius: 10px; border: 1px solid transparent;
       background: var(--bg-card); color: var(--text-bright); font-weight: 600; cursor: pointer;
     }
     .sheet-foot { display: flex; gap: 8px; margin-top: 16px; }
     .sheet-foot button { flex: 1; padding: 13px; border-radius: 11px; border: 0; font-weight: 700; cursor: pointer; }
     .b-primary { background: var(--accent-blue); color: var(--on-accent); }
-    .b-ghost { background: var(--bg-card); color: var(--text-bright); border: 1px solid var(--border) !important; }
+    .b-ghost { background: var(--bg-sunken); color: var(--text-bright); border: 1px solid transparent !important; }
     .b-warn { background: var(--accent-red); color: var(--on-accent); }
     .msg { font-size: 12px; line-height: 1.6; margin-top: 10px; min-height: 16px; }
     .msg.err { color: var(--accent-red); }
@@ -421,14 +436,14 @@
     .photo-pick { display: flex; gap: 6px; flex-wrap: wrap; }
     .photo-pick .pk {
       flex: 1; min-width: 72px; text-align: center; padding: 10px 8px;
-      border-radius: 9px; border: 1px solid var(--border); background: var(--bg-card);
+      border-radius: 9px; border: 1px solid transparent; background: var(--bg-sunken);
       color: var(--text-bright); font-size: 12.5px; font-weight: 600; cursor: pointer;
     }
     .photo-pick .pk input { position: absolute; width: 1px; height: 1px; opacity: 0; }
     .photo-prev { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .photo-prev .pend {
       position: relative; width: 56px; height: 56px; border-radius: 8px; overflow: hidden;
-      border: 1px solid var(--border); background: var(--bg-sunken);
+      border: 1px solid transparent; background: var(--bg-sunken);
     }
     .photo-prev .pend img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .photo-prev .pend button {
@@ -441,10 +456,10 @@
     .hits { margin-top: 6px; }
     .hit {
       display: block; width: 100%; text-align: left; padding: 9px 10px; margin-bottom: 5px;
-      border-radius: 9px; border: 1px solid var(--border); background: var(--bg-sunken);
+      border-radius: 9px; border: 1px solid transparent; background: var(--bg-sunken);
       color: var(--text-bright); font-size: 12.5px; line-height: 1.5; cursor: pointer;
     }
-    .hit:active, .hit.on { border-color: var(--accent-blue); background: rgba(47,111,235,0.14); }
+    .hit:active, .hit.on { background: var(--accent-blue-bg); color: var(--accent-blue); }
     .hit b { display: block; font-size: 13px; margin-bottom: 2px; }
 
     .lb {
