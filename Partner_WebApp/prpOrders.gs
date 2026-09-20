@@ -21,7 +21,7 @@
  * ══════════════════════════════════════════════════════════════
  */
 
-var PRP_ORD_LIVE_LIMIT_ = 300;   // 검색어 없이 훑을 때 「발주 및 송장조회」 최대
+var PRP_ORD_LIVE_LIMIT_ = 800;   // 검색어 없이 훑을 때 「발주 및 송장조회」 최대 (뒤에서부터)
 var PRP_ORD_HIT_LIMIT_ = 20;     // 붙여넣은 한 줄당 최대
 var PRP_ORD_TOTAL_LIMIT_ = 300;  // 한 번에 돌려주는 전체 최대
 
@@ -164,9 +164,15 @@ function prpScanLiveOnly_(sess) {
   if (!live) {
     return { ok: true, matches: [] };
   }
+  /*  ★ 앞에서 끊으면 «오래된 것»만 남는다 ★  (2026-09-20)
+      여태는 위에서부터 300줄을 담고 뒤집었다. 시트는 위가 오래된 것이라,
+      줄이 300을 넘는 순간 정작 오늘 넣은 줄이 목록에서 사라졌다.
+      다 담은 뒤 «뒤에서» 끊는다. 「그날 발주가 제대로 들어갔는지」를 보려면
+      최근 것이 반드시 있어야 한다.  */
   var out = [];
-  prpScanTabAll_(live, PRP_ORDER_TAB_NAME_, out, PRP_ORD_LIVE_LIMIT_);
-  /*  시트는 위가 오래된 것이다. 화면은 최근 것부터 본다.  */
-  out.reverse();
-  return { ok: true, matches: out };
+  prpScanTabAll_(live, PRP_ORDER_TAB_NAME_, out, 100000);
+  var total = out.length;
+  if (out.length > PRP_ORD_LIVE_LIMIT_) out = out.slice(out.length - PRP_ORD_LIVE_LIMIT_);
+  out.reverse();   // 화면은 최근 것부터
+  return { ok: true, matches: out, total: total };
 }

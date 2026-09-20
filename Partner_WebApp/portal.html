@@ -286,6 +286,22 @@
       font-size: 11px; color: var(--text-muted);
     }
     .ent-item .no { color: var(--accent-red); font-weight: 700; }
+    /*  받는 분이 머리글, 그 아래 품목. 엑셀로 쉰 줄이 들어와도 사람 단위로
+        읽힌다 — 평평하게 늘어놓으면 잘못 들어간 한 줄을 못 찾는다. */
+    .ent-grp { margin-bottom: 12px; }
+    .ent-grp-h {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; margin-bottom: 5px;
+      background: var(--bg-sunken); border-radius: 9px;
+    }
+    .ent-grp-t { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--text-bright); }
+    .ent-grp-t i {
+      display: block; font-style: normal; font-weight: 500;
+      font-size: 11px; color: var(--text-muted); margin-top: 2px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .ent-grp-n { flex: 0 0 auto; font-size: 11px; color: var(--text-muted); font-weight: 600; }
+    .ent-grp .ent-row { margin-left: 10px; }
     .ent-row {
       display: flex; align-items: center; gap: 8px; padding: 8px 10px;
       background: var(--bg-card); border-radius: 9px; margin-bottom: 5px;
@@ -708,6 +724,19 @@
         </div>
         <div class="hint" id="oHint">검색 없이 열면 아직 마감 안 된 <b>발주 및 송장조회</b>를 보여줍니다.</div>
       </div>
+      <!-- ★ 그날 것을 한눈에 ★ (2026-09-20)
+           > "그날 발주 내용이 전체가 보여야 발주가 제대로 들어갔는지 등을
+           >  파악할수 있어"
+           날짜는 허브가 수집할 때 찍는다. 그래서 «아직 수집 안 된 줄»을
+           따로 고를 수 있게 둔다 — 방금 넣은 것이 거기 있다. -->
+      <div class="segs" id="oDays">
+        <button type="button" class="on" data-d="today">오늘</button>
+        <button type="button" data-d="yest">어제</button>
+        <button type="button" data-d="7">최근 7일</button>
+        <button type="button" data-d="new">미수집</button>
+        <button type="button" data-d="all">전체</button>
+      </div>
+      <div class="hint" id="oSum"></div>
       <div id="oList"></div>
     </div>
 
@@ -726,7 +755,7 @@
       </div>
 
       <div class="ent-sec">
-        <div class="ent-h">받는 분 <span>담은 품목이 모두 이 분께 갑니다</span></div>
+        <div class="ent-h">받는 분 <span>여기 적힌 분께 아래 품목이 담깁니다</span></div>
         <div class="fld2">
           <div><label class="req">수취인</label><input type="text" id="eName" autocomplete="off"></div>
           <div><label>전화번호</label><input type="tel" id="ePhone" inputmode="numeric" autocomplete="off"></div>
@@ -735,6 +764,11 @@
         <div class="fld2">
           <div><label>배송메시지</label><input type="text" id="eMsg" autocomplete="off"></div>
           <div><label>적요</label><input type="text" id="eNote" autocomplete="off"></div>
+        </div>
+        <!-- ★ 한 번에 여러 사람 ★ 담은 것은 그대로 두고 칸만 비운다.
+             한 사람 다 담고 「다음 분」을 눌러 이어 담는다. -->
+        <div class="ord-find-row">
+          <button type="button" class="act" id="eNext">다음 분 (칸 비우기)</button>
         </div>
       </div>
 
@@ -2009,6 +2043,11 @@
         return;
       }
 
+      //  검색 중에는 날짜칩·셈이 뜻이 없다 — 검색은 줄별로 답한 것이다
+      var 검색중 = !!(res.groups && res.groups.length);
+      el('oDays').hidden = 검색중;
+      if (검색중) el('oSum').innerHTML = '';
+
       //  검색어가 있었을 때 — 붙여넣은 줄마다 한 덩어리
       if (res.groups && res.groups.length) {
         var h = '';
@@ -2025,17 +2064,98 @@
         return;
       }
 
-      var rows = res.rows || [];
+      ORD_ROWS = res.rows || [];
+      ORD_TRUNC = !!res.truncated;
+      ordRenderDay();
+    }
+
+    /* ── 그날 것 가리기 ──────────────────────────────────────────
+       날짜는 「주문일자(자동)」다 — 허브가 수집할 때 찍는다. 그래서 방금
+       넣은 줄에는 아직 없다. 그 줄들은 「미수집」으로 따로 고른다. */
+    var ORD_ROWS = [], ORD_TRUNC = false, ORD_DAY = 'today';
+
+    function ordYmd(d) {
+      var m = d.getMonth() + 1, dd = d.getDate();
+      return {
+        y: String(d.getFullYear()),
+        m: (m < 10 ? '0' : '') + m,
+        d: (dd < 10 ? '0' : '') + dd
+      };
+    }
+
+    /**
+     * 시트 날짜 표기가 제각각이다 — 260920 · 2026-09-20 · 2026. 9. 20 · 2026/9/20.
+     * 숫자만 뭉뚱그려 견주면 「2026. 9. 20」이 2026920 이 되어 안 맞는다.
+     * 연·월·일을 «따로» 뽑아 견준다.
+     */
+    function ordSameDay(cell, ymd) {
+      var raw = String(cell || '').trim();
+      if (!raw) return false;
+
+      //  ① 구분자가 있는 표기 — 2026-09-20 · 2026. 9. 20 · 2026/9/20
+      var m = raw.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+      if (m) {
+        return m[1] === ymd.y &&
+          String(parseInt(m[2], 10)) === String(parseInt(ymd.m, 10)) &&
+          String(parseInt(m[3], 10)) === String(parseInt(ymd.d, 10));
+      }
+      //  ② 붙여 쓴 표기 — 20260920 · 260920
+      var d = raw.replace(/[^0-9]/g, '');
+      if (d.length === 8) return d === ymd.y + ymd.m + ymd.d;
+      if (d.length === 6) return d === ymd.y.slice(2) + ymd.m + ymd.d;
+      return false;
+    }
+
+    function ordRenderDay() {
+      var box = el('oList');
+      var 오늘 = ordYmd(new Date());
+      var 어제날 = new Date(); 어제날.setDate(어제날.getDate() - 1);
+      var 어제 = ordYmd(어제날);
+
+      var rows = [];
+      for (var i = 0; i < ORD_ROWS.length; i++) {
+        var r = ORD_ROWS[i];
+        var 넣을까 = false;
+        if (ORD_DAY === 'all') 넣을까 = true;
+        else if (ORD_DAY === 'new') 넣을까 = !String(r.uid || '').trim();
+        else if (ORD_DAY === 'today') 넣을까 = ordSameDay(r.date, 오늘) || !String(r.uid || '').trim();
+        else if (ORD_DAY === 'yest') 넣을까 = ordSameDay(r.date, 어제);
+        else if (ORD_DAY === '7') {
+          for (var d = 0; d < 7 && !넣을까; d++) {
+            var t = new Date(); t.setDate(t.getDate() - d);
+            if (ordSameDay(r.date, ordYmd(t))) 넣을까 = true;
+          }
+          if (!넣을까 && !String(r.uid || '').trim()) 넣을까 = true;
+        }
+        if (넣을까) rows.push(r);
+      }
+
+      //  ★ 몇 줄인지 · 몇 분인지 · 아직 수집 안 된 것이 몇인지 ★
+      var 사람 = {}, 인원 = 0, 미수집 = 0, 수량 = 0;
+      for (var j = 0; j < rows.length; j++) {
+        var key = String(rows[j].name || '') + '|' + String(rows[j].phone || '');
+        if (!사람[key]) { 사람[key] = 1; 인원++; }
+        if (!String(rows[j].uid || '').trim()) 미수집++;
+        수량 += (parseInt(rows[j].qty, 10) || 0);
+      }
+      el('oSum').innerHTML = rows.length
+        ? '<b>' + rows.length + '줄</b> · ' + 인원 + '분 · 수량 ' + 수량 +
+          (미수집 ? ' · <span class="ent-bad">아직 수집 안 됨 ' + 미수집 + '줄</span>' : ' · 모두 수집됨')
+        : '';
+
       if (!rows.length) {
-        box.innerHTML = '<div class="empty">아직 마감 안 된 발주가 없습니다.<br>' +
-          '지난 건은 위 칸에 제품명이나 송장번호를 넣어 찾아 주세요.</div>';
+        box.innerHTML = '<div class="empty">' +
+          (ORD_DAY === 'today' ? '오늘 넣은 발주가 없습니다.'
+            : ORD_DAY === 'new' ? '아직 수집 안 된 줄이 없습니다 — 모두 들어갔습니다.'
+            : '해당하는 발주가 없습니다.') +
+          '<br>지난 건은 위 칸에 제품명이나 송장번호를 넣어 찾아 주세요.</div>';
         return;
       }
       var h2 = '';
       for (var k = 0; k < rows.length; k++) h2 += ordRowHtml(rows[k]);
-      if (res.truncated) {
-        h2 += '<div class="hint">' + rows.length + '건까지만 보여 줍니다. ' +
-          '찾으시는 것이 있으면 위 칸에 넣어 주세요.</div>';
+      if (ORD_TRUNC) {
+        h2 += '<div class="hint">최근 것부터 보여 줍니다. ' +
+          '더 지난 건은 위 칸에 넣어 찾아 주세요.</div>';
       }
       box.innerHTML = h2;
     }
@@ -2070,10 +2190,24 @@
          건드리는 일이라, 길부터 눈으로 보고 넣는다.
        ══════════════════════════════════════════════════════════════ */
     var ENT_ITEMS = [];     // 단가조회에서 읽은 품목
-    var ENT_CART = [];      // 담은 것 [{code, item, qty}]
-    var ENT_BULK = [];      // 묶음으로 담은 줄 (받는 분이 줄마다 다르다)
+    /*  ★ 담은 것은 «줄»의 모음이다 ★  (2026-09-20)
+        > "엑셀 넣기시 여러 주문이 한번에 들어올텐데.."
+        > "같은 사람이 여러개 주문시에도 추가 가능이 필요할듯"
+
+        받는 분을 하나로 붙들어 두면 엑셀 여러 건도, 다음 사람도 못 받는다.
+        그래서 «줄마다» 받는 분을 지니게 한다. 골라 담기도 엑셀도 같은 통에
+        들어가고, 화면에서만 받는 분으로 묶어 보여 준다.
+        통이 하나면 미리보기·넣기·되돌리기가 갈라지지 않는다.  */
+    var ENT_ROWS = [];      // [{code, item, qty, name, phone, addr, msg, note}]
     var ENT_LOADED = false;
     var ENT_LAST = null;    // 방금 넣은 것 — 되돌리기용
+
+    /** 같은 사람인가 — 이름·전화·주소가 같으면 한 묶음으로 본다 */
+    function entWho(r) {
+      return [String(r.name || '').trim(),
+              String(r.phone || '').replace(/[^0-9]/g, ''),
+              String(r.addr || '').replace(/\s+/g, '')].join('|');
+    }
 
     function entMsg(t, cls) {
       var b = el('eMsgBox');
@@ -2124,51 +2258,77 @@
       el('eItems').innerHTML = h || '<div class="ent-empty">찾는 품목이 없습니다.</div>';
     }
 
+    /**
+     * 담은 것을 «받는 분»으로 묶어 보여 준다.
+     *
+     * ★ 엑셀로 쉰 줄이 들어와도 사람 단위로 읽힌다 ★
+     *   평평하게 쉰 줄을 늘어놓으면 누가 누구인지 안 보이고, 잘못 들어간 한
+     *   줄을 못 찾는다. 받는 분이 머리글이 되고 그 아래 품목이 붙는다.
+     *   묶음째 빼는 단추도 거기 둔다 — 한 사람 걸 통째로 무르는 일이 잦다.
+     */
     function entRenderCart() {
-      var 줄수 = ENT_CART.length + ENT_BULK.length;
-      el('eCartCnt').textContent = 줄수 + '줄';
+      el('eCartCnt').textContent = ENT_ROWS.length + '줄';
+      if (!ENT_ROWS.length) {
+        el('eCart').innerHTML =
+          '<div class="ent-empty">위에서 품목을 고르거나, 묶음으로 붙여넣으세요.</div>';
+        return;
+      }
+
+      //  차례는 담은 순서를 지킨다 — 사람이 넣은 차례가 곧 읽는 차례다
+      var 순서 = [], 묶음 = {};
+      for (var i = 0; i < ENT_ROWS.length; i++) {
+        var k = entWho(ENT_ROWS[i]);
+        if (!묶음[k]) { 묶음[k] = []; 순서.push(k); }
+        묶음[k].push(i);
+      }
+
       var h = '';
-      for (var i = 0; i < ENT_CART.length; i++) {
-        var c = ENT_CART[i];
-        h += '<div class="ent-row"><div class="g">' + esc(c.item) +
-          '<i>' + esc(c.code) + '</i></div>' +
-          '<input class="q" type="text" inputmode="numeric" value="' + esc(c.qty) +
-          '" data-q="' + i + '" aria-label="수량">' +
-          '<button type="button" class="x" data-x="' + i + '" title="빼기">×</button></div>';
+      for (var g = 0; g < 순서.length; g++) {
+        var idxs = 묶음[순서[g]];
+        var 첫줄 = ENT_ROWS[idxs[0]];
+        var 이름 = String(첫줄.name || '').trim();
+        h += '<div class="ent-grp">' +
+          '<div class="ent-grp-h">' +
+          '<div class="ent-grp-t">' + (이름 ? esc(이름) : '<span class="ent-bad">수취인 없음</span>') +
+            '<i>' + esc(첫줄.phone || '') +
+            (첫줄.addr ? (첫줄.phone ? ' · ' : '') + esc(첫줄.addr) : '') +
+            (첫줄.msg ? ' · ' + esc(첫줄.msg) : '') + '</i></div>' +
+          '<span class="ent-grp-n">' + idxs.length + '줄</span>' +
+          '<button type="button" class="x" data-xg="' + g + '" title="이 분 것 모두 빼기">×</button>' +
+          '</div>';
+        for (var j = 0; j < idxs.length; j++) {
+          var r = ENT_ROWS[idxs[j]];
+          h += '<div class="ent-row"><div class="g">' +
+            esc(r.item || r.code) + (r.item ? '<i>' + esc(r.code) + '</i>' : '') + '</div>' +
+            '<input class="q" type="text" inputmode="numeric" value="' + esc(r.qty) +
+            '" data-q="' + idxs[j] + '" aria-label="수량">' +
+            '<button type="button" class="x" data-x="' + idxs[j] + '" title="빼기">×</button></div>';
+        }
+        h += '</div>';
       }
-      for (var j = 0; j < ENT_BULK.length; j++) {
-        var b = ENT_BULK[j];
-        h += '<div class="ent-row"><div class="g">' + esc(b.code) +
-          ' × ' + esc(b.qty) + '<i>' + esc(b.name || '(수취인 없음)') +
-          (b.addr ? ' · ' + esc(b.addr) : '') + '</i></div>' +
-          '<button type="button" class="x" data-xb="' + j + '" title="빼기">×</button></div>';
-      }
-      el('eCart').innerHTML = h ||
-        '<div class="ent-empty">위에서 품목을 고르거나, 묶음으로 붙여넣으세요.</div>';
+      //  묶음째 빼기를 위해 어느 줄이 어느 묶음인지 기억해 둔다
+      el('eCart').setAttribute('data-groups', JSON.stringify(순서.map(function (k) { return 묶음[k]; })));
+      el('eCart').innerHTML = h;
     }
 
-    /** 담은 것을 서버가 받는 모양으로 편다 */
-    function entRows() {
-      var out = [];
-      var 받는분 = {
-        name: el('eName').value, phone: el('ePhone').value,
-        addr: el('eAddr').value, msg: el('eMsg').value, note: el('eNote').value
+    /** 담은 것이 곧 서버가 받는 모양이다 — 옮겨 담지 않는다 */
+    function entRows() { return ENT_ROWS.slice(); }
+
+    /** 지금 화면에 적힌 받는 분 */
+    function entWhoNow() {
+      return {
+        name: String(el('eName').value || '').trim(),
+        phone: String(el('ePhone').value || '').trim(),
+        addr: String(el('eAddr').value || '').trim(),
+        msg: String(el('eMsg').value || '').trim(),
+        note: String(el('eNote').value || '').trim()
       };
-      for (var i = 0; i < ENT_CART.length; i++) {
-        out.push({
-          code: ENT_CART[i].code, qty: ENT_CART[i].qty,
-          name: 받는분.name, phone: 받는분.phone, addr: 받는분.addr,
-          msg: 받는분.msg, note: 받는분.note
-        });
-      }
-      for (var j = 0; j < ENT_BULK.length; j++) out.push(ENT_BULK[j]);
-      return out;
     }
 
     /*  묶음 한 줄을 읽는다 — 탭·쉼표로 나눈 차례대로.
         차례: 코드 · 수량 · 수취인 · 전화 · 주소 · 배송메시지 · 적요  */
     function entParseBulk(text) {
-      var rows = [], bad = [];
+      var rows = [], bad = [], 앞사람 = null;
       var lines = String(text || '').split(/[\r\n]+/);
       for (var i = 0; i < lines.length; i++) {
         var ln = lines[i].trim();
@@ -2182,6 +2342,17 @@
           name: f[2] || '', phone: f[3] || '', addr: f[4] || '',
           msg: f[5] || '', note: f[6] || ''
         };
+        /*  ★ 수취인이 비면 윗줄을 잇는다 ★
+            엑셀에서 한 사람이 여러 품목을 시키면 첫 줄에만 이름·주소를 적고
+            아래는 비워 두는 일이 흔하다. 그대로 받으면 「수취인 없음」이
+            줄줄이 생긴다. 빈칸은 «같은 사람»이라는 뜻으로 읽는다.  */
+        if (!one.name && !one.addr && 앞사람) {
+          one.name = 앞사람.name; one.phone = 앞사람.phone; one.addr = 앞사람.addr;
+          if (!one.msg) one.msg = 앞사람.msg;
+        }
+        if (one.name || one.addr) {
+          앞사람 = { name: one.name, phone: one.phone, addr: one.addr, msg: one.msg };
+        }
         if (!one.code || !one.qty) { bad.push(i + 1 + '번째 줄: 코드나 수량이 없습니다'); continue; }
         rows.push(one);
         if (rows.length >= 50) break;
@@ -2213,24 +2384,58 @@
         }
         h += '</span>';
       }
+      /*  ★ 미리보기도 사람 단위로 ★ 쉰 줄을 평평하게 뿌리면 읽히지 않는다.
+          받는 분마다 「몇 행부터 몇 줄」로 접어 보여 준다.  */
       var pv = res.preview || [];
-      for (var i = 0; i < pv.length; i++) {
-        h += '<br>' + pv[i].row + '행 · ' + esc(pv[i].code) + ' × ' + esc(pv[i].qty) +
-          ' · ' + esc(pv[i].name) + (pv[i].addr ? ' · ' + esc(pv[i].addr) : '');
+      if (pv.length) {
+        var 순서 = [], 묶 = {};
+        for (var i = 0; i < pv.length; i++) {
+          var k = entWho(pv[i]);
+          if (!묶[k]) { 묶[k] = []; 순서.push(k); }
+          묶[k].push(pv[i]);
+        }
+        h += '<br><br>모두 <b>' + pv.length + '줄 · ' + 순서.length + '분</b>';
+        for (var g = 0; g < 순서.length; g++) {
+          var arr = 묶[순서[g]];
+          h += '<br><b>' + esc(arr[0].name || '(수취인 없음)') + '</b> · ' +
+            arr.length + '줄 · ' + arr[0].row + '행부터' +
+            (arr[0].addr ? '<br><span style="color:var(--text-muted)">' +
+              esc(arr[0].addr) + '</span>' : '');
+          for (var j = 0; j < arr.length; j++) {
+            h += '<br>&nbsp;&nbsp;· ' + esc(arr[j].code) + ' × ' + esc(arr[j].qty);
+          }
+        }
       }
       if (!dryRun) {
         ENT_LAST = pv;
-        h += '<br><br><button type="button" class="act" id="eUndo">방금 넣은 것 지우기</button>';
+        /*  ★ 넣었으면 «들어간 것»을 보여 준다 ★  (2026-09-20)
+            > "그날 발주 내용이 전체가 보여야 발주가 제대로 들어갔는지 등을
+            >  파악할수 있어"
+            넣었다는 말만 하고 끝내면 사람이 시트를 열어 확인하게 된다.  */
+        h += '<br><br><button type="button" class="act" id="eSee">들어간 것 보기</button>' +
+          ' <button type="button" class="act" id="eUndo">방금 넣은 것 지우기</button>';
       }
       h += '</div>';
       entMsg(h);
 
       if (!dryRun) {
         //  넣었으면 담은 것을 비운다 — 두 번 눌러 두 번 들어가는 일이 없게
-        ENT_CART = []; ENT_BULK = [];
+        ENT_ROWS = [];
         entRenderCart();
         var u = el('eUndo');
         if (u) u.addEventListener('click', entUndo);
+        var s = el('eSee');
+        if (s) s.addEventListener('click', function () {
+          //  「미수집」으로 간다 — 방금 넣은 줄은 아직 고유ID가 없다
+          ORD_DAY = 'new';
+          var bs = el('oDays').querySelectorAll('button');
+          for (var i = 0; i < bs.length; i++) {
+            bs[i].classList.toggle('on', bs[i].getAttribute('data-d') === 'new');
+          }
+          el('oq').value = '';
+          showPage('orders');
+          loadOrders();
+        });
       }
     }
 
@@ -2259,43 +2464,81 @@
       if (!b) return;
       var it = ENT_ITEMS[parseInt(b.getAttribute('data-i'), 10)];
       if (!it) return;
-      //  같은 품목을 또 고르면 수량을 올린다 — 같은 줄이 둘 생기지 않게
-      for (var i = 0; i < ENT_CART.length; i++) {
-        if (ENT_CART[i].code === it.code) {
-          ENT_CART[i].qty = String((parseInt(ENT_CART[i].qty, 10) || 0) + 1);
+
+      var w = entWhoNow();
+      if (!w.name || !w.addr) {
+        entMsg('먼저 위에 <b>수취인</b>과 <b>주소</b>를 적어 주세요. ' +
+          '담는 품목은 그 분께 갑니다.', 'ent-bad');
+        el(w.name ? 'eAddr' : 'eName').focus();
+        return;
+      }
+
+      /*  같은 사람 · 같은 품목이면 수량만 올린다. 다른 사람이면 새 줄이다 —
+          「같은 사람이 여러 개 주문시에도 추가」가 바로 이 자리다.  */
+      var key = entWho({ name: w.name, phone: w.phone, addr: w.addr });
+      for (var i = 0; i < ENT_ROWS.length; i++) {
+        if (ENT_ROWS[i].code === it.code && entWho(ENT_ROWS[i]) === key) {
+          ENT_ROWS[i].qty = String((parseInt(ENT_ROWS[i].qty, 10) || 0) + 1);
           entRenderCart();
+          entMsg(esc(it.item) + ' 수량을 올렸습니다.');
           return;
         }
       }
-      ENT_CART.push({ code: it.code, item: it.item, qty: '1' });
+      ENT_ROWS.push({
+        code: it.code, item: it.item, qty: '1',
+        name: w.name, phone: w.phone, addr: w.addr, msg: w.msg, note: w.note
+      });
       entRenderCart();
+      entMsg('');
     });
+
     el('eCart').addEventListener('click', function (ev) {
       var t = ev.target;
-      if (t.hasAttribute && t.hasAttribute('data-x')) {
-        ENT_CART.splice(parseInt(t.getAttribute('data-x'), 10), 1);
+      if (!t.hasAttribute) return;
+      if (t.hasAttribute('data-x')) {
+        ENT_ROWS.splice(parseInt(t.getAttribute('data-x'), 10), 1);
         entRenderCart();
-      } else if (t.hasAttribute && t.hasAttribute('data-xb')) {
-        ENT_BULK.splice(parseInt(t.getAttribute('data-xb'), 10), 1);
+      } else if (t.hasAttribute('data-xg')) {
+        //  묶음째 빼기 — 뒤에서부터 지운다. 앞에서 지우면 뒤 번호가 밀린다
+        var groups = [];
+        try { groups = JSON.parse(el('eCart').getAttribute('data-groups') || '[]'); } catch (e) {}
+        var idxs = (groups[parseInt(t.getAttribute('data-xg'), 10)] || []).slice()
+          .sort(function (a, b) { return b - a; });
+        for (var i = 0; i < idxs.length; i++) ENT_ROWS.splice(idxs[i], 1);
         entRenderCart();
       }
     });
+
     el('eCart').addEventListener('input', function (ev) {
       var t = ev.target;
       if (!t.hasAttribute || !t.hasAttribute('data-q')) return;
       var i = parseInt(t.getAttribute('data-q'), 10);
-      if (ENT_CART[i]) ENT_CART[i].qty = String(t.value || '').replace(/[^0-9]/g, '');
+      if (ENT_ROWS[i]) ENT_ROWS[i].qty = String(t.value || '').replace(/[^0-9]/g, '');
     });
+
+    el('eNext').addEventListener('click', function () {
+      el('eName').value = ''; el('ePhone').value = '';
+      el('eAddr').value = ''; el('eMsg').value = ''; el('eNote').value = '';
+      el('eName').focus();
+      entMsg('담은 것은 그대로 있습니다. 다음 분을 적어 주세요.');
+    });
+
     el('eBulkAdd').addEventListener('click', function () {
       var r = entParseBulk(el('eBulk').value);
       if (!r.rows.length) {
-        entMsg('읽을 줄이 없습니다.' + (r.bad.length ? ' ' + r.bad.join(' · ') : ''), 'ent-bad');
+        entMsg('읽을 줄이 없습니다.' + (r.bad.length ? ' ' + esc(r.bad.join(' · ')) : ''), 'ent-bad');
         return;
       }
-      for (var i = 0; i < r.rows.length; i++) ENT_BULK.push(r.rows[i]);
+      for (var i = 0; i < r.rows.length; i++) ENT_ROWS.push(r.rows[i]);
       el('eBulk').value = '';
       entRenderCart();
-      entMsg(r.rows.length + '줄 담았습니다.' +
+      //  몇 사람 몫인지 같이 말해 준다 — 줄 수만으로는 규모가 안 읽힌다
+      var 사람 = {}, n = 0;
+      for (var j = 0; j < ENT_ROWS.length; j++) {
+        var k = entWho(ENT_ROWS[j]);
+        if (!사람[k]) { 사람[k] = 1; n++; }
+      }
+      entMsg(r.rows.length + '줄 담았습니다. 지금 모두 ' + ENT_ROWS.length + '줄 · ' + n + '분.' +
         (r.bad.length ? '<br><span class="ent-bad">' + esc(r.bad.join(' · ')) + '</span>' : ''));
     });
     el('eDry').addEventListener('click', function () { entSubmit(true); });
@@ -2315,6 +2558,16 @@
         b.addEventListener('click', function () { showPage(b.getAttribute('data-page')); });
       })(document.querySelectorAll('.pages button')[pi]);
     }
+    el('oDays').addEventListener('click', function (ev) {
+      var b = ev.target.closest ? ev.target.closest('button[data-d]') : null;
+      if (!b) return;
+      ORD_DAY = b.getAttribute('data-d');
+      var bs = el('oDays').querySelectorAll('button');
+      for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', bs[i] === b);
+      //  검색 중에는 날짜칩이 뜻이 없다 — 검색 결과는 줄별로 답한 것이다
+      if (String(el('oq').value || '').trim()) { loadOrders(); return; }
+      ordRenderDay();
+    });
     el('oGo').addEventListener('click', loadOrders);
     el('oClear').addEventListener('click', function () {
       el('oq').value = '';
