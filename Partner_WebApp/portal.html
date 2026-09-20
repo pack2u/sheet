@@ -317,6 +317,24 @@
       flex: 0 0 auto; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px;
       background: var(--bg-sunken); color: var(--text-muted); cursor: pointer; font-size: 15px;
     }
+    /*  열 짚기 — 붙여넣은 것의 앞 세 줄을 그대로 보여 준다.
+        사람이 «자기 엑셀»을 보고 짚어야 하므로 값이 보여야 한다. */
+    #eMapBox { margin-top: 12px; padding: 12px; border-radius: 10px; background: var(--bg-sunken); }
+    .ent-map-scroll { overflow-x: auto; margin: 9px 0; }
+    .ent-map { border-collapse: collapse; font-size: 11.5px; white-space: nowrap; }
+    .ent-map th { padding: 0 4px 6px 0; text-align: left; }
+    .ent-map th select {
+      font-size: 11.5px; padding: 4px 6px; border-radius: 7px;
+      border: 1px solid transparent; background: var(--bg-card);
+      color: var(--text-bright); font-family: inherit;
+    }
+    .ent-map td {
+      padding: 4px 8px 4px 0; color: var(--text-muted);
+      max-width: 170px; overflow: hidden; text-overflow: ellipsis;
+    }
+    .ent-chk { display: flex; align-items: center; gap: 6px; font-size: 12px;
+      color: var(--text-secondary); margin-top: 4px; }
+    .ent-chk input { width: auto; }
     .ent-empty { padding: 18px; text-align: center; color: var(--text-muted); font-size: 12.5px; }
     .ent-pre { font-size: 11.5px; line-height: 1.7; }
     .ent-pre b { color: var(--text-bright); }
@@ -782,8 +800,8 @@
       <div class="ent-sec">
         <div class="ent-h">묶음으로 넣기 <span>줄마다 한 건</span></div>
         <div class="hint">
-          코드 · 수량 · 수취인 · 전화 · 주소 · 배송메시지 · 적요 차례로,
-          탭이나 쉼표로 나눠 붙여넣으세요. 엑셀에서 긁어 그대로 붙이셔도 됩니다.
+          엑셀에서 긁어 그대로 붙여넣으세요. <b>열 차례는 아무래도 됩니다</b> —
+          읽은 뒤에 어느 칸이 무엇인지 짚는 화면이 나옵니다.
         </div>
         <textarea id="eBulk" rows="3" spellcheck="false"
                   placeholder="JHMINIJJIMB00002	3	홍길동	010-1234-5678	서울시 …"></textarea>
@@ -792,8 +810,10 @@
             <input type="file" id="eXlsx" accept=".xlsx,.xls,.csv,text/csv"
                    style="position:absolute;width:1px;height:1px;opacity:0">
           </label>
-          <button type="button" class="act" id="eBulkAdd">담기</button>
+          <button type="button" class="act" id="eBulkAdd">읽기</button>
         </div>
+        <!-- 열 짚기 — 읽은 뒤 여기서 칸을 확인하고 담는다 -->
+        <div id="eMapBox" hidden></div>
       </div>
 
       <div class="ent-sec">
@@ -2325,27 +2345,132 @@
       };
     }
 
-    /*  묶음 한 줄을 읽는다 — 탭·쉼표로 나눈 차례대로.
-        차례: 코드 · 수량 · 수취인 · 전화 · 주소 · 배송메시지 · 적요  */
-    function entParseBulk(text) {
-      var rows = [], bad = [], 앞사람 = null;
+    /* ══════════════════════════════════════════════════════════════
+       ★ 열 차례를 못 박지 않는다 ★  (2026-09-21)
+
+       처음엔 「코드·수량·수취인·전화·주소·메시지·적요」 차례라고 가정했다.
+       실제 엑셀을 넣어 보니 차례가 달랐고, 수취인 자리에 「2」가, 수량 자리에
+       1914403331002200 이 들어갔다. 빠진 칸이 없으니 그대로 통과했다.
+       조용히 틀린 데이터가 들어가는 것이 안 들어가는 것보다 나쁘다.
+
+       그래서 «칸을 먼저 보여 주고 사람이 짚게» 한다. 짚는 수고를 줄이려고
+       머리글과 내용으로 먼저 찍어 두되, 마지막 판단은 사람이 한다.
+       업체마다 양식이 다르므로 이 방법 말고는 맞출 길이 없다.
+       ══════════════════════════════════════════════════════════════ */
+    var ENT_GRID = [];    // 붙여넣은 것을 칸으로 쪼갠 것 [[a,b,c], …]
+    var ENT_MAP = [];     // 열마다 무엇인가 ['code','qty',…,'']
+    var ENT_SKIP_HEAD = false;
+
+    var ENT_FIELDS = [
+      ['', '— 안 씀 —'],
+      ['code', '품목코드'],
+      ['qty', '수량'],
+      ['name', '수취인'],
+      ['phone', '전화번호'],
+      ['addr', '주소'],
+      ['msg', '배송메시지'],
+      ['note', '적요']
+    ];
+
+    /** 한 줄을 칸으로 쪼갠다 — 탭이 있으면 탭, 없으면 쉼표 */
+    function entSplitLine(ln) {
+      if (ln.indexOf('\t') >= 0) return ln.split('\t');
+      return ln.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+    }
+
+    /**
+     * 열마다 무엇인지 찍어 본다.
+     * ① 머리글에 이름이 있으면 그것 ② 없으면 내용 생김새로.
+     * 틀려도 괜찮다 — 사람이 보고 고친다.
+     */
+    function entGuessMap(grid) {
+      var w = 0;
+      for (var i = 0; i < grid.length; i++) w = Math.max(w, grid[i].length);
+      var map = [];
+      for (var c = 0; c < w; c++) map.push('');
+
+      var head = grid[0] || [];
+      var 머리글있나 = false;
+      for (var h = 0; h < w; h++) {
+        var t = String(head[h] || '').replace(/\s/g, '');
+        if (/품목코드|이카운트코드|^코드$/.test(t)) { map[h] = 'code'; 머리글있나 = true; }
+        else if (/^수량$/.test(t)) { map[h] = 'qty'; 머리글있나 = true; }
+        else if (/수취인$|받는분|^이름$|^성명$/.test(t)) { map[h] = 'name'; 머리글있나 = true; }
+        else if (/전화|연락처|휴대/.test(t)) { map[h] = 'phone'; 머리글있나 = true; }
+        else if (/주소/.test(t)) { map[h] = 'addr'; 머리글있나 = true; }
+        else if (/배송메시지|배송메모|요청/.test(t)) { map[h] = 'msg'; 머리글있나 = true; }
+        else if (/^적요$|^메모$|^비고$/.test(t)) { map[h] = 'note'; 머리글있나 = true; }
+      }
+      if (머리글있나) return { map: map, hasHeader: true };
+
+      //  머리글이 없으면 내용으로 — 몇 줄을 훑어 «대개 그렇다»를 본다
+      var 표본 = grid.slice(0, Math.min(grid.length, 8));
+      for (var c2 = 0; c2 < w; c2++) {
+        var 전화 = 0, 숫자 = 0, 코드 = 0, 긴글 = 0, 값 = 0;
+        for (var r = 0; r < 표본.length; r++) {
+          var v = String((표본[r] || [])[c2] || '').trim();
+          if (!v) continue;
+          값++;
+          var d = v.replace(/[^0-9]/g, '');
+          if (/^0\d{1,3}[-\s]?\d{3,4}[-\s]?\d{4}$/.test(v) || (d.length >= 9 && d.length <= 11 && d[0] === '0')) 전화++;
+          else if (/^[0-9]{1,4}$/.test(v)) 숫자++;
+          else if (/^[A-Za-z][A-Za-z0-9_\-]{4,}$/.test(v)) 코드++;
+          else if (v.length >= 8 && /[가-힣]/.test(v)) 긴글++;
+        }
+        if (!값) continue;
+        if (전화 >= 값 * 0.6) map[c2] = 'phone';
+        else if (코드 >= 값 * 0.6) map[c2] = 'code';
+        else if (긴글 >= 값 * 0.6) map[c2] = 'addr';
+        else if (숫자 >= 값 * 0.6) map[c2] = 'qty';
+      }
+      //  이름은 남은 칸 중 «짧은 한글»이 많은 곳
+      if (map.indexOf('name') < 0) {
+        var 후보 = -1, 최고 = 0;
+        for (var c3 = 0; c3 < w; c3++) {
+          if (map[c3]) continue;
+          var n = 0;
+          for (var r2 = 0; r2 < 표본.length; r2++) {
+            var s = String((표본[r2] || [])[c3] || '').trim();
+            if (s && s.length <= 8 && /^[가-힣a-zA-Z().\s]+$/.test(s)) n++;
+          }
+          if (n > 최고) { 최고 = n; 후보 = c3; }
+        }
+        if (후보 >= 0) map[후보] = 'name';
+      }
+      return { map: map, hasHeader: false };
+    }
+
+    /*  묶음 한 줄을 읽는다 — 짚어 둔 열 차례(ENT_MAP)대로  */
+    /** 붙여넣은 글 → 칸으로 쪼갠 표. 여기서는 «무엇인지»를 정하지 않는다 */
+    function entToGrid(text) {
+      var grid = [];
       var lines = String(text || '').split(/[\r\n]+/);
       for (var i = 0; i < lines.length; i++) {
-        var ln = lines[i].trim();
-        if (!ln) continue;
-        var f = ln.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(function (x) {
-          return String(x || '').replace(/^"|"$/g, '').trim();
-        });
-        if (/^(이카운트코드|품목코드|코드)$/i.test(f[0] || '')) continue;   // 머리글
-        var one = {
-          code: f[0] || '', qty: String(f[1] || '').replace(/[^0-9]/g, ''),
-          name: f[2] || '', phone: f[3] || '', addr: f[4] || '',
-          msg: f[5] || '', note: f[6] || ''
-        };
+        var ln = lines[i];
+        if (!String(ln).trim()) continue;
+        grid.push(entSplitLine(ln).map(function (x) {
+          return String(x || '').replace(/^"|"$/g, '').replace(/\s+/g, ' ').trim();
+        }));
+        if (grid.length >= 210) break;
+      }
+      return grid;
+    }
+
+    /** 짚어 둔 열 차례(ENT_MAP)대로 읽는다 */
+    function entParseBulk(grid, map, skipHeader) {
+      var rows = [], bad = [], 앞사람 = null;
+      for (var i = skipHeader ? 1 : 0; i < grid.length; i++) {
+        var f = grid[i] || [];
+        var one = { code: '', qty: '', name: '', phone: '', addr: '', msg: '', note: '' };
+        for (var c = 0; c < map.length; c++) {
+          if (!map[c]) continue;
+          var v = String(f[c] || '').trim();
+          if (map[c] === 'qty') v = v.replace(/[^0-9]/g, '');
+          one[map[c]] = v;
+        }
         /*  ★ 수취인이 비면 윗줄을 잇는다 ★
             엑셀에서 한 사람이 여러 품목을 시키면 첫 줄에만 이름·주소를 적고
-            아래는 비워 두는 일이 흔하다. 그대로 받으면 「수취인 없음」이
-            줄줄이 생긴다. 빈칸은 «같은 사람»이라는 뜻으로 읽는다.  */
+            아래는 비워 두는 일이 흔하다. 빈칸은 «같은 사람»이라는 뜻으로 읽는다.  */
         if (!one.name && !one.addr && 앞사람) {
           one.name = 앞사람.name; one.phone = 앞사람.phone; one.addr = 앞사람.addr;
           if (!one.msg) one.msg = 앞사람.msg;
@@ -2353,11 +2478,55 @@
         if (one.name || one.addr) {
           앞사람 = { name: one.name, phone: one.phone, addr: one.addr, msg: one.msg };
         }
-        if (!one.code || !one.qty) { bad.push(i + 1 + '번째 줄: 코드나 수량이 없습니다'); continue; }
+        if (!one.code || !one.qty) {
+          bad.push((i + 1) + '번째 줄: 코드나 수량이 없습니다');
+          continue;
+        }
+        //  화면에서도 한 번 거른다 — 서버가 또 본다. 여기서 막으면 바로 안다
+        if (parseInt(one.qty, 10) > 9999) {
+          bad.push((i + 1) + '번째 줄: 수량이 ' + one.qty + ' — 열을 잘못 짚은 것 같습니다');
+          continue;
+        }
         rows.push(one);
         if (rows.length >= 200) break;
       }
       return { rows: rows, bad: bad };
+    }
+
+    /** 열 짚기 화면 — 첫 줄 몇 개를 보여 주고 칸마다 고르게 한다 */
+    function entRenderMap() {
+      var box = el('eMapBox');
+      if (!ENT_GRID.length) { box.innerHTML = ''; box.hidden = true; return; }
+      box.hidden = false;
+
+      var w = ENT_MAP.length;
+      var h = '<div class="ent-h">열 짚기 <span>이 칸이 무엇인지 확인해 주세요</span></div>' +
+        '<div class="hint">아래는 붙여넣으신 것의 앞 세 줄입니다. ' +
+        '잘못 짚은 칸이 있으면 바꿔 주세요.</div>' +
+        '<div class="ent-map-scroll"><table class="ent-map"><tr>';
+      for (var c = 0; c < w; c++) {
+        h += '<th><select data-mc="' + c + '">';
+        for (var f = 0; f < ENT_FIELDS.length; f++) {
+          h += '<option value="' + ENT_FIELDS[f][0] + '"' +
+            (ENT_MAP[c] === ENT_FIELDS[f][0] ? ' selected' : '') + '>' +
+            ENT_FIELDS[f][1] + '</option>';
+        }
+        h += '</select></th>';
+      }
+      h += '</tr>';
+      for (var r = 0; r < Math.min(ENT_GRID.length, 3); r++) {
+        h += '<tr>';
+        for (var c2 = 0; c2 < w; c2++) {
+          h += '<td>' + esc(String((ENT_GRID[r] || [])[c2] || '')) + '</td>';
+        }
+        h += '</tr>';
+      }
+      h += '</table></div>' +
+        '<label class="ent-chk"><input type="checkbox" id="eSkipHead"' +
+        (ENT_SKIP_HEAD ? ' checked' : '') + '> 첫 줄은 머리글입니다 (담지 않음)</label>' +
+        '<div class="ord-find-row"><button type="button" class="btn-new" id="eMapAdd">' +
+        '이 차례로 담기</button></div>';
+      box.innerHTML = h;
     }
 
     function entSubmit(dryRun) {
@@ -2523,15 +2692,69 @@
       entMsg('담은 것은 그대로 있습니다. 다음 분을 적어 주세요.');
     });
 
-    el('eBulkAdd').addEventListener('click', function () {
-      var r = entParseBulk(el('eBulk').value);
+    /*  「담기」는 이제 «열 짚기»를 먼저 띄운다. 바로 담지 않는다 —
+        차례를 지어내면 수취인 자리에 수량이 들어간다 (2026-09-21 에 실제로 났다).  */
+    function entOpenMap() {
+      var grid = entToGrid(el('eBulk').value);
+      if (!grid.length) { entMsg('읽을 줄이 없습니다.', 'ent-bad'); return; }
+      ENT_GRID = grid;
+      var g = entGuessMap(grid);
+      ENT_MAP = g.map;
+      ENT_SKIP_HEAD = g.hasHeader;
+      entRenderMap();
+      entMsg('칸이 무엇인지 확인하고 「이 차례로 담기」를 눌러 주세요.');
+      var b = el('eMapBox');
+      if (b && b.scrollIntoView) b.scrollIntoView({ block: 'start' });
+    }
+
+    el('eBulkAdd').addEventListener('click', entOpenMap);
+
+    el('eMapBox').addEventListener('change', function (ev) {
+      var t = ev.target;
+      if (t.hasAttribute && t.hasAttribute('data-mc')) {
+        var c = parseInt(t.getAttribute('data-mc'), 10);
+        var v = t.value;
+        //  같은 뜻을 두 칸에 줄 수 없다 — 먼저 있던 곳을 비운다
+        if (v) {
+          for (var i = 0; i < ENT_MAP.length; i++) {
+            if (i !== c && ENT_MAP[i] === v) ENT_MAP[i] = '';
+          }
+        }
+        ENT_MAP[c] = v;
+        entRenderMap();
+      } else if (t.id === 'eSkipHead') {
+        ENT_SKIP_HEAD = !!t.checked;
+      }
+    });
+
+    el('eMapBox').addEventListener('click', function (ev) {
+      if (!ev.target || ev.target.id !== 'eMapAdd') return;
+
+      //  없으면 안 되는 것부터 본다 — 없는 채로 담으면 전부 못 쓴다
+      var 없는것 = [];
+      ['code', 'qty', 'name', 'addr'].forEach(function (k) {
+        if (ENT_MAP.indexOf(k) < 0) {
+          없는것.push({ code: '품목코드', qty: '수량', name: '수취인', addr: '주소' }[k]);
+        }
+      });
+      if (없는것.length) {
+        entMsg('<b>' + esc(없는것.join(' · ')) + '</b> 칸을 짚어 주세요. 없으면 발주가 안 됩니다.', 'ent-bad');
+        return;
+      }
+
+      var r = entParseBulk(ENT_GRID, ENT_MAP, ENT_SKIP_HEAD);
       if (!r.rows.length) {
-        entMsg('읽을 줄이 없습니다.' + (r.bad.length ? ' ' + esc(r.bad.join(' · ')) : ''), 'ent-bad');
+        entMsg('담을 줄이 없습니다.' +
+          (r.bad.length ? '<br><span class="ent-bad">' + esc(r.bad.join('<br>')) + '</span>' : ''), 'ent-bad');
         return;
       }
       for (var i = 0; i < r.rows.length; i++) ENT_ROWS.push(r.rows[i]);
+
+      ENT_GRID = []; ENT_MAP = [];
       el('eBulk').value = '';
+      entRenderMap();
       entRenderCart();
+
       //  몇 사람 몫인지 같이 말해 준다 — 줄 수만으로는 규모가 안 읽힌다
       var 사람 = {}, n = 0;
       for (var j = 0; j < ENT_ROWS.length; j++) {
@@ -2539,7 +2762,8 @@
         if (!사람[k]) { 사람[k] = 1; n++; }
       }
       entMsg(r.rows.length + '줄 담았습니다. 지금 모두 ' + ENT_ROWS.length + '줄 · ' + n + '분.' +
-        (r.bad.length ? '<br><span class="ent-bad">' + esc(r.bad.join(' · ')) + '</span>' : ''));
+        (r.bad.length ? '<br><span class="ent-bad">못 담은 줄<br>' +
+          esc(r.bad.join('<br>')) + '</span>' : ''));
     });
     el('eDry').addEventListener('click', function () { entSubmit(true); });
     el('eGo').addEventListener('click', function () {
@@ -2550,7 +2774,8 @@
     //  엑셀 → 묶음칸. 발주·송장조회의 엑셀 읽기와 같은 통로를 쓴다
     window.prpEntryBulkFill = function (text) {
       el('eBulk').value = text;
-      entMsg('엑셀을 읽었습니다. 「담기」를 눌러 주세요.');
+      //  읽자마자 열 짚기까지 띄운다 — 「읽기」를 또 누르게 하지 않는다
+      entOpenMap();
     };
 
     for (var pi = 0; pi < document.querySelectorAll('.pages button').length; pi++) {
