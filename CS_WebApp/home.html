@@ -1977,7 +1977,6 @@
     #hbList > .hb-card.hb-notice { grid-column: span 2; }
     #hbList.one-col > .hb-card.hb-notice { grid-column: auto; }
     .hb-card.hb-notice {
-      border-color: rgba(90, 160, 240, 0.45);
       background: linear-gradient(180deg, rgba(90, 160, 240, 0.10), transparent 70%), var(--bg-card);
       border-left: 3px solid #5aa0f0;
     }
@@ -2014,7 +2013,7 @@
       touch-action: pan-y;
     }
     .hb-card.open {
-      padding: 12px 14px; cursor: default; border-color: rgba(173, 173, 173,0.35);
+      padding: 12px 14px; cursor: default; background: var(--bg-card-hover);
     }
     .hb-card.hb-done { opacity: 0.55; background: var(--bg-secondary); }
 
@@ -2058,7 +2057,7 @@
        "급한 것"이 아니라 "묵은 것"이라는 뜻으로 파랑을 골랐다.
        펼쳐 놓고 읽는 중인 카드(.open)는 뺀다 — 읽는데 밝아졌다 하면 거슬린다. */
     .hb-card.hb-stale:not(.open) {
-      border-color: rgba(90, 170, 255, 0.55);
+      border-left: 3px solid rgba(90, 170, 255, 0.7);
     }
     .hb-card.hb-stale:not(.open)::after {
       background: radial-gradient(120% 100% at 50% 0%,
@@ -2069,7 +2068,7 @@
        (hbCardHtml 의 pinged). 내가 읽으면 멈춘다 — 안 멈추면 영영 숨 쉬어서
        곧 무시하게 된다. */
     .hb-card.hb-ping:not(.open) {
-      border-color: rgba(232, 93, 93, 0.7);
+      border-left: 3px solid rgba(232, 93, 93, 0.85);
     }
     .hb-card.hb-ping:not(.open)::after {
       animation-duration: 1.1s;
@@ -2082,16 +2081,16 @@
     @media (prefers-reduced-motion: reduce) {
       .hb-card.hb-stale:not(.open)::after,
       .hb-card.hb-ping:not(.open)::after { animation: none; opacity: 0.35; }
-      .hb-card.hb-stale:not(.open) { border-color: rgba(90, 170, 255, 0.85); }
-      .hb-card.hb-ping:not(.open)  { border-color: rgba(232, 93, 93, 1); }
+      .hb-card.hb-stale:not(.open) { border-left-color: rgba(90, 170, 255, 0.95); }
+      .hb-card.hb-ping:not(.open)  { border-left-color: rgba(232, 93, 93, 1); }
     }
 
     /* 지목 배지 — 누구더러 보라는 카드인지는 모두에게 보인다.
        내가 지목된 경우에만 꽉 찬 빨강이 된다. */
     .hb-badge.hb-to {
-      background: rgba(232, 93, 93, 0.16);
+      background: rgba(232, 93, 93, 0.24);
       color: #e85d5d;
-      border: 1px solid rgba(232, 93, 93, 0.4);
+      border: 1px solid transparent;
     }
     .hb-badge.hb-to.me { background: #e85d5d; color: #fff; border-color: #e85d5d; }
 
@@ -2747,7 +2746,7 @@
     }
 
     .lb-card {
-      background: var(--bg-card); border: 1px solid var(--border);
+      background: var(--bg-card); border: 1px solid transparent;
       border-radius: var(--radius-sm); padding: 10px 12px;
       display: flex; flex-direction: column;
       /* stretch 가 기본이라 지정하지 않으면 중요도 배지가 카드 전폭으로 늘어난다 */
@@ -3084,6 +3083,19 @@
           <div id="hbList"></div>
 
         </div>
+        <!-- 물류 커뮤니티 보드 — CS 보드와 같은 서버 코드, board:"logi" 로 탭만 다르다 -->
+        <div class="mn-sec lb-box" id="lbBox">
+          <div class="mn-sec-head">🚚 물류 커뮤니티 보드 <span id="lbCount"></span></div>
+          <div class="os-toolbar" style="margin-top:8px">
+            <button type="button" class="os-chip" onclick="openHbModal('logi')">글쓰기</button>
+            <button type="button" class="os-chip" id="lbMineChip" onclick="toggleHbMine()"
+                    title="나를 지목한 글만 봅니다 (공지는 항상 보입니다)">내 것만</button>
+            <button type="button" class="os-chip ghost" onclick="lbLoad()">↻</button>
+          </div>
+<!-- 물류 글쓰기도 CS 와 같은 모달(hbModal)을 쓴다. 여기 있던 간단 폼은 걷어냈다 —
+               같은 일을 하는 화면이 둘이면 고칠 때마다 한쪽을 빠뜨린다. -->
+          <div id="lbList" class="os-status" style="margin-top:8px">불러오는 중…</div>
+        </div>
           <div class="hb-acc mn-sec" id="manualAcc">
             <button type="button" class="hb-acc-head" id="manualAccHead" aria-expanded="false"
                     aria-controls="manualAccBody" onclick="toggleManualAcc()">
@@ -3114,19 +3126,6 @@
               <div id="mlist"></div>
             </div>
           </div>
-        </div>
-        <!-- 물류 커뮤니티 보드 — CS 보드와 같은 서버 코드, board:"logi" 로 탭만 다르다 -->
-        <div class="mn-sec lb-box" id="lbBox">
-          <div class="mn-sec-head">🚚 물류 커뮤니티 보드 <span id="lbCount"></span></div>
-          <div class="os-toolbar" style="margin-top:8px">
-            <button type="button" class="os-chip" onclick="openHbModal('logi')">글쓰기</button>
-            <button type="button" class="os-chip" id="lbMineChip" onclick="toggleHbMine()"
-                    title="나를 지목한 글만 봅니다 (공지는 항상 보입니다)">내 것만</button>
-            <button type="button" class="os-chip ghost" onclick="lbLoad()">↻</button>
-          </div>
-<!-- 물류 글쓰기도 CS 와 같은 모달(hbModal)을 쓴다. 여기 있던 간단 폼은 걷어냈다 —
-               같은 일을 하는 화면이 둘이면 고칠 때마다 한쪽을 빠뜨린다. -->
-          <div id="lbList" class="os-status" style="margin-top:8px">불러오는 중…</div>
         </div>
       </div>
       <!-- 입고 촬영 — 모바일 전용 4번째 페이지 (CSS 로 PC 에서는 숨긴다) -->
