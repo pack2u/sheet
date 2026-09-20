@@ -83,7 +83,8 @@ function onOpen() {
       .addItem('합배송 진단', 'ss_합배송진단')
       .addItem('사방넷 진단 (저장 안 함)', 'ss_사방넷진단')
       .addItem('중복발주 의심 점검', 'ss_중복점검')
-      .addItem('검증 (행수 대조)', 'ss_검증'))
+      .addItem('검증 (행수 대조)', 'ss_검증')
+      .addItem('☁ 이 회차를 v2 에 올리기 (속도·정확도 맞대기)', 'ss_v2지금보내기'))
 
     .addSubMenu(ui.createMenu('⚙ 설정 · 설치')
       .addItem('🔑 카카오 API 키 설정', 'ss_카카오키설정')
@@ -783,6 +784,13 @@ function ss_실행(opts) {
       for (var tk = 0; tk < 시계.length; tk++) sum.push(시계[tk]);
     }
     ssio_write(SSIO_TABS.요약, SS_SUMMARY_HEADER, sum);
+
+    /*  ★ 이 회차를 v2 로 올린다 ★  (2026-09-21 · gasV2.js)
+        판매현황은 다음 회차에 덮어쓰므로 «지금» 아니면 짝을 맞출 수 없다.
+        예약만 하고 지나간다 — 사람을 기다리게 하지 않는다. */
+    var v2예약 = ss_v2_예약_(runKey);
+    if (v2예약) sum.push(['v2 올리기', v2예약]);
+    if (v2예약) ssio_write(SSIO_TABS.요약, SS_SUMMARY_HEADER, sum);
 
     var 대표 = (res.합배송뷰 || []).length - res.stats.합포장흡수;
     /*  사람이 견주는 숫자는 «누른 뒤 뜰 때까지»다. 원장 적재까지만 센 값을
