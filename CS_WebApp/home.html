@@ -2510,8 +2510,10 @@
     /* ★ 덩어리마다 «상자»로 가른다 (2026-09-11) ★
        품절 · 대리공급 품절 · 품절 예상이 줄만 바뀐 채 이어져 있어서
        어디까지가 무엇인지 헷갈렸다. 상자로 묶고 왼쪽에 색 띠를 둔다. */
+    /*  왼쪽 굵은 띠도 걷는다 (2026-09-20). 어느 덩어리인지는 머리글 글자색이
+        이미 말하고 있다 — 같은 말을 두 번 할 자리가 아니다.  */
     .so-grp { margin-bottom: 8px; padding: 7px 9px 3px;
-              border:1px solid transparent; border-left:3px solid rgba(255,255,255,0.16);
+              border:1px solid transparent;
               border-radius:10px; background:rgba(255,255,255,0.035); }
     .so-grp-h { display:flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; margin:0 0 5px; }
     .so-grp-n { color: var(--text-muted); font-weight:400; }
@@ -7317,7 +7319,7 @@
         var 무리 = res.rows.filter(function (r) { return r.kind === k; });
         if (!무리.length) continue;
 
-        html += '<div class="so-grp" style="border-left-color:' + SO_TONE[k] + '">' +
+        html += '<div class="so-grp">' +
           '<div class="so-grp-h">' +
           '<span style="color:' + SO_TONE[k] + '">' + SO_LABEL[k] + '</span>' +
           '<span class="so-grp-n">' + 무리.length + '</span></div>';
