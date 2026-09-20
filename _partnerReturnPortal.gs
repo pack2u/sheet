@@ -413,7 +413,10 @@ function partnerPortalOpenVendorView() {
 function _prpShowVendorView_(v) {
   var ui = SpreadsheetApp.getUi();
   var base = _prpPortalUrl_();
-  var link = base + "?v=" + encodeURIComponent(v.name) + "&t=" + encodeURIComponent(v.token);
+  /*  peek=1 — 포털이 이 표시를 보면 최근접속·접속수를 건드리지 않는다.
+      우리가 들여다본 탓에 업체 화면의 「새로 온 것」이 지워지면 안 된다.  */
+  var link = base + "?v=" + encodeURIComponent(v.name) +
+    "&t=" + encodeURIComponent(v.token) + "&peek=1";
 
   var esc = function (s) {
     return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -445,9 +448,11 @@ function _prpShowVendorView_(v) {
       '링크를 열면 「접속이 중지된 계정입니다」가 뜹니다. ' +
       '같은 메뉴의 「🚦 접속 차단 / 해제」에서 풀 수 있습니다.</div>');
   }
-  h.push('<div class="note">여는 것만으로 업체 쪽 「최근접속」이 갱신됩니다. ' +
-    '업체가 「지난번에 본 뒤로 새로 온 것」을 재는 기준이라, ' +
-    '자주 열면 업체 화면의 새 소식 표시가 지워집니다.</div>');
+  h.push('<div class="note">이 링크는 <b>보기 전용</b>입니다. 몇 번을 열어도 업체의 ' +
+    '「최근접속」은 그대로라, 업체 화면의 새 소식 표시가 지워지지 않습니다. ' +
+    '대신 포털 로그에 「미리보기」로 남습니다.<br>' +
+    '업체에 전달할 링크는 이것이 아니라 「🔑 접속 링크 발급 / 재발급」에서 ' +
+    '꺼낸 것입니다 (끝에 <code>&amp;peek=1</code>이 없는 쪽).</div>');
 
   ui.showModalDialog(
     HtmlService.createHtmlOutput(h.join("\n")).setWidth(470).setHeight(v.blocked ? 390 : 330),

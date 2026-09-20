@@ -225,6 +225,29 @@ function prpLog_(vendor, action, detail) {
  *
  * @return {string} 지난번 접속 시각 ("yyyy-MM-dd HH:mm"). 처음이면 빈 문자열.
  */
+/**
+ * ★ 읽기만 한다 ★  (2026-09-20)
+ *
+ * > "확인용으로 열 때는 최근접속 안 건드리게 해줘"
+ *
+ * 운영팀이 업체 화면을 들여다볼 때 쓴다. 최근접속·접속수를 그대로 두므로
+ * 업체가 「지난번에 본 뒤로 새로 온 것」을 재는 기준이 흐트러지지 않는다.
+ * prpTouchAccount_ 와 «돌려주는 값이 같아야» 부르는 쪽이 갈라지지 않는다.
+ *
+ * @return {string} 업체가 마지막으로 본 시각. 처음이면 빈 문자열.
+ */
+function prpPeekLastSeen_(account) {
+  try {
+    var tab = prpEnsureAccountTab_();
+    return String(
+      tab.getRange(account.row, PRP_AC.lastSeen + 1).getDisplayValue() || ""
+    ).trim();
+  } catch (e) {
+    Logger.log("[PRP] 최근접속 읽기 실패: " + e.message);
+    return "";
+  }
+}
+
 function prpTouchAccount_(account) {
   var 지난번 = "";
   try {

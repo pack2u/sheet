@@ -47,8 +47,18 @@ function doGet(e) {
   /*  ★ 덮기 전 값을 받아 둔다 ★  (2026-09-18)
       「지난번에 본 뒤로 새로 생긴 것」을 가리는 기준이다.
       여기서 안 받으면 아래 화면에서는 이미 «방금»으로 덮여 있다. */
-  var 지난접속 = prpTouchAccount_(account);
-  prpLog_(account.vendor, "접속", "포털 진입");
+  /*  ★ 「보기만」 하는 진입 ★  (2026-09-20)
+      운영팀이 업체 화면을 확인할 때는 최근접속을 건드리지 않는다.
+      건드리면 업체 화면에서 「새로 온 것」 표시가 그 자리에서 지워진다 —
+      우리가 본 탓에 업체가 못 보게 되는 일은 없어야 한다.
+      토큰은 그대로 검사하므로 이 표시가 문을 여는 열쇠가 되지는 않는다.  */
+  var 보기만 = /^(1|true|y|yes)$/i.test(String(p.peek || ""));
+  var 지난접속 = 보기만 ? prpPeekLastSeen_(account) : prpTouchAccount_(account);
+  prpLog_(
+    account.vendor,
+    보기만 ? "미리보기" : "접속",
+    보기만 ? "포털 진입 (최근접속 안 건드림)" : "포털 진입"
+  );
 
   var tpl = HtmlService.createTemplateFromFile("portal");
   tpl.sid = sid;
