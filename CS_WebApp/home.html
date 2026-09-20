@@ -36,7 +36,12 @@
       --accent-orange: #f0a030;
       --accent-orange-glow: rgba(240, 160, 48, 0.25);
       --accent-red: #ff5f56;
-      --border: rgba(255, 255, 255, 0.06);
+      /*  ★ 선을 안 긋는다 ★  (2026-09-20)
+          > "전체적으로 외각라인들이 살아있네 지워줘.. 앱느낌으로"
+          이름은 --border 로 둔다. 「선 자리」라는 뜻은 남기고 색만 뺀다 —
+          나중에 어느 한 곳만 다시 긋고 싶어지면 그 자리에서 색을 주면 된다.
+          이 값을 «바탕»으로 쓰는 규칙은 한 곳도 없다 (2026-09-20 확인).  */
+      --border: transparent;
       /* --text-secondary 보다 밝은 본문색. 값·이름 같은 "읽어야 하는 글자"에 쓴다.
          전에는 #c1c1c1 로 24곳에 박혀 있었다 — 밝은 테마에서 안 보여 변수로 뺐다. */
       --text-bright: #c1c1c1;
@@ -78,7 +83,7 @@
       --accent-orange: #b46a00;
       --accent-orange-glow: rgba(180, 106, 0, 0.20);
       --accent-red: #d13b32;
-      --border: rgba(0, 0, 0, 0.13);
+      --border: transparent;
     }
 
     /* 흰 바탕에서 흐려지는 강조색만 진하게. 배경 rgba 는 그대로 두고 글자만 바꾼다 */
@@ -198,6 +203,28 @@
     .cs-theme-btn:hover { opacity: 1; border-color: var(--accent-green); }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* ══════════════════════════════════════════════════════════════
+       ★ 선을 걷었으면 초점은 더 또렷해야 한다 ★  (2026-09-20)
+
+       테두리가 있을 때는 그것이 흐릿하게나마 「여기가 칸이다」를 말해 줬다.
+       이제 --border 가 투명하니, 커서가 어디 있는지는 초점 테두리가 혼자
+       말해야 한다. CS 는 하루 종일 탭 키로 칸을 옮겨 다닌다 —
+       길을 잃으면 그 자리에서 마우스를 잡게 되고, 그만큼 느려진다.
+
+       :focus-visible 을 쓴다. 마우스로 눌렀을 때는 안 뜨고,
+       키보드로 옮겨 왔을 때만 뜬다.
+       ══════════════════════════════════════════════════════════════ */
+    input:focus-visible, select:focus-visible, textarea:focus-visible,
+    button:focus-visible, [tabindex]:focus-visible, a:focus-visible {
+      outline: 2px solid var(--accent, #FDB813);
+      outline-offset: 1px;
+    }
+    /*  글자 칸은 마우스로 눌러 들어가도 알아야 한다 — 거기에 적을 참이므로  */
+    input:focus, textarea:focus, select:focus {
+      outline: 2px solid var(--accent, #FDB813);
+      outline-offset: 1px;
+    }
 
     /* 윈도우 기본 스크롤(흰 트랙+화살표)은 CSS로 색을 바꿀 수 없다.
        네이티브 스크롤은 숨기고, 패널 위에 바만 직접 그린다. */
@@ -357,7 +384,7 @@
     }
     .menu-card.cs .menu-icon {
       background: linear-gradient(135deg, rgba(173, 173, 173,0.15), rgba(173, 173, 173,0.05));
-      border: 1px solid rgba(173, 173, 173,0.2);
+      border: 1px solid transparent;
       color: var(--accent-soft);
     }
     .menu-card.cs::before {
@@ -365,7 +392,7 @@
     }
     .menu-card.inv .menu-icon {
       background: linear-gradient(135deg, rgba(52,199,123,0.15), rgba(52,199,123,0.05));
-      border: 1px solid rgba(52,199,123,0.2);
+      border: 1px solid transparent;
       color: var(--accent-green);
     }
     .menu-card.inv::before {
@@ -374,7 +401,7 @@
 
     .menu-card.search .menu-icon {
       background: linear-gradient(135deg, rgba(240,160,48,0.15), rgba(240,160,48,0.05));
-      border: 1px solid rgba(240,160,48,0.2);
+      border: 1px solid transparent;
       color: var(--accent-orange);
     }
     .menu-card.search::before {
@@ -382,7 +409,7 @@
     }
     .menu-card.manual .menu-icon {
       background: linear-gradient(135deg, rgba(74, 74, 74,0.15), rgba(74, 74, 74,0.05));
-      border: 1px solid rgba(74, 74, 74,0.25);
+      border: 1px solid transparent;
       color: #a5a5a5;
     }
     .menu-card.manual::before {
@@ -512,7 +539,8 @@
     .hb-up-btns button {
       flex: 1; padding: 13px 10px;
       border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
+      /*  선을 걷었으므로 바탕으로 선다 — 안 그러면 글자만 떠 있다 (2026-09-20) */
+      border: 1px solid var(--border); background: var(--bg-card-hover);
       font-family: inherit; font-size: 14px; font-weight: 600;
       cursor: pointer;
     }
@@ -627,7 +655,8 @@
     .nt-dot.n { background: #5aa0f0; box-shadow: 0 0 7px rgba(90,160,240,0.7); }
     .nt-tag {
       font-size: 9px; font-weight: 700; letter-spacing: 0.4px; color: var(--text-muted);
-      border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px;
+      border: 1px solid var(--border); background: var(--bg-card-hover);
+      border-radius: 4px; padding: 1px 4px;
     }
     .nt-t { font-weight: 600; color: var(--text-secondary); }
     .nt-b { color: var(--text-muted); }
@@ -895,7 +924,7 @@
       display: flex; align-items: center; gap: 8px;
       font-size: 12px; font-weight: 600; color: #ffd479;
       background: rgba(255, 212, 121, 0.10);
-      border: 1px solid rgba(255, 212, 121, 0.35);
+      border: 1px solid transparent;
       border-radius: var(--radius); padding: 6px 10px; margin-bottom: 10px;
       cursor: pointer; user-select: none;
     }
@@ -1052,7 +1081,7 @@
     }
     .os-inv-warn { color: #f0a030; font-size: 13px; font-weight: 600; }
     .os-copy {
-      border: 1px solid rgba(255,255,255,0.08); background: transparent;
+      border: 1px solid transparent; background: transparent;
       color: var(--text-muted); border-radius: 8px; padding: 2px 8px;
       font-size: 11px; font-weight: 500; font-family: inherit; cursor: pointer; margin-left: 6px;
       text-decoration: none;
@@ -1244,7 +1273,7 @@
     .ret-card.ret-focus .ret-sub { font-size: 12px; margin-top: 8px; }
     .ret-foot {
       margin-top: 6px; padding-top: 6px; width: 100%;
-      border-top: 1px solid rgba(255,255,255,0.06);
+      border-top: 1px solid transparent;
       display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
     }
     .ret-card.ret-focus .ret-foot {
@@ -1268,7 +1297,7 @@
     .ret-act-bar { display: flex; gap: 3px; flex-wrap: nowrap; justify-content: flex-start; }
     .ret-act {
       width: 20px; height: 20px; flex: none; border-radius: 6px;
-      border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06);
+      border: 1px solid transparent; background: rgba(255,255,255,0.06);
       color: #cfcfcf; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       font-family: inherit; padding: 0;
@@ -1321,7 +1350,7 @@
     .ret-photo-pick { display: flex; gap: 6px; }
     .ret-photo-pick .pk {
       flex: 1; margin: 0; padding: 9px; border-radius: 8px; text-align: center;
-      border: 1px dashed rgba(173, 173, 173,0.5); background: rgba(173, 173, 173,0.1);
+      border: 1px dashed transparent; background: rgba(173, 173, 173,0.1);
       color: #c8c8c8; font-size: 11px; font-weight: 700; cursor: pointer;
       letter-spacing: normal; text-transform: none;
     }
@@ -1330,7 +1359,7 @@
     .ret-photo-pend {
       position: relative; display: block; width: 46px; height: 46px;
       border-radius: 7px; overflow: hidden; background: rgba(0,0,0,0.35);
-      border: 1px solid rgba(255,255,255,0.1);
+      border: 1px solid transparent;
     }
     .ret-photo-pend img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .ret-photo-pend button {
@@ -1384,7 +1413,7 @@
     .ret-proc-thumbs button {
       position: relative; display: block; width: 34px; height: 34px; padding: 0;
       border-radius: 6px; overflow: hidden; background: rgba(0,0,0,0.35);
-      border: 1px solid rgba(255,255,255,0.1); cursor: pointer;
+      border: 1px solid transparent; cursor: pointer;
     }
     .ret-proc-thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .ret-proc-thumbs .thumb-alt {
@@ -1686,7 +1715,7 @@
        («커뮤니티라 비밀로 할 이유가 없다». 자세한 까닭은 returnComposePopHtml) */
     .ret-more-btn {
       display: block; width: 100%; padding: 12px 10px; margin: 2px 0 10px;
-      border: 1px dashed rgba(173, 173, 173,0.5); border-radius: 10px;
+      border: 1px dashed transparent; border-radius: 10px;
       background: rgba(173, 173, 173,0.1); color: #c8c8c8;
       font-size: 13px; font-weight: 700; font-family: inherit; cursor: pointer;
     }
@@ -1704,7 +1733,7 @@
       flex: 1;
       display: block;
       padding: 9px 10px;
-      border: 1px solid rgba(255,255,255,0.08);
+      border: 1px solid transparent;
       border-radius: 10px;
       font-size: 13px;
       font-weight: 500;
@@ -1726,7 +1755,7 @@
     .os-item-link:active { opacity: 0.85; }
     .os-item-code { font-size: 11px; color: var(--text-muted); margin-left: 6px; }
     .prod-preview { font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
-    .prod-row { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .prod-row { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid transparent; }
     .prod-row:last-child { border-bottom: none; }
     .prod-lab { flex: 0 0 88px; font-size: 12px; color: var(--text-muted); }
     .prod-val { flex: 1; word-break: break-word; }
@@ -1767,7 +1796,9 @@
     .ledger-fee-why { margin-top: 4px; font-size: 11px; color: var(--text-muted); }
 
     /* 롯데 회수 접수 — 2026-09-08 */
-    .lrt-opt { border: 1px solid rgba(240,150,20,0.45); border-radius: var(--radius-sm); padding: 8px 10px; }
+    /*  선이 유일한 경계였던 칸 — 선 대신 옅은 바탕으로 세운다 (2026-09-20) */
+    .lrt-opt { border: 1px solid transparent; background: rgba(240,150,20,0.13);
+               border-radius: var(--radius-sm); padding: 8px 10px; }
     .lrt-opt[hidden] { display: none; }
     .lrt-check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
     .lrt-check input { width: 18px; height: 18px; flex: none; accent-color: #f0961e; }
@@ -1957,7 +1988,7 @@
        없는 것과 가린 것을 구분하게 한다. */
     /* 미확인 숫자 — 글자처럼 보이되 누를 수 있다는 것이 보여야 한다 */
     .hb-unread-btn {
-      border: 1px solid rgba(255, 158, 158, 0.45); border-radius: 999px;
+      border: 1px solid transparent; border-radius: 999px;
       background: rgba(255, 158, 158, 0.10); color: #ff9e9e;
       font: inherit; font-weight: 700; padding: 1px 9px; cursor: pointer;
     }
@@ -1969,13 +2000,13 @@
       display: flex; align-items: center; justify-content: space-between;
       gap: 10px; flex-wrap: wrap;
       margin-bottom: 8px; padding: 7px 12px;
-      border: 1px solid rgba(253, 184, 19, 0.5);
+      border: 1px solid transparent;
       background: rgba(253, 184, 19, 0.12);
       border-radius: 8px;
       font-size: 12px; font-weight: 700; color: #fdb813;
     }
     .hb-mine-bar button {
-      border: 1px solid rgba(253, 184, 19, 0.6);
+      border: 1px solid transparent;
       background: transparent; color: #fdb813;
       border-radius: 999px; padding: 3px 12px;
       font-size: 12px; font-weight: 700; cursor: pointer;
@@ -2223,7 +2254,7 @@
     }
     .hb-link-btn {
       display: inline-flex; align-items: center; gap: 4px; margin-top: 7px;
-      border: 1px solid rgba(173, 173, 173,0.35); background: rgba(173, 173, 173,0.12);
+      border: 1px solid transparent; background: rgba(173, 173, 173,0.12);
       color: var(--text-bright); border-radius: 7px; padding: 4px 8px;
       font-size: calc(11px * var(--hb-text-scale)); font-family: inherit; cursor: pointer;
     }
@@ -2231,7 +2262,7 @@
     /* ── 최초 등록 내용 — 테두리로 가둬 아래 전달 내역과 섞이지 않게 한다 ── */
     .hb-orig {
       margin-top: 10px; padding: 8px 10px 9px;
-      border: 1px solid rgba(255,255,255,0.08); border-radius: 9px;
+      border: 1px solid transparent; border-radius: 9px;
       background: rgba(255,255,255,0.025);
     }
     .hb-sec {
@@ -2251,11 +2282,9 @@
       font-size: calc(11px * var(--hb-text-scale)); font-weight: 700; color: var(--text-secondary);
     }
     .hb-tl-head span { font-weight: 500; color: var(--text-muted); font-size: calc(10px * var(--hb-text-scale)); }
+    /*  세로 선을 걷는다 (2026-09-20) — 반품 포털과 같은 기준.
+        흐름은 들여쓰기와 왼쪽 점들이 대신 읽어 준다. */
     .hb-tl { position: relative; padding-left: 15px; }
-    .hb-tl::before {
-      content: ''; position: absolute; left: 3px; top: 10px; bottom: 10px;
-      width: 1px; background: rgba(255,255,255,0.10);
-    }
     .hb-tl-item { position: relative; padding: 5px 0; }
     .hb-tl-item::before {
       content: ''; position: absolute; left: -15px; top: 10px;
@@ -2407,7 +2436,7 @@
     .hb-lb-b {
       display: flex; align-items: center; justify-content: center;
       width: 28px; height: 28px; padding: 0;
-      border: 1px solid rgba(255,255,255,0.16); border-radius: 8px;
+      border: 1px solid transparent; border-radius: 8px;
       background: rgba(255,255,255,0.09); color: #eaeaea;
       font-size: 14px; font-family: inherit; font-weight: 600;
       cursor: pointer; text-decoration: none; line-height: 1;
@@ -2440,7 +2469,7 @@
     .hb-lb-nav {
       position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
       width: 34px; height: 52px; padding: 0;
-      border: 1px solid rgba(255,255,255,0.14); border-radius: 10px;
+      border: 1px solid transparent; border-radius: 10px;
       background: rgba(0,0,0,0.42); color: #eaeaea;
       font-size: 26px; font-family: inherit; line-height: 1; cursor: pointer;
     }
@@ -2460,7 +2489,7 @@
 
     .hb-limit {
       font-size: 12px; line-height: 1.5; color: #ffca7a;
-      background: rgba(240,160,48,0.12); border: 1px solid rgba(240,160,48,0.3);
+      background: rgba(240,160,48,0.12); border: 1px solid transparent;
       border-radius: 10px; padding: 9px 11px;
     }
 
@@ -2477,7 +2506,7 @@
     .hb-lv-btn.lv-normal.on { background: rgba(173, 173, 173,0.28); color: var(--text-bright); }
 
     /* 하단 접기 — 처리가이드·CS사례 */
-    .hb-acc { margin-top: 18px; border-top: 1px solid rgba(255,255,255,0.09); padding-top: 12px; }
+    .hb-acc { margin-top: 18px; border-top: 1px solid transparent; padding-top: 12px; }
     .hb-acc-head {
       width: 100%; display: flex; align-items: center; gap: 8px;
       border: 1px solid var(--border); background: var(--bg-secondary);
@@ -2494,7 +2523,7 @@
     /* ── 주문검색 하단 대시보드 ── */
     .os-dash {
       margin-top: 12px; padding-top: 12px;
-      border-top: 1px solid rgba(255,255,255,0.08);
+      border-top: 1px solid transparent;
     }
     .os-dash-head {
       display: flex; align-items: center; justify-content: space-between;
@@ -2549,7 +2578,7 @@
       background: rgba(52,199,123,0.16); color: var(--accent-green);
     }
     .ret-pickup-btn {
-      border: 1px solid rgba(240,160,48,0.5); background: rgba(240,160,48,0.10);
+      border: 1px solid transparent; background: rgba(240,160,48,0.10);
       color: var(--accent-orange); font-family: inherit; font-size: 11px; font-weight: 700;
       border-radius: 8px; padding: 3px 9px; cursor: pointer;
     }
@@ -2693,7 +2722,7 @@
       .dash-check-row, .dash-check-row.late, .dash-check-row.done { animation: none !important; }
     }
 
-    .dash-vendor-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .dash-vendor-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid transparent; }
     .dash-vendor-row:last-child { border-bottom: none; }
     .dash-vendor-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .dash-vendor-n { flex-shrink: 0; font-weight: 700; color: var(--text-bright); }
@@ -2723,7 +2752,8 @@
       min-height: 90px;
       padding-bottom: 6px;
       border-bottom: 1px solid var(--border);
-      margin-bottom: 10px;
+      /*  가름선을 잃었으니 여백으로 갚는다 — 세 칸이 한 덩어리로 안 보이게 */
+      margin-bottom: 18px;
     }
     .mn-sec:last-child { margin-bottom: 0; }
 
@@ -2911,7 +2941,7 @@
            두 곳이 다른 사람을 가리킬 수 있다. -->
     <a class="menu-card" href="<?= v2Url ?>/po" target="_blank" rel="noopener"
        style="border-color: rgba(56,132,255,0.25); text-decoration:none; color:inherit;">
-      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(56,132,255,0.18), rgba(56,132,255,0.06)); border: 1px solid rgba(56,132,255,0.25); color: #3884ff;">📦</div>
+      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(56,132,255,0.18), rgba(56,132,255,0.06)); color: #3884ff;">📦</div>
       <div class="menu-text">
         <div class="menu-title">발주 <span style="font-size:10px;color:#3884ff;background:rgba(56,132,255,0.12);padding:2px 6px;border-radius:6px;margin-left:6px;">v2</span></div>
         <div class="menu-desc">대리판매 주문 모아 대리공급업체로 발주 · 송장 회수</div>
@@ -2920,7 +2950,7 @@
     </a>
 
     <div class="menu-card cs" onclick="openPage('return_intake')" style="border-color: rgba(52,199,123,0.25);">
-      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(52,199,123,0.18), rgba(52,199,123,0.06)); border: 1px solid rgba(52,199,123,0.25); color: #34c77b;">📥</div>
+      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(52,199,123,0.18), rgba(52,199,123,0.06)); color: #34c77b;">📥</div>
       <div class="menu-text">
         <div class="menu-title">반품 입고 스캔 <span style="font-size:10px;color:#34c77b;background:rgba(52,199,123,0.12);padding:2px 6px;border-radius:6px;margin-left:6px;">NEW</span></div>
         <div class="menu-desc">반품송장 스캔 → 반품관리대장 · 반품입고 즉시 처리</div>
@@ -2947,7 +2977,7 @@
     </div>
 
     <div class="menu-card" onclick="openPage('scan_test')" style="border-color: rgba(240,160,48,0.25);">
-      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(240,160,48,0.18), rgba(240,160,48,0.06)); border: 1px solid rgba(240,160,48,0.25); color: #f0a030;">🚚</div>
+      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(240,160,48,0.18), rgba(240,160,48,0.06)); color: #f0a030;">🚚</div>
       <div class="menu-text">
         <div class="menu-title">택배 바코드 스캔 테스트 <span style="font-size:10px;color:#f0a030;background:rgba(240,160,48,0.12);padding:2px 6px;border-radius:6px;margin-left:6px;">롯데</span></div>
         <div class="menu-desc">CODE128 · 롯데 12자리 파싱 · 주문 매칭 확인</div>
@@ -2956,7 +2986,7 @@
     </div>
 
     <div class="menu-card" onclick="navigateTo('camera_test')" style="border-color: rgba(113, 113, 113,0.2);">
-      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(113, 113, 113,0.15), rgba(113, 113, 113,0.05)); border: 1px solid rgba(113, 113, 113,0.2); color: #717171;">📸</div>
+      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(113, 113, 113,0.15), rgba(113, 113, 113,0.05)); color: #717171;">📸</div>
       <div class="menu-text">
         <div class="menu-title">카메라 테스트 <span style="font-size:10px;color:#717171;background:rgba(113, 113, 113,0.12);padding:2px 6px;border-radius:6px;margin-left:6px;">PROTO</span></div>
         <div class="menu-desc">송장 바코드 인식 · 사진 4장 촬영 · OCR 테스트</div>

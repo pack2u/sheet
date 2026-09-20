@@ -19,7 +19,10 @@
     --tx: #f0f0f0; --tx2: #909090; --tx3: #616161;
     --ac: #757575; --acs: #c1c1c1; --acg: rgba(173,173,173,0.22);
     --green: #34c77b; --orange: #f0a030; --red: #e74c5f;
-    --bd: rgba(255,255,255,0.07); --r: 14px;
+    /*  ★ 선을 안 긋는다 ★  (2026-09-20)
+          > "전체적으로 외각라인들이 살아있네 지워줘.. 앱느낌으로"
+          이름은 그대로 둔다 — 「선 자리」라는 뜻은 남기고 색만 뺀다.  */
+      --bd: transparent; --r: 14px;
   }
   body {
     margin: 0; padding: 0 14px 40px; background: var(--bg); color: var(--tx);
@@ -233,6 +236,13 @@
   }
   .lg-up-go { background: var(--acs); color: #1b1e23; border-color: transparent; }
   .lg-up-retry { background: var(--bg2); color: var(--tx); }
+
+  /*  선을 걷었으니 초점은 또렷하게 (2026-09-20) — 키보드로 옮겨 다닐 때
+      커서가 어디 있는지 알 길이 이것뿐이다. */
+  input:focus, textarea:focus, select:focus,
+  button:focus-visible, a:focus-visible {
+    outline: 2px solid #FDB813; outline-offset: 1px;
+  }
 </style>
 </head>
 <body>

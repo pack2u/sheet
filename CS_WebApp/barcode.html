@@ -35,13 +35,38 @@
       --accent-red: #e74c5f;
       --accent-orange: #f0a030;
       --accent-purple: #717171;
-      --border: rgba(255, 255, 255, 0.06);
+      /*  ★ 선을 안 긋는다 ★  (2026-09-20)
+          > "전체적으로 외각라인들이 살아있네 지워줘.. 앱느낌으로"
+          이름은 그대로 둔다 — 「선 자리」라는 뜻은 남기고 색만 뺀다.  */
+      --border: transparent;
       --border-active: rgba(173, 173, 173, 0.4);
       --radius: 16px;
       --radius-sm: 10px;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* ══════════════════════════════════════════════════════════════
+       ★ 선을 걷었으면 초점은 더 또렷해야 한다 ★  (2026-09-20)
+
+       테두리가 있을 때는 그것이 흐릿하게나마 「여기가 칸이다」를 말해 줬다.
+       이제 --border 가 투명하니, 커서가 어디 있는지는 초점 테두리가 혼자
+       말해야 한다. CS 는 하루 종일 탭 키로 칸을 옮겨 다닌다 —
+       길을 잃으면 그 자리에서 마우스를 잡게 되고, 그만큼 느려진다.
+
+       :focus-visible 을 쓴다. 마우스로 눌렀을 때는 안 뜨고,
+       키보드로 옮겨 왔을 때만 뜬다.
+       ══════════════════════════════════════════════════════════════ */
+    input:focus-visible, select:focus-visible, textarea:focus-visible,
+    button:focus-visible, [tabindex]:focus-visible, a:focus-visible {
+      outline: 2px solid var(--accent, #FDB813);
+      outline-offset: 1px;
+    }
+    /*  글자 칸은 마우스로 눌러 들어가도 알아야 한다 — 거기에 적을 참이므로  */
+    input:focus, textarea:focus, select:focus {
+      outline: 2px solid var(--accent, #FDB813);
+      outline-offset: 1px;
+    }
 
     body {
       font-family: 'Noto Sans KR', -apple-system, sans-serif;
@@ -462,7 +487,7 @@
       display: inline-block;
       padding: 10px 20px;
       background: rgba(173, 173, 173,0.12);
-      border: 1px solid rgba(173, 173, 173,0.3);
+      border: 1px solid transparent;
       border-radius: var(--radius-sm);
       font-size: 16px;
       font-weight: 600;

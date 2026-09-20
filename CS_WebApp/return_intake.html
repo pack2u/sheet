@@ -32,7 +32,7 @@ html, body {
       display: flex; align-items: center; gap: 8px;
       padding: 14px 14px 10px;
       padding-top: calc(14px + env(safe-area-inset-top, 0px));
-      background: #1d1d1d; border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: #1d1d1d; border-bottom: 1px solid transparent;
       position: sticky; top: 0; z-index: 50;
     }
     .back-btn {
@@ -44,7 +44,7 @@ html, body {
     .staff-badge {
       font-size: 11px; color: #adadad;
       background: rgba(173, 173, 173,0.12);
-      border: 1px solid rgba(173, 173, 173,0.25);
+      border: 1px solid transparent;
       padding: 4px 8px; border-radius: 8px;
     }
     .wrap { padding: 14px; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
@@ -62,14 +62,14 @@ html, body {
     .hint { font-size: 13px; color: #909090; line-height: 1.55; margin-bottom: 12px; }
     .hint strong { color: #f0a030; }
     .card {
-      background: #1d1d1d; border: 1px solid rgba(255,255,255,0.06);
+      background: #1d1d1d; border: 1px solid transparent;
       border-radius: 14px; padding: 14px; margin-bottom: 12px;
     }
     .card-title { font-size: 13px; color: #909090; margin-bottom: 10px; }
     .manual-row { display: flex; gap: 8px; }
     .manual-row input {
       flex: 1; padding: 14px 12px; border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.08); background: #252525;
+      border: 1px solid transparent; background: #252525;
       color: #f0f0f0; font-size: 16px; min-width: 0;
     }
     .btn {
@@ -79,7 +79,7 @@ html, body {
     .btn-primary { background: #757575; color: #fff; white-space: nowrap; }
     .btn-outline {
       width: 100%; margin-top: 8px; background: transparent;
-      color: #909090; border: 1px solid rgba(255,255,255,0.08);
+      color: #909090; border: 1px solid transparent;
     }
     .btn-green { width: 100%; margin-top: 8px; background: #34c77b; color: #111111; }
     #qr-reader {
@@ -91,7 +91,7 @@ html, body {
     .step { display: none; }
     .step.on { display: block; }
     .pick-card {
-      background: #252525; border: 1px solid rgba(255,255,255,0.06);
+      background: #252525; border: 1px solid transparent;
       border-radius: 10px; padding: 14px; margin-bottom: 10px; cursor: pointer;
     }
     .pick-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
@@ -127,7 +127,14 @@ html, body {
       background: rgba(231,76,95,0.12); color: #f5a0a8; font-size: 12px; line-height: 1.5;
     }
     .file-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
-  </style>
+  
+  /*  선을 걷었으니 초점은 또렷하게 (2026-09-20) — 키보드로 옮겨 다닐 때
+      커서가 어디 있는지 알 길이 이것뿐이다. */
+  input:focus, textarea:focus, select:focus,
+  button:focus-visible, a:focus-visible {
+    outline: 2px solid #FDB813; outline-offset: 1px;
+  }
+</style>
 </head>
 <body style="background:#111111;color:#f0f0f0;">
 
