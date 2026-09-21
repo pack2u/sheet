@@ -188,6 +188,8 @@ var SS_DEFAULT_CONFIG = {
   전화주문_고유ID: '주문번호칸에채움',
   재고부족_자동대리발송: '사용',
   합포장_최대건수: '0',
+  /*  샘플이 낀 박스만 따로 (2026-09-21). 비우면 위 값과 같다. */
+  합포장_최대건수_샘플: '14',
   고유ID_짧은날짜_전환일: SS_ID_SHORT_FROM,
   비배송_품목패턴: '적립금|반품배송비|배송비|할인|쿠폰|수수료|차감'
 };
@@ -1145,6 +1147,12 @@ function ssMerge(units, cfg) {
   // 박스당 건수를 제한하고 싶으면 설정에서 숫자를 넣는다.
   var cap = ssNum(cfg && cfg.합포장_최대건수);
   if (!(cap > 0)) cap = 0;
+  /*  ★ 샘플 박스는 더 담긴다 ★  (2026-09-21)
+      > "샘플만 14개로 하고 나머지는 10개로 해줘"
+      샘플은 낱개가 작아 같은 박스에 더 들어간다. 안 적어 두면 일반과 같게 둔다 —
+      설정을 지웠다고 «제한 없음»이 되면 박스가 터진다. */
+  var capSample = ssNum(cfg && cfg.합포장_최대건수_샘플);
+  if (!(capSample > 0)) capSample = cap;
 
   var groups = {};
   for (var i = 0; i < units.length; i++) {
@@ -1183,11 +1191,24 @@ function ssMerge(units, cfg) {
     var g = groups[key];
     if (g.length < 2) continue;
 
-    // 한 박스에 담기는 건수에 한계가 있다 (기본 10건).
-    // 넘치면 잘라서 박스를 나누고, 박스마다 대표를 따로 둔다.
+    /*  한 박스에 담기는 건수에 한계가 있다.
+        넘치면 잘라서 박스를 나누고, 박스마다 대표를 따로 둔다.
+
+        ★ 샘플이 하나라도 끼면 «샘플 박스»다 ★  (2026-09-21)
+          아래에서 이름을 접을 때 쓰는 판정과 «같은 규칙»을 쓴다
+          (`/^\[샘플\]/`). 여기만 다르게 세면 「접히기는 샘플로 접혔는데
+          건수는 일반으로 잘렸다」가 되어 아무도 설명 못 한다.
+          자르기 «전»에 정해야 하므로 묶음 전체를 먼저 훑는다. */
+    var 샘플묶음 = false;
+    for (var sj = 0; sj < g.length; sj++) {
+      if (/^\[샘플\]/.test(ssText(g[sj].품목명))) { 샘플묶음 = true; break; }
+    }
+    var 이번cap = 샘플묶음 ? capSample : cap;
+
     var boxes = [];
-    if (cap > 0) { for (var st = 0; st < g.length; st += cap) boxes.push(g.slice(st, st + cap)); }
-    else boxes.push(g);
+    if (이번cap > 0) {
+      for (var st = 0; st < g.length; st += 이번cap) boxes.push(g.slice(st, st + 이번cap));
+    } else boxes.push(g);
 
     for (var b = 0; b < boxes.length; b++) {
       var box = boxes[b];
