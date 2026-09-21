@@ -165,5 +165,31 @@ console.log("\n⑩ 한 실행에서 두 번 계산해도 번호가 안 밀린다
   ok("두 번 계산해도 같다", 첫.join() === 둘.join(), 첫.join() + "  vs  " + 둘.join());
 }
 
+console.log("\n⑪ ★ 기억을 «엔진보다 먼저» 읽는가 ★");
+{
+  /*  2026-09-22 에 이걸로 한 번 걸렸다.
+      회차 지문(ssFingerprint)이 ssNormalize 를 먼저 돌리는데, 기억을 그 뒤에서
+      읽고 있었다. 기억이 없으면 core 가 던지므로 세트분리가 «첫 걸음»에서 멈춘다.
+      순서는 사람이 기억할 것이 아니라 여기서 지킨다. */
+  const fs = require("fs");
+  const gasMain = fs.readFileSync(path.join(__dirname, "세트분리V2", "gasMain.js"), "utf8");
+  const 기억자리 = gasMain.indexOf("cfg._전화ID기억 = ssm_loadPhoneIds();");
+  ok("기억을 읽는 줄이 있다", 기억자리 > 0);
+
+  const 늦은부름 = [];
+  const re = /\b(ssRun|ssNormalize)\s*\(/g;
+  let m;
+  while ((m = re.exec(gasMain))) {
+    if (m.index < 기억자리) {
+      const 줄번호 = gasMain.slice(0, m.index).split("\n").length;
+      늦은부름.push(m[1] + " (gasMain.js:" + 줄번호 + ")");
+    }
+  }
+  ok("기억보다 «먼저» 엔진을 부르는 자리가 없다", 늦은부름.length === 0, 늦은부름.join(" · "));
+
+  //  못 읽었으면 그냥 돌지 않는다 — 번호를 1번부터 다시 주면 이미 나간 주문과 겹친다
+  ok("기억을 못 읽으면 멈춘다", /cfg\._전화ID기억\.왜[\s\S]{0,400}return;/.test(gasMain));
+}
+
 console.log("\n" + (fail ? "❌ " + fail + "개 실패" : "✅ 모두 통과") + " (통과 " + pass + ")");
 process.exit(fail ? 1 : 0);
