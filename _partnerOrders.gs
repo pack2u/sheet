@@ -2195,11 +2195,13 @@ function partnerFetchInvoices() {
               if (_tail && _tail.length <= 24) _tails.push(_tail);
               var _out2 = (_cOut !== undefined) ? String(_lgAll[_sr][_cOut] || "") : "";
               if (_out2) {
-                /*  세트분리가 붙이는 말이 2026-09-21 에 「===합포장」으로 바뀌었다
-                    (하는 일은 그대로 — 낱개 여럿을 한 박스로). 지난 회차 원장에는
-                    「===합배송」이 그대로 있으므로 둘 다 받고, 적는 말은 새것으로 맞춘다. */
+                /*  ★ 둘은 다른 말이다 ★  (2026-09-21)
+                      ===합포장  낱개를 한 박스에 (샘플·위생장갑)
+                      ===합배송  작은 박스 여럿을 한 송장으로 (소분 등)
+                    세트분리가 묶음 내용을 보고 가려 붙인다. 적힌 대로 옮긴다 —
+                    여기서 하나로 뭉치면 창고가 박스를 어떻게 쌀지 알 수 없다. */
                 if (_out2.indexOf("===합포장") >= 0) _tails.push("합포장");
-                else if (_out2.indexOf("===합배송") >= 0) _tails.push("합포장");
+                else if (_out2.indexOf("===합배송") >= 0) _tails.push("합배송");
                 //  「---2개 합포장」·「---2개 합포장(완박스)」 — 뒤에 다른 꼬리가 안 붙는다
                 var _mHap = _out2.match(/---\s*(\d+\s*개\s*합포장[^-]*)/);
                 if (_mHap) _tails.push(_mHap[1].trim());
