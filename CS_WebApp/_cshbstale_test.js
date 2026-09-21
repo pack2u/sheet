@@ -88,8 +88,12 @@ ok('펼친 카드는 숨쉬지 않는다', raw.indexOf('.hb-card.hb-stale:not(.o
     숨쉬기는 밝기만 바뀌므로 멈춰도 얼룩이 안 된다 — 중간 밝기로 세워 둔다.  */
 ok('모션 끄기 설정을 존중한다',
    /prefers-reduced-motion[\s\S]{0,400}hb-stale[\s\S]{0,200}animation:\s*none/.test(raw));
-ok('숨이 꺼져도 뜻이 남는다 (테두리 색)',
-   /hb-stale:not\(\.\open\)[\s\S]{0,80}border-color/.test(raw));
+/*  ★ 2026-09-20: 테두리 → 밝기 ★
+    > "기본이 라인이 없는카드형태로"  — 바깥선을 다 걷었다.
+    움직임을 꺼 둔 사람에게 뜻을 남기는 길이 «테두리 색»에서
+    «불을 켜 둔 채»(opacity: 1)로 바뀌었다. 숨만 멈추고 빛은 남는다.  */
+ok('숨이 꺼져도 뜻이 남는다 (불을 켜 둔 채)',
+   /hb-stale:not\(\.open\)::after[\s\S]{0,140}opacity:\s*1/.test(raw));
 ok('카드에 data-at 을 심는다', /data-at="'\s*\+\s*esc\(c\.at\)/.test(raw));
 
 console.log('\n통과 ' + pass + ' · 실패 ' + fail);

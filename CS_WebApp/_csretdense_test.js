@@ -71,21 +71,19 @@ console.log("\n[1] 이력 맨 앞 한 장");
   ok("  그 딱지 CSS 도 있다", has(".ret-proc-more {"));
 }
 
-/* ── [2] 조밀은 «고르는 것» ─────────────────────────────── */
-console.log("\n[2] 조밀 단추");
-{
-  ok("★ 단추가 있다", has('id="retDense"'));
-  ok("★ 누르면 토글한다", has('onclick="toggleReturnDense()"'));
-  ok("★ 켜짐/꺼짐을 읽어 준다", has('aria-pressed="false"') && has("aria-pressed', RET_DENSE ? 'true' : 'false'"));
-  ok("★ 켜져 있으면 단추에 보인다", has("#pane-returns.ret-dense #retDense"));
+/* ── [2] 조밀은 «기본»이다 (고르는 것이 아니다) ──────────────
+   > "보통모드는 삭제하고 조밀모드가 기본으로"   2026-09-20
 
-  ok("★ 고른 값을 기억한다", has("localStorage.setItem(RET_DENSE_KEY"));
-  ok("★ 다시 열면 그대로다", has("localStorage.getItem(RET_DENSE_KEY)"));
-  //  저장이 막힌 브라우저에서도 화면은 돌아야 한다
-  ok("★ 읽기를 try 로 감쌌다",
-    has("try { RET_DENSE = localStorage.getItem(RET_DENSE_KEY) === '1'; } catch (e) {}"));
-  ok("★ 쓰기도 try 로 감쌌다",
-    has("try { localStorage.setItem(RET_DENSE_KEY, RET_DENSE ? '1' : '0'); } catch (e) {}"));
+   여기 있던 「조밀(⇕) 단추」 시험은 2026-09-22 에 걷었다. 없앤 단추를
+   찾는 시험은 «없애기로 한 결정»을 되돌리라는 말이 된다.
+   지금 지켜야 할 것은 그 반대다 — 고르게 하지 말 것. */
+console.log("\n[2] 조밀은 기본");
+{
+  ok("★ 고르는 단추가 없다", !has('id="retDense"') && !has("toggleReturnDense"));
+  ok("★ 기억해 둘 값도 없다", !has("RET_DENSE_KEY") && !has("RET_DENSE"));
+  //  조건 없이 입힌다 — 「고를 것이 하나면 고르게 하지 않는다」
+  ok("★ 언제나 입힌다", has("if (pane) pane.classList.add('ret-dense');"));
+  ok("★ 벗기는 길이 없다", !has("classList.remove('ret-dense')"));
 }
 
 /* ── [3] 집중 보기는 건드리지 않는다 ────────────────────── */
@@ -126,7 +124,8 @@ console.log("\n[5] 배선");
   const 정의 = html.indexOf("function applyReturnDense()");
   const 부름 = html.indexOf("try { applyReturnDense(); } catch (eD) {}");
   ok("★ 정의도 있고 부르는 곳도 있다", 정의 > 0 && 부름 > 0);
-  eq("★ 토글은 한 곳에서만 만든다", 몇곳("function toggleReturnDense()"), 1);
+  //  토글은 2026-09-20 에 없앴다 — 되살아나면 「기본」이 다시 「고르는 것」이 된다
+  eq("★ 토글은 되살아나지 않았다", 몇곳("function toggleReturnDense()"), 0);
 }
 
 /* ── [6] 이력이 없으면 빈 상자를 안 그린다 ──────────────── */

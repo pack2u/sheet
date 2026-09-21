@@ -240,8 +240,15 @@ console.log("\n[8] 반품 — 누르는 즉시");
   ok("★ 메모·상담도", has("var 즉시2 = retOptimistic(c,"));
   ok("★ 완료로 바꾸면 진행 목록에서 내려간다",
     has("x.active = !isReturnCardDone({ status: status, doneFlag: status });"));
-  ok("★ 보내는 꾸러미를 한 번만 짓는다",
-    has("var 꾸러미 = {") && HTML.split(".updateReturnLedgerStatus(꾸러미);").length - 1 === 2);
+  /*  부르는 자리는 늘어난다 (2026-09-18 카드 송장칸, 2026-09-22 …).
+      숫자를 못 박으면 시험이 먼저 낡는다. 지키려던 뜻은
+      «자리마다 꾸러미를 새로 짓지 말 것»이니 그것을 본다. */
+  {
+    const 부름 = HTML.match(/\.updateReturnLedgerStatus\(([^)]*)\)/g) || [];
+    ok("★ 꾸러미를 지어서 보낸다", has("var 꾸러미 = {") && 부름.length >= 2);
+    ok("★ 부르는 자리마다 그 꾸러미를 넘긴다",
+      부름.every((x) => x.indexOf("(꾸러미)") >= 0), 부름.join(" · "));
+  }
   ok("★ 글이 실패하면 쓴 내용을 돌려준다",
     HTML.indexOf("if (ta && !ta.value) ta.value = text;") >= 0);
   ok("  사진은 낙관적으로 안 한다 (되돌릴 수 없다)",
