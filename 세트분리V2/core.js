@@ -2634,9 +2634,10 @@ function ssVerifySplit(units, masters, warnings) {
     var 허용 = {};
     for (var p = 0; p < parts.length; p++) 허용[ssText(parts[p].code).toUpperCase()] = true;
 
-    var 본것 = {}, 탈 = '';
+    var 본것 = {}, 탈 = '', 고친줄 = false;
     for (var j = 0; j < 줄들.length; j++) {
       var code = ssText(줄들[j].품목코드).toUpperCase();
+      if (줄들[j].수정코드) 고친줄 = true;
       if (본것[code]) {
         탈 = '같은 구성품이 두 줄입니다 (' + code + ')';
         break;
@@ -2645,6 +2646,45 @@ function ssVerifySplit(units, masters, warnings) {
       if (!줄들[j].수정코드 && parts.length && !허용[code]) {
         탈 = 'BOM 에 없는 구성품입니다 (' + code + ')';
         break;
+      }
+    }
+
+    /*  ══════════════════════════════════════════════════════════
+        ★ BOM 에 있는데 «안 나온» 구성품 ★  (2026-09-21)
+
+        > "코드가 다른 뚜껑 둘이면 통과합니다" → "넣어줘"
+
+        위의 두 검사는 «나온 것»만 본다 — 겹쳤는가, BOM 에 있는가.
+        그래서 몸통이 통째로 빠지고 뚜껑 둘이 나가도, 그 뚜껑들이
+        BOM 에 있는 코드이기만 하면 조용히 통과한다. 구조는 맞고 «뜻»이 틀린
+        경우다. 9/18 김병수 건은 같은 코드가 둘이라 걸렸지만, 코드가 다른
+        뚜껑 둘이었으면 그대로 나갔을 것이다.
+
+        ★ 쪼개기는 한 겹뿐이다 ★
+          ssExplode 는 되풀이해 쪼개지 않는다. BOM 의 구성품은 «전부» 한 줄씩
+          나온다(겹친 것은 합치고, 자기 자신은 버린다). 그러니 「BOM 에 있는데
+          안 나온 것」은 있을 수 없다 — 있으면 어딘가에서 덮인 것이다.
+
+        ★ 사람이 고친 줄이 있으면 안 본다 ★
+          보류 탭에서 코드를 고치면 그 줄은 BOM 과 달라지는 것이 «정상»이다.
+          그때 이 검사를 돌리면 멀쩡한 주문이 보류로 떨어진다.
+          한 줄이라도 고쳤으면 그 묶음은 통째로 건너뛴다.
+
+        ★ 자기 자신은 뺀다 ★  세트가 제 코드를 구성품으로 갖고 있으면
+          ssExplode 가 그 줄을 버리므로 안 나오는 것이 맞다.
+        ══════════════════════════════════════════════════════════ */
+    if (!탈 && parts.length && !고친줄) {
+      var 빠진 = [], 뺀것 = {};
+      var 원본대문자 = 원본.toUpperCase();
+      for (var q = 0; q < parts.length; q++) {
+        var pc2 = ssText(parts[q].code).toUpperCase();
+        if (!pc2 || pc2 === 원본대문자) continue;
+        if (본것[pc2] || 뺀것[pc2]) continue;
+        뺀것[pc2] = true;
+        빠진.push(pc2);
+      }
+      if (빠진.length) {
+        탈 = 'BOM 에 있는데 안 나온 구성품입니다 (' + 빠진.join(', ') + ')';
       }
     }
     if (!탈) continue;
