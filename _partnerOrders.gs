@@ -97,12 +97,17 @@ function _po_ensureHubCarrierCol_(hubTab) {
  *   ② 발주업체명(B열)  ③ 이카운트코드(E열) → 출고지 → 택배사
  * 근거가 없으면 빈칸. 추측해서 채우지 않는다 (틀린 택배사가 빈칸보다 나쁘다).
  */
-function _po_carrierForHubRow_(srcLabel, hubRow) {
+/**
+ * @param {?Object=} invInfo 송장맵 엔트리 {inv, source, carrier} — 있으면 ①순위로
+ *   쓰인다. 「그 송장이 어느 탭에서 걷혔나」가 택배사의 가장 확실한 근거다.
+ *   허브는 대리판매(업체 주문·우리 발송)라 발주업체 표(③)만으로는 틀린다.
+ */
+function _po_carrierForHubRow_(srcLabel, hubRow, invInfo) {
   if (typeof _pep_carrierForArchiveRow_ !== "function") return "";
   try {
     return (
       _pep_carrierForArchiveRow_(
-        null,
+        invInfo || null,
         srcLabel || "",
         hubRow ? hubRow[1] : "", // B열: 발주업체
         hubRow ? hubRow[4] : "", // E열: 이카운트코드
@@ -3153,15 +3158,40 @@ function partnerFetchInvoices() {
       ★ 지우지는 않는다 ★
         다시 계산해서 «값이 나온 것»만 덮는다. 빈 판정으로 기존 값을 지우면
         돌릴수록 정보가 줄어든다. 위 배포 루프와 같은 손버릇이다.
-      ★ 출처는 안 넘긴다 ★
-        옛 줄이 어느 탭에서 걷혔는지는 이제 알 수 없다. 모르는 것을
-        아는 척하지 않는다 — 발주업체와 품목코드로만 판정한다.
-        허브는 전부 대리발송 건이라 «발주업체의 택배사»가 사실이다.
+      ★ 2026-09-21 — 여기 적혀 있던 전제가 틀렸다 ★
+        「허브는 전부 대리발송 건이라 «발주업체의 택배사»가 사실이다」라고
+        적어 두고 발주업체와 품목코드로만 판정했다. 아니다.
+
+        허브는 «대리판매»다 — 업체가 주문을 넣고 **우리가** 부친다.
+        「업체_택배사」 표는 그 업체가 «자기 손으로» 부칠 때 쓰는 택배사라
+        (대리공급용) 우리가 부친 건에 갖다 대면 틀린다.
+
+        실측(2026-09-21): 허브에서 「롯데택배」로 찍힌 53건이 전부
+        로젠 송장번호(4523…11자리)였다. 냅킨코리아 26 · 하나팩 20 ·
+        올팩 7 — 셋 다 「업체_택배사」 표에 롯데로 적혀 있는 업체다.
+        당장드림은 그 표에 없어서 이 함정을 피했다(로젠 92건).
+
+        ★ 고치는 법 — 송장이 어느 탭에서 걷혔는지를 넘긴다 ★
+          이번 회차에 걷은 송장맵에는 «그 송장이 나온 탭»이 들어 있다.
+          그게 ①순위라 발주업체 표(③)보다 먼저 이긴다. 고유ID로 찾는다.
+          맵에 없으면(옛 송장이라 실적탭에서 사라진 경우) 여태처럼
+          발주업체로 떨어진다 — 그건 따로 한 번 쓸어야 한다.
       ══════════════════════════════════════════════════════════════ */
   var _carrierFixed = 0;
   for (var _ci = 0; _ci < hubData.length; _ci++) {
     if (!_po_hasRealInvoice_(hubData[_ci][13])) continue;
-    var _newCar = _po_carrierForHubRow_("", hubData[_ci]);
+    /*  이번 회차 송장맵에서 그 주문을 찾는다 — 있으면 «어느 탭에서 걷었나»가
+        따라온다. 그것이 택배사에 대한 가장 확실한 근거다. */
+    var _uidC = String(hubData[_ci][2] || "").trim();
+    var _infoC = (_uidC && invoiceMap && invoiceMap[_uidC]) ? invoiceMap[_uidC] : null;
+    /*  ★ 근거가 없으면 «덮지 않는다» ★  (2026-09-21)
+        여태 이 루프는 근거 없이도 돌아 발주업체 표의 택배사를 밀어 넣었다.
+        그래서 ①②로 맞게 찍힌 「로젠택배」를 «롯데택배로 덮어쓰고» 있었다 —
+        회차가 돌수록 틀린 값으로 되돌아갔다. 53건이 그렇게 만들어졌다.
+        이번 회차 송장맵에 그 주문이 있을 때만 다시 계산한다. */
+    if (!_infoC) continue;
+    var _newCar = _po_carrierForHubRow_(
+      (_infoC && _infoC.source) || "", hubData[_ci], _infoC);
     if (!_newCar) continue;
     if (String(hubData[_ci][_PO_HUB_CARRIER_COL_] || "").trim() === _newCar) continue;
     hubData[_ci][_PO_HUB_CARRIER_COL_] = _newCar;
