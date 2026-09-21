@@ -816,6 +816,11 @@ function partnerCollectOrders(opt_noWriteBack) {
   var hubWasEmpty = lastRow <= 1;
   var existingIds = {};
   var existingKeyCount = {};  // ★ 수정: boolean → count — 같은 키의 주문 건수를 추적
+  /*  ★ 그 고유ID 가 «무슨 내용»으로 허브에 있나 ★  (2026-09-21)
+      같은 ID 라도 내용이 같으면 「아직 출고 안 된 그 줄」이고, 내용이 다르면
+      「남의 ID 를 달고 있는 줄」이다. 할 일이 다르므로 갈라 봐야 한다.
+      내용키 = 수취인_전화끝4_품목코드_수량 */
+  var existingIdKey = {};
   if (!hubWasEmpty) {
     var hubAllData = hubTab
       .getRange(2, 1, lastRow - 1, _PO_HUB_HEADERS.length)
@@ -852,6 +857,13 @@ function partnerCollectOrders(opt_noWriteBack) {
         if (!existingKeyRows[eKey]) existingKeyRows[eKey] = [];
         if (existingKeyRows[eKey].length < 5) existingKeyRows[eKey].push(ei + 2);
       }
+      /*  그 ID 가 허브에서 «무슨 내용»이었는지. 수량(G열)까지 넣는다 —
+          수량만 고쳐 다시 넣는 경우가 잦아서 수량을 빼면 못 가린다. */
+      var eUid = String(hubAllData[ei][2] || "").trim();
+      if (eUid && existingIdKey[eUid] === undefined) {
+        existingIdKey[eUid] =
+          eName + "_" + eShrt + "_" + eCd + "_" + String(hubAllData[ei][6] || "").trim();
+      }
     }
     // ★ 성능최적화: 전화번호 수정 건이 있을 때만 I열 일괄 기록
     if (phoneFixNeeded) {
@@ -881,6 +893,8 @@ function partnerCollectOrders(opt_noWriteBack) {
       어느 쪽이든 사람이 봐야 한다. 세어서 말한다.  */
   var _건너뛴_ = [];
   var _의심건수_ = 0;   //  ★ 빠진 게 아니라 «들어온» 의심 줄 (2026-09-18)
+  var _새ID건수_ = 0;   //  ID 가 겹쳐 새로 발급해 걷은 줄 (2026-09-21)
+  var _같은줄또봄_ = 0; //  허브에 있는 그 줄을 또 본 것 — 정상. 셈만 한다 (2026-09-21)
   function _건너뜀_(까닭, 업체, 행, uid, 수취인, 품목, 더) {
     /* ★ 60건 한도는 «알림 글»의 사정이었다 ★  (2026-09-18)
        > "중복으로 주문수집에서 뺀것들만 따로 보이게 해줘"
@@ -977,6 +991,13 @@ function partnerCollectOrders(opt_noWriteBack) {
 
   for (var fi = 0; fi < processingFiles.length; fi++) {
     var file = processingFiles[fi];
+    /*  ★ 이 «파일 안에서» 이미 쓴 고유ID ★  (2026-09-21)
+        한 파일에 같은 고유ID 가 두 줄 있으면, 그중 하나는 «복사한 줄»이다.
+        업체가 기존 줄을 복사해 새 주문을 만들면 고유ID 칸까지 따라온다 —
+        9/21 당장드림 28행(송제훈)이 47행(최진엽)의 ID 를 달고 있었다.
+        여태는 그 줄을 통째로 버려서 주문이 사라졌다. 이제는 새 ID 를 준다.
+        탭이 여럿이어도 ID 는 파일 전체에서 하나여야 하므로 파일 단위로 센다. */
+    var _이파일ID_ = {};
     try {
       var ss = SpreadsheetApp.openById(file.id);
 
@@ -1261,6 +1282,60 @@ function partnerCollectOrders(opt_noWriteBack) {
               ══════════════════════════════════════════════════════ */
           var dupKey = recipient + "_" + shortPh + "_" + code;
           var isDup = existingIds[uid];
+
+          /*  이 줄의 «내용». 수량까지 넣는다 — 수량만 고쳐 다시 넣는 일이 잦다. */
+          var _내용키_ = recipient + "_" + shortPh + "_" + code + "_" + qtyStr;
+          /*  이 파일 앞줄이 그 ID 를 썼나, 썼다면 «무슨 내용»으로 썼나 */
+          var _앞줄키_ = uid ? _이파일ID_[uid] : undefined;
+          var _앞줄이쓴ID_ = _앞줄키_ !== undefined;
+          if (uid && !_앞줄이쓴ID_) _이파일ID_[uid] = _내용키_;
+
+          /*  ══════════════════════════════════════════════════════
+              ★ ㉮ 복사된 줄은 «버리지 않고» 새 ID 를 준다 ★  (2026-09-21)
+
+              > "현재 당장드림을 보면 수집을 했는데 1개가 빠졌어"
+              > "그냥 고유번호를 삭제하고 수동으로 다시 수집중...
+              >  이런 문제 해결 방법은 없을까?"
+
+              같은 파일 «앞줄»이 이미 그 ID 를 썼다면, 이 줄은 앞줄을 복사해
+              만든 다른 주문이다. 고유ID 는 한 주문에 하나여야 하므로
+              늦게 온 줄에 새 ID 를 준다. 업체 시트에도 되적어서 다음 회차부터
+              흔들리지 않게 한다.
+
+              ★ 두 조건을 «둘 다» 본다 ★
+                ① 같은 파일 앞줄이 그 ID 를 썼다  — 하나는 복사본이라는 사실
+                ② 그런데 내용이 다르다           — 그 복사본이 «다른 주문»이라는 사실
+
+                ②가 없으면 안 된다. 업체가 똑같은 줄을 실수로 두 번 붙여넣은
+                경우에도 ①은 참이다. 그때 새 ID 를 주면 같은 물건이 두 번 나간다.
+                내용까지 같으면 그건 진짜 중복이라 여태처럼 빼는 것이 맞다 —
+                9/18 에 사장님이 정하신 「고유아이디가 둘이면 빼는 게 맞아」 그대로다.
+
+              ★ 허브에 있던 ID 는 손대지 않는다 ★
+                업체가 «이미 들어간 주문을 고친» 경우(수량 정정 등)도 내용이
+                달라진다. 그건 새 주문이 아니다. 파일 안에서 겹친 것만 다룬다.
+
+              ★ 조용히 하지 않는다 ★
+                새로 발급했다고 적어 둔다. 업체가 복사 버릇을 고치지 않으면
+                계속 생기고, 그 사실이 보여야 업체에 말할 수 있다.
+              ══════════════════════════════════════════════════════ */
+          var _새ID발급_ = '';
+          if (isDup && _앞줄이쓴ID_ && _앞줄키_ !== _내용키_) {
+            var _옛uid_ = uid;
+            uid =
+              Utilities.formatDate(new Date(), "Asia/Seoul", "MMdd") +
+              "-ds-" +
+              Utilities.getUuid().substring(0, 4);
+            if (cMap.uniqueId !== -1) {
+              data[r][cMap.uniqueId] = uid;
+              idFillChanged = true;
+            }
+            _이파일ID_[uid] = _내용키_;
+            isDup = false;                     // 이제 새 주문이다
+            _새ID발급_ = '앞줄과 고유ID가 겹쳐 새로 발급했습니다 (' +
+              _옛uid_ + ' → ' + uid + ') — 업체가 줄을 복사한 것으로 보입니다';
+          }
+
           var _왜_ = isDup ? '고유ID가 이미 허브에 있음' : '';
           var _짝행_ = isDup && existingIdRow ? (existingIdRow[uid] || '') : '';
           var _의심_ = '';   //  태우되 «의심»으로 적어 둘 까닭
@@ -1276,6 +1351,25 @@ function partnerCollectOrders(opt_noWriteBack) {
           }
           if (isDup) {
             skipped++;
+            /*  ══════════════════════════════════════════════════════
+                ★ ㉯ «정상인 것»은 빠짐 목록에 안 적는다 ★  (2026-09-21)
+
+                > "18일건중 아직 송장이 없는(출고가 안된)건 남아있는게 정상이고"
+
+                업체 시트는 출고될 때까지 그 줄을 들고 있다. 그래서 매 회차
+                다시 읽히고, 허브에 이미 있으니 건너뛴다 — 그건 «맞는 동작»이다.
+                그런데 여태 그걸 전부 ⛔ 빠짐으로 적었다. 9/21 오전에만 21건 중
+                20건이 이것이었다. 정상인 것이 매일 쌓이면 진짜 빠진 한 건이
+                그 속에 묻힌다 — 그러면 목록 자체를 안 보게 된다.
+
+                허브에 있던 ID 이고 «내용도 같으면» 아무 말도 안 한다.
+                내용이 다르면 그때는 적는다 — 남의 ID 를 달고 있다는 뜻이다.
+                ══════════════════════════════════════════════════════ */
+            var _허브내용_ = existingIdKey[uid];
+            if (_허브내용_ !== undefined && _허브내용_ === _내용키_) {
+              _같은줄또봄_++;
+              continue;                       // 조용히 넘어간다. 셈에만 남는다
+            }
             /*  숫자만 남기면 「한두 건이 안 들어온다」를 사람이 눈으로 찾아야 한다 */
             _건너뜀_(_왜_, file.name, r + 1, uid, recipient, code, {
               파일ID: file.id, 탭: tabName, 전화: phoneRaw,
@@ -1283,6 +1377,15 @@ function partnerCollectOrders(opt_noWriteBack) {
               구분: _PO_DUP_OUT_,
             });
             continue;
+          }
+          if (_새ID발급_) {
+            //  ★ 걷되 «말한다» ★ 업체 복사 버릇은 사람이 알아야 고쳐진다
+            _새ID건수_++;
+            _건너뜀_(_새ID발급_, file.name, r + 1, uid, recipient, code, {
+              파일ID: file.id, 탭: tabName, 전화: phoneRaw,
+              품목명: itemName, 수량: qtyStr, 짝행: '',
+              구분: _PO_DUP_NEWID_,
+            });
           }
           if (_의심_) {
             //  ★ 빼지 않는다 ★ 태워 보내고 말만 한다
@@ -1685,7 +1788,12 @@ function partnerCollectOrders(opt_noWriteBack) {
         dupIn  — 들어왔지만 의심되는 줄 (지우면 되는 것)
         dupOut — 고유ID가 겹쳐 빠진 줄   (되살려야 하는 것) */
     dupIn: _의심건수_,
-    dupOut: _건너뛴_.length - _의심건수_,
+    /*  ★ 새로 발급해 «걷은» 줄은 빠진 것이 아니다 ★  (2026-09-21)
+        같은 탭에 적히지만 할 일이 없다. 빠짐 수에 섞으면 「되살려야 할 것」이
+        실제보다 많아 보이고, 그러면 그 숫자를 안 믿게 된다. */
+    dupOut: _건너뛴_.length - _의심건수_ - _새ID건수_,
+    newId: _새ID건수_,
+    seenAgain: _같은줄또봄_,
   };
   Logger.log(msg);
   // ★ Google Chat 알림
@@ -4216,6 +4324,15 @@ function _po_collectSilentCore_(withSalesRebuild) {
         (_s_ && _s_.dupIn > 0)
           ? [{ label: "⚠ 중복의심인데 들어옴",
                value: _s_.dupIn + "건 — 진짜 중복이면 허브에서 그 줄을 지우세요" }]
+          : []
+      ).concat(
+        /*  ★ 걷었다 — 손댈 일 없다 ★  (2026-09-21)
+            업체가 줄을 복사해 고유ID 가 겹친 것. 여태는 통째로 버려서
+            주문이 사라졌다. 이제는 새 ID 를 주고 걷는다.
+            할 일은 없지만 «업체 복사 버릇»은 사람이 알아야 고쳐진다. */
+        (_s_ && _s_.newId > 0)
+          ? [{ label: "🆕 ID 겹쳐 새로 발급(걷음)",
+               value: _s_.newId + "건 — 업체가 줄을 복사한 것입니다. 손댈 일은 없습니다" }]
           : []
       ).concat([
         { label: "⚠ 필수정보 미입력", value: (_s_ ? _s_.missing : "?") + "건" },
