@@ -193,6 +193,7 @@ var SS_DEFAULT_CONFIG = {
   /*  이 낱말이 든 품목«만»으로 묶인 박스는 합포장이다 (2026-09-21). 샘플은 늘 포함. */
   합포장_품목낱말: '위생장갑',
   고유ID_짧은날짜_전환일: SS_ID_SHORT_FROM,
+  고유ID_6자리_전환일: SS_ID_WIDE_FROM,
   비배송_품목패턴: '적립금|반품배송비|배송비|할인|쿠폰|수수료|차감'
 };
 
@@ -371,7 +372,7 @@ function ssHashN(s, n) {
  * 그래서 순번 기반이나 랜덤(UUID)은 쓸 수 없다 — 회차마다 값이 달라진다.
  * 전표번호와 주문 내용만으로 계산해 **같은 주문이면 언제 계산해도 같은 값**이 나온다.
  *
- *   0902-PH-a3f19   (전환일 이전 주문은 260902-PH-a3f19)
+ *   0921-PH-a3f194  (2026-09-21 이전 주문은 5 자리 0902-PH-a3f19)
  *    └날짜   └표식 └전표·수취인·연락처·주소·품목·수량 해시
  *
  * 상품정보 시트의 「MMdd-ds-xxxx」(발주수집이 발급)와 나란한 형태지만
@@ -382,6 +383,17 @@ function ssHashN(s, n) {
  * 오늘 이미 롯데에 올라간 ID 가 바뀌면 송장이 안 맞으므로 날짜로 끊는다.
  */
 var SS_ID_SHORT_FROM = '20260909';
+
+/**
+ * 뒷자리를 5 → 6 으로 넓히기 시작하는 날 (2026-09-21).
+ * 5 자리는 1,048,576 가지라 하루 186 건이면 그날 안에서 겹칠 확률이 1.6%,
+ * 6 자리는 16,777,216 가지라 0.10% 로 내려간다.
+ *
+ * 왜 날짜로 끊나 — 이 ID 는 랜덤이 아니라 «내용 해시»다. 자리수를 바꾸면
+ * 지난 주문의 ID 까지 통째로 달라져 원장·허브·롯데 송장이 다 어긋난다.
+ * 그래서 «주문 일자»로 끊는다. 지난 회차를 다시 돌려도 그때 값이 그대로 나온다.
+ */
+var SS_ID_WIDE_FROM = '20260921';
 
 function ssMakeOrderId(L, cfg) {
   var 일자 = ssText(L.일자);
@@ -395,15 +407,34 @@ function ssMakeOrderId(L, cfg) {
   if (digits.length >= 8) {
     ymd = (digits.slice(0, 8) >= 전환일) ? digits.slice(4, 8) : digits.slice(2, 8);
   }
+  //  뒷자리 넓히기도 «오늘»이 아니라 «주문 일자»로 끊는다 (위 SS_ID_WIDE_FROM 설명).
+  var 넓힘일 = (cfg && ssText(cfg.고유ID_6자리_전환일)) || SS_ID_WIDE_FROM;
+  var 자리 = (digits.length >= 8 && digits.slice(0, 8) >= 넓힘일) ? 6 : 5;
   var no = ssText(parts[1]).replace(/[^0-9]/g, '') || '0';
   // 배송지가 바뀌어도 같은 주문이므로 원래 값으로 계산한다.
   // 그래야 오전에 발급한 ID가 오후 회차에서도 그대로다.
-  var seed = [
+  return ymd + '-PH-' + ssHashN(ssOrderSeed(L, no), 자리);
+}
+
+/**
+ * 고유ID 를 만드는 «씨앗». 겹침 판정도 이 값을 본다.
+ *
+ * 둘이 따로 놀면 안 된다 — 씨앗이 같으면 ID 도 같으므로, 겹쳤을 때
+ * 「같은 주문인가 진짜 충돌인가」는 씨앗을 견줘야만 정확히 갈린다.
+ * 여기에 없는 칸으로 판정하면 «다른 주문»을 같은 주문으로 보거나 그 반대가 된다.
+ *
+ * 배송지가 바뀌어도 같은 주문이므로 원래 값으로 계산한다.
+ * 그래야 오전에 발급한 ID가 오후 회차에서도 그대로다.
+ */
+function ssOrderSeed(L, no) {
+  if (no === undefined) {
+    no = ssText(ssText(L.일자).split('-')[1]).replace(/[^0-9]/g, '') || '0';
+  }
+  return [
     no, ssNorm(L.원받는분 || L.받는분),
     ssText(L.원연락처) || ssText(L.모바일) || ssText(L.전화),
     ssNorm(L.원주소1 || L.주소1), ssText(L.원본코드), ssText(L.주문수량)
   ].join('|');
-  return ymd + '-PH-' + ssHashN(seed, 5);
 }
 
 
@@ -696,12 +727,31 @@ function ssNormalize(grid, cfg, warnings) {
     line.고유ID = ssText(line.사방넷주문번호) || ssMakeOrderId(line, cfg);
     if (line.주문번호출처 !== undefined) { /* noop */ }
     if (!ssText(line.사방넷주문번호)) {
-      var base = line.고유ID, n = 1;
-      while (issued[line.고유ID]) { n++; line.고유ID = base + '-' + n; }
-      issued[line.고유ID] = true;
-      if (n > 1) {
-        ssWarn(warnings, '주의', 'ID_COLLISION', line.고유ID,
-          '같은 회차에 동일한 고유ID가 계산되어 뒤에 순번을 붙였습니다.');
+      /*  ★ 겹침에도 두 가지가 있다 ★  (2026-09-21)
+
+          ① 내용이 «같은» 두 줄 — 같은 사람이 같은 품목·같은 수량을 두 줄로 적은 것.
+             둘은 서로 바꿔 놓아도 나가는 물건이 같으니, 순번이 어느 줄에 붙든 무해하다.
+
+          ② 내용이 «다른» 두 줄 — 진짜 해시 충돌. 다른 사람·다른 품목인데 같은 ID 가 나왔다.
+             순번(-2)은 «그 회차에 무엇이 같이 들어왔느냐»로 정해진다. 판매현황은 하루 두 번
+             통째로 다시 받으므로, 다음 회차에 순번이 딴 줄로 옮겨 붙을 수 있다.
+             그러면 아침에 이미 나간 송장과 어긋난다 — 이건 사고다.
+
+          지금까지는 둘을 똑같이 '주의'로 다뤄, ②가 일어나도 ①에 묻혀 지나갔다.
+          그래서 이름·연락처·품목·수량을 견줘 갈라 놓는다. ①은 조용히, ②는 '오류'로 올린다.  */
+      var 내용 = ssOrderSeed(line);
+      var base = line.고유ID, n = 1, 부딪힌것 = null;
+      while (issued[line.고유ID]) {
+        if (!부딪힌것 && issued[line.고유ID].키 !== 내용) 부딪힌것 = issued[line.고유ID];
+        n++; line.고유ID = base + '-' + n;
+      }
+      issued[line.고유ID] = { 키: 내용, 이름: ssText(line.받는분), 품목: ssText(line.원본품목명) };
+      if (부딪힌것) {
+        ssWarn(warnings, '오류', 'ID_COLLISION', base,
+          '서로 «다른 주문»에 같은 고유ID 가 나왔습니다 — 확인이 필요합니다.  ' +
+          '[' + 부딪힌것.이름 + ' / ' + 부딪힌것.품목.slice(0, 20) + ']  vs  ' +
+          '[' + ssText(line.받는분) + ' / ' + ssText(line.원본품목명).slice(0, 20) + ']' +
+          '   뒤에 -' + n + ' 를 붙여 갈랐습니다.');
       }
     }
     line.주문번호출처 = ssText(line.사방넷주문번호) ? SS_ORDNO_SRC.사방넷 : SS_ORDNO_SRC.자동발급;
@@ -2657,7 +2707,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssApplyManualEdits: ssApplyManualEdits,
     ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
+    ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, SS_ID_WIDE_FROM: SS_ID_WIDE_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssDupRunGroups: ssDupRunGroups, SS_ORDNO_SRC: SS_ORDNO_SRC,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,
