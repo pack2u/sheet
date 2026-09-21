@@ -452,6 +452,12 @@ function ss_실행(opts) {
           두 번 돌아도 같은 번호다.
 
         cfg 에 실어 보낸다 — 한 실행에서 또 계산해도(우편번호 재계산) 같은 객체다. */
+    /*  「적요확인」 탭에서 사람이 고른 조치를 먼저 걷는다 (2026-09-22).
+        AI 가 제안한 값은 이 조치를 거쳐야만 들어온다. 저절로 들어오는 길은 없다.
+        회차 지문보다 먼저 걷어야 한다 — 지문도 ssNormalize 를 돌리기 때문이다. */
+    단계 = ss단계_('적요확인 조치 걷기');
+    try { cfg._적요조치 = ssm_captureMemoActions(); } catch (eM) { cfg._적요조치 = {}; }
+
     단계 = ss단계_('전화주문 번호 기억 읽기');
     cfg._전화ID기억 = ssm_loadPhoneIds();
     if (cfg._전화ID기억.왜) {
@@ -831,7 +837,15 @@ function ss_실행(opts) {
         예약만 하고 지나간다 — 사람을 기다리게 하지 않는다. */
     var v2예약 = ss_v2_예약_(runKey);
     if (v2예약) sum.push(['v2 올리기', v2예약]);
-    if (v2예약) ssio_write(SSIO_TABS.요약, SS_SUMMARY_HEADER, sum);
+
+    /*  ★ 규칙이 못 읽은 적요를 AI 에게 물어본다 ★  (2026-09-22 · gasAi.js)
+        여기도 예약만 한다 — 실행이 끝난 뒤 5초 뒤에 따로 깨어난다.
+        세트분리를 한 톨도 늦추지 않고, 거기서 실패해도 이 실행은 이미 끝나 있다.
+        AI 가 읽은 것은 「적요확인」 탭에 «제안»으로만 쌓인다. */
+    var ai예약 = ss_적요AI_예약_(runKey);
+    if (ai예약) sum.push(['적요 AI', ai예약]);
+
+    if (v2예약 || ai예약) ssio_write(SSIO_TABS.요약, SS_SUMMARY_HEADER, sum);
 
     var 대표 = (res.합배송뷰 || []).length - res.stats.합포장흡수;
     /*  사람이 견주는 숫자는 «누른 뒤 뜰 때까지»다. 원장 적재까지만 센 값을

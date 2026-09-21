@@ -866,6 +866,31 @@ function ssNormalize(grid, cfg, warnings) {
       }
     }
     line.주문번호출처 = ssText(line.사방넷주문번호) ? SS_ORDNO_SRC.사방넷 : SS_ORDNO_SRC.자동발급;
+
+    /*  ★ 「적요확인」 탭에서 사람이 고른 조치 ★  (2026-09-22)
+        규칙이 못 읽은 적요를 AI 가 읽어 제안해 두면, 사람이 조치를 고른다.
+        AI 가 읽은 값이 저절로 들어오는 일은 없다 — 여기가 유일한 문이다.
+
+        고유ID 를 열쇠로 쓴다. 씨앗은 «원주소»로 만들므로 여기서 주소를 바꿔도
+        ID 가 안 바뀐다 — 그래서 조치가 다음 회차까지 살아남는다. */
+    var 적요조치 = (cfg && cfg._적요조치) ? cfg._적요조치[line.고유ID] : null;
+    if (적요조치) {
+      if (적요조치.조치 === '미발송') {
+        line.적요조치 = '미발송';
+      } else if (적요조치.조치 === '이대로 적용' && ssText(적요조치.주소)) {
+        if (line.원받는분 === undefined) line.원받는분 = line.받는분;
+        if (line.원주소1 === undefined) line.원주소1 = line.주소1;
+        if (line.원연락처 === undefined) line.원연락처 = line.모바일 || line.전화;
+        line.주소1 = ssText(적요조치.주소);
+        if (ssText(적요조치.휴대)) line.모바일 = ssText(적요조치.휴대);
+        if (ssText(적요조치.전화)) line.전화 = ssText(적요조치.전화);
+        if (ssText(적요조치.이름)) line.받는분 = ssText(적요조치.이름).slice(0, 25);
+        line.주소변경 = '적요확인(사람이 고름)';
+        ssWarn(warnings, '주의', 'MEMO_ACTION', line.고유ID,
+          '적요확인 탭의 조치대로 바꿨습니다: ' + ssText(line.원주소1).slice(0, 24) +
+          '  →  ' + ssText(line.주소1).slice(0, 34));
+      }
+    }
     if (line.주문번호출처 === '자동발급' && ssText(cfg.전화주문_고유ID) === '주문번호칸에채움') {
       line.사방넷주문번호 = line.고유ID;
     }
@@ -1626,6 +1651,8 @@ function ssAllocateStock(units, masters) {
 function ssNonShipReason(u, cfg) {
   var name = ssText(u.품목명) || ssText(u.원본품목명);
   var code = ssText(u.원본코드) || ssText(u.품목코드);
+  //  사람이 「적요확인」 탭에서 고른 것이 가장 세다. 아무것도 앞지르지 않는다.
+  if (ssText(u.적요조치) === '미발송') return '적요확인 탭에서 「미발송」으로 고름';
   if (ssNum(u.합계) < 0) return '금액 음수 (' + u.합계 + ')';
 
   /*  ★ 적요가 스스로 「안 나간다」고 말하는 경우 ★  (2026-09-22)
