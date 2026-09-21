@@ -8455,7 +8455,33 @@
       if (el) { el.focus(); el.select(); }
     }
 
-    /** 저장 — 상태는 «건드리지 않고» 반품송장만 보낸다 */
+    /*  ★ 서버가 정한 값을 받아 쓴다 ★  (2026-09-22)
+        > "반품 송장이 입력이 되면 자동으로 반품송장 상태로 바뀌게 해줘.. 2번 작업이네"
+
+        서버는 9/20 부터 송장이 들어오면 상태를 「반품송장」으로 올린다.
+        그런데 화면이 그 답(res.status)을 안 읽어서, 시트는 바뀌었는데 카드는
+        「접수」로 남았다. 그걸 보고 사람이 상태를 한 번 더 바꿨다 — 그게 두 번째 일이다.
+
+        여기서 «짐작»하지 않는다. 단계 규칙은 서버 한 곳에만 둔다
+        (_cs_returnStage_). 화면이 같은 규칙을 한 벌 더 갖고 있으면 언젠가 갈린다. */
+    function retApplyServer(c, res) {
+      if (!c || !res) return;
+      var i = retLocate(retKeyOf(c));
+      if (i < 0) return;
+      var row = RETURN_ALL_ROWS[i];
+      var 바뀜 = false;
+      if (res.status && String(row.status || '') !== String(res.status)) {
+        row.status = String(res.status);
+        바뀜 = true;
+      }
+      if (res.returnInvoice && String(row.returnInvoice || '') !== String(res.returnInvoice)) {
+        row.returnInvoice = String(res.returnInvoice);
+        바뀜 = true;
+      }
+      if (바뀜) renderReturnActiveList();
+    }
+
+    /** 저장 — 상태는 «건드리지 않고» 반품송장만 보낸다. 단계는 서버가 정한다. */
     function retInvSave(idx) {
       var c = RETURN_ACTIVE_ROWS[idx];
       if (!c) return;
@@ -8493,6 +8519,9 @@
               if (btn) { btn.disabled = false; btn.textContent = '저장'; }
               if (!res || !res.ok) { 실패(String((res && res.error) || '반품송장 저장 실패')); return; }
               성공();
+              //  서버가 단계를 올렸으면 카드도 따라간다 (성공 뒤에 — 되돌리기 사진과 안 엉킨다)
+              retApplyServer(c, res);
+              if (res.status && res.status !== 지금상태) toast('상태를 「' + res.status + '」로 올렸습니다');
             })
             .withFailureHandler(function (err) {
               if (btn) { btn.disabled = false; btn.textContent = '저장'; }
@@ -8875,6 +8904,13 @@
                 if (saveBtn) saveBtn.disabled = false;
                 if (!res || !res.ok) { 실패(String((res && res.error) || '상태 저장 실패')); return; }
                 성공();
+                /*  팝업에서 상태는 「접수」로 두고 반품송장만 적는 일이 잦다.
+                    그때 서버가 단계를 「반품송장」으로 올리므로 카드도 따라가야 한다.
+                    안 따라가면 시트와 화면이 갈리고, 그걸 보고 또 한 번 바꾸게 된다. */
+                retApplyServer(c, res);
+                if (res.status && res.status !== status) {
+                  toast('상태를 「' + res.status + '」로 올렸습니다');
+                }
               })
               .withFailureHandler(function (err) {
                 if (saveBtn) saveBtn.disabled = false;
