@@ -193,7 +193,6 @@ var SS_DEFAULT_CONFIG = {
   /*  이 낱말이 든 품목«만»으로 묶인 박스는 합포장이다 (2026-09-21). 샘플은 늘 포함. */
   합포장_품목낱말: '위생장갑',
   고유ID_짧은날짜_전환일: SS_ID_SHORT_FROM,
-  고유ID_6자리_전환일: SS_ID_WIDE_FROM,
   비배송_품목패턴: '적립금|반품배송비|배송비|할인|쿠폰|수수료|차감'
 };
 
@@ -372,8 +371,8 @@ function ssHashN(s, n) {
  * 그래서 순번 기반이나 랜덤(UUID)은 쓸 수 없다 — 회차마다 값이 달라진다.
  * 전표번호와 주문 내용만으로 계산해 **같은 주문이면 언제 계산해도 같은 값**이 나온다.
  *
- *   0921-PH-a3f194  (2026-09-21 이전 주문은 5 자리 0902-PH-a3f19)
- *    └날짜   └표식 └전표·수취인·연락처·주소·품목·수량 해시
+ *   p0921000047   ← 그날 47번째 전화주문
+ *   └표식 └날짜 └그날의 번호
  *
  * 상품정보 시트의 「MMdd-ds-xxxx」(발주수집이 발급)와 나란한 형태지만
  * 뒷자리가 랜덤이 아니라 내용 해시다 — 랜덤이면 회차마다 값이 달라진다.
@@ -384,36 +383,44 @@ function ssHashN(s, n) {
  */
 var SS_ID_SHORT_FROM = '20260909';
 
-/**
- * 뒷자리를 5 → 6 으로 넓히기 시작하는 날 (2026-09-21).
- * 5 자리는 1,048,576 가지라 하루 186 건이면 그날 안에서 겹칠 확률이 1.6%,
- * 6 자리는 16,777,216 가지라 0.10% 로 내려간다.
- *
- * 왜 날짜로 끊나 — 이 ID 는 랜덤이 아니라 «내용 해시»다. 자리수를 바꾸면
- * 지난 주문의 ID 까지 통째로 달라져 원장·허브·롯데 송장이 다 어긋난다.
- * 그래서 «주문 일자»로 끊는다. 지난 회차를 다시 돌려도 그때 값이 그대로 나온다.
- */
-var SS_ID_WIDE_FROM = '20260921';
-
 function ssMakeOrderId(L, cfg) {
   var 일자 = ssText(L.일자);
   var parts = 일자.split('-');
   var digits = ssText(parts[0]).replace(/[^0-9]/g, '');
-  // 전환일부터 상품정보 시트의 「MMdd-ds-xxxx」 와 자리수를 맞춘다.
-  // 오늘 날짜가 아니라 「주문 일자」로 판정한다 — 지난 회차를 다시 돌려도
-  // 그때 발급한 ID 가 그대로 나와야 원장·송장매칭이 어긋나지 않는다.
-  var 전환일 = (cfg && ssText(cfg.고유ID_짧은날짜_전환일)) || SS_ID_SHORT_FROM;
-  var ymd = digits;
-  if (digits.length >= 8) {
-    ymd = (digits.slice(0, 8) >= 전환일) ? digits.slice(4, 8) : digits.slice(2, 8);
-  }
-  //  뒷자리 넓히기도 «오늘»이 아니라 «주문 일자»로 끊는다 (위 SS_ID_WIDE_FROM 설명).
-  var 넓힘일 = (cfg && ssText(cfg.고유ID_6자리_전환일)) || SS_ID_WIDE_FROM;
-  var 자리 = (digits.length >= 8 && digits.slice(0, 8) >= 넓힘일) ? 6 : 5;
+  var ymd = digits.length >= 8 ? digits.slice(4, 8) : digits;
   var no = ssText(parts[1]).replace(/[^0-9]/g, '') || '0';
-  // 배송지가 바뀌어도 같은 주문이므로 원래 값으로 계산한다.
-  // 그래야 오전에 발급한 ID가 오후 회차에서도 그대로다.
-  return ymd + '-PH-' + ssHashN(ssOrderSeed(L, no), 자리);
+  var 씨앗 = ssOrderSeed(L, no);
+
+  /*  ★ 기억이 없으면 돌지 않는다 ★
+      번호를 1 번부터 다시 주면, 아침에 나간 주문과 같은 번호가 다른 사람에게
+      간다. 멈추면 사람이 보지만, 어긋난 송장은 아무도 못 본다. */
+  var 기억 = cfg && cfg._전화ID기억;
+  if (!기억 || !기억.표) {
+    throw new Error('전화주문 고유ID 의 «기억»(원장)을 못 읽었습니다. ' +
+      '번호를 처음부터 다시 주면 이미 나간 주문과 겹치므로 멈춥니다.');
+  }
+
+  /*  ★ 같은 씨앗이 여러 줄일 수 있다 ★
+      같은 사람이 같은 품목·같은 수량을 두 줄로 적는 일이 흔하다(수량을 잘못
+      적어 다시 적는 경우). 둘은 «각각 나가는» 주문이라 번호도 둘이어야 한다.
+      씨앗 하나에 ID 를 여럿 달아 두고, 이 회차에서 몇 번째로 나온 줄인지로
+      골라 준다. 그래야 다음 회차에도 첫 줄은 첫 ID, 둘째 줄은 둘째 ID 다. */
+  var 쓴횟수 = 기억.쓴횟수 || (기억.쓴횟수 = {});
+  var 몇번째 = 쓴횟수[씨앗] || 0;
+  쓴횟수[씨앗] = 몇번째 + 1;
+
+  //  ① 이미 준 것이 있으면 그대로. 옛 모양(0921-PH-a3f19)도 여기에 들어 있다.
+  var 목록 = 기억.표[씨앗];
+  if (목록 && 목록[몇번째]) return 목록[몇번째];
+
+  //  ② 없으면 그날 다음 번호
+  var 다음 = 기억.다음 || (기억.다음 = {});
+  var n = 다음[ymd] || 1;
+  var 새ID = 'p' + ymd + ('00000' + n).slice(-6);
+  다음[ymd] = n + 1;
+  if (!목록) 목록 = 기억.표[씨앗] = [];
+  목록[몇번째] = 새ID;
+  return 새ID;
 }
 
 /**
@@ -623,6 +630,10 @@ function ssNormalize(grid, cfg, warnings) {
   var out = [];
   var seen = {};
   var issued = {};
+  /*  전화주문 번호표의 «이 회차에서 몇 번째 줄인가»를 0 으로 되돌린다.
+      한 실행에서 두 번 계산할 때가 있다(우편번호를 새로 구하면 다시 돈다).
+      안 되돌리면 두 번째 계산이 둘째 번호부터 집어 든다. */
+  if (cfg && cfg._전화ID기억) cfg._전화ID기억.쓴횟수 = {};
   for (var r = found.headerRow + 1; r < grid.length; r++) {
     var row = grid[r];
     if (!row) continue;
@@ -2364,6 +2375,7 @@ var SS_INVOICE_HEADER = ['주문번호', '품목코드', '구분', '합포장키
 function ssIsSabangnetUid(uid) {
   var u = ssText(uid);
   if (!u) return false;
+  if (/^[pd]\d{10}$/.test(u)) return false;          // p0921000001 · d0921000001 (2026-09-22~)
   if (/^\d{4}-[A-Za-z]{2}-/.test(u)) return false;   // MMdd-ds- · MMdd-PH- 형
   if (/^\d{6}-PH-/.test(u)) return false;            // 구 YYMMDD-PH- 형 (과거 발급분)
   return /^\d+$/.test(u);
@@ -2707,7 +2719,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssApplyManualEdits: ssApplyManualEdits,
     ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, SS_ID_WIDE_FROM: SS_ID_WIDE_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
+    ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssMakeOrderId: ssMakeOrderId, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssDupRunGroups: ssDupRunGroups, SS_ORDNO_SRC: SS_ORDNO_SRC,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,

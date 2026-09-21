@@ -39,16 +39,64 @@ var _PO_HUB_SHEET_NAME = "협력업체_발주허브";
  *
  *  @param {Object} taken 이미 쓰인 ID 들 (허브 전체 + 이번 회차). 값은 안 본다.
  */
+/*  ★ 그날의 번호표 ★   실행 하나 안에서만 산다 (GAS 는 실행마다 스크립트를 새로 읽는다).
+    수집을 두 사람이 동시에 돌리지 않는다는 전제다 — 2026-09-21 확인.  */
+var _PO_UID_SERIAL_ = { 날: "", 다음: 0 };
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  고유ID 발급 —  0921-ds-000001  ·  난수가 아니라 번호표
+ *  2026-09-21
+ *
+ *  ★ 왜 난수를 버렸나 ★
+ *    > "그냥 사방넷처럼 하자..걍 숫자로도 수백만개의 고유아이디를 적용하는데"
+ *    > "날짜 자채가 새로운 넘버링인데.."
+ *
+ *    난수는 «확률게임»이다. 뒷자리가 넉 자면 65,536가지뿐이라, 하루 184건을
+ *    뽑으면 그날 겹칠 확률이 22.7% — 나흘에 한 번꼴이다. 여섯 자로 늘려도
+ *    0.1% 로 줄 뿐 0 이 아니다. 물량이 늘면 도로 올라온다.
+ *
+ *    날짜는 이미 «윗자리»다. 하루에 한 칸씩 오르는 카운터다. 그러면 아랫자리도
+ *    카운터로 두면 된다 — 그날 1, 2, 3 … 으로 세면 겹침이 «구조적으로» 없다.
+ *    덤으로 000047 을 보면 그날 47번째 주문임을 안다.
+ *
+ *  ★ 왜 이카운트 번호를 안 빌리나 ★
+ *    순번·전표번호를 원장에서 견줬더니 하루 안에서 재사용된다(9/15, 9건).
+ *    목록을 다시 뽑으면 같은 번호가 «다른 사람»에게 간다. 우리가 세야 한다.
+ *
+ *  ★ 보관(아카이브)에 안 걸린다 ★
+ *    «오늘» 것만 보고 세므로, 지난 줄이 걷혀 나가도 번호가 되돌아가지 않는다.
+ * ══════════════════════════════════════════════════════════════
+ */
 function _po_newUid_(taken) {
-  var 날 = Utilities.formatDate(new Date(), "Asia/Seoul", "MMdd");
-  var uid = "";
-  for (var 번 = 0; 번 < 50; 번++) {
-    uid = 날 + "-ds-" + Utilities.getUuid().replace(/-/g, "").substring(0, 6);
-    if (!taken || !taken[uid]) return uid;
+  var 오늘 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd");
+  var 날 = 오늘.substring(4);
+
+  var 앞 = "d" + 날;
+
+  //  그날 이미 나간 제일 큰 번호를 한 번만 찾아 둔다
+  if (_PO_UID_SERIAL_.날 !== 날) {
+    var 최대 = 0;
+    for (var k in taken) {
+      if (!Object.prototype.hasOwnProperty.call(taken, k)) continue;
+      if (String(k).indexOf(앞) !== 0) continue;
+      //  옛 난수 ID(16진수 네댓 자)는 여기서 저절로 빠진다 — 숫자 여섯 자만 센다
+      var 꼬리 = String(k).substring(앞.length);
+      if (!/^[0-9]{6}$/.test(꼬리)) continue;
+      var n = parseInt(꼬리, 10);
+      if (n > 최대) 최대 = n;
+    }
+    _PO_UID_SERIAL_ = { 날: 날, 다음: 최대 + 1 };
   }
-  /*  쉰 번을 다 겹치는 일은 없다(1,677만 가지). 그래도 빈손으로 돌려주지
-      않는다 — 시각을 붙여 반드시 다른 값으로 만든다. */
-  return 날 + "-ds-" + String(new Date().getTime()).slice(-6);
+
+  /*  이미 쓰인 번호는 건너뛴다. 허브에는 없는데 «업체 시트»에만 적혀 있는 ID 가
+      있을 수 있다 — 지난 회차에 걷히지 않고 남은 줄이 그렇다. */
+  var uid;
+  do {
+    uid = 앞 + ("00000" + _PO_UID_SERIAL_.다음).slice(-6);
+    _PO_UID_SERIAL_.다음++;
+  } while (taken && taken[uid]);
+  return uid;
 }
 
 /**
@@ -6800,7 +6848,11 @@ function _po_collectExistingUidSet_(tab, uidCol) {
  *   실제로 그랬다. 두 자리 형태를 다 본다.
  */
 function _po_isGeneratedUid_(uid) {
-  return /^\d{4}(?:\d{2})?-[A-Za-z]{2}-/.test(String(uid || "").trim());
+  var u = String(uid || "").trim();
+  //  2026-09-22 부터의 모양 —  d0921000001 (발주) · p0921000001 (전화주문)
+  if (/^[pd]\d{10}$/.test(u)) return true;
+  //  그 전 모양 —  0921-ds-b1d1 · 0921-PH-a3f19 · 260902-PH-a3f19
+  return /^\d{4}(?:\d{2})?-[A-Za-z]{2}-/.test(u);
 }
 
 function _po_isSabangnetUid_(uid) {
