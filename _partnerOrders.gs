@@ -14,6 +14,44 @@
 var _PO_HUB_SHEET_NAME = "협력업체_발주허브";
 
 /**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 고유ID 발급 — 겹치면 다시 뽑는다 ★   2026-09-21
+ *
+ *  > "이건 고유아이디 생성의 문제인거 같네.. 그걸 고치지 않는 이상
+ *  >  계속 발생될 사항인거 같아"
+ *
+ *  여태는 만들고 끝이었다 — 이미 있는 ID 인지 «한 번도 안 봤다».
+ *      uid = MMdd + "-ds-" + getUuid().substring(0, 4)
+ *  뒷자리가 16진수 넉 자라 65,536가지뿐이고, 앞에 날짜가 붙으니 겹침은
+ *  «같은 날 안»에서만 난다. 그런데 그게 곧 하루 발급량 문제다 —
+ *  생일 문제라 150건이면 15.7%, 186건이면 23.1%, 300건이면 49.6% 다.
+ *
+ *  ★ 실제로 났다 ★  2026-09-21, 183건을 뽑아 한 번 겹쳤다.
+ *      0921-ds-b1d1  하나팩·임상혁(앞치마)      → 허브에 들어감
+ *      0921-ds-b1d1  그린우드·반찬애사랑2(찜)   → 같은 ID 라 빠짐
+ *    서로 «다른 업체 파일»이라 복사가 아니라 난수가 그냥 겹친 것이다.
+ *    빠진 줄은 업체 시트에 「접수완료」만 남아, 업체도 우리도 들어간 줄 안다.
+ *
+ *  ★ 자릿수를 늘리는 것으로는 못 끝낸다 ★
+ *    6자리로 늘리면 확률이 줄 뿐 0 은 아니고, 물량이 더 늘면 같은 이야기가
+ *    또 나온다. 검사가 본질이다. 자릿수는 «다시 뽑는 일이 드물게» 하려고
+ *    같이 늘린다.
+ *
+ *  @param {Object} taken 이미 쓰인 ID 들 (허브 전체 + 이번 회차). 값은 안 본다.
+ */
+function _po_newUid_(taken) {
+  var 날 = Utilities.formatDate(new Date(), "Asia/Seoul", "MMdd");
+  var uid = "";
+  for (var 번 = 0; 번 < 50; 번++) {
+    uid = 날 + "-ds-" + Utilities.getUuid().replace(/-/g, "").substring(0, 6);
+    if (!taken || !taken[uid]) return uid;
+  }
+  /*  쉰 번을 다 겹치는 일은 없다(1,677만 가지). 그래도 빈손으로 돌려주지
+      않는다 — 시각을 붙여 반드시 다른 값으로 만든다. */
+  return 날 + "-ds-" + String(new Date().getTime()).slice(-6);
+}
+
+/**
  * 송장 수집이 「주문라인원장」에서 «끝에서부터» 읽을 줄 수.
  *
  * 합배송 묶음키와 적요 꼬리표를 얻으려고 읽는다. 오늘 붙일 송장을 위한
@@ -1250,10 +1288,7 @@ function partnerCollectOrders(opt_noWriteBack) {
               ? String(data[r][cMap.uniqueId] || "").trim()
               : "";
           if (!uid) {
-            uid =
-              Utilities.formatDate(new Date(), "Asia/Seoul", "MMdd") +
-              "-ds-" +
-              Utilities.getUuid().substring(0, 4);
+            uid = _po_newUid_(existingIds);
             if (cMap.uniqueId !== -1) {
               data[r][cMap.uniqueId] = uid;
               idFillChanged = true;
@@ -1342,10 +1377,9 @@ function partnerCollectOrders(opt_noWriteBack) {
           var _같은내용복사_ = false;
           if (isDup && _앞줄이쓴ID_) {
             var _옛uid_ = uid;
-            uid =
-              Utilities.formatDate(new Date(), "Asia/Seoul", "MMdd") +
-              "-ds-" +
-              Utilities.getUuid().substring(0, 4);
+            //  여기도 «겹치지 않는» 것으로 받는다 — 복사본에 또 겹친 ID 를 주면
+            //  같은 일이 다음 회차에 그대로 반복된다.
+            uid = _po_newUid_(existingIds);
             if (cMap.uniqueId !== -1) {
               data[r][cMap.uniqueId] = uid;
               idFillChanged = true;
