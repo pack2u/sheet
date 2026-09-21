@@ -129,6 +129,16 @@ console.log("\n⑥ 배선 — 소스에서 직접 확인");
   ok("★ 조치를 엔진보다 먼저 걷는다", 걷는자리 > 0 && 걷는자리 < 첫엔진,
     "걷기 " + 걷는자리 + " · 엔진 " + 첫엔진);
   ok("끝난 뒤 AI 를 예약한다", /var ai예약 = ss_적요AI_예약_\(runKey\);/.test(main));
+
+  /*  ★ .claspignore 는 «화이트리스트»다 ★  (2026-09-22 에 여기서 걸렸다)
+      새 파일을 거기 안 적으면 clasp push 가 조용히 빼고 올린다. 시트에는 그
+      함수가 없으니 「함수를 찾을 수 없습니다」로 죽는데, 코드는 멀쩡해 보인다. */
+  const ignore = fs.readFileSync(path.join(밑, ".claspignore"), "utf8");
+  const 안올라가는것 = fs.readdirSync(밑)
+    .filter((n) => /\.(js|gs)$/.test(n))
+    .filter((n) => ignore.indexOf("!" + n) < 0);
+  ok("★ 폴더의 모든 .js/.gs 가 올릴 목록에 있다",
+    안올라가는것.length === 0, 안올라가는것.join(" · "));
 }
 
 console.log("\n" + (fail ? "❌ " + fail + "개 실패" : "✅ 모두 통과") + " (통과 " + pass + ")");
