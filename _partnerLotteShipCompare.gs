@@ -368,7 +368,17 @@ function _pls_isSampleProductName_(name) {
 
 /** ===합배송 등 — 책정배송비 기본 1,900원 (원본 상품명 기준) */
 function _pls_isHapbaesongProductName_(name) {
-  return String(name == null ? "" : name).indexOf("합배송") !== -1;
+  var s = String(name == null ? "" : name);
+  /*  ★ 2026-09-21 — 세트분리가 붙이는 말이 「===합포장」으로 바뀌었다 ★
+      하는 일은 그대로고 이름만 바로잡은 것이다(낱개 여럿 → 한 박스).
+      지난 자료에는 「===합배송」이 그대로 쌓여 있으므로 둘 다 받는다.
+
+      ★ 「합포장」을 통째로 보면 안 된다 ★
+        품목명에는 「---2개 합포장」도 붙는데, 그건 «한 줄의 수량이 여럿»이라
+        묶음배송비 규칙으로 계산한 것이라 여기 1,900원 대상이 아니다.
+        === 가 앞에 붙은 것만 본다.  */
+  if (s.indexOf("합배송") !== -1) return true;
+  return s.indexOf("===합포장") !== -1;
 }
 
 function _pls_resolveBookFee_(key, rawName, prodMap) {

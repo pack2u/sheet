@@ -2195,7 +2195,11 @@ function partnerFetchInvoices() {
               if (_tail && _tail.length <= 24) _tails.push(_tail);
               var _out2 = (_cOut !== undefined) ? String(_lgAll[_sr][_cOut] || "") : "";
               if (_out2) {
-                if (_out2.indexOf("===합배송") >= 0) _tails.push("합배송");
+                /*  세트분리가 붙이는 말이 2026-09-21 에 「===합포장」으로 바뀌었다
+                    (하는 일은 그대로 — 낱개 여럿을 한 박스로). 지난 회차 원장에는
+                    「===합배송」이 그대로 있으므로 둘 다 받고, 적는 말은 새것으로 맞춘다. */
+                if (_out2.indexOf("===합포장") >= 0) _tails.push("합포장");
+                else if (_out2.indexOf("===합배송") >= 0) _tails.push("합포장");
                 //  「---2개 합포장」·「---2개 합포장(완박스)」 — 뒤에 다른 꼬리가 안 붙는다
                 var _mHap = _out2.match(/---\s*(\d+\s*개\s*합포장[^-]*)/);
                 if (_mHap) _tails.push(_mHap[1].trim());
