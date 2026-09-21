@@ -2217,15 +2217,36 @@ function ss_판매현황아이디채움(cells) {
     while (grid[g2].length < width) grid[g2].push('');
   }
 
-  var n = 0;
+  /*  ★ 적요대로 바꾼 칸은 «덮어쓴다» ★  (2026-09-22)
+      F 전화 · G 모바일 · H 주소1 · J 거래처명. 전화주문은 본사 계정으로
+      들어와 이 칸에 본사 값이 박혀 있으므로, 비어 있기를 기다리면 영영 안 바뀐다.
+      머리글 이름으로 자리를 찾는다 — 칸이 하나 끼어들어도 따라간다. */
+  var 덮을자리 = {};
+  var 머리 = grid[0] || [];
+  for (var h = 0; h < 머리.length; h++) {
+    var hn = ssText(머리[h]);
+    if (hn && 덮을자리[hn] === undefined) 덮을자리[hn] = h;
+  }
+
+  var n = 0, 고친칸 = 0;
   for (var i = 0; i < (cells || []).length; i++) {
     var r = cells[i].행;                 // 0-기준 (판매현황 그리드 기준)
     if (r < 0 || r >= grid.length) continue;
-    //  이미 값이 있으면 손대지 않는다 — 사방넷 주문번호를 덮으면 안 된다
-    if (ssText(grid[r][col - 1])) continue;
-    grid[r][col - 1] = cells[i].값;
-    n++;
+    //  아이디 칸은 반대다 — 이미 값이 있으면 손대지 않는다(사방넷 주문번호)
+    if (!ssText(grid[r][col - 1])) { grid[r][col - 1] = cells[i].값; n++; }
+
+    var 덮을것 = cells[i].덮을것;
+    if (!덮을것) continue;
+    for (var 칸이름 in 덮을것) {
+      if (!Object.prototype.hasOwnProperty.call(덮을것, 칸이름)) continue;
+      var ci = 덮을자리[칸이름];
+      if (ci === undefined) continue;
+      if (ssText(grid[r][ci]) === ssText(덮을것[칸이름])) continue;   // 이미 같다
+      grid[r][ci] = 덮을것[칸이름];
+      고친칸++;
+    }
   }
+  if (고친칸) Logger.log('[적요] 판매현황 사본에서 ' + 고친칸 + '칸을 적요대로 바꿨습니다');
 
   var out = ssio_sheet(SSIO_TABS.입력아이디, grid[0]);
   ssio_clearBody(out);

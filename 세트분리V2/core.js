@@ -193,7 +193,12 @@ var SS_DEFAULT_CONFIG = {
   /*  이 낱말이 든 품목«만»으로 묶인 박스는 합포장이다 (2026-09-21). 샘플은 늘 포함. */
   합포장_품목낱말: '위생장갑',
   고유ID_짧은날짜_전환일: SS_ID_SHORT_FROM,
-  비배송_품목패턴: '적립금|반품배송비|배송비|할인|쿠폰|수수료|차감'
+  비배송_품목패턴: '적립금|반품배송비|배송비|할인|쿠폰|수수료|차감',
+  /*  적요에 이 낱말이 있으면 미발송으로 뺀다 (2026-09-22).
+      ★ 「출고」 한 낱말로는 못 잡는다 ★  「★ 09/15 출고」처럼 «그날 내보내라»는
+      뜻으로 쓰는 일이 있어서, 그걸 잡으면 멀쩡한 주문이 미발송으로 빠진다.
+      그래서 붙여 쓴 말만 둔다. S팀 확인 뒤 늘리거나 줄인다. */
+  미발송_적요낱말: '이미출고,출고완료,중복출고,방문수령,방문후수령,직접수령,픽업,주문취소'
 };
 
 /* ── 작은 도구들 ──────────────────────────────────────── */
@@ -303,29 +308,104 @@ function ssLooksPhone(s) {
   return d.length >= 9 && d.length <= 12 && d.charAt(0) === '0';
 }
 
+/**
+ * 전화·주소가 «어느 자리에» 있는지는 안 따진다.
+ *   전화   0xx-xxxx-xxxx 무늬 — 제일 또렷해서 이것이 닻이다
+ *   주소   시·군·구 «그리고» 번지 붙은 도로명(또는 동·리) 이 둘 다 있는 덩어리
+ *   이름   남은 짧은 조각. 구분자가 없으면 주소 앞에서 떼어 낸다
+ * 그래서 순서가 무작위여도, 「/」 가 없어도 읽는다.
+ */
+var SS_PHONE_RE = /0\d{1,2}[-. ]?\d{3,4}[-. ]?\d{4}/g;
+/*  우편번호는 «표시가 붙은 것»만 본다. 그냥 다섯 자리를 잡으면
+    「70700원 아주품절건…」의 금액을 우편번호로 먹는다. 실제로 그랬다.  */
+var SS_ZIP_RE = /\[(\d{5})\]|\(우\)\s*(\d{5})|^(\d{5})(?=\s)/;
+/*  주소가 상호에 붙어 올 때 잘라 낼 자리. 시·도 이름 뒤에 도/시/자치/공백이 와야
+    한다 — 「전라」 없이 「전」 하나로 자르면 상호 한가운데를 자른다.  */
+var SS_SIDO_RE = /(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청|충북|충남|전라|전북|전남|경상|경북|경남|제주)(특별|광역|자치|도|시|\s)/g;
+
 function ssParseAddrOverride(memo) {
-  var s = ssText(memo);
-  if (!s || s.indexOf('/') < 0) return null;
-  var parts = s.split('/');
+  var s = ssText(memo).replace(/\s+/g, ' ').trim();
+  if (!s) return null;
 
-  // 전화번호가 어디 있느냐로 형식을 가른다
-  //   이름/전화/주소  → parts[1] 이 전화
-  //   전화/주소       → parts[0] 이 전화
-  var pi = -1;
-  if (parts.length >= 3 && ssLooksPhone(parts[1])) pi = 1;
-  else if (ssLooksPhone(parts[0])) pi = 0;
-  else if (parts.length >= 2 && ssLooksPhone(parts[1])) pi = 1;
-  if (pi < 0) return null;
+  //  ① 전화가 없으면 배송지 적요가 아니다. 이 한 줄이 오인식을 거의 다 막는다.
+  SS_PHONE_RE.lastIndex = 0;
+  var 전화들 = (s.match(SS_PHONE_RE) || []).map(function (p) { return p.replace(/[.\s]/g, '-'); });
+  if (!전화들.length) return null;
 
-  var addr = parts.slice(pi + 1).join('/').trim();   // 주소 안에 / 가 있어도 살린다
-  if (addr.length < 6) return null;
-  if (!/(시|도|군|구|읍|면|동|리|로|길)/.test(addr)) return null;
+  //  ② 전화 자리에서 잘라 조각을 만든다 — 「/」 가 없어도 잘린다
+  var 남은 = s;
+  for (var t = 0; t < 전화들.length; t++) 남은 = 남은.split(전화들[t]).join('\u0001');
+  var 조각 = 남은.split(/[\u0001\/]/);
+  var 깨끗 = [];
+  for (var c = 0; c < 조각.length; c++) {
+    var v = ssText(조각[c]).replace(/^[\s,:·]+|[\s,:·]+$/g, '');
+    if (v) 깨끗.push(v);
+  }
 
-  var name = pi === 1 ? ssText(parts[0]) : '';
-  if (name.length > 25) return null;                 // 이름치고 너무 길면 이 형식이 아니다
-  if (name && /(로|길)\s*[0-9]/.test(name)) return null;   // 주소 조각이 앞에 온 경우
+  //  ③ 주소 — «둘 다» 있어야 한다. 하나만 보면 「냉면 」의 「면」에 걸린다.
+  var 주소 = '', 주소자리 = -1;
+  for (var i = 0; i < 깨끗.length; i++) {
+    var a = 깨끗[i].replace(/^주소\s*[:：]\s*/, '');
+    if (a.length < 8) continue;
+    if (!/(특별시|광역시|특별자치시|특별자치도|[가-힣]{2,4}(시|군|구)(\s|[가-힣]))/.test(a)) continue;
+    if (!/(로|길)\s*\d|[가-힣]{2,5}(동|리|읍|면)\s*\d/.test(a)) continue;
+    if (a.length > 주소.length) { 주소 = a; 주소자리 = i; }
+  }
+  if (!주소) return null;
 
-  return { name: name, phone: ssText(parts[pi]), addr: addr };
+  /*  우편번호는 떼어만 낸다. 주소 칸에 넣지 않는다 — 우편번호는 gasZip 이
+      주소로 따로 구하고, 그 값이 도서산간 판정의 주인이다. 여기서 같이 넣으면
+      한 값에 주인이 둘이 된다.  */
+  var zm = 주소.match(SS_ZIP_RE);
+  if (zm) 주소 = 주소.replace(zm[0], '').replace(/^[\s,]+/, '');
+
+  /*  ④ 구분자가 없으면 상호가 주소 «앞»에 붙어 온다.
+      「보돌미역(시흥 은계호수점) 경기도 시흥시 …」 — 시·도 앞을 떼어 낸다.
+      이것을 이름 찾기보다 «먼저» 한다. 주소 바로 앞에 붙은 말이 상호일 가능성이
+      다른 어떤 조각보다 높기 때문이다.
+
+      ★ 첫 시·도에서 자르면 안 된다 ★
+        지점명에 시·도 이름이 들어 있다 — 「보돌미역(세종 청사점) 세종특별자치시 …」.
+        첫 「세종」에서 자르면 J 에 「보돌미역(」 만 남고 주소가 「세종 청사점) …」 이 된다.
+        그래서 «괄호가 닫힌» 자리에서만 자른다. 나온 자리를 차례로 보며
+        앞쪽 괄호가 맞아떨어지는 첫 자리를 고른다. */
+  var 이름 = '';
+  SS_SIDO_RE.lastIndex = 0;
+  var 잘랐나 = false, mm;
+  while (!잘랐나 && (mm = SS_SIDO_RE.exec(주소)) !== null) {
+    var 자리 = mm.index;
+    if (자리 <= 0) continue;
+    var 앞 = 주소.slice(0, 자리);
+    //  괄호가 열린 채로 끝나면 그 안을 자른 것이다 — 지나친다
+    var 열림 = (앞.match(/\(/g) || []).length, 닫힘 = (앞.match(/\)/g) || []).length;
+    if (열림 !== 닫힘) continue;
+    앞 = 앞.replace(/[\s,]+$/, '');
+    if (!앞 || 앞.length > 25) continue;
+    이름 = 앞; 주소 = 주소.slice(자리); 잘랐나 = true;
+  }
+  SS_SIDO_RE.lastIndex = 0;
+
+  /*  ⑤ 그래도 없으면 «주소보다 앞에 있는» 조각에서 찾는다.
+      뒤쪽은 안 본다 — 거기 오는 것은 대개 업무 메모다. 실제로
+      「천현욱 서울 마포구 … 010-4322-8447 대자 구매후 소자로 오배송」에서
+      「대자 구매후 소자로 오배송」이 가게이름으로 들어갔다. */
+  for (var k = 0; !이름 && k < 주소자리; k++) {
+    var n = 깨끗[k];
+    if (!n || n.length > 25) continue;
+    if (/^주소$/.test(n)) continue;
+    if (/(해주세요|부탁|바랍니다|요망|문앞|부재|놓아)/.test(n)) continue;   // 배송메시지다
+    이름 = n;
+  }
+
+  //  ⑥ 유선은 F, 휴대는 G
+  var 유선 = '', 휴대 = '';
+  for (var p = 0; p < 전화들.length; p++) {
+    if (/^01/.test(전화들[p])) { if (!휴대) 휴대 = 전화들[p]; }
+    else if (!유선) 유선 = 전화들[p];
+  }
+
+  //  phone 은 예전 이름이다 — 읽는 쪽이 여럿이라 그대로 둔다(휴대 우선)
+  return { name: 이름, phone: 휴대 || 유선, mobile: 휴대, tel: 유선, addr: 주소 };
 }
 
 /**
@@ -489,7 +569,21 @@ function ssSalesIdCells(lines) {
       who = 뒤 || ssNorm(L.받는분) || '';
       if (who.indexOf('/') !== -1) who = who.split('/').join(' ').replace(/ {2,}/g, ' ').trim();
     }
-    out.push({ 행: L._행, 값: who ? who + '/' + id : id });
+    /*  ★ 적요대로 바꾼 값을 판매현황 사본에도 적는다 ★  (2026-09-22)
+        > "전화번호는 f열 G열에 주소는 h열에 가게이름은 j열에 들어가게"
+
+        전화주문은 본사 계정으로 들어와 F·G·H·J 에 «본사 값»이 박혀 있다.
+        그래서 «빈 칸만 채운다»가 아니라 덮어써야 맞다 — 빈 적이 없다.
+        원래 값은 원받는분·원주소·원연락처에 남고 경고 탭에도 올라간다. */
+    var 덮을것 = null;
+    if (ssText(L.주소변경)) {
+      덮을것 = {};
+      if (ssText(L.전화)) 덮을것['전화'] = ssText(L.전화);
+      if (ssText(L.모바일)) 덮을것['모바일'] = ssText(L.모바일);
+      if (ssText(L.주소1)) 덮을것['주소1'] = ssText(L.주소1);
+      if (ssText(L.받는분)) 덮을것['거래처명'] = ssText(L.받는분);
+    }
+    out.push({ 행: L._행, 값: who ? who + '/' + id : id, 덮을것: 덮을것 });
   }
   return out;
 }
@@ -727,7 +821,13 @@ function ssNormalize(grid, cfg, warnings) {
       line.원주소1 = line.주소1;
       line.원연락처 = line.모바일 || line.전화;
       line.주소1 = ovAddr.addr;
-      line.모바일 = ovAddr.phone;
+      /*  ★ 유선과 휴대를 따로 넣는다 ★  (2026-09-22)
+          적요에 둘 다 적힌 일이 잦다 — 보돌미역 지점들이 그렇다.
+            「… 02-725-1391 010-7759-1781」 → 전화 02… · 모바일 010…
+          여태 하나로 뭉뚱그려 모바일에만 넣었다. 한쪽만 있으면 그쪽만 바꾼다. */
+      if (ovAddr.mobile) line.모바일 = ovAddr.mobile;
+      if (ovAddr.tel) line.전화 = ovAddr.tel;
+      if (!ovAddr.mobile && !ovAddr.tel) line.모바일 = ovAddr.phone;
       if (ovAddr.name) line.받는분 = ovAddr.name.slice(0, 25);
       line.주소변경 = ovAddr.name ? '적요(이름·연락처·주소)' : '적요(연락처·주소)';
       ssWarn(warnings, '주의', 'ADDR_OVERRIDE', line.순번,
@@ -1527,6 +1627,22 @@ function ssNonShipReason(u, cfg) {
   var name = ssText(u.품목명) || ssText(u.원본품목명);
   var code = ssText(u.원본코드) || ssText(u.품목코드);
   if (ssNum(u.합계) < 0) return '금액 음수 (' + u.합계 + ')';
+
+  /*  ★ 적요가 스스로 「안 나간다」고 말하는 경우 ★  (2026-09-22)
+      > "적요에 이미출고, 방문수령 이런 글자가 있을때는 미발송으로 빼주고"
+
+      사람이 적어 둔 것이 가장 확실한 신호다. 품목명·코드로 짐작하기 전에 본다.
+      «//» 뒤(배송메시지)는 안 본다 — u.적요 는 이미 앞쪽만 담고 있다.
+      띄어쓰기는 무시한다: 「방문 수령」도 「방문수령」으로 본다. */
+  var 뺄낱말 = ssText(cfg && cfg.미발송_적요낱말);
+  if (뺄낱말) {
+    var 적요 = ssText(u.적요).replace(/[ \t]/g, '');
+    var ws = 뺄낱말.split(',');
+    for (var k = 0; k < ws.length; k++) {
+      var w = ssText(ws[k]).replace(/[ \t]/g, '');
+      if (w && 적요.indexOf(w) >= 0) return '적요에 「' + w + '」';
+    }
+  }
   var pat = ssText(cfg && cfg.비배송_품목패턴);
   if (pat) {
     var words = pat.split('|');
@@ -2725,7 +2841,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     SS_VERSION: SS_VERSION, SS_ROUTE: SS_ROUTE,
     SS_OUT_HEADER: SS_OUT_HEADER, SS_HOLD_HEADER: SS_HOLD_HEADER,
-    SS_LEDGER_HEADER: SS_LEDGER_HEADER, SS_WARN_HEADER: SS_WARN_HEADER, SS_MERGED_HEADER: SS_MERGED_HEADER, SS_ISLAND_HEADER: SS_ISLAND_HEADER,
+    SS_SALES_COLS: SS_SALES_COLS, SS_LEDGER_HEADER: SS_LEDGER_HEADER, SS_WARN_HEADER: SS_WARN_HEADER, SS_MERGED_HEADER: SS_MERGED_HEADER, SS_ISLAND_HEADER: SS_ISLAND_HEADER,
     SS_FEE_RULE_HEADER: SS_FEE_RULE_HEADER, SS_DEFAULT_CONFIG: SS_DEFAULT_CONFIG,
     ssRun: ssRun, ssNormalize: ssNormalize, ssExplode: ssExplode, ssEnrich: ssEnrich,
     ssAssignCondition: ssAssignCondition, ssAllocateStock: ssAllocateStock,
