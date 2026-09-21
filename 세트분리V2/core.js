@@ -1954,9 +1954,12 @@ function ssRoute(units, masters, cfg, warnings) {
 
     // 2) 우편번호가 아직 없을 때만 지역명을 본다
     var 확정 = '', 후보 = false;
+    /*  지역명은 «행정구역 부분»에서만 찾는다 (2026-09-22).
+        주소 전체를 보면 상호의 「제주」에 걸려 경기도 부천이 제주가 된다. */
+    var 지역앞머리 = ssAddrRegion(addr);
     for (var k = 0; k < islandKw.length; k++) {
       if (!islandKw[k] || islandKw[k].skip) continue;
-      if (addr.indexOf(islandKw[k].kw) < 0) continue;
+      if (지역앞머리.indexOf(islandKw[k].kw) < 0) continue;
       후보 = true;
       if (islandKw[k].confirm) { 확정 = islandKw[k].zone || '도서'; break; }
     }
@@ -2171,13 +2174,46 @@ function ssReturnFee(addr, zone, ferry, opts) {
  * 리조건이 있으면 그 리까지 주소에 있어야 확정이다 — 없으면 null 을 돌려
  * 우편번호 판정에 맡긴다. 그 읍·면 전체가 도선료 대상은 아니기 때문이다.
  */
+/**
+ * 주소에서 «행정구역 부분»만 떼어 낸다.
+ *
+ * ★ 왜 필요한가 ★  (2026-09-22)
+ *   상호가 주소 뒤에 붙어 온다 — 「경기도 부천시 부흥로 315번길 55 … 제주은희네해장국」.
+ *   주소 «전체»에서 「제주」를 찾으면 부천이 제주 권역이 되어 도서산간으로 빠지고
+ *   도선료까지 붙는다. 실제로 그렇게 나간 줄이 있었다(260915, 김세진 2줄).
+ *   「울릉도회관」·「완도수산」처럼 지역명이 든 상호는 흔하다 — 또 난다.
+ *
+ * 행정구역은 도로명·번지 «앞»에서 끝난다. 둘 중 먼저 끝나는 데까지 자른다:
+ *   · 도로명 + 번지가 나오는 자리        「부흥로 315」
+ *   · 낱말 셋 (시도 · 시군구 · 읍면동)
+ * 띄어쓰기가 없는 주소(「강원특별자치도인제군서화면서화길4-11」)는 도로명으로 자른다.
+ */
+function ssAddrRegion(addr) {
+  var s = ssText(addr).replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  var 끝 = s.length;
+
+  var m = s.match(/[가-힣0-9]+(로|길)\s*\d/);
+  if (m && m.index >= 0) 끝 = Math.min(끝, m.index + m[0].length);
+
+  var 조각 = s.split(' ');
+  if (조각.length >= 3) 끝 = Math.min(끝, 조각.slice(0, 3).join(' ').length);
+
+  //  너무 짧게 자르면 시·도조차 안 남는다
+  if (끝 < 6) 끝 = Math.min(s.length, 12);
+  return s.slice(0, 끝);
+}
+
 function ssFerryMatch(addr, ferry) {
   if (!addr || !ferry || !ferry.length) return null;
+  /*  시군·읍면동은 «행정구역 부분»에서만 찾는다 — 상호에 든 지역명에 안 걸리게.
+      다만 「리」는 도로명 뒤에 오기도 하므로(「… 상귀장수물길 14-1 장전리 …») 주소 전체에서 찾는다. */
+  var 앞머리 = ssAddrRegion(addr);
   for (var i = 0; i < ferry.length; i++) {
     var f = ferry[i];
     if (!f.시군 || !f.읍면동) continue;
-    if (addr.indexOf(f.시군) < 0) continue;
-    if (addr.indexOf(f.읍면동) < 0) continue;
+    if (앞머리.indexOf(f.시군) < 0) continue;
+    if (앞머리.indexOf(f.읍면동) < 0) continue;
     if (f.리 && f.리.length) {
       var hit = false;
       for (var j = 0; j < f.리.length; j++) {
@@ -2886,7 +2922,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssInvoiceRows: ssInvoiceRows, ssIsSabangnetUid: ssIsSabangnetUid, SS_INVOICE_HEADER: SS_INVOICE_HEADER,
     ssNonshipRow: ssNonshipRow, ssNonShipReason: ssNonShipReason, SS_NONSHIP_HEADER: SS_NONSHIP_HEADER,
     SS_PARTNER_HEADER: SS_PARTNER_HEADER, SS_MANUAL_HEADER: SS_MANUAL_HEADER, SS_VENDOR_HEADER: SS_VENDOR_HEADER, ssLedgerRow: ssLedgerRow, ssDisplayName: ssDisplayName,
-    ssStripName: ssStripName, ssNormAddr: ssNormAddr, ssPad6: ssPad6
+    ssStripName: ssStripName, ssNormAddr: ssNormAddr, ssAddrRegion: ssAddrRegion, ssPad6: ssPad6
   };
 }
 
