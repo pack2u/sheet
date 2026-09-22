@@ -132,7 +132,11 @@ function ssio_write(name, headers, rows, style) {
     /*  ★ 값을 넣기 «전»에 서식을 잡는다 ★
         넣고 나서 바꾸면 이미 수로 해석된 뒤라 0 이 안 돌아온다. */
     ssio_textFormat(sh, headers, rows.length);
-    sh.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    ssio_다시해보기_('쓰기(' + name + ')', function () {
+      var 모자람 = (1 + rows.length) - sh.getMaxRows();
+      if (모자람 > 0) sh.insertRowsAfter(sh.getMaxRows(), 모자람 + 500);
+      sh.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    });
   }
   ssio_styleHeader(sh, headers.length, style);
   return sh;
@@ -150,12 +154,52 @@ function ssio_textFormat(sh, headers, rowCount) {
   }
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  시트가 투정을 부리면 잠깐 쉬었다 다시 해 본다  (2026-09-22)
+ *
+ *  > "Exception: ID가 …인 문서에 액세스하는 동안 스프레드시트 서비스에 오류가
+ *  >  발생했습니다  at ssio_append(gasIO:157)  at ss_실행(gasMain:627)"
+ *
+ *  이 오류는 코드가 틀려서가 아니라 구글 쪽이 잠깐 못 받아 줄 때 난다.
+ *  하필 그 자리가 «원장 적재»였다 — 다 계산해 놓고 마지막에 못 적어,
+ *  회차가 통째로 남지 않았다. 다시 돌리는 수밖에 없었다.
+ *
+ *  ★ 되풀이해도 안전한 일에만 쓴다 ★
+ *    setValues 는 같은 자리에 같은 값을 다시 쓰는 것이라 두 번 해도 같다.
+ *    (이어붙이기는 lastRow 를 «그때» 다시 재므로 두 번 붙지 않는다.)
+ * ══════════════════════════════════════════════════════════════
+ */
+function ssio_다시해보기_(무엇, 일) {
+  var 마지막;
+  for (var 번 = 0; 번 < 3; 번++) {
+    try { return 일(); }
+    catch (e) {
+      마지막 = e;
+      var 말 = String(e && e.message ? e.message : e);
+      //  «내 잘못»은 다시 해도 같다 — 범위·인수 오류는 그냥 던진다
+      if (!/서비스|Service|일시적|internal|Internal|timed out|시간 초과/.test(말)) throw e;
+      Logger.log('[시트] ' + 무엇 + ' ' + (번 + 1) + '번째 실패 — ' + 말.slice(0, 120));
+      SpreadsheetApp.flush();
+      Utilities.sleep(1500 * (번 + 1));
+    }
+  }
+  throw 마지막;
+}
+
 /** 맨 아래에 이어붙이기 (이력용) */
 function ssio_append(name, headers, rows) {
   var sh = ssio_sheet(name, headers);
   if (!rows || !rows.length) return sh;
-  sh.getRange(sh.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
-  return sh;
+  return ssio_다시해보기_('이어붙이기(' + name + ')', function () {
+    var 시작 = sh.getLastRow() + 1;
+    /*  자리가 모자라면 늘린다. 안 늘리면 getRange 가 시트 밖을 가리켜 터진다.
+        여유를 넉넉히 둔다 — 회차마다 늘리는 것도 비용이다. */
+    var 모자람 = (시작 + rows.length - 1) - sh.getMaxRows();
+    if (모자람 > 0) sh.insertRowsAfter(sh.getMaxRows(), 모자람 + 500);
+    sh.getRange(시작, 1, rows.length, headers.length).setValues(rows);
+    return sh;
+  });
 }
 
 function ssio_styleHeader(sh, cols, style) {
