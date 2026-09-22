@@ -155,6 +155,34 @@ function cleanupDuplicateEventTriggers() {
  *  빠진 것 · 시각이 다른 것 · 목록에 없는 것을 보여준다.
  * ══════════════════════════════════════════════════════════════
  */
+/** 트리거 점검 결과를 남기는 탭 이름 */
+var _DBG_CENSUS_TAB_ = "트리거점검";
+
+/**
+ * 점검 글을 탭에 적는다. 한 줄에 한 줄씩, 맨 위가 최신이다.
+ * 회차마다 덮어쓴다 — 지난 점검을 쌓아 둘 까닭이 없다. 지금 상태가 알고 싶은 것이다.
+ */
+function _dbg_트리거점검적기_(text) {
+  var ss = null;
+  try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) {}
+  if (!ss) {
+    //  트리거로 돌면 «활성 시트»가 없다. 설치 때 적어 둔 ID 로 연다.
+    var id = PropertiesService.getScriptProperties().getProperty("MAIN_SS_ID");
+    if (!id) return;
+    ss = SpreadsheetApp.openById(id);
+  }
+  var sh = ss.getSheetByName(_DBG_CENSUS_TAB_);
+  if (!sh) sh = ss.insertSheet(_DBG_CENSUS_TAB_);
+  sh.clear();
+  var 줄들 = String(text || "").split("\n");
+  var rows = [];
+  for (var i = 0; i < 줄들.length; i++) rows.push([줄들[i]]);
+  if (!rows.length) return;
+  if (sh.getMaxRows() < rows.length) sh.insertRowsAfter(sh.getMaxRows(), rows.length + 20);
+  sh.getRange(1, 1, rows.length, 1).setValues(rows);
+  sh.setColumnWidth(1, 620);
+}
+
 function triggerListSafe() {
   var L = [];
   var live = ScriptApp.getProjectTriggers();
@@ -226,6 +254,14 @@ function triggerListSafe() {
 
   var text = L.join("\n");
   Logger.log(text);
+
+  /*  ★ 시트에도 남긴다 ★  (2026-09-22)
+      일정을 고쳐 놓고 「다시 깔았나」를 볼 길이 «시트 메뉴»뿐이었다.
+      웹앱으로 부르려 했으나 배포가 소유자만 되어 막혔다. 그래서 결과를
+      탭에 적어 둔다 — 밖에서 시트만 읽을 수 있으면 누구나 확인한다.
+      쓰기가 실패해도 점검 자체는 돌아야 하므로 통째로 감싼다. */
+  try { _dbg_트리거점검적기_(text); } catch (eW) {}
+
   try { SpreadsheetApp.getUi().alert("트리거 점검", text, SpreadsheetApp.getUi().ButtonSet.OK); } catch (eU) {}
   return text;
 }

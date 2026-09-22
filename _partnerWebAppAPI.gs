@@ -445,6 +445,12 @@ function _api_runTask_(params) {
          트리거는 몇 해에 한 번 거는 것이라 문이 늘어도 위험이 늘지 않는다. */
       installBoardMirror:   { label: "보드 미러 트리거 설치", fn: function() { return partnerInstallBoardMirrorTrigger(); } },
       checkBoardMirror:     { label: "보드 미러 트리거 확인", fn: function() { return partnerCheckBoardMirrorTrigger(); } },
+
+      /*  ★ 2026-09-22: 트리거 점검을 밖에서 본다 ★
+         일정 목록을 고쳐 놓고 「다시 깔았나」를 확인할 길이 시트 메뉴뿐이었다.
+         그래서 고친 사람이 확인을 남에게 넘기게 된다. 읽기만 하는 일이라
+         문을 내도 위험이 늘지 않는다 (triggerListSafe 는 아무것도 안 바꾼다). */
+      checkTriggers:        { label: "트리거 점검",           fn: function() { return triggerListSafe(); } },
       installReturnsMirror: { label: "반품 미러 트리거 설치", fn: function() { return partnerInstallReturnsMirrorTrigger(); } },
       checkReturnsMirror:   { label: "반품 미러 트리거 확인", fn: function() { return partnerCheckReturnsMirrorTrigger(); } },
       mirrorBoardNow:       { label: "보드 지금 보내기",     fn: function() { return partnerMirrorBoardNow(); } },
