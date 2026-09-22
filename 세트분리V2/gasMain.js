@@ -373,20 +373,35 @@ function ss_실행(opts) {
   try {
     단계 = ss단계_('설정 읽기');
     var cfgRaw = ssio_config();
-    var cfg = {
-      자사출고지접두: cfgRaw['자사출고지접두'] || SS_DEFAULT_CONFIG.자사출고지접두,
-      합배송출고지: cfgRaw['합배송출고지'] || SS_DEFAULT_CONFIG.합배송출고지,
-      위탁출고지: cfgRaw['위탁출고지'] || SS_DEFAULT_CONFIG.위탁출고지,
-      허용상태: cfgRaw['허용상태'] || SS_DEFAULT_CONFIG.허용상태,
-      보내는주소: cfgRaw['보내는주소'] || SS_DEFAULT_CONFIG.보내는주소,
-      대표전화: cfgRaw['대표전화'] || SS_DEFAULT_CONFIG.대표전화,
-      도서산간_미확인: cfgRaw['도서산간_미확인'] || SS_DEFAULT_CONFIG.도서산간_미확인,
-      도서산간_판정: cfgRaw['도서산간_판정'] || SS_DEFAULT_CONFIG.도서산간_판정,
-      전화주문_고유ID: cfgRaw['전화주문_고유ID'] || SS_DEFAULT_CONFIG.전화주문_고유ID,
-      재고부족_자동대리발송: cfgRaw['재고부족_자동대리발송'] || SS_DEFAULT_CONFIG.재고부족_자동대리발송,
-      비배송_품목패턴: cfgRaw['비배송_품목패턴'] || SS_DEFAULT_CONFIG.비배송_품목패턴,
-      합포장_최대건수: cfgRaw['합포장_최대건수'] || SS_DEFAULT_CONFIG.합포장_최대건수
-    };
+    /*  ══════════════════════════════════════════════════════════
+        ★ 설정을 하나하나 옮겨 적지 않는다 ★  (2026-09-22)
+
+        여기 손으로 적은 목록에 새 설정을 안 더하면 «조용히» 안 먹는다.
+        설정 탭에는 값이 있고, 요약에도 그 값이 찍히는데, 엔진은 못 본다.
+        틀린 데가 없어 보이니 아무도 못 찾는다.
+
+        실제로 여섯이 그러고 있었다:
+          도선료_통일금액        ← 9/21 「5,000원으로 통일」이 여태 안 먹었다
+          합포장_최대건수_샘플     ← 샘플 14개 한도
+          합포장_품목낱말         ← 합포장/합배송 가르기
+          미발송_적요낱말         ← 적요로 미발송 빼기
+          도서산간_판정 밖의 도선료표_기준 · 고유ID_짧은날짜_전환일
+
+        기본값을 깔고 시트 값으로 덮는다. 새 설정은 저절로 따라온다.
+        빈 칸은 덮지 않는다 — 안 적은 것은 «기본값대로»라는 뜻이다.
+        ══════════════════════════════════════════════════════════ */
+    var cfg = {};
+    for (var _dk in SS_DEFAULT_CONFIG) {
+      if (Object.prototype.hasOwnProperty.call(SS_DEFAULT_CONFIG, _dk)) {
+        cfg[_dk] = SS_DEFAULT_CONFIG[_dk];
+      }
+    }
+    for (var _ck in cfgRaw) {
+      if (!Object.prototype.hasOwnProperty.call(cfgRaw, _ck)) continue;
+      var _cv = cfgRaw[_ck];
+      if (_cv === '' || _cv === null || _cv === undefined) continue;
+      cfg[_ck] = _cv;
+    }
 
     단계 = ss단계_('판매현황 읽기');
     var sales;
