@@ -5127,14 +5127,25 @@
     document.addEventListener('pointerup', function (e) {
       if (!HB_PTR_.moved) return;                 // 드래그가 아니면 관심 없다
       if (HB_PTR_.copied) return;                 // 한 제스처에 한 번만 (pointerup 이 겹쳐 올 때가 있다)
-      if (!e.target || !e.target.closest) return;
-      if (!e.target.closest(HB_COPY_SEL_)) return;
       HB_PTR_.copied = true;
       // 선택이 확정된 뒤에 읽어야 한다
       setTimeout(function () {
-        var s = '';
-        try { s = String(window.getSelection() || ''); } catch (eSel) { return; }
+        var sel = null, s = '';
+        try { sel = window.getSelection(); s = String(sel || ''); } catch (eSel) { return; }
         if (s.replace(/\s/g, '').length < 2) return;   // 실수로 살짝 긁은 것
+
+        /*  ★ 손을 «어디서» 뗐느냐가 아니라 «무엇을 골랐느냐»로 본다 ★  (2026-09-22)
+            > "반품 카드내에 송장번호를 드래그하면 복사가 안되... 텍스트는 복사가 되는데"
+
+            송장번호는 카드 «아래쪽 끝»에 있다. 마지막 자리를 긁고 손을 떼면
+            포인터가 이미 카드 밖이라, e.target 으로 가리면 복사가 통째로 건너뛰어진다.
+            카드 한가운데 글은 손을 떼는 자리도 카드 안이라 잘 되고 — 그래서
+            「텍스트는 되는데 송장번호만 안 되는」 모양이 된다.
+            고른 글이 카드 «안»에서 시작했으면 복사한다. */
+        var 뿌리 = sel && sel.anchorNode;
+        if (뿌리 && 뿌리.nodeType === 3) 뿌리 = 뿌리.parentNode;   // 글자마디 → 그 요소
+        if (!뿌리 || !뿌리.closest || !뿌리.closest(HB_COPY_SEL_)) return;
+
         copyText(s, true, '복사됨 · ' + s.replace(/\s+/g, ' ').trim().slice(0, 18));
       }, 0);
     }, true);
@@ -8391,6 +8402,11 @@
           ev.target.closest('.ret-act, .ret-act-pop, .ret-proc-del, button, select, textarea, input')) {
         return;
       }
+      /*  ★ 글을 긁은 뒤에는 카드를 건드리지 않는다 ★  (2026-09-22)
+          드래그로 골라 놓고 손을 떼면 click 이 뒤따라 온다. 그대로 두면 카드가
+          접히거나 펴지면서 화면이 움직이고(scrollIntoView), 고른 것이 사라진 듯 보인다.
+          CS 보드 카드는 이미 hbClickWasDrag_ 로 막고 있다 — 반품 카드만 빠져 있었다. */
+      if (typeof hbClickWasDrag_ === 'function' && hbClickWasDrag_(ev)) return;
       if (RETURN_FOCUS_IDX === idx) {
         clearReturnFocus();
         return;
