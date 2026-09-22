@@ -174,16 +174,30 @@ function triggerListSafe() {
   L.push("시간 트리거 " + (live.length - other.length) + "개 / 이벤트 " + other.length + "개 / 한도 20개");
   L.push("");
 
-  // 기대 목록과 대조. 시각은 GAS API로 못 읽으므로 설치 여부만 본다.
+  /*  기대 목록과 대조. 시각은 GAS API 로 못 읽는다(Trigger 객체가 안 준다).
+
+      ★ 그래서 «몇 개»를 센다 ★  (2026-09-22)
+        한 함수가 여러 시각에 걸리는 일이 있다 — partnerCollectOrdersSilent_ 는
+        13:00 과 15:00 둘이다. 여태는 그것을 「▲x2」 로 적어 이상한 것처럼
+        보여 줬고, 반대로 «하나가 빠져도» 나머지 하나 때문에 ✔ 로 보였다.
+        목록이 바라는 개수와 실제 개수를 견준다.  */
   var expect = (typeof _ALL_SCHEDULED_TRIGGERS_ !== "undefined") ? _ALL_SCHEDULED_TRIGGERS_ : [];
+  var 바라는수 = {};
+  for (var q = 0; q < expect.length; q++) 바라는수[expect[q].fn] = (바라는수[expect[q].fn] || 0) + 1;
+
   var missing = [];
   L.push("── 예정 일정 (_partnerWebApp.gs) ──");
   for (var e = 0; e < expect.length; e++) {
     var x = expect[e];
     var hhmm = ("0" + x.h).slice(-2) + ":" + ("0" + x.m).slice(-2);
-    var n = installed[x.fn] ? installed[x.fn].length : 0;
-    if (!n) missing.push(hhmm + " " + x.label + "  [" + x.fn + "]");
-    L.push("  " + (n ? (n > 1 ? "▲x" + n : "✔") : "★ 없음") + "  " + hhmm + "  " + x.label);
+    var 실제 = installed[x.fn] ? installed[x.fn].length : 0;
+    var 바람 = 바라는수[x.fn];
+    var 표시;
+    if (실제 === 바람) 표시 = 바람 > 1 ? "✔x" + 바람 : "✔";
+    else if (실제 === 0) 표시 = "★ 없음";
+    else 표시 = "★ " + 실제 + "/" + 바람;
+    if (실제 < 바람) missing.push(hhmm + " " + x.label + "  [" + x.fn + " " + 실제 + "/" + 바람 + "]");
+    L.push("  " + 표시 + "  " + hhmm + "  " + x.label);
   }
 
   // 목록에 없는데 설치된 것
