@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>재고 실사 - Pack2U</title>
   <?!= include('csFavicon'); ?>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -82,7 +82,8 @@
       border-bottom: 1px solid var(--border);
     }
     .back-btn {
-      width: 36px; height: 36px; border-radius: 10px;
+      /* 손가락으로 누르는 단추다 — 36px 로는 빗맞기 쉬워 44px 로 올렸다 (2026-09-24) */
+      width: 44px; height: 44px; border-radius: 12px;
       background: var(--bg-card); border: 1px solid var(--border);
       color: var(--text-primary); font-size: 18px;
       display: flex; align-items: center; justify-content: center; cursor: pointer;
@@ -190,7 +191,8 @@
       display: flex; align-items: center; gap: 10px;
     }
     .qty-btn {
-      width: 42px; height: 42px; border-radius: 10px;
+      /* 수량을 연속으로 누르는 단추다 — 손가락 기준 44px (2026-09-24) */
+      width: 44px; height: 44px; border-radius: 12px;
       background: var(--bg-card); border: 1px solid var(--border);
       color: var(--text-primary); font-size: 20px;
       display: flex; align-items: center; justify-content: center; cursor: pointer;
@@ -261,7 +263,8 @@
     /* ── 하단 요약 바 ── */
     .bottom-bar {
       position: sticky; bottom: 0; left: 0; right: 0;
-      padding: 14px 16px;
+      /* 홈바에 가리지 않게 — 아래 여백에 깊이를 더한다 (2026-09-24) */
+      padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
       background: var(--bg-secondary);
       border-top: 1px solid var(--border);
       display: flex; align-items: center; gap: 12px;

@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>택배 바코드 스캔 테스트 - Pack2U</title>
   <?!= include('csFavicon'); ?>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -27,7 +27,7 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Noto Sans KR', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-    .bar { display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: #1d1d1d; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
+    .bar { display: flex; align-items: center; gap: 10px; padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px; background: #1d1d1d; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
     .back { width: 36px; height: 36px; border: none; border-radius: 10px; background: var(--card); color: var(--text); font-size: 22px; }
     .title { font-size: 16px; font-weight: 700; flex: 1; }
     .wrap { padding: 14px 16px 24px; }

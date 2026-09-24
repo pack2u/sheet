@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>팩투유(Pack2U) CS 웹앱</title>
   <script>
     /* 저장해 둔 테마를 그리기 전에 입힌다.
@@ -191,7 +191,7 @@
 
     /* 테마 전환 단추 — 화면 왼쪽 아래 구석. 위쪽은 즐겨찾기·배포 알림이 쓴다 */
     .cs-theme-btn {
-      position: fixed; left: 12px; bottom: 12px; z-index: 8500;
+      position: fixed; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 8500;
       width: 34px; height: 34px; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       background: var(--bg-card); border: 1px solid var(--border);
@@ -201,6 +201,9 @@
       transition: opacity 0.15s ease, border-color 0.15s ease;
     }
     .cs-theme-btn:hover { opacity: 1; border-color: var(--accent-green); }
+    /* 눌리는 자리만 넓힌다 — 구석에 조용히 있으라고 34px·반투명으로 둔 단추라
+       «보이는 크기»는 그대로 두고 손가락 기준(44px)만 맞춘다 (2026-09-24) */
+    .cs-theme-btn::before { content: ''; position: absolute; inset: -5px; border-radius: 50%; }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -317,6 +320,9 @@
       font-weight: 700;
       letter-spacing: -0.5px;
       position: relative;
+      /* 좁은 화면에서 "CS 웹/앱" 으로 잘렸다 — 낱말 단위로만 넘긴다 (2026-09-24) */
+      word-break: keep-all;
+      text-wrap: balance;
     }
     .header .logo span {
       background: linear-gradient(135deg, var(--accent), #505050);
@@ -430,6 +436,10 @@
       font-size: 12px;
       color: var(--text-secondary);
       line-height: 1.4;
+      /* 한글을 단어 중간에서 끊지 않는다 — "이카운/트 연동" 처럼 잘렸다 (2026-09-24).
+         송장번호처럼 띄어쓰기 없이 긴 값은 overflow-wrap 이 받는다 */
+      word-break: keep-all;
+      overflow-wrap: break-word;
     }
     .menu-arrow {
       color: var(--text-muted);
@@ -939,7 +949,7 @@
        패널 알림 줄과 달리 앱 전체에 걸리는 일이라 화면 위에 따로 띄운다. */
     .cs-build-bar {
       display: none; position: fixed; z-index: 9000;
-      top: 10px; left: 50%; transform: translateX(-50%);
+      top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
       align-items: center; gap: 8px; max-width: calc(100vw - 24px);
       font-size: 12px; font-weight: 700; color: #062214;
       background: var(--accent-green);
@@ -954,7 +964,8 @@
        않으려고 숨겨 뒀다 — 작업 화면은 이미 3분할이라 세로가 아깝다.
        마우스가 없는 기기에서는 오른쪽 위 ★ 손잡이를 눌러 연다. */
     .cs-fav-wrap {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 8000;
+      /* 노치 있는 기기에서 바가 시계·카메라 밑에 깔리지 않게 내려 붙인다 (2026-09-24) */
+      position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; z-index: 8000;
       pointer-events: none;   /* 감지 띠와 바만 클릭을 받는다 */
     }
     /* 감지 띠도 바와 같은 폭이다. 전체 폭으로 두면 브라우저 주소창 쪽으로
@@ -1872,7 +1883,7 @@
     .ledger-ok { background: var(--accent-green); color: #062214; }
     .os-empty { text-align: center; padding: 48px 16px; color: var(--text-muted); font-size: 14px; }
     .os-toast {
-      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+      position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(20px);
       background: #2e7d57; color: #fff; padding: 10px 16px; border-radius: 999px;
       font-size: 13px; opacity: 0; pointer-events: none; transition: all 0.2s;
       z-index: 5000;   /* 첨부 확대보기(4000)보다 위 — 오류 안내가 가려지면 안 된다 */
@@ -1907,12 +1918,13 @@
       border: 1px solid transparent; background: var(--bg-card-hover);
       color: var(--text-secondary); font-size: 13px;
     }
-    /* 손가락으로 누르는 기기에서는 탭 영역을 다시 넓힌다 */
+    /* 손가락으로 누르는 기기에서는 탭 영역을 다시 넓힌다.
+       38px 로는 아직 손가락 기준(44px)에 못 미쳐 옆 단추가 눌렸다 — 44 로 올렸다 (2026-09-24) */
     @media (pointer: coarse) {
-      .hb-search input { height: 38px !important; font-size: 14px !important; }
-      .hb-new, .hb-icon { width: 38px; height: 38px; border-radius: 11px; }
-      .hb-new { font-size: 20px; }
-      .hb-icon { font-size: 15px; }
+      .hb-search input { height: 44px !important; font-size: 15px !important; }
+      .hb-new, .hb-icon { width: 44px; height: 44px; border-radius: 12px; }
+      .hb-new { font-size: 21px; }
+      .hb-icon { font-size: 16px; }
       .hb-att-btn { padding: 8px 12px; font-size: 12px; }
       .hb-act { padding: 8px 12px; font-size: 12px; }
       .hb-link-btn { padding: 7px 11px; font-size: 12px; }
@@ -2489,10 +2501,11 @@
       bottom: calc(9px + env(safe-area-inset-bottom, 0px));
       text-align: center; font-size: 10px; color: #909090; pointer-events: none;
     }
+    /* 사진을 넘기고 닫는 단추다. 화면을 가릴 걱정이 없는 자리라 손가락 기준으로 키웠다 (2026-09-24) */
     @media (pointer: coarse) {
-      .hb-lb-b { width: 34px; height: 34px; font-size: 16px; }
-      .hb-lb-b.wide { padding: 0 10px; font-size: 12px; }
-      .hb-lb-nav { width: 40px; height: 60px; }
+      .hb-lb-b { width: 44px; height: 44px; font-size: 18px; }
+      .hb-lb-b.wide { padding: 0 13px; font-size: 13px; }
+      .hb-lb-nav { width: 44px; height: 64px; }
     }
 
     .hb-limit {

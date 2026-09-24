@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>반품 CS 접수 - Pack2U</title>
   <?!= include('csFavicon'); ?>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -90,7 +90,8 @@
       border-bottom: 1px solid var(--border);
     }
     .back-btn {
-      width: 36px; height: 36px;
+      /* 손가락으로 누르는 단추다 — 36px 로는 빗맞기 쉬워 44px 로 올렸다 (2026-09-24) */
+      width: 44px; height: 44px;
       border-radius: 10px;
       background: var(--bg-card);
       border: 1px solid var(--border);

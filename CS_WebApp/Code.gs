@@ -92,7 +92,7 @@ function doGet(e) {
     return _cs_withFavicon_(out)
       .setTitle(title)
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-      .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no");
+      .addMetaTag("viewport", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover");
   } catch (err) {
     return HtmlService.createHtmlOutput(
       "<pre style='padding:16px;font-family:sans-serif'>페이지 로드 오류: " +
