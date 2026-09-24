@@ -58,7 +58,18 @@
       --accent-purple: #b39ae8;
       --accent-purple-bg: rgba(160, 120, 230, 0.18);
       --accent-red: #ff5f56;
+      /*  빨강만 «바탕 짝»이 없어서 쓰는 쪽에서 색을 박아 넣고 있었다
+          (.ent-warn.live 의 #ff9e9e). 다른 넷과 같은 짜임으로 채운다. (2026-09-24) */
+      --accent-red-bg: rgba(255, 95, 86, 0.18);
       --on-accent: #ffffff;
+      /*  ★ 옅은 바탕 «위에 얹는 글자» ★  (2026-09-24)
+          어두운 화면에서는 강조색 그대로가 잘 읽힌다(5~6대). 이름만 둔다 —
+          쓰는 쪽이 테마를 몰라도 되게 하려는 것이다.  */
+      --accent-blue-ink: var(--accent-blue);
+      --accent-green-ink: var(--accent-green);
+      --accent-orange-ink: var(--accent-orange);
+      --accent-purple-ink: var(--accent-purple);
+      --accent-red-ink: var(--accent-red);
     }
     :root[data-theme="light"] {
       /* 바탕을 흰색 바로 아래로 낮춘다. 카드가 흰색이라 바탕까지 희면
@@ -84,6 +95,15 @@
       --accent-purple: #6b46c1;
       --accent-purple-bg: rgba(107, 70, 193, 0.14);
       --accent-red: #d13b32;
+      --accent-red-bg: rgba(209, 59, 50, 0.14);
+      /*  흰 바탕에 옅은 색을 깔면 그 위 글자가 묻힌다. 재 보니 2.44~4.43 으로
+          전부 AA(4.5) 아래였다. 색마다 필요한 만큼만 눌러 4.8 대로 맞춘다.
+          토큰 자체(--accent-*)는 안 건드린다 — CS 웹앱과 같은 값이어야 한다.  */
+      --accent-blue-ink: color-mix(in srgb, var(--accent-blue) 86%, black);
+      --accent-green-ink: color-mix(in srgb, var(--accent-green) 66%, black);
+      --accent-orange-ink: color-mix(in srgb, var(--accent-orange) 73%, black);
+      --accent-purple-ink: color-mix(in srgb, var(--accent-purple) 94%, black);
+      --accent-red-ink: color-mix(in srgb, var(--accent-red) 79%, black);
     }
 
     /* ══════════════════════════════════════════════════════════════
@@ -274,10 +294,10 @@
     /* ── 발주 넣기 ── */
     .ent-warn {
       margin-bottom: 14px; padding: 10px 12px; border-radius: 10px;
-      background: var(--accent-orange-bg); color: var(--accent-orange);
+      background: var(--accent-orange-bg); color: var(--accent-orange-ink);
       font-size: 12px; line-height: 1.6;
     }
-    .ent-warn.live { background: rgba(232,93,93,0.16); color: #ff9e9e; }
+    .ent-warn.live { background: var(--accent-red-bg); color: var(--accent-red-ink); }
     .ent-sec { margin-bottom: 18px; }
     .ent-h {
       display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;
@@ -437,10 +457,10 @@
       flex-shrink: 0; padding: 4px 9px; border-radius: 999px;
       font-size: 11px; font-weight: 700; white-space: nowrap;
     }
-    .b-new { background: var(--accent-blue-bg); color: var(--accent-blue); }
-    .b-mid { background: var(--accent-orange-bg); color: var(--accent-orange); }
-    .b-in  { background: var(--accent-purple-bg); color: var(--accent-purple); }
-    .b-ok  { background: var(--accent-green-bg); color: var(--accent-green); }
+    .b-new { background: var(--accent-blue-bg); color: var(--accent-blue-ink); }
+    .b-mid { background: var(--accent-orange-bg); color: var(--accent-orange-ink); }
+    .b-in  { background: var(--accent-purple-bg); color: var(--accent-purple-ink); }
+    .b-ok  { background: var(--accent-green-bg); color: var(--accent-green-ink); }
     .b-off { background: var(--border); color: var(--text-secondary); }
 
     .c-body { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -475,7 +495,7 @@
     .fresh-bar {
       display: flex; align-items: center; gap: 7px;
       margin-bottom: 8px; padding: 5px 10px; border-radius: 8px;
-      background: var(--accent-orange-bg); color: var(--accent-orange);
+      background: var(--accent-orange-bg); color: var(--accent-orange-ink);
       font-size: 0.86em; font-weight: 700;
     }
     .fresh-dot {
@@ -523,10 +543,10 @@
       display: inline-block; font-size: 10px; font-weight: 700;
       padding: 1px 6px; border-radius: 5px; margin-left: 4px;
     }
-    .t-status  { background: var(--accent-blue-bg); color: var(--accent-blue); }
+    .t-status  { background: var(--accent-blue-bg); color: var(--accent-blue-ink); }
     .t-access  { background: var(--border); color: var(--text-secondary); }
-    .t-mine    { background: var(--accent-orange-bg); color: var(--accent-orange); }
-    .t-consult { background: var(--accent-purple-bg); color: var(--accent-purple); }
+    .t-mine    { background: var(--accent-orange-bg); color: var(--accent-orange-ink); }
+    .t-consult { background: var(--accent-purple-bg); color: var(--accent-purple-ink); }
     .t-photo   { background: var(--border); color: var(--text-secondary); }
     .ev-body { font-size: 12.5px; color: var(--text-bright); margin-top: 2px; word-break: break-word; }
     .ev-body a { color: var(--text-primary); text-decoration: underline; text-underline-offset: 2px; }
@@ -559,7 +579,7 @@
         읽힌다. 지나온 칸과 지금 칸만 파랗게 긋는다 — 어디까지 왔는지는
         「색이 찬 데까지」로 읽힌다. */
     .steps .st.done { color: var(--text-secondary); border-top-color: var(--accent-blue); }
-    .steps .st.now  { color: var(--accent-blue); background: var(--accent-blue-bg); border-top-color: var(--accent-blue); }
+    .steps .st.now  { color: var(--accent-blue-ink); background: var(--accent-blue-bg); border-top-color: var(--accent-blue); }
     .steps.off .st  { color: var(--text-muted); border-top-color: transparent; }
     .steps-off-note { font-size: 10.5px; color: var(--text-muted); margin: 9px 0 2px; }
 
