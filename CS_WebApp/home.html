@@ -31,17 +31,22 @@
       --text-muted: #616161;
       --accent: #757575;
       --accent-glow: rgba(173, 173, 173, 0.22);
-      --accent-green: #34c77b;
-      --accent-green-glow: rgba(52, 199, 123, 0.25);
-      --accent-orange: #f0a030;
-      --accent-orange-glow: rgba(240, 160, 48, 0.25);
-      --accent-red: #ff5f56;
+      --accent-green: #55a67c;
+      --accent-green-glow: rgba(85, 166, 124, 0.25);
+      --accent-orange: #c5995b;
+      --accent-orange-glow: rgba(197, 153, 91, 0.25);
+      --accent-red: #d9817c;
       /*  ★ 선을 안 긋는다 ★  (2026-09-20)
           > "전체적으로 외각라인들이 살아있네 지워줘.. 앱느낌으로"
           이름은 --border 로 둔다. 「선 자리」라는 뜻은 남기고 색만 뺀다 —
           나중에 어느 한 곳만 다시 긋고 싶어지면 그 자리에서 색을 주면 된다.
           이 값을 «바탕»으로 쓰는 규칙은 한 곳도 없다 (2026-09-20 확인).  */
       --border: transparent;
+      /*  ★ 강조색 바탕 위 글자 ★  (2026-09-24 파스텔로 내리면서)
+          파스텔 강조색은 «어두운 테마에서 밝고, 밝은 테마에서 진하다».
+          그래서 얹는 글자도 테마마다 뒤집혀야 한다 — 한 값으로는 한쪽이 안 읽힌다.
+          당장드림(Partner_WebApp/portal.html)과 같은 짜임이다.  */
+      --on-accent: #1a1a1a;
       /* --text-secondary 보다 밝은 본문색. 값·이름 같은 "읽어야 하는 글자"에 쓴다.
          전에는 #c1c1c1 로 24곳에 박혀 있었다 — 밝은 테마에서 안 보여 변수로 뺐다. */
       --text-bright: #c1c1c1;
@@ -78,11 +83,13 @@
       --text-bright: #2f343b;
       --accent: #6b7280;
       --accent-glow: rgba(0, 0, 0, 0.10);
-      --accent-green: #1a9e68;
-      --accent-green-glow: rgba(26, 158, 104, 0.20);
-      --accent-orange: #b46a00;
-      --accent-orange-glow: rgba(180, 106, 0, 0.20);
-      --accent-red: #d13b32;
+      --accent-green: #367d60;
+      --accent-green-glow: rgba(56, 128, 99, 0.20);
+      --accent-orange: #8c6328;
+      --accent-orange-glow: rgba(140, 99, 40, 0.20);
+      --accent-red: #ac5954;
+      /*  밝은 테마의 강조색은 진하다 — 흰 글자가 맞다 */
+      --on-accent: #ffffff;
       --border: transparent;
     }
 
@@ -105,8 +112,8 @@
     /* 자동 새로고침 알림 줄 — 어두운 배경용 노란 톤이라 흰 바탕에서 안 읽힌다 */
     :root[data-theme="light"] .cs-pulse-bar {
       color: #8a5300;
-      background: rgba(180, 106, 0, 0.10);
-      border-color: rgba(180, 106, 0, 0.35);
+      background: rgba(140, 99, 40, 0.10);
+      border-color: rgba(140, 99, 40, 0.35);
     }
     :root[data-theme="light"] .cs-pulse-bar .dot { background: #b46a00; }
 
@@ -114,8 +121,8 @@
        ★ 라이트박스(.hb-lb-*)·토스트·사진 썸네일 위의 옅은 색은 손대지 않는다 —
          그것들은 밝은 테마에서도 어두운 면 위에 있어서 지금이 맞다. */
     :root[data-theme="light"] .os-val.big { color: var(--text-primary); }
-    :root[data-theme="light"] .os-trk-run { color: #1d5fa8; border-color: rgba(29, 95, 168, 0.40); }
-    :root[data-theme="light"] .os-trk-done { color: #10714b; border-color: rgba(16, 113, 75, 0.40); }
+    :root[data-theme="light"] .os-trk-run { color: #1d5fa8; border-color: rgba(60, 97, 137, 0.40); }
+    :root[data-theme="light"] .os-trk-done { color: #10714b; border-color: rgba(38, 91, 70, 0.40); }
     :root[data-theme="light"] .os-tag.hub,
     :root[data-theme="light"] .os-tag.pack,
     :root[data-theme="light"] .manual-check { color: #10714b; }
@@ -163,11 +170,11 @@
       background: #f3efe9; border-color: rgba(0, 0, 0, 0.10); color: var(--text-primary);
     }
     :root[data-theme="light"] .ret-proc.status {
-      background: #fdf3d8; border-color: rgba(180, 140, 0, 0.28);
+      background: #fdf3d8; border-color: rgba(140, 118, 40, 0.28);
     }
     :root[data-theme="light"] .ret-proc.consult { background: #f3efe9; }
     :root[data-theme="light"] .ret-proc.access {
-      background: #e4f3ea; border-color: rgba(26, 158, 104, 0.30);
+      background: #e4f3ea; border-color: rgba(56, 128, 99, 0.30);
     }
     :root[data-theme="light"] .ret-proc.note { background: #f1f2f4; }
     :root[data-theme="light"] .ret-proc.photo {
@@ -181,7 +188,7 @@
     :root[data-theme="light"] .ret-card.ret-focus .ret-proc-body { color: rgba(0, 0, 0, 0.75); }
 
     :root[data-theme="light"] .ret-proc-link {
-      background: rgba(26, 158, 104, 0.16); color: #10714b;
+      background: rgba(56, 128, 99, 0.16); color: #10714b;
     }
     :root[data-theme="light"] .ret-pop-save { background: #e4e7eb; color: #2f343b; }
     :root[data-theme="light"] .ret-tl-track::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.18); }
@@ -397,7 +404,7 @@
       background: linear-gradient(135deg, var(--accent-glow), transparent);
     }
     .menu-card.inv .menu-icon {
-      background: linear-gradient(135deg, rgba(52,199,123,0.15), rgba(52,199,123,0.05));
+      background: linear-gradient(135deg, rgba(85, 166, 124,0.15), rgba(85, 166, 124,0.05));
       border: 1px solid transparent;
       color: var(--accent-green);
     }
@@ -406,7 +413,7 @@
     }
 
     .menu-card.search .menu-icon {
-      background: linear-gradient(135deg, rgba(240,160,48,0.15), rgba(240,160,48,0.05));
+      background: linear-gradient(135deg, rgba(197, 153, 91,0.15), rgba(197, 153, 91,0.05));
       border: 1px solid transparent;
       color: var(--accent-orange);
     }
@@ -659,10 +666,10 @@
     }
     .nt-item:hover .nt-t { color: var(--text-primary); }
     .nt-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
-    .nt-dot.u { background: var(--accent-red); box-shadow: 0 0 7px rgba(255,95,86,0.75); }
+    .nt-dot.u { background: var(--accent-red); box-shadow: 0 0 7px rgba(217, 129, 124,0.75); }
     .nt-dot.w { background: var(--accent-orange); }
     /* 공지 — 파랑. 빨강·주황과 뜻이 다르므로 색도 다르다 */
-    .nt-dot.n { background: #5aa0f0; box-shadow: 0 0 7px rgba(90,160,240,0.7); }
+    .nt-dot.n { background: #5aa0f0; box-shadow: 0 0 7px rgba(124, 162, 206,0.7); }
     .nt-tag {
       font-size: 9px; font-weight: 700; letter-spacing: 0.4px; color: var(--text-muted);
       border: 1px solid var(--border); background: var(--bg-card-hover);
@@ -707,7 +714,7 @@
       color: var(--text-bright);
     }
     .ws-mobile-tabs button[data-pane="1"].on {
-      background: rgba(255,193,7,0.15); border-color: rgba(255,193,7,0.4); color: #ffc107;
+      background: rgba(199, 165, 63,0.15); border-color: rgba(199, 165, 63,0.4); color: #ffc107;
     }
     .ws-mobile-tabs button[data-pane="2"].on {
       background: rgba(165, 165, 165,0.12); border-color: rgba(165, 165, 165,0.35); color: #a5a5a5;
@@ -933,12 +940,12 @@
     .cs-pulse-bar {
       display: flex; align-items: center; gap: 8px;
       font-size: 12px; font-weight: 600; color: #ffd479;
-      background: rgba(255, 212, 121, 0.10);
+      background: rgba(225, 201, 151, 0.10);
       border: 1px solid transparent;
       border-radius: var(--radius); padding: 6px 10px; margin-bottom: 10px;
       cursor: pointer; user-select: none;
     }
-    .cs-pulse-bar:hover { background: rgba(255, 212, 121, 0.18); }
+    .cs-pulse-bar:hover { background: rgba(225, 201, 151, 0.18); }
     .cs-pulse-bar .dot {
       width: 7px; height: 7px; border-radius: 50%; background: #ffd479; flex: 0 0 auto;
       animation: csPulseDot 1.4s ease-in-out infinite;
@@ -951,7 +958,7 @@
       display: none; position: fixed; z-index: 9000;
       top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
       align-items: center; gap: 8px; max-width: calc(100vw - 24px);
-      font-size: 12px; font-weight: 700; color: #062214;
+      font-size: 12px; font-weight: 700; color: var(--on-accent);
       background: var(--accent-green);
       border-radius: 999px; padding: 8px 16px;
       box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
@@ -1046,9 +1053,9 @@
     /* 한번에 열기는 탭을 여러 개 여는 큰 동작이라 오른쪽 끝에 따로 세운다 */
     .cs-fav-back.openall {
       margin-left: auto; color: var(--accent-green);
-      border-color: rgba(52, 199, 123, 0.35);
+      border-color: rgba(85, 166, 124, 0.35);
     }
-    .cs-fav-back.openall:hover { background: rgba(52, 199, 123, 0.12); }
+    .cs-fav-back.openall:hover { background: rgba(85, 166, 124, 0.12); }
     .cs-fav-grid { display: flex; flex-wrap: wrap; gap: 6px; }
 
     /* 좁은 화면에서 70% 는 너무 좁다. 거의 꽉 채우고 스크롤로 넘긴다 */
@@ -1126,18 +1133,18 @@
     .os-trk-hist .t { min-width: 84px; font-variant-numeric: tabular-nums; color: var(--text-muted); }
     .os-trk-hist .b, .os-trk-hist .m { color: var(--text-muted); }
     .os-trk-foot { margin-top: 7px; display: flex; gap: 6px; }
-    .os-trk-run { border-color: rgba(90,160,240,0.45); color: #8fbdf0; }
-    .os-trk-done { border-color: rgba(52,199,123,0.45); color: #7ee0ad; }
+    .os-trk-run { border-color: rgba(124, 162, 206,0.45); color: #8fbdf0; }
+    .os-trk-done { border-color: rgba(85, 166, 124,0.45); color: #7ee0ad; }
     .os-tag { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 6px; margin-left: 6px; background: rgba(255,255,255,0.06); color: var(--text-secondary); }
     .os-tag.lotte { background: rgba(173, 173, 173,0.18); color: var(--text-bright); }
-    .os-tag.hub { background: rgba(52,199,123,0.18); color: #7ee0ad; }
-    .os-tag.miss { background: rgba(240,160,48,0.18); color: #f0c070; }
-    .os-tag.pack { background: rgba(76,175,80,0.22); color: #a5d6a7; }
+    .os-tag.hub { background: rgba(85, 166, 124,0.18); color: #7ee0ad; }
+    .os-tag.miss { background: rgba(197, 153, 91,0.18); color: #f0c070; }
+    .os-tag.pack { background: rgba(98, 153, 100,0.22); color: #a5d6a7; }
     /*  방문수령 — 택배로 안 나가는 건이라 눈에 걸려야 한다.
         송장을 찾으러 가거나 택배사에 물어볼 일이 아니다. */
-    .os-tag.pickup { background: rgba(120,160,240,0.22); color: #a8c4f5; font-weight: 700; }
+    .os-tag.pickup { background: rgba(147, 169, 213,0.22); color: #a8c4f5; font-weight: 700; }
     .os-tag.manual { background: rgba(74, 74, 74,0.2); color: #a5a5a5; }
-    .os-tag.case { background: rgba(255,183,77,0.2); color: #ffcc80; }
+    .os-tag.case { background: rgba(215, 175, 117,0.2); color: #ffcc80; }
     .os-tag.guide { background: rgba(150, 150, 150,0.22); color: var(--text-bright); }
     .manual-flow {
       font-size: 11px; color: var(--text-bright); margin-top: 6px; line-height: 1.45;
@@ -1151,7 +1158,7 @@
     }
     .manual-caution {
       font-size: 11px; color: #ffab91; margin-top: 6px; line-height: 1.45;
-      padding: 6px 8px; border-radius: 8px; background: rgba(255,87,34,0.08);
+      padding: 6px 8px; border-radius: 8px; background: rgba(205, 113, 84,0.08);
     }
     .manual-tools { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
     .manual-cats { flex-wrap: wrap; margin-bottom: 4px; }
@@ -1169,9 +1176,9 @@
     .os-tag-btn:active { transform: translateY(1px); }
     .os-tag-btn:focus-visible { outline: 2px solid var(--accent, #ffc107); outline-offset: 1px; }
     .os-tag.ret-s0 { background: rgba(255,255,255,0.09); color: var(--text-secondary); }
-    .os-tag.ret-s1 { background: rgba(79,158,255,0.18); color: #8cc0ff; }
-    .os-tag.ret-s2 { background: rgba(255,193,7,0.18); color: #ffc107; }
-    .os-tag.ret-s3 { background: rgba(129,199,132,0.15); color: #81c784; }
+    .os-tag.ret-s1 { background: rgba(119, 162, 215,0.18); color: #8cc0ff; }
+    .os-tag.ret-s2 { background: rgba(199, 165, 63,0.18); color: #ffc107; }
+    .os-tag.ret-s3 { background: rgba(145, 183, 146,0.15); color: #81c784; }
     .os-return-card {
       background: var(--bg-secondary); border: 1px solid var(--border);
       border-radius: 9px; padding: 9px 10px; margin-bottom: 7px; font-size: 12px;
@@ -1180,7 +1187,7 @@
     .os-return-card .rn { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
     .os-return-card .rs {
       display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 6px;
-      background: rgba(255,193,7,0.15); color: #ffc107; margin-left: 6px;
+      background: rgba(199, 165, 63,0.15); color: #ffc107; margin-left: 6px;
     }
     .os-return-empty { font-size: 12px; color: var(--text-secondary); padding: 4px 0; }
     /* ★ 바깥선을 걷었다 ★  (2026-09-20)
@@ -1209,8 +1216,8 @@
       transform: scale(1.015);
       z-index: 3;
       cursor: default;
-      border-color: rgba(255, 193, 7, 0.5);
-      box-shadow: 0 10px 32px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(255, 193, 7, 0.12);
+      border-color: rgba(199, 165, 63, 0.5);
+      box-shadow: 0 10px 32px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(199, 165, 63, 0.12);
       padding: 14px 12px 10px;
       background: var(--bg-card);
       margin-bottom: 14px;
@@ -1246,7 +1253,7 @@
     .ret-left .rn .ret-name { min-width: 0; }
     .ret-left .rn .rs {
       display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 6px;
-      background: rgba(255,193,7,0.15); color: #ffc107; margin-left: 0; vertical-align: middle;
+      background: rgba(199, 165, 63,0.15); color: #ffc107; margin-left: 0; vertical-align: middle;
       font-weight: 600;
     }
     .ret-vendor {
@@ -1376,7 +1383,7 @@
     .ret-photo-pend button {
       position: absolute; top: 1px; right: 1px;
       width: 17px; height: 17px; padding: 0; border: none; border-radius: 5px;
-      background: rgba(231,76,95,0.8); color: #fff;
+      background: rgba(196, 111, 121,0.8); color: #fff;
       font-size: 12px; line-height: 17px; cursor: pointer;
     }
     .ret-right {
@@ -1402,15 +1409,15 @@
       position: relative;
       flex: 0 0 auto; width: 128px; min-height: 76px;
       border-radius: 10px; padding: 8px 9px;
-      background: rgba(58, 48, 42, 0.92);
+      background: rgba(54, 49, 46, 0.92);
       /* 선 없이 바탕색만으로 — 카드 안에 선이 또 있으면 그때부터 복잡해진다
          (2026-09-20). 색 구분은 아래 .status/.access/.photo 가 이미 한다. */
       border: 1px solid transparent;
       display: flex; flex-direction: column;
     }
-    .ret-proc.status { background: rgba(72, 58, 38, 0.95); }
-    .ret-proc.consult { background: rgba(58, 48, 42, 0.92); }
-    .ret-proc.access { background: rgba(38, 58, 48, 0.9); }
+    .ret-proc.status { background: rgba(64, 57, 46, 0.95); }
+    .ret-proc.consult { background: rgba(54, 49, 46, 0.92); }
+    .ret-proc.access { background: rgba(43, 53, 48, 0.9); }
     .ret-proc.note { background: rgba(51, 51, 51, 0.88); }
     .ret-proc.photo { background: rgba(47, 47, 47, 0.92); }
     .ret-proc-link {
@@ -1515,7 +1522,8 @@
       margin-left: auto; flex: 0 0 auto; white-space: nowrap;
       padding: 3px 11px; font-size: 11.5px; font-weight: 700; cursor: pointer;
       border: 0; border-radius: 6px;
-      background: var(--accent-orange); color: #fff;
+      /*  파스텔 주황에 흰 글자는 안 읽힌다 — 어두운 글자로 뒤집는다 (2026-09-24) */
+      background: var(--accent-orange); color: var(--on-accent);
     }
     .ret-new-ok[disabled] { opacity: .55; cursor: default; }
 
@@ -1530,9 +1538,9 @@
     .ret-origin {
       margin-top: 4px; padding: 3px 7px; border-radius: 7px;
       font-size: 11px; font-weight: 600; line-height: 1.35;
-      color: #ffca7a; background: rgba(240,160,48,0.16);
+      color: #ffca7a; background: rgba(197, 153, 91,0.16);
     }
-    .ret-origin.bad { color: #ff9e9e; background: rgba(232,93,93,0.18); }
+    .ret-origin.bad { color: #ff9e9e; background: rgba(201, 124, 124,0.18); }
 
     /* ★ 반품송장 — 카드에서 바로 적는다 ★  (2026-09-18)
        한 줄을 넘지 않게 짠다. 카드가 길어지면 한 화면에 드는 건수가 줄고,
@@ -1571,7 +1579,7 @@
       background: var(--bg-card-hover); color: var(--text-primary);
     }
     .ret-retinv-save {
-      border-color: transparent; background: var(--accent-green); color: #fff;
+      border-color: transparent; background: var(--accent-green); color: var(--on-accent);
       font-weight: 600;
     }
     .ret-retinv-save[disabled] { opacity: .55; cursor: default; }
@@ -1714,10 +1722,10 @@
     .ret-proc-del {
       position: absolute; top: 3px; right: 3px; z-index: 2;
       width: 20px; height: 20px; padding: 0; border: none; border-radius: 5px;
-      background: rgba(231,76,95,0.22); color: #f5a0a8;
+      background: rgba(196, 111, 121,0.22); color: #f5a0a8;
       font-size: 14px; line-height: 20px; cursor: pointer;
     }
-    .ret-proc-del:active { background: rgba(231,76,95,0.4); }
+    .ret-proc-del:active { background: rgba(196, 111, 121,0.4); }
     /* 협력업체 포털 공개 여부 — 기본 공개이므로 CS가 실수로 내부 판단을 쓰지 않게 표시한다 */
     /* 드물게 뜨는 표시라 선을 남긴다 — 뜻이 있는 선은 복잡함이 아니다 (2026-09-20) */
     .ret-proc.internal {
@@ -1816,7 +1824,7 @@
 
     /* 롯데 회수 접수 — 2026-09-08 */
     /*  선이 유일한 경계였던 칸 — 선 대신 옅은 바탕으로 세운다 (2026-09-20) */
-    .lrt-opt { border: 1px solid transparent; background: rgba(240,150,20,0.13);
+    .lrt-opt { border: 1px solid transparent; background: rgba(190, 141, 69,0.13);
                border-radius: var(--radius-sm); padding: 8px 10px; }
     .lrt-opt[hidden] { display: none; }
     .lrt-check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
@@ -1825,7 +1833,7 @@
     .lrt-warn {
       margin: 6px 0 10px; padding: 8px 10px; font-size: 12px; line-height: 1.5;
       border-radius: var(--radius-sm);
-      background: rgba(228,70,70,0.10); color: #ffb3b3;
+      background: rgba(192, 106, 106,0.10); color: #ffb3b3;
     }
     .lrt-row { display: flex; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
     .lrt-row:first-child { border-top: 0; }
@@ -1880,7 +1888,7 @@
       font-size: 14px; font-weight: 700; font-family: inherit; cursor: pointer;
     }
     .ledger-cancel { background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border) !important; }
-    .ledger-ok { background: var(--accent-green); color: #062214; }
+    .ledger-ok { background: var(--accent-green); color: var(--on-accent); }
     .os-empty { text-align: center; padding: 48px 16px; color: var(--text-muted); font-size: 14px; }
     .os-toast {
       position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(20px);
@@ -2009,19 +2017,19 @@
     /* 미확인 숫자 — 글자처럼 보이되 누를 수 있다는 것이 보여야 한다 */
     .hb-unread-btn {
       border: 1px solid transparent; border-radius: 999px;
-      background: rgba(255, 158, 158, 0.10); color: #ff9e9e;
+      background: rgba(233, 180, 180, 0.10); color: #ff9e9e;
       font: inherit; font-weight: 700; padding: 1px 9px; cursor: pointer;
     }
-    .hb-unread-btn:hover { background: rgba(255, 158, 158, 0.22); }
+    .hb-unread-btn:hover { background: rgba(233, 180, 180, 0.22); }
     .hb-unread-btn.on { background: #ff9e9e; color: #1a1c24; border-color: #ff9e9e; }
-    .hb-unread-bar { border-color: rgba(255, 158, 158, 0.5) !important; }
+    .hb-unread-bar { border-color: rgba(233, 180, 180, 0.5) !important; }
 
     .hb-mine-bar {
       display: flex; align-items: center; justify-content: space-between;
       gap: 10px; flex-wrap: wrap;
       margin-bottom: 8px; padding: 7px 12px;
       border: 1px solid transparent;
-      background: rgba(253, 184, 19, 0.12);
+      background: rgba(200, 162, 72, 0.12);
       border-radius: 8px;
       font-size: 12px; font-weight: 700; color: #fdb813;
     }
@@ -2031,9 +2039,9 @@
       border-radius: 999px; padding: 3px 12px;
       font-size: 12px; font-weight: 700; cursor: pointer;
     }
-    .hb-mine-bar button:hover { background: rgba(253, 184, 19, 0.2); }
+    .hb-mine-bar button:hover { background: rgba(200, 162, 72, 0.2); }
     :root[data-theme="light"] .hb-mine-bar { color: #8a5300; }
-    :root[data-theme="light"] .hb-mine-bar button { color: #8a5300; border-color: rgba(138, 83, 0, 0.5); }
+    :root[data-theme="light"] .hb-mine-bar button { color: #8a5300; border-color: rgba(107, 77, 31, 0.5); }
 
     /* ★ 2026-09-04: 공지 카드.
        한 줄을 통째로 쓰고 본문을 접지 않는다 — "금일 판매불가 상품"처럼
@@ -2044,7 +2052,7 @@
     #hbList > .hb-card.hb-notice { grid-column: span 2; }
     #hbList.one-col > .hb-card.hb-notice { grid-column: auto; }
     .hb-card.hb-notice {
-      background: linear-gradient(180deg, rgba(90, 160, 240, 0.10), transparent 70%), var(--bg-card);
+      background: linear-gradient(180deg, rgba(124, 162, 206, 0.10), transparent 70%), var(--bg-card);
     }
     /* 접힌 타일의 3줄 자르기·본문 숨김을 공지에서는 풀어 준다 */
     .hb-card.hb-notice:not(.open) .hb-title {
@@ -2205,19 +2213,24 @@
     }
     /* 공지 — 파랑. 빨강·주황은 "처리해 달라"는 뜻이라 이미 임자가 있다.
        공지는 "알고 일해 달라"라서 색이 겹치면 안 된다. */
+    /*  흰 화면에서는 이 옅은 파랑이 1.75 밖에 안 됐다 — 덮어쓴 적이 없던 자리다 (2026-09-24) */
     .hb-badge.lv-notice { color: #9ec8f5; }
+    :root[data-theme="light"] .hb-badge.lv-notice { color: #5a728c; }
     .hb-badge.lv-urgent { color: #ff9e9e; }
     .hb-badge.lv-warn   { color: #ffca7a; }
-    /*  「일반」은 가장 흔한 값이다 — 앞에 나서면 다른 등급이 묻힌다  */
-    .hb-badge.lv-normal { color: var(--text-muted); }
+    /*  「일반」은 가장 흔한 값이다 — 앞에 나서면 다른 등급이 묻힌다.
+        다만 --text-muted 로는 어두운 화면에서 2.48 이라 읽히질 않았다.
+        한 단 위(--text-secondary)로 올린다 — 여전히 제일 조용하다. (2026-09-24)  */
+    .hb-badge.lv-normal { color: var(--text-secondary); }
     /*  ★ NEW 만 채운 채로 둔다 ★  안 읽은 건을 알리는 하나뿐인 표시라
         글자로 바꾸면 훑다가 지나친다. 여기서는 튀는 것이 제 일이다.  */
     .hb-badge.hb-unread {
-      background: rgba(232,93,93,0.9); color: #fff;
+      /*  흰 글자를 얹으므로 바탕은 눌러야 한다 — 파스텔로 내리니 2.77 이 됐다 */
+      background: #9d6161; color: #fff;
       padding: 1px 6px; border-radius: 999px;
     }
     .hb-badge.hb-partner { color: #f0b45e; }
-    .hb-badge.hb-note { color: var(--text-muted); font-weight: 400; }
+    .hb-badge.hb-note { color: var(--text-secondary); font-weight: 400; }
     /* ── 올린 글 고치기 (2026-09-14) ── */
     .hb-tl-edit { margin-top: 4px; }
     .hb-tl-edit button {
@@ -2327,8 +2340,8 @@
       background: rgba(255,255,255,0.07); color: var(--text-muted);
     }
     .hb-tl-item.k-open .hb-tl-tag   { background: rgba(132, 132, 132,0.20); color: #bdbdbd; }
-    .hb-tl-item.k-done .hb-tl-tag   { background: rgba(52,199,123,0.18); color: #7fd1a8; }
-    .hb-tl-item.k-reopen .hb-tl-tag { background: rgba(240,160,48,0.18); color: #ffca7a; }
+    .hb-tl-item.k-done .hb-tl-tag   { background: rgba(85, 166, 124,0.18); color: #7fd1a8; }
+    .hb-tl-item.k-reopen .hb-tl-tag { background: rgba(197, 153, 91,0.18); color: #ffca7a; }
     /* 전달 내용이 주인공 — 원본보다 밝게 두지 않되 흐리지도 않게 */
     .hb-tl-text {
       font-size: calc(13px * var(--hb-text-scale)); line-height: 1.55; color: var(--text-primary);
@@ -2409,7 +2422,7 @@
       background: rgba(0,0,0,0.62); color: #ff9e9e;
       font-size: calc(11px * var(--hb-text-scale)); line-height: 15px; cursor: pointer;
     }
-    .hb-thumb-x:active { background: rgba(231,76,95,0.55); }
+    .hb-thumb-x:active { background: rgba(196, 111, 121,0.55); }
 
     .hb-acts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
     .hb-act {
@@ -2417,8 +2430,8 @@
       color: var(--text-secondary); border-radius: 7px; padding: 5px 9px;
       font-size: calc(11px * var(--hb-text-scale)); font-family: inherit; cursor: pointer;
     }
-    .hb-act.done { background: rgba(52,199,123,0.16); color: #7fd1a8; border-color: rgba(52,199,123,0.35); }
-    .hb-act.danger { background: rgba(232,93,93,0.14); color: #ff9e9e; border-color: rgba(232,93,93,0.32); }
+    .hb-act.done { background: rgba(85, 166, 124,0.16); color: #7fd1a8; border-color: rgba(85, 166, 124,0.35); }
+    .hb-act.danger { background: rgba(201, 124, 124,0.14); color: #ff9e9e; border-color: rgba(201, 124, 124,0.32); }
     .hb-act.ghost { margin-left: auto; }
 
     /* 누가 봤고 누가 아직 안 봤는지 — 소통이 목적이라 미확인이 더 중요하다 */
@@ -2429,7 +2442,7 @@
     .hb-rd-lb { font-weight: 700; }
     .hb-rd {
       font-size: calc(10px * var(--hb-text-scale)); font-weight: 700; padding: 2px 7px; border-radius: 999px;
-      background: rgba(52,199,123,0.15); color: #7fd1a8;
+      background: rgba(85, 166, 124,0.15); color: #7fd1a8;
     }
     .hb-rd.no {
       background: rgba(255,255,255,0.05); color: var(--text-muted); font-weight: 500;
@@ -2462,7 +2475,7 @@
       cursor: pointer; text-decoration: none; line-height: 1;
     }
     .hb-lb-b.wide { width: auto; padding: 0 8px; font-size: 11px; }
-    .hb-lb-b.x { background: rgba(232,93,93,0.28); border-color: rgba(232,93,93,0.4); }
+    .hb-lb-b.x { background: rgba(201, 124, 124,0.28); border-color: rgba(201, 124, 124,0.4); }
     .hb-lb-b:active { opacity: 0.7; }
 
     /* 팬·핀치를 우리가 처리하므로 브라우저 기본 제스처를 끈다 */
@@ -2510,7 +2523,7 @@
 
     .hb-limit {
       font-size: 12px; line-height: 1.5; color: #ffca7a;
-      background: rgba(240,160,48,0.12); border: 1px solid transparent;
+      background: rgba(197, 153, 91,0.12); border: 1px solid transparent;
       border-radius: 10px; padding: 9px 11px;
     }
 
@@ -2521,9 +2534,9 @@
       border: 1px solid transparent; background: var(--bg-card-hover);
       color: var(--text-secondary); font-size: 13px; font-family: inherit;
     }
-    .hb-lv-btn.lv-notice.on { background: rgba(90,160,240,0.30); color: #9ec8f5; }
-    .hb-lv-btn.lv-urgent.on { background: rgba(232,93,93,0.28); color: #ff9e9e; }
-    .hb-lv-btn.lv-warn.on   { background: rgba(240,160,48,0.28); color: #ffca7a; }
+    .hb-lv-btn.lv-notice.on { background: rgba(124, 162, 206,0.30); color: #9ec8f5; }
+    .hb-lv-btn.lv-urgent.on { background: rgba(201, 124, 124,0.28); color: #ff9e9e; }
+    .hb-lv-btn.lv-warn.on   { background: rgba(197, 153, 91,0.28); color: #ffca7a; }
     .hb-lv-btn.lv-normal.on { background: rgba(173, 173, 173,0.28); color: var(--text-bright); }
 
     /* 하단 접기 — 처리가이드·CS사례 */
@@ -2596,10 +2609,10 @@
     .ret-done {
       display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 8px;
       font-size: 10px; font-weight: 700;
-      background: rgba(52,199,123,0.16); color: var(--accent-green);
+      background: rgba(85, 166, 124,0.16); color: var(--accent-green);
     }
     .ret-pickup-btn {
-      border: 1px solid transparent; background: rgba(240,160,48,0.10);
+      border: 1px solid transparent; background: rgba(197, 153, 91,0.10);
       color: var(--accent-orange); font-family: inherit; font-size: 11px; font-weight: 700;
       border-radius: 8px; padding: 3px 9px; cursor: pointer;
     }
@@ -2643,7 +2656,7 @@
       background: linear-gradient(180deg, rgba(173, 173, 173,0.85), rgba(173, 173, 173,0.35));
       border-radius: 3px 3px 0 0;
     }
-    .dash-bar.today { background: linear-gradient(180deg, #34c77b, rgba(52,199,123,0.35)); }
+    .dash-bar.today { background: linear-gradient(180deg, #34c77b, rgba(85, 166, 124,0.35)); }
     .dash-bar-lab { font-size: 9px; color: var(--text-muted); white-space: nowrap; }
     /* 주말·공휴일 자리 — 막대를 그리지 않고 얇은 줄 하나만 긋는다.
        0 막대를 세워 두면 「그날 장사를 못 했다」로 읽히고, 자리도 뺏는다. */
@@ -2662,7 +2675,7 @@
       border-radius: 999px; padding: 4px 9px; font-size: 11px;
       color: var(--text-secondary); cursor: pointer; font-family: inherit;
     }
-    .dash-chip:active { border-color: rgba(255,193,7,0.45); color: #ffc107; }
+    .dash-chip:active { border-color: rgba(199, 165, 63,0.45); color: #ffc107; }
     .dash-chip .n { font-weight: 700; color: var(--text-primary); margin-left: 4px; }
     .dash-vendors { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
 
@@ -2676,7 +2689,7 @@
     }
     .dash-check-row:hover { background: var(--bg-card-hover); }
     /* 예정 시각을 넘겼는데 미체크 — 숨기지 않고 눈에 띄게 둔다 */
-    .dash-check-row.late { border-color: rgba(231,76,95,.45); background: rgba(231,76,95,.10); }
+    .dash-check-row.late { border-color: rgba(196, 111, 121,.45); background: rgba(196, 111, 121,.10); }
     .dash-check-box { font-size: 14px; color: var(--text-muted); flex: none; }
     .dash-check-row.late .dash-check-box { color: var(--accent-red); }
     .dash-check-due { font-size: 11px; font-weight: 700; color: var(--text-secondary); flex: none; }
@@ -2708,8 +2721,8 @@
       50%      { box-shadow: 0 0 0 3px rgba(193,193,193,.13); }
     }
     @keyframes chkUrgent {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(231,76,95,.0); border-color: rgba(231,76,95,.45); }
-      50%      { box-shadow: 0 0 0 4px rgba(231,76,95,.22); border-color: rgba(231,76,95,.85); }
+      0%, 100% { box-shadow: 0 0 0 0 rgba(196, 111, 121,.0); border-color: rgba(196, 111, 121,.45); }
+      50%      { box-shadow: 0 0 0 4px rgba(196, 111, 121,.22); border-color: rgba(196, 111, 121,.85); }
     }
     /* 6초마다 한 번만 툭 — 계속 흔들면 눈이 아프다 */
     @keyframes chkNudge {
@@ -2730,7 +2743,7 @@
     /* 체크한 순간 — 사라지기 전에 잠깐 성공을 보여준다 */
     @keyframes chkDone {
       0%   { transform: scale(1); opacity: 1; }
-      35%  { transform: scale(1.04); background: rgba(52,199,123,.22); }
+      35%  { transform: scale(1.04); background: rgba(85, 166, 124,.22); }
       100% { transform: scale(.94); opacity: 0; }
     }
     .dash-check-row.done { animation: chkDone .42s ease-in forwards !important; }
@@ -2849,11 +2862,11 @@
     }
     .lb-card .lb-act { margin-top: auto; padding-top: 8px; }
     .lb-lv { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
-    .lb-lv.u { background: rgba(231,76,95,.18); color: #e74c5f; }
-    .lb-lv.w { background: rgba(240,160,48,.18); color: #f0a030; }
+    .lb-lv.u { background: rgba(196, 111, 121,.18); color: #e74c5f; }
+    .lb-lv.w { background: rgba(197, 153, 91,.18); color: #f0a030; }
     .lb-lv.n { background: rgba(173,173,173,.18); color: var(--text-bright); }
     /* 공지 — CS 보드와 같은 파랑. 빨강·주황은 "처리해 달라"는 뜻으로 임자가 있다 */
-    .lb-lv.p { background: rgba(90,160,240,.22); color: #9ec8f5; }
+    .lb-lv.p { background: rgba(124, 162, 206,.22); color: #9ec8f5; }
     :root[data-theme="light"] .lb-lv.p { color: #1d5fa8; }
 
     /* ★ 2026-09-04: 물류 보드도 CS 카드(.hb-card)를 그대로 그린다.
@@ -2961,19 +2974,19 @@
            v2 는 구글 계정으로 스스로 누군지 안다. 여기서 이름을 넘기면
            두 곳이 다른 사람을 가리킬 수 있다. -->
     <a class="menu-card" href="<?= v2Url ?>/po" target="_blank" rel="noopener"
-       style="border-color: rgba(56,132,255,0.25); text-decoration:none; color:inherit;">
-      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(56,132,255,0.18), rgba(56,132,255,0.06)); color: #3884ff;">📦</div>
+       style="border-color: rgba(101, 143, 210,0.25); text-decoration:none; color:inherit;">
+      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(101, 143, 210,0.18), rgba(101, 143, 210,0.06)); color: #3884ff;">📦</div>
       <div class="menu-text">
-        <div class="menu-title">발주 <span style="font-size:10px;color:#3884ff;background:rgba(56,132,255,0.12);padding:2px 6px;border-radius:6px;margin-left:6px;">v2</span></div>
+        <div class="menu-title">발주 <span style="font-size:10px;color:#3884ff;background:rgba(101, 143, 210,0.12);padding:2px 6px;border-radius:6px;margin-left:6px;">v2</span></div>
         <div class="menu-desc">대리판매 주문 모아 대리공급업체로 발주 · 송장 회수</div>
       </div>
       <div class="menu-arrow">›</div>
     </a>
 
-    <div class="menu-card cs" onclick="openPage('return_intake')" style="border-color: rgba(52,199,123,0.25);">
-      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(52,199,123,0.18), rgba(52,199,123,0.06)); color: #34c77b;">📥</div>
+    <div class="menu-card cs" onclick="openPage('return_intake')" style="border-color: rgba(85, 166, 124,0.25);">
+      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(85, 166, 124,0.18), rgba(85, 166, 124,0.06)); color: #34c77b;">📥</div>
       <div class="menu-text">
-        <div class="menu-title">반품 입고 스캔 <span style="font-size:10px;color:#34c77b;background:rgba(52,199,123,0.12);padding:2px 6px;border-radius:6px;margin-left:6px;">NEW</span></div>
+        <div class="menu-title">반품 입고 스캔 <span style="font-size:10px;color:#34c77b;background:rgba(85, 166, 124,0.12);padding:2px 6px;border-radius:6px;margin-left:6px;">NEW</span></div>
         <div class="menu-desc">반품송장 스캔 → 반품관리대장 · 반품입고 즉시 처리</div>
       </div>
       <div class="menu-arrow">›</div>
@@ -2997,10 +3010,10 @@
       <div class="menu-arrow">›</div>
     </div>
 
-    <div class="menu-card" onclick="openPage('scan_test')" style="border-color: rgba(240,160,48,0.25);">
-      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(240,160,48,0.18), rgba(240,160,48,0.06)); color: #f0a030;">🚚</div>
+    <div class="menu-card" onclick="openPage('scan_test')" style="border-color: rgba(197, 153, 91,0.25);">
+      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(197, 153, 91,0.18), rgba(197, 153, 91,0.06)); color: #f0a030;">🚚</div>
       <div class="menu-text">
-        <div class="menu-title">택배 바코드 스캔 테스트 <span style="font-size:10px;color:#f0a030;background:rgba(240,160,48,0.12);padding:2px 6px;border-radius:6px;margin-left:6px;">롯데</span></div>
+        <div class="menu-title">택배 바코드 스캔 테스트 <span style="font-size:10px;color:#f0a030;background:rgba(197, 153, 91,0.12);padding:2px 6px;border-radius:6px;margin-left:6px;">롯데</span></div>
         <div class="menu-desc">CODE128 · 롯데 12자리 파싱 · 주문 매칭 확인</div>
       </div>
       <div class="menu-arrow">›</div>

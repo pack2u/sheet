@@ -49,9 +49,9 @@ console.log("\n[2] ★ CS 웹앱과 «같은 값»");
    ["--bg-primary: #e9ebef", "밝은 바탕"],
    ["--bg-secondary: #ffffff", "밝은 카드 바탕"],
    ["--text-primary: #1b1e23", "밝은 글자"],
-   ["--accent-green: #34c77b", "초록(완료)"],
-   ["--accent-orange: #f0a030", "주황(진행)"],
-   ["--accent-red: #ff5f56", "빨강"]].forEach(function (쌍) {
+   ["--accent-green: #55a67c", "초록(완료)"],
+   ["--accent-orange: #c5995b", "주황(진행)"],
+   ["--accent-red: #d9817c", "빨강"]].forEach(function (쌍) {
     ok("CS 와 같다: " + 쌍[1], html.indexOf(쌍[0]) >= 0);
   });
   ok("★ 라이트 토큰 블록이 있다", html.indexOf(':root[data-theme="light"] {') >= 0);

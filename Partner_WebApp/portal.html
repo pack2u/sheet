@@ -49,27 +49,37 @@
       --border: rgba(255, 255, 255, 0.10);
       --border-soft: rgba(255, 255, 255, 0.06);
       --accent: #757575;
-      --accent-blue: #5aaaff;
-      --accent-blue-bg: rgba(90, 170, 255, 0.18);
-      --accent-green: #34c77b;
-      --accent-green-bg: rgba(52, 199, 123, 0.18);
-      --accent-orange: #f0a030;
-      --accent-orange-bg: rgba(240, 160, 48, 0.18);
-      --accent-purple: #b39ae8;
-      --accent-purple-bg: rgba(160, 120, 230, 0.18);
-      --accent-red: #ff5f56;
+      --accent-blue: #7fabda;
+      --accent-blue-bg: rgba(127, 171, 218, 0.18);
+      --accent-green: #55a67c;
+      --accent-green-bg: rgba(85, 166, 124, 0.18);
+      --accent-orange: #c5995b;
+      --accent-orange-bg: rgba(197, 153, 91, 0.18);
+      --accent-purple: #b9acd6;
+      --accent-purple-bg: rgba(167, 145, 205, 0.18);
+      --accent-red: #d9817c;
       /*  빨강만 «바탕 짝»이 없어서 쓰는 쪽에서 색을 박아 넣고 있었다
           (.ent-warn.live 의 #ff9e9e). 다른 넷과 같은 짜임으로 채운다. (2026-09-24) */
-      --accent-red-bg: rgba(255, 95, 86, 0.18);
-      --on-accent: #ffffff;
+      --accent-red-bg: rgba(217, 129, 124, 0.18);
+      /*  ★ 강조색 바탕 위 글자 ★  (2026-09-24 파스텔로 내리면서)
+          파스텔 강조색은 «어두운 테마에서 밝고, 밝은 테마에서 진하다».
+          그래서 얹는 글자도 테마마다 뒤집혀야 한다 — 한 값으로는 한쪽이 안 읽힌다.
+            어두움  밝은 바탕(#55a67c 등) + 어두운 글자  5.9~6.7
+            밝음    진한 바탕(#367d60 등) + 흰 글자      4.9~5.3  */
+      --on-accent: #1a1a1a;
+      /*  검은 덮개(사진·라이트박스) 위 글자. 덮개가 테마를 안 타니 이것도 안 탄다 */
+      --on-shade: #ffffff;
       /*  ★ 옅은 바탕 «위에 얹는 글자» ★  (2026-09-24)
           어두운 화면에서는 강조색 그대로가 잘 읽힌다(5~6대). 이름만 둔다 —
           쓰는 쪽이 테마를 몰라도 되게 하려는 것이다.  */
-      --accent-blue-ink: var(--accent-blue);
-      --accent-green-ink: var(--accent-green);
-      --accent-orange-ink: var(--accent-orange);
-      --accent-purple-ink: var(--accent-purple);
-      --accent-red-ink: var(--accent-red);
+      /*  파스텔로 내리면서 글자·바탕을 둘 다 덜었더니 대비가 4.5 아래가 됐다
+          (완료 3.93 · 회수중 4.31 · 바로들어갑니다 4.04). 전에는 강조색 그대로
+          써도 읽혔지만 이제는 «글자만» 필요한 만큼 밝혀야 한다. (2026-09-24)  */
+      --accent-blue-ink:   #87b0dc;
+      --accent-green-ink:  #74b694;
+      --accent-orange-ink: #cba46d;
+      --accent-purple-ink: #b9acd6;
+      --accent-red-ink:    #df9591;
     }
     :root[data-theme="light"] {
       /* 바탕을 흰색 바로 아래로 낮춘다. 카드가 흰색이라 바탕까지 희면
@@ -86,24 +96,26 @@
       --border-soft: rgba(0, 0, 0, 0.10);
       --accent: #6b7280;
       /* 흰 바탕에서 흐려지는 강조색만 진하게. 배경 rgba 는 그대로 둔다 */
-      --accent-blue: #1f66c9;
-      --accent-blue-bg: rgba(31, 102, 201, 0.14);
-      --accent-green: #1a9e68;
-      --accent-green-bg: rgba(26, 158, 104, 0.16);
-      --accent-orange: #b46a00;
-      --accent-orange-bg: rgba(180, 106, 0, 0.16);
-      --accent-purple: #6b46c1;
-      --accent-purple-bg: rgba(107, 70, 193, 0.14);
-      --accent-red: #d13b32;
-      --accent-red-bg: rgba(209, 59, 50, 0.14);
+      --accent-blue: #456ca3;
+      --accent-blue-bg: rgba(69, 108, 163, 0.14);
+      --accent-green: #367d60;
+      --accent-green-bg: rgba(56, 128, 99, 0.16);
+      --accent-orange: #8c6328;
+      --accent-orange-bg: rgba(140, 99, 40, 0.16);
+      --accent-purple: #7662a5;
+      --accent-purple-bg: rgba(118, 98, 165, 0.14);
+      --accent-red: #ac5954;
+      --accent-red-bg: rgba(173, 91, 86, 0.14);
+      /*  밝은 테마의 강조색은 진하다 — 흰 글자가 맞다 (어두움과 뒤집힌다) */
+      --on-accent: #ffffff;
       /*  흰 바탕에 옅은 색을 깔면 그 위 글자가 묻힌다. 재 보니 2.44~4.43 으로
           전부 AA(4.5) 아래였다. 색마다 필요한 만큼만 눌러 4.8 대로 맞춘다.
           토큰 자체(--accent-*)는 안 건드린다 — CS 웹앱과 같은 값이어야 한다.  */
-      --accent-blue-ink: color-mix(in srgb, var(--accent-blue) 86%, black);
-      --accent-green-ink: color-mix(in srgb, var(--accent-green) 66%, black);
-      --accent-orange-ink: color-mix(in srgb, var(--accent-orange) 73%, black);
-      --accent-purple-ink: color-mix(in srgb, var(--accent-purple) 94%, black);
-      --accent-red-ink: color-mix(in srgb, var(--accent-red) 79%, black);
+      --accent-blue-ink:   #416699;
+      --accent-green-ink:  #306e54;
+      --accent-orange-ink: #815b25;
+      --accent-purple-ink: #6d5a98;
+      --accent-red-ink:    #994f4b;
     }
 
     /* ══════════════════════════════════════════════════════════════
@@ -352,7 +364,7 @@
     .ent-row .g { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.4; }
     .ent-row .g i { display: block; font-style: normal; font-size: 11px; color: var(--text-muted); }
     /*  ⚠ 붙은 줄 — 막지 않고 알린다. 담긴 것이고, 사람이 보고 판단한다 */
-    .ent-row.warn { background: rgba(240,160,48,0.14); }
+    .ent-row.warn { background: rgba(197, 153, 91,0.14); }
     .ent-row .ent-warn-i { color: var(--accent-orange); margin-top: 2px; }
     .ent-row input.q {
       flex: 0 0 62px; width: 62px; padding: 7px 8px; border-radius: 8px;
@@ -544,10 +556,10 @@
       padding: 1px 6px; border-radius: 5px; margin-left: 4px;
     }
     .t-status  { background: var(--accent-blue-bg); color: var(--accent-blue-ink); }
-    .t-access  { background: var(--border); color: var(--text-secondary); }
+    .t-access  { background: var(--border); color: var(--text-bright); }
     .t-mine    { background: var(--accent-orange-bg); color: var(--accent-orange-ink); }
     .t-consult { background: var(--accent-purple-bg); color: var(--accent-purple-ink); }
-    .t-photo   { background: var(--border); color: var(--text-secondary); }
+    .t-photo   { background: var(--border); color: var(--text-bright); }
     .ev-body { font-size: 12.5px; color: var(--text-bright); margin-top: 2px; word-break: break-word; }
     .ev-body a { color: var(--text-primary); text-decoration: underline; text-underline-offset: 2px; }
 
@@ -571,7 +583,7 @@
     .steps { display: flex; gap: 3px; margin: 9px 0 2px; }
     .steps .st {
       flex: 1; min-width: 0; text-align: center; font-size: 9.5px; font-weight: 600;
-      padding: 4px 2px 5px; border-radius: 6px; background: var(--bg-sunken); color: var(--text-muted);
+      padding: 4px 2px 5px; border-radius: 6px; background: var(--bg-sunken); color: var(--text-secondary);
       border-top: 2px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     /*  ★ 지나온 자리에만 선을 남긴다 ★  (2026-09-20)
@@ -676,7 +688,7 @@
     .photo-prev .pend img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .photo-prev .pend button {
       position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; padding: 0;
-      border: 0; border-radius: 50%; background: rgba(8,9,13,0.72); color: var(--on-accent);
+      border: 0; border-radius: 50%; background: rgba(8,9,13,0.72); color: var(--on-shade);
       font-size: 12px; line-height: 18px; cursor: pointer;
     }
     .photo-help { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
@@ -703,7 +715,7 @@
     .lb-x {
       position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 14px;
       width: 40px; height: 40px; border: 0; border-radius: 50%;
-      background: var(--bg-card); color: var(--on-accent); font-size: 22px; cursor: pointer;
+      background: var(--bg-card); color: var(--text-primary); font-size: 22px; cursor: pointer;
     }
   </style>
 </head>
