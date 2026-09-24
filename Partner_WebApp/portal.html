@@ -1,0 +1,3261 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="format-detection" content="telephone=no">
+  <title>반품 현황 · Pack2U</title>
+  <script>
+    /* 저장해 둔 테마를 그리기 전에 입힌다.
+       body 나 onload 에서 하면 어두운 화면이 한 번 번쩍이고 밝게 바뀐다.
+       CS 웹앱과 «같은 열쇠»를 쓴다 — 한 사람이 두 앱을 오가도 한 번만 고르면 된다. */
+    (function () {
+      try {
+        var t = localStorage.getItem("pack2u_theme");
+        if (t === "light" || t === "dark") {
+          document.documentElement.setAttribute("data-theme", t);
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <?!= include('prpFavicon') ?>
+  <style>
+    /* ══════════════════════════════════════════════════════════════
+       ★ CS 웹앱과 같은 색 · 다크/라이트 ★  (2026-09-16)
+
+       > "칼라도 cs웹앱 칼라로 다크와 라이트 모드 2가지로 되게"
+
+       종전에는 푸른 기가 도는 어두운 색(#0f1117 계열)이 서른 곳 넘게
+       박혀 있었다. 업체가 보는 화면과 우리가 보는 화면이 딴 물건 같았고,
+       밝은 화면에서 일하는 사람은 아예 못 봤다.
+
+       값은 CS_WebApp/home.html 의 :root 와 «같다». 한쪽을 고치면 다른
+       쪽도 봐야 한다 — 두 앱이 같은 물건으로 보이는 것이 그 값의 뜻이다.
+
+       ★ 파랑은 CS 의 묵은 카드 파랑(90,170,255)을 쓴다 ★
+         CS 의 강조색은 회색이라 「접수·정보」를 나타낼 색이 없다.
+         이미 CS 안에서 「알려야 하는 것」에 쓰는 파랑을 그대로 가져온다.
+       ══════════════════════════════════════════════════════════════ */
+    :root {
+      --bg-primary: #111111;
+      --bg-secondary: #1d1d1d;
+      --bg-card: #252525;
+      --bg-sunken: #1a1a1a;
+      --text-primary: #f0f0f0;
+      --text-bright: #c1c1c1;
+      --text-secondary: #909090;
+      --text-muted: #616161;
+      --border: rgba(255, 255, 255, 0.10);
+      --border-soft: rgba(255, 255, 255, 0.06);
+      --accent: #757575;
+      --accent-blue: #5aaaff;
+      --accent-blue-bg: rgba(90, 170, 255, 0.18);
+      --accent-green: #34c77b;
+      --accent-green-bg: rgba(52, 199, 123, 0.18);
+      --accent-orange: #f0a030;
+      --accent-orange-bg: rgba(240, 160, 48, 0.18);
+      --accent-purple: #b39ae8;
+      --accent-purple-bg: rgba(160, 120, 230, 0.18);
+      --accent-red: #ff5f56;
+      /*  빨강만 «바탕 짝»이 없어서 쓰는 쪽에서 색을 박아 넣고 있었다
+          (.ent-warn.live 의 #ff9e9e). 다른 넷과 같은 짜임으로 채운다. (2026-09-24) */
+      --accent-red-bg: rgba(255, 95, 86, 0.18);
+      --on-accent: #ffffff;
+      /*  ★ 옅은 바탕 «위에 얹는 글자» ★  (2026-09-24)
+          어두운 화면에서는 강조색 그대로가 잘 읽힌다(5~6대). 이름만 둔다 —
+          쓰는 쪽이 테마를 몰라도 되게 하려는 것이다.  */
+      --accent-blue-ink: var(--accent-blue);
+      --accent-green-ink: var(--accent-green);
+      --accent-orange-ink: var(--accent-orange);
+      --accent-purple-ink: var(--accent-purple);
+      --accent-red-ink: var(--accent-red);
+    }
+    :root[data-theme="light"] {
+      /* 바탕을 흰색 바로 아래로 낮춘다. 카드가 흰색이라 바탕까지 희면
+         경계가 안 보여 화면이 통째로 뿌옇게 읽힌다. (CS 와 같은 판단) */
+      --bg-primary: #e9ebef;
+      --bg-secondary: #ffffff;
+      --bg-card: #ffffff;
+      --bg-sunken: #f2f4f7;
+      --text-primary: #1b1e23;
+      --text-bright: #2f343b;
+      --text-secondary: #5b6169;
+      --text-muted: #868d96;
+      --border: rgba(0, 0, 0, 0.16);
+      --border-soft: rgba(0, 0, 0, 0.10);
+      --accent: #6b7280;
+      /* 흰 바탕에서 흐려지는 강조색만 진하게. 배경 rgba 는 그대로 둔다 */
+      --accent-blue: #1f66c9;
+      --accent-blue-bg: rgba(31, 102, 201, 0.14);
+      --accent-green: #1a9e68;
+      --accent-green-bg: rgba(26, 158, 104, 0.16);
+      --accent-orange: #b46a00;
+      --accent-orange-bg: rgba(180, 106, 0, 0.16);
+      --accent-purple: #6b46c1;
+      --accent-purple-bg: rgba(107, 70, 193, 0.14);
+      --accent-red: #d13b32;
+      --accent-red-bg: rgba(209, 59, 50, 0.14);
+      /*  흰 바탕에 옅은 색을 깔면 그 위 글자가 묻힌다. 재 보니 2.44~4.43 으로
+          전부 AA(4.5) 아래였다. 색마다 필요한 만큼만 눌러 4.8 대로 맞춘다.
+          토큰 자체(--accent-*)는 안 건드린다 — CS 웹앱과 같은 값이어야 한다.  */
+      --accent-blue-ink: color-mix(in srgb, var(--accent-blue) 86%, black);
+      --accent-green-ink: color-mix(in srgb, var(--accent-green) 66%, black);
+      --accent-orange-ink: color-mix(in srgb, var(--accent-orange) 73%, black);
+      --accent-purple-ink: color-mix(in srgb, var(--accent-purple) 94%, black);
+      --accent-red-ink: color-mix(in srgb, var(--accent-red) 79%, black);
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       ★ 파랑은 「카드 안의 뜻」에만 ★  (2026-09-24)
+
+       > "UI정돈이 필요할꺼 같아.. 버튼 칼라도 너무 눈에 튀어"
+
+       파랑은 2026-09-16 에 「접수·정보」 한 가지 뜻으로 들여왔다. 그런데
+       탭·필터·버튼·배지·링크·금액·송장번호까지 열다섯 자리가 나눠 쓰게 되어,
+       같은 색이 여섯 가지를 뜻하게 됐다. 색이 여러 뜻을 겸하면 위계가 없다 —
+       눈이 어디를 먼저 볼지 못 정하고 화면 전체가 똑같이 시끄럽다.
+
+       그래서 파랑을 원래 뜻으로 되돌린다.
+         남긴다  접수 배지 · 타임라인 상태 태그 · 진행 단계 · 초점 테두리
+         걷는다  탭 · 필터 · 큰 버튼 · 송장번호 · 금액 · 사진 태그 · 검색 결과
+
+       걷어낸 자리는 «바탕색 차이»가 대신한다 — 카드 경계를 그렇게 낸
+       것과 같은 방식이다(2026-09-20). 색을 안 쓰고도 「지금 여기」가 보인다.
+       ══════════════════════════════════════════════════════════════ */
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; width: 100%;
+      min-height: 100vh; min-height: 100dvh;
+      background: var(--bg-primary); color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+    button, input, select, textarea { font-family: inherit; font-size: 14px; }
+
+    /* ── 상단 ── */
+    .top {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 14px 12px;
+      padding-top: calc(14px + env(safe-area-inset-top, 0px));
+      background: var(--bg-secondary);
+      position: sticky; top: 0; z-index: 40;
+    }
+    /* ══════════════════════════════════════════════════════════════
+       ★ 업체 이름이 제목이다 ★  (2026-09-20)
+
+       > "타이틀에 업체 이름이 크게 보여야 할꺼 같아..
+       >  본인 업체 페이지라는 느낌이 강하게 들게"
+
+       여태 큰 글자는 「반품 현황」이었고 업체 이름은 그 밑에 작게 붙어 있었다.
+       업체가 열었을 때 첫눈에 들어와야 하는 것은 «우리 페이지»라는 사실이다.
+       자리를 맞바꾼다 — 업체 이름을 크게, 무엇을 보는 화면인지는 작게.
+
+       ★ 여기는 앞으로 발주·송장조회·마감·단가조회가 붙을 자리다 ★
+         그러면 「반품 현황」은 여러 쪽 중 하나가 된다. 제목이 업체 이름이어야
+         그때 가서 다시 안 고친다.
+       ══════════════════════════════════════════════════════════════ */
+    .top-title { flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .top-title b {
+      display: block; font-size: 19px; font-weight: 700; line-height: 1.25;
+      color: var(--text-bright);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .top-title small { display: block; font-size: 11.5px; color: var(--text-muted); font-weight: 500; margin-top: 1px; }
+    @media (min-width: 900px) {
+      .top-title b { font-size: 22px; }
+    }
+    .icon-btn {
+      width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px;
+      border: 1px solid transparent; background: var(--bg-card); color: var(--text-bright);
+      font-size: 16px; cursor: pointer;
+    }
+    .icon-btn:active { background: var(--bg-card); }
+
+    .wrap { padding: 14px; max-width: 720px; margin: 0 auto; }
+
+    /* ══════════════════════════════════════════════════════════════
+       ★ PC 에서는 가로 셋 ★  (2026-09-16)
+
+       > "지금은 모바일 버젼인데 pc에서는 가로 3개 한줄로 전체를 다
+       >  볼수 있게"
+
+       폭을 720px 로 묶어 두어 큰 화면에서도 카드가 한 줄에 하나였다.
+       업체는 진행 중 반품을 «훑어보는» 것이 일이라 한 화면에 많이 들어와야
+       한다. 넓어지면 셋, 더 좁으면 둘, 폰에서는 하나.
+
+       ★ 칸 수를 못 박지 않는다 ★  카드 한 장에 최소 330px 를 주고 남는
+         만큼 채운다. 노트북·태블릿·세로 모니터가 저마다 알맞게 선다.
+       ★ 카드 안은 «안 바꾼다» ★  왼쪽 1 : 오른쪽 2 비율(c-left/c-right)은
+         2026-09-11 에 정한 것이다. 칸이 좁아지면 그 안에서 위아래로 접힌다.
+       ══════════════════════════════════════════════════════════════ */
+    @media (min-width: 900px) {
+      .wrap { max-width: 1560px; padding: 18px 20px 20px; }
+      #list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+        gap: 12px;
+        align-items: start;
+      }
+      #list > .card { margin-bottom: 0; }
+
+      /* ══════════════════════════════════════════════════════════
+         ★ 위 칸도 폭을 다 쓴다 ★  (2026-09-20)
+
+         > "PC에서는 오른쪽 상단이 빈공간이라 미완성느낌이야..
+         >  위 매뉴들이 분할되어 오른쪽도 채워주면 좋겠어"
+
+         종전에는 셈(KPI)·단추·필터·검색을 모두 760px 로 묶어 두어, 카드가
+         셋씩 서는 넓은 화면에서 오른쪽 절반이 통째로 비었다.
+         왼쪽에 «지금 몇 건인가»(셈), 오른쪽에 «무엇을 할까»(접수·거르기·찾기).
+         읽는 것과 누르는 것을 갈라 두면 눈이 오갈 일도 준다.
+         ══════════════════════════════════════════════════════════ */
+      /*  ★ .wrap 을 앞에 단다 ★ 아래쪽 폰용 규칙(.head/.kpi …)이 이 블록보다
+          «뒤»에 있어서, 무게가 같으면 뒤가 이긴다. 한 칸 무겁게 둔다.  */
+      .wrap > .head {
+        display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 18px; align-items: start; margin-bottom: 16px;
+      }
+      .wrap .head-r { display: flex; flex-direction: column; gap: 10px; }
+      .wrap .kpi, .wrap .bar, .wrap .search, .wrap .btn-new {
+        max-width: none; margin-bottom: 0;
+      }
+      /* 오른쪽 칸 높이를 셈 칸에 맞춘다 — 단추가 혼자 커 보이지 않게 */
+      .wrap .btn-new { padding: 11px; }
+      /* 「접수 없음」 같은 안내는 한 줄을 다 쓴다 — 셋 중 하나만 서면 어색하다 */
+      #list > .empty, #list > .err { grid-column: 1 / -1; }
+    }
+
+    /* ── 쪽 고르기 ── */
+    .pages { display: flex; gap: 6px; margin-bottom: 14px; }
+    .pages button {
+      padding: 9px 16px; border: 1px solid transparent; border-radius: 999px;
+      background: transparent; color: var(--text-muted);
+      font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    /*  고른 것은 «뒤집어» 세운다 — 밝은 테마에서는 카드색이 바탕과 같은 흰색이라
+        면을 한 톤 띄우는 방법이 안 통한다(고른 칸 대비 1.1 이었다).
+        색을 쓰지 않고도 「지금 여기」가 확실해진다.
+        --text-primary 로 뒤집으면 순백 덩어리가 되어 이번엔 그것이 제일 시끄럽다.
+        한 톤 낮춘 --text-bright 로 둔다 — 갈리는 것은 그대로고 덜 튄다. */
+    .pages button.on { background: var(--text-bright); color: var(--bg-primary); }
+
+    /* ── 발주 · 송장조회 ── */
+    .ord-find { margin-bottom: 14px; }
+    .ord-find label { display: block; font-size: 11.5px; color: var(--text-secondary);
+      font-weight: 600; margin-bottom: 5px; }
+    .ord-find textarea {
+      width: 100%; padding: 11px; border-radius: 10px; border: 1px solid transparent;
+      background: var(--bg-sunken); color: var(--text-primary);
+      font-family: inherit; font-size: 13.5px; line-height: 1.5; resize: vertical;
+    }
+    .ord-find-row { display: flex; gap: 6px; margin-top: 8px; }
+    .ord-find-row .btn-new { flex: 1; margin: 0; padding: 11px; }
+    .ord-find-row .act { flex: 0 0 auto; padding: 11px 16px; }
+
+    /*  붙여넣은 줄 하나가 한 덩어리. 무엇을 찾았는지 줄을 그대로 되비춘다 —
+        열 줄을 붙이면 어느 줄이 안 나왔는지가 제일 궁금하다.  */
+    .ord-grp { margin-bottom: 14px; }
+    .ord-grp-h {
+      display: flex; align-items: baseline; gap: 7px; margin-bottom: 6px;
+      font-size: 12px; color: var(--text-secondary); font-weight: 600;
+    }
+    .ord-grp-q { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; color: var(--text-bright); }
+    .ord-grp-n { flex: 0 0 auto; font-size: 11px; color: var(--text-muted); font-weight: 500; }
+    .ord-grp.none .ord-grp-n { color: var(--accent-orange); }
+
+    .ord-row {
+      background: var(--bg-card); border-radius: 12px; padding: 10px 12px;
+      margin-bottom: 7px;
+    }
+    .ord-row .t { font-size: 13.5px; font-weight: 600; line-height: 1.4; }
+    .ord-row .m {
+      margin-top: 4px; font-size: 11.5px; color: var(--text-muted);
+      display: flex; flex-wrap: wrap; gap: 4px 10px;
+    }
+    .ord-row .m b { color: var(--text-secondary); font-weight: 600; }
+    .ord-inv { color: var(--accent-blue); font-weight: 700; }
+    .ord-src { font-size: 10.5px; color: var(--text-muted); }
+    .ord-copy {
+      margin-top: 7px; padding: 5px 10px; border: 1px solid transparent; border-radius: 8px;
+      background: var(--bg-sunken); color: var(--text-secondary);
+      font-size: 11px; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .ord-copy.done { color: var(--accent-green); }
+    @media (min-width: 900px) {
+      #oList { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; align-items: start; }
+      #oList > .ord-grp { grid-column: 1 / -1; }
+      .wrap .ord-find { max-width: 760px; }
+    }
+
+    /* ── 발주 넣기 ── */
+    .ent-warn {
+      margin-bottom: 14px; padding: 10px 12px; border-radius: 10px;
+      background: var(--accent-orange-bg); color: var(--accent-orange-ink);
+      font-size: 12px; line-height: 1.6;
+    }
+    .ent-warn.live { background: var(--accent-red-bg); color: var(--accent-red-ink); }
+    .ent-sec { margin-bottom: 18px; }
+    .ent-h {
+      display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;
+      font-size: 13px; font-weight: 700; color: var(--text-bright);
+    }
+    .ent-h span { font-size: 11px; font-weight: 500; color: var(--text-muted); }
+    .ent-sec .fld, .ent-sec .fld2 { margin-bottom: 9px; }
+    .ent-sec label { display: block; font-size: 11.5px; color: var(--text-secondary);
+      font-weight: 600; margin-bottom: 4px; }
+    .ent-sec input[type="text"], .ent-sec input[type="tel"] {
+      width: 100%; padding: 10px 11px; border-radius: 10px; border: 1px solid transparent;
+      background: var(--bg-sunken); color: var(--text-primary); font-family: inherit; font-size: 13.5px;
+    }
+    .ent-sec textarea {
+      width: 100%; margin-top: 7px; padding: 10px 11px; border-radius: 10px;
+      border: 1px solid transparent; background: var(--bg-sunken); color: var(--text-primary);
+      font-family: inherit; font-size: 13px; line-height: 1.5; resize: vertical;
+    }
+    .ent-items { max-height: 260px; overflow-y: auto; margin-top: 8px; }
+    .ent-item {
+      display: block; width: 100%; text-align: left; margin-bottom: 5px;
+      padding: 8px 10px; border-radius: 9px; border: 1px solid transparent;
+      background: var(--bg-card); color: var(--text-bright);
+      font-family: inherit; font-size: 12.5px; line-height: 1.45; cursor: pointer;
+    }
+    .ent-item b { display: block; font-weight: 600; }
+    .ent-item i {
+      display: block; font-style: normal; margin-top: 2px;
+      font-size: 11px; color: var(--text-muted);
+    }
+    .ent-item .no { color: var(--accent-red); font-weight: 700; }
+    /*  받는 분이 머리글, 그 아래 품목. 엑셀로 쉰 줄이 들어와도 사람 단위로
+        읽힌다 — 평평하게 늘어놓으면 잘못 들어간 한 줄을 못 찾는다. */
+    .ent-grp { margin-bottom: 12px; }
+    .ent-grp-h {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; margin-bottom: 5px;
+      background: var(--bg-sunken); border-radius: 9px;
+    }
+    .ent-grp-t { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--text-bright); }
+    .ent-grp-t i {
+      display: block; font-style: normal; font-weight: 500;
+      font-size: 11px; color: var(--text-muted); margin-top: 2px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .ent-grp-n { flex: 0 0 auto; font-size: 11px; color: var(--text-muted); font-weight: 600; }
+    .ent-grp .ent-row { margin-left: 10px; }
+    .ent-row {
+      display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+      background: var(--bg-card); border-radius: 9px; margin-bottom: 5px;
+    }
+    .ent-row .g { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.4; }
+    .ent-row .g i { display: block; font-style: normal; font-size: 11px; color: var(--text-muted); }
+    /*  ⚠ 붙은 줄 — 막지 않고 알린다. 담긴 것이고, 사람이 보고 판단한다 */
+    .ent-row.warn { background: rgba(240,160,48,0.14); }
+    .ent-row .ent-warn-i { color: var(--accent-orange); margin-top: 2px; }
+    .ent-row input.q {
+      flex: 0 0 62px; width: 62px; padding: 7px 8px; border-radius: 8px;
+      border: 1px solid transparent; background: var(--bg-sunken);
+      color: var(--text-primary); font-family: inherit; font-size: 13px; text-align: center;
+    }
+    .ent-row button.x {
+      flex: 0 0 auto; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px;
+      background: var(--bg-sunken); color: var(--text-muted); cursor: pointer; font-size: 15px;
+    }
+    /*  열 짚기 — 붙여넣은 것의 앞 세 줄을 그대로 보여 준다.
+        사람이 «자기 엑셀»을 보고 짚어야 하므로 값이 보여야 한다. */
+    #eMapBox { margin-top: 12px; padding: 12px; border-radius: 10px; background: var(--bg-sunken); }
+    .ent-map-scroll { overflow-x: auto; margin: 9px 0; }
+    .ent-map { border-collapse: collapse; font-size: 11.5px; white-space: nowrap; }
+    .ent-map th { padding: 0 4px 6px 0; text-align: left; }
+    .ent-map th select {
+      font-size: 11.5px; padding: 4px 6px; border-radius: 7px;
+      border: 1px solid transparent; background: var(--bg-card);
+      color: var(--text-bright); font-family: inherit;
+    }
+    .ent-map td {
+      padding: 4px 8px 4px 0; color: var(--text-muted);
+      max-width: 170px; overflow: hidden; text-overflow: ellipsis;
+    }
+    .ent-chk { display: flex; align-items: center; gap: 6px; font-size: 12px;
+      color: var(--text-secondary); margin-top: 4px; }
+    .ent-chk input { width: auto; }
+    .ent-empty { padding: 18px; text-align: center; color: var(--text-muted); font-size: 12.5px; }
+    .ent-pre { font-size: 11.5px; line-height: 1.7; }
+    .ent-pre b { color: var(--text-bright); }
+    .ent-bad { color: var(--accent-red); }
+    @media (min-width: 900px) {
+      .wrap #pageEntry { max-width: 760px; }
+      .ent-items { max-height: 340px; }
+    }
+
+    /* ── KPI ── */
+    /*  폰에서는 지금까지처럼 위에서 아래로. 좌우 나누기는 900px 부터다.  */
+    .head { display: contents; }
+    .head-r { display: contents; }
+    .kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+    .kpi div {
+      background: var(--bg-secondary); border: 1px solid transparent;
+      border-radius: 12px; padding: 10px 8px; text-align: center;
+    }
+    .kpi b { display: block; font-size: 19px; font-weight: 700; line-height: 1.2; }
+    .kpi span { font-size: 10.5px; color: var(--text-muted); }
+    .kpi .k-act b { color: var(--accent-orange); }
+    .kpi .k-done b { color: var(--accent-green); }
+    .kpi .k-fee b { font-size: 14px; color: var(--text-bright); }
+
+    /* ── 필터 ── */
+    .bar { display: flex; gap: 8px; margin-bottom: 12px; }
+    .segs { display: flex; gap: 4px; background: var(--bg-sunken); border-radius: 10px; padding: 4px; flex: 1; }
+    .segs button {
+      flex: 1; padding: 8px 4px; border: 0; border-radius: 7px;
+      background: transparent; color: var(--text-secondary); font-size: 12.5px; font-weight: 600; cursor: pointer;
+    }
+    .segs button.on { background: var(--text-bright); color: var(--bg-primary); }
+    /* 나열 차례 고르는 칸 — 진행중/완료/전체 오른쪽에 조용히 선다 */
+    .sortsel {
+      flex: 0 0 auto; margin-left: 6px; height: 36px; padding: 0 8px;
+      font-size: 13px; color: var(--text-bright); background: var(--bg-secondary);
+      border: 1px solid transparent; border-radius: 10px; cursor: pointer;
+    }
+    /*  ★ 선을 걷었으면 초점은 더 또렷해야 한다 ★  (2026-09-20)
+        테두리가 있을 때는 그것이 흐릿하게나마 「여기가 칸이다」를 말해 줬다.
+        이제 없으니, 커서가 어디 있는지는 초점 테두리가 혼자 말해야 한다.
+        PC 로 쓰는 화면이라 탭 키로 옮겨 다니는 사람이 길을 잃으면 안 된다.  */
+    .sortsel:focus,
+    .search:focus,
+    .fld input:focus, .fld select:focus, .fld textarea:focus,
+    .pop textarea:focus,
+    .act:focus-visible, .scan-btn:focus-visible, .icon-btn:focus-visible,
+    .btn-new:focus-visible, .hit:focus-visible, .photo-pick .pk:focus-within {
+      outline: 2px solid var(--accent-blue); outline-offset: 1px;
+    }
+    .search {
+      width: 100%; padding: 11px 12px; border-radius: 10px;
+      border: 1px solid transparent; background: var(--bg-sunken); color: var(--text-primary); margin-bottom: 12px;
+    }
+    .btn-new {
+      width: 100%; padding: 13px; border-radius: 11px; border: 0;
+      background: var(--bg-card); color: var(--accent-blue); font-size: 14px; font-weight: 700;
+      cursor: pointer; margin-bottom: 14px;
+    }
+    .btn-new:active { background: var(--accent-blue-bg); }
+
+    /* ── 카드 ── */
+    /* ★ 바깥선을 걷었다 ★  (2026-09-20)
+       > "외각라인을 삭제하고 심플하게 해줘.. 업체반품현황도 마찬가지이고.."
+       경계는 «바탕색 차이»로 낸다 — 카드는 밝고 바깥은 어둡다.
+       선을 겹쳐 두면 무엇이 한 덩어리인지가 되레 안 보인다. */
+    .card {
+      background: var(--bg-secondary); border: 1px solid transparent;
+      border-radius: 14px; padding: 13px; margin-bottom: 10px;
+    }
+    .c-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+    .c-name { font-size: 15px; font-weight: 700; flex: 1; min-width: 0; }
+    .badge {
+      flex-shrink: 0; padding: 4px 9px; border-radius: 999px;
+      font-size: 11px; font-weight: 700; white-space: nowrap;
+    }
+    .b-new { background: var(--accent-blue-bg); color: var(--accent-blue-ink); }
+    .b-mid { background: var(--accent-orange-bg); color: var(--accent-orange-ink); }
+    .b-in  { background: var(--accent-purple-bg); color: var(--accent-purple-ink); }
+    .b-ok  { background: var(--accent-green-bg); color: var(--accent-green-ink); }
+    .b-off { background: var(--border); color: var(--text-secondary); }
+
+    .c-body { display: flex; gap: 12px; flex-wrap: wrap; }
+    /* ★ 왼쪽:오른쪽 = 1:2 ★  (2026-09-11)
+       왼쪽(품목·송장·연락처)은 한 번 읽고 마는 것이고, 오른쪽 처리 경과는
+       업체가 «매일 들여다보는» 것이다. 반반이면 오른쪽이 좁아 사진과 글이
+       세로로만 쌓이고 옆이 비어 있었다. 자리는 자주 보는 쪽에 준다.
+       190/280 은 «접히는 바닥»이다 — 폰에서는 여기서 위아래로 접힌다. */
+    .c-left { flex: 1 1 190px; min-width: 0; }
+    .c-right { flex: 2 1 280px; min-width: 0; }
+    .meta { font-size: 12.5px; color: var(--text-secondary); line-height: 1.65; word-break: break-all; }
+    .meta em { color: var(--text-muted); font-style: normal; }
+    .sub { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+    /* 전화번호 딱지 — 작고 조용하게. 「안심번호뿐」일 때만 색을 준다
+       (2026-09-11 · CS home.html · v2 returns.css 와 같은 규칙) */
+    /* 이름은 번호에 딸린 것이라 번호보다 조용하게, 다만 읽히게
+       (CS home.html · v2 returns.css 의 .ret-ph-who 와 같은 무게) */
+    .ph-who { font-size: 0.92em; font-weight: 600; opacity: 0.85; }
+    .ph-tag { font-size: 0.85em; font-weight: 600; opacity: 0.7; }
+    .ph-sub { font-size: 0.9em; opacity: 0.55; }
+    .ph-warn { font-size: 0.85em; font-weight: 600; color: var(--accent-red); }
+    /* ★ 지난번에 보신 뒤로 CS 가 남긴 것 ★  (2026-09-18)
+       눈에 걸리되 시끄럽지 않게 — 테두리 한 줄과 띠 하나까지만.
+       깜빡임은 안 쓴다. 오래 켜져 있는 것이 깜빡이면 화면을 피하게 된다. */
+    /* 강조도 «선»이 아니라 결로 — 바깥선을 걷었으니 (2026-09-20).
+       왼쪽에 굵은 띠 한 줄. 눈은 바로 가는데 화면은 조용하다. */
+    .card.card-fresh {
+      background:
+        linear-gradient(90deg, var(--accent-orange) 0 3px, transparent 3px),
+        var(--bg-secondary);
+    }
+    .fresh-bar {
+      display: flex; align-items: center; gap: 7px;
+      margin-bottom: 8px; padding: 5px 10px; border-radius: 8px;
+      background: var(--accent-orange-bg); color: var(--accent-orange-ink);
+      font-size: 0.86em; font-weight: 700;
+    }
+    .fresh-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
+      background: var(--accent-orange);
+    }
+
+    /* 반품사유 — 품목 바로 밑. 두 테마 다 읽히게 변수로 (2026-09-18) */
+    .reason { margin-top: 3px; color: var(--accent-orange); font-size: 0.95em; }
+    .fee { color: var(--text-bright); font-weight: 600; }
+    .inv-link { color: var(--text-bright); text-decoration: underline; text-underline-offset: 2px;
+      text-decoration-color: var(--border); }
+    .inv-link:active { color: var(--text-primary); }
+
+    /* 타임라인 */
+    /* ★ 반품송장은 따로 세운다 ★  (2026-09-11)
+       > "반품송장번호는 카드안에 넣어서 잘보이게 해줘"
+       한 줄로 흘려 두면 원송장·수거·연락처 사이에 묻힌다. 업체가 카드를
+       여는 «이유»가 대개 이 번호라, 눈이 먼저 닿는 자리에 둔다.
+       아직 없을 때도 칸을 지운다 — 「없다」가 보여야 기다릴지 물어볼지 안다. */
+    /* 선 없이 바탕만으로 세운다 (2026-09-20) — 카드 안에 상자 선이 겹치면
+       정작 번호가 눈에 안 들어온다. 「따로 세운다」는 뜻은 바탕이 맡는다. */
+    .ret-inv-box {
+      margin-top: 8px; padding: 7px 9px; border-radius: 8px;
+      background: var(--bg-sunken); border: 1px solid transparent;
+    }
+    .ret-inv-box .lab { font-size: 10.5px; color: var(--text-muted); margin-bottom: 2px; }
+    .ret-inv-box .val { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
+    .ret-inv-box .val a { color: var(--text-primary); text-decoration: underline;
+      text-underline-offset: 3px; text-decoration-color: var(--border); }
+    .ret-inv-box .val a:hover { text-decoration: underline; }
+    /*  아직 없을 때는 바탕을 더 낮춘다 — 점선 테두리가 하던 일을 옮긴다 */
+    .ret-inv-box.none { background: var(--border-soft); }
+    .ret-inv-box.none .val { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+    .tl-h { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
+    /* 이 선은 «세로 흐름»을 읽게 해 주는 선이라 남긴다 — 다만 더 옅게.
+       모든 선을 없애는 것이 목적이 아니라, 뜻 없는 선을 없애는 것이다 (2026-09-20). */
+    /*  세로 선도 걷는다 (2026-09-20) — 「앱 느낌으로」.
+        흐름은 들여쓰기와 사이 여백이 대신 읽어 준다.  */
+    .tl { padding-left: 2px; }
+    .ev { margin-bottom: 8px; }
+    .ev:last-child { margin-bottom: 0; }
+    .ev-when { font-size: 10.5px; color: var(--text-muted); }
+    .ev-tag {
+      display: inline-block; font-size: 10px; font-weight: 700;
+      padding: 1px 6px; border-radius: 5px; margin-left: 4px;
+    }
+    .t-status  { background: var(--accent-blue-bg); color: var(--accent-blue-ink); }
+    .t-access  { background: var(--border); color: var(--text-secondary); }
+    .t-mine    { background: var(--accent-orange-bg); color: var(--accent-orange-ink); }
+    .t-consult { background: var(--accent-purple-bg); color: var(--accent-purple-ink); }
+    .t-photo   { background: var(--border); color: var(--text-secondary); }
+    .ev-body { font-size: 12.5px; color: var(--text-bright); margin-top: 2px; word-break: break-word; }
+    .ev-body a { color: var(--text-primary); text-decoration: underline; text-underline-offset: 2px; }
+
+    /* 사진 썸네일 — 눌러 같은 화면 팝업으로 연다 (새 탭 아님) */
+    .ev-thumbs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+    /* 송장 사진은 «읽으려고» 보는 것이다. 52px 로는 글자가 안 보여
+       매번 크게 열어야 했다. 칸이 넓어진 만큼 키운다. */
+    .ev-thumbs button {
+      display: block; width: 92px; height: 92px; border-radius: 7px; overflow: hidden;
+      border: 1px solid transparent; background: var(--bg-sunken); position: relative;
+      padding: 0; cursor: pointer;
+    }
+    .ev-thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .ev-thumbs .alt {
+      display: none; position: absolute; inset: 0; align-items: center; justify-content: center;
+      font-size: 9.5px; color: var(--text-secondary); text-align: center; line-height: 1.3;
+    }
+    .ev-thumbs button.fail .alt { display: flex; }
+
+    /* 처리 단계 — "어디까지 됐나" 를 한눈에 보여 문의를 줄인다 */
+    .steps { display: flex; gap: 3px; margin: 9px 0 2px; }
+    .steps .st {
+      flex: 1; min-width: 0; text-align: center; font-size: 9.5px; font-weight: 600;
+      padding: 4px 2px 5px; border-radius: 6px; background: var(--bg-sunken); color: var(--text-muted);
+      border-top: 2px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /*  ★ 지나온 자리에만 선을 남긴다 ★  (2026-09-20)
+        네 칸 모두에 회색 선을 그으면 그 선이 「단계」가 아니라 「상자 테두리」로
+        읽힌다. 지나온 칸과 지금 칸만 파랗게 긋는다 — 어디까지 왔는지는
+        「색이 찬 데까지」로 읽힌다. */
+    .steps .st.done { color: var(--text-secondary); border-top-color: var(--accent-blue); }
+    .steps .st.now  { color: var(--accent-blue-ink); background: var(--accent-blue-bg); border-top-color: var(--accent-blue); }
+    .steps.off .st  { color: var(--text-muted); border-top-color: transparent; }
+    .steps-off-note { font-size: 10.5px; color: var(--text-muted); margin: 9px 0 2px; }
+
+    /* 액션 */
+    /*  가름선 대신 여백으로 가른다 — 카드 안에 선이 하나 줄면 그만큼 조용해진다 */
+    .c-foot { display: flex; gap: 6px; margin-top: 14px; }
+    .act {
+      flex: 1; padding: 9px 6px; border-radius: 9px; border: 1px solid transparent;
+      background: var(--bg-sunken); color: var(--text-bright); font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .act:active { background: var(--bg-card-hover); }
+    .pop { display: none; margin-top: 9px; }
+    .pop.on { display: block; }
+    .pop textarea {
+      width: 100%; min-height: 68px; padding: 10px; border-radius: 9px;
+      border: 1px solid transparent; background: var(--bg-sunken); color: var(--text-primary); resize: vertical;
+    }
+    .pop-row { display: flex; gap: 6px; margin-top: 6px; }
+
+    .empty { text-align: center; padding: 44px 20px; color: var(--text-muted); font-size: 13px; line-height: 1.8; }
+
+    /* ── 정산 ── */
+    .fee-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .fee-tbl th, .fee-tbl td { padding: 11px 8px; border-bottom: 1px solid transparent; text-align: left; }
+    /*  줄을 긋는 대신 한 줄 걸러 바탕을 살짝 올린다 — 눈이 옆줄로 안 샌다 */
+    .fee-tbl tbody tr:nth-child(odd) td { background: var(--bg-sunken); }
+    .fee-tbl th { color: var(--text-muted); font-size: 11px; font-weight: 600; }
+    .fee-tbl td.num { text-align: right; }
+
+    /* ── 모달 ── */
+    .modal {
+      display: none; position: fixed; inset: 0; z-index: 200;
+      background: rgba(8,9,13,0.72); padding: 16px; overflow-y: auto;
+    }
+    .modal.on { display: block; }
+    .sheet {
+      max-width: 480px; margin: 24px auto; background: var(--bg-secondary);
+      border: 1px solid transparent; border-radius: 16px; padding: 18px;
+    }
+    .sheet h2 { font-size: 16px; margin: 0 0 4px; font-weight: 700; }
+    /*  안내 글씨는 어디에 있든 같은 크기다 — .sheet 안에서만 작았던 탓에
+        발주 화면에서는 본문만 한 크기로 떴다 (2026-09-20).  */
+    .hint { font-size: 11.5px; color: var(--text-muted); line-height: 1.6; }
+    .sheet .hint { margin-bottom: 14px; }
+    .ord-find .hint { margin-top: 7px; }
+    .fld { margin-bottom: 11px; }
+    .fld label { display: block; font-size: 11.5px; color: var(--text-secondary); margin-bottom: 5px; font-weight: 600; }
+    .fld input, .fld select, .fld textarea {
+      width: 100%; padding: 11px; border-radius: 10px;
+      border: 1px solid transparent; background: var(--bg-sunken); color: var(--text-primary);
+    }
+    .fld textarea { min-height: 62px; resize: vertical; }
+    .fld2 { display: flex; gap: 8px; }
+    .fld2 > * { flex: 1; min-width: 0; }
+    .req::after { content: ' *'; color: var(--accent-red); }
+    .scan-row { display: flex; gap: 8px; }
+    .scan-row input { flex: 1; min-width: 0; }
+    .scan-btn {
+      flex: 0 0 auto; padding: 11px 13px; border-radius: 10px; border: 1px solid transparent;
+      background: var(--bg-card); color: var(--text-bright); font-weight: 600; cursor: pointer;
+    }
+    .sheet-foot { display: flex; gap: 8px; margin-top: 16px; }
+    .sheet-foot button { flex: 1; padding: 13px; border-radius: 11px; border: 0; font-weight: 700; cursor: pointer; }
+    .b-primary { background: var(--accent-blue); color: var(--on-accent); }
+    .b-ghost { background: var(--bg-sunken); color: var(--text-bright); border: 1px solid transparent !important; }
+    .b-warn { background: var(--accent-red); color: var(--on-accent); }
+    .msg { font-size: 12px; line-height: 1.6; margin-top: 10px; min-height: 16px; }
+    .msg.err { color: var(--accent-red); }
+    .msg.ok { color: var(--accent-green); }
+    .hidden-file { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+    /* ── 로딩 ── */
+    .load { display: none; position: fixed; inset: 0; z-index: 300;
+      background: rgba(15,17,23,0.86); align-items: center; justify-content: center;
+      flex-direction: column; gap: 12px; }
+    .load.on { display: flex; }
+    .spin { width: 34px; height: 34px; border: 3px solid rgba(255,255,255,0.09);
+      border-top-color: var(--accent-blue); border-radius: 50%; animation: rot .8s linear infinite; }
+    @keyframes rot { to { transform: rotate(360deg); } }
+    .ver { text-align: center; font-size: 11px; color: var(--text-muted); padding: 20px 0 30px; }
+
+    .photo-pick { display: flex; gap: 6px; flex-wrap: wrap; }
+    .photo-pick .pk {
+      flex: 1; min-width: 72px; text-align: center; padding: 10px 8px;
+      border-radius: 9px; border: 1px solid transparent; background: var(--bg-sunken);
+      color: var(--text-bright); font-size: 12.5px; font-weight: 600; cursor: pointer;
+    }
+    .photo-pick .pk input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .photo-prev { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .photo-prev .pend {
+      position: relative; width: 56px; height: 56px; border-radius: 8px; overflow: hidden;
+      border: 1px solid transparent; background: var(--bg-sunken);
+    }
+    .photo-prev .pend img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .photo-prev .pend button {
+      position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; padding: 0;
+      border: 0; border-radius: 50%; background: rgba(8,9,13,0.72); color: var(--on-accent);
+      font-size: 12px; line-height: 18px; cursor: pointer;
+    }
+    .photo-help { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+    .hits { margin-top: 6px; }
+    .hit {
+      display: block; width: 100%; text-align: left; padding: 9px 10px; margin-bottom: 5px;
+      border-radius: 9px; border: 1px solid transparent; background: var(--bg-sunken);
+      color: var(--text-bright); font-size: 12.5px; line-height: 1.5; cursor: pointer;
+    }
+    .hit:active, .hit.on { background: var(--border); color: var(--text-primary); }
+    .hit b { display: block; font-size: 13px; margin-bottom: 2px; }
+
+    .lb {
+      display: none; position: fixed; inset: 0; z-index: 260;
+      background: rgba(8,9,13,0.88); padding: 16px;
+      align-items: center; justify-content: center;
+    }
+    .lb.on { display: flex; }
+    .lb img {
+      max-width: min(92vw, 880px); max-height: 82vh;
+      border-radius: 10px; object-fit: contain; background: #111;
+    }
+    .lb-x {
+      position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 14px;
+      width: 40px; height: 40px; border: 0; border-radius: 50%;
+      background: var(--bg-card); color: var(--on-accent); font-size: 22px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top">
+    <!-- 업체 이름은 서버가 심어 준 값(vendorName)이라 첫 그림부터 제자리에 있다.
+         불러오기를 기다리는 동안 이름이 비어 있으면 「남의 화면」처럼 보인다. -->
+    <div class="top-title" id="topTitle">
+      <b id="topVendor"><?= vendorName ?></b>
+      <small id="topSub">불러오는 중…</small>
+    </div>
+    <button class="icon-btn" type="button" id="btnTheme" title="밝게 보기" aria-label="화면 밝기">&#9728;&#65039;</button>
+    <button class="icon-btn" type="button" id="btnFee" title="반품비 정산">&#8361;</button>
+    <button class="icon-btn" type="button" id="btnReload" title="새로고침">&#8635;</button>
+  </div>
+
+  <div class="wrap">
+    <!-- ★ 쪽 고르기 ★ (2026-09-20)
+         여기가 이 업체의 페이지가 되어 간다. 반품 현황은 그중 한 쪽이다. -->
+    <div class="pages">
+      <button type="button" class="on" data-page="returns">반품 현황</button>
+      <button type="button" data-page="orders">발주 · 송장조회</button>
+      <button type="button" data-page="entry">발주 넣기</button>
+    </div>
+
+    <div id="pageReturns">
+    <!-- ★ PC 에서 좌우로 나눈다 ★ (2026-09-20) 폰에서는 display:contents 라
+         지금까지처럼 위에서 아래로 차례대로 선다. -->
+    <div class="head">
+      <div class="kpi">
+        <div class="k-act"><b id="kAct">-</b><span>진행 중</span></div>
+        <div class="k-done"><b id="kDone">-</b><span>완료</span></div>
+        <div><b id="kToday">-</b><span>오늘 접수</span></div>
+        <div class="k-fee"><b id="kFee">-</b><span>반품비 합계</span></div>
+      </div>
+
+      <div class="head-r">
+        <button class="btn-new" type="button" id="btnNew">＋ 새 반품 접수</button>
+
+        <div class="bar">
+          <div class="segs">
+            <button type="button" class="on" data-f="active">진행 중</button>
+            <button type="button" data-f="done">완료</button>
+            <button type="button" data-f="all">전체</button>
+          </div>
+          <select id="sortSel" class="sortsel" title="나열 차례" aria-label="나열 차례">
+            <option value="new">최신순</option>
+            <option value="old">오래된순</option>
+            <option value="stage">상태순</option>
+          </select>
+        </div>
+
+        <input class="search" type="search" id="q" placeholder="이름 · 송장 · 상품명 검색" autocomplete="off">
+      </div>
+    </div>
+
+    <div id="list"></div>
+    </div><!-- /#pageReturns -->
+
+    <!-- ══════════════════════════════════════════════════════════
+         발주 및 송장조회  (2026-09-20)
+
+         ★ 붙여넣기가 기본 동작이다 ★
+           가게업체는 제품명을 손으로 치지 않는다. 주문서·카톡·엑셀에서
+           긁어 붙인다. 그래서 검색칸을 한 줄짜리 input 이 아니라 여러 줄
+           textarea 로 둔다 — 열 줄을 붙이면 열 건을 한 번에 찾는다.
+         ══════════════════════════════════════════════════════════ -->
+    <div id="pageOrders" hidden>
+      <div class="ord-find">
+        <label for="oq">제품명 · 수취인 · 송장번호 · 고유ID</label>
+        <textarea id="oq" rows="3" autocomplete="off" spellcheck="false"
+                  placeholder="찾을 것을 붙여넣으세요.&#10;여러 줄을 붙이면 줄마다 따로 찾습니다.&#10;수량(× 3)이나 괄호 규격이 섞여 있어도 됩니다."></textarea>
+        <div class="ord-find-row">
+          <button type="button" class="btn-new" id="oGo">찾기</button>
+          <!-- ★ 엑셀도 붙여넣기와 같은 일이다 ★ (2026-09-20)
+               파일을 고르면 제품명 열을 읽어 위 칸을 채우고 바로 찾는다.
+               업체가 열·머리글을 맞춰 줄 필요가 없다 — 우리가 찾아낸다. -->
+          <label class="act" id="oXlsxBtn" style="text-align:center">엑셀 열기
+            <input type="file" id="oXlsx" accept=".xlsx,.xls,.csv,text/csv"
+                   style="position:absolute;width:1px;height:1px;opacity:0">
+          </label>
+          <button type="button" class="act" id="oClear">지우기</button>
+        </div>
+        <div class="hint" id="oHint">검색 없이 열면 아직 마감 안 된 <b>발주 및 송장조회</b>를 보여줍니다.</div>
+      </div>
+      <!-- ★ 그날 것을 한눈에 ★ (2026-09-20)
+           > "그날 발주 내용이 전체가 보여야 발주가 제대로 들어갔는지 등을
+           >  파악할수 있어"
+           날짜는 허브가 수집할 때 찍는다. 그래서 «아직 수집 안 된 줄»을
+           따로 고를 수 있게 둔다 — 방금 넣은 것이 거기 있다. -->
+      <div class="segs" id="oDays">
+        <button type="button" class="on" data-d="today">오늘</button>
+        <button type="button" data-d="yest">어제</button>
+        <button type="button" data-d="7">최근 7일</button>
+        <button type="button" data-d="new">미수집</button>
+        <button type="button" data-d="all">전체</button>
+      </div>
+      <div class="hint" id="oSum"></div>
+      <div id="oList"></div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         발주 넣기  (2026-09-20)
+
+         ★ 시트에 직접 적는 길은 그대로 살아 있다 ★
+           여기는 «또 하나의 입구»다. 넣으면 그 업체 파일의
+           「발주 및 송장조회」 탭에 줄이 더해지고, 그 뒤는 여태 돌던
+           수집·고유ID·송장이 그대로 받는다.
+         ══════════════════════════════════════════════════════════ -->
+    <div id="pageEntry" hidden>
+      <div class="ent-warn" id="entMode">
+        <b>지금은 시험 모드입니다.</b> 「넣어 보기」는 시트에 아무것도 쓰지 않고
+        어느 자리에 어떻게 들어가는지만 보여 줍니다.
+      </div>
+
+      <div class="ent-sec">
+        <div class="ent-h">받는 분 <span>여기 적힌 분께 아래 품목이 담깁니다</span></div>
+        <div class="fld2">
+          <div><label class="req">수취인</label><input type="text" id="eName" autocomplete="off"></div>
+          <div><label>전화번호</label><input type="tel" id="ePhone" inputmode="numeric" autocomplete="off"></div>
+        </div>
+        <div class="fld"><label class="req">주소</label><input type="text" id="eAddr" autocomplete="off"></div>
+        <div class="fld2">
+          <div><label>배송메시지</label><input type="text" id="eMsg" autocomplete="off"></div>
+          <div><label>적요</label><input type="text" id="eNote" autocomplete="off"></div>
+        </div>
+        <!-- ★ 한 번에 여러 사람 ★ 담은 것은 그대로 두고 칸만 비운다.
+             한 사람 다 담고 「다음 분」을 눌러 이어 담는다. -->
+        <div class="ord-find-row">
+          <button type="button" class="act" id="eNext">다음 분 (칸 비우기)</button>
+        </div>
+      </div>
+
+      <div class="ent-sec">
+        <div class="ent-h">품목 고르기 <span id="eItemCnt"></span></div>
+        <input class="search" type="search" id="eSearch" autocomplete="off"
+               placeholder="품목명 · 코드로 좁히기">
+        <div id="eItems" class="ent-items">단가조회를 불러오는 중…</div>
+      </div>
+
+      <div class="ent-sec">
+        <div class="ent-h">묶음으로 넣기 <span>줄마다 한 건</span></div>
+        <div class="hint">
+          엑셀에서 긁어 그대로 붙여넣으세요. <b>열 차례는 아무래도 됩니다</b> —
+          읽은 뒤에 어느 칸이 무엇인지 짚는 화면이 나옵니다.
+        </div>
+        <textarea id="eBulk" rows="3" spellcheck="false"
+                  placeholder="JHMINIJJIMB00002	3	홍길동	010-1234-5678	서울시 …"></textarea>
+        <div class="ord-find-row">
+          <label class="act" style="text-align:center">엑셀 열기
+            <input type="file" id="eXlsx" accept=".xlsx,.xls,.csv,text/csv"
+                   style="position:absolute;width:1px;height:1px;opacity:0">
+          </label>
+          <button type="button" class="act" id="eBulkAdd">읽기</button>
+        </div>
+        <!-- 열 짚기 — 읽은 뒤 여기서 칸을 확인하고 담는다 -->
+        <div id="eMapBox" hidden></div>
+      </div>
+
+      <div class="ent-sec">
+        <div class="ent-h">담은 것 <span id="eCartCnt">0줄</span></div>
+        <div id="eCart"></div>
+        <div class="ord-find-row">
+          <button type="button" class="btn-new" id="eDry">넣어 보기 (안 씀)</button>
+          <button type="button" class="act" id="eGo">발주 넣기</button>
+        </div>
+        <div id="eMsgBox" class="hint"></div>
+      </div>
+    </div>
+
+    <div class="ver">Pack2U 협력업체 포털 <?= version ?></div>
+  </div>
+
+  <!-- 새 반품 접수 -->
+  <div class="modal" id="mNew">
+    <div class="sheet">
+      <h2>새 반품 접수</h2>
+      <div class="hint">
+        접수하면 CS팀 반품관리대장에 바로 등록됩니다.<br>
+        반품비는 CS팀이 확인 후 입력합니다.
+      </div>
+
+      <div class="fld">
+        <label>고유아이디</label>
+        <div class="scan-row">
+          <input type="text" id="nUid" autocomplete="off" placeholder="발주 마감 고유ID">
+          <button class="scan-btn" type="button" id="nLookup">불러오기</button>
+        </div>
+        <!-- ★ 송장으로도 찾는다 ★ (2026-09-20)
+             고유ID 를 모르는 건이 적지 않다. 그때 업체는 손으로 적고, 손으로
+             적은 건은 「출처 미확인」이 되어 사진을 받아야 한다.
+             업체 손에 «늘» 있는 것은 송장번호다. -->
+        <div class="hint" style="margin-top:6px">
+          고유ID를 모르시면 아래 <b>원송장번호</b>를 적고 「송장으로 찾기」를 눌러 주세요.
+        </div>
+        <div class="hits" id="nHits"></div>
+      </div>
+      <div class="fld">
+        <label class="req">반품신청자 (수취인)</label>
+        <input type="text" id="nName" autocomplete="off">
+      </div>
+      <div class="fld fld2">
+        <div>
+          <label>연락처</label>
+          <input type="tel" id="nPhone" inputmode="numeric" autocomplete="off">
+          <!-- 불러오기로 딸려온 번호가 안심번호면 여기서 알려 준다.
+               사람이 0504 를 알아보고 판단하기를 바라지 않는다. -->
+          <div class="hint" id="nPhoneHint" hidden></div>
+        </div>
+        <div>
+          <label>수량</label>
+          <input type="text" id="nQty" value="1" inputmode="numeric">
+        </div>
+      </div>
+      <!-- ★ 2026-09-09: 실 전화번호 ★
+           고유아이디로 불러오면 주문에 적힌 번호가 딸려 오는데 안심번호(0504-…)
+           인 경우가 많다. 안심번호는 배송이 끝나면 끊겨서 회수 기사가 걸면
+           안 받는 번호가 된다. 업체가 아는 실제 번호를 여기 적는다.
+           대장의 「추가연락처」 열로 들어간다 — 위 연락처를 덮지 않는다. -->
+      <div class="fld">
+        <label>실 전화번호 (선택)</label>
+        <input type="tel" id="nPhone2" inputmode="numeric" autocomplete="off"
+               placeholder="안심번호 말고 실제로 통화되는 번호">
+      </div>
+      <!-- ★ 그 번호의 주인 ★  (2026-09-11)
+           > "주문자와 상담자가 다른경우가 있어"
+           주문은 며느리가 하고 전화는 시어머니가 받는 식이다.
+           회수 기사가 걸 때 «누구를 찾으면 되는지»가 이 한 낱말이다.
+           대장의 「실번호 이름」 열로 들어간다. -->
+      <div class="fld">
+        <label>실 번호 주인 (선택)</label>
+        <input type="text" id="nPhone2Name" maxlength="20" autocomplete="off"
+               placeholder="주문자와 다르면 적어 주세요">
+      </div>
+      <div class="fld">
+        <label>원송장번호</label>
+        <div class="scan-row">
+          <input type="text" id="nInv" inputmode="numeric" autocomplete="off" placeholder="직접 입력 또는 촬영">
+          <button class="scan-btn" type="button" id="nInvLookup">송장으로 찾기</button>
+          <button class="scan-btn" type="button" id="nScan">&#128247;</button>
+        </div>
+        <input type="file" class="hidden-file" id="nScanFile" accept="image/*" capture="environment">
+      </div>
+      <div class="fld">
+        <label class="req">상품명</label>
+        <input type="text" id="nItem" autocomplete="off">
+      </div>
+      <div class="fld fld2">
+        <div>
+          <label>반품 유형</label>
+          <select id="nType"></select>
+        </div>
+        <div>
+          <label>수거 택배사</label>
+          <select id="nPickup"></select>
+        </div>
+      </div>
+      <div class="fld">
+        <label>전달 사항</label>
+        <textarea id="nMemo" placeholder="반품 사유, 특이사항 등 · 스크린샷은 Ctrl+V"></textarea>
+      </div>
+      <div class="fld">
+        <label>사진 (여러 장 · 파일 / 촬영 / 붙여넣기)</label>
+        <div class="photo-pick" id="nPhotoPick">
+          <label class="pk">파일<input type="file" id="nPhotoFile" accept="image/*" multiple></label>
+          <label class="pk">촬영<input type="file" id="nPhotoCam" accept="image/*" capture="environment"></label>
+        </div>
+        <div class="photo-prev" id="nPhotoPrev"></div>
+        <div class="photo-help" id="nPhotoHelp">최대 6장. 접수할 때 함께 올라갑니다.</div>
+      </div>
+
+      <div class="msg" id="nMsg"></div>
+      <div class="sheet-foot">
+        <button class="b-ghost" type="button" id="nCancel">닫기</button>
+        <button class="b-primary" type="button" id="nSubmit">접수</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 중복 확인 -->
+  <div class="modal" id="mDup">
+    <div class="sheet">
+      <h2>중복 확인</h2>
+      <div class="hint" id="dupMsg"></div>
+      <div class="sheet-foot">
+        <button class="b-ghost" type="button" id="dupNo">취소</button>
+        <button class="b-warn" type="button" id="dupYes">그래도 접수</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 반품비 정산 -->
+  <div class="modal" id="mFee">
+    <div class="sheet">
+      <h2>월별 반품비</h2>
+      <div class="hint">최근 1년 기준. 금액은 CS팀이 확정한 값입니다.</div>
+      <div id="feeBody"></div>
+      <div class="sheet-foot">
+        <button class="b-ghost" type="button" id="feeClose">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="lb" id="mPhoto" role="dialog" aria-label="사진 보기">
+    <button class="lb-x" type="button" id="photoClose" aria-label="닫기">×</button>
+    <img id="photoFull" alt="반품 사진">
+  </div>
+
+  <div class="load" id="load">
+    <div class="spin"></div>
+    <div id="loadTxt">불러오는 중…</div>
+  </div>
+
+  <input type="file" class="hidden-file" id="attFile" accept="image/*" multiple>
+
+  <?!= include('prpDecode') ?>
+
+  <script>
+  (function () {
+    // 아래 두 줄은 반드시 force-print 스크립틀릿(느낌표 붙은 것)이어야 한다.
+    // 인쇄 스크립틀릿(느낌표 없는 것)은 script 안에서도 이스케이프해서 따옴표가
+    // 값 안으로 들어가고, SID 가 틀려 모든 호출이 인증 만료로 떨어진다.
+    // 자세한 내용은 Code.gs 의 prpJsonForScript_ 주석에 있다.
+    var SID = <?!= sidJson ?>;
+    var VENDOR = <?!= vendorJson ?>;
+    /* ★ 지난번에 본 시각 ★  (2026-09-18)
+       > "우리 웹앱의 기본은 원활한 커뮤니케이션이야..
+       >  체크하고 카톡으로 확인했습니다.. 이런 글을 또 남기는 번거로움을 줄이기"
+       CS 가 앱에서 무엇을 해도 업체가 «열어 봐야만» 알면 아직 연락이 아니다.
+       지난번 이후 CS 가 남긴 것이 있으면 그 카드를 눈에 걸리게 한다. */
+    var LAST_SEEN = <?!= lastSeenJson ?>;
+    var ROWS = [];
+    var FILTER = 'active';
+    var OPEN_POP = '';        // 열려 있는 문의창 (카드 idx)
+    var ATT_TARGET = null;    // 사진 첨부 대상 {tab, row}
+    var DUP_PENDING = null;   // 중복 확인 대기 중인 접수 payload
+    var NEW_PHOTOS = [];      // 새 접수 대기 사진 {preview, base64, mimeType}
+    var PHOTO_MAX = 6;
+    var LOOKUP_HITS = [];     // 고유ID 조회 결과
+
+    function el(id) { return document.getElementById(id); }
+    function show(id, on) { el(id).classList.toggle('on', !!on); }
+    function load(msg) { el('loadTxt').textContent = msg || '처리 중…'; show('load', true); }
+    function unload() { show('load', false); }
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    /**
+     * 세션 만료 처리.
+     *
+     * **`location.reload()` 를 부르면 안 된다.** 이 화면은 Apps Script 샌드박스
+     * iframe 안이고, 그 iframe 의 주소는 토큰이 없는 내부 주소
+     * (googleusercontent/userCodeAppPanel) 다. 그것을 다시 열면 빈 문서가 떠서
+     * **백색화면**이 된다. 토큰이 붙은 원본 링크는 최상위 프레임에만 있다.
+     *
+     * 최상위 프레임은 다른 출처라 `top.location.reload()` 가 막힌다(예외).
+     * 그래서 시도해 보고, 막히면 사용자에게 새로고침을 안내한다.
+     * 브라우저 새로고침은 원본 링크를 다시 열므로 항상 성공한다.
+     */
+    function handled(res) {
+      if (!(res && res.authExpired)) return false;
+      try {
+        if (window.top && window.top !== window) {
+          window.top.location.reload();
+          return true;
+        }
+      } catch (e) { /* 다른 출처 — 아래 안내로 넘어간다 */ }
+      expired();
+      return true;
+    }
+
+    function expired() {
+      unload();
+      el('topSub').textContent = '접속 만료';
+      el('list').innerHTML =
+        '<div class="empty">접속 유효시간이 지났습니다.' +
+        '<br><br>브라우저를 <b>새로고침</b>하면 다시 열립니다.' +
+        '<br>받으신 링크를 다시 열어도 됩니다.</div>';
+    }
+
+    function fail(err) {
+      unload();
+      alert('오류: ' + (err && err.message ? err.message : err));
+    }
+
+    // ── 상태 배지 ──
+    function badgeClass(status) {
+      var s = String(status || '').replace(/\s/g, '');
+      if (/완료|이카운트ok/i.test(s)) return 'b-ok';
+      if (/철회|취소/.test(s)) return 'b-off';
+      if (/입고|검수/.test(s)) return 'b-in';
+      if (/수거/.test(s)) return 'b-mid';
+      return 'b-new';
+    }
+
+    // ── 목록 ──
+    function loadRows(refresh) {
+      load(refresh ? '새로 불러오는 중…' : '반품 현황을 불러오는 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          unload();
+          if (handled(res)) return;
+          if (!res || !res.ok) {
+            el('list').innerHTML = '<div class="empty">' +
+              esc((res && res.error) || '목록을 불러오지 못했습니다.') + '</div>';
+            return;
+          }
+          ROWS = res.rows || [];
+          el('topSub').textContent = '반품 현황 · 최근 ' + res.days + '일';
+          var s = res.summary || {};
+          el('kAct').textContent = s.active || 0;
+          el('kDone').textContent = s.done || 0;
+          el('kToday').textContent = s.today || 0;
+          el('kFee').textContent = s.feeSumText || '0원';
+          render();
+        })
+        .withFailureHandler(fail)
+        .prpMyReturns(SID, { refresh: !!refresh });
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       나열 차례
+
+       > "반품현황에서 카드 나열을 선택할수 있게 해줘.. 최신순. 오래된순"
+
+       ★ 서버가 쓰는 열쇠를 그대로 쓴다 ★
+         sortKey 는 dateYmd_역순번 이다(prpLedger.gs). 여기서 날짜를 다시
+         해석하면 차례를 정하는 규칙이 두 군데가 되고 언젠가 어긋난다.
+       ★ 상태순도 stepIndex 를 그대로 쓴다 ★
+         카드에 그리는 단계와 나열 차례가 다르면 사람이 못 믿는다.
+       ★ 고른 것은 그 사람 브라우저에만 ★
+         업체마다·사람마다 보는 차례가 다르다. 서버에 둘 일이 아니다.
+       ══════════════════════════════════════════════════════════ */
+    var SORT = 'new';
+    try { SORT = localStorage.getItem('PRP_SORT') || 'new'; } catch (e) {}
+
+    function setSort(v) {
+      SORT = String(v || 'new');
+      try { localStorage.setItem('PRP_SORT', SORT); } catch (e) {}
+      render();
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       ★ 지난번에 본 뒤로 CS 가 남긴 것 ★  (2026-09-18)
+
+       이벤트의 date 는 YYMMDD, time 은 HH:MM 이다. 지난번 접속은
+       「yyyy-MM-dd HH:mm」 으로 온다. 둘을 «같은 자»로 만들어 견준다 —
+       모양이 다른 채로 문자열 비교를 하면 조용히 늘 참이거나 늘 거짓이 된다.
+
+       ★ 우리 글은 안 센다 ★ 업체가 자기가 쓴 글 때문에 새 소식 표시를
+         보면 그건 소음이다. kind 'mine' 은 건너뛴다.
+       ★ 처음 온 사람은 안 켠다 ★ 지난 기록이 없으면 전부가 새 것이라
+         온 화면이 켜진다. 그건 알림이 아니다.
+       ══════════════════════════════════════════════════════════ */
+    function seenKey(s) {
+      var d = String(s || '').replace(/[^0-9]/g, '');
+      if (d.length >= 12) return d.substring(2, 12);   // yyyyMMddHHmm → yyMMddHHmm
+      return '';
+    }
+    function evKey(e) {
+      var d = String((e && e.date) || '').replace(/[^0-9]/g, '');
+      if (d.length !== 6) return '';
+      var t = String((e && e.time) || '').replace(/[^0-9]/g, '');
+      while (t.length < 4) t += '0';
+      return d + t.substring(0, 4);
+    }
+    var LAST_SEEN_KEY = seenKey(LAST_SEEN);
+
+    /** 이 건에 «지난번 이후 CS 가 남긴 것»이 몇 개인가 */
+    function freshCount(c) {
+      if (!LAST_SEEN_KEY) return 0;
+      var ev = (c && c.timeline) || [];
+      var n = 0;
+      for (var i = 0; i < ev.length; i++) {
+        if (!ev[i] || ev[i].kind === 'mine') continue;   // 우리가 쓴 글은 빼고
+        var k = evKey(ev[i]);
+        if (k && k > LAST_SEEN_KEY) n++;
+      }
+      return n;
+    }
+
+    function sortRows(rows) {
+      var key = function (c) { return String((c && c.sortKey) || ''); };
+      var out = rows.slice();
+      /*  새 소식이 있는 건은 어느 차례로 보든 맨 위 — CS 쪽과 같은 규칙이다 */
+      var 새소식 = [], 나머지 = [];
+      for (var f = 0; f < out.length; f++) {
+        (freshCount(out[f]) > 0 ? 새소식 : 나머지).push(out[f]);
+      }
+      if (새소식.length) {
+        새소식.sort(function (a, b) { return key(b).localeCompare(key(a)); });
+        out = 나머지;
+      }
+      if (SORT === 'old') {
+        out.sort(function (a, b) { return key(a).localeCompare(key(b)); });
+      } else if (SORT === 'stage') {
+        /*  손이 안 간 것부터 — 접수 → 회수중 → 입고검수 → 처리완료.
+            철회(-1)는 흐름 밖이라 맨 뒤로 보낸다.
+            같은 단계면 오래된 것이 위다 — 묵은 건이 밀려 안 보이면
+            이 차례를 고른 뜻이 없다. */
+        var st = function (c) {
+          var i = stepIndex(c && c.status, c && c.done);
+          return i < 0 ? 9 : i;
+        };
+        out.sort(function (a, b) {
+          var sa = st(a), sb = st(b);
+          if (sa !== sb) return sa - sb;
+          return key(a).localeCompare(key(b));
+        });
+      } else {
+        out.sort(function (a, b) { return key(b).localeCompare(key(a)); });
+      }
+      return 새소식.length ? 새소식.concat(out) : out;
+    }
+
+    function visible() {
+      var q = el('q').value.replace(/\s/g, '').toLowerCase();
+      return ROWS.filter(function (c) {
+        if (FILTER === 'active' && c.done) return false;
+        if (FILTER === 'done' && !c.done) return false;
+        if (!q) return true;
+        //  사유로도 찾게 한다 — 「깨짐」으로 모아 보는 일이 잦다 (2026-09-18)
+        var hay = [c.name, c.item, c.invoice, c.returnInvoice, c.phone, c.phone2, c.phone2Name, c.status, c.type, c.reason]
+          .join('').replace(/\s/g, '').toLowerCase();
+        return hay.indexOf(q) >= 0;
+      });
+    }
+
+    function render() {
+      var rows = sortRows(visible());
+      var _ss = el('sortSel');
+      if (_ss && _ss.value !== SORT) _ss.value = SORT;
+      if (!rows.length) {
+        el('list').innerHTML = '<div class="empty">' +
+          (el('q').value ? '검색 결과가 없습니다.' :
+            (FILTER === 'done' ? '완료된 반품이 없습니다.' : '진행 중인 반품이 없습니다.')) +
+          '</div>';
+        return;
+      }
+      el('list').innerHTML = rows.map(cardHtml).join('');
+    }
+
+    /**
+     * 카드 식별은 화면 순번이 아니라 탭·행으로 한다.
+     * 검색어를 바꾸면 순번이 밀리므로 순번을 쓰면 엉뚱한 건에 문의가 달린다.
+     */
+    function keyOf(c) { return c.tab + ':' + c.row; }
+
+    /**
+     * 처리 단계 — "어디까지 됐나요" 문의를 줄이는 것이 목적이다.
+     * CS 상태 옵션(_CS_RETURN_STATUS_OPTS_) 중 흐름을 이루는 것만 순서대로 둔다.
+     * 철회·취소는 흐름을 벗어나므로 바를 그리지 않고 문장으로 알린다.
+     */
+    /* ══════════════════════════════════════════════════════════
+     *  진행 단계 — CS 웹앱과 «같은 규칙»이라야 한다
+     *  2026-09-11
+     *
+     *  > "반품현황에 상태값이 우리 웹앱 반품카드 상황과 안맞고
+     *     서로 같이 반응도 안되"
+     *
+     *  ★ 무엇이 어긋나 있었나 ★
+     *    CS 웹앱은 상태를 넷으로 줄였다 —
+     *      접수 · 반품송장 · 입고검수 · 이카운트OK
+     *    그런데 여기는 옛 일곱 단계(수거요청·수거중·반품입고·환불처리…)를
+     *    그대로 두고 «그 낱말이 들어 있나»로 찾고 있었다.
+     *    「반품송장」은 그 일곱 중 어디에도 안 걸려 맨 아래 return 0 으로
+     *    떨어졌다 — CS 가 회수 송장을 냈는데 업체 화면은 계속 「접수」였다.
+     *    오류가 아니라 «폴백»이라 아무도 몰랐다.
+     *
+     *  ★ 그래서 CS 의 _cs_returnStage_ 와 규칙을 맞춘다 ★
+     *    (CS_WebApp/csOrderSearch.gs) 낱말은 업체가 읽을 말로 바꾸되
+     *    «몇 단계인가»는 두 화면이 반드시 같아야 한다.
+     *    한쪽만 고치면 또 조용히 갈라진다 — 쌍으로 고칠 것.
+     *
+     *  ★ 옛 낱말도 계속 받는다 ★
+     *    드롭다운만 줄었을 뿐 지난 행에는 옛 글자가 그대로 남아 있다.
+     *    수거요청·수거중 → 회수 / 반품입고 → 입고 / 환불처리 → 완료.
+     * ══════════════════════════════════════════════════════════ */
+    var STEPS = ['접수', '회수중', '입고검수', '처리완료'];
+
+    function stepIndex(status, done) {
+      var s = String(status || '').replace(/[ 	]/g, '');
+      if (/철회|취소/.test(s)) return -1;
+      if (done) return 3;
+      if (/이카운트ok/i.test(s)) return 3;
+      if (/완료|환불/.test(s)) return 3;
+      /* 「입고」를 먼저 본다 — 「반품입고」가 「반품송장」보다 뒤 단계다 */
+      if (/입고|검수/.test(s)) return 2;
+      if (/반품송장|회수|수거/.test(s)) return 1;
+      return 0;
+    }
+
+    function stepsHtml(c) {
+      var idx = stepIndex(c.status, c.done);
+      if (idx < 0) {
+        return '<div class="steps-off-note">철회된 건입니다. 아래 진행 내역을 확인해 주세요.</div>';
+      }
+      var h = '<div class="steps">';
+      for (var i = 0; i < STEPS.length; i++) {
+        h += '<div class="st' + (i < idx ? ' done' : (i === idx ? ' now' : '')) + '">' +
+          esc(STEPS[i]) + '</div>';
+      }
+      return h + '</div>';
+    }
+
+    function driveId(u) {
+      var s = String(u || '');
+      var m = s.match(/\/d\/([-\w]{20,})/) || s.match(/[?&]id=([-\w]{20,})/);
+      return m ? m[1] : '';
+    }
+
+    /**
+     * 이력 한 줄에서 드라이브 사진을 뽑아 썸네일로 만든다.
+     * 첨부 파일은 ANYONE_WITH_LINK 로 공유되므로 업체 화면에서도 썸네일이 뜬다.
+     * 드라이브 링크가 없으면 빈 문자열을 돌려 호출부가 일반 본문으로 처리한다.
+     */
+    function thumbsHtml(text) {
+      var urls = String(text || '').match(/https?:\/\/[^\s]+/g) || [];
+      var h = '', n = 0;
+      for (var i = 0; i < urls.length; i++) {
+        var id = driveId(urls[i]);
+        if (!id) continue;
+        n++;
+        h += '<button type="button" class="thumb" data-id="' + esc(id) + '" title="사진 크게 보기">' +
+          '<img src="https://drive.google.com/thumbnail?id=' + esc(id) + '&amp;sz=w480"' +
+          ' alt="반품 사진" loading="lazy"' +
+          ' onerror="this.parentNode.classList.add(\'fail\');this.remove()">' +
+          '<span class="alt">사진<br>열기</span></button>';
+      }
+      return n ? '<div class="ev-thumbs">' + h + '</div>' : '';
+    }
+
+    /**
+     * 송장 배송조회 링크.
+     *
+     * CS앱 home.html 의 URL 과 같아야 한다 — 한쪽만 바꾸면 업체와 CS가
+     * 서로 다른 화면을 보며 통화하게 된다.
+     * 택배사를 모를 때는 네이버 검색으로 보낸다 (CS앱과 같은 폴백).
+     */
+    var TRACK = [
+      [/로젠/,          function (d) { return 'https://www.ilogen.com/web/personal/trace/' + d; }],
+      [/CJ|대한통운/,   function (d) { return 'https://trace.cjlogistics.com/next/tracking.html?wblNo=' + d; }],
+      [/한진/,          function (d) { return 'https://www.hanjin.com/kor/CMS/DeliveryMgr/WaybillResult.do?mCode=MN038&wblnum=' + d; }],
+      [/롯데/,          function (d) { return 'https://www.lotteglogis.com/home/reservation/tracking/linkView?InvNo=' + d; }],
+      [/우체국|우편/,   function (d) { return 'https://service.epost.go.kr/trace.RetrieveDomRigiTraceList.comm?displayHeader=N&sid1=' + d; }],
+      [/대신/,          function (d) { return 'https://www.ds3211.co.kr/freight/internalFreightSearch.ht?billno=' + d; }],
+      [/경동/,          function (d) { return 'https://kdexp.com/newDeliverySearch.kd?barcode=' + d; }]
+    ];
+
+    function trackUrl(invRaw, carrierHint) {
+      var d = String(invRaw || '').replace(/[^0-9]/g, '');
+      if (d.length < 8) return '';
+      var c = String(carrierHint || '').replace(/\s/g, '');
+      for (var i = 0; i < TRACK.length; i++) {
+        if (c && TRACK[i][0].test(c)) return TRACK[i][1](d);
+      }
+      return 'https://search.naver.com/search.naver?query=' + encodeURIComponent(d + ' 배송조회');
+    }
+
+    /** 송장 한 줄 — 눌러서 배송조회로 보낸다. 업체가 가장 자주 묻는 항목이다. */
+    function invLine(label, invRaw, carrierHint) {
+      if (!invRaw) return '';
+      var u = trackUrl(invRaw, carrierHint);
+      var txt = esc(invRaw);
+      return '<br><em>' + esc(label) + '</em> ' + (u
+        ? '<a class="inv-link" href="' + esc(u) + '" target="_blank" rel="noopener" ' +
+          'title="배송조회 열기">' + txt + '</a>'
+        : txt);
+    }
+
+    /**
+     * 반품송장 상자.
+     * 아직 없으면 «없다고» 적는다 — 빈 자리는 「안 보여주는 것」인지
+     * 「아직 안 나온 것」인지 구분이 안 된다. 그 차이로 전화가 온다.
+     */
+    function retInvBoxHtml(c) {
+      var inv = String(c.returnInvoice || '').trim();
+      if (!inv) {
+        return '<div class="ret-inv-box none"><div class="lab">반품송장</div>' +
+          '<div class="val">아직 없습니다 — 수거 접수 후 나옵니다</div></div>';
+      }
+      var u = trackUrl(inv, c.pickup);
+      return '<div class="ret-inv-box"><div class="lab">반품송장' +
+        (c.pickup ? ' · ' + esc(c.pickup) : '') + '</div>' +
+        '<div class="val">' + (u
+          ? '<a href="' + esc(u) + '" target="_blank" rel="noopener" title="배송조회 열기">' +
+            esc(inv) + '</a>'
+          : esc(inv)) + '</div></div>';
+    }
+
+    /** 같은 순간·같은 사람이 올린 것인가 (사진 여러 장을 한 칸으로 묶는 기준) */
+    function sameMoment(a, b) {
+      if (!a || !b) return false;
+      if (a.kind !== b.kind) return false;
+      if (String(a.who || '') !== String(b.who || '')) return false;
+      if (String(a.date || '') !== String(b.date || '')) return false;
+      return String(a.time || '') === String(b.time || '');
+    }
+
+    function tagClass(kind) {
+      if (kind === 'status') return 't-status';
+      if (kind === 'mine') return 't-mine';
+      if (kind === 'photo') return 't-photo';
+      if (kind === 'consult') return 't-consult';
+      return 't-access';
+    }
+
+    function cardHtml(c) {
+      var k = keyOf(c);
+      var 새것 = freshCount(c);
+      var h = '';
+      h += '<div class="card' + (새것 ? ' card-fresh' : '') + '" data-k="' + esc(k) + '">';
+
+      /* ★ 지난번 이후 CS 가 남긴 것 ★  (2026-09-18)
+         여기까지 와야 «앱에서 한 일이 곧 연락»이 된다. 이게 없으면
+         CS 가 확인을 눌러도 업체는 열어 봐야만 알고, 결국 전화를 건다. */
+      if (새것) {
+        h += '<div class="fresh-bar">' +
+          '<span class="fresh-dot"></span>' +
+          '<span>새 소식 ' + 새것 + '건 — 지난번에 보신 뒤로 CS팀이 남겼습니다</span>' +
+          '</div>';
+      }
+
+      h += '<div class="c-head">';
+      h += '<div class="c-name">' + esc(c.name || '(이름 없음)') + '</div>';
+      h += '<span class="badge ' + badgeClass(c.status) + '">' + esc(c.status) + '</span>';
+      h += '</div>';
+
+      h += stepsHtml(c);
+
+      h += '<div class="c-body">';
+
+      h += '<div class="c-left"><div class="meta">';
+      h += esc(c.item || '-') + (c.qty ? ' <em>×</em> ' + esc(c.qty) : '');
+      /* ★ 왜 반품인지를 품목 바로 밑에 ★  (2026-09-18)
+         > "업체 반품 현황에도 같이 적용해줘"
+         대장 L열에 적혀 있었는데 K열이 먼저 자리를 차지해 한 번도 안
+         읽혔다(prpMapCols_ 참고). 업체도 자기 건이 왜 반품인지 알아야
+         다음에 안 그런다.
+         구분(type)과 같은 말이면 두 번 적지 않는다 — 아래 sub 줄에 이미 나간다. */
+      var 사유 = String(c.reason || '').trim();
+      if (사유 && 사유 !== String(c.type || '').trim()) {
+        h += '<div class="reason">' + esc(사유) + '</div>';
+      }
+      // 원송장은 우리가 보낸 것이라 택배사 힌트가 없다 → 네이버 검색으로 간다.
+      // 반품송장은 수거입력처가 곧 택배사라 그 값을 힌트로 쓴다.
+      h += invLine('원송장', c.invoice, '');
+      if (c.pickup) h += '<br><em>수거</em> ' + esc(c.pickup);
+      var ph = pickPhones(c.phone, c.phone2);
+      if (ph.main) {
+        h += '<br><em>연락처</em> ' + esc(ph.main) +
+          (ph.mainTag ? ' <span class="ph-tag">' + esc(ph.mainTag) + '</span>' : '') +
+          /* 이름은 «실번호» 옆에만 붙는다 — 안심번호의 주인이 아니다.
+             회수 기사가 걸 때 누구를 찾으면 되는지가 이 한 낱말이다. */
+          (c.phone2Name && !ph.mainTag ? ' <span class="ph-who">' + esc(c.phone2Name) + '</span>' : '') +
+          (ph.sub ? ' <span class="ph-sub">· ' + esc(ph.subTag) + ' ' + esc(ph.sub) +
+            (c.phone2Name && ph.subTag === '추가' ? ' ' + esc(c.phone2Name) : '') + '</span>' : '') +
+          (ph.onlySafe ? ' <span class="ph-warn">기간이 지나면 끊깁니다</span>' : '');
+      }
+      if (c.fee) h += '<br><em>반품비</em> <span class="fee">' + esc(c.fee) + '</span>';
+      h += '</div>';
+      h += retInvBoxHtml(c);
+      h += '<div class="sub">' + esc(c.date || '') +
+        (c.type ? ' · ' + esc(c.type) : '') +
+        ' · ' + esc(c.openedBy) + ' 접수</div>';
+      h += '</div>';
+
+      h += '<div class="c-right">';
+      h += '<div class="tl-h">처리 경과</div>';
+      h += '<div class="tl">';
+      var ev = c.timeline || [];
+      if (!ev.length) {
+        h += '<div class="ev"><div class="ev-body">진행 내역이 아직 없습니다.</div></div>';
+      } else {
+        // 카운터를 k 로 쓰면 위에서 잡은 카드 키 k 를 덮어쓴다 (var 는 함수 스코프).
+        // 그러면 c-foot 버튼의 data-k 가 숫자가 되어 카드 조회가 실패하고 버튼이 죽는다.
+        for (var i = 0; i < ev.length; i++) {
+          var e = ev[i];
+          h += '<div class="ev">';
+          h += '<div class="ev-when">' + esc(e.date || '') + (e.time ? ' ' + esc(e.time) : '') +
+            '<span class="ev-tag ' + tagClass(e.kind) + '">' + esc(e.who) + '</span></div>';
+          // 사진 줄이면 URL 을 늘어놓지 않고 썸네일로 보여준다.
+          // CS 가 올린 것과 업체가 올린 것을 같은 방식으로 다룬다.
+          var tb = thumbsHtml(e.text);
+          if (tb) {
+            /* ★ 같은 순간에 올린 사진은 한 칸에 모은다 ★  (2026-09-11)
+               사진 한 장마다 카드가 따로 생겨 「260911 13:05 · 사진 첨부」가
+               세로로 줄줄이 쌓였다. 같은 말이 반복되고 사진 옆은 비어 있었다.
+               날짜·시각·올린 사람이 같으면 한 칸으로 본다 —
+               한 번에 여러 장 올린 것이라 실제로 한 사건이다. */
+            var urls = String(e.text || '');
+            var j = i + 1;
+            while (j < ev.length && sameMoment(e, ev[j]) && thumbsHtml(ev[j].text)) {
+              urls += ' ' + String(ev[j].text || '');
+              j++;
+            }
+            tb = thumbsHtml(urls);
+            var 장수 = j - i;
+            i = j - 1;
+            var cap = String(e.text || '').replace(/https?:\/\/[^\s]+/g, '').trim() || '사진 첨부';
+            if (장수 > 1) cap += ' ' + 장수 + '장';
+            h += '<div class="ev-body">' + esc(cap) + '</div>' + tb;
+          } else {
+            h += '<div class="ev-body">' + linkify(e.text) + '</div>';
+          }
+          h += '</div>';
+        }
+      }
+      h += '</div></div>';
+
+      h += '</div>'; // c-body
+
+      h += '<div class="c-foot">';
+      h += '<button class="act" type="button" data-act="ask" data-k="' + esc(k) + '">문의</button>';
+      h += '<button class="act" type="button" data-act="photo" data-k="' + esc(k) + '">사진 첨부</button>';
+      h += '</div>';
+
+      h += '<div class="pop' + (OPEN_POP === k ? ' on' : '') + '">';
+      h += '<textarea data-ask="' + esc(k) + '" placeholder="CS팀에 전달할 문의 내용"></textarea>';
+      h += '<div class="pop-row">';
+      h += '<button class="act" type="button" data-act="askCancel" data-k="' + esc(k) + '">취소</button>';
+      h += '<button class="act" type="button" data-act="askSend" data-k="' + esc(k) + '" ' +
+        'style="background:var(--accent-blue);color:var(--on-accent);border-color:var(--accent-blue)">보내기</button>';
+      h += '</div></div>';
+
+      h += '</div>';
+      return h;
+    }
+
+    /** 첨부 사진 링크가 이력에 섞여 들어오므로 눌러서 팝업으로 연다 */
+    function linkify(text) {
+      var s = esc(text || '');
+      return s.replace(/(https?:\/\/[^\s<]+)/g, function (u) {
+        var id = driveId(u);
+        return id
+          ? '<a href="#" class="thumb-link" data-id="' + id + '">사진 열기</a>'
+          : '<a href="' + u + '" target="_blank" rel="noopener">링크 열기</a>';
+      });
+    }
+
+    function openLightbox(id) {
+      if (!id) return;
+      el('photoFull').src = 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(id) + '&sz=w1600';
+      show('mPhoto', true);
+    }
+    function closeLightbox() {
+      show('mPhoto', false);
+      el('photoFull').removeAttribute('src');
+    }
+
+    // ── 카드 액션 ──
+    el('list').addEventListener('click', function (ev) {
+      var thumb = ev.target.closest('.ev-thumbs .thumb, a.thumb-link');
+      if (thumb) {
+        ev.preventDefault();
+        openLightbox(thumb.getAttribute('data-id'));
+        return;
+      }
+      var btn = ev.target.closest('button[data-act]');
+      if (!btn) return;
+      var k = btn.getAttribute('data-k');
+      var act = btn.getAttribute('data-act');
+      var c = null;
+      for (var n = 0; n < ROWS.length; n++) {
+        if (keyOf(ROWS[n]) === k) { c = ROWS[n]; break; }
+      }
+      if (!c) return;
+
+      if (act === 'ask') {
+        OPEN_POP = (OPEN_POP === k) ? '' : k;
+        render();
+        if (OPEN_POP) {
+          var t = document.querySelector('[data-ask="' + k + '"]');
+          if (t) t.focus();
+        }
+        return;
+      }
+      if (act === 'askCancel') { OPEN_POP = ''; render(); return; }
+
+      if (act === 'askSend') {
+        var box = document.querySelector('[data-ask="' + k + '"]');
+        var text = box ? box.value : '';
+        if (!text.trim()) { alert('문의 내용을 입력해 주세요.'); return; }
+        load('문의를 전달하는 중…');
+        google.script.run
+          .withSuccessHandler(function (res) {
+            unload();
+            if (handled(res)) return;
+            if (!res || !res.ok) { alert((res && res.error) || '전달 실패'); return; }
+            OPEN_POP = '';
+            loadRows(true);
+          })
+          .withFailureHandler(fail)
+          .prpAddInquiry(SID, { tab: c.tab, row: c.row, text: text });
+        return;
+      }
+
+      if (act === 'photo') {
+        ATT_TARGET = { tab: c.tab, row: c.row };
+        el('attFile').click();
+      }
+    });
+
+    function shrinkFiles(files, done) {
+      var list = [];
+      var left = files.length;
+      if (!left) { done([]); return; }
+      files.forEach(function (f) {
+        csLoadImage_(f)
+          .then(function (img) {
+            var canvas = csDrawCanvas_(img, 1600, 0);
+            if (!canvas) throw new Error('사진을 처리할 수 없습니다.');
+            var b64 = csCanvasToBase64_(canvas);
+            if (!b64) throw new Error('사진을 변환할 수 없습니다.');
+            var preview = '';
+            try { preview = canvas.toDataURL('image/jpeg', 0.72); } catch (eP) {}
+            list.push({ preview: preview, base64: b64, mimeType: 'image/jpeg' });
+          })
+          .catch(function () {})
+          .then(function () {
+            if (--left === 0) done(list);
+          });
+      });
+    }
+
+    // ── 사진 첨부 (카드) ──
+    el('attFile').addEventListener('change', function (ev) {
+      var files = Array.prototype.slice.call(ev.target.files || []);
+      ev.target.value = '';
+      if (!files.length || !ATT_TARGET) return;
+      if (files.length > PHOTO_MAX) files = files.slice(0, PHOTO_MAX);
+
+      load('사진을 올리는 중…');
+      shrinkFiles(files, function (photos) {
+        if (!photos.length) { unload(); alert('사진을 처리할 수 없습니다.'); return; }
+        google.script.run
+          .withSuccessHandler(function (res) {
+            unload();
+            if (handled(res)) return;
+            if (!res || !res.ok) { alert((res && res.error) || '첨부 실패'); return; }
+            loadRows(true);
+          })
+          .withFailureHandler(fail)
+          .prpAttachPhotos(SID, {
+            tab: ATT_TARGET.tab, row: ATT_TARGET.row,
+            photos: photos
+          });
+      });
+    });
+
+    // ── 새 접수 ──
+    function fillOpts(sel, arr) {
+      el(sel).innerHTML = (arr || []).map(function (v) {
+        return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+      }).join('');
+    }
+
+    /* 수거 택배사 기본값. 서버가 알려 주기 전까지의 대비값이다 (2026-09-18) */
+    var PICKUP_DEFAULT = '로젠택배';
+
+    /**
+     * 수거 택배사를 기본값으로 되돌린다.
+     * ★ 「새로 만들기」를 열 때마다 부른다 ★ select 는 지난번에 고른 값을
+     *   그대로 들고 있다. 한 번 딴 곳으로 바꾸면 다음 접수도 계속 딴 곳이다.
+     * 목록에 없는 값이면 손대지 않는다 — 억지로 넣으면 빈 칸이 된다.
+     */
+    function setPickupDefault() {
+      var s = el('nPickup');
+      if (!s || !PICKUP_DEFAULT) return;
+      for (var i = 0; i < s.options.length; i++) {
+        if (s.options[i].value === PICKUP_DEFAULT) { s.value = PICKUP_DEFAULT; return; }
+      }
+    }
+
+    function openNew() {
+      ['nName', 'nPhone', 'nPhone2', 'nPhone2Name', 'nInv', 'nItem', 'nMemo', 'nUid']
+        .forEach(function (k) { el(k).value = ''; });
+      el('nPhoneHint').hidden = true;
+      el('nQty').value = '1';
+      /*  select 는 지난번 고른 값을 들고 있다 — 열 때마다 기본으로 되돌린다 */
+      setPickupDefault();
+      el('nMsg').textContent = '';
+      el('nMsg').className = 'msg';
+      el('nHits').innerHTML = '';
+      LOOKUP_HITS = [];
+      NEW_PHOTOS = [];
+      renderNewPhotos();
+      show('mNew', true);
+      el('nUid').focus();
+    }
+
+    function newPayload(force) {
+      return {
+        uid: el('nUid').value,
+        name: el('nName').value,
+        phone: el('nPhone').value,
+        phone2: el('nPhone2').value,
+        phone2Name: el('nPhone2Name').value,
+        qty: el('nQty').value,
+        invoice: el('nInv').value,
+        item: el('nItem').value,
+        type: el('nType').value,
+        pickup: el('nPickup').value,
+        memo: el('nMemo').value,
+        /*  ★ 사진 장수를 같이 보낸다 ★  (2026-09-20)
+            서버가 장부에서 못 찾은 건은 사진을 받아야 접수된다.
+            사진은 행을 만든 «뒤»에 올라가므로, 서버는 올릴 사진이 있는지를
+            이 숫자로 안다. 막으려는 것이 아니라 빠뜨리지 않게 하려는 것이다. */
+        photoCount: NEW_PHOTOS.length,
+        force: !!force
+      };
+    }
+
+    /**
+     * 불러온 번호가 안심번호면 알려 준다.
+     * ★ 2026-09-09
+     *
+     * ★ 사람이 0504 를 알아보게 두지 않는다 ★
+     *   안심번호는 배송이 끝나면 끊긴다. 그 번호만 적힌 채로 회수를 넣으면
+     *   기사가 걸어도 안 받는 번호가 되고, 그때는 이미 물건이 나간 뒤다.
+     *   화면이 먼저 말해 준다.
+     *
+     * ★ 막지는 않는다 ★
+     *   실 번호를 모를 수도 있다. 안내만 하고 접수는 그대로 된다 —
+     *   막으면 급한 건을 못 넣는다.
+     */
+    /* v2 의 is_safe_number 와 **같은 규칙**이다 (sql/04_reorder.sql 35행).
+       두 곳이 다르게 판정하면 포털은 안심번호라 하고 v2 는 아니라 한다. */
+    var SAFE_PREFIX = /^050[0-9]/;
+    /* ★ 걸 수 있는 번호를 앞에 ★  (2026-09-11)
+         > "쿠팡의 경우 안심번호라 기간이 지나면 연락이 안되"
+       접수창은 진작부터 실번호를 받고 있었는데(nPhone2), 정작 «카드»는
+       안심번호만 보여 주고 있었다. 받아 적은 값이 화면에 안 돌아온 셈이다.
+
+       CS 웹앱 _cs_pickPhones_ · v2 lib/returns pickPhones 와 같은 규칙.
+       셋 중 하나만 고치면 같은 건이 화면마다 다른 번호로 보인다. */
+    /* 딱지 모양은 CSS 에. 아래 규칙과 한 쌍이다 */
+    function pickPhones(phone, phone2) {
+      var 주 = String(phone || '').trim();
+      var 실 = String(phone2 || '').trim();
+      var 주가안심 = SAFE_PREFIX.test(주.replace(/[^0-9]/g, ''));
+      var 실이안심 = SAFE_PREFIX.test(실.replace(/[^0-9]/g, ''));
+      if (실 && !실이안심) {
+        return { main: 실, mainTag: '',
+                 sub: (주 && 주 !== 실) ? 주 : '',
+                 subTag: (주 && 주 !== 실) ? (주가안심 ? '안심' : '주문서') : '',
+                 onlySafe: false };
+      }
+      return { main: 주 || 실,
+               mainTag: 주 ? (주가안심 ? '안심' : '') : (실 ? '안심' : ''),
+               sub: (주 && 실 && 주 !== 실) ? 실 : '',
+               subTag: (주 && 실 && 주 !== 실) ? '추가' : '',
+               onlySafe: !!(주 || 실) && (주 ? 주가안심 : true) };
+    }
+
+    function showSafeHint(phone) {
+      var box = el('nPhoneHint');
+      if (!box) return;
+      var d = String(phone || '').replace(/[^0-9]/g, '');
+      var safe = SAFE_PREFIX.test(d);
+      box.hidden = !safe;
+      if (safe) box.textContent = '안심번호입니다 — 배송이 끝나면 끊깁니다. 아래에 실 번호를 적어 주세요.';
+    }
+
+    function applyHit(h) {
+      if (!h) return;
+      if (h.uid) el('nUid').value = h.uid;
+      if (h.name) el('nName').value = h.name;
+      if (h.phone) {
+        el('nPhone').value = h.phone;
+        showSafeHint(h.phone);
+      }
+      if (h.phone2) el('nPhone2').value = h.phone2;
+      if (h.qty) el('nQty').value = h.qty;
+      else if (!el('nQty').value) el('nQty').value = '1';
+      if (h.invoice) el('nInv').value = h.invoice;
+      if (h.item) el('nItem').value = h.item;
+    }
+
+    function renderHits(matches) {
+      LOOKUP_HITS = matches || [];
+      var box = el('nHits');
+      if (!LOOKUP_HITS.length) { box.innerHTML = ''; return; }
+      if (LOOKUP_HITS.length === 1) {
+        applyHit(LOOKUP_HITS[0]);
+        box.innerHTML = '';
+        return;
+      }
+      var h = '';
+      for (var i = 0; i < LOOKUP_HITS.length; i++) {
+        var m = LOOKUP_HITS[i];
+        h += '<button class="hit" type="button" data-hit="' + i + '">' +
+          '<b>' + esc(m.name || '(이름 없음)') + (m.item ? ' · ' + esc(m.item) : '') + '</b>' +
+          (m.qty ? '수량 ' + esc(m.qty) + ' · ' : '') +
+          (m.invoice ? '송장 ' + esc(m.invoice) : '송장 없음') +
+          '</button>';
+      }
+      box.innerHTML = h;
+    }
+
+    /*  송장으로 찾기 — 고유ID 를 모를 때. 결과를 받는 길은 위와 같다  */
+    function lookupInvoice() {
+      var inv = el('nInv').value;
+      if (String(inv || '').replace(/[^0-9]/g, '').length < 8) {
+        setNewMsg('원송장번호를 숫자 8자리 이상 적어 주세요.', true);
+        return;
+      }
+      load('발주 마감에서 송장으로 찾는 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          unload();
+          if (handled(res)) return;
+          if (!res || !res.ok) {
+            renderHits([]);
+            setNewMsg((res && res.error) || '조회 실패', true);
+            return;
+          }
+          renderHits(res.matches || []);
+          setNewMsg((res.matches || []).length === 1
+            ? '발주 마감에서 불러왔습니다.'
+            : (res.matches || []).length + '건이 있습니다. 해당하는 주문을 눌러 주세요.', false);
+        })
+        .withFailureHandler(function (e) { unload(); setNewMsg(String(e && e.message ? e.message : e), true); })
+        .prpLookupByInvoice(SID, inv);
+    }
+
+    function lookupUid() {
+      var uid = el('nUid').value;
+      if (!String(uid || '').trim()) { setNewMsg('고유아이디를 입력해 주세요.', true); return; }
+      load('발주 마감에서 찾는 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          unload();
+          if (handled(res)) return;
+          if (!res || !res.ok) {
+            renderHits([]);
+            setNewMsg((res && res.error) || '조회 실패', true);
+            return;
+          }
+          renderHits(res.matches || []);
+          if ((res.matches || []).length === 1) {
+            setNewMsg('발주 마감에서 불러왔습니다.', false);
+          } else {
+            setNewMsg((res.matches || []).length + '건이 있습니다. 해당하는 주문을 눌러 주세요.', false);
+          }
+        })
+        .withFailureHandler(function (e) { unload(); setNewMsg(String(e && e.message ? e.message : e), true); })
+        .prpLookupByUid(SID, uid);
+    }
+
+    function renderNewPhotos() {
+      var box = el('nPhotoPrev');
+      var help = el('nPhotoHelp');
+      if (!NEW_PHOTOS.length) {
+        box.innerHTML = '';
+        help.textContent = '최대 ' + PHOTO_MAX + '장. 접수할 때 함께 올라갑니다.';
+        return;
+      }
+      var h = '';
+      for (var i = 0; i < NEW_PHOTOS.length; i++) {
+        h += '<span class="pend"><img src="' + NEW_PHOTOS[i].preview + '" alt="">' +
+          '<button type="button" data-drop="' + i + '" title="빼기">×</button></span>';
+      }
+      box.innerHTML = h;
+      help.textContent = NEW_PHOTOS.length + '장 첨부 대기 · 최대 ' + PHOTO_MAX + '장';
+    }
+
+    function stageNewPhotos(fileList) {
+      var files = Array.prototype.slice.call(fileList || []);
+      if (!files.length) return;
+      var room = PHOTO_MAX - NEW_PHOTOS.length;
+      if (room <= 0) { setNewMsg('사진은 ' + PHOTO_MAX + '장까지입니다.', true); return; }
+      if (files.length > room) files = files.slice(0, room);
+      load('사진을 준비하는 중…');
+      shrinkFiles(files, function (photos) {
+        unload();
+        for (var i = 0; i < photos.length; i++) NEW_PHOTOS.push(photos[i]);
+        renderNewPhotos();
+      });
+    }
+
+    function uploadNewPhotos(res, done) {
+      if (!NEW_PHOTOS.length) { done(''); return; }
+      if (!res || !res.tab || !res.row) {
+        done('사진은 올리지 못했습니다');
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function (att) {
+          NEW_PHOTOS = [];
+          done(att && att.ok ? ('사진 ' + (att.count || 0) + '장 첨부됨')
+            : ('사진 첨부 실패: ' + ((att && att.error) || '오류')));
+        })
+        .withFailureHandler(function (err) {
+          done('사진 첨부 실패: ' + String((err && err.message) || err));
+        })
+        .prpAttachPhotos(SID, {
+          tab: res.tab, row: res.row,
+          photos: NEW_PHOTOS.map(function (p) {
+            return { base64: p.base64, mimeType: p.mimeType };
+          })
+        });
+    }
+
+    function submitNew(force) {
+      var payload = newPayload(force);
+      if (!payload.name.trim()) { setNewMsg('반품신청자 이름을 입력해 주세요.', true); return; }
+      if (!payload.item.trim()) { setNewMsg('상품명을 입력해 주세요.', true); return; }
+
+      load('접수하는 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (handled(res)) { unload(); return; }
+          if (res && res.duplicate) {
+            unload();
+            DUP_PENDING = payload;
+            el('dupMsg').textContent = res.message;
+            show('mDup', true);
+            return;
+          }
+          /*  ★ 사진을 받아야 하는 건 ★  (2026-09-20)
+              서버가 이 업체 장부에서 주문을 못 찾았다. 막는 것이 아니라
+              사진 한 장을 받는 것이다 — CS 가 사진으로 바로 판단한다.
+              오류처럼 붉게 띄우지 않는다. 잘못한 것이 아니다.  */
+          if (res && res.needPhoto) {
+            unload();
+            setNewMsg(res.message || '상품 사진을 올려 주세요.', false);
+            var pk = el('nPhotoPick');
+            if (pk && pk.scrollIntoView) pk.scrollIntoView({ block: 'center' });
+            return;
+          }
+          if (!res || !res.ok) { unload(); setNewMsg((res && res.error) || '접수 실패', true); return; }
+          uploadNewPhotos(res, function (photoMsg) {
+            unload();
+            show('mNew', false);
+            loadRows(true);
+            setTimeout(function () {
+              alert((res.message || '접수되었습니다.') + (photoMsg ? '\n' + photoMsg : ''));
+            }, 200);
+          });
+        })
+        .withFailureHandler(function (e) { unload(); setNewMsg(String(e && e.message ? e.message : e), true); })
+        .prpSubmitReturn(SID, payload);
+    }
+
+    function setNewMsg(t, isErr) {
+      var m = el('nMsg');
+      m.textContent = t;
+      m.className = 'msg' + (isErr ? ' err' : ' ok');
+    }
+
+    // ── 송장 촬영 인식 ──
+    el('nScan').addEventListener('click', function () { el('nScanFile').click(); });
+    el('nScanFile').addEventListener('change', function (ev) {
+      var f = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!f) return;
+      load('사진 분석 중…');
+      csDecodeImageFile(f, {
+        minDigits: 8,
+        ocr: true,
+        onStage: function (m) { if (m) load(m); }
+      })
+        .then(function (r) {
+          unload();
+          el('nInv').value = r.value;
+          setNewMsg('송장번호를 인식했습니다: ' + r.value, false);
+        })
+        .catch(function (e) {
+          unload();
+          setNewMsg(String(e && e.message ? e.message : e), true);
+        });
+    });
+
+    // ── 반품비 정산 ──
+    function openFee() {
+      load('집계 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          unload();
+          if (handled(res)) return;
+          if (!res || !res.ok) { alert((res && res.error) || '집계 실패'); return; }
+          var months = res.months || [];
+          if (!months.length) {
+            el('feeBody').innerHTML = '<div class="empty">집계할 내역이 없습니다.</div>';
+          } else {
+            var h = '<table class="fee-tbl"><tr><th>월</th><th class="num">건수</th><th class="num">반품비</th></tr>';
+            var tc = 0, tf = 0;
+            months.forEach(function (m) {
+              tc += m.count; tf += m.fee;
+              var label = /^\d{6}$/.test(m.month)
+                ? m.month.substring(0, 4) + '. ' + m.month.substring(4)
+                : m.month;
+              h += '<tr><td>' + esc(label) + '</td><td class="num">' + m.count +
+                '</td><td class="num">' + esc(m.feeText || '-') + '</td></tr>';
+            });
+            h += '<tr><td><b>합계</b></td><td class="num"><b>' + tc +
+              '</b></td><td class="num"><b>' + esc(fmtWon(tf)) + '</b></td></tr>';
+            h += '</table>';
+            el('feeBody').innerHTML = h;
+          }
+          show('mFee', true);
+        })
+        .withFailureHandler(fail)
+        .prpFeeSummary(SID, { days: 365 });
+    }
+
+    function fmtWon(n) {
+      return String(Math.round(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '원';
+    }
+
+    // ── 바인딩 ──
+    /* ══════════════════════════════════════════════════════════════
+       ★ 밝게 / 어둡게 ★  (2026-09-16)
+
+       > "다크와 라이트 모드 2가지로 되게"
+
+       CS 웹앱과 «같은 열쇠»(pack2u_theme)를 쓴다. 한 사람이 두 앱을
+       오가도 한 번만 고르면 된다.
+       단추에는 «지금 무엇인지»가 아니라 «누르면 무엇이 되는지»를 보인다 —
+       어두울 때 ☀️, 밝을 때 🌙. (CS home.html 과 같은 규칙)
+       ══════════════════════════════════════════════════════════════ */
+    var PRP_THEME_KEY = 'pack2u_theme';
+
+    function prpCurrentTheme() {
+      return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    }
+
+    function prpApplyTheme(theme, persist) {
+      var light = (theme === 'light');
+      if (light) document.documentElement.setAttribute('data-theme', 'light');
+      else document.documentElement.removeAttribute('data-theme');
+      var btn = el('btnTheme');
+      if (btn) {
+        btn.textContent = light ? '🌙' : '☀️';
+        btn.title = light ? '어둡게 보기' : '밝게 보기';
+      }
+      if (persist) {
+        try { localStorage.setItem(PRP_THEME_KEY, light ? "light" : "dark"); } catch (eT) {}
+      }
+    }
+
+    prpApplyTheme(prpCurrentTheme(), false);   // 단추 모양을 지금 상태에 맞춘다
+    el('btnTheme').addEventListener('click', function () {
+      prpApplyTheme(prpCurrentTheme() === 'light' ? 'dark' : 'light', true);
+    });
+
+    el('btnReload').addEventListener('click', function () { loadRows(true); });
+    el('btnNew').addEventListener('click', openNew);
+    el('nCancel').addEventListener('click', function () { show('mNew', false); });
+    el('nSubmit').addEventListener('click', function () { submitNew(false); });
+    el('nLookup').addEventListener('click', lookupUid);
+    el('nInvLookup').addEventListener('click', lookupInvoice);
+
+    /* ══════════════════════════════════════════════════════════════
+       발주 및 송장조회  (2026-09-20)
+       ══════════════════════════════════════════════════════════════ */
+    var ORD_LOADED = false;
+
+    function showPage(which) {
+      var btns = document.querySelectorAll('.pages button');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle('on', btns[i].getAttribute('data-page') === which);
+      }
+      el('pageReturns').hidden = (which !== 'returns');
+      el('pageOrders').hidden = (which !== 'orders');
+      el('pageEntry').hidden = (which !== 'entry');
+      //  처음 열 때만 불러온다 — 반품만 보는 사람에게 헛일을 시키지 않는다
+      if (which === 'orders' && !ORD_LOADED) { ORD_LOADED = true; loadOrders(); }
+      if (which === 'entry' && !ENT_LOADED) { ENT_LOADED = true; entLoadItems(); entRenderCart(); }
+    }
+
+    function ordEsc(s) { return esc(s == null ? '' : String(s)); }
+
+    /** 한 줄을 그린다. 복사 단추는 카톡·메모로 옮길 때 쓴다. */
+    function ordRowHtml(r) {
+      var 조각 = [];
+      if (r.name) 조각.push('<span><b>' + ordEsc(r.name) + '</b></span>');
+      if (r.qty) 조각.push('<span>수량 ' + ordEsc(r.qty) + '</span>');
+      if (r.invoice) 조각.push('<span class="ord-inv">' + ordEsc(r.invoice) + '</span>');
+      if (r.uid) 조각.push('<span>' + ordEsc(r.uid) + '</span>');
+      if (r.date) 조각.push('<span>' + ordEsc(r.date) + '</span>');
+      조각.push('<span class="ord-src">' + ordEsc(r.source) + '</span>');
+
+      /*  복사할 글은 «사람이 읽을 한 줄»이다. 화면에 보이는 차례 그대로 담는다 */
+      var 복사 = [r.item, r.qty ? '× ' + r.qty : '', r.name, r.invoice, r.uid]
+        .filter(function (x) { return !!String(x || '').trim(); }).join(' · ');
+
+      return '<div class="ord-row">' +
+        '<div class="t">' + ordEsc(r.item || '(품목 없음)') + '</div>' +
+        '<div class="m">' + 조각.join('') + '</div>' +
+        '<button type="button" class="ord-copy" data-copy="' + ordEsc(복사) + '">복사</button>' +
+        '</div>';
+    }
+
+    function renderOrders(res) {
+      var box = el('oList');
+      if (!res || !res.ok) {
+        box.innerHTML = '<div class="empty">' + ordEsc((res && res.error) || '불러오지 못했습니다') + '</div>';
+        return;
+      }
+
+      //  검색 중에는 날짜칩·셈이 뜻이 없다 — 검색은 줄별로 답한 것이다
+      var 검색중 = !!(res.groups && res.groups.length);
+      el('oDays').hidden = 검색중;
+      if (검색중) el('oSum').innerHTML = '';
+
+      //  검색어가 있었을 때 — 붙여넣은 줄마다 한 덩어리
+      if (res.groups && res.groups.length) {
+        var h = '';
+        for (var i = 0; i < res.groups.length; i++) {
+          var gp = res.groups[i];
+          var n = (gp.rows || []).length;
+          h += '<div class="ord-grp' + (n ? '' : ' none') + '">' +
+            '<div class="ord-grp-h"><span class="ord-grp-q">' + ordEsc(gp.q) + '</span>' +
+            '<span class="ord-grp-n">' + (n ? n + '건' : '못 찾음') + '</span></div>';
+          for (var j = 0; j < n; j++) h += ordRowHtml(gp.rows[j]);
+          h += '</div>';
+        }
+        box.innerHTML = h;
+        return;
+      }
+
+      ORD_ROWS = res.rows || [];
+      ORD_TRUNC = !!res.truncated;
+      ordRenderDay();
+    }
+
+    /* ── 그날 것 가리기 ──────────────────────────────────────────
+       날짜는 「주문일자(자동)」다 — 허브가 수집할 때 찍는다. 그래서 방금
+       넣은 줄에는 아직 없다. 그 줄들은 「미수집」으로 따로 고른다. */
+    var ORD_ROWS = [], ORD_TRUNC = false, ORD_DAY = 'today';
+
+    function ordYmd(d) {
+      var m = d.getMonth() + 1, dd = d.getDate();
+      return {
+        y: String(d.getFullYear()),
+        m: (m < 10 ? '0' : '') + m,
+        d: (dd < 10 ? '0' : '') + dd
+      };
+    }
+
+    /**
+     * 시트 날짜 표기가 제각각이다 — 260920 · 2026-09-20 · 2026. 9. 20 · 2026/9/20.
+     * 숫자만 뭉뚱그려 견주면 「2026. 9. 20」이 2026920 이 되어 안 맞는다.
+     * 연·월·일을 «따로» 뽑아 견준다.
+     */
+    function ordSameDay(cell, ymd) {
+      var raw = String(cell || '').trim();
+      if (!raw) return false;
+
+      //  ① 구분자가 있는 표기 — 2026-09-20 · 2026. 9. 20 · 2026/9/20
+      var m = raw.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+      if (m) {
+        return m[1] === ymd.y &&
+          String(parseInt(m[2], 10)) === String(parseInt(ymd.m, 10)) &&
+          String(parseInt(m[3], 10)) === String(parseInt(ymd.d, 10));
+      }
+      //  ② 붙여 쓴 표기 — 20260920 · 260920
+      var d = raw.replace(/[^0-9]/g, '');
+      if (d.length === 8) return d === ymd.y + ymd.m + ymd.d;
+      if (d.length === 6) return d === ymd.y.slice(2) + ymd.m + ymd.d;
+      return false;
+    }
+
+    function ordRenderDay() {
+      var box = el('oList');
+      var 오늘 = ordYmd(new Date());
+      var 어제날 = new Date(); 어제날.setDate(어제날.getDate() - 1);
+      var 어제 = ordYmd(어제날);
+
+      var rows = [];
+      for (var i = 0; i < ORD_ROWS.length; i++) {
+        var r = ORD_ROWS[i];
+        var 넣을까 = false;
+        if (ORD_DAY === 'all') 넣을까 = true;
+        else if (ORD_DAY === 'new') 넣을까 = !String(r.uid || '').trim();
+        else if (ORD_DAY === 'today') 넣을까 = ordSameDay(r.date, 오늘) || !String(r.uid || '').trim();
+        else if (ORD_DAY === 'yest') 넣을까 = ordSameDay(r.date, 어제);
+        else if (ORD_DAY === '7') {
+          for (var d = 0; d < 7 && !넣을까; d++) {
+            var t = new Date(); t.setDate(t.getDate() - d);
+            if (ordSameDay(r.date, ordYmd(t))) 넣을까 = true;
+          }
+          if (!넣을까 && !String(r.uid || '').trim()) 넣을까 = true;
+        }
+        if (넣을까) rows.push(r);
+      }
+
+      //  ★ 몇 줄인지 · 몇 분인지 · 아직 수집 안 된 것이 몇인지 ★
+      var 사람 = {}, 인원 = 0, 미수집 = 0, 수량 = 0;
+      for (var j = 0; j < rows.length; j++) {
+        var key = String(rows[j].name || '') + '|' + String(rows[j].phone || '');
+        if (!사람[key]) { 사람[key] = 1; 인원++; }
+        if (!String(rows[j].uid || '').trim()) 미수집++;
+        수량 += (parseInt(rows[j].qty, 10) || 0);
+      }
+      el('oSum').innerHTML = rows.length
+        ? '<b>' + rows.length + '줄</b> · ' + 인원 + '분 · 수량 ' + 수량 +
+          (미수집 ? ' · <span class="ent-bad">아직 수집 안 됨 ' + 미수집 + '줄</span>' : ' · 모두 수집됨')
+        : '';
+
+      if (!rows.length) {
+        box.innerHTML = '<div class="empty">' +
+          (ORD_DAY === 'today' ? '오늘 넣은 발주가 없습니다.'
+            : ORD_DAY === 'new' ? '아직 수집 안 된 줄이 없습니다 — 모두 들어갔습니다.'
+            : '해당하는 발주가 없습니다.') +
+          '<br>지난 건은 위 칸에 제품명이나 송장번호를 넣어 찾아 주세요.</div>';
+        return;
+      }
+      var h2 = '';
+      for (var k = 0; k < rows.length; k++) h2 += ordRowHtml(rows[k]);
+      if (ORD_TRUNC) {
+        h2 += '<div class="hint">최근 것부터 보여 줍니다. ' +
+          '더 지난 건은 위 칸에 넣어 찾아 주세요.</div>';
+      }
+      box.innerHTML = h2;
+    }
+
+    function loadOrders() {
+      var q = el('oq').value;
+      el('oList').innerHTML = '<div class="empty">' +
+        (String(q).trim() ? '발주 마감까지 훑는 중…' : '불러오는 중…') + '</div>';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (handled(res)) return;
+          renderOrders(res);
+        })
+        .withFailureHandler(function (e) {
+          el('oList').innerHTML = '<div class="empty">' +
+            ordEsc(String(e && e.message ? e.message : e)) + '</div>';
+        })
+        .prpListOrders(SID, { q: q, scope: 'live' });
+    }
+
+    /*  ★ 바깥으로 낸 통로 하나 ★  (2026-09-20)
+        이 script 는 통째로 IIFE 안이라 밖에서 아무것도 못 부른다. 엑셀 읽기는
+        밖에서 받아오는 도구(XLSX)를 쓰므로 별도 블록에 두었고, 다 읽은 뒤에
+        찾기를 걸어야 한다. 통로는 이 하나만 낸다 — 늘리면 안이 밖이 된다.  */
+    window.prpOrdersSearch = loadOrders;
+
+    /* ══════════════════════════════════════════════════════════════
+       발주 넣기  (2026-09-20)
+
+       ★ 넣기 전에 «넣어 보기» ★ 시트에 아무것도 쓰지 않고 어느 자리에
+         어떻게 들어가는지만 보여 준다. 가장 바쁜 업체의 실제 장부를
+         건드리는 일이라, 길부터 눈으로 보고 넣는다.
+       ══════════════════════════════════════════════════════════════ */
+    var ENT_ITEMS = [];     // 단가조회에서 읽은 품목
+    /*  ★ 담은 것은 «줄»의 모음이다 ★  (2026-09-20)
+        > "엑셀 넣기시 여러 주문이 한번에 들어올텐데.."
+        > "같은 사람이 여러개 주문시에도 추가 가능이 필요할듯"
+
+        받는 분을 하나로 붙들어 두면 엑셀 여러 건도, 다음 사람도 못 받는다.
+        그래서 «줄마다» 받는 분을 지니게 한다. 골라 담기도 엑셀도 같은 통에
+        들어가고, 화면에서만 받는 분으로 묶어 보여 준다.
+        통이 하나면 미리보기·넣기·되돌리기가 갈라지지 않는다.  */
+    var ENT_ROWS = [];      // [{code, item, qty, name, phone, addr, msg, note}]
+    var ENT_ITEMS_CUT = false;   // 단가조회 목록이 잘렸나
+    var ENT_LOADED = false;
+    var ENT_LAST = null;    // 방금 넣은 것 — 되돌리기용
+
+    /** 같은 사람인가 — 이름·전화·주소가 같으면 한 묶음으로 본다 */
+    function entWho(r) {
+      return [String(r.name || '').trim(),
+              String(r.phone || '').replace(/[^0-9]/g, ''),
+              String(r.addr || '').replace(/\s+/g, '')].join('|');
+    }
+
+    function entMsg(t, cls) {
+      var b = el('eMsgBox');
+      b.className = 'hint' + (cls ? ' ' + cls : '');
+      b.innerHTML = t || '';
+    }
+
+    function entLoadItems() {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (handled(res)) return;
+          if (!res || !res.ok) {
+            el('eItems').innerHTML = '<div class="ent-empty">' +
+              esc((res && res.error) || '단가조회를 불러오지 못했습니다') + '</div>';
+            return;
+          }
+          ENT_ITEMS = res.items || [];
+          ENT_ITEMS_CUT = !!res.truncated;
+          el('eItemCnt').textContent = ENT_ITEMS.length + '개' +
+            (ENT_ITEMS_CUT ? ' (잘림)' : '');
+          entRenderItems();
+        })
+        .withFailureHandler(function (e) {
+          el('eItems').innerHTML = '<div class="ent-empty">' + esc(String(e && e.message || e)) + '</div>';
+        })
+        .prpListItems(SID);
+    }
+
+    function entRenderItems() {
+      var q = String(el('eSearch').value || '').toLowerCase().replace(/\s+/g, '');
+      var h = '', n = 0;
+      for (var i = 0; i < ENT_ITEMS.length && n < 80; i++) {
+        var it = ENT_ITEMS[i];
+        if (q) {
+          var hay = (it.item + ' ' + it.code).toLowerCase().replace(/\s+/g, '');
+          if (hay.indexOf(q) < 0) continue;
+        }
+        n++;
+        /*  ★ 품절은 담기 전에 말한다 ★ 담아서 넣고 나서 알면 이미 늦다.
+            상태칸에 「품절」이 적혀 있으면 그대로 보여 준다 — 막지는 않는다.
+            재고가 실시간이 아니라는 것은 서로 안다.  */
+        var 품절 = /품절|중단|단종/.test(it.state || '');
+        h += '<button type="button" class="ent-item" data-i="' + i + '">' +
+          '<b>' + esc(it.item) + '</b><i>' + esc(it.code) +
+          (it.stock ? ' · 재고 ' + esc(it.stock) : '') +
+          (it.price ? ' · ' + esc(it.price) : '') +
+          (품절 ? ' · <span class="no">' + esc(it.state) + '</span>' : '') +
+          '</i></button>';
+      }
+      el('eItems').innerHTML = h || '<div class="ent-empty">찾는 품목이 없습니다.</div>';
+    }
+
+    /**
+     * 담은 것을 «받는 분»으로 묶어 보여 준다.
+     *
+     * ★ 엑셀로 쉰 줄이 들어와도 사람 단위로 읽힌다 ★
+     *   평평하게 쉰 줄을 늘어놓으면 누가 누구인지 안 보이고, 잘못 들어간 한
+     *   줄을 못 찾는다. 받는 분이 머리글이 되고 그 아래 품목이 붙는다.
+     *   묶음째 빼는 단추도 거기 둔다 — 한 사람 걸 통째로 무르는 일이 잦다.
+     */
+    function entRenderCart() {
+      el('eCartCnt').textContent = ENT_ROWS.length + '줄';
+      if (!ENT_ROWS.length) {
+        el('eCart').innerHTML =
+          '<div class="ent-empty">위에서 품목을 고르거나, 묶음으로 붙여넣으세요.</div>';
+        return;
+      }
+
+      //  차례는 담은 순서를 지킨다 — 사람이 넣은 차례가 곧 읽는 차례다
+      var 순서 = [], 묶음 = {};
+      for (var i = 0; i < ENT_ROWS.length; i++) {
+        var k = entWho(ENT_ROWS[i]);
+        if (!묶음[k]) { 묶음[k] = []; 순서.push(k); }
+        묶음[k].push(i);
+      }
+
+      var h = '';
+      for (var g = 0; g < 순서.length; g++) {
+        var idxs = 묶음[순서[g]];
+        var 첫줄 = ENT_ROWS[idxs[0]];
+        var 이름 = String(첫줄.name || '').trim();
+        h += '<div class="ent-grp">' +
+          '<div class="ent-grp-h">' +
+          '<div class="ent-grp-t">' + (이름 ? esc(이름) : '<span class="ent-bad">수취인 없음</span>') +
+            '<i>' + esc(첫줄.phone || '') +
+            (첫줄.addr ? (첫줄.phone ? ' · ' : '') + esc(첫줄.addr) : '') +
+            (첫줄.msg ? ' · ' + esc(첫줄.msg) : '') + '</i></div>' +
+          '<span class="ent-grp-n">' + idxs.length + '줄</span>' +
+          '<button type="button" class="x" data-xg="' + g + '" title="이 분 것 모두 빼기">×</button>' +
+          '</div>';
+        for (var j = 0; j < idxs.length; j++) {
+          var r = ENT_ROWS[idxs[j]];
+          h += '<div class="ent-row' + (r.warn ? ' warn' : '') + '"><div class="g">' +
+            esc(r.item || r.code) + (r.item ? '<i>' + esc(r.code) + '</i>' : '') +
+            (r.warn ? '<i class="ent-warn-i">⚠ ' + esc(r.warn) + '</i>' : '') + '</div>' +
+            '<input class="q" type="text" inputmode="numeric" value="' + esc(r.qty) +
+            '" data-q="' + idxs[j] + '" aria-label="수량">' +
+            '<button type="button" class="x" data-x="' + idxs[j] + '" title="빼기">×</button></div>';
+        }
+        h += '</div>';
+      }
+      //  묶음째 빼기를 위해 어느 줄이 어느 묶음인지 기억해 둔다
+      el('eCart').setAttribute('data-groups', JSON.stringify(순서.map(function (k) { return 묶음[k]; })));
+      el('eCart').innerHTML = h;
+    }
+
+    /** 담은 것이 곧 서버가 받는 모양이다 — 옮겨 담지 않는다 */
+    function entRows() { return ENT_ROWS.slice(); }
+
+    /** 지금 화면에 적힌 받는 분 */
+    function entWhoNow() {
+      return {
+        name: String(el('eName').value || '').trim(),
+        phone: String(el('ePhone').value || '').trim(),
+        addr: String(el('eAddr').value || '').trim(),
+        msg: String(el('eMsg').value || '').trim(),
+        note: String(el('eNote').value || '').trim()
+      };
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       ★ 열 차례를 못 박지 않는다 ★  (2026-09-21)
+
+       처음엔 「코드·수량·수취인·전화·주소·메시지·적요」 차례라고 가정했다.
+       실제 엑셀을 넣어 보니 차례가 달랐고, 수취인 자리에 「2」가, 수량 자리에
+       1914403331002200 이 들어갔다. 빠진 칸이 없으니 그대로 통과했다.
+       조용히 틀린 데이터가 들어가는 것이 안 들어가는 것보다 나쁘다.
+
+       그래서 «칸을 먼저 보여 주고 사람이 짚게» 한다. 짚는 수고를 줄이려고
+       머리글과 내용으로 먼저 찍어 두되, 마지막 판단은 사람이 한다.
+       업체마다 양식이 다르므로 이 방법 말고는 맞출 길이 없다.
+       ══════════════════════════════════════════════════════════════ */
+    var ENT_GRID = [];    // 붙여넣은 것을 칸으로 쪼갠 것 [[a,b,c], …]
+    var ENT_MAP = [];     // 열마다 무엇인가 ['code','qty',…,'']
+    var ENT_SKIP_HEAD = false;
+
+    /*  ★ 품목명도 고를 수 있어야 한다 ★  (2026-09-21)
+        > "문제는 두번째가 주소가 아니고 품목명이야.."
+        발주탭의 품목명은 «자동» 열이라 우리가 쓰지 않는다. 그렇다고 목록에서
+        빼 두면 사람이 그 칸을 「안 씀」으로 밖에 못 놓고, 그러면 화면이
+        주소로 잘못 찍은 것을 바로잡기가 헷갈린다.
+        고를 수 있게 두되 시트에는 안 쓴다 — 대신 «코드가 맞는지» 견준다.  */
+    var ENT_FIELDS = [
+      ['', '— 안 씀 —'],
+      ['code', '품목코드'],
+      ['item', '품목명 (확인용)'],
+      ['qty', '수량'],
+      ['name', '수취인'],
+      ['phone', '전화번호'],
+      ['addr', '주소'],
+      ['msg', '배송메시지'],
+      ['note', '적요']
+    ];
+
+    /**
+     * 품목코드를 견줄 모양으로 다듬는다.
+     *
+     * ★ 보이지 않는 글자가 섞인다 ★  (2026-09-21)
+     *   허브의 발주탭 수식이 TRIM(CLEAN(SUBSTITUTE(C2:C, CHAR(160), ""))) 를
+     *   쓴다 — 줄바꿈 없는 빈칸(NBSP)이 코드에 섞이는 일이 실제로 있다는 뜻이다.
+     *   엑셀에서 긁어 붙이면 더 잘 섞인다. 같은 기준으로 걷어내고 견준다.
+     */
+    function entCodeKey(s) {
+      return String(s == null ? '' : s)
+        .replace(/[ ​-‍﻿]/g, '')   // NBSP·폭 없는 빈칸
+        .replace(/\s/g, '')
+        .toUpperCase();
+    }
+
+    /** 한 줄을 칸으로 쪼갠다 — 탭이 있으면 탭, 없으면 쉼표 */
+    function entSplitLine(ln) {
+      if (ln.indexOf('\t') >= 0) return ln.split('\t');
+      return ln.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+    }
+
+    /**
+     * 열마다 무엇인지 찍어 본다.
+     * ① 머리글에 이름이 있으면 그것 ② 없으면 내용 생김새로.
+     * 틀려도 괜찮다 — 사람이 보고 고친다.
+     */
+    function entGuessMap(grid) {
+      var w = 0;
+      for (var i = 0; i < grid.length; i++) w = Math.max(w, grid[i].length);
+      var map = [];
+      for (var c = 0; c < w; c++) map.push('');
+
+      var head = grid[0] || [];
+      var 머리글있나 = false;
+      for (var h = 0; h < w; h++) {
+        var t = String(head[h] || '').replace(/\s/g, '');
+        if (/품목코드|이카운트코드|^코드$/.test(t)) { map[h] = 'code'; 머리글있나 = true; }
+        else if (/품목명|상품명|제품명|^품명$/.test(t)) { map[h] = 'item'; 머리글있나 = true; }
+        else if (/^수량$/.test(t)) { map[h] = 'qty'; 머리글있나 = true; }
+        else if (/수취인$|받는분|^이름$|^성명$/.test(t)) { map[h] = 'name'; 머리글있나 = true; }
+        else if (/전화|연락처|휴대/.test(t)) { map[h] = 'phone'; 머리글있나 = true; }
+        else if (/주소/.test(t)) { map[h] = 'addr'; 머리글있나 = true; }
+        else if (/배송메시지|배송메모|요청/.test(t)) { map[h] = 'msg'; 머리글있나 = true; }
+        else if (/^적요$|^메모$|^비고$/.test(t)) { map[h] = 'note'; 머리글있나 = true; }
+      }
+      if (머리글있나) return { map: map, hasHeader: true };
+
+      /*  머리글이 없으면 내용으로 — 몇 줄을 훑어 «대개 그렇다»를 본다.
+
+          ★ 긴 한글이라고 다 주소가 아니다 ★  (2026-09-21)
+            「BF 220파이 감자탕 소 백색 200세트」를 주소로 찍었다.
+            주소에는 시·도·구·읍·면·로·길·번지가 있고, 품목명에는 규격
+            (파이·호·세트·매·팩)과 색(백색·투명)이 있다. 그 표를 보고 가른다.  */
+      var 표본 = grid.slice(0, Math.min(grid.length, 8));
+      /*  ★ 「2호점」이 주소로 걸렸다 ★  (2026-09-21)
+          「[0-9]+호」를 주소 표시로 뒀더니 상호 「마라힐링2호점」이 주소가 됐다.
+          주소를 주소이게 하는 것은 «행정 낱말»이다 — 시·도·군·구·읍·면·동·
+          리·로·길. 그것 하나는 반드시 있어야 주소로 본다.  */
+      var 주소끼 = /(특별자치|특별시|광역시|[가-힣]{2,}\s*(도|시|군|구|읍|면|동|리|로|길)(\s|[0-9]))/;
+      var 품목끼 = /(파이|호\b|세트|매입|개입|팩|박스|백색|투명|흑색|검정|사이즈|[0-9]{2,}\s*(ml|ML|cc|CC|mm|MM))/;
+
+      /*  칸마다 «얼마나 그럴듯한가»를 재어 둔다. 바로 정하지 않는 까닭은
+          같은 뜻이 두 칸에 가는 일이 있기 때문이다 — 실제로 주소가 둘이 됐다.
+          다 재고 나서 «가장 그럴듯한 칸 하나»씩 나눠 준다.  */
+      var 점수 = [];
+      for (var c2 = 0; c2 < w; c2++) {
+        var 전화 = 0, 숫자 = 0, 코드 = 0, 주소 = 0, 품목 = 0, 긴글 = 0, 값 = 0;
+        for (var r = 0; r < 표본.length; r++) {
+          var v = String((표본[r] || [])[c2] || '').trim();
+          if (!v) continue;
+          값++;
+          var d = v.replace(/[^0-9]/g, '');
+          if (/^0\d{1,3}[-\s]?\d{3,4}[-\s]?\d{4}$/.test(v) || (d.length >= 9 && d.length <= 11 && d[0] === '0')) { 전화++; continue; }
+          if (/^[0-9]{1,4}$/.test(v)) { 숫자++; continue; }
+          if (/^[A-Za-z][A-Za-z0-9_\-]{4,}$/.test(v)) { 코드++; continue; }
+          if (v.length >= 6) {
+            긴글++;
+            if (주소끼.test(v)) 주소++;
+            else if (품목끼.test(v)) 품목++;
+          }
+        }
+        점수.push({ c: c2, 값: 값, phone: 전화, qty: 숫자, code: 코드, addr: 주소, item: 품목, 긴글: 긴글 });
+      }
+
+      //  뚜렷한 것부터 한 칸씩 — 뒤에 오는 것은 남은 칸에서만 고른다
+      ['phone', 'code', 'addr', 'item', 'qty'].forEach(function (f) {
+        var 최고 = null;
+        for (var i2 = 0; i2 < 점수.length; i2++) {
+          var s = 점수[i2];
+          if (!s.값 || map[s.c]) continue;
+          var 몫 = s[f] / s.값;
+          if (몫 < 0.6) continue;
+          if (!최고 || s[f] > 최고[f]) 최고 = s;
+        }
+        if (최고) map[최고.c] = f;
+      });
+
+      /*  주소도 품목명도 아닌 «긴 글»이 남았는데 주소가 아직 없으면 그것이 주소다.
+          주소는 생김새가 제각각이라 표에 다 담을 수 없다.  */
+      if (map.indexOf('addr') < 0) {
+        var 남은긴글 = null;
+        for (var i3 = 0; i3 < 점수.length; i3++) {
+          var s3 = 점수[i3];
+          if (!s3.값 || map[s3.c]) continue;
+          if (s3.긴글 / s3.값 < 0.6) continue;
+          if (!남은긴글 || s3.긴글 > 남은긴글.긴글) 남은긴글 = s3;
+        }
+        if (남은긴글) map[남은긴글.c] = 'addr';
+      }
+      /*  이름은 남은 칸 중 «사람·가게 이름처럼 생긴» 곳.
+          「마라힐링2호점」처럼 숫자가 섞인 상호도 이름이다 — 숫자만 아니면 된다.  */
+      if (map.indexOf('name') < 0) {
+        var 후보 = -1, 최고n = 0;
+        for (var c3 = 0; c3 < w; c3++) {
+          if (map[c3]) continue;
+          var n = 0;
+          for (var r2 = 0; r2 < 표본.length; r2++) {
+            var s = String((표본[r2] || [])[c3] || '').trim();
+            if (!s || s.length > 20) continue;
+            if (/^[0-9\-\s]+$/.test(s)) continue;       // 숫자뿐이면 이름이 아니다
+            if (/[가-힣]/.test(s) && !주소끼.test(s)) n++;
+          }
+          if (n > 최고n) { 최고n = n; 후보 = c3; }
+        }
+        if (후보 >= 0) map[후보] = 'name';
+      }
+      return { map: map, hasHeader: false };
+    }
+
+    /*  묶음 한 줄을 읽는다 — 짚어 둔 열 차례(ENT_MAP)대로  */
+    /** 붙여넣은 글 → 칸으로 쪼갠 표. 여기서는 «무엇인지»를 정하지 않는다 */
+    function entToGrid(text) {
+      var grid = [];
+      var lines = String(text || '').split(/[\r\n]+/);
+      for (var i = 0; i < lines.length; i++) {
+        var ln = lines[i];
+        if (!String(ln).trim()) continue;
+        grid.push(entSplitLine(ln).map(function (x) {
+          return String(x || '').replace(/^"|"$/g, '').replace(/\s+/g, ' ').trim();
+        }));
+        if (grid.length >= 210) break;
+      }
+      return grid;
+    }
+
+    /** 짚어 둔 열 차례(ENT_MAP)대로 읽는다 */
+    function entParseBulk(grid, map, skipHeader) {
+      var rows = [], bad = [], 앞사람 = null;
+      for (var i = skipHeader ? 1 : 0; i < grid.length; i++) {
+        var f = grid[i] || [];
+        var one = { code: '', item: '', qty: '', name: '', phone: '', addr: '', msg: '', note: '' };
+        for (var c = 0; c < map.length; c++) {
+          if (!map[c]) continue;
+          var v = String(f[c] || '').trim();
+          if (map[c] === 'qty') v = v.replace(/[^0-9]/g, '');
+          one[map[c]] = v;
+        }
+        /*  ★ 수취인이 비면 윗줄을 잇는다 ★
+            엑셀에서 한 사람이 여러 품목을 시키면 첫 줄에만 이름·주소를 적고
+            아래는 비워 두는 일이 흔하다. 빈칸은 «같은 사람»이라는 뜻으로 읽는다.  */
+        if (!one.name && !one.addr && 앞사람) {
+          one.name = 앞사람.name; one.phone = 앞사람.phone; one.addr = 앞사람.addr;
+          if (!one.msg) one.msg = 앞사람.msg;
+        }
+        if (one.name || one.addr) {
+          앞사람 = { name: one.name, phone: one.phone, addr: one.addr, msg: one.msg };
+        }
+        if (!one.code || !one.qty) {
+          bad.push((i + 1) + '번째 줄: 코드나 수량이 없습니다');
+          continue;
+        }
+        //  화면에서도 한 번 거른다 — 서버가 또 본다. 여기서 막으면 바로 안다
+        if (parseInt(one.qty, 10) > 9999) {
+          bad.push((i + 1) + '번째 줄: 수량이 ' + one.qty + ' — 열을 잘못 짚은 것 같습니다');
+          continue;
+        }
+
+        /* ══════════════════════════════════════════════════════════
+           ★ 견주되 막지 않는다 ★  (2026-09-21 · 처음엔 막았다가 물렸다)
+
+           단가조회는 «전 품목 단가표»지 그 업체 취급 목록이 아니다. 신규
+           품목이 아직 안 올라왔을 수도 있다. 「모른다」를 「틀렸다」로 다뤄
+           발주를 막으면, 업체는 전화로 돌아간다. 그게 더 나쁘다.
+
+           수량 9999 같은 것은 «틀린» 값이라 막는 것이 맞지만, 코드가 표에
+           없는 것은 «모르는» 것이다. 담되 눈에 띄게 표시하고 사람이 본다.
+           ══════════════════════════════════════════════════════════ */
+        var 단가표이름 = '';
+        for (var t = 0; t < ENT_ITEMS.length; t++) {
+          if (entCodeKey(ENT_ITEMS[t].code) === entCodeKey(one.code)) {
+            단가표이름 = ENT_ITEMS[t].item;
+            one.code = ENT_ITEMS[t].code;   // 표에 적힌 모양으로 맞춘다
+            break;
+          }
+        }
+        one.warn = '';
+        if (ENT_ITEMS.length && !단가표이름) {
+          /*  ★ 「없다」고 단정하지 않는다 ★  (2026-09-21)
+              목록을 1200 에서 자르고 있었던 탓에, 단가조회에 «있는» 코드를
+              없다고 말했다. 사람은 그 말을 믿고 코드를 의심한다.
+              내가 못 본 것과 없는 것은 다르다 — 잘렸으면 그렇게 말한다.  */
+          one.warn = ENT_ITEMS_CUT
+            ? '단가조회에서 못 찾음 (목록이 잘려 있습니다 — 시트에서 확인해 주세요)'
+            : '단가조회에 없는 코드';
+        } else if (단가표이름 && one.item) {
+          var 납작 = function (s) { return String(s).replace(/[\s()\-_]/g, '').toLowerCase(); };
+          var a = 납작(단가표이름), b = 납작(one.item);
+          if (a.indexOf(b) < 0 && b.indexOf(a) < 0) {
+            one.warn = '코드는 「' + 단가표이름 + '」인데 「' + one.item + '」로 적혔습니다';
+          }
+        }
+        //  단가조회의 이름으로 채운다 — 화면에서 무엇을 담았는지 보이게
+        if (단가표이름) one.item = 단가표이름;
+
+        rows.push(one);
+        if (rows.length >= 200) break;
+      }
+      return { rows: rows, bad: bad };
+    }
+
+    /** 열 짚기 화면 — 첫 줄 몇 개를 보여 주고 칸마다 고르게 한다 */
+    function entRenderMap() {
+      var box = el('eMapBox');
+      if (!ENT_GRID.length) { box.innerHTML = ''; box.hidden = true; return; }
+      box.hidden = false;
+
+      var w = ENT_MAP.length;
+      var h = '<div class="ent-h">열 짚기 <span>이 칸이 무엇인지 확인해 주세요</span></div>' +
+        '<div class="hint">아래는 붙여넣으신 것의 앞 세 줄입니다. ' +
+        '잘못 짚은 칸이 있으면 바꿔 주세요.</div>' +
+        '<div class="ent-map-scroll"><table class="ent-map"><tr>';
+      for (var c = 0; c < w; c++) {
+        h += '<th><select data-mc="' + c + '">';
+        for (var f = 0; f < ENT_FIELDS.length; f++) {
+          h += '<option value="' + ENT_FIELDS[f][0] + '"' +
+            (ENT_MAP[c] === ENT_FIELDS[f][0] ? ' selected' : '') + '>' +
+            ENT_FIELDS[f][1] + '</option>';
+        }
+        h += '</select></th>';
+      }
+      h += '</tr>';
+      for (var r = 0; r < Math.min(ENT_GRID.length, 3); r++) {
+        h += '<tr>';
+        for (var c2 = 0; c2 < w; c2++) {
+          h += '<td>' + esc(String((ENT_GRID[r] || [])[c2] || '')) + '</td>';
+        }
+        h += '</tr>';
+      }
+      h += '</table></div>' +
+        '<label class="ent-chk"><input type="checkbox" id="eSkipHead"' +
+        (ENT_SKIP_HEAD ? ' checked' : '') + '> 첫 줄은 머리글입니다 (담지 않음)</label>' +
+        '<div class="ord-find-row"><button type="button" class="btn-new" id="eMapAdd">' +
+        '이 차례로 담기</button></div>';
+      box.innerHTML = h;
+    }
+
+    function entSubmit(dryRun) {
+      var rows = entRows();
+      if (!rows.length) { entMsg('담은 것이 없습니다.', 'ent-bad'); return; }
+      entMsg(dryRun ? '어디에 들어갈지 보는 중…' : '발주를 넣는 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (handled(res)) return;
+          if (!res || !res.ok) { entMsg(esc((res && res.error) || '실패'), 'ent-bad'); return; }
+          entShowResult(res, dryRun);
+        })
+        .withFailureHandler(function (e) { entMsg(esc(String(e && e.message || e)), 'ent-bad'); })
+        .prpSubmitOrders(SID, { rows: rows, dryRun: !!dryRun });
+    }
+
+    function entShowResult(res, dryRun) {
+      var h = '<div class="ent-pre"><b>' + esc(res.message || '') + '</b>';
+      if (res.spillWarn) h += '<br><span class="ent-bad">⚠ ' + esc(res.spillWarn) + '</span>';
+      if (res.bad && res.bad.length) {
+        h += '<br><span class="ent-bad">못 넣은 줄 ' + res.bad.length + '개 — ';
+        for (var b = 0; b < res.bad.length; b++) {
+          h += (b ? ', ' : '') + res.bad[b].line + '번째(' + esc(res.bad[b].why) + ')';
+        }
+        h += '</span>';
+      }
+      /*  ★ 미리보기도 사람 단위로 ★ 쉰 줄을 평평하게 뿌리면 읽히지 않는다.
+          받는 분마다 「몇 행부터 몇 줄」로 접어 보여 준다.  */
+      var pv = res.preview || [];
+      if (pv.length) {
+        var 순서 = [], 묶 = {};
+        for (var i = 0; i < pv.length; i++) {
+          var k = entWho(pv[i]);
+          if (!묶[k]) { 묶[k] = []; 순서.push(k); }
+          묶[k].push(pv[i]);
+        }
+        h += '<br><br>모두 <b>' + pv.length + '줄 · ' + 순서.length + '분</b>';
+        for (var g = 0; g < 순서.length; g++) {
+          var arr = 묶[순서[g]];
+          h += '<br><b>' + esc(arr[0].name || '(수취인 없음)') + '</b> · ' +
+            arr.length + '줄 · ' + arr[0].row + '행부터' +
+            (arr[0].addr ? '<br><span style="color:var(--text-muted)">' +
+              esc(arr[0].addr) + '</span>' : '');
+          for (var j = 0; j < arr.length; j++) {
+            h += '<br>&nbsp;&nbsp;· ' + esc(arr[j].code) + ' × ' + esc(arr[j].qty);
+          }
+        }
+      }
+      if (!dryRun) {
+        ENT_LAST = pv;
+        /*  ★ 넣었으면 «들어간 것»을 보여 준다 ★  (2026-09-20)
+            > "그날 발주 내용이 전체가 보여야 발주가 제대로 들어갔는지 등을
+            >  파악할수 있어"
+            넣었다는 말만 하고 끝내면 사람이 시트를 열어 확인하게 된다.  */
+        h += '<br><br><button type="button" class="act" id="eSee">들어간 것 보기</button>' +
+          ' <button type="button" class="act" id="eUndo">방금 넣은 것 지우기</button>';
+      }
+      h += '</div>';
+      entMsg(h);
+
+      if (!dryRun) {
+        //  넣었으면 담은 것을 비운다 — 두 번 눌러 두 번 들어가는 일이 없게
+        ENT_ROWS = [];
+        entRenderCart();
+        var u = el('eUndo');
+        if (u) u.addEventListener('click', entUndo);
+        var s = el('eSee');
+        if (s) s.addEventListener('click', function () {
+          //  「미수집」으로 간다 — 방금 넣은 줄은 아직 고유ID가 없다
+          ORD_DAY = 'new';
+          var bs = el('oDays').querySelectorAll('button');
+          for (var i = 0; i < bs.length; i++) {
+            bs[i].classList.toggle('on', bs[i].getAttribute('data-d') === 'new');
+          }
+          el('oq').value = '';
+          showPage('orders');
+          loadOrders();
+        });
+      }
+    }
+
+    function entUndo() {
+      if (!ENT_LAST || !ENT_LAST.length) return;
+      entMsg('지우는 중…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (handled(res)) return;
+          if (!res || !res.ok) { entMsg(esc((res && res.error) || '실패'), 'ent-bad'); return; }
+          var t = res.removed + '줄 지웠습니다.';
+          if (res.skipped && res.skipped.length) {
+            t += '<br><span class="ent-bad">건드리지 않은 줄 — ' +
+              esc(res.skipped.join(' · ')) + '</span>';
+          }
+          ENT_LAST = null;
+          entMsg(t);
+        })
+        .withFailureHandler(function (e) { entMsg(esc(String(e && e.message || e)), 'ent-bad'); })
+        .prpUndoOrders(SID, { rows: ENT_LAST });
+    }
+
+    el('eSearch').addEventListener('input', entRenderItems);
+    el('eItems').addEventListener('click', function (ev) {
+      var b = ev.target.closest ? ev.target.closest('.ent-item') : null;
+      if (!b) return;
+      var it = ENT_ITEMS[parseInt(b.getAttribute('data-i'), 10)];
+      if (!it) return;
+
+      var w = entWhoNow();
+      if (!w.name || !w.addr) {
+        entMsg('먼저 위에 <b>수취인</b>과 <b>주소</b>를 적어 주세요. ' +
+          '담는 품목은 그 분께 갑니다.', 'ent-bad');
+        el(w.name ? 'eAddr' : 'eName').focus();
+        return;
+      }
+
+      /*  같은 사람 · 같은 품목이면 수량만 올린다. 다른 사람이면 새 줄이다 —
+          「같은 사람이 여러 개 주문시에도 추가」가 바로 이 자리다.  */
+      var key = entWho({ name: w.name, phone: w.phone, addr: w.addr });
+      for (var i = 0; i < ENT_ROWS.length; i++) {
+        if (ENT_ROWS[i].code === it.code && entWho(ENT_ROWS[i]) === key) {
+          ENT_ROWS[i].qty = String((parseInt(ENT_ROWS[i].qty, 10) || 0) + 1);
+          entRenderCart();
+          entMsg(esc(it.item) + ' 수량을 올렸습니다.');
+          return;
+        }
+      }
+      ENT_ROWS.push({
+        code: it.code, item: it.item, qty: '1',
+        name: w.name, phone: w.phone, addr: w.addr, msg: w.msg, note: w.note
+      });
+      entRenderCart();
+      entMsg('');
+    });
+
+    el('eCart').addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (!t.hasAttribute) return;
+      if (t.hasAttribute('data-x')) {
+        ENT_ROWS.splice(parseInt(t.getAttribute('data-x'), 10), 1);
+        entRenderCart();
+      } else if (t.hasAttribute('data-xg')) {
+        //  묶음째 빼기 — 뒤에서부터 지운다. 앞에서 지우면 뒤 번호가 밀린다
+        var groups = [];
+        try { groups = JSON.parse(el('eCart').getAttribute('data-groups') || '[]'); } catch (e) {}
+        var idxs = (groups[parseInt(t.getAttribute('data-xg'), 10)] || []).slice()
+          .sort(function (a, b) { return b - a; });
+        for (var i = 0; i < idxs.length; i++) ENT_ROWS.splice(idxs[i], 1);
+        entRenderCart();
+      }
+    });
+
+    el('eCart').addEventListener('input', function (ev) {
+      var t = ev.target;
+      if (!t.hasAttribute || !t.hasAttribute('data-q')) return;
+      var i = parseInt(t.getAttribute('data-q'), 10);
+      if (ENT_ROWS[i]) ENT_ROWS[i].qty = String(t.value || '').replace(/[^0-9]/g, '');
+    });
+
+    el('eNext').addEventListener('click', function () {
+      el('eName').value = ''; el('ePhone').value = '';
+      el('eAddr').value = ''; el('eMsg').value = ''; el('eNote').value = '';
+      el('eName').focus();
+      entMsg('담은 것은 그대로 있습니다. 다음 분을 적어 주세요.');
+    });
+
+    /*  「담기」는 이제 «열 짚기»를 먼저 띄운다. 바로 담지 않는다 —
+        차례를 지어내면 수취인 자리에 수량이 들어간다 (2026-09-21 에 실제로 났다).  */
+    function entOpenMap() {
+      var grid = entToGrid(el('eBulk').value);
+      if (!grid.length) { entMsg('읽을 줄이 없습니다.', 'ent-bad'); return; }
+      ENT_GRID = grid;
+      var g = entGuessMap(grid);
+      ENT_MAP = g.map;
+      ENT_SKIP_HEAD = g.hasHeader;
+      entRenderMap();
+      entMsg('칸이 무엇인지 확인하고 「이 차례로 담기」를 눌러 주세요.');
+      var b = el('eMapBox');
+      if (b && b.scrollIntoView) b.scrollIntoView({ block: 'start' });
+    }
+
+    el('eBulkAdd').addEventListener('click', entOpenMap);
+
+    el('eMapBox').addEventListener('change', function (ev) {
+      var t = ev.target;
+      if (t.hasAttribute && t.hasAttribute('data-mc')) {
+        var c = parseInt(t.getAttribute('data-mc'), 10);
+        var v = t.value;
+        //  같은 뜻을 두 칸에 줄 수 없다 — 먼저 있던 곳을 비운다
+        if (v) {
+          for (var i = 0; i < ENT_MAP.length; i++) {
+            if (i !== c && ENT_MAP[i] === v) ENT_MAP[i] = '';
+          }
+        }
+        ENT_MAP[c] = v;
+        entRenderMap();
+      } else if (t.id === 'eSkipHead') {
+        ENT_SKIP_HEAD = !!t.checked;
+      }
+    });
+
+    el('eMapBox').addEventListener('click', function (ev) {
+      if (!ev.target || ev.target.id !== 'eMapAdd') return;
+
+      //  없으면 안 되는 것부터 본다 — 없는 채로 담으면 전부 못 쓴다
+      var 없는것 = [];
+      ['code', 'qty', 'name', 'addr'].forEach(function (k) {
+        if (ENT_MAP.indexOf(k) < 0) {
+          없는것.push({ code: '품목코드', qty: '수량', name: '수취인', addr: '주소' }[k]);
+        }
+      });
+      if (없는것.length) {
+        entMsg('<b>' + esc(없는것.join(' · ')) + '</b> 칸을 짚어 주세요. 없으면 발주가 안 됩니다.', 'ent-bad');
+        return;
+      }
+
+      var r = entParseBulk(ENT_GRID, ENT_MAP, ENT_SKIP_HEAD);
+      if (!r.rows.length) {
+        entMsg('담을 줄이 없습니다.' +
+          (r.bad.length ? '<br><span class="ent-bad">' + r.bad.map(esc).join('<br>') + '</span>' : ''), 'ent-bad');
+        return;
+      }
+      for (var i = 0; i < r.rows.length; i++) ENT_ROWS.push(r.rows[i]);
+
+      ENT_GRID = []; ENT_MAP = [];
+      el('eBulk').value = '';
+      entRenderMap();
+      entRenderCart();
+
+      //  몇 사람 몫인지 같이 말해 준다 — 줄 수만으로는 규모가 안 읽힌다
+      var 사람 = {}, n = 0;
+      for (var j = 0; j < ENT_ROWS.length; j++) {
+        var k = entWho(ENT_ROWS[j]);
+        if (!사람[k]) { 사람[k] = 1; n++; }
+      }
+      //  ⚠ 붙은 줄이 몇인지 같이 말한다 — 담겼어도 봐야 할 것이 있다
+      var 확인할것 = 0;
+      for (var q = 0; q < ENT_ROWS.length; q++) if (ENT_ROWS[q].warn) 확인할것++;
+
+      entMsg(r.rows.length + '줄 담았습니다. 지금 모두 ' + ENT_ROWS.length + '줄 · ' + n + '분.' +
+        (확인할것 ? '<br><span class="ent-bad">⚠ 확인할 줄 ' + 확인할것 + '개 — ' +
+          '아래 담은 것에서 표시된 줄을 봐 주세요. 그대로 넣으셔도 됩니다.</span>' : '') +
+        (r.bad.length ? '<br><span class="ent-bad">못 담은 줄<br>' +
+          r.bad.map(esc).join('<br>') + '</span>' : ''));
+    });
+    el('eDry').addEventListener('click', function () { entSubmit(true); });
+    el('eGo').addEventListener('click', function () {
+      if (!confirm('시트의 「발주 및 송장조회」 탭에 실제로 넣습니다. 계속할까요?')) return;
+      entSubmit(false);
+    });
+
+    //  엑셀 → 묶음칸. 발주·송장조회의 엑셀 읽기와 같은 통로를 쓴다
+    window.prpEntryBulkFill = function (text) {
+      el('eBulk').value = text;
+      //  읽자마자 열 짚기까지 띄운다 — 「읽기」를 또 누르게 하지 않는다
+      entOpenMap();
+    };
+
+    for (var pi = 0; pi < document.querySelectorAll('.pages button').length; pi++) {
+      (function (b) {
+        b.addEventListener('click', function () { showPage(b.getAttribute('data-page')); });
+      })(document.querySelectorAll('.pages button')[pi]);
+    }
+    el('oDays').addEventListener('click', function (ev) {
+      var b = ev.target.closest ? ev.target.closest('button[data-d]') : null;
+      if (!b) return;
+      ORD_DAY = b.getAttribute('data-d');
+      var bs = el('oDays').querySelectorAll('button');
+      for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', bs[i] === b);
+      //  검색 중에는 날짜칩이 뜻이 없다 — 검색 결과는 줄별로 답한 것이다
+      if (String(el('oq').value || '').trim()) { loadOrders(); return; }
+      ordRenderDay();
+    });
+    el('oGo').addEventListener('click', loadOrders);
+    el('oClear').addEventListener('click', function () {
+      el('oq').value = '';
+      loadOrders();
+    });
+    /*  ★ 붙여넣으면 바로 찾는다 ★ 붙여넣고 또 단추를 누르게 하지 않는다.
+        브라우저가 값을 채운 뒤에 읽어야 해서 한 박자 미룬다.  */
+    el('oq').addEventListener('paste', function () { setTimeout(loadOrders, 0); });
+    el('oq').addEventListener('keydown', function (ev) {
+      //  한 줄짜리는 Enter 로 찾는다. 여러 줄을 쓰는 중이면 줄바꿈이 먼저다.
+      if (ev.key === 'Enter' && !ev.shiftKey && el('oq').value.indexOf('\n') < 0) {
+        ev.preventDefault();
+        loadOrders();
+      }
+    });
+
+    /*  복사 — 붙여넣기와 짝이다. 한 줄을 카톡·메모로 옮길 때 쓴다.  */
+    el('oList').addEventListener('click', function (ev) {
+      var b = ev.target.closest ? ev.target.closest('.ord-copy') : null;
+      if (!b) return;
+      var txt = b.getAttribute('data-copy') || '';
+      function 됐다() {
+        b.textContent = '복사됨';
+        b.classList.add('done');
+        setTimeout(function () { b.textContent = '복사'; b.classList.remove('done'); }, 1600);
+      }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).then(됐다, function () { 옛방식(txt, 됐다); });
+        } else { 옛방식(txt, 됐다); }
+      } catch (e) { 옛방식(txt, 됐다); }
+    });
+
+    /*  clipboard API 는 안전한 문맥에서만 된다. 옛 기기·iframe 에서는 안 되므로
+        보이지 않는 칸에 넣고 execCommand 로 복사한다 — 되는 길을 남겨 둔다.  */
+    function 옛방식(txt, 끝) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = txt;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        끝();
+      } catch (e) {
+        alert('복사하지 못했습니다. 글자를 길게 눌러 복사해 주세요.\n\n' + txt);
+      }
+    }
+    el('nUid').addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); lookupUid(); }
+    });
+    el('nHits').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-hit]');
+      if (!b) return;
+      var i = parseInt(b.getAttribute('data-hit'), 10);
+      if (LOOKUP_HITS[i]) {
+        applyHit(LOOKUP_HITS[i]);
+        el('nHits').innerHTML = '';
+        setNewMsg('선택한 주문을 채웠습니다.', false);
+      }
+    });
+    el('nPhotoFile').addEventListener('change', function (ev) {
+      stageNewPhotos(ev.target.files);
+      ev.target.value = '';
+    });
+    el('nPhotoCam').addEventListener('change', function (ev) {
+      stageNewPhotos(ev.target.files);
+      ev.target.value = '';
+    });
+    el('nPhotoPrev').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-drop]');
+      if (!b) return;
+      NEW_PHOTOS.splice(parseInt(b.getAttribute('data-drop'), 10), 1);
+      renderNewPhotos();
+    });
+    el('photoClose').addEventListener('click', closeLightbox);
+    el('mPhoto').addEventListener('click', function (ev) {
+      if (ev.target === el('mPhoto')) closeLightbox();
+    });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && el('mPhoto').classList.contains('on')) closeLightbox();
+    });
+    document.addEventListener('paste', function (ev) {
+      if (!el('mNew').classList.contains('on')) return;
+      var cd = ev.clipboardData || window.clipboardData;
+      if (!cd) return;
+      var blobs = [];
+      var items = cd.items || [];
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file' && /^image\//i.test(items[i].type)) {
+          var b = items[i].getAsFile();
+          if (b) blobs.push(b);
+        }
+      }
+      if (!blobs.length) return;
+      ev.preventDefault();
+      stageNewPhotos(blobs);
+    });
+    el('btnFee').addEventListener('click', openFee);
+    el('feeClose').addEventListener('click', function () { show('mFee', false); });
+    el('dupNo').addEventListener('click', function () { DUP_PENDING = null; show('mDup', false); });
+    el('dupYes').addEventListener('click', function () {
+      show('mDup', false);
+      if (DUP_PENDING) { DUP_PENDING = null; submitNew(true); }
+    });
+    el('q').addEventListener('input', render);
+    //  나열 차례를 바꾸면 바로 다시 그린다 (고른 값은 그 사람 브라우저에 남는다)
+    el('sortSel').addEventListener('change', function () { setSort(this.value); });
+
+    document.querySelectorAll('.segs button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.segs button').forEach(function (x) { x.classList.remove('on'); });
+        b.classList.add('on');
+        FILTER = b.getAttribute('data-f');
+        OPEN_POP = '';
+        render();
+      });
+    });
+
+    // 작성 중인 접수창은 바깥을 눌러도 닫지 않는다 (적던 내용이 사라진다).
+    // 정산·중복확인만 바깥 클릭으로 닫는다.
+    ['mFee', 'mDup'].forEach(function (id) {
+      el(id).addEventListener('click', function (ev) {
+        if (ev.target === el(id)) show(id, false);
+      });
+    });
+
+    // ── 시작 ──
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (handled(res)) return;
+        if (res && res.ok) {
+          fillOpts('nType', res.types);
+          fillOpts('nPickup', res.pickups);
+          /* ★ 수거 택배사 기본값 ★  (2026-09-18)
+             > "업체 반품접수 새로 만들기에서 수거택배사를 기본 로젠택배로 해줘"
+             여태 목록 첫째(CJ대한통운)가 그냥 골라져 있었다 — 우리가 안 쓰는 곳이다.
+             값은 서버(prpConfig.PRP_PICKUP_DEFAULT)가 정한다. 화면에 박으면
+             다음에 택배사를 바꿀 때 또 두 곳을 고쳐야 한다. */
+          if (res.pickupDefault) PICKUP_DEFAULT = res.pickupDefault;
+          setPickupDefault();
+          if (res.photoMax) PHOTO_MAX = res.photoMax;
+        }
+        loadRows(false);
+      })
+      .withFailureHandler(function () { loadRows(false); })
+      .prpBootstrap(SID);
+  })();
+  </script>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       엑셀 읽기 — 브라우저에서 곧바로  (2026-09-20)
+
+       파일을 서버로 올리지 않는다. 업체 컴퓨터 안에서 읽고, 뽑아낸 제품명만
+       검색칸에 들어간다. 발주서에는 단가·거래처가 같이 들어 있는 일이 많은데,
+       찾기 하나 하자고 그걸 통째로 올릴 까닭이 없다.
+
+       ★ 못 불러와도 화면은 돈다 ★ 밖에서 받아오는 도구라 막힐 수 있다.
+         그때는 단추가 「붙여넣어 주세요」로 바뀐다 — 조용히 죽지 않는다.
+       ══════════════════════════════════════════════════════════════ -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script>
+  (function () {
+    var btn = document.getElementById('oXlsxBtn');
+    var input = document.getElementById('oXlsx');
+    var entInput = document.getElementById('eXlsx');
+    if (!btn || !input) return;
+
+    if (typeof XLSX === 'undefined') {
+      btn.textContent = '엑셀 열기 (안 됨)';
+      btn.title = '엑셀 읽는 도구를 불러오지 못했습니다. 내용을 붙여넣어 주세요.';
+      btn.style.opacity = '0.5';
+      if (entInput && entInput.parentNode) {
+        entInput.parentNode.textContent = '엑셀 열기 (안 됨)';
+        entInput.parentNode.style.opacity = '0.5';
+      }
+      return;
+    }
+
+    /*  ★ 발주 넣기 쪽 엑셀 ★
+        여기는 «열 하나»가 아니라 «줄 전체»가 필요하다. 코드·수량·수취인·전화·
+        주소·메시지·적요를 그대로 탭으로 이어 붙여 묶음칸에 넣는다.
+        무엇이 무엇인지는 사람이 보고 판단한다 — 열 차례를 지어내지 않는다. */
+    if (entInput) {
+      entInput.addEventListener('change', function (ev) {
+        var f = (ev.target.files || [])[0];
+        if (!f) return;
+        var fr = new FileReader();
+        fr.onload = function (e) {
+          try {
+            var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+            var sh = wb.Sheets[wb.SheetNames[0]];
+            var rows = XLSX.utils.sheet_to_json(sh, { header: 1, blankrows: false, defval: '' });
+            var lines = [];
+            for (var r = 0; r < rows.length && lines.length < 200; r++) {
+              var cells = (rows[r] || []).map(function (v) {
+                return String(v == null ? '' : v).replace(/[\t\r\n]+/g, ' ').trim();
+              });
+              while (cells.length && !cells[cells.length - 1]) cells.pop();
+              if (!cells.length) continue;
+              lines.push(cells.join('\t'));
+            }
+            if (!lines.length) throw new Error('빈 파일입니다');
+            if (typeof window.prpEntryBulkFill === 'function') {
+              window.prpEntryBulkFill(lines.join('\n'));
+            }
+          } catch (err) {
+            alert('엑셀을 읽지 못했습니다 — ' + (err && err.message ? err.message : '알 수 없음'));
+          }
+          entInput.value = '';
+        };
+        fr.readAsArrayBuffer(f);
+      });
+    }
+
+    /*  제품명 열을 찾는다.
+        ① 머리글에 「품목명·상품명·제품명」이 있으면 그 열.
+        ② 없으면 «글자가 가장 긴» 열을 고른다 — 발주서에서 품목명은 늘
+           제일 긴 칸이다. 업체가 열 차례를 맞춰 줄 필요가 없게 한다.  */
+    function 제품명열(rows) {
+      var head = rows[0] || [];
+      for (var c = 0; c < head.length; c++) {
+        var h = String(head[c] == null ? '' : head[c]).replace(/\s/g, '');
+        if (/품목명|상품명|제품명|품명/.test(h)) return { col: c, skipHead: true };
+      }
+      var 길이 = [], 셈 = [];
+      for (var r = 0; r < rows.length; r++) {
+        var row = rows[r] || [];
+        for (var k = 0; k < row.length; k++) {
+          var v = String(row[k] == null ? '' : row[k]).trim();
+          if (!v) continue;
+          //  숫자만 있는 칸은 품목명이 아니다 (수량·단가·송장)
+          if (/^[\d,.\-\s]+$/.test(v)) continue;
+          길이[k] = (길이[k] || 0) + v.length;
+          셈[k] = (셈[k] || 0) + 1;
+        }
+      }
+      var best = -1, bestAvg = 0;
+      for (var m = 0; m < 길이.length; m++) {
+        if (!셈[m] || 셈[m] < 2) continue;
+        var avg = 길이[m] / 셈[m];
+        if (avg > bestAvg) { bestAvg = avg; best = m; }
+      }
+      return { col: best, skipHead: false };
+    }
+
+    input.addEventListener('change', function (ev) {
+      var f = (ev.target.files || [])[0];
+      if (!f) return;
+      var oq = document.getElementById('oq');
+      var hint = document.getElementById('oHint');
+      if (hint) hint.textContent = f.name + ' 읽는 중…';
+
+      var fr = new FileReader();
+      fr.onerror = function () {
+        if (hint) hint.textContent = '파일을 읽지 못했습니다. 내용을 붙여넣어 주세요.';
+      };
+      fr.onload = function (e) {
+        try {
+          var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+          var sh = wb.Sheets[wb.SheetNames[0]];
+          var rows = XLSX.utils.sheet_to_json(sh, { header: 1, blankrows: false, defval: '' });
+          if (!rows.length) throw new Error('빈 파일입니다');
+
+          var 고른것 = 제품명열(rows);
+          if (고른것.col < 0) throw new Error('제품명으로 보이는 열을 못 찾았습니다');
+
+          var out = [], seen = {};
+          for (var r = 고른것.skipHead ? 1 : 0; r < rows.length; r++) {
+            var v = String((rows[r] || [])[고른것.col] || '').replace(/\s+/g, ' ').trim();
+            if (!v || v.length < 2) continue;
+            if (/^[\d,.\-\s]+$/.test(v)) continue;
+            if (seen[v]) continue;
+            seen[v] = true;
+            out.push(v);
+            if (out.length >= 200) break;   // 서버가 한 번에 보는 줄 수와 맞춘다
+          }
+          if (!out.length) throw new Error('제품명을 못 뽑았습니다');
+
+          oq.value = out.join('\n');
+          if (hint) {
+            hint.textContent = f.name + ' — ' + out.length + '건을 읽었습니다' +
+              (out.length >= 200 ? ' (200건까지)' : '') + '. 찾는 중…';
+          }
+          if (typeof window.prpOrdersSearch === 'function') window.prpOrdersSearch();
+        } catch (err) {
+          if (hint) {
+            hint.textContent = '엑셀을 읽지 못했습니다 — ' +
+              (err && err.message ? err.message : '알 수 없음') + '. 내용을 붙여넣어 주세요.';
+          }
+        }
+        input.value = '';   // 같은 파일을 다시 골라도 열리게
+      };
+      fr.readAsArrayBuffer(f);
+    });
+  })();
+  </script>
+</body>
+</html>

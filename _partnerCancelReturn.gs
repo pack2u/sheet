@@ -88,6 +88,7 @@ function partnerCollectCancels() {
       var crLr = crTab.getLastRow();
       var crData = crTab.getRange(2, 1, crLr - 1, _CR_HEADERS.length).getValues();
       var timestamps = []; // 처리 완료 시각 기록용
+      var fileStatusByUid = {}; // ★ 2026-07-17 (M3): 발주탭 갱신 배치 버퍼
 
       for (var r = 0; r < crData.length; r++) {
         var uid      = String(crData[r][_CR_COL.UID] || "").trim();
@@ -117,8 +118,8 @@ function partnerCollectCancels() {
           }
         }
 
-        // ── (2) 발주탭 N열 상태 업데이트 ──
-        _cr_updateOrderTab_(ss, uid, statusVal);
+        // ── (2) 발주탭 N열 상태 업데이트 (파일당 1회 배치 — 루프 뒤 일괄) ──
+        fileStatusByUid[uid] = statusVal;
 
         // ── (3) 마감탭 체크박스 체크 + 반품배송비 기록 (취소완료/반품입고일 때만) ──
         var shipFee = crData[r][_CR_COL.SHIP_FEE] || "";
@@ -128,7 +129,10 @@ function partnerCollectCancels() {
         collected++;
       }
 
-      // 처리일시 일괄 기록 (H열 = 8열)
+      // ── (2) 발주탭 N열 상태 일괄 배치 (★ 2026-07-17 M3: UID별 스캔 제거) ──
+      _cr_updateOrderTab_(ss, fileStatusByUid);
+
+      // 처리일시 일괄 기록 (H열 = 8열) — 중복 처리 방지 마커라 파일 단위 flush 유지
       if (timestamps.length > 0) {
         var tsData = timestamps.map(function(t) { return [t]; });
         crTab.getRange(2, _CR_COL.DONE_AT + 1, tsData.length, 1).setValues(tsData);
@@ -152,10 +156,41 @@ function partnerCollectCancels() {
     (errors.length > 0 ? "\n⚠ 오류:\n" + errors.slice(0, 5).join("\n") : "");
   Logger.log(msg);
   if (ui) ui.alert(msg);
+
+  // ★ 2026-07-02: DB 동기화 — 취소/반품 → cancel_returns
+  try {
+    if (collected > 0 && hubTab) {
+      var dbCrRows = [];
+      for (var dci = 0; dci < hubData.length; dci++) {
+        var crStatus = String(hubData[dci][14] || "").trim();
+        if (crStatus === "취소" || crStatus === "반품") {
+          dbCrRows.push({
+            unique_id: String(hubData[dci][2] || "").trim(),
+            vendor_name: String(hubData[dci][1] || "").trim(),
+            type: crStatus,
+            ecount_code: String(hubData[dci][4] || "").trim(),
+            item_name: String(hubData[dci][5] || "").trim(),
+            qty: parseInt(hubData[dci][6]) || 1,
+            recipient: String(hubData[dci][7] || "").trim(),
+            phone: String(hubData[dci][8] || "").trim(),
+            invoice_no: String(hubData[dci][13] || "").trim(),
+            status: "접수"
+          });
+        }
+      }
+      if (dbCrRows.length > 0) _sb_syncCancelReturns_(dbCrRows);
+    }
+  } catch (eDb) { Logger.log("[SB] 취소/반품 DB 동기화 오류: " + eDb.message); }
 }
 
 // ── 발주탭 N열(상태) 업데이트 ──
-function _cr_updateOrderTab_(ss, uid, statusVal) {
+// ★ 2026-07-17 (M3): UID 1건당 전체 탭 스캔+setValue → UID 맵으로 파일당 1회 배치
+// @param {Object} statusByUid - { uid: statusVal } (해당 파일에서 갱신할 전체 건)
+function _cr_updateOrderTab_(ss, statusByUid) {
+  var uidCount = 0;
+  for (var k in statusByUid) { uidCount++; break; }
+  if (!uidCount) return;
+
   var allTabs = ss.getSheets();
   for (var ti = 0; ti < allTabs.length; ti++) {
     var tabName = allTabs[ti].getName();
@@ -170,12 +205,24 @@ function _cr_updateOrderTab_(ss, uid, statusVal) {
     var cMap = _po_buildColMap(data[0]);
     if (cMap.uniqueId === -1 || cMap.status === -1) continue;
 
+    // ★ 2026-07-20: N1이 스필 수식(수식 모드)이면 값 쓰기 금지 — #REF! 파괴 방지
+    var _stHdrF_ = "";
+    try { _stHdrF_ = String(tab.getRange(1, cMap.status + 1).getFormula() || ""); } catch (_) {}
+    if (_stHdrF_) continue;
+
+    var stChanged = false;
+    var stVals = [];
     for (var r = 1; r < data.length; r++) {
       var rowUid = String(data[r][cMap.uniqueId] || "").trim();
-      if (rowUid === uid) {
-        tab.getRange(r + 1, cMap.status + 1).setValue(statusVal);
-        return;
+      if (rowUid && statusByUid[rowUid] &&
+          String(data[r][cMap.status] || "").trim() !== statusByUid[rowUid]) {
+        data[r][cMap.status] = statusByUid[rowUid];
+        stChanged = true;
       }
+      stVals.push([data[r][cMap.status]]);
+    }
+    if (stChanged) {
+      tab.getRange(2, cMap.status + 1, stVals.length, 1).setValues(stVals);
     }
   }
 }
@@ -313,20 +360,25 @@ function partnerPushCancelStatus() {
         var cMap = _po_buildColMap(data[0]);
         if (cMap.uniqueId === -1 || cMap.status === -1) continue;
 
+        // ★ 2026-07-17 (M3): 행별 setValue + flush → 상태열 setValues 1회
         var tabChanged = false;
+        var pcVals = [];
         for (var r = 1; r < data.length; r++) {
           var rowUid = String(data[r][cMap.uniqueId] || "").trim();
-          if (!rowUid || !cancelByUid[rowUid]) continue;
-
-          var c = cancelByUid[rowUid];
-          var curSt = String(data[r][cMap.status] || "").trim();
-          if (curSt === c.status) continue;
-
-          tab.getRange(r + 1, cMap.status + 1).setValue(c.status);
-          tabChanged = true;
-          pushed++;
+          if (rowUid && cancelByUid[rowUid]) {
+            var c = cancelByUid[rowUid];
+            var curSt = String(data[r][cMap.status] || "").trim();
+            if (curSt !== c.status) {
+              data[r][cMap.status] = c.status;
+              tabChanged = true;
+              pushed++;
+            }
+          }
+          pcVals.push([data[r][cMap.status]]);
         }
-        if (tabChanged) SpreadsheetApp.flush();
+        if (tabChanged) {
+          tab.getRange(2, cMap.status + 1, pcVals.length, 1).setValues(pcVals);
+        }
       }
     } catch(e) {
       errors.push(file.name + ": " + e.message);

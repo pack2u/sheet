@@ -1,0 +1,369 @@
+<script>
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  이미지 → 바코드/송장번호 인식 (공용 모듈)
+ *
+ *  Apps Script 웹앱 HTML 은 camera 권한이 없는 샌드박스 iframe 안에서 돈다.
+ *  그래서 getUserMedia(라이브 카메라)는 어느 화면에서도 열리지 않는다.
+ *  반면 <input type="file" capture="environment"> 는 권한 정책 대상이 아니라
+ *  모바일에서 네이티브 카메라 앱을 그대로 띄운다. 즉 모바일에서 확실히
+ *  동작하는 경로는 "촬영해서 사진 한 장" 뿐이다.
+ *
+ *  이 모듈은 그 사진 한 장을 아래 순서로 끝까지 물고 늘어진다.
+ *    1) BarcodeDetector       - 안드로이드 크롬. 네이티브라 가장 빠르고 정확
+ *    2) html5-qrcode scanFile - iOS 사파리 포함 전 브라우저. ZXing 자바스크립트
+ *    3) 축소·회전 재시도       - 라벨을 세로로 찍었거나 사진이 너무 큰 경우
+ *    4) 서버 Gemini OCR       - 바코드가 접혔거나 지워져 숫자만 읽히는 경우
+ *
+ *  쓰는 쪽:
+ *    csDecodeImageFile(file, {
+ *      minDigits: 8,                       // 송장번호로 인정할 최소 자릿수
+ *      fast: true,                         // 바코드 시도를 2판으로 줄인다(현장 촬영용)
+ *      ocr: true,                          // 4단계 서버 OCR 허용
+ *      onStage: function(msg) { ... }      // 진행 상황 표시
+ *    }).then(function(r) {
+ *      r.value  인식값
+ *      r.via    'detector' | 'qrlib' | 'ocr'
+ *      r.fields OCR 일 때 { recipientName, phone, address, carrier ... }
+ *    }).catch(function(e) { e.message });
+ * ══════════════════════════════════════════════════════════════
+ */
+
+var CS_DEC = { libState: 0, libWait: null }; // libState 0 미시도 1 성공 2 실패
+
+/** 이 환경에서 무엇이 되는지 (진단·안내 문구용) */
+function csScanCapability() {
+  var embedded = true;
+  try { embedded = (window.self !== window.top); } catch (e) { embedded = true; }
+  return {
+    embedded: embedded,
+    secure: !!window.isSecureContext,
+    getUserMedia: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+    barcodeDetector: (typeof window.BarcodeDetector !== 'undefined'),
+    qrLib: (typeof Html5Qrcode !== 'undefined'),
+    // 아이폰은 BarcodeDetector 가 없어서 반드시 html5-qrcode 폴백이 있어야 한다
+    ios: /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  };
+}
+
+/**
+ * 라이브 카메라는 샌드박스 iframe 안에서 구조적으로 막힌다.
+ * 버튼을 띄울지 말지 이 값으로 정한다.
+ */
+function csLiveCameraLikelyBlocked() {
+  var c = csScanCapability();
+  return c.embedded || !c.getUserMedia;
+}
+
+// ── html5-qrcode 지연 로드 (CDN 한 곳이 막혀도 넘어가게) ──────────────
+
+var CS_DEC_CDNS = [
+  'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
+  'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'
+];
+
+function csEnsureScanLib() {
+  if (typeof Html5Qrcode !== 'undefined') { CS_DEC.libState = 1; return Promise.resolve(true); }
+  if (CS_DEC.libState === 2) return Promise.resolve(false);
+  if (CS_DEC.libWait) return CS_DEC.libWait;
+
+  CS_DEC.libWait = new Promise(function (resolve) {
+    var i = 0;
+    function next() {
+      if (typeof Html5Qrcode !== 'undefined') { CS_DEC.libState = 1; resolve(true); return; }
+      if (i >= CS_DEC_CDNS.length) { CS_DEC.libState = 2; resolve(false); return; }
+      var s = document.createElement('script');
+      s.src = CS_DEC_CDNS[i++];
+      s.async = true;
+      s.onload = function () { CS_DEC.libState = 1; resolve(typeof Html5Qrcode !== 'undefined'); };
+      s.onerror = next;
+      document.head.appendChild(s);
+    }
+    next();
+  });
+  return CS_DEC.libWait;
+}
+
+// ── 이미지 준비 ────────────────────────────────────────────────
+
+/** File → ImageBitmap(또는 HTMLImageElement) */
+function csLoadImage_(file) {
+  if (typeof createImageBitmap === 'function') {
+    return createImageBitmap(file).catch(function () { return csLoadImageEl_(file); });
+  }
+  return csLoadImageEl_(file);
+}
+
+function csLoadImageEl_(file) {
+  return new Promise(function (resolve, reject) {
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () { resolve(img); };
+    img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('이미지를 열 수 없습니다')); };
+    img.src = url;
+  });
+}
+
+/**
+ * 캔버스로 그린다. rotate 는 0/90/180/270.
+ * 폰 카메라 원본은 4000px 이 넘어 디코더가 되레 놓치므로 긴 변을 맞춰 줄인다.
+ */
+function csDrawCanvas_(img, maxSide, rotate) {
+  var iw = img.width || img.naturalWidth;
+  var ih = img.height || img.naturalHeight;
+  if (!iw || !ih) return null;
+
+  var scale = Math.min(1, maxSide / Math.max(iw, ih));
+  var w = Math.max(1, Math.round(iw * scale));
+  var h = Math.max(1, Math.round(ih * scale));
+  var swap = (rotate === 90 || rotate === 270);
+
+  var c = document.createElement('canvas');
+  c.width = swap ? h : w;
+  c.height = swap ? w : h;
+
+  var ctx = c.getContext('2d');
+  ctx.save();
+  if (rotate === 90) { ctx.translate(c.width, 0); ctx.rotate(Math.PI / 2); }
+  else if (rotate === 180) { ctx.translate(c.width, c.height); ctx.rotate(Math.PI); }
+  else if (rotate === 270) { ctx.translate(0, c.height); ctx.rotate(-Math.PI / 2); }
+  ctx.drawImage(img, 0, 0, w, h);
+  ctx.restore();
+  return c;
+}
+
+/** 대비를 세게 올린 흑백판 — 인쇄가 흐린 라벨에 잘 듣는다 */
+function csBoostCanvas_(src) {
+  try {
+    var c = document.createElement('canvas');
+    c.width = src.width; c.height = src.height;
+    var ctx = c.getContext('2d');
+    ctx.drawImage(src, 0, 0);
+    var d = ctx.getImageData(0, 0, c.width, c.height);
+    var p = d.data;
+    for (var i = 0; i < p.length; i += 4) {
+      var g = (p[i] * 0.299 + p[i + 1] * 0.587 + p[i + 2] * 0.114);
+      g = g < 110 ? 0 : (g > 150 ? 255 : (g - 110) * (255 / 40));
+      p[i] = p[i + 1] = p[i + 2] = g;
+    }
+    ctx.putImageData(d, 0, 0);
+    return c;
+  } catch (e) { return null; }
+}
+
+// ── 1단계 BarcodeDetector ─────────────────────────────────────
+
+var CS_DEC_FORMATS = ['code_128', 'itf', 'code_39', 'codabar', 'ean_13', 'ean_8', 'qr_code', 'data_matrix'];
+
+function csTryDetector_(canvases) {
+  if (typeof window.BarcodeDetector === 'undefined') return Promise.resolve('');
+
+  var det;
+  try { det = new BarcodeDetector({ formats: CS_DEC_FORMATS }); }
+  catch (e) {
+    try { det = new BarcodeDetector(); } catch (e2) { return Promise.resolve(''); }
+  }
+
+  var i = 0;
+  function step() {
+    if (i >= canvases.length) return Promise.resolve('');
+    var c = canvases[i++];
+    return det.detect(c).then(function (codes) {
+      if (codes && codes.length) return String(codes[0].rawValue || '');
+      return step();
+    }).catch(step);
+  }
+  return step();
+}
+
+// ── 2단계 html5-qrcode ────────────────────────────────────────
+
+/**
+ * scanFile 은 인자가 File 인스턴스가 아니면 즉시 throw 한다.
+ * Blob 만 만들 수 있는 구형 환경에서는 아예 후보에서 뺀다.
+ */
+function csCanvasToFile_(canvas, name) {
+  return new Promise(function (resolve) {
+    try {
+      canvas.toBlob(function (b) {
+        if (!b) { resolve(null); return; }
+        try { resolve(new File([b], name || 'scan.jpg', { type: 'image/jpeg' })); }
+        catch (e) { resolve(null); }
+      }, 'image/jpeg', 0.92);
+    } catch (e) { resolve(null); }
+  });
+}
+
+/**
+ * html5-qrcode 는 컨테이너 엘리먼트를 가진 인스턴스가 필요하다.
+ * scanFile 은 정적 메서드가 아니므로 Html5Qrcode.scanFile(...) 로 부르면 안 된다.
+ */
+function csQrHost_() {
+  var id = 'csDecHost';
+  var el = document.getElementById(id);
+  if (el) return id;
+  el = document.createElement('div');
+  el.id = id;
+  // display:none 이면 내부 레이아웃 계산이 0 이 되므로 화면 밖으로 밀어낸다
+  el.style.cssText = 'position:fixed;left:-10000px;top:0;width:320px;height:320px;overflow:hidden;';
+  document.body.appendChild(el);
+  return id;
+}
+
+function csTryQrLib_(files) {
+  return csEnsureScanLib().then(function (ok) {
+    if (!ok) return '';
+
+    var inst;
+    try { inst = new Html5Qrcode(csQrHost_(), { verbose: false }); }
+    catch (e) { return ''; }
+
+    var i = 0;
+    function step() {
+      if (i >= files.length) return Promise.resolve('');
+      var f = files[i++];
+      if (!f || typeof File === 'undefined' || !(f instanceof File)) return step();
+      var p;
+      try { p = inst.scanFile(f, false); }
+      catch (e) { return step(); }
+      return p.then(function (t) {
+        var v = String(t || '');
+        return v ? v : step();
+      }).catch(step);
+    }
+    return step();
+  });
+}
+
+// ── 4단계 서버 OCR ────────────────────────────────────────────
+
+function csCanvasToBase64_(canvas) {
+  try {
+    var u = canvas.toDataURL('image/jpeg', 0.82);
+    var k = u.indexOf(',');
+    return k < 0 ? '' : u.slice(k + 1);
+  } catch (e) { return ''; }
+}
+
+function csTryServerOcr_(canvas) {
+  return new Promise(function (resolve) {
+    var b64 = csCanvasToBase64_(canvas);
+    if (!b64) { resolve(null); return; }
+    if (!(window.google && google.script && google.script.run)) { resolve(null); return; }
+    var done = false;
+    var timer = setTimeout(function () { if (!done) { done = true; resolve(null); } }, 45000);
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (done) return;
+        done = true; clearTimeout(timer);
+        resolve(r || null);
+      })
+      .withFailureHandler(function () {
+        if (done) return;
+        done = true; clearTimeout(timer);
+        resolve(null);
+      })
+      .csOcrImageForScan(b64, 'image/jpeg');
+  });
+}
+
+// ── 메인 ──────────────────────────────────────────────────────
+
+/**
+ * 사진 한 장에서 바코드/송장번호를 뽑는다.
+ * @param {File} file
+ * @param {Object} opts {minDigits, ocr, onStage}
+ * @return {Promise<{value:string, via:string, fields:Object, text:string}>}
+ */
+function csDecodeImageFile(file, opts) {
+  opts = opts || {};
+  var minDigits = opts.minDigits || 0;
+  var stage = typeof opts.onStage === 'function' ? opts.onStage : function () {};
+
+  if (!file) return Promise.reject(new Error('사진이 없습니다'));
+
+  var okDigits = function (v) {
+    if (!minDigits) return !!v;
+    return String(v || '').replace(/[^0-9]/g, '').length >= minDigits;
+  };
+
+  // 라이브러리 로드는 이미지 준비와 동시에 시작해 둔다
+  csEnsureScanLib();
+
+  var img = null, cands = [], files = [];
+
+  stage('사진 준비 중…');
+  return csLoadImage_(file)
+    .then(function (im) {
+      img = im;
+      // 큰 판 → 회전 → 대비 강화 순으로 후보를 만든다. 앞쪽이 성공률이 높다.
+      //
+      //  fast 모드 — 현장 촬영용. 판을 2개로 줄인다.
+      //  6판 × 2엔진이면 12번 시도라 폰에서 10초 넘게 걸린다. 라벨이 멀리 찍혀
+      //  바코드가 뭉개진 사진은 판을 늘려도 어차피 안 읽히고 기다리기만 한다.
+      //  그런 사진은 OCR 이 답이라 바코드는 빨리 포기하는 편이 낫다.
+      var plan = opts.fast
+        ? [[2200, 0], [2200, 90]]
+        : [[1600, 0], [2200, 0], [1100, 0], [1600, 90], [1600, 270]];
+      plan.forEach(function (p) {
+        var c = csDrawCanvas_(img, p[0], p[1]);
+        if (c) cands.push(c);
+      });
+      if (!cands.length) throw new Error('이미지를 처리할 수 없습니다');
+      if (!opts.fast) {
+        var b = csBoostCanvas_(cands[0]);
+        if (b) cands.push(b);
+      }
+
+      stage('바코드 찾는 중…');
+      return csTryDetector_(cands);
+    })
+    .then(function (v) {
+      if (okDigits(v)) return { value: v, via: 'detector' };
+
+      stage('바코드 재분석 중…');
+      // 원본 파일 먼저, 그다음 축소·회전판
+      var seq = [file];
+      return Promise.all([
+        csCanvasToFile_(cands[0], 'a.jpg'),
+        csCanvasToFile_(cands[3] || cands[0], 'b.jpg'),
+        csCanvasToFile_(cands[cands.length - 1], 'c.jpg')
+      ]).then(function (fs) {
+        files = seq.concat(fs);
+        return csTryQrLib_(files);
+      }).then(function (v2) {
+        if (okDigits(v2)) return { value: v2, via: 'qrlib' };
+        return null;
+      });
+    })
+    .then(function (hit) {
+      if (hit) return hit;
+      if (opts.ocr === false) {
+        throw new Error(csDecodeFailMsg_());
+      }
+
+      stage('바코드가 안 읽혀 글자를 읽는 중…');
+      return csTryServerOcr_(cands[0]).then(function (r) {
+        if (r && r.ok && okDigits(r.invoice)) {
+          return { value: r.invoice, via: 'ocr', fields: r.fields || {}, text: r.text || '' };
+        }
+        if (r && r.error) throw new Error('글자 인식 실패: ' + r.error);
+        throw new Error(csDecodeFailMsg_());
+      });
+    })
+    .then(function (r) {
+      stage('');
+      return { value: String(r.value || '').trim(), via: r.via, fields: r.fields || {}, text: r.text || '' };
+    });
+}
+
+function csDecodeFailMsg_() {
+  var c = csScanCapability();
+  var tip = c.ios
+    ? '라벨이 화면을 꽉 채우게, 바코드를 가로로 눕혀서 다시 찍어보세요.'
+    : '초점이 맞을 때까지 기다린 뒤 바코드가 화면을 꽉 채우게 다시 찍어보세요.';
+  return '사진에서 송장번호를 찾지 못했습니다. ' + tip;
+}
+</script>

@@ -1,25 +1,67 @@
 ---
-description: Pack2U 작업 범위 제한 — 협력업체 시스템 전용
+description: Pack2U 작업 범위 — 3개 시스템 구분과 프로젝트 경계
 alwaysApply: true
 ---
 
-# 작업 범위: 협력업체 시스템만
+# 작업 범위
 
-## 절대 규칙
-- 모든 코드 수정은 **협력업체 시스템**에만 적용한다.
-- **독립배포 시스템**(`orderSyncManager.gs`, `salesUploadFromIntegratedOrders.gs`, `통합 발주 DB` 관련)은 사용자가 명시적으로 요청하지 않는 한 **건드리지 않는다**.
+## 독립배포 시스템은 폐기됨
 
-## 협력업체 시스템 핵심 파일
-- `_partnerOrders.gs` — 발주 수집
-- `_partnerExclusivePush.gs` — 대리공급 발주 Push
-- `_partnerExclusiveArchive.gs` — 전용양식 마감 이동
-- `_partnerDeploy.gs` — 배포 시트 생성/갱신
-- `_partnerMenu.gs` — 메뉴
-- `_partnerHelpers.gs`, `_partnerMaintenance.gs` — 유틸/유지보수
-- `priceManager.gs` — 허브 단가 관리 (협력업체용)
+`orderSyncManager.gs`, `salesUploadFromIntegratedOrders.gs`, `vendorCustCodeManager.gs`, `통합 발주 DB` 는
+**더 이상 존재하지 않는다.** "건드리지 말라"가 아니라 "없다".
 
-## 독립배포 시스템 (수정 금지)
-- `orderSyncManager.gs`
-- `salesUploadFromIntegratedOrders.gs`
-- `vendorCustCodeManager.gs`
-- `통합 발주 DB`, `이카운트-판매현황업로드용` 관련 로직
+코드에서 이 이름을 만나면 다음 중 하나다.
+- `[이식]` 출처를 기록한 주석 → 그대로 둔다
+- `typeof … === "function"` 가드로 감싼 호출 → 죽은 코드, 제거 대상
+- 가드 없는 직접 호출 → **버그**. 즉시 고친다
+
+## 시스템 3개와 그 경계
+
+| 시스템 | 디렉터리 | push 위치 |
+|---|---|---|
+| 협력업체(대리발송) | 루트 `*.gs` | 루트에서 `clasp push` |
+| CS 웹앱 | `CS_WebApp/` | `CS_WebApp/` 에서 `clasp push` |
+| 협력업체 반품 포털 | `Partner_WebApp/` | `Partner_WebApp/` 에서 `clasp push` |
+
+**프로젝트를 섞지 않는다.** 루트 `.claspignore` 가 `CS_WebApp/**`, `Partner_WebApp/**` 를 제외한다.
+이 줄을 지우면 `appsscript.json` 이름 충돌로 루트 push 가 실패한다.
+
+## 시스템을 넘나드는 변경
+
+반품관리대장은 **CS 웹앱과 반품 포털이 공유한다.** 열 구조나 매핑을 바꾸면 양쪽을 같이 고쳐야 한다.
+
+- `CS_WebApp/csOrderSearch.gs` `_cs_mapReturnLedgerCols_` — 매핑 원본
+- `Partner_WebApp/prpLedger.gs` `prpMapCols_` — 위 매핑의 복제본
+
+**새 행을 붙일 위치를 계산하는 코드도 복제본이다.**
+`_cs_nextReturnLedgerDestRow_` ↔ `prpNextDestRow_` (`Partner_WebApp/prpApi.gs`).
+`values` 는 0-기반, 시트 행은 1-기반이라 **다음 빈 행 = 마지막 데이터 인덱스 + 2** 다.
+한쪽만 고치면 그 경로로 접수한 건이 직전 건을 덮어쓴다 — 에러는 안 난다.
+검사는 `node _return_append_test.js`.
+
+한쪽만 고치면 포털이 조용히 값을 못 읽는다. 항상 쌍으로 확인한다.
+
+**CS 커뮤니티보드 탭도 양쪽이 쓴다** (`CS_커뮤니티보드`, 반품대장과 같은 파일).
+포털은 위치가 아니라 헤더명으로 열을 찾으므로 CS가 열을 **추가**하는 것은 안전하다.
+헤더명을 **바꾸거나 없애면** 포털이 그 칸을 못 찾는다 (`Partner_WebApp/prpBoard.gs`).
+
+## 복제된 상수 — 항상 쌍으로 고친다
+
+프로젝트가 분리돼 있어 상수를 참조할 수 없는 자리는 복제해 둔다.
+**한쪽만 고치면 에러 없이 값만 틀어진다.**
+
+| SSOT | 복제본 | 무엇 |
+|---|---|---|
+| `_partnerExclusivePush.gs` `_PEP_VENDOR_PREFIX_ALIAS_` | `CS_WebApp/csOrderSearch.gs` `_CS_VENDOR_PREFIX_ALIAS_` | 보조 접두 → 대표 접두 (JH·BF·NS → JT) |
+| `_partnerExclusivePush.gs` `_PEP_VENDOR_LABELS_` | `Partner_WebApp/prpConfig.gs` `PRP_VENDOR_LABELS` | 접두 → 업체명 |
+| `Partner_WebApp/prpConfig.gs` `PRP_INTERNAL_MARK_` | `CS_WebApp/home.html` `RET_INTERNAL_MARK` | 업체에 숨길 비고 줄 표시 |
+
+보조 접두를 새로 등록할 때는 **`_PEP_VENDOR_PREFIX_ALIAS_` 와 `_CS_VENDOR_PREFIX_ALIAS_` 둘 다** 넣는다.
+`_PEP_VENDOR_LABELS_` · `_PEP_VENDOR_DIRECT_MAP_` 에는 **대표 접두만** 둔다
+(업체명 역매핑이 1:1 전제라 보조 접두를 넣으면 파일 매핑이 덮어써진다).
+`업체_택배사` 표에도 **대표 접두 행만** 둔다 — 조회 전에 별칭이 환산되므로 보조 접두 행은 죽은 행이다.
+
+## 백업 디렉터리는 읽기 전용
+
+`backup_2026*/` 는 과거 스냅샷이다. 검색 결과에 섞여 나오더라도 **수정하지 않는다.**
+현재 코드와 혼동하지 않도록 경로를 항상 확인한다.

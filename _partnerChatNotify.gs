@@ -6,8 +6,41 @@
  * Webhook 방식 (별도 인증 불필요)
  */
 
-var _CHAT_WEBHOOK_URL_ =
-  "https://chat.googleapis.com/v1/spaces/AAQA-mgg-f0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=6eJY5mRml0dM-bYOS3BvlAGC_Jk0Eaiz7K1Ds7bIS1I";
+/**
+ * ★ 웹훅 주소는 _secrets.gs 에 있다 ★  (2026-09-14)
+ *
+ *   이 파일은 깃에 올라간다. URL 안의 key·token 이 곧 «그 방에 글을 올릴
+ *   권한»이라, 저장소를 읽을 수 있는 사람이면 누구나 팀 방에 글을 넣을 수
+ *   있었다. CS_WebApp/_secrets_guard_test 가 그걸 잡아 줬다.
+ *
+ *   못 읽으면 «빈 문자열»을 준다 — 알림은 조용히 안 가고, _chat_diagnose_
+ *   가 그 사실을 말한다. 여기에 값을 다시 적으면 안 된다.
+ */
+/**
+ * ★ 2026-09-16: 여기가 「알림이 안 오는」 까닭이었다 ★
+ *
+ *   > "그리고 챗알림 안옴... 확인해줘"
+ *
+ *   전에는 파일 맨 위에서 웹훅 주소를 «한 번» 읽어 두었다.
+ *   Apps Script 는 프로젝트의 모든 .gs 를 «파일 차례대로» 훑으며 맨 위
+ *   코드를 실행한다. _partnerChatNotify 는 _secrets 보다 앞이다 (p < s).
+ *   그래서 그 줄이 돌 때 _secrets.gs 의 값은 아직 «담기지 않은» 상태고,
+ *   typeof 는 "undefined" 였다. 결국 빈 문자열이 박히고, 그 뒤로는 무엇을
+ *   보내려 해도 맨 앞의 if (!주소) return 에 걸려 «조용히» 안 갔다.
+ *   오류도 안 났으니 아무도 몰랐다.
+ *
+ *   9/14 에 웹훅을 _secrets.gs 로 옮긴 그날부터 알림이 끊긴 것이 이것이다.
+ *
+ *   ★ 고치는 법: «보낼 때» 읽는다 ★
+ *     함수 안에서 읽으면 그때는 모든 파일이 다 돈 뒤라 값이 들어 있다.
+ *     앞으로 _secrets.gs 의 값을 파일 맨 위에서 읽지 말 것.
+ *     (V2_URL · V2_INGEST_TOKEN 은 이미 함수 안에서 읽고 있어 무사했다)
+ */
+function _chat_url_() {
+  try {
+    return (typeof CHAT_WEBHOOK_URL === "string" && CHAT_WEBHOOK_URL) ? CHAT_WEBHOOK_URL : "";
+  } catch (e) { return ""; }
+}
 
 // ══════════════════════════════════════════════
 //  핵심: 메시지 전송
@@ -17,17 +50,68 @@ var _CHAT_WEBHOOK_URL_ =
  * Google Chat으로 텍스트 메시지 전송
  * @param {string} text - 전송할 메시지 (마크다운 지원)
  */
-function _chat_sendText_(text) {
-  if (!_CHAT_WEBHOOK_URL_) return;
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 보냈는지 «확인»한다 ★  (2026-09-15)
+ *
+ *  > "오늘부터 알림이 안오네..확인해줘"
+ *
+ *  여태 두 전송 함수 모두 muteHttpExceptions 로 부르고 «응답 코드를
+ *  보지 않았다». 웹훅이 지워졌든 방에서 쫓겨났든 403·404 가 와도
+ *  성공한 것처럼 지나갔다. 알림이 안 오는데 아무도 까닭을 모른다.
+ *
+ *  ★ 알림이 죽으면 알림으로 알릴 수 없다 ★
+ *    그래서 «마지막 실패»를 스크립트 속성에 남긴다. 사람이 메뉴를
+ *    눌렀을 때 그 자리에서 말해 줄 수 있게. 새 메뉴는 안 만든다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var _CHAT_FAIL_KEY_ = "_CHAT_LAST_FAIL";
+
+/** 보낸 결과를 본다. 실패면 까닭을 남기고 false */
+function _chat_checkSend_(res, what) {
+  var props = null;
+  try { props = PropertiesService.getScriptProperties(); } catch (e) {}
+  var code = 0;
+  try { code = res.getResponseCode(); } catch (e2) {}
+  if (code >= 200 && code < 300) {
+    try { if (props) props.deleteProperty(_CHAT_FAIL_KEY_); } catch (e3) {}
+    return true;
+  }
+  var body = "";
+  try { body = String(res.getContentText() || "").substring(0, 200); } catch (e4) {}
+  var line = Utilities.formatDate(new Date(), "Asia/Seoul", "MM-dd HH:mm") +
+    " · " + what + " HTTP " + code + " " + body;
+  Logger.log("[CHAT] 전송 실패: " + line);
+  try { if (props) props.setProperty(_CHAT_FAIL_KEY_, line); } catch (e5) {}
+  return false;
+}
+
+/**
+ * 마지막으로 알림을 못 보낸 기록. 없으면 빈 문자열.
+ * 알림이 죽었을 때 «다른 화면»이 대신 말해 주라고 있는 것이다.
+ */
+function chatLastFailure() {
   try {
-    UrlFetchApp.fetch(_CHAT_WEBHOOK_URL_, {
+    return String(PropertiesService.getScriptProperties().getProperty(_CHAT_FAIL_KEY_) || "");
+  } catch (e) { return ""; }
+}
+
+function _chat_sendText_(text) {
+  if (!_chat_url_()) return;
+  try {
+    var res = UrlFetchApp.fetch(_chat_url_(), {
       method: "post",
       contentType: "application/json; charset=utf-8",
       payload: JSON.stringify({ text: text }),
       muteHttpExceptions: true,
     });
+    _chat_checkSend_(res, "글");
   } catch (e) {
     Logger.log("[CHAT] 전송 실패: " + e.message);
+    try {
+      PropertiesService.getScriptProperties().setProperty(_CHAT_FAIL_KEY_,
+        Utilities.formatDate(new Date(), "Asia/Seoul", "MM-dd HH:mm") + " · 글 " + e.message);
+    } catch (e2) {}
   }
 }
 
@@ -38,8 +122,40 @@ function _chat_sendText_(text) {
  * @param {Array} keyValues - [{label, value}] 배열
  * @param {string} [footerText] - 하단 텍스트
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 트리거 자리가 차 가면 «밤 알림이» 먼저 말한다 ★  (2026-09-15)
+ *
+ *  > "업무시간에 이런 오류 발생하면 함부로 실행을 못해.. 루틴이 있는데"
+ *  > "그렇다고 또 일회성 검증 메뉴를 만들면 메뉴만 수백개..."
+ *
+ *  한 스크립트 프로젝트에 트리거는 20개까지다. 다 차면 백그라운드 예약이
+ *  실패하고, 마감이 즉시 처리로 떨어져 6분 한도에 걸려 죽는다.
+ *  2026-09-10 부터 대리판매 마감이 그렇게 막혀 있었다.
+ *
+ *  ★ 알아내려고 «실행»해야 한다면 그건 진단이 아니다 ★
+ *    업무시간에 마감을 눌러 봐야만 알 수 있다면 못 쓴다. 루틴이 꼬인다.
+ *  ★ 그렇다고 점검 메뉴를 만들지 않는다 ★
+ *    메뉴가 수백 개가 된다. 찾는 것부터 일이 된다.
+ *
+ *  이미 밤마다 오는 알림에 «문제일 때만» 한 줄을 얹는다. 평소엔 아무 말도
+ *  안 한다. 자리가 차 가면 사람이 누르지 않아도 저절로 눈에 들어온다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var _CHAT_TRIGGER_WARN_AT_ = 18;   // 20 자리 중 이만큼 차면 미리 말한다
+
+function _chat_triggerPressure_() {
+  try {
+    var n = ScriptApp.getProjectTriggers().length;
+    if (n < _CHAT_TRIGGER_WARN_AT_) return '';
+    return '⚠ 트리거 ' + n + '/20 — 다 차면 마감의 백그라운드 예약이 막힙니다';
+  } catch (e) { return ''; }
+}
+
 function _chat_sendCard_(title, subtitle, keyValues, footerText) {
-  if (!_CHAT_WEBHOOK_URL_) return;
+  if (!_chat_url_()) return;
+  var 압박 = _chat_triggerPressure_();
+  if (압박) footerText = footerText ? (footerText + ' · ' + 압박) : 압박;
   try {
     var widgets = [];
     for (var i = 0; i < keyValues.length; i++) {
@@ -72,14 +188,19 @@ function _chat_sendCard_(title, subtitle, keyValues, footerText) {
         },
       ],
     };
-    UrlFetchApp.fetch(_CHAT_WEBHOOK_URL_, {
+    var res = UrlFetchApp.fetch(_chat_url_(), {
       method: "post",
       contentType: "application/json; charset=utf-8",
       payload: JSON.stringify(card),
       muteHttpExceptions: true,
     });
+    _chat_checkSend_(res, "카드");
   } catch (e) {
     Logger.log("[CHAT] 카드 전송 실패: " + e.message);
+    try {
+      PropertiesService.getScriptProperties().setProperty(_CHAT_FAIL_KEY_,
+        Utilities.formatDate(new Date(), "Asia/Seoul", "MM-dd HH:mm") + " · 카드 " + e.message);
+    } catch (e2) {}
   }
 }
 
