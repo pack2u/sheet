@@ -86,6 +86,24 @@
       --accent-red: #d13b32;
     }
 
+    /* ══════════════════════════════════════════════════════════════
+       ★ 파랑은 「카드 안의 뜻」에만 ★  (2026-09-24)
+
+       > "UI정돈이 필요할꺼 같아.. 버튼 칼라도 너무 눈에 튀어"
+
+       파랑은 2026-09-16 에 「접수·정보」 한 가지 뜻으로 들여왔다. 그런데
+       탭·필터·버튼·배지·링크·금액·송장번호까지 열다섯 자리가 나눠 쓰게 되어,
+       같은 색이 여섯 가지를 뜻하게 됐다. 색이 여러 뜻을 겸하면 위계가 없다 —
+       눈이 어디를 먼저 볼지 못 정하고 화면 전체가 똑같이 시끄럽다.
+
+       그래서 파랑을 원래 뜻으로 되돌린다.
+         남긴다  접수 배지 · 타임라인 상태 태그 · 진행 단계 · 초점 테두리
+         걷는다  탭 · 필터 · 큰 버튼 · 송장번호 · 금액 · 사진 태그 · 검색 결과
+
+       걷어낸 자리는 «바탕색 차이»가 대신한다 — 카드 경계를 그렇게 낸
+       것과 같은 방식이다(2026-09-20). 색을 안 쓰고도 「지금 여기」가 보인다.
+       ══════════════════════════════════════════════════════════════ */
+
     * { box-sizing: border-box; }
     html, body {
       margin: 0; padding: 0; width: 100%;
@@ -194,10 +212,15 @@
     .pages { display: flex; gap: 6px; margin-bottom: 14px; }
     .pages button {
       padding: 9px 16px; border: 1px solid transparent; border-radius: 999px;
-      background: var(--bg-secondary); color: var(--text-secondary);
+      background: transparent; color: var(--text-muted);
       font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
     }
-    .pages button.on { background: var(--accent-blue); color: var(--on-accent); }
+    /*  고른 것은 «뒤집어» 세운다 — 밝은 테마에서는 카드색이 바탕과 같은 흰색이라
+        면을 한 톤 띄우는 방법이 안 통한다(고른 칸 대비 1.1 이었다).
+        색을 쓰지 않고도 「지금 여기」가 확실해진다.
+        --text-primary 로 뒤집으면 순백 덩어리가 되어 이번엔 그것이 제일 시끄럽다.
+        한 톤 낮춘 --text-bright 로 둔다 — 갈리는 것은 그대로고 덜 튄다. */
+    .pages button.on { background: var(--text-bright); color: var(--bg-primary); }
 
     /* ── 발주 · 송장조회 ── */
     .ord-find { margin-bottom: 14px; }
@@ -360,16 +383,16 @@
     .kpi span { font-size: 10.5px; color: var(--text-muted); }
     .kpi .k-act b { color: var(--accent-orange); }
     .kpi .k-done b { color: var(--accent-green); }
-    .kpi .k-fee b { font-size: 14px; color: var(--accent-blue); }
+    .kpi .k-fee b { font-size: 14px; color: var(--text-bright); }
 
     /* ── 필터 ── */
     .bar { display: flex; gap: 8px; margin-bottom: 12px; }
-    .segs { display: flex; gap: 4px; background: var(--bg-secondary); border-radius: 10px; padding: 4px; flex: 1; }
+    .segs { display: flex; gap: 4px; background: var(--bg-sunken); border-radius: 10px; padding: 4px; flex: 1; }
     .segs button {
       flex: 1; padding: 8px 4px; border: 0; border-radius: 7px;
       background: transparent; color: var(--text-secondary); font-size: 12.5px; font-weight: 600; cursor: pointer;
     }
-    .segs button.on { background: var(--accent-blue); color: var(--on-accent); }
+    .segs button.on { background: var(--text-bright); color: var(--bg-primary); }
     /* 나열 차례 고르는 칸 — 진행중/완료/전체 오른쪽에 조용히 선다 */
     .sortsel {
       flex: 0 0 auto; margin-left: 6px; height: 36px; padding: 0 8px;
@@ -394,10 +417,10 @@
     }
     .btn-new {
       width: 100%; padding: 13px; border-radius: 11px; border: 0;
-      background: var(--accent-blue); color: var(--on-accent); font-size: 14px; font-weight: 700;
+      background: var(--bg-card); color: var(--accent-blue); font-size: 14px; font-weight: 700;
       cursor: pointer; margin-bottom: 14px;
     }
-    .btn-new:active { background: var(--accent-blue); }
+    .btn-new:active { background: var(--accent-blue-bg); }
 
     /* ── 카드 ── */
     /* ★ 바깥선을 걷었다 ★  (2026-09-20)
@@ -462,9 +485,10 @@
 
     /* 반품사유 — 품목 바로 밑. 두 테마 다 읽히게 변수로 (2026-09-18) */
     .reason { margin-top: 3px; color: var(--accent-orange); font-size: 0.95em; }
-    .fee { color: var(--accent-blue); font-weight: 600; }
-    .inv-link { color: var(--accent-blue); text-decoration: none; }
-    .inv-link:active { color: var(--accent-blue); }
+    .fee { color: var(--text-bright); font-weight: 600; }
+    .inv-link { color: var(--text-bright); text-decoration: underline; text-underline-offset: 2px;
+      text-decoration-color: var(--border); }
+    .inv-link:active { color: var(--text-primary); }
 
     /* 타임라인 */
     /* ★ 반품송장은 따로 세운다 ★  (2026-09-11)
@@ -480,7 +504,8 @@
     }
     .ret-inv-box .lab { font-size: 10.5px; color: var(--text-muted); margin-bottom: 2px; }
     .ret-inv-box .val { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
-    .ret-inv-box .val a { color: var(--accent-blue); text-decoration: none; }
+    .ret-inv-box .val a { color: var(--text-primary); text-decoration: underline;
+      text-underline-offset: 3px; text-decoration-color: var(--border); }
     .ret-inv-box .val a:hover { text-decoration: underline; }
     /*  아직 없을 때는 바탕을 더 낮춘다 — 점선 테두리가 하던 일을 옮긴다 */
     .ret-inv-box.none { background: var(--border-soft); }
@@ -502,9 +527,9 @@
     .t-access  { background: var(--border); color: var(--text-secondary); }
     .t-mine    { background: var(--accent-orange-bg); color: var(--accent-orange); }
     .t-consult { background: var(--accent-purple-bg); color: var(--accent-purple); }
-    .t-photo   { background: var(--accent-blue-bg); color: var(--accent-blue); }
+    .t-photo   { background: var(--border); color: var(--text-secondary); }
     .ev-body { font-size: 12.5px; color: var(--text-bright); margin-top: 2px; word-break: break-word; }
-    .ev-body a { color: var(--accent-blue); }
+    .ev-body a { color: var(--text-primary); text-decoration: underline; text-underline-offset: 2px; }
 
     /* 사진 썸네일 — 눌러 같은 화면 팝업으로 연다 (새 탭 아님) */
     .ev-thumbs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
@@ -642,7 +667,7 @@
       border-radius: 9px; border: 1px solid transparent; background: var(--bg-sunken);
       color: var(--text-bright); font-size: 12.5px; line-height: 1.5; cursor: pointer;
     }
-    .hit:active, .hit.on { background: var(--accent-blue-bg); color: var(--accent-blue); }
+    .hit:active, .hit.on { background: var(--border); color: var(--text-primary); }
     .hit b { display: block; font-size: 13px; margin-bottom: 2px; }
 
     .lb {
