@@ -326,10 +326,32 @@ function ssParseAddrOverride(memo) {
   var s = ssText(memo).replace(/\s+/g, ' ').trim();
   if (!s) return null;
 
-  //  ① 전화가 없으면 배송지 적요가 아니다. 이 한 줄이 오인식을 거의 다 막는다.
+  /*  ★ 「배송지」 라고 적어 주면 그대로 믿는다 ★  (2026-09-28)
+      > "적요에 적을시 / 를 이용하면 될까? … 규칙을 만들면 되지 않을까?"  "배송지로 가자"
+
+      적요 103건을 세어 보니 「/」 는 이미 37건에 쓰인다. 그런데 칸을 나누는 데도
+      쓰고 품목 목록에도 쓴다 — 「여기가 배송지다」를 말해 주지 못한다.
+      「배송지」 라는 낱말은 103건에 한 건도 없었다. 그래서 그것을 표시로 쓴다.
+
+        배송지 가게이름 / 전화번호 / 주소
+
+      표시 «앞»에 적힌 말은 버린다 — 그것은 다른 메모다.
+      (「//」 는 표시로 못 쓴다. 적요를 「//」 에서 잘라 뒤를 버리는 코드가 있다)  */
+  var 표시 = false;
+  var m표 = s.match(/(^|[\s\/,·])배송지\s*[:：]?\s*/);
+  if (m표) {
+    표시 = true;
+    s = s.slice(m표.index + m표[0].length).trim();
+    if (!s) return null;
+  }
+
+  /*  ★ 전화가 없어도 주소는 읽는다 ★  (2026-09-28)
+      여태 「전화가 없으면 배송지 적요가 아니다」로 막았다. 오인식은 잘 막았지만
+      주소«만» 적는 손님을 놓쳤다 — 8일치에 5건이 본사 주소로 나갔다.
+      9/22 황금코다리는 기장으로 갈 것이 해운대로 갔다 (송장 45246021822).
+      오인식을 실제로 막는 것은 아래 ③ 의 «시/군/구 와 번지가 둘 다» 이다.  */
   SS_PHONE_RE.lastIndex = 0;
   var 전화들 = (s.match(SS_PHONE_RE) || []).map(function (p) { return p.replace(/[.\s]/g, '-'); });
-  if (!전화들.length) return null;
 
   //  ② 전화 자리에서 잘라 조각을 만든다 — 「/」 가 없어도 잘린다
   var 남은 = s;
@@ -345,9 +367,12 @@ function ssParseAddrOverride(memo) {
   var 주소 = '', 주소자리 = -1;
   for (var i = 0; i < 깨끗.length; i++) {
     var a = 깨끗[i].replace(/^주소\s*[:：]\s*/, '');
-    if (a.length < 8) continue;
-    if (!/(특별시|광역시|특별자치시|특별자치도|[가-힣]{2,4}(시|군|구)(\s|[가-힣]))/.test(a)) continue;
-    if (!/(로|길)\s*\d|[가-힣]{2,5}(동|리|읍|면)\s*\d/.test(a)) continue;
+    if (a.length < (표시 ? 6 : 8)) continue;
+    var 시군구 = /(특별시|광역시|특별자치시|특별자치도|[가-힣]{2,4}(시|군|구)(\s|[가-힣]))/.test(a);
+    var 번지 = /(로|길)\s*\d|[가-힣]{2,5}(동|리|읍|면)\s*\d/.test(a);
+    /*  표시가 있으면 사람이 「배송지」라고 말한 것이다 — 하나만 맞아도 받는다.
+        표시가 없으면 둘 다 있어야 한다. 하나만 보면 「냉면 」의 「면」에 걸린다. */
+    if (표시 ? !(시군구 || 번지) : !(시군구 && 번지)) continue;
     if (a.length > 주소.length) { 주소 = a; 주소자리 = i; }
   }
   if (!주소) return null;
@@ -404,7 +429,7 @@ function ssParseAddrOverride(memo) {
   }
 
   //  phone 은 예전 이름이다 — 읽는 쪽이 여럿이라 그대로 둔다(휴대 우선)
-  return { name: 이름, phone: 휴대 || 유선, mobile: 휴대, tel: 유선, addr: 주소 };
+  return { name: 이름, phone: 휴대 || 유선, mobile: 휴대, tel: 유선, addr: 주소, 표시: 표시 };
 }
 
 /**
@@ -824,11 +849,19 @@ function ssNormalize(grid, cfg, warnings) {
           적요에 둘 다 적힌 일이 잦다 — 보돌미역 지점들이 그렇다.
             「… 02-725-1391 010-7759-1781」 → 전화 02… · 모바일 010…
           여태 하나로 뭉뚱그려 모바일에만 넣었다. 한쪽만 있으면 그쪽만 바꾼다. */
+      //  되돌릴 수 있게 원래 값을 그대로 쥐고 있는다 (적요확인 탭의 「주소 안 바꾸기」)
+      line._원전화 = line.전화;
+      line._원모바일 = line.모바일;
       if (ovAddr.mobile) line.모바일 = ovAddr.mobile;
       if (ovAddr.tel) line.전화 = ovAddr.tel;
-      if (!ovAddr.mobile && !ovAddr.tel) line.모바일 = ovAddr.phone;
+      /*  ★ 전화가 없으면 있던 것을 그대로 둔다 ★  (2026-09-28)
+          주소«만» 적은 적요를 읽게 되면서 phone 이 빌 수 있다. 여기서 그대로
+          넣으면 연락처를 지운다 — 전화 없는 송장이 나간다. */
+      if (!ovAddr.mobile && !ovAddr.tel && ovAddr.phone) line.모바일 = ovAddr.phone;
       if (ovAddr.name) line.받는분 = ovAddr.name.slice(0, 25);
-      line.주소변경 = ovAddr.name ? '적요(이름·연락처·주소)' : '적요(연락처·주소)';
+      line.주소변경 = (ovAddr.표시 ? '적요「배송지」(' : '적요(') +
+        (ovAddr.name ? '이름·' : '') +
+        ((ovAddr.mobile || ovAddr.tel) ? '연락처·' : '') + '주소)';
       ssWarn(warnings, '주의', 'ADDR_OVERRIDE', line.순번,
         '적요대로 바꿨습니다: ' + ssText(line.원받는분).slice(0, 12) + ' / ' + ssText(line.원주소1).slice(0, 24) +
         '  →  ' + ssText(line.받는분).slice(0, 12) + ' / ' + ovAddr.addr.slice(0, 34));
@@ -889,6 +922,22 @@ function ssNormalize(grid, cfg, warnings) {
         ssWarn(warnings, '주의', 'MEMO_ACTION', line.고유ID,
           '적요확인 탭의 조치대로 바꿨습니다: ' + ssText(line.원주소1).slice(0, 24) +
           '  →  ' + ssText(line.주소1).slice(0, 34));
+      } else if (_조치 === '주소 안 바꾸기') {
+        /*  ★ 규칙이 읽은 것을 «되돌린다» ★  (2026-09-28)
+            규칙이 적요를 잘못 읽었을 때 물릴 길이 없으면, 적요확인 탭에 읽은 것을
+            보여 주는 뜻이 없다. 원래 값으로 돌린다.
+            고유ID 는 원받는분·원주소로 뽑으므로 되돌려도 번호는 그대로다. */
+        if (ssText(line.원주소1)) {
+          var _되돌린곳 = ssText(line.주소1);
+          line.주소1 = ssText(line.원주소1);
+          if (line.원받는분 !== undefined) line.받는분 = ssText(line.원받는분);
+          if (line._원전화 !== undefined) line.전화 = line._원전화;
+          if (line._원모바일 !== undefined) line.모바일 = line._원모바일;
+          line.주소변경 = '';
+          ssWarn(warnings, '주의', 'MEMO_KEEP', line.고유ID,
+            '적요확인 탭에서 「주소 안 바꾸기」로 고르셨습니다 — 원래 주소로 되돌렸습니다: ' +
+            _되돌린곳.slice(0, 28) + '  →  ' + ssText(line.주소1).slice(0, 28));
+        }
       }
     }
     if (line.주문번호출처 === '자동발급' && ssText(cfg.전화주문_고유ID) === '주문번호칸에채움') {
