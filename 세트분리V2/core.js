@@ -197,6 +197,8 @@ var SS_DEFAULT_CONFIG = {
       ★ 「출고」 한 낱말로는 못 잡는다 ★  「★ 09/15 출고」처럼 «그날 내보내라»는
       뜻으로 쓰는 일이 있어서, 그걸 잡으면 멀쩡한 주문이 미발송으로 빠진다.
       그래서 붙여 쓴 말만 둔다. S팀 확인 뒤 늘리거나 줄인다. */
+  /*  적요에 주소 같은 글이 있는데 못 읽으면 세운다 (끔 = 그냥 내보낸다) */
+  적요주소의심_보류: '켬',
   미발송_적요낱말: '이미출고,출고완료,중복출고,방문수령,방문후수령,직접수령,픽업,주문취소'
 };
 
@@ -321,6 +323,31 @@ var SS_ZIP_RE = /\[(\d{5})\]|\(우\)\s*(\d{5})|^(\d{5})(?=\s)/;
 /*  주소가 상호에 붙어 올 때 잘라 낼 자리. 시·도 이름 뒤에 도/시/자치/공백이 와야
     한다 — 「전라」 없이 「전」 하나로 자르면 상호 한가운데를 자른다.  */
 var SS_SIDO_RE = /(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청|충북|충남|전라|전북|전남|경상|경북|경남|제주)(특별|광역|자치|도|시|\s)/g;
+
+/**
+ * 적요에 주소 같은 글이 «있어 보이는데» 규칙이 못 읽었나.
+ *
+ * ★ 왜 필요한가 ★  (2026-09-28)
+ *   > "전화번호가 없어도 주소 같이 보이면 해당 주소로... 아니면 미발송으로
+ *   >  빼서 확인가능하게 해줘"
+ *   못 읽은 것을 조용히 본사로 보내면 아무도 모른다. 세워서 사람이 보게 한다.
+ *
+ * ★ 시·도 «이름»을 요구한다 ★
+ *   「[가-힣]{2,4}시」 만 보면 「돈까스도시」가 걸린다 — 실제 적요에 있다.
+ *   시·도 이름 목록은 스무 개뿐이고 품목명에는 안 나온다.
+ *   실제 전화주문 적요 86건으로 재 보니 헛것 0건이었다 (걸린 것도 0건 —
+ *   주소꼴은 모두 위에서 이미 읽힌다. 이 그물은 앞날의 새 모양을 위한 것이다).
+ */
+function ssMemoLooksAddr(memo) {
+  var s = ssText(memo);
+  if (!s) return false;
+  if (ssParseAddrOverride(s)) return false;   //  읽었으면 의심할 일이 없다
+  SS_SIDO_RE.lastIndex = 0;
+  var 시도 = SS_SIDO_RE.test(s);
+  SS_SIDO_RE.lastIndex = 0;
+  if (!시도) return false;
+  return /\d/.test(s);   //  번지 없는 주소는 없다
+}
 
 function ssParseAddrOverride(memo) {
   var s = ssText(memo).replace(/\s+/g, ' ').trim();
@@ -908,6 +935,8 @@ function ssNormalize(grid, cfg, warnings) {
     var 적요조치 = (cfg && cfg._적요조치) ? cfg._적요조치[line.고유ID] : null;
     if (적요조치) {
       var _조치 = ssText(적요조치.조치);
+      //  사람이 한 번 골랐으면 아래 「적요확인 세우기」가 다시 세우지 않는다
+      line.적요조치본것 = _조치;
       if (_조치 === '안 보냄' || _조치 === '미발송') {
         line.적요조치 = '미발송';
       } else if ((_조치 === '주소 바꾸기' || _조치 === '이대로 적용') && ssText(적요조치.주소)) {
@@ -1827,6 +1856,29 @@ function ssRoute(units, masters, cfg, warnings) {
         u.보류사유 = '제품아님';
         u.보류상세 = ns;          // 「품목명에 「반품배송비」」·「금액 음수 (-3000)」 …
         u.비배송사유 = ns;        // 읽던 쪽이 있으면 그대로 읽히게 남겨 둔다
+        continue;
+      }
+
+      /*  ★ 적요에 주소 같은 글이 있는데 «못 읽었다» → 세운다 ★  (2026-09-28)
+          > "아니면 미발송으로 빼서 확인가능하게 해줘"
+
+          못 읽은 채로 내보내면 본사 주소로 나가고 아무도 모른다 — 9/22 에
+          그렇게 한 건이 해운대로 갔다. 세워 두면 적어도 눈에 띈다.
+
+          ★ 미발송 낱말이 먼저다 ★ 위의 ns 검사가 이미 지나갔다. 「방문수령」
+            같은 줄은 그 사유로 세워졌으니 여기까지 오지 않는다.
+          ★ 사람이 한 번 고른 줄은 다시 세우지 않는다 ★ 안 그러면 「주소 안
+            바꾸기」를 골라도 다음 회차에 또 세워져 영영 못 나간다.
+          끄려면 설정 「적요주소의심_보류」를 «끔» 으로. */
+      if (u.주문번호출처 === SS_ORDNO_SRC.자동발급 &&
+          ssText(cfg && cfg.적요주소의심_보류) !== '끔' &&
+          !ssText(u.주소변경) && !ssText(u.적요조치본것) &&
+          ssMemoLooksAddr(u.적요)) {
+        u.route = SS_ROUTE.HOLD;
+        u.보류사유 = '적요확인';
+        u.보류상세 = '적요에 주소 같은 글이 있는데 못 읽었습니다 — ' +
+          '「적요확인」 탭에서 주소를 적고 조치를 「주소 바꾸기」로 고르세요.  적요[' +
+          ssText(u.적요).slice(0, 40) + ']';
         continue;
       }
     }
@@ -3003,7 +3055,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssApplyManualEdits: ssApplyManualEdits,
     ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
+    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssItemBase: ssItemBase, ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssDupRunGroups: ssDupRunGroups, SS_ORDNO_SRC: SS_ORDNO_SRC,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,
