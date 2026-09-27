@@ -119,9 +119,9 @@ console.log("\n⑥ 배선 — 소스에서 직접 확인");
   const mst = fs.readFileSync(path.join(밑, "gasMasters.js"), "utf8");
   const io = fs.readFileSync(path.join(밑, "gasIO.js"), "utf8");
 
-  ok("수동조치 칸이 15개다", core.SS_MANUAL_HEADER
-    ? core.SS_MANUAL_HEADER.length === 15
-    : /'새주소', '새받는분', '새전화', '새모바일'/.test(src));
+  ok("수동조치 칸이 16개다", core.SS_MANUAL_HEADER
+    ? core.SS_MANUAL_HEADER.length === 16
+    : /.새주소., .새받는분., .새전화., .새모바일., .적은말./.test(src));
   ok("  칸을 뒤에만 더했다 (앞을 밀면 이미 적힌 줄이 어긋난다)",
     /'새코드', '새품목명',[\s\S]{0,80}'새주소'/.test(src));
   ok("메모를 적요와 같은 함수로 읽는다", /var 메모주소 = 메모 \? ssParseAddrOverride\(메모\) : null;/.test(mst));
@@ -130,7 +130,7 @@ console.log("\n⑥ 배선 — 소스에서 직접 확인");
   ok("  사람이 조치에 적은 것이 먼저다 (위에서 이미 정해진다)",
     mst.indexOf("if (적은값 === '발송')") < mst.indexOf("if (!조치 && 메모주소)"));
   ok("적어 둘 칸 넷을 만든다", /var 새주소 = 메모주소 \? ssText\(메모주소\.addr\) : '';/.test(mst));
-  ok("이미 있는 줄도 고쳐 쓴다 (12칸)", /getRange\(b0 \+ 2, 4, 1, 12\)/.test(mst));
+  ok("이미 있는 줄도 고쳐 쓴다 (13칸)", /getRange\(b0 \+ 2, 4, 1, 13\)/.test(mst));
   ok("  ★ 주소가 달라졌으면 다시 먹인다", /옛새주소 === 새주소\) continue;/.test(mst));
   ok("조치를 읽을 때 주소도 읽는다", /새주소: ssText\(body\[i\]\[11\]\)/.test(mst));
   ok("옛 시트의 짧은 머리글을 늘린다",
@@ -142,6 +142,43 @@ console.log("\n⑥ 배선 — 소스에서 직접 확인");
     /if \(cfg\[_키\] !== _옛\) continue;/.test(io));
   ok("  고친 것을 남긴다", /\[설정 바로잡음\]/.test(io));
   ok("샘플 한도는 14 그대로", /합포장_최대건수_샘플: '14'/.test(src));
+}
+
+console.log("\n⑦ 「보류」라고 적으면 그대로 세워 둔다  (2026-09-28)");
+{
+  /*  > "도서산간에서 발송으로 처리 안했는데도 넘어가네.. 일부러 보류라고 적었는데도"
+
+      여태 조치 칸의 안내는 「비워 둠 = 그대로 보류」 하나뿐이었다. 그래서 「보류」라고
+      적으면 모르는 «업체코드»로 보고 대리발송으로 돌렸다 — 세워 두려고 적은 말이
+      «보내라»는 뜻이 된 셈이다. 그 말이 우연히 등록된 두 글자 코드와 같으면
+      그 업체로 그냥 나간다.  */
+  const W = core.SS_HOLD_KEEP_WORDS || [];
+  ok("「보류」를 알아듣는다", W.indexOf("보류") >= 0, JSON.stringify(W.slice(0, 6)));
+  ["그대로", "두기", "홀드", "대기", "확인중", "미발송", "안보냄"].forEach((w) => {
+    ok("  「" + w + "」도", W.indexOf(w) >= 0);
+  });
+
+  const mst = fs.readFileSync(path.join(__dirname, "세트분리V2", "gasMasters.js"), "utf8");
+  ok("★ 세우는 말이 「발송」보다 먼저 걸린다",
+    mst.indexOf("if (세우기)") < mst.indexOf("else if (적은값 === '발송')"));
+  ok("★ 모르는 말을 업체코드로 «받지 않는다» (여태 대리발송으로 돌렸다)",
+    /else if \(적은값\) 뜻모름 = true;/.test(mst) &&
+    !/else if \(적은값\) \{ 조치 = '대리발송'; 업체 = up; \}/.test(mst));
+  ok("  모르는 말은 그대로 보류하고 말해 준다",
+    /if \(뜻모름\) \{/.test(mst) && /못알아들음\.push/.test(mst) && /못 알아들어/.test(mst));
+  ok("등록된 업체코드는 그대로 먹는다", /else if \(up && vendors\[up\]\)/.test(mst));
+
+  ok("★ 적은 말을 그대로 적어 둔다 (왜 그리 됐는지 되짚을 수 있게)",
+    /'새모바일', '적은말'\]/.test(fs.readFileSync(path.join(__dirname, "세트분리V2", "core.js"), "utf8")) &&
+    /새모바일, 적은값\]\);/.test(mst));
+  ok("  이미 있는 줄도 적은 말까지 고쳐 쓴다 (13칸)", /getRange\(b0 \+ 2, 4, 1, 13\)/.test(mst));
+
+  const main = fs.readFileSync(path.join(__dirname, "세트분리V2", "gasMain.js"), "utf8");
+  ok("★ 고르개를 진짜로 단다 (주석은 있다더니 코드엔 없었다)",
+    /requireValueInList\(\['발송', '보류', '대리발송'\]\.concat\(codes\), true\)/.test(main));
+  ok("  적을 수도 있게 열어 둔다 (막으면 메모를 못 적는다)",
+    /setAllowInvalid\(true\)/.test(main));
+  ok("  안내문에 「보류」를 적는다", /보류        그대로 세워 둔다/.test(main));
 }
 
 console.log("\n" + (fail ? "❌ " + fail + "개 실패" : "✅ 모두 통과") + " (통과 " + pass + ")");

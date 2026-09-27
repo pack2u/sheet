@@ -106,11 +106,22 @@ var SS_NONSHIP_HEADER = SS_OUT_HEADER.concat(['비배송사유']);
  *
  *   앞이 아니라 맨 뒤에 붙인다. 앞 열이 밀리면 자리로 읽는 곳이 조용히 어긋난다.
  */
-/*  ★ 뒤에 넷을 더했다 ★  (2026-09-28)  보류 탭 「메모」 칸에 적은 배송지.
-    칸을 «뒤에만» 더한다 — 앞을 건드리면 이미 적혀 있는 줄의 자리가 밀린다. */
+/*  ★ 뒤에 칸을 더했다 ★  (2026-09-28)  보류 탭 「메모」 칸에 적은 배송지와,
+    사람이 조치 칸에 «실제로 적은 말». 칸은 «뒤에만» 더한다 —
+    앞을 건드리면 이미 적혀 있는 줄의 자리가 밀린다 (적요확인 탭에서 그랬다). */
 var SS_MANUAL_HEADER = ['등록일', '고유ID', '원본코드', '조치', '업체코드', '메모',
   '등록회차', '등록시각', '최근적용회차', '새코드', '새품목명',
-  '새주소', '새받는분', '새전화', '새모바일'];
+  '새주소', '새받는분', '새전화', '새모바일', '적은말'];
+
+/*  ★ 「그대로 보류」로 알아듣는 말 ★  (2026-09-28)
+    > "일부러 보류라고 적었는데도 넘어가는"
+
+    여태 조치 칸의 안내는 「비워 둠 = 그대로 보류」 하나뿐이었다. 사람은 자기
+    뜻을 «적고» 싶어 한다 — 「보류」라고 적었더니 모르는 «업체코드»로 보고
+    대리발송으로 돌렸다. 적어서 세우는 길을 낸다.
+    ssNorm 으로 띄어쓰기를 떼고 견준다. */
+var SS_HOLD_KEEP_WORDS = ['보류', '보류유지', '그대로', '그대로보류', '두기', '그냥두기',
+  '홀드', 'HOLD', '대기', '확인중', '확인필요', '미발송', '안보냄', '보내지마', '보류함'];
 
 var SS_VENDOR_HEADER = ['업체코드', '업체명'];
 
@@ -3086,7 +3097,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssApplyManualEdits: ssApplyManualEdits,
     ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
+    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, SS_HOLD_KEEP_WORDS: SS_HOLD_KEEP_WORDS, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssItemBase: ssItemBase, ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssDupRunGroups: ssDupRunGroups, SS_ORDNO_SRC: SS_ORDNO_SRC,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,

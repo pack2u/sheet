@@ -1317,8 +1317,12 @@ function ss_중복점검(quiet) {
 }
 
 /**
- * 보류 탭의 입력 3칸을 쓰기 편하게 만든다.
- * 조치·업체코드는 드롭다운이라 오타로 반영이 안 되는 일이 없다.
+ * 보류 탭의 입력 칸을 쓰기 편하게 만든다.
+ *
+ * ★ 고르개를 «진짜로» 단다 ★  (2026-09-28)
+ *   여태 주석은 「드롭다운이라 오타로 반영이 안 되는 일이 없다」고 적혀 있었는데,
+ *   코드는 clearDataValidations() 만 하고 아무것도 달지 않았다. 그래서 손으로
+ *   적어야 했고, 적은 말이 뜻대로 안 먹는 일이 났다.
  */
 function ss_보류입력꾸미기(sh, rows) {
   var cA = SS_HOLD_HEADER.indexOf('조치') + 1;
@@ -1333,11 +1337,26 @@ function ss_보류입력꾸미기(sh, rows) {
   for (var i = 0; i < vd.length; i++) { var v = ssText(vd[i][0]).toUpperCase(); if (v) codes.push(v); }
   codes.sort();
 
+  /*  고를 수 있는 것만 고르게 한다. 손으로 적은 말이 뜻대로 안 먹는 일을 없앤다.
+      setAllowInvalid(true) 로 둔다 — 못 알아듣는 말을 적으면 그대로 보류되고,
+      실행할 때 「못 알아들었습니다」라고 말해 준다. 아예 막으면 메모를 못 적는다. */
+  try {
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['발송', '보류', '대리발송'].concat(codes), true)
+      .setAllowInvalid(true)
+      .setHelpText('발송 = 내보낸다 · 보류 = 그대로 세워 둔다 · 업체코드 = 그 업체로 대리발송')
+      .build();
+    sh.getRange(2, cA, last, 1).setDataValidation(rule);
+  } catch (eV) {}
+
   sh.getRange(1, cA, 1, 2).setBackground('#1f3d3a').setNote(
     '이 칸 하나로 정합니다.' + String.fromCharCode(10) + String.fromCharCode(10) +
     '  발송        자체 출고 (보류 해제)' + String.fromCharCode(10) +
     '  업체코드    그 업체로 대리발송  예) JH, HP' + String.fromCharCode(10) +
-    '  비워 둠     그대로 보류' + String.fromCharCode(10) + String.fromCharCode(10) +
+    '  보류        그대로 세워 둔다 (비워 두는 것과 같다)' + String.fromCharCode(10) +
+    '  비워 둠     그대로 보류' + String.fromCharCode(10) +
+    '  그 밖의 말   그대로 보류 — 실행할 때 못 알아들었다고 알려 줍니다' +
+    String.fromCharCode(10) + String.fromCharCode(10) +
     'U열 상세를 지워도 해소된 것으로 보고 발송합니다.' + String.fromCharCode(10) +
     '등록된 업체코드 : ' + codes.join(', ') + String.fromCharCode(10) + String.fromCharCode(10) +
     '적은 뒤 메뉴 → ✅ 보류 조치 반영' + String.fromCharCode(10) +
