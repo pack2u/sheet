@@ -2623,6 +2623,20 @@ function ssAddrKey(s) { return ssNormAddr(s).replace(/\s+/g, '').replace(/[()\[\
  * 두 시스템이 서로 다른 판정을 내면 운영자가 무엇을 믿어야 할지 알 수 없다.
  * keyFn 이 빈 문자열을 돌려주면 그 레코드는 그 등급에서 빠진다.
  */
+/**
+ * 품목명에서 «물건 이름»만 남긴다.
+ *   「AJ 감자탕 공용 200개---뚜껑만---법인/배민상회」  →  AJ감자탕공용200개
+ * 세트분리가 붙이는 꼬리표(--- · ===)와 띄어쓰기를 떼어 견줄 수 있게 한다.
+ * 같은 물건인데 꼬리표가 달라 다르게 보이면 중복을 못 잡는다.
+ */
+function ssItemBase(name) {
+  var s = ssText(name);
+  var i = s.indexOf('---'), j = s.indexOf('===');
+  if (i >= 0 && (j < 0 || i < j)) s = s.substring(0, i);
+  else if (j >= 0) s = s.substring(0, j);
+  return s.replace(/\s+/g, '').toUpperCase();
+}
+
 function ssDupLevels() {
   return [
     // 한 주문번호에 품목이 여럿일 수 있다. 품목까지 같아야 같은 건이다.
@@ -2652,6 +2666,34 @@ function ssDupLevels() {
           짐작이 아니라서 사람이 볼 값어치가 있다. 최소한의 검증은 이것이다.
 
         되살릴 일이 있으면 git 이 갖고 있다. 코드로 남겨 두지 않는다. */
+
+    /*  ══════════════════════════════════════════════════════════
+        ★ 전화주문만 — 같은 주문자 · 같은 상품명 · 같은 수량 ★  (2026-09-28)
+
+        > "세트분리에서 이전 판매현황을 비교해서 같은 주문(전화주문에서)도
+        >  중복의심에 넣어줘. 4일치정도까지"
+        > "같은 주문자 같은 상품명, 같은 수량.."  "이카운트 중복주문(즉 사람의 실수)"
+
+        ★ 왜 전화주문«만» 인가 ★
+          사방넷·주문서 건은 쇼핑몰이 준 주문번호가 있어서, 같은 주문이 두 번
+          들어오면 「🔴 동일 고유ID」가 잡는다. 전화주문은 사람이 이카운트에
+          손으로 넣는다 — 두 번 넣으면 번호가 둘이 되어 아무것도 못 잡는다.
+          9/15 에 이름·전화·주소 등급을 지운 까닭(정상 재주문이 걸린다)은
+          여전히 맞다. 그래서 «사람이 손으로 넣는 쪽»에만 되살린다.
+
+        ★ 막지 않는다 ★
+          중복의심 탭은 사람이 보는 «목록»이다. 출고를 세우지 않는다.
+          실제 원장 7일치로 재 보니 하루 3.9묶음이다 — 볼 만한 크기다.
+          그중 절반쯤은 정상 재주문일 것이고, 그것을 가리는 것이 사람 몫이다.
+          가리기 쉽게 «같은 회차»와 «날 넘김»을 아래에서 등급으로 가른다.
+        ══════════════════════════════════════════════════════════ */
+    { grade: '🟠 전화주문', reason: '같은 주문자 + 상품명 + 수량',
+      keyFn: function (r) {
+        if (ssText(r.주문번호출처) !== SS_ORDNO_SRC.자동발급) return '';
+        var 누구 = ssNorm(r.받는분), 물건 = ssItemBase(r.품목명);
+        if (!누구 || !물건 || !(ssNum(r.수량) > 0)) return '';
+        return 'P|' + 누구 + '|' + 물건 + '|' + ssNum(r.수량);
+      } },
   ];
 }
 
@@ -2913,7 +2955,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
     ssParseAddrOverride: ssParseAddrOverride, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
-    ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
+    ssItemBase: ssItemBase, ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssDupRunGroups: ssDupRunGroups, SS_ORDNO_SRC: SS_ORDNO_SRC,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,
     ssSurcharge: ssSurcharge, ssReturnFee: ssReturnFee,

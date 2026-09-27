@@ -1196,19 +1196,33 @@ function ss_중복점검(quiet) {
      견줄 상대가 없어 통째로 지나갔다 — 오류도 경고도 없이.
      날마다 쌓이는 표라 넓게 잡을 이유는 없다. 기본 2일(오늘+어제)이고,
      연휴 뒤처럼 더 봐야 하면 설정 「중복점검_대상일수」를 올린다. */
-  var 볼일수 = ssNum(ssio_config()['중복점검_대상일수']);
+  var _cfg중복 = ssio_config();
+  var 볼일수 = ssNum(_cfg중복['중복점검_대상일수']);
   if (!(볼일수 >= 1)) 볼일수 = 2;
-  var 볼날 = {};
-  for (var d = 0; d < 볼일수; d++) {
-    볼날[Utilities.formatDate(new Date(new Date().getTime() - d * 86400000),
-      'Asia/Seoul', 'yyMMdd')] = true;
+
+  /*  ★ 전화주문은 더 길게 본다 ★  (2026-09-28)
+      사람이 이카운트에 손으로 넣는 쪽이라, 며칠 지나 또 넣는 일이 있다.
+      사방넷 건까지 넓히면 목록이 정상 재주문으로 뒤덮인다 — 전화주문만 넓힌다. */
+  var 전화볼일수 = ssNum(_cfg중복['중복점검_대상일수_전화주문']);
+  if (!(전화볼일수 >= 1)) 전화볼일수 = 4;
+  if (전화볼일수 < 볼일수) 전화볼일수 = 볼일수;
+
+  var 볼날 = {}, 전화볼날 = {};
+  for (var d = 0; d < 전화볼일수; d++) {
+    var _날 = Utilities.formatDate(new Date(new Date().getTime() - d * 86400000),
+      'Asia/Seoul', 'yyMMdd');
+    전화볼날[_날] = true;
+    if (d < 볼일수) 볼날[_날] = true;
   }
 
   var all = sh.getRange(2, 1, sh.getLastRow() - 1, cols).getValues();
   var rows = [];
   for (var i = 0; i < all.length; i++) {
     var r = all[i];
-    if (!볼날[ssText(r[idx['회차키']]).substring(0, 6)]) continue;
+    var _날6 = ssText(r[idx['회차키']]).substring(0, 6);
+    var _전화 = 출처칸있음 && ssText(r[idx['주문번호출처']]) === SS_ORDNO_SRC.자동발급;
+    //  전화주문은 넓은 창, 나머지는 좁은 창
+    if (!(_전화 ? 전화볼날[_날6] : 볼날[_날6])) continue;
     rows.push({
       회차: ssText(r[idx['회차키']]),
       고유ID: ssText(r[idx['고유ID']]),
