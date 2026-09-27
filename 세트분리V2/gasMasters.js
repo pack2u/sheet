@@ -869,6 +869,14 @@ function ssm_captureManual(회차키) {
   }
 
   var sh = ssio_sheet(SSIO_TABS.수동조치, SS_MANUAL_HEADER);
+  /*  ★ 머리글이 짧으면 늘린다 ★  (2026-09-28)
+      ssio_sheet 는 «빈 시트»에만 머리글을 쓴다. 이미 쓰던 탭에는 칸이 11개뿐이라,
+      늘어난 칸에 값이 들어가도 머리에 이름이 없어 사람이 무슨 값인지 모른다. */
+  try {
+    if (sh.getLastColumn() < SS_MANUAL_HEADER.length) {
+      sh.getRange(1, 1, 1, SS_MANUAL_HEADER.length).setValues([SS_MANUAL_HEADER]);
+    }
+  } catch (eH) {}
   // 같은 줄에 대한 기록이 이미 있으면 「새로 넣지 않고 고쳐 쓴다」.
   // 예전에는 건너뛰었는데, 그러면 JT 로 한 번 잘못 적은 뒤에는 무엇을 적어도 반영되지 않았다.
   var at = {};
@@ -888,6 +896,19 @@ function ssm_captureManual(회차키) {
     var 상세 = ssText(v[i][idx['상세']]);
     var 메모 = ssText(v[i][idx['메모']]);
 
+    /*  ★ 「메모」 칸에 주소를 적으면 그 주소로 보낸다 ★  (2026-09-28)
+        > "미발송으로 빠져서 확인을 하고 주소라고 적으면 주소로 적용되면 좋겠어"
+
+        ★ 왜 「조치」 칸이 아닌가 ★
+          조치 칸은 이미 꽉 찼다 — 아무 글자나 적으면 「미등록 업체코드」로 보고
+          대리발송으로 돌린다. 거기에 주소를 적으면 엉뚱한 업체로 간다.
+          메모 칸은 지금 아무 뜻도 없는 자유 칸이라 부딪히는 것이 없다.
+
+        ★ 읽는 함수는 적요와 «같은 것»이다 ★
+          ssParseAddrOverride 하나만 쓴다. 「배송지 …」 형식도 그대로 먹고,
+          주소만 적어도 먹는다. 문법이 둘로 갈리지 않는다. */
+    var 메모주소 = 메모 ? ssParseAddrOverride(메모) : null;
+
     // 조치 칸 하나로 뜻이 갈린다.
     //   「발송」        → 자체 출고
     //   등록된 업체코드 → 그 업체로 대리발송
@@ -898,6 +919,10 @@ function ssm_captureManual(회차키) {
     else if (적은값 === '대리발송') 조치 = '대리발송';
     else if (up && vendors[up]) { 조치 = '대리발송'; 업체 = up; }
     else if (적은값) { 조치 = '대리발송'; 업체 = up; }   // 미등록 코드 — 반영 단계에서 걸러 알려 준다
+    //  메모에 주소를 적었으면 조치 칸이 비어 있어도 「보내라」는 뜻이다.
+    //  사람이 조치 칸에 따로 적었으면 그것이 이긴다 — 위에서 이미 정해졌다.
+    if (!조치 && 메모주소) 조치 = '발송';
+
     // 상세(사유 내용)를 지웠으면 그 사유가 해소된 것으로 보고 발송한다.
     // 보류사유가 붙는 행은 상세가 항상 채워지므로, 비었다는 건 사람이 지웠다는 뜻이다.
     if (!조치 && 사유 && !상세) { 조치 = '발송'; if (!메모) 메모 = '상세 지움 → 해소'; }
@@ -963,6 +988,12 @@ function ssm_captureManual(회차키) {
       for (var li2 = 0; li2 < L0.length; li2++) if (L0[li2].원본 === 원본) { 원이름 = L0[li2].이름; break; }
       if (이름 && 원이름 && 이름 !== 원이름) 새이름 = 이름;
     }
+    //  메모에서 읽은 배송지 — 아무것도 못 읽었으면 넷 다 빈 값이다
+    var 새주소 = 메모주소 ? ssText(메모주소.addr) : '';
+    var 새받는분 = 메모주소 ? ssText(메모주소.name) : '';
+    var 새전화 = 메모주소 ? ssText(메모주소.tel) : '';
+    var 새모바일 = 메모주소 ? ssText(메모주소.mobile) : '';
+
     var k = today + '|' + uid + '|' + 원본;
 
     /*  ★ 같은 열쇠가 이 실행 안에서 두 번 나온다 ★  (2026-09-17)
@@ -986,6 +1017,7 @@ function ssm_captureManual(회차키) {
       var a0 = add[addAt[k]];
       a0[3] = 조치; a0[4] = 업체; a0[5] = 메모;
       a0[6] = 회차키 || ''; a0[7] = now; a0[9] = 새코드; a0[10] = 새이름;
+      a0[11] = 새주소; a0[12] = 새받는분; a0[13] = 새전화; a0[14] = 새모바일;
       continue;
     }
 
@@ -996,15 +1028,19 @@ function ssm_captureManual(회차키) {
       var 옛회차 = ssText(body[b0][6]);
       var 옛새코드 = ssText(body[b0][9]);
       var 옛새이름 = ssText(body[b0][10]);
+      var 옛새주소 = ssText(body[b0][11]);
       // 값도 회차도 그대로면 손댈 것이 없다. 하나라도 다르면 새 값으로 되살린다.
+      //  주소도 견준다 — 메모를 고쳤는데 그대로면 사람은 왜 안 먹는지 모른다.
       if (옛조치 === 조치 && 옛업체 === 업체 && 옛회차 === (회차키 || '') &&
-          옛새코드 === 새코드 && 옛새이름 === 새이름) continue;
-      sh.getRange(b0 + 2, 4, 1, 8).setValues([[조치, 업체, 메모, 회차키 || '', now, '', 새코드, 새이름]]);
+          옛새코드 === 새코드 && 옛새이름 === 새이름 && 옛새주소 === 새주소) continue;
+      sh.getRange(b0 + 2, 4, 1, 12).setValues([[조치, 업체, 메모, 회차키 || '', now, '',
+        새코드, 새이름, 새주소, 새받는분, 새전화, 새모바일]]);
       updated++;
       continue;
     }
     addAt[k] = add.length;
-    add.push([today, uid, 원본, 조치, 업체, 메모, 회차키 || '', now, '', 새코드, 새이름]);
+    add.push([today, uid, 원본, 조치, 업체, 메모, 회차키 || '', now, '', 새코드, 새이름,
+      새주소, 새받는분, 새전화, 새모바일]);
   }
   if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, SS_MANUAL_HEADER.length).setValues(add);
   /*  ★ 못 건 것은 «조용히» 두지 않는다 ★
@@ -1089,7 +1125,11 @@ function ssm_loadManual(cfg, 회차키) {
       업체코드: ssText(body[i][4]).toUpperCase(),
       메모: ssText(body[i][5]),
       새코드: ssText(body[i][9]),
-      새이름: ssText(body[i][10])
+      새이름: ssText(body[i][10]),
+      새주소: ssText(body[i][11]),
+      새받는분: ssText(body[i][12]),
+      새전화: ssText(body[i][13]),
+      새모바일: ssText(body[i][14])
     };
   }
   return out;

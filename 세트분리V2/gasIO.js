@@ -346,6 +346,18 @@ function ssio_setConfig(key, value) {
   return true;
 }
 
+/*  ★ 설정값 한 번 바로잡기 ★  (2026-09-28)
+    지금 값이 «옛» 과 «정확히» 같을 때만 «새» 로 고친다. 사람이 다른 값으로
+    바꿔 두었으면 손대지 않는다. 고친 것은 Logger 에 남긴다.
+
+    왜 코드가 고치나 — 시트 설정 칸은 사람 손으로만 바뀌는데, 잘못 들어간 값을
+    그대로 두면 매 회차 잘못 돈다. 한 칸을 고쳐 달라고 넘기지 않는다.
+    다 돌고 나면(며칠 뒤) 이 표를 비운다. */
+var SSIO_CONFIG_FIXES = [
+  ['합포장_최대건수', '14', '2',
+   '샘플 한도(14)가 «일반» 한도 칸에 들어가 있었습니다. 일반은 2 로 바로잡습니다 (샘플은 14 그대로).'],
+];
+
 function ssio_config() {
   var sh = ssio_sheet(SSIO_TABS.설정, SSIO_CONFIG_HEADER);
   if (sh.getLastRow() < 2) {
@@ -369,6 +381,22 @@ function ssio_config() {
       cfg[key] = SSIO_CONFIG_DEFAULTS[d][1];
     }
   }
+  /*  잘못 들어간 값을 한 번만 바로잡는다 (SSIO_CONFIG_FIXES 주석 참고) */
+  for (var f = 0; f < SSIO_CONFIG_FIXES.length; f++) {
+    var _키 = SSIO_CONFIG_FIXES[f][0], _옛 = SSIO_CONFIG_FIXES[f][1];
+    var _새 = SSIO_CONFIG_FIXES[f][2], _까닭 = SSIO_CONFIG_FIXES[f][3];
+    if (cfg[_키] !== _옛) continue;          //  이미 고쳐졌거나 사람이 다른 값을 넣었다
+    for (var g = 0; g < rows.length; g++) {
+      if (ssText(rows[g][0]) !== _키) continue;
+      try {
+        sh.getRange(g + 2, 2).setValue(_새);
+        cfg[_키] = _새;
+        Logger.log('[설정 바로잡음] ' + _키 + ' : ' + _옛 + ' → ' + _새 + '  — ' + _까닭);
+      } catch (eF) {}
+      break;
+    }
+  }
+
   if (add.length) {
     sh.getRange(sh.getLastRow() + 1, 1, add.length, 3).setValues(add);
   }
