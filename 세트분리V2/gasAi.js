@@ -37,12 +37,20 @@ var SS_AI_MAX_ = 60;                     // 한 번에 물어볼 최대 건수
 
 /*  ★ 「AI …」 를 「읽은 …」 으로 ★  (2026-09-28)
     이 탭에 «규칙»이 읽은 줄도 올라온다. 머리글이 AI 라고 되어 있으면
-    규칙이 읽은 값을 AI 말로 잘못 읽는다. 누가 읽었는지는 칸을 따로 둔다. */
+    규칙이 읽은 값을 AI 말로 잘못 읽는다. 누가 읽었는지는 칸을 따로 둔다.
+
+    ★ 이름만 바꾼다. 칸을 «중간에 끼우지 않는다» ★  (2026-09-28 저녁, 고침)
+      처음에 「읽은 이」를 8번째에 끼웠다. 이름 바꾸기는 자리를 안 옮기지만,
+      칸을 끼우면 그 뒤가 한 칸씩 밀린다 — 이미 쓰던 탭(8줄이 있었다)에서
+      「조치」를 「걷은때」 자리에서 읽게 되어, 사람이 고른 조치가 통째로
+      무시되고 시각 문자열이 조치로 읽혔다.
+      전에도 같은 실수를 하고 되돌린 자리다. 새 칸은 «맨 뒤»에만 붙인다.  */
 var SS_AI_HEADER = [
   '회차키', '고유ID', '순번', '거래처명', '적요',
   '지금 주소', '지금 전화',
-  '읽은 이', '판단', '읽은 가게이름', '읽은 전화(F)', '읽은 휴대(G)', '읽은 주소', '까닭',
-  '조치', '걷은때'
+  '판단', '읽은 가게이름', '읽은 전화(F)', '읽은 휴대(G)', '읽은 주소', '까닭',
+  '조치', '걷은때',
+  '읽은 이'
 ];
 
 /**
@@ -319,10 +327,11 @@ function _ss_ai_탭에쌓기_(줄들, 답, 물어본것) {
       rows.push([
         L.회차키, L.고유ID, L.순번, L.거래처명, L.적요,
         L.주소, L.전화,
-        '규칙', L.읽음.표시 ? '배송지 (「배송지」라고 적혀 있음)' : '배송지 (주소 꼴로 읽음)',
+        L.읽음.표시 ? '배송지 (「배송지」라고 적혀 있음)' : '배송지 (주소 꼴로 읽음)',
         ssText(L.읽음.name), ssText(L.읽음.tel), ssText(L.읽음.mobile), ssText(L.읽음.addr),
         '이미 이대로 보냅니다. 아니면 조치에서 「주소 안 바꾸기」를 고르세요',
-        '', ''
+        '', '',
+        '규칙'
       ]);
       continue;
     }
@@ -333,15 +342,17 @@ function _ss_ai_탭에쌓기_(줄들, 답, 물어본것) {
     rows.push([
       L.회차키, L.고유ID, L.순번, L.거래처명, L.적요,
       L.주소, L.전화,
-      'AI', 답있음 ? (ssText(r.kind) || '아님') : '',
+      답있음 ? (ssText(r.kind) || '아님') : '',
       ssText(r.name), ssText(r.tel), ssText(r.mobile), ssText(r.addr),
       답있음 ? ssText(r.why) : 'AI 가 답을 못 했습니다 — 적요를 보고 고르세요',
-      '', ''
+      '', '',
+      'AI'
     ]);
   }
   if (!rows.length) return 0;
 
   var sh = ssio_sheet(SSIO_TABS.적요확인, SS_AI_HEADER);
+  _ss_ai_머리맞추기_(sh);
   var 끝 = Math.max(sh.getLastRow(), 1);
   if (sh.getMaxRows() < 끝 + rows.length) sh.insertRowsAfter(sh.getMaxRows(), rows.length + 20);
   sh.getRange(끝 + 1, 1, rows.length, SS_AI_HEADER.length).setValues(rows);
@@ -357,6 +368,28 @@ function _ss_ai_탭에쌓기_(줄들, 답, 물어본것) {
   return rows.length;
 }
 
+/**
+ * 이미 쓰던 탭의 머리글을 새 이름으로 맞춘다.
+ *
+ * ssio_sheet 는 «빈 시트»에만 머리글을 쓴다. 그래서 이미 줄이 있는 탭은
+ * 옛 이름(「AI 판단」…)이 그대로 남아, 사람이 무슨 칸인지 헷갈린다.
+ * 자리는 그대로고 이름만 바뀌므로 자료는 어긋나지 않는다 —
+ * 「읽은 이」는 맨 뒤에 붙는 새 칸이라 옛 줄에서는 빈칸이다.
+ */
+function _ss_ai_머리맞추기_(sh) {
+  try {
+    var 폭 = Math.max(sh.getLastColumn(), 1);
+    var 이제 = sh.getRange(1, 1, 1, polyMax_(폭, SS_AI_HEADER.length)).getValues()[0];
+    var 같나 = true;
+    for (var i = 0; i < SS_AI_HEADER.length; i++) {
+      if (ssText(이제[i]) !== SS_AI_HEADER[i]) { 같나 = false; break; }
+    }
+    if (!같나) sh.getRange(1, 1, 1, SS_AI_HEADER.length).setValues([SS_AI_HEADER]);
+  } catch (e) {}
+}
+
+function polyMax_(a, b) { return a > b ? a : b; }
+
 /* ══════════════════════════════════════════════════════════════
    조치 걷기 — 세트분리가 «시작할 때» 부른다
    보류 탭(ssm_captureManual)과 같은 얼개다.
@@ -366,8 +399,14 @@ function ssm_captureMemoActions() {
   try {
     var sh = ssio_ss().getSheetByName(SSIO_TABS.적요확인);
     if (!sh || sh.getLastRow() < 2) return 표;
+    _ss_ai_머리맞추기_(sh);
 
-    var v = sh.getRange(2, 1, sh.getLastRow() - 1, SS_AI_HEADER.length).getValues();
+    /*  ★ 칸이 모자라면 읽을 만큼만 읽는다 ★
+        「읽은 이」는 새로 붙는 칸이다. 옛 탭에는 없어서 15칸뿐일 수 있고,
+        없는 칸까지 달라고 하면 getRange 가 터진다. */
+    var 읽을폭 = sh.getLastColumn();
+    if (읽을폭 > SS_AI_HEADER.length) 읽을폭 = SS_AI_HEADER.length;
+    var v = sh.getRange(2, 1, sh.getLastRow() - 1, 읽을폭).getValues();
     var c = {};
     for (var h = 0; h < SS_AI_HEADER.length; h++) c[SS_AI_HEADER[h]] = h;
 
