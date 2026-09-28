@@ -1308,10 +1308,9 @@
      * ══════════════════════════════════════════════════════════ */
     var STEPS = ['접수', '회수중', '입고검수', '처리완료'];
 
-    function stepIndex(status, done) {
+    /** 낱말 하나를 단계로 — CS 의 _cs_stageWord_ 와 «같은 규칙»이라야 한다 */
+    function stageWord(status) {
       var s = String(status || '').replace(/[ 	]/g, '');
-      if (/철회|취소/.test(s)) return -1;
-      if (done) return 3;
       if (/이카운트ok/i.test(s)) return 3;
       if (/완료|환불/.test(s)) return 3;
       /* 「입고」를 먼저 본다 — 「반품입고」가 「반품송장」보다 뒤 단계다 */
@@ -1320,8 +1319,44 @@
       return 0;
     }
 
+    /*  ★ 처리 경과가 말하는 단계 ★  (2026-09-28)
+
+        > "아래 상태값에 따라 상단 아이콘도 바뀌어야 되는데 따로놀아"
+
+        대장 A열은 사람이 자유롭게 적는 칸이다. 9월 한 달에만 열네 가지 말이
+        쓰였고 「진행중·사고·자동·확인필요문정」 19건은 규칙이 모르는 말이라
+        전부 0(접수)으로 떨어졌다 — 경과에는 「상태→입고검수」가 또렷한데도.
+        업체 화면에서 이은화 건이 그랬다: 경과는 입고검수인데 위쪽은 접수.
+
+        ★ 「상태→」 줄만 본다 ★  상담 본문에 「입고 언제 되나요」가 흔하다.
+          본문을 읽으면 그런 말에 걸려 단계가 멋대로 올라간다.
+          (포털 서버는 그런 줄을 kind 'status' 로만 내보낸다 — prpPublicTimeline_)
+
+        ★ CS 웹앱과 쌍으로 고칠 것 ★  csOrderSearch.gs 의 _cs_stageFromTimeline_ 과
+          같은 규칙이다. 한쪽만 고치면 또 조용히 갈라진다.  */
+    function stageFromTimeline(timeline) {
+      var best = -1;
+      for (var i = 0; i < (timeline || []).length; i++) {
+        var e = timeline[i];
+        if (!e || e.kind !== 'status') continue;
+        var s = stageWord(e.text);
+        if (s > best) best = s;
+      }
+      return best;
+    }
+
+    function stepIndex(status, done, timeline) {
+      var s = String(status || '').replace(/[ 	]/g, '');
+      if (/철회|취소/.test(s)) return -1;
+      if (done) return 3;
+      var 글자 = stageWord(s);
+      var 경과 = stageFromTimeline(timeline);
+      //  «더 앞선» 것을 쓴다 — 단계는 앞으로만 간다
+      return 경과 > 글자 ? 경과 : 글자;
+    }
+
     function stepsHtml(c) {
-      var idx = stepIndex(c.status, c.done);
+      var idx = stepIndex(c.status, c.done, c.timeline);
       if (idx < 0) {
         return '<div class="steps-off-note">철회된 건입니다. 아래 진행 내역을 확인해 주세요.</div>';
       }
