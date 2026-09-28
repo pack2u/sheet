@@ -1,0 +1,5 @@
+# 로컬 검증용 Node 테스트·문서는 올리지 않는다
+*_test.js
+*.md
+_secrets.gs.template
+node_modules/**
