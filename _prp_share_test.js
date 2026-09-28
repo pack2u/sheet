@@ -161,6 +161,11 @@ vm.runInContext([
   grabFn(portalSrc, "stepIndex"),
   grabFn(portalSrc, "stepsHtml"),
   grabFn(portalSrc, "driveId"),
+  /*  2026-09-28 — 사진이 v2 보관소로 옮겨져 thumbsHtml 이 도우미 셋을 더 쓴다.
+      driveId 만 꺼내면 photoSrc 를 못 찾아 터진다. */
+  grabFn(portalSrc, "storeUrl"),
+  grabFn(portalSrc, "storeThumb"),
+  grabFn(portalSrc, "photoSrc"),
   grabFn(portalSrc, "thumbsHtml")
 ].join("\n"), cliCtx);
 const stepIdx = s => vm.runInContext("stepIndex(" + JSON.stringify(s) + ")", cliCtx);

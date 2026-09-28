@@ -1374,6 +1374,44 @@
       return m ? m[1] : '';
     }
 
+    /*  ★ v2 보관소(Supabase) 사진도 그린다 ★  (2026-09-28)
+
+        > "왜 링크열기가 뜨지?"
+
+        CS 사진 보관소가 드라이브에서 v2 로 옮겨졌는데 포털은 드라이브 id 만
+        알아봤다. id 가 없으니 driveId 가 '' 를 돌려주고, 그 줄은 통째로
+        linkify 로 떨어져 「링크 열기」가 됐다.
+        9월 대장만 봐도 보관소 사진 374개 · 드라이브 100개 — 새로 올라오는 것은
+        거의 다 보관소인데 업체 화면에서는 한 장도 안 보이고 있었다.
+
+        ★ 우리 보관소 주소만 받는다 ★  아무 주소나 <img> 에 넣으면 남의 서버를
+          부른다. CS 웹앱의 retStoreUrl 과 같은 규칙이다.  */
+    function storeUrl(u) {
+      var s = String(u || '');
+      if (s.indexOf('/storage/v1/object/sign/') < 0 &&
+          s.indexOf('/storage/v1/render/image/sign/') < 0) return '';
+      return s;
+    }
+
+    /*  보관소 사진을 «작게» 받는 주소. 34px 로 그리면서 원본 1MB 를 받으면
+        카드 하나 펼 때마다 몇 MB 가 나간다 — 밖에서 폰으로 보는 화면이다.
+        작게 주는 기능이 없는 요금제도 있어서, 안 되면 <img> 의 onerror 가
+        원본으로 물러선다. (CS 웹앱 retStoreThumb 과 같다) */
+    function storeThumb(u, w) {
+      var s = String(u || '');
+      if (s.indexOf('/storage/v1/object/sign/') < 0) return s;
+      var r = s.replace('/storage/v1/object/sign/', '/storage/v1/render/image/sign/');
+      return r + (r.indexOf('?') >= 0 ? '&' : '?') + 'width=' + w + '&quality=70';
+    }
+
+    /** 주소 하나 → 그 너비로 볼 수 있는 주소. 우리 사진이 아니면 '' */
+    function photoSrc(u, w) {
+      var id = driveId(u);
+      if (id) return 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(id) + '&sz=w' + w;
+      var st = storeUrl(u);
+      return st ? storeThumb(st, w) : '';
+    }
+
     /**
      * 이력 한 줄에서 드라이브 사진을 뽑아 썸네일로 만든다.
      * 첨부 파일은 ANYONE_WITH_LINK 로 공유되므로 업체 화면에서도 썸네일이 뜬다.
@@ -1383,13 +1421,22 @@
       var urls = String(text || '').match(/https?:\/\/[^\s]+/g) || [];
       var h = '', n = 0;
       for (var i = 0; i < urls.length; i++) {
-        var id = driveId(urls[i]);
-        if (!id) continue;
+        /*  드라이브든 보관소든 «볼 수 있는 주소»로 바꿔 싣는다.
+            크게보기는 id 가 아니라 주소를 받는다 — 보관소 사진에는 id 가 없다. */
+        var small = photoSrc(urls[i], 480);
+        if (!small) continue;
+        var big = photoSrc(urls[i], 1600);
+        var raw = storeUrl(urls[i]);
         n++;
-        h += '<button type="button" class="thumb" data-id="' + esc(id) + '" title="사진 크게 보기">' +
-          '<img src="https://drive.google.com/thumbnail?id=' + esc(id) + '&amp;sz=w480"' +
+        h += '<button type="button" class="thumb" data-full="' + esc(big) + '" title="사진 크게 보기">' +
+          '<img src="' + esc(small) + '"' +
           ' alt="반품 사진" loading="lazy"' +
-          ' onerror="this.parentNode.classList.add(\'fail\');this.remove()">' +
+          (raw ? ' data-raw="' + esc(raw) + '"' : '') +
+          /*  작게 주는 기능이 없으면 원본으로 한 번 물러선다. 그것도 안 되면
+              「사진 열기」 글자만 남긴다 — 빈 네모가 남는 것보다 낫다. */
+          ' onerror="var r=this.getAttribute(\'data-raw\');' +
+          'if(r&&this.src!==r){this.src=r;return;}' +
+          'this.parentNode.classList.add(\'fail\');this.remove()">' +
           '<span class="alt">사진<br>열기</span></button>';
       }
       return n ? '<div class="ev-thumbs">' + h + '</div>' : '';
@@ -1596,16 +1643,21 @@
     function linkify(text) {
       var s = esc(text || '');
       return s.replace(/(https?:\/\/[^\s<]+)/g, function (u) {
-        var id = driveId(u);
-        return id
-          ? '<a href="#" class="thumb-link" data-id="' + id + '">사진 열기</a>'
+        //  esc 를 거친 뒤라 &amp; 가 섞여 있다 — 주소로 쓰기 전에 되돌린다
+        var raw = String(u).split('&amp;').join('&');
+        var big = photoSrc(raw, 1600);
+        return big
+          ? '<a href="#" class="thumb-link" data-full="' + esc(big) + '">사진 열기</a>'
           : '<a href="' + u + '" target="_blank" rel="noopener">링크 열기</a>';
       });
     }
 
-    function openLightbox(id) {
-      if (!id) return;
-      el('photoFull').src = 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(id) + '&sz=w1600';
+    /*  ★ id 가 아니라 «주소»를 받는다 ★  (2026-09-28)
+        보관소 사진에는 드라이브 id 가 없다. 부르는 쪽에서 이미 볼 수 있는
+        주소로 만들어 싣는다(photoSrc) — 여기서 다시 짐작하지 않는다. */
+    function openLightbox(src) {
+      if (!src) return;
+      el('photoFull').src = src;
       show('mPhoto', true);
     }
     function closeLightbox() {
@@ -1618,7 +1670,7 @@
       var thumb = ev.target.closest('.ev-thumbs .thumb, a.thumb-link');
       if (thumb) {
         ev.preventDefault();
-        openLightbox(thumb.getAttribute('data-id'));
+        openLightbox(thumb.getAttribute('data-full'));
         return;
       }
       var btn = ev.target.closest('button[data-act]');
