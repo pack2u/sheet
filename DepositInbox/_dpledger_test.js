@@ -119,6 +119,23 @@ console.log('\n[잔액 연속성]');
   ok('불연속이면 알림에 경고가 붙는다', last.includes('잔액 불연속'));
 }
 
+console.log('\n[챗에 잔액을 안 싣는다]');
+{
+  const { post, chats } = makeEnv();
+  post({ token: 'tok', action: 'sms', body: SMS1 });
+  post({ token: 'tok', action: 'sms', body: SMS_GAP });
+  const all = JSON.stringify(chats);
+  ok('입금 카드에 잔액 숫자가 없다', !/1,?230,?000|1,?400,?000/.test(all), all.slice(0, 200));
+  ok('예상 잔액도 없다', !/1,?240,?000/.test(all));
+  ok('불연속 경고는 그대로 간다', all.includes('잔액 불연속'));
+}
+{
+  const { post, chats } = makeEnv();
+  post({ token: 'tok', action: 'sms', body: '[기업] 알림 잔액 12,345,678원 확인바랍니다' });
+  ok('읽지 못한 문자 원문에서도 잔액을 가린다',
+    chats.length === 1 && !chats[0].text.includes('12,345,678') && chats[0].text.includes('잔액 ***'), chats[0] && chats[0].text);
+}
+
 console.log('\n[늦게 온 문자]');
 {
   const { post, rows } = makeEnv();

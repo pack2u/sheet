@@ -40,17 +40,27 @@ function _dp_won_(n) {
   return n == null ? "-" : Number(n).toLocaleString() + "원";
 }
 
+/**
+ * ★ 잔액은 챗에 안 싣는다 (2026-09-29) ★
+ *   > "카드 내용에서 잔액은 표시 안되게 가능한가?"
+ *   통장 잔액은 방에 있는 모든 사람에게 보인다. 잔액은 입금대장에만 두고
+ *   (빠진 문자 감지에 쓴다), 챗에는 «맞는지 안 맞는지»만 말한다.
+ *   은행 원문을 보여 줄 때도 잔액 숫자는 가린다.
+ */
+function _dp_hideBalance_(text) {
+  return String(text || "").replace(/(잔액\s*:?\s*)-?[\d,]+\s*원?/g, "$1***");
+}
+
 function dpNotifyDeposit_(p, bal) {
   var rows = [
     { label: "입금자", value: p.name || "(이름 없음)" },
     { label: "금액", value: _dp_won_(p.amount) },
     { label: "거래일시", value: p.txAt },
-    { label: "은행 · 계좌", value: (p.bank || "?") + " " + (p.account || "") },
-    { label: "거래후잔액", value: _dp_won_(p.balance) }
+    { label: "은행 · 계좌", value: (p.bank || "?") + " " + (p.account || "") }
   ];
   if (bal && bal.status === "불연속") {
     rows.push({ label: "⚠ 잔액 불연속",
-      value: "예상 " + _dp_won_(bal.expected) + " — 사이에 빠진 문자가 있을 수 있습니다" });
+      value: "사이에 빠진 문자가 있을 수 있습니다 — 입금대장을 확인해 주세요" });
   }
   var widgets = rows.map(function (r) {
     return { decoratedText: { topLabel: r.label, text: String(r.value) } };
@@ -68,12 +78,11 @@ function dpNotifyDeposit_(p, bal) {
 
 function dpNotifyGap_(p, bal) {
   dpNotifyText_("⚠ 잔액 불연속 — " + (p.bank || "") + " " + (p.account || "") + " " + p.kind + " " +
-    _dp_won_(p.amount) + " (" + p.txAt + ")\n예상 잔액 " + _dp_won_(bal.expected) +
-    " / 문자 잔액 " + _dp_won_(p.balance) + "\n사이에 빠진 입출금 문자가 있을 수 있습니다. 입금대장을 확인해 주세요.");
+    _dp_won_(p.amount) + " (" + p.txAt + ")\n사이에 빠진 입출금 문자가 있을 수 있습니다. 입금대장을 확인해 주세요.");
 }
 
 function dpNotifyUnparsed_(body, reason) {
   // 인증번호 등 입출금이 아닌 은행 문자도 여기로 온다. 원문은 앞부분만 보인다.
-  var head = String(body || "").replace(/\s+/g, " ").slice(0, 80);
+  var head = _dp_hideBalance_(String(body || "").replace(/\s+/g, " ")).slice(0, 80);
   dpNotifyText_("❓ 읽지 못한 은행 문자 (" + reason + ")\n" + head);
 }
