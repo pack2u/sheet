@@ -2076,6 +2076,22 @@ function ssRoute(units, masters, cfg, warnings) {
          비행기로 제주까지 간 뒤 배로 한 번 더 나간다. 도선료만 적으면
          제주 왕복분이 통째로 빠진다 (2026-09-08 사장님 확인). */
       u.도선료 = ssSurcharge(addr, fh.권역, ferry, { 통일도선료: 통일도선료 }).합계;
+
+      /*  ★ 산간은 «배»가 아니다 — 일반 로젠으로 보낸다 ★  (2026-09-28)
+          > "1로 해야되"   (도서산간 탭이 아니라 일반 탭)
+
+          강원 산간 55곳은 차로 가고 추가운임만 붙는다. 도서산간 탭에 섞으면
+          출고하는 사람이 「배 타는 건」과 구별을 못 한다.
+          금액은 도서와 같은 평균 5,000원이다 (통일값이 위에서 이미 씌워졌다) —
+          > "반품의 경우 비용이 너무 많이들어서 평균비용으로 처리하는거야"
+
+          조치(발송·보류)는 안 본다. 애초에 도서산간 탭에 안 서므로 적을 자리가 없다. */
+      if (ssText(fh.권역) === '산간') {
+        u.도서판정 = '산간(도선료표)';
+        u.route = SS_ROUTE.LOTTE;
+        continue;
+      }
+
       if (면제) { ssIslandSkipByManual_(u, warnings); continue; }
       if (_섬세우기) { ssIslandHoldByManual_(u, _섬적음); continue; }
       u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
@@ -2087,6 +2103,17 @@ function ssRoute(units, masters, cfg, warnings) {
       if (islandZip[zip]) {
         u.도서권역 = islandZip[zip];
         u.도서판정 = '우편번호';
+
+        /*  ★ 우편번호로 잡힌 산간도 «일반» 로젠이다 ★  (2026-09-28)
+            도선료표 갈래와 같은 규칙이다. 산간은 배가 아니라 차로 간다.
+            여기서 안 갈라 주면 강원 산간이 도서산간 탭으로 샌다. */
+        if (ssText(islandZip[zip]) === '산간') {
+          u.도서판정 = '산간(우편번호)';
+          u.도선료 = ssSurcharge(addr, '', ferry, { 통일도선료: 통일도선료 }).합계 ||
+            (Number(통일도선료) > 0 ? Number(통일도선료) : 3000);
+          u.route = SS_ROUTE.LOTTE;
+          continue;
+        }
         /* 제주 본섬은 도선료표에 없다(우도·추자만 있다). 항공료 정액만 붙는다. */
         u.도선료 = ssSurcharge(addr, islandZip[zip], ferry, { 통일도선료: 통일도선료 }).합계;
         if (면제) { ssIslandSkipByManual_(u, warnings); continue; }
