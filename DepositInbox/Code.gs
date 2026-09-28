@@ -64,8 +64,14 @@ function doPost(e) {
   try {
     p = _dp_params_(e);
     var want = String(_dp_secret_("DP_PHONE_TOKEN") || "");
-    tokenState = !p.token ? "없음" : (String(p.token) === want ? "맞음" : "틀림");
+    var csWant = String(_dp_secret_("DP_CS_TOKEN") || "");
+    // ★ 열쇠 두 개 (2026-09-29) ★
+    //   폰 열쇠는 «적기»만, CS웹앱 열쇠는 «읽기»만 연다.
+    //   폰을 잃어버려도 입금 내역을 못 빼 가고, CS웹앱 열쇠로는 가짜 입금을 못 넣는다.
+    var isCs = !!(csWant && p.token && String(p.token) === csWant);
+    tokenState = !p.token ? "없음" : (String(p.token) === want ? "맞음" : (isCs ? "맞음(CS)" : "틀림"));
     if (!want) out = { ok: false, error: "수신기에 토큰이 설정되지 않았습니다" };
+    else if (isCs) out = _dp_handleCs_(p);
     else if (tokenState !== "맞음") out = { ok: false, error: "토큰이 맞지 않습니다" };
     else out = _dp_handle_(p);
   } catch (err) {
@@ -76,11 +82,22 @@ function doPost(e) {
   return _dp_json_(out);
 }
 
+/** CS웹앱이 부른다 — 읽기만. 폰 생존 신호로 치지 않는다. */
+function _dp_handleCs_(p) {
+  var action = String(p.action || "");
+  if (action !== "list") return { ok: false, error: "CS 열쇠로는 읽기(list)만 됩니다" };
+  var r = dpListDeposits_(String(p.date || ""), Number(p.limit) || 0);
+  r.ok = true;
+  r.action = "list";
+  return r;
+}
+
 function _dp_handle_(p) {
   dpTouchSeen_();
 
   var action = String(p.action || "sms");
   if (action === "ping") return { ok: true, action: "ping" };
+  if (action === "list") return { ok: false, error: "폰 열쇠로는 조회할 수 없습니다" };
   if (action !== "sms") return { ok: false, error: "모르는 동작: " + action };
 
   var allowed = _dp_secret_("DP_ALLOWED_SENDERS");

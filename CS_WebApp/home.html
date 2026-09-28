@@ -2756,6 +2756,39 @@
       .dash-check-row, .dash-check-row.late, .dash-check-row.done { animation: none !important; }
     }
 
+    /* ── 오늘 입금 — 「오늘 할 일」 자리 (2026-09-29) ──
+       한 줄 = 한 입금. 금액이 먼저 눈에 들어와야 한다(오른쪽 굵게).
+       잔액은 싣지 않는다 — 서버가 애초에 안 준다. */
+    .dash-dep { display: flex; flex-direction: column; gap: 4px; }
+    .dash-dep-sum { font-weight: 400; color: var(--text-muted); margin-left: 4px; }
+    .dash-dep-row {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--bg-secondary); border: 1px solid var(--border);
+      border-radius: 8px; padding: 7px 10px; font-size: 11px;
+    }
+    .dash-dep-row.new { animation: chkIn .32s ease-out both; }
+    .dash-dep-time { font-weight: 700; color: var(--text-secondary); flex: none; font-variant-numeric: tabular-nums; }
+    .dash-dep-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+    .dash-dep-bank { flex: none; color: var(--text-muted); font-size: 10px; }
+    .dash-dep-amt { flex: none; font-weight: 700; color: var(--accent-green); font-variant-numeric: tabular-nums; }
+    .dash-dep-warn { flex: none; color: var(--accent-orange); font-size: 10px; }
+    .dash-dep-empty { font-size: 11px; color: var(--text-muted); padding: 6px 2px; }
+    .dash-dep-more {
+      margin-top: 2px; width: 100%; padding: 7px; border-radius: 8px; cursor: pointer;
+      background: transparent; border: 1px dashed var(--border); color: var(--text-secondary);
+      font-family: inherit; font-size: 11px;
+    }
+    .dash-dep-more:hover { background: var(--bg-card-hover); }
+    .dep-modal-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+    .dep-modal-head .dash-dep-sum { font-size: 12px; }
+    .dep-modal-list { display: flex; flex-direction: column; gap: 4px; }
+    .dep-modal-close {
+      margin-top: 12px; width: 100%; padding: 10px; border-radius: 10px; cursor: pointer;
+      background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary);
+      font-family: inherit; font-size: 13px;
+    }
+    @media (prefers-reduced-motion: reduce) { .dash-dep-row.new { animation: none !important; } }
+
     .dash-vendor-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid transparent; }
     .dash-vendor-row:last-child { border-bottom: none; }
     .dash-vendor-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3533,6 +3566,19 @@
         <button class="ledger-cancel" type="button" onclick="closeRetNewModal(true)">취소</button>
         <button class="ledger-ok" type="button" id="retNewSubmitBtn" onclick="submitRetNew(false)">카드 생성</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 오늘 입금 — 더보기 (2026-09-29). 바깥을 누르거나 닫기로 닫는다. -->
+  <div class="modal-overlay" id="depModal" onclick="if (event.target === this) closeDepositModal()">
+    <div class="modal-content" style="max-height:88vh;overflow-y:auto;">
+      <div class="modal-handle"></div>
+      <div class="dep-modal-head">
+        <div class="modal-title" style="margin:0" id="depModalTitle">오늘 입금</div>
+        <span class="dash-dep-sum" id="depModalSum"></span>
+      </div>
+      <div class="dep-modal-list" id="depModalList">불러오는 중…</div>
+      <button type="button" class="dep-modal-close" onclick="closeDepositModal()">닫기</button>
     </div>
   </div>
 
@@ -7540,14 +7586,16 @@
           '<div class="dash-chips">' + chipsHtml + '</div>' +
         '</div>' +
         // ★ 2026-08-31: 발주업체 TOP5 자리를 일과 체크리스트로 바꿨다.
-        //   TOP5 는 보기만 하고 손댈 일이 없었고, 시각별 할 일은 놓치면 바로 손해다.
-        //   내용은 csDailyChecklist 가 따로 채운다(서버 왕복이라 비동기).
+        // ★ 2026-09-29: 그 자리를 «오늘 입금»에 내줬다.
+        //   > "지금 일정 뜨는걸 삭제하고 그위치에 뜨게해줘"
+        //   체크리스트 코드(renderDailyChecklist · csDailyChecklist.gs)는 지우지 않았다 —
+        //   되살리려면 이 자리에 dashChecklist 칸을 다시 넣고 renderDailyChecklist() 를 부르면 된다.
         '<div class="dash-section">' +
-          '<div class="dash-section-title">오늘 할 일</div>' +
-          '<div id="dashChecklist" class="dash-check">불러오는 중…</div>' +
+          '<div class="dash-section-title">오늘 입금<span id="dashDepositSum" class="dash-dep-sum"></span></div>' +
+          '<div id="dashDeposit" class="dash-dep">불러오는 중…</div>' +
         '</div>';
 
-      renderDailyChecklist();
+      renderDeposits();
     }
 
     function setIndexStatus(where) {
@@ -12239,6 +12287,118 @@
         .csLogisticsToday();
     }
 
+    // ══ 오늘 입금 (2026-09-29) ═════════════════════════════
+    //   > "10개정도까지 보이게해주고 더보기를 클릭해 당일 내용을 확인할수 있게 해줘"
+    //   대시보드에는 최근 10건, 더보기는 그날 전부(창으로).
+    //   1분마다 조용히 다시 묻는다 — 서버(csDeposit.gs)가 20초 캐시를 둬서 여러 명이 열어도 가볍다.
+    //   새로 들어온 줄만 한 번 살짝 들어오는 움직임을 준다. 매번 전부 움직이면 무엇이 새것인지 모른다.
+    var DEP_CACHE = null;
+    var DEP_SEEN = null;          // 처음 그릴 때는 «새것» 표시를 안 한다
+    var DEP_LIMIT = 10;
+
+    function depWon(n) { return (Number(n) || 0).toLocaleString() + '원'; }
+
+    function depRowHtml(x, isNew) {
+      return '<div class="dash-dep-row' + (isNew ? ' new' : '') + '"' +
+        ' title="' + esc((x.txAt || '') + ' · ' + (x.bank || '') + ' ' + (x.acct ? '…' + x.acct : '') + ' · ' + (x.status || '')) + '">' +
+        '<span class="dash-dep-time">' + esc(x.time || '') + '</span>' +
+        '<span class="dash-dep-name">' + esc(x.name || '(이름 없음)') + '</span>' +
+        (x.check === '불연속' ? '<span class="dash-dep-warn" title="이 입금 앞에 빠진 은행 문자가 있을 수 있습니다">⚠ 확인</span>' : '') +
+        '<span class="dash-dep-bank">' + esc(x.bank || '') + '</span>' +
+        '<span class="dash-dep-amt">' + esc(depWon(x.amount)) + '</span>' +
+        '</div>';
+    }
+
+    function depSumText(r) {
+      if (!r || !r.total) return '';
+      return ' · ' + r.total + '건 · ' + depWon(r.sum) + (r.unparsed ? ' · 읽지 못한 문자 ' + r.unparsed : '');
+    }
+
+    function renderDeposits(force) {
+      var el = document.getElementById('dashDeposit');
+      if (!el) return;
+      if (DEP_CACHE && !force) { paintDeposits(DEP_CACHE); return; }
+
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (!r || !r.ok) {
+            // 이미 그려 둔 것이 있으면 지우지 않는다 — 잠깐의 연결 실패로 목록이 사라지면 더 헷갈린다
+            if (DEP_CACHE) return;
+            var e2 = document.getElementById('dashDeposit');
+            if (e2) e2.innerHTML = '<div class="dash-dep-empty">불러오지 못했습니다' +
+              (r && r.error ? ' — ' + esc(r.error) : '') + '</div>';
+            return;
+          }
+          DEP_CACHE = r;
+          paintDeposits(r);
+        })
+        .withFailureHandler(function () {
+          if (DEP_CACHE) return;
+          var e3 = document.getElementById('dashDeposit');
+          if (e3) e3.innerHTML = '<div class="dash-dep-empty">불러오지 못했습니다</div>';
+        })
+        .csDepositList('', DEP_LIMIT);
+    }
+
+    function paintDeposits(r) {
+      var el = document.getElementById('dashDeposit');
+      if (!el || !r) return;
+      var sumEl = document.getElementById('dashDepositSum');
+      if (sumEl) sumEl.textContent = depSumText(r);
+
+      var first = DEP_SEEN === null;
+      var seen = DEP_SEEN || {};
+      var next = {};
+      var h = '';
+      for (var i = 0; i < r.rows.length; i++) {
+        var x = r.rows[i];
+        next[x.key] = 1;
+        h += depRowHtml(x, !first && !seen[x.key]);
+      }
+      DEP_SEEN = next;
+
+      if (!r.rows.length) h = '<div class="dash-dep-empty">오늘 들어온 입금이 없습니다</div>';
+      if (r.total > r.rows.length) {
+        h += '<button type="button" class="dash-dep-more" onclick="openDepositModal()">더보기 · 오늘 ' +
+          r.total + '건 전체</button>';
+      }
+      el.innerHTML = h;
+    }
+
+    function openDepositModal() {
+      var m = document.getElementById('depModal');
+      if (!m) return;
+      document.getElementById('depModalTitle').textContent = '오늘 입금';
+      document.getElementById('depModalSum').textContent = depSumText(DEP_CACHE).replace(/^ · /, '');
+      document.getElementById('depModalList').innerHTML = '<div class="dash-dep-empty">불러오는 중…</div>';
+      m.classList.add('active');
+
+      google.script.run
+        .withSuccessHandler(function (r) {
+          var list = document.getElementById('depModalList');
+          if (!list) return;
+          if (!r || !r.ok) {
+            list.innerHTML = '<div class="dash-dep-empty">불러오지 못했습니다' + (r && r.error ? ' — ' + esc(r.error) : '') + '</div>';
+            return;
+          }
+          document.getElementById('depModalTitle').textContent = r.date + ' 입금';
+          document.getElementById('depModalSum').textContent = depSumText(r).replace(/^ · /, '');
+          var h = '';
+          for (var i = 0; i < r.rows.length; i++) h += depRowHtml(r.rows[i], false);
+          list.innerHTML = h || '<div class="dash-dep-empty">오늘 들어온 입금이 없습니다</div>';
+        })
+        .withFailureHandler(function () {
+          var list = document.getElementById('depModalList');
+          if (list) list.innerHTML = '<div class="dash-dep-empty">불러오지 못했습니다</div>';
+        })
+        .csDepositList('', 0);
+    }
+
+    function closeDepositModal() {
+      var m = document.getElementById('depModal');
+      if (m) m.classList.remove('active');
+    }
+
     // ══ 일과 체크리스트 (2026-08-31) ═══════════════════════
     //   예정 시각 10분 전부터 뜨고, 체크하면 그날은 사라진다.
     //   시각이 지났는데 미체크면 빨갛게 남는다 — 숨기면 빠뜨린 걸 아무도 모른다.
@@ -12581,6 +12741,12 @@
     // 10분 전이 되면 카드가 저절로 뜨고, 예정 시각을 넘기면 빨갛게 바뀐다.
     setInterval(function () {
       if (CHK_CACHE && document.getElementById('dashChecklist')) paintDailyChecklist(CHK_CACHE);
+    }, 60000);
+
+    // 오늘 입금 — 1분마다 새로 묻는다. 화면을 안 보고 있으면(다른 탭) 건너뛴다.
+    setInterval(function () {
+      if (document.hidden) return;
+      if (document.getElementById('dashDeposit')) renderDeposits(true);
     }, 60000);
 </script>
 

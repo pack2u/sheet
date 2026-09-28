@@ -19,6 +19,8 @@ var DP_REQLOG_MAX_ = 500;
 function dpReqLog_(method, e, p, tokenState, out) {
   // 정상 신호(ping)는 30분마다 온다. 다 적으면 정작 봐야 할 줄이 묻힌다 — 마지막 신호는 DP_LAST_SEEN 에 있다.
   if (out && out.ok && out.action === "ping") return;
+  // CS웹앱 조회도 1분마다 온다 — 성공은 안 적는다
+  if (out && out.ok && out.action === "list") return;
   try {
     var ss = dpLedgerSs_(false);
     if (!ss) return;

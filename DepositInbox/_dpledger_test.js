@@ -28,7 +28,9 @@ function makeEnv() {
         } }) }),
       };
     },
-    appendRow: (row) => rows.push(row.slice()),
+    // 진짜 시트처럼 — 「2026-09-28 23:55」 같은 글자는 날짜(Date)로 바뀌어 저장된다 (2026-09-29 실측)
+    appendRow: (row) => rows.push(row.map(v =>
+      (typeof v === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(v)) ? new Date(v.replace(' ', 'T')) : v)),
     setFrozenRows() {}, hideColumns() {}, setName() { return sheet; },
   };
   const logRows = [];
@@ -51,7 +53,11 @@ function makeEnv() {
       getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Utilities: {
-      formatDate: (d) => d.toISOString().replace('T', ' ').slice(0, 19),
+      formatDate: (d, tz, f) => {
+        const p = (n) => String(n).padStart(2, '0');
+        const m = { yyyy: d.getFullYear(), MM: p(d.getMonth() + 1), dd: p(d.getDate()), HH: p(d.getHours()), mm: p(d.getMinutes()), ss: p(d.getSeconds()) };
+        return String(f || 'yyyy-MM-dd HH:mm:ss').replace(/yyyy|MM|dd|HH|mm|ss/g, (k) => m[k]);
+      },
       computeDigest: (_, s) => [...crypto.createHash('md5').update(s).digest()],
       base64EncodeWebSafe: (b) => Buffer.from(b).toString('base64url'),
       DigestAlgorithm: { MD5: 'md5' }, Charset: { UTF_8: 'utf8' },
@@ -227,6 +233,38 @@ console.log('\n[폼 형식으로 문자만 실어 온 경우]');
     postData: { type: 'application/x-www-form-urlencoded', contents: SMS1 } });
   ok('원래 본문을 문자로 읽는다', r.ok && r.result === '입금', JSON.stringify(r));
   ok('금액이 맞다', rows[1] && rows[1][7] === 50000);
+}
+
+console.log('\n[CS웹앱 조회 — 열쇠 두 개]');
+{
+  const { ctx, post } = makeEnv();
+  ctx.DP_CS_TOKEN = 'cstok';
+  const csPost = (o) => ctx.doPost({ parameter: {}, postData: { type: 'application/json', contents: JSON.stringify(o) } });
+  // 오늘(2026-09-28) 입금 12건 + 출금 1건 + 미해석 1건
+  for (let i = 0; i < 12; i++) {
+    const mm = String(10 + i).padStart(2, '0');
+    post({ token: 'tok', action: 'sms', body: `[Web발신]\n2026/09/28\n14:${mm}\n입금 ${1000 + i}원\n잔액 ${50000 + i * 1000}원\n입금자${i}\n458***12345678\n기업` });
+  }
+  post({ token: 'tok', action: 'sms', body: SMS_GAP.replace('입금', '출금') });
+  post({ token: 'tok', action: 'sms', body: '신한은행 인증번호 [111]' });
+
+  const r = csPost({ token: 'cstok', action: 'list', date: '2026-09-28', limit: 10 });
+  ok('CS 열쇠로 조회된다', r.ok && r.action === 'list', JSON.stringify(r).slice(0, 120));
+  ok('10건만 준다', r.rows.length === 10, r.rows.length);
+  ok('전체 건수는 12', r.total === 12, r.total);
+  ok('합계', r.sum === Array.from({ length: 12 }, (_, i) => 1000 + i).reduce((a, b) => a + b), r.sum);
+  ok('최근 것이 위', r.rows[0].time === '14:21' && r.rows[9].time === '14:12', r.rows[0].time + '..' + r.rows[9].time);
+  ok('출금은 안 나온다', r.rows.every(x => x.name !== '수수료'));
+  ok('잔액은 안 내보낸다', !JSON.stringify(r).includes('50000') && !JSON.stringify(r).includes('balance'));
+  ok('계좌는 끝 4자리만', r.rows[0].acct === '5678', r.rows[0].acct);
+  const all = csPost({ token: 'cstok', action: 'list', date: '2026-09-28' });
+  ok('limit 없으면 당일 전부 (더보기)', all.rows.length === 12);
+  const other = csPost({ token: 'cstok', action: 'list', date: '2026-09-27' });
+  ok('다른 날은 비어 있다', other.ok && other.total === 0);
+
+  ok('CS 열쇠로는 입금을 못 넣는다', csPost({ token: 'cstok', action: 'sms', body: SMS1 }).ok === false);
+  ok('폰 열쇠로는 조회를 못 한다', post({ token: 'tok', action: 'list' }).ok === false);
+  ok('틀린 열쇠는 둘 다 안 된다', csPost({ token: 'x', action: 'list' }).ok === false);
 }
 
 console.log('\n[V2 미러]');

@@ -67,6 +67,20 @@ const 스텁 = `<script>
         return function () {
           var 답 = null;
           if (String(k).indexOf('StaffList') >= 0) 답 = 담당자;
+          // 오늘 입금 (2026-09-29) — 12건: 대시보드 10건 + 「더보기」 가 보이게
+          else if (k === 'csDepositList') {
+            var 이름 = ['(주)태양포장', '콤콤', '홍길동', '부원산업', '김철수', '아주상사', '이영희', '뉴파츠', '정희화학', '와이에스', '코라마', '후아'];
+            var 줄 = 이름.map(function (n, i) {
+              var hh = 16 - Math.floor(i / 2), mm = i % 2 ? '05' : '42';
+              return { key: 'k' + i, txAt: '2026-09-29 ' + hh + ':' + mm, time: hh + ':' + mm, name: n,
+                       amount: [500000, 320000, 88000, 1250000, 50000, 214500, 30000, 990000, 45000, 132000, 77000, 1000][i],
+                       bank: '기업', acct: '1018', status: '대기', check: i === 3 ? '불연속' : '정상', memo: '' };
+            });
+            var 한도 = arguments[1] || 0;
+            답 = { ok: true, date: '2026-09-29', total: 줄.length, unparsed: 0,
+                   sum: 줄.reduce(function (a, x) { return a + x.amount; }, 0),
+                   rows: 한도 ? 줄.slice(0, 한도) : 줄 };
+          }
           else if (/List|All|Search|Rows|Cards|Items/i.test(String(k))) 답 = [];
           else 답 = {};
           if (t._ok) setTimeout(function () { t._ok(답); }, 0);

@@ -136,10 +136,88 @@ function dpPrevBalance_(sh, c, p) {
   var best = null, bestT = "";
   for (var i = 0; i < n; i++) {
     if (String(keys[i][0]) !== accKey) continue;
-    var t = String(times[i][0]);
+    var t = _dp_ts_(times[i][0]);
     if (t > p.txAt) continue;
     if (bals[i][0] === "" || bals[i][0] == null) continue;
     if (t >= bestT) { bestT = t; best = Number(bals[i][0]); }
   }
   return best;
+}
+
+/**
+ * 하루치 입금 목록 — CS웹앱 대시보드가 부른다 (읽기만)
+ * ★ 2026-09-29 신규
+ *
+ * > "웹앱에 입금 내용카드가 뜨게해줘 … 10개정도까지 보이게 … 더보기를 클릭해 당일 내용을"
+ *
+ * ★ 잔액은 안 내보낸다 ★ — 챗 알림과 같은 판단. 잔액확인은 «정상/불연속» 말만 준다.
+ * ★ 입금만 ★ — 출금·미해석은 대시보드에 안 뜬다. 미해석은 건수만 알려 준다.
+ *
+ * @param {string} date   "yyyy-MM-dd". 비우면 오늘(서울)
+ * @param {number} limit  0 이면 전부
+ * @return {{date, total, sum, unparsed, rows:[{key,txAt,time,name,amount,bank,acct,status,check,memo}]}}
+ */
+function dpListDeposits_(date, limit) {
+  var day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date
+    : Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+  var out = { date: day, total: 0, sum: 0, unparsed: 0, rows: [] };
+  var ss = dpLedgerSs_(false);
+  if (!ss) return out;
+  var sh = ss.getSheetByName(DP_SHEET_NAME_);
+  if (!sh || sh.getLastRow() < 2) return out;
+
+  var c = _dp_cols_(sh);
+  var last = sh.getLastRow();
+  var start = Math.max(2, last - DP_LOOKBACK_ROWS_ + 1);
+  var vals = sh.getRange(start, 1, last - start + 1, sh.getLastColumn()).getValues();
+  var col = function (r, h) { return c[h] ? r[c[h] - 1] : ""; };
+
+  var hits = [];
+  for (var i = 0; i < vals.length; i++) {
+    var r = vals[i];
+    var st = String(col(r, "상태"));
+    var rcvDay = _dp_ts_(col(r, "수신시각")).slice(0, 10);
+    if (st === "미해석") { if (rcvDay === day) out.unparsed++; continue; }
+    if (String(col(r, "구분")) !== "입금") continue;
+    var txAt = _dp_ts_(col(r, "거래일시"));
+    if (txAt.slice(0, 10) !== day) continue;
+    var amt = Number(col(r, "금액")) || 0;
+    var acct = String(col(r, "계좌")).replace(/[^\d]/g, "").slice(-4);
+    hits.push({
+      key: String(col(r, "고유번호")),
+      txAt: txAt,
+      rcv: _dp_ts_(col(r, "수신시각")),
+      time: txAt.slice(11, 16),
+      name: String(col(r, "입금자")),
+      amount: amt,
+      bank: String(col(r, "은행")),
+      acct: acct,
+      status: st,
+      check: String(col(r, "잔액확인")).indexOf("불연속") === 0 ? "불연속" : String(col(r, "잔액확인")),
+      memo: String(col(r, "메모"))
+    });
+    out.sum += amt;
+  }
+  // 최근 것이 위로 — 같은 분이면 늦게 받은 것이 위
+  hits.sort(function (a, b) {
+    return a.txAt < b.txAt ? 1 : a.txAt > b.txAt ? -1 : (a.rcv < b.rcv ? 1 : a.rcv > b.rcv ? -1 : 0);
+  });
+  out.total = hits.length;
+  out.rows = (limit > 0 ? hits.slice(0, limit) : hits).map(function (h) { delete h.rcv; return h; });
+  return out;
+}
+
+/**
+ * 시트 칸 → "yyyy-MM-dd HH:mm[:ss]" 글자.
+ *
+ * ★ 2026-09-29 ★ 글자로 적은 「2026-09-28 23:55」 를 시트가 날짜로 바꿔 두었다.
+ *   getValues 는 그걸 Date 로 돌려주고, String(Date) 는 "Mon Sep 28 …" 이 된다.
+ *   그래서 오늘 입금 조회가 0건이었고, 잔액 연속성도 직전 줄을 못 찾고 있었다.
+ */
+function _dp_ts_(v) {
+  if (v && typeof v.getTime === "function" && !isNaN(v.getTime())) {
+    var withSec = v.getSeconds() !== 0;
+    return Utilities.formatDate(v, "Asia/Seoul", withSec ? "yyyy-MM-dd HH:mm:ss" : "yyyy-MM-dd HH:mm");
+  }
+  return String(v == null ? "" : v);
 }
