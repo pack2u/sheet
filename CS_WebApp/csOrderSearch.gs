@@ -2684,6 +2684,56 @@ var _CS_RETURN_STATUS_OPTS_ = [
   "접수", "반품송장", "입고검수", "이카운트OK"
 ];
 
+/**
+ * 대장 A열에 고르개를 단다 — 달 탭마다 «한 번만».  (2026-09-28)
+ *
+ * > "아래 상태값에 따라 상단 아이콘도 바뀌어야 되는데 따로놀아"
+ *
+ * ★ 왜 다나 ★
+ *   A열은 사람이 자유롭게 적는 칸이었다. 9월 한 달에만 열네 가지 말이 쓰였다 —
+ *     완료 100 · 자동수거 46 · 접수 32 · 환불완료 17 · 입고 15 ·
+ *     진행중 12 · 사고 4 · 자동 2 · 확인필요문정 1 …
+ *   그중 열아홉 건은 단계 규칙이 모르는 말이라 카드가 「접수」에 머물렀다.
+ *   _cs_stageFromTimeline_ 이 지난 것은 건져 주지만, 앞으로 또 쌓이면 안 된다.
+ *
+ * ★ 지난 값은 안 건드린다 ★
+ *   고르개는 «앞으로 적는 것»만 막는다. 이미 적힌 「진행중」은 그대로 남고
+ *   화면도 처리 경과를 보고 맞게 그린다. 400여 건을 손볼 일이 없다.
+ *
+ * ★ 한 번만 단다 ★
+ *   목록을 띄울 때마다 걸면 느려진다. 스크립트 속성에 탭 이름을 적어 두고
+ *   그 탭은 다시 안 건다. 실패해도 목록은 그대로 뜬다 — 곁다리다.
+ */
+var _CS_RET_DV_PROP_ = "CS_RET_DV_";
+
+function _cs_ensureReturnStatusDropdown_(tab, tabName) {
+  if (!tab || !tabName) return false;
+  //  달 탭만 — 「202609」 꼴. 보드·첨부 같은 탭에 걸면 엉뚱한 칸을 막는다
+  if (!/^\d{6}$/.test(String(tabName))) return false;
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var key = _CS_RET_DV_PROP_ + tabName;
+    if (props.getProperty(key)) return false;
+
+    var last = tab.getMaxRows();
+    if (last < 2) { props.setProperty(key, "1"); return false; }
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(_CS_RETURN_STATUS_OPTS_, true)
+      .setAllowInvalid(false)
+      .setHelpText(
+        "접수 → 반품송장 → 입고검수 → 이카운트OK\n" +
+          "이 넷만 씁니다. 그 밖의 말은 카드 위쪽 단계가 「접수」로 보입니다.\n" +
+          "덧붙일 말은 비고(N열)에 적어 주세요.")
+      .build();
+    tab.getRange(2, 1, last - 1, 1).setDataValidation(rule);
+    props.setProperty(key, "1");
+    return true;
+  } catch (e) {
+    //  권한이 없거나 탭이 잠겨 있어도 목록은 떠야 한다
+    return false;
+  }
+}
+
 /** 주문검색 뱃지가 훑는 기간. 뱃지는 "이 주문 반품된 적 있나"를 답해야 하므로 완료건까지 본다. */
 var _CS_RETURN_BADGE_DAYS_ = 90;
 
@@ -2712,14 +2762,76 @@ var _CS_RETURN_BADGE_DAYS_ = 90;
  *     한쪽만 고치면 같은 건이 두 화면에서 다른 단계로 보인다.
  *     실제로 그 일이 있었다 — 포털이 「반품송장」을 몰라 계속 접수였다.
  */
-function _cs_returnStage_(status, active) {
-  if (!active) return 3;
+/** 낱말 하나를 단계로 — 0 접수 · 1 회수 · 2 입고 · 3 완료 */
+function _cs_stageWord_(status) {
   var s = String(status || "").replace(/[ 	]/g, "");
   if (!s) return 0;
   if (/완료|환불/.test(s)) return 3;
   if (/입고|검수/.test(s)) return 2;
   if (/반품송장|회수|수거/.test(s)) return 1;
   return 0;
+}
+
+/**
+ * 「처리 경과」가 말하는 단계.  (2026-09-28)
+ *
+ * > "아래 상태값에 따라 상단 아이콘도 바뀌어야 되는데 따로놀아"
+ *
+ * ★ 왜 필요한가 ★
+ *   대장 A열은 사람이 자유롭게 적는 칸이다. 9월 한 달에만 열네 가지 말이
+ *   쓰였고 그중 「진행중·자동·사고·확인필요문정」 19건은 규칙이 모르는 말이라
+ *   전부 0(접수)으로 떨어졌다. 타임라인에는 「상태→입고검수」가 또렷이
+ *   적혀 있는데도 카드 위쪽은 접수에 머물렀다.
+ *
+ * ★ 「상태→」 줄과 반품송장 줄만 본다 ★
+ *   상담 메모에 「입고 언제 되나요」 같은 말이 흔하다. 본문을 읽으면 그런
+ *   말에 걸려 단계가 멋대로 올라간다. 사람이 «단계로 적은 것»만 본다.
+ */
+function _cs_stageFromTimeline_(timeline) {
+  var best = -1;
+  for (var i = 0; i < (timeline || []).length; i++) {
+    var e = timeline[i];
+    if (!e) continue;
+    var s;
+    if (e.kind === "status") s = _cs_stageWord_(e.text);
+    else if (e.kind === "meta" && /^(반품송장|회수송장)/.test(String(e.text || ""))) s = 1;
+    else continue;
+    if (s > best) best = s;
+  }
+  return best;
+}
+
+/**
+ * 단계 — A열 낱말과 처리 경과 중 «더 앞선» 것을 쓴다.
+ *
+ * ★ 뒤로 끌어내리지 않는다 ★ 단계는 앞으로만 간다. A열에 뜻 없는 말이
+ *   적혀도 경과가 말해 주고, 경과가 비어도 A열이 말해 준다.
+ */
+function _cs_returnStage_(status, active, timeline) {
+  if (!active) return 3;
+  var 글자 = _cs_stageWord_(status);
+  var 경과 = _cs_stageFromTimeline_(timeline);
+  return 경과 > 글자 ? 경과 : 글자;
+}
+
+/**
+ * 정렬에 쓰는 «마지막 시각» 셋.  (2026-09-28)
+ *
+ * > "최신 메모순. 최신 병경순등 다양한 정렬방식을 넣으면 좋겠어"
+ *
+ * 날짜가 붙은 줄만 본다 — meta·note 는 시각이 없어 가짜 열쇠를 달고 있다.
+ * 그것까지 세면 「오래 멈춘 순」이 엉뚱한 건을 맨 위로 올린다.
+ */
+function _cs_timelineLastKey_(timeline, kinds) {
+  var best = "";
+  for (var i = 0; i < (timeline || []).length; i++) {
+    var e = timeline[i];
+    if (!e || !e.date) continue;
+    if (kinds && kinds.indexOf(e.kind) < 0) continue;
+    var k = String(e.sortKey || "");
+    if (k > best) best = k;
+  }
+  return best;
 }
 
 /*
@@ -3440,6 +3552,8 @@ function _cs_loadReturnLedgerTabRows_(ss, tabName, refresh) {
 
   var tab = ss.getSheetByName(tabName);
   if (!tab) return [];
+  //  A열 고르개 — 달 탭마다 한 번만. 실패해도 목록은 그대로 뜬다
+  try { _cs_ensureReturnStatusDropdown_(tab, tabName); } catch (eDv) {}
   //  자르지 않고 읽는다 — 30일치도 90일치도 이 하나로 만든다
   var rows = _cs_readReturnLedgerTabCases_(tab, tabName, "", false);
   _cs_retCachePut_(cache, ck, rows, _CS_RETURN_CACHE_TTL_);
@@ -3538,8 +3652,17 @@ function csGetReturnLedgerBadgeIndex(opt) {
         active: r.active,
         tab: r.tab,
         row: r.row,
-        stage: _cs_returnStage_(r.status, r.active),
+        stage: _cs_returnStage_(r.status, r.active, r.timeline),
         photos: _cs_returnPhotoCount_(r.timeline),
+        /*  ★ 정렬용 시각 — 타임라인을 통째로 보내지 않고 열쇠만 싣는다 ★
+            (2026-09-28)  카드 수백 장에 경과를 다 실으면 화면이 무거워진다.
+            움직임 : 사람이 무엇이든 한 것 (상태·상담·사진)
+            메모   : 상담·메모만
+            변경   : 「상태→」 줄만  */
+        //  접수도 움직임이다 — 접수 뒤로 아무도 안 건드린 건은 접수일이 마지막 움직임이다
+        moveKey: _cs_timelineLastKey_(r.timeline, ["status", "consult", "photo", "access"]),
+        memoKey: _cs_timelineLastKey_(r.timeline, ["consult"]),
+        stageKey: _cs_timelineLastKey_(r.timeline, ["status"]),
         date: r.date,
         item: r.item,
         qty: r.qty,

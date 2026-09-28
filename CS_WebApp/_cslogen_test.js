@@ -11,9 +11,10 @@
  *   문서 예시는 실데이터와 다를 수 있다 — 롯데에서 겪었다
  *   (표에 없는 코드가 왔고, 시각이 "------" 로 오는 이벤트가 있었다).
  *
- *   ⚠ 키를 받으면 **개발계를 실제로 불러 응답을 받아 아래 FIXTURE 를 교체하고**
- *     _cslotte_test.js 처럼 실호출 방식으로 바꿀 것. 그 전까지 이 테스트는
- *     "문서대로면 맞게 판다" 까지만 보증한다.
+ *   ⚠ 2026-09-28 로젠 회신: **개발계는 화물추적·반품 테스트를 지원하지 않는다.**
+ *     그래서 «개발계 실호출»이라는 길이 없다. **운영** 키를 받은 뒤 운영에서 조회해
+ *     FIXTURE 를 교체해야 한다. 화물추적은 읽기 전용이라 운영 조회에 부작용이 없다.
+ *     그 전까지 이 테스트는 "문서대로면 맞게 판다" 까지만 보증한다.
  *
  * 실행: node _cslogen_test.js
  * (.claspignore 의 *_test.js 규칙으로 GAS 에는 올라가지 않는다)
@@ -27,9 +28,10 @@ let FETCH_LOG = [];     // 무엇을 어떻게 불렀는지
 let CACHE = {};         // { key: {value, ttl} }
 let PROPS = {};
 let WARNS = [];
+let SLEEPS = [];        // Utilities.sleep 이 몇 ms 로 불렸나
 
 function resetEnv() {
-  FETCH_QUEUE = []; FETCH_LOG = []; CACHE = {}; PROPS = {}; WARNS = [];
+  FETCH_QUEUE = []; FETCH_LOG = []; CACHE = {}; PROPS = {}; WARNS = []; SLEEPS = [];
 }
 
 function reply(obj, code) {
@@ -69,7 +71,8 @@ const sandbox = {
   },
 
   Utilities: {
-    formatDate: () => "20260915"
+    formatDate: () => "20260915",
+    sleep: ms => { SLEEPS.push(ms); }   // 실제로 쉬지는 않는다 — 부른 것만 센다
   },
 
   // _secrets.gs 대신 — 실제 키는 쓰지 않는다
@@ -178,6 +181,25 @@ t("배송완료 문자열을 완료로 본다", () => {
   ok(!sandbox._logen_isDone_("배송중"), "배송중은 아직");
   ok(!sandbox._logen_isDone_("집하완료"), "집하완료는 아직");
   ok(!sandbox._logen_isDone_(""), "빈값은 아직");
+});
+
+t("담당자가 준 7단계 중 «배송완료»만 끝으로 본다", () => {
+  // 2026-09-28 정보전략팀 회신: 집하완료→집하입고→터미널입고→터미널출고
+  //                              →배송입고→배송출고→배송완료
+  const flow = sandbox._LOGEN_STATUS_FLOW_;
+  eq(flow.length, 7, "7단계");
+  eq(flow[0], "집하완료", "첫 단계");
+  eq(flow[6], "배송완료", "마지막 단계");
+  flow.forEach((s, i) => {
+    eq(sandbox._logen_isDone_(s), i === 6, s + " 는 " + (i === 6 ? "끝" : "아직"));
+  });
+});
+
+t("아는 7단계는 경고를 남기지 않는다 (새 값만 걸러내려고)", () => {
+  sandbox._LOGEN_STATUS_FLOW_.forEach(s => sandbox._logen_noteStatus_(s));
+  eq(WARNS.length, 0, "아는 값은 조용하다");
+  sandbox._logen_noteStatus_("미배달(부재)");
+  eq(WARNS.length, 1, "모르는 값만 경고");
 });
 
 // ── 5. 단건 조회 ─────────────────────────────────────────
@@ -303,6 +325,85 @@ t("응답에 안 실려 온 송장도 결과를 남긴다 (조용히 빠지지 �
   ok(/응답에 없습니다/.test(r["38010109999"].error), "사유 안내");
 });
 
+// ── 8-1. 로젠이 요청한 호출 예절 (2026-09-28) ─────────────
+t("10건을 넘으면 끊어서 부른다", () => {
+  const invs = [];
+  for (let i = 0; i < 23; i++) invs.push("3801010" + String(1000 + i));
+
+  // 묶음마다 그 묶음의 송장을 그대로 돌려준다
+  for (let c = 0; c < 3; c++) {
+    FETCH_QUEUE.push({
+      code: 200,
+      get text() { return ""; }   // 아래 stub 에서 갈아끼운다
+    });
+  }
+  FETCH_QUEUE = [];
+  const chunks = [invs.slice(0, 10), invs.slice(10, 20), invs.slice(20)];
+  chunks.forEach(ch => {
+    FETCH_QUEUE.push(reply({
+      sttsCd: "SUCCESS",
+      data: ch.map(sn => ({
+        slipNo: sn, resultCd: "TRUE",
+        data1: [{ scanDt: "20260928", scanTm: "090000", statNm: "배송출고" }]
+      }))
+    }));
+  });
+
+  const r = sandbox.csLogenTrackMany(invs);
+  eq(FETCH_LOG.length, 3, "세 번에 나눠 부른다");
+  eq(FETCH_LOG[0].body.data.length, 10, "첫 묶음 10건");
+  eq(FETCH_LOG[1].body.data.length, 10, "둘째 묶음 10건");
+  eq(FETCH_LOG[2].body.data.length, 3, "셋째 묶음 3건");
+  eq(Object.keys(r).length, 23, "23건 모두 결과가 있다");
+});
+
+t("호출 사이에 쉰다 — 첫 호출 앞에서는 안 쉰다", () => {
+  const invs = [];
+  for (let i = 0; i < 12; i++) invs.push("3801010" + String(2000 + i));
+  [invs.slice(0, 10), invs.slice(10)].forEach(ch => {
+    FETCH_QUEUE.push(reply({
+      sttsCd: "SUCCESS",
+      data: ch.map(sn => ({
+        slipNo: sn, resultCd: "TRUE",
+        data1: [{ scanDt: "20260928", scanTm: "090000", statNm: "배송출고" }]
+      }))
+    }));
+  });
+
+  sandbox.csLogenTrackMany(invs);
+  eq(SLEEPS.length, 1, "두 번 부르면 한 번 쉰다");
+  eq(SLEEPS[0], 2000, "수 초 간격");
+});
+
+t("한 묶음이 실패해도 나머지는 계속 본다", () => {
+  const invs = [];
+  for (let i = 0; i < 12; i++) invs.push("3801010" + String(3000 + i));
+  FETCH_QUEUE.push({ code: 500, text: '{"sttsCd":"FAIL","sttsMsg":"일시 오류"}' });
+  FETCH_QUEUE.push(reply({
+    sttsCd: "SUCCESS",
+    data: invs.slice(10).map(sn => ({
+      slipNo: sn, resultCd: "TRUE",
+      data1: [{ scanDt: "20260928", scanTm: "090000", statNm: "배송완료" }]
+    }))
+  }));
+
+  const r = sandbox.csLogenTrackMany(invs);
+  eq(r[invs[0]].ok, false, "첫 묶음은 실패");
+  eq(r[invs[11]].ok, true, "둘째 묶음은 성공");
+  eq(FETCH_LOG.length, 2, "두 번 다 부른다");
+});
+
+t("일일 한도에 닿으면 남은 묶음을 부르지 않는다", () => {
+  const invs = [];
+  for (let i = 0; i < 30; i++) invs.push("3801010" + String(4000 + i));
+  PROPS["LOGEN_QUOTA_20260915"] = String(sandbox._LOGEN_QUOTA_SOFT_CAP_);
+
+  const r = sandbox.csLogenTrackMany(invs);
+  eq(FETCH_LOG.length, 0, "한 번도 부르지 않는다");
+  eq(Object.keys(r).length, 30, "그래도 30건 모두 사유가 있다");
+  ok(/한도/.test(r[invs[29]].error), "마지막 건도 한도 사유");
+});
+
 t("중복 송장은 한 번만 묻는다", () => {
   FETCH_QUEUE = [reply({
     sttsCd: "SUCCESS",
@@ -404,5 +505,5 @@ if (fail) {
   process.exit(1);
 } else {
   console.log("  ⚠ 이 통과는 «문서 예시대로면 맞다» 까지만 뜻한다.");
-  console.log("    키를 받으면 개발계 실응답으로 FIXTURE 를 갈아 끼울 것.\n");
+  console.log("    운영 키를 받으면 «운영» 실응답으로 FIXTURE 를 갈아 끼울 것.\n");
 }

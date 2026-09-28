@@ -72,5 +72,46 @@ ctx.sortReturnRows(목록);
 check("★ 넘겨 준 배열은 그대로", ids(목록), ["A", "B", "C", "D"]);
 
 console.log("");
+console.log("");
+console.log("[차례] ★ 새로 더한 넷  (2026-09-28)");
+{
+  /*  > "최신 메모순. 최신 병경순등 다양한 정렬방식을 넣으면 좋겠어"
+
+      movesKey 는 서버가 주는 yyyymmddHHMM 12자리다. 카드 sortKey 는
+      yyyymmdd_ 꼴이라 모양이 다르다 — 섞어 견주면 조용히 어긋난다. */
+  const 칸 = (id, ymd, seq, move, memo, chg, inv, photos) => ({
+    id: id, sortKey: ymd + "_" + seq,
+    moveKey: move, memoKey: memo, stageKey: chg,
+    returnInvoice: inv, photos: photos,
+  });
+  const 넷 = [
+    칸("A", "20260911", "099998", "202609200900", "202609200900", "",             "492-1", 2),
+    칸("B", "20260914", "099999", "202609120800", "",             "202609120800", "",      0),
+    칸("C", "20260909", "099997", "",             "202609100000", "",             "111-2", 0),
+    칸("D", "20260914", "099995", "202609181000", "202609181000", "202609181000", "",      3),
+  ];
+  const 봄 = (mode) => { ctx.RETURN_SORT = mode; return ids(ctx.sortReturnRows(넷)); };
+
+  //  C 는 한 번도 안 움직였다 → 접수일(20260909)이 마지막 움직임이다
+  check("오래 멈춘 순 — 가라앉은 것부터", 봄("stale"), ["C", "B", "D", "A"]);
+  check("최신 메모순 — 메모 없는 건 아래로", 봄("memo"), ["A", "D", "C", "B"]);
+  check("최신 변경순 — 단계가 방금 바뀐 것부터", 봄("chg"), ["D", "B", "A", "C"]);
+  //  B 는 송장·사진 둘 다 없음(2) · C 는 사진 없음 · D 는 송장 없음(각 1) · A 는 다 있음(0)
+  check("빠진 것 먼저 — 많이 빠진 것이 위, 같으면 묵은 것이 위", 봄("gap"), ["B", "C", "D", "A"]);
+
+  ctx.RETURN_SORT = "stale";
+  ctx.sortReturnRows(넷);
+  check("★ 원본을 안 건드린다", ids(넷), ["A", "B", "C", "D"]);
+}
+
+console.log("");
+console.log("[고르개] 화면에 여덟 가지가 선다");
+{
+  const 고르개 = html.slice(html.indexOf('id="retSort"'), html.indexOf("</select>", html.indexOf('id="retSort"')));
+  ["new", "old", "stale", "memo", "chg", "gap", "vendor", "stage"].forEach(function (v) {
+    check("option " + v, 고르개.indexOf('value="' + v + '"') >= 0, true);
+  });
+}
+
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

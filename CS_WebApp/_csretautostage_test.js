@@ -31,7 +31,8 @@ function 꺼내(from, to) {
 
 const box = { String, Number, RegExp, console };
 vm.createContext(box);
-vm.runInContext(꺼내("function _cs_returnStage_", "/** CS앱 — 진행 중 반품 목록"), box);
+/*  2026-09-28 — 단계 판정이 셋으로 갈렸다 (낱말·처리경과·합치기). 셋 다 넣는다. */
+vm.runInContext(꺼내("/** 낱말 하나를 단계로", "/** CS앱 — 진행 중 반품 목록"), box);
 vm.runInContext(꺼내("function _cs_isReturnDoneMark_", "function _cs_parseReturnInvFromNotice_"), box);
 vm.runInContext("var _CS_STATUS_PICKUP_ = " +
   JSON.stringify(src.match(/var _CS_STATUS_PICKUP_ = "([^"]*)"/)[1]) + ";", box);

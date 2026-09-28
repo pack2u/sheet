@@ -30,22 +30,36 @@
  *    로젠은 화물상태에 **코드가 없다.** statNm 한글 문자열이 전부다.
  *    롯데에서 "표보다 응답의 이름을 우선한다"로 정착시킨 방식이
  *    (csLotte.gs 머리말) 로젠에서는 선택이 아니라 **유일한 방법**이다.
- *    그래서 여기서는 표 자체를 두지 않고 문자열을 그대로 흘린다.
- *    「배달 끝났나」만 단어로 판정한다(_LOGEN_DONE_WORDS_).
+ *    2026-09-28 담당자가 7단계 목록을 회신해 줬다(_LOGEN_STATUS_FLOW_).
+ *    그래도 문자열을 그대로 흘린다 — 목록에 없는 값이 와도 죽지 않게.
  *
- *  ★ 쿼터 ★
- *    로젠은 **공개된 일일 상한이 없다.** 문서 어디에도 없어서 담당자에게
- *    물어봤다(문의메일 2번). 모르는 채로 마음 놓고 부르면 안 되므로
- *    답이 올 때까지 롯데와 같은 방식으로 세고 캐시한다.
+ *  ★ 호출 방식 — 로젠이 직접 요청한 것이다 ★  (2026-09-28 정보전략팀 회신)
+ *      "1회 호출 시 최대 10건 내외"
+ *      "비동기가 아닌 순차적인 동기식(Synchronous) 호출"
+ *      "각 호출 간 수 초 정도의 간격(Delay)"
+ *    일일 상한은 안 알려줬다. 대신 이 세 가지를 지켜 달라고 했다.
+ *    **지키지 않으면 차단당할 수 있다.** 아래 _LOGEN_BATCH_* 가 그 장치다.
  * ══════════════════════════════════════════════════════════════
  */
 
 // ── 환경 ────────────────────────────────────────────────
 /**
  * 운영 사용 여부.
- * 키를 받으면 개발계(topenapi)에서 먼저 확인하고 나서 true 로 올린다.
- * 개발계에 우리 거래처 연계 등록이 없을 수 있다 — 롯데에서 그랬다.
- * (문의메일 4번에서 미리 물어봤다)
+ *
+ * ★ 개발계에서는 검증할 수 없다 ★  (2026-09-28 로젠 회신)
+ *   "개발계 환경에서의 **화물추적 및 반품 API 테스트는 지원이 어려움**을
+ *    양해 부탁드립니다."
+ *   롯데와 똑같다(csLotte.gs 머리말 — 개발계에 연계 등록이 없어 못 썼다).
+ *   그래서 topenapi 로는 우리가 쓸 두 기능을 한 번도 못 돌려 본 채
+ *   **곧바로 운영으로 가야 한다.**
+ *
+ * ★ 운영에서 시험할 때 ★
+ *   화물추적 = 읽기 전용이라 운영에서 조회해도 부작용이 없다. 먼저 이것으로 확인한다.
+ *   **반품 접수(registReturnRequest)는 다르다 — 운영에서 부르면 진짜로 접수된다.**
+ *   csLogenReturn.gs 를 만들 때 이 점을 맨 앞에 못 박을 것.
+ *
+ * 운영 키를 받기 전까지는 false 로 둔다(그 사이 실수로 운영을 부르지 않게).
+ * 키가 들어오면 true 로 올린다.
  */
 var _LOGEN_USE_PROD_ = false;
 
@@ -58,8 +72,14 @@ var _LOGEN_PATH_ = "/lrm02b-edi/edi/";
 // ── 쿼터·캐시 ────────────────────────────────────────────
 /**
  * 일일 소프트 캡.
- * ★ 근거가 약한 값이다 ★ 로젠이 상한을 안 알려줬다. 롯데(10,000)를 답습해
- * 보수적으로 잡아 둔 것뿐이다. **회신이 오면 반드시 고칠 것.**
+ *
+ * ★ 로젠은 일일 한도가 없다 ★  (2026-09-28 회신)
+ *   "현재 API 호출에 대한 별도의 일일 한도는 설정되어 있지 않습니다."
+ *
+ *   그래도 이 숫자를 지운다는 뜻은 아니다. 목적이 바뀐 것뿐이다 —
+ *   전에는 「로젠에 차단당하지 않으려고」였고, 지금은 **「우리 실수를 막으려고」** 다.
+ *   무한루프나 잘못된 배치가 밤새 도는 사고를 여기서 끊는다.
+ *   로젠이 한도를 안 걸어 둔 만큼, 예절(10건·순차·지연)은 우리가 더 지켜야 한다.
  */
 var _LOGEN_QUOTA_SOFT_CAP_ = 9000;
 
@@ -76,12 +96,45 @@ var _LOGEN_CACHE_SEC_ = 1800;      // 30분
 var _LOGEN_CACHE_DONE_SEC_ = 21600; // 6시간 (CacheService 최대)
 
 /**
+ * 화물상태(statNm) 흐름 — **담당자가 알려준 7단계** (2026-09-28 정보전략팀 회신)
+ *
+ *   집하완료 → 집하입고 → 터미널입고 → 터미널출고 → 배송입고 → 배송출고 → 배송완료
+ *
+ * ★ 이 목록을 «판정 기준»으로 쓰지 않는다 ★
+ *   롯데에서 표를 믿었다가 데었다 — 표에 없는 값이 오고, 같은 값이 상황별로
+ *   다른 이름을 썼다(csLotte.gs 머리말). 로젠도 "통보 없이 늘 수 있다"고 봐야 한다.
+ *   여기서는 (1) 진행 단계를 몇 번째인지 셈하고 (2) «처음 보는 값»을 가려내는
+ *   데만 쓴다. 화면에는 언제나 응답이 준 문자열을 그대로 보여준다.
+ */
+var _LOGEN_STATUS_FLOW_ = [
+  "집하완료", "집하입고", "터미널입고", "터미널출고",
+  "배송입고", "배송출고", "배송완료"
+];
+
+/**
  * 배달 완료로 볼 단어.
- * ★ 관측되는 대로 늘린다 ★ 로젠이 쓰는 문자열 전체 목록을 못 받았다
- * (문의메일 5번). 목록이 오기 전까지는 여기 있는 단어만 "끝"으로 본다.
- * 모르는 문자열이 와도 죽이지 않는다 — 그대로 보여주고 로그만 남긴다.
+ * 목록의 마지막이 «배송완료»다. 롯데 쪽 표기(배달완료)도 같이 본다 —
+ * 두 택배사 결과가 한 화면에 섞이므로 판정 함수를 갈라 두고 싶지 않다.
+ *
+ * ★ 「집하완료」가 걸리지 않게 조심 ★ 둘 다 "완료"로 끝난다.
+ *   그래서 "완료"가 아니라 **낱말 전체**로 본다.
  */
 var _LOGEN_DONE_WORDS_ = ["배송완료", "배달완료"];
+
+// ── 호출 예절 — 로젠이 직접 요청한 것 (2026-09-28) ───────
+/** "1회 호출 시 최대 10건 내외로 구성해 주세요" */
+var _LOGEN_BATCH_SIZE_ = 10;
+
+/** "각 호출 간에는 수 초 정도의 시간 간격(Delay)" */
+var _LOGEN_BATCH_DELAY_MS_ = 2000;
+
+/**
+ * 한 번 실행에서 쓸 시간 예산.
+ * ★ GAS 는 6분에서 잘린다 ★ 10건씩 끊어 2초씩 쉬면 100건에 40초쯤 걸린다.
+ *   잘리면 앞부분 결과까지 통째로 날아가므로, 예산을 넘기면 **남은 건을
+ *   「다음에」로 표시하고 정상 종료**한다. 조용히 사라지는 것보다 낫다.
+ */
+var _LOGEN_TIME_BUDGET_MS_ = 150000; // 2분 30초
 
 // ── 설정 읽기 ────────────────────────────────────────────
 function _logen_host_() {
@@ -101,11 +154,9 @@ function _logen_key_() {
 
 /**
  * 연동업체코드.
- * ★ 우리는 연동업체가 아니라 화주사가 직접 개발한다 ★
- *   API Docs 에 "연동업체코드가 아닌 경우 거래처코드 입력" 으로 적혀 있어
- *   거래처코드(30556066)를 그대로 쓰는 것으로 잡아 뒀다.
- *   맞는지 담당자에게 확인 중이다(문의메일 3번).
- *   별도 연동업체코드가 발급되면 _secrets.gs 의 LOGEN_USER_ID 만 바꾸면 된다.
+ * ★ 확정 ★ 2026-09-28 로젠 회신 —
+ *   "언급하신 userId, custCd 에 **거래처코드(30556066)를 입력하시는 것이 맞습니다.**"
+ *   즉 둘 다 같은 값이다. 화주사가 직접 개발하는 경우의 정상 사용법이다.
  */
 function _logen_userId_() {
   return String(typeof LOGEN_USER_ID === "string" && LOGEN_USER_ID
@@ -314,6 +365,11 @@ function _logen_isDone_(statNm) {
 function _logen_noteStatus_(statNm) {
   var s = String(statNm == null ? "" : statNm).trim();
   if (!s) return;
+  // 담당자가 알려준 7단계는 «아는 값»이다. 이것까지 경고하면 로그가 시끄러워
+  // 정작 새 값이 나왔을 때 묻힌다.
+  for (var f = 0; f < _LOGEN_STATUS_FLOW_.length; f++) {
+    if (_LOGEN_STATUS_FLOW_[f] === s) return;
+  }
   try {
     var props = PropertiesService.getScriptProperties();
     var key = "LOGEN_STATNM_SEEN";
@@ -503,8 +559,12 @@ function _logen_lastTel_(inv) {
  * 여러 건 조회.
  *
  * ★ 롯데와 다르다 ★ 롯데 화물추적은 단건뿐이라 루프를 돌 수밖에 없었지만,
- *   **로젠은 data[] 에 여러 송장을 한 번에 넣는다.** 한 번 부르고 나눠 담는다.
- *   건별로 돌면 GAS 6분 실행 제한에 걸린다.
+ *   **로젠은 data[] 에 여러 송장을 한 번에 넣는다.**
+ *
+ * ★ 그렇다고 다 넣지는 않는다 ★  (2026-09-28 담당자 회신)
+ *   로젠이 "1회 최대 10건 내외 · 동기식 순차 · 호출 간 수 초 간격"을 요청했다.
+ *   그래서 10건씩 끊어 2초씩 쉬며 **차례로** 부른다.
+ *   UrlFetchApp 은 원래 동기라 「순차」는 저절로 지켜진다.
  *
  * 전화번호(최종조회)는 여기서 부르지 않는다 — 목록에서는 필요 없고,
  * 건당 한 번씩 더 부르면 배치로 아낀 걸 도로 까먹는다.
@@ -545,49 +605,211 @@ function csLogenTrackMany(invoices) {
   }
   if (!ask.length) return out;
 
-  var body = { userId: _logen_userId_(), data: [] };
-  for (var a = 0; a < ask.length; a++) body.data.push({ slipNo: ask[a] });
+  // ── 10건씩 끊어 순차로 부른다 (로젠 요청 사항) ──
+  var started = new Date().getTime();
 
-  var r = _logen_call_("inquiryCargoTrackingMulti", body);
-  if (!r.ok) {
-    for (var f = 0; f < ask.length; f++) {
-      out[ask[f]] = { ok: false, carrier: "로젠", invoice: ask[f], error: r.error };
+  for (var s = 0; s < ask.length; s += _LOGEN_BATCH_SIZE_) {
+    var chunk = ask.slice(s, s + _LOGEN_BATCH_SIZE_);
+
+    // 시간 예산을 넘었으면 남은 건을 표시하고 정상 종료한다.
+    // 6분에 잘리면 앞서 받은 것까지 통째로 날아간다.
+    if (s > 0 && (new Date().getTime() - started) > _LOGEN_TIME_BUDGET_MS_) {
+      for (var z = s; z < ask.length; z++) {
+        out[ask[z]] = { ok: false, carrier: "로젠", invoice: ask[z],
+                        error: "한 번에 다 조회하지 못했습니다 — 나눠서 다시 눌러 주세요." };
+      }
+      break;
     }
-    return out;
+
+    // 호출 사이에만 쉰다. 첫 호출 앞에서 쉬면 화면이 그만큼 늦어진다.
+    if (s > 0) {
+      try { Utilities.sleep(_LOGEN_BATCH_DELAY_MS_); } catch (e) { /* 무시 */ }
+    }
+
+    var body = { userId: _logen_userId_(), data: [] };
+    for (var a = 0; a < chunk.length; a++) body.data.push({ slipNo: chunk[a] });
+
+    var r = _logen_call_("inquiryCargoTrackingMulti", body);
+
+    if (!r.ok) {
+      for (var f = 0; f < chunk.length; f++) {
+        out[chunk[f]] = { ok: false, carrier: "로젠", invoice: chunk[f], error: r.error };
+      }
+      // 한도에 닿았으면 더 부를 이유가 없다 — 남은 것도 같은 사유로 세운다
+      if (/한도/.test(String(r.error))) {
+        for (var q = s + _LOGEN_BATCH_SIZE_; q < ask.length; q++) {
+          out[ask[q]] = { ok: false, carrier: "로젠", invoice: ask[q], error: r.error };
+        }
+        break;
+      }
+      continue; // 한 묶음이 실패해도 나머지는 계속 본다
+    }
+
+    var rows = _logen_arr_(r.json.data);
+    var got = {};
+    for (var j = 0; j < rows.length; j++) {
+      var row = rows[j];
+      var sn = _logen_digits_(row.slipNo);
+      if (!sn) continue;
+      got[sn] = true;
+
+      if (!_logen_ok_(row.resultCd)) {
+        out[sn] = { ok: false, carrier: "로젠", invoice: sn,
+                    error: _logen_blank_(row.resultMsg) ? "조회 실패" : String(row.resultMsg) };
+        continue;
+      }
+      var o2 = _logen_buildTrack_(sn, row);
+      out[sn] = o2;
+      try {
+        cache.put("logenTrk|" + (_LOGEN_USE_PROD_ ? "P" : "D") + "|" + sn,
+          JSON.stringify(o2), o2.delivered ? _LOGEN_CACHE_DONE_SEC_ : _LOGEN_CACHE_SEC_);
+      } catch (e) { /* 무시 */ }
+    }
+
+    // 이 묶음에서 응답에 안 실려 온 송장 — 조용히 빠지면 화면에서 원인을 못 읽는다
+    for (var m = 0; m < chunk.length; m++) {
+      if (!got[chunk[m]]) {
+        out[chunk[m]] = { ok: false, carrier: "로젠", invoice: chunk[m],
+                          error: "응답에 없습니다 (" + String(r.json.sttsMsg || "") + ")" };
+      }
+    }
   }
 
-  var rows = _logen_arr_(r.json.data);
-  var got = {};
-  for (var j = 0; j < rows.length; j++) {
-    var row = rows[j];
-    var sn = _logen_digits_(row.slipNo);
-    if (!sn) continue;
-    got[sn] = true;
-
-    if (!_logen_ok_(row.resultCd)) {
-      out[sn] = { ok: false, carrier: "로젠", invoice: sn,
-                  error: _logen_blank_(row.resultMsg) ? "조회 실패" : String(row.resultMsg) };
-      continue;
-    }
-    var o2 = _logen_buildTrack_(sn, row);
-    out[sn] = o2;
-    try {
-      cache.put("logenTrk|" + (_LOGEN_USE_PROD_ ? "P" : "D") + "|" + sn,
-        JSON.stringify(o2), o2.delivered ? _LOGEN_CACHE_DONE_SEC_ : _LOGEN_CACHE_SEC_);
-    } catch (e) { /* 무시 */ }
-  }
-
-  // 응답에 아예 안 실려 온 송장 — 조용히 빠지면 화면에서 원인을 못 읽는다
-  for (var m = 0; m < ask.length; m++) {
-    if (!got[ask[m]]) {
-      out[ask[m]] = { ok: false, carrier: "로젠", invoice: ask[m],
-                      error: "응답에 없습니다 (" + String(r.json.sttsMsg || "") + ")" };
-    }
-  }
   return out;
 }
 
 // ── 진단 ────────────────────────────────────────────────
+/**
+ * ★ 이 스크립트가 «어느 IP·도메인으로» 밖에 나가는지 알아본다 ★
+ *
+ * 왜 필요한가 — 2026-09-28 로젠 회신:
+ *   "당사는 IP 주소 외에도 **도메인 기반으로 등록이 가능**합니다.
+ *    사용하시는 도메인 정보를 전달해 주실 수 있으신지요?"
+ *
+ *   Apps Script 는 고정 IP 가 없지만, 도메인으로 등록할 수 있다면 길이 열린다.
+ *   다만 «어떤 도메인을 줘야 하는지»는 추측하면 안 된다.
+ *   로젠이 들어오는 IP 를 역방향 조회(PTR)해서 도메인과 맞춰 보는 방식이라면,
+ *   우리가 줘야 할 값은 script.google.com 이 아니라 **나가는 IP 의 PTR** 이다.
+ *   (script.google.com 은 «들어오는» 주소지 «나가는» 주소가 아니다)
+ *
+ *   그래서 지어내지 말고 **실제로 재서** 로젠에 전달한다.
+ *
+ * 쓰는 법: Apps Script 편집기에서 이 함수를 골라 실행 → 실행로그를 본다.
+ *   편집기: https://script.google.com/home/projects/1eTAUhXH2tWBqqDI-36J4QGoKcILo1vP8SKT_O7AB3Mc4aHoj66q_jRe4/edit
+ *
+ * @param {number} times 몇 번 재볼지 (기본 3). IP 가 매번 바뀌는지 보려고 여러 번 잰다.
+ */
+function csLogenWhoAmI(times) {
+  var n = times || 10;
+  var seen = {};
+  var rows = [];
+
+  /* ★ api.ipify.org 를 쓰면 안 된다 ★  (2026-09-28 에 속았다)
+     Apps Script 는 외부 호출에 **실행한 사람의 브라우저 IP 를 X-Forwarded-For 로
+     얹어서** 보낸다. ipify 는 그 헤더를 그대로 믿어 «사무실 IP» 를 돌려줬다.
+     그 값을 로젠에 줬다면 개발에선 되다가 운영에서 조용히 막혔을 것이다.
+
+     httpbin 의 origin 은 체인을 통째로 준다 — "14.34.200.225, 34.116.22.3".
+     **맨 뒤가 진짜 발신 IP** 다. 그것만 쓴다. */
+  for (var i = 0; i < n; i++) {
+    var ip = "", chain = "";
+    try {
+      var res = UrlFetchApp.fetch("https://httpbin.org/get",
+        { muteHttpExceptions: true, followRedirects: true });
+      var j = JSON.parse(res.getContentText("UTF-8"));
+      chain = String(j.origin || "");
+      var parts = chain.split(",");
+      ip = String(parts[parts.length - 1] || "").trim();
+    } catch (e) {
+      rows.push({ try: i + 1, ip: "", ptr: "", error: e.message });
+      continue;
+    }
+    if (!ip) { rows.push({ try: i + 1, ip: "", chain: chain }); continue; }
+
+    var ptr = _logen_reverseDns_(ip);
+    seen[ip] = true;
+    rows.push({ try: i + 1, ip: ip, ptr: ptr, chain: chain });
+  }
+
+  /* ★ 정말 «구글에서» 나간 게 맞는지 확인한다 ★  (2026-09-28)
+     첫 측정에서 사무실 공인 IP(14.34.200.225)와 똑같은 값이 나왔다.
+     구글 서버가 한국 ISP 대역으로 나갈 수는 없으므로 «어디서 잰 것인지»를
+     먼저 가려야 한다. 잘못된 IP 를 로젠에 주면 개발에선 되다가 운영에서 막힌다.
+
+     가리는 법: 밖으로 나갈 때 붙는 User-Agent 를 본다.
+     Apps Script 의 UrlFetchApp 은 UA 에 «Google-Apps-Script» 를 달고 나간다
+     ([[gas-cannot-call-supabase-directly]] 에서 겪은 그 UA 다). */
+  var ua = "", echoIp = "", echoErr = "";
+  try {
+    var e1 = UrlFetchApp.fetch("https://httpbin.org/get",
+      { muteHttpExceptions: true, followRedirects: true });
+    var j1 = JSON.parse(e1.getContentText("UTF-8"));
+    ua = String((j1.headers && (j1.headers["User-Agent"] || j1.headers["user-agent"])) || "");
+    echoIp = String(j1.origin || "");
+  } catch (e) {
+    echoErr = e.message;
+  }
+
+  var ranOnGoogle = /Google-Apps-Script/i.test(ua);
+  var ips = Object.keys(seen);
+
+  // 흩어진 정도를 본다 — 좁으면 한시적으로 몇 개만 등록해 볼 여지가 있다
+  var c24 = {}, c16 = {};
+  for (var k = 0; k < ips.length; k++) {
+    var seg = ips[k].split(".");
+    c24[seg.slice(0, 3).join(".") + ".0/24"] = true;
+    c16[seg.slice(0, 2).join(".") + ".0.0/16"] = true;
+  }
+
+  var out = {
+    설명: "이 Apps Script 가 밖으로 나갈 때 쓰는 «진짜» IP 와 그 역방향 도메인",
+    잰횟수: n,
+    나온IP: ips,
+    서로다른IP수: ips.length,
+    IP가매번다른가: ips.length > 1,
+    묶인_24: Object.keys(c24),
+    묶인_16: Object.keys(c16),
+    상세: rows,
+
+    // ── 어디서 실행됐나 ──
+    보낸UA: ua || ("(확인 실패: " + echoErr + ")"),
+    에코가본IP: echoIp,
+    구글에서실행된게맞나: ranOnGoogle,
+    판정: !ua
+      ? "판정 불가 — httpbin 응답을 못 받았다. 다시 실행해 볼 것."
+      : (ranOnGoogle
+          ? "OK — Apps Script 서버에서 나갔다. 위 IP/PTR 을 로젠에 전달해도 된다."
+          : "⚠ 구글에서 나간 것이 아니다. UA 가 Google-Apps-Script 가 아니다. " +
+            "편집기에서 실행한 게 맞는지 확인할 것 — 이 값을 로젠에 주면 안 된다.")
+  };
+
+  console.log(JSON.stringify(out, null, 2));
+  return out;
+}
+
+/**
+ * IP → 역방향 도메인(PTR).
+ * 구글 공개 DNS 의 DoH 엔드포인트를 쓴다. 별도 키가 필요 없다.
+ */
+function _logen_reverseDns_(ip) {
+  var p = String(ip || "").split(".");
+  if (p.length !== 4) return "";
+  var name = p[3] + "." + p[2] + "." + p[1] + "." + p[0] + ".in-addr.arpa";
+  try {
+    var res = UrlFetchApp.fetch(
+      "https://dns.google/resolve?name=" + encodeURIComponent(name) + "&type=PTR",
+      { muteHttpExceptions: true });
+    var j = JSON.parse(res.getContentText("UTF-8"));
+    var ans = j.Answer || [];
+    for (var i = 0; i < ans.length; i++) {
+      if (ans[i].data) return String(ans[i].data).replace(/\.$/, "");
+    }
+    return "(PTR 없음)";
+  } catch (e) {
+    return "(조회 실패: " + e.message + ")";
+  }
+}
+
 /**
  * 연결 점검. 키를 받은 직후 이것부터 돌린다.
  * 실패 원인(키 없음 / IP 미등록 / 중계 오류)을 갈라서 알려준다.

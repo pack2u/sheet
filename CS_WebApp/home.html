@@ -3113,6 +3113,10 @@
                     aria-label="카드 나열 차례" onchange="setReturnSort(this.value)">
               <option value="new">최신순</option>
               <option value="old">오래된순</option>
+              <option value="stale">오래 멈춘 순</option>
+              <option value="memo">최신 메모순</option>
+              <option value="chg">최신 변경순</option>
+              <option value="gap">빠진 것 먼저</option>
               <option value="vendor">업체순</option>
               <option value="stage">상태순</option>
             </select>
@@ -9799,8 +9803,56 @@
         새것.sort(function(a, b) { return key(b).localeCompare(key(a)); });
         out = 나머지;
       }
+      /*  ★ 마지막 «움직임» 시각 ★  (2026-09-28)
+          > "최신 메모순. 최신 병경순등 다양한 정렬방식을 넣으면 좋겠어"
+
+          서버가 실어 보낸 열쇠는 yyyymmddHHMM 12자리다. 카드의 sortKey 는
+          yyyymmdd_ 꼴이라 모양이 다르다 — 섞어 견주면 조용히 어긋난다.
+          열쇠가 없으면(옛 서버) 접수일을 12자리로 맞춰 쓴다. */
+      var 움직임 = function(c) {
+        var k = String((c && c.moveKey) || '');
+        if (k && k !== '000000000000') return k;
+        return String((c && c.sortKey) || '').split('_')[0] + '0000';
+      };
+      var 메모때 = function(c) { return String((c && c.memoKey) || ''); };
+      var 변경때 = function(c) { return String((c && c.stageKey) || ''); };
+      /*  빠진 것 = 반품송장이 없거나 사진이 0장. 둘 다 없으면 더 위로. */
+      var 빠짐 = function(c) {
+        var n = 0;
+        if (!String((c && c.returnInvoice) || '').replace(/[^0-9]/g, '')) n++;
+        if (!(Number((c && c.photos) || 0) > 0)) n++;
+        return n;
+      };
+
       if (RETURN_SORT === 'old') {
         out.sort(function(a, b) { return key(a).localeCompare(key(b)); });
+      } else if (RETURN_SORT === 'stale') {
+        /*  ★ 오래 멈춘 순 ★  아무도 안 건드린 채 가라앉은 건을 끌어올린다.
+            최신순 계열은 «활발한» 건을 위로 올리는데, 정작 놓치는 것은 그 반대다. */
+        out.sort(function(a, b) {
+          var ma = 움직임(a), mb = 움직임(b);
+          if (ma !== mb) return ma.localeCompare(mb);
+          return key(a).localeCompare(key(b));
+        });
+      } else if (RETURN_SORT === 'memo') {
+        //  메모가 한 번도 없는 건은 «아래»로 — 여기서 찾는 것은 방금 오간 건이다
+        out.sort(function(a, b) {
+          var ma = 메모때(a), mb = 메모때(b);
+          if (ma !== mb) return mb.localeCompare(ma);
+          return key(b).localeCompare(key(a));
+        });
+      } else if (RETURN_SORT === 'chg') {
+        out.sort(function(a, b) {
+          var ca = 변경때(a), cb = 변경때(b);
+          if (ca !== cb) return cb.localeCompare(ca);
+          return key(b).localeCompare(key(a));
+        });
+      } else if (RETURN_SORT === 'gap') {
+        out.sort(function(a, b) {
+          var ga = 빠짐(a), gb = 빠짐(b);
+          if (ga !== gb) return gb - ga;      //  많이 빠진 것이 위
+          return key(a).localeCompare(key(b));  //  같으면 묵은 것이 위
+        });
       } else if (RETURN_SORT === 'vendor') {
         //  업체가 같으면 최신순 — 한 업체 것을 모아 놓고 그 안에서 새 것부터
         out.sort(function(a, b) {
