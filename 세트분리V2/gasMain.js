@@ -473,6 +473,15 @@ function ss_실행(opts) {
     단계 = ss단계_('적요확인 조치 걷기');
     try { cfg._적요조치 = ssm_captureMemoActions(); } catch (eM) { cfg._적요조치 = {}; }
 
+    /*  ★ 도서산간 탭 조치를 «엔진 앞»에서 걷는다 ★  (2026-09-28)
+        여태 출력 탭을 쓰기 직전(재실행일 때만) 걷어서, 지워지지 않게 되돌려
+        쓰는 데만 썼다. 판정에 쓰려면 엔진보다 먼저 손에 있어야 한다.
+        회차가 새것이어도 걷는다 — 조치는 «그 탭에 지금 적혀 있는 말»이고,
+        새 판매현황이라고 사람이 적은 말을 버릴 이유가 없다. 같은 줄(순번+품목코드)
+        이 다시 올라온 것이면 그 판단은 여전히 그 줄에 대한 판단이다. */
+    단계 = ss단계_('도서산간 조치 걷기');
+    try { cfg._섬조치 = ss_섬조치걷기_(); } catch (eI) { cfg._섬조치 = {}; }
+
     단계 = ss단계_('전화주문 번호 기억 읽기');
     cfg._전화ID기억 = ssm_loadPhoneIds();
     if (cfg._전화ID기억.왜) {
@@ -591,7 +600,9 @@ function ss_실행(opts) {
        ★ 회차가 바뀌면 안 지킨다 ★
          새 판매현황이면 「전에 봤으니 됐겠지」가 되면 안 된다. 보류 조치가
          회차 안에서만 유효한 것과 같은 규칙이다. */
-    var 섬조치 = 회차.재실행 ? ss_섬조치걷기_() : {};
+    /*  되돌려 쓸 때도 «엔진에 넘긴 그것»을 쓴다. 한 값에 주인은 하나다 —
+        여기서 다시 걷으면 엔진이 본 것과 화면에 보이는 것이 갈릴 수 있다. */
+    var 섬조치 = cfg._섬조치 || {};
 
     // 출력 탭
     /*  ★ 나가기 직전에 한 번 본다 ★  (2026-09-15)
@@ -606,8 +617,9 @@ function ss_실행(opts) {
       var name = SSIO_TABS.출력[i];
       var bucket = res.buckets[name] || [];
       if (name === SS_ROUTE.LOTTE_ISLAND || name === SS_ROUTE.LOTTE_ISLAND_CONSIGN) {
-        ssio_write(name, SS_ISLAND_HEADER,
+        var _섬탭 = ssio_write(name, SS_ISLAND_HEADER,
           ss_섬조치되돌리기_(bucket.map(ssIslandRow), 섬조치), { bg: '#4a3a6b' });
+        try { ss_섬입력꾸미기_(_섬탭, bucket.length); } catch (eJ) {}
       } else if (name === SS_ROUTE.PARTNER) {
         ssio_write(name, SS_PARTNER_HEADER, bucket.map(ssPartnerRow), { bg: '#3a5a3a' });
       } else {
@@ -1037,6 +1049,38 @@ function ss_섬조치걷기_() {
     }
   }
   return out;
+}
+
+/**
+ * 도서산간 탭 조치 칸 — 고르개를 달고 무슨 일이 일어나는지 적어 둔다.
+ *
+ * ★ 이 칸은 2026-09-28 부터 «실제로» 먹는다 ★
+ *   그전에는 적어도 아무 일도 일어나지 않았다. 그것을 모르고 적으신 분이
+ *   「보류라고 적었는데 넘어간다」고 하셨다. 이제 적으면 먹고, 무슨 일이
+ *   일어나는지 칸 머리에 적어 둔다.
+ */
+function ss_섬입력꾸미기_(sh, rows) {
+  if (!sh) return;
+  var cA = SS_ISLAND_HEADER.indexOf('조치') + 1;
+  if (cA < 1) return;
+  var last = Math.max(rows, 1);
+  sh.getRange(2, cA, last, 1).clearDataValidations();
+  try {
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['발송', '보류'], true)
+      .setAllowInvalid(true)
+      .setHelpText('발송 = 도서산간에서 빼고 일반으로 보낸다 · 보류 = 보류(미발송)로 세운다')
+      .build();
+    sh.getRange(2, cA, last, 1).setDataValidation(rule);
+  } catch (e) {}
+  sh.getRange(1, cA).setBackground('#1f3d3a').setNote(
+    '이 칸 하나로 정합니다.' + String.fromCharCode(10) + String.fromCharCode(10) +
+    '  발송        도서산간에서 빼고 일반으로 보냅니다' + String.fromCharCode(10) +
+    '              (추가운임은 못 받습니다 — 경고 탭에 금액이 적힙니다)' + String.fromCharCode(10) +
+    '  보류        보류(미발송) 탭으로 세웁니다' + String.fromCharCode(10) +
+    '  비워 둠     그대로 도서산간으로 나갑니다' + String.fromCharCode(10) + String.fromCharCode(10) +
+    '적은 뒤 메뉴 → ✅ 조치 적용.  적은 말은 다음 실행에도 남습니다.');
+  sh.setColumnWidth(cA, 110);
 }
 
 /** 걷어 둔 조치를 같은 줄에 되돌린다. 없으면 빈칸 그대로. */

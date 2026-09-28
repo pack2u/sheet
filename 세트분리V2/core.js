@@ -2031,6 +2031,35 @@ function ssRoute(units, masters, cfg, warnings) {
     var addr = ssNormAddr(u.주소1);
     u.정규주소 = addr;
 
+    /*  ★ 도서산간 탭에 적은 조치를 «실제로» 먹인다 ★  (2026-09-28)
+        > "도서산간에서 발송으로 처리 안했는데도 넘어가네..
+        >  일부러 보류라고 적었는데도 넘어가는"
+
+        여태 그 칸은 «아무 일도 하지 않았다». ss_섬조치걷기_ 가 걷어서 다시 써
+        주기만 했다 — 재실행에 지워지지 않게 하려고 만든 것인데(2026-09-14),
+        적는 사람에게는 「적으면 먹는 칸」으로 보인다.
+        적었는데 아무 일도 안 일어나는 칸은 없는 것보다 나쁘다.
+
+          발송        도서산간에서 빼고 일반으로 보낸다 (추가운임 못 받는다)
+          보류        보류(미발송)로 세운다
+          비워 둠     여태 그대로 — 도서산간으로 나간다
+
+        열쇠는 순번+품목코드다 (ss_섬조치걷기_ 와 같은 열쇠). 고유ID 는 세트가
+        쪼개지면 두 줄이 같아서 못 쓴다.  */
+    var _섬적음 = (cfg && cfg._섬조치)
+      ? ssText(cfg._섬조치[ssText(u.순번) + '|' + ssText(u.품목코드)]) : '';
+    var _섬세우기 = false;
+    if (_섬적음) {
+      var _민섬 = ssNorm(_섬적음).split(' ').join('').toUpperCase();
+      for (var _sk = 0; _sk < SS_HOLD_KEEP_WORDS.length; _sk++) {
+        if (_민섬 === ssNorm(SS_HOLD_KEEP_WORDS[_sk]).split(' ').join('').toUpperCase()) {
+          _섬세우기 = true; break;
+        }
+      }
+      //  보류 탭의 「발송」이 더 세다 — 거기는 세워 둔 줄을 «푸는» 자리다
+      if (!_섬세우기 && !면제 && _섬적음 === '발송') 면제 = true;
+    }
+
 
     var zip = ssText(addrZip[addr]);
     u.우편번호 = zip;
@@ -2048,6 +2077,7 @@ function ssRoute(units, masters, cfg, warnings) {
          제주 왕복분이 통째로 빠진다 (2026-09-08 사장님 확인). */
       u.도선료 = ssSurcharge(addr, fh.권역, ferry, { 통일도선료: 통일도선료 }).합계;
       if (면제) { ssIslandSkipByManual_(u, warnings); continue; }
+      if (_섬세우기) { ssIslandHoldByManual_(u, _섬적음); continue; }
       u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
       continue;
     }
@@ -2060,7 +2090,8 @@ function ssRoute(units, masters, cfg, warnings) {
         /* 제주 본섬은 도선료표에 없다(우도·추자만 있다). 항공료 정액만 붙는다. */
         u.도선료 = ssSurcharge(addr, islandZip[zip], ferry, { 통일도선료: 통일도선료 }).합계;
         if (면제) { ssIslandSkipByManual_(u, warnings); continue; }
-        u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
+        if (_섬세우기) { ssIslandHoldByManual_(u, _섬적음); continue; }
+      u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
         continue;
       }
       u.route = SS_ROUTE.LOTTE;
@@ -2089,6 +2120,7 @@ function ssRoute(units, masters, cfg, warnings) {
         ssIslandSkipByManual_(u, warnings);
         continue;
       }
+      if (_섬세우기) { ssIslandHoldByManual_(u, _섬적음); continue; }
       u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
       continue;
     }
@@ -2193,6 +2225,19 @@ var SS_RETURN_BOX_FEE = 1000;
  * ★ 대신 잃는 것 ★ 도선료·항공료가 안 붙는다. 진짜 섬이면 그만큼 못 받는다.
  *   그래서 «조용히» 빼지 않는다 — 얼마가 빠지는지 경고에 적는다.
  */
+/**
+ * 도서산간 탭 조치에 「보류」라고 적은 줄을 세운다.
+ *
+ * > "일부러 보류라고 적었는데도 넘어가는"  (2026-09-28)
+ */
+function ssIslandHoldByManual_(u, 적음) {
+  u.route = SS_ROUTE.HOLD;
+  u.보류사유 = '도서산간확인';
+  u.보류상세 = '도서산간 탭 조치에 「' + ssText(적음) + '」이라 적으셨습니다 (' +
+    (u.도서판정 || '판정없음') + ' · ' + (u.도서권역 || '권역없음') +
+    ' · 추가운임 ' + (Number(u.도선료) || 0) + '원)';
+}
+
 function ssIslandSkipByManual_(u, warnings) {
   u.route = SS_ROUTE.LOTTE;
   u.도서면제 = true;

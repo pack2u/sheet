@@ -91,5 +91,42 @@ console.log("\n⑥ 도선료표도 같은 규칙을 쓴다 (시군·읍면동은
     JSON.stringify(core.ssFerryMatch(b, ferry)));
 }
 
+console.log("\n★ 도서산간 탭 「조치」 칸이 실제로 먹는다  (2026-09-28)");
+{
+  /*  > "도서산간에서 발송으로 처리 안했는데도 넘어가네.. 일부러 보류라고 적었는데도"
+
+      여태 그 칸은 «아무 일도 하지 않았다». ss_섬조치걷기_ 가 걷어서 다시 써 주기만
+      했다 — 재실행에 지워지지 않게 하려고 만든 것인데(2026-09-14), 적는 사람에게는
+      「적으면 먹는 칸」으로 보인다. 적었는데 아무 일도 안 일어나는 칸은
+      없는 것보다 나쁘다.  */
+  const fs2 = require("fs");
+  const src = fs2.readFileSync(path.join(__dirname, "세트분리V2", "core.js"), "utf8");
+  const main = fs2.readFileSync(path.join(__dirname, "세트분리V2", "gasMain.js"), "utf8");
+
+  ok("적은 말을 엔진이 읽는다", /cfg\._섬조치\[ssText\(u\.순번\) \+ .\|. \+ ssText\(u\.품목코드\)\]/.test(src));
+  ok("  열쇠는 순번+품목코드다 (고유ID 는 세트 두 줄이 같다)",
+    /ss_섬조치걷기_ 와 같은 열쇠/.test(src));
+  ok("★ 「보류」면 세운다", /ssIslandHoldByManual_/.test(src) && /보류사유 = .도서산간확인./.test(src));
+  ok("  도서산간 배정 «세 군데» 모두 앞에서 막는다",
+    (src.split("if (_섬세우기) { ssIslandHoldByManual_(u, _섬적음); continue; }").length - 1) === 3,
+    String(src.split("if (_섬세우기) { ssIslandHoldByManual_").length - 1));
+  ok("★ 「발송」이면 도서산간에서 뺀다", /_섬적음 === .발송.\) 면제 = true;/.test(src));
+  ok("  보류 탭의 「발송」이 더 세다 (거기는 세워 둔 줄을 푸는 자리다)",
+    /!_섬세우기 && !면제 && _섬적음 === .발송./.test(src));
+  ok("  세우는 말은 보류 탭과 «같은 목록»을 쓴다 (문법이 둘로 갈리지 않는다)",
+    /SS_HOLD_KEEP_WORDS\[_sk\]/.test(src));
+  ok("  얼마를 못 받는지 적어 준다", /추가운임 . \+ \(Number\(u\.도선료\)/.test(src));
+
+  ok("★ 엔진 «앞»에서 걷는다 (판정에 쓰려면 먼저 손에 있어야 한다)",
+    main.indexOf("cfg._섬조치 = ss_섬조치걷기_()") < main.indexOf("var res = ssRun(grid, masters, cfg)"));
+  ok("★ 회차가 새것이어도 걷는다 (사람이 적은 말을 버릴 이유가 없다)",
+    !/회차\.재실행 \? ss_섬조치걷기_\(\) : \{\}/.test(main));
+  ok("  되돌려 쓸 때도 엔진에 넘긴 그것을 쓴다 (한 값에 주인은 하나)",
+    /var 섬조치 = cfg\._섬조치 \|\| \{\};/.test(main));
+  ok("고르개를 단다", /ss_섬입력꾸미기_/.test(main) &&
+    /requireValueInList\(\[.발송., .보류.\], true\)/.test(main));
+  ok("  칸 머리에 무슨 일이 일어나는지 적는다", /보류        보류\(미발송\) 탭으로 세웁니다/.test(main));
+}
+
 console.log("\n" + (fail ? "❌ " + fail + "개 실패" : "✅ 모두 통과") + " (통과 " + pass + ")");
 process.exit(fail ? 1 : 0);
