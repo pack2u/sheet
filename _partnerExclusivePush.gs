@@ -10583,6 +10583,31 @@ function _pep_fillUnmatchedArchiveDay_(dateStr) {
   return out;
 }
 
+/**
+ * 다시 채울 날짜들 — 마감일 «바로 앞»부터 거슬러 _PEP_BACKFILL_DAYS_ 일치.
+ *
+ * ★ 마감일 자신은 뺀다 ★ 방금 1단계가 새 송장맵으로 붙였다. 다시 훑어야
+ *   나올 것이 없고, 파일 한 장을 통째로 다시 읽는 값만 든다.
+ *
+ * ★ 시작일보다 앞은 안 본다 ★ 2026-09-16 에 «거기서부터 다시 쌓는다»고
+ *   그은 선이다 (_pep_afterStart_). 무너진 기록을 뒤지면 시간과
+ *   숫자의 뜻을 둘 다 잃는다.
+ */
+function _pep_backfillDates_(archiveDateStr) {
+  var out = [];
+  if (!archiveDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(archiveDateStr)) return out;
+  var days = _PEP_BACKFILL_DAYS_ || 7;
+  var base = new Date(archiveDateStr + "T00:00:00+09:00");
+  for (var d = 1; d <= days; d++) {
+    var dt = new Date(base.getTime() - d * 86400000);
+    var s = Utilities.formatDate(dt, "Asia/Seoul", "yyyy-MM-dd");
+    //  9/16 에 그은 선보다 앞은 안 본다 (_pep_afterStart_)
+    try { if (typeof _pep_afterStart_ === "function" && !_pep_afterStart_(s)) break; } catch (eA) {}
+    out.push(s);
+  }
+  return out;
+}
+
 function _pep_scheduleUnmatchedPatch_(dateStr) {
   if (!dateStr) return;
   try {
@@ -12234,6 +12259,32 @@ function _pep_archiveUnifiedDaily_(targetDateStr, opts) {
   } catch (e) {
     result.error = e.message;
     Logger.log("[UNIFIED_ARCHIVE] 오류: " + e.message);
+  }
+
+  /*  ★ 지난 7일치 빈 송장을 다시 채운다 ★  (2026-09-28)
+
+      > "현재 일일 마감시 이전날 송장 없는 부분에 채워지고 있나?
+      >  이전꺼 보면 안채워지는거 같은데?"    "7일로 해줘"
+
+      안 채워지고 있었다. 채우는 함수도, 그것을 부르는 함수도, 예약 함수도
+      다 있었는데 «_pep_scheduleUnmatchedPatch_ 를 부르는 데가 한 군데도
+      없었다». 그래서 속성이 안 심기고 트리거가 안 걸려 한 번도 안 돌았다.
+      주석은 「2단계: 바로 이전 일일마감 파일의 미매칭만 …」 이라고 적혀
+      있었지만, 그 2단계가 실제로는 없었다.
+
+      ★ 마감이 실패해도 예약한다 ★ catch 밖이다. 오늘 마감이 넘어져도
+        어제·그제 파일의 빈 송장은 채울 수 있다 — 서로 다른 일이다.
+
+      ★ 곁다리다 ★ 여기서 터져도 마감 결과는 이미 result 에 있다.
+        15초 뒤 따로 깨어나므로 마감 자체를 한 톨도 늦추지 않는다. */
+  try {
+    var _bfDates = _pep_backfillDates_(archiveDate || targetDateStr || "");
+    if (_bfDates.length) {
+      _pep_scheduleUnmatchedPatch_(_bfDates.join(","));
+      result.backfillDates = _bfDates.length;
+    }
+  } catch (eBf) {
+    Logger.log("[UNIFIED_ARCHIVE] 미매칭 재채움 예약 실패: " + (eBf && eBf.message));
   }
 
   return result;
