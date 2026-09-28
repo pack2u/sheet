@@ -10608,6 +10608,56 @@ function _pep_backfillDates_(archiveDateStr) {
   return out;
 }
 
+/**
+ * 여러 날의 빈 송장을 «송장맵 한 벌»로 채운다.  (2026-09-28)
+ *
+ * ★ 날마다 새로 만들지 않는다 ★
+ *   _pep_fillUnmatchedArchiveDay_ 는 하루마다 _puv_buildInvoiceMap_ 을 다시
+ *   만든다. 7일치면 일곱 번이다 — 맵 한 벌이 제일 무거운 일인데.
+ *   맵은 «지금 있는 송장 전부»라 날짜마다 다를 이유도 없다.
+ *
+ * ★ 시간을 재며 돈다 ★
+ *   GAS 는 6분에서 끊긴다. 중간에 끊기면 어디까지 했는지 모른 채 끝난다.
+ *   예산을 넘으면 멈추고 «남은 날»을 돌려준다 — 부르는 쪽이 알려 준다.
+ *
+ * @param {string[]} dates yyyy-MM-dd 목록
+ * @param {number=} budgetMs 기본 4분 30초
+ */
+function _pep_fillUnmatchedDays_(dates, budgetMs) {
+  var out = { patched: 0, stillEmpty: 0, scanned: 0, keys: 0, done: [], remain: [], errors: [] };
+  dates = dates || [];
+  if (!dates.length) return out;
+  var 시작 = new Date().getTime();
+  var 예산 = budgetMs || (4.5 * 60 * 1000);
+
+  var stat = { lotte: 0, weekly: 0, ledger: 0, temp: 0, hub: 0, keys: 0, errors: [], skipPartnerArchives: true };
+  var invoiceMap = (typeof _puv_buildInvoiceMap_ === "function") ? _puv_buildInvoiceMap_(stat) : {};
+  out.keys = stat.keys || 0;
+  if (stat.errors && stat.errors.length) out.errors = stat.errors.slice(0, 3);
+
+  for (var i = 0; i < dates.length; i++) {
+    var d = String(dates[i] || "").trim();
+    if (!d) continue;
+    if (new Date().getTime() - 시작 > 예산) { out.remain.push(d); continue; }
+    try {
+      var archSs = _unified_findExistingArchiveSs_(_UNIFIED_ARCHIVE_PREFIX_ + "(" + d + ")");
+      if (!archSs) continue;   //  그날 마감 파일이 없다 — 주말·휴일이다
+      var archTab = archSs.getSheetByName("일일마감") || archSs.getSheets()[0];
+      if (!archTab || archTab.getLastRow() < 2) continue;
+      var one = _pep_patchArchiveTabUnmatched_(archTab, invoiceMap, d);
+      out.patched += one.patched || 0;
+      out.stillEmpty += one.stillEmpty || 0;
+      out.scanned += one.scanned || 0;
+      if (one.patched) out.done.push(d + "(" + one.patched + ")");
+    } catch (e) {
+      out.errors.push(d + ": " + (e && e.message ? e.message : e));
+    }
+  }
+  Logger.log("[UNIFIED] 여러날 재채움 키=" + out.keys + " 채움=" + out.patched +
+    " 남은미매칭=" + out.stillEmpty + (out.remain.length ? " 시간초과남은날=" + out.remain.join(",") : ""));
+  return out;
+}
+
 function _pep_scheduleUnmatchedPatch_(dateStr) {
   if (!dateStr) return;
   try {
@@ -10641,16 +10691,10 @@ function _pep_patchUnmatchedArchiveScheduled_() {
     }
   } catch (eT) {}
   if (!dateStr) return;
-  var dates = String(dateStr).split(",");
-  var patched = 0, remain = 0, errs = [];
-  for (var i = 0; i < dates.length; i++) {
-    var d = String(dates[i] || "").trim();
-    if (!d) continue;
-    var one = _pep_fillUnmatchedArchiveDay_(d);
-    patched += one.patched || 0;
-    remain += one.stillEmpty || 0;
-    if (one.error) errs.push(d + ": " + one.error);
-  }
+  //  2026-09-28 — 날마다 송장맵을 새로 만들던 것을 한 벌로 바꿨다
+  var r = _pep_fillUnmatchedDays_(String(dateStr).split(","));
+  var patched = r.patched, remain = r.stillEmpty, errs = r.errors || [];
+  if (r.remain && r.remain.length) errs.push("시간초과 남은 날: " + r.remain.join(","));
   Logger.log("[UNIFIED] 미매칭 재채움 자동실행: 채움=" + patched + " 남은=" + remain);
   try {
     var items = [
@@ -10660,6 +10704,47 @@ function _pep_patchUnmatchedArchiveScheduled_() {
     if (errs.length) items.push({ label: "⚠", value: errs.join(" / ").substring(0, 200) });
     _chat_sendCard_("📋 일일마감 미매칭 재채움", dateStr, items);
   } catch (_) {}
+}
+
+/**
+ * ⏪ 지난 7일 일일마감의 빈 송장을 «지금» 채운다.  (2026-09-28)
+ *
+ * > "오늘 마감은 실행됬으나 이전꺼 입력만 실행해볼수 있나? 내일까지 미룰필요가.."
+ *
+ * 마감 끝에 저절로 예약되지만, 그것은 «다음 마감»부터다. 오늘 마감은 이미
+ * 끝났으므로 여기서 손으로 한 번 돌린다. 하는 일은 예약 실행과 같다 —
+ * 같은 함수를 부르므로 결과가 갈릴 일이 없다.
+ *
+ * 읽고 «빈 칸만» 채운다. 이미 송장이 있는 줄은 건드리지 않는다.
+ */
+function partnerFillUnmatchedRecent() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+
+  var 오늘 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+  /*  오늘은 «앞으로» 7일이 아니라 오늘을 포함해 거슬러 본다 —
+      마감이 이미 끝났으니 오늘 파일에도 빈 칸이 남아 있을 수 있다. */
+  var dates = [오늘].concat(_pep_backfillDates_(오늘));
+
+  var r = _pep_fillUnmatchedDays_(dates);
+  var msg = "지난 " + dates.length + "일 (" + dates[dates.length - 1] + " ~ " + 오늘 + ")\n\n" +
+    "✅ 채움 " + r.patched + "건\n" +
+    "⏳ 아직 빈 칸 " + r.stillEmpty + "건\n" +
+    "· 훑은 줄 " + r.scanned + " · 송장 열쇠 " + r.keys + "개\n" +
+    (r.done.length ? "\n채운 날: " + r.done.join(" · ") : "\n채운 날 없음") +
+    (r.remain.length ? "\n\n⏱ 시간이 모자라 못 본 날: " + r.remain.join(", ") +
+      "\n   한 번 더 누르면 이어서 합니다." : "") +
+    (r.errors.length ? "\n\n⚠ " + r.errors.join(" / ").substring(0, 200) : "");
+
+  try {
+    _chat_sendCard_("📋 일일마감 미매칭 재채움 (손으로)", dates[dates.length - 1] + " ~ " + 오늘, [
+      { label: "✅ 채움", value: r.patched + "건" },
+      { label: "⏳ 남은 미매칭", value: r.stillEmpty + "건" }
+    ]);
+  } catch (_) {}
+
+  if (ui) ui.alert("⏪ 지난 7일 미매칭 재채움", msg, ui.ButtonSet.OK);
+  return r;
 }
 
 /** 헤더 배열에서 택배사 열 위치. 없으면 -1 */

@@ -205,6 +205,7 @@ function registerPartnerMenu_() {
         .addItem("📦 일일마감 택배사 채움률 점검", "partnerDiagnoseArchiveCarrier")
         .addItem("🏭 출고지 마스터 점검 (평택=롯데 / 대리발송=업체)", "partnerDiagnoseShipOrigin")
         .addItem("⏪ 지난 일일마감에 택배사 채우기", "partnerBackfillArchiveCarrier")
+        .addItem("⏪ 지난 7일 미매칭 송장 채우기 (지금)", "partnerFillUnmatchedRecent")
         .addSeparator()
         .addItem("📋 사방넷 송장대량등록 탭 갱신", "partnerRebuildSabangnetBulkUpload")
         .addItem("🔧 사방넷_송장매칭 열배열(롯데) 적용", "partnerApplySabangnetLotteHeaders")
