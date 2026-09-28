@@ -10496,9 +10496,51 @@ function _pep_loadArchiveExistPair_(dateStr) {
 
 var _PEP_UDA_PATCH_PROP_ = "_PEP_UDA_PATCH_DATE_";
 
+/*  ★ 송장이 있을 수 «없는» 줄 ★  (2026-09-28)
+
+    적립금·할인액·반품배송비·시안비용은 물건이 아니다. 택배가 안 나가니
+    송장도 없다. 그런데 여태 이것까지 「미매칭」으로 셌다 —
+    최근 8일 빈 송장 45줄 가운데 8줄(18%)이 이것이었다.
+    숫자에 섞이면 «진짜 문제»가 그만큼 묻힌다.
+
+    세트분리의 미발송 판정(ssNonShipReason)과 같은 뜻이지만, 여기는 마감
+    파일의 품목명 한 칸만 보고 가리므로 낱말로 본다.  */
+var _PEP_NONSHIP_WORDS_ = [
+  "적립금", "할인액", "할인", "반품배송비", "배송비", "시안비용", "시안",
+  "샘플신청", "추가결제", "차액"
+];
+
+/**
+ * 빈 송장 한 줄이 어느 갈래인가 — "비배송" · "대기" · "미매칭"
+ *
+ * ★ 대기 ★  (2026-09-28)
+ *   > "대리공급업체 푸시는 현재 1번(오후2시쯤)만 이루어지고 그것에 대한
+ *   >  송장만 당일날 나와.. 그 푸시 이후는 다음날로 미뤄"
+ *
+ *   대리공급 건이 오늘·어제 파일에서 비어 있는 것은 «순서상 당연»하다.
+ *   숨은 문제가 아니므로 미매칭과 갈라 센다. 그래야 미매칭 숫자를 믿는다.
+ *   이틀이 지나도 비어 있으면 그때는 진짜 미매칭이다.
+ */
+function _pep_unmatchedKind_(row, cols, dateStr) {
+  var item = cols.item >= 0 ? String(row[cols.item] || "").replace(/\s/g, "") : "";
+  for (var i = 0; i < _PEP_NONSHIP_WORDS_.length; i++) {
+    if (item.indexOf(_PEP_NONSHIP_WORDS_[i]) >= 0) return "비배송";
+  }
+  var src = cols.src >= 0 ? String(row[cols.src] || "").trim() : "";
+  if (/대리공급|대리발송/.test(src)) {
+    try {
+      var 어제 = Utilities.formatDate(new Date(new Date().getTime() - 86400000),
+        "Asia/Seoul", "yyyy-MM-dd");
+      if (String(dateStr || "") >= 어제) return "대기";
+    } catch (e) {}
+  }
+  return "미매칭";
+}
+
 /** 이미 만들어진 일일마감 파일의 미매칭 행만 송장맵으로 채운다. */
 function _pep_patchArchiveTabUnmatched_(archTab, invoiceMap, dateStr) {
-  var out = { patched: 0, stillEmpty: 0, scanned: 0 };
+  //  stillEmpty 는 «셋을 합친 수»다. 갈래별로도 센다 (2026-09-28)
+  var out = { patched: 0, stillEmpty: 0, scanned: 0, 비배송: 0, 대기: 0, 미매칭: 0 };
   if (!archTab || !invoiceMap) return out;
   var lr = archTab.getLastRow();
   if (lr < 2) return out;
@@ -10513,7 +10555,9 @@ function _pep_patchArchiveTabUnmatched_(archTab, invoiceMap, dateStr) {
     if (inv && _pep_normInvoiceNo_(inv)) continue;
     if (src && src !== "미매칭") continue;
     var matchKey = _pep_deriveMatchKeyFromArchiveRow_(all[ri], cols);
-    if (!matchKey) { out.stillEmpty++; continue; }
+    //  갈래를 먼저 가린다 — 비배송·대기는 «문제»가 아니다 (2026-09-28)
+    var 갈래 = _pep_unmatchedKind_(all[ri], cols, dateStr);
+    if (!matchKey) { out.stillEmpty++; out[갈래]++; continue; }
     var itemNm = cols.item >= 0 ? all[ri][cols.item] : "";
     var invInfo = _pep_resolveRowInvoice_(invoiceMap, {
       uid: matchKey,
@@ -10523,9 +10567,10 @@ function _pep_patchArchiveTabUnmatched_(archTab, invoiceMap, dateStr) {
       item: itemNm,
       orderDate: dateStr
     });
-    if (!invInfo || !invInfo.inv) { out.stillEmpty++; continue; }
+    if (!invInfo || !invInfo.inv) { out.stillEmpty++; out[갈래]++; continue; }
     if (_pep_qtyOverMax_(cols.qty >= 0 ? all[ri][cols.qty] : "", itemNm, invInfo.inv)) {
       out.stillEmpty++;
+      out[갈래]++;
       continue;
     }
     all[ri][cols.inv] = invInfo.inv;
@@ -10624,7 +10669,8 @@ function _pep_backfillDates_(archiveDateStr) {
  * @param {number=} budgetMs 기본 4분 30초
  */
 function _pep_fillUnmatchedDays_(dates, budgetMs) {
-  var out = { patched: 0, stillEmpty: 0, scanned: 0, keys: 0, done: [], remain: [], errors: [] };
+  var out = { patched: 0, stillEmpty: 0, scanned: 0, keys: 0, done: [], remain: [], errors: [],
+    비배송: 0, 대기: 0, 미매칭: 0 };
   dates = dates || [];
   if (!dates.length) return out;
   var 시작 = new Date().getTime();
@@ -10648,6 +10694,9 @@ function _pep_fillUnmatchedDays_(dates, budgetMs) {
       out.patched += one.patched || 0;
       out.stillEmpty += one.stillEmpty || 0;
       out.scanned += one.scanned || 0;
+      out.비배송 += one.비배송 || 0;
+      out.대기 += one.대기 || 0;
+      out.미매칭 += one.미매칭 || 0;
       if (one.patched) out.done.push(d + "(" + one.patched + ")");
     } catch (e) {
       out.errors.push(d + ": " + (e && e.message ? e.message : e));
@@ -10699,7 +10748,8 @@ function _pep_patchUnmatchedArchiveScheduled_() {
   try {
     var items = [
       { label: "✅ 채움", value: patched + "건" },
-      { label: "⏳ 남은 미매칭", value: remain + "건" }
+      { label: "★ 진짜 미매칭", value: (r.미매칭 || 0) + "건" },
+      { label: "비배송 / 대기", value: (r.비배송 || 0) + " / " + (r.대기 || 0) + "건" }
     ];
     if (errs.length) items.push({ label: "⚠", value: errs.join(" / ").substring(0, 200) });
     _chat_sendCard_("📋 일일마감 미매칭 재채움", dateStr, items);
@@ -10727,9 +10777,15 @@ function partnerFillUnmatchedRecent() {
   var dates = [오늘].concat(_pep_backfillDates_(오늘));
 
   var r = _pep_fillUnmatchedDays_(dates);
+  /*  ★ 빈 칸을 셋으로 갈라 보여 준다 ★  (2026-09-28)
+      「빈 칸 45건」 하나로 적으면 그중 8건이 적립금·할인액이라는 것을 모른다.
+      갈라 적어야 «진짜 봐야 할 수»가 눈에 든다. */
   var msg = "지난 " + dates.length + "일 (" + dates[dates.length - 1] + " ~ " + 오늘 + ")\n\n" +
     "✅ 채움 " + r.patched + "건\n" +
     "⏳ 아직 빈 칸 " + r.stillEmpty + "건\n" +
+    "     · 비배송(적립금·할인액·배송비) " + r.비배송 + "건  ← 송장이 있을 수 없다\n" +
+    "     · 대리공급 내일 푸시 대기      " + r.대기 + "건  ← 순서상 당연하다\n" +
+    "     · ★ 진짜 미매칭               " + r.미매칭 + "건\n" +
     "· 훑은 줄 " + r.scanned + " · 송장 열쇠 " + r.keys + "개\n" +
     (r.done.length ? "\n채운 날: " + r.done.join(" · ") : "\n채운 날 없음") +
     (r.remain.length ? "\n\n⏱ 시간이 모자라 못 본 날: " + r.remain.join(", ") +
@@ -10739,7 +10795,8 @@ function partnerFillUnmatchedRecent() {
   try {
     _chat_sendCard_("📋 일일마감 미매칭 재채움 (손으로)", dates[dates.length - 1] + " ~ " + 오늘, [
       { label: "✅ 채움", value: r.patched + "건" },
-      { label: "⏳ 남은 미매칭", value: r.stillEmpty + "건" }
+      { label: "★ 진짜 미매칭", value: r.미매칭 + "건" },
+      { label: "비배송 / 대기", value: r.비배송 + " / " + r.대기 + "건" }
     ]);
   } catch (_) {}
 
