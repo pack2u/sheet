@@ -10824,14 +10824,18 @@ function partnerDiagnoseLedgerCoverage() {
       var 원장송장 = key ? (원장[key] || "") : "";
       if (원장송장) 날원장++;
       if (rows.length < 400) {
+        /*  ★ 값을 문자열로 못 박는다 ★  (2026-09-28 저녁, 고침)
+            cols.src 가 그 줄의 길이를 넘으면 undefined 가 들어간다.
+            setValues 는 undefined 를 못 받고 통째로 터진다 — 실제로 그래서
+            머리글만 남고 45줄이 한 줄도 안 써졌다. */
         rows.push([
-          d,
-          cols.src >= 0 ? all[ri][cols.src] : "",
-          key || "(열쇠없음)",
-          cols.name >= 0 ? all[ri][cols.name] : "",
-          cols.item >= 0 ? String(all[ri][cols.item] || "").substring(0, 40) : "",
+          String(d || ""),
+          String((cols.src >= 0 ? all[ri][cols.src] : "") || ""),
+          String(key || "(열쇠없음)"),
+          String((cols.name >= 0 ? all[ri][cols.name] : "") || ""),
+          String((cols.item >= 0 ? all[ri][cols.item] : "") || "").substring(0, 40),
           원장송장 ? "원장에 있다" : "원장에도 없다",
-          원장송장
+          String(원장송장 || "")
         ]);
       }
     }
@@ -10853,7 +10857,18 @@ function partnerDiagnoseLedgerCoverage() {
       "원장에 있다 " + 합.원장있음, "원장에도 없다 " + 합.원장없음,
       "원장 열쇠 " + 원장줄 + "개", ""]];
     out.getRange(2, 1, 1, head.length).setValues(요약).setBackground("#fff3cd");
-    if (rows.length) out.getRange(3, 1, rows.length, head.length).setValues(rows);
+    SpreadsheetApp.flush();
+    /*  ★ 줄 쓰기를 따로 감싼다 ★  (2026-09-28 저녁)
+        여기서 터져도 요약은 남아야 한다. 요약만 있고 줄이 없으면
+        «왜 없는지»를 그 자리에 적어 둔다 — 빈 탭은 아무 말도 안 한다. */
+    if (rows.length) {
+      try {
+        out.getRange(3, 1, rows.length, head.length).setValues(rows);
+      } catch (eR) {
+        out.getRange(3, 1, 1, 2).setValues([["줄을 못 썼습니다",
+          String(eR && eR.message ? eR.message : eR).substring(0, 300)]]);
+      }
+    }
   } catch (eW) {
     if (ui) ui.alert("결과 탭을 못 썼습니다: " + (eW && eW.message));
   }
