@@ -9107,8 +9107,64 @@ function _pep_detectPhoneColumns_(headers) {
  * @param {Spreadsheet} srcSS - 이미 열린 세트분리 시트 (openById 재사용)
  * @return {Object} { saved, skipped, error }
  */
+/**
+ * 세트분리 원장 —  「일자-No.」+「순번」  →  고유ID
+ *
+ * ★ 왜 필요한가 ★  (2026-09-28)
+ *   > "키가 다른건 우리가 고유아이디를 바꾼게 22일인가 그럴껄?"
+ *   ID 모양이 바뀐 탓은 아니었다. 옛 모양(0921-PH-…)도 새 모양(p0928…)도
+ *   다 알아본다. 진짜 까닭은 «스냅샷이 매칭키를 한 번 정하고 굳히는 것» 이다.
+ *
+ *   판매현황 O열(주문자명(사방넷))이 아직 비어 있을 때 스냅샷이 뜨면
+ *   매칭키가 TEL:전화 로 정해지고, 그 키가 스냅샷 B열에 영구히 남는다.
+ *   다음 회차는 같은 키로 걸러져 다시 계산하지 않는다 —
+ *   세트분리가 나중에 O열을 채워도 마감은 영영 TEL 이다.
+ *   최근 8일 빈 송장 45줄 가운데 14줄이 그렇게 굳은 TEL 키였고,
+ *   그중 9줄은 원장에 송장이 멀쩡히 있었다.
+ *
+ * ★ 짐작하지 않는다 ★
+ *   이름·전화로 사람을 짚는 길은 2026-09-15 에 일부러 지웠다
+ *   (「찾아도 엉뚱한 매칭..데이타만 불순하게 만듬」). 동명이인이 96건이다.
+ *   순번은 판매현황 한 줄에 하나뿐이고 일자-No. 와 함께면 그 줄 하나를
+ *   가리킨다 — 짐작이 아니라 열쇠다.
+ */
+function _pep_setsplitUidBySeq_() {
+  var out = {};
+  try {
+    var ss = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
+    var lg = ss.getSheetByName("주문라인원장");
+    if (!lg || lg.getLastRow() < 2) return out;
+    var lc = lg.getLastColumn();
+    var head = lg.getRange(1, 1, 1, lc).getValues()[0];
+    var li = {};
+    for (var h = 0; h < head.length; h++) {
+      var hn = String(head[h] || "").trim();
+      if (hn && li[hn] === undefined) li[hn] = h;
+    }
+    if (li["고유ID"] === undefined || li["순번"] === undefined || li["일자-No."] === undefined) return out;
+    var v = lg.getRange(2, 1, lg.getLastRow() - 1, lc).getDisplayValues();
+    for (var r = 0; r < v.length; r++) {
+      var uid = String(v[r][li["고유ID"]] || "").trim();
+      if (!uid) continue;
+      var k = _pep_seqKey_(v[r][li["일자-No."]], v[r][li["순번"]]);
+      if (k && !out[k]) out[k] = uid;
+    }
+  } catch (e) {
+    Logger.log("[SNAPSHOT] 세트분리 순번표를 못 읽었습니다: " + (e && e.message));
+  }
+  return out;
+}
+
+/** 「일자-No.」+「순번」 하나로 — 앞 0·공백을 털어 양쪽이 같은 모양이 되게 */
+function _pep_seqKey_(dateNo, seq) {
+  var d = String(dateNo == null ? "" : dateNo).replace(/\s/g, "");
+  var s = String(seq == null ? "" : seq).replace(/\s/g, "").replace(/^0+/, "");
+  if (!d || !s) return "";
+  return d + "#" + s;
+}
+
 function _pep_saveSnapshotToHub_(srcSS, fallbackDateStr) {
-  var result = { saved: 0, skipped: 0, error: "", 읽은탭: "" };
+  var result = { saved: 0, skipped: 0, error: "", 읽은탭: "", 순번되찾음: 0 };
   try {
     /* ══════════════════════════════════════════════════════════
      *  ★ 「판매현황」은 «붙여넣는 칸»이라 하루를 못 담는다 ★
@@ -9254,6 +9310,8 @@ function _pep_saveSnapshotToHub_(srcSS, fallbackDateStr) {
     var J_IDX_IN_CQ = 7;   // J열 = 판매처/가게명 (C~Q 범위 내 index 7)
     // ★ 2026-06-30: 동일 전화번호 복수 주문 지원용 카운터
     var telKeyCounter = {};
+    //  순번으로 고유ID 를 되찾을 때만 만든다 (2026-09-28)
+    var _snapSeqMap = null, _snapSeqFixed = 0;
 
     for (var si = 0; si < salesData.length; si++) {
       // ★ 2026-06-30: 판매현황 A~B열 기반 요약행("계", "합계") 스킵
@@ -9267,7 +9325,24 @@ function _pep_saveSnapshotToHub_(srcSS, fallbackDateStr) {
       telPhone = String(_pep_fixPhoneLeadingZero_(telPhone));
       // O열(일일마감 M열 주문자명(사방넷)) = 주문자명/고유아이디. 슬래시 뒤만 키.
       var matchKey = _pep_deriveMatchKeyFromSalesCols_(oVal, telName, telPhone);
-      if (!oVal && telName) {
+
+      /*  ★ TEL 로 굳기 전에 순번으로 되찾는다 ★  (2026-09-28)
+          O열이 아직 비어 있으면 매칭키가 TEL:전화 로 정해지고 그대로 굳는다.
+          세트분리 원장에는 같은 줄이 «일자-No.+순번» 으로 있고 고유ID 도 있다.
+          표는 «필요할 때 한 번만» 만든다 — 다 채워져 있으면 원장을 안 읽는다. */
+      if (!_pep_isRealUid_(matchKey)) {
+        if (!_snapSeqMap) _snapSeqMap = _pep_setsplitUidBySeq_();
+        var _sk = _pep_seqKey_(abData[si][1], abData[si][0]);
+        var _uid2 = _sk ? _snapSeqMap[_sk] : "";
+        if (_uid2 && _pep_isRealUid_(_uid2)) {
+          matchKey = _uid2;
+          _snapSeqFixed++;
+          //  O열도 채워 둔다 — 마감 파일에서 사람이 눈으로 찾을 때 쓴다
+          if (!oVal) salesData[si][O_IDX_IN_CQ] = (telName ? telName + "/" : "") + _uid2;
+        }
+      }
+
+      if (!oVal && telName && !String(salesData[si][O_IDX_IN_CQ] || "").trim()) {
         salesData[si][O_IDX_IN_CQ] = telName;
       }
 
@@ -9366,9 +9441,13 @@ function _pep_saveSnapshotToHub_(srcSS, fallbackDateStr) {
       SpreadsheetApp.flush();
     }
 
+    result.순번되찾음 = _snapSeqFixed;
     Logger.log("[SNAPSHOT] 판매현황 스냅샷 저장: 신규=" + result.saved +
       " 중복스킵=" + result.skipped +
       (result.dateFixed ? " 일자보정=" + result.dateFixed : "") +
+      /*  TEL 로 굳을 뻔한 줄을 순번으로 되찾은 수. 0 이 아니면 그만큼
+          마감에서 고유ID 로 붙는다 (2026-09-28) */
+      (_snapSeqFixed ? " ★순번으로되찾음=" + _snapSeqFixed : "") +
       " (폴백날짜=" + todayStr + ")");
 
   } catch (e) {
