@@ -452,7 +452,25 @@ function _pt_createTemplateCopy(templateId, copyName) {
 // ═══════════════════════════════════════════
 //  이식: ensureDeployLocalSettingsTab_ → _pt_ensureLocalSettingsTab
 // ═══════════════════════════════════════════
-function _pt_ensureLocalSettingsTab(ss, defaultVendorName, defaultCustCd) {
+/**
+ * 업체 시트의 「설정」 탭을 만들고 거래처명·CUST_CD 자리를 잡는다.
+ *
+ * @param {boolean} 새로만듦  시트를 «새로 만드는 중»이면 true.
+ *
+ * ★ 왜 이 인자가 필요한가 ★  (2026-09-28)
+ *   > "상품정보시트에서 협력업체 시트 생성 메뉴로 만들면 설정이 기본 그린우드로 되더라구"
+ *
+ *   시트는 템플릿을 «통째로 복사»해서 만든다. 그래서 B5·B6 에 템플릿 업체
+ *   (그린우드)의 거래처명과 CUST_CD 가 이미 들어 있다.
+ *   아래 「비어 있을 때만 채운다」 규칙이 그래서 한 번도 안 걸렸고,
+ *   새로 만든 시트마다 그린우드 이름과 그린우드 코드를 달고 태어났다.
+ *   실제로 지에스·삼일 둘 다 CUST_CD 가 4216400626 이었다 — 같은 값이라
+ *   이카운트에서 두 업체가 한 거래처로 보일 수 있었다.
+ *
+ *   복구로 부를 때는 덮어쓰면 안 된다 — 사람이 고쳐 둔 값이 날아간다.
+ *   그래서 «새로 만들 때»만 덮는다.
+ */
+function _pt_ensureLocalSettingsTab(ss, defaultVendorName, defaultCustCd, 새로만듦) {
   if (!ss) return null;
   var tab = ss.getSheetByName(_PT_DEPLOY_LOCAL_SETTINGS_TAB_NAME);
   if (!tab) tab = ss.insertSheet(_PT_DEPLOY_LOCAL_SETTINGS_TAB_NAME);
@@ -478,15 +496,40 @@ function _pt_ensureLocalSettingsTab(ss, defaultVendorName, defaultCustCd) {
   var curCust = String(
     tab.getRange(_PT_DEPLOY_LOCAL_CUST_CODE_CELL).getValue() || "",
   ).trim();
-  if (!curVendor && String(defaultVendorName || "").trim()) {
-    tab
-      .getRange(_PT_DEPLOY_LOCAL_VENDOR_NAME_CELL)
-      .setValue(String(defaultVendorName).trim());
-  }
-  if (!curCust && String(defaultCustCd || "").trim()) {
-    tab
-      .getRange(_PT_DEPLOY_LOCAL_CUST_CODE_CELL)
-      .setValue(String(defaultCustCd).trim());
+  if (새로만듦) {
+    /*  ★ 템플릿에서 딸려온 값을 걷어 낸다 ★  (2026-09-28)
+        거래처명은 새 업체 이름으로 덮고, CUST_CD 는 «비운다».
+        모르는 값을 짐작해 넣느니 빈 칸이 낫다 — 남의 코드가 박혀 있으면
+        이카운트에서 두 업체가 한 거래처가 되고, 아무도 눈치채지 못한다.
+        빈 칸이면 사람이 채워야 한다는 것이 눈에 보인다. */
+    if (String(defaultVendorName || "").trim()) {
+      tab
+        .getRange(_PT_DEPLOY_LOCAL_VENDOR_NAME_CELL)
+        .setValue(String(defaultVendorName).trim());
+    }
+    if (String(defaultCustCd || "").trim()) {
+      tab.getRange(_PT_DEPLOY_LOCAL_CUST_CODE_CELL).setValue(String(defaultCustCd).trim());
+    } else {
+      tab.getRange(_PT_DEPLOY_LOCAL_CUST_CODE_CELL).clearContent();
+      try {
+        tab
+          .getRange(_PT_DEPLOY_LOCAL_CUST_CODE_CELL)
+          .setBackground("#fff3cd")
+          .setNote("이카운트 거래처코드를 여기에 적어 주세요. 비어 있으면 이카운트로 넘어갈 때 거래처를 못 찾습니다.");
+      } catch (eN) {}
+    }
+  } else {
+    //  복구로 부른 것이다 — 비어 있을 때만 채운다. 사람이 고친 값을 안 덮는다.
+    if (!curVendor && String(defaultVendorName || "").trim()) {
+      tab
+        .getRange(_PT_DEPLOY_LOCAL_VENDOR_NAME_CELL)
+        .setValue(String(defaultVendorName).trim());
+    }
+    if (!curCust && String(defaultCustCd || "").trim()) {
+      tab
+        .getRange(_PT_DEPLOY_LOCAL_CUST_CODE_CELL)
+        .setValue(String(defaultCustCd).trim());
+    }
   }
   var custRule = SpreadsheetApp.newDataValidation()
     .requireFormulaSatisfied('=OR($B6="",AND($B6<>$B5,$B6<>$B3))')

@@ -796,7 +796,7 @@ function partnerCreateSheet() {
 
   // 설정 탭 (업체명만, 그룹 안 넣음)
   try {
-    _pt_ensureLocalSettingsTab(ss, vendorName, "");
+    _pt_ensureLocalSettingsTab(ss, vendorName, "", true);   // 새로 만드는 중 — 템플릿 값을 덮는다
   } catch (e) {}
 
   // Row 1: 공지
@@ -917,7 +917,7 @@ function partnerCreateViewerOnlySheet() {
 
   // 설정 탭
   try {
-    _pt_ensureLocalSettingsTab(ss, vendorName, "");
+    _pt_ensureLocalSettingsTab(ss, vendorName, "", true);   // 새로 만드는 중 — 템플릿 값을 덮는다
   } catch (e) {}
 
   // Row 1: 공지
@@ -1003,7 +1003,7 @@ function partnerCreateConsumerSheet() {
   sheet.setName(vendorName + " 뷰어");
 
   try {
-    _pt_ensureLocalSettingsTab(ss, vendorName, "");
+    _pt_ensureLocalSettingsTab(ss, vendorName, "", true);   // 새로 만드는 중 — 템플릿 값을 덮는다
   } catch (e) {}
 
   _pt_ensureNoticeRowLinked(sheet, hubId);

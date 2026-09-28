@@ -5099,6 +5099,21 @@ var _PEP_CARRIER_SABANG_CODE_ = {
 //  CS앱(별도 프로젝트)도 같은 탭을 읽으므로 표가 하나로 유지된다.
 // ─────────────────────────────────────────────────────
 var _PEP_VC_TAB_NAME_ = "업체_택배사";
+
+/*  ★ 표에 빠진 업체를 채운다 ★  (2026-09-28)
+    > "삼일은 로젠택배로 넣어줘"
+
+    아래 시드는 씨앗(_PEP_VENDOR_CARRIER_)과 다르다. 씨앗은 «탭이 비었을 때»만
+    통째로 심는데, 탭에는 이미 18줄이 있어서 새 업체가 영영 안 들어간다.
+    이것은 «빠진 접두만» 한 줄씩 채운다. 있는 줄은 안 건드린다 —
+    사람이 탭에서 고친 값이 언제나 이긴다 (탭이 SSOT 다).
+    다 들어가고 나면 이 표를 비운다.
+
+    [접두, 업체명, 택배사]
+*/
+var _PEP_VC_ADD_ = [
+  ["SI", "삼일", "로젠택배"],
+];
 var _PEP_VC_HEADERS_ = ["접두", "업체명", "택배사", "사방넷코드", "비고"];
 var _pep_vcMem_ = null;
 
@@ -5494,7 +5509,34 @@ function _pep_ensureVendorCarrierTab_() {
     tab.getRange(1, 4).setNumberFormat("@"); // 001 앞 0 보존
   }
 
-  var seeded = 0;
+  /*  ★ 빠진 업체를 한 줄씩 채운다 ★  (2026-09-28)
+      탭이 비었을 때만 심는 아래 씨앗과 달리, 이미 쓰고 있는 탭에도 넣는다. */
+  var 더한것 = 0;
+  try {
+    if (tab.getLastRow() >= 2 && _PEP_VC_ADD_.length) {
+      var 있는접두 = {};
+      var cur = tab.getRange(2, 1, tab.getLastRow() - 1, 1).getDisplayValues();
+      for (var ci = 0; ci < cur.length; ci++) {
+        var cp = String(cur[ci][0] || "").trim().toUpperCase();
+        if (cp) 있는접두[cp] = true;
+      }
+      var 넣을줄 = [];
+      for (var ai = 0; ai < _PEP_VC_ADD_.length; ai++) {
+        var A = _PEP_VC_ADD_[ai];
+        if (있는접두[String(A[0]).toUpperCase()]) continue;
+        넣을줄.push([A[0], A[1], A[2], String(_PEP_CARRIER_SABANG_CODE_[A[2]] || ""), ""]);
+      }
+      if (넣을줄.length) {
+        tab
+          .getRange(tab.getLastRow() + 1, 1, 넣을줄.length, 5)
+          .setValues(넣을줄);
+        tab.getRange(2, 4, tab.getLastRow() - 1, 1).setNumberFormat("@");
+        더한것 = 넣을줄.length;
+      }
+    }
+  } catch (eAdd) {}
+
+  var seeded = 더한것;
   if (tab.getLastRow() < 2) {
     var rows = [];
     for (var pfx in _PEP_VENDOR_CARRIER_) {
