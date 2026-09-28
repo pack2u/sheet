@@ -154,6 +154,10 @@ vm.createContext(cliCtx);
 vm.runInContext([
   grabVar(portalSrc, "STEPS"),
   grabFn(portalSrc, "esc"),
+  /*  2026-09-28 — 단계 판정이 셋으로 갈렸다 (낱말·처리경과·합치기).
+      stepIndex 혼자 꺼내면 stageWord 를 못 찾아 터진다. */
+  grabFn(portalSrc, "stageWord"),
+  grabFn(portalSrc, "stageFromTimeline"),
   grabFn(portalSrc, "stepIndex"),
   grabFn(portalSrc, "stepsHtml"),
   grabFn(portalSrc, "driveId"),
