@@ -351,6 +351,7 @@ function ssm_load(회차키) {
 
 
   M.vendors = {};
+  ssm_업체심기_();
   var vd = ssio_body(SSIO_TABS.업체);
   for (var v2 = 0; v2 < vd.length; v2++) {
     var vc = ssText(vd[v2][0]).toUpperCase();
@@ -1196,6 +1197,57 @@ function ssm_stampManual(units, 회차키) {
 }
 
 /** 「도서산간_도선료」 탭 → core 가 쓰는 모양으로 */
+/*  ★ 대리발송업체 새로 등록 ★  (2026-09-28)
+
+    > "업체등록이 되있는지 확인해줘  코드는 GS"   "업으면 등록해줘"
+    > "이 업체도 추가해줘.. 삼일...코드는SI"
+
+    ★ 왜 이 표가 중요한가 ★
+      품목코드 앞 두 글자로 업체를 가린다(ssVendorOf). 여기 없는 코드로 대리발송이
+      걸리면 「업체코드확인」으로 «보류»된다 — 나가야 할 것이 안 나간다.
+      GS 접두 품목이 251개, SI 가 20개(실링기계)인데 둘 다 표에 없었다.
+
+    ★ 표의 주인은 시트다 ★
+      없을 때만 넣는다. 사장님이 이름을 고치시면 그 값이 이긴다.
+      다 들어가고 나면(며칠 뒤) 이 표를 비운다.
+
+    업체 시트
+      지에스 18bp2Gd4lzdNBN6NQNGKkv36qQQWg3SgclYZLTEt09L8
+      삼일   1NuBrK5q1QH7Xhre4Caqf6kk_6wk8xo2FVPedBLR8oPs
+*/
+var SS_SEED_업체 = [
+  ['GS', '지에스'],
+  ['SI', '삼일'],
+];
+
+/** 업체코드가 표에 없으면 넣는다. 있으면 아무것도 안 한다. */
+function ssm_업체심기_() {
+  try {
+    var sh = ssio_ss().getSheetByName(SSIO_TABS.업체);
+    if (!sh) return 0;
+    var body = ssio_body(SSIO_TABS.업체);
+    var 있다 = {};
+    for (var i = 0; i < body.length; i++) {
+      var c = ssText(body[i][0]).toUpperCase();
+      if (c) 있다[c] = true;
+    }
+    var 넣을것 = [];
+    for (var s = 0; s < SS_SEED_업체.length; s++) {
+      if (있다[SS_SEED_업체[s][0]]) continue;
+      넣을것.push(SS_SEED_업체[s]);
+    }
+    if (!넣을것.length) return 0;
+    var 끝 = Math.max(sh.getLastRow(), 1);
+    if (sh.getMaxRows() < 끝 + 넣을것.length) sh.insertRowsAfter(sh.getMaxRows(), 넣을것.length + 10);
+    sh.getRange(끝 + 1, 1, 넣을것.length, 2).setValues(넣을것);
+    Logger.log('[업체 심기] ' + 넣을것.map(function (r) { return r[0] + ' ' + r[1]; }).join(' · '));
+    return 넣을것.length;
+  } catch (e) {
+    Logger.log('[업체 심기] 실패: ' + String(e && e.message ? e.message : e));
+    return 0;
+  }
+}
+
 /*  ★ 강원 산간 55곳 ★  (2026-09-28)
 
     로젠이 준 「산간지역 세부 list(260801)」 그대로다. 표에 없으면 한 번만 심는다.
