@@ -10747,6 +10747,128 @@ function partnerFillUnmatchedRecent() {
   return r;
 }
 
+var _PEP_LEDGER_DIAG_TAB_ = "일일마감_원장대조";
+
+/**
+ * 🧪 마감 미매칭을 «세트분리 원장»과 맞대 본다. (읽기만 한다)
+ *
+ * > "송장이 늦어지는 제일큰 이유는 대리공급업체야.. 푸시는 1번(오후2시쯤)만"
+ * > "내가볼떈 세트메뉴가 더 접합할꺼 같긴한데"
+ *
+ * ★ 무엇을 재나 ★
+ *   마감 파일에서 송장이 빈 줄을 모아, 그 고유ID 를 세트분리 주문라인원장에서
+ *   찾는다. 원장에 송장이 있으면 «마감은 못 붙였는데 원장은 붙인» 건이다.
+ *   그 수가 곧 «원장을 송장맵에 더했을 때 메워질 수» 다.
+ *     0 에 가까우면  → 원장을 더해도 소용없다. 다른 데를 봐야 한다.
+ *     크면          → 그것만으로 미매칭이 줄어든다.
+ *
+ * ★ 아무것도 안 고친다 ★ 재기만 한다. 결과는 탭에 적는다.
+ */
+function partnerDiagnoseLedgerCoverage() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+
+  //  ① 세트분리 원장 — 고유ID → 송장
+  var 원장 = {};
+  var 원장줄 = 0;
+  try {
+    var lgSs = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
+    var lg = lgSs.getSheetByName("주문라인원장");
+    if (lg && lg.getLastRow() > 1) {
+      var lc = lg.getLastColumn();
+      var head = lg.getRange(1, 1, 1, lc).getValues()[0];
+      var li = {};
+      for (var h = 0; h < head.length; h++) {
+        var hn = String(head[h] || "").trim();
+        if (hn && li[hn] === undefined) li[hn] = h;
+      }
+      if (li["고유ID"] !== undefined && li["운송장번호"] !== undefined) {
+        var v = lg.getRange(2, 1, lg.getLastRow() - 1, lc).getDisplayValues();
+        for (var r = 0; r < v.length; r++) {
+          var uid = String(v[r][li["고유ID"]] || "").trim();
+          var inv = String(v[r][li["운송장번호"]] || "").trim();
+          if (!uid || !inv) continue;
+          if (!원장[uid]) { 원장[uid] = inv; 원장줄++; }
+        }
+      }
+    }
+  } catch (eL) {
+    if (ui) ui.alert("세트분리 원장을 못 읽었습니다: " + (eL && eL.message));
+    return;
+  }
+
+  //  ② 최근 마감 파일의 «빈 송장» 줄을 원장과 맞댄다
+  var 오늘 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+  var dates = [오늘].concat(_pep_backfillDates_(오늘));
+  var rows = [];
+  var 합 = { 빈칸: 0, 원장있음: 0, 원장없음: 0, 본파일: 0 };
+
+  for (var di = 0; di < dates.length; di++) {
+    var d = dates[di];
+    var archSs = null;
+    try { archSs = _unified_findExistingArchiveSs_(_UNIFIED_ARCHIVE_PREFIX_ + "(" + d + ")"); } catch (eF) {}
+    if (!archSs) continue;
+    var tab = archSs.getSheetByName("일일마감") || archSs.getSheets()[0];
+    if (!tab || tab.getLastRow() < 2) continue;
+    합.본파일++;
+
+    var all = tab.getRange(1, 1, tab.getLastRow(), Math.max(tab.getLastColumn(), 2)).getDisplayValues();
+    var cols = _pep_mapArchiveMatchCols_(all[0]);
+    var 날빈칸 = 0, 날원장 = 0;
+    for (var ri = 1; ri < all.length; ri++) {
+      if (String(all[ri][0] || "").indexOf("합계") !== -1) continue;
+      var inv = cols.inv >= 0 ? String(all[ri][cols.inv] || "").trim() : "";
+      if (inv && _pep_normInvoiceNo_(inv)) continue;
+      날빈칸++;
+      var key = _pep_deriveMatchKeyFromArchiveRow_(all[ri], cols);
+      var 원장송장 = key ? (원장[key] || "") : "";
+      if (원장송장) 날원장++;
+      if (rows.length < 400) {
+        rows.push([
+          d,
+          cols.src >= 0 ? all[ri][cols.src] : "",
+          key || "(열쇠없음)",
+          cols.name >= 0 ? all[ri][cols.name] : "",
+          cols.item >= 0 ? String(all[ri][cols.item] || "").substring(0, 40) : "",
+          원장송장 ? "원장에 있다" : "원장에도 없다",
+          원장송장
+        ]);
+      }
+    }
+    합.빈칸 += 날빈칸;
+    합.원장있음 += 날원장;
+  }
+  합.원장없음 = 합.빈칸 - 합.원장있음;
+
+  //  ③ 탭에 적는다 — 판독은 사람이 / 클로드가 한다
+  try {
+    var ss = SpreadsheetApp.openById(_PT.INFO_SS_ID);
+    var out = ss.getSheetByName(_PEP_LEDGER_DIAG_TAB_) || ss.insertSheet(_PEP_LEDGER_DIAG_TAB_);
+    out.clear();
+    var head = ["마감일", "출처", "매칭키", "수취인", "품목명", "판정", "원장송장"];
+    out.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight("bold").setBackground("#E8EAED");
+    out.setFrozenRows(1);
+    var 요약 = [["[요약] " + dates[dates.length - 1] + " ~ " + 오늘,
+      "파일 " + 합.본파일 + "개", "빈 송장 " + 합.빈칸 + "줄",
+      "원장에 있다 " + 합.원장있음, "원장에도 없다 " + 합.원장없음,
+      "원장 열쇠 " + 원장줄 + "개", ""]];
+    out.getRange(2, 1, 1, head.length).setValues(요약).setBackground("#fff3cd");
+    if (rows.length) out.getRange(3, 1, rows.length, head.length).setValues(rows);
+  } catch (eW) {
+    if (ui) ui.alert("결과 탭을 못 썼습니다: " + (eW && eW.message));
+  }
+
+  var msg = dates[dates.length - 1] + " ~ " + 오늘 + "  (마감 파일 " + 합.본파일 + "개)\n\n" +
+    "빈 송장 " + 합.빈칸 + "줄\n" +
+    "  · 세트분리 원장에는 있다 : " + 합.원장있음 + "줄\n" +
+    "  · 원장에도 없다          : " + 합.원장없음 + "줄\n\n" +
+    "원장 열쇠 " + 원장줄 + "개\n\n" +
+    "「원장에는 있다」가 크면 원장을 송장맵에 더하는 것만으로 메워집니다.\n" +
+    "자세한 줄은 「" + _PEP_LEDGER_DIAG_TAB_ + "」 탭에 적었습니다.";
+  if (ui) ui.alert("🧪 마감 미매칭 × 세트분리 원장", msg, ui.ButtonSet.OK);
+  return 합;
+}
+
 /** 헤더 배열에서 택배사 열 위치. 없으면 -1 */
 function _pep_findCarrierIdx_(hdr) {
   if (!hdr) return -1;
