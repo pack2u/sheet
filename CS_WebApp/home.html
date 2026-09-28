@@ -3129,6 +3129,12 @@
           </div>
           <div class="os-status" id="status">불러오는 중…</div>
           <div id="list"></div>
+          <!-- 오늘 입금 (2026-09-29) — "위치를 주문 송장 검색 아래로 바꿔줘"
+               검색 결과(#list) «아래»에 둔다. 위에 두면 검색할 때마다 결과가 입금 10줄 밑으로 밀린다. -->
+          <div id="depositBox" class="os-dash">
+            <div class="os-dash-head"><span class="os-dash-title">💰 오늘 입금<span id="dashDepositSum" class="dash-dep-sum"></span></span></div>
+            <div id="dashDeposit" class="dash-dep">불러오는 중…</div>
+          </div>
           <div id="stockoutBox" class="os-dash"></div>
           <div id="orderDash" class="os-dash loading"></div>
         </div>
@@ -3828,6 +3834,7 @@
       loadReturnActive(false);
       renderOrderDashboard();
       loadStockout();   /* 팩투유 품절상품 — 화면 열 때 한 번 (2026-09-11) */
+      renderDeposits(); /* 오늘 입금 — 열 때 한 번, 그 뒤 1분마다 (2026-09-29) */
       startCsPulse();
       setTimeout(function() { initWsSplitter(); csInstallScrollbars(); }, 80);
       setTimeout(function() { initWsSplitter(); csInstallScrollbars(); }, 400);
@@ -7566,7 +7573,7 @@
       el.innerHTML =
         '<div class="os-dash-head">' +
           '<span class="os-dash-title">📊 CS 대시보드</span>' +
-          '<button type="button" class="os-dash-refresh" onclick="warm(true);loadReturnActive(true,false);loadDashDays(true);loadStockout()">↻ 갱신</button>' +
+          '<button type="button" class="os-dash-refresh" onclick="warm(true);loadReturnActive(true,false);loadDashDays(true);loadStockout();renderDeposits(true)">↻ 갱신</button>' +
         '</div>' +
         '<div class="dash-kpi-grid">' + kpiHtml + '</div>' +
         '<div class="dash-section">' +
@@ -7586,16 +7593,13 @@
           '<div class="dash-chips">' + chipsHtml + '</div>' +
         '</div>' +
         // ★ 2026-08-31: 발주업체 TOP5 자리를 일과 체크리스트로 바꿨다.
-        // ★ 2026-09-29: 그 자리를 «오늘 입금»에 내줬다.
-        //   > "지금 일정 뜨는걸 삭제하고 그위치에 뜨게해줘"
+        // ★ 2026-09-29: 체크리스트는 걷어냈다.
+        //   > "지금 일정 뜨는걸 삭제하고 그위치에 뜨게해줘" → 이어서 "위치를 주문 송장 검색 아래로"
+        //   «오늘 입금»은 검색 바로 아래 #depositBox 로 옮겼다 (대시보드는 다시 그려질 때마다
+        //   통째로 바뀌어서, 1분마다 새로 묻는 입금 칸을 두기에도 맞지 않았다).
         //   체크리스트 코드(renderDailyChecklist · csDailyChecklist.gs)는 지우지 않았다 —
         //   되살리려면 이 자리에 dashChecklist 칸을 다시 넣고 renderDailyChecklist() 를 부르면 된다.
-        '<div class="dash-section">' +
-          '<div class="dash-section-title">오늘 입금<span id="dashDepositSum" class="dash-dep-sum"></span></div>' +
-          '<div id="dashDeposit" class="dash-dep">불러오는 중…</div>' +
-        '</div>';
-
-      renderDeposits();
+        '';
     }
 
     function setIndexStatus(where) {
