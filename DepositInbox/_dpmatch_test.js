@@ -51,8 +51,20 @@ console.log('\n[부족 · 초과]');
 }
 {
   const r = m.dpMatchDeposit(dep('콤콤', 322000), ORDERS, {});
+  ok('콤콤 주문 둘(320,000×2) 합 640,000 보다 적으면 부족', r.result === '부족' && r.alloc[0].no === '2026/09/27-1', JSON.stringify(r));
+}
+{
+  const r = m.dpMatchDeposit(dep('콤콤', 642000), ORDERS, {});
   ok('남으면 초과', r.result === '초과' && r.diff === 2000, JSON.stringify(r));
-  ok('입금일 뒤 주문은 안 쓴다', r.alloc.length === 1 && r.alloc[0].no === '2026/09/27-1');
+}
+{
+  // 이카운트 실데이터: 주문번호 날짜가 입금일보다 뒤인 주문이 있다 (납기는 앞)
+  const r = m.dpMatchDeposit(dep('콤콤', 320000, '2026-09-29 10:00'), [O('2026/10/13-2', '2026-10-13', 'C02', '콤콤', 320000)], {});
+  ok('주문번호 날짜가 입금일 뒤여도 쓴다', r.result === '일치', JSON.stringify(r));
+}
+{
+  const r = m.dpMatchDeposit(dep('환불처리', 18000), [O('R', '2026-09-27', 'C09', '환불처리', -18000)], {});
+  ok('금액 0 이하 주문(반품·차감)은 후보가 아니다', r.result === '미확인', JSON.stringify(r));
 }
 {
   const r = m.dpMatchDeposit(dep('태양포장', 600000), ORDERS, {});
@@ -99,6 +111,30 @@ console.log('\n[비슷한 이름]');
      r2.code === '' && r2.result === '후보' && r2.candidates.join() === 'X', JSON.stringify(r2));
   const r3 = m.dpMatchDeposit(dep('한빛', 1000), orders, {});
   ok('2글자는 비슷한 이름으로 안 붙인다', r3.how !== '비슷한 이름', JSON.stringify(r3));
+}
+
+console.log('\n[「상호 + 대표자명」 — 이카운트 거래처 945건 중 904건]');
+{
+  const real = [
+    O('1', '2026-09-28', '6190464617', '구도로통닭 역곡점 이병남', 68500),
+    O('2', '2026-09-28', '5049089283', '의령농산/표건욱', 1410000),
+    O('3', '2026-09-28', '1111111111', '본가참순대 이령', 45000),
+    O('4', '2026-09-28', '2222222222', '육쌈냉면 산본점 서형택', 132000),
+    O('5', '2026-09-28', '3333333333', '육쌈냉면 역곡점 김희숙', 99000),
+  ];
+  let r = m.dpMatchDeposit(dep('이병남', 68500), real, {});
+  ok('대표자 이름으로 입금 → 거래처', r.result === '일치' && r.code === '6190464617' && r.how === '이름 일부', JSON.stringify(r));
+  r = m.dpMatchDeposit(dep('표건욱', 1410000), real, {});
+  ok('「상호/대표자」 슬래시도 조각으로', r.result === '일치' && r.code === '5049089283', JSON.stringify(r));
+  r = m.dpMatchDeposit(dep('이령', 45000), real, {});
+  ok('2글자 이름도 조각이 통째로 같으면', r.result === '일치' && r.code === '1111111111', JSON.stringify(r));
+  r = m.dpMatchDeposit(dep('구도로통닭역곡', 68500), real, {});
+  ok('은행이 잘라 보낸 상호도 (품음)', r.result === '일치' && r.code === '6190464617' && r.how === '비슷한 이름', JSON.stringify(r));
+  r = m.dpMatchDeposit(dep('육쌈냉면', 132000), real, {});
+  ok('같은 상호 가게가 둘이면 거래처로 안 붙이고 금액으로 후보', r.code === '' && r.result === '후보' && r.candidates.join() === '4', JSON.stringify(r));
+  const twins = real.concat([O('6', '2026-09-28', '4444444444', '다른가게 이령', 45000)]);
+  r = m.dpMatchDeposit(dep('이령', 45000), twins, {});
+  ok('같은 대표자 이름이 두 거래처에 있으면 짐작하지 않는다', r.code === '' && r.result === '후보', JSON.stringify(r));
 }
 
 console.log('\n[합 조합이 둘 이상]');

@@ -20,8 +20,16 @@
  *  ★ 거래처 찾기 ★
  *    1) 별칭표 (사람이 한 번 지정한 입금자 → 거래처)  ← 가장 믿는다
  *    2) 이름 정리 후 같음  「(주)태양 포장」 = 「태양포장」
- *    3) 한쪽이 다른 쪽을 품음 (3글자 이상일 때만)  「태양포장산업」 ⊃ 「태양포장」
- *       ※ 3)이 둘 이상의 거래처에 걸리면 못 찾은 것으로 본다 — 짐작해서 붙이지 않는다
+ *    3) 이름 «조각»이 같음  「구도로통닭 역곡점 이병남」 의 「이병남」
+ *       — 이카운트 거래처명 945건 중 904건이 「상호 + 대표자명」 이었다 (2026-09-29 실측).
+ *         입금자는 대표자 개인 이름으로 찍히는 일이 많다. 2글자 이름도 조각이 «통째로» 같으면 본다.
+ *    4) 한쪽이 다른 쪽을 품음 (3글자 이상일 때만)  — 은행이 긴 이름을 잘라 보낼 때
+ *       「구도로통닭역곡」 ⊂ 「구도로통닭역곡점이병남」
+ *    ※ 3)·4)가 둘 이상의 거래처에 걸리면 못 찾은 것으로 본다 — 짐작해서 붙이지 않는다
+ *
+ *  ★ 날짜로 거르지 않는다 ★ (2026-09-29)
+ *    이카운트 주문번호 날짜가 납기보다 늦은 주문이 14건, 오늘보다 뒤인 주문이 3건 있었다.
+ *    날짜로 거르면 진짜 주문이 빠진다. 기간은 부르는 쪽이 «최근 며칠치»로 잘라서 넘긴다.
  *
  *  ★ 모르면 모른다고 한다 ★ 애매하면 «후보»로 올리고 사람이 고른다.
  *    잘못 붙이면 채권이 틀어진다 — 그게 이 작업을 시작한 까닭이다.
@@ -62,6 +70,11 @@ function dpFindCustomer(payer, customers, aliases) {
   for (var i = 0; i < codes.length; i++) {
     if (dpNormName(byCode[codes[i]].name) === p) return { code: codes[i], name: byCode[codes[i]].name, how: "이름" };
   }
+  var tokenHits = codes.filter(function (k) {
+    return String(byCode[k].name).split(/[\s\/,·]+/).some(function (t) { return t && dpNormName(t) === p; });
+  });
+  if (tokenHits.length === 1) return { code: tokenHits[0], name: byCode[tokenHits[0]].name, how: "이름 일부" };
+  if (tokenHits.length > 1) return null;   // 같은 이름이 여러 거래처에 — 짐작하지 않는다
   if (p.length >= 3) {
     var hits = codes.filter(function (k) {
       var n = dpNormName(byCode[k].name);
@@ -101,15 +114,14 @@ function _dp_combos_(items, target) {
  */
 function dpMatchDeposit(dep, orders, aliases) {
   var amt = Number(dep && dep.amount) || 0;
-  var day = String((dep && dep.txAt) || "").slice(0, 10);
   var out = { result: "미확인", code: "", cust: "", how: "", alloc: [], diff: 0, candidates: [], reason: "" };
   if (amt <= 0) { out.reason = "금액 없음"; return out; }
 
-  // 아직 다 안 받았고, 입금일 이전(같은 날 포함)에 잡힌 주문만
+  // 아직 다 안 받은 주문만 (금액 0 이하 = 반품·차감 주문은 자연히 빠진다)
   var open = (orders || []).map(function (o) {
     return { no: String(o.no), date: String(o.date || ""), code: String(o.code || ""), name: String(o.name || ""),
              remain: (Number(o.amount) || 0) - (Number(o.paid) || 0) };
-  }).filter(function (o) { return o.remain > 0 && (!day || !o.date || o.date <= day); });
+  }).filter(function (o) { return o.remain > 0; });
   open.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.no < b.no ? -1 : a.no > b.no ? 1 : 0); });
 
   var customers = [];
