@@ -51,13 +51,28 @@ function _dp_hideBalance_(text) {
   return String(text || "").replace(/(잔액\s*:?\s*)-?[\d,]+\s*원?/g, "$1***");
 }
 
-function dpNotifyDeposit_(p, bal) {
+/** 매칭 결과 한 줄 — 챗·웹앱이 같은 말을 쓰게 */
+var DP_MATCH_ICON_ = { "일치": "✅", "일치(합산)": "✅", "일치(지정)": "✅", "부족": "🔴", "부족(지정)": "🔴",
+  "초과": "🟡", "초과(지정)": "🟡", "후보": "🟠", "미확인": "⚪", "제외": "➖", "확인필요": "⚠", "오류": "⚠" };
+
+function dpMatchLine_(m) {
+  if (!m) return "";
+  var t = (DP_MATCH_ICON_[m.result] || "") + " " + m.result;
+  if (m.cust) t += " · " + m.cust;
+  if (m.nos) t += " · " + m.nos;
+  if (m.diff) t += " · 차액 " + (m.diff > 0 ? "+" : "") + Number(m.diff).toLocaleString() + "원";
+  if (!/^일치/.test(m.result) && m.reason) t += "\n" + m.reason;
+  return t;
+}
+
+function dpNotifyDeposit_(p, bal, match) {
   var rows = [
     { label: "입금자", value: p.name || "(이름 없음)" },
     { label: "금액", value: _dp_won_(p.amount) },
     { label: "거래일시", value: p.txAt },
     { label: "은행 · 계좌", value: (p.bank || "?") + " " + (p.account || "") }
   ];
+  if (match) rows.unshift({ label: "주문서 매칭", value: dpMatchLine_(match) });
   if (bal && bal.status === "불연속") {
     rows.push({ label: "⚠ 잔액 불연속",
       value: "사이에 빠진 문자가 있을 수 있습니다 — 입금대장을 확인해 주세요" });

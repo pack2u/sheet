@@ -145,5 +145,39 @@ console.log('\n[합 조합이 둘 이상]');
   ok('100+400 · 200+300 둘 다 맞으면 후보', r.result === '후보' && r.alloc.length === 0, JSON.stringify(r));
 }
 
+console.log('\n[이카운트 주문서조회 엑셀 읽기]');
+{
+  const rows = [
+    ['회사명 : 주식회사 팩투유 / 2026/08/30  ~ 2026/10/29 ', '', '', '', '', '', '', '', '', '', '', ''],
+    ['주문번호', '거래처명', '거래처코드', '거래처모바일', '수령인', '담당자', '품목', '납기일자', '금액', '종결\n여부', '진행\n상태', '인쇄'],
+    ['2026/10/13 -2', '의령농산/표건욱', '504-90-89283', '', '', '박상식', 'JH 9193', '2026/09/28 ', '1,410,000', '진행중', '조회', '인쇄'],
+    ['2026/09/28 -44', '구도로통닭 역곡점 이병남', '6190464617', '010-0000-0000', '', '고윤서', 'JH 68파이', '2026/09/28 ', '68,500', '완료', '조회', '인쇄'],
+    ['2026/09/20 -3', '반품가게', '1234567890', '', '', '', 'x', '2026/09/20', '-18,000', '완료', '조회', '인쇄'],
+    ['2026/09/29 (화) 오전 12:26:11', '', '', '', '', '', '', '', '', '', '', ''],
+  ];
+  const r = m.dpParseOrderSheet(rows);
+  ok('읽힌다', r.ok && r.orders.length === 3, JSON.stringify(r).slice(0, 200));
+  ok('주문번호 공백 정리', r.orders[0].no === '2026/10/13-2');
+  ok('날짜·납기', r.orders[0].date === '2026-10-13' && r.orders[0].due === '2026-09-28');
+  ok('금액 쉼표·음수', r.orders[0].amount === 1410000 && r.orders[2].amount === -18000);
+  ok('종결여부 줄바꿈 머리글도 찾는다', r.orders[1].done === '완료');
+  ok('끝의 내려받은 시각 줄은 건너뛴다', r.skipped === 1);
+  const bad = m.dpParseOrderSheet([['아무거나'], ['a', 'b']]);
+  ok('다른 엑셀이면 알려 준다', !bad.ok && bad.error.includes('주문서조회'));
+}
+{
+  // 실파일이 있으면 통째로 읽어 본다 (없는 PC 에서는 건너뛴다)
+  let X = null;
+  try { X = require('D:/Pack2U_협력업체시스템_v2/app/node_modules/xlsx'); } catch (e) {}
+  const f = 'D:/이카운트/주문서 전체.xlsx';
+  if (X && require('fs').existsSync(f)) {
+    const wb = X.readFile(f);
+    const rows = X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
+    const r = m.dpParseOrderSheet(rows);
+    ok('실파일 945건', r.ok && r.orders.length === 945, r.orders.length);
+    ok('실파일 주문번호가 겹치지 않는다', new Set(r.orders.map(o => o.no)).size === r.orders.length);
+  } else console.log('  (실파일 없음 — 건너뜀)');
+}
+
 console.log('\n' + pass + ' 통과 · ' + fail + ' 실패');
 process.exit(fail ? 1 : 0);

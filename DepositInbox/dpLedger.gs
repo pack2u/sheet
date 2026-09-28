@@ -14,7 +14,9 @@
 var DP_SHEET_NAME_ = "입금대장";
 var DP_HEADERS_ = [
   "고유번호", "수신시각", "거래일시", "은행", "계좌", "구분", "입금자", "금액",
-  "거래후잔액", "잔액확인", "상태", "메모", "원문", "발신번호", "계좌키"
+  "거래후잔액", "잔액확인", "상태", "메모", "원문", "발신번호", "계좌키",
+  // ★ 2026-09-29 주문서 매칭 (dpOrders.gs · DP_MATCH_HEADERS_ 와 같은 이름)
+  "매칭결과", "거래처", "거래처코드", "주문번호", "차액", "매칭메모", "배분", "지정"
 ];
 /** 잔액 연속성을 볼 때 뒤에서부터 읽는 줄 수. 한 계좌의 직전 거래는 이 안에 있다. */
 var DP_LOOKBACK_ROWS_ = 500;
@@ -75,9 +77,10 @@ function dpIngestSms_(body, rcv, from) {
 
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
-  var row, bal = { status: "확인불가", expected: null }, now = "", status = "";
+  var row, bal = { status: "확인불가", expected: null }, now = "", status = "", match = null;
   try {
-    var sh = dpLedgerSheet_(dpLedgerSs_(true));
+    var ss = dpLedgerSs_(true);
+    var sh = dpLedgerSheet_(ss);
     var c = _dp_cols_(sh);
 
     if (sh.getLastRow() > 1) {
@@ -105,13 +108,19 @@ function dpIngestSms_(body, rcv, from) {
       if (c[h]) row[c[h] - 1] = rec[h] == null ? "" : rec[h];
     });
     sh.appendRow(row);
+
+    // 새 입금이면 주문서와 맞춰 본다. 실패해도 입금 기록은 이미 끝났다 — 알림에 «매칭 못 함»만 싣는다
+    if (p.ok && p.kind === "입금") {
+      try { match = dpMatchRunLocked_(ss)[key] || null; }
+      catch (eM) { match = { result: "오류", reason: String(eM && eM.message || eM) }; }
+    }
   } finally {
     lock.releaseLock();
   }
 
   // 알림은 잠금 밖에서 — 챗이 느려도 다음 문자를 막지 않는다
   if (!p.ok) dpNotifyUnparsed_(body, p.reason);
-  else if (p.kind === "입금") dpNotifyDeposit_(p, bal);
+  else if (p.kind === "입금") dpNotifyDeposit_(p, bal, match);
   else if (bal.status === "불연속") dpNotifyGap_(p, bal);
 
   // V2 그림자 — 꺼져 있거나 실패해도 여기서 끝난다 (dpMirror.gs)
@@ -160,7 +169,8 @@ function dpPrevBalance_(sh, c, p) {
 function dpListDeposits_(date, limit) {
   var day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date
     : Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
-  var out = { date: day, total: 0, sum: 0, unparsed: 0, rows: [] };
+  var out = { date: day, total: 0, sum: 0, unparsed: 0, rows: [],
+              ordersAt: _dp_prop_("DP_ORDERS_AT"), ordersCount: Number(_dp_prop_("DP_ORDERS_COUNT")) || 0 };
   var ss = dpLedgerSs_(false);
   if (!ss) return out;
   var sh = ss.getSheetByName(DP_SHEET_NAME_);
@@ -194,7 +204,14 @@ function dpListDeposits_(date, limit) {
       acct: acct,
       status: st,
       check: String(col(r, "잔액확인")).indexOf("불연속") === 0 ? "불연속" : String(col(r, "잔액확인")),
-      memo: String(col(r, "메모"))
+      memo: String(col(r, "메모")),
+      // 주문서 매칭 (2026-09-29)
+      result: String(col(r, "매칭결과")),
+      cust: String(col(r, "거래처")),
+      orderNos: String(col(r, "주문번호")),
+      diff: Number(col(r, "차액")) || 0,
+      matchMemo: String(col(r, "매칭메모")),
+      pinned: String(col(r, "지정") || "") !== ""
     });
     out.sum += amt;
   }

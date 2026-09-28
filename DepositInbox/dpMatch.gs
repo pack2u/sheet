@@ -196,11 +196,70 @@ function dpMatchDeposit(dep, orders, aliases) {
   return out;
 }
 
+/**
+ * 이카운트 「주문서조회」 엑셀(보이는 값 2차원 배열) → 주문 목록
+ * ★ 2026-09-29 — 실파일 「주문서 전체.xlsx」 모양
+ *
+ *   0행  회사명 : 주식회사 팩투유 / 2026/08/30 ~ 2026/10/29
+ *   1행  주문번호 | 거래처명 | 거래처코드 | 거래처모바일 | 수령인 | 담당자 | 품목 | 납기일자 | 금액 | 종결\n여부 | 진행\n상태 | 인쇄
+ *   2행~ 2026/10/13 -2 | 의령농산/표건욱 | 504-90-89283 | … | 1,410,000 | 진행중 | …
+ *   끝행 2026/09/29 (화) 오전 12:26:11   ← 내려받은 시각
+ *
+ * ★ 칸은 «이름으로» 찾는다 ★ 머리글 줄도 찾아서 쓴다 — 이카운트 화면 설정에 따라 칸이 바뀐다.
+ * ★ 「종결여부」 는 입금과 관계없다 ★ — 「완료」 = 판매현황으로 넘겼다는 뜻 (사용자 확인 2026-09-29).
+ *   그래서 거르지 않고 싣기만 한다.
+ *
+ * @param {Array<Array<string>>} rows
+ * @return {{ok:boolean, error:string, orders:Array<{no,date,due,code,name,amount,done}>, skipped:number}}
+ */
+function dpParseOrderSheet(rows) {
+  var out = { ok: false, error: "", orders: [], skipped: 0 };
+  rows = rows || [];
+  var norm = function (s) { return String(s == null ? "" : s).replace(/\s+/g, ""); };
+  var hi = -1, col = {};
+  for (var i = 0; i < Math.min(rows.length, 15); i++) {
+    var r = (rows[i] || []).map(norm);
+    if (r.indexOf("주문번호") >= 0 && r.indexOf("금액") >= 0) {
+      hi = i;
+      r.forEach(function (h, j) { if (h && col[h] == null) col[h] = j; });
+      break;
+    }
+  }
+  if (hi < 0) { out.error = "머리글(주문번호 · 금액)을 찾지 못했습니다 — 이카운트 「주문서조회」 엑셀인지 확인해 주세요"; return out; }
+  var need = ["주문번호", "거래처명", "거래처코드", "금액"];
+  var miss = need.filter(function (h) { return col[h] == null; });
+  if (miss.length) { out.error = "칸이 없습니다: " + miss.join(", "); return out; }
+
+  var ymd = function (s) {
+    var m = String(s || "").match(/(\d{4})[\/.\-](\d{1,2})[\/.\-](\d{1,2})/);
+    return m ? m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2) : "";
+  };
+  for (var k = hi + 1; k < rows.length; k++) {
+    var row = rows[k] || [];
+    var rawNo = String(row[col["주문번호"]] || "").trim();
+    var mNo = rawNo.match(/^(\d{4}[\/.\-]\d{1,2}[\/.\-]\d{1,2})\s*-\s*(\d+)$/);
+    if (!mNo) { if (rawNo) out.skipped++; continue; }      // 끝의 「내려받은 시각」 줄 등
+    var amt = Number(String(row[col["금액"]] || "").replace(/[^\d\-]/g, "")) || 0;
+    out.orders.push({
+      no: ymd(mNo[1]).replace(/-/g, "/") + "-" + mNo[2],   // 「2026/10/13 -2」 → 「2026/10/13-2」
+      date: ymd(mNo[1]),
+      due: col["납기일자"] != null ? ymd(row[col["납기일자"]]) : "",
+      code: String(row[col["거래처코드"]] || "").trim(),
+      name: String(row[col["거래처명"]] || "").trim(),
+      amount: amt,
+      done: col["종결여부"] != null ? String(row[col["종결여부"]] || "").trim() : ""
+    });
+  }
+  out.ok = true;
+  return out;
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     DP_MATCH_VERSION: DP_MATCH_VERSION,
     dpNormName: dpNormName,
     dpFindCustomer: dpFindCustomer,
-    dpMatchDeposit: dpMatchDeposit
+    dpMatchDeposit: dpMatchDeposit,
+    dpParseOrderSheet: dpParseOrderSheet
   };
 }

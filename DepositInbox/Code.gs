@@ -82,13 +82,44 @@ function doPost(e) {
   return _dp_json_(out);
 }
 
-/** CS웹앱이 부른다 — 읽기만. 폰 생존 신호로 치지 않는다. */
+/**
+ * CS웹앱이 부른다. 폰 생존 신호로 치지 않는다.
+ *
+ * ★ 2026-09-29: 읽기에 «매칭 손질»이 더해졌다 ★
+ *   주문서 올리기 · 주문 지정 · 제외 · 되돌리기. 입금 자체(금액·입금자)를 만들거나 고치는 길은
+ *   여전히 폰 열쇠에만 있다 — CS 열쇠로는 가짜 입금을 못 넣는다.
+ */
 function _dp_handleCs_(p) {
   var action = String(p.action || "");
-  if (action !== "list") return { ok: false, error: "CS 열쇠로는 읽기(list)만 됩니다" };
-  var r = dpListDeposits_(String(p.date || ""), Number(p.limit) || 0);
+  var r;
+  switch (action) {
+    case "list":
+      r = dpListDeposits_(String(p.date || ""), Number(p.limit) || 0);
+      break;
+    case "orders_upload":
+      r = dpCsOrdersUpload_(p.rows);
+      break;
+    case "detail":
+      r = dpCsDetail_(String(p.key || ""));
+      break;
+    case "orders_search":
+      r = dpCsOrdersSearch_(String(p.q || ""));
+      break;
+    case "assign":
+      r = dpCsPin_(String(p.key || ""), { orders: [].concat(p.orders || []) }, !!p.remember, String(p.by || ""));
+      break;
+    case "exclude":
+      r = dpCsPin_(String(p.key || ""), "제외", false, String(p.by || ""));
+      break;
+    case "unassign":
+      r = dpCsPin_(String(p.key || ""), "", false, String(p.by || ""));
+      break;
+    default:
+      return { ok: false, error: "모르는 동작: " + action };
+  }
+  if (r && r.ok === false) return r;
   r.ok = true;
-  r.action = "list";
+  r.action = action;
   return r;
 }
 

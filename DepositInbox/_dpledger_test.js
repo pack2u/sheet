@@ -11,38 +11,40 @@ function makeEnv() {
   const mirrors = [];
   let mirrorFail = false;
   let triggers = [];
-  const sheet = {
-    getLastRow: () => rows.length,
-    getLastColumn: () => rows.reduce((m, r) => Math.max(m, r.length), 0),
-    getRange(r, c, nr = 1, nc = 1) {
-      if (typeof r === 'string') return { setNumberFormat() { return this; } };
-      return {
-        getValues: () => Array.from({ length: nr }, (_, i) =>
-          Array.from({ length: nc }, (_, j) => ((rows[r - 1 + i] || [])[c - 1 + j] ?? ''))),
-        setValues(v) { v.forEach((row, i) => row.forEach((x, j) => { (rows[r - 1 + i] = rows[r - 1 + i] || [])[c - 1 + j] = x; })); return this; },
-        setValue(x) { (rows[r - 1] = rows[r - 1] || [])[c - 1] = x; return this; },
-        setFontWeight() { return this; },
-        createTextFinder: (txt) => ({ matchEntireCell: () => ({ findNext: () => {
-          for (let i = 0; i < nr; i++) if (String((rows[r - 1 + i] || [])[c - 1]) === txt) return {};
-          return null;
-        } }) }),
-      };
-    },
-    // 진짜 시트처럼 — 「2026-09-28 23:55」 같은 글자는 날짜(Date)로 바뀌어 저장된다 (2026-09-29 실측)
-    appendRow: (row) => rows.push(row.map(v =>
-      (typeof v === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(v)) ? new Date(v.replace(' ', 'T')) : v)),
-    setFrozenRows() {}, hideColumns() {}, setName() { return sheet; },
+  /* 탭 하나 — 행 배열(0행 = 머리글)을 그대로 들고 있다 */
+  const makeSheet = (rows) => {
+    const sh = {
+      getLastRow: () => rows.length,
+      getLastColumn: () => rows.reduce((m, r) => Math.max(m, r.length), 0),
+      getRange(r, c, nr = 1, nc = 1) {
+        if (typeof r === 'string') return { setNumberFormat() { return this; } };
+        return {
+          getValues: () => Array.from({ length: nr }, (_, i) =>
+            Array.from({ length: nc }, (_, j) => ((rows[r - 1 + i] || [])[c - 1 + j] ?? ''))),
+          setValues(v) { v.forEach((row, i) => row.forEach((x, j) => { (rows[r - 1 + i] = rows[r - 1 + i] || [])[c - 1 + j] = x; })); return this; },
+          setValue(x) { (rows[r - 1] = rows[r - 1] || [])[c - 1] = x; return this; },
+          setFontWeight() { return this; },
+          createTextFinder: (txt) => ({ matchEntireCell: () => ({ findNext: () => {
+            for (let i = 0; i < nr; i++) if (String((rows[r - 1 + i] || [])[c - 1]) === txt) return { getRow: () => r + i };
+            return null;
+          } }) }),
+        };
+      },
+      // 진짜 시트처럼 — 「2026-09-28 23:55」 같은 글자는 날짜(Date)로 바뀌어 저장된다 (2026-09-29 실측)
+      appendRow: (row) => rows.push(row.map(v =>
+        (typeof v === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(v)) ? new Date(v.replace(' ', 'T')) : v)),
+      setFrozenRows() {}, hideColumns() {}, setName() { return sh; }, deleteRows() {},
+    };
+    return sh;
   };
+  const sheet = makeSheet(rows);
   const logRows = [];
-  let logSheet = null;
-  const makeLogSheet = () => ({
-    getRange: () => ({ setValues(v) { logRows.push(...v); return this; }, setFontWeight() { return this; } }),
-    setFrozenRows() {}, appendRow: (r) => logRows.push(r.slice()), getLastRow: () => logRows.length, deleteRows() {},
-  });
+  const tabs = { '입금대장': sheet };
+  const tabRows = { '입금대장': rows, '수신로그': logRows };
   const ss = {
-    getSheetByName: (n) => n === '수신로그' ? logSheet : sheet,
+    getSheetByName: (n) => tabs[n] || null,
     getSheets: () => [sheet],
-    insertSheet: (n) => n === '수신로그' ? (logSheet = makeLogSheet()) : sheet,
+    insertSheet: (n) => { tabRows[n] = tabRows[n] || []; return (tabs[n] = makeSheet(tabRows[n])); },
     getId: () => 'SS', getUrl: () => 'url',
   };
   const ctx = {
@@ -76,11 +78,11 @@ function makeEnv() {
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
-  for (const f of ['dpParse.gs', 'Code.gs', 'dpLedger.gs', 'dpNotify.gs', 'dpWatch.gs', 'dpMirror.gs', 'dpReqLog.gs']) {
+  for (const f of ['dpParse.gs', 'dpMatch.gs', 'Code.gs', 'dpLedger.gs', 'dpNotify.gs', 'dpWatch.gs', 'dpMirror.gs', 'dpReqLog.gs', 'dpOrders.gs', 'dpCs.gs']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, f), 'utf8'), ctx, { filename: f });
   }
   const post = (params) => ctx.doPost({ parameter: params, postData: { type: 'application/x-www-form-urlencoded', contents: '' } });
-  return { ctx, rows, logRows, props, chats, mirrors, post, setMirrorFail: (v) => { mirrorFail = v; } };
+  return { ctx, rows, logRows, tabRows, props, chats, mirrors, post, setMirrorFail: (v) => { mirrorFail = v; } };
 }
 
 let pass = 0, fail = 0;
@@ -265,6 +267,99 @@ console.log('\n[CS웹앱 조회 — 열쇠 두 개]');
   ok('CS 열쇠로는 입금을 못 넣는다', csPost({ token: 'cstok', action: 'sms', body: SMS1 }).ok === false);
   ok('폰 열쇠로는 조회를 못 한다', post({ token: 'tok', action: 'list' }).ok === false);
   ok('틀린 열쇠는 둘 다 안 된다', csPost({ token: 'x', action: 'list' }).ok === false);
+}
+
+console.log('\n[주문서 매칭 — 올리기 · 자동 · 지정 · 제외 · 되돌리기]');
+{
+  const { ctx, post, rows, tabRows, chats } = makeEnv();
+  ctx.DP_CS_TOKEN = 'cstok';
+  const cs = (o) => ctx.doPost({ parameter: {}, postData: { type: 'application/json', contents: JSON.stringify(Object.assign({ token: 'cstok' }, o)) } });
+  const now = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate());
+  const T = ymd(now), Y = ymd(new Date(now - 864e5));
+  let bal = 1000000, mm = 0;
+  const sms = (name, amount) => {
+    bal += amount; mm++;
+    return `[Web발신]\n${T}\n10:${p2(mm)}\n입금 ${amount.toLocaleString()}원\n잔액 ${bal.toLocaleString()}원\n${name}\n458***12345678\n기업`;
+  };
+  const sheetRows = [
+    ['회사명 : 주식회사 팩투유', '', '', '', '', '', '', '', '', '', '', ''],
+    ['주문번호', '거래처명', '거래처코드', '거래처모바일', '수령인', '담당자', '품목', '납기일자', '금액', '종결\n여부', '진행\n상태', '인쇄'],
+    [Y + ' -1', '구도로통닭 역곡점 이병남', '6190464617', '', '', '', 'x', T, '68,500', '완료', '조회', '인쇄'],
+    [Y + ' -2', '본가참순대 이령', '1111111111', '', '', '', 'x', T, '88,000', '진행중', '조회', '인쇄'],
+    [Y + ' -3', '아주상사 김아주', '2222222222', '', '', '', 'x', T, '88,000', '진행중', '조회', '인쇄'],
+    [T + ' -1', '아주상사 김아주', '2222222222', '', '', '', 'x', T, '45,000', '진행중', '조회', '인쇄'],
+    [T + ' (화) 오전 9:00:00', '', '', '', '', '', '', '', '', '', '', ''],
+  ];
+  const up = cs({ action: 'orders_upload', rows: sheetRows });
+  ok('주문서 올리기 — 4건 추가', up.ok && up.added === 4 && up.read === 4, JSON.stringify(up));
+  ok('주문서 탭에 적힌다', tabRows['주문서'] && tabRows['주문서'].length === 5);
+  const again = cs({ action: 'orders_upload', rows: sheetRows });
+  ok('같은 파일을 또 올려도 추가 0 · 변경 0', again.added === 0 && again.updated === 0, JSON.stringify(again));
+
+  const col = (h) => rows[0].indexOf(h);
+  const rowOf = (name) => rows.find((r) => r[col('입금자')] === name);
+
+  post({ token: 'tok', action: 'sms', body: sms('이병남', 68500) });
+  ok('대표자 이름 입금 → 자동 일치', rowOf('이병남')[col('매칭결과')] === '일치', rowOf('이병남')[col('매칭결과')]);
+  ok('주문번호가 적힌다', rowOf('이병남')[col('주문번호')] === Y + '-1');
+  ok('챗 카드에 매칭 결과가 실린다', JSON.stringify(chats[chats.length - 1]).includes('✅ 일치'));
+
+  post({ token: 'tok', action: 'sms', body: sms('홍길동', 88000) });
+  const hk = rowOf('홍길동')[col('고유번호')];
+  ok('모르는 입금자 + 같은 금액 주문 둘 → 후보', rowOf('홍길동')[col('매칭결과')] === '후보');
+  const det = cs({ action: 'detail', key: hk });
+  ok('상세 — 후보 주문 둘이 보인다', det.ok && det.options.filter((o) => o.tag === '후보').length === 2, JSON.stringify(det.options));
+  ok('상세에 잔액이 없다', !JSON.stringify(det).includes('잔액') && !('balance' in det.deposit));
+
+  const pin = cs({ action: 'assign', key: hk, orders: [Y + '-3'], remember: true, by: '고윤서' });
+  ok('사람이 지정 → 일치(지정)', pin.ok && pin.match.result === '일치(지정)' && pin.match.cust === '아주상사 김아주', JSON.stringify(pin));
+  ok('별칭표에 남는다', tabRows['별칭표'] && tabRows['별칭표'].length === 2);
+
+  post({ token: 'tok', action: 'sms', body: sms('홍길동', 45000) });
+  const second = rows.filter((r) => r[col('입금자')] === '홍길동')[1];
+  ok('같은 입금자의 다음 입금은 별칭으로 바로 일치', second[col('매칭결과')] === '일치' && second[col('주문번호')] === T + '-1', second[col('매칭결과')] + ' ' + second[col('주문번호')]);
+
+  // 몇 번을 다시 돌려도 답이 같다 — 입금누계를 «적어 두지 않는» 까닭
+  const snap = () => rows.slice(1).map((r) => [r[col('매칭결과')], r[col('주문번호')], r[col('배분')]].join('|')).join('\n');
+  const before = snap();
+  ctx.dpMatchRun_(); ctx.dpMatchRun_(); ctx.dpMatchRun_();
+  ok('매칭을 세 번 더 돌려도 그대로', snap() === before);
+
+  // 이미 다 받은 주문은 또 안 붙는다
+  post({ token: 'tok', action: 'sms', body: sms('이병남', 68500) });
+  const dupPay = rows.filter((r) => r[col('입금자')] === '이병남')[1];
+  ok('이미 받은 주문에 두 번 붙지 않는다', dupPay[col('매칭결과')] !== '일치', dupPay[col('매칭결과')]);
+
+  // 제외하면 그 주문이 다시 비고, 다른 입금이 가져간다
+  const firstKey = rowOf('이병남')[col('고유번호')];
+  cs({ action: 'exclude', key: firstKey, by: '고윤서' });
+  ok('제외', rowOf('이병남')[col('매칭결과')] === '제외');
+  ok('제외하면 두 번째 입금이 그 주문과 일치', dupPay[col('매칭결과')] === '일치', dupPay[col('매칭결과')]);
+  cs({ action: 'unassign', key: firstKey });
+  ok('되돌리면 먼저 들어온 입금이 다시 가져간다', rowOf('이병남')[col('매칭결과')] === '일치' && dupPay[col('매칭결과')] !== '일치');
+
+  // 이카운트에 넘어간 줄은 못 바꾼다
+  rowOf('이병남')[col('상태')] = '반영완료';
+  const frozen = cs({ action: 'exclude', key: firstKey });
+  ok('반영완료 줄은 지정·제외 거절', frozen.ok === false && frozen.error.includes('이카운트'));
+  ctx.dpMatchRun_();
+  ok('반영완료 줄의 배분은 그대로 센다', dupPay[col('매칭결과')] !== '일치');
+
+  // 찾기
+  const s1 = cs({ action: 'orders_search', q: '아주' });
+  ok('거래처명으로 찾기', s1.ok && s1.rows.length === 2);
+  const s2 = cs({ action: 'orders_search', q: '88,000' });
+  ok('금액으로 찾기', s2.rows.length === 2);
+
+  const list = cs({ action: 'list', limit: 10 });
+  ok('목록에 매칭 칸이 실린다', list.rows.some((r) => r.result === '일치(지정)' && r.cust === '아주상사 김아주'));
+  ok('목록에 주문서 올린 시각', !!list.ordersAt && list.ordersCount === 4);
+
+  const bad = cs({ action: 'orders_upload', rows: [['엉뚱한 엑셀']] });
+  ok('다른 엑셀은 거절', bad.ok === false && bad.error.includes('주문서조회'));
+  ok('폰 열쇠로는 주문서를 못 올린다', post({ token: 'tok', action: 'orders_upload' }).ok === false);
 }
 
 console.log('\n[V2 미러]');

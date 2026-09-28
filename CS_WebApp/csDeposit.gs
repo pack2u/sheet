@@ -43,10 +43,6 @@ function _cs_dep_cfg_() {
  */
 function csDepositList(date, limit) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
-  var cfg = _cs_dep_cfg_();
-  if (!cfg.url || !cfg.token) {
-    return { ok: false, error: "입금수신 연결 설정이 없습니다 (_secrets.gs CS_DEPOSIT_URL · CS_DEPOSIT_TOKEN)" };
-  }
   var day = /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? String(date)
     : Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
   var lim = Math.max(0, Number(limit) || 0);
@@ -59,14 +55,27 @@ function csDepositList(date, limit) {
       if (hit) return JSON.parse(hit);
     } catch (e) {}
   }
+  var out = _cs_dep_call_({ action: "list", date: day, limit: lim });
+  if (out.ok && cache) {
+    try { cache.put(ck, JSON.stringify(out), _CS_DEP_CACHE_SEC_); } catch (e) {}
+  }
+  return out;
+}
 
+/** 입금수신에 한 번 묻는다 — 모든 동작이 같은 길로 간다 */
+function _cs_dep_call_(payload) {
+  var cfg = _cs_dep_cfg_();
+  if (!cfg.url || !cfg.token) {
+    return { ok: false, error: "입금수신 연결 설정이 없습니다 (_secrets.gs CS_DEPOSIT_URL · CS_DEPOSIT_TOKEN)" };
+  }
+  payload.token = cfg.token;
   try {
     var res = UrlFetchApp.fetch(cfg.url, {
       method: "post",
       contentType: "application/json",
       muteHttpExceptions: true,
       followRedirects: true,
-      payload: JSON.stringify({ token: cfg.token, action: "list", date: day, limit: lim })
+      payload: JSON.stringify(payload)
     });
     var code = res.getResponseCode();
     var out;
@@ -74,11 +83,74 @@ function csDepositList(date, limit) {
       return { ok: false, error: "입금수신 응답을 읽지 못했습니다 (HTTP " + code + ")" };
     }
     if (!out || !out.ok) return { ok: false, error: (out && out.error) || ("HTTP " + code) };
-    if (cache) {
-      try { cache.put(ck, JSON.stringify(out), _CS_DEP_CACHE_SEC_); } catch (e) {}
-    }
     return out;
   } catch (err) {
     return { ok: false, error: "입금수신에 닿지 못했습니다 — " + String((err && err.message) || err) };
   }
+}
+
+/** 손질한 뒤에는 오늘 목록 캐시를 지운다 — 누른 사람이 20초 동안 옛 판정을 보지 않게 */
+function _cs_dep_bust_() {
+  try {
+    var day = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+    CacheService.getScriptCache().removeAll(["csdep:" + day + ":10", "csdep:" + day + ":0"]);
+  } catch (e) {}
+}
+
+/** 누가 했는지 — 지정·제외에 남긴다 */
+function _cs_dep_by_() {
+  try { var c = _cs_ac_check_(); return c.name || c.email || ""; } catch (e) { return ""; }
+}
+
+// ══════════════════════════════════════════════
+//  주문서 매칭 (2026-09-29)
+//  > "이제 주문서 매칭 진행해줘"
+//  엑셀은 브라우저가 읽어 «보이는 값 2차원 배열»로 넘긴다. 해석은 입금수신(dpMatch.gs)이 한다 —
+//  규칙이 두 곳에 있으면 늦게 고친 쪽이 조용히 틀린다.
+// ══════════════════════════════════════════════
+
+/** 이카운트 「주문서조회」 엑셀 올리기 */
+function csDepositOrdersUpload(rows) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  if (!rows || !rows.length) return { ok: false, error: "엑셀에서 읽은 줄이 없습니다" };
+  var out = _cs_dep_call_({ action: "orders_upload", rows: rows });
+  _cs_dep_bust_();
+  return out;
+}
+
+/** 입금 한 건의 상세와 고를 만한 주문들 */
+function csDepositDetail(key) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  return _cs_dep_call_({ action: "detail", key: String(key || "") });
+}
+
+/** 남은 주문 찾기 (거래처명 · 금액 · 주문번호) */
+function csDepositSearch(q) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  return _cs_dep_call_({ action: "orders_search", q: String(q || "") });
+}
+
+/** 이 입금은 이 주문(들)의 것 — remember 면 입금자 → 거래처를 기억한다 */
+function csDepositAssign(key, orders, remember) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  var out = _cs_dep_call_({ action: "assign", key: String(key || ""), orders: orders || [],
+                            remember: !!remember, by: _cs_dep_by_() });
+  _cs_dep_bust_();
+  return out;
+}
+
+/** 주문 입금이 아님 (개인 송금 · 환불 반환 등) */
+function csDepositExclude(key) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  var out = _cs_dep_call_({ action: "exclude", key: String(key || ""), by: _cs_dep_by_() });
+  _cs_dep_bust_();
+  return out;
+}
+
+/** 사람이 정한 것을 걷고 자동 판정으로 되돌린다 */
+function csDepositUnassign(key) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  var out = _cs_dep_call_({ action: "unassign", key: String(key || ""), by: _cs_dep_by_() });
+  _cs_dep_bust_();
+  return out;
 }

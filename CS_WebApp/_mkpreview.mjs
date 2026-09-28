@@ -74,13 +74,26 @@ const 스텁 = `<script>
               var hh = 16 - Math.floor(i / 2), mm = i % 2 ? '05' : '42';
               return { key: 'k' + i, txAt: '2026-09-29 ' + hh + ':' + mm, time: hh + ':' + mm, name: n,
                        amount: [500000, 320000, 88000, 1250000, 50000, 214500, 30000, 990000, 45000, 132000, 77000, 1000][i],
-                       bank: '기업', acct: '1018', status: '대기', check: i === 3 ? '불연속' : '정상', memo: '' };
+                       bank: '기업', acct: '1018', status: '대기', check: i === 3 ? '불연속' : '정상', memo: '',
+                       result: ['일치', '부족', '후보', '일치(합산)', '미확인', '일치(지정)', '초과', '일치', '일치', '제외', '일치', '미확인'][i],
+                       cust: [n + ' 대표', n, '', n, '', n, n, n, n, '', n, ''][i],
+                       orderNos: i === 2 ? '후보: 2026/09/28-3, 2026/09/28-9' : '2026/09/28-' + (i + 1),
+                       diff: i === 1 ? -20000 : (i === 6 ? 2000 : 0),
+                       matchMemo: i === 4 ? '입금자 「김철수」 를 거래처로 못 찾고, 같은 금액 주문도 없음' : '', pinned: i === 5 };
             });
             var 한도 = arguments[1] || 0;
             답 = { ok: true, date: '2026-09-29', total: 줄.length, unparsed: 0,
                    sum: 줄.reduce(function (a, x) { return a + x.amount; }, 0),
                    rows: 한도 ? 줄.slice(0, 한도) : 줄 };
           }
+          else if (k === 'csDepositDetail') 답 = { ok: true,
+            deposit: { key: 'k2', txAt: '2026-09-29 15:42', name: '홍길동', amount: 88000, bank: '기업', acct: '1018', status: '대기',
+                       result: '후보', cust: '', orderNos: '후보: 2026/09/28-3, 2026/09/28-9', diff: 0,
+                       memo: '입금자 「홍길동」 를 거래처로 못 찾음 — 같은 금액 주문 2건', pinned: '', frozen: false },
+            options: [{ no: '2026/09/28-3', date: '2026-09-28', name: '본가참순대 이령', code: '1', amount: 88000, remain: 88000, tag: '후보' },
+                      { no: '2026/09/28-9', date: '2026-09-28', name: '아주상사 김아주', code: '2', amount: 88000, remain: 88000, tag: '후보' },
+                      { no: '2026/09/27-4', date: '2026-09-27', name: '홍길동식당 홍길동', code: '3', amount: 120000, remain: 32000, tag: '같은 금액' }] };
+          else if (k === 'csDepositSearch') 답 = { ok: true, rows: [] };
           else if (/List|All|Search|Rows|Cards|Items/i.test(String(k))) 답 = [];
           else 답 = {};
           if (t._ok) setTimeout(function () { t._ok(답); }, 0);

@@ -2789,6 +2789,42 @@
     }
     @media (prefers-reduced-motion: reduce) { .dash-dep-row.new { animation: none !important; } }
 
+    /* ── 주문서 매칭 (2026-09-29) ──
+       한 입금 = 두 줄. 윗줄은 그대로(시각·입금자·금액), 아랫줄에 판정.
+       눌러서 고칠 수 있는 줄이라 커서를 바꾼다. */
+    .dash-dep-row { flex-wrap: wrap; cursor: pointer; text-align: left; font-family: inherit; width: 100%; color: var(--text-primary); }
+    .dash-dep-row:hover { background: var(--bg-card-hover); }
+    .dash-dep-match { flex: 1 0 100%; font-size: 10px; color: var(--text-muted); padding-left: 2px;
+                      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dash-dep-match.ok   { color: var(--accent-green); }
+    .dash-dep-match.low  { color: var(--accent-red); }
+    .dash-dep-match.over { color: var(--accent-orange); }
+    .dash-dep-match.ask  { color: var(--accent-orange); font-weight: 700; }
+    .dash-dep-orders { font-size: 10px; color: var(--text-muted); margin: -4px 0 6px; }
+    .dash-dep-orders.stale { color: var(--accent-orange); }
+    .dep-det-now { font-size: 12px; line-height: 1.5; padding: 8px 10px; border-radius: 8px;
+                   background: var(--bg-secondary); border: 1px solid var(--border); margin-bottom: 12px; }
+    .dep-det-now small { display: block; color: var(--text-muted); font-size: 11px; }
+    .dep-det-label { font-size: 12px; font-weight: 700; margin: 4px 0 6px; }
+    .dep-det-label span { font-weight: 400; color: var(--text-muted); }
+    .dep-det-opts { display: flex; flex-direction: column; gap: 4px; }
+    .dep-det-opt { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px;
+                   background: var(--bg-secondary); border: 1px solid var(--border); font-size: 12px; cursor: pointer; }
+    .dep-det-opt.done { opacity: .5; }
+    .dep-det-opt .n { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dep-det-opt .t { flex: none; font-size: 10px; color: var(--text-muted); }
+    .dep-det-opt .a { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .dep-det-search { display: flex; gap: 6px; margin: 10px 0; }
+    .dep-det-search input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+                            background: var(--bg-secondary); color: var(--text-primary); font-family: inherit; font-size: 12px; }
+    .dep-det-search button, .dep-det-actions button {
+      padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer;
+      background: var(--bg-secondary); color: var(--text-primary); font-family: inherit; font-size: 12px; }
+    .dep-det-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .dep-det-actions button.primary { background: var(--accent-green); border-color: var(--accent-green); color: #fff; font-weight: 700; }
+    .dep-det-actions button:disabled { opacity: .5; cursor: default; }
+    .dep-det-remember { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); }
+
     .dash-vendor-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid transparent; }
     .dash-vendor-row:last-child { border-bottom: none; }
     .dash-vendor-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3132,7 +3168,14 @@
           <!-- 오늘 입금 (2026-09-29) — "위치를 주문 송장 검색 아래로 바꿔줘"
                검색 결과(#list) «아래»에 둔다. 위에 두면 검색할 때마다 결과가 입금 10줄 밑으로 밀린다. -->
           <div id="depositBox" class="os-dash">
-            <div class="os-dash-head"><span class="os-dash-title">💰 오늘 입금<span id="dashDepositSum" class="dash-dep-sum"></span></span></div>
+            <div class="os-dash-head">
+              <span class="os-dash-title">💰 오늘 입금<span id="dashDepositSum" class="dash-dep-sum"></span></span>
+              <!-- 주문서 매칭 (2026-09-29) — 주문수집 전에 받는 「주문서조회」 엑셀을 여기에 한 번 올린다 -->
+              <button type="button" class="os-dash-refresh" onclick="document.getElementById('depOrdersFile').click()"
+                      title="이카운트 영업관리 → 주문서조회 → 엑셀 내려받기 한 파일">📥 주문서 올리기</button>
+              <input type="file" id="depOrdersFile" accept=".xlsx,.xls" hidden onchange="depUploadOrders(this)">
+            </div>
+            <div id="depOrdersInfo" class="dash-dep-orders"></div>
             <div id="dashDeposit" class="dash-dep">불러오는 중…</div>
           </div>
           <div id="stockoutBox" class="os-dash"></div>
@@ -3585,6 +3628,33 @@
       </div>
       <div class="dep-modal-list" id="depModalList">불러오는 중…</div>
       <button type="button" class="dep-modal-close" onclick="closeDepositModal()">닫기</button>
+    </div>
+  </div>
+
+  <!-- 입금 한 건 — 주문 고르기 · 제외 · 되돌리기 (2026-09-29) -->
+  <div class="modal-overlay" id="depDetailModal" onclick="if (event.target === this) closeDepositDetail()">
+    <div class="modal-content" style="max-height:88vh;overflow-y:auto;">
+      <div class="modal-handle"></div>
+      <div class="dep-modal-head">
+        <div class="modal-title" style="margin:0" id="depDetTitle">입금</div>
+        <span class="dash-dep-amt" id="depDetAmt"></span>
+      </div>
+      <div class="dep-det-now" id="depDetNow"></div>
+      <div class="dep-det-label">이 입금이 갚는 주문 <span>(여러 개 고를 수 있음)</span></div>
+      <div class="dep-det-opts" id="depDetOpts">불러오는 중…</div>
+      <div class="dep-det-search">
+        <input type="search" id="depDetQ" placeholder="거래처명 · 금액 · 주문번호로 찾기"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();depDetailSearch();}">
+        <button type="button" onclick="depDetailSearch()">찾기</button>
+      </div>
+      <label class="dep-det-remember"><input type="checkbox" id="depDetRemember" checked>
+        <span id="depDetRememberLabel">이 입금자는 다음부터 이 거래처로 기억</span></label>
+      <div class="dep-det-actions">
+        <button type="button" class="primary" id="depDetSave" onclick="depDetailAssign()">선택한 주문으로 확정</button>
+        <button type="button" onclick="depDetailExclude()" title="개인 송금 · 환불 반환 등 주문 대금이 아닌 입금">주문 입금 아님</button>
+        <button type="button" id="depDetUndo" onclick="depDetailUnassign()" hidden>자동 판정으로 되돌리기</button>
+      </div>
+      <button type="button" class="dep-modal-close" onclick="closeDepositDetail()">닫기</button>
     </div>
   </div>
 
@@ -12302,15 +12372,55 @@
 
     function depWon(n) { return (Number(n) || 0).toLocaleString() + '원'; }
 
+    /* 주문서 매칭 한 줄 (2026-09-29) — 챗 알림(dpMatchLine_)과 같은 아이콘을 쓴다 */
+    var DEP_ICON = { '일치': '✅', '일치(합산)': '✅', '일치(지정)': '✅', '부족': '🔴', '부족(지정)': '🔴',
+                     '초과': '🟡', '초과(지정)': '🟡', '후보': '🟠', '미확인': '⚪', '제외': '➖', '확인필요': '⚠' };
+    function depMatchCls(r) {
+      if (/^일치/.test(r)) return 'ok';
+      if (/^부족/.test(r)) return 'low';
+      if (/^초과/.test(r)) return 'over';
+      if (r === '후보' || r === '확인필요') return 'ask';
+      return '';
+    }
+    function depMatchText(x) {
+      if (!x.result) return '주문서 매칭 전';
+      var t = (DEP_ICON[x.result] || '') + ' ' + x.result;
+      if (x.cust) t += ' · ' + x.cust;
+      else if (x.orderNos && /^후보/.test(x.orderNos)) t += ' · ' + x.orderNos.replace(/^후보:\s*/, '').split(/,\s*/).length + '건 중 선택';
+      if (x.diff) t += ' · ' + (x.diff > 0 ? '+' : '') + depWon(x.diff);
+      if (x.result === '미확인' && x.matchMemo) t += ' · ' + x.matchMemo;
+      return t;
+    }
+
     function depRowHtml(x, isNew) {
-      return '<div class="dash-dep-row' + (isNew ? ' new' : '') + '"' +
-        ' title="' + esc((x.txAt || '') + ' · ' + (x.bank || '') + ' ' + (x.acct ? '…' + x.acct : '') + ' · ' + (x.status || '')) + '">' +
+      return '<button type="button" class="dash-dep-row' + (isNew ? ' new' : '') + '"' +
+        ' onclick="openDepositDetail(\'' + js(x.key) + '\')"' +
+        ' title="' + esc((x.txAt || '') + ' · ' + (x.bank || '') + ' ' + (x.acct ? '…' + x.acct : '') +
+                     (x.orderNos ? '\n주문 ' + x.orderNos : '') + (x.matchMemo ? '\n' + x.matchMemo : '') +
+                     '\n눌러서 주문 고르기') + '">' +
         '<span class="dash-dep-time">' + esc(x.time || '') + '</span>' +
         '<span class="dash-dep-name">' + esc(x.name || '(이름 없음)') + '</span>' +
         (x.check === '불연속' ? '<span class="dash-dep-warn" title="이 입금 앞에 빠진 은행 문자가 있을 수 있습니다">⚠ 확인</span>' : '') +
         '<span class="dash-dep-bank">' + esc(x.bank || '') + '</span>' +
         '<span class="dash-dep-amt">' + esc(depWon(x.amount)) + '</span>' +
-        '</div>';
+        '<span class="dash-dep-match ' + depMatchCls(x.result) + '">' + esc(depMatchText(x)) + (x.pinned ? ' ✎' : '') + '</span>' +
+        '</button>';
+    }
+
+    /* 주문서를 언제 올렸는지 — 오늘 안 올렸으면 눈에 띄게 (매칭이 옛 주문서로 돌고 있다는 뜻) */
+    function paintDepOrdersInfo(r) {
+      var el = document.getElementById('depOrdersInfo');
+      if (!el || !r) return;
+      var today = r.date || '';
+      if (!r.ordersAt) {
+        el.className = 'dash-dep-orders stale';
+        el.textContent = '주문서를 아직 안 올렸습니다 — 「📥 주문서 올리기」로 이카운트 주문서조회 엑셀을 올리면 매칭합니다';
+        return;
+      }
+      var stale = today && r.ordersAt.slice(0, 10) !== today;
+      el.className = 'dash-dep-orders' + (stale ? ' stale' : '');
+      el.textContent = '주문서 ' + r.ordersAt.slice(5, 16) + ' 기준 · ' + (r.ordersCount || 0).toLocaleString() + '건' +
+        (stale ? ' — 오늘 주문서를 올려 주세요' : '');
     }
 
     function depSumText(r) {
@@ -12349,6 +12459,7 @@
       if (!el || !r) return;
       var sumEl = document.getElementById('dashDepositSum');
       if (sumEl) sumEl.textContent = depSumText(r);
+      paintDepOrdersInfo(r);
 
       var first = DEP_SEEN === null;
       var seen = DEP_SEEN || {};
@@ -12401,6 +12512,180 @@
     function closeDepositModal() {
       var m = document.getElementById('depModal');
       if (m) m.classList.remove('active');
+    }
+
+    // ── 입금 한 건 — 주문 고르기 (2026-09-29) ─────────────
+    //   후보·미확인·부족·초과를 사람이 정리하는 창. 자동 «일치»도 열어서 고칠 수 있다.
+    //   고르면 서버가 매칭을 통째로 다시 돌린다 — 다른 입금의 판정도 같이 바뀔 수 있다(같은 주문을 두고 다투던 것).
+    var DEP_DET = null;         // { deposit, options }
+    var DEP_DET_BUSY = false;
+
+    function depOptHtml(o, checked) {
+      var done = o.remain <= 0 && !checked;
+      return '<label class="dep-det-opt' + (done ? ' done' : '') + '">' +
+        '<input type="checkbox" value="' + esc(o.no) + '"' + (checked ? ' checked' : '') + '>' +
+        '<span class="n">' + esc(o.name) + '</span>' +
+        '<span class="t">' + esc(o.no) + (o.tag ? ' · ' + esc(o.tag) : '') + '</span>' +
+        '<span class="a">' + (o.remain < o.amount ? esc(depWon(o.remain)) + ' / ' : '') + esc(depWon(o.amount)) + '</span>' +
+        '</label>';
+    }
+
+    function openDepositDetail(key) {
+      var m = document.getElementById('depDetailModal');
+      if (!m) return;
+      DEP_DET = null;
+      document.getElementById('depDetTitle').textContent = '입금';
+      document.getElementById('depDetAmt').textContent = '';
+      document.getElementById('depDetNow').textContent = '불러오는 중…';
+      document.getElementById('depDetOpts').innerHTML = '';
+      document.getElementById('depDetQ').value = '';
+      m.classList.add('active');
+
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (!r || !r.ok) {
+            document.getElementById('depDetNow').textContent = '불러오지 못했습니다' + (r && r.error ? ' — ' + r.error : '');
+            return;
+          }
+          DEP_DET = r;
+          var d = r.deposit;
+          document.getElementById('depDetTitle').textContent = (d.txAt || '').slice(5) + ' · ' + (d.name || '(이름 없음)');
+          document.getElementById('depDetAmt').textContent = depWon(d.amount);
+          document.getElementById('depDetNow').innerHTML =
+            esc(depMatchText({ result: d.result, cust: d.cust, orderNos: d.orderNos, diff: d.diff, matchMemo: '' })) +
+            (d.orderNos ? '<small>주문 ' + esc(d.orderNos) + '</small>' : '') +
+            (d.memo ? '<small>' + esc(d.memo) + '</small>' : '') +
+            (d.frozen ? '<small>이카운트에 넘어간 입금이라 여기서는 못 바꿉니다</small>' : '');
+          document.getElementById('depDetRememberLabel').textContent =
+            '「' + (d.name || '?') + '」 는 다음부터 이 거래처로 기억';
+          var cur = {};
+          (r.options || []).forEach(function (o) { if (o.tag === '지금 배분') cur[o.no] = 1; });
+          var h = '';
+          (r.options || []).forEach(function (o) { h += depOptHtml(o, !!cur[o.no]); });
+          document.getElementById('depDetOpts').innerHTML = h ||
+            '<div class="dash-dep-empty">고를 만한 주문이 없습니다 — 아래에서 찾아보세요</div>';
+          document.getElementById('depDetUndo').hidden = !d.pinned;
+          ['depDetSave'].forEach(function (id) { document.getElementById(id).disabled = !!d.frozen; });
+        })
+        .withFailureHandler(function (e) {
+          document.getElementById('depDetNow').textContent = '불러오지 못했습니다';
+        })
+        .csDepositDetail(key);
+    }
+
+    function closeDepositDetail() {
+      var m = document.getElementById('depDetailModal');
+      if (m) m.classList.remove('active');
+      DEP_DET = null;
+    }
+
+    function depDetailSearch() {
+      var q = (document.getElementById('depDetQ').value || '').trim();
+      if (!q) return;
+      var box = document.getElementById('depDetOpts');
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (!r || !r.ok) { toast('찾지 못했습니다' + (r && r.error ? ' — ' + r.error : ''), 2600); return; }
+          // 이미 보이는 주문은 그대로 두고, 새로 찾은 것만 위에 붙인다 (체크해 둔 것이 풀리지 않게)
+          var have = {};
+          box.querySelectorAll('input[type=checkbox]').forEach(function (c) { have[c.value] = 1; });
+          var h = '';
+          (r.rows || []).forEach(function (o) { if (!have[o.no]) { o.tag = '찾음'; h += depOptHtml(o, false); } });
+          if (!h) { toast('더 찾은 주문이 없습니다', 2000); return; }
+          box.insertAdjacentHTML('afterbegin', h);
+        })
+        .withFailureHandler(function () { toast('찾지 못했습니다', 2000); })
+        .csDepositSearch(q);
+    }
+
+    function depDetailDone(r, what) {
+      DEP_DET_BUSY = false;
+      if (!r || !r.ok) { toast(what + ' 실패 — ' + ((r && r.error) || '다시 시도해 주세요'), 3200); return; }
+      var m = r.match;
+      toast(what + ' · ' + (m ? (DEP_ICON[m.result] || '') + ' ' + m.result + (m.cust ? ' · ' + m.cust : '') : '완료'), 2600);
+      closeDepositDetail();
+      renderDeposits(true);
+      // 더보기 창이 열려 있으면 그것도 새로
+      var dm = document.getElementById('depModal');
+      if (dm && dm.classList.contains('active')) openDepositModal();
+    }
+
+    function depDetailAssign() {
+      if (!DEP_DET || DEP_DET_BUSY) return;
+      var picked = [];
+      document.querySelectorAll('#depDetOpts input[type=checkbox]:checked').forEach(function (c) { picked.push(c.value); });
+      if (!picked.length) { toast('주문을 하나 이상 고르세요', 2200); return; }
+      DEP_DET_BUSY = true;
+      var remember = document.getElementById('depDetRemember').checked;
+      google.script.run
+        .withSuccessHandler(function (r) { depDetailDone(r, '확정'); })
+        .withFailureHandler(function () { depDetailDone(null, '확정'); })
+        .csDepositAssign(DEP_DET.deposit.key, picked, remember);
+    }
+
+    function depDetailExclude() {
+      if (!DEP_DET || DEP_DET_BUSY) return;
+      if (!confirm('이 입금을 주문 대금이 아닌 것으로 표시할까요?\n(개인 송금 · 환불 반환 등)')) return;
+      DEP_DET_BUSY = true;
+      google.script.run
+        .withSuccessHandler(function (r) { depDetailDone(r, '제외'); })
+        .withFailureHandler(function () { depDetailDone(null, '제외'); })
+        .csDepositExclude(DEP_DET.deposit.key);
+    }
+
+    function depDetailUnassign() {
+      if (!DEP_DET || DEP_DET_BUSY) return;
+      DEP_DET_BUSY = true;
+      google.script.run
+        .withSuccessHandler(function (r) { depDetailDone(r, '되돌림'); })
+        .withFailureHandler(function () { depDetailDone(null, '되돌림'); })
+        .csDepositUnassign(DEP_DET.deposit.key);
+    }
+
+    // ── 주문서 올리기 (2026-09-29) ─────────────────────
+    //   엑셀은 브라우저가 읽는다(SheetJS — 누를 때만 한 번 받아 온다).
+    //   «보이는 값» 그대로 서버에 넘기고, 어느 칸이 무엇인지는 입금수신(dpMatch.gs)이 판단한다.
+    var DEP_XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    function depLoadXlsx(cb) {
+      if (window.XLSX) { cb(); return; }
+      var s = document.createElement('script');
+      s.src = DEP_XLSX_URL;
+      s.onload = function () { cb(); };
+      s.onerror = function () { toast('엑셀 읽기 도구를 못 불러왔습니다 — 인터넷 연결을 확인해 주세요', 3500); };
+      document.head.appendChild(s);
+    }
+
+    function depUploadOrders(input) {
+      var f = input.files && input.files[0];
+      input.value = '';                       // 같은 파일을 다시 골라도 onchange 가 뜨게
+      if (!f) return;
+      toast('주문서 읽는 중… ' + f.name, 2500);
+      depLoadXlsx(function () {
+        var rd = new FileReader();
+        rd.onload = function (ev) {
+          var rows;
+          try {
+            var wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+            var ws = wb.Sheets[wb.SheetNames[0]];
+            rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+          } catch (e) {
+            toast('엑셀을 읽지 못했습니다 — ' + (e && e.message ? e.message : e), 3500);
+            return;
+          }
+          google.script.run
+            .withSuccessHandler(function (r) {
+              if (!r || !r.ok) { toast('주문서 올리기 실패 — ' + ((r && r.error) || ''), 4000); return; }
+              var t = r.tally || {}, parts = [];
+              Object.keys(t).forEach(function (k) { parts.push((DEP_ICON[k] || '') + k + ' ' + t[k]); });
+              toast('주문서 ' + r.read + '건 읽음 · 새로 ' + r.added + ' · 바뀜 ' + r.updated +
+                    (parts.length ? '\n' + parts.join(' · ') : ''), 4500);
+              renderDeposits(true);
+            })
+            .withFailureHandler(function (e) { toast('주문서 올리기 실패 — ' + (e && e.message ? e.message : ''), 4000); })
+            .csDepositOrdersUpload(rows);
+        };
+        rd.readAsArrayBuffer(f);
+      });
     }
 
     // ══ 일과 체크리스트 (2026-08-31) ═══════════════════════
