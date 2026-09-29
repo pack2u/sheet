@@ -565,6 +565,7 @@
 
     Promise.all(files.map(shrink)).then(function (list) {
       PENDING = list;
+      startOcr(list[0]); // 바코드와 같이 달린다 — 아래 둘이 이 답을 나눠 쓴다
       stage("송장번호 인식 중…");
       // 첫 장에서만 번호를 찾는다. 보통 첫 장이 송장 사진이다.
       // minDigits 4 — 파손으로 일부만 읽혀도 뒷자리 매칭에 쓴다.
@@ -580,20 +581,12 @@
         // 바코드 실패 → 글자 읽기. 여기서 딱 한 번만 부른다.
         // csDecode 를 거치지 않고 직접 불러야 8자리 미만이어도
         // 같이 읽은 보내는분 이름·전화를 건질 수 있다.
+        //  글자는 찍자마자 이미 읽기 시작했다(startOcr). 그 답을 기다린다.
         stage("바코드가 안 읽혀 글자를 읽는 중…");
-        return new Promise(function (resolve) {
-          google.script.run
-            .withSuccessHandler(function (r) {
-              if (!r) { OCR_ERR = "글자 인식 응답 없음"; resolve(null); return; }
-              //  글자를 하나도 못 건졌으면 까닭을 남긴다 — 「번호 없음」만 뜨면 왜인지 모른다
-              if (!r.fields && r.error) OCR_ERR = r.error;
-              resolve({ value: String(r.invoice || ""), via: "ocr", fields: r.fields || {} });
-            })
-            .withFailureHandler(function (e) {
-              OCR_ERR = "글자 인식 호출 실패: " + ((e && e.message) || e);
-              resolve(null);
-            })
-            .csOcrImageForScan(PENDING[0].dataB64, "image/jpeg");
+        return OCR_P.then(function (r) {
+          //  글자를 하나도 못 건졌으면 까닭을 남긴다 — 「번호 없음」만 뜨면 왜인지 모른다
+          if (!r.fields && r.error) { OCR_ERR = r.error; return null; }
+          return { value: String(r.invoice || ""), via: "ocr", fields: r.fields || {} };
         });
       });
     }).then(function (dec) {
@@ -653,14 +646,35 @@
      · 확정(sure)이면 안 부른다 — 이미 답이 있다
      ══════════════════════════════════════════════════════════ */
   var LABEL_SEQ = 0;
+
+  /*  ★ 글자 읽기는 찍자마자 «바코드와 같이» 시작한다 (2026-09-29) ★
+      실제 로젠 라벨 사진으로 재 보니 막대가 촘촘해 바코드는 거의 안 읽혔다
+      (판독기 자체는 깨끗한 CODE128 을 읽는다 — 사진 해상도 문제).
+      그런데 바코드를 «다 해 보고 실패한 뒤에야» 글자를 읽어서 시간이 둘을
+      더한 만큼 걸렸다. 한 번만 부르고, 바코드 쪽과 글자 쪽이 같은 답을 나눠 쓴다.  */
+  var OCR_P = null, OCR_SHOT = null, OCR_T0 = 0;
+  function startOcr(shot) {
+    OCR_SHOT = shot; OCR_T0 = Date.now();
+    OCR_P = new Promise(function (resolve) {
+      google.script.run
+        .withSuccessHandler(function (r) { resolve(r || { error: "글자 인식 응답 없음" }); })
+        .withFailureHandler(function (e) {
+          resolve({ error: "글자 인식 호출 실패: " + ((e && e.message) || e) });
+        })
+        .csOcrImageForScan(shot.dataB64, "image/jpeg");
+    });
+    return OCR_P;
+  }
+
   function readLabel() {
     if (!PENDING.length || !LAST) return;
-    var seq = ++LABEL_SEQ, shot = PENDING[0], t0 = Date.now();
+    var seq = ++LABEL_SEQ, shot = PENDING[0];
     LAST.reading = true;
     render();
     function stale() { return seq !== LABEL_SEQ || !LAST || PENDING[0] !== shot; }
-    google.script.run
-      .withSuccessHandler(function (r) {
+    var p = (OCR_P && OCR_SHOT === shot) ? OCR_P : startOcr(shot);
+    var t0 = OCR_T0;
+    p.then(function (r) {
         if (stale()) return;
         LAST.reading = false;
         LAST.labelSec = ((Date.now() - t0) / 1000).toFixed(1);
@@ -684,14 +698,7 @@
           })
           .withFailureHandler(function () { if (!stale()) render(); })
           .csLogisticsMatch(LAST.raw, f);
-      })
-      .withFailureHandler(function (e) {
-        if (stale()) return;
-        LAST.reading = false;
-        LAST.labelErr = "글자 인식 호출 실패: " + ((e && e.message) || e);
-        render();
-      })
-      .csOcrImageForScan(shot.dataB64, "image/jpeg");
+      });
   }
 
   function render() {
