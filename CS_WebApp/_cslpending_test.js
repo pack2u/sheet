@@ -210,7 +210,7 @@ check("★ 인식 중에 찾아도 사진을 지킨다 (LAST 가 없으면 만�
 check("★ 인식이 늦게 끝나도 찾아 둔 후보를 안 덮는다",
   fn(LG, "handleFiles").indexOf("if (LAST && LAST.searched)") >= 0, true);
 check("★ 바코드가 읽혀도 라벨 글자를 읽는다 (확정이 아니면)",
-  /r.via === "detector" || r.via === "qrlib") && LAST.match.tier !== "sure") readLabel()/.test(LG), true);
+  LG.indexOf('(r.via === "detector" || r.via === "qrlib") && LAST.match.tier !== "sure") readLabel();') >= 0, true);
 check("사람이 찾았거나 골랐으면 글자 결과로 후보를 안 바꾼다", fn(LG, "readLabel").indexOf("LAST.searched || PICKED") >= 0, true);
 check("인식 시간을 비고에 남긴다", LG.indexOf('"올리기까지 "') >= 0, true);
 check("사진 아래 칸이 이름도 받는다 (글자면 doSearch)", /doSearch\(v, true\)/.test(LG), true);
