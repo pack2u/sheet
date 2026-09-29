@@ -82,7 +82,7 @@ console.log('\n[분할 입금 — 입금누계]');
 console.log('\n[못 찾으면 사람에게]');
 {
   const r = m.dpMatchDeposit(dep('홍길동', 88000), ORDERS, {});
-  ok('이름 모름 + 같은 금액 주문 2건 → 후보', r.result === '후보' && r.candidates.length === 2, JSON.stringify(r));
+  ok('이름 모름 + 같은 금액 → 후보는 당일·전날 주문만 (09-27 주문은 빠진다)', r.result === '후보' && r.candidates.join() === '2026/09/28-1', JSON.stringify(r));
   ok('자동으로 붙이지 않는다', r.alloc.length === 0 && r.code === '');
 }
 {
@@ -105,7 +105,7 @@ console.log('\n[비슷한 이름]');
 {
   const r = m.dpMatchDeposit(dep('부원산업사', 88000), ORDERS, {});
   ok('한쪽이 다른 쪽을 품으면 (3글자↑) 찾는다', r.result === '일치' && r.code === 'C03' && r.how === '비슷한 이름', JSON.stringify(r));
-  const orders = [O('X', '2026-09-27', 'D1', '한빛포장', 1000), O('Y', '2026-09-27', 'D2', '한빛포장산업', 2000)];
+  const orders = [O('X', '2026-09-28', 'D1', '한빛포장', 1000), O('Y', '2026-09-28', 'D2', '한빛포장산업', 2000)];
   const r2 = m.dpMatchDeposit(dep('한빛포장산업사', 1000), orders, {});
   ok('비슷한 거래처가 둘이면 짐작하지 않는다 (같은 금액 주문은 후보로)',
      r2.code === '' && r2.result === '후보' && r2.candidates.join() === 'X', JSON.stringify(r2));
@@ -191,6 +191,20 @@ console.log('\n[이카운트 일반전표 — 모양 · 넘길 수 있나 · 응
   ok('검증 실패 → 거절 (다시 넣어도 된다)', r.kind === 'reject' && r.message.includes('CUST_D'), JSON.stringify(r));
   ok('응답 없음 → 모름', m.dpReadJournalResult(null).kind === 'unknown');
   ok('성공이라는데 전표번호가 없음 → 모름', m.dpReadJournalResult({ Status: '200', Data: { SuccessCnt: 1, SlipNos: [] } }).kind === 'unknown');
+}
+
+console.log('\n[후보는 당일 · 전날 주문만, 최신순]');
+{
+  const os = [O('a', '2026-09-26', 'X1', '가게A 김일', 50000), O('b', '2026-09-28', 'X2', '가게B 김이', 50000),
+              O('c', '2026-09-29', 'X3', '가게C 김삼', 50000), O('d', '2026-10-13', 'X4', '가게D 김사', 50000)];
+  os[3].due = '2026-09-28';
+  const r = m.dpMatchDeposit(dep('모르는분', 50000, '2026-09-29 10:00'), os, {});
+  ok('최신순 · 사흘 전 주문은 빠진다', r.result === '후보' && r.candidates.join() === 'd,c,b', JSON.stringify(r.candidates));
+  ok('주문번호 날짜가 미래여도 납기일이 창 안이면 후보', r.candidates.includes('d'));
+  const old = m.dpMatchDeposit(dep('모르는분', 50000, '2026-09-29 10:00'), [os[0]], {});
+  ok('옛 주문뿐이면 미확인 (찾기로 찾는다)', old.result === '미확인');
+  const known = m.dpMatchDeposit(dep('김일', 50000, '2026-09-29 10:00'), [os[0]], {});
+  ok('거래처를 찾은 입금은 옛 주문도 자동 일치 (14일 창 그대로)', known.result === '일치' && known.alloc[0].no === 'a');
 }
 
 console.log('\n[합 조합이 둘 이상]');

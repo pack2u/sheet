@@ -7661,7 +7661,7 @@
       el.innerHTML =
         '<div class="os-dash-head">' +
           '<span class="os-dash-title">📊 CS 대시보드</span>' +
-          '<button type="button" class="os-dash-refresh" onclick="warm(true);loadReturnActive(true,false);loadDashDays(true);loadStockout();renderDeposits(true)">↻ 갱신</button>' +
+          '<button type="button" class="os-dash-refresh" onclick="warm(true);loadReturnActive(true,false);loadDashDays(true);loadStockout();renderDeposits(true,true)">↻ 갱신</button>' +
         '</div>' +
         '<div class="dash-kpi-grid">' + kpiHtml + '</div>' +
         '<div class="dash-section">' +
@@ -12451,10 +12451,33 @@
       return ' · ' + r.total + '건 · ' + depWon(r.sum) + (r.unparsed ? ' · 읽지 못한 문자 ' + r.unparsed : '');
     }
 
-    function renderDeposits(force) {
+    /* ★ 먼저 보이고, 새 것은 뒤에서 (2026-09-29) — "데이타 불러오는 속도가 너무 느려"
+       화면을 열면 이 브라우저에 남겨 둔 «오늘» 목록부터 곧바로 그리고, 서버 답이 오면 바꿔 그린다.
+       남겨 두는 건 오늘 날짜 것만 — 날이 바뀌면 안 쓴다. 잔액은 애초에 목록에 없다.
+       저장이 막힌 브라우저(시크릿 창 등)에서는 조용히 예전처럼 기다린다. */
+    var DEP_LS_KEY = 'pack2u_dep_today';
+    function depToday() {
+      var d = new Date(Date.now() + 9 * 3600 * 1000);          // 서울 날짜
+      return d.toISOString().slice(0, 10);
+    }
+    function depLoadLocal() {
+      try {
+        var r = JSON.parse(localStorage.getItem(DEP_LS_KEY) || 'null');
+        return r && r.ok && r.date === depToday() ? r : null;
+      } catch (e) { return null; }
+    }
+    function depSaveLocal(r) {
+      try { if (r && r.ok && r.date === depToday()) localStorage.setItem(DEP_LS_KEY, JSON.stringify(r)); } catch (e) {}
+    }
+
+    function renderDeposits(force, hard) {
       var el = document.getElementById('dashDeposit');
       if (!el) return;
       if (DEP_CACHE && !force) { paintDeposits(DEP_CACHE); return; }
+      if (!DEP_CACHE) {
+        var local = depLoadLocal();
+        if (local) { DEP_CACHE = local; paintDeposits(local); }
+      }
 
       google.script.run
         .withSuccessHandler(function (r) {
@@ -12467,6 +12490,7 @@
             return;
           }
           DEP_CACHE = r;
+          depSaveLocal(r);
           paintDeposits(r);
         })
         .withFailureHandler(function () {
@@ -12474,7 +12498,7 @@
           var e3 = document.getElementById('dashDeposit');
           if (e3) e3.innerHTML = '<div class="dash-dep-empty">불러오지 못했습니다</div>';
         })
-        .csDepositList('', DEP_LIMIT);
+        .csDepositList('', DEP_LIMIT, !!hard);
     }
 
     function paintDeposits(r) {

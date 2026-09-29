@@ -43,21 +43,33 @@ function _dp_findRow_(ss, key) {
 
 /** 주문마다 이미 받은 돈 — 입금대장의 배분을 모두 더한다 (excludeKey 입금은 빼고) */
 function _dp_paidMap_(ss, excludeKey) {
+  // 배분 목록은 판 번호 캐시 (dpCache.gs) — 뺄 입금만 여기서 뺀다
+  var rows = dpCached_("alloc", function () { return _dp_allocRows_(ss); });
+  var map = {};
+  rows.forEach(function (x) {
+    if (x[0] === excludeKey) return;
+    x[1].forEach(function (a) { map[a.no] = (map[a.no] || 0) + (Number(a.apply) || 0); });
+  });
+  return map;
+}
+
+/** [[고유번호, 배분[]], …] — 제외된 입금 · 배분 없는 입금은 뺀다 */
+function _dp_allocRows_(ss) {
   var sh = dpLedgerSheet_(ss);
   var c = _dp_cols_(sh);
-  var map = {};
-  if (sh.getLastRow() < 2 || !c["배분"]) return map;
+  var out = [];
+  if (sh.getLastRow() < 2 || !c["배분"]) return out;
   var n = sh.getLastRow() - 1;
   var keys = sh.getRange(2, c["고유번호"], n, 1).getValues();
   var res = sh.getRange(2, c["매칭결과"], n, 1).getValues();
   var alloc = sh.getRange(2, c["배분"], n, 1).getValues();
   for (var i = 0; i < n; i++) {
-    if (String(keys[i][0]) === excludeKey || String(res[i][0]) === "제외") continue;
+    if (String(res[i][0]) === "제외") continue;
     var a = [];
     try { a = JSON.parse(String(alloc[i][0] || "[]")) || []; } catch (e) { a = []; }
-    a.forEach(function (x) { map[x.no] = (map[x.no] || 0) + (Number(x.apply) || 0); });
+    if (a.length) out.push([String(keys[i][0]), a]);
   }
-  return map;
+  return out;
 }
 
 function _dp_orderView_(o, paid, tag) {
@@ -91,11 +103,18 @@ function dpCsDetail_(key) {
   try { alloc = JSON.parse(String(g("배분") || "[]")) || []; } catch (e) { alloc = []; }
   alloc.forEach(function (a) { add(byNo[a.no], "지금 배분"); });
   String(g("주문번호") || "").replace(/^후보:\s*/, "").split(/,\s*/).forEach(function (no) { add(byNo[no], "후보"); });
+  // ★ 최신순 · 같은 금액은 당일·전날만 (2026-09-29) — "후보가 너무 많네.. 최신순으로 … 당일,전날까지만"
+  //   옛 주문은 아래 「찾기」 로 여전히 찾을 수 있다
+  var newestFirst = function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : (a.no < b.no ? 1 : -1); };
+  var depDay = _dp_ts_(g("거래일시")).slice(0, 10);
   var code = String(g("거래처코드") || "");
   if (code) orders.filter(function (o) { return o.code === code && o.amount - (paid[o.no] || 0) > 0; })
-    .forEach(function (o) { add(o, "같은 거래처"); });
-  orders.filter(function (o) { return o.amount - (paid[o.no] || 0) === amount; }).slice(0, 10)
-    .forEach(function (o) { add(o, "같은 금액"); });
+    .sort(newestFirst).forEach(function (o) { add(o, "같은 거래처"); });
+  orders.filter(function (o) { return o.amount - (paid[o.no] || 0) === amount && dpIsRecentOrder(o, depDay); })
+    .sort(newestFirst).slice(0, 10).forEach(function (o) { add(o, "같은 금액"); });
+  // 「지금 배분」 은 맨 위에 두고, 나머지는 최신순으로 다시 늘어놓는다
+  var head = list.filter(function (o) { return o.tag === "지금 배분"; });
+  list = head.concat(list.filter(function (o) { return o.tag !== "지금 배분"; }).sort(newestFirst));
 
   return {
     deposit: {

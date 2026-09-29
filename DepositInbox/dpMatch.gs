@@ -73,6 +73,31 @@ function _dp_payerParts_(name) {
     .map(dpNormName).filter(function (s) { return s.length >= 2; });
 }
 
+/**
+ * ★ 후보는 입금일 «당일 · 전날» 주문만 (2026-09-29) ★
+ *   > "입금확인시 후보가 너무 많네.. 후보가 주문 최신순으로 보이게 해주고..당일,전날까지만 보이게 해줘
+ *   >  대부분 하루이틀안에 확인이 되니까.."
+ *   첫날 허기복 58,600원에 9/16~9/22 주문 6건이 후보로 떴다 — 같은 금액의 옛 주문은 대개 이미 받은 돈이다.
+ *   거래처를 «찾은» 입금의 자동 매칭은 그대로 14일을 본다 (그건 후보가 아니라 그 거래처의 주문이다).
+ *   주문일이나 납기일 중 하나가 창 안이면 된다 — 주문번호 날짜가 미래인 주문이 있다.
+ */
+var DP_CANDIDATE_DAYS_ = 1;   // 입금일 포함 이만큼 앞날까지 (1 = 당일 + 전날)
+
+function _dp_dayShift_(ymd, n) {
+  var m = String(ymd || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return "";
+  var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + n));
+  return d.toISOString().slice(0, 10);
+}
+
+/** 입금일(yyyy-MM-dd) 기준 후보 창 안의 주문인가 */
+function dpIsRecentOrder(o, depDay) {
+  if (!depDay) return true;
+  var from = _dp_dayShift_(depDay, -DP_CANDIDATE_DAYS_);
+  var inWin = function (x) { return x && x >= from && x <= depDay; };
+  return inWin(String(o.date || "").slice(0, 10)) || inWin(String(o.due || "").slice(0, 10));
+}
+
 /** 합산 조합을 찾을 때 볼 주문 수 한도 — 2^n 이라 크게 잡으면 느려진다 */
 var DP_MATCH_MAX_COMBO_ = 12;
 
@@ -179,7 +204,7 @@ function dpMatchDeposit(dep, orders, aliases) {
 
   // 아직 다 안 받은 주문만 (금액 0 이하 = 반품·차감 주문은 자연히 빠진다)
   var open = (orders || []).map(function (o) {
-    return { no: String(o.no), date: String(o.date || ""), code: String(o.code || ""), name: String(o.name || ""),
+    return { no: String(o.no), date: String(o.date || ""), due: String(o.due || ""), code: String(o.code || ""), name: String(o.name || ""),
              remain: (Number(o.amount) || 0) - (Number(o.paid) || 0) };
   }).filter(function (o) { return o.remain > 0; });
   open.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.no < b.no ? -1 : a.no > b.no ? 1 : 0); });
@@ -191,7 +216,10 @@ function dpMatchDeposit(dep, orders, aliases) {
   var cust = dpFindCustomer(dep.name, customers, aliases);
 
   if (!cust) {
-    var same = open.filter(function (o) { return o.remain === amt; });
+    // 후보는 당일 · 전날 주문만, 최신순 (DP_CANDIDATE_DAYS_)
+    var depDay = String((dep && dep.txAt) || "").slice(0, 10);
+    var same = open.filter(function (o) { return o.remain === amt && dpIsRecentOrder(o, depDay); })
+      .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : (a.no < b.no ? 1 : -1); });
     if (same.length) {
       out.result = "후보";
       out.candidates = same.map(function (o) { return o.no; });
@@ -442,6 +470,7 @@ if (typeof module !== "undefined" && module.exports) {
     dpFindCustomer: dpFindCustomer,
     dpMatchDeposit: dpMatchDeposit,
     dpParseOrderSheet: dpParseOrderSheet,
+    dpIsRecentOrder: dpIsRecentOrder,
     dpIsPlatformPayer: dpIsPlatformPayer
   };
 }

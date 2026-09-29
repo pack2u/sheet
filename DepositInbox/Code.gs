@@ -94,13 +94,17 @@ function _dp_handleCs_(p) {
   var r;
   switch (action) {
     case "list":
+      // 「↻ 갱신」 은 판 번호를 올려 캐시를 버린다 — 시트를 손으로 고친 뒤에도 새로 읽게
+      if (p.force) dpBumpVer_();
       r = dpListDeposits_(String(p.date || ""), Number(p.limit) || 0);
       break;
     case "orders_upload":
       r = dpCsOrdersUpload_(p.rows, String(p.by || ""));
       break;
     case "detail":
-      r = dpCsDetail_(String(p.key || ""));
+      // 판 번호 캐시 — 같은 입금을 다시 열면 시트를 안 읽는다 (켜짐 여부는 속성이라 열쇠에 넣는다)
+      r = dpCached_("detail:" + String(p.key || "") + ":" + _dp_prop_("DP_ECOUNT_POST"),
+                    function () { return dpCsDetail_(String(p.key || "")); });
       break;
     case "orders_search":
       r = dpCsOrdersSearch_(String(p.q || ""));

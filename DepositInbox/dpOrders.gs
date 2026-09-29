@@ -170,6 +170,7 @@ function dpUpsertOrders_(ss, parsed, by) {
   }
   props.setProperty("DP_ORDERS_COUNT", String(total));
 
+  dpBumpVer_();   // 주문서가 바뀌었다 — 바로 뒤 매칭이 새 주문을 읽게
   var up = _dp_tab_(ss, DP_UPLOADS_SHEET_, DP_UPLOADS_HEADERS_, "A:D");
   up.appendRow([now, by || "", parsed.downloadedAt || "(없음)",
     parsed.range ? parsed.range.from + " ~ " + parsed.range.to : "(없음)",
@@ -180,7 +181,12 @@ function dpUpsertOrders_(ss, parsed, by) {
 }
 
 /** 매칭에 쓸 주문 — 최근 DP_ORDER_DAYS_ 일 (주문일이나 납기일 기준) */
+/** 매칭에 쓸 주문 — 판 번호 캐시 (올리기가 판 번호를 올린다) */
 function dpLoadOrders_(ss) {
+  return dpCached_("orders:" + _dp_daysAgo_(DP_ORDER_DAYS_), function () { return _dp_loadOrdersRaw_(ss); });
+}
+
+function _dp_loadOrdersRaw_(ss) {
   var sh = ss.getSheetByName(DP_ORDERS_SHEET_);
   if (!sh) return [];
   var t = _dp_readTab_(sh), c = t.cols;
@@ -303,7 +309,7 @@ function dpMatchRunLocked_(ss) {
       }
     } else {
       res = dpMatchDeposit({ name: String(g(r, "입금자")), amount: amount, txAt: txAt },
-        orders.map(function (o) { return { no: o.no, date: o.date, code: o.code, name: o.name, amount: o.amount, paid: o.paid }; }),
+        orders.map(function (o) { return { no: o.no, date: o.date, due: o.due, code: o.code, name: o.name, amount: o.amount, paid: o.paid }; }),
         aliases);
       if (res.how && res.how !== "이름") res.reason = (res.reason ? res.reason + " · " : "") + "거래처: " + res.how;
     }
@@ -326,6 +332,7 @@ function dpMatchRunLocked_(ss) {
     if (!c[h] || h === "지정") return;
     sh.getRange(2, c[h], rows.length, 1).setValues(rows.map(function (r) { return [r[c[h] - 1]]; }));
   });
+  dpBumpVer_();   // 목록 · 상세 캐시가 새로 읽게
   return out;
 }
 

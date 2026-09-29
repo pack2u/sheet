@@ -151,6 +151,7 @@ function dpCsPost_(keys, by) {
       SpreadsheetApp.flush();
     });
   } finally {
+    dpBumpVer_();   // 상태 · 전표번호가 바뀌었다 — 목록 캐시를 버린다
     lock.releaseLock();
   }
   return { results: results };
@@ -174,6 +175,7 @@ function dpCsPostResolve_(key, slipNo, by) {
     if (c["전표번호"]) sh.getRange(f.rowNo, c["전표번호"]).setValue(slipNo);
     if (c["반영메모"]) sh.getRange(f.rowNo, c["반영메모"]).setValue(
       (slipNo ? "이카운트에 있음 — " : "이카운트에 없음 — 다시 넘길 수 있음 · ") + (by || "") + " " + _dp_now_());
+    dpBumpVer_();
     return { status: slipNo ? "반영완료" : "대기" };
   } finally {
     lock.releaseLock();

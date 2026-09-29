@@ -110,6 +110,7 @@ function dpIngestSms_(body, rcv, from) {
       if (c[h]) row[c[h] - 1] = rec[h] == null ? "" : rec[h];
     });
     sh.appendRow(row);
+    dpBumpVer_();
 
     // 새 입금이면 주문서와 맞춰 본다. 실패해도 입금 기록은 이미 끝났다 — 알림에 «매칭 못 함»만 싣는다
     if (p.ok && p.kind === "입금") {
@@ -168,9 +169,15 @@ function dpPrevBalance_(sh, c, p) {
  * @param {number} limit  0 이면 전부
  * @return {{date, total, sum, unparsed, rows:[{key,txAt,time,name,amount,bank,acct,status,check,memo}]}}
  */
+/** 하루치 입금 — 판 번호 캐시를 거친다 (dpCache.gs). 켜짐 여부는 속성이라 열쇠에 넣는다 */
 function dpListDeposits_(date, limit) {
   var day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date
     : Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+  var on = String(_dp_prop_("DP_ECOUNT_POST")).toLowerCase() === "on";
+  return dpCached_("list:" + day + ":" + (limit || 0) + ":" + on, function () { return _dp_listDepositsRaw_(day, limit); });
+}
+
+function _dp_listDepositsRaw_(day, limit) {
   var out = { date: day, total: 0, sum: 0, unparsed: 0, rows: [],
               ordersAt: _dp_prop_("DP_ORDERS_AT"), ordersBy: _dp_prop_("DP_ORDERS_BY"),
               ordersCount: Number(_dp_prop_("DP_ORDERS_COUNT")) || 0,

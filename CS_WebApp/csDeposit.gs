@@ -41,7 +41,7 @@ function _cs_dep_cfg_() {
  * @param {number} limit  대시보드는 10, 더보기는 0(전부)
  * @return {{ok, date, total, sum, unparsed, rows[], error?}}
  */
-function csDepositList(date, limit) {
+function csDepositList(date, limit, force) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   var day = /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? String(date)
     : Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
@@ -49,13 +49,14 @@ function csDepositList(date, limit) {
 
   var cache = null, ck = "csdep:" + day + ":" + lim;
   try { cache = CacheService.getScriptCache(); } catch (e) {}
-  if (cache) {
+  if (cache && !force) {
     try {
       var hit = cache.get(ck);
       if (hit) return JSON.parse(hit);
     } catch (e) {}
   }
-  var out = _cs_dep_call_({ action: "list", date: day, limit: lim });
+  // force = 「↻ 갱신」 — 입금수신 쪽 캐시도 버리고 시트를 새로 읽게 한다 (시트를 손으로 고친 뒤)
+  var out = _cs_dep_call_({ action: "list", date: day, limit: lim, force: !!force });
   if (out.ok && cache) {
     try { cache.put(ck, JSON.stringify(out), _CS_DEP_CACHE_SEC_); } catch (e) {}
   }

@@ -96,7 +96,7 @@ function makeEnv() {
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
-  for (const f of ['dpParse.gs', 'dpMatch.gs', 'Code.gs', 'dpLedger.gs', 'dpNotify.gs', 'dpWatch.gs', 'dpMirror.gs', 'dpReqLog.gs', 'dpOrders.gs', 'dpCs.gs', 'dpEcount.gs']) {
+  for (const f of ['dpParse.gs', 'dpMatch.gs', 'Code.gs', 'dpLedger.gs', 'dpNotify.gs', 'dpWatch.gs', 'dpMirror.gs', 'dpReqLog.gs', 'dpOrders.gs', 'dpCs.gs', 'dpEcount.gs', 'dpCache.gs']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, f), 'utf8'), ctx, { filename: f });
   }
   const post = (params) => ctx.doPost({ parameter: params, postData: { type: 'application/x-www-form-urlencoded', contents: '' } });
@@ -529,6 +529,24 @@ console.log('\n[이카운트 반영 — 두 번 눌러도 한 장]');
   const lr = list.rows.find((x) => x.name === '정명옥');
   ok('목록에 전표번호 · 넘길 수 있나', lr.slipNo && lr.canPost === false && list.rows.find((x) => x.name === '홍길동').canPost === false);
   ok('폰 열쇠로는 반영 못 한다', post({ token: 'tok', action: 'post', keys: [keyOf('홍길동')] }).ok === false);
+}
+
+console.log('\n[읽기 캐시 — 바뀐 게 없으면 다시 안 읽는다]');
+{
+  const { ctx, post, rows } = makeEnv();
+  ctx.DP_CS_TOKEN = 'cstok';
+  const cs = (o) => ctx.doPost({ parameter: {}, postData: { type: 'application/json', contents: JSON.stringify(Object.assign({ token: 'cstok' }, o)) } });
+  post({ token: 'tok', action: 'sms', body: SMS1 });
+  const a = cs({ action: 'list', date: '2026-09-28', limit: 10 });
+  const nameCol = rows[0].indexOf('입금자');
+  rows[1][nameCol] = '손으로고침';                       // 시트를 손으로 고쳤다 (판 번호 안 올라감)
+  const b = cs({ action: 'list', date: '2026-09-28', limit: 10 });
+  ok('바뀐 게 없으면 캐시 (손으로 고친 건 아직 안 보임)', b.rows[0].name === a.rows[0].name && a.rows[0].name === '홍길동');
+  const c = cs({ action: 'list', date: '2026-09-28', limit: 10, force: true });
+  ok('↻ 갱신(force)은 새로 읽는다', c.rows[0].name === '손으로고침', c.rows[0].name);
+  post({ token: 'tok', action: 'sms', body: SMS2 });
+  const d = cs({ action: 'list', date: '2026-09-28', limit: 10 });
+  ok('새 입금이 오면 곧바로 새 목록', d.total === 2, d.total);
 }
 
 console.log('\n[V2 미러]');
