@@ -35,6 +35,8 @@ var _CS_AC_PROP_ = "CS_ALLOWED_EMAILS";
 var _CS_AC_DEFAULT_NAMES_ = {
   "pack2u@pack2u.co.kr": "팩투유",
   "rkdtjgml486@gmail.com": "강서희",
+  "seongdeogcheon4@gmail.com": "천성덕", // 물류 대리
+  "ig3790342@gmail.com": "이기훈",       // 물류 주임
 };
 
 var _CS_AC_NAME_PROP_ = "CS_ACCOUNT_NAMES";
