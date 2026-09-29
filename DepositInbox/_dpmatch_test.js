@@ -161,7 +161,15 @@ console.log('\n[이카운트 주문서조회 엑셀 읽기]');
   ok('날짜·납기', r.orders[0].date === '2026-10-13' && r.orders[0].due === '2026-09-28');
   ok('금액 쉼표·음수', r.orders[0].amount === 1410000 && r.orders[2].amount === -18000);
   ok('종결여부 줄바꿈 머리글도 찾는다', r.orders[1].done === '완료');
-  ok('끝의 내려받은 시각 줄은 건너뛴다', r.skipped === 1);
+  ok('끝의 내려받은 시각 줄은 주문이 아니다', r.skipped === 0 && r.orders.every(o => !/오전/.test(o.no)));
+  ok('조회 기간을 읽는다', r.range && r.range.from === '2026-08-30' && r.range.to === '2026-10-29', JSON.stringify(r.range));
+  ok('내려받은 시각 — 오전 12시는 00시', r.downloadedAt === '2026-09-29 00:26:11', r.downloadedAt);
+  const pm = m.dpParseOrderSheet(rows.slice(0, 5).concat([['2026/09/29 (화) 오후 12:05:09']]));
+  ok('오후 12시는 12시', pm.downloadedAt === '2026-09-29 12:05:09', pm.downloadedAt);
+  const pm2 = m.dpParseOrderSheet(rows.slice(0, 5).concat([['2026/09/29 (화) 오후 3:40:00']]));
+  ok('오후 3시는 15시', pm2.downloadedAt === '2026-09-29 15:40:00', pm2.downloadedAt);
+  const nostamp = m.dpParseOrderSheet(rows.slice(0, 5));
+  ok('시각 줄이 없으면 빈 값 (짐작하지 않는다)', nostamp.ok && nostamp.downloadedAt === '');
   const bad = m.dpParseOrderSheet([['아무거나'], ['a', 'b']]);
   ok('다른 엑셀이면 알려 준다', !bad.ok && bad.error.includes('주문서조회'));
 }
@@ -176,6 +184,8 @@ console.log('\n[이카운트 주문서조회 엑셀 읽기]');
     const r = m.dpParseOrderSheet(rows);
     ok('실파일 945건', r.ok && r.orders.length === 945, r.orders.length);
     ok('실파일 주문번호가 겹치지 않는다', new Set(r.orders.map(o => o.no)).size === r.orders.length);
+    ok('실파일 조회 기간 · 내려받은 시각', r.range && r.range.from === '2026-08-30' && r.downloadedAt === '2026-09-29 00:26:11',
+       JSON.stringify(r.range) + ' ' + r.downloadedAt);
   } else console.log('  (실파일 없음 — 건너뜀)');
 }
 

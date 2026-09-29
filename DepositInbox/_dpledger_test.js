@@ -11,6 +11,8 @@ function makeEnv() {
   const mirrors = [];
   let mirrorFail = false;
   let triggers = [];
+  /* 진짜 시트처럼 — 「2026-09-28 23:55(:00)」 같은 글자는 날짜(Date)로 바뀌어 저장된다 (2026-09-29 실측) */
+  const asCell = (v) => (typeof v === 'string' && /^d{4}-d{2}-d{2} d{2}:d{2}(:d{2})?$/.test(v)) ? new Date(v.replace(' ', 'T')) : v;
   /* 탭 하나 — 행 배열(0행 = 머리글)을 그대로 들고 있다 */
   const makeSheet = (rows) => {
     const sh = {
@@ -21,8 +23,8 @@ function makeEnv() {
         return {
           getValues: () => Array.from({ length: nr }, (_, i) =>
             Array.from({ length: nc }, (_, j) => ((rows[r - 1 + i] || [])[c - 1 + j] ?? ''))),
-          setValues(v) { v.forEach((row, i) => row.forEach((x, j) => { (rows[r - 1 + i] = rows[r - 1 + i] || [])[c - 1 + j] = x; })); return this; },
-          setValue(x) { (rows[r - 1] = rows[r - 1] || [])[c - 1] = x; return this; },
+          setValues(v) { v.forEach((row, i) => row.forEach((x, j) => { (rows[r - 1 + i] = rows[r - 1 + i] || [])[c - 1 + j] = asCell(x); })); return this; },
+          setValue(x) { (rows[r - 1] = rows[r - 1] || [])[c - 1] = asCell(x); return this; },
           setFontWeight() { return this; },
           createTextFinder: (txt) => ({ matchEntireCell: () => ({ findNext: () => {
             for (let i = 0; i < nr; i++) if (String((rows[r - 1 + i] || [])[c - 1]) === txt) return { getRow: () => r + i };
@@ -360,6 +362,68 @@ console.log('\n[주문서 매칭 — 올리기 · 자동 · 지정 · 제외 · 
   const bad = cs({ action: 'orders_upload', rows: [['엉뚱한 엑셀']] });
   ok('다른 엑셀은 거절', bad.ok === false && bad.error.includes('주문서조회'));
   ok('폰 열쇠로는 주문서를 못 올린다', post({ token: 'tok', action: 'orders_upload' }).ok === false);
+}
+
+console.log('\n[여러 사람이 서로 다른 때 받은 파일을 올린다]');
+{
+  const { ctx, post, rows, tabRows } = makeEnv();
+  ctx.DP_CS_TOKEN = 'cstok';
+  const cs = (o) => ctx.doPost({ parameter: {}, postData: { type: 'application/json', contents: JSON.stringify(Object.assign({ token: 'cstok' }, o)) } });
+  const now = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate());
+  const T = ymd(now), Y = ymd(new Date(now - 864e5)), W = ymd(new Date(now - 7 * 864e5));
+  const range = `회사명 : 주식회사 팩투유 / ${W}  ~ ${T} `;
+  const head = ['주문번호', '거래처명', '거래처코드', '거래처모바일', '수령인', '담당자', '품목', '납기일자', '금액', '종결\n여부', '진행\n상태', '인쇄'];
+  const order = (n, name, code, amt) => [Y + ' -' + n, name, code, '', '', '', 'x', T, amt.toLocaleString(), '진행중', '조회', '인쇄'];
+  const base = [];
+  for (let i = 1; i <= 12; i++) base.push(order(i, '가게' + i + ' 대표' + i, 'C' + i, 10000 * i));
+  const file = (hhmmss, list, withRange = true) =>
+    [[withRange ? range : '회사명 : 주식회사 팩투유'], head, ...list, [`${T} (화) ${hhmmss}`]];
+  const oCol = (h) => tabRows['주문서'][0].indexOf(h);
+  const oRow = (n) => tabRows['주문서'].find((r) => r[0] === Y + '-' + n);
+
+  const a = cs({ action: 'orders_upload', rows: file('오전 9:00:00', base), by: '고윤서' });
+  ok('A(09:00) — 12건 새로', a.ok && a.added === 12 && a.missing === 0, JSON.stringify(a));
+
+  // B: 전날 받아 둔 옛 파일 — 3번 금액이 옛 값
+  const old = base.map((r) => r.slice()); old[2][8] = '99,999';
+  const b = cs({ action: 'orders_upload', rows: file('오전 8:00:00', old), by: '강서희' });
+  ok('B(08:00, 옛 파일) — 12건 모두 건너뜀', b.ok && b.stale === 12 && b.updated === 0, JSON.stringify(b));
+  ok('옛 파일이 금액을 덮지 않는다', oRow(3)[oCol('금액')] === 30000, oRow(3)[oCol('금액')]);
+  let list = cs({ action: 'list', limit: 10 });
+  ok('「주문서 ○○ 기준」은 뒤로 가지 않는다 (09:00 · 고윤서)', /09:00/.test(String(list.ordersAt)) && list.ordersBy === '고윤서', list.ordersAt + ' ' + list.ordersBy);
+
+  // C: 더 늦게 받은 파일 — 5번이 이카운트에서 지워졌다, 3번 금액이 바뀌었다
+  const newer = base.filter((r) => r[0] !== Y + ' -5').map((r) => r.slice()); newer[2][8] = '33,000';
+  const c = cs({ action: 'orders_upload', rows: file('오전 10:00:00', newer), by: '박상식' });
+  ok('C(10:00) — 5번 없어짐 · 3번 바뀜', c.ok && c.missing === 1 && c.updated === 1, JSON.stringify(c));
+  ok('없어진 주문은 표시만 (지우지 않는다)', oRow(5) && oRow(5)[oCol('상태')] === '없어짐');
+  // 없어진 주문 금액 그대로 입금이 와도 붙지 않는다
+  post({ token: 'tok', action: 'sms', body: `[Web발신]\n${T}\n11:00\n입금 50,000원\n잔액 1,050,000원\n대표5\n458***12345678\n기업` });
+  const r5 = rows.find((r) => r[rows[0].indexOf('입금자')] === '대표5');
+  ok('없어진 주문에는 매칭하지 않는다', r5[rows[0].indexOf('매칭결과')] !== '일치', r5[rows[0].indexOf('매칭결과')]);
+
+  // D: 5번이 다시 보이는 파일 → 되살아난다, 입금이 그제야 붙는다
+  const d = cs({ action: 'orders_upload', rows: file('오전 11:30:00', base.map((r, i) => i === 2 ? order(3, '가게3 대표3', 'C3', 33000) : r)), by: '고윤서' });
+  ok('D(11:30) — 5번 되살아남', d.ok && d.revived === 1 && oRow(5)[oCol('상태')] === '', JSON.stringify(d));
+  ok('되살아난 주문에 입금이 붙는다', r5[rows[0].indexOf('매칭결과')] === '일치', r5[rows[0].indexOf('매칭결과')]);
+
+  // E: 담당자로 걸러 3건만 받은 파일 — 기간 안 9건이 «없어 보인다» → 표시하지 않는다
+  const e = cs({ action: 'orders_upload', rows: file('오후 12:00:00', base.slice(0, 3)), by: '김진수' });
+  ok('걸러 받은 파일 — 없어짐 표시 안 함 + 알림', e.ok && e.missing === 0 && e.warn.some((w) => w.includes('걸러')), JSON.stringify(e));
+  ok('다른 주문은 멀쩡', tabRows['주문서'].slice(1).every((r) => r[oCol('상태')] !== '없어짐'));
+
+  // F: 조회 기간이 없는 파일 — 추가·수정만, 지워진 것은 안 본다
+  const f = cs({ action: 'orders_upload', rows: file('오후 1:00:00', base.slice(0, 2), false), by: '김진수' });
+  ok('기간 없는 파일 — 알림만', f.ok && f.missing === 0 && f.warn.some((w) => w.includes('조회 기간')), JSON.stringify(f));
+
+  // 올린 기록
+  const up = tabRows['주문서올림'];
+  ok('올린 기록 6줄 (누가 · 파일 받은 시각)', up && up.length === 7 && up[1][1] === '고윤서' && String(up[2][2]).includes('08:00'),
+     up && JSON.stringify(up.slice(1, 3)));
+  list = cs({ action: 'list', limit: 10 });
+  ok('기준은 가장 늦은 파일 (13:00 · 김진수)', /13:00/.test(String(list.ordersAt)) && list.ordersBy === '김진수', list.ordersAt + ' ' + list.ordersBy);
 }
 
 console.log('\n[V2 미러]');

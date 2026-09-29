@@ -22,7 +22,19 @@
  */
 
 var DP_ORDERS_SHEET_ = "주문서";
-var DP_ORDERS_HEADERS_ = ["주문번호", "주문일", "납기일", "거래처코드", "거래처명", "금액", "종결여부", "처음올림", "마지막올림"];
+var DP_ORDERS_HEADERS_ = ["주문번호", "주문일", "납기일", "거래처코드", "거래처명", "금액", "종결여부", "처음올림", "마지막올림",
+  // ★ 2026-09-29 여러 사람이 서로 다른 때 받은 파일을 올린다
+  "받은시각", "상태", "상태바뀐시각"];
+var DP_UPLOADS_SHEET_ = "주문서올림";
+var DP_UPLOADS_HEADERS_ = ["올린시각", "올린사람", "파일받은시각", "조회기간", "읽은건수", "새로", "바뀜", "옛파일이라건너뜀",
+  "없어짐", "되살아남", "알림"];
+/**
+ * 한 번에 «없어짐»으로 돌릴 수 있는 한도.
+ * 이카운트에서 담당자·거래처로 걸러 일부만 내려받은 파일을 올리면, 기간 안의 다른 주문이 몽땅 «없어짐»이 된다.
+ * 그래서 없어질 주문이 이만큼 넘으면 «걸러 받은 파일» 로 보고 표시하지 않는다 (알림만 남긴다).
+ */
+var DP_MISSING_MAX_COUNT_ = 30;
+var DP_MISSING_MAX_RATIO_ = 0.1;
 var DP_ALIAS_SHEET_ = "별칭표";
 var DP_ALIAS_HEADERS_ = ["입금자(정리)", "입금자", "거래처코드", "거래처명", "지정자", "지정시각"];
 var DP_ORDER_DAYS_ = 14;
@@ -31,6 +43,12 @@ var DP_MATCH_DEPOSIT_DAYS_ = 30;
 var DP_FROZEN_STATES_ = ["반영중", "반영완료", "확인필요"];
 /** 입금대장에 붙는 매칭 칸 (dpLedgerSheet_ 가 없으면 뒤에 붙인다) */
 var DP_MATCH_HEADERS_ = ["매칭결과", "거래처", "거래처코드", "주문번호", "차액", "매칭메모", "배분", "지정"];
+
+/** 시각 칸 → "yyyy-MM-dd HH:mm:ss" (시트가 날짜로 바꾸며 초를 떨어뜨려도 견줄 수 있게) */
+function _dp_sec_(v) {
+  var t = _dp_ts_(v);
+  return /^d{4}-d{2}-d{2} d{2}:d{2}$/.test(t) ? t + ":00" : t;
+}
 
 function _dp_now_() { return Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss"); }
 function _dp_daysAgo_(n) { return Utilities.formatDate(new Date(Date.now() - n * 86400000), "Asia/Seoul", "yyyy-MM-dd"); }
@@ -43,6 +61,12 @@ function _dp_tab_(ss, name, headers, textCols) {
     if (textCols) sh.getRange(textCols).setNumberFormat("@");
     sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight("bold");
     sh.setFrozenRows(1);
+  } else {
+    // 머리글이 모자라면 뒤에 붙인다 (칸이 늘어난 뒤에도 옛 탭을 그대로 쓴다)
+    var have = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+    headers.forEach(function (h) {
+      if (have.indexOf(h) < 0) { sh.getRange(1, have.length + 1).setValue(h).setFontWeight("bold"); have.push(h); }
+    });
   }
   return sh;
 }
@@ -56,36 +80,103 @@ function _dp_readTab_(sh) {
 // ── 주문서 ────────────────────────────────────────
 
 /**
- * 올린 주문을 붙인다. 주문번호가 같으면 고친다(금액·거래처가 바뀌었을 수 있다).
- * @return {{added:number, updated:number, total:number}}
+ * 올린 주문서를 붙인다.
+ *
+ * ★ 더 «늦게 받은» 파일이 이긴다 (2026-09-29) ★
+ *   > "각각 다른사람이 계속 다른 화일을 올리면 어떻게 된느거야?"
+ *   주문마다 「받은시각」(그 내용이 나온 파일의 내려받은 시각)을 적는다.
+ *   더 옛날에 받은 파일은 그 주문을 덮지 못한다 — 올린 차례가 아니라 «받은 차례»로 판단한다.
+ *
+ * ★ 이카운트에서 지운 주문 ★
+ *   파일의 조회 기간 안인데 그 파일에 없는 주문은 「없어짐」으로 돌리고 매칭에서 뺀다. 지우지는 않는다 —
+ *   다음 파일에 다시 나오면 되살아난다. 단, 한꺼번에 너무 많이 없어지면(걸러 받은 파일) 손대지 않는다.
+ *
+ * @param {Object} parsed  dpParseOrderSheet 결과
+ * @return {{added, updated, stale, missing, revived, total, warn:string[], fileAt:string}}
  */
-function dpUpsertOrders_(ss, orders) {
+function dpUpsertOrders_(ss, parsed, by) {
   var sh = _dp_tab_(ss, DP_ORDERS_SHEET_, DP_ORDERS_HEADERS_, "A:C");
   var t = _dp_readTab_(sh), c = t.cols;
+  var width = sh.getLastColumn();
+  var now = _dp_now_();
+  var warn = [];
+  // 받은 시각을 못 읽으면 올린 시각으로 친다 — 그래도 «옛 파일이 덮는» 일은 막지 못하니 알린다
+  var fileAt = parsed.downloadedAt || now;
+  if (!parsed.downloadedAt) warn.push("파일에 내려받은 시각이 없어 올린 시각으로 쳤습니다");
+
   var at = {};
   t.rows.forEach(function (r, i) { at[String(r[c["주문번호"] - 1])] = i; });
-  var now = _dp_now_(), added = [], updated = 0;
-  orders.forEach(function (o) {
-    var vals = [o.no, o.date, o.due, o.code, o.name, o.amount, o.done];
-    if (at[o.no] != null) {
-      var r = t.rows[at[o.no]];
-      var changed = false;
-      for (var j = 0; j < vals.length; j++) {
-        var before = j === 1 || j === 2 ? _dp_ts_(r[j]).slice(0, 10) : String(r[j]);
-        if (before !== String(vals[j])) { r[j] = vals[j]; changed = true; }
-      }
-      r[c["마지막올림"] - 1] = now;
-      if (changed) updated++;
-    } else {
-      added.push(vals.concat([now, now]));
+  var g = function (r, h) { return r[c[h] - 1]; };
+  var s = function (r, h, v) { r[c[h] - 1] = v; };
+
+  var inFile = {}, added = [], updated = 0, stale = 0, revived = 0;
+  parsed.orders.forEach(function (o) {
+    inFile[o.no] = 1;
+    var vals = { "주문번호": o.no, "주문일": o.date, "납기일": o.due, "거래처코드": o.code,
+                 "거래처명": o.name, "금액": o.amount, "종결여부": o.done };
+    if (at[o.no] == null) {
+      var row = [];
+      for (var w = 0; w < width; w++) row.push("");
+      Object.keys(vals).forEach(function (h) { s(row, h, vals[h]); });
+      s(row, "처음올림", now); s(row, "마지막올림", now); s(row, "받은시각", fileAt);
+      added.push(row);
+      return;
     }
+    var r = t.rows[at[o.no]];
+    var rowAt = _dp_sec_(g(r, "받은시각"));
+    if (rowAt && rowAt > fileAt) { stale++; return; }        // 더 늦게 받은 내용이 이미 있다
+    var changed = false;
+    Object.keys(vals).forEach(function (h) {
+      var before = (h === "주문일" || h === "납기일") ? _dp_ts_(g(r, h)).slice(0, 10) : String(g(r, h));
+      if (before !== String(vals[h])) { s(r, h, vals[h]); changed = true; }
+    });
+    if (String(g(r, "상태")) === "없어짐") { s(r, "상태", ""); s(r, "상태바뀐시각", now); revived++; }
+    s(r, "마지막올림", now);
+    s(r, "받은시각", fileAt);
+    if (changed) updated++;
   });
-  if (t.rows.length) sh.getRange(2, 1, t.rows.length, t.rows[0].length).setValues(t.rows);
-  if (added.length) sh.getRange(sh.getLastRow() + 1, 1, added.length, added[0].length).setValues(added);
+
+  // 조회 기간 안인데 파일에 없는 주문 → 없어짐 (그 주문을 이 파일보다 늦게 본 적이 없을 때만)
+  var missing = [];
+  if (parsed.range) {
+    t.rows.forEach(function (r) {
+      var no = String(g(r, "주문번호"));
+      var d = _dp_ts_(g(r, "주문일")).slice(0, 10);
+      if (inFile[no] || String(g(r, "상태")) === "없어짐") return;
+      if (d < parsed.range.from || d > parsed.range.to) return;
+      var rowAt = _dp_sec_(g(r, "받은시각"));
+      if (rowAt && rowAt > fileAt) return;
+      missing.push(r);
+    });
+    var inRange = parsed.orders.length + missing.length;
+    if (missing.length > DP_MISSING_MAX_COUNT_ || (inRange && missing.length / inRange > DP_MISSING_MAX_RATIO_)) {
+      warn.push("기간 안의 주문 " + missing.length + "건이 이 파일에 없습니다 — 담당자·거래처로 걸러 받은 파일 같아 「없어짐」 표시를 하지 않았습니다");
+      missing = [];
+    }
+    missing.forEach(function (r) { s(r, "상태", "없어짐"); s(r, "상태바뀐시각", now); });
+  } else {
+    warn.push("파일에 조회 기간이 없어 지워진 주문은 확인하지 않았습니다");
+  }
+
+  if (t.rows.length) sh.getRange(2, 1, t.rows.length, width).setValues(t.rows);
+  if (added.length) sh.getRange(sh.getLastRow() + 1, 1, added.length, width).setValues(added);
+
+  var total = t.rows.length + added.length;
   var props = PropertiesService.getScriptProperties();
-  props.setProperty("DP_ORDERS_AT", now);
-  props.setProperty("DP_ORDERS_COUNT", String(t.rows.length + added.length));
-  return { added: added.length, updated: updated, total: t.rows.length + added.length };
+  // 화면의 「주문서 ○○ 기준」은 지금까지 본 가장 늦은 파일 — 옛 파일을 올려도 뒤로 가지 않는다
+  if (!_dp_prop_("DP_ORDERS_AT") || fileAt >= _dp_prop_("DP_ORDERS_AT")) {
+    props.setProperty("DP_ORDERS_AT", fileAt);
+    props.setProperty("DP_ORDERS_BY", by || "");
+  }
+  props.setProperty("DP_ORDERS_COUNT", String(total));
+
+  var up = _dp_tab_(ss, DP_UPLOADS_SHEET_, DP_UPLOADS_HEADERS_, "A:D");
+  up.appendRow([now, by || "", parsed.downloadedAt || "(없음)",
+    parsed.range ? parsed.range.from + " ~ " + parsed.range.to : "(없음)",
+    parsed.orders.length, added.length, updated, stale, missing.length, revived, warn.join(" / ")]);
+
+  return { added: added.length, updated: updated, stale: stale, missing: missing.length, revived: revived,
+           total: total, warn: warn, fileAt: fileAt };
 }
 
 /** 매칭에 쓸 주문 — 최근 DP_ORDER_DAYS_ 일 (주문일이나 납기일 기준) */
@@ -102,9 +193,10 @@ function dpLoadOrders_(ss) {
       code: String(r[c["거래처코드"] - 1]),
       name: String(r[c["거래처명"] - 1]),
       amount: Number(r[c["금액"] - 1]) || 0,
-      paid: 0
+      paid: 0,
+      gone: c["상태"] ? String(r[c["상태"] - 1]) === "없어짐" : false
     };
-  }).filter(function (o) { return o.no && (o.date >= since || o.due >= since); });
+  }).filter(function (o) { return o.no && !o.gone && (o.date >= since || o.due >= since); });
 }
 
 // ── 별칭표 ────────────────────────────────────────

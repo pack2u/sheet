@@ -97,7 +97,7 @@ function _dp_handleCs_(p) {
       r = dpListDeposits_(String(p.date || ""), Number(p.limit) || 0);
       break;
     case "orders_upload":
-      r = dpCsOrdersUpload_(p.rows);
+      r = dpCsOrdersUpload_(p.rows, String(p.by || ""));
       break;
     case "detail":
       r = dpCsDetail_(String(p.key || ""));

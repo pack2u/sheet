@@ -113,7 +113,7 @@ function _cs_dep_by_() {
 function csDepositOrdersUpload(rows) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   if (!rows || !rows.length) return { ok: false, error: "엑셀에서 읽은 줄이 없습니다" };
-  var out = _cs_dep_call_({ action: "orders_upload", rows: rows });
+  var out = _cs_dep_call_({ action: "orders_upload", rows: rows, by: _cs_dep_by_() });
   _cs_dep_bust_();
   return out;
 }

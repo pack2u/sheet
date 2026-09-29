@@ -7,7 +7,7 @@
  */
 
 /** 주문서조회 엑셀(보이는 값 2차원 배열)을 받아 붙이고 매칭을 다시 돌린다 */
-function dpCsOrdersUpload_(rows) {
+function dpCsOrdersUpload_(rows, by) {
   var parsed = dpParseOrderSheet(rows || []);
   if (!parsed.ok) return { ok: false, error: parsed.error };
   if (!parsed.orders.length) return { ok: false, error: "주문이 한 줄도 없습니다" };
@@ -15,14 +15,15 @@ function dpCsOrdersUpload_(rows) {
   lock.waitLock(30000);
   try {
     var ss = dpLedgerSs_(true);
-    var up = dpUpsertOrders_(ss, parsed.orders);
+    var up = dpUpsertOrders_(ss, parsed, by);
     var res = dpMatchRunLocked_(ss);
     var tally = {};
     Object.keys(res).forEach(function (k) {
       if (res[k].result === "제외") return;
       tally[res[k].result] = (tally[res[k].result] || 0) + 1;
     });
-    return { added: up.added, updated: up.updated, total: up.total, read: parsed.orders.length, tally: tally };
+    return { added: up.added, updated: up.updated, stale: up.stale, missing: up.missing, revived: up.revived,
+             total: up.total, read: parsed.orders.length, fileAt: up.fileAt, warn: up.warn, tally: tally };
   } finally {
     lock.releaseLock();
   }

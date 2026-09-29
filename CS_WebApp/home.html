@@ -1892,8 +1892,11 @@
     .os-empty { text-align: center; padding: 48px 16px; color: var(--text-muted); font-size: 14px; }
     .os-toast {
       position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(20px);
-      background: #2e7d57; color: #fff; padding: 10px 16px; border-radius: 999px;
+      background: #2e7d57; color: #fff; padding: 10px 16px; border-radius: 20px;
       font-size: 13px; opacity: 0; pointer-events: none; transition: all 0.2s;
+      /* 여러 줄 알림 (2026-09-29 주문서 올리기 결과) — 줄바꿈을 살리고 너무 넓어지지 않게.
+         한 줄 알림은 높이 ~40px 이라 반지름 20px 이면 예전 알약 모양 그대로다 */
+      white-space: pre-line; max-width: min(92vw, 560px); text-align: center; line-height: 1.5;
       z-index: 5000;   /* 첨부 확대보기(4000)보다 위 — 오류 안내가 가려지면 안 된다 */
     }
     .os-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -12419,8 +12422,9 @@
       }
       var stale = today && r.ordersAt.slice(0, 10) !== today;
       el.className = 'dash-dep-orders' + (stale ? ' stale' : '');
-      el.textContent = '주문서 ' + r.ordersAt.slice(5, 16) + ' 기준 · ' + (r.ordersCount || 0).toLocaleString() + '건' +
-        (stale ? ' — 오늘 주문서를 올려 주세요' : '');
+      // 「기준」 = 지금까지 올라온 파일 중 가장 늦게 «받은» 파일의 시각 (올린 차례가 아니다)
+      el.textContent = '주문서 ' + r.ordersAt.slice(5, 16) + ' 기준' + (r.ordersBy ? ' · ' + r.ordersBy : '') +
+        ' · ' + (r.ordersCount || 0).toLocaleString() + '건' + (stale ? ' — 오늘 주문서를 올려 주세요' : '');
     }
 
     function depSumText(r) {
@@ -12677,8 +12681,16 @@
               if (!r || !r.ok) { toast('주문서 올리기 실패 — ' + ((r && r.error) || ''), 4000); return; }
               var t = r.tally || {}, parts = [];
               Object.keys(t).forEach(function (k) { parts.push((DEP_ICON[k] || '') + k + ' ' + t[k]); });
-              toast('주문서 ' + r.read + '건 읽음 · 새로 ' + r.added + ' · 바뀜 ' + r.updated +
-                    (parts.length ? '\n' + parts.join(' · ') : ''), 4500);
+              // 옛 파일·지워진 주문·걸러 받은 파일 — 무슨 일이 있었는지 그대로 말한다
+              var extra = [];
+              if (r.stale) extra.push('더 늦게 받은 내용이 있어 건너뜀 ' + r.stale);
+              if (r.missing) extra.push('이카운트에서 없어짐 ' + r.missing);
+              if (r.revived) extra.push('되살아남 ' + r.revived);
+              var warn = r.warn || [];
+              toast('주문서 ' + r.read + '건 읽음 (' + String(r.fileAt || '').slice(5, 16) + ' 받은 파일) · 새로 ' + r.added + ' · 바뀜 ' + r.updated +
+                    (extra.length ? '\n' + extra.join(' · ') : '') +
+                    (warn.length ? '\n⚠ ' + warn.join('\n⚠ ') : '') +
+                    (parts.length ? '\n' + parts.join(' · ') : ''), warn.length ? 8000 : 5000);
               renderDeposits(true);
             })
             .withFailureHandler(function (e) { toast('주문서 올리기 실패 — ' + (e && e.message ? e.message : ''), 4000); })

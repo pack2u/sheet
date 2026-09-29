@@ -209,11 +209,18 @@ function dpMatchDeposit(dep, orders, aliases) {
  * ★ 「종결여부」 는 입금과 관계없다 ★ — 「완료」 = 판매현황으로 넘겼다는 뜻 (사용자 확인 2026-09-29).
  *   그래서 거르지 않고 싣기만 한다.
  *
+ * ★ 조회 기간 · 내려받은 시각도 읽는다 (2026-09-29) ★
+ *   > "주문서올리기는 각각 다른사람이 계속 다른 화일을 올리면 어떻게 되는거야?"
+ *   여러 사람이 서로 다른 때 받은 파일을 올린다. 옛 파일이 새 내용을 덮지 않게 «언제 받은 파일인지»를,
+ *   이카운트에서 지운 주문을 알아채려고 «어느 기간을 조회한 파일인지»를 함께 돌려준다.
+ *
  * @param {Array<Array<string>>} rows
- * @return {{ok:boolean, error:string, orders:Array<{no,date,due,code,name,amount,done}>, skipped:number}}
+ * @return {{ok:boolean, error:string, orders:Array<{no,date,due,code,name,amount,done}>, skipped:number,
+ *           range:{from:string,to:string}|null, downloadedAt:string}}
+ *   downloadedAt: "yyyy-MM-dd HH:mm:ss" — 못 찾으면 ""
  */
 function dpParseOrderSheet(rows) {
-  var out = { ok: false, error: "", orders: [], skipped: 0 };
+  var out = { ok: false, error: "", orders: [], skipped: 0, range: null, downloadedAt: "" };
   rows = rows || [];
   var norm = function (s) { return String(s == null ? "" : s).replace(/\s+/g, ""); };
   var hi = -1, col = {};
@@ -234,11 +241,30 @@ function dpParseOrderSheet(rows) {
     var m = String(s || "").match(/(\d{4})[\/.\-](\d{1,2})[\/.\-](\d{1,2})/);
     return m ? m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2) : "";
   };
+
+  // 머리글 위 줄: 「회사명 : 주식회사 팩투유 / 2026/08/30  ~ 2026/10/29」
+  for (var t = 0; t < hi; t++) {
+    var mr = String((rows[t] || []).join(" ")).match(/(\d{4}[\/.\-]\d{1,2}[\/.\-]\d{1,2})\s*~\s*(\d{4}[\/.\-]\d{1,2}[\/.\-]\d{1,2})/);
+    if (mr) { out.range = { from: ymd(mr[1]), to: ymd(mr[2]) }; break; }
+  }
+  // 「2026/09/29 (화) 오전 12:26:11」 — 이카운트가 끝에 적는 내려받은 시각
+  var stamp = function (s) {
+    var m = String(s || "").match(/^\s*(\d{4}[\/.\-]\d{1,2}[\/.\-]\d{1,2})\s*\([^)]*\)\s*(오전|오후)\s*(\d{1,2}):(\d{2}):(\d{2})/);
+    if (!m) return "";
+    var h = Number(m[3]) % 12 + (m[2] === "오후" ? 12 : 0);
+    return ymd(m[1]) + " " + ("0" + h).slice(-2) + ":" + m[4] + ":" + m[5];
+  };
+
   for (var k = hi + 1; k < rows.length; k++) {
     var row = rows[k] || [];
     var rawNo = String(row[col["주문번호"]] || "").trim();
     var mNo = rawNo.match(/^(\d{4}[\/.\-]\d{1,2}[\/.\-]\d{1,2})\s*-\s*(\d+)$/);
-    if (!mNo) { if (rawNo) out.skipped++; continue; }      // 끝의 「내려받은 시각」 줄 등
+    if (!mNo) {
+      var st = stamp(rawNo);
+      if (st) out.downloadedAt = st;
+      else if (rawNo) out.skipped++;
+      continue;
+    }
     var amt = Number(String(row[col["금액"]] || "").replace(/[^\d\-]/g, "")) || 0;
     out.orders.push({
       no: ymd(mNo[1]).replace(/-/g, "/") + "-" + mNo[2],   // 「2026/10/13 -2」 → 「2026/10/13-2」
