@@ -147,7 +147,7 @@ function _cib_apply_(it, applied) {
       try { appendReturnConsultation({ tab: loc.tab, row: loc.row, text: "물류 메모: " + it.memo, staff: staff }); } catch (eM) {}
     }
     mTab = loc.tab; mRow = loc.row; mName = r.name || ""; mItem = r.item || "";
-    result = _CS_RI_STATUS_INTAKE_ + " 처리 · 사진 " + photos.length + "장 · v2" + (loc.moved ? " (행 밀림 → 다시 찾음)" : "");
+    result = (r.alreadyDone ? "완료 건 · 사진만 추가" : _CS_RI_STATUS_INTAKE_ + " 처리") + " · 사진 " + photos.length + "장 · v2" + (loc.moved ? " (행 밀림 → 다시 찾음)" : "");
   } else {
     //  못 붙인 것은 CS 「📷 입고 확인」 대기로 — 처리결과가 「사진만 적재」로 시작해야 걸린다
     result = "사진만 적재 (확인 대기) · v2 · " + loc.miss;

@@ -754,6 +754,8 @@
       m.matches.forEach(function (c, i) {
         var on = PICKED && PICKED.tab === c.tab && String(PICKED.row) === String(c.row);
         h += '<div class="pick' + (on ? ' on' : '') + '" data-i="' + i + '"><b>' + esc(c.name || "-") + '</b>';
+        //  끝난 건 — 사진만 남고 상태는 안 바뀐다 (2026-09-30)
+        if (c.done) h += ' <span class="w" style="display:inline">이미 완료 — 사진만 남깁니다</span>';
         h += '<div class="m">' + esc(c.item || "") + '</div>';
         h += '<div class="m">' + esc(c.matchVia) + ' · ' + esc(c.status || "") + '</div>';
         if (String(c.matchVia).indexOf("원송장") === 0) h += '<div class="w">원송장 기준 매칭 — 확인 후 선택</div>';

@@ -192,7 +192,9 @@ function csLogisticsMatch(raw, fields) {
 
   var rows = [];
   try {
-    rows = _cs_loadReturnLedgerCases_(_CSL_LOOKBACK_, true, false) || [];
+    //  완료 건도 읽는다 (2026-09-30) — 환불을 먼저 하고 닫은 반품은 물건이 나중에 온다.
+    //  기간은 접수일 기준 _CSL_LOOKBACK_(60일). 진행 중인 건이 늘 먼저 나온다(아래 정렬).
+    rows = _cs_loadReturnLedgerCases_(_CSL_LOOKBACK_, false, false) || [];
   } catch (e) {
     return {
       tier: "none", digits: digits, checksumOk: checksumOk,
@@ -210,7 +212,7 @@ function csLogisticsMatch(raw, fields) {
     hits[k] = {
       tab: c.tab, row: c.row, name: c.name, item: c.item, phone: c.phone,
       status: c.status, invoice: c.invoice, returnInvoice: c.returnInvoice,
-      matchVia: via, score: score
+      matchVia: via, score: score, done: !c.active
     };
     out.push(hits[k]);
   }
@@ -277,7 +279,7 @@ function csLogisticsMatch(raw, fields) {
     }
   }
 
-  out.sort(function (a, b) { return b.score - a.score; });
+  out.sort(function (a, b) { return (a.done - b.done) || (b.score - a.score); });
 
   // 등급 판정 — 자동 처리는 확신할 때만.
   //  ★ 2026-08-31 정정 ★
@@ -291,7 +293,7 @@ function csLogisticsMatch(raw, fields) {
   //    입고대장 C열(신뢰도)로 얼마간 지켜본 뒤 조정한다.
   //    지금은 종전대로 "완전일치 1건 + 10자리 이상"만 자동 처리한다.
   var tier = "none", note = "";
-  if (out.length === 1 && out[0].score >= 95 && digits.length >= 10) {
+  if (out.length === 1 && out[0].score >= 95 && digits.length >= 10 && !out[0].done) {
     tier = "sure";
   } else if (out.length) {
     tier = "maybe";
@@ -389,7 +391,9 @@ function csLogisticsSearch(q) {
 
   var rows = [];
   try {
-    rows = _cs_loadReturnLedgerCases_(_CSL_LOOKBACK_, true, false) || [];
+    //  완료 건도 읽는다 (2026-09-30) — 환불을 먼저 하고 닫은 반품은 물건이 나중에 온다.
+    //  기간은 접수일 기준 _CSL_LOOKBACK_(60일). 진행 중인 건이 늘 먼저 나온다(아래 정렬).
+    rows = _cs_loadReturnLedgerCases_(_CSL_LOOKBACK_, false, false) || [];
   } catch (e) {
     empty.note = "대장 조회 실패: " + e.message;
     return empty;
@@ -405,7 +409,7 @@ function csLogisticsSearch(q) {
     hits[k] = {
       tab: c.tab, row: c.row, name: c.name, item: c.item, phone: c.phone,
       status: c.status, invoice: c.invoice, returnInvoice: c.returnInvoice,
-      matchVia: via, score: score
+      matchVia: via, score: score, done: !c.active
     };
     out.push(hits[k]);
   }
@@ -456,7 +460,7 @@ function csLogisticsSearch(q) {
     if (hasName && !maskRe && _csl_norm_(c.item).indexOf(nm) !== -1) add(c, "품목 포함", 40);
   }
 
-  out.sort(function (a2, b2) { return b2.score - a2.score; });
+  out.sort(function (a2, b2) { return (a2.done - b2.done) || (b2.score - a2.score); });
 
   /* 검색은 하나만 걸려도 **자동 처리하지 않는다.**
      사람이 친 글자로 찾은 것이라 오타 한 글자면 남의 건이 걸린다.
@@ -603,7 +607,7 @@ function csLogisticsSubmit(payload) {
         links
       );
       result = (r && r.ok)
-        ? (_CS_RI_STATUS_INTAKE_ + " 처리 · 사진 " + links.length + "장")
+        ? ((r.alreadyDone ? "완료 건 · 사진만 추가" : _CS_RI_STATUS_INTAKE_ + " 처리") + " · 사진 " + links.length + "장")
         : ("연동 실패: " + ((r && r.error) || "알 수 없음"));
     } catch (eI) {
       result = "연동 실패: " + eI.message;
@@ -847,13 +851,14 @@ function csLogisticsResolve(p) {
     //  매칭탭·매칭행·수취인·품목·처리결과 (G~K) — 촬영 때 붙은 줄과 같은 모양
     tab.getRange(intakeRow, 7, 1, 5).setValues([[
       res.tab, res.row, res.name || "", res.item || "",
-      _CS_RI_STATUS_INTAKE_ + " 처리 · 사진 " + photos.length + "장 · " +
-        _CSL_RESOLVED_BY_CS_ + " " + stamp
+      (res.alreadyDone ? "완료 건 · 사진만 추가" : _CS_RI_STATUS_INTAKE_ + " 처리") +
+        " · 사진 " + photos.length + "장 · " + _CSL_RESOLVED_BY_CS_ + " " + stamp
     ]]);
     _csl_dropPendingCache_();
     return {
       ok: true, tab: res.tab, row: res.row, name: res.name, item: res.item,
-      message: (res.name || res.tab + " " + res.row + "행") + " 건에 붙였습니다 · " + _CS_RI_STATUS_INTAKE_
+      message: (res.name || res.tab + " " + res.row + "행") + " 건에 붙였습니다 · " +
+        (res.alreadyDone ? "완료된 건이라 상태는 그대로" : _CS_RI_STATUS_INTAKE_)
     };
   } catch (e) {
     return { ok: false, error: e.message || String(e) };

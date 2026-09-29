@@ -178,9 +178,15 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
 
     //  「현장입고」로 시작해야 CS 카드·업체 포털이 사진 줄로 알아본다
     //  (_cs_isPhotoLine_ · prpPublicTimeline_). 앞말을 바꾸면 둘 다 고칠 것.
+    /*  ★ 이미 끝난 건에는 사진만 남긴다 (2026-09-30) ★
+        > "완료된 건에 사진을 붙이면 사진만 남기기"
+        환불을 먼저 하고 닫은 반품은 물건이 나중에 온다. 거기에 입고검수를 찍으면
+        끝난 건이 다시 열려 CS 가 또 손을 댄다. 상태는 그대로 두고 경과에 사진 줄만.
+        「끝났다」는 판정은 목록과 같은 _cs_isReturnLedgerDone_ 한 곳에서 한다.  */
+    var alreadyDone = _cs_isReturnLedgerDone_(String(ctx.row[ctx.col.status || 0] || ""), ctx.row);
     var noteText = "현장입고 스캔" + (fullInv ? " · " + formatted : "") +
       ((isOrigInv || matchVia === "original_invoice_warn") ? " (원송장 일치)" : "") +
-      retInvClash;
+      retInvClash + (alreadyDone ? " (이미 완료된 건 — 상태 그대로)" : "");
     var links = (photoLinks && photoLinks.length) ? photoLinks : [];
     if (links.length) {
       noteText += " · 사진 " + links.length + "장";
@@ -195,16 +201,19 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
     });
     if (!consult.ok) return consult;
 
-    var statusRes = updateReturnLedgerStatus({
-      tab: tabName,
-      row: rowNum,
-      status: _CS_RI_STATUS_INTAKE_,
-      staff: staff
-    });
-    if (!statusRes.ok) return statusRes;
+    if (!alreadyDone) {
+      var statusRes = updateReturnLedgerStatus({
+        tab: tabName,
+        row: rowNum,
+        status: _CS_RI_STATUS_INTAKE_,
+        staff: staff
+      });
+      if (!statusRes.ok) return statusRes;
+    }
 
     var name = ctx.col.name >= 0 ? String(ctx.row[ctx.col.name] || "").trim() : "";
     var item = ctx.col.item >= 0 ? String(ctx.row[ctx.col.item] || "").trim() : "";
+    var curStatus = String(ctx.row[ctx.col.status || 0] || "").trim();
     return {
       ok: true,
       action: "updated",
@@ -212,10 +221,12 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
       row: rowNum,
       name: name,
       item: item,
-      status: _CS_RI_STATUS_INTAKE_,
+      alreadyDone: alreadyDone,
+      status: alreadyDone ? curStatus : _CS_RI_STATUS_INTAKE_,
       matchVia: matchVia || "",
       returnInvoice: formatted,
-      message: tabName + " " + rowNum + "행 · " + _CS_RI_STATUS_INTAKE_ + " 처리"
+      message: tabName + " " + rowNum + "행 · " +
+        (alreadyDone ? "완료 건에 사진만 추가 (상태 그대로)" : _CS_RI_STATUS_INTAKE_ + " 처리")
     };
   } catch (e) {
     return { ok: false, error: e.message || String(e) };

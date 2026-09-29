@@ -2939,6 +2939,7 @@
     .lgw-acts button:disabled { opacity: .4; cursor: default; }
     .lgw-ocr { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-secondary); font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
     .lgw-ocr.err { color: var(--text-muted); }
+    .lgw-done { font-size: 11px; font-weight: 700; color: var(--accent-orange); margin-left: 4px; }
     .lgw-ocr-t { font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
     .lgw-ocr span { display: inline-block; min-width: 56px; color: var(--text-muted); }
     .lgw-close {
@@ -12443,6 +12444,7 @@
         var c = ms[j];
         h += '<div class="lg-pick' + (LGW.pick[k] === j ? ' on' : '') + '" onclick="lgwPick(' + i + ',' + j + ')">' +
           '<b>' + esc(c.name || '-') + '</b> <span class="m">' + esc(c.status || '') + '</span>' +
+          (c.done ? ' <span class="lgw-done">이미 완료 · 사진만 남김</span>' : '') +
           '<div class="m">' + esc(c.item || '') + ' · ' + esc(c.matchVia || '') +
           (c.returnInvoice ? ' · 반품송장 ' + esc(c.returnInvoice) : '') + '</div></div>';
       }
@@ -12477,6 +12479,16 @@
       google.script.run
         .withSuccessHandler(function (r) {
           if (LGW.q[k] !== q) return; // 그새 다른 걸 쳤다
+          /*  「이름 + 전화 뒤4」로 하나도 안 걸리면 이름만으로 한 번 더 (2026-09-30)
+              라벨의 전화(안심번호 등)가 대장의 전화와 다른 일이 흔하다 — 고*엽 건이 그랬다.
+              둘 다 준 검색은 한쪽만 맞으면 안 올리므로(엉뚱한 건 방지) 여기서 따로 한다.  */
+          var nameOnly = (q.match(/^(\S+)\s+\d{4,}$/) || [])[1];
+          if (nameOnly && (!r || !r.matches || !r.matches.length)) {
+            var box = document.querySelector('#lgw-' + i + ' .lgw-q');
+            if (box) box.value = nameOnly;
+            lgwSearch(i, nameOnly);
+            return;
+          }
           LGW.hits[k] = r || { matches: [], note: '조회 실패' };
           //  하나만 걸리면 골라 둔다 — 붙이는 건 여전히 사람이 누른다
           if (r && r.matches && r.matches.length === 1) LGW.pick[k] = 0;

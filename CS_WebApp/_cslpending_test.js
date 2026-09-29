@@ -123,6 +123,8 @@ vm.runInContext([
   fn(OS, "_cs_parseReturnInvFromNotice_"),
   fn(OS, "_cs_appendNoticeLine_"),
   fn(OS, "_cs_isPhotoLine_"),
+  fn(OS, "_cs_isReturnDoneMark_"),
+  fn(OS, "_cs_isReturnLedgerDone_"),
 ].join("\n"), ctx);
 
 // ── ① 반품송장 칸 ──────────────────────────────────────
@@ -148,6 +150,16 @@ check("빈 칸에 온전한 번호는 적는다", ledger.rows[1][3], "2552-5285-
 
 ctx._cs_intakeExistingReturn_("202609", 2, "0504-1234-5678", "강물류", "스캔", []);
 check("안심번호(0 으로 시작)는 안 적는다 — 이미 적힌 값 그대로", ledger.rows[1][3], "2552-5285-1199");
+
+console.log("\n[①-2] 이미 완료된 건에는 사진만 — 상태를 안 바꾼다 (2026-09-30)");
+ledger.rows.push(["완료", "고승엽", "4521-5285-1010", "", ""]);
+log.consult = []; log.status = [];
+const dn = ctx._cs_intakeExistingReturn_("202609", 4, "45240677274", "강물류", "스캔", [U1]);
+check("ok", dn.ok, true);
+check("★ 상태를 안 바꾼다", log.status.length, 0);
+check("알려 준다", dn.alreadyDone, true);
+check("사진 줄에 표시", /이미 완료된 건 — 상태 그대로/.test(log.consult[0].text), true);
+check("그래도 사진 줄로 알아본다", ctx._cs_isPhotoLine_(log.consult[0].text.replace(/\n/g, " ")), true);
 
 // ── ② CS 가 사진 줄로 알아본다 ─────────────────────────
 console.log("\n[②] CS 카드 사진 줄 판정 — 포털과 같은 규칙");
