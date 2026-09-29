@@ -6811,11 +6811,27 @@ function partnerSyncExclusiveFormHeaders() {
     }
   });
 
+  //  허브 「업체전용양식마스터」도 같이 맞춘다 — 보이는 것과 도는 것을 같게
+  var 마스터 = { 고친것: [], 왜: "" };
+  try {
+    if (typeof _pep_syncTemplateMasterFromCode_ === "function") {
+      마스터 = _pep_syncTemplateMasterFromCode_(SpreadsheetApp.getActiveSpreadsheet());
+    }
+  } catch (eM) {
+    마스터.왜 = String(eM && eM.message);
+  }
+
   var msg = "✅ 자리 맞춤 " + 한것.length + "곳";
   if (한것.length) msg += "\n\n" + 한것.join("\n");
   if (그만둔것.length) msg += "\n\n⏸ 손대지 않음 (사람이 볼 것)\n" + 그만둔것.join("\n");
   if (탈.length) msg += "\n\n❌ 오류\n" + 탈.join("\n");
-  if (!한것.length && !그만둔것.length && !탈.length) msg = "ℹ️ 모두 이미 맞습니다.";
+  if (!한것.length && !그만둔것.length && !탈.length) msg = "ℹ️ 업체 시트는 모두 이미 맞습니다.";
+  if (마스터.고친것.length) {
+    msg += "\n\n📋 업체전용양식마스터 " + 마스터.고친것.length + "줄도 맞췄습니다\n· " +
+      마스터.고친것.join("\n· ");
+  } else if (마스터.왜 && 마스터.왜 !== "이미 같습니다") {
+    msg += "\n\n📋 업체전용양식마스터 — " + 마스터.왜;
+  }
   ui.alert(msg);
 }
 

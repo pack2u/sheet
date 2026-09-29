@@ -213,7 +213,94 @@ console.log("\n─── ⑩ 코드에 없는 업체 ───");
 const r5 = 맞춰(가짜탭([["가"], [""]]), "없는업체");
 ok("코드에 양식이 없다고 한다", r5.했나 === false && /양식이 없/.test(r5.왜), r5.왜);
 
-console.log("\n─── ⑪ 「1행 글자만」 고치는 쪽이 49·50 을 안 지우나 ───");
+console.log("\n─── ⑪ 허브 「업체전용양식마스터」도 코드를 따라오나 ───");
+{
+  function 꺼내D(name) {
+    const i = dep.indexOf("function " + name + "(");
+    if (i < 0) throw new Error(name + " 를 못 찾음");
+    let d = 0, seen = false;
+    for (let k = i; k < dep.length; k++) {
+      if (dep[k] === "{") { d++; seen = true; }
+      else if (dep[k] === "}") { d--; if (seen && d === 0) return dep.slice(i, k + 1); }
+    }
+    throw new Error(name + " 본문이 안 닫힘");
+  }
+  //  코드 내장표를 그대로 읽어 온다 — 시험이 표를 따로 베껴 두면 갈라진다
+  const 표시작 = dep.indexOf("var EMBEDDED_VENDOR_EXCLUSIVE_MASTER_ROWS_");
+  const 내장 = dep.slice(표시작, dep.indexOf("\n];", 표시작))
+    .match(/\{[^{}]*label:[^{}]*headerCsv:[^{}]*\}/g)
+    .map((m) => ({
+      label: m.match(/label: "([^"]*)"/)[1],
+      headerCsv: m.match(/headerCsv: "([^"]*)"/)[1],
+    }));
+  ok("내장표를 읽었다", 내장.length > 10, String(내장.length));
+
+  const mctx = {
+    String, Number, Array, Math, console,
+    EMBEDDED_VENDOR_EXCLUSIVE_MASTER_ROWS_: 내장,
+    VENDOR_EXCLUSIVE_TEMPLATE_MASTER_SHEET_NAME: "업체전용양식마스터",
+    Logger: { log: () => {} },
+    SpreadsheetApp: { flush: () => {} },
+    normHubMappingHeader_: (v) => String(v == null ? "" : v).replace(/\s/g, ""),
+  };
+  vm.createContext(mctx);
+  vm.runInContext(꺼내D("normVendorExclusiveTemplateKey_"), mctx);
+  vm.runInContext(꺼내D("resolveVendorExclusiveTemplateColumns_"), mctx);
+  vm.runInContext(꺼내D("_pep_syncTemplateMasterFromCode_"), mctx);
+
+  function 가짜마스터(줄들) {
+    const grid = 줄들.map((r) => r.slice());
+    const sh = {
+      _grid: grid,
+      getSheetByName: (n) => (n === "업체전용양식마스터" ? sh : null),
+      getLastRow: () => grid.length,
+      getLastColumn: () => 3,
+      getRange(r, c, nr, nc) {
+        nr = nr || 1; nc = nc || 1;
+        return {
+          getValues: () => grid.slice(r - 1, r - 1 + nr).map((row) => row.slice(c - 1, c - 1 + nc)),
+          setValues(v) {
+            for (let i = 0; i < v.length; i++) for (let j = 0; j < v[i].length; j++) grid[r - 1 + i][c - 1 + j] = v[i][j];
+            return this;
+          },
+        };
+      },
+    };
+    return sh;
+  }
+  const 내장의 = (이름) => 내장.filter((x) => x.label === 이름)[0].headerCsv;
+
+  /*  2026-09-29 아침에 C17 에 실제로 들어 있던 글자 */
+  const 옛CSV = "송장번호|적요|사용안함|보내는분성명|보내는분전화번호|보내는분기타연락처|" +
+    "보내는분우편번호|보내는분주소(전체, 분할)|받는분성명|받는분전화번호|받는분기타연락처|" +
+    "받는분우편번호|받는분주소(전체, 분할)|품목명|내품명|박스수량|배송메세지1|박스타입|운임구분";
+  const 마 = 가짜마스터([
+    ["맞춤양식명", "품목접두(참고)", "전용양식헤더CSV(| 또는 탭 구분)"],
+    ["올팩", "AP", 내장의("올팩")],
+    ["선우", "SW", 옛CSV],
+    ["누가손으로넣음", "", "가|나|다"],
+  ]);
+  const m = mctx._pep_syncTemplateMasterFromCode_(마);
+  ok("한 줄 고쳤다고 한다", m.고친것.length === 1, m.고친것.join(" · ") + " / " + m.왜);
+  ok("선우 줄이라고 말해 준다", /선우/.test(m.고친것[0] || ""), m.고친것[0]);
+  ok("3행 C열이라고 말해 준다", /3행 C열/.test(m.고친것[0] || ""), m.고친것[0]);
+  ok("19칸 → 23칸이라고 말해 준다", /19칸 → 23칸/.test(m.고친것[0] || ""), m.고친것[0]);
+  ok("선우 칸이 양식과 똑같아졌다", 마._grid[2][2] === SW.join("|"), 마._grid[2][2]);
+  ok("이미 맞던 올팩은 그대로", 마._grid[1][2] === 내장의("올팩"));
+  ok("코드에 없는 줄은 손대지 않는다", 마._grid[3][2] === "가|나|다", 마._grid[3][2]);
+  ok("머리글 줄은 안 건드린다", 마._grid[0][2] === "전용양식헤더CSV(| 또는 탭 구분)");
+  ok("맞춤양식명 칸은 안 건드린다", 마._grid[2][0] === "선우" && 마._grid[2][1] === "SW");
+
+  const m2 = mctx._pep_syncTemplateMasterFromCode_(마);
+  ok("두 번 돌리면 이미 같다고 한다", m2.고친것.length === 0 && m2.왜 === "이미 같습니다", m2.왜);
+
+  const 없는 = 가짜마스터([["맞춤양식명", "x", "헤더CSV"]]);
+  없는.getSheetByName = () => null;
+  ok("탭이 없으면 말해 준다", /탭이 없습니다/.test(mctx._pep_syncTemplateMasterFromCode_(없는).왜));
+  ok("허브가 없으면 말해 준다", /허브 시트가 없/.test(mctx._pep_syncTemplateMasterFromCode_(null).왜));
+}
+
+console.log("\n─── ⑫ 「1행 글자만」 고치는 쪽이 49·50 을 안 지우나 ───");
 const 수리 = 꺼내("partnerRepairExclusiveFormHeaders");
 ok("지우는 범위를 _PEO_MARK_COL_ 앞에서 끊는다", /_PEO_MARK_COL_[^;]*\) - 1\)/.test(수리));
 ok("lc 끝까지 쓸지 않는다", 수리.indexOf("1, lc - headers.length") < 0);
