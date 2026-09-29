@@ -114,6 +114,17 @@ function _dp_handleCs_(p) {
     case "unassign":
       r = dpCsPin_(String(p.key || ""), "", false, String(p.by || ""));
       break;
+    case "post":
+      // 이카운트 반영 — 막는 장치는 dpEcount.gs 머리말 (잠금 · 반영중 먼저 · 모르면 다시 안 보냄)
+      r = dpCsPost_(p.keys, String(p.by || ""));
+      break;
+    case "ec_check":
+      // 설정 점검 + 로그인까지만 — 전표는 보내지 않는다
+      r = { report: dpEcountCheck() };
+      break;
+    case "post_resolve":
+      r = dpCsPostResolve_(String(p.key || ""), String(p.slipNo || ""), String(p.by || ""));
+      break;
     case "rematch":
       // 규칙이 바뀐 뒤 지난 입금을 다시 판정한다 (사람이 정한 것 · 이카운트에 넘어간 것은 그대로)
       r = { tally: dpMatchNow() };

@@ -16,7 +16,9 @@ var DP_HEADERS_ = [
   "고유번호", "수신시각", "거래일시", "은행", "계좌", "구분", "입금자", "금액",
   "거래후잔액", "잔액확인", "상태", "메모", "원문", "발신번호", "계좌키",
   // ★ 2026-09-29 주문서 매칭 (dpOrders.gs · DP_MATCH_HEADERS_ 와 같은 이름)
-  "매칭결과", "거래처", "거래처코드", "주문번호", "차액", "매칭메모", "배분", "지정"
+  "매칭결과", "거래처", "거래처코드", "주문번호", "차액", "매칭메모", "배분", "지정",
+  // ★ 2026-09-29 이카운트 반영 (dpEcount.gs · DP_EC_POST_HEADERS_ 와 같은 이름)
+  "전표번호", "반영시각", "반영자", "반영메모"
 ];
 /** 잔액 연속성을 볼 때 뒤에서부터 읽는 줄 수. 한 계좌의 직전 거래는 이 안에 있다. */
 var DP_LOOKBACK_ROWS_ = 500;
@@ -171,7 +173,8 @@ function dpListDeposits_(date, limit) {
     : Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
   var out = { date: day, total: 0, sum: 0, unparsed: 0, rows: [],
               ordersAt: _dp_prop_("DP_ORDERS_AT"), ordersBy: _dp_prop_("DP_ORDERS_BY"),
-              ordersCount: Number(_dp_prop_("DP_ORDERS_COUNT")) || 0 };
+              ordersCount: Number(_dp_prop_("DP_ORDERS_COUNT")) || 0,
+              postOn: String(_dp_prop_("DP_ECOUNT_POST")).toLowerCase() === "on" };
   var ss = dpLedgerSs_(false);
   if (!ss) return out;
   var sh = ss.getSheetByName(DP_SHEET_NAME_);
@@ -212,7 +215,11 @@ function dpListDeposits_(date, limit) {
       orderNos: String(col(r, "주문번호")),
       diff: Number(col(r, "차액")) || 0,
       matchMemo: String(col(r, "매칭메모")),
-      pinned: String(col(r, "지정") || "") !== ""
+      pinned: String(col(r, "지정") || "") !== "",
+      // 이카운트 반영 (2026-09-29)
+      slipNo: String(col(r, "전표번호") || ""),
+      postMemo: String(col(r, "반영메모") || ""),
+      canPost: dpCanPost({ result: String(col(r, "매칭결과")), status: st, code: String(col(r, "거래처코드")), amount: amt }).ok
     });
     out.sum += amt;
   }

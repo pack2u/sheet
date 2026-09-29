@@ -1,0 +1,197 @@
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  이카운트 반영 — 입금 1건을 일반전표 1장으로
+ *  ★ 2026-09-29 신규 · 규격: 이카운트_일반전표_API.md · 전표 모양: dpMatch.gs dpBuildJournal
+ *
+ *  > "이카운트의 문제는 입금확인이 2번 3번 클릭하면 계속 된다는거야"
+ *    — 이 작업을 시작한 까닭. 여기가 그걸 막는 자리다.
+ *
+ *  ★ 세 겹 ★
+ *    1) 스크립트 잠금 — 두 사람이 동시에 눌러도 한 번에 하나
+ *    2) 상태 — 「대기」 인 줄만 넘긴다. 보내기 «전에» 「반영중」 으로 바꾸고 시트에 먼저 쓴다(flush)
+ *    3) 결과를 모르면 다시 보내지 않는다 — 응답이 끊기거나 애매하면 「확인필요」.
+ *       사람이 이카운트에서 보고 전표번호를 적거나(있음) 「대기」 로 되돌린다(없음).
+ *       이카운트가 «안 받았다»고 분명히 말한 경우에만 「대기」 로 되돌린다.
+ *
+ *  ★ 켜는 법 ★
+ *    스크립트 속성 DP_ECOUNT_POST = on. 기본은 꺼짐 — 시험 전표로 거래처원장을 확인한 뒤 켠다.
+ *    필요한 속성: ECOUNT_COM_CODE · ECOUNT_USER_ID · ECOUNT_API_CERT_KEY (허브와 같은 값)
+ *               DP_GYE_BANK (보통예금 계정코드) · DP_GYE_AR (외상매출금 계정코드)
+ *    프록시: _secrets.gs DP_ECOUNT_PROXY_URL · DP_ECOUNT_PROXY_KEY (허브 ecount.gs 와 같은 곳 — 고정 IP)
+ * ══════════════════════════════════════════════════════════════
+ */
+
+var DP_EC_POST_HEADERS_ = ["전표번호", "반영시각", "반영자", "반영메모"];
+var DP_EC_JOURNAL_PATH_ = "/OAPI/V2/GeneralJournal/SaveGeneralJournal";
+
+function _dp_ec_cfg_() {
+  var p = function (k) { return _dp_prop_(k); };
+  return {
+    on: String(p("DP_ECOUNT_POST")).toLowerCase() === "on",
+    comCode: p("ECOUNT_COM_CODE"), userId: p("ECOUNT_USER_ID"), certKey: p("ECOUNT_API_CERT_KEY"),
+    lanType: p("ECOUNT_LAN_TYPE") || "ko-KR",
+    bankGye: p("DP_GYE_BANK"), arGye: p("DP_GYE_AR"),
+    proxyUrl: String(_dp_secret_("DP_ECOUNT_PROXY_URL") || ""), proxyKey: String(_dp_secret_("DP_ECOUNT_PROXY_KEY") || "")
+  };
+}
+
+/** 빠진 설정 — 비어 있으면 보낼 수 있다 */
+function _dp_ec_missing_(cfg) {
+  var miss = [];
+  if (!cfg.comCode) miss.push("ECOUNT_COM_CODE");
+  if (!cfg.userId) miss.push("ECOUNT_USER_ID");
+  if (!cfg.certKey) miss.push("ECOUNT_API_CERT_KEY");
+  if (!cfg.bankGye) miss.push("DP_GYE_BANK(보통예금)");
+  if (!cfg.arGye) miss.push("DP_GYE_AR(외상매출금)");
+  if (!cfg.proxyUrl || !cfg.proxyKey) miss.push("DP_ECOUNT_PROXY_URL/KEY");
+  return miss;
+}
+
+/** 고정 IP 프록시를 거쳐 이카운트를 부른다 → 응답 JSON (못 읽으면 던진다) */
+function _dp_ec_fetch_(cfg, url, payload) {
+  var res = UrlFetchApp.fetch(cfg.proxyUrl, {
+    method: "post", contentType: "application/json", muteHttpExceptions: true,
+    headers: { "X-Proxy-Key": cfg.proxyKey },
+    payload: JSON.stringify({ url: url, payload: payload || {}, method: "POST" })
+  });
+  var text = res.getContentText();
+  try { return JSON.parse(text); }
+  catch (e) { throw new Error("이카운트 응답을 읽지 못함 (HTTP " + res.getResponseCode() + ") " + String(text).slice(0, 200)); }
+}
+
+/** 세션 — 20분 캐시. force 면 새로 */
+function _dp_ec_session_(cfg, force) {
+  var cache = CacheService.getScriptCache();
+  if (!force) {
+    var hit = cache.get("DP_EC_SESSION");
+    if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  }
+  var zone = _dp_prop_("ECOUNT_ZONE");
+  if (!zone) {
+    var z = _dp_ec_fetch_(cfg, "https://oapi.ecount.com/OAPI/V2/Zone", { COM_CODE: cfg.comCode });
+    zone = z && z.Data && z.Data.ZONE;
+    if (!zone) throw new Error("이카운트 Zone 을 못 받음");
+    PropertiesService.getScriptProperties().setProperty("ECOUNT_ZONE", String(zone));
+  }
+  var lg = _dp_ec_fetch_(cfg, "https://oapi" + zone + ".ecount.com/OAPI/V2/OAPILogin", {
+    COM_CODE: cfg.comCode, USER_ID: cfg.userId, ZONE: zone, API_CERT_KEY: cfg.certKey, LAN_TYPE: cfg.lanType
+  });
+  var sid = lg && lg.Data && lg.Data.Datas && lg.Data.Datas.SESSION_ID;
+  if (!sid) throw new Error("이카운트 로그인 실패 — " + ((lg && lg.Error && lg.Error.Message) || JSON.stringify(lg).slice(0, 200)));
+  var s = { zone: String(zone), sid: String(sid) };
+  cache.put("DP_EC_SESSION", JSON.stringify(s), 20 * 60);
+  return s;
+}
+
+/**
+ * 입금 여러 건을 이카운트에 넘긴다 (CS웹앱 「이카운트 반영」).
+ * 한 건씩 보낸다 — 여러 장을 한 요청에 담으면 어느 전표번호가 어느 입금인지 흐려진다.
+ *
+ * @return {{results: Array<{key, outcome, slipNo, message}>}}
+ *   outcome: 반영완료 · 거절(대기로 되돌림) · 확인필요 · 건너뜀
+ */
+function dpCsPost_(keys, by) {
+  var cfg = _dp_ec_cfg_();
+  if (!cfg.on) return { ok: false, error: "이카운트 반영이 꺼져 있습니다 (스크립트 속성 DP_ECOUNT_POST=on)" };
+  var miss = _dp_ec_missing_(cfg);
+  if (miss.length) return { ok: false, error: "이카운트 설정이 비었습니다: " + miss.join(", ") };
+  keys = [].concat(keys || []).map(String).filter(Boolean);
+  if (!keys.length) return { ok: false, error: "넘길 입금을 고르세요" };
+
+  var ss = dpLedgerSs_(false);
+  if (!ss) return { ok: false, error: "입금대장이 없습니다" };
+  var results = [];
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sh = dpLedgerSheet_(ss);
+    var session = null;
+    keys.forEach(function (key) {
+      var f = _dp_findRow_(ss, key);
+      if (!f) { results.push({ key: key, outcome: "건너뜀", message: "입금을 못 찾음" }); return; }
+      var c = f.c, row = f.row;
+      var g = function (h) { return c[h] ? row[c[h] - 1] : ""; };
+      var set = function (h, v) { if (c[h]) sh.getRange(f.rowNo, c[h]).setValue(v); };
+      var d = { key: key, txAt: _dp_ts_(g("거래일시")), name: String(g("입금자")), amount: Number(g("금액")) || 0,
+                orderNos: String(g("주문번호")), code: String(g("거래처코드")), result: String(g("매칭결과")),
+                status: String(g("상태")) };
+      var can = dpCanPost(d);
+      if (!can.ok) { results.push({ key: key, outcome: "건너뜀", message: can.reason }); return; }
+
+      // ② 보내기 «전에» 반영중으로 — 여기서 멈춰도(시간 초과 등) 다음 사람이 또 보내지 못한다
+      set("상태", "반영중"); set("반영시각", _dp_now_()); set("반영자", by || ""); set("반영메모", "");
+      SpreadsheetApp.flush();
+
+      var read;
+      try {
+        if (!session) session = _dp_ec_session_(cfg, false);
+        var url = "https://oapi" + session.zone + ".ecount.com" + DP_EC_JOURNAL_PATH_ + "?SESSION_ID=" + encodeURIComponent(session.sid);
+        var res = _dp_ec_fetch_(cfg, url, { GeneralJournalList: dpBuildJournal(d, cfg, 1) });
+        read = dpReadJournalResult(res);
+        // 세션 만료로 거절되면 한 번만 새로 로그인해서 다시 — «거절»이 분명할 때만
+        if (read.kind === "reject" && /세션|session|로그인/i.test(read.message)) {
+          session = _dp_ec_session_(cfg, true);
+          url = "https://oapi" + session.zone + ".ecount.com" + DP_EC_JOURNAL_PATH_ + "?SESSION_ID=" + encodeURIComponent(session.sid);
+          read = dpReadJournalResult(_dp_ec_fetch_(cfg, url, { GeneralJournalList: dpBuildJournal(d, cfg, 1) }));
+        }
+      } catch (err) {
+        read = { kind: "unknown", slipNo: "", message: String((err && err.message) || err) };
+      }
+
+      if (read.kind === "ok") {
+        set("상태", "반영완료"); set("전표번호", read.slipNo);
+        results.push({ key: key, outcome: "반영완료", slipNo: read.slipNo });
+      } else if (read.kind === "reject") {
+        set("상태", "대기"); set("반영메모", "이카운트 거절: " + read.message);
+        results.push({ key: key, outcome: "거절", message: read.message });
+      } else {
+        set("상태", "확인필요"); set("반영메모", "결과 모름 — 이카운트에서 확인: " + read.message);
+        results.push({ key: key, outcome: "확인필요", message: read.message });
+      }
+      SpreadsheetApp.flush();
+    });
+  } finally {
+    lock.releaseLock();
+  }
+  return { results: results };
+}
+
+/**
+ * 「확인필요」 정리 — 사람이 이카운트를 보고 알려 준다.
+ * @param slipNo  이카운트에 있으면 그 전표번호 → 반영완료. 비우면 «없었다» → 대기 (다시 넘길 수 있다)
+ */
+function dpCsPostResolve_(key, slipNo, by) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var ss = dpLedgerSs_(false);
+    var f = ss && _dp_findRow_(ss, key);
+    if (!f) return { ok: false, error: "입금을 못 찾음" };
+    var sh = f.sh, c = f.c;
+    if (String(f.row[c["상태"] - 1]) !== "확인필요") return { ok: false, error: "「확인필요」 인 입금만 정리합니다" };
+    slipNo = String(slipNo || "").trim();
+    sh.getRange(f.rowNo, c["상태"]).setValue(slipNo ? "반영완료" : "대기");
+    if (c["전표번호"]) sh.getRange(f.rowNo, c["전표번호"]).setValue(slipNo);
+    if (c["반영메모"]) sh.getRange(f.rowNo, c["반영메모"]).setValue(
+      (slipNo ? "이카운트에 있음 — " : "이카운트에 없음 — 다시 넘길 수 있음 · ") + (by || "") + " " + _dp_now_());
+    return { status: slipNo ? "반영완료" : "대기" };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** 편집기에서 ▶ — 설정 점검 (보내지 않는다). 로그인까지만 해 본다 */
+function dpEcountCheck() {
+  var cfg = _dp_ec_cfg_();
+  var out = ["이카운트 반영 점검", "켜짐       " + (cfg.on ? "on" : "꺼짐 (DP_ECOUNT_POST)")];
+  var miss = _dp_ec_missing_(cfg);
+  out.push("빠진 설정  " + (miss.length ? miss.join(", ") : "없음"));
+  out.push("보통예금   " + (cfg.bankGye || "-") + " · 외상매출금 " + (cfg.arGye || "-"));
+  if (!miss.length) {
+    try { var s = _dp_ec_session_(cfg, true); out.push("로그인     OK (zone " + s.zone + ")"); }
+    catch (e) { out.push("로그인     ★ " + e.message); }
+  }
+  var msg = out.join("\n");
+  Logger.log(msg);
+  return msg;
+}

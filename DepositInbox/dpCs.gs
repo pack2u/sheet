@@ -103,7 +103,10 @@ function dpCsDetail_(key) {
       bank: String(g("은행")), acct: String(g("계좌")).replace(/[^\d]/g, "").slice(-4),
       status: String(g("상태")), result: String(g("매칭결과")), cust: String(g("거래처")),
       orderNos: String(g("주문번호")), diff: Number(g("차액")) || 0, memo: String(g("매칭메모")),
-      pinned: String(g("지정") || ""), frozen: DP_FROZEN_STATES_.indexOf(String(g("상태"))) >= 0
+      pinned: String(g("지정") || ""), frozen: DP_FROZEN_STATES_.indexOf(String(g("상태"))) >= 0,
+      slipNo: String(g("전표번호") || ""), postMemo: String(g("반영메모") || ""), postedBy: String(g("반영자") || ""),
+      canPost: dpCanPost({ result: String(g("매칭결과")), status: String(g("상태")), code: String(g("거래처코드")), amount: amount }).ok,
+      postOn: _dp_ec_cfg_().on
     },
     options: list
   };

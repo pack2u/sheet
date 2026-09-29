@@ -152,6 +152,29 @@ function csDepositExclude(key, staff) {
   return out;
 }
 
+// ══════════════════════════════════════════════
+//  이카운트 반영 (4단계, 2026-09-29)
+//  > "이카운트의 문제는 입금확인이 2번 3번 클릭하면 계속 된다는거야"
+//  막는 장치는 입금수신 dpEcount.gs 에 있다 (잠금 · 반영중 먼저 · 모르면 다시 안 보냄).
+//  여기는 전달만 한다 — 규칙이 두 곳에 있으면 갈라진다.
+// ══════════════════════════════════════════════
+
+/** 입금 여러 건을 이카운트 일반전표로 */
+function csDepositPost(keys, staff) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  var out = _cs_dep_call_({ action: "post", keys: [].concat(keys || []), by: _cs_dep_by_(staff) });
+  _cs_dep_bust_();
+  return out;
+}
+
+/** 「확인필요」 정리 — 이카운트에 있으면 전표번호, 없으면 빈 값 */
+function csDepositPostResolve(key, slipNo, staff) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  var out = _cs_dep_call_({ action: "post_resolve", key: String(key || ""), slipNo: String(slipNo || ""), by: _cs_dep_by_(staff) });
+  _cs_dep_bust_();
+  return out;
+}
+
 /** 사람이 정한 것을 걷고 자동 판정으로 되돌린다 */
 function csDepositUnassign(key, staff) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;

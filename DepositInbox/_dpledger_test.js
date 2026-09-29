@@ -11,6 +11,10 @@ function makeEnv() {
   const mirrors = [];
   let mirrorFail = false;
   let triggers = [];
+  const cache = {};
+  const ecCalls = [];
+  let ecLogins = 0;
+  let ecSave = () => ({ Status: '200', Data: { SuccessCnt: 1, FailCnt: 0, SlipNos: ['20260929-' + ecCalls.length] } });
   /* 진짜 시트처럼 — 「2026-09-28 23:55(:00)」 같은 글자는 날짜(Date)로 바뀌어 저장된다 (2026-09-29 실측) */
   const asCell = (v) => (typeof v === 'string' && /^d{4}-d{2}-d{2} d{2}:d{2}(:d{2})?$/.test(v)) ? new Date(v.replace(' ', 'T')) : v;
   /* 탭 하나 — 행 배열(0행 = 머리글)을 그대로 들고 있다 */
@@ -52,7 +56,8 @@ function makeEnv() {
   const ctx = {
     DP_PHONE_TOKEN: 'tok', DP_CHAT_WEBHOOK: 'https://chat', DP_ALLOWED_SENDERS: '',
     V2_URL: 'https://v2.example/', DEPOSIT_INGEST_TOKEN: 'v2tok',
-    SpreadsheetApp: { openById: () => ss, create: () => ss },
+    SpreadsheetApp: { openById: () => ss, create: () => ss, flush() {} },
+    CacheService: { getScriptCache: () => ({ get: (k) => cache[k] ?? null, put: (k, v) => { cache[k] = v; }, removeAll: (ks) => ks.forEach((k) => delete cache[k]) }) },
     PropertiesService: { getScriptProperties: () => ({
       getProperty: k => props[k] ?? null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
@@ -67,6 +72,17 @@ function makeEnv() {
       DigestAlgorithm: { MD5: 'md5' }, Charset: { UTF_8: 'utf8' },
     },
     UrlFetchApp: { fetch: (url, o) => {
+      if (url === 'https://proxy.example') {
+        // 고정 IP 프록시 — 이카운트 응답을 그대로 돌려준다
+        const body = JSON.parse(o.payload);
+        ecCalls.push(body);
+        let res;
+        if (body.url.endsWith('/OAPI/V2/Zone')) res = { Data: { ZONE: 'CD' } };
+        else if (body.url.includes('/OAPILogin')) res = { Data: { Datas: { SESSION_ID: 'S' + (++ecLogins) } } };
+        else res = ecSave(body);
+        if (res instanceof Error) throw res;
+        return { getResponseCode: () => 200, getContentText: () => JSON.stringify(res) };
+      }
       if (url.includes('/api/deposits/ingest')) {
         if (mirrorFail) throw new Error('V2 down');
         mirrors.push({ headers: o.headers, body: JSON.parse(o.payload) });
@@ -80,11 +96,12 @@ function makeEnv() {
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
-  for (const f of ['dpParse.gs', 'dpMatch.gs', 'Code.gs', 'dpLedger.gs', 'dpNotify.gs', 'dpWatch.gs', 'dpMirror.gs', 'dpReqLog.gs', 'dpOrders.gs', 'dpCs.gs']) {
+  for (const f of ['dpParse.gs', 'dpMatch.gs', 'Code.gs', 'dpLedger.gs', 'dpNotify.gs', 'dpWatch.gs', 'dpMirror.gs', 'dpReqLog.gs', 'dpOrders.gs', 'dpCs.gs', 'dpEcount.gs']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, f), 'utf8'), ctx, { filename: f });
   }
   const post = (params) => ctx.doPost({ parameter: params, postData: { type: 'application/x-www-form-urlencoded', contents: '' } });
-  return { ctx, rows, logRows, tabRows, props, chats, mirrors, post, setMirrorFail: (v) => { mirrorFail = v; } };
+  return { ctx, rows, logRows, tabRows, props, chats, mirrors, post, setMirrorFail: (v) => { mirrorFail = v; },
+           ecCalls, setEcSave: (fn) => { ecSave = fn; } };
 }
 
 let pass = 0, fail = 0;
@@ -429,6 +446,89 @@ console.log('\n[여러 사람이 서로 다른 때 받은 파일을 올린다]')
      up && JSON.stringify(up.slice(1, 3)));
   list = cs({ action: 'list', limit: 10 });
   ok('기준은 가장 늦은 파일 (13:00 · 김진수)', /13:00/.test(String(list.ordersAt)) && list.ordersBy === '김진수', list.ordersAt + ' ' + list.ordersBy);
+}
+
+console.log('\n[이카운트 반영 — 두 번 눌러도 한 장]');
+{
+  const { ctx, post, rows, props, ecCalls, setEcSave } = makeEnv();
+  ctx.DP_CS_TOKEN = 'cstok';
+  ctx.DP_ECOUNT_PROXY_URL = 'https://proxy.example'; ctx.DP_ECOUNT_PROXY_KEY = 'pk';
+  const cs = (o) => ctx.doPost({ parameter: {}, postData: { type: 'application/json', contents: JSON.stringify(Object.assign({ token: 'cstok' }, o)) } });
+  const now = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const T = now.getFullYear() + '/' + p2(now.getMonth() + 1) + '/' + p2(now.getDate());
+  const Y = (() => { const d = new Date(now - 864e5); return d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate()); })();
+  cs({ action: 'orders_upload', rows: [
+    ['회사명 : 주식회사 팩투유'], ['주문번호', '거래처명', '거래처코드', '거래처모바일', '수령인', '담당자', '품목', '납기일자', '금액', '종결\n여부', '진행\n상태', '인쇄'],
+    [Y + ' -1', '장터순대 정명옥', '1212181120', '', '', '', 'x', T, '58,600', '진행중', '조회', '인쇄'],
+    [Y + ' -2', '원막국수만두 김상원', '4016300265', '', '', '', 'x', T, '213,500', '진행중', '조회', '인쇄'],
+    [Y + ' -3', '태조감자국 이호광', '5800200757', '', '', '', 'x', T, '74,500', '진행중', '조회', '인쇄'],
+    [T + ' (화) 오전 9:00:00']] });
+  let bal = 1000000, mm = 0;
+  const sms = (name, amount) => { bal += amount; mm++;
+    return `[Web발신]\n${T}\n10:${p2(mm)}\n입금 ${amount.toLocaleString()}원\n잔액 ${bal.toLocaleString()}원\n${name}\n458***12345678\n기업`; };
+  post({ token: 'tok', action: 'sms', body: sms('정명옥', 58600) });
+  post({ token: 'tok', action: 'sms', body: sms('김상원', 213500) });
+  post({ token: 'tok', action: 'sms', body: sms('이호광', 74500) });
+  post({ token: 'tok', action: 'sms', body: sms('홍길동', 9999) });            // 미확인 — 못 넘긴다
+  const col = (h) => rows[0].indexOf(h);
+  const rowOf = (n) => rows.find((r) => r[col('입금자')] === n);
+  const keyOf = (n) => rowOf(n)[col('고유번호')];
+
+  let r = cs({ action: 'post', keys: [keyOf('정명옥')] });
+  ok('기본은 꺼짐 — 보내지 않는다', r.ok === false && r.error.includes('꺼져') && ecCalls.length === 0);
+  props.DP_ECOUNT_POST = 'on';
+  r = cs({ action: 'post', keys: [keyOf('정명옥')] });
+  ok('설정이 비면 보내지 않는다', r.ok === false && r.error.includes('ECOUNT_COM_CODE') && ecCalls.length === 0, r.error);
+  Object.assign(props, { ECOUNT_COM_CODE: '178341', ECOUNT_USER_ID: 'U', ECOUNT_API_CERT_KEY: 'K', DP_GYE_BANK: '1031', DP_GYE_AR: '1080' });
+
+  r = cs({ action: 'post', keys: [keyOf('정명옥')], by: '강서희' });
+  ok('반영 → 반영완료 · 전표번호', r.ok && r.results[0].outcome === '반영완료' && rowOf('정명옥')[col('상태')] === '반영완료' && /^20260929-/.test(rowOf('정명옥')[col('전표번호')]), JSON.stringify(r));
+  ok('누가 · 언제', rowOf('정명옥')[col('반영자')] === '강서희' && !!rowOf('정명옥')[col('반영시각')]);
+  const save = ecCalls.find((c) => c.url.includes('SaveGeneralJournal'));
+  ok('Zone → 로그인 → 전표 (고정 IP 프록시로)', ecCalls[0].url.endsWith('/Zone') && ecCalls[1].url.includes('OAPILogin') && save && save.url.startsWith('https://oapiCD.ecount.com'));
+  ok('보낸 전표 — 차변 보통예금 · 대변 외상매출금(거래처)', save.payload.GeneralJournalList.length === 2 &&
+     save.payload.GeneralJournalList[1].BulkDatas.CUST_D === '1212181120' && save.payload.GeneralJournalList[0].BulkDatas.GYE_CODE === '1031');
+
+  const n1 = ecCalls.length;
+  r = cs({ action: 'post', keys: [keyOf('정명옥')] });
+  ok('또 눌러도 안 보낸다 (반영완료)', r.results[0].outcome === '건너뜀' && ecCalls.length === n1, JSON.stringify(r));
+  r = cs({ action: 'post', keys: [keyOf('김상원'), keyOf('김상원')] });
+  ok('한 번에 같은 입금을 두 번 넣어도 한 장', r.results.filter((x) => x.outcome === '반영완료').length === 1 &&
+     ecCalls.filter((c) => c.url.includes('SaveGeneralJournal')).length === 2, JSON.stringify(r));
+  ok('세션은 다시 로그인하지 않고 재사용', ecCalls.filter((c) => c.url.includes('OAPILogin')).length === 1);
+
+  // 이카운트가 «안 받았다» — 대기로 되돌린다
+  setEcSave(() => ({ Status: '200', Data: { SuccessCnt: 0, FailCnt: 1, SlipNos: [],
+    ResultDetails: [{ IsSuccess: false, TotalError: '거래처', Errors: [{ ColCd: 'CUST_D', Message: '거래처' }] }] } }));
+  r = cs({ action: 'post', keys: [keyOf('이호광')] });
+  ok('거절 → 대기로 되돌림 + 까닭', r.results[0].outcome === '거절' && rowOf('이호광')[col('상태')] === '대기' &&
+     rowOf('이호광')[col('반영메모')].includes('CUST_D'), JSON.stringify(r));
+
+  // 응답이 끊겼다 — 들어갔는지 모른다
+  setEcSave(() => new Error('timeout'));
+  r = cs({ action: 'post', keys: [keyOf('이호광')] });
+  ok('응답 끊김 → 확인필요 (다시 보내지 않는다)', r.results[0].outcome === '확인필요' && rowOf('이호광')[col('상태')] === '확인필요');
+  setEcSave(() => ({ Status: '200', Data: { SuccessCnt: 1, SlipNos: ['X-1'] } }));
+  const n2 = ecCalls.length;
+  r = cs({ action: 'post', keys: [keyOf('이호광')] });
+  ok('확인필요는 또 눌러도 안 보낸다', r.results[0].outcome === '건너뜀' && ecCalls.length === n2);
+  r = cs({ action: 'post_resolve', key: keyOf('이호광'), slipNo: '20260929-99', by: '강서희' });
+  ok('사람이 확인 — 이카운트에 있음 → 반영완료', r.ok && rowOf('이호광')[col('상태')] === '반영완료' && rowOf('이호광')[col('전표번호')] === '20260929-99');
+
+  r = cs({ action: 'post', keys: [keyOf('홍길동')] });
+  ok('미확인은 넘기지 않는다', r.results[0].outcome === '건너뜀' && r.results[0].message.includes('미확인'));
+
+  // 넘어간 줄은 매칭을 다시 돌려도 그대로, 지정·제외도 거절
+  const before = [col('매칭결과'), col('배분'), col('전표번호')].map((i) => rowOf('정명옥')[i]).join('|');
+  cs({ action: 'rematch' });
+  ok('반영완료 줄은 다시 판정해도 그대로', [col('매칭결과'), col('배분'), col('전표번호')].map((i) => rowOf('정명옥')[i]).join('|') === before);
+  ok('반영완료 줄은 제외 못 한다', cs({ action: 'exclude', key: keyOf('정명옥') }).ok === false);
+
+  const list = cs({ action: 'list', limit: 10 });
+  const lr = list.rows.find((x) => x.name === '정명옥');
+  ok('목록에 전표번호 · 넘길 수 있나', lr.slipNo && lr.canPost === false && list.rows.find((x) => x.name === '홍길동').canPost === false);
+  ok('폰 열쇠로는 반영 못 한다', post({ token: 'tok', action: 'post', keys: [keyOf('홍길동')] }).ok === false);
 }
 
 console.log('\n[V2 미러]');

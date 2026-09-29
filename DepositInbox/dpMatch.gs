@@ -340,8 +340,103 @@ function dpParseOrderSheet(rows) {
   return out;
 }
 
+// ══════════════════════════════════════════════
+//  이카운트 일반전표 (4단계, 2026-09-29) — 규격: 이카운트_일반전표_API.md
+// ══════════════════════════════════════════════
+
+/**
+ * 이카운트에 넘길 수 있는 판정.
+ * 부족은 «들어온 만큼» 넘긴다 — 모자란 돈은 채권 잔액으로 남는 게 맞다.
+ * 초과는 넘기지 않는다 — 남는 돈을 선수금으로 둘지 환불할지는 사람이 정한다.
+ */
+var DP_POSTABLE_RESULTS_ = ["일치", "일치(합산)", "일치(지정)", "부족", "부족(지정)"];
+
+/**
+ * @param {{result, status, code, amount}} r  입금대장 한 줄
+ * @return {{ok:boolean, reason:string}}
+ */
+function dpCanPost(r) {
+  if (!r) return { ok: false, reason: "입금 없음" };
+  if (String(r.status) !== "대기") return { ok: false, reason: "상태가 「" + r.status + "」 — 대기인 입금만 넘긴다" };
+  if (DP_POSTABLE_RESULTS_.indexOf(String(r.result)) < 0) return { ok: false, reason: "「" + r.result + "」 은 넘기지 않는다" };
+  if (!String(r.code || "").trim()) return { ok: false, reason: "거래처코드 없음" };
+  if (!(Number(r.amount) > 0)) return { ok: false, reason: "금액 없음" };
+  return { ok: true, reason: "" };
+}
+
+/** 고유번호 지문 (FNV-1a 32bit, 16진 8자) — 적요에 실어 이카운트에서 어느 입금인지 찾는다 */
+function dpFingerprint(s) {
+  var h = 0x811c9dc5;
+  s = String(s || "");
+  for (var i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return ("0000000" + h.toString(16)).slice(-8);
+}
+
+/**
+ * 입금 1건 → 일반전표 1장 (BulkDatas 두 줄, 같은 UPLOAD_SER_NO)
+ *   차변(3) 보통예금  입금액
+ *   대변(4) 외상매출금 입금액  거래처
+ * 「입금(2)」 구분은 상대 계정이 현금으로 잡혀 쓰지 않는다 — 돈은 통장으로 들어왔다.
+ *
+ * @param {{key, txAt, name, amount, orderNos, code}} d
+ * @param {{bankGye:string, arGye:string}} cfg
+ * @param {number} serNo  이 요청 안에서의 전표 순번 (1부터)
+ */
+function dpBuildJournal(d, cfg, serNo) {
+  var date = String(d.txAt || "").replace(/[^\d]/g, "").slice(0, 8);
+  var nos = String(d.orderNos || "").replace(/^후보:\s*/, "");
+  var remark = ("입금 " + (d.name || "") + (nos ? " · " + nos : "") + " · DP" + dpFingerprint(d.key)).slice(0, 200);
+  var line = function (gubun, gye, cust) {
+    return { BulkDatas: {
+      UPLOAD_SER_NO: String(serNo || 1), TRX_DATE: date, ACCT_DOC_NO: "", SLIP_GUBUN: gubun,
+      SITE: "", PJT_CD: "", GYE_CODE: String(gye), CUST_D: cust || "", CUST_NAME: "",
+      DR_AMT: String(Number(d.amount) || 0), TAX_AMT: "", ACC101_EXCHANGE_RATE: "",
+      REMARKS_CD: "", REMARKS_DES: remark,
+      ITEM1_CD: "", ITEM2_CD: "", ITEM3_CD: "", ITEM4: "", ITEM5: "", ITEM6: "", ITEM7: "", ITEM8: ""
+    } };
+  };
+  return [line("3", cfg.bankGye, ""), line("4", cfg.arGye, String(d.code || ""))];
+}
+
+/**
+ * 이카운트 응답 → {kind, slipNo, message}
+ *   kind: "ok"      전표가 만들어졌다 (전표번호 있음)
+ *         "reject"  이카운트가 «안 받았다»고 분명히 말했다 → 다시 넣어도 된다
+ *         "unknown" 들어갔는지 모른다 → 다시 넣지 말고 사람이 이카운트에서 확인
+ */
+function dpReadJournalResult(res) {
+  if (!res || typeof res !== "object") return { kind: "unknown", slipNo: "", message: "응답을 읽지 못함" };
+  var d = res.Data || {};
+  var slips = d.SlipNos || [];
+  if (String(res.Status) === "200" && Number(d.SuccessCnt) >= 1 && slips.length && slips[0]) {
+    return { kind: "ok", slipNo: String(slips[0]), message: "" };
+  }
+  var msg = "";
+  var details = d.ResultDetails;
+  if (typeof details === "string") { try { details = JSON.parse(details); } catch (e) { msg = details; } }
+  if (details && details.length) {
+    msg = details.map(function (x) {
+      var errs = (x.Errors || []).map(function (e) { return (e.ColCd ? e.ColCd + ": " : "") + (e.Message || ""); }).join(", ");
+      return (x.TotalError || "") + (errs ? " (" + errs + ")" : "");
+    }).join(" / ");
+  }
+  if (res.Error && res.Error.Message) msg = (msg ? msg + " / " : "") + res.Error.Message;
+  if (String(res.Status) === "200" && Number(d.FailCnt) >= 1 && Number(d.SuccessCnt || 0) === 0) {
+    return { kind: "reject", slipNo: "", message: msg || "이카운트가 거절함" };
+  }
+  if (String(res.Status) !== "200" && res.Error) return { kind: "reject", slipNo: "", message: msg };
+  return { kind: "unknown", slipNo: "", message: msg || "결과가 분명하지 않음" };
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
+    dpCanPost: dpCanPost,
+    dpFingerprint: dpFingerprint,
+    dpBuildJournal: dpBuildJournal,
+    dpReadJournalResult: dpReadJournalResult,
     DP_MATCH_VERSION: DP_MATCH_VERSION,
     dpNormName: dpNormName,
     dpFindCustomer: dpFindCustomer,

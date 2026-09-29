@@ -166,6 +166,33 @@ console.log('\n[2026-09-29 첫날 실입금에서 배운 것]');
   ok('같은 상호·같은 대표 두 가게면 짐작하지 않는다', r.code === '' && r.result === '후보', JSON.stringify(r));
 }
 
+console.log('\n[이카운트 일반전표 — 모양 · 넘길 수 있나 · 응답 읽기]');
+{
+  const d = { key: '202609291112-입금-31900-윤성훈-54127154-1018', txAt: '2026-09-29 11:12', name: '윤성훈', amount: 31900,
+              orderNos: '2026/09/29-17', code: '5971102153' };
+  const j = m.dpBuildJournal(d, { bankGye: '1031', arGye: '1080' }, 1);
+  ok('두 줄 · 같은 순번', j.length === 2 && j[0].BulkDatas.UPLOAD_SER_NO === '1' && j[1].BulkDatas.UPLOAD_SER_NO === '1');
+  ok('차변(3) 보통예금 · 거래처 없음', j[0].BulkDatas.SLIP_GUBUN === '3' && j[0].BulkDatas.GYE_CODE === '1031' && j[0].BulkDatas.CUST_D === '');
+  ok('대변(4) 외상매출금 · 거래처코드', j[1].BulkDatas.SLIP_GUBUN === '4' && j[1].BulkDatas.GYE_CODE === '1080' && j[1].BulkDatas.CUST_D === '5971102153');
+  ok('금액 · 일자', j[0].BulkDatas.DR_AMT === '31900' && j[1].BulkDatas.DR_AMT === '31900' && j[0].BulkDatas.TRX_DATE === '20260929');
+  ok('적요에 입금자 · 주문번호 · 지문', /^입금 윤성훈 · 2026\/09\/29-17 · DP[0-9a-f]{8}$/.test(j[0].BulkDatas.REMARKS_DES), j[0].BulkDatas.REMARKS_DES);
+  ok('지문은 고유번호마다 늘 같다', m.dpFingerprint(d.key) === m.dpFingerprint(d.key) && m.dpFingerprint(d.key) !== m.dpFingerprint(d.key + 'x'));
+  const base = { status: '대기', code: 'C1', amount: 1000 };
+  ok('일치는 넘긴다', m.dpCanPost({ ...base, result: '일치' }).ok);
+  ok('부족도 넘긴다 (들어온 만큼)', m.dpCanPost({ ...base, result: '부족(지정)' }).ok);
+  for (const r of ['초과', '후보', '미확인', '정산', '제외', '확인필요']) ok(r + ' 는 안 넘긴다', !m.dpCanPost({ ...base, result: r }).ok);
+  ok('반영완료는 또 안 넘긴다', !m.dpCanPost({ ...base, result: '일치', status: '반영완료' }).ok);
+  ok('반영중도 안 넘긴다', !m.dpCanPost({ ...base, result: '일치', status: '반영중' }).ok);
+  ok('거래처코드 없으면 안 넘긴다', !m.dpCanPost({ ...base, result: '일치', code: '' }).ok);
+  let r = m.dpReadJournalResult({ Status: '200', Data: { SuccessCnt: 1, FailCnt: 0, SlipNos: ['20260929-12'] } });
+  ok('성공 → 전표번호', r.kind === 'ok' && r.slipNo === '20260929-12');
+  r = m.dpReadJournalResult({ Status: '200', Data: { SuccessCnt: 0, FailCnt: 1, SlipNos: [],
+      ResultDetails: '[{"IsSuccess":false,"TotalError":"거래처","Errors":[{"ColCd":"CUST_D","Message":"거래처"}]}]' } });
+  ok('검증 실패 → 거절 (다시 넣어도 된다)', r.kind === 'reject' && r.message.includes('CUST_D'), JSON.stringify(r));
+  ok('응답 없음 → 모름', m.dpReadJournalResult(null).kind === 'unknown');
+  ok('성공이라는데 전표번호가 없음 → 모름', m.dpReadJournalResult({ Status: '200', Data: { SuccessCnt: 1, SlipNos: [] } }).kind === 'unknown');
+}
+
 console.log('\n[합 조합이 둘 이상]');
 {
   const orders = [O('a', '2026-09-20', 'E1', '이지팩', 100), O('b', '2026-09-21', 'E1', '이지팩', 200),
