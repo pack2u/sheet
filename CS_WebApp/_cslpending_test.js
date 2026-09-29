@@ -199,6 +199,35 @@ check("붙일 건을 안 고르면 안 받는다", r.ok, false);
 pend = ctx.csLogisticsPending(true);
 check("남은 대기는 연동 실패 한 건", pend.rows.map((x) => x.intakeRow), [6]);
 
+// ── ⑤ 찍고 → 이름으로 찾고 → 골라 → 올리기 ─────────────
+console.log("\n[⑤] 사진 먼저, 이름 검색 나중 — 사진이 안 날아가고, 라벨의 가린 이름도 쓴다");
+const LG = rd("logistics.html");
+const 검색 = fn(LG, "doSearch");
+check("★ 사진이 있으면 PENDING 을 비우지 않는다",
+  /if \(PENDING\.length && LAST\)/.test(검색) && 검색.indexOf("LAST.match = res") >= 0, true);
+check("사진 아래 칸이 이름도 받는다 (글자면 doSearch)", /doSearch\(v, true\)/.test(LG), true);
+const 저장 = fn(LG, "save");
+check("★ 이름으로 찾아도 사진에서 읽은 번호를 보낸다", 저장.indexOf("LAST.match.digits || LAST.scanDigits") >= 0, true);
+check("「김*동 1234」의 1234 를 송장으로 안 본다", 저장.indexOf("/^[\\d\\s-]+$/.test(mv)") >= 0, true);
+
+const ctx2 = {
+  String, Number, RegExp, Math, console,
+  csParseCourierBarcode: () => ({ ok: false }),
+  _cs_loadReturnLedgerCases_: () => [
+    { tab: "202609", row: 10, name: "김민동", phone: "010-9948-1234", item: "AJ", status: "회수중", invDigits: "440812891733", returnInvDigits: "" },
+    { tab: "202609", row: 11, name: "박철수", phone: "010-2222-1234", item: "HR", status: "접수", invDigits: "", returnInvDigits: "" },
+  ],
+};
+vm.createContext(ctx2);
+vm.runInContext(rd("csLogistics.gs"), ctx2);
+let mm = ctx2.csLogisticsMatch("255252859999", { senderName: "김*동", senderPhone: "010-****-1234" });
+check("★ 라벨 「김*동 · 뒤4 1234」 → 한 건", mm.matches.map((x) => x.name), ["김민동"]);
+check("읽은 값이라 자동 처리는 안 한다", mm.tier, "maybe");
+mm = ctx2.csLogisticsMatch("255252859999", { senderPhone: "010-****-1234" });
+check("전화 뒤4 만이면 둘 다 후보", mm.matches.length, 2);
+mm = ctx2.csLogisticsMatch("440812891733", { senderName: "김*동" });
+check("번호로 찾았으면 이름은 안 섞는다", mm.matches.length, 1);
+
 console.log("");
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

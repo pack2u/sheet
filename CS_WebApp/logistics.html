@@ -68,11 +68,12 @@
   .thumbs { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
   .thumbs img { width: 62px; height: 62px; object-fit: cover; border-radius: 8px; border: 1px solid var(--bd); }
 
-  input[type=text] {
+  input[type=text], #manualInv {
     width: 100%; background: var(--bg2); border: 1px solid var(--bd); border-radius: 10px;
     padding: 12px 13px; color: var(--tx); font-size: 16px; outline: none; margin-top: 8px;
+    box-sizing: border-box; font-family: inherit;
   }
-  input[type=text]:focus { border-color: var(--acs); box-shadow: 0 0 0 3px var(--acg); }
+  input[type=text]:focus, #manualInv:focus { border-color: var(--acs); box-shadow: 0 0 0 3px var(--acg); }
 
   .row { display: flex; gap: 8px; margin-top: 12px; }
   .btn { flex: 1; padding: 14px; border: 0; border-radius: 11px; font-size: 15px; font-weight: 700; color: #fff; background: var(--ac); }
@@ -471,15 +472,36 @@
   /* ── 찾기 ──
      물류팀의 주 경로다. 두 글자부터 찾고, 치는 동안 기다렸다 보낸다. */
   var Q_TIMER = null;
-  function doSearch(q) {
+  /*  ★ 2026-09-29: 사진을 찍은 «뒤에» 이름으로 찾으면 사진이 날아갔다 ★
+      > "사진찍어서 반품관리대장 이름검색으로 선택 후 올리는 시스템"
+
+      여기서 PENDING 을 늘 비웠다. 찍고 → 번호가 안 맞아 → 이름을 치면
+      방금 찍은 사진이 사라져 다시 찍어야 했다. 반품 라벨은 대장에 반품송장이
+      아직 없는 경우가 많아 이 순서가 오히려 흔하다.
+      이제 사진이 있으면 사진과 «읽은 번호»는 그대로 두고 후보만 바꾼다.
+      읽은 번호는 저장 때 대장의 빈 반품송장 칸을 채우는 데 쓰인다.  */
+  function doSearch(q, keepFocus) {
     var hint = document.getElementById("qHint");
     if (hint) { hint.textContent = "찾는 중…"; hint.className = "hint busy"; }
     google.script.run
       .withSuccessHandler(function (m) {
         if (hint) { hint.textContent = "대장에서 찾아 사진을 붙입니다"; hint.className = "hint"; }
-        PENDING = []; PICKED = null;
-        LAST = { raw: q, via: "검색", fields: {}, match: m || { tier: "none", matches: [], note: "조회 실패" } };
+        var res = m || { tier: "none", matches: [], note: "조회 실패" };
+        PICKED = null;
+        if (PENDING.length && LAST) {
+          LAST.match = res;
+          LAST.searched = q;
+        } else {
+          PENDING = [];
+          LAST = { raw: q, via: "검색", fields: {}, scanDigits: "", match: res };
+        }
+        //  한 건만 걸리면 골라 둔다 — 올리는 것은 여전히 사람이 누른다
+        if (res.matches && res.matches.length === 1) PICKED = res.matches[0];
         render();
+        if (keepFocus) {
+          var mi = document.getElementById("manualInv");
+          if (mi) { mi.value = q; mi.focus(); }
+        }
       })
       .withFailureHandler(function (e) {
         if (hint) { hint.textContent = "찾기 실패 — 다시 시도해 주세요"; hint.className = "hint"; }
@@ -557,8 +579,11 @@
     }).then(function (r) {
       LAST = {
         raw: r.raw, via: r.via || "manual", fields: r.fields || {},
+        scanDigits: (r.m && r.m.digits) || "",
         match: r.m || { tier: "none", digits: "", matches: [], note: "매칭 조회 실패" }
       };
+      //  후보가 하나뿐이면 골라 둔다 (확정은 이미 골라져 있다)
+      if (LAST.match.tier === "maybe" && LAST.match.matches.length === 1) PICKED = LAST.match.matches[0];
       render();
     }).catch(function (e) {
       stage("처리 실패: " + (e && e.message ? e.message : e));
@@ -572,7 +597,8 @@
 
     var h = '<div class="card">';
     h += '<span class="tier ' + tier + '">' + label + '</span>';
-    h += '<div class="inv">' + esc(m.digits || "번호 없음") + '</div>';
+    h += '<div class="inv">' + esc(m.digits || LAST.scanDigits || "번호 없음") + '</div>';
+    if (LAST.searched) h += '<div class="via">「' + esc(LAST.searched) + '」 로 찾은 결과</div>';
     h += '<div class="note">' + esc(m.note || "") + '</div>';
     if (LAST.via) h += '<div class="via">인식 경로: ' + esc(LAST.via) + '</div>';
 
@@ -598,7 +624,8 @@
     } else if (tier === "maybe") {
       h += '<div style="margin-top:12px;font-size:12px;color:var(--tx2)">해당 건을 눌러 확정하세요</div>';
       m.matches.forEach(function (c, i) {
-        h += '<div class="pick" data-i="' + i + '"><b>' + esc(c.name || "-") + '</b>';
+        var on = PICKED && PICKED.tab === c.tab && String(PICKED.row) === String(c.row);
+        h += '<div class="pick' + (on ? ' on' : '') + '" data-i="' + i + '"><b>' + esc(c.name || "-") + '</b>';
         h += '<div class="m">' + esc(c.item || "") + '</div>';
         h += '<div class="m">' + esc(c.matchVia) + ' · ' + esc(c.status || "") + '</div>';
         if (String(c.matchVia).indexOf("원송장") === 0) h += '<div class="w">원송장 기준 매칭 — 확인 후 선택</div>';
@@ -606,12 +633,15 @@
       });
     }
 
-    // ★ 뒤 4자리 입력은 항상 보인다 ★
+    // ★ 찾기 칸은 항상 보인다 ★
     //   진행 중 반품이 백 건 안쪽이라 뒤 4자리면 대부분 유일하게 걸린다.
     //   멀리서 찍혔거나 매직으로 덮인 라벨은 인식을 기다리는 것보다 이게 빠르다.
     //   인식이 성공했어도 틀렸을 수 있으니 덮어쓸 수단으로 남겨둔다.
-    h += '<input type="text" id="manualInv" inputmode="numeric" ' +
-         'placeholder="송장 뒤 4자리만 입력해도 찾습니다">';
+    //   ★ 2026-09-29: 이름도 받는다 ★ 숫자만 받던 칸이라 사진을 찍은 뒤 이름으로
+    //   찾으려면 맨 위 검색창으로 올라가야 했다(그러면 사진이 날아갔다).
+    //   숫자뿐이면 송장 뒷자리로, 글자가 섞이면 이름 검색으로 보낸다.
+    h += '<input type="search" id="manualInv" autocomplete="off" enterkeyhint="search" ' +
+         'placeholder="이름 · 김*동 1234 · 송장 뒤 4자리">';
 
     /* 검색으로 찾아온 경우 사진이 아직 없다. 여기서 바로 찍게 한다 —
        위로 올라가 촬영 버튼을 누르면 방금 고른 건이 날아간다. */
@@ -620,10 +650,13 @@
            'style="width:100%;margin-top:10px">📷 사진 찍어 붙이기</button>';
     }
 
+    //  무엇이 일어나는지 단추에 적는다 — 고른 건이 있으면 그 이름, 없으면 「확인 대기」
+    var saveOn = tier === "sure" || !!PICKED;
+    var saveName = PICKED ? PICKED.name : (tier === "sure" && m.matches.length ? m.matches[0].name : "");
     h += '<div class="row">';
     h += '<button class="btn ghost" type="button" id="btnCancel">취소</button>';
-    h += '<button class="btn ' + (tier === "sure" ? "green" : "") + '" type="button" id="btnSave">' +
-         (tier === "sure" ? "저장 · 입고처리" : "사진 저장") + '</button>';
+    h += '<button class="btn ' + (saveOn ? "green" : "") + '" type="button" id="btnSave">' +
+         (saveOn ? esc(saveName || "") + " 건에 올리기 · 입고처리" : "사진만 저장 (CS 확인 대기)") + '</button>';
     h += '</div></div>';
 
     document.getElementById("result").innerHTML = h;
@@ -634,7 +667,7 @@
         el.classList.add("on");
         PICKED = LAST.match.matches[parseInt(el.getAttribute("data-i"), 10)];
         var b = document.getElementById("btnSave");
-        b.textContent = "저장 · 입고처리"; b.classList.add("green");
+        b.textContent = (PICKED.name || "") + " 건에 올리기 · 입고처리"; b.classList.add("green");
       });
     });
     document.getElementById("btnCancel").addEventListener("click", reset);
@@ -650,15 +683,21 @@
       });
     }
 
-    // 4자리 이상 치면 바로 대장에서 찾는다. 버튼을 또 누르게 하지 않는다.
+    // 치는 대로 찾는다. 버튼을 또 누르게 하지 않는다.
+    //   숫자만 → 송장 뒤자리(4자리부터) · 글자가 섞이면 → 이름 검색(두 글자부터)
     var mi = document.getElementById("manualInv");
     if (mi) {
       var t = null;
       mi.addEventListener("input", function () {
-        var d = mi.value.replace(/[^0-9]/g, "");
+        var v = mi.value.trim();
         clearTimeout(t);
-        if (d.length < 4) return;
-        t = setTimeout(function () { manualLookup(d); }, 350);
+        if (/^[\d\s-]+$/.test(v)) {
+          var d = v.replace(/[^0-9]/g, "");
+          if (d.length < 4) return;
+          t = setTimeout(function () { manualLookup(d); }, 350);
+        } else if (v.length >= 2) {
+          t = setTimeout(function () { doSearch(v, true); }, 350);
+        }
       });
     }
   }
@@ -671,7 +710,8 @@
         LAST.raw = digits;
         LAST.via = "manual";
         LAST.match = m;
-        PICKED = null;
+        LAST.searched = digits;
+        PICKED = (m.matches && m.matches.length === 1) ? m.matches[0] : null;
         render();
         var mi = document.getElementById("manualInv");
         if (mi) { mi.value = digits; mi.focus(); }
@@ -695,11 +735,15 @@
         그러면 사진이 안 올라간다. 끝날 때까지 덮는다.  */
     lgUpOpen("사진을 올리는 중…", PENDING.length + "장");
 
+    //  번호는 «읽은 것»이 먼저다. 이름으로 찾았으면 match.digits 는 비어 있다 —
+    //  그때도 사진에서 읽은 반품송장은 살려 보낸다(대장의 빈 칸을 채운다).
+    //  손으로 친 칸은 «숫자뿐»일 때만 번호로 본다. 「김*동 1234」의 1234 는 전화다.
     var manual = document.getElementById("manualInv");
-    var inv = LAST.match.digits;
-    var via = LAST.via;
-    if (manual && manual.value.replace(/[^0-9]/g, "").length >= 4) {
-      inv = manual.value.replace(/[^0-9]/g, "");
+    var inv = LAST.match.digits || LAST.scanDigits || "";
+    var via = LAST.via + (LAST.searched ? "+검색" : "");
+    var mv = manual ? manual.value.trim() : "";
+    if (/^[\d\s-]+$/.test(mv) && mv.replace(/[^0-9]/g, "").length >= 4) {
+      inv = mv.replace(/[^0-9]/g, "");
       via = "manual";
     }
 

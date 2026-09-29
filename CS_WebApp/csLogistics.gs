@@ -197,22 +197,27 @@ function csLogisticsMatch(raw, fields) {
     }
   }
 
-  // ③ 이름·전화
+  // ③ 이름·전화 — 번호로 못 찾았을 때만
   //    ★ 반품회수 라벨은 받는 분이 회수처(팩투유)다. 실제 고객은 보내는 분이다.
   //      recipientName 을 쓰면 전부 "팩투유"로 잡혀 쓸모가 없다.
-  var nm = _csl_norm_(fields.senderName || fields.name || fields.recipientName || "");
-  var ph = _csl_digits_(fields.senderPhone || fields.phone || "");
-  if (nm.length >= 2) {
-    for (i = 0; i < rows.length; i++) {
-      c = rows[i];
-      if (_csl_norm_(c.name) && _csl_norm_(c.name) === nm) add(c, "수취인명 일치", 40);
-    }
-  }
-  if (ph.length >= 4) {
-    var p4 = ph.slice(-4);
-    for (i = 0; i < rows.length; i++) {
-      c = rows[i];
-      if (_csl_digits_(c.phone).slice(-4) === p4) add(c, "전화 뒤4자리", 35);
+  //
+  //    ★ 2026-09-29: 라벨 이름은 「김*동」으로 가려져 있다 ★
+  //      여기서는 이름을 «완전일치»로만 봐서 가린 이름은 한 번도 안 걸렸고,
+  //      전화 뒤4 만으로 후보가 여럿 떴다. 같은 값을 검색창에 치면 한 건으로
+  //      좁혀졌다(가린 이름 + 전화 뒤4). 그래서 검색(csLogisticsSearch)에 맡긴다 —
+  //      규칙을 두 벌 두면 한쪽만 고쳐진다.
+  //      점수는 49 로 누른다. 사람이 친 것이 아니라 «읽은» 값이라 자동 처리(sure)로
+  //      넘어가면 안 된다.
+  if (!out.length) {
+    var nmRaw = String(fields.senderName || fields.name || "").trim();
+    var ph = _csl_digits_(fields.senderPhone || fields.phone || "");
+    var q = (nmRaw + " " + (ph.length >= 4 ? ph.slice(-4) : "")).trim();
+    if (q.length >= 2) {
+      var sr = csLogisticsSearch(q);
+      for (i = 0; i < (sr.matches || []).length; i++) {
+        var sm = sr.matches[i];
+        add(sm, "라벨 " + sm.matchVia, Math.min(49, Math.round(sm.score * 0.49)));
+      }
     }
   }
 
