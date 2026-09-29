@@ -201,7 +201,8 @@ function ssb_isPlaceholder(v) {
 
 /** 한 셀의 송장을 여러 행으로 편다. 중복은 주문번호|송장 으로 막는다. */
 function ssb_addRows(rows, seen, orderNo, invCell, code, res, uidSeen, seenOrd) {
-  var o = ssText(orderNo);
+  //  쪼갠 줄은 2314556_S2 로 나가 그 번호로 송장이 온다. 사방넷은 맨 번호만 안다 (2026-09-29)
+  var o = ssBaseUid(orderNo);
   var c = ssText(code);
   if (!o || !c) return 0;
   if (!ssIsSabangnetUid(o)) { res.skipGen++; return 0; }

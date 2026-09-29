@@ -2804,6 +2804,9 @@
     .dash-dep-match.over { color: var(--accent-orange); }
     .dash-dep-match.ask  { color: var(--accent-orange); font-weight: 700; }
     .dash-dep-orders { font-size: 10px; color: var(--text-muted); margin: -4px 0 6px; }
+    /* 날이 바뀌는 자리 (2026-09-30 오늘 + 어제) */
+    .dash-dep-day { font-size: 10px; font-weight: 700; color: var(--text-secondary); margin: 8px 2px 2px;
+                    padding-top: 6px; border-top: 1px dashed var(--border); }
     .dash-dep-orders.stale { color: var(--accent-orange); }
     .dep-det-now { font-size: 12px; line-height: 1.5; padding: 8px 10px; border-radius: 8px;
                    background: var(--bg-secondary); border: 1px solid var(--border); margin-bottom: 12px; }
@@ -2991,6 +2994,45 @@
     .lg-pick.on { border-color: var(--text-bright); background: var(--bg-card-hover); }
     .lg-thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
     .lg-thumbs img { width: 56px; height: 56px; object-fit: cover; border-radius: 7px; border: 1px solid var(--border); }
+
+    /* 입고 확인 대기 (2026-09-29) */
+    .lgw-btn {
+      border: 1px solid var(--accent-orange); background: transparent; color: var(--accent-orange);
+      border-radius: 999px; padding: 0 10px; height: 32px; font-size: 12px; font-weight: 700;
+      font-family: inherit; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+    }
+    .lgw-btn[hidden] { display: none; }
+    @media (pointer: coarse) { .lgw-btn { height: 44px; } }
+    .lgw-sub { font-size: 12px; color: var(--text-muted); margin: 4px 0 6px; }
+    .lgw-item { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 10px; background: var(--bg-card); }
+    .lgw-item.busy { opacity: .55; pointer-events: none; }
+    .lgw-head { font-size: 12px; color: var(--text-muted); }
+    .lgw-head b { color: var(--text-bright); font-size: 14px; }
+    .lgw-item .lg-thumbs button { border: 0; padding: 0; background: none; cursor: zoom-in; }
+    .lgw-q {
+      width: 100%; box-sizing: border-box; margin-top: 9px; padding: 9px 11px; font-size: 14px;
+      background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text-primary); font-family: inherit; outline: none;
+    }
+    .lgw-hits .lg-pick b { color: var(--text-bright); }
+    .lgw-hits .m, .lgw-item > .m { font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 3px; }
+    .lgw-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 9px; }
+    .lgw-acts button {
+      border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-secondary);
+      border-radius: 8px; padding: 7px 12px; font-size: 12px; font-family: inherit; cursor: pointer;
+    }
+    .lgw-acts button.go { border-color: var(--text-bright); color: var(--text-bright); font-weight: 700; }
+    .lgw-acts button:disabled { opacity: .4; cursor: default; }
+    .lgw-ocr { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-secondary); font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
+    .lgw-ocr.err { color: var(--text-muted); }
+    .lgw-done { font-size: 11px; font-weight: 700; color: var(--accent-orange); margin-left: 4px; }
+    .lgw-ocr-t { font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
+    .lgw-ocr span { display: inline-block; min-width: 56px; color: var(--text-muted); }
+    .lgw-close {
+      margin-top: 12px; width: 100%; padding: 10px; border-radius: 10px; cursor: pointer;
+      background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary);
+      font-family: inherit; font-size: 13px;
+    }
 
     @media (max-width: 900px) {
       #pane-logistics { display: block; }
@@ -3183,7 +3225,7 @@
                검색 결과(#list) «아래»에 둔다. 위에 두면 검색할 때마다 결과가 입금 10줄 밑으로 밀린다. -->
           <div id="depositBox" class="os-dash">
             <div class="os-dash-head">
-              <span class="os-dash-title">💰 오늘 입금<span id="dashDepositSum" class="dash-dep-sum"></span></span>
+              <span class="os-dash-title">💰 입금 (오늘 · 어제)<span id="dashDepositSum" class="dash-dep-sum"></span></span>
               <!-- 주문서 매칭 (2026-09-29) — 주문수집 전에 받는 「주문서조회」 엑셀을 여기에 한 번 올린다 -->
               <button type="button" class="os-dash-refresh" id="depPostAllBtn" hidden onclick="depPostAll()"
                       title="오늘 ✅ 일치·🔴 부족 입금 중 아직 안 넘긴 것을 이카운트 일반전표로">📒 일치 전체 반영</button>
@@ -3224,6 +3266,10 @@
                     onclick="toggleReturnFold()">▤</button>
             <button type="button" class="hb-icon" title="새로고침" aria-label="새로고침"
                     onclick="loadReturnActive(true, true)">↻</button>
+            <!-- 입고 확인 대기 — 물류가 찍었는데 어느 건인지 못 정한 사진 (2026-09-29) -->
+            <button type="button" class="lgw-btn" id="lgwBtn" hidden
+                    title="물류팀이 찍었는데 아직 반품 건에 안 붙은 입고 사진"
+                    onclick="openLgWait()">📷 입고 확인 <b id="lgwN">0</b></button>
             <button type="button" class="hb-icon" id="maxReturns" title="크게 보기 (가로 3줄)"
                     aria-label="크게 보기" aria-pressed="false"
                     onclick="wsToggleMax('pane-returns')">⛶</button>
@@ -3503,6 +3549,17 @@
     <button type="button" class="hb-lb-nav prev" id="hbLbPrev" onclick="hbLbGo(-1)">‹</button>
     <button type="button" class="hb-lb-nav next" id="hbLbNext" onclick="hbLbGo(1)">›</button>
     <div class="hb-lb-hint" id="hbLbHint"></div>
+  </div>
+
+  <!-- 입고 확인 대기 (2026-09-29) — 사진을 보고 대장의 건을 골라 붙인다 -->
+  <div class="modal-overlay" id="lgwModal" onclick="if (event.target === this) closeLgWait()">
+    <div class="modal-content" style="max-height:88vh;overflow-y:auto;">
+      <div class="modal-handle"></div>
+      <div class="modal-title" style="margin:0">입고 사진 확인 대기</div>
+      <div class="lgw-sub" id="lgwSub"></div>
+      <div id="lgwList">불러오는 중…</div>
+      <button type="button" class="lgw-close" onclick="closeLgWait()">닫기</button>
+    </div>
   </div>
 
   <div class="modal-overlay" id="retNewModal">
@@ -10206,6 +10263,7 @@
             RETURN_INTAKE_TODAY = res.intakeToday || 0;
             RETURN_INTAKE_YDAY = res.intakeYesterday || 0;
             renderReturnActiveList(res.rows || []);
+            lgwLoad(!!refreshData);
             if (silent) csScrollRestore(snap);
             csSyncScrollbars();
           } else {
@@ -12379,6 +12437,260 @@
         .csLogisticsToday();
     }
 
+    // ══ 입고 확인 대기 (2026-09-29) ═════════════════════════
+    //   물류팀이 찍었는데 어느 반품 건인지 못 정한 사진(후보·미상).
+    //   전에는 입고대장 탭에만 남고 아무도 안 읽었다 — 물건은 들어왔는데
+    //   카드는 접수·회수중에 머물고 업체 포털도 사진을 못 봤다.
+    //   여기서 건을 골라 붙이면 촬영 때와 같은 길(csLogisticsResolve →
+    //   _cs_intakeExistingReturn_)로 입고검수 · 사진 이력 · 업체 포털에 들어간다.
+    var LGW = { rows: [], pick: {}, hits: {}, q: {}, timers: {} };
+
+    function lgwKey(x) { return x.intakeTab + ':' + x.intakeRow; }
+
+    function lgwLoad(force) {
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (!r || !r.ok) return;
+          LGW.rows = r.rows || [];
+          var b = document.getElementById('lgwBtn');
+          if (b) {
+            b.hidden = !r.count;
+            document.getElementById('lgwN').textContent = r.count;
+          }
+          var sub = document.getElementById('lgwSub');
+          if (sub) {
+            sub.textContent = '최근 ' + r.days + '일 · ' + r.count + '건' +
+              (r.count > LGW.rows.length ? ' (최근 ' + LGW.rows.length + '건만 보임)' : '') +
+              ' — 반품 건을 골라 붙이면 입고검수로 넘어가고 업체 포털에도 입고 사진이 보입니다';
+          }
+          var m = document.getElementById('lgwModal');
+          if (m && m.classList.contains('active')) renderLgw();
+        })
+        .withFailureHandler(function () {})
+        .csLogisticsPending(!!force);
+    }
+
+    function openLgWait() {
+      var m = document.getElementById('lgwModal');
+      if (!m) return;
+      LGW.pick = {}; LGW.hits = {}; LGW.q = {};
+      m.classList.add('active');
+      renderLgw();
+      lgwLoad(true);
+    }
+
+    function closeLgWait() {
+      var m = document.getElementById('lgwModal');
+      if (m) m.classList.remove('active');
+    }
+
+    function renderLgw() {
+      var el = document.getElementById('lgwList');
+      if (!el) return;
+      if (!LGW.rows.length) {
+        el.innerHTML = '<div class="os-status">확인 대기 사진이 없습니다</div>';
+        return;
+      }
+      var h = '', auto = [];
+      for (var i = 0; i < LGW.rows.length; i++) {
+        var x = LGW.rows[i], k = lgwKey(x);
+        var items = retPhotoItems({ text: (x.photos || []).join(' '), staff: x.staff });
+        var failed = /^연동 실패/.test(x.result || '');
+        h += '<div class="lgw-item" id="lgw-' + i + '">' +
+          '<div class="lgw-head"><b>' + esc(x.invoice || '번호 미상') + '</b> · ' +
+          esc(String(x.at || '').slice(5, 16)) + ' · ' + esc(x.staff || '') +
+          ' · ' + esc(failed ? x.result : (x.tier || '')) + '</div>';
+        if (x.memo) h += '<div class="m">' + esc(String(x.memo).replace(/v2:[0-9a-f-]{36}\s*·?\s*/, '')) + '</div>';
+        h += lgwOcrHtml(x.ocr);
+        if (items.length) {
+          h += '<div class="lg-thumbs">';
+          for (var p = 0; p < items.length; p++) {
+            h += '<button type="button" title="크게 보기" onclick="lgwLb(' + i + ',' + p + ')">' +
+              '<img src="' + esc(items[p].thumbUrl) + '" alt="입고 사진" loading="lazy"' +
+              ' data-full="' + esc(items[p].viewUrl) + '"' +
+              ' onerror="var f=this.getAttribute(\'data-full\');if(f&&this.src!==f){this.src=f;return;}this.remove()">' +
+              '</button>';
+          }
+          h += '</div>';
+        } else if ((x.photos || []).length) {
+          h += '<div class="m">' + linkifyProcBody(x.photos.join(' ')) + '</div>';
+        }
+        //  무엇으로 먼저 찾아 둘까 — 라벨 글자에서 읽은 것이 있으면 그것부터 (lgwFirstQuery)
+        var q0 = LGW.q[k] != null ? LGW.q[k] : lgwFirstQuery(x);
+        h += '<input type="search" class="lgw-q" value="' + esc(q0) + '"' +
+          ' placeholder="이름 · 가린 이름(김*동) · 전화 뒤4 · 송장 뒤자리"' +
+          ' oninput="lgwInput(' + i + ', this)">' +
+          '<div class="lgw-hits" id="lgwHits-' + i + '">' + lgwHitsHtml(i) + '</div>' +
+          '<div class="lgw-acts">' +
+          '<button type="button" onclick="lgwResolve(' + i + ',\'dismiss\')">대상 아님</button>' +
+          '<button type="button" class="go" id="lgwGo-' + i + '"' +
+          (LGW.pick[k] == null ? ' disabled' : '') +
+          ' onclick="lgwResolve(' + i + ',\'attach\')">이 건에 붙이기 · 입고검수</button>' +
+          '</div></div>';
+        if (!LGW.hits[k] && q0.length >= 2 && auto.length < 8) auto.push([i, q0]);
+      }
+      el.innerHTML = h;
+      //  한꺼번에 50번 부르지 않는다 — 번호 있는 앞 8건만 미리 찾는다
+      for (var a = 0; a < auto.length; a++) lgwSearch(auto[a][0], auto[a][1]);
+    }
+
+    /* ── 라벨 글자 (2026-09-30) ──────────────────────────────
+       > "이미지가 업로드 되면 텍스트 인식을 해서 입고확인에 송장 내용이 나오게"
+       서버(다리)가 사진에서 읽어 입고대장 N(글자인식)에 둔 것을 보여 준다. */
+    function lgwOcrHtml(o) {
+      if (!o) return '';
+      if (o.error) return '<div class="lgw-ocr err">📖 글자 인식 실패 — ' + esc(o.error) + '</div>';
+      var rows = [
+        ['송장', o.inv], ['원송장', o.orig],
+        ['보낸 분', [o.sender, o.senderPhone].filter(Boolean).join(' · ')],
+        ['품명', o.item], ['주문번호', o.order]
+      ].filter(function (r) { return r[1]; });
+      if (!rows.length) return '<div class="lgw-ocr err">📖 라벨에서 읽은 글자가 없습니다</div>';
+      var h = '<div class="lgw-ocr"><div class="lgw-ocr-t">📖 라벨에서 읽은 글자</div>';
+      for (var i = 0; i < rows.length; i++) h += '<div><span>' + esc(rows[i][0]) + '</span>' + esc(rows[i][1]) + '</div>';
+      return h + '</div>';
+    }
+
+    /**
+     * 처음에 무엇으로 찾아 둘까.
+     *   ① 원송장 — 대장에 거의 늘 적혀 있다. 한 건으로 떨어진다
+     *   ② 보낸 분 이름 + 전화 뒤4 — 라벨에 가려져 있어도(김*동) 그대로 찾는다
+     *   ③ 바코드로 읽은 송장
+     */
+    function lgwFirstQuery(x) {
+      var o = x.ocr || {};
+      if (o.orig && o.orig.length >= 10) return o.orig;
+      //  뒤 4자리가 «보일 때만» 쓴다 — 010-4860-**** 에서 숫자만 모으면 가운데(4860)가 뒤로 온다
+      var tail = (String(o.senderPhone || '').match(/(\d{4})\s*$/) || [])[1] || '';
+      if (o.sender && !/팩투유|팩•유|pack2u/i.test(o.sender)) {
+        return (o.sender + (tail ? ' ' + tail : '')).trim();
+      }
+      return String(x.invoice || o.inv || '').replace(/[^0-9]/g, '');
+    }
+
+    function lgwLb(i, p) {
+      var x = LGW.rows[i];
+      if (!x) return;
+      openLbImages(retPhotoItems({ text: (x.photos || []).join(' '), staff: x.staff }), p);
+    }
+
+    function lgwHitsHtml(i) {
+      var x = LGW.rows[i];
+      if (!x) return '';
+      var k = lgwKey(x), r = LGW.hits[k];
+      if (!r) return '';
+      if (r === 'loading') return '<div class="os-status"><span class="os-spin"></span>대장에서 찾는 중…</div>';
+      var ms = r.matches || [];
+      if (!ms.length) return '<div class="os-status">' + esc(r.note || '못 찾았습니다') + '</div>';
+      var h = '';
+      for (var j = 0; j < ms.length; j++) {
+        var c = ms[j];
+        h += '<div class="lg-pick' + (LGW.pick[k] === j ? ' on' : '') + '" onclick="lgwPick(' + i + ',' + j + ')">' +
+          '<b>' + esc(c.name || '-') + '</b> <span class="m">' + esc(c.status || '') + '</span>' +
+          (c.done ? ' <span class="lgw-done">이미 완료 · 사진만 남김</span>' : '') +
+          '<div class="m">' + esc(c.item || '') + ' · ' + esc(c.matchVia || '') +
+          (c.returnInvoice ? ' · 반품송장 ' + esc(c.returnInvoice) : '') + '</div></div>';
+      }
+      return h;
+    }
+
+    function lgwPaintHits(i) {
+      var x = LGW.rows[i];
+      if (!x) return;
+      var box = document.getElementById('lgwHits-' + i);
+      if (box) box.innerHTML = lgwHitsHtml(i);
+      var go = document.getElementById('lgwGo-' + i);
+      if (go) go.disabled = LGW.pick[lgwKey(x)] == null;
+    }
+
+    function lgwInput(i, el) {
+      clearTimeout(LGW.timers[i]);
+      var v = el.value;
+      LGW.timers[i] = setTimeout(function () { lgwSearch(i, v); }, 350);
+    }
+
+    function lgwSearch(i, q) {
+      var x = LGW.rows[i];
+      if (!x) return;
+      var k = lgwKey(x);
+      q = String(q || '').trim();
+      LGW.q[k] = q;
+      delete LGW.pick[k];
+      if (q.length < 2) { delete LGW.hits[k]; lgwPaintHits(i); return; }
+      LGW.hits[k] = 'loading';
+      lgwPaintHits(i);
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (LGW.q[k] !== q) return; // 그새 다른 걸 쳤다
+          /*  「이름 + 전화 뒤4」로 하나도 안 걸리면 이름만으로 한 번 더 (2026-09-30)
+              라벨의 전화(안심번호 등)가 대장의 전화와 다른 일이 흔하다 — 고*엽 건이 그랬다.
+              둘 다 준 검색은 한쪽만 맞으면 안 올리므로(엉뚱한 건 방지) 여기서 따로 한다.  */
+          var nameOnly = (q.match(/^(\S+)\s+\d{4,}$/) || [])[1];
+          if (nameOnly && (!r || !r.matches || !r.matches.length)) {
+            var box = document.querySelector('#lgw-' + i + ' .lgw-q');
+            if (box) box.value = nameOnly;
+            lgwSearch(i, nameOnly);
+            return;
+          }
+          LGW.hits[k] = r || { matches: [], note: '조회 실패' };
+          //  하나만 걸리면 골라 둔다 — 붙이는 건 여전히 사람이 누른다
+          if (r && r.matches && r.matches.length === 1) LGW.pick[k] = 0;
+          lgwPaintHits(i);
+        })
+        .withFailureHandler(function () {
+          if (LGW.q[k] !== q) return;
+          LGW.hits[k] = { matches: [], note: '조회 실패' };
+          lgwPaintHits(i);
+        })
+        .csLogisticsSearch(q);
+    }
+
+    function lgwPick(i, j) {
+      var x = LGW.rows[i];
+      if (!x) return;
+      LGW.pick[lgwKey(x)] = j;
+      lgwPaintHits(i);
+    }
+
+    function lgwResolve(i, action) {
+      var x = LGW.rows[i];
+      if (!x) return;
+      var k = lgwKey(x);
+      var staff = hbRequireStaff();
+      if (!staff) return;
+      var p = { intakeTab: x.intakeTab, intakeRow: x.intakeRow, action: action, staff: staff };
+      if (action === 'attach') {
+        var r = LGW.hits[k], j = LGW.pick[k];
+        var c = (r && r.matches && j != null) ? r.matches[j] : null;
+        if (!c) { toast('붙일 반품 건을 고르세요', 2400); return; }
+        p.tab = c.tab; p.row = c.row;
+      } else {
+        var why = prompt('제외하는 까닭 (비워도 됩니다)\n예: 흔들림 · 같은 건 중복 촬영 · 반품 아님\n\n사진은 지우지 않습니다.', '');
+        if (why === null) return;
+        p.reason = why;
+      }
+      var card = document.getElementById('lgw-' + i);
+      if (card) card.classList.add('busy');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (card) card.classList.remove('busy');
+          if (!res || !res.ok) {
+            toast((res && res.error) || '처리 실패', 3600);
+            if (res && /이미 처리/.test(res.error || '')) lgwLoad(true);
+            return;
+          }
+          toast(res.message || '처리했습니다');
+          delete LGW.q[k]; delete LGW.hits[k]; delete LGW.pick[k];
+          lgwLoad(true);
+          if (action === 'attach') loadReturnActive(true, false, true);
+        })
+        .withFailureHandler(function (e) {
+          if (card) card.classList.remove('busy');
+          toast(String((e && e.message) || e), 3600);
+        })
+        .csLogisticsResolve(p);
+    }
+
     // ══ 오늘 입금 (2026-09-29) ═════════════════════════════
     //   > "10개정도까지 보이게해주고 더보기를 클릭해 당일 내용을 확인할수 있게 해줘"
     //   대시보드에는 최근 10건, 더보기는 그날 전부(창으로).
@@ -12447,9 +12759,38 @@
         ' · ' + (r.ordersCount || 0).toLocaleString() + '건' + (stale ? ' — 오늘 주문서를 올려 주세요' : '');
     }
 
+    /* 「오늘 N건 · 합계」 — 어제 것은 섞지 않는다. 어제가 있으면 뒤에 「어제 M건」 만 붙인다 (2026-09-30) */
+    var DEP_DAYS = 2;
+    function depYesterday(r) {
+      var y = r && r.byDay && r.from && r.from !== r.date ? r.byDay[r.from] : null;
+      return y && y.total ? y : null;
+    }
     function depSumText(r) {
-      if (!r || !r.total) return '';
-      return ' · ' + r.total + '건 · ' + depWon(r.sum) + (r.unparsed ? ' · 읽지 못한 문자 ' + r.unparsed : '');
+      if (!r) return '';
+      var y = depYesterday(r);
+      if (!r.total && !y) return '';
+      return ' · ' + (r.total || 0) + '건 · ' + depWon(r.sum) + (y ? ' · 어제 ' + y.total + '건' : '') +
+        (r.unparsed ? ' · 읽지 못한 문자 ' + r.unparsed : '');
+    }
+    /* 날이 바뀌는 자리에 구분선 — 「어제 · 09-29 · 44건 · 28,548,287원」 */
+    function depDayDivider(r, day) {
+      var bd = (r.byDay || {})[day] || { total: 0, sum: 0 };
+      var label = day === r.date ? '오늘' : (day === r.from ? '어제' : '');
+      return '<div class="dash-dep-day">' + esc(label) + ' · ' + esc(day.slice(5)) +
+        ' · ' + bd.total + '건 · ' + esc(depWon(bd.sum)) + '</div>';
+    }
+    function depRowsHtml(r, rows, markNew) {
+      var h = '', prev = null;
+      if (rows.length && rows[0].day && rows[0].day !== r.date) {
+        h += '<div class="dash-dep-empty">오늘 들어온 입금이 아직 없습니다</div>';
+      }
+      for (var i = 0; i < rows.length; i++) {
+        var x = rows[i];
+        if (x.day && x.day !== prev && x.day !== r.date) h += depDayDivider(r, x.day);
+        prev = x.day;
+        h += depRowHtml(x, markNew ? markNew(x) : false);
+      }
+      return h;
     }
 
     /* ★ 먼저 보이고, 새 것은 뒤에서 (2026-09-29) — "데이타 불러오는 속도가 너무 느려"
@@ -12499,7 +12840,7 @@
           var e3 = document.getElementById('dashDeposit');
           if (e3) e3.innerHTML = '<div class="dash-dep-empty">불러오지 못했습니다</div>';
         })
-        .csDepositList('', DEP_LIMIT, !!hard);
+        .csDepositList('', DEP_LIMIT, !!hard, DEP_DAYS);
     }
 
     function paintDeposits(r) {
@@ -12515,18 +12856,15 @@
       var first = DEP_SEEN === null;
       var seen = DEP_SEEN || {};
       var next = {};
-      var h = '';
-      for (var i = 0; i < r.rows.length; i++) {
-        var x = r.rows[i];
-        next[x.key] = 1;
-        h += depRowHtml(x, !first && !seen[x.key]);
-      }
+      (r.rows || []).forEach(function (x) { next[x.key] = 1; });
+      var h = depRowsHtml(r, r.rows || [], function (x) { return !first && !seen[x.key]; });
       DEP_SEEN = next;
 
-      if (!r.rows.length) h = '<div class="dash-dep-empty">오늘 들어온 입금이 없습니다</div>';
-      if (r.total > r.rows.length) {
-        h += '<button type="button" class="dash-dep-more" onclick="openDepositModal()">더보기 · 오늘 ' +
-          r.total + '건 전체</button>';
+      if (!(r.rows || []).length) h = '<div class="dash-dep-empty">오늘 · 어제 들어온 입금이 없습니다</div>';
+      var all = r.count != null ? r.count : r.total;       // 여러 날 합친 건수 (옛 서버면 total)
+      if (all > (r.rows || []).length) {
+        h += '<button type="button" class="dash-dep-more" onclick="openDepositModal()">더보기 · 오늘 · 어제 ' +
+          all + '건 전체</button>';
       }
       el.innerHTML = h;
     }
@@ -12547,17 +12885,16 @@
             list.innerHTML = '<div class="dash-dep-empty">불러오지 못했습니다' + (r && r.error ? ' — ' + esc(r.error) : '') + '</div>';
             return;
           }
-          document.getElementById('depModalTitle').textContent = r.date + ' 입금';
+          document.getElementById('depModalTitle').textContent = '입금 · 오늘 ' + r.date.slice(5) + ' · 어제';
           document.getElementById('depModalSum').textContent = depSumText(r).replace(/^ · /, '');
-          var h = '';
-          for (var i = 0; i < r.rows.length; i++) h += depRowHtml(r.rows[i], false);
-          list.innerHTML = h || '<div class="dash-dep-empty">오늘 들어온 입금이 없습니다</div>';
+          list.innerHTML = depRowsHtml(r, r.rows || [], null) ||
+            '<div class="dash-dep-empty">오늘 · 어제 들어온 입금이 없습니다</div>';
         })
         .withFailureHandler(function () {
           var list = document.getElementById('depModalList');
           if (list) list.innerHTML = '<div class="dash-dep-empty">불러오지 못했습니다</div>';
         })
-        .csDepositList('', 0);
+        .csDepositList('', 0, false, DEP_DAYS);
     }
 
     function closeDepositModal() {
@@ -12842,7 +13179,7 @@
           next();
         })
         .withFailureHandler(function () { toast('목록을 못 불러왔습니다', 2500); })
-        .csDepositList('', 0);
+        .csDepositList('', 0, false, DEP_DAYS);
     }
 
     // ── 주문서 올리기 (2026-09-29) ─────────────────────

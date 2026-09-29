@@ -148,6 +148,17 @@ const t6 = timeline("반품송장: 1234567890\n[260826 10:00 김담당] 상태�
 check("공개 이벤트 수", t6.length, 2);
 check("송장 줄이 없다", JSON.stringify(t6).indexOf("반품송장:") < 0, true);
 
+console.log("\n[7] 물류 입고 사진(현장입고)도 사진 줄이다 — CS _cs_isPhotoLine_ 과 같은 규칙");
+const t7 = timeline([
+  "[260929 10:00 강물류] 현장입고 스캔 · 2524-1234-5678 · 사진 2장 https://x.supabase.co/storage/v1/object/sign/return-photos/a.jpg?token=1 https://x.supabase.co/storage/v1/object/sign/return-photos/b.jpg?token=2",
+  "[260929 10:00 강물류] 상태→입고검수",
+  "[260929 10:05 강물류] 현장입고 스캔 · 2524-1234-5678"
+].join("\n"));
+check("사진 줄로 잡힌다", t7.filter(e => e.kind === "photo").length, 1);
+check("이름은 「입고 사진」", t7.filter(e => e.kind === "photo")[0].who, "입고 사진");
+check("링크 없는 현장입고 줄은 상담", t7.filter(e => e.kind === "consult").length, 1);
+check("물류 담당자 실명도 안 나간다", JSON.stringify(t7).indexOf("강물류") < 0, true);
+
 // ── 클라이언트: 처리 단계 · 썸네일 ──────────────────────────
 const cliCtx = { OPEN_POP: "" };
 vm.createContext(cliCtx);

@@ -2672,8 +2672,8 @@ var EMBEDDED_VENDOR_EXCLUSIVE_MASTER_ROWS_ = [
   { label: "냅킨코리아", prefix: "NK", headerCsv: "송장번호|이슈|받는사람|전화번호|주소|우편번호|상품명|수량|배송메세지|보내는사람|주소|전화" },
   { label: "인터웍스", prefix: "IW", headerCsv: "송장번호|이슈|받는사람|전화번호|주소|우편번호|상품명|박스타입|수량|배송메세지|보내는사람|주소|전화" },
   { label: "후아코리아", prefix: "HU", headerCsv: "송장번호|이슈|받는분(필수)|받는분전화번호|휴대폰번호(필수입력)|받는분주소(전체, 분할)필수입력|품목(필수)|배송메세지1|택배수량(필수입력)|운임구분 (신용/착불) 필수입력|운임|보내는분성명(필수)|보내는분전화번호(필수)" },
-  // ★ 2026-08-25: 업체 제공 신 양식 16열 반영 (구 양식의 '사용안함' 열 제거) — _PEP_EXCLUSIVE_FORM_HEADERS_.SW와 동일하게 유지
-  { label: "선우",    prefix: "SW", headerCsv: "송장번호|이슈|보내는분성명|보내는분전화번호|보내는분기타연락처|보내는분우편번호|보내는분주소(전체, 분할)|받는분성명|받는분전화번호|받는분기타연락처|받는분우편번호|받는분주소(전체, 분할)|품목명|내품명|박스수량|배송메세지1|박스타입|운임구분" },
+  // ★ 2026-09-29: 준테크(JT)와 똑같은 대한통운 양식 23열 — _PEP_EXCLUSIVE_FORM_HEADERS_.SW 와 늘 같이 고친다
+  { label: "선우",    prefix: "SW", headerCsv: "송장번호|이슈|예약구분|집하예정일|보내는분성명|보내는분전화번호|보내는분기타연락처|보내는분우편번호|보내는분주소(전체, 분할)|받는분성명|받는분전화번호|받는분기타연락처|받는분우편번호|받는분주소(전체, 분할)|운송장번호|고객주문번호|품목명|박스수량|박스타입|기본운임|배송메세지1|배송메세지2|운임구분" },
   { label: "로엔그린", prefix: "LG", headerCsv: "송장번호|이슈|보내는사람(지정)|전화번호1(지정)|전화번호2(지정)|우편번호(지정)|주소(지정)|받는사람|전화번호1|전화번호2|우편번호|주소|상품명1|상품상세1|수량(A타입)|배송메시지|운임구분 신용.선불.착불|운임|운송장번호|택배수량" },
 ];
 
@@ -2710,6 +2710,61 @@ function resolveVendorExclusiveTemplateColumns_(headerRow) {
   if (nameIx === -1) nameIx = 0;
   if (csvIx === -1) csvIx = headerRow.length >= 3 ? 2 : 1;
   return { nameIx: nameIx, csvIx: csvIx };
+}
+
+/**
+ * 허브 「업체전용양식마스터」 탭의 헤더CSV 를 코드 내장표로 맞춘다.  (2026-09-29)
+ *
+ * ★ 이 탭은 이미 «주인이 아니다» ★
+ *   loadVendorExclusiveTemplateHeadersFromHub_ 는 코드 내장표
+ *   (EMBEDDED_VENDOR_EXCLUSIVE_MASTER_ROWS_)를 먼저 본다. 그래서 이 탭이
+ *   옛 양식이어도 실제로 쓰이지는 않는다 — 다만 «사람이 이 탭을 보고»
+ *   양식을 짐작한다. 선우를 준테크 양식으로 바꿨는데 여기만 옛 16열로
+ *   남아 있으면, 다음에 누가 이 탭을 믿고 일을 그르친다.
+ *   보이는 것과 도는 것을 같게 둔다.
+ *
+ * 코드에 없는 줄은 손대지 않는다 — 사람이 손으로 넣은 양식일 수 있다.
+ *
+ * @return {Object} { 고친것: string[], 왜: string }
+ */
+function _pep_syncTemplateMasterFromCode_(hubSs) {
+  var out = { 고친것: [], 왜: "" };
+  if (!hubSs) { out.왜 = "허브 시트가 없습니다"; return out; }
+  var sh = hubSs.getSheetByName(VENDOR_EXCLUSIVE_TEMPLATE_MASTER_SHEET_NAME);
+  if (!sh) { out.왜 = "「" + VENDOR_EXCLUSIVE_TEMPLATE_MASTER_SHEET_NAME + "」 탭이 없습니다"; return out; }
+  var lr = sh.getLastRow(), lc = sh.getLastColumn();
+  if (lr < 2 || lc < 1) { out.왜 = "탭이 비었습니다"; return out; }
+
+  var data = sh.getRange(1, 1, lr, lc).getValues();
+  var meta = resolveVendorExclusiveTemplateColumns_(data[0]);
+
+  //  코드 내장표 — 맞춤양식명으로 찾는다
+  var 표 = {};
+  for (var e = 0; e < EMBEDDED_VENDOR_EXCLUSIVE_MASTER_ROWS_.length; e++) {
+    var er = EMBEDDED_VENDOR_EXCLUSIVE_MASTER_ROWS_[e];
+    var k = normVendorExclusiveTemplateKey_(er.label);
+    if (k && !표[k]) 표[k] = String(er.headerCsv || "");
+  }
+
+  var 칸 = [], 바뀜 = false;
+  for (var r = 1; r < data.length; r++) {
+    var 지금 = String(data[r][meta.csvIx] == null ? "" : data[r][meta.csvIx]);
+    칸.push([지금]);
+    var nm = normVendorExclusiveTemplateKey_(data[r][meta.nameIx]);
+    if (!nm || !표[nm]) continue;              //  코드에 없는 줄은 그대로 둔다
+    if (지금 === 표[nm]) continue;
+    칸[칸.length - 1] = [표[nm]];
+    바뀜 = true;
+    out.고친것.push(String(data[r][meta.nameIx] || "").trim() + " (" + (r + 1) + "행 " +
+      String.fromCharCode(65 + meta.csvIx) + "열) " +
+      지금.split("|").length + "칸 → " + 표[nm].split("|").length + "칸");
+  }
+  if (!바뀜) { out.왜 = "이미 같습니다"; return out; }
+
+  sh.getRange(2, meta.csvIx + 1, 칸.length, 1).setValues(칸);
+  SpreadsheetApp.flush();
+  Logger.log("[양식마스터] " + out.고친것.length + "줄 맞춤: " + out.고친것.join(" · "));
+  return out;
 }
 
 /** 맞춤양식명 일치 시 코드 내장 목록에서 헤더 배열 반환 */

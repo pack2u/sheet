@@ -176,7 +176,10 @@ var SS_LEDGER_HEADER = [
      읽는 쪽(CS·gasBulk)이 저마다 «자릿수로 짐작»했고, 12자리 대한통운이
      롯데가 됐다. 송장을 넣는 그 코드가 택배사도 이미 알고 있다 — 같이 적는다.
      ★ 반드시 맨 뒤 ★ 중간에 끼우면 머리글 이사가 돈다(ssio_migrateHeader). */
-  '택배사'
+  '택배사',
+  /* ★ 송장키 ★  (2026-09-29) 쪼갠 줄이 로젠·업체에 보낸 번호(2314556_S2).
+     송장 전파가 «이 줄의» 송장만 집는 열쇠다. 반드시 맨 뒤. */
+  '송장키'
 ];
 
 var SS_WARN_HEADER = ['심각도', '코드', '대상', '내용'];
@@ -198,6 +201,7 @@ var SS_DEFAULT_CONFIG = {
       로젠 요율표를 못 받은 동안. 0 이면 표를 그대로 쓴다. */
   도선료_통일금액: 5000,
   도서산간_미확인: '보류',
+  세트_송장꼬리표: '끔',
   도서산간_판정: '우편번호우선',
   전화주문_고유ID: '주문번호칸에채움',
   재고부족_자동대리발송: '사용',
@@ -1241,6 +1245,7 @@ function ssMakeUnit(L, code, 소요, seq) {
   u.수량 = qtyInt;
   u.수량원시 = qty;
   u.세트분해 = seq > 0;
+  u.분해순번 = seq || 0;
   return u;
 }
 
@@ -1248,6 +1253,7 @@ function ssMakeUnit(L, code, 소요, seq) {
 
 /**
  * 상태·출고지는 「원본 세트 코드」 기준, 품목명·배송비는 「구성품 코드」 기준.
+ * 단, 구성품 출고지가 「대리발송」이면 그 구성품만 대리발송이다 (2026-09-29, 아래).
  * (구 시트도 이 규칙이다 — 변환!B:C 는 판매현황 품목코드로 조회하고,
  *  품목명·배송비는 합배송 단계에서 분해된 코드로 다시 조회한다.
  *  세트가 판매중이면 그 구성품도 함께 나간다는 뜻)
@@ -1260,6 +1266,31 @@ function ssEnrich(units, masters, warnings) {
     var m = items[u.품목코드];
     var head = items[u.원본코드] || m;
     if (head) { u.상태 = head.status || ''; u.출고지 = head.origin || ''; }
+
+    /*  ★ 구성품이 「대리발송」이면 그 구성품만 대리발송 ★  (2026-09-29)
+        > "세트중에 뚜껑만 출고지를 대리발송으로 빼놓으면 뚜껑만 대리공급으로
+        >  빠지는거지? 몸통은 평택으로 되있으면.."
+
+        위 규칙대로면 쪼갠 줄은 출고지를 «세트»에서 받는다. 그래서 몸통은
+        평택·뚜껑은 대리발송인 세트가 통째로 우리 창고에서 나갔다 — 뚜껑
+        재고가 없는데도. 2026-09-29 마스터로 재 보니 이런 세트가 22개,
+        구성품이 «전부» 대리발송인데 세트만 평택인 것이 43개였다.
+
+        ★ 대리발송 쪽으로만 바꾼다 ★
+          세트가 대리발송이면 업체가 통째로 보내는 것이니 구성품이 평택이어도
+          세트를 따른다. 평택 칸 번호(A-1·D-6 …)도 그대로 세트를 따른다 —
+          출력·합포장이 그 값으로 묶이므로 여기서 흔들지 않는다.
+
+        ★ 「대리발송품목」 표와는 다른 길이다 ★
+          그 표에 구성품을 적으면 세트를 «쪼개지 않고» 통째로 업체에 넘긴다
+          (9/17 규칙, ssExplode). 이것은 쪼갠 «뒤» 한 줄만 넘긴다.
+          합포장은 대리발송 줄을 이미 빼고 묶는다 — 몸통 박스에 안 섞인다. */
+    if (u.세트분해 && m && ssNorm(m.origin).split(' ').join('') === SS_ROUTE.PARTNER &&
+        ssNorm(u.출고지).split(' ').join('') !== SS_ROUTE.PARTNER) {
+      u.세트출고지 = u.출고지;
+      u.출고지 = m.origin;
+      u.구성품대리 = true;
+    }
     if (!m) {
       u.품목명 = u.세트분해 ? '(품목정보 없음) ' + u.품목코드 : u.원본품목명;
       u.단품배송비 = 0; u.배송비규칙원문 = '';
@@ -2224,8 +2255,41 @@ function ssOutRow(u) {
   return [
     u.출고지, u.순번, u.일자, u.품목코드, u.출력품목명 || ssDisplayName(u),
     u.박스수, u.수량, u.전화, u.모바일, u.주소1, u.배송메시지, u.합계,
-    u.받는분, u.배송비, u.적요, u.사방넷주문번호, u.보내는분, u.보내는분전화, u.보내는주소
+    u.받는분, u.배송비, u.적요, u.송장키 || u.사방넷주문번호, u.보내는분, u.보내는분전화, u.보내는주소
   ];
+}
+
+/*  ★ 쪼갠 줄은 송장이 따로 돌아오게 «꼬리표»를 붙인다 ★  (2026-09-29)
+    > "세트 고유아이디가 2314556야.. 그럼 몸통은 2314556-1 뚜껑은 2314556-2
+    >  이런식으로 분리되면 뚜껑만 대리발송으로도 가능하지 않을까? 송장번호도
+    >  몸통 뚜껑 확실하게 구분될수 있고.. 지금은 서로 엇갈리게 붙어.."
+
+    몸통과 뚜껑이 한 주문번호로 로젠·업체에 가면 송장 둘이 한 번호로 돌아온다.
+    전파는 그 둘을 이어 붙여 두 줄에 «똑같이» 적었다 — 어느 게 몸통 것인지 모른다.
+
+    ★ 하이픈이 아니라 _S 다 ★
+      「-2」는 이미 전화주문 ID 가 겹칠 때 «다른 주문»에 붙이는 꼬리다(ssNormalize).
+      「_S숫자」는 옛 세트분리가 쓰던 꼬리라, 상품정보 쪽 정규화(업체 푸시 중복검사
+      _pep_normalizeAxUid_ · 일일마감 _pep_normalizeMatchUid_ · 반품포털)가
+      이미 «떼면 같은 주문»으로 읽는다. 그쪽은 손대지 않아도 지금처럼 돈다.
+
+    ★ 고유ID 는 그대로다 ★ 로젠·업체로 «나가는» 칸(P)에만 붙는다.
+      원장·보류 탭·사방넷 등록은 맨 번호를 쓴다. 보류·비배송 줄에는 안 붙인다 —
+      보류 탭 P 칸은 조치를 걷는 열쇠다(ssm_captureManual). */
+function ssShipKey(u, cfg) {
+  var base = ssText(u.사방넷주문번호);
+  /*  ★ 설정 「세트_송장꼬리표」가 「켬」일 때만 ★
+      상품정보 쪽(사방넷 대량등록 _po_addSabangBulkRowCoded_)이 _S 를 떼는 판이
+      «먼저» 나가 있어야 한다. 순서가 뒤집히면 2314556_S2 가 사방넷에 그대로 오른다. */
+  if (ssText(cfg && cfg.세트_송장꼬리표) !== '켬') return base;
+  if (!base || !u.세트분해 || !(u.분해순번 > 0)) return base;
+  if (u.route === SS_ROUTE.HOLD || u.route === SS_ROUTE.NONSHIP) return base;
+  return base + '_S' + u.분해순번;
+}
+
+/** 꼬리표를 뗀 맨 주문번호. 사방넷·고아 점검처럼 «주문» 단위로 볼 때 쓴다. */
+function ssBaseUid(s) {
+  return ssText(s).replace(/_S[0-9]+$/, '');
 }
 
 /**
@@ -2470,7 +2534,8 @@ function ssLedgerRow(u, runKey, at) {
     /* 운송장번호·송장매칭은 전파가 나중에 채운다. 조치는 지금 안다. */
     u.수동조치 || '',
     (u.수동조치 === '대리발송' ? (u.업체코드 || '') : ''),
-    ''   // 택배사 — 세트분리 때는 모른다. 송장 전파가 송장과 같이 적는다.
+    '',  // 택배사 — 세트분리 때는 모른다. 송장 전파가 송장과 같이 적는다.
+    u.송장키 || ''
   ];
 }
 
@@ -2717,6 +2782,7 @@ function ssRun(grid, masters, cfg) {
 
   for (var i = 0; i < units.length; i++) ssShippingFee(units[i], masters, warnings);
   ssMerge(units, cfg);
+  for (var sk = 0; sk < units.length; sk++) units[sk].송장키 = ssShipKey(units[sk], cfg);
 
   var buckets = {};
   for (var k in SS_ROUTE) if (Object.prototype.hasOwnProperty.call(SS_ROUTE, k)) buckets[SS_ROUTE[k]] = [];
@@ -2786,7 +2852,9 @@ function ssRun(grid, masters, cfg) {
 /* ── 사방넷 송장 등록용 ───────────────────────────────── */
 
 var SS_INVOICE_HEADER = ['주문번호', '품목코드', '구분', '합포장키', '대표주문번호',
-  '운송장번호', '경로', '받는분', '품목명', '주문출처', '사방넷등록', '택배사'];
+  '운송장번호', '경로', '받는분', '품목명', '주문출처', '사방넷등록', '택배사',
+  //  (2026-09-29) 로젠·업체에 보낸 번호. 쪼갠 줄은 2314556_S2 — 전파가 이것으로 찾는다
+  '송장키'];
 
 /**
  * 사방넷이 아는 주문번호인가.
@@ -2815,7 +2883,8 @@ function ssInvoiceRows(units) {
   var 대표번호 = {};
   for (var i = 0; i < units.length; i++) {
     var u = units[i];
-    if (u.합포장대표 && u.합포장그룹) 대표번호[u.합포장그룹] = ssText(u.사방넷주문번호);
+    //  동봉은 대표가 «로젠에 보낸 번호»로 송장을 받는다 — 대표가 쪼갠 줄이면 꼬리표째
+    if (u.합포장대표 && u.합포장그룹) 대표번호[u.합포장그룹] = ssText(u.송장키 || u.사방넷주문번호);
   }
   var out = [], seenReg = {};
   for (var j = 0; j < units.length; j++) {
@@ -2832,7 +2901,8 @@ function ssInvoiceRows(units) {
       uid, ssText(v.품목코드), 구분,
       ssText(v.합포장그룹), v.합포장흡수 ? (대표번호[v.합포장그룹] || '') : '',
       '', ssText(v.실경로 || v.route), ssText(v.받는분),
-      ssText(v.출력품목명 || v.품목명), 출처, 등록, ''
+      ssText(v.출력품목명 || v.품목명), 출처, 등록, '',
+      ssText(v.송장키 || uid)
     ]);
   }
   return out;
@@ -3183,7 +3253,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssApplyManualEdits: ssApplyManualEdits,
     ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, SS_HOLD_KEEP_WORDS: SS_HOLD_KEEP_WORDS, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
+    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, SS_HOLD_KEEP_WORDS: SS_HOLD_KEEP_WORDS, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssShipKey: ssShipKey, ssBaseUid: ssBaseUid, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssItemBase: ssItemBase, ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssDupRunGroups: ssDupRunGroups, SS_ORDNO_SRC: SS_ORDNO_SRC,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,

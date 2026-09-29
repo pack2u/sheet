@@ -35,7 +35,10 @@ var _CSL_LOOKBACK_ = 60; // 반품 후보 조회 일수
 
 var _CSL_HEADERS_ = [
   "일시", "담당자", "신뢰도", "인식경로", "송장번호", "원문",
-  "매칭탭", "매칭행", "수취인", "품목", "처리결과", "사진", "비고"
+  "매칭탭", "매칭행", "수취인", "품목", "처리결과", "사진", "비고",
+  //  N 글자인식 (2026-09-30) — 서버가 라벨을 읽은 결과 JSON. 입고 확인 화면이 보여 주고,
+  //  그 값으로 대장 검색을 미리 해 둔다. 사람이 읽는 요약은 F(원문)에 적는다.
+  "글자인식"
 ];
 
 // ── 공통 ────────────────────────────────────────────────
@@ -91,8 +94,61 @@ function _csl_ensureIntakeTab_() {
     tab.setColumnWidth(12, 260); // 사진
     // 송장번호·원문은 앞자리 0 이 죽지 않게 텍스트로 잠근다
     tab.getRange(2, 5, tab.getMaxRows() - 1, 2).setNumberFormat("@");
+  } else {
+    //  칸이 늘었으면(2026-09-30 N 글자인식) 옛 탭에도 머리글을 채운다
+    var w = _CSL_HEADERS_.length;
+    if (tab.getMaxColumns() < w) tab.insertColumnsAfter(tab.getMaxColumns(), w - tab.getMaxColumns());
+    if (!String(tab.getRange(1, w).getValue() || "").trim()) {
+      tab.getRange(1, w).setValue(_CSL_HEADERS_[w - 1])
+        .setBackground("#252525").setFontColor("#f0f0f0").setFontWeight("bold").setHorizontalAlignment("center");
+    }
   }
   return tab;
+}
+
+/**
+ * 라벨 글자 인식 결과 — 입고대장 N(글자인식)에 JSON 으로 둔다.  (2026-09-30)
+ * > "이미지가 업로드 되면 텍스트 인식을 해서 입고확인에 송장 내용이 나오게"
+ */
+function _csl_ocrPack_(r) {
+  if (!r) return "";
+  if (!r.fields) return r.error ? JSON.stringify({ error: String(r.error).slice(0, 120) }) : "";
+  var f = r.fields, d = function (v) { return String(v || "").replace(/[^0-9]/g, ""); };
+  var o = {
+    inv: d(f.returnInvoiceNumber) || d(r.invoice), orig: d(f.originalInvoiceNumber),
+    sender: String(f.senderName || ""), senderPhone: String(f.senderPhone || ""),
+    to: String(f.recipientName || ""), item: String(f.itemName || ""),
+    order: String(f.orderNumber || ""), carrier: String(f.carrier || "")
+  };
+  for (var k in o) if (!o[k]) delete o[k];
+  return JSON.stringify(o);
+}
+
+function _csl_parseOcr_(s) {
+  s = String(s || "").trim();
+  if (!s || s.charAt(0) !== "{") return null;
+  try { return JSON.parse(s); } catch (e) { return null; }
+}
+
+/** 사람이 읽는 한 줄 — 입고대장 F(원문)에 적는다 */
+function _csl_ocrLine_(o) {
+  if (!o) return "";
+  if (o.error) return "글자인식 실패: " + o.error;
+  return [
+    o.inv ? "송장 " + o.inv : "", o.orig ? "원송장 " + o.orig : "",
+    o.sender ? "보낸분 " + o.sender + (o.senderPhone ? " " + o.senderPhone : "") : "",
+    o.item ? "품명 " + o.item : "", o.order ? "주문 " + o.order : ""
+  ].filter(function (v) { return v; }).join(" · ");
+}
+
+/** 읽을 칸 수 — 옛 탭은 칸이 모자랄 수 있다. 모자란 칸은 빈 값으로 채워 돌려준다 */
+function _csl_readRows_(tab, fromRow, n) {
+  var w = Math.min(_CSL_HEADERS_.length, tab.getMaxColumns());
+  var vals = tab.getRange(fromRow, 1, n, w).getDisplayValues();
+  if (w < _CSL_HEADERS_.length) {
+    for (var i = 0; i < vals.length; i++) while (vals[i].length < _CSL_HEADERS_.length) vals[i].push("");
+  }
+  return vals;
 }
 
 // ── 매칭 ────────────────────────────────────────────────
@@ -136,7 +192,9 @@ function csLogisticsMatch(raw, fields) {
 
   var rows = [];
   try {
-    rows = _cs_loadReturnLedgerCases_(_CSL_LOOKBACK_, true, false) || [];
+    //  완료 건도 읽는다 (2026-09-30) — 환불을 먼저 하고 닫은 반품은 물건이 나중에 온다.
+    //  기간은 접수일 기준 _CSL_LOOKBACK_(60일). 진행 중인 건이 늘 먼저 나온다(아래 정렬).
+    rows = _cs_loadReturnLedgerCases_(_CSL_LOOKBACK_, false, false) || [];
   } catch (e) {
     return {
       tier: "none", digits: digits, checksumOk: checksumOk,
@@ -154,7 +212,7 @@ function csLogisticsMatch(raw, fields) {
     hits[k] = {
       tab: c.tab, row: c.row, name: c.name, item: c.item, phone: c.phone,
       status: c.status, invoice: c.invoice, returnInvoice: c.returnInvoice,
-      matchVia: via, score: score
+      matchVia: via, score: score, done: !c.active
     };
     out.push(hits[k]);
   }
@@ -197,26 +255,31 @@ function csLogisticsMatch(raw, fields) {
     }
   }
 
-  // ③ 이름·전화
+  // ③ 이름·전화 — 번호로 못 찾았을 때만
   //    ★ 반품회수 라벨은 받는 분이 회수처(팩투유)다. 실제 고객은 보내는 분이다.
   //      recipientName 을 쓰면 전부 "팩투유"로 잡혀 쓸모가 없다.
-  var nm = _csl_norm_(fields.senderName || fields.name || fields.recipientName || "");
-  var ph = _csl_digits_(fields.senderPhone || fields.phone || "");
-  if (nm.length >= 2) {
-    for (i = 0; i < rows.length; i++) {
-      c = rows[i];
-      if (_csl_norm_(c.name) && _csl_norm_(c.name) === nm) add(c, "수취인명 일치", 40);
-    }
-  }
-  if (ph.length >= 4) {
-    var p4 = ph.slice(-4);
-    for (i = 0; i < rows.length; i++) {
-      c = rows[i];
-      if (_csl_digits_(c.phone).slice(-4) === p4) add(c, "전화 뒤4자리", 35);
+  //
+  //    ★ 2026-09-29: 라벨 이름은 「김*동」으로 가려져 있다 ★
+  //      여기서는 이름을 «완전일치»로만 봐서 가린 이름은 한 번도 안 걸렸고,
+  //      전화 뒤4 만으로 후보가 여럿 떴다. 같은 값을 검색창에 치면 한 건으로
+  //      좁혀졌다(가린 이름 + 전화 뒤4). 그래서 검색(csLogisticsSearch)에 맡긴다 —
+  //      규칙을 두 벌 두면 한쪽만 고쳐진다.
+  //      점수는 49 로 누른다. 사람이 친 것이 아니라 «읽은» 값이라 자동 처리(sure)로
+  //      넘어가면 안 된다.
+  if (!out.length) {
+    var nmRaw = String(fields.senderName || fields.name || "").trim();
+    var ph = _csl_digits_(fields.senderPhone || fields.phone || "");
+    var q = (nmRaw + " " + (ph.length >= 4 ? ph.slice(-4) : "")).trim();
+    if (q.length >= 2) {
+      var sr = csLogisticsSearch(q);
+      for (i = 0; i < (sr.matches || []).length; i++) {
+        var sm = sr.matches[i];
+        add(sm, "라벨 " + sm.matchVia, Math.min(49, Math.round(sm.score * 0.49)));
+      }
     }
   }
 
-  out.sort(function (a, b) { return b.score - a.score; });
+  out.sort(function (a, b) { return (a.done - b.done) || (b.score - a.score); });
 
   // 등급 판정 — 자동 처리는 확신할 때만.
   //  ★ 2026-08-31 정정 ★
@@ -230,7 +293,7 @@ function csLogisticsMatch(raw, fields) {
   //    입고대장 C열(신뢰도)로 얼마간 지켜본 뒤 조정한다.
   //    지금은 종전대로 "완전일치 1건 + 10자리 이상"만 자동 처리한다.
   var tier = "none", note = "";
-  if (out.length === 1 && out[0].score >= 95 && digits.length >= 10) {
+  if (out.length === 1 && out[0].score >= 95 && digits.length >= 10 && !out[0].done) {
     tier = "sure";
   } else if (out.length) {
     tier = "maybe";
@@ -328,7 +391,9 @@ function csLogisticsSearch(q) {
 
   var rows = [];
   try {
-    rows = _cs_loadReturnLedgerCases_(_CSL_LOOKBACK_, true, false) || [];
+    //  완료 건도 읽는다 (2026-09-30) — 환불을 먼저 하고 닫은 반품은 물건이 나중에 온다.
+    //  기간은 접수일 기준 _CSL_LOOKBACK_(60일). 진행 중인 건이 늘 먼저 나온다(아래 정렬).
+    rows = _cs_loadReturnLedgerCases_(_CSL_LOOKBACK_, false, false) || [];
   } catch (e) {
     empty.note = "대장 조회 실패: " + e.message;
     return empty;
@@ -344,7 +409,7 @@ function csLogisticsSearch(q) {
     hits[k] = {
       tab: c.tab, row: c.row, name: c.name, item: c.item, phone: c.phone,
       status: c.status, invoice: c.invoice, returnInvoice: c.returnInvoice,
-      matchVia: via, score: score
+      matchVia: via, score: score, done: !c.active
     };
     out.push(hits[k]);
   }
@@ -395,7 +460,7 @@ function csLogisticsSearch(q) {
     if (hasName && !maskRe && _csl_norm_(c.item).indexOf(nm) !== -1) add(c, "품목 포함", 40);
   }
 
-  out.sort(function (a2, b2) { return b2.score - a2.score; });
+  out.sort(function (a2, b2) { return (a2.done - b2.done) || (b2.score - a2.score); });
 
   /* 검색은 하나만 걸려도 **자동 처리하지 않는다.**
      사람이 친 글자로 찾은 것이라 오타 한 글자면 남의 건이 걸린다.
@@ -542,13 +607,15 @@ function csLogisticsSubmit(payload) {
         links
       );
       result = (r && r.ok)
-        ? (_CS_RI_STATUS_INTAKE_ + " 처리 · 사진 " + links.length + "장")
+        ? ((r.alreadyDone ? "완료 건 · 사진만 추가" : _CS_RI_STATUS_INTAKE_ + " 처리") + " · 사진 " + links.length + "장")
         : ("연동 실패: " + ((r && r.error) || "알 수 없음"));
     } catch (eI) {
       result = "연동 실패: " + eI.message;
     }
   } else {
-    result = (tier === "none") ? "사진만 적재 (번호 미상)" : "사진만 적재 (확인 대기)";
+    //  번호를 읽었으면 「번호 미상」이 아니다 — 대장에 없을 뿐이다 (2026-09-29)
+    result = (tier !== "none") ? "사진만 적재 (확인 대기)" :
+      (digits ? "사진만 적재 (대장에 없음)" : "사진만 적재 (번호 미상)");
   }
 
   // 3) 입고대장 한 줄 — 어떤 경우에도 남긴다
@@ -561,6 +628,7 @@ function csLogisticsSubmit(payload) {
     ]);
     var last = tab.getLastRow();
     tab.getRange(last, 5, 1, 2).setNumberFormat("@"); // 송장번호·원문 텍스트 유지
+    _csl_dropPendingCache_();
   } catch (eL) {
     return {
       ok: false,
@@ -598,7 +666,7 @@ function csLogisticsToday() {
     if (lr < 2) {
       return { ok: true, rows: [], summary: { total: 0, sure: 0, maybe: 0, none: 0, pending: pending } };
     }
-    var vals = tab.getRange(2, 1, lr - 1, _CSL_HEADERS_.length).getDisplayValues();
+    var vals = _csl_readRows_(tab, 2, lr - 1);
     var today = _csl_ymd_(), out = [];
     var sum = { total: 0, sure: 0, maybe: 0, none: 0, pending: pending };
 
@@ -623,6 +691,179 @@ function csLogisticsToday() {
     return { ok: true, rows: out, summary: sum, tab: tab.getName() };
   } catch (e) {
     return { ok: false, error: e.message };
+  }
+}
+
+// ── 확인 대기 — 대장에 못 붙은 입고 사진 ─────────────────
+/*
+ * ★ 2026-09-29 신규 ★
+ *   > "물류 반품 입고 시스템 … CS웹앱 · 반품포털과 연동"
+ *
+ * 물류팀이 찍었는데 대장의 어느 건인지 못 정한 사진(후보·미상)은
+ * 입고대장 탭에만 한 줄 남고 거기서 끝났다. 그 줄을 읽는 곳이 아무 데도
+ * 없었다 — 반품 카드는 입고검수로 안 넘어가고, 업체 포털도 사진을 못 본다.
+ * 물건은 창고에 들어와 있는데 기록으로는 «아직 안 왔다».
+ *
+ * 그래서 CS 가 그 사진을 보고 대장의 건을 골라 «나중에» 붙인다.
+ * 붙이는 길은 촬영 때와 똑같다(_cs_intakeExistingReturn_) —
+ * 입고검수 · 이력에 사진 줄 · 업체 포털에 입고 사진. 길을 하나로 둔다.
+ *
+ * 대상이 아닌 사진(흔들림·중복 촬영)은 「제외」로 닫는다. 지우지 않는다 —
+ * 사진은 잃지 않는다는 이 파일의 약속을 지킨다.
+ */
+var _CSL_PENDING_DAYS_ = 14;
+var _CSL_PENDING_MAX_ = 50;
+var _CSL_PENDING_CACHE_ = "csl_pending_v1";
+var _CSL_RESOLVED_BY_CS_ = "CS연결";
+
+function _csl_dropPendingCache_() {
+  try { CacheService.getScriptCache().remove(_CSL_PENDING_CACHE_); } catch (e) {}
+}
+
+/**
+ * 입고대장 한 줄이 «아직 아무 건에도 안 붙은» 줄인가.
+ *   · 「사진만 적재 …」 — 매칭탭(G)이 빈 줄
+ *   · 「연동 실패 …」   — 건은 골랐는데 대장에 쓰다 실패했다. G 가 차 있어도 대기다
+ * 「제외 …」나 「입고검수 처리 …」는 이미 닫힌 줄이다.
+ */
+function _csl_isPendingRow_(r) {
+  if (!r) return false;
+  var res = String(r[10] || "").trim();
+  if (/^연동 실패/.test(res)) return true;
+  return !String(r[6] || "").trim() && /^사진만 적재/.test(res);
+}
+
+/** 이번 달과 지난달 입고대장 탭 이름 — 14일은 달을 넘을 수 있다 */
+function _csl_recentIntakeTabNames_() {
+  var now = new Date();
+  var prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return [
+    _CSL_INTAKE_TAB_PREFIX_ + Utilities.formatDate(now, "Asia/Seoul", "yyyyMM"),
+    _CSL_INTAKE_TAB_PREFIX_ + Utilities.formatDate(prev, "Asia/Seoul", "yyyyMM")
+  ];
+}
+
+/**
+ * 확인 대기 목록 — 최근 14일, 대장에 못 붙은 입고 사진.
+ * 반품 목록을 열 때마다 불리므로 1분 캐시를 둔다(제출·처리 때 비운다).
+ */
+function csLogisticsPending(force) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  var cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (eC) {}
+  if (!force && cache) {
+    var hit = cache.get(_CSL_PENDING_CACHE_);
+    if (hit) { try { return JSON.parse(hit); } catch (eJ) {} }
+  }
+
+  var cutoff = Utilities.formatDate(
+    new Date(Date.now() - _CSL_PENDING_DAYS_ * 86400000), "Asia/Seoul", "yyyy-MM-dd");
+  var out = [];
+  try {
+    var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
+    var names = _csl_recentIntakeTabNames_();
+    for (var t = 0; t < names.length; t++) {
+      var tab = ss.getSheetByName(names[t]);
+      if (!tab) continue;
+      var lr = tab.getLastRow();
+      if (lr < 2) continue;
+      var vals = _csl_readRows_(tab, 2, lr - 1);
+      for (var i = 0; i < vals.length; i++) {
+        var r = vals[i];
+        if (String(r[0] || "").slice(0, 10) < cutoff) continue;
+        if (!_csl_isPendingRow_(r)) continue;
+        out.push({
+          intakeTab: names[t], intakeRow: i + 2,
+          at: String(r[0] || ""), staff: r[1], tier: r[2], via: r[3],
+          invoice: r[4], raw: r[5], result: r[10], memo: r[12],
+          photos: String(r[11] || "").split(/\s+/).filter(function (u) { return /^https?:\/\//.test(u); }),
+          ocr: _csl_parseOcr_(r[13])
+        });
+      }
+    }
+  } catch (e) {
+    return { ok: false, error: "입고대장을 못 읽었습니다: " + e.message };
+  }
+
+  out.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
+  var res = { ok: true, count: out.length, rows: out.slice(0, _CSL_PENDING_MAX_), days: _CSL_PENDING_DAYS_ };
+  if (cache) { try { cache.put(_CSL_PENDING_CACHE_, JSON.stringify(res), 60); } catch (eP) {} }
+  return res;
+}
+
+/**
+ * 확인 대기 한 줄을 닫는다.
+ *   action "attach"  — 대장의 {tab,row} 에 붙인다 → 입고검수 · 사진 이력 · 업체 포털
+ *   action "dismiss" — 대상 아님. 사진은 그대로 두고 줄만 닫는다
+ *
+ * 두 사람이 같은 사진을 동시에 붙이면 이력이 두 번 적힌다 — 잠그고,
+ * 잠근 뒤에 그 줄이 «아직 대기인지» 다시 본다.
+ */
+function csLogisticsResolve(p) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  p = p || {};
+  var intakeTab = String(p.intakeTab || "").trim();
+  var intakeRow = parseInt(p.intakeRow, 10);
+  var action = String(p.action || "").trim();
+  var staff = String(p.staff || "").trim() || "CS";
+
+  if (!/^입고_\d{6}$/.test(intakeTab) || !(intakeRow >= 2)) {
+    return { ok: false, error: "입고대장 줄을 알 수 없습니다. 새로고침 후 다시 해 주세요." };
+  }
+  if (action !== "attach" && action !== "dismiss") {
+    return { ok: false, error: "무엇을 할지 모릅니다: " + action };
+  }
+  if (action === "attach" && !(p.tab && parseInt(p.row, 10) > 0)) {
+    return { ok: false, error: "붙일 반품 건을 고르세요." };
+  }
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    return { ok: false, error: "다른 담당자가 처리 중입니다. 잠시 후 다시 해 주세요." };
+  }
+  try {
+    var tab = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_).getSheetByName(intakeTab);
+    if (!tab || intakeRow > tab.getLastRow()) {
+      return { ok: false, error: "입고대장 줄이 없습니다. 새로고침 후 다시 해 주세요." };
+    }
+    var r = _csl_readRows_(tab, intakeRow, 1)[0];
+    if (!_csl_isPendingRow_(r)) {
+      _csl_dropPendingCache_();
+      return { ok: false, error: "이미 처리된 사진입니다 — " + (r[6] ? r[6] + " " + r[7] + "행 · " : "") + r[10] };
+    }
+    var stamp = staff + " " + _csl_now_().slice(5, 16);
+
+    if (action === "dismiss") {
+      var why = String(p.reason || "").trim() || "대상 아님";
+      tab.getRange(intakeRow, 11).setValue("제외 · " + why + " · " + stamp);
+      _csl_dropPendingCache_();
+      return { ok: true, message: "제외했습니다 (사진은 남아 있습니다)" };
+    }
+
+    var photos = String(r[11] || "").split(/\s+/).filter(function (u) { return /^https?:\/\//.test(u); });
+    var inv = String(r[4] || "").trim() || String(r[5] || "").trim();
+    var res = _cs_intakeExistingReturn_(
+      String(p.tab), parseInt(p.row, 10), inv, staff, _CSL_RESOLVED_BY_CS_, photos);
+    if (!res || !res.ok) {
+      return { ok: false, error: "대장에 못 붙였습니다: " + ((res && res.error) || "알 수 없음") };
+    }
+
+    //  매칭탭·매칭행·수취인·품목·처리결과 (G~K) — 촬영 때 붙은 줄과 같은 모양
+    tab.getRange(intakeRow, 7, 1, 5).setValues([[
+      res.tab, res.row, res.name || "", res.item || "",
+      (res.alreadyDone ? "완료 건 · 사진만 추가" : _CS_RI_STATUS_INTAKE_ + " 처리") +
+        " · 사진 " + photos.length + "장 · " + _CSL_RESOLVED_BY_CS_ + " " + stamp
+    ]]);
+    _csl_dropPendingCache_();
+    return {
+      ok: true, tab: res.tab, row: res.row, name: res.name, item: res.item,
+      message: (res.name || res.tab + " " + res.row + "행") + " 건에 붙였습니다 · " +
+        (res.alreadyDone ? "완료된 건이라 상태는 그대로" : _CS_RI_STATUS_INTAKE_)
+    };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  } finally {
+    lock.releaseLock();
   }
 }
 

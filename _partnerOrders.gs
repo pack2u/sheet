@@ -5890,9 +5890,14 @@ function _po_addSabangBulkRow_(rows, seen, orderNo, invCell, vendorHint, result)
 }
 
 function _po_addSabangBulkRowCoded_(rows, seen, orderNo, invCell, code, result) {
-  orderNo = String(orderNo || "").trim();
+  /*  ★ 세트분리(뉴)가 쪼갠 줄은 2314556_S2 로 나간다 ★  (2026-09-29)
+      몸통·뚜껑 송장이 따로 돌아오게 로젠·업체에 꼬리표 번호를 보낸다.
+      사방넷은 맨 번호만 안다 — 여기서 뗀다. 떼고 나서 «다시» 발급번호인지 본다:
+      p0929000086_S2 는 부르는 쪽의 _po_isGeneratedUid_ 를 빠져나온다. */
+  orderNo = String(orderNo || "").trim().replace(/_S\d+$/, "");
   code = String(code || "").trim();
   if (!orderNo || !code) return 0;
+  if (_po_isGeneratedUid_(orderNo)) return 0;
   var invs = String(invCell || "").split(/[\r\n,;]+/);
   var added = 0;
   for (var k = 0; k < invs.length; k++) {

@@ -344,15 +344,18 @@ function prpPublicTimeline_(notice, status, staff, date, type, vendorName) {
       continue;
     }
 
-    // 사진 첨부 — CS앱(csAttach)과 포털(prpAttach)이 같은 문구로 남긴다
-    var isPhoto = /^사진\s*첨부/.test(body) && /https?:\/\//.test(body);
+    // 사진 첨부 — CS앱(csAttach)과 포털(prpAttach)이 같은 문구로 남긴다.
+    // 현장입고 — 물류팀이 물건을 받고 찍은 사진 (2026-09-29).
+    //   ★ CS 웹앱 csOrderSearch._cs_isPhotoLine_ 과 «같은 규칙»이다 ★
+    var isIntake = /^현장입고/.test(body);
+    var isPhoto = /^(사진\s*첨부|현장입고)/.test(body) && /https?:\/\//.test(body);
     var kind = isPhoto ? "photo" : "consult";
     if (allow.indexOf(kind) < 0) continue;
 
     events.push({
       kind: kind,
       date: m[1], time: m[2],
-      who: isPhoto ? "CS팀 사진" : "CS팀",
+      who: isPhoto ? (isIntake ? "입고 사진" : "CS팀 사진") : "CS팀",
       text: body,
       sortKey: prpSortKey_(m[1], m[2])
     });

@@ -4416,11 +4416,24 @@ var _PEP_EXCLUSIVE_FORM_HEADERS_ = {
     "배송메세지2",
     "운임구분",
   ],
-  // SW: 선우 — 대한통운 양식 (★ 2026-08-25)
-  // A=송장번호, B=이슈(운영) + C~R=업체 제공 양식 16열 = 총 18열
+  /*  SW: 선우 — 준테크(JT)와 «똑같은» 대한통운 양식  (★ 2026-09-29)
+
+      > "선우 전용양식을 cj대한통운 택배양식.xlsx으로 바꿔줘"
+      > "준테크 양식과 똑같이 하면 되"
+
+      바로 위 JT 와 한 글자도 다르지 않다. 일부러 그렇다 —
+      두 곳을 따로 고치다 갈라지면 어느 것이 맞는지 모르게 된다.
+      JT 를 고치면 여기도 같이 고친다.
+
+      2026-08-25 에는 업체가 준 16열 양식(사용안함·예약구분 없음)을 썼는데,
+      준테크와 같은 대한통운 양식으로 모은다.
+
+      A=송장번호, B=이슈(운영) + C~W=대한통운 양식 21열 = 총 23열  */
   SW: [
     "송장번호",
     "이슈",
+    "예약구분",
+    "집하예정일",
     "보내는분성명",
     "보내는분전화번호",
     "보내는분기타연락처",
@@ -4431,11 +4444,14 @@ var _PEP_EXCLUSIVE_FORM_HEADERS_ = {
     "받는분기타연락처",
     "받는분우편번호",
     "받는분주소(전체, 분할)",
+    "운송장번호",
+    "고객주문번호",
     "품목명",
-    "내품명",
     "박스수량",
-    "배송메세지1",
     "박스타입",
+    "기본운임",
+    "배송메세지1",
+    "배송메세지2",
     "운임구분",
   ],
   // AP: 올팩 — 19열
@@ -6266,24 +6282,36 @@ var _PEP_VENDOR_DIRECT_MAP_ = {
     ],
   },
   SW: {
-    // 선우 — 대한통운 양식 (★ 2026-08-25)
-    // A(0):송장번호, B(1):이슈,
-    // C(2):보내는분성명, D(3):보내는분전화번호, E(4):보내는분기타연락처,
-    // F(5):보내는분우편번호, G(6):보내는분주소(전체, 분할),
-    // H(7):받는분성명, I(8):받는분전화번호, J(9):받는분기타연락처,
-    // K(10):받는분우편번호, L(11):받는분주소(전체, 분할),
-    // M(12):품목명, N(13):내품명, O(14):박스수량,
-    // P(15):배송메세지1, Q(16):박스타입, R(17):운임구분
-    // 보내는분(C~G)·내품명(N)·박스타입(Q)·운임구분(R)은 업체 입력 → 비움
-    totalCols: 18,
-    phoneTargetCols: [8], // I(받는분전화번호)
+    /*  선우 — 준테크(JT)와 «똑같은» 대한통운 양식  (★ 2026-09-29)
+
+        > "준테크 양식과 똑같이 하면 되"
+
+        ★ 머리글만 바꾸면 안 된다 ★
+          양식의 칸 이름은 위 _PEP_EXCLUSIVE_FORM_HEADERS_ 가, 그 칸에
+          «무엇을 적을지»는 여기가 정한다. 한쪽만 고치면 이름은 받는분성명인데
+          값은 보내는분우편번호가 들어앉는다. 둘은 늘 같이 움직인다.
+
+        A(0):송장번호, B(1):이슈,
+        C(2):예약구분, D(3):집하예정일,
+        E(4):보내는분성명, F(5):보내는분전화번호, G(6):보내는분기타연락처,
+        H(7):보내는분우편번호, I(8):보내는분주소,
+        J(9):받는분성명, K(10):받는분전화번호, L(11):받는분기타연락처,
+        M(12):받는분우편번호, N(13):받는분주소,
+        O(14):운송장번호, P(15):고객주문번호, Q(16):품목명, R(17):박스수량,
+        S(18):박스타입, T(19):기본운임, U(20):배송메세지1, V(21):배송메세지2,
+        W(22):운임구분  */
+    totalCols: 23,
+    phoneTargetCols: [5, 10], // F(보내는분전화), K(받는분전화)
     sourceToTarget: [
-      { sourceCol: 12, targetCol: 7, label: "M(거래처명)→H(받는분성명)" },
-      { sourceCol: 8, targetCol: 8, label: "I(모바일)→I(받는분전화번호)" },
-      { sourceCol: 9, targetCol: 11, label: "J(주소1)→L(받는분주소)" },
-      { sourceCol: 4, targetCol: 12, label: "E(품목명)→M(품목명)" },
-      { sourceCol: 6, targetCol: 14, label: "G(수량)→O(박스수량)" },
-      { sourceCol: 10, targetCol: 15, label: "K(배송메세지)→P(배송메세지1)" },
+      { sourceCol: 16, targetCol: 4, label: "Q(보내는분)→E(보내는분성명)" },
+      { sourceCol: 17, targetCol: 5, label: "R(보내는분전화)→F(보내는분전화번호)" },
+      { sourceCol: 18, targetCol: 8, label: "S(보내는분주소)→I(보내는분주소)" },
+      { sourceCol: 12, targetCol: 9, label: "M(거래처명)→J(받는분성명)" },
+      { sourceCol: 8, targetCol: 10, label: "I(모바일)→K(받는분전화번호)" },
+      { sourceCol: 9, targetCol: 13, label: "J(주소1)→N(받는분주소)" },
+      { sourceCol: 4, targetCol: 16, label: "E(품목명)→Q(품목명)" },
+      { sourceCol: 6, targetCol: 17, label: "G(수량)→R(박스수량)" },
+      { sourceCol: 10, targetCol: 20, label: "K(배송메세지)→U(배송메세지1)" },
     ],
   },
   LG: {
@@ -6422,6 +6450,107 @@ var _PEP_VENDOR_COL_OVERRIDES_ = {
 //  전용양식 탭 생성 (협력업체 파일에 탭이 없을 때)
 //  vendorSS: SpreadsheetApp 객체, pfx: "NK"|"GW"|...
 // ─────────────────────────────────────────────────────
+/**
+ * 이미 만들어진 「전용양식」 탭을 코드의 양식으로 옮긴다.  (2026-09-29)
+ *
+ * ★ 왜 필요한가 ★
+ *   _pep_createExclusiveFormTab_ 은 «탭이 있으면 그냥 돌아간다». 그래서 코드의
+ *   양식을 고쳐도 이미 쓰고 있는 업체 시트는 옛 머리글 그대로다.
+ *   선우를 준테크와 같은 양식(18칸 → 23칸)으로 모으면서 필요해졌다.
+ *
+ * ★ 자리가 아니라 «칸 이름»으로 옮긴다 ★
+ *   선우는 칸이 늘기만 한 게 아니라 순서도 바뀐다(품목명 13→17,
+ *   박스타입 17→19 …). 한 칸씩 미는 식으로는 맞출 수 없다.
+ *   옛 칸의 이름을 새 양식에서 찾아 그 자리로 값을 옮긴다.
+ *
+ * ★ 잃을 값이 있으면 아예 안 한다 ★
+ *   새 양식에 없어진 이름(선우의 「내품명」 같은)에 값이 들어 있으면
+ *   손대지 않고 무엇이 걸렸는지 말해 준다. 업체가 적어 둔 발주를
+ *   말없이 지우지 않는다.
+ *
+ * ★ 49·50 은 건드리지 않는다 ★
+ *   _PEO_MARK_COL_(49 엑셀발주)·50(고유ID)은 자리로 못 박혀 있다.
+ *   시트에 열을 끼우면 둘이 50·51 로 밀려 통째로 깨지므로,
+ *   양식 구역(1~48열) «안에서만» 다시 쓴다.
+ *
+ * @return {Object} { 했나, 왜, 옮긴칸, 잃을뻔, 줄수 }
+ */
+function _pep_syncExclusiveFormHeader_(vendorSS, pfx) {
+  var out = { 했나: false, 왜: "", 옮긴칸: 0, 잃을뻔: [], 줄수: 0 };
+  var want = _PEP_EXCLUSIVE_FORM_HEADERS_[pfx];
+  if (!want || !want.length) { out.왜 = "코드에 그 업체 양식이 없습니다"; return out; }
+  var tab = _pep_findExclusiveFormTab_(vendorSS);
+  if (!tab) { out.왜 = "전용양식 탭이 없습니다"; return out; }
+
+  var 끝 = (typeof _PEO_MARK_COL_ !== "undefined" ? _PEO_MARK_COL_ : 49) - 1;   // 48
+  if (want.length > 끝) { out.왜 = "양식이 " + 끝 + "칸을 넘습니다"; return out; }
+  if (tab.getMaxColumns() < 끝) { out.왜 = "열이 모자랍니다"; return out; }
+
+  var lr = Math.max(tab.getLastRow(), 1);
+  var 통 = tab.getRange(1, 1, lr, 끝).getValues();
+  var 글 = function (v) { return String(v == null ? "" : v).trim(); };
+
+  var 지금 = [];
+  for (var h = 0; h < 끝; h++) 지금.push(글(통[0][h]));
+  while (지금.length && !지금[지금.length - 1]) 지금.pop();
+
+  var 같나 = 지금.length === want.length;
+  for (var q = 0; 같나 && q < want.length; q++) if (지금[q] !== 글(want[q])) 같나 = false;
+  if (같나) { out.왜 = "이미 같습니다"; return out; }
+
+  //  옛 양식 밖(머리글 없는 칸)에 값이 흘러 있으면 손대지 않는다
+  for (var r0 = 1; r0 < 통.length; r0++) {
+    for (var c0 = 지금.length; c0 < 끝; c0++) {
+      if (글(통[r0][c0])) {
+        out.왜 = "머리글 없는 " + (c0 + 1) + "번째 칸에 값이 있습니다. 손으로 보세요";
+        return out;
+      }
+    }
+  }
+
+  //  칸 이름 → 지금 자리 (같은 이름이 둘이면 앞의 것)
+  var 자리 = {};
+  for (var a = 0; a < 지금.length; a++) if (지금[a] && 자리[지금[a]] === undefined) 자리[지금[a]] = a;
+
+  //  새 양식에서 사라지는 이름 가운데 «값이 든» 것
+  var 새이름 = {};
+  for (var b = 0; b < want.length; b++) 새이름[글(want[b])] = true;
+  for (var c = 0; c < 지금.length; c++) {
+    if (!지금[c] || 새이름[지금[c]]) continue;
+    for (var d = 1; d < 통.length; d++) {
+      if (글(통[d][c])) { out.잃을뻔.push(지금[c]); break; }
+    }
+  }
+  if (out.잃을뻔.length) {
+    out.왜 = "「" + out.잃을뻔.join("·") + "」 칸이 새 양식에 없는데 값이 들어 있습니다";
+    return out;
+  }
+
+  var 새통 = [];
+  for (var r = 0; r < 통.length; r++) {
+    var 줄 = [];
+    for (var x = 0; x < 끝; x++) 줄.push("");
+    for (var y = 0; y < want.length; y++) {
+      if (r === 0) { 줄[y] = want[y]; continue; }
+      var 옛 = 자리[글(want[y])];
+      줄[y] = 옛 === undefined ? "" : 통[r][옛];
+    }
+    새통.push(줄);
+  }
+  tab.getRange(1, 1, lr, 끝).setValues(새통);
+  SpreadsheetApp.flush();
+
+  for (var z = 0; z < want.length; z++) {
+    var 옛z = 자리[글(want[z])];
+    if (옛z !== undefined && 옛z !== z) out.옮긴칸++;
+  }
+  out.했나 = true;
+  out.줄수 = Math.max(lr - 1, 0);
+  Logger.log("[전용양식] " + pfx + " 자리 맞춤: " + 지금.length + "칸 → " + want.length +
+    "칸, 옮긴 칸 " + out.옮긴칸 + "개 (자료 " + out.줄수 + "줄)");
+  return out;
+}
+
 function _pep_createExclusiveFormTab_(vendorSS, pfx) {
   var headers = _PEP_EXCLUSIVE_FORM_HEADERS_[pfx];
   if (!headers || headers.length === 0) return null;
@@ -6636,6 +6765,76 @@ function _pep_getPrefixFromFileName_(fileName) {
 //  전용양식 헤더 일괄 업데이트 (AS 메뉴용)
 //  독립배포 repairVendorExclusiveFormatHeaders 대응
 // ─────────────────────────────────────────────────────
+/**
+ * 전용양식 탭의 «자료까지» 새 머리글에 맞춰 옮긴다.  (2026-09-29)
+ *
+ *   > "선우 전용양식을 cj대한통운 택배양식.xlsx으로 바꿔줘"
+ *
+ * 바로 아래 partnerRepairExclusiveFormHeaders 와 다른 점 —
+ *   저쪽은 «1행 글자만» 새로 쓴다. 칸 자리가 바뀐 경우에 저것을 돌리면
+ *   이름표만 바뀌고 아래 자료는 제자리라, 받는분성명 칸에 보내는분우편번호가
+ *   들어앉은 꼴이 된다. 이쪽은 칸 이름을 따라 자료도 같이 옮긴다.
+ *
+ * 새 양식에 없어진 칸에 값이 들어 있으면 손대지 않고 말해 준다.
+ */
+function partnerSyncExclusiveFormHeaders() {
+  var ui = SpreadsheetApp.getUi();
+  var go = ui.alert(
+    "📐 전용양식 자리 맞추기 (자료까지)",
+    "업체 시트의 「전용양식」을 코드의 양식으로 옮깁니다.\n" +
+      "칸 «이름»을 따라 자료도 제 자리로 같이 옮깁니다.\n\n" +
+      "· 엑셀발주(49)·고유ID(50)는 건드리지 않습니다\n" +
+      "· 없어지는 칸에 값이 있으면 손대지 않고 알려만 줍니다\n\n" +
+      "계속할까요?",
+    ui.ButtonSet.YES_NO
+  );
+  if (go !== ui.Button.YES) return;
+
+  var files = _pt_listFiles();
+  if (!files || !files.length) return ui.alert("협력업체 파일 없음");
+
+  var 한것 = [], 그만둔것 = [], 탈 = [];
+  files.forEach(function (fileInfo) {
+    try {
+      var pfx = _pep_getPrefixFromFileName_(fileInfo.name);
+      if (!pfx || !_PEP_EXCLUSIVE_FORM_HEADERS_[pfx]) return;
+      var ss = SpreadsheetApp.openById(fileInfo.id);
+      var r = _pep_syncExclusiveFormHeader_(ss, pfx);
+      if (r.했나) {
+        한것.push("· " + fileInfo.name + " — " + _PEP_EXCLUSIVE_FORM_HEADERS_[pfx].length +
+          "칸, 옮긴 칸 " + r.옮긴칸 + "개 (자료 " + r.줄수 + "줄)");
+      } else if (r.왜 && r.왜 !== "이미 같습니다" && r.왜 !== "전용양식 탭이 없습니다") {
+        그만둔것.push("· " + fileInfo.name + " — " + r.왜);
+      }
+    } catch (e) {
+      탈.push("· " + fileInfo.name + " — " + (e && e.message));
+    }
+  });
+
+  //  허브 「업체전용양식마스터」도 같이 맞춘다 — 보이는 것과 도는 것을 같게
+  var 마스터 = { 고친것: [], 왜: "" };
+  try {
+    if (typeof _pep_syncTemplateMasterFromCode_ === "function") {
+      마스터 = _pep_syncTemplateMasterFromCode_(SpreadsheetApp.getActiveSpreadsheet());
+    }
+  } catch (eM) {
+    마스터.왜 = String(eM && eM.message);
+  }
+
+  var msg = "✅ 자리 맞춤 " + 한것.length + "곳";
+  if (한것.length) msg += "\n\n" + 한것.join("\n");
+  if (그만둔것.length) msg += "\n\n⏸ 손대지 않음 (사람이 볼 것)\n" + 그만둔것.join("\n");
+  if (탈.length) msg += "\n\n❌ 오류\n" + 탈.join("\n");
+  if (!한것.length && !그만둔것.length && !탈.length) msg = "ℹ️ 업체 시트는 모두 이미 맞습니다.";
+  if (마스터.고친것.length) {
+    msg += "\n\n📋 업체전용양식마스터 " + 마스터.고친것.length + "줄도 맞췄습니다\n· " +
+      마스터.고친것.join("\n· ");
+  } else if (마스터.왜 && 마스터.왜 !== "이미 같습니다") {
+    msg += "\n\n📋 업체전용양식마스터 — " + 마스터.왜;
+  }
+  ui.alert(msg);
+}
+
 function partnerRepairExclusiveFormHeaders() {
   var ui = SpreadsheetApp.getUi();
   var go = ui.alert(
@@ -6706,11 +6905,17 @@ function partnerRepairExclusiveFormHeaders() {
       tab.getRange("B1").setBackground("#e06c75").setFontColor("#ffffff");
       tab.setFrozenRows(1);
 
-      // 기존 열 수가 신규 헤더보다 많으면 초과 헤더 셀 정리 (예: 32열→20열 전환)
-      if (lc > headers.length) {
+      /*  기존 열 수가 신규 헤더보다 많으면 초과 헤더 셀 정리 (예: 32열→20열 전환)
+
+          ★ 49·50 은 건드리지 않는다 ★  (2026-09-29)
+            49=엑셀발주(_PEO_MARK_COL_) · 50=고유ID 는 우리 내부 열이고 «자리로»
+            못 박혀 있다. 여기서 끝까지 쓸어버리면 그 두 머리글이 사라져
+            발주 표시와 고유ID 가 이름을 잃는다. 양식 구역(48열)까지만 쓴다.  */
+      var _끝 = Math.min(lc, (typeof _PEO_MARK_COL_ !== "undefined" ? _PEO_MARK_COL_ : 49) - 1);
+      if (_끝 > headers.length) {
         try {
           tab
-            .getRange(1, headers.length + 1, 1, lc - headers.length)
+            .getRange(1, headers.length + 1, 1, _끝 - headers.length)
             .clearContent()
             .setBackground("#ffffff");
         } catch (eClean) {}

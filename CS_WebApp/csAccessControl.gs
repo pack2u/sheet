@@ -20,6 +20,8 @@ var _CS_AC_DEFAULT_ALLOWED_ = [
   "polo115419@gmail.com",
   "siot5ta@gmail.com",
   "rkdtjgml486@gmail.com",
+  "seongdeogcheon4@gmail.com", // 물류 (2026-09-30)
+  "ig3790342@gmail.com",       // 물류 (2026-09-30)
 ];
 
 var _CS_AC_PROP_ = "CS_ALLOWED_EMAILS";
@@ -33,6 +35,8 @@ var _CS_AC_PROP_ = "CS_ALLOWED_EMAILS";
 var _CS_AC_DEFAULT_NAMES_ = {
   "pack2u@pack2u.co.kr": "팩투유",
   "rkdtjgml486@gmail.com": "강서희",
+  "seongdeogcheon4@gmail.com": "천성덕", // 물류 대리
+  "ig3790342@gmail.com": "이기훈",       // 물류 주임
 };
 
 var _CS_AC_NAME_PROP_ = "CS_ACCOUNT_NAMES";
@@ -171,6 +175,8 @@ function _cs_ac_check_() {
 var _CS_AC_LOGISTICS_PROP_ = "CS_LOGISTICS_EMAILS";
 var _CS_AC_DEFAULT_LOGISTICS_ = [
   "gimdongbin5@gmail.com",
+  "seongdeogcheon4@gmail.com", // 2026-09-30
+  "ig3790342@gmail.com",       // 2026-09-30
   "siot5ta@gmail.com", // 테스트용 — 빼려면 이 줄만 지우면 된다
 ];
 

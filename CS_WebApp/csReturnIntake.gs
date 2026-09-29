@@ -138,11 +138,32 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
     var digits = _cs_normalizeInvDigits_(returnInv);
     var formatted = _cs_formatLedgerInvoice_(returnInv);
 
+    /* ★ 2026-09-29: 반품송장 칸을 «아무 번호로나» 덮고 있었다 ★
+
+       물류 화면은 송장 뒤 4자리·이름으로도 찾는다. 그렇게 고른 건은
+       returnInv 가 「1234」이거나 빈칸인데, 여기서 «다르면 덮어쓰기»를 해서
+       대장에 적힌 진짜 반품송장이 「1234」로 바뀌었다.
+       원송장으로 찾은 건(원송장 일치)도 원송장 번호가 반품송장 칸에 들어갔다.
+
+       그래서 셋을 다 만족할 때만 적는다.
+         · 온전한 번호다 (10자리 이상 · 0 으로 시작하지 않음 — 안심번호 배제)
+         · 그 줄의 원송장이 아니다
+         · 칸이 비어 있다 — 이미 적힌 번호가 다르면 덮지 않고 이력에 남긴다 */
+    var origDigits = ctx.col.invoice >= 0 ? _cs_normalizeInvDigits_(ctx.row[ctx.col.invoice]) : "";
+    var fullInv = digits.length >= 10 && digits.charAt(0) !== "0";
+    var isOrigInv = fullInv && origDigits && digits === origDigits;
+    var writeRetInv = fullInv && !isOrigInv;
+    var retInvClash = "";
+
     // 반품송장은 전용 열이 있으면 그 열에 쓴다. 열이 없는 과거 탭에서만 비고에 남긴다.
-    if (ctx.col.returnInvoice >= 0) {
+    if (!writeRetInv) {
+      // 적을 번호가 아니다 — 대장은 그대로 둔다
+    } else if (ctx.col.returnInvoice >= 0) {
       var cur = String(ctx.row[ctx.col.returnInvoice] || "").replace(/[^0-9]/g, "");
-      if (cur !== digits) {
+      if (!cur) {
         ctx.tab.getRange(rowNum, ctx.col.returnInvoice + 1).setValue(formatted);
+      } else if (cur !== digits) {
+        retInvClash = " (대장 반품송장 " + String(ctx.row[ctx.col.returnInvoice]).trim() + " 과 다름)";
       }
     } else {
       var hasRetInv = false;
@@ -155,8 +176,17 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
       }
     }
 
-    var noteText = "현장입고 스캔 · " + formatted +
-      (matchVia === "original_invoice_warn" ? " (원송장 일치)" : "");
+    //  「현장입고」로 시작해야 CS 카드·업체 포털이 사진 줄로 알아본다
+    //  (_cs_isPhotoLine_ · prpPublicTimeline_). 앞말을 바꾸면 둘 다 고칠 것.
+    /*  ★ 이미 끝난 건에는 사진만 남긴다 (2026-09-30) ★
+        > "완료된 건에 사진을 붙이면 사진만 남기기"
+        환불을 먼저 하고 닫은 반품은 물건이 나중에 온다. 거기에 입고검수를 찍으면
+        끝난 건이 다시 열려 CS 가 또 손을 댄다. 상태는 그대로 두고 경과에 사진 줄만.
+        「끝났다」는 판정은 목록과 같은 _cs_isReturnLedgerDone_ 한 곳에서 한다.  */
+    var alreadyDone = _cs_isReturnLedgerDone_(String(ctx.row[ctx.col.status || 0] || ""), ctx.row);
+    var noteText = "현장입고 스캔" + (fullInv ? " · " + formatted : "") +
+      ((isOrigInv || matchVia === "original_invoice_warn") ? " (원송장 일치)" : "") +
+      retInvClash + (alreadyDone ? " (이미 완료된 건 — 상태 그대로)" : "");
     var links = (photoLinks && photoLinks.length) ? photoLinks : [];
     if (links.length) {
       noteText += " · 사진 " + links.length + "장";
@@ -171,16 +201,19 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
     });
     if (!consult.ok) return consult;
 
-    var statusRes = updateReturnLedgerStatus({
-      tab: tabName,
-      row: rowNum,
-      status: _CS_RI_STATUS_INTAKE_,
-      staff: staff
-    });
-    if (!statusRes.ok) return statusRes;
+    if (!alreadyDone) {
+      var statusRes = updateReturnLedgerStatus({
+        tab: tabName,
+        row: rowNum,
+        status: _CS_RI_STATUS_INTAKE_,
+        staff: staff
+      });
+      if (!statusRes.ok) return statusRes;
+    }
 
     var name = ctx.col.name >= 0 ? String(ctx.row[ctx.col.name] || "").trim() : "";
     var item = ctx.col.item >= 0 ? String(ctx.row[ctx.col.item] || "").trim() : "";
+    var curStatus = String(ctx.row[ctx.col.status || 0] || "").trim();
     return {
       ok: true,
       action: "updated",
@@ -188,10 +221,12 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
       row: rowNum,
       name: name,
       item: item,
-      status: _CS_RI_STATUS_INTAKE_,
+      alreadyDone: alreadyDone,
+      status: alreadyDone ? curStatus : _CS_RI_STATUS_INTAKE_,
       matchVia: matchVia || "",
       returnInvoice: formatted,
-      message: tabName + " " + rowNum + "행 · " + _CS_RI_STATUS_INTAKE_ + " 처리"
+      message: tabName + " " + rowNum + "행 · " +
+        (alreadyDone ? "완료 건에 사진만 추가 (상태 그대로)" : _CS_RI_STATUS_INTAKE_ + " 처리")
     };
   } catch (e) {
     return { ok: false, error: e.message || String(e) };

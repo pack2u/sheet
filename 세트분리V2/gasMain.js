@@ -1922,6 +1922,11 @@ function ss_송장전파() {
 
   // ── 2) 사방넷송장 채우기 — 직접 매칭, 동봉은 대표의 번호를 그대로 ──
   var iCar = SS_INVOICE_HEADER.indexOf('택배사');
+  /*  ★ 쪼갠 줄은 «제 송장키»로만 찾는다 ★  (2026-09-29)
+      몸통 2314556_S1 · 뚜껑 2314556_S2 로 나갔으면 송장도 그 번호로 돌아온다.
+      맨 번호로 물러서지 않는다 — 물러서면 같은 주문 다른 줄의 송장을 또 집는다
+      (그게 «엇갈려 붙던» 그 일이다). 칸이 없는 옛 줄은 종전대로 주문번호로. */
+  var iKey = SS_INVOICE_HEADER.indexOf('송장키');
   var n = inv.getLastRow() - 1;
   var v = inv.getRange(2, 1, n, SS_INVOICE_HEADER.length).getValues();
   var 롯데직접 = 0, 대리공급건 = 0, 대리판매건 = 0, 전파 = 0, 미매칭 = 0, 전화미매칭 = 0;
@@ -1929,7 +1934,8 @@ function ss_송장전파() {
   for (var i = 0; i < n; i++) {
     var 주문 = ssText(v[i][0]);
     var 대표 = ssText(v[i][4]);
-    var direct = find(주문);
+    var 열쇠 = (iKey >= 0 && ssText(v[i][iKey])) || 주문;
+    var direct = find(열쇠);
     var hit = direct || (대표 ? find(대표) : null);
     if (hit) {
       v[i][5] = hit.w;
@@ -1997,7 +2003,9 @@ function ss_송장전파() {
         var uid = ssText(lv[a][li['고유ID']]);
         if (ssText(lv[a][li['운송장번호']])) 원장기채움++;
         if (!ssText(lv[a][li['운송장번호']])) {
-          var hit2 = find(uid);
+          //  쪼갠 줄은 제 송장키로만 (위 사방넷송장과 같은 규칙)
+          var 줄열쇠 = li['송장키'] !== undefined ? ssText(lv[a][li['송장키']]) : '';
+          var hit2 = find(줄열쇠 || uid);
           if (!hit2) {
             /*  아직 송장이 없다. 회차키 앞 6자리가 주문날짜(YYMMDD)다. */
             var rk대기 = li['회차키'] !== undefined ? ssText(lv[a][li['회차키']]) : '';
@@ -2068,9 +2076,17 @@ function ss_송장전파() {
         };
         var 여럿 = '\u0002여럿';
         var 자리송장 = {}, 자리택배 = {};
+        /*  ★ 대리발송 줄은 주지도 받지도 않는다 ★  (2026-09-29)
+            사람이 합치는 박스는 «우리 창고» 박스다. 업체 물건은 거기 안 담긴다.
+            여태는 뚜껑만 업체로 간 줄이 업체 송장을 기다리는 동안, 같은 주소의
+            몸통 로젠 송장을 여기서 받아 버렸다 — «엇갈려 붙던» 또 한 갈래다. */
+        var 업체줄 = function (row) {
+          return li['경로'] !== undefined && ssText(row[li['경로']]) === SS_ROUTE.PARTNER;
+        };
         for (var s1 = 0; s1 < lv.length; s1++) {
           var w4 = ssText(lv[s1][li['운송장번호']]);
           if (!w4) continue;
+          if (업체줄(lv[s1])) continue;
           var sk = 자리열쇠(lv[s1]);
           if (자리송장[sk] === undefined) {
             자리송장[sk] = w4;
@@ -2084,6 +2100,7 @@ function ss_송장전파() {
           //  애초에 안 나가는 줄은 건드리지 않는다
           var 경로2 = li['경로'] !== undefined ? ssText(lv[s2][li['경로']]) : '';
           if (경로2 === SS_ROUTE.HOLD || 경로2 === SS_ROUTE.NONSHIP) continue;
+          if (경로2 === SS_ROUTE.PARTNER) continue;
           if (li['보류사유'] !== undefined && ssText(lv[s2][li['보류사유']])) continue;
           var got = 자리송장[자리열쇠(lv[s2])];
           if (!got) continue;
