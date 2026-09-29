@@ -98,9 +98,13 @@ function _dp_ec_session_(cfg, force) {
  * @return {{results: Array<{key, outcome, slipNo, message}>}}
  *   outcome: 반영완료 · 거절(대기로 되돌림) · 확인필요 · 건너뜀
  */
-function dpCsPost_(keys, by) {
+function dpCsPost_(keys, by, test) {
   var cfg = _dp_ec_cfg_();
-  if (!cfg.on) return { ok: false, error: "이카운트 반영이 꺼져 있습니다 (스크립트 속성 DP_ECOUNT_POST=on)" };
+  // ★ 시험 한 건 (2026-09-29) ★ 켜기 전에 실제 전표 «한 장»으로 거래처원장을 확인한다.
+  //   스위치(DP_ECOUNT_POST)는 꺼 둔 채 — 직원 화면에는 버튼이 안 뜬다. 딱 한 건만 받는다.
+  //   CS웹앱은 test 를 보내지 않는다 (csDeposit.gs) — 사장님이 채팅에서 허락한 시험에만 쓴다.
+  var isTest = !!test && [].concat(keys || []).length === 1;
+  if (!cfg.on && !isTest) return { ok: false, error: "이카운트 반영이 꺼져 있습니다 (스크립트 속성 DP_ECOUNT_POST=on)" };
   var miss = _dp_ec_missing_(cfg);
   if (miss.length) return { ok: false, error: "이카운트 설정이 비었습니다: " + miss.join(", ") };
   keys = [].concat(keys || []).map(String).filter(Boolean);
@@ -123,7 +127,7 @@ function dpCsPost_(keys, by) {
       var d = { key: key, txAt: _dp_ts_(g("거래일시")), name: String(g("입금자")), amount: Number(g("금액")) || 0,
                 orderNos: String(g("주문번호")), code: String(g("거래처코드")), result: String(g("매칭결과")),
                 status: String(g("상태")) };
-      var can = dpCanPost(d);
+      var can = dpCanPost(d, _dp_prop_("DP_ECOUNT_FROM"));
       if (!can.ok) { results.push({ key: key, outcome: "건너뜀", message: can.reason }); return; }
 
       // ② 보내기 «전에» 반영중으로 — 여기서 멈춰도(시간 초과 등) 다음 사람이 또 보내지 못한다
@@ -190,6 +194,41 @@ function dpCsPostResolve_(key, slipNo, by) {
   }
 }
 
+/**
+ * 「이미 이카운트에 넣었음」 — 누가 손으로(또는 이카운트 엑셀로) 이미 입력한 입금
+ * ★ 2026-09-29 ★ "수동 확인건과 업로드하면 이중입금처리 되는거 아닌지.."
+ *   이카운트를 읽을 수 없으니 사람이 알려 준다. 표시하면 「반영완료」 + 전표번호 「손으로」 — 시스템은 다시 넘기지 않는다.
+ * @param undo  true 면 잘못 누른 것을 되돌린다 (전표번호가 「손으로」 인 줄만)
+ */
+var DP_MANUAL_SLIP_ = "손으로";
+
+function dpCsMarkManual_(key, by, undo) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var ss = dpLedgerSs_(false);
+    var f = ss && _dp_findRow_(ss, key);
+    if (!f) return { ok: false, error: "입금을 못 찾음" };
+    var sh = f.sh, c = f.c, g = function (h) { return c[h] ? String(f.row[c[h] - 1]) : ""; };
+    var set = function (h, v) { if (c[h]) sh.getRange(f.rowNo, c[h]).setValue(v); };
+    if (undo) {
+      if (g("상태") !== "반영완료" || g("전표번호") !== DP_MANUAL_SLIP_) {
+        return { ok: false, error: "「이미 넣었음」 으로 표시한 입금만 되돌립니다" };
+      }
+      set("상태", "대기"); set("전표번호", ""); set("반영메모", "「이미 넣었음」 되돌림 · " + (by || "") + " " + _dp_now_());
+    } else {
+      if (g("상태") !== "대기") return { ok: false, error: "상태가 「" + g("상태") + "」 — 대기인 입금만 표시합니다" };
+      set("상태", "반영완료"); set("전표번호", DP_MANUAL_SLIP_);
+      set("반영자", by || ""); set("반영시각", _dp_now_());
+      set("반영메모", "이카운트에 손으로 이미 입력함 — 시스템은 넘기지 않음");
+    }
+    dpBumpVer_();
+    return { status: undo ? "대기" : "반영완료" };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /** 편집기에서 ▶ — 설정 점검 (보내지 않는다). 로그인까지만 해 본다 */
 function dpEcountCheck() {
   var cfg = _dp_ec_cfg_();
@@ -197,6 +236,7 @@ function dpEcountCheck() {
   var miss = _dp_ec_missing_(cfg);
   out.push("빠진 설정  " + (miss.length ? miss.join(", ") : "없음"));
   out.push("보통예금   " + (cfg.bankGye || "-") + " · 외상매출금 " + (cfg.arGye || "-"));
+  out.push("반영 시작  " + (_dp_prop_("DP_ECOUNT_FROM") || "★ 없음 — 아무것도 넘기지 않음 (DP_ECOUNT_FROM)"));
   if (!miss.length) {
     try { var s = _dp_ec_session_(cfg, true); out.push("로그인     OK (zone " + s.zone + ")"); }
     catch (e) { out.push("로그인     ★ " + e.message); }

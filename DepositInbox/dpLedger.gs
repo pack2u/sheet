@@ -174,10 +174,11 @@ function dpListDeposits_(date, limit) {
   var day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date
     : Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
   var on = String(_dp_prop_("DP_ECOUNT_POST")).toLowerCase() === "on";
-  return dpCached_("list:" + day + ":" + (limit || 0) + ":" + on, function () { return _dp_listDepositsRaw_(day, limit); });
+  return dpCached_("list:" + day + ":" + (limit || 0) + ":" + on + ":" + _dp_prop_("DP_ECOUNT_FROM"), function () { return _dp_listDepositsRaw_(day, limit); });
 }
 
 function _dp_listDepositsRaw_(day, limit) {
+  var postFrom = _dp_prop_("DP_ECOUNT_FROM");
   var out = { date: day, total: 0, sum: 0, unparsed: 0, rows: [],
               ordersAt: _dp_prop_("DP_ORDERS_AT"), ordersBy: _dp_prop_("DP_ORDERS_BY"),
               ordersCount: Number(_dp_prop_("DP_ORDERS_COUNT")) || 0,
@@ -226,7 +227,7 @@ function _dp_listDepositsRaw_(day, limit) {
       // 이카운트 반영 (2026-09-29)
       slipNo: String(col(r, "전표번호") || ""),
       postMemo: String(col(r, "반영메모") || ""),
-      canPost: dpCanPost({ result: String(col(r, "매칭결과")), status: st, code: String(col(r, "거래처코드")), amount: amt }).ok
+      canPost: dpCanPost({ result: String(col(r, "매칭결과")), status: st, code: String(col(r, "거래처코드")), amount: amt, txAt: txAt }, postFrom).ok
     });
     out.sum += amt;
   }

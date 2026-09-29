@@ -168,6 +168,18 @@ function csDepositPost(keys, staff) {
   return out;
 }
 
+/**
+ * 「이미 이카운트에 넣었음」 — 손으로(또는 이카운트 엑셀로) 이미 입력한 입금을 시스템이 또 넘기지 않게
+ * > "수동 확인건과 업로드하면 이중입금처리 되는거 아닌지.." (2026-09-29)
+ * undo = 잘못 누른 것을 되돌린다
+ */
+function csDepositMarkManual(key, undo, staff) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  var out = _cs_dep_call_({ action: "mark_manual", key: String(key || ""), undo: !!undo, by: _cs_dep_by_(staff) });
+  _cs_dep_bust_();
+  return out;
+}
+
 /** 「확인필요」 정리 — 이카운트에 있으면 전표번호, 없으면 빈 값 */
 function csDepositPostResolve(key, slipNo, staff) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;

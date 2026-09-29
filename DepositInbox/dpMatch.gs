@@ -380,10 +380,28 @@ function dpParseOrderSheet(rows) {
 var DP_POSTABLE_RESULTS_ = ["일치", "일치(합산)", "일치(지정)", "부족", "부족(지정)"];
 
 /**
- * @param {{result, status, code, amount}} r  입금대장 한 줄
- * @return {{ok:boolean, reason:string}}
+ * ★ 반영 시작 시각 (2026-09-29) ★
+ *   > "이미 처리된것도 이중으로 처리되는지 확인해줘.. 수동 확인건과 업로드하면 이중입금처리 되는거 아닌지.."
+ *   이카운트 API 로는 입금·전표를 «읽을» 수 없다 — 누가 손으로(또는 엑셀로) 이미 넣었는지 알 길이 없다.
+ *   그래서 선을 긋는다: 시작 시각 «이전» 입금은 시스템이 넘기지 않는다 (예전처럼 손으로).
+ *   시작 시각이 비어 있으면 아무것도 넘기지 않는다 — 선을 긋지 않은 채 켜는 일이 없게.
+ *   시작 뒤에 누가 손으로 넣었으면 「이미 이카운트에 넣었음」 으로 막는다 (dpEcount.gs mark_manual).
+ *
+ * @param {{result, status, code, amount, txAt}} r  입금대장 한 줄
+ * @param {string} from  반영 시작 시각 "yyyy-MM-dd HH:mm" (스크립트 속성 DP_ECOUNT_FROM)
+ * @return {{ok:boolean, reason:string, beforeStart:boolean}}
  */
-function dpCanPost(r) {
+function dpCanPost(r, from) {
+  var base = _dp_canPostBase_(r);
+  if (!base.ok) return base;
+  if (!from) return { ok: false, reason: "반영 시작 시각이 정해지지 않음", beforeStart: true };
+  if (String(r.txAt || "") < String(from)) {
+    return { ok: false, reason: "반영 시작(" + from + ") 전 입금 — 손으로 처리했을 수 있어 넘기지 않는다", beforeStart: true };
+  }
+  return base;
+}
+
+function _dp_canPostBase_(r) {
   if (!r) return { ok: false, reason: "입금 없음" };
   if (String(r.status) !== "대기") return { ok: false, reason: "상태가 「" + r.status + "」 — 대기인 입금만 넘긴다" };
   if (DP_POSTABLE_RESULTS_.indexOf(String(r.result)) < 0) return { ok: false, reason: "「" + r.result + "」 은 넘기지 않는다" };

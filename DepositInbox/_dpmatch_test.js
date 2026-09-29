@@ -177,9 +177,9 @@ console.log('\n[이카운트 일반전표 — 모양 · 넘길 수 있나 · 응
   ok('금액 · 일자', j[0].BulkDatas.DR_AMT === '31900' && j[1].BulkDatas.DR_AMT === '31900' && j[0].BulkDatas.TRX_DATE === '20260929');
   ok('적요에 입금자 · 주문번호 · 지문', /^입금 윤성훈 · 2026\/09\/29-17 · DP[0-9a-f]{8}$/.test(j[0].BulkDatas.REMARKS_DES), j[0].BulkDatas.REMARKS_DES);
   ok('지문은 고유번호마다 늘 같다', m.dpFingerprint(d.key) === m.dpFingerprint(d.key) && m.dpFingerprint(d.key) !== m.dpFingerprint(d.key + 'x'));
-  const base = { status: '대기', code: 'C1', amount: 1000 };
-  ok('일치는 넘긴다', m.dpCanPost({ ...base, result: '일치' }).ok);
-  ok('부족도 넘긴다 (들어온 만큼)', m.dpCanPost({ ...base, result: '부족(지정)' }).ok);
+  const base = { status: '대기', code: 'C1', amount: 1000, txAt: '2026-09-29 11:34' };
+  ok('일치는 넘긴다', m.dpCanPost({ ...base, result: '일치' }, '2026-09-29 00:00').ok);
+  ok('부족도 넘긴다 (들어온 만큼)', m.dpCanPost({ ...base, result: '부족(지정)' }, '2026-09-29 00:00').ok);
   for (const r of ['초과', '후보', '미확인', '정산', '제외', '확인필요']) ok(r + ' 는 안 넘긴다', !m.dpCanPost({ ...base, result: r }).ok);
   ok('반영완료는 또 안 넘긴다', !m.dpCanPost({ ...base, result: '일치', status: '반영완료' }).ok);
   ok('반영중도 안 넘긴다', !m.dpCanPost({ ...base, result: '일치', status: '반영중' }).ok);

@@ -481,6 +481,7 @@ console.log('\n[이카운트 반영 — 두 번 눌러도 한 장]');
   r = cs({ action: 'post', keys: [keyOf('정명옥')] });
   ok('설정이 비면 보내지 않는다', r.ok === false && r.error.includes('ECOUNT_COM_CODE') && ecCalls.length === 0, r.error);
   Object.assign(props, { ECOUNT_COM_CODE: '178341', ECOUNT_USER_ID: 'U', ECOUNT_API_CERT_KEY: 'K', DP_GYE_BANK: '1031', DP_GYE_AR: '1080' });
+  props.DP_ECOUNT_FROM = '2000-01-01 00:00';   // 반영 시작 시각 — 이 뒤 입금만 넘긴다
 
   r = cs({ action: 'post', keys: [keyOf('정명옥')], by: '강서희' });
   ok('반영 → 반영완료 · 전표번호', r.ok && r.results[0].outcome === '반영완료' && rowOf('정명옥')[col('상태')] === '반영완료' && /^20260929-/.test(rowOf('정명옥')[col('전표번호')]), JSON.stringify(r));
@@ -529,6 +530,50 @@ console.log('\n[이카운트 반영 — 두 번 눌러도 한 장]');
   const lr = list.rows.find((x) => x.name === '정명옥');
   ok('목록에 전표번호 · 넘길 수 있나', lr.slipNo && lr.canPost === false && list.rows.find((x) => x.name === '홍길동').canPost === false);
   ok('폰 열쇠로는 반영 못 한다', post({ token: 'tok', action: 'post', keys: [keyOf('홍길동')] }).ok === false);
+}
+
+console.log('\n[이중 입금 — 손으로 이미 넣은 것 · 시작 전 입금은 안 넘긴다]');
+{
+  const { ctx, post, rows, props, ecCalls } = makeEnv();
+  ctx.DP_CS_TOKEN = 'cstok';
+  ctx.DP_ECOUNT_PROXY_URL = 'https://proxy.example'; ctx.DP_ECOUNT_PROXY_KEY = 'pk';
+  Object.assign(props, { ECOUNT_COM_CODE: 'C', ECOUNT_USER_ID: 'U', ECOUNT_API_CERT_KEY: 'K', DP_ECOUNT_POST: 'on' });
+  const cs = (o) => ctx.doPost({ parameter: {}, postData: { type: 'application/json', contents: JSON.stringify(Object.assign({ token: 'cstok' }, o)) } });
+  const now = new Date(); const p2 = (n) => String(n).padStart(2, '0');
+  const T = now.getFullYear() + '/' + p2(now.getMonth() + 1) + '/' + p2(now.getDate());
+  const Td = T.replace(/\//g, '-');
+  cs({ action: 'orders_upload', rows: [['회사명'], ['주문번호', '거래처명', '거래처코드', '거래처모바일', '수령인', '담당자', '품목', '납기일자', '금액'],
+    [T + ' -1', '가게갑 김갑', 'A1', '', '', '', 'x', T, '10,000'], [T + ' -2', '가게을 이을', 'B1', '', '', '', 'x', T, '20,000'],
+    [T + ' -3', '가게병 박병', 'C1', '', '', '', 'x', T, '30,000'], [T + ' (화) 오전 8:00:00']] });
+  let bal = 500000;
+  const sms = (hhmm, name, amount) => { bal += amount;
+    return `[Web발신]\n${T}\n${hhmm}\n입금 ${amount.toLocaleString()}원\n잔액 ${bal.toLocaleString()}원\n${name}\n458***12345678\n기업`; };
+  post({ token: 'tok', action: 'sms', body: sms('09:00', '김갑', 10000) });   // 시작 전
+  post({ token: 'tok', action: 'sms', body: sms('13:00', '이을', 20000) });   // 시작 뒤
+  post({ token: 'tok', action: 'sms', body: sms('13:30', '박병', 30000) });   // 시작 뒤, 누가 손으로 이미 넣음
+  const col = (h) => rows[0].indexOf(h);
+  const keyOf = (n) => rows.find((r) => r[col('입금자')] === n)[col('고유번호')];
+  const rowOf = (n) => rows.find((r) => r[col('입금자')] === n);
+
+  let r = cs({ action: 'post', keys: [keyOf('이을')] });
+  ok('시작 시각이 없으면 아무것도 안 넘긴다', r.results[0].outcome === '건너뜀' && r.results[0].message.includes('시작') && ecCalls.length === 0, JSON.stringify(r));
+  props.DP_ECOUNT_FROM = Td + ' 12:00';
+  r = cs({ action: 'post', keys: [keyOf('김갑')] });
+  ok('시작 전 입금은 안 넘긴다 (손으로 처리했을 수 있다)', r.results[0].outcome === '건너뜀' && ecCalls.length === 0, JSON.stringify(r));
+
+  const mk = cs({ action: 'mark_manual', key: keyOf('박병'), by: '고윤서' });
+  ok('「이미 이카운트에 넣었음」 → 반영완료 · 전표 「손으로」', mk.ok && rowOf('박병')[col('상태')] === '반영완료' && rowOf('박병')[col('전표번호')] === '손으로');
+  r = cs({ action: 'post', keys: [keyOf('박병')] });
+  ok('손으로 넣은 입금은 시스템이 또 안 넘긴다', r.results[0].outcome === '건너뜀' && ecCalls.length === 0, JSON.stringify(r));
+  r = cs({ action: 'post', keys: [keyOf('이을')] });
+  ok('시작 뒤 · 손으로 안 넣은 입금만 넘긴다', r.results[0].outcome === '반영완료', JSON.stringify(r));
+  ok('이카운트에는 딱 한 장 갔다', ecCalls.filter((c) => c.url.includes('SaveGeneralJournal')).length === 1);
+
+  ok('실제 전표로 넘어간 줄은 「이미 넣었음」 되돌리기 불가', cs({ action: 'mark_manual', key: keyOf('이을'), undo: true }).ok === false);
+  const un = cs({ action: 'mark_manual', key: keyOf('박병'), undo: true, by: '고윤서' });
+  ok('잘못 누른 「이미 넣었음」 은 되돌린다 → 대기', un.ok && rowOf('박병')[col('상태')] === '대기' && rowOf('박병')[col('전표번호')] === '');
+  const det = cs({ action: 'detail', key: keyOf('김갑') });
+  ok('시작 전 입금 — 반영 버튼 없음 · 「이미 넣었음」 은 가능', det.deposit.canPost === false && det.deposit.canMarkManual === true);
 }
 
 console.log('\n[읽기 캐시 — 바뀐 게 없으면 다시 안 읽는다]');

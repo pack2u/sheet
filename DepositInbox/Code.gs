@@ -103,7 +103,7 @@ function _dp_handleCs_(p) {
       break;
     case "detail":
       // 판 번호 캐시 — 같은 입금을 다시 열면 시트를 안 읽는다 (켜짐 여부는 속성이라 열쇠에 넣는다)
-      r = dpCached_("detail:" + String(p.key || "") + ":" + _dp_prop_("DP_ECOUNT_POST"),
+      r = dpCached_("detail:" + String(p.key || "") + ":" + _dp_prop_("DP_ECOUNT_POST") + ":" + _dp_prop_("DP_ECOUNT_FROM"),
                     function () { return dpCsDetail_(String(p.key || "")); });
       break;
     case "orders_search":
@@ -120,7 +120,11 @@ function _dp_handleCs_(p) {
       break;
     case "post":
       // 이카운트 반영 — 막는 장치는 dpEcount.gs 머리말 (잠금 · 반영중 먼저 · 모르면 다시 안 보냄)
-      r = dpCsPost_(p.keys, String(p.by || ""));
+      r = dpCsPost_(p.keys, String(p.by || ""), !!p.test);
+      break;
+    case "mark_manual":
+      // 「이미 이카운트에 넣었음」 — 손으로 넣은 입금을 시스템이 또 넘기지 않게
+      r = dpCsMarkManual_(String(p.key || ""), String(p.by || ""), !!p.undo);
       break;
     case "ec_check":
       // 설정 점검 + 로그인까지만 — 전표는 보내지 않는다
