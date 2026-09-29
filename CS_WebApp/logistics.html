@@ -597,6 +597,7 @@
         LAST.fields = r.fields || {};
         LAST.scanDigits = (r.m && r.m.digits) || "";
         render();
+        if (r.via === "detector" || r.via === "qrlib") readLabel();
         return;
       }
       LAST = {
@@ -607,9 +608,65 @@
       //  후보가 하나뿐이면 골라 둔다 (확정은 이미 골라져 있다)
       if (LAST.match.tier === "maybe" && LAST.match.matches.length === 1) PICKED = LAST.match.matches[0];
       render();
+      //  바코드로 번호만 읽고 확정은 못 했다 → 라벨 글자도 읽는다(뒤에서)
+      if ((r.via === "detector" || r.via === "qrlib") && LAST.match.tier !== "sure") readLabel();
     }).catch(function (e) {
       stage("처리 실패: " + (e && e.message ? e.message : e));
     });
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     라벨 글자 읽기 — 바코드가 읽혀도 한다   (2026-09-29)
+
+     > "송장 번호만 인식을 하는거 같네.. 내용인식은 못하는건가?"
+
+     글자 읽기(Gemini)는 «바코드가 실패했을 때만» 돌았다. 바코드가 읽히면
+     번호 하나만 남고 보내는 분·품명·원송장번호는 아무도 안 봤다.
+     그런데 반품 라벨의 바코드(이번 회수 송장)는 대장에 아직 없는 일이 많고,
+     «원송장번호»는 대장에 거의 늘 있다 — 글자에 답이 있었다.
+
+     · 화면은 바코드 결과를 «먼저» 보여 준다. 글자는 뒤에서 읽고 오면 얹는다
+     · 사람이 이미 찾았거나 골랐으면 후보는 안 바꾼다 — 보여 주기만 한다
+     · 확정(sure)이면 안 부른다 — 이미 답이 있다
+     ══════════════════════════════════════════════════════════ */
+  var LABEL_SEQ = 0;
+  function readLabel() {
+    if (!PENDING.length || !LAST) return;
+    var seq = ++LABEL_SEQ, shot = PENDING[0], t0 = Date.now();
+    LAST.reading = true;
+    render();
+    function stale() { return seq !== LABEL_SEQ || !LAST || PENDING[0] !== shot; }
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (stale()) return;
+        LAST.reading = false;
+        LAST.labelSec = ((Date.now() - t0) / 1000).toFixed(1);
+        var f = (r && r.fields) || {};
+        LAST.fields = f;
+        if (LAST.searched || PICKED || !(f.senderName || f.senderPhone || f.originalInvoiceNumber || f.returnInvoiceNumber)) {
+          render();
+          return;
+        }
+        google.script.run
+          .withSuccessHandler(function (m) {
+            if (stale() || LAST.searched || PICKED) { if (!stale()) render(); return; }
+            if (m && m.matches && m.matches.length) {
+              m.digits = m.digits || LAST.scanDigits;
+              LAST.match = m;
+              LAST.fromLabel = true;
+              if (m.matches.length === 1) PICKED = m.matches[0];
+            }
+            render();
+          })
+          .withFailureHandler(function () { if (!stale()) render(); })
+          .csLogisticsMatch(LAST.raw, f);
+      })
+      .withFailureHandler(function () {
+        if (stale()) return;
+        LAST.reading = false;
+        render();
+      })
+      .csOcrImageForScan(shot.dataB64, "image/jpeg");
   }
 
   function render() {
@@ -630,6 +687,10 @@
     var who = [f.senderName, f.senderPhone].filter(function (v) { return v; }).join(" · ");
     if (who) h += '<div class="via">라벨 보내는분: ' + esc(who) + '</div>';
     if (f.originalInvoiceNumber) h += '<div class="via">원송장번호: ' + esc(f.originalInvoiceNumber) + '</div>';
+    if (f.itemName) h += '<div class="via">품명: ' + esc(f.itemName) + '</div>';
+    if (f.orderNumber) h += '<div class="via">주문번호: ' + esc(f.orderNumber) + '</div>';
+    if (LAST.reading) h += '<div class="via">📖 라벨 글자 읽는 중… (기다리지 않고 찾거나 골라도 됩니다)</div>';
+    else if (LAST.fromLabel) h += '<div class="via">라벨 글자로 다시 찾은 결과</div>';
 
     // 사진 미리보기
     if (PENDING.length) {
@@ -681,7 +742,14 @@
          (saveOn ? esc(saveName || "") + " 건에 올리기 · 입고처리" : "사진만 저장 (CS 확인 대기)") + '</button>';
     h += '</div></div>';
 
+    //  글자 읽기가 뒤에서 끝나 다시 그릴 때 치던 글자·커서를 잃지 않게
+    var old = document.getElementById("manualInv");
+    var oldV = old ? old.value : "", oldFocus = old && document.activeElement === old;
     document.getElementById("result").innerHTML = h;
+    if (oldV || oldFocus) {
+      var nw = document.getElementById("manualInv");
+      if (nw) { nw.value = oldV; if (oldFocus) nw.focus(); }
+    }
 
     Array.prototype.forEach.call(document.querySelectorAll(".pick[data-i]"), function (el) {
       el.addEventListener("click", function () {
@@ -790,7 +858,7 @@
         raw: LAST.raw,
         invoice: inv,
         via: via,
-        memo: T_SHOT ? [T_READ, "올리기까지 " + Math.round((Date.now() - T_SHOT) / 1000) + "초"]
+        memo: T_SHOT ? [T_READ, LAST.labelSec ? "글자 " + LAST.labelSec + "초" : "", "올리기까지 " + Math.round((Date.now() - T_SHOT) / 1000) + "초"]
           .filter(function (v) { return v; }).join(" · ") : "",
         tier: PICKED ? "maybe" : LAST.match.tier,
         pick: PICKED,
