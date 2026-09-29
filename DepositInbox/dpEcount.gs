@@ -22,6 +22,14 @@
  */
 
 var DP_EC_POST_HEADERS_ = ["전표번호", "반영시각", "반영자", "반영메모"];
+
+/**
+ * 계정 — 코드 대신 «이름» (매뉴얼: GYE_CODE 는 계정코드 또는 명)
+ * > "그냥 보통예금이야" (2026-09-29) — 손으로 입금 처리할 때 고르는 계정 그대로.
+ * 비밀이 아니니 코드에 적는다. 바꿀 일이 생기면 스크립트 속성 DP_GYE_BANK · DP_GYE_AR 이 이긴다.
+ */
+var DP_GYE_BANK_DEFAULT_ = "보통예금";
+var DP_GYE_AR_DEFAULT_ = "외상매출금";
 var DP_EC_JOURNAL_PATH_ = "/OAPI/V2/GeneralJournal/SaveGeneralJournal";
 
 function _dp_ec_cfg_() {
@@ -30,7 +38,7 @@ function _dp_ec_cfg_() {
     on: String(p("DP_ECOUNT_POST")).toLowerCase() === "on",
     comCode: p("ECOUNT_COM_CODE"), userId: p("ECOUNT_USER_ID"), certKey: p("ECOUNT_API_CERT_KEY"),
     lanType: p("ECOUNT_LAN_TYPE") || "ko-KR",
-    bankGye: p("DP_GYE_BANK"), arGye: p("DP_GYE_AR"),
+    bankGye: p("DP_GYE_BANK") || DP_GYE_BANK_DEFAULT_, arGye: p("DP_GYE_AR") || DP_GYE_AR_DEFAULT_,
     proxyUrl: String(_dp_secret_("DP_ECOUNT_PROXY_URL") || ""), proxyKey: String(_dp_secret_("DP_ECOUNT_PROXY_KEY") || "")
   };
 }
