@@ -580,7 +580,8 @@ function _cs_orderKeyPart_(rec) {
   var o = String((rec && rec.orderNo) || "").trim();
   if (!o) return "";
   var uid = _cs_orderNoFromName_(o);
-  return String(uid || o).replace(/\s/g, "").toLowerCase();
+  //  세트분리(뉴)가 쪼갠 줄은 2314556_S2 로 업체에 간다 — 맞출 땐 떼고 본다 (2026-09-29)
+  return String(uid || o).replace(/\s/g, "").replace(/_s\d+$/i, "").toLowerCase();
 }
 
 function _cs_overlayPersonKey_(rec) {

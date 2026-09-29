@@ -316,7 +316,8 @@ function ss_고아송장점검() {
         if (!o || !w) continue;
         if (o.indexOf('주문번호') >= 0 || w.indexOf('운송장') >= 0) continue;
         총송장++;
-        if (known[o]) continue;
+        //  쪼갠 줄의 꼬리표(_S2)를 떼고 본다 — 원장은 맨 고유ID 로 안다 (2026-09-29)
+        if (known[o] || known[ssBaseUid(o)]) continue;
         고아.push({ o: o, w: w, d: cd >= 0 ? ssText(rv[r][cd]) : '', 탭: 편2.이름 });
       }
       읽은탭2.push(편2.이름 + ' ' + (총송장 - n2) + '건');

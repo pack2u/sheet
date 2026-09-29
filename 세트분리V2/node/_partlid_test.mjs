@@ -78,6 +78,72 @@ console.log('\n[둘 다 평택] 종전 그대로');
   eq('  출고지는 세트(평택S-1) 그대로', r.AJLID0001.출고지, '평택S-1');
 }
 
+/*  ═══════════════════════════════════════════════════════════
+    ★ 쪼갠 줄은 로젠·업체에 «꼬리표 번호»로 나간다 ★  (2026-09-29)
+    > "몸통은 2314556-1 뚜껑은 2314556-2 이런식으로 분리되면 …
+    >  송장번호도 몸통 뚜껑 확실하게 구분될수 있고"
+    ═══════════════════════════════════════════════════════════ */
+console.log('\n[꼬리표] 몸통 _S1 · 뚜껑 _S2');
+const P = C.SS_OUT_HEADER.indexOf('사방넷주문번호');
+const 켬 = Object.assign({}, cfg, { 세트_송장꼬리표: '켬' });
+function 꼬리돌리기(code, over) {
+  const w = [];
+  const L = Object.assign({ 순번: '100001', 원본코드: code, 원본품목명: items[code].name, 주문수량: 1,
+    고유ID: '2314556', 사방넷주문번호: '2314556', 주소1: '서울시 강남구 테헤란로 1',
+    받는분: '홍길동', 보내는분: '팩투유', 합계: 50000 }, over || {});
+  const units = C.ssExplode([L], { bom, splitExcept: {}, partnerItems: {} }, w);
+  C.ssEnrich(units, { items }, w);
+  for (const u of units) { u.부족수량 = 0; u.총필요수량 = 1; u.현재고 = 9; }
+  C.ssRoute(units, { vendors, override: {}, partnerItems: {} }, cfg, w);
+  C.ssMerge(units, cfg);
+  for (const u of units) u.송장키 = C.ssShipKey(u, 켬);
+  const by = {}; for (const u of units) by[u.품목코드] = u;
+  return { by, units };
+}
+{
+  const { by, units } = 꼬리돌리기('BWSC195B0001');
+  eq('몸통 송장키 _S1', by.BWSC195B0005.송장키, '2314556_S1');
+  eq('뚜껑 송장키 _S2', by.BWSC1950009.송장키, '2314556_S2');
+  eq('★ 로젠 출력 P칸에 꼬리표', C.ssOutRow(by.BWSC195B0005)[P], '2314556_S1');
+  eq('★ 대리발송 탭 P칸에 꼬리표 (업체가 이 번호로 송장을 준다)', C.ssPartnerRow(by.BWSC1950009)[P], '2314556_S2');
+  eq('  고유ID 는 그대로', by.BWSC1950009.고유ID, '2314556');
+  const led = C.ssLedgerRow(by.BWSC1950009, 'R', 'T');
+  eq('원장 고유ID 칸은 맨 번호', led[C.SS_LEDGER_HEADER.indexOf('고유ID')], '2314556');
+  eq('원장 송장키 칸', led[C.SS_LEDGER_HEADER.indexOf('송장키')], '2314556_S2');
+  eq('  원장 줄 길이 = 머리글 길이', led.length, C.SS_LEDGER_HEADER.length);
+  const inv = C.ssInvoiceRows(units);
+  eq('사방넷송장 A칸은 맨 번호', inv[0][0], '2314556');
+  eq('사방넷송장 송장키 칸', inv[1][C.SS_INVOICE_HEADER.indexOf('송장키')], '2314556_S2');
+  eq('  줄 길이 = 머리글 길이', inv[0].length, C.SS_INVOICE_HEADER.length);
+  eq('  사방넷 등록은 한 번만', inv.filter(r => r[10] === 'Y').length, 1);
+}
+{
+  const { by } = 꼬리돌리기('AJSET0001');
+  eq('둘 다 평택이어도 꼬리표 (송장이 두 장 온다)', by.AJLID0001.송장키, '2314556_S2');
+}
+{
+  //  낱개 주문은 그대로
+  const w = [];
+  const units = C.ssExplode([{ 순번: '1', 원본코드: 'AJBODY001', 원본품목명: 'AJ 몸통', 주문수량: 1,
+    고유ID: '777', 사방넷주문번호: '777' }], { bom, splitExcept: {}, partnerItems: {} }, w);
+  eq('낱개는 꼬리표 없음', C.ssShipKey(units[0], 켬), '777');
+}
+{
+  //  보류 줄은 맨 번호 — 보류 탭 P칸은 조치를 걷는 열쇠다
+  const { by } = 꼬리돌리기('AJSET0001');
+  const u = by.AJLID0001; u.route = C.SS_ROUTE.HOLD; u.보류사유 = '재고부족';
+  eq('보류 줄은 꼬리표 없음', C.ssShipKey(u, 켬), '2314556');
+  u.route = C.SS_ROUTE.PARTNER; u.보류사유 = '';
+  eq('★ 설정이 「끔」(기본)이면 꼬리표 없음', C.ssShipKey(u, cfg), '2314556');
+}
+{
+  //  전화주문 겹침 꼬리(-2)와 안 부딪힌다
+  eq('맨 번호 되찾기 _S2', C.ssBaseUid('2314556_S2'), '2314556');
+  eq('  전화주문 -2 는 그대로 (다른 주문이다)', C.ssBaseUid('p0929000086-2'), 'p0929000086-2');
+  eq('  꼬리표 붙은 번호는 사방넷 번호가 아니다 (떼고 봐야 한다)', C.ssIsSabangnetUid('2314556_S2'), false);
+  eq('  떼면 사방넷 번호', C.ssIsSabangnetUid(C.ssBaseUid('2314556_S2')), true);
+}
+
 console.log('');
 console.log(fail ? 'FAIL ' + fail + '건' : '통과 ' + pass + '건');
 process.exit(fail ? 1 : 0);
