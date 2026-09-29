@@ -138,11 +138,32 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
     var digits = _cs_normalizeInvDigits_(returnInv);
     var formatted = _cs_formatLedgerInvoice_(returnInv);
 
+    /* ★ 2026-09-29: 반품송장 칸을 «아무 번호로나» 덮고 있었다 ★
+
+       물류 화면은 송장 뒤 4자리·이름으로도 찾는다. 그렇게 고른 건은
+       returnInv 가 「1234」이거나 빈칸인데, 여기서 «다르면 덮어쓰기»를 해서
+       대장에 적힌 진짜 반품송장이 「1234」로 바뀌었다.
+       원송장으로 찾은 건(원송장 일치)도 원송장 번호가 반품송장 칸에 들어갔다.
+
+       그래서 셋을 다 만족할 때만 적는다.
+         · 온전한 번호다 (10자리 이상 · 0 으로 시작하지 않음 — 안심번호 배제)
+         · 그 줄의 원송장이 아니다
+         · 칸이 비어 있다 — 이미 적힌 번호가 다르면 덮지 않고 이력에 남긴다 */
+    var origDigits = ctx.col.invoice >= 0 ? _cs_normalizeInvDigits_(ctx.row[ctx.col.invoice]) : "";
+    var fullInv = digits.length >= 10 && digits.charAt(0) !== "0";
+    var isOrigInv = fullInv && origDigits && digits === origDigits;
+    var writeRetInv = fullInv && !isOrigInv;
+    var retInvClash = "";
+
     // 반품송장은 전용 열이 있으면 그 열에 쓴다. 열이 없는 과거 탭에서만 비고에 남긴다.
-    if (ctx.col.returnInvoice >= 0) {
+    if (!writeRetInv) {
+      // 적을 번호가 아니다 — 대장은 그대로 둔다
+    } else if (ctx.col.returnInvoice >= 0) {
       var cur = String(ctx.row[ctx.col.returnInvoice] || "").replace(/[^0-9]/g, "");
-      if (cur !== digits) {
+      if (!cur) {
         ctx.tab.getRange(rowNum, ctx.col.returnInvoice + 1).setValue(formatted);
+      } else if (cur !== digits) {
+        retInvClash = " (대장 반품송장 " + String(ctx.row[ctx.col.returnInvoice]).trim() + " 과 다름)";
       }
     } else {
       var hasRetInv = false;
@@ -155,8 +176,11 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
       }
     }
 
-    var noteText = "현장입고 스캔 · " + formatted +
-      (matchVia === "original_invoice_warn" ? " (원송장 일치)" : "");
+    //  「현장입고」로 시작해야 CS 카드·업체 포털이 사진 줄로 알아본다
+    //  (_cs_isPhotoLine_ · prpPublicTimeline_). 앞말을 바꾸면 둘 다 고칠 것.
+    var noteText = "현장입고 스캔" + (fullInv ? " · " + formatted : "") +
+      ((isOrigInv || matchVia === "original_invoice_warn") ? " (원송장 일치)" : "") +
+      retInvClash;
     var links = (photoLinks && photoLinks.length) ? photoLinks : [];
     if (links.length) {
       noteText += " · 사진 " + links.length + "장";

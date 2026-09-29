@@ -2853,6 +2853,23 @@ function _cs_isBeforePickup_(status) {
   return _cs_returnStage_(status, true) === 0;
 }
 
+/**
+ * 이력 한 줄이 «사진 줄»인가.
+ *
+ *   사진 첨부 …  — CS앱(csAttach)과 협력업체 포털(prpAttach)
+ *   현장입고 …   — 물류팀 입고 사진 (csReturnIntake._cs_intakeExistingReturn_)
+ *
+ * ★ 2026-09-29: 물류 입고 사진이 CS 카드에서 「링크」 글자로만 보였다 ★
+ *   앞말이 「현장입고」라 사진 줄로 못 알아봤다. 업체 포털은 줄마다 썸네일을
+ *   뽑아서 사진이 보였고, 정작 CS 는 링크를 눌러야 봤다. 사진 장수에도 안 셌다.
+ *
+ * ★ 포털 prpLedger.prpPublicTimeline_ 과 «같은 규칙»이다 ★ 한쪽만 고치지 말 것.
+ */
+function _cs_isPhotoLine_(body) {
+  var s = String(body || "");
+  return /^(사진\s*첨부|현장입고)/.test(s) && /https?:\/\//.test(s);
+}
+
 /** 상담이력에 붙은 사진 장수 (물류팀이 올린 입고 사진 포함) */
 function _cs_returnPhotoCount_(timeline) {
   var n = 0;
@@ -2912,8 +2929,7 @@ function _cs_parseReturnTimeline_(notice, status, staff, date, type) {
     if (m) {
       var body = String(m[4] || "").trim();
       var isStatus = /^상태→/.test(body);
-      // 사진 첨부 줄 — CS앱(csAttach)과 협력업체 포털(prpAttach)이 같은 문구로 남긴다
-      var isPhoto = /^사진\s*첨부/.test(body) && /https?:\/\//.test(body);
+      var isPhoto = _cs_isPhotoLine_(body);
       events.push({
         kind: isStatus ? "status" : (isPhoto ? "photo" : "consult"),
         date: m[1],
