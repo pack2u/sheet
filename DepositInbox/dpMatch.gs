@@ -36,7 +36,42 @@
  * ══════════════════════════════════════════════════════════════
  */
 
-var DP_MATCH_VERSION = "1.0.0";
+var DP_MATCH_VERSION = "1.1.0";
+
+/**
+ * ★ 플랫폼 정산금 (2026-09-29 첫날 실입금) ★
+ *   스마트스토어·쿠팡페이·지마켓·우아한형제들·카카오 — 22건 중 7건이 이것이었다.
+ *   주문서와 맞출 돈이 아니다. 게다가 거래처명에 「(지마켓 중복 - 세금영수증 미발행)박규현」 처럼
+ *   플랫폼 이름이 섞인 거래처가 있어, 그대로 두면 엉뚱한 주문에 «초과»로 붙었다 (실제로 붙었다).
+ *   그래서 거래처를 찾기 «전에» 걸러 「정산」으로 둔다.
+ *   정리한 이름(dpNormName)에 이 낱말이 들어 있으면 정산이다.
+ */
+var DP_PLATFORM_PAYERS_ = [
+  "스마트스토어", "네이버", "naver", "쿠팡", "coupang", "지마켓", "g마켓", "gmarket", "옥션", "auction", "11번가",
+  "이베이", "ebay", "우아한형제들", "배달의민족", "배민", "요기요", "위대한상상", "쿠팡이츠", "카카오", "kakao",
+  "위메프", "티몬", "ssg", "쓱", "롯데온", "토스", "toss", "페이코", "payco", "카페24", "cafe24",
+  "나이스페이", "이니시스", "inicis", "kg모빌리언스", "다날", "케이에스넷", "kicc", "한국정보통신", "nhn", "올리브영"
+];
+
+/** 플랫폼 정산금인가 */
+function dpIsPlatformPayer(name) {
+  var n = dpNormName(name);
+  if (!n) return false;
+  for (var i = 0; i < DP_PLATFORM_PAYERS_.length; i++) {
+    if (n.indexOf(DP_PLATFORM_PAYERS_[i]) >= 0) return true;
+  }
+  return false;
+}
+
+/**
+ * 입금자 이름의 «조각»들.
+ * 은행은 「전진홍(손큰할매순대」 처럼 «대표자(상호» 를 괄호로 붙여 보내고 뒤를 자른다 (2026-09-29 실입금 4건).
+ * 통째로는 어느 거래처와도 안 맞지만 「전진홍」 · 「손큰할매순대」 로 나누면 맞는다.
+ */
+function _dp_payerParts_(name) {
+  return String(name == null ? "" : name).split(/[()\[\]{}\/,·\s]+/)
+    .map(dpNormName).filter(function (s) { return s.length >= 2; });
+}
 
 /** 합산 조합을 찾을 때 볼 주문 수 한도 — 2^n 이라 크게 잡으면 느려진다 */
 var DP_MATCH_MAX_COMBO_ = 12;
@@ -70,17 +105,37 @@ function dpFindCustomer(payer, customers, aliases) {
   for (var i = 0; i < codes.length; i++) {
     if (dpNormName(byCode[codes[i]].name) === p) return { code: codes[i], name: byCode[codes[i]].name, how: "이름" };
   }
-  var tokenHits = codes.filter(function (k) {
-    return String(byCode[k].name).split(/[\s\/,·]+/).some(function (t) { return t && dpNormName(t) === p; });
+  var tokensOf = {};
+  codes.forEach(function (k) {
+    tokensOf[k] = String(byCode[k].name).split(/[()\[\]{}\s\/,·]+/).map(dpNormName).filter(Boolean);
   });
-  if (tokenHits.length === 1) return { code: tokenHits[0], name: byCode[tokenHits[0]].name, how: "이름 일부" };
-  if (tokenHits.length > 1) return null;   // 같은 이름이 여러 거래처에 — 짐작하지 않는다
+  var one = function (hits, how) {
+    return hits.length === 1 ? { code: hits[0], name: byCode[hits[0]].name, how: how } : null;
+  };
+  var tokenHits = codes.filter(function (k) { return tokensOf[k].indexOf(p) >= 0; });
+  if (tokenHits.length) return one(tokenHits, "이름 일부");   // 둘 이상이면 짐작하지 않는다
   if (p.length >= 3) {
     var hits = codes.filter(function (k) {
       var n = dpNormName(byCode[k].name);
       return n.length >= 3 && (n.indexOf(p) >= 0 || p.indexOf(n) >= 0);
     });
-    if (hits.length === 1) return { code: hits[0], name: byCode[hits[0]].name, how: "비슷한 이름" };
+    if (hits.length === 1) return one(hits, "비슷한 이름");
+    if (hits.length > 1) return null;
+  }
+
+  // 입금자 이름을 조각내서 다시 — 「전진홍(손큰할매순대」 → 전진홍 · 손큰할매순대
+  //   조각마다 맞는 거래처를 모아, «한 거래처»로 모일 때만 붙인다
+  var parts = _dp_payerParts_(payer).filter(function (s) { return s !== p; });
+  if (parts.length) {
+    var seen = {};
+    parts.forEach(function (part) {
+      codes.forEach(function (k) {
+        var n = dpNormName(byCode[k].name);
+        if (tokensOf[k].indexOf(part) >= 0 || (part.length >= 3 && n.length >= 3 && n.indexOf(part) >= 0)) seen[k] = 1;
+      });
+    });
+    var partHits = Object.keys(seen);
+    if (partHits.length === 1) return one(partHits, "이름 조각");
   }
   return null;
 }
@@ -116,6 +171,11 @@ function dpMatchDeposit(dep, orders, aliases) {
   var amt = Number(dep && dep.amount) || 0;
   var out = { result: "미확인", code: "", cust: "", how: "", alloc: [], diff: 0, candidates: [], reason: "" };
   if (amt <= 0) { out.reason = "금액 없음"; return out; }
+  if (dpIsPlatformPayer(dep && dep.name)) {
+    out.result = "정산";
+    out.reason = "플랫폼 정산금 — 주문서와 맞추지 않음";
+    return out;
+  }
 
   // 아직 다 안 받은 주문만 (금액 0 이하 = 반품·차감 주문은 자연히 빠진다)
   var open = (orders || []).map(function (o) {
@@ -286,6 +346,7 @@ if (typeof module !== "undefined" && module.exports) {
     dpNormName: dpNormName,
     dpFindCustomer: dpFindCustomer,
     dpMatchDeposit: dpMatchDeposit,
-    dpParseOrderSheet: dpParseOrderSheet
+    dpParseOrderSheet: dpParseOrderSheet,
+    dpIsPlatformPayer: dpIsPlatformPayer
   };
 }

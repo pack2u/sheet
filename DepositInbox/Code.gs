@@ -114,6 +114,10 @@ function _dp_handleCs_(p) {
     case "unassign":
       r = dpCsPin_(String(p.key || ""), "", false, String(p.by || ""));
       break;
+    case "rematch":
+      // 규칙이 바뀐 뒤 지난 입금을 다시 판정한다 (사람이 정한 것 · 이카운트에 넘어간 것은 그대로)
+      r = { tally: dpMatchNow() };
+      break;
     default:
       return { ok: false, error: "모르는 동작: " + action };
   }

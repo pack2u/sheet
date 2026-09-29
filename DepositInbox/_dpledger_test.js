@@ -318,6 +318,11 @@ console.log('\n[주문서 매칭 — 올리기 · 자동 · 지정 · 제외 · 
   const pin = cs({ action: 'assign', key: hk, orders: [Y + '-3'], remember: true, by: '고윤서' });
   ok('사람이 지정 → 일치(지정)', pin.ok && pin.match.result === '일치(지정)' && pin.match.cust === '아주상사 김아주', JSON.stringify(pin));
   ok('별칭표에 남는다', tabRows['별칭표'] && tabRows['별칭표'].length === 2);
+  cs({ action: 'assign', key: hk, orders: [Y + '-3'], remember: true, by: '고윤서' });
+  ok('같은 별칭을 또 지정해도 한 줄', tabRows['별칭표'].length === 2, tabRows['별칭표'].length);
+  const rm = cs({ action: 'rematch' });
+  ok('다시 판정(rematch) — 결과 집계를 돌려준다', rm.ok && rm.tally && rm.tally['일치(지정)'] >= 1, JSON.stringify(rm));
+  ok('폰 열쇠로는 다시 판정 못 한다', post({ token: 'tok', action: 'rematch' }).ok === false);
 
   post({ token: 'tok', action: 'sms', body: sms('홍길동', 45000) });
   const second = rows.filter((r) => r[col('입금자')] === '홍길동')[1];

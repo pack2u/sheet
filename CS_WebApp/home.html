@@ -12377,7 +12377,7 @@
 
     /* 주문서 매칭 한 줄 (2026-09-29) — 챗 알림(dpMatchLine_)과 같은 아이콘을 쓴다 */
     var DEP_ICON = { '일치': '✅', '일치(합산)': '✅', '일치(지정)': '✅', '부족': '🔴', '부족(지정)': '🔴',
-                     '초과': '🟡', '초과(지정)': '🟡', '후보': '🟠', '미확인': '⚪', '제외': '➖', '확인필요': '⚠' };
+                     '초과': '🟡', '초과(지정)': '🟡', '후보': '🟠', '미확인': '⚪', '제외': '➖', '확인필요': '⚠', '정산': '💳' };
     function depMatchCls(r) {
       if (/^일치/.test(r)) return 'ok';
       if (/^부족/.test(r)) return 'low';
@@ -12624,7 +12624,7 @@
       google.script.run
         .withSuccessHandler(function (r) { depDetailDone(r, '확정'); })
         .withFailureHandler(function () { depDetailDone(null, '확정'); })
-        .csDepositAssign(DEP_DET.deposit.key, picked, remember);
+        .csDepositAssign(DEP_DET.deposit.key, picked, remember, hbStaffName() || '');
     }
 
     function depDetailExclude() {
@@ -12634,7 +12634,7 @@
       google.script.run
         .withSuccessHandler(function (r) { depDetailDone(r, '제외'); })
         .withFailureHandler(function () { depDetailDone(null, '제외'); })
-        .csDepositExclude(DEP_DET.deposit.key);
+        .csDepositExclude(DEP_DET.deposit.key, hbStaffName() || '');
     }
 
     function depDetailUnassign() {
@@ -12643,7 +12643,7 @@
       google.script.run
         .withSuccessHandler(function (r) { depDetailDone(r, '되돌림'); })
         .withFailureHandler(function () { depDetailDone(null, '되돌림'); })
-        .csDepositUnassign(DEP_DET.deposit.key);
+        .csDepositUnassign(DEP_DET.deposit.key, hbStaffName() || '');
     }
 
     // ── 주문서 올리기 (2026-09-29) ─────────────────────
@@ -12694,7 +12694,7 @@
               renderDeposits(true);
             })
             .withFailureHandler(function (e) { toast('주문서 올리기 실패 — ' + (e && e.message ? e.message : ''), 4000); })
-            .csDepositOrdersUpload(rows);
+            .csDepositOrdersUpload(rows, hbStaffName() || '');
         };
         rd.readAsArrayBuffer(f);
       });

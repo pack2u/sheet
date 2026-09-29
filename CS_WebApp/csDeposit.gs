@@ -97,8 +97,13 @@ function _cs_dep_bust_() {
   } catch (e) {}
 }
 
-/** 누가 했는지 — 지정·제외에 남긴다 */
-function _cs_dep_by_() {
+/**
+ * 누가 했는지 — 지정·제외·올리기에 남긴다.
+ * ★ 화면에서 고른 «담당자»가 먼저다 (2026-09-29) ★ 구글 계정 이름은 공용 계정이면 「팩투유」로만 찍힌다.
+ */
+function _cs_dep_by_(staff) {
+  var s = String(staff || "").trim();
+  if (s) return s;
   try { var c = _cs_ac_check_(); return c.name || c.email || ""; } catch (e) { return ""; }
 }
 
@@ -110,10 +115,10 @@ function _cs_dep_by_() {
 // ══════════════════════════════════════════════
 
 /** 이카운트 「주문서조회」 엑셀 올리기 */
-function csDepositOrdersUpload(rows) {
+function csDepositOrdersUpload(rows, staff) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   if (!rows || !rows.length) return { ok: false, error: "엑셀에서 읽은 줄이 없습니다" };
-  var out = _cs_dep_call_({ action: "orders_upload", rows: rows, by: _cs_dep_by_() });
+  var out = _cs_dep_call_({ action: "orders_upload", rows: rows, by: _cs_dep_by_(staff) });
   _cs_dep_bust_();
   return out;
 }
@@ -131,26 +136,26 @@ function csDepositSearch(q) {
 }
 
 /** 이 입금은 이 주문(들)의 것 — remember 면 입금자 → 거래처를 기억한다 */
-function csDepositAssign(key, orders, remember) {
+function csDepositAssign(key, orders, remember, staff) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   var out = _cs_dep_call_({ action: "assign", key: String(key || ""), orders: orders || [],
-                            remember: !!remember, by: _cs_dep_by_() });
+                            remember: !!remember, by: _cs_dep_by_(staff) });
   _cs_dep_bust_();
   return out;
 }
 
 /** 주문 입금이 아님 (개인 송금 · 환불 반환 등) */
-function csDepositExclude(key) {
+function csDepositExclude(key, staff) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
-  var out = _cs_dep_call_({ action: "exclude", key: String(key || ""), by: _cs_dep_by_() });
+  var out = _cs_dep_call_({ action: "exclude", key: String(key || ""), by: _cs_dep_by_(staff) });
   _cs_dep_bust_();
   return out;
 }
 
 /** 사람이 정한 것을 걷고 자동 판정으로 되돌린다 */
-function csDepositUnassign(key) {
+function csDepositUnassign(key, staff) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
-  var out = _cs_dep_call_({ action: "unassign", key: String(key || ""), by: _cs_dep_by_() });
+  var out = _cs_dep_call_({ action: "unassign", key: String(key || ""), by: _cs_dep_by_(staff) });
   _cs_dep_bust_();
   return out;
 }

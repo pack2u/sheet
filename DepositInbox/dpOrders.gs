@@ -217,6 +217,8 @@ function dpSaveAlias_(ss, payer, code, name, by) {
   var k = dpNormName(payer);
   if (!k || !code) return false;
   var sh = _dp_tab_(ss, DP_ALIAS_SHEET_, DP_ALIAS_HEADERS_, "A:C");
+  // 이미 같은 입금자 → 같은 거래처로 적혀 있으면 또 적지 않는다 (첫날 이호광이 두 줄 들어갔다)
+  if (dpLoadAliases_(ss)[k] === String(code)) return true;
   sh.appendRow([k, payer, code, name || "", by || "", _dp_now_()]);
   return true;
 }
