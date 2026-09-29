@@ -20,6 +20,8 @@ var _CS_AC_DEFAULT_ALLOWED_ = [
   "polo115419@gmail.com",
   "siot5ta@gmail.com",
   "rkdtjgml486@gmail.com",
+  "seongdeogcheon4@gmail.com", // 물류 (2026-09-30)
+  "ig3790342@gmail.com",       // 물류 (2026-09-30)
 ];
 
 var _CS_AC_PROP_ = "CS_ALLOWED_EMAILS";
@@ -171,6 +173,8 @@ function _cs_ac_check_() {
 var _CS_AC_LOGISTICS_PROP_ = "CS_LOGISTICS_EMAILS";
 var _CS_AC_DEFAULT_LOGISTICS_ = [
   "gimdongbin5@gmail.com",
+  "seongdeogcheon4@gmail.com", // 2026-09-30
+  "ig3790342@gmail.com",       // 2026-09-30
   "siot5ta@gmail.com", // 테스트용 — 빼려면 이 줄만 지우면 된다
 ];
 
