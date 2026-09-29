@@ -553,7 +553,9 @@ function csLogisticsSubmit(payload) {
       result = "연동 실패: " + eI.message;
     }
   } else {
-    result = (tier === "none") ? "사진만 적재 (번호 미상)" : "사진만 적재 (확인 대기)";
+    //  번호를 읽었으면 「번호 미상」이 아니다 — 대장에 없을 뿐이다 (2026-09-29)
+    result = (tier !== "none") ? "사진만 적재 (확인 대기)" :
+      (digits ? "사진만 적재 (대장에 없음)" : "사진만 적재 (번호 미상)");
   }
 
   // 3) 입고대장 한 줄 — 어떤 경우에도 남긴다
