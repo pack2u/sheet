@@ -170,16 +170,25 @@ function dpPrevBalance_(sh, c, p) {
  * @return {{date, total, sum, unparsed, rows:[{key,txAt,time,name,amount,bank,acct,status,check,memo}]}}
  */
 /** 하루치 입금 — 판 번호 캐시를 거친다 (dpCache.gs). 켜짐 여부는 속성이라 열쇠에 넣는다 */
-function dpListDeposits_(date, limit) {
+function dpListDeposits_(date, limit, days) {
+  days = Math.max(1, Math.min(7, Number(days) || 1));
   var day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date
     : Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
   var on = String(_dp_prop_("DP_ECOUNT_POST")).toLowerCase() === "on";
-  return dpCached_("list:" + day + ":" + (limit || 0) + ":" + on + ":" + _dp_prop_("DP_ECOUNT_FROM"), function () { return _dp_listDepositsRaw_(day, limit); });
+  return dpCached_("list:" + day + ":" + days + ":" + (limit || 0) + ":" + on + ":" + _dp_prop_("DP_ECOUNT_FROM"), function () { return _dp_listDepositsRaw_(day, limit, days); });
 }
 
-function _dp_listDepositsRaw_(day, limit) {
+/*
+ * ★ 여러 날 (2026-09-30) ★ "12시가 넘어가니까 목록이 다사려져 버리네..하루정도는 더보여야 할꺼 같네.."
+ *   days = 2 면 오늘 + 어제. 줄마다 day 를 싣고, byDay 에 날마다 건수·합계를 준다.
+ *   total · sum 은 «기준일(오늘)» 것 — 화면의 「오늘 N건」 이 어제와 섞이지 않게.
+ */
+function _dp_listDepositsRaw_(day, limit, days) {
+  days = days || 1;
+  var from = _dp_dayShift_(day, -(days - 1));
+  var inRange = function (d) { return d >= from && d <= day; };
   var postFrom = _dp_prop_("DP_ECOUNT_FROM");
-  var out = { date: day, total: 0, sum: 0, unparsed: 0, rows: [],
+  var out = { date: day, from: from, byDay: {}, total: 0, sum: 0, unparsed: 0, rows: [],
               ordersAt: _dp_prop_("DP_ORDERS_AT"), ordersBy: _dp_prop_("DP_ORDERS_BY"),
               ordersCount: Number(_dp_prop_("DP_ORDERS_COUNT")) || 0,
               postOn: String(_dp_prop_("DP_ECOUNT_POST")).toLowerCase() === "on" };
@@ -202,12 +211,14 @@ function _dp_listDepositsRaw_(day, limit) {
     if (st === "미해석") { if (rcvDay === day) out.unparsed++; continue; }
     if (String(col(r, "구분")) !== "입금") continue;
     var txAt = _dp_ts_(col(r, "거래일시"));
-    if (txAt.slice(0, 10) !== day) continue;
+    var txDay = txAt.slice(0, 10);
+    if (!inRange(txDay)) continue;
     var amt = Number(col(r, "금액")) || 0;
     var acct = String(col(r, "계좌")).replace(/[^\d]/g, "").slice(-4);
     hits.push({
       key: String(col(r, "고유번호")),
       txAt: txAt,
+      day: txDay,
       rcv: _dp_ts_(col(r, "수신시각")),
       time: txAt.slice(11, 16),
       name: String(col(r, "입금자")),
@@ -229,13 +240,16 @@ function _dp_listDepositsRaw_(day, limit) {
       postMemo: String(col(r, "반영메모") || ""),
       canPost: dpCanPost({ result: String(col(r, "매칭결과")), status: st, code: String(col(r, "거래처코드")), amount: amt, txAt: txAt }, postFrom).ok
     });
-    out.sum += amt;
+    var bd = out.byDay[txDay] || (out.byDay[txDay] = { total: 0, sum: 0 });
+    bd.total++; bd.sum += amt;
+    if (txDay === day) out.sum += amt;
   }
   // 최근 것이 위로 — 같은 분이면 늦게 받은 것이 위
   hits.sort(function (a, b) {
     return a.txAt < b.txAt ? 1 : a.txAt > b.txAt ? -1 : (a.rcv < b.rcv ? 1 : a.rcv > b.rcv ? -1 : 0);
   });
-  out.total = hits.length;
+  out.total = (out.byDay[day] || { total: 0 }).total;
+  out.count = hits.length;   // 여러 날 합친 건수 — 「더보기」 는 이것을 본다
   out.rows = (limit > 0 ? hits.slice(0, limit) : hits).map(function (h) { delete h.rcv; return h; });
   return out;
 }

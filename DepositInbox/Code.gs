@@ -96,7 +96,7 @@ function _dp_handleCs_(p) {
     case "list":
       // 「↻ 갱신」 은 판 번호를 올려 캐시를 버린다 — 시트를 손으로 고친 뒤에도 새로 읽게
       if (p.force) dpBumpVer_();
-      r = dpListDeposits_(String(p.date || ""), Number(p.limit) || 0);
+      r = dpListDeposits_(String(p.date || ""), Number(p.limit) || 0, Number(p.days) || 1);
       break;
     case "orders_upload":
       r = dpCsOrdersUpload_(p.rows, String(p.by || ""));

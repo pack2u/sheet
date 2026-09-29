@@ -82,8 +82,12 @@ const 스텁 = `<script>
                        matchMemo: i === 4 ? '입금자 「김철수」 를 거래처로 못 찾고, 같은 금액 주문도 없음' : '', pinned: i === 5 };
             });
             var 한도 = arguments[1] || 0;
-            답 = { ok: true, date: '2026-09-29', total: 줄.length, unparsed: 0,
-                   sum: 줄.reduce(function (a, x) { return a + x.amount; }, 0),
+            줄.forEach(function (x, i) { x.day = i < 3 ? '2026-09-30' : '2026-09-29'; x.txAt = x.day + x.txAt.slice(10); });
+            var 합 = function (d) { return 줄.filter(function (x) { return x.day === d; }).reduce(function (a, x) { return a + x.amount; }, 0); };
+            답 = { ok: true, date: '2026-09-30', from: '2026-09-29', count: 줄.length,
+                   byDay: { '2026-09-30': { total: 3, sum: 합('2026-09-30') }, '2026-09-29': { total: 9, sum: 합('2026-09-29') } },
+                   total: 3, unparsed: 0,
+                   sum: 합('2026-09-30'),
                    rows: 한도 ? 줄.slice(0, 한도) : 줄 };
           }
           else if (k === 'csDepositDetail') 답 = { ok: true,

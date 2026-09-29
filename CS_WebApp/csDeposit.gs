@@ -41,13 +41,15 @@ function _cs_dep_cfg_() {
  * @param {number} limit  대시보드는 10, 더보기는 0(전부)
  * @return {{ok, date, total, sum, unparsed, rows[], error?}}
  */
-function csDepositList(date, limit, force) {
+function csDepositList(date, limit, force, days) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   var day = /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? String(date)
     : Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
   var lim = Math.max(0, Number(limit) || 0);
+  // ★ 2026-09-30: 오늘 + 어제 (days=2) — "12시가 넘어가니까 목록이 다사려져 버리네"
+  var nd = Math.max(1, Math.min(7, Number(days) || 1));
 
-  var cache = null, ck = "csdep:" + day + ":" + lim;
+  var cache = null, ck = "csdep:" + day + ":" + lim + ":" + nd;
   try { cache = CacheService.getScriptCache(); } catch (e) {}
   if (cache && !force) {
     try {
@@ -56,7 +58,7 @@ function csDepositList(date, limit, force) {
     } catch (e) {}
   }
   // force = 「↻ 갱신」 — 입금수신 쪽 캐시도 버리고 시트를 새로 읽게 한다 (시트를 손으로 고친 뒤)
-  var out = _cs_dep_call_({ action: "list", date: day, limit: lim, force: !!force });
+  var out = _cs_dep_call_({ action: "list", date: day, limit: lim, force: !!force, days: nd });
   if (out.ok && cache) {
     try { cache.put(ck, JSON.stringify(out), _CS_DEP_CACHE_SEC_); } catch (e) {}
   }
@@ -94,7 +96,9 @@ function _cs_dep_call_(payload) {
 function _cs_dep_bust_() {
   try {
     var day = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
-    CacheService.getScriptCache().removeAll(["csdep:" + day + ":10", "csdep:" + day + ":0"]);
+    var ks = [];
+    [10, 0].forEach(function (lim) { [1, 2].forEach(function (nd) { ks.push("csdep:" + day + ":" + lim + ":" + nd); }); });
+    CacheService.getScriptCache().removeAll(ks);
   } catch (e) {}
 }
 

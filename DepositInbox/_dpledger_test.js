@@ -576,6 +576,24 @@ console.log('\n[이중 입금 — 손으로 이미 넣은 것 · 시작 전 입�
   ok('시작 전 입금 — 반영 버튼 없음 · 「이미 넣었음」 은 가능', det.deposit.canPost === false && det.deposit.canMarkManual === true);
 }
 
+console.log('\n[오늘 + 어제 — 자정이 지나도 목록이 안 사라진다]');
+{
+  const { ctx, post } = makeEnv();
+  ctx.DP_CS_TOKEN = 'cstok';
+  const cs = (o) => ctx.doPost({ parameter: {}, postData: { type: 'application/json', contents: JSON.stringify(Object.assign({ token: 'cstok' }, o)) } });
+  post({ token: 'tok', action: 'sms', body: '[Web발신]\n2026/09/27\n23:50\n입금 7,000원\n잔액 1,000,000원\n엊그제\n458***12345678\n기업' });
+  post({ token: 'tok', action: 'sms', body: '[Web발신]\n2026/09/28\n22:10\n입금 5,000원\n잔액 1,005,000원\n어제분\n458***12345678\n기업' });
+  post({ token: 'tok', action: 'sms', body: '[Web발신]\n2026/09/29\n00:05\n입금 3,000원\n잔액 1,008,000원\n오늘분\n458***12345678\n기업' });
+  const one = cs({ action: 'list', date: '2026-09-29', limit: 10 });
+  ok('기본(하루)은 오늘만', one.rows.length === 1 && one.rows[0].name === '오늘분');
+  const two = cs({ action: 'list', date: '2026-09-29', limit: 10, days: 2 });
+  ok('days=2 — 오늘 + 어제, 최신이 위', two.rows.map((x) => x.name).join() === '오늘분,어제분', two.rows.map((x) => x.name).join());
+  ok('엊그제는 안 나온다', !two.rows.some((x) => x.name === '엊그제'));
+  ok('「오늘 N건」 은 오늘 것만 · 합친 건수는 따로', two.total === 1 && two.sum === 3000 && two.count === 2);
+  ok('날마다 건수 · 합계', two.byDay['2026-09-28'].total === 1 && two.byDay['2026-09-28'].sum === 5000);
+  ok('줄마다 날짜', two.rows[1].day === '2026-09-28');
+}
+
 console.log('\n[읽기 캐시 — 바뀐 게 없으면 다시 안 읽는다]');
 {
   const { ctx, post, rows } = makeEnv();
