@@ -204,7 +204,12 @@ console.log("\n[⑤] 사진 먼저, 이름 검색 나중 — 사진이 안 날�
 const LG = rd("logistics.html");
 const 검색 = fn(LG, "doSearch");
 check("★ 사진이 있으면 PENDING 을 비우지 않는다",
-  /if \(PENDING\.length && LAST\)/.test(검색) && 검색.indexOf("LAST.match = res") >= 0, true);
+  /if \(PENDING\.length\) \{/.test(검색) && 검색.indexOf("LAST.match = res") >= 0, true);
+check("★ 인식 중에 찾아도 사진을 지킨다 (LAST 가 없으면 만든다)",
+  검색.indexOf('if (!LAST) LAST = { raw: q, via: "검색"') >= 0, true);
+check("★ 인식이 늦게 끝나도 찾아 둔 후보를 안 덮는다",
+  fn(LG, "handleFiles").indexOf("if (LAST && LAST.searched)") >= 0, true);
+check("인식 시간을 비고에 남긴다", LG.indexOf('"올리기까지 "') >= 0, true);
 check("사진 아래 칸이 이름도 받는다 (글자면 doSearch)", /doSearch\(v, true\)/.test(LG), true);
 const 저장 = fn(LG, "save");
 check("★ 이름으로 찾아도 사진에서 읽은 번호를 보낸다", 저장.indexOf("LAST.match.digits || LAST.scanDigits") >= 0, true);

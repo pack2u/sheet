@@ -488,7 +488,10 @@
         if (hint) { hint.textContent = "대장에서 찾아 사진을 붙입니다"; hint.className = "hint"; }
         var res = m || { tier: "none", matches: [], note: "조회 실패" };
         PICKED = null;
-        if (PENDING.length && LAST) {
+        if (PENDING.length) {
+          //  인식이 아직 도는 중(LAST 가 없다)에 쳐도 사진을 지키고 결과를 먼저 보여 준다.
+          //  인식이 끝나면 읽은 번호·라벨 값만 여기에 얹는다 (handleFiles 끝).
+          if (!LAST) LAST = { raw: q, via: "검색", fields: {}, scanDigits: "" };
           LAST.match = res;
           LAST.searched = q;
         } else {
@@ -529,12 +532,20 @@
   })();
 
   function stage(msg) {
+    //  인식 중에 이름으로 찾아 둔 결과가 떠 있으면 진행 글로 덮지 않는다
+    if (LAST && LAST.searched && PENDING.length) return;
     document.getElementById("result").innerHTML =
       '<div class="card"><div class="note">' + esc(msg) + '</div></div>';
   }
 
+  /*  인식에 걸린 시간 — 입고대장 비고(M)에 남긴다 (2026-09-29)
+      > "인식하는데 시간이 얼마나 걸릴까?"
+      재 본 적이 없었다. 짐작 대신 현장 숫자를 모은다.  */
+  var T_SHOT = 0, T_READ = "";
+
   function handleFiles(files) {
     PENDING = []; LAST = null; PICKED = null;
+    T_SHOT = Date.now(); T_READ = "";
     stage("사진 준비 중…");
 
     Promise.all(files.map(shrink)).then(function (list) {
@@ -577,6 +588,17 @@
           .csLogisticsMatch(raw, fields);
       });
     }).then(function (r) {
+      T_READ = "인식 " + ((Date.now() - T_SHOT) / 1000).toFixed(1) + "초(" + (r.via || "못읽음") + ")";
+      //  기다리는 동안 이름으로 찾아 두었으면 그 후보와 고른 건을 지킨다 —
+      //  읽은 번호(대장의 빈 반품송장 칸을 채울 값)와 라벨 값만 얹는다.
+      if (LAST && LAST.searched) {
+        LAST.raw = r.raw || LAST.raw;
+        LAST.via = r.via || LAST.via;
+        LAST.fields = r.fields || {};
+        LAST.scanDigits = (r.m && r.m.digits) || "";
+        render();
+        return;
+      }
       LAST = {
         raw: r.raw, via: r.via || "manual", fields: r.fields || {},
         scanDigits: (r.m && r.m.digits) || "",
@@ -768,6 +790,8 @@
         raw: LAST.raw,
         invoice: inv,
         via: via,
+        memo: T_SHOT ? [T_READ, "올리기까지 " + Math.round((Date.now() - T_SHOT) / 1000) + "초"]
+          .filter(function (v) { return v; }).join(" · ") : "",
         tier: PICKED ? "maybe" : LAST.match.tier,
         pick: PICKED,
         sureMatch: (LAST.match.tier === "sure" && LAST.match.matches.length) ? LAST.match.matches[0] : null,
