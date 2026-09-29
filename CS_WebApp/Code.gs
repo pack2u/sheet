@@ -647,17 +647,24 @@ function ocrInvoiceImage(base64Data, mimeType) {
       "이 택배 송장 사진에서 정보를 뽑아 JSON 만 출력하세요. 다른 말은 쓰지 마세요.\n" +
       "찾을 수 없으면 빈 문자열로 두세요.\n\n" +
       "읽는 요령:\n" +
-      "- 번호는 NNNN-NNNN-NNNN 12자리 형식이 많습니다. 하이픈은 빼고 숫자만 적으세요.\n" +
+      "- 택배사마다 번호 모양이 다릅니다. 하이픈은 빼고 숫자만 적으세요.\n" +
+      "    롯데택배: NNNN-NNNN-NNNN 12자리, 2 로 시작\n" +
+      "    로젠택배(LOGEN): NNN-NNNN-NNNN 11자리, 보통 4 로 시작 (예: 452-4470-4050)\n" +
       "- 「운송장번호」 칸의 번호와 「원송장번호」 칸의 번호는 서로 다릅니다. 각각 따로 적으세요.\n" +
+      "  로젠 라벨은 원송장번호를 「(원)452-0977-2915」처럼 (원) 을 붙여 적습니다 — 이것이 originalInvoiceNumber 입니다.\n" +
+      "  로젠 라벨 위쪽 큰 번호(「반품」 옆)가 이번 운송장번호(returnInvoiceNumber)입니다.\n" +
+      "- 로젠 라벨은 「송하인」=보내는 분, 「수하인」=받는 분 입니다.\n" +
       "- 같은 번호가 라벨의 여러 위치(상단 칸, 왼쪽 세로 여백, 아래쪽 바코드 옆)에 반복 인쇄됩니다.\n" +
       "  여러 곳을 서로 대조해서 가장 확실한 값을 쓰세요. 한 곳이 가려졌으면 다른 곳을 보세요.\n" +
       "- 빨간 손글씨, 검은 테이프, 찢어진 부분, 도장은 무시하고 인쇄된 글자만 읽으세요.\n" +
       "- ★ 0504-XXXX-XXXX, 0502-XXXX-XXXX 는 안심번호(전화)입니다. 송장번호가 아닙니다.\n" +
-      "  송장번호와 자릿수·하이픈 모양이 똑같으니 헷갈리지 마세요. 송장번호는 2 로 시작합니다.\n" +
+      "  송장번호와 자릿수·하이픈 모양이 비슷하니 헷갈리지 마세요. 송장번호는 0 으로 시작하지 않습니다.\n" +
       "  0 으로 시작하는 번호는 절대 invoiceNumber 에 넣지 말고 전화번호 칸에 넣으세요.\n" +
       "- 라벨이 세로로 돌아가 있거나 다른 라벨이 겹쳐 있을 수 있습니다.\n" +
-      "  「반품회수」 표시가 있는 라벨의 번호를 우선하세요.\n" +
-      "- 「반품회수」 라벨이면 받는 분은 회수처(팩투유)이고, 보내는 분이 실제 고객입니다.\n" +
+      "  「반품회수」·「반품」 표시가 있는 라벨의 번호를 우선하세요.\n" +
+      "- 반품 라벨이면 받는 분(수하인)은 회수처(팩투유)이고, 보내는 분(송하인)이 실제 고객입니다.\n" +
+      "  팩투유는 고객이 아닙니다 — senderName 에 팩투유를 넣지 마세요.\n" +
+      "- 전화는 가려지지 않은 번호가 있으면 그것을 적으세요 (010-8709-**** 보다 010-8709-3916).\n" +
       "  senderName·senderPhone 에 보내는 분 정보를 정확히 넣으세요.\n\n" +
       "{\n" +
       "  \"invoiceNumber\": \"운송장번호 (숫자만). 없으면 사진에서 가장 확실한 송장번호\",\n" +
@@ -669,7 +676,7 @@ function ocrInvoiceImage(base64Data, mimeType) {
       "  \"senderName\": \"보내는 분 이름 (반품이면 이쪽이 고객)\",\n" +
       "  \"senderPhone\": \"보내는 분 전화번호\",\n" +
       "  \"orderNumber\": \"주문번호 칸의 값\",\n" +
-      "  \"itemName\": \"품명 칸의 값\",\n" +
+      "  \"itemName\": \"품명 칸의 값 (로젠은 수하인 아래 JH/BF 같은 품목 줄)\",\n" +
       "  \"carrier\": \"택배사명\"\n" +
       "}";
 
@@ -685,9 +692,19 @@ function ocrInvoiceImage(base64Data, mimeType) {
           }
         ]
       }],
+      /*  ★ 2026-09-29: 512 토큰이면 답이 잘렸다 ★
+          > "바코드인식 못해 텍스트 인식중이라고 뜨고 결국 대상을 못찾음..번호없음"
+
+          3.6-flash 는 «생각하고» 답한다. 생각한 토큰도 이 한도에서 깎인다.
+          빈 그림에도 생각 250~370 + 답 83 = 450 을 썼다. 실제 라벨은 칸이 차서
+          답이 길어지고 생각도 늘어 512 를 넘는다 → JSON 이 중간에 끊기거나 비고
+          → 「번호 없음」. 오류가 아니라 빈 결과로 떨어져 아무도 몰랐다.
+          · 한도 2048 · 생각은 low(3초 안팎) · 답은 JSON 으로만 받는다  */
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 512
+        maxOutputTokens: 2048,
+        responseMimeType: "application/json",
+        thinkingConfig: { thinkingLevel: "low" }
       }
     };
 
@@ -705,8 +722,18 @@ function ocrInvoiceImage(base64Data, mimeType) {
       return { error: "Gemini API 오류: " + json.error.message };
     }
 
-    var text = json.candidates[0].content.parts[0].text;
-    Logger.log("[OCR] Gemini 응답: " + text);
+    //  답이 없거나 한도에서 끊겼으면 «그렇다고» 말한다 — 빈 결과로 넘기지 않는다
+    var cand = (json.candidates || [])[0] || {};
+    var text = ((cand.content || {}).parts || [])
+      .filter(function (p) { return p && p.text && !p.thought; })
+      .map(function (p) { return p.text; }).join("");
+    Logger.log("[OCR] Gemini 응답(" + cand.finishReason + "): " + text);
+    if (!text) {
+      return { error: "글자 인식 응답이 비었습니다 (" + (cand.finishReason || "이유 없음") + ")" };
+    }
+    if (cand.finishReason === "MAX_TOKENS") {
+      return { error: "글자 인식 답이 길이 한도에서 끊겼습니다", raw: text };
+    }
 
     // JSON 추출 (```json ... ``` 감싸기 대응)
     var jsonMatch = text.match(/\{[\s\S]*\}/);

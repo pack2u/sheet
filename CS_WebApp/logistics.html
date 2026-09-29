@@ -541,11 +541,11 @@
   /*  인식에 걸린 시간 — 입고대장 비고(M)에 남긴다 (2026-09-29)
       > "인식하는데 시간이 얼마나 걸릴까?"
       재 본 적이 없었다. 짐작 대신 현장 숫자를 모은다.  */
-  var T_SHOT = 0, T_READ = "";
+  var T_SHOT = 0, T_READ = "", OCR_ERR = "";
 
   function handleFiles(files) {
     PENDING = []; LAST = null; PICKED = null;
-    T_SHOT = Date.now(); T_READ = "";
+    T_SHOT = Date.now(); T_READ = ""; OCR_ERR = "";
     stage("사진 준비 중…");
 
     Promise.all(files.map(shrink)).then(function (list) {
@@ -569,10 +569,15 @@
         return new Promise(function (resolve) {
           google.script.run
             .withSuccessHandler(function (r) {
-              if (!r) { resolve(null); return; }
+              if (!r) { OCR_ERR = "글자 인식 응답 없음"; resolve(null); return; }
+              //  글자를 하나도 못 건졌으면 까닭을 남긴다 — 「번호 없음」만 뜨면 왜인지 모른다
+              if (!r.fields && r.error) OCR_ERR = r.error;
               resolve({ value: String(r.invoice || ""), via: "ocr", fields: r.fields || {} });
             })
-            .withFailureHandler(function () { resolve(null); })
+            .withFailureHandler(function (e) {
+              OCR_ERR = "글자 인식 호출 실패: " + ((e && e.message) || e);
+              resolve(null);
+            })
             .csOcrImageForScan(PENDING[0].dataB64, "image/jpeg");
         });
       });
@@ -641,6 +646,7 @@
         if (stale()) return;
         LAST.reading = false;
         LAST.labelSec = ((Date.now() - t0) / 1000).toFixed(1);
+        if (r && !r.fields && r.error) LAST.labelErr = r.error;
         var f = (r && r.fields) || {};
         LAST.fields = f;
         if (LAST.searched || PICKED || !(f.senderName || f.senderPhone || f.originalInvoiceNumber || f.returnInvoiceNumber)) {
@@ -661,9 +667,10 @@
           .withFailureHandler(function () { if (!stale()) render(); })
           .csLogisticsMatch(LAST.raw, f);
       })
-      .withFailureHandler(function () {
+      .withFailureHandler(function (e) {
         if (stale()) return;
         LAST.reading = false;
+        LAST.labelErr = "글자 인식 호출 실패: " + ((e && e.message) || e);
         render();
       })
       .csOcrImageForScan(shot.dataB64, "image/jpeg");
@@ -689,6 +696,10 @@
     if (f.originalInvoiceNumber) h += '<div class="via">원송장번호: ' + esc(f.originalInvoiceNumber) + '</div>';
     if (f.itemName) h += '<div class="via">품명: ' + esc(f.itemName) + '</div>';
     if (f.orderNumber) h += '<div class="via">주문번호: ' + esc(f.orderNumber) + '</div>';
+    if (OCR_ERR || LAST.labelErr) {
+      h += '<div class="via" style="color:var(--orange)">⚠ ' + esc(OCR_ERR || LAST.labelErr) +
+           ' — 이름·김*동 1234 로 찾아 주세요</div>';
+    }
     if (LAST.reading) h += '<div class="via">📖 라벨 글자 읽는 중… (기다리지 않고 찾거나 골라도 됩니다)</div>';
     else if (LAST.fromLabel) h += '<div class="via">라벨 글자로 다시 찾은 결과</div>';
 
@@ -858,7 +869,8 @@
         raw: LAST.raw,
         invoice: inv,
         via: via,
-        memo: T_SHOT ? [T_READ, LAST.labelSec ? "글자 " + LAST.labelSec + "초" : "", "올리기까지 " + Math.round((Date.now() - T_SHOT) / 1000) + "초"]
+        memo: T_SHOT ? [T_READ, LAST.labelSec ? "글자 " + LAST.labelSec + "초" : "",
+          (OCR_ERR || LAST.labelErr) ? "글자오류: " + (OCR_ERR || LAST.labelErr) : "", "올리기까지 " + Math.round((Date.now() - T_SHOT) / 1000) + "초"]
           .filter(function (v) { return v; }).join(" · ") : "",
         tier: PICKED ? "maybe" : LAST.match.tier,
         pick: PICKED,
