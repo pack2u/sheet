@@ -31,8 +31,10 @@ function sheet(rows) {
     getRange: (r, c, nr, nc) => ({
       getDisplayValues: () => rows.slice(r - 1, r - 1 + (nr || 1)).map((x) => x.slice(c - 1, c - 1 + (nc || 1)).map(String)),
       setNumberFormat() {},
+      setValue: (v) => { rows[r - 1][c - 1] = v; },
     }),
     appendRow: (a) => rows.push(a),
+    getMaxColumns: () => 26,
   };
 }
 const L = sheet(ledger);
@@ -44,7 +46,6 @@ let failWrite = false;
 const ctx = {
   String, Number, RegExp, Math, JSON, Date, parseInt, console,
   _CS_RETURN_LEDGER_ID_: "L", _CS_RI_STATUS_INTAKE_: "입고검수",
-  Utilities: { formatDate: (d) => d.toISOString().slice(0, 19).replace("T", " ") },
   Logger: { log() {} },
   SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => (n.indexOf("입고_") === 0 ? I : null) }) },
   _csl_recentIntakeTabNames_: () => ["입고_202609"],
@@ -55,9 +56,19 @@ const ctx = {
     return failWrite ? { ok: false, error: "잠김" } : { ok: true, name: ledger[row - 1][1], item: "" };
   },
   appendReturnConsultation: (p) => { calls.push({ memo: p.text }); return { ok: true }; },
+  //  글자 인식 (2026-09-30) — 사진을 받아 Gemini 로 읽는 자리
+  UrlFetchApp: { fetch: (u) => ({ getResponseCode: () => (/bad/.test(u) ? 404 : 200), getBlob: () => ({ getBytes: () => [1, 2, 3], getContentType: () => "image/jpeg" }) }) },
+  Utilities: { formatDate: (d) => d.toISOString().slice(0, 19).replace("T", " "), base64Encode: () => "AAA" },
+  csOcrImageForScan: () => ocrReply,
 };
+let ocrReply = { ok: true, invoice: "45244704050", fields: { returnInvoiceNumber: "45244704050", originalInvoiceNumber: "45209772915", senderName: "김병수", senderPhone: "010-8709-3916", itemName: "JH/BF 감자탕 공용", orderNumber: "" } };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync("csIntakeBridge.gs", "utf8"), ctx);
+{ //  csLogistics.gs 의 글자인식 도우미만 떼어 온다
+  const L = fs.readFileSync("csLogistics.gs", "utf8");
+  const a = L.indexOf("function _csl_ocrPack_("), b = L.indexOf("/** 읽을 칸 수", a);
+  vm.runInContext(L.slice(a, b), ctx);
+}
 
 const ret = (o) => Object.assign({ src_tab: "202609", src_row: 2, customer_name: "김민동", phone: "01099481234", order_invoice: "440812891733", return_invoice: "" }, o);
 const item = (id, o) => Object.assign({ id: id, at: "2026-09-29T02:00:00Z", staff: "강물류", tier: "maybe", via: "scan", invoice: "255252859999", photos: ["https://x/a.jpg"], memo: "", ret: ret() }, o);
@@ -100,6 +111,25 @@ const before = intakeRows.length;
 r = ctx._cib_apply_(item("55555555-5555-5555-5555-555555555555"), {});
 check("ok:false", r.ok, false);
 check("입고대장에 줄을 남기지 않는다 (다시 올 것이라)", intakeRows.length, before);
+
+console.log("\n[⑤] 올라온 사진에서 라벨 글자를 읽어 입고대장에 남긴다");
+failWrite = false;
+r = ctx._cib_apply_(item("66666666-6666-6666-6666-666666666666", { ret: null, tier: "none" }), {});
+const last = intakeRows[intakeRows.length - 1];
+check("F(원문)에 사람이 읽는 한 줄", last[5], "송장 45244704050 · 원송장 45209772915 · 보낸분 김병수 010-8709-3916 · 품명 JH/BF 감자탕 공용");
+check("N(글자인식)에 JSON — 원송장", JSON.parse(last[13]).orig, "45209772915");
+check("글자 인식이 실패해도 입고는 간다", (ocrReply = null, ctx._cib_apply_(item("77777777-7777-7777-7777-777777777777", { ret: null, photos: ["https://x/bad.jpg"] }), {}).ok), true);
+check("실패 까닭을 남긴다", JSON.parse(intakeRows[intakeRows.length - 1][13]).error, "사진을 못 받음 HTTP 404");
+
+console.log("\n[⑥] 확인 대기 줄의 빠진 글자를 채운다 (한가할 때 두 건씩)");
+ocrReply = { ok: true, invoice: "45272060050", fields: { returnInvoiceNumber: "45272060050", senderName: "조*옥", senderPhone: "010-4860-****" } };
+intakeRows.push(["2026-09-30 00:09:00", "김윤동", "미상", "v2/search", "", "", "", "", "", "", "사진만 적재 (확인 대기)", "https://x/c.jpg", "", ""]);
+intakeRows.push(["2026-09-30 00:10:00", "강물류", "미상", "detector", "45272060050", "45272060050", "", "", "", "", "사진만 적재 (대장에 없음)", "https://x/d.jpg", "", ""]);
+const nFill = (ctx._csl_isPendingRow_ = (r) => /^사진만 적재/.test(String(r[10])) && !String(r[6]), ctx._csl_readRows_ = (tab, from, n) => intakeRows.slice(from - 1, from - 1 + n).map((r) => { const x = r.slice(); while (x.length < 14) x.push(""); return x; }), ctx._csl_dropPendingCache_ = () => {}, ctx._CSL_HEADERS_ = new Array(14), ctx._cib_backfillOcr_(2));
+check("두 건 채웠다", nFill, 2);
+check("빈 F 는 사람이 읽는 줄로", intakeRows[intakeRows.length - 2][5], "송장 45272060050 · 보낸분 조*옥 010-4860-****");
+check("바코드 원문이 있는 F 는 안 건드린다", intakeRows[intakeRows.length - 1][5], "45272060050");
+check("N 은 채운다", JSON.parse(intakeRows[intakeRows.length - 1][13]).sender, "조*옥");
 
 console.log("");
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");

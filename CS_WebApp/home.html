@@ -2937,6 +2937,10 @@
     }
     .lgw-acts button.go { border-color: var(--text-bright); color: var(--text-bright); font-weight: 700; }
     .lgw-acts button:disabled { opacity: .4; cursor: default; }
+    .lgw-ocr { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-secondary); font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
+    .lgw-ocr.err { color: var(--text-muted); }
+    .lgw-ocr-t { font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
+    .lgw-ocr span { display: inline-block; min-width: 56px; color: var(--text-muted); }
     .lgw-close {
       margin-top: 12px; width: 100%; padding: 10px; border-radius: 10px; cursor: pointer;
       background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary);
@@ -12352,7 +12356,8 @@
           '<div class="lgw-head"><b>' + esc(x.invoice || '번호 미상') + '</b> · ' +
           esc(String(x.at || '').slice(5, 16)) + ' · ' + esc(x.staff || '') +
           ' · ' + esc(failed ? x.result : (x.tier || '')) + '</div>';
-        if (x.memo) h += '<div class="m">' + esc(x.memo) + '</div>';
+        if (x.memo) h += '<div class="m">' + esc(String(x.memo).replace(/v2:[0-9a-f-]{36}\s*·?\s*/, '')) + '</div>';
+        h += lgwOcrHtml(x.ocr);
         if (items.length) {
           h += '<div class="lg-thumbs">';
           for (var p = 0; p < items.length; p++) {
@@ -12366,8 +12371,8 @@
         } else if ((x.photos || []).length) {
           h += '<div class="m">' + linkifyProcBody(x.photos.join(' ')) + '</div>';
         }
-        //  번호를 읽은 건은 그 번호로 먼저 찾아 둔다. 못 읽은 건은 사진을 보고 친다.
-        var q0 = LGW.q[k] != null ? LGW.q[k] : String(x.invoice || '').replace(/[^0-9]/g, '');
+        //  무엇으로 먼저 찾아 둘까 — 라벨 글자에서 읽은 것이 있으면 그것부터 (lgwFirstQuery)
+        var q0 = LGW.q[k] != null ? LGW.q[k] : lgwFirstQuery(x);
         h += '<input type="search" class="lgw-q" value="' + esc(q0) + '"' +
           ' placeholder="이름 · 가린 이름(김*동) · 전화 뒤4 · 송장 뒤자리"' +
           ' oninput="lgwInput(' + i + ', this)">' +
@@ -12378,7 +12383,41 @@
           (LGW.pick[k] == null ? ' disabled' : '') +
           ' onclick="lgwResolve(' + i + ',\'attach\')">이 건에 붙이기 · 입고검수</button>' +
           '</div></div>';
-        if (!LGW.hits[k] && q0.length >= 4 && auto.length < 8) auto.push([i, q0]);
+        if (!LGW.hits[k] && q0.length >= 2 && auto.length < 8) auto.push([i, q0]);
+    /* ── 라벨 글자 (2026-09-30) ──────────────────────────────
+       > "이미지가 업로드 되면 텍스트 인식을 해서 입고확인에 송장 내용이 나오게"
+       서버(다리)가 사진에서 읽어 입고대장 N(글자인식)에 둔 것을 보여 준다. */
+    function lgwOcrHtml(o) {
+      if (!o) return '';
+      if (o.error) return '<div class="lgw-ocr err">📖 글자 인식 실패 — ' + esc(o.error) + '</div>';
+      var rows = [
+        ['송장', o.inv], ['원송장', o.orig],
+        ['보낸 분', [o.sender, o.senderPhone].filter(Boolean).join(' · ')],
+        ['품명', o.item], ['주문번호', o.order]
+      ].filter(function (r) { return r[1]; });
+      if (!rows.length) return '<div class="lgw-ocr err">📖 라벨에서 읽은 글자가 없습니다</div>';
+      var h = '<div class="lgw-ocr"><div class="lgw-ocr-t">📖 라벨에서 읽은 글자</div>';
+      for (var i = 0; i < rows.length; i++) h += '<div><span>' + esc(rows[i][0]) + '</span>' + esc(rows[i][1]) + '</div>';
+      return h + '</div>';
+    }
+
+    /**
+     * 처음에 무엇으로 찾아 둘까.
+     *   ① 원송장 — 대장에 거의 늘 적혀 있다. 한 건으로 떨어진다
+     *   ② 보낸 분 이름 + 전화 뒤4 — 라벨에 가려져 있어도(김*동) 그대로 찾는다
+     *   ③ 바코드로 읽은 송장
+     */
+    function lgwFirstQuery(x) {
+      var o = x.ocr || {};
+      if (o.orig && o.orig.length >= 10) return o.orig;
+      //  뒤 4자리가 «보일 때만» 쓴다 — 010-4860-**** 에서 숫자만 모으면 가운데(4860)가 뒤로 온다
+      var tail = (String(o.senderPhone || '').match(/(\d{4})\s*$/) || [])[1] || '';
+      if (o.sender && !/팩투유|팩•유|pack2u/i.test(o.sender)) {
+        return (o.sender + (tail ? ' ' + tail : '')).trim();
+      }
+      return String(x.invoice || o.inv || '').replace(/[^0-9]/g, '');
+    }
+
       }
       el.innerHTML = h;
       //  한꺼번에 50번 부르지 않는다 — 번호 있는 앞 8건만 미리 찾는다

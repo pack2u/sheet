@@ -35,7 +35,10 @@ var _CSL_LOOKBACK_ = 60; // 반품 후보 조회 일수
 
 var _CSL_HEADERS_ = [
   "일시", "담당자", "신뢰도", "인식경로", "송장번호", "원문",
-  "매칭탭", "매칭행", "수취인", "품목", "처리결과", "사진", "비고"
+  "매칭탭", "매칭행", "수취인", "품목", "처리결과", "사진", "비고",
+  //  N 글자인식 (2026-09-30) — 서버가 라벨을 읽은 결과 JSON. 입고 확인 화면이 보여 주고,
+  //  그 값으로 대장 검색을 미리 해 둔다. 사람이 읽는 요약은 F(원문)에 적는다.
+  "글자인식"
 ];
 
 // ── 공통 ────────────────────────────────────────────────
@@ -91,8 +94,61 @@ function _csl_ensureIntakeTab_() {
     tab.setColumnWidth(12, 260); // 사진
     // 송장번호·원문은 앞자리 0 이 죽지 않게 텍스트로 잠근다
     tab.getRange(2, 5, tab.getMaxRows() - 1, 2).setNumberFormat("@");
+  } else {
+    //  칸이 늘었으면(2026-09-30 N 글자인식) 옛 탭에도 머리글을 채운다
+    var w = _CSL_HEADERS_.length;
+    if (tab.getMaxColumns() < w) tab.insertColumnsAfter(tab.getMaxColumns(), w - tab.getMaxColumns());
+    if (!String(tab.getRange(1, w).getValue() || "").trim()) {
+      tab.getRange(1, w).setValue(_CSL_HEADERS_[w - 1])
+        .setBackground("#252525").setFontColor("#f0f0f0").setFontWeight("bold").setHorizontalAlignment("center");
+    }
   }
   return tab;
+}
+
+/**
+ * 라벨 글자 인식 결과 — 입고대장 N(글자인식)에 JSON 으로 둔다.  (2026-09-30)
+ * > "이미지가 업로드 되면 텍스트 인식을 해서 입고확인에 송장 내용이 나오게"
+ */
+function _csl_ocrPack_(r) {
+  if (!r) return "";
+  if (!r.fields) return r.error ? JSON.stringify({ error: String(r.error).slice(0, 120) }) : "";
+  var f = r.fields, d = function (v) { return String(v || "").replace(/[^0-9]/g, ""); };
+  var o = {
+    inv: d(f.returnInvoiceNumber) || d(r.invoice), orig: d(f.originalInvoiceNumber),
+    sender: String(f.senderName || ""), senderPhone: String(f.senderPhone || ""),
+    to: String(f.recipientName || ""), item: String(f.itemName || ""),
+    order: String(f.orderNumber || ""), carrier: String(f.carrier || "")
+  };
+  for (var k in o) if (!o[k]) delete o[k];
+  return JSON.stringify(o);
+}
+
+function _csl_parseOcr_(s) {
+  s = String(s || "").trim();
+  if (!s || s.charAt(0) !== "{") return null;
+  try { return JSON.parse(s); } catch (e) { return null; }
+}
+
+/** 사람이 읽는 한 줄 — 입고대장 F(원문)에 적는다 */
+function _csl_ocrLine_(o) {
+  if (!o) return "";
+  if (o.error) return "글자인식 실패: " + o.error;
+  return [
+    o.inv ? "송장 " + o.inv : "", o.orig ? "원송장 " + o.orig : "",
+    o.sender ? "보낸분 " + o.sender + (o.senderPhone ? " " + o.senderPhone : "") : "",
+    o.item ? "품명 " + o.item : "", o.order ? "주문 " + o.order : ""
+  ].filter(function (v) { return v; }).join(" · ");
+}
+
+/** 읽을 칸 수 — 옛 탭은 칸이 모자랄 수 있다. 모자란 칸은 빈 값으로 채워 돌려준다 */
+function _csl_readRows_(tab, fromRow, n) {
+  var w = Math.min(_CSL_HEADERS_.length, tab.getMaxColumns());
+  var vals = tab.getRange(fromRow, 1, n, w).getDisplayValues();
+  if (w < _CSL_HEADERS_.length) {
+    for (var i = 0; i < vals.length; i++) while (vals[i].length < _CSL_HEADERS_.length) vals[i].push("");
+  }
+  return vals;
 }
 
 // ── 매칭 ────────────────────────────────────────────────
@@ -606,7 +662,7 @@ function csLogisticsToday() {
     if (lr < 2) {
       return { ok: true, rows: [], summary: { total: 0, sure: 0, maybe: 0, none: 0, pending: pending } };
     }
-    var vals = tab.getRange(2, 1, lr - 1, _CSL_HEADERS_.length).getDisplayValues();
+    var vals = _csl_readRows_(tab, 2, lr - 1);
     var today = _csl_ymd_(), out = [];
     var sum = { total: 0, sure: 0, maybe: 0, none: 0, pending: pending };
 
@@ -707,7 +763,7 @@ function csLogisticsPending(force) {
       if (!tab) continue;
       var lr = tab.getLastRow();
       if (lr < 2) continue;
-      var vals = tab.getRange(2, 1, lr - 1, _CSL_HEADERS_.length).getDisplayValues();
+      var vals = _csl_readRows_(tab, 2, lr - 1);
       for (var i = 0; i < vals.length; i++) {
         var r = vals[i];
         if (String(r[0] || "").slice(0, 10) < cutoff) continue;
@@ -716,7 +772,8 @@ function csLogisticsPending(force) {
           intakeTab: names[t], intakeRow: i + 2,
           at: String(r[0] || ""), staff: r[1], tier: r[2], via: r[3],
           invoice: r[4], raw: r[5], result: r[10], memo: r[12],
-          photos: String(r[11] || "").split(/\s+/).filter(function (u) { return /^https?:\/\//.test(u); })
+          photos: String(r[11] || "").split(/\s+/).filter(function (u) { return /^https?:\/\//.test(u); }),
+          ocr: _csl_parseOcr_(r[13])
         });
       }
     }
@@ -765,7 +822,7 @@ function csLogisticsResolve(p) {
     if (!tab || intakeRow > tab.getLastRow()) {
       return { ok: false, error: "입고대장 줄이 없습니다. 새로고침 후 다시 해 주세요." };
     }
-    var r = tab.getRange(intakeRow, 1, 1, _CSL_HEADERS_.length).getDisplayValues()[0];
+    var r = _csl_readRows_(tab, intakeRow, 1)[0];
     if (!_csl_isPendingRow_(r)) {
       _csl_dropPendingCache_();
       return { ok: false, error: "이미 처리된 사진입니다 — " + (r[6] ? r[6] + " " + r[7] + "행 · " : "") + r[10] };

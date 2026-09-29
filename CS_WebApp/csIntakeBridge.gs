@@ -103,6 +103,32 @@ function _cib_appliedIds_() {
   return seen;
 }
 
+/**
+ * 올라온 사진에서 라벨 글자를 읽는다 — 서버(Gemini)에서.  (2026-09-30)
+ * > "바코드 인식 → 이미지 업로드 → 서버에서 텍스트인식 → 입고확인에 텍스트 보여주기"
+ *
+ * 첫 장이 보통 라벨이다. 거기서 송장·원송장·보낸분을 하나도 못 건지면 둘째 장까지 본다
+ * (물건부터 찍는 사람도 있다). 셋째부터는 안 본다 — 1분 트리거 안에 끝나야 한다.
+ * 실패해도 입고는 그대로 간다. 글자는 «보여 주는 것»이지 막는 것이 아니다.
+ */
+function _cib_ocr_(photos) {
+  var last = null;
+  for (var i = 0; i < Math.min(2, (photos || []).length); i++) {
+    try {
+      var res = UrlFetchApp.fetch(photos[i], { muteHttpExceptions: true });
+      if (res.getResponseCode() !== 200) { last = { error: "사진을 못 받음 HTTP " + res.getResponseCode() }; continue; }
+      var blob = res.getBlob();
+      var r = csOcrImageForScan(Utilities.base64Encode(blob.getBytes()), blob.getContentType() || "image/jpeg");
+      var f = (r && r.fields) || null;
+      if (f && (r.invoice || f.originalInvoiceNumber || f.senderName || f.senderPhone)) return r;
+      last = r;
+    } catch (e) {
+      last = { error: String((e && e.message) || e) };
+    }
+  }
+  return last;
+}
+
 function _cib_apply_(it, applied) {
   if (applied[it.id]) return { id: it.id, ok: true, note: "이미 대장에 있음 (다시 안 씀)" };
   var photos = it.photos || [];
@@ -127,13 +153,51 @@ function _cib_apply_(it, applied) {
     result = "사진만 적재 (확인 대기) · v2 · " + loc.miss;
   }
 
+  //  라벨 글자 — F(원문)에 사람이 읽는 한 줄, N(글자인식)에 JSON. 입고 확인 화면이 쓴다
+  var ocrPack = "";
+  try { ocrPack = _csl_ocrPack_(_cib_ocr_(photos)); } catch (eO) { ocrPack = ""; }
+  var ocrLine = _csl_ocrLine_(_csl_parseOcr_(ocrPack));
+
   tab.appendRow([
     at, staff, it.tier === "none" ? "미상" : "후보", "v2/" + (it.via || ""),
-    it.invoice || "", "", mTab, mRow, mName, mItem, result, photos.join("\n"), tail
+    it.invoice || "", ocrLine, mTab, mRow, mName, mItem, result, photos.join("\n"), tail, ocrPack
   ]);
   tab.getRange(tab.getLastRow(), 5, 1, 2).setNumberFormat("@");
   applied[it.id] = true;
   return { id: it.id, ok: true, note: result };
+}
+
+/**
+ * 확인 대기 중인데 라벨 글자가 아직 없는 줄을 채운다 — 한 번에 조금씩.  (2026-09-30)
+ * v2 다리가 생기기 전 줄, CS 웹앱 물류 화면에서 올린 줄에는 N(글자인식)이 없다.
+ * F(원문)에 이미 무언가(바코드 원문)가 있으면 F 는 안 건드리고 N 만 채운다.
+ */
+function _cib_backfillOcr_(maxN) {
+  var n = 0;
+  try {
+    var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
+    var names = _csl_recentIntakeTabNames_();
+    for (var t = 0; t < names.length && n < maxN; t++) {
+      var tab = ss.getSheetByName(names[t]);
+      if (!tab || tab.getLastRow() < 2) continue;
+      if (tab.getMaxColumns() < _CSL_HEADERS_.length) continue; // 옛 탭 — 머리글 늘리기는 _csl_ensureIntakeTab_ 몫
+      var vals = _csl_readRows_(tab, 2, tab.getLastRow() - 1);
+      for (var i = vals.length - 1; i >= 0 && n < maxN; i--) {
+        var r = vals[i];
+        if (!_csl_isPendingRow_(r) || String(r[13] || "").trim()) continue;
+        var photos = String(r[11] || "").split(/\s+/).filter(function (u) { return /^https?:\/\//.test(u); });
+        if (!photos.length) continue;
+        var pack = _csl_ocrPack_(_cib_ocr_(photos)) || JSON.stringify({ error: "읽은 글자 없음" });
+        tab.getRange(i + 2, 14).setValue(pack);
+        if (!String(r[5] || "").trim()) tab.getRange(i + 2, 6).setValue(_csl_ocrLine_(_csl_parseOcr_(pack)));
+        n++;
+      }
+    }
+  } catch (e) {
+    Logger.log("[CIB] 글자 채우기 실패: " + ((e && e.message) || e));
+  }
+  if (n) _csl_dropPendingCache_();
+  return n;
 }
 
 /** 1분 트리거가 부른다. 손으로 불러도 된다 (결과를 돌려준다). */
@@ -141,10 +205,14 @@ function csIntakeBridgePull() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(2000)) return { ok: true, skipped: "다른 실행이 돌고 있음" };
   try {
-    var claim = _cib_post_({ op: "claim", limit: 20 });
+    var claim = _cib_post_({ op: "claim", limit: 10 }); // 한 건에 글자 인식 3~5초 — 1분 안에 끝나게
     if (!claim.ok) { Logger.log("[CIB] claim 실패: " + claim.error); return claim; }
     var items = claim.items || [];
-    if (!items.length) return { ok: true, n: 0 };
+    //  새로 온 것이 없는 한가한 때에만 — 확인 대기 줄의 빠진 글자를 두 건씩 채운다
+    if (!items.length) {
+      try { _csl_ensureIntakeTab_(); } catch (eE) {}
+      return { ok: true, n: 0, ocrFilled: _cib_backfillOcr_(2) };
+    }
 
     var applied = _cib_appliedIds_(), results = [];
     for (var i = 0; i < items.length; i++) {

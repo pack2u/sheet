@@ -53,6 +53,7 @@ function sheet(rows) {
   return {
     rows,
     getLastRow() { return rows.length; },
+    getMaxColumns() { return 26; },
     getRange(r, c, nr, nc) {
       nr = nr || 1; nc = nc || 1;
       return {
