@@ -128,7 +128,7 @@ function dpCsDetail_(key) {
       // 시작 전이거나 스위치가 꺼져 있어도, 넘길 만한 판정이면 「이미 이카운트에 넣었음」 은 누를 수 있다
       canMarkManual: String(g("상태")) === "대기" && DP_POSTABLE_RESULTS_.indexOf(String(g("매칭결과"))) >= 0,
       postFrom: dpPostFrom_(),
-      postOn: _dp_ec_cfg_().on
+      postOn: dpPostOn_()
     },
     options: list
   };

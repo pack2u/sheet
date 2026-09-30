@@ -34,6 +34,20 @@ var DP_EC_POST_HEADERS_ = ["전표번호", "반영시각", "반영자", "반영�
  * 사장님이 정한 값이라 코드에 적는다. 스크립트 속성 DP_ECOUNT_FROM 이 있으면 그것이 이긴다.
  * ★ 이 값을 읽는 곳은 dpPostFrom_() 하나다 — 여러 곳에서 속성을 따로 읽으면 한쪽만 바뀐다.
  */
+/**
+ * ★ 일시 정지 (2026-09-30 17:2x) ★
+ *   > "직원들한테 공지했어 그런데 의미가 없네.. 판매현황으로 넘기는건 또 따로라 더 해깔리는게 되버리네"
+ *   직원은 주문서를 판매로 넘길 때 매출전표 I 와 입금보고서를 «같이» 만든다 (전표목록 -34 매출 / -35 입금 짝).
+ *   시스템이 입금만 따로 넣으면 일이 두 곳으로 갈리고, 판매 전환 때 습관대로 입금을 또 넣으면 이중 입금이 된다.
+ *   흐름을 정할 때까지 멈춘다. true 면 속성(DP_ECOUNT_POST)이 on 이어도 넘기지 않고, 화면에 반영 버튼도 안 뜬다.
+ *   ★ 켜짐 여부를 읽는 곳은 dpPostOn_() 하나다.
+ */
+var DP_ECOUNT_PAUSED_ = true;
+
+function dpPostOn_() {
+  return !DP_ECOUNT_PAUSED_ && String(_dp_prop_("DP_ECOUNT_POST")).toLowerCase() === "on";
+}
+
 var DP_ECOUNT_FROM_DEFAULT_ = "2026-09-30 17:11";   // 2026-09-30 사장님이 스위치를 켠 순간 — 그 전(손으로 처리한) 입금은 안 넘긴다
 
 function dpPostFrom_() {
@@ -47,7 +61,7 @@ var DP_EC_JOURNAL_PATH_ = "/OAPI/V2/GeneralJournal/SaveGeneralJournal";
 function _dp_ec_cfg_() {
   var p = function (k) { return _dp_prop_(k); };
   return {
-    on: String(p("DP_ECOUNT_POST")).toLowerCase() === "on",
+    on: dpPostOn_(),
     comCode: p("ECOUNT_COM_CODE"), userId: p("ECOUNT_USER_ID"), certKey: p("ECOUNT_API_CERT_KEY"),
     testCertKey: p("ECOUNT_TEST_CERT_KEY"),   // 일반전표 검증용 (2026-09-30)
     lanType: p("ECOUNT_LAN_TYPE") || "ko-KR",
@@ -307,7 +321,7 @@ function dpCsMarkManual_(key, by, undo) {
 /** 편집기에서 ▶ — 설정 점검 (보내지 않는다). 로그인까지만 해 본다 */
 function dpEcountCheck() {
   var cfg = _dp_ec_cfg_();
-  var out = ["이카운트 반영 점검", "켜짐       " + (cfg.on ? "on" : "꺼짐 (DP_ECOUNT_POST)")];
+  var out = ["이카운트 반영 점검", "켜짐       " + (cfg.on ? "on" : (DP_ECOUNT_PAUSED_ ? "일시 정지 (코드 DP_ECOUNT_PAUSED_)" : "꺼짐 (DP_ECOUNT_POST)"))];
   var miss = _dp_ec_missing_(cfg);
   out.push("빠진 설정  " + (miss.length ? miss.join(", ") : "없음"));
   out.push("보통예금   " + (cfg.bankGye || "-") + " · 외상매출금 " + (cfg.arGye || "-"));

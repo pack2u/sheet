@@ -99,6 +99,7 @@ function makeEnv() {
   for (const f of ['dpParse.gs', 'dpMatch.gs', 'Code.gs', 'dpLedger.gs', 'dpNotify.gs', 'dpWatch.gs', 'dpMirror.gs', 'dpReqLog.gs', 'dpOrders.gs', 'dpCs.gs', 'dpEcount.gs', 'dpCache.gs']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, f), 'utf8'), ctx, { filename: f });
   }
+  ctx.DP_ECOUNT_PAUSED_ = false;   // 반영 테스트는 일시 정지를 풀고 돈다 (정지 자체는 따로 시험)
   const post = (params) => ctx.doPost({ parameter: params, postData: { type: 'application/x-www-form-urlencoded', contents: '' } });
   return { ctx, rows, logRows, tabRows, props, chats, mirrors, post, setMirrorFail: (v) => { mirrorFail = v; },
            ecCalls, setEcSave: (fn) => { ecSave = fn; } };
@@ -628,6 +629,23 @@ console.log('\n[일반전표 API 검증 — 테스트 서버, 보낸 입금은 �
   const n = ecCalls.length;
   r = cs({ action: 'post', keys: [key] });
   ok('확인필요로 묶인 입금은 운영으로 다시 안 보낸다', r.results[0].outcome === '건너뜀' && ecCalls.length === n);
+}
+
+console.log('\n[일시 정지 — 속성이 on 이어도 안 보낸다, 화면에도 버튼이 안 뜬다]');
+{
+  const { ctx, post, rows, props, ecCalls } = makeEnv();
+  ctx.DP_ECOUNT_PAUSED_ = true;
+  ctx.DP_CS_TOKEN = 'cstok';
+  ctx.DP_ECOUNT_PROXY_URL = 'https://proxy.example'; ctx.DP_ECOUNT_PROXY_KEY = 'pk';
+  Object.assign(props, { ECOUNT_COM_CODE: 'C', ECOUNT_USER_ID: 'U', ECOUNT_API_CERT_KEY: 'K', DP_ECOUNT_POST: 'on', DP_ECOUNT_FROM: '2000-01-01 00:00' });
+  const cs = (o) => ctx.doPost({ parameter: {}, postData: { type: 'application/json', contents: JSON.stringify(Object.assign({ token: 'cstok' }, o)) } });
+  post({ token: 'tok', action: 'sms', body: SMS1 });
+  const key = rows[1][rows[0].indexOf('고유번호')];
+  const r = cs({ action: 'post', keys: [key] });
+  ok('정지 중 — 속성이 on 이어도 안 보낸다', r.ok === false && ecCalls.length === 0);
+  const l = cs({ action: 'list', date: '2026-09-28', limit: 10 });
+  ok('정지 중 — 화면 켜짐 표시 꺼짐 (버튼 안 뜸)', l.postOn === false);
+  ok('정지 중 — 점검 화면이 까닭을 말한다', cs({ action: 'ec_check' }).report.includes('일시 정지'));
 }
 
 console.log('\n[읽기 캐시 — 바뀐 게 없으면 다시 안 읽는다]');
