@@ -232,6 +232,9 @@ console.log("\n─── ⑪ 허브 「업체전용양식마스터」도 코드�
     .map((m) => ({
       label: m.match(/label: "([^"]*)"/)[1],
       headerCsv: m.match(/headerCsv: "([^"]*)"/)[1],
+      //  옛이름도 같이 읽는다 — 이것을 빼먹으면 시험만 옛 이름을 못 찾는다
+      옛이름: (m.match(/옛이름:\s*\[([^\]]*)\]/) || ["", ""])[1]
+        .split(",").map((x) => x.trim().replace(/^"|"$/g, "")).filter(Boolean),
     }));
   ok("내장표를 읽었다", 내장.length > 10, String(내장.length));
 
@@ -246,6 +249,9 @@ console.log("\n─── ⑪ 허브 「업체전용양식마스터」도 코드�
   vm.createContext(mctx);
   vm.runInContext(꺼내D("normVendorExclusiveTemplateKey_"), mctx);
   vm.runInContext(꺼내D("resolveVendorExclusiveTemplateColumns_"), mctx);
+  vm.runInContext(꺼내D("_pep_templateRowNames_"), mctx);
+  vm.runInContext(꺼내D("parseVendorExclusiveHeaderCsv_"), mctx);
+  vm.runInContext(꺼내D("loadVendorExclusiveTemplateHeadersFromEmbedded_"), mctx);
   vm.runInContext(꺼내D("_pep_syncTemplateMasterFromCode_"), mctx);
 
   function 가짜마스터(줄들) {
@@ -298,6 +304,31 @@ console.log("\n─── ⑪ 허브 「업체전용양식마스터」도 코드�
   없는.getSheetByName = () => null;
   ok("탭이 없으면 말해 준다", /탭이 없습니다/.test(mctx._pep_syncTemplateMasterFromCode_(없는).왜));
   ok("허브가 없으면 말해 준다", /허브 시트가 없/.test(mctx._pep_syncTemplateMasterFromCode_(null).왜));
+
+  /*  뉴파츠 — 시트는 「뉴파츠」, 코드는 「뉴파츠_NEW」라 짝이 안 맞았다 (2026-09-30) */
+  const 옛뉴="송장번호|적요|일자|순번|거래처코드|거래처명|담당자|출하창고|거래유형|통화|환율|참조|"+
+    "결제조건|유효기간|납기일자|검색창내용|배송방식|수령인|수령인연락처|배송지주소|적요(배송메시지)|"+
+    "품목코드|품목명|규격|수량|단가|금액1|외화금액|공급가액|부가세|납기일자|적요";
+  const 뉴 = 가짜마스터([
+    ["맞춤양식명", "품목접두(참고)", "전용양식헤더CSV(| 또는 탭 구분)"],
+    ["뉴파츠", "HR", 옛뉴],
+  ]);
+  const mn = mctx._pep_syncTemplateMasterFromCode_(뉴);
+  ok("뉴파츠도 짝이 맞는다", mn.고친것.length === 1, mn.고친것.join(" · ") + " / " + mn.왜);
+  ok("뉴파츠 칸이 코드와 같아졌다", 뉴._grid[1][2] === 내장의("뉴파츠"), 뉴._grid[1][2]);
+  ok("2번째가 이슈로", 뉴._grid[1][2].split("|")[1] === "이슈");
+  ok("22·23번째가 변환품목코드·변환품목명으로",
+    뉴._grid[1][2].split("|")[21] === "변환품목코드" && 뉴._grid[1][2].split("|")[22] === "변환품목명");
+  ok("32칸 그대로다", 뉴._grid[1][2].split("|").length === 32, String(뉴._grid[1][2].split("|").length));
+
+  //  옛이름으로 물어도 같은 양식이 나와야 한다 — 어딘가 설정에 남아 있을 수 있다
+  const 새이름 = mctx.loadVendorExclusiveTemplateHeadersFromEmbedded_("뉴파츠");
+  const 옛이름 = mctx.loadVendorExclusiveTemplateHeadersFromEmbedded_("뉴파츠_NEW");
+  ok("새 이름으로 찾힌다", !!새이름 && 새이름.length === 32, String(새이름 && 새이름.length));
+  ok("옛 이름으로도 찾힌다", !!옛이름 && 옛이름.length === 32, String(옛이름 && 옛이름.length));
+  ok("둘이 같은 양식이다", (새이름||[]).join("|") === (옛이름||[]).join("|"));
+  ok("없는 이름은 안 찾힌다", mctx.loadVendorExclusiveTemplateHeadersFromEmbedded_("없는양식") === null);
+  ok("선우도 그대로 찾힌다", (mctx.loadVendorExclusiveTemplateHeadersFromEmbedded_("선우")||[]).join("|") === SW.join("|"));
 }
 
 console.log("\n─── ⑫ 「1행 글자만」 고치는 쪽이 49·50 을 안 지우나 ───");
