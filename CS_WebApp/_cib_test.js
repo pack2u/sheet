@@ -131,6 +131,14 @@ check("빈 F 는 사람이 읽는 줄로", intakeRows[intakeRows.length - 2][5],
 check("바코드 원문이 있는 F 는 안 건드린다", intakeRows[intakeRows.length - 1][5], "45272060050");
 check("N 은 채운다", JSON.parse(intakeRows[intakeRows.length - 1][13]).sender, "조*옥");
 
+console.log("\n[⑦] 물류 체크 줄은 그대로, 그냥 메모는 「물류 메모:」로");
+failWrite = false; calls.length = 0; ocrReply = null;
+ctx._cib_apply_(item("88888888-8888-8888-8888-888888888888", { memo: "입고 확인 — 수량 맞음 · 파손 있음 / 메모: 뚜껑 금감" }), {});
+check("체크 줄", calls.filter((x) => x.memo).map((x) => x.memo)[0], "입고 확인 — 수량 맞음 · 파손 있음 / 메모: 뚜껑 금감");
+calls.length = 0;
+ctx._cib_apply_(item("99999999-9999-9999-9999-999999999999", { memo: "테이프 뜯김" }), {});
+check("그냥 메모", calls.filter((x) => x.memo).map((x) => x.memo)[0], "물류 메모: 테이프 뜯김");
+
 console.log("");
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

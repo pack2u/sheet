@@ -2218,6 +2218,29 @@ function submitReturnLedger(data) {
     if (col.qty >= 0) row[col.qty] = data.qty || "";
     if (col.invoice >= 0) row[col.invoice] = invoice;
     if (col.type >= 0) row[col.type] = String(data.type || "단순반품").trim();
+
+    /* 사유(L열) — 고객이 «왜» 보냈나. 유형(K열)과 다른 칸이다.
+       2026-09-30 까지 카드에만 보여 주고 «적는 데»가 없었다. */
+    var reasonIn = String(data.reason || "").trim();
+    if (col.reason >= 0 && reasonIn) row[col.reason] = reasonIn;
+
+    /* 귀책 — 전용 열이 있으면 열에, 없으면 비고에.
+       반품송장·환불계좌가 걸어온 길과 같다. 시트에 「귀책」 열을 만들면
+       코드를 안 고쳐도 그쪽으로 옮겨 간다.
+       ★ 사유가 비었으면 귀책만 남기지 않는다 ★ 「판매자」 한 낱말은
+         나중에 읽는 사람에게 아무것도 알려 주지 않는다. */
+    var faultIn = String(data.fault || "").trim();
+    var faultToNotice = "";
+    if (faultIn && reasonIn) {
+      if (col.fault >= 0) row[col.fault] = faultIn;
+      else faultToNotice = "귀책: " + faultIn + " (" + reasonIn + ")";
+    }
+    /*  ★ 사유 열도 없다 ★  (2026-09-30)
+        위 「귀책: 판매자 (오배송)」 줄이 사유까지 담으므로 대개 이 줄은 안 쓴다.
+        귀책이 비었을 때만 사유를 따로 남긴다 — 조용히 버리지 않는다.  */
+    if (col.reason < 0 && reasonIn && !faultToNotice) {
+      faultToNotice = "사유: " + reasonIn;
+    }
     if (col.fee >= 0 && data.fee !== undefined && data.fee !== null && String(data.fee).trim() !== "") {
       row[col.fee] = String(data.fee).trim();
     }
@@ -2245,6 +2268,7 @@ function submitReturnLedger(data) {
     if (col.notice >= 0) {
       var noticeLines = [];
       if (data.memo) noticeLines.push(_cs_ledgerStamp_(data.staff) + " " + String(data.memo || "").trim());
+      if (faultToNotice) noticeLines.push(faultToNotice);
       if (retInvToNotice) noticeLines.push(retInvToNotice);
       if (acctToNotice) noticeLines.push(acctToNotice);
       if (p2NameToNotice) noticeLines.push(p2NameToNotice);
@@ -2402,6 +2426,50 @@ function _cs_colLetter_(idx) {
   return s;
 }
 
+/**
+ * 비고에 남은 「귀책: 판매자 (오배송)」에서 귀책만 꺼낸다.  (2026-09-30)
+ *
+ * 대장에 「귀책」 열이 생기기 전까지의 길이다. 열이 생기면 읽는 쪽이
+ * 열을 먼저 보므로 이 함수는 저절로 안 쓰인다.
+ * 반품송장이 비고에서 열로 옮겨 간 것과 같은 방식이다.
+ *
+ * @return {string} "구매자" | "판매자" | ""
+ */
+/**
+ * 비고에 남은 표시에서 사유를 꺼낸다.  (2026-09-30)
+ *
+ * ★ 대장에 사유 열이 «없다» ★
+ *   202609 탭 실측 — 쓰이는 폭 21칸에 「반품사유」가 없다.
+ *   12번째가 「재출고/단순/오주문입력/오배송」(유형)이고 그 옆은 회수신청이다.
+ *   2026-09-18 에 「대장 L열에 반품사유가 있다」고 알고 고쳤는데 L열은
+ *   유형이었다. 그래서 사유는 그때부터 한 번도 안 적혔고 카드에도 안 떴다.
+ *
+ *   반품송장·환불계좌가 걸어온 길을 사유도 탄다 — 비고에 적고 비고에서 읽는다.
+ *   시트에 「반품사유」 열을 만들면 읽는 쪽이 열을 먼저 보므로 이 함수는
+ *   저절로 안 쓰인다.
+ *
+ * 두 가지 모양을 받는다 —
+ *   「귀책: 판매자 (오배송)」  귀책과 사유를 둘 다 담은 줄
+ *   「사유: 제품불량」        귀책이 없을 때
+ *
+ * @return {string} 사유 낱말, 없으면 ""
+ */
+function _cs_reasonFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/귀책\s*[:：]\s*(?:구매자|판매자)\s*\(([^)]{1,20})\)/);
+  if (m) return String(m[1]).trim();
+  m = s.match(/(?:^|[\s·.])사유\s*[:：]\s*([^\s·.,()]{1,20})/);
+  return m ? String(m[1]).trim() : "";
+}
+
+function _cs_faultFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/귀책\s*[:：]\s*(구매자|판매자)/);
+  return m ? m[1] : "";
+}
+
 function _cs_mapReturnLedgerCols_(header) {
   var col = {
     date: -1, staff: -1, vendor: -1, name: -1, phone: -1, phone2: -1, phone2Name: -1,
@@ -2414,12 +2482,22 @@ function _cs_mapReturnLedgerCols_(header) {
     /* 환불계좌 — 아직 대장에 없는 열이다 (2026-09-08).
        시트에 「환불계좌」 열을 만들면 **코드를 안 고쳐도** 여기로 잡힌다.
        그전까지는 비고에 「계좌: …」로 남는다. 반품송장이 걸어온 길과 같다. */
-    account: -1
+    account: -1,
+    /* 귀책 — 구매자냐 판매자냐. 아직 대장에 없는 열이다 (2026-09-30).
+       반품비를 누가 내는지가 여기서 갈린다. 사유 낱말도 귀책마다 다르다 —
+       구매자 잘못은 「오주문」, 우리 잘못은 「오배송」.
+       시트에 「귀책」 열을 만들면 코드를 안 고쳐도 여기로 잡힌다. */
+    fault: -1,
+    /* 입고확인요청 — CS 가 물류에게 «박스 열 때 볼 것»을 적는 칸 (2026-09-30).
+       대장 맨 뒤에 붙인다(_cs_ensureIntakeReqCol_). 업체 포털은 이 열을 안 읽는다. */
+    intakeReq: -1
   };
   for (var i = 0; i < header.length; i++) {
     var h = String(header[i] || "").replace(/\s/g, "");
     if (!h) continue;
-    if (col.date < 0 && /반품접수날짜|접수날짜|접수일자/.test(h)) col.date = i;
+    //  맨 앞에서 먼저 잡는다 — 「요청」·「확인」이 다른 규칙(고객요청 → 비고 등)에 걸리지 않게
+    if (col.intakeReq < 0 && /^입고확인요청/.test(h)) col.intakeReq = i;
+    else if (col.date < 0 && /반품접수날짜|접수날짜|접수일자/.test(h)) col.date = i;
     else if (col.staff < 0 && h === "접수자") col.staff = i;
     /* 2026-09-09: 9월 탭에서 D열이 「업체명」 → 「주문지」로 바뀌었다.
        뜻은 같다 — 「법인/쿠팡」·「대리발송-리바이」처럼 주문이 어디서 왔나다.
@@ -2467,6 +2545,10 @@ function _cs_mapReturnLedgerCols_(header) {
        ★ type 보다 «앞»에 둔다 ★ 뒤에 두면 또 같은 일이 난다.
        ★ 좁게 잡는다 ★ /사유/ 만 보면 「취소반품사유」 같은 다른 칸까지
          빨아들인다. 반품 쪽 사유만 집는다. */
+    /* ★ 귀책을 사유보다 «앞»에 둔다 ★  (2026-09-30)
+       뒤에 두면 「반품귀책사유」 같은 머리글이 사유에 먼저 걸려 귀책이
+       통째로 버려진다 — 2026-09-18 에 사유가 당한 일이 정확히 그것이다. */
+    else if (col.fault < 0 && /^귀책$|귀책구분|^책임$|책임구분|과실구분/.test(h)) col.fault = i;
     else if (col.reason < 0 && /^반품사유$|^사유$|반품이유|교환반품사유/.test(h)) col.reason = i;
     // 2026-09-04: 실제 헤더 문구를 넣는다.
     //   시트는 「재출고/단순/오주문입력/오배송」이라고 적혀 있는데 정규식에 없어서
@@ -3442,7 +3524,17 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
          구분(type) 은 「재출고/단순/오배송」처럼 처리하는 갈래고,
          사유(reason) 는 「뚜껑 깨짐」처럼 왜 반품인지다. 상담에서
          먼저 묻는 것은 «왜»다. 같으면 카드가 한 번만 보여 준다. */
-      reason: col.reason >= 0 ? String(row[col.reason] || "").trim() : "",
+      /* 사유 — 열이 없으면 비고에서 되읽는다. 대장에 사유 열이 없다(2026-09-30). */
+      reason: col.reason >= 0
+        ? String(row[col.reason] || "").trim()
+        : _cs_reasonFromNotice_(notice),
+      //  입고확인요청 열 (2026-09-30) — 카드에 노란 띠로, v2 물류 입고 화면에도 뜬다
+      intakeReq: col.intakeReq >= 0 ? String(row[col.intakeReq] || "").trim() : "",
+      /* 귀책 — 전용 열이 없는 탭은 비고에 「귀책: 판매자 (오배송)」으로 남는다.
+         열이 생기면 저절로 열을 읽는다. (2026-09-30) */
+      fault: col.fault >= 0
+        ? String(row[col.fault] || "").trim()
+        : _cs_faultFromNotice_(notice),
       /* ★ 업체가 새로 올린 건데 CS 가 아직 안 본 것 ★  (2026-09-18)
          이 값 하나로 화면이 «맨 위 + 하이라이트»를 정한다.
          판정은 _cs_needsCsCheck_ 한 곳에서만 한다 — 두 곳에서 따로
@@ -3609,7 +3701,19 @@ function _cs_loadReturnLedgerCases_(days, activeOnly, refresh) {
   return all;
 }
 
-/** CS앱 — 진행 중 반품 목록 (최근 30일, 완료·이카운트ok 제외) */
+/**
+ * ★ 검색에서 완료된 건도 보여 줄 기간  (2026-09-30)
+ *
+ *   > "반품 검색시 완료된건은 아나와서 접수가 안된거로 파악이 되서
+ *   >  다시 만드는경우가 생기네.. 검색에서 완료된것도 보이면 좋겠어..
+ *   >  최대 기한이 45일로 하면 어떨까?"
+ *
+ * 목록(검색 없을 때)은 그대로 «진행 30일»이다 — 완료를 섞으면 할 일이
+ * 안 보인다. 검색할 때만 완료 45일을 함께 뒤진다.
+ */
+var _CS_RETURN_DONE_DAYS_ = 45;
+
+/** CS앱 — 진행 중 반품 목록 (최근 30일) + 검색용 완료 45일 */
 function csListActiveReturnCases(opt) {
   opt = opt || {};
   var days = parseInt(opt.days, 10) || 30;
@@ -3617,16 +3721,27 @@ function csListActiveReturnCases(opt) {
   try {
     var rows = _cs_loadReturnLedgerCases_(days, true, refresh);
 
-    // 접수 건수는 완료된 건도 세야 맞다. 진행 목록(rows)은 완료건이 빠져 있어
-    // 같은 기간의 전체 목록을 따로 본다 (동일 캐시 키라 추가 부담이 적다).
-    var allRows = _cs_loadReturnLedgerCases_(days, false, refresh);
+    /*  완료건까지 «한 번만» 읽어 두 가지에 쓴다.
+
+        ① 접수 건수 — 완료된 건도 세야 맞다. 진행 목록(rows)에는 빠져 있다.
+        ② 검색용 완료 목록 — 완료가 안 보여서 「접수가 안 됐다」고 보고
+           다시 만드는 일이 생겼다. (2026-09-30)
+
+        기간은 넓은 쪽(45일)으로 한 번 읽는다. 탭 단위로 캐시돼 있어
+        두 번 읽는 것보다 싸다. 건수 셈은 오늘·어제만 보므로 기간이
+        넓어져도 숫자가 달라지지 않는다.  */
+    var wideDays = Math.max(days, _CS_RETURN_DONE_DAYS_);
+    var allRows = _cs_loadReturnLedgerCases_(wideDays, false, refresh);
     var todayYmd = _cs_daysAgoYmd_(0);
     var ydayYmd = _cs_daysAgoYmd_(1);
     var intakeToday = 0, intakeYesterday = 0;
+    var doneRows = [];
     for (var i = 0; i < allRows.length; i++) {
       var ymd = String(allRows[i].dateYmd || "");
       if (ymd === todayYmd) intakeToday++;
       else if (ymd === ydayYmd) intakeYesterday++;
+      /*  진행 건은 rows 에 이미 있다 — 여기 또 담으면 검색이 두 번 보여 준다. */
+      if (!allRows[i].active) doneRows.push(allRows[i]);
     }
 
     return {
@@ -3634,6 +3749,9 @@ function csListActiveReturnCases(opt) {
       days: days,
       count: rows.length,
       rows: rows,
+      /*  검색할 때만 쓰는 완료 목록. 화면의 기본 목록에는 섞지 않는다. */
+      doneRows: doneRows,
+      doneDays: _CS_RETURN_DONE_DAYS_,
       intakeToday: intakeToday,
       intakeYesterday: intakeYesterday,
       statusOptions: _CS_RETURN_STATUS_OPTS_

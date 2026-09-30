@@ -21,6 +21,8 @@ function prpBootstrap(sid) {
     vendor: g.sess.vendor,
     version: PRP_VERSION,
     types: PRP_RETURN_TYPES,
+    faults: PRP_RETURN_FAULTS,       // 2026-09-30 — 귀책
+    reasons: PRP_RETURN_REASONS,     // 2026-09-30 — 귀책별 사유
     pickups: PRP_PICKUP_OPTS,
     pickupDefault: PRP_PICKUP_DEFAULT,   // 2026-09-18 — 처음 골라져 있을 것
     defaultDays: PRP_DEFAULT_DAYS,
@@ -190,6 +192,34 @@ function prpSubmitReturn(sid, data) {
     if (col.invoice >= 0) row[col.invoice] = invoice;
     if (col.type >= 0) row[col.type] = String(data.type || "단순반품").trim();
 
+    /*  사유 — 고객이 «왜» 보냈나. 유형(K열)과 다른 칸(L열)이다. (2026-09-30)
+        업체가 목록에서 고른 낱말만 받는다 — 자유 글은 「전달 사항」이 받는다.  */
+    var reasonIn = String(data.reason || "").trim();
+    if (PRP_RETURN_REASONS) {
+      var 있나 = false;
+      for (var fk in PRP_RETURN_REASONS) {
+        if (PRP_RETURN_REASONS[fk].indexOf(reasonIn) !== -1) { 있나 = true; break; }
+      }
+      if (!있나) reasonIn = "";
+    }
+    if (col.reason >= 0 && reasonIn) row[col.reason] = reasonIn;
+
+    /*  귀책 — 전용 열이 있으면 열에, 없으면 아래 비고 줄에.
+        CS웹앱이 걸어온 길과 같은 글자 모양을 쓴다 — 읽는 쪽이 하나여야 한다.
+        ★ 사유가 비면 귀책도 안 적는다 ★ 「판매자」 한 낱말은 아무것도 안 알려 준다.  */
+    var faultIn = String(data.fault || "").trim();
+    if (PRP_RETURN_FAULTS && PRP_RETURN_FAULTS.indexOf(faultIn) === -1) faultIn = "";
+    var faultToNotice = "";
+    if (faultIn && reasonIn) {
+      if (col.fault >= 0) row[col.fault] = faultIn;
+      else faultToNotice = " 귀책: " + faultIn + " (" + reasonIn + ").";
+    }
+    /*  사유 열도 없다 — 위 줄이 사유까지 담으므로 대개 이 줄은 안 쓴다.
+        귀책이 비었을 때만 따로 남긴다. (2026-09-30)  */
+    if (col.reason < 0 && reasonIn && !faultToNotice) {
+      faultToNotice = " 사유: " + reasonIn + ".";
+    }
+
     var memo = String(data.memo || "").replace(/\s+/g, " ").trim();
     var uid = prpUidFromCell_(data.uid);
     /* 추가연락처 열이 없는 옛 탭에서는 비고에 남긴다.
@@ -217,6 +247,7 @@ function prpSubmitReturn(sid, data) {
            (p2NameIn ? " (" + p2NameIn + ")" : "") + "." : "") +
         (!p2Lost && p2NameLost ? " 실번호 " + prpFormatPhone_(p2) +
            " (" + p2NameIn + ")." : "") +
+        faultToNotice +
         (memo ? " " + memo : "");
     }
 

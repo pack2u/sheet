@@ -323,3 +323,62 @@ function csDiagnoseReturnIntake(sampleInvoice) {
     error: found.error || ""
   };
 }
+
+/* ══════════════════════════════════════════════════════════════
+ *  입고확인요청 열  (2026-09-30)
+ *
+ *  > "반품카드에 입고확인요청 열을 만들고 물류팀에서 확인할때 한눈에 요청사항이 잘보이게"
+ *
+ *  처음엔 처리 경과에 「[내부] 입고확인요청: …」 한 줄로만 남겼다. 그러면 «지금 유효한
+ *  요청»이 무엇인지 줄을 훑어야 안다. 그래서 대장에 전용 열을 둔다 —
+ *    · 열(맨 뒤 「입고확인요청」) = 지금 요청. 고치면 덮는다, 비우면 지운다
+ *    · 처리 경과 = 누가 언제 무엇으로 바꿨는지 (내부 표시 — 업체 포털엔 안 나간다)
+ *  v2 는 밤 미러·그때그때 읽기로 이 열을 returns.intake_req 로 받는다(sql/69).
+ *  업체 포털(prpLedger.prpMapCols_)은 이 열을 모른다 — 업체에게 안 보인다.
+ * ══════════════════════════════════════════════════════════════ */
+var _CS_INTAKE_REQ_HEADER_ = "입고확인요청";
+
+/** 그 탭에 입고확인요청 열이 없으면 맨 뒤에 만든다. 0-기반 열 번호를 돌려준다 */
+function _cs_ensureIntakeReqCol_(tab) {
+  var lastCol = Math.max(tab.getLastColumn(), 15);
+  var scan = tab.getRange(1, 1, Math.min(Math.max(tab.getLastRow(), 1), 40), lastCol).getDisplayValues();
+  var hi = _cs_findReturnHeaderRow_(scan);
+  if (hi < 0) throw new Error("반품접수날짜 헤더 없음");
+  var col = _cs_mapReturnLedgerCols_(scan[hi]);
+  if (col.intakeReq >= 0) return col.intakeReq;
+  var at = tab.getLastColumn() + 1;
+  if (at > tab.getMaxColumns()) tab.insertColumnsAfter(tab.getMaxColumns(), at - tab.getMaxColumns());
+  tab.getRange(hi + 1, at).setValue(_CS_INTAKE_REQ_HEADER_)
+    .setFontWeight("bold").setBackground("#fff4d6");
+  return at - 1;
+}
+
+/**
+ * CS 반품 카드 「📦 입고 요청」 — 열에 쓰고 경과에 남긴다.
+ * @param {{tab:string,row:number,text:string,staff:string}} p  text 가 비면 요청을 지운다
+ */
+function csSetReturnIntakeReq(p) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  p = p || {};
+  var tabName = String(p.tab || "").trim(), rowNum = parseInt(p.row, 10);
+  var text = String(p.text || "").replace(/\s+/g, " ").trim();
+  var staff = String(p.staff || "").trim() || "CS";
+  if (!tabName || !(rowNum > 0)) return { ok: false, error: "반품 건을 알 수 없습니다" };
+  try {
+    var tab = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_).getSheetByName(tabName);
+    if (!tab) return { ok: false, error: "탭 없음: " + tabName };
+    var ci = _cs_ensureIntakeReqCol_(tab);
+    var cell = tab.getRange(rowNum, ci + 1);
+    var before = String(cell.getDisplayValue() || "").trim();
+    if (before === text) return { ok: true, intakeReq: text, unchanged: true };
+    cell.setValue(text);
+    appendReturnConsultation({
+      tab: tabName, row: rowNum, staff: staff,
+      text: "[내부] 입고확인요청" + (text ? ": " + text : " 지움 (전: " + before + ")")
+    });
+    try { csInvalidateReturnLedgerCache_(); } catch (eC) {}
+    return { ok: true, intakeReq: text, message: text ? "입고 확인 요청을 남겼습니다" : "입고 확인 요청을 지웠습니다" };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+}

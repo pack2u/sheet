@@ -2614,6 +2614,18 @@
       font-size: 10px; font-weight: 700;
       background: rgba(85, 166, 124,0.16); color: var(--accent-green);
     }
+    /* ── 완료된 건 (검색에만 나온다) ── (2026-09-30)
+       > "완료된건은 아나와서 접수가 안된거로 파악이 되서 다시 만드는경우가 생기네"
+       찾아 준 것이 «이미 끝난 건»임을 한눈에 알아야 또 손대지 않는다.
+       지우지 않고 가라앉힌다 — 읽을 수는 있어야 한다. */
+    .ret-card.ret-closed { opacity: .72; border-style: dashed; }
+    .ret-card.ret-closed:hover { opacity: 1; }
+    .ret-closed-tag {
+      display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 8px;
+      font-size: 10px; font-weight: 700;
+      background: var(--bg-secondary); color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
     .ret-pickup-btn {
       border: 1px solid transparent; background: rgba(197, 153, 91,0.10);
       color: var(--accent-orange); font-family: inherit; font-size: 11px; font-weight: 700;
@@ -3025,6 +3037,11 @@
     .lgw-acts button:disabled { opacity: .4; cursor: default; }
     .lgw-ocr { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-secondary); font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
     .lgw-ocr.err { color: var(--text-muted); }
+    .ret-intakereq {
+      margin-top: 5px; padding: 5px 8px; border-radius: 7px; cursor: pointer;
+      background: #fff4d6; color: #6b4a00; font-size: 12px; font-weight: 700; line-height: 1.45;
+      border-left: 3px solid #FDB813; word-break: keep-all;
+    }
     .lgw-done { font-size: 11px; font-weight: 700; color: var(--accent-orange); margin-left: 4px; }
     .lgw-ocr-t { font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
     .lgw-ocr span { display: inline-block; min-width: 56px; color: var(--text-muted); }
@@ -3227,6 +3244,8 @@
             <div class="os-dash-head">
               <span class="os-dash-title">💰 입금 (오늘 · 어제)<span id="dashDepositSum" class="dash-dep-sum"></span></span>
               <!-- 주문서 매칭 (2026-09-29) — 주문수집 전에 받는 「주문서조회」 엑셀을 여기에 한 번 올린다 -->
+              <!-- 입금 소리 (2026-09-30) — 구글챗 PC 는 방마다 소리를 못 나눠 협력업체 알림과 헷갈렸다. 이 PC 에서만 켜고 끈다 -->
+              <button type="button" class="os-dash-refresh" id="depSoundBtn" onclick="depToggleSound()" title="새 입금이 오면 입금 전용 소리">🔔</button>
               <button type="button" class="os-dash-refresh" id="depPostAllBtn" hidden onclick="depPostAll()"
                       title="오늘 ✅ 일치·🔴 부족 입금 중 아직 안 넘긴 것을 이카운트 일반전표로">📒 일치 전체 반영</button>
               <button type="button" class="os-dash-refresh" onclick="document.getElementById('depOrdersFile').click()"
@@ -3639,16 +3658,8 @@
       <div class="ledger-row2">
         <div class="ledger-field">
           <label>유형</label>
-          <select id="retNewType">
-            <option value="단순반품">단순반품</option>
-            <option value="반품">반품</option>
-            <option value="교환">교환</option>
-            <option value="오배송">오배송</option>
-            <option value="오주문">오주문</option>
-            <option value="재출고">재출고</option>
-            <option value="파손">파손</option>
-            <option value="기타">기타</option>
-          </select>
+          <!-- 낱말은 RET_TYPES 에서 온다 (retFillPicks) -->
+          <select id="retNewType"></select>
         </div>
         <div class="ledger-field">
           <label>상태</label>
@@ -3660,6 +3671,33 @@
             <option value="입고검수">입고검수</option>
             <option value="환불처리">환불처리</option>
           </select>
+        </div>
+      </div>
+      <!--  ★ 귀책과 사유  (2026-09-30)
+
+            > "반품 접수시 내용을 (자동반품, 단순변심, 오입력, 오배송, 제품파손,
+            >  택배사고, 제품불량, 배송지연 / 정보불일치, 오배송, 중복출고) 로 해줘"
+            > "아니 구매자 귀책이 오주문... 판매자 귀책이 오배송"
+
+            「유형」과 「사유」는 이미 다른 칸이다 —
+              유형(대장 K열) : 재출고·단순·오배송   … 우리가 «어떻게 처리하나»
+              사유(대장 L열) : 제품파손·단순변심     … 고객이 «왜 보냈나»
+            사유는 카드에 나오는데 «적는 칸이 없어» 늘 비어 있었다.
+
+            귀책을 먼저 고르는 까닭 — 반품비를 누가 내는지가 여기서 갈린다.
+            그리고 사유 낱말이 귀책마다 다르다. 구매자가 잘못 주문한 것은
+            「오주문」, 우리가 잘못 보낸 것은 「오배송」 — 낱말이 다르니
+            섞어 두면 CS 가 매번 어느 것인지 고민한다.  -->
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>귀책</label>
+          <select id="retNewFault" onchange="retFillReasons()"></select>
+        </div>
+        <div class="ledger-field">
+          <label>사유</label>
+          <!-- 빈칸으로 둘 수 있다. 목록에 없는 사유는 아래 메모에 적는다 —
+               「기타」를 골라 대장에 「기타」가 적히면 아무 뜻도 없다. -->
+          <select id="retNewReason"></select>
         </div>
       </div>
       <div class="ledger-field">
@@ -3758,16 +3796,20 @@
       </div>
       <div class="ledger-field">
         <label>교환/반품</label>
-        <select id="ledgerType">
-          <option value="단순반품">단순반품</option>
-          <option value="반품">반품</option>
-          <option value="교환">교환</option>
-          <option value="오배송">오배송</option>
-          <option value="오주문">오주문</option>
-          <option value="재출고">재출고</option>
-          <option value="파손">파손</option>
-          <option value="기타">기타</option>
-        </select>
+        <!-- 낱말은 RET_TYPES 에서 온다 (retFillPicks) -->
+        <select id="ledgerType"></select>
+      </div>
+      <!--  귀책·사유 — 반품탭 접수(retNew)와 «같은 목록·같은 함수»를 쓴다.
+            칸 이름만 ledger* 로 다르다. (2026-09-30)  -->
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>귀책</label>
+          <select id="ledgerFault" onchange="retFillReasons('ledger')"></select>
+        </div>
+        <div class="ledger-field">
+          <label>사유</label>
+          <select id="ledgerReason"></select>
+        </div>
       </div>
       <div class="ledger-field">
         <label>수거입력처 (대리공급은 택배사 자동)</label>
@@ -3980,6 +4022,7 @@
       renderOrderDashboard();
       loadStockout();   /* 팩투유 품절상품 — 화면 열 때 한 번 (2026-09-11) */
       renderDeposits(); /* 오늘 입금 — 열 때 한 번, 그 뒤 1분마다 (2026-09-29) */
+      depPaintSoundBtn(); /* 입금 소리 켜짐/꺼짐 (2026-09-30) */
       startCsPulse();
       setTimeout(function() { initWsSplitter(); csInstallScrollbars(); }, 80);
       setTimeout(function() { initWsSplitter(); csInstallScrollbars(); }, 400);
@@ -6163,7 +6206,18 @@
         modal: 'retNewModal', bar: 'retNewDraftBar',
         fields: ['retNewStaff', 'retNewName', 'retNewPhone', 'retNewPhone2', 'retNewPhone2Name', 'retNewInvoice', 'retNewQty',
                  'retNewItem', 'retNewVendor', 'retNewPickup', 'retNewRetInvoice',
-                 'retNewFee', 'retNewType', 'retNewStatus', 'retNewAccount', 'retNewMemo']
+                 'retNewFee', 'retNewType', 'retNewFault', 'retNewReason',
+                 'retNewStatus', 'retNewAccount', 'retNewMemo'],
+        /*  사유 목록은 귀책에 딸려 있다 — 되살릴 때 «순서»가 있다.  (2026-09-30)
+            위 칸 되살리기는 값만 넣는다(onchange 가 안 돈다). 그래서 사유
+            select 에는 아직 그 귀책의 항목이 없고, 값을 넣어도 안 들어간다.
+            여기서 목록을 채운 «뒤에» 사유를 다시 넣는다.  */
+        load: function (v) {
+          if (typeof retFillReasons !== 'function') return;
+          retFillReasons();
+          var r = document.getElementById('retNewReason');
+          if (r && v && v.retNewReason) r.value = v.retNewReason;
+        }
       },
       hb: {
         modal: 'hbModal', bar: 'hbDraftBar',
@@ -6177,7 +6231,16 @@
       // 송장이 없으면 아예 담지 않는다 — 엉뚱한 건에 남의 메모가 붙는 게 더 나쁘다.
       ledger: {
         modal: 'ledgerModal', bar: 'ledgerDraftBar', requireScope: true,
-        fields: ['ledgerStaff', 'ledgerType', 'ledgerPickup', 'ledgerFee', 'ledgerAccount', 'ledgerMemo'],
+        fields: ['ledgerStaff', 'ledgerType', 'ledgerFault', 'ledgerReason',
+                 'ledgerPickup', 'ledgerFee', 'ledgerAccount', 'ledgerMemo'],
+        /*  retNew 와 같은 까닭 — 되살리기는 값만 넣어 onchange 가 안 돈다.
+            목록을 채운 «뒤에» 사유를 다시 넣는다. (2026-09-30)  */
+        load: function (v) {
+          if (typeof retFillReasons !== 'function') return;
+          retFillReasons('ledger');
+          var r = document.getElementById('ledgerReason');
+          if (r && v && v.ledgerReason) r.value = v.ledgerReason;
+        },
         scope: function() {
           var r = CS_ROWS[LEDGER_IDX] || {};
           return String(r.invoice || '').replace(/[^0-9]/g, '');
@@ -8045,6 +8108,11 @@
     var CS_PRODUCT_CACHE = {};
     var RETURN_CASES = [];
     var RETURN_ALL_ROWS = [];
+    /*  ★ 검색할 때만 함께 뒤지는 «완료» 목록  (2026-09-30)
+        RETURN_ALL_ROWS 에 섞지 않는다 — 여러 곳에서 그 수를 「진행 건수」로
+        세고 있다(뱃지·요약·집중보기). 섞으면 그 숫자가 다 틀어진다.  */
+    var RETURN_DONE_ROWS = [];
+    var RETURN_DONE_DAYS = 45;
     var RETURN_INTAKE_TODAY = 0;   // 반품 접수 건수 (완료건 포함)
     var RETURN_INTAKE_YDAY = 0;
     var RETURN_ACTIVE_ROWS = [];
@@ -8410,6 +8478,9 @@
       if (mode === 'photo') {
         return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.4"/></svg>';
       }
+      if (mode === 'intakereq') {  // 📦 입고 확인 요청 — 상자
+        return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>';
+      }
       return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
     }
 
@@ -8507,6 +8578,92 @@
       return '<div class="ret-origin ' + (o === '어긋남' ? 'bad' : '') + '">⚠ ' + 말 + '</div>';
     }
 
+    /*  ★ 반품 접수에서 «고르는 낱말»은 전부 여기서만 정한다  (2026-09-30)
+
+        반품 접수 길이 둘이다 —
+          retNew : 반품탭 「+ 반품 접수」
+          ledger : 주문송장조회 → 「반품대장 기록」
+
+        ★ 왜 표로 모으나 ★
+          두 화면이 HTML 에 <option> 을 «두 벌» 적어 두고 있었다. 그래서
+          귀책·사유를 retNew 에만 넣었을 때 ledger 는 옛 화면 그대로였고,
+          사장님이 「주문송장조회에서 반품대장 기록으로 할경우는 아직도
+          이전 그대로네.. 다른 부분도 통일이 되야지」 하고 짚어 주셨다.
+          낱말을 고칠 자리가 하나면 한쪽을 빠뜨릴 수가 없다.
+
+        화면과 시트가 다른 낱말을 쓰면 나중에 세지도 못하고 견주지도 못한다.  */
+    var RET_TYPES = ['단순반품', '반품', '교환', '오배송', '오주문', '재출고', '파손', '기타'];
+    var RET_FAULTS = ['구매자', '판매자'];
+    var RET_REASONS = {
+      구매자: ['자동반품', '단순변심', '오입력', '오주문',
+               '제품파손', '택배사고', '제품불량', '배송지연'],
+      판매자: ['정보불일치', '오배송', '중복출고']
+    };
+
+    /**
+     * 고르는 칸 하나를 표대로 채운다.
+     *
+     * 고르고 있던 값이 새 목록에도 있으면 지킨다. 없으면 —
+     *   빈칸 안내가 있는 칸(사유)은 빈 값으로,
+     *   없는 칸(유형·귀책)은 첫 낱말로.
+     *
+     * @param {string} id       칸 id
+     * @param {string[]} 목록
+     * @param {string=} 빈칸안내 비워 둘 수 있는 칸이면 그 안내 글
+     */
+    function retFillSelect(id, 목록, 빈칸안내) {
+      var el = document.getElementById(id);
+      if (!el) return null;
+      var 있던것 = el.value;
+      var h = 빈칸안내 ? '<option value="">' + 빈칸안내 + '</option>' : '';
+      for (var i = 0; i < 목록.length; i++) {
+        h += '<option value="' + 목록[i] + '">' + 목록[i] + '</option>';
+      }
+      el.innerHTML = h;
+      /*  ★ 값을 «드러내» 정한다 ★
+          innerHTML 을 갈면 브라우저가 알아서 첫 항목으로 되돌려 주기는 한다.
+          그 성질에 기대면 눈에 안 보이는 규칙이 되고, 시험도 못 한다.  */
+      el.value = (있던것 && 목록.indexOf(있던것) !== -1) ? 있던것
+        : (빈칸안내 ? '' : (목록[0] || ''));
+      return el;
+    }
+
+    /**
+     * 한 화면의 고르는 칸을 전부 표대로 채운다 — 화면을 열 때 한 번.
+     * @param {string=} which 'retNew'(기본) | 'ledger'
+     */
+    function retFillPicks(which) {
+      var pfx = which === 'ledger' ? 'ledger' : 'retNew';
+      retFillSelect(pfx + 'Type', RET_TYPES);
+      retFillSelect(pfx + 'Fault', RET_FAULTS);
+      retFillReasons(which);
+    }
+
+    /**
+     * 귀책 칸을 보고 사유 목록을 다시 채운다.
+     *
+     * ★ 두 화면이 이 함수 하나를 쓴다 ★  (2026-09-30)
+     *   반품 접수는 길이 둘이다 —
+     *     retNew : 반품탭 「+ 반품 접수」
+     *     ledger : 주문송장조회 → 「반품대장 기록」
+     *   같은 일을 하는 화면이 둘이면 «고칠 때마다 한쪽을 빠뜨린다».
+     *   실제로 귀책·사유를 retNew 에만 넣었다가 사장님이
+     *   「주문송장조회에서 반품대장 기록으로 할경우는 아직도 이전 그대로네」
+     *   하고 짚어 주셨다. 그래서 칸 이름만 다르고 속은 하나로 둔다.
+     *
+     * 고르고 있던 값이 새 목록에도 있으면 그대로 둔다 — 귀책을 잘못 눌렀다가
+     * 되돌렸을 때 적어 둔 것이 날아가면 안 된다.
+     *
+     * @param {string=} which 'retNew'(기본) | 'ledger'
+     */
+    function retFillReasons(which) {
+      var pfx = which === 'ledger' ? 'ledger' : 'retNew';
+      var f = document.getElementById(pfx + 'Fault');
+      if (!f) return;
+      retFillSelect(pfx + 'Reason', RET_REASONS[f.value] || [],
+        '— 고르세요 (비워도 됩니다) —');
+    }
+
     function retReasonOf(c) {
       var r = String((c && c.reason) || '').trim();
       if (!r) return '';
@@ -8579,6 +8736,17 @@
           '<div class="ret-pop-btns">' +
             '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
             '<button type="button" class="ret-pop-save" id="ret-save-consult-' + idx + '" onclick="submitReturnCompose(' + idx + ',\'consult\')">카드 추가</button>' +
+          '</div></div>' +
+        /*  📦 입고 확인 요청 (2026-09-30) — 물류가 박스를 열 때 볼 것.
+            > (물류 1차 테스트) "CS가 입고 확인 요청을 따로 적는 칸"
+            「[내부] 입고확인요청: …」 한 줄로 남는다 — 업체 포털에는 안 나가고(PRP_INTERNAL_MARK_),
+            v2 물류 입고 화면 카드 맨 위에 노란 띠로 뜬다(lib/intake-notes). */
+        '<div class="ret-act-pop" id="ret-pop-intakereq-' + idx + '" data-mode="intakereq">' +
+          '<div class="pop-label">📦 입고 확인 요청 · 물류 입고 화면에 뜹니다 (업체에는 안 보임)</div>' +
+          '<textarea id="ret-intakereq-' + idx + '" placeholder="예: 뚜껑만 반품 — 몸통 섞였는지 확인 / 수량 50개 맞는지 / 파손 사진 꼭 (비우고 남기면 요청을 지웁니다)">' + esc(c.intakeReq || '') + '</textarea>' +
+          '<div class="ret-pop-btns">' +
+            '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
+            '<button type="button" class="ret-pop-save" id="ret-save-intakereq-' + idx + '" onclick="submitReturnCompose(' + idx + ',\x27intakereq\x27)">요청 남기기</button>' +
           '</div></div>' +
         '<div class="ret-act-pop" id="ret-pop-photo-' + idx + '" data-mode="photo">' +
           '<div class="pop-label">사진 첨부 (최대 ' + RET_PHOTO_MAX + '장 · Ctrl+V 붙여넣기)</div>' +
@@ -8798,7 +8966,11 @@
           «있고 없고»를 한 군데(renderReturnTimeline)서만 가린다. 두 곳에서
           따로 세면 언젠가 어긋나 빈 칸이 다시 생긴다. */
       var tlHtml = renderReturnTimeline(c.timeline, idx);
+      /*  ★ 완료된 건임을 한눈에 ★  (2026-09-30)
+          검색에만 나오는 카드다. 진행 건과 같아 보이면 「아직 안 끝났나」
+          하고 또 손을 대게 된다. 상태 딱지만으로는 눈에 안 들어온다.  */
       return '<div class="ret-card' + (tlHtml ? '' : ' ret-noproc') +
+        (c.active === false ? ' ret-closed' : '') +
         (c.needsCheck ? ' ret-new' : '') +
         '" id="ret-card-' + idx + '" onclick="onReturnCardTap(' + idx + ', event)">' +
         '<div class="ret-focus-badge">집중 보기 · 다시 탭하면 접기</div>' +
@@ -8821,8 +8993,14 @@
             '<div class="rn">' + retVendorIconHtml(c.vendor) +
               '<span class="ret-name">' + esc(c.name || '(이름 없음)') + '</span>' +
               statusBadge +
+              (c.active === false ? '<span class="ret-closed-tag">완료</span>' : '') +
               (picked ? '<span class="ret-done">회수 접수됨</span>' : '') + '</div>' +
             '<div class="ret-item">' + esc(c.item || '-') + (c.qty ? ' × ' + esc(c.qty) : '') + '</div>' +
+            /* 📦 입고확인요청 열 (2026-09-30) — 지금 유효한 요청. 누르면 고친다 */
+            (c.intakeReq
+              ? '<div class="ret-intakereq" onclick="event.stopPropagation(); toggleReturnCompose(' + idx + ',\x27intakereq\x27)"' +
+                  ' title="물류 입고 화면에 이대로 뜹니다 · 눌러서 고치기">📦 입고 확인: ' + esc(c.intakeReq) + '</div>'
+              : '') +
             /* ★ 왜 보냈는지를 품목 바로 밑에 ★  (2026-09-18)
                상담에서 첫 물음이 「왜 반품이세요」다. 대장에 적혀 있는데
                화면에 없으면 사람이 시트를 다시 연다. */
@@ -8883,6 +9061,7 @@
             returnActBtnHtml(idx, 'status', '상태') +
             returnActBtnHtml(idx, 'consult', '메모') +
             returnActBtnHtml(idx, 'photo', '사진') +
+            returnActBtnHtml(idx, 'intakereq', '입고 요청') +
             returnGoOrderBtnHtml(idx) +
             retPickupBtnHtml(idx, c, picked) +
           '</div>' +
@@ -9063,7 +9242,7 @@
     }
 
     function retPopId(idx, mode) {
-      if (mode === 'status' || mode === 'phone' || mode === 'photo') {
+      if (mode === 'status' || mode === 'phone' || mode === 'photo' || mode === 'intakereq') {
         return 'ret-pop-' + mode + '-' + idx;
       }
       return 'ret-pop-consult-' + idx; // 상담·메모는 한 입력창을 쓴다
@@ -9185,11 +9364,15 @@
         return;
       }
 
-      var ta = document.getElementById(mode === 'phone' ? 'ret-phone-' + idx : 'ret-consult-' + idx);
-      var btn = document.getElementById(mode === 'phone' ? 'ret-save-phone-' + idx : 'ret-save-consult-' + idx);
+      if (mode === 'intakereq') { submitIntakeReq(idx, c, staff); return; }
+      var boxKey = (mode === 'phone' || mode === 'intakereq') ? mode : 'consult';
+      var ta = document.getElementById('ret-' + boxKey + '-' + idx);
+      var btn = document.getElementById('ret-save-' + boxKey + '-' + idx);
       var text = ta ? String(ta.value || '').trim() : '';
       if (!text) { toast('내용을 입력하세요'); return; }
       if (mode === 'phone') text = '전화 통화. ' + text;
+      //  입고 확인 요청 — 업체에는 안 보이게 [내부] (v2 lib/intake-notes 가 이 앞말을 찾는다)
+      if (mode === 'intakereq') text = '[내부] 입고확인요청: ' + text;
       /*  「업체에 숨김」 체크상자는 2026-09-18 에 뺐다 — 커뮤니티라 가릴 것이 없다.
           가려야 할 줄이 생기면 반품대장 비고에 손으로 「[내부] 」를 붙인다.
           포털은 그 표시를 그대로 걸러 낸다 (prpConfig.PRP_INTERNAL_MARK_). */
@@ -9238,6 +9421,31 @@
           toast(String((err && err.message) || err), 2600);
         })
         .appendReturnConsultation({ tab: c.tab, row: c.row, text: text, staff: staff });
+    }
+
+    /* 📦 입고확인요청 — 대장 전용 열에 쓴다 (2026-09-30, csSetReturnIntakeReq).
+       > "반품카드에 입고확인요청 열을 만들고 물류팀에서 확인할때 한눈에 요청사항이 잘보이게"
+       열 = 지금 요청(덮어쓰기 · 비우면 지움), 처리 경과 = 누가 언제 바꿨는지(내부). */
+    function submitIntakeReq(idx, c, staff) {
+      var ta = document.getElementById('ret-intakereq-' + idx);
+      var btn = document.getElementById('ret-save-intakereq-' + idx);
+      var text = ta ? String(ta.value || '').trim() : '';
+      if (!text && !c.intakeReq) { toast('요청 내용을 적어 주세요'); return; }
+      if (btn) btn.disabled = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (btn) btn.disabled = false;
+          if (!res || !res.ok) { toast((res && res.error) || '저장 실패', 3000); return; }
+          c.intakeReq = res.intakeReq || '';
+          closeReturnCompose(idx);
+          toast(res.message || '저장했습니다');
+          loadReturnActive(true, false, true);
+        })
+        .withFailureHandler(function (e) {
+          if (btn) btn.disabled = false;
+          toast(String((e && e.message) || e), 3000);
+        })
+        .csSetReturnIntakeReq({ tab: c.tab, row: c.row, text: text, staff: staff });
     }
 
     // ── 반품 사진 첨부 ────────────────────────────────────
@@ -9853,6 +10061,8 @@
         retCaseRowHtml('유형', c.type) +
         /*  사유가 유형과 같은 말이면 두 번 적지 않는다 (2026-09-18) */
         retCaseRowHtml('사유', retReasonOf(c)) +
+        /*  귀책은 반품비를 누가 내는지다. 사유 바로 아래 둔다 (2026-09-30) */
+        retCaseRowHtml('귀책', c.fault) +
         retCaseRowHtml('반품비', /^[0₩,.\s원]*$/.test(String(c.fee || '')) ? '' : c.fee) +
         retCaseRowHtml('담당', c.staff) +
         '<div class="os-actions"><button class="os-reply" type="button" ' +
@@ -10111,6 +10321,13 @@
 
     function retKeyOf(c) { return String(c && c.tab) + '|' + String(c && c.row); }
 
+    /*  진행 목록에서만 찾는다.
+        ★ 검색에 나온 «완료» 카드는 여기서 -1 이 된다 ★  (2026-09-30)
+          RETURN_DONE_ROWS 는 검색용 별도 목록이라 이 배열에 없다. -1 이면
+          retOptimistic 이 false 를 돌려주고, 부르는 쪽이 옛 길(서버에 보내고
+          다시 불러오기)로 간다 — 느리지만 맞다. 완료된 건을 손대는 일은
+          드물어서 그 값을 치를 만하다. 두 배열을 다 뒤지게 만들면 아래에서
+          RETURN_ALL_ROWS[i] 에 써 넣는 곳이 엉뚱한 줄을 덮는다.  */
     function retLocate(key) {
       for (var i = 0; i < RETURN_ALL_ROWS.length; i++) {
         if (retKeyOf(RETURN_ALL_ROWS[i]) === key) return i;
@@ -10195,22 +10412,44 @@
       if (!list) return;
       if (sourceRows) RETURN_ALL_ROWS = sourceRows.slice();
       RET_PHOTO_PEND = {};   // 카드 index 가 다시 매겨지므로 대기 사진도 비운다
-      var filtered = sortReturnRows(filterReturnRows(RETURN_ALL_ROWS, RETURN_QUERY));
+      /*  ★ 검색할 때는 완료된 건도 뒤진다  (2026-09-30)
+
+          > "완료된건은 아나와서 접수가 안된거로 파악이 되서 다시 만드는경우가
+          >  생기네.. 검색에서 완료된것도 보이면 좋겠어"
+
+          검색이 없을 때의 목록은 그대로 «진행 건»만이다 — 완료를 늘 섞으면
+          할 일이 안 보인다. 찾을 때만 넓게 본다.  */
+      var 뒤질것 = RETURN_QUERY && RETURN_DONE_ROWS.length
+        ? RETURN_ALL_ROWS.concat(RETURN_DONE_ROWS)
+        : RETURN_ALL_ROWS;
+      var filtered = sortReturnRows(filterReturnRows(뒤질것, RETURN_QUERY));
       RETURN_ACTIVE_ROWS = filtered;
       var _sortSel = document.getElementById('retSort');
       if (_sortSel && _sortSel.value !== RETURN_SORT) _sortSel.value = RETURN_SORT;
       clearReturnFocus();
+      /*  찾은 것 가운데 완료가 몇 건인지 «세어» 말해 준다 —
+          「없네」 하고 다시 만드는 일을 막으려는 기능이니, 완료가 섞여
+          있다는 것 자체가 알려야 할 소식이다.  */
+      var 완료찾음 = 0;
+      for (var _di = 0; _di < filtered.length; _di++) {
+        if (!filtered[_di].active) 완료찾음++;
+      }
       if (head) {
         head.textContent = RETURN_QUERY
-          ? ('진행 중 반품 · 검색 ' + filtered.length + '/' + RETURN_ALL_ROWS.length + '건')
+          ? ('반품 검색 ' + filtered.length + '건' +
+             (완료찾음 ? ' (완료 ' + 완료찾음 + ')' : '') +
+             ' · 진행 ' + RETURN_ALL_ROWS.length + '건 중')
           : ('진행 중 반품 (' + RETURN_ALL_ROWS.length + '건)');
       }
       var limit = RETURN_QUERY ? Math.min(filtered.length, 80) : RETURN_SHOW_LIMIT;
       var shown = Math.min(filtered.length, limit);
       if (RETURN_QUERY) {
-        setReturnStatus('「' + esc(RETURN_QUERY) + '」 ' + filtered.length + '건 · 카드 탭=확대');
+        setReturnStatus('「' + esc(RETURN_QUERY) + '」 ' + filtered.length + '건' +
+          (완료찾음 ? ' · 완료 ' + 완료찾음 + '건 포함 (' + RETURN_DONE_DAYS + '일)' : '') +
+          ' · 카드 탭=확대');
       } else {
-        setReturnStatus('최근 30일 · ' + shown + '/' + filtered.length + '건 · 검색 또는 카드 탭');
+        setReturnStatus('최근 30일 · ' + shown + '/' + filtered.length + '건 · 검색하면 완료된 건도 찾습니다(' +
+          RETURN_DONE_DAYS + '일)');
       }
       if (!filtered.length) {
         list.innerHTML = RETURN_QUERY
@@ -10262,6 +10501,9 @@
             }
             RETURN_INTAKE_TODAY = res.intakeToday || 0;
             RETURN_INTAKE_YDAY = res.intakeYesterday || 0;
+            //  검색용 완료 목록 (2026-09-30)
+            RETURN_DONE_ROWS = res.doneRows || [];
+            if (res.doneDays) RETURN_DONE_DAYS = res.doneDays;
             renderReturnActiveList(res.rows || []);
             lgwLoad(!!refreshData);
             if (silent) csScrollRestore(snap);
@@ -11228,7 +11470,14 @@
       document.getElementById('retNewPickup').value = '';
       document.getElementById('retNewRetInvoice').value = '';
       document.getElementById('retNewFee').value = '';
+      /*  고르는 칸을 표대로 채운 «뒤에» 기본값을 박는다.
+          채우기가 먼저여야 값이 들어간다 — 빈 select 에는 값을 못 넣는다.
+          새로 여는 것이니 지난번에 고른 것은 남기지 않는다.  */
+      retFillPicks('retNew');
       document.getElementById('retNewType').value = '단순반품';
+      document.getElementById('retNewFault').value = '구매자';
+      retFillReasons();
+      document.getElementById('retNewReason').value = '';
       document.getElementById('retNewStatus').value = '접수';
       document.getElementById('retNewAccount').value = '';
       document.getElementById('retNewMemo').value = '';
@@ -11339,6 +11588,8 @@
         .submitReturnLedger({
           staff: staff,
           type: document.getElementById('retNewType').value,
+          fault: document.getElementById('retNewFault').value,
+          reason: document.getElementById('retNewReason').value,
           pickup: document.getElementById('retNewPickup').value,
           memo: document.getElementById('retNewMemo').value,
           account: document.getElementById('retNewAccount').value,
@@ -11649,7 +11900,12 @@
         '송장 ' + esc(r.invoice || '-') +
         (resolveCarrier(r) ? '<br>택배사 ' + esc(resolveCarrier(r)) : '') +
         (r.vendor ? '<br>업체 ' + esc(r.vendor) : '');
+      //  retNew 와 같은 차례 — 채우고 나서 기본값을 박는다
+      retFillPicks('ledger');
       document.getElementById('ledgerType').value = '단순반품';
+      document.getElementById('ledgerFault').value = '구매자';
+      retFillReasons('ledger');
+      document.getElementById('ledgerReason').value = '';
       document.getElementById('ledgerPickup').value = resolveCarrier(r) || '';
       document.getElementById('ledgerFee').value = '';
       document.getElementById('ledgerFeeWhy').textContent = '';
@@ -11771,6 +12027,8 @@
         .submitReturnLedger({
           staff: staff,
           type: document.getElementById('ledgerType').value,
+          fault: document.getElementById('ledgerFault').value,
+          reason: document.getElementById('ledgerReason').value,
           pickup: document.getElementById('ledgerPickup').value,
           memo: document.getElementById('ledgerMemo').value,
           account: document.getElementById('ledgerAccount').value,
@@ -12759,6 +13017,68 @@
         ' · ' + (r.ordersCount || 0).toLocaleString() + '건' + (stale ? ' — 오늘 주문서를 올려 주세요' : '');
     }
 
+    /* ── 입금 소리 (2026-09-30) ──────────────────────
+       > "구글쳇 PC에서 나는소리가 협력업체 수집, 발주 소리랑 똑같아서 헷갈려"
+       구글챗 PC 는 방마다 알림음을 못 바꾼다. 그래서 입금은 여기서 따로 운다.
+       ✅ 일치 = 「띠링」 한 번 (올라가는 두 음) / 확인이 필요한 입금(후보·미확인·부족·초과) = 두 번.
+       파일 없이 브라우저가 직접 만든 소리라 다른 알림음과 섞이지 않는다.
+       켜고 끄는 건 이 PC 에만 기억한다 (기본 켜짐). 브라우저 규칙상 화면을 한 번 누른 뒤부터 소리가 난다. */
+    var DEP_SOUND_KEY = 'pack2u_dep_sound';
+    var DEP_AUDIO = null;
+    var DEP_CHIME_READY = false;
+    function depSoundOn() {
+      try { return localStorage.getItem(DEP_SOUND_KEY) !== '0'; } catch (e) { return true; }
+    }
+    function depPaintSoundBtn() {
+      var b = document.getElementById('depSoundBtn');
+      if (!b) return;
+      var on = depSoundOn();
+      b.textContent = on ? '🔔' : '🔕';
+      b.title = on ? '입금 소리 켜짐 — 누르면 끔' : '입금 소리 꺼짐 — 누르면 켬';
+    }
+    function depToggleSound() {
+      var on = !depSoundOn();
+      try { localStorage.setItem(DEP_SOUND_KEY, on ? '1' : '0'); } catch (e) {}
+      depPaintSoundBtn();
+      toast(on ? '🔔 입금 소리 켬 (이 PC)' : '🔕 입금 소리 끔 (이 PC)', 1600);
+      if (on) depChime(false);                  // 켤 때 한 번 들려준다 — 어떤 소리인지 알게
+    }
+    function depAudio() {
+      if (DEP_AUDIO) return DEP_AUDIO;
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      try { DEP_AUDIO = new AC(); } catch (e) { DEP_AUDIO = null; }
+      return DEP_AUDIO;
+    }
+    // 브라우저는 사용자가 한 번 누르기 전까지 소리를 막는다 — 첫 클릭 때 깨워 둔다
+    document.addEventListener('click', function () {
+      var a = depAudio();
+      if (a && a.state === 'suspended') { try { a.resume(); } catch (e) {} }
+    }, { once: true, capture: true });
+
+    function depTone(a, freq, at, dur, vol) {
+      var o = a.createOscillator(), g = a.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(freq, at);
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(vol, at + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+      o.connect(g); g.connect(a.destination);
+      o.start(at); o.stop(at + dur + 0.05);
+    }
+    function depChime(attention) {
+      if (!depSoundOn()) return;
+      var a = depAudio();
+      if (!a) return;
+      try {
+        if (a.state === 'suspended') a.resume();
+        var t = a.currentTime + 0.05;
+        var ding = function (s) { depTone(a, 1046.5, s, 0.35, 0.25); depTone(a, 1568, s + 0.14, 0.5, 0.22); };  // 도(C6) → 솔(G6)
+        ding(t);
+        if (attention) ding(t + 0.7);          // 확인이 필요한 입금은 한 번 더
+      } catch (e) {}
+    }
+
     /* 「오늘 N건 · 합계」 — 어제 것은 섞지 않는다. 어제가 있으면 뒤에 「어제 M건」 만 붙인다 (2026-09-30) */
     var DEP_DAYS = 2;
     function depYesterday(r) {
@@ -12834,6 +13154,7 @@
           DEP_CACHE = r;
           depSaveLocal(r);
           paintDeposits(r);
+          DEP_CHIME_READY = true;
         })
         .withFailureHandler(function () {
           if (DEP_CACHE) return;
@@ -12857,6 +13178,12 @@
       var seen = DEP_SEEN || {};
       var next = {};
       (r.rows || []).forEach(function (x) { next[x.key] = 1; });
+      // 새로 들어온 입금이 있으면 입금 전용 소리 — 처음 그릴 때(화면 열 때)는 울리지 않는다
+      // 서버에서 한 번 받은 «다음부터»만 운다 — 화면을 연 뒤 첫 응답은 닫혀 있던 동안의 입금이라 조용히 그린다
+      if (!first && DEP_CHIME_READY) {
+        var fresh = (r.rows || []).filter(function (x) { return !seen[x.key]; });
+        if (fresh.length) depChime(fresh.some(function (x) { return /^(후보|미확인|부족|초과)/.test(x.result || ''); }));
+      }
       var h = depRowsHtml(r, r.rows || [], function (x) { return !first && !seen[x.key]; });
       DEP_SEEN = next;
 

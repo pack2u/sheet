@@ -2664,7 +2664,13 @@ var EMBEDDED_VENDOR_EXCLUSIVE_MASTER_ROWS_ = [
   { label: "팩시스",  prefix: "PS", headerCsv: "주문번호|받는사람|전화번호1|전화번호2|우편번호|주소|상품명1|상품상세1|수량(A타입)|배송메시지|운임구분|운임|운송장번호|송하인명|송하인전화번호|송하인주소" },
   { label: "제이씨",  prefix: "JC", headerCsv: "월/일 (필수입력)|거래처명(주문번호) (필수입력)|품목명 (필수입력)|수량 (필수입력)|수령인 (필수입력)|수령인연락처 (필수입력)|배송지주소 (필수입력)|적요(배송메시지)|보내는분성명 (고정)|보내는분전화번호 (고정)|보내는분주소(전체, 분할) (고정)" },
   { label: "하나팩",  prefix: "HP", headerCsv: "송장번호|이슈|보내는사람|전화번호|보내는사람주소|상품명|수량|받는사람|연락처|주소|배송메시지" },
-  { label: "뉴파츠_NEW", prefix: "HR", headerCsv: "송장번호|이슈|일자|순번|거래처코드|거래처명|담당자|출하창고|거래유형|통화|환율|참조|결제조건|유효기간|납기일자|검색창내용|배송방식|수령인|수령인연락처|배송지주소|적요(배송메시지)|변환품목코드|변환품목명|규격|수량|단가|금액1|외화금액|공급가액|부가세|납기일자|적요" },
+  /*  뉴파츠 — 이름이 시트와 달라 짝이 안 맞았다  (★ 2026-09-30)
+      허브 「업체전용양식마스터」에는 「뉴파츠」로 적혀 있는데 여기만
+      「뉴파츠_NEW」였다. 이름이 안 맞아 32칸 가운데 세 칸(적요→이슈,
+      품목코드→변환품목코드, 품목명→변환품목명)이 시트에 옛것으로 남아 있었다.
+      시트를 안 건드리고 여기를 시트 이름에 맞춘다.
+      옛이름은 어딘가 「뉴파츠_NEW」로 적힌 설정이 남아 있을 수 있어 같이 받는다.  */
+  { label: "뉴파츠", 옛이름: ["뉴파츠_NEW"], prefix: "HR", headerCsv: "송장번호|이슈|일자|순번|거래처코드|거래처명|담당자|출하창고|거래유형|통화|환율|참조|결제조건|유효기간|납기일자|검색창내용|배송방식|수령인|수령인연락처|배송지주소|적요(배송메시지)|변환품목코드|변환품목명|규격|수량|단가|금액1|외화금액|공급가액|부가세|납기일자|적요" },
   { label: "부원",    prefix: "BW", headerCsv: "송장번호|이슈|받는사람|전화번호|주소||상품명|수량|B2750|C3200|D5500|E6500|배송메세지|운임구분|운임|보내는사람|주소|전화" },
   { label: "부엉이커피", prefix: "OC", headerCsv: "송장번호|이슈|받는사람|전화번호|주소|우편번호|상품명|수량|배송메세지|보내는사람|주소|전화" },
   { label: "지에스",  prefix: "GS", headerCsv: "송장번호|이슈|순번|일자-No.|품목코드|품목명|택배박스수량|판매수량|전화|모바일|주소1|배송메시지|합계|거래처명|단품배송비|적요|사방넷주문번호|보내는분|보내는분전화|보내는주소(팩투유)" },
@@ -2742,8 +2748,10 @@ function _pep_syncTemplateMasterFromCode_(hubSs) {
   var 표 = {};
   for (var e = 0; e < EMBEDDED_VENDOR_EXCLUSIVE_MASTER_ROWS_.length; e++) {
     var er = EMBEDDED_VENDOR_EXCLUSIVE_MASTER_ROWS_[e];
-    var k = normVendorExclusiveTemplateKey_(er.label);
-    if (k && !표[k]) 표[k] = String(er.headerCsv || "");
+    var 이름들 = _pep_templateRowNames_(er);
+    for (var n = 0; n < 이름들.length; n++) {
+      if (!표[이름들[n]]) 표[이름들[n]] = String(er.headerCsv || "");
+    }
   }
 
   var 칸 = [], 바뀜 = false;
@@ -2767,6 +2775,28 @@ function _pep_syncTemplateMasterFromCode_(hubSs) {
   return out;
 }
 
+/**
+ * 내장표 한 줄이 «받는 이름들» — label 과 옛이름.  (2026-09-30)
+ * 이름을 알아보는 자리가 둘(양식 찾기 · 마스터 맞추기)이라 여기서만 정한다.
+ * @return {string[]} 견줄 수 있게 다듬은 이름들
+ */
+function _pep_templateRowNames_(er) {
+  var out = [];
+  if (!er || typeof er !== "object") return out;
+  var 넣어 = function (v) {
+    var k = normVendorExclusiveTemplateKey_(v);
+    if (k && out.indexOf(k) === -1) out.push(k);
+  };
+  넣어(er.label);
+  var 옛 = er.옛이름;
+  if (옛) {
+    if (Object.prototype.toString.call(옛) === "[object Array]") {
+      for (var i = 0; i < 옛.length; i++) 넣어(옛[i]);
+    } else 넣어(옛);
+  }
+  return out;
+}
+
 /** 맞춤양식명 일치 시 코드 내장 목록에서 헤더 배열 반환 */
 function loadVendorExclusiveTemplateHeadersFromEmbedded_(supplierFormatName) {
   var rows = EMBEDDED_VENDOR_EXCLUSIVE_MASTER_ROWS_;
@@ -2776,8 +2806,7 @@ function loadVendorExclusiveTemplateHeadersFromEmbedded_(supplierFormatName) {
   for (var ri = 0; ri < rows.length; ri++) {
     var er = rows[ri];
     if (!er || typeof er !== "object") continue;
-    var label = String(er.label || "").trim();
-    if (!label || normVendorExclusiveTemplateKey_(label) !== want) continue;
+    if (_pep_templateRowNames_(er).indexOf(want) === -1) continue;
     var headers = parseVendorExclusiveHeaderCsv_(er.headerCsv);
     if (headers.length) return headers;
   }
