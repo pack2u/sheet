@@ -2637,6 +2637,14 @@ function partnerFetchInvoices() {
     var existingInv0 = String(hubData[r][13] || "").trim();
     if (_po_hasRealInvoice_(existingInv0)) {
       alreadyHas++;
+      /*  ★ 송장은 있는데 세트 적요만 비었으면 적요만 채운다 ★  (2026-09-30)
+          원장을 못 읽은 회차에 송장만 붙고 「몸통만/뚜껑만」이 빠진 줄이 있다.
+          송장·상태는 건드리지 않는다 — 적요 칸이 «비어 있을 때만». */
+      var _uidA = String(hubData[r][2] || "").trim();
+      if (_uidA && !String(hubData[r][12] || "").trim() && setDetailByUid[_uidA]) {
+        writeUpdates.push({ row: r + 2, inv: existingInv0, setDetail: setDetailByUid[_uidA],
+          status: "", writeInvoice: false, carrier: "" });
+      }
       continue;
     }
     if (isTerminalOrderStatus_(String(hubData[r][14] || ""))) continue;
