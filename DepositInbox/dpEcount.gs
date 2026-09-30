@@ -34,7 +34,7 @@ var DP_EC_POST_HEADERS_ = ["전표번호", "반영시각", "반영자", "반영�
  * 사장님이 정한 값이라 코드에 적는다. 스크립트 속성 DP_ECOUNT_FROM 이 있으면 그것이 이긴다.
  * ★ 이 값을 읽는 곳은 dpPostFrom_() 하나다 — 여러 곳에서 속성을 따로 읽으면 한쪽만 바뀐다.
  */
-var DP_ECOUNT_FROM_DEFAULT_ = "2026-09-30 00:00";
+var DP_ECOUNT_FROM_DEFAULT_ = "2026-09-30 17:11";   // 2026-09-30 사장님이 스위치를 켠 순간 — 그 전(손으로 처리한) 입금은 안 넘긴다
 
 function dpPostFrom_() {
   return _dp_prop_("DP_ECOUNT_FROM") || DP_ECOUNT_FROM_DEFAULT_;
