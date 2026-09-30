@@ -595,6 +595,41 @@ console.log('\n[오늘 + 어제 — 자정이 지나도 목록이 안 사라진�
   ok('줄마다 날짜', two.rows[1].day === '2026-09-28');
 }
 
+console.log('\n[일반전표 API 검증 — 테스트 서버, 보낸 입금은 확인필요로 묶는다]');
+{
+  const { ctx, post, rows, props, ecCalls, setEcSave } = makeEnv();
+  ctx.DP_CS_TOKEN = 'cstok';
+  ctx.DP_ECOUNT_PROXY_URL = 'https://proxy.example'; ctx.DP_ECOUNT_PROXY_KEY = 'pk';
+  Object.assign(props, { ECOUNT_COM_CODE: 'C', ECOUNT_USER_ID: 'U', ECOUNT_API_CERT_KEY: 'REAL', DP_ECOUNT_FROM: '2000-01-01 00:00' });
+  const cs = (o) => ctx.doPost({ parameter: {}, postData: { type: 'application/json', contents: JSON.stringify(Object.assign({ token: 'cstok' }, o)) } });
+  const now = new Date(); const p2 = (n) => String(n).padStart(2, '0');
+  const T = now.getFullYear() + '/' + p2(now.getMonth() + 1) + '/' + p2(now.getDate());
+  cs({ action: 'orders_upload', rows: [['회사명'], ['주문번호', '거래처명', '거래처코드', '금액'], [T + ' -1', '예원 왕려려', 'W1', '44,000'], [T + ' (화) 오전 8:00:00']] });
+  post({ token: 'tok', action: 'sms', body: `[Web발신]\n${T}\n09:10\n입금 44,000원\n잔액 100,000원\n왕려려(예원)\n458***12345678\n기업` });
+  const col = (h) => rows[0].indexOf(h);
+  const row = rows.find((r) => r[col('입금자')] === '왕려려(예원)');
+  const key = row[col('고유번호')];
+
+  let r = cs({ action: 'ec_verify', key });
+  ok('테스트 인증키가 없으면 안 보낸다', r.ok === false && r.error.includes('ECOUNT_TEST_CERT_KEY') && ecCalls.length === 0);
+  props.ECOUNT_TEST_CERT_KEY = 'TEST';
+  setEcSave(() => ({ Status: '200', Data: { SuccessCnt: 0, FailCnt: 1, SlipNos: [],
+    ResultDetails: [{ IsSuccess: false, TotalError: '양식필수', Errors: [{ ColCd: 'REMARKS_DES', Message: '필수' }] }] } }));
+  r = cs({ action: 'ec_verify', key });
+  ok('테스트 서버가 거절 → 대기 + 까닭 (전표 모양을 고칠 단서)', r.ok && r.kind === 'reject' && row[col('상태')] === '대기' && row[col('반영메모')].includes('REMARKS_DES'), JSON.stringify(r));
+  const login = ecCalls.find((c) => c.url.includes('OAPILogin'));
+  ok('테스트 서버(sboapi)에 테스트 인증키로', login.url.startsWith('https://sboapi') && login.payload.API_CERT_KEY === 'TEST');
+  ok('전표도 테스트 서버로', ecCalls.some((c) => c.url.startsWith('https://sboapi') && c.url.includes('SaveGeneralJournal')));
+
+  setEcSave(() => ({ Status: '200', Data: { SuccessCnt: 1, SlipNos: ['20260930-1'] } }));
+  r = cs({ action: 'ec_verify', key });
+  ok('테스트 서버가 받음 → 확인필요 (실제 장부에 생겼는지 사람이 확인)', r.kind === 'ok' && row[col('상태')] === '확인필요' && row[col('반영메모')].includes('20260930-1'), row[col('반영메모')]);
+  props.DP_ECOUNT_POST = 'on';
+  const n = ecCalls.length;
+  r = cs({ action: 'post', keys: [key] });
+  ok('확인필요로 묶인 입금은 운영으로 다시 안 보낸다', r.results[0].outcome === '건너뜀' && ecCalls.length === n);
+}
+
 console.log('\n[읽기 캐시 — 바뀐 게 없으면 다시 안 읽는다]');
 {
   const { ctx, post, rows } = makeEnv();

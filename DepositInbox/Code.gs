@@ -126,6 +126,10 @@ function _dp_handleCs_(p) {
       // 「이미 이카운트에 넣었음」 — 손으로 넣은 입금을 시스템이 또 넘기지 않게
       r = dpCsMarkManual_(String(p.key || ""), String(p.by || ""), !!p.undo);
       break;
+    case "ec_verify":
+      // 일반전표 API 검증 — 테스트 서버로 한 번 (dpEcount.gs dpCsVerifyJournal_). 보낸 입금은 확인필요로 묶인다
+      r = dpCsVerifyJournal_(String(p.key || ""), String(p.by || ""));
+      break;
     case "ec_check":
       // 설정 점검 + 로그인까지만 — 전표는 보내지 않는다
       r = { report: dpEcountCheck() };
