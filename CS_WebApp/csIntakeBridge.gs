@@ -144,7 +144,9 @@ function _cib_apply_(it, applied) {
     var r = _cs_intakeExistingReturn_(loc.tab, loc.row, it.invoice || "", staff, "v2/" + (it.via || ""), photos);
     if (!r || !r.ok) return { id: it.id, ok: false, note: "대장 쓰기 실패: " + ((r && r.error) || "알 수 없음") };
     if (it.memo) {
-      try { appendReturnConsultation({ tab: loc.tab, row: loc.row, text: "물류 메모: " + it.memo, staff: staff }); } catch (eM) {}
+      //  「입고 확인 — 수량 맞음 · 파손 있음 / 메모: …」 는 물류 체크(v2 IntakeUploader) — 그대로 한 줄로 (2026-09-30)
+      var memoLine = /^입고 확인\s*[—-]/.test(it.memo) ? it.memo : "물류 메모: " + it.memo;
+      try { appendReturnConsultation({ tab: loc.tab, row: loc.row, text: memoLine, staff: staff }); } catch (eM) {}
     }
     mTab = loc.tab; mRow = loc.row; mName = r.name || ""; mItem = r.item || "";
     result = (r.alreadyDone ? "완료 건 · 사진만 추가" : _CS_RI_STATUS_INTAKE_ + " 처리") + " · 사진 " + photos.length + "장 · v2" + (loc.moved ? " (행 밀림 → 다시 찾음)" : "");

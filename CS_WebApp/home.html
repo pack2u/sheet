@@ -8308,6 +8308,9 @@
       if (mode === 'photo') {
         return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.4"/></svg>';
       }
+      if (mode === 'intakereq') {  // 📦 입고 확인 요청 — 상자
+        return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>';
+      }
       return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
     }
 
@@ -8507,6 +8510,17 @@
           '<div class="ret-pop-btns">' +
             '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
             '<button type="button" class="ret-pop-save" id="ret-save-consult-' + idx + '" onclick="submitReturnCompose(' + idx + ',\'consult\')">카드 추가</button>' +
+          '</div></div>' +
+        /*  📦 입고 확인 요청 (2026-09-30) — 물류가 박스를 열 때 볼 것.
+            > (물류 1차 테스트) "CS가 입고 확인 요청을 따로 적는 칸"
+            「[내부] 입고확인요청: …」 한 줄로 남는다 — 업체 포털에는 안 나가고(PRP_INTERNAL_MARK_),
+            v2 물류 입고 화면 카드 맨 위에 노란 띠로 뜬다(lib/intake-notes). */
+        '<div class="ret-act-pop" id="ret-pop-intakereq-' + idx + '" data-mode="intakereq">' +
+          '<div class="pop-label">📦 입고 확인 요청 · 물류 입고 화면에 뜹니다 (업체에는 안 보임)</div>' +
+          '<textarea id="ret-intakereq-' + idx + '" placeholder="예: 뚜껑만 반품 — 몸통 섞였는지 확인 / 수량 50개 맞는지 / 파손 사진 꼭"></textarea>' +
+          '<div class="ret-pop-btns">' +
+            '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
+            '<button type="button" class="ret-pop-save" id="ret-save-intakereq-' + idx + '" onclick="submitReturnCompose(' + idx + ',\x27intakereq\x27)">요청 남기기</button>' +
           '</div></div>' +
         '<div class="ret-act-pop" id="ret-pop-photo-' + idx + '" data-mode="photo">' +
           '<div class="pop-label">사진 첨부 (최대 ' + RET_PHOTO_MAX + '장 · Ctrl+V 붙여넣기)</div>' +
@@ -8811,6 +8825,7 @@
             returnActBtnHtml(idx, 'status', '상태') +
             returnActBtnHtml(idx, 'consult', '메모') +
             returnActBtnHtml(idx, 'photo', '사진') +
+            returnActBtnHtml(idx, 'intakereq', '입고 요청') +
             returnGoOrderBtnHtml(idx) +
             retPickupBtnHtml(idx, c, picked) +
           '</div>' +
@@ -8991,7 +9006,7 @@
     }
 
     function retPopId(idx, mode) {
-      if (mode === 'status' || mode === 'phone' || mode === 'photo') {
+      if (mode === 'status' || mode === 'phone' || mode === 'photo' || mode === 'intakereq') {
         return 'ret-pop-' + mode + '-' + idx;
       }
       return 'ret-pop-consult-' + idx; // 상담·메모는 한 입력창을 쓴다
@@ -9113,8 +9128,11 @@
         return;
       }
 
-      var ta = document.getElementById(mode === 'phone' ? 'ret-phone-' + idx : 'ret-consult-' + idx);
-      var btn = document.getElementById(mode === 'phone' ? 'ret-save-phone-' + idx : 'ret-save-consult-' + idx);
+      var boxKey = (mode === 'phone' || mode === 'intakereq') ? mode : 'consult';
+      var ta = document.getElementById('ret-' + boxKey + '-' + idx);
+      var btn = document.getElementById('ret-save-' + boxKey + '-' + idx);
+      //  입고 확인 요청 — 업체에는 안 보이게 [내부] (v2 lib/intake-notes 가 이 앞말을 찾는다)
+      if (mode === 'intakereq') text = '[내부] 입고확인요청: ' + text;
       var text = ta ? String(ta.value || '').trim() : '';
       if (!text) { toast('내용을 입력하세요'); return; }
       if (mode === 'phone') text = '전화 통화. ' + text;
