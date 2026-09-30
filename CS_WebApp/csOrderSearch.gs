@@ -2235,6 +2235,12 @@ function submitReturnLedger(data) {
       if (col.fault >= 0) row[col.fault] = faultIn;
       else faultToNotice = "귀책: " + faultIn + " (" + reasonIn + ")";
     }
+    /*  ★ 사유 열도 없다 ★  (2026-09-30)
+        위 「귀책: 판매자 (오배송)」 줄이 사유까지 담으므로 대개 이 줄은 안 쓴다.
+        귀책이 비었을 때만 사유를 따로 남긴다 — 조용히 버리지 않는다.  */
+    if (col.reason < 0 && reasonIn && !faultToNotice) {
+      faultToNotice = "사유: " + reasonIn;
+    }
     if (col.fee >= 0 && data.fee !== undefined && data.fee !== null && String(data.fee).trim() !== "") {
       row[col.fee] = String(data.fee).trim();
     }
@@ -2429,6 +2435,34 @@ function _cs_colLetter_(idx) {
  *
  * @return {string} "구매자" | "판매자" | ""
  */
+/**
+ * 비고에 남은 표시에서 사유를 꺼낸다.  (2026-09-30)
+ *
+ * ★ 대장에 사유 열이 «없다» ★
+ *   202609 탭 실측 — 쓰이는 폭 21칸에 「반품사유」가 없다.
+ *   12번째가 「재출고/단순/오주문입력/오배송」(유형)이고 그 옆은 회수신청이다.
+ *   2026-09-18 에 「대장 L열에 반품사유가 있다」고 알고 고쳤는데 L열은
+ *   유형이었다. 그래서 사유는 그때부터 한 번도 안 적혔고 카드에도 안 떴다.
+ *
+ *   반품송장·환불계좌가 걸어온 길을 사유도 탄다 — 비고에 적고 비고에서 읽는다.
+ *   시트에 「반품사유」 열을 만들면 읽는 쪽이 열을 먼저 보므로 이 함수는
+ *   저절로 안 쓰인다.
+ *
+ * 두 가지 모양을 받는다 —
+ *   「귀책: 판매자 (오배송)」  귀책과 사유를 둘 다 담은 줄
+ *   「사유: 제품불량」        귀책이 없을 때
+ *
+ * @return {string} 사유 낱말, 없으면 ""
+ */
+function _cs_reasonFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/귀책\s*[:：]\s*(?:구매자|판매자)\s*\(([^)]{1,20})\)/);
+  if (m) return String(m[1]).trim();
+  m = s.match(/(?:^|[\s·.])사유\s*[:：]\s*([^\s·.,()]{1,20})/);
+  return m ? String(m[1]).trim() : "";
+}
+
 function _cs_faultFromNotice_(notice) {
   var s = String(notice == null ? "" : notice);
   if (!s) return "";
@@ -3490,7 +3524,10 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
          구분(type) 은 「재출고/단순/오배송」처럼 처리하는 갈래고,
          사유(reason) 는 「뚜껑 깨짐」처럼 왜 반품인지다. 상담에서
          먼저 묻는 것은 «왜»다. 같으면 카드가 한 번만 보여 준다. */
-      reason: col.reason >= 0 ? String(row[col.reason] || "").trim() : "",
+      /* 사유 — 열이 없으면 비고에서 되읽는다. 대장에 사유 열이 없다(2026-09-30). */
+      reason: col.reason >= 0
+        ? String(row[col.reason] || "").trim()
+        : _cs_reasonFromNotice_(notice),
       //  입고확인요청 열 (2026-09-30) — 카드에 노란 띠로, v2 물류 입고 화면에도 뜬다
       intakeReq: col.intakeReq >= 0 ? String(row[col.intakeReq] || "").trim() : "",
       /* 귀책 — 전용 열이 없는 탭은 비고에 「귀책: 판매자 (오배송)」으로 남는다.

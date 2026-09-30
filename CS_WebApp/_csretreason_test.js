@@ -242,5 +242,30 @@ ok("onchange 가 제 화면을 가리킨다",
   /id="retNewFault" onchange="retFillReasons\(\)"/.test(html) &&
   /id="ledgerFault" onchange="retFillReasons\('ledger'\)"/.test(html));
 
+console.log("\n─── ⑬ 사유도 비고 길을 탄다 (대장에 사유 열이 없다) ───");
+/*  202609 탭 실측(2026-09-30) — 쓰이는 폭 21칸에 「반품사유」가 없다.
+    12번째가 「재출고/단순/오주문입력/오배송」(유형)이고 그 옆은 회수신청이다.
+    2026-09-18 에 「L열에 반품사유가 있다」고 알고 고쳤는데 L열은 유형이었다.
+    그래서 사유는 그때부터 한 번도 안 적혔고 카드에도 안 떴다.  */
+vm.runInContext(꺼내(gs, "_cs_reasonFromNotice_"), gctx);
+ok("열이 없으면 비고에서 사유를 읽는다",
+  /reason: col\.reason >= 0\s*\r?\n\s*\? String\(row\[col\.reason\] \|\| ""\)\.trim\(\)\s*\r?\n\s*: _cs_reasonFromNotice_\(notice\)/.test(gs));
+ok("귀책이 비었을 때만 「사유: …」를 따로 적는다",
+  /if \(col\.reason < 0 && reasonIn && !faultToNotice\) \{/.test(gs));
+[["귀책: 판매자 (오배송)", "오배송"],
+ ["[260930 10:00 김진수] 고객 요청\n귀책: 구매자 (제품불량)\n반품송장: 600622029800", "제품불량"],
+ ["사유: 제품파손", "제품파손"],
+ ["업체 포털 접수. 사유: 중복출고. 덧붙임", "중복출고"]].forEach(function (쌍) {
+  ok("「" + 쌍[0].replace(/\n/g, " ").slice(0, 34) + "…」 → " + 쌍[1],
+    gctx._cs_reasonFromNotice_(쌍[0]) === 쌍[1], gctx._cs_reasonFromNotice_(쌍[0]));
+});
+ok("귀책 줄 하나가 사유까지 담는다 — 줄을 둘 적지 않는다",
+  gctx._cs_faultFromNotice_("귀책: 판매자 (오배송)") === "판매자" &&
+  gctx._cs_reasonFromNotice_("귀책: 판매자 (오배송)") === "오배송");
+ok("표시가 없으면 빈 값", gctx._cs_reasonFromNotice_("반품송장: 600622029800") === "");
+ok("빈 비고도 탈 없다",
+  gctx._cs_reasonFromNotice_("") === "" && gctx._cs_reasonFromNotice_(null) === "");
+ok("괄호가 안 닫혔으면 안 받는다", gctx._cs_reasonFromNotice_("귀책: 판매자 (오배송") === "");
+
 console.log("\n" + (fail ? "❌" : "✅") + "  맞음 " + pass + " · 틀림 " + fail + "\n");
 process.exit(fail ? 1 : 0);

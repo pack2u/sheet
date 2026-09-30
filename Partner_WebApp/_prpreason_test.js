@@ -240,5 +240,32 @@ ok("유형 기본값도 화면에 안 박았다", /var TYPE_DEFAULT = '단순반
 ok("전달 사항 안내가 사유와 겹치지 않는다",
   !/placeholder="반품 사유, 특이사항/.test(portal), "옛 안내 글이 남아 있다");
 
+console.log("\n─── ⑫ 사유도 비고 길을 탄다 · 두 프로젝트가 같게 읽는가 ───");
+/*  202609 탭 실측(2026-09-30) — 대장에 「반품사유」 열이 «없다».
+    적는 데가 둘(CS·포털)이고 읽는 데도 둘이다. 넷이 한 글자 모양을 써야 한다.  */
+vm.runInContext(꺼내(led, "prpReasonFromNotice_"), gctx);
+vm.runInContext(꺼내(csGs, "_cs_reasonFromNotice_"), gctx);
+ok("포털도 열이 없으면 비고에서 사유를 읽는다",
+  /reason: col\.reason >= 0\s*\r?\n\s*\? String\(row\[col\.reason\] \|\| ""\)\.trim\(\)\s*\r?\n\s*: prpReasonFromNotice_\(notice\)/.test(led));
+ok("포털도 귀책이 비었을 때만 「사유: …」를 따로 적는다",
+  /if \(col\.reason < 0 && reasonIn && !faultToNotice\) \{/.test(api));
+[["귀책: 판매자 (오배송)", "판매자", "오배송"],
+ ["[260930 당장드림] 업체 포털 접수. [출처 확인됨] 장부에서 확인. 귀책: 구매자 (단순변심). 뚜껑 깨짐", "구매자", "단순변심"],
+ ["[260930 10:00 김진수] 고객 요청\n귀책: 구매자 (제품불량)", "구매자", "제품불량"],
+ ["업체 포털 접수. 사유: 중복출고.", "", "중복출고"],
+ ["반품송장: 600622029800", "", ""],
+ ["", "", ""]].forEach(function (t) {
+  const cf = gctx._cs_faultFromNotice_(t[0]), cr = gctx._cs_reasonFromNotice_(t[0]);
+  const pf = gctx.prpFaultFromNotice_(t[0]), pr2 = gctx.prpReasonFromNotice_(t[0]);
+  ok("「" + (t[0] || "(빈 비고)").replace(/\n/g, " ").slice(0, 30) + "…」 넷이 같게 읽는다",
+    cf === t[1] && pf === t[1] && cr === t[2] && pr2 === t[2],
+    "CS[" + cf + "/" + cr + "] 포털[" + pf + "/" + pr2 + "] 기대[" + t[1] + "/" + t[2] + "]");
+});
+ok("두 사유 읽기가 같은 정규식이다", (function () {
+  const a = 꺼내(led, "prpReasonFromNotice_"), b = 꺼내(csGs, "_cs_reasonFromNotice_");
+  const 뽑 = (s) => (s.match(/\/[^/\n]*귀책[^/\n]*\//g) || []).join("|");
+  return 뽑(a) === 뽑(b) && 뽑(a).length > 0;
+})());
+
 console.log("\n" + (fail ? "❌" : "✅") + "  맞음 " + pass + " · 틀림 " + fail + "\n");
 process.exit(fail ? 1 : 0);

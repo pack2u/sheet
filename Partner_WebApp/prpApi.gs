@@ -214,6 +214,11 @@ function prpSubmitReturn(sid, data) {
       if (col.fault >= 0) row[col.fault] = faultIn;
       else faultToNotice = " 귀책: " + faultIn + " (" + reasonIn + ").";
     }
+    /*  사유 열도 없다 — 위 줄이 사유까지 담으므로 대개 이 줄은 안 쓴다.
+        귀책이 비었을 때만 따로 남긴다. (2026-09-30)  */
+    if (col.reason < 0 && reasonIn && !faultToNotice) {
+      faultToNotice = " 사유: " + reasonIn + ".";
+    }
 
     var memo = String(data.memo || "").replace(/\s+/g, " ").trim();
     var uid = prpUidFromCell_(data.uid);
