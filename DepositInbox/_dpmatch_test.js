@@ -152,7 +152,7 @@ console.log('\n[2026-09-29 첫날 실입금에서 배운 것]');
   ok('「대표자(상호)」', r.result === '일치' && r.code === '5800200757', JSON.stringify(r));
   r = m.dpMatchDeposit(dep('정윤성(포승루)', 100800), real, {});
   ok('「대표자(상호)」 — 상호가 거래처명 앞에 있어도', r.result === '일치' && r.code === '3353001673', JSON.stringify(r));
-  for (const p of ['지마켓', '쿠팡페이', '스마트스토어정', '우아한형제들', '(주)카카오(c)']) {
+  for (const p of ['지마켓', '쿠팡페이', '스마트스토어정', '우아한형제들', '(주)카카오(c)', 'Npay충전금']) {
     r = m.dpMatchDeposit(dep(p, 4312050), real, {});
     ok(p + ' → 정산 (주문과 안 맞춘다)', r.result === '정산' && r.alloc.length === 0 && r.code === '', JSON.stringify(r));
   }
@@ -181,6 +181,8 @@ console.log('\n[이카운트 일반전표 — 모양 · 넘길 수 있나 · 응
   ok('일치는 넘긴다', m.dpCanPost({ ...base, result: '일치' }, '2026-09-29 00:00').ok);
   ok('부족도 넘긴다 (들어온 만큼)', m.dpCanPost({ ...base, result: '부족(지정)' }, '2026-09-29 00:00').ok);
   for (const r of ['초과', '후보', '미확인', '정산', '제외', '확인필요']) ok(r + ' 는 안 넘긴다', !m.dpCanPost({ ...base, result: r }).ok);
+  ok('시작 시각이 비면 아무것도 안 넘긴다', !m.dpCanPost({ ...base, result: '일치' }, '').ok);
+  ok('시작 시각 전 입금은 안 넘긴다', !m.dpCanPost({ ...base, result: '일치' }, '2026-09-30 00:00').ok);
   ok('반영완료는 또 안 넘긴다', !m.dpCanPost({ ...base, result: '일치', status: '반영완료' }).ok);
   ok('반영중도 안 넘긴다', !m.dpCanPost({ ...base, result: '일치', status: '반영중' }).ok);
   ok('거래처코드 없으면 안 넘긴다', !m.dpCanPost({ ...base, result: '일치', code: '' }).ok);

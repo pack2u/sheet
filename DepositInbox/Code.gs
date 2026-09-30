@@ -103,7 +103,7 @@ function _dp_handleCs_(p) {
       break;
     case "detail":
       // 판 번호 캐시 — 같은 입금을 다시 열면 시트를 안 읽는다 (켜짐 여부는 속성이라 열쇠에 넣는다)
-      r = dpCached_("detail:" + String(p.key || "") + ":" + _dp_prop_("DP_ECOUNT_POST") + ":" + _dp_prop_("DP_ECOUNT_FROM"),
+      r = dpCached_("detail:" + String(p.key || "") + ":" + _dp_prop_("DP_ECOUNT_POST") + ":" + dpPostFrom_(),
                     function () { return dpCsDetail_(String(p.key || "")); });
       break;
     case "orders_search":

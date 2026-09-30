@@ -555,8 +555,9 @@ console.log('\n[이중 입금 — 손으로 이미 넣은 것 · 시작 전 입�
   const keyOf = (n) => rows.find((r) => r[col('입금자')] === n)[col('고유번호')];
   const rowOf = (n) => rows.find((r) => r[col('입금자')] === n);
 
+  props.DP_ECOUNT_FROM = '2999-01-01 00:00';   // 속성이 코드 기본값(2026-09-30 00:00)을 이긴다
   let r = cs({ action: 'post', keys: [keyOf('이을')] });
-  ok('시작 시각이 없으면 아무것도 안 넘긴다', r.results[0].outcome === '건너뜀' && r.results[0].message.includes('시작') && ecCalls.length === 0, JSON.stringify(r));
+  ok('시작 시각보다 앞선 입금은 아무것도 안 넘긴다 (속성이 기본값을 이긴다)', r.results[0].outcome === '건너뜀' && r.results[0].message.includes('시작') && ecCalls.length === 0, JSON.stringify(r));
   props.DP_ECOUNT_FROM = Td + ' 12:00';
   r = cs({ action: 'post', keys: [keyOf('김갑')] });
   ok('시작 전 입금은 안 넘긴다 (손으로 처리했을 수 있다)', r.results[0].outcome === '건너뜀' && ecCalls.length === 0, JSON.stringify(r));

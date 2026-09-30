@@ -175,7 +175,7 @@ function dpListDeposits_(date, limit, days) {
   var day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date
     : Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
   var on = String(_dp_prop_("DP_ECOUNT_POST")).toLowerCase() === "on";
-  return dpCached_("list:" + day + ":" + days + ":" + (limit || 0) + ":" + on + ":" + _dp_prop_("DP_ECOUNT_FROM"), function () { return _dp_listDepositsRaw_(day, limit, days); });
+  return dpCached_("list:" + day + ":" + days + ":" + (limit || 0) + ":" + on + ":" + dpPostFrom_(), function () { return _dp_listDepositsRaw_(day, limit, days); });
 }
 
 /*
@@ -187,7 +187,7 @@ function _dp_listDepositsRaw_(day, limit, days) {
   days = days || 1;
   var from = _dp_dayShift_(day, -(days - 1));
   var inRange = function (d) { return d >= from && d <= day; };
-  var postFrom = _dp_prop_("DP_ECOUNT_FROM");
+  var postFrom = dpPostFrom_();
   var out = { date: day, from: from, byDay: {}, total: 0, sum: 0, unparsed: 0, rows: [],
               ordersAt: _dp_prop_("DP_ORDERS_AT"), ordersBy: _dp_prop_("DP_ORDERS_BY"),
               ordersCount: Number(_dp_prop_("DP_ORDERS_COUNT")) || 0,

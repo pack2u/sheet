@@ -28,6 +28,18 @@ var DP_EC_POST_HEADERS_ = ["전표번호", "반영시각", "반영자", "반영�
  * > "그냥 보통예금이야" (2026-09-29) — 손으로 입금 처리할 때 고르는 계정 그대로.
  * 비밀이 아니니 코드에 적는다. 바꿀 일이 생기면 스크립트 속성 DP_GYE_BANK · DP_GYE_AR 이 이긴다.
  */
+/**
+ * 반영 시작 시각 — 이 시각 «이전» 입금은 시스템이 넘기지 않는다 (dpMatch.gs dpCanPost 머리말)
+ * > "오늘 00시부터 시작하고 오늘 첫 입금으로 시험해줘" (2026-09-30)
+ * 사장님이 정한 값이라 코드에 적는다. 스크립트 속성 DP_ECOUNT_FROM 이 있으면 그것이 이긴다.
+ * ★ 이 값을 읽는 곳은 dpPostFrom_() 하나다 — 여러 곳에서 속성을 따로 읽으면 한쪽만 바뀐다.
+ */
+var DP_ECOUNT_FROM_DEFAULT_ = "2026-09-30 00:00";
+
+function dpPostFrom_() {
+  return _dp_prop_("DP_ECOUNT_FROM") || DP_ECOUNT_FROM_DEFAULT_;
+}
+
 var DP_GYE_BANK_DEFAULT_ = "보통예금";
 var DP_GYE_AR_DEFAULT_ = "외상매출금";
 var DP_EC_JOURNAL_PATH_ = "/OAPI/V2/GeneralJournal/SaveGeneralJournal";
@@ -127,7 +139,7 @@ function dpCsPost_(keys, by, test) {
       var d = { key: key, txAt: _dp_ts_(g("거래일시")), name: String(g("입금자")), amount: Number(g("금액")) || 0,
                 orderNos: String(g("주문번호")), code: String(g("거래처코드")), result: String(g("매칭결과")),
                 status: String(g("상태")) };
-      var can = dpCanPost(d, _dp_prop_("DP_ECOUNT_FROM"));
+      var can = dpCanPost(d, dpPostFrom_());
       if (!can.ok) { results.push({ key: key, outcome: "건너뜀", message: can.reason }); return; }
 
       // ② 보내기 «전에» 반영중으로 — 여기서 멈춰도(시간 초과 등) 다음 사람이 또 보내지 못한다
@@ -236,7 +248,7 @@ function dpEcountCheck() {
   var miss = _dp_ec_missing_(cfg);
   out.push("빠진 설정  " + (miss.length ? miss.join(", ") : "없음"));
   out.push("보통예금   " + (cfg.bankGye || "-") + " · 외상매출금 " + (cfg.arGye || "-"));
-  out.push("반영 시작  " + (_dp_prop_("DP_ECOUNT_FROM") || "★ 없음 — 아무것도 넘기지 않음 (DP_ECOUNT_FROM)"));
+  out.push("반영 시작  " + (dpPostFrom_() || "★ 없음 — 아무것도 넘기지 않음 (DP_ECOUNT_FROM)"));
   if (!miss.length) {
     try { var s = _dp_ec_session_(cfg, true); out.push("로그인     OK (zone " + s.zone + ")"); }
     catch (e) { out.push("로그인     ★ " + e.message); }

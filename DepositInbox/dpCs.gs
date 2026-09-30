@@ -124,10 +124,10 @@ function dpCsDetail_(key) {
       orderNos: String(g("주문번호")), diff: Number(g("차액")) || 0, memo: String(g("매칭메모")),
       pinned: String(g("지정") || ""), frozen: DP_FROZEN_STATES_.indexOf(String(g("상태"))) >= 0,
       slipNo: String(g("전표번호") || ""), postMemo: String(g("반영메모") || ""), postedBy: String(g("반영자") || ""),
-      canPost: dpCanPost({ result: String(g("매칭결과")), status: String(g("상태")), code: String(g("거래처코드")), amount: amount, txAt: _dp_ts_(g("거래일시")) }, _dp_prop_("DP_ECOUNT_FROM")).ok,
+      canPost: dpCanPost({ result: String(g("매칭결과")), status: String(g("상태")), code: String(g("거래처코드")), amount: amount, txAt: _dp_ts_(g("거래일시")) }, dpPostFrom_()).ok,
       // 시작 전이거나 스위치가 꺼져 있어도, 넘길 만한 판정이면 「이미 이카운트에 넣었음」 은 누를 수 있다
       canMarkManual: String(g("상태")) === "대기" && DP_POSTABLE_RESULTS_.indexOf(String(g("매칭결과"))) >= 0,
-      postFrom: _dp_prop_("DP_ECOUNT_FROM"),
+      postFrom: dpPostFrom_(),
       postOn: _dp_ec_cfg_().on
     },
     options: list
