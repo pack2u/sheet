@@ -3538,16 +3538,8 @@
       <div class="ledger-row2">
         <div class="ledger-field">
           <label>유형</label>
-          <select id="retNewType">
-            <option value="단순반품">단순반품</option>
-            <option value="반품">반품</option>
-            <option value="교환">교환</option>
-            <option value="오배송">오배송</option>
-            <option value="오주문">오주문</option>
-            <option value="재출고">재출고</option>
-            <option value="파손">파손</option>
-            <option value="기타">기타</option>
-          </select>
+          <!-- 낱말은 RET_TYPES 에서 온다 (retFillPicks) -->
+          <select id="retNewType"></select>
         </div>
         <div class="ledger-field">
           <label>상태</label>
@@ -3579,10 +3571,7 @@
       <div class="ledger-row2">
         <div class="ledger-field">
           <label>귀책</label>
-          <select id="retNewFault" onchange="retFillReasons()">
-            <option value="구매자" selected>구매자</option>
-            <option value="판매자">판매자</option>
-          </select>
+          <select id="retNewFault" onchange="retFillReasons()"></select>
         </div>
         <div class="ledger-field">
           <label>사유</label>
@@ -3645,16 +3634,20 @@
       </div>
       <div class="ledger-field">
         <label>교환/반품</label>
-        <select id="ledgerType">
-          <option value="단순반품">단순반품</option>
-          <option value="반품">반품</option>
-          <option value="교환">교환</option>
-          <option value="오배송">오배송</option>
-          <option value="오주문">오주문</option>
-          <option value="재출고">재출고</option>
-          <option value="파손">파손</option>
-          <option value="기타">기타</option>
-        </select>
+        <!-- 낱말은 RET_TYPES 에서 온다 (retFillPicks) -->
+        <select id="ledgerType"></select>
+      </div>
+      <!--  귀책·사유 — 반품탭 접수(retNew)와 «같은 목록·같은 함수»를 쓴다.
+            칸 이름만 ledger* 로 다르다. (2026-09-30)  -->
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>귀책</label>
+          <select id="ledgerFault" onchange="retFillReasons('ledger')"></select>
+        </div>
+        <div class="ledger-field">
+          <label>사유</label>
+          <select id="ledgerReason"></select>
+        </div>
       </div>
       <div class="ledger-field">
         <label>수거입력처 (대리공급은 택배사 자동)</label>
@@ -6074,7 +6067,16 @@
       // 송장이 없으면 아예 담지 않는다 — 엉뚱한 건에 남의 메모가 붙는 게 더 나쁘다.
       ledger: {
         modal: 'ledgerModal', bar: 'ledgerDraftBar', requireScope: true,
-        fields: ['ledgerStaff', 'ledgerType', 'ledgerPickup', 'ledgerFee', 'ledgerAccount', 'ledgerMemo'],
+        fields: ['ledgerStaff', 'ledgerType', 'ledgerFault', 'ledgerReason',
+                 'ledgerPickup', 'ledgerFee', 'ledgerAccount', 'ledgerMemo'],
+        /*  retNew 와 같은 까닭 — 되살리기는 값만 넣어 onchange 가 안 돈다.
+            목록을 채운 «뒤에» 사유를 다시 넣는다. (2026-09-30)  */
+        load: function (v) {
+          if (typeof retFillReasons !== 'function') return;
+          retFillReasons('ledger');
+          var r = document.getElementById('ledgerReason');
+          if (r && v && v.ledgerReason) r.value = v.ledgerReason;
+        },
         scope: function() {
           var r = CS_ROWS[LEDGER_IDX] || {};
           return String(r.invoice || '').replace(/[^0-9]/g, '');
@@ -8408,8 +8410,22 @@
       return '<div class="ret-origin ' + (o === '어긋남' ? 'bad' : '') + '">⚠ ' + 말 + '</div>';
     }
 
-    /*  ★ 귀책별 사유 — 한 곳에서만 정한다  (2026-09-30)
+    /*  ★ 반품 접수에서 «고르는 낱말»은 전부 여기서만 정한다  (2026-09-30)
+
+        반품 접수 길이 둘이다 —
+          retNew : 반품탭 「+ 반품 접수」
+          ledger : 주문송장조회 → 「반품대장 기록」
+
+        ★ 왜 표로 모으나 ★
+          두 화면이 HTML 에 <option> 을 «두 벌» 적어 두고 있었다. 그래서
+          귀책·사유를 retNew 에만 넣었을 때 ledger 는 옛 화면 그대로였고,
+          사장님이 「주문송장조회에서 반품대장 기록으로 할경우는 아직도
+          이전 그대로네.. 다른 부분도 통일이 되야지」 하고 짚어 주셨다.
+          낱말을 고칠 자리가 하나면 한쪽을 빠뜨릴 수가 없다.
+
         화면과 시트가 다른 낱말을 쓰면 나중에 세지도 못하고 견주지도 못한다.  */
+    var RET_TYPES = ['단순반품', '반품', '교환', '오배송', '오주문', '재출고', '파손', '기타'];
+    var RET_FAULTS = ['구매자', '판매자'];
     var RET_REASONS = {
       구매자: ['자동반품', '단순변심', '오입력', '오주문',
                '제품파손', '택배사고', '제품불량', '배송지연'],
@@ -8417,25 +8433,67 @@
     };
 
     /**
-     * 귀책 칸을 보고 사유 목록을 다시 채운다.
-     * 고르고 있던 값이 새 목록에도 있으면 그대로 둔다 — 귀책을 잘못 눌렀다가
-     * 되돌렸을 때 적어 둔 것이 날아가면 안 된다.
+     * 고르는 칸 하나를 표대로 채운다.
+     *
+     * 고르고 있던 값이 새 목록에도 있으면 지킨다. 없으면 —
+     *   빈칸 안내가 있는 칸(사유)은 빈 값으로,
+     *   없는 칸(유형·귀책)은 첫 낱말로.
+     *
+     * @param {string} id       칸 id
+     * @param {string[]} 목록
+     * @param {string=} 빈칸안내 비워 둘 수 있는 칸이면 그 안내 글
      */
-    function retFillReasons() {
-      var f = document.getElementById('retNewFault');
-      var r = document.getElementById('retNewReason');
-      if (!f || !r) return;
-      var 있던것 = r.value;
-      var 목록 = RET_REASONS[f.value] || [];
-      var h = '<option value="">— 고르세요 (비워도 됩니다) —</option>';
+    function retFillSelect(id, 목록, 빈칸안내) {
+      var el = document.getElementById(id);
+      if (!el) return null;
+      var 있던것 = el.value;
+      var h = 빈칸안내 ? '<option value="">' + 빈칸안내 + '</option>' : '';
       for (var i = 0; i < 목록.length; i++) {
         h += '<option value="' + 목록[i] + '">' + 목록[i] + '</option>';
       }
-      r.innerHTML = h;
+      el.innerHTML = h;
       /*  ★ 값을 «드러내» 정한다 ★
           innerHTML 을 갈면 브라우저가 알아서 첫 항목으로 되돌려 주기는 한다.
           그 성질에 기대면 눈에 안 보이는 규칙이 되고, 시험도 못 한다.  */
-      r.value = (있던것 && 목록.indexOf(있던것) !== -1) ? 있던것 : '';
+      el.value = (있던것 && 목록.indexOf(있던것) !== -1) ? 있던것
+        : (빈칸안내 ? '' : (목록[0] || ''));
+      return el;
+    }
+
+    /**
+     * 한 화면의 고르는 칸을 전부 표대로 채운다 — 화면을 열 때 한 번.
+     * @param {string=} which 'retNew'(기본) | 'ledger'
+     */
+    function retFillPicks(which) {
+      var pfx = which === 'ledger' ? 'ledger' : 'retNew';
+      retFillSelect(pfx + 'Type', RET_TYPES);
+      retFillSelect(pfx + 'Fault', RET_FAULTS);
+      retFillReasons(which);
+    }
+
+    /**
+     * 귀책 칸을 보고 사유 목록을 다시 채운다.
+     *
+     * ★ 두 화면이 이 함수 하나를 쓴다 ★  (2026-09-30)
+     *   반품 접수는 길이 둘이다 —
+     *     retNew : 반품탭 「+ 반품 접수」
+     *     ledger : 주문송장조회 → 「반품대장 기록」
+     *   같은 일을 하는 화면이 둘이면 «고칠 때마다 한쪽을 빠뜨린다».
+     *   실제로 귀책·사유를 retNew 에만 넣었다가 사장님이
+     *   「주문송장조회에서 반품대장 기록으로 할경우는 아직도 이전 그대로네」
+     *   하고 짚어 주셨다. 그래서 칸 이름만 다르고 속은 하나로 둔다.
+     *
+     * 고르고 있던 값이 새 목록에도 있으면 그대로 둔다 — 귀책을 잘못 눌렀다가
+     * 되돌렸을 때 적어 둔 것이 날아가면 안 된다.
+     *
+     * @param {string=} which 'retNew'(기본) | 'ledger'
+     */
+    function retFillReasons(which) {
+      var pfx = which === 'ledger' ? 'ledger' : 'retNew';
+      var f = document.getElementById(pfx + 'Fault');
+      if (!f) return;
+      retFillSelect(pfx + 'Reason', RET_REASONS[f.value] || [],
+        '— 고르세요 (비워도 됩니다) —');
     }
 
     function retReasonOf(c) {
@@ -11176,8 +11234,11 @@
       document.getElementById('retNewPickup').value = '';
       document.getElementById('retNewRetInvoice').value = '';
       document.getElementById('retNewFee').value = '';
+      /*  고르는 칸을 표대로 채운 «뒤에» 기본값을 박는다.
+          채우기가 먼저여야 값이 들어간다 — 빈 select 에는 값을 못 넣는다.
+          새로 여는 것이니 지난번에 고른 것은 남기지 않는다.  */
+      retFillPicks('retNew');
       document.getElementById('retNewType').value = '단순반품';
-      //  사유 목록은 귀책을 정한 «뒤에» 채운다 — 순서가 뒤집히면 빈 목록이 된다
       document.getElementById('retNewFault').value = '구매자';
       retFillReasons();
       document.getElementById('retNewReason').value = '';
@@ -11603,7 +11664,12 @@
         '송장 ' + esc(r.invoice || '-') +
         (resolveCarrier(r) ? '<br>택배사 ' + esc(resolveCarrier(r)) : '') +
         (r.vendor ? '<br>업체 ' + esc(r.vendor) : '');
+      //  retNew 와 같은 차례 — 채우고 나서 기본값을 박는다
+      retFillPicks('ledger');
       document.getElementById('ledgerType').value = '단순반품';
+      document.getElementById('ledgerFault').value = '구매자';
+      retFillReasons('ledger');
+      document.getElementById('ledgerReason').value = '';
       document.getElementById('ledgerPickup').value = resolveCarrier(r) || '';
       document.getElementById('ledgerFee').value = '';
       document.getElementById('ledgerFeeWhy').textContent = '';
@@ -11725,6 +11791,8 @@
         .submitReturnLedger({
           staff: staff,
           type: document.getElementById('ledgerType').value,
+          fault: document.getElementById('ledgerFault').value,
+          reason: document.getElementById('ledgerReason').value,
           pickup: document.getElementById('ledgerPickup').value,
           memo: document.getElementById('ledgerMemo').value,
           account: document.getElementById('ledgerAccount').value,
