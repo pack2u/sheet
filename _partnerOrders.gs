@@ -4174,7 +4174,19 @@ function partnerPushInvoices() {
          : [])
     );
   } catch (eChat) {}
-  if (ui) ui.alert(msg);
+  /*  ★ 결과 창이 스크립트를 붙잡지 않게 ★  (2026-10-01)
+      ui.alert 는 「확인」을 누를 때까지 실행을 멈춰 둔다. 9/30 17:47 배포는
+      78건을 4분 만에 다 쓰고도 창이 열린 채 30분을 기다려 «시간 초과»로 끝났다.
+      HTML 창은 띄우고 바로 끝난다 — 송장 수집 결과 창과 같은 방식이다. */
+  if (ui) {
+    try {
+      var _pushOut = HtmlService.createHtmlOutput(
+        '<pre style="font:13px/1.5 sans-serif;white-space:pre-wrap;margin:0">' +
+          String(msg).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</pre>")
+        .setWidth(520).setHeight(360);
+      ui.showModalDialog(_pushOut, "📬 송장 배포 결과");
+    } catch (eUi) {}
+  }
 }
 
 // ═══════════════════════════════════════════
