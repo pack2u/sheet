@@ -2218,6 +2218,23 @@ function submitReturnLedger(data) {
     if (col.qty >= 0) row[col.qty] = data.qty || "";
     if (col.invoice >= 0) row[col.invoice] = invoice;
     if (col.type >= 0) row[col.type] = String(data.type || "단순반품").trim();
+
+    /* 사유(L열) — 고객이 «왜» 보냈나. 유형(K열)과 다른 칸이다.
+       2026-09-30 까지 카드에만 보여 주고 «적는 데»가 없었다. */
+    var reasonIn = String(data.reason || "").trim();
+    if (col.reason >= 0 && reasonIn) row[col.reason] = reasonIn;
+
+    /* 귀책 — 전용 열이 있으면 열에, 없으면 비고에.
+       반품송장·환불계좌가 걸어온 길과 같다. 시트에 「귀책」 열을 만들면
+       코드를 안 고쳐도 그쪽으로 옮겨 간다.
+       ★ 사유가 비었으면 귀책만 남기지 않는다 ★ 「판매자」 한 낱말은
+         나중에 읽는 사람에게 아무것도 알려 주지 않는다. */
+    var faultIn = String(data.fault || "").trim();
+    var faultToNotice = "";
+    if (faultIn && reasonIn) {
+      if (col.fault >= 0) row[col.fault] = faultIn;
+      else faultToNotice = "귀책: " + faultIn + " (" + reasonIn + ")";
+    }
     if (col.fee >= 0 && data.fee !== undefined && data.fee !== null && String(data.fee).trim() !== "") {
       row[col.fee] = String(data.fee).trim();
     }
@@ -2245,6 +2262,7 @@ function submitReturnLedger(data) {
     if (col.notice >= 0) {
       var noticeLines = [];
       if (data.memo) noticeLines.push(_cs_ledgerStamp_(data.staff) + " " + String(data.memo || "").trim());
+      if (faultToNotice) noticeLines.push(faultToNotice);
       if (retInvToNotice) noticeLines.push(retInvToNotice);
       if (acctToNotice) noticeLines.push(acctToNotice);
       if (p2NameToNotice) noticeLines.push(p2NameToNotice);
@@ -2402,6 +2420,22 @@ function _cs_colLetter_(idx) {
   return s;
 }
 
+/**
+ * 비고에 남은 「귀책: 판매자 (오배송)」에서 귀책만 꺼낸다.  (2026-09-30)
+ *
+ * 대장에 「귀책」 열이 생기기 전까지의 길이다. 열이 생기면 읽는 쪽이
+ * 열을 먼저 보므로 이 함수는 저절로 안 쓰인다.
+ * 반품송장이 비고에서 열로 옮겨 간 것과 같은 방식이다.
+ *
+ * @return {string} "구매자" | "판매자" | ""
+ */
+function _cs_faultFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/귀책\s*[:：]\s*(구매자|판매자)/);
+  return m ? m[1] : "";
+}
+
 function _cs_mapReturnLedgerCols_(header) {
   var col = {
     date: -1, staff: -1, vendor: -1, name: -1, phone: -1, phone2: -1, phone2Name: -1,
@@ -2414,7 +2448,12 @@ function _cs_mapReturnLedgerCols_(header) {
     /* 환불계좌 — 아직 대장에 없는 열이다 (2026-09-08).
        시트에 「환불계좌」 열을 만들면 **코드를 안 고쳐도** 여기로 잡힌다.
        그전까지는 비고에 「계좌: …」로 남는다. 반품송장이 걸어온 길과 같다. */
-    account: -1
+    account: -1,
+    /* 귀책 — 구매자냐 판매자냐. 아직 대장에 없는 열이다 (2026-09-30).
+       반품비를 누가 내는지가 여기서 갈린다. 사유 낱말도 귀책마다 다르다 —
+       구매자 잘못은 「오주문」, 우리 잘못은 「오배송」.
+       시트에 「귀책」 열을 만들면 코드를 안 고쳐도 여기로 잡힌다. */
+    fault: -1
   };
   for (var i = 0; i < header.length; i++) {
     var h = String(header[i] || "").replace(/\s/g, "");
@@ -2467,6 +2506,10 @@ function _cs_mapReturnLedgerCols_(header) {
        ★ type 보다 «앞»에 둔다 ★ 뒤에 두면 또 같은 일이 난다.
        ★ 좁게 잡는다 ★ /사유/ 만 보면 「취소반품사유」 같은 다른 칸까지
          빨아들인다. 반품 쪽 사유만 집는다. */
+    /* ★ 귀책을 사유보다 «앞»에 둔다 ★  (2026-09-30)
+       뒤에 두면 「반품귀책사유」 같은 머리글이 사유에 먼저 걸려 귀책이
+       통째로 버려진다 — 2026-09-18 에 사유가 당한 일이 정확히 그것이다. */
+    else if (col.fault < 0 && /^귀책$|귀책구분|^책임$|책임구분|과실구분/.test(h)) col.fault = i;
     else if (col.reason < 0 && /^반품사유$|^사유$|반품이유|교환반품사유/.test(h)) col.reason = i;
     // 2026-09-04: 실제 헤더 문구를 넣는다.
     //   시트는 「재출고/단순/오주문입력/오배송」이라고 적혀 있는데 정규식에 없어서
@@ -3443,6 +3486,11 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
          사유(reason) 는 「뚜껑 깨짐」처럼 왜 반품인지다. 상담에서
          먼저 묻는 것은 «왜»다. 같으면 카드가 한 번만 보여 준다. */
       reason: col.reason >= 0 ? String(row[col.reason] || "").trim() : "",
+      /* 귀책 — 전용 열이 없는 탭은 비고에 「귀책: 판매자 (오배송)」으로 남는다.
+         열이 생기면 저절로 열을 읽는다. (2026-09-30) */
+      fault: col.fault >= 0
+        ? String(row[col.fault] || "").trim()
+        : _cs_faultFromNotice_(notice),
       /* ★ 업체가 새로 올린 건데 CS 가 아직 안 본 것 ★  (2026-09-18)
          이 값 하나로 화면이 «맨 위 + 하이라이트»를 정한다.
          판정은 _cs_needsCsCheck_ 한 곳에서만 한다 — 두 곳에서 따로

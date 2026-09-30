@@ -3561,6 +3561,36 @@
           </select>
         </div>
       </div>
+      <!--  ★ 귀책과 사유  (2026-09-30)
+
+            > "반품 접수시 내용을 (자동반품, 단순변심, 오입력, 오배송, 제품파손,
+            >  택배사고, 제품불량, 배송지연 / 정보불일치, 오배송, 중복출고) 로 해줘"
+            > "아니 구매자 귀책이 오주문... 판매자 귀책이 오배송"
+
+            「유형」과 「사유」는 이미 다른 칸이다 —
+              유형(대장 K열) : 재출고·단순·오배송   … 우리가 «어떻게 처리하나»
+              사유(대장 L열) : 제품파손·단순변심     … 고객이 «왜 보냈나»
+            사유는 카드에 나오는데 «적는 칸이 없어» 늘 비어 있었다.
+
+            귀책을 먼저 고르는 까닭 — 반품비를 누가 내는지가 여기서 갈린다.
+            그리고 사유 낱말이 귀책마다 다르다. 구매자가 잘못 주문한 것은
+            「오주문」, 우리가 잘못 보낸 것은 「오배송」 — 낱말이 다르니
+            섞어 두면 CS 가 매번 어느 것인지 고민한다.  -->
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>귀책</label>
+          <select id="retNewFault" onchange="retFillReasons()">
+            <option value="구매자" selected>구매자</option>
+            <option value="판매자">판매자</option>
+          </select>
+        </div>
+        <div class="ledger-field">
+          <label>사유</label>
+          <!-- 빈칸으로 둘 수 있다. 목록에 없는 사유는 아래 메모에 적는다 —
+               「기타」를 골라 대장에 「기타」가 적히면 아무 뜻도 없다. -->
+          <select id="retNewReason"></select>
+        </div>
+      </div>
       <div class="ledger-field">
         <label>환불계좌 (선택)</label>
         <input id="retNewAccount" type="text"
@@ -6019,7 +6049,18 @@
         modal: 'retNewModal', bar: 'retNewDraftBar',
         fields: ['retNewStaff', 'retNewName', 'retNewPhone', 'retNewPhone2', 'retNewPhone2Name', 'retNewInvoice', 'retNewQty',
                  'retNewItem', 'retNewVendor', 'retNewPickup', 'retNewRetInvoice',
-                 'retNewFee', 'retNewType', 'retNewStatus', 'retNewAccount', 'retNewMemo']
+                 'retNewFee', 'retNewType', 'retNewFault', 'retNewReason',
+                 'retNewStatus', 'retNewAccount', 'retNewMemo'],
+        /*  사유 목록은 귀책에 딸려 있다 — 되살릴 때 «순서»가 있다.  (2026-09-30)
+            위 칸 되살리기는 값만 넣는다(onchange 가 안 돈다). 그래서 사유
+            select 에는 아직 그 귀책의 항목이 없고, 값을 넣어도 안 들어간다.
+            여기서 목록을 채운 «뒤에» 사유를 다시 넣는다.  */
+        load: function (v) {
+          if (typeof retFillReasons !== 'function') return;
+          retFillReasons();
+          var r = document.getElementById('retNewReason');
+          if (r && v && v.retNewReason) r.value = v.retNewReason;
+        }
       },
       hb: {
         modal: 'hbModal', bar: 'hbDraftBar',
@@ -8364,6 +8405,36 @@
       return '<div class="ret-origin ' + (o === '어긋남' ? 'bad' : '') + '">⚠ ' + 말 + '</div>';
     }
 
+    /*  ★ 귀책별 사유 — 한 곳에서만 정한다  (2026-09-30)
+        화면과 시트가 다른 낱말을 쓰면 나중에 세지도 못하고 견주지도 못한다.  */
+    var RET_REASONS = {
+      구매자: ['자동반품', '단순변심', '오입력', '오주문',
+               '제품파손', '택배사고', '제품불량', '배송지연'],
+      판매자: ['정보불일치', '오배송', '중복출고']
+    };
+
+    /**
+     * 귀책 칸을 보고 사유 목록을 다시 채운다.
+     * 고르고 있던 값이 새 목록에도 있으면 그대로 둔다 — 귀책을 잘못 눌렀다가
+     * 되돌렸을 때 적어 둔 것이 날아가면 안 된다.
+     */
+    function retFillReasons() {
+      var f = document.getElementById('retNewFault');
+      var r = document.getElementById('retNewReason');
+      if (!f || !r) return;
+      var 있던것 = r.value;
+      var 목록 = RET_REASONS[f.value] || [];
+      var h = '<option value="">— 고르세요 (비워도 됩니다) —</option>';
+      for (var i = 0; i < 목록.length; i++) {
+        h += '<option value="' + 목록[i] + '">' + 목록[i] + '</option>';
+      }
+      r.innerHTML = h;
+      /*  ★ 값을 «드러내» 정한다 ★
+          innerHTML 을 갈면 브라우저가 알아서 첫 항목으로 되돌려 주기는 한다.
+          그 성질에 기대면 눈에 안 보이는 규칙이 되고, 시험도 못 한다.  */
+      r.value = (있던것 && 목록.indexOf(있던것) !== -1) ? 있던것 : '';
+    }
+
     function retReasonOf(c) {
       var r = String((c && c.reason) || '').trim();
       if (!r) return '';
@@ -9710,6 +9781,8 @@
         retCaseRowHtml('유형', c.type) +
         /*  사유가 유형과 같은 말이면 두 번 적지 않는다 (2026-09-18) */
         retCaseRowHtml('사유', retReasonOf(c)) +
+        /*  귀책은 반품비를 누가 내는지다. 사유 바로 아래 둔다 (2026-09-30) */
+        retCaseRowHtml('귀책', c.fault) +
         retCaseRowHtml('반품비', /^[0₩,.\s원]*$/.test(String(c.fee || '')) ? '' : c.fee) +
         retCaseRowHtml('담당', c.staff) +
         '<div class="os-actions"><button class="os-reply" type="button" ' +
@@ -11086,6 +11159,10 @@
       document.getElementById('retNewRetInvoice').value = '';
       document.getElementById('retNewFee').value = '';
       document.getElementById('retNewType').value = '단순반품';
+      //  사유 목록은 귀책을 정한 «뒤에» 채운다 — 순서가 뒤집히면 빈 목록이 된다
+      document.getElementById('retNewFault').value = '구매자';
+      retFillReasons();
+      document.getElementById('retNewReason').value = '';
       document.getElementById('retNewStatus').value = '접수';
       document.getElementById('retNewAccount').value = '';
       document.getElementById('retNewMemo').value = '';
@@ -11196,6 +11273,8 @@
         .submitReturnLedger({
           staff: staff,
           type: document.getElementById('retNewType').value,
+          fault: document.getElementById('retNewFault').value,
+          reason: document.getElementById('retNewReason').value,
           pickup: document.getElementById('retNewPickup').value,
           memo: document.getElementById('retNewMemo').value,
           account: document.getElementById('retNewAccount').value,
