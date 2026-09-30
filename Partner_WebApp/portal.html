@@ -981,9 +981,26 @@
           <select id="nPickup"></select>
         </div>
       </div>
+      <!--  ★ 귀책과 사유  (2026-09-30)
+            > "당장드림 반품 현황도 위 사유에 대한 내용이 적용되야 할꺼 같아"
+            CS웹앱 두 접수 화면과 «같은 낱말»이다. 목록은 서버가 내려 준다
+            (prpConfig.PRP_RETURN_FAULTS · PRP_RETURN_REASONS).
+            귀책을 먼저 고르는 까닭 — 구매자가 잘못 주문한 것은 「오주문」,
+            우리가 잘못 보낸 것은 「오배송」. 낱말이 달라서다.  -->
+      <div class="fld fld2">
+        <div>
+          <label>귀책</label>
+          <select id="nFault"></select>
+        </div>
+        <div>
+          <label>반품 사유</label>
+          <select id="nReason"></select>
+        </div>
+      </div>
       <div class="fld">
         <label>전달 사항</label>
-        <textarea id="nMemo" placeholder="반품 사유, 특이사항 등 · 스크린샷은 Ctrl+V"></textarea>
+        <!-- 사유는 위에서 고른다. 여기는 목록에 없는 것·덧붙일 말을 받는다. -->
+        <textarea id="nMemo" placeholder="어느 품목인지, 덧붙일 말 등 · 스크린샷은 Ctrl+V"></textarea>
       </div>
       <div class="fld">
         <label>사진 (여러 장 · 파일 / 촬영 / 붙여넣기)</label>
@@ -1551,8 +1568,14 @@
          다음에 안 그런다.
          구분(type)과 같은 말이면 두 번 적지 않는다 — 아래 sub 줄에 이미 나간다. */
       var 사유 = String(c.reason || '').trim();
+      /*  귀책은 반품비를 누가 내는지다. 사유와 한 줄에 붙여 낸다 (2026-09-30) —
+          줄을 따로 두면 카드가 길어지고, 귀책만 있는 건은 거의 없다.  */
+      var 귀책 = String(c.fault || '').trim();
       if (사유 && 사유 !== String(c.type || '').trim()) {
-        h += '<div class="reason">' + esc(사유) + '</div>';
+        h += '<div class="reason">' + esc(사유) +
+          (귀책 ? ' <em>· ' + esc(귀책) + ' 귀책</em>' : '') + '</div>';
+      } else if (귀책) {
+        h += '<div class="reason"><em>' + esc(귀책) + ' 귀책</em></div>';
       }
       // 원송장은 우리가 보낸 것이라 택배사 힌트가 없다 → 네이버 검색으로 간다.
       // 반품송장은 수거입력처가 곧 택배사라 그 값을 힌트로 쓴다.
@@ -1772,6 +1795,36 @@
       }).join('');
     }
 
+    /*  ★ 귀책·사유 — 서버가 내려 준 것을 그대로 쓴다  (2026-09-30)
+        화면에 낱말을 박으면 prpConfig 와 두 벌이 되어 갈라진다.
+        서버가 아직 안 줬을 때의 대비값만 둔다 — 옛 화면이 열려 있을 수 있다.  */
+    var FAULTS = ['구매자', '판매자'];
+    var REASONS = {
+      구매자: ['자동반품', '단순변심', '오입력', '오주문',
+        '제품파손', '택배사고', '제품불량', '배송지연'],
+      판매자: ['정보불일치', '오배송', '중복출고']
+    };
+
+    /**
+     * 귀책 칸을 보고 사유 목록을 다시 채운다.
+     * 고르고 있던 값이 새 목록에도 있으면 지킨다 — 귀책을 잘못 눌렀다가
+     * 되돌렸을 때 적어 둔 것이 날아가면 안 된다.
+     */
+    function fillReasons() {
+      var f = el('nFault'), r = el('nReason');
+      if (!f || !r) return;
+      var 있던것 = r.value;
+      var 목록 = REASONS[f.value] || [];
+      var h = '<option value="">— 고르세요 (비워도 됩니다) —</option>';
+      for (var i = 0; i < 목록.length; i++) {
+        h += '<option value="' + esc(목록[i]) + '">' + esc(목록[i]) + '</option>';
+      }
+      r.innerHTML = h;
+      /*  값을 «드러내» 정한다 — 브라우저가 알아서 첫 항목으로 되돌려 주는
+          성질에 기대면 눈에 안 보이는 규칙이 되고, 시험도 못 한다. */
+      r.value = (있던것 && 목록.indexOf(있던것) !== -1) ? 있던것 : '';
+    }
+
     /* 수거 택배사 기본값. 서버가 알려 주기 전까지의 대비값이다 (2026-09-18) */
     var PICKUP_DEFAULT = '로젠택배';
 
@@ -1789,6 +1842,9 @@
       }
     }
 
+    /*  유형 기본값 — 서버 목록의 첫째. 화면에 낱말을 박지 않는다. */
+    var TYPE_DEFAULT = '단순반품';
+
     function openNew() {
       ['nName', 'nPhone', 'nPhone2', 'nPhone2Name', 'nInv', 'nItem', 'nMemo', 'nUid']
         .forEach(function (k) { el(k).value = ''; });
@@ -1796,6 +1852,11 @@
       el('nQty').value = '1';
       /*  select 는 지난번 고른 값을 들고 있다 — 열 때마다 기본으로 되돌린다 */
       setPickupDefault();
+      /*  사유 목록은 귀책에 딸려 있다 — 귀책을 정한 «뒤에» 채운다 */
+      if (el('nType')) el('nType').value = TYPE_DEFAULT;
+      if (el('nFault')) el('nFault').value = FAULTS[0] || '구매자';
+      fillReasons();
+      if (el('nReason')) el('nReason').value = '';
       el('nMsg').textContent = '';
       el('nMsg').className = 'msg';
       el('nHits').innerHTML = '';
@@ -1817,6 +1878,8 @@
         invoice: el('nInv').value,
         item: el('nItem').value,
         type: el('nType').value,
+        fault: el('nFault').value,
+        reason: el('nReason').value,
         pickup: el('nPickup').value,
         memo: el('nMemo').value,
         /*  ★ 사진 장수를 같이 보낸다 ★  (2026-09-20)
@@ -3175,6 +3238,10 @@
     //  나열 차례를 바꾸면 바로 다시 그린다 (고른 값은 그 사람 브라우저에 남는다)
     el('sortSel').addEventListener('change', function () { setSort(this.value); });
 
+    /*  귀책을 바꾸면 사유 목록을 다시 채운다  (2026-09-30)
+        낱말이 귀책마다 다르다 — 구매자는 「오주문」, 판매자는 「오배송」. */
+    el('nFault').addEventListener('change', fillReasons);
+
     document.querySelectorAll('.segs button').forEach(function (b) {
       b.addEventListener('click', function () {
         document.querySelectorAll('.segs button').forEach(function (x) { x.classList.remove('on'); });
@@ -3199,6 +3266,13 @@
         if (handled(res)) return;
         if (res && res.ok) {
           fillOpts('nType', res.types);
+          if (res.types && res.types.length) TYPE_DEFAULT = res.types[0];
+          /*  ★ 귀책·사유도 서버 것으로 ★  (2026-09-30)
+              화면에 박으면 prpConfig 와 두 벌이 되어 갈라진다.  */
+          if (res.faults && res.faults.length) FAULTS = res.faults;
+          if (res.reasons) REASONS = res.reasons;
+          fillOpts('nFault', FAULTS);
+          fillReasons();
           fillOpts('nPickup', res.pickups);
           /* ★ 수거 택배사 기본값 ★  (2026-09-18)
              > "업체 반품접수 새로 만들기에서 수거택배사를 기본 로젠택배로 해줘"

@@ -45,7 +45,11 @@ function prpMapCols_(header) {
     /* 반품사유 — 대장 L열. type(K열 구분)과 «다른» 칸이다.
        CS_WebApp/csOrderSearch.gs 의 같은 표와 «쌍»이다.
        한쪽만 고치면 또 어긋난다 — 아래 type 주석이 겪은 그 일이다. */
-    reason: -1
+    reason: -1,
+    /* 귀책 — 아직 대장에 없는 열이다 (2026-09-30). 그때까지는 비고에
+       「귀책: 판매자 (오배송)」으로 남는다. 시트에 「귀책」 열을 만들면
+       코드를 안 고쳐도 여기로 잡힌다. CS웹앱 쪽과 «쌍»이다. */
+    fault: -1
   };
   for (var i = 0; i < header.length; i++) {
     var h = String(header[i] || "").replace(/\s/g, "");
@@ -117,6 +121,9 @@ function prpMapCols_(header) {
 
        ★ type 보다 «앞»에 둔다 ★ 뒤에 두면 또 같은 일이 난다.
        ★ CS웹앱과 «같은 규칙»이다 — 쌍으로 고친다 ★ */
+    /* ★ 귀책을 사유보다 «앞»에 둔다 ★ 뒤에 두면 「반품귀책사유」 같은
+       머리글이 사유에 먼저 걸려 귀책이 통째로 버려진다. */
+    else if (col.fault < 0 && /^귀책$|귀책구분|^책임$|책임구분|과실구분/.test(h)) col.fault = i;
     else if (col.reason < 0 && /^반품사유$|^사유$|반품이유|교환반품사유/.test(h)) col.reason = i;
     else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유|재출고|오주문입력/.test(h)) col.type = i;
     /* 2026-09-09: 「환불비용」을 더한다. 9월 탭 머리글이 「반품/환불비용」인데
@@ -192,6 +199,23 @@ function prpYmdFromCell_(raw) {
   m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
   if (m) return m[1] + ("0" + m[2]).slice(-2) + ("0" + m[3]).slice(-2);
   return "";
+}
+
+/**
+ * 비고에 남은 「귀책: 판매자 (오배송)」에서 귀책만 꺼낸다.  (2026-09-30)
+ *
+ * 대장에 「귀책」 열이 생기기 전까지의 길이다. 열이 생기면 읽는 쪽이 열을
+ * 먼저 보므로 이 함수는 저절로 안 쓰인다. 반품송장이 걸어온 길과 같다.
+ * CS_WebApp/csOrderSearch.gs 의 _cs_faultFromNotice_ 와 «쌍»이다 —
+ * 적는 글자 모양이 하나니 읽는 것도 하나여야 한다.
+ *
+ * @return {string} "구매자" | "판매자" | ""
+ */
+function prpFaultFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/귀책\s*[:：]\s*(구매자|판매자)/);
+  return m ? m[1] : "";
 }
 
 function prpParseReturnInvFromNotice_(text) {
@@ -462,6 +486,10 @@ function prpReadTabCases_(tab, tabName, cutoffYmd, sess) {
       /*  구분(type)은 «어떻게 처리하나», 사유(reason)는 «왜 보냈나».
           업체도 자기 건이 왜 반품인지 알아야 다음에 안 그런다. */
       reason: col.reason >= 0 ? String(row[col.reason] || "").trim() : "",
+      /* 귀책 — 열이 없으면 비고에서 되읽는다 (2026-09-30) */
+      fault: col.fault >= 0
+        ? String(row[col.fault] || "").trim()
+        : prpFaultFromNotice_(notice),
       status: status || "접수",
       pickup: col.pickup >= 0 ? String(row[col.pickup] || "").trim() : "",
       fee: col.fee >= 0 ? prpFormatFee_(row[col.fee]) : "",
