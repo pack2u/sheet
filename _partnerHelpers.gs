@@ -2987,6 +2987,17 @@ function _pt_ingestInvoiceSheetTabIntoMap(
         invoiceMap[uidKey].push(invEntry);
       }
     }
+    /*  ★ 세트분리(뉴)가 쪼갠 세트는 d0930000044_S1 · _S2 로 나간다 ★  (2026-09-30)
+        허브 C열은 맨 번호(d0930000044)다. 맨 번호 칸에도 담아야 허브가
+        몸통·뚜껑 송장을 전처럼 «전부» 집는다 ("같은 고유ID에 송장이 여러 개"). */
+    var _baseDone = {};
+    [sbUidKey, uidIdx !== -1 ? String(invData[i][uidIdx] || "").trim() : ""].forEach(function (k0) {
+      var b0 = String(k0 || "").replace(/_S\d+$/, "");
+      if (!k0 || b0 === k0 || b0.length <= 2 || b0 === key || _baseDone[b0]) return;
+      _baseDone[b0] = true;
+      if (!invoiceMap[b0]) invoiceMap[b0] = [];
+      invoiceMap[b0].push(invEntry);
+    });
 
     // 이름+전화 기반 키 (이름 또는 전화가 있을 때만)
     if (key && key.length > 2) {
