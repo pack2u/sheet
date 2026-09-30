@@ -2939,6 +2939,11 @@
     .lgw-acts button:disabled { opacity: .4; cursor: default; }
     .lgw-ocr { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-secondary); font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
     .lgw-ocr.err { color: var(--text-muted); }
+    .ret-intakereq {
+      margin-top: 5px; padding: 5px 8px; border-radius: 7px; cursor: pointer;
+      background: #fff4d6; color: #6b4a00; font-size: 12px; font-weight: 700; line-height: 1.45;
+      border-left: 3px solid #FDB813; word-break: keep-all;
+    }
     .lgw-done { font-size: 11px; font-weight: 700; color: var(--accent-orange); margin-left: 4px; }
     .lgw-ocr-t { font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
     .lgw-ocr span { display: inline-block; min-width: 56px; color: var(--text-muted); }
@@ -8575,7 +8580,7 @@
             v2 물류 입고 화면 카드 맨 위에 노란 띠로 뜬다(lib/intake-notes). */
         '<div class="ret-act-pop" id="ret-pop-intakereq-' + idx + '" data-mode="intakereq">' +
           '<div class="pop-label">📦 입고 확인 요청 · 물류 입고 화면에 뜹니다 (업체에는 안 보임)</div>' +
-          '<textarea id="ret-intakereq-' + idx + '" placeholder="예: 뚜껑만 반품 — 몸통 섞였는지 확인 / 수량 50개 맞는지 / 파손 사진 꼭"></textarea>' +
+          '<textarea id="ret-intakereq-' + idx + '" placeholder="예: 뚜껑만 반품 — 몸통 섞였는지 확인 / 수량 50개 맞는지 / 파손 사진 꼭 (비우고 남기면 요청을 지웁니다)">' + esc(c.intakeReq || '') + '</textarea>' +
           '<div class="ret-pop-btns">' +
             '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
             '<button type="button" class="ret-pop-save" id="ret-save-intakereq-' + idx + '" onclick="submitReturnCompose(' + idx + ',\x27intakereq\x27)">요청 남기기</button>' +
@@ -8823,6 +8828,11 @@
               statusBadge +
               (picked ? '<span class="ret-done">회수 접수됨</span>' : '') + '</div>' +
             '<div class="ret-item">' + esc(c.item || '-') + (c.qty ? ' × ' + esc(c.qty) : '') + '</div>' +
+            /* 📦 입고확인요청 열 (2026-09-30) — 지금 유효한 요청. 누르면 고친다 */
+            (c.intakeReq
+              ? '<div class="ret-intakereq" onclick="event.stopPropagation(); toggleReturnCompose(' + idx + ',\x27intakereq\x27)"' +
+                  ' title="물류 입고 화면에 이대로 뜹니다 · 눌러서 고치기">📦 입고 확인: ' + esc(c.intakeReq) + '</div>'
+              : '') +
             /* ★ 왜 보냈는지를 품목 바로 밑에 ★  (2026-09-18)
                상담에서 첫 물음이 「왜 반품이세요」다. 대장에 적혀 있는데
                화면에 없으면 사람이 시트를 다시 연다. */
@@ -9186,6 +9196,7 @@
         return;
       }
 
+      if (mode === 'intakereq') { submitIntakeReq(idx, c, staff); return; }
       var boxKey = (mode === 'phone' || mode === 'intakereq') ? mode : 'consult';
       var ta = document.getElementById('ret-' + boxKey + '-' + idx);
       var btn = document.getElementById('ret-save-' + boxKey + '-' + idx);
@@ -9242,6 +9253,31 @@
           toast(String((err && err.message) || err), 2600);
         })
         .appendReturnConsultation({ tab: c.tab, row: c.row, text: text, staff: staff });
+    }
+
+    /* 📦 입고확인요청 — 대장 전용 열에 쓴다 (2026-09-30, csSetReturnIntakeReq).
+       > "반품카드에 입고확인요청 열을 만들고 물류팀에서 확인할때 한눈에 요청사항이 잘보이게"
+       열 = 지금 요청(덮어쓰기 · 비우면 지움), 처리 경과 = 누가 언제 바꿨는지(내부). */
+    function submitIntakeReq(idx, c, staff) {
+      var ta = document.getElementById('ret-intakereq-' + idx);
+      var btn = document.getElementById('ret-save-intakereq-' + idx);
+      var text = ta ? String(ta.value || '').trim() : '';
+      if (!text && !c.intakeReq) { toast('요청 내용을 적어 주세요'); return; }
+      if (btn) btn.disabled = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (btn) btn.disabled = false;
+          if (!res || !res.ok) { toast((res && res.error) || '저장 실패', 3000); return; }
+          c.intakeReq = res.intakeReq || '';
+          closeReturnCompose(idx);
+          toast(res.message || '저장했습니다');
+          loadReturnActive(true, false, true);
+        })
+        .withFailureHandler(function (e) {
+          if (btn) btn.disabled = false;
+          toast(String((e && e.message) || e), 3000);
+        })
+        .csSetReturnIntakeReq({ tab: c.tab, row: c.row, text: text, staff: staff });
     }
 
     // ── 반품 사진 첨부 ────────────────────────────────────

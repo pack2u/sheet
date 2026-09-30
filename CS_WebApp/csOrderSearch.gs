@@ -2453,12 +2453,17 @@ function _cs_mapReturnLedgerCols_(header) {
        반품비를 누가 내는지가 여기서 갈린다. 사유 낱말도 귀책마다 다르다 —
        구매자 잘못은 「오주문」, 우리 잘못은 「오배송」.
        시트에 「귀책」 열을 만들면 코드를 안 고쳐도 여기로 잡힌다. */
-    fault: -1
+    fault: -1,
+    /* 입고확인요청 — CS 가 물류에게 «박스 열 때 볼 것»을 적는 칸 (2026-09-30).
+       대장 맨 뒤에 붙인다(_cs_ensureIntakeReqCol_). 업체 포털은 이 열을 안 읽는다. */
+    intakeReq: -1
   };
   for (var i = 0; i < header.length; i++) {
     var h = String(header[i] || "").replace(/\s/g, "");
     if (!h) continue;
-    if (col.date < 0 && /반품접수날짜|접수날짜|접수일자/.test(h)) col.date = i;
+    //  맨 앞에서 먼저 잡는다 — 「요청」·「확인」이 다른 규칙(고객요청 → 비고 등)에 걸리지 않게
+    if (col.intakeReq < 0 && /^입고확인요청/.test(h)) col.intakeReq = i;
+    else if (col.date < 0 && /반품접수날짜|접수날짜|접수일자/.test(h)) col.date = i;
     else if (col.staff < 0 && h === "접수자") col.staff = i;
     /* 2026-09-09: 9월 탭에서 D열이 「업체명」 → 「주문지」로 바뀌었다.
        뜻은 같다 — 「법인/쿠팡」·「대리발송-리바이」처럼 주문이 어디서 왔나다.
@@ -3486,6 +3491,8 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
          사유(reason) 는 「뚜껑 깨짐」처럼 왜 반품인지다. 상담에서
          먼저 묻는 것은 «왜»다. 같으면 카드가 한 번만 보여 준다. */
       reason: col.reason >= 0 ? String(row[col.reason] || "").trim() : "",
+      //  입고확인요청 열 (2026-09-30) — 카드에 노란 띠로, v2 물류 입고 화면에도 뜬다
+      intakeReq: col.intakeReq >= 0 ? String(row[col.intakeReq] || "").trim() : "",
       /* 귀책 — 전용 열이 없는 탭은 비고에 「귀책: 판매자 (오배송)」으로 남는다.
          열이 생기면 저절로 열을 읽는다. (2026-09-30) */
       fault: col.fault >= 0
