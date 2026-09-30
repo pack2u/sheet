@@ -2126,7 +2126,8 @@ function partnerFetchInvoices() {
       }
       if (_csUidCol < 0) _csUidCol = 16; // Q열 = 0-based 16 (구 시트)
       for (var _cr2 = 1; _cr2 < _csData.length; _cr2++) {
-        var _csUid = String(_csData[_cr2][_csUidCol] || "").trim();
+        //  쪼갠 세트가 대표면 P칸이 d0930000044_S1 이다 — 허브 C열은 맨 번호 (2026-09-30)
+        var _csUid = String(_csData[_cr2][_csUidCol] || "").trim().replace(/_S\d+$/, "");
         if (!_csUid) continue;
         combinedUidSet[_csUid] = true;
         if (_csGrpCol >= 0) {
@@ -2140,6 +2141,13 @@ function partnerFetchInvoices() {
           "개, UID " + Object.keys(combinedUidSet).length + "개 로드됨" +
           "  (이름칸 " + _csNameIdx + " · UID칸 " + _csUidCol + ")",
       );
+    }
+    /*  ★ 원장 읽기는 합배송 탭이 «비어도» 돈다 ★  (2026-09-30)
+        여태 이 아래가 「합배송 탭에 줄이 있으면」 블록 안에 있었다. 마지막 회차에
+        합포장이 0건이면(9/30 3차) 탭이 비어 원장을 아예 안 읽었고, 그래서 앞 차수의
+        합포장 48건과 「몸통만/뚜껑만」 적요가 통째로 빠졌다 — 바로 아래 주석이
+        막으려던 그 일이다. */
+    {
 
       /*  ══════════════════════════════════════════════════════════
           ★ 합배송은 «차수별»로 쌓인 원장에서도 읽는다 ★  (2026-09-15)
