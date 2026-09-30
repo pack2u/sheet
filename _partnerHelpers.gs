@@ -3115,7 +3115,11 @@ function _pt_scoreInvoiceCandidate(detail, itemName) {
  *   hasInfo  : 비교할 detail·품목명이 있었나 (없으면 판단 자체가 불가)
  */
 function _pt_scoreInvoiceEvidence_(detail, itemName) {
-  var dRaw = String(detail || "").toUpperCase();
+  /*  ★ 세트 꼬리표(_S1·_S2)는 규격이 아니다 ★  (2026-09-30)
+      로젠 탭은 품목 칸이 없어 주문번호(d0930000044_S1)가 detail 로 온다.
+      「S1」이 규격 토큰(/^[A-Z][0-9]?$/)으로 읽혀 «규격 다름»으로 버려졌다 —
+      쪼갠 세트 송장이 허브에 한 장도 안 붙던 까닭이다. */
+  var dRaw = String(detail || "").replace(/_S\d+(?![0-9])/gi, "").toUpperCase();
   var item = String(itemName || "").toUpperCase();
   var dtTokens = dRaw.match(/[A-Z0-9가-힣]+/g) || [];
   var score = 0;
