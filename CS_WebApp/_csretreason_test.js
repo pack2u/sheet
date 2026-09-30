@@ -48,9 +48,9 @@ function 꺼내(src, name) {
 
 /* ── 사장님이 말한 낱말 그대로 ─────────────────────────────── */
 const 시킨것 = {
-  구매자: ["자동반품", "단순변심", "오입력", "오주문",
-    "제품파손", "택배사고", "제품불량", "배송지연"],
-  판매자: ["정보불일치", "오배송", "중복출고"],
+  구매자: ["자동반품", "단순변심", "오입력"],
+  판매자: ["오배송", "제품파손", "사고", "불량",
+    "배송지연", "정보불일치", "중복출고"],
 };
 
 /* ── 화면 쪽 ─────────────────────────────────────────────────── */
@@ -72,9 +72,16 @@ console.log("\n─── ① 목록이 시킨 그대로인가 ───");
   ok(귀책 + " 낱말이 한 글자도 안 다르다", 실제.join("·") === 시킨것[귀책].join("·"),
     "\n         지금: " + 실제.join("·") + "\n         시킨것: " + 시킨것[귀책].join("·"));
 });
-ok("구매자 4번째는 오주문이다 (오배송이 아니다)", hctx.RET_REASONS.구매자[3] === "오주문", hctx.RET_REASONS.구매자[3]);
+/*  ★ 2026-09-30 두 번째 가름 ★
+    물건이 깨지거나 늦은 것은 «우리(또는 택배사) 탓»이다 — 구매자 쪽에 두면
+    반품비를 고객에게 물리게 된다. 귀책이 곧 돈이라 이 가름이 값을 정한다.  */
+ok("구매자 쪽은 셋뿐 — 자동반품·단순변심·오입력",
+  hctx.RET_REASONS.구매자.join("·") === "자동반품·단순변심·오입력",
+  hctx.RET_REASONS.구매자.join("·"));
+ok("오배송·파손·사고·불량·배송지연은 판매자 쪽이다",
+  ["오배송", "제품파손", "사고", "불량", "배송지연"].every((w) =>
+    hctx.RET_REASONS.판매자.indexOf(w) >= 0 && hctx.RET_REASONS.구매자.indexOf(w) < 0));
 ok("구매자 목록에 오배송은 없다", hctx.RET_REASONS.구매자.indexOf("오배송") < 0);
-ok("판매자 목록에 오주문은 없다", hctx.RET_REASONS.판매자.indexOf("오주문") < 0);
 const 겹침 = hctx.RET_REASONS.구매자.filter((x) => hctx.RET_REASONS.판매자.indexOf(x) >= 0);
 ok("두 목록에 겹치는 낱말이 없다", 겹침.length === 0, 겹침.join("·"));
 ok("귀책은 둘뿐", hctx.RET_FAULTS.join("·") === "구매자·판매자", hctx.RET_FAULTS.join("·"));
@@ -136,15 +143,15 @@ ok("retFillReasons() 도 retNew 를 본다",
   고를수있는것(칸.retNewReason).slice(1).join("·") === 시킨것.판매자.join("·"));
 
 console.log("\n─── ⑤ 잘못 눌렀다 되돌려도 적은 것이 안 날아간다 ───");
-칸 = 가짜화면("ledger", "구매자", "제품불량");
+칸 = 가짜화면("ledger", "구매자", "단순변심");
 hctx.retFillReasons("ledger");
-ok("같은 귀책이면 고른 값이 그대로", 칸.ledgerReason.value === "제품불량", 칸.ledgerReason.value);
+ok("같은 귀책이면 고른 값이 그대로", 칸.ledgerReason.value === "단순변심", 칸.ledgerReason.value);
 칸.ledgerFault.value = "판매자";
 hctx.retFillReasons("ledger");
 ok("귀책이 바뀌어 없는 낱말이면 비워진다", 칸.ledgerReason.value === "", 칸.ledgerReason.value);
 
 console.log("\n─── ⑥ 모르는 값이 와도 안 죽는다 ───");
-칸 = 가짜화면("retNew", "아무거나", "제품불량");
+칸 = 가짜화면("retNew", "아무거나", "단순변심");
 hctx.retFillReasons();
 ok("빈 목록만 남는다", 고를수있는것(칸.retNewReason).join("·") === "", JSON.stringify(고를수있는것(칸.retNewReason)));
 ok("칸이 사라지면 조용히 돌아간다", (function () {
@@ -253,7 +260,7 @@ ok("열이 없으면 비고에서 사유를 읽는다",
 ok("귀책이 비었을 때만 「사유: …」를 따로 적는다",
   /if \(col\.reason < 0 && reasonIn && !faultToNotice\) \{/.test(gs));
 [["귀책: 판매자 (오배송)", "오배송"],
- ["[260930 10:00 김진수] 고객 요청\n귀책: 구매자 (제품불량)\n반품송장: 600622029800", "제품불량"],
+ ["[260930 10:00 김진수] 고객 요청\n귀책: 판매자 (불량)\n반품송장: 600622029800", "불량"],
  ["사유: 제품파손", "제품파손"],
  ["업체 포털 접수. 사유: 중복출고. 덧붙임", "중복출고"]].forEach(function (쌍) {
   ok("「" + 쌍[0].replace(/\n/g, " ").slice(0, 34) + "…」 → " + 쌍[1],

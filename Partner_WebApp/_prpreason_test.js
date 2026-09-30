@@ -18,7 +18,7 @@
  *  ★ 2026-09-30 에 업체 유형을 CS 와 맞췄다 ★
  *    전: 단순반품·교환·불량반품·오배송·부분반품 (5개)  →  후: CS 와 같은 8개
  *    없어진 두 낱말은 갈 곳이 있다 —
- *      불량반품 → 유형 「반품」 + 사유 「제품불량」
+ *      불량반품 → 유형 「반품」 + 사유 「불량」(판매자 귀책)
  *      부분반품 → 유형 「반품」 + 전달 사항에 어느 품목인지
  *
  * 실행: node _prpreason_test.js
@@ -85,16 +85,20 @@ Object.keys(C_REASONS).forEach((f) => {
 
 console.log("\n─── ② 사장님이 말한 낱말 그대로인가 ───");
 const 시킨것 = {
-  구매자: ["자동반품", "단순변심", "오입력", "오주문",
-    "제품파손", "택배사고", "제품불량", "배송지연"],
-  판매자: ["정보불일치", "오배송", "중복출고"],
+  구매자: ["자동반품", "단순변심", "오입력"],
+  판매자: ["오배송", "제품파손", "사고", "불량",
+    "배송지연", "정보불일치", "중복출고"],
 };
 Object.keys(시킨것).forEach((f) => {
   ok(f + " " + 시킨것[f].length + "개", (P_REASONS[f] || []).join("·") === 시킨것[f].join("·"),
     (P_REASONS[f] || []).join("·"));
 });
-ok("구매자는 오주문, 판매자는 오배송", P_REASONS.구매자.indexOf("오배송") < 0 &&
-  P_REASONS.판매자.indexOf("오주문") < 0);
+/*  물건이 깨지거나 늦은 것은 «우리(또는 택배사) 탓»이다 — 구매자 쪽에 두면
+    반품비를 고객에게 물리게 된다. 귀책이 곧 돈이라 이 가름이 값을 정한다.  */
+ok("오배송·파손·사고·불량·배송지연은 판매자 쪽이다", ["오배송", "제품파손", "사고", "불량", "배송지연"]
+  .every((w) => P_REASONS.판매자.indexOf(w) >= 0 && P_REASONS.구매자.indexOf(w) < 0));
+ok("구매자 쪽은 셋뿐 — 자동반품·단순변심·오입력",
+  P_REASONS.구매자.join("·") === "자동반품·단순변심·오입력", P_REASONS.구매자.join("·"));
 ok("두 목록에 겹치는 낱말이 없다",
   P_REASONS.구매자.filter((x) => P_REASONS.판매자.indexOf(x) >= 0).length === 0);
 
@@ -103,7 +107,7 @@ console.log("\n─── ③ 없어진 업체 낱말 ───");
 ["불량반품", "부분반품"].forEach((w) => {
   ok("「" + w + "」은 고르는 목록에서 빠졌다", P_TYPES.indexOf(w) < 0, P_TYPES.join("·"));
 });
-ok("「제품불량」이 사유에 있다 (불량반품이 갈 곳)", P_REASONS.구매자.indexOf("제품불량") >= 0);
+ok("「불량」이 사유에 있다 (불량반품이 갈 곳)", P_REASONS.판매자.indexOf("불량") >= 0);
 ok("바뀐 까닭이 적혀 있다", /불량반품 → 유형은 「반품」/.test(cfg));
 
 console.log("\n─── ④ 서버가 화면에 내려 주는가 ───");
@@ -113,6 +117,17 @@ ok("화면이 서버 것으로 갈아 쓴다",
   /if \(res\.faults && res\.faults\.length\) FAULTS = res\.faults;/.test(portal) &&
   /if \(res\.reasons\) REASONS = res\.reasons;/.test(portal));
 ok("서버가 안 줄 때의 대비값이 있다", /var FAULTS = \['구매자', '판매자'\];/.test(portal));
+/*  ★ 넷째 자리 ★  (2026-09-30)
+    portal.html 의 대비값도 «낱말을 적어 둔 자리»다. 2026-09-30 에 사유를
+    다시 가를 때 prpConfig 만 고치고 이것을 빠뜨렸다 — 여기서 걸렸다.  */
+ok("화면의 대비값이 서버 표와 같다", (function () {
+  const i = portal.indexOf("    var REASONS = {");
+  const ctx2 = {};
+  vm.createContext(ctx2);
+  vm.runInContext(portal.slice(i, portal.indexOf("};", i) + 2), ctx2);
+  return Object.keys(P_REASONS).every((f) =>
+    (ctx2.REASONS[f] || []).join("·") === P_REASONS[f].join("·"));
+})(), "prpConfig 와 portal.html 의 대비값이 갈라졌다");
 
 /* ── 화면 흉내 ───────────────────────────────────────────────── */
 const hctx = { console, esc: (v) => String(v == null ? "" : v) };
@@ -147,13 +162,13 @@ ok("판매자 3개", 고를수있는것(칸.nReason).slice(1).join("·") === 시
   고를수있는것(칸.nReason).slice(1).join("·"));
 
 console.log("\n─── ⑥ 잘못 눌렀다 되돌려도 적은 것이 안 날아간다 ───");
-칸 = 가짜화면("구매자", "제품불량");
+칸 = 가짜화면("구매자", "단순변심");
 hctx.fillReasons();
-ok("같은 귀책이면 그대로", 칸.nReason.value === "제품불량", 칸.nReason.value);
+ok("같은 귀책이면 그대로", 칸.nReason.value === "단순변심", 칸.nReason.value);
 칸.nFault.value = "판매자";
 hctx.fillReasons();
 ok("없는 낱말이면 비워진다", 칸.nReason.value === "", 칸.nReason.value);
-칸 = 가짜화면("아무거나", "제품불량");
+칸 = 가짜화면("아무거나", "단순변심");
 hctx.fillReasons();
 ok("모르는 귀책이면 빈 목록만", 고를수있는것(칸.nReason).join("·") === "");
 ok("칸이 사라지면 조용히 돌아간다", (function () {
@@ -251,7 +266,7 @@ ok("포털도 귀책이 비었을 때만 「사유: …」를 따로 적는다",
   /if \(col\.reason < 0 && reasonIn && !faultToNotice\) \{/.test(api));
 [["귀책: 판매자 (오배송)", "판매자", "오배송"],
  ["[260930 당장드림] 업체 포털 접수. [출처 확인됨] 장부에서 확인. 귀책: 구매자 (단순변심). 뚜껑 깨짐", "구매자", "단순변심"],
- ["[260930 10:00 김진수] 고객 요청\n귀책: 구매자 (제품불량)", "구매자", "제품불량"],
+ ["[260930 10:00 김진수] 고객 요청\n귀책: 판매자 (불량)", "판매자", "불량"],
  ["업체 포털 접수. 사유: 중복출고.", "", "중복출고"],
  ["반품송장: 600622029800", "", ""],
  ["", "", ""]].forEach(function (t) {
