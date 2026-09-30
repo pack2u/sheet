@@ -3664,7 +3664,19 @@ function _cs_loadReturnLedgerCases_(days, activeOnly, refresh) {
   return all;
 }
 
-/** CS앱 — 진행 중 반품 목록 (최근 30일, 완료·이카운트ok 제외) */
+/**
+ * ★ 검색에서 완료된 건도 보여 줄 기간  (2026-09-30)
+ *
+ *   > "반품 검색시 완료된건은 아나와서 접수가 안된거로 파악이 되서
+ *   >  다시 만드는경우가 생기네.. 검색에서 완료된것도 보이면 좋겠어..
+ *   >  최대 기한이 45일로 하면 어떨까?"
+ *
+ * 목록(검색 없을 때)은 그대로 «진행 30일»이다 — 완료를 섞으면 할 일이
+ * 안 보인다. 검색할 때만 완료 45일을 함께 뒤진다.
+ */
+var _CS_RETURN_DONE_DAYS_ = 45;
+
+/** CS앱 — 진행 중 반품 목록 (최근 30일) + 검색용 완료 45일 */
 function csListActiveReturnCases(opt) {
   opt = opt || {};
   var days = parseInt(opt.days, 10) || 30;
@@ -3672,16 +3684,27 @@ function csListActiveReturnCases(opt) {
   try {
     var rows = _cs_loadReturnLedgerCases_(days, true, refresh);
 
-    // 접수 건수는 완료된 건도 세야 맞다. 진행 목록(rows)은 완료건이 빠져 있어
-    // 같은 기간의 전체 목록을 따로 본다 (동일 캐시 키라 추가 부담이 적다).
-    var allRows = _cs_loadReturnLedgerCases_(days, false, refresh);
+    /*  완료건까지 «한 번만» 읽어 두 가지에 쓴다.
+
+        ① 접수 건수 — 완료된 건도 세야 맞다. 진행 목록(rows)에는 빠져 있다.
+        ② 검색용 완료 목록 — 완료가 안 보여서 「접수가 안 됐다」고 보고
+           다시 만드는 일이 생겼다. (2026-09-30)
+
+        기간은 넓은 쪽(45일)으로 한 번 읽는다. 탭 단위로 캐시돼 있어
+        두 번 읽는 것보다 싸다. 건수 셈은 오늘·어제만 보므로 기간이
+        넓어져도 숫자가 달라지지 않는다.  */
+    var wideDays = Math.max(days, _CS_RETURN_DONE_DAYS_);
+    var allRows = _cs_loadReturnLedgerCases_(wideDays, false, refresh);
     var todayYmd = _cs_daysAgoYmd_(0);
     var ydayYmd = _cs_daysAgoYmd_(1);
     var intakeToday = 0, intakeYesterday = 0;
+    var doneRows = [];
     for (var i = 0; i < allRows.length; i++) {
       var ymd = String(allRows[i].dateYmd || "");
       if (ymd === todayYmd) intakeToday++;
       else if (ymd === ydayYmd) intakeYesterday++;
+      /*  진행 건은 rows 에 이미 있다 — 여기 또 담으면 검색이 두 번 보여 준다. */
+      if (!allRows[i].active) doneRows.push(allRows[i]);
     }
 
     return {
@@ -3689,6 +3712,9 @@ function csListActiveReturnCases(opt) {
       days: days,
       count: rows.length,
       rows: rows,
+      /*  검색할 때만 쓰는 완료 목록. 화면의 기본 목록에는 섞지 않는다. */
+      doneRows: doneRows,
+      doneDays: _CS_RETURN_DONE_DAYS_,
       intakeToday: intakeToday,
       intakeYesterday: intakeYesterday,
       statusOptions: _CS_RETURN_STATUS_OPTS_
