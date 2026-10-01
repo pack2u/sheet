@@ -2647,7 +2647,9 @@ function _cs_mapReturnLedgerCols_(header) {
     ecount: -1,      // 이카운처리 여부 (9월 「이카운트 반영」과 같은 자리)
     siteDone: -1,    // 각 사이트처리
     taxDone: -1,     // 계산서발행여부
-    refund: -1       // 환불완료
+    refund: -1,      // 환불완료
+    /*  적요 — 사람이 길게 적는 칸. 사유(발생원인)와 다르다. 크게 보기 글줄이 보여 준다 (2026-10-01) */
+    jeokyo: -1
   };
   for (var i = 0; i < header.length; i++) {
     var h = String(header[i] || "").replace(/\s/g, "");
@@ -2734,6 +2736,7 @@ function _cs_mapReturnLedgerCols_(header) {
     else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유|재출고|오주문입력/.test(h)) col.type = i;
     // 「반품/환불비용」이 실제 헤더다. 슬래시 때문에 /반품비/ 로는 안 걸린다.
     else if (col.fee < 0 && /반품비|반품운임|반품배송비|환불비용/.test(h)) col.fee = i;
+    else if (col.jeokyo < 0 && h === "적요") col.jeokyo = i;
     else if (col.notice < 0 && /고객요청|유의사항|비고/.test(h)) col.notice = i;
   }
   /*  A열 = 처리상태 (접수/수거중/완료 …). 헤더명이 비어도 A를 쓴다.
@@ -3795,6 +3798,11 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
       /*  물류가 CS 에게 남기는 한 줄 — 「미사용확인요망」 같은 것.
           입고 요청(CS→물류)의 «반대 방향»이다.  */
       recheck: col.recheck >= 0 ? String(row[col.recheck] || "").trim() : "",
+      /*  ★ 크게 보기 글줄이 «시트와 같이» 보이려면 ★  (2026-10-01)
+          > "수정된 반품 카드 내용대로 다 표시되게 해줘..시트랑 거의 똑같이"
+          적요·환불계좌는 카드가 안 쓰던 칸이라 여태 안 실었다. */
+      jeokyo: col.jeokyo >= 0 ? String(row[col.jeokyo] || "").trim() : "",
+      account: col.account >= 0 ? String(row[col.account] || "").trim() : "",
       active: !done,
       timeline: _cs_parseReturnTimeline_(notice, status, staffVal, dateVal, typeVal),
       sortKey: (dateYmd || "00000000") + "_" + String(100000 - ri)

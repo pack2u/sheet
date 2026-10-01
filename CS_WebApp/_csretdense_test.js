@@ -37,15 +37,19 @@ console.log("\n[1] 이력 맨 앞 한 장");
   //  최신이 앞이다 — 서버가 내림차순으로 준다(_cs_parseReturnTimeline_)
   ok("★ 맨 앞 한 장에 거는 규칙이 있다", has(".ret-tl-track > .ret-proc:first-child"));
   ok("★ 「한 장뿐일 때만」이 아니다", html.indexOf(".ret-tl-track > .ret-proc:only-child") < 0);
-  const i = html.indexOf(".ret-tl-track > .ret-proc:first-child {");
-  const 몸통 = i >= 0 ? html.substring(i, i + 200) : "";
+  //  «기본» 규칙만 — 줄 맨 앞에서 시작하는 것. 크게 보기(.is-max) 전용 규칙도 같은 글자를
+  //  품고 있어 처음 걸리는 것을 집으면 그쪽을 읽는다 (2026-10-01)
+  const htmlN = html.replace(/\r\n/g, "\n");
+  const 줄머리 = (t) => { const m = htmlN.indexOf("\n    " + t); return m >= 0 ? m + 5 : -1; };
+  const i = 줄머리(".ret-tl-track > .ret-proc:first-child {");
+  const 몸통 = i >= 0 ? htmlN.substring(i, i + 200) : "";
   //  flex-grow 만으로는 부모가 내용만큼만 넓을 때 안 늘어난다 — 바닥을 100% 로 깐다
   ok("★ 늘어나게 되어 있다", 몸통.indexOf("flex: 1 1 100%") >= 0);
   ok("★ 굳은 폭을 푼다 (바닥을 100% 로)", 몸통.indexOf("width: 100%") >= 0);
   ok("★ 그래도 너무 좁아지진 않는다", 몸통.indexOf("min-width: 128px") >= 0);
   //  ★ 사진은 오른쪽 칸에 세운다 (2026-09-17) ★
-  const g = html.indexOf(".ret-tl-track > .ret-proc:first-child.photo {");
-  const 격자 = g >= 0 ? html.substring(g, g + 420) : "";
+  const g = 줄머리(".ret-tl-track > .ret-proc:first-child.photo {");
+  const 격자 = g >= 0 ? htmlN.substring(g, g + 420) : "";
   ok("★ 사진 이력은 두 칸으로 나눈다", 격자.indexOf("display: grid") >= 0);
   ok("★ 왼쪽은 글, 오른쪽은 사진", 격자.indexOf("grid-template-columns: minmax(0, 1fr) auto") >= 0);
   //  시각·구분이 없는 이력도 있다. 줄 번호로 박으면 사진이 엉뚱한 줄에 앉는다

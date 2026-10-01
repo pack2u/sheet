@@ -875,84 +875,62 @@
     .ws-split > #pane-returns.is-max #returnActiveList {
       grid-template-columns: 1fr; gap: 0;
     }
-    /* ① 접힌 카드 = 글줄 */
+    /* ① 접힌 카드 = 시트의 한 줄 + 그 아래 이력 한 줄  (2026-10-01 저녁)
+       > "수정된 반품 카드 내용대로 다 표시되게 해줘..시트랑 거의 똑같이.. 그래야 의미가 있어.
+       >  적요의 카드 내용도 하단 줄에 정렬되고 이미지도 섬네일로"
+       위 줄은 반품관리대장 «협의된 배열» 차례 그대로다(retRowHtml). 머리줄도 시트처럼.
+       아래 줄은 비고에 쌓인 처리 이력을 «전부» 가로로 — 사진은 작은 섬네일(누르면 크게).
+       카드의 왼쪽 칸·단추줄은 이 모드에선 숨긴다 — 같은 값을 두 번 보이면 눈이 갈린다. */
+    .ret-row { display: none; }
+    .ws-split > #pane-returns.is-max #returnActiveList { overflow-x: auto; }
+    .ws-split > #pane-returns.is-max .ret-row {
+      display: grid; align-items: start; column-gap: 5px; font-size: 11.5px; line-height: 1.38;
+      /*  상품명·발생원인·적요만 늘고 준다. 단계 칸(이카운트~환불)은 날짜 여섯 자리라 좁게.
+          1920 모니터에선 한 화면, 노트북에선 목록만 옆으로 민다(위 overflow-x). */
+      grid-template-columns: 54px 46px 44px 40px 72px 96px 72px 58px 94px 94px
+                             minmax(150px, 1fr) 28px 96px minmax(90px, 130px) minmax(90px, 150px)
+                             42px 42px 42px 42px 104px;
+      min-width: 1430px;
+    }
+    .ws-split > #pane-returns.is-max .ret-row > span { min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); }
+    .ws-split > #pane-returns.is-max .ret-row .rs { font-size: 10.5px; padding: 1px 6px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-row { display: none; }
+    .ws-split > #pane-returns.is-max .ret-row-head {
+      position: sticky; top: 0; z-index: 4; padding: 6px 10px; margin: 0;
+      background: var(--bg-card); border-bottom: 1px solid var(--border); font-weight: 700;
+    }
+    .ws-split > #pane-returns.is-max .ret-row-head > span { color: var(--text-secondary); }
+
     .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) {
-      margin: 0; padding: 5px 10px; border-radius: 0; transform: none;
+      margin: 0; padding: 6px 10px; border-radius: 0; transform: none; min-width: 1450px;
       background: transparent; border: 0; border-bottom: 1px solid var(--border);
     }
     .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus):hover { background: var(--bg-card-hover); }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-new-bar,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-foot,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-retinv,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-ph2-slot,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-ph2-btn,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-ph-warn,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-intakereq,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-pickup-btn { display: none; }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-body {
-      flex-direction: row; align-items: center; gap: 14px;
-    }
-    /*  ★ 접어 보기(▤)가 켜져 있어도 글줄엔 다 싣는다 ★
-        접기는 «높이»를 줄이려고 원송장·전화·사유·날짜를 감춘다. 글줄은 이미
-        한 줄이라 감출 까닭이 없다 — 크게 보기의 뜻은 «한눈에 다» 다. */
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-metas { display: flex; }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-meta,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-reason,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-sub { display: block; }
-    /*  ★ 칸은 «격자»로 — 비어도 자리를 지킨다 ★
-        사유·반품비가 없는 줄도 있다. 흐르게(flex) 두면 뒤 칸이 앞으로 당겨져
-        세로줄이 어긋난다. 칸마다 자리를 정해 두면 비어도 그 자리가 빈다. */
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-left {
-      flex: 1 1 0; max-width: none; min-width: 0; font-size: 12px;
-      display: grid; align-items: center; column-gap: 14px;
-      grid-template-columns: 210px minmax(160px, 1fr) 90px 250px 200px 96px;
-    }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-left > * {
-      grid-row: 1; margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .rn { grid-column: 1; font-size: 13px; flex-wrap: nowrap; }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-item { grid-column: 2; }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-reason { grid-column: 3; color: var(--text-secondary); }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-left > .ret-meta { grid-column: 4; }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-metas {
-      grid-column: 5; display: flex; flex-wrap: nowrap; gap: 0 10px;
-    }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-sub {
-      grid-column: 6; font-size: 11px; color: var(--text-muted);
-    }
-    /*  업체 대조 경고는 펼쳐서 본다 — 글줄 칸을 하나 더 잡을 만큼 흔하지 않다 */
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-origin { display: none; }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-boxes { display: inline; }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-metas > .ret-meta { margin: 0; white-space: nowrap; }
-    /*  최근 이력은 «한 줄»만 — 옛 것·사진·삭제는 펼쳐서 본다 */
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-right {
-      flex: 0 0 34%; max-width: 34%; min-width: 0; display: block;
-    }
-    /*  이력이 없는 줄도 그 칸만큼 비워 둔다 — 안 그러면 왼쪽 칸들이 통째로 밀린다 */
-    .ws-split > #pane-returns.is-max .ret-card.ret-noproc:not(.ret-focus) .ret-body {
-      padding-right: calc(34% + 14px);
-    }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track {
-      display: block; overflow: hidden; padding: 0;
-    }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc:not(:first-child),
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-more,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-del,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-share { display: none; }
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc:first-child {
-      display: flex; flex-direction: row; align-items: baseline; gap: 8px;
-      width: auto; min-width: 0; min-height: 0;
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-left,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-foot { display: none; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-new-bar { margin: 0 0 3px; padding: 2px 8px; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-body { display: block; }
+    /*  아래 줄 — 처리 이력 전부, 가로로 흐르다 넘치면 다음 줄 */
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-right { display: block; max-width: none; width: auto; margin: 4px 0 0 0; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track { display: flex; flex-wrap: wrap; gap: 3px 22px; overflow: visible; padding: 0; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc:first-child,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc:first-child.photo {
+      display: flex; flex-direction: row; align-items: center; gap: 6px; flex: 0 1 auto;
+      width: auto; min-width: 0; max-width: 100%; min-height: 0;
       padding: 0; background: none; border: 0; box-shadow: none;
     }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-del,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-more { display: none; }
     .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-when,
-    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-tag {
-      flex: 0 0 auto; margin: 0; font-size: 11px; white-space: nowrap;
-    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-tag { flex: 0 0 auto; margin: 0; font-size: 11px; white-space: nowrap; color: var(--text-muted); }
     .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-body {
-      flex: 1 1 auto; min-width: 0; margin: 0; font-size: 12px;
-      display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      flex: 0 1 auto; min-width: 0; max-width: 640px; margin: 0; font-size: 12px;
+      display: block; -webkit-line-clamp: unset; white-space: normal; overflow: visible; color: var(--text-primary);
     }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs { display: flex; gap: 3px; margin: 0; flex: 0 0 auto; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs button,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs img { width: 34px; height: 34px; }
 
     /* ② 펼친 카드 = 왼쪽 정보 · 오른쪽 이력 격자, 빈자리 없이 */
     .ws-split > #pane-returns.is-max .ret-card.ret-focus {
@@ -9196,6 +9174,51 @@
       if (즉시) toast('실번호를 적었습니다');
     }
 
+    /* ★ 크게 보기 글줄 — 반품관리대장 «협의된 배열» 차례 그대로 ★  (2026-10-01)
+       상태값 | 접수날짜 | 접수자 | 입고여부 | 재검수 사안 | 원송장 | 거래처 | 수취인 | 연락처 |
+       추가연락처 | 상품명 | 수량 | 반품송장 | 발생원인 | 적요 | 이카운트 | 사이트 | 계산서 | 환불 | 환불계좌
+       (비고는 아래 줄 — 처리 이력으로 이미 그린다)
+       세 칸 화면에서는 CSS 가 감춘다(.ret-row 기본 display:none). */
+    var RET_ROW_HEAD = ['상태값', '접수일', '접수자', '입고', '재검수', '원송장', '거래처', '수취인', '연락처',
+      '추가연락처', '상품명', '수량', '반품송장', '발생원인', '적요', '이카운트', '사이트', '계산서', '환불', '환불계좌'];
+
+    function retRowHeadHtml() {
+      return '<div class="ret-row ret-row-head">' +
+        RET_ROW_HEAD.map(function (h) { return '<span>' + esc(h) + '</span>'; }).join('') + '</div>';
+    }
+
+    /** 단계 칸 — 날짜가 있으면 날짜, 됐다는 표시만 있으면 ✔ */
+    function retStageText(v) {
+      if (!v) return '';
+      if (typeof v === 'object') return v.값 || v.날짜 || (v.된 ? '✔' : '');
+      return String(v);
+    }
+
+    /** 시트의 「연락처」(주문서 번호)와 「추가연락처」(실번호)로 되돌린다 */
+    function retSheetPhones(c) {
+      if (c.phoneSubTag === '안심' || c.phoneSubTag === '주문서') return [c.phoneSub || '', c.phone || ''];
+      if (c.phoneSubTag === '추가') return [c.phone || '', c.phoneSub || ''];
+      return [c.phone || '', ''];
+    }
+
+    function retRowHtml(c) {
+      var ph = retSheetPhones(c);
+      var 원인 = [c.fault, c.reason].filter(function (x) { return x; }).join(' / ');
+      var 안심 = ph[0] && /^050/.test(String(ph[0]).replace(/[^0-9]/g, ''));
+      var 칸 = [
+        c.status ? '<span class="rs">' + esc(c.status) + '</span>' : '',
+        esc(c.date || ''), esc(c.staff || ''), esc(retStageText(c.intake)), esc(c.recheck || ''),
+        esc(c.invoice || ''), esc(c.vendor || ''), esc(c.name || ''),
+        esc(ph[0]) + (안심 ? ' <span class="ret-ph-tag">안심</span>' : ''),
+        esc(ph[1]) + (ph[1] && c.phone2Name ? ' ' + esc(c.phone2Name) : ''),
+        esc(c.item || ''), esc(c.qty || ''), esc(c.returnInvoice || ''), esc(원인),
+        esc(c.jeokyo || ''),
+        esc(retStageText(c.ecountDone)), esc(retStageText(c.siteDone)),
+        esc(retStageText(c.taxDone)), esc(retStageText(c.refund)), esc(c.account || '')
+      ];
+      return '<div class="ret-row">' + 칸.map(function (x) { return '<span>' + x + '</span>'; }).join('') + '</div>';
+    }
+
     function returnCardHtml(c, idx) {
       /* ★ 박스마다 상태를 보여준다 ★  (2026-09-09)
          한 반품에 박스가 둘이면 하나만 접수하고 나머지는 나중에 하는 일이 생긴다.
@@ -9226,6 +9249,7 @@
         (c.needsCheck ? ' ret-new' : '') +
         '" id="ret-card-' + idx + '" onclick="onReturnCardTap(' + idx + ', event)">' +
         '<div class="ret-focus-badge">집중 보기 · 다시 탭하면 접기</div>' +
+        retRowHtml(c) +
         /* ★ 업체가 새로 올린 것 ★  (2026-09-18)
            > "cs들이 확인을 못할수 있으니까"
            «확인» 을 누르면 대장에 적히고 이 띠가 꺼진다 — 팀이 같이 안다.
@@ -10713,7 +10737,7 @@
         renderOrderDashboard();
         return;
       }
-      var html = '';
+      var html = retRowHeadHtml();
       for (var i = 0; i < filtered.length && i < limit; i++) {
         html += returnCardHtml(filtered[i], i);
       }
