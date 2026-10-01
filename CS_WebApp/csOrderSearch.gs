@@ -2978,15 +2978,30 @@ function _cs_ensureReturnStatusDropdown_(tab, tabName) {
 
     var last = tab.getMaxRows();
     if (last < 2) { props.setProperty(key, "1"); return false; }
+
+    /*  ★ 머리글 «아래»부터 건다 ★  (2026-10-01)
+        전에는 2행부터 걸었다. 그런데 이 대장의 머리글은 4행이다 —
+        2~4행(안내문·머리글)까지 규칙이 얹혀, 머리글 칸 「상태값」이
+        «목록에 없는 값»으로 빨갛게 표시됐다. 머리글 줄을 찾아 그 다음
+        줄부터 건다. 못 찾으면 옛대로 2행부터.  */
+    var 시작 = 2;
+    try {
+      var hv = tab.getRange(1, 1, Math.min(last, 40), Math.max(tab.getLastColumn(), 15))
+        .getDisplayValues();
+      var hi = _cs_findReturnHeaderRow_(hv);
+      if (hi >= 0) 시작 = hi + 2;
+    } catch (eH) {}
+    if (시작 > last) { props.setProperty(key, "1"); return false; }
+
     var rule = SpreadsheetApp.newDataValidation()
       .requireValueInList(_CS_RETURN_STATUS_OPTS_, true)
       .setAllowInvalid(false)
       .setHelpText(
         "접수 → 반품송장 → 입고검수 → 이카운트OK\n" +
           "이 넷만 씁니다. 그 밖의 말은 카드 위쪽 단계가 「접수」로 보입니다.\n" +
-          "덧붙일 말은 비고(N열)에 적어 주세요.")
+          "덧붙일 말은 「비고 및 추가처리사항」 칸에 적어 주세요.")
       .build();
-    tab.getRange(2, 1, last - 1, 1).setDataValidation(rule);
+    tab.getRange(시작, 1, last - 시작 + 1, 1).setDataValidation(rule);
     props.setProperty(key, "1");
     return true;
   } catch (e) {
