@@ -23,8 +23,13 @@
  *    안 걸리므로 읽는 쪽이 두 번 세지 않는다. 눈으로 보고 나중에 지우면 된다.
  *
  *  돌리는 법  —  편집기에서 ▶ 실행 → Ctrl+Enter 로 로그
- *    ① csRebuildOct2026_미리보기   무엇이 어디로 가는지만 «본다». 안 바꾼다.
- *    ② csRebuildOct2026            실제로 바꾼다.
+ *    ① csRebuildOct2026_미리보기    무엇이 어디로 가는지만 «본다». 안 바꾼다.
+ *    ② csRebuildOct2026             이름이 어긋날 때만 새로 만든다.
+ *    ②' csRebuildOct2026_서식까지   이름이 같아도 새로 만든다 (서식·너비·유효성).
+ *    ③ csFixReturnStatusDropdown    상태 드롭다운 범위만 바로잡는다. 자료는 안 건드린다.
+ *
+ *  2026-10-01 미리보기 결과 — 21칸이 이름까지 전부 같고 제자리였다.
+ *  앞서 한 열 손질에서 이미 협의안에 맞춰져 있었다. 그래서 ② 는 멈춘다.
  *
  *  다 쓰면 이 파일은 지운다.
  * ══════════════════════════════════════════════════════════════
@@ -77,9 +82,11 @@ function _csrb_plan_(ss) {
   if (hi < 0) { out.탈 = "지금 " + _CS_REBUILD_TAB_ + " 에서 머리글 줄을 못 찾았습니다."; return out; }
   out.옛이름 = 옛값[hi].map(function (x) { return String(x || "").replace(/\s/g, ""); });
   out.옛자료 = _csrb_dataRows_(옛값, hi);
+  out.옛머리줄 = hi + 1;
 
   var b = _cs_returnHeaderNames_(본);
   if (!b) { out.탈 = "협의안 탭에서 머리글 줄을 못 찾았습니다."; return out; }
+  out.새머리줄 = b.줄;
   //  상태값(우리가 끼우는 칸) + 협의안 이름들 — _cs_newReturnTabFromSpec_ 이 만드는 모양과 같다
   out.새이름 = ["상태값"].concat(b.이름);
 
@@ -102,8 +109,10 @@ function csRebuildOct2026_미리보기() {
   var p = _csrb_plan_(ss);
   if (p.탈) { 줄.push("★ " + p.탈); return _csrbLog_(줄); }
 
-  줄.push("지금 — " + p.옛이름.filter(String).length + "칸 · 자료 " + p.옛자료.length + "줄");
-  줄.push("새로 — " + p.새이름.filter(String).length + "칸 (협의안 " + (p.새이름.length - 1) + " + 상태값)");
+  줄.push("지금 — " + p.옛이름.filter(String).length + "칸 · 자료 " + p.옛자료.length +
+    "줄 · 머리글 " + p.옛머리줄 + "행");
+  줄.push("새로 — " + p.새이름.filter(String).length + "칸 (협의안 " + (p.새이름.length - 1) +
+    " + 상태값) · 협의안 머리글 " + p.새머리줄 + "행");
   줄.push("");
   줄.push("· 이름끼리 가는 칸");
   var keys = Object.keys(p.짝).sort(function (a, b) { return a - b; });
@@ -133,22 +142,95 @@ function csRebuildOct2026_미리보기() {
     줄.push("");
     줄.push("· 새로 생기는 빈 칸 — " + 안쓰는.join(", "));
   }
+  /* ── 상태 드롭다운이 «머리글 위»까지 덮고 있나 ──────────────
+        규칙을 2행부터 걸던 때가 있었다. 머리글이 1행이 아니면 안내문·머리글
+        칸까지 덮여, 머리글 「상태값」이 «목록에 없는 값»으로 빨갛게 표시된다.
+        고쳤지만(2026-10-01) 이미 걸린 탭은 「걸었다」 표시 때문에 다시 안 돈다. */
   줄.push("");
-  줄.push("이대로 괜찮으면 csRebuildOct2026 을 실행하세요.");
+  var 옛탭 = ss.getSheetByName(_CS_REBUILD_TAB_);
+  var 머리칸규칙 = null, 첫줄규칙 = null;
+  try { 머리칸규칙 = 옛탭.getRange(p.옛머리줄, 1).getDataValidation(); } catch (eV1) {}
+  try { 첫줄규칙 = 옛탭.getRange(p.옛머리줄 + 1, 1).getDataValidation(); } catch (eV2) {}
+  줄.push("· 상태 드롭다운 — 머리글 칸(A" + p.옛머리줄 + ") " +
+    (머리칸규칙 ? "⏸ 규칙이 얹혀 있습니다 (빨갛게 보입니다)" : "✅ 없습니다") +
+    " · 첫 자료줄(A" + (p.옛머리줄 + 1) + ") " + (첫줄규칙 ? "✅ 있습니다" : "⏸ 없습니다"));
+
+  /* ── 나가기 직전 검문 — 정말 바꿀 것이 있나 ─────────────── */
+  줄.push("");
+  var 말 = _cs_returnTabShapeNote_(ss, _CS_REBUILD_TAB_);
+  if (!말) {
+    줄.push("✅ 이미 협의된 배열입니다 — 머리글 이름이 전부 같습니다.");
+    줄.push("   csRebuildOct2026 을 돌려도 «아무것도 안 합니다»(검문에서 멈춥니다).");
+    줄.push("   서식·너비까지 협의안과 똑같이 맞추고 싶을 때만 쓰십니다 —");
+    줄.push("   그때는 csRebuildOct2026_서식까지 를 실행하세요. 줄은 이름끼리 옮깁니다.");
+  } else {
+    줄.push("⏸ 아직 다릅니다:\n   " + 말);
+    줄.push("");
+    줄.push("이대로 괜찮으면 csRebuildOct2026 을 실행하세요.");
+  }
   return _csrbLog_(줄);
 }
 
-/** ② 실제로 바꾼다 */
-function csRebuildOct2026() {
-  var 줄 = ["■ " + _CS_REBUILD_TAB_ + " 을 협의된 배열로 새로 만든다", ""];
+/**
+ * 상태 드롭다운 범위만 바로잡는다 — 머리글 «아래»부터 다시 건다.
+ * 자료는 건드리지 않는다. 두 번 돌려도 탈이 없다.
+ */
+function csFixReturnStatusDropdown() {
+  var 줄 = ["■ 상태 드롭다운 범위 바로잡기", ""];
+  var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
+  var 탭들 = _cs_listReturnLedgerMonthTabs_(ss).slice(0, 2);   // 이번 달 · 전달
+  if (!탭들.length) { 줄.push("★ 달 탭을 못 찾았습니다."); return _csrbLog_(줄); }
+
+  for (var i = 0; i < 탭들.length; i++) {
+    var nm = 탭들[i];
+    var tab = ss.getSheetByName(nm);
+    if (!tab) continue;
+    var v = tab.getRange(1, 1, Math.max(Math.min(tab.getLastRow(), 40), 12),
+      Math.max(tab.getLastColumn(), 15)).getDisplayValues();
+    var hi = _cs_findReturnHeaderRow_(v);
+    if (hi < 0) { 줄.push("⏸ " + nm + " — 머리글 줄을 못 찾았습니다."); continue; }
+
+    //  A 에 걸린 규칙을 전부 떼고, 「걸었다」 표시를 지우고 다시 건다
+    try { tab.getRange(1, 1, tab.getMaxRows(), 1).clearDataValidations(); } catch (eC) {}
+    try {
+      PropertiesService.getScriptProperties().deleteProperty(_CS_RET_DV_PROP_ + nm);
+    } catch (eP) {}
+    var 걸림 = false;
+    try { 걸림 = !!_cs_ensureReturnStatusDropdown_(tab, nm); } catch (eD) {}
+
+    var 위 = null, 아래 = null;
+    try { 위 = tab.getRange(hi + 1, 1).getDataValidation(); } catch (e1) {}
+    try { 아래 = tab.getRange(hi + 2, 1).getDataValidation(); } catch (e2) {}
+    줄.push((걸림 ? "✅ " : "⏸ ") + nm + " — 머리글 " + (hi + 1) + "행 · " +
+      "머리글 칸 " + (위 ? "⏸ 규칙 있음" : "규칙 없음") + " · " +
+      "첫 자료줄 " + (아래 ? "규칙 있음" : "⏸ 규칙 없음"));
+  }
+  줄.push("");
+  줄.push("상태 칸은 접수 / 반품송장 / 입고검수 / 이카운트OK 넷만 고릅니다.");
+  return _csrbLog_(줄);
+}
+
+/** ② 실제로 바꾼다 — 이름이 어긋날 때만 */
+function csRebuildOct2026() { return _csrb_run_(false); }
+
+/**
+ * ②' 이름이 이미 같아도 새로 만든다 — 서식·너비·유효성을 협의안과 똑같이.
+ * 줄은 «이름끼리» 옮긴다. 옛 탭은 이름만 바꿔 남긴다.
+ */
+function csRebuildOct2026_서식까지() { return _csrb_run_(true); }
+
+function _csrb_run_(강제) {
+  var 줄 = ["■ " + _CS_REBUILD_TAB_ + " 을 협의된 배열로 새로 만든다" +
+    (강제 ? "  (서식까지)" : ""), ""];
   var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
 
   var p = _csrb_plan_(ss);
   if (p.탈) { 줄.push("★ " + p.탈); return _csrbLog_(줄); }
 
   //  이미 협의안 모양이면 손대지 않는다 — 두 번 돌려도 탈이 없게
-  if (!_cs_returnTabShapeNote_(ss, _CS_REBUILD_TAB_)) {
+  if (!강제 && !_cs_returnTabShapeNote_(ss, _CS_REBUILD_TAB_)) {
     줄.push("· 이미 협의된 배열입니다 — 아무것도 안 했습니다.");
+    줄.push("  서식·너비까지 맞추려면 csRebuildOct2026_서식까지 를 쓰세요.");
     return _csrbLog_(줄);
   }
   줄.push("지금 — " + p.옛이름.filter(String).length + "칸 · 자료 " + p.옛자료.length + "줄");
