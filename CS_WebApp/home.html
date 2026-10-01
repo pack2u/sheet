@@ -853,6 +853,136 @@
       grid-column: 1 / -1;
     }
 
+    /* ══════════════════════════════════════════════════════════════
+       ★ 크게 보기에서는 «표처럼» 읽는다 ★  (2026-10-01)
+
+       > "전체 화면시에 카드가 웹앱카드랑 똑같은데 전체화면 모드에서는 전체 내용을
+       >  한눈에 잘보이게 … 접힌 카드에도 카드 형식이 아니라 텍스트형식으로
+       >  카드 내용이 정렬되면 더 보기 좋을꺼 같아 … 펼쳤을떄도 무의미한 공간을 없애줘"
+
+       세 칸 격자는 좁은 칸의 카드를 그대로 셋 늘어놓은 것이라, 넓은 화면을
+       쓰면서도 한 장 한 장이 좁았다. 크게 보기의 뜻은 «많이·한눈에» 다.
+
+       ① 접힌 카드 → 한 줄 글줄. 이름·상태 | 품목 | 원송장 | 전화 | 사유 |
+          최근 이력 한 줄 | 날짜·담당 이 가로로 선다. 입력칸·단추줄은 숨긴다.
+       ② 펼친 카드 → 왼쪽 정보 · 오른쪽 이력 «격자». 확대(scale)·큰 글씨를 끄고,
+          맨 앞 이력 한 장을 폭 전체로 늘리던 것(9/17, 좁은 칸용)을 여기선 끈다 —
+          그게 펼친 카드 한복판의 큰 빈 상자였다.
+
+       ★ 크게 보기(.is-max)에서만 ★ 세 칸 화면의 카드는 한 줄도 안 바뀐다.
+       ★ 선택자를 한 겹 무겁게 ★ (.ws-split) 접어 보기·조밀 규칙보다 이긴다.
+       ══════════════════════════════════════════════════════════════ */
+    .ws-split > #pane-returns.is-max #returnActiveList {
+      grid-template-columns: 1fr; gap: 0;
+    }
+    /* ① 접힌 카드 = 글줄 */
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) {
+      margin: 0; padding: 5px 10px; border-radius: 0; transform: none;
+      background: transparent; border: 0; border-bottom: 1px solid var(--border);
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus):hover { background: var(--bg-card-hover); }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-new-bar,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-foot,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-retinv,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-ph2-slot,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-ph2-btn,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-ph-warn,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-intakereq,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-pickup-btn { display: none; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-body {
+      flex-direction: row; align-items: center; gap: 14px;
+    }
+    /*  ★ 접어 보기(▤)가 켜져 있어도 글줄엔 다 싣는다 ★
+        접기는 «높이»를 줄이려고 원송장·전화·사유·날짜를 감춘다. 글줄은 이미
+        한 줄이라 감출 까닭이 없다 — 크게 보기의 뜻은 «한눈에 다» 다. */
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-metas { display: flex; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-meta,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-reason,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-sub { display: block; }
+    /*  ★ 칸은 «격자»로 — 비어도 자리를 지킨다 ★
+        사유·반품비가 없는 줄도 있다. 흐르게(flex) 두면 뒤 칸이 앞으로 당겨져
+        세로줄이 어긋난다. 칸마다 자리를 정해 두면 비어도 그 자리가 빈다. */
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-left {
+      flex: 1 1 0; max-width: none; min-width: 0; font-size: 12px;
+      display: grid; align-items: center; column-gap: 14px;
+      grid-template-columns: 210px minmax(160px, 1fr) 90px 250px 200px 96px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-left > * {
+      grid-row: 1; margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .rn { grid-column: 1; font-size: 13px; flex-wrap: nowrap; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-item { grid-column: 2; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-reason { grid-column: 3; color: var(--text-secondary); }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-left > .ret-meta { grid-column: 4; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-metas {
+      grid-column: 5; display: flex; flex-wrap: nowrap; gap: 0 10px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-sub {
+      grid-column: 6; font-size: 11px; color: var(--text-muted);
+    }
+    /*  업체 대조 경고는 펼쳐서 본다 — 글줄 칸을 하나 더 잡을 만큼 흔하지 않다 */
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-origin { display: none; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-boxes { display: inline; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-metas > .ret-meta { margin: 0; white-space: nowrap; }
+    /*  최근 이력은 «한 줄»만 — 옛 것·사진·삭제는 펼쳐서 본다 */
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-right {
+      flex: 0 0 34%; max-width: 34%; min-width: 0; display: block;
+    }
+    /*  이력이 없는 줄도 그 칸만큼 비워 둔다 — 안 그러면 왼쪽 칸들이 통째로 밀린다 */
+    .ws-split > #pane-returns.is-max .ret-card.ret-noproc:not(.ret-focus) .ret-body {
+      padding-right: calc(34% + 14px);
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track {
+      display: block; overflow: hidden; padding: 0;
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc:not(:first-child),
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-more,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-del,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-share { display: none; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc:first-child {
+      display: flex; flex-direction: row; align-items: baseline; gap: 8px;
+      width: auto; min-width: 0; min-height: 0;
+      padding: 0; background: none; border: 0; box-shadow: none;
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-when,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-tag {
+      flex: 0 0 auto; margin: 0; font-size: 11px; white-space: nowrap;
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-body {
+      flex: 1 1 auto; min-width: 0; margin: 0; font-size: 12px;
+      display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* ② 펼친 카드 = 왼쪽 정보 · 오른쪽 이력 격자, 빈자리 없이 */
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus {
+      transform: none; margin: 6px 0 8px; padding: 12px 14px 10px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-body {
+      flex-direction: row; align-items: flex-start; gap: 18px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-left {
+      flex: 0 0 420px; width: auto; max-width: 42%; font-size: 13px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-left .rn { font-size: 16px; margin-bottom: 4px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-left > div:nth-child(2) { font-size: 13px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-meta { font-size: 13px; margin-top: 3px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-sub { margin-top: 5px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-right {
+      flex: 1 1 auto; max-width: none; width: auto; justify-content: flex-start;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 8px; overflow: visible; padding: 0;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track > .ret-proc,
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track > .ret-proc:first-child {
+      width: auto; min-width: 0; min-height: 0; flex: none; padding: 8px 10px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-proc-body { font-size: 12.5px; -webkit-line-clamp: 6; }
+    /*  사진 붙은 맨 앞 이력은 좁은 칸에서 «넓게» 짜던 격자를 쓴다 — 여기선 보통 칸으로 */
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track > .ret-proc:first-child.photo { display: block; }
+
     .hb-icon.is-on {
       background: var(--accent, #FDB813);
       color: #1b1e23; border-color: transparent;
