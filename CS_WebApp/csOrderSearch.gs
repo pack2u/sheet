@@ -2212,7 +2212,6 @@ function submitReturnLedger(data) {
     /* 사유(L열) — 고객이 «왜» 보냈나. 유형(K열)과 다른 칸이다.
        2026-09-30 까지 카드에만 보여 주고 «적는 데»가 없었다. */
     var reasonIn = String(data.reason || "").trim();
-    if (col.reason >= 0 && reasonIn) row[col.reason] = reasonIn;
 
     /* 귀책 — 전용 열이 있으면 열에, 없으면 비고에.
        반품송장·환불계좌가 걸어온 길과 같다. 시트에 「귀책」 열을 만들면
@@ -2221,18 +2220,29 @@ function submitReturnLedger(data) {
          나중에 읽는 사람에게 아무것도 알려 주지 않는다. */
     var faultIn = String(data.fault || "").trim();
     var faultToNotice = "";
-    if (faultIn && reasonIn) {
-      if (col.fault >= 0) row[col.fault] = faultIn;
-      else faultToNotice = "귀책: " + faultIn + " (" + reasonIn + ")";
-    }
-    /*  ★ 사유 열도 없다 ★  (2026-09-30)
-        위 「귀책: 판매자 (오배송)」 줄이 사유까지 담으므로 대개 이 줄은 안 쓴다.
-        귀책이 비었을 때만 사유를 따로 남긴다 — 조용히 버리지 않는다.  */
-    if (col.reason < 0 && reasonIn && !faultToNotice) {
+
+    /*  ★ 협의된 배열은 「발생원인」 한 칸에 «귀책 / 사유» ★  (2026-10-01)
+          판매자귀책 / 오배송
+        귀책 전용 열이 따로 있으면 그쪽에 적는다(누가 그렇게 만들면).
+        칸이 아예 없는 옛 탭은 비고에 표시로 남긴다 — 조용히 버리지 않는다.  */
+    if (col.reason >= 0) {
+      var 원인 = _cs_makeCause_(col.fault >= 0 ? "" : faultIn, reasonIn);
+      if (원인) row[col.reason] = 원인;
+      if (col.fault >= 0 && faultIn) row[col.fault] = faultIn;
+    } else if (faultIn && reasonIn) {
+      faultToNotice = "귀책: " + faultIn + " (" + reasonIn + ")";
+    } else if (reasonIn) {
       faultToNotice = "사유: " + reasonIn;
     }
-    if (col.fee >= 0 && data.fee !== undefined && data.fee !== null && String(data.fee).trim() !== "") {
-      row[col.fee] = String(data.fee).trim();
+    var feeIn = (data.fee === undefined || data.fee === null) ? "" : String(data.fee).trim();
+    var feeToNotice = "";
+    if (feeIn) {
+      if (col.fee >= 0) row[col.fee] = feeIn;
+      /*  ★ 협의된 배열에는 반품비 칸이 없다 ★  (2026-10-01)
+          9월에는 있었다. 칸이 없다고 «돈»을 조용히 버리면 안 된다 —
+          계좌·귀책이 걸어온 길과 같이 비고에 남긴다.
+          시트에 「반품/환불비용」 열을 만들면 코드를 안 고쳐도 그쪽으로 간다.  */
+      else feeToNotice = "반품비: " + feeIn;
     }
     if (col.status >= 0 && data.status) row[col.status] = String(data.status).trim();
 
@@ -2259,6 +2269,7 @@ function submitReturnLedger(data) {
       var noticeLines = [];
       if (data.memo) noticeLines.push(_cs_ledgerStamp_(data.staff) + " " + String(data.memo || "").trim());
       if (faultToNotice) noticeLines.push(faultToNotice);
+      if (feeToNotice) noticeLines.push(feeToNotice);
       if (retInvToNotice) noticeLines.push(retInvToNotice);
       if (acctToNotice) noticeLines.push(acctToNotice);
       if (p2NameToNotice) noticeLines.push(p2NameToNotice);
@@ -2456,14 +2467,51 @@ function _cs_reasonFromNotice_(notice) {
 /**
  * 단계 칸 하나를 읽는다 — «언제 됐나».  (2026-10-01)
  *
- * ★ 값이 무엇이든 «있으면 된 것»으로 본다 ★
- *   권하는 모양은 날짜(261001)지만, 사람은 「Y」·「OK」·「완료」라고도 적는다.
- *   모양을 따지면 멀쩡한 줄이 「아직 안 됨」으로 보인다 — 그러면 아무도 안 쓴다.
- *   날짜면 날짜를 돌려주고, 아니면 적힌 말을 그대로 돌려준다.
- *   화면은 «있다/없다»만 보면 되고, 날짜가 있으면 덤으로 보여 준다.
+ * ★ 「N」은 «안 된 것»이다 ★  (2026-10-01 고침)
+ *   협의된 배열(「202609의 테스트 시트」)은 이 칸들을 「Y / N」으로 적는다.
+ *   각 사이트처리는 「Y / N / ING」다. 처음에 «값이 있으면 된 것»으로 읽었는데,
+ *   그러면 N 이 적힌 줄이 «끝난 것»으로 보인다 — 환불 안 한 건이 환불 완료로
+ *   보이는 것이 제일 나쁘다. 아니라고 적은 말은 아니라고 읽는다.
+ *
+ *   받는 말 —  된 것 : Y · OK · 완료 · 날짜(261001) · ING 아닌 다른 글
+ *             아닌 것 : N · 아니오 · X · - · ING(아직 도는 중)
+ *   「Y / N」처럼 «적는 법»이 적힌 보기 줄도 아닌 것으로 본다
+ *   (협의안 2행이 그런 줄이다).
  *
  * @return {{된: boolean, 값: string, 날짜: string}}
  */
+/**
+ * 발생원인 한 칸 — 「판매자귀책 / 중복출고」.  (2026-10-01)
+ *
+ * ★ 협의된 배열은 귀책과 사유를 «한 칸»에 적는다 ★
+ *   「202609의 테스트 시트」 13열이 그 칸이다. 귀책 열을 따로 두지 않는다.
+ *   앞이 귀책(판매자귀책·구매자귀책), 「/」 뒤가 사유다.
+ *
+ * ★ 옛 자료는 사유만 적혀 있다 ★
+ *   9월까지는 「중복출고」처럼 사유만 적었다. 「/」가 없으면 전부 사유로 읽는다 —
+ *   짐작해서 귀책을 지어내지 않는다.
+ *
+ * @return {{귀책: string, 사유: string}}
+ */
+function _cs_parseCause_(v) {
+  var s = String(v == null ? "" : v).trim();
+  if (!s) return { 귀책: "", 사유: "" };
+  var i = s.indexOf("/");
+  if (i < 0) return { 귀책: "", 사유: s };
+  var 앞 = s.slice(0, i).trim(), 뒤 = s.slice(i + 1).trim();
+  var m = 앞.replace(/\s/g, "").match(/^(구매자|판매자)귀책$/);
+  //  앞이 귀책 낱말이 아니면 통째로 사유다 (「오배송> 재출고 되는 건가요?」 같은 줄)
+  if (!m) return { 귀책: "", 사유: s };
+  return { 귀책: m[1], 사유: 뒤 };
+}
+
+/** 「판매자」 + 「오배송」 → 「판매자귀책 / 오배송」 */
+function _cs_makeCause_(귀책, 사유) {
+  var f = String(귀책 || "").trim(), r = String(사유 || "").trim();
+  if (!r) return "";
+  return f ? f + "귀책 / " + r : r;
+}
+
 function _cs_stageCell_(row, idx) {
   if (idx < 0) return { 된: false, 값: "", 날짜: "" };
   var v = row[idx];
@@ -2473,6 +2521,14 @@ function _cs_stageCell_(row, idx) {
   }
   var s = String(v == null ? "" : v).trim();
   if (!s) return { 된: false, 값: "", 날짜: "" };
+
+  var 납작 = s.replace(/\s/g, "").toUpperCase();
+  //  아니라고 적은 말 · 아직 도는 중 · 적는 법을 적어 둔 보기 줄
+  if (/^(N|NO|X|-|아니오|아님|미처리|ING|진행중)$/.test(납작) ||
+      /^(Y\/N(\/ING)?|TEXT\/N|O\/X)$/.test(납작)) {
+    return { 된: false, 값: s, 날짜: "" };
+  }
+
   var m = s.match(/^(\d{6})$|^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/);
   var 날 = "";
   if (m) {
@@ -2485,6 +2541,34 @@ function _cs_stageCell_(row, idx) {
 /** Date → 261001 (서울) */
 function _cs_ymd6_(d) {
   return Utilities.formatDate(d, "Asia/Seoul", "yyMMdd");
+}
+
+/**
+ * 단계 한 낱말 — Y/N 칸들에서 «뽑는다».  (2026-10-01)
+ *
+ * > "㉠으로 가자"
+ *
+ * ★ 협의된 배열에는 「상태값」 열이 없다 ★
+ *   어디까지 왔나는 입고여부·이카운처리·각사이트처리·계산서발행·환불완료
+ *   다섯 칸이 나눠 들고 있다. 카드는 한 낱말이 필요하니 여기서 «뽑아» 만든다.
+ *   주인은 그 다섯 칸 하나뿐이다 — 상태값 열을 따로 두면 둘이 어긋난다.
+ *
+ * ★ 뒤에서부터 본다 ★  가장 멀리 간 단계가 지금 단계다.
+ * ★ 아무것도 없으면 「접수」 ★  카드가 만들어졌다는 것 자체가 접수다.
+ */
+function _cs_stageFromFlags_(row, col) {
+  var 차례 = [
+    [col.refund, "완료"],
+    [col.taxDone, "계산서"],
+    [col.siteDone, "사이트처리"],
+    [col.ecount, "이카운트OK"],
+    [col.intake, "입고"]
+  ];
+  for (var i = 0; i < 차례.length; i++) {
+    if (차례[i][0] < 0) continue;
+    if (_cs_stageCell_(row, 차례[i][0]).된) return 차례[i][1];
+  }
+  return "";
 }
 
 function _cs_faultFromNotice_(notice) {
@@ -3618,17 +3702,21 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
          구분(type) 은 「재출고/단순/오배송」처럼 처리하는 갈래고,
          사유(reason) 는 「뚜껑 깨짐」처럼 왜 반품인지다. 상담에서
          먼저 묻는 것은 «왜»다. 같으면 카드가 한 번만 보여 준다. */
-      /* 사유 — 열이 없으면 비고에서 되읽는다. 대장에 사유 열이 없다(2026-09-30). */
+      /*  사유·귀책 — 협의된 배열은 「발생원인」 한 칸에 «귀책 / 사유»로 적는다.
+          열이 아예 없는 옛 탭(9월까지)은 비고 표시에서 되읽는다. (2026-10-01)  */
       reason: col.reason >= 0
-        ? String(row[col.reason] || "").trim()
+        ? _cs_parseCause_(row[col.reason]).사유
         : _cs_reasonFromNotice_(notice),
       //  입고확인요청 열 (2026-09-30) — 카드에 노란 띠로, v2 물류 입고 화면에도 뜬다
       intakeReq: col.intakeReq >= 0 ? String(row[col.intakeReq] || "").trim() : "",
-      /* 귀책 — 전용 열이 없는 탭은 비고에 「귀책: 판매자 (오배송)」으로 남는다.
-         열이 생기면 저절로 열을 읽는다. (2026-09-30) */
+      /*  귀책 — 찾는 차례가 셋이다 (2026-10-01)
+            ① 「귀책」 전용 열이 있으면 그것        (누가 그렇게 만들면)
+            ② 「발생원인」 칸의 «앞»부분             (협의된 배열)
+            ③ 비고의 「귀책: 판매자 (…)」 표시      (9월까지의 길)  */
       fault: col.fault >= 0
         ? String(row[col.fault] || "").trim()
-        : _cs_faultFromNotice_(notice),
+        : (col.reason >= 0 && _cs_parseCause_(row[col.reason]).귀책) ||
+          _cs_faultFromNotice_(notice),
       /* ★ 업체가 새로 올린 건데 CS 가 아직 안 본 것 ★  (2026-09-18)
          이 값 하나로 화면이 «맨 위 + 하이라이트»를 정한다.
          판정은 _cs_needsCsCheck_ 한 곳에서만 한다 — 두 곳에서 따로
@@ -3639,7 +3727,9 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
          적어 둔다. 「미확인·어긋남」이면 다른 업체 물건이 섞였을 수 있다 —
          사진으로 먼저 보라는 뜻이다. 판정은 포털이 하고 여기서는 읽기만 한다. */
       origin: _cs_returnOrigin_(notice),
-      status: status,
+      /*  협의된 배열에는 「상태값」 열이 없다. 그때는 Y/N 칸에서 뽑는다.
+          열이 있는 탭(9월)은 그 값이 그대로 이긴다 — 사람이 적은 것이 먼저다.  */
+      status: status || _cs_stageFromFlags_(row, col),
       doneFlag: doneFlag,
       notice: notice,
       pickup: col.pickup >= 0 ? String(row[col.pickup] || "").trim() : "",

@@ -214,15 +214,29 @@ ok("모르는 낱말은 안 받는다", gctx._cs_faultFromNotice_("귀책: 택�
 
 console.log("\n─── ⑩ 적는 규칙 — 사유가 없으면 귀책만 남기지 않는다 ───");
 const 쓰는데 = gs.slice(gs.indexOf("var faultIn = String(data.fault"),
-  gs.indexOf("var faultIn = String(data.fault") + 400);
-ok("귀책은 사유가 있을 때만 적는다", /if \(faultIn && reasonIn\)/.test(쓰는데), 쓰는데.slice(0, 120));
-ok("사유는 값이 있을 때만 적는다", /if \(col\.reason >= 0 && reasonIn\)/.test(gs));
-ok("전용 열이 있으면 열에 적는다", /if \(col\.fault >= 0\) row\[col\.fault\] = faultIn;/.test(쓰는데));
+  gs.indexOf("var faultIn = String(data.fault") + 1200);
+/*  ★ 협의안 — 「발생원인」 한 칸에 «귀책 / 사유» ★  (2026-10-01)
+    귀책 열을 따로 두지 않는다. 칸이 아예 없는 옛 탭만 비고로 흘린다.  */
+ok("발생원인 칸이 있으면 거기에 한 줄로 적는다",
+  /if \(col\.reason >= 0\) \{[\s\S]{0,200}_cs_makeCause_/.test(쓰는데), 쓰는데.slice(0, 160));
+ok("귀책 전용 열이 따로 있으면 그쪽에도 적는다",
+  /if \(col\.fault >= 0 && faultIn\) row\[col\.fault\] = faultIn;/.test(쓰는데));
+ok("칸이 없으면 비고로 — 귀책과 사유를 한 줄에",
+  /\} else if \(faultIn && reasonIn\) \{/.test(쓰는데));
+ok("귀책이 없으면 사유만이라도 남긴다",
+  /\} else if \(reasonIn\) \{/.test(쓰는데));
 ok("비고 줄에 태운다", /if \(faultToNotice\) noticeLines\.push\(faultToNotice\);/.test(gs));
+/*  ★ 협의안에는 반품비 칸이 없다 ★ 돈을 조용히 버리지 않는다  */
+ok("반품비 칸이 없으면 비고로 흘린다",
+  /else feeToNotice = "반품비: " \+ feeIn;/.test(gs) &&
+  /if \(feeToNotice\) noticeLines\.push\(feeToNotice\);/.test(gs));
 
 console.log("\n─── ⑪ 카드로 돌려준다 ───");
-ok("열이 있으면 열을, 없으면 비고를 읽는다",
-  /fault: col\.fault >= 0\s*\r?\n\s*\? String\(row\[col\.fault\] \|\| ""\)\.trim\(\)\s*\r?\n\s*: _cs_faultFromNotice_\(notice\)/.test(gs));
+/*  귀책을 찾는 차례가 셋이다 — 전용 열 · 발생원인 앞부분 · 비고 표시  */
+ok("귀책 — 전용 열을 먼저 본다", /fault: col\.fault >= 0/.test(gs));
+ok("귀책 — 그 다음 발생원인 칸의 앞부분",
+  /_cs_parseCause_\(row\[col\.reason\]\)\.귀책/.test(gs));
+ok("귀책 — 마지막으로 비고 표시", /_cs_faultFromNotice_\(notice\)/.test(gs));
 ok("카드 화면이 귀책을 낸다", /retCaseRowHtml\('귀책', c\.fault\)/.test(html));
 
 console.log("\n─── ⑫ 두 화면이 서버로 같은 값을 보낸다 ───");
@@ -289,10 +303,11 @@ console.log("\n─── ⑬ 사유도 비고 길을 탄다 (대장에 사유 �
     2026-09-18 에 「L열에 반품사유가 있다」고 알고 고쳤는데 L열은 유형이었다.
     그래서 사유는 그때부터 한 번도 안 적혔고 카드에도 안 떴다.  */
 vm.runInContext(꺼내(gs, "_cs_reasonFromNotice_"), gctx);
-ok("열이 없으면 비고에서 사유를 읽는다",
-  /reason: col\.reason >= 0\s*\r?\n\s*\? String\(row\[col\.reason\] \|\| ""\)\.trim\(\)\s*\r?\n\s*: _cs_reasonFromNotice_\(notice\)/.test(gs));
-ok("귀책이 비었을 때만 「사유: …」를 따로 적는다",
-  /if \(col\.reason < 0 && reasonIn && !faultToNotice\) \{/.test(gs));
+ok("사유 — 발생원인 칸의 뒷부분을 읽는다",
+  /reason: col\.reason >= 0\s*\r?\n\s*\? _cs_parseCause_\(row\[col\.reason\]\)\.사유/.test(gs));
+ok("사유 — 칸이 없으면 비고에서", /: _cs_reasonFromNotice_\(notice\)/.test(gs));
+ok("단계는 상태값이 없으면 Y/N 칸에서 뽑는다",
+  /status: status \|\| _cs_stageFromFlags_\(row, col\)/.test(gs));
 [["귀책: 판매자 (오배송)", "오배송"],
  ["[260930 10:00 김진수] 고객 요청\n귀책: 판매자 (불량)\n반품송장: 600622029800", "불량"],
  ["사유: 제품파손", "제품파손"],
