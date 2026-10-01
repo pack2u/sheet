@@ -240,11 +240,39 @@ ok("귀책 — 마지막으로 비고 표시", /_cs_faultFromNotice_\(notice\)/.
 ok("카드 화면이 귀책을 낸다", /retCaseRowHtml\('귀책', c\.fault\)/.test(html));
 
 console.log("\n─── ⑫ 두 화면이 서버로 같은 값을 보낸다 ───");
+
+/*  ★ 2026-10-01 — 기록 창은 읽는 자리를 하나로 모았다 ★
+      전에는 단건·여러건이 창을 각자 읽었고, 여러건 쪽에 귀책·사유·상태가
+      «빠져» 있었다(합포장 반품에서 조용히 사라졌다). 이제 ledgerModalCommon
+      한 곳에서 읽는다. 그래서 「보내는 낱말」은 그 함수의 낱말 + 그 자리의 낱말이다.
+      접수 창(retNew)은 한 길뿐이라 예전처럼 그 자리에서 바로 읽는다.
+      자리별 길은 _csledgerpath_test.js 가 따로 지킨다.                      */
+const 공통키 = (function () {
+  const i = html.indexOf("function ledgerModalCommon(");
+  if (i < 0) return [];
+  const j = html.indexOf("return {", i);
+  const e = html.indexOf("};", j);
+  return (html.slice(j, e).match(/^\s*(\w+): g\(/gm) || [])
+    .map((x) => x.trim().split(":")[0]);
+})();
+
 ["retNew", "ledger"].forEach((pfx) => {
-  ok(pfx + " 가 fault 를 보낸다",
-    new RegExp("fault: document\\.getElementById\\('" + pfx + "Fault'\\)\\.value").test(html));
-  ok(pfx + " 가 reason 을 보낸다",
-    new RegExp("reason: document\\.getElementById\\('" + pfx + "Reason'\\)\\.value").test(html));
+  const 읽나 = function (칸) {
+    if (pfx === "retNew") {
+      return new RegExp(칸.toLowerCase() +
+        ": document\\.getElementById\\('" + pfx + 칸 + "'\\)\\.value").test(html);
+    }
+    /*  기록 창 — 공통 함수가 그 칸을 읽고, 보내는 자리가 그 함수를 쓰면 된다.
+        ★ 함수 안에 g = function(){…}; 가 있어 첫 「};」로 자르면 안 된다 ★ */
+    const i = html.indexOf("function ledgerModalCommon(");
+    if (i < 0) return false;
+    const j = html.indexOf("return {", i);
+    const 공통몸 = j < 0 ? "" : html.slice(j, html.indexOf("};", j));
+    return 공통몸.indexOf("'ledger" + 칸 + "'") >= 0 &&
+      공통키.indexOf(칸.toLowerCase()) >= 0;
+  };
+  ok(pfx + " 가 fault 를 보낸다", 읽나("Fault"));
+  ok(pfx + " 가 reason 을 보낸다", 읽나("Reason"));
   ok(pfx + " 임시저장에 두 칸이 들어 있다",
     new RegExp("'" + pfx + "Fault', '" + pfx + "Reason'").test(html));
   ok(pfx + " 화면 열 때 채우기가 기본값보다 «먼저»", (function () {
@@ -280,22 +308,52 @@ ok("서버 표도 그 넷이다",
 });
 ok("두 화면 다 상태를 서버로 보낸다",
   /status: document\.getElementById\('retNewStatus'\)\.value/.test(html) &&
-  /status: document\.getElementById\('ledgerStatus'\)\.value/.test(html));
-ok("★ 기록 화면이 접수 화면과 «같은 값»을 보낸다 ★", (function () {
-  const 뽑 = function (fn) {
-    const i = html.indexOf(".submitReturnLedger({", html.indexOf(fn));
-    const e = html.indexOf("});", i);
-    return (html.slice(i, e).match(/^\s*(\w+):/gm) || []).map(function (x) {
-      return x.trim().replace(":", "");
-    });
-  };
-  const a = 뽑("function submitRetNew");
-  const b = {};
-  뽑("function submitLedger").forEach(function (k) { b[k] = 1; });
-  //  source·origin·carrier·orderNo 는 주문에서 오는 것이라 접수 화면엔 없다
-  const 빠진 = a.filter(function (k) { return !b[k]; });
-  return 빠진.length === 0;
-})());
+  공통키.indexOf("status") >= 0);
+
+/**
+ * 그 함수가 서버로 보내는 낱말들.
+ *
+ * ★ 두 가지를 조심한다 ★
+ *   ① 한 줄에 낱말이 여럿이다 — 「name: r.name, phone: r.phone」.
+ *      줄머리만 보면 phone 을 놓치고 «빠졌다»고 거짓 경보를 울린다.
+ *   ② 공통 값을 미리 읽어 변수로 들고 가는 길이 있다 —
+ *      여러건 쪽은 var 공통 = ledgerModalCommon() 을 «함수 머리»에서 한다.
+ *      보내는 자리만 보면 그 낱말들을 못 센다. 함수 몸통 전체를 본다.
+ */
+function 보내는낱말(fn) {
+  const s = html.indexOf(fn);
+  if (s < 0) return [];
+  const i = html.indexOf(".submitReturnLedger(", s);
+  if (i < 0) return [];
+  const o = html.indexOf("(", i);
+  let 깊이 = 0, e = -1;
+  for (let k = o; k < html.length; k++) {
+    if (html[k] === "(") 깊이++;
+    else if (html[k] === ")") { 깊이--; if (깊이 === 0) { e = k; break; } }
+  }
+  if (e < 0) return [];
+  const 안 = html.slice(o, e);
+  const 낱 = [];
+  const re = /[{,\s]([A-Za-z_$][\w$]*)\s*:/g;
+  let m;
+  while ((m = re.exec(안))) if (낱.indexOf(m[1]) < 0) 낱.push(m[1]);
+  //  이 함수가 공통 함수를 쓰면(바로 쓰든 변수로 들고 가든) 그 낱말도 센다
+  const 몸 = html.slice(s, e);
+  return /ledgerModalCommon\s*\(/.test(몸) ? 낱.concat(공통키) : 낱;
+}
+
+["submitLedger", "submitLedgerMany"].forEach(function (fn) {
+  ok("★ " + fn + " 이 접수 화면과 «같은 값»을 보낸다 ★", (function () {
+    const a = 보내는낱말("function submitRetNew");
+    if (!a.length) return false;
+    const b = {};
+    보내는낱말("function " + fn).forEach(function (k) { b[k] = 1; });
+    //  source·origin·carrier·orderNo 는 주문에서 오는 것이라 접수 화면엔 없다
+    const 빠진 = a.filter(function (k) { return !b[k]; });
+    if (빠진.length) console.log("      빠진 낱말 — " + 빠진.join(", "));
+    return 빠진.length === 0;
+  })());
+});
 
 console.log("\n─── ⑬ 사유도 비고 길을 탄다 (대장에 사유 열이 없다) ───");
 /*  202609 탭 실측(2026-09-30) — 쓰이는 폭 21칸에 「반품사유」가 없다.

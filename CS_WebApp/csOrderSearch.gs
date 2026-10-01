@@ -2207,7 +2207,16 @@ function submitReturnLedger(data) {
     if (col.item >= 0) row[col.item] = String(data.item || "").trim();
     if (col.qty >= 0) row[col.qty] = data.qty || "";
     if (col.invoice >= 0) row[col.invoice] = invoice;
-    if (col.type >= 0) row[col.type] = String(data.type || "단순반품").trim();
+    /*  ★ 협의된 배열에는 교환반품구분 칸이 없다 ★  (2026-10-01)
+        그런데 창은 여전히 「단순반품/교환/재출고…」를 묻는다. 칸이 없다고
+        고른 값을 조용히 버리면, 사람은 적힌 줄 알고 나중에 아무도 모른다.
+        귀책·반품비·계좌가 걸어온 길과 같이 비고에 남긴다. 시트에
+        「교환반품구분」 열을 만들면 코드를 안 고쳐도 그쪽으로 간다.
+        기본값 「단순반품」은 남기지 않는다 — 줄마다 같은 말이 쌓이면 비고를 못 읽는다. */
+    var typeIn = String(data.type || "").trim();
+    var typeToNotice = "";
+    if (col.type >= 0) row[col.type] = typeIn || "단순반품";
+    else if (typeIn && typeIn !== "단순반품") typeToNotice = "구분: " + typeIn;
 
     /* 사유(L열) — 고객이 «왜» 보냈나. 유형(K열)과 다른 칸이다.
        2026-09-30 까지 카드에만 보여 주고 «적는 데»가 없었다. */
@@ -2268,6 +2277,7 @@ function submitReturnLedger(data) {
     if (col.notice >= 0) {
       var noticeLines = [];
       if (data.memo) noticeLines.push(_cs_ledgerStamp_(data.staff) + " " + String(data.memo || "").trim());
+      if (typeToNotice) noticeLines.push(typeToNotice);
       if (faultToNotice) noticeLines.push(faultToNotice);
       if (feeToNotice) noticeLines.push(feeToNotice);
       if (retInvToNotice) noticeLines.push(retInvToNotice);
@@ -2461,6 +2471,22 @@ function _cs_reasonFromNotice_(notice) {
   var m = s.match(/귀책\s*[:：]\s*(?:구매자|판매자)\s*\(([^)]{1,20})\)/);
   if (m) return String(m[1]).trim();
   m = s.match(/(?:^|[\s·.])사유\s*[:：]\s*([^\s·.,()]{1,20})/);
+  return m ? String(m[1]).trim() : "";
+}
+
+/**
+ * 비고에 남긴 「구분: 교환」 표시에서 교환반품구분을 되읽는다.  (2026-10-01)
+ *
+ * 협의된 배열에는 교환반품구분 칸이 없다. 쓰는 쪽(submitReturnLedger)이
+ * 비고에 「구분: …」으로 남기므로, 읽는 쪽도 같은 자리에서 되찾아야
+ * 카드에 보인다. 사유·귀책이 걸어온 길과 같다.
+ *
+ * @return {string} 구분 낱말, 없으면 ""
+ */
+function _cs_typeFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/(?:^|[\s·.])구분\s*[:：]\s*([^\s·.,()]{1,20})/);
   return m ? String(m[1]).trim() : "";
 }
 
@@ -3498,7 +3524,10 @@ function deleteReturnTimelineEvent(payload) {
     var status = ctx.col.status >= 0 ? String(ctx.row[ctx.col.status] || "").trim() : "";
     var staffVal = ctx.col.staff >= 0 ? String(ctx.row[ctx.col.staff] || "").trim() : "";
     var dateVal = ctx.col.date >= 0 ? String(ctx.row[ctx.col.date] || "").trim() : "";
-    var typeVal = ctx.col.type >= 0 ? String(ctx.row[ctx.col.type] || "").trim() : "";
+    //  칸이 없으면 비고에서 되읽는다 — 읽는 자리 둘이 달라지면 화면이 갈라진다
+    var typeVal = ctx.col.type >= 0
+      ? String(ctx.row[ctx.col.type] || "").trim()
+      : _cs_typeFromNotice_(newNotice);
     var timeline = _cs_parseReturnTimeline_(newNotice, status, staffVal, dateVal, typeVal);
 
     csInvalidateReturnLedgerCache_();
@@ -3683,7 +3712,10 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
     if (!phone2Name) phone2Name = _cs_parseReturnPhone2NameFromNotice_(notice);
     var staffVal = col.staff >= 0 ? String(row[col.staff] || "").trim() : "";
     var dateVal = col.date >= 0 ? String(row[col.date] || "").trim() : "";
-    var typeVal = col.type >= 0 ? String(row[col.type] || "").trim() : "";
+    //  칸이 없으면 비고의 「구분: …」에서 되읽는다 (협의된 배열, 2026-10-01)
+    var typeVal = col.type >= 0
+      ? String(row[col.type] || "").trim()
+      : _cs_typeFromNotice_(notice);
 
     out.push({
       tab: tabName,
