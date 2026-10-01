@@ -124,15 +124,37 @@ function prpMapCols_(header) {
     /* ★ 귀책을 사유보다 «앞»에 둔다 ★ 뒤에 두면 「반품귀책사유」 같은
        머리글이 사유에 먼저 걸려 귀책이 통째로 버려진다. */
     else if (col.fault < 0 && /^귀책$|귀책구분|^책임$|책임구분|과실구분/.test(h)) col.fault = i;
-    else if (col.reason < 0 && /^반품사유$|^사유$|반품이유|교환반품사유/.test(h)) col.reason = i;
+    /*  「발생원인」을 더한다 (2026-10-01) — 협의된 배열의 사유 칸 이름이다.
+        한 칸에 「판매자귀책 / 오배송」으로 적힌다(prpParseCause_ 로 가른다).
+        CS웹앱이 9/30 에 넣었고(csOrderSearch col.reason) 여기만 빠져 있었다 —
+        그래서 업체 화면에 사유·귀책이 통째로 안 나왔다. 조용히.  */
+    else if (col.reason < 0 && /^반품사유$|^사유$|반품이유|교환반품사유|^발생원인$/.test(h)) col.reason = i;
     else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유|재출고|오주문입력/.test(h)) col.type = i;
     /* 2026-09-09: 「환불비용」을 더한다. 9월 탭 머리글이 「반품/환불비용」인데
        가운데 「/」 때문에 「반품비」로 안 걸렸다. CS 웹앱은 9/4 에 이미 넣었고
        (csOrderSearch.gs 2257행) 여기만 안 고쳐져 있었다. */
     else if (col.fee < 0 && /반품비|반품운임|반품배송비|환불비용/.test(h)) col.fee = i;
     else if (col.notice < 0 && /고객요청|유의사항|비고/.test(h)) col.notice = i;
+    /*  상태값을 «머리글 이름»으로 찾는다 (2026-10-01) — 아래 폴백 설명 참조 */
+    else if (col.status < 0 && /^상태값$|^상태$|^처리상태$|^진행상태$/.test(h)) col.status = i;
   }
-  col.status = 0;             // A열 = 처리상태
+  /*  ★ A열을 상태로 «못 박지» 않는다 ★  (2026-10-01)
+        전에는 무조건 col.status = 0 이었다. 10월 탭이 A 를 「반품접수날짜」로
+        쓰자 CS웹앱 쪽에서 날짜 위에 상태를 덮어 7줄이 접수날짜를 잃었다.
+        포털은 읽기만 하지만, 틀린 칸을 읽으면 업체 화면에 날짜가 상태로 보인다.
+
+        머리글로 찾지 못했을 때만 A 를 쓴다 — 그것도 «A 를 아무도 안 가져갔을
+        때»만. 옛 탭(상태 머리글이 비어 있다)은 그대로 돌고, 머리글이 다른 탭은
+        조용히 틀리지 않는다.
+        ★ CS웹앱 _cs_mapReturnLedgerCols_ 와 같은 규칙이다 — 쌍으로 고친다 ★  */
+  if (col.status < 0) {
+    var _A임자 = "";
+    for (var _ck in col) {
+      if (Object.prototype.hasOwnProperty.call(col, _ck) &&
+          _ck !== "status" && col[_ck] === 0) { _A임자 = _ck; break; }
+    }
+    col.status = _A임자 ? -1 : 0;
+  }
   /* M열 = 반품비 폴백.
      ★ 2026-09-09: **머리글이 비었거나 옛 문구일 때만** 쓴다 ★
        전에는 무조건 M 을 금액으로 읽었다. 9월에 열이 한 칸 밀려 M 이
@@ -244,6 +266,53 @@ function prpFaultFromNotice_(notice) {
   if (!s) return "";
   var m = s.match(/귀책\s*[:：]\s*(구매자|판매자)/);
   return m ? m[1] : "";
+}
+
+/**
+ * 「판매자귀책 / 오배송」 한 칸을 귀책과 사유로 가른다.  (2026-10-01)
+ *
+ * ★ CS웹앱 _cs_parseCause_ 와 «같은 규칙»이다 — 쌍으로 고친다 ★
+ *   협의된 배열(「202609의 테스트 시트」)은 「발생원인」 한 칸에 둘을 함께
+ *   적는다. 두 앱이 같은 대장을 읽으니 가르는 법도 같아야 한다 —
+ *   다르면 업체 화면과 CS 화면이 다른 말을 한다.
+ *
+ * 「/」가 없으면 통째로 사유다. 앞이 귀책 낱말이 아니어도 통째로 사유다
+ * (「오배송> 재출고 되는 건가요?」 같은 줄이 실제로 있다).
+ */
+function prpParseCause_(v) {
+  var s = String(v == null ? "" : v).trim();
+  if (!s) return { 귀책: "", 사유: "" };
+  var i = s.indexOf("/");
+  if (i < 0) return { 귀책: "", 사유: s };
+  var 앞 = s.slice(0, i).trim(), 뒤 = s.slice(i + 1).trim();
+  var m = 앞.replace(/\s/g, "").match(/^(구매자|판매자)귀책$/);
+  if (!m) return { 귀책: "", 사유: s };
+  return { 귀책: m[1], 사유: 뒤 };
+}
+
+/**
+ * 「판매자」 + 「오배송」 → 「판매자귀책 / 오배송」  (2026-10-01)
+ * CS웹앱 _cs_makeCause_ 와 «같은 글자 모양»이다. 다르면 같은 칸에 두 모양이
+ * 섞여 읽는 쪽이 한쪽을 못 가른다.
+ */
+function prpMakeCause_(귀책, 사유) {
+  var f = String(귀책 || "").trim(), r = String(사유 || "").trim();
+  if (!r) return "";
+  return f ? f + "귀책 / " + r : r;
+}
+
+/**
+ * 비고에 남긴 「구분: 교환」에서 교환반품구분을 되읽는다.  (2026-10-01)
+ *
+ * 협의된 배열에는 교환반품구분 칸이 없다. CS웹앱이 비고에 「구분: …」으로
+ * 남기므로(csOrderSearch.submitReturnLedger) 포털도 같은 자리에서 읽어야
+ * 업체 화면에 보인다. CS웹앱 _cs_typeFromNotice_ 와 같은 규칙이다.
+ */
+function prpTypeFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/(?:^|[\s·.])구분\s*[:：]\s*([^\s·.,()]{1,20})/);
+  return m ? String(m[1]).trim() : "";
 }
 
 function prpParseReturnInvFromNotice_(text) {
@@ -483,11 +552,18 @@ function prpReadTabCases_(tab, tabName, cutoffYmd, sess) {
     var dateYmd = prpYmdFromCell_(col.date >= 0 ? row[col.date] : "");
     if (cutoffYmd && dateYmd && dateYmd < cutoffYmd) continue;
 
-    var status = String(row[0] || "").trim();
+    /*  ★ row[0] 이 아니라 col.status 를 본다 ★  (2026-10-01)
+        A열을 상태로 못 박고 있었다. 10월 탭이 A 를 「반품접수날짜」로 쓰면
+        업체 화면의 상태 자리에 날짜가 찍힌다. 칸을 못 찾으면 빈 값 —
+        아래에서 「접수」로 보인다. 틀린 칸을 읽는 것보다 모르는 게 낫다.  */
+    var status = col.status >= 0 ? String(row[col.status] || "").trim() : "";
     var notice = col.notice >= 0 ? String(row[col.notice] || "").trim() : "";
     var staffVal = col.staff >= 0 ? String(row[col.staff] || "").trim() : "";
     var dateVal = col.date >= 0 ? String(row[col.date] || "").trim() : "";
-    var typeVal = col.type >= 0 ? String(row[col.type] || "").trim() : "";
+    //  칸이 없으면 비고의 「구분: …」에서 되읽는다 (협의된 배열, 2026-10-01)
+    var typeVal = col.type >= 0
+      ? String(row[col.type] || "").trim()
+      : prpTypeFromNotice_(notice);
     var invRaw = col.invoice >= 0 ? String(row[col.invoice] || "").trim() : "";
 
     out.push({
@@ -513,14 +589,20 @@ function prpReadTabCases_(tab, tabName, cutoffYmd, sess) {
       type: typeVal,
       /*  구분(type)은 «어떻게 처리하나», 사유(reason)는 «왜 보냈나».
           업체도 자기 건이 왜 반품인지 알아야 다음에 안 그런다. */
-      /* 사유 — 열이 없으면 비고에서 되읽는다. 대장에 사유 열이 없다(2026-09-30). */
+      /*  사유 — 협의된 배열은 「발생원인」 한 칸에 «귀책 / 사유»로 적는다.
+          열이 아예 없는 옛 탭(9월까지)은 비고 표시에서 되읽는다. (2026-10-01)
+          ★ CS웹앱 csOrderSearch 와 같은 차례다 — 쌍으로 고친다 ★  */
       reason: col.reason >= 0
-        ? String(row[col.reason] || "").trim()
+        ? prpParseCause_(row[col.reason]).사유
         : prpReasonFromNotice_(notice),
-      /* 귀책 — 열이 없으면 비고에서 되읽는다 (2026-09-30) */
+      /*  귀책 — 찾는 차례가 셋이다 (2026-10-01)
+            ① 「귀책」 전용 열이 있으면 그것
+            ② 「발생원인」 칸의 «앞»부분          (협의된 배열)
+            ③ 비고의 「귀책: 판매자 (…)」 표시    (9월까지의 길)  */
       fault: col.fault >= 0
         ? String(row[col.fault] || "").trim()
-        : prpFaultFromNotice_(notice),
+        : (col.reason >= 0 && prpParseCause_(row[col.reason]).귀책) ||
+          prpFaultFromNotice_(notice),
       status: status || "접수",
       pickup: col.pickup >= 0 ? String(row[col.pickup] || "").trim() : "",
       fee: col.fee >= 0 ? prpFormatFee_(row[col.fee]) : "",
