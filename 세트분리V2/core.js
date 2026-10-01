@@ -3303,7 +3303,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssAssignCondition: ssAssignCondition, ssAllocateStock: ssAllocateStock,
     ssRoute: ssRoute, ssMerge: ssMerge, ssShippingFee: ssShippingFee,
     ssApplyManualEdits: ssApplyManualEdits,
-    ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship,
+    ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship, ssAuditSetNames: ssAuditSetNames,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
     ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, SS_HOLD_KEEP_WORDS: SS_HOLD_KEEP_WORDS, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssShipKey: ssShipKey, ssBaseUid: ssBaseUid, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssItemBase: ssItemBase, ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
@@ -3560,4 +3560,97 @@ function ssBlockReship(units, masters, cfg, warnings) {
       '정말 다시 보내야 하면 「보류(미발송)」 탭에서 조치하세요.');
   }
   return 막음;
+}
+
+/* ══════════════════════════════════════════════════════════════
+ *  ★ 세트 이름 점검 — 원장을 «나간 뒤에» 다시 본다 ★  (2026-10-01)
+ *
+ *  > "이걸 검증하는 시스템을 만들면 좋겠어"
+ *  > "v2 점검에 넣어줘 그리고 시트에서도 점검내용이 뜨게 해줘"
+ *
+ *  9/28 회차 260928-1·2 에서 쪼갠 세트의 몸통 줄에 뚜껑 이름이 적혀
+ *  뚜껑만 나갔다(오은수 2건 · 신경순 1건). 코드는 맞아서 아무 검사에도
+ *  안 걸렸다 — 창고는 «이름»을 보고 담는다.
+ *
+ *  ssVerifySplit 은 내보내기 «전»에 막는 그물이다. 이것은 원장에 «적힌 뒤»
+ *  다시 보는 그물이다. 앞 그물이 뚫려도 그날 안에 알게 한다.
+ *
+ *  ★ 규칙은 여기 한 곳 ★
+ *    시트(세트점검 탭)와 v2(날마다 점검·챗)가 «같은 이 함수»를 부른다.
+ *    v2 는 core.js 사본을 쓴다(tools/syncCore.mjs). 둘이 갈라질 수 없다.
+ *
+ *  무엇을 탈로 보나
+ *    같은 회차 · 같은 순번 · 같은 원본코드(= 한 주문의 한 세트)에서
+ *    실제로 쪼갠 줄(품목코드 ≠ 원본코드)이 «서로 다른 코드»인데
+ *    «같은 이름»으로 나갔을 때. 이름은 출력품목명(없으면 품목명)이고,
+ *    끝의 판매처 꼬리(---법인/… · ---개인/…)는 떼고 견준다.
+ *    「…---몸통만」·「…---뚜껑만」은 꼬리로 갈리므로 정상이다.
+ *
+ *  @param {Array[]} rows  원장 자료 줄 (머리글 빼고)
+ *  @param {Array}   head  원장 머리글 줄
+ *  @param {Object}  [opt] { 회차들: {회차키:true} } — 주면 그 회차만 본다
+ *  @return {{ 본주문:number, 탈:Array }}
+ * ══════════════════════════════════════════════════════════════ */
+function ssAuditSetNames(rows, head, opt) {
+  var ix = {};
+  for (var h = 0; h < (head || []).length; h++) {
+    var hn = ssText(head[h]);
+    if (hn && ix[hn] === undefined) ix[hn] = h;
+  }
+  var need = ['회차키', '순번', '원본품목코드', '품목코드'];
+  for (var n = 0; n < need.length; n++) {
+    if (ix[need[n]] === undefined) {
+      return { 본주문: 0, 탈: [], 못봄: '원장에 「' + need[n] + '」 칸이 없습니다' };
+    }
+  }
+  var 회차들 = opt && opt.회차들;
+  var 이름칸 = ix['출력품목명'] !== undefined ? ix['출력품목명'] : ix['품목명'];
+  var 품목명칸 = ix['품목명'];
+  var 꼬리뗀이름 = function (s) {
+    return ssText(s).replace(/---(법인|개인)\/[^-]*$/, '').replace(/---(법인|개인)\/[^-]*$/, '').trim();
+  };
+  var 묶음 = {}, 차례 = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var rk = ssText(r[ix['회차키']]);
+    if (!rk || (회차들 && !회차들[rk])) continue;
+    var 원본 = ssText(r[ix['원본품목코드']]), 코드 = ssText(r[ix['품목코드']]);
+    if (!원본 || !코드 || 원본 === 코드) continue;          // 안 쪼갠 줄
+    var k = rk + '|' + ssText(r[ix['순번']]) + '|' + 원본;
+    if (!묶음[k]) { 묶음[k] = []; 차례.push(k); }
+    var 이름 = 이름칸 !== undefined ? ssText(r[이름칸]) : '';
+    if (!이름 && 품목명칸 !== undefined) 이름 = ssText(r[품목명칸]);
+    묶음[k].push({
+      코드: 코드, 이름: 이름, 견줄이름: 꼬리뗀이름(이름),
+      받는분: ix['거래처명'] !== undefined ? ssText(r[ix['거래처명']]) : '',
+      고유ID: ix['고유ID'] !== undefined ? ssText(r[ix['고유ID']]) : '',
+      경로: ix['경로'] !== undefined ? ssText(r[ix['경로']]) : ''
+    });
+  }
+  var 탈 = [];
+  for (var c = 0; c < 차례.length; c++) {
+    var 줄들 = 묶음[차례[c]];
+    var 코드들 = {}, 코드수 = 0, 이름별 = {};
+    for (var j = 0; j < 줄들.length; j++) {
+      if (!코드들[줄들[j].코드]) { 코드들[줄들[j].코드] = true; 코드수++; }
+      var nm = 줄들[j].견줄이름;
+      if (!nm) continue;
+      (이름별[nm] || (이름별[nm] = {}))[줄들[j].코드] = true;
+    }
+    if (코드수 < 2) continue;
+    var 겹친이름 = [];
+    for (var nm2 in 이름별) {
+      if (!Object.prototype.hasOwnProperty.call(이름별, nm2)) continue;
+      if (Object.keys(이름별[nm2]).length >= 2) 겹친이름.push(nm2);
+    }
+    if (!겹친이름.length) continue;
+    var p = 차례[c].split('|');
+    탈.push({
+      회차키: p[0], 순번: p[1], 원본코드: p[2],
+      받는분: 줄들[0].받는분, 고유ID: 줄들[0].고유ID,
+      겹친이름: 겹친이름,
+      줄들: 줄들.map(function (x) { return { 코드: x.코드, 이름: x.이름, 경로: x.경로 }; })
+    });
+  }
+  return { 본주문: 차례.length, 탈: 탈 };
 }

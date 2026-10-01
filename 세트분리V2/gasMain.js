@@ -80,6 +80,7 @@ function onOpen() {
           쪼개기는 한 겹만 하므로, 더 나갔다면 BOM 자료가 그렇게 생긴 것이다. */
       .addItem('🔍 BOM 진단 (구성품이 몇 개 나가나)', 'ss_BOM진단')
       .addItem('🔎 같은 주문에 같은 품목이 두 줄', 'ss_중복품목진단')
+      .addItem('🧪 세트 이름 점검 (최근 7일 원장)', 'ss_세트점검')
       .addItem('합배송 진단', 'ss_합배송진단')
       .addItem('사방넷 진단 (저장 안 함)', 'ss_사방넷진단')
       .addItem('중복발주 의심 점검', 'ss_중복점검')
@@ -751,6 +752,20 @@ function ss_실행(opts) {
     if (예외글.length) {
       sum.push(['대리발송품목으로 뺀 건', 예외글.join(' · ') +
         '  — 입고되면 「대리발송품목」 탭에서 그 줄을 지우세요']);
+    }
+    /*  ★ 세트 이름 점검 — 원장에 적힌 «뒤» 한 번 더 ★  (2026-10-01)
+        9/28 뚜껑만 나간 사고는 코드가 맞아 아무 검사에도 안 걸렸다.
+        ssVerifySplit(내보내기 전)이 막고, 이것이 원장에서 다시 본다.
+        걸리면 실행요약 «맨 앞 쪽 ★★ 줄»과 「세트점검」 탭에 적는다. 곁다리다 — 터져도 실행은 산다. */
+    try {
+      var 세트점검 = ss_세트점검_({ 회차: runKey });
+      if (세트점검.탈수) {
+        sum.push(['★★ 세트 이름 겹침', 세트점검.탈수 + '주문 — 몸통·뚜껑이 같은 이름으로 나갔습니다. 「세트점검」 탭을 보세요']);
+      } else {
+        sum.push(['세트 이름 점검', 'OK — 쪼갠 세트 ' + 세트점검.본주문 + '주문']);
+      }
+    } catch (eAudit) {
+      sum.push(['세트 이름 점검', '못 돌림 — ' + String(eAudit && eAudit.message ? eAudit.message : eAudit).slice(0, 80)]);
     }
     var 적용조치 = ssm_stampManual(res.units, runKey);
 
@@ -3870,4 +3885,86 @@ function ss_날짜키_(s) {
     return yy2 + '0' + d;
   }
   return '';
+}
+
+/* ══════════════════════════════════════════════════════════════
+ *  🧪 세트 이름 점검  (2026-10-01)
+ *
+ *  > "이걸 검증하는 시스템을 만들면 좋겠어"  "시트에서도 점검내용이 뜨게 해줘"
+ *
+ *  원장을 읽어 core.js ssAuditSetNames 에 넘기고, 걸린 것을 「세트점검」 탭에 적는다.
+ *  규칙은 거기 한 곳이다 — v2 날마다 점검도 같은 함수를 부른다.
+ *
+ *  · 세트분리를 돌릴 때마다 «그 회차»를 본다 (ss_실행 끝)
+ *  · 메뉴로 누르면 «최근 7일» 원장을 본다
+ *  읽기만 한다. 원장·출력 탭은 한 글자도 안 고친다.
+ * ══════════════════════════════════════════════════════════════ */
+var SS_SETAUDIT_HEADER = ['점검시각', '회차키', '순번', '받는분', '고유ID', '원본코드',
+  '구성품코드', '나간 이름', '경로', '겹친 이름'];
+
+function ss_세트점검() {
+  var r = ss_세트점검_({ 일수: 7 });
+  ssio_alert(r.탈수
+    ? '⚠ 세트 이름 겹침 ' + r.탈수 + '주문 (최근 7일 · 쪼갠 세트 ' + r.본주문 + '주문 중)' + String.fromCharCode(10, 10) +
+      r.요약.join(String.fromCharCode(10)) + String.fromCharCode(10, 10) + '「세트점검」 탭에 줄마다 적었습니다.'
+    : '✅ 세트 이름 점검 — 이상 없음' + String.fromCharCode(10, 10) +
+      '최근 7일 쪼갠 세트 ' + r.본주문 + '주문을 봤습니다.');
+}
+
+/** @param {{회차?:string, 일수?:number}} opt  회차를 주면 그 회차만, 아니면 최근 일수 */
+function ss_세트점검_(opt) {
+  opt = opt || {};
+  var sh = ssio_ss().getSheetByName(SSIO_TABS.원장);
+  var 결과 = { 본주문: 0, 탈수: 0, 요약: [] };
+  if (!sh || sh.getLastRow() < 2) return 결과;
+  var w = sh.getLastColumn();
+  var head = sh.getRange(1, 1, 1, w).getDisplayValues()[0];
+  //  쓸 칸까지만 읽는다 — 원장은 수천 줄 × 수십 칸이다
+  var 쓸칸 = ['회차키', '순번', '원본품목코드', '품목코드', '품목명', '출력품목명', '거래처명', '고유ID', '경로'];
+  var 끝 = 0;
+  for (var h = 0; h < head.length; h++) {
+    if (쓸칸.indexOf(ssText(head[h])) >= 0 && h + 1 > 끝) 끝 = h + 1;
+  }
+  if (!끝) return 결과;
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, 끝).getDisplayValues();
+  var head2 = head.slice(0, 끝);
+
+  var 회차들 = {};
+  if (opt.회차) {
+    회차들[opt.회차] = true;
+  } else {
+    var 일수 = opt.일수 || 7;
+    var 오늘 = new Date();
+    for (var d = 0; d < 일수; d++) {
+      var t = new Date(오늘.getTime() - d * 86400000);
+      회차들['__' + Utilities.formatDate(t, 'Asia/Seoul', 'yyMMdd')] = true;
+    }
+    var iRk = head2.indexOf('회차키');
+    for (var i = 0; i < rows.length; i++) {
+      var rk = ssText(rows[i][iRk]);
+      if (회차들['__' + rk.slice(0, 6)]) 회차들[rk] = true;
+    }
+  }
+  var a = ssAuditSetNames(rows, head2, { 회차들: 회차들 });
+  if (a.못봄) throw new Error(a.못봄);
+  결과.본주문 = a.본주문;
+  결과.탈수 = a.탈.length;
+
+  var now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm');
+  var 줄 = [];
+  for (var k = 0; k < a.탈.length; k++) {
+    var x = a.탈[k];
+    결과.요약.push('· ' + x.회차키 + ' 순번 ' + x.순번 + ' ' + x.받는분 + ' — ' + x.겹친이름[0].slice(0, 30));
+    for (var j = 0; j < x.줄들.length; j++) {
+      줄.push([now, x.회차키, x.순번, x.받는분, x.고유ID, x.원본코드,
+        x.줄들[j].코드, x.줄들[j].이름, x.줄들[j].경로, x.겹친이름.join(' / ')]);
+    }
+  }
+  if (!줄.length) {
+    줄.push([now, opt.회차 || ('최근 ' + (opt.일수 || 7) + '일'), '', '✅ 이상 없음', '',
+      '쪼갠 세트 ' + a.본주문 + '주문', '', '', '', '']);
+  }
+  ssio_write(SSIO_TABS.세트점검, SS_SETAUDIT_HEADER, 줄,
+    { bg: a.탈.length ? '#8b1a1a' : '#2c5f2d' });
+  return 결과;
 }
