@@ -894,7 +894,7 @@ function ssNormalize(grid, cfg, warnings) {
           적요에 둘 다 적힌 일이 잦다 — 보돌미역 지점들이 그렇다.
             「… 02-725-1391 010-7759-1781」 → 전화 02… · 모바일 010…
           여태 하나로 뭉뚱그려 모바일에만 넣었다. 한쪽만 있으면 그쪽만 바꾼다. */
-      //  되돌릴 수 있게 원래 값을 그대로 쥐고 있는다 (적요확인 탭의 「주소 안 바꾸기」)
+      //  되돌릴 수 있게 원래 값을 그대로 쥐고 있는다 (적요확인 탭의 「기존 주소 반영」)
       line._원전화 = line.전화;
       line._원모바일 = line.모바일;
       if (ovAddr.mobile) line.모바일 = ovAddr.mobile;
@@ -953,11 +953,16 @@ function ssNormalize(grid, cfg, warnings) {
     var 적요조치 = (cfg && cfg._적요조치) ? cfg._적요조치[line.고유ID] : null;
     if (적요조치) {
       var _조치 = ssText(적요조치.조치);
+      /*  ★ 옛 말도 여기서 받는다 ★  (2026-10-01 말을 바꿨다)
+          시트는 걷을 때(gasAi SS_AI_ACTION_ALIAS) 이미 새 말로 바꿔 오지만,
+          엔진을 바로 부르는 길(v2 맞대기·시험)은 그 표를 안 거친다. */
+      if (_조치 === '주소 바꾸기' || _조치 === '이대로 적용') _조치 = '적요 주소 반영';
+      else if (_조치 === '주소 안 바꾸기' || _조치 === '아님' || _조치 === '그냥 두기') _조치 = '기존 주소 반영';
       //  사람이 한 번 골랐으면 아래 「적요확인 세우기」가 다시 세우지 않는다
       line.적요조치본것 = _조치;
       if (_조치 === '안 보냄' || _조치 === '미발송') {
         line.적요조치 = '미발송';
-      } else if ((_조치 === '주소 바꾸기' || _조치 === '이대로 적용') && ssText(적요조치.주소)) {
+      } else if (_조치 === '적요 주소 반영' && ssText(적요조치.주소)) {
         if (line.원받는분 === undefined) line.원받는분 = line.받는분;
         if (line.원주소1 === undefined) line.원주소1 = line.주소1;
         if (line.원연락처 === undefined) line.원연락처 = line.모바일 || line.전화;
@@ -969,7 +974,7 @@ function ssNormalize(grid, cfg, warnings) {
         ssWarn(warnings, '주의', 'MEMO_ACTION', line.고유ID,
           '적요확인 탭의 조치대로 바꿨습니다: ' + ssText(line.원주소1).slice(0, 24) +
           '  →  ' + ssText(line.주소1).slice(0, 34));
-      } else if (_조치 === '주소 안 바꾸기') {
+      } else if (_조치 === '기존 주소 반영') {
         /*  ★ 규칙이 읽은 것을 «되돌린다» ★  (2026-09-28)
             규칙이 적요를 잘못 읽었을 때 물릴 길이 없으면, 적요확인 탭에 읽은 것을
             보여 주는 뜻이 없다. 원래 값으로 돌린다.
@@ -982,7 +987,7 @@ function ssNormalize(grid, cfg, warnings) {
           if (line._원모바일 !== undefined) line.모바일 = line._원모바일;
           line.주소변경 = '';
           ssWarn(warnings, '주의', 'MEMO_KEEP', line.고유ID,
-            '적요확인 탭에서 「주소 안 바꾸기」로 고르셨습니다 — 원래 주소로 되돌렸습니다: ' +
+            '적요확인 탭에서 「기존 주소 반영」으로 고르셨습니다 — 원래 주소로 되돌렸습니다: ' +
             _되돌린곳.slice(0, 28) + '  →  ' + ssText(line.주소1).slice(0, 28));
         }
       }
@@ -1938,7 +1943,7 @@ function ssRoute(units, masters, cfg, warnings) {
         u.route = SS_ROUTE.HOLD;
         u.보류사유 = '적요확인';
         u.보류상세 = '적요에 주소 같은 글이 있는데 못 읽었습니다 — ' +
-          '「적요확인」 탭에서 주소를 적고 조치를 「주소 바꾸기」로 고르세요.  적요[' +
+          '「적요확인」 탭에서 주소를 적고 조치를 「적요 주소 반영」으로 고르세요.  적요[' +
           ssText(u.적요).slice(0, 40) + ']';
         continue;
       }
