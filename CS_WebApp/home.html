@@ -1584,6 +1584,9 @@
     }
     .ret-retinv-save[disabled] { opacity: .55; cursor: default; }
     .ret-retinv-edit:hover { background: var(--bg-secondary); }
+    /* 실번호 칸 (2026-10-01) — 반품송장 칸과 같은 꼴. 이름 칸은 번호보다 좁게 */
+    .ret-retinv-in.ret-ph2in-name { flex: 0 1 110px; max-width: 130px; }
+    .ret-metas .ret-ph2-btn { padding: 1px 7px; font-size: 11px; align-self: center; }
 
     .ret-metas {
       display: flex; flex-wrap: wrap; align-items: baseline;
@@ -8940,6 +8943,112 @@
       if (즉시) toast('반품송장을 적었습니다');
     }
 
+    /* ★ 실번호도 카드에서 «바로» 적는다 ★  (2026-10-01)
+
+       > "반품카드에 전화번호 옆에 전화번호 입력할수 있게 만들어줘
+       >  (안심번호일경우 실 전화번호 입력을 위해).. 송장번호 입력하듯이.."
+
+       9/11 에 「처리상태 변경」 팝업 «안»에 넣었다. 9/18 반품송장이 그랬듯
+       아무도 거기서 찾지 않는다 — 없는 것과 같다. 반품송장 칸과 같은 꼴로 꺼낸다.
+
+       ★ 카드가 길어지지 않게 ★  (반품송장 칸과 같은 규칙)
+         · 안심번호뿐이고 실번호가 없을 때만 칸을 펴 둔다 — 그때가 적을 때다
+         · 아니면 전화 옆 「+ 실번호」/「실번호 고침」을 누를 때 편다
+       ★ 저장하는 길은 하나 ★ 팝업과 같은 updateReturnLedgerStatus.
+         상태는 지금 것을 그대로 보낸다 — 이 칸은 «번호만» 적는 자리다. */
+    function retPh2BtnHtml(idx, c) {
+      var has = !!retCardPhone2(c);
+      return '<button type="button" class="ret-retinv-edit ret-ph2-btn"' +
+        ' onclick="event.stopPropagation(); retPh2Edit(' + idx + ')">' +
+        (has ? '실번호 고침' : '+ 실번호') + '</button>';
+    }
+
+    function retPh2SlotHtml(idx, c) {
+      var 펴기 = !!(c && c.phoneOnlySafe && !retCardPhone2(c));
+      return '<div class="ret-ph2-slot" id="ret-ph2-slot-' + idx + '">' +
+        (펴기 ? retPh2FieldHtml(idx, '', (c && c.phone2Name) || '') : '') + '</div>';
+    }
+
+    /** 칸 + 저장 단추 — 펴진 모습 (번호와 이름은 «같이» 적는다) */
+    function retPh2FieldHtml(idx, val, name) {
+      var 엔터 = ' onclick="event.stopPropagation()"' +
+        ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();event.stopPropagation();retPh2Save(' + idx + ');}"';
+      return '<div class="ret-retinv">' +
+        '<span class="ret-retinv-lbl">실번호</span>' +
+        '<input type="tel" class="ret-retinv-in" id="ret-ph2in-' + idx + '"' +
+          ' placeholder="010-0000-0000" value="' + esc(val) + '"' + 엔터 + '>' +
+        '<input type="text" class="ret-retinv-in ret-ph2in-name" id="ret-ph2nin-' + idx + '"' +
+          ' maxlength="20" placeholder="이름 (주문자와 다르면)" value="' + esc(name) + '"' + 엔터 + '>' +
+        '<button type="button" class="ret-retinv-save" id="ret-ph2-btn-' + idx + '"' +
+          ' onclick="event.stopPropagation(); retPh2Save(' + idx + ')">저장</button>' +
+        '</div>';
+    }
+
+    /** 「+ 실번호」·「실번호 고침」 — 한 번 누르면 펴고, 또 누르면 접는다 */
+    function retPh2Edit(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      var slot = document.getElementById('ret-ph2-slot-' + idx);
+      if (!c || !slot) return;
+      if (slot.innerHTML) { slot.innerHTML = ''; return; }
+      slot.innerHTML = retPh2FieldHtml(idx, retCardPhone2(c), c.phone2Name || '');
+      var el = document.getElementById('ret-ph2in-' + idx);
+      if (el) { el.focus(); el.select(); }
+    }
+
+    /** 저장 — 상태는 그대로, 실번호(와 이름)만 보낸다. 검사는 팝업과 같다. */
+    function retPh2Save(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      if (!c) return;
+      var el = document.getElementById('ret-ph2in-' + idx);
+      var nel = document.getElementById('ret-ph2nin-' + idx);
+      var val = el ? String(el.value || '').trim() : '';
+      var nm = nel ? String(nel.value || '').trim().substring(0, 20) : '';
+      var 숫자 = val.replace(/[^0-9]/g, '');
+      if (!val) { toast('실번호를 입력하세요'); return; }
+      if (/^050[0-9]/.test(숫자)) {
+        toast('실번호 칸에는 안심번호(050…) 말고 실제 번호를 넣어 주세요', 4200);
+        return;
+      }
+      if (숫자.length < 9) { toast('전화번호가 짧습니다 — 다시 확인해 주세요', 3200); return; }
+      var staff = returnStaffName();
+      if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
+
+      var btn = document.getElementById('ret-ph2-btn-' + idx);
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+
+      var 지금상태 = String(c.status || '').trim() || '접수';
+      var 꾸러미 = {
+        tab: c.tab, row: c.row,
+        status: 지금상태, staff: staff,
+        phone2: val, phone2Name: nm
+      };
+
+      var 즉시 = retOptimistic(c,
+        function (x) {
+          //  팝업과 같은 모양으로 — 주 번호(안심번호)는 그대로, 실번호는 「추가」로
+          x.phoneSub = val; x.phoneSubTag = '추가';
+          if (nm) x.phone2Name = nm;
+          x.phoneOnlySafe = false;
+          return retPrependEvent(x, 'meta', '실번호 ' + val + (nm ? ' (' + nm + ')' : ''), staff);
+        },
+        function (성공, 실패) {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              if (!res || !res.ok) { 실패(String((res && res.error) || '실번호 저장 실패')); return; }
+              성공();
+              retApplyServer(c, res);
+            })
+            .withFailureHandler(function (err) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              실패(String((err && err.message) || err));
+            })
+            .updateReturnLedgerStatus(꾸러미);
+        });
+
+      if (즉시) toast('실번호를 적었습니다');
+    }
+
     function returnCardHtml(c, idx) {
       /* ★ 박스마다 상태를 보여준다 ★  (2026-09-09)
          한 반품에 박스가 둘이면 하나만 접수하고 나머지는 나중에 하는 일이 생긴다.
@@ -9026,7 +9135,9 @@
                  (c.phone2Name && c.phoneSubTag === '추가' ? ' ' + esc(c.phone2Name) : '') + '</span>' : '') +
               (c.phoneOnlySafe ? '<span class="ret-ph-warn"> 기간이 지나면 끊깁니다</span>' : '') +
               '</span>' : '') +
+            retPh2BtnHtml(idx, c) +
             '</div>' +
+            retPh2SlotHtml(idx, c) +
             /* ★ 「202609 170행」을 지웠다 ★  (2026-09-17)
                > "굳이 202609 127행 같은 내용은 불필요해"
                시트 몇 행인지는 사람이 카드에서 할 일이 아니다. 자리만 먹었다.
