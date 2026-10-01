@@ -3776,8 +3776,7 @@ function partnerPushInvoices() {
   var hubTab = _po_getHubTab();
   var lastRow = hubTab.getLastRow();
   if (lastRow <= 1) {
-    if (ui)
-      ui.alert("허브에 발주 데이터가 없습니다.\n먼저 발주 수집을 실행하세요.");
+    _po_pushNotice_(ui, "허브에 발주 데이터가 없습니다.\n먼저 발주 수집을 실행하세요.");
     return;
   }
 
@@ -3843,10 +3842,7 @@ function partnerPushInvoices() {
 
   var pendingCount = Object.keys(pendingByUid).length;
   if (pendingCount === 0) {
-    if (ui)
-      ui.alert(
-        "배포할 송장이 없습니다.\n허브 '송장번호' 열에 번호를 입력한 후 실행하세요.",
-      );
+    _po_pushNotice_(ui, "배포할 송장이 없습니다.\n허브 '송장번호' 열에 번호를 입력한 후 실행하세요.");
     return;
   }
 
@@ -4174,19 +4170,23 @@ function partnerPushInvoices() {
          : [])
     );
   } catch (eChat) {}
-  /*  ★ 결과 창이 스크립트를 붙잡지 않게 ★  (2026-10-01)
-      ui.alert 는 「확인」을 누를 때까지 실행을 멈춰 둔다. 9/30 17:47 배포는
-      78건을 4분 만에 다 쓰고도 창이 열린 채 30분을 기다려 «시간 초과»로 끝났다.
-      HTML 창은 띄우고 바로 끝난다 — 송장 수집 결과 창과 같은 방식이다. */
-  if (ui) {
-    try {
-      var _pushOut = HtmlService.createHtmlOutput(
-        '<pre style="font:13px/1.5 sans-serif;white-space:pre-wrap;margin:0">' +
-          String(msg).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</pre>")
-        .setWidth(520).setHeight(360);
-      ui.showModalDialog(_pushOut, "📬 송장 배포 결과");
-    } catch (eUi) {}
-  }
+  _po_pushNotice_(ui, msg);
+}
+
+/*  ★ 송장 배포의 안내 창은 스크립트를 붙잡지 않는다 ★  (2026-10-01)
+    ui.alert 는 「확인」을 누를 때까지 실행을 멈춰 둔다. 9/30 17:47 배포는
+    78건을 4분 만에 다 쓰고도 창이 열린 채 30분을 기다려 «시간 초과»로 끝났다.
+    HTML 창은 띄우고 바로 끝난다 — 송장 수집 결과 창과 같은 방식이다.
+    배포의 세 창(데이터 없음 · 배포할 송장 없음 · 결과)이 모두 이것을 쓴다. */
+function _po_pushNotice_(ui, msg) {
+  if (!ui) return;
+  try {
+    var out = HtmlService.createHtmlOutput(
+      '<pre style="font:13px/1.5 sans-serif;white-space:pre-wrap;margin:0">' +
+        String(msg).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</pre>")
+      .setWidth(520).setHeight(360);
+    ui.showModalDialog(out, "📬 송장 배포");
+  } catch (eUi) {}
 }
 
 // ═══════════════════════════════════════════
