@@ -113,6 +113,8 @@ function _cib_appliedIds_() {
  */
 function _cib_ocr_(photos) {
   var last = null;
+  //  동영상은 안 읽는다 (2026-10-01) — 50MB 를 받아 Gemini 에 넣으면 1분 안에 못 끝난다
+  photos = (photos || []).filter(function (u) { return !_cs_isVideoUrl_(u); });
   for (var i = 0; i < Math.min(2, (photos || []).length); i++) {
     try {
       var res = UrlFetchApp.fetch(photos[i], { muteHttpExceptions: true });

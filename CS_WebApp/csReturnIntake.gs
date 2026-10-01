@@ -189,7 +189,9 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
       retInvClash + (alreadyDone ? " (이미 완료된 건 — 상태 그대로)" : "");
     var links = (photoLinks && photoLinks.length) ? photoLinks : [];
     if (links.length) {
-      noteText += " · 사진 " + links.length + "장";
+      //  동영상은 따로 센다 (2026-10-01) — 「사진 3장」인데 열어 보니 영상이면 헷갈린다
+      var nVid = links.filter(function (u) { return _cs_isVideoUrl_(u); }).length;
+      noteText += " · 사진 " + (links.length - nVid) + "장" + (nVid ? " · 영상 " + nVid + "개" : "");
       for (var pi = 0; pi < links.length; pi++) noteText += "\n" + links[pi];
     }
 
@@ -381,4 +383,14 @@ function csSetReturnIntakeReq(p) {
   } catch (e) {
     return { ok: false, error: e.message || String(e) };
   }
+}
+
+/**
+ * 동영상 주소인가 — 확장자로 가른다 (2026-10-01).
+ * v2 보관소 키는 올린 파일의 확장자를 그대로 쓴다(storageKey). 서명 주소의 «경로» 끝을 본다.
+ * 화면(home.html retIsVideoUrl · portal.html isVideoUrl)도 같은 규칙이다.
+ */
+function _cs_isVideoUrl_(u) {
+  var path = String(u || "").split("?")[0];
+  return /\.(mp4|mov|m4v|webm|3gp)$/i.test(path);
 }

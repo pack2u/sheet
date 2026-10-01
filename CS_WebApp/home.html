@@ -2956,6 +2956,15 @@
       background: #fff4d6; color: #6b4a00; font-size: 12px; font-weight: 700; line-height: 1.45;
       border-left: 3px solid #FDB813; word-break: keep-all;
     }
+    /* 반품 영상 칸 (2026-10-01) — 사진 썸네일과 같은 크기로 */
+    .ret-vid {
+      display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+      width: 56px; height: 56px; border-radius: 8px; text-decoration: none;
+      background: #1f1f1f; color: #fff; font-size: 18px; line-height: 1; border: 1px solid var(--border);
+    }
+    .ret-vid span { font-size: 10px; margin-top: 3px; opacity: .85; }
+    .ret-proc-thumbs .ret-vid { width: 34px; height: 34px; font-size: 13px; }
+    .ret-proc-thumbs .ret-vid span { display: none; }
     .lgw-done { font-size: 11px; font-weight: 700; color: var(--accent-orange); margin-left: 4px; }
     .lgw-ocr-t { font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
     .lgw-ocr span { display: inline-block; min-width: 56px; color: var(--text-muted); }
@@ -8176,6 +8185,13 @@
       var urls = String((ev && (ev.raw || ev.text)) || '').match(/https?:\/\/[^\s]+/g) || [];
       var out = [];
       for (var i = 0; i < urls.length; i++) {
+        /*  ★ 동영상 (2026-10-01) ★ v2 물류 입고가 영상도 올린다(sql/70). <img> 로 그리면 깨지니
+            따로 표시해 두고 그리는 쪽이 「▶ 영상」 칸으로 만든다. 가르는 규칙은 서버 _cs_isVideoUrl_ 와 같다. */
+        if (retIsVideoUrl(urls[i])) {
+          out.push({ name: '반품 영상 ' + (i + 1), by: (ev && ev.staff) || '', at: formatProcWhen(ev || {}) || '',
+                     isImage: false, isVideo: true, thumbUrl: '', bigUrl: urls[i], viewUrl: urls[i] });
+          continue;
+        }
         var id = retDriveId(urls[i]);
         var thumb = '', big = '';
         if (id) {
@@ -8207,6 +8223,16 @@
       return out;
     }
 
+    function retIsVideoUrl(u) {
+      return /\.(mp4|mov|m4v|webm|3gp)$/i.test(String(u || '').split('?')[0]);
+    }
+
+    /** 영상 칸 — 누르면 새 창에서 재생한다(앱 안 확대보기는 사진만 다룬다) */
+    function retVideoTileHtml(item) {
+      return '<a class="ret-vid" href="' + esc(item.viewUrl) + '" target="_blank" rel="noopener"' +
+        ' title="영상 재생" onclick="event.stopPropagation()">▶<span>영상</span></a>';
+    }
+
     /** 사진 이력 카드 — 드라이브 썸네일을 깔고 탭하면 앱 안에서 확대한다 */
     function procPhotoHtml(ev, cardIdx, evIdx) {
       var items = retPhotoItems(ev);
@@ -8216,9 +8242,10 @@
       var caption = String(ev.text || '').replace(/https?:\/\/[^\s]+/g, '').trim() || '사진 첨부';
       var html = '<div class="ret-proc-body" style="-webkit-line-clamp:2">' + esc(caption) + '</div>' +
         '<div class="ret-proc-thumbs">';
-      for (var i = 0; i < items.length; i++) {
+      for (var i = 0, im = 0; i < items.length; i++) {
+        if (items[i].isVideo) { html += retVideoTileHtml(items[i]); continue; }
         html += '<button type="button" title="사진 크게 보기"' +
-          ' onclick="openRetPhotoLb(' + cardIdx + ',' + evIdx + ',' + i + ', event)">' +
+          ' onclick="openRetPhotoLb(' + cardIdx + ',' + evIdx + ',' + (im++) + ', event)">' +
           '<img src="' + esc(items[i].thumbUrl) + '" alt="첨부 사진"' +
           ' loading="lazy" decoding="async" fetchpriority="low"' +
           ' data-full="' + esc(items[i].viewUrl) + '"' +
@@ -8236,7 +8263,7 @@
       var visible = returnVisibleTimeline(cardIdx);
       var item = visible[evIdx];
       if (!item) return;
-      openLbImages(retPhotoItems(item), imgIdx);
+      openLbImages(retPhotoItems(item).filter(function (x) { return !x.isVideo; }), imgIdx);
     }
 
     /**
@@ -12656,8 +12683,9 @@
         h += lgwOcrHtml(x.ocr);
         if (items.length) {
           h += '<div class="lg-thumbs">';
-          for (var p = 0; p < items.length; p++) {
-            h += '<button type="button" title="크게 보기" onclick="lgwLb(' + i + ',' + p + ')">' +
+          for (var p = 0, pim = 0; p < items.length; p++) {
+            if (items[p].isVideo) { h += retVideoTileHtml(items[p]); continue; }
+            h += '<button type="button" title="크게 보기" onclick="lgwLb(' + i + ',' + (pim++) + ')">' +
               '<img src="' + esc(items[p].thumbUrl) + '" alt="입고 사진" loading="lazy"' +
               ' data-full="' + esc(items[p].viewUrl) + '"' +
               ' onerror="var f=this.getAttribute(\'data-full\');if(f&&this.src!==f){this.src=f;return;}this.remove()">' +
@@ -12733,7 +12761,8 @@
     function lgwLb(i, p) {
       var x = LGW.rows[i];
       if (!x) return;
-      openLbImages(retPhotoItems({ text: (x.photos || []).join(' '), staff: x.staff }), p);
+      openLbImages(retPhotoItems({ text: (x.photos || []).join(' '), staff: x.staff })
+        .filter(function (it) { return !it.isVideo; }), p);
     }
 
     function lgwHitsHtml(i) {
