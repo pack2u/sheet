@@ -1338,6 +1338,21 @@
        또 선. 선이 겹치면 «무엇이 한 덩어리인지»가 되레 안 보인다.
        경계는 «바탕색 차이»로 낸다 — 카드는 밝고 바깥은 어둡다.
        그것으로 충분하고, 눈이 훨씬 조용하다. */
+    /* ★ 상태값 칩 — 그 상태인 것만 보인다 ★  (2026-10-01)
+       > "정렬에서 상태순으로 하라니까 접수부터 나오니까 입고를 보고싶을떈 한참 내려야되..
+       >  상태값(접수, 반품송장등등) 으로 그 상태값의 데이타만 보이게"
+       정렬은 «차례»라 원하는 것이 아래에 있으면 내려가야 한다. 거르기는 «그것만» 남긴다. */
+    .ret-stage-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 6px; }
+    .ret-stage-chips:empty { display: none; }
+    .ret-stage-chip {
+      padding: 3px 10px; border-radius: 999px; font-size: 11.5px; cursor: pointer; font-family: inherit;
+      border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-secondary);
+    }
+    .ret-stage-chip b { margin-left: 4px; font-weight: 700; color: var(--text-primary); }
+    .ret-stage-chip.on { background: var(--accent, #FDB813); border-color: transparent; color: #1b1e23; }
+    .ret-stage-chip.on b { color: #1b1e23; }
+    .ret-stage-chip.zero { opacity: .5; }
+
     .ret-card {
       display: flex; flex-direction: column; gap: 0;
       background: var(--bg-secondary); border: 1px solid transparent;
@@ -3408,6 +3423,8 @@
             <button type="button" class="hb-new" title="새 반품 카드" aria-label="새 반품 카드"
                     onclick="openRetNewModal()">＋</button>
           </div>
+          <!-- 상태값으로 거르기 — 그 상태인 것만 (2026-10-01) -->
+          <div class="ret-stage-chips" id="retStageChips"></div>
           <div class="os-status" id="returnStatus">불러오는 중…</div>
           <div id="returnPulseBar" class="cs-pulse-bar" style="display:none"
                onclick="applyPulsePending('ret')"></div>
@@ -7680,11 +7697,13 @@
     }
 
     function dashFilterReturn(status) {
+      /*  (2026-10-01) 상태 이름을 검색어로 넣던 것을 상태값 거르기로 바꿨다 —
+          검색은 메모에 「접수」 글자만 있어도 걸린다. 칩은 «그 상태인 것만»이다. */
       var rq = document.getElementById('rq');
-      if (rq) rq.value = status;
-      RETURN_QUERY = status;
-      RETURN_SHOW_LIMIT = 30;
-      doReturnSearch(true);
+      if (rq) rq.value = '';
+      RETURN_QUERY = '';
+      RETURN_STAGE_FILTER = '';
+      setReturnStageFilter(status);
       wsGoToPane(1);
     }
 
@@ -10717,6 +10736,40 @@
       return 새것.length ? 새것.concat(out) : out;
     }
 
+    /*  고른 상태값 — 그 사람 브라우저에만 기억한다 (선택은 사람마다 다르다) */
+    var RETURN_STAGE_FILTER = '';
+    try { RETURN_STAGE_FILTER = localStorage.getItem('CS_RET_STAGE') || ''; } catch (e) {}
+
+    /** 「전체 · 접수 n · 반품송장 n …」 — 정해진 단계 차례 먼저, 그 밖의 상태는 뒤에 */
+    function retStageChipsHtml(rows) {
+      var 셈 = {}, 차례 = RETURN_STATUS_OPTS.slice();
+      (rows || []).forEach(function (c) {
+        var st = String(c.status || '').trim() || '(상태 없음)';
+        셈[st] = (셈[st] || 0) + 1;
+        if (차례.indexOf(st) < 0) 차례.push(st);
+      });
+      if (RETURN_STAGE_FILTER && 차례.indexOf(RETURN_STAGE_FILTER) < 0) 차례.push(RETURN_STAGE_FILTER);
+      var 칩 = function (st, label, n) {
+        var on = (RETURN_STAGE_FILTER === st);
+        return '<button type="button" class="ret-stage-chip' + (on ? ' on' : '') + (n ? '' : ' zero') + '"' +
+          ' data-st="' + esc(st) + '" onclick="setReturnStageFilter(this.getAttribute(\'data-st\'))">' +
+          esc(label) + '<b>' + n + '</b></button>';
+      };
+      return 칩('', '전체', (rows || []).length) +
+        차례.map(function (st) { return 칩(st, st, 셈[st] || 0); }).join('');
+    }
+
+    /** 같은 칩을 다시 누르면 풀린다 — 「전체」를 찾으러 가지 않게 */
+    function setReturnStageFilter(st) {
+      st = String(st || '');
+      RETURN_STAGE_FILTER = (st && RETURN_STAGE_FILTER !== st) ? st : '';
+      try { localStorage.setItem('CS_RET_STAGE', RETURN_STAGE_FILTER); } catch (e) {}
+      RETURN_SHOW_LIMIT = 30;
+      renderReturnActiveList();
+      var p = document.getElementById('pane-returns');
+      if (p) p.scrollTop = 0;
+    }
+
     function filterReturnRows(all, q) {
       all = (all || []).filter(function(c) { return !isReturnCardDone(c); });
       q = String(q || '').trim();
@@ -10858,6 +10911,12 @@
         ? RETURN_ALL_ROWS.concat(RETURN_DONE_ROWS)
         : RETURN_ALL_ROWS;
       var filtered = sortReturnRows(filterReturnRows(뒤질것, RETURN_QUERY));
+      //  상태값 칩 — 숫자는 «거르기 전»으로 센다. 그래야 다른 상태에 몇 건 있는지 보인다
+      var _칩 = document.getElementById('retStageChips');
+      if (_칩) _칩.innerHTML = retStageChipsHtml(filtered);
+      if (RETURN_STAGE_FILTER) {
+        filtered = filtered.filter(function (c) { return String(c.status || '').trim() === RETURN_STAGE_FILTER; });
+      }
       RETURN_ACTIVE_ROWS = filtered;
       var _sortSel = document.getElementById('retSort');
       if (_sortSel && _sortSel.value !== RETURN_SORT) _sortSel.value = RETURN_SORT;
