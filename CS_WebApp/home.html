@@ -1560,6 +1560,20 @@
     .ret-case-tl { margin-top: 12px; }
     .ret-tl-track::-webkit-scrollbar { height: 4px; }
     .ret-tl-track::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+    /* ★ PC 에서는 잡을 수 있게 굵게 ★  (2026-10-01)
+       > "반품카드내의 카드 좌우스크롤이 너무 얇아 pc에서 마우스로 클릭하기가 너무 어려워"
+       4px 는 손가락으로 미는 폰 기준이었다. 마우스(pointer: fine)일 때만 10px 로,
+       올리면 진해진다. 폰·태블릿은 그대로 — 거기선 막대를 잡지 않고 민다. */
+    @media (pointer: fine) {
+      .ret-tl-track { padding-bottom: 6px; }
+      .ret-tl-track::-webkit-scrollbar { height: 10px; }
+      .ret-tl-track::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 6px; }
+      .ret-tl-track::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.26); border-radius: 6px; }
+      .ret-tl-track::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.42); }
+      :root[data-theme="light"] .ret-tl-track::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+      :root[data-theme="light"] .ret-tl-track::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.28); }
+      :root[data-theme="light"] .ret-tl-track::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.45); }
+    }
     .ret-proc {
       position: relative;
       flex: 0 0 auto; width: 128px; min-height: 76px;
