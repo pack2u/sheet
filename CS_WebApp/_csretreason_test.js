@@ -56,7 +56,7 @@ const 시킨것 = {
 /* ── 화면 쪽 ─────────────────────────────────────────────────── */
 const hctx = { console };
 vm.createContext(hctx);
-["RET_TYPES", "RET_FAULTS"].forEach((n) => {
+["RET_TYPES", "RET_FAULTS", "RETURN_STATUS_OPTS"].forEach((n) => {
   const i = html.indexOf("    var " + n + " = [");
   vm.runInContext(html.slice(i, html.indexOf("];", i) + 2), hctx);
 });
@@ -248,6 +248,40 @@ console.log("\n─── ⑫ 두 화면이 서버로 같은 값을 보낸다 ─
 ok("onchange 가 제 화면을 가리킨다",
   /id="retNewFault" onchange="retFillReasons\(\)"/.test(html) &&
   /id="ledgerFault" onchange="retFillReasons\('ledger'\)"/.test(html));
+
+console.log("\n─── ⑫ 상태 목록 — 시트가 받는 말과 같은가 ───");
+/*  ★ 2026-10-01 ★  반품탭 접수에 「수거요청·수거중·반품입고·환불처리」가
+    박혀 있었는데, 대장 상태 드롭다운은 넷만 받는다(setAllowInvalid(false)).
+    그 넷 밖을 고르면 시트가 쓰기를 «거절»해 카드가 안 만들어진다.
+    목록을 적어 둔 자리가 셋이었다 — 서버 표·화면 대비값·화면 <option>.  */
+ok("화면 대비값이 시트가 받는 넷과 같다",
+  hctx.RETURN_STATUS_OPTS.join("·") === "접수·반품송장·입고검수·이카운트OK",
+  hctx.RETURN_STATUS_OPTS.join("·"));
+ok("서버 표도 그 넷이다",
+  /_CS_RETURN_STATUS_OPTS_ = \[[^\]]*"접수"[^\]]*"반품송장"[^\]]*"입고검수"[^\]]*"이카운트OK"[^\]]*\]/.test(gs));
+["retNewStatus", "ledgerStatus"].forEach(function (id) {
+  const i = html.indexOf('<select id="' + id + '"');
+  ok(id + " 에 option 이 박혀 있지 않다 (표에서 채운다)",
+    i > 0 && !/<option/.test(html.slice(i, html.indexOf("</select>", i))));
+});
+ok("두 화면 다 상태를 서버로 보낸다",
+  /status: document\.getElementById\('retNewStatus'\)\.value/.test(html) &&
+  /status: document\.getElementById\('ledgerStatus'\)\.value/.test(html));
+ok("★ 기록 화면이 접수 화면과 «같은 값»을 보낸다 ★", (function () {
+  const 뽑 = function (fn) {
+    const i = html.indexOf(".submitReturnLedger({", html.indexOf(fn));
+    const e = html.indexOf("});", i);
+    return (html.slice(i, e).match(/^\s*(\w+):/gm) || []).map(function (x) {
+      return x.trim().replace(":", "");
+    });
+  };
+  const a = 뽑("function submitRetNew");
+  const b = {};
+  뽑("function submitLedger").forEach(function (k) { b[k] = 1; });
+  //  source·origin·carrier·orderNo 는 주문에서 오는 것이라 접수 화면엔 없다
+  const 빠진 = a.filter(function (k) { return !b[k]; });
+  return 빠진.length === 0;
+})());
 
 console.log("\n─── ⑬ 사유도 비고 길을 탄다 (대장에 사유 열이 없다) ───");
 /*  202609 탭 실측(2026-09-30) — 쓰이는 폭 21칸에 「반품사유」가 없다.

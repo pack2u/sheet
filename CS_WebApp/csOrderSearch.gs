@@ -2116,24 +2116,14 @@ function _cs_clearReturnLedgerDataRows_(tab) {
  */
 function _cs_getReturnLedgerTab_(ss) {
   if (!ss) return null;
-  var monthKey = _cs_returnLedgerMonthKey_();
-  var tab = ss.getSheetByName(monthKey);
-  if (tab) return tab;
-
-  var template = _cs_findReturnLedgerTemplateTab_(ss, monthKey);
-  if (!template) return null;
-
-  tab = template.copyTo(ss);
-  tab.setName(monthKey);
-  try {
-    ss.setActiveSheet(tab);
-    ss.moveActiveSheet(0);
-  } catch (eMove) {
-    Logger.log("[RETURN_LEDGER] 탭 이동 skip: " + eMove.message);
-  }
-  _cs_clearReturnLedgerDataRows_(tab);
-  Logger.log("[RETURN_LEDGER] 월별 탭 생성: " + monthKey + " ← " + template.getName());
-  return tab;
+  /*  ★ 만드는 자리는 한 곳이다 ★  (2026-10-01)
+      전에는 여기서 직접 본떠 만들었다. 매일 미리 만드는 일
+      (csEnsureReturnMonthTabs) 이 생기면서 만드는 코드가 두 벌이 될 뻔했다 —
+      두 벌이면 한쪽만 고쳐져 달마다 다른 모양이 생긴다. 그것이
+      2026-10-01 사고(10월 탭이 9월과 구조가 달라 접수날짜가 지워짐)의 뿌리다.
+      csReturnMonthTab.gs 의 _cs_ensureReturnMonthTab_ 하나만 만든다.  */
+  var r = _cs_ensureReturnMonthTab_(ss, _cs_returnLedgerMonthKey_());
+  return r ? r.tab : null;
 }
 
 function submitReturnLedger(data) {
@@ -2463,6 +2453,40 @@ function _cs_reasonFromNotice_(notice) {
   return m ? String(m[1]).trim() : "";
 }
 
+/**
+ * 단계 칸 하나를 읽는다 — «언제 됐나».  (2026-10-01)
+ *
+ * ★ 값이 무엇이든 «있으면 된 것»으로 본다 ★
+ *   권하는 모양은 날짜(261001)지만, 사람은 「Y」·「OK」·「완료」라고도 적는다.
+ *   모양을 따지면 멀쩡한 줄이 「아직 안 됨」으로 보인다 — 그러면 아무도 안 쓴다.
+ *   날짜면 날짜를 돌려주고, 아니면 적힌 말을 그대로 돌려준다.
+ *   화면은 «있다/없다»만 보면 되고, 날짜가 있으면 덤으로 보여 준다.
+ *
+ * @return {{된: boolean, 값: string, 날짜: string}}
+ */
+function _cs_stageCell_(row, idx) {
+  if (idx < 0) return { 된: false, 값: "", 날짜: "" };
+  var v = row[idx];
+  //  시트가 진짜 날짜로 들고 있으면 Date 로 온다
+  if (v instanceof Date) {
+    return { 된: true, 값: _cs_ymd6_(v), 날짜: _cs_ymd6_(v) };
+  }
+  var s = String(v == null ? "" : v).trim();
+  if (!s) return { 된: false, 값: "", 날짜: "" };
+  var m = s.match(/^(\d{6})$|^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/);
+  var 날 = "";
+  if (m) {
+    날 = m[1] ? m[1] : (String(m[2]).slice(2) +
+      ("0" + m[3]).slice(-2) + ("0" + m[4]).slice(-2));
+  }
+  return { 된: true, 값: s, 날짜: 날 };
+}
+
+/** Date → 261001 (서울) */
+function _cs_ymd6_(d) {
+  return Utilities.formatDate(d, "Asia/Seoul", "yyMMdd");
+}
+
 function _cs_faultFromNotice_(notice) {
   var s = String(notice == null ? "" : notice);
   if (!s) return "";
@@ -2490,7 +2514,30 @@ function _cs_mapReturnLedgerCols_(header) {
     fault: -1,
     /* 입고확인요청 — CS 가 물류에게 «박스 열 때 볼 것»을 적는 칸 (2026-09-30).
        대장 맨 뒤에 붙인다(_cs_ensureIntakeReqCol_). 업체 포털은 이 열을 안 읽는다. */
-    intakeReq: -1
+    intakeReq: -1,
+
+    /*  ══════════════════════════════════════════════════════
+        ★ 2026-10 대장 설계 ★  (2026-10-01)
+
+        10월 탭은 9월과 «다르게» 다시 설계됐다. 처리 단계를 칸으로 나눠
+        필터로 보려는 뜻이다. 그 칸들을 코드가 읽게 한다.
+          입고여부 · 재검수 사안 · 거래처 · 발생원인 ·
+          이카운처리 여부 · 각 사이트처리 · 계산서발행여부 · 환불완료
+
+        ★ 단계 칸은 «날짜»로 읽는다 ★
+          상태값 하나가 단계의 주인이고, 이 칸들은 «언제 됐나»를 적는다.
+          체크표시로 두면 상태값과 어긋났을 때 어느 것이 맞는지 모른다.
+          날짜면 ⑴ 주인이 하나고 ⑵ 필터가 「빈칸」 하나로 되고
+          ⑶ 얼마나 걸렸는지가 저절로 남는다.
+          값이 「Y」·「OK」처럼 날짜가 아니어도 «있으면 된 것»으로 본다 —
+          옛 자료를 버리지 않는다.
+        ══════════════════════════════════════════════════════ */
+    intake: -1,      // 입고여부      — 물류가 박스를 받은 날
+    recheck: -1,     // 재검수 사안    — 물류가 CS 에게 남기는 한 줄
+    ecount: -1,      // 이카운처리 여부 (9월 「이카운트 반영」과 같은 자리)
+    siteDone: -1,    // 각 사이트처리
+    taxDone: -1,     // 계산서발행여부
+    refund: -1       // 환불완료
   };
   for (var i = 0; i < header.length; i++) {
     var h = String(header[i] || "").replace(/\s/g, "");
@@ -2503,7 +2550,8 @@ function _cs_mapReturnLedgerCols_(header) {
        뜻은 같다 — 「법인/쿠팡」·「대리발송-리바이」처럼 주문이 어디서 왔나다.
        여기는 못 찾아도 안 막고 빈칸으로 두던 자리라 조용히 업체명이 사라지고
        있었다. 협력업체 포털(prpLedger.gs)은 같은 이유로 접수를 막았다. */
-    else if (col.vendor < 0 && /업체명|주문지|판매처|발주업체/.test(h)) col.vendor = i;
+    //  10월부터 「거래처」로 적는다 (2026-10-01)
+    else if (col.vendor < 0 && /업체명|주문지|판매처|발주업체|^거래처$/.test(h)) col.vendor = i;
     else if (col.name < 0 && /반품신청자|수취인명|수취인|받는분/.test(h) && !/전화|주소/.test(h)) col.name = i;
     /* ★ 「추가」를 «먼저» 걸러야 한다 ★  (2026-09-11)
        /연락처/ 는 「추가연락처」에도 걸린다. 지금은 E(연락처)가 F(추가연락처)보다
@@ -2548,8 +2596,28 @@ function _cs_mapReturnLedgerCols_(header) {
     /* ★ 귀책을 사유보다 «앞»에 둔다 ★  (2026-09-30)
        뒤에 두면 「반품귀책사유」 같은 머리글이 사유에 먼저 걸려 귀책이
        통째로 버려진다 — 2026-09-18 에 사유가 당한 일이 정확히 그것이다. */
+    //  ── 2026-10 설계의 단계 칸들 — 머리글로만 찾는다 (자리로 못 박지 않는다)
+    /*  ★ 상태값도 «머리글»로 찾는다 ★  (2026-10-01)
+        > "시트에서 열배열을 바꿔도 우리 웹앱에서 인식이 되면 좋겠어"
+        여태 상태는 A열 고정이었다. 그래서 상태값 열을 다른 자리로 옮기면
+        따라가지 못하고 A(엉뚱한 칸)를 상태로 읽었다. 머리글이 먼저고,
+        못 찾았을 때만 A 로 떨어진다(아래).  */
+    else if (col.status < 0 && /^상태값$|^상태$|^처리상태$|^진행상태$/.test(h)) col.status = i;
+    else if (col.intake < 0 && /^입고여부$|^입고일$|^입고확인$/.test(h)) col.intake = i;
+    else if (col.recheck < 0 && /^재검수사안$|^재검수$|^검수사안$/.test(h)) col.recheck = i;
+    /*  시트 머리글이 「이카운처리 여부」다 — 「트」가 빠져 있다. 글자를 고치면
+        옛 탭이 안 걸리니, 둘 다 받는다. (2026-10-01)  */
+    else if (col.ecount < 0 && /이카운트?처리|이카운트반영|^이카운트$/.test(h)) col.ecount = i;
+    else if (col.siteDone < 0 && /각사이트처리|사이트처리/.test(h)) col.siteDone = i;
+    else if (col.taxDone < 0 && /계산서발행/.test(h)) col.taxDone = i;
+    else if (col.refund < 0 && /^환불완료$|^환불일$/.test(h)) col.refund = i;
     else if (col.fault < 0 && /^귀책$|귀책구분|^책임$|책임구분|과실구분/.test(h)) col.fault = i;
-    else if (col.reason < 0 && /^반품사유$|^사유$|반품이유|교환반품사유/.test(h)) col.reason = i;
+    /*  ★ 10월부터 「발생원인」이 사유 자리다 ★  (2026-10-01)
+        9월까지는 대장에 사유 열이 아예 없어 비고 표시로 흘렸다.
+        10월 탭에 생겼으니 이제 제 칸에 적힌다 — 읽는 쪽이 열을 먼저 보므로
+        비고 표시는 저절로 안 쓰인다.
+        ★ 「적요」는 사유가 아니다 ★ 그 칸은 사람이 길게 적는 말이다.  */
+    else if (col.reason < 0 && /^반품사유$|^사유$|반품이유|교환반품사유|^발생원인$/.test(h)) col.reason = i;
     // 2026-09-04: 실제 헤더 문구를 넣는다.
     //   시트는 「재출고/단순/오주문입력/오배송」이라고 적혀 있는데 정규식에 없어서
     //   지금껏 K열 위치 폴백으로만 맞고 있었다. 9월에 열이 한 칸 밀리자 바로 깨졌다.
@@ -2575,12 +2643,17 @@ function _cs_mapReturnLedgerCols_(header) {
         덮는 것보다 비는 편이 낫다 — 비면 사람이 알아채고, 덮으면 아무도 모른다.
         (202610 은 열을 하나 끼워 9월과 같은 모양으로 맞췄다.
          이 줄은 다음에 또 누가 탭을 새로 만들 때를 위한 것이다.)  */
-  var _A임자 = "";
-  for (var _ck in col) {
-    if (!Object.prototype.hasOwnProperty.call(col, _ck)) continue;
-    if (_ck !== "status" && col[_ck] === 0) { _A임자 = _ck; break; }
+  /*  ★ 머리글로 찾았으면 그것이 답이다 ★  (2026-10-01)
+      위에서 「상태값」·「처리상태」를 찾았으면 A 는 보지 않는다.
+      열 순서를 바꿔도 따라가는 길이 이것이다.  */
+  if (col.status < 0) {
+    var _A임자 = "";
+    for (var _ck in col) {
+      if (!Object.prototype.hasOwnProperty.call(col, _ck)) continue;
+      if (_ck !== "status" && col[_ck] === 0) { _A임자 = _ck; break; }
+    }
+    col.status = _A임자 ? -1 : 0;
   }
-  col.status = _A임자 ? -1 : 0;
 
   /* M열 = 반품비 폴백.
      ★ 2026-09-04: **헤더가 비었거나 옛 문구일 때만** 쓴다.
@@ -3572,6 +3645,19 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
       pickup: col.pickup >= 0 ? String(row[col.pickup] || "").trim() : "",
       fee: col.fee >= 0 ? _cs_formatReturnFee_(row[col.fee]) : "",
       feeRaw: col.fee >= 0 ? String(row[col.fee] == null ? "" : row[col.fee]).trim() : "",
+
+      /*  ── 2026-10 설계의 단계 칸들 ──  (2026-10-01)
+          상태값 하나가 단계의 «주인»이고, 이 칸들은 «언제 됐나»를 적는다.
+          화면은 있다/없다로 거르고, 날짜가 있으면 덤으로 보여 준다.
+          9월 탭에는 없는 칸이라 전부 빈 값으로 나온다 — 그래도 탈이 없다.  */
+      intake: _cs_stageCell_(row, col.intake),
+      ecountDone: _cs_stageCell_(row, col.ecount),
+      siteDone: _cs_stageCell_(row, col.siteDone),
+      taxDone: _cs_stageCell_(row, col.taxDone),
+      refund: _cs_stageCell_(row, col.refund),
+      /*  물류가 CS 에게 남기는 한 줄 — 「미사용확인요망」 같은 것.
+          입고 요청(CS→물류)의 «반대 방향»이다.  */
+      recheck: col.recheck >= 0 ? String(row[col.recheck] || "").trim() : "",
       active: !done,
       timeline: _cs_parseReturnTimeline_(notice, status, staffVal, dateVal, typeVal),
       sortKey: (dateYmd || "00000000") + "_" + String(100000 - ri)

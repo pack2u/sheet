@@ -3560,14 +3560,13 @@
         </div>
         <div class="ledger-field">
           <label>상태</label>
-          <select id="retNewStatus">
-            <option value="접수" selected>접수</option>
-            <option value="수거요청">수거요청</option>
-            <option value="수거중">수거중</option>
-            <option value="반품입고">반품입고</option>
-            <option value="입고검수">입고검수</option>
-            <option value="환불처리">환불처리</option>
-          </select>
+          <!--  ★ 시트가 받는 말과 달랐다 ★  (2026-10-01)
+                여기에 「수거요청·수거중·반품입고·환불처리」가 박혀 있었는데,
+                대장 상태 드롭다운은 「접수·반품송장·입고검수·이카운트OK」 넷만
+                받는다(setAllowInvalid(false)). 그 넷 밖을 고르면 시트가
+                «쓰기를 거절»해 카드가 안 만들어진다.
+                목록은 서버 표(_CS_RETURN_STATUS_OPTS_) 하나에서만 온다. -->
+          <select id="retNewStatus"></select>
         </div>
       </div>
       <!--  ★ 귀책과 사유  (2026-09-30)
@@ -3661,10 +3660,29 @@
           <label>귀책</label>
           <select id="ledgerFault" onchange="retFillReasons('ledger')"></select>
         </div>
-        <div class="ledger-field">
-          <label>사유</label>
           <select id="ledgerReason"></select>
         </div>
+      </div>
+      <!--  ★ 상태는 «반드시» 있어야 한다 ★  (2026-10-01)
+            이 화면에만 상태 칸이 없어서, 여기서 올린 카드는 대장 상태값이
+            «빈 칸»으로 들어갔다. 상태가 비면 카드 단계가 안 잡히고
+            필터(입고 대기·환불 대기)에서도 샌다.
+            반품탭 접수(retNew)와 같은 목록을 쓴다.  -->
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>상태</label>
+          <select id="ledgerStatus"></select>
+        </div>
+        <div class="ledger-field">
+          <label>실번호 (선택)</label>
+          <input id="ledgerPhone2" type="tel" inputmode="numeric"
+                 placeholder="안심번호면 실제 번호를 받아 적으세요">
+        </div>
+      </div>
+      <div class="ledger-field">
+        <label>실번호 주인 (선택)</label>
+        <!-- 누구 번호인지 — 대신 받아 준 사장님·직원일 때가 많다 -->
+        <input id="ledgerPhone2Name" type="text" maxlength="20" placeholder="예: 가게 사장님">
       </div>
       <div class="ledger-field">
         <label>수거입력처 (대리공급은 택배사 자동)</label>
@@ -6085,6 +6103,7 @@
       ledger: {
         modal: 'ledgerModal', bar: 'ledgerDraftBar', requireScope: true,
         fields: ['ledgerStaff', 'ledgerType', 'ledgerFault', 'ledgerReason',
+                 'ledgerStatus', 'ledgerPhone2', 'ledgerPhone2Name',
                  'ledgerPickup', 'ledgerFee', 'ledgerAccount', 'ledgerMemo'],
         /*  retNew 와 같은 까닭 — 되살리기는 값만 넣어 onchange 가 안 돈다.
             목록을 채운 «뒤에» 사유를 다시 넣는다. (2026-09-30)  */
@@ -8500,6 +8519,9 @@
       var pfx = which === 'ledger' ? 'ledger' : 'retNew';
       retFillSelect(pfx + 'Type', RET_TYPES);
       retFillSelect(pfx + 'Fault', RET_FAULTS);
+      /*  상태 목록은 서버(_CS_RETURN_STATUS_OPTS_)가 내려 준 것을 쓴다.
+          아직 안 왔으면 화면에 박힌 기본값으로 — 두 화면이 같은 목록을 본다. */
+      retFillSelect(pfx + 'Status', RETURN_STATUS_OPTS);
       retFillReasons(which);
     }
 
@@ -11339,6 +11361,7 @@
           새로 여는 것이니 지난번에 고른 것은 남기지 않는다.  */
       retFillPicks('retNew');
       document.getElementById('retNewType').value = '단순반품';
+      document.getElementById('retNewStatus').value = '접수';
       document.getElementById('retNewFault').value = '구매자';
       retFillReasons();
       document.getElementById('retNewReason').value = '';
@@ -11768,6 +11791,9 @@
       retFillPicks('ledger');
       document.getElementById('ledgerType').value = '단순반품';
       document.getElementById('ledgerFault').value = '구매자';
+      document.getElementById('ledgerStatus').value = '접수';
+      document.getElementById('ledgerPhone2').value = '';
+      document.getElementById('ledgerPhone2Name').value = '';
       retFillReasons('ledger');
       document.getElementById('ledgerReason').value = '';
       document.getElementById('ledgerPickup').value = resolveCarrier(r) || '';
@@ -11893,6 +11919,9 @@
           type: document.getElementById('ledgerType').value,
           fault: document.getElementById('ledgerFault').value,
           reason: document.getElementById('ledgerReason').value,
+          status: document.getElementById('ledgerStatus').value || '접수',
+          phone2: document.getElementById('ledgerPhone2').value,
+          phone2Name: document.getElementById('ledgerPhone2Name').value,
           pickup: document.getElementById('ledgerPickup').value,
           memo: document.getElementById('ledgerMemo').value,
           account: document.getElementById('ledgerAccount').value,
