@@ -1889,11 +1889,75 @@
     }
     .ledger-cancel { background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border) !important; }
     .ledger-ok { background: var(--accent-green); color: var(--on-accent); }
+
+    /* ══ 반품대장 기록 창 — 2026-10-01 ═══════════════════════════
+       > "하단부분이 짤리고 하단 아래쪽으로 무분별하게 분리되어 있어"
+
+       증상이 둘인데 원인도 둘이었다.
+         ① 「기록」 단추가 스크롤 맨 끝에 있는데 «스크롤바가 숨겨져»
+            있었다(.modal-content 가 scrollbar-width:none). 더 있는 줄
+            모르니 창이 잘린 것처럼 보인다.
+         ② 칸이 열다섯인데 PC 에서도 420px 한 줄이라 아래로 끝없이
+            늘어졌다. 어디까지가 한 벌인지 안 보인다.
+
+       이 창만 고친다 — 다른 창 여덟 개는 짧아서 탈이 없다.      */
+
+    /* ★ 단추를 바닥에 붙인다 ★ 늘 보여야 한다.
+       창 아래 여백(40px)만큼 끌어내려 바닥에 딱 닿게 한다. */
+    .ledger-sheet .ledger-btns {
+      position: sticky;
+      bottom: -40px;
+      margin-top: 16px;
+      padding: 12px 0 calc(40px + env(safe-area-inset-bottom, 0px));
+      background: var(--bg-card);
+      box-shadow: 0 -10px 12px -8px rgba(0,0,0,0.35);
+      z-index: 2;
+    }
+    /* ★ 이 창은 스크롤바를 보인다 ★ 숨기면 잘린 것처럼 보인다. */
+    .modal-content.ledger-sheet {
+      scrollbar-width: thin;
+      scrollbar-color: var(--text-muted) transparent;
+      -ms-overflow-style: auto;
+      overscroll-behavior: contain;
+    }
+    .modal-content.ledger-sheet::-webkit-scrollbar {
+      display: block; width: 8px; height: 8px;
+    }
+    .modal-content.ledger-sheet::-webkit-scrollbar-thumb {
+      background: var(--text-muted); border-radius: 4px;
+    }
+    .modal-content.ledger-sheet::-webkit-scrollbar-track { background: transparent; }
+
+    /* ★ 넓은 화면에서는 두 칸 ★  (PC 가 기본이다)
+       묶음(.ledger-grid) 안만 접는다 — 미리보기·품목·임시저장·단추는
+       형제라 끌려 들어가지 않는다.
+       길게 적는 칸(메모·사진)은 .wide 로 한 줄을 통째로 쓴다. */
+    @media (min-width: 900px) {
+      .modal-content.ledger-sheet {
+        max-width: 780px;
+        border-radius: 20px;
+        margin-bottom: 4vh;
+        max-height: 92vh;
+      }
+      .ledger-sheet .ledger-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 14px;
+        align-items: start;
+      }
+      .ledger-sheet .ledger-grid > .ledger-field.wide,
+      .ledger-sheet .ledger-grid > .ledger-row2,
+      .ledger-sheet .ledger-grid > .ledger-help,
+      .ledger-sheet .ledger-grid > .lrt-opt { grid-column: 1 / -1; }
+    }
     .os-empty { text-align: center; padding: 48px 16px; color: var(--text-muted); font-size: 14px; }
     .os-toast {
       position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(20px);
-      background: #2e7d57; color: #fff; padding: 10px 16px; border-radius: 999px;
+      background: #2e7d57; color: #fff; padding: 10px 16px; border-radius: 20px;
       font-size: 13px; opacity: 0; pointer-events: none; transition: all 0.2s;
+      /* 여러 줄 알림 (2026-09-29 주문서 올리기 결과) — 줄바꿈을 살리고 너무 넓어지지 않게.
+         한 줄 알림은 높이 ~40px 이라 반지름 20px 이면 예전 알약 모양 그대로다 */
+      white-space: pre-line; max-width: min(92vw, 560px); text-align: center; line-height: 1.5;
       z-index: 5000;   /* 첨부 확대보기(4000)보다 위 — 오류 안내가 가려지면 안 된다 */
     }
     .os-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -3635,7 +3699,7 @@
   </div>
 
   <div class="modal-overlay" id="ledgerModal">
-    <div class="modal-content" style="max-height:88vh;overflow-y:auto;">
+    <div class="modal-content ledger-sheet" style="max-height:88vh;overflow-y:auto;">
       <div class="modal-handle"></div>
       <div class="modal-title">반품관리대장 기록</div>
       <div class="ledger-preview" id="ledgerPreview"></div>
@@ -3653,6 +3717,13 @@
         <span class="dm"></span>
         <button type="button" class="dx" onclick="draftDiscard('ledger')">새로 작성</button>
       </div>
+      <!--  ★ 적는 칸들을 한 묶음으로 ★  (2026-10-01)
+            > "하단부분이 짤리고 하단 아래쪽으로 무분별하게 분리되어 있어"
+            칸이 열다섯인데 420px 한 줄로 세워 두니 아래로 끝없이 늘어졌다.
+            넓은 화면에서는 이 묶음만 두 칸으로 접는다 (.ledger-grid).
+            묶음으로 싸는 까닭은 미리보기·품목·임시저장·단추가 형제라,
+            창 자체를 그리드로 만들면 그것들까지 끌려 들어가기 때문이다.  -->
+      <div class="ledger-grid">
       <div class="ledger-field">
         <label>접수자</label>
         <select id="ledgerStaff"></select>
@@ -3669,6 +3740,16 @@
           <label>귀책</label>
           <select id="ledgerFault" onchange="retFillReasons('ledger')"></select>
         </div>
+        <!--  ★ 2026-10-01 고침 ★ 이 칸의 «여는» 태그와 라벨이 빠져 있었다.
+              그래서 닫는 태그가 하나 남아 .modal-content 가 여기서 «일찍 닫혔고»,
+              뒤따르는 칸들(상태·실번호·수거입력처·반품비·환불계좌·메모·사진)과
+              「기록」 단추가 창 «밖»으로 밀려났다 — 사장님이 본
+              「하단이 잘리고 아래쪽으로 무분별하게 분리된」 모양이 이것이다.
+              접수 창(retNewReason)과 같은 모양으로 되돌린다.  -->
+        <div class="ledger-field">
+          <label>사유</label>
+          <!-- 빈칸으로 둘 수 있다. 목록에 없는 사유는 아래 메모에 적는다 —
+               「기타」를 골라 대장에 「기타」가 적히면 아무 뜻도 없다. -->
           <select id="ledgerReason"></select>
         </div>
       </div>
@@ -3721,11 +3802,11 @@
         <!-- 은행·번호·예금주를 한 칸에 그대로 받는다. 쪼개면 은행 표기가
              제각각이라 반드시 틀린다. 돈이 걸린 값은 원문이 안전하다. -->
       </div>
-      <div class="ledger-field">
+      <div class="ledger-field wide">
         <label>메모 (고객요청/유의사항)</label>
         <textarea id="ledgerMemo" placeholder="필요하면 적고, 없으면 비워 두세요"></textarea>
       </div>
-      <div class="ledger-field">
+      <div class="ledger-field wide">
         <label>사진 (선택 · 스크린샷은 Ctrl+V · 기록과 함께 올라갑니다)</label>
         <div class="ret-photo-pick">
           <label class="pk">촬영<input type="file" accept="image/*" capture="environment"
@@ -3735,6 +3816,7 @@
         </div>
         <div id="ledgerPhotoPrev"></div>
       </div>
+      </div><!-- /.ledger-grid -->
       <div class="ledger-btns">
         <button class="ledger-cancel" type="button" onclick="closeLedger(true)">취소</button>
         <button class="ledger-ok" type="button" id="ledgerSubmitBtn" onclick="submitLedger(false)">기록</button>
