@@ -932,6 +932,38 @@
     .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs button,
     .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs img { width: 34px; height: 34px; }
 
+    /* ③ 편집판 — 크게 보기에서 펼친 카드에만  (2026-10-01)
+       > "펼쳐졌을떄 웹앱카드랑 너무 똑같네.. 전체 모드에서는 디테일한것들을 다보고 수정 추가할수 있어야"
+       왼쪽 요약 · 가운데 편집판 · 오른쪽 처리 이력. 세 칸 화면 카드엔 안 나온다. */
+    .ret-edit { display: none; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit {
+      display: block; flex: 1 1 520px; min-width: 0; font-size: 12px; cursor: default;
+      border-left: 1px solid var(--border); border-right: 1px solid var(--border); padding: 0 14px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-ro { display: flex; flex-wrap: wrap; gap: 2px 14px; color: var(--text-muted); margin-bottom: 8px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-ro b { color: var(--text-primary); font-weight: 600; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px 10px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f.w2 { grid-column: span 2; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f.w4 { grid-column: 1 / -1; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f > label { font-size: 10.5px; color: var(--text-muted); }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f .ret-edit-in {
+      width: 100%; box-sizing: border-box; padding: 4px 7px; font-size: 12px; font-family: inherit;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--bg-secondary); color: var(--text-primary);
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f textarea.ret-edit-in { min-height: 46px; resize: vertical; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f .ret-edit-in:focus { outline: none; border-color: var(--accent-green); }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f .ret-edit-in.changed { border-color: #ffc107; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-pair { display: flex; gap: 4px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-pair .ret-edit-in { flex: 1 1 auto; min-width: 0; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-today {
+      flex: 0 0 auto; padding: 2px 6px; font-size: 10.5px; cursor: pointer; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--bg-card-hover); color: var(--text-primary);
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-btns { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-hint { font-size: 10.5px; color: var(--text-muted); }
+
     /* ② 펼친 카드 = 왼쪽 정보 · 오른쪽 이력 격자, 빈자리 없이 */
     .ws-split > #pane-returns.is-max .ret-card.ret-focus {
       transform: none; margin: 6px 0 8px; padding: 12px 14px 10px;
@@ -940,14 +972,14 @@
       flex-direction: row; align-items: flex-start; gap: 18px;
     }
     .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-left {
-      flex: 0 0 420px; width: auto; max-width: 42%; font-size: 13px;
+      flex: 0 0 330px; width: auto; max-width: 30%; font-size: 13px;   /* 세 칸 — 편집판이 가운데 (2026-10-01) */
     }
     .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-left .rn { font-size: 16px; margin-bottom: 4px; }
     .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-left > div:nth-child(2) { font-size: 13px; }
     .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-meta { font-size: 13px; margin-top: 3px; }
     .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-sub { margin-top: 5px; }
     .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-right {
-      flex: 1 1 auto; max-width: none; width: auto; justify-content: flex-start;
+      flex: 0 1 400px; max-width: none; width: auto; justify-content: flex-start;
     }
     .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
@@ -9219,6 +9251,130 @@
       return '<div class="ret-row">' + 칸.map(function (x) { return '<span>' + x + '</span>'; }).join('') + '</div>';
     }
 
+    /* ★ 크게 보기 편집판 ★  (2026-10-01)
+       시트의 칸을 카드에서 바로 고친다. 저장은 updateReturnLedgerFields 하나 —
+       바뀐 칸만 보내고, 서버가 바뀐 칸만 적고 비고에 «앞 → 뒤»를 남긴다.
+       상태·반품송장·실번호·메모는 원래 길(왼쪽 칸·아래 단추)을 그대로 쓴다.
+       키는 서버 _CS_RET_EDITABLE_ 와 같다. 단계 칸은 카드 자료에서 이름이 다르다(ecount↔ecountDone). */
+    var RET_EDIT_FIELDS = [
+      { k: 'name', t: '수취인' }, { k: 'vendor', t: '거래처' },
+      { k: 'qty', t: '수량' }, { k: 'recheck', t: '재검수 사안' },
+      { k: 'item', t: '상품명', w: 'w4' },
+      { k: 'intake', t: '입고', stage: 'intake' }, { k: 'ecount', t: '이카운트', stage: 'ecountDone' },
+      { k: 'siteDone', t: '사이트처리', stage: 'siteDone' }, { k: 'taxDone', t: '계산서', stage: 'taxDone' },
+      { k: 'refund', t: '환불완료', stage: 'refund' }, { k: 'account', t: '환불계좌', w: 'w2' },
+      { k: 'jeokyo', t: '적요', w: 'w4', area: true }
+    ];
+    var RET_FAULTS = ['', '판매자', '구매자', '택배사'];
+
+    function retEditVal(c, f) {
+      return f.stage ? retStageText(c[f.stage]) : String(c[f.k] == null ? '' : c[f.k]);
+    }
+
+    function retEditHtml(idx, c) {
+      var ph = retSheetPhones(c);
+      var ro = [['접수일', c.date], ['접수자', c.staff], ['원송장', c.invoice], ['연락처', ph[0]]]
+        .filter(function (p) { return p[1]; })
+        .map(function (p) { return '<span>' + p[0] + ' <b>' + esc(p[1]) + '</b></span>'; }).join('');
+      var 칸 = RET_EDIT_FIELDS.map(function (f) {
+        var v = retEditVal(c, f);
+        var id = 'ret-ed-' + f.k + '-' + idx;
+        var attr = ' id="' + id + '" class="ret-edit-in" data-orig="' + esc(v) + '" oninput="retEditMark(this)"';
+        var 입력 = f.area
+          ? '<textarea' + attr + '>' + esc(v) + '</textarea>'
+          : '<input type="text"' + attr + ' value="' + esc(v) + '">';
+        if (f.stage) {
+          입력 = '<div class="ret-edit-pair">' + 입력 +
+            '<button type="button" class="ret-edit-today" title="오늘 날짜"' +
+            ' onclick="retEditToday(\'' + id + '\')">오늘</button></div>';
+        }
+        return '<div class="ret-edit-f ' + (f.w || '') + '"><label for="' + id + '">' + f.t + '</label>' + 입력 + '</div>';
+      }).join('');
+      var 귀책 = String(c.fault || '').replace(/귀책$/, '');
+      var 고르개 = RET_FAULTS.map(function (x) {
+        return '<option value="' + x + '"' + (x === 귀책 ? ' selected' : '') + '>' + (x ? x + '귀책' : '(귀책 없음)') + '</option>';
+      }).join('');
+      var 원인 = '<div class="ret-edit-f w4"><label>발생원인 (귀책 / 사유)</label><div class="ret-edit-pair">' +
+        '<select id="ret-ed-fault-' + idx + '" class="ret-edit-in" style="flex:0 0 120px" data-orig="' + esc(귀책) + '" onchange="retEditMark(this)">' + 고르개 + '</select>' +
+        '<input type="text" id="ret-ed-reason-' + idx + '" class="ret-edit-in" data-orig="' + esc(c.reason || '') + '"' +
+        ' oninput="retEditMark(this)" value="' + esc(c.reason || '') + '" placeholder="예: 오배송, 뚜껑 깨짐"></div></div>';
+      return '<div class="ret-edit" id="ret-edit-' + idx + '" onclick="event.stopPropagation()">' +
+        (ro ? '<div class="ret-edit-ro">' + ro + '</div>' : '') +
+        '<div class="ret-edit-grid">' + 칸 + 원인 + '</div>' +
+        '<div class="ret-edit-btns">' +
+          '<button type="button" class="ret-retinv-save" id="ret-edit-btn-' + idx + '" onclick="retEditSave(' + idx + ')">저장</button>' +
+          '<span class="ret-edit-hint">바뀐 칸(노란 테두리)만 시트에 적고, 비고에 «앞 → 뒤»를 남깁니다</span>' +
+        '</div></div>';
+    }
+
+    function retEditMark(el) {
+      if (!el) return;
+      el.classList.toggle('changed', String(el.value).trim() !== String(el.getAttribute('data-orig') || '').trim());
+    }
+
+    /** 단계 칸 「오늘」 — 시트가 쓰는 꼴(YYMMDD) 그대로 */
+    function retEditToday(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var d = new Date();
+      el.value = String(d.getFullYear()).slice(2) + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
+      retEditMark(el);
+    }
+
+    function retEditSave(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      if (!c) return;
+      var staff = returnStaffName();
+      if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
+      var 고칠 = {}, 몇 = 0;
+      RET_EDIT_FIELDS.forEach(function (f) {
+        var el = document.getElementById('ret-ed-' + f.k + '-' + idx);
+        if (!el) return;
+        var v = String(el.value || '').trim();
+        if (v !== String(el.getAttribute('data-orig') || '').trim()) { 고칠[f.k] = v; 몇++; }
+      });
+      var fEl = document.getElementById('ret-ed-fault-' + idx), rEl = document.getElementById('ret-ed-reason-' + idx);
+      var cause = null;
+      if (fEl && rEl && (fEl.value !== (fEl.getAttribute('data-orig') || '') ||
+          String(rEl.value).trim() !== String(rEl.getAttribute('data-orig') || '').trim())) {
+        cause = { fault: fEl.value, reason: String(rEl.value).trim() };
+        if (cause.fault && !cause.reason) { toast('귀책만 적을 수는 없습니다 — 사유도 적어 주세요', 3200); return; }
+        몇++;
+      }
+      if (!몇) { toast('바뀐 칸이 없습니다'); return; }
+
+      var btn = document.getElementById('ret-edit-btn-' + idx);
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+      var 꾸러미 = { tab: c.tab, row: c.row, staff: staff, fields: 고칠, cause: cause };
+      var 즉시 = retOptimistic(c,
+        function (x) {
+          RET_EDIT_FIELDS.forEach(function (f) {
+            if (!(f.k in 고칠)) return;
+            if (f.stage) x[f.stage] = { 된: !!고칠[f.k], 값: 고칠[f.k], 날짜: 고칠[f.k] };
+            else x[f.k] = 고칠[f.k];
+          });
+          if (cause) { x.fault = cause.fault; x.reason = cause.reason; }
+          return retPrependEvent(x, 'meta', '수정 ' + 몇 + '칸', staff);
+        },
+        function (성공, 실패) {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              if (!res || !res.ok) { 실패(String((res && res.error) || '저장 실패')); return; }
+              성공();
+              if (res.missing && res.missing.length) {
+                toast('이 달 탭에 없는 칸이라 못 적었습니다: ' + res.missing.join(', '), 4200);
+              }
+            })
+            .withFailureHandler(function (err) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              실패(String((err && err.message) || err));
+            })
+            .updateReturnLedgerFields(꾸러미);
+        });
+      if (즉시) toast(몇 + '칸을 고쳤습니다');
+    }
+
     function returnCardHtml(c, idx) {
       /* ★ 박스마다 상태를 보여준다 ★  (2026-09-09)
          한 반품에 박스가 둘이면 하나만 접수하고 나머지는 나중에 하는 일이 생긴다.
@@ -9316,6 +9472,7 @@
                날짜·담당자는 남기되, 둘 다 없으면 줄 자체를 안 만든다. */
             retSubLine(c) +
           '</div>' +
+          retEditHtml(idx, c) +
           (tlHtml ? '<div class="ret-right">' + tlHtml + '</div>' : '') +
         '</div>' +
         '<div class="ret-foot">' +

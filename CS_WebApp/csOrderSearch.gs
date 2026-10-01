@@ -3419,6 +3419,88 @@ function updateReturnLedgerStatus(payload) {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════
+ *  ★ 크게 보기 편집판 — 시트의 여러 칸을 한 번에 고친다 ★  (2026-10-01)
+ *
+ *  > "펼쳐졌을떄 웹앱카드랑 너무 똑같네.. 전체 모드에서는 디테일한것들을
+ *  >  다보고 수정 추가할수 있어야 되는데..."
+ *
+ *  카드에서 고칠 수 있던 것은 상태·반품송장·실번호·메모뿐이었다. 나머지 칸은
+ *  시트를 열어야 했다. 크게 보기의 편집판이 이 함수로 «바뀐 칸만» 적는다.
+ *
+ *  ★ 상태값은 여기서 안 바꾼다 ★ 단계의 주인은 상태값이고, 바꾸는 길은
+ *    updateReturnLedgerStatus 하나다(반품송장이 들어오면 단계를 올리는 규칙도 거기).
+ *    두 길이 상태를 쓰면 언젠가 서로 다르게 쓴다.
+ *  ★ 안 고치는 칸 ★ 접수날짜·접수자(누가 언제 받았나는 기록이다) ·
+ *    원송장(입고 스캔이 이 번호로 찾는다) · 연락처(주문서 번호 — 쇼핑몰과 맞춰 보는 열쇠).
+ *  ★ 바뀐 것은 비고에 «앞 → 뒤»로 남긴다 ★ 누가 언제 무엇을 바꿨는지 모르면
+ *    다음 사람이 시트와 기억이 다를 때 어느 쪽이 맞는지 모른다.
+ * ══════════════════════════════════════════════════════════════ */
+var _CS_RET_EDITABLE_ = {
+  intake: "입고", recheck: "재검수", vendor: "거래처", name: "수취인",
+  item: "상품명", qty: "수량", jeokyo: "적요",
+  ecount: "이카운트", siteDone: "사이트처리", taxDone: "계산서", refund: "환불완료",
+  account: "환불계좌"
+};
+
+function updateReturnLedgerFields(payload) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  payload = payload || {};
+  var tabName = String(payload.tab || "").trim();
+  var rowNum = parseInt(payload.row, 10);
+  var staff = String(payload.staff || "").trim();
+  var fields = payload.fields || {};
+  if (!tabName || !(rowNum > 0)) return { ok: false, error: "탭·행이 필요합니다." };
+  if (!staff) return { ok: false, error: "담당자를 먼저 고르세요." };
+  try {
+    var ctx = _cs_openReturnLedgerRow_(tabName, rowNum);
+    var notice = ctx.col.notice >= 0 ? String(ctx.row[ctx.col.notice] || "").trim() : "";
+    var 바뀜 = [], 칸없음 = [], 값 = {};
+
+    for (var key in fields) {
+      if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
+      if (!_CS_RET_EDITABLE_[key]) continue;                 // 고치는 칸이 아니다 — 조용히 넘긴다
+      var ci = ctx.col[key];
+      if (!(ci >= 0)) { 칸없음.push(_CS_RET_EDITABLE_[key]); continue; }
+      var v = String(fields[key] == null ? "" : fields[key]).trim().substring(0, 500);
+      var cur = String(ctx.row[ci] || "").trim();
+      if (v === cur) continue;
+      ctx.tab.getRange(rowNum, ci + 1).setValue(v);
+      바뀜.push(_CS_RET_EDITABLE_[key] + ": " + (cur || "(빈칸)") + " → " + (v || "(지움)"));
+      값[key] = v;
+    }
+
+    /* 발생원인 — 협의된 배열은 한 칸에 «귀책 / 사유». 귀책 전용 열이 있으면 나눠 적는다. */
+    if (payload.cause && ctx.col.reason >= 0) {
+      var 귀책 = String(payload.cause.fault || "").trim().replace(/귀책$/, "");
+      var 사유 = String(payload.cause.reason || "").trim().substring(0, 200);
+      var 원인 = ctx.col.fault >= 0 ? 사유 : _cs_makeCause_(귀책, 사유);
+      var 원인cur = String(ctx.row[ctx.col.reason] || "").trim();
+      if (원인 !== 원인cur) {
+        ctx.tab.getRange(rowNum, ctx.col.reason + 1).setValue(원인);
+        바뀜.push("발생원인: " + (원인cur || "(빈칸)") + " → " + (원인 || "(지움)"));
+      }
+      if (ctx.col.fault >= 0) {
+        var 귀책cur = String(ctx.row[ctx.col.fault] || "").trim();
+        if (귀책 !== 귀책cur) {
+          ctx.tab.getRange(rowNum, ctx.col.fault + 1).setValue(귀책);
+          바뀜.push("귀책: " + (귀책cur || "(빈칸)") + " → " + (귀책 || "(지움)"));
+        }
+      }
+      값.fault = 귀책; 값.reason = 사유;
+    }
+
+    if (바뀜.length && ctx.col.notice >= 0) {
+      notice = _cs_appendNoticeLine_(notice, _cs_ledgerStamp_(staff) + " 수정 · " + 바뀜.join(" · "));
+      ctx.tab.getRange(rowNum, ctx.col.notice + 1).setValue(notice);
+    }
+    if (바뀜.length) csInvalidateReturnLedgerCache_();
+    return { ok: true, changed: 바뀜.length, lines: 바뀜, missing: 칸없음, values: 값, notice: notice };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
 /** 반품대장 행 삭제 (전체 건 — CS앱 UI에서는 미사용, 점검용) */
 function deleteReturnLedgerRow(payload) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
