@@ -883,8 +883,8 @@
        카드의 왼쪽 칸·단추줄은 이 모드에선 숨긴다 — 같은 값을 두 번 보이면 눈이 갈린다. */
     /*  ★ 선 색을 따로 둔다 ★ 이 앱의 어두운 테마는 --border 가 투명이라
         상자·머리줄·점선·편집판 칸막이가 하나도 안 보였다 (2026-10-01). */
-    #pane-returns { --ret-line: rgba(255, 255, 255, 0.12); }
-    :root[data-theme="light"] #pane-returns { --ret-line: rgba(0, 0, 0, 0.12); }
+    #pane-returns { --ret-line: rgba(255, 255, 255, 0.12); --ret-zebra: rgba(255, 255, 255, 0.04); }
+    :root[data-theme="light"] #pane-returns { --ret-line: rgba(0, 0, 0, 0.12); --ret-zebra: rgba(0, 0, 0, 0.04); }
     .ret-row { display: none; }
     .ws-split > #pane-returns.is-max #returnActiveList { overflow-x: auto; }
     .ws-split > #pane-returns.is-max .ret-row {
@@ -913,6 +913,13 @@
       background: var(--bg-secondary); border: 1px solid var(--ret-line);
     }
     .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus):hover { background: var(--bg-card-hover); }
+    /*  ★ 한 줄 걸러 톤을 살짝 ★  (2026-10-02)
+        > "테두리 상자 내부 칼라를 톤차이를 살짝줘.. 1,3,5,7,9 … 2,4,6,8 이런식으로 교차해서"
+        목록 첫 자식은 머리줄이라, 카드 2·4·6… 번째가 nth-child(odd)다. 바탕색 위에 덧칠만 한다 —
+        색을 박지 않으므로 테마가 바뀌어도 «한 톤 차이»가 그대로 남는다. */
+    .ws-split > #pane-returns.is-max #returnActiveList > .ret-card:not(.ret-focus):nth-child(odd) {
+      background-image: linear-gradient(var(--ret-zebra), var(--ret-zebra));
+    }
     .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-left,
     .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-foot { display: none; }
     .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-new-bar { margin: 0 0 3px; padding: 2px 8px; }
