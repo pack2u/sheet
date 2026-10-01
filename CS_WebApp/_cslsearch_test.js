@@ -43,6 +43,7 @@ const ctx = {
   _CSL_LOOKBACK_: 60,
   _CSL_TAIL_MIN_: 4,
   _cs_loadReturnLedgerCases_: () => LEDGER,
+  Logger: { log() {} },
 };
 vm.createContext(ctx);
 vm.runInContext(take("function _csl_norm_", "/**\n * 송장번호처럼 보이는가"), ctx);
@@ -51,6 +52,14 @@ vm.runInContext(take("var _CSL_MASK_RE_", "// ── 적재 ─"), ctx);
 
 const names = (r) => r.matches.map((m) => m.name).sort().join(",");
 const S = (q) => ctx.csLogisticsSearch(q);
+
+console.log("\n[온전한 송장은 전화로 안 본다 — 2026-10-01]");
+ok("11자리 송장 뒤4(1234)가 전화 뒤4와 같아도 안 걸린다", S("45000001234").matches.length === 0, names(S("45000001234")));
+ok("뒤 4자리만 치면 예전처럼 전화도 본다", S("1234").matches.length > 0, names(S("1234")));
+ctx._csl_search_tmp = ctx._csl_search_;
+ctx._csl_search_ = () => { throw new Error("시험 오류"); };
+ok("★ 서버가 터져도 이유를 돌려준다", /검색 오류: 시험 오류/.test(S("김*동").note), S("김*동").note);
+ctx._csl_search_ = ctx._csl_search_tmp;
 
 console.log("\n[가린 이름 — 자리 수까지 맞춘다]");
 ok("김*동 → 김민동·김철동", names(S("김*동")) === "김민동,김철동", names(S("김*동")));

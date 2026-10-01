@@ -372,7 +372,23 @@ function _csl_maskPattern_(nm) {
  *
  * 돌려주는 모양은 csLogisticsMatch 와 같다. 화면이 같은 코드로 그린다.
  */
+/**
+ * ★ 2026-10-01 — 바깥 껍데기 ★
+ *   > "이사람 이름이 인식이 됐는데.. 자동 검색기능 작동은 안되나?"
+ *   화면에 「조회 실패」만 떠서 왜인지 아무도 몰랐다. 무엇이 터지든 이유를 문장으로 돌려준다 —
+ *   화면은 그 문장을 보여 주고 다음 방법(이름 등)으로 이어서 찾는다.
+ */
 function csLogisticsSearch(q) {
+  try {
+    return _csl_search_(q);
+  } catch (e) {
+    Logger.log("[CSL] 검색 오류: " + ((e && e.stack) || e));
+    return { tier: "none", digits: "", checksumOk: false, matches: [],
+             note: "검색 오류: " + ((e && e.message) || e), error: true };
+  }
+}
+
+function _csl_search_(q) {
   q = String(q == null ? "" : q).trim();
   var empty = { tier: "none", digits: "", checksumOk: false, matches: [] };
   if (q.length < 2) {
@@ -434,8 +450,11 @@ function csLogisticsSearch(q) {
     if (d.length >= _CSL_TAIL_MIN_) {
       if (rv && rv.slice(-d.length) === d) numHit = "반품송장 뒤" + d.length + "자리";
       else if (ov && ov.slice(-d.length) === d) numHit = "원송장 뒤" + d.length + "자리";
-      else if (ph && ph.slice(-4) === d.slice(-4)) numHit = "전화 뒤4자리";
-      else if (ph && d.length >= 6 && ph.indexOf(d) !== -1) numHit = "전화 포함";
+      //  ★ 온전한 송장(10자리 이상)은 전화로 보지 않는다 (2026-10-01) ★
+      //    v2 는 9/30 에 고쳤다(sql/66). 여기는 남아 있어 11자리 송장의 뒤 4자리가
+      //    같은 전화 손님이 전부 후보로 떴다. 두 쪽을 같은 규칙으로 맞춘다.
+      else if (ph && d.length < 10 && ph.slice(-4) === d.slice(-4)) numHit = "전화 뒤4자리";
+      else if (ph && d.length >= 6 && d.length < 10 && ph.indexOf(d) !== -1) numHit = "전화 포함";
     }
 
     /* 둘 다 주고 둘 다 맞으면 사실상 확정이다 */

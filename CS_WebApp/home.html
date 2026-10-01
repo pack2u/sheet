@@ -9254,11 +9254,11 @@
       var boxKey = (mode === 'phone' || mode === 'intakereq') ? mode : 'consult';
       var ta = document.getElementById('ret-' + boxKey + '-' + idx);
       var btn = document.getElementById('ret-save-' + boxKey + '-' + idx);
-      //  입고 확인 요청 — 업체에는 안 보이게 [내부] (v2 lib/intake-notes 가 이 앞말을 찾는다)
-      if (mode === 'intakereq') text = '[내부] 입고확인요청: ' + text;
       var text = ta ? String(ta.value || '').trim() : '';
       if (!text) { toast('내용을 입력하세요'); return; }
       if (mode === 'phone') text = '전화 통화. ' + text;
+      //  입고 확인 요청 — 업체에는 안 보이게 [내부] (v2 lib/intake-notes 가 이 앞말을 찾는다)
+      if (mode === 'intakereq') text = '[내부] 입고확인요청: ' + text;
       /*  「업체에 숨김」 체크상자는 2026-09-18 에 뺐다 — 커뮤니티라 가릴 것이 없다.
           가려야 할 줄이 생기면 반품대장 비고에 손으로 「[내부] 」를 붙인다.
           포털은 그 표시를 그대로 걸러 낸다 (prpConfig.PRP_INTERNAL_MARK_). */
@@ -12594,7 +12594,7 @@
     //   카드는 접수·회수중에 머물고 업체 포털도 사진을 못 봤다.
     //   여기서 건을 골라 붙이면 촬영 때와 같은 길(csLogisticsResolve →
     //   _cs_intakeExistingReturn_)로 입고검수 · 사진 이력 · 업체 포털에 들어간다.
-    var LGW = { rows: [], pick: {}, hits: {}, q: {}, timers: {} };
+    var LGW = { rows: [], pick: {}, hits: {}, q: {}, timers: {}, chain: {}, tried: {} };
 
     function lgwKey(x) { return x.intakeTab + ':' + x.intakeRow; }
 
@@ -12668,6 +12668,7 @@
         }
         //  무엇으로 먼저 찾아 둘까 — 라벨 글자에서 읽은 것이 있으면 그것부터 (lgwFirstQuery)
         var q0 = LGW.q[k] != null ? LGW.q[k] : lgwFirstQuery(x);
+        if (LGW.q[k] == null && LGW.chain[k] == null) LGW.chain[k] = lgwChain(x).slice(1);
         h += '<input type="search" class="lgw-q" value="' + esc(q0) + '"' +
           ' placeholder="이름 · 가린 이름(김*동) · 전화 뒤4 · 송장 뒤자리"' +
           ' oninput="lgwInput(' + i + ', this)">' +
@@ -12679,6 +12680,12 @@
           ' onclick="lgwResolve(' + i + ',\'attach\')">이 건에 붙이기 · 입고검수</button>' +
           '</div></div>';
         if (!LGW.hits[k] && q0.length >= 2 && auto.length < 8) auto.push([i, q0]);
+      }
+      el.innerHTML = h;
+      //  한꺼번에 50번 부르지 않는다 — 번호 있는 앞 8건만 미리 찾는다
+      for (var a = 0; a < auto.length; a++) lgwSearch(auto[a][0], auto[a][1]);
+    }
+
     /* ── 라벨 글자 (2026-09-30) ──────────────────────────────
        > "이미지가 업로드 되면 텍스트 인식을 해서 입고확인에 송장 내용이 나오게"
        서버(다리)가 사진에서 읽어 입고대장 N(글자인식)에 둔 것을 보여 준다. */
@@ -12702,21 +12709,24 @@
      *   ② 보낸 분 이름 + 전화 뒤4 — 라벨에 가려져 있어도(김*동) 그대로 찾는다
      *   ③ 바코드로 읽은 송장
      */
-    function lgwFirstQuery(x) {
-      var o = x.ocr || {};
-      if (o.orig && o.orig.length >= 10) return o.orig;
-      //  뒤 4자리가 «보일 때만» 쓴다 — 010-4860-**** 에서 숫자만 모으면 가운데(4860)가 뒤로 온다
-      var tail = (String(o.senderPhone || '').match(/(\d{4})\s*$/) || [])[1] || '';
-      if (o.sender && !/팩투유|팩•유|pack2u/i.test(o.sender)) {
-        return (o.sender + (tail ? ' ' + tail : '')).trim();
-      }
-      return String(x.invoice || o.inv || '').replace(/[^0-9]/g, '');
-    }
+    function lgwFirstQuery(x) { return lgwChain(x)[0] || ''; }
 
+    /*  ★ 찾는 차례 — 한 건이 걸릴 때까지 이어서 (2026-10-01) ★
+        > "이사람 이름이 인식이 됐는데.. 자동 검색기능 작동은 안되나?"
+        원송장 하나만 해 보고 0건·오류면 거기서 멈췄다. 라벨에서 이름(문정순)·전화를 읽었는데도.
+        ① 원송장  ② 보낸 분 이름 + 전화 뒤4(보일 때만)  ③ 이름만  ④ 바코드 송장
+        사람이 칸에 직접 치면 이 차례는 버린다 — 사람이 친 것이 먼저다.  */
+    function lgwChain(x) {
+      var o = x.ocr || {}, out = [];
+      var push = function (v) { v = String(v || '').trim(); if (v.length >= 2 && out.indexOf(v) < 0) out.push(v); };
+      if (o.orig && o.orig.length >= 10) push(o.orig);
+      var tail0 = (String(o.senderPhone || '').match(/(\d{4})\s*$/) || [])[1] || '';
+      if (o.sender && !/팩투유|팩•유|pack2u/i.test(o.sender)) {
+        if (tail0) push(o.sender + ' ' + tail0);
+        push(o.sender);
       }
-      el.innerHTML = h;
-      //  한꺼번에 50번 부르지 않는다 — 번호 있는 앞 8건만 미리 찾는다
-      for (var a = 0; a < auto.length; a++) lgwSearch(auto[a][0], auto[a][1]);
+      push(String(x.invoice || o.inv || '').replace(/[^0-9]/g, ''));
+      return out;
     }
 
     function lgwLb(i, p) {
@@ -12756,6 +12766,8 @@
 
     function lgwInput(i, el) {
       clearTimeout(LGW.timers[i]);
+      var xx = LGW.rows[i];
+      if (xx) { var kk = lgwKey(xx); LGW.chain[kk] = []; LGW.tried[kk] = []; }  // 사람이 친 것이 먼저
       var v = el.value;
       LGW.timers[i] = setTimeout(function () { lgwSearch(i, v); }, 350);
     }
@@ -12770,27 +12782,39 @@
       if (q.length < 2) { delete LGW.hits[k]; lgwPaintHits(i); return; }
       LGW.hits[k] = 'loading';
       lgwPaintHits(i);
+      /*  다음 방법으로 넘어간다 — 차례(lgwChain)가 남았으면 그것, 없으면 「이름 + 뒤4」의 이름만.
+          라벨의 전화(안심번호 등)가 대장 전화와 다른 일이 흔하다 — 고*엽 건이 그랬다.
+          둘 다 준 검색은 한쪽만 맞으면 안 올리므로(엉뚱한 건 방지) 여기서 따로 한다.  */
+      function next(why) {
+        var rest = LGW.chain[k] || [];
+        var nameOnly = (q.match(/^(\S+)\s+\d{4,}$/) || [])[1];
+        var nxt = rest.length ? rest.shift() : (nameOnly && nameOnly !== q ? nameOnly : '');
+        if (!nxt) return false;
+        (LGW.tried[k] = LGW.tried[k] || []).push(q + ' → ' + why);
+        var box = document.querySelector('#lgw-' + i + ' .lgw-q');
+        if (box) box.value = nxt;
+        lgwSearch(i, nxt);
+        return true;
+      }
       google.script.run
         .withSuccessHandler(function (r) {
           if (LGW.q[k] !== q) return; // 그새 다른 걸 쳤다
-          /*  「이름 + 전화 뒤4」로 하나도 안 걸리면 이름만으로 한 번 더 (2026-09-30)
-              라벨의 전화(안심번호 등)가 대장의 전화와 다른 일이 흔하다 — 고*엽 건이 그랬다.
-              둘 다 준 검색은 한쪽만 맞으면 안 올리므로(엉뚱한 건 방지) 여기서 따로 한다.  */
-          var nameOnly = (q.match(/^(\S+)\s+\d{4,}$/) || [])[1];
-          if (nameOnly && (!r || !r.matches || !r.matches.length)) {
-            var box = document.querySelector('#lgw-' + i + ' .lgw-q');
-            if (box) box.value = nameOnly;
-            lgwSearch(i, nameOnly);
-            return;
+          var empty = !r || !r.matches || !r.matches.length;
+          if (empty && next(r && r.error ? '오류' : '0건')) return;
+          if (!r) r = { matches: [], note: '조회 실패 — 서버가 답을 주지 않았습니다' };
+          if (empty && (LGW.tried[k] || []).length) {
+            r.note = (r.note ? r.note + ' · ' : '') + '해 본 것: ' + LGW.tried[k].concat(q).join(' · ');
           }
-          LGW.hits[k] = r || { matches: [], note: '조회 실패' };
+          LGW.hits[k] = r;
           //  하나만 걸리면 골라 둔다 — 붙이는 건 여전히 사람이 누른다
           if (r && r.matches && r.matches.length === 1) LGW.pick[k] = 0;
           lgwPaintHits(i);
         })
-        .withFailureHandler(function () {
+        .withFailureHandler(function (e) {
           if (LGW.q[k] !== q) return;
-          LGW.hits[k] = { matches: [], note: '조회 실패' };
+          if (next('오류')) return;
+          //  「조회 실패」만 띄우면 왜인지 모른다 — 서버가 준 까닭을 그대로 (2026-10-01)
+          LGW.hits[k] = { matches: [], note: '조회 실패 — ' + String((e && e.message) || e || '알 수 없는 오류') };
           lgwPaintHits(i);
         })
         .csLogisticsSearch(q);
