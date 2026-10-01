@@ -144,5 +144,53 @@ ok("사람이 «정말» 고친 이름은 고친 것으로 본다",
   이름그대로인가(원장, "BFTANGB00002", "공용 뚜껑만 (깨짐 교체)") === false);
 ok("빈 이름은 고친 것이 아니다", 이름그대로인가(원장, "BFTANGB00002", "") === false);
 
+/* ── ④ 나가기 직전 검문이 이름도 본다 ───────────────────────── */
+console.log("\n─── ④ ssVerifySplit — 이름도 본다 ───");
+/*  9/28 은 «코드가 전부 맞아서» 통과했다. 창고는 이름을 보고 담는다.
+    메모리 「결과를 견준다, 원인만 막지 말고」가 못 박은 그 검문의 구멍이다.  */
+const 마스터 = { items: {
+  BFTANGB30002: { name: "BF 225파이 감자탕 중 블랙200개---몸통만" },
+  MAJHG0022:    { name: "JH/BF 225파이 감자탕 공용 200개---뚜껑만" },
+}, bom: { BFTANGB00002: [{ code: "BFTANGB30002", qty: 1 }, { code: "MAJHG0022", qty: 1 }] } };
+
+function 검문(이름들, 덧) {
+  const 줄 = ["BFTANGB30002", "MAJHG0022"].map((c, i) => Object.assign({
+    세트분해: true, 순번: "100733", 원본코드: "BFTANGB00002", 고유ID: "2165247640",
+    품목코드: c, 품목명: 이름들[i], route: "로젠택배",
+  }, (덧 && 덧[i]) || {}));
+  const w = [];
+  const 막음 = core.ssVerifySplit(줄, 마스터, w);
+  return { 줄: 줄, w: w, 막음: 막음 };
+}
+
+let v = 검문([마스터.items.MAJHG0022.name, 마스터.items.MAJHG0022.name]);
+ok("★ 몸통 줄에 뚜껑 이름이 있으면 세운다 (9/28 그 꼴) ★", v.막음 === 2, String(v.막음));
+ok("두 줄을 «다» 세운다 — 반쪽을 내보내지 않는다",
+  v.줄.every((u) => u.보류사유 === "구성품어긋남"),
+  v.줄.map((u) => u.route + "/" + u.보류사유).join(" "));
+ok("무엇이 어긋났는지 적어 준다", /다른 구성품.*이름이 적혀/.test(v.줄[0].보류상세 || ""), v.줄[0].보류상세);
+ok("경고도 남는다", v.w.some((x) => x.code === "SPLIT_MISMATCH"));
+
+v = 검문([마스터.items.BFTANGB30002.name, 마스터.items.MAJHG0022.name]);
+ok("제 이름이 제자리면 안 세운다", v.막음 === 0, String(v.막음));
+
+v = 검문([마스터.items.MAJHG0022.name, 마스터.items.MAJHG0022.name], [{ 수정이름: "사람이 적음" }, {}]);
+ok("사람이 일부러 적은 이름(수정이름)은 안 본다", v.막음 === 0, String(v.막음));
+
+v = 검문([마스터.items.MAJHG0022.name, 마스터.items.MAJHG0022.name], [{ 수정코드: true }, {}]);
+ok("코드를 고친 묶음은 건너뛴다", v.막음 === 0, String(v.막음));
+
+v = 검문(["", ""]);
+ok("이름이 비면 견줄 짝이 없어 안 세운다", v.막음 === 0, String(v.막음));
+
+/*  두 구성품의 «본래» 이름이 같은 세트 — 어긋난 것이 아니다  */
+{
+  const 같은이름 = { items: { A1: { name: "같은 뚜껑" }, A2: { name: "같은 뚜껑" } },
+    bom: { S1: [{ code: "A1", qty: 1 }, { code: "A2", qty: 1 }] } };
+  const 줄 = ["A1", "A2"].map((c) => ({ 세트분해: true, 순번: "1", 원본코드: "S1",
+    고유ID: "u1", 품목코드: c, 품목명: "같은 뚜껑", route: "로젠택배" }));
+  ok("본래 이름이 같은 구성품끼리는 안 세운다", core.ssVerifySplit(줄, 같은이름, []) === 0);
+}
+
 console.log("\n" + (fail ? "❌" : "✅") + "  맞음 " + pass + " · 틀림 " + fail + "\n");
 process.exit(fail ? 1 : 0);
