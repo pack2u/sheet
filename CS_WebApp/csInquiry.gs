@@ -138,6 +138,57 @@ function csCompleteInquiry(p) {
   });
 }
 
+/**
+ * 사진 한 장을 v2 보관소에 올리고 «링크»를 돌려준다.  (2026-10-02)
+ *
+ * ★ 파일을 cs_inquiries 에 넣지 않는다 ★
+ *   올리는 길은 이미 있다(csFileStore → v2 /api/files/upload). 표에는
+ *   링크만 담는다 — 자료가 두 군데로 갈라지지 않는다.
+ *
+ * ★ kind 는 "board" 를 쓴다 ★
+ *   v2 보관소는 return · board 둘만 받는다. 문의는 반품 건이 아니라
+ *   CS 내부 자료라 보드 쪽이 맞다. 새 버킷을 만들려면 v2 와 Supabase를
+ *   둘 다 손봐야 하는데, 그만한 까닭이 없다.
+ *
+ * @param {{dataB64:string, mime:string, name:string}} p
+ * @return {{ok:boolean, name:string, url:string, error:string}}
+ */
+function csUploadInquiryPhoto(p) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  p = p || {};
+  var b64 = String(p.dataB64 || "");
+  if (!b64) return { ok: false, error: "사진이 비어 있습니다" };
+  var name = String(p.name || "").trim() || ("사진_" +
+    Utilities.formatDate(new Date(), "Asia/Seoul", "yyMMdd_HHmmss") + ".jpg");
+  var mime = String(p.mime || "image/jpeg");
+
+  var bytes;
+  try { bytes = Utilities.base64Decode(b64); }
+  catch (e) { return { ok: false, error: "사진을 읽지 못했습니다" }; }
+
+  var r = csFileStorePut("board", bytes, mime, name);
+  if (!r || !r.ok) return { ok: false, error: (r && r.error) || "보관소에 못 올렸습니다" };
+  return { ok: true, name: name, url: r.url };
+}
+
+/**
+ * 올린 사진을 문의에 «덧붙인다».
+ *
+ * ★ 통째로 덮지 않는다 ★ 두 사람이 같은 건에 올리면 나중 것이 앞 것을
+ *   지운다. v2 가 지금 것을 읽어 뒤에 붙인다.
+ *
+ * @param {{id:string, photos:Array<{name:string,url:string}>}} p
+ */
+function csAddInquiryPhotos(p) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  p = p || {};
+  if (!p.id) return { ok: false, error: "어느 문의인지 알 수 없습니다" };
+  if (!p.photos || !p.photos.length) return { ok: false, error: "올릴 사진이 없습니다" };
+  return _csq_call_("post", _CSQ_PATH_, {
+    action: "photos", id: p.id, photos: p.photos, staff: p.staff || "CS",
+  });
+}
+
 /** 되돌리기 — 잘못 눌렀을 때 */
 function csReopenInquiry(p) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;

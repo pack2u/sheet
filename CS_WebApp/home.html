@@ -3532,6 +3532,15 @@
               </div>
               <textarea id="csqnBody" placeholder="문의 내용"></textarea>
               <textarea id="csqnFollowup" placeholder="후처리 요청 (선택) — 나중에 해야 할 일"></textarea>
+              <!--  사진 — 반품 쪽과 같은 길이다. 고르면 줄여서 들고 있다가
+                    「올리기」를 누를 때 v2 보관소로 보내고 링크만 담는다. -->
+              <div class="ret-photo-pick">
+                <label class="pk">촬영<input type="file" accept="image/*" capture="environment"
+                  onchange="csqPhotoPick(null, this)"></label>
+                <label class="pk">앨범<input type="file" accept="image/*" multiple
+                  onchange="csqPhotoPick(null, this)"></label>
+              </div>
+              <div id="csqnPhotoPrev"></div>
               <div class="csq-acts">
                 <button type="button" onclick="csqNewToggle()">닫기</button>
                 <button type="button" class="ok" id="csqnSave" onclick="csqNewSave()">올리기</button>
@@ -8185,7 +8194,19 @@
       h += '<div class="csq-fu"><textarea id="csqfu-' + esc(id) + '"' +
         ' placeholder="예: 불량 100개 — 다음 주문 때 모아 1000개 되면 추가 발송">' +
         esc(fu) + '</textarea></div>';
+      /*  사진 더 올리기 — 펼쳤을 때만 보인다. 접힌 카드에 두면 잘못 눌린다. */
+      h += '<div class="csq-label">사진 더 올리기</div>';
+      h += '<div class="ret-photo-pick">' +
+        '<label class="pk">촬영<input type="file" accept="image/*" capture="environment"' +
+          ' onchange="csqPhotoPick(\'' + esc(id) + '\', this)"></label>' +
+        '<label class="pk">앨범<input type="file" accept="image/*" multiple' +
+          ' onchange="csqPhotoPick(\'' + esc(id) + '\', this)"></label>' +
+        '</div>';
+      h += '<div id="csqPhotoPrev-' + esc(id) + '">' +
+        retPhotoStripHtml(csqPickList(id), "csqPhotoDrop(\x27" + id + "\x27,") + '</div>';
+
       h += '<div class="csq-acts">' +
+        '<button type="button" id="csqph-' + esc(id) + '" onclick="csqAddPhotos(\'' + esc(id) + '\')">사진 올리기</button>' +
         '<button type="button" onclick="csqSaveFollowup(\'' + esc(id) + '\')">후처리 저장</button>' +
         (끝남
           ? '<button type="button" onclick="csqReopen(\'' + esc(id) + '\')">다시 열기</button>'
@@ -8201,6 +8222,105 @@
       var id = el.getAttribute('data-csq');
       CSQ_OPEN[id] = !CSQ_OPEN[id];
       renderCsq();
+    }
+
+    /* ══ CS 문의 사진 ══════════════════════════════════════════
+       반품 쪽 길을 그대로 쓴다 —
+         hbShrinkImage  크기 줄이기 (송장 글자가 읽혀야 해서 2400px)
+         hbToAttachment base64 로
+         csUploadInquiryPhoto  v2 보관소(board-files)에 올리고 링크를 받음
+       ★ 표에는 링크만 담는다 ★ 파일을 두 군데 두지 않는다.
+
+       고른 사진은 «올리기를 누를 때» 보낸다. 고르자마자 올리면 쓰다
+       만 문의의 사진이 보관소에 남는다.                              */
+    var CSQ_PICK = [];        // 새 문의에 달 사진 (아직 안 올린 것)
+    var CSQ_PICK_ON = {};     // 이미 있는 문의에 달 사진 — id 별로
+
+    /** id 가 null 이면 새 문의 쪽, 아니면 그 카드 쪽 */
+    function csqPickList(id) {
+      if (!id) return CSQ_PICK;
+      if (!CSQ_PICK_ON[id]) CSQ_PICK_ON[id] = [];
+      return CSQ_PICK_ON[id];
+    }
+
+    function csqPhotoPick(id, input) {
+      var files = Array.prototype.slice.call(input.files);
+      input.value = '';
+      //  반품 쪽과 같은 줄이기·장수 제한을 그대로 쓴다
+      retPhotoStage(csqPickList(id), files, function () { csqPhotoRender(id); });
+    }
+
+    function csqPhotoRender(id) {
+      var el = document.getElementById(id ? ("csqPhotoPrev-" + id) : "csqnPhotoPrev");
+      if (!el) return;
+      el.innerHTML = retPhotoStripHtml(csqPickList(id),
+        "csqPhotoDrop(" + (id ? "\x27" + id + "\x27" : "null") + ",");
+    }
+
+    function csqPhotoDrop(id, i) {
+      csqPickList(id).splice(i, 1);
+      csqPhotoRender(id);
+    }
+
+    /**
+     * 고른 사진을 하나씩 올린다. 다 되면 링크 목록을 준다.
+     *
+     * ★ 한 장이 실패하면 멈춘다 ★ 반쯤 올라간 채로 넘어가면 어느 것이
+     *   빠졌는지 아무도 모른다. 몇 장째에서 멎었는지 말해 준다.
+     */
+    function csqUploadAll(list, onDone, onFail, 진행) {
+      var 결과 = [];
+      function 다음(n) {
+        if (n >= list.length) { onDone(결과); return; }
+        if (진행) 진행(n + 1, list.length);
+        google.script.run
+          .withSuccessHandler(function (r) {
+            if (!r || !r.ok) {
+              onFail('사진 ' + (n + 1) + '장째 — ' + ((r && r.error) || '올리기 실패'));
+              return;
+            }
+            결과.push({ name: r.name, url: r.url });
+            다음(n + 1);
+          })
+          .withFailureHandler(function (e) {
+            onFail('사진 ' + (n + 1) + '장째 — ' + String((e && e.message) || e));
+          })
+          .csUploadInquiryPhoto({
+            dataB64: list[n].dataB64, mime: list[n].mimeType, name: list[n].name,
+          });
+      }
+      다음(0);
+    }
+
+    /** 이미 있는 문의에 사진을 덧붙인다 */
+    function csqAddPhotos(id) {
+      var list = csqPickList(id);
+      if (!list.length) { toast('올릴 사진을 먼저 고르세요'); return; }
+      var btn = document.getElementById('csqph-' + id);
+      if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
+      csqUploadAll(list, function (사진들) {
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (btn) { btn.disabled = false; btn.textContent = '사진 올리기'; }
+            if (!res || !res.ok) { toast((res && res.error) || '붙이기 실패', 3200); return; }
+            CSQ_PICK_ON[id] = [];
+            for (var i = 0; i < CSQ_ROWS.length; i++) {
+              if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i] = res.row;
+            }
+            toast(사진들.length + '장 올렸습니다');
+            renderCsq();
+          })
+          .withFailureHandler(function (e) {
+            if (btn) { btn.disabled = false; btn.textContent = '사진 올리기'; }
+            toast(String((e && e.message) || e || '붙이기 실패'), 3200);
+          })
+          .csAddInquiryPhotos({ id: id, photos: 사진들, staff: csqStaff() });
+      }, function (말) {
+        if (btn) { btn.disabled = false; btn.textContent = '사진 올리기'; }
+        toast(말, 3600);
+      }, function (n, 전체) {
+        if (btn) btn.textContent = '올리는 중… (' + n + '/' + 전체 + ')';
+      });
     }
 
     function csqStaff() {
@@ -8228,6 +8348,21 @@
       }
       var btn = document.getElementById('csqnSave');
       if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
+
+      /*  사진을 «먼저» 올린다. 문의를 먼저 만들면 사진이 실패했을 때
+          사진 없는 문의가 남아, 다시 올리려면 그 건을 찾아 들어가야 한다. */
+      csqUploadAll(CSQ_PICK, function (사진들) {
+        p.photos = 사진들;
+        csqNewPost(p, btn);
+      }, function (말) {
+        if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
+        toast(말, 3600);
+      }, function (n, 전체) {
+        if (btn) btn.textContent = '사진 올리는 중… (' + n + '/' + 전체 + ')';
+      });
+    }
+
+    function csqNewPost(p, btn) {
       google.script.run
         .withSuccessHandler(function (res) {
           if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
@@ -8235,6 +8370,8 @@
           ['csqnVendor', 'csqnItem', 'csqnBody', 'csqnFollowup'].forEach(function (id) {
             var e = document.getElementById(id); if (e) e.value = '';
           });
+          CSQ_PICK = [];
+          csqPhotoRender(null);
           document.getElementById('csqNew').hidden = true;
           if (res.row) CSQ_ROWS.unshift(res.row);
           toast('문의를 올렸습니다');
