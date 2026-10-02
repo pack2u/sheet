@@ -2219,11 +2219,25 @@ function submitReturnLedger(data) {
         다시 보내는데, 그것을 적을 칸이 협의된 배열에 없다.
         귀책·반품비·구분이 걸어온 길과 같이 비고에 남긴다.
         시트에 「재출고상품」 열을 만들면 코드를 안 고쳐도 그쪽으로 간다.  */
-    var reshipIn = String(data.reship || "").replace(/s+/g, " ").trim();
+    //  ★ /\s+/ 다 ★ 2026-10-02 에 /s+/ 로 들어가 영문 s 를 공백으로 바꿨다
+    var reshipIn = String(data.reship || "").replace(/\s+/g, " ").trim();
     var reshipToNotice = "";
     if (reshipIn) {
       if (col.reship >= 0) row[col.reship] = reshipIn;
       else reshipToNotice = "재출고: " + reshipIn;
+    }
+
+    /*  재출고 배송비 — 우리가 다시 보내며 쓴 돈.  (2026-10-02)
+        반품비(고객이 돌려보낼 때 든 택배비)와 «다른 돈»이다. 한 칸에
+        뭉뚱그리면 「이번 달 우리가 쓴 배송비」를 셀 수 없다.
+        칸이 없으면 비고에 남긴다 — 조용히 버리지 않는다.  */
+    var reshipFeeIn = String(
+      data.reshipFee === undefined || data.reshipFee === null ? "" : data.reshipFee
+    ).trim();
+    var reshipFeeToNotice = "";
+    if (reshipFeeIn) {
+      if (col.reshipFee >= 0) row[col.reshipFee] = reshipFeeIn;
+      else reshipFeeToNotice = "재출고배송비: " + reshipFeeIn;
     }
 
     var typeIn = String(data.type || "").trim();
@@ -2292,6 +2306,7 @@ function submitReturnLedger(data) {
       if (data.memo) noticeLines.push(_cs_ledgerStamp_(data.staff) + " " + String(data.memo || "").trim());
       if (typeToNotice) noticeLines.push(typeToNotice);
       if (reshipToNotice) noticeLines.push(reshipToNotice);
+      if (reshipFeeToNotice) noticeLines.push(reshipFeeToNotice);
       if (faultToNotice) noticeLines.push(faultToNotice);
       if (feeToNotice) noticeLines.push(feeToNotice);
       if (retInvToNotice) noticeLines.push(retInvToNotice);
@@ -2497,6 +2512,20 @@ function _cs_reasonFromNotice_(notice) {
  *
  * @return {string} 재출고 상품, 없으면 ""
  */
+/**
+ * 비고에 남긴 「재출고배송비: 3000」을 되읽는다.  (2026-10-02)
+ *
+ * 금액이라 낱말 하나로 끊는다 — 품목명과 달리 띄어쓰기가 없다.
+ * ★ 「재출고: …」보다 «먼저» 찾아야 한다 ★ 쓰는 쪽이 두 줄을 나란히
+ *   적으므로, 느슨하게 찾으면 품목명 줄이 금액으로 걸린다.
+ */
+function _cs_reshipFeeFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/재출고배송비\s*[:：]\s*([^\s·,\n]{1,20})/);
+  return m ? String(m[1]).trim() : "";
+}
+
 function _cs_reshipFromNotice_(notice) {
   var s = String(notice == null ? "" : notice);
   if (!s) return "";
@@ -2655,8 +2684,13 @@ function _cs_mapReturnLedgerCols_(header) {
     /* 입고확인요청 — CS 가 물류에게 «박스 열 때 볼 것»을 적는 칸 (2026-09-30).
        대장 맨 뒤에 붙인다(_cs_ensureIntakeReqCol_). 업체 포털은 이 열을 안 읽는다. */
     intakeReq: -1,
-    //  재출고 상품 — 아직 대장에 없는 열이다 (2026-10-02). 생기면 여기로 잡힌다
+    /*  재출고 (2026-10-02) — 돌려받는 것과 «다시 보내는 것»을 갈라 적는다.
+        반품에서 돈도 두 번 움직인다 —
+          fee        고객이 돌려보낼 때 든 택배비 (반품비)
+          reshipFee  우리가 다시 보낼 때 든 택배비 (재출고배송비)
+        한 칸에 뭉뚱그리면 「이번 달 우리가 쓴 배송비」를 셀 수 없다.  */
     reship: -1,
+    reshipFee: -1,
 
     /*  ══════════════════════════════════════════════════════
         ★ 2026-10 대장 설계 ★  (2026-10-01)
@@ -2688,6 +2722,10 @@ function _cs_mapReturnLedgerCols_(header) {
     if (!h) continue;
     //  맨 앞에서 먼저 잡는다 — 「요청」·「확인」이 다른 규칙(고객요청 → 비고 등)에 걸리지 않게
     if (col.intakeReq < 0 && /^입고확인요청/.test(h)) col.intakeReq = i;
+    /*  ★ 재출고배송비를 «반품비보다 먼저» 본다 ★
+        아래 col.fee 규칙(/반품비|…배송비…/)이 「재출고배송비」를 먼저
+        집어 가면 우리가 쓴 돈이 고객 반품비로 적힌다. 조용히 틀린다.  */
+    else if (col.reshipFee < 0 && /^재출고배송비$|^재출고운임$|^재발송배송비$/.test(h)) col.reshipFee = i;
     else if (col.reship < 0 && /^재출고상품$|^재출고품목$|^재발송상품$/.test(h)) col.reship = i;
     else if (col.date < 0 && /반품접수날짜|접수날짜|접수일자/.test(h)) col.date = i;
     else if (col.staff < 0 && h === "접수자") col.staff = i;
@@ -3879,6 +3917,9 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
       reship: col.reship >= 0
         ? String(row[col.reship] || "").trim()
         : _cs_reshipFromNotice_(notice),
+      reshipFee: col.reshipFee >= 0
+        ? _cs_formatReturnFee_(row[col.reshipFee])
+        : _cs_reshipFeeFromNotice_(notice),
       /*  귀책 — 찾는 차례가 셋이다 (2026-10-01)
             ① 「귀책」 전용 열이 있으면 그것        (누가 그렇게 만들면)
             ② 「발생원인」 칸의 «앞»부분             (협의된 배열)

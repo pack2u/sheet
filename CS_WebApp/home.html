@@ -3204,6 +3204,62 @@
     .lgw-acts button:disabled { opacity: .4; cursor: default; }
     .lgw-ocr { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-secondary); font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
     .lgw-ocr.err { color: var(--text-muted); }
+    /* ══ CS 문의 (2026-10-02) ══════════════════════════════════
+       접힌 카드가 기본이다. 한 줄에 「거래처 · 상품」, 그 아래 문의 첫 줄.
+       눌러야 펼쳐진다 — 열 건이 다 펼쳐져 있으면 훑을 수가 없다.      */
+    .csq-top { display: flex; gap: 6px; align-items: center; margin: 8px 0 6px; }
+    .csq-top .csq-search { flex: 1; min-width: 0; margin-bottom: 0; }
+    .csq-list { display: flex; flex-direction: column; gap: 6px; }
+    .csq-card {
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg-secondary); padding: 9px 11px; cursor: pointer;
+    }
+    .csq-card:hover { background: var(--bg-card-hover); }
+    .csq-head { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+    .csq-vendor { font-weight: 700; font-size: 13px; color: var(--text-primary); }
+    .csq-item { font-size: 12px; color: var(--text-secondary); min-width: 0; }
+    .csq-when { margin-left: auto; font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
+    /*  접힌 줄 — 한 줄만. 넘치면 … 로 자른다. 세 줄씩 보이면 못 훑는다. */
+    .csq-one {
+      margin-top: 3px; font-size: 12px; color: var(--text-secondary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /*  후처리요청이 있으면 접힌 채로도 보인다 — 나중에 할 일이라 놓치면 안 된다 */
+    .csq-fu-tag {
+      display: inline-block; margin-top: 4px; padding: 1px 7px; border-radius: 8px;
+      font-size: 10.5px; font-weight: 700;
+      background: rgba(253, 184, 19, 0.14); color: var(--accent, #FDB813);
+    }
+    .csq-body { display: none; margin-top: 8px; }
+    .csq-card.open .csq-body { display: block; }
+    .csq-card.open { background: var(--bg-card-hover); }
+    .csq-label { font-size: 10.5px; color: var(--text-muted); margin: 7px 0 3px; }
+    .csq-text {
+      font-size: 12.5px; line-height: 1.55; color: var(--text-primary);
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .csq-fu textarea {
+      width: 100%; min-height: 54px; resize: vertical; padding: 8px 10px;
+      border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-primary); color: var(--text-primary);
+      font-size: 12.5px; font-family: inherit;
+    }
+    .csq-acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .csq-acts button {
+      padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-primary); color: var(--text-secondary);
+      font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer;
+    }
+    .csq-acts .ok { background: var(--accent-green); color: var(--on-accent); border-color: transparent; }
+    .csq-photos { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+    .csq-photos a {
+      display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: var(--bg-primary); color: var(--text-secondary);
+      font-size: 11px; text-decoration: none;
+    }
+    .csq-empty { font-size: 12px; color: var(--text-muted); padding: 10px 2px; }
+
     .ret-reship {
       margin-top: 3px; font-size: 11px; color: var(--accent-green);
       line-height: 1.4;
@@ -3419,6 +3475,52 @@
           </div>
           <div class="os-status" id="status">불러오는 중…</div>
           <div id="list"></div>
+          <!-- ══ CS 문의 (2026-10-02) ═══════════════════════════════
+               > "CS웹앱 입금확인위에 CS문의라는 내용을 만들어줘.
+               >  따로 시트는 만들지 말고 … 카드식으로 … 검색기능도 넣고 …
+               >  접힌 카드 방식으로 클릭하면 펼쳐서 … 처리완료를 누르면
+               >  삭제(화면에서만 데이타는 저장)"
+
+               ★ 새 시트를 안 만든다 ★ 업체 문의는 이미 CS 커뮤니티 보드
+                 (반품관리대장 「CS_커뮤니티보드」 탭)로 들어온다 —
+                 포털 prpBoard.prpPostInquiryToBoard_ 가 넣는다.
+                 여기서는 그 카드를 «문의 보기»로 다시 보여 줄 뿐이다.
+
+               ★ 처리완료는 지우는 게 아니다 ★ 상태만 「완료」로 바꾼다.
+                 줄은 그대로 남고 화면에서만 빠진다. 후처리요청은 완료
+                 뒤에도 살아 있다 — 문의는 끝나도 그 일은 다음 달에 한다. -->
+          <div id="csqBox" class="os-dash">
+            <div class="os-dash-head">
+              <span>CS 문의 <b id="csqCount">0</b></span>
+              <span class="os-dash-sub" id="csqSub"></span>
+            </div>
+            <div class="csq-top">
+              <div class="os-search csq-search">
+                <input id="csqq" type="search" autocomplete="off"
+                       placeholder="거래처·상품·문의 내용·후처리요청"
+                       oninput="renderCsq()">
+              </div>
+              <button type="button" class="os-chip ghost" onclick="loadCsq(true)" title="새로 읽기">↻</button>
+            </div>
+            <div id="csqList" class="csq-list"></div>
+          </div>
+          <!-- 오늘 입금 (2026-09-29) — "위치를 주문 송장 검색 아래로 바꿔줘"
+               검색 결과(#list) «아래»에 둔다. 위에 두면 검색할 때마다 결과가 입금 10줄 밑으로 밀린다. -->
+          <div id="depositBox" class="os-dash">
+            <div class="os-dash-head">
+              <span class="os-dash-title">💰 입금 (오늘 · 어제)<span id="dashDepositSum" class="dash-dep-sum"></span></span>
+              <!-- 주문서 매칭 (2026-09-29) — 주문수집 전에 받는 「주문서조회」 엑셀을 여기에 한 번 올린다 -->
+              <!-- 입금 소리 (2026-09-30) — 구글챗 PC 는 방마다 소리를 못 나눠 협력업체 알림과 헷갈렸다. 이 PC 에서만 켜고 끈다 -->
+              <button type="button" class="os-dash-refresh" id="depSoundBtn" onclick="depToggleSound()" title="새 입금이 오면 입금 전용 소리">🔔</button>
+              <button type="button" class="os-dash-refresh" id="depPostAllBtn" hidden onclick="depPostAll()"
+                      title="오늘 ✅ 일치·🔴 부족 입금 중 아직 안 넘긴 것을 이카운트 일반전표로">📒 일치 전체 반영</button>
+              <button type="button" class="os-dash-refresh" onclick="document.getElementById('depOrdersFile').click()"
+                      title="이카운트 영업관리 → 주문서조회 → 엑셀 내려받기 한 파일">📥 주문서 올리기</button>
+              <input type="file" id="depOrdersFile" accept=".xlsx,.xls" hidden onchange="depUploadOrders(this)">
+            </div>
+            <div id="depOrdersInfo" class="dash-dep-orders"></div>
+            <div id="dashDeposit" class="dash-dep">불러오는 중…</div>
+          </div>
           <div id="stockoutBox" class="os-dash"></div>
           <div id="orderDash" class="os-dash loading"></div>
         </div>
@@ -3819,10 +3921,17 @@
               우리가 «다시 보내는 것» 몸통 1 → 이 칸
             한 칸에 뭉뚱그리면 「이번 달 뚜껑 반품 몇 건」을 셀 수 없다.
             협의된 배열에는 빈 칸이 없어 비고에 「재출고: …」로 남긴다.  -->
-      <div class="ledger-field">
-        <label>재출고 상품 (선택 · 다시 보내는 것)</label>
-        <input id="retNewReship" type="text"
-               placeholder="예: 220파이 감자탕 중 백색 몸통 1 — 없으면 비워 두세요">
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>재출고 상품 (선택 · 다시 보내는 것)</label>
+          <input id="retNewReship" type="text"
+                 placeholder="예: 220파이 감자탕 중 백색 몸통 1">
+        </div>
+        <div class="ledger-field">
+          <label>재출고 배송비 (선택)</label>
+          <input id="retNewReshipFee" type="text" inputmode="numeric"
+                 placeholder="우리가 보내며 쓴 돈">
+        </div>
       </div>
       <div class="ledger-row2">
         <div class="ledger-field">
@@ -4000,10 +4109,17 @@
               우리가 «다시 보내는 것» 몸통 1 → 이 칸
             한 칸에 뭉뚱그리면 「이번 달 뚜껑 반품 몇 건」을 셀 수 없다.
             협의된 배열에는 빈 칸이 없어 비고에 「재출고: …」로 남긴다.  -->
-      <div class="ledger-field">
-        <label>재출고 상품 (선택 · 다시 보내는 것)</label>
-        <input id="ledgerReship" type="text"
-               placeholder="예: 220파이 감자탕 중 백색 몸통 1 — 없으면 비워 두세요">
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>재출고 상품 (선택 · 다시 보내는 것)</label>
+          <input id="ledgerReship" type="text"
+                 placeholder="예: 220파이 감자탕 중 백색 몸통 1">
+        </div>
+        <div class="ledger-field">
+          <label>재출고 배송비 (선택)</label>
+          <input id="ledgerReshipFee" type="text" inputmode="numeric"
+                 placeholder="우리가 보내며 쓴 돈">
+        </div>
       </div>
       <div class="ledger-field">
         <label>수거입력처 (대리공급은 택배사 자동)</label>
@@ -4216,6 +4332,9 @@
       loadReturnActive(false);
       renderOrderDashboard();
       loadStockout();   /* 팩투유 품절상품 — 화면 열 때 한 번 (2026-09-11) */
+      loadCsq();        /* CS 문의 — 열 때 한 번, 10분 지나면 다시 (2026-10-02) */
+      renderDeposits(); /* 오늘 입금 — 열 때 한 번, 그 뒤 1분마다 (2026-09-29) */
+      depPaintSoundBtn(); /* 입금 소리 켜짐/꺼짐 (2026-09-30) */
       startCsPulse();
       setTimeout(function() { initWsSplitter(); csInstallScrollbars(); }, 80);
       setTimeout(function() { initWsSplitter(); csInstallScrollbars(); }, 400);
@@ -6400,7 +6519,7 @@
         fields: ['retNewStaff', 'retNewName', 'retNewPhone', 'retNewPhone2', 'retNewPhone2Name', 'retNewInvoice', 'retNewQty',
                  'retNewItem', 'retNewVendor', 'retNewPickup', 'retNewRetInvoice',
                  'retNewFee', 'retNewType', 'retNewFault', 'retNewReason',
-                 'retNewReship',
+                 'retNewReship', 'retNewReshipFee',
                  'retNewStatus', 'retNewAccount', 'retNewMemo'],
         /*  사유 목록은 귀책에 딸려 있다 — 되살릴 때 «순서»가 있다.  (2026-09-30)
             위 칸 되살리기는 값만 넣는다(onchange 가 안 돈다). 그래서 사유
@@ -7900,6 +8019,215 @@
         html += '</div>';
       }
       el.innerHTML = html;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+     *  CS 문의  (2026-10-02)
+     *
+     *  > "CS웹앱 입금확인위에 CS문의라는 내용을 만들어줘. 따로 시트는
+     *  >  만들지 말고 거래처, 상품, 문의 내용, 후처리요청, 사진등이
+     *  >  나오게 카드식으로 … 검색기능도 넣고 … 접힌 카드 방식으로
+     *  >  클릭하면 펼쳐서 자세히 보고 처리완료를 누르면 삭제
+     *  >  (화면에서만 데이타는 저장)"
+     *
+     *  ★ 새 시트를 안 만든다 ★
+     *    업체 문의는 이미 CS 커뮤니티 보드로 들어온다 —
+     *    포털(prpBoard.prpPostInquiryToBoard_)이 반품 건마다 카드를 만든다.
+     *    여기서는 그 카드를 «문의 보기»로 다시 보여 줄 뿐이다.
+     *    그래서 보드에서 답하면 여기도 바뀌고, 여기서 닫으면 보드도 닫힌다.
+     *
+     *  ★ 거래처는 어디서 오나 ★
+     *    카드 작성자가 「업체:당장드림」 꼴이다(PRP_STAFF_PREFIX).
+     *    그 접두를 떼면 거래처다. CS 가 직접 만든 카드는 거래처가 없다 —
+     *    그때는 작성자 이름을 그대로 쓴다.
+     */
+    var CSQ_ROWS = [];
+    var CSQ_OPEN = {};        // 펼쳐 둔 카드 — 다시 그려도 그대로 둔다
+    var CSQ_AT = 0;
+    var csqBusy = false;
+
+    /** 「업체:당장드림」 → 「당장드림」. 아니면 작성자 이름 그대로 */
+    function csqVendor(c) {
+      var a = String((c && c.author) || '').trim();
+      var m = a.match(/^업체\s*[:：]\s*(.+)$/);
+      return m ? m[1].trim() : a;
+    }
+
+    /*  문의 내용 — 전달내역의 「문의.」 줄들을 모은다. 없으면 본문.
+        보드 카드는 같은 건의 두 번째 문의를 전달내역에 쌓는다. */
+    function csqText(c) {
+      var ns = (c && c.notes) || [];
+      var 모음 = [];
+      for (var i = 0; i < ns.length; i++) {
+        var t = String((ns[i] && (ns[i].text || ns[i].body || ns[i])) || '');
+        if (!t) continue;
+        if (t.indexOf('[내부]') >= 0) continue;   // 후처리요청 기록 같은 내부 줄은 뺀다
+        /*  ★ 도장을 걷어낸다 ★  (2026-10-02)
+            전달내역은 「[261002 09:10 업체:당장드림] 문의. 내용」 꼴이다.
+            접힌 줄은 한 줄뿐인데 도장이 스물몇 자를 먹어 정작 내용이 밀린다.
+            누가 언제는 카드 머리(거래처·시각)에 이미 있다.
+            「문의.」 라는 말머리도 뗀다 — 여기 있는 것은 다 문의다.  */
+        t = t.replace(/^\s*\[[^\]]{1,40}\]\s*/, '').replace(/^문의[.\s]*/, '');
+        t = t.trim();
+        if (t) 모음.push(t);
+      }
+      if (모음.length) return 모음.join('\n');
+      return String((c && c.body) || '');
+    }
+
+    function csqMatch(c, q) {
+      if (!q) return true;
+      var 뭉치 = [csqVendor(c), c.item, c.title, csqText(c), c.followup,
+        c.custName, c.invoice].join(' ').toLowerCase();
+      return 뭉치.indexOf(q) >= 0;
+    }
+
+    function loadCsq(force) {
+      if (csqBusy) return;
+      //  10분에 한 번이면 넉넉하다. ↻ 를 누르면 바로 다시 읽는다
+      if (!force && CSQ_AT && Date.now() - CSQ_AT < 600000) { renderCsq(); return; }
+      csqBusy = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          csqBusy = false;
+          CSQ_AT = Date.now();
+          CSQ_ROWS = (res && res.ok && res.rows) ? res.rows : [];
+          renderCsq();
+        })
+        .withFailureHandler(function () {
+          csqBusy = false;
+          //  조용히 비워 두지 않는다 — 안 보이는 것과 없는 것은 다르다
+          var el = document.getElementById('csqList');
+          if (el) el.innerHTML = '<div class="csq-empty">문의를 못 읽었습니다. ↻ 를 눌러 보세요.</div>';
+        })
+        .csListHandoffCards({ board: 'cs' });
+    }
+
+    function renderCsq() {
+      var list = document.getElementById('csqList');
+      if (!list) return;
+      var q = String((document.getElementById('csqq') || {}).value || '').trim().toLowerCase();
+      var 볼것 = CSQ_ROWS.filter(function (c) { return csqMatch(c, q); });
+
+      var cnt = document.getElementById('csqCount');
+      if (cnt) cnt.textContent = String(볼것.length);
+      var sub = document.getElementById('csqSub');
+      if (sub) {
+        var fu = CSQ_ROWS.filter(function (c) { return String(c.followup || '').trim(); }).length;
+        sub.textContent = fu ? ('후처리 ' + fu + '건') : '';
+      }
+
+      if (!볼것.length) {
+        list.innerHTML = '<div class="csq-empty">' +
+          (q ? '찾는 문의가 없습니다.' : '처리할 문의가 없습니다.') + '</div>';
+        return;
+      }
+
+      var h = '';
+      for (var i = 0; i < 볼것.length; i++) h += csqCardHtml(볼것[i]);
+      list.innerHTML = h;
+    }
+
+    function csqCardHtml(c) {
+      var id = String(c.id || '');
+      var 열림 = !!CSQ_OPEN[id];
+      var 글 = csqText(c);
+      var 한줄 = 글.replace(/\s+/g, ' ').trim();
+      var fu = String(c.followup || '').trim();
+
+      var h = '<div class="csq-card' + (열림 ? ' open' : '') + '" data-csq="' + esc(id) + '"' +
+        ' onclick="csqToggle(this)">';
+      h += '<div class="csq-head">' +
+        '<span class="csq-vendor">' + esc(csqVendor(c) || '(거래처 없음)') + '</span>' +
+        (c.item ? '<span class="csq-item">' + esc(c.item) + '</span>' : '') +
+        '<span class="csq-when">' + esc(String(c.at || '').slice(5, 16)) + '</span>' +
+        '</div>';
+      if (!열림 && 한줄) h += '<div class="csq-one">' + esc(한줄) + '</div>';
+      if (!열림 && fu) h += '<div class="csq-fu-tag">후처리 ' + esc(fu.replace(/\s+/g, ' ').slice(0, 28)) + '</div>';
+
+      /*  펼친 속 — 눌러서 보는 자리라 자세히 적는다.
+          ★ 안쪽을 누를 때 카드가 접히면 안 된다 ★ 글자를 끌어 복사하거나
+          후처리요청을 적다가 접히면 적던 것이 날아간다.  */
+      h += '<div class="csq-body" onclick="event.stopPropagation()">';
+      if (c.custName || c.invoice) {
+        h += '<div class="csq-label">주문</div><div class="csq-text">' +
+          esc([c.custName, c.invoice].filter(Boolean).join(' · ')) + '</div>';
+      }
+      h += '<div class="csq-label">문의 내용</div>' +
+        '<div class="csq-text">' + esc(글 || '(내용 없음)') + '</div>';
+
+      if (c.att && c.att.length) {
+        h += '<div class="csq-label">사진 ' + c.att.length + '장</div><div class="csq-photos">';
+        for (var a = 0; a < c.att.length; a++) {
+          var f = c.att[a];
+          h += '<a href="' + esc(f.viewUrl || f.url || '#') + '" target="_blank" rel="noopener">📎 ' +
+            esc(f.name || ('사진 ' + (a + 1))) + '</a>';
+        }
+        h += '</div>';
+      }
+
+      /*  후처리요청 — «나중에 해야 할 일». 문의가 끝나도 남는다.
+          > "1000개중 100개가 불량… 다음 주문시에 모아서 1000개가 되면 추가 발송" */
+      h += '<div class="csq-label">후처리 요청 — 나중에 해야 할 일 (완료해도 남습니다)</div>';
+      h += '<div class="csq-fu"><textarea id="csqfu-' + esc(id) + '"' +
+        ' placeholder="예: 불량 100개 — 다음 주문 때 모아 1000개 되면 추가 발송">' +
+        esc(fu) + '</textarea></div>';
+
+      h += '<div class="csq-acts">' +
+        '<button type="button" onclick="csqSaveFollowup(\'' + esc(id) + '\')">후처리 저장</button>' +
+        '<button type="button" class="ok" onclick="csqDone(\'' + esc(id) + '\')">처리완료</button>' +
+        '</div>';
+      h += '</div></div>';
+      return h;
+    }
+
+    function csqToggle(el) {
+      var id = el.getAttribute('data-csq');
+      CSQ_OPEN[id] = !CSQ_OPEN[id];
+      renderCsq();
+    }
+
+    function csqSaveFollowup(id) {
+      var ta = document.getElementById('csqfu-' + id);
+      if (!ta) return;
+      var staff = currentStaff || (document.getElementById('ledgerStaff') || {}).value || '';
+      if (!staff) { toast('담당자를 먼저 고르세요'); return; }
+      var text = ta.value;
+      ta.disabled = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          ta.disabled = false;
+          if (!res || !res.ok) { toast((res && res.error) || '저장 실패', 3200); return; }
+          //  들고 있는 자료도 같이 고친다 — 다시 읽지 않아도 화면이 맞는다
+          for (var i = 0; i < CSQ_ROWS.length; i++) {
+            if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i].followup = text;
+          }
+          toast(String(text).trim() ? '후처리 요청을 저장했습니다' : '후처리 요청을 지웠습니다');
+          renderCsq();
+        })
+        .withFailureHandler(function (e) {
+          ta.disabled = false;
+          toast(String((e && e.message) || e || '저장 실패'), 3200);
+        })
+        .csSetHandoffFollowup({ id: id, board: 'cs', text: text, staff: staff });
+    }
+
+    /*  처리완료 — ★ 지우는 게 아니다 ★
+        보드 카드의 상태만 「완료」로 바꾼다. 줄은 그대로 남고 화면에서만
+        빠진다. 후처리요청도 그대로 살아 있다.  */
+    function csqDone(id) {
+      var staff = currentStaff || (document.getElementById('ledgerStaff') || {}).value || '';
+      if (!staff) { toast('담당자를 먼저 고르세요'); return; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) { toast((res && res.error) || '처리 실패', 3200); return; }
+          CSQ_ROWS = CSQ_ROWS.filter(function (c) { return String(c.id) !== String(id); });
+          delete CSQ_OPEN[id];
+          toast('처리완료 — 목록에서 뺐습니다 (자료는 보드에 남습니다)', 2600);
+          renderCsq();
+        })
+        .withFailureHandler(function (e) { toast(String((e && e.message) || e || '처리 실패'), 3200); })
+        .csCompleteHandoffCard({ id: id, board: 'cs', staff: staff });
     }
 
     function loadStockout() {
@@ -9530,8 +9858,9 @@
                 위 품목은 «돌려받는 것»이다. 세트가 뚜껑만 나가면 우리가 몸통을
                 다시 보내는데, 그게 안 보이면 「이 건 뭘 보내기로 했더라」를
                 비고에서 찾아 읽어야 한다. 품목 바로 밑이 그 자리다. */
-            (c.reship
-              ? '<div class="ret-reship">↩ 재출고 ' + esc(c.reship) + '</div>'
+            (c.reship || c.reshipFee
+              ? '<div class="ret-reship">↩ 재출고 ' + esc(c.reship || '-') +
+                  (c.reshipFee ? ' <em>· 배송비 ' + esc(c.reshipFee) + '</em>' : '') + '</div>'
               : '') +
             /* 📦 입고확인요청 열 (2026-09-30) — 지금 유효한 요청. 누르면 고친다 */
             (c.intakeReq
@@ -10592,6 +10921,7 @@
         retCaseRowHtml('접수일', c.date) +
         retCaseRowHtml('품목', (c.item || '') + (c.qty ? ' × ' + c.qty : '')) +
         retCaseRowHtml('재출고', c.reship) +
+        retCaseRowHtml('재출고 배송비', c.reshipFee) +
         retCaseRowHtml('원송장', c.invoice) +
         retCaseRowHtml('반품송장', c.returnInvoice) +
         retCaseRowHtml('전화', (c.phone || '') + (c.phoneTag ? ' (' + c.phoneTag + ')' : '') +
@@ -12244,6 +12574,7 @@
           vendor: document.getElementById('retNewVendor').value,
           item: document.getElementById('retNewItem').value,
           reship: document.getElementById('retNewReship').value,
+          reshipFee: document.getElementById('retNewReshipFee').value,
           qty: document.getElementById('retNewQty').value,
           invoice: document.getElementById('retNewInvoice').value,
           returnInvoice: document.getElementById('retNewRetInvoice').value,
@@ -12630,7 +12961,8 @@
         phone2: g('ledgerPhone2'),
         phone2Name: g('ledgerPhone2Name'),
         //  다시 보내는 것 — 품목마다 다를 수 없다. 같은 상자에서 온 것이다
-        reship: g('ledgerReship')
+        reship: g('ledgerReship'),
+        reshipFee: g('ledgerReshipFee')
       };
     }
 
