@@ -3216,39 +3216,56 @@
     }
     .csq-card:hover { background: var(--bg-card-hover); }
     .csq-head { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
-    .csq-vendor { font-weight: 700; font-size: 13px; color: var(--text-primary); }
-    .csq-item { font-size: 12px; color: var(--text-secondary); min-width: 0; }
-    .csq-when { margin-left: auto; font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
+    .csq-vendor {
+      font-weight: 700; color: var(--text-primary);
+      font-size: calc(13px * var(--hb-text-scale));   /* .hb-title 과 같다 */
+    }
+    /*  펼치면 한 단 키운다 — 보드 카드가 그렇다(.hb-card.open .hb-title) */
+    .csq-card.open .csq-vendor { font-size: calc(15px * var(--hb-text-scale)); }
+    .csq-item {
+      font-size: calc(11px * var(--hb-text-scale));   /* .hb-facts */
+      color: var(--text-secondary); min-width: 0;
+    }
+    .csq-when {
+      margin-left: auto; white-space: nowrap; color: var(--text-muted);
+      font-size: calc(10px * var(--hb-text-scale));   /* .hb-tl-at */
+    }
     /*  접힌 줄 — 한 줄만. 넘치면 … 로 자른다. 세 줄씩 보이면 못 훑는다. */
     .csq-one {
-      margin-top: 3px; font-size: 12px; color: var(--text-secondary);
+      margin-top: 3px; color: var(--text-secondary);
+      font-size: calc(12px * var(--hb-text-scale));
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     /*  후처리요청이 있으면 접힌 채로도 보인다 — 나중에 할 일이라 놓치면 안 된다 */
     .csq-fu-tag {
       display: inline-block; margin-top: 4px; padding: 1px 7px; border-radius: 8px;
-      font-size: 10.5px; font-weight: 700;
+      font-size: calc(10px * var(--hb-text-scale)); font-weight: 700;
       background: rgba(253, 184, 19, 0.14); color: var(--accent, #FDB813);
     }
     .csq-body { display: none; margin-top: 8px; }
     .csq-card.open .csq-body { display: block; }
     .csq-card.open { background: var(--bg-card-hover); }
-    .csq-label { font-size: 10.5px; color: var(--text-muted); margin: 7px 0 3px; }
+    .csq-label {
+      font-size: calc(10px * var(--hb-text-scale));
+      color: var(--text-muted); margin: 7px 0 3px;
+    }
     .csq-text {
-      font-size: 12.5px; line-height: 1.55; color: var(--text-primary);
+      font-size: calc(12px * var(--hb-text-scale)); line-height: 1.55;
+      color: var(--text-primary);
       white-space: pre-wrap; word-break: break-word;
     }
     .csq-fu textarea {
       width: 100%; min-height: 54px; resize: vertical; padding: 8px 10px;
       border-radius: 8px; border: 1px solid var(--border);
       background: var(--bg-primary); color: var(--text-primary);
-      font-size: 12.5px; font-family: inherit;
+      font-size: calc(12px * var(--hb-text-scale)); font-family: inherit;
     }
     .csq-acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
     .csq-acts button {
       padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
       background: var(--bg-primary); color: var(--text-secondary);
-      font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer;
+      font-size: calc(12px * var(--hb-text-scale));
+      font-weight: 700; font-family: inherit; cursor: pointer;
     }
     .csq-acts .ok { background: var(--accent-green); color: var(--on-accent); border-color: transparent; }
     .csq-photos { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
@@ -3256,15 +3273,19 @@
       display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px;
       border-radius: 7px; border: 1px solid var(--border);
       background: var(--bg-primary); color: var(--text-secondary);
-      font-size: 11px; text-decoration: none;
+      font-size: calc(11px * var(--hb-text-scale)); text-decoration: none;
     }
     /*  완료인데 후처리가 남아 목록에 있는 카드 — 왜 있는지 글로 적어 둔다 */
     .csq-card.done { opacity: 0.78; }
     .csq-done-tag {
-      padding: 1px 7px; border-radius: 8px; font-size: 10px; font-weight: 700;
+      padding: 1px 7px; border-radius: 8px; font-weight: 700;
+      font-size: calc(9px * var(--hb-text-scale));    /* .hb-badge */
       background: rgba(85, 166, 124, 0.16); color: var(--accent-green);
     }
-    .csq-by { margin-top: 7px; font-size: 10.5px; color: var(--text-muted); }
+    .csq-by {
+      margin-top: 7px; color: var(--text-muted);
+      font-size: calc(10px * var(--hb-text-scale));
+    }
     /*  새 문의 — 접혀 있다가 펴진다 */
     .csq-new {
       border: 1px solid var(--border); border-radius: 10px;
@@ -3275,11 +3296,15 @@
     .csq-new input, .csq-new textarea {
       width: 100%; padding: 8px 10px; border-radius: 8px;
       border: 1px solid var(--border); background: var(--bg-primary);
-      color: var(--text-primary); font-size: 12.5px; font-family: inherit;
+      color: var(--text-primary); font-family: inherit;
+      font-size: calc(12px * var(--hb-text-scale));
     }
     .csq-new textarea { min-height: 52px; resize: vertical; }
     @media (max-width: 640px) { .csq-new-row { grid-template-columns: 1fr; } }
-    .csq-empty { font-size: 12px; color: var(--text-muted); padding: 10px 2px; }
+    .csq-empty {
+      font-size: calc(12px * var(--hb-text-scale));
+      color: var(--text-muted); padding: 10px 2px;
+    }
 
     .ret-reship {
       margin-top: 3px; font-size: 11px; color: var(--accent-green);
@@ -3533,7 +3558,9 @@
               <textarea id="csqnBody" placeholder="문의 내용"></textarea>
               <textarea id="csqnFollowup" placeholder="후처리 요청 (선택) — 나중에 해야 할 일"></textarea>
               <!--  사진 — 반품 쪽과 같은 길이다. 고르면 줄여서 들고 있다가
-                    「올리기」를 누를 때 v2 보관소로 보내고 링크만 담는다. -->
+                    「올리기」를 누를 때 v2 보관소로 보내고 링크만 담는다.
+                    스크린샷은 Ctrl+V 로도 붙는다(retHandlePaste). -->
+              <div class="csq-label">사진 (선택 · 스크린샷은 Ctrl+V)</div>
               <div class="ret-photo-pick">
                 <label class="pk">촬영<input type="file" accept="image/*" capture="environment"
                   onchange="csqPhotoPick(null, this)"></label>
@@ -8195,7 +8222,7 @@
         ' placeholder="예: 불량 100개 — 다음 주문 때 모아 1000개 되면 추가 발송">' +
         esc(fu) + '</textarea></div>';
       /*  사진 더 올리기 — 펼쳤을 때만 보인다. 접힌 카드에 두면 잘못 눌린다. */
-      h += '<div class="csq-label">사진 더 올리기</div>';
+      h += '<div class="csq-label">사진 더 올리기 (스크린샷은 Ctrl+V)</div>';
       h += '<div class="ret-photo-pick">' +
         '<label class="pk">촬영<input type="file" accept="image/*" capture="environment"' +
           ' onchange="csqPhotoPick(\'' + esc(id) + '\', this)"></label>' +
@@ -8218,10 +8245,42 @@
       return h;
     }
 
+    /*  마지막으로 «편» 카드 — 붙여넣기가 어디로 갈지 정한다.
+        여럿 펴 두었을 때 DOM 차례로 첫 것에 붙이면, 방금 연 카드가 아니라
+        위에 있던 카드에 붙어 사람이 못 찾는다.  */
+    var CSQ_LAST_OPEN = '';
+
     function csqToggle(el) {
       var id = el.getAttribute('data-csq');
       CSQ_OPEN[id] = !CSQ_OPEN[id];
+      if (CSQ_OPEN[id]) CSQ_LAST_OPEN = id;
+      else if (CSQ_LAST_OPEN === id) CSQ_LAST_OPEN = '';
       renderCsq();
+    }
+
+    /**
+     * 붙여넣은 이미지를 받을 CS 문의 자리.  (2026-10-02)
+     *
+     * ★ 새 문의가 먼저다 ★ 그것을 펴 두었다는 건 지금 거기에 적고 있다는 뜻이다.
+     * 아니면 마지막으로 편 카드. 둘 다 아니면 null — 엉뚱한 데 붙이지 않는다.
+     */
+    function csqPasteTarget() {
+      var 새 = document.getElementById('csqNew');
+      if (새 && !새.hidden) {
+        return { label: 'CS 문의 — 새 문의', stage: function (files) {
+          retPhotoStage(csqPickList(null), files, function () { csqPhotoRender(null); });
+        } };
+      }
+      var id = CSQ_LAST_OPEN;
+      if (!id || !CSQ_OPEN[id]) return null;
+      if (!document.getElementById('csqPhotoPrev-' + id)) return null;
+      var 누구 = '';
+      for (var i = 0; i < CSQ_ROWS.length; i++) {
+        if (String(CSQ_ROWS[i].id) === String(id)) { 누구 = CSQ_ROWS[i].vendor || ''; break; }
+      }
+      return { label: 'CS 문의 — ' + (누구 || '그 건'), stage: function (files) {
+        retPhotoStage(csqPickList(id), files, function () { csqPhotoRender(id); });
+      } };
     }
 
     /* ══ CS 문의 사진 ══════════════════════════════════════════
@@ -10730,6 +10789,11 @@
           };
         }
       }
+
+      /*  CS 문의 — 창이 아니라 대시보드 칸이라 위 모달 검사에 안 걸린다.
+          모달이 떠 있으면 그쪽이 위라 먼저다. 그 다음이 여기다. (2026-10-02) */
+      var csq = csqPasteTarget();
+      if (csq) return csq;
 
       var pop = document.querySelector('#pane-returns .ret-act-pop[data-mode="photo"].open');
       if (pop) {
