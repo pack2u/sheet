@@ -187,5 +187,55 @@ ok("되읽기가 줄 끝까지 받는다", (function () {
   return fn(비고) === "220파이 감자탕 중 백색 몸통 1";
 })(), "낱말 하나로 끊기면 품목명이 잘린다");
 
+
+/* ══════════════════════════════════════════════════════════════
+ *  접수자별로 보기  (2026-10-02)
+ *
+ *  > "반품 카드 정렬시 최초 입력자로 볼수 있게도 만들어줘..입력자별..."
+ *
+ *  두 가지를 뒀다 — 한 가지로 못 박지 않는다.
+ *    ① 정렬 「접수자순」  사람끼리 모아서 전부 본다
+ *    ② 거르개 「접수자 ▾」 한 사람 것만 본다
+ * ══════════════════════════════════════════════════════════════ */
+console.log("\n─── ⑦ 접수자별로 본다 ───");
+
+/*  ★ 여기는 «글자 포함»으로만 본다 ★
+    정규식으로 적으면 셸·스크립트를 거치며 백슬래시가 먹혀 조용히
+    「아무것도 안 걸리는 규칙」이 된다. 2026-10-02 에 실제로 그랬다.  */
+ok("정렬에 「접수자순」이 있다",
+  HTML.includes('<option value="staff">접수자순</option>'));
+ok("정렬 규칙이 접수자로 모은다",
+  HTML.includes("RETURN_SORT === 'staff'") &&
+  HTML.includes("(a && a.staff) || '힣'"),
+  "접수자가 빈 건은 맨 뒤로 가야 한다");
+
+ok("접수자 거르개 칸이 있다", HTML.includes('id="retStaffPick"'));
+ok("고른 값을 그 사람 브라우저에 남긴다", HTML.includes("CS_RET_STAFF"));
+ok("거르개 목록을 «코드에 안 박고» 건들에서 채운다",
+  HTML.includes("function retFillStaffPick") && !HTML.includes("'강서희'"),
+  "이름을 박아 두면 그만둔 사람이 남고 새 사람이 안 보인다");
+
+/*  ★ 채우는 차례 ★ 거른 «뒤»로 채우면 한 사람을 고른 순간 다른 사람이
+    목록에서 사라져 되돌아갈 길이 없어진다.  */
+ok("고르는 칸을 «거르기 전»에 채운다", (function () {
+  const i = HTML.indexOf("retFillStaffPick(filtered);");
+  const j = HTML.indexOf("if (RETURN_STAFF_FILTER) {", i);
+  return i > 0 && j > i;
+})(), "거른 뒤로 채우면 되돌아갈 수 없다");
+
+ok("고른 사람 건이 없어도 칸에 남는다",
+  HTML.includes("셈[RETURN_STAFF_FILTER] = 0"),
+  "저절로 「전체」로 돌아가면 왜 다 보이는지 모른다");
+
+ok("대시보드에서 상태를 누르면 접수자 거르개가 풀린다", (function () {
+  const i = HTML.indexOf("function dashFilterReturn(");
+  if (i < 0) return false;
+  const 안 = HTML.slice(i, i + 1400);
+  return 안.includes("RETURN_STAFF_FILTER = ''") &&
+    안.includes("setReturnStageFilter(status)");
+})(), "12건이라 했는데 3건만 보이면 숫자가 틀렸다고 여긴다");
+
+
 console.log("\n" + (틀린것 ? "✗ " : "✅ ") + 잰것 + "개 중 " + 틀린것 + "개 틀렸습니다.");
 process.exit(틀린것 ? 1 : 0);
+
