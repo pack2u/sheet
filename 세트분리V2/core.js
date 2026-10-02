@@ -382,10 +382,11 @@ function ssParseAddrOverride(memo) {
 
       표시 «앞»에 적힌 말은 버린다 — 그것은 다른 메모다.
       (「//」 는 표시로 못 쓴다. 적요를 「//」 에서 잘라 뒤를 버리는 코드가 있다)  */
-  var 표시 = false;
+  var 표시 = false, 앞글 = '';
   var m표 = s.match(/(^|[\s\/,·])배송지\s*[:：]?\s*/);
   if (m표) {
     표시 = true;
+    앞글 = s.slice(0, m표.index).trim();
     s = s.slice(m표.index + m표[0].length).trim();
     if (!s) return null;
   }
@@ -466,6 +467,45 @@ function ssParseAddrOverride(memo) {
     이름 = n;
   }
 
+  /*  ★ 「배송지」 «앞»에 이름·전화를 적은 경우 ★  (2026-10-02)
+      > "서정희 /010-2965-4774 / 배송지 :인천광역시 서구 가좌동 30-78 … /문 앞
+      >  적요에 이렇게 적었는데 배송지만 들어가고 나머지가 안들어갔는데"
+
+      표시 앞은 «다른 메모»로 보고 통째로 버렸다. 그런데 사람은 이름·전화를
+      먼저 적고 「배송지:」 뒤에 주소를 적기도 한다 — 그쪽이 더 자연스럽다.
+      ★ 앞에 «전화가 있을 때만» 앞을 연락처 덩어리로 본다 ★
+        「재발송 배송지 …」처럼 전화 없는 앞말은 여전히 메모라 버린다.
+        전화는 무늬가 또렷해서 섞일 일이 없다. 이름은 전화 바로 곁의 짧은 조각이다.
+      뒤에 이름·전화가 따로 적혀 있으면 뒤가 이긴다(표시 뒤가 본문이다). */
+  if (표시 && 앞글) {
+    SS_PHONE_RE.lastIndex = 0;
+    var 앞전화 = (앞글.match(SS_PHONE_RE) || []).map(function (p) { return p.replace(/[.\s]/g, '-'); });
+    if (앞전화.length) {
+      if (!전화들.length) 전화들 = 앞전화;
+      if (!이름) {
+        var 앞남은 = 앞글;
+        for (var ap = 0; ap < 앞전화.length; ap++) 앞남은 = 앞남은.split(앞전화[ap]).join('\u0001');
+        var 앞조각 = 앞남은.split(/[\u0001\/]/);
+        for (var ak = 앞조각.length - 1; ak >= 0; ak--) {
+          var an = ssText(앞조각[ak]).replace(/^[\s,:·]+|[\s,:·]+$/g, '');
+          if (!an || an.length > 25) continue;
+          if (/(해주세요|부탁|바랍니다|요망|문앞|부재|놓아)/.test(an)) continue;
+          이름 = an; break;
+        }
+      }
+    }
+  }
+
+  //  주소 뒤의 짧은 배송 부탁(「문 앞」 등) — 표시가 있을 때만 집는다
+  var 메시지 = '';
+  if (표시) {
+    for (var mk = 주소자리 + 1; mk < 깨끗.length; mk++) {
+      if (/(문\s*앞|부재|경비실|놓아|연락|벨|노크|택배함)/.test(깨끗[mk]) && 깨끗[mk].length <= 40) {
+        메시지 = 깨끗[mk]; break;
+      }
+    }
+  }
+
   //  ⑥ 유선은 F, 휴대는 G
   var 유선 = '', 휴대 = '';
   for (var p = 0; p < 전화들.length; p++) {
@@ -474,7 +514,7 @@ function ssParseAddrOverride(memo) {
   }
 
   //  phone 은 예전 이름이다 — 읽는 쪽이 여럿이라 그대로 둔다(휴대 우선)
-  return { name: 이름, phone: 휴대 || 유선, mobile: 휴대, tel: 유선, addr: 주소, 표시: 표시 };
+  return { name: 이름, phone: 휴대 || 유선, mobile: 휴대, tel: 유선, addr: 주소, 표시: 표시, msg: 메시지 };
 }
 
 /**
@@ -904,6 +944,8 @@ function ssNormalize(grid, cfg, warnings) {
           넣으면 연락처를 지운다 — 전화 없는 송장이 나간다. */
       if (!ovAddr.mobile && !ovAddr.tel && ovAddr.phone) line.모바일 = ovAddr.phone;
       if (ovAddr.name) line.받는분 = ovAddr.name.slice(0, 25);
+      //  「//」 뒤 배송메시지가 없을 때만 — 있던 것을 덮지 않는다
+      if (ovAddr.msg && !ssText(line.배송메시지)) line.배송메시지 = ovAddr.msg;
       line.주소변경 = (ovAddr.표시 ? '적요「배송지」(' : '적요(') +
         (ovAddr.name ? '이름·' : '') +
         ((ovAddr.mobile || ovAddr.tel) ? '연락처·' : '') + '주소)';
