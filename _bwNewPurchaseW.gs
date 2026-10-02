@@ -314,3 +314,47 @@ function bwApplyNewPurchaseW() {
 
 /** 시트가 안 열려 있으면 getUi() 가 던진다 — 기록은 Logger 에 이미 남았다 */
 function _bww_alert_(m) { try { SpreadsheetApp.getUi().alert(m); } catch (e) { Logger.log(m); } }
+
+/**
+ * 자체 발송(출고지가 「대리발송」이 아닌 줄)은 W 를 옛 값으로 되돌리고 노랑을 지운다.
+ * 2026-10-02 사장님 — "대리발송만 수정한거로 남기고 자체 발송은 원래 단가로 돌려줘"
+ *
+ * · 출고지는 «지금 시트의» B열로 본다.
+ * · W 가 우리가 넣은 새 값일 때만 되돌린다. 다른 값이면 누가 고친 것이라 두고 말한다.
+ * · 바탕색은 같은 줄 V칸 색으로 맞춘다(원래 색을 따로 적어 두지 않았다).
+ */
+function bwRevertSelfShipW() {
+  var NL = String.fromCharCode(10);
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('상품정보');
+  if (!sh) throw new Error('상품정보 탭이 없습니다');
+  var FIRST = 6, last = sh.getLastRow(), n = last - FIRST + 1;
+  var head = sh.getRange(4, 1, 1, 23).getValues()[0];
+  if (String(head[1]).indexOf('출고지') < 0 || String(head[4]).indexOf('이카운트코드') < 0 || String(head[22]).replace(/\s/g, '') !== '매입가') {
+    throw new Error('열 자리가 다릅니다 — B4=' + head[1] + ' / E4=' + head[4] + ' / W4=' + head[22]);
+  }
+  var bVal = sh.getRange(FIRST, 2, n, 1).getValues();
+  var codes = sh.getRange(FIRST, 5, n, 1).getValues();
+  var wVal = sh.getRange(FIRST, 23, n, 1).getValues();
+  var vBg = sh.getRange(FIRST, 22, n, 1).getBackgrounds();
+  var at = {};
+  for (var i = 0; i < n; i++) { var c = String(codes[i][0]).trim(); if (c) (at[c] = at[c] || []).push(i); }
+
+  var done = [], skip = [], kept = 0;
+  _BWW_DATA_.forEach(function (d) {
+    var rows = at[d[0]];
+    if (!rows || rows.length !== 1) { skip.push(d[0] + ' 줄을 하나로 못 찾음'); return; }
+    var i = rows[0];
+    if (String(bVal[i][0]).trim() === '대리발송') { kept++; return; }
+    var cur = Math.round(Number(wVal[i][0]) * 100) / 100;
+    if (cur === d[1]) return;                                   // 이미 옛 값
+    if (cur !== d[2]) { skip.push(d[0] + ' 지금 W=' + cur + ' (새 값 ' + d[2] + ' 아님 — 안 건드림)'); return; }
+    sh.getRange(FIRST + i, 23).setValue(d[1]).setBackground(vBg[i][0]);
+    done.push((FIRST + i) + '행 ' + d[0] + ' ' + bVal[i][0] + ' ' + cur + ' → ' + d[1]);
+  });
+  SpreadsheetApp.flush();
+
+  var msg = '자체 발송 W 되돌림' + NL + '되돌림 ' + done.length + ' · 대리발송(새 값 유지) ' + kept + ' · 건너뜀 ' + skip.length;
+  Logger.log(msg + NL + done.join(NL));
+  if (skip.length) Logger.log('건너뜀' + NL + skip.join(NL));
+  _bww_alert_(msg + (skip.length ? NL + NL + '건너뜀:' + NL + skip.slice(0, 15).join(NL) : ''));
+}
