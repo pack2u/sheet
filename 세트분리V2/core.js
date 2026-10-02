@@ -1858,6 +1858,87 @@ function ssRoute(units, masters, cfg, warnings) {
       한 값으로 통일한다. 비우거나 0 이면 표를 그대로 쓴다. */
   var 통일도선료 = ssNum(cfg.도선료_통일금액);
 
+  /*  ★ 대리발송으로 가는 줄도 섬인지 먼저 본다 ★  (2026-10-02)
+      > "제주도인데 대리발송으로 빠졌는데 도서산간에 안잡혔어 확인해줘"
+      > (고르신 것) 도서산간 탭에 세운다 — 업체 발주를 멈추고 사람이 정한다
+
+      대리발송으로 정해지면 그 자리에서 `continue` 해서, 주소를 보는 아래
+      도서 판정까지 한 번도 안 내려왔다. 대리발송 갈래 셋(출고지 대리발송 ·
+      대리발송품목 표 · 재고부족 자동)이 다 그랬다. 2차(261002-2)에 제주 3건이
+      업체로 그냥 넘어갔다.
+
+      섬만보기 는 아래 도서 판정과 «같은 순서·같은 잣대»다 (도선료표 → 우편번호 →
+      지역확정). 산간은 배가 아니라 차로 가므로 여기서도 섬이 아니다.
+      우편번호도 없고 지역도 «후보»뿐이면 막지 않는다 — 모르는 것을 막으면
+      육지 주문이 업체로 못 간다.
+
+      도서산간 탭 조치 칸에 적은 말로 정한다:
+        비워 둠          도서산간 탭에 선다. 업체로 안 넘어간다
+        대리발송         기본 업체로 넘긴다
+        업체코드(BW 등)  그 업체로 넘긴다
+        보류             보류(미발송)로 세운다
+        발송             도서산간에서 빼고 우리가 일반으로 보낸다 (탭의 원래 뜻 그대로) */
+  function 섬만보기(u) {
+    var addr = ssNormAddr(u.주소1);
+    var zip = ssText(addrZip[addr]);
+    var 료 = function (권역) { return ssSurcharge(addr, 권역, ferry, { 통일도선료: 통일도선료 }).합계; };
+    var fh = ssFerryMatch(addr, ferry);
+    if (fh) {
+      if (ssText(fh.권역) === '산간') return null;
+      return { addr: addr, zip: zip, 권역: fh.권역, 판정: '도선료표', 도선료: 료(fh.권역) };
+    }
+    if (zip) {
+      if (!islandZip[zip] || ssText(islandZip[zip]) === '산간') return null;
+      return { addr: addr, zip: zip, 권역: islandZip[zip], 판정: '우편번호', 도선료: 료(islandZip[zip]) };
+    }
+    var 앞머리 = ssAddrRegion(addr);
+    for (var q = 0; q < islandKw.length; q++) {
+      if (!islandKw[q] || islandKw[q].skip || !islandKw[q].confirm) continue;
+      if (앞머리.indexOf(islandKw[q].kw) < 0) continue;
+      var 확정권역 = islandKw[q].zone || '도서';
+      return { addr: addr, zip: '', 권역: 확정권역, 판정: '지역확정', 도선료: 료(확정권역) };
+    }
+    return null;
+  }
+  /** true 면 여기서 경로를 정했다(대리발송으로 가지 말 것). false 면 대리발송으로 간다. */
+  function 섬대리검문(u, 길) {
+    var s = 섬만보기(u);
+    if (!s) return false;
+    u.정규주소 = s.addr; u.우편번호 = s.zip;
+    u.도서권역 = s.권역; u.도서판정 = s.판정; u.도선료 = s.도선료;
+    var 적음 = (cfg && cfg._섬조치)
+      ? ssText(cfg._섬조치[ssText(u.순번) + '|' + ssText(u.품목코드)]) : '';
+    var 민 = ssNorm(적음).split(' ').join('').toUpperCase();
+    if (!적음) {
+      //  「도서산간(위탁배송)」 탭 — 대리발송 출고지의 섬 주문을 받으려고 있던 자리다.
+      //  우리 창고 도서산간 탭과 섞으면 출고하는 사람이 우리 재고로 싸 버린다.
+      u.route = SS_ROUTE.LOTTE_ISLAND_CONSIGN;
+      u.섬대리대기 = true;
+      //  도서산간 탭에서 한눈에 보이게 판정 칸에 적는다 — 이 줄은 우리 재고로 나가는 줄이 아니다
+      u.도서판정 = s.판정 + ' · ⚠대리발송 확인' + (u.업체코드 ? '(' + u.업체코드 + ')' : '');
+      ssWarn(warnings, '주의', 'ISLAND_PARTNER_WAIT', (u.순번 || '') + ' / ' + (u.품목코드 || ''),
+        '도서(' + s.권역 + ') 주소라 대리발송(' + 길 + ')을 멈추고 「로젠택배-도서산간(위탁배송)」 탭에 세웠습니다. ' +
+        '조치 칸에 「대리발송」·업체코드·「보류」·「발송」 중 하나를 적고 ✅ 조치 적용을 누르세요. ' +
+        '적기 전에는 업체로 안 넘어갑니다.');
+      return true;
+    }
+    for (var w = 0; w < SS_HOLD_KEEP_WORDS.length; w++) {
+      if (민 === ssNorm(SS_HOLD_KEEP_WORDS[w]).split(' ').join('').toUpperCase()) {
+        ssIslandHoldByManual_(u, 적음);
+        return true;
+      }
+    }
+    if (적음 === '발송') { ssIslandSkipByManual_(u, warnings); return true; }
+    if (민 === '대리발송') return false;
+    if (vendors[민]) { u.업체코드 = 민; u.업체명 = vendors[민]; return false; }
+    //  알아들을 수 없는 말은 «보내지 않는다» — 잘못 보내면 되돌릴 수 없다
+    u.route = SS_ROUTE.HOLD;
+    u.보류사유 = '도서산간확인';
+    u.보류상세 = '도서산간 탭 조치 「' + 적음 + '」을 못 알아들었습니다 — ' +
+      '대리발송 · 업체코드 · 보류 · 발송 중 하나로 적어 주세요';
+    return true;
+  }
+
   // 한 글자 키워드는 시/군을 가려내지 못한다.
   // 예전 목록의 「중」은 중구·중랑구·중앙로·궁중보쌈까지 전부 후보로 만들었다.
   for (var kk = 0; kk < islandKw.length; kk++) {
@@ -1980,6 +2061,7 @@ function ssRoute(units, masters, cfg, warnings) {
          보류 탭에서 «이건 그냥 우리가 보낸다»고 손으로 뒤집은 건이다.
          기계가 그 결정을 다시 덮으면 사람은 되돌릴 방법이 없어진다. */
     if (!면제 && ssNorm(u.출고지).split(' ').join('') === SS_ROUTE.PARTNER) {
+      if (섬대리검문(u, '출고지 대리발송')) continue;
       u.route = SS_ROUTE.PARTNER;
       /*  업체코드가 비어도 «보내긴 한다». 푸시는 품목코드 앞 두 글자로 업체를
           가리므로 이 칸이 비어도 돈다. 다만 비었다는 사실은 말해 준다 —
@@ -2032,7 +2114,6 @@ function ssRoute(units, masters, cfg, warnings) {
             '보류 탭에서 「발송」으로 잡혀 있었지만 «대리발송품목» 표가 이깁니다. ' +
             '우리가 보내려면 그 품목을 「대리발송품목」 탭에서 지우세요.');
         }
-        u.route = SS_ROUTE.PARTNER;
         u.보류상세 = 예외.사유 || '';
         u.대리품목적용 = 예외.코드;
         /* ★ 재고를 근거로 「지우세요」 하지 않는다 ★
@@ -2062,6 +2143,12 @@ function ssRoute(units, masters, cfg, warnings) {
             '「대리발송품목」이라 대리발송으로 보냈는데 업체코드를 못 정했습니다. ' +
             '그 탭의 업체코드 칸을 채우거나, 대리발송 탭에서 손으로 채우세요.');
         }
+        //  업체코드를 정한 «뒤»에 본다 — 도서산간 탭 판정 칸에 어느 업체 건인지 보이게
+        if (섬대리검문(u, '대리발송품목')) {
+          if (u.route !== SS_ROUTE.HOLD) u.보류상세 = '';
+          continue;
+        }
+        u.route = SS_ROUTE.PARTNER;
         continue;
       }
     }
@@ -2089,7 +2176,11 @@ function ssRoute(units, masters, cfg, warnings) {
     if (위탁 && u.부족수량 > 0) {
       // 「사용」이면 구 시트처럼 자동으로 협력업체 발주로 넘긴다.
       // 「안함」이면 미발송에 세워 두고, 사람이 업체코드를 적어 필요한 건만 토스한다.
-      if (ssText(cfg.재고부족_자동대리발송) !== '안함') { u.route = SS_ROUTE.PARTNER; continue; }
+      if (ssText(cfg.재고부족_자동대리발송) !== '안함') {
+        if (섬대리검문(u, '재고부족')) continue;
+        u.route = SS_ROUTE.PARTNER;
+        continue;
+      }
       u.route = SS_ROUTE.HOLD;
       u.보류사유 = '재고부족';
       u.보류상세 = '부족 ' + u.부족수량 + '개 (필요 ' + u.총필요수량 + ' / 재고 ' + u.현재고 + ')' +
