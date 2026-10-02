@@ -2160,6 +2160,26 @@ function submitReturnLedger(data) {
     var row = [];
     for (var c = 0; c < lastCol; c++) row.push("");
     if (col.date >= 0) row[col.date] = _cs_ledgerDate_();
+
+    /*  ★ 고유ID 를 여기서 발급한다 ★  (2026-10-02)
+        > "모든 문의 반품 발주관련된 부분에서 항상 고유아이디가 붙게해줘"
+
+        r1002000003 — 발주(d)·전화주문(p)과 같은 규칙, 그날의 번호표다.
+        여태 반품 건은 (탭, 행)으로만 가리켰다. 줄이 한 칸 밀리면 짝이
+        끊긴다 — 9월 탭에서 그렇게 「유령 아홉 줄」이 생겼다.
+
+        ★ 열이 없으면 조용히 넘어간다 ★ csReturnUid.gs 로 열을 만들기
+        전에도 기록은 돼야 한다. 열이 생기면 그때부터 저절로 붙는다.  */
+    if (col.uid >= 0) {
+      var 쓴것 = {};
+      for (var u = headerIdx + 1; u < values.length; u++) {
+        var uu = String((values[u] || [])[col.uid] || "").trim();
+        if (uu) 쓴것[uu] = true;
+      }
+      var mmdd = _cs_ruidMMDD_(col.date >= 0 ? row[col.date] : "") ||
+        Utilities.formatDate(new Date(), "Asia/Seoul", "MMdd");
+      row[col.uid] = _cs_returnUidNext_(mmdd, 쓴것);
+    }
     if (col.staff >= 0) row[col.staff] = String(data.staff || "").trim();
     if (col.vendor >= 0) row[col.vendor] = String(data.vendor || "").trim();
     if (col.name >= 0) row[col.name] = String(data.name || "").trim();
@@ -2690,6 +2710,9 @@ function _cs_mapReturnLedgerCols_(header) {
           reshipFee  우리가 다시 보낼 때 든 택배비 (재출고배송비)
         한 칸에 뭉뚱그리면 「이번 달 우리가 쓴 배송비」를 셀 수 없다.  */
     reship: -1,
+    /*  고유ID — 「r1002000003」. 반품 건 제 번호다 (csReturnUid.gs).
+        여태 (탭, 행)으로만 가리켜, 줄이 밀리면 짝이 끊겼다.  */
+    uid: -1,
     reshipFee: -1,
 
     /*  ══════════════════════════════════════════════════════
@@ -2725,6 +2748,7 @@ function _cs_mapReturnLedgerCols_(header) {
     /*  ★ 재출고배송비를 «반품비보다 먼저» 본다 ★
         아래 col.fee 규칙(/반품비|…배송비…/)이 「재출고배송비」를 먼저
         집어 가면 우리가 쓴 돈이 고객 반품비로 적힌다. 조용히 틀린다.  */
+    else if (col.uid < 0 && /^고유ID$|^고유아이디$|^UID$/i.test(h)) col.uid = i;
     else if (col.reshipFee < 0 && /^재출고배송비$|^재출고운임$|^재발송배송비$/.test(h)) col.reshipFee = i;
     else if (col.reship < 0 && /^재출고상품$|^재출고품목$|^재발송상품$/.test(h)) col.reship = i;
     else if (col.date < 0 && /반품접수날짜|접수날짜|접수일자/.test(h)) col.date = i;
@@ -3917,6 +3941,8 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
       reship: col.reship >= 0
         ? String(row[col.reship] || "").trim()
         : _cs_reshipFromNotice_(notice),
+      //  고유ID — 어느 화면에서든 이 번호로 찾는다 (2026-10-02)
+      uid: col.uid >= 0 ? String(row[col.uid] || "").trim() : "",
       reshipFee: col.reshipFee >= 0
         ? _cs_formatReturnFee_(row[col.reshipFee])
         : _cs_reshipFeeFromNotice_(notice),

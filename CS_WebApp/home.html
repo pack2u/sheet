@@ -11200,6 +11200,7 @@
         '<div class="os-card-head"><div class="os-name">' + esc(c.name || '(이름 없음)') +
         '<span class="os-tag ret-s' + stage + '">' + esc(RET_STAGE_ICON[stage] + ' ' + (st || '접수')) +
         '</span></div></div>' +
+        retCaseRowHtml('고유ID', c.uid) +
         retCaseRowHtml('접수일', c.date) +
         retCaseRowHtml('품목', (c.item || '') + (c.qty ? ' × ' + c.qty : '')) +
         retCaseRowHtml('재출고', c.reship) +
@@ -11243,7 +11244,11 @@
         c.name, c.item, c.qty, c.phone, c.phoneDigits, c.phoneSub, c.phone2Digits,
         c.invoice, c.invDigits,
         c.returnInvoice, c.returnInvDigits, c.status, c.staff, c.tab, c.type,
-        c.vendor, c.notice, c.fee, c.row, c.date
+        c.vendor, c.notice, c.fee, c.row, c.date,
+        /*  고유ID — 번호 하나로 어느 화면에서든 같은 건에 닿는다 (2026-10-02).
+            발주(d)·전화주문(p)·반품(r) 이 같은 모양이라, 번호만 알면
+            어디서 찾든 그 건이다.  */
+        c.uid
       ].join(' ').toLowerCase();
     }
 
