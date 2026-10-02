@@ -3204,6 +3204,11 @@
     .lgw-acts button:disabled { opacity: .4; cursor: default; }
     .lgw-ocr { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-secondary); font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
     .lgw-ocr.err { color: var(--text-muted); }
+    .ret-reship {
+      margin-top: 3px; font-size: 11px; color: var(--accent-green);
+      line-height: 1.4;
+    }
+    .ret-card.ret-focus .ret-reship { font-size: 13px; }
     .ret-intakereq {
       margin-top: 5px; padding: 5px 8px; border-radius: 7px; cursor: pointer;
       background: #fff4d6; color: #6b4a00; font-size: 12px; font-weight: 700; line-height: 1.45;
@@ -3793,8 +3798,20 @@
         </div>
       </div>
       <div class="ledger-field">
-        <label>품목</label>
+        <label>품목 <span style="color:var(--text-muted)">(돌려받는 것)</span></label>
         <input id="retNewItem" type="text" placeholder="품목명">
+      </div>
+      <!--  ★ 둘 다 적는다 ★  (2026-10-02)
+            > "둘다 적으면 좋겠네"
+            세트가 뚜껑만 나가면 두 가지가 같이 움직인다 —
+              고객이 «돌려보내는 것» 뚜껑 4 → 위 「품목」
+              우리가 «다시 보내는 것» 몸통 1 → 이 칸
+            한 칸에 뭉뚱그리면 「이번 달 뚜껑 반품 몇 건」을 셀 수 없다.
+            협의된 배열에는 빈 칸이 없어 비고에 「재출고: …」로 남긴다.  -->
+      <div class="ledger-field">
+        <label>재출고 상품 (선택 · 다시 보내는 것)</label>
+        <input id="retNewReship" type="text"
+               placeholder="예: 220파이 감자탕 중 백색 몸통 1 — 없으면 비워 두세요">
       </div>
       <div class="ledger-row2">
         <div class="ledger-field">
@@ -3964,6 +3981,18 @@
         <label>실번호 주인 (선택)</label>
         <!-- 누구 번호인지 — 대신 받아 준 사장님·직원일 때가 많다 -->
         <input id="ledgerPhone2Name" type="text" maxlength="20" placeholder="예: 가게 사장님">
+      </div>
+      <!--  ★ 둘 다 적는다 ★  (2026-10-02)
+            > "둘다 적으면 좋겠네"
+            세트가 뚜껑만 나가면 두 가지가 같이 움직인다 —
+              고객이 «돌려보내는 것» 뚜껑 4 → 위 「품목」
+              우리가 «다시 보내는 것» 몸통 1 → 이 칸
+            한 칸에 뭉뚱그리면 「이번 달 뚜껑 반품 몇 건」을 셀 수 없다.
+            협의된 배열에는 빈 칸이 없어 비고에 「재출고: …」로 남긴다.  -->
+      <div class="ledger-field">
+        <label>재출고 상품 (선택 · 다시 보내는 것)</label>
+        <input id="ledgerReship" type="text"
+               placeholder="예: 220파이 감자탕 중 백색 몸통 1 — 없으면 비워 두세요">
       </div>
       <div class="ledger-field">
         <label>수거입력처 (대리공급은 택배사 자동)</label>
@@ -6360,6 +6389,7 @@
         fields: ['retNewStaff', 'retNewName', 'retNewPhone', 'retNewPhone2', 'retNewPhone2Name', 'retNewInvoice', 'retNewQty',
                  'retNewItem', 'retNewVendor', 'retNewPickup', 'retNewRetInvoice',
                  'retNewFee', 'retNewType', 'retNewFault', 'retNewReason',
+                 'retNewReship',
                  'retNewStatus', 'retNewAccount', 'retNewMemo'],
         /*  사유 목록은 귀책에 딸려 있다 — 되살릴 때 «순서»가 있다.  (2026-09-30)
             위 칸 되살리기는 값만 넣는다(onchange 가 안 돈다). 그래서 사유
@@ -9478,6 +9508,14 @@
               (c.active === false ? '<span class="ret-closed-tag">완료</span>' : '') +
               (picked ? '<span class="ret-done">회수 접수됨</span>' : '') + '</div>' +
             '<div class="ret-item">' + esc(c.item || '-') + (c.qty ? ' × ' + esc(c.qty) : '') + '</div>' +
+            /*  ★ 다시 보내는 것 ★  (2026-10-02)
+                > "둘다 적으면 좋겠네"
+                위 품목은 «돌려받는 것»이다. 세트가 뚜껑만 나가면 우리가 몸통을
+                다시 보내는데, 그게 안 보이면 「이 건 뭘 보내기로 했더라」를
+                비고에서 찾아 읽어야 한다. 품목 바로 밑이 그 자리다. */
+            (c.reship
+              ? '<div class="ret-reship">↩ 재출고 ' + esc(c.reship) + '</div>'
+              : '') +
             /* 📦 입고확인요청 열 (2026-09-30) — 지금 유효한 요청. 누르면 고친다 */
             (c.intakeReq
               ? '<div class="ret-intakereq" onclick="event.stopPropagation(); toggleReturnCompose(' + idx + ',\x27intakereq\x27)"' +
@@ -10536,6 +10574,7 @@
         '</span></div></div>' +
         retCaseRowHtml('접수일', c.date) +
         retCaseRowHtml('품목', (c.item || '') + (c.qty ? ' × ' + c.qty : '')) +
+        retCaseRowHtml('재출고', c.reship) +
         retCaseRowHtml('원송장', c.invoice) +
         retCaseRowHtml('반품송장', c.returnInvoice) +
         retCaseRowHtml('전화', (c.phone || '') + (c.phoneTag ? ' (' + c.phoneTag + ')' : '') +
@@ -12128,6 +12167,7 @@
           phone2Name: document.getElementById('retNewPhone2Name').value,
           vendor: document.getElementById('retNewVendor').value,
           item: document.getElementById('retNewItem').value,
+          reship: document.getElementById('retNewReship').value,
           qty: document.getElementById('retNewQty').value,
           invoice: document.getElementById('retNewInvoice').value,
           returnInvoice: document.getElementById('retNewRetInvoice').value,
@@ -12512,7 +12552,9 @@
         account: g('ledgerAccount'),
         fee: g('ledgerFee'),
         phone2: g('ledgerPhone2'),
-        phone2Name: g('ledgerPhone2Name')
+        phone2Name: g('ledgerPhone2Name'),
+        //  다시 보내는 것 — 품목마다 다를 수 없다. 같은 상자에서 온 것이다
+        reship: g('ledgerReship')
       };
     }
 

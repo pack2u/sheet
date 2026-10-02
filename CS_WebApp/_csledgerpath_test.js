@@ -137,5 +137,55 @@ ok("읽는 쪽이 비고에서 구분을 되찾는다",
   "쓰기만 하고 못 읽으면 카드에 안 보인다");
 
 /* ── 끝 ───────────────────────────────────────────────────── */
+
+/* ══════════════════════════════════════════════════════════════
+ *  다시 보내는 것 — 「둘다 적으면 좋겠네」  (2026-10-02)
+ *
+ *  상품명 칸은 «돌려받는 것»이다. 세트가 뚜껑만 나가면 우리가 몸통을
+ *  다시 보내는데, 그것을 적을 칸이 협의된 배열에 없다.
+ *  귀책·반품비·구분이 걸어온 길과 같이 비고에 「재출고: …」로 남긴다.
+ * ══════════════════════════════════════════════════════════════ */
+console.log("\n─── ⑥ 다시 보내는 것을 둘 다 적는다 ───");
+
+const GS2 = fs.readFileSync(path.join(__dirname, "csOrderSearch.gs"), "utf8");
+
+ok("접수 창에 재출고 칸이 있다", HTML.indexOf('id="retNewReship"') >= 0);
+ok("기록 창에 재출고 칸이 있다", HTML.indexOf('id="ledgerReship"') >= 0);
+
+//  기록 창은 읽는 자리가 하나여야 한다 — 앞의 ② 와 같은 규칙
+ok("기록 창의 재출고도 공통 함수에서 읽는다", (function () {
+  const i = HTML.indexOf("function ledgerModalCommon(");
+  if (i < 0) return false;
+  const j = HTML.indexOf("return {", i);
+  return HTML.slice(j, HTML.indexOf("};", j)).indexOf("'ledgerReship'") >= 0;
+})(), "여기 없으면 여러건 길에서 또 빠진다");
+ok("여러건 길이 직접 안 읽는다",
+  !/getElementById\(\s*['"]ledgerReship['"]\s*\)/.test(떠내("submitLedgerMany") || ""));
+ok("접수 창이 reship 을 보낸다", /reship: document\.getElementById\('retNewReship'\)/.test(HTML));
+ok("접수 임시저장에 재출고가 들어 있다", /'retNewReship'/.test(HTML));
+
+ok("칸이 없으면 비고에 「재출고: …」로 남긴다",
+  /reshipToNotice = "재출고: " \+ reshipIn/.test(GS2));
+ok("비고 줄에 태운다", /noticeLines\.push\(reshipToNotice\)/.test(GS2));
+ok("시트에 열이 생기면 그쪽으로 간다",
+  /col\.reship >= 0.*row\[col\.reship\] = reshipIn/s.test(GS2) &&
+  /\^재출고상품\$/.test(GS2));
+ok("읽는 쪽이 비고에서 되찾는다",
+  /function _cs_reshipFromNotice_/.test(GS2) && /_cs_reshipFromNotice_\(notice\)/.test(GS2));
+ok("카드가 재출고를 낸다", /ret-reship/.test(HTML));
+ok("상세 표에도 낸다", /retCaseRowHtml\('재출고', c\.reship\)/.test(HTML));
+
+/*  ★ 품목명은 줄 끝까지 받아야 한다 ★
+    「220파이 감자탕 중 백색 몸통 1」처럼 띄어쓰기·숫자가 섞인다.
+    낱말 하나로 끊으면 「220파이」만 남는다.  */
+ok("되읽기가 줄 끝까지 받는다", (function () {
+  const m = GS2.match(/function _cs_reshipFromNotice_[\s\S]{0,500}?\n\}/);
+  if (!m) return false;
+  //  그 함수를 떼어 내 실제로 돌려 본다
+  const fn = new Function("return (" + m[0].replace(/^function /, "function ") + ")")();
+  const 비고 = "[261002 09:10 강서희] 뚜껑만 옴\n재출고: 220파이 감자탕 중 백색 몸통 1\n귀책: 판매자 (오배송)";
+  return fn(비고) === "220파이 감자탕 중 백색 몸통 1";
+})(), "낱말 하나로 끊기면 품목명이 잘린다");
+
 console.log("\n" + (틀린것 ? "✗ " : "✅ ") + 잰것 + "개 중 " + 틀린것 + "개 틀렸습니다.");
 process.exit(틀린것 ? 1 : 0);

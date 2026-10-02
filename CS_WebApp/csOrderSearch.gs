@@ -2213,6 +2213,19 @@ function submitReturnLedger(data) {
         귀책·반품비·계좌가 걸어온 길과 같이 비고에 남긴다. 시트에
         「교환반품구분」 열을 만들면 코드를 안 고쳐도 그쪽으로 간다.
         기본값 「단순반품」은 남기지 않는다 — 줄마다 같은 말이 쌓이면 비고를 못 읽는다. */
+    /*  ★ 다시 보내는 것 ★  (2026-10-02)
+        > "둘다 적으면 좋겠네"
+        상품명 칸은 «돌려받는 것»이다. 세트가 뚜껑만 나가면 우리가 몸통을
+        다시 보내는데, 그것을 적을 칸이 협의된 배열에 없다.
+        귀책·반품비·구분이 걸어온 길과 같이 비고에 남긴다.
+        시트에 「재출고상품」 열을 만들면 코드를 안 고쳐도 그쪽으로 간다.  */
+    var reshipIn = String(data.reship || "").replace(/s+/g, " ").trim();
+    var reshipToNotice = "";
+    if (reshipIn) {
+      if (col.reship >= 0) row[col.reship] = reshipIn;
+      else reshipToNotice = "재출고: " + reshipIn;
+    }
+
     var typeIn = String(data.type || "").trim();
     var typeToNotice = "";
     if (col.type >= 0) row[col.type] = typeIn || "단순반품";
@@ -2278,6 +2291,7 @@ function submitReturnLedger(data) {
       var noticeLines = [];
       if (data.memo) noticeLines.push(_cs_ledgerStamp_(data.staff) + " " + String(data.memo || "").trim());
       if (typeToNotice) noticeLines.push(typeToNotice);
+      if (reshipToNotice) noticeLines.push(reshipToNotice);
       if (faultToNotice) noticeLines.push(faultToNotice);
       if (feeToNotice) noticeLines.push(feeToNotice);
       if (retInvToNotice) noticeLines.push(retInvToNotice);
@@ -2475,6 +2489,22 @@ function _cs_reasonFromNotice_(notice) {
 }
 
 /**
+ * 비고에 남긴 「재출고: 몸통 1」에서 «다시 보내는 것»을 되읽는다. (2026-10-02)
+ *
+ * 쓰는 쪽(submitReturnLedger)과 같은 자리에서 찾는다.
+ * ★ 줄 끝까지 받는다 ★ 품목명에는 띄어쓰기·괄호·숫자가 섞인다 —
+ *   낱말 하나로 끊으면 「220파이 감자탕 중 백색 몸통 1」이 「220파이」가 된다.
+ *
+ * @return {string} 재출고 상품, 없으면 ""
+ */
+function _cs_reshipFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/(?:^|[\n·])\s*재출고\s*[:：]\s*([^\n]{1,80})/);
+  return m ? String(m[1]).trim() : "";
+}
+
+/**
  * 비고에 남긴 「구분: 교환」 표시에서 교환반품구분을 되읽는다.  (2026-10-01)
  *
  * 협의된 배열에는 교환반품구분 칸이 없다. 쓰는 쪽(submitReturnLedger)이
@@ -2625,6 +2655,8 @@ function _cs_mapReturnLedgerCols_(header) {
     /* 입고확인요청 — CS 가 물류에게 «박스 열 때 볼 것»을 적는 칸 (2026-09-30).
        대장 맨 뒤에 붙인다(_cs_ensureIntakeReqCol_). 업체 포털은 이 열을 안 읽는다. */
     intakeReq: -1,
+    //  재출고 상품 — 아직 대장에 없는 열이다 (2026-10-02). 생기면 여기로 잡힌다
+    reship: -1,
 
     /*  ══════════════════════════════════════════════════════
         ★ 2026-10 대장 설계 ★  (2026-10-01)
@@ -2656,6 +2688,7 @@ function _cs_mapReturnLedgerCols_(header) {
     if (!h) continue;
     //  맨 앞에서 먼저 잡는다 — 「요청」·「확인」이 다른 규칙(고객요청 → 비고 등)에 걸리지 않게
     if (col.intakeReq < 0 && /^입고확인요청/.test(h)) col.intakeReq = i;
+    else if (col.reship < 0 && /^재출고상품$|^재출고품목$|^재발송상품$/.test(h)) col.reship = i;
     else if (col.date < 0 && /반품접수날짜|접수날짜|접수일자/.test(h)) col.date = i;
     else if (col.staff < 0 && h === "접수자") col.staff = i;
     /* 2026-09-09: 9월 탭에서 D열이 「업체명」 → 「주문지」로 바뀌었다.
@@ -3841,6 +3874,11 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
         : _cs_reasonFromNotice_(notice),
       //  입고확인요청 열 (2026-09-30) — 카드에 노란 띠로, v2 물류 입고 화면에도 뜬다
       intakeReq: col.intakeReq >= 0 ? String(row[col.intakeReq] || "").trim() : "",
+      /*  다시 보내는 것 (2026-10-02) — 상품명은 «돌려받는 것»이다.
+          열이 생기면 열에서, 없으면 비고 표시에서 되읽는다.  */
+      reship: col.reship >= 0
+        ? String(row[col.reship] || "").trim()
+        : _cs_reshipFromNotice_(notice),
       /*  귀책 — 찾는 차례가 셋이다 (2026-10-01)
             ① 「귀책」 전용 열이 있으면 그것        (누가 그렇게 만들면)
             ② 「발생원인」 칸의 «앞»부분             (협의된 배열)
