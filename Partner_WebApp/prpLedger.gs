@@ -302,6 +302,26 @@ function prpMakeCause_(귀책, 사유) {
 }
 
 /**
+ * 비고에 남긴 「재출고: 몸통 1」에서 «다시 보내는 것»을 되읽는다. (2026-10-02)
+ *
+ * 반품대장의 상품명 칸은 «돌려받는 것»이다. 세트가 뚜껑만 나가면 우리가
+ * 몸통을 다시 보내는데, 협의된 배열에 그 칸이 없어 비고에 남긴다.
+ *
+ * ★ 줄 끝까지 받는다 ★ 품목명에는 띄어쓰기·괄호·숫자가 섞인다 —
+ *   낱말 하나로 끊으면 「220파이 감자탕 중 백색 몸통 1」이 「220파이」가 된다.
+ *
+ * ★ CS웹앱 `_cs_reshipFromNotice_` 와 «같은 규칙» ★ 쌍으로 고친다.
+ *
+ * @return {string} 재출고 상품, 없으면 ""
+ */
+function prpReshipFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/(?:^|[\n·])\s*재출고\s*[:：]\s*([^\n]{1,80})/);
+  return m ? String(m[1]).trim() : "";
+}
+
+/**
  * 비고에 남긴 「구분: 교환」에서 교환반품구분을 되읽는다.  (2026-10-01)
  *
  * 협의된 배열에는 교환반품구분 칸이 없다. CS웹앱이 비고에 「구분: …」으로
@@ -587,6 +607,10 @@ function prpReadTabCases_(tab, tabName, cutoffYmd, sess) {
       returnInvoice: (col.returnInvoice >= 0 ? String(row[col.returnInvoice] || "").trim() : "") ||
         prpParseReturnInvFromNotice_(notice),
       type: typeVal,
+      /*  다시 보내는 것 (2026-10-02) — 상품명은 «돌려받는 것»이다.
+          대리발송 업체에게는 자기가 보낼 물건이라 더 중요하다.
+          CS웹앱 _cs_reshipFromNotice_ 와 같은 규칙이다 — 쌍으로 고친다. */
+      reship: prpReshipFromNotice_(notice),
       /*  구분(type)은 «어떻게 처리하나», 사유(reason)는 «왜 보냈나».
           업체도 자기 건이 왜 반품인지 알아야 다음에 안 그런다. */
       /*  사유 — 협의된 배열은 「발생원인」 한 칸에 «귀책 / 사유»로 적는다.
