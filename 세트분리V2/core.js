@@ -1624,17 +1624,20 @@ function ssMerge(units, cfg) {
            >  이렇게 나오는데 어떤거와 합배송인지가 안나와서 합배송이 안되고 있네.."
            이름 접기(ssCompressNames)는 같은 이름을 하나로 줄인다. 두 주문이 같은
            품목이면 이름이 하나만 남아 «무엇과 묶였는지» 안 보였다.
-           이름 수가 건수보다 적을 때만 「===합배송 N개」로 건수를 붙인다.
-           ===합배송 글자는 그대로 둔다 — 허브 적요·배송비 판정·독점푸시가
-           그 글자를 그대로 찾는다. 숫자는 그 «뒤»에만 붙인다. */
+           이름 수가 건수보다 적을 때만 「===2개 합배송」처럼 건수를 붙인다 —
+           「---2개 합포장」과 같은 모양이다 (사장님이 보내 주신 예시).
+           이 글자를 읽는 곳은 셋이다. 셋 다 숫자가 끼어도 읽게 고쳤다 —
+             _partnerOrders.gs        허브 적요 (「2개 합배송」 그대로 옮긴다)
+             _partnerExclusivePush.gs _pep_isCombinedPackItem_
+             _partnerLotteShipCompare.gs  「합배송」 글자만 본다 — 그대로 된다 */
       var _이름들 = {}, _이름수 = 0;
       for (var nn = 0; nn < names.length; nn++) {
         var _nk = ssNorm(names[nn]);
         if (_nk && !_이름들[_nk]) { _이름들[_nk] = true; _이름수++; }
       }
-      var _건수꼬리 = (!합포장박스 && _이름수 < box.length) ? ' ' + box.length + '개' : '';
+      var _건수꼬리 = (!합포장박스 && _이름수 < box.length) ? box.length + '개 ' : '';
       rep.출력품목명 = (sample ? '[샘플] ' : '') + ssCompressNames(names, !sample) +
-        (합포장박스 ? ' ===합포장' : ' ===합배송' + _건수꼬리) +
+        (합포장박스 ? ' ===합포장' : ' ===' + _건수꼬리 + '합배송') +
         (boxes.length > 1 ? '(' + (b + 1) + '/' + boxes.length + ')' : '');
       for (var k = 1; k < box.length; k++) box[k].합포장흡수 = true;
 
