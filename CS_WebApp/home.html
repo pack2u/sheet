@@ -3245,6 +3245,29 @@
     .csq-body { display: none; margin-top: 8px; }
     .csq-card.open .csq-body { display: block; }
     .csq-card.open { background: var(--bg-card-hover); }
+    /*  고유ID 줄 — 번호는 «숫자가 고르게» 보여야 사람이 읽는다.
+        tabular-nums 가 아니라 고정폭을 쓴다 — 표식(r/q)까지 자리가 같아야
+        위아래 카드의 번호가 눈으로 견줘진다. (2026-10-02)              */
+    .csq-uids { display: flex; gap: 6px; align-items: center; margin-top: 3px; flex-wrap: wrap; }
+    .csq-uid, .csq-ref {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: calc(10px * var(--hb-text-scale));
+      padding: 1px 6px; border-radius: 6px; letter-spacing: 0.02em;
+    }
+    .csq-uid { background: var(--bg-primary); color: var(--text-secondary); }
+    /*  ↳ 걸린 건 — 제 번호와 «다른 색»이어야 헷갈리지 않는다 */
+    .csq-ref { background: rgba(253, 184, 19, 0.16); color: var(--text-primary); }
+    .csq-ref-in {
+      width: 100%; margin-top: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: calc(11px * var(--hb-text-scale));
+    }
+    .csq-fu input[type="text"] {
+      width: 100%; padding: 7px 9px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-input, var(--bg-primary));
+      color: var(--text-primary); font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: calc(12px * var(--hb-text-scale));
+    }
     .csq-label {
       font-size: calc(10px * var(--hb-text-scale));
       color: var(--text-muted); margin: 7px 0 3px;
@@ -3555,6 +3578,11 @@
                 <input id="csqnVendor" type="text" placeholder="거래처">
                 <input id="csqnItem" type="text" placeholder="상품">
               </div>
+              <!--  관련 번호 (2026-10-02, sql/76) — 반품·발주 건에 걸린 문의면 그 번호.
+                    ★ 적어 두면 그 번호로 양쪽이 다 찾아진다 ★ 안 적으면 문의는
+                    문의끼리만 남아, 나중에 그 반품 건을 보는 사람은 이 글을 못 본다. -->
+              <input id="csqnRef" type="text" class="csq-ref-in"
+                placeholder="관련 번호 (선택) — 반품 r1002000003 · 발주 d1002000047">
               <textarea id="csqnBody" placeholder="문의 내용"></textarea>
               <textarea id="csqnFollowup" placeholder="후처리 요청 (선택) — 나중에 해야 할 일"></textarea>
               <!--  사진 — 반품 쪽과 같은 길이다. 고르면 줄여서 들고 있다가
@@ -8118,7 +8146,11 @@
 
     function csqMatch(c, q) {
       if (!q) return true;
-      return [c.vendor, c.item, c.body, c.followup, c.created_by]
+      /*  ★ 번호로도 찾는다 ★  (2026-10-02, sql/76)
+          > "다 연결되어 연동..찾기가 가능하고 추적가능하게"
+          c.uid 는 이 문의 번호, c.ref_uid 는 걸린 건의 번호다. 둘 다
+          넣어야 「이 반품 건에 걸린 문의」를 번호로 끌어올 수 있다.  */
+      return [c.vendor, c.item, c.body, c.followup, c.created_by, c.uid, c.ref_uid]
         .join(' ').toLowerCase().indexOf(q) >= 0;
     }
 
@@ -8201,6 +8233,16 @@
         (끝남 ? '<span class="csq-done-tag">완료 · 후처리 남음</span>' : '') +
         '<span class="csq-when">' + esc(csqWhen(c.created_at)) + '</span>' +
         '</div>';
+      /*  ★ 번호가 «보여야» 추적이 된다 ★  (2026-10-02, sql/76)
+          찾기만 되고 어디에도 안 보이면, 사람이 그 번호를 알 길이 없어
+          다른 화면에 옮겨 적을 수가 없다. 접힌 카드에도 둔다 —
+          전화를 받으며 「문의 번호 뭐예요」에 바로 읽어 줘야 한다.  */
+      if (c.uid || c.ref_uid) {
+        h += '<div class="csq-uids">' +
+          (c.uid ? '<span class="csq-uid">' + esc(c.uid) + '</span>' : '') +
+          (c.ref_uid ? '<span class="csq-ref">↳ ' + esc(c.ref_uid) + '</span>' : '') +
+          '</div>';
+      }
       if (!열림 && 한줄) h += '<div class="csq-one">' + esc(한줄) + '</div>';
       if (!열림 && fu) h += '<div class="csq-fu-tag">후처리 ' + esc(fu.replace(/\s+/g, ' ').slice(0, 28)) + '</div>';
 
@@ -8217,6 +8259,11 @@
         }
         h += '</div>';
       }
+      /*  관련 번호 — 펼쳤을 때만. 접힌 카드에 입력칸을 두면 잘못 눌린다.  */
+      h += '<div class="csq-label">관련 번호 — 반품 r… · 발주 d… · 전화주문 p…</div>';
+      h += '<div class="csq-fu"><input type="text" id="csqref-' + esc(id) + '"' +
+        ' value="' + esc(String(c.ref_uid || '')) + '"' +
+        ' placeholder="예: r1002000003 (비워 두면 지웁니다)"></div>';
       h += '<div class="csq-label">후처리 요청 — 나중에 해야 할 일 (완료해도 남습니다)</div>';
       h += '<div class="csq-fu"><textarea id="csqfu-' + esc(id) + '"' +
         ' placeholder="예: 불량 100개 — 다음 주문 때 모아 1000개 되면 추가 발송">' +
@@ -8234,6 +8281,7 @@
 
       h += '<div class="csq-acts">' +
         '<button type="button" id="csqph-' + esc(id) + '" onclick="csqAddPhotos(\'' + esc(id) + '\')">사진 올리기</button>' +
+        '<button type="button" onclick="csqSaveRef(\'' + esc(id) + '\')">번호 저장</button>' +
         '<button type="button" onclick="csqSaveFollowup(\'' + esc(id) + '\')">후처리 저장</button>' +
         (끝남
           ? '<button type="button" onclick="csqReopen(\'' + esc(id) + '\')">다시 열기</button>'
@@ -8401,6 +8449,8 @@
       var p = {
         staff: staff, vendor: g('csqnVendor'), item: g('csqnItem'),
         body: g('csqnBody'), followup: g('csqnFollowup'), photos: [],
+        //  관련 번호 — 비어 있으면 그냥 안 적힌다 (2026-10-02, sql/76)
+        refUid: g('csqnRef'),
       };
       if (!p.vendor.trim() && !p.item.trim() && !p.body.trim()) {
         toast('거래처·상품·내용 가운데 하나는 적어 주세요'); return;
@@ -8426,7 +8476,7 @@
         .withSuccessHandler(function (res) {
           if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
           if (!res || !res.ok) { toast((res && res.error) || '올리기 실패', 3200); return; }
-          ['csqnVendor', 'csqnItem', 'csqnBody', 'csqnFollowup'].forEach(function (id) {
+          ['csqnVendor', 'csqnItem', 'csqnBody', 'csqnFollowup', 'csqnRef'].forEach(function (id) {
             var e = document.getElementById(id); if (e) e.value = '';
           });
           CSQ_PICK = [];
@@ -8441,6 +8491,40 @@
           toast(String((e && e.message) || e || '올리기 실패'), 3200);
         })
         .csSaveInquiry(p);
+    }
+
+    /**
+     * 관련 번호를 저장한다.  (2026-10-02, sql/76)
+     *
+     * ★ 꼴을 미리 본다 ★ 「1002000003」처럼 표식을 빼고 적으면 어느
+     * 쪽 건인지 알 수 없다. 막지는 않는다 — 앞으로 표식이 더 생길 수
+     * 있고, 막으면 사람은 왜 안 되는지 모른다. 알려만 준다.
+     */
+    function csqSaveRef(id) {
+      var inp = document.getElementById('csqref-' + id);
+      if (!inp) return;
+      var staff = csqStaff();
+      if (!staff) { toast('담당자를 먼저 고르세요'); return; }
+      var v = String(inp.value || '').trim();
+      if (v && !/^[rdpq]\d{4}\d{6}$/i.test(v)) {
+        toast('번호 꼴이 다릅니다 — r1002000003 처럼 적어 주세요. 그대로 저장합니다.', 3600);
+      }
+      inp.disabled = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          inp.disabled = false;
+          if (!res || !res.ok) { toast((res && res.error) || '저장 실패', 3200); return; }
+          for (var i = 0; i < CSQ_ROWS.length; i++) {
+            if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i].ref_uid = v;
+          }
+          toast(v ? ('관련 번호를 ' + v + ' 로 두었습니다') : '관련 번호를 지웠습니다');
+          renderCsq();
+        })
+        .withFailureHandler(function (e) {
+          inp.disabled = false;
+          toast(String((e && e.message) || e || '저장 실패'), 3200);
+        })
+        .csSetInquiryRef({ id: id, refUid: v, staff: staff });
     }
 
     function csqSaveFollowup(id) {

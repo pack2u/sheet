@@ -112,6 +112,23 @@ function csSaveInquiry(p) {
     body: p.body || "",
     followup: p.followup || "",
     photos: p.photos || [],
+    //  무엇에 걸린 문의인가 — r…(반품) · d…(발주) · p…(전화주문)  (2026-10-02)
+    refUid: p.refUid || "",
+  });
+}
+
+/**
+ * 「무엇에 걸린 문의인가」만 고친다.  (2026-10-02, sql/76)
+ *
+ * ★ csSaveInquiry 로 고치지 않는다 ★ 그쪽 고치기는 거래처·상품·내용을
+ * 함께 덮는다 — 번호만 바꾸려고 부르면 그 셋이 지워진다.
+ */
+function csSetInquiryRef(p) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  p = p || {};
+  if (!p.id) return { ok: false, error: "어느 문의인지 알 수 없습니다" };
+  return _csq_call_("post", _CSQ_PATH_, {
+    action: "ref", id: p.id, refUid: p.refUid || "", staff: p.staff || "CS",
   });
 }
 
