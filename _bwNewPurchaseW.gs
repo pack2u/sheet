@@ -276,17 +276,21 @@ function bwApplyNewPurchaseW() {
     throw new Error('열 자리가 다릅니다 — E4=' + head[4] + ' / W4=' + head[22]);
   }
   var codes = sh.getRange(FIRST, 5, last - FIRST + 1, 1).getValues();
+  var bVal = sh.getRange(FIRST, 2, last - FIRST + 1, 1).getValues();
   var wRng = sh.getRange(FIRST, 23, last - FIRST + 1, 1);
   var wVal = wRng.getValues(), wFm = wRng.getFormulas();
   var at = {};
   for (var i = 0; i < codes.length; i++) { var c = String(codes[i][0]).trim(); if (c) (at[c] = at[c] || []).push(i); }
 
-  var plan = [], skip = [], same = 0;
+  /* 2026-10-02 사장님 — 대리발송만 새 단가로. 자체 발송(평택 창고)은 원래 단가 그대로.
+     출고지는 «지금 시트의» B열로 본다. */
+  var plan = [], skip = [], same = 0, selfShip = 0;
   _BWW_DATA_.forEach(function (d) {
     var rows = at[d[0]];
     if (!rows) { skip.push(d[0] + ' 코드 없음'); return; }
     if (rows.length > 1) { skip.push(d[0] + ' 코드가 ' + rows.length + '줄'); return; }
     var i = rows[0];
+    if (String(bVal[i][0]).trim() !== '대리발송') { selfShip++; return; }
     if (wFm[i][0]) { skip.push(d[0] + ' W 수식 ' + wFm[i][0]); return; }
     var cur = Math.round(Number(wVal[i][0]) * 100) / 100;
     if (cur === d[2]) { same++; return; }
@@ -306,7 +310,7 @@ function bwApplyNewPurchaseW() {
   });
   SpreadsheetApp.flush();
 
-  var msg = '부원 새 매입가 W열 반영' + NL + '바꿈 ' + plan.length + ' · 이미 새 값 ' + same + ' · 건너뜀 ' + skip.length;
+  var msg = '부원 새 매입가 W열 반영' + NL + '바꿈 ' + plan.length + ' · 이미 새 값 ' + same + ' · 자체 발송(안 건드림) ' + selfShip + ' · 건너뜀 ' + skip.length;
   Logger.log(msg + NL + plan.map(function (p) { return p.row + '행 ' + p.code + ' ' + p.from + ' → ' + p.to; }).join(NL));
   if (skip.length) Logger.log('건너뜀' + NL + skip.join(NL));
   _bww_alert_(msg + (skip.length ? NL + NL + '건너뜀:' + NL + skip.slice(0, 15).join(NL) : ''));
