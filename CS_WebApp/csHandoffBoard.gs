@@ -75,11 +75,11 @@ var _CS_HB_HEADERS_ = [
   //   지목된 사람 화면에서만 그 카드가 빨갛게 깜박인다. 읽으면 멈춘다.
   //   「읽음」(I열)과 같은 형식이라 _cs_hb_readList_ 를 그대로 쓴다.
   "지목",        // S
-  /*  후처리요청 (2026-10-02) — CS 가 «나중에 해야 할 일»을 적어 둔다.
-      > "1000개중 100개가 불량… 다음 주문시에 모아서 1000개가 되면 추가 발송"
-      문의 자체는 오늘 끝나도 이 일은 다음 달에 해야 한다.
-      ★ 카드를 완료로 닫아도 이 칸은 안 지운다 ★                      */
-  "후처리요청",  // T
+  /*  2026-10-02: 여기 「후처리요청」을 잠깐 뒀다가 거뒀다.
+      CS 문의가 v2 제 표(cs_inquiries · sql/74)로 독립하면서 그 칸의 임자가
+      그쪽이 됐다. 두 군데에 같은 뜻의 칸을 두면 어느 것이 맞는지 모른다.
+      ★ 시트에 「후처리요청」 머리글이 남아 있을 수 있다 ★ 한 번이라도
+        보드를 연 뒤라면 T열에 글자만 남는다. 코드는 안 읽는다 — 지워도 된다. */
 ];
 
 var _CS_HB_COL_ = {
@@ -88,7 +88,6 @@ var _CS_HB_COL_ = {
   att: 12, srcKey: 13,
   custName: 14, phone: 15, invoice: 16, item: 17,
   mention: 18,
-  followup: 19,
 };
 
 /**
@@ -477,8 +476,6 @@ function _cs_hb_rowToCard_(row, sheetRow) {
     invoice: String(row[c.invoice] || "").trim(),
     item: String(row[c.item] || "").trim(),
     to: _cs_hb_readList_(row[c.mention]),
-    //  나중에 해야 할 일 (2026-10-02). 완료된 카드에도 남아 있다
-    followup: String(row[c.followup] || "").trim(),
   };
 }
 
@@ -1005,49 +1002,6 @@ function csSetHandoffMention(payload) {
  * 완료 처리 — 보드에서 내리고 시트에는 남긴다 (보관)
  * @param {Object} payload {id, staff}
  */
-/**
- * 후처리요청 — CS 가 «나중에 해야 할 일»을 적어 둔다.  (2026-10-02)
- *
- * > "1000개중 100개가 불량이야.. 100개만 따로 보낼수 없으니 다음에 주문시에
- * >  불량들을 모아서 1000개가 된다면 1000개를 추가로 보내야 된다"
- *
- * ★ 문의와 수명이 다르다 ★
- *   문의는 오늘 답하면 끝나지만 이 일은 다음 달에 해야 한다. 그래서
- *   카드를 「처리완료」로 닫아도 이 칸은 «안 지운다». 완료 카드에서도
- *   그대로 읽힌다(_cs_hb_rowToCard_ 가 늘 실어 보낸다).
- *
- * ★ 전달내역에도 한 줄 남긴다 ★
- *   누가 언제 무엇으로 바꿨는지가 없으면, 나중에 「이거 누가 적었지」를
- *   물어볼 데가 없다. 비우는 것도 적는다.
- *
- * @param {{id:string, board:string, text:string, staff:string}} payload
- */
-function csSetHandoffFollowup(payload) {
-  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
-  payload = payload || {};
-  var staff = _cs_hb_staff_(payload.staff);
-  if (!staff) return { ok: false, error: "담당자를 먼저 선택하세요." };
-  var text = String(payload.text == null ? "" : payload.text).replace(/\s+$/, "");
-
-  return _cs_hb_withCard_(payload, function (tab, sheetRow, row) {
-    var before = String(row[_CS_HB_COL_.followup] || "").trim();
-    if (before === text.trim()) return { ok: true, followup: text, unchanged: true };
-
-    tab.getRange(sheetRow, _CS_HB_COL_.followup + 1).setValue(text);
-
-    var 말 = text.trim()
-      ? "[내부] 후처리요청: " + text.replace(/\s+/g, " ").slice(0, 120)
-      : "[내부] 후처리요청 지움" + (before ? " (전: " + before.replace(/\s+/g, " ").slice(0, 80) + ")" : "");
-    try {
-      var cur = String(row[_CS_HB_COL_.notes] || "").replace(/\s+$/, "");
-      var line = _cs_hb_stamp_(staff) + " " + 말;
-      tab.getRange(sheetRow, _CS_HB_COL_.notes + 1).setValue(cur ? (cur + "\n" + line) : line);
-    } catch (eN) {}
-
-    return { ok: true, followup: text };
-  });
-}
-
 function csCompleteHandoffCard(payload) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   payload = payload || {};

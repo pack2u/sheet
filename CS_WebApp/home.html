@@ -3258,6 +3258,27 @@
       background: var(--bg-primary); color: var(--text-secondary);
       font-size: 11px; text-decoration: none;
     }
+    /*  완료인데 후처리가 남아 목록에 있는 카드 — 왜 있는지 글로 적어 둔다 */
+    .csq-card.done { opacity: 0.78; }
+    .csq-done-tag {
+      padding: 1px 7px; border-radius: 8px; font-size: 10px; font-weight: 700;
+      background: rgba(85, 166, 124, 0.16); color: var(--accent-green);
+    }
+    .csq-by { margin-top: 7px; font-size: 10.5px; color: var(--text-muted); }
+    /*  새 문의 — 접혀 있다가 펴진다 */
+    .csq-new {
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg-secondary); padding: 10px; margin-bottom: 8px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .csq-new-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .csq-new input, .csq-new textarea {
+      width: 100%; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-primary);
+      color: var(--text-primary); font-size: 12.5px; font-family: inherit;
+    }
+    .csq-new textarea { min-height: 52px; resize: vertical; }
+    @media (max-width: 640px) { .csq-new-row { grid-template-columns: 1fr; } }
     .csq-empty { font-size: 12px; color: var(--text-muted); padding: 10px 2px; }
 
     .ret-reship {
@@ -3500,7 +3521,21 @@
                        placeholder="거래처·상품·문의 내용·후처리요청"
                        oninput="renderCsq()">
               </div>
+              <button type="button" class="os-chip" onclick="csqNewToggle()" title="문의 올리기">+ 새 문의</button>
               <button type="button" class="os-chip ghost" onclick="loadCsq(true)" title="새로 읽기">↻</button>
+            </div>
+            <!--  새 문의 — 기본은 접혀 있다. 늘 펴 두면 목록이 아래로 밀린다. -->
+            <div class="csq-new" id="csqNew" hidden>
+              <div class="csq-new-row">
+                <input id="csqnVendor" type="text" placeholder="거래처">
+                <input id="csqnItem" type="text" placeholder="상품">
+              </div>
+              <textarea id="csqnBody" placeholder="문의 내용"></textarea>
+              <textarea id="csqnFollowup" placeholder="후처리 요청 (선택) — 나중에 해야 할 일"></textarea>
+              <div class="csq-acts">
+                <button type="button" onclick="csqNewToggle()">닫기</button>
+                <button type="button" class="ok" id="csqnSave" onclick="csqNewSave()">올리기</button>
+              </div>
             </div>
             <div id="csqList" class="csq-list"></div>
           </div>
@@ -8024,62 +8059,40 @@
     /* ══════════════════════════════════════════════════════════════
      *  CS 문의  (2026-10-02)
      *
-     *  > "CS웹앱 입금확인위에 CS문의라는 내용을 만들어줘. 따로 시트는
-     *  >  만들지 말고 거래처, 상품, 문의 내용, 후처리요청, 사진등이
-     *  >  나오게 카드식으로 … 검색기능도 넣고 … 접힌 카드 방식으로
-     *  >  클릭하면 펼쳐서 자세히 보고 처리완료를 누르면 삭제
-     *  >  (화면에서만 데이타는 저장)"
+     *  > "CS웹앱 입금확인위에 CS문의라는 내용을 만들어줘 … 거래처, 상품,
+     *  >  문의 내용, 후처리요청, 사진등이 나오게 카드식으로 … 검색기능도
+     *  >  넣고 … 접힌 카드 방식으로 클릭하면 펼쳐서 … 처리완료를 누르면
+     *  >  삭제(화면에서만 데이타는 저장)"
+     *  > "CS_커뮤니티보드에서 불러오는게 아니고 이건 별도로 저장해줘
+     *  >  시트말고 바르셀 데이타로.."
      *
-     *  ★ 새 시트를 안 만든다 ★
-     *    업체 문의는 이미 CS 커뮤니티 보드로 들어온다 —
-     *    포털(prpBoard.prpPostInquiryToBoard_)이 반품 건마다 카드를 만든다.
-     *    여기서는 그 카드를 «문의 보기»로 다시 보여 줄 뿐이다.
-     *    그래서 보드에서 답하면 여기도 바뀌고, 여기서 닫으면 보드도 닫힌다.
+     *  ★ 저장은 v2 다 (cs_inquiries · sql/74) ★
+     *    시트도 보드도 아니다. 보드는 «오늘 넘길 일»이 사는 곳이고 문의는
+     *    거래처와 상품에 매인 일이다 — 섞으면 둘 다 흐려진다.
+     *    GAS 는 Supabase 를 직접 못 부르므로 csInquiry.gs 가 v2 문으로 간다.
      *
-     *  ★ 거래처는 어디서 오나 ★
-     *    카드 작성자가 「업체:당장드림」 꼴이다(PRP_STAFF_PREFIX).
-     *    그 접두를 떼면 거래처다. CS 가 직접 만든 카드는 거래처가 없다 —
-     *    그때는 작성자 이름을 그대로 쓴다.
+     *  ★ 처리완료는 지우는 게 아니다 ★ status 만 「완료」가 되고 줄은 남는다.
+     *    후처리요청은 완료 뒤에도 산다 — 「1000개 되면 추가 발송」은 다음 달 일이다.
+     *    그래서 목록은 «진행 + 후처리 남은 완료»를 받는다.
      */
     var CSQ_ROWS = [];
     var CSQ_OPEN = {};        // 펼쳐 둔 카드 — 다시 그려도 그대로 둔다
     var CSQ_AT = 0;
     var csqBusy = false;
 
-    /** 「업체:당장드림」 → 「당장드림」. 아니면 작성자 이름 그대로 */
-    function csqVendor(c) {
-      var a = String((c && c.author) || '').trim();
-      var m = a.match(/^업체\s*[:：]\s*(.+)$/);
-      return m ? m[1].trim() : a;
-    }
-
-    /*  문의 내용 — 전달내역의 「문의.」 줄들을 모은다. 없으면 본문.
-        보드 카드는 같은 건의 두 번째 문의를 전달내역에 쌓는다. */
-    function csqText(c) {
-      var ns = (c && c.notes) || [];
-      var 모음 = [];
-      for (var i = 0; i < ns.length; i++) {
-        var t = String((ns[i] && (ns[i].text || ns[i].body || ns[i])) || '');
-        if (!t) continue;
-        if (t.indexOf('[내부]') >= 0) continue;   // 후처리요청 기록 같은 내부 줄은 뺀다
-        /*  ★ 도장을 걷어낸다 ★  (2026-10-02)
-            전달내역은 「[261002 09:10 업체:당장드림] 문의. 내용」 꼴이다.
-            접힌 줄은 한 줄뿐인데 도장이 스물몇 자를 먹어 정작 내용이 밀린다.
-            누가 언제는 카드 머리(거래처·시각)에 이미 있다.
-            「문의.」 라는 말머리도 뗀다 — 여기 있는 것은 다 문의다.  */
-        t = t.replace(/^\s*\[[^\]]{1,40}\]\s*/, '').replace(/^문의[.\s]*/, '');
-        t = t.trim();
-        if (t) 모음.push(t);
-      }
-      if (모음.length) return 모음.join('\n');
-      return String((c && c.body) || '');
-    }
-
     function csqMatch(c, q) {
       if (!q) return true;
-      var 뭉치 = [csqVendor(c), c.item, c.title, csqText(c), c.followup,
-        c.custName, c.invoice].join(' ').toLowerCase();
-      return 뭉치.indexOf(q) >= 0;
+      return [c.vendor, c.item, c.body, c.followup, c.created_by]
+        .join(' ').toLowerCase().indexOf(q) >= 0;
+    }
+
+    /** 2026-10-02T06:03:53Z → 10-02 15:03 (서울). 자리만 차지하는 초는 뗀다 */
+    function csqWhen(iso) {
+      var d = new Date(String(iso || ''));
+      if (isNaN(d.getTime())) return '';
+      var p = function (n) { return (n < 10 ? '0' : '') + n; };
+      return p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +
+        p(d.getHours()) + ':' + p(d.getMinutes());
     }
 
     function loadCsq(force) {
@@ -8091,16 +8104,22 @@
         .withSuccessHandler(function (res) {
           csqBusy = false;
           CSQ_AT = Date.now();
-          CSQ_ROWS = (res && res.ok && res.rows) ? res.rows : [];
+          if (!res || !res.ok) {
+            //  ★ 조용히 비워 두지 않는다 ★ 못 읽은 것과 없는 것은 다르다
+            var el = document.getElementById('csqList');
+            if (el) el.innerHTML = '<div class="csq-empty">문의를 못 읽었습니다 — ' +
+              esc((res && res.error) || '까닭 모름') + '</div>';
+            return;
+          }
+          CSQ_ROWS = res.rows || [];
           renderCsq();
         })
-        .withFailureHandler(function () {
+        .withFailureHandler(function (e) {
           csqBusy = false;
-          //  조용히 비워 두지 않는다 — 안 보이는 것과 없는 것은 다르다
           var el = document.getElementById('csqList');
           if (el) el.innerHTML = '<div class="csq-empty">문의를 못 읽었습니다. ↻ 를 눌러 보세요.</div>';
         })
-        .csListHandoffCards({ board: 'cs' });
+        .csListInquiries({ limit: 200 });
     }
 
     function renderCsq() {
@@ -8122,7 +8141,6 @@
           (q ? '찾는 문의가 없습니다.' : '처리할 문의가 없습니다.') + '</div>';
         return;
       }
-
       var h = '';
       for (var i = 0; i < 볼것.length; i++) h += csqCardHtml(볼것[i]);
       list.innerHTML = h;
@@ -8131,52 +8149,50 @@
     function csqCardHtml(c) {
       var id = String(c.id || '');
       var 열림 = !!CSQ_OPEN[id];
-      var 글 = csqText(c);
+      var 글 = String(c.body || '');
       var 한줄 = 글.replace(/\s+/g, ' ').trim();
       var fu = String(c.followup || '').trim();
+      var 끝남 = String(c.status || '') === '완료';
+      var 사진 = (c.photos && c.photos.length) ? c.photos : [];
 
-      var h = '<div class="csq-card' + (열림 ? ' open' : '') + '" data-csq="' + esc(id) + '"' +
-        ' onclick="csqToggle(this)">';
+      var h = '<div class="csq-card' + (열림 ? ' open' : '') + (끝남 ? ' done' : '') +
+        '" data-csq="' + esc(id) + '" onclick="csqToggle(this)">';
       h += '<div class="csq-head">' +
-        '<span class="csq-vendor">' + esc(csqVendor(c) || '(거래처 없음)') + '</span>' +
+        '<span class="csq-vendor">' + esc(c.vendor || '(거래처 없음)') + '</span>' +
         (c.item ? '<span class="csq-item">' + esc(c.item) + '</span>' : '') +
-        '<span class="csq-when">' + esc(String(c.at || '').slice(5, 16)) + '</span>' +
+        /*  ★ 완료인데 왜 보이나 ★ 후처리가 남아서다. 안 적어 두면
+            「닫았는데 왜 또 있지」가 된다.  */
+        (끝남 ? '<span class="csq-done-tag">완료 · 후처리 남음</span>' : '') +
+        '<span class="csq-when">' + esc(csqWhen(c.created_at)) + '</span>' +
         '</div>';
       if (!열림 && 한줄) h += '<div class="csq-one">' + esc(한줄) + '</div>';
       if (!열림 && fu) h += '<div class="csq-fu-tag">후처리 ' + esc(fu.replace(/\s+/g, ' ').slice(0, 28)) + '</div>';
 
-      /*  펼친 속 — 눌러서 보는 자리라 자세히 적는다.
-          ★ 안쪽을 누를 때 카드가 접히면 안 된다 ★ 글자를 끌어 복사하거나
-          후처리요청을 적다가 접히면 적던 것이 날아간다.  */
+      /*  ★ 안쪽을 누를 때 접히면 안 된다 ★ 글자를 끌어 복사하거나
+          후처리를 적다가 접히면 적던 것이 날아간다.  */
       h += '<div class="csq-body" onclick="event.stopPropagation()">';
-      if (c.custName || c.invoice) {
-        h += '<div class="csq-label">주문</div><div class="csq-text">' +
-          esc([c.custName, c.invoice].filter(Boolean).join(' · ')) + '</div>';
-      }
       h += '<div class="csq-label">문의 내용</div>' +
         '<div class="csq-text">' + esc(글 || '(내용 없음)') + '</div>';
-
-      if (c.att && c.att.length) {
-        h += '<div class="csq-label">사진 ' + c.att.length + '장</div><div class="csq-photos">';
-        for (var a = 0; a < c.att.length; a++) {
-          var f = c.att[a];
-          h += '<a href="' + esc(f.viewUrl || f.url || '#') + '" target="_blank" rel="noopener">📎 ' +
-            esc(f.name || ('사진 ' + (a + 1))) + '</a>';
+      if (사진.length) {
+        h += '<div class="csq-label">사진 ' + 사진.length + '장</div><div class="csq-photos">';
+        for (var a = 0; a < 사진.length; a++) {
+          h += '<a href="' + esc(사진[a].url || '#') + '" target="_blank" rel="noopener">📎 ' +
+            esc(사진[a].name || ('사진 ' + (a + 1))) + '</a>';
         }
         h += '</div>';
       }
-
-      /*  후처리요청 — «나중에 해야 할 일». 문의가 끝나도 남는다.
-          > "1000개중 100개가 불량… 다음 주문시에 모아서 1000개가 되면 추가 발송" */
       h += '<div class="csq-label">후처리 요청 — 나중에 해야 할 일 (완료해도 남습니다)</div>';
       h += '<div class="csq-fu"><textarea id="csqfu-' + esc(id) + '"' +
         ' placeholder="예: 불량 100개 — 다음 주문 때 모아 1000개 되면 추가 발송">' +
         esc(fu) + '</textarea></div>';
-
       h += '<div class="csq-acts">' +
         '<button type="button" onclick="csqSaveFollowup(\'' + esc(id) + '\')">후처리 저장</button>' +
-        '<button type="button" class="ok" onclick="csqDone(\'' + esc(id) + '\')">처리완료</button>' +
+        (끝남
+          ? '<button type="button" onclick="csqReopen(\'' + esc(id) + '\')">다시 열기</button>'
+          : '<button type="button" class="ok" onclick="csqDone(\'' + esc(id) + '\')">처리완료</button>') +
         '</div>';
+      h += '<div class="csq-by">' + esc(c.created_by || '') +
+        (끝남 && c.done_by ? ' · 완료 ' + esc(c.done_by) : '') + '</div>';
       h += '</div></div>';
       return h;
     }
@@ -8187,10 +8203,54 @@
       renderCsq();
     }
 
+    function csqStaff() {
+      return currentStaff || (document.getElementById('ledgerStaff') || {}).value || '';
+    }
+
+    /* ── 새 문의 ─────────────────────────────────────────────── */
+    function csqNewToggle() {
+      var box = document.getElementById('csqNew');
+      if (!box) return;
+      box.hidden = !box.hidden;
+      if (!box.hidden) { var v = document.getElementById('csqnVendor'); if (v) v.focus(); }
+    }
+
+    function csqNewSave() {
+      var staff = csqStaff();
+      if (!staff) { toast('담당자를 먼저 고르세요'); return; }
+      var g = function (id) { var e = document.getElementById(id); return e ? e.value : ''; };
+      var p = {
+        staff: staff, vendor: g('csqnVendor'), item: g('csqnItem'),
+        body: g('csqnBody'), followup: g('csqnFollowup'), photos: [],
+      };
+      if (!p.vendor.trim() && !p.item.trim() && !p.body.trim()) {
+        toast('거래처·상품·내용 가운데 하나는 적어 주세요'); return;
+      }
+      var btn = document.getElementById('csqnSave');
+      if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
+          if (!res || !res.ok) { toast((res && res.error) || '올리기 실패', 3200); return; }
+          ['csqnVendor', 'csqnItem', 'csqnBody', 'csqnFollowup'].forEach(function (id) {
+            var e = document.getElementById(id); if (e) e.value = '';
+          });
+          document.getElementById('csqNew').hidden = true;
+          if (res.row) CSQ_ROWS.unshift(res.row);
+          toast('문의를 올렸습니다');
+          renderCsq();
+        })
+        .withFailureHandler(function (e) {
+          if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
+          toast(String((e && e.message) || e || '올리기 실패'), 3200);
+        })
+        .csSaveInquiry(p);
+    }
+
     function csqSaveFollowup(id) {
       var ta = document.getElementById('csqfu-' + id);
       if (!ta) return;
-      var staff = currentStaff || (document.getElementById('ledgerStaff') || {}).value || '';
+      var staff = csqStaff();
       if (!staff) { toast('담당자를 먼저 고르세요'); return; }
       var text = ta.value;
       ta.disabled = true;
@@ -8198,7 +8258,6 @@
         .withSuccessHandler(function (res) {
           ta.disabled = false;
           if (!res || !res.ok) { toast((res && res.error) || '저장 실패', 3200); return; }
-          //  들고 있는 자료도 같이 고친다 — 다시 읽지 않아도 화면이 맞는다
           for (var i = 0; i < CSQ_ROWS.length; i++) {
             if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i].followup = text;
           }
@@ -8209,25 +8268,47 @@
           ta.disabled = false;
           toast(String((e && e.message) || e || '저장 실패'), 3200);
         })
-        .csSetHandoffFollowup({ id: id, board: 'cs', text: text, staff: staff });
+        .csSetInquiryFollowup({ id: id, text: text, staff: staff });
     }
 
-    /*  처리완료 — ★ 지우는 게 아니다 ★
-        보드 카드의 상태만 「완료」로 바꾼다. 줄은 그대로 남고 화면에서만
-        빠진다. 후처리요청도 그대로 살아 있다.  */
+    /*  처리완료 — ★ 지우는 게 아니다 ★ status 만 「완료」로 바뀐다.
+        후처리가 남아 있으면 목록에 그대로 있다(딱지가 붙는다) — 그 일은
+        아직 안 끝났기 때문이다. 없으면 화면에서 빠진다.  */
     function csqDone(id) {
-      var staff = currentStaff || (document.getElementById('ledgerStaff') || {}).value || '';
+      var staff = csqStaff();
       if (!staff) { toast('담당자를 먼저 고르세요'); return; }
       google.script.run
         .withSuccessHandler(function (res) {
           if (!res || !res.ok) { toast((res && res.error) || '처리 실패', 3200); return; }
-          CSQ_ROWS = CSQ_ROWS.filter(function (c) { return String(c.id) !== String(id); });
-          delete CSQ_OPEN[id];
-          toast('처리완료 — 목록에서 뺐습니다 (자료는 보드에 남습니다)', 2600);
+          var fu = String((res.row && res.row.followup) || '').trim();
+          if (fu) {
+            for (var i = 0; i < CSQ_ROWS.length; i++) {
+              if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i] = res.row;
+            }
+            toast('처리완료 — 후처리가 남아 목록에 둡니다', 2800);
+          } else {
+            CSQ_ROWS = CSQ_ROWS.filter(function (c) { return String(c.id) !== String(id); });
+            delete CSQ_OPEN[id];
+            toast('처리완료 — 목록에서 뺐습니다 (자료는 남습니다)', 2600);
+          }
           renderCsq();
         })
         .withFailureHandler(function (e) { toast(String((e && e.message) || e || '처리 실패'), 3200); })
-        .csCompleteHandoffCard({ id: id, board: 'cs', staff: staff });
+        .csCompleteInquiry({ id: id, staff: staff });
+    }
+
+    function csqReopen(id) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) { toast((res && res.error) || '되돌리기 실패', 3200); return; }
+          for (var i = 0; i < CSQ_ROWS.length; i++) {
+            if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i] = res.row;
+          }
+          toast('다시 열었습니다');
+          renderCsq();
+        })
+        .withFailureHandler(function (e) { toast(String((e && e.message) || e || '되돌리기 실패'), 3200); })
+        .csReopenInquiry({ id: id, staff: csqStaff() });
     }
 
     function loadStockout() {
