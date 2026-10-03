@@ -142,6 +142,36 @@ function _cib_apply_(it, applied) {
   var tab = _csl_ensureIntakeTab_();
   var result, mTab = "", mRow = "", mName = "", mItem = "";
 
+  /*  ★ 재검수 결과 (2026-10-02, v2 sql/74) ★
+      물류가 v2 입고 화면에서 「이상 없음 / 문제 있음 / 확인 못 함」을 누른 것. 사진이 없다.
+      상태·반품송장·사진은 «안 건드리고» 처리 경과(비고)에 한 줄만 — it.memo 가 그 줄이다
+      (「재검수 결과 — 문제 있음 · 뚜껑 사용 흔적 (사안: 미사용확인요망)」).
+      대장 「재검수사안」 칸도 그대로 둔다 — 무엇을 볼지 적는 사람의 칸이다.
+      appendReturnConsultation 을 안 거치는 까닭: 트리거에서 접근 검사에 걸리면 조용히
+      빠지는데, 이 줄은 «그것이 전부»라 빠지면 안 된다. 같은 일을 직접 하고 실패를 돌려준다. */
+  if (it.via === "recheck") {
+    if (!loc.tab) return { id: it.id, ok: false, note: "재검수 결과 — 대장에서 그 건을 못 찾음 · " + loc.miss };
+    var line = String(it.memo || "").replace(/\s+/g, " ").trim();
+    if (!line) return { id: it.id, ok: false, note: "재검수 결과 — 적을 글이 없음" };
+    try {
+      var ctx = _cs_openReturnLedgerRow_(loc.tab, loc.row);
+      if (ctx.col.notice < 0) return { id: it.id, ok: false, note: "재검수 결과 — 비고 열을 못 찾음" };
+      var notice = _cs_appendNoticeLine_(String(ctx.row[ctx.col.notice] || "").trim(), _cs_ledgerStamp_(staff) + " " + line);
+      ctx.tab.getRange(loc.row, ctx.col.notice + 1).setValue(notice);
+      try { csInvalidateReturnLedgerCache_(); } catch (eC) {}
+    } catch (eR) {
+      return { id: it.id, ok: false, note: "재검수 결과 쓰기 실패: " + (eR.message || eR) };
+    }
+    //  기록 탭에도 한 줄 — _cib_appliedIds_ 가 M열 v2:id 로 «이미 적음»을 안다 (두 번 안 쓴다)
+    tab.appendRow([
+      at, staff, "후보", "v2/recheck", "", "", loc.tab, loc.row,
+      (ret && ret.customer_name) || "", (ret && ret.item_name) || "",
+      it.result || "재검수 결과", "", tail, ""
+    ]);
+    applied[it.id] = true;
+    return { id: it.id, ok: true, note: it.result || "재검수 결과" };
+  }
+
   if (loc.tab) {
     var r = _cs_intakeExistingReturn_(loc.tab, loc.row, it.invoice || "", staff, "v2/" + (it.via || ""), photos);
     if (!r || !r.ok) return { id: it.id, ok: false, note: "대장 쓰기 실패: " + ((r && r.error) || "알 수 없음") };
@@ -209,7 +239,7 @@ function csIntakeBridgePull() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(2000)) return { ok: true, skipped: "다른 실행이 돌고 있음" };
   try {
-    var claim = _cib_post_({ op: "claim", limit: 10 }); // 한 건에 글자 인식 3~5초 — 1분 안에 끝나게
+    var claim = _cib_post_({ op: "claim", limit: 10, recheck: true }); // recheck: 재검수 결과 줄도 받는다 (v2 sql/74) // 한 건에 글자 인식 3~5초 — 1분 안에 끝나게
     if (!claim.ok) { Logger.log("[CIB] claim 실패: " + claim.error); return claim; }
     var items = claim.items || [];
     //  새로 온 것이 없는 한가한 때에만 — 확인 대기 줄의 빠진 글자를 두 건씩 채운다

@@ -190,7 +190,15 @@ function prpSubmitReturn(sid, data) {
     if (col.item >= 0) row[col.item] = item;
     if (col.qty >= 0) row[col.qty] = String(data.qty || "1").trim();
     if (col.invoice >= 0) row[col.invoice] = invoice;
-    if (col.type >= 0) row[col.type] = String(data.type || "단순반품").trim();
+    /*  ★ 협의된 배열에는 교환반품구분 칸이 없다 ★  (2026-10-01)
+        칸이 없다고 업체가 고른 값을 조용히 버리면, 업체는 적었는데 아무 데도
+        없는 값이 된다. 귀책·실번호가 걸어온 길과 같이 비고에 남긴다.
+        ★ CS웹앱 submitReturnLedger 와 같은 글자 모양이다 — 쌍으로 고친다 ★
+        기본값 「단순반품」은 남기지 않는다 — 줄마다 같은 말이 쌓인다.  */
+    var typeIn = String(data.type || "").trim();
+    var typeToNotice = "";
+    if (col.type >= 0) row[col.type] = typeIn || "단순반품";
+    else if (typeIn && typeIn !== "단순반품") typeToNotice = " 구분: " + typeIn + ".";
 
     /*  사유 — 고객이 «왜» 보냈나. 유형(K열)과 다른 칸(L열)이다. (2026-09-30)
         업체가 목록에서 고른 낱말만 받는다 — 자유 글은 「전달 사항」이 받는다.  */
@@ -202,21 +210,26 @@ function prpSubmitReturn(sid, data) {
       }
       if (!있나) reasonIn = "";
     }
-    if (col.reason >= 0 && reasonIn) row[col.reason] = reasonIn;
-
-    /*  귀책 — 전용 열이 있으면 열에, 없으면 아래 비고 줄에.
-        CS웹앱이 걸어온 길과 같은 글자 모양을 쓴다 — 읽는 쪽이 하나여야 한다.
+    /*  귀책 — 「판매자」 같은 낱말만 받는다.
         ★ 사유가 비면 귀책도 안 적는다 ★ 「판매자」 한 낱말은 아무것도 안 알려 준다.  */
     var faultIn = String(data.fault || "").trim();
     if (PRP_RETURN_FAULTS && PRP_RETURN_FAULTS.indexOf(faultIn) === -1) faultIn = "";
     var faultToNotice = "";
-    if (faultIn && reasonIn) {
-      if (col.fault >= 0) row[col.fault] = faultIn;
-      else faultToNotice = " 귀책: " + faultIn + " (" + reasonIn + ").";
-    }
-    /*  사유 열도 없다 — 위 줄이 사유까지 담으므로 대개 이 줄은 안 쓴다.
-        귀책이 비었을 때만 따로 남긴다. (2026-09-30)  */
-    if (col.reason < 0 && reasonIn && !faultToNotice) {
+
+    /*  ★ 협의된 배열은 「발생원인」 한 칸에 «귀책 / 사유» ★  (2026-10-01)
+            판매자귀책 / 오배송
+        전에는 포털이 사유만 그 칸에 적고 귀책은 비고로 보냈다 — CS웹앱은
+        한 칸에 둘을 함께 적는다. 같은 칸에 두 모양이 섞이면 읽는 쪽이
+        한쪽을 못 가른다. 글자 모양을 CS 와 똑같이 맞춘다(prpMakeCause_).
+        귀책 전용 열이 따로 있으면 그쪽에도 적는다.
+        칸이 아예 없는 옛 탭은 비고에 표시로 남긴다 — 조용히 버리지 않는다.  */
+    if (col.reason >= 0) {
+      var 원인 = prpMakeCause_(col.fault >= 0 ? "" : faultIn, reasonIn);
+      if (원인) row[col.reason] = 원인;
+      if (col.fault >= 0 && faultIn) row[col.fault] = faultIn;
+    } else if (faultIn && reasonIn) {
+      faultToNotice = " 귀책: " + faultIn + " (" + reasonIn + ").";
+    } else if (reasonIn) {
       faultToNotice = " 사유: " + reasonIn + ".";
     }
 
@@ -247,6 +260,7 @@ function prpSubmitReturn(sid, data) {
            (p2NameIn ? " (" + p2NameIn + ")" : "") + "." : "") +
         (!p2Lost && p2NameLost ? " 실번호 " + prpFormatPhone_(p2) +
            " (" + p2NameIn + ")." : "") +
+        typeToNotice +
         faultToNotice +
         (memo ? " " + memo : "");
     }

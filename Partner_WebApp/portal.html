@@ -491,6 +491,9 @@
     .c-left { flex: 1 1 190px; min-width: 0; }
     .c-right { flex: 2 1 280px; min-width: 0; }
     .meta { font-size: 12.5px; color: var(--text-secondary); line-height: 1.65; word-break: break-all; }
+    /*  다시 보내는 것 (2026-10-02) — 돌려받는 품목 바로 아래.
+        초록은 「나가는 것」을 뜻한다. CS 카드(.ret-reship)와 같은 뜻의 색이다. */
+    .c-reship { margin-top: 3px; font-size: 11.5px; color: var(--accent-green, #2e7d57); line-height: 1.45; }
     .meta em { color: var(--text-muted); font-style: normal; }
     .sub { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
     /* 전화번호 딱지 — 작고 조용하게. 「안심번호뿐」일 때만 색을 준다
@@ -1438,6 +1441,18 @@
       var urls = String(text || '').match(/https?:\/\/[^\s]+/g) || [];
       var h = '', n = 0;
       for (var i = 0; i < urls.length; i++) {
+        /*  ★ 동영상 (2026-10-01) ★ 물류 입고가 영상도 올린다(v2 sql/70).
+            <img> 로 그리면 깨진다 — 「▶ 영상」 칸으로, 누르면 새 창에서 재생.
+            가르는 규칙은 CS 웹앱(retIsVideoUrl · _cs_isVideoUrl_)과 같다. 우리 보관소 주소만. */
+        if (storeUrl(urls[i]) && /\.(mp4|mov|m4v|webm|3gp)$/i.test(urls[i].split('?')[0])) {
+          n++;
+          //  .thumb 를 붙이면 아래 클릭 처리가 사진 확대로 가로챈다 — 따로 이름을 준다. 크기는 사진 칸(92px)과 같게
+          h += '<a class="thumb-vid" href="' + esc(urls[i]) + '" target="_blank" rel="noopener"' +
+            ' title="영상 재생" style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;' +
+            'width:92px;height:92px;border-radius:7px;background:#1f1f1f;color:#fff;font-size:24px;text-decoration:none">' +
+            '▶<span style="font-size:11px;margin-top:4px">영상</span></a>';
+          continue;
+        }
         /*  드라이브든 보관소든 «볼 수 있는 주소»로 바꿔 싣는다.
             크게보기는 id 가 아니라 주소를 받는다 — 보관소 사진에는 id 가 없다. */
         var small = photoSrc(urls[i], 480);
@@ -1561,6 +1576,11 @@
 
       h += '<div class="c-left"><div class="meta">';
       h += esc(c.item || '-') + (c.qty ? ' <em>×</em> ' + esc(c.qty) : '');
+      /*  ★ 다시 보내는 것 ★  (2026-10-02)
+          위 품목은 «돌려받는 것»이다. 세트가 뚜껑만 나가면 몸통을 다시
+          보내는데, 대리발송 업체에게는 자기가 보낼 물건이라 더 중요하다.
+          CS 카드(ret-reship)와 같은 자리·같은 규칙이다. */
+      if (c.reship) h += '<div class="c-reship">↩ 재출고 ' + esc(c.reship) + '</div>';
       /* ★ 왜 반품인지를 품목 바로 밑에 ★  (2026-09-18)
          > "업체 반품 현황에도 같이 적용해줘"
          대장 L열에 적혀 있었는데 K열이 먼저 자리를 차지해 한 번도 안

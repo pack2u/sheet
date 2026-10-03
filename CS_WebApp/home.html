@@ -853,6 +853,163 @@
       grid-column: 1 / -1;
     }
 
+    /* ══════════════════════════════════════════════════════════════
+       ★ 크게 보기에서는 «표처럼» 읽는다 ★  (2026-10-01)
+
+       > "전체 화면시에 카드가 웹앱카드랑 똑같은데 전체화면 모드에서는 전체 내용을
+       >  한눈에 잘보이게 … 접힌 카드에도 카드 형식이 아니라 텍스트형식으로
+       >  카드 내용이 정렬되면 더 보기 좋을꺼 같아 … 펼쳤을떄도 무의미한 공간을 없애줘"
+
+       세 칸 격자는 좁은 칸의 카드를 그대로 셋 늘어놓은 것이라, 넓은 화면을
+       쓰면서도 한 장 한 장이 좁았다. 크게 보기의 뜻은 «많이·한눈에» 다.
+
+       ① 접힌 카드 → 한 줄 글줄. 이름·상태 | 품목 | 원송장 | 전화 | 사유 |
+          최근 이력 한 줄 | 날짜·담당 이 가로로 선다. 입력칸·단추줄은 숨긴다.
+       ② 펼친 카드 → 왼쪽 정보 · 오른쪽 이력 «격자». 확대(scale)·큰 글씨를 끄고,
+          맨 앞 이력 한 장을 폭 전체로 늘리던 것(9/17, 좁은 칸용)을 여기선 끈다 —
+          그게 펼친 카드 한복판의 큰 빈 상자였다.
+
+       ★ 크게 보기(.is-max)에서만 ★ 세 칸 화면의 카드는 한 줄도 안 바뀐다.
+       ★ 선택자를 한 겹 무겁게 ★ (.ws-split) 접어 보기·조밀 규칙보다 이긴다.
+       ══════════════════════════════════════════════════════════════ */
+    .ws-split > #pane-returns.is-max #returnActiveList {
+      grid-template-columns: 1fr; gap: 0;
+    }
+    /* ① 접힌 카드 = 시트의 한 줄 + 그 아래 이력 한 줄  (2026-10-01 저녁)
+       > "수정된 반품 카드 내용대로 다 표시되게 해줘..시트랑 거의 똑같이.. 그래야 의미가 있어.
+       >  적요의 카드 내용도 하단 줄에 정렬되고 이미지도 섬네일로"
+       위 줄은 반품관리대장 «협의된 배열» 차례 그대로다(retRowHtml). 머리줄도 시트처럼.
+       아래 줄은 비고에 쌓인 처리 이력을 «전부» 가로로 — 사진은 작은 섬네일(누르면 크게).
+       카드의 왼쪽 칸·단추줄은 이 모드에선 숨긴다 — 같은 값을 두 번 보이면 눈이 갈린다. */
+    /*  ★ 선 색을 따로 둔다 ★ 이 앱의 어두운 테마는 --border 가 투명이라
+        상자·머리줄·점선·편집판 칸막이가 하나도 안 보였다 (2026-10-01). */
+    #pane-returns { --ret-line: rgba(255, 255, 255, 0.12); --ret-zebra: rgba(255, 255, 255, 0.08); }
+    :root[data-theme="light"] #pane-returns { --ret-line: rgba(0, 0, 0, 0.12); --ret-zebra: rgba(0, 0, 0, 0.07); }
+    .ret-row { display: none; }
+    .ws-split > #pane-returns.is-max #returnActiveList { overflow-x: auto; }
+    .ws-split > #pane-returns.is-max .ret-row {
+      display: grid; align-items: start; column-gap: 5px; font-size: 11.5px; line-height: 1.38;
+      /*  상품명·발생원인·적요만 늘고 준다. 단계 칸(이카운트~환불)은 날짜 여섯 자리라 좁게.
+          1920 모니터에선 한 화면, 노트북에선 목록만 옆으로 민다(위 overflow-x). */
+      grid-template-columns: 54px 46px 44px 40px 72px 96px 72px 58px 94px 94px
+                             minmax(150px, 1fr) 28px 96px minmax(90px, 130px) minmax(90px, 150px)
+                             42px 42px 42px 42px 104px;
+      min-width: 1430px;
+    }
+    .ws-split > #pane-returns.is-max .ret-row > span { min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); }
+    .ws-split > #pane-returns.is-max .ret-row .rs { font-size: 10.5px; padding: 1px 6px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-row { display: none; }
+    .ws-split > #pane-returns.is-max .ret-row-head {
+      position: sticky; top: 0; z-index: 4; padding: 6px 11px; margin: 0 0 6px;
+      background: var(--bg-card); border-bottom: 1px solid var(--ret-line); font-weight: 700;
+    }
+    .ws-split > #pane-returns.is-max .ret-row-head > span { color: var(--text-secondary); }
+
+    /*  ★ 한 건씩 상자로 ★  (2026-10-01)
+        > "텍스트만 있어서 구분이 안되네 카드박스로 감싸던 해야 할꺼 같아"
+        글줄만 늘어서면 위 줄의 이력과 아래 건의 칸이 붙어 어디서 끊기는지 안 보였다. */
+    .ws-split > #pane-returns.is-max #returnActiveList > .ret-card:not(.ret-focus) {
+      margin: 0 0 6px; padding: 7px 10px 6px; border-radius: 8px; transform: none; min-width: 1450px;
+      background: var(--bg-secondary); border: 1px solid var(--ret-line);
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus):hover { background: var(--bg-card-hover); }
+    /*  ★ 한 줄 걸러 톤을 살짝 ★  (2026-10-02)
+        > "테두리 상자 내부 칼라를 톤차이를 살짝줘.. 1,3,5,7,9 … 2,4,6,8 이런식으로 교차해서"
+        목록 첫 자식은 머리줄이라, 카드 2·4·6… 번째가 nth-child(odd)다. 바탕색 위에 덧칠만 한다 —
+        색을 박지 않으므로 테마가 바뀌어도 «한 톤 차이»가 그대로 남는다. */
+    .ws-split > #pane-returns.is-max #returnActiveList > .ret-card:not(.ret-focus):nth-child(odd) {
+      background-image: linear-gradient(var(--ret-zebra), var(--ret-zebra));
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-left,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-foot { display: none; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-new-bar { margin: 0 0 3px; padding: 2px 8px; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-body { display: block; }
+    /*  아래 줄 — 처리 이력 전부, 가로로 흐르다 넘치면 다음 줄 */
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-right {
+      display: block; max-width: none; width: auto; margin: 5px 0 0 0;
+      padding-top: 5px; border-top: 1px dashed var(--ret-line);   /* 위는 시트 칸, 아래는 이력 */
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track { display: flex; flex-wrap: wrap; gap: 3px 22px; overflow: visible; padding: 0; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc:first-child,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc:first-child.photo {
+      display: flex; flex-direction: row; align-items: center; gap: 6px; flex: 0 1 auto;
+      width: auto; min-width: 0; max-width: 100%; min-height: 0;
+      padding: 0; background: none; border: 0; box-shadow: none;
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-del,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-more { display: none; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-when,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-tag { flex: 0 0 auto; margin: 0; font-size: 11px; white-space: nowrap; color: var(--text-muted); }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-body {
+      flex: 0 1 auto; min-width: 0; max-width: 640px; margin: 0; font-size: 12px;
+      display: block; -webkit-line-clamp: unset; white-space: normal; overflow: visible; color: var(--text-primary);
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs { display: flex; gap: 3px; margin: 0; flex: 0 0 auto; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs button,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs img { width: 34px; height: 34px; }
+
+    /* ③ 편집판 — 크게 보기에서 펼친 카드에만  (2026-10-01)
+       > "펼쳐졌을떄 웹앱카드랑 너무 똑같네.. 전체 모드에서는 디테일한것들을 다보고 수정 추가할수 있어야"
+       왼쪽 요약 · 가운데 편집판 · 오른쪽 처리 이력. 세 칸 화면 카드엔 안 나온다. */
+    .ret-edit { display: none; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit {
+      display: block; flex: 1 1 520px; min-width: 0; font-size: 12px; cursor: default;
+      border-left: 1px solid var(--ret-line); border-right: 1px solid var(--ret-line); padding: 0 14px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-ro { display: flex; flex-wrap: wrap; gap: 2px 14px; color: var(--text-muted); margin-bottom: 8px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-ro b { color: var(--text-primary); font-weight: 600; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px 10px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f.w2 { grid-column: span 2; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f.w4 { grid-column: 1 / -1; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f > label { font-size: 10.5px; color: var(--text-muted); }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f .ret-edit-in {
+      width: 100%; box-sizing: border-box; padding: 4px 7px; font-size: 12px; font-family: inherit;
+      border: 1px solid var(--ret-line); border-radius: 6px;
+      background: var(--bg-secondary); color: var(--text-primary);
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f textarea.ret-edit-in { min-height: 46px; resize: vertical; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f .ret-edit-in:focus { outline: none; border-color: var(--accent-green); }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f .ret-edit-in.changed { border-color: #ffc107; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-pair { display: flex; gap: 4px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-pair .ret-edit-in { flex: 1 1 auto; min-width: 0; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-today {
+      flex: 0 0 auto; padding: 2px 6px; font-size: 10.5px; cursor: pointer; border-radius: 6px;
+      border: 1px solid var(--ret-line); background: var(--bg-card-hover); color: var(--text-primary);
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-btns { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-hint { font-size: 10.5px; color: var(--text-muted); }
+
+    /* ② 펼친 카드 = 왼쪽 정보 · 오른쪽 이력 격자, 빈자리 없이 */
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus {
+      transform: none; margin: 6px 0 8px; padding: 12px 14px 10px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-body {
+      flex-direction: row; align-items: flex-start; gap: 18px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-left {
+      flex: 0 0 330px; width: auto; max-width: 30%; font-size: 13px;   /* 세 칸 — 편집판이 가운데 (2026-10-01) */
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-left .rn { font-size: 16px; margin-bottom: 4px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-left > div:nth-child(2) { font-size: 13px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-meta { font-size: 13px; margin-top: 3px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-sub { margin-top: 5px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-right {
+      flex: 0 1 400px; max-width: none; width: auto; justify-content: flex-start;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 8px; overflow: visible; padding: 0;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track > .ret-proc,
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track > .ret-proc:first-child {
+      width: auto; min-width: 0; min-height: 0; flex: none; padding: 8px 10px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-proc-body { font-size: 12.5px; -webkit-line-clamp: 6; }
+    /*  사진 붙은 맨 앞 이력은 좁은 칸에서 «넓게» 짜던 격자를 쓴다 — 여기선 보통 칸으로 */
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track > .ret-proc:first-child.photo { display: block; }
+
     .hb-icon.is-on {
       background: var(--accent, #FDB813);
       color: #1b1e23; border-color: transparent;
@@ -1198,6 +1355,21 @@
        또 선. 선이 겹치면 «무엇이 한 덩어리인지»가 되레 안 보인다.
        경계는 «바탕색 차이»로 낸다 — 카드는 밝고 바깥은 어둡다.
        그것으로 충분하고, 눈이 훨씬 조용하다. */
+    /* ★ 상태값 칩 — 그 상태인 것만 보인다 ★  (2026-10-01)
+       > "정렬에서 상태순으로 하라니까 접수부터 나오니까 입고를 보고싶을떈 한참 내려야되..
+       >  상태값(접수, 반품송장등등) 으로 그 상태값의 데이타만 보이게"
+       정렬은 «차례»라 원하는 것이 아래에 있으면 내려가야 한다. 거르기는 «그것만» 남긴다. */
+    .ret-stage-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 6px; }
+    .ret-stage-chips:empty { display: none; }
+    .ret-stage-chip {
+      padding: 3px 10px; border-radius: 999px; font-size: 11.5px; cursor: pointer; font-family: inherit;
+      border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-secondary);
+    }
+    .ret-stage-chip b { margin-left: 4px; font-weight: 700; color: var(--text-primary); }
+    .ret-stage-chip.on { background: var(--accent, #FDB813); border-color: transparent; color: #1b1e23; }
+    .ret-stage-chip.on b { color: #1b1e23; }
+    .ret-stage-chip.zero { opacity: .5; }
+
     .ret-card {
       display: flex; flex-direction: column; gap: 0;
       background: var(--bg-secondary); border: 1px solid transparent;
@@ -1405,6 +1577,20 @@
     .ret-case-tl { margin-top: 12px; }
     .ret-tl-track::-webkit-scrollbar { height: 4px; }
     .ret-tl-track::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+    /* ★ PC 에서는 잡을 수 있게 굵게 ★  (2026-10-01)
+       > "반품카드내의 카드 좌우스크롤이 너무 얇아 pc에서 마우스로 클릭하기가 너무 어려워"
+       4px 는 손가락으로 미는 폰 기준이었다. 마우스(pointer: fine)일 때만 10px 로,
+       올리면 진해진다. 폰·태블릿은 그대로 — 거기선 막대를 잡지 않고 민다. */
+    @media (pointer: fine) {
+      .ret-tl-track { padding-bottom: 6px; }
+      .ret-tl-track::-webkit-scrollbar { height: 10px; }
+      .ret-tl-track::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 6px; }
+      .ret-tl-track::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.26); border-radius: 6px; }
+      .ret-tl-track::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.42); }
+      :root[data-theme="light"] .ret-tl-track::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+      :root[data-theme="light"] .ret-tl-track::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.28); }
+      :root[data-theme="light"] .ret-tl-track::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.45); }
+    }
     .ret-proc {
       position: relative;
       flex: 0 0 auto; width: 128px; min-height: 76px;
@@ -1584,6 +1770,9 @@
     }
     .ret-retinv-save[disabled] { opacity: .55; cursor: default; }
     .ret-retinv-edit:hover { background: var(--bg-secondary); }
+    /* 실번호 칸 (2026-10-01) — 반품송장 칸과 같은 꼴. 이름 칸은 번호보다 좁게 */
+    .ret-retinv-in.ret-ph2in-name { flex: 0 1 110px; max-width: 130px; }
+    .ret-metas .ret-ph2-btn { padding: 1px 7px; font-size: 11px; align-self: center; }
 
     .ret-metas {
       display: flex; flex-wrap: wrap; align-items: baseline;
@@ -1889,11 +2078,75 @@
     }
     .ledger-cancel { background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border) !important; }
     .ledger-ok { background: var(--accent-green); color: var(--on-accent); }
+
+    /* ══ 반품대장 기록 창 — 2026-10-01 ═══════════════════════════
+       > "하단부분이 짤리고 하단 아래쪽으로 무분별하게 분리되어 있어"
+
+       증상이 둘인데 원인도 둘이었다.
+         ① 「기록」 단추가 스크롤 맨 끝에 있는데 «스크롤바가 숨겨져»
+            있었다(.modal-content 가 scrollbar-width:none). 더 있는 줄
+            모르니 창이 잘린 것처럼 보인다.
+         ② 칸이 열다섯인데 PC 에서도 420px 한 줄이라 아래로 끝없이
+            늘어졌다. 어디까지가 한 벌인지 안 보인다.
+
+       이 창만 고친다 — 다른 창 여덟 개는 짧아서 탈이 없다.      */
+
+    /* ★ 단추를 바닥에 붙인다 ★ 늘 보여야 한다.
+       창 아래 여백(40px)만큼 끌어내려 바닥에 딱 닿게 한다. */
+    .ledger-sheet .ledger-btns {
+      position: sticky;
+      bottom: -40px;
+      margin-top: 16px;
+      padding: 12px 0 calc(40px + env(safe-area-inset-bottom, 0px));
+      background: var(--bg-card);
+      box-shadow: 0 -10px 12px -8px rgba(0,0,0,0.35);
+      z-index: 2;
+    }
+    /* ★ 이 창은 스크롤바를 보인다 ★ 숨기면 잘린 것처럼 보인다. */
+    .modal-content.ledger-sheet {
+      scrollbar-width: thin;
+      scrollbar-color: var(--text-muted) transparent;
+      -ms-overflow-style: auto;
+      overscroll-behavior: contain;
+    }
+    .modal-content.ledger-sheet::-webkit-scrollbar {
+      display: block; width: 8px; height: 8px;
+    }
+    .modal-content.ledger-sheet::-webkit-scrollbar-thumb {
+      background: var(--text-muted); border-radius: 4px;
+    }
+    .modal-content.ledger-sheet::-webkit-scrollbar-track { background: transparent; }
+
+    /* ★ 넓은 화면에서는 두 칸 ★  (PC 가 기본이다)
+       묶음(.ledger-grid) 안만 접는다 — 미리보기·품목·임시저장·단추는
+       형제라 끌려 들어가지 않는다.
+       길게 적는 칸(메모·사진)은 .wide 로 한 줄을 통째로 쓴다. */
+    @media (min-width: 900px) {
+      .modal-content.ledger-sheet {
+        max-width: 780px;
+        border-radius: 20px;
+        margin-bottom: 4vh;
+        max-height: 92vh;
+      }
+      .ledger-sheet .ledger-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 14px;
+        align-items: start;
+      }
+      .ledger-sheet .ledger-grid > .ledger-field.wide,
+      .ledger-sheet .ledger-grid > .ledger-row2,
+      .ledger-sheet .ledger-grid > .ledger-help,
+      .ledger-sheet .ledger-grid > .lrt-opt { grid-column: 1 / -1; }
+    }
     .os-empty { text-align: center; padding: 48px 16px; color: var(--text-muted); font-size: 14px; }
     .os-toast {
       position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(20px);
-      background: #2e7d57; color: #fff; padding: 10px 16px; border-radius: 999px;
+      background: #2e7d57; color: #fff; padding: 10px 16px; border-radius: 20px;
       font-size: 13px; opacity: 0; pointer-events: none; transition: all 0.2s;
+      /* 여러 줄 알림 (2026-09-29 주문서 올리기 결과) — 줄바꿈을 살리고 너무 넓어지지 않게.
+         한 줄 알림은 높이 ~40px 이라 반지름 20px 이면 예전 알약 모양 그대로다 */
+      white-space: pre-line; max-width: min(92vw, 560px); text-align: center; line-height: 1.5;
       z-index: 5000;   /* 첨부 확대보기(4000)보다 위 — 오류 안내가 가려지면 안 된다 */
     }
     .os-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -2768,6 +3021,89 @@
       .dash-check-row, .dash-check-row.late, .dash-check-row.done { animation: none !important; }
     }
 
+    /* ── 오늘 입금 — 「오늘 할 일」 자리 (2026-09-29) ──
+       한 줄 = 한 입금. 금액이 먼저 눈에 들어와야 한다(오른쪽 굵게).
+       잔액은 싣지 않는다 — 서버가 애초에 안 준다. */
+    .dash-dep { display: flex; flex-direction: column; gap: 4px; }
+    .dash-dep-sum { font-weight: 400; color: var(--text-muted); margin-left: 4px; }
+    .dash-dep-row {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--bg-secondary); border: 1px solid var(--border);
+      border-radius: 8px; padding: 7px 10px; font-size: 11px;
+    }
+    .dash-dep-row.new { animation: chkIn .32s ease-out both; }
+    .dash-dep-time { font-weight: 700; color: var(--text-secondary); flex: none; font-variant-numeric: tabular-nums; }
+    .dash-dep-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+    .dash-dep-bank { flex: none; color: var(--text-muted); font-size: 10px; }
+    .dash-dep-amt { flex: none; font-weight: 700; color: var(--accent-green); font-variant-numeric: tabular-nums; }
+    .dash-dep-warn { flex: none; color: var(--accent-orange); font-size: 10px; }
+    .dash-dep-empty { font-size: 11px; color: var(--text-muted); padding: 6px 2px; }
+    .dash-dep-more {
+      margin-top: 2px; width: 100%; padding: 7px; border-radius: 8px; cursor: pointer;
+      background: transparent; border: 1px dashed var(--border); color: var(--text-secondary);
+      font-family: inherit; font-size: 11px;
+    }
+    .dash-dep-more:hover { background: var(--bg-card-hover); }
+    .dep-modal-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+    .dep-modal-head .dash-dep-sum { font-size: 12px; }
+    .dep-modal-list { display: flex; flex-direction: column; gap: 4px; }
+    .dep-modal-close {
+      margin-top: 12px; width: 100%; padding: 10px; border-radius: 10px; cursor: pointer;
+      background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary);
+      font-family: inherit; font-size: 13px;
+    }
+    @media (prefers-reduced-motion: reduce) { .dash-dep-row.new { animation: none !important; } }
+
+    /* ── 주문서 매칭 (2026-09-29) ──
+       한 입금 = 두 줄. 윗줄은 그대로(시각·입금자·금액), 아랫줄에 판정.
+       눌러서 고칠 수 있는 줄이라 커서를 바꾼다. */
+    .dash-dep-row { flex-wrap: wrap; cursor: pointer; text-align: left; font-family: inherit; width: 100%; color: var(--text-primary); }
+    .dash-dep-row:hover { background: var(--bg-card-hover); }
+    .dash-dep-match { flex: 1 0 100%; font-size: 10px; color: var(--text-muted); padding-left: 2px;
+                      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dash-dep-match.ok   { color: var(--accent-green); }
+    .dash-dep-match.low  { color: var(--accent-red); }
+    .dash-dep-match.over { color: var(--accent-orange); }
+    .dash-dep-match.ask  { color: var(--accent-orange); font-weight: 700; }
+    .dash-dep-orders { font-size: 10px; color: var(--text-muted); margin: -4px 0 6px; }
+    /* 날이 바뀌는 자리 (2026-09-30 오늘 + 어제) */
+    .dash-dep-day { font-size: 10px; font-weight: 700; color: var(--text-secondary); margin: 8px 2px 2px;
+                    padding-top: 6px; border-top: 1px dashed var(--border); }
+    .dash-dep-orders.stale { color: var(--accent-orange); }
+    .dep-det-now { font-size: 12px; line-height: 1.5; padding: 8px 10px; border-radius: 8px;
+                   background: var(--bg-secondary); border: 1px solid var(--border); margin-bottom: 12px; }
+    .dep-det-now small { display: block; color: var(--text-muted); font-size: 11px; }
+    .dep-det-label { font-size: 12px; font-weight: 700; margin: 4px 0 6px; }
+    .dep-det-label span { font-weight: 400; color: var(--text-muted); }
+    .dep-det-opts { display: flex; flex-direction: column; gap: 4px; }
+    .dep-det-opt { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px;
+                   background: var(--bg-secondary); border: 1px solid var(--border); font-size: 12px; cursor: pointer; }
+    .dep-det-opt.done { opacity: .5; }
+    .dep-det-opt .n { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dep-det-opt .t { flex: none; font-size: 10px; color: var(--text-muted); }
+    .dep-det-opt .a { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .dep-det-search { display: flex; gap: 6px; margin: 10px 0; }
+    .dep-det-search input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+                            background: var(--bg-secondary); color: var(--text-primary); font-family: inherit; font-size: 12px; }
+    .dep-det-search button, .dep-det-actions button {
+      padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer;
+      background: var(--bg-secondary); color: var(--text-primary); font-family: inherit; font-size: 12px; }
+    .dep-det-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .dep-det-actions button.primary { background: var(--accent-green); border-color: var(--accent-green); color: #fff; font-weight: 700; }
+    .dep-det-actions button:disabled { opacity: .5; cursor: default; }
+    .dep-det-remember { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); }
+    /* 이카운트 반영 칸 (2026-09-29) */
+    .dep-det-ec { margin: 12px 0 4px; padding: 10px; border-radius: 8px; border: 1px dashed var(--border); font-size: 12px; line-height: 1.5; }
+    .dep-det-ec.done { border-style: solid; border-color: var(--accent-green); }
+    .dep-det-ec.warn { border-style: solid; border-color: var(--accent-orange); }
+    .dep-det-ec small { display: block; color: var(--text-muted); font-size: 11px; }
+    .dep-det-ec .row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .dep-det-ec input { flex: 1; min-width: 120px; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border);
+                        background: var(--bg-secondary); color: var(--text-primary); font-family: inherit; font-size: 12px; }
+    .dep-det-ec button { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer;
+                         background: var(--bg-secondary); color: var(--text-primary); font-family: inherit; font-size: 12px; }
+    .dep-det-ec button.primary { background: #3d6fb6; border-color: #3d6fb6; color: #fff; font-weight: 700; }
+
     .dash-vendor-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid transparent; }
     .dash-vendor-row:last-child { border-bottom: none; }
     .dash-vendor-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2951,6 +3287,136 @@
     .lgw-acts button:disabled { opacity: .4; cursor: default; }
     .lgw-ocr { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-secondary); font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
     .lgw-ocr.err { color: var(--text-muted); }
+    /* ══ CS 문의 (2026-10-02) ══════════════════════════════════
+       접힌 카드가 기본이다. 한 줄에 「거래처 · 상품」, 그 아래 문의 첫 줄.
+       눌러야 펼쳐진다 — 열 건이 다 펼쳐져 있으면 훑을 수가 없다.      */
+    .csq-top { display: flex; gap: 6px; align-items: center; margin: 8px 0 6px; }
+    .csq-top .csq-search { flex: 1; min-width: 0; margin-bottom: 0; }
+    .csq-list { display: flex; flex-direction: column; gap: 6px; }
+    .csq-card {
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg-secondary); padding: 9px 11px; cursor: pointer;
+    }
+    .csq-card:hover { background: var(--bg-card-hover); }
+    .csq-head { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+    .csq-vendor {
+      font-weight: 700; color: var(--text-primary);
+      font-size: calc(13px * var(--hb-text-scale));   /* .hb-title 과 같다 */
+    }
+    /*  펼치면 한 단 키운다 — 보드 카드가 그렇다(.hb-card.open .hb-title) */
+    .csq-card.open .csq-vendor { font-size: calc(15px * var(--hb-text-scale)); }
+    .csq-item {
+      font-size: calc(11px * var(--hb-text-scale));   /* .hb-facts */
+      color: var(--text-secondary); min-width: 0;
+    }
+    .csq-when {
+      margin-left: auto; white-space: nowrap; color: var(--text-muted);
+      font-size: calc(10px * var(--hb-text-scale));   /* .hb-tl-at */
+    }
+    /*  접힌 줄 — 한 줄만. 넘치면 … 로 자른다. 세 줄씩 보이면 못 훑는다. */
+    .csq-one {
+      margin-top: 3px; color: var(--text-secondary);
+      font-size: calc(12px * var(--hb-text-scale));
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /*  후처리요청이 있으면 접힌 채로도 보인다 — 나중에 할 일이라 놓치면 안 된다 */
+    .csq-fu-tag {
+      display: inline-block; margin-top: 4px; padding: 1px 7px; border-radius: 8px;
+      font-size: calc(10px * var(--hb-text-scale)); font-weight: 700;
+      background: rgba(253, 184, 19, 0.14); color: var(--accent, #FDB813);
+    }
+    .csq-body { display: none; margin-top: 8px; }
+    .csq-card.open .csq-body { display: block; }
+    .csq-card.open { background: var(--bg-card-hover); }
+    /*  고유ID 줄 — 번호는 «숫자가 고르게» 보여야 사람이 읽는다.
+        tabular-nums 가 아니라 고정폭을 쓴다 — 표식(r/q)까지 자리가 같아야
+        위아래 카드의 번호가 눈으로 견줘진다. (2026-10-02)              */
+    .csq-uids { display: flex; gap: 6px; align-items: center; margin-top: 3px; flex-wrap: wrap; }
+    .csq-uid, .csq-ref {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: calc(10px * var(--hb-text-scale));
+      padding: 1px 6px; border-radius: 6px; letter-spacing: 0.02em;
+    }
+    .csq-uid { background: var(--bg-primary); color: var(--text-secondary); }
+    /*  ↳ 걸린 건 — 제 번호와 «다른 색»이어야 헷갈리지 않는다 */
+    .csq-ref { background: rgba(253, 184, 19, 0.16); color: var(--text-primary); }
+    .csq-ref-in {
+      width: 100%; margin-top: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: calc(11px * var(--hb-text-scale));
+    }
+    .csq-fu input[type="text"] {
+      width: 100%; padding: 7px 9px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-input, var(--bg-primary));
+      color: var(--text-primary); font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: calc(12px * var(--hb-text-scale));
+    }
+    .csq-label {
+      font-size: calc(10px * var(--hb-text-scale));
+      color: var(--text-muted); margin: 7px 0 3px;
+    }
+    .csq-text {
+      font-size: calc(12px * var(--hb-text-scale)); line-height: 1.55;
+      color: var(--text-primary);
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .csq-fu textarea {
+      width: 100%; min-height: 54px; resize: vertical; padding: 8px 10px;
+      border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-primary); color: var(--text-primary);
+      font-size: calc(12px * var(--hb-text-scale)); font-family: inherit;
+    }
+    .csq-acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .csq-acts button {
+      padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-primary); color: var(--text-secondary);
+      font-size: calc(12px * var(--hb-text-scale));
+      font-weight: 700; font-family: inherit; cursor: pointer;
+    }
+    .csq-acts .ok { background: var(--accent-green); color: var(--on-accent); border-color: transparent; }
+    .csq-photos { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+    .csq-photos a {
+      display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: var(--bg-primary); color: var(--text-secondary);
+      font-size: calc(11px * var(--hb-text-scale)); text-decoration: none;
+    }
+    /*  완료인데 후처리가 남아 목록에 있는 카드 — 왜 있는지 글로 적어 둔다 */
+    .csq-card.done { opacity: 0.78; }
+    .csq-done-tag {
+      padding: 1px 7px; border-radius: 8px; font-weight: 700;
+      font-size: calc(9px * var(--hb-text-scale));    /* .hb-badge */
+      background: rgba(85, 166, 124, 0.16); color: var(--accent-green);
+    }
+    .csq-by {
+      margin-top: 7px; color: var(--text-muted);
+      font-size: calc(10px * var(--hb-text-scale));
+    }
+    /*  새 문의 — 접혀 있다가 펴진다 */
+    .csq-new {
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg-secondary); padding: 10px; margin-bottom: 8px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .csq-new-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .csq-new input, .csq-new textarea {
+      width: 100%; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-primary);
+      color: var(--text-primary); font-family: inherit;
+      font-size: calc(12px * var(--hb-text-scale));
+    }
+    .csq-new textarea { min-height: 52px; resize: vertical; }
+    @media (max-width: 640px) { .csq-new-row { grid-template-columns: 1fr; } }
+    .csq-empty {
+      font-size: calc(12px * var(--hb-text-scale));
+      color: var(--text-muted); padding: 10px 2px;
+    }
+
+    .ret-reship {
+      margin-top: 3px; font-size: 11px; color: var(--accent-green);
+      line-height: 1.4;
+    }
+    .ret-card.ret-focus .ret-reship { font-size: 13px; }
     .ret-intakereq {
       margin-top: 5px; padding: 5px 8px; border-radius: 7px; cursor: pointer;
       background: #fff4d6; color: #6b4a00; font-size: 12px; font-weight: 700; line-height: 1.45;
@@ -3161,6 +3627,82 @@
           </div>
           <div class="os-status" id="status">불러오는 중…</div>
           <div id="list"></div>
+          <!-- ══ CS 문의 (2026-10-02) ═══════════════════════════════
+               > "CS웹앱 입금확인위에 CS문의라는 내용을 만들어줘.
+               >  따로 시트는 만들지 말고 … 카드식으로 … 검색기능도 넣고 …
+               >  접힌 카드 방식으로 클릭하면 펼쳐서 … 처리완료를 누르면
+               >  삭제(화면에서만 데이타는 저장)"
+
+               ★ 새 시트를 안 만든다 ★ 업체 문의는 이미 CS 커뮤니티 보드
+                 (반품관리대장 「CS_커뮤니티보드」 탭)로 들어온다 —
+                 포털 prpBoard.prpPostInquiryToBoard_ 가 넣는다.
+                 여기서는 그 카드를 «문의 보기»로 다시 보여 줄 뿐이다.
+
+               ★ 처리완료는 지우는 게 아니다 ★ 상태만 「완료」로 바꾼다.
+                 줄은 그대로 남고 화면에서만 빠진다. 후처리요청은 완료
+                 뒤에도 살아 있다 — 문의는 끝나도 그 일은 다음 달에 한다. -->
+          <div id="csqBox" class="os-dash">
+            <div class="os-dash-head">
+              <span>CS 문의 <b id="csqCount">0</b></span>
+              <span class="os-dash-sub" id="csqSub"></span>
+            </div>
+            <div class="csq-top">
+              <div class="os-search csq-search">
+                <input id="csqq" type="search" autocomplete="off"
+                       placeholder="거래처·상품·문의 내용·후처리요청"
+                       oninput="renderCsq()">
+              </div>
+              <button type="button" class="os-chip" onclick="csqNewToggle()" title="문의 올리기">+ 새 문의</button>
+              <button type="button" class="os-chip ghost" onclick="loadCsq(true)" title="새로 읽기">↻</button>
+            </div>
+            <!--  새 문의 — 기본은 접혀 있다. 늘 펴 두면 목록이 아래로 밀린다. -->
+            <div class="csq-new" id="csqNew" hidden>
+              <div class="csq-new-row">
+                <input id="csqnVendor" type="text" placeholder="거래처">
+                <input id="csqnItem" type="text" placeholder="상품">
+              </div>
+              <!--  관련 번호 (2026-10-02, sql/76) — 반품·발주 건에 걸린 문의면 그 번호.
+                    ★ 적어 두면 그 번호로 양쪽이 다 찾아진다 ★ 안 적으면 문의는
+                    문의끼리만 남아, 나중에 그 반품 건을 보는 사람은 이 글을 못 본다. -->
+              <input id="csqnRef" type="text" class="csq-ref-in"
+                placeholder="관련 번호 (선택) — 반품 r1002000003 · 발주 d1002000047">
+              <textarea id="csqnBody" placeholder="문의 내용"></textarea>
+              <textarea id="csqnFollowup" placeholder="후처리 요청 (선택) — 나중에 해야 할 일"></textarea>
+              <!--  사진 — 반품 쪽과 같은 길이다. 고르면 줄여서 들고 있다가
+                    「올리기」를 누를 때 v2 보관소로 보내고 링크만 담는다.
+                    스크린샷은 Ctrl+V 로도 붙는다(retHandlePaste). -->
+              <div class="csq-label">사진 (선택 · 스크린샷은 Ctrl+V)</div>
+              <div class="ret-photo-pick">
+                <label class="pk">촬영<input type="file" accept="image/*" capture="environment"
+                  onchange="csqPhotoPick(null, this)"></label>
+                <label class="pk">앨범<input type="file" accept="image/*" multiple
+                  onchange="csqPhotoPick(null, this)"></label>
+              </div>
+              <div id="csqnPhotoPrev"></div>
+              <div class="csq-acts">
+                <button type="button" onclick="csqNewToggle()">닫기</button>
+                <button type="button" class="ok" id="csqnSave" onclick="csqNewSave()">올리기</button>
+              </div>
+            </div>
+            <div id="csqList" class="csq-list"></div>
+          </div>
+          <!-- 오늘 입금 (2026-09-29) — "위치를 주문 송장 검색 아래로 바꿔줘"
+               검색 결과(#list) «아래»에 둔다. 위에 두면 검색할 때마다 결과가 입금 10줄 밑으로 밀린다. -->
+          <div id="depositBox" class="os-dash">
+            <div class="os-dash-head">
+              <span class="os-dash-title">💰 입금 (오늘 · 어제)<span id="dashDepositSum" class="dash-dep-sum"></span></span>
+              <!-- 주문서 매칭 (2026-09-29) — 주문수집 전에 받는 「주문서조회」 엑셀을 여기에 한 번 올린다 -->
+              <!-- 입금 소리 (2026-09-30) — 구글챗 PC 는 방마다 소리를 못 나눠 협력업체 알림과 헷갈렸다. 이 PC 에서만 켜고 끈다 -->
+              <button type="button" class="os-dash-refresh" id="depSoundBtn" onclick="depToggleSound()" title="새 입금이 오면 입금 전용 소리">🔔</button>
+              <button type="button" class="os-dash-refresh" id="depPostAllBtn" hidden onclick="depPostAll()"
+                      title="오늘 ✅ 일치·🔴 부족 입금 중 아직 안 넘긴 것을 이카운트 일반전표로">📒 일치 전체 반영</button>
+              <button type="button" class="os-dash-refresh" onclick="document.getElementById('depOrdersFile').click()"
+                      title="이카운트 영업관리 → 주문서조회 → 엑셀 내려받기 한 파일">📥 주문서 올리기</button>
+              <input type="file" id="depOrdersFile" accept=".xlsx,.xls" hidden onchange="depUploadOrders(this)">
+            </div>
+            <div id="depOrdersInfo" class="dash-dep-orders"></div>
+            <div id="dashDeposit" class="dash-dep">불러오는 중…</div>
+          </div>
           <div id="stockoutBox" class="os-dash"></div>
           <div id="orderDash" class="os-dash loading"></div>
         </div>
@@ -3183,7 +3725,18 @@
               <option value="chg">최신 변경순</option>
               <option value="gap">빠진 것 먼저</option>
               <option value="vendor">업체순</option>
+              <!-- 접수자순 (2026-10-02) — 「누가 받은 건」끼리 모아 본다.
+                   업체순과 같은 짜임이다: 사람끼리 묶고 그 안에서 최신순. -->
+              <option value="staff">접수자순</option>
               <option value="stage">상태순</option>
+            </select>
+            <!-- 접수자 거르개 (2026-10-02) — 한 사람 것만 본다.
+                 ★ 목록은 코드에 안 박는다 ★ 사람이 들고 나는데 박아 두면
+                 그만둔 사람이 남고 새로 온 사람이 빠진다. 지금 화면에 있는
+                 건들에서 모아 채운다(retFillStaffPick). -->
+            <select id="retStaffPick" class="ret-sort" title="접수자로 거르기"
+                    aria-label="접수자로 거르기" onchange="setReturnStaffFilter(this.value)">
+              <option value="">접수자 전체</option>
             </select>
             <!-- 접기 — 이름·품목·상태만 남긴다. 카드를 눌러 하나씩 펼 수 있다 (2026-09-20) -->
             <button type="button" class="hb-icon" id="retFold" title="접어 보기 (이름·품목·상태만)"
@@ -3201,6 +3754,8 @@
             <button type="button" class="hb-new" title="새 반품 카드" aria-label="새 반품 카드"
                     onclick="openRetNewModal()">＋</button>
           </div>
+          <!-- 상태값으로 거르기 — 그 상태인 것만 (2026-10-01) -->
+          <div class="ret-stage-chips" id="retStageChips"></div>
           <div class="os-status" id="returnStatus">불러오는 중…</div>
           <div id="returnPulseBar" class="cs-pulse-bar" style="display:none"
                onclick="applyPulsePending('ret')"></div>
@@ -3538,8 +4093,27 @@
         </div>
       </div>
       <div class="ledger-field">
-        <label>품목</label>
+        <label>품목 <span style="color:var(--text-muted)">(돌려받는 것)</span></label>
         <input id="retNewItem" type="text" placeholder="품목명">
+      </div>
+      <!--  ★ 둘 다 적는다 ★  (2026-10-02)
+            > "둘다 적으면 좋겠네"
+            세트가 뚜껑만 나가면 두 가지가 같이 움직인다 —
+              고객이 «돌려보내는 것» 뚜껑 4 → 위 「품목」
+              우리가 «다시 보내는 것» 몸통 1 → 이 칸
+            한 칸에 뭉뚱그리면 「이번 달 뚜껑 반품 몇 건」을 셀 수 없다.
+            협의된 배열에는 빈 칸이 없어 비고에 「재출고: …」로 남긴다.  -->
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>재출고 상품 (선택 · 다시 보내는 것)</label>
+          <input id="retNewReship" type="text"
+                 placeholder="예: 220파이 감자탕 중 백색 몸통 1">
+        </div>
+        <div class="ledger-field">
+          <label>재출고 배송비 (선택)</label>
+          <input id="retNewReshipFee" type="text" inputmode="numeric"
+                 placeholder="우리가 보내며 쓴 돈">
+        </div>
       </div>
       <div class="ledger-row2">
         <div class="ledger-field">
@@ -3634,8 +4208,50 @@
     </div>
   </div>
 
-  <div class="modal-overlay" id="ledgerModal">
+  <!-- 오늘 입금 — 더보기 (2026-09-29). 바깥을 누르거나 닫기로 닫는다. -->
+  <div class="modal-overlay" id="depModal" onclick="if (event.target === this) closeDepositModal()">
     <div class="modal-content" style="max-height:88vh;overflow-y:auto;">
+      <div class="modal-handle"></div>
+      <div class="dep-modal-head">
+        <div class="modal-title" style="margin:0" id="depModalTitle">오늘 입금</div>
+        <span class="dash-dep-sum" id="depModalSum"></span>
+      </div>
+      <div class="dep-modal-list" id="depModalList">불러오는 중…</div>
+      <button type="button" class="dep-modal-close" onclick="closeDepositModal()">닫기</button>
+    </div>
+  </div>
+
+  <!-- 입금 한 건 — 주문 고르기 · 제외 · 되돌리기 (2026-09-29) -->
+  <div class="modal-overlay" id="depDetailModal" onclick="if (event.target === this) closeDepositDetail()">
+    <div class="modal-content" style="max-height:88vh;overflow-y:auto;">
+      <div class="modal-handle"></div>
+      <div class="dep-modal-head">
+        <div class="modal-title" style="margin:0" id="depDetTitle">입금</div>
+        <span class="dash-dep-amt" id="depDetAmt"></span>
+      </div>
+      <div class="dep-det-now" id="depDetNow"></div>
+      <div class="dep-det-label">이 입금이 갚는 주문 <span>(여러 개 고를 수 있음)</span></div>
+      <div class="dep-det-opts" id="depDetOpts">불러오는 중…</div>
+      <div class="dep-det-search">
+        <input type="search" id="depDetQ" placeholder="거래처명 · 금액 · 주문번호로 찾기"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();depDetailSearch();}">
+        <button type="button" onclick="depDetailSearch()">찾기</button>
+      </div>
+      <label class="dep-det-remember"><input type="checkbox" id="depDetRemember" checked>
+        <span id="depDetRememberLabel">이 입금자는 다음부터 이 거래처로 기억</span></label>
+      <!-- 이카운트 반영 (2026-09-29) — 넘길 수 있는 입금이면 버튼, 넘어갔으면 전표번호, 모르면 정리 칸 -->
+      <div class="dep-det-ec" id="depDetEc" hidden></div>
+      <div class="dep-det-actions">
+        <button type="button" class="primary" id="depDetSave" onclick="depDetailAssign()">선택한 주문으로 확정</button>
+        <button type="button" onclick="depDetailExclude()" title="개인 송금 · 환불 반환 등 주문 대금이 아닌 입금">주문 입금 아님</button>
+        <button type="button" id="depDetUndo" onclick="depDetailUnassign()" hidden>자동 판정으로 되돌리기</button>
+      </div>
+      <button type="button" class="dep-modal-close" onclick="closeDepositDetail()">닫기</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="ledgerModal">
+    <div class="modal-content ledger-sheet" style="max-height:88vh;overflow-y:auto;">
       <div class="modal-handle"></div>
       <div class="modal-title">반품관리대장 기록</div>
       <div class="ledger-preview" id="ledgerPreview"></div>
@@ -3653,6 +4269,13 @@
         <span class="dm"></span>
         <button type="button" class="dx" onclick="draftDiscard('ledger')">새로 작성</button>
       </div>
+      <!--  ★ 적는 칸들을 한 묶음으로 ★  (2026-10-01)
+            > "하단부분이 짤리고 하단 아래쪽으로 무분별하게 분리되어 있어"
+            칸이 열다섯인데 420px 한 줄로 세워 두니 아래로 끝없이 늘어졌다.
+            넓은 화면에서는 이 묶음만 두 칸으로 접는다 (.ledger-grid).
+            묶음으로 싸는 까닭은 미리보기·품목·임시저장·단추가 형제라,
+            창 자체를 그리드로 만들면 그것들까지 끌려 들어가기 때문이다.  -->
+      <div class="ledger-grid">
       <div class="ledger-field">
         <label>접수자</label>
         <select id="ledgerStaff"></select>
@@ -3669,6 +4292,16 @@
           <label>귀책</label>
           <select id="ledgerFault" onchange="retFillReasons('ledger')"></select>
         </div>
+        <!--  ★ 2026-10-01 고침 ★ 이 칸의 «여는» 태그와 라벨이 빠져 있었다.
+              그래서 닫는 태그가 하나 남아 .modal-content 가 여기서 «일찍 닫혔고»,
+              뒤따르는 칸들(상태·실번호·수거입력처·반품비·환불계좌·메모·사진)과
+              「기록」 단추가 창 «밖»으로 밀려났다 — 사장님이 본
+              「하단이 잘리고 아래쪽으로 무분별하게 분리된」 모양이 이것이다.
+              접수 창(retNewReason)과 같은 모양으로 되돌린다.  -->
+        <div class="ledger-field">
+          <label>사유</label>
+          <!-- 빈칸으로 둘 수 있다. 목록에 없는 사유는 아래 메모에 적는다 —
+               「기타」를 골라 대장에 「기타」가 적히면 아무 뜻도 없다. -->
           <select id="ledgerReason"></select>
         </div>
       </div>
@@ -3692,6 +4325,25 @@
         <label>실번호 주인 (선택)</label>
         <!-- 누구 번호인지 — 대신 받아 준 사장님·직원일 때가 많다 -->
         <input id="ledgerPhone2Name" type="text" maxlength="20" placeholder="예: 가게 사장님">
+      </div>
+      <!--  ★ 둘 다 적는다 ★  (2026-10-02)
+            > "둘다 적으면 좋겠네"
+            세트가 뚜껑만 나가면 두 가지가 같이 움직인다 —
+              고객이 «돌려보내는 것» 뚜껑 4 → 위 「품목」
+              우리가 «다시 보내는 것» 몸통 1 → 이 칸
+            한 칸에 뭉뚱그리면 「이번 달 뚜껑 반품 몇 건」을 셀 수 없다.
+            협의된 배열에는 빈 칸이 없어 비고에 「재출고: …」로 남긴다.  -->
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>재출고 상품 (선택 · 다시 보내는 것)</label>
+          <input id="ledgerReship" type="text"
+                 placeholder="예: 220파이 감자탕 중 백색 몸통 1">
+        </div>
+        <div class="ledger-field">
+          <label>재출고 배송비 (선택)</label>
+          <input id="ledgerReshipFee" type="text" inputmode="numeric"
+                 placeholder="우리가 보내며 쓴 돈">
+        </div>
       </div>
       <div class="ledger-field">
         <label>수거입력처 (대리공급은 택배사 자동)</label>
@@ -3721,11 +4373,11 @@
         <!-- 은행·번호·예금주를 한 칸에 그대로 받는다. 쪼개면 은행 표기가
              제각각이라 반드시 틀린다. 돈이 걸린 값은 원문이 안전하다. -->
       </div>
-      <div class="ledger-field">
+      <div class="ledger-field wide">
         <label>메모 (고객요청/유의사항)</label>
         <textarea id="ledgerMemo" placeholder="필요하면 적고, 없으면 비워 두세요"></textarea>
       </div>
-      <div class="ledger-field">
+      <div class="ledger-field wide">
         <label>사진 (선택 · 스크린샷은 Ctrl+V · 기록과 함께 올라갑니다)</label>
         <div class="ret-photo-pick">
           <label class="pk">촬영<input type="file" accept="image/*" capture="environment"
@@ -3735,6 +4387,7 @@
         </div>
         <div id="ledgerPhotoPrev"></div>
       </div>
+      </div><!-- /.ledger-grid -->
       <div class="ledger-btns">
         <button class="ledger-cancel" type="button" onclick="closeLedger(true)">취소</button>
         <button class="ledger-ok" type="button" id="ledgerSubmitBtn" onclick="submitLedger(false)">기록</button>
@@ -3903,6 +4556,9 @@
       loadReturnActive(false);
       renderOrderDashboard();
       loadStockout();   /* 팩투유 품절상품 — 화면 열 때 한 번 (2026-09-11) */
+      loadCsq();        /* CS 문의 — 열 때 한 번, 10분 지나면 다시 (2026-10-02) */
+      renderDeposits(); /* 오늘 입금 — 열 때 한 번, 그 뒤 1분마다 (2026-09-29) */
+      depPaintSoundBtn(); /* 입금 소리 켜짐/꺼짐 (2026-09-30) */
       startCsPulse();
       setTimeout(function() { initWsSplitter(); csInstallScrollbars(); }, 80);
       setTimeout(function() { initWsSplitter(); csInstallScrollbars(); }, 400);
@@ -6087,6 +6743,7 @@
         fields: ['retNewStaff', 'retNewName', 'retNewPhone', 'retNewPhone2', 'retNewPhone2Name', 'retNewInvoice', 'retNewQty',
                  'retNewItem', 'retNewVendor', 'retNewPickup', 'retNewRetInvoice',
                  'retNewFee', 'retNewType', 'retNewFault', 'retNewReason',
+                 'retNewReship', 'retNewReshipFee',
                  'retNewStatus', 'retNewAccount', 'retNewMemo'],
         /*  사유 목록은 귀책에 딸려 있다 — 되살릴 때 «순서»가 있다.  (2026-09-30)
             위 칸 되살리기는 값만 넣는다(onchange 가 안 돈다). 그래서 사유
@@ -7455,11 +8112,19 @@
     }
 
     function dashFilterReturn(status) {
+      /*  (2026-10-01) 상태 이름을 검색어로 넣던 것을 상태값 거르기로 바꿨다 —
+          검색은 메모에 「접수」 글자만 있어도 걸린다. 칩은 «그 상태인 것만»이다. */
       var rq = document.getElementById('rq');
-      if (rq) rq.value = status;
-      RETURN_QUERY = status;
-      RETURN_SHOW_LIMIT = 30;
-      doReturnSearch(true);
+      if (rq) rq.value = '';
+      RETURN_QUERY = '';
+      RETURN_STAGE_FILTER = '';
+      /*  접수자 거르개도 푼다 (2026-10-02).
+          대시보드에서 「입고검수 12건」을 눌렀는데 3건만 보이면, 왜 그런지
+          모른 채 숫자가 틀렸다고 여긴다. 이 단추는 «그 상태 전부»를 뜻한다.
+          거르개 칸은 「접수자 전체」로 돌아가므로 눈에도 보인다.  */
+      RETURN_STAFF_FILTER = '';
+      try { localStorage.setItem('CS_RET_STAFF', ''); } catch (e) {}
+      setReturnStageFilter(status);
       wsGoToPane(1);
     }
 
@@ -7580,6 +8245,477 @@
       el.innerHTML = html;
     }
 
+    /* ══════════════════════════════════════════════════════════════
+     *  CS 문의  (2026-10-02)
+     *
+     *  > "CS웹앱 입금확인위에 CS문의라는 내용을 만들어줘 … 거래처, 상품,
+     *  >  문의 내용, 후처리요청, 사진등이 나오게 카드식으로 … 검색기능도
+     *  >  넣고 … 접힌 카드 방식으로 클릭하면 펼쳐서 … 처리완료를 누르면
+     *  >  삭제(화면에서만 데이타는 저장)"
+     *  > "CS_커뮤니티보드에서 불러오는게 아니고 이건 별도로 저장해줘
+     *  >  시트말고 바르셀 데이타로.."
+     *
+     *  ★ 저장은 v2 다 (cs_inquiries · sql/74) ★
+     *    시트도 보드도 아니다. 보드는 «오늘 넘길 일»이 사는 곳이고 문의는
+     *    거래처와 상품에 매인 일이다 — 섞으면 둘 다 흐려진다.
+     *    GAS 는 Supabase 를 직접 못 부르므로 csInquiry.gs 가 v2 문으로 간다.
+     *
+     *  ★ 처리완료는 지우는 게 아니다 ★ status 만 「완료」가 되고 줄은 남는다.
+     *    후처리요청은 완료 뒤에도 산다 — 「1000개 되면 추가 발송」은 다음 달 일이다.
+     *    그래서 목록은 «진행 + 후처리 남은 완료»를 받는다.
+     */
+    var CSQ_ROWS = [];
+    var CSQ_OPEN = {};        // 펼쳐 둔 카드 — 다시 그려도 그대로 둔다
+    var CSQ_AT = 0;
+    var csqBusy = false;
+
+    function csqMatch(c, q) {
+      if (!q) return true;
+      /*  ★ 번호로도 찾는다 ★  (2026-10-02, sql/76)
+          > "다 연결되어 연동..찾기가 가능하고 추적가능하게"
+          c.uid 는 이 문의 번호, c.ref_uid 는 걸린 건의 번호다. 둘 다
+          넣어야 「이 반품 건에 걸린 문의」를 번호로 끌어올 수 있다.  */
+      return [c.vendor, c.item, c.body, c.followup, c.created_by, c.uid, c.ref_uid]
+        .join(' ').toLowerCase().indexOf(q) >= 0;
+    }
+
+    /** 2026-10-02T06:03:53Z → 10-02 15:03 (서울). 자리만 차지하는 초는 뗀다 */
+    function csqWhen(iso) {
+      var d = new Date(String(iso || ''));
+      if (isNaN(d.getTime())) return '';
+      var p = function (n) { return (n < 10 ? '0' : '') + n; };
+      return p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +
+        p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+
+    function loadCsq(force) {
+      if (csqBusy) return;
+      //  10분에 한 번이면 넉넉하다. ↻ 를 누르면 바로 다시 읽는다
+      if (!force && CSQ_AT && Date.now() - CSQ_AT < 600000) { renderCsq(); return; }
+      csqBusy = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          csqBusy = false;
+          CSQ_AT = Date.now();
+          if (!res || !res.ok) {
+            //  ★ 조용히 비워 두지 않는다 ★ 못 읽은 것과 없는 것은 다르다
+            var el = document.getElementById('csqList');
+            if (el) el.innerHTML = '<div class="csq-empty">문의를 못 읽었습니다 — ' +
+              esc((res && res.error) || '까닭 모름') + '</div>';
+            return;
+          }
+          CSQ_ROWS = res.rows || [];
+          renderCsq();
+        })
+        .withFailureHandler(function (e) {
+          csqBusy = false;
+          var el = document.getElementById('csqList');
+          if (el) el.innerHTML = '<div class="csq-empty">문의를 못 읽었습니다. ↻ 를 눌러 보세요.</div>';
+        })
+        .csListInquiries({ limit: 200 });
+    }
+
+    function renderCsq() {
+      var list = document.getElementById('csqList');
+      if (!list) return;
+      var q = String((document.getElementById('csqq') || {}).value || '').trim().toLowerCase();
+      var 볼것 = CSQ_ROWS.filter(function (c) { return csqMatch(c, q); });
+
+      var cnt = document.getElementById('csqCount');
+      if (cnt) cnt.textContent = String(볼것.length);
+      var sub = document.getElementById('csqSub');
+      if (sub) {
+        var fu = CSQ_ROWS.filter(function (c) { return String(c.followup || '').trim(); }).length;
+        sub.textContent = fu ? ('후처리 ' + fu + '건') : '';
+      }
+
+      if (!볼것.length) {
+        list.innerHTML = '<div class="csq-empty">' +
+          (q ? '찾는 문의가 없습니다.' : '처리할 문의가 없습니다.') + '</div>';
+        return;
+      }
+      var h = '';
+      for (var i = 0; i < 볼것.length; i++) h += csqCardHtml(볼것[i]);
+      list.innerHTML = h;
+    }
+
+    function csqCardHtml(c) {
+      var id = String(c.id || '');
+      var 열림 = !!CSQ_OPEN[id];
+      var 글 = String(c.body || '');
+      var 한줄 = 글.replace(/\s+/g, ' ').trim();
+      var fu = String(c.followup || '').trim();
+      var 끝남 = String(c.status || '') === '완료';
+      var 사진 = (c.photos && c.photos.length) ? c.photos : [];
+
+      var h = '<div class="csq-card' + (열림 ? ' open' : '') + (끝남 ? ' done' : '') +
+        '" data-csq="' + esc(id) + '" onclick="csqToggle(this)">';
+      h += '<div class="csq-head">' +
+        '<span class="csq-vendor">' + esc(c.vendor || '(거래처 없음)') + '</span>' +
+        (c.item ? '<span class="csq-item">' + esc(c.item) + '</span>' : '') +
+        /*  ★ 완료인데 왜 보이나 ★ 후처리가 남아서다. 안 적어 두면
+            「닫았는데 왜 또 있지」가 된다.  */
+        (끝남 ? '<span class="csq-done-tag">완료 · 후처리 남음</span>' : '') +
+        '<span class="csq-when">' + esc(csqWhen(c.created_at)) + '</span>' +
+        '</div>';
+      /*  ★ 번호가 «보여야» 추적이 된다 ★  (2026-10-02, sql/76)
+          찾기만 되고 어디에도 안 보이면, 사람이 그 번호를 알 길이 없어
+          다른 화면에 옮겨 적을 수가 없다. 접힌 카드에도 둔다 —
+          전화를 받으며 「문의 번호 뭐예요」에 바로 읽어 줘야 한다.  */
+      if (c.uid || c.ref_uid) {
+        h += '<div class="csq-uids">' +
+          (c.uid ? '<span class="csq-uid">' + esc(c.uid) + '</span>' : '') +
+          (c.ref_uid ? '<span class="csq-ref">↳ ' + esc(c.ref_uid) + '</span>' : '') +
+          '</div>';
+      }
+      if (!열림 && 한줄) h += '<div class="csq-one">' + esc(한줄) + '</div>';
+      if (!열림 && fu) h += '<div class="csq-fu-tag">후처리 ' + esc(fu.replace(/\s+/g, ' ').slice(0, 28)) + '</div>';
+
+      /*  ★ 안쪽을 누를 때 접히면 안 된다 ★ 글자를 끌어 복사하거나
+          후처리를 적다가 접히면 적던 것이 날아간다.  */
+      h += '<div class="csq-body" onclick="event.stopPropagation()">';
+      h += '<div class="csq-label">문의 내용</div>' +
+        '<div class="csq-text">' + esc(글 || '(내용 없음)') + '</div>';
+      if (사진.length) {
+        h += '<div class="csq-label">사진 ' + 사진.length + '장</div><div class="csq-photos">';
+        for (var a = 0; a < 사진.length; a++) {
+          h += '<a href="' + esc(사진[a].url || '#') + '" target="_blank" rel="noopener">📎 ' +
+            esc(사진[a].name || ('사진 ' + (a + 1))) + '</a>';
+        }
+        h += '</div>';
+      }
+      /*  관련 번호 — 펼쳤을 때만. 접힌 카드에 입력칸을 두면 잘못 눌린다.  */
+      h += '<div class="csq-label">관련 번호 — 반품 r… · 발주 d… · 전화주문 p…</div>';
+      h += '<div class="csq-fu"><input type="text" id="csqref-' + esc(id) + '"' +
+        ' value="' + esc(String(c.ref_uid || '')) + '"' +
+        ' placeholder="예: r1002000003 (비워 두면 지웁니다)"></div>';
+      h += '<div class="csq-label">후처리 요청 — 나중에 해야 할 일 (완료해도 남습니다)</div>';
+      h += '<div class="csq-fu"><textarea id="csqfu-' + esc(id) + '"' +
+        ' placeholder="예: 불량 100개 — 다음 주문 때 모아 1000개 되면 추가 발송">' +
+        esc(fu) + '</textarea></div>';
+      /*  사진 더 올리기 — 펼쳤을 때만 보인다. 접힌 카드에 두면 잘못 눌린다. */
+      h += '<div class="csq-label">사진 더 올리기 (스크린샷은 Ctrl+V)</div>';
+      h += '<div class="ret-photo-pick">' +
+        '<label class="pk">촬영<input type="file" accept="image/*" capture="environment"' +
+          ' onchange="csqPhotoPick(\'' + esc(id) + '\', this)"></label>' +
+        '<label class="pk">앨범<input type="file" accept="image/*" multiple' +
+          ' onchange="csqPhotoPick(\'' + esc(id) + '\', this)"></label>' +
+        '</div>';
+      h += '<div id="csqPhotoPrev-' + esc(id) + '">' +
+        retPhotoStripHtml(csqPickList(id), "csqPhotoDrop(\x27" + id + "\x27,") + '</div>';
+
+      h += '<div class="csq-acts">' +
+        '<button type="button" id="csqph-' + esc(id) + '" onclick="csqAddPhotos(\'' + esc(id) + '\')">사진 올리기</button>' +
+        '<button type="button" onclick="csqSaveRef(\'' + esc(id) + '\')">번호 저장</button>' +
+        '<button type="button" onclick="csqSaveFollowup(\'' + esc(id) + '\')">후처리 저장</button>' +
+        (끝남
+          ? '<button type="button" onclick="csqReopen(\'' + esc(id) + '\')">다시 열기</button>'
+          : '<button type="button" class="ok" onclick="csqDone(\'' + esc(id) + '\')">처리완료</button>') +
+        '</div>';
+      h += '<div class="csq-by">' + esc(c.created_by || '') +
+        (끝남 && c.done_by ? ' · 완료 ' + esc(c.done_by) : '') + '</div>';
+      h += '</div></div>';
+      return h;
+    }
+
+    /*  마지막으로 «편» 카드 — 붙여넣기가 어디로 갈지 정한다.
+        여럿 펴 두었을 때 DOM 차례로 첫 것에 붙이면, 방금 연 카드가 아니라
+        위에 있던 카드에 붙어 사람이 못 찾는다.  */
+    var CSQ_LAST_OPEN = '';
+
+    function csqToggle(el) {
+      var id = el.getAttribute('data-csq');
+      CSQ_OPEN[id] = !CSQ_OPEN[id];
+      if (CSQ_OPEN[id]) CSQ_LAST_OPEN = id;
+      else if (CSQ_LAST_OPEN === id) CSQ_LAST_OPEN = '';
+      renderCsq();
+    }
+
+    /**
+     * 붙여넣은 이미지를 받을 CS 문의 자리.  (2026-10-02)
+     *
+     * ★ 새 문의가 먼저다 ★ 그것을 펴 두었다는 건 지금 거기에 적고 있다는 뜻이다.
+     * 아니면 마지막으로 편 카드. 둘 다 아니면 null — 엉뚱한 데 붙이지 않는다.
+     */
+    function csqPasteTarget() {
+      var 새 = document.getElementById('csqNew');
+      if (새 && !새.hidden) {
+        return { label: 'CS 문의 — 새 문의', stage: function (files) {
+          retPhotoStage(csqPickList(null), files, function () { csqPhotoRender(null); });
+        } };
+      }
+      var id = CSQ_LAST_OPEN;
+      if (!id || !CSQ_OPEN[id]) return null;
+      if (!document.getElementById('csqPhotoPrev-' + id)) return null;
+      var 누구 = '';
+      for (var i = 0; i < CSQ_ROWS.length; i++) {
+        if (String(CSQ_ROWS[i].id) === String(id)) { 누구 = CSQ_ROWS[i].vendor || ''; break; }
+      }
+      return { label: 'CS 문의 — ' + (누구 || '그 건'), stage: function (files) {
+        retPhotoStage(csqPickList(id), files, function () { csqPhotoRender(id); });
+      } };
+    }
+
+    /* ══ CS 문의 사진 ══════════════════════════════════════════
+       반품 쪽 길을 그대로 쓴다 —
+         hbShrinkImage  크기 줄이기 (송장 글자가 읽혀야 해서 2400px)
+         hbToAttachment base64 로
+         csUploadInquiryPhoto  v2 보관소(board-files)에 올리고 링크를 받음
+       ★ 표에는 링크만 담는다 ★ 파일을 두 군데 두지 않는다.
+
+       고른 사진은 «올리기를 누를 때» 보낸다. 고르자마자 올리면 쓰다
+       만 문의의 사진이 보관소에 남는다.                              */
+    var CSQ_PICK = [];        // 새 문의에 달 사진 (아직 안 올린 것)
+    var CSQ_PICK_ON = {};     // 이미 있는 문의에 달 사진 — id 별로
+
+    /** id 가 null 이면 새 문의 쪽, 아니면 그 카드 쪽 */
+    function csqPickList(id) {
+      if (!id) return CSQ_PICK;
+      if (!CSQ_PICK_ON[id]) CSQ_PICK_ON[id] = [];
+      return CSQ_PICK_ON[id];
+    }
+
+    function csqPhotoPick(id, input) {
+      var files = Array.prototype.slice.call(input.files);
+      input.value = '';
+      //  반품 쪽과 같은 줄이기·장수 제한을 그대로 쓴다
+      retPhotoStage(csqPickList(id), files, function () { csqPhotoRender(id); });
+    }
+
+    function csqPhotoRender(id) {
+      var el = document.getElementById(id ? ("csqPhotoPrev-" + id) : "csqnPhotoPrev");
+      if (!el) return;
+      el.innerHTML = retPhotoStripHtml(csqPickList(id),
+        "csqPhotoDrop(" + (id ? "\x27" + id + "\x27" : "null") + ",");
+    }
+
+    function csqPhotoDrop(id, i) {
+      csqPickList(id).splice(i, 1);
+      csqPhotoRender(id);
+    }
+
+    /**
+     * 고른 사진을 하나씩 올린다. 다 되면 링크 목록을 준다.
+     *
+     * ★ 한 장이 실패하면 멈춘다 ★ 반쯤 올라간 채로 넘어가면 어느 것이
+     *   빠졌는지 아무도 모른다. 몇 장째에서 멎었는지 말해 준다.
+     */
+    function csqUploadAll(list, onDone, onFail, 진행) {
+      var 결과 = [];
+      function 다음(n) {
+        if (n >= list.length) { onDone(결과); return; }
+        if (진행) 진행(n + 1, list.length);
+        google.script.run
+          .withSuccessHandler(function (r) {
+            if (!r || !r.ok) {
+              onFail('사진 ' + (n + 1) + '장째 — ' + ((r && r.error) || '올리기 실패'));
+              return;
+            }
+            결과.push({ name: r.name, url: r.url });
+            다음(n + 1);
+          })
+          .withFailureHandler(function (e) {
+            onFail('사진 ' + (n + 1) + '장째 — ' + String((e && e.message) || e));
+          })
+          .csUploadInquiryPhoto({
+            dataB64: list[n].dataB64, mime: list[n].mimeType, name: list[n].name,
+          });
+      }
+      다음(0);
+    }
+
+    /** 이미 있는 문의에 사진을 덧붙인다 */
+    function csqAddPhotos(id) {
+      var list = csqPickList(id);
+      if (!list.length) { toast('올릴 사진을 먼저 고르세요'); return; }
+      var btn = document.getElementById('csqph-' + id);
+      if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
+      csqUploadAll(list, function (사진들) {
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (btn) { btn.disabled = false; btn.textContent = '사진 올리기'; }
+            if (!res || !res.ok) { toast((res && res.error) || '붙이기 실패', 3200); return; }
+            CSQ_PICK_ON[id] = [];
+            for (var i = 0; i < CSQ_ROWS.length; i++) {
+              if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i] = res.row;
+            }
+            toast(사진들.length + '장 올렸습니다');
+            renderCsq();
+          })
+          .withFailureHandler(function (e) {
+            if (btn) { btn.disabled = false; btn.textContent = '사진 올리기'; }
+            toast(String((e && e.message) || e || '붙이기 실패'), 3200);
+          })
+          .csAddInquiryPhotos({ id: id, photos: 사진들, staff: csqStaff() });
+      }, function (말) {
+        if (btn) { btn.disabled = false; btn.textContent = '사진 올리기'; }
+        toast(말, 3600);
+      }, function (n, 전체) {
+        if (btn) btn.textContent = '올리는 중… (' + n + '/' + 전체 + ')';
+      });
+    }
+
+    function csqStaff() {
+      return currentStaff || (document.getElementById('ledgerStaff') || {}).value || '';
+    }
+
+    /* ── 새 문의 ─────────────────────────────────────────────── */
+    function csqNewToggle() {
+      var box = document.getElementById('csqNew');
+      if (!box) return;
+      box.hidden = !box.hidden;
+      if (!box.hidden) { var v = document.getElementById('csqnVendor'); if (v) v.focus(); }
+    }
+
+    function csqNewSave() {
+      var staff = csqStaff();
+      if (!staff) { toast('담당자를 먼저 고르세요'); return; }
+      var g = function (id) { var e = document.getElementById(id); return e ? e.value : ''; };
+      var p = {
+        staff: staff, vendor: g('csqnVendor'), item: g('csqnItem'),
+        body: g('csqnBody'), followup: g('csqnFollowup'), photos: [],
+        //  관련 번호 — 비어 있으면 그냥 안 적힌다 (2026-10-02, sql/76)
+        refUid: g('csqnRef'),
+      };
+      if (!p.vendor.trim() && !p.item.trim() && !p.body.trim()) {
+        toast('거래처·상품·내용 가운데 하나는 적어 주세요'); return;
+      }
+      var btn = document.getElementById('csqnSave');
+      if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
+
+      /*  사진을 «먼저» 올린다. 문의를 먼저 만들면 사진이 실패했을 때
+          사진 없는 문의가 남아, 다시 올리려면 그 건을 찾아 들어가야 한다. */
+      csqUploadAll(CSQ_PICK, function (사진들) {
+        p.photos = 사진들;
+        csqNewPost(p, btn);
+      }, function (말) {
+        if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
+        toast(말, 3600);
+      }, function (n, 전체) {
+        if (btn) btn.textContent = '사진 올리는 중… (' + n + '/' + 전체 + ')';
+      });
+    }
+
+    function csqNewPost(p, btn) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
+          if (!res || !res.ok) { toast((res && res.error) || '올리기 실패', 3200); return; }
+          ['csqnVendor', 'csqnItem', 'csqnBody', 'csqnFollowup', 'csqnRef'].forEach(function (id) {
+            var e = document.getElementById(id); if (e) e.value = '';
+          });
+          CSQ_PICK = [];
+          csqPhotoRender(null);
+          document.getElementById('csqNew').hidden = true;
+          if (res.row) CSQ_ROWS.unshift(res.row);
+          toast('문의를 올렸습니다');
+          renderCsq();
+        })
+        .withFailureHandler(function (e) {
+          if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
+          toast(String((e && e.message) || e || '올리기 실패'), 3200);
+        })
+        .csSaveInquiry(p);
+    }
+
+    /**
+     * 관련 번호를 저장한다.  (2026-10-02, sql/76)
+     *
+     * ★ 꼴을 미리 본다 ★ 「1002000003」처럼 표식을 빼고 적으면 어느
+     * 쪽 건인지 알 수 없다. 막지는 않는다 — 앞으로 표식이 더 생길 수
+     * 있고, 막으면 사람은 왜 안 되는지 모른다. 알려만 준다.
+     */
+    function csqSaveRef(id) {
+      var inp = document.getElementById('csqref-' + id);
+      if (!inp) return;
+      var staff = csqStaff();
+      if (!staff) { toast('담당자를 먼저 고르세요'); return; }
+      var v = String(inp.value || '').trim();
+      if (v && !/^[rdpq]\d{4}\d{6}$/i.test(v)) {
+        toast('번호 꼴이 다릅니다 — r1002000003 처럼 적어 주세요. 그대로 저장합니다.', 3600);
+      }
+      inp.disabled = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          inp.disabled = false;
+          if (!res || !res.ok) { toast((res && res.error) || '저장 실패', 3200); return; }
+          for (var i = 0; i < CSQ_ROWS.length; i++) {
+            if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i].ref_uid = v;
+          }
+          toast(v ? ('관련 번호를 ' + v + ' 로 두었습니다') : '관련 번호를 지웠습니다');
+          renderCsq();
+        })
+        .withFailureHandler(function (e) {
+          inp.disabled = false;
+          toast(String((e && e.message) || e || '저장 실패'), 3200);
+        })
+        .csSetInquiryRef({ id: id, refUid: v, staff: staff });
+    }
+
+    function csqSaveFollowup(id) {
+      var ta = document.getElementById('csqfu-' + id);
+      if (!ta) return;
+      var staff = csqStaff();
+      if (!staff) { toast('담당자를 먼저 고르세요'); return; }
+      var text = ta.value;
+      ta.disabled = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          ta.disabled = false;
+          if (!res || !res.ok) { toast((res && res.error) || '저장 실패', 3200); return; }
+          for (var i = 0; i < CSQ_ROWS.length; i++) {
+            if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i].followup = text;
+          }
+          toast(String(text).trim() ? '후처리 요청을 저장했습니다' : '후처리 요청을 지웠습니다');
+          renderCsq();
+        })
+        .withFailureHandler(function (e) {
+          ta.disabled = false;
+          toast(String((e && e.message) || e || '저장 실패'), 3200);
+        })
+        .csSetInquiryFollowup({ id: id, text: text, staff: staff });
+    }
+
+    /*  처리완료 — ★ 지우는 게 아니다 ★ status 만 「완료」로 바뀐다.
+        후처리가 남아 있으면 목록에 그대로 있다(딱지가 붙는다) — 그 일은
+        아직 안 끝났기 때문이다. 없으면 화면에서 빠진다.  */
+    function csqDone(id) {
+      var staff = csqStaff();
+      if (!staff) { toast('담당자를 먼저 고르세요'); return; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) { toast((res && res.error) || '처리 실패', 3200); return; }
+          var fu = String((res.row && res.row.followup) || '').trim();
+          if (fu) {
+            for (var i = 0; i < CSQ_ROWS.length; i++) {
+              if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i] = res.row;
+            }
+            toast('처리완료 — 후처리가 남아 목록에 둡니다', 2800);
+          } else {
+            CSQ_ROWS = CSQ_ROWS.filter(function (c) { return String(c.id) !== String(id); });
+            delete CSQ_OPEN[id];
+            toast('처리완료 — 목록에서 뺐습니다 (자료는 남습니다)', 2600);
+          }
+          renderCsq();
+        })
+        .withFailureHandler(function (e) { toast(String((e && e.message) || e || '처리 실패'), 3200); })
+        .csCompleteInquiry({ id: id, staff: staff });
+    }
+
+    function csqReopen(id) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) { toast((res && res.error) || '되돌리기 실패', 3200); return; }
+          for (var i = 0; i < CSQ_ROWS.length; i++) {
+            if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i] = res.row;
+          }
+          toast('다시 열었습니다');
+          renderCsq();
+        })
+        .withFailureHandler(function (e) { toast(String((e && e.message) || e || '되돌리기 실패'), 3200); })
+        .csReopenInquiry({ id: id, staff: csqStaff() });
+    }
+
     function loadStockout() {
       var el = document.getElementById('stockoutBox');
       if (el) el.innerHTML = '<div class="os-dash-head"><span class="os-dash-title">🚫 팩투유 품절상품</span></div>' +
@@ -7662,7 +8798,7 @@
       el.innerHTML =
         '<div class="os-dash-head">' +
           '<span class="os-dash-title">📊 CS 대시보드</span>' +
-          '<button type="button" class="os-dash-refresh" onclick="warm(true);loadReturnActive(true,false);loadDashDays(true);loadStockout()">↻ 갱신</button>' +
+          '<button type="button" class="os-dash-refresh" onclick="warm(true);loadReturnActive(true,false);loadDashDays(true);loadStockout();renderDeposits(true,true)">↻ 갱신</button>' +
         '</div>' +
         '<div class="dash-kpi-grid">' + kpiHtml + '</div>' +
         '<div class="dash-section">' +
@@ -7682,14 +8818,13 @@
           '<div class="dash-chips">' + chipsHtml + '</div>' +
         '</div>' +
         // ★ 2026-08-31: 발주업체 TOP5 자리를 일과 체크리스트로 바꿨다.
-        //   TOP5 는 보기만 하고 손댈 일이 없었고, 시각별 할 일은 놓치면 바로 손해다.
-        //   내용은 csDailyChecklist 가 따로 채운다(서버 왕복이라 비동기).
-        '<div class="dash-section">' +
-          '<div class="dash-section-title">오늘 할 일</div>' +
-          '<div id="dashChecklist" class="dash-check">불러오는 중…</div>' +
-        '</div>';
-
-      renderDailyChecklist();
+        // ★ 2026-09-29: 체크리스트는 걷어냈다.
+        //   > "지금 일정 뜨는걸 삭제하고 그위치에 뜨게해줘" → 이어서 "위치를 주문 송장 검색 아래로"
+        //   «오늘 입금»은 검색 바로 아래 #depositBox 로 옮겼다 (대시보드는 다시 그려질 때마다
+        //   통째로 바뀌어서, 1분마다 새로 묻는 입금 칸을 두기에도 맞지 않았다).
+        //   체크리스트 코드(renderDailyChecklist · csDailyChecklist.gs)는 지우지 않았다 —
+        //   되살리려면 이 자리에 dashChecklist 칸을 다시 넣고 renderDailyChecklist() 를 부르면 된다.
+        '';
     }
 
     function setIndexStatus(where) {
@@ -8595,6 +9730,24 @@
       return c.phoneTag ? '' : (c.phone || '');
     }
 
+    /* ★ 실번호를 적은 «그 순간»에도 서버와 같은 순서로 ★  (2026-10-01)
+       > "바로 실번호가 앞에 오게 맞춰줘"
+       서버(_cs_pickPhones_)는 실번호가 있으면 «실번호를 앞», 원래 연락처를
+       뒤에 「안심」(050…) 또는 「주문서」 딱지로 둔다. 화면이 저장 직후에만
+       「안심 · 추가 실번호」로 거꾸로 보이다가 새로 불러오면 뒤집혔다.
+       같은 규칙을 여기서 그대로 따른다 — 카드 칸·팝업 두 길이 다 이것을 쓴다. */
+    function retApplyPhone2(x, val) {
+      var 숫 = function (s) { return String(s || '').replace(/[^0-9]/g, ''); };
+      //  원래 연락처(대장 「연락처」 칸)가 지금 어디 앉아 있나
+      var 주 = (x.phoneSubTag === '안심' || x.phoneSubTag === '주문서') ? (x.phoneSub || '') : (x.phone || '');
+      var 뒤 = (주 && 숫(주) !== 숫(val)) ? 주 : '';
+      x.phone = val; x.phoneTag = '';
+      x.phoneSub = 뒤;
+      x.phoneSubTag = 뒤 ? (/^050[0-9]/.test(숫(뒤)) ? '안심' : '주문서') : '';
+      x.phoneOnlySafe = false;
+      return x;
+    }
+
     function returnComposePopHtml(idx, c) {
       return '<div class="ret-act-pop" id="ret-pop-status-' + idx + '" data-mode="status">' +
           '<div class="pop-label">처리상태 변경</div>' +
@@ -8858,6 +10011,280 @@
       if (즉시) toast('반품송장을 적었습니다');
     }
 
+    /* ★ 실번호도 카드에서 «바로» 적는다 ★  (2026-10-01)
+
+       > "반품카드에 전화번호 옆에 전화번호 입력할수 있게 만들어줘
+       >  (안심번호일경우 실 전화번호 입력을 위해).. 송장번호 입력하듯이.."
+
+       9/11 에 「처리상태 변경」 팝업 «안»에 넣었다. 9/18 반품송장이 그랬듯
+       아무도 거기서 찾지 않는다 — 없는 것과 같다. 반품송장 칸과 같은 꼴로 꺼낸다.
+
+       ★ 카드가 길어지지 않게 ★  (반품송장 칸과 같은 규칙)
+         · 안심번호뿐이고 실번호가 없을 때만 칸을 펴 둔다 — 그때가 적을 때다
+         · 아니면 전화 옆 「+ 실번호」/「실번호 고침」을 누를 때 편다
+       ★ 저장하는 길은 하나 ★ 팝업과 같은 updateReturnLedgerStatus.
+         상태는 지금 것을 그대로 보낸다 — 이 칸은 «번호만» 적는 자리다. */
+    function retPh2BtnHtml(idx, c) {
+      var has = !!retCardPhone2(c);
+      return '<button type="button" class="ret-retinv-edit ret-ph2-btn"' +
+        ' onclick="event.stopPropagation(); retPh2Edit(' + idx + ')">' +
+        (has ? '실번호 고침' : '+ 실번호') + '</button>';
+    }
+
+    function retPh2SlotHtml(idx, c) {
+      var 펴기 = !!(c && c.phoneOnlySafe && !retCardPhone2(c));
+      return '<div class="ret-ph2-slot" id="ret-ph2-slot-' + idx + '">' +
+        (펴기 ? retPh2FieldHtml(idx, '', (c && c.phone2Name) || '') : '') + '</div>';
+    }
+
+    /** 칸 + 저장 단추 — 펴진 모습 (번호와 이름은 «같이» 적는다) */
+    function retPh2FieldHtml(idx, val, name) {
+      var 엔터 = ' onclick="event.stopPropagation()"' +
+        ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();event.stopPropagation();retPh2Save(' + idx + ');}"';
+      return '<div class="ret-retinv">' +
+        '<span class="ret-retinv-lbl">실번호</span>' +
+        '<input type="tel" class="ret-retinv-in" id="ret-ph2in-' + idx + '"' +
+          ' placeholder="010-0000-0000" value="' + esc(val) + '"' + 엔터 + '>' +
+        '<input type="text" class="ret-retinv-in ret-ph2in-name" id="ret-ph2nin-' + idx + '"' +
+          ' maxlength="20" placeholder="이름 (주문자와 다르면)" value="' + esc(name) + '"' + 엔터 + '>' +
+        '<button type="button" class="ret-retinv-save" id="ret-ph2-btn-' + idx + '"' +
+          ' onclick="event.stopPropagation(); retPh2Save(' + idx + ')">저장</button>' +
+        '</div>';
+    }
+
+    /** 「+ 실번호」·「실번호 고침」 — 한 번 누르면 펴고, 또 누르면 접는다 */
+    function retPh2Edit(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      var slot = document.getElementById('ret-ph2-slot-' + idx);
+      if (!c || !slot) return;
+      if (slot.innerHTML) { slot.innerHTML = ''; return; }
+      slot.innerHTML = retPh2FieldHtml(idx, retCardPhone2(c), c.phone2Name || '');
+      var el = document.getElementById('ret-ph2in-' + idx);
+      if (el) { el.focus(); el.select(); }
+    }
+
+    /** 저장 — 상태는 그대로, 실번호(와 이름)만 보낸다. 검사는 팝업과 같다. */
+    function retPh2Save(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      if (!c) return;
+      var el = document.getElementById('ret-ph2in-' + idx);
+      var nel = document.getElementById('ret-ph2nin-' + idx);
+      var val = el ? String(el.value || '').trim() : '';
+      var nm = nel ? String(nel.value || '').trim().substring(0, 20) : '';
+      var 숫자 = val.replace(/[^0-9]/g, '');
+      if (!val) { toast('실번호를 입력하세요'); return; }
+      if (/^050[0-9]/.test(숫자)) {
+        toast('실번호 칸에는 안심번호(050…) 말고 실제 번호를 넣어 주세요', 4200);
+        return;
+      }
+      if (숫자.length < 9) { toast('전화번호가 짧습니다 — 다시 확인해 주세요', 3200); return; }
+      var staff = returnStaffName();
+      if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
+
+      var btn = document.getElementById('ret-ph2-btn-' + idx);
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+
+      var 지금상태 = String(c.status || '').trim() || '접수';
+      var 꾸러미 = {
+        tab: c.tab, row: c.row,
+        status: 지금상태, staff: staff,
+        phone2: val, phone2Name: nm
+      };
+
+      var 즉시 = retOptimistic(c,
+        function (x) {
+          //  서버와 같은 순서 — 실번호가 앞, 안심번호는 뒤에 「안심」으로
+          retApplyPhone2(x, val);
+          if (nm) x.phone2Name = nm;
+          return retPrependEvent(x, 'meta', '실번호 ' + val + (nm ? ' (' + nm + ')' : ''), staff);
+        },
+        function (성공, 실패) {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              if (!res || !res.ok) { 실패(String((res && res.error) || '실번호 저장 실패')); return; }
+              성공();
+              retApplyServer(c, res);
+            })
+            .withFailureHandler(function (err) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              실패(String((err && err.message) || err));
+            })
+            .updateReturnLedgerStatus(꾸러미);
+        });
+
+      if (즉시) toast('실번호를 적었습니다');
+    }
+
+    /* ★ 크게 보기 글줄 — 반품관리대장 «협의된 배열» 차례 그대로 ★  (2026-10-01)
+       상태값 | 접수날짜 | 접수자 | 입고여부 | 재검수 사안 | 원송장 | 거래처 | 수취인 | 연락처 |
+       추가연락처 | 상품명 | 수량 | 반품송장 | 발생원인 | 적요 | 이카운트 | 사이트 | 계산서 | 환불 | 환불계좌
+       (비고는 아래 줄 — 처리 이력으로 이미 그린다)
+       세 칸 화면에서는 CSS 가 감춘다(.ret-row 기본 display:none). */
+    var RET_ROW_HEAD = ['상태값', '접수일', '접수자', '입고', '재검수', '원송장', '거래처', '수취인', '연락처',
+      '추가연락처', '상품명', '수량', '반품송장', '발생원인', '적요', '이카운트', '사이트', '계산서', '환불', '환불계좌'];
+
+    function retRowHeadHtml() {
+      return '<div class="ret-row ret-row-head">' +
+        RET_ROW_HEAD.map(function (h) { return '<span>' + esc(h) + '</span>'; }).join('') + '</div>';
+    }
+
+    /** 단계 칸 — 날짜가 있으면 날짜, 됐다는 표시만 있으면 ✔ */
+    function retStageText(v) {
+      if (!v) return '';
+      if (typeof v === 'object') return v.값 || v.날짜 || (v.된 ? '✔' : '');
+      return String(v);
+    }
+
+    /** 시트의 「연락처」(주문서 번호)와 「추가연락처」(실번호)로 되돌린다 */
+    function retSheetPhones(c) {
+      if (c.phoneSubTag === '안심' || c.phoneSubTag === '주문서') return [c.phoneSub || '', c.phone || ''];
+      if (c.phoneSubTag === '추가') return [c.phone || '', c.phoneSub || ''];
+      return [c.phone || '', ''];
+    }
+
+    function retRowHtml(c) {
+      var ph = retSheetPhones(c);
+      var 원인 = [c.fault, c.reason].filter(function (x) { return x; }).join(' / ');
+      var 안심 = ph[0] && /^050/.test(String(ph[0]).replace(/[^0-9]/g, ''));
+      var 칸 = [
+        c.status ? '<span class="rs">' + esc(c.status) + '</span>' : '',
+        esc(c.date || ''), esc(c.staff || ''), esc(retStageText(c.intake)), esc(c.recheck || ''),
+        esc(c.invoice || ''), esc(c.vendor || ''), esc(c.name || ''),
+        esc(ph[0]) + (안심 ? ' <span class="ret-ph-tag">안심</span>' : ''),
+        esc(ph[1]) + (ph[1] && c.phone2Name ? ' ' + esc(c.phone2Name) : ''),
+        esc(c.item || ''), esc(c.qty || ''), esc(c.returnInvoice || ''), esc(원인),
+        esc(c.jeokyo || ''),
+        esc(retStageText(c.ecountDone)), esc(retStageText(c.siteDone)),
+        esc(retStageText(c.taxDone)), esc(retStageText(c.refund)), esc(c.account || '')
+      ];
+      return '<div class="ret-row">' + 칸.map(function (x) { return '<span>' + x + '</span>'; }).join('') + '</div>';
+    }
+
+    /* ★ 크게 보기 편집판 ★  (2026-10-01)
+       시트의 칸을 카드에서 바로 고친다. 저장은 updateReturnLedgerFields 하나 —
+       바뀐 칸만 보내고, 서버가 바뀐 칸만 적고 비고에 «앞 → 뒤»를 남긴다.
+       상태·반품송장·실번호·메모는 원래 길(왼쪽 칸·아래 단추)을 그대로 쓴다.
+       키는 서버 _CS_RET_EDITABLE_ 와 같다. 단계 칸은 카드 자료에서 이름이 다르다(ecount↔ecountDone). */
+    var RET_EDIT_FIELDS = [
+      { k: 'name', t: '수취인' }, { k: 'vendor', t: '거래처' },
+      { k: 'qty', t: '수량' }, { k: 'recheck', t: '재검수 사안' },
+      { k: 'item', t: '상품명', w: 'w4' },
+      { k: 'intake', t: '입고', stage: 'intake' }, { k: 'ecount', t: '이카운트', stage: 'ecountDone' },
+      { k: 'siteDone', t: '사이트처리', stage: 'siteDone' }, { k: 'taxDone', t: '계산서', stage: 'taxDone' },
+      { k: 'refund', t: '환불완료', stage: 'refund' }, { k: 'account', t: '환불계좌', w: 'w2' },
+      { k: 'jeokyo', t: '적요', w: 'w4', area: true }
+    ];
+    var RET_FAULTS = ['', '판매자', '구매자', '택배사'];
+
+    function retEditVal(c, f) {
+      return f.stage ? retStageText(c[f.stage]) : String(c[f.k] == null ? '' : c[f.k]);
+    }
+
+    function retEditHtml(idx, c) {
+      var ph = retSheetPhones(c);
+      var ro = [['접수일', c.date], ['접수자', c.staff], ['원송장', c.invoice], ['연락처', ph[0]]]
+        .filter(function (p) { return p[1]; })
+        .map(function (p) { return '<span>' + p[0] + ' <b>' + esc(p[1]) + '</b></span>'; }).join('');
+      var 칸 = RET_EDIT_FIELDS.map(function (f) {
+        var v = retEditVal(c, f);
+        var id = 'ret-ed-' + f.k + '-' + idx;
+        var attr = ' id="' + id + '" class="ret-edit-in" data-orig="' + esc(v) + '" oninput="retEditMark(this)"';
+        var 입력 = f.area
+          ? '<textarea' + attr + '>' + esc(v) + '</textarea>'
+          : '<input type="text"' + attr + ' value="' + esc(v) + '">';
+        if (f.stage) {
+          입력 = '<div class="ret-edit-pair">' + 입력 +
+            '<button type="button" class="ret-edit-today" title="오늘 날짜"' +
+            ' onclick="retEditToday(\'' + id + '\')">오늘</button></div>';
+        }
+        return '<div class="ret-edit-f ' + (f.w || '') + '"><label for="' + id + '">' + f.t + '</label>' + 입력 + '</div>';
+      }).join('');
+      var 귀책 = String(c.fault || '').replace(/귀책$/, '');
+      var 고르개 = RET_FAULTS.map(function (x) {
+        return '<option value="' + x + '"' + (x === 귀책 ? ' selected' : '') + '>' + (x ? x + '귀책' : '(귀책 없음)') + '</option>';
+      }).join('');
+      var 원인 = '<div class="ret-edit-f w4"><label>발생원인 (귀책 / 사유)</label><div class="ret-edit-pair">' +
+        '<select id="ret-ed-fault-' + idx + '" class="ret-edit-in" style="flex:0 0 120px" data-orig="' + esc(귀책) + '" onchange="retEditMark(this)">' + 고르개 + '</select>' +
+        '<input type="text" id="ret-ed-reason-' + idx + '" class="ret-edit-in" data-orig="' + esc(c.reason || '') + '"' +
+        ' oninput="retEditMark(this)" value="' + esc(c.reason || '') + '" placeholder="예: 오배송, 뚜껑 깨짐"></div></div>';
+      return '<div class="ret-edit" id="ret-edit-' + idx + '" onclick="event.stopPropagation()">' +
+        (ro ? '<div class="ret-edit-ro">' + ro + '</div>' : '') +
+        '<div class="ret-edit-grid">' + 칸 + 원인 + '</div>' +
+        '<div class="ret-edit-btns">' +
+          '<button type="button" class="ret-retinv-save" id="ret-edit-btn-' + idx + '" onclick="retEditSave(' + idx + ')">저장</button>' +
+          '<span class="ret-edit-hint">바뀐 칸(노란 테두리)만 시트에 적고, 비고에 «앞 → 뒤»를 남깁니다</span>' +
+        '</div></div>';
+    }
+
+    function retEditMark(el) {
+      if (!el) return;
+      el.classList.toggle('changed', String(el.value).trim() !== String(el.getAttribute('data-orig') || '').trim());
+    }
+
+    /** 단계 칸 「오늘」 — 시트가 쓰는 꼴(YYMMDD) 그대로 */
+    function retEditToday(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var d = new Date();
+      el.value = String(d.getFullYear()).slice(2) + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
+      retEditMark(el);
+    }
+
+    function retEditSave(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      if (!c) return;
+      var staff = returnStaffName();
+      if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
+      var 고칠 = {}, 몇 = 0;
+      RET_EDIT_FIELDS.forEach(function (f) {
+        var el = document.getElementById('ret-ed-' + f.k + '-' + idx);
+        if (!el) return;
+        var v = String(el.value || '').trim();
+        if (v !== String(el.getAttribute('data-orig') || '').trim()) { 고칠[f.k] = v; 몇++; }
+      });
+      var fEl = document.getElementById('ret-ed-fault-' + idx), rEl = document.getElementById('ret-ed-reason-' + idx);
+      var cause = null;
+      if (fEl && rEl && (fEl.value !== (fEl.getAttribute('data-orig') || '') ||
+          String(rEl.value).trim() !== String(rEl.getAttribute('data-orig') || '').trim())) {
+        cause = { fault: fEl.value, reason: String(rEl.value).trim() };
+        if (cause.fault && !cause.reason) { toast('귀책만 적을 수는 없습니다 — 사유도 적어 주세요', 3200); return; }
+        몇++;
+      }
+      if (!몇) { toast('바뀐 칸이 없습니다'); return; }
+
+      var btn = document.getElementById('ret-edit-btn-' + idx);
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+      var 꾸러미 = { tab: c.tab, row: c.row, staff: staff, fields: 고칠, cause: cause };
+      var 즉시 = retOptimistic(c,
+        function (x) {
+          RET_EDIT_FIELDS.forEach(function (f) {
+            if (!(f.k in 고칠)) return;
+            if (f.stage) x[f.stage] = { 된: !!고칠[f.k], 값: 고칠[f.k], 날짜: 고칠[f.k] };
+            else x[f.k] = 고칠[f.k];
+          });
+          if (cause) { x.fault = cause.fault; x.reason = cause.reason; }
+          return retPrependEvent(x, 'meta', '수정 ' + 몇 + '칸', staff);
+        },
+        function (성공, 실패) {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              if (!res || !res.ok) { 실패(String((res && res.error) || '저장 실패')); return; }
+              성공();
+              if (res.missing && res.missing.length) {
+                toast('이 달 탭에 없는 칸이라 못 적었습니다: ' + res.missing.join(', '), 4200);
+              }
+            })
+            .withFailureHandler(function (err) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              실패(String((err && err.message) || err));
+            })
+            .updateReturnLedgerFields(꾸러미);
+        });
+      if (즉시) toast(몇 + '칸을 고쳤습니다');
+    }
+
     function returnCardHtml(c, idx) {
       /* ★ 박스마다 상태를 보여준다 ★  (2026-09-09)
          한 반품에 박스가 둘이면 하나만 접수하고 나머지는 나중에 하는 일이 생긴다.
@@ -8888,6 +10315,7 @@
         (c.needsCheck ? ' ret-new' : '') +
         '" id="ret-card-' + idx + '" onclick="onReturnCardTap(' + idx + ', event)">' +
         '<div class="ret-focus-badge">집중 보기 · 다시 탭하면 접기</div>' +
+        retRowHtml(c) +
         /* ★ 업체가 새로 올린 것 ★  (2026-09-18)
            > "cs들이 확인을 못할수 있으니까"
            «확인» 을 누르면 대장에 적히고 이 띠가 꺼진다 — 팀이 같이 안다.
@@ -8910,6 +10338,15 @@
               (c.active === false ? '<span class="ret-closed-tag">완료</span>' : '') +
               (picked ? '<span class="ret-done">회수 접수됨</span>' : '') + '</div>' +
             '<div class="ret-item">' + esc(c.item || '-') + (c.qty ? ' × ' + esc(c.qty) : '') + '</div>' +
+            /*  ★ 다시 보내는 것 ★  (2026-10-02)
+                > "둘다 적으면 좋겠네"
+                위 품목은 «돌려받는 것»이다. 세트가 뚜껑만 나가면 우리가 몸통을
+                다시 보내는데, 그게 안 보이면 「이 건 뭘 보내기로 했더라」를
+                비고에서 찾아 읽어야 한다. 품목 바로 밑이 그 자리다. */
+            (c.reship || c.reshipFee
+              ? '<div class="ret-reship">↩ 재출고 ' + esc(c.reship || '-') +
+                  (c.reshipFee ? ' <em>· 배송비 ' + esc(c.reshipFee) + '</em>' : '') + '</div>'
+              : '') +
             /* 📦 입고확인요청 열 (2026-09-30) — 지금 유효한 요청. 누르면 고친다 */
             (c.intakeReq
               ? '<div class="ret-intakereq" onclick="event.stopPropagation(); toggleReturnCompose(' + idx + ',\x27intakereq\x27)"' +
@@ -8944,7 +10381,9 @@
                  (c.phone2Name && c.phoneSubTag === '추가' ? ' ' + esc(c.phone2Name) : '') + '</span>' : '') +
               (c.phoneOnlySafe ? '<span class="ret-ph-warn"> 기간이 지나면 끊깁니다</span>' : '') +
               '</span>' : '') +
+            retPh2BtnHtml(idx, c) +
             '</div>' +
+            retPh2SlotHtml(idx, c) +
             /* ★ 「202609 170행」을 지웠다 ★  (2026-09-17)
                > "굳이 202609 127행 같은 내용은 불필요해"
                시트 몇 행인지는 사람이 카드에서 할 일이 아니다. 자리만 먹었다.
@@ -8952,6 +10391,7 @@
                날짜·담당자는 남기되, 둘 다 없으면 줄 자체를 안 만든다. */
             retSubLine(c) +
           '</div>' +
+          retEditHtml(idx, c) +
           (tlHtml ? '<div class="ret-right">' + tlHtml + '</div>' : '') +
         '</div>' +
         '<div class="ret-foot">' +
@@ -9230,7 +10670,7 @@
             //  완료로 바꾸면 「진행 중」 목록에서 내려가야 한다
             x.active = !isReturnCardDone({ status: status, doneFlag: status });
             if (retInvVal) x.returnInvoice = retInvVal;
-            if (ph2Val) { x.phoneSub = ph2Val; x.phoneSubTag = '추가'; }
+            if (ph2Val) retApplyPhone2(x, ph2Val);   // 실번호가 앞 (서버와 같은 순서)
             if (ph2nVal) x.phone2Name = ph2nVal;
             return retPrependEvent(x, 'status', status, staff);
           },
@@ -9557,6 +10997,11 @@
           };
         }
       }
+
+      /*  CS 문의 — 창이 아니라 대시보드 칸이라 위 모달 검사에 안 걸린다.
+          모달이 떠 있으면 그쪽이 위라 먼저다. 그 다음이 여기다. (2026-10-02) */
+      var csq = csqPasteTarget();
+      if (csq) return csq;
 
       var pop = document.querySelector('#pane-returns .ret-act-pop[data-mode="photo"].open');
       if (pop) {
@@ -9963,8 +11408,11 @@
         '<div class="os-card-head"><div class="os-name">' + esc(c.name || '(이름 없음)') +
         '<span class="os-tag ret-s' + stage + '">' + esc(RET_STAGE_ICON[stage] + ' ' + (st || '접수')) +
         '</span></div></div>' +
+        retCaseRowHtml('고유ID', c.uid) +
         retCaseRowHtml('접수일', c.date) +
         retCaseRowHtml('품목', (c.item || '') + (c.qty ? ' × ' + c.qty : '')) +
+        retCaseRowHtml('재출고', c.reship) +
+        retCaseRowHtml('재출고 배송비', c.reshipFee) +
         retCaseRowHtml('원송장', c.invoice) +
         retCaseRowHtml('반품송장', c.returnInvoice) +
         retCaseRowHtml('전화', (c.phone || '') + (c.phoneTag ? ' (' + c.phoneTag + ')' : '') +
@@ -10004,7 +11452,11 @@
         c.name, c.item, c.qty, c.phone, c.phoneDigits, c.phoneSub, c.phone2Digits,
         c.invoice, c.invDigits,
         c.returnInvoice, c.returnInvDigits, c.status, c.staff, c.tab, c.type,
-        c.vendor, c.notice, c.fee, c.row, c.date
+        c.vendor, c.notice, c.fee, c.row, c.date,
+        /*  고유ID — 번호 하나로 어느 화면에서든 같은 건에 닿는다 (2026-10-02).
+            발주(d)·전화주문(p)·반품(r) 이 같은 모양이라, 번호만 알면
+            어디서 찾든 그 건이다.  */
+        c.uid
       ].join(' ').toLowerCase();
     }
 
@@ -10181,6 +11633,14 @@
           if (va !== vb) return va.localeCompare(vb);
           return key(b).localeCompare(key(a));
         });
+      } else if (RETURN_SORT === 'staff') {
+        /*  접수자가 같으면 최신순 — 한 사람 것을 모아 놓고 그 안에서 새 것부터.
+            접수자가 빈 건은 맨 뒤로 보낸다('힣'). 업체순과 같은 짜임이다.  */
+        out.sort(function(a, b) {
+          var sa = String((a && a.staff) || '힣'), sb = String((b && b.staff) || '힣');
+          if (sa !== sb) return sa.localeCompare(sb);
+          return key(b).localeCompare(key(a));
+        });
       } else if (RETURN_SORT === 'stage') {
         /*  stage 는 숫자다 — 0 접수 · 1 회수 · 2 입고 · 3 완료.
             «손이 안 간 것부터» 올린다. 같은 단계면 오래된 것이 위다 —
@@ -10194,6 +11654,82 @@
         out.sort(function(a, b) { return key(b).localeCompare(key(a)); });
       }
       return 새것.length ? 새것.concat(out) : out;
+    }
+
+    /*  고른 상태값 — 그 사람 브라우저에만 기억한다 (선택은 사람마다 다르다) */
+    var RETURN_STAGE_FILTER = '';
+    try { RETURN_STAGE_FILTER = localStorage.getItem('CS_RET_STAGE') || ''; } catch (e) {}
+
+    /*  접수자 거르개 (2026-10-02) — 「내가 받은 것만」을 보려는 것이다.
+        상태 거르개와 같은 짜임. 고른 값은 그 사람 브라우저에만 남는다.  */
+    var RETURN_STAFF_FILTER = '';
+    try { RETURN_STAFF_FILTER = localStorage.getItem('CS_RET_STAFF') || ''; } catch (e) {}
+
+    function setReturnStaffFilter(v) {
+      RETURN_STAFF_FILTER = String(v || '').trim();
+      try { localStorage.setItem('CS_RET_STAFF', RETURN_STAFF_FILTER); } catch (e) {}
+      renderReturnActiveList();
+    }
+
+    /**
+     * 접수자 고르는 칸을 «지금 화면에 있는 건»에서 채운다.
+     *
+     * ★ 이름을 코드에 안 박는다 ★ 사람이 들고 난다. 박아 두면 그만둔
+     *   사람이 남고 새로 온 사람이 안 보인다.
+     * ★ 고른 사람이 목록에 없어도 남겨 둔다 ★ 그 사람 건이 오늘 하나도
+     *   없으면 칸이 저절로 「전체」로 돌아가, 왜 다 보이는지 모르게 된다.
+     */
+    function retFillStaffPick(rows) {
+      var sel = document.getElementById('retStaffPick');
+      if (!sel) return;
+      var 셈 = {};
+      for (var i = 0; i < rows.length; i++) {
+        var who = String((rows[i] && rows[i].staff) || '').trim();
+        if (!who) continue;
+        셈[who] = (셈[who] || 0) + 1;
+      }
+      var 이름들 = Object.keys(셈).sort(function (a, b) { return a.localeCompare(b); });
+      if (RETURN_STAFF_FILTER && 이름들.indexOf(RETURN_STAFF_FILTER) < 0) {
+        이름들.push(RETURN_STAFF_FILTER);
+        셈[RETURN_STAFF_FILTER] = 0;
+      }
+      var h = '<option value="">접수자 전체</option>';
+      for (var k = 0; k < 이름들.length; k++) {
+        h += '<option value="' + esc(이름들[k]) + '">' +
+          esc(이름들[k]) + ' (' + 셈[이름들[k]] + ')</option>';
+      }
+      sel.innerHTML = h;
+      sel.value = RETURN_STAFF_FILTER;
+    }
+
+    /** 「전체 · 접수 n · 반품송장 n …」 — 정해진 단계 차례 먼저, 그 밖의 상태는 뒤에 */
+    function retStageChipsHtml(rows) {
+      var 셈 = {}, 차례 = RETURN_STATUS_OPTS.slice();
+      (rows || []).forEach(function (c) {
+        var st = String(c.status || '').trim() || '(상태 없음)';
+        셈[st] = (셈[st] || 0) + 1;
+        if (차례.indexOf(st) < 0) 차례.push(st);
+      });
+      if (RETURN_STAGE_FILTER && 차례.indexOf(RETURN_STAGE_FILTER) < 0) 차례.push(RETURN_STAGE_FILTER);
+      var 칩 = function (st, label, n) {
+        var on = (RETURN_STAGE_FILTER === st);
+        return '<button type="button" class="ret-stage-chip' + (on ? ' on' : '') + (n ? '' : ' zero') + '"' +
+          ' data-st="' + esc(st) + '" onclick="setReturnStageFilter(this.getAttribute(\'data-st\'))">' +
+          esc(label) + '<b>' + n + '</b></button>';
+      };
+      return 칩('', '전체', (rows || []).length) +
+        차례.map(function (st) { return 칩(st, st, 셈[st] || 0); }).join('');
+    }
+
+    /** 같은 칩을 다시 누르면 풀린다 — 「전체」를 찾으러 가지 않게 */
+    function setReturnStageFilter(st) {
+      st = String(st || '');
+      RETURN_STAGE_FILTER = (st && RETURN_STAGE_FILTER !== st) ? st : '';
+      try { localStorage.setItem('CS_RET_STAGE', RETURN_STAGE_FILTER); } catch (e) {}
+      RETURN_SHOW_LIMIT = 30;
+      renderReturnActiveList();
+      var p = document.getElementById('pane-returns');
+      if (p) p.scrollTop = 0;
     }
 
     function filterReturnRows(all, q) {
@@ -10337,6 +11873,21 @@
         ? RETURN_ALL_ROWS.concat(RETURN_DONE_ROWS)
         : RETURN_ALL_ROWS;
       var filtered = sortReturnRows(filterReturnRows(뒤질것, RETURN_QUERY));
+      //  상태값 칩 — 숫자는 «거르기 전»으로 센다. 그래야 다른 상태에 몇 건 있는지 보인다
+      var _칩 = document.getElementById('retStageChips');
+      if (_칩) _칩.innerHTML = retStageChipsHtml(filtered);
+      if (RETURN_STAGE_FILTER) {
+        filtered = filtered.filter(function (c) { return String(c.status || '').trim() === RETURN_STAGE_FILTER; });
+      }
+      /*  접수자 거르개 (2026-10-02) — 고르는 칸은 «거르기 전»으로 채운다.
+          거른 뒤로 채우면 한 사람을 고른 순간 다른 사람이 목록에서 사라져
+          되돌아갈 길이 없어진다.  */
+      retFillStaffPick(filtered);
+      if (RETURN_STAFF_FILTER) {
+        filtered = filtered.filter(function (c) {
+          return String((c && c.staff) || '').trim() === RETURN_STAFF_FILTER;
+        });
+      }
       RETURN_ACTIVE_ROWS = filtered;
       var _sortSel = document.getElementById('retSort');
       if (_sortSel && _sortSel.value !== RETURN_SORT) _sortSel.value = RETURN_SORT;
@@ -10353,7 +11904,9 @@
           ? ('반품 검색 ' + filtered.length + '건' +
              (완료찾음 ? ' (완료 ' + 완료찾음 + ')' : '') +
              ' · 진행 ' + RETURN_ALL_ROWS.length + '건 중')
-          : ('진행 중 반품 (' + RETURN_ALL_ROWS.length + '건)');
+          : (RETURN_STAGE_FILTER
+              ? ('진행 중 반품 (' + filtered.length + '/' + RETURN_ALL_ROWS.length + '건 · ' + RETURN_STAGE_FILTER + ')')
+              : ('진행 중 반품 (' + RETURN_ALL_ROWS.length + '건)'));
       }
       var limit = RETURN_QUERY ? Math.min(filtered.length, 80) : RETURN_SHOW_LIMIT;
       var shown = Math.min(filtered.length, limit);
@@ -10373,7 +11926,7 @@
         renderOrderDashboard();
         return;
       }
-      var html = '';
+      var html = retRowHeadHtml();
       for (var i = 0; i < filtered.length && i < limit; i++) {
         html += returnCardHtml(filtered[i], i);
       }
@@ -11515,6 +13068,8 @@
           phone2Name: document.getElementById('retNewPhone2Name').value,
           vendor: document.getElementById('retNewVendor').value,
           item: document.getElementById('retNewItem').value,
+          reship: document.getElementById('retNewReship').value,
+          reshipFee: document.getElementById('retNewReshipFee').value,
           qty: document.getElementById('retNewQty').value,
           invoice: document.getElementById('retNewInvoice').value,
           returnInvoice: document.getElementById('retNewRetInvoice').value,
@@ -11875,6 +13430,47 @@
      *     같은 송장으로 여러 줄을 넣는 것이다. 첫 줄에서 한 번만 사람에게 묻고
      *     나머지는 그 답을 따른다 — 품목마다 같은 것을 세 번 묻지 않는다.
      */
+    /**
+     * 기록 창에 «사람이 적은» 값 — 읽는 자리는 여기 하나다.
+     *
+     * ★ 왜 한 곳인가 ★ (2026-10-01)
+     *   전에는 단건(submitLedger)과 여러건(submitLedgerMany)이 각자 읽었다.
+     *   그래서 여러건 쪽에 귀책·사유·상태·추가연락처가 «빠져 있었다» —
+     *   합포장 반품을 기록하면 창에 골라 둔 귀책·사유가 조용히 사라졌다.
+     *   창은 하나인데 읽는 코드가 둘이면 반드시 갈라진다.
+     */
+    function ledgerModalCommon() {
+      var g = function (id) {
+        var e = document.getElementById(id);
+        return e ? e.value : '';
+      };
+      return {
+        type: g('ledgerType'),
+        fault: g('ledgerFault'),
+        reason: g('ledgerReason'),
+        status: g('ledgerStatus') || '접수',
+        pickup: g('ledgerPickup'),
+        memo: g('ledgerMemo'),
+        account: g('ledgerAccount'),
+        fee: g('ledgerFee'),
+        phone2: g('ledgerPhone2'),
+        phone2Name: g('ledgerPhone2Name'),
+        //  다시 보내는 것 — 품목마다 다를 수 없다. 같은 상자에서 온 것이다
+        reship: g('ledgerReship'),
+        reshipFee: g('ledgerReshipFee')
+      };
+    }
+
+    /** 뒤 꾸러미를 앞 꾸러미에 얹는다 (얕게). 뒤가 이긴다. */
+    function retMergeInto(base, extra) {
+      base = base || {};
+      extra = extra || {};
+      for (var k in extra) {
+        if (Object.prototype.hasOwnProperty.call(extra, k)) base[k] = extra[k];
+      }
+      return base;
+    }
+
     function submitLedger(force, pickedInv) {
       /* 회수 접수를 같이 하겠다고 했으면 **먼저 묻는다.**
          되돌릴 수 없는 일이라 기록보다 앞에 둔다. 접수가 끝나면
@@ -11891,7 +13487,8 @@
       if (!staff) { toast('접수자를 선택하세요'); return; }
       currentStaff = staff;
       try { localStorage.setItem('pack2u_staff', staff); } catch (eS) {}
-      if (picked.length > 1) { submitLedgerMany(picked, staff, force); return; }
+      //  pickedInv(방금 접수한 반품송장)도 같이 넘긴다 — 전에는 여기서 사라졌다
+      if (picked.length > 1) { submitLedgerMany(picked, staff, force, pickedInv); return; }
 
       var r = CS_ROWS[picked[0]] || {};
       var btn = document.getElementById('ledgerSubmitBtn');
@@ -11942,18 +13539,8 @@
           btn.textContent = '기록';
           toast(String((err && err.message) || err || '기록 실패'), 3200);
         })
-        .submitReturnLedger({
+        .submitReturnLedger(retMergeInto(ledgerModalCommon(), {
           staff: staff,
-          type: document.getElementById('ledgerType').value,
-          fault: document.getElementById('ledgerFault').value,
-          reason: document.getElementById('ledgerReason').value,
-          status: document.getElementById('ledgerStatus').value || '접수',
-          phone2: document.getElementById('ledgerPhone2').value,
-          phone2Name: document.getElementById('ledgerPhone2Name').value,
-          pickup: document.getElementById('ledgerPickup').value,
-          memo: document.getElementById('ledgerMemo').value,
-          account: document.getElementById('ledgerAccount').value,
-          fee: document.getElementById('ledgerFee').value,
           returnInvoice: pickedInv || '',
           name: r.name,
           phone: r.phone,
@@ -11966,7 +13553,7 @@
           qty: useQty,
           invoice: useInv,
           force: !!force
-        });
+        }));
     }
 
     /**
@@ -11978,13 +13565,13 @@
      *   차례로 보내는 편이 훨씬 안전하다. 중간에 실패하면 **거기서 멈추고**
      *   몇 건까지 들어갔는지 말해 준다 — 조용히 반만 들어가면 안 된다.
      */
-    function submitLedgerMany(picked, staff, force) {
+    function submitLedgerMany(picked, staff, force, pickedInv) {
       var btn = document.getElementById('ledgerSubmitBtn');
-      var type = document.getElementById('ledgerType').value;
-      var pickup = document.getElementById('ledgerPickup').value;
-      var memo = document.getElementById('ledgerMemo').value;
-      var account = document.getElementById('ledgerAccount').value;
-      var fee = document.getElementById('ledgerFee').value;
+      /*  창에 적은 값은 ledgerModalCommon 한 곳에서만 읽는다 (2026-10-01).
+          전에는 여기서 따로 읽으면서 «귀책·사유·상태·추가연락처»를 빠뜨렸다 —
+          합포장 반품을 기록하면 골라 둔 귀책·사유가 조용히 사라졌다.
+          한 번만 읽어 품목마다 같은 값을 쓴다. 같은 상자에서 온 것이니 같아야 한다. */
+      var 공통 = ledgerModalCommon();
       var done = 0;
       var first = null;
 
@@ -12037,13 +13624,15 @@
               String((err && err.message) || err || '기록 실패') +
               (done ? ' — ' + done + '건까지는 들어갔습니다' : ''), 4200);
           })
-          .submitReturnLedger({
-            staff: staff, type: type, pickup: pickup, memo: memo, account: account, fee: fee,
+          .submitReturnLedger(retMergeInto(retMergeInto({}, 공통), {
+            staff: staff,
+            //  방금 접수한 반품송장 — 전에는 여러건 길에서 아예 안 보냈다
+            returnInvoice: pickedInv || '',
             name: r.name, phone: r.phone, vendor: r.vendor,
             source: r.source, origin: r.origin, carrier: resolveCarrier(r),
             orderNo: r.orderNo, item: r.item, qty: r.qty, invoice: r.invoice,
             force: !!useForce
-          });
+          }));
       }
       step(0, !!force);
     }
@@ -12896,6 +14485,620 @@
         .csLogisticsResolve(p);
     }
 
+    // ══ 오늘 입금 (2026-09-29) ═════════════════════════════
+    //   > "10개정도까지 보이게해주고 더보기를 클릭해 당일 내용을 확인할수 있게 해줘"
+    //   대시보드에는 최근 10건, 더보기는 그날 전부(창으로).
+    //   1분마다 조용히 다시 묻는다 — 서버(csDeposit.gs)가 20초 캐시를 둬서 여러 명이 열어도 가볍다.
+    //   새로 들어온 줄만 한 번 살짝 들어오는 움직임을 준다. 매번 전부 움직이면 무엇이 새것인지 모른다.
+    var DEP_CACHE = null;
+    var DEP_SEEN = null;          // 처음 그릴 때는 «새것» 표시를 안 한다
+    var DEP_LIMIT = 10;
+
+    function depWon(n) { return (Number(n) || 0).toLocaleString() + '원'; }
+
+    /* 주문서 매칭 한 줄 (2026-09-29) — 챗 알림(dpMatchLine_)과 같은 아이콘을 쓴다 */
+    var DEP_ICON = { '일치': '✅', '일치(합산)': '✅', '일치(지정)': '✅', '부족': '🔴', '부족(지정)': '🔴',
+                     '초과': '🟡', '초과(지정)': '🟡', '후보': '🟠', '미확인': '⚪', '제외': '➖', '확인필요': '⚠', '정산': '💳' };
+    function depMatchCls(r) {
+      if (/^일치/.test(r)) return 'ok';
+      if (/^부족/.test(r)) return 'low';
+      if (/^초과/.test(r)) return 'over';
+      if (r === '후보' || r === '확인필요') return 'ask';
+      return '';
+    }
+    function depMatchText(x) {
+      if (!x.result) return '주문서 매칭 전';
+      var t = (DEP_ICON[x.result] || '') + ' ' + x.result;
+      if (x.cust) t += ' · ' + x.cust;
+      else if (x.orderNos && /^후보/.test(x.orderNos)) t += ' · ' + x.orderNos.replace(/^후보:\s*/, '').split(/,\s*/).length + '건 중 선택';
+      if (x.diff) t += ' · ' + (x.diff > 0 ? '+' : '') + depWon(x.diff);
+      if (x.result === '미확인' && x.matchMemo) t += ' · ' + x.matchMemo;
+      // 이카운트 반영 상태 (2026-09-29)
+      if (x.status === '반영완료' && x.slipNo === '손으로') t += ' · ✋ 이카운트에 손으로 입력';
+      else if (x.status === '반영완료') t += ' · 📒 이카운트 ' + (x.slipNo || '반영');
+      else if (x.status === '반영중') t += ' · 📒 반영 중…';
+      else if (x.status === '확인필요') t += ' · ⚠ 이카운트 반영 확인 필요';
+      return t;
+    }
+
+    function depRowHtml(x, isNew) {
+      return '<button type="button" class="dash-dep-row' + (isNew ? ' new' : '') + '"' +
+        ' onclick="openDepositDetail(\'' + js(x.key) + '\')"' +
+        ' title="' + esc((x.txAt || '') + ' · ' + (x.bank || '') + ' ' + (x.acct ? '…' + x.acct : '') +
+                     (x.orderNos ? '\n주문 ' + x.orderNos : '') + (x.matchMemo ? '\n' + x.matchMemo : '') +
+                     '\n눌러서 주문 고르기') + '">' +
+        '<span class="dash-dep-time">' + esc(x.time || '') + '</span>' +
+        '<span class="dash-dep-name">' + esc(x.name || '(이름 없음)') + '</span>' +
+        (x.check === '불연속' ? '<span class="dash-dep-warn" title="이 입금 앞에 빠진 은행 문자가 있을 수 있습니다">⚠ 확인</span>' : '') +
+        '<span class="dash-dep-bank">' + esc(x.bank || '') + '</span>' +
+        '<span class="dash-dep-amt">' + esc(depWon(x.amount)) + '</span>' +
+        '<span class="dash-dep-match ' + depMatchCls(x.result) + '">' + esc(depMatchText(x)) + (x.pinned ? ' ✎' : '') + '</span>' +
+        '</button>';
+    }
+
+    /* 주문서를 언제 올렸는지 — 오늘 안 올렸으면 눈에 띄게 (매칭이 옛 주문서로 돌고 있다는 뜻) */
+    function paintDepOrdersInfo(r) {
+      var el = document.getElementById('depOrdersInfo');
+      if (!el || !r) return;
+      var today = r.date || '';
+      if (!r.ordersAt) {
+        el.className = 'dash-dep-orders stale';
+        el.textContent = '주문서를 아직 안 올렸습니다 — 「📥 주문서 올리기」로 이카운트 주문서조회 엑셀을 올리면 매칭합니다';
+        return;
+      }
+      var stale = today && r.ordersAt.slice(0, 10) !== today;
+      el.className = 'dash-dep-orders' + (stale ? ' stale' : '');
+      // 「기준」 = 지금까지 올라온 파일 중 가장 늦게 «받은» 파일의 시각 (올린 차례가 아니다)
+      el.textContent = '주문서 ' + r.ordersAt.slice(5, 16) + ' 기준' + (r.ordersBy ? ' · ' + r.ordersBy : '') +
+        ' · ' + (r.ordersCount || 0).toLocaleString() + '건' + (stale ? ' — 오늘 주문서를 올려 주세요' : '');
+    }
+
+    /* ── 입금 소리 (2026-09-30) ──────────────────────
+       > "구글쳇 PC에서 나는소리가 협력업체 수집, 발주 소리랑 똑같아서 헷갈려"
+       구글챗 PC 는 방마다 알림음을 못 바꾼다. 그래서 입금은 여기서 따로 운다.
+       ✅ 일치 = 「띠링」 한 번 (올라가는 두 음) / 확인이 필요한 입금(후보·미확인·부족·초과) = 두 번.
+       파일 없이 브라우저가 직접 만든 소리라 다른 알림음과 섞이지 않는다.
+       켜고 끄는 건 이 PC 에만 기억한다 (기본 켜짐). 브라우저 규칙상 화면을 한 번 누른 뒤부터 소리가 난다. */
+    var DEP_SOUND_KEY = 'pack2u_dep_sound';
+    var DEP_AUDIO = null;
+    var DEP_CHIME_READY = false;
+    function depSoundOn() {
+      try { return localStorage.getItem(DEP_SOUND_KEY) !== '0'; } catch (e) { return true; }
+    }
+    function depPaintSoundBtn() {
+      var b = document.getElementById('depSoundBtn');
+      if (!b) return;
+      var on = depSoundOn();
+      b.textContent = on ? '🔔' : '🔕';
+      b.title = on ? '입금 소리 켜짐 — 누르면 끔' : '입금 소리 꺼짐 — 누르면 켬';
+    }
+    function depToggleSound() {
+      var on = !depSoundOn();
+      try { localStorage.setItem(DEP_SOUND_KEY, on ? '1' : '0'); } catch (e) {}
+      depPaintSoundBtn();
+      toast(on ? '🔔 입금 소리 켬 (이 PC)' : '🔕 입금 소리 끔 (이 PC)', 1600);
+      if (on) depChime(false);                  // 켤 때 한 번 들려준다 — 어떤 소리인지 알게
+    }
+    function depAudio() {
+      if (DEP_AUDIO) return DEP_AUDIO;
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      try { DEP_AUDIO = new AC(); } catch (e) { DEP_AUDIO = null; }
+      return DEP_AUDIO;
+    }
+    // 브라우저는 사용자가 한 번 누르기 전까지 소리를 막는다 — 첫 클릭 때 깨워 둔다
+    document.addEventListener('click', function () {
+      var a = depAudio();
+      if (a && a.state === 'suspended') { try { a.resume(); } catch (e) {} }
+    }, { once: true, capture: true });
+
+    function depTone(a, freq, at, dur, vol) {
+      var o = a.createOscillator(), g = a.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(freq, at);
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(vol, at + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+      o.connect(g); g.connect(a.destination);
+      o.start(at); o.stop(at + dur + 0.05);
+    }
+    function depChime(attention) {
+      if (!depSoundOn()) return;
+      var a = depAudio();
+      if (!a) return;
+      try {
+        if (a.state === 'suspended') a.resume();
+        var t = a.currentTime + 0.05;
+        var ding = function (s) { depTone(a, 1046.5, s, 0.35, 0.25); depTone(a, 1568, s + 0.14, 0.5, 0.22); };  // 도(C6) → 솔(G6)
+        ding(t);
+        if (attention) ding(t + 0.7);          // 확인이 필요한 입금은 한 번 더
+      } catch (e) {}
+    }
+
+    /* 「오늘 N건 · 합계」 — 어제 것은 섞지 않는다. 어제가 있으면 뒤에 「어제 M건」 만 붙인다 (2026-09-30) */
+    var DEP_DAYS = 2;
+    function depYesterday(r) {
+      var y = r && r.byDay && r.from && r.from !== r.date ? r.byDay[r.from] : null;
+      return y && y.total ? y : null;
+    }
+    function depSumText(r) {
+      if (!r) return '';
+      var y = depYesterday(r);
+      if (!r.total && !y) return '';
+      return ' · ' + (r.total || 0) + '건 · ' + depWon(r.sum) + (y ? ' · 어제 ' + y.total + '건' : '') +
+        (r.unparsed ? ' · 읽지 못한 문자 ' + r.unparsed : '');
+    }
+    /* 날이 바뀌는 자리에 구분선 — 「어제 · 09-29 · 44건 · 28,548,287원」 */
+    function depDayDivider(r, day) {
+      var bd = (r.byDay || {})[day] || { total: 0, sum: 0 };
+      var label = day === r.date ? '오늘' : (day === r.from ? '어제' : '');
+      return '<div class="dash-dep-day">' + esc(label) + ' · ' + esc(day.slice(5)) +
+        ' · ' + bd.total + '건 · ' + esc(depWon(bd.sum)) + '</div>';
+    }
+    function depRowsHtml(r, rows, markNew) {
+      var h = '', prev = null;
+      if (rows.length && rows[0].day && rows[0].day !== r.date) {
+        h += '<div class="dash-dep-empty">오늘 들어온 입금이 아직 없습니다</div>';
+      }
+      for (var i = 0; i < rows.length; i++) {
+        var x = rows[i];
+        if (x.day && x.day !== prev && x.day !== r.date) h += depDayDivider(r, x.day);
+        prev = x.day;
+        h += depRowHtml(x, markNew ? markNew(x) : false);
+      }
+      return h;
+    }
+
+    /* ★ 먼저 보이고, 새 것은 뒤에서 (2026-09-29) — "데이타 불러오는 속도가 너무 느려"
+       화면을 열면 이 브라우저에 남겨 둔 «오늘» 목록부터 곧바로 그리고, 서버 답이 오면 바꿔 그린다.
+       남겨 두는 건 오늘 날짜 것만 — 날이 바뀌면 안 쓴다. 잔액은 애초에 목록에 없다.
+       저장이 막힌 브라우저(시크릿 창 등)에서는 조용히 예전처럼 기다린다. */
+    var DEP_LS_KEY = 'pack2u_dep_today';
+    function depToday() {
+      var d = new Date(Date.now() + 9 * 3600 * 1000);          // 서울 날짜
+      return d.toISOString().slice(0, 10);
+    }
+    function depLoadLocal() {
+      try {
+        var r = JSON.parse(localStorage.getItem(DEP_LS_KEY) || 'null');
+        return r && r.ok && r.date === depToday() ? r : null;
+      } catch (e) { return null; }
+    }
+    function depSaveLocal(r) {
+      try { if (r && r.ok && r.date === depToday()) localStorage.setItem(DEP_LS_KEY, JSON.stringify(r)); } catch (e) {}
+    }
+
+    function renderDeposits(force, hard) {
+      var el = document.getElementById('dashDeposit');
+      if (!el) return;
+      if (DEP_CACHE && !force) { paintDeposits(DEP_CACHE); return; }
+      if (!DEP_CACHE) {
+        var local = depLoadLocal();
+        if (local) { DEP_CACHE = local; paintDeposits(local); }
+      }
+
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (!r || !r.ok) {
+            // 이미 그려 둔 것이 있으면 지우지 않는다 — 잠깐의 연결 실패로 목록이 사라지면 더 헷갈린다
+            if (DEP_CACHE) return;
+            var e2 = document.getElementById('dashDeposit');
+            if (e2) e2.innerHTML = '<div class="dash-dep-empty">불러오지 못했습니다' +
+              (r && r.error ? ' — ' + esc(r.error) : '') + '</div>';
+            return;
+          }
+          DEP_CACHE = r;
+          depSaveLocal(r);
+          paintDeposits(r);
+          DEP_CHIME_READY = true;
+        })
+        .withFailureHandler(function () {
+          if (DEP_CACHE) return;
+          var e3 = document.getElementById('dashDeposit');
+          if (e3) e3.innerHTML = '<div class="dash-dep-empty">불러오지 못했습니다</div>';
+        })
+        .csDepositList('', DEP_LIMIT, !!hard, DEP_DAYS);
+    }
+
+    function paintDeposits(r) {
+      var el = document.getElementById('dashDeposit');
+      if (!el || !r) return;
+      var sumEl = document.getElementById('dashDepositSum');
+      if (sumEl) sumEl.textContent = depSumText(r);
+      paintDepOrdersInfo(r);
+      // 넘길 입금이 보이면 「일치 전체 반영」 을 띄운다 (넘기는 목록은 누를 때 그날 전부를 다시 묻는다)
+      var pab = document.getElementById('depPostAllBtn');
+      if (pab) pab.hidden = !r.postOn || !(r.rows || []).some(function (x) { return x.canPost; });
+
+      var first = DEP_SEEN === null;
+      var seen = DEP_SEEN || {};
+      var next = {};
+      (r.rows || []).forEach(function (x) { next[x.key] = 1; });
+      // 새로 들어온 입금이 있으면 입금 전용 소리 — 처음 그릴 때(화면 열 때)는 울리지 않는다
+      // 서버에서 한 번 받은 «다음부터»만 운다 — 화면을 연 뒤 첫 응답은 닫혀 있던 동안의 입금이라 조용히 그린다
+      if (!first && DEP_CHIME_READY) {
+        var fresh = (r.rows || []).filter(function (x) { return !seen[x.key]; });
+        if (fresh.length) depChime(fresh.some(function (x) { return /^(후보|미확인|부족|초과)/.test(x.result || ''); }));
+      }
+      var h = depRowsHtml(r, r.rows || [], function (x) { return !first && !seen[x.key]; });
+      DEP_SEEN = next;
+
+      if (!(r.rows || []).length) h = '<div class="dash-dep-empty">오늘 · 어제 들어온 입금이 없습니다</div>';
+      var all = r.count != null ? r.count : r.total;       // 여러 날 합친 건수 (옛 서버면 total)
+      if (all > (r.rows || []).length) {
+        h += '<button type="button" class="dash-dep-more" onclick="openDepositModal()">더보기 · 오늘 · 어제 ' +
+          all + '건 전체</button>';
+      }
+      el.innerHTML = h;
+    }
+
+    function openDepositModal() {
+      var m = document.getElementById('depModal');
+      if (!m) return;
+      document.getElementById('depModalTitle').textContent = '오늘 입금';
+      document.getElementById('depModalSum').textContent = depSumText(DEP_CACHE).replace(/^ · /, '');
+      document.getElementById('depModalList').innerHTML = '<div class="dash-dep-empty">불러오는 중…</div>';
+      m.classList.add('active');
+
+      google.script.run
+        .withSuccessHandler(function (r) {
+          var list = document.getElementById('depModalList');
+          if (!list) return;
+          if (!r || !r.ok) {
+            list.innerHTML = '<div class="dash-dep-empty">불러오지 못했습니다' + (r && r.error ? ' — ' + esc(r.error) : '') + '</div>';
+            return;
+          }
+          document.getElementById('depModalTitle').textContent = '입금 · 오늘 ' + r.date.slice(5) + ' · 어제';
+          document.getElementById('depModalSum').textContent = depSumText(r).replace(/^ · /, '');
+          list.innerHTML = depRowsHtml(r, r.rows || [], null) ||
+            '<div class="dash-dep-empty">오늘 · 어제 들어온 입금이 없습니다</div>';
+        })
+        .withFailureHandler(function () {
+          var list = document.getElementById('depModalList');
+          if (list) list.innerHTML = '<div class="dash-dep-empty">불러오지 못했습니다</div>';
+        })
+        .csDepositList('', 0, false, DEP_DAYS);
+    }
+
+    function closeDepositModal() {
+      var m = document.getElementById('depModal');
+      if (m) m.classList.remove('active');
+    }
+
+    // ── 입금 한 건 — 주문 고르기 (2026-09-29) ─────────────
+    //   후보·미확인·부족·초과를 사람이 정리하는 창. 자동 «일치»도 열어서 고칠 수 있다.
+    //   고르면 서버가 매칭을 통째로 다시 돌린다 — 다른 입금의 판정도 같이 바뀔 수 있다(같은 주문을 두고 다투던 것).
+    var DEP_DET = null;         // { deposit, options }
+    var DEP_DET_BUSY = false;
+
+    function depOptHtml(o, checked) {
+      var done = o.remain <= 0 && !checked;
+      return '<label class="dep-det-opt' + (done ? ' done' : '') + '">' +
+        '<input type="checkbox" value="' + esc(o.no) + '"' + (checked ? ' checked' : '') + '>' +
+        '<span class="n">' + esc(o.name) + '</span>' +
+        '<span class="t">' + esc(o.no) + (o.tag ? ' · ' + esc(o.tag) : '') + '</span>' +
+        '<span class="a">' + (o.remain < o.amount ? esc(depWon(o.remain)) + ' / ' : '') + esc(depWon(o.amount)) + '</span>' +
+        '</label>';
+    }
+
+    function openDepositDetail(key) {
+      var m = document.getElementById('depDetailModal');
+      if (!m) return;
+      DEP_DET = null;
+      document.getElementById('depDetTitle').textContent = '입금';
+      document.getElementById('depDetAmt').textContent = '';
+      document.getElementById('depDetNow').textContent = '불러오는 중…';
+      document.getElementById('depDetOpts').innerHTML = '';
+      document.getElementById('depDetQ').value = '';
+      m.classList.add('active');
+
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (!r || !r.ok) {
+            document.getElementById('depDetNow').textContent = '불러오지 못했습니다' + (r && r.error ? ' — ' + r.error : '');
+            return;
+          }
+          DEP_DET = r;
+          var d = r.deposit;
+          document.getElementById('depDetTitle').textContent = (d.txAt || '').slice(5) + ' · ' + (d.name || '(이름 없음)');
+          document.getElementById('depDetAmt').textContent = depWon(d.amount);
+          document.getElementById('depDetNow').innerHTML =
+            esc(depMatchText({ result: d.result, cust: d.cust, orderNos: d.orderNos, diff: d.diff, matchMemo: '' })) +
+            (d.orderNos ? '<small>주문 ' + esc(d.orderNos) + '</small>' : '') +
+            (d.memo ? '<small>' + esc(d.memo) + '</small>' : '') +
+            (d.frozen ? '<small>이카운트에 넘어간 입금이라 여기서는 못 바꿉니다</small>' : '');
+          document.getElementById('depDetRememberLabel').textContent =
+            '「' + (d.name || '?') + '」 는 다음부터 이 거래처로 기억';
+          var cur = {};
+          (r.options || []).forEach(function (o) { if (o.tag === '지금 배분') cur[o.no] = 1; });
+          var h = '';
+          (r.options || []).forEach(function (o) { h += depOptHtml(o, !!cur[o.no]); });
+          document.getElementById('depDetOpts').innerHTML = h ||
+            '<div class="dash-dep-empty">고를 만한 주문이 없습니다 — 아래에서 찾아보세요</div>';
+          document.getElementById('depDetUndo').hidden = !d.pinned;
+          paintDepDetailEc(d);
+          ['depDetSave'].forEach(function (id) { document.getElementById(id).disabled = !!d.frozen; });
+        })
+        .withFailureHandler(function (e) {
+          document.getElementById('depDetNow').textContent = '불러오지 못했습니다';
+        })
+        .csDepositDetail(key);
+    }
+
+    function closeDepositDetail() {
+      var m = document.getElementById('depDetailModal');
+      if (m) m.classList.remove('active');
+      DEP_DET = null;
+    }
+
+    function depDetailSearch() {
+      var q = (document.getElementById('depDetQ').value || '').trim();
+      if (!q) return;
+      var box = document.getElementById('depDetOpts');
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (!r || !r.ok) { toast('찾지 못했습니다' + (r && r.error ? ' — ' + r.error : ''), 2600); return; }
+          // 이미 보이는 주문은 그대로 두고, 새로 찾은 것만 위에 붙인다 (체크해 둔 것이 풀리지 않게)
+          var have = {};
+          box.querySelectorAll('input[type=checkbox]').forEach(function (c) { have[c.value] = 1; });
+          var h = '';
+          (r.rows || []).forEach(function (o) { if (!have[o.no]) { o.tag = '찾음'; h += depOptHtml(o, false); } });
+          if (!h) { toast('더 찾은 주문이 없습니다', 2000); return; }
+          box.insertAdjacentHTML('afterbegin', h);
+        })
+        .withFailureHandler(function () { toast('찾지 못했습니다', 2000); })
+        .csDepositSearch(q);
+    }
+
+    function depDetailDone(r, what) {
+      DEP_DET_BUSY = false;
+      if (!r || !r.ok) { toast(what + ' 실패 — ' + ((r && r.error) || '다시 시도해 주세요'), 3200); return; }
+      var m = r.match;
+      toast(what + ' · ' + (m ? (DEP_ICON[m.result] || '') + ' ' + m.result + (m.cust ? ' · ' + m.cust : '') : '완료'), 2600);
+      closeDepositDetail();
+      renderDeposits(true);
+      // 더보기 창이 열려 있으면 그것도 새로
+      var dm = document.getElementById('depModal');
+      if (dm && dm.classList.contains('active')) openDepositModal();
+    }
+
+    function depDetailAssign() {
+      if (!DEP_DET || DEP_DET_BUSY) return;
+      var picked = [];
+      document.querySelectorAll('#depDetOpts input[type=checkbox]:checked').forEach(function (c) { picked.push(c.value); });
+      if (!picked.length) { toast('주문을 하나 이상 고르세요', 2200); return; }
+      DEP_DET_BUSY = true;
+      var remember = document.getElementById('depDetRemember').checked;
+      google.script.run
+        .withSuccessHandler(function (r) { depDetailDone(r, '확정'); })
+        .withFailureHandler(function () { depDetailDone(null, '확정'); })
+        .csDepositAssign(DEP_DET.deposit.key, picked, remember, hbStaffName() || '');
+    }
+
+    function depDetailExclude() {
+      if (!DEP_DET || DEP_DET_BUSY) return;
+      if (!confirm('이 입금을 주문 대금이 아닌 것으로 표시할까요?\n(개인 송금 · 환불 반환 등)')) return;
+      DEP_DET_BUSY = true;
+      google.script.run
+        .withSuccessHandler(function (r) { depDetailDone(r, '제외'); })
+        .withFailureHandler(function () { depDetailDone(null, '제외'); })
+        .csDepositExclude(DEP_DET.deposit.key, hbStaffName() || '');
+    }
+
+    function depDetailUnassign() {
+      if (!DEP_DET || DEP_DET_BUSY) return;
+      DEP_DET_BUSY = true;
+      google.script.run
+        .withSuccessHandler(function (r) { depDetailDone(r, '되돌림'); })
+        .withFailureHandler(function () { depDetailDone(null, '되돌림'); })
+        .csDepositUnassign(DEP_DET.deposit.key, hbStaffName() || '');
+    }
+
+    // ── 이카운트 반영 (2026-09-29) ─────────────────────
+    //   > "이카운트의 문제는 입금확인이 2번 3번 클릭하면 계속 된다는거야"
+    //   두 번 눌러도 한 장 — 막는 건 서버(입금수신 dpEcount.gs)가 한다. 여기서는 누르는 동안 버튼만 잠근다.
+    var DEP_POST_BUSY = false;
+
+    function paintDepDetailEc(d) {
+      var el = document.getElementById('depDetEc');
+      if (!el) return;
+      var h = '', cls = '';
+      var manualBtn = d.canMarkManual
+        ? '<button type="button" onclick="depMarkManual(false)" title="이카운트에 손으로(또는 엑셀로) 이미 입력한 입금 — 시스템이 또 넣지 않게 표시">✋ 이미 이카운트에 넣었음</button>'
+        : '';
+      if (d.status === '반영완료' && d.slipNo === '손으로') {
+        cls = 'done';
+        h = '✋ 이카운트에 손으로 입력한 입금으로 표시됨' + (d.postedBy ? ' · ' + esc(d.postedBy) : '') +
+            '<small>시스템은 이 입금을 이카운트에 넘기지 않습니다.</small>' +
+            '<div class="row"><button type="button" onclick="depMarkManual(true)">잘못 눌렀음 — 되돌리기</button></div>';
+      } else if (d.status === '반영완료') {
+        cls = 'done';
+        h = '📒 이카운트 반영 완료 · 전표 <b>' + esc(d.slipNo || '?') + '</b>' +
+            (d.postedBy ? ' · ' + esc(d.postedBy) : '') +
+            '<small>이미 넘어간 입금이라 여기서는 바꿀 수 없습니다. 고칠 일이 있으면 이카운트에서 전표를 정리하세요.</small>';
+      } else if (d.status === '반영중') {
+        cls = 'warn';
+        h = '📒 이카운트에 넘기는 중입니다…<small>잠시 뒤 다시 열어 보세요.</small>';
+      } else if (d.status === '확인필요') {
+        cls = 'warn';
+        h = '⚠ 이카운트에 들어갔는지 확인이 필요합니다' +
+            '<small>' + esc(d.postMemo || '') + '</small>' +
+            '<small>이카운트 일반전표에서 적요의 입금자·금액으로 찾아보세요. 같은 전표를 두 번 넣지 않으려고 저절로 다시 보내지 않았습니다.</small>' +
+            '<div class="row"><input id="depDetSlip" placeholder="있으면 전표번호 (예: 20260929-12)">' +
+            '<button type="button" class="primary" onclick="depPostResolve(true)">이카운트에 있음</button>' +
+            '<button type="button" onclick="depPostResolve(false)">없음 — 다시 넘길 수 있게</button></div>';
+      } else if (d.canPost && d.postOn) {
+        h = '📒 이 입금을 이카운트 일반전표로 넘길 수 있습니다' +
+            '<small>차변 보통예금 / 대변 외상매출금 (' + esc(d.cust || '거래처') + ') · ' + esc(depWon(d.amount)) + '</small>' +
+            '<small>이카운트에 손으로 이미 넣었다면 반영하지 말고 「이미 넣었음」 을 누르세요 — 두 번 들어갑니다.</small>' +
+            (d.postMemo ? '<small>' + esc(d.postMemo) + '</small>' : '') +
+            '<div class="row"><button type="button" class="primary" id="depDetPostBtn" onclick="depPostOne()">📒 이카운트 반영</button>' + manualBtn + '</div>';
+      } else if (d.canMarkManual) {
+        // 시작 시각 전 입금이거나 스위치가 꺼져 있다 — 넘기지는 못해도 「이미 넣었음」 표시는 된다
+        h = (d.postFrom && d.txAt < d.postFrom
+              ? '📒 이카운트 반영 시작(' + esc(d.postFrom) + ') 전 입금입니다<small>예전처럼 이카운트에 손으로 처리합니다. 처리했으면 아래를 눌러 두세요.</small>'
+              : '📒 이카운트 반영은 아직 꺼져 있습니다<small>이카운트에 손으로 처리했으면 아래를 눌러 두세요 — 나중에 켰을 때 두 번 들어가지 않습니다.</small>') +
+            '<div class="row">' + manualBtn + '</div>';
+      } else {
+        el.hidden = true;
+        return;
+      }
+      el.className = 'dep-det-ec' + (cls ? ' ' + cls : '');
+      el.innerHTML = h;
+      el.hidden = false;
+    }
+
+    function depPostSummary(r) {
+      if (!r || !r.ok) return '이카운트 반영 실패 — ' + ((r && r.error) || '다시 시도해 주세요');
+      var n = { '반영완료': 0, '거절': 0, '확인필요': 0, '건너뜀': 0 }, why = [];
+      (r.results || []).forEach(function (x) {
+        n[x.outcome] = (n[x.outcome] || 0) + 1;
+        if (x.outcome === '거절' || x.outcome === '확인필요') why.push(x.outcome + ': ' + (x.message || ''));
+      });
+      return '📒 반영완료 ' + n['반영완료'] + (n['거절'] ? ' · 거절 ' + n['거절'] : '') +
+             (n['확인필요'] ? ' · ⚠ 확인필요 ' + n['확인필요'] : '') + (n['건너뜀'] ? ' · 건너뜀 ' + n['건너뜀'] : '') +
+             (why.length ? '\n' + why.slice(0, 3).join('\n') : '');
+    }
+
+    function depPostOne() {
+      if (!DEP_DET || DEP_POST_BUSY) return;
+      var b = document.getElementById('depDetPostBtn');
+      if (b) { b.disabled = true; b.textContent = '넘기는 중…'; }
+      DEP_POST_BUSY = true;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          DEP_POST_BUSY = false;
+          toast(depPostSummary(r), r && r.ok ? 3500 : 6000);
+          closeDepositDetail(); renderDeposits(true);
+        })
+        .withFailureHandler(function () { DEP_POST_BUSY = false; toast('이카운트 반영 실패 — 다시 열어 상태를 확인해 주세요', 5000); renderDeposits(true); })
+        .csDepositPost([DEP_DET.deposit.key], hbStaffName() || '');
+    }
+
+    function depMarkManual(undo) {
+      if (!DEP_DET) return;
+      if (!undo && !confirm('이 입금은 이카운트에 이미 손으로(또는 엑셀로) 넣으셨나요?\n표시하면 시스템은 이 입금을 이카운트에 넘기지 않습니다.')) return;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          toast(r && r.ok ? (undo ? '되돌렸습니다 — 다시 넘길 수 있습니다' : '✋ 이미 넣은 입금으로 표시했습니다') : ('실패 — ' + ((r && r.error) || '')), 3000);
+          closeDepositDetail(); renderDeposits(true);
+        })
+        .withFailureHandler(function () { toast('실패 — 다시 시도해 주세요', 2500); })
+        .csDepositMarkManual(DEP_DET.deposit.key, !!undo, hbStaffName() || '');
+    }
+
+    function depPostResolve(found) {
+      if (!DEP_DET) return;
+      var slip = found ? String((document.getElementById('depDetSlip') || {}).value || '').trim() : '';
+      if (found && !slip) { toast('이카운트에서 찾은 전표번호를 적어 주세요', 2600); return; }
+      if (!found && !confirm('이카운트에 이 입금 전표가 «없는» 것을 확인하셨나요?\n없음으로 두면 다시 넘길 수 있게 됩니다.')) return;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          toast(r && r.ok ? (found ? '📒 반영완료로 정리했습니다' : '대기로 되돌렸습니다 — 다시 넘길 수 있습니다') : ('정리 실패 — ' + ((r && r.error) || '')), 3000);
+          closeDepositDetail(); renderDeposits(true);
+        })
+        .withFailureHandler(function () { toast('정리 실패', 2500); })
+        .csDepositPostResolve(DEP_DET.deposit.key, slip, hbStaffName() || '');
+    }
+
+    /* 오늘 ✅·🔴 중 아직 안 넘긴 것 전부 — 누를 때 그날 전부를 다시 물어 목록을 만든다 (화면의 10건만이 아니다) */
+    function depPostAll() {
+      if (DEP_POST_BUSY) return;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (!r || !r.ok) { toast('목록을 못 불러왔습니다', 2500); return; }
+          var go = (r.rows || []).filter(function (x) { return x.canPost; });
+          if (!go.length) { toast('넘길 입금이 없습니다', 2000); return; }
+          var sum = go.reduce(function (s, x) { return s + (Number(x.amount) || 0); }, 0);
+          if (!confirm('오늘 ✅ 일치 · 🔴 부족 입금 ' + go.length + '건 (' + depWon(sum) + ') 을 이카운트 일반전표로 넘길까요?\n\n' +
+                       go.slice(0, 8).map(function (x) { return x.time + ' ' + x.name + ' ' + depWon(x.amount) + ' → ' + (x.cust || ''); }).join('\n') +
+                       (go.length > 8 ? '\n… 외 ' + (go.length - 8) + '건' : ''))) return;
+          DEP_POST_BUSY = true;
+          var btn = document.getElementById('depPostAllBtn');
+          // 5건씩 나눠 보낸다 — 한 번에 많이 보내면 웹앱 사이 호출이 1분 한도에 걸린다 (전표 1장 1~2초)
+          var keys = go.map(function (x) { return x.key; }), all = { ok: true, results: [] }, i = 0;
+          var done = function (msg) {
+            DEP_POST_BUSY = false;
+            if (btn) { btn.disabled = false; btn.textContent = '📒 일치 전체 반영'; }
+            toast(msg || depPostSummary(all), 6000);
+            renderDeposits(true);
+          };
+          var next = function () {
+            if (i >= keys.length) { done(); return; }
+            var part = keys.slice(i, i + 5);
+            if (btn) { btn.disabled = true; btn.textContent = '📒 넘기는 중… ' + i + '/' + keys.length; }
+            google.script.run
+              .withSuccessHandler(function (res) {
+                if (!res || !res.ok) { done(depPostSummary(res)); return; }
+                all.results = all.results.concat(res.results || []);
+                i += part.length;
+                next();
+              })
+              .withFailureHandler(function () {
+                done('이카운트 반영 중 연결이 끊겼습니다 (' + i + '/' + keys.length + ') — 입금 줄의 상태를 확인해 주세요');
+              })
+              .csDepositPost(part, hbStaffName() || '');
+          };
+          next();
+        })
+        .withFailureHandler(function () { toast('목록을 못 불러왔습니다', 2500); })
+        .csDepositList('', 0, false, DEP_DAYS);
+    }
+
+    // ── 주문서 올리기 (2026-09-29) ─────────────────────
+    //   엑셀은 브라우저가 읽는다(SheetJS — 누를 때만 한 번 받아 온다).
+    //   «보이는 값» 그대로 서버에 넘기고, 어느 칸이 무엇인지는 입금수신(dpMatch.gs)이 판단한다.
+    var DEP_XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    function depLoadXlsx(cb) {
+      if (window.XLSX) { cb(); return; }
+      var s = document.createElement('script');
+      s.src = DEP_XLSX_URL;
+      s.onload = function () { cb(); };
+      s.onerror = function () { toast('엑셀 읽기 도구를 못 불러왔습니다 — 인터넷 연결을 확인해 주세요', 3500); };
+      document.head.appendChild(s);
+    }
+
+    function depUploadOrders(input) {
+      var f = input.files && input.files[0];
+      input.value = '';                       // 같은 파일을 다시 골라도 onchange 가 뜨게
+      if (!f) return;
+      toast('주문서 읽는 중… ' + f.name, 2500);
+      depLoadXlsx(function () {
+        var rd = new FileReader();
+        rd.onload = function (ev) {
+          var rows;
+          try {
+            var wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+            var ws = wb.Sheets[wb.SheetNames[0]];
+            rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+          } catch (e) {
+            toast('엑셀을 읽지 못했습니다 — ' + (e && e.message ? e.message : e), 3500);
+            return;
+          }
+          google.script.run
+            .withSuccessHandler(function (r) {
+              if (!r || !r.ok) { toast('주문서 올리기 실패 — ' + ((r && r.error) || ''), 4000); return; }
+              var t = r.tally || {}, parts = [];
+              Object.keys(t).forEach(function (k) { parts.push((DEP_ICON[k] || '') + k + ' ' + t[k]); });
+              // 옛 파일·지워진 주문·걸러 받은 파일 — 무슨 일이 있었는지 그대로 말한다
+              var extra = [];
+              if (r.stale) extra.push('더 늦게 받은 내용이 있어 건너뜀 ' + r.stale);
+              if (r.missing) extra.push('이카운트에서 없어짐 ' + r.missing);
+              if (r.revived) extra.push('되살아남 ' + r.revived);
+              var warn = r.warn || [];
+              toast('주문서 ' + r.read + '건 읽음 (' + String(r.fileAt || '').slice(5, 16) + ' 받은 파일) · 새로 ' + r.added + ' · 바뀜 ' + r.updated +
+                    (extra.length ? '\n' + extra.join(' · ') : '') +
+                    (warn.length ? '\n⚠ ' + warn.join('\n⚠ ') : '') +
+                    (parts.length ? '\n' + parts.join(' · ') : ''), warn.length ? 8000 : 5000);
+              renderDeposits(true);
+            })
+            .withFailureHandler(function (e) { toast('주문서 올리기 실패 — ' + (e && e.message ? e.message : ''), 4000); })
+            .csDepositOrdersUpload(rows, hbStaffName() || '');
+        };
+        rd.readAsArrayBuffer(f);
+      });
+    }
+
     // ══ 일과 체크리스트 (2026-08-31) ═══════════════════════
     //   예정 시각 10분 전부터 뜨고, 체크하면 그날은 사라진다.
     //   시각이 지났는데 미체크면 빨갛게 남는다 — 숨기면 빠뜨린 걸 아무도 모른다.
@@ -13238,6 +15441,12 @@
     // 10분 전이 되면 카드가 저절로 뜨고, 예정 시각을 넘기면 빨갛게 바뀐다.
     setInterval(function () {
       if (CHK_CACHE && document.getElementById('dashChecklist')) paintDailyChecklist(CHK_CACHE);
+    }, 60000);
+
+    // 오늘 입금 — 1분마다 새로 묻는다. 화면을 안 보고 있으면(다른 탭) 건너뛴다.
+    setInterval(function () {
+      if (document.hidden) return;
+      if (document.getElementById('dashDeposit')) renderDeposits(true);
     }, 60000);
 </script>
 

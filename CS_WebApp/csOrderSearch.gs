@@ -2160,6 +2160,26 @@ function submitReturnLedger(data) {
     var row = [];
     for (var c = 0; c < lastCol; c++) row.push("");
     if (col.date >= 0) row[col.date] = _cs_ledgerDate_();
+
+    /*  ★ 고유ID 를 여기서 발급한다 ★  (2026-10-02)
+        > "모든 문의 반품 발주관련된 부분에서 항상 고유아이디가 붙게해줘"
+
+        r1002000003 — 발주(d)·전화주문(p)과 같은 규칙, 그날의 번호표다.
+        여태 반품 건은 (탭, 행)으로만 가리켰다. 줄이 한 칸 밀리면 짝이
+        끊긴다 — 9월 탭에서 그렇게 「유령 아홉 줄」이 생겼다.
+
+        ★ 열이 없으면 조용히 넘어간다 ★ csReturnUid.gs 로 열을 만들기
+        전에도 기록은 돼야 한다. 열이 생기면 그때부터 저절로 붙는다.  */
+    if (col.uid >= 0) {
+      var 쓴것 = {};
+      for (var u = headerIdx + 1; u < values.length; u++) {
+        var uu = String((values[u] || [])[col.uid] || "").trim();
+        if (uu) 쓴것[uu] = true;
+      }
+      var mmdd = _cs_ruidMMDD_(col.date >= 0 ? row[col.date] : "") ||
+        Utilities.formatDate(new Date(), "Asia/Seoul", "MMdd");
+      row[col.uid] = _cs_returnUidNext_(mmdd, 쓴것);
+    }
     if (col.staff >= 0) row[col.staff] = String(data.staff || "").trim();
     if (col.vendor >= 0) row[col.vendor] = String(data.vendor || "").trim();
     if (col.name >= 0) row[col.name] = String(data.name || "").trim();
@@ -2207,7 +2227,43 @@ function submitReturnLedger(data) {
     if (col.item >= 0) row[col.item] = String(data.item || "").trim();
     if (col.qty >= 0) row[col.qty] = data.qty || "";
     if (col.invoice >= 0) row[col.invoice] = invoice;
-    if (col.type >= 0) row[col.type] = String(data.type || "단순반품").trim();
+    /*  ★ 협의된 배열에는 교환반품구분 칸이 없다 ★  (2026-10-01)
+        그런데 창은 여전히 「단순반품/교환/재출고…」를 묻는다. 칸이 없다고
+        고른 값을 조용히 버리면, 사람은 적힌 줄 알고 나중에 아무도 모른다.
+        귀책·반품비·계좌가 걸어온 길과 같이 비고에 남긴다. 시트에
+        「교환반품구분」 열을 만들면 코드를 안 고쳐도 그쪽으로 간다.
+        기본값 「단순반품」은 남기지 않는다 — 줄마다 같은 말이 쌓이면 비고를 못 읽는다. */
+    /*  ★ 다시 보내는 것 ★  (2026-10-02)
+        > "둘다 적으면 좋겠네"
+        상품명 칸은 «돌려받는 것»이다. 세트가 뚜껑만 나가면 우리가 몸통을
+        다시 보내는데, 그것을 적을 칸이 협의된 배열에 없다.
+        귀책·반품비·구분이 걸어온 길과 같이 비고에 남긴다.
+        시트에 「재출고상품」 열을 만들면 코드를 안 고쳐도 그쪽으로 간다.  */
+    //  ★ /\s+/ 다 ★ 2026-10-02 에 /s+/ 로 들어가 영문 s 를 공백으로 바꿨다
+    var reshipIn = String(data.reship || "").replace(/\s+/g, " ").trim();
+    var reshipToNotice = "";
+    if (reshipIn) {
+      if (col.reship >= 0) row[col.reship] = reshipIn;
+      else reshipToNotice = "재출고: " + reshipIn;
+    }
+
+    /*  재출고 배송비 — 우리가 다시 보내며 쓴 돈.  (2026-10-02)
+        반품비(고객이 돌려보낼 때 든 택배비)와 «다른 돈»이다. 한 칸에
+        뭉뚱그리면 「이번 달 우리가 쓴 배송비」를 셀 수 없다.
+        칸이 없으면 비고에 남긴다 — 조용히 버리지 않는다.  */
+    var reshipFeeIn = String(
+      data.reshipFee === undefined || data.reshipFee === null ? "" : data.reshipFee
+    ).trim();
+    var reshipFeeToNotice = "";
+    if (reshipFeeIn) {
+      if (col.reshipFee >= 0) row[col.reshipFee] = reshipFeeIn;
+      else reshipFeeToNotice = "재출고배송비: " + reshipFeeIn;
+    }
+
+    var typeIn = String(data.type || "").trim();
+    var typeToNotice = "";
+    if (col.type >= 0) row[col.type] = typeIn || "단순반품";
+    else if (typeIn && typeIn !== "단순반품") typeToNotice = "구분: " + typeIn;
 
     /* 사유(L열) — 고객이 «왜» 보냈나. 유형(K열)과 다른 칸이다.
        2026-09-30 까지 카드에만 보여 주고 «적는 데»가 없었다. */
@@ -2268,6 +2324,9 @@ function submitReturnLedger(data) {
     if (col.notice >= 0) {
       var noticeLines = [];
       if (data.memo) noticeLines.push(_cs_ledgerStamp_(data.staff) + " " + String(data.memo || "").trim());
+      if (typeToNotice) noticeLines.push(typeToNotice);
+      if (reshipToNotice) noticeLines.push(reshipToNotice);
+      if (reshipFeeToNotice) noticeLines.push(reshipFeeToNotice);
       if (faultToNotice) noticeLines.push(faultToNotice);
       if (feeToNotice) noticeLines.push(feeToNotice);
       if (retInvToNotice) noticeLines.push(retInvToNotice);
@@ -2465,6 +2524,52 @@ function _cs_reasonFromNotice_(notice) {
 }
 
 /**
+ * 비고에 남긴 「재출고: 몸통 1」에서 «다시 보내는 것»을 되읽는다. (2026-10-02)
+ *
+ * 쓰는 쪽(submitReturnLedger)과 같은 자리에서 찾는다.
+ * ★ 줄 끝까지 받는다 ★ 품목명에는 띄어쓰기·괄호·숫자가 섞인다 —
+ *   낱말 하나로 끊으면 「220파이 감자탕 중 백색 몸통 1」이 「220파이」가 된다.
+ *
+ * @return {string} 재출고 상품, 없으면 ""
+ */
+/**
+ * 비고에 남긴 「재출고배송비: 3000」을 되읽는다.  (2026-10-02)
+ *
+ * 금액이라 낱말 하나로 끊는다 — 품목명과 달리 띄어쓰기가 없다.
+ * ★ 「재출고: …」보다 «먼저» 찾아야 한다 ★ 쓰는 쪽이 두 줄을 나란히
+ *   적으므로, 느슨하게 찾으면 품목명 줄이 금액으로 걸린다.
+ */
+function _cs_reshipFeeFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/재출고배송비\s*[:：]\s*([^\s·,\n]{1,20})/);
+  return m ? String(m[1]).trim() : "";
+}
+
+function _cs_reshipFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/(?:^|[\n·])\s*재출고\s*[:：]\s*([^\n]{1,80})/);
+  return m ? String(m[1]).trim() : "";
+}
+
+/**
+ * 비고에 남긴 「구분: 교환」 표시에서 교환반품구분을 되읽는다.  (2026-10-01)
+ *
+ * 협의된 배열에는 교환반품구분 칸이 없다. 쓰는 쪽(submitReturnLedger)이
+ * 비고에 「구분: …」으로 남기므로, 읽는 쪽도 같은 자리에서 되찾아야
+ * 카드에 보인다. 사유·귀책이 걸어온 길과 같다.
+ *
+ * @return {string} 구분 낱말, 없으면 ""
+ */
+function _cs_typeFromNotice_(notice) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return "";
+  var m = s.match(/(?:^|[\s·.])구분\s*[:：]\s*([^\s·.,()]{1,20})/);
+  return m ? String(m[1]).trim() : "";
+}
+
+/**
  * 단계 칸 하나를 읽는다 — «언제 됐나».  (2026-10-01)
  *
  * ★ 「N」은 «안 된 것»이다 ★  (2026-10-01 고침)
@@ -2599,6 +2704,16 @@ function _cs_mapReturnLedgerCols_(header) {
     /* 입고확인요청 — CS 가 물류에게 «박스 열 때 볼 것»을 적는 칸 (2026-09-30).
        대장 맨 뒤에 붙인다(_cs_ensureIntakeReqCol_). 업체 포털은 이 열을 안 읽는다. */
     intakeReq: -1,
+    /*  재출고 (2026-10-02) — 돌려받는 것과 «다시 보내는 것»을 갈라 적는다.
+        반품에서 돈도 두 번 움직인다 —
+          fee        고객이 돌려보낼 때 든 택배비 (반품비)
+          reshipFee  우리가 다시 보낼 때 든 택배비 (재출고배송비)
+        한 칸에 뭉뚱그리면 「이번 달 우리가 쓴 배송비」를 셀 수 없다.  */
+    reship: -1,
+    /*  고유ID — 「r1002000003」. 반품 건 제 번호다 (csReturnUid.gs).
+        여태 (탭, 행)으로만 가리켜, 줄이 밀리면 짝이 끊겼다.  */
+    uid: -1,
+    reshipFee: -1,
 
     /*  ══════════════════════════════════════════════════════
         ★ 2026-10 대장 설계 ★  (2026-10-01)
@@ -2621,13 +2736,21 @@ function _cs_mapReturnLedgerCols_(header) {
     ecount: -1,      // 이카운처리 여부 (9월 「이카운트 반영」과 같은 자리)
     siteDone: -1,    // 각 사이트처리
     taxDone: -1,     // 계산서발행여부
-    refund: -1       // 환불완료
+    refund: -1,      // 환불완료
+    /*  적요 — 사람이 길게 적는 칸. 사유(발생원인)와 다르다. 크게 보기 글줄이 보여 준다 (2026-10-01) */
+    jeokyo: -1
   };
   for (var i = 0; i < header.length; i++) {
     var h = String(header[i] || "").replace(/\s/g, "");
     if (!h) continue;
     //  맨 앞에서 먼저 잡는다 — 「요청」·「확인」이 다른 규칙(고객요청 → 비고 등)에 걸리지 않게
     if (col.intakeReq < 0 && /^입고확인요청/.test(h)) col.intakeReq = i;
+    /*  ★ 재출고배송비를 «반품비보다 먼저» 본다 ★
+        아래 col.fee 규칙(/반품비|…배송비…/)이 「재출고배송비」를 먼저
+        집어 가면 우리가 쓴 돈이 고객 반품비로 적힌다. 조용히 틀린다.  */
+    else if (col.uid < 0 && /^고유ID$|^고유아이디$|^UID$/i.test(h)) col.uid = i;
+    else if (col.reshipFee < 0 && /^재출고배송비$|^재출고운임$|^재발송배송비$/.test(h)) col.reshipFee = i;
+    else if (col.reship < 0 && /^재출고상품$|^재출고품목$|^재발송상품$/.test(h)) col.reship = i;
     else if (col.date < 0 && /반품접수날짜|접수날짜|접수일자/.test(h)) col.date = i;
     else if (col.staff < 0 && h === "접수자") col.staff = i;
     /* 2026-09-09: 9월 탭에서 D열이 「업체명」 → 「주문지」로 바뀌었다.
@@ -2708,6 +2831,7 @@ function _cs_mapReturnLedgerCols_(header) {
     else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유|재출고|오주문입력/.test(h)) col.type = i;
     // 「반품/환불비용」이 실제 헤더다. 슬래시 때문에 /반품비/ 로는 안 걸린다.
     else if (col.fee < 0 && /반품비|반품운임|반품배송비|환불비용/.test(h)) col.fee = i;
+    else if (col.jeokyo < 0 && h === "적요") col.jeokyo = i;
     else if (col.notice < 0 && /고객요청|유의사항|비고/.test(h)) col.notice = i;
   }
   /*  A열 = 처리상태 (접수/수거중/완료 …). 헤더명이 비어도 A를 쓴다.
@@ -2978,15 +3102,30 @@ function _cs_ensureReturnStatusDropdown_(tab, tabName) {
 
     var last = tab.getMaxRows();
     if (last < 2) { props.setProperty(key, "1"); return false; }
+
+    /*  ★ 머리글 «아래»부터 건다 ★  (2026-10-01)
+        전에는 2행부터 걸었다. 그런데 이 대장의 머리글은 4행이다 —
+        2~4행(안내문·머리글)까지 규칙이 얹혀, 머리글 칸 「상태값」이
+        «목록에 없는 값»으로 빨갛게 표시됐다. 머리글 줄을 찾아 그 다음
+        줄부터 건다. 못 찾으면 옛대로 2행부터.  */
+    var 시작 = 2;
+    try {
+      var hv = tab.getRange(1, 1, Math.min(last, 40), Math.max(tab.getLastColumn(), 15))
+        .getDisplayValues();
+      var hi = _cs_findReturnHeaderRow_(hv);
+      if (hi >= 0) 시작 = hi + 2;
+    } catch (eH) {}
+    if (시작 > last) { props.setProperty(key, "1"); return false; }
+
     var rule = SpreadsheetApp.newDataValidation()
       .requireValueInList(_CS_RETURN_STATUS_OPTS_, true)
       .setAllowInvalid(false)
       .setHelpText(
         "접수 → 반품송장 → 입고검수 → 이카운트OK\n" +
           "이 넷만 씁니다. 그 밖의 말은 카드 위쪽 단계가 「접수」로 보입니다.\n" +
-          "덧붙일 말은 비고(N열)에 적어 주세요.")
+          "덧붙일 말은 「비고 및 추가처리사항」 칸에 적어 주세요.")
       .build();
-    tab.getRange(2, 1, last - 1, 1).setDataValidation(rule);
+    tab.getRange(시작, 1, last - 시작 + 1, 1).setDataValidation(rule);
     props.setProperty(key, "1");
     return true;
   } catch (e) {
@@ -3375,6 +3514,88 @@ function updateReturnLedgerStatus(payload) {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════
+ *  ★ 크게 보기 편집판 — 시트의 여러 칸을 한 번에 고친다 ★  (2026-10-01)
+ *
+ *  > "펼쳐졌을떄 웹앱카드랑 너무 똑같네.. 전체 모드에서는 디테일한것들을
+ *  >  다보고 수정 추가할수 있어야 되는데..."
+ *
+ *  카드에서 고칠 수 있던 것은 상태·반품송장·실번호·메모뿐이었다. 나머지 칸은
+ *  시트를 열어야 했다. 크게 보기의 편집판이 이 함수로 «바뀐 칸만» 적는다.
+ *
+ *  ★ 상태값은 여기서 안 바꾼다 ★ 단계의 주인은 상태값이고, 바꾸는 길은
+ *    updateReturnLedgerStatus 하나다(반품송장이 들어오면 단계를 올리는 규칙도 거기).
+ *    두 길이 상태를 쓰면 언젠가 서로 다르게 쓴다.
+ *  ★ 안 고치는 칸 ★ 접수날짜·접수자(누가 언제 받았나는 기록이다) ·
+ *    원송장(입고 스캔이 이 번호로 찾는다) · 연락처(주문서 번호 — 쇼핑몰과 맞춰 보는 열쇠).
+ *  ★ 바뀐 것은 비고에 «앞 → 뒤»로 남긴다 ★ 누가 언제 무엇을 바꿨는지 모르면
+ *    다음 사람이 시트와 기억이 다를 때 어느 쪽이 맞는지 모른다.
+ * ══════════════════════════════════════════════════════════════ */
+var _CS_RET_EDITABLE_ = {
+  intake: "입고", recheck: "재검수", vendor: "거래처", name: "수취인",
+  item: "상품명", qty: "수량", jeokyo: "적요",
+  ecount: "이카운트", siteDone: "사이트처리", taxDone: "계산서", refund: "환불완료",
+  account: "환불계좌"
+};
+
+function updateReturnLedgerFields(payload) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  payload = payload || {};
+  var tabName = String(payload.tab || "").trim();
+  var rowNum = parseInt(payload.row, 10);
+  var staff = String(payload.staff || "").trim();
+  var fields = payload.fields || {};
+  if (!tabName || !(rowNum > 0)) return { ok: false, error: "탭·행이 필요합니다." };
+  if (!staff) return { ok: false, error: "담당자를 먼저 고르세요." };
+  try {
+    var ctx = _cs_openReturnLedgerRow_(tabName, rowNum);
+    var notice = ctx.col.notice >= 0 ? String(ctx.row[ctx.col.notice] || "").trim() : "";
+    var 바뀜 = [], 칸없음 = [], 값 = {};
+
+    for (var key in fields) {
+      if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
+      if (!_CS_RET_EDITABLE_[key]) continue;                 // 고치는 칸이 아니다 — 조용히 넘긴다
+      var ci = ctx.col[key];
+      if (!(ci >= 0)) { 칸없음.push(_CS_RET_EDITABLE_[key]); continue; }
+      var v = String(fields[key] == null ? "" : fields[key]).trim().substring(0, 500);
+      var cur = String(ctx.row[ci] || "").trim();
+      if (v === cur) continue;
+      ctx.tab.getRange(rowNum, ci + 1).setValue(v);
+      바뀜.push(_CS_RET_EDITABLE_[key] + ": " + (cur || "(빈칸)") + " → " + (v || "(지움)"));
+      값[key] = v;
+    }
+
+    /* 발생원인 — 협의된 배열은 한 칸에 «귀책 / 사유». 귀책 전용 열이 있으면 나눠 적는다. */
+    if (payload.cause && ctx.col.reason >= 0) {
+      var 귀책 = String(payload.cause.fault || "").trim().replace(/귀책$/, "");
+      var 사유 = String(payload.cause.reason || "").trim().substring(0, 200);
+      var 원인 = ctx.col.fault >= 0 ? 사유 : _cs_makeCause_(귀책, 사유);
+      var 원인cur = String(ctx.row[ctx.col.reason] || "").trim();
+      if (원인 !== 원인cur) {
+        ctx.tab.getRange(rowNum, ctx.col.reason + 1).setValue(원인);
+        바뀜.push("발생원인: " + (원인cur || "(빈칸)") + " → " + (원인 || "(지움)"));
+      }
+      if (ctx.col.fault >= 0) {
+        var 귀책cur = String(ctx.row[ctx.col.fault] || "").trim();
+        if (귀책 !== 귀책cur) {
+          ctx.tab.getRange(rowNum, ctx.col.fault + 1).setValue(귀책);
+          바뀜.push("귀책: " + (귀책cur || "(빈칸)") + " → " + (귀책 || "(지움)"));
+        }
+      }
+      값.fault = 귀책; 값.reason = 사유;
+    }
+
+    if (바뀜.length && ctx.col.notice >= 0) {
+      notice = _cs_appendNoticeLine_(notice, _cs_ledgerStamp_(staff) + " 수정 · " + 바뀜.join(" · "));
+      ctx.tab.getRange(rowNum, ctx.col.notice + 1).setValue(notice);
+    }
+    if (바뀜.length) csInvalidateReturnLedgerCache_();
+    return { ok: true, changed: 바뀜.length, lines: 바뀜, missing: 칸없음, values: 값, notice: notice };
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
 /** 반품대장 행 삭제 (전체 건 — CS앱 UI에서는 미사용, 점검용) */
 function deleteReturnLedgerRow(payload) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
@@ -3483,7 +3704,10 @@ function deleteReturnTimelineEvent(payload) {
     var status = ctx.col.status >= 0 ? String(ctx.row[ctx.col.status] || "").trim() : "";
     var staffVal = ctx.col.staff >= 0 ? String(ctx.row[ctx.col.staff] || "").trim() : "";
     var dateVal = ctx.col.date >= 0 ? String(ctx.row[ctx.col.date] || "").trim() : "";
-    var typeVal = ctx.col.type >= 0 ? String(ctx.row[ctx.col.type] || "").trim() : "";
+    //  칸이 없으면 비고에서 되읽는다 — 읽는 자리 둘이 달라지면 화면이 갈라진다
+    var typeVal = ctx.col.type >= 0
+      ? String(ctx.row[ctx.col.type] || "").trim()
+      : _cs_typeFromNotice_(newNotice);
     var timeline = _cs_parseReturnTimeline_(newNotice, status, staffVal, dateVal, typeVal);
 
     csInvalidateReturnLedgerCache_();
@@ -3668,7 +3892,10 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
     if (!phone2Name) phone2Name = _cs_parseReturnPhone2NameFromNotice_(notice);
     var staffVal = col.staff >= 0 ? String(row[col.staff] || "").trim() : "";
     var dateVal = col.date >= 0 ? String(row[col.date] || "").trim() : "";
-    var typeVal = col.type >= 0 ? String(row[col.type] || "").trim() : "";
+    //  칸이 없으면 비고의 「구분: …」에서 되읽는다 (협의된 배열, 2026-10-01)
+    var typeVal = col.type >= 0
+      ? String(row[col.type] || "").trim()
+      : _cs_typeFromNotice_(notice);
 
     out.push({
       tab: tabName,
@@ -3709,6 +3936,16 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
         : _cs_reasonFromNotice_(notice),
       //  입고확인요청 열 (2026-09-30) — 카드에 노란 띠로, v2 물류 입고 화면에도 뜬다
       intakeReq: col.intakeReq >= 0 ? String(row[col.intakeReq] || "").trim() : "",
+      /*  다시 보내는 것 (2026-10-02) — 상품명은 «돌려받는 것»이다.
+          열이 생기면 열에서, 없으면 비고 표시에서 되읽는다.  */
+      reship: col.reship >= 0
+        ? String(row[col.reship] || "").trim()
+        : _cs_reshipFromNotice_(notice),
+      //  고유ID — 어느 화면에서든 이 번호로 찾는다 (2026-10-02)
+      uid: col.uid >= 0 ? String(row[col.uid] || "").trim() : "",
+      reshipFee: col.reshipFee >= 0
+        ? _cs_formatReturnFee_(row[col.reshipFee])
+        : _cs_reshipFeeFromNotice_(notice),
       /*  귀책 — 찾는 차례가 셋이다 (2026-10-01)
             ① 「귀책」 전용 열이 있으면 그것        (누가 그렇게 만들면)
             ② 「발생원인」 칸의 «앞»부분             (협의된 배열)
@@ -3748,6 +3985,11 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
       /*  물류가 CS 에게 남기는 한 줄 — 「미사용확인요망」 같은 것.
           입고 요청(CS→물류)의 «반대 방향»이다.  */
       recheck: col.recheck >= 0 ? String(row[col.recheck] || "").trim() : "",
+      /*  ★ 크게 보기 글줄이 «시트와 같이» 보이려면 ★  (2026-10-01)
+          > "수정된 반품 카드 내용대로 다 표시되게 해줘..시트랑 거의 똑같이"
+          적요·환불계좌는 카드가 안 쓰던 칸이라 여태 안 실었다. */
+      jeokyo: col.jeokyo >= 0 ? String(row[col.jeokyo] || "").trim() : "",
+      account: col.account >= 0 ? String(row[col.account] || "").trim() : "",
       active: !done,
       timeline: _cs_parseReturnTimeline_(notice, status, staffVal, dateVal, typeVal),
       sortKey: (dateYmd || "00000000") + "_" + String(100000 - ri)
