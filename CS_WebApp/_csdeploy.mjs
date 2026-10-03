@@ -26,6 +26,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { 견주기 } from "../_pushguard.mjs";
 
 const 설명 = process.argv.slice(2).join(" ").trim() || "CS웹앱 갱신";
 
@@ -76,6 +77,14 @@ if (!depId) {
   console.error("배포 id 를 못 읽었습니다:\n" + 목록);
   process.exit(1);
 }
+
+/*  ★ 밀기 전에 견준다 ★  (2026-10-04)
+    clasp push 는 로컬 목록으로 서버를 «동기화»한다 — 로컬에 없는 파일은
+    지워진다. 2026-09-08 에 37개를 그렇게 날렸고, 2026-10-04 에 또 그럴
+    뻔했다(편집기로 만든 파일 5개 · home.html 131KB).
+    그때는 손으로 견주어 막았다. 손으로 막은 것은 다음에 또 안 막는다.
+    어긋나면 여기서 멈춘다 — 멈추는 쪽이 사라지는 쪽보다 낫다.  */
+견주기();
 
 /* ── ② 빌드 번호를 다음 것으로 ── */
 const p = "csPulse.gs";
