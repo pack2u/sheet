@@ -183,7 +183,13 @@ ok("사유를 목록으로 걸러 낸다", /if \(!있나\) reasonIn = "";/.test(
 ok("귀책도 목록으로 걸러 낸다",
   /PRP_RETURN_FAULTS\.indexOf\(faultIn\) === -1\) faultIn = "";/.test(api));
 ok("사유가 비면 귀책도 안 적는다", /if \(faultIn && reasonIn\)/.test(api));
-ok("전용 열이 있으면 열에 적는다", /if \(col\.fault >= 0\) row\[col\.fault\] = faultIn;/.test(api));
+/*  ★ 소스 글자를 집는 단정은 «다듬기»에 약하다 ★  (2026-10-04)
+    아래 넷은 코드 한 줄을 글자 그대로 찾는다. 2026-10-02 에 그 줄들이
+    「발생원인 한 칸」 설계(prpParseCause_·prpMakeCause_)로 바뀌면서
+    넷 다 안 맞게 됐다 — 동작은 멀쩡한데 시험만 빨갰다.
+    지금 코드에 맞추되 공백·줄바꿈에는 덜 매이게 적는다.  */
+ok("전용 열이 있으면 열에 적는다",
+  /if \(col\.fault >= 0 && faultIn\) row\[col\.fault\] = faultIn;/.test(api));
 ok("없으면 비고에 남긴다", /faultToNotice = " 귀책: " \+ faultIn/.test(api));
 ok("비고 줄에 태운다", /faultToNotice \+/.test(api));
 
@@ -228,8 +234,10 @@ ok("「귀책구분」은 귀책 · 그 뒤 사유도 따로", c.fault === 0 && 
   c.fault + "/" + c.reason);
 
 console.log("\n─── ⑩ 업체 카드로 돌려주고 보여 준다 ───");
-ok("열이 있으면 열을, 없으면 비고를 읽는다",
-  /fault: col\.fault >= 0\s*\r?\n\s*\? String\(row\[col\.fault\] \|\| ""\)\.trim\(\)\s*\r?\n\s*: prpFaultFromNotice_\(notice\)/.test(led));
+/*  귀책을 찾는 차례가 셋이다 — 전용 열 · 발생원인 앞부분 · 비고 표시.
+    가운데 한 자리가 빠지면 협의된 배열에서 귀책이 통째로 사라진다. */
+ok("귀책은 전용 열 → 발생원인 앞 → 비고, 세 자리를 차례로 본다",
+  /fault: col\.fault >= 0[\s\S]*?prpParseCause_\(row\[col\.reason\]\)\.귀책[\s\S]*?prpFaultFromNotice_\(notice\)/.test(led));
 ok("카드가 귀책을 낸다", (portal.match(/esc\(귀책\) \+ ' 귀책<\/em>/g) || []).length === 2,
   "사유와 함께 · 귀책만 — 두 갈래 다 있어야 한다");
 ok("사유가 없고 귀책만 있어도 낸다", /} else if \(귀책\) \{/.test(portal));
@@ -260,10 +268,12 @@ console.log("\n─── ⑫ 사유도 비고 길을 탄다 · 두 프로젝트�
     적는 데가 둘(CS·포털)이고 읽는 데도 둘이다. 넷이 한 글자 모양을 써야 한다.  */
 vm.runInContext(꺼내(led, "prpReasonFromNotice_"), gctx);
 vm.runInContext(꺼내(csGs, "_cs_reasonFromNotice_"), gctx);
-ok("포털도 열이 없으면 비고에서 사유를 읽는다",
-  /reason: col\.reason >= 0\s*\r?\n\s*\? String\(row\[col\.reason\] \|\| ""\)\.trim\(\)\s*\r?\n\s*: prpReasonFromNotice_\(notice\)/.test(led));
-ok("포털도 귀책이 비었을 때만 「사유: …」를 따로 적는다",
-  /if \(col\.reason < 0 && reasonIn && !faultToNotice\) \{/.test(api));
+ok("사유는 발생원인 칸을 가르고, 칸이 없으면 비고에서 읽는다",
+  /reason: col\.reason >= 0[\s\S]*?prpParseCause_\(row\[col\.reason\]\)\.사유[\s\S]*?prpReasonFromNotice_\(notice\)/.test(led));
+/*  else-if 차례가 「귀책이 있으면 귀책 줄, 없으면 사유 줄」을 말한다.
+    둘을 다 적으면 비고에 같은 말이 두 줄 쌓인다. */
+ok("귀책이 비었을 때만 「사유: …」를 따로 적는다",
+  /\} else if \(faultIn && reasonIn\) \{[\s\S]*?\} else if \(reasonIn\) \{[\s\S]*?사유: /.test(api));
 [["귀책: 판매자 (오배송)", "판매자", "오배송"],
  ["[260930 당장드림] 업체 포털 접수. [출처 확인됨] 장부에서 확인. 귀책: 구매자 (단순변심). 뚜껑 깨짐", "구매자", "단순변심"],
  ["[260930 10:00 김진수] 고객 요청\n귀책: 판매자 (불량)", "판매자", "불량"],

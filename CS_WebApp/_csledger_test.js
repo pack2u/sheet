@@ -124,8 +124,16 @@ ok("임시저장에도 들어간다 — 적다 만 계좌가 날아가면 다시
    /* 자리(붙어 있는지)가 아니라 **있는지**를 본다. 사이에 다른 칸이 들어오면
       자리로 잡은 검사는 기능이 멀쩡한데도 깨진다 — 실제로 반품비가 들어오며 깨졌다. */
    /fields: \[[^\]]*'ledgerAccount'/.test(html) && /'retNewAccount'/.test(html));
-ok("한 건 기록에 실어 보낸다", /account: document\.getElementById\('ledgerAccount'\)/.test(html));
-ok("여러 건 기록에도 실어 보낸다", /memo: memo, account: account,/.test(html));
+/*  ★ 기록 화면은 한 곳에서만 읽는다 ★  (2026-10-04)
+    2026-10-01 에 단건·여러건이 ledgerModalCommon 한 곳으로 모였다 —
+    둘이 각자 읽어 여러건 쪽에 귀책·사유가 빠졌던 일을 막은 것이다.
+    그래서 「memo: memo, account: account,」 같은 글자가 사라졌고 이 두 줄이
+    빨갰다. 바로 윗 주석이 말하는 그 함정을 이 줄들이 다시 밟은 셈이다 —
+    자리도 글자도 아니라 «한 곳인가»를 본다.  */
+ok("한 곳에서 읽어 둘이 갈라질 수 없다",
+   /function ledgerModalCommon\(\)[\s\S]*?account: g\('ledgerAccount'\)/.test(html));
+ok("단건·여러건이 다 그 한 곳을 쓴다",
+   (html.match(/ledgerModalCommon\(\)/g) || []).length >= 3);
 ok("새 반품 카드도 실어 보낸다", /account: document\.getElementById\('retNewAccount'\)/.test(html));
 
 console.log("\n[8] ★ 시트에 열이 생기면 저절로 쓰인다 ★");

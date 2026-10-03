@@ -64,6 +64,17 @@ ok("기간으로 세지 않는다", !/intakeToday \+= /.test(함수));
 
 /* ── 화면 흉내 ───────────────────────────────────────────────── */
 const ctx = {
+  /*  ★ 단계 거르기 ★  (2026-10-04)
+      renderReturnActiveList 이 RETURN_STAGE_FILTER 를 보게 된 뒤 이 시험은
+      ReferenceError 로 터져 ④부터 통째로 안 돌았다. 빈 값은 «안 거른다»는
+      뜻이라, 진행/완료 가름을 재는 이 시험의 전제와 맞는다.  */
+  RETURN_STAGE_FILTER: "",
+  /*  ★ 담당자 거르기·단계 칩 ★  (2026-10-04)
+      같은 까닭으로 둘 더 생겼다. 그리는 쪽 일이라 이 시험의 것이 아니다 —
+      빈 값·아무 일 안 하는 것으로 둔다. 거르기 자체는 ④~⑤가 따로 잰다.  */
+  RETURN_STAFF_FILTER: "",
+  retFillStaffPick: () => {},
+  retStageChipsHtml: () => "",
   console, JSON, String, Number, Array, Math,
   RETURN_ALL_ROWS: [], RETURN_DONE_ROWS: [], RETURN_DONE_DAYS: 45,
   RETURN_QUERY: "", RETURN_ACTIVE_ROWS: [], RETURN_SORT: "new", RETURN_SHOW_LIMIT: 30,

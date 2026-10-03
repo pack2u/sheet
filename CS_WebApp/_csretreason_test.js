@@ -241,10 +241,18 @@ ok("카드 화면이 귀책을 낸다", /retCaseRowHtml\('귀책', c\.fault\)/.t
 
 console.log("\n─── ⑫ 두 화면이 서버로 같은 값을 보낸다 ───");
 ["retNew", "ledger"].forEach((pfx) => {
-  ok(pfx + " 가 fault 를 보낸다",
-    new RegExp("fault: document\\.getElementById\\('" + pfx + "Fault'\\)\\.value").test(html));
-  ok(pfx + " 가 reason 을 보낸다",
-    new RegExp("reason: document\\.getElementById\\('" + pfx + "Reason'\\)\\.value").test(html));
+  /*  ★ 읽는 «방식»이 화면마다 다르다 ★  (2026-10-04)
+      접수 화면은 아직 document.getElementById 로 직접 읽고, 기록 화면은
+      2026-10-01 에 ledgerModalCommon 한 곳으로 모여 g('ledgerFault') 가 됐다
+      (단건·여러건이 갈라져 귀책·사유가 사라졌던 일을 막은 것이다).
+      시험이 한 가지 모양만 찾아 기록 쪽 넷이 빨갰다. 둘 다 받아 준다 —
+      무엇을 보내는지가 뜻이고, 어떻게 읽는지는 아니다.  */
+  const 보내나 = function (칸) {
+    return new RegExp(칸 + ": document\\.getElementById\\(\\'" + pfx + 칸.replace(/^./, c => c.toUpperCase()) + "\\'\\)").test(html) ||
+           new RegExp(칸 + ": g\\(\\'" + pfx + 칸.replace(/^./, c => c.toUpperCase()) + "\\'\\)").test(html);
+  };
+  ok(pfx + " 가 fault 를 보낸다", 보내나("fault"));
+  ok(pfx + " 가 reason 을 보낸다", 보내나("reason"));
   ok(pfx + " 임시저장에 두 칸이 들어 있다",
     new RegExp("'" + pfx + "Fault', '" + pfx + "Reason'").test(html));
   ok(pfx + " 화면 열 때 채우기가 기본값보다 «먼저»", (function () {
@@ -280,21 +288,31 @@ ok("서버 표도 그 넷이다",
 });
 ok("두 화면 다 상태를 서버로 보낸다",
   /status: document\.getElementById\('retNewStatus'\)\.value/.test(html) &&
-  /status: document\.getElementById\('ledgerStatus'\)\.value/.test(html));
+  /status: g\('ledgerStatus'\)/.test(html));
+/*  ★ 이 시험이 지키려는 것 ★
+      기록 화면(주문송장조회)에서 올린 카드에 접수 화면에는 있는 값이 빠지면
+      대장에 빈 칸으로 들어간다. 2026-09 에 상태가 그렇게 비어 단계가 안 잡혔다.
+    ★ 기록 쪽 꾸러미가 둘로 갈렸다 ★  (2026-10-04)
+      retMergeInto(ledgerModalCommon(), { … }) — 창에서 읽는 것과 주문에서
+      오는 것이 나뉘었다. 한쪽만 보면 늘 「빠졌다」가 된다. 둘을 합쳐 본다.  */
 ok("★ 기록 화면이 접수 화면과 «같은 값»을 보낸다 ★", (function () {
-  const 뽑 = function (fn) {
-    const i = html.indexOf(".submitReturnLedger({", html.indexOf(fn));
-    const e = html.indexOf("});", i);
-    return (html.slice(i, e).match(/^\s*(\w+):/gm) || []).map(function (x) {
+  const 열쇠 = function (조각) {
+    return (조각.match(/^\s*(\w+):/gm) || []).map(function (x) {
       return x.trim().replace(":", "");
     });
   };
-  const a = 뽑("function submitRetNew");
+  const 꾸러미 = function (fn, 여는말) {
+    const i = html.indexOf(여는말, html.indexOf(fn));
+    if (i < 0) return [];
+    return 열쇠(html.slice(i, html.indexOf("});", i)));
+  };
+  const a = 꾸러미("function submitRetNew", ".submitReturnLedger({");
   const b = {};
-  뽑("function submitLedger").forEach(function (k) { b[k] = 1; });
-  //  source·origin·carrier·orderNo 는 주문에서 오는 것이라 접수 화면엔 없다
-  const 빠진 = a.filter(function (k) { return !b[k]; });
-  return 빠진.length === 0;
+  꾸러미("function ledgerModalCommon", "return {").forEach(function (key) { b[key] = 1; });
+  꾸러미("function submitLedger", "retMergeInto(ledgerModalCommon(), {").forEach(function (key) { b[key] = 1; });
+  const 빠진 = a.filter(function (key) { return !b[key]; });
+  if (빠진.length) console.log("       빠진 값: " + 빠진.join(", "));
+  return a.length > 5 && 빠진.length === 0;
 })());
 
 console.log("\n─── ⑬ 사유도 비고 길을 탄다 (대장에 사유 열이 없다) ───");

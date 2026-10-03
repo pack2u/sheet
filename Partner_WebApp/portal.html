@@ -493,7 +493,7 @@
     .meta { font-size: 12.5px; color: var(--text-secondary); line-height: 1.65; word-break: break-all; }
     /*  다시 보내는 것 (2026-10-02) — 돌려받는 품목 바로 아래.
         초록은 「나가는 것」을 뜻한다. CS 카드(.ret-reship)와 같은 뜻의 색이다. */
-    .c-reship { margin-top: 3px; font-size: 11.5px; color: var(--accent-green, #2e7d57); line-height: 1.45; }
+    .c-reship { margin-top: 3px; font-size: 11.5px; color: var(--accent-green); line-height: 1.45; }
     .meta em { color: var(--text-muted); font-style: normal; }
     .sub { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
     /* 전화번호 딱지 — 작고 조용하게. 「안심번호뿐」일 때만 색을 준다
@@ -588,6 +588,18 @@
       font-size: 9.5px; color: var(--text-secondary); text-align: center; line-height: 1.3;
     }
     .ev-thumbs button.fail .alt { display: flex; }
+    /*  ★ 반품 영상 칸 ★  (2026-10-04 — 인라인에서 옮겨 왔다)
+        10/01 에 급히 인라인 style 로 넣었더니 거의 검은 바탕과 흰 글자가 박혀,
+        밝은 테마에서 그 칸만 검은 네모로 남고 _prptheme 시험이 빨개졌다.
+        사진 칸과 같은 토큰을 쓴다 — 크기도 같다(92px). 작게 두면 영상이
+        덜 중요한 것처럼 보인다.  */
+    .thumb-vid {
+      display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+      width: 92px; height: 92px; border-radius: 7px; text-decoration: none;
+      border: 1px solid transparent; background: var(--bg-sunken);
+      color: var(--text-bright); font-size: 24px; line-height: 1;
+    }
+    .thumb-vid span { font-size: 11px; margin-top: 4px; color: var(--text-secondary); }
 
     /* 처리 단계 — "어디까지 됐나" 를 한눈에 보여 문의를 줄인다 */
     .steps { display: flex; gap: 3px; margin: 9px 0 2px; }
@@ -1448,9 +1460,7 @@
           n++;
           //  .thumb 를 붙이면 아래 클릭 처리가 사진 확대로 가로챈다 — 따로 이름을 준다. 크기는 사진 칸(92px)과 같게
           h += '<a class="thumb-vid" href="' + esc(urls[i]) + '" target="_blank" rel="noopener"' +
-            ' title="영상 재생" style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;' +
-            'width:92px;height:92px;border-radius:7px;background:#1f1f1f;color:#fff;font-size:24px;text-decoration:none">' +
-            '▶<span style="font-size:11px;margin-top:4px">영상</span></a>';
+            ' title="영상 재생" onclick="event.stopPropagation()">▶<span>영상</span></a>';
           continue;
         }
         /*  드라이브든 보관소든 «볼 수 있는 주소»로 바꿔 싣는다.

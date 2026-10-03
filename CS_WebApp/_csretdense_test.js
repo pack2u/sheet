@@ -30,6 +30,27 @@ const html = fs.readFileSync("home.html", "utf8");
 const has = (s) => html.indexOf(s) >= 0;
 const 몇곳 = (s) => html.split(s).length - 1;
 
+/*  ★ 궜칙은 «줄 머리»에서 찾는다 ★  (2026-10-04)
+
+    여태 html.indexOf(".ret-tl-track > .ret-proc:first-child {") 로 집었다.
+    그런데 2026-10 에 더 좀은 궜칙이 «위»에 생겼다 —
+      .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track > .ret-proc:first-child {
+    같은 글자로 끝나므로 indexOf 가 그것을 먼저 집었고, 거기엔 일부러
+    width: auto · flex: none 가 들었다. 그래서 여섯 줄이 한긌번에 물갔다.
+    기본 궜칙은 먀날했다 — 시험이 엉뚱한 데를 보고 있었다.
+    정규식 없이 본다 — 선택자 «앎»이 줄바휘과 공백뿐인 것만 기본 궜칙이다.  */
+const 규칙몸통 = (선택자) => {
+  let at = -1;
+  while ((at = html.indexOf(선택자 + " {", at + 1)) >= 0) {
+    const 줄머리 = html.lastIndexOf(String.fromCharCode(10), at);
+    const 앞 = html.slice(줄머리 + 1, at);
+    if (앞.trim() !== "") continue;            //  남의 선택자 꼬리다
+    const 끝 = html.indexOf("}", at);
+    return 끝 < 0 ? "" : html.slice(at, 끝);
+  }
+  return "";
+};
+
 /* ── [1] 맨 앞(=최신) 한 장이 폭을 다 쓴다 ──────────────── */
 console.log("\n[1] 이력 맨 앞 한 장");
 {
@@ -37,15 +58,13 @@ console.log("\n[1] 이력 맨 앞 한 장");
   //  최신이 앞이다 — 서버가 내림차순으로 준다(_cs_parseReturnTimeline_)
   ok("★ 맨 앞 한 장에 거는 규칙이 있다", has(".ret-tl-track > .ret-proc:first-child"));
   ok("★ 「한 장뿐일 때만」이 아니다", html.indexOf(".ret-tl-track > .ret-proc:only-child") < 0);
-  const i = html.indexOf(".ret-tl-track > .ret-proc:first-child {");
-  const 몸통 = i >= 0 ? html.substring(i, i + 200) : "";
+  const 몸통 = 규칙몸통(".ret-tl-track > .ret-proc:first-child");
   //  flex-grow 만으로는 부모가 내용만큼만 넓을 때 안 늘어난다 — 바닥을 100% 로 깐다
   ok("★ 늘어나게 되어 있다", 몸통.indexOf("flex: 1 1 100%") >= 0);
   ok("★ 굳은 폭을 푼다 (바닥을 100% 로)", 몸통.indexOf("width: 100%") >= 0);
   ok("★ 그래도 너무 좁아지진 않는다", 몸통.indexOf("min-width: 128px") >= 0);
   //  ★ 사진은 오른쪽 칸에 세운다 (2026-09-17) ★
-  const g = html.indexOf(".ret-tl-track > .ret-proc:first-child.photo {");
-  const 격자 = g >= 0 ? html.substring(g, g + 420) : "";
+  const 격자 = 규칙몸통(".ret-tl-track > .ret-proc:first-child.photo");
   ok("★ 사진 이력은 두 칸으로 나눈다", 격자.indexOf("display: grid") >= 0);
   ok("★ 왼쪽은 글, 오른쪽은 사진", 격자.indexOf("grid-template-columns: minmax(0, 1fr) auto") >= 0);
   //  시각·구분이 없는 이력도 있다. 줄 번호로 박으면 사진이 엉뚱한 줄에 앉는다
@@ -56,8 +75,7 @@ console.log("\n[1] 이력 맨 앞 한 장");
     has(".ret-tl-track > .ret-proc:first-child.photo > .ret-proc-body { grid-area: body; }"));
   ok("  공개 표시는 아래 한 줄을 다 쓴다",
     has(".ret-tl-track > .ret-proc:first-child.photo > .ret-share { grid-area: share; }"));
-  const t2 = html.indexOf(".ret-tl-track > .ret-proc:first-child.photo > .ret-proc-thumbs {");
-  const 사진칸 = t2 >= 0 ? html.substring(t2, t2 + 320) : "";
+  const 사진칸 = 규칙몸통(".ret-tl-track > .ret-proc:first-child.photo > .ret-proc-thumbs");
   ok("★ 사진이 많아도 글 칸을 밀어내지 않는다", 사진칸.indexOf("max-width: 55%") >= 0);
 
   //  여러 장일 때 옛것은 그대로여야 한다 — 옆으로 밀어 보는 길이 막히면 안 된다
