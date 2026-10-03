@@ -585,6 +585,17 @@
       font-size: 9.5px; color: var(--text-secondary); text-align: center; line-height: 1.3;
     }
     .ev-thumbs button.fail .alt { display: flex; }
+    /*  ★ 반품 영상 칸 ★  (2026-10-04)
+        v2 물류 입고가 영상도 올린다. <img> 로 그리면 깨진 네모가 남으므로
+        따로 칸을 둔다 — 눌러 새 창에서 재생한다(라이트박스는 사진만 다룬다).
+        사진 칸과 «같은 크기»여야 한다. 작게 두면 영상이 덜 중요한 것처럼 보인다. */
+    .ev-thumbs .ev-vid {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      width: 92px; height: 92px; border-radius: 7px; text-decoration: none;
+      border: 1px solid transparent; background: var(--bg-sunken);
+      color: var(--text-bright); font-size: 22px; line-height: 1;
+    }
+    .ev-thumbs .ev-vid span { font-size: 10px; margin-top: 4px; color: var(--text-secondary); }
 
     /* 처리 단계 — "어디까지 됐나" 를 한눈에 보여 문의를 줄인다 */
     .steps { display: flex; gap: 3px; margin: 9px 0 2px; }
@@ -1421,12 +1432,40 @@
       return r + (r.indexOf('?') >= 0 ? '&' : '?') + 'width=' + w + '&quality=70';
     }
 
+    /*  ★ 동영상이냐 ★  (2026-10-04)
+
+        > "그리고 동영상 올리기도 가능하게 해줘"
+
+        v2 물류 입고가 영상도 올린다(v2 sql/70). CS 웹앱은 10/01 에 「▶ 영상」
+        칸을 받았는데 포털은 못 받았다 — 그래서 업체 화면에서는 영상이
+        «죽은 사진 칸»으로 떨어졌다. 보관소 주소라 photoSrc 가 주소를 돌려주고,
+        그 주소를 <img> 에 싣고, 그림이 아니니 onerror 가 두 번 돌아
+        「사진 열기」 글자만 남는다. 눌러도 라이트박스에 아무것도 안 뜬다.
+        올라갔는데 안 보이는 것은 안 올라간 것과 같다.
+
+        ★ 가르는 규칙은 CS 와 «같은 한 줄»이어야 한다 ★
+          CS 웹앱 retIsVideoUrl · 서버 _cs_isVideoUrl_ 과 같다.
+          갈라지면 한쪽은 영상으로 그리고 한쪽은 사진으로 그린다
+          (_prpvideo_test.js 가 세 자리를 맞대 본다).  */
+    function isVideoUrl(u) {
+      return /\.(mp4|mov|m4v|webm|3gp)$/i.test(String(u || '').split('?')[0]);
+    }
+
     /** 주소 하나 → 그 너비로 볼 수 있는 주소. 우리 사진이 아니면 '' */
     function photoSrc(u, w) {
+      /*  영상은 «사진 주소»가 없다. 여기서 막아야 라이트박스와 linkify 가
+          영상을 사진으로 착각하지 않는다 — 부르는 쪽마다 막으면 한 곳을 빼먹는다. */
+      if (isVideoUrl(u)) return '';
       var id = driveId(u);
       if (id) return 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(id) + '&sz=w' + w;
       var st = storeUrl(u);
       return st ? storeThumb(st, w) : '';
+    }
+
+    /** 우리가 그릴 수 있는 영상 주소인가 — 보관소·드라이브만 받는다 */
+    function videoSrc(u) {
+      if (!isVideoUrl(u)) return '';
+      return storeUrl(u) || (driveId(u) ? String(u) : '');
     }
 
     /**
@@ -1438,6 +1477,17 @@
       var urls = String(text || '').match(/https?:\/\/[^\s]+/g) || [];
       var h = '', n = 0;
       for (var i = 0; i < urls.length; i++) {
+        /*  ★ 영상은 「▶ 영상」 칸으로 ★  (2026-10-04)
+            새 창에서 재생한다. 앱 안 확대보기(라이트박스)는 사진만 다룬다 —
+            <img> 로는 재생이 안 되고, 거기까지 손대면 팝업을 다시 설계해야 한다.
+            onclick 으로 번짐을 막는다. 안 막으면 카드가 접힌다. */
+        var vid = videoSrc(urls[i]);
+        if (vid) {
+          n++;
+          h += '<a class="ev-vid" href="' + esc(vid) + '" target="_blank" rel="noopener"' +
+            ' title="영상 재생" onclick="event.stopPropagation()">▶<span>영상</span></a>';
+          continue;
+        }
         /*  드라이브든 보관소든 «볼 수 있는 주소»로 바꿔 싣는다.
             크게보기는 id 가 아니라 주소를 받는다 — 보관소 사진에는 id 가 없다. */
         var small = photoSrc(urls[i], 480);
@@ -1457,6 +1507,19 @@
           '<span class="alt">사진<br>열기</span></button>';
       }
       return n ? '<div class="ev-thumbs">' + h + '</div>' : '';
+    }
+
+    /*  이력 줄에서 «우리가 그릴 수 있는» 첨부만 센다.  (2026-10-04)
+        아무 링크나 세면 송장조회 주소까지 「사진 1장」이 된다. 그리는 쪽과
+        같은 판정(videoSrc · photoSrc)을 써야 «보이는 수»와 «적힌 수»가 맞는다. */
+    function attachCount(text) {
+      var urls = String(text || '').match(/https?:\/\/[^\s]+/g) || [];
+      var out = { 사진: 0, 영상: 0 };
+      for (var i = 0; i < urls.length; i++) {
+        if (videoSrc(urls[i])) out.영상++;
+        else if (photoSrc(urls[i], 480)) out.사진++;
+      }
+      return out;
     }
 
     /**
@@ -1630,10 +1693,20 @@
               j++;
             }
             tb = thumbsHtml(urls);
-            var 장수 = j - i;
             i = j - 1;
-            var cap = String(e.text || '').replace(/https?:\/\/[^\s]+/g, '').trim() || '사진 첨부';
-            if (장수 > 1) cap += ' ' + 장수 + '장';
+            /*  ★ 몇 장인지 «실제 파일»로 센다 ★  (2026-10-04)
+                여태 묶인 «줄» 수(j - i)를 「장」으로 적었다. 영상이 섞이면
+                영상을 「장」이라 부르고, 한 줄에 두 장이 실리면 한 장이라 부른다.
+                대장이 적는 말(「사진 2장 · 영상 1개」)과 같은 셈으로 맞춘다. */
+            var 센것 = attachCount(urls);
+            var 사진 = 센것.사진, 영상 = 센것.영상;
+            var cap = String(e.text || '').replace(/https?:\/\/[^\s]+/g, '').trim();
+            if (!cap) cap = (사진 && 영상) ? '첨부' : (영상 ? '영상 첨부' : '사진 첨부');
+            var 셈 = [];
+            if (사진 && 영상) 셈 = ['사진 ' + 사진 + '장', '영상 ' + 영상 + '개'];
+            else if (사진 > 1) 셈 = [사진 + '장'];
+            else if (영상 > 1) 셈 = [영상 + '개'];
+            if (셈.length) cap += ' ' + 셈.join(' · ');
             h += '<div class="ev-body">' + esc(cap) + '</div>' + tb;
           } else {
             h += '<div class="ev-body">' + linkify(e.text) + '</div>';
