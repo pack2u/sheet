@@ -2207,7 +2207,23 @@ function submitReturnLedger(data) {
     if (col.item >= 0) row[col.item] = String(data.item || "").trim();
     if (col.qty >= 0) row[col.qty] = data.qty || "";
     if (col.invoice >= 0) row[col.invoice] = invoice;
-    if (col.type >= 0) row[col.type] = String(data.type || "단순반품").trim();
+    /*  ★ 유형도 «칸이 없으면 비고로» ★  (2026-10-04)
+
+        10월 협의안에는 「교환반품구분」 칸이 없다. 그런데 전에는 /재출고/ 가
+        「재출고상품」(V)을 유형으로 잡아 거기에 박고 있었다 — 재출고할 물건
+        이름을 적는 칸이 「단순반품」으로 덮였다. 정규식을 좁혀 그 일은 멎었는데,
+        그대로 두면 이번엔 유형이 «아무 데도» 안 남는다.
+        반품비·귀책·반품송장·환불계좌가 걸어온 길과 같이 비고에 남긴다.
+        시트에 「교환반품구분」 열을 만들면 코드를 안 고쳐도 그쪽으로 옮겨 간다
+        (csAddReturnLedgerCols 가 발생원인 뒤에 끼워 준다).
+
+        ★ 기본값은 적지 않는다 ★  고르지 않았을 때의 「단순반품」은 «소식»이
+          아니다. 모든 카드에 「구분: 단순반품」 한 줄을 붙이면 비고가 그 줄로
+          덮여, 정작 사람이 적은 말이 안 읽힌다. 안 적힌 것이 단순반품이다.  */
+    var typeIn = String(data.type || "").trim();
+    var typeToNotice = "";
+    if (col.type >= 0) row[col.type] = typeIn || "단순반품";
+    else if (typeIn && typeIn !== "단순반품") typeToNotice = "구분: " + typeIn;
 
     /* 사유(L열) — 고객이 «왜» 보냈나. 유형(K열)과 다른 칸이다.
        2026-09-30 까지 카드에만 보여 주고 «적는 데»가 없었다. */
@@ -2269,6 +2285,8 @@ function submitReturnLedger(data) {
       var noticeLines = [];
       if (data.memo) noticeLines.push(_cs_ledgerStamp_(data.staff) + " " + String(data.memo || "").trim());
       if (faultToNotice) noticeLines.push(faultToNotice);
+      /*  협의된 열 차례와 같게 — 발생원인(귀책/사유) → 교환반품구분 → 반품비 */
+      if (typeToNotice) noticeLines.push(typeToNotice);
       if (feeToNotice) noticeLines.push(feeToNotice);
       if (retInvToNotice) noticeLines.push(retInvToNotice);
       if (acctToNotice) noticeLines.push(acctToNotice);
@@ -2705,7 +2723,20 @@ function _cs_mapReturnLedgerCols_(header) {
     // 2026-09-04: 실제 헤더 문구를 넣는다.
     //   시트는 「재출고/단순/오주문입력/오배송」이라고 적혀 있는데 정규식에 없어서
     //   지금껏 K열 위치 폴백으로만 맞고 있었다. 9월에 열이 한 칸 밀리자 바로 깨졌다.
-    else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유|재출고|오주문입력/.test(h)) col.type = i;
+    /*  ★ 「재출고」 한 낱말로는 못 찾는다 ★  (2026-10-04)
+
+        9월 머리글이 「재출고/단순/오주문입력/오배송」 이라 /재출고/ 를 넣었다.
+        그런데 10월 탭에는 「재출고상품」·「재출고배송비」 두 칸이 «따로» 생겼다.
+        둘 다 /재출고/ 에 걸려, 가장 앞인 「재출고상품」(V)이 유형 자리를 차지했다.
+
+        읽기만 틀리는 것이 아니다 — 카드를 쓸 때 row[col.type] 에 「단순반품」을
+        박으므로, 10월에 접수한 건마다 «재출고상품 칸이 「단순반품」으로 덮인다».
+        재출고할 물건 이름을 적는 칸이다. 조용히 덮고 아무도 모른다.
+
+        그래서 «슬래시가 붙은» 것만 받는다 — 「재출고/…」 는 여러 낱말을 늘어놓은
+        구분 칸이고, 「재출고상품」 은 한 칸짜리 다른 열이다.
+        9월 것은 「오주문입력」으로도 걸리므로 잃는 것이 없다.  */
+    else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유|재출고\/|오주문입력/.test(h)) col.type = i;
     // 「반품/환불비용」이 실제 헤더다. 슬래시 때문에 /반품비/ 로는 안 걸린다.
     else if (col.fee < 0 && /반품비|반품운임|반품배송비|환불비용/.test(h)) col.fee = i;
     else if (col.notice < 0 && /고객요청|유의사항|비고/.test(h)) col.notice = i;
