@@ -33,8 +33,18 @@ function 꺼내기(src, 이름) {
   }
   throw new Error(이름 + " 끝 못 찾음");
 }
-eval(꺼내기(fs.readFileSync(곳("CS_WebApp/csOrderSearch.gs"), "utf8"), "_cs_returnStage_"));
-eval(꺼내기(fs.readFileSync(곳("Partner_WebApp/portal.html"), "utf8"), "stepIndex"));
+/*  ★ 도움 함수까지 꺼내야 돈다 ★  (2026-10-04)
+    _cs_returnStage_ 가 _cs_stageWord_ · _cs_stageFromTimeline_ 로 갈라진 뒤
+    이 시험은 「_cs_stageWord_ is not defined」로 터져 «한 번도 안 돌고 있었다».
+    터진 시험은 틀린 시험보다 나쁘다 — 아무도 안 보니 갈라짐을 못 잡는다. */
+var CS원본 = fs.readFileSync(곳("CS_WebApp/csOrderSearch.gs"), "utf8");
+eval(꺼내기(CS원본, "_cs_stageWord_"));
+eval(꺼내기(CS원본, "_cs_stageFromTimeline_"));
+eval(꺼내기(CS원본, "_cs_returnStage_"));
+var 포털원본 = fs.readFileSync(곳("Partner_WebApp/portal.html"), "utf8");
+eval(꺼내기(포털원본, "stageWord"));
+eval(꺼내기(포털원본, "stageFromTimeline"));
+eval(꺼내기(포털원본, "stepIndex"));
 
 /* CS 는 active(진행중) 를, 포털은 done(완료) 를 받는다 — 서로 반대다 */
 function 대장완료(s) {

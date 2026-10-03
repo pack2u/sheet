@@ -10,7 +10,7 @@
  *    · 상태순은 손 안 간 것부터, 같은 단계면 오래된 것이 위
  *    · 철회된 건은 흐름 밖이라 맨 뒤
  *
- * 실행: node _prpsort_test.js
+ * 실행: node Partner_WebApp/_prpsort_test.js  (어느 자리에서 불러도 된다)
  */
 const fs = require("fs");
 const vm = require("vm");
@@ -23,7 +23,11 @@ function check(label, got, want) {
     (ok ? "" : "   (기대: " + JSON.stringify(want) + ")"));
 }
 
-const html = fs.readFileSync("portal.html", "utf8");
+/*  ★ 어디서 불러도 같은 파일을 본다 ★  (2026-10-04)
+    상대 경로라 저장소 뿌리에서 돌리면 ENOENT 로 터졌다 — 이웃 시험들은
+    모두 __dirname 을 쓰는데 이것만 빠져 있었다. */
+const path = require("path");
+const html = fs.readFileSync(path.join(__dirname, "portal.html"), "utf8");
 function grabFn(name) {
   const i = html.indexOf("function " + name + "(");
   if (i < 0) throw new Error(name + " 를 못 찾음");
@@ -35,9 +39,15 @@ function grabFn(name) {
   throw new Error(name + " 본문이 안 닫힘");
 }
 
-const ctx = { SORT: "new" };
+/*  ★ sortRows 가 freshCount 를 쓴다 ★  (2026-10-04)
+    「새 소식이 있는 건은 맨 위」가 들어간 뒤 freshCount 가 없어
+    이 시험은 ReferenceError 로 «한 번도 안 돌고 있었다».
+    터진 시험은 틀린 시험보다 나쁘다 — 아무도 안 보니 갈라짐을 못 잡는다.
+    LAST_SEEN_KEY 를 빈 값으로 두면 freshCount 는 0 을 돌려준다 —
+    «새 소식 표시를 쓰지 않는 상태»다. 차례 자체를 재는 시험이라 그 편이 맞다. */
+const ctx = { SORT: "new", LAST_SEEN_KEY: "" };
 vm.createContext(ctx);
-vm.runInContext([grabFn("stepIndex"), grabFn("sortRows")].join("\n"), ctx);
+vm.runInContext([grabFn("evKey"), grabFn("freshCount"), grabFn("stageWord"), grabFn("stageFromTimeline"), grabFn("stepIndex"), grabFn("sortRows")].join("\n"), ctx);
 
 //  sortKey = dateYmd_역순번 (prpLedger.gs 와 같은 모양)
 const 행 = (id, ymd, seq, status, done) =>
