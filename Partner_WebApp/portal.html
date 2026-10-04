@@ -1533,9 +1533,11 @@
         return '<div class="ret-inv-box none"><div class="lab">반품송장</div>' +
           '<div class="val">아직 없습니다 — 수거 접수 후 나옵니다</div></div>';
       }
-      var u = trackUrl(inv, c.pickup);
+      //  반품송장 칸에 같이 적힌 수거 택배사가 가장 정확하다 (2026-10-04)
+      var 수거사 = c.returnCarrier || c.pickup || '';
+      var u = trackUrl(inv, 수거사);
       return '<div class="ret-inv-box"><div class="lab">반품송장' +
-        (c.pickup ? ' · ' + esc(c.pickup) : '') + '</div>' +
+        (수거사 ? ' · ' + esc(수거사) : '') + '</div>' +
         '<div class="val">' + (u
           ? '<a href="' + esc(u) + '" target="_blank" rel="noopener" title="배송조회 열기">' +
             esc(inv) + '</a>'
@@ -1609,7 +1611,11 @@
       }
       // 원송장은 우리가 보낸 것이라 택배사 힌트가 없다 → 네이버 검색으로 간다.
       // 반품송장은 수거입력처가 곧 택배사라 그 값을 힌트로 쓴다.
-      h += invLine('원송장', c.invoice, '');
+      /*  ★ 택배사를 알면 네이버 검색으로 안 빠진다 ★  (2026-10-04)
+          여태 세 번째 칸이 빈 글자였다 — 택배사를 적을 칸이 대장에 없었으니
+          알 길이 없었다. 10월부터 「원송장번호 / 택배사」 한 칸에 같이 적히고
+          서버가 갈라서 c.carrier 로 준다. 업체가 가장 자주 누르는 자리다.  */
+      h += invLine('원송장', c.invoice, c.carrier || '');
       if (c.pickup) h += '<br><em>수거</em> ' + esc(c.pickup);
       var ph = pickPhones(c.phone, c.phone2);
       if (ph.main) {

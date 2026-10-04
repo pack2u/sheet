@@ -186,7 +186,22 @@ function prpSubmitReturn(sid, data) {
     if (col.phone2Name >= 0 && p2NameIn) {
       row[col.phone2Name] = p2NameIn;
     }
-    if (col.pickup >= 0) row[col.pickup] = String(data.pickup || "").trim();
+    /*  ★ 업체가 고른 수거 택배사 ★  (2026-10-04)
+
+        > "택배사 한 칸에 같이 적게 해줘"
+
+        10월 협의안에는 「회수신청」 칸이 없다. 그래서 접수창에서 고른 택배사가
+        10/01 부터 아무 데도 안 적혔다 — 업체는 골랐으니 적힌 줄 알고,
+        CS 는 빈칸을 보고 안 골랐다고 안다. 2026-09-10 과 같은 일이다.
+        머리글이 「반품송장번호 / 택배사」이므로 그 칸에 같이 적는다.
+        번호는 아직 없다 — 「/ CJ대한통운」으로 두면 나중에 번호가 들어올 때
+        prpLedgerInvoiceReplaceNo_ 가 택배사를 지켜 준다.  */
+    var 수거사 = String(data.pickup || "").trim();
+    if (col.pickup >= 0) row[col.pickup] = 수거사;
+    else if (수거사 && col.returnInvoice >= 0) {
+      var 반품칸값 = prpLedgerInvoiceCell_("", 수거사);
+      if (반품칸값) row[col.returnInvoice] = 반품칸값;
+    }
     if (col.item >= 0) row[col.item] = item;
     if (col.qty >= 0) row[col.qty] = String(data.qty || "1").trim();
     if (col.invoice >= 0) row[col.invoice] = invoice;
@@ -365,9 +380,10 @@ function prpAddInquiry(sid, payload) {
       name: ctx.col.name >= 0 ? String(ctx.row[ctx.col.name] || "").trim() : "",
       item: ctx.col.item >= 0 ? String(ctx.row[ctx.col.item] || "").trim() : "",
       status: String(ctx.row[0] || "").trim(),
-      invoice: ctx.col.invoice >= 0 ? String(ctx.row[ctx.col.invoice] || "").trim() : "",
-      returnInvoice: ctx.col.returnInvoice >= 0
-        ? String(ctx.row[ctx.col.returnInvoice] || "").trim() : ""
+      //  한 칸에 담긴 번호와 택배사를 가른다 (2026-10-04)
+      invoice: prpSplitLedgerInvoice_(ctx.col.invoice >= 0 ? ctx.row[ctx.col.invoice] : "").번호,
+      returnInvoice: prpSplitLedgerInvoice_(
+        ctx.col.returnInvoice >= 0 ? ctx.row[ctx.col.returnInvoice] : "").번호,
     });
     if (!board || !board.ok) {
       prpLog_(g.sess.vendor, "보드실패", (board && board.error) || "원인 미상");

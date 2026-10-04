@@ -15,12 +15,16 @@
  *
  *  ★ 두 가지를 본다 ★
  *    ① 지워질 것이 있나          서버에 있고 로컬에 없는 파일 → 멈춘다
- *    ② 서버가 git 밖으로 갔나    서버 내용이 git HEAD 와 다른 파일 → 멈춘다
+ *    ② 서버가 git «역사 밖»인가  서버 내용이 어느 커밋에도 없으면 → 멈춘다
  *
- *    ②가 핵심이다. 로컬이 HEAD 보다 앞선 것은 «고친 것»이니 당연하다.
- *    하지만 «서버»가 HEAD 와 다르면 누가 편집기에서 고치고 커밋을 안 한 것이다.
- *    그걸 모르고 밀면 그 작업이 사라진다. 먼저 되찾아 커밋해야 한다.
+ *  ★ ②를 「HEAD 와 같은가」로 물으면 안 된다 ★  (2026-10-04 에 그렇게 썼다가 고쳤다)
+ *    배포는 «고친 것을 올리는 일»이다. 그러니 배포 직전에는 서버가 HEAD 보다
+ *    뒤처진 것이 당연하다. 그걸 멈추면 정상 배포가 전부 막히고, 그러면 사람은
+ *    검문을 끄거나 우회한다 — 안 막는 검문보다 그게 나쁘다.
  *
+ *    물어야 할 것은 «서버에 있는 그 내용이 우리 역사 안에 있나»다.
+ *    있으면 어느 시점에 커밋된 것을 배포해 둔 것이니 밀어도 잃는 게 없다.
+ *    없으면 누가 편집기에서 고치고 커밋을 안 한 것이다 — 그때 멈춘다.
  *  ★ 줄끝은 뜻이 아니다 ★
  *    편집기에서 내려오는 것은 LF, 저장소는 CRLF 다. CR 을 벗기고 견준다.
  *    안 그러면 매번 「전부 다르다」가 되어 아무도 이 검문을 안 쓴다.
@@ -37,6 +41,7 @@ import { tmpdir } from "node:os";
 import { join, basename, extname } from "node:path";
 
 const CR = String.fromCharCode(13);
+const SEP2 = String.fromCharCode(10) + "[2] ";
 const 벗기 = (s) => s.split(CR).join("");
 
 /** GAS 는 .gs/.js 를 같은 파일로 본다 — 이름만 견준다 */
@@ -73,23 +78,41 @@ export function 견주기({ 그냥 = false } = {}) {
     /* ① 지워질 것 */
     const 지워질것 = 서버.filter((f) => !로컬이름.has(이름만(f)));
 
-    /* ② 서버가 git 밖으로 간 것 */
+    /* ② 서버 내용이 이 파일의 «역사» 안에 있나 */
     const 밖으로 = [];
     for (const f of 서버) {
       const 짝 = 로컬.find((l) => 이름만(l) === 이름만(f));
       if (!짝) continue;
-      let 커밋된;
+
+      /*  줄끝을 고른 뒤 견준다 — 편집기는 LF, 저장소는 CRLF 다.
+          줄끝은 뜻이 아니므로 비교에서 빼야 매번 「다르다」가 되지 않는다. */
+      const 서버본 = 벗기(readFileSync(join(집, f), "utf8"));
+
+      let 커밋들 = [];
       try {
-        /*  stderr 를 받아 둔다 — 무시 목록의 _secrets.gs 는 HEAD 에 없고,
-            그때 git 이 fatal 한 줄을 뱉는다. 예상된 경우를 사람에게
-            오류처럼 보여 주면 정작 멈춰야 할 때의 말이 묻힌다. */
-        커밋된 = execFileSync("git", ["show", "HEAD:./" + 짝], {
-          cwd: 어디, encoding: "buffer", maxBuffer: 1 << 28,
-          stdio: ["ignore", "pipe", "pipe"],
-        }).toString("utf8");
-      } catch { continue; }          //  git 이 모르는 파일(무시 목록 등)은 넘긴다
-      const 서버내용 = readFileSync(join(집, f), "utf8");
-      if (벗기(서버내용) !== 벗기(커밋된)) 밖으로.push(짝);
+        /*  stderr 를 받아 둔다 — 무시 목록의 _secrets.gs 는 git 이 모르고,
+            그때 fatal 한 줄을 뱉는다. 예상된 경우를 오류처럼 보여 주면
+            정작 멈춰야 할 때의 말이 묻힌다. */
+        커밋들 = execFileSync("git", ["log", "--format=%H", "--", "./" + 짝], {
+          cwd: 어디, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+        }).split(String.fromCharCode(10)).filter(Boolean);
+      } catch { continue; }
+      if (!커밋들.length) continue;   //  git 이 모르는 파일은 넘긴다
+
+      /*  최근 것부터 본다 — 거의 언제나 «마지막 배포»가 최근 몇 커밋 안에 있다.
+          찾으면 바로 끝낸다. 못 찾으면 그 파일의 역사를 다 훑는다. */
+      let 찾음 = false;
+      for (const c of 커밋들) {
+        let 그때;
+        try {
+          그때 = execFileSync("git", ["show", c + ":./" + 짝], {
+            cwd: 어디, encoding: "buffer", maxBuffer: 1 << 28,
+            stdio: ["ignore", "pipe", "pipe"],
+          }).toString("utf8");
+        } catch { continue; }
+        if (벗기(그때) === 서버본) { 찾음 = true; break; }
+      }
+      if (!찾음) 밖으로.push(짝);
     }
 
     /*  서버에 없는 로컬 파일은 «새로 올라간다». 지우는 것이 아니라 막지는
@@ -115,7 +138,7 @@ export function 견주기({ 그냥 = false } = {}) {
       지워질것.forEach((f) => console.log("    · " + f));
     }
     if (밖으로.length) {
-      console.log("\n[2] 서버가 커밋된 것과 다릅니다 — 편집기에서 고치고 커밋을 안 한 것입니다");
+      console.log(SEP2 + "서버에 있는 내용이 커밋 «어디에도» 없습니다 — 편집기에서 고치고 커밋을 안 한 것입니다");
       밖으로.forEach((f) => console.log("    · " + f));
     }
     console.log("\n  먼저 되찾아 커밋하세요:");

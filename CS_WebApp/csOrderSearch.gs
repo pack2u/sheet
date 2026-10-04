@@ -2204,29 +2204,40 @@ function submitReturnLedger(data) {
           _cs_formatLedgerPhone_(data.phone2) + " (" + p2NameIn + ")";
       }
     }
-    if (col.pickup >= 0) {
-      var pickupVal = String(data.pickup || "").trim();
-      if (!pickupVal && data.carrier) pickupVal = String(data.carrier).trim();
-      if (!pickupVal) {
-        var bulkIdx = _cs_loadSabangBulkIndex_(false);
-        var recForCarrier = {
-          orderNo: data.orderNo,
-          invoice: data.invoice,
-          invDigits: String(data.invoice || "").replace(/[^0-9\s]/g, " ").trim(),
-          source: data.source,
-          origin: data.origin
-        };
-        pickupVal = _cs_lookupCarrierFromSabangBulk_(recForCarrier, bulkIdx);
-        if (!pickupVal) {
-          _cs_enrichCarrier_(recForCarrier, bulkIdx);
-          pickupVal = recForCarrier.carrier || "";
-        }
+    /*  ★ 택배사를 «먼저» 알아낸다 ★  (2026-10-04)
+
+        > "택배사 한 칸에 같이 적게 해줘"
+
+        여태 이 조회가 «if (col.pickup >= 0)» 안에 있었다. 10월 협의안에는
+        「회수신청」 칸이 없으므로 10/01 부터 조회 자체가 한 번도 안 돌았고,
+        택배사는 아무 데도 남지 않았다 — 수거 기사를 누가 보냈는지 알 수 없고
+        배송조회도 택배사를 몰라 네이버 검색으로 빠졌다.
+        칸이 있나 없나보다 «알아내는 일»이 먼저다. 적는 자리는 그 다음에 고른다.  */
+    var 택배사 = String(data.pickup || "").trim();
+    if (!택배사 && data.carrier) 택배사 = String(data.carrier).trim();
+    if (!택배사) {
+      var bulkIdx = _cs_loadSabangBulkIndex_(false);
+      var recForCarrier = {
+        orderNo: data.orderNo,
+        invoice: data.invoice,
+        invDigits: String(data.invoice || "").replace(/[^0-9\s]/g, " ").trim(),
+        source: data.source,
+        origin: data.origin
+      };
+      택배사 = _cs_lookupCarrierFromSabangBulk_(recForCarrier, bulkIdx);
+      if (!택배사) {
+        _cs_enrichCarrier_(recForCarrier, bulkIdx);
+        택배사 = recForCarrier.carrier || "";
       }
-      row[col.pickup] = pickupVal;
     }
+    //  전용 칸이 있는 옛 탭(「회수신청」)은 그대로 거기에도 적는다
+    if (col.pickup >= 0) row[col.pickup] = 택배사;
     if (col.item >= 0) row[col.item] = String(data.item || "").trim();
     if (col.qty >= 0) row[col.qty] = data.qty || "";
-    if (col.invoice >= 0) row[col.invoice] = invoice;
+    /*  ★ 「원송장번호 / 택배사」 한 칸에 같이 적는다 ★
+        머리글이 그렇게 적혀 있다. 읽는 쪽은 _cs_splitLedgerInvoice_ 로 갈라
+        번호와 택배사를 따로 받는다 — 숫자만 뽑던 자리는 손댈 것이 없다.  */
+    if (col.invoice >= 0) row[col.invoice] = _cs_ledgerInvoiceCell_(invoice, 택배사);
     /*  ★ 협의된 배열에는 교환반품구분 칸이 없다 ★  (2026-10-01)
         그런데 창은 여전히 「단순반품/교환/재출고…」를 묻는다. 칸이 없다고
         고른 값을 조용히 버리면, 사람은 적힌 줄 알고 나중에 아무도 모른다.
@@ -2305,9 +2316,19 @@ function submitReturnLedger(data) {
     // 반품송장 — 전용 열이 있으면 열에 쓰고, 없는 탭이면 예전처럼 비고에 남긴다
     var retInv = data.returnInvoice ? _cs_formatLedgerInvoice_(data.returnInvoice) : "";
     var retInvToNotice = "";
-    if (retInv) {
-      if (col.returnInvoice >= 0) row[col.returnInvoice] = retInv;
-      else retInvToNotice = "반품송장: " + retInv;
+    /*  ★ 「반품송장번호 / 택배사」도 한 칸이다 ★  (2026-10-04)
+        수거를 어느 택배사가 가는지가 여기 말고는 남을 곳이 없다
+        (협의안에 「회수신청」 칸이 없다).
+
+        ★ 번호가 아직 없어도 택배사는 적는다 ★
+          접수 시점에는 수거 번호가 없다. 번호가 나올 때까지 기다리면
+          그때는 택배사를 아는 사람이 없다 — 지금 「/ 롯데」로 적어 두면
+          나중에 번호가 들어올 때 _cs_ledgerInvoiceReplaceNo_ 가 지켜 준다.  */
+    if (col.returnInvoice >= 0) {
+      var 반품칸값 = _cs_ledgerInvoiceCell_(retInv, 택배사);
+      if (반품칸값) row[col.returnInvoice] = 반품칸값;
+    } else if (retInv) {
+      retInvToNotice = "반품송장: " + retInv;
     }
 
     /* 환불계좌 — 반품송장과 같은 방식. 전용 열이 있으면 열에, 없으면 비고에.
@@ -3020,6 +3041,106 @@ function _cs_pickPhones_(phone, phone2) {
   };
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  송장 칸 하나에 «번호와 택배사»를 같이 담는다  (2026-10-04)
+ *
+ *  > "택배사 한 칸에 같이 적게 해줘"
+ *
+ *  ★ 왜 한 칸인가 ★
+ *    10월 협의안의 머리글이 「원송장번호 / 택배사」·「반품송장번호 / 택배사」다.
+ *    택배사 전용 칸(「회수신청」)은 없어졌다. 그런데 코드는 번호만 적고 있어서
+ *    조회해 온 택배사가 그냥 버려졌다 — 수거 기사를 누가 보냈는지 알 수 없고,
+ *    배송조회 링크도 택배사를 몰라 네이버 검색으로 빠졌다.
+ *
+ *  ★ 적는 모양은 머리글과 같게 ★   4466-5170-4219 / CJ대한통운
+ *    사람이 머리글을 보고 그대로 적을 수 있어야 한다. 새 기호를 만들면
+ *    사람이 적은 줄과 코드가 적은 줄이 달라진다.
+ *
+ *  ★ 읽는 쪽은 «번호만» 받던 그대로 둔다 ★
+ *    대장을 읽는 자리가 열 곳이 넘고, 거의 다 숫자만 뽑아 쓴다
+ *    (입고 스캔·중복 검사·배송조회). 칸 내용을 그대로 흘려보내면 그 모두를
+ *    고쳐야 하고, 한 곳만 빠뜨리면 조용히 틀린다.
+ *    그래서 «가름»을 한 곳에 두고, 읽는 쪽에는 번호와 택배사를 따로 준다.
+ *
+ *  ★ 송장이 여럿인 칸도 있다 ★
+ *    합포장 반품은 「446651704219 440812891733」처럼 여러 개가 들어간다.
+ *    그래서 「마지막 / 뒤」만 택배사로 본다 — 숫자 덩어리는 건드리지 않는다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var _CS_INV_CARRIER_SEP_ = " / ";
+
+/**
+ * 송장 칸을 번호와 택배사로 가른다.
+ * @param {*} cell 대장 칸 값
+ * @return {{번호:string, 택배사:string}}
+ */
+function _cs_splitLedgerInvoice_(cell) {
+  var s = String(cell == null ? "" : cell).trim();
+  if (!s) return { 번호: "", 택배사: "" };
+  var at = s.lastIndexOf("/");
+  if (at < 0) return { 번호: s, 택배사: "" };
+
+  var 뒤 = s.slice(at + 1).trim();
+  var 앞 = s.slice(0, at).trim();
+  /*  ★ 택배사인지 «확인»하고 가른다 ★
+      「4466/5170/4219」처럼 빗금으로 끊어 적은 번호도 있고, 9월 탭의
+      「재출고/단순/오주문입력/오배송」이 송장 칸에 잘못 들어온 줄도 있다.
+      택배사 이름은 짧고 숫자가 길게 들어가지 않는다. 아니면 통째로 번호다 —
+      멀쩡한 번호를 쪼개는 쪽이 택배사를 못 읽는 쪽보다 나쁘다.  */
+  //  「446651704219 / 」처럼 뒤가 비면 빗금만 떼고 번호로 본다
+  if (!뒤) return { 번호: 앞 || s, 택배사: "" };
+  /*  ★ 번호 없이 택배사만 적힌 칸 ★  (2026-10-04)
+      수거를 접수할 때는 «어느 택배사가 가는지»를 먼저 알고 번호는 나중에 나온다.
+      그때 「/ CJ대한통운」으로 적어 둔다 — 숫자를 뽑으면 빈 값이라
+      입고 스캔·중복 검사는 「번호 없음」으로 여태처럼 읽는다.  */
+  if (!앞) {
+    if (뒤.length > 12 || /\d{4,}/.test(뒤)) return { 번호: s, 택배사: "" };
+    return { 번호: "", 택배사: 뒤 };
+  }
+  /*  ★ 앞에 «진짜 송장번호»가 있을 때만 택배사로 본다 ★
+      이것이 없으면 「재출고/단순/오주문입력/오배송」의 「오배송」이 택배사가 되고
+      「4466/5170/4219」의 「4219」도 택배사가 된다. 둘 다 실제로 있는 줄이다.
+      송장번호는 8자리 이상 숫자 덩어리다 — 그게 앞에 있어야 가른다.  */
+  if (!/\d{8,}/.test(앞.replace(/[^0-9]/g, ""))) return { 번호: s, 택배사: "" };
+  if (뒤.length > 12) return { 번호: s, 택배사: "" };
+  if (/\d{4,}/.test(뒤)) return { 번호: s, 택배사: "" };
+  return { 번호: 앞, 택배사: 뒤 };
+}
+
+/**
+ * 번호와 택배사를 한 칸으로 합친다. 택배사가 없으면 번호만.
+ * 번호가 없으면 빈 칸이다 — 택배사만 남기면 숫자를 뽑는 쪽이 빈 송장으로 읽는다.
+ */
+function _cs_ledgerInvoiceCell_(번호, 택배사) {
+  var n = String(번호 == null ? "" : 번호).trim();
+  var c = String(택배사 == null ? "" : 택배사).replace(/\s+/g, " ").trim();
+  if (c.length > 12 || /\d{4,}/.test(c)) c = "";   //  택배사로 볼 수 없는 값은 버린다
+  /*  ★ 번호가 없어도 택배사는 남긴다 ★  (2026-10-04)
+      수거 접수는 택배사를 먼저 알고 번호를 나중에 받는다. 그때 버리면
+      누가 수거하는지가 사라지고, 나중에 번호가 들어와도 되살릴 길이 없다.  */
+  if (!n) return c ? _CS_INV_CARRIER_SEP_.replace(/^\s+/, "") + c : "";
+  if (!c) return n;
+  //  이미 붙어 있으면 두 번 붙이지 않는다
+  if (_cs_splitLedgerInvoice_(n).택배사) return n;
+  if (c.length > 12 || /\d{4,}/.test(c)) return n;   //  택배사로 볼 수 없는 값은 안 적는다
+  return n + _CS_INV_CARRIER_SEP_ + c;
+}
+
+/**
+ * 이미 적힌 칸의 번호만 갈아 쓴다 — 택배사는 그대로 둔다.
+ * 수거 접수·입고 스캔이 번호를 덮어쓸 때 택배사를 지우지 않게 한다.
+ */
+/**
+ * 이미 적힌 칸의 번호만 갈아 쓴다 — 택배사는 그대로 둔다.
+ * 수거 접수·입고 스캔이 번호를 덮어쓸 때 택배사를 지우지 않게 한다.
+ * 새 번호가 비어도 택배사는 남긴다 — 번호를 지운 것이 택배사를 지운 뜻은 아니다.
+ */
+function _cs_ledgerInvoiceReplaceNo_(옛칸, 새번호) {
+  var 옛 = _cs_splitLedgerInvoice_(옛칸);
+  return _cs_ledgerInvoiceCell_(새번호, 옛.택배사);
+}
+
 function _cs_formatLedgerInvoice_(raw) {
   var s = String(raw || "").trim();
   var parts = s.match(/\d{10,14}/g);
@@ -3413,7 +3534,9 @@ function updateReturnLedgerStatus(payload) {
       if (ctx.col.returnInvoice >= 0) {
         var curDigits = String(ctx.row[ctx.col.returnInvoice] || "").replace(/[^0-9]/g, "");
         if (curDigits !== newDigits) {
-          ctx.tab.getRange(rowNum, ctx.col.returnInvoice + 1).setValue(formatted);
+          //  택배사는 그대로 두고 번호만 갈아 쓴다 (2026-10-04)
+          var 새칸 = _cs_ledgerInvoiceReplaceNo_(ctx.row[ctx.col.returnInvoice], formatted);
+          ctx.tab.getRange(rowNum, ctx.col.returnInvoice + 1).setValue(새칸);
           retInvSaved = formatted;
         }
       } else if (ctx.col.notice >= 0) {
@@ -3879,9 +4002,20 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
     var notice = col.notice >= 0 ? String(row[col.notice] || "").trim() : "";
     // 반품송장은 전용 열이 우선이다. 열이 없거나 비어 있으면 과거 방식(N열 비고
     // "반품송장: …" 한 줄)에서 읽는다. 이관 전 데이터가 그대로 살아 있어야 한다.
+    /*  ★ 한 칸에 담긴 번호와 택배사를 가른다 ★  (2026-10-04)
+
+        > "택배사 한 칸에 같이 적게 해줘"
+
+        10월 머리글이 「원송장번호 / 택배사」·「반품송장번호 / 택배사」다.
+        화면과 조회는 «번호»만 받던 그대로 둔다 — 칸 내용을 그대로 흘려보내면
+        배송조회 주소에 「/ CJ대한통운」이 붙고, 복사해 붙이는 사람도 손으로
+        지워야 한다. 가름은 한 곳에서 하고, 택배사는 따로 내보낸다.  */
     var returnInvCell = col.returnInvoice >= 0 ? String(row[col.returnInvoice] || "").trim() : "";
-    var returnInv = returnInvCell || _cs_parseReturnInvFromNotice_(notice);
-    var invRaw = col.invoice >= 0 ? String(row[col.invoice] || "").trim() : "";
+    var 반품칸 = _cs_splitLedgerInvoice_(returnInvCell);
+    var returnInv = 반품칸.번호 || _cs_parseReturnInvFromNotice_(notice);
+    var invRaw0 = col.invoice >= 0 ? String(row[col.invoice] || "").trim() : "";
+    var 원송장칸 = _cs_splitLedgerInvoice_(invRaw0);
+    var invRaw = 원송장칸.번호;
     var invDigits = invRaw.replace(/[^0-9]/g, "");
     var retDigits = returnInv.replace(/[^0-9]/g, "");
     var phoneRaw = col.phone >= 0 ? String(row[col.phone] || "").trim() : "";
@@ -3924,6 +4058,12 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
       returnInvoice: returnInv,
       returnInvDigits: retDigits,
       returnInvFromCol: !!returnInvCell,
+      /*  ★ 택배사 ★  (2026-10-04)
+          원송장 칸에 같이 적힌 택배사다. 배송조회 주소를 고르는 데 쓴다 —
+          여태 몰라서 네이버 검색으로 빠지던 자리다.  */
+      carrier: 원송장칸.택배사,
+      //  수거를 어느 택배사가 가나. 반품송장 칸에 같이 적힌다.
+      returnCarrier: 반품칸.택배사,
       type: typeVal,
       /* ★ 사유는 «구분»과 다르다 ★  (2026-09-18)
          구분(type) 은 「재출고/단순/오배송」처럼 처리하는 갈래고,
@@ -3969,7 +4109,12 @@ function _cs_readReturnLedgerTabCases_(tab, tabName, cutoffYmd, activeOnly) {
       status: status || _cs_stageFromFlags_(row, col),
       doneFlag: doneFlag,
       notice: notice,
-      pickup: col.pickup >= 0 ? String(row[col.pickup] || "").trim() : "",
+      /*  ★ 수거 택배사 — 칸이 없으면 반품송장 칸에서 ★  (2026-10-04)
+          화면이 롯데·로젠 수거 접수 단추를 이 값으로 가른다. 10월 탭에는
+          「회수신청」 칸이 없어 늘 빈칸이었고, 그래서 아무 건에나 단추가 떴다.
+          원송장 칸의 택배사까지 마지막 대비로 본다 — 수거는 보통 그 택배사다.  */
+      pickup: (col.pickup >= 0 ? String(row[col.pickup] || "").trim() : "") ||
+        반품칸.택배사 || 원송장칸.택배사,
       fee: col.fee >= 0 ? _cs_formatReturnFee_(row[col.fee]) : "",
       feeRaw: col.fee >= 0 ? String(row[col.fee] == null ? "" : row[col.fee]).trim() : "",
 
