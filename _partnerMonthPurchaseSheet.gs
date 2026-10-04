@@ -73,7 +73,11 @@ function partnerBuildMonthPurchaseSheet() {
 
   /* ── 하루치 파일이 어느 달에 몇 개 있나 ──────────────────
       파일 «이름»만 본다. 내용을 열지 않으니 달을 고르기 전에 비용이 거의 없다. */
-  var 날들 = _pms_하루치날짜모으기_(folder);
+  /*  ★ 폴더는 한 번만 훑는다 ★  (2026-10-04)
+      전에는 달 목록을 만들 때 한 번, 모을 때 또 한 번 훑었다. 「구매입력」
+      폴더에는 하루치가 몇 달치 쌓여 있어 그 한 번이 공짜가 아니다. */
+  var 하루치 = _pms_하루치파일_(folder);     // "2026-09-22" → 파일 id
+  var 날들 = Object.keys(하루치).map(function (k) { return k.split("-").join(""); }).sort();
   var 달별 = {}, 달차례 = [];
   for (var i = 0; i < 날들.length; i++) {
     var ym = 날들[i].slice(0, 4) + "-" + 날들[i].slice(4, 6);
@@ -108,7 +112,7 @@ function partnerBuildMonthPurchaseSheet() {
 
   /* ── 모은다 ─────────────────────────────────────────────── */
   var 모음 = 달별[고른달]
-    ? _pms_하루치에서모으기_(folder, 고른달)
+    ? _pms_하루치에서모으기_(하루치, 고른달)
     : _pms_변환탭에서모으기_(hub, 고른달);
 
   if (모음.왜) {
@@ -245,71 +249,87 @@ function partnerBuildMonthPurchaseSheet() {
 // ───────────────────────────────────────────────────────────
 
 /**
- * 「구매입력」 폴더의 하루치 파일 이름에서 날짜만 모은다 (yyyymmdd 오름차순).
+ * 「구매입력」 폴더의 하루치 파일 — "2026-09-22" → 파일 id.
  *
- * 이름만 본다 — 파일을 열지 않는다. 달을 고르기 전에 서른 개를 여는 것은
+ * 이름만 본다. 파일을 열지 않는다 — 달을 고르기 전에 서른 개를 여는 것은
  * 6분 한도를 그냥 버리는 일이다.
  * 내가 내는 파일(구매입력_2026-09_전체)은 괄호가 없어 안 걸린다.
+ * 같은 날이 둘이면 뒤엣것만 남는다 — 둘 다 세면 금액이 두 배가 된다.
  */
-function _pms_하루치날짜모으기_(folder) {
-  var out = [];
+function _pms_하루치파일_(folder) {
+  var out = {};
   var it = folder.getFiles();
   while (it.hasNext()) {
     var f = it.next();
-    var m = String(f.getName()).match(/^구매입력_\((\d{4})-(\d{2})-(\d{2})\)$/);
+    var m = String(f.getName()).match(/^구매입력_((d{4}-d{2}-d{2}))$/);
     if (!m) continue;
-    var ymd = m[1] + m[2] + m[3];
-    if (out.indexOf(ymd) === -1) out.push(ymd);
+    out[m[1]] = f.getId();
   }
-  out.sort();
   return out;
 }
 
 /**
  * 하루치 파일들을 모은다 — 그날 단가가 박힌 것이다.
- * @return {{줄들:Array, 근거:string, 빠진날:string[], 왜:string}}
+ *
+ *  ★ 왜 Sheets API 를 직접 부르나 ★  (2026-10-04)
+ *
+ *    > "시간이 너무 오래걸린다"
+ *
+ *    처음에는 날마다 SpreadsheetApp.openById 로 열어 읽었다. 한 달이면 서른
+ *    번이고, 그 한 번이 «문서 모델을 통째로 세우는» 일이라 몇 초씩 걸린다.
+ *    서른 번을 차례로 하면 1~2분, 재수 없으면 6분 한도에 걸린다.
+ *    6분에 걸리면 아무것도 안 나온다 — 느린 것보다 나쁘다.
+ *
+ *    값만 필요하므로 문서 모델이 필요 없다. values.get 한 번이면 된다.
+ *    게다가 UrlFetchApp.fetchAll 은 여러 요청을 «한꺼번에» 보낸다 —
+ *    서른 번을 차례로 기다리는 대신 한 번 기다린다.
+ *    쓰는 열쇠는 그 스크립트의 것(ScriptApp.getOAuthToken)이라 새 비밀이 없고,
+ *    appsscript.json 에 spreadsheets · script.external_request 가 이미 있다.
+ *
+ *    ★ 실패한 파일은 옛 길로 한 번 더 본다 ★  탭 이름이 다르거나 권한이
+ *      걸린 파일이 있을 수 있다. 그 하나 때문에 한 달이 비면 안 된다.
+ *
+ * @return {{줄들:Array, 근거:string, 빠진날:string[], 거래없음:string[], 쉰날:number, 왜:string}}
  */
-function _pms_하루치에서모으기_(folder, 고른달) {
+function _pms_하루치에서모으기_(하루치, 고른달) {
   var 줄들 = [], 본날 = [], 행있던날 = [];
   var 끝일 = _pms_달끝일_(고른달);
 
-  var it = folder.getFiles();
-  var 파일 = {};
-  while (it.hasNext()) {
-    var f = it.next();
-    var m = String(f.getName()).match(/^구매입력_\((\d{4}-\d{2})-(\d{2})\)$/);
-    if (!m || m[1] !== 고른달) continue;
-    파일[m[2]] = f;   // 같은 이름이 둘이면 뒤엣것을 쓴다 — 둘 다 세면 두 배가 된다
+  //  그 달 것만 골라 날짜 차례로
+  var 일차례 = [];
+  for (var 키 in 하루치) {
+    if (!Object.prototype.hasOwnProperty.call(하루치, 키)) continue;
+    if (키.slice(0, 7) !== 고른달) continue;
+    일차례.push(키);
   }
+  일차례.sort();
 
-  var 일차례 = Object.keys(파일).sort();
+  var 받은것 = _pms_값읽기한꺼번에_(일차례, 하루치);
+
   for (var i = 0; i < 일차례.length; i++) {
-    var 일 = 일차례[i];
-    var ss;
-    try {
-      ss = SpreadsheetApp.openById(파일[일].getId());
-    } catch (eO) {
-      Logger.log("[PMS] " + 고른달 + "-" + 일 + " 못 엶: " + eO.message);
-      continue;
+    var 그날 = 일차례[i];
+    var dd = 그날.slice(8, 10);
+    본날.push(dd);
+    var 값 = 받은것[그날];
+    if (값 === null) {
+      //  한꺼번에 읽기가 안 된 파일 — 옛 길로 한 번 더 본다
+      값 = _pms_값읽기한개_(하루치[그날]);
     }
-    var tab = ss.getSheetByName(_EPX_OUT_TAB_) || ss.getSheets()[0];
-    //  파일은 있는데 행이 0 — 그날 매입이 없었다는 «기록»이다. 빠진 것이 아니다.
-    if (!tab || tab.getLastRow() < 2) { 본날.push(일); continue; }
+    if (!값 || !값.length) continue;      //  머리글만 있는 날 (거래 없음)
     var 앞수 = 줄들.length;
-    _pms_탭에서담기_(tab, 줄들, 고른달 + "-" + 일, 고른달);
-    본날.push(일);
-    if (줄들.length > 앞수) 행있던날.push(일);
+    _pms_값담기_(값, 줄들, 그날, 고른달);
+    if (줄들.length > 앞수) 행있던날.push(dd);
   }
 
   /*  날을 셋으로 가른다 (머리말 참고). 쉬는 날은 세지 않는다 —
       시끄러운 알림은 정말 빠진 하루까지 묻는다. */
   var 빠진날 = [], 거래없음 = [], 쉰날 = 0;
   for (var d = 1; d <= 끝일; d++) {
-    var dd = ("0" + d).slice(-2);
-    var 그날 = 고른달 + "-" + dd;
-    if (_pms_쉬는날_(그날)) { 쉰날++; continue; }
-    if (본날.indexOf(dd) === -1) 빠진날.push(그날);
-    else if (행있던날.indexOf(dd) === -1) 거래없음.push(그날);
+    var dd2 = ("0" + d).slice(-2);
+    var 날 = 고른달 + "-" + dd2;
+    if (_pms_쉬는날_(날)) { 쉰날++; continue; }
+    if (본날.indexOf(dd2) === -1) 빠진날.push(날);
+    else if (행있던날.indexOf(dd2) === -1) 거래없음.push(날);
   }
 
   return {
@@ -319,9 +339,102 @@ function _pms_하루치에서모으기_(folder, 고른달) {
     거래없음: 거래없음,
     쉰날: 쉰날,
     왜: 줄들.length ? "" :
-      고른달 + " 하루치 파일에 행이 없습니다.\n" +
+      고른달 + " 하루치 파일에 행이 없습니다." + String.fromCharCode(10) +
       "「📤 당일 구매입력 시트 만들기」 가 그 달에 돌았는지 보세요.",
   };
+}
+
+/** 읽을 칸 — A2 부터 AA(변환상태) 까지. 한 번에 받아 두고 잘라 쓴다 */
+var _PMS_RANGE_ = "A2:AA";
+
+/**
+ * 여러 파일의 값을 «한꺼번에» 받는다.  "2026-09-22" → 줄 배열 (못 받으면 null)
+ *
+ * fetchAll 은 한 번에 보내는 수가 많으면 오히려 느려지고 쿼터에 걸린다.
+ * 서른씩 끊어 보낸다 — 한 달이면 한두 번에 끝난다.
+ */
+function _pms_값읽기한꺼번에_(일차례, 하루치) {
+  var out = {};
+  var 열쇠;
+  try {
+    열쇠 = ScriptApp.getOAuthToken();
+  } catch (eT) {
+    Logger.log("[PMS] 토큰 못 받음 — 옛 길로 갑니다: " + eT.message);
+    for (var z = 0; z < 일차례.length; z++) out[일차례[z]] = null;
+    return out;
+  }
+
+  var 칸 = encodeURIComponent("'" + _EPX_OUT_TAB_ + "'!" + _PMS_RANGE_);
+  for (var s = 0; s < 일차례.length; s += 30) {
+    var 묶음 = 일차례.slice(s, s + 30);
+    var 요청 = [];
+    for (var k = 0; k < 묶음.length; k++) {
+      요청.push({
+        url: "https://sheets.googleapis.com/v4/spreadsheets/" + 하루치[묶음[k]] +
+             "/values/" + 칸 + "?valueRenderOption=FORMATTED_VALUE",
+        headers: { Authorization: "Bearer " + 열쇠 },
+        muteHttpExceptions: true,   //  한 파일이 막혀도 나머지를 받는다
+      });
+    }
+    var 답 = [];
+    try {
+      답 = UrlFetchApp.fetchAll(요청);
+    } catch (eF) {
+      Logger.log("[PMS] fetchAll 실패 — 그 묶음은 옛 길로: " + eF.message);
+      for (var m0 = 0; m0 < 묶음.length; m0++) out[묶음[m0]] = null;
+      continue;
+    }
+    for (var r = 0; r < 묶음.length; r++) {
+      var 한답 = 답[r];
+      if (!한답 || 한답.getResponseCode() !== 200) {
+        Logger.log("[PMS] " + 묶음[r] + " 응답 " +
+          (한답 ? 한답.getResponseCode() : "없음") + " — 옛 길로");
+        out[묶음[r]] = null;
+        continue;
+      }
+      try {
+        var 몸 = JSON.parse(한답.getContentText());
+        out[묶음[r]] = 몸.values || [];      //  머리글만 있으면 values 가 없다
+      } catch (eJ) {
+        out[묶음[r]] = null;
+      }
+    }
+  }
+  return out;
+}
+
+/** 한 파일만 옛 길로 읽는다 — 한꺼번에 읽기가 안 된 것을 건지는 자리 */
+function _pms_값읽기한개_(id) {
+  try {
+    var ss = SpreadsheetApp.openById(id);
+    var tab = ss.getSheetByName(_EPX_OUT_TAB_) || ss.getSheets()[0];
+    if (!tab || tab.getLastRow() < 2) return [];
+    return tab.getRange(2, 1, tab.getLastRow() - 1, _EPX_DIAG_START_COL_)
+      .getDisplayValues();
+  } catch (e) {
+    Logger.log("[PMS] 한 개 읽기도 실패: " + e.message);
+    return [];
+  }
+}
+
+/**
+ * 받은 값을 담는다. A~Y 가 업로드 칸이고 AA 가 변환상태다.
+ *
+ * ★ 짧은 줄이 온다 ★  Sheets API 는 오른쪽 빈 칸을 잘라서 준다. 그래서
+ *   줄 길이가 제각각이다 — 그대로 쓰면 값[18](금액)이 undefined 가 되어
+ *   금액 0 으로 읽힌다. 스물다섯 칸으로 채워 놓고 쓴다.
+ */
+function _pms_값담기_(값, 모을곳, 어디, 고른달) {
+  for (var r = 0; r < 값.length; r++) {
+    var 한줄 = 값[r] || [];
+    //  빈 줄 건너뛰기 — 하루치 파일은 지웠다 쓴 자리가 남는다
+    if (!String(한줄[0] || "").trim() && !String(한줄[10] || "").trim()) continue;
+    if (_pms_ym_(한줄[0]) !== 고른달) continue;
+    var 상태 = String(한줄[_EPX_DIAG_START_COL_ - 1] || "");   // AA
+    var 값줄 = 한줄.slice(0, _EPX_HEADERS_.length);
+    while (값줄.length < _EPX_HEADERS_.length) 값줄.push("");
+    모을곳.push({ 값: 값줄, 상태: 상태, 어디: 어디 });
+  }
 }
 
 /**
