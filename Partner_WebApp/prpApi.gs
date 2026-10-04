@@ -163,6 +163,28 @@ function prpSubmitReturn(sid, data) {
 
     if (col.status >= 0) row[col.status] = PRP_INITIAL_STATUS;
     if (col.date >= 0) row[col.date] = prpToday_("yyMMdd");
+
+    /*  ★ 반품 고유ID 를 여기서 발급한다 ★  (2026-10-04)
+        > "모든 문의 반품 발주관련된 부분에서 항상 고유아이디가 붙게해줘"
+
+        여태 포털은 이 칸을 아예 몰라, 업체가 접수한 반품은 번호 없이
+        남았다. 그러면 그 건은 번호로 못 찾는다 — 「모든 반품에 번호」가
+        업체 쪽에서만 새고 있었다 (2026-10-04 에 실측으로 드러났다).
+
+        ★ 날짜는 오늘이다 ★ 포털 접수는 적는 날이 곧 접수날짜다
+        (바로 위에서 col.date 에 오늘을 넣는다). CS 쪽은 사람이 지난
+        날짜를 적을 수 있어 그 칸을 읽지만, 여기는 늘 오늘이다.
+
+        ★ 열이 없으면 조용히 넘어간다 ★ 옛 탭에는 이 칸이 없다.
+        칸이 없다고 접수를 막으면 업체가 아무것도 못 한다.          */
+    if (col.uid >= 0) {
+      var 쓴것 = {};
+      for (var u = headerIdx + 1; u < values.length; u++) {
+        var uu = String((values[u] || [])[col.uid] || "").trim();
+        if (uu) 쓴것[uu] = true;
+      }
+      row[col.uid] = prpReturnUidNext_(prpToday_("MMdd"), 쓴것);
+    }
     if (col.staff >= 0) row[col.staff] = PRP_STAFF_PREFIX + sess.vendor;
     if (col.vendor >= 0) row[col.vendor] = sess.vendor;
     if (col.name >= 0) row[col.name] = name;
