@@ -1,16 +1,12 @@
 /**
- * [협력업체] 도서산간 추가배송비 시스템  v2.1  (배치 API 최적화)
+ * [협력업체] 도서산간 추가배송비 시스템  v2.2
  * 파일: _partnerIslandShipping.gs
  *
- * ★ v2.1 핵심 최적화:
- *   - Q열/O열 전체를 배열로 읽고 → 메모리에서 수정 → 한번에 setValues() (1회 API)
- *   - getRangeList()로 서식 일괄 적용 (1회 API)
- *   - 매칭된 거래처 업체만 열기
- *   - 예상: 176초 → 15~30초
- *
- * ★ 세트/합배송:
- *   - 세트: 도서산간탭행수 × 수량 × 단가
- *   - 합배송: 1박스 × 단가 (5,000원)
+ * ★ v2.2 (2026-07-16):
+ *   - 허브/업체 열을 헤더명「도서산간배송비」로 동적 탐지 (Q=17 고정 버그 수정)
+ *   - 발주탭 ARRAYFORMULA 스필로 getLastRow() 부풀림 → C열 기준 실데이터 행만 처리
+ *   - UID 정규화 + 소스 P열 외 인접열 폴백
+ *   - 매칭 0건 시 진단 메시지 강화
  */
 
 // ═══════════════════════════════════════════
@@ -24,8 +20,10 @@ var _ISLAND_HEADER_BG     = "#7b1fa2";
 var _ISLAND_SOURCE_SHEET_ID = "1vWdJgmbW_Gwm_2b1pP8mVBxpfYBbUiAduSwkStXxs0Y";
 var _ISLAND_SOURCE_TAB_GID  = 1971071523;
 
-var _ISLAND_HUB_COL       = 17;
-var _ISLAND_PARTNER_COL   = 15;
+/** 허브: 상태(O=15) 다음 열(P=16) 기본 — 예전 Q=17 고정을 폐기 */
+var _ISLAND_HUB_COL_FALLBACK     = 16;
+/** 업체 발주탭: O=15 도서산간배송비 */
+var _ISLAND_PARTNER_COL_FALLBACK = 15;
 
 // ═══════════════════════════════════════════
 //  메뉴 진입점
@@ -52,60 +50,106 @@ function partnerCheckIslandShipping() {
 function _island_core_(ui) {
   var t0 = Date.now();
 
-  // ① 도서산간 탭 → UID→박스수 맵
   var uidBoxMap = _island_loadIslandUidBoxMap_();
   if (!uidBoxMap || Object.keys(uidBoxMap).length === 0) {
-    ui.alert("ℹ️ 도서산간 탭에 데이터가 없습니다.");
+    ui.alert(
+      "ℹ️ 도서산간 탭에서 UID를 읽지 못했습니다.\n\n" +
+      "확인:\n" +
+      "1) 소스 시트의 도서산간 탭(P열)에 UID가 있는지\n" +
+      "2) 시트/탭 접근 권한"
+    );
     return;
   }
 
   var totalIslandUids = Object.keys(uidBoxMap).length;
 
-  // ② 허브 적용 + 거래처명 수집
   var hubResult = _island_applyToHub_(uidBoxMap);
 
-  // ③ 매칭된 업체만 적용
-  var partnerResult = { applied: 0, skipped: 0, files: 0, errors: [] };
+  var partnerResult = { applied: 0, skipped: 0, files: 0, errors: [], unmatchedHint: "" };
   if (hubResult.vendorNames && hubResult.vendorNames.length > 0) {
     partnerResult = _island_applyToPartnerSheets_(uidBoxMap, hubResult.vendorNames);
   }
 
   var elapsed = Math.round((Date.now() - t0) / 1000);
+  var feeColLabel = hubResult.feeCol || _ISLAND_HUB_COL_FALLBACK;
 
   var msg = "🏝️ 도서산간 추가배송비 적용 완료 (" + elapsed + "초)\n" +
     "═══════════════════════════════\n" +
-    "도서산간 탭: " + totalIslandUids + "건\n\n" +
-    "── 허브 Q열 ──\n" +
-    "  적용: " + hubResult.applied + "건 / 스킵: " + hubResult.skipped + "건\n\n" +
-    "── 업체 O열 (" + hubResult.vendorNames.length + "개 업체) ──\n" +
-    "  적용: " + partnerResult.applied + "건 / 스킵: " + partnerResult.skipped + "건";
+    "도서산간 탭 UID: " + totalIslandUids + "건\n" +
+    "허브 매칭: " + hubResult.matched + "건 (열=" + feeColLabel + ")\n\n" +
+    "── 허브 도서산간배송비 ──\n" +
+    "  적용: " + hubResult.applied + "건 / 이미있음: " + hubResult.skipped + "건\n\n" +
+    "── 업체 발주탭 (" + (hubResult.vendorNames ? hubResult.vendorNames.length : 0) + "개 업체) ──\n" +
+    "  적용: " + partnerResult.applied + "건 / 이미있음: " + partnerResult.skipped + "건";
 
-  if (hubResult.errors.length > 0 || partnerResult.errors.length > 0) {
-    msg += "\n\n⚠ 오류:\n" + hubResult.errors.concat(partnerResult.errors).slice(0, 5).join("\n");
+  if (hubResult.matched === 0) {
+    msg += "\n\n⚠ 허브에서 UID 매칭 0건입니다.\n" +
+      "도서산간 탭 UID ↔ 허브 C열(고유ID) 형식이 같은지 확인하세요.\n" +
+      "샘플 UID: " + Object.keys(uidBoxMap).slice(0, 3).join(", ");
   }
 
-  ui.alert("도서산간 추가배송비", msg, ui.ButtonSet.OK);
+  if (hubResult.errors.length > 0 || partnerResult.errors.length > 0) {
+    msg += "\n\n⚠ 오류:\n" + hubResult.errors.concat(partnerResult.errors).slice(0, 8).join("\n");
+  }
+
+  ui.alert("도서산간 추가배송비", msg.substring(0, 4500), ui.ButtonSet.OK);
 }
 
 // ═══════════════════════════════════════════
 //  도서산간 탭 로드
 // ═══════════════════════════════════════════
 
+function _island_normUid_(raw) {
+  return String(raw || "")
+    .replace(/\u00a0/g, "")
+    .replace(/[\u200b-\u200d\ufeff]/g, "")
+    .replace(/\s/g, "")
+    .trim();
+}
+
 function _island_loadIslandUidBoxMap_() {
   try {
     var ss = SpreadsheetApp.openById(_ISLAND_SOURCE_SHEET_ID);
     var tab = _pt_getSheetByGid(ss, _ISLAND_SOURCE_TAB_GID);
-    if (!tab) return null;
-    var lr = tab.getLastRow();
-    if (lr < 2 || tab.getLastColumn() < 16) return null;
-
-    var data = tab.getRange(2, 16, lr - 1, 1).getValues();
-    var map = {};
-    for (var i = 0; i < data.length; i++) {
-      var uid = String(data[i][0] || "").trim();
-      if (uid) map[uid] = (map[uid] || 0) + 1;
+    if (!tab) {
+      Logger.log("[도서산간] GID 탭 없음: " + _ISLAND_SOURCE_TAB_GID);
+      return null;
     }
-    return map;
+    var lr = tab.getLastRow();
+    var lc = tab.getLastColumn();
+    if (lr < 2) return null;
+
+    // P열(16) 우선, 비면 O~R(15~18)에서 UID 형태 열 탐색
+    var tryCols = [16, 15, 17, 18, 14];
+    var map = {};
+    var usedCol = 0;
+
+    for (var ti = 0; ti < tryCols.length; ti++) {
+      var col = tryCols[ti];
+      if (lc < col) continue;
+      var numRows = lr - 1;
+      if (numRows < 1) continue;
+      var data = tab.getRange(2, col, numRows, 1).getDisplayValues();
+      var tmp = {};
+      var hits = 0;
+      for (var i = 0; i < data.length; i++) {
+        var uid = _island_normUid_(data[i][0]);
+        if (!uid) continue;
+        // UID 형태: 숫자/하이픈 조합 (너무 짧은 한글 헤더 제외)
+        if (uid.length < 4) continue;
+        if (/^[가-힣]+$/.test(uid)) continue;
+        tmp[uid] = (tmp[uid] || 0) + 1;
+        hits++;
+      }
+      if (hits > 0) {
+        map = tmp;
+        usedCol = col;
+        break;
+      }
+    }
+
+    Logger.log("[도서산간] 소스 열=" + usedCol + ", UID=" + Object.keys(map).length + "건");
+    return Object.keys(map).length ? map : null;
   } catch (e) {
     Logger.log("[도서산간] 소스 로드 실패: " + e.message);
     return null;
@@ -113,73 +157,138 @@ function _island_loadIslandUidBoxMap_() {
 }
 
 // ═══════════════════════════════════════════
-//  허브 Q열 적용 (배치 API)
+//  열 탐지 유틸
+// ═══════════════════════════════════════════
+
+/** 헤더 행에서 「도서산간」포함 열 찾기 (1-based). 없으면 0 */
+function _island_findFeeCol1_(headers) {
+  if (!headers || !headers.length) return 0;
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || "").replace(/\s/g, "");
+    if (h.indexOf("도서산간") !== -1) return i + 1;
+  }
+  return 0;
+}
+
+function _island_findStatusCol0_(headers) {
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || "").replace(/\s/g, "").toLowerCase();
+    if (h === "상태" || h === "상태(자동)" || h.indexOf("status") !== -1) return i;
+  }
+  return -1;
+}
+
+function _island_findUidCol0_(headers) {
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || "").replace(/\s/g, "").toLowerCase();
+    if (h.indexOf("고유id") !== -1 || h.indexOf("uniqueid") !== -1 || h === "uid") return i;
+  }
+  // 폴백: 업체 발주탭 M열(12), 허브 C열(2)
+  return -1;
+}
+
+function _island_findQtyCol0_(headers) {
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || "").replace(/\s/g, "").toLowerCase();
+    if (h === "수량" || h.indexOf("박스수량") !== -1 || h.indexOf("판매수량") !== -1 ||
+        h.indexOf("택배수량") !== -1 || h.indexOf("택배박스수량") !== -1) return i;
+  }
+  return -1;
+}
+
+/** ARRAYFORMULA 스필로 lastRow가 부풀어 있을 때 C열(코드) 기준 실데이터 끝행 */
+function _island_findLastDataRow_(tab, codeCol1) {
+  var lr = tab.getLastRow();
+  if (lr < 2) return 1;
+  var maxScan = Math.min(lr, 2000);
+  var col = codeCol1 || 3;
+  var vals = tab.getRange(2, col, maxScan - 1, 1).getDisplayValues();
+  var last = 1;
+  for (var i = 0; i < vals.length; i++) {
+    if (String(vals[i][0] || "").trim()) last = i + 2;
+  }
+  return last;
+}
+
+// ═══════════════════════════════════════════
+//  허브 적용
 // ═══════════════════════════════════════════
 
 function _island_applyToHub_(uidBoxMap) {
-  var result = { applied: 0, skipped: 0, matched: 0, errors: [], vendorNames: [] };
+  var result = {
+    applied: 0, skipped: 0, matched: 0, errors: [], vendorNames: [], feeCol: 0
+  };
 
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var hubTab = ss.getSheetByName(_PO_HUB_SHEET_NAME);
     if (!hubTab || hubTab.getLastRow() < 2) return result;
 
-    _island_ensureHubHeader_(hubTab);
+    var feeCol = _island_ensureHubFeeCol_(hubTab);
+    result.feeCol = feeCol;
 
-    var hubLr = hubTab.getLastRow();
-    var readCols = Math.max(hubTab.getLastColumn(), _ISLAND_HUB_COL);
-    var hubData = hubTab.getRange(2, 1, hubLr - 1, readCols).getValues();
+    var hubLr = _island_findLastDataRow_(hubTab, 5); // E=이카운트코드 (또는 C=고유ID)
+    if (hubLr < 2) hubLr = hubTab.getLastRow();
+    // C열(고유ID) 기준으로 다시
+    hubLr = Math.max(hubLr, _island_findLastDataRow_(hubTab, 3));
+    if (hubLr < 2) return result;
 
-    // ★ Q열(17번째) 전체를 배열로 복사 — 메모리에서 수정 후 한번에 기입
-    var qColArr = [];
+    var readCols = Math.max(hubTab.getLastColumn(), feeCol, 15);
+    var numRows = hubLr - 1;
+    var hubData = hubTab.getRange(2, 1, numRows, readCols).getValues();
+    var headers = hubTab.getRange(1, 1, 1, readCols).getDisplayValues()[0];
+
+    var uidCol0 = _island_findUidCol0_(headers);
+    if (uidCol0 < 0) uidCol0 = 2; // C열
+    var statusCol0 = _island_findStatusCol0_(headers);
+    if (statusCol0 < 0) statusCol0 = 14; // O열
+    var qtyCol0 = _island_findQtyCol0_(headers);
+    if (qtyCol0 < 0) qtyCol0 = 6; // G열
+
+    var feeArr = [];
     for (var i = 0; i < hubData.length; i++) {
-      qColArr.push([hubData[i][_ISLAND_HUB_COL - 1]]);
+      feeArr.push([hubData[i][feeCol - 1]]);
     }
 
     var vendorSet = {};
-    var changedRows = [];  // 서식 적용할 행 번호 (A1 표기)
+    var changedRows = [];
 
     for (var r = 0; r < hubData.length; r++) {
-      var uid = String(hubData[r][2] || "").trim();
+      var uid = _island_normUid_(hubData[r][uidCol0]);
       if (!uid || !uidBoxMap[uid]) continue;
 
       result.matched++;
 
-      var existing = Number(hubData[r][_ISLAND_HUB_COL - 1]) || 0;
+      var existing = Number(hubData[r][feeCol - 1]) || 0;
       if (existing > 0) {
         result.skipped++;
-        var vn = String(hubData[r][1] || "").trim(); // B열=발주업체
-        if (vn) vendorSet[vn] = true;
+        var vn0 = String(hubData[r][1] || "").trim();
+        if (vn0) vendorSet[vn0] = true;
         continue;
       }
 
-      var status = String(hubData[r][14] || "").trim();
+      var status = statusCol0 >= 0 ? String(hubData[r][statusCol0] || "").trim() : "";
       var isCombinedShip = status.indexOf("합배송") !== -1;
-      var qty = parseFloat(hubData[r][6]) || 1;
+      var qty = parseFloat(hubData[r][qtyCol0]) || 1;
       var boxes = isCombinedShip ? 1 : (uidBoxMap[uid] * qty);
       var fee = boxes * _ISLAND_FEE_PER_QTY;
 
-      qColArr[r][0] = fee;  // 메모리에서 수정
-      changedRows.push("Q" + (r + 2));
+      feeArr[r][0] = fee;
+      changedRows.push(_island_colToLetter_(feeCol) + (r + 2));
       result.applied++;
 
-      var vendorName = String(hubData[r][1] || "").trim(); // B열=발주업체
+      var vendorName = String(hubData[r][1] || "").trim();
       if (vendorName) vendorSet[vendorName] = true;
     }
 
     if (changedRows.length > 0) {
-      // ★ 1회 API: Q열 전체 한번에 기입
-      hubTab.getRange(2, _ISLAND_HUB_COL, qColArr.length, 1).setValues(qColArr);
-
-      // ★ 1회 API: 변경된 셀들 서식 일괄 적용
+      hubTab.getRange(2, feeCol, feeArr.length, 1).setValues(feeArr);
       hubTab.getRangeList(changedRows)
         .setNumberFormat("#,##0")
         .setFontColor(_ISLAND_FONT_COLOR)
         .setFontWeight("bold")
         .setBackground(_ISLAND_BG_COLOR);
-
-      // 조건부서식 (최초 1회)
-      _island_addConditionalFormatRule_(hubTab, "A2:Q5000", _ISLAND_HUB_COL);
+      _island_addConditionalFormatRule_(hubTab, "A2:" + _island_colToLetter_(feeCol) + "5000", feeCol);
       SpreadsheetApp.flush();
     }
 
@@ -192,27 +301,36 @@ function _island_applyToHub_(uidBoxMap) {
   return result;
 }
 
-function _island_ensureHubHeader_(hubTab) {
-  try {
-    var maxCol = hubTab.getLastColumn();
-    if (maxCol < _ISLAND_HUB_COL) {
-      hubTab.insertColumnsAfter(maxCol, _ISLAND_HUB_COL - maxCol);
-    }
-    var h = String(hubTab.getRange(1, _ISLAND_HUB_COL).getValue() || "").trim();
-    if (!h) {
-      hubTab.getRange(1, _ISLAND_HUB_COL)
-        .setValue("도서산간배송비")
-        .setBackground(_ISLAND_HEADER_BG)
-        .setFontColor("white")
-        .setFontWeight("bold")
-        .setHorizontalAlignment("center");
-      hubTab.setColumnWidth(_ISLAND_HUB_COL, 120);
-    }
-  } catch (e) {}
+/** 허브에 도서산간배송비 열 확보 → 1-based 열번호 */
+function _island_ensureHubFeeCol_(hubTab) {
+  var lc = Math.max(hubTab.getLastColumn(), 15);
+  var headers = hubTab.getRange(1, 1, 1, lc).getDisplayValues()[0];
+  var found = _island_findFeeCol1_(headers);
+  if (found > 0) return found;
+
+  // 상태 열 다음(기본 P=16)
+  var status0 = _island_findStatusCol0_(headers);
+  var target = status0 >= 0 ? status0 + 2 : _ISLAND_HUB_COL_FALLBACK; // 1-based = index+2 for next col... 
+  // status0 is 0-based → status col 1-based = status0+1 → next = status0+2
+  if (status0 >= 0) target = status0 + 2;
+  else target = _ISLAND_HUB_COL_FALLBACK;
+
+  var maxCol = hubTab.getLastColumn();
+  if (maxCol < target) {
+    hubTab.insertColumnsAfter(maxCol, target - maxCol);
+  }
+  hubTab.getRange(1, target)
+    .setValue("도서산간배송비")
+    .setBackground(_ISLAND_HEADER_BG)
+    .setFontColor("white")
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center");
+  hubTab.setColumnWidth(target, 120);
+  return target;
 }
 
 // ═══════════════════════════════════════════
-//  업체 시트 O열 적용 (배치 API + 매칭 업체만)
+//  업체 시트 적용
 // ═══════════════════════════════════════════
 
 function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
@@ -221,7 +339,6 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
   var files = _pt_listFiles();
   if (!files || !files.length) return result;
 
-  // 거래처명으로 파일 필터
   var targetFiles = [];
   for (var fi = 0; fi < files.length; fi++) {
     var fn = files[fi].name.replace("[협력업체] ", "").replace("[협력업체]_", "");
@@ -233,39 +350,40 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
       }
     }
   }
-  if (targetFiles.length === 0) targetFiles = files; // 안전장치
+  if (targetFiles.length === 0) targetFiles = files;
 
-  for (var fi = 0; fi < targetFiles.length; fi++) {
+  for (var f = 0; f < targetFiles.length; f++) {
     try {
-      var ss = SpreadsheetApp.openById(targetFiles[fi].id);
+      var ss = SpreadsheetApp.openById(targetFiles[f].id);
       var orderTab = ss.getSheetByName("발주 및 송장조회");
       if (!orderTab || orderTab.getLastRow() < 2) continue;
 
-      var lr = orderTab.getLastRow();
-      var lc = orderTab.getLastColumn();
-      _island_ensurePartnerHeader_(orderTab);
-      var readCols = Math.max(lc, _ISLAND_PARTNER_COL);
-      var data = orderTab.getRange(2, 1, lr - 1, readCols).getValues();
+      var feeCol = _island_ensurePartnerFeeCol_(orderTab);
+      var dataLr = _island_findLastDataRow_(orderTab, 3); // C=이카운트코드
+      if (dataLr < 2) continue;
 
-      var headers = orderTab.getRange(1, 1, 1, readCols).getValues()[0];
-      var uidColIdx = _island_findUidCol_(headers);
-      if (uidColIdx === -1) continue;
-      var statusColIdx = _island_findStatusCol_(headers);
-      var qtyColIdx = _island_findQtyCol_(headers);
+      var readCols = Math.max(orderTab.getLastColumn(), feeCol, 15);
+      var numRows = dataLr - 1;
+      var data = orderTab.getRange(2, 1, numRows, readCols).getValues();
+      var headers = orderTab.getRange(1, 1, 1, readCols).getDisplayValues()[0];
 
-      // ★ O열 배열 복사
+      var uidColIdx = _island_findUidCol0_(headers);
+      if (uidColIdx < 0) uidColIdx = 12; // M열 폴백
+      var statusColIdx = _island_findStatusCol0_(headers);
+      var qtyColIdx = _island_findQtyCol0_(headers);
+
       var oColArr = [];
       for (var i = 0; i < data.length; i++) {
-        oColArr.push([data[i][_ISLAND_PARTNER_COL - 1]]);
+        oColArr.push([data[i][feeCol - 1]]);
       }
 
       var changedRows = [];
 
       for (var r = 0; r < data.length; r++) {
-        var uid = String(data[r][uidColIdx] || "").trim();
+        var uid = _island_normUid_(data[r][uidColIdx]);
         if (!uid || !uidBoxMap[uid]) continue;
 
-        var existing = Number(data[r][_ISLAND_PARTNER_COL - 1]) || 0;
+        var existing = Number(data[r][feeCol - 1]) || 0;
         if (existing > 0) { result.skipped++; continue; }
 
         var status = statusColIdx !== -1 ? String(data[r][statusColIdx] || "").trim() : "";
@@ -275,20 +393,20 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
         var fee = boxes * _ISLAND_FEE_PER_QTY;
 
         oColArr[r][0] = fee;
-        changedRows.push("O" + (r + 2));
+        changedRows.push(_island_colToLetter_(feeCol) + (r + 2));
       }
 
       if (changedRows.length > 0) {
-        // ★ 1회 API: O열 한번에 기입
-        orderTab.getRange(2, _ISLAND_PARTNER_COL, oColArr.length, 1).setValues(oColArr);
-
-        // ★ 1회 API: 서식 일괄 (배경색은 조건부서식이 처리 → 직접 setBackground 안 함)
+        orderTab.getRange(2, feeCol, oColArr.length, 1).setValues(oColArr);
         orderTab.getRangeList(changedRows)
           .setNumberFormat("#,##0")
           .setFontColor(_ISLAND_FONT_COLOR)
           .setFontWeight("bold");
-
-        _island_addConditionalFormatRule_(orderTab, "A2:O5000", _ISLAND_PARTNER_COL);
+        _island_addConditionalFormatRule_(
+          orderTab,
+          "A2:" + _island_colToLetter_(feeCol) + "5000",
+          feeCol
+        );
         result.files++;
         result.applied += changedRows.length;
       }
@@ -296,63 +414,46 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
       SpreadsheetApp.flush();
 
     } catch (e) {
-      result.errors.push("[" + targetFiles[fi].name.replace("[협력업체] ", "") + "] " + e.message);
+      result.errors.push("[" + targetFiles[f].name.replace("[협력업체] ", "") + "] " + e.message);
     }
   }
 
   return result;
 }
 
-function _island_ensurePartnerHeader_(orderTab) {
-  try {
-    var maxCol = orderTab.getLastColumn();
-    if (maxCol < _ISLAND_PARTNER_COL) {
-      orderTab.insertColumnsAfter(maxCol, _ISLAND_PARTNER_COL - maxCol);
-    }
-    var h = String(orderTab.getRange(1, _ISLAND_PARTNER_COL).getValue() || "").trim();
-    if (!h) {
-      orderTab.getRange(1, _ISLAND_PARTNER_COL)
-        .setValue("도서산간배송비")
-        .setBackground(_ISLAND_HEADER_BG)
-        .setFontColor("white")
-        .setFontWeight("bold")
-        .setHorizontalAlignment("center");
-      orderTab.setColumnWidth(_ISLAND_PARTNER_COL, 120);
-    }
-  } catch (e) {}
+function _island_ensurePartnerFeeCol_(orderTab) {
+  var lc = Math.max(orderTab.getLastColumn(), 14);
+  var headers = orderTab.getRange(1, 1, 1, lc).getDisplayValues()[0];
+  var found = _island_findFeeCol1_(headers);
+  if (found > 0) return found;
+
+  var target = _ISLAND_PARTNER_COL_FALLBACK; // O=15
+  var maxCol = orderTab.getLastColumn();
+  if (maxCol < target) {
+    orderTab.insertColumnsAfter(maxCol, target - maxCol);
+  }
+  var h = String(orderTab.getRange(1, target).getDisplayValue() || "").trim();
+  if (!h || h.indexOf("도서산간") === -1) {
+    orderTab.getRange(1, target)
+      .setValue("도서산간배송비")
+      .setBackground(_ISLAND_HEADER_BG)
+      .setFontColor("white")
+      .setFontWeight("bold")
+      .setHorizontalAlignment("center");
+    orderTab.setColumnWidth(target, 120);
+  }
+  return target;
 }
+
+// 하위 호환 별칭
+function _island_ensureHubHeader_(hubTab) { _island_ensureHubFeeCol_(hubTab); }
+function _island_ensurePartnerHeader_(orderTab) { _island_ensurePartnerFeeCol_(orderTab); }
+function _island_findUidCol_(headers) { return _island_findUidCol0_(headers); }
+function _island_findStatusCol_(headers) { return _island_findStatusCol0_(headers); }
+function _island_findQtyCol_(headers) { return _island_findQtyCol0_(headers); }
 
 // ═══════════════════════════════════════════
-//  유틸
-// ═══════════════════════════════════════════
-
-function _island_findUidCol_(headers) {
-  for (var i = 0; i < headers.length; i++) {
-    var h = String(headers[i] || "").replace(/\s/g, "").toLowerCase();
-    if (h.indexOf("고유id") !== -1 || h.indexOf("uniqueid") !== -1) return i;
-  }
-  return -1;
-}
-
-function _island_findStatusCol_(headers) {
-  for (var i = 0; i < headers.length; i++) {
-    var h = String(headers[i] || "").replace(/\s/g, "").toLowerCase();
-    if (h === "상태" || h === "상태(자동)" || h.indexOf("status") !== -1) return i;
-  }
-  return -1;
-}
-
-function _island_findQtyCol_(headers) {
-  for (var i = 0; i < headers.length; i++) {
-    var h = String(headers[i] || "").replace(/\s/g, "").toLowerCase();
-    if (h === "수량" || h.indexOf("박스수량") !== -1 || h.indexOf("판매수량") !== -1 ||
-        h.indexOf("택배수량") !== -1 || h.indexOf("택배박스수량") !== -1) return i;
-  }
-  return -1;
-}
-
-// ═══════════════════════════════════════════
-//  조건부서식 (최우선 규칙)
+//  조건부서식
 // ═══════════════════════════════════════════
 
 function _island_addConditionalFormatRule_(tab, rangeA1, feeCol) {
@@ -365,7 +466,7 @@ function _island_addConditionalFormatRule_(tab, rangeA1, feeCol) {
       var bc = existingRules[i].getBooleanCondition();
       if (bc) {
         var v = bc.getCriteriaValues();
-        if (v && v.length > 0 && String(v[0]).indexOf(colLetter + "2") !== -1 &&
+        if (v && v.length > 0 && String(v[0]).indexOf("$" + colLetter + "2") !== -1 &&
             String(v[0]).indexOf(">0") !== -1) return;
       }
     }

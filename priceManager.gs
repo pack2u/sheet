@@ -6,7 +6,7 @@
  */
 
 const TARGET_FOLDER_ID = "1IqqPLKxBNrqh-u14Op6jKNN7khzE13Cl";
-const MASTER_TEMPLATE_ID = "1ZT9hqXXOSuSYRS6gYaJUhvVpTHDql6HokqExJdPcbiA"; // 즉시 ID 및 정산단가 도장 센서 탑재 템플릿
+const MASTER_TEMPLATE_ID = "1UL96S9_mNpJF4Yyxye1fIljOp0pInx-ps03N-NrILho"; // ★ 2026-07-15: 신규 템플릿으로 교체
 const DEPLOY_SHEET_SCHEMA_VERSION = "2026.04.21.1";
 // 주의: AD1~AH1은 매핑(AA1~AH1) 진단/IMPORTRANGE 영역과 충돌하므로 메타 전용 셀을 분리한다.
 const DEPLOY_META_SCHEMA_CELL = "N1";
@@ -1074,6 +1074,47 @@ function applyViewerIdentityFormulaFromHubMap_(sheet, hubId, fileId) {
     .setFontColor("white");
 }
 
+/**
+ * 배포 파일명 판정 — 협력업체 배포 파일만 대상으로 한다.
+ * 폴더에는 허브·정산본 등 다른 파일도 같이 있어서 접두어로 걸러야 한다.
+ * (_partnerDeploy.gs _PT.PREFIX 와 같은 규칙, 언더스코어 변형까지 인식)
+ */
+function isPartnerDeployFileName_(rawName) {
+  var name = String(rawName || "");
+  return name.indexOf("[협력업체] ") !== -1 || name.indexOf("[협력업체]_") !== -1;
+}
+
+/**
+ * 배포 파일을 Drive File 객체로 반환.
+ * 뷰어 보호·수식 복구 함수들이 file.getId()/getName() 을 직접 쓰기 때문에
+ * {id,name} 을 주는 _pt_listFiles() 로 대체할 수 없어 따로 둔다.
+ */
+function listAllDeployFiles_() {
+  var out = [];
+  var seen = {};
+  var folderIds = [TARGET_FOLDER_ID, "1J0f8HjtartQwixF3xKQf0p7fvr04Ef7v"];
+  for (var fi = 0; fi < folderIds.length; fi++) {
+    var fid = String(folderIds[fi] || "").trim();
+    if (!fid) continue;
+    var folder = null;
+    try {
+      folder = DriveApp.getFolderById(fid);
+    } catch (eFolder) {
+      continue;
+    }
+    var it = folder.getFiles();
+    while (it.hasNext()) {
+      var f = it.next();
+      if (!isPartnerDeployFileName_(f.getName())) continue;
+      var id = f.getId();
+      if (seen[id]) continue;
+      seen[id] = true;
+      out.push(f);
+    }
+  }
+  return out;
+}
+
 function listDeployFilesSorted_() {
   var arr = [];
   var seen = {};
@@ -1094,13 +1135,7 @@ function listDeployFilesSorted_() {
     while (files.hasNext()) {
       var f = files.next();
       var name = String(f.getName() || "");
-      var isDeploy =
-        name.indexOf("[독립 배포]") !== -1 ||
-        name.indexOf("[독립배포]") !== -1 ||
-        name.indexOf("독립 배포") !== -1 ||
-        name.indexOf("독립배포") !== -1 ||
-        name.indexOf("배포") !== -1;
-      if (!isDeploy) continue;
+      if (!isPartnerDeployFileName_(name)) continue;
       if (seen[f.getId()]) continue;
       seen[f.getId()] = true;
       arr.push({
@@ -2082,796 +2117,6 @@ function syncGroupPrices(isAuto) {
   }
 }
 
-// [스페셜] 소비자(일반인) 전용 배포 시트 — 할인율(1~10, 소수 허용)
-function createConsumerDiscountSheet() {
-  createConsumerDiscountSheetWithRate_(5);
-}
-
-function createConsumerDiscountSheet5() {
-  createConsumerDiscountSheetWithRate_(5);
-}
-
-function createConsumerDiscountSheet8() {
-  createConsumerDiscountSheetWithRate_(8);
-}
-
-function createConsumerDiscountSheet10() {
-  createConsumerDiscountSheetWithRate_(10);
-}
-
-function createConsumerDiscountSheetCustom() {
-  var ui = SpreadsheetApp.getUi();
-  var resp = ui.prompt(
-    "소비자용 DC율 입력",
-    "DC율(1~10, 소수 1자리 허용)을 입력하세요.\n예: 6.5",
-    ui.ButtonSet.OK_CANCEL,
-  );
-  if (resp.getSelectedButton() !== ui.Button.OK) return;
-  var text = String(resp.getResponseText() || "").trim();
-  if (!text) {
-    ui.alert("DC율을 입력해야 합니다.");
-    return;
-  }
-  var rate = normalizeDcRateNumber_(text, NaN);
-  if (isNaN(rate)) {
-    ui.alert(
-      "유효하지 않은 DC율입니다. 1~10 범위 숫자를 입력해주세요. (예: 7.5)",
-    );
-    return;
-  }
-  createConsumerDiscountSheetWithRate_(rate);
-}
-
-function createConsumerDiscountSheetWithRate_(pct) {
-  var ui = SpreadsheetApp.getUi();
-  var props = PropertiesService.getScriptProperties();
-  var hubId = getCanonicalHubIdFromProps_(props);
-  if (!hubId) return ui.alert("1번을 눌러 깨끗한 허브를 먼저 구축하세요.");
-
-  pct = normalizeDcRateNumber_(pct, 5);
-  var priceMultiplier = (100 - pct) / 100;
-  var dcHeader = "소비자 할인가";
-
-  var response = ui.prompt(
-    "🔗 [B2C] 소비자 전용 배포 시트 발급기 (" + pct + "% DC)",
-    "[1/2] 파일명용 짧은 이름을 입력하세요.\n" +
-      "(예: 당장, 홈마트, 카페리베 등 — 드라이브 파일 제목에 쓰임)",
-    ui.ButtonSet.OK_CANCEL,
-  );
-  if (response.getSelectedButton() !== ui.Button.OK) return;
-  var vendorName = response.getResponseText().trim();
-  if (!vendorName) return;
-
-  // [2/2] 매핑시트에 저장할 공식 거래처명 (발주탭 A열 표시용)
-  var officialResp = ui.prompt(
-    "🔗 [B2C] 소비자 전용 배포 시트 발급기 (" + pct + "% DC)",
-    "[2/2] 매핑시트에 저장할 공식 거래처명을 입력하세요.\n" +
-      "(예: 대리발송-당장드림/탁기선)\n\n" +
-      "※ 발주탭 A열에 자동 표시됩니다. 비우면 파일명과 동일하게 저장됩니다.",
-    ui.ButtonSet.OK_CANCEL,
-  );
-  if (officialResp.getSelectedButton() !== ui.Button.OK) return;
-  var officialVendorName = officialResp.getResponseText().trim() || vendorName;
-
-  var newFile = createTemplateCopyInTargetFolder_(
-    MASTER_TEMPLATE_ID,
-    "[독립 배포] " + vendorName + " (소비자용)",
-  );
-  var fileId = newFile.getId();
-  var newSS = SpreadsheetApp.openById(fileId);
-  ensureDeployLocalSettingsTab_(newSS, officialVendorName, "");
-
-  var sheet = newSS.getSheets()[0];
-  sheet.setName(vendorName + " 단가조회");
-
-  // 🚨 [순서 중요] 매핑시트에 fileId 행을 먼저 등록해야
-  //   applyViewerIdentityFormulaFromHubMap_()의 IMPORTRANGE MATCH가 성공한다.
-  try {
-    if (typeof registerVendorMappingOnCreate === "function") {
-      registerVendorMappingOnCreate(
-        officialVendorName,
-        fileId,
-        newFile.getName(),
-        {
-          operatingType: "일괄DC",
-          overrideDcRate: String(pct),
-        },
-      );
-    }
-  } catch (eRegPre) {}
-
-  // AC1(fileId)은 수식의 매칭 키이므로 정적 값 필요.
-  // AA1/AB1은 정적 setValue 하지 않는다 → 바로 수식으로 덮으면 매핑 변경이 자동 반영됨.
-  sheet.getRange("AC1").setValue(fileId).setFontColor("white");
-  // AA1/AB1을 허브 매핑과 IMPORTRANGE 수식으로 즉시 연결 (매핑시트 수정이 자동 반영)
-  try {
-    applyViewerIdentityFormulaFromHubMap_(sheet, hubId, fileId);
-  } catch (eIdent) {}
-  try {
-    applyLocalVendorIdentityOverride_(newSS, sheet, officialVendorName, "");
-  } catch (eLocalOverrideConsumer) {}
-  writeDeploySheetMeta_(sheet, { type: "consumer", dcRate: pct });
-
-  // 헤더 생성
-  sheet
-    .getRange("A1:G1")
-    .setValues([
-      [
-        "상태",
-        "출고지",
-        "이카운트코드(입력👇)",
-        "품목명",
-        "재고",
-        "소비자가",
-        dcHeader,
-      ],
-    ]);
-  sheet
-    .getRange("A1:G1")
-    .setBackground("#d9ead3")
-    .setFontWeight("bold")
-    .setHorizontalAlignment("center");
-  sheet.getRange("C1").setBackground("#fff2cc"); // 입력칸 강조
-  sheet.setFrozenRows(1);
-
-  // 허브 데이터 참조 수식
-  var hubLink = 'IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!';
-  var ids = 'IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!C:C")';
-
-  // 상태 (허브 A열)
-  sheet
-    .getRange("A2")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C2:C="", "", IFNA(XLOOKUP(C2:C, ' +
-        ids +
-        ", " +
-        hubLink +
-        'A:A")), "-")))',
-    );
-  // 출고지 (허브 B열)
-  sheet
-    .getRange("B2")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C2:C="", "", IFNA(XLOOKUP(C2:C, ' +
-        ids +
-        ", " +
-        hubLink +
-        'B:B")), "-")))',
-    );
-  // 품목명 (허브 D열)
-  sheet
-    .getRange("D2")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C2:C="", "", IFNA(XLOOKUP(C2:C, ' +
-        ids +
-        ", " +
-        hubLink +
-        'D:D")), "-")))',
-    );
-  // 재고 (허브 E열)
-  sheet
-    .getRange("E2")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C2:C="", "", IFNA(XLOOKUP(C2:C, ' +
-        ids +
-        ", " +
-        hubLink +
-        'E:E")), "-")))',
-    );
-  // 소비자가 (허브 F열)
-  sheet
-    .getRange("F2")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C2:C="", "", IFNA(XLOOKUP(C2:C, ' +
-        ids +
-        ", " +
-        hubLink +
-        'F:F")), "-")))',
-    );
-
-  // DC 할인가: 소비자가 × (1-할인율) 후 100원 단위 올림 (ROUNDUP)
-  sheet
-    .getRange("G2")
-    .setFormula(
-      '=ARRAYFORMULA(IF(C2:C="", "", IFERROR(IF(F2:F="-", "-", ROUNDUP(F2:F*' +
-        priceMultiplier +
-        ', -2)), "-")))',
-    );
-
-  // 서식 정리
-  sheet.getRange("E2:G1000").setNumberFormat("#,##0");
-  sheet.getRange("G2:G1000").setFontColor("red").setFontWeight("bold");
-  sheet.getRange("A2:G1000").setVerticalAlignment("middle");
-
-  // IMPORTRANGE 권한 뚫기 전용 숨김 셀 (안전을 위해 Z1에 배치)
-  sheet
-    .getRange("Z1")
-    .setFormula('=IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!A1")')
-    .setFontColor("white");
-
-  // 조건부 서식: 품절/단종 색칠
-  sheet.clearConditionalFormatRules();
-  var vRange = sheet.getRange("A2:G1000");
-  var rulePink = SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied('=ISNUMBER(SEARCH("품절", $A2))')
-    .setBackground("#f4cccc")
-    .setRanges([vRange])
-    .build();
-  var ruleGray = SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied('=ISNUMBER(SEARCH("단종", $A2))')
-    .setBackground("#d9d9d9")
-    .setRanges([vRange])
-    .build();
-  var ruleYellow = SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied('=ISNUMBER(SEARCH("재고까지만", $A2))')
-    .setBackground("#ffe599")
-    .setRanges([vRange])
-    .build();
-  sheet.setConditionalFormatRules([rulePink, ruleGray, ruleYellow]);
-
-  // 발주 탭 활용 (템플릿에 존재할 시 연결, 없으면 생성)
-  var orderTab = newSS.getSheetByName("발주 및 송장조회");
-  if (!orderTab) orderTab = newSS.insertSheet("발주 및 송장조회");
-  var defaultHeaders = [
-    "거래처명",
-    "주문일자(YYYYMMDD)",
-    "품목코드",
-    "품목명",
-    "수량",
-    "수취인",
-    "수취인전화번호",
-    "수취인주소",
-    "배송메시지",
-    "적요",
-    "송장번호",
-    "정산금액",
-    "고유ID",
-  ];
-  orderTab.getRange(1, 1, 1, defaultHeaders.length).setValues([defaultHeaders]);
-  orderTab
-    .getRange(1, 1, 1, defaultHeaders.length)
-    .setBackground("#4a86e8")
-    .setFontColor("white")
-    .setFontWeight("bold")
-    .setHorizontalAlignment("center");
-  orderTab.getRange("J1:K1").setBackground("#38761d");
-  orderTab.getRange("A2:A1000").setBackground("#ffffff");
-  orderTab.getRange("C2:F1000").setBackground("#d9ead3");
-  orderTab.getRange("H2:H1000").setBackground("#d9ead3");
-  orderTab.getRange("L2:L1000").setNumberFormat("#,##0");
-  orderTab.setFrozenRows(1);
-  orderTab.getRange("A2:Z1000").setVerticalAlignment("middle");
-
-  // 송장조회 전용 조건부 서식
-  var oRange = orderTab.getRange("A2:K1000");
-  var oRulePink = SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied('=AND(ISTEXT($J2), $J2<>"", $J2<>"발송완료")')
-    .setBackground("#f4cccc")
-    .setFontColor("red")
-    .setBold(false)
-    .setRanges([oRange])
-    .build();
-  var oRuleGray = SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied('=ISNUMBER(SEARCH("발송완료", $J2))')
-    .setBackground("#d9d9d9")
-    .setFontColor("#000000")
-    .setBold(false)
-    .setRanges([oRange])
-    .build();
-  orderTab.setConditionalFormatRules([oRulePink, oRuleGray]);
-  try {
-    var mapSheetForCreateConsumer =
-      SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
-        VENDOR_CUST_MAP_SHEET_NAME,
-      );
-    var policyForCreateConsumer = resolveVendorPolicyForFile_(
-      mapSheetForCreateConsumer,
-      fileId,
-      newFile.getName(),
-      "일괄DC",
-    );
-    applyVendorPolicyToOrderAndReply_(
-      newSS,
-      orderTab,
-      sheet,
-      policyForCreateConsumer,
-    );
-  } catch (ePolicyCreateConsumer) {}
-
-  try {
-    if (typeof ensureCurrentMonthArchiveTabForVendorFileId === "function") {
-      ensureCurrentMonthArchiveTabForVendorFileId(fileId, true);
-    }
-  } catch (e2) {}
-
-  ui.alert(
-    "✅ [" +
-      vendorName +
-      " (소비자용)] 배포 시트 복제가 완료되었습니다.\n구글 드라이브 폴더를 확인해주세요.\n\n해당 시트는 내부 그룹에 구애받지 않고 소비자 전용 할인가로 연동합니다.",
-  );
-  // registerVendorMappingOnCreate는 시트 생성 초반에 이미 호출되었음 (순서가 중요)
-}
-
-// 4. 배포 시트 생성 (스마트 필터링 및 ARRAYFORMULA 버그 수정 적용)
-
-function createVendorVlookupSheet() {
-  var ui = SpreadsheetApp.getUi();
-  var props = PropertiesService.getScriptProperties();
-  var hubId = getCanonicalHubIdFromProps_(props);
-  if (!hubId) return ui.alert("1번을 눌러 깨끗한 허브를 먼저 구축하세요.");
-
-  try {
-    var hubSS = getHubSS(hubId);
-    var hubTab = hubSS.getSheetByName("전체 그룹 단가표");
-    var hubData = hubTab.getDataRange().getValues();
-
-    var groupRowIdx = 0;
-    for (var r = 0; r < Math.min(4, hubData.length); r++) {
-      if (String(hubData[r][0]).replace(/\s/g, "") === "상태") {
-        groupRowIdx = r;
-        break;
-      }
-    }
-
-    var groupLocs = {};
-    for (var i = 6; i < hubData[groupRowIdx].length; i += 5) {
-      var gName = String(hubData[groupRowIdx][i]).trim();
-      if (gName && gName !== "") {
-        groupLocs[gName] = i + 1;
-      }
-    }
-
-    var groupListStr = Object.keys(groupLocs).join("  /  ");
-    var promptMsg =
-      "👉 아래 나열된 그룹 중 하나를 드래그+복사(Ctrl+C)하여 빈칸에 붙여넣으세요(Ctrl+V):\n\n" +
-      "[ " +
-      groupListStr +
-      " ]\n\n" +
-      "⚠️ 대소문자나 띄어쓰기가 틀리면 생성되지 않습니다.";
-
-    var response = ui.prompt(
-      "🔗 배포용 시트 (뷰어) 발급기",
-      promptMsg,
-      ui.ButtonSet.OK_CANCEL,
-    );
-    if (response.getSelectedButton() !== ui.Button.OK) return;
-
-    var groupName = response.getResponseText().trim();
-    if (!groupLocs[groupName]) {
-      return ui.alert(
-        "🚨 오류: ['" +
-          groupName +
-          "'] 은(는) 존재하지 않는 그룹명입니다. 복사/붙여넣기를 이용해주세요.",
-      );
-    }
-
-    var vendorName = ui
-      .prompt(
-        "업체명 [1/2]",
-        "파일명용 짧은 이름을 입력하세요.\n" +
-          "(예: 당장, 홈마트 — 드라이브 파일 제목에 쓰임)",
-        ui.ButtonSet.OK_CANCEL,
-      )
-      .getResponseText()
-      .trim();
-    if (!vendorName) return;
-
-    // [2/2] 매핑시트에 저장될 공식 거래처명 (발주탭 A열 표시용)
-    var officialVendorName = ui
-      .prompt(
-        "업체명 [2/2]",
-        "매핑시트에 저장할 공식 거래처명을 입력하세요.\n" +
-          "(예: 대리발송-당장드림/탁기선)\n\n" +
-          "※ 발주탭 A열에 자동 표시됩니다. 비우면 파일명과 동일.",
-        ui.ButtonSet.OK_CANCEL,
-      )
-      .getResponseText()
-      .trim();
-    if (!officialVendorName) officialVendorName = vendorName;
-
-    var newFile = createTemplateCopyInTargetFolder_(
-      MASTER_TEMPLATE_ID,
-      "[독립 배포] " + vendorName,
-    );
-    var fileId = newFile.getId();
-    var newSS = SpreadsheetApp.openById(fileId);
-    ensureDeployLocalSettingsTab_(newSS, officialVendorName, "");
-
-    var sheet = newSS.getSheets()[0];
-    sheet.setName(vendorName + " 뷰어");
-
-    // 🚨 [순서 중요] 매핑시트에 fileId 행을 먼저 등록해야
-    //   applyViewerIdentityFormulaFromHubMap_()의 IMPORTRANGE MATCH가 성공한다.
-    try {
-      if (typeof registerVendorMappingOnCreate === "function") {
-        registerVendorMappingOnCreate(
-          officialVendorName,
-          fileId,
-          newFile.getName(),
-          {
-            operatingType: "대리판매",
-          },
-        );
-      }
-    } catch (eRegPre) {}
-
-    // AC1(fileId)은 수식의 매칭 키이므로 정적 값 필요.
-    // AA1/AB1은 정적 setValue 하지 않는다 → 바로 수식으로 덮으면 매핑 변경이 자동 반영됨.
-    sheet.getRange("AC1").setValue(fileId).setFontColor("white");
-    // AA1/AB1을 허브 매핑과 IMPORTRANGE 수식으로 즉시 연결 (매핑시트 수정이 자동 반영)
-    try {
-      applyViewerIdentityFormulaFromHubMap_(sheet, hubId, fileId);
-    } catch (eIdent) {}
-    try {
-      applyLocalVendorIdentityOverride_(newSS, sheet, officialVendorName, "");
-    } catch (eLocalOverrideStandard) {}
-    writeDeploySheetMeta_(sheet, { type: "standard", dcRate: "" });
-
-    // ── Row 1 (신규): 공지사항 표시 행 ──
-    ensureNoticeRowLinked_(sheet, hubId);
-
-    // ── Row 2: 컬럼 헤더 (기존 Row 1에서 한 칸 이동) ──
-    // 허브가 1행 추가되어 F1→F2 (변동단가 제목 연동)
-    var customTitleForm = buildDeployTitleFormula_(hubId);
-    sheet
-      .getRange("A2:J2")
-      .setValues([
-        [
-          "상태",
-          "출고지",
-          "이카운트코드",
-          "품목명",
-          "재고",
-          "소비자가",
-          "최종단가",
-          "단가변동",
-          "지난단가",
-          "-",
-        ],
-      ]);
-    sheet.getRange("J2").setFormula(customTitleForm);
-    sheet
-      .getRange("A2:J2")
-      .setBackground("#cfe2f3")
-      .setFontColor("#000000")
-      .setFontWeight("bold")
-      .setHorizontalAlignment("center");
-
-    // K2: 그룹 위치 저장 (기존 K1 → K2, 공지 행 추가로 이동)
-    sheet.getRange("K2").setValue(groupLocs[groupName]).setFontColor("white");
-
-    // ── Row 3~: 데이터 수식 (기존 Row 2~에서 한 칸 이동) ──
-    var hubLink = 'IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!';
-    var ids = 'IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!C:C")';
-
-    sheet
-      .getRange("A3")
-      .setFormula(
-        '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-          ids +
-          ", " +
-          hubLink +
-          'A:A")), "-")))',
-      );
-    sheet
-      .getRange("B3")
-      .setFormula(
-        '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-          ids +
-          ", " +
-          hubLink +
-          'B:B")), "-")))',
-      );
-    sheet
-      .getRange("C3")
-      .setFormula('=IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!C3:C")');
-    sheet
-      .getRange("D3")
-      .setFormula(
-        '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-          ids +
-          ", " +
-          hubLink +
-          'D:D")), "-")))',
-      );
-    sheet
-      .getRange("E3")
-      .setFormula(
-        '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-          ids +
-          ", " +
-          hubLink +
-          'E:E")), "-")))',
-      );
-    sheet
-      .getRange("F3")
-      .setFormula(
-        '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-          ids +
-          ", " +
-          hubLink +
-          'F:F")), "-")))',
-      );
-
-    // K2 기준 동적 열 참조
-    var gRange =
-      'SUBSTITUTE(ADDRESS(1, K2, 4), "1", "") & ":" & SUBSTITUTE(ADDRESS(1, K2, 4), "1", "")';
-    sheet
-      .getRange("G3")
-      .setFormula(
-        '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-          ids +
-          ', IMPORTRANGE("' +
-          hubId +
-          '", "전체 그룹 단가표!" & ' +
-          gRange +
-          ')), "-")))',
-      );
-
-    var iRangeFormula =
-      'SUBSTITUTE(ADDRESS(1, K2+2, 4), "1", "") & ":" & SUBSTITUTE(ADDRESS(1, K2+2, 4), "1", "")';
-    sheet
-      .getRange("I3")
-      .setFormula(
-        '=ARRAYFORMULA(IF(C3:C="", "", IFNA(XLOOKUP(C3:C, ' +
-          ids +
-          ', IMPORTRANGE("' +
-          hubId +
-          '", "전체 그룹 단가표!" & ' +
-          iRangeFormula +
-          ')), "-")))',
-      );
-
-    sheet
-      .getRange("H3")
-      .setFormula(
-        '=ARRAYFORMULA(IF(C3:C="", "", IFERROR(IF(G3:G=I3:I, "-", G3:G-I3:I), "-")))',
-      );
-
-    var jRangeFormula =
-      'SUBSTITUTE(ADDRESS(1, K2+4, 4), "1", "") & ":" & SUBSTITUTE(ADDRESS(1, K2+4, 4), "1", "")';
-    sheet
-      .getRange("J3")
-      .setFormula(
-        '=ARRAYFORMULA(IF(C3:C="", "", LET(nxt, IFNA(XLOOKUP(C3:C, ' +
-          ids +
-          ', IMPORTRANGE("' +
-          hubId +
-          '", "전체 그룹 단가표!" & ' +
-          jRangeFormula +
-          ')), "-"), IF((nxt="-") + (nxt="") + (nxt=G3:G), "-", nxt))))',
-      );
-
-    // 디자인 포맷 (Row 3부터 적용)
-    sheet.getRange("E3:J1000").setNumberFormat("#,##0");
-    sheet.getRange("G3:H1000").setFontColor("red");
-    sheet.getRange("I3:I1000").setFontColor("#666666");
-    sheet.getRange("J3:J1000").setFontColor("blue");
-    sheet.setFrozenRows(2); // 공지행 + 헤더행 고정
-
-    // ── 공지 팝업용 숨김 셀 (Y1에 [설정] B1 공지 미러링, 흰 글씨) ──
-    if (sheet.getMaxColumns() < 26) {
-      sheet.insertColumnsAfter(
-        sheet.getMaxColumns(),
-        26 - sheet.getMaxColumns(),
-      );
-    }
-    sheet
-      .getRange("Y1")
-      .setFormula('=IFERROR(IMPORTRANGE("' + hubId + '", "설정!B1"), "")')
-      .setFontColor("white");
-    sheet
-      .getRange("Z1")
-      .setFormula('=IMPORTRANGE("' + hubId + '", "전체 그룹 단가표!A1")')
-      .setFontColor("white");
-    // 상태값 조건부 서식 (Row 3부터)
-    sheet.clearConditionalFormatRules();
-    var vRange = sheet.getRange("A3:J1000");
-    var rulePink = SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=ISNUMBER(SEARCH("품절", $A3))')
-      .setBackground("#f4cccc")
-      .setRanges([vRange])
-      .build();
-    var ruleGray = SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=ISNUMBER(SEARCH("단종", $A3))')
-      .setBackground("#d9d9d9")
-      .setRanges([vRange])
-      .build();
-    var ruleYellow = SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=ISNUMBER(SEARCH("재고까지만", $A3))')
-      .setBackground("#ffe599")
-      .setRanges([vRange])
-      .build();
-    sheet.setConditionalFormatRules([rulePink, ruleGray, ruleYellow]);
-
-    // [신규 시스템] 발주 및 송장조회 탭 생성 파트
-    var formatPrompt = ui.prompt(
-      "📝 발주 양식 세팅 (선택)",
-      "판매처(기본양식)인 경우 그냥 [확인]을 누르세요.\n\n" +
-        "공급처(맞춤양식)인 경우 맞춤양식명을 정확히 입력하세요. (예: 태양)\n" +
-        "허브 「업체전용양식마스터」시트 또는 코드(EMBEDDED_VENDOR_EXCLUSIVE_MASTER_ROWS_)에 같은 맞춤양식명이 있으면 「… 전용양식」 1행 헤더가 자동 적용됩니다.\n" +
-        "(탭 준비: 💰 독립배포 관리 → 6-4) ",
-      ui.ButtonSet.OK_CANCEL,
-    );
-    if (formatPrompt.getSelectedButton() !== ui.Button.OK) {
-      ui.alert("⚠️ 시트 생성이 취소되었습니다. (양식 구성 불가)");
-      return;
-    }
-    var supplierFormatName = formatPrompt.getResponseText().trim();
-
-    var defaultHeaders = [
-      "거래처명",
-      "주문일자(YYYYMMDD)",
-      "이카운트코드",
-      "품목명",
-      "수량",
-      "수취인",
-      "수취인전화번호",
-      "수취인주소",
-      "배송메시지",
-      "적요",
-      "송장번호",
-      "정산금액",
-      "고유ID",
-    ];
-    var exclusiveFormHeaders = defaultHeaders;
-    if (
-      supplierFormatName !== "" &&
-      typeof loadVendorExclusiveTemplateHeadersFromHub_ === "function"
-    ) {
-      var tmplH = loadVendorExclusiveTemplateHeadersFromHub_(
-        SpreadsheetApp.getActiveSpreadsheet(),
-        supplierFormatName,
-      );
-      if (tmplH && tmplH.length) exclusiveFormHeaders = tmplH;
-    }
-
-    // 1. 공통 팩투유 발주 탭 연결 및 갱신 (2번 탭)
-    var orderTab = newSS.getSheetByName("발주 및 송장조회");
-    if (!orderTab) orderTab = newSS.insertSheet("발주 및 송장조회");
-    orderTab
-      .getRange(1, 1, 1, defaultHeaders.length)
-      .setValues([defaultHeaders]);
-    orderTab
-      .getRange(1, 1, 1, defaultHeaders.length)
-      .setBackground("#4a86e8")
-      .setFontColor("white")
-      .setFontWeight("bold")
-      .setHorizontalAlignment("center");
-
-    // 주문조회 용 추가 스타일링
-    orderTab.getRange("J1:K1").setBackground("#38761d");
-    orderTab.getRange("L1:M1").setBackground("#990000"); // 정산/ID 강조
-    orderTab.getRange("A2:A1000").setBackground("#ffffff");
-    orderTab.getRange("C2:D1000").setBackground("#fff2cc"); // 코드/품목명 강조 (드롭다운 대상)
-    orderTab.getRange("E2:F1000").setBackground("#d9ead3");
-    orderTab.getRange("H2:H1000").setBackground("#d9ead3");
-    orderTab.getRange("L2:L1000").setNumberFormat("#,##0");
-    orderTab.setFrozenRows(1);
-    orderTab.getRange("A2:Z1000").setVerticalAlignment("middle");
-
-    // 1. (삭제) C열은 사용자가 직접 입력하기도 하므로 배열 수식을 해제하고 onEdit 스크립트로 대체합니다.
-
-    // 2. 이카운트코드(C)를 바탕으로 정산금액(L) 자동 완성 (단가×수량)
-
-    // 2. A1/L1에 spill 수식 주입 (A2 단일 삭제 원천 차단, 깨져도 self-heal이 복구)
-    var viewerTabName = sheet.getName();
-    injectOrderSpillFormulas_(orderTab, viewerTabName);
-
-    // 🚨 발주 탭의 중요한 영역 보호 (업체에서 임의 조작 방지)
-    try {
-      var oProtections = orderTab.getProtections(
-        SpreadsheetApp.ProtectionType.RANGE,
-      );
-      for (var pIdx = 0; pIdx < oProtections.length; pIdx++)
-        oProtections[pIdx].remove();
-
-      var headerProtect = orderTab
-        .getRange("1:1")
-        .protect()
-        .setDescription("발주 시트 헤더 락");
-      headerProtect.removeEditors(headerProtect.getEditors());
-
-      var abProtect = orderTab
-        .getRange("A:B")
-        .protect()
-        .setDescription("거래처/주문일자 수동입력 방지");
-      abProtect.removeEditors(abProtect.getEditors());
-      var priceProtect = orderTab
-        .getRange("L:M")
-        .protect()
-        .setDescription("정산금액 조작 방지");
-      priceProtect.removeEditors(priceProtect.getEditors());
-    } catch (e) {}
-
-    // [초기 override 선택] 드롭다운 사용 여부를 매핑시트 정책 override로 기록
-    var isFranchiseInfo = ui.alert(
-      "✨ 드롭다운(품목 선택) 기능 포함 여부",
-      "이 업체에게 드롭다운(마우스로 클릭해서 상품 선택) 기능을 넣으시겠습니까?\n\n▶ 예: 프랜차이즈 매장 등 마우스로 수동 선택 발주가 잦은 곳\n▶ 아니오: 엑셀 데이터를 대량 복붙하는 업체 (렉 및 입력 에러 완전 차단)",
-      ui.ButtonSet.YES_NO,
-    );
-    var initialDropdownOverride = isFranchiseInfo === ui.Button.YES ? "Y" : "N";
-    try {
-      if (typeof updateVendorPolicyOverridesByFileId_ === "function") {
-        updateVendorPolicyOverridesByFileId_(fileId, {
-          overrideDropdownEnabled: initialDropdownOverride,
-        });
-      }
-    } catch (ePolicyOverride) {}
-
-    // 2. 개별 커스텀 탭 생성 (맞춤 양식 입력 시 3번 탭으로 분리)
-    if (supplierFormatName !== "") {
-      var customTab = newSS.insertSheet(supplierFormatName + " 전용양식");
-      var exLc = exclusiveFormHeaders.length;
-      customTab.getRange(1, 1, 1, exLc).setValues([exclusiveFormHeaders]);
-      customTab
-        .getRange(1, 1, 1, exLc)
-        .setBackground("#ea9999")
-        .setFontColor("black")
-        .setFontWeight("bold")
-        .setHorizontalAlignment("center");
-      customTab
-        .getRange("A2")
-        .setValue(
-          "※ 행 데이터는 허브 「대리공급 발주 → 독립배포 전용양식」으로 채워집니다. 업체 표시 품목명은 허브 「누적품목매핑」이 우선입니다.",
-        );
-      customTab.setFrozenRows(1);
-    }
-
-    try {
-      if (typeof ensureCurrentMonthArchiveTabForVendorFileId === "function") {
-        ensureCurrentMonthArchiveTabForVendorFileId(fileId, true);
-      }
-    } catch (e3) {}
-
-    // 송장조회 용 조건부 서식
-    var oRange = orderTab.getRange("A2:K1000");
-    var oRulePink = SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=AND(ISTEXT($J2), $J2<>"", $J2<>"발송완료")')
-      .setBackground("#f4cccc")
-      .setFontColor("red")
-      .setBold(false)
-      .setRanges([oRange])
-      .build();
-    var oRuleGray = SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=ISNUMBER(SEARCH("발송완료", $J2))')
-      .setBackground("#d9d9d9")
-      .setFontColor("#000000")
-      .setBold(false)
-      .setRanges([oRange])
-      .build();
-    orderTab.setConditionalFormatRules([oRulePink, oRuleGray]);
-    try {
-      var mapSheetForCreateStandard =
-        SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
-          VENDOR_CUST_MAP_SHEET_NAME,
-        );
-      var policyForCreateStandard = resolveVendorPolicyForFile_(
-        mapSheetForCreateStandard,
-        fileId,
-        newFile.getName(),
-        "대리판매",
-      );
-      applyVendorPolicyToOrderAndReply_(
-        newSS,
-        orderTab,
-        sheet,
-        policyForCreateStandard,
-      );
-    } catch (ePolicyCreateStandard) {}
-
-    ui.alert(
-      "✅ [" +
-        vendorName +
-        "] 배포 시트 생성이 완료되었습니다.\n구글 드라이브 폴더를 확인해주세요.",
-    );
-    // registerVendorMappingOnCreate는 시트 생성 초반에 이미 호출되었음 (순서가 중요)
-  } catch (e) {
-    var dbg2 = getPermissionDebugSummary_();
-    ui.alert("❌ 오류: " + e.message + "\n\n" + dbg2);
-  }
-}
-
 // [정기 업데이트] 배포 시트(전체)를 최신 단가/공지 반영 상태로 업데이트하는 함수
 function updateAllVendorSheets(opts) {
   opts = opts || {};
@@ -3373,7 +2618,7 @@ function updateAllVendorSheets(opts) {
         ensureNoticeRowLinked_(sheet, hubId);
 
         // 헤더 갱신 (Row 2, 10개 열 신규 구조 적용)
-        // 생성 시(createVendorVlookupSheet)와 동일하게 설정 탭(B2) 제목을 기준으로 유지
+        // 생성 시(partnerCreateSheet)와 동일하게 설정 탭(B2) 제목을 기준으로 유지
         // (강제 업데이트 실행 시 타이틀이 사라지거나 기본값으로 되돌아가는 현상 방지)
         var customTitleForm = buildDeployTitleFormula_(hubId);
 
@@ -4144,6 +3389,133 @@ function findMyHub() {
 }
 function syncStatusOnly(isAuto) {
   syncGroupPrices(isAuto);
+  // ★ 2026-08-24: 허브 동기화 후 협력업체 단가조회 IMPORTRANGE 빠른 새로고침
+  try {
+    if (typeof partnerRefreshViewerPrices === "function") {
+      partnerRefreshViewerPrices({ silent: !!isAuto });
+    }
+  } catch (eVendor) {
+    Logger.log(
+      "[syncStatusOnly] 단가 새로고침 오류: " + (eVendor.message || eVendor),
+    );
+  }
+}
+
+/**
+ * ★ 2026-06-23: 특정 업체 시트에 바인딩된 중복 스크립트 프로젝트를 검색하여,
+ * 1개만 남기고 나머지는 자동으로 휴지통으로 정리하는 함수
+ * ★ 2026-07-20: preferId 지원 — 캐시된(코드를 갱신할) 프로젝트를 우선 보존.
+ *   구버전 onEdit(입력차단·자동복구·D/L 값 쓰기)이 남은 중복 프로젝트가
+ *   편집 때마다 함께 실행되며 스필 #REF!를 유발하던 문제의 정리 경로.
+ */
+var _p2uDupScanCache_ = null; // ★ 2026-07-20: 실행당 1회 스캔 (parentId → 프로젝트 목록)
+
+function _p2uScanAllBoundScripts_() {
+  if (_p2uDupScanCache_) return _p2uDupScanCache_;
+  var oauthToken = ScriptApp.getOAuthToken();
+  var byParent = {};
+  var names = ["Pack2U 공지팝업", "Pack2U 송장매칭"];
+
+  names.forEach(function(name) {
+    var files = DriveApp.getFilesByName(name);
+    while (files.hasNext()) {
+      var file = files.next();
+      var id = file.getId();
+      if (file.isTrashed()) continue;
+
+      try {
+        var resp = UrlFetchApp.fetch("https://script.googleapis.com/v1/projects/" + id, {
+          method: "GET",
+          headers: { Authorization: "Bearer " + oauthToken },
+          muteHttpExceptions: true
+        });
+        if (resp.getResponseCode() === 200) {
+          var proj = JSON.parse(resp.getContentText());
+          var pid = String(proj.parentId || "");
+          if (!pid) continue;
+          if (!byParent[pid]) byParent[pid] = [];
+          byParent[pid].push({
+            id: id,
+            updateTime: file.getLastUpdated().getTime(),
+            file: file
+          });
+        }
+      } catch(e) {}
+    }
+  });
+  _p2uDupScanCache_ = byParent;
+  return byParent;
+}
+
+function cleanDuplicateViewerScripts_(viewerSheetId, preferId) {
+  var oauthToken = ScriptApp.getOAuthToken();
+  var foundProjects = _p2uScanAllBoundScripts_()[viewerSheetId] || [];
+
+  if (foundProjects.length === 0) return null;
+  
+  // 가장 최근에 업데이트된 순서로 정렬
+  foundProjects.sort(function(a, b) {
+    return b.updateTime - a.updateTime;
+  });
+  
+  // ★ preferId(캐시된 프로젝트)가 목록에 있으면 그것을 보존 — 없으면 최신 프로젝트
+  var keepProject = foundProjects[0];
+  if (preferId) {
+    for (var pi = 0; pi < foundProjects.length; pi++) {
+      if (foundProjects[pi].id === preferId) { keepProject = foundProjects[pi]; break; }
+    }
+  }
+  
+  // 나머지 중복 프로젝트는 자동 삭제
+  for (var i = 0; i < foundProjects.length; i++) {
+    if (foundProjects[i].id === keepProject.id) continue;
+    try {
+      foundProjects[i].file.setTrashed(true);
+      Logger.log("중복 스크립트 자동 삭제 완료: " + foundProjects[i].id);
+    } catch(eDel) {
+      Logger.log("중복 삭제 중 실패: " + eDel.message);
+      // ★ 삭제 실패 시 폴백: 구버전 onEdit을 no-op으로 덮어써 무력화
+      try { _neutralizeBoundScriptProject_(foundProjects[i].id, oauthToken); } catch(eNu) {}
+    }
+  }
+  
+  return keepProject.id;
+}
+
+/**
+ * ★ 2026-07-20: 바인딩 스크립트 프로젝트를 no-op 코드로 덮어써 무력화
+ *   (휴지통 이동 실패 시 폴백 — 구버전 onEdit 실행 차단)
+ */
+function _neutralizeBoundScriptProject_(scriptId, oauthToken) {
+  var manifest = JSON.stringify({
+    timeZone: "Asia/Seoul",
+    exceptionLogging: "STACKDRIVER",
+    runtimeVersion: "V8",
+  });
+  var resp = UrlFetchApp.fetch(
+    "https://script.googleapis.com/v1/projects/" + scriptId + "/content",
+    {
+      method: "PUT",
+      headers: {
+        Authorization: "Bearer " + oauthToken,
+        "Content-Type": "application/json",
+        Expect: "",
+      },
+      payload: JSON.stringify({
+        files: [
+          {
+            name: "Code",
+            type: "SERVER_JS",
+            source: "// [Pack2U] 구버전 스크립트 무력화 (2026-07-20)\nfunction onEdit(e) {}\nfunction onOpen() {}\n",
+          },
+          { name: "appsscript", type: "JSON", source: manifest },
+        ],
+      }),
+      muteHttpExceptions: true,
+    }
+  );
+  Logger.log("[NEUTRALIZE] " + scriptId + " → HTTP " + resp.getResponseCode());
+  return resp.getResponseCode() === 200;
 }
 
 function createViewerNoticeScript_(viewerSS) {
@@ -4151,64 +3523,141 @@ function createViewerNoticeScript_(viewerSS) {
   var oauthToken = ScriptApp.getOAuthToken();
   var props = PropertiesService.getScriptProperties();
   var scriptKey = "VIEWER_BOUND_SCRIPT_ID_" + viewerSheetId;
+  
+  // ★ 2026-07-01: 성능 최적화 — 캐시를 먼저 확인하고 유효하면 중복 정리(DriveApp 검색)를 건너뜀
   var savedScriptId = String(props.getProperty(scriptKey) || "").trim();
+  
+  if (savedScriptId) {
+    // 캐시가 있으면 일단 유효한지 가볍게 체크
+    try {
+      var check = UrlFetchApp.fetch("https://script.googleapis.com/v1/projects/" + savedScriptId, {
+        method: "GET",
+        headers: { Authorization: "Bearer " + oauthToken },
+        muteHttpExceptions: true
+      });
+      if (check.getResponseCode() === 200) {
+        // 유효함 → 코드 갱신은 이 프로젝트에 진행
+        // ★ 2026-07-20: 단, 중복 프로젝트 정리는 항상 실행 (캐시 프로젝트 보존)
+        //   기존엔 캐시가 유효하면 정리를 건너뛰어, 같은 시트에 바인딩된
+        //   "구버전 onEdit"(입력차단·자동복구·D/L 값 쓰기) 프로젝트가 살아남아
+        //   재설치를 해도 편집 때마다 함께 실행되며 스필 #REF!를 재발시켰음
+        try {
+          cleanDuplicateViewerScripts_(viewerSheetId, savedScriptId);
+        } catch (eDup) {
+          Logger.log("중복 스크립트 정리 중 오류(캐시 유효 경로): " + eDup.message);
+        }
+      } else {
+        savedScriptId = ""; // 유효하지 않음 → 검색 필요
+      }
+    } catch(e) { savedScriptId = ""; }
+  }
+
+  // 캐시가 없거나 유효하지 않을 때만 전체 검색 실행
+  if (!savedScriptId) {
+    try {
+      savedScriptId = cleanDuplicateViewerScripts_(viewerSheetId) || "";
+      if (savedScriptId) {
+        props.setProperty(scriptKey, savedScriptId); // 캐시 갱신
+      }
+    } catch(eClean) {
+      Logger.log("중복 스크립트 정리 중 오류: " + eClean.message);
+    }
+  }
 
 
-  // 1) 바운드 스크립트 소스:
-  //    - onOpen: 공지 팝업
-  //    - onEdit: 발주탭 C/D 입력 시 B(주문일자) 누락 행만 yyyyMMdd 자동기입
-  //      (A열/A1 spill, L열 수식에는 절대 터치하지 않음)
+  // ★ 2026-07-03: 라이브러리 패턴 전환 — onOpen도 라이브러리 호출
   var onOpenPart = [
-    "// Pack2U \uACF5\uC9C0 \uD31D\uC5C5 \uC2A4\uD06C\uB9BD\uD2B8 (\uC790\uB3D9 \uC0DD\uC131\uB428)",
+    "// Pack2U 라이브러리 기반 (2026-07-03 전환)",
     "function onOpen() {",
-    "  try {",
-    "    var notice = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getRange('Y1').getValue();",
-    "    var msg = String(notice || '').trim();",
-    "    // \uBE48\uAC12\uC774\uAC70\uB098 \uAE30\uBCF8 \uC548\uB0B4\uBB38\uAD6C(\uAD04\uD638\uB85C \uC2DC\uC791)\uBA74 \uBBF8\uD45C\uC2DC",
-    "    if (msg && msg.charAt(0) !== '(' && msg.charAt(0) !== '#') {",
-    "    var html = HtmlService.createHtmlOutput(",
-    "      '<div style=\"font-family:Apple SD Gothic Neo,Arial,sans-serif;padding:24px;\">' +",
-    "      '<div style=\"font-size:15px;font-weight:bold;color:#c07616;margin-bottom:14px;\">' +",
-    "      '\uD83D\uDD14 \uACF5\uC9C0\uC0AC\uD56D</div>' +", // 📢 공지사항
-    "      '<div style=\"font-size:13px;line-height:1.9;white-space:pre-wrap;\">' + msg + '</div>' +",
-    "      '</div>'",
-    "    ).setWidth(440).setHeight(230);",
-    "    SpreadsheetApp.getUi().showModelessDialog(html, '\uD83D\uDD14 Pack2U \uACF5\uC9C0\uC0AC\uD56D');", // 📢 Pack2U 공지사항
-    "    }",
-    "  } catch(e) { /* \uD31D\uC5C5 \uC624\uB958 \uBB34\uC2DC */ }",
-    "  // \u2605 \uC0C1\uD488 \uAC80\uC0C9 \uC0AC\uC774\uB4DC\uBC14 \uBA54\uB274 \uB4F1\uB85D",
-    "  try {",
-    "    SpreadsheetApp.getUi()",
-    "      .createMenu('\uD83D\uDD0D \uC0C1\uD488 \uAC80\uC0C9')",
-    "      .addItem('\uC0C1\uD488\uBA85\uC73C\uB85C \uCF54\uB4DC \uAC80\uC0C9', 'openProductSearchSidebar')",
-    "      .addToUi();",
-    "  } catch(eMenu2) {}",
-    "  // \u2605 2026-06-18: \uC1A1\uC7A5 \uB9E4\uCE6D \uC0AC\uC774\uB4DC\uBC14 \uBA54\uB274",
-    "  try {",
-    "    SpreadsheetApp.getActiveSpreadsheet()",
-    "      .addMenu('\uD83D\uDCEC \uC1A1\uC7A5 \uB9E4\uCE6D', [",
-    "        { name: '\uCE74\uCE74\uC624 \uC1A1\uC7A5\uBC88\uD638 \uC785\uB825', functionName: 'openInvoiceMatchSidebarLocal' }",
-    "      ]);",
-    "  } catch(eMenu3) {}",
+    "  Pack2U.p2u_partnerOnOpen();",
     "}",
   ].join("\n");
 
   // ★ 2026-06-17: 단일 소스 전환 — onEdit 코드를 partnerOnEditSource.gs에서 읽음
-  // 수정은 partnerOnEditSource.gs의 getPartnerOnEditCode_() 한 곳에서만!
   var onEditCode = "";
   try {
     onEditCode = getPartnerOnEditCode_();
   } catch (eRead) {
     Logger.log("getPartnerOnEditCode_ 호출 실패: " + eRead.message);
-    onEditCode = "function onEdit(e) { /* partnerOnEditSource.gs 파일 누락 */ }";
+    onEditCode = "function onEdit(e) { Pack2U.p2u_partnerOnEdit(e); }";
   }
 
   // onOpen + onEdit 합치기
   var onOpenCode = onOpenPart + "\n\n" + onEditCode;
 
-
-
-
+  // ★ 2026-07-01: DB 단가 검색/새로고침 함수 (업체 시트 주입용)
+  var dbPriceCode = [
+    "// ═══ [DB 단가] 웹앱 API 기반 단가 검색 (2026-07-01) ═══",
+    "var _HUB_API_ = '" + (typeof HUB_WEBAPP_URL !== 'undefined' ? HUB_WEBAPP_URL : '') + "';",
+    "",
+    "function dbPriceSearch() {",
+    "  var ui = SpreadsheetApp.getUi();",
+    "  if (!_HUB_API_) { ui.alert('DB API URL이 설정되지 않았습니다.'); return; }",
+    "  var input = ui.prompt('\uD83D\uDD0D DB \uD488\uBAA9 \uAC80\uC0C9', '\uC774\uCE74\uC6B4\uD2B8\uCF54\uB4DC \uB610\uB294 \uD488\uBAA9\uBA85 \uC77C\uBD80\uB97C \uC785\uB825\uD558\uC138\uC694:', ui.ButtonSet.OK_CANCEL);",
+    "  if (input.getSelectedButton() !== ui.Button.OK) return;",
+    "  var q = input.getResponseText().trim();",
+    "  if (!q) return;",
+    "  try {",
+    "    var startTime = new Date();",
+    "    var res = UrlFetchApp.fetch(_HUB_API_ + '?action=productSearch&q=' + encodeURIComponent(q) + '&limit=10', {muteHttpExceptions: true});",
+    "    var data = JSON.parse(res.getContentText());",
+    "    var elapsed = new Date() - startTime;",
+    "    if (!data.data || data.data.length === 0) { ui.alert('\uAC80\uC0C9 \uACB0\uACFC \uC5C6\uC74C\\n\\n\"' + q + '\"\uC5D0 \uD574\uB2F9\uD558\uB294 \uD488\uBAA9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.\\n\u23F1 ' + elapsed + 'ms'); return; }",
+    "    var msg = '\uD83D\uDD0D \uAC80\uC0C9 \uACB0\uACFC (' + data.data.length + '\uAC74) \u2014 \u23F1 ' + elapsed + 'ms\\n\\n';",
+    "    for (var i = 0; i < data.data.length; i++) {",
+    "      var p = data.data[i];",
+    "      msg += '\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\\n';",
+    "      msg += '\uCF54\uB4DC: ' + p.ecount_code + '\\n';",
+    "      msg += '\uD488\uBAA9: ' + p.item_name + '\\n';",
+    "      msg += '\uC0C1\uD0DC: ' + (p.status || '-') + ' | \uC7AC\uACE0: ' + (p.stock_qty || 0) + '\\n';",
+    "      msg += '\uD5C8\uBE0C\uB2E8\uAC00: ' + (p.hub_base_price || '-') + '\\n';",
+    "    }",
+    "    ui.alert(msg);",
+    "  } catch(e) { ui.alert('\u274C DB \uAC80\uC0C9 \uC624\uB958: ' + e.message); }",
+    "}",
+    "",
+    "function _findViewerTab_(ss) {",
+    "  var sheets = ss.getSheets();",
+    "  for (var i = 0; i < sheets.length; i++) {",
+    "    var n = sheets[i].getName();",
+    "    if (n.indexOf('\uB2E8\uAC00\uC870\uD68C') !== -1 || n.indexOf('\uBE74\uC5B4') !== -1) return sheets[i];",
+    "  }",
+    "  return null;",
+    "}",
+    "",
+    "function dbPriceRefresh() {",
+    "  var ui = SpreadsheetApp.getUi();",
+    "  if (!_HUB_API_) { ui.alert('DB API URL\uC774 \uC124\uC815\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.'); return; }",
+    "  var ss = SpreadsheetApp.getActiveSpreadsheet();",
+    "  var settingsTab = ss.getSheetByName('\uC124\uC815');",
+    "  var group = '';",
+    "  if (settingsTab) { group = String(settingsTab.getRange('B5').getValue() || '').trim(); }",
+    "  if (!group) { ui.alert('\uC124\uC815 \uD0ED B5\uC5D0 \uAC70\uB798\uCC98\uBA85\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.'); return; }",
+    "  ui.alert('\uD83D\uDD04 DB \uB2E8\uAC00 \uC0C8\uB85C\uACE0\uCE68\\n\\n\uADF8\uB8F9: ' + group + '\\n\uC870\uD68C \uC911... (\uC218\uCD08 \uC18C\uC694)');",
+    "  try {",
+    "    var res = UrlFetchApp.fetch(_HUB_API_ + '?action=vendorProducts&group=' + encodeURIComponent(group), {muteHttpExceptions: true});",
+    "    var data = JSON.parse(res.getContentText());",
+    "    if (!data.data || data.data.length === 0) { ui.alert('\u274C \uACB0\uACFC \uC5C6\uC74C: \"' + group + '\" \uADF8\uB8F9 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.'); return; }",
+    "    var viewerTab = _findViewerTab_(ss);",
+    "    if (!viewerTab) { ui.alert('\uB2E8\uAC00\uC870\uD68C \uD0ED\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.'); return; }",
+    "    var rows = data.data.map(function(p) { return [p.status || '', '', p.code || '', p.name || '', '', '', p.price || 0]; });",
+    "    viewerTab.getRange(3, 1, viewerTab.getMaxRows() - 2, 7).clearContent();",
+    "    viewerTab.getRange(3, 1, rows.length, 7).setValues(rows);",
+    "    ui.alert('\u2705 DB \uB2E8\uAC00 \uC0C8\uB85C\uACE0\uCE68 \uC644\uB8CC\\n\\n\uADF8\uB8F9: ' + group + '\\n\uD488\uBAA9 \uC218: ' + rows.length + '\uAC74');",
+    "  } catch(e) { ui.alert('\u274C DB \uC0C8\uB85C\uACE0\uCE68 \uC624\uB958: ' + e.message); }",
+    "}",
+    "",
+    "function dbToggleMode() {",
+    "  var ss = SpreadsheetApp.getActiveSpreadsheet();",
+    "  var settingsTab = ss.getSheetByName('\uC124\uC815');",
+    "  if (!settingsTab) { SpreadsheetApp.getUi().alert('\uC124\uC815 \uD0ED\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.'); return; }",
+    "  var current = String(settingsTab.getRange('C20').getValue() || '').trim();",
+    "  var newMode = (current === 'DB') ? '\uAE30\uC874' : 'DB';",
+    "  settingsTab.getRange('B20').setValue('\uB2E8\uAC00\uC870\uD68C\uBC29\uC2DD');",
+    "  settingsTab.getRange('C20').setValue(newMode);",
+    "  SpreadsheetApp.getUi().alert('\u2705 \uB2E8\uAC00\uC870\uD68C \uBAA8\uB4DC \uC804\uD658\\n\\n' + current + ' \u2192 ' + newMode + '\\n\\n' + (newMode === 'DB' ? 'DB \uBAA8\uB4DC: \uC6F9\uC571 API\uB85C \uBE60\uB978 \uAC80\uC0C9' : '\uAE30\uC874 \uBAA8\uB4DC: IMPORTRANGE \uC0AC\uC6A9'));",
+    "}",
+  ].join("\n");
 
   var searchOrderCode = [
     "// [검색발주] 발주 제출 + 드롭다운 갱신 (자동 생성됨)",
@@ -4457,14 +3906,25 @@ function createViewerNoticeScript_(viewerSS) {
   ].join("\n");
 
 
+  // ★ 2026-07-03: 라이브러리 패턴 — 허브 프로젝트를 Pack2U 라이브러리로 참조
+  var hubScriptId = "192tojXvo5GfhIJoHXo7UbmSMbNjpUjfx2nEUAz56kacKaQrDXoSMLC7i";
   var manifest = JSON.stringify({
     timeZone: "Asia/Seoul",
-    dependencies: {},
+    dependencies: {
+      libraries: [
+        {
+          userSymbol: "Pack2U",
+          libraryId: hubScriptId,
+          version: "0",
+          developmentMode: true
+        }
+      ]
+    },
     exceptionLogging: "STACKDRIVER",
     runtimeVersion: "V8",
   });
 
-  // ★ 2026-06-22: 송장 매칭 코드 + HTML 분리
+  // ★ 2026-06-23 v9: 송장 매칭 코드 주입 (HTML 파일 없이 인라인 방식)
   var invoiceMatchCode = "";
   try {
     invoiceMatchCode = getPartnerInvoiceMatchCode_();
@@ -4472,15 +3932,22 @@ function createViewerNoticeScript_(viewerSS) {
     Logger.log("getPartnerInvoiceMatchCode_ 호출 실패: " + eIM.message);
     invoiceMatchCode = "// InvoiceMatch 코드 로드 실패";
   }
-  // ★ HTML 별도 파일로 분리 (이스케이프 문제 원천 차단)
-  // ★ 2026-06-22: 로컬 하이브리드 방식으로 웹앱 URL이 필요 없음
-  var invoiceMatchHtml = "";
-  try {
-    var _apiKey = _getOcrApiKey_();
-    invoiceMatchHtml = _getInvoiceMatchHtml_()
-      .replace('__OCR_API_KEY__', _apiKey);
-  } catch (eIMH) {
-    Logger.log("InvoiceMatch HTML 로드 실패: " + eIMH.message);
+  // ★ v9: InvoiceMatchSidebar.html 파일 주입 제거
+  // openInvoiceMatchSidebarLocal이 _getInvoiceMatchHtml_()를 직접 호출하므로 불필요
+
+  // ★ 2026-06-24: 429 Rate Limit 자동 재시도 래퍼
+  function _fetchWithRetry_(url, options, maxRetries) {
+    maxRetries = maxRetries || 3;
+    for (var attempt = 0; attempt <= maxRetries; attempt++) {
+      var resp = UrlFetchApp.fetch(url, options);
+      if (resp.getResponseCode() !== 429) return resp;
+      if (attempt < maxRetries) {
+        var waitSec = 3 + attempt * 3; // 3초, 6초, 9초
+        Logger.log("[RATE_LIMIT] 429 감지 — " + waitSec + "초 대기 후 재시도 (" + (attempt + 1) + "/" + maxRetries + ")");
+        Utilities.sleep(waitSec * 1000);
+      }
+    }
+    return UrlFetchApp.fetch(url, options); // 마지막 시도
   }
 
   function putScriptContent_(scriptId) {
@@ -4488,13 +3955,10 @@ function createViewerNoticeScript_(viewerSS) {
       { name: "Code", type: "SERVER_JS", source: onOpenCode },
       { name: "ProductSearch", type: "SERVER_JS", source: productSearchCode },
       { name: "InvoiceMatch", type: "SERVER_JS", source: invoiceMatchCode },
+      { name: "DbPrice", type: "SERVER_JS", source: dbPriceCode },  // ★ 2026-07-01: DB 단가 검색
       { name: "appsscript", type: "JSON", source: manifest },
     ];
-    // ★ 2026-06-22: HTML 파일 추가 (이스케이프 문제 해결)
-    if (invoiceMatchHtml) {
-      fileList.push({ name: "InvoiceMatchSidebar", type: "HTML", source: invoiceMatchHtml });
-    }
-    return UrlFetchApp.fetch(
+    return _fetchWithRetry_(
       "https://script.googleapis.com/v1/projects/" + scriptId + "/content",
       {
         method: "PUT",
@@ -4507,7 +3971,7 @@ function createViewerNoticeScript_(viewerSS) {
           files: fileList,
         }),
         muteHttpExceptions: true,
-      },
+      }
     );
   }
 
@@ -4535,7 +3999,7 @@ function createViewerNoticeScript_(viewerSS) {
   }
 
   // 3) 없으면 허브 바운드 Apps Script 프로젝트 생성 후 코드 주입
-  var createResp = UrlFetchApp.fetch(
+  var createResp = _fetchWithRetry_(
     "https://script.googleapis.com/v1/projects",
     {
       method: "POST",
@@ -4549,7 +4013,7 @@ function createViewerNoticeScript_(viewerSS) {
         parentId: viewerSheetId, // 해당 스프레드시트에 컨테이너 바인딩
       }),
       muteHttpExceptions: true,
-    },
+    }
   );
   if (createResp.getResponseCode() !== 200) {
     throw new Error(
@@ -4676,6 +4140,25 @@ function adminInstallVendorOrderDateAutofillScripts_() {
     try {
       var ss = SpreadsheetApp.openById(allFiles[i].id);
       createViewerNoticeScript_(ss);
+      // ★ 2026-07-06: 뷰어 탭 #REF! 자동 복구 (스필 영역 클리어)
+      try {
+        var tabs = ss.getSheets();
+        for (var ti = 0; ti < tabs.length; ti++) {
+          var tn = tabs[ti].getName();
+          if (tn.indexOf('단가') !== -1 || tn.indexOf('뷰어') !== -1 || tn.indexOf('팩투유') !== -1) {
+            var a3v = String(tabs[ti].getRange('A3').getDisplayValue() || '');
+            if (a3v.indexOf('#REF') !== -1 || a3v.indexOf('#오류') !== -1) {
+              var vLr2 = Math.max(tabs[ti].getLastRow(), 4);
+              if (vLr2 >= 4) {
+                var cr = vLr2 - 3;
+                try { tabs[ti].getRange(4, 1, cr, 2).clearContent(); } catch(e1) {}
+                try { tabs[ti].getRange(4, 4, cr, 7).clearContent(); } catch(e2) {}
+              }
+            }
+            break;
+          }
+        }
+      } catch(eRef) {}
       ok++;
     } catch (e) {
       failed.push(allFiles[i].name + " :: " + (e && e.message ? e.message : e));
@@ -4964,7 +4447,7 @@ function healViewerRow3Formulas_(viewerSheet, hubId) {
 }
 
 /**
- * 모든 독립배포 시트의 단가조회(뷰어) 탭을 점검:
+ * 모든 협력업체 배포 시트의 단가조회(뷰어) 탭을 점검:
  * 1) 1~3행 삭제 방지 보호 적용
  * 2) 3행 수식이 깨졌으면 자동 복구
  * 메뉴에서 수동 호출용.
@@ -5008,7 +4491,7 @@ function emergencyRepairAllViewerRow3Formulas() {
   } catch (eHubGroup) {}
 
   var files = listAllDeployFiles_();
-  // 독립배포 + 협력업체 파일 모두 수집 (중복 제거)
+  // 배포 파일 수집 (중복 제거)
   var allFiles = [];
   var seenIds = {};
   for (var di = 0; di < files.length; di++) {
@@ -5184,7 +4667,7 @@ function repairAndProtectAllViewerSheets() {
   if (ui) {
     var go = ui.alert(
       "🔧 뷰어 3행 보호 & 복구",
-      "모든 독립배포 시트의 단가조회 탭을 점검합니다:\n" +
+      "모든 협력업체 배포 시트의 단가조회 탭을 점검합니다:\n" +
         "1) 1~3행 삭제 방지 보호 적용\n" +
         "2) 3행 수식이 깨졌으면 자동 복구\n\n계속할까요?",
       ui.ButtonSet.YES_NO,
@@ -5246,6 +4729,25 @@ function installAllVendorScriptsNoUI() {
     try {
       var ss = SpreadsheetApp.openById(allFiles[i].id);
       createViewerNoticeScript_(ss);
+      // ★ 2026-07-06: 뷰어 탭 #REF! 자동 복구
+      try {
+        var tabs = ss.getSheets();
+        for (var ti = 0; ti < tabs.length; ti++) {
+          var tn = tabs[ti].getName();
+          if (tn.indexOf('단가') !== -1 || tn.indexOf('뷰어') !== -1 || tn.indexOf('팩투유') !== -1) {
+            var a3v = String(tabs[ti].getRange('A3').getDisplayValue() || '');
+            if (a3v.indexOf('#REF') !== -1 || a3v.indexOf('#오류') !== -1) {
+              var vLr2 = Math.max(tabs[ti].getLastRow(), 4);
+              if (vLr2 >= 4) {
+                var cr = vLr2 - 3;
+                try { tabs[ti].getRange(4, 1, cr, 2).clearContent(); } catch(e1) {}
+                try { tabs[ti].getRange(4, 4, cr, 7).clearContent(); } catch(e2) {}
+              }
+            }
+            break;
+          }
+        }
+      } catch(eRef) {}
       ok++;
       Logger.log("✅ 성공: " + allFiles[i].name);
     } catch (e) {

@@ -6,7 +6,7 @@
  *  냅킨코리아에서 pack2u@pack2u.co.kr 로 보내는 메일에서
  *  송장번호를 파싱하여 냅킨코리아 전용양식 A열(송장번호)에 자동 입력.
  *
- *  트리거: 매일 오후 3:45, 4:00, 4:15 (15분 간격 트리거 + 시간 윈도우 체크)
+ *  트리거: 통합 스케줄 매일 16:00 (★ 2026-08-10)
  *  수동:  메뉴 → 협력업체 관리 → 📦 대리발송 발주시스템
  *             → 📧 냅킨코리아 Gmail 송장 수집
  * ═══════════════════════════════════════════════════════════════
@@ -24,10 +24,11 @@ var _GMI_NK_SEARCH_QUERY = "from:no-reply@cafe24shop.com 냅킨코리아";
 var _GMI_PROCESSED_LABEL = "P2U_송장처리완료";
 
 // 트리거 실행 시간 윈도우 (시:분)
-var _GMI_TRIGGER_START_HOUR = 15; // 오후 3시
-var _GMI_TRIGGER_START_MIN = 30; // 3시 30분부터
-var _GMI_TRIGGER_END_HOUR = 16; // 오후 4시
-var _GMI_TRIGGER_END_MIN = 30; // 4시 30분까지
+// ★ 2026-08-10: 통합 스케줄 16:00 실행 — 윈도우 15:50~16:30
+var _GMI_TRIGGER_START_HOUR = 15;
+var _GMI_TRIGGER_START_MIN = 50;
+var _GMI_TRIGGER_END_HOUR = 16;
+var _GMI_TRIGGER_END_MIN = 30;
 
 // ═════════════════════════════════════════════════════════════════
 //  1. 메인 함수 — Gmail에서 냅킨코리아 송장 수집 (자동/수동 공용)
@@ -116,11 +117,13 @@ function partnerFetchInvoiceFromGmail_NK_Manual() {
  * 트리거 실행용 래퍼 (시간 윈도우 체크 포함)
  */
 function _gmi_triggerFetchNKInvoice_() {
+  // ★ 2026-06-27: 주말 차단
+  if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → NK Gmail 송장수집 스킵"); return; }
   var now = new Date();
   var h = now.getHours();
   var m = now.getMinutes();
 
-  // 시간 윈도우 체크 (15:30 ~ 16:30)
+  // 시간 윈도우 체크 (15:50 ~ 16:30)
   var totalMin = h * 60 + m;
   var startMin = _GMI_TRIGGER_START_HOUR * 60 + _GMI_TRIGGER_START_MIN;
   var endMin = _GMI_TRIGGER_END_HOUR * 60 + _GMI_TRIGGER_END_MIN;
@@ -130,7 +133,57 @@ function _gmi_triggerFetchNKInvoice_() {
     return;
   }
 
-  partnerFetchInvoiceFromGmail_NK(false);
+  // ★ 2026-06-24: Chat 알림 추가
+  try {
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) {
+      Logger.log("[TRIGGER] NK Gmail 송장수집: Lock 확보 실패");
+      return;
+    }
+    try {
+      var result = _gmi_processNKInvoiceMails_(false);
+      // ★ 2026-06-30: Chat 알림에 상세 정보 추가
+      try {
+        var mc = result.mailCount || 0;
+        var pc = result.parsedCount || 0;
+        var matched = result.matchedCount || 0;
+        var unmatched = result.unmatchedCount || 0;
+        var timeStr = Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm");
+
+        var titleIcon = matched > 0 ? "✅" : (mc > 0 ? "⚠️" : "📭");
+        var titleText = titleIcon + " 냅킨코리아 Gmail 송장수집";
+        var subtitleText = "📧" + mc + "건 · 🔍파싱" + pc + "쌍 · ✅매칭" + matched + " · ❌미매칭" + unmatched + " (" + timeStr + ")";
+
+        var kv = [
+          { label: "📧 메일 확인", value: mc + "건" },
+          { label: "🔍 파싱된 송장", value: pc + "쌍" },
+          { label: "✅ 매칭 성공", value: matched + "건" },
+        ];
+        if (unmatched > 0) {
+          kv.push({ label: "❌ 미매칭", value: unmatched + "건" });
+          // 미매칭 상세 (최대 5개)
+          var details = result.unmatchedDetails || [];
+          if (details.length > 0) {
+            var detailStr = details.slice(0, 5).map(function(d) {
+              return d.recipient + "(" + d.invoice + ")";
+            }).join(", ");
+            if (details.length > 5) detailStr += " 외 " + (details.length - 5) + "건";
+            kv.push({ label: "📋 미매칭 상세", value: detailStr });
+          }
+        }
+        if (result.errors && result.errors.length > 0) {
+          kv.push({ label: "⚠ 오류", value: result.errors.slice(0, 3).join("; ") });
+        }
+
+        _chat_sendCard_(titleText, subtitleText, kv);
+      } catch (_) {}
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (e) {
+    Logger.log("[TRIGGER] NK Gmail 송장수집 에러: " + e.message);
+    try { _chat_sendCard_("❌ 냅킨코리아 Gmail 에러", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(e.message).substring(0, 200) }]); } catch (_) {}
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -769,30 +822,23 @@ function _gmi_log_(msg) {
 
 /**
  * 냅킨코리아 Gmail 송장수집 트리거 설치
- * 15분 간격으로 실행하되, 함수 내부에서 시간 윈도우(15:30~16:30)만 실행
+ * ★ 2026-07-17 (H5): 15분 단독 트리거 설치 폐기
+ *   통합 스케줄(_ALL_SCHEDULED_TRIGGERS_, 16:00 일 1회)과 중복 실행되고
+ *   트리거 20개 한도를 압박하므로, 잔존 15분 트리거를 제거만 하고
+ *   설치는 통합 트리거 메뉴로 안내한다.
  */
 function partnerSetupGmailInvoiceTrigger_NK() {
-  // 기존 트리거 제거
-  partnerRemoveGmailInvoiceTrigger_NK();
-
-  ScriptApp.newTrigger("_gmi_triggerFetchNKInvoice_")
-    .timeBased()
-    .everyMinutes(15)
-    .create();
-
   var ui = null;
   try {
     ui = SpreadsheetApp.getUi();
   } catch (e) {}
 
   var msg =
-    "✅ 냅킨코리아 Gmail 송장수집 트리거가 설치되었습니다.\n\n" +
-    "• 실행 간격: 15분마다\n" +
-    "• 활성 시간: 오후 3:30 ~ 4:30 (이 시간 외에는 자동 스킵)\n" +
-    "• 예상 실행 시각: 약 3:45, 4:00, 4:15\n" +
-    "• Gmail 검색 필터: " + _GMI_NK_SEARCH_QUERY;
+    "ℹ Gmail 송장수집은 통합 자동 트리거(16:00 일 1회)로 실행됩니다.\n\n" +
+    "단독 15분 트리거는 중복 실행·트리거 한도 문제로 폐기되었습니다.\n" +
+    "설치/재설치는 ⏰ 통합 자동 트리거 설치 메뉴를 사용하세요.";
 
-  _gmi_log_("트리거 설치됨 — 15분 간격, 활성 윈도우 15:30~16:30");
+  _gmi_log_("단독 15분 트리거 설치 차단 — 통합 스케줄(16:00)로 위임");
 
   if (ui) ui.alert(msg);
 }

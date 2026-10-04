@@ -230,7 +230,7 @@ function ocrImageToTextLocal(base64Data) {
 
     // ★ GEMINI_API_KEY는 _secrets.gs에서 전역 정의됨 (GitHub 유출 방지)
     var apiKey = GEMINI_API_KEY;
-    var model = "gemini-3.5-flash"; // ★ 2026-06-18 OCR 정확도 최우선
+    var model = "gemini-3.6-flash"; // ★ 2026-07-24 업그레이드 (OCR 정확도 최우선)
     var url = "https://generativelanguage.googleapis.com/v1beta/models/" +
       model + ":generateContent?key=" + apiKey;
 
@@ -251,7 +251,7 @@ function ocrImageToTextLocal(base64Data) {
         { text: prompt },
         { inline_data: { mime_type: mimeType, data: rawB64 } }
       ]}],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 2048 }
+      generationConfig: { temperature: 0.1, maxOutputTokens: 8192 } // ★ 2026-07-24: thinking 토큰 감안 상향
     };
 
     var resp = UrlFetchApp.fetch(url, {

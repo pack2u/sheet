@@ -723,7 +723,7 @@ function _oa_callGemini_(msg) {
   var summaryData = JSON.parse(summaryResp);
   var hubContext = summaryData.msg || '';
 
-  var model = 'gemini-3.5-flash';
+  var model = 'gemini-3.6-flash'; // ★ 2026-07-24 업그레이드
   var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model +
             ':generateContent?key=' + GEMINI_API_KEY;
 
@@ -752,4 +752,290 @@ function _oa_callGemini_(msg) {
 
   var reply = json.candidates[0].content.parts[0].text;
   return JSON.stringify({ type: 'TEXT', msg: reply });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ★ 2026-07-08: 중복 발주 자동 감지
+//  발주탭(대리판매) + 전용양식(대리공급) 모두 지원
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 메뉴 호출: 전체 업체 중복 발주 검사
+ */
+function partnerCheckDuplicateOrdersOwner() {
+  var ui = SpreadsheetApp.getUi();
+  var files = _pt_listFiles();
+  var allDups = [];
+  var checkedCount = 0;
+
+  for (var fi = 0; fi < files.length; fi++) {
+    try {
+      var ss = SpreadsheetApp.openById(files[fi].id);
+      var vendorName = files[fi].name.replace("[협력업체] ", "");
+
+      // 1. 발주탭 중복 검사
+      var orderTab = ss.getSheetByName("발주 및 송장조회");
+      if (orderTab && orderTab.getLastRow() >= 2) {
+        var oLr = orderTab.getLastRow();
+        var oData = orderTab.getRange(2, 1, oLr - 1, 14).getValues();
+        var oDups = _oa_findDuplicates_(oData, "발주탭",
+          { date: 1, recipient: 7, code: 2, product: 3, qty: 4, invoice: 13 });
+        for (var oi = 0; oi < oDups.length; oi++) {
+          oDups[oi].vendor = vendorName;
+          allDups.push(oDups[oi]);
+        }
+        // ★ 중복 행 노란색 강조
+        if (oDups.length > 0) {
+          _oa_highlightDuplicateRows_(orderTab, oDups);
+        }
+      }
+
+      // 2. 전용양식 중복 검사
+      var tabs = ss.getSheets();
+      for (var ti = 0; ti < tabs.length; ti++) {
+        var tn = tabs[ti].getName();
+        if (tn.indexOf("전용양식") === -1) continue;
+        var eLr = tabs[ti].getLastRow();
+        if (eLr < 2) continue;
+        var eLc = tabs[ti].getLastColumn();
+        var eHeaders = tabs[ti].getRange(1, 1, 1, eLc).getValues()[0];
+        var eData = tabs[ti].getRange(2, 1, eLr - 1, eLc).getValues();
+
+        // 헤더 기반 열 인덱스 매핑
+        var eColMap = _oa_buildExclColMap_(eHeaders);
+        if (eColMap.recipient < 0) continue;
+
+        var eDups = _oa_findDuplicates_(eData, "전용양식", eColMap);
+        for (var ei = 0; ei < eDups.length; ei++) {
+          eDups[ei].vendor = vendorName;
+          allDups.push(eDups[ei]);
+        }
+        if (eDups.length > 0) {
+          _oa_highlightDuplicateRows_(tabs[ti], eDups);
+        }
+      }
+      checkedCount++;
+    } catch (e) {
+      Logger.log("[DupCheck] " + files[fi].name + " 에러: " + e.message);
+    }
+  }
+
+  // 결과 알림
+  if (allDups.length === 0) {
+    ui.alert("✅ 중복 감지 완료",
+      "총 " + checkedCount + "개 업체 검사 → 중복 발주 없음",
+      ui.ButtonSet.OK);
+  } else {
+    var msg = "⚠️ 중복 발주 " + allDups.length + "건 감지!\n" +
+              "(해당 행에 노란색 강조 표시됨)\n\n";
+    // 업체별 그룹
+    var byVendor = {};
+    for (var di = 0; di < allDups.length; di++) {
+      var d = allDups[di];
+      var key = d.vendor + " (" + d.tab + ")";
+      if (!byVendor[key]) byVendor[key] = [];
+      byVendor[key].push(d);
+    }
+    for (var vk in byVendor) {
+      msg += "📦 " + vk + ":\n";
+      var items = byVendor[vk];
+      for (var ii = 0; ii < Math.min(items.length, 5); ii++) {
+        msg += "  - " + items[ii].recipient + " | " + items[ii].product +
+               " (행 " + items[ii].rows.join(",") + ")\n";
+      }
+      if (items.length > 5) msg += "  ... 외 " + (items.length - 5) + "건\n";
+      msg += "\n";
+    }
+    ui.alert("⚠️ 중복 발주 감지", msg, ui.ButtonSet.OK);
+  }
+}
+
+/**
+ * 전용양식 헤더에서 열 인덱스 매핑
+ */
+function _oa_buildExclColMap_(headers) {
+  var map = { date: -1, recipient: -1, code: -1, product: -1, qty: -1, invoice: 0 };
+  var RECIP_KW = ["받는사람", "수취인", "수령인", "고객명"];
+  var PROD_KW = ["상품명", "품목명", "품명", "품목코드", "코드"];
+  var QTY_KW = ["수량"];
+  var DATE_KW = ["날짜", "일자", "발주일"];
+
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || "").replace(/\s/g, "");
+    for (var rk = 0; rk < RECIP_KW.length; rk++) {
+      if (h.indexOf(RECIP_KW[rk]) !== -1 && map.recipient < 0) map.recipient = i;
+    }
+    for (var pk = 0; pk < PROD_KW.length; pk++) {
+      if (h.indexOf(PROD_KW[pk]) !== -1 && map.product < 0) map.product = i;
+    }
+    for (var qk = 0; qk < QTY_KW.length; qk++) {
+      if (h.indexOf(QTY_KW[qk]) !== -1 && map.qty < 0) map.qty = i;
+    }
+    for (var dk = 0; dk < DATE_KW.length; dk++) {
+      if (h.indexOf(DATE_KW[dk]) !== -1 && map.date < 0) map.date = i;
+    }
+  }
+  return map;
+}
+
+/**
+ * 데이터 배열에서 중복 발주 감지
+ * @param {Array[]} data - 2D 데이터 (행 기준)
+ * @param {string} tabLabel - "발주탭" 또는 "전용양식"
+ * @param {Object} colMap - { date, recipient, code, product, qty, invoice }
+ * @return {Array} 중복 목록 [{recipient, product, rows:[], tab}]
+ */
+function _oa_findDuplicates_(data, tabLabel, colMap) {
+  var seen = {};   // key → { rows: [], recipient, product }
+  var duplicates = [];
+
+  for (var ri = 0; ri < data.length; ri++) {
+    var row = data[ri];
+
+    // 송장번호 있으면 이미 발송 완료 → 스킵
+    if (colMap.invoice >= 0) {
+      var inv = String(row[colMap.invoice] || "").trim();
+      if (inv && inv.length > 5) continue;
+    }
+
+    // 수취인
+    var recip = "";
+    if (colMap.recipient >= 0) recip = String(row[colMap.recipient] || "").trim();
+    if (!recip) continue;
+
+    // 품목
+    var prod = "";
+    if (colMap.product >= 0) prod = String(row[colMap.product] || "").trim();
+    if (colMap.code >= 0 && !prod) prod = String(row[colMap.code] || "").trim();
+
+    // 수량 (같은 수취인+품목이지만 수량이 다르면 다른 주문일 수 있음 → 포함)
+    var qty = colMap.qty >= 0 ? String(row[colMap.qty] || "").trim() : "";
+
+    // 중복 키: 수취인 + 품목 (수량 제외 — 같은 사람이 같은 물건을 2번 주문하면 중복)
+    var key = recip + "||" + prod;
+    if (!seen[key]) {
+      seen[key] = { rows: [ri + 2], recipient: recip, product: prod };
+    } else {
+      seen[key].rows.push(ri + 2);
+    }
+  }
+
+  // 2건 이상인 것만 중복
+  for (var sk in seen) {
+    if (seen[sk].rows.length >= 2) {
+      duplicates.push({
+        recipient: seen[sk].recipient,
+        product: seen[sk].product.length > 25 ? seen[sk].product.substring(0, 25) + "…" : seen[sk].product,
+        rows: seen[sk].rows,
+        tab: tabLabel
+      });
+    }
+  }
+  return duplicates;
+}
+
+/**
+ * 중복 행에 노란색 배경 강조
+ */
+function _oa_highlightDuplicateRows_(sheet, dups) {
+  try {
+    var lc = Math.max(sheet.getLastColumn(), 1);
+    for (var di = 0; di < dups.length; di++) {
+      var rows = dups[di].rows;
+      for (var ri = 0; ri < rows.length; ri++) {
+        sheet.getRange(rows[ri], 1, 1, lc).setBackground("#FFF9C4"); // 연한 노란색
+      }
+    }
+    SpreadsheetApp.flush();
+  } catch (e) {}
+}
+
+/**
+ * ★ 2026-07-08: 자동 중복 감지 (Push/발주수집 후 호출)
+ * 에러 발생 시 메인 플로우에 영향 없이 조용히 로그만 남김
+ * @param {string} mode - "발주탭" | "전용양식"
+ */
+function _oa_autoCheckDuplicates_(mode) {
+  try {
+    var files = _pt_listFiles();
+    var allDups = [];
+
+    for (var fi = 0; fi < files.length; fi++) {
+      try {
+        var ss = SpreadsheetApp.openById(files[fi].id);
+        var vendorName = files[fi].name.replace("[협력업체] ", "");
+
+        if (mode === "발주탭") {
+          var orderTab = ss.getSheetByName("발주 및 송장조회");
+          if (!orderTab || orderTab.getLastRow() < 2) continue;
+          var oData = orderTab.getRange(2, 1, orderTab.getLastRow() - 1, 14).getValues();
+          var oDups = _oa_findDuplicates_(oData, "발주탭",
+            { date: 1, recipient: 7, code: 2, product: 3, qty: 4, invoice: 13 });
+          for (var oi = 0; oi < oDups.length; oi++) {
+            oDups[oi].vendor = vendorName;
+            allDups.push(oDups[oi]);
+          }
+          if (oDups.length > 0) _oa_highlightDuplicateRows_(orderTab, oDups);
+
+        } else if (mode === "전용양식") {
+          var tabs = ss.getSheets();
+          for (var ti = 0; ti < tabs.length; ti++) {
+            if (tabs[ti].getName().indexOf("전용양식") === -1) continue;
+            var eLr = tabs[ti].getLastRow();
+            if (eLr < 2) continue;
+            var eLc = tabs[ti].getLastColumn();
+            var eHeaders = tabs[ti].getRange(1, 1, 1, eLc).getValues()[0];
+            var eData = tabs[ti].getRange(2, 1, eLr - 1, eLc).getValues();
+            var eColMap = _oa_buildExclColMap_(eHeaders);
+            if (eColMap.recipient < 0) continue;
+            var eDups = _oa_findDuplicates_(eData, "전용양식", eColMap);
+            for (var ei = 0; ei < eDups.length; ei++) {
+              eDups[ei].vendor = vendorName;
+              allDups.push(eDups[ei]);
+            }
+            if (eDups.length > 0) _oa_highlightDuplicateRows_(tabs[ti], eDups);
+          }
+        }
+      } catch (e) {
+        Logger.log("[AutoDupCheck] " + files[fi].name + ": " + e.message);
+      }
+    }
+
+    // 중복이 있으면 Google Chat + UI 알림
+    if (allDups.length > 0) {
+      var msg = "⚠️ 중복 발주 " + allDups.length + "건 감지!\n";
+      var byVendor = {};
+      for (var di = 0; di < allDups.length; di++) {
+        var d = allDups[di];
+        var key = d.vendor;
+        if (!byVendor[key]) byVendor[key] = [];
+        byVendor[key].push(d);
+      }
+      for (var vk in byVendor) {
+        msg += "📦 " + vk + ": ";
+        var items = byVendor[vk];
+        var summaries = [];
+        for (var ii = 0; ii < Math.min(items.length, 3); ii++) {
+          summaries.push(items[ii].recipient + "|" + items[ii].product);
+        }
+        msg += summaries.join(", ");
+        if (items.length > 3) msg += " 외 " + (items.length - 3) + "건";
+        msg += "\n";
+      }
+      // Chat 알림
+      try { _chat_sendText_(msg); } catch (e) {}
+      // UI 알림 (사이드바가 아닌 경우)
+      try {
+        SpreadsheetApp.getUi().alert("⚠️ 중복 발주 감지",
+          msg + "\n해당 행에 노란색 강조 표시됨",
+          SpreadsheetApp.getUi().ButtonSet.OK);
+      } catch (e) {}
+      Logger.log("[AutoDupCheck] " + msg);
+    } else {
+      Logger.log("[AutoDupCheck] " + mode + " 중복 없음");
+    }
+  } catch (e) {
+    // 메인 플로우에 영향 없도록 조용히 로그만
+    Logger.log("[AutoDupCheck] 전체 에러: " + e.message);
+  }
 }

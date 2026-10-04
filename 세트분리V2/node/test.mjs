@@ -1,0 +1,530 @@
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const C = require('../core.js');
+
+let pass = 0, fail = 0;
+const eq = (name, got, want) => {
+  if (got === want) { pass++; console.log('  ok   ' + name); }
+  else { fail++; console.log('  FAIL ' + name + '\n       got  ' + got + '\n       want ' + want); }
+};
+
+console.log('\n[ssCompressNames] 구 시트 실제 출력과 대조');
+eq('감자탕 왕대/특대',
+  C.ssCompressNames(['JH 감자탕 왕대', 'JH 감자탕 특대']),
+  'JH 감자탕 왕대/특대');
+eq('225파이 대/중/소 블랙',
+  C.ssCompressNames(['BF 225파이 감자탕 대 블랙', 'BF 225파이 감자탕 중 블랙', 'BF 225파이 감자탕 소 블랙']),
+  'BF 225파이 감자탕 대/중/소 블랙');
+eq('블랙 유무는 따로 묶임',
+  C.ssCompressNames(['BF 225파이 감자탕 대 블랙', 'BF 225파이 감자탕 중 블랙', 'BF 225파이 감자탕 대', 'BF 225파이 감자탕 중']),
+  'BF 225파이 감자탕 대/중 블랙, BF 225파이 감자탕 대/중');
+eq('앞뒤 공통 + 가운데 2토큰',
+  C.ssCompressNames(['GS 좋은봉투 대 유백 (100*1팩) 100매--/소분', 'GS 좋은봉투 중 투명 (100*1팩) 100매--/소분']),
+  'GS 좋은봉투 대 유백/중 투명 (100*1팩) 100매--/소분');
+eq('브랜드가 다르면 안 묶임',
+  C.ssCompressNames(['JH 9193 돈까스도시락', 'BF 8909 돈까스도시락', '6칸도시락', '5칸도시락']),
+  'JH 9193 돈까스도시락, BF 8909 돈까스도시락, 6칸도시락, 5칸도시락');
+
+console.log('\n[ssParseFeeRule] 레거시 문자열 이관');
+{
+  const r = C.ssParseFeeRule('X', '2개-2200/3개-2200/9개-2500/10개-2500');
+  eq('행 수', r.rows.length, 4);
+  eq('9개 → 2500', r.rows[2].fee, 2500);
+  const r2 = C.ssParseFeeRule('Y', '2개(완박스)-3600/3개-3000');
+  eq('완박스 인식', r2.rows[0].fullBox, true);
+  const r3 = C.ssParseFeeRule('Z', '두개에 삼천원');
+  eq('파싱 실패 수집', r3.bad.length, 1);
+}
+
+console.log('\n[ssPad6 / ssNormAddr]');
+eq('순번 포맷 TEXT(n,"100000")', C.ssPad6(35), '100035');
+
+console.log('\n[고유ID] 결정적이어야 한다');
+const _L = { 일자: '2026/09/02 -8', 받는분: '김대선', 모바일: '010-5415-4432', 주소1: '서울 강동구 양재대로89가길 34', 원본코드: 'BFTANG00001', 주문수량: 2 };
+eq('전환일 이전은 YYMMDD-PH-', /^260902-PH-[0-9a-f]{5}$/.test(C.ssMakeOrderId(_L)), true);
+{
+  const _L2 = Object.assign({}, _L, { 일자: '2026/09/09 -11' });
+  eq('전환일부터 MMdd-PH-', /^0909-PH-[0-9a-f]{5}$/.test(C.ssMakeOrderId(_L2)), true);
+  const _L3 = Object.assign({}, _L, { 일자: '2026/09/08 -11' });
+  eq('전환일 하루 전은 YYMMDD-PH-', /^260908-PH-[0-9a-f]{5}$/.test(C.ssMakeOrderId(_L3)), true);
+}
+eq('재계산해도 동일', C.ssMakeOrderId(_L), C.ssMakeOrderId(_L));
+eq('전표 다르면 다른 ID', C.ssMakeOrderId(Object.assign({}, _L, { 일자: '2026/09/02 -12' })) !== C.ssMakeOrderId(_L), true);
+eq('상품정보 -ds- 와 형식 구분', /-ds-/.test(C.ssMakeOrderId(_L)), false);
+eq('주소 정규화', C.ssNormAddr('서울  강남구  1\n.(참고)'), '서울 강남구 1');
+
+
+console.log('\n[중복발주 의심] 상품정보 시트와 같은 등급 규칙');
+{
+  const R = (회차, 고유ID, 원본코드, 받는분, 전화, 주소) =>
+    ({ 회차, 고유ID, 원본코드, 받는분, 전화, 주소, 품목명: '품', 수량: 1, 금액: 1000, 경로: '롯데택배' });
+
+  // 세트분리로 갈린 2행은 한 건이다
+  const f1 = C.ssFindDuplicates([
+    R('260902-1', 'A1', 'SET', '고동', '010-1111-2222', '서울 1'),
+    R('260902-1', 'A1', 'SET', '고동', '010-1111-2222', '서울 1')
+  ]);
+  eq('세트분리 2행 → 1건으로 접힘', f1.records.length, 1);
+  eq('그래서 중복 아님', f1.groups.length, 0);
+
+  // 같은 고유ID가 다른 회차에 → 확실
+  const f2 = C.ssFindDuplicates([
+    R('260902-1', 'A1', 'X', '고동', '010-1111-2222', '서울 1'),
+    R('260902-2', 'A1', 'X', '고동', '010-1111-2222', '서울 1')
+  ]);
+  eq('회차간 동일 고유ID → 확실', f2.groups[0].grade, '🔴 확실');
+  eq('회차간 표시', f2.groups[0].회차간, true);
+
+  /*  2026-09-15: 이름·전화·주소로 짐작하는 세 등급을 지웠다.
+      > "중복검사도 고유아이디로만 중복검사를 하게 해줘"
+      같은 사람이 같은 물건을 이틀에 걸쳐 시키는 일은 흔하고, 한 거래처가
+      여러 지점으로 보내기도 한다. 그걸 중복이라 하면 정상 주문이 걸린다.
+      이 시험은 «걸리던 것»을 사실로 못 박고 있었다 — 이제 안 걸려야 맞다. */
+  const f3 = C.ssFindDuplicates([
+    R('260902-1', 'A1', 'X', '김철수', '010-3333-4444', '부산 2'),
+    R('260902-2', 'B2', 'X', '김철수', '010-3333-4444', '부산 2')
+  ]);
+  eq('★ 고유ID 가 다르면 안 걸린다 (이름·전화·주소가 같아도)', f3.groups.length, 0);
+
+  //  고유ID + 품목이 같으면 그건 사실이다 — 두 번 붙여넣었거나 두 번 돌린 것
+  const f4b = C.ssFindDuplicates([
+    R('260902-1', 'A1', 'X', '김철수', '010-3333-4444', '부산 2'),
+    R('260902-2', 'A1', 'X', '김철수', '010-3333-4444', '부산 2')
+  ]);
+  eq('★ 동일 고유ID + 품목은 걸린다', f4b.groups[0].reason, '동일 고유ID + 품목');
+  eq('등급은 확실', f4b.groups[0].grade, '🔴 확실');
+
+  // 비배송(적립금·반품배송비)은 아예 보지 않는다
+  const f6 = C.ssFindDuplicates([
+    { ...R('260902-2', 'C1', 'FEE', '법인/쿠팡', '', ''), 경로: '비배송' },
+    { ...R('260902-2', 'C2', 'FEE', '법인/쿠팡', '', ''), 경로: '비배송' }
+  ]);
+  eq('비배송은 중복 대상 아님', f6.groups.length, 0);
+
+  //  2026-09-15: 「전화 없음 → 의심」 등급을 지웠다 — 이름·주소 짐작이었다
+  const f4 = C.ssFindDuplicates([
+    R('260902-1', 'A1', 'X', '김철수', '', '부산 2'),
+    R('260902-2', 'B2', 'X', '김철수', '', '부산 2')
+  ]);
+  eq('★ 전화가 없어도 고유ID 가 다르면 안 걸린다', f4.groups.length, 0);
+
+  //  창고 대량 배송 — 고유ID 가 다 다르니 애초에 안 걸린다
+  const bulk = [];
+  for (let i = 0; i < 6; i++) bulk.push(R('260902-1', 'ID' + i, 'X', '수취인' + i, '010-0000-000' + i, '경기 창고 1'));
+  eq('★ 같은 주소 대량은 안 걸린다', C.ssFindDuplicates(bulk).groups.length, 0);
+}
+
+
+console.log('\n[수동조치] 보류를 사람이 되살린다');
+{
+  const grid = [
+    ['순번','일자-No.','품목코드','품목명','수량','전화','모바일','주소1','합계','거래처명','세트구성및배송비','단품배송비','묶음배송비','적요','주문자명(사방넷)','전화번호(사방넷)','추가장문형식1','주문자명(주문서)','전화번호(주문서)','배송지(주문서)/배송메시지(주문서)'],
+    [1,'2026/09/02 -1','SOLD','JH 품절품목',1,'010-1111-2222','010-1111-2222','서울 강남구 1',10000,'행주국수','','2500','','','','','','','',''],
+  ];
+  const base = {
+    items: { SOLD: { name: 'JH 품절품목', status: '품절', origin: '평택A-1', unitFee: 2500, feeRuleRaw: '' } },
+    stock: { SOLD: 0 }, bom: {}, splitExcept: {}, cond: {}, condCodes: {}, feeRules: {},
+    islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {},
+    vendors: { JH: '준테크', HP: '하나팩' }, override: {}
+  };
+  const idOf = (r) => r.units[0].고유ID;
+
+  const r0 = C.ssRun(grid, base, C.SS_DEFAULT_CONFIG);
+  eq('품절이면 보류', r0.buckets[C.SS_ROUTE.HOLD].length, 1);
+  eq('보류사유', r0.buckets[C.SS_ROUTE.HOLD][0].보류사유, '상태보류');
+  eq('업체코드는 품목명 앞 토큰', r0.buckets[C.SS_ROUTE.HOLD][0].업체코드, 'JH');
+
+  const key = idOf(r0) + '|SOLD';
+
+  const m1 = { ...base, override: { [key]: { 조치: '발송', 업체코드: '' } } };
+  const r1 = C.ssRun(grid, m1, C.SS_DEFAULT_CONFIG);
+  eq('발송 지정 → 보류 해제', r1.buckets[C.SS_ROUTE.HOLD].length, 0);
+  eq('발송 지정 → 롯데택배', r1.buckets[C.SS_ROUTE.LOTTE].length, 1);
+
+  const m2 = { ...base, override: { [key]: { 조치: '대리발송', 업체코드: 'HP' } } };
+  const r2 = C.ssRun(grid, m2, C.SS_DEFAULT_CONFIG);
+  eq('대리발송 지정 → 대리발송 탭', r2.buckets[C.SS_ROUTE.PARTNER].length, 1);
+  eq('지정한 업체코드가 우선', r2.buckets[C.SS_ROUTE.PARTNER][0].업체코드, 'HP');
+  eq('업체명 채워짐', r2.buckets[C.SS_ROUTE.PARTNER][0].업체명, '하나팩');
+  eq('대리발송 행 폭', C.ssPartnerRow(r2.buckets[C.SS_ROUTE.PARTNER][0]).length, C.SS_PARTNER_HEADER.length);
+
+  // 품목명에서 업체를 알 수 없고 지정도 없으면 경고해야 한다
+  const grid2 = grid.map((r) => r.slice());
+  grid2[1][3] = '무명 품절품목';
+  const m3 = {
+    ...base,
+    items: { SOLD: { name: '무명 품절품목', status: '품절', origin: '평택A-1', unitFee: 2500, feeRuleRaw: '' } },
+    override: {}
+  };
+  const r3a = C.ssRun(grid2, m3, C.SS_DEFAULT_CONFIG);
+  const key2 = r3a.units[0].고유ID + '|SOLD';
+  const r3 = C.ssRun(grid2, { ...m3, override: { [key2]: { 조치: '대리발송', 업체코드: '' } } }, C.SS_DEFAULT_CONFIG);
+  eq('업체를 알 수 없으면 오류', r3.warnings.some((w) => w.code === 'MANUAL_NO_VENDOR'), true);
+  eq('대리발송으로 안 넘어가고 보류 유지', r3.buckets[C.SS_ROUTE.PARTNER].length, 0);
+  eq('보류사유는 업체코드확인', r3.buckets[C.SS_ROUTE.HOLD][0].보류사유, '업체코드확인');
+
+  // 표에 없는 코드도 막는다
+  const r4 = C.ssRun(grid, { ...base, override: { [key]: { 조치: '대리발송', 업체코드: 'ZZ' } } }, C.SS_DEFAULT_CONFIG);
+  eq('미등록 코드는 거부', r4.buckets[C.SS_ROUTE.PARTNER].length, 0);
+  eq('사유에 코드 표시', r4.buckets[C.SS_ROUTE.HOLD][0].보류상세.indexOf('ZZ') >= 0, true);
+}
+
+
+console.log('\n[입력 간소화] 업체코드만 적어도 대리발송');
+{
+  const grid = [
+    ['순번','일자-No.','품목코드','품목명','수량','전화','모바일','주소1','합계','거래처명','세트구성및배송비','단품배송비','묶음배송비','적요','주문자명(사방넷)','전화번호(사방넷)','추가장문형식1','주문자명(주문서)','전화번호(주문서)','배송지(주문서)/배송메시지(주문서)'],
+    [1,'2026/09/02 -1','SOLD','무명 품절품목',1,'010-1111-2222','010-1111-2222','서울 강남구 1',10000,'행주국수','','2500','','','','','','','','']
+  ];
+  const base = {
+    items: { SOLD: { name: '무명 품절품목', status: '품절', origin: '평택A-1', unitFee: 2500, feeRuleRaw: '' } },
+    stock: { SOLD: 0 }, bom: {}, splitExcept: {}, cond: {}, condCodes: {}, feeRules: {},
+    islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {},
+    vendors: { HP: '하나팩' }, override: {}
+  };
+  const k = C.ssRun(grid, base, C.SS_DEFAULT_CONFIG).units[0].고유ID + '|SOLD';
+  const r = C.ssRun(grid, { ...base, override: { [k]: { 조치: '', 업체코드: 'HP' } } }, C.SS_DEFAULT_CONFIG);
+  eq('조치 비우고 업체코드만 → 대리발송', r.buckets[C.SS_ROUTE.PARTNER].length, 1);
+  eq('대리발송 T열이 업체코드', C.SS_PARTNER_HEADER[19], '업체코드');
+  eq('앞 19열은 표준 그대로', C.SS_PARTNER_HEADER.slice(0, 19).join(), C.SS_OUT_HEADER.join());
+}
+
+
+console.log('\n[적요 배송지 변경] 전화주문 주소 갈아끼우기');
+{
+  const H = ['순번','일자-No.','품목코드','품목명','수량','전화','모바일','주소1','합계','거래처명','세트구성및배송비','단품배송비','묶음배송비','적요','주문자명(사방넷)','전화번호(사방넷)','추가장문형식1','주문자명(주문서)','전화번호(주문서)','배송지(주문서)/배송메시지(주문서)'];
+  const row = (적요) => [1,'2026/09/02 -29','AJJUG0002','AJ 죽용기 대 500세트',1,'010-8711-4550','010-8711-4550','세종특별자치시 원주소',91400,'보든에프엔비','', '2500','',적요,'','','','','',''];
+  const masters = {
+    items: { AJJUG0002: { name: 'AJ 죽용기 대 500세트', status: '판매중', origin: '평택A-1', unitFee: 2500, feeRuleRaw: '' } },
+    stock: { AJJUG0002: 99 }, bom: {}, splitExcept: {}, cond: {}, condCodes: {}, feeRules: {},
+    islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {}, vendors: {}, override: {}
+  };
+  const 새주소 = '세종특별자치시 도움8로 11-11, 1층 120호(어진동,어진프라자)';
+
+  const r1 = C.ssRun([H, row('010-8711-4550/' + 새주소)], masters, C.SS_DEFAULT_CONFIG);
+  const u1 = r1.buckets[C.SS_ROUTE.LOTTE][0];
+  eq('주소가 적요 값으로 바뀜', u1.주소1, 새주소);
+  eq('원주소 보존', u1.원주소1, '세종특별자치시 원주소');
+  eq('주소변경 표시', u1.주소변경, '적요(연락처·주소)');
+
+  // 이름/전화/주소 3단 형식
+  const r2 = C.ssRun([H, row('변영걸/010-9999-8888/' + 새주소)], masters, C.SS_DEFAULT_CONFIG);
+  const u2 = r2.buckets[C.SS_ROUTE.LOTTE][0];
+  eq('이름도 바뀜', u2.받는분, '변영걸');
+  eq('원받는분 보존', u2.원받는분, '보든에프엔비');
+  eq('연락처도 바뀜', u2.모바일, '010-9999-8888');
+  eq('변경 종류 표시', u2.주소변경, '적요(이름·연락처·주소)');
+  eq('이름이 바뀌어도 고유ID 그대로', u2.고유ID, u1.고유ID);
+  eq('경고 남김', r1.warnings.some((w) => w.code === 'ADDR_OVERRIDE'), true);
+
+  const r0 = C.ssRun([H, row('09/02 출고요청')], masters, C.SS_DEFAULT_CONFIG);
+  const u0 = r0.buckets[C.SS_ROUTE.LOTTE][0];
+  eq('일반 적요는 손대지 않음', u0.주소1, '세종특별자치시 원주소');
+  eq('그때는 경고 없음', r0.warnings.some((w) => w.code === 'ADDR_OVERRIDE'), false);
+
+  eq('배송지가 바뀌어도 고유ID는 그대로', u1.고유ID, u0.고유ID);
+
+  // 사방넷 주문은 쇼핑몰 배송지가 정답이므로 적요로 덮어쓰지 않는다
+  const sabang = row('010-9999-8888/' + 새주소);
+  sabang[14] = '홍길동/2159999999';        // 주문자명(사방넷)
+  sabang[15] = '010-7777-6666';           // 전화번호(사방넷)
+  sabang[16] = '서울 송파구 올림픽로 300'; // 추가장문형식1 = 배송지
+  const rs = C.ssRun([H, sabang], masters, C.SS_DEFAULT_CONFIG);
+  const us = rs.buckets[C.SS_ROUTE.LOTTE][0];
+  eq('사방넷 주문은 적요로 안 바뀜', us.주소1, '서울 송파구 올림픽로 300');
+  eq('사방넷 주문엔 변경 표시 없음', us.주소변경 || '', '');
+  eq('사방넷 주문엔 경고 없음', rs.warnings.some((w) => w.code === 'ADDR_OVERRIDE'), false);
+}
+
+
+console.log('\n[미발송] 제품이 아닌 줄은 보류(미발송) 한 곳으로');
+{
+  const H = ['순번','일자-No.','품목코드','품목명','수량','전화','모바일','주소1','합계','거래처명','세트구성및배송비','단품배송비','묶음배송비','적요','주문자명(사방넷)','전화번호(사방넷)','추가장문형식1','주문자명(주문서)','전화번호(주문서)','배송지(주문서)/배송메시지(주문서)'];
+  const row = (n, code, name, amt) => [n,'2026/09/02 -1',code,name,1,'010-1111-2222','010-1111-2222','서울 강남구 1',amt,'행주국수','','2500','','','','','','','',''];
+  const masters = {
+    items: { OK1: { name: '정상품목', status: '판매중', origin: '평택A-1', unitFee: 2500, feeRuleRaw: '' },
+             LGTB00017: { name: '반품배송비', status: '판매중', origin: '평택A-1', unitFee: 0, feeRuleRaw: '' } },
+    stock: { OK1: 99, LGTB00017: 99 }, bom: {}, splitExcept: {}, cond: {}, condCodes: {}, feeRules: {},
+    islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {}, vendors: {}, override: {}
+  };
+  const r = C.ssRun([
+    H,
+    row(1, 'OK1', '정상품목', 50000),
+    row(2, '77', '적립금', -206270),
+    row(3, 'LGTB00017', '반품배송비---법인/쿠팡', 3500)
+  ], masters, C.SS_DEFAULT_CONFIG);
+
+  eq('정상품목만 롯데택배', r.buckets[C.SS_ROUTE.LOTTE].length, 1);
+  /*  ★ 2026-09-18 ★ 여태 「비배송」 탭으로 뺐다.
+      > "코드가 없거나 제품이 아닌 반품비, 값이 -인것등 제품이 아닌것들은
+      >  다 미발송으로 빠지게 해주고"
+      사람이 볼 목록을 둘로 나눠 봐야 손대는 자리는 결국 미발송 하나다.  */
+  eq('★ 적립금·반품배송비는 미발송(보류)', r.buckets[C.SS_ROUTE.HOLD].length, 2);
+  eq('★ 비배송 탭은 비어 있다', r.buckets[C.SS_ROUTE.NONSHIP].length, 0);
+  eq('보류사유가 「제품아님」', r.buckets[C.SS_ROUTE.HOLD][0].보류사유, '제품아님');
+  eq('상세에 까닭이 적힌다',
+    r.buckets[C.SS_ROUTE.HOLD][0].보류상세.indexOf('음수') >= 0, true);
+  //  읽던 쪽이 있을 수 있어 옛 이름도 그대로 남긴다
+  eq('비배송사유도 남아 있다',
+    r.buckets[C.SS_ROUTE.HOLD][0].비배송사유.indexOf('음수') >= 0, true);
+
+  //  ★ 합포장에 안 삼켜진다 ★ 보류사유가 붙으면 ssMerge 가 안 건드린다
+  eq('동봉으로 빨려 들지 않는다',
+    r.units.filter((u) => u.합포장흡수).length, 0);
+
+  // 매출 집계에 그대로 남아야 한다
+  const 합계 = r.units.reduce((s, u) => s + u.합계, 0);
+  eq('원장 매출 합계 보존', 합계, 50000 - 206270 + 3500);
+  eq('분해행 = 탭 합계', r.stats.분해행, r.stats.출력행);
+  eq('보류 행 폭', C.ssHoldRow(r.buckets[C.SS_ROUTE.HOLD][0]).length, C.SS_HOLD_HEADER.length);
+}
+
+console.log('\n[미발송] 코드가 없는 줄');
+{
+  const H = ['순번','일자-No.','품목코드','품목명','수량','전화','모바일','주소1','합계','거래처명','세트구성및배송비','단품배송비','묶음배송비','적요','주문자명(사방넷)','전화번호(사방넷)','추가장문형식1','주문자명(주문서)','전화번호(주문서)','배송지(주문서)/배송메시지(주문서)'];
+  const row = (n, code, name, amt) => [n,'2026/09/02 -1',code,name,1,'010-1111-2222','010-1111-2222','서울 강남구 1',amt,'행주국수','','2500','','','','','','','',''];
+  const masters = {
+    items: { OK1: { name: '정상품목', status: '판매중', origin: '평택A-1', unitFee: 2500, feeRuleRaw: '' } },
+    stock: { OK1: 99 }, bom: {}, splitExcept: {}, cond: {}, condCodes: {}, feeRules: {},
+    islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {}, vendors: {}, override: {}
+  };
+  const r = C.ssRun([H, row(1, 'OK1', '정상품목', 50000), row(2, '', '무슨 사은품', 0)],
+    masters, C.SS_DEFAULT_CONFIG);
+
+  eq('★ 코드 없는 줄은 미발송', r.buckets[C.SS_ROUTE.HOLD].length, 1);
+  eq('사유가 「코드없음」', r.buckets[C.SS_ROUTE.HOLD][0].보류사유, '코드없음');
+  //  ★ 무엇인지 모를 때 «모른다»고 하지 않고 품목명이라도 적는다 ★
+  eq('품목명이라도 적는다', r.buckets[C.SS_ROUTE.HOLD][0].보류상세, '무슨 사은품');
+  eq('「품목누락」으로 새지 않는다',
+    r.buckets[C.SS_ROUTE.HOLD].filter((u) => u.보류사유 === '품목누락').length, 0);
+}
+
+
+console.log('\n[합배송] 롯데엔 대표만 · 사방넷엔 전부');
+{
+  const H = ['순번','일자-No.','품목코드','품목명','수량','전화','모바일','주소1','합계','거래처명','세트구성및배송비','단품배송비','묶음배송비','적요','주문자명(사방넷)','전화번호(사방넷)','추가장문형식1','주문자명(주문서)','전화번호(주문서)','배송지(주문서)/배송메시지(주문서)'];
+  const r = (n, code) => [n,'2026/09/02 -1',code,'샘플'+code,1,'','010-1','서울 강남구 1',10,'법인/배민상회','','2200','','','홍길동/215971115'+n,'010-1','서울 강남구 1','','',''];
+  const M = { items:{}, stock:{}, bom:{}, splitExcept:{},
+    cond:{S1:['평택샘플'],S2:['평택샘플'],S3:['평택샘플']},
+    condCodes:{평택샘플:{S1:1,S2:1,S3:1}}, feeRules:{},
+    islandKeywords:[], islandZips:{}, addrZip:{}, localAddrs:{}, vendors:{}, override:{} };
+  for (const k of ['S1','S2','S3']) {
+    M.items[k] = { name:'샘플'+k, status:'판매중', origin:'평택S-1', unitFee:2200, feeRuleRaw:'' };
+    M.stock[k] = 99;
+  }
+  const res = C.ssRun([H, r(1,'S1'), r(2,'S2'), r(3,'S3')], M, C.SS_DEFAULT_CONFIG);
+  const lotte = res.buckets[C.SS_ROUTE.LOTTE];
+
+  eq('롯데엔 대표 1건만', lotte.length, 1);
+  eq('대표 품목명에 ===합배송', /===합배송/.test(lotte[0].출력품목명), true);
+  eq('대표만 배송비 청구', lotte[0].배송비, 2200);
+  eq('합배송 확인뷰는 3행', res.합배송뷰.length, 3);
+
+  const invRows = C.ssInvoiceRows(res.units);
+  eq('사방넷송장엔 3건 모두', invRows.length, 3);
+  eq('대표 1 · 동봉 2', invRows.filter((x) => x[2] === '동봉').length, 2);
+  const rep = invRows.find((x) => x[2] === '대표')[0];
+  eq('동봉은 대표주문번호를 가리킨다', invRows.filter((x) => x[2] === '동봉').every((x) => x[4] === rep), true);
+  eq('주문번호는 각자 유지', new Set(invRows.map((x) => x[0])).size, 3);
+}
+
+
+console.log('\n[합포장] 기본은 제한 없음 (구 시트와 동일) · 설정하면 박스 분할');
+{
+  const H = ['순번','일자-No.','품목코드','품목명','수량','전화','모바일','주소1','합계','거래처명','세트구성및배송비','단품배송비','묶음배송비','적요','주문자명(사방넷)','전화번호(사방넷)','추가장문형식1','주문자명(주문서)','전화번호(주문서)','배송지(주문서)/배송메시지(주문서)'];
+  const run = (n, cap) => {
+    const rows = [H];
+    const M = { items:{}, stock:{}, bom:{}, splitExcept:{}, cond:{}, condCodes:{평택샘플:{}},
+      feeRules:{}, islandKeywords:[], islandZips:{}, addrZip:{}, localAddrs:{}, vendors:{}, override:{} };
+    for (let i = 1; i <= n; i++) {
+      const k = 'S' + i;
+      rows.push([i,'2026/09/02 -11',k,'[샘플] 감자탕 '+i,1,'','010-1','대전 서구 갈마역로 3',10,'법인/배민상회','','2200','','','조은주/1082494'+String(i).padStart(3,'0'),'010-1','대전 서구 갈마역로 3','','','']);
+      M.items[k] = { name:'[샘플] 감자탕 '+i, status:'판매중', origin:'평택S-1', unitFee:2200, feeRuleRaw:'' };
+      M.stock[k] = 99; M.cond[k] = ['평택샘플']; M.condCodes.평택샘플[k] = 1;
+    }
+    const cfg = cap === undefined ? C.SS_DEFAULT_CONFIG
+      : Object.assign({}, C.SS_DEFAULT_CONFIG, { 합포장_최대건수: String(cap) });
+    return C.ssRun(rows, M, cfg);
+  };
+  const boxes = (r) => r.buckets[C.SS_ROUTE.LOTTE].length;
+
+  eq('기본값은 제한 없음', C.SS_DEFAULT_CONFIG.합포장_최대건수, '0');
+  eq('14건도 한 박스', boxes(run(14)), 1);
+  eq('25건도 한 박스', boxes(run(25)), 1);
+  eq('설정 10 → 14건은 2박스', boxes(run(14, 10)), 2);
+  eq('설정 10 → 11건은 10+단독', boxes(run(11, 10)), 2);
+  eq('설정 10 → 박스 표기', run(14, 10).units.find((u) => u.합포장대표).출력품목명.indexOf('(1/2)') >= 0, true);
+  eq('제한 없으면 박스 표기 안 붙음', run(14).units.find((u) => u.합포장대표).출력품목명.indexOf('(1/') , -1);
+}
+
+
+console.log('\n[사방넷등록 표시] 주문번호당 한 줄 · 전화주문 제외');
+{
+  const H = ['순번','일자-No.','품목코드','품목명','수량','전화','모바일','주소1','합계','거래처명','세트구성및배송비','단품배송비','묶음배송비','적요','주문자명(사방넷)','전화번호(사방넷)','추가장문형식1','주문자명(주문서)','전화번호(주문서)','배송지(주문서)/배송메시지(주문서)'];
+  // 사방넷 주문(같은 주문번호에 품목 2개) + 전화주문 1건
+  const rows = [H,
+    [1,'2026/09/02 -1','A1','품목A',1,'','010-1','서울 강남구 1',1000,'거래처','','2500','','','홍길동/2159999999','010-1','서울 강남구 1','','',''],
+    [2,'2026/09/02 -1','B1','품목B',1,'','010-1','서울 강남구 1',2000,'거래처','','2500','','','홍길동/2159999999','010-1','서울 강남구 1','','',''],
+    [3,'2026/09/02 -2','C1','품목C',1,'010-2','010-2','부산 해운대 2',3000,'행주국수','','2500','','','','','','','','']
+  ];
+  const M = { items:{A1:{name:'품목A',status:'판매중',origin:'평택A-1',unitFee:2500,feeRuleRaw:''},
+    B1:{name:'품목B',status:'판매중',origin:'평택A-1',unitFee:2500,feeRuleRaw:''},
+    C1:{name:'품목C',status:'판매중',origin:'평택A-1',unitFee:2500,feeRuleRaw:''}},
+    stock:{A1:9,B1:9,C1:9}, bom:{}, splitExcept:{}, cond:{}, condCodes:{}, feeRules:{},
+    islandKeywords:[], islandZips:{}, addrZip:{}, localAddrs:{}, vendors:{}, override:{} };
+  const res = C.ssRun(rows, M, C.SS_DEFAULT_CONFIG);
+  const inv = C.ssInvoiceRows(res.units);
+  const iSrc = C.SS_INVOICE_HEADER.indexOf('주문출처');
+  const iReg = C.SS_INVOICE_HEADER.indexOf('사방넷등록');
+
+  eq('행 폭 = 헤더 폭', inv[0].length, C.SS_INVOICE_HEADER.length);
+  eq('사방넷 첫 품목만 등록 Y', inv.filter((r) => r[iReg] === 'Y').length, 1);
+  eq('같은 주문번호 둘째 품목은 빈칸', inv.filter((r) => r[0] === '2159999999' && r[iReg] === '').length, 1);
+  eq('전화주문은 등록 대상 아님', inv.filter((r) => r[iSrc] === '자동발급').every((r) => r[iReg] === ''), true);
+  eq('원장 행 폭 (운송장번호·송장매칭 포함)', C.ssLedgerRow(res.units[0], 'k', 'at').length, C.SS_LEDGER_HEADER.length);
+}
+
+
+console.log('\n[사방넷 번호 판별] 시스템 발급 ID는 등록 제외');
+{
+  eq('사방넷 숫자 번호', C.ssIsSabangnetUid('2159711511'), true);
+  eq('상품정보 발급 -ds-', C.ssIsSabangnetUid('0902-ds-e158'), false);
+  eq('세트분리 전화주문 MMdd-PH-', C.ssIsSabangnetUid('0903-PH-4bdf'), false);
+  eq('과거 발급 YYMMDD-PH- 도 제외', C.ssIsSabangnetUid('260903-PH-4bdf'), false);
+  eq('빈 값', C.ssIsSabangnetUid(''), false);
+  eq('문자 섞임', C.ssIsSabangnetUid('ABC123'), false);
+}
+
+
+console.log('\n[도선료 표] 롯데 공식 표로 도서산간 확정');
+{
+  const F = [{시군:'통영시',읍면동:'산양읍',리:['연곡리','저림리'],료:4000,권역:'도서'},{시군:'통영시',읍면동:'욕지면',리:[],료:4000,권역:'도서'},{시군:'울릉군',읍면동:'울릉읍',리:[],료:6500,권역:'도서'},{시군:'신안군',읍면동:'압해면',리:['매화리1구~3구','고이리'],료:5000,권역:'도서'},{시군:'목포시',읍면동:'달동',리:[],료:5000,권역:'도서'}];
+  const hit = (a) => { const r = C.ssFerryMatch(a, F); return r ? r.읍면동 + ' ' + r.료 : ''; };
+  eq('면 전체 대상', hit('경남 통영시 욕지면 동항리 100'), '욕지면 4000');
+  eq('리조건 — 해당 리', hit('경남 통영시 산양읍 연곡리 12'), '산양읍 4000');
+  eq('리조건 — 다른 리는 제외', hit('경남 통영시 산양읍 삼덕리 5'), '');
+  eq('구간 표기 리도 잡는다', hit('전남 신안군 압해면 매화리 2구'), '압해면 5000');
+  eq('동 단위', hit('전남 목포시 달동 100'), '달동 5000');
+  eq('같은 면 이름 다른 시군은 제외', hit('경기 화성시 남면 1'), '');
+  eq('시군만 맞고 읍면 다르면 제외', hit('경남 통영시 도산면 1'), '');
+}
+
+console.log('\n[도선료 표 기준] 표가 아직 롯데 것이면 알린다 — 2026-09-11');
+{
+  /* 택배사를 로젠으로 바꿔도 도선료 표는 «탭에 심은 자료»라 그대로 남는다.
+     그대로 두면 로젠 청구액과 다른 금액을 안내하고도 아무 소리가 안 난다. */
+  const F = [{시군:'울릉군',읍면동:'울릉읍',리:[],료:6500,권역:'도서'}];
+  const M = { ferry: F, islandKeywords: [], islandZips: {}, addrZip: {}, localAddrs: {} };
+  const 옛표경고 = (w) => w.filter((x) => x.code === 'FERRY_TABLE_OLD');
+  const 돌리기 = (주소, 기준) => {
+    const w = [];
+    /* 상태·출고지가 있어야 보류를 지나 도서산간 판정까지 온다 */
+    /* 품목코드가 있어야 «코드없음» 그물(2026-09-18)을 지나 여기까지 온다 */
+    C.ssRoute([{ 주소1: 주소, route: '', 상태: '판매중', 출고지: '평택A-1',
+      품목코드: 'OK1', 원본코드: 'OK1' }], M,
+      Object.assign({}, C.SS_DEFAULT_CONFIG, { 도선료표_기준: 기준 }), w);
+    return 옛표경고(w);
+  };
+  const 섬 = '경북 울릉군 울릉읍 도동리 1';
+  eq('롯데 표 그대로면 경고 1건', 돌리기(섬, '롯데').length, 1);
+  eq('로젠으로 바꿔 두면 조용하다', 돌리기(섬, '로젠').length, 0);
+  /* 도서산간 건이 «없는» 회차에는 안 뜬다 — 매번 뜨면 눈이 감긴다 */
+  eq('도서산간이 없으면 안 뜬다', 돌리기('경기 평택시 포승읍 1', '롯데').length, 0);
+}
+
+console.log('\n[ssCompressNames · 펼쳐 적기] 합배송 이름 — 2026-09-09');
+/* 접어 놓은 이름은 박스를 싸는 사람에게 한 품목처럼 보인다.
+   품목마다 제 꼬리를 붙이고 ★★ 로 끝나는 자리를 못 박는다. */
+eq('묶이는 둘 — 앞말은 한 번만',
+  C.ssCompressNames(['JH 반죽사각 300 - (50*1팩) 50세트--/소분', 'JH 반죽사각 400 - (50*1팩) 50세트--/소분'], true),
+  'JH 반죽사각 300 - (50*1팩) 50세트--/소분 ★★400 - (50*1팩) 50세트--/소분 ★★');
+eq('★ 안 묶이는 둘에도 붙는다 (앞말이 BW 하나뿐) — 사장님 시험에서 나옴',
+  C.ssCompressNames(['BW 2166 사출 중화면용기 중 검정 (100*2팩)', 'BW 2145 사출 중화면용기 소 검정 (100*1팩)'], true),
+  'BW 2166 사출 중화면용기 중 검정 (100*2팩) ★★BW 2145 사출 중화면용기 소 검정 (100*1팩) ★★');
+eq('셋 이상',
+  C.ssCompressNames(['BF 225파이 감자탕 대 블랙', 'BF 225파이 감자탕 중 블랙', 'BF 225파이 감자탕 소 블랙'], true),
+  'BF 225파이 감자탕 대 블랙 ★★중 블랙 ★★소 블랙 ★★');
+eq('섞임 — 묶이는 둘 + 따로 하나. ★★ 가 겹치지 않는다',
+  C.ssCompressNames(['JH 반죽사각 300', 'JH 반죽사각 400', 'GS 좋은봉투 특대 유백'], true),
+  'JH 반죽사각 300 ★★400 ★★GS 좋은봉투 특대 유백 ★★');
+eq('샘플이 낀 박스는 접어 둔다 (spellOut 안 줌)',
+  C.ssCompressNames(['JH 반죽사각 300', 'JH 반죽사각 400'], false),
+  'JH 반죽사각 300/400');
+eq('하나뿐이면 ★★ 하나만',
+  C.ssCompressNames(['GS 좋은봉투 특대 유백'], true),
+  'GS 좋은봉투 특대 유백 ★★');
+
+
+console.log('\n[ssSalesIdCells] 이름/고유ID — 슬래시는 «하나»여야 한다');
+{
+  /* ★ 읽는 쪽이 둘인데 규칙이 다르다 ★  (2026-09-11)
+       세트분리 ssSplit2              → «첫» / 뒤 전부
+       허브 _pep_uidFromOrdererCell_  → «마지막» / 뒤
+     「백반나라/김다영」 처럼 상호와 이름이 / 로 붙어 있으면 슬래시가 둘이 되어
+     앞은 「김다영/0911-PH-64377」, 뒤는 「0911-PH-64377」 로 갈렸다.
+     사장님이 실제로 그 값을 보셨다. 넣는 값에서 슬래시를 하나로 만든다. */
+  const 첫 = (v) => { const i = v.indexOf('/'); return i < 0 ? '' : v.slice(i + 1).trim(); };
+  const 끝 = (v) => (v.indexOf('/') < 0 ? v : v.split('/').pop().trim());
+  const 한줄 = (거래처, 받는분, id) => C.ssSalesIdCells([{
+    _행: 1, 주문번호출처: '자동발급', 고유ID: id, 거래처명원본: 거래처, 받는분: 받는분,
+  }])[0].값;
+
+  eq('★ 상호/이름은 «뒷이름»만 남는다', 한줄('백반나라/김다영', '백반나라/김다영', '0911-PH-64377'),
+    '김다영/0911-PH-64377');
+  eq('슬래시 없는 이름은 그대로', 한줄('득우유통 김천 조한석', '득우유통 김천 조한석', '0911-PH-5d3af'),
+    '득우유통 김천 조한석/0911-PH-5d3af');
+  eq('슬래시가 둘이어도 맨 뒤만', 한줄('법인/쿠팡/김철수', '김철수', '0911-PH-aaaaa'),
+    '김철수/0911-PH-aaaaa');
+  eq('「/」 뿐이면 받는분으로', 한줄('/', '홍길동', '0911-PH-bbbbb'), '홍길동/0911-PH-bbbbb');
+
+  /* 넣은 값을 «두 규칙으로 다시 읽어» 같은지 본다 — 이 시험의 핵심이다 */
+  [
+    ['백반나라/김다영', '0911-PH-64377'],
+    ['득우유통 김천 조한석', '0911-PH-5d3af'],
+    ['법인/쿠팡/김철수', '0911-PH-aaaaa'],
+  ].forEach(([who, id]) => {
+    const v = 한줄(who, who, id);
+    eq('두 규칙이 같은 ID — ' + who, 첫(v) + '|' + 끝(v), id + '|' + id);
+  });
+
+  //  사방넷·대리판매 줄은 손대지 않는다 — 이미 제 주문번호가 들어 있다
+  eq('사방넷 줄은 안 건드린다',
+    C.ssSalesIdCells([{ _행: 1, 주문번호출처: '사방넷', 고유ID: '2161567025' }]).length, 0);
+}
+
+console.log('\n[ssVendorOf] 업체코드 — 품목명 먼저, 코드 앞글자는 예비');
+{
+  /* 「대리발송업체」 표를 흉내낸다 */
+  const V = { JH: '제이에이치', JM: '제이엠', AJ: '아주팩', HP: '에이치피' };
+
+  const of = (name, code) => C.ssVendorOf({ 품목명: name, 품목코드: code }, V);
+
+  eq('품목명 첫 낱말이 업체코드',
+    of('JH 실링 23189 블랙 900개', 'JH2318SL00021'), 'JH');
+
+  /* ★ 오늘 고친 것 ★ 코드는 JM 인데 품목명은 PSP 로 시작한다 (141개 전부) */
+  eq('품목명이 PSP 여도 코드가 JM 이면 제이엠',
+    of('PSP 트레이 380 볼록 백색 400개', 'JMPSPTB0014'), 'JM');
+  eq('품목명이 PSP 여도 코드가 JM 이면 제이엠 (다른 건)',
+    of('PSP 트레이 8호 백색 1000개', 'JMPSPT80001'), 'JM');
+
+  /* 품목명으로 이미 잡히던 것은 코드가 달라도 «안 바뀐다» */
+  eq('품목명이 이기고 코드는 안 본다',
+    of('AJ 감자탕 대 200세트', 'JMPSPT80001'), 'AJ');
+
+  /* 표에 없는 앞글자는 무시한다 — 없는 업체로 토스하면 아무도 안 보낸다 */
+  eq('등록 안 된 앞글자는 빈칸',
+    of('ZZ 무엇', 'ZZ0001'), '');
+  eq('코드도 이름도 안 맞으면 빈칸',
+    of('PSP 트레이', 'XXPSP0001'), '');
+
+  /* 두 글자와 세 글자가 섞여 있으면 긴 쪽이 이긴다 */
+  eq('긴 앞글자가 이긴다',
+    C.ssVendorOf({ 품목명: '무엇', 품목코드: 'HPX0001' },
+      { HP: '에이치피', HPX: '에이치피엑스' }), 'HPX');
+
+  eq('코드가 없으면 빈칸', of('PSP 트레이', ''), '');
+}
+
+console.log('\n' + (fail ? `실패 ${fail}건 / ` : '') + `통과 ${pass}건`);
+process.exit(fail ? 1 : 0);

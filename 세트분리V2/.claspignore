@@ -1,0 +1,13 @@
+**/**
+!appsscript.json
+!core.js
+!gasIO.js
+!gasMasters.js
+!gasMain.js
+!gasSeed.js
+!gasZip.js
+!gasBulk.js
+!gasAuto.js
+!gasV2.js
+!gasAi.js
+!_secrets.gs
