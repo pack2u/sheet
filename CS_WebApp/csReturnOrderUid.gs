@@ -39,8 +39,29 @@
  * ══════════════════════════════════════════════════════════════
  */
 
-/** 채울 달 탭 — 고유ID 칸이 있는 달. 칸이 없는 탭은 «만들지 않고» 건너뛴다 */
-var _CS_ROU_TABS_ = ["202610", "202609", "202608"];
+/**
+ * 채울 달 — 2026-10 부터 지금 달까지.
+ *
+ * > "10월부터 적용해주면되 이전꺼는 쉽지 않아"
+ *
+ * 9·8월도 미리보기로 돌려 봤는데 대부분 못 찾았다 — 주문 원장이 최근 회차만
+ * 들고 있어 그 달 송장이 거의 없고(9월 275줄 중 찾음 46), 송장이 빈 줄도 많다.
+ * 그 이전은 손으로 맞추는 쪽이 낫다는 사장님 판단이다.
+ * 10월부터는 주문송장조회 → 반품대장 기록이 번호를 같이 싣는다. 이 함수는 그
+ * 흐름을 안 거치고 들어온 줄(반품탭에서 직접 적은 것)을 메우는 데 쓴다.
+ */
+var _CS_ROU_FROM_ = "202610";
+
+/** 대장에 있는 달 탭 중 _CS_ROU_FROM_ 부터 — 새것이 앞 */
+function _cs_rou_탭들_(ss) {
+  var out = [];
+  var 탭 = ss.getSheets();
+  for (var i = 0; i < 탭.length; i++) {
+    var 이름 = 탭[i].getName();
+    if (/^[0-9]{6}$/.test(이름) && 이름 >= _CS_ROU_FROM_) out.push(이름);
+  }
+  return out.sort().reverse();
+}
 
 /**
  * 주문 원장을 얼마나 거슬러 볼까 (오늘부터, 일).
@@ -96,7 +117,14 @@ function _cs_rou_run_(보기만) {
   var 말 = ["■ 반품대장 고유ID ← 원래 주문의 고유ID — " + (보기만 ? "미리보기 (안 바꿈)" : "넣기"), ""];
 
   /*  주문 색인 — CS 주문검색이 쓰는 그것. 송장 → 고유ID 를 들고 있다. */
-  var 날수 = _cs_rou_보는날수_(_CS_ROU_TABS_);
+  var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
+  var 탭들 = _cs_rou_탭들_(ss);
+  if (!탭들.length) {
+    Logger.log("채울 달 탭이 없습니다 (" + _CS_ROU_FROM_ + " 부터)");
+    return "채울 달 탭 없음";
+  }
+  var 날수 = _cs_rou_보는날수_(탭들);
+  말.push("  채울 달 " + 탭들.join(", "));
   var pack = _cs_loadSearchIndex_(날수, false);
   var 주문들 = (pack && pack.rows) || [];
   말.push("  주문 색인 " + 주문들.length + "줄 · 최근 " + 날수 + "일 · 근거 " +
@@ -106,12 +134,11 @@ function _cs_rou_run_(보기만) {
   }
   var 색인 = _cs_rou_송장색인_(주문들);
 
-  var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
   var 합 = { 찾음: 0, 겹침: 0, 못찾음: 0, 송장없음: 0, 이미: 0, 넣음: 0 };
   var 자세히 = [];
 
-  for (var t = 0; t < _CS_ROU_TABS_.length; t++) {
-    var 이름 = _CS_ROU_TABS_[t];
+  for (var t = 0; t < 탭들.length; t++) {
+    var 이름 = 탭들[t];
     var 탭 = ss.getSheetByName(이름);
     if (!탭) { 말.push("  · " + 이름 + " — 탭이 없습니다"); continue; }
     var 읽음 = _cs_rou_읽기_(탭);
@@ -139,6 +166,9 @@ function _cs_rou_run_(보기만) {
     });
     결과.겹침.forEach(function (x) {
       자세히.push("  ⚠ " + 이름 + " " + x.행 + "행  " + x.요약 + "  — 후보 " + x.후보.join(", "));
+    });
+    결과.송장없음.forEach(function (x) {
+      자세히.push("  ✋ " + 이름 + " " + x.행 + "행  " + x.요약 + "  — 원송장이 비어 있음 (손으로 적어 주세요)");
     });
     결과.못찾음.forEach(function (x) {
       자세히.push("  ❌ " + 이름 + " " + x.행 + "행  " + x.요약 + "  — 원장에 이 송장이 없음");

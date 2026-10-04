@@ -40,6 +40,8 @@ eval(꺼내(본, "_cs_rou_상품_"));
 eval(꺼내(본, "_cs_rou_송장색인_"));
 eval(꺼내(본, "_cs_rou_좁히기_"));
 eval(꺼내(본, "_cs_rou_맞추기_"));
+eval(꺼내(본, "_cs_rou_탭들_"));
+eval(본.substring(본.indexOf("var _CS_ROU_FROM_ = "), 본.indexOf(";", 본.indexOf("var _CS_ROU_FROM_ = ")) + 1));
 eval(꺼내(포털, "prpUidFromCell_"));
 eval(꺼내(허브, "_pep_normalizeMatchUid_"));
 eval(꺼내(허브, "_pep_uidFromOrdererCell_"));
@@ -169,6 +171,22 @@ console.log("\n[10] 옛 r 번호 함수는 막혀 있다");
 var 옛 = fs.readFileSync(path.join(여기, "csReturnUid.gs"), "utf8");
 ok("csReturnUidFill 이 r 번호를 다시 넣지 못한다",
    옛.indexOf("_cs_returnUidNext_") === -1 && 옛.indexOf("setValues") === -1);
+
+console.log("\n[11] ★ 10월부터만 — 이전 달은 안 건드린다 ★");
+/*  > "10월부터 적용해주면되 이전꺼는 쉽지 않아"
+    8·9월은 주문 원장에 그 송장이 거의 없어 대부분 못 찾았다. 시험 r 번호가
+    남아 있어도 손대지 않는다 — 고르는 탭에 아예 들지 않게 한다. */
+function 가짜대장(이름들) {
+  return { getSheets: function () {
+    return 이름들.map(function (n) { return { getName: function () { return n; } }; });
+  } };
+}
+var 고른탭 = _cs_rou_탭들_(가짜대장(["202608", "202609", "202610", "202611", "요약", "202610(사본)", "2026100"]));
+같나("202610 부터 지금 달까지만, 새것이 앞", 고른탭.join(","), "202611,202610");
+ok("9월·8월 탭은 고르지 않는다", 고른탭.indexOf("202609") < 0 && 고른탭.indexOf("202608") < 0);
+ok("달 이름이 아닌 탭은 고르지 않는다", 고른탭.every(function (n) { return /^[0-9]{6}$/.test(n); }));
+같나("10월 탭이 없으면 빈 목록", _cs_rou_탭들_(가짜대장(["202609", "202608"])).length, 0);
+ok("고정 목록(_CS_ROU_TABS_)이 남아 있지 않다", 본.indexOf("_CS_ROU_TABS_") === -1);
 
 console.log("");
 console.log(실패 ? "★ 실패 " + 실패 + "건 / 통과 " + 통과 + "건"
