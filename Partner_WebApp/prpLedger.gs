@@ -49,7 +49,11 @@ function prpMapCols_(header) {
     /* 귀책 — 아직 대장에 없는 열이다 (2026-09-30). 그때까지는 비고에
        「귀책: 판매자 (오배송)」으로 남는다. 시트에 「귀책」 열을 만들면
        코드를 안 고쳐도 여기로 잡힌다. CS웹앱 쪽과 «쌍»이다. */
-    fault: -1
+    fault: -1,
+    /* 고유ID — «원래 주문»의 고유ID (2026-10-04).
+       하나의 번호로 주문·송장·반품을 다 찾으려면 같은 번호가 대장에도 있어야
+       한다. CS웹앱 csOrderSearch 와 «쌍»이다. */
+    uid: -1
   };
   for (var i = 0; i < header.length; i++) {
     var h = String(header[i] || "").replace(/\s/g, "");
@@ -114,6 +118,7 @@ function prpMapCols_(header) {
     else if (col.qty < 0 && (h === "수량" || h.indexOf("수량") === 0)) col.qty = i;
     else if (col.invoice < 0 && /원송장|송장번호/.test(h) && !/회수|재발송|반품송장/.test(h)) col.invoice = i;
     else if (col.returnInvoice < 0 && /반품송장|회수송장/.test(h)) col.returnInvoice = i;
+    else if (col.uid < 0 && /^고유ID$|^고유아이디$|^UID$/i.test(h)) col.uid = i;
     /* ★ 2026-09-10: CS 웹앱과 낱말을 맞춘다 ★
        9월 탭의 L열은 「재출고/단순/오주문입력/오배송」 이라 /교환.?반품/ 로는
        안 걸렸다. 접수창에서 고른 「단순반품」이 조용히 버려지고 있었다.
@@ -149,7 +154,12 @@ function prpMapCols_(header) {
     else if (col.fee < 0 && /반품비|반품운임|반품배송비|환불비용/.test(h)) col.fee = i;
     else if (col.notice < 0 && /고객요청|유의사항|비고/.test(h)) col.notice = i;
     /*  상태값을 «머리글 이름»으로 찾는다 (2026-10-01) — 아래 폴백 설명 참조 */
-    else if (col.status < 0 && /^상태값$|^상태$|^처리상태$|^진행상태$/.test(h)) col.status = i;
+    /*  ★ 「처리상태」를 상태로 읽지 않는다 ★  (2026-10-04 — CS 웹앱과 쌍)
+        옛 탭(202604~08) N열 「처리상태」에 실제로 든 것은 이카운트 반영이다
+        (「이카운트ok」). 상태로 읽으면 업체 화면에 상태가 「이카운트ok」로 뜬다.
+        CS 는 그날 고쳤는데 포털이 빠져 있었다 — 같은 대장을 두 화면이 다르게
+        읽고 있었다. 옛 탭의 상태는 A열 폴백이 집는다.  */
+    else if (col.status < 0 && /^상태값$|^상태$|^진행상태$/.test(h)) col.status = i;
   }
   /*  ★ A열을 상태로 «못 박지» 않는다 ★  (2026-10-01)
         전에는 무조건 col.status = 0 이었다. 10월 탭이 A 를 「반품접수날짜」로

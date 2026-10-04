@@ -281,6 +281,15 @@ function prpSubmitReturn(sid, data) {
     }
 
     var dest = prpNextDestRow_(values, headerIdx, col);
+    /*  ★ 주문 고유ID 를 칸에도 적는다 ★  (2026-10-04)
+        > "고유아이디로 주문, 송장, 반품유무등을 한번에 찾을수 있게"
+        업체가 조회로 고른 주문의 고유ID 를 여태 비고에만 「고유ID …」로 적었다.
+        비고는 사람이 읽는 글이라 번호로 찾을 수 없다. 칸이 있으면 칸에도 적는다.
+        업체가 손으로 적은 건(조회를 안 거친 것)은 uid 가 비어 있어 칸도 빈다 —
+        번호를 지어내지 않는다. 비고 표시는 그대로 둔다(옛 화면들이 그걸 읽는다).
+        ★ CS 쪽과 같은 다듬기 ★ prpUidFromCell_ 가 마지막 「/」 뒤만 남기고
+          「#n」·「|코드」·「_S숫자」를 뗀다 — CS _cs_orderUid_ 와 같은 규칙이다. */
+    if (col.uid >= 0 && uid) row[col.uid] = uid;
     tab.getRange(dest, 1, 1, lastCol).setValues([row]);
     // 위 행 서식을 물려받아 대장 모양이 깨지지 않게 한다
     if (dest > headerIdx + 2) {

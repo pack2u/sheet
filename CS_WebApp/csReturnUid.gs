@@ -1,292 +1,35 @@
 /**
  * ══════════════════════════════════════════════════════════════
- *  반품 고유ID — 「r1002000003」
+ *  [쓰지 않음] 반품 제 번호 「r1002000003」  — 2026-10-04 에 막았다
  *
- *  > "모든 문의 반품 발주관련된 부분에서 항상 고유아이디가 붙게해줘..
- *  >  다 연결되어 연동..찾기가 가능하고 추적가능하게"
+ *  > "주문건의 고유아이디를 넣어 달라고한건데. 반품관련 고유아이디를 따로
+ *  >  만드는거로 착각한듯..."
  *
- *  ★ 있던 규칙을 늘린다 ★  (2026-09-21 결정)
- *      d1002000047   발주 수집 (허브)
- *      p1002000047   전화주문 (세트분리)
- *      r1002000003   반품          ← 여기
- *    난수가 아니라 «그날의 번호표»다. 난수 넉 자는 나흘에 한 번 겹쳤고,
- *    겹친 줄은 아무 말 없이 빠졌다. 날짜가 이미 윗자리 카운터이므로
- *    아랫자리도 카운터로 두면 겹침이 «구조적으로» 없다.
+ *  2026-10-02 에 반품대장 고유ID 칸을 「반품 제 번호」로 읽고 r 번호를 매겼다.
+ *  뜻을 잘못 읽은 것이다. 그 칸은 «원래 주문»의 고유ID 다 — 하나의 번호로
+ *  주문·송장·반품을 다 찾으려면 같은 번호가 세 곳에 있어야 한다.
  *
- *  ★ 왜 반품에 제 번호가 있어야 하나 ★
- *    여태 반품 건은 (탭, 행)으로만 가리켰다. 줄이 한 칸 밀리면 짝이 끊긴다 —
- *    2026-10-01 에 9월 탭에서 그렇게 «유령 아홉 줄»이 생겼다.
- *    제 번호가 있으면 줄이 어디로 가든 같은 건이다.
+ *  이제는 csReturnOrderUid.gs 가 맡는다.
+ *    · 새 반품  submitReturnLedger 가 주문송장조회에서 받은 orderNo 를 적는다
+ *    · 지난 반품  csReturnOrderUidFill 이 원송장으로 주문 원장을 찾아 넣는다
+ *              (이때 시험으로 들어간 r 번호를 덮는다)
  *
- *  ★ 날짜는 «접수날짜»를 쓴다 ★
- *    번호를 매긴 날이 아니라 그 반품이 접수된 날이다. 그래야 번호를 보고
- *    언제 건인지 안다. 접수날짜가 비어 있으면 그 탭의 1일로 둔다 —
- *    비워 두면 그 줄만 영영 못 가리킨다.
- *
- *  ★ 열은 맨 뒤에 ★
- *    중간에 끼우면 뒤 칸이 전부 밀리고, 자리가 움직이면 v2 미러가 어긋난다.
- *    대장은 머리글 «이름»으로 읽으니 맨 뒤여도 똑같이 잡힌다.
- *
- *  돌리는 법  —  편집기에서 ▶ 실행 → Ctrl+Enter 로 로그
- *    ① csReturnUid_미리보기   몇 줄에 매길지만 «본다». 안 바꾼다.
- *    ② csReturnUidFill        열을 만들고 빈 줄에 매긴다. 두 번 돌려도 탈 없다.
- *
- *  다 쓰면 ②는 지워도 된다. ★ _cs_returnUidNext_ 는 남겨야 한다 ★ —
- *  새 반품을 기록할 때 csOrderSearch 가 부른다.
+ *  ★ 파일을 지우지 않고 남긴 까닭 ★
+ *    clasp push 는 로컬에 없는 파일을 서버에서 지운다. 배포 견주기(_pushguard)는
+ *    그걸 «사고»로 보고 멈춘다 — 맞는 동작이다. 지우는 것은 사람이 편집기에서
+ *    정리할 때 같이 하면 된다. 그때까지 아래 둘을 누가 실수로 돌려도 r 번호가
+ *    다시 들어가지 않게 막아 둔다.
  * ══════════════════════════════════════════════════════════════
  */
 
-/** 반품 고유ID 의 표식. 발주 d · 전화주문 p 와 겹치지 않는다 */
-var _CS_RUID_PFX_ = "r";
-var _CS_RUID_HEADER_ = "고유ID";
+function csReturnUid_미리보기() { return _csruid_막힘_(); }
+function csReturnUidFill() { return _csruid_막힘_(); }
 
-/** 머리글이 고유ID 인가 — 띄어쓰기·대소문자를 봐준다 */
-function _cs_isUidHeader_(h) {
-  return /^고유ID$|^고유아이디$|^UID$/i.test(String(h || "").replace(/\s/g, ""));
-}
-
-/** 「261002」·「2026-10-02」·Date → 「1002」. 못 읽으면 "" */
-function _cs_ruidMMDD_(v) {
-  if (v instanceof Date) return Utilities.formatDate(v, "Asia/Seoul", "MMdd");
-  var s = String(v == null ? "" : v).trim();
-  if (!s) return "";
-  var m = s.match(/^(\d{2})(\d{2})(\d{2})$/);              // 261002
-  if (m) return m[2] + m[3];
-  m = s.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);      // 2026-10-02
-  if (m) return ("0" + m[2]).slice(-2) + ("0" + m[3]).slice(-2);
-  m = s.match(/^(\d{1,2})[-./](\d{1,2})$/);                 // 10/2
-  if (m) return ("0" + m[1]).slice(-2) + ("0" + m[2]).slice(-2);
-  return "";
-}
-
-/**
- * 그날의 다음 번호를 준다.
- *
- * @param {string} mmdd  「1002」
- * @param {Object} 쓴것  이미 쓰인 ID 들 {uid: true}. ★ 이 함수가 여기에 적어 둔다 ★
- *                        같은 실행 안에서 두 번 같은 번호를 주지 않으려면 그래야 한다.
- */
-function _cs_returnUidNext_(mmdd, 쓴것) {
-  var 앞 = _CS_RUID_PFX_ + mmdd;
-  var 최대 = 0;
-  for (var k in 쓴것) {
-    if (!Object.prototype.hasOwnProperty.call(쓴것, k)) continue;
-    if (String(k).indexOf(앞) !== 0) continue;
-    var 꼬리 = String(k).substring(앞.length);
-    if (!/^[0-9]{6}$/.test(꼬리)) continue;
-    var n = parseInt(꼬리, 10);
-    if (n > 최대) 최대 = n;
-  }
-  var uid, 다음 = 최대 + 1;
-  do {
-    uid = 앞 + ("00000" + 다음).slice(-6);
-    다음++;
-  } while (쓴것[uid]);
-  쓴것[uid] = true;
-  return uid;
-}
-
-/** 그 탭의 고유ID 열(0기준). 없으면 -1 */
-function _cs_ruidCol_(머리) {
-  for (var i = 0; i < 머리.length; i++) if (_cs_isUidHeader_(머리[i])) return i;
-  return -1;
-}
-
-/** 손댈 탭 — 달 탭 전부 + 협의안 */
-function _csruid_tabs_(ss) {
-  var out = [];
-  var 본 = null;
-  try { 본 = _cs_returnLedgerSpecTab_(ss); } catch (e) {}
-  if (본) out.push(본);
-  var sheets = ss.getSheets();
-  for (var i = 0; i < sheets.length; i++) {
-    if (/^\d{6}$/.test(String(sheets[i].getName() || "").trim())) out.push(sheets[i]);
-  }
-  return out;
-}
-
-/** ① 몇 줄에 매길지만 본다 */
-function csReturnUid_미리보기() { return _csruid_run_(true); }
-
-/** ② 열을 만들고 빈 줄에 매긴다 */
-function csReturnUidFill() { return _csruid_run_(false); }
-
-function _csruid_run_(미리보기만) {
-  var 줄 = ["■ 반품 고유ID" + (미리보기만 ? "  (미리보기 · 안 바꿉니다)" : " 매기기"), ""];
-  var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
-  var 탭들 = _csruid_tabs_(ss);
-  if (!탭들.length) { 줄.push("★ 손댈 탭이 없습니다."); return _csruidLog_(줄); }
-
-  /*  ★ 먼저 «전부» 읽어 이미 쓰인 번호를 모은다 ★
-      탭마다 따로 세면 같은 날짜가 두 탭에 걸쳐 있을 때 번호가 겹친다.  */
-  var 쓴것 = {};
-  var 모음 = [];
-  for (var t = 0; t < 탭들.length; t++) {
-    var tab = 탭들[t];
-    var lc = Math.max(tab.getLastColumn(), 15);
-    var lr = Math.max(tab.getLastRow(), 1);
-    var v = tab.getRange(1, 1, lr, lc).getDisplayValues();
-    var hi = _cs_findReturnHeaderRow_(v);
-    if (hi < 0) { 줄.push("⏸ " + tab.getName() + " — 머리글 줄을 못 찾아 건너뜁니다."); continue; }
-    var 머리 = v[hi];
-    var col = _cs_mapReturnLedgerCols_(머리);
-    var uidCol = _cs_ruidCol_(머리);
-    if (uidCol >= 0) {
-      for (var r = hi + 1; r < v.length; r++) {
-        var u = String(v[r][uidCol] || "").trim();
-        if (u) 쓴것[u] = true;
-      }
-    }
-    모음.push({ tab: tab, 값: v, 머리칸: hi, 머리: 머리, col: col, uidCol: uidCol });
-  }
-
-  /* ── 탭마다 ─────────────────────────────────────────────── */
-  var 총매김 = 0, 총빈날 = 0;
-  for (var m = 0; m < 모음.length; m++) {
-    var o = 모음[m];
-    var 이름 = o.tab.getName();
-    var 달 = /^\d{6}$/.test(이름) ? 이름.substring(4) + "01" : "";   // 202610 → 1001
-
-    //  자료 줄 — 머리글 아래, 값이 있는 마지막 줄까지
-    var 끝 = -1;
-    for (var i2 = o.머리칸 + 1; i2 < o.값.length; i2++) {
-      for (var c2 = 0; c2 < o.값[i2].length; c2++) {
-        if (String(o.값[i2][c2] || "").trim()) { 끝 = i2; break; }
-      }
-    }
-    if (끝 < 0) { 줄.push("· " + 이름 + " — 자료가 없습니다."); continue; }
-
-    var 매길것 = [], 빈날 = 0;
-    for (var r2 = o.머리칸 + 1; r2 <= 끝; r2++) {
-      var 줄값 = o.값[r2];
-      var 뭔가 = false;
-      for (var c3 = 0; c3 < 줄값.length; c3++) {
-        if (String(줄값[c3] || "").trim()) { 뭔가 = true; break; }
-      }
-      if (!뭔가) continue;                                    // 빈 줄은 건너뛴다
-      if (o.uidCol >= 0 && String(줄값[o.uidCol] || "").trim()) continue;  // 이미 있다
-
-      var mmdd = o.col.date >= 0 ? _cs_ruidMMDD_(줄값[o.col.date]) : "";
-      if (!mmdd) { mmdd = 달; 빈날++; }                        // 접수날짜가 없다 → 그 달 1일
-      if (!mmdd) continue;                                    // 협의안 탭 등 — 달도 모르면 건너뛴다
-      매길것.push({ row: r2, mmdd: mmdd });
-    }
-
-    줄.push("· " + 이름 + "  (머리 " + (o.머리칸 + 1) + "행 · " +
-      (끝 - o.머리칸) + "줄)" +
-      (o.uidCol >= 0 ? "  고유ID " + _cs_colLetter_(o.uidCol) + "열" : "  고유ID 열 없음"));
-    /*  ★ 협의안 탭은 «본»이다 — 열만 만들고 번호는 안 매긴다 ★ (2026-10-02)
-        「202609의 테스트 시트」는 달 탭을 만들 때 베끼는 본이고
-        (csReturnMonthTab._cs_newReturnTabFromSpec_), 그 안에는 9월 자료의
-        «사본» 238줄이 들어 있다. 여기에 번호를 매기면 같은 반품 한 건이
-        202609 의 번호와 여기 번호, 둘을 갖는다 — 번호를 매긴 까닭이
-        그 자리에서 없어진다.
-        v2 거울도 이 탭을 안 담는다(달 탭만 본다). 실측 2026-10-02:
-        returns 1,696줄에 이 탭 이름이 아예 없다.
-        ★ 열은 만든다 ★ 본에 칸이 없으면 11월 탭이 고유ID 없이 태어난다.  */
-    var 본이다 = !달;
-    if (본이다) {
-      줄.push("   본(本) 탭입니다 — 열만 만들고 번호는 안 매깁니다" +
-        (매길것.length ? " (" + (매길것.length + 빈날) + "줄 건너뜀)" : ""));
-    } else {
-      줄.push("   매길 줄 " + 매길것.length + (빈날 ? " · 접수날짜 없는 줄 " + 빈날 + " (그 달 1일로)" : ""));
-      총매김 += 매길것.length;
-      총빈날 += 빈날;
-    }
-    if (미리보기만) continue;
-    //  본 탭은 열만 만들고 넘어간다 — 아래 「한 번에 쓴다」로 안 간다
-    if (본이다) 매길것 = [];
-
-    /* ── 열이 없으면 맨 뒤에 만든다 ───────────────────────
-         ★ 매길 줄이 없어도 만든다 ★ 본 탭도, 이미 다 매긴 달 탭도
-         칸은 있어야 한다. 칸이 없으면 다음에 CS 가 그 탭에 반품을
-         적을 때 번호가 조용히 안 붙는다(submitReturnLedger 는 열이
-         없으면 넘어간다). 그게 가장 늦게 들통나는 고장이다.        */
-    var uidCol2 = o.uidCol;
-    if (uidCol2 < 0) {
-      var 폭 = o.머리.length;
-      while (폭 > 0 && !String(o.머리[폭 - 1] || "").trim()) 폭--;
-      var 칸 = 폭 + 1;
-      if (칸 > o.tab.getMaxColumns()) {
-        o.tab.insertColumnsAfter(o.tab.getMaxColumns(), 칸 - o.tab.getMaxColumns());
-      }
-      o.tab.getRange(o.머리칸 + 1, 칸).setValue(_CS_RUID_HEADER_).setFontWeight("bold");
-      try {
-        o.tab.getRange(o.머리칸 + 1, 폭).copyTo(
-          o.tab.getRange(o.머리칸 + 1, 칸), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
-        o.tab.getRange(o.머리칸 + 1, 칸).setValue(_CS_RUID_HEADER_);
-      } catch (eF) {}
-      //  ★ 글로 잠근다 ★ r1002000003 을 숫자로 읽으려 들면 안 된다
-      o.tab.getRange(o.머리칸 + 2, 칸, Math.max(1, o.tab.getMaxRows() - o.머리칸 - 1), 1)
-        .setNumberFormat("@");
-      try { o.tab.setColumnWidth(칸, 110); } catch (eW) {}
-      uidCol2 = 칸 - 1;
-      줄.push("   + " + _cs_colLetter_(uidCol2) + "열 ← 고유ID");
-    }
-
-    /* ── 한 번에 쓴다 ─────────────────────────────────────
-         ★ 빈 묶음이면 손대지 않는다 ★ 매길것[0] 을 읽으면 터진다.    */
-    if (!매길것.length) continue;
-    var 처음 = 매길것[0].row, 마지막 = 매길것[매길것.length - 1].row;
-    var 폭2 = 마지막 - 처음 + 1;
-    var 지금 = o.tab.getRange(처음 + 1, uidCol2 + 1, 폭2, 1).getDisplayValues();
-    for (var k2 = 0; k2 < 매길것.length; k2++) {
-      var 자리 = 매길것[k2].row - 처음;
-      if (String(지금[자리][0] || "").trim()) continue;        // 그 사이 누가 적었다 — 안 덮는다
-      지금[자리][0] = _cs_returnUidNext_(매길것[k2].mmdd, 쓴것);
-    }
-    o.tab.getRange(처음 + 1, uidCol2 + 1, 폭2, 1).setValues(지금);
-  }
-
-  SpreadsheetApp.flush();
-  줄.push("");
-  if (미리보기만) {
-    줄.push("모두 " + 총매김 + "줄에 매깁니다" + (총빈날 ? " (접수날짜 없는 " + 총빈날 + "줄은 그 달 1일로)" : "") + ".");
-    줄.push("이대로 괜찮으면 csReturnUidFill 을 실행하세요.");
-    return _csruidLog_(줄);
-  }
-
-  /* ── 나가기 직전 검문 — 빠진 줄이 없나 ─────────────────── */
-  var 남은것 = 0, 봄 = 0, 본탭줄 = 0;
-  for (var z = 0; z < 모음.length; z++) {
-    var tb = 모음[z].tab;
-    /*  ★ 본 탭은 세지 않는다 ★ 일부러 안 매긴 줄이다. 여기 세면 검문이
-        매번 ⏸ 로 끝나고, 달 탭에서 한 줄이 진짜 빠진 날 묻힌다.      */
-    var 본탭이다 = !/^\d{6}$/.test(tb.getName());
-    var lc2 = Math.max(tb.getLastColumn(), 15);
-    var vv = tb.getRange(1, 1, Math.max(tb.getLastRow(), 1), lc2).getDisplayValues();
-    var hi2 = _cs_findReturnHeaderRow_(vv);
-    if (hi2 < 0) continue;
-    var uc = _cs_ruidCol_(vv[hi2]);
-    if (uc < 0) continue;
-    for (var y = hi2 + 1; y < vv.length; y++) {
-      var 뭔가2 = false;
-      for (var x = 0; x < vv[y].length; x++) {
-        if (x !== uc && String(vv[y][x] || "").trim()) { 뭔가2 = true; break; }
-      }
-      if (!뭔가2) continue;
-      if (본탭이다) { 본탭줄++; continue; }
-      봄++;
-      if (!String(vv[y][uc] || "").trim()) 남은것++;
-    }
-  }
-  줄.push("✅ " + 총매김 + "줄에 매겼습니다.");
-  줄.push((남은것 ? "⏸ " : "✅ ") + "달 탭 자료 " + 봄 + "줄 가운데 번호 없는 줄 " + 남은것 + "개");
-  if (남은것) 줄.push("   (접수날짜도 달도 모르는 줄입니다 — 손으로 봐 주세요)");
-  //  ★ 일부러 안 매긴 것은 «따로» 알린다 ★ 조용히 넘기면 나중에 사고로 보인다
-  if (본탭줄) {
-    줄.push("· 본(本) 탭 " + 본탭줄 + "줄은 일부러 안 매겼습니다 — 달 탭을 만들 때 베끼는 본이고,");
-    줄.push("  그 안은 9월 자료의 사본입니다. 매기면 같은 건에 번호가 둘이 됩니다.");
-  }
-  줄.push("");
-  줄.push("▶ 다음: 허브에서 partnerMirrorReturnsToV2 를 돌리면 v2 가 번호를 받습니다.");
-
-  try { csInvalidateReturnLedgerCache_(); } catch (e) {}
-  return _csruidLog_(줄);
-}
-
-function _csruidLog_(줄) {
-  var 글 = 줄.join("\n");
+function _csruid_막힘_() {
+  var 줄 = String.fromCharCode(10);
+  var 글 = "이 함수는 더 쓰지 않습니다 (2026-10-04)." + 줄 +
+    "반품대장 고유ID 는 «원래 주문»의 고유ID 입니다." + 줄 +
+    "csReturnOrderUid_미리보기 → csReturnOrderUidFill 을 쓰세요.";
   Logger.log(글);
   return 글;
 }

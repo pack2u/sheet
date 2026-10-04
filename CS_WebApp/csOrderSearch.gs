@@ -2161,24 +2161,28 @@ function submitReturnLedger(data) {
     for (var c = 0; c < lastCol; c++) row.push("");
     if (col.date >= 0) row[col.date] = _cs_ledgerDate_();
 
-    /*  ★ 고유ID 를 여기서 발급한다 ★  (2026-10-02)
-        > "모든 문의 반품 발주관련된 부분에서 항상 고유아이디가 붙게해줘"
+    /*  ★ 고유ID 는 «원래 주문»의 것이다 ★  (2026-10-04)
 
-        r1002000003 — 발주(d)·전화주문(p)과 같은 규칙, 그날의 번호표다.
-        여태 반품 건은 (탭, 행)으로만 가리켰다. 줄이 한 칸 밀리면 짝이
-        끊긴다 — 9월 탭에서 그렇게 「유령 아홉 줄」이 생겼다.
+        > "주문건의 고유아이디를 넣어 달라고한건데. 반품관련 고유아이디를 따로
+        >  만드는거로 착각한듯... 고유아이디로 주문, 송장, 반품유무등을 한번에
+        >  찾을수 있게 하려는거야"
+        > "웹앱에서 주문송장조회를 통해 주문건을 확인하고 바로 반품대장기록을
+        >  통해 흘러가는 시스템으로"
 
-        ★ 열이 없으면 조용히 넘어간다 ★ csReturnUid.gs 로 열을 만들기
-        전에도 기록은 돼야 한다. 열이 생기면 그때부터 저절로 붙는다.  */
+        2026-10-02 에 여기서 반품 제 번호(r1002000003)를 새로 지었다. 뜻을
+        잘못 읽은 것이다 — 하나의 번호로 주문·송장·반품을 다 찾으려면 «같은»
+        번호가 세 곳에 있어야 한다. 반품에 따로 번호를 지으면 오히려 끊긴다.
+
+        주문송장조회의 「반품대장 기록」은 이미 그 주문의 orderNo 를 보내고
+        있었다. 그걸 버리고 새 번호를 짓던 것을, 받은 것을 그대로 적게 고친다.
+        「김미화/2157237902#2」 같은 모양으로 올 수 있어 _cs_orderUid_ 로 다듬는다.
+
+        ★ 주문 없이 접수한 반품은 비워 둔다 ★  반품탭에서 직접 적은 건은 주문을
+          모른다. 번호를 지어내지 않는다 — 비어 있으면 csReturnOrderUidFill 이
+          원송장으로 찾아 넣는다.  */
     if (col.uid >= 0) {
-      var 쓴것 = {};
-      for (var u = headerIdx + 1; u < values.length; u++) {
-        var uu = String((values[u] || [])[col.uid] || "").trim();
-        if (uu) 쓴것[uu] = true;
-      }
-      var mmdd = _cs_ruidMMDD_(col.date >= 0 ? row[col.date] : "") ||
-        Utilities.formatDate(new Date(), "Asia/Seoul", "MMdd");
-      row[col.uid] = _cs_returnUidNext_(mmdd, 쓴것);
+      var 주문uid = _cs_orderUid_(data.orderNo);
+      if (주문uid) row[col.uid] = 주문uid;
     }
     if (col.staff >= 0) row[col.staff] = String(data.staff || "").trim();
     if (col.vendor >= 0) row[col.vendor] = String(data.vendor || "").trim();
