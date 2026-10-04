@@ -76,6 +76,9 @@ function registerPack2UMenu_() {
         // 반드시 위 「전용마감 → 구매입력 변환」 을 먼저 돌린 뒤에 쓴다.
         .addItem("📅 이카운트 누락분 → 날짜별 구매입력", "partnerBuildMissingPurchaseByDate")
         .addItem("🏭 업체별 구매입력 내보내기 (날짜별)", "partnerExportVendorPurchase")
+        // 한 달치를 한 시트로 — 업체별(날짜별 탭)과 반대 방향이다.
+        // 일자·업체 차례로 정렬하고 순번을 묶음마다 1 부터 다시 매긴다.
+        .addItem("📆 한 달 전체 구매입력 (한 시트)", "partnerBuildMonthPurchaseSheet")
         .addItem("🏷 업체 거래처코드 점검", "partnerDiagnoseVendorCustCode")
         .addItem("⏰ 당일 구매입력 자동생성 켜기(17시)", "installDailyEcountPurchaseTrigger")
         .addItem("⏹️ 당일 구매입력 자동생성 끄기", "removeDailyEcountPurchaseTrigger")
