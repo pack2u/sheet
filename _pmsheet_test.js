@@ -36,6 +36,20 @@ eval(꺼내(본, "_pms_ymd8_"));
 eval(꺼내(본, "_pms_ym_"));
 eval(꺼내(본, "_pms_숫자날짜_"));
 eval(꺼내(본, "_pms_달끝일_"));
+/*  쉬는날 판정은 허브(_partnerHelpers.gs)의 표와 함수를 그대로 부른다.
+    표를 시험에 베껴 적으면 연말에 표만 고치고 시험은 그대로 남는다 —
+    그러면 시험이 코드가 아니라 옛 표를 검사한다. */
+var 헬퍼 = fs.readFileSync(path.join(여기, "_partnerHelpers.gs"), "utf8");
+var 표 = 헬퍼.match(/var _PT_KR_HOLIDAYS_ = {[^}]*};/);
+if (!표) throw new Error("_PT_KR_HOLIDAYS_ 못 찾음");
+eval(표[0]);
+var PropertiesService = { getScriptProperties: function () {
+  return { getProperty: function () { return ""; } };   //  임시공휴일은 없는 셈으로
+} };
+var Utilities = { formatDate: function () { return ""; } };
+eval(꺼내(헬퍼, "_pt_koreanHolidayName_"));
+eval(꺼내(헬퍼, "_pt_isNonBusinessDate_"));
+eval(꺼내(본, "_pms_쉬는날_"));
 eval(꺼내(본, "_pms_왜못올리나_"));
 
 var 통과 = 0, 실패 = 0;
@@ -146,7 +160,36 @@ console.log(String.fromCharCode(10) + "[6] 달의 마지막 날 — 빠진 날�
 같나("2월은 28일", _pms_달끝일_("2026-02"), 28);
 같나("윤년 2월은 29일", _pms_달끝일_("2028-02"), 29);
 
-console.log(String.fromCharCode(10) + "[7] 업체 이름이 흔들려도 한 묶음");
+console.log(String.fromCharCode(10) + "[7] ★ 쉬는 날과 빠진 날을 가른다 ★");
+/*  > "토일은 없고.. 추석 연휴 23~27일까지는 없어"
+
+    달의 모든 날을 훑어 파일이 없으면 「빠졌다」고 하면 9월에 열네 날이
+    빨갛게 뜬다. 그런 알림은 아무도 안 읽고, 정말 빠진 하루도 같이 묻힌다.
+    2026 추석은 9/24(목)·25(금)·26(토)이고 9/27 은 일요일이다.
+    9/23(수)은 법정 공휴일이 아니다 — 자체 휴무일은
+    _PT_EXTRA_HOLIDAYS_ 속성에 넣는 길을 둔다(여기서는 없는 셈으로 본다). */
+[["2026-09-26", true,  "토요일"],
+ ["2026-09-27", true,  "일요일"],
+ ["2026-09-24", true,  "추석 연휴"],
+ ["2026-09-25", true,  "추석"],
+ ["2026-10-03", true,  "개천절"],
+ ["2026-10-05", true,  "개천절 대체공휴일"],
+ ["2026-09-22", false, "화요일 — 영업일"],
+ ["2026-09-28", false, "월요일 — 영업일"],
+ ["2026-09-23", false, "수요일 — 법정 공휴일이 아니다 (자체 휴무는 속성으로)"]
+].forEach(function (쌍) {
+  ok(쌍[0] + "  " + 쌍[2] + (쌍[1] ? "  → 쉬는 날" : "  → 센다"),
+     _pms_쉬는날_(쌍[0]) === 쌍[1],
+     "얻은 " + _pms_쉬는날_(쌍[0]));
+});
+/*  9월에 쉬는 날이 몇일인가 — 이 수만큼 알림에서 빠진다 */
+var 쉰날수 = 0;
+for (var dd = 1; dd <= 30; dd++) {
+  if (_pms_쉬는날_("2026-09-" + ("0" + dd).slice(-2))) 쉰날수++;
+}
+같나("2026-09 의 쉬는 날 — 토·일 8일 + 추석 평일 2일", 쉰날수, 10);
+
+console.log(String.fromCharCode(10) + "[8] 업체 이름이 흔들려도 한 묶음");
 /*  「㈜인터웍스」·「주식회사 인터웍스」·「인터웍스」가 섞여 온다.
     그대로 가르면 같은 업체가 전표 셋으로 쪼개진다.  */
 같나("㈜ 를 떼고 본다", _pve_norm_("㈜인터웍스"), _pve_norm_("인터웍스"));
