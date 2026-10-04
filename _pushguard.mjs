@@ -93,7 +93,12 @@ export function 견주기({ 그냥 = false } = {}) {
         /*  stderr 를 받아 둔다 — 무시 목록의 _secrets.gs 는 git 이 모르고,
             그때 fatal 한 줄을 뱉는다. 예상된 경우를 오류처럼 보여 주면
             정작 멈춰야 할 때의 말이 묻힌다. */
-        커밋들 = execFileSync("git", ["log", "--format=%H", "--", "./" + 짝], {
+        /*  ★ --full-history ★  (2026-10-04)
+            git 은 기본으로 «그 파일이 안 바뀐 합치기»의 옆가지를 숨긴다.
+            다른 세션의 서버 작업을 보관 가지에 남기고 -s ours 로 «보았고
+            우리 것을 골랐다»를 기록했더니, 그 보관 커밋이 안 보여 견주기가
+            계속 멈췄다. 묻는 것은 「역사 어디에든 있나」다 — 옆가지도 봐야 한다. */
+        커밋들 = execFileSync("git", ["log", "--full-history", "--format=%H", "--", "./" + 짝], {
           cwd: 어디, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
         }).split(String.fromCharCode(10)).filter(Boolean);
       } catch { continue; }
