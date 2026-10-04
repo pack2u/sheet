@@ -1096,9 +1096,9 @@ function ss_섬입력꾸미기_(sh, rows) {
   sh.getRange(2, cA, last, 1).clearDataValidations();
   try {
     var rule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(['발송', '보류'], true)
+      .requireValueInList(['발송', '보류', '대리발송'], true)
       .setAllowInvalid(true)
-      .setHelpText('발송 = 도서산간에서 빼고 일반으로 보낸다 · 보류 = 보류(미발송)로 세운다')
+      .setHelpText('발송 = 도서산간에서 빼고 일반으로 보낸다 · 보류 = 보류(미발송)로 세운다 · 대리발송/업체코드 = 업체로 넘긴다(⚠대리발송 확인 줄)')
       .build();
     sh.getRange(2, cA, last, 1).setDataValidation(rule);
   } catch (e) {}
@@ -1108,6 +1108,10 @@ function ss_섬입력꾸미기_(sh, rows) {
     '              (추가운임은 못 받습니다 — 경고 탭에 금액이 적힙니다)' + String.fromCharCode(10) +
     '  보류        보류(미발송) 탭으로 세웁니다' + String.fromCharCode(10) +
     '  비워 둠     그대로 도서산간으로 나갑니다' + String.fromCharCode(10) + String.fromCharCode(10) +
+    '판정 칸에 「⚠대리발송 확인」이 붙은 줄은 업체가 보낼 물건입니다 (2026-10-02)' + String.fromCharCode(10) +
+    '  대리발송    기본 업체로 넘깁니다' + String.fromCharCode(10) +
+    '  업체코드    (BW 처럼) 그 업체로 넘깁니다' + String.fromCharCode(10) +
+    '  비워 두면 업체로 안 넘어갑니다' + String.fromCharCode(10) + String.fromCharCode(10) +
     '적은 뒤 메뉴 → ✅ 조치 적용.  적은 말은 다음 실행에도 남습니다.');
   sh.setColumnWidth(cA, 110);
 }

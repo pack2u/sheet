@@ -382,10 +382,11 @@ function ssParseAddrOverride(memo) {
 
       표시 «앞»에 적힌 말은 버린다 — 그것은 다른 메모다.
       (「//」 는 표시로 못 쓴다. 적요를 「//」 에서 잘라 뒤를 버리는 코드가 있다)  */
-  var 표시 = false;
+  var 표시 = false, 앞글 = '';
   var m표 = s.match(/(^|[\s\/,·])배송지\s*[:：]?\s*/);
   if (m표) {
     표시 = true;
+    앞글 = s.slice(0, m표.index).trim();
     s = s.slice(m표.index + m표[0].length).trim();
     if (!s) return null;
   }
@@ -466,6 +467,45 @@ function ssParseAddrOverride(memo) {
     이름 = n;
   }
 
+  /*  ★ 「배송지」 «앞»에 이름·전화를 적은 경우 ★  (2026-10-02)
+      > "서정희 /010-2965-4774 / 배송지 :인천광역시 서구 가좌동 30-78 … /문 앞
+      >  적요에 이렇게 적었는데 배송지만 들어가고 나머지가 안들어갔는데"
+
+      표시 앞은 «다른 메모»로 보고 통째로 버렸다. 그런데 사람은 이름·전화를
+      먼저 적고 「배송지:」 뒤에 주소를 적기도 한다 — 그쪽이 더 자연스럽다.
+      ★ 앞에 «전화가 있을 때만» 앞을 연락처 덩어리로 본다 ★
+        「재발송 배송지 …」처럼 전화 없는 앞말은 여전히 메모라 버린다.
+        전화는 무늬가 또렷해서 섞일 일이 없다. 이름은 전화 바로 곁의 짧은 조각이다.
+      뒤에 이름·전화가 따로 적혀 있으면 뒤가 이긴다(표시 뒤가 본문이다). */
+  if (표시 && 앞글) {
+    SS_PHONE_RE.lastIndex = 0;
+    var 앞전화 = (앞글.match(SS_PHONE_RE) || []).map(function (p) { return p.replace(/[.\s]/g, '-'); });
+    if (앞전화.length) {
+      if (!전화들.length) 전화들 = 앞전화;
+      if (!이름) {
+        var 앞남은 = 앞글;
+        for (var ap = 0; ap < 앞전화.length; ap++) 앞남은 = 앞남은.split(앞전화[ap]).join('\u0001');
+        var 앞조각 = 앞남은.split(/[\u0001\/]/);
+        for (var ak = 앞조각.length - 1; ak >= 0; ak--) {
+          var an = ssText(앞조각[ak]).replace(/^[\s,:·]+|[\s,:·]+$/g, '');
+          if (!an || an.length > 25) continue;
+          if (/(해주세요|부탁|바랍니다|요망|문앞|부재|놓아)/.test(an)) continue;
+          이름 = an; break;
+        }
+      }
+    }
+  }
+
+  //  주소 뒤의 짧은 배송 부탁(「문 앞」 등) — 표시가 있을 때만 집는다
+  var 메시지 = '';
+  if (표시) {
+    for (var mk = 주소자리 + 1; mk < 깨끗.length; mk++) {
+      if (/(문\s*앞|부재|경비실|놓아|연락|벨|노크|택배함)/.test(깨끗[mk]) && 깨끗[mk].length <= 40) {
+        메시지 = 깨끗[mk]; break;
+      }
+    }
+  }
+
   //  ⑥ 유선은 F, 휴대는 G
   var 유선 = '', 휴대 = '';
   for (var p = 0; p < 전화들.length; p++) {
@@ -474,7 +514,7 @@ function ssParseAddrOverride(memo) {
   }
 
   //  phone 은 예전 이름이다 — 읽는 쪽이 여럿이라 그대로 둔다(휴대 우선)
-  return { name: 이름, phone: 휴대 || 유선, mobile: 휴대, tel: 유선, addr: 주소, 표시: 표시 };
+  return { name: 이름, phone: 휴대 || 유선, mobile: 휴대, tel: 유선, addr: 주소, 표시: 표시, msg: 메시지 };
 }
 
 /**
@@ -894,7 +934,7 @@ function ssNormalize(grid, cfg, warnings) {
           적요에 둘 다 적힌 일이 잦다 — 보돌미역 지점들이 그렇다.
             「… 02-725-1391 010-7759-1781」 → 전화 02… · 모바일 010…
           여태 하나로 뭉뚱그려 모바일에만 넣었다. 한쪽만 있으면 그쪽만 바꾼다. */
-      //  되돌릴 수 있게 원래 값을 그대로 쥐고 있는다 (적요확인 탭의 「주소 안 바꾸기」)
+      //  되돌릴 수 있게 원래 값을 그대로 쥐고 있는다 (적요확인 탭의 「기존 주소 반영」)
       line._원전화 = line.전화;
       line._원모바일 = line.모바일;
       if (ovAddr.mobile) line.모바일 = ovAddr.mobile;
@@ -904,6 +944,8 @@ function ssNormalize(grid, cfg, warnings) {
           넣으면 연락처를 지운다 — 전화 없는 송장이 나간다. */
       if (!ovAddr.mobile && !ovAddr.tel && ovAddr.phone) line.모바일 = ovAddr.phone;
       if (ovAddr.name) line.받는분 = ovAddr.name.slice(0, 25);
+      //  「//」 뒤 배송메시지가 없을 때만 — 있던 것을 덮지 않는다
+      if (ovAddr.msg && !ssText(line.배송메시지)) line.배송메시지 = ovAddr.msg;
       line.주소변경 = (ovAddr.표시 ? '적요「배송지」(' : '적요(') +
         (ovAddr.name ? '이름·' : '') +
         ((ovAddr.mobile || ovAddr.tel) ? '연락처·' : '') + '주소)';
@@ -953,11 +995,16 @@ function ssNormalize(grid, cfg, warnings) {
     var 적요조치 = (cfg && cfg._적요조치) ? cfg._적요조치[line.고유ID] : null;
     if (적요조치) {
       var _조치 = ssText(적요조치.조치);
+      /*  ★ 옛 말도 여기서 받는다 ★  (2026-10-01 말을 바꿨다)
+          시트는 걷을 때(gasAi SS_AI_ACTION_ALIAS) 이미 새 말로 바꿔 오지만,
+          엔진을 바로 부르는 길(v2 맞대기·시험)은 그 표를 안 거친다. */
+      if (_조치 === '주소 바꾸기' || _조치 === '이대로 적용') _조치 = '적요 주소 반영';
+      else if (_조치 === '주소 안 바꾸기' || _조치 === '아님' || _조치 === '그냥 두기') _조치 = '기존 주소 반영';
       //  사람이 한 번 골랐으면 아래 「적요확인 세우기」가 다시 세우지 않는다
       line.적요조치본것 = _조치;
       if (_조치 === '안 보냄' || _조치 === '미발송') {
         line.적요조치 = '미발송';
-      } else if ((_조치 === '주소 바꾸기' || _조치 === '이대로 적용') && ssText(적요조치.주소)) {
+      } else if (_조치 === '적요 주소 반영' && ssText(적요조치.주소)) {
         if (line.원받는분 === undefined) line.원받는분 = line.받는분;
         if (line.원주소1 === undefined) line.원주소1 = line.주소1;
         if (line.원연락처 === undefined) line.원연락처 = line.모바일 || line.전화;
@@ -969,7 +1016,7 @@ function ssNormalize(grid, cfg, warnings) {
         ssWarn(warnings, '주의', 'MEMO_ACTION', line.고유ID,
           '적요확인 탭의 조치대로 바꿨습니다: ' + ssText(line.원주소1).slice(0, 24) +
           '  →  ' + ssText(line.주소1).slice(0, 34));
-      } else if (_조치 === '주소 안 바꾸기') {
+      } else if (_조치 === '기존 주소 반영') {
         /*  ★ 규칙이 읽은 것을 «되돌린다» ★  (2026-09-28)
             규칙이 적요를 잘못 읽었을 때 물릴 길이 없으면, 적요확인 탭에 읽은 것을
             보여 주는 뜻이 없다. 원래 값으로 돌린다.
@@ -982,7 +1029,7 @@ function ssNormalize(grid, cfg, warnings) {
           if (line._원모바일 !== undefined) line.모바일 = line._원모바일;
           line.주소변경 = '';
           ssWarn(warnings, '주의', 'MEMO_KEEP', line.고유ID,
-            '적요확인 탭에서 「주소 안 바꾸기」로 고르셨습니다 — 원래 주소로 되돌렸습니다: ' +
+            '적요확인 탭에서 「기존 주소 반영」으로 고르셨습니다 — 원래 주소로 되돌렸습니다: ' +
             _되돌린곳.slice(0, 28) + '  →  ' + ssText(line.주소1).slice(0, 28));
         }
       }
@@ -1614,8 +1661,25 @@ function ssMerge(units, cfg) {
            _partnerOrders.gs            허브 적요
          바꾸려면 읽는 쪽을 다 찾아 한 번에 갈아야 한다. */
       rep.합포장여부 = 합포장박스;
+      /* ★ 같은 품목끼리 묶이면 몇 개인지 적는다 ★  (2026-10-02)
+           > "BF 실링 191440 (3호) 화이트 (100*2팩) 200개--/소분 ==합배송
+           >  이렇게 나오는데 어떤거와 합배송인지가 안나와서 합배송이 안되고 있네.."
+           이름 접기(ssCompressNames)는 같은 이름을 하나로 줄인다. 두 주문이 같은
+           품목이면 이름이 하나만 남아 «무엇과 묶였는지» 안 보였다.
+           이름 수가 건수보다 적을 때만 「===2개 합배송」처럼 건수를 붙인다 —
+           「---2개 합포장」과 같은 모양이다 (사장님이 보내 주신 예시).
+           이 글자를 읽는 곳은 셋이다. 셋 다 숫자가 끼어도 읽게 고쳤다 —
+             _partnerOrders.gs        허브 적요 (「2개 합배송」 그대로 옮긴다)
+             _partnerExclusivePush.gs _pep_isCombinedPackItem_
+             _partnerLotteShipCompare.gs  「합배송」 글자만 본다 — 그대로 된다 */
+      var _이름들 = {}, _이름수 = 0;
+      for (var nn = 0; nn < names.length; nn++) {
+        var _nk = ssNorm(names[nn]);
+        if (_nk && !_이름들[_nk]) { _이름들[_nk] = true; _이름수++; }
+      }
+      var _건수꼬리 = (!합포장박스 && _이름수 < box.length) ? box.length + '개 ' : '';
       rep.출력품목명 = (sample ? '[샘플] ' : '') + ssCompressNames(names, !sample) +
-        (합포장박스 ? ' ===합포장' : ' ===합배송') +
+        (합포장박스 ? ' ===합포장' : ' ===' + _건수꼬리 + '합배송') +
         (boxes.length > 1 ? '(' + (b + 1) + '/' + boxes.length + ')' : '');
       for (var k = 1; k < box.length; k++) box[k].합포장흡수 = true;
 
@@ -1836,6 +1900,87 @@ function ssRoute(units, masters, cfg, warnings) {
       한 값으로 통일한다. 비우거나 0 이면 표를 그대로 쓴다. */
   var 통일도선료 = ssNum(cfg.도선료_통일금액);
 
+  /*  ★ 대리발송으로 가는 줄도 섬인지 먼저 본다 ★  (2026-10-02)
+      > "제주도인데 대리발송으로 빠졌는데 도서산간에 안잡혔어 확인해줘"
+      > (고르신 것) 도서산간 탭에 세운다 — 업체 발주를 멈추고 사람이 정한다
+
+      대리발송으로 정해지면 그 자리에서 `continue` 해서, 주소를 보는 아래
+      도서 판정까지 한 번도 안 내려왔다. 대리발송 갈래 셋(출고지 대리발송 ·
+      대리발송품목 표 · 재고부족 자동)이 다 그랬다. 2차(261002-2)에 제주 3건이
+      업체로 그냥 넘어갔다.
+
+      섬만보기 는 아래 도서 판정과 «같은 순서·같은 잣대»다 (도선료표 → 우편번호 →
+      지역확정). 산간은 배가 아니라 차로 가므로 여기서도 섬이 아니다.
+      우편번호도 없고 지역도 «후보»뿐이면 막지 않는다 — 모르는 것을 막으면
+      육지 주문이 업체로 못 간다.
+
+      도서산간 탭 조치 칸에 적은 말로 정한다:
+        비워 둠          도서산간 탭에 선다. 업체로 안 넘어간다
+        대리발송         기본 업체로 넘긴다
+        업체코드(BW 등)  그 업체로 넘긴다
+        보류             보류(미발송)로 세운다
+        발송             도서산간에서 빼고 우리가 일반으로 보낸다 (탭의 원래 뜻 그대로) */
+  function 섬만보기(u) {
+    var addr = ssNormAddr(u.주소1);
+    var zip = ssText(addrZip[addr]);
+    var 료 = function (권역) { return ssSurcharge(addr, 권역, ferry, { 통일도선료: 통일도선료 }).합계; };
+    var fh = ssFerryMatch(addr, ferry);
+    if (fh) {
+      if (ssText(fh.권역) === '산간') return null;
+      return { addr: addr, zip: zip, 권역: fh.권역, 판정: '도선료표', 도선료: 료(fh.권역) };
+    }
+    if (zip) {
+      if (!islandZip[zip] || ssText(islandZip[zip]) === '산간') return null;
+      return { addr: addr, zip: zip, 권역: islandZip[zip], 판정: '우편번호', 도선료: 료(islandZip[zip]) };
+    }
+    var 앞머리 = ssAddrRegion(addr);
+    for (var q = 0; q < islandKw.length; q++) {
+      if (!islandKw[q] || islandKw[q].skip || !islandKw[q].confirm) continue;
+      if (앞머리.indexOf(islandKw[q].kw) < 0) continue;
+      var 확정권역 = islandKw[q].zone || '도서';
+      return { addr: addr, zip: '', 권역: 확정권역, 판정: '지역확정', 도선료: 료(확정권역) };
+    }
+    return null;
+  }
+  /** true 면 여기서 경로를 정했다(대리발송으로 가지 말 것). false 면 대리발송으로 간다. */
+  function 섬대리검문(u, 길) {
+    var s = 섬만보기(u);
+    if (!s) return false;
+    u.정규주소 = s.addr; u.우편번호 = s.zip;
+    u.도서권역 = s.권역; u.도서판정 = s.판정; u.도선료 = s.도선료;
+    var 적음 = (cfg && cfg._섬조치)
+      ? ssText(cfg._섬조치[ssText(u.순번) + '|' + ssText(u.품목코드)]) : '';
+    var 민 = ssNorm(적음).split(' ').join('').toUpperCase();
+    if (!적음) {
+      //  「도서산간(위탁배송)」 탭 — 대리발송 출고지의 섬 주문을 받으려고 있던 자리다.
+      //  우리 창고 도서산간 탭과 섞으면 출고하는 사람이 우리 재고로 싸 버린다.
+      u.route = SS_ROUTE.LOTTE_ISLAND_CONSIGN;
+      u.섬대리대기 = true;
+      //  도서산간 탭에서 한눈에 보이게 판정 칸에 적는다 — 이 줄은 우리 재고로 나가는 줄이 아니다
+      u.도서판정 = s.판정 + ' · ⚠대리발송 확인' + (u.업체코드 ? '(' + u.업체코드 + ')' : '');
+      ssWarn(warnings, '주의', 'ISLAND_PARTNER_WAIT', (u.순번 || '') + ' / ' + (u.품목코드 || ''),
+        '도서(' + s.권역 + ') 주소라 대리발송(' + 길 + ')을 멈추고 「로젠택배-도서산간(위탁배송)」 탭에 세웠습니다. ' +
+        '조치 칸에 「대리발송」·업체코드·「보류」·「발송」 중 하나를 적고 ✅ 조치 적용을 누르세요. ' +
+        '적기 전에는 업체로 안 넘어갑니다.');
+      return true;
+    }
+    for (var w = 0; w < SS_HOLD_KEEP_WORDS.length; w++) {
+      if (민 === ssNorm(SS_HOLD_KEEP_WORDS[w]).split(' ').join('').toUpperCase()) {
+        ssIslandHoldByManual_(u, 적음);
+        return true;
+      }
+    }
+    if (적음 === '발송') { ssIslandSkipByManual_(u, warnings); return true; }
+    if (민 === '대리발송') return false;
+    if (vendors[민]) { u.업체코드 = 민; u.업체명 = vendors[민]; return false; }
+    //  알아들을 수 없는 말은 «보내지 않는다» — 잘못 보내면 되돌릴 수 없다
+    u.route = SS_ROUTE.HOLD;
+    u.보류사유 = '도서산간확인';
+    u.보류상세 = '도서산간 탭 조치 「' + 적음 + '」을 못 알아들었습니다 — ' +
+      '대리발송 · 업체코드 · 보류 · 발송 중 하나로 적어 주세요';
+    return true;
+  }
+
   // 한 글자 키워드는 시/군을 가려내지 못한다.
   // 예전 목록의 「중」은 중구·중랑구·중앙로·궁중보쌈까지 전부 후보로 만들었다.
   for (var kk = 0; kk < islandKw.length; kk++) {
@@ -1920,6 +2065,23 @@ function ssRoute(units, masters, cfg, warnings) {
         continue;
       }
 
+      /*  ★ 직매입 거래처는 방문수령이다 — 로젠으로 안 나간다 ★  (2026-10-02)
+          > "협력업체 시스템중에 직매입인 경우가 3개가 있어 그린우드, 넵킨코리아,
+          >  성우플러스 여기는 로젠 출력으로 넘어가면 안되.. 방문수령이라.."
+
+          이카운트 거래처명이 「직매입-그린우드-이신종」처럼 «직매입-» 으로 시작한다.
+          이름(그린우드)으로 가르면 안 된다 — 「대리발송-그린우드스토리」는 그 업체
+          손님에게 우리가 로젠으로 보내는 줄이라 그대로 나가야 한다.
+          보류(미발송)에 사유 「방문수령」으로 세운다. 보류 탭 조치에 「발송」을
+          적으면 그때는 로젠으로 나간다(사람이 정한 것이 이긴다). */
+      if (/^\s*직매입/.test(ssText(u.거래처명원본))) {
+        u.route = SS_ROUTE.HOLD;
+        u.보류사유 = '방문수령';
+        u.보류상세 = '직매입 거래처(' + ssText(u.거래처명원본).replace(/^\s*직매입-?/, '') +
+          ') — 로젠 출력 안 함';
+        continue;
+      }
+
       /*  ★ 적요에 주소 같은 글이 있는데 «못 읽었다» → 세운다 ★  (2026-09-28)
           > "아니면 미발송으로 빼서 확인가능하게 해줘"
 
@@ -1938,7 +2100,7 @@ function ssRoute(units, masters, cfg, warnings) {
         u.route = SS_ROUTE.HOLD;
         u.보류사유 = '적요확인';
         u.보류상세 = '적요에 주소 같은 글이 있는데 못 읽었습니다 — ' +
-          '「적요확인」 탭에서 주소를 적고 조치를 「주소 바꾸기」로 고르세요.  적요[' +
+          '「적요확인」 탭에서 주소를 적고 조치를 「적요 주소 반영」으로 고르세요.  적요[' +
           ssText(u.적요).slice(0, 40) + ']';
         continue;
       }
@@ -1958,6 +2120,7 @@ function ssRoute(units, masters, cfg, warnings) {
          보류 탭에서 «이건 그냥 우리가 보낸다»고 손으로 뒤집은 건이다.
          기계가 그 결정을 다시 덮으면 사람은 되돌릴 방법이 없어진다. */
     if (!면제 && ssNorm(u.출고지).split(' ').join('') === SS_ROUTE.PARTNER) {
+      if (섬대리검문(u, '출고지 대리발송')) continue;
       u.route = SS_ROUTE.PARTNER;
       /*  업체코드가 비어도 «보내긴 한다». 푸시는 품목코드 앞 두 글자로 업체를
           가리므로 이 칸이 비어도 돈다. 다만 비었다는 사실은 말해 준다 —
@@ -2010,7 +2173,6 @@ function ssRoute(units, masters, cfg, warnings) {
             '보류 탭에서 「발송」으로 잡혀 있었지만 «대리발송품목» 표가 이깁니다. ' +
             '우리가 보내려면 그 품목을 「대리발송품목」 탭에서 지우세요.');
         }
-        u.route = SS_ROUTE.PARTNER;
         u.보류상세 = 예외.사유 || '';
         u.대리품목적용 = 예외.코드;
         /* ★ 재고를 근거로 「지우세요」 하지 않는다 ★
@@ -2040,6 +2202,12 @@ function ssRoute(units, masters, cfg, warnings) {
             '「대리발송품목」이라 대리발송으로 보냈는데 업체코드를 못 정했습니다. ' +
             '그 탭의 업체코드 칸을 채우거나, 대리발송 탭에서 손으로 채우세요.');
         }
+        //  업체코드를 정한 «뒤»에 본다 — 도서산간 탭 판정 칸에 어느 업체 건인지 보이게
+        if (섬대리검문(u, '대리발송품목')) {
+          if (u.route !== SS_ROUTE.HOLD) u.보류상세 = '';
+          continue;
+        }
+        u.route = SS_ROUTE.PARTNER;
         continue;
       }
     }
@@ -2067,7 +2235,11 @@ function ssRoute(units, masters, cfg, warnings) {
     if (위탁 && u.부족수량 > 0) {
       // 「사용」이면 구 시트처럼 자동으로 협력업체 발주로 넘긴다.
       // 「안함」이면 미발송에 세워 두고, 사람이 업체코드를 적어 필요한 건만 토스한다.
-      if (ssText(cfg.재고부족_자동대리발송) !== '안함') { u.route = SS_ROUTE.PARTNER; continue; }
+      if (ssText(cfg.재고부족_자동대리발송) !== '안함') {
+        if (섬대리검문(u, '재고부족')) continue;
+        u.route = SS_ROUTE.PARTNER;
+        continue;
+      }
       u.route = SS_ROUTE.HOLD;
       u.보류사유 = '재고부족';
       u.보류상세 = '부족 ' + u.부족수량 + '개 (필요 ' + u.총필요수량 + ' / 재고 ' + u.현재고 + ')' +
