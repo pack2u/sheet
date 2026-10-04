@@ -10681,7 +10681,7 @@ function _pep_deriveSnapOrderDate_(salesRow, salesHeaders, fallbackStr) {
 /** 합포장·소분 품목명 판별 (---/소분, 합포장 등) */
 function _pep_isCombinedPackItem_(itemName) {
   var s = String(itemName || "");
-  return /---\/\s*소분|---\/.*소분|\/소분|합포장|===합배송|---.*합포/.test(s);
+  return /---\/\s*소분|---\/.*소분|\/소분|합포장|===\s*(\d+\s*개\s*)?합배송|---.*합포/.test(s);
 }
 
 /** 일일마감 배치에 송장이 있는 실출고 행이 1건이라도 있는지 */

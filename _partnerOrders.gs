@@ -2296,7 +2296,11 @@ function partnerFetchInvoices() {
                     세트분리가 묶음 내용을 보고 가려 붙인다. 적힌 대로 옮긴다 —
                     여기서 하나로 뭉치면 창고가 박스를 어떻게 쌀지 알 수 없다. */
                 if (_out2.indexOf("===합포장") >= 0) _tails.push("합포장");
-                else if (_out2.indexOf("===합배송") >= 0) _tails.push("합배송");
+                else {
+                  //  「===2개 합배송」 — 같은 품목끼리 묶이면 건수가 끼어 온다 (2026-10-02)
+                  var _mBae = _out2.match(/===\s*(\d+\s*개\s*)?합배송/);
+                  if (_mBae) _tails.push(_mBae[1] ? _mBae[1].replace(/\s+/g, "") + " 합배송" : "합배송");
+                }
                 //  「---2개 합포장」·「---2개 합포장(완박스)」 — 뒤에 다른 꼬리가 안 붙는다
                 var _mHap = _out2.match(/---\s*(\d+\s*개\s*합포장[^-]*)/);
                 if (_mHap) _tails.push(_mHap[1].trim());
