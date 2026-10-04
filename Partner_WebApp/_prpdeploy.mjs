@@ -23,8 +23,17 @@
  * ══════════════════════════════════════════════════════════════
  */
 import { execFileSync } from "node:child_process";
+import { 서버먼저보기 } from "../_pullcheck.mjs";
 
 const 설명 = (process.argv[2] || "반품 포털 갱신").trim();
+
+/* ── 0) 올리기 전에 «서버를 먼저 본다» ──  (2026-10-04)
+     > "수정내용을 편집기로 커밋을 안하면 일이 반복된다고 하네."
+
+     push 는 로컬 파일 목록으로 서버를 «동기화»한다. 편집기에서 고친 것이
+     서버에만 있으면 오류 없이 덮인다. 2026-10-04 에 이 폴더에서도
+     portal.html·prpLedger.gs·prpApi.gs 가 서버에만 앞서 있었다.      */
+서버먼저보기();
 
 function 실행(args) {
   return execFileSync("npx", ["clasp", ...args], {

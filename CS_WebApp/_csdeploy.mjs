@@ -26,8 +26,20 @@
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { 서버먼저보기 } from "../_pullcheck.mjs";
 
 const 설명 = process.argv.slice(2).join(" ").trim() || "CS웹앱 갱신";
+
+/* ── ⓞ 올리기 전에 «서버를 먼저 본다» ──  (2026-10-04)
+     > "수정내용을 편집기로 커밋을 안하면 일이 반복된다고 하네."
+
+     push 는 로컬 파일 목록으로 서버를 «동기화»한다. 편집기에서 고친 것이
+     서버에만 있으면 그대로 덮인다 — 오류 없이, 그냥 없어진다.
+     2026-10-04 에 그럴 뻔했다(서버 382 / 내 쪽 381 · 아홉 파일).
+
+     ★ 빌드 번호를 고치기 «전»에 본다 ★ 고친 뒤에 보면 csPulse.gs 가
+     늘 달라 보여, 정말 다른 파일이 그 속에 묻힌다.                   */
+서버먼저보기();
 
 function 달려(args) {
   return execFileSync("clasp", args, { encoding: "utf8", shell: true });
