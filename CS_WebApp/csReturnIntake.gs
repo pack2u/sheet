@@ -161,7 +161,10 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
     } else if (ctx.col.returnInvoice >= 0) {
       var cur = String(ctx.row[ctx.col.returnInvoice] || "").replace(/[^0-9]/g, "");
       if (!cur) {
-        ctx.tab.getRange(rowNum, ctx.col.returnInvoice + 1).setValue(formatted);
+        /*  칸이 비어 있어도 택배사만 적혀 있을 수 있다 — 지우지 않는다 (2026-10-04)
+            「/ 롯데」만 있던 칸에 번호를 넣으면 「번호 / 롯데」가 된다.  */
+        ctx.tab.getRange(rowNum, ctx.col.returnInvoice + 1)
+          .setValue(_cs_ledgerInvoiceReplaceNo_(ctx.row[ctx.col.returnInvoice], formatted));
       } else if (cur !== digits) {
         retInvClash = " (대장 반품송장 " + String(ctx.row[ctx.col.returnInvoice]).trim() + " 과 다름)";
       }

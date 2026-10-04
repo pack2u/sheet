@@ -11254,6 +11254,22 @@
       if (safe) box.textContent = '안심번호입니다 — 배송이 끝나면 끊깁니다. 아래 실번호를 받아 적어 주세요.';
     }
 
+    /*  ★ 송장과 택배사를 한 줄로 ★  (2026-10-04)
+
+        > "택배사 한 칸에 같이 적게 해줘"
+
+        대장 머리글이 「원송장번호 / 택배사」다. 서버는 칸을 갈라 번호와
+        택배사를 따로 준다(조회 주소에 택배사 글자가 붙으면 안 되니까).
+        사람에게는 시트와 같은 모양으로 다시 붙여 보인다 — 시트를 보던
+        사람이 화면에서 못 찾으면 「안 적혔다」고 읽는다.
+        택배사가 없으면 번호만 — 「/」 만 떠 있으면 고장으로 보인다.  */
+    function retInvWithCarrier(번호, 택배사) {
+      var n = String(번호 || '').trim();
+      var c = String(택배사 || '').trim();
+      if (!n) return '';
+      return c ? n + '  /  ' + c : n;
+    }
+
     function retCaseRowHtml(lab, val) {
       if (!val) return '';
       return '<div class="os-row"><div class="os-lab">' + esc(lab) +
@@ -11289,8 +11305,8 @@
         retCaseRowHtml('품목', (c.item || '') + (c.qty ? ' × ' + c.qty : '')) +
         retCaseRowHtml('재출고', c.reship) +
         retCaseRowHtml('재출고 배송비', c.reshipFee) +
-        retCaseRowHtml('원송장', c.invoice) +
-        retCaseRowHtml('반품송장', c.returnInvoice) +
+        retCaseRowHtml('원송장', retInvWithCarrier(c.invoice, c.carrier)) +
+        retCaseRowHtml('반품송장', retInvWithCarrier(c.returnInvoice, c.returnCarrier)) +
         retCaseRowHtml('전화', (c.phone || '') + (c.phoneTag ? ' (' + c.phoneTag + ')' : '') +
           (c.phone2Name && !c.phoneTag ? '  ' + c.phone2Name : '') +
           (c.phoneOnlySafe ? '  — 기간이 지나면 끊깁니다' : '')) +

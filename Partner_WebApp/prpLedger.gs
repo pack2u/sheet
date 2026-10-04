@@ -68,7 +68,14 @@ function prpMapCols_(header) {
        ★ 시트를 되돌리지 않는다 ★
          「주문지」가 그 칸을 더 잘 부르는 말이다. 팀이 고친 것을 코드 편하자고
          되돌리면 다음 사람이 또 고치고 또 깨진다. 코드가 두 이름을 다 안다. */
-    else if (col.vendor < 0 && /업체명|주문지|판매처|발주업체/.test(h)) col.vendor = i;
+    /*  ★ 10월부터 「거래처」로 적는다 ★  (2026-10-04)
+        CS 웹앱은 10/01 에 이 낱말을 받았는데 포털만 빠졌다. 그래서 202610
+        탭에서 col.vendor 가 -1 이 되고,
+          · 목록은 return [] — 업체 화면에 10월 반품이 «하나도» 안 보인다
+          · 한 건 열기·사진·문의는 「업체명 열을 찾지 못했습니다」로 막힌다
+        9월에 「주문지」로 당한 것과 글자 하나 다르지 않은 일이다.
+        조용히 닫히므로 업체는 「아직 접수 안 됐나」로 읽는다.  */
+    else if (col.vendor < 0 && /업체명|주문지|판매처|발주업체|^거래처$/.test(h)) col.vendor = i;
     else if (col.name < 0 && /반품신청자|수취인명|수취인|받는분/.test(h) && !/전화|주소/.test(h)) col.name = i;
     /* ★ 2026-09-09: 연락처를 둘로 나눈다 ★
        고유아이디로 불러오면 주문에 적힌 번호가 딸려 오는데, 그게
@@ -129,7 +136,13 @@ function prpMapCols_(header) {
         CS웹앱이 9/30 에 넣었고(csOrderSearch col.reason) 여기만 빠져 있었다 —
         그래서 업체 화면에 사유·귀책이 통째로 안 나왔다. 조용히.  */
     else if (col.reason < 0 && /^반품사유$|^사유$|반품이유|교환반품사유|^발생원인$/.test(h)) col.reason = i;
-    else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유|재출고|오주문입력/.test(h)) col.type = i;
+    /*  ★ 「재출고」 한 낱말로는 못 찾는다 ★  (2026-10-04)
+        10월 탭에 「재출고상품」·「재출고배송비」가 따로 생겼다. 둘 다 /재출고/ 에
+        걸려 앞선 「재출고상품」(V)이 구분 자리를 차지했다 — 업체 화면의 「구분」에
+        다시 보낼 물건 이름이 떴다. 슬래시가 붙은 것만 받는다.
+        (CS 쪽은 reship·reshipFee 를 type «앞»에 두어 막았다. 포털에는 그 둘을
+         읽는 자리가 아직 없으므로 여기서 좁힌다.)  */
+    else if (col.type < 0 && /교환.?반품|반품구분|반품유형|처리구분|반품사유|재출고\/|오주문입력/.test(h)) col.type = i;
     /* 2026-09-09: 「환불비용」을 더한다. 9월 탭 머리글이 「반품/환불비용」인데
        가운데 「/」 때문에 「반품비」로 안 걸렸다. CS 웹앱은 9/4 에 이미 넣었고
        (csOrderSearch.gs 2257행) 여기만 안 고쳐져 있었다. */
@@ -584,7 +597,14 @@ function prpReadTabCases_(tab, tabName, cutoffYmd, sess) {
     var typeVal = col.type >= 0
       ? String(row[col.type] || "").trim()
       : prpTypeFromNotice_(notice);
-    var invRaw = col.invoice >= 0 ? String(row[col.invoice] || "").trim() : "";
+    /*  ★ 한 칸에 담긴 번호와 택배사를 가른다 ★  (2026-10-04)
+        10월 머리글이 「원송장번호 / 택배사」·「반품송장번호 / 택배사」다.
+        업체 화면은 번호로 배송조회 주소를 만든다 — 칸을 그대로 흘려보내면
+        주소에 「/ CJ대한통운」이 붙어 조회가 안 된다.
+        ★ CS 웹앱 csOrderSearch 와 같은 가름이다 — 쌍으로 고친다 ★  */
+    var 원송장칸 = prpSplitLedgerInvoice_(col.invoice >= 0 ? row[col.invoice] : "");
+    var invRaw = 원송장칸.번호;
+    var 반품칸 = prpSplitLedgerInvoice_(col.returnInvoice >= 0 ? row[col.returnInvoice] : "");
 
     out.push({
       tab: tabName,
@@ -604,8 +624,11 @@ function prpReadTabCases_(tab, tabName, cutoffYmd, sess) {
       invoice: invRaw,
       invDigits: prpDigits_(invRaw),
       // 전용 열 우선, 없으면 과거 방식(N열 비고)에서 읽는다
-      returnInvoice: (col.returnInvoice >= 0 ? String(row[col.returnInvoice] || "").trim() : "") ||
-        prpParseReturnInvFromNotice_(notice),
+      returnInvoice: 반품칸.번호 || prpParseReturnInvFromNotice_(notice),
+      /*  택배사 — 원송장은 «보낸» 택배사, 반품송장은 «수거하는» 택배사다.
+          업체 화면이 배송조회 주소를 고르는 데 쓴다.  */
+      carrier: 원송장칸.택배사,
+      returnCarrier: 반품칸.택배사,
       type: typeVal,
       /*  다시 보내는 것 (2026-10-02) — 상품명은 «돌려받는 것»이다.
           대리발송 업체에게는 자기가 보낼 물건이라 더 중요하다.
@@ -628,7 +651,12 @@ function prpReadTabCases_(tab, tabName, cutoffYmd, sess) {
         : (col.reason >= 0 && prpParseCause_(row[col.reason]).귀책) ||
           prpFaultFromNotice_(notice),
       status: status || "접수",
-      pickup: col.pickup >= 0 ? String(row[col.pickup] || "").trim() : "",
+      /*  ★ 수거 택배사 — 칸이 없으면 반품송장 칸에서 ★  (2026-10-04)
+          업체 화면이 이 값으로 배송조회 주소를 고르고 카드에 「수거 CJ」로 보인다.
+          10월 탭에는 「회수신청」 칸이 없어 늘 빈칸이었다 — 업체가 접수창에서
+          고른 택배사가 어디에도 안 남았다는 뜻이다(2026-09-10 과 같은 일).  */
+      pickup: (col.pickup >= 0 ? String(row[col.pickup] || "").trim() : "") ||
+        반품칸.택배사 || 원송장칸.택배사,
       fee: col.fee >= 0 ? prpFormatFee_(row[col.fee]) : "",
       feeNum: col.fee >= 0 ? prpFeeNumber_(row[col.fee]) : 0,
       done: prpIsDoneMark_(status),
@@ -712,4 +740,73 @@ function prpOpenOwnedRow_(sess, tabName, rowNum) {
 function prpAppendNoticeLine_(existing, line) {
   var s = String(existing || "").trim();
   return s ? (s + "\n" + line) : line;
+}
+
+/*  ★ CS 웹앱에서 옮겨 온 짝이다 ★  (2026-10-04)
+    두 GAS 프로젝트는 코드를 나눠 쓸 수 없어 복사한다. 손으로 고치면 갈라지고,
+    갈라지면 같은 칸을 한쪽은 「번호 / 택배사」로 다른 쪽은 통째로 번호로 읽는다.
+    _prpinvcarrier_test.js 가 두 쪽을 «글자까지» 맞대 본다 — 한쪽만 고치면 울린다.
+    주인은 CS_WebApp/csOrderSearch.gs 다.  */
+var _PRP_INV_CARRIER_SEP_ = " / ";
+
+function prpSplitLedgerInvoice_(cell) {
+  var s = String(cell == null ? "" : cell).trim();
+  if (!s) return { 번호: "", 택배사: "" };
+  var at = s.lastIndexOf("/");
+  if (at < 0) return { 번호: s, 택배사: "" };
+
+  var 뒤 = s.slice(at + 1).trim();
+  var 앞 = s.slice(0, at).trim();
+  /*  ★ 택배사인지 «확인»하고 가른다 ★
+      「4466/5170/4219」처럼 빗금으로 끊어 적은 번호도 있고, 9월 탭의
+      「재출고/단순/오주문입력/오배송」이 송장 칸에 잘못 들어온 줄도 있다.
+      택배사 이름은 짧고 숫자가 길게 들어가지 않는다. 아니면 통째로 번호다 —
+      멀쩡한 번호를 쪼개는 쪽이 택배사를 못 읽는 쪽보다 나쁘다.  */
+  //  「446651704219 / 」처럼 뒤가 비면 빗금만 떼고 번호로 본다
+  if (!뒤) return { 번호: 앞 || s, 택배사: "" };
+  /*  ★ 번호 없이 택배사만 적힌 칸 ★  (2026-10-04)
+      수거를 접수할 때는 «어느 택배사가 가는지»를 먼저 알고 번호는 나중에 나온다.
+      그때 「/ CJ대한통운」으로 적어 둔다 — 숫자를 뽑으면 빈 값이라
+      입고 스캔·중복 검사는 「번호 없음」으로 여태처럼 읽는다.  */
+  if (!앞) {
+    if (뒤.length > 12 || /\d{4,}/.test(뒤)) return { 번호: s, 택배사: "" };
+    return { 번호: "", 택배사: 뒤 };
+  }
+  /*  ★ 앞에 «진짜 송장번호»가 있을 때만 택배사로 본다 ★
+      이것이 없으면 「재출고/단순/오주문입력/오배송」의 「오배송」이 택배사가 되고
+      「4466/5170/4219」의 「4219」도 택배사가 된다. 둘 다 실제로 있는 줄이다.
+      송장번호는 8자리 이상 숫자 덩어리다 — 그게 앞에 있어야 가른다.  */
+  if (!/\d{8,}/.test(앞.replace(/[^0-9]/g, ""))) return { 번호: s, 택배사: "" };
+  if (뒤.length > 12) return { 번호: s, 택배사: "" };
+  if (/\d{4,}/.test(뒤)) return { 번호: s, 택배사: "" };
+  return { 번호: 앞, 택배사: 뒤 };
+}
+
+/**
+ * 번호와 택배사를 한 칸으로 합친다. 택배사가 없으면 번호만.
+ * 번호가 없으면 빈 칸이다 — 택배사만 남기면 숫자를 뽑는 쪽이 빈 송장으로 읽는다.
+ */
+function prpLedgerInvoiceCell_(번호, 택배사) {
+  var n = String(번호 == null ? "" : 번호).trim();
+  var c = String(택배사 == null ? "" : 택배사).replace(/\s+/g, " ").trim();
+  if (c.length > 12 || /\d{4,}/.test(c)) c = "";   //  택배사로 볼 수 없는 값은 버린다
+  /*  ★ 번호가 없어도 택배사는 남긴다 ★  (2026-10-04)
+      수거 접수는 택배사를 먼저 알고 번호를 나중에 받는다. 그때 버리면
+      누가 수거하는지가 사라지고, 나중에 번호가 들어와도 되살릴 길이 없다.  */
+  if (!n) return c ? _PRP_INV_CARRIER_SEP_.replace(/^\s+/, "") + c : "";
+  if (!c) return n;
+  //  이미 붙어 있으면 두 번 붙이지 않는다
+  if (prpSplitLedgerInvoice_(n).택배사) return n;
+  if (c.length > 12 || /\d{4,}/.test(c)) return n;   //  택배사로 볼 수 없는 값은 안 적는다
+  return n + _PRP_INV_CARRIER_SEP_ + c;
+}
+
+/**
+ * 이미 적힌 칸의 번호만 갈아 쓴다 — 택배사는 그대로 둔다.
+ * 수거 접수·입고 스캔이 번호를 덮어쓸 때 택배사를 지우지 않게 한다.
+ * 새 번호가 비어도 택배사는 남긴다 — 번호를 지운 것이 택배사를 지운 뜻은 아니다.
+ */
+function prpLedgerInvoiceReplaceNo_(옛칸, 새번호) {
+  var 옛 = prpSplitLedgerInvoice_(옛칸);
+  return prpLedgerInvoiceCell_(새번호, 옛.택배사);
 }

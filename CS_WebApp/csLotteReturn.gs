@@ -599,7 +599,13 @@ function csLotteReturnPickupFromCard(p) {
           var d2 = String(okRows[a].invoice).replace(/[^0-9]/g, "");
           if (d2 && prev.indexOf(d2) === -1) prev.push(d2);
         }
-        ctx.tab.getRange(ctx.rowNum, col.returnInvoice + 1).setValue(prev.join(" "));
+        /*  ★ 여기는 택배사를 «안다» ★  (2026-10-04)
+            롯데에 수거를 넣는 자리다. 「반품송장번호 / 택배사」 한 칸이므로
+            번호 뒤에 같이 적는다 — 이미 적혀 있으면 그것을 그대로 둔다.  */
+        var 옛칸 = String(cell("returnInvoice") || "");
+        var 수거사 = _cs_splitLedgerInvoice_(옛칸).택배사 || "롯데";
+        ctx.tab.getRange(ctx.rowNum, col.returnInvoice + 1)
+          .setValue(_cs_ledgerInvoiceCell_(prev.join(" "), 수거사));
       }
       /* ★ 짝을 남긴다 ★ 어느 원송장의 회수송장인지 여기에만 남는다.
          사람이 읽을 수 있는 한 줄이고, 다음 접수 때 이 줄을 읽어

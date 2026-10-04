@@ -493,7 +493,7 @@
     .meta { font-size: 12.5px; color: var(--text-secondary); line-height: 1.65; word-break: break-all; }
     /*  다시 보내는 것 (2026-10-02) — 돌려받는 품목 바로 아래.
         초록은 「나가는 것」을 뜻한다. CS 카드(.ret-reship)와 같은 뜻의 색이다. */
-    .c-reship { margin-top: 3px; font-size: 11.5px; color: var(--accent-green, #2e7d57); line-height: 1.45; }
+    .c-reship { margin-top: 3px; font-size: 11.5px; color: var(--accent-green); line-height: 1.45; }
     .meta em { color: var(--text-muted); font-style: normal; }
     .sub { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
     /* 전화번호 딱지 — 작고 조용하게. 「안심번호뿐」일 때만 색을 준다
@@ -588,6 +588,18 @@
       font-size: 9.5px; color: var(--text-secondary); text-align: center; line-height: 1.3;
     }
     .ev-thumbs button.fail .alt { display: flex; }
+    /*  ★ 반품 영상 칸 ★  (2026-10-04 — 인라인에서 옮겨 왔다)
+        10/01 에 급히 인라인 style 로 넣었더니 거의 검은 바탕과 흰 글자가 박혀,
+        밝은 테마에서 그 칸만 검은 네모로 남고 _prptheme 시험이 빨개졌다.
+        사진 칸과 같은 토큰을 쓴다 — 크기도 같다(92px). 작게 두면 영상이
+        덜 중요한 것처럼 보인다.  */
+    .thumb-vid {
+      display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+      width: 92px; height: 92px; border-radius: 7px; text-decoration: none;
+      border: 1px solid transparent; background: var(--bg-sunken);
+      color: var(--text-bright); font-size: 24px; line-height: 1;
+    }
+    .thumb-vid span { font-size: 11px; margin-top: 4px; color: var(--text-secondary); }
 
     /* 처리 단계 — "어디까지 됐나" 를 한눈에 보여 문의를 줄인다 */
     .steps { display: flex; gap: 3px; margin: 9px 0 2px; }
@@ -1441,6 +1453,16 @@
       var urls = String(text || '').match(/https?:\/\/[^\s]+/g) || [];
       var h = '', n = 0;
       for (var i = 0; i < urls.length; i++) {
+        /*  ★ 동영상 (2026-10-01) ★ 물류 입고가 영상도 올린다(v2 sql/70).
+            <img> 로 그리면 깨진다 — 「▶ 영상」 칸으로, 누르면 새 창에서 재생.
+            가르는 규칙은 CS 웹앱(retIsVideoUrl · _cs_isVideoUrl_)과 같다. 우리 보관소 주소만. */
+        if (storeUrl(urls[i]) && /\.(mp4|mov|m4v|webm|3gp)$/i.test(urls[i].split('?')[0])) {
+          n++;
+          //  .thumb 를 붙이면 아래 클릭 처리가 사진 확대로 가로챈다 — 따로 이름을 준다. 크기는 사진 칸(92px)과 같게
+          h += '<a class="thumb-vid" href="' + esc(urls[i]) + '" target="_blank" rel="noopener"' +
+            ' title="영상 재생" onclick="event.stopPropagation()">▶<span>영상</span></a>';
+          continue;
+        }
         /*  드라이브든 보관소든 «볼 수 있는 주소»로 바꿔 싣는다.
             크게보기는 id 가 아니라 주소를 받는다 — 보관소 사진에는 id 가 없다. */
         var small = photoSrc(urls[i], 480);
@@ -1511,9 +1533,11 @@
         return '<div class="ret-inv-box none"><div class="lab">반품송장</div>' +
           '<div class="val">아직 없습니다 — 수거 접수 후 나옵니다</div></div>';
       }
-      var u = trackUrl(inv, c.pickup);
+      //  반품송장 칸에 같이 적힌 수거 택배사가 가장 정확하다 (2026-10-04)
+      var 수거사 = c.returnCarrier || c.pickup || '';
+      var u = trackUrl(inv, 수거사);
       return '<div class="ret-inv-box"><div class="lab">반품송장' +
-        (c.pickup ? ' · ' + esc(c.pickup) : '') + '</div>' +
+        (수거사 ? ' · ' + esc(수거사) : '') + '</div>' +
         '<div class="val">' + (u
           ? '<a href="' + esc(u) + '" target="_blank" rel="noopener" title="배송조회 열기">' +
             esc(inv) + '</a>'
@@ -1587,7 +1611,11 @@
       }
       // 원송장은 우리가 보낸 것이라 택배사 힌트가 없다 → 네이버 검색으로 간다.
       // 반품송장은 수거입력처가 곧 택배사라 그 값을 힌트로 쓴다.
-      h += invLine('원송장', c.invoice, '');
+      /*  ★ 택배사를 알면 네이버 검색으로 안 빠진다 ★  (2026-10-04)
+          여태 세 번째 칸이 빈 글자였다 — 택배사를 적을 칸이 대장에 없었으니
+          알 길이 없었다. 10월부터 「원송장번호 / 택배사」 한 칸에 같이 적히고
+          서버가 갈라서 c.carrier 로 준다. 업체가 가장 자주 누르는 자리다.  */
+      h += invLine('원송장', c.invoice, c.carrier || '');
       if (c.pickup) h += '<br><em>수거</em> ' + esc(c.pickup);
       var ph = pickPhones(c.phone, c.phone2);
       if (ph.main) {
