@@ -261,9 +261,21 @@ function _pms_하루치파일_(folder) {
   var it = folder.getFiles();
   while (it.hasNext()) {
     var f = it.next();
-    var m = String(f.getName()).match(/^구매입력_((d{4}-d{2}-d{2}))$/);
-    if (!m) continue;
-    out[m[1]] = f.getId();
+    /*  ★ 정규식을 쓰지 않는다 ★  (2026-10-04)
+        처음엔 /^구매입력_((d{4}-d{2}-d{2}))$/ 로 썼는데 역슬래시가 빠져
+        「d{4}」 라는 «글자»를 찾고 있었다. 그래서 하루치를 하나도 못 찾고
+        변환 탭으로 떨어져 「그 달로 변환을 먼저 돌리세요」가 떴다.
+        글자 자르기로 바꾸고, 날짜인지는 이미 있는 가름(_pms_ymd8_)에 맡긴다 —
+        한 군데서만 날짜를 가르면 이런 일이 한 번만 난다.  */
+    var 이름 = String(f.getName());
+    var 머리 = _PMS_PREFIX_ + "(";
+    if (이름.indexOf(머리) !== 0) continue;
+    if (이름.charAt(이름.length - 1) !== ")") continue;
+    var 안 = 이름.slice(머리.length, 이름.length - 1);
+    var d8 = _pms_ymd8_(안);
+    if (!d8) continue;                       //  날짜가 아니면 넘긴다
+    //  열쇠는 늘 같은 모양으로 — 「2026-9-2」처럼 적힌 파일도 한자리에 모인다
+    out[d8.slice(0, 4) + "-" + d8.slice(4, 6) + "-" + d8.slice(6, 8)] = f.getId();
   }
   return out;
 }
