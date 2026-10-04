@@ -341,3 +341,58 @@ function _cs_rou_쓰기_(탭, 읽음, 채울것) {
   try { csInvalidateReturnLedgerCache_(); } catch (e2) {}
   return 쓴수;
 }
+
+/**
+ * ③ 10월 이전 달의 시험 r 번호 지우기 — 2026-10-04
+ *
+ * > "8·9월 r번호 지워줘"
+ *
+ * 2026-10-02 에 «반품 제 번호»로 잘못 알아듣고 넣은 r1002000003 꼴만 비운다.
+ * 10월부터는 위 ①② 가 주문 고유ID 로 바꿔 넣으므로 여기서 건드리지 않는다.
+ * 사람이 적은 값(주문 고유ID 등)은 시험 번호 꼴이 아니라 그대로 둔다.
+ */
+function csReturnOrderUid_시험번호지우기() {
+  var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
+  var 말 = ["■ 반품대장 — " + _CS_ROU_FROM_ + " 이전 달의 시험 r 번호 지우기", ""];
+  var 합 = 0;
+  var 탭들 = _cs_rou_옛탭들_(ss);
+  for (var t = 0; t < 탭들.length; t++) {
+    var 탭 = ss.getSheetByName(탭들[t]);
+    var 읽음 = _cs_rou_읽기_(탭);
+    if (읽음.왜) { 말.push("  · " + 탭들[t] + " — " + 읽음.왜 + " (건너뜀)"); continue; }
+    var 지운행 = _cs_rou_시험번호비우기_(탭, 읽음);
+    합 += 지운행.length;
+    말.push("  · " + 탭들[t] + "  " + 지운행.length + "칸 비움" +
+      (지운행.length ? "  (" + 지운행.slice(0, 40).join(", ") + (지운행.length > 40 ? " …" : "") + "행)" : ""));
+  }
+  if (합) { SpreadsheetApp.flush(); try { csInvalidateReturnLedgerCache_(); } catch (e) {} }
+  말.push("", "합계 " + 합 + "칸 비움");
+  Logger.log(말.join(String.fromCharCode(10)));
+  return 합 + "칸 비움";
+}
+
+/** 대장의 달 탭 중 _CS_ROU_FROM_ 보다 앞선 것 */
+function _cs_rou_옛탭들_(ss) {
+  var out = [];
+  var 탭 = ss.getSheets();
+  for (var i = 0; i < 탭.length; i++) {
+    var 이름 = 탭[i].getName();
+    if (/^[0-9]{6}$/.test(이름) && 이름 < _CS_ROU_FROM_) out.push(이름);
+  }
+  return out.sort().reverse();
+}
+
+/** 고유ID 칸에서 시험 번호 꼴만 비운다. 비운 행 번호들을 돌려준다 */
+function _cs_rou_시험번호비우기_(탭, 읽음) {
+  var 첫행 = 읽음.머리행 + 2;
+  var 끝행 = 탭.getLastRow();
+  if (끝행 < 첫행) return [];
+  var 범위 = 탭.getRange(첫행, 읽음.col.uid + 1, 끝행 - 첫행 + 1, 1);
+  var 값 = 범위.getValues();
+  var 지운행 = [];
+  for (var k = 0; k < 값.length; k++) {
+    if (_cs_rou_시험번호인가_(값[k][0])) { 값[k][0] = ""; 지운행.push(첫행 + k); }
+  }
+  if (지운행.length) 범위.setValues(값);
+  return 지운행;
+}
