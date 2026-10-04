@@ -189,3 +189,54 @@ test("다른 이름도 같은 열로 본다 — 상담자 · 통화자", () => {
 test("이름 열이 없는 옛 탭은 -1 — 그때는 비고로 흘린다", () => {
   assert.equal(prpMapCols_(H202609).phone2Name, -1);
 });
+
+/* ─────────────────────────────────────────────────────────────
+   「처리상태」는 상태가 아니라 이카운트 반영이다 — 2026-10-04
+   > _prpcols_test 의 「A열은 늘 처리상태다」가 빨개져 드러났다
+
+   옛 탭(202604~08) N열 머리글은 「처리상태」인데 담긴 것은 이카운트다
+   (v2 colMap 이 세어 적어 뒀다 — 「이카운트ok」 33~91건, 같은 탭의
+   「이카운트 반영」 열은 전부 비어 있다).
+
+   ★ 2026-10-01 에 상태를 머리글로 찾게 바꾸면서 이 칸이 상태로 잡혔다 ★
+   그러면 옛 탭 카드의 상태가 「이카운트ok」로 보이고, 상태를 쓰면
+   이카운트 칸에 쓴다. 오류는 안 난다 — 그냥 엉뚱한 칸이다.
+
+   ★ 세 곳이 같은 말을 해야 한다 ★ v2 colMap · CS csOrderSearch · 이 파일.
+   한 곳만 다르면 그 화면만 틀리고, 그 틀림은 조용하다.
+   ───────────────────────────────────────────────────────────── */
+
+test("★ 옛 탭 「처리상태」를 상태로 읽지 않는다 ★", () => {
+  const c = prpMapCols_(H202608);
+  assert.notEqual(H202608[c.status], "처리상태",
+    "「처리상태」를 상태로 읽으면 카드가 이카운트 값을 상태로 보여 준다");
+  assert.equal(c.status, 0, "옛 탭의 상태는 A열이다 (머리글이 비어 폴백이 집는다)");
+});
+
+test("세 곳이 같은 말을 하는가 — v2 · CS · 포털", () => {
+  const fs2 = require("fs");
+  const path2 = require("path");
+  const 뿌리 = path2.join(__dirname, "..");
+  const cs = fs2.readFileSync(path2.join(뿌리, "CS_WebApp", "csOrderSearch.gs"), "utf8");
+  const 나 = fs2.readFileSync(__filename.replace("_prpcols_test.js", "prpLedger.gs"), "utf8");
+
+  //  어느 쪽도 status 정규식에 ^처리상태$ 를 두지 않는다
+  for (const [이름, src] of [["CS csOrderSearch", cs], ["포털 prpLedger", 나]]) {
+    const m = src.match(/col\.status < 0 && \/([^/]+)\//);
+    assert.ok(m, 이름 + " 의 status 정규식을 못 찾았다");
+    assert.ok(m[1].indexOf("처리상태") < 0,
+      이름 + " 가 「처리상태」를 상태로 읽는다: " + m[1]);
+  }
+  //  CS 는 그 칸을 이카운트로 받는다
+  const e = cs.match(/col\.ecount < 0 && \/([^/]+)\//);
+  assert.ok(e && e[1].indexOf("처리상태") >= 0,
+    "CS 가 「처리상태」를 이카운트로 받지 않으면 옛 탭의 이카운트 값이 통째로 빈다");
+
+  //  v2 도 같은 말을 한다
+  const v2길 = "D:/Pack2U_협력업체시스템_v2/app/src/lib/returns-ingest/colMap.js";
+  if (fs2.existsSync(v2길)) {
+    const v2 = fs2.readFileSync(v2길, "utf8");
+    assert.ok(/처리상태:\s*"ecount"/.test(v2),
+      "v2 colMap 이 「처리상태」를 ecount 로 잇지 않는다 — 세 곳이 갈라졌다");
+  }
+});

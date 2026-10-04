@@ -2830,12 +2830,20 @@ function _cs_mapReturnLedgerCols_(header) {
         여태 상태는 A열 고정이었다. 그래서 상태값 열을 다른 자리로 옮기면
         따라가지 못하고 A(엉뚱한 칸)를 상태로 읽었다. 머리글이 먼저고,
         못 찾았을 때만 A 로 떨어진다(아래).  */
-    else if (col.status < 0 && /^상태값$|^상태$|^처리상태$|^진행상태$/.test(h)) col.status = i;
+    /*  ★ 「처리상태」를 상태로 읽지 않는다 ★  (2026-10-04)
+        옛 탭(202604~08) N열 머리글이 「처리상태」인데, 그 칸에 실제로 담긴
+        것은 «이카운트 반영»이다 — v2 가 세어 적어 뒀다(「이카운트ok」
+        33~91건, 같은 탭의 「이카운트 반영」 열은 전부 비어 있다).
+        상태로 읽으면 카드 상태가 「이카운트ok」로 보이고, 상태를 쓰면
+        이카운트 칸에 쓴다. 오류는 안 난다 — 그냥 엉뚱한 칸이다.
+        옛 탭의 상태는 A열이고, 아래 폴백이 그것을 집는다.          */
+    else if (col.status < 0 && /^상태값$|^상태$|^진행상태$/.test(h)) col.status = i;
     else if (col.intake < 0 && /^입고여부$|^입고일$|^입고확인$/.test(h)) col.intake = i;
     else if (col.recheck < 0 && /^재검수사안$|^재검수$|^검수사안$/.test(h)) col.recheck = i;
     /*  시트 머리글이 「이카운처리 여부」다 — 「트」가 빠져 있다. 글자를 고치면
         옛 탭이 안 걸리니, 둘 다 받는다. (2026-10-01)  */
-    else if (col.ecount < 0 && /이카운트?처리|이카운트반영|^이카운트$/.test(h)) col.ecount = i;
+    //  ^처리상태$ 도 여기서 받는다 — 위에 적은 까닭 (2026-10-04)
+    else if (col.ecount < 0 && /이카운트?처리|이카운트반영|^이카운트$|^처리상태$/.test(h)) col.ecount = i;
     else if (col.siteDone < 0 && /각사이트처리|사이트처리/.test(h)) col.siteDone = i;
     else if (col.taxDone < 0 && /계산서발행/.test(h)) col.taxDone = i;
     else if (col.refund < 0 && /^환불완료$|^환불일$/.test(h)) col.refund = i;
