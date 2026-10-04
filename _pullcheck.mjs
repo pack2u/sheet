@@ -67,6 +67,38 @@ export function 판단(작업, 서버, 담긴것) {
 }
 
 /**
+ * git 에 「지움」으로 담아 두었나 (staged delete).
+ *
+ * 끝난 일회용 파일을 치울 때 쓰는 길이다 — `git rm` 한 뒤 배포하면
+ * 서버에서도 없어진다. 그 파일은 당기면 「서버에만 있다」로 보이는데,
+ * 뜻은 「지우는 중」이다. 담아 둔 뜻이 있으면 막지 않는다.
+ */
+function 지움으로담겼나(이름) {
+  try {
+    /*  ★ git 의 두 가지 경로 기준을 섞지 말 것 ★
+        `git show HEAD:<길>` 은 «저장소 뿌리» 기준이라 접두사를 붙여야 한다.
+        `git diff -- <길>` 의 경로는 «지금 폴더» 기준이다 — 접두사를 붙이면
+        CS_WebApp/CS_WebApp/… 을 찾아 늘 「없다」가 된다.
+        2026-10-04 에 그래서 「일부러 지운 것」을 못 알아봤다.        */
+    /*  ★ 두 이름을 다 물어본다 ★ clasp 는 서버 것을 .js 로 주는데, 내 쪽
+        이름(.gs)은 «로컬 파일이 있어야» 알아낼 수 있다. 지운 뒤에는 없다 —
+        그래서 .js 로 물어 늘 「없다」가 나왔다(2026-10-04 에 그랬다).
+        담긴 이름은 .gs 일 수도 .js 일 수도 있으니 둘 다 본다.       */
+    const 이름들 = [이름];
+    if (이름.endsWith(".js")) 이름들.push(이름.slice(0, -3) + ".gs");
+    else if (이름.endsWith(".gs")) 이름들.push(이름.slice(0, -3) + ".js");
+    for (const n of 이름들) {
+      const out = execFileSync("git", ["diff", "--cached", "--name-status", "--", n],
+        { cwd: process.cwd(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+      if (/^D\s/m.test(out)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * git 에 «담긴» 그 파일의 내용. 담긴 적이 없으면 null.
  *
  * 서버가 이것과 같으면, 서버는 담긴 것 그대로이고 내 작업 폴더가 그 위에
@@ -127,8 +159,9 @@ export function 서버먼저보기(선택 = {}) {
     process.exit(1);
   }
 
-  const 다른것 = [];
+  const 다른것 = [];   // 서버에만 있는 것 — 이것이 있으면 멈춘다
   const 앞선것 = [];   // 내 쪽이 앞선 파일 — 막지 않지만 몇 개인지는 말해 준다
+  const 지운것 = [];   // 일부러 지우는 중인 파일 — 막지 않지만 말해 준다
   for (const f of fs.readdirSync(받을곳)) {
     if (f === ".clasp.json" || 안볼것.test(f)) continue;
 
@@ -144,7 +177,15 @@ export function 서버먼저보기(선택 = {}) {
     const 내길 = path.join(process.cwd(), 내이름);
 
     if (!fs.existsSync(내길)) {
-      다른것.push(내이름 + "  ← 서버에만 있다 (" + fs.statSync(path.join(받을곳, f)).size + "바이트)");
+      /*  ★ 일부러 지운 파일은 막지 않는다 ★  (2026-10-04)
+          끝난 일회용 파일을 치울 때, 그 파일은 «서버에만» 남는다 —
+          문이 그것까지 막으면 지울 때마다 --서버무시 를 쓰게 되고,
+          그 버릇이 들면 문이 있으나 없으나 같아진다.
+          git 에 「지움(D)」으로 담아 두었으면 뜻이 분명하다 — 통과시킨다.
+          담지 않고 그냥 파일만 없앤 것은 여전히 막는다.            */
+      if (지움으로담겼나(내이름)) { 지운것.push(내이름); continue; }
+      다른것.push(내이름 + "  ← 서버에만 있다 (" + fs.statSync(path.join(받을곳, f)).size + "바이트)" +
+        " · git 에 「지움」으로 담지 않았다");
       continue;
     }
     const a = 고르게(fs.readFileSync(내길, "utf8"));
@@ -175,6 +216,7 @@ export function 서버먼저보기(선택 = {}) {
   }
 
   if (!다른것.length) {
+    if (지운것.length) console.log("· 지우는 중인 파일 " + 지운것.length + "개: " + 지운것.join(", ") + " — 올리면 서버에서도 없어집니다");
     console.log(앞선것.length
       ? "· 서버에만 있는 것은 없습니다 (내 쪽이 앞선 파일 " + 앞선것.length + "개 — 그것을 올립니다)"
       : "· 서버와 같습니다 — 올려도 덮을 것이 없습니다");
