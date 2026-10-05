@@ -21,7 +21,7 @@ function 꺼내(이름) {
   throw new Error(이름 + " 끝 못 찾음");
 }
 ["_pms_vendorLabel_", "_pms_vendorNo_", "_pms_vendorNames_", "_pms_parseVendorPick_",
- "_pms_repairTabsForFiles_", "_pms_repairMemoGet_", "_pms_repairMemoPut_", "_pms_repairMemoClear_"].forEach(function (n) { eval.call(null, 꺼내(n)); });
+ "_pms_repairTabsForFiles_", "_pms_repairMemoGet_", "_pms_repairMemoPut_", "_pms_repairMemoClear_", "_pms_parseMonthPick_", "_pms_monthMatches_", "_pms_monthLabel_"].forEach(function (n) { eval.call(null, 꺼내(n)); });
 
 var 통과 = 0, 실패 = 0;
 function ok(이름, 참, 덧) {
@@ -134,12 +134,30 @@ var e3 = _pms_repairTabsForFiles_(큰, 0);
 ok("  이번엔 끝난다", e3.left.length === 0 && (e3.done[0] || "").indexOf("앞서 한 1개 건너뜀") >= 0, e3.done[0]);
 ok("  끝나면 기억을 지운다 (다음에 또 돌리면 처음부터)", Object.keys(캐시).length === 0);
 
+console.log("\n[2c] 월 고르기 — 편집기판에서 옮겨 심은 것");
+같나("비우면 모든 달", _pms_parseMonthPick_("  "), null);
+같나("2026-09", JSON.stringify(_pms_parseMonthPick_("2026-09")), JSON.stringify({ y: 2026, m: 9 }));
+같나("202609", JSON.stringify(_pms_parseMonthPick_("202609")), JSON.stringify({ y: 2026, m: 9 }));
+같나("2026년 9월", JSON.stringify(_pms_parseMonthPick_("2026년 9월")), JSON.stringify({ y: 2026, m: 9 }));
+같나("9 (해 없이)", JSON.stringify(_pms_parseMonthPick_("9")), JSON.stringify({ y: null, m: 9 }));
+같나("9월", JSON.stringify(_pms_parseMonthPick_("9월")), JSON.stringify({ y: null, m: 9 }));
+ok("13 은 틀린 월", !!(_pms_parseMonthPick_("13") || {}).err);
+ok("글자는 틀린 월", !!(_pms_parseMonthPick_("구월") || {}).err);
+같나("이름표", _pms_monthLabel_({ y: null, m: 9 }) + " / " + _pms_monthLabel_(null), "9월 / 전체");
+캐시 = {}; 지금 = 0; 한탭에 = 1000; 고친탭 = [];
+_pms_repairTabsForFiles_(files, 0, { y: null, m: 9 });
+같나("9월만 고르면 9월 탭만", 고친탭.join("|"), "a:(2026년 9월) 발주 마감|b:(2026년 9월) 발주 마감|d:(2026년 9월) 발주 마감");
+캐시 = {}; 고친탭 = [];
+_pms_repairTabsForFiles_(files, 0, { y: 2025, m: 9 });
+같나("해가 다르면 안 고친다", 고친탭.length, 0);
+
 console.log("\n[3] 메뉴 함수가 고르기와 한도를 쓴다");
 var 메뉴 = 꺼내("partnerRepairMonthlySettleTabs");
 ok("업체를 고른다", 메뉴.indexOf("_pms_pickVendors_(") >= 0);
 ok("고른 것만 돌린다", 메뉴.indexOf("_pms_repairTabsForFiles_(selected") >= 0);
 ok("전 업체를 그냥 돌지 않는다", 메뉴.indexOf("files.forEach") < 0);
 ok("못 한 업체 번호를 알려 준다", 메뉴.indexOf("r.left") >= 0);
+ok("월을 묻고 넘긴다", 메뉴.indexOf("_pms_parseMonthPick_(") >= 0 && 메뉴.indexOf("Date.now(), 월)") >= 0);
 
 console.log("");
 console.log(실패 ? "★ 실패 " + 실패 + "건 / 통과 " + 통과 + "건" : "모두 통과 (" + 통과 + "건)");

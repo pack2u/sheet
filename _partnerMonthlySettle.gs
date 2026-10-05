@@ -1631,7 +1631,8 @@ function _pms_findTabByKey_(ss, key) {
 //      ① 업체를 고른다 — 번호(쉼표) · 이름 일부 · all
 //      ② 4분 30초가 되면 스스로 멈추고, 못 한 업체를 번호와 함께 알려 준다
 //         (그 번호를 그대로 넣고 다시 돌리면 된다)
-//      ③ 한 업체 안에서 끊기면 끝낸 탭을 6시간 기억한다 — 다시 돌리면 이어서 한다.
+//      ③ 월을 고를 수 있다 — 비우면 모든 달 (같은 날 편집기에서 만든 판의 것을 옮겨 심었다)
+//      ④ 한 업체 안에서 끊기면 끝낸 탭을 6시간 기억한다 — 다시 돌리면 이어서 한다.
 //         안 그러면 마감 탭이 많은 업체는 매번 첫 탭부터 하다 끊겨 영영 못 끝낸다.
 // ──────────────────────────────────────────────────────
 var _PMS_REPAIR_LIMIT_MS_ = 270000;
@@ -1648,20 +1649,30 @@ function partnerRepairMonthlySettleTabs() {
   if (selected === null) return;
   if (!selected.length) return ui.alert("선택된 업체가 없습니다.");
 
+  var mResp = ui.prompt(
+    "🔧 월별 마감 탭 레이아웃 보정 — 대상 월",
+    "보정할 월을 입력하세요 (예: 2026-09 또는 9).\n비워두면 해당 업체의 모든 월 탭을 보정합니다.",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (mResp.getSelectedButton() !== ui.Button.OK) return;
+  var 월 = _pms_parseMonthPick_(mResp.getResponseText());
+  if (월 && 월.err) return ui.alert(월.err);
+
   var go = ui.alert(
     "🔧 월별 마감 탭 레이아웃 보정",
     selected.length + "개 업체의 마감 탭을 보정합니다.\n\n" +
-    _pms_vendorNames_(selected, 15) + "\n\n계속할까요?",
+    _pms_vendorNames_(selected, 15) + "\n" +
+    "대상 월: " + _pms_monthLabel_(월) + "\n\n계속할까요?",
     ui.ButtonSet.YES_NO
   );
   if (go !== ui.Button.YES) return;
 
-  var r = _pms_repairTabsForFiles_(selected, Date.now());
+  var r = _pms_repairTabsForFiles_(selected, Date.now(), 월);
 
   var msg = "보정: " + r.fixed + "개 탭 · " + r.done.length + "개 업체";
   if (r.done.length) msg += "\n" + r.done.join("\n");
   if (r.left.length) {
-    msg += "\n\n⏱ 시간이 모자라 못 한 업체 " + r.left.length + "곳 — 아래 번호로 다시 돌려 주세요:\n" +
+    msg += "\n\n⏱ 시간이 모자라 못 한 업체 " + r.left.length + "곳 — 아래 번호로 (같은 월로) 다시 돌려 주세요:\n" +
       r.left.map(function(f) { return _pms_vendorNo_(files, f) + ". " + _pms_vendorLabel_(f); }).join("\n") +
       "\n번호: " + r.left.map(function(f) { return _pms_vendorNo_(files, f); }).join(",");
   }
@@ -1672,9 +1683,10 @@ function partnerRepairMonthlySettleTabs() {
 /**
  * 고른 업체들의 마감 탭을 보정한다. 한도 시간이 되면 멈추고 남은 업체를 돌려준다.
  * 탭 하나를 하다 만 업체도 «못 한 업체»로 센다 — 다시 돌려도 같은 결과라 안전하다.
+ * 월: _pms_parseMonthPick_ 의 결과 — null 이면 모든 달
  * @return {{fixed:number, done:string[], left:Object[], errs:string[]}}
  */
-function _pms_repairTabsForFiles_(selected, 시작) {
+function _pms_repairTabsForFiles_(selected, 시작, 월) {
   var fixed = 0, done = [], left = [], errs = [];
   var tabPattern = /^\((\d{4})년 (\d{1,2})월\) 발주 마감$/;
 
@@ -1704,7 +1716,9 @@ function _pms_repairTabsForFiles_(selected, 시작) {
       var sheets = ss.getSheets();
       for (var si = 0; si < sheets.length; si++) {
         var sh = sheets[si];
-        if (!String(sh.getName()).match(tabPattern)) continue;
+        var tm = String(sh.getName()).match(tabPattern);
+        if (!tm) continue;
+        if (!_pms_monthMatches_(월, parseInt(tm[1], 10), parseInt(tm[2], 10))) continue;
         if (기억[sh.getName()]) { 건넘++; continue; }
         if (Date.now() - 시작 > _PMS_REPAIR_LIMIT_MS_) { 끊김 = true; break; }
 
@@ -1739,6 +1753,34 @@ function _pms_repairMemoPut_(fileId, memo) {
 }
 function _pms_repairMemoClear_(fileId) {
   try { CacheService.getScriptCache().remove("PMS_REPAIR_" + fileId); } catch (e) {}
+}
+
+/**
+ * 순수 — 월 입력 읽기. 「2026-09」·「2026년 9월」·「202609」·「9」.
+ * 비우면 null(모든 달), 못 읽으면 {err}.
+ */
+function _pms_parseMonthPick_(text) {
+  var mText = String(text || "").trim();
+  if (mText.slice(-1) === "월") mText = mText.slice(0, -1).trim();   //  「2026년 9월」·「9월」
+  if (!mText) return null;
+  var wantY = null, wantM = null;
+  var mm = mText.match(/^(\d{4})\D+(\d{1,2})$/) || mText.match(/^(\d{4})(\d{2})$/);
+  if (mm) { wantY = parseInt(mm[1], 10); wantM = parseInt(mm[2], 10); }
+  else if (/^\d{1,2}$/.test(mText)) { wantM = parseInt(mText, 10); }
+  else return { err: "월 형식을 알 수 없습니다: " + mText };
+  if (!(wantM >= 1 && wantM <= 12)) return { err: "월 형식을 알 수 없습니다: " + mText };
+  return { y: wantY, m: wantM };
+}
+
+function _pms_monthMatches_(월, y, m) {
+  if (!월) return true;
+  if (월.m !== m) return false;
+  return 월.y === null || 월.y === y;
+}
+
+function _pms_monthLabel_(월) {
+  if (!월) return "전체";
+  return (월.y !== null ? 월.y + "년 " : "") + 월.m + "월";
 }
 
 /** 「[협력업체] 」 머리를 뗀 업체 이름 */
