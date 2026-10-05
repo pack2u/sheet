@@ -185,24 +185,14 @@ function _pms_audit_headerDiff_(row, extHdr) {
   return out;
 }
 
-/** 보정 코드가 넣을 수식을 그대로 받아 적는다 — 기준을 따로 쓰지 않는다 */
+/** 보정 코드가 넣을 수식을 그대로 받아 적는다 — 빠른 보정과 같은 것을 쓴다 */
 function _pms_audit_expectedFormulas_(cMap, c) {
-  var rec = {};
-  function cell(r, col) {
-    var o = {};
-    ["setValue", "setNumberFormat", "setFontWeight", "setFontSize", "setFontColor", "setBackground", "setBorder"]
-      .forEach(function (fn) { o[fn] = function () { return o; }; });
-    o.setFormula = function (f) { rec[r + "," + col] = f; return o; };
-    return o;
-  }
-  var 가짜 = { getRange: function (r, col) { return cell(r, col); } };
-  _pms_applyFormulas_(가짜, cMap, c.cancel, c.ret, c.ship, c.island, c.etc);
-  return rec;
+  return _pms_expectedSummaryFormulas_(cMap, c.cancel, c.ret, c.ship, c.island, c.etc);
 }
 
-/** 수식 견주기 — 띄어쓰기·대소문자는 뜻이 아니다 */
+/** 수식 견주기 — 빠른 보정과 같은 것 */
 function _pms_audit_normF_(f) {
-  return String(f || "").replace(/\s/g, "").toUpperCase();
+  return _pms_normF_(f);
 }
 
 /**

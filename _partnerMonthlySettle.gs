@@ -1447,31 +1447,39 @@ function _pms_layoutArchiveTab_(tab, extHeaders, cMap, extLc, cancelC, returnC, 
 
   // ★ 2026-06-13 추가: 취소/반품 행 조건부 서식 (행 전체 연한 빨강 강조)
   try {
-    var dataRange = tab.getRange(_PMS_DATA_START, 1, tab.getMaxRows() - _PMS_DATA_START + 1, extLc);
-    // 취소=TRUE → 행 전체 연한 빨강
-    var cancelFormula = "=INDIRECT(\"R[0]C" + cancelC + "\",FALSE)=TRUE";
-    var cancelRule = SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied(cancelFormula)
-      .setBackground("#fce4ec")
-      .setRanges([dataRange])
-      .build();
-    // 반품=TRUE → 행 전체 연한 주황
-    var returnFormula = "=INDIRECT(\"R[0]C" + returnC + "\",FALSE)=TRUE";
-    var returnRule = SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied(returnFormula)
-      .setBackground("#fff3e0")
-      .setRanges([dataRange])
-      .build();
-    //  ★ 2026-10-05 겹침 정리: 보정을 돌릴 때마다 같은 규칙 두 개가 덧붙어
-    //    4벌·8개까지 쌓였다(점검 로그). 우리 규칙(INDIRECT("R[0]C…",FALSE)=TRUE)은
-    //    칸 자리가 옛것이어도 모두 걷어 내고 새로 두 개만 둔다.
-    var existingRules = (tab.getConditionalFormatRules() || []).filter(function(rule) {
-      return !_pms_isOurRowRule_(rule);
-    });
-    existingRules.push(cancelRule);
-    existingRules.push(returnRule);
-    tab.setConditionalFormatRules(existingRules);
+    _pms_setRowRules_(tab, extLc, cancelC, returnC);
   } catch(e) {}
+}
+
+/** 취소·반품 줄 칠하기 규칙의 수식 — 취소 빨강 / 반품 주황 */
+function _pms_rowRuleFormula_(col) {
+  return "=INDIRECT(\"R[0]C" + col + "\",FALSE)=TRUE";
+}
+
+/**
+ * 취소·반품 줄 칠하기 규칙을 «두 개만» 둔다.
+ * ★ 2026-10-05 겹침 정리: 보정을 돌릴 때마다 같은 규칙 두 개가 덧붙어
+ *   4벌·8개까지 쌓였다(점검 로그). 우리 규칙(INDIRECT("R[0]C…",FALSE)=TRUE)은
+ *   칸 자리가 옛것이어도 모두 걷어 내고 새로 두 개만 둔다. 다른 규칙은 그대로.
+ */
+function _pms_setRowRules_(tab, extLc, cancelC, returnC) {
+  var dataRange = tab.getRange(_PMS_DATA_START, 1, tab.getMaxRows() - _PMS_DATA_START + 1, extLc);
+  var cancelRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied(_pms_rowRuleFormula_(cancelC))
+    .setBackground("#fce4ec")
+    .setRanges([dataRange])
+    .build();
+  var returnRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied(_pms_rowRuleFormula_(returnC))
+    .setBackground("#fff3e0")
+    .setRanges([dataRange])
+    .build();
+  var existingRules = (tab.getConditionalFormatRules() || []).filter(function(rule) {
+    return !_pms_isOurRowRule_(rule);
+  });
+  existingRules.push(cancelRule);
+  existingRules.push(returnRule);
+  tab.setConditionalFormatRules(existingRules);
 }
 
 // ──────────────────────────────────────────────────────
@@ -1584,9 +1592,10 @@ function _pms_applyProtection_(tab) {
 // ──────────────────────────────────────────────────────
 //  기존 데이터 행 체크박스 보정
 // ──────────────────────────────────────────────────────
+/** @return {boolean} 체크박스를 새로 넣었으면 true */
 function _pms_ensureCheckboxes_(tab, cancelC, returnC) {
   var lr = tab.getLastRow();
-  if (lr < _PMS_DATA_START) return;
+  if (lr < _PMS_DATA_START) return false;
   var rowCount = lr - _PMS_DATA_START + 1;
 
   // ★ 2026-07-16 성능: 이미 체크박스가 다 있으면 스킵
@@ -1601,7 +1610,7 @@ function _pms_ensureCheckboxes_(tab, cancelC, returnC) {
       if (!dvs[di][0] || dvs[di][0].getCriteriaType() !== CBX ||
           !dvs[di][1] || dvs[di][1].getCriteriaType() !== CBX) allOk = false;
     }
-    if (allOk) return;
+    if (allOk) return false;
   } catch(e) {}
 
   // ★ 2026-07-16 성능: 행별 삽입 대신 전체 범위 1회 처리
@@ -1614,8 +1623,10 @@ function _pms_ensureCheckboxes_(tab, cancelC, returnC) {
       return [ r[0] === true, r[1] === true ];
     });
     rng.setValues(restore);
+    return true;
   } catch(e) {
     Logger.log("[PMS] 체크박스 일괄 보정 실패: " + e.message);
+    return false;
   }
 }
 
@@ -1703,7 +1714,7 @@ function _pms_repairTabsForFiles_(selected, 시작, 월) {
   for (var fi = 0; fi < selected.length; fi++) {
     var fileInfo = selected[fi];
     if (Date.now() - 시작 > _PMS_REPAIR_LIMIT_MS_) { left = selected.slice(fi); break; }
-    var 탭수 = 0, 건넘 = 0, 끊김 = false;
+    var 탭수 = 0, 건넘 = 0, 끊김 = false, 맞음 = 0, 고친내용 = [];
     var 기억 = _pms_repairMemoGet_(fileInfo.id);
     try {
       var ss       = SpreadsheetApp.openById(fileInfo.id);
@@ -1721,11 +1732,15 @@ function _pms_repairTabsForFiles_(selected, 시작, 월) {
         //  ★ 2026-10-05 칸 배치는 «그 마감 탭 4행»에서 읽는다 (_pms_archiveLayout_ 머리 주석)
         var L = _pms_archiveLayout_(sh, orderTab);
         if (!L) { errs.push("[" + _pms_vendorLabel_(fileInfo) + "] " + sh.getName() + " — 4행에 취소·반품 칸이 없고 발주 탭도 없어 건너뜀"); continue; }
-        _pms_layoutArchiveTab_(sh, L.extHdr, L.cMap, L.extLc, L.cancelC, L.returnC, L.reasonC, L.retInvC, L.shipFeeC, L.islandFeeC, L.etcFeeC, false);
-        _pms_ensureCheckboxes_(sh, L.cancelC, L.returnC);
-        _pms_applyProtection_(sh);
+        //  ★ 2026-10-05 빠른 보정 — 틀린 것만 쓴다 (_pms_quickRepairTab_ 머리 주석)
+        var 고친것 = _pms_quickRepairTab_(sh, L);
+        if (고친것.length) {
+          고친내용.push(tm[2] + "월 " + 고친것.join("·"));
+          SpreadsheetApp.flush();
+        } else {
+          맞음++;
+        }
         fixed++; 탭수++;
-        SpreadsheetApp.flush();
         기억[sh.getName()] = 1;
         _pms_repairMemoPut_(fileInfo.id, 기억);
       }
@@ -1735,7 +1750,10 @@ function _pms_repairTabsForFiles_(selected, 시작, 월) {
     }
     if (끊김) { left = selected.slice(fi); break; }
     _pms_repairMemoClear_(fileInfo.id);
-    done.push(_pms_vendorLabel_(fileInfo) + " — " + 탭수 + "개 탭" + (건넘 ? " (앞서 한 " + 건넘 + "개 건너뜀)" : ""));
+    done.push(_pms_vendorLabel_(fileInfo) + " — " + 탭수 + "개 탭" +
+      (맞음 ? " · 이미 맞음 " + 맞음 : "") +
+      (고친내용.length ? " · 고침: " + 고친내용.join(" / ") : "") +
+      (건넘 ? " (앞서 한 " + 건넘 + "개 건너뜀)" : ""));
   }
   return { fixed: fixed, done: done, left: left, errs: errs };
 }
@@ -1803,6 +1821,105 @@ function _pms_archiveLayoutFrom_(row4, orderHdr, orderLast, 발주있음) {
     cancelC: extLc - 6, returnC: extLc - 5, reasonC: extLc - 4, retInvC: extLc - 3,
     shipFeeC: extLc - 2, islandFeeC: extLc - 1, etcFeeC: extLc
   };
+}
+
+/**
+ * 빠른 보정 — «틀린 것만» 고친다.  ★ 2026-10-05
+ *
+ *  > "빠르게 만들어줘"
+ *  예전 보정은 탭마다 제목·머리글 색·열 너비·숫자 서식·고정·규칙·보호를 «전부 다시»
+ *  썼다. 업체 파일은 수식이 많아 쓰기마다 다시 계산하느라 탭 하나에 1분 가까이
+ *  걸렸다(4분 30초에 4개 탭). 대부분의 탭은 이미 맞는데도 그랬다.
+ *  이제는 먼저 읽어 보고(읽기 몇 번) 다른 것만 쓴다. 맞는 탭은 쓰기 0번.
+ *  1행 제목이 없는 탭 — 한 번도 꾸민 적 없는 탭 — 만 예전처럼 전부 칠한다.
+ *
+ *  보는 것: 1행 제목 · 4행 머리글 · 2~3행 요약 수식 · 취소/반품 칠하기 규칙 2개 ·
+ *          체크박스 · 4행 고정 · 머리글 보호.  (열 너비·글자색은 한 번 칠하면 안 바뀐다)
+ *
+ * @return {string[]} 고친 것들 — 비었으면 이미 맞음
+ */
+function _pms_quickRepairTab_(sh, L) {
+  var 고침 = [];
+  var maxC = Math.max(sh.getMaxColumns(), L.extLc, 10);
+  var 위 = sh.getRange(1, 1, _PMS_HEADER_ROW, maxC);
+  var 값 = 위.getValues(), 식 = 위.getFormulas();
+
+  if (String(값[0][0]).trim() !== "📊 월별 마감 요약") {
+    _pms_layoutArchiveTab_(sh, L.extHdr, L.cMap, L.extLc, L.cancelC, L.returnC, L.reasonC, L.retInvC, L.shipFeeC, L.islandFeeC, L.etcFeeC, false);
+    _pms_ensureCheckboxes_(sh, L.cancelC, L.returnC);
+    _pms_applyProtection_(sh);
+    return ["전체 레이아웃(처음 꾸밈)"];
+  }
+
+  //  4행 머리글 — 값만 고친다 (색은 이미 칠해져 있다)
+  for (var i = 0; i < L.extLc; i++) {
+    var a = String(값[3][i] == null ? "" : 값[3][i]).trim();
+    var b = String(L.extHdr[i] == null ? "" : L.extHdr[i]).trim();
+    if (a !== b) {
+      if (sh.getMaxColumns() < L.extLc) sh.insertColumnsAfter(sh.getMaxColumns(), L.extLc - sh.getMaxColumns());
+      sh.getRange(_PMS_HEADER_ROW, 1, 1, L.extLc).setValues([L.extHdr]);
+      고침.push("머리글");
+      break;
+    }
+  }
+
+  //  2~3행 요약 수식
+  var 기대 = _pms_expectedSummaryFormulas_(L.cMap, L.cancelC, L.returnC, L.shipFeeC, L.islandFeeC, L.etcFeeC);
+  var 수식다름 = Object.keys(기대).some(function(k) {
+    var rc = k.split(",");
+    var 지금 = (식[+rc[0] - 1] || [])[+rc[1] - 1];
+    return _pms_normF_(지금) !== _pms_normF_(기대[k]);
+  });
+  if (수식다름) {
+    _pms_applyFormulas_(sh, L.cMap, L.cancelC, L.returnC, L.shipFeeC, L.islandFeeC, L.etcFeeC);
+    고침.push("요약 수식");
+  }
+
+  //  칠하기 규칙 — 우리 것이 정확히 2개이고 지금 취소·반품 칸을 가리키면 둔다
+  var 우리 = (sh.getConditionalFormatRules() || []).filter(_pms_isOurRowRule_);
+  var 기대규칙 = [_pms_normF_(_pms_rowRuleFormula_(L.cancelC)), _pms_normF_(_pms_rowRuleFormula_(L.returnC))].sort().join("|");
+  var 지금규칙 = 우리.map(function(r) {
+    try { return _pms_normF_(r.getBooleanCondition().getCriteriaValues()[0]); } catch (e) { return ""; }
+  }).sort().join("|");
+  if (지금규칙 !== 기대규칙) {
+    _pms_setRowRules_(sh, L.extLc, L.cancelC, L.returnC);
+    고침.push("칠하기 규칙 " + 우리.length + "→2");
+  }
+
+  if (_pms_ensureCheckboxes_(sh, L.cancelC, L.returnC)) 고침.push("체크박스");
+
+  if (sh.getFrozenRows() !== _PMS_HEADER_ROW) {
+    sh.setFrozenRows(_PMS_HEADER_ROW);
+    고침.push("고정 행");
+  }
+
+  var rp = sh.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+  var sp = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+  if (sp.length || rp.length !== 1) {
+    _pms_applyProtection_(sh);
+    고침.push("보호");
+  }
+  return 고침;
+}
+
+/** 보정 코드(_pms_applyFormulas_)가 넣을 요약 수식을 받아 적는다 — {"행,열": 수식} */
+function _pms_expectedSummaryFormulas_(cMap, cancelC, returnC, shipFeeC, islandFeeC, etcFeeC) {
+  var rec = {};
+  function cell(r, col) {
+    var o = {};
+    ["setValue", "setNumberFormat", "setFontWeight", "setFontSize", "setFontColor", "setBackground", "setBorder"]
+      .forEach(function(fn) { o[fn] = function() { return o; }; });
+    o.setFormula = function(f) { rec[r + "," + col] = f; return o; };
+    return o;
+  }
+  _pms_applyFormulas_({ getRange: function(r, col) { return cell(r, col); } },
+    cMap, cancelC, returnC, shipFeeC, islandFeeC, etcFeeC);
+  return rec;
+}
+
+/** 수식 견주기 — 띄어쓰기·대소문자는 뜻이 아니다 */
+function _pms_normF_(f) {
+  return String(f || "").replace(/\s/g, "").toUpperCase();
 }
 
 /** 우리가 넣는 취소·반품 줄 칠하기 규칙인가 — =INDIRECT("R[0]C…",FALSE)=TRUE */

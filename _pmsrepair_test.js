@@ -67,6 +67,7 @@ global._pms_applyProtection_ = function () {};
 var 지금 = 0, 한탭에 = 0, 고친탭 = [];
 global.Date = { now: function () { return 지금; } };
 global._pms_layoutArchiveTab_ = function (sh) { 고친탭.push(sh.이름); 지금 += 한탭에; };
+global._pms_quickRepairTab_ = function (sh) { 고친탭.push(sh.이름); 지금 += 한탭에; return ["시험"]; };
 function 시트(이름) { return { 이름: 이름, getName: function () { return 이름; } }; }
 var 탭들 = { a: ["발주", "(2026년 8월) 발주 마감", "(2026년 9월) 발주 마감", "메모"],
              b: ["발주", "(2026년 9월) 발주 마감"],
@@ -195,8 +196,9 @@ ok("우리 칠하기 규칙을 알아본다", _pms_isOurRowRule_(규칙('=INDIRE
 ok("  옛 칸 자리의 것도 우리 것", _pms_isOurRowRule_(규칙('=INDIRECT("R[0]C17",FALSE)=TRUE')));
 ok("  사장님이 만든 다른 규칙은 안 건드린다", !_pms_isOurRowRule_(규칙("=$A5>100")));
 ok("  색 범위 규칙(조건 없음)도 안 건드린다", !_pms_isOurRowRule_(규칙(null)));
-var 보정본 = 꺼내("_pms_layoutArchiveTab_");
-ok("보정은 우리 규칙을 걷어 내고 두 개만 다시 넣는다", 보정본.indexOf("!_pms_isOurRowRule_(rule)") >= 0);
+ok("보정은 우리 규칙을 걷어 내고 두 개만 다시 넣는다", 꺼내("_pms_setRowRules_").indexOf("!_pms_isOurRowRule_(rule)") >= 0 &&
+   꺼내("_pms_layoutArchiveTab_").indexOf("_pms_setRowRules_(") >= 0);
+ok("업체 보정은 빠른 보정을 쓴다", 꺼내("_pms_repairTabsForFiles_").indexOf("_pms_quickRepairTab_(sh, L)") >= 0);
 var 체크본 = 꺼내("_pms_ensureCheckboxes_");
 ok("체크박스는 첫 행이 아니라 모든 행을 본다", 체크본.indexOf("getRange(_PMS_DATA_START, cancelC, rowCount, 2).getDataValidations()") >= 0);
 

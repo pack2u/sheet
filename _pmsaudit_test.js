@@ -21,7 +21,7 @@ global._PMS_DATA_START = 5;
 ["_pms_audit_headerDiff_", "_pms_audit_expectedFormulas_", "_pms_audit_normF_", "_pms_audit_recalc_",
  "_pms_audit_dateLike_", "_pms_audit_col_", "_pms_audit_a1_", "_pms_audit_fmt_"]
   .forEach(function (n) { eval.call(null, 꺼내(점검, n)); });
-["_pms_applyFormulas_", "_pms_buildExtHeaders_"].forEach(function (n) { eval.call(null, 꺼내(마감, n)); });
+["_pms_applyFormulas_", "_pms_buildExtHeaders_", "_pms_expectedSummaryFormulas_", "_pms_normF_"].forEach(function (n) { eval.call(null, 꺼내(마감, n)); });
 
 var 통과 = 0, 실패 = 0;
 function ok(이름, 참, 덧) {
