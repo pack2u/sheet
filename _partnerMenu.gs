@@ -40,6 +40,7 @@ function registerPartnerMenu_() {
     .addItem("   └ 📥 v2 업체발주 지금 가져오기", "partnerBridgeV2OrdersNow")
     .addItem("2️⃣ 이카운트 업로드용 판매현황 갱신", "partnerRebuildSalesUploadOwner")
     .addItem("   └ 🏝️ 도서산간 추가배송비 확인", "partnerCheckIslandShippingOwner")
+    .addItem("   └ 🏝️ 도서산간 주소 판정 (판매현황 전)", "partnerJudgeIslandByAddress")
     .addItem("3️⃣ 대리공급업체로 발주 Push", "partnerPushOrdersToExclusiveFormsOwner")
     // Push 가 중간에 끊겼을 때 이어서 밀 때 쓴다. 매일 흐름의 일부라 남긴다.
     .addItem("   └ 📋 임시기록 → 전용양식 Push", "partnerPushFromTempTabToExclusiveOwner")

@@ -4475,6 +4475,14 @@ function _po_collectSilentCore_(withSalesRebuild) {
   //   > "발주 수집때 제주도서산간을 인식해서 건당..5000원.. 세트상품일경우 10000원"
   //   세트분리(뉴) 원장이 도서산간으로 가른 주문에 금액을 넣으면, 바로 뒤 판매현황
   //   갱신이 OUT00001 줄을 같이 올린다. 곁다리라 실패해도 수집은 그대로 간다.
+  //   ★ 먼저 «주소»로 본다 — 판매현황 전에, 대리판매 허브 주문만 (_partnerIslandJudge.gs)
+  //     > "판매현황전에 확인하자는거야..세트분리 전에 대리판매업체들것만.."
+  //     그 뒤 세트분리 원장으로 놓친 것을 받친다(이미 올라간 옛 줄).
+  try {
+    if (typeof _island_judgeHubByAddress_ === "function") _island_judgeHubByAddress_();
+  } catch (eJdg) {
+    try { Logger.log("[ISLAND_JUDGE_ERR] " + String(eJdg.message || eJdg)); } catch (_) {}
+  }
   try {
     if (typeof _trigger_islandShipping_ === "function") _trigger_islandShipping_();
   } catch (eIsl) {

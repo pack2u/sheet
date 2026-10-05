@@ -120,6 +120,11 @@ var 수집 = 꺼내(주문, "_po_collectSilentCore_");
 ok("발주 수집 때 도서산간을 먼저 붙이고 판매현황을 갱신한다",
    수집.indexOf("_trigger_islandShipping_()") !== -1 &&
    수집.indexOf("_trigger_islandShipping_()") < 수집.indexOf("partnerRebuildSalesUploadSheet(true)"));
+ok("★ 판매현황 전에 «주소»로 먼저 본다 → 원장으로 받친다 → 판매현황 갱신",
+   수집.indexOf("_island_judgeHubByAddress_()") !== -1 &&
+   수집.indexOf("_island_judgeHubByAddress_()") < 수집.indexOf("_trigger_islandShipping_()") &&
+   수집.indexOf("_trigger_islandShipping_()") < 수집.indexOf("partnerRebuildSalesUploadSheet(true)"));
+ok("판정 열(도서산간판정)을 금액 열로 착각하지 않는다", _island_findFeeCol1_(["도서산간판정", "도서산간배송비"]) === 2);
 var 트리거 = 꺼내(웹, "_trigger_islandShipping_");
 ok("트리거는 허브 금액을 업체 시트에 그대로 넘긴다", 트리거.indexOf("hubResult.feeByUid") !== -1);
 ok("예전 박스×수량×5,000 계산이 남아 있지 않다", 섬.indexOf("uidBoxMap[uid] * qty") === -1 && 섬.indexOf("* _ISLAND_FEE_PER_QTY") === -1);

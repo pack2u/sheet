@@ -270,7 +270,8 @@ function _island_findFeeCol1_(headers) {
   if (!headers || !headers.length) return 0;
   for (var i = 0; i < headers.length; i++) {
     var h = String(headers[i] || "").replace(/\s/g, "");
-    if (h.indexOf("도서산간") !== -1 && h.indexOf("판매갱신") === -1) return i + 1;   //  표지 열(도서산간 판매갱신)은 아니다
+    //  표지 열(도서산간 판매갱신)·판정 열(도서산간판정)은 금액 열이 아니다
+    if (h.indexOf("도서산간") !== -1 && h.indexOf("판매갱신") === -1 && h.indexOf("판정") === -1) return i + 1;
   }
   return 0;
 }
