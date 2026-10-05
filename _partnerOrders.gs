@@ -4471,6 +4471,15 @@ function _po_collectSilentCore_(withSalesRebuild) {
   } catch (e) {
     try { Logger.log("[VOID_INVOICE_TRIGGER_ERR] " + String(e.message || e)); } catch (_) {}
   }
+  // ②-2 ★ 2026-10-05: 도서산간 추가배송비 — 판매현황 갱신 «앞»에 붙인다
+  //   > "발주 수집때 제주도서산간을 인식해서 건당..5000원.. 세트상품일경우 10000원"
+  //   세트분리(뉴) 원장이 도서산간으로 가른 주문에 금액을 넣으면, 바로 뒤 판매현황
+  //   갱신이 OUT00001 줄을 같이 올린다. 곁다리라 실패해도 수집은 그대로 간다.
+  try {
+    if (typeof _trigger_islandShipping_ === "function") _trigger_islandShipping_();
+  } catch (eIsl) {
+    try { Logger.log("[ISLAND_AFTER_COLLECT_ERR] " + String(eIsl.message || eIsl)); } catch (_) {}
+  }
   // ③ ★ 2026-07-02: 판매현황 갱신 (발주수집 후 자동 실행)
   //    ★ 2026-09-17: 오후 1시 회차에서만 돈다 (partnerCollectOrdersSilent_)
   if (!withSalesRebuild) {
@@ -4813,6 +4822,27 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
     .getRange(2, 1, hubLr - 1, 16)
     .getValues();
 
+  // 1-2) ★ 2026-10-05 도서산간 OUT00001 — 금액 칸과 «따로 두는» 완료 칸 (_partnerIslandSales.gs)
+  var islFeeVals = null, islFlagVals = null, islFlagCol = 0, islUpdates = [];
+  try {
+    var hubHdr = hubTab.getRange(1, 1, 1, hubTab.getLastColumn()).getDisplayValues()[0];
+    var islFeeCol = typeof _island_findFeeCol1_ === "function" ? _island_findFeeCol1_(hubHdr) : 0;
+    if (islFeeCol > 0 && typeof _po_islandSaleLine_ === "function") {
+      islFeeVals = hubTab.getRange(2, islFeeCol, hubLr - 1, 1).getValues();
+      islFlagCol = _po_islandFlagCol_(hubTab, hubHdr);
+      islFlagVals = hubTab.getRange(2, islFlagCol, hubLr - 1, 1).getValues();
+    }
+  } catch (eIsl) {
+    Logger.log("[도서산간 판매] 준비 실패 — 이번엔 도서산간 줄 없이 갑니다: " + eIsl.message);
+    islFeeVals = null;
+  }
+  function _islNeed_(r) {
+    if (!islFeeVals || !islFlagVals) return 0;
+    var fee = Number(islFeeVals[r][0]) || 0;
+    if (fee <= 0 || String(islFlagVals[r][0] || "").trim()) return 0;
+    return fee;
+  }
+
   // 2) 업체→거래처코드 매핑 구축
   var vendorMap = _po_buildVendorCustCdMap_();
 
@@ -4859,6 +4889,15 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
 
     // 이미 판매갱신 업 완료된 건 제외 (기존 "이카운트 업 완료", "판매현황 업 완료"도 호환)
     if (ecountUpRaw === "판매갱신 업 완료" || ecountUpRaw === "이카운트 업 완료" || ecountUpRaw === "판매현황 업 완료") {
+      //  ★ 2026-10-05 본 주문은 이미 올라갔어도, 그 뒤에 붙은 도서산간비는 올린다
+      var islFeeLate = _islNeed_(r);
+      if (islFeeLate && !_po_islandCancelLike_(stCompact)) {
+        var custCdLate = _po_resolveVendorCustCd_(String(row[1] || "").trim(), vendorMap);
+        if (custCdLate) {
+          out.push(_po_islandSaleLine_(row, islFeeLate, custCdLate, _shipYmd_, colCount));
+          islUpdates.push(r);
+        }
+      }
       skipCount++;
       _po_countReason_(skipReasons, "이미 판매갱신 업됨");
       continue;
@@ -4993,6 +5032,13 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
     out.push(line);
     // 반영 완료 목록에 현재 행 번호 기록 (2부터 시작하므로 r + 2)
     hubPUpdates.push(r + 2);
+
+    //  ★ 2026-10-05 도서산간비가 이미 붙어 있으면 본 주문 바로 아래에 OUT00001
+    var islFeeNow = _islNeed_(r);
+    if (islFeeNow) {
+      out.push(_po_islandSaleLine_(row, islFeeNow, custCd, _shipYmd_, colCount));
+      islUpdates.push(r);
+    }
   }
 
   // 5) 시트 생성/갱신 (전량 덮어쓰기 + 잔여 행 정리)
@@ -5009,6 +5055,13 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
       }
     }
     hubTab.getRange(2, 16, hubData.length, 1).setValues(pColVals);
+    SpreadsheetApp.flush();
+  }
+
+  // 5-2b) ★ 2026-10-05 도서산간 줄을 올린 행 — 「도서산간 판매갱신」 칸에 완료
+  if (islUpdates.length > 0 && islFlagCol > 0 && islFlagVals) {
+    for (var iu = 0; iu < islUpdates.length; iu++) islFlagVals[islUpdates[iu]][0] = _PO_ISLAND_FLAG_DONE_;
+    hubTab.getRange(2, islFlagCol, islFlagVals.length, 1).setValues(islFlagVals);
     SpreadsheetApp.flush();
   }
 
@@ -5042,7 +5095,9 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
     "\n" +
     "- 반영: " +
     out.length +
-    "건\n" +
+    "건" +
+    (islUpdates.length ? " (그중 도서산간 OUT00001 " + islUpdates.length + "줄)" : "") +
+    "\n" +
     "- 스킵: " +
     skipCount +
     "건\n" +

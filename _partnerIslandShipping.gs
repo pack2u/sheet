@@ -53,21 +53,21 @@ function _island_core_(ui) {
   var uidBoxMap = _island_loadIslandUidBoxMap_();
   if (!uidBoxMap || Object.keys(uidBoxMap).length === 0) {
     ui.alert(
-      "ℹ️ 도서산간 탭에서 UID를 읽지 못했습니다.\n\n" +
+      "ℹ️ 세트분리(뉴) 주문라인원장에서 도서산간 주문을 찾지 못했습니다.\n\n" +
       "확인:\n" +
-      "1) 소스 시트의 도서산간 탭(P열)에 UID가 있는지\n" +
-      "2) 시트/탭 접근 권한"
+      "1) 세트분리(뉴)를 돌렸는지 (원장에 로젠택배-도서산간 경로가 있어야 합니다)\n" +
+      "2) 세트분리(뉴) 시트 접근 권한"
     );
     return;
   }
 
   var totalIslandUids = Object.keys(uidBoxMap).length;
 
-  var hubResult = _island_applyToHub_(uidBoxMap);
+  var hubResult = _island_applyToHub_(uidBoxMap, { reconcile: true });
 
   var partnerResult = { applied: 0, skipped: 0, files: 0, errors: [], unmatchedHint: "" };
   if (hubResult.vendorNames && hubResult.vendorNames.length > 0) {
-    partnerResult = _island_applyToPartnerSheets_(uidBoxMap, hubResult.vendorNames);
+    partnerResult = _island_applyToPartnerSheets_(uidBoxMap, hubResult.vendorNames, hubResult.feeByUid);
   }
 
   var elapsed = Math.round((Date.now() - t0) / 1000);
@@ -75,7 +75,7 @@ function _island_core_(ui) {
 
   var msg = "🏝️ 도서산간 추가배송비 적용 완료 (" + elapsed + "초)\n" +
     "═══════════════════════════════\n" +
-    "도서산간 탭 UID: " + totalIslandUids + "건\n" +
+    "세트분리(뉴) 도서산간 고유ID: " + totalIslandUids + "건 (줄마다 5,000 · 세트 10,000)\n" +
     "허브 매칭: " + hubResult.matched + "건 (열=" + feeColLabel + ")\n\n" +
     "── 허브 도서산간배송비 ──\n" +
     "  적용: " + hubResult.applied + "건 / 이미있음: " + hubResult.skipped + "건\n\n" +
@@ -107,7 +107,112 @@ function _island_normUid_(raw) {
     .trim();
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ v3 (2026-10-05) 세트분리(뉴) 로젠 도서산간과 연동 ★
+ *
+ *  > "발주 수집때 제주도서산간을 인식해서 건당..5000원.. 세트상품일경우 10000원"
+ *  > "세트분리(뉴)에 로젠택배 도서산간이 연동되있어 이부분과 연동시켜줘"
+ *
+ *  ① 누가 도서산간인가 — 세트분리(뉴) 「주문라인원장」이 정한다.
+ *     세트분리는 도선료표·우편번호·확정 지역명으로 섬을 가려 「로젠택배-도서산간」
+ *     (대리발송이면 「…(위탁배송)」)으로 보낸다. 산간은 배가 아니라서 일반 로젠으로
+ *     가지만 추가운임은 붙는다(도서권역=산간) — 그것도 센다.
+ *     사람이 도서산간 탭 조치에 「발송」을 적어 일반으로 뺀 건은 경로가 로젠택배로
+ *     바뀌어 원장에 다시 적힌다 → 같은 고유ID 의 «마지막» 기록을 따른다.
+ *     예전 원천(옛 세트분리 「도서산간」 탭)은 더 안 읽는다.
+ *  ② 얼마인가 — 주문 줄마다 5,000원. 품목명에 한글 「세트」가 있으면 10,000원
+ *     (몸통·뚜껑이 따로 나간다). 영문 SET 은 한 박스라 5,000원.
+ *     수량·박스 수와 상관없다. 예전 「박스×수량×5,000」은 버렸다.
+ *     이미 금액이 들어 있는 줄은 그대로 둔다(예전 규칙으로 들어간 것 포함).
+ * ══════════════════════════════════════════════════════════════
+ */
+var _ISLAND_SS_ID_          = "1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo";   // 세트분리(뉴)
+var _ISLAND_LEDGER_TAB_     = "주문라인원장";
+var _ISLAND_LEDGER_TAIL_    = 40000;   // 원장 끝에서 이만큼만 본다 (석 달 남짓)
+var _ISLAND_FEE_LINE_       = 5000;
+var _ISLAND_FEE_SET_        = 10000;
+
+/** 주문 줄 하나의 도서산간비 — 한글 「세트」면 10,000, 아니면 5,000 */
+function _island_lineFee_(itemName) {
+  return String(itemName == null ? "" : itemName).indexOf("세트") !== -1 ? _ISLAND_FEE_SET_ : _ISLAND_FEE_LINE_;
+}
+
+/**
+ * 고유ID 열쇠 — 「수취인/0901-ds-4581」·「d0930000044_S2」·「…#2」·「…|코드」를 같은 번호로.
+ * (CS _cs_orderUid_ · 허브 _pep_uidFromOrdererCell_ 와 같은 규칙)
+ */
+function _island_uidKey_(raw) {
+  var s = _island_normUid_(raw);
+  var cut = Math.max(s.lastIndexOf("/"), s.lastIndexOf("／"));
+  if (cut >= 0) s = s.slice(cut + 1);
+  s = s.replace(/#\d+$/, "");
+  var bar = s.indexOf("|");
+  if (bar >= 0) s = s.slice(0, bar);
+  return s.replace(/_S\d+$/i, "");
+}
+
+/**
+ * 순수 — 원장 머리글·줄들에서 «지금» 도서산간인 고유ID 를 고른다. 시험이 직접 부른다.
+ * @return {Object} { 고유ID: { 권역, 경로 } }
+ */
+function _island_pickFromLedger_(header, rows) {
+  function col(name) {
+    for (var i = 0; i < header.length; i++) if (String(header[i]).replace(/\s/g, "") === name) return i;
+    return -1;
+  }
+  var cUid = col("고유ID"), cRoute = col("경로"), cZone = col("도서권역");
+  if (cUid < 0 || cRoute < 0) return {};
+  var last = {};
+  for (var r = 0; r < rows.length; r++) {
+    var uid = _island_uidKey_(rows[r][cUid]);
+    if (!uid) continue;
+    var route = String(rows[r][cRoute] || "").trim();
+    var zone = cZone >= 0 ? String(rows[r][cZone] || "").trim() : "";
+    var 섬 = route.indexOf("도서산간") !== -1 || zone === "산간";
+    last[uid] = 섬 ? { 권역: zone || "도서", 경로: route } : null;   //  나중 기록이 이긴다
+  }
+  var out = {};
+  for (var k in last) if (last[k]) out[k] = last[k];
+  return out;
+}
+
+/** 세트분리(뉴) 주문라인원장 → { 고유ID: {권역, 경로} } */
 function _island_loadIslandUidBoxMap_() {
+  try {
+    var ss = SpreadsheetApp.openById(_ISLAND_SS_ID_);
+    var tab = ss.getSheetByName(_ISLAND_LEDGER_TAB_);
+    if (!tab) { Logger.log("[도서산간] 세트분리(뉴)에 " + _ISLAND_LEDGER_TAB_ + " 탭 없음"); return null; }
+    var lr = tab.getLastRow(), lc = tab.getLastColumn();
+    if (lr < 2) return null;
+    var header = tab.getRange(1, 1, 1, lc).getValues()[0];
+    var 시작 = Math.max(2, lr - _ISLAND_LEDGER_TAIL_ + 1);
+    //  필요한 세 칸만 읽는다 (원장은 50칸이 넘는다)
+    var 이름들 = ["고유ID", "경로", "도서권역"], 칸들 = [];
+    for (var n = 0; n < 이름들.length; n++) {
+      var at = -1;
+      for (var h = 0; h < header.length; h++) if (String(header[h]).replace(/\s/g, "") === 이름들[n]) { at = h; break; }
+      칸들.push(at);
+    }
+    if (칸들[0] < 0 || 칸들[1] < 0) { Logger.log("[도서산간] 원장 머리글에 고유ID·경로가 없음"); return null; }
+    var 세로 = 칸들.map(function (c) {
+      return c < 0 ? null : tab.getRange(시작, c + 1, lr - 시작 + 1, 1).getValues();
+    });
+    var rows = [];
+    for (var i = 0; i < lr - 시작 + 1; i++) {
+      rows.push([세로[0][i][0], 세로[1][i][0], 세로[2] ? 세로[2][i][0] : ""]);
+    }
+    var map = _island_pickFromLedger_(이름들, rows);
+    Logger.log("[도서산간] 세트분리(뉴) 원장 " + rows.length + "줄 → 도서산간 고유ID " + Object.keys(map).length + "건");
+    return Object.keys(map).length ? map : null;
+  } catch (e) {
+    Logger.log("[도서산간] 세트분리(뉴) 원장 읽기 실패: " + e.message);
+    return null;
+  }
+}
+
+/** (옛) 옛 세트분리 「도서산간」 탭 — 더 안 쓴다. 되돌릴 때를 위해 남긴다 */
+function _island_loadOldIslandTab_() {
   try {
     var ss = SpreadsheetApp.openById(_ISLAND_SOURCE_SHEET_ID);
     var tab = _pt_getSheetByGid(ss, _ISLAND_SOURCE_TAB_GID);
@@ -165,7 +270,7 @@ function _island_findFeeCol1_(headers) {
   if (!headers || !headers.length) return 0;
   for (var i = 0; i < headers.length; i++) {
     var h = String(headers[i] || "").replace(/\s/g, "");
-    if (h.indexOf("도서산간") !== -1) return i + 1;
+    if (h.indexOf("도서산간") !== -1 && h.indexOf("판매갱신") === -1) return i + 1;   //  표지 열(도서산간 판매갱신)은 아니다
   }
   return 0;
 }
@@ -196,6 +301,16 @@ function _island_findQtyCol0_(headers) {
   return -1;
 }
 
+/** 품목명 열 (0-based) — 「품목명」·「상품명」. 「출력품목명」은 아니다. 없으면 -1 */
+function _island_findItemCol0_(headers) {
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || "").replace(/\s/g, "");
+    if (h.indexOf("출력") !== -1) continue;
+    if (h.indexOf("품목명") !== -1 || h.indexOf("상품명") !== -1) return i;
+  }
+  return -1;
+}
+
 /** ARRAYFORMULA 스필로 lastRow가 부풀어 있을 때 C열(코드) 기준 실데이터 끝행 */
 function _island_findLastDataRow_(tab, codeCol1) {
   var lr = tab.getLastRow();
@@ -214,9 +329,12 @@ function _island_findLastDataRow_(tab, codeCol1) {
 //  허브 적용
 // ═══════════════════════════════════════════
 
-function _island_applyToHub_(uidBoxMap) {
+/** opts.reconcile: 이미 금액이 있는 줄의 업체도 업체 시트를 맞춰 본다 (메뉴에서만 — 느리다) */
+function _island_applyToHub_(uidBoxMap, opts) {
+  opts = opts || {};
   var result = {
-    applied: 0, skipped: 0, matched: 0, errors: [], vendorNames: [], feeCol: 0
+    applied: 0, skipped: 0, matched: 0, errors: [], vendorNames: [], feeCol: 0,
+    feeByUid: {}   //  업체 시트가 허브와 «같은 금액»을 쓰게 넘긴다
   };
 
   try {
@@ -242,8 +360,8 @@ function _island_applyToHub_(uidBoxMap) {
     if (uidCol0 < 0) uidCol0 = 2; // C열
     var statusCol0 = _island_findStatusCol0_(headers);
     if (statusCol0 < 0) statusCol0 = 14; // O열
-    var qtyCol0 = _island_findQtyCol0_(headers);
-    if (qtyCol0 < 0) qtyCol0 = 6; // G열
+    var itemCol0 = _island_findItemCol0_(headers);
+    if (itemCol0 < 0) itemCol0 = 5; // F열 품목명
 
     var feeArr = [];
     for (var i = 0; i < hubData.length; i++) {
@@ -254,7 +372,7 @@ function _island_applyToHub_(uidBoxMap) {
     var changedRows = [];
 
     for (var r = 0; r < hubData.length; r++) {
-      var uid = _island_normUid_(hubData[r][uidCol0]);
+      var uid = _island_uidKey_(hubData[r][uidCol0]);
       if (!uid || !uidBoxMap[uid]) continue;
 
       result.matched++;
@@ -263,15 +381,16 @@ function _island_applyToHub_(uidBoxMap) {
       if (existing > 0) {
         result.skipped++;
         var vn0 = String(hubData[r][1] || "").trim();
-        if (vn0) vendorSet[vn0] = true;
+        if (vn0 && opts.reconcile) vendorSet[vn0] = true;
+        result.feeByUid[uid] = existing;   //  업체 시트도 허브와 같은 금액으로
         continue;
       }
 
-      var status = statusCol0 >= 0 ? String(hubData[r][statusCol0] || "").trim() : "";
-      var isCombinedShip = status.indexOf("합배송") !== -1;
-      var qty = parseFloat(hubData[r][qtyCol0]) || 1;
-      var boxes = isCombinedShip ? 1 : (uidBoxMap[uid] * qty);
-      var fee = boxes * _ISLAND_FEE_PER_QTY;
+      var status = statusCol0 >= 0 ? String(hubData[r][statusCol0] || "").replace(/\s/g, "") : "";
+      if (status.indexOf("취소") !== -1 || status.indexOf("반품") !== -1 || status.indexOf("불용") !== -1) continue;
+      //  ★ v3: 주문 줄마다 5,000 · 한글 「세트」 10,000 (수량·박스·합배송과 상관없이)
+      var fee = _island_lineFee_(hubData[r][itemCol0]);
+      result.feeByUid[uid] = fee;
 
       feeArr[r][0] = fee;
       changedRows.push(_island_colToLetter_(feeCol) + (r + 2));
@@ -333,8 +452,9 @@ function _island_ensureHubFeeCol_(hubTab) {
 //  업체 시트 적용
 // ═══════════════════════════════════════════
 
-function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
+function _island_applyToPartnerSheets_(uidBoxMap, vendorNames, feeByUid) {
   var result = { applied: 0, skipped: 0, files: 0, errors: [] };
+  feeByUid = feeByUid || {};
 
   var files = _pt_listFiles();
   if (!files || !files.length) return result;
@@ -370,7 +490,7 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
       var uidColIdx = _island_findUidCol0_(headers);
       if (uidColIdx < 0) uidColIdx = 12; // M열 폴백
       var statusColIdx = _island_findStatusCol0_(headers);
-      var qtyColIdx = _island_findQtyCol0_(headers);
+      var itemColIdx = _island_findItemCol0_(headers);
 
       var oColArr = [];
       for (var i = 0; i < data.length; i++) {
@@ -380,17 +500,16 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
       var changedRows = [];
 
       for (var r = 0; r < data.length; r++) {
-        var uid = _island_normUid_(data[r][uidColIdx]);
+        var uid = _island_uidKey_(data[r][uidColIdx]);
         if (!uid || !uidBoxMap[uid]) continue;
 
         var existing = Number(data[r][feeCol - 1]) || 0;
         if (existing > 0) { result.skipped++; continue; }
 
-        var status = statusColIdx !== -1 ? String(data[r][statusColIdx] || "").trim() : "";
-        var isCombinedShip = status.indexOf("합배송") !== -1;
-        var qty = qtyColIdx !== -1 ? (parseFloat(data[r][qtyColIdx]) || 1) : 1;
-        var boxes = isCombinedShip ? 1 : (uidBoxMap[uid] * qty);
-        var fee = boxes * _ISLAND_FEE_PER_QTY;
+        var status = statusColIdx !== -1 ? String(data[r][statusColIdx] || "").replace(/\s/g, "") : "";
+        if (status.indexOf("취소") !== -1 || status.indexOf("반품") !== -1 || status.indexOf("불용") !== -1) continue;
+        //  ★ v3: 허브가 정한 금액을 그대로 — 허브에 없을 때만 이 줄 품목명으로 정한다
+        var fee = feeByUid[uid] || _island_lineFee_(itemColIdx !== -1 ? data[r][itemColIdx] : "");
 
         oColArr[r][0] = fee;
         changedRows.push(_island_colToLetter_(feeCol) + (r + 2));
