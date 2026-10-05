@@ -4782,6 +4782,14 @@ function partnerRebuildSalesUploadSheet(silent) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) return;
 
+  // ★ 2026-10-05 판매현황 «전에» 도서산간 주소 판정 — 손으로 갱신해도 OUT00001 이 빠지지 않게.
+  //   이미 본 줄은 다시 안 보므로 수집 회차에서 방금 돌았으면 금방 지나간다.
+  try {
+    if (typeof _island_judgeHubByAddress_ === "function") _island_judgeHubByAddress_();
+  } catch (eIsl) {
+    Logger.log("[도서산간 판정] 판매현황 앞 실행 실패(무시): " + eIsl.message);
+  }
+
   var lock = LockService.getDocumentLock();
   if (!lock.tryLock(45000)) {
     if (ui) {

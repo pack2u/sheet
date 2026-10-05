@@ -136,6 +136,8 @@ function partnerPushInvoicesOwner() {
 function partnerCollectOrdersOwner() {
   _owner_runWithNotify_("발주 수집", function() {
     partnerCollectOrders();
+    // ★ 2026-10-05: 손으로 수집해도 도서산간 주소 판정을 같이 한다 (자동 회차와 같게)
+    try { _island_judgeHubByAddress_(); } catch (eIsl) { Logger.log("[도서산간 판정] " + eIsl.message); }
     // ★ 2026-07-08: 발주수집 후 자동 중복 감지
     _oa_autoCheckDuplicates_("발주탭");
   });
