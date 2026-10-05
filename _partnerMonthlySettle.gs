@@ -1625,25 +1625,82 @@ function _pms_findTabByKey_(ss, key) {
 // ──────────────────────────────────────────────────────
 function partnerRepairMonthlySettleTabs() {
   var ui = SpreadsheetApp.getUi();
+  var files = _pt_listFiles();
+  if (!files || !files.length) return ui.alert("협력업체 파일 없음");
+
+  // ★ 2026-10-05: 업체·월 선택 실행 (전체 실행 시 6분 시간초과 방지)
+  var names = [];
+  for (var i = 0; i < files.length; i++) {
+    names.push((i + 1) + ". " + files[i].name.replace("[협력업체] ", ""));
+  }
+  var listText = names.join("\n");
+  if (listText.length > 3500) {
+    listText = names.slice(0, 60).join("\n") + "\n… (번호 또는 all)";
+  }
+  var vResp = ui.prompt(
+    "🔧 월별 마감 탭 레이아웃 보정 — 업체 선택",
+    "요약·헤더·취소반품열·보호를 최신 형식으로 재적용합니다.\n" +
+      "업체 번호(쉼표로 여러 개) 또는 all:\n\n" + listText,
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (vResp.getSelectedButton() !== ui.Button.OK) return;
+  var input = String(vResp.getResponseText() || "").trim().toLowerCase();
+  var selected = [];
+  if (input === "all" || input === "전체") {
+    selected = files.slice(0);
+  } else {
+    var nums = input.split(/[,\s]+/);
+    var seen = {};
+    for (var n = 0; n < nums.length; n++) {
+      if (!nums[n]) continue;
+      var idx = parseInt(nums[n], 10) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= files.length || seen[idx]) continue;
+      seen[idx] = true;
+      selected.push(files[idx]);
+    }
+  }
+  if (!selected.length) return ui.alert("선택된 업체가 없습니다.");
+
+  var mResp = ui.prompt(
+    "🔧 월별 마감 탭 레이아웃 보정 — 대상 월",
+    "보정할 월을 입력하세요 (예: 2026-09 또는 9).\n비워두면 해당 업체의 모든 월 탭을 보정합니다.",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (mResp.getSelectedButton() !== ui.Button.OK) return;
+  var mText = String(mResp.getResponseText() || "").trim();
+  var wantY = null, wantM = null;
+  if (mText) {
+    var mm = mText.match(/^(\d{4})\D+(\d{1,2})$/) || mText.match(/^(\d{4})(\d{2})$/);
+    if (mm) { wantY = parseInt(mm[1], 10); wantM = parseInt(mm[2], 10); }
+    else if (/^\d{1,2}$/.test(mText)) { wantM = parseInt(mText, 10); }
+    else return ui.alert("월 형식을 알 수 없습니다: " + mText);
+  }
+
+  var selNames = selected.map(function (f) { return f.name.replace("[협력업체] ", ""); });
   var go = ui.alert(
     "🔧 월별 마감 탭 레이아웃 보정",
-    "모든 협력업체 파일의 '(YYYY년 M월) 발주 마감' 탭을 찾아\n" +
-    "요약·헤더·취소반품열·보호를 최신 형식으로 재적용합니다.\n계속할까요?",
+    "업체 " + selected.length + "곳: " + selNames.join(", ") + "\n" +
+      "대상 월: " + (mText ? (wantY ? wantY + "년 " : "") + wantM + "월" : "전체") + "\n\n계속할까요?",
     ui.ButtonSet.YES_NO
   );
   if (go !== ui.Button.YES) return;
 
-  var files = _pt_listFiles();
-  if (!files || !files.length) return ui.alert("협력업체 파일 없음");
-
-  var fixed = 0, errs = [];
+  var started = Date.now();
+  var LIMIT_MS = 5 * 60 * 1000; // 6분 제한 전에 안전하게 멈춤
+  var fixed = 0, errs = [], doneVendors = [], skipped = [];
   var tabPattern = /^\((\d{4})년 (\d{1,2})월\) 발주 마감$/;
 
-  files.forEach(function(fileInfo) {
+  for (var fi = 0; fi < selected.length; fi++) {
+    var fileInfo = selected[fi];
+    var vLabel = fileInfo.name.replace("[협력업체] ", "");
+    if (Date.now() - started > LIMIT_MS) {
+      skipped = selNames.slice(fi);
+      break;
+    }
     try {
       var ss       = SpreadsheetApp.openById(fileInfo.id);
       var orderTab = ss.getSheetByName(_PMS_ORDER_TAB);
-      if (!orderTab) return;
+      if (!orderTab) { errs.push("[" + vLabel + "] 발주 및 송장조회 탭 없음"); continue; }
 
       var lc0     = orderTab.getMaxColumns();
       var headers = orderTab.getRange(1, 1, 1, lc0).getValues()[0];
@@ -1658,23 +1715,30 @@ function partnerRepairMonthlySettleTabs() {
       var returnC  = extLc - 5;
       var cancelC  = extLc - 6;
 
+      var nTabs = 0;
       ss.getSheets().forEach(function(sh) {
-        if (!String(sh.getName()).match(tabPattern)) return;
+        var m = String(sh.getName()).match(tabPattern);
+        if (!m) return;
+        if (wantM !== null && parseInt(m[2], 10) !== wantM) return;
+        if (wantY !== null && parseInt(m[1], 10) !== wantY) return;
 
         _pms_layoutArchiveTab_(sh, extHdr, cMap, extLc, cancelC, returnC, reasonC, retInvC, shipFeeC, islandFeeC, etcFeeC, false);
         _pms_ensureCheckboxes_(sh, cancelC, returnC);
         _pms_applyProtection_(sh);
-        fixed++;
+        fixed++; nTabs++;
         SpreadsheetApp.flush();
       });
+      doneVendors.push(vLabel + "(" + nTabs + ")");
     } catch(e) {
-      errs.push("[" + fileInfo.name + "] " + e.message);
+      errs.push("[" + vLabel + "] " + e.message);
     }
-  });
+  }
 
   ui.alert(
-    "✅ 월별 마감 탭 보정 완료\n보정: " + fixed + "개 탭"
-    + (errs.length ? "\n⚠ 오류:\n" + errs.join("\n") : "")
+    "✅ 월별 마감 탭 보정 완료\n보정: " + fixed + "개 탭\n" +
+    "완료 업체: " + (doneVendors.join(", ") || "없음")
+    + (skipped.length ? "\n\n⏱ 시간 제한으로 멈춤 — 남은 업체: " + skipped.join(", ") + "\n(다시 실행해서 남은 업체 번호만 선택하세요)" : "")
+    + (errs.length ? "\n\n⚠ 오류:\n" + errs.join("\n") : "")
   );
 }
 
