@@ -21,7 +21,7 @@ function 꺼내(이름) {
   throw new Error(이름 + " 끝 못 찾음");
 }
 ["_pms_vendorLabel_", "_pms_vendorNo_", "_pms_vendorNames_", "_pms_parseVendorPick_",
- "_pms_repairTabsForFiles_", "_pms_repairMemoGet_", "_pms_repairMemoPut_", "_pms_repairMemoClear_", "_pms_parseMonthPick_", "_pms_monthMatches_", "_pms_monthLabel_", "_pms_archiveLayout_", "_pms_archiveLayoutFrom_", "_pms_isOurRowRule_"].forEach(function (n) { eval.call(null, 꺼내(n)); });
+ "_pms_repairTabsForFiles_", "_pms_repairMemoGet_", "_pms_repairMemoPut_", "_pms_repairMemoClear_", "_pms_parseMonthPick_", "_pms_monthMatches_", "_pms_monthLabel_", "_pms_archiveLayout_", "_pms_archiveLayoutFrom_", "_pms_isOurRowRule_", "_pms_newLayout_"].forEach(function (n) { eval.call(null, 꺼내(n)); });
 
 var 통과 = 0, 실패 = 0;
 function ok(이름, 참, 덧) {
@@ -54,6 +54,7 @@ console.log("\n[1] 업체 고르기");
 console.log("\n[2] ★ 시간 한도 — 6분에 끊기기 전에 스스로 멈추고 남은 업체를 알려 준다 ★");
 global._PMS_ORDER_TAB = "발주";
 global._PMS_HEADER_ROW = 4;
+global._PMS_OLD_EXT_ = ["취소", "반품", "취소반품사유", "반품송장번호", "반품배송비", "도서산간배송비", "기타정산"];
 var 캐시 = {};
 global.CacheService = { getScriptCache: function () { return {
   get: function (k) { return 캐시[k] || null; },
@@ -154,50 +155,56 @@ _pms_repairTabsForFiles_(files, 0, { y: null, m: 9 });
 _pms_repairTabsForFiles_(files, 0, { y: 2025, m: 9 });
 같나("해가 다르면 안 고친다", 고친탭.length, 0);
 
-console.log("\n[2d] ★ 칸 배치는 그 마감 탭 4행에서 — 후아코리아처럼 발주 탭이 바뀐 뒤에도 안 밀린다 ★");
-/*  보정이 «지금 발주 탭»(27칸)으로 배치를 만들면, 16칸으로 만들어진 마감 탭에 머리글을
-    엉뚱하게 덮고 요약 수식이 빈 AB·AC 칸을 가리켰다. */
+console.log("\n[2d] ★ 칸 배치는 그 마감 탭 4행에서 · 새 모양(취소·반품 없음 · 도서산간은 O열) ★");
+/*  > "월 마감텝에서도 취소 반품 (Q,R열) 삭제해줘. O열 도서산간 배송비만 재대로 붙게해줘"
+    옛 모양을 알아보고(지울 칸 자리), 새 모양을 알아보고, 둘 다 아니면 발주 탭 폭으로. */
 (function () {
-  var 진짜 = global._pms_buildColMap_, 진짜ext = global._pms_buildExtHeaders_;
+  var 진짜 = global._pms_buildColMap_;
   global._pms_buildColMap_ = function (h) {
     var m = { date: -1, price: -1, qty: -1 };
     h.forEach(function (x, i) { x = String(x); if (x === "일자" && m.date < 0) m.date = i; if (x.indexOf("정산금액") >= 0 && m.price < 0) m.price = i; });
     return m;
   };
-  global._pms_buildExtHeaders_ = function (headers, lc) {
-    var b = headers.slice(0, lc);
-    return b.concat(["취소", "반품", "취소반품사유", "반품송장번호", "반품배송비", "도서산간배송비", "기타정산"]);
-  };
-  //  마감 탭 4행: A #REF! · B 일자 · C..K · L 정산금액 · M..P · Q 취소 · R 반품 …
-  var row4 = ["#REF!", "일자"]; while (row4.length < 11) row4.push("칸" + row4.length);
-  row4.push("정산금액"); while (row4.length < 16) row4.push("칸" + row4.length);
-  row4 = row4.concat(["취소", "반품", "취소반품사유", "반품송장번호", "반품배송비", "도서산간배송비", "기타정산"]);
-  //  지금 발주 탭: 27칸, L 은 「정산금액(자동)」
+  //  원본 16칸: A #REF! · B 일자 · … · L 정산금액 · … · O 도서산간배송비 · P
+  var 원본 = ["#REF!", "일자"]; while (원본.length < 11) 원본.push("칸" + 원본.length);
+  원본.push("정산금액"); while (원본.length < 14) 원본.push("칸" + 원본.length);
+  원본.push("도서산간배송비"); 원본.push("칸15");
+  var 옛 = 원본.concat(["취소", "반품", "취소반품사유", "반품송장번호", "반품배송비", "도서산간배송비", "기타정산"]);
   var 발주 = ["거래처명(자동)", "일자"]; while (발주.length < 11) 발주.push("칸" + 발주.length);
   발주.push("정산금액(자동)"); while (발주.length < 27) 발주.push("새칸" + 발주.length);
-  var L = _pms_archiveLayoutFrom_(row4, 발주, 27, true);
-  같나("배치는 탭에서 읽는다", L.출처, "탭");
-  같나("취소 = Q(17)", L.cancelC, 17);
-  같나("반품 = R(18)", L.returnC, 18);
-  같나("기타정산 = W(23)", L.etcFeeC, 23);
+  발주[14] = "도서산간배송비";
+
+  var L = _pms_archiveLayoutFrom_(옛, 발주, 27, true);
+  같나("옛 모양을 알아본다 — 취소 Q(17)·반품 R(18)·뒤쪽 도서산간 V(22)·기타정산 W(23)",
+    [L.구형.cancel, L.구형.ret, L.구형.island, L.구형.etc].join(","), "17,18,22,23");
+  같나("새 모양 = 원본 16칸 + 기타정산", L.extHdr.slice(14).join(","), "도서산간배송비,칸15,기타정산");
+  같나("도서산간은 원본 O(15)", L.islandC, 15);
+  같나("기타정산은 Q(17)", L.etcC, 17);
   같나("깨진 A4 는 발주 탭 이름으로 메운다", L.extHdr[0] + " / 메움 " + L.메움.join(","), "거래처명(자동) / 메움 0");
-  같나("금액 칸 머리글은 「정산금액」 (마감 이동과 같이)", L.extHdr[11], "정산금액");
-  var row4b = row4.slice(); row4b[11] = "정산금액(자동)";
-  같나("「정산금액(자동)」이어도 「정산금액」으로", _pms_archiveLayoutFrom_(row4b, 발주, 27, true).extHdr[11], "정산금액");
-  var 깨진 = row4.slice(0, 16);   //  취소·반품 머리글이 없는 탭
-  var L2 = _pms_archiveLayoutFrom_(깨진, 발주, 27, true);
-  같나("4행에 없으면 마감 이동과 같은 폭(최대 20칸)으로", L2.출처 + " " + L2.cancelC, "발주 21");
+  같나("금액 칸 머리글은 「정산금액」", L.extHdr[11], "정산금액");
+
+  var 새 = 원본.concat(["기타정산"]);
+  var N = _pms_archiveLayoutFrom_(새, 발주, 27, true);
+  같나("새 모양을 알아본다 (옛 칸 자리 없음)", [N.출처, N.구형, N.islandC, N.etcC].join(","), "탭,,15,17");
+  var 새빈 = 새.concat(["", ""]);
+  같나("뒤에 빈 칸이 있어도 새 모양", _pms_archiveLayoutFrom_(새빈, 발주, 27, true).etcC, 17);
+
+  var 섬없음 = 원본.slice(0, 14).concat(["칸14", "칸15"]);   //  원본에 도서산간 칸이 없는 옛 파일
+  var S = _pms_archiveLayoutFrom_(섬없음.concat(["취소", "반품", "취소반품사유", "반품송장번호", "반품배송비", "도서산간배송비", "기타정산"]), 발주, 27, true);
+  같나("원본에 도서산간이 없으면 뒤에 하나 둔다 — 원본+도서산간+기타정산", [S.addIsland, S.islandC, S.etcC].join(","), "true,17,18");
+
+  var 깨진 = 원본.slice();   //  취소·반품도 기타정산도 없는 탭
+  같나("둘 다 아니면 마감 이동과 같은 폭(최대 20칸) + 기타정산", _pms_archiveLayoutFrom_(깨진, 발주, 27, true).etcC, 21);
   같나("4행에도 없고 발주 탭도 없으면 건너뛴다", _pms_archiveLayoutFrom_(깨진, [], 0, false), null);
-  global._pms_buildColMap_ = 진짜; global._pms_buildExtHeaders_ = 진짜ext;
+  global._pms_buildColMap_ = 진짜;
 })();
 
 function 규칙(f) { return { getBooleanCondition: function () { return f == null ? null : { getCriteriaValues: function () { return [f]; } }; } }; }
-ok("우리 칠하기 규칙을 알아본다", _pms_isOurRowRule_(규칙('=INDIRECT("R[0]C27",FALSE)=TRUE')));
-ok("  옛 칸 자리의 것도 우리 것", _pms_isOurRowRule_(규칙('=INDIRECT("R[0]C17",FALSE)=TRUE')));
+ok("옛 칠하기 규칙을 알아본다", _pms_isOurRowRule_(규칙('=INDIRECT("R[0]C27",FALSE)=TRUE')));
 ok("  사장님이 만든 다른 규칙은 안 건드린다", !_pms_isOurRowRule_(규칙("=$A5>100")));
 ok("  색 범위 규칙(조건 없음)도 안 건드린다", !_pms_isOurRowRule_(규칙(null)));
-ok("보정은 우리 규칙을 걷어 내고 두 개만 다시 넣는다", 꺼내("_pms_setRowRules_").indexOf("!_pms_isOurRowRule_(rule)") >= 0 &&
-   꺼내("_pms_layoutArchiveTab_").indexOf("_pms_setRowRules_(") >= 0);
+ok("레이아웃은 옛 칠하기 규칙을 걷어 낸다 (새로 넣지 않는다)", 꺼내("_pms_layoutArchiveTab_").indexOf("_pms_removeRowRules_(") >= 0 &&
+   꺼내("_pms_layoutArchiveTab_").indexOf("newConditionalFormatRule") < 0);
 ok("업체 보정은 빠른 보정을 쓴다", 꺼내("_pms_repairTabsForFiles_").indexOf("_pms_quickRepairTab_(sh, L)") >= 0);
 var 체크본 = 꺼내("_pms_ensureCheckboxes_");
 ok("체크박스는 첫 행이 아니라 모든 행을 본다", 체크본.indexOf("getRange(_PMS_DATA_START, cancelC, rowCount, 2).getDataValidations()") >= 0);

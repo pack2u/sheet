@@ -951,22 +951,8 @@ function _pms_processOneFile_(ss, todayNum, archivedUids, hubDateByUid) {
     return _pms_ensureViewerMaps_().name;
   }
 
-  var extHeaders = _pms_buildExtHeaders_(headers, lc);
-  // 마감탭 금액열 헤더는 줄합계 의미로 통일
-  if (cMap.price !== -1 && cMap.price < extHeaders.length) {
-    var _ph0 = String(extHeaders[cMap.price] || "").replace(/\s/g, "");
-    if (_ph0 && _ph0 !== "정산금액") {
-      extHeaders[cMap.price] = "정산금액";
-    }
-  }
-  var extLc      = extHeaders.length;
-  var etcFeeC    = extLc;
-  var islandFeeC = extLc - 1;
-  var shipFeeC   = extLc - 2;
-  var retInvC    = extLc - 3;
-  var reasonC    = extLc - 4;
-  var returnC    = extLc - 5;
-  var cancelC    = extLc - 6;
+  //  ★ 2026-10-05 새 마감탭 모양 — 원본(O열 도서산간 포함) + 기타정산 (_pms_newLayout_)
+  var Lord = _pms_layoutFromOrder_(headers, lc);
 
   // ★ 고유ID 열 인덱스 — 루프 밖에서 1회만 산출
   var uidColIdx = 12;
@@ -1067,6 +1053,7 @@ function _pms_processOneFile_(ss, todayNum, archivedUids, hubDateByUid) {
     hasArchived = true;
     var monthKey = _PMS_KEY_PREFIX + tabName;
 
+    var _새탭_ = false;   //  이 달 탭을 «이번에» 만들었나 (result.newTabCreated 는 파일 전체라 다음 달까지 남는다)
     var archTab = ss.getSheetByName(tabName);
     if (!archTab) {
       var byKey = _pms_findTabByKey_(ss, monthKey);
@@ -1075,30 +1062,41 @@ function _pms_processOneFile_(ss, todayNum, archivedUids, hubDateByUid) {
       } else {
         archTab = ss.insertSheet(tabName);
         result.newTabCreated = true; // ★ 새 마감탭 생성됨
+        _새탭_ = true;
       }
     }
 
     var isNewBlank = archTab.getLastRow() < 1;
 
     // ★ 레이아웃/CF는 새 탭만 — 기존 탭마다 CF 누적·maxRows 서식 = 갈수록 더 느려짐
-    if (isNewBlank || result.newTabCreated) {
-      _pms_layoutArchiveTab_(archTab, extHeaders, cMap, extLc, cancelC, returnC, reasonC, retInvC, shipFeeC, islandFeeC, etcFeeC, isNewBlank);
+    var Ltab;
+    if (isNewBlank || _새탭_) {
+      Ltab = Lord;
+      _pms_layoutArchiveTab_(archTab, Lord, isNewBlank);
       _pms_setKey_(archTab, monthKey);
       _pms_applyProtection_(archTab);
+    } else {
+      //  ★ 2026-10-05 있던 탭은 «그 탭의 모양»을 따른다. 옛 모양(취소·반품 칸)이면 먼저 새 모양으로
+      //    바꿔 본다 — 취소·반품 기록이 있어 못 바꾸면 옛 모양 그대로 붙인다(_pms_migrateOldLayout_).
+      Ltab = _pms_archiveLayout_(archTab, orderTab) || Lord;
+      if (Ltab.구형) {
+        try { _pms_quickRepairTab_(archTab, Ltab); } catch (eMg) {}
+        Ltab = _pms_archiveLayout_(archTab, orderTab) || Lord;
+      }
+      if (Ltab.구형) _pms_ensureCheckboxes_(archTab, Ltab.구형.cancel, Ltab.구형.ret);
     }
-    _pms_ensureCheckboxes_(archTab, cancelC, returnC);
 
     var padded = arr.map(function(row) {
-      return _pms_padRow_(row, extLc, lc);
+      return _pms_padRow_(row, Ltab);
     });
     var nextRow = archTab.getLastRow() + 1;
     if (nextRow < _PMS_DATA_START) nextRow = _PMS_DATA_START;
 
-    archTab.getRange(nextRow, 1, padded.length, extLc)
+    archTab.getRange(nextRow, 1, padded.length, padded[0].length)
       .setValues(padded)
       .setVerticalAlignment("middle");
 
-    archTab.getRange(nextRow, cancelC, padded.length, 2).insertCheckboxes();
+    if (Ltab.구형) archTab.getRange(nextRow, Ltab.구형.cancel, padded.length, 2).insertCheckboxes();
 
     result.archived += padded.length;
   }
@@ -1324,57 +1322,79 @@ function _pms_buildColMap_(headers) {
 }
 
 // ──────────────────────────────────────────────────────
-//  확장 헤더 구성 (원본 + 취소 + 반품 + 취소반품사유 + 반품송장번호 + 반품배송비 + 도서산간배송비 + 기타정산)
+//  확장 헤더 구성 — ★ 2026-10-05 원본 + 기타정산 (취소·반품 칸은 없앴다 · _pms_newLayout_)
 // ──────────────────────────────────────────────────────
 function _pms_buildExtHeaders_(headers, lc) {
   var base = [];
   for (var i = 0; i < lc; i++) base.push(i < headers.length ? headers[i] : "");
-  while (base.length > 0) {
-    var tail = String(base[base.length-1]||"").trim();
-    if (tail === "취소" || tail === "반품" || tail === "취소반품사유" || tail === "반품송장번호" || tail === "반품배송비" || tail === "도서산간배송비" || tail === "기타정산") {
-      base.pop();
-    } else {
-      break;
-    }
+  return _pms_newLayout_(base).extHdr;
+}
+
+/**
+ * ★ 2026-10-05 마감탭 새 모양 — 원본 칸 + 「기타정산」 하나
+ *
+ *  > "월 마감텝에서도 취소 반품 (Q,R열) 삭제해줘. O열 도서산간 배송비만 재대로 붙게해줘..
+ *  >  취소 반품은 반품관리대장과 연동되고 처리날짜가 달을 넘어가는 경우가 많아서
+ *  >  별도 관리해야되"
+ *  > (고르신 것) 반품 관련 전부 — 취소·반품·취소반품사유·반품송장번호·반품배송비를 뺀다
+ *
+ *  여태: 원본 + 취소·반품·취소반품사유·반품송장번호·반품배송비·도서산간배송비·기타정산
+ *        도서산간은 원본 O열 값을 뒤쪽 칸에 «한 번 더» 베껴 그쪽을 합계했다 — 두 벌.
+ *  이제: 원본(O열 도서산간배송비 포함) + 기타정산.  도서산간은 O열 하나만 센다.
+ *        원본에 도서산간 칸이 없는 옛 파일만 뒤에 「도서산간배송비」를 하나 붙인다.
+ *
+ *  최종 정산금액 = 정산금액 + 도서산간(O) + 기타정산.  취소·반품은 반품관리대장이 맡는다.
+ */
+var _PMS_OLD_EXT_ = ["취소", "반품", "취소반품사유", "반품송장번호", "반품배송비", "도서산간배송비", "기타정산"];
+
+function _pms_newLayout_(baseIn) {
+  var base = baseIn.slice();
+  //  꼬리가 옛 확장 일곱 칸 그대로면 통째로 뗀다
+  if (base.length >= _PMS_OLD_EXT_.length) {
+    var 꼬리 = base.slice(base.length - _PMS_OLD_EXT_.length).map(function (h) { return String(h == null ? "" : h).replace(/\s/g, ""); });
+    if (꼬리.join("|") === _PMS_OLD_EXT_.join("|")) base = base.slice(0, base.length - _PMS_OLD_EXT_.length);
   }
-  base.push("취소");
-  base.push("반품");
-  base.push("취소반품사유");
-  base.push("반품송장번호");
-  base.push("반품배송비");
-  base.push("도서산간배송비");
-  base.push("기타정산");
-  return base;
+  //  꼬리에 남은 옛 확장 칸은 떼어 낸다 (원본을 다시 읽어 만들 때).
+  //  ★ 「도서산간배송비」는 떼지 않는다 — 원본이 O열에서 끝나는 파일(15칸)은 O가 꼬리다.
+  //    떼면 O열을 «옛 확장»으로 오해해 도서산간 칸을 하나 더 만든다.
+  while (base.length) {
+    var t = String(base[base.length - 1] == null ? "" : base[base.length - 1]).replace(/\s/g, "");
+    if (t !== "도서산간배송비" && _PMS_OLD_EXT_.indexOf(t) !== -1) base.pop(); else break;
+  }
+  var islandIdx = -1;
+  for (var i = 0; i < base.length; i++) {
+    if (String(base[i] == null ? "" : base[i]).replace(/\s/g, "").indexOf("도서산간") !== -1) { islandIdx = i; break; }
+  }
+  var extHdr = base.slice();
+  var addIsland = islandIdx === -1;
+  if (addIsland) { extHdr.push("도서산간배송비"); islandIdx = extHdr.length - 1; }
+  extHdr.push("기타정산");
+  return {
+    extHdr: extHdr, extLc: extHdr.length, baseLen: base.length,
+    islandC: islandIdx + 1, etcC: extHdr.length, addIsland: addIsland
+  };
 }
 
 // ──────────────────────────────────────────────────────
-//  행 길이 맞춤 (취소=false, 반품=false, 사유="", 반품송장="", 반품배송비="", 도서산간=O열값, 기타정산="")
+//  행 길이 맞춤 — ★ 2026-10-05 새 모양은 _pms_padRow_ 머리 주석
 // ──────────────────────────────────────────────────────
-function _pms_padRow_(row, extLc, origLc) {
+function _pms_padRow_(row, L) {
   var padded = [];
-  // ★ 발주탭 O열(index 14) = 도서산간배송비 값 추출
   var islandFeeVal = (row.length > 14) ? (Number(row[14]) || 0) : 0;
-
-  for (var i = 0; i < extLc; i++) {
-    if (i < origLc && i < row.length) {
-      padded.push(row[i]);
-    } else if (i === extLc - 7 || i === extLc - 6) {
-      padded.push(false); // 취소/반품 = false
-    } else if (i === extLc - 2) {
-      // ★ 도서산간배송비: O열 값 복사
-      padded.push(islandFeeVal > 0 ? islandFeeVal : "");
-    } else {
-      padded.push(""); // 취소반품사유, 반품송장번호, 반품배송비, 기타정산
-    }
+  for (var i = 0; i < L.baseLen; i++) padded.push(i < row.length ? row[i] : "");
+  if (L.구형) {
+    padded.push(false, false, "", "", "", islandFeeVal > 0 ? islandFeeVal : "", "");
+    return padded;
   }
+  if (L.addIsland) padded.push(islandFeeVal > 0 ? islandFeeVal : "");
+  padded.push("");
   return padded;
 }
 
 // ──────────────────────────────────────────────────────
 //  월별 마감 탭 레이아웃 적용
 // ──────────────────────────────────────────────────────
-function _pms_layoutArchiveTab_(tab, extHeaders, cMap, extLc, cancelC, returnC, reasonC, retInvC, shipFeeC, islandFeeC, etcFeeC, isNewBlank) {
-  // 1행: 요약 마커 ★ 2026-06-13 디자인 개선
+function _pms_layoutArchiveTab_(tab, L, isNewBlank) {
   try {
     tab.getRange(1, 1, 1, 10).merge()
       .setValue("📊 월별 마감 요약")
@@ -1385,187 +1405,94 @@ function _pms_layoutArchiveTab_(tab, extHeaders, cMap, extLc, cancelC, returnC, 
     tab.setRowHeight(1, 32);
   } catch(e) {}
 
-  // 2~3행: 합계 수식
-  _pms_applyFormulas_(tab, cMap, cancelC, returnC, shipFeeC, islandFeeC, etcFeeC);
+  _pms_applyFormulas_(tab, L.cMap, L.islandC, L.etcC);
 
-  // 4행: 헤더
-  if (tab.getMaxColumns() < extLc) {
-    tab.insertColumnsAfter(tab.getMaxColumns(), extLc - tab.getMaxColumns());
+  if (tab.getMaxColumns() < L.extLc) {
+    tab.insertColumnsAfter(tab.getMaxColumns(), L.extLc - tab.getMaxColumns());
   }
-  tab.getRange(_PMS_HEADER_ROW, 1, 1, extLc).setValues([extHeaders])
+  tab.getRange(_PMS_HEADER_ROW, 1, 1, L.extLc).setValues([L.extHdr])
     .setBackground("#37474f").setFontColor("white")
     .setFontWeight("bold").setHorizontalAlignment("center")
     .setFontSize(10);
-  // 취소·반품 체크박스 헤더 강조 (빨간)
-  tab.getRange(_PMS_HEADER_ROW, cancelC).setBackground("#c62828").setFontColor("white");
-  tab.getRange(_PMS_HEADER_ROW, returnC).setBackground("#c62828").setFontColor("white");
-  // 사유·반품송장 헤더 강조 (주황)
-  tab.getRange(_PMS_HEADER_ROW, reasonC).setBackground("#e65100").setFontColor("white");
-  tab.getRange(_PMS_HEADER_ROW, retInvC).setBackground("#e65100").setFontColor("white");
-  // 반품배송비 헤더 강조 (파랑)
-  tab.getRange(_PMS_HEADER_ROW, shipFeeC).setBackground("#1565c0").setFontColor("white");
-  // 도서산간배송비 헤더 강조 (보라)
-  tab.getRange(_PMS_HEADER_ROW, islandFeeC).setBackground("#6a1b9a").setFontColor("white");
-  // 기타정산 헤더 강조 (초록)
-  tab.getRange(_PMS_HEADER_ROW, etcFeeC).setBackground("#2e7d32").setFontColor("white");
+  tab.getRange(_PMS_HEADER_ROW, L.islandC).setBackground("#6a1b9a").setFontColor("white");   // 도서산간 (보라)
+  tab.getRange(_PMS_HEADER_ROW, L.etcC).setBackground("#2e7d32").setFontColor("white");      // 기타정산 (초록)
 
-  // ★ 2026-06-13 개선: 자동 열 너비 + 주요 열 최적 너비
   try {
-    // 기본 열 너비 설정
-    if (cMap.date !== -1)      tab.setColumnWidth(cMap.date + 1, 90);    // 일자
-    if (cMap.recipient !== -1) tab.setColumnWidth(cMap.recipient + 1, 80); // 수취인
-    if (cMap.phone !== -1)     tab.setColumnWidth(cMap.phone + 1, 110);   // 전화번호
-    if (cMap.price !== -1)     tab.setColumnWidth(cMap.price + 1, 85);    // 정산금액
-    if (cMap.qty !== -1)       tab.setColumnWidth(cMap.qty + 1, 55);      // 수량
-    tab.setColumnWidth(cancelC, 45);   // 취소
-    tab.setColumnWidth(returnC, 45);   // 반품
-    tab.setColumnWidth(reasonC, 200);  // 사유
-    tab.setColumnWidth(retInvC, 150);  // 반품송장
-    tab.setColumnWidth(shipFeeC, 100); // 반품배송비
-    tab.setColumnWidth(islandFeeC, 100); // 도서산간
-    tab.setColumnWidth(etcFeeC, 100);  // 기타정산
+    if (L.cMap.date !== -1)  tab.setColumnWidth(L.cMap.date + 1, 90);
+    if (L.cMap.price !== -1) tab.setColumnWidth(L.cMap.price + 1, 85);
+    if (L.cMap.qty !== -1)   tab.setColumnWidth(L.cMap.qty + 1, 55);
+    tab.setColumnWidth(L.islandC, 100);
+    tab.setColumnWidth(L.etcC, 100);
   } catch(e) {}
 
-  // 금액 열 숫자 형식
-  try { tab.getRange(_PMS_DATA_START, shipFeeC, tab.getMaxRows() - _PMS_DATA_START + 1, 1).setNumberFormat("#,##0"); } catch(e) {}
-  try { tab.getRange(_PMS_DATA_START, islandFeeC, tab.getMaxRows() - _PMS_DATA_START + 1, 1).setNumberFormat("#,##0"); } catch(e) {}
-  try { tab.getRange(_PMS_DATA_START, etcFeeC, tab.getMaxRows() - _PMS_DATA_START + 1, 1).setNumberFormat("#,##0"); } catch(e) {}
-  if (cMap.price !== -1) {
-    try { tab.getRange(_PMS_DATA_START, cMap.price + 1, tab.getMaxRows() - _PMS_DATA_START + 1, 1).setNumberFormat("#,##0"); } catch(e) {}
+  var 끝 = tab.getMaxRows() - _PMS_DATA_START + 1;
+  try { tab.getRange(_PMS_DATA_START, L.islandC, 끝, 1).setNumberFormat("#,##0"); } catch(e) {}
+  try { tab.getRange(_PMS_DATA_START, L.etcC, 끝, 1).setNumberFormat("#,##0"); } catch(e) {}
+  if (L.cMap.price !== -1) {
+    try { tab.getRange(_PMS_DATA_START, L.cMap.price + 1, 끝, 1).setNumberFormat("#,##0"); } catch(e) {}
   }
 
   tab.setFrozenRows(_PMS_HEADER_ROW);
-
-  // ★ 2026-06-13 추가: 주요 열 고정 확대 (수취인 열까지)
   try {
-    var freezeCols = 1; // 최소 1열(일자) 고정
-    if (cMap.recipient !== -1 && cMap.recipient + 1 <= 6) freezeCols = cMap.recipient + 1;
-    else if (cMap.item !== -1 && cMap.item + 1 <= 6) freezeCols = cMap.item + 1;
-    else freezeCols = Math.min(3, extLc);
+    var freezeCols = (L.cMap.recipient !== undefined && L.cMap.recipient !== -1 && L.cMap.recipient + 1 <= 6)
+      ? L.cMap.recipient + 1 : Math.min(3, L.extLc);
     tab.setFrozenColumns(freezeCols);
   } catch(e) {}
 
-  // ★ 2026-06-13 추가: 취소/반품 행 조건부 서식 (행 전체 연한 빨강 강조)
-  try {
-    _pms_setRowRules_(tab, extLc, cancelC, returnC);
-  } catch(e) {}
+  //  취소·반품 줄 칠하기 규칙은 이제 없다 — 남은 것은 걷어 낸다
+  try { _pms_removeRowRules_(tab); } catch(e) {}
 }
 
-/** 취소·반품 줄 칠하기 규칙의 수식 — 취소 빨강 / 반품 주황 */
-function _pms_rowRuleFormula_(col) {
-  return "=INDIRECT(\"R[0]C" + col + "\",FALSE)=TRUE";
+/** 우리가 넣었던 취소·반품 줄 칠하기 규칙을 걷어 낸다. @return {number} 걷은 수 */
+function _pms_removeRowRules_(tab) {
+  var all = tab.getConditionalFormatRules() || [];
+  var keep = all.filter(function(rule) { return !_pms_isOurRowRule_(rule); });
+  if (keep.length !== all.length) tab.setConditionalFormatRules(keep);
+  return all.length - keep.length;
 }
 
-/**
- * 취소·반품 줄 칠하기 규칙을 «두 개만» 둔다.
- * ★ 2026-10-05 겹침 정리: 보정을 돌릴 때마다 같은 규칙 두 개가 덧붙어
- *   4벌·8개까지 쌓였다(점검 로그). 우리 규칙(INDIRECT("R[0]C…",FALSE)=TRUE)은
- *   칸 자리가 옛것이어도 모두 걷어 내고 새로 두 개만 둔다. 다른 규칙은 그대로.
- */
-function _pms_setRowRules_(tab, extLc, cancelC, returnC) {
-  var dataRange = tab.getRange(_PMS_DATA_START, 1, tab.getMaxRows() - _PMS_DATA_START + 1, extLc);
-  var cancelRule = SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied(_pms_rowRuleFormula_(cancelC))
-    .setBackground("#fce4ec")
-    .setRanges([dataRange])
-    .build();
-  var returnRule = SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied(_pms_rowRuleFormula_(returnC))
-    .setBackground("#fff3e0")
-    .setRanges([dataRange])
-    .build();
-  var existingRules = (tab.getConditionalFormatRules() || []).filter(function(rule) {
-    return !_pms_isOurRowRule_(rule);
-  });
-  existingRules.push(cancelRule);
-  existingRules.push(returnRule);
-  tab.setConditionalFormatRules(existingRules);
-}
+
 
 // ──────────────────────────────────────────────────────
-//  요약 수식 (2~3행): 건수 + 정산금액, 반품배송비, 도서산간, 기타정산, 최종정산
-// ──────────────────────────────────────────────────────
-function _pms_applyFormulas_(tab, cMap, cancelC, returnC, shipFeeC, islandFeeC, etcFeeC) {
-  function L(n) {
+function _pms_applyFormulas_(tab, cMap, islandC, etcC) {
+  function Lc(n) {
     var s = "", c = n;
     while (c > 0) { var m = (c-1)%26; s = String.fromCharCode(65+m)+s; c = Math.floor((c-1)/26); }
     return s;
   }
-  var dr    = String(_PMS_DATA_START);
-  var cO    = L(cancelC) + dr + ":" + L(cancelC);
-  var rO    = L(returnC) + dr + ":" + L(returnC);
-  var dO    = cMap.date !== -1 ? L(cMap.date+1) + dr + ":" + L(cMap.date+1) : "";
+  var dr = String(_PMS_DATA_START);
+  var dO = cMap.date !== -1 ? Lc(cMap.date+1) + dr + ":" + Lc(cMap.date+1) : "";
+  var ifO = Lc(islandC) + dr + ":" + Lc(islandC);
+  var efO = Lc(etcC) + dr + ":" + Lc(etcC);
 
-  var sfO   = shipFeeC ? L(shipFeeC) + dr + ":" + L(shipFeeC) : "";
-  var ifO   = islandFeeC ? L(islandFeeC) + dr + ":" + L(islandFeeC) : "";
-  var efO   = etcFeeC ? L(etcFeeC) + dr + ":" + L(etcFeeC) : "";
-
-  var cntAll, cntNet;
-  if (dO) {
-    cntAll = '=IFERROR(COUNTIF(' + dO + ',"<>0"),0)';
-    cntNet = "=IFERROR(SUMPRODUCT((" + dO + '<>0)*(' + cO + "<>TRUE)*(" + rO + "<>TRUE)),0)";
-  } else {
-    cntAll = '=IFERROR(COUNTA(A' + dr + ':A),0)';
-    cntNet = "=IFERROR(SUMPRODUCT((A" + dr + ':A<>"")*(' + cO + "<>TRUE)*(" + rO + "<>TRUE)),0)";
-  }
+  //  옛 모양의 요약 칸(유효 건수·반품배송비·옛 최종 자리)을 먼저 비운다
+  tab.getRange(2, 1, 2, 10).clearContent();
 
   tab.getRange(2,1).setValue("📦 전체 건수");
-  tab.getRange(2,2).setFormula(cntAll).setNumberFormat("#,##0").setFontWeight("bold").setFontSize(11);
-  tab.getRange(3,1).setValue("✅ 유효 건수 (취소·반품 제외)");
-  tab.getRange(3,2).setFormula(cntNet).setNumberFormat("#,##0").setFontWeight("bold").setFontSize(11).setFontColor("#1b5e20");
+  tab.getRange(2,2).setFormula(dO ? '=IFERROR(COUNTIF(' + dO + ',"<>0"),0)' : '=IFERROR(COUNTA(A' + dr + ':A),0)')
+    .setNumberFormat("#,##0").setFontWeight("bold").setFontSize(11);
 
+  var 최종 = [];
   if (cMap.price !== -1) {
-    var pO = L(cMap.price+1) + dr + ":" + L(cMap.price+1);
-    var sumAll = dO
-      ? '=IFERROR(SUMIF(' + dO + ',"<>0",' + pO + '),0)'
-      : '=IFERROR(SUM(' + pO + '),0)';
-    var sumNet = dO
-      ? "=IFERROR(SUMPRODUCT((" + dO + "<>0)*(" + cO + "<>TRUE)*(" + rO + "<>TRUE)*(" + pO + ")),0)"
-      : "=IFERROR(SUMPRODUCT((" + pO + '<>"")*(' + cO + "<>TRUE)*(" + rO + "<>TRUE)*(" + pO + ")),0)";
+    var pO = Lc(cMap.price+1) + dr + ":" + Lc(cMap.price+1);
     tab.getRange(2,3).setValue("💰 정산금액 합계");
-    tab.getRange(2,4).setFormula(sumAll).setNumberFormat("#,##0").setFontWeight("bold");
-    tab.getRange(3,3).setValue("💰 유효 정산금액");
-    tab.getRange(3,4).setFormula(sumNet).setNumberFormat("#,##0").setFontWeight("bold").setFontColor("#1b5e20");
-
-    if (sfO) {
-      // 2행: 반품배송비
-      tab.getRange(2,5).setValue("📦 반품배송비");
-      tab.getRange(2,6).setFormula('=IFERROR(SUM(' + sfO + '),0)').setNumberFormat("#,##0");
-
-      // 2행: 도서산간배송비
-      if (ifO) {
-        tab.getRange(2,7).setValue("🏝️ 도서산간배송비");
-        tab.getRange(2,8).setFormula('=IFERROR(SUM(' + ifO + '),0)').setNumberFormat("#,##0");
-      }
-
-      // 2행: 기타정산 합계
-      if (efO) {
-        tab.getRange(2,9).setValue("📋 기타정산");
-        tab.getRange(2,10).setFormula('=IFERROR(SUM(' + efO + '),0)').setNumberFormat("#,##0");
-      }
-
-      // 3행: 최종 정산금액 = 정산금액(취소반품 제외) + 반품배송비 + 도서산간 + 기타정산
-      tab.getRange(3,5).setValue("🏷️ 최종 정산금액");
-      var finalParts = "D3+F2";
-      if (ifO) finalParts += "+H2";
-      if (efO) finalParts += "+J2";
-      tab.getRange(3,6).setFormula("=IFERROR(" + finalParts + ",0)").setNumberFormat("#,##0");
-
-      tab.getRange(3,5).setFontWeight("bold").setFontSize(11);
-      tab.getRange(3,6).setFontWeight("bold").setFontColor("#c62828").setFontSize(12);
-
-      var summaryColCount = efO ? 10 : (ifO ? 8 : 6);
-      // ★ 2026-06-13: 요약 영역 시각화 강화
-      tab.getRange(2,1,1,summaryColCount).setBackground("#e3f2fd").setBorder(true,true,true,true,true,true); // 연파랑
-      tab.getRange(3,1,1,summaryColCount).setBackground("#e8f5e9").setBorder(true,true,true,true,true,true); // 연초록
-    } else {
-      tab.getRange(2,1,1,4).setBackground("#e3f2fd").setBorder(true,true,true,true,true,true);
-      tab.getRange(3,1,1,4).setBackground("#e8f5e9").setBorder(true,true,true,true,true,true);
-    }
-  } else {
-    tab.getRange(2,1,1,2).setBackground("#e3f2fd").setBorder(true,true,true,true,true,true);
-    tab.getRange(3,1,1,2).setBackground("#e8f5e9").setBorder(true,true,true,true,true,true);
+    tab.getRange(2,4).setFormula(dO ? '=IFERROR(SUMIF(' + dO + ',"<>0",' + pO + '),0)' : '=IFERROR(SUM(' + pO + '),0)')
+      .setNumberFormat("#,##0").setFontWeight("bold");
+    최종.push("D2");
   }
+  tab.getRange(2,5).setValue("🏝️ 도서산간배송비");
+  tab.getRange(2,6).setFormula('=IFERROR(SUM(' + ifO + '),0)').setNumberFormat("#,##0");
+  tab.getRange(2,7).setValue("📋 기타정산");
+  tab.getRange(2,8).setFormula('=IFERROR(SUM(' + efO + '),0)').setNumberFormat("#,##0");
+  최종.push("F2", "H2");
+
+  tab.getRange(3,1).setValue("🏷️ 최종 정산금액").setFontWeight("bold").setFontSize(11);
+  tab.getRange(3,2).setFormula("=IFERROR(" + 최종.join("+") + ",0)").setNumberFormat("#,##0")
+    .setFontWeight("bold").setFontColor("#c62828").setFontSize(12);
+  tab.getRange(3,3).setValue("취소·반품은 반품관리대장에서 따로 관리합니다").setFontColor("#757575");
+
+  tab.getRange(2,1,1,8).setBackground("#e3f2fd").setBorder(true,true,true,true,true,true);
+  tab.getRange(3,1,1,2).setBackground("#e8f5e9").setBorder(true,true,true,true,true,true);
 }
 
 
@@ -1665,7 +1592,7 @@ function partnerRepairMonthlySettleTabs() {
 
   var selected = _pms_pickVendors_(ui, files,
     "🔧 월별 마감 탭 레이아웃 보정 — 업체 선택",
-    "'(YYYY년 M월) 발주 마감' 탭의 요약·헤더·취소반품열·보호를 최신 형식으로 재적용합니다.\n" +
+    "'(YYYY년 M월) 발주 마감' 탭을 새 모양(취소·반품 칸 없음 · 도서산간은 O열)으로 바꾸고 요약·헤더·보호를 맞춥니다. 취소·반품 기록이 있는 탭은 그대로 둡니다.\n" +
     "업체 번호(쉼표로 여럿) · 이름 일부 · all 중 하나를 넣으세요.");
   if (selected === null) return;
   if (!selected.length) return ui.alert("선택된 업체가 없습니다.");
@@ -1783,13 +1710,21 @@ function _pms_archiveLayout_(sh, orderTab) {
 
 /** 순수 — 시험이 직접 부른다 */
 function _pms_archiveLayoutFrom_(row4, orderHdr, orderLast, 발주있음) {
-  var base = null, 출처 = "";
+  function t(v) { return String(v == null ? "" : v).replace(/\s/g, ""); }
+  var base = null, 출처 = "", 구형 = null;
   for (var i = 0; i + 1 < row4.length; i++) {
-    if (String(row4[i] == null ? "" : row4[i]).trim() === "취소" &&
-        String(row4[i + 1] == null ? "" : row4[i + 1]).trim() === "반품") {
+    if (t(row4[i]) === "취소" && t(row4[i + 1]) === "반품") {
       base = row4.slice(0, i);
       출처 = "탭";
+      //  옛 모양: 취소·반품·사유·반품송장·반품배송비·도서산간(뒤)·기타정산
+      구형 = { cancel: i + 1, ret: i + 2, reason: i + 3, retInv: i + 4, retFee: i + 5, island: i + 6, etc: i + 7 };
       break;
+    }
+  }
+  if (!base) {
+    for (var j = row4.length - 1; j >= 0; j--) {
+      if (t(row4[j]) === "기타정산") { base = row4.slice(0, j); 출처 = "탭"; break; }
+      if (t(row4[j]) !== "") break;   //  맨 뒤(빈칸 뺀) 칸이 기타정산일 때만 새 모양
     }
   }
   if (!base) {
@@ -1800,7 +1735,6 @@ function _pms_archiveLayoutFrom_(row4, orderHdr, orderLast, 발주있음) {
     for (var k = 0; k < lc; k++) base.push(k < orderHdr.length ? orderHdr[k] : "");
     출처 = "발주";
   }
-  //  깨진 머리글(#REF!·빈칸)은 같은 자리 발주 탭 머리글로 메운다
   var 메움 = [];
   base = base.map(function(h, idx) {
     var s = String(h == null ? "" : h).trim();
@@ -1809,18 +1743,74 @@ function _pms_archiveLayoutFrom_(row4, orderHdr, orderLast, 발주있음) {
     return h;
   });
   var cMap = _pms_buildColMap_(base);
-  //  마감 이동과 같이: 금액 칸 머리글은 「정산금액」(줄 합계)
   if (cMap.price !== -1) {
     var ph = String(base[cMap.price] || "").replace(/\s/g, "");
     if (ph && ph !== "정산금액") base[cMap.price] = "정산금액";
   }
-  var extHdr = _pms_buildExtHeaders_(base, base.length);
-  var extLc = extHdr.length;
+  var N = _pms_newLayout_(base);
   return {
-    출처: 출처, 메움: 메움, cMap: cMap, extHdr: extHdr, extLc: extLc,
-    cancelC: extLc - 6, returnC: extLc - 5, reasonC: extLc - 4, retInvC: extLc - 3,
-    shipFeeC: extLc - 2, islandFeeC: extLc - 1, etcFeeC: extLc
+    출처: 출처, 메움: 메움, cMap: cMap, 구형: 구형,
+    extHdr: N.extHdr, extLc: N.extLc, baseLen: N.baseLen,
+    islandC: N.islandC, etcC: N.etcC, addIsland: N.addIsland
   };
+}
+
+/** 발주탭에서 바로 만드는 새 모양 (새 마감탭을 처음 만들 때) */
+function _pms_layoutFromOrder_(headers, lc) {
+  var base = [];
+  for (var i = 0; i < lc; i++) base.push(i < headers.length ? headers[i] : "");
+  var cMap = _pms_buildColMap_(base);
+  if (cMap.price !== -1) {
+    var ph = String(base[cMap.price] || "").replace(/\s/g, "");
+    if (ph && ph !== "정산금액") base[cMap.price] = "정산금액";
+  }
+  var N = _pms_newLayout_(base);
+  return { 출처: "발주", 메움: [], cMap: cMap, 구형: null,
+    extHdr: N.extHdr, extLc: N.extLc, baseLen: N.baseLen,
+    islandC: N.islandC, etcC: N.etcC, addIsland: N.addIsland };
+}
+
+/**
+ * ★ 2026-10-05 옛 모양 → 새 모양 (취소·반품·사유·반품송장·반품배송비·뒤쪽 도서산간 칸을 지운다)
+ *
+ *  안 바꾸고 그대로 두는 경우 — 취소·반품 체크가 하나라도 있거나 사유·반품송장·반품배송비가
+ *  적혀 있으면. 지우면 그 달의 최종 정산금액이 «바뀐다»(취소한 줄이 다시 들어가고
+ *  반품배송비가 빠진다). 이미 정산한 달일 수 있으니 사람이 정한다.
+ *
+ *  뒤쪽 「도서산간배송비」는 원본 O열을 베낀 것이지만, 최종 합계는 «뒤쪽»을 셌다.
+ *  사람이 뒤쪽만 고쳤을 수 있으니, 둘이 다르면 뒤쪽 값을 O열에 옮긴 뒤 지운다.
+ *  원본에 도서산간 칸이 없으면 뒤쪽 도서산간 칸은 남긴다(그게 새 모양의 도서산간 칸이다).
+ *
+ * @return {{바꿈:boolean, 왜:string, 섬맞춤:number, 기록:number}}
+ */
+function _pms_migrateOldLayout_(sh, L) {
+  var g = L.구형, out = { 바꿈: false, 왜: "", 섬맞춤: 0, 기록: 0 };
+  if (!g) return out;
+  var lr = sh.getLastRow();
+  var n = Math.max(0, lr - _PMS_DATA_START + 1);
+  if (n) {
+    var ext = sh.getRange(_PMS_DATA_START, g.cancel, n, 7).getValues();
+    for (var r = 0; r < n; r++) {
+      var x = ext[r];
+      if (x[0] === true || x[1] === true || String(x[2] || "").trim() || String(x[3] || "").trim() ||
+          (Number(x[4]) || 0) !== 0) out.기록++;
+    }
+    if (out.기록) { out.왜 = "취소·반품 기록 " + out.기록 + "줄 — 지우면 그 달 최종 금액이 바뀌어 그대로 둠"; return out; }
+    if (!L.addIsland) {
+      var baseIsl = sh.getRange(_PMS_DATA_START, L.islandC, n, 1).getValues();
+      var 맞춤 = false;
+      for (var k = 0; k < n; k++) {
+        var 뒤 = ext[k][5];
+        if (뒤 === "" || 뒤 === null) continue;
+        if ((Number(뒤) || 0) !== (Number(baseIsl[k][0]) || 0)) { baseIsl[k][0] = 뒤; out.섬맞춤++; 맞춤 = true; }
+      }
+      if (맞춤) sh.getRange(_PMS_DATA_START, L.islandC, n, 1).setValues(baseIsl);
+    }
+  }
+  //  지울 칸: 취소~반품배송비(5) + (원본에 도서산간이 있으면) 뒤쪽 도서산간(1)
+  sh.deleteColumns(g.cancel, L.addIsland ? 5 : 6);
+  out.바꿈 = true;
+  return out;
 }
 
 /**
@@ -1839,19 +1829,28 @@ function _pms_archiveLayoutFrom_(row4, orderHdr, orderLast, 발주있음) {
  * @return {string[]} 고친 것들 — 비었으면 이미 맞음
  */
 function _pms_quickRepairTab_(sh, L) {
+  if (L.구형) {
+    var mg = _pms_migrateOldLayout_(sh, L);
+    if (!mg.바꿈) return ["⚠ 옛 모양 유지 — " + mg.왜];
+    SpreadsheetApp.flush();
+    var L2 = _pms_archiveLayout_(sh, null);
+    if (!L2) return ["⚠ 새 모양으로 바꾼 뒤 칸 배치를 못 읽음"];
+    _pms_layoutArchiveTab_(sh, L2, false);
+    _pms_applyProtection_(sh);
+    return ["새 모양으로 바꿈(취소·반품 칸 지움" + (mg.섬맞춤 ? " · 도서산간 " + mg.섬맞춤 + "줄 O열로 옮김" : "") + ")"];
+  }
+
   var 고침 = [];
   var maxC = Math.max(sh.getMaxColumns(), L.extLc, 10);
   var 위 = sh.getRange(1, 1, _PMS_HEADER_ROW, maxC);
   var 값 = 위.getValues(), 식 = 위.getFormulas();
 
   if (String(값[0][0]).trim() !== "📊 월별 마감 요약") {
-    _pms_layoutArchiveTab_(sh, L.extHdr, L.cMap, L.extLc, L.cancelC, L.returnC, L.reasonC, L.retInvC, L.shipFeeC, L.islandFeeC, L.etcFeeC, false);
-    _pms_ensureCheckboxes_(sh, L.cancelC, L.returnC);
+    _pms_layoutArchiveTab_(sh, L, false);
     _pms_applyProtection_(sh);
     return ["전체 레이아웃(처음 꾸밈)"];
   }
 
-  //  4행 머리글 — 값만 고친다 (색은 이미 칠해져 있다)
   for (var i = 0; i < L.extLc; i++) {
     var a = String(값[3][i] == null ? "" : 값[3][i]).trim();
     var b = String(L.extHdr[i] == null ? "" : L.extHdr[i]).trim();
@@ -1863,30 +1862,23 @@ function _pms_quickRepairTab_(sh, L) {
     }
   }
 
-  //  2~3행 요약 수식
-  var 기대 = _pms_expectedSummaryFormulas_(L.cMap, L.cancelC, L.returnC, L.shipFeeC, L.islandFeeC, L.etcFeeC);
+  var 기대 = _pms_expectedSummaryFormulas_(L.cMap, L.islandC, L.etcC);
   var 수식다름 = Object.keys(기대).some(function(k) {
     var rc = k.split(",");
     var 지금 = (식[+rc[0] - 1] || [])[+rc[1] - 1];
     return _pms_normF_(지금) !== _pms_normF_(기대[k]);
   });
+  //  옛 요약 칸(I2·J2 등)에 수식이 남아 있어도 다시 쓴다
+  if (!수식다름) {
+    for (var cc = 8; cc < 10 && !수식다름; cc++) if (식[1][cc] || 식[2][cc]) 수식다름 = true;
+  }
   if (수식다름) {
-    _pms_applyFormulas_(sh, L.cMap, L.cancelC, L.returnC, L.shipFeeC, L.islandFeeC, L.etcFeeC);
+    _pms_applyFormulas_(sh, L.cMap, L.islandC, L.etcC);
     고침.push("요약 수식");
   }
 
-  //  칠하기 규칙 — 우리 것이 정확히 2개이고 지금 취소·반품 칸을 가리키면 둔다
-  var 우리 = (sh.getConditionalFormatRules() || []).filter(_pms_isOurRowRule_);
-  var 기대규칙 = [_pms_normF_(_pms_rowRuleFormula_(L.cancelC)), _pms_normF_(_pms_rowRuleFormula_(L.returnC))].sort().join("|");
-  var 지금규칙 = 우리.map(function(r) {
-    try { return _pms_normF_(r.getBooleanCondition().getCriteriaValues()[0]); } catch (e) { return ""; }
-  }).sort().join("|");
-  if (지금규칙 !== 기대규칙) {
-    _pms_setRowRules_(sh, L.extLc, L.cancelC, L.returnC);
-    고침.push("칠하기 규칙 " + 우리.length + "→2");
-  }
-
-  if (_pms_ensureCheckboxes_(sh, L.cancelC, L.returnC)) 고침.push("체크박스");
+  var 걷음 = _pms_removeRowRules_(sh);
+  if (걷음) 고침.push("취소·반품 칠하기 규칙 " + 걷음 + "개 걷음");
 
   if (sh.getFrozenRows() !== _PMS_HEADER_ROW) {
     sh.setFrozenRows(_PMS_HEADER_ROW);
@@ -1903,17 +1895,16 @@ function _pms_quickRepairTab_(sh, L) {
 }
 
 /** 보정 코드(_pms_applyFormulas_)가 넣을 요약 수식을 받아 적는다 — {"행,열": 수식} */
-function _pms_expectedSummaryFormulas_(cMap, cancelC, returnC, shipFeeC, islandFeeC, etcFeeC) {
+function _pms_expectedSummaryFormulas_(cMap, islandC, etcC) {
   var rec = {};
   function cell(r, col) {
     var o = {};
-    ["setValue", "setNumberFormat", "setFontWeight", "setFontSize", "setFontColor", "setBackground", "setBorder"]
+    ["setValue", "setNumberFormat", "setFontWeight", "setFontSize", "setFontColor", "setBackground", "setBorder", "clearContent"]
       .forEach(function(fn) { o[fn] = function() { return o; }; });
     o.setFormula = function(f) { rec[r + "," + col] = f; return o; };
     return o;
   }
-  _pms_applyFormulas_({ getRange: function(r, col) { return cell(r, col); } },
-    cMap, cancelC, returnC, shipFeeC, islandFeeC, etcFeeC);
+  _pms_applyFormulas_({ getRange: function(r, col) { return cell(r, col); } }, cMap, islandC, etcC);
   return rec;
 }
 

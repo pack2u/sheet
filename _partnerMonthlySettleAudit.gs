@@ -13,8 +13,9 @@
  *       금액 칸에 글자가 하나라도 있으면 SUMPRODUCT 가 오류 → IFERROR 가 0 을 낸다)
  *    ④ 칸 밀림 — 일자 칸에 날짜, 수량·금액 칸에 숫자가 있나. 보정은 머리글을
  *       «지금» 발주 탭으로 덮으므로, 발주 탭 칸이 바뀐 뒤면 옛 데이터와 어긋난다
- *    ⑤ 취소·반품 체크박스 · 4행 고정 · 머리글 보호 · 오류값(#REF! 등)
- *    ⑥ 조건부 서식 겹침 — 레이아웃 보정은 돌 때마다 규칙 두 개를 «덧붙인다»
+ *    ⑤ 4행 고정 · 머리글 보호 · 오류값(#REF! 등)
+ *    ⑥ 옛 취소·반품 줄 칠하기 규칙이 남았나
+ *  ★ 2026-10-05 마감탭에서 취소·반품 칸을 뺐다 — 옛 모양 탭은 «보정하라»고만 알린다
  *
  *  돌리는 법: 편집기에서 partnerAuditMonthlySettle_2609 ▶ 실행 → 실행 로그
  * ══════════════════════════════════════════════════════════════
@@ -115,13 +116,18 @@ function _pms_auditOne_(ss, y, m) {
 
   //  기준 — 보정이 쓰는 것과 똑같이: 그 마감 탭 4행의 제 배치
   var L = _pms_archiveLayout_(sh, orderTab);
-  if (!L) return { 문제: ["4행에 취소·반품 칸이 없고 발주 탭도 없어 기준을 못 만듦"], 요약: "" };
-  if (L.출처 === "발주") 문제.push("4행에서 「취소」「반품」 칸을 못 찾음 — 발주 탭 폭으로 짐작해 견줌");
+  if (!L) return { 문제: ["4행에서 칸 배치를 못 읽었고 발주 탭도 없어 기준을 못 만듦"], 요약: "" };
+  //  ★ 2026-10-05 옛 모양(취소·반품 칸)은 새 기준으로 견주지 않는다 — 보정이 바꾼다
+  if (L.구형) {
+    return { 문제: ["옛 모양(취소·반품 칸 있음) — 「월별 마감 탭 레이아웃 보정」을 돌리면 새 모양으로 바뀝니다 " +
+      "(취소·반품 기록이 있는 탭은 그대로 둡니다)"], 요약: "" };
+  }
+  if (L.출처 === "발주") 문제.push("4행에서 칸 배치를 못 찾음 — 발주 탭 폭으로 짐작해 견줌");
   if (L.메움.length) 문제.push("4행 머리글이 깨짐 — " + L.메움.map(function (i) { return _pms_audit_col_(i + 1) + "4"; }).join(", ") + " (보정하면 발주 탭 이름으로 메움)");
   var cMap    = L.cMap;
   var extHdr  = L.extHdr;
   var extLc   = L.extLc;
-  var c = { cancel: L.cancelC, ret: L.returnC, ship: L.shipFeeC, island: L.islandFeeC, etc: L.etcFeeC };
+  var c = { island: L.islandC, etc: L.etcC };
 
   var maxC = Math.max(sh.getMaxColumns(), extLc, 10);
   var 위 = sh.getRange(1, 1, _PMS_HEADER_ROW, maxC);
@@ -134,7 +140,7 @@ function _pms_auditOne_(ss, y, m) {
     return !L.메움.some(function (i) { return d.indexOf(_pms_audit_col_(i + 1) + ": ") === 0; });
   });
   if (다른머리.length) {
-    문제.push("4행 머리글이 발주 탭과 다름 — " + 다른머리.slice(0, 6).join(" · ") +
+    문제.push("4행 머리글이 다름 — " + 다른머리.slice(0, 6).join(" · ") +
       (다른머리.length > 6 ? " 외 " + (다른머리.length - 6) + "칸" : ""));
   }
 
@@ -158,15 +164,10 @@ function _pms_auditOne_(ss, y, m) {
   var 데이터 = 줄수 ? sh.getRange(_PMS_DATA_START, 1, 줄수, Math.min(extLc, sh.getMaxColumns())).getValues() : [];
   var 셈 = _pms_audit_recalc_(데이터, cMap, c);
 
-  var 보인 = {
-    "B2": 위값[1][1], "B3": 위값[2][1], "D2": 위값[1][3], "D3": 위값[2][3],
-    "F2": 위값[1][5], "H2": 위값[1][7], "J2": 위값[1][9], "F3": 위값[2][5]
-  };
-  var 견줄 = { "B2": 셈.전체건, "B3": 셈.유효건 };
-  if (cMap.price !== -1) {
-    견줄["D2"] = 셈.전체금액; 견줄["D3"] = 셈.유효금액;
-    견줄["F2"] = 셈.반품배송비; 견줄["H2"] = 셈.도서산간; 견줄["J2"] = 셈.기타정산; 견줄["F3"] = 셈.최종;
-  }
+  //  새 요약 자리: B2 건수 · D2 정산금액 · F2 도서산간 · H2 기타정산 · B3 최종
+  var 보인 = { "B2": 위값[1][1], "D2": 위값[1][3], "F2": 위값[1][5], "H2": 위값[1][7], "B3": 위값[2][1] };
+  var 견줄 = { "B2": 셈.전체건, "F2": 셈.도서산간, "H2": 셈.기타정산, "B3": 셈.최종 };
+  if (cMap.price !== -1) 견줄["D2"] = 셈.전체금액;
   Object.keys(견줄).forEach(function (k) {
     var v = 보인[k];
     if (typeof v !== "number" || Math.abs(v - 견줄[k]) > _PMS_AMT_TOLERANCE) {
@@ -175,30 +176,18 @@ function _pms_auditOne_(ss, y, m) {
   });
   셈.경고.forEach(function (w) { 문제.push(w); });
 
-  //  ⑤ 체크박스 · 고정 · 보호
-  if (줄수 && sh.getMaxColumns() >= c.ret) {
-    var dv = sh.getRange(_PMS_DATA_START, c.cancel, 줄수, 2).getDataValidations();
-    var CBX = SpreadsheetApp.DataValidationCriteria.CHECKBOX, 없음 = 0;
-    for (var i = 0; i < dv.length; i++) {
-      if (!dv[i][0] || dv[i][0].getCriteriaType() !== CBX || !dv[i][1] || dv[i][1].getCriteriaType() !== CBX) 없음++;
-    }
-    if (없음) 문제.push("취소·반품 칸에 체크박스가 없는 줄 " + 없음 + "줄");
-  }
+  //  ⑤ 고정 · 보호
   if (sh.getFrozenRows() !== _PMS_HEADER_ROW) 문제.push("고정 행이 " + sh.getFrozenRows() + " (기대 " + _PMS_HEADER_ROW + ")");
   var 범위보호 = sh.getProtections(SpreadsheetApp.ProtectionType.RANGE);
   var 시트보호 = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET);
   if (시트보호.length) 문제.push("탭 전체가 보호되어 있음 — 데이터 칸을 못 고칠 수 있음");
   if (범위보호.length !== 1) 문제.push("머리글 보호가 " + 범위보호.length + "개 (기대 1개)");
 
-  //  ⑥ 조건부 서식 겹침
-  var 규칙 = sh.getConditionalFormatRules() || [];
-  var 우리것 = 규칙.filter(_pms_isOurRowRule_).length;
-  if (우리것 !== 2) {
-    문제.push("취소·반품 줄 칠하기 규칙이 " + 우리것 + "개 (기대 2개)" +
-      (우리것 > 2 ? " — 보정을 돌릴 때마다 쌓였던 것. 보정을 다시 돌리면 2개로 정리됨" : ""));
-  }
+  //  ⑥ 옛 취소·반품 줄 칠하기 규칙이 남았나 (새 모양에는 없다)
+  var 우리것 = (sh.getConditionalFormatRules() || []).filter(_pms_isOurRowRule_).length;
+  if (우리것) 문제.push("옛 취소·반품 줄 칠하기 규칙 " + 우리것 + "개가 남음 — 보정하면 걷힘");
 
-  var 요약 = 셈.전체건 + "줄 · 유효 " + 셈.유효건 + "건";
+  var 요약 = 셈.전체건 + "줄";
   if (cMap.price !== -1) 요약 += " · 최종 " + _pms_audit_fmt_(셈.최종) + "원";
   return { 문제: 문제, 요약: 요약 };
 }
@@ -219,7 +208,7 @@ function _pms_audit_headerDiff_(row, extHdr) {
 
 /** 보정 코드가 넣을 수식을 그대로 받아 적는다 — 빠른 보정과 같은 것을 쓴다 */
 function _pms_audit_expectedFormulas_(cMap, c) {
-  return _pms_expectedSummaryFormulas_(cMap, c.cancel, c.ret, c.ship, c.island, c.etc);
+  return _pms_expectedSummaryFormulas_(cMap, c.island, c.etc);
 }
 
 /** 수식 견주기 — 빠른 보정과 같은 것 */
@@ -232,8 +221,9 @@ function _pms_audit_normF_(f) {
  * 수식과 같은 뜻: 일자가 비거나 0 인 줄은 건수·금액에서 뺀다.
  */
 function _pms_audit_recalc_(rows, cMap, c) {
-  var o = { 전체건: 0, 유효건: 0, 전체금액: 0, 유효금액: 0, 반품배송비: 0, 도서산간: 0, 기타정산: 0, 최종: 0, 경고: [] };
-  var 날짜아님 = 0, 날짜예 = "", 수량글 = 0, 금액글 = 0, 금액예 = "", 체크아님 = 0, 오류 = 0, 오류예 = "";
+  //  ★ 2026-10-05 새 모양 — 취소·반품 없음. 최종 = 정산금액 + 도서산간(O) + 기타정산
+  var o = { 전체건: 0, 전체금액: 0, 도서산간: 0, 기타정산: 0, 최종: 0, 경고: [] };
+  var 날짜아님 = 0, 날짜예 = "", 수량글 = 0, 금액글 = 0, 금액예 = "", 오류 = 0, 오류예 = "";
   var 비용글 = {}, 무일자 = { 수: 0, 합: 0, 예: "" };
   var 오류꼴 = /^#(REF!|N\/A|VALUE!|DIV\/0!|NAME\?|ERROR!|NUM!|NULL!)/;
   function 글자(v) {          //  숫자가 아닌 글자 (빈칸·숫자·불린·날짜는 아님)
@@ -247,11 +237,10 @@ function _pms_audit_recalc_(rows, cMap, c) {
         오류++; if (!오류예) 오류예 = _pms_audit_a1_(i + _PMS_DATA_START, k + 1) + " " + row[k];
       }
     }
-    o.반품배송비 += 수(row[c.ship - 1]);
     o.도서산간 += 수(row[c.island - 1]);
     o.기타정산 += 수(row[c.etc - 1]);
     //  ★ 2026-10-05 «금액을 넣었는데 최종이 안 바뀐다» — 글자로 들어간 금액은 SUM 이 건너뛴다
-    [["반품배송비", c.ship], ["도서산간배송비", c.island], ["기타정산", c.etc]].forEach(function (fc) {
+    [["도서산간배송비", c.island], ["기타정산", c.etc]].forEach(function (fc) {
       var v = row[fc[1] - 1];
       if (글자(v)) {
         var 칸 = 비용글[fc[0]] || (비용글[fc[0]] = { 수: 0, 예: "" });
@@ -276,25 +265,19 @@ function _pms_audit_recalc_(rows, cMap, c) {
     if (cMap.date !== -1 && !(d instanceof Date) && !_pms_audit_dateLike_(d)) {
       날짜아님++; if (!날짜예) 날짜예 = (i + _PMS_DATA_START) + "행 「" + d + "」";
     }
-    var 취소 = row[c.cancel - 1], 반품 = row[c.ret - 1];
-    if ((취소 !== "" && typeof 취소 !== "boolean") || (반품 !== "" && typeof 반품 !== "boolean")) 체크아님++;
-    var 유효 = 취소 !== true && 반품 !== true;
     o.전체건++;
-    if (유효) o.유효건++;
     if (cMap.qty !== -1 && 글자(row[cMap.qty])) 수량글++;
     if (cMap.price !== -1) {
       var p = row[cMap.price];
       if (글자(p)) { 금액글++; if (!금액예) 금액예 = (i + _PMS_DATA_START) + "행 「" + p + "」"; }
       o.전체금액 += 수(p);
-      if (유효) o.유효금액 += 수(p);
     }
   }
-  o.최종 = o.유효금액 + o.반품배송비 + o.도서산간 + o.기타정산;
+  o.최종 = o.전체금액 + o.도서산간 + o.기타정산;
 
   if (날짜아님) o.경고.push("일자 칸에 날짜가 아닌 값 " + 날짜아님 + "줄 (예: " + 날짜예 + ") — 칸이 밀렸을 수 있음");
   if (수량글) o.경고.push("수량 칸에 글자 " + 수량글 + "줄");
-  if (금액글) o.경고.push("금액 칸에 글자 " + 금액글 + "줄 (예: " + 금액예 + ") — 유효 정산금액이 0 으로 떨어질 수 있음");
-  if (체크아님) o.경고.push("취소·반품 칸에 체크(참/거짓)가 아닌 값 " + 체크아님 + "줄");
+  if (금액글) o.경고.push("금액 칸에 글자 " + 금액글 + "줄 (예: " + 금액예 + ") — 정산금액 합계에 안 들어감");
   if (오류) o.경고.push("데이터에 오류값 " + 오류 + "칸 (예: " + 오류예 + ")");
   Object.keys(비용글).forEach(function (이름) {
     o.경고.push(이름 + " 칸에 글자로 된 금액 " + 비용글[이름].수 + "칸 (예: " + 비용글[이름].예 +
