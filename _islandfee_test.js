@@ -127,6 +127,30 @@ ok("★ 판매현황 전에 «주소»로 먼저 본다 → 원장으로 받친�
 ok("판정 열(도서산간판정)을 금액 열로 착각하지 않는다", _island_findFeeCol1_(["도서산간판정", "도서산간배송비"]) === 2);
 ok("손으로 판매현황을 갱신해도 먼저 주소 판정", 꺼내(주문, "partnerRebuildSalesUploadSheet").indexOf("_island_judgeHubByAddress_()") !== -1);
 ok("손으로 발주 수집해도 주소 판정", 꺼내(웹, "partnerCollectOrdersOwner").indexOf("_island_judgeHubByAddress_()") !== -1);
+console.log("\n[7] ★ 내일 첫 회차에 옛 줄이 쏟아지지 않는다 ★");
+eval.call(null, 상수(판매, "_PO_ISLAND_FLAG_BEFORE_"));
+eval.call(null, 꺼내(판매, "_po_islandSeedFlags_"));
+eval.call(null, 꺼내(섬, "_island_ledgerMayCharge_"));
+//  허브 줄: [15] = P열(판매갱신 업 완료)
+function 허브(p) { var r = new Array(20).fill(""); r[15] = p; return r; }
+var 허브들 = [허브("판매갱신 업 완료"), 허브("판매갱신 업 완료"), 허브(""), 허브("판매갱신 업 완료")];
+var 금액 = [[15000], [0], [5000], [""]];
+var 표지 = [[""], [""], [""], [""]];
+같나("칸을 처음 만든 날: 이미 올라간 + 금액 있는 줄만 막는다", _po_islandSeedFlags_(허브들, 금액, 표지), 1);
+같나("  막은 줄 표시", 표지[0][0], "도입 전(2026-10-05)");
+같나("  아직 안 올라간 줄은 안 막는다 (본 주문과 같이 OUT00001)", 표지[2][0], "");
+ok("판매현황 갱신이 칸을 «만든 날»에만 막기를 한다", 재작성.indexOf("if (_po_islandFlagCol_.만듦)") !== -1 && 재작성.indexOf("_po_islandSeedFlags_(hubData, islFeeVals, islFlagVals)") !== -1);
+
+ok("원장(받침)은 판매현황에 올라간 줄에 새 금액을 안 붙인다", !_island_ledgerMayCharge_(허브("판매갱신 업 완료"), -1));
+var 판정된 = 허브(""); 판정된[18] = "일반 · 06134";
+ok("원장은 주소 판정을 한 줄에 새 금액을 안 붙인다", !_island_ledgerMayCharge_(판정된, 18));
+ok("원장은 판매현황 전·판정 전 줄에만 붙인다", _island_ledgerMayCharge_(허브(""), 18));
+ok("업체 시트는 허브가 정한 금액만 — 허브가 안 붙인 줄은 안 붙인다",
+   꺼내(섬, "_island_applyToPartnerSheets_").indexOf("var fee = feeByUid[uid];\n        if (!fee) continue;") !== -1);
+ok("수집이 4분을 넘겼으면 도서산간을 건너뛴다 (판매현황 갱신을 지킨다)", 수집.indexOf("_islElapsed_ > 240000") !== -1);
+ok("자동 판매현황 갱신(silent)은 판정을 또 하지 않는다 — 손으로 누를 때만",
+   /if \(!silent\) \{[\s\S]{0,200}_island_judgeHubByAddress_\(\)/.test(꺼내(주문, "partnerRebuildSalesUploadSheet")));
+
 var 트리거 = 꺼내(웹, "_trigger_islandShipping_");
 ok("트리거는 허브 금액을 업체 시트에 그대로 넘긴다", 트리거.indexOf("hubResult.feeByUid") !== -1);
 ok("예전 박스×수량×5,000 계산이 남아 있지 않다", 섬.indexOf("uidBoxMap[uid] * qty") === -1 && 섬.indexOf("* _ISLAND_FEE_PER_QTY") === -1);

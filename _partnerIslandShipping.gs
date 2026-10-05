@@ -133,6 +133,13 @@ var _ISLAND_LEDGER_TAIL_    = 40000;   // 원장 끝에서 이만큼만 본다 (
 var _ISLAND_FEE_LINE_       = 5000;
 var _ISLAND_FEE_SET_        = 10000;
 
+/** 순수 — 원장(받침)이 이 허브 줄에 «새로» 금액을 붙여도 되나: 판매현황 전(P 빈칸) · 주소 판정 전 */
+function _island_ledgerMayCharge_(hubRow, judgeCol0) {
+  if (String(hubRow[15] || "").trim()) return false;
+  if (judgeCol0 >= 0 && String(hubRow[judgeCol0] || "").trim()) return false;
+  return true;
+}
+
 /** 주문 줄 하나의 도서산간비 — 한글 「세트」면 10,000, 아니면 5,000 */
 function _island_lineFee_(itemName) {
   return String(itemName == null ? "" : itemName).indexOf("세트") !== -1 ? _ISLAND_FEE_SET_ : _ISLAND_FEE_LINE_;
@@ -363,6 +370,10 @@ function _island_applyToHub_(uidBoxMap, opts) {
     if (statusCol0 < 0) statusCol0 = 14; // O열
     var itemCol0 = _island_findItemCol0_(headers);
     if (itemCol0 < 0) itemCol0 = 5; // F열 품목명
+    var judgeCol0 = -1;
+    for (var jh = 0; jh < headers.length; jh++) {
+      if (String(headers[jh] || "").replace(/\s/g, "") === "도서산간판정") { judgeCol0 = jh; break; }
+    }
 
     var feeArr = [];
     for (var i = 0; i < hubData.length; i++) {
@@ -386,6 +397,13 @@ function _island_applyToHub_(uidBoxMap, opts) {
         result.feeByUid[uid] = existing;   //  업체 시트도 허브와 같은 금액으로
         continue;
       }
+
+      //  ★ 2026-10-05 원장은 «받침»일 뿐 — 새 금액은 판매현황 전·주소 판정 전인 줄에만
+      //    · 판매현황에 이미 올라간 줄(P열): 옛 주문에 소급해 붙이면 이미 마감한 달
+      //      (9월 등)에 이카운트 OUT00001 만 뒤늦게 생긴다. 업체 시트에는 줄이 없다.
+      //    · 주소 판정을 한 줄(도서산간판정): 그쪽이 주인이다. 세트분리는 이제
+      //      대리판매를 패스하므로 원장에 남은 옛 「도서산간」 기록이 이길 이유가 없다.
+      if (!_island_ledgerMayCharge_(hubData[r], judgeCol0)) continue;
 
       var status = statusCol0 >= 0 ? String(hubData[r][statusCol0] || "").replace(/\s/g, "") : "";
       if (status.indexOf("취소") !== -1 || status.indexOf("반품") !== -1 || status.indexOf("불용") !== -1) continue;
@@ -491,7 +509,6 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames, feeByUid) {
       var uidColIdx = _island_findUidCol0_(headers);
       if (uidColIdx < 0) uidColIdx = 12; // M열 폴백
       var statusColIdx = _island_findStatusCol0_(headers);
-      var itemColIdx = _island_findItemCol0_(headers);
 
       var oColArr = [];
       for (var i = 0; i < data.length; i++) {
@@ -509,8 +526,11 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames, feeByUid) {
 
         var status = statusColIdx !== -1 ? String(data[r][statusColIdx] || "").replace(/\s/g, "") : "";
         if (status.indexOf("취소") !== -1 || status.indexOf("반품") !== -1 || status.indexOf("불용") !== -1) continue;
-        //  ★ v3: 허브가 정한 금액을 그대로 — 허브에 없을 때만 이 줄 품목명으로 정한다
-        var fee = feeByUid[uid] || _island_lineFee_(itemColIdx !== -1 ? data[r][itemColIdx] : "");
+        //  ★ v3: 허브가 정한 금액만 — 허브가 안 붙인 줄(이미 판매현황에 올라갔거나
+        //    주소 판정이 일반이라 한 줄)은 업체 시트에도 안 붙인다. 업체 시트(월마감 정산)와
+        //    이카운트 OUT00001 이 늘 같이 간다.
+        var fee = feeByUid[uid];
+        if (!fee) continue;
 
         oColArr[r][0] = fee;
         changedRows.push(_island_colToLetter_(feeCol) + (r + 2));

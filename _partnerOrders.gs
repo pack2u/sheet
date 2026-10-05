@@ -4478,15 +4478,25 @@ function _po_collectSilentCore_(withSalesRebuild) {
   //   ★ 먼저 «주소»로 본다 — 판매현황 전에, 대리판매 허브 주문만 (_partnerIslandJudge.gs)
   //     > "판매현황전에 확인하자는거야..세트분리 전에 대리판매업체들것만.."
   //     그 뒤 세트분리 원장으로 놓친 것을 받친다(이미 올라간 옛 줄).
-  try {
-    if (typeof _island_judgeHubByAddress_ === "function") _island_judgeHubByAddress_();
-  } catch (eJdg) {
-    try { Logger.log("[ISLAND_JUDGE_ERR] " + String(eJdg.message || eJdg)); } catch (_) {}
-  }
-  try {
-    if (typeof _trigger_islandShipping_ === "function") _trigger_islandShipping_();
-  } catch (eIsl) {
-    try { Logger.log("[ISLAND_AFTER_COLLECT_ERR] " + String(eIsl.message || eIsl)); } catch (_) {}
+  //   ★ 시간 예산: 수집이 이미 4분을 썼으면 건너뛴다 — 6분에 끊기면 뒤의 판매현황 갱신이
+  //     통째로 빠진다. 건너뛴 줄은 판정 칸이 비어 있으니 다음 회차나 판매현황 갱신
+  //     (그 앞에서도 판정한다)이 받는다.
+  var _islElapsed_ = new Date() - startTime;
+  if (_islElapsed_ > 240000) {
+    Logger.log("[ISLAND] 수집이 " + Math.round(_islElapsed_ / 1000) + "초를 써서 도서산간 판정을 이번 회차엔 건너뜁니다");
+  } else {
+    try {
+      if (typeof _island_judgeHubByAddress_ === "function") _island_judgeHubByAddress_();
+    } catch (eJdg) {
+      try { Logger.log("[ISLAND_JUDGE_ERR] " + String(eJdg.message || eJdg)); } catch (_) {}
+    }
+    if (new Date() - startTime < 270000) {
+      try {
+        if (typeof _trigger_islandShipping_ === "function") _trigger_islandShipping_();
+      } catch (eIsl) {
+        try { Logger.log("[ISLAND_AFTER_COLLECT_ERR] " + String(eIsl.message || eIsl)); } catch (_) {}
+      }
+    }
   }
   // ③ ★ 2026-07-02: 판매현황 갱신 (발주수집 후 자동 실행)
   //    ★ 2026-09-17: 오후 1시 회차에서만 돈다 (partnerCollectOrdersSilent_)
@@ -4783,11 +4793,14 @@ function partnerRebuildSalesUploadSheet(silent) {
   if (!ss) return;
 
   // ★ 2026-10-05 판매현황 «전에» 도서산간 주소 판정 — 손으로 갱신해도 OUT00001 이 빠지지 않게.
-  //   이미 본 줄은 다시 안 보므로 수집 회차에서 방금 돌았으면 금방 지나간다.
-  try {
-    if (typeof _island_judgeHubByAddress_ === "function") _island_judgeHubByAddress_();
-  } catch (eIsl) {
-    Logger.log("[도서산간 판정] 판매현황 앞 실행 실패(무시): " + eIsl.message);
+  //   자동 회차(silent)는 _po_collectSilentCore_ 가 바로 앞에서 시간 예산을 보고 이미 했다 —
+  //   여기서 또 하면 그 예산이 무너진다. 손으로 누를 때만 한다.
+  if (!silent) {
+    try {
+      if (typeof _island_judgeHubByAddress_ === "function") _island_judgeHubByAddress_();
+    } catch (eIsl) {
+      Logger.log("[도서산간 판정] 판매현황 앞 실행 실패(무시): " + eIsl.message);
+    }
   }
 
   var lock = LockService.getDocumentLock();
@@ -4847,6 +4860,12 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
       islFeeVals = hubTab.getRange(2, islFeeCol, hubLr - 1, 1).getValues();
       islFlagCol = _po_islandFlagCol_(hubTab, hubHdr);
       islFlagVals = hubTab.getRange(2, islFlagCol, hubLr - 1, 1).getValues();
+      //  처음 만든 날 한 번: 이미 올라간 옛 도서산간 줄은 「도입 전」으로 막는다
+      if (_po_islandFlagCol_.만듦) {
+        var 막음 = _po_islandSeedFlags_(hubData, islFeeVals, islFlagVals);
+        if (막음) hubTab.getRange(2, islFlagCol, islFlagVals.length, 1).setValues(islFlagVals);
+        Logger.log("[도서산간 판매] 「" + _PO_ISLAND_FLAG_HEADER_ + "」 칸을 만들고 도입 전 줄 " + 막음 + "개를 막았습니다");
+      }
     }
   } catch (eIsl) {
     Logger.log("[도서산간 판매] 준비 실패 — 이번엔 도서산간 줄 없이 갑니다: " + eIsl.message);

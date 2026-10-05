@@ -71,11 +71,36 @@ function _po_islandCancelLike_(stCompact) {
   return stCompact.indexOf("취소") !== -1 || stCompact.indexOf("반품") !== -1 || stCompact.indexOf("불용") !== -1;
 }
 
-/** 허브 「도서산간 판매갱신」 칸 — 없으면 맨 뒤에 만든다 (가운데 끼우면 뒤 칸이 밀린다) */
+var _PO_ISLAND_FLAG_BEFORE_ = "도입 전(2026-10-05)";
+
+/**
+ * 순수 — 칸을 «처음 만들 때» 한 번: 판매현황에 이미 올라간 줄 중 금액이 있는 줄은
+ * 「도입 전」으로 막는다. 안 그러면 첫 갱신에 옛 도서산간 줄 전부가 OUT00001 로
+ * 한꺼번에 올라간다(그 금액은 예전 방식 — 월마감 정산 — 으로 이미 받았다).
+ * @return {number} 막은 줄 수
+ */
+function _po_islandSeedFlags_(hubData, feeVals, flagVals) {
+  var n = 0;
+  for (var r = 0; r < hubData.length; r++) {
+    var 올라감 = String(hubData[r][15] || "").trim() !== "";
+    if (올라감 && (Number(feeVals[r][0]) || 0) > 0 && !String(flagVals[r][0] || "").trim()) {
+      flagVals[r][0] = _PO_ISLAND_FLAG_BEFORE_;
+      n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * 허브 「도서산간 판매갱신」 칸 — 없으면 맨 뒤에 만든다 (가운데 끼우면 뒤 칸이 밀린다).
+ * 만들었으면 _po_islandFlagCol_.만듦 = true (호출한 쪽이 처음 한 번 막기를 한다)
+ */
 function _po_islandFlagCol_(hubTab, hdr) {
+  _po_islandFlagCol_.만듦 = false;
   for (var i = 0; i < hdr.length; i++) {
     if (String(hdr[i] || "").replace(/\s/g, "") === _PO_ISLAND_FLAG_HEADER_.replace(/\s/g, "")) return i + 1;
   }
+  _po_islandFlagCol_.만듦 = true;
   var col = hubTab.getLastColumn() + 1;
   if (hubTab.getMaxColumns() < col) hubTab.insertColumnsAfter(hubTab.getMaxColumns(), col - hubTab.getMaxColumns());
   hubTab.getRange(1, col).setValue(_PO_ISLAND_FLAG_HEADER_)

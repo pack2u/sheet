@@ -37,6 +37,16 @@ var _ISJ_JUDGE_HEADER_ = "도서산간판정";
 var _ISJ_TABS_ = { 도선료: "도서산간_도선료", 우편: "도서산간_우편번호", 시군: "도서산간_시군", 사전: "도서산간_주소사전" };
 var _ISJ_KAKAO_BATCH_ = 30;
 var _ISJ_SLOW_RETRY_MAX_ = 15;   // 첫판에 못 맞힌 주소를 하나씩 더 묻는 상한
+var _ISJ_MAX_ROWS_ = 300;        // 한 번에 보는 줄 상한 (첫날 쌓인 옛 줄 때문에 수집이 끊기지 않게)
+
+/** 허브 마지막 주문 행 — C열(고유ID) 기준. 2,000행 제한 없이 끝까지 본다 */
+function _isj_lastRow_(hubTab) {
+  var lr = hubTab.getLastRow();
+  if (lr < 2) return 1;
+  var c = hubTab.getRange(2, 3, lr - 1, 1).getDisplayValues();
+  for (var i = c.length - 1; i >= 0; i--) if (String(c[i][0] || "").trim()) return i + 2;
+  return 1;
+}
 
 /* ── core.js 에서 옮긴 것 (ssNormAddr · ssAddrRegion · ssFerryMatch) ───────── */
 
@@ -252,7 +262,7 @@ function _island_judgeHubByAddress_() {
     var lc = hubTab.getLastColumn();
     var hdr = hubTab.getRange(1, 1, 1, lc).getDisplayValues()[0];
     var judgeCol = _isj_judgeCol_(hubTab, hdr);
-    var lr = Math.max(_island_findLastDataRow_(hubTab, 3), _island_findLastDataRow_(hubTab, 5));
+    var lr = _isj_lastRow_(hubTab);
     if (lr < 2) { 결과.글 = "허브에 주문이 없습니다"; return 결과; }
     var n = lr - 1;
     var data = hubTab.getRange(2, 1, n, Math.max(16, lc)).getValues();
@@ -272,8 +282,17 @@ function _island_judgeHubByAddress_() {
       if ((Number(feeVals[r][0]) || 0) > 0) { judgeVals[r][0] = "금액 있음"; continue; }
       볼.push({ r: r, addr: addr });
     }
+    //  한 번에 너무 많이 묻지 않는다 — 새것(아래쪽)부터. 남은 줄은 판정 칸이 비어 있어 다음에 본다
+    var 남김 = 0;
+    if (볼.length > _ISJ_MAX_ROWS_) { 남김 = 볼.length - _ISJ_MAX_ROWS_; 볼 = 볼.slice(볼.length - _ISJ_MAX_ROWS_); }
     결과.본 = 볼.length;
-    if (!볼.length) { 결과.글 = "새로 볼 주문이 없습니다"; return 결과; }
+    결과.남김 = 남김;
+    if (!볼.length) {
+      //  「금액 있음」만 적힌 경우도 있다 — 그건 남긴다
+      hubTab.getRange(2, judgeCol, n, 1).setValues(judgeVals);
+      결과.글 = "새로 볼 주문이 없습니다";
+      return 결과;
+    }
 
     var M = _isj_loadMasters_();
     //  도선료표로 끝나는 주소는 우편번호를 안 묻는다 (세트분리와 같은 순서)
@@ -326,6 +345,7 @@ function _island_judgeHubByAddress_() {
       "  섬·산간 " + 결과.섬 + "줄 (허브·업체 시트에 금액, 보라색)\n" +
       "  일반 " + 결과.일반 + "줄\n" +
       "  미확인 " + 결과.미확인 + "줄 (우편번호를 못 구했고 지역명이 후보뿐 — 금액 안 붙임)" +
+      (남김 ? "\n  이번에 못 본 옛 줄 " + 남김 + "개 — 다음 실행에서 봅니다" : "") +
       (미확인줄.length ? "\n    " + 미확인줄.slice(0, 10).join("\n    ") : "");
     if (결과.미확인 && typeof _chat_sendText_ === "function") {
       try { _chat_sendText_("🏝️ 도서산간 미확인 " + 결과.미확인 + "줄 — 허브 「도서산간판정」 칸을 확인해 주세요\n" + 미확인줄.slice(0, 10).join("\n")); } catch (eC) {}
