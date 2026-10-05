@@ -35,17 +35,48 @@ function partnerAuditMonthlySettle_2609() {
   return _pms_auditRun_(_PMS_AUDIT_2609_, 2026, 9);
 }
 
-function _pms_auditRun_(names, y, m) {
-  var 시작 = Date.now();
+/**
+ * 메뉴: 🔎 월별 마감 탭 점검 — 업체·월을 골라 읽기만 한다.  ★ 2026-10-05
+ *  > "금액을 추가하면 최종 정산 금액이 수정되야 되는데 안되고 있어"
+ *  글자로 들어간 금액·일자 없는 줄의 금액(합계에 안 들어가는 것)도 짚는다.
+ */
+function partnerAuditMonthlySettleTabs() {
+  var ui = SpreadsheetApp.getUi();
   var files = _pt_listFiles();
-  var 말 = ["■ 월별 마감 탭 점검 — (" + y + "년 " + m + "월) 발주 마감 · 읽기만 함", ""];
+  if (!files || !files.length) return ui.alert("협력업체 파일 없음");
+  var selected = _pms_pickVendors_(ui, files,
+    "🔎 월별 마감 탭 점검 — 업체 선택",
+    "수식·레이아웃·요약 값을 읽기만 해서 봅니다 (안 바꿈).\n업체 번호(쉼표로 여럿) · 이름 일부 · all");
+  if (selected === null) return;
+  if (!selected.length) return ui.alert("선택된 업체가 없습니다.");
+  var mResp = ui.prompt("🔎 월별 마감 탭 점검 — 월", "볼 월을 입력하세요 (예: 2026-09 또는 9).", ui.ButtonSet.OK_CANCEL);
+  if (mResp.getSelectedButton() !== ui.Button.OK) return;
+  var 월 = _pms_parseMonthPick_(mResp.getResponseText());
+  if (!월 || 월.err) return ui.alert((월 && 월.err) || "월을 넣어 주세요.");
+  var y = 월.y !== null ? 월.y : new Date().getFullYear();
+
+  var 글 = _pms_auditFiles_(selected, y, 월.m, []);
+  if (글.length > 3800) 글 = 글.slice(0, 3800) + "\n… (나머지는 실행 로그에)";
+  ui.alert(글);
+}
+
+function _pms_auditRun_(names, y, m) {
+  var files = _pt_listFiles();
+  var 앞말 = [];
   var 고른 = [], 본 = {};
   names.forEach(function (n) {
     var hit = files.filter(function (f) { return _pms_vendorLabel_(f).indexOf(n) !== -1; });
-    if (!hit.length) { 말.push("  ❓ " + n + " — 협력업체 파일을 못 찾음"); return; }
+    if (!hit.length) { 앞말.push("  ❓ " + n + " — 협력업체 파일을 못 찾음"); return; }
     hit.forEach(function (f) { if (!본[f.id]) { 본[f.id] = 1; 고른.push(f); } });
   });
+  _pms_auditFiles_(고른, y, m, 앞말);
+  return "실행 로그를 보세요";
+}
 
+/** 고른 업체들 점검 — 로그에 남기고 글을 돌려준다 */
+function _pms_auditFiles_(고른, y, m, 앞말) {
+  var 시작 = Date.now();
+  var 말 = ["■ 월별 마감 탭 점검 — (" + y + "년 " + m + "월) 발주 마감 · 읽기만 함", ""].concat(앞말 || []);
   var 좋음 = 0, 나쁨 = 0;
   for (var i = 0; i < 고른.length; i++) {
     if (Date.now() - 시작 > _PMS_REPAIR_LIMIT_MS_) {
@@ -65,8 +96,9 @@ function _pms_auditRun_(names, y, m) {
     }
   }
   말.push("", "합계  이상 없음 " + 좋음 + " · 손볼 것 있음 " + 나쁨 + "   " + Math.round((Date.now() - 시작) / 1000) + "초");
-  Logger.log(말.join("\n"));
-  return 좋음 + " ok / " + 나쁨 + " 문제";
+  var 글 = 말.join("\n");
+  Logger.log(글);
+  return 글;
 }
 
 /** 한 업체의 한 달 마감 탭 점검 */
@@ -202,6 +234,7 @@ function _pms_audit_normF_(f) {
 function _pms_audit_recalc_(rows, cMap, c) {
   var o = { 전체건: 0, 유효건: 0, 전체금액: 0, 유효금액: 0, 반품배송비: 0, 도서산간: 0, 기타정산: 0, 최종: 0, 경고: [] };
   var 날짜아님 = 0, 날짜예 = "", 수량글 = 0, 금액글 = 0, 금액예 = "", 체크아님 = 0, 오류 = 0, 오류예 = "";
+  var 비용글 = {}, 무일자 = { 수: 0, 합: 0, 예: "" };
   var 오류꼴 = /^#(REF!|N\/A|VALUE!|DIV\/0!|NAME\?|ERROR!|NUM!|NULL!)/;
   function 글자(v) {          //  숫자가 아닌 글자 (빈칸·숫자·불린·날짜는 아님)
     return !(v === "" || v == null || typeof v === "number" || typeof v === "boolean" || v instanceof Date);
@@ -217,10 +250,29 @@ function _pms_audit_recalc_(rows, cMap, c) {
     o.반품배송비 += 수(row[c.ship - 1]);
     o.도서산간 += 수(row[c.island - 1]);
     o.기타정산 += 수(row[c.etc - 1]);
+    //  ★ 2026-10-05 «금액을 넣었는데 최종이 안 바뀐다» — 글자로 들어간 금액은 SUM 이 건너뛴다
+    [["반품배송비", c.ship], ["도서산간배송비", c.island], ["기타정산", c.etc]].forEach(function (fc) {
+      var v = row[fc[1] - 1];
+      if (글자(v)) {
+        var 칸 = 비용글[fc[0]] || (비용글[fc[0]] = { 수: 0, 예: "" });
+        칸.수++;
+        if (!칸.예) 칸.예 = _pms_audit_a1_(i + _PMS_DATA_START, fc[1]) + " 「" + v + "」";
+      }
+    });
 
     var d = cMap.date !== -1 ? row[cMap.date] : row[0];
     var 있음 = d !== "" && d !== null && d !== undefined && (cMap.date === -1 || d !== 0);
-    if (!있음) continue;
+    if (!있음) {
+      //  일자 없는 줄의 정산금액은 요약 수식이 세지 않는다 (B5:B<>0)
+      if (cMap.price !== -1) {
+        var 빈금액 = row[cMap.price];
+        if ((typeof 빈금액 === "number" && 빈금액 !== 0) || 글자(빈금액)) {
+          무일자.수++; 무일자.합 += 수(빈금액);
+          if (!무일자.예) 무일자.예 = (i + _PMS_DATA_START) + "행 「" + 빈금액 + "」";
+        }
+      }
+      continue;
+    }
     if (cMap.date !== -1 && !(d instanceof Date) && !_pms_audit_dateLike_(d)) {
       날짜아님++; if (!날짜예) 날짜예 = (i + _PMS_DATA_START) + "행 「" + d + "」";
     }
@@ -244,6 +296,14 @@ function _pms_audit_recalc_(rows, cMap, c) {
   if (금액글) o.경고.push("금액 칸에 글자 " + 금액글 + "줄 (예: " + 금액예 + ") — 유효 정산금액이 0 으로 떨어질 수 있음");
   if (체크아님) o.경고.push("취소·반품 칸에 체크(참/거짓)가 아닌 값 " + 체크아님 + "줄");
   if (오류) o.경고.push("데이터에 오류값 " + 오류 + "칸 (예: " + 오류예 + ")");
+  Object.keys(비용글).forEach(function (이름) {
+    o.경고.push(이름 + " 칸에 글자로 된 금액 " + 비용글[이름].수 + "칸 (예: " + 비용글[이름].예 +
+      ") — 합계·최종 정산금액에 안 들어감");
+  });
+  if (무일자.수) {
+    o.경고.push("일자가 없는 줄의 정산금액 " + 무일자.수 + "줄 (예: " + 무일자.예 +
+      ") — 요약 수식이 일자 있는 줄만 세서 최종 정산금액에 안 들어감");
+  }
   return o;
 }
 
