@@ -772,37 +772,26 @@ function _po_refreshAutofillBeforeCollect_(tab, priceMap, vendorName) {
     lHasF = !!String(tab.getRange("L1").getFormula() || "");
   } catch (_) {}
 
-  // ★ 2026-07-20 (3차): 수집 직전 D/L 스필 막힘 무음 해제 (2계층 백필 — 운영자 확정 무음 복원 정책)
-  //   수식은 있는데 헤더가 #REF!(복붙 값이 스필 차단)이면 해당 열 값만 걷어냄.
-  //   토스트·알림 없음. 수식 재주입 아님(수식은 살아있음) → "자동복구 순환" 문제와 무관.
+  // ★ 2026-10-05: D/L 이 아직 옛 스필이면 «줄마다 수식»으로 바꾼다 (업체가 쓴 값은 남긴다).
+  //   여태는 스필이 막히면(#REF!) 그 열을 통째로 지웠다 — 업체가 적은 품명·단가까지.
+  //   (_pt_ensureOrderRowFormulasDL_ 머리 주석)
   try {
-    if (dHasF || lHasF) {
-      var _spillClr_ = false;
-      if (dHasF && String(tab.getRange("D1").getDisplayValue() || "").indexOf("#REF") !== -1) {
-        var _dEnd_ = 500;
-        try {
-          var _dM_ = String(tab.getRange("D1").getFormula() || "").match(/C2:C(\d+)/);
-          if (_dM_) _dEnd_ = parseInt(_dM_[1], 10);
-        } catch (_) {}
-        tab.getRange(2, 4, _dEnd_ - 1, 1).clearContent();
-        _spillClr_ = true;
-      }
-      if (lHasF && String(tab.getRange("L1").getDisplayValue() || "").indexOf("#REF") !== -1) {
-        var _lEnd_ = 500;
-        try {
-          var _lM_ = String(tab.getRange("L1").getFormula() || "").match(/C2:C(\d+)/);
-          if (_lM_) _lEnd_ = parseInt(_lM_[1], 10);
-        } catch (_) {}
-        tab.getRange(2, 12, _lEnd_ - 1, 1).clearContent();
-        _spillClr_ = true;
-      }
-      if (_spillClr_) SpreadsheetApp.flush();
+    var _d1f_ = String(tab.getRange("D1").getFormula() || "");
+    var _l1f_ = String(tab.getRange("L1").getFormula() || "");
+    if (_d1f_.indexOf("ARRAYFORMULA") !== -1 || _l1f_.indexOf("ARRAYFORMULA") !== -1) {
+      var _safe_ = _pt_resolveViewerTabNameForOrderSpill(tab, null);
+      _pt_ensureOrderRowFormulasDL_(tab, "'" + _safe_.replace(/'/g, "''") + "'", 0);
+      SpreadsheetApp.flush();
+      dHasF = !!String(tab.getRange("D1").getFormula() || "");
+      lHasF = !!String(tab.getRange("L1").getFormula() || "");
     }
   } catch (_) {}
 
   // ★ 2026-07-17: B열(주문일자) 사전 채움 제거 — 수집 성공 행에만 수집일 기록
   var nRows = lr - 1;
   var block = tab.getRange(2, 1, nRows, 14).getValues();
+  //  ★ 2026-10-05 줄마다 수식을 값으로 굳히지 않게 — 안 바꾼 칸은 수식을 그대로 다시 쓴다
+  var fblock = tab.getRange(2, 1, nRows, 14).getFormulas();
   var filled = 0;
   var map = priceMap || {};
   var aCol = [], dCol = [], lCol = [];
@@ -837,9 +826,9 @@ function _po_refreshAutofillBeforeCollect_(tab, priceMap, vendorName) {
       }
     }
 
-    aCol.push([aVal]);
-    dCol.push([dVal]);
-    lCol.push([lVal]);
+    aCol.push([aVal === block[i][0] && fblock[i][0] ? fblock[i][0] : aVal]);
+    dCol.push([dVal === block[i][3] && fblock[i][3] ? fblock[i][3] : dVal]);
+    lCol.push([lVal === block[i][11] && fblock[i][11] ? fblock[i][11] : lVal]);
   }
 
   if (aChanged) tab.getRange(2, 1, nRows, 1).setValues(aCol);

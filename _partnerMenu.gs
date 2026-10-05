@@ -298,6 +298,7 @@ function registerPartnerMenu_() {
         .addItem("🔄 취소/반품 수식 갱신", "partnerRefreshCancelReturnFormulas")
         .addItem("🔧 월별 마감 탭 레이아웃 보정", "partnerRepairMonthlySettleTabs")
         .addItem("🔎 월별 마감 탭 점검 (읽기만)", "partnerAuditMonthlySettleTabs")
+        .addItem("✍️ 발주탭 품목명·단가 줄마다 수식으로 (입력 막기 해제)", "partnerConvertOrderDLToRowFormulas")
         .addItem("🔧 마감 정산금액 보정 (단가×수량)", "partnerRepairArchiveLineTotals")
         .addSeparator()
         // ── 여기서부터 명세서 (받은 명세를 대사한다) ──
