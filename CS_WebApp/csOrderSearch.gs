@@ -4375,6 +4375,14 @@ function csGetReturnLedgerBadgeIndex(opt) {
             화면에서 「오래된순」을 고를 때 날짜를 다시 파싱하지 않게 —
             차례를 정하는 규칙이 두 군데로 갈리면 반드시 어긋난다. */
         sortKey: r.sortKey,
+        /*  ★ 2026-10-05 원래 주문의 고유ID — 주문 카드와 «번호로» 잇는다 ★
+            > "주문 카드에 반품 내용 붙여줘"
+            전화·송장으로 잇던 것은 같은 손님의 다른 주문에도 붙었다. 대장의 고유ID 는
+            이제 주문 고유ID 다(csReturnOrderUid.gs). 시험 r 번호는 번호가 아니다. */
+        uid: (function (u) {
+          u = _cs_orderUid_(u);
+          return /^r\d{10}$/.test(u) ? "" : u;
+        })(r.uid),
         invDigits: r.invDigits,
         returnInvDigits: r.returnInvDigits,
         phoneDigits: r.phoneDigits,

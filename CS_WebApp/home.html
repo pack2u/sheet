@@ -1336,6 +1336,24 @@
     .os-tag.ret-s1 { background: rgba(119, 162, 215,0.18); color: #8cc0ff; }
     .os-tag.ret-s2 { background: rgba(199, 165, 63,0.18); color: #ffc107; }
     .os-tag.ret-s3 { background: rgba(145, 183, 146,0.15); color: #81c784; }
+    /* ★ 2026-10-05 주문 카드 「반품」 줄 — 대장 내용을 그대로. 단계 색은 뱃지와 같다 */
+    .os-ret-line {
+      display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 5px 8px;
+      border: 0; border-radius: 6px; font: inherit; font-size: 12.5px; line-height: 1.45;
+      cursor: pointer; word-break: keep-all; overflow-wrap: anywhere;
+    }
+    .os-ret-line:last-child { margin-bottom: 0; }
+    .os-ret-line:hover { filter: brightness(1.2); }
+    .os-ret-line:focus-visible { outline: 2px solid var(--accent, #ffc107); outline-offset: 1px; }
+    .os-ret-line.ret-s0 { background: rgba(255,255,255,0.09); color: var(--text-secondary); }
+    .os-ret-line.ret-s1 { background: rgba(119, 162, 215,0.18); color: #8cc0ff; }
+    .os-ret-line.ret-s2 { background: rgba(199, 165, 63,0.18); color: #ffc107; }
+    .os-ret-line.ret-s3 { background: rgba(145, 183, 146,0.15); color: #81c784; }
+    .os-ret-by { font-size: 11px; opacity: 0.75; }
+    :root[data-theme="light"] .os-ret-line.ret-s0 { background: rgba(0,0,0,0.06); }
+    :root[data-theme="light"] .os-ret-line.ret-s1 { color: #1b5fa8; }
+    :root[data-theme="light"] .os-ret-line.ret-s2 { color: #8a5300; }
+    :root[data-theme="light"] .os-ret-line.ret-s3 { color: #10714b; }
     .os-return-card {
       background: var(--bg-secondary); border: 1px solid var(--border);
       border-radius: 9px; padding: 9px 10px; margin-bottom: 7px; font-size: 12px;
@@ -11214,24 +11232,83 @@
       return c.active ? 0 : 3;   // 서버가 아직 옛 인덱스를 주는 동안의 대비
     }
 
-    function returnBadgeFor(r) {
-      if (!RETURN_CASES.length || !r) return null;
+    /** 주문 고유ID 열쇠 — 서버 _cs_orderUid_ 와 같은 규칙 (마지막 / 뒤 · 띄어쓰기 · #n · |코드 · _S숫자) */
+    function orderUidKey(v) {
+      var s = String(v == null ? '' : v);
+      var cut = Math.max(s.lastIndexOf('/'), s.lastIndexOf('／'));
+      if (cut >= 0) s = s.slice(cut + 1);
+      s = s.replace(/\s+/g, '').replace(/#\d+$/, '');
+      var bar = s.indexOf('|');
+      if (bar >= 0) s = s.slice(0, bar);
+      return s.replace(/_S\d+$/i, '');
+    }
+
+    /**
+     * 이 주문의 반품들 — ★ 2026-10-05 고유ID 가 먼저 ★
+     *   > "주문 카드에 반품 내용 붙여줘"
+     *   반품대장 고유ID 칸이 이제 «원래 주문의 고유ID» 다. 번호가 같으면 그 주문이다.
+     *   대장에 번호가 있는데 다르면 «다른 주문»이다 — 같은 손님이라 전화가 같아도 붙이지 않는다.
+     *   번호가 없는 옛 반품만 예전처럼 송장 → (송장도 없을 때) 전화로 잇는다.
+     * @return {Array<{c:Object, by:string}>} 진행 중 먼저, 같으면 더 나아간 단계 먼저
+     */
+    function returnCasesFor(r) {
+      if (!RETURN_CASES.length || !r) return [];
+      var uid = orderUidKey(r.orderNo);
       var phone = String(r.phoneDigits || '').replace(/[^0-9]/g, '');
       var inv = String(r.invDigits || '');
-      var best = null;
+      var out = [];
       for (var i = 0; i < RETURN_CASES.length; i++) {
         var c = RETURN_CASES[i];
-        var hit = false;
-        if (phone && c.phoneDigits && phone === c.phoneDigits) hit = true;
-        if (!hit && inv && (invDigitsOverlap(inv, c.invDigits) || invDigitsOverlap(inv, c.returnInvDigits))) hit = true;
-        if (!hit) continue;
-        if (!best) { best = c; continue; }
-        /* 같은 사람의 반품이 여러 건일 수 있다. 진행 중인 것을 먼저 보여준다 —
-           지난달 완료건보다 지금 처리해야 할 건이 급하다.
-           둘 다 진행 중이면 더 나아간 단계를 보여준다. */
-        if (c.active !== best.active) { if (c.active) best = c; continue; }
-        if (returnStageOf(c) > returnStageOf(best)) best = c;
+        var by = '';
+        if (c.uid) {
+          if (uid && c.uid === uid) by = '고유ID';
+          else if (!uid && inv && (invDigitsOverlap(inv, c.invDigits) || invDigitsOverlap(inv, c.returnInvDigits))) by = '송장';
+        } else if (inv && (invDigitsOverlap(inv, c.invDigits) || invDigitsOverlap(inv, c.returnInvDigits))) {
+          by = '송장';
+        } else if (phone && c.phoneDigits && phone === c.phoneDigits && !c.invDigits) {
+          by = '전화';
+        }
+        if (by) out.push({ c: c, by: by });
       }
+      /* 같은 사람의 반품이 여러 건일 수 있다. 진행 중인 것을 먼저 보여준다 —
+         지난달 완료건보다 지금 처리해야 할 건이 급하다.
+         둘 다 진행 중이면 더 나아간 단계를 보여준다. */
+      out.sort(function(a, b) {
+        if (a.c.active !== b.c.active) return a.c.active ? -1 : 1;
+        var ds = returnStageOf(b.c) - returnStageOf(a.c);
+        if (ds) return ds;
+        return String(b.c.sortKey || '').localeCompare(String(a.c.sortKey || ''));
+      });
+      return out;
+    }
+
+    /** 주문 카드 「반품」 줄 — 대장에 적힌 내용을 그대로 (시트와 같은 말) */
+    function returnLinesHtml(r) {
+      var hits = returnCasesFor(r);
+      if (!hits.length) return '';
+      var lines = hits.slice(0, 3).map(function(h) {
+        var c = h.c, stage = returnStageOf(c);
+        var st = String(c.status || '').trim() || (stage === 3 ? '완료' : '접수');
+        var 조각 = [];
+        if (c.date) 조각.push(esc(String(c.date).replace(/^\d{4}[-/.]/, '')) + ' 접수');
+        조각.push(RET_STAGE_ICON[stage] + ' ' + esc(st));
+        if (c.type) 조각.push(esc(c.type));
+        if (c.reason) 조각.push(esc(c.reason));
+        if (c.qty) 조각.push('수량 ' + esc(c.qty));
+        if (c.returnInvoice) 조각.push('반품송장 ' + esc(c.returnInvoice));
+        if (c.fee) 조각.push('반품비 ' + esc(c.fee));
+        return '<button type="button" class="os-ret-line ret-s' + stage + '" title="눌러서 반품 조회 · ' +
+          esc(h.by) + '로 찾음" onclick="openReturnFromOrder(\'' + js(c.tab + '|' + c.row) + '\', event)">' +
+          조각.join(' · ') + (h.by !== '고유ID' ? ' <span class="os-ret-by">(' + esc(h.by) + '로 찾음)</span>' : '') +
+          '</button>';
+      }).join('');
+      if (hits.length > 3) lines += '<span class="os-ret-by">… 외 ' + (hits.length - 3) + '건</span>';
+      return '<div class="os-row"><div class="os-lab">반품</div><div class="os-val">' + lines + '</div></div>';
+    }
+
+    function returnBadgeFor(r) {
+      var hits = returnCasesFor(r);
+      var best = hits.length ? hits[0].c : null;
       if (!best) return null;
 
       var stage = returnStageOf(best);
@@ -13778,6 +13855,7 @@
         (r.qty ? ' × ' + esc(r.qty) : '') + '</div></div>' +
         (r.orderNo ? '<div class="os-row"><div class="os-lab">주문</div><div class="os-val">' + esc(r.orderNo) + '</div></div>' : '') +
         (r.vendor ? '<div class="os-row"><div class="os-lab">업체</div><div class="os-val">' + esc(r.vendor) + '</div></div>' : '') +
+        returnLinesHtml(r) +
         '<div class="os-actions"><button class="os-reply" onclick="copyReply(' + idx + ')">답변 문구 복사</button>' +
         '<button class="os-ledger" onclick="openLedger(' + idx + ')">반품대장 기록</button></div>' +
         '</div>';
