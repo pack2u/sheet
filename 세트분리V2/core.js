@@ -1873,6 +1873,8 @@ function ssNonShipReason(u, cfg) {
       if (w && 적요.indexOf(w) >= 0) return '적요에 「' + w + '」';
     }
   }
+  //  ★ 2026-10-05 허브가 판매현황에 싣는 도서산간비 줄 — 이름이 무엇이든 코드로 뺀다
+  if (code === SS_ISLAND_FEE_CODE) return '도서산간비 줄 (' + code + ')';
   var pat = ssText(cfg && cfg.비배송_품목패턴);
   if (pat) {
     var words = pat.split('|');
@@ -1944,6 +1946,8 @@ function ssRoute(units, masters, cfg, warnings) {
   }
   /** true 면 여기서 경로를 정했다(대리발송으로 가지 말 것). false 면 대리발송으로 간다. */
   function 섬대리검문(u, 길) {
+    //  ★ 2026-10-05 전화주문·대리판매는 도서산간 판정 패스 — 업체로 그대로 넘긴다 (ssIsHubOrderUid)
+    if (ssIsHubOrderUid(u.고유ID)) { u.도서판정 = SS_HUB_ISLAND_NOTE; return false; }
     var s = 섬만보기(u);
     if (!s) return false;
     u.정규주소 = s.addr; u.우편번호 = s.zip;
@@ -2249,6 +2253,16 @@ function ssRoute(units, masters, cfg, warnings) {
 
     var addr = ssNormAddr(u.주소1);
     u.정규주소 = addr;
+
+    /*  ★ 전화주문·대리판매는 도서산간 판정을 패스한다 ★  (2026-10-05 · ssIsHubOrderUid)
+        대리판매는 허브가 판매현황 전에 이미 판정하고 금액·OUT00001 을 붙였고,
+        전화주문은 받을 때 사람이 정한다. 일반 로젠으로 낸다.
+        판정 칸에 왜 빠졌는지 남긴다 — 원장에서 「이 섬 주문이 왜 일반 탭에?」를 물을 때. */
+    if (ssIsHubOrderUid(u.고유ID)) {
+      u.도서판정 = SS_HUB_ISLAND_NOTE;
+      u.route = SS_ROUTE.LOTTE;
+      continue;
+    }
 
     /*  ★ 도서산간 탭에 적은 조치를 «실제로» 먹인다 ★  (2026-09-28)
         > "도서산간에서 발송으로 처리 안했는데도 넘어가네..
@@ -3086,6 +3100,33 @@ var SS_INVOICE_HEADER = ['주문번호', '품목코드', '구분', '합포장키
  *   0902-ds-e158   상품정보 발주수집 발급 (허브 _po_isGeneratedUid_ 와 같은 판별)
  *   0903-PH-…      세트분리 전화주문 발급
  */
+/**
+ * 도서산간 판정을 «패스»하는 고유ID 인가 — 전화주문 · 대리판매 (쪼갠 _S2 포함).
+ *   대리판매   d0921000001 · 0921-ds-b1d1        (상품정보 발주 수집이 발급)
+ *   전화주문   p0921000001 · 0921-PH-a3f19 · 260902-PH-a3f19   (세트분리가 발급)
+ * 사방넷 주문(숫자뿐)은 여태처럼 여기서 판정한다.
+ *
+ * ★ 2026-10-05 ★
+ *   > "세트분리시 대리판매 업체는 이미도서산간을 실행했으니 도서산간 판정에서
+ *   >  빠져야 되겠지?(고유아이디 인식 으로)"
+ *   > "세트분리시 고유아이디(P00000, d00000)가 전화주문 또는 대리판매업체일경우
+ *   >  도서산간 판정 패스 하게 해주면 되.."
+ *   대리판매는 허브가 발주 수집 때(판매현황 «전») 같은 자료 — 이 시트의
+ *   도서산간_도선료·우편번호·시군·주소사전 — 와 같은 순서로 이미 판정해 금액
+ *   (5,000 / 세트 10,000)을 붙이고 판매현황에 OUT00001 을 실었다
+ *   (상품정보 _partnerIslandJudge.gs). 전화주문은 받을 때 사람이 정한다.
+ *   여기서 또 도서산간 탭에 세우면 조치를 한 번 더 적어야 하고 출고가 멈춘다.
+ *   (대소문자는 안 가린다 — 「P0921000001」도 전화주문이다)
+ */
+function ssIsHubOrderUid(uid) {
+  var u = ssBaseUid(uid);
+  return /^[pd]\d{10}$/i.test(u) || /^\d{4}(?:\d{2})?-(?:ds|PH)-/i.test(u);
+}
+var SS_HUB_ISLAND_NOTE = '도서산간 패스(전화주문·대리판매)';
+
+/** 도서산간비 줄 — 허브가 판매현황에 싣는 OUT00001. 물건이 아니라 송장을 안 낸다 */
+var SS_ISLAND_FEE_CODE = 'OUT00001';
+
 function ssIsSabangnetUid(uid) {
   var u = ssText(uid);
   if (!u) return false;
@@ -3485,6 +3526,7 @@ if (typeof module !== 'undefined' && module.exports) {
     SS_AIR_FEE_JEJU: SS_AIR_FEE_JEJU, SS_RETURN_BOX_FEE: SS_RETURN_BOX_FEE,
     ssPartnerRow: ssPartnerRow, ssHoldRow: ssHoldRow, ssVendorOf: ssVendorOf,
     ssInvoiceRows: ssInvoiceRows, ssIsSabangnetUid: ssIsSabangnetUid, SS_INVOICE_HEADER: SS_INVOICE_HEADER,
+    ssIsHubOrderUid: ssIsHubOrderUid, SS_HUB_ISLAND_NOTE: SS_HUB_ISLAND_NOTE, SS_ISLAND_FEE_CODE: SS_ISLAND_FEE_CODE,
     ssNonshipRow: ssNonshipRow, ssNonShipReason: ssNonShipReason, SS_NONSHIP_HEADER: SS_NONSHIP_HEADER,
     SS_PARTNER_HEADER: SS_PARTNER_HEADER, SS_MANUAL_HEADER: SS_MANUAL_HEADER, SS_VENDOR_HEADER: SS_VENDOR_HEADER, ssLedgerRow: ssLedgerRow, ssDisplayName: ssDisplayName,
     ssStripName: ssStripName, ssNormAddr: ssNormAddr, ssAddrRegion: ssAddrRegion, ssPad6: ssPad6
