@@ -141,8 +141,25 @@ function _island_ledgerMayCharge_(hubRow, judgeCol0) {
 }
 
 /** 주문 줄 하나의 도서산간비 — 한글 「세트」면 10,000, 아니면 5,000 */
+/**
+ * 세트 상품인가 — 도서산간비가 갈리는 «한 곳»의 판정.  (2026-10-06)
+ *
+ * ★ 한글 「세트」만이다 ★ 영문 「SET」은 한 박스로 나가는 완제품이라 한 줄
+ *   값(5,000)이고, 한글 「세트」는 몸통+뚜껑처럼 여러 박스가 따로 나가
+ *   택배비가 두 번 든다(10,000).
+ *   > "한글 세트만 적용 영문 set는 한박스로 나가는것들이야"
+ *
+ * ★ 왜 함수로 떼어 두나 ★
+ *   금액(5,000/10,000)과 이카운트 품목코드(OUT00001/OUT000011)가 «같은
+ *   판정»으로 갈려야 한다. 두 곳에 각각 적으면 한쪽만 고쳐져 금액은
+ *   10,000인데 코드는 OUT00001 로 올라가는 날이 온다 — 그건 조용하다.
+ */
+function _island_isSetItem_(itemName) {
+  return String(itemName == null ? "" : itemName).indexOf("세트") !== -1;
+}
+
 function _island_lineFee_(itemName) {
-  return String(itemName == null ? "" : itemName).indexOf("세트") !== -1 ? _ISLAND_FEE_SET_ : _ISLAND_FEE_LINE_;
+  return _island_isSetItem_(itemName) ? _ISLAND_FEE_SET_ : _ISLAND_FEE_LINE_;
 }
 
 /**

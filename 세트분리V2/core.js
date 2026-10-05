@@ -200,6 +200,14 @@ var SS_DEFAULT_CONFIG = {
   /*  도서산간 도선료를 한 값으로 통일 (2026-09-21).
       로젠 요율표를 못 받은 동안. 0 이면 표를 그대로 쓴다. */
   도선료_통일금액: 5000,
+  /*  ★ 세트 상품은 한 값이 더 든다 ★  (2026-10-06)
+      > "세트분리에서도 세트 상품일경우 도서산간비 10000원"
+      한글 「세트」는 몸통+뚜껑처럼 여러 박스가 따로 나가 택배비가 두 번 든다.
+      영문 「SET」은 한 박스 완제품이라 통일금액 그대로다.
+      허브(발주 수집)의 _ISLAND_FEE_SET_ 와 «같은 금액이어야» 한다 —
+      둘이 다르면 업체 시트와 이카운트가 서로 다른 돈을 말한다.
+      0 이면 세트도 통일금액을 쓴다(끄는 법).                         */
+  도선료_세트금액: 10000,
   도서산간_미확인: '보류',
   세트_송장꼬리표: '끔',
   도서산간_판정: '우편번호우선',
@@ -1901,6 +1909,18 @@ function ssRoute(units, masters, cfg, warnings) {
       로젠 요율표를 못 받은 동안 표의 롯데 금액(1,000~9,900원)을 쓰느니
       한 값으로 통일한다. 비우거나 0 이면 표를 그대로 쓴다. */
   var 통일도선료 = ssNum(cfg.도선료_통일금액);
+  /*  ★ 그 줄의 도서산간 옵션을 한 곳에서 만든다 ★  (2026-10-06)
+      도선료를 정하는 자리가 다섯이다. 자리마다 손으로 적으면 한 곳을
+      빼먹고, 그 줄만 세트인데 5,000 으로 나간다 — 돈이고, 조용하다.  */
+  var 세트도선료 = ssNum(cfg.도선료_세트금액);
+  var 섬옵션 = function (u) {
+    return {
+      통일도선료: 통일도선료,
+      세트도선료: 세트도선료,
+      //  이름이 아직 안 붙은 줄(세트분해 전)은 원본 이름으로 본다
+      품목명: u ? (ssText(u.품목명) || ssText(u.원본품목명)) : ''
+    };
+  };
 
   /*  ★ 대리발송으로 가는 줄도 섬인지 먼저 본다 ★  (2026-10-02)
       > "제주도인데 대리발송으로 빠졌는데 도서산간에 안잡혔어 확인해줘"
@@ -1925,7 +1945,7 @@ function ssRoute(units, masters, cfg, warnings) {
   function 섬만보기(u) {
     var addr = ssNormAddr(u.주소1);
     var zip = ssText(addrZip[addr]);
-    var 료 = function (권역) { return ssSurcharge(addr, 권역, ferry, { 통일도선료: 통일도선료 }).합계; };
+    var 료 = function (권역) { return ssSurcharge(addr, 권역, ferry, 섬옵션(u)).합계; };
     var fh = ssFerryMatch(addr, ferry);
     if (fh) {
       if (ssText(fh.권역) === '산간') return null;
@@ -2308,7 +2328,7 @@ function ssRoute(units, masters, cfg, warnings) {
       /* ★ 우도·추자는 항공료가 더 붙는다 ★
          비행기로 제주까지 간 뒤 배로 한 번 더 나간다. 도선료만 적으면
          제주 왕복분이 통째로 빠진다 (2026-09-08 사장님 확인). */
-      u.도선료 = ssSurcharge(addr, fh.권역, ferry, { 통일도선료: 통일도선료 }).합계;
+      u.도선료 = ssSurcharge(addr, fh.권역, ferry, 섬옵션(u)).합계;
 
       /*  ★ 산간은 «배»가 아니다 — 일반 로젠으로 보낸다 ★  (2026-09-28)
           > "1로 해야되"   (도서산간 탭이 아니라 일반 탭)
@@ -2342,13 +2362,13 @@ function ssRoute(units, masters, cfg, warnings) {
             여기서 안 갈라 주면 강원 산간이 도서산간 탭으로 샌다. */
         if (ssText(islandZip[zip]) === '산간') {
           u.도서판정 = '산간(우편번호)';
-          u.도선료 = ssSurcharge(addr, '', ferry, { 통일도선료: 통일도선료 }).합계 ||
+          u.도선료 = ssSurcharge(addr, '', ferry, 섬옵션(u)).합계 ||
             (Number(통일도선료) > 0 ? Number(통일도선료) : 3000);
           u.route = SS_ROUTE.LOTTE;
           continue;
         }
         /* 제주 본섬은 도선료표에 없다(우도·추자만 있다). 항공료 정액만 붙는다. */
-        u.도선료 = ssSurcharge(addr, islandZip[zip], ferry, { 통일도선료: 통일도선료 }).합계;
+        u.도선료 = ssSurcharge(addr, islandZip[zip], ferry, 섬옵션(u)).합계;
         if (면제) { ssIslandSkipByManual_(u, warnings); continue; }
         if (_섬세우기) { ssIslandHoldByManual_(u, _섬적음); continue; }
       u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
@@ -2376,7 +2396,7 @@ function ssRoute(units, masters, cfg, warnings) {
       //  «빼는 건»만 금액을 센다 — 얼마를 못 받는지 말하기 위해서다.
       //  안 빠지는 줄의 도선료 칸은 여태 하던 대로 둔다(이 자리 일이 아니다).
       if (면제) {
-        u.도선료 = ssSurcharge(addr, 확정, ferry, { 통일도선료: 통일도선료 }).합계;
+        u.도선료 = ssSurcharge(addr, 확정, ferry, 섬옵션(u)).합계;
         ssIslandSkipByManual_(u, warnings);
         continue;
       }
@@ -2554,6 +2574,26 @@ function ssIslandSkipByManual_(u, warnings) {
  * @param zone  이미 판정된 권역('제주'|'도서'|''). 없으면 도선료표에서 본다.
  * @param ferry 롯데 도선료 표
  */
+/**
+ * 도서산간비가 갈리는 「세트인가」 판정.  (2026-10-06)
+ *
+ * 한글 「세트」면 몸통+뚜껑처럼 여러 박스가 따로 나가 택배비가 두 번 든다.
+ * 영문 「SET」은 한 박스 완제품이라 한 값이다.
+ *   > "한글 세트만 적용 영문 set는 한박스로 나가는것들이야"
+ *
+ * ★ ssNeedsBom_ 를 쓰지 않는다 ★
+ *   그쪽은 「쪼갤 이름인가」를 묻는 다른 물음이고, BOM 점검을 조용히 하려고
+ *   「샘플」을 뺀다. 샘플이어도 박스는 두 번 나가니 돈은 붙어야 한다.
+ *   물음이 다르면 함수도 달라야 한다 — 섞으면 한쪽을 고칠 때 다른 쪽이 샌다.
+ *
+ * ★ 허브와 같은 잣대다 ★ _partnerIslandShipping.gs 의 _island_isSetItem_.
+ *   둘이 갈라지면 업체 시트와 이카운트가 서로 다른 돈을 말한다.
+ *   node/_fee_test.mjs 가 두 곳이 같은 답인지 맞댄다.
+ */
+function ssIsSetName(name) {
+  return ssText(name).indexOf('세트') !== -1;
+}
+
 function ssSurcharge(addr, zone, ferry, opts) {
   opts = opts || {};
   var air = opts.항공료 == null ? SS_AIR_FEE_JEJU : (Number(opts.항공료) || 0);
@@ -2601,16 +2641,28 @@ function ssSurcharge(addr, zone, ferry, opts) {
       ★ 붙는 줄에만 ★ 표에도 없고 권역도 없는 주소는 «육지»다. 0 그대로 둔다.
       끄는 법 : 설정 「도선료_통일금액」 을 비우거나 0 으로. 그러면 표값이 나온다. */
   var 통일 = Number(opts.통일도선료);
+  var 세트인가 = false;
   if (통일 > 0) {
     var 붙는가 = !!fh || z === '도서' || z === '제주' || z === '산간';
-    if (붙는가) { 도선료 = 통일; 항공료 = 0; }
+    if (붙는가) {
+      /*  ★ 세트는 한 값이 더 든다 ★  (2026-10-06)
+          > "세트분리에서도 세트 상품일경우 도서산간비 10000원"
+          몸통+뚜껑이 따로 나가 택배비가 두 번 든다. 영문 SET 은 한 박스라 그대로.
+          ★ 품목명을 «받았을 때만» 갈린다 ★ 안 넘기는 쪽(반품비 ssReturnFee)은
+          여태 그대로다 — 반품은 「평균 비용으로 처리」라고 따로 정한 값이다.  */
+      var 세트값 = Number(opts.세트도선료);
+      세트인가 = 세트값 > 0 && ssIsSetName(opts.품목명);
+      도선료 = 세트인가 ? 세트값 : 통일;
+      항공료 = 0;
+    }
   }
   return {
     권역: z,
     항공료: 항공료,
     도선료: 도선료,
     합계: 항공료 + 도선료,
-    근거: (통일 > 0 && (항공료 + 도선료) === 통일 ? '평균 통일 · ' : '') +
+    근거: (세트인가 ? '세트 ' : '') +
+      (통일 > 0 && (항공료 + 도선료) === (세트인가 ? Number(opts.세트도선료) : 통일) ? '평균 통일 · ' : '') +
       (fh ? ('도선료표 ' + fh.읍면동) : (z ? (z + ' 권역') : ''))
   };
 }

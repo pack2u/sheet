@@ -22,7 +22,15 @@
  * ══════════════════════════════════════════════════════════════
  */
 
+/*  ★ 이카운트 품목코드가 둘이다 ★  (2026-10-06)
+    > "세트상품은 도서산간 코드가 OUT000011이야"
+
+    한 줄 값(5,000)은 OUT00001, 세트(10,000)는 OUT000011 이다.
+    금액과 코드는 «같은 판정»으로 갈린다 — _island_isSetItem_ 한 곳이
+    정한다(_partnerIslandShipping.gs). 두 곳에 각각 적으면 한쪽만
+    고쳐져 금액은 10,000인데 코드는 OUT00001 로 올라가는 날이 온다.    */
 var _PO_ISLAND_ITEM_CODE_   = "OUT00001";
+var _PO_ISLAND_ITEM_CODE_SET_ = "OUT000011";
 var _PO_ISLAND_FLAG_HEADER_ = "도서산간 판매갱신";
 var _PO_ISLAND_FLAG_DONE_   = "판매갱신 업 완료";
 var _PO_ISLAND_MEMO_MAX_    = 200;   // 이카운트 적요 길이
@@ -50,7 +58,11 @@ function _po_islandSaleLine_(row, fee, custCd, shipYmd, colCount) {
   line[0] = shipYmd;                 // 출고일자
   line[2] = custCd;                  // 거래처코드
   line[7] = "100";                   // 출하창고
-  line[15] = _PO_ISLAND_ITEM_CODE_;  // 품목코드
+  /*  품목코드 — 세트면 OUT000011 (2026-10-06).
+      ★ 금액이 아니라 «품목명»으로 가린다 ★ 금액(10,000)으로 가리면 설정이
+      바뀌는 날 코드가 따라오지 않는다. 금액을 정한 그 판정을 그대로 쓴다. */
+  line[15] = _island_isSetItem_(item)
+    ? _PO_ISLAND_ITEM_CODE_SET_ : _PO_ISLAND_ITEM_CODE_;  // 품목코드
   line[17] = 1;                      // 수량
   line[18] = total;                  // 단가
   line[20] = supply;                 // 공급가액

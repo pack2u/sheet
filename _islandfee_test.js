@@ -32,8 +32,8 @@ function 상수(src, 이름) {
   return src.substring(i, src.indexOf(";", i) + 1);
 }
 ["_ISLAND_FEE_LINE_", "_ISLAND_FEE_SET_"].forEach(function (n) { eval.call(null, 상수(섬, n)); });
-["_PO_ISLAND_ITEM_CODE_", "_PO_ISLAND_FLAG_HEADER_", "_PO_ISLAND_MEMO_MAX_"].forEach(function (n) { eval.call(null, 상수(판매, n)); });
-["_island_normUid_", "_island_uidKey_", "_island_lineFee_", "_island_pickFromLedger_", "_island_findFeeCol1_", "_island_findItemCol0_"]
+["_PO_ISLAND_ITEM_CODE_", "_PO_ISLAND_ITEM_CODE_SET_", "_PO_ISLAND_FLAG_HEADER_", "_PO_ISLAND_MEMO_MAX_"].forEach(function (n) { eval.call(null, 상수(판매, n)); });
+["_island_normUid_", "_island_uidKey_", "_island_isSetItem_", "_island_lineFee_", "_island_pickFromLedger_", "_island_findFeeCol1_", "_island_findItemCol0_"]
   .forEach(function (n) { eval.call(null, 꺼내(섬, n)); });
 ["_po_islandSaleLine_", "_po_islandCancelLike_"].forEach(function (n) { eval.call(null, 꺼내(판매, n)); });
 
@@ -94,10 +94,39 @@ console.log("\n[5] ★ 이카운트 판매입력 OUT00001 줄 ★");
 var 허브줄 = ["", "그린우드", "0901-ds-aaaa", "20260901", "BWSC195C004", "BW 사출 195파이 특대 투명 300세트", 2,
   "홍길동", "1012345678", "제주특별자치도 제주시 연동 1", "문앞", 98000, "", "", "접수완료", ""];
 var 줄 = _po_islandSaleLine_(허브줄, 10000, "C001", "20261005", 28);
-같나("품목코드 OUT00001", 줄[15], "OUT00001");
+/*  ★ 세트는 품목코드가 다르다 ★  (2026-10-06)
+    > "세트상품은 도서산간 코드가 OUT000011이야"
+    위 허브줄의 품목명이 「…300세트」라 세트다.                      */
+같나("품목코드 — 세트는 OUT000011", 줄[15], "OUT000011");
 같나("수량 1", 줄[17], 1);
 같나("단가 = 도서산간비", 줄[18], 10000);
 같나("공급가액 + 부가세 = 금액", 줄[20] + 줄[21], 10000);
+
+/*  ★ 금액과 코드가 «같은 판정»으로 가는가 ★  (2026-10-06)
+    한쪽만 고쳐지면 금액은 10,000인데 코드는 OUT00001 로 올라간다 —
+    이카운트에서 품목이 섞이고, 그 틀림은 조용하다.                  */
+var 보통줄 = 허브줄.slice();
+보통줄[5] = "JH 실링 23195 화이트 (100*1팩) 100";
+var 줄2 = _po_islandSaleLine_(보통줄, _island_lineFee_(보통줄[5]), "C001", "20261005", 28);
+같나("보통 상품은 OUT00001", 줄2[15], "OUT00001");
+같나("  그 줄의 단가는 5,000", 줄2[18], 5000);
+
+var 세트줄 = 허브줄.slice();
+세트줄[5] = "BW 사출 냉면 대 200세트";
+var 줄3 = _po_islandSaleLine_(세트줄, _island_lineFee_(세트줄[5]), "C001", "20261005", 28);
+같나("세트는 OUT000011", 줄3[15], "OUT000011");
+같나("  그 줄의 단가는 10,000", 줄3[18], 10000);
+
+var 영문줄 = 허브줄.slice();
+영문줄[5] = "JH 신형 105파이 중 블랙 1000 SET";
+var 줄4 = _po_islandSaleLine_(영문줄, _island_lineFee_(영문줄[5]), "C001", "20261005", 28);
+같나("영문 SET 은 한 박스 — OUT00001", 줄4[15], "OUT00001");
+같나("  그 줄의 단가는 5,000", 줄4[18], 5000);
+
+ok("★ 판정이 한 곳이다 ★",
+   꺼내(판매, "_po_islandSaleLine_").indexOf("_island_isSetItem_(item)") !== -1 &&
+   꺼내(섬, "_island_lineFee_").indexOf("_island_isSetItem_(itemName)") !== -1,
+   "금액과 코드가 각각 「세트」를 찾으면 한쪽만 고쳐지는 날이 온다");
 같나("공급가액", 줄[20], 9091);
 같나("거래처코드 · 출하창고 · 출고일자", 줄[2] + "/" + 줄[7] + "/" + 줄[0], "C001/100/20261005");
 같나("적요 = 도서산간 · 수취인 · 상품명(코드) · 주소", 줄[23],
@@ -146,7 +175,11 @@ var 판정된 = 허브(""); 판정된[18] = "일반 · 06134";
 ok("원장은 주소 판정을 한 줄에 새 금액을 안 붙인다", !_island_ledgerMayCharge_(판정된, 18));
 ok("원장은 판매현황 전·판정 전 줄에만 붙인다", _island_ledgerMayCharge_(허브(""), 18));
 ok("업체 시트는 허브가 정한 금액만 — 허브가 안 붙인 줄은 안 붙인다",
-   꺼내(섬, "_island_applyToPartnerSheets_").indexOf("var fee = feeByUid[uid];\n        if (!fee) continue;") !== -1);
+   /*  ★ 줄끝을 고르고 본다 ★ 파일이 CRLF 인데 \n 으로 찾아, 코드는
+       멀쩡한데도 이 시험만 빨갰다(2026-10-06 에 확인). 줄끝 때문에
+       우는 시험이 하나 있으면 나머지 초록도 안 믿게 된다.          */
+   꺼내(섬, "_island_applyToPartnerSheets_").replace(/\r\n/g, "\n")
+     .indexOf("var fee = feeByUid[uid];\n        if (!fee) continue;") !== -1);
 ok("수집이 4분을 넘겼으면 도서산간을 건너뛴다 (판매현황 갱신을 지킨다)", 수집.indexOf("_islElapsed_ > 240000") !== -1);
 ok("자동 판매현황 갱신(silent)은 판정을 또 하지 않는다 — 손으로 누를 때만",
    /if \(!silent\) \{[\s\S]{0,200}_island_judgeHubByAddress_\(\)/.test(꺼내(주문, "partnerRebuildSalesUploadSheet")));
