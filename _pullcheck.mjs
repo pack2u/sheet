@@ -159,10 +159,37 @@ export function 서버먼저보기(선택 = {}) {
     process.exit(1);
   }
 
+  /*  ★★ 빈손으로 왔으면 «멈춘다» ★★  (2026-10-05)
+
+      clasp 가 0 을 돌려주면서도 파일을 하나도 안 주는 일이 있다
+      (invalid_rapt 뒤 같은 때). 그러면 아래 고리가 한 바퀴도 안 돌아
+      「다른 것 없음」이 되고, 문이 «무사 통과»를 외친다 —
+      정작 서버에 무엇이 있는지 한 번도 안 본 채로.
+
+      2026-10-05 에 실제로 그랬다. 여덟 프로젝트를 당겼는데 모두 빈
+      폴더였고, 나는 「서버와 같습니다」라고 사장님께 말했다. 사실은
+      서버에 일산에서 한 작업이 가득 있었다.
+
+      그래서 «온 파일 수»를 센다. 내 쪽 스크립트 수의 절반도 안 되면
+      당기기가 샌 것으로 보고 멈춘다. 모르면 멈춘다.                */
+  const 온것 = fs.readdirSync(받을곳).filter((f) => f !== ".clasp.json");
+  const 내스크립트 = fs.readdirSync(process.cwd())
+    .filter((f) => /\.(gs|js|html)$/.test(f) && !/_test\.js$/.test(f));
+  if (온것.length === 0 || 온것.length * 2 < 내스크립트.length) {
+    console.error("★ 서버에서 온 파일이 " + 온것.length + "개뿐입니다 " +
+      "(내 쪽 스크립트 " + 내스크립트.length + "개) — 당기기가 샌 것으로 봅니다.");
+    console.error("");
+    console.error("   clasp 가 오류 없이 빈손으로 돌아오는 일이 있습니다(로그인 만료 뒤 등).");
+    console.error("   그대로 올리면 서버에 무엇이 있는지 «한 번도 안 보고» 덮습니다.");
+    console.error("   clasp login 뒤 다시 돌려 주세요.");
+    fs.rmSync(받을곳, { recursive: true, force: true });
+    process.exit(1);
+  }
+
   const 다른것 = [];   // 서버에만 있는 것 — 이것이 있으면 멈춘다
   const 앞선것 = [];   // 내 쪽이 앞선 파일 — 막지 않지만 몇 개인지는 말해 준다
   const 지운것 = [];   // 일부러 지우는 중인 파일 — 막지 않지만 말해 준다
-  for (const f of fs.readdirSync(받을곳)) {
+  for (const f of 온것) {
     if (f === ".clasp.json" || 안볼것.test(f)) continue;
 
     /*  clasp pull 은 서버 스크립트를 늘 .js 로 준다. 내 쪽은 프로젝트마다
