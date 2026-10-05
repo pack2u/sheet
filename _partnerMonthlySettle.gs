@@ -1462,7 +1462,12 @@ function _pms_layoutArchiveTab_(tab, extHeaders, cMap, extLc, cancelC, returnC, 
       .setBackground("#fff3e0")
       .setRanges([dataRange])
       .build();
-    var existingRules = tab.getConditionalFormatRules() || [];
+    //  ★ 2026-10-05 겹침 정리: 보정을 돌릴 때마다 같은 규칙 두 개가 덧붙어
+    //    4벌·8개까지 쌓였다(점검 로그). 우리 규칙(INDIRECT("R[0]C…",FALSE)=TRUE)은
+    //    칸 자리가 옛것이어도 모두 걷어 내고 새로 두 개만 둔다.
+    var existingRules = (tab.getConditionalFormatRules() || []).filter(function(rule) {
+      return !_pms_isOurRowRule_(rule);
+    });
     existingRules.push(cancelRule);
     existingRules.push(returnRule);
     tab.setConditionalFormatRules(existingRules);
@@ -1584,14 +1589,19 @@ function _pms_ensureCheckboxes_(tab, cancelC, returnC) {
   if (lr < _PMS_DATA_START) return;
   var rowCount = lr - _PMS_DATA_START + 1;
 
-  // ★ 2026-07-16 성능: 첫 데이터 행에 이미 체크박스가 있으면 전체 정상으로 보고 스킵
-  //   (정상 마감탭은 이 경로에서 즉시 반환 → 기존 행별 스캔·삽입 비용 제거)
+  // ★ 2026-07-16 성능: 이미 체크박스가 다 있으면 스킵
+  // ★ 2026-10-05 «첫 행만» 보던 것을 «모든 행»으로: 첫 행이 멀쩡하면 뒤에 붙은 줄의
+  //   빈 체크박스를 영영 안 메웠다(점검: 그린우드 4줄·엠케이테크 2줄·후아코리아 1줄).
+  //   읽기 한 번이라 느려지지 않는다.
   try {
-    var fdv = tab.getRange(_PMS_DATA_START, cancelC, 1, 2).getDataValidations()[0];
+    var dvs = tab.getRange(_PMS_DATA_START, cancelC, rowCount, 2).getDataValidations();
     var CBX = SpreadsheetApp.DataValidationCriteria.CHECKBOX;
-    var ok0 = fdv[0] && fdv[0].getCriteriaType() === CBX;
-    var ok1 = fdv[1] && fdv[1].getCriteriaType() === CBX;
-    if (ok0 && ok1) return;
+    var allOk = true;
+    for (var di = 0; di < dvs.length && allOk; di++) {
+      if (!dvs[di][0] || dvs[di][0].getCriteriaType() !== CBX ||
+          !dvs[di][1] || dvs[di][1].getCriteriaType() !== CBX) allOk = false;
+    }
+    if (allOk) return;
   } catch(e) {}
 
   // ★ 2026-07-16 성능: 행별 삽입 대신 전체 범위 1회 처리
@@ -1697,21 +1707,7 @@ function _pms_repairTabsForFiles_(selected, 시작, 월) {
     var 기억 = _pms_repairMemoGet_(fileInfo.id);
     try {
       var ss       = SpreadsheetApp.openById(fileInfo.id);
-      var orderTab = ss.getSheetByName(_PMS_ORDER_TAB);
-      if (!orderTab) { done.push(_pms_vendorLabel_(fileInfo) + " — 발주 탭 없음"); continue; }
-
-      var lc0     = orderTab.getMaxColumns();
-      var headers = orderTab.getRange(1, 1, 1, lc0).getValues()[0];
-      var cMap    = _pms_buildColMap_(headers);
-      var extHdr  = _pms_buildExtHeaders_(headers, lc0);
-      var extLc   = extHdr.length;
-      var etcFeeC    = extLc;
-      var islandFeeC = extLc - 1;
-      var shipFeeC = extLc - 2;
-      var retInvC  = extLc - 3;
-      var reasonC  = extLc - 4;
-      var returnC  = extLc - 5;
-      var cancelC  = extLc - 6;
+      var orderTab = ss.getSheetByName(_PMS_ORDER_TAB);   //  없어도 된다 — 탭 제 배치로 보정한다
 
       var sheets = ss.getSheets();
       for (var si = 0; si < sheets.length; si++) {
@@ -1722,8 +1718,11 @@ function _pms_repairTabsForFiles_(selected, 시작, 월) {
         if (기억[sh.getName()]) { 건넘++; continue; }
         if (Date.now() - 시작 > _PMS_REPAIR_LIMIT_MS_) { 끊김 = true; break; }
 
-        _pms_layoutArchiveTab_(sh, extHdr, cMap, extLc, cancelC, returnC, reasonC, retInvC, shipFeeC, islandFeeC, etcFeeC, false);
-        _pms_ensureCheckboxes_(sh, cancelC, returnC);
+        //  ★ 2026-10-05 칸 배치는 «그 마감 탭 4행»에서 읽는다 (_pms_archiveLayout_ 머리 주석)
+        var L = _pms_archiveLayout_(sh, orderTab);
+        if (!L) { errs.push("[" + _pms_vendorLabel_(fileInfo) + "] " + sh.getName() + " — 4행에 취소·반품 칸이 없고 발주 탭도 없어 건너뜀"); continue; }
+        _pms_layoutArchiveTab_(sh, L.extHdr, L.cMap, L.extLc, L.cancelC, L.returnC, L.reasonC, L.retInvC, L.shipFeeC, L.islandFeeC, L.etcFeeC, false);
+        _pms_ensureCheckboxes_(sh, L.cancelC, L.returnC);
         _pms_applyProtection_(sh);
         fixed++; 탭수++;
         SpreadsheetApp.flush();
@@ -1739,6 +1738,81 @@ function _pms_repairTabsForFiles_(selected, 시작, 월) {
     done.push(_pms_vendorLabel_(fileInfo) + " — " + 탭수 + "개 탭" + (건넘 ? " (앞서 한 " + 건넘 + "개 건너뜀)" : ""));
   }
   return { fixed: fixed, done: done, left: left, errs: errs };
+}
+
+/**
+ * 마감 탭의 «제 칸 배치» — 보정과 점검이 함께 쓴다.  ★ 2026-10-05
+ *
+ *  전에는 보정이 칸 배치를 «지금 발주 탭»(getMaxColumns)에서 만들었다. 그런데
+ *  마감 이동(_pms_processOneFile_)은 min(getLastColumn, 20) 폭으로 탭을 만든다.
+ *  둘이 다르면(후아코리아: 마감 탭은 16칸 + 취소 Q, 지금 발주 탭은 27칸) 보정이
+ *  머리글을 엉뚱한 칸에 덮고 요약 수식이 빈 칸(AB·AC…)을 가리키게 된다.
+ *  그래서 기준을 «그 마감 탭 4행»으로 바꾼다 — 「취소」「반품」이 붙어 있는 자리 앞까지가
+ *  원래 칸이다. 그 탭을 만들 때의 배치이므로 데이터와 어긋날 수 없다.
+ *  4행에서 못 찾을 때만 마감 이동과 같은 폭으로 발주 탭에서 만든다.
+ *
+ * @return {null | {출처, 메움, cMap, extHdr, extLc, cancelC, returnC, reasonC, retInvC, shipFeeC, islandFeeC, etcFeeC}}
+ */
+function _pms_archiveLayout_(sh, orderTab) {
+  var row4 = sh.getRange(_PMS_HEADER_ROW, 1, 1, Math.max(sh.getMaxColumns(), 1)).getValues()[0];
+  var orderHdr = [], orderLast = 0;
+  if (orderTab) {
+    orderHdr = orderTab.getRange(1, 1, 1, Math.max(orderTab.getMaxColumns(), 1)).getValues()[0];
+    orderLast = orderTab.getLastColumn();
+  }
+  return _pms_archiveLayoutFrom_(row4, orderHdr, orderLast, !!orderTab);
+}
+
+/** 순수 — 시험이 직접 부른다 */
+function _pms_archiveLayoutFrom_(row4, orderHdr, orderLast, 발주있음) {
+  var base = null, 출처 = "";
+  for (var i = 0; i + 1 < row4.length; i++) {
+    if (String(row4[i] == null ? "" : row4[i]).trim() === "취소" &&
+        String(row4[i + 1] == null ? "" : row4[i + 1]).trim() === "반품") {
+      base = row4.slice(0, i);
+      출처 = "탭";
+      break;
+    }
+  }
+  if (!base) {
+    if (!발주있음) return null;
+    var lc = Math.min(orderLast, 20);           //  마감 이동과 같은 폭
+    if (lc < 15) lc = 15;
+    base = [];
+    for (var k = 0; k < lc; k++) base.push(k < orderHdr.length ? orderHdr[k] : "");
+    출처 = "발주";
+  }
+  //  깨진 머리글(#REF!·빈칸)은 같은 자리 발주 탭 머리글로 메운다
+  var 메움 = [];
+  base = base.map(function(h, idx) {
+    var s = String(h == null ? "" : h).trim();
+    var o = orderHdr[idx] == null ? "" : String(orderHdr[idx]).trim();
+    if ((s === "" || s.charAt(0) === "#") && o && o.charAt(0) !== "#") { 메움.push(idx); return o; }
+    return h;
+  });
+  var cMap = _pms_buildColMap_(base);
+  //  마감 이동과 같이: 금액 칸 머리글은 「정산금액」(줄 합계)
+  if (cMap.price !== -1) {
+    var ph = String(base[cMap.price] || "").replace(/\s/g, "");
+    if (ph && ph !== "정산금액") base[cMap.price] = "정산금액";
+  }
+  var extHdr = _pms_buildExtHeaders_(base, base.length);
+  var extLc = extHdr.length;
+  return {
+    출처: 출처, 메움: 메움, cMap: cMap, extHdr: extHdr, extLc: extLc,
+    cancelC: extLc - 6, returnC: extLc - 5, reasonC: extLc - 4, retInvC: extLc - 3,
+    shipFeeC: extLc - 2, islandFeeC: extLc - 1, etcFeeC: extLc
+  };
+}
+
+/** 우리가 넣는 취소·반품 줄 칠하기 규칙인가 — =INDIRECT("R[0]C…",FALSE)=TRUE */
+function _pms_isOurRowRule_(rule) {
+  try {
+    var bc = rule.getBooleanCondition();
+    if (!bc) return false;
+    var f = String(bc.getCriteriaValues()[0] || "").replace(/\s/g, "");
+    return f.indexOf('=INDIRECT("R[0]C') === 0 && /",FALSE\)=TRUE$/.test(f);
+  } catch (e) { return false; }
 }
 
 /** 한 업체 안에서 끝낸 탭 기억 — 6시간(캐시 최대)이 지나면 저절로 잊는다 */

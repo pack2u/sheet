@@ -21,7 +21,7 @@ function 꺼내(이름) {
   throw new Error(이름 + " 끝 못 찾음");
 }
 ["_pms_vendorLabel_", "_pms_vendorNo_", "_pms_vendorNames_", "_pms_parseVendorPick_",
- "_pms_repairTabsForFiles_", "_pms_repairMemoGet_", "_pms_repairMemoPut_", "_pms_repairMemoClear_", "_pms_parseMonthPick_", "_pms_monthMatches_", "_pms_monthLabel_"].forEach(function (n) { eval.call(null, 꺼내(n)); });
+ "_pms_repairTabsForFiles_", "_pms_repairMemoGet_", "_pms_repairMemoPut_", "_pms_repairMemoClear_", "_pms_parseMonthPick_", "_pms_monthMatches_", "_pms_monthLabel_", "_pms_archiveLayout_", "_pms_archiveLayoutFrom_", "_pms_isOurRowRule_"].forEach(function (n) { eval.call(null, 꺼내(n)); });
 
 var 통과 = 0, 실패 = 0;
 function ok(이름, 참, 덧) {
@@ -53,6 +53,7 @@ console.log("\n[1] 업체 고르기");
 
 console.log("\n[2] ★ 시간 한도 — 6분에 끊기기 전에 스스로 멈추고 남은 업체를 알려 준다 ★");
 global._PMS_ORDER_TAB = "발주";
+global._PMS_HEADER_ROW = 4;
 var 캐시 = {};
 global.CacheService = { getScriptCache: function () { return {
   get: function (k) { return 캐시[k] || null; },
@@ -78,7 +79,7 @@ global.SpreadsheetApp = {
     return {
       getSheetByName: function (n) {
         return 이름들.indexOf(n) < 0 ? null : {
-          getMaxColumns: function () { return 10; },
+          getMaxColumns: function () { return 10; }, getLastColumn: function () { return 10; },
           getRange: function () { return { getValues: function () { return [[]]; } }; },
         };
       },
@@ -91,7 +92,8 @@ SpreadsheetApp.openById = (function (orig) {
   return function (id) {
     var ss = orig(id);
     var g = ss.getSheets;
-    ss.getSheets = function () { return g().map(function (s) { var n = s.이름.slice(2); return { 이름: s.이름, getName: function () { return n; } }; }); };
+    ss.getSheets = function () { return g().map(function (s) { var n = s.이름.slice(2); return { 이름: s.이름, getName: function () { return n; }, getMaxColumns: function () { return 3; },
+      getRange: function () { return { getValues: function () { return [["일자", "취소", "반품"]]; } }; } }; }); };
     return ss;
   };
 })(SpreadsheetApp.openById);
@@ -99,10 +101,10 @@ SpreadsheetApp.openById = (function (orig) {
 지금 = 0; 한탭에 = 1000; 고친탭 = [];
 var r1 = _pms_repairTabsForFiles_(files, 0);
 같나("시간 넉넉하면 마감 탭만 다 고친다", 고친탭.join("|"),
-   "a:(2026년 8월) 발주 마감|a:(2026년 9월) 발주 마감|b:(2026년 9월) 발주 마감|d:(2026년 7월) 발주 마감|d:(2026년 9월) 발주 마감");
-같나("  고친 탭 수", r1.fixed, 5);
+   "a:(2026년 8월) 발주 마감|a:(2026년 9월) 발주 마감|b:(2026년 9월) 발주 마감|c:(2026년 9월) 발주 마감|d:(2026년 7월) 발주 마감|d:(2026년 9월) 발주 마감");
+같나("  고친 탭 수", r1.fixed, 6);
 같나("  남은 업체 없음", r1.left.length, 0);
-ok("  발주 탭 없는 업체는 그렇다고 적는다", r1.done.join("|").indexOf("한빛용기 — 발주 탭 없음") >= 0);
+ok("  발주 탭이 없어도 마감 탭 제 배치(4행)로 고친다", r1.done.join("|").indexOf("한빛용기 — 1개 탭") >= 0, r1.done.join("|"));
 
 지금 = 0; 한탭에 = 100000; 고친탭 = [];
 var r2 = _pms_repairTabsForFiles_(files, 0);
@@ -146,10 +148,57 @@ ok("글자는 틀린 월", !!(_pms_parseMonthPick_("구월") || {}).err);
 같나("이름표", _pms_monthLabel_({ y: null, m: 9 }) + " / " + _pms_monthLabel_(null), "9월 / 전체");
 캐시 = {}; 지금 = 0; 한탭에 = 1000; 고친탭 = [];
 _pms_repairTabsForFiles_(files, 0, { y: null, m: 9 });
-같나("9월만 고르면 9월 탭만", 고친탭.join("|"), "a:(2026년 9월) 발주 마감|b:(2026년 9월) 발주 마감|d:(2026년 9월) 발주 마감");
+같나("9월만 고르면 9월 탭만", 고친탭.join("|"), "a:(2026년 9월) 발주 마감|b:(2026년 9월) 발주 마감|c:(2026년 9월) 발주 마감|d:(2026년 9월) 발주 마감");
 캐시 = {}; 고친탭 = [];
 _pms_repairTabsForFiles_(files, 0, { y: 2025, m: 9 });
 같나("해가 다르면 안 고친다", 고친탭.length, 0);
+
+console.log("\n[2d] ★ 칸 배치는 그 마감 탭 4행에서 — 후아코리아처럼 발주 탭이 바뀐 뒤에도 안 밀린다 ★");
+/*  보정이 «지금 발주 탭»(27칸)으로 배치를 만들면, 16칸으로 만들어진 마감 탭에 머리글을
+    엉뚱하게 덮고 요약 수식이 빈 AB·AC 칸을 가리켰다. */
+(function () {
+  var 진짜 = global._pms_buildColMap_, 진짜ext = global._pms_buildExtHeaders_;
+  global._pms_buildColMap_ = function (h) {
+    var m = { date: -1, price: -1, qty: -1 };
+    h.forEach(function (x, i) { x = String(x); if (x === "일자" && m.date < 0) m.date = i; if (x.indexOf("정산금액") >= 0 && m.price < 0) m.price = i; });
+    return m;
+  };
+  global._pms_buildExtHeaders_ = function (headers, lc) {
+    var b = headers.slice(0, lc);
+    return b.concat(["취소", "반품", "취소반품사유", "반품송장번호", "반품배송비", "도서산간배송비", "기타정산"]);
+  };
+  //  마감 탭 4행: A #REF! · B 일자 · C..K · L 정산금액 · M..P · Q 취소 · R 반품 …
+  var row4 = ["#REF!", "일자"]; while (row4.length < 11) row4.push("칸" + row4.length);
+  row4.push("정산금액"); while (row4.length < 16) row4.push("칸" + row4.length);
+  row4 = row4.concat(["취소", "반품", "취소반품사유", "반품송장번호", "반품배송비", "도서산간배송비", "기타정산"]);
+  //  지금 발주 탭: 27칸, L 은 「정산금액(자동)」
+  var 발주 = ["거래처명(자동)", "일자"]; while (발주.length < 11) 발주.push("칸" + 발주.length);
+  발주.push("정산금액(자동)"); while (발주.length < 27) 발주.push("새칸" + 발주.length);
+  var L = _pms_archiveLayoutFrom_(row4, 발주, 27, true);
+  같나("배치는 탭에서 읽는다", L.출처, "탭");
+  같나("취소 = Q(17)", L.cancelC, 17);
+  같나("반품 = R(18)", L.returnC, 18);
+  같나("기타정산 = W(23)", L.etcFeeC, 23);
+  같나("깨진 A4 는 발주 탭 이름으로 메운다", L.extHdr[0] + " / 메움 " + L.메움.join(","), "거래처명(자동) / 메움 0");
+  같나("금액 칸 머리글은 「정산금액」 (마감 이동과 같이)", L.extHdr[11], "정산금액");
+  var row4b = row4.slice(); row4b[11] = "정산금액(자동)";
+  같나("「정산금액(자동)」이어도 「정산금액」으로", _pms_archiveLayoutFrom_(row4b, 발주, 27, true).extHdr[11], "정산금액");
+  var 깨진 = row4.slice(0, 16);   //  취소·반품 머리글이 없는 탭
+  var L2 = _pms_archiveLayoutFrom_(깨진, 발주, 27, true);
+  같나("4행에 없으면 마감 이동과 같은 폭(최대 20칸)으로", L2.출처 + " " + L2.cancelC, "발주 21");
+  같나("4행에도 없고 발주 탭도 없으면 건너뛴다", _pms_archiveLayoutFrom_(깨진, [], 0, false), null);
+  global._pms_buildColMap_ = 진짜; global._pms_buildExtHeaders_ = 진짜ext;
+})();
+
+function 규칙(f) { return { getBooleanCondition: function () { return f == null ? null : { getCriteriaValues: function () { return [f]; } }; } }; }
+ok("우리 칠하기 규칙을 알아본다", _pms_isOurRowRule_(규칙('=INDIRECT("R[0]C27",FALSE)=TRUE')));
+ok("  옛 칸 자리의 것도 우리 것", _pms_isOurRowRule_(규칙('=INDIRECT("R[0]C17",FALSE)=TRUE')));
+ok("  사장님이 만든 다른 규칙은 안 건드린다", !_pms_isOurRowRule_(규칙("=$A5>100")));
+ok("  색 범위 규칙(조건 없음)도 안 건드린다", !_pms_isOurRowRule_(규칙(null)));
+var 보정본 = 꺼내("_pms_layoutArchiveTab_");
+ok("보정은 우리 규칙을 걷어 내고 두 개만 다시 넣는다", 보정본.indexOf("!_pms_isOurRowRule_(rule)") >= 0);
+var 체크본 = 꺼내("_pms_ensureCheckboxes_");
+ok("체크박스는 첫 행이 아니라 모든 행을 본다", 체크본.indexOf("getRange(_PMS_DATA_START, cancelC, rowCount, 2).getDataValidations()") >= 0);
 
 console.log("\n[3] 메뉴 함수가 고르기와 한도를 쓴다");
 var 메뉴 = 꺼내("partnerRepairMonthlySettleTabs");

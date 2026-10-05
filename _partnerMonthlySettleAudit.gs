@@ -20,11 +20,15 @@
  * ══════════════════════════════════════════════════════════════
  */
 
-/** 바탕화면 2609\대리판매 의 엑셀 파일 이름에서 뽑은 업체들 */
+/**
+ * 바탕화면 2609\대리판매 의 엑셀 파일 이름에서 뽑은 업체들 — 협력업체 파일 이름으로.
+ *   올팩코리아 → 「올팩」, 불스떡볶이 → 「불쓰떡볶이」 (파일 이름이 이렇다)
+ *   개인팩투유·인더샵(스마트스토어·쿠팡·배민상회 채널)·펀앤아이는 협력업체 시트가 없다 — 뺀다
+ */
 var _PMS_AUDIT_2609_ = [
-  "개인팩투유", "그린우드", "뉴파츠", "당장드림", "냅킨코리아", "리바이", "밥장인",
-  "불스떡볶이", "쉬움", "엠케이테크", "올팩코리아", "용기창고", "인더샵", "준테크",
-  "펀앤아이", "하나팩", "후아코리아"
+  "그린우드", "뉴파츠", "당장드림", "냅킨코리아", "리바이", "밥장인",
+  "불쓰떡볶이", "쉬움", "엠케이테크", "올팩", "용기창고", "준테크",
+  "하나팩", "후아코리아"
 ];
 
 function partnerAuditMonthlySettle_2609() {
@@ -70,17 +74,22 @@ function _pms_auditOne_(ss, y, m) {
   var 문제 = [];
   var 탭이름 = "(" + y + "년 " + m + "월) 발주 마감";
   var sh = ss.getSheetByName(탭이름);
-  if (!sh) return { 문제: ["마감 탭이 없음 — " + 탭이름], 요약: "" };
+  if (!sh) {
+    var 있는 = ss.getSheets().map(function (t) { return t.getName(); })
+      .filter(function (n) { return n.indexOf("발주 마감") !== -1; });
+    return { 문제: ["마감 탭이 없음 — " + 탭이름 + "  (있는 마감 탭: " + (있는.join(", ") || "하나도 없음") + ")"], 요약: "" };
+  }
   var orderTab = ss.getSheetByName(_PMS_ORDER_TAB);
-  if (!orderTab) return { 문제: ["발주 탭(" + _PMS_ORDER_TAB + ")이 없어 기준을 못 만듦"], 요약: "" };
 
-  //  기준 — 보정이 쓰는 것과 똑같이 만든다
-  var lc0     = orderTab.getMaxColumns();
-  var headers = orderTab.getRange(1, 1, 1, lc0).getValues()[0];
-  var cMap    = _pms_buildColMap_(headers);
-  var extHdr  = _pms_buildExtHeaders_(headers, lc0);
-  var extLc   = extHdr.length;
-  var c = { cancel: extLc - 6, ret: extLc - 5, ship: extLc - 2, island: extLc - 1, etc: extLc };
+  //  기준 — 보정이 쓰는 것과 똑같이: 그 마감 탭 4행의 제 배치
+  var L = _pms_archiveLayout_(sh, orderTab);
+  if (!L) return { 문제: ["4행에 취소·반품 칸이 없고 발주 탭도 없어 기준을 못 만듦"], 요약: "" };
+  if (L.출처 === "발주") 문제.push("4행에서 「취소」「반품」 칸을 못 찾음 — 발주 탭 폭으로 짐작해 견줌");
+  if (L.메움.length) 문제.push("4행 머리글이 깨짐 — " + L.메움.map(function (i) { return _pms_audit_col_(i + 1) + "4"; }).join(", ") + " (보정하면 발주 탭 이름으로 메움)");
+  var cMap    = L.cMap;
+  var extHdr  = L.extHdr;
+  var extLc   = L.extLc;
+  var c = { cancel: L.cancelC, ret: L.returnC, ship: L.shipFeeC, island: L.islandFeeC, etc: L.etcFeeC };
 
   var maxC = Math.max(sh.getMaxColumns(), extLc, 10);
   var 위 = sh.getRange(1, 1, _PMS_HEADER_ROW, maxC);
@@ -88,7 +97,10 @@ function _pms_auditOne_(ss, y, m) {
 
   //  ① 제목 · 머리글
   if (String(위값[0][0]).trim() !== "📊 월별 마감 요약") 문제.push("1행 제목이 다름: 「" + 위값[0][0] + "」");
-  var 다른머리 = _pms_audit_headerDiff_(위값[3], extHdr);
+  var 다른머리 = _pms_audit_headerDiff_(위값[3], extHdr).filter(function (d) {
+    //  깨진 칸(#REF!·빈칸)은 위에서 따로 알렸다
+    return !L.메움.some(function (i) { return d.indexOf(_pms_audit_col_(i + 1) + ": ") === 0; });
+  });
   if (다른머리.length) {
     문제.push("4행 머리글이 발주 탭과 다름 — " + 다른머리.slice(0, 6).join(" · ") +
       (다른머리.length > 6 ? " 외 " + (다른머리.length - 6) + "칸" : ""));
@@ -148,18 +160,10 @@ function _pms_auditOne_(ss, y, m) {
 
   //  ⑥ 조건부 서식 겹침
   var 규칙 = sh.getConditionalFormatRules() || [];
-  var 같은규칙 = {};
-  규칙.forEach(function (rule) {
-    try {
-      var bc = rule.getBooleanCondition();
-      var key = bc ? String(bc.getCriteriaValues()[0]) : "";
-      if (key) 같은규칙[key] = (같은규칙[key] || 0) + 1;
-    } catch (e) {}
-  });
-  var 겹침 = Object.keys(같은규칙).filter(function (k) { return 같은규칙[k] > 1; });
-  if (겹침.length) {
-    문제.push("조건부 서식이 겹쳐 쌓임 — 규칙 " + 규칙.length + "개 (같은 규칙 " +
-      겹침.map(function (k) { return 같은규칙[k] + "벌"; }).join(", ") + "). 보정을 돌릴 때마다 늘어남");
+  var 우리것 = 규칙.filter(_pms_isOurRowRule_).length;
+  if (우리것 !== 2) {
+    문제.push("취소·반품 줄 칠하기 규칙이 " + 우리것 + "개 (기대 2개)" +
+      (우리것 > 2 ? " — 보정을 돌릴 때마다 쌓였던 것. 보정을 다시 돌리면 2개로 정리됨" : ""));
   }
 
   var 요약 = 셈.전체건 + "줄 · 유효 " + 셈.유효건 + "건";
