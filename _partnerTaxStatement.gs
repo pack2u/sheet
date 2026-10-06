@@ -994,8 +994,14 @@ function _pts_pdfFolder_(issuer, ym) {
 /** 「거래명세표」 탭만 A4 세로 PDF 로 뽑는다 */
 function _pts_exportPdf_(ss, tab, fileName, folder) {
   var url = "https://docs.google.com/spreadsheets/d/" + ss.getId() + "/export" +
+    /*  ★ 쪽 번호를 켠다 ★  (2026-10-06)
+        > "건수 가 많은떄는 페이지가 넘어가고 페이지가 나오는건가?"  → "쪽 번호만 켜줘"
+        품목이 많으면 A4 한 장을 넘긴다. 번호가 없으면 받는 쪽에서 몇 장짜리인지,
+        빠진 장이 있는지 알 길이 없다.
+        머리글 반복(fzr)은 «켜지 않았다» — 그건 시트의 고정 행을 바꿔야 하고,
+        한 장짜리 명세서에도 영향이 간다. 따로 정하기로 했다.               */
     "?format=pdf&size=A4&portrait=true&fitw=true" +
-    "&sheetnames=false&printtitle=false&pagenumbers=false" +
+    "&sheetnames=false&printtitle=false&pagenumbers=true" +
     "&gridlines=false&fzr=false&horizontal_alignment=CENTER" +
     "&top_margin=0.5&bottom_margin=0.5&left_margin=0.4&right_margin=0.4" +
     "&gid=" + tab.getSheetId();
