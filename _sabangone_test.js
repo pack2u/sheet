@@ -25,6 +25,19 @@ const path = require("path");
 /** gasBulk.js 에서 ssb_addRows 와 그 이웃을 떼어 온다 — 복사본을 두면 갈라진다 */
 function load() {
   const src = fs.readFileSync(path.join(__dirname, "세트분리V2", "gasBulk.js"), "utf8");
+  /*  ★ 2026-10-07 — ssb_addRows 가 ssBaseUid 를 부르게 됐다 ★
+      그 함수는 core.js 에 산다. 여기 베껴 두면 갈라지므로 «진짜»를 떼어 온다. */
+  const coreSrc = fs.readFileSync(path.join(__dirname, "세트분리V2", "core.js"), "utf8");
+  const grabFrom = (text, name) => {
+    const at = text.indexOf("function " + name + "(");
+    if (at < 0) throw new Error(name + " 을 못 찾았습니다");
+    let depth = 0, i = text.indexOf("{", at);
+    for (; i < text.length; i++) {
+      if (text[i] === "{") depth++;
+      else if (text[i] === "}") { depth--; if (depth === 0) break; }
+    }
+    return text.slice(at, i + 1);
+  };
   const grab = (name) => {
     const at = src.indexOf("function " + name + "(");
     if (at < 0) throw new Error(name + " 을 못 찾았습니다");
@@ -43,6 +56,7 @@ function load() {
     grab("ssb_isPlaceholder") + "\n" +
     "function ssIsSabangnetUid(u){u=ssText(u);if(!u)return false;" +
     "if(/^\\d{4}(\\d{2})?-[A-Za-z]{2}-/.test(u))return false;return /^\\d+$/.test(u);}\n" +
+    grabFrom(coreSrc, "ssBaseUid") + "\n" +
     grab("ssb_addRows");
   return new Function(head + "\nreturn ssb_addRows;")();
 }

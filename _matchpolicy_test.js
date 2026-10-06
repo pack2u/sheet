@@ -33,7 +33,7 @@ function extract(src, decl) {
 
 const pushSrc = fs.readFileSync("_partnerExclusivePush.gs", "utf8");
 const helpSrc = fs.readFileSync("_partnerHelpers.gs", "utf8");
-const refixSrc = fs.readFileSync("_partnerArchiveInvoiceRefix.gs", "utf8");
+const refixSrc = fs.readFileSync("_partnerInvoiceSlots.gs", "utf8");
 
 let allowSingle = false;
 
@@ -64,7 +64,6 @@ const src = [
   extract(refixSrc, "function _par_qtyNum_("),
   extract(refixSrc, "function _par_isSetItem_("),
   extract(refixSrc, "function _par_slotSpec_("),
-  extract(refixSrc, "function _par_decideRow_("),
 ].join("\n\n");
 
 const ctx = {
@@ -112,8 +111,17 @@ console.log("\n[고유ID 우선] 있으면 이름 폴백을 안 탄다");
 {
   const po = fs.readFileSync("_partnerOrders.gs", "utf8");
 
-  check("★ 고유ID 가 진짜면 이름 폴백을 막는다",
-    po.indexOf("if ((!hit || !hit.inv) && !_uidReal_) {") > 0, true);
+  /*  ★ 2026-10-07 — 약속이 «더 세게» 바뀐 자리다 ★
+      이 줄은 「고유ID 가 진짜면 이름 폴백을 타지 않는다」는 가드를
+      글자 그대로 찾고 있었다. 2026-09-16(4f49cfb) 에
+        > "고유아이디가 없는건 이제 무시할꺼야.. 몇달을 해도 매칭율이 10%도 안되"
+      로 이름·전화 폴백 «자체»가 지워졌다. 가드가 지킬 것이 없어졌으니
+      가드도 없는 것이 맞다 — 그래서 가드가 아니라 «폴백이 없음»을 본다.
+      남은 _uidReal_ 자리는 이제 「고유ID 가 있는데 못 찾은 건」을 세는 쪽이다. */
+  check("★ 이름·전화로 더듬는 길이 아예 없다",
+    /_pep_lookupNamePhoneInvoice_\s*\(/.test(po), false);
+  check("★ 고유ID 로 못 찾으면 빈칸으로 둔다",
+    po.indexOf("if (!hit || !hit.inv) continue;") > 0, true);
   check("★ 옛 무조건 폴백은 사라졌다",
     po.indexOf("if (!hit || !hit.inv) {" + String.fromCharCode(10) +
       "          var npHit = _pep_lookupNamePhoneInvoice_(") > 0, false);

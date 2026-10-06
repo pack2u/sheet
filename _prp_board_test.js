@@ -180,8 +180,13 @@ check("예외 대신 skip 을 돌려준다", { ok: noTab.ok, mode: noTab.mode },
 
 console.log("\n[9] CS 보드 헤더와 포털이 찾는 헤더명이 일치");
 const hbSrc = fs.readFileSync("CS_WebApp/csHandoffBoard.gs", "utf8");
-const hbHdr = JSON.parse("[" + hbSrc.match(/var _CS_HB_HEADERS_ = \[([\s\S]*?)\];/)[1]
-  .replace(/\/\/[^\n]*/g, "").replace(/,\s*$/, "").trim().replace(/,\s*$/, "") + "]");
+//  ★ 2026-10-07 — 「//」만 떼고 있었다 ★
+//    2026-10-02 에 머리글 배열 안에 묶음 주석(슬래시-별)이 들어오면서
+//    JSON.parse 가 그 첫 글자 「/」에 걸려 시험이 통째로 죽었다.
+//    묶음 주석도 같이 뗀다.
+const hbHdr = JSON.parse("[" + hbSrc.match(/var _CS_HB_HEADERS_ = \[([\s\S]*?)\n\];/)[1]
+  .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")
+  .trim().replace(/,\s*$/, "") + "]");
 /*  ★ 칸 «개수»를 못 박지 않는다 ★  (2026-09-16)
     전에는 14개라고 적어 두었다. 8/31 에 고객명·전화·송장·품목이, 9/04 에
     지목이 뒤에 붙어 19개가 됐고, 이 검사는 그날부터 빨간 채로 남았다.

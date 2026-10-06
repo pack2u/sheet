@@ -176,7 +176,7 @@ check("상한이 허브와 같다", srv._cs_slotSpec_(1, "앞치마").max,
   (function () {
     const par = {};
     vm.createContext(par);
-    const refix = fs.readFileSync("_partnerArchiveInvoiceRefix.gs", "utf8");
+    const refix = fs.readFileSync("_partnerInvoiceSlots.gs", "utf8");
     vm.runInContext([
       grabFn(refix, "_par_qtyNum_"),
       grabFn(refix, "_par_isSetItem_"),
