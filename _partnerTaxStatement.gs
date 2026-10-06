@@ -63,6 +63,12 @@ var _PTS_VENDOR_HEADERS_ = [
       문서번호 끝에 붙는 짧은 약자다(올팩 → AP). 비워 두면 거래처명 앞 두 글자를 쓴다.
       거래처코드(이카운트 CUST_CD)는 사업자번호라 문서번호에 쓰기엔 길고 험하다.  */
   "문서코드",
+  /*  ★ 매일발송 ★  (2026-10-06)
+      > "내일부터는 3시 40분에 자동 발송되게해줘.. 주문내역이 있을떄만."
+      여기를 켠 거래처에만 15:40 자동 발송이 나간다. 끄면 아무 일도 안 난다.
+      목록을 처음 만들 때는 «수신메일이 이미 적힌 줄»만 켜 둔다 — 메일도 없는
+      곳을 켜 두면 매일 「수신메일 없음」만 쌓인다.                        */
+  "매일발송",
 ];
 
 var _PTS_LOG_HEADERS_ = [
@@ -399,7 +405,7 @@ function _pts_syncVendors_() {
       continue;
     }
     appendRows.push([
-      true, file.name, file.id, name, "", "", "", "", "", "", "", "자동", "", "", "",
+      true, file.name, file.id, name, "", "", "", "", "", "", "", "자동", "", "", "", false,
     ]);
     added++;
   }
@@ -408,6 +414,8 @@ function _pts_syncVendors_() {
     tab.getRange(start, 1, appendRows.length, _PTS_VENDOR_HEADERS_.length)
       .setValues(appendRows);
     tab.getRange(start, 1, appendRows.length, 1).insertCheckboxes();
+    //  매일발송(P열)도 체크 칸으로 — 글자로 TRUE/FALSE 를 적게 하면 오타가 난다
+    tab.getRange(start, 16, appendRows.length, 1).insertCheckboxes();
   }
   return { files: files.length, added: added, renamed: renamed };
 }
@@ -444,6 +452,7 @@ function _pts_readVendors_() {
       memo: String(v[12] || "").trim(),
       custCd: String(v[13] || "").trim(),
       docCode: String(v[14] || "").trim(),
+      daily: v[15] === true || String(v[15]).toUpperCase() === "TRUE",
     });
   }
   return out;
@@ -1042,6 +1051,8 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
     total: totals.total,
     docNo: docNo,
     tab: tab,
+    //  PDF 를 여기까지만 내보낸다 — 아래는 빈 칸이라 2페이지만 만든다
+    lastRow: footRow,
   };
 }
 
@@ -1165,7 +1176,16 @@ function _pts_pdfFolder_(issuer, ym) {
 }
 
 /** 「거래명세표」 탭만 A4 세로 PDF 로 뽑는다 */
-function _pts_exportPdf_(ss, tab, fileName, folder) {
+/**
+ * @param {number} [lastRow]  여기까지만 내보낸다. 안 주면 탭 전체 — 빈 아래쪽이
+ *   딸려 나가 쓸데없는 2페이지가 생긴다. (2026-10-06)
+ *   > "pdf가 2페이지로 만들어졌어 … 필요없는 2번쨰 페이지가 만들어졌어"
+ *   시트는 기본 1,000행이고 clear() 는 «값»만 지운다. 테두리·글꼴이 남은 행,
+ *   심지어 아무것도 없는 행까지 인쇄 범위에 들어가 한 장이 더 나온다.
+ *   r1/c1/r2/c2 는 0 부터 세고 끝은 포함하지 않는다.
+ */
+function _pts_exportPdf_(ss, tab, fileName, folder, lastRow) {
+  var 끝행 = Math.max(1, Number(lastRow) || tab.getLastRow() || 1);
   var url = "https://docs.google.com/spreadsheets/d/" + ss.getId() + "/export" +
     /*  ★ 쪽 번호를 켠다 ★  (2026-10-06)
         > "건수 가 많은떄는 페이지가 넘어가고 페이지가 나오는건가?"  → "쪽 번호만 켜줘"
@@ -1179,7 +1199,9 @@ function _pts_exportPdf_(ss, tab, fileName, folder) {
     /*  좌우 여백 2배 (2026-10-06) — "좌우측 여백을 지금은 2배로".
         0.4 → 0.8 인치. fitw=true 라 폭이 줄어든 만큼 표가 작게 들어간다.    */
     "&top_margin=0.5&bottom_margin=0.5&left_margin=0.8&right_margin=0.8" +
-    "&gid=" + tab.getSheetId();
+    "&gid=" + tab.getSheetId() +
+    //  ★ 여기까지만 ★ 0 부터 세고 끝은 포함하지 않는다
+    "&r1=0&c1=0&r2=" + 끝행 + "&c2=" + _PTS_COLS;
 
   var res = UrlFetchApp.fetch(url, {
     headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
@@ -1295,7 +1317,7 @@ function _pts_issueWithPack_(ss, vendor, ym, issuer, pack, opts) {
     var folder = _pts_pdfFolder_(issuer, p.ym);
     var fname = "거래명세표_" + p.ym + (pack.docTag ? "_" + pack.docTag : "") + "_" +
       String(vendor.name || vendor.fileName).replace(/[\\\/:*?"<>|]/g, "");
-    var pdf = _pts_exportPdf_(ss, result.tab, fname, folder);
+    var pdf = _pts_exportPdf_(ss, result.tab, fname, folder, result.lastRow);
     result.pdfUrl = pdf.getUrl();
     if (opts.mail) {
       var m = _pts_sendMail_(issuer, vendor, ym, result, pdf, pack.periodLabel);

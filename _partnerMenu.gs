@@ -325,6 +325,10 @@ function registerPartnerMenu_() {
         .addItem("⚙️ 설정 탭 생성 (허브)", "partnerCreateTaxStatementTabs")
         .addItem("🔄 거래처 목록 동기화", "partnerSyncTaxStatementVendors")
         .addItem("🔎 직인 찾기 (드라이브에서)", "partnerFindSealImage")
+        .addSeparator()
+        .addItem("📮 일일 명세서 지금 보내기", "partnerSendDailyStatements")
+        .addItem("⏰ 일일 명세서 트리거 설치 (15:40)", "partnerInstallDailyStatementTrigger")
+        .addItem("⏹ 일일 명세서 트리거 해제", "partnerRemoveDailyStatementTrigger")
         // 사업자정보 손입력을 줄이는 3단계 — 코드 채우기 → 진단 → 자동 채우기
         .addItem("   └ ① 거래처코드 채우기 (업체 설정탭에서)", "partnerFillVendorCustCodes")
         .addItem("   └ ② 🧪 이카운트 거래처 조회 진단", "partnerProbeEcountCustomers")
