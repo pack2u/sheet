@@ -263,15 +263,10 @@ function _island_judgeHubByAddress_() {
     var hdr = hubTab.getRange(1, 1, 1, lc).getDisplayValues()[0];
     var judgeCol = _isj_judgeCol_(hubTab, hdr);
 
-    /*  ★ 줄 전체 칠하기 규칙을 «늘» 손본다 ★  (2026-10-06)
-
-        > "현재 도서산간비만 보라색인데 행 전체가 보라색으로 수정해줘"
-
-        아래에서는 «새로 칠할 것이 있을 때»만 규칙을 건다. 그런데 이미 금액이
-        적혀 있는 줄만 남은 날에는 새로 칠할 것이 없어, 좁던 옛 규칙이 영영
-        그대로다 — 오늘 허브가 그 상태였다. 그래서 여기서 한 번 더 부른다.
-        같은 규칙을 다시 넣는 일이라 여러 번 돌아도 결과가 같다.          */
-    _island_addConditionalFormatRule_(hubTab, "A2:" + _island_colToLetter_(feeCol) + "5000", feeCol);
+    /*  ★ 옛 조건부 서식을 걷는다 ★  (2026-10-06)
+        칠하기를 «직접»으로 옮겼다. 옛 규칙이 남아 있으면 직접 칠한 것을
+        덮어, 고쳐도 금액 칸만 보라색으로 보인다. 한 값에 주인은 하나다. */
+    _island_dropOurConditionalRule_(hubTab, feeCol);
     var lr = _isj_lastRow_(hubTab);
     if (lr < 2) { 결과.글 = "허브에 주문이 없습니다"; return 결과; }
     var n = lr - 1;
@@ -340,9 +335,12 @@ function _island_judgeHubByAddress_() {
     if (칠할.length) {
       hubTab.getRange(2, feeCol, n, 1).setValues(feeVals);
       hubTab.getRangeList(칠할).setNumberFormat("#,##0").setFontColor(_ISLAND_FONT_COLOR)
-        .setFontWeight("bold").setBackground(_ISLAND_BG_COLOR);
-      _island_addConditionalFormatRule_(hubTab, "A2:" + _island_colToLetter_(feeCol) + "5000", feeCol);
+        .setFontWeight("bold");
     }
+    /*  ★ 금액이 있는 줄은 «다 다시» 칠한다 ★  (2026-10-06)
+        새로 붙은 줄만 칠하면 전에 붙은 줄이 영영 안 바뀐다 — 그래서
+        허브와 업체 시트가 갈렸다. 새로 칠할 게 없는 날에도 돈다.      */
+    결과.칠함 = _island_paintIslandRows_(hubTab, feeCol, feeVals);
     SpreadsheetApp.flush();
 
     /*  ★ 금액이 «이미» 붙어 있는 업체도 한 번 들른다 ★  (2026-10-06)

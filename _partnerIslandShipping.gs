@@ -441,11 +441,12 @@ function _island_applyToHub_(uidBoxMap, opts) {
       hubTab.getRangeList(changedRows)
         .setNumberFormat("#,##0")
         .setFontColor(_ISLAND_FONT_COLOR)
-        .setFontWeight("bold")
-        .setBackground(_ISLAND_BG_COLOR);
-      _island_addConditionalFormatRule_(hubTab, "A2:" + _island_colToLetter_(feeCol) + "5000", feeCol);
-      SpreadsheetApp.flush();
+        .setFontWeight("bold");
     }
+    //  칠하기는 «직접» (2026-10-06). 금액이 있는 줄은 다 다시 칠한다
+    _island_dropOurConditionalRule_(hubTab, feeCol);
+    _island_paintIslandRows_(hubTab, feeCol, feeArr);
+    if (changedRows.length > 0) SpreadsheetApp.flush();
 
     for (var vn in vendorSet) result.vendorNames.push(vn);
 
@@ -553,23 +554,6 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames, feeByUid) {
         changedRows.push(_island_colToLetter_(feeCol) + (r + 2));
       }
 
-      /*  ★ 줄 전체 칠하기 규칙은 «열 때마다» 손본다 ★  (2026-10-06)
-
-          > "발주허브는 되는데 업체 발주 시트에는 안되"
-
-          여태 이 규칙을 「금액을 새로 쓸 때(changedRows)」 안에서만 걸었다.
-          그런데 금액이 이미 적혀 있는 시트는 그 길로 안 들어간다 —
-          허브에서 「금액 있음」으로 걸러지기 때문이다. 그래서 좁은 범위로
-          한 번 걸린 업체 시트는 영영 안 넓어졌다. 허브는 판정이 돌 때마다
-          손보게 고쳐서 됐고, 여기만 남아 있었다.
-
-          규칙 걸기는 같은 결과를 내는 일이라 여러 번 돌아도 탈이 없다.   */
-      _island_addConditionalFormatRule_(
-        orderTab,
-        "A2:" + _island_colToLetter_(feeCol) + "5000",
-        feeCol
-      );
-
       if (changedRows.length > 0) {
         orderTab.getRange(2, feeCol, oColArr.length, 1).setValues(oColArr);
         orderTab.getRangeList(changedRows)
@@ -579,6 +563,18 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames, feeByUid) {
         result.files++;
         result.applied += changedRows.length;
       }
+
+      /*  ★ 칠하기는 «열 때마다 · 직접» ★  (2026-10-06)
+
+          > "발주허브는 되는데 업체 발주 시트에는 안되"
+          > "직접 칠하는 쪽으로 바꿔줘"
+
+          여태 조건부 서식을, 그것도 「금액을 새로 쓸 때」 안에서만 걸었다.
+          금액이 이미 적힌 시트는 그 길로 안 들어가 영영 안 고쳐졌다.
+          이제 시트를 연 자리에서 옛 규칙을 걷고 금액 있는 줄을 다 칠한다.  */
+      _island_dropOurConditionalRule_(orderTab, feeCol);
+      var 칠한수 = _island_paintIslandRows_(orderTab, feeCol, oColArr);
+      if (칠한수 && !changedRows.length) result.files++;   //  칠하기만 한 시트도 셈에 든다
 
       SpreadsheetApp.flush();
 
@@ -625,32 +621,57 @@ function _island_findQtyCol_(headers) { return _island_findQtyCol0_(headers); }
 //  조건부서식
 // ═══════════════════════════════════════════
 
-function _island_addConditionalFormatRule_(tab, rangeA1, feeCol) {
+/**
+ * 도서산간 줄을 «직접» 칠한다 — 줄 전체.  (2026-10-06)
+ *
+ * > "직접 칠하는 쪽으로 바꿔줘"
+ *
+ * ★ 조건부 서식을 접은 까닭 ★
+ *   같은 일로 세 번 걸렸다 — 범위가 금액 칸에서 끊겼고, 옛 규칙을 안 갈아
+ *   끼웠고, 업체 시트가 아예 안 열렸다. 게다가 «고쳐졌는지 확인할 길이
+ *   없다» — 서식 규칙은 값이 아니라 읽어 볼 수가 없어 매번 사람에게
+ *   물어야 했다. 직접 칠하면 변수가 하나로 준다.
+ *
+ * ★ 금액이 있는 줄은 «다 다시» 칠한다 ★
+ *   새로 붙은 줄만 칠하면, 전에 붙은 줄은 영영 안 바뀐다 — 그게 이번에
+ *   허브와 업체 시트가 갈렸던 까닭이다. 여러 번 돌아도 결과가 같다.
+ *
+ * @param {Sheet} tab
+ * @param {number} feeCol  도서산간비 칸 (1부터)
+ * @param {Array<Array<*>>} feeVals  2행부터의 도서산간비 값 (한 줄에 한 칸)
+ * @return {number} 칠한 줄 수
+ */
+function _island_paintIslandRows_(tab, feeCol, feeVals) {
+  try {
+    var 끝열 = Math.max(tab.getLastColumn(), feeCol);
+    if (끝열 < 1) return 0;
+    var 끝자 = _island_colToLetter_(끝열);
+    var 줄들 = [];
+    for (var i = 0; i < feeVals.length; i++) {
+      if ((Number(feeVals[i][0]) || 0) > 0) 줄들.push("A" + (i + 2) + ":" + 끝자 + (i + 2));
+    }
+    if (!줄들.length) return 0;
+    //  한 번에 — 줄마다 부르면 백 줄에 백 번 왕복한다
+    tab.getRangeList(줄들).setBackground(_ISLAND_BG_COLOR);
+    return 줄들.length;
+  } catch (e) {
+    try { Logger.log("[ISLAND] 줄 칠하기 실패(" + tab.getName() + "): " + e.message); } catch (_) {}
+    return 0;
+  }
+}
+
+/**
+ * 우리가 걸어 둔 옛 조건부 서식을 걷는다.  (2026-10-06)
+ *
+ * ★ 한 값에 주인은 하나 ★ 직접 칠하기로 옮겼는데 옛 규칙이 남아 있으면,
+ *   규칙이 직접 칠한 것을 덮어 「왜 아직 금액 칸만 보라색이지」가 된다.
+ *   우리 것만 고른다(같은 칸 + >0) — 사람이 걸어 둔 규칙은 안 건드린다.
+ */
+function _island_dropOurConditionalRule_(tab, feeCol) {
   try {
     var colLetter = _island_colToLetter_(feeCol);
-    var formula = '=AND($' + colLetter + '2<>"", $' + colLetter + '2>0)';
-
-    /*  ★ 줄 «전체»를 칠한다 ★  (2026-10-06)
-
-        > "현재 도서산간비만 보라색인데 행 전체가 보라색으로 수정해줘"
-
-        여태 범위를 「A2:<도서산간비 칸>5000」으로 걸어, 그 칸 «뒤»의 열
-        (택배사 등)은 안 칠해졌다. 눈으로는 금액 칸만 보라색으로 보인다.
-        범위를 부르는 쪽이 정하면 자리마다 또 어긋나므로, 여기서 그 시트의
-        «지금 쓰는 너비»로 다시 잡는다 — 열이 늘어도 따라간다.
-        (받은 rangeA1 은 그 시트에 규칙이 없을 때의 대비값으로만 쓴다.)   */
-    var 끝열 = 0;
-    try { 끝열 = tab.getLastColumn(); } catch (e0) {}
-    if (끝열 < feeCol) 끝열 = feeCol;
-    var 범위 = 끝열 > 0 ? ("A2:" + _island_colToLetter_(끝열) + "5000") : rangeA1;
-
-    /*  ★ 옛 규칙은 «갈아 끼운다» ★
-        전에는 「같은 칸을 보는 규칙이 있으면 그냥 돌아간다」였다. 그래서
-        범위가 좁던 옛 규칙이 남아 있는 시트는 고쳐도 영영 안 넓어졌다 —
-        이 글을 쓰는 지금 허브가 그 상태다. 떼고 새로 넣는다.
-        우리가 만든 것만 고른다(같은 칸 + >0) — 사람이 걸어 둔 규칙은 안 건드린다. */
-    var 남길것 = [];
     var 있던것 = tab.getConditionalFormatRules() || [];
+    var 남길것 = [], 뗀것 = 0;
     for (var i = 0; i < 있던것.length; i++) {
       var 우리것 = false;
       var bc = 있던것[i].getBooleanCondition();
@@ -659,18 +680,11 @@ function _island_addConditionalFormatRule_(tab, rangeA1, feeCol) {
         if (v && v.length > 0 && String(v[0]).indexOf("$" + colLetter + "2") !== -1 &&
             String(v[0]).indexOf(">0") !== -1) 우리것 = true;
       }
-      if (!우리것) 남길것.push(있던것[i]);
+      if (우리것) 뗀것++; else 남길것.push(있던것[i]);
     }
-
-    남길것.unshift(
-      SpreadsheetApp.newConditionalFormatRule()
-        .whenFormulaSatisfied(formula)
-        .setBackground(_ISLAND_BG_COLOR)
-        .setRanges([tab.getRange(범위)])
-        .build()
-    );
-    tab.setConditionalFormatRules(남길것);
-  } catch (e) {}
+    if (뗀것) tab.setConditionalFormatRules(남길것);
+    return 뗀것;
+  } catch (e) { return 0; }
 }
 
 function _island_colToLetter_(col) {

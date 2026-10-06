@@ -119,39 +119,57 @@ ok("구글 챗으로도 알린다", /_chat_sendText_/.test(걸기),
      (택배사 등)은 안 칠해졌다. 눈으로는 금액 칸만 보라색으로 보인다.
      그리고 「같은 칸을 보는 규칙이 있으면 그냥 돌아간다」였던 탓에, 좁던
      옛 규칙이 남은 시트는 코드를 고쳐도 영영 안 넓어졌다.                */
-console.log("\n─── ⑥ 행 전체 칠하기 ───");
+console.log("\n─── ⑥ 행 전체 칠하기 (직접) ───");
 const 배송 = fs.readFileSync(path.join(__dirname, "_partnerIslandShipping.gs"), "utf8");
-const 규칙 = 꺼내(배송, "_island_addConditionalFormatRule_");
-ok("범위를 그 시트의 «지금 너비»로 다시 잡는다",
-  /getLastColumn\(\)/.test(규칙) && /끝열/.test(규칙),
-  "부르는 쪽이 준 범위는 도서산간비 칸에서 끊긴다");
-ok("도서산간비 칸보다 좁아지지 않는다", /if \(끝열 < feeCol\) 끝열 = feeCol;/.test(규칙));
-ok("★ 옛 규칙을 갈아 끼운다 — 건너뛰지 않는다 ★",
-  /남길것/.test(규칙) && /setConditionalFormatRules\(남길것\)/.test(규칙),
-  "건너뛰면 좁던 규칙이 남은 시트는 영영 안 넓어진다 — 지금 허브가 그 상태다");
-ok("사람이 건 규칙은 안 건드린다", /if \(!우리것\) 남길것\.push/.test(규칙));
-ok("판정이 돌 때마다 규칙을 손본다",
-  /_isj_judgeCol_\(hubTab, hdr\);[\s\S]{0,1200}_island_addConditionalFormatRule_/.test(판정),
-  "새로 칠할 것이 없는 날에는 아래 호출이 안 돌아 옛 규칙이 그대로다");
 
-/*  ★ 업체 시트까지 닿아야 한다 ★
-    > "발주허브는 되는데 업체 발주 시트에는 안되"
-    업체 시트는 ① 그 업체가 «목록에» 들어야 열리고 ② 열린 뒤 규칙을 손봐야
-    한다. 둘 중 하나만 고치면 안 닿는다 — 허브만 고쳐졌던 까닭이 ①이다.  */
+/*  ★ 조건부 서식을 접었다 ★  (2026-10-06)
+    > "직접 칠하는 쪽으로 바꿔줘"
+    같은 일로 세 번 걸렸다 — 범위가 금액 칸에서 끊겼고, 옛 규칙을 안 갈아
+    끼웠고, 업체 시트가 아예 안 열렸다. 게다가 «고쳐졌는지 확인할 길이 없다» —
+    서식 규칙은 값이 아니라 읽어 볼 수가 없어 매번 사람에게 물어야 했다.   */
+const 칠하기 = 꺼내(배송, "_island_paintIslandRows_");
+ok("줄 전체를 칠한다 (A부터 마지막 열까지)",
+  /"A" \+ \(i \+ 2\) \+ ":" \+ 끝자 \+ \(i \+ 2\)/.test(칠하기),
+  "금액 칸만 칠하면 처음 문제로 되돌아간다");
+ok("그 시트의 지금 너비를 쓴다", /getLastColumn\(\)/.test(칠하기) && /끝자/.test(칠하기));
+ok("도서산간비 칸보다 좁아지지 않는다", /Math\.max\(tab\.getLastColumn\(\), feeCol\)/.test(칠하기));
+ok("★ 금액이 «있는 줄은 다» 칠한다 ★",
+  /for \(var i = 0; i < feeVals\.length; i\+\+\)/.test(칠하기) &&
+  /\(Number\(feeVals\[i\]\[0\]\) \|\| 0\) > 0/.test(칠하기),
+  "새로 붙은 줄만 칠하면 전에 붙은 줄이 영영 안 바뀐다");
+ok("한 번에 칠한다 (줄마다 왕복하지 않는다)", /getRangeList\(줄들\)\.setBackground/.test(칠하기));
+
+const 걷기 = 꺼내(배송, "_island_dropOurConditionalRule_");
+ok("★ 옛 조건부 서식을 걷는다 ★", /setConditionalFormatRules\(남길것\)/.test(걷기),
+  "남겨 두면 규칙이 직접 칠한 것을 덮어 금액 칸만 보라색으로 보인다");
+ok("사람이 건 규칙은 안 건드린다", /if \(우리것\) 뗀것\+\+; else 남길것\.push/.test(걷기));
+ok("옛 조건부 서식 함수는 지웠다",
+  배송.indexOf("_island_addConditionalFormatRule_") < 0,
+  "남겨 두면 다음 사람이 그것을 쓴다");
+
+/*  ★ 세 시트에 다 닿아야 한다 ★ 허브(판정) · 허브(원장 받침) · 업체 시트.
+    하나라도 빠지면 그 시트만 옛 모양으로 남는다 — 이번에 실제로 그랬다.  */
+console.log("\n─── ⑦ 세 자리에 다 닿는가 ───");
+ok("허브(판정)에서 칠한다", /_island_paintIslandRows_\(hubTab, feeCol, feeVals\)/.test(판정));
+ok("허브(판정)에서 옛 규칙을 걷는다", /_island_dropOurConditionalRule_\(hubTab, feeCol\)/.test(판정));
+ok("허브(원장 받침)에서도 칠한다", /_island_paintIslandRows_\(hubTab, feeCol, feeArr\)/.test(배송));
+ok("업체 시트에서도 칠한다", /_island_paintIslandRows_\(orderTab, feeCol, oColArr\)/.test(배송));
+
+const 적용 = 꺼내(배송, "_island_applyToPartnerSheets_");
+const 칠자리 = 적용.indexOf("_island_paintIslandRows_");
+const 조건자리 = 적용.indexOf("if (changedRows.length > 0)");
+ok("★ 업체 시트는 changedRows 와 상관없이 칠한다 ★",
+  칠자리 >= 0 && 조건자리 >= 0 && 칠자리 > 조건자리 &&
+  적용.slice(조건자리).indexOf("_island_paintIslandRows_") >
+    적용.slice(조건자리).indexOf("result.applied += changedRows.length;"),
+  "조건문 «안»에 두면 금액이 이미 적힌 시트는 영영 안 칠해진다");
+
+/*  ★ 업체 시트까지 닿아야 한다 ★ 그 업체가 «목록에» 들어야 시트가 열린다.  */
 ok("★ 금액이 이미 붙은 업체도 목록에 넣는다 ★",
   /Number\(feeVals\[fr\]\[0\]\)[\s\S]{0,120}업체\[vn2\] = true/.test(판정),
   "새로 판정된 섬이 없는 날에는 업체 시트가 아예 안 열린다");
 ok("그 목록이 업체 시트 적용으로 간다",
   /var 업체들 = Object\.keys\(업체\);[\s\S]{0,160}_island_applyToPartnerSheets_/.test(판정));
-/*  글자 모양이 아니라 «자리»로 잰다 — 띄어쓰기나 줄끝이 바뀌어도
-    뜻이 안 바뀌면 울지 않게.                                        */
-const 적용 = 꺼내(배송, "_island_applyToPartnerSheets_");
-const 규칙자리 = 적용.indexOf("_island_addConditionalFormatRule_");
-const 조건자리 = 적용.indexOf("if (changedRows.length > 0)");
-ok("★ 업체 시트는 «열 때마다» 규칙을 손본다 ★",
-  규칙자리 >= 0 && 조건자리 >= 0 && 규칙자리 < 조건자리,
-  "changedRows 안에 두면 금액이 이미 적힌 시트는 영영 안 넓어진다 " +
-  "(규칙 " + 규칙자리 + " · 조건 " + 조건자리 + ")");
 
 console.log("\n" + (틀린것 ? "✗ " : "✅ ") + 잰것 + "개 중 " + 틀린것 + "개 틀렸습니다.");
 process.exit(틀린것 ? 1 : 0);
