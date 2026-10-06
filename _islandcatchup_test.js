@@ -134,5 +134,24 @@ ok("판정이 돌 때마다 규칙을 손본다",
   /_isj_judgeCol_\(hubTab, hdr\);[\s\S]{0,1200}_island_addConditionalFormatRule_/.test(판정),
   "새로 칠할 것이 없는 날에는 아래 호출이 안 돌아 옛 규칙이 그대로다");
 
+/*  ★ 업체 시트까지 닿아야 한다 ★
+    > "발주허브는 되는데 업체 발주 시트에는 안되"
+    업체 시트는 ① 그 업체가 «목록에» 들어야 열리고 ② 열린 뒤 규칙을 손봐야
+    한다. 둘 중 하나만 고치면 안 닿는다 — 허브만 고쳐졌던 까닭이 ①이다.  */
+ok("★ 금액이 이미 붙은 업체도 목록에 넣는다 ★",
+  /Number\(feeVals\[fr\]\[0\]\)[\s\S]{0,120}업체\[vn2\] = true/.test(판정),
+  "새로 판정된 섬이 없는 날에는 업체 시트가 아예 안 열린다");
+ok("그 목록이 업체 시트 적용으로 간다",
+  /var 업체들 = Object\.keys\(업체\);[\s\S]{0,160}_island_applyToPartnerSheets_/.test(판정));
+/*  글자 모양이 아니라 «자리»로 잰다 — 띄어쓰기나 줄끝이 바뀌어도
+    뜻이 안 바뀌면 울지 않게.                                        */
+const 적용 = 꺼내(배송, "_island_applyToPartnerSheets_");
+const 규칙자리 = 적용.indexOf("_island_addConditionalFormatRule_");
+const 조건자리 = 적용.indexOf("if (changedRows.length > 0)");
+ok("★ 업체 시트는 «열 때마다» 규칙을 손본다 ★",
+  규칙자리 >= 0 && 조건자리 >= 0 && 규칙자리 < 조건자리,
+  "changedRows 안에 두면 금액이 이미 적힌 시트는 영영 안 넓어진다 " +
+  "(규칙 " + 규칙자리 + " · 조건 " + 조건자리 + ")");
+
 console.log("\n" + (틀린것 ? "✗ " : "✅ ") + 잰것 + "개 중 " + 틀린것 + "개 틀렸습니다.");
 process.exit(틀린것 ? 1 : 0);

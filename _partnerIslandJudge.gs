@@ -345,6 +345,23 @@ function _island_judgeHubByAddress_() {
     }
     SpreadsheetApp.flush();
 
+    /*  ★ 금액이 «이미» 붙어 있는 업체도 한 번 들른다 ★  (2026-10-06)
+
+        > "발주허브는 되는데 업체 발주 시트에는 안되"
+
+        업체 시트는 「그 시트에 금액을 새로 쓸 때」만 열렸다. 그런데 금액이
+        이미 적힌 줄은 위에서 「금액 있음」으로 걸러져 업체 목록에 안 들어간다.
+        그래서 좁은 범위로 한 번 걸린 업체 시트는 영영 안 넓어졌다 —
+        허브만 고쳐졌고 업체 시트가 남은 까닭이 이것이다.
+
+        들러도 금액은 안 바뀐다(이미 있는 줄은 건너뛴다). 줄 전체 칠하기
+        규칙만 지금 모양으로 갈아 끼운다.                                 */
+    for (var fr = 0; fr < n; fr++) {
+      if (!((Number(feeVals[fr][0]) || 0) > 0)) continue;
+      var vn2 = _isj_text_(data[fr][1]);
+      if (vn2) 업체[vn2] = true;
+    }
+
     var 업체들 = Object.keys(업체);
     if (업체들.length) {
       var pr = _island_applyToPartnerSheets_(섬uid, 업체들, feeByUid);

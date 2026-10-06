@@ -553,17 +553,29 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames, feeByUid) {
         changedRows.push(_island_colToLetter_(feeCol) + (r + 2));
       }
 
+      /*  ★ 줄 전체 칠하기 규칙은 «열 때마다» 손본다 ★  (2026-10-06)
+
+          > "발주허브는 되는데 업체 발주 시트에는 안되"
+
+          여태 이 규칙을 「금액을 새로 쓸 때(changedRows)」 안에서만 걸었다.
+          그런데 금액이 이미 적혀 있는 시트는 그 길로 안 들어간다 —
+          허브에서 「금액 있음」으로 걸러지기 때문이다. 그래서 좁은 범위로
+          한 번 걸린 업체 시트는 영영 안 넓어졌다. 허브는 판정이 돌 때마다
+          손보게 고쳐서 됐고, 여기만 남아 있었다.
+
+          규칙 걸기는 같은 결과를 내는 일이라 여러 번 돌아도 탈이 없다.   */
+      _island_addConditionalFormatRule_(
+        orderTab,
+        "A2:" + _island_colToLetter_(feeCol) + "5000",
+        feeCol
+      );
+
       if (changedRows.length > 0) {
         orderTab.getRange(2, feeCol, oColArr.length, 1).setValues(oColArr);
         orderTab.getRangeList(changedRows)
           .setNumberFormat("#,##0")
           .setFontColor(_ISLAND_FONT_COLOR)
           .setFontWeight("bold");
-        _island_addConditionalFormatRule_(
-          orderTab,
-          "A2:" + _island_colToLetter_(feeCol) + "5000",
-          feeCol
-        );
         result.files++;
         result.applied += changedRows.length;
       }
