@@ -3528,7 +3528,8 @@
         크게 보기(.ret-focus)에서만 — 목록은 빽빽해야 많이 보인다.          */
     .ret-row .rc-name,
     .ret-row .rc-vendor,
-    .ret-row .rc-inv {
+    .ret-row .rc-inv,
+    .ret-row .rc-retinv {
       font-size: calc(1em + 1px); font-weight: 700; letter-spacing: 0.01em;
     }
     /*  ★ !important 를 쓴 까닭 ★  (2026-10-07)
@@ -3539,6 +3540,10 @@
     .ret-row .rc-name   { color: #FFE9A8 !important; }  /* 수취인 — 파스텔 노랑 */
     .ret-row .rc-vendor { color: #B3E2FF !important; }  /* 주문 쇼핑몰 — 파스텔 하늘 */
     .ret-row .rc-inv    { color: #BFEFD2 !important; }  /* 송장번호 — 파스텔 연두 */
+    /*  ★ 반품송장 — 파스텔 분홍 ★  (2026-10-07)  > "반품 송장번호도 잘보이게 해줘"
+        원송장(연두)과 «짝»이라 일부러 먼 색으로 둔다. 노랑·하늘과도 안 겹친다 —
+        네 칸이 색만으로 갈려야 스무 칸 사이에서 눈이 바로 꽂힌다.           */
+    .ret-row .rc-retinv { color: #FFC6D9 !important; }  /* 반품송장 — 파스텔 분홍 */
     /*  크게 보기(편집판)에서도 같은 색·같은 굵기로.  (2026-10-07)
         목록의 한 줄과 편집판은 «같은 값»을 보여 준다 — 색이 다르면 다른 것으로 읽힌다. */
     .ret-edit-in[data-f="name"],
@@ -3548,6 +3553,8 @@
     .ret-edit-in[data-f="name"]   { color: #FFE9A8; }
     .ret-edit-in[data-f="vendor"] { color: #B3E2FF; }
     .ro-inv b { font-size: calc(1em + 1px); font-weight: 700; color: #BFEFD2; }
+    /*  카드의 「반품송장 …」 줄도 같은 색·같은 굵기로. 목록 한 줄과 «같은 값»이다. */
+    .ret-retinv-val { font-size: calc(1em + 1px); font-weight: 700; color: #FFC6D9; }
 
     /*  ★ 상태값 ★  (2026-10-07)  > "상태값도 잘보이게 해줘"
         제일 먼저 보는 값이다 — 「지금 어디까지 왔나」. 딱지로 세워 둔다. */
@@ -3561,11 +3568,13 @@
     :root[data-theme="light"] .ret-edit-in[data-f="name"]   { color: #9A6B00; }
     :root[data-theme="light"] .ret-edit-in[data-f="vendor"] { color: #0B6E99; }
     :root[data-theme="light"] .ro-inv b { color: #137A4E; }
+    :root[data-theme="light"] .ret-retinv-val { color: #A01F55; }
 
     /*  밝은 바탕에서는 그대로 쓰면 글자가 날아간다 — 같은 색을 한 단 내린다 */
     :root[data-theme="light"] .ret-row .rc-name   { color: #8A5A00 !important; }
     :root[data-theme="light"] .ret-row .rc-vendor { color: #0A5E85 !important; }
     :root[data-theme="light"] .ret-row .rc-inv    { color: #10653F !important; }
+    :root[data-theme="light"] .ret-row .rc-retinv { color: #A01F55 !important; }
 
     /*  ★ 끌어다 놓기 ★  (2026-10-06)  끄는 동안 어디에 놓이는지가 보여야 한다. */
     .ret-proc[draggable="true"] { cursor: grab; }
@@ -10441,7 +10450,9 @@
           >  잘 안보여 1포인트 크게 볼드로 … 밝은 칼라로 각각 통일"
           자리(nth-child)로 집지 않고 «이름표»를 단다 — 칸 차례가 바뀌면
           자리로 집은 꼴은 엉뚱한 칸을 칠한다.                            */
-      var 이름표 = { 5: 'rc-inv', 6: 'rc-vendor', 7: 'rc-name' };
+      //  ★ 2026-10-07 추가: 반품송장 ★  > "반품 송장번호도 잘보이게 해줘"
+      //    원송장(5)과 «짝»이라 색을 갈라 둔다 — 둘이 같은 색이면 어느 쪽인지 모른다.
+      var 이름표 = { 5: 'rc-inv', 6: 'rc-vendor', 7: 'rc-name', 12: 'rc-retinv' };
       return '<div class="ret-row">' + 칸.map(function (x, i) {
         var cl = 이름표[i];
         return cl ? ('<span class="' + cl + '">' + x + '</span>') : ('<span>' + x + '</span>');
