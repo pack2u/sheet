@@ -774,7 +774,13 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
     tab.insertRowsAfter(tab.getMaxRows(), needRows - tab.getMaxRows());
   }
 
-  var W = [70, 92, 210, 70, 55, 78, 92, 82]; // A~H ≈ 749px — A4 세로에 맞는 폭
+  /*  ★ 열 너비 ★  (2026-10-06 고침)
+      > "글자가 짤리고 그런 문제가 발생하네"
+      품목코드가 「JH1914SLSB_1004」처럼 길어 92px 에서 잘렸다(앞 J 까지 날아갔다).
+      규격은 거의 늘 비어 있으니 거기서 떼어 품목코드에 준다.
+      fitw=true 라 총폭이 조금 달라져도 인쇄는 알아서 맞춘다 — 잘림은 칸 문제지
+      인쇄 배율 문제가 아니다. 그래서 «아래 줄바꿈»을 같이 켠다.           */
+  var W = [52, 124, 196, 44, 44, 74, 88, 82]; // A~H ≈ 704px — A4 세로에 맞는 폭
   for (var c = 0; c < W.length; c++) tab.setColumnWidth(c + 1, W[c]);
 
   // ── 제목 ──
@@ -847,6 +853,11 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   tab.getRange(10, 1, 2, _PTS_COLS)
     .setBorder(true, true, true, true, true, true)
     .setFontSize(9).setVerticalAlignment("middle");
+  /*  문서번호(P2U-202610-R10061006-올팩코리아)와 거래기간(2026-10-06 ~ 2026-10-06)은
+      한 칸에 안 들어간다. 줄을 바꿔 다 보이게 한다 — 끊긴 번호는 번호가 아니다. */
+  tab.getRange(11, 2).setWrap(true).setFontSize(8);
+  tab.getRange(11, 4).setWrap(true).setFontSize(8);
+  tab.setRowHeight(11, 30);
   tab.getRange(10, 1, 2, 1).setBackground("#f7f9fc").setFontWeight("bold");
   tab.getRange(10, 3, 2, 1).setBackground("#f7f9fc").setFontWeight("bold");
   tab.getRange(10, 5, 2, 1).setBackground("#f7f9fc").setFontWeight("bold");
@@ -855,7 +866,7 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   tab.getRange(10, 6).setNumberFormat("#,##0");
   tab.getRange(10, 8).setNumberFormat("#,##0").setFontWeight("bold").setFontColor("#c62828");
   tab.setRowHeight(10, 22);
-  tab.setRowHeight(11, 22);
+  //  11행 높이는 위에서 30 으로 잡았다 (문서번호·거래기간 두 줄)
   tab.setRowHeight(12, 8);
 
   // ── 품목 표 ──
@@ -880,6 +891,8 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
       .setFontSize(9).setVerticalAlignment("middle")
       .setBorder(true, true, true, true, true, true);
     tab.getRange(hr + 1, 1, body.length, 2).setHorizontalAlignment("center");
+    //  품목코드도 줄을 바꾼다 — 넓혀도 「JH1915SL10005-1」 같은 것은 또 넘친다
+    tab.getRange(hr + 1, 2, body.length, 1).setWrap(true);
     tab.getRange(hr + 1, 3, body.length, 1).setWrap(true);
     tab.getRange(hr + 1, 5, body.length, 1).setNumberFormat("#,##0").setHorizontalAlignment("right");
     tab.getRange(hr + 1, 6, body.length, 3).setNumberFormat("#,##0").setHorizontalAlignment("right");
