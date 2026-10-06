@@ -316,6 +316,7 @@ function registerPartnerMenu_() {
         .addItem("🗂️ 마감탭에서 골라 발행", "partnerOpenTaxStatementPicker")
         .addItem("🖱️ 선택한 행으로 발행 (현재 탭)", "partnerIssueTaxStatementFromSelection")
         .addItem("📅 날짜 구간으로 발행 (현재 파일)", "partnerIssueTaxStatementByDateRange")
+        .addItem("📧 날짜 구간으로 발행 + 메일", "partnerIssueTaxStatementByDateRangeMail")
         .addItem("📄 월 단위 발행 (현재 파일)", "partnerIssueTaxStatementHere")
         .addSeparator()
         .addItem("📤 전체 거래처 일괄 발행 + 메일", "partnerIssueTaxStatementsAll")

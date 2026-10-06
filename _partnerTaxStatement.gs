@@ -118,6 +118,12 @@ var _PTS_ISSUER_ROWS_ = [
     "확인 후 회신 부탁드립니다.\n감사합니다.\n\n주식회사 팩투유"],
   ["발신자 표시이름", "주식회사 팩투유"],
   ["숨은참조(BCC)", ""],
+  /*  ★ 시험 수신메일 ★  (2026-10-06)
+      여기에 주소가 적혀 있으면 «모든» 거래명세표 메일이 업체 대신 그리로만 간다.
+      제목 앞에 [시험] 이 붙고, 본문 맨 위에 원래 받을 사람이 적힌다.
+      업체에게 가는 첫 명세서는 되돌릴 수 없다 — 며칠 여기로 받아 보고 비운다.
+      비우면 그때부터 진짜로 나간다. 그 한 칸이 전부다.                    */
+  ["시험 수신메일", "pack2u@pack2u.co.kr"],
 ];
 
 
@@ -1219,10 +1225,15 @@ function _pts_comma_(n) {
 }
 
 function _pts_sendMail_(issuer, vendor, ym, result, pdfFile, periodLabel) {
-  var to = String(vendor.emails || "")
+  var 진짜 = String(vendor.emails || "")
     .split(/[,;\s]+/)
     .filter(function (s) { return s.indexOf("@") !== -1; })
     .join(",");
+
+  /*  시험 주소가 적혀 있으면 «업체 대신» 거기로만 간다. 업체 주소가 비어 있어도
+      시험은 보낸다 — 모양을 보려고 쓰는 것이라 여기서 막으면 쓸 수가 없다. */
+  var 시험 = String(issuer["시험 수신메일"] || "").trim();
+  var to = 시험 || 진짜;
   if (!to) return { sent: false, note: "수신메일 없음" };
 
   var p = _pts_parseMonth_(ym);
@@ -1236,14 +1247,22 @@ function _pts_sendMail_(issuer, vendor, ym, result, pdfFile, periodLabel) {
     rows: String(result.rows),
     docNo: result.docNo,
   };
-  var subject = _pts_fillTokens_(issuer["메일 제목"] || "[팩투유] {거래처명} {대상월} 거래명세표", ctx);
+  var subject = _pts_fillTokens_(issuer["메일 제목"] || "[팩투유] {거래처명} {기간} 거래명세표", ctx);
   var body = _pts_fillTokens_(issuer["메일 본문"] || "", ctx);
+  if (시험) {
+    /*  시험인 것을 «제목부터» 알린다. 본문 맨 위에 원래 받을 사람을 적는다 —
+        나중에 이 메일만 보고도 누구에게 갈 것이었는지 알 수 있어야 한다. */
+    subject = "[시험] " + subject;
+    body = "※ 시험 발송입니다. 원래 받는 곳: " + (진짜 || "(거래처 탭에 수신메일 없음)") +
+      "\n※ 공급자 탭 「시험 수신메일」 을 비우면 그때부터 업체로 나갑니다.\n\n" +
+      "────────────────────────\n\n" + body;
+  }
 
   var opts = { attachments: [pdfFile.getAs("application/pdf")] };
   if (issuer["발신자 표시이름"]) opts.name = issuer["발신자 표시이름"];
   if (issuer["숨은참조(BCC)"]) opts.bcc = issuer["숨은참조(BCC)"];
   GmailApp.sendEmail(to, subject, body, opts);
-  return { sent: true, note: to };
+  return { sent: true, note: to + (시험 ? " (시험 — 원래 " + (진짜 || "없음") + ")" : "") };
 }
 
 
@@ -1769,7 +1788,18 @@ function partnerIssueTaxStatementFromSelection() {
  * **날짜 구간**으로 거래명세표를 만든다.
  * 구간에 걸치는 마감탭 + 발주 및 송장조회 + 전용양식을 모두 훑는다.
  */
-function partnerIssueTaxStatementByDateRange() {
+/** 메뉴: 📧 날짜 구간으로 발행 + 메일 */
+function partnerIssueTaxStatementByDateRangeMail() {
+  return partnerIssueTaxStatementByDateRange({ mail: true });
+}
+
+/**
+ * @param {{mail:boolean}} [opt]  mail 이 참이면 PDF 를 만들고 메일까지 보낸다.
+ *   메뉴에서 부를 때는 인자가 없다 — 그때는 여태처럼 메일을 «안» 보낸다.
+ */
+function partnerIssueTaxStatementByDateRange(opt) {
+  opt = opt || {};
+  var 보낼까 = !!opt.mail;
   var ui = SpreadsheetApp.getUi();
   var issuer, vendors;
   try {
@@ -1842,27 +1872,47 @@ function partnerIssueTaxStatementByDateRange() {
     _pts_previewItems_(pack, issuer),
     issuer["VAT 기준"] === "별도" ? "별도" : "포함",
   );
+  /*  ★ 보내기 전에 «받는 사람»을 보여 준다 ★  (2026-10-06)
+      업체에게 간 메일은 되돌릴 수 없다. 주소를 눈으로 보고 누르게 한다. */
+  var 시험주소 = String(issuer["시험 수신메일"] || "").trim();
+  var 업체주소 = String(vendor.emails || "").trim();
+  var 받는곳 = 시험주소 || 업체주소;
+
+  var 꼬리 = 보낼까
+    ? ("\n받는 사람 : " + (받는곳 || "★ 없음 — 못 보냅니다 ★") +
+       (시험주소 ? "\n   (시험 발송 — 업체 " + (업체주소 || "없음") + " 로는 안 갑니다)"
+                 : "\n   ★ 업체에게 실제로 나갑니다 ★") +
+       "\n\n[예] 탭 + PDF + 메일 발송\n[아니오] 탭만 생성 (메일 안 보냄)\n[취소] 중단")
+    : "\n[예] 탭 + PDF 저장\n[아니오] 탭만 생성\n[취소] 중단";
+
   var go = ui.alert(
-    "구간 거래명세표 · " + vendor.name,
+    (보낼까 ? "구간 거래명세표 + 메일 · " : "구간 거래명세표 · ") + vendor.name,
     pack.periodLabel + "\n" +
       "품목 " + pack.lines.length + "줄 · 합계 " + _pts_comma_(tt.total) + "원\n" +
       "원천 " + pack.tabs.join(", ") + "\n" +
       (itemQuery ? "품목 필터 " + itemQuery.join(", ") + "\n" : "") +
       (pack.noInvoice ? "송장 미발행 " + pack.noInvoice + "행 제외\n" : "") +
-      "\n[예] 탭 + PDF 저장\n[아니오] 탭만 생성\n[취소] 중단",
+      꼬리,
     ui.ButtonSet.YES_NO_CANCEL,
   );
   if (go !== ui.Button.YES && go !== ui.Button.NO) return;
 
   try {
-    var r = _pts_issueWithPack_(ss, vendor, ym, issuer, pack, { pdf: go === ui.Button.YES, mail: false });
+    var r = _pts_issueWithPack_(ss, vendor, ym, issuer, pack, {
+      pdf: go === ui.Button.YES,
+      //  [아니오] 는 「탭만」이다 — 메일 회차라도 안 보낸다
+      mail: 보낼까 && go === ui.Button.YES,
+    });
     _pts_log_(ym, vendor, r,
-      "구간 " + pack.periodLabel + (itemQuery ? " · 품목 " + itemQuery.join("/") : ""));
+      (보낼까 ? "구간+메일 " : "구간 ") + pack.periodLabel +
+      (itemQuery ? " · 품목 " + itemQuery.join("/") : ""));
     try { ss.setActiveSheet(r.tab); } catch (e3) {}
     ui.alert(
       "발행 완료",
       vendor.name + "\n기간 " + pack.periodLabel + "\n\n" +
         "품목 " + r.rows + "줄\n합계 " + _pts_comma_(r.total) + "원" +
+        //  «어디로 갔나»를 끝에 보여 준다. 보냈는지 안 보냈는지 모르면 또 누른다.
+        (r.mailNote ? "\n\n메일 " + r.mailNote : "") +
         (r.pdfUrl ? "\n\nPDF: " + r.pdfUrl : ""),
       ui.ButtonSet.OK,
     );
