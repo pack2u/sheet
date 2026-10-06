@@ -131,6 +131,19 @@ function _island_normUid_(raw) {
 var _ISLAND_SS_ID_          = "1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo";   // 세트분리(뉴)
 var _ISLAND_LEDGER_TAB_     = "주문라인원장";
 var _ISLAND_LEDGER_TAIL_    = 40000;   // 원장 끝에서 이만큼만 본다 (석 달 남짓)
+/*  ★ 업체 시트에는 도서산간비를 안 적는다 ★  (2026-10-06)
+
+    > "대리발송으로 넘어갈때.. 도서산간 추가비용은 빠져야되"
+    > "판매현황에 이미 적용되있는거니 푸시시에만 빼면 되"
+
+    도서산간비는 «우리가» 로젠에 내는 돈이다. 업체가 대신 보내는 건(대리발송)은
+    그 업체가 택배를 쓰므로 우리 도선료가 업체 발주서에 붙을 까닭이 없다.
+    허브와 이카운트 OUT00001 은 그대로 둔다 — 판매현황에는 이미 적용돼 있고,
+    우리가 보내는 건은 여전히 받아야 한다. 빠지는 것은 «업체에게 보이는 칸» 하나다.
+
+    되살리려면 이 값만 true 로 바꾸면 된다 — 적는 길은 그대로 남겨 두었다.   */
+var _ISLAND_WRITE_TO_VENDOR_ = false;
+
 var _ISLAND_FEE_LINE_       = 5000;
 //  허브 수량 칸 — 머리글: 수집일시 A · 발주업체 B · 고유ID C · 주문일자 D · 이카운트코드 E
 //  · 품목명 F · 수량 G · 수취인 H … 0-based 로 6 이다.
@@ -515,8 +528,18 @@ function _island_ensureHubFeeCol_(hubTab) {
 // ═══════════════════════════════════════════
 
 function _island_applyToPartnerSheets_(uidBoxMap, vendorNames, feeByUid) {
-  var result = { applied: 0, skipped: 0, files: 0, errors: [] };
+  var result = { applied: 0, skipped: 0, files: 0, errors: [], 꺼짐: false };
   feeByUid = feeByUid || {};
+
+  /*  업체 발주서에는 도서산간비를 안 적는다 (2026-10-06 — 위 _ISLAND_WRITE_TO_VENDOR_).
+      «안 했다»는 것을 결과에 남긴다. 조용히 0 으로 돌아오면 다음 사람이
+      「왜 업체 시트에 안 붙었지」를 또 처음부터 쫓는다. */
+  if (!_ISLAND_WRITE_TO_VENDOR_) {
+    result.꺼짐 = true;
+    Logger.log("[ISLAND] 업체 발주서에는 도서산간비를 적지 않습니다 " +
+      "(_ISLAND_WRITE_TO_VENDOR_ = false · 2026-10-06). 허브·이카운트는 그대로입니다.");
+    return result;
+  }
 
   var files = _pt_listFiles();
   if (!files || !files.length) return result;
