@@ -96,6 +96,7 @@ function scanMenuItems(body) {
   const menus = []; // {name, depth} — depth 1 = 최상위 파트
   let paren = 0;
   const subAt = []; // .addSubMenu( 가 열린 괄호 깊이들
+  let curPart = null;  //  지금 어느 최상위 파트 안인가
   let i = 0;
   while (i < body.length) {
     const c = body[i];
@@ -114,12 +115,15 @@ function scanMenuItems(body) {
       i += ".addSubMenu".length;
       paren++; subAt.push(paren); i++;
       const nm = /^\s*ui\.createMenu\("((?:[^"\\]|\\.)*)"\)/.exec(body.slice(i, i + 200));
-      if (nm) menus.push({ name: nm[1], depth: subAt.length });
+      if (nm) {
+        menus.push({ name: nm[1], depth: subAt.length });
+        if (subAt.length === 1) curPart = nm[1];   //  최상위 파트가 바뀌었다
+      }
       continue;
     }
     if (body.startsWith(".addItem(", i)) {
       const m = /^\.addItem\(\s*"((?:[^"\\]|\\.)*)"/.exec(body.slice(i, i + 400));
-      if (m) items.push({ label: m[1], depth: subAt.length });
+      if (m) items.push({ label: m[1], depth: subAt.length, part: curPart });
       i += ".addItem".length;
       paren++; i++;
       continue;
@@ -146,7 +150,13 @@ parts.forEach(p => {
   const n = adminItems.filter(it => it.depth >= 1).length;
   console.log("      · " + p);
 });
-check("파트 수가 한눈에 들어온다 (12개 이하)", parts.length <= 12, parts.length + "개");
+/*  ★ 2026-10-07 — 열둘에서 열셋으로 ★
+    2026-10-06 에 「🧾 거래명세표 발행」이 늘었다. 「📋 마감 · 명세서 정리」와
+    합칠 수 있을 것 같지만 _partnerMenu.gs 가 왜 안 되는지 적어 두었다 —
+      「거래명세표 발행」은 우리가 **보낼** 명세를 만든다. 방향이 반대다.
+    그래서 합치지 않고 잣대를 한 칸 올린다. ★ 다음에 또 늘면 올리지 말 것 ★
+    하나를 합쳐 내보내고 열셋을 지킨다. 사장님과 한 번 추려야 한다.      */
+check("파트 수가 한눈에 들어온다 (13개 이하)", parts.length <= 13, parts.length + "개");
 check("파트마다 항목이 있다", parts.length > 0 && adminItems.length >= parts.length, "");
 
 // 파트별 항목 수 — 한 파트에 너무 많이 몰리면 다시 갈라야 한다
@@ -154,19 +164,22 @@ console.log("\n      파트별 항목 수");
 let cursor = 0;
 const perPart = {};
 scanned.menus.forEach(m => { if (m.depth === 1) perPart[m.name] = 0; });
-{
-  // 항목을 순서대로 훑으며 직전 최상위 파트에 귀속시킨다
-  const seq = [];
-  const body = admin.slice(0, admin.lastIndexOf(".addToUi()"));
-  const rx = /\.addSubMenu\(\s*ui\.createMenu\("((?:[^"\\]|\\.)*)"\)|\.addItem\(\s*"((?:[^"\\]|\\.)*)"/g;
-  let x, cur = null;
-  const topNames = new Set(parts);
-  while ((x = rx.exec(body))) {
-    if (x[1] !== undefined) { if (topNames.has(x[1])) cur = x[1]; }
-    else if (cur) perPart[cur]++;
-  }
-}
-Object.keys(perPart).forEach(k => console.log("      · " + k + " — " + perPart[k] + "개"));
+/*  ★ 2026-10-07 — «겉줄»과 «속까지»를 갈라 센다 ★
+    여태 한 파트 안의 항목을 깊이와 상관없이 다 세었다. 그래서
+    한 번만 쓰는 것들을 한 겹 안으로 치워도 숫자가 안 줄었다 —
+    눈에 보이는 줄은 분명히 줄었는데도.
+    막으려는 것은 「열었을 때 한눈에 안 들어온다」이므로, 16개 잣대는
+    «겉줄»(파트를 열자마자 보이는 것)에 댄다. 속까지 센 수는 같이 적어
+    한 파트가 통째로 비대해지는 것도 보이게 둔다.                       */
+const perPartDeep = {};
+scanned.menus.forEach(m => { if (m.depth === 1) perPartDeep[m.name] = 0; });
+scanned.items.forEach(it => {
+  if (!it.part || !(it.part in perPart)) return;
+  perPartDeep[it.part]++;
+  if (it.depth === 1) perPart[it.part]++;     //  파트 바로 밑 = 겉줄
+});
+Object.keys(perPart).forEach(k => console.log("      · " + k + " — 겉줄 " +
+  perPart[k] + "개 (속까지 " + perPartDeep[k] + "개)"));
 const bloated = Object.keys(perPart).filter(k => perPart[k] > 16);
 bloated.forEach(k => console.log("      → 너무 많음: " + k + " (" + perPart[k] + "개)"));
 check("한 파트에 16개 초과 없음", bloated.length === 0, bloated.length + "건");

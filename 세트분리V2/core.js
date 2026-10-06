@@ -2037,66 +2037,15 @@ function ssRoute(units, masters, cfg, warnings) {
         업체코드(BW 등)  그 업체로 넘긴다
         보류             보류(미발송)로 세운다
         발송             도서산간에서 빼고 우리가 일반으로 보낸다 (탭의 원래 뜻 그대로) */
-  function 섬만보기(u) {
-    var addr = ssNormAddr(u.주소1);
-    var zip = ssText(addrZip[addr]);
-    var 료 = function (권역) { return ssSurcharge(addr, 권역, ferry, { 통일도선료: 통일도선료 }).합계; };
-    var fh = ssFerryMatch(addr, ferry);
-    if (fh) {
-      if (ssText(fh.권역) === '산간') return null;
-      return { addr: addr, zip: zip, 권역: fh.권역, 판정: '도선료표', 도선료: 료(fh.권역) };
-    }
-    if (zip) {
-      if (!islandZip[zip] || ssText(islandZip[zip]) === '산간') return null;
-      return { addr: addr, zip: zip, 권역: islandZip[zip], 판정: '우편번호', 도선료: 료(islandZip[zip]) };
-    }
-    var 앞머리 = ssAddrRegion(addr);
-    for (var q = 0; q < islandKw.length; q++) {
-      if (!islandKw[q] || islandKw[q].skip || !islandKw[q].confirm) continue;
-      if (앞머리.indexOf(islandKw[q].kw) < 0) continue;
-      var 확정권역 = islandKw[q].zone || '도서';
-      return { addr: addr, zip: '', 권역: 확정권역, 판정: '지역확정', 도선료: 료(확정권역) };
-    }
-    return null;
-  }
-  /** true 면 여기서 경로를 정했다(대리발송으로 가지 말 것). false 면 대리발송으로 간다. */
-  function 섬대리검문(u, 길) {
-    var s = 섬만보기(u);
-    if (!s) return false;
-    u.정규주소 = s.addr; u.우편번호 = s.zip;
-    u.도서권역 = s.권역; u.도서판정 = s.판정; u.도선료 = s.도선료;
-    var 적음 = (cfg && cfg._섬조치)
-      ? ssText(cfg._섬조치[ssText(u.순번) + '|' + ssText(u.품목코드)]) : '';
-    var 민 = ssNorm(적음).split(' ').join('').toUpperCase();
-    if (!적음) {
-      //  「도서산간(위탁배송)」 탭 — 대리발송 출고지의 섬 주문을 받으려고 있던 자리다.
-      //  우리 창고 도서산간 탭과 섞으면 출고하는 사람이 우리 재고로 싸 버린다.
-      u.route = SS_ROUTE.LOTTE_ISLAND_CONSIGN;
-      u.섬대리대기 = true;
-      //  도서산간 탭에서 한눈에 보이게 판정 칸에 적는다 — 이 줄은 우리 재고로 나가는 줄이 아니다
-      u.도서판정 = s.판정 + ' · ⚠대리발송 확인' + (u.업체코드 ? '(' + u.업체코드 + ')' : '');
-      ssWarn(warnings, '주의', 'ISLAND_PARTNER_WAIT', (u.순번 || '') + ' / ' + (u.품목코드 || ''),
-        '도서(' + s.권역 + ') 주소라 대리발송(' + 길 + ')을 멈추고 「로젠택배-도서산간(위탁배송)」 탭에 세웠습니다. ' +
-        '조치 칸에 「대리발송」·업체코드·「보류」·「발송」 중 하나를 적고 ✅ 조치 적용을 누르세요. ' +
-        '적기 전에는 업체로 안 넘어갑니다.');
-      return true;
-    }
-    for (var w = 0; w < SS_HOLD_KEEP_WORDS.length; w++) {
-      if (민 === ssNorm(SS_HOLD_KEEP_WORDS[w]).split(' ').join('').toUpperCase()) {
-        ssIslandHoldByManual_(u, 적음);
-        return true;
-      }
-    }
-    if (적음 === '발송') { ssIslandSkipByManual_(u, warnings); return true; }
-    if (민 === '대리발송') return false;
-    if (vendors[민]) { u.업체코드 = 민; u.업체명 = vendors[민]; return false; }
-    //  알아들을 수 없는 말은 «보내지 않는다» — 잘못 보내면 되돌릴 수 없다
-    u.route = SS_ROUTE.HOLD;
-    u.보류사유 = '도서산간확인';
-    u.보류상세 = '도서산간 탭 조치 「' + 적음 + '」을 못 알아들었습니다 — ' +
-      '대리발송 · 업체코드 · 보류 · 발송 중 하나로 적어 주세요';
-    return true;
-  }
+  /*  ★ 2026-10-07: 여기 있던 섬만보기·섬대리검문 «두 번째 벌»을 걷어냈다 ★
+      바로 위에 같은 이름의 함수가 이미 있었다. 자바스크립트는 나중 것을 쓰므로
+      «여기 있던 옛 벌»이 위의 새 벌을 가리고 있었다. 그래서
+        · 2026-10-05 「전화주문·대리판매는 도서산간 판정 패스」가 대리발송 갈래에서
+          한 번도 안 먹었다 — 허브가 이미 도서산간비를 실은 줄이 다시
+          「도서산간(위탁배송)」 탭에 서서 업체 발주가 멈췄다
+        · 도선료 계산이 섬옵션(u) 가 아니라 통일금액만 보고 있었다
+          (세트 10,000원이 안 붙었다)
+      한 값에 주인은 하나다. 위의 한 벌만 남긴다.                          */
 
   // 한 글자 키워드는 시/군을 가려내지 못한다.
   // 예전 목록의 「중」은 중구·중랑구·중앙로·궁중보쌈까지 전부 후보로 만들었다.
