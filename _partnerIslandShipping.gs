@@ -131,18 +131,21 @@ function _island_normUid_(raw) {
 var _ISLAND_SS_ID_          = "1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo";   // 세트분리(뉴)
 var _ISLAND_LEDGER_TAB_     = "주문라인원장";
 var _ISLAND_LEDGER_TAIL_    = 40000;   // 원장 끝에서 이만큼만 본다 (석 달 남짓)
-/*  ★ 업체 시트에는 도서산간비를 안 적는다 ★  (2026-10-06)
+/*  ★ 적되, 업체 눈에는 안 보이게 ★  (2026-10-06)
 
     > "대리발송으로 넘어갈때.. 도서산간 추가비용은 빠져야되"
-    > "판매현황에 이미 적용되있는거니 푸시시에만 빼면 되"
+    > "그리고 도서산간 추가배송비도 목록으로 뽑히게 해줘"   → ㉮
 
-    도서산간비는 «우리가» 로젠에 내는 돈이다. 업체가 대신 보내는 건(대리발송)은
-    그 업체가 택배를 쓰므로 우리 도선료가 업체 발주서에 붙을 까닭이 없다.
-    허브와 이카운트 OUT00001 은 그대로 둔다 — 판매현황에는 이미 적용돼 있고,
-    우리가 보내는 건은 여전히 받아야 한다. 빠지는 것은 «업체에게 보이는 칸» 하나다.
+    한 칸을 두 곳이 쓴다.
+      · 업체가 보는 「발주 및 송장조회」 — 업체가 쓸 일이 없는 숫자다. 보이면 안 된다.
+      · 거래명세표 — 반품배송비·기타정산과 함께 «가산 항목»으로 이 칸을 읽는다.
+    안 적으면 명세서가 읽을 것이 없고, 적으면 업체가 본다.
+    그래서 «적고 숨긴다» — 값은 그대로 두고 열만 감춘다. 명세서는 숨은 열도 읽는다.
 
-    되살리려면 이 값만 true 로 바꾸면 된다 — 적는 길은 그대로 남겨 두었다.   */
-var _ISLAND_WRITE_TO_VENDOR_ = false;
+    _ISLAND_WRITE_TO_VENDOR_ 를 false 로 두면 아예 안 적는다(㉯ — 명세서에도 안 나온다).
+    _ISLAND_HIDE_VENDOR_COL_ 을 false 로 두면 적고 보여 준다(㉰).                 */
+var _ISLAND_WRITE_TO_VENDOR_ = true;
+var _ISLAND_HIDE_VENDOR_COL_ = true;
 
 var _ISLAND_FEE_LINE_       = 5000;
 //  허브 수량 칸 — 머리글: 수집일시 A · 발주업체 B · 고유ID C · 주문일자 D · 이카운트코드 E
@@ -536,8 +539,8 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames, feeByUid) {
       「왜 업체 시트에 안 붙었지」를 또 처음부터 쫓는다. */
   if (!_ISLAND_WRITE_TO_VENDOR_) {
     result.꺼짐 = true;
-    Logger.log("[ISLAND] 업체 발주서에는 도서산간비를 적지 않습니다 " +
-      "(_ISLAND_WRITE_TO_VENDOR_ = false · 2026-10-06). 허브·이카운트는 그대로입니다.");
+    Logger.log("[ISLAND] 업체 시트에 도서산간비를 적지 않습니다 " +
+      "(_ISLAND_WRITE_TO_VENDOR_ = false). 거래명세표도 이 칸을 못 읽습니다.");
     return result;
   }
 
@@ -564,6 +567,13 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames, feeByUid) {
       if (!orderTab || orderTab.getLastRow() < 2) continue;
 
       var feeCol = _island_ensurePartnerFeeCol_(orderTab);
+      /*  ★ 업체 눈에는 안 보이게 ★  (2026-10-06 — ㉮)
+          값은 명세서가 읽어야 하니 지우지 않는다. 열만 감춘다.
+          이미 감춰져 있어도 다시 불러 탈이 없다. 사람이 펼쳐 보면 그대로 보인다 —
+          감추는 것은 «업체가 쓸 칸이 아니다»라는 표시지, 자물쇠가 아니다.      */
+      if (_ISLAND_HIDE_VENDOR_COL_) {
+        try { orderTab.hideColumns(feeCol); } catch (eHide) {}
+      }
       var dataLr = _island_findLastDataRow_(orderTab, 3); // C=이카운트코드
       if (dataLr < 2) continue;
 
