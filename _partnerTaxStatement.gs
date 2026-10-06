@@ -58,6 +58,11 @@ var _PTS_VENDOR_HEADERS_ = [
   "발행", "파일명", "파일ID", "거래처명", "등록번호", "대표자",
   "사업장주소", "업태", "종목", "담당자", "수신메일(콤마)", "원천", "비고",
   "거래처코드",   // 이카운트 CUST_CD — 사업자정보 자동 매칭 키
+  /*  ★ 문서코드 ★  (2026-10-06)
+      > "문서 번호는 26-1006-AP"
+      문서번호 끝에 붙는 짧은 약자다(올팩 → AP). 비워 두면 거래처명 앞 두 글자를 쓴다.
+      거래처코드(이카운트 CUST_CD)는 사업자번호라 문서번호에 쓰기엔 길고 험하다.  */
+  "문서코드",
 ];
 
 var _PTS_LOG_HEADERS_ = [
@@ -85,6 +90,13 @@ var _PTS_ISSUER_ROWS_ = [
   ["VAT 기준", "포함"],
   ["품목 표시", "품목별합산"],
   ["PDF 폴더ID", ""],
+  /*  ★ 직인 ★  (2026-10-06)
+      > "그리고 도장도 필요하지?"
+      드라이브에 올린 도장 그림의 파일ID. 비워 두면 안 찍는다 —
+      도장은 «있는 척»하면 안 되는 것이라, 못 읽으면 조용히 건너뛰고 로그에 남긴다.
+      권장: 배경이 투명한 PNG. 흰 배경이면 글자를 가린다.                 */
+  ["직인 이미지ID", ""],
+  ["직인 크기(px)", "66"],
   ["메일 제목", "[팩투유] {거래처명} {기간} 거래명세표"],
   ["메일 본문",
     "안녕하세요, {거래처명} 담당자님.\n\n" +
@@ -359,7 +371,7 @@ function _pts_syncVendors_() {
       continue;
     }
     appendRows.push([
-      true, file.name, file.id, name, "", "", "", "", "", "", "", "자동", "", "",
+      true, file.name, file.id, name, "", "", "", "", "", "", "", "자동", "", "", "",
     ]);
     added++;
   }
@@ -403,6 +415,7 @@ function _pts_readVendors_() {
       source: String(v[11] || "자동").trim() || "자동",
       memo: String(v[12] || "").trim(),
       custCd: String(v[13] || "").trim(),
+      docCode: String(v[14] || "").trim(),
     });
   }
   return out;
@@ -755,8 +768,7 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   }
   var items = goods.concat(pack.extras);
 
-  var docNo = "P2U-" + p.yyyy + (p.m < 10 ? "0" + p.m : String(p.m)) +
-    (pack.docTag ? "-" + pack.docTag : "") + "-" + _pts_docSuffix_(vendor);
+  var docNo = _pts_docNo_(vendor, pack, p);
 
   var tab = ss.getSheetByName(_PTS_TAB_OUT);
   if (!tab) tab = ss.insertSheet(_PTS_TAB_OUT);
@@ -829,6 +841,27 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   tab.getRange(4, 7, head.length, 2).setWrap(true);
   tab.setRowHeight(9, 8);
 
+  /*  ★ 직인 ★  (2026-10-06)
+      공급자 「대표자」 줄 오른쪽에 얹는다 — 종이 거래명세표가 늘 그 자리다.
+      ★ 먼저 지운다 ★ tab.clear() 는 «칸»만 지운다. 그림은 칸 위에 떠 있어
+      그냥 두면 다시 그릴 때마다 겹겹이 쌓인다.                           */
+  try {
+    var 옛그림 = tab.getImages();
+    for (var gi = 0; gi < 옛그림.length; gi++) { try { 옛그림[gi].remove(); } catch (e) {} }
+  } catch (e) {}
+  var 직인ID = String(issuer["직인 이미지ID"] || "").trim();
+  if (직인ID) {
+    try {
+      var 크기 = Math.max(30, Math.min(120, Number(issuer["직인 크기(px)"]) || 66));
+      var 그림 = tab.insertImage(DriveApp.getFileById(직인ID).getBlob(), 4, 5, 4, 2);
+      그림.setWidth(크기).setHeight(크기);
+    } catch (eSeal) {
+      /*  못 찍었으면 «말한다». 도장이 조용히 빠진 명세서는 다시 보내야 한다. */
+      Logger.log("[거래명세표] 직인을 못 찍었습니다 (공급자 탭 「직인 이미지ID」 확인): " +
+        (eSeal && eSeal.message ? eSeal.message : eSeal));
+    }
+  }
+
   // ── 요약 ──
   var totals = _pts_totals_(items, vatMode);
   var today = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
@@ -864,7 +897,13 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   tab.getRange(10, 7, 2, 1).setBackground("#f7f9fc").setFontWeight("bold");
   tab.getRange(10, 4).setNumberFormat("#,##0");
   tab.getRange(10, 6).setNumberFormat("#,##0");
-  tab.getRange(10, 8).setNumberFormat("#,##0").setFontWeight("bold").setFontColor("#c62828");
+  /*  ★ 금액이 먼저 보여야 한다 ★  (2026-10-06)
+      > "금액이 잘보여야되"
+      받는 사람이 제일 먼저 찾는 숫자다. 요약줄 합계와 맨 아래 총합계 둘을 키운다. */
+  tab.getRange(10, 8).setNumberFormat("#,##0").setFontWeight("bold")
+    .setFontColor("#c62828").setFontSize(12);
+  tab.getRange(10, 4).setFontSize(10).setFontWeight("bold");
+  tab.getRange(10, 6).setFontSize(10).setFontWeight("bold");
   tab.setRowHeight(10, 22);
   //  11행 높이는 위에서 30 으로 잡았다 (문서번호·거래기간 두 줄)
   tab.setRowHeight(12, 8);
@@ -896,6 +935,8 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
     tab.getRange(hr + 1, 3, body.length, 1).setWrap(true);
     tab.getRange(hr + 1, 5, body.length, 1).setNumberFormat("#,##0").setHorizontalAlignment("right");
     tab.getRange(hr + 1, 6, body.length, 3).setNumberFormat("#,##0").setHorizontalAlignment("right");
+    //  줄마다의 공급가액도 눈에 들어오게 — 단가·세액보다 한 치 굵다
+    tab.getRange(hr + 1, 7, body.length, 1).setFontWeight("bold");
   } else {
     tab.getRange(hr + 1, 1, 1, _PTS_COLS).merge()
       .setValue("해당 월에 마감된 거래가 없습니다.")
@@ -910,7 +951,7 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   tab.getRange(sumRow, 7).setValue(totals.supply);
   tab.getRange(sumRow, 8).setValue(totals.vat);
   tab.getRange(sumRow, 7, 1, 2).setNumberFormat("#,##0")
-    .setFontWeight("bold").setHorizontalAlignment("right");
+    .setFontWeight("bold").setFontSize(11).setHorizontalAlignment("right");
   tab.getRange(sumRow, 1, 1, _PTS_COLS)
     .setBackground("#eef3f9").setFontSize(10)
     .setBorder(true, true, true, true, true, true);
@@ -921,12 +962,12 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
     .setValue("총 합 계 (공급가액 + 세액)").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
   tab.getRange(totRow, 7, 1, 2).merge().setValue(totals.total)
-    .setNumberFormat("#,##0").setFontWeight("bold").setFontSize(12)
+    .setNumberFormat("#,##0").setFontWeight("bold").setFontSize(16)
     .setFontColor("#c62828").setHorizontalAlignment("right");
   tab.getRange(totRow, 1, 1, _PTS_COLS)
     .setBackground("#e8f0fa")
     .setBorder(true, true, true, true, true, true);
-  tab.setRowHeight(totRow, 28);
+  tab.setRowHeight(totRow, 34);
 
   // ── 하단 ──
   var footRow = totRow + 2;
@@ -1480,6 +1521,45 @@ function _pts_ymdNum_(s) {
   return n;
 }
 
+/**
+ * 짧은 날짜 — 26-10-6   (2026-10-06)
+ * > "거래기간은 26-10-6 또는 26-10-1~10-30 이정도로"
+ * 앞의 0 을 떼고 두 자리 해다. 명세서 칸이 좁아 한 줄에 들어가야 한다.
+ */
+function _pts_fmtShort_(n) {
+  var s = String(n);
+  return s.substring(2, 4) + "-" + Number(s.substring(4, 6)) + "-" + Number(s.substring(6, 8));
+}
+
+/** 짧은 거래기간 — 하루면 「26-10-6」, 같은 달이면 「26-10-1~10-30」 */
+function _pts_shortPeriod_(fromNum, toNum) {
+  if (!fromNum) return "";
+  if (!toNum || fromNum === toNum) return _pts_fmtShort_(fromNum);
+  var f = String(fromNum), t = String(toNum);
+  //  해·달이 같으면 뒤쪽은 「월-일」만 — 「26-10-1~10-30」
+  if (f.substring(0, 6) === t.substring(0, 6)) {
+    return _pts_fmtShort_(fromNum) + "~" + Number(t.substring(4, 6)) + "-" + Number(t.substring(6, 8));
+  }
+  return _pts_fmtShort_(fromNum) + "~" + _pts_fmtShort_(toNum);
+}
+
+/**
+ * 문서번호 — 26-1006-AP   (2026-10-06)
+ * > "문서 번호는 26-1006-AP"
+ *   해 두 자리 · 기간 시작 MMDD · 거래처 문서코드.
+ *   문서코드가 비면 거래처명 앞 두 글자를 쓴다 — 비어서 번호가 없는 것보다 낫다.
+ */
+function _pts_docNo_(vendor, pack, p) {
+  var 시작 = pack && pack.fromNum ? String(pack.fromNum)
+    : String(p.yyyy) + (p.m < 10 ? "0" + p.m : String(p.m)) + "01";
+  var 코드 = String(vendor.docCode || "").trim();
+  if (!코드) {
+    코드 = String(vendor.name || vendor.fileName || "")
+      .replace(/[^0-9A-Za-z가-힣]/g, "").substring(0, 2) || "V";
+  }
+  return 시작.substring(2, 4) + "-" + 시작.substring(4, 8) + "-" + 코드;
+}
+
 function _pts_fmtYmd_(n) {
   var s = String(n);
   return s.substring(0, 4) + "-" + s.substring(4, 6) + "-" + s.substring(6, 8);
@@ -1641,7 +1721,9 @@ function partnerIssueTaxStatementByDateRange() {
     ("0" + Math.floor((fromNum % 10000) / 100)).slice(-2);
   pack.forceDetail = true;
   pack.docTag = "R" + String(fromNum).substring(4) + String(toNum).substring(4);
-  pack.periodLabel = _pts_fmtYmd_(fromNum) + " ~ " + _pts_fmtYmd_(toNum);
+  pack.fromNum = fromNum;
+  pack.toNum = toNum;
+  pack.periodLabel = _pts_shortPeriod_(fromNum, toNum);
 
   var tt = _pts_totals_(
     _pts_previewItems_(pack, issuer),
