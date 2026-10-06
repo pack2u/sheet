@@ -295,7 +295,23 @@ function _island_judgeHubByAddress_() {
     if (!볼.length) {
       //  「금액 있음」만 적힌 경우도 있다 — 그건 남긴다
       hubTab.getRange(2, judgeCol, n, 1).setValues(judgeVals);
-      결과.글 = "새로 볼 주문이 없습니다";
+
+      /*  ★ 여기서 돌아가더라도 «칠하기»는 하고 간다 ★  (2026-10-06)
+
+          > "직접 칠하는 쪽으로 바꿔줘" → 돌려도 안 바뀌던 까닭이 이것이다.
+
+          새로 볼 주문이 없으면 여기서 끝났다. 그런데 칠하기와 업체 시트
+          손보기는 아래(판정 고리 뒤)에 있어, 전부 이미 판정된 날에는
+          한 번도 안 돌았다 — 오늘 허브가 바로 그 상태였다.
+          칠하기는 «이미 금액이 붙은 줄»을 손보는 일이라, 새로 볼 것이
+          없는 날에 더 필요하다.                                        */
+      var 되살림 = _isj_paintAndVendors_(hubTab, feeCol, feeVals, data, n);
+      결과.칠함 = 되살림.칠함;
+      if (되살림.업체들.length) {
+        try { _island_applyToPartnerSheets_({}, 되살림.업체들, {}); } catch (eAp) {}
+      }
+      결과.글 = "새로 볼 주문이 없습니다 — 섬 줄 " + 되살림.칠함 + "개 칠함 · 업체 " +
+        되살림.업체들.length + "곳 손봤습니다";
       return 결과;
     }
 
@@ -337,10 +353,7 @@ function _island_judgeHubByAddress_() {
       hubTab.getRangeList(칠할).setNumberFormat("#,##0").setFontColor(_ISLAND_FONT_COLOR)
         .setFontWeight("bold");
     }
-    /*  ★ 금액이 있는 줄은 «다 다시» 칠한다 ★  (2026-10-06)
-        새로 붙은 줄만 칠하면 전에 붙은 줄이 영영 안 바뀐다 — 그래서
-        허브와 업체 시트가 갈렸다. 새로 칠할 게 없는 날에도 돈다.      */
-    결과.칠함 = _island_paintIslandRows_(hubTab, feeCol, feeVals);
+    //  칠하기는 아래 _isj_paintAndVendors_ 한 곳에서 한다 (두 번 칠하지 않게)
     SpreadsheetApp.flush();
 
     /*  ★ 금액이 «이미» 붙어 있는 업체도 한 번 들른다 ★  (2026-10-06)
@@ -348,17 +361,14 @@ function _island_judgeHubByAddress_() {
         > "발주허브는 되는데 업체 발주 시트에는 안되"
 
         업체 시트는 「그 시트에 금액을 새로 쓸 때」만 열렸다. 그런데 금액이
-        이미 적힌 줄은 위에서 「금액 있음」으로 걸러져 업체 목록에 안 들어간다.
-        그래서 좁은 범위로 한 번 걸린 업체 시트는 영영 안 넓어졌다 —
-        허브만 고쳐졌고 업체 시트가 남은 까닭이 이것이다.
+        이미 적힌 줄은 위에서 「금액 있음」으로 걸러져 업체 목록에 안 든다.
+        들러도 금액은 안 바뀐다(이미 있는 줄은 건너뛴다) — 칠하기만 한다.
 
-        들러도 금액은 안 바뀐다(이미 있는 줄은 건너뛴다). 줄 전체 칠하기
-        규칙만 지금 모양으로 갈아 끼운다.                                 */
-    for (var fr = 0; fr < n; fr++) {
-      if (!((Number(feeVals[fr][0]) || 0) > 0)) continue;
-      var vn2 = _isj_text_(data[fr][1]);
-      if (vn2) 업체[vn2] = true;
-    }
+        위의 「새로 볼 주문이 없다」 길과 «같은 도우미»를 쓴다.
+        따로 적으면 한쪽만 고쳐진다.                                      */
+    var 손봄 = _isj_paintAndVendors_(hubTab, feeCol, feeVals, data, n);
+    결과.칠함 = 손봄.칠함;
+    손봄.업체들.forEach(function (v) { 업체[v] = true; });
 
     var 업체들 = Object.keys(업체);
     if (업체들.length) {
@@ -397,6 +407,26 @@ function _isj_hubCols_(hdr) {
     if (h.indexOf("주소") !== -1 && h.indexOf("송하인") === -1 && h.indexOf("보내는") === -1) { c.addr = i; break; }
   }
   return c;
+}
+
+/**
+ * 금액이 붙은 줄을 칠하고, 그 줄의 업체를 모은다.  (2026-10-06)
+ *
+ * ★ 두 길이 같은 것을 쓰게 하려고 떼어 뒀다 ★
+ *   「새로 볼 주문이 없다」로 일찍 돌아가는 길과 평소 길, 둘 다 여기를 지난다.
+ *   따로 적으면 한쪽만 고쳐진다 — 이번에 실제로 그랬다.
+ *
+ * @return {{칠함:number, 업체들:string[]}}
+ */
+function _isj_paintAndVendors_(hubTab, feeCol, feeVals, data, n) {
+  var 칠함 = _island_paintIslandRows_(hubTab, feeCol, feeVals);
+  var 업체 = {};
+  for (var r = 0; r < n; r++) {
+    if (!((Number(feeVals[r][0]) || 0) > 0)) continue;
+    var vn = _isj_text_(data[r][1]);
+    if (vn) 업체[vn] = true;
+  }
+  return { 칠함: 칠함, 업체들: Object.keys(업체) };
 }
 
 /** 허브 「도서산간판정」 칸 — 없으면 맨 뒤에 만든다 */
