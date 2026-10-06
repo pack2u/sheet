@@ -59,10 +59,10 @@ const 수집 = 꺼내(주문, "_po_collectSilentCore_");
 ok("4분 예산이 그대로 있다", /_islElapsed_ > 240000/.test(수집),
   "예산을 없애면 6분에 끊겨 뒤의 판매현황 갱신이 통째로 빠진다");
 ok("★ 건너뛸 때 _isj_scheduleCatchUp_ 를 부른다 ★",
-  /_islElapsed_ > 240000\)\s*\{[\s\S]{0,1400}?_isj_scheduleCatchUp_\(\)/.test(수집),
+  /_islElapsed_ > 240000\)\s*\{[\s\S]{0,2600}?_isj_scheduleCatchUp_\(/.test(수집),
   "이것이 없으면 자동으로는 영영 안 붙는다 — 2026-10-06 에 101줄이 그랬다");
 ok("건 결과를 로그에 남긴다 (걸었나 못 걸었나)",
-  /이어\.ok[\s\S]{0,160}이어달리기도 못 걸었습니다/.test(수집),
+  /이어\.ok[\s\S]{0,600}이어달리기도 못 걸었습니다/.test(수집),
   "조용히 넘어가면 오늘 일이 그대로 되풀이된다");
 ok("거는 데 실패해도 수집은 계속 간다", /catch \(eSch\)/.test(수집),
   "곁다리 때문에 수집이 멈추면 더 나쁘다");
@@ -191,6 +191,56 @@ ok("몇 줄·몇 곳을 손봤는지 «말한다»",
 ok("두 길이 같은 도우미를 쓴다",
   (판정.match(/_isj_paintAndVendors_\(/g) || []).length >= 3,
   "따로 적으면 한쪽만 고쳐진다 — 이번이 그랬다 (함수 하나 + 부르는 곳 둘)");
+
+/* ── ⑨ 판정을 미루면 판매현황 갱신도 미룬다 ─────────────────
+   > "발주 수집시 도서산간 확인이 일시 중지되고 판매현황입력으로 넘어가 버리는데"
+   > "도서산간이 판매입력에 들어가는게 있고 없고 그러네 수량때문인가?"
+
+   수량과는 상관이 없다. 순서가 뒤집혀서다 —
+   판정은 90초 뒤, 판매현황은 지금. 판매현황이 먼저 돌아 허브 P열을 채우면
+   판정은 그 줄을 «건너뛴다»(바로 아래 시험이 그 규칙을 못 박는다).
+   그래서 금액이 영영 안 붙었다. 둘을 같이 미뤄 차례를 지킨다.          */
+console.log("\n─── ⑨ 판정을 미루면 판매현황 갱신도 미룬다 ───");
+const 판정본체 = 꺼내(판정, "_island_judgeHubByAddress_");
+ok("판정은 판매현황에 이미 올라간 줄(P열)을 건너뛴다",
+  /data\[r\]\[15\][\s\S]{0,200}continue/.test(판정본체),
+  "이 규칙이 있어서, 순서가 뒤집히면 금액이 «영영» 안 붙는다");
+ok("★ 미룰 때 판매현황 여부를 같이 넘긴다 ★",
+  /_isj_scheduleCatchUp_\(\s*null\s*,\s*!!withSalesRebuild\s*\)/.test(수집),
+  "안 넘기면 이어달리기가 판매현황을 안 돌린다");
+ok("★ 이어달리기를 «걸었을 때만» 미룬다 ★",
+  /_이어\.ok && withSalesRebuild\) 판매현황_미룸 = true/.test(수집),
+  "못 걸었는데 미루면 판매현황이 통째로 빠진다 — 도서산간이 빠지는 것보다 나쁘다");
+ok("미뤘으면 그 자리에서는 판매현황을 안 돈다",
+  /if \(판매현황_미룸\) \{[\s\S]{0,260}\} else if \(!withSalesRebuild\)/.test(수집),
+  "둘 다 돌면 이카운트에 두 번 올라간다");
+ok("미룸 깃발은 섬 블록 «앞»에서 선언한다",
+  수집.indexOf("var 판매현황_미룸 = false;") >= 0 &&
+  수집.indexOf("var 판매현황_미룸 = false;") < 수집.indexOf("_islElapsed_ > 240000"),
+  "읽는 자리가 선언보다 앞서면 안 된다");
+
+const 스케줄 = 꺼내(판정, "_isj_scheduleCatchUp_");
+ok("스케줄러가 판매현황 여부를 받는다",
+  /function _isj_scheduleCatchUp_\(delayMs, 판매현황도\)/.test(스케줄));
+ok("받은 값을 속성에 적는다",
+  /판매현황도\) props\.setProperty\(_ISJ_CATCHUP_SALES_, "1"\)/.test(스케줄));
+ok("★ 안 받았으면 «지운다» ★",
+  /else props\.deleteProperty\(_ISJ_CATCHUP_SALES_\)/.test(스케줄),
+  "지난 회차 깃발이 남아 있으면 엉뚱한 회차가 판매현황을 돌린다");
+ok("못 걸었으면 그 속성도 거둔다",
+  /deleteProperty\(_ISJ_CATCHUP_SALES_\)[\s\S]{0,240}이어달리기를 못 걸었습니다/.test(스케줄));
+
+const 이어달리기 = 꺼내(판정, "partnerIslandCatchUp_");
+ok("이어달리기가 그 속성을 읽는다",
+  /판매현황도 = String\(_p\.getProperty\(_ISJ_CATCHUP_SALES_\)[\s\S]{0,40}=== "1"/.test(이어달리기));
+ok("읽고 바로 지운다 — 터져도 다음 회차에 안 남게",
+  /_p\.deleteProperty\(_ISJ_CATCHUP_SALES_\)/.test(이어달리기));
+ok("★ 판매현황 갱신은 판정·원장 «뒤»다 ★",
+  이어.indexOf("_island_judgeHubByAddress_") < 이어.indexOf("partnerRebuildSalesUploadSheet") &&
+  이어.indexOf("_trigger_islandShipping_") < 이어.indexOf("partnerRebuildSalesUploadSheet"),
+  "앞서면 미룬 보람이 없다 — P열이 또 먼저 찬다");
+ok("판매현황을 돌렸는지 말한다", /판매현황 갱신까지 마쳤습니다/.test(이어달리기));
+ok("판매현황 갱신이 터져도 이어달리기는 끝까지 간다", /판매현황 갱신 실패/.test(이어달리기));
 
 console.log("\n" + (틀린것 ? "✗ " : "✅ ") + 잰것 + "개 중 " + 틀린것 + "개 틀렸습니다.");
 process.exit(틀린것 ? 1 : 0);

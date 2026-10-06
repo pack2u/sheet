@@ -330,7 +330,7 @@ function _island_judgeHubByAddress_() {
       judgeVals[x.r][0] = _isj_label_(j, zip);
       if (j.섬) {
         var row = data[x.r];
-        var fee = _island_lineFee_(row[c.item]);
+        var fee = _island_lineFee_(row[c.item], row[c.qty]);
         feeVals[x.r][0] = fee;
         칠할.push(_island_colToLetter_(feeCol) + (x.r + 2));
         var uid = _island_uidKey_(row[c.uid]);
@@ -398,7 +398,7 @@ function _island_judgeHubByAddress_() {
 
 /** 허브 열 — 머리글로 찾고 못 찾으면 늘 쓰던 자리 */
 function _isj_hubCols_(hdr) {
-  var c = { uid: 2, item: 5, addr: 9, status: 14 };
+  var c = { uid: 2, item: 5, qty: 6, addr: 9, status: 14 };
   var u = _island_findUidCol0_(hdr); if (u >= 0) c.uid = u;
   var it = _island_findItemCol0_(hdr); if (it >= 0) c.item = it;
   var st = _island_findStatusCol0_(hdr); if (st >= 0) c.status = st;
@@ -471,6 +471,12 @@ function _isj_judgeCol_(hubTab, hdr) {
 
 var _ISJ_CATCHUP_FN_   = "partnerIslandCatchUp_";
 var _ISJ_CATCHUP_FLAG_ = "_ISJ_CATCHUP_PENDING";
+/*  ★ 판매현황 갱신도 이어서 하나 ★  (2026-10-06)
+    예산을 넘겨 판정을 미룰 때, 판매현황 갱신이 «먼저» 돌아 버리면
+    허브 P열(이카운트업로드)이 채워진다. 판정은 P열이 찬 줄을 건너뛰므로
+    그 줄에는 도서산간 금액이 영영 안 붙는다. 그래서 둘을 같이 미룬다 —
+    순서는 판정 → 원장 받침 → 판매현황 갱신, 늘 이 차례다.                */
+var _ISJ_CATCHUP_SALES_ = "_ISJ_CATCHUP_SALES";
 
 /** 내가 건 일회성 트리거만 지운다 — 남의 것은 안 건드린다 */
 function _isj_dropCatchUpTriggers_() {
@@ -490,12 +496,18 @@ function _isj_dropCatchUpTriggers_() {
  * @param {number=} delayMs 기본 90초 — 수집이 끝나고 잠금이 풀릴 만큼
  * @return {{ok:boolean, why:string}}
  */
-function _isj_scheduleCatchUp_(delayMs) {
+function _isj_scheduleCatchUp_(delayMs, 판매현황도) {
   var out = { ok: false, why: "" };
   var props = null;
   try { props = PropertiesService.getScriptProperties(); } catch (e) {}
   //  ★ 깃발을 «먼저» 세운다 ★ 걸고 나서 세우면 그 사이에 남이 치울 수 있다
   if (props) { try { props.setProperty(_ISJ_CATCHUP_FLAG_, String(new Date().getTime())); } catch (e) {} }
+  if (props) {
+    try {
+      if (판매현황도) props.setProperty(_ISJ_CATCHUP_SALES_, "1");
+      else props.deleteProperty(_ISJ_CATCHUP_SALES_);
+    } catch (e) {}
+  }
   _isj_dropCatchUpTriggers_();
 
   function 걸기() {
@@ -515,13 +527,17 @@ function _isj_scheduleCatchUp_(delayMs) {
   /*  ★ 못 걸었으면 «말한다» ★ 조용히 넘어가면 오늘 일이 그대로 되풀이된다.
       깃발을 지워 둔다 — 안 지우면 남의 자리 확보가 내 것을 「살아 있다」고
       보고 못 치운다.                                                    */
-  if (props) { try { props.deleteProperty(_ISJ_CATCHUP_FLAG_); } catch (e) {} }
+  if (props) {
+    try { props.deleteProperty(_ISJ_CATCHUP_FLAG_); } catch (e) {}
+    try { props.deleteProperty(_ISJ_CATCHUP_SALES_); } catch (e) {}
+  }
   Logger.log("[ISLAND] 이어달리기를 못 걸었습니다 (치운 것 " + 치움 + "개): " + out.why +
     " — 메뉴 「🏝️ 도서산간 주소 판정 (판매현황 전)」을 손으로 눌러 주세요");
   try {
     if (typeof _chat_sendText_ === "function") {
       _chat_sendText_("🏝️ 도서산간 판정을 이번 회차에 못 했고 이어달리기도 못 걸었습니다.\n" +
-        "메뉴 「🏝️ 도서산간 주소 판정 (판매현황 전)」을 눌러 주세요.");
+        "메뉴 「🏝️ 도서산간 주소 판정 (판매현황 전)」을 눌러 주세요." +
+        (판매현황도 ? "\n그 다음 「판매현황 업로드용 갱신」도 눌러 주세요." : ""));
     }
   } catch (e) {}
   return out;
@@ -530,7 +546,13 @@ function _isj_scheduleCatchUp_(delayMs) {
 /** 일회성 트리거가 부르는 것 — 판정과 원장 받침을 제 6분으로 돈다 */
 function partnerIslandCatchUp_() {
   //  깃발을 먼저 지운다 — 여기서 터져도 트리거가 「살아 있는 것」으로 남지 않게
-  try { PropertiesService.getScriptProperties().deleteProperty(_ISJ_CATCHUP_FLAG_); } catch (e) {}
+  var 판매현황도 = false;
+  try {
+    var _p = PropertiesService.getScriptProperties();
+    판매현황도 = String(_p.getProperty(_ISJ_CATCHUP_SALES_) || "") === "1";
+    _p.deleteProperty(_ISJ_CATCHUP_FLAG_);
+    _p.deleteProperty(_ISJ_CATCHUP_SALES_);
+  } catch (e) {}
   _isj_dropCatchUpTriggers_();
 
   var 글 = [];
@@ -546,6 +568,27 @@ function partnerIslandCatchUp_() {
   try {
     if (typeof _trigger_islandShipping_ === "function") { _trigger_islandShipping_(); 글.push("원장 받침 돌렸습니다"); }
   } catch (e) { 글.push("원장 받침 실패: " + (e.message || e)); }
+
+  /*  ★ 판매현황 갱신은 «판정 뒤»다 ★  (2026-10-06)
+
+      > "발주 수집시 도서산간 확인이 일시 중지되고 판매현황입력으로 넘어가 버리는데"
+      > "도서산간이 판매입력에 들어가는게 있고 없고 그러네 수량때문인가?"
+
+      수량과는 상관이 없다. 수집이 4분을 넘긴 회차에서만 빠졌다.
+      넘기면 판정은 여기로 미뤄졌는데 판매현황 갱신은 그 자리에서 돌아,
+      허브 P열(이카운트업로드)이 먼저 채워졌다. 판정은 P열이 찬 줄을
+      건너뛴다 — 그래서 그 줄에는 금액이 «영영» 안 붙고 OUT 줄도 없었다.
+      이제 둘을 같이 미루고, 여기서 제 차례대로 돌린다.                  */
+  if (판매현황도) {
+    try {
+      if (typeof partnerRebuildSalesUploadSheet === "function") {
+        partnerRebuildSalesUploadSheet(true); // silent
+        글.push("판매현황 갱신까지 마쳤습니다");
+      } else {
+        글.push("★ 판매현황 갱신 함수가 없습니다 ★");
+      }
+    } catch (e) { 글.push("★ 판매현황 갱신 실패: " + (e.message || e) + " ★"); }
+  }
 
   var 말 = "[ISLAND_CATCHUP] " + 글.join(" · ");
   Logger.log(말);

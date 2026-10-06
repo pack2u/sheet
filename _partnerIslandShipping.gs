@@ -123,7 +123,8 @@ function _island_normUid_(raw) {
  *     예전 원천(옛 세트분리 「도서산간」 탭)은 더 안 읽는다.
  *  ② 얼마인가 — 주문 줄마다 5,000원. 품목명에 한글 「세트」가 있으면 10,000원
  *     (몸통·뚜껑이 따로 나간다). 영문 SET 은 한 박스라 5,000원.
- *     수량·박스 수와 상관없다. 예전 「박스×수량×5,000」은 버렸다.
+ *     ★ 2026-10-06: 그 값은 «박스 한 개» 값이다 — 수량(허브 G열)만큼 곱한다.
+ *       > "박스 수량으로 따지니까 도서산간비도 박스당 가격으로 적용되야되"
  *     이미 금액이 들어 있는 줄은 그대로 둔다(예전 규칙으로 들어간 것 포함).
  * ══════════════════════════════════════════════════════════════
  */
@@ -131,6 +132,9 @@ var _ISLAND_SS_ID_          = "1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo";   
 var _ISLAND_LEDGER_TAB_     = "주문라인원장";
 var _ISLAND_LEDGER_TAIL_    = 40000;   // 원장 끝에서 이만큼만 본다 (석 달 남짓)
 var _ISLAND_FEE_LINE_       = 5000;
+//  허브 수량 칸 — 머리글: 수집일시 A · 발주업체 B · 고유ID C · 주문일자 D · 이카운트코드 E
+//  · 품목명 F · 수량 G · 수취인 H … 0-based 로 6 이다.
+var _ISLAND_HUB_QTY_COL0_   = 6;
 var _ISLAND_FEE_SET_        = 10000;
 
 /** 순수 — 원장(받침)이 이 허브 줄에 «새로» 금액을 붙여도 되나: 판매현황 전(P 빈칸) · 주소 판정 전 */
@@ -140,7 +144,28 @@ function _island_ledgerMayCharge_(hubRow, judgeCol0) {
   return true;
 }
 
-/** 주문 줄 하나의 도서산간비 — 한글 「세트」면 10,000, 아니면 5,000 */
+/**
+ * 박스 수 — 허브 G열(수량)이다. 못 읽으면 1박스로 본다.  (2026-10-06)
+ *
+ * > "박스 수량으로 따지니까 도서산간비도 박스당 가격으로 적용되야되"
+ *
+ * ★ 2026-10-05 의 「수량과 상관없다」를 되돌린 것이다 ★
+ *   그때는 한 주문에 한 번만 받기로 했는데, 판매현황이 박스 수량으로
+ *   올라가는 것을 보고 사장님이 박스당으로 바로잡았다.
+ *   「없으면 1」로 받는 것이 중요하다 — 빈 칸을 0으로 읽으면 도서산간비가
+ *   통째로 0원이 되고, 그건 아무도 모르게 조용하다.
+ */
+function _island_boxCount_(qty) {
+  var n = Math.floor(Number(String(qty == null ? "" : qty).replace(/[^0-9.-]/g, "")) || 0);
+  return n > 0 ? n : 1;
+}
+
+/** 박스 «한 개»의 도서산간비 — 한글 「세트」면 10,000, 아니면 5,000 */
+function _island_unitFee_(itemName) {
+  return _island_isSetItem_(itemName) ? _ISLAND_FEE_SET_ : _ISLAND_FEE_LINE_;
+}
+
+/** 주문 줄 하나의 도서산간비 — 박스당 값 × 박스 수 */
 /**
  * 세트 상품인가 — 도서산간비가 갈리는 «한 곳»의 판정.  (2026-10-06)
  *
@@ -158,8 +183,8 @@ function _island_isSetItem_(itemName) {
   return String(itemName == null ? "" : itemName).indexOf("세트") !== -1;
 }
 
-function _island_lineFee_(itemName) {
-  return _island_isSetItem_(itemName) ? _ISLAND_FEE_SET_ : _ISLAND_FEE_LINE_;
+function _island_lineFee_(itemName, qty) {
+  return _island_unitFee_(itemName) * _island_boxCount_(qty);
 }
 
 /**
@@ -424,8 +449,8 @@ function _island_applyToHub_(uidBoxMap, opts) {
 
       var status = statusCol0 >= 0 ? String(hubData[r][statusCol0] || "").replace(/\s/g, "") : "";
       if (status.indexOf("취소") !== -1 || status.indexOf("반품") !== -1 || status.indexOf("불용") !== -1) continue;
-      //  ★ v3: 주문 줄마다 5,000 · 한글 「세트」 10,000 (수량·박스·합배송과 상관없이)
-      var fee = _island_lineFee_(hubData[r][itemCol0]);
+      //  ★ v4 (2026-10-06): 박스 한 개가 5,000 · 한글 「세트」 10,000 — 수량만큼 곱한다
+      var fee = _island_lineFee_(hubData[r][itemCol0], hubData[r][_ISLAND_HUB_QTY_COL0_]);
       result.feeByUid[uid] = fee;
 
       feeArr[r][0] = fee;

@@ -4470,6 +4470,8 @@ function _po_collectSilentCore_(withSalesRebuild) {
   //   ★ 시간 예산: 수집이 이미 4분을 썼으면 건너뛴다 — 6분에 끊기면 뒤의 판매현황 갱신이
   //     통째로 빠진다. 건너뛴 줄은 판정 칸이 비어 있으니 다음 회차나 판매현황 갱신
   //     (그 앞에서도 판정한다)이 받는다.
+  //  판매현황 갱신을 이어달리기로 넘겼나 — 아래 ③이 이 값을 본다
+  var 판매현황_미룸 = false;
   var _islElapsed_ = new Date() - startTime;
   if (_islElapsed_ > 240000) {
     /*  ★ 건너뛰고 «끝내지» 않는다 ★  (2026-10-06)
@@ -4488,10 +4490,23 @@ function _po_collectSilentCore_(withSalesRebuild) {
       "초를 써서 도서산간 판정을 이번 회차엔 건너뜁니다";
     var _이어 = { ok: false, why: "이어달리기 함수가 없습니다" };
     try {
-      if (typeof _isj_scheduleCatchUp_ === "function") _이어 = _isj_scheduleCatchUp_();
+      /*  ★ 판매현황 갱신도 «같이» 미룬다 ★  (2026-10-06)
+
+          > "발주 수집시 도서산간 확인이 일시 중지되고 판매현황입력으로 넘어가 버리는데"
+
+          그대로 두면 순서가 뒤집힌다 — 판정은 90초 뒤, 판매현황은 지금.
+          판매현황이 먼저 돌면 허브 P열(이카운트업로드)이 채워지고,
+          판정은 P열이 찬 줄을 건너뛴다. 그 줄의 도서산간 금액은 영영 안 붙고
+          OUT00001 줄도 안 올라간다 — 「들어가는 게 있고 없고」의 까닭이다.   */
+      if (typeof _isj_scheduleCatchUp_ === "function") _이어 = _isj_scheduleCatchUp_(null, !!withSalesRebuild);
     } catch (eSch) { _이어 = { ok: false, why: String(eSch.message || eSch) }; }
+    //  이어달리기를 «걸었을 때만» 판매현황을 미룬다. 못 걸었으면 여태처럼 지금 돌린다 —
+    //  도서산간은 빠지더라도 판매현황이 통째로 빠지는 쪽이 더 나쁘다.
+    if (_이어.ok && withSalesRebuild) 판매현황_미룸 = true;
     Logger.log(_돌릴말 + (_이어.ok
-      ? " — 90초 뒤에 판정만 따로 돕니다 (partnerIslandCatchUp_)"
+      ? (판매현황_미룸
+          ? " — 90초 뒤에 판정 → 원장 받침 → 판매현황 갱신 차례로 돕니다 (partnerIslandCatchUp_)"
+          : " — 90초 뒤에 판정만 따로 돕니다 (partnerIslandCatchUp_)")
       : " — ★ 이어달리기도 못 걸었습니다: " + _이어.why + " ★"));
   } else {
     try {
@@ -4509,7 +4524,9 @@ function _po_collectSilentCore_(withSalesRebuild) {
   }
   // ③ ★ 2026-07-02: 판매현황 갱신 (발주수집 후 자동 실행)
   //    ★ 2026-09-17: 오후 1시 회차에서만 돈다 (partnerCollectOrdersSilent_)
-  if (!withSalesRebuild) {
+  if (판매현황_미룸) {
+    Logger.log("[SALES_REFRESH] 도서산간 판정을 미뤘으므로 판매현황 갱신도 이어달리기에 맡깁니다");
+  } else if (!withSalesRebuild) {
     Logger.log("[SALES_REFRESH] 이 회차는 판매현황을 안 건드립니다 (오후 1시에만 갱신)");
   } else {
     try {

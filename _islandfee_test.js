@@ -31,9 +31,9 @@ function 상수(src, 이름) {
   if (i < 0) throw new Error(이름 + " 상수 못 찾음");
   return src.substring(i, src.indexOf(";", i) + 1);
 }
-["_ISLAND_FEE_LINE_", "_ISLAND_FEE_SET_"].forEach(function (n) { eval.call(null, 상수(섬, n)); });
+["_ISLAND_FEE_LINE_", "_ISLAND_FEE_SET_", "_ISLAND_HUB_QTY_COL0_"].forEach(function (n) { eval.call(null, 상수(섬, n)); });
 ["_PO_ISLAND_ITEM_CODE_", "_PO_ISLAND_ITEM_CODE_SET_", "_PO_ISLAND_FLAG_HEADER_", "_PO_ISLAND_MEMO_MAX_"].forEach(function (n) { eval.call(null, 상수(판매, n)); });
-["_island_normUid_", "_island_uidKey_", "_island_isSetItem_", "_island_lineFee_", "_island_pickFromLedger_", "_island_findFeeCol1_", "_island_findItemCol0_"]
+["_island_normUid_", "_island_uidKey_", "_island_isSetItem_", "_island_boxCount_", "_island_unitFee_", "_island_lineFee_", "_island_pickFromLedger_", "_island_findFeeCol1_", "_island_findItemCol0_"]
   .forEach(function (n) { eval.call(null, 꺼내(섬, n)); });
 ["_po_islandSaleLine_", "_po_islandCancelLike_"].forEach(function (n) { eval.call(null, 꺼내(판매, n)); });
 
@@ -44,12 +44,35 @@ function ok(이름, 참, 덧) {
 }
 function 같나(이름, 얻은, 기대) { ok(이름, 얻은 === 기대, "얻은 " + JSON.stringify(얻은) + " · 기대 " + JSON.stringify(기대)); }
 
-console.log("\n[1] 금액 — 줄마다 5,000 · 한글 「세트」만 10,000");
-같나("보통 상품", _island_lineFee_("JH 실링 23195 화이트 (100*1팩) 100"), 5000);
-같나("한글 세트", _island_lineFee_("BW 사출 195파이 특대 투명 300세트"), 10000);
-같나("영문 SET 은 한 박스 — 5,000", _island_lineFee_("JH 신형 105파이 중 블랙 1000 SET"), 5000);
-같나("소문자 set 도 5,000", _island_lineFee_("뚜껑 set"), 5000);
-같나("빈 이름", _island_lineFee_(""), 5000);
+console.log("\n[1] 박스 «한 개» 값 — 5,000 · 한글 「세트」만 10,000");
+같나("보통 상품", _island_unitFee_("JH 실링 23195 화이트 (100*1팩) 100"), 5000);
+같나("한글 세트", _island_unitFee_("BW 사출 195파이 특대 투명 300세트"), 10000);
+같나("영문 SET 은 한 박스 — 5,000", _island_unitFee_("JH 신형 105파이 중 블랙 1000 SET"), 5000);
+같나("소문자 set 도 5,000", _island_unitFee_("뚜껑 set"), 5000);
+같나("빈 이름", _island_unitFee_(""), 5000);
+
+/*  ★ 2026-10-06 — 박스당 ★
+    > "박스 수량으로 따지니까 도서산간비도 박스당 가격으로 적용되야되"
+    2026-10-05 에 「수량과 상관없다」로 두었던 것을 사장님이 되돌렸다.
+    판매현황이 박스 수량으로 올라가는데 도서산간비만 한 번이면 모자란다.   */
+console.log("\n[1-2] 박스 수 — 허브 G열(수량)");
+같나("비면 1박스", _island_boxCount_(""), 1);
+같나("0 이어도 1박스", _island_boxCount_(0), 1);
+같나("null 도 1박스", _island_boxCount_(null), 1);
+같나("3", _island_boxCount_(3), 3);
+같나("글자 「3」", _island_boxCount_("3"), 3);
+같나("「3박스」처럼 글자가 붙어도", _island_boxCount_("3박스"), 3);
+같나("소수점은 내린다", _island_boxCount_("2.9"), 2);
+같나("음수는 1박스", _island_boxCount_(-2), 1);
+
+console.log("\n[1-3] 줄 금액 = 박스 한 개 값 × 박스 수");
+같나("보통 1박스", _island_lineFee_("JH 실링 23195", 1), 5000);
+같나("★ 보통 3박스 ★", _island_lineFee_("JH 실링 23195", 3), 15000);
+같나("세트 1박스", _island_lineFee_("JH 타원찜 대 100세트", 1), 10000);
+같나("★ 세트 3박스 ★", _island_lineFee_("JH 타원찜 대 100세트", 3), 30000);
+같나("수량을 안 주면 1박스로", _island_lineFee_("JH 실링 23195"), 5000);
+같나("수량 칸이 비어도 1박스로", _island_lineFee_("JH 타원찜 대 100세트", ""), 10000);
+같나("허브 수량 칸은 G열(0-based 6)", _ISLAND_HUB_QTY_COL0_, 6);
 
 console.log("\n[2] 고유ID 열쇠 — 허브·업체·원장이 같은 번호로 만난다");
 같나("그대로", _island_uidKey_("0901-ds-4581"), "0901-ds-4581");
@@ -125,8 +148,12 @@ var 줄4 = _po_islandSaleLine_(영문줄, _island_lineFee_(영문줄[5]), "C001"
 
 ok("★ 판정이 한 곳이다 ★",
    꺼내(판매, "_po_islandSaleLine_").indexOf("_island_isSetItem_(item)") !== -1 &&
-   꺼내(섬, "_island_lineFee_").indexOf("_island_isSetItem_(itemName)") !== -1,
+   꺼내(섬, "_island_unitFee_").indexOf("_island_isSetItem_(itemName)") !== -1 &&
+   꺼내(섬, "_island_lineFee_").indexOf("_island_unitFee_(itemName)") !== -1,
    "금액과 코드가 각각 「세트」를 찾으면 한쪽만 고쳐지는 날이 온다");
+ok("★ 판매입력 줄의 단가도 그 한 곳에서 온다 ★",
+   꺼내(판매, "_po_islandSaleLine_").indexOf("_island_unitFee_(item)") !== -1,
+   "단가를 따로 계산하면 금액과 어긋난다");
 같나("공급가액", 줄[20], 9091);
 같나("거래처코드 · 출하창고 · 출고일자", 줄[2] + "/" + 줄[7] + "/" + 줄[0], "C001/100/20261005");
 같나("적요 = 도서산간 · 수취인 · 상품명(코드) · 주소", 줄[23],
