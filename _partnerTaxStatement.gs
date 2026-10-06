@@ -96,6 +96,9 @@ var _PTS_ISSUER_ROWS_ = [
       도장은 «있는 척»하면 안 되는 것이라, 못 읽으면 조용히 건너뛰고 로그에 남긴다.
       권장: 배경이 투명한 PNG. 흰 배경이면 글자를 가린다.                 */
   ["직인 이미지ID", ""],
+  /*  도장을 둔 드라이브 폴더. 「🔎 직인 찾기」가 여기서 PNG 를 찾아
+      위 「직인 이미지ID」 를 채운다 — 사람이 주소창에서 ID 를 떼어 올 일이 없다. */
+  ["직인 폴더ID", "1IqqPLKxBNrqh-u14Op6jKNN7khzE13Cl"],
   ["직인 크기(px)", "66"],
   ["메일 제목", "[팩투유] {거래처명} {기간} 거래명세표"],
   ["메일 본문",
@@ -1025,6 +1028,80 @@ function _pts_unmergeAll_(tab) {
 // ═══════════════════════════════════════════
 
 /** 대상월 PDF 폴더 (없으면 만든다). 루트 폴더ID는 설정에 되써 준다 */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  🔎 직인 찾기 — 드라이브 폴더에서 도장 그림을 찾아 ID 를 적는다
+ *  2026-10-06
+ *
+ *  > "도장 파일 어떻게 주면 되나? …에 법인도장 .PNG 화일이야"
+ *
+ *  주소창에서 파일ID 를 떼어 오게 하지 않는다. 폴더만 정해 두면 여기서 찾아
+ *  「직인 이미지ID」 칸에 적는다. 도장을 새로 스캔해 바꿔도 다시 누르면 된다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function partnerFindSealImage() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  var 말 = _pts_findSeal_();
+  Logger.log("[직인 찾기] " + 말);
+  if (ui) ui.alert("🔎 직인 찾기", 말, ui.ButtonSet.OK);
+  return 말;
+}
+
+function _pts_findSeal_() {
+  var hub, tab, issuer;
+  try {
+    hub = _pts_hub_();
+    _pts_ensureHubTabs_(hub);
+    tab = hub.getSheetByName(_PTS_TAB_ISSUER);
+    issuer = _pts_readIssuer_();
+  } catch (e) {
+    return "공급자 탭을 못 읽었습니다: " + (e.message || e);
+  }
+
+  var folderId = String(issuer["직인 폴더ID"] || "").trim();
+  if (!folderId) return "공급자 탭 「직인 폴더ID」 가 비어 있습니다.";
+
+  var folder;
+  try { folder = DriveApp.getFolderById(folderId); }
+  catch (e2) { return "그 폴더를 못 열었습니다 (" + folderId + "): " + (e2.message || e2); }
+
+  /*  이름에 도장·직인·seal 이 든 그림을 먼저 본다. 없으면 폴더의 PNG 아무거나.
+      «아무거나»까지 가면 그 이름을 같이 말한다 — 엉뚱한 그림을 찍으면 안 된다. */
+  var 고른것 = null, 본것 = [], 짐작 = false;
+  var it = folder.getFiles();
+  while (it.hasNext()) {
+    var f = it.next();
+    var nm = f.getName();
+    var mt = String(f.getMimeType() || "");
+    if (mt.indexOf("image/") !== 0) continue;
+    if (본것.length < 12) 본것.push(nm);
+    if (!고른것 && /도장|직인|seal/i.test(nm)) 고른것 = f;
+  }
+  if (!고른것) {
+    it = folder.getFiles();
+    while (it.hasNext()) {
+      var f2 = it.next();
+      if (String(f2.getMimeType() || "").indexOf("image/") !== 0) continue;
+      고른것 = f2; 짐작 = true; break;
+    }
+  }
+  if (!고른것) {
+    return "그 폴더에 그림 파일이 없습니다.\n\n폴더: " + folder.getName() +
+      "\n본 파일: " + (본것.join(", ") || "없음");
+  }
+
+  var r = _pts_issuerRowOf_(tab, "직인 이미지ID");
+  if (r > 0) tab.getRange(r, 2).setValue(고른것.getId());
+
+  return (짐작 ? "★ 이름에 「도장·직인」이 든 그림이 없어 첫 그림을 골랐습니다 ★\n\n" : "") +
+    "찾은 그림 : " + 고른것.getName() + "\n" +
+    "파일ID    : " + 고른것.getId() + "\n\n" +
+    "공급자 탭 「직인 이미지ID」 에 적었습니다. 이제 명세표에 찍힙니다." +
+    (짐작 ? "\n\n다른 그림이면 그 파일 이름에 「도장」을 넣고 다시 누르세요." : "") +
+    "\n\n폴더에 있던 그림: " + 본것.join(", ");
+}
+
 function _pts_pdfFolder_(issuer, ym) {
   var rootId = String(issuer["PDF 폴더ID"] || "").trim();
   var root = null;
