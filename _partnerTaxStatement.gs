@@ -1005,20 +1005,28 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   tab.getRange(footRow, 6, 1, 3).merge()
     .setValue(_pts_join_(issuer["담당자"], issuer["전화"])).setFontSize(9);
 
-  tab.getRange(footRow + 1, 1, 1, _PTS_COLS).merge()
-    .setValue("· 위와 같이 거래명세를 통지합니다.   · 내역에 이의가 있으면 수령 후 7일 이내에 연락 주십시오.")
-    .setFontSize(8).setFontColor("#666666");
-  tab.getRange(footRow + 2, 1, 1, _PTS_COLS).merge()
-    .setValue("생성 " + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm") +
-      " · 원천 " + (pack.tabs.join(" + ") || "없음") +
-      (pack.skipped ? " · 취소반품 제외 " + pack.skipped + "행" : "") +
-      (pack.noInvoice ? " · 송장미발행 제외 " + pack.noInvoice + "행" : ""))
-    .setFontSize(7).setFontColor("#999999");
+  /*  ★ 아래 두 줄을 지웠다 ★  (2026-10-06)
+      > "· 위와 같이 거래명세를 통지합니다. … 이문구는 삭제해줘"
+
+      ① 「위와 같이 거래명세를 통지합니다 / 7일 이내 연락」 — 통째로 뺐다.
+      ② 「생성 … · 원천 (2026년 10월) 발주 마감 (0행) + …」 — 우리끼리 보는 값이
+         업체에게 가는 종이에 찍히고 있었다. 0행짜리 탭 이름까지 나와 어수선하다.
+
+      ②는 «무엇을 읽었나»를 따질 때 쓰는 값이라 버리지 않고 A1 메모로 옮긴다.
+      메모는 PDF 에 안 나온다 — 종이는 깨끗하고, 따질 거리는 남는다.           */
+  try {
+    tab.getRange(1, 1).setNote(
+      "생성 " + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm") +
+      "\n원천 " + (pack.tabs.join(" + ") || "없음") +
+      (pack.skipped ? "\n취소·반품 제외 " + pack.skipped + "행" : "") +
+      (pack.noInvoice ? "\n송장 미발행 제외 " + pack.noInvoice + "행" : "") +
+      "\n문서번호 " + docNo);
+  } catch (eNote) {}
 
   try { tab.setFrozenRows(0); } catch (e) {}
   try {
     var 글꼴 = String(issuer["글꼴"] || "").trim() || "Noto Sans KR";
-    tab.getRange(1, 1, footRow + 2, _PTS_COLS).setFontFamily(글꼴);
+    tab.getRange(1, 1, footRow, _PTS_COLS).setFontFamily(글꼴);
   } catch (e) {}
 
   return {
