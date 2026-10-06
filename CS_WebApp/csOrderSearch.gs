@@ -2161,24 +2161,28 @@ function submitReturnLedger(data) {
     for (var c = 0; c < lastCol; c++) row.push("");
     if (col.date >= 0) row[col.date] = _cs_ledgerDate_();
 
-    /*  ★ 고유ID 를 여기서 발급한다 ★  (2026-10-02)
-        > "모든 문의 반품 발주관련된 부분에서 항상 고유아이디가 붙게해줘"
+    /*  ★ 고유ID 는 «원래 주문»의 것이다 ★  (2026-10-04)
 
-        r1002000003 — 발주(d)·전화주문(p)과 같은 규칙, 그날의 번호표다.
-        여태 반품 건은 (탭, 행)으로만 가리켰다. 줄이 한 칸 밀리면 짝이
-        끊긴다 — 9월 탭에서 그렇게 「유령 아홉 줄」이 생겼다.
+        > "주문건의 고유아이디를 넣어 달라고한건데. 반품관련 고유아이디를 따로
+        >  만드는거로 착각한듯... 고유아이디로 주문, 송장, 반품유무등을 한번에
+        >  찾을수 있게 하려는거야"
+        > "웹앱에서 주문송장조회를 통해 주문건을 확인하고 바로 반품대장기록을
+        >  통해 흘러가는 시스템으로"
 
-        ★ 열이 없으면 조용히 넘어간다 ★ csReturnUid.gs 로 열을 만들기
-        전에도 기록은 돼야 한다. 열이 생기면 그때부터 저절로 붙는다.  */
+        2026-10-02 에 여기서 반품 제 번호(r1002000003)를 새로 지었다. 뜻을
+        잘못 읽은 것이다 — 하나의 번호로 주문·송장·반품을 다 찾으려면 «같은»
+        번호가 세 곳에 있어야 한다. 반품에 따로 번호를 지으면 오히려 끊긴다.
+
+        주문송장조회의 「반품대장 기록」은 이미 그 주문의 orderNo 를 보내고
+        있었다. 그걸 버리고 새 번호를 짓던 것을, 받은 것을 그대로 적게 고친다.
+        「김미화/2157237902#2」 같은 모양으로 올 수 있어 _cs_orderUid_ 로 다듬는다.
+
+        ★ 주문 없이 접수한 반품은 비워 둔다 ★  반품탭에서 직접 적은 건은 주문을
+          모른다. 번호를 지어내지 않는다 — 비어 있으면 csReturnOrderUidFill 이
+          원송장으로 찾아 넣는다.  */
     if (col.uid >= 0) {
-      var 쓴것 = {};
-      for (var u = headerIdx + 1; u < values.length; u++) {
-        var uu = String((values[u] || [])[col.uid] || "").trim();
-        if (uu) 쓴것[uu] = true;
-      }
-      var mmdd = _cs_ruidMMDD_(col.date >= 0 ? row[col.date] : "") ||
-        Utilities.formatDate(new Date(), "Asia/Seoul", "MMdd");
-      row[col.uid] = _cs_returnUidNext_(mmdd, 쓴것);
+      var 주문uid = _cs_orderUid_(data.orderNo);
+      if (주문uid) row[col.uid] = 주문uid;
     }
     if (col.staff >= 0) row[col.staff] = String(data.staff || "").trim();
     if (col.vendor >= 0) row[col.vendor] = String(data.vendor || "").trim();
@@ -3454,6 +3458,21 @@ function _cs_parseReturnTimeline_(notice, status, staff, date, type) {
       events.push({ kind: "meta", text: ln, sortKey: "100000000000" });
       continue;
     }
+    /*  ★ 카드 옮긴 흔적도 meta 다 ★  (2026-10-06)
+        > "지금은 옮긴 쪽이나 옮겨진 쪽이나 둘다 사진이 안보여"
+
+        진행 카드를 다른 건으로 옮기면 양쪽에 한 줄씩 남는다(나중에 되짚으려고).
+        그런데 그 줄이 «제일 새것»이라 맨 앞에 서고, 사진 카드가 옆으로 밀려
+        안 보였다 — 사진이 사라진 것처럼 보였다. 자료는 멀쩡한데 화면이 가린 것이다.
+
+        그래서 카드로는 안 보이게 한다. 비고에는 그대로 남아 되짚을 수 있다.
+        ★ 옛 꼴도 같이 가린다 ★ 이 고침 전에 적힌 줄은 「[…] → … 로 옮김」
+          꼴이라 머리가 대괄호다. 그것도 흔적이니 같이 숨긴다.             */
+    if (/^카드이동\s*[:：]/.test(ln) ||
+        /\]\s*(→\s*.+\s*로 옮김|←\s*.+\s*에서 옮겨옴)/.test(ln)) {
+      events.push({ kind: "meta", text: ln, sortKey: "100000000000" });
+      continue;
+    }
     var m = ln.match(/^\[(\d{6})\s+(\d{1,2}:\d{2})\s+([^\]]+)\]\s*(.*)$/);
     if (m) {
       var body = String(m[4] || "").trim();
@@ -4371,6 +4390,14 @@ function csGetReturnLedgerBadgeIndex(opt) {
             화면에서 「오래된순」을 고를 때 날짜를 다시 파싱하지 않게 —
             차례를 정하는 규칙이 두 군데로 갈리면 반드시 어긋난다. */
         sortKey: r.sortKey,
+        /*  ★ 2026-10-05 원래 주문의 고유ID — 주문 카드와 «번호로» 잇는다 ★
+            > "주문 카드에 반품 내용 붙여줘"
+            전화·송장으로 잇던 것은 같은 손님의 다른 주문에도 붙었다. 대장의 고유ID 는
+            이제 주문 고유ID 다(csReturnOrderUid.gs). 시험 r 번호는 번호가 아니다. */
+        uid: (function (u) {
+          u = _cs_orderUid_(u);
+          return /^r\d{10}$/.test(u) ? "" : u;
+        })(r.uid),
         invDigits: r.invDigits,
         returnInvDigits: r.returnInvDigits,
         phoneDigits: r.phoneDigits,
