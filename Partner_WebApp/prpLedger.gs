@@ -37,53 +37,6 @@ function prpFindHeaderRow_(values) {
   return -1;
 }
 
-/*  ══ 반품 고유ID ══════════════════════════════════════════
-      「r1002000003」 = 표식(r) + MMDD + 여섯 자리 번호표.
-      발주 수집(d…)·전화주문(p…)·문의(q…)와 한 집안이다.
-
-      ★ 난수가 아니다 ★ 2026-09-21 에 난수 넉 자를 쓰다 나흘에 한 번꼴로
-      겹쳤다. 겹치면 그 줄이 아무 말 없이 빠진다.
-
-      ★ CS_WebApp/csReturnUid.gs 를 «베낀» 것이다 ★ 포털은 다른 스크립트
-      프로젝트라 그 함수를 부를 수 없다. 어긋나면 같은 번호가 두 줄에
-      나가므로, _prpuid_test.js 가 두 파일에서 떠내 같은 값인지 잰다.
-      한쪽을 고치면 다른 쪽도 고쳐야 한다.                            */
-var _PRP_RUID_PFX_ = "r";
-
-/** 접수날짜에서 MMDD. 날짜로 안 읽히면 "" (CS _cs_ruidMMDD_ 와 같다) */
-function prpRuidMMDD_(v) {
-  if (v instanceof Date && !isNaN(v.getTime())) {
-    return Utilities.formatDate(v, "Asia/Seoul", "MMdd");
-  }
-  var s = String(v == null ? "" : v).trim();
-  if (!s) return "";
-  var m = s.match(/^(\d{2})(\d{2})(\d{2})$/);          // 261002
-  if (m) return m[2] + m[3];
-  m = s.match(/^\d{4}[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);  // 2026-10-02
-  if (m) return ("0" + m[1]).slice(-2) + ("0" + m[2]).slice(-2);
-  m = s.match(/^(\d{1,2})[.\-\/](\d{1,2})$/);          // 10/2
-  if (m) return ("0" + m[1]).slice(-2) + ("0" + m[2]).slice(-2);
-  return "";
-}
-
-/**
- * 그날의 다음 번호. 쓴것 에 스스로 적어 둔다.
- *
- * ★ 빈 번호를 줍지 않는다 ★ 가장 큰 번호 + 1 이다. 지운 줄의 번호를
- * 다시 주면, 그 번호를 적어 둔 다른 기록이 엉뚱한 건을 가리킨다.
- */
-function prpReturnUidNext_(mmdd, 쓴것) {
-  var 가장 = 0;
-  var re = new RegExp("^" + _PRP_RUID_PFX_ + mmdd + "(\\d{6})$");
-  for (var k in 쓴것) {
-    var m = String(k).match(re);
-    if (m) { var n = parseInt(m[1], 10); if (n > 가장) 가장 = n; }
-  }
-  var 다음 = _PRP_RUID_PFX_ + mmdd + ("00000" + (가장 + 1)).slice(-6);
-  쓴것[다음] = true;
-  return 다음;
-}
-
 function prpMapCols_(header) {
   var col = {
     date: -1, staff: -1, vendor: -1, name: -1, phone: -1, phone2: -1, phone2Name: -1,
@@ -97,11 +50,9 @@ function prpMapCols_(header) {
        「귀책: 판매자 (오배송)」으로 남는다. 시트에 「귀책」 열을 만들면
        코드를 안 고쳐도 여기로 잡힌다. CS웹앱 쪽과 «쌍»이다. */
     fault: -1,
-    /*  고유ID — 「r1002000003」 (2026-10-04)
-        ★ 포털도 번호를 매긴다 ★ 여태 이 칸을 몰라, 업체가 접수한 반품은
-        번호 없이 남았다. 그러면 그 건은 번호로 못 찾는다 —
-        「모든 반품에 번호」가 업체 쪽에서만 새고 있었다.
-        CS웹앱 csOrderSearch._cs_mapReturnLedgerCols_ 와 «쌍»이다.      */
+    /* 고유ID — «원래 주문»의 고유ID (2026-10-04).
+       하나의 번호로 주문·송장·반품을 다 찾으려면 같은 번호가 대장에도 있어야
+       한다. CS웹앱 csOrderSearch 와 «쌍»이다. */
     uid: -1
   };
   for (var i = 0; i < header.length; i++) {
@@ -109,8 +60,6 @@ function prpMapCols_(header) {
     if (!h) continue;
     if (col.date < 0 && /반품접수날짜|접수날짜|접수일자/.test(h)) col.date = i;
     else if (col.staff < 0 && h === "접수자") col.staff = i;
-    //  고유ID — CS 쪽과 같은 정규식을 쓴다 (2026-10-04)
-    else if (col.uid < 0 && /^고유ID$|^고유아이디$|^UID$/i.test(h)) col.uid = i;
     /* ★ 2026-09-09: 「주문지」를 더한다 ★
        9월 탭(202609)에서 D열 머리글이 「업체명」 → 「주문지」로 바뀌었다.
        뜻은 그대로다 — 그 칸에는 예나 지금이나 「법인/쿠팡」·「대리발송-리바이」
@@ -169,6 +118,7 @@ function prpMapCols_(header) {
     else if (col.qty < 0 && (h === "수량" || h.indexOf("수량") === 0)) col.qty = i;
     else if (col.invoice < 0 && /원송장|송장번호/.test(h) && !/회수|재발송|반품송장/.test(h)) col.invoice = i;
     else if (col.returnInvoice < 0 && /반품송장|회수송장/.test(h)) col.returnInvoice = i;
+    else if (col.uid < 0 && /^고유ID$|^고유아이디$|^UID$/i.test(h)) col.uid = i;
     /* ★ 2026-09-10: CS 웹앱과 낱말을 맞춘다 ★
        9월 탭의 L열은 「재출고/단순/오주문입력/오배송」 이라 /교환.?반품/ 로는
        안 걸렸다. 접수창에서 고른 「단순반품」이 조용히 버려지고 있었다.
@@ -204,10 +154,11 @@ function prpMapCols_(header) {
     else if (col.fee < 0 && /반품비|반품운임|반품배송비|환불비용/.test(h)) col.fee = i;
     else if (col.notice < 0 && /고객요청|유의사항|비고/.test(h)) col.notice = i;
     /*  상태값을 «머리글 이름»으로 찾는다 (2026-10-01) — 아래 폴백 설명 참조 */
-    /*  ★ 「처리상태」를 상태로 읽지 않는다 ★  (2026-10-04)
-        옛 탭 N열 머리글은 「처리상태」지만 담긴 것은 이카운트 반영이다.
-        CS_WebApp/csOrderSearch.gs 와 «쌍»이고, v2 colMap 도 같게 잇는다.
-        세 곳이 같은 말을 해야 한다 — 한 곳만 다르면 그 화면만 틀린다.  */
+    /*  ★ 「처리상태」를 상태로 읽지 않는다 ★  (2026-10-04 — CS 웹앱과 쌍)
+        옛 탭(202604~08) N열 「처리상태」에 실제로 든 것은 이카운트 반영이다
+        (「이카운트ok」). 상태로 읽으면 업체 화면에 상태가 「이카운트ok」로 뜬다.
+        CS 는 그날 고쳤는데 포털이 빠져 있었다 — 같은 대장을 두 화면이 다르게
+        읽고 있었다. 옛 탭의 상태는 A열 폴백이 집는다.  */
     else if (col.status < 0 && /^상태값$|^상태$|^진행상태$/.test(h)) col.status = i;
   }
   /*  ★ A열을 상태로 «못 박지» 않는다 ★  (2026-10-01)

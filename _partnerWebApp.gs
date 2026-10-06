@@ -136,6 +136,8 @@ function partnerPushInvoicesOwner() {
 function partnerCollectOrdersOwner() {
   _owner_runWithNotify_("발주 수집", function() {
     partnerCollectOrders();
+    // ★ 2026-10-05: 손으로 수집해도 도서산간 주소 판정을 같이 한다 (자동 회차와 같게)
+    try { _island_judgeHubByAddress_(); } catch (eIsl) { Logger.log("[도서산간 판정] " + eIsl.message); }
     // ★ 2026-07-08: 발주수집 후 자동 중복 감지
     _oa_autoCheckDuplicates_("발주탭");
   });
@@ -1728,18 +1730,21 @@ function _trigger_islandShipping_() {
     var lock = LockService.getScriptLock();
     if (!lock.tryLock(15000)) { Logger.log("[TRIGGER] 도서산간 락 획득 실패 → 스킵"); return; }
     try {
-      var uidBoxMap = _island_loadIslandUidBoxMap_();
+      var uidBoxMap = _island_loadIslandUidBoxMap_();   //  ★ v3: 세트분리(뉴) 주문라인원장
       if (!uidBoxMap || Object.keys(uidBoxMap).length === 0) {
-        Logger.log("[TRIGGER] 도서산간 탭 데이터 없음 → 스킵");
+        Logger.log("[TRIGGER] 세트분리(뉴) 원장에 도서산간 없음 → 스킵");
         return;
       }
       var hubResult = _island_applyToHub_(uidBoxMap);
       var partnerResult = { applied: 0, skipped: 0, files: 0, errors: [] };
       if (hubResult.vendorNames && hubResult.vendorNames.length > 0) {
-        partnerResult = _island_applyToPartnerSheets_(uidBoxMap, hubResult.vendorNames);
+        partnerResult = _island_applyToPartnerSheets_(uidBoxMap, hubResult.vendorNames, hubResult.feeByUid);
       }
       Logger.log("[TRIGGER] 도서산간 완료: 허브=" + hubResult.applied + "건, 업체=" + partnerResult.applied + "건");
-      try { _chat_sendCard_("✅ 도서산간 배송비 완료", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "허브", value: hubResult.applied + "건" }, { label: "업체", value: partnerResult.applied + "건" }]); } catch (_) {}
+      //  발주 수집 때마다 불리므로, 새로 붙인 것이 있을 때만 알린다
+      if (hubResult.applied || partnerResult.applied) {
+        try { _chat_sendCard_("✅ 도서산간 배송비 완료", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "허브", value: hubResult.applied + "건" }, { label: "업체", value: partnerResult.applied + "건" }]); } catch (_) {}
+      }
     } finally {
       lock.releaseLock();
     }

@@ -12515,9 +12515,19 @@
     }
 
     function filterReturnRows(all, q) {
-      all = (all || []).filter(function(c) { return !isReturnCardDone(c); });
       q = String(q || '').trim();
-      if (!q) return all.slice();
+      /*  ★ 찾을 때는 완료도 남긴다 ★  (2026-10-06)
+
+          부르는 쪽(renderReturnActiveList)은 2026-09-30부터 완료 목록을
+          합쳐서 넘기는데, 여기 첫 줄이 그것을 «다시 걷어내고» 있었다.
+          그래서 「검색에서 완료된 것도 보이게」가 넣은 그날부터 막혀 있었다 —
+          9월 반품 276건 가운데 151건이 완료라, 9월을 찾으면 거의 안 나왔다.
+
+          검색이 없을 때의 목록은 그대로 «진행 건»만이다. 완료를 늘 섞으면
+          할 일이 안 보인다. 찾을 때만 넓게 본다.                        */
+      all = q ? (all || []).slice()
+              : (all || []).filter(function (c) { return !isReturnCardDone(c); });
+      if (!q) return all;
       var ql = q.toLowerCase();
       var qd = q.replace(/[^0-9]/g, '');
       var tokens = ql.split(/\s+/).filter(function(t) { return t.length >= 1; });

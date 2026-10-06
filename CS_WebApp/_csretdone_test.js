@@ -47,7 +47,22 @@ ok("화면에 박힌 45 는 대비값 하나뿐",
 
 console.log("\n─── ② 서버가 완료 목록을 따로 내려 주는가 ───");
 const 함수 = 꺼내(gs, "csListActiveReturnCases");
-ok("완료만 담는다", /if \(!allRows\[i\]\.active\) doneRows\.push\(allRows\[i\]\);/.test(함수));
+/*  ★ 「완료만」에서 「목록에 없는 줄」로 넓혔다 ★  (2026-10-06)
+
+    완료만 담으면 «진행인데 30일보다 오래된» 줄이 두 묶음 어디에도 없어
+    검색으로 영영 못 찾았다 — rows 는 진행 30일이고 이 목록은 완료만이었다.
+    실측: 202608 의 45일 안 96건 가운데 진행 36건이 그랬다.
+
+    넓히면서도 «두 번 보여 주지 않는» 성질은 지켜야 한다 — 그래서
+    (탭, 행) 으로 목록에 이미 있는지 가린다.                           */
+ok("목록에 «없는» 줄을 담는다 (완료 + 오래된 진행)",
+  /목록에있나\[/.test(함수) && /if \(!목록에있나\[/.test(함수),
+  "「완료만」으로 담으면 오래된 진행 건이 검색에서 사라진다");
+ok("(탭, 행) 으로 가려 두 번 담지 않는다",
+  /목록에있나\[String\(rows\[k\]\.tab\) \+ "\|" \+ String\(rows\[k\]\.row\)\] = true/.test(함수),
+  "열쇠가 없으면 같은 줄이 목록과 검색에 둘 다 들어간다");
+ok("완료만 담던 옛 줄은 없다",
+  !/if \(!allRows\[i\]\.active\) doneRows\.push/.test(함수));
 ok("doneRows 로 돌려준다", /doneRows: doneRows,/.test(함수));
 ok("넓은 쪽 기간으로 «한 번만» 읽는다",
   /var wideDays = Math\.max\(days, _CS_RETURN_DONE_DAYS_\);/.test(함수) &&
@@ -64,6 +79,17 @@ ok("기간으로 세지 않는다", !/intakeToday \+= /.test(함수));
 
 /* ── 화면 흉내 ───────────────────────────────────────────────── */
 const ctx = {
+  /*  ★ 단계 거르기 ★  (2026-10-04)
+      renderReturnActiveList 이 RETURN_STAGE_FILTER 를 보게 된 뒤 이 시험은
+      ReferenceError 로 터져 ④부터 통째로 안 돌았다. 빈 값은 «안 거른다»는
+      뜻이라, 진행/완료 가름을 재는 이 시험의 전제와 맞는다.  */
+  RETURN_STAGE_FILTER: "",
+  /*  ★ 담당자 거르기·단계 칩 ★  (2026-10-04)
+      같은 까닭으로 둘 더 생겼다. 그리는 쪽 일이라 이 시험의 것이 아니다 —
+      빈 값·아무 일 안 하는 것으로 둔다. 거르기 자체는 ④~⑤가 따로 잰다.  */
+  RETURN_STAFF_FILTER: "",
+  retFillStaffPick: () => {},
+  retStageChipsHtml: () => "",
   console, JSON, String, Number, Array, Math,
   RETURN_ALL_ROWS: [], RETURN_DONE_ROWS: [], RETURN_DONE_DAYS: 45,
   RETURN_QUERY: "", RETURN_ACTIVE_ROWS: [], RETURN_SORT: "new", RETURN_SHOW_LIMIT: 30,

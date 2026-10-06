@@ -50,9 +50,28 @@ ok("전화·송장 다 다르면 null",
 ok("주문 쪽 값이 비어 있으면 null", B(ORDER({})) === null);
 ok("빈 주문이면 null", B(null) === null);
 
-console.log("\n[전화·송장으로 붙는다]");
-ok("전화 일치", B(ORDER({ phoneDigits: "01099481234" })) !== null);
+console.log("\n[전화·송장으로 붙는다 — 고유ID 가 없는 옛 반품]");
+/*  ★ 2026-10-05 전화는 «대장에 송장도 없을 때만» ★
+    대장에 송장이 있는데 이 주문 송장과 다르면, 같은 손님의 «다른 주문» 반품이다.
+    전화가 같다고 붙이면 주문 카드에 남의 주문 반품이 뜬다. */
+ok("전화만 같고 대장에 다른 송장이 있으면 안 붙인다", B(ORDER({ phoneDigits: "01099481234" })) === null);
 ok("송장 일치", B(ORDER({ invDigits: "440812891733" })) !== null);
+ctx.RETURN_CASES = [CASE({ phoneDigits: "01099481234" })];
+ok("대장에 송장도 고유ID도 없으면 전화로 붙인다", B(ORDER({ phoneDigits: "01099481234" })) !== null);
+
+console.log("\n[★ 고유ID 로 붙는다 — 반품대장 고유ID = 원래 주문 고유ID ★]");
+ctx.RETURN_CASES = [
+  CASE({ uid: "d1006000001", phoneDigits: "0101111", invDigits: "440812891733", row: 7 }),
+  CASE({ uid: "d1006000002", phoneDigits: "0101111", invDigits: "", row: 8 }),
+];
+ok("고유ID 가 같으면 붙는다", B(ORDER({ orderNo: "d1006000001" })).key === "202609|7");
+ok("  주문 칸이 「수취인/고유ID」 꼴이어도", B(ORDER({ orderNo: "홍길동 님/d1006000002" })).key === "202609|8");
+ok("  세트분리가 쪼갠 _S2 여도", B(ORDER({ orderNo: "d1006000002_S2" })).key === "202609|8");
+ok("고유ID 가 다르면 전화가 같아도 안 붙인다 (같은 손님 다른 주문)",
+  B(ORDER({ orderNo: "d1006000099", phoneDigits: "0101111" })) === null);
+const hits = ctx.returnCasesFor(ORDER({ orderNo: "d1006000001", phoneDigits: "0101111" }));
+ok("주문 카드 반품 줄 — 그 주문 것 하나만", hits.length === 1 && hits[0].by === "고유ID", JSON.stringify(hits.map((h) => h.by)));
+ok("주문에 고유ID 가 없으면 송장으로", B(ORDER({ invDigits: "440812891733" })).key === "202609|7");
 
 console.log("\n[단계가 글자·색·아이콘을 정한다]");
 ctx.RETURN_CASES = [CASE({ phoneDigits: "0101111", status: "입고검수", stage: 2 })];
@@ -115,6 +134,21 @@ b = B(ORDER({ phoneDigits: "0101111" }));
 ok("진행 중이면 0단계로 그린다 (틀린 색이지만 안 터진다)", b.cls === "ret-s0", b.cls);
 ctx.RETURN_CASES = [{ phoneDigits: "0101111", status: "완료", active: false, tab: "202609", row: 9 }];
 ok("완료면 3단계", B(ORDER({ phoneDigits: "0101111" })).cls === "ret-s3");
+
+console.log("\n[★ 주문 카드 「반품」 줄 — 대장 내용을 그대로 ★]");
+ctx.esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+ctx.js = (s) => String(s == null ? "" : s);
+ctx.RETURN_CASES = [
+  CASE({ uid: "d1006000001", date: "2026-10-03", status: "회수중", stage: 1, type: "반품", reason: "고객변심",
+         qty: 2, returnInvoice: "123456789012", fee: 3000, tab: "202610", row: 12 }),
+];
+const 줄 = ctx.returnLinesHtml(ORDER({ orderNo: "d1006000001" }));
+ok("반품 줄이 생긴다", 줄.indexOf('<div class="os-lab">반품</div>') >= 0, 줄);
+["10-03 접수", "🚚 회수중", "고객변심", "수량 2", "반품송장 123456789012", "반품비 3000"].forEach((w) =>
+  ok("  「" + w + "」", 줄.indexOf(w) >= 0, 줄));
+ok("  누르면 그 반품을 연다", 줄.indexOf("openReturnFromOrder('202610|12'") >= 0, 줄);
+ok("  고유ID 로 찾은 것은 «어떻게 찾았나»를 안 단다", 줄.indexOf("로 찾음)") < 0);
+ok("반품이 없으면 줄도 없다", ctx.returnLinesHtml(ORDER({ orderNo: "d1006000099" })) === "");
 
 console.log("\n" + (fail ? `실패 ${fail}건 / 통과 ${pass}건` : `모두 통과 (${pass}건)`));
 process.exit(fail ? 1 : 0);

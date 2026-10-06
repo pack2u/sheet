@@ -15,7 +15,13 @@ const ok = (name, cond, got) => {
   else { fail++; console.log("  FAIL " + name + (got !== undefined ? "  → " + got : "")); }
 };
 
-const src = fs.readFileSync(path.join(__dirname, "csLogistics.gs"), "utf8");
+/*  ★ 줄끝을 고르게 한 뒤 조각을 뗀다 ★  (2026-10-04)
+    앵커에 '/**\n * 송장번호처럼…' 처럼 줄바꿈이 들어 있다. csLogistics.gs 가
+    CRLF 로 바뀐 날부터 그 앵커가 한 번도 안 맞아 이 시험은 통째로 터져 있었다
+    — 「못 찾음」 한 줄만 남기고 44건이 아예 돌지 않았다.
+    줄끝은 뜻이 아니다. 여기서 골라 놓고 본다.  */
+const src = fs.readFileSync(path.join(__dirname, "csLogistics.gs"), "utf8")
+  .split("\r\n").join("\n");
 
 /* 필요한 조각만 떼어 온다 */
 function take(from, to) {

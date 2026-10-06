@@ -200,6 +200,14 @@ var SS_DEFAULT_CONFIG = {
   /*  도서산간 도선료를 한 값으로 통일 (2026-09-21).
       로젠 요율표를 못 받은 동안. 0 이면 표를 그대로 쓴다. */
   도선료_통일금액: 5000,
+  /*  ★ 세트 상품은 한 값이 더 든다 ★  (2026-10-06)
+      > "세트분리에서도 세트 상품일경우 도서산간비 10000원"
+      한글 「세트」는 몸통+뚜껑처럼 여러 박스가 따로 나가 택배비가 두 번 든다.
+      영문 「SET」은 한 박스 완제품이라 통일금액 그대로다.
+      허브(발주 수집)의 _ISLAND_FEE_SET_ 와 «같은 금액이어야» 한다 —
+      둘이 다르면 업체 시트와 이카운트가 서로 다른 돈을 말한다.
+      0 이면 세트도 통일금액을 쓴다(끄는 법).                         */
+  도선료_세트금액: 10000,
   도서산간_미확인: '보류',
   세트_송장꼬리표: '끔',
   도서산간_판정: '우편번호우선',
@@ -728,9 +736,13 @@ var SS_SALES_COLS = [
  *
  *  > "수집했는데 주소가 80% 이상 안나와"
  *
- *  사방넷 건의 주소는 「추가장문형식1」 칸에서 읽는다. 이카운트에서 그 항목
- *  이름이 한 글자만 달라져도 idx 에 없어서 빈 문자열이 돌아온다 — 오류는 안 난다.
+ *  사방넷 건의 주소는 따로 있는 칸에서 읽는다. 이카운트에서 그 항목 이름이
+ *  한 글자만 달라져도 idx 에 없어서 빈 문자열이 돌아온다 — 오류는 안 난다.
  *  사방넷이 80%인 날은 주소가 80% 빈 채로 송장이 나간다. 실제로 그랬다.
+ *
+ *  ★ 지금까지 쓰인 이름 ★
+ *    추가문자형7 (2026-09-14 확인) · 추가장문형식1 · 배송지(사방넷)/배송메시지 (2026-10-06)
+ *    두 번 다 아무 소리 없이 주소만 비었다. 그래서 이름 목록과 «느슨한 무늬»를 함께 둔다.
  *
  *  ★ 그래도 «아무거나» 집지는 않는다 ★
  *    먼저 정확한 이름들을 차례로 찾고, 없을 때만 느슨한 무늬로 한 번 더 본다.
@@ -806,10 +818,16 @@ function ssNormalize(grid, cfg, warnings) {
       이카운트의 사용자 정의 항목이라 이름이 「추가문자형N」 꼴이다.
       「장문」도 「형식」도 없어서 처음 무늬에 안 걸렸다.
       N 은 사람이 항목을 늘리면 바뀔 수 있으므로 숫자를 박지 않는다. */
+  /*  ★ 2026-10-06 — 이름이 또 바뀌었다 ★
+      오늘 오전 1차까지는 「추가장문형식1」, 오후 2차부터 「배송지(사방넷)/배송메시지」.
+      2차 434줄 중 사방넷 340건의 주소가 통째로 빠졌다(전화주문 89건만 멀쩡).
+      이름이 「추가…」 꼴에서 아예 벗어났으므로 느슨한 무늬도 넓힌다 —
+      「배송지」와 「사방넷」이 한 이름에 같이 있으면 그 칸이다.
+      주문서 칸(배송지(주문서)/배송메시지(주문서))에는 «사방넷»이 없으니 안 걸린다. */
   var 사방넷주소칸 = ssPickCol(idx,
-    ['추가문자형7', '추가장문형식1', '추가주문자형식1', '추가장문형식',
-     '추가주문형식1', '추가장문1'],
-    /추가.*(장문|형식|문자형)/);
+    ['추가문자형7', '추가장문형식1', '배송지(사방넷)/배송메시지',
+     '추가주문자형식1', '추가장문형식', '추가주문형식1', '추가장문1'],
+    /추가.*(장문|형식|문자형)|배송지.*사방넷|사방넷.*배송지/);
   if (!사방넷주소칸) {
     /*  실제 머리글을 같이 싣는다. 「못 찾았다」만 말하면 무엇으로 바꿔야
         하는지 알 수가 없어 한 번 더 물어봐야 한다. */
@@ -820,10 +838,12 @@ function ssNormalize(grid, cfg, warnings) {
     ssWarn(warnings, '오류', 'SABANG_ADDR_COL', '(못 찾음)',
       '사방넷 주문의 주소를 읽을 칸을 못 찾았습니다 — 「추가문자형7」. ' +
       '사방넷 건은 주소 없이 나갑니다. 판매현황 머리글: ' + 본이름.join(' · '));
-  } else if (사방넷주소칸 !== '추가문자형7') {
+  } else if (['추가문자형7', '추가장문형식1', '배송지(사방넷)/배송메시지'].indexOf(사방넷주소칸) < 0) {
+    /*  아는 이름이면 조용히 간다. 모르는 이름을 «느슨한 무늬»로 집었을 때만 말한다 —
+        매번 울리는 알림은 아무도 안 본다(2026-10-06). */
     ssWarn(warnings, '주의', 'SABANG_ADDR_COL', 사방넷주소칸,
-      '사방넷 주소를 「' + 사방넷주소칸 + '」 칸에서 읽었습니다 (여태 쓰던 이름은 「추가문자형7」). ' +
-      '이카운트 항목 이름이 바뀐 듯합니다 — 맞는지 한 번 보세요.');
+      '사방넷 주소를 「' + 사방넷주소칸 + '」 칸에서 읽었습니다 (아는 이름이 아닙니다). ' +
+      '이카운트 항목 이름이 또 바뀐 듯합니다 — 맞는지 한 번 보세요.');
   }
   var g = function (row, name) {
     var c = idx[name];
@@ -1873,6 +1893,8 @@ function ssNonShipReason(u, cfg) {
       if (w && 적요.indexOf(w) >= 0) return '적요에 「' + w + '」';
     }
   }
+  //  ★ 2026-10-05 허브가 판매현황에 싣는 도서산간비 줄 — 이름이 무엇이든 코드로 뺀다
+  if (code === SS_ISLAND_FEE_CODE) return '도서산간비 줄 (' + code + ')';
   var pat = ssText(cfg && cfg.비배송_품목패턴);
   if (pat) {
     var words = pat.split('|');
@@ -1899,6 +1921,101 @@ function ssRoute(units, masters, cfg, warnings) {
       로젠 요율표를 못 받은 동안 표의 롯데 금액(1,000~9,900원)을 쓰느니
       한 값으로 통일한다. 비우거나 0 이면 표를 그대로 쓴다. */
   var 통일도선료 = ssNum(cfg.도선료_통일금액);
+  /*  ★ 그 줄의 도서산간 옵션을 한 곳에서 만든다 ★  (2026-10-06)
+      도선료를 정하는 자리가 다섯이다. 자리마다 손으로 적으면 한 곳을
+      빼먹고, 그 줄만 세트인데 5,000 으로 나간다 — 돈이고, 조용하다.  */
+  var 세트도선료 = ssNum(cfg.도선료_세트금액);
+  var 섬옵션 = function (u) {
+    return {
+      통일도선료: 통일도선료,
+      세트도선료: 세트도선료,
+      //  이름이 아직 안 붙은 줄(세트분해 전)은 원본 이름으로 본다
+      품목명: u ? (ssText(u.품목명) || ssText(u.원본품목명)) : ''
+    };
+  };
+
+  /*  ★ 대리발송으로 가는 줄도 섬인지 먼저 본다 ★  (2026-10-02)
+      > "제주도인데 대리발송으로 빠졌는데 도서산간에 안잡혔어 확인해줘"
+      > (고르신 것) 도서산간 탭에 세운다 — 업체 발주를 멈추고 사람이 정한다
+
+      대리발송으로 정해지면 그 자리에서 `continue` 해서, 주소를 보는 아래
+      도서 판정까지 한 번도 안 내려왔다. 대리발송 갈래 셋(출고지 대리발송 ·
+      대리발송품목 표 · 재고부족 자동)이 다 그랬다. 2차(261002-2)에 제주 3건이
+      업체로 그냥 넘어갔다.
+
+      섬만보기 는 아래 도서 판정과 «같은 순서·같은 잣대»다 (도선료표 → 우편번호 →
+      지역확정). 산간은 배가 아니라 차로 가므로 여기서도 섬이 아니다.
+      우편번호도 없고 지역도 «후보»뿐이면 막지 않는다 — 모르는 것을 막으면
+      육지 주문이 업체로 못 간다.
+
+      도서산간 탭 조치 칸에 적은 말로 정한다:
+        비워 둠          도서산간 탭에 선다. 업체로 안 넘어간다
+        대리발송         기본 업체로 넘긴다
+        업체코드(BW 등)  그 업체로 넘긴다
+        보류             보류(미발송)로 세운다
+        발송             도서산간에서 빼고 우리가 일반으로 보낸다 (탭의 원래 뜻 그대로) */
+  function 섬만보기(u) {
+    var addr = ssNormAddr(u.주소1);
+    var zip = ssText(addrZip[addr]);
+    var 료 = function (권역) { return ssSurcharge(addr, 권역, ferry, 섬옵션(u)).합계; };
+    var fh = ssFerryMatch(addr, ferry);
+    if (fh) {
+      if (ssText(fh.권역) === '산간') return null;
+      return { addr: addr, zip: zip, 권역: fh.권역, 판정: '도선료표', 도선료: 료(fh.권역) };
+    }
+    if (zip) {
+      if (!islandZip[zip] || ssText(islandZip[zip]) === '산간') return null;
+      return { addr: addr, zip: zip, 권역: islandZip[zip], 판정: '우편번호', 도선료: 료(islandZip[zip]) };
+    }
+    var 앞머리 = ssAddrRegion(addr);
+    for (var q = 0; q < islandKw.length; q++) {
+      if (!islandKw[q] || islandKw[q].skip || !islandKw[q].confirm) continue;
+      if (앞머리.indexOf(islandKw[q].kw) < 0) continue;
+      var 확정권역 = islandKw[q].zone || '도서';
+      return { addr: addr, zip: '', 권역: 확정권역, 판정: '지역확정', 도선료: 료(확정권역) };
+    }
+    return null;
+  }
+  /** true 면 여기서 경로를 정했다(대리발송으로 가지 말 것). false 면 대리발송으로 간다. */
+  function 섬대리검문(u, 길) {
+    //  ★ 2026-10-05 전화주문·대리판매는 도서산간 판정 패스 — 업체로 그대로 넘긴다 (ssIsHubOrderUid)
+    if (ssIsHubOrderUid(u.고유ID)) { u.도서판정 = SS_HUB_ISLAND_NOTE; return false; }
+    var s = 섬만보기(u);
+    if (!s) return false;
+    u.정규주소 = s.addr; u.우편번호 = s.zip;
+    u.도서권역 = s.권역; u.도서판정 = s.판정; u.도선료 = s.도선료;
+    var 적음 = (cfg && cfg._섬조치)
+      ? ssText(cfg._섬조치[ssText(u.순번) + '|' + ssText(u.품목코드)]) : '';
+    var 민 = ssNorm(적음).split(' ').join('').toUpperCase();
+    if (!적음) {
+      //  「도서산간(위탁배송)」 탭 — 대리발송 출고지의 섬 주문을 받으려고 있던 자리다.
+      //  우리 창고 도서산간 탭과 섞으면 출고하는 사람이 우리 재고로 싸 버린다.
+      u.route = SS_ROUTE.LOTTE_ISLAND_CONSIGN;
+      u.섬대리대기 = true;
+      //  도서산간 탭에서 한눈에 보이게 판정 칸에 적는다 — 이 줄은 우리 재고로 나가는 줄이 아니다
+      u.도서판정 = s.판정 + ' · ⚠대리발송 확인' + (u.업체코드 ? '(' + u.업체코드 + ')' : '');
+      ssWarn(warnings, '주의', 'ISLAND_PARTNER_WAIT', (u.순번 || '') + ' / ' + (u.품목코드 || ''),
+        '도서(' + s.권역 + ') 주소라 대리발송(' + 길 + ')을 멈추고 「로젠택배-도서산간(위탁배송)」 탭에 세웠습니다. ' +
+        '조치 칸에 「대리발송」·업체코드·「보류」·「발송」 중 하나를 적고 ✅ 조치 적용을 누르세요. ' +
+        '적기 전에는 업체로 안 넘어갑니다.');
+      return true;
+    }
+    for (var w = 0; w < SS_HOLD_KEEP_WORDS.length; w++) {
+      if (민 === ssNorm(SS_HOLD_KEEP_WORDS[w]).split(' ').join('').toUpperCase()) {
+        ssIslandHoldByManual_(u, 적음);
+        return true;
+      }
+    }
+    if (적음 === '발송') { ssIslandSkipByManual_(u, warnings); return true; }
+    if (민 === '대리발송') return false;
+    if (vendors[민]) { u.업체코드 = 민; u.업체명 = vendors[민]; return false; }
+    //  알아들을 수 없는 말은 «보내지 않는다» — 잘못 보내면 되돌릴 수 없다
+    u.route = SS_ROUTE.HOLD;
+    u.보류사유 = '도서산간확인';
+    u.보류상세 = '도서산간 탭 조치 「' + 적음 + '」을 못 알아들었습니다 — ' +
+      '대리발송 · 업체코드 · 보류 · 발송 중 하나로 적어 주세요';
+    return true;
+  }
 
   /*  ★ 대리발송으로 가는 줄도 섬인지 먼저 본다 ★  (2026-10-02)
       > "제주도인데 대리발송으로 빠졌는데 도서산간에 안잡혔어 확인해줘"
@@ -2250,6 +2367,16 @@ function ssRoute(units, masters, cfg, warnings) {
     var addr = ssNormAddr(u.주소1);
     u.정규주소 = addr;
 
+    /*  ★ 전화주문·대리판매는 도서산간 판정을 패스한다 ★  (2026-10-05 · ssIsHubOrderUid)
+        대리판매는 허브가 판매현황 전에 이미 판정하고 금액·OUT00001 을 붙였고,
+        전화주문은 받을 때 사람이 정한다. 일반 로젠으로 낸다.
+        판정 칸에 왜 빠졌는지 남긴다 — 원장에서 「이 섬 주문이 왜 일반 탭에?」를 물을 때. */
+    if (ssIsHubOrderUid(u.고유ID)) {
+      u.도서판정 = SS_HUB_ISLAND_NOTE;
+      u.route = SS_ROUTE.LOTTE;
+      continue;
+    }
+
     /*  ★ 도서산간 탭에 적은 조치를 «실제로» 먹인다 ★  (2026-09-28)
         > "도서산간에서 발송으로 처리 안했는데도 넘어가네..
         >  일부러 보류라고 적었는데도 넘어가는"
@@ -2294,7 +2421,7 @@ function ssRoute(units, masters, cfg, warnings) {
       /* ★ 우도·추자는 항공료가 더 붙는다 ★
          비행기로 제주까지 간 뒤 배로 한 번 더 나간다. 도선료만 적으면
          제주 왕복분이 통째로 빠진다 (2026-09-08 사장님 확인). */
-      u.도선료 = ssSurcharge(addr, fh.권역, ferry, { 통일도선료: 통일도선료 }).합계;
+      u.도선료 = ssSurcharge(addr, fh.권역, ferry, 섬옵션(u)).합계;
 
       /*  ★ 산간은 «배»가 아니다 — 일반 로젠으로 보낸다 ★  (2026-09-28)
           > "1로 해야되"   (도서산간 탭이 아니라 일반 탭)
@@ -2328,13 +2455,13 @@ function ssRoute(units, masters, cfg, warnings) {
             여기서 안 갈라 주면 강원 산간이 도서산간 탭으로 샌다. */
         if (ssText(islandZip[zip]) === '산간') {
           u.도서판정 = '산간(우편번호)';
-          u.도선료 = ssSurcharge(addr, '', ferry, { 통일도선료: 통일도선료 }).합계 ||
+          u.도선료 = ssSurcharge(addr, '', ferry, 섬옵션(u)).합계 ||
             (Number(통일도선료) > 0 ? Number(통일도선료) : 3000);
           u.route = SS_ROUTE.LOTTE;
           continue;
         }
         /* 제주 본섬은 도선료표에 없다(우도·추자만 있다). 항공료 정액만 붙는다. */
-        u.도선료 = ssSurcharge(addr, islandZip[zip], ferry, { 통일도선료: 통일도선료 }).합계;
+        u.도선료 = ssSurcharge(addr, islandZip[zip], ferry, 섬옵션(u)).합계;
         if (면제) { ssIslandSkipByManual_(u, warnings); continue; }
         if (_섬세우기) { ssIslandHoldByManual_(u, _섬적음); continue; }
       u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
@@ -2362,7 +2489,7 @@ function ssRoute(units, masters, cfg, warnings) {
       //  «빼는 건»만 금액을 센다 — 얼마를 못 받는지 말하기 위해서다.
       //  안 빠지는 줄의 도선료 칸은 여태 하던 대로 둔다(이 자리 일이 아니다).
       if (면제) {
-        u.도선료 = ssSurcharge(addr, 확정, ferry, { 통일도선료: 통일도선료 }).합계;
+        u.도선료 = ssSurcharge(addr, 확정, ferry, 섬옵션(u)).합계;
         ssIslandSkipByManual_(u, warnings);
         continue;
       }
@@ -2540,6 +2667,26 @@ function ssIslandSkipByManual_(u, warnings) {
  * @param zone  이미 판정된 권역('제주'|'도서'|''). 없으면 도선료표에서 본다.
  * @param ferry 롯데 도선료 표
  */
+/**
+ * 도서산간비가 갈리는 「세트인가」 판정.  (2026-10-06)
+ *
+ * 한글 「세트」면 몸통+뚜껑처럼 여러 박스가 따로 나가 택배비가 두 번 든다.
+ * 영문 「SET」은 한 박스 완제품이라 한 값이다.
+ *   > "한글 세트만 적용 영문 set는 한박스로 나가는것들이야"
+ *
+ * ★ ssNeedsBom_ 를 쓰지 않는다 ★
+ *   그쪽은 「쪼갤 이름인가」를 묻는 다른 물음이고, BOM 점검을 조용히 하려고
+ *   「샘플」을 뺀다. 샘플이어도 박스는 두 번 나가니 돈은 붙어야 한다.
+ *   물음이 다르면 함수도 달라야 한다 — 섞으면 한쪽을 고칠 때 다른 쪽이 샌다.
+ *
+ * ★ 허브와 같은 잣대다 ★ _partnerIslandShipping.gs 의 _island_isSetItem_.
+ *   둘이 갈라지면 업체 시트와 이카운트가 서로 다른 돈을 말한다.
+ *   node/_fee_test.mjs 가 두 곳이 같은 답인지 맞댄다.
+ */
+function ssIsSetName(name) {
+  return ssText(name).indexOf('세트') !== -1;
+}
+
 function ssSurcharge(addr, zone, ferry, opts) {
   opts = opts || {};
   var air = opts.항공료 == null ? SS_AIR_FEE_JEJU : (Number(opts.항공료) || 0);
@@ -2587,16 +2734,28 @@ function ssSurcharge(addr, zone, ferry, opts) {
       ★ 붙는 줄에만 ★ 표에도 없고 권역도 없는 주소는 «육지»다. 0 그대로 둔다.
       끄는 법 : 설정 「도선료_통일금액」 을 비우거나 0 으로. 그러면 표값이 나온다. */
   var 통일 = Number(opts.통일도선료);
+  var 세트인가 = false;
   if (통일 > 0) {
     var 붙는가 = !!fh || z === '도서' || z === '제주' || z === '산간';
-    if (붙는가) { 도선료 = 통일; 항공료 = 0; }
+    if (붙는가) {
+      /*  ★ 세트는 한 값이 더 든다 ★  (2026-10-06)
+          > "세트분리에서도 세트 상품일경우 도서산간비 10000원"
+          몸통+뚜껑이 따로 나가 택배비가 두 번 든다. 영문 SET 은 한 박스라 그대로.
+          ★ 품목명을 «받았을 때만» 갈린다 ★ 안 넘기는 쪽(반품비 ssReturnFee)은
+          여태 그대로다 — 반품은 「평균 비용으로 처리」라고 따로 정한 값이다.  */
+      var 세트값 = Number(opts.세트도선료);
+      세트인가 = 세트값 > 0 && ssIsSetName(opts.품목명);
+      도선료 = 세트인가 ? 세트값 : 통일;
+      항공료 = 0;
+    }
   }
   return {
     권역: z,
     항공료: 항공료,
     도선료: 도선료,
     합계: 항공료 + 도선료,
-    근거: (통일 > 0 && (항공료 + 도선료) === 통일 ? '평균 통일 · ' : '') +
+    근거: (세트인가 ? '세트 ' : '') +
+      (통일 > 0 && (항공료 + 도선료) === (세트인가 ? Number(opts.세트도선료) : 통일) ? '평균 통일 · ' : '') +
       (fh ? ('도선료표 ' + fh.읍면동) : (z ? (z + ' 권역') : ''))
   };
 }
@@ -3086,6 +3245,33 @@ var SS_INVOICE_HEADER = ['주문번호', '품목코드', '구분', '합포장키
  *   0902-ds-e158   상품정보 발주수집 발급 (허브 _po_isGeneratedUid_ 와 같은 판별)
  *   0903-PH-…      세트분리 전화주문 발급
  */
+/**
+ * 도서산간 판정을 «패스»하는 고유ID 인가 — 전화주문 · 대리판매 (쪼갠 _S2 포함).
+ *   대리판매   d0921000001 · 0921-ds-b1d1        (상품정보 발주 수집이 발급)
+ *   전화주문   p0921000001 · 0921-PH-a3f19 · 260902-PH-a3f19   (세트분리가 발급)
+ * 사방넷 주문(숫자뿐)은 여태처럼 여기서 판정한다.
+ *
+ * ★ 2026-10-05 ★
+ *   > "세트분리시 대리판매 업체는 이미도서산간을 실행했으니 도서산간 판정에서
+ *   >  빠져야 되겠지?(고유아이디 인식 으로)"
+ *   > "세트분리시 고유아이디(P00000, d00000)가 전화주문 또는 대리판매업체일경우
+ *   >  도서산간 판정 패스 하게 해주면 되.."
+ *   대리판매는 허브가 발주 수집 때(판매현황 «전») 같은 자료 — 이 시트의
+ *   도서산간_도선료·우편번호·시군·주소사전 — 와 같은 순서로 이미 판정해 금액
+ *   (5,000 / 세트 10,000)을 붙이고 판매현황에 OUT00001 을 실었다
+ *   (상품정보 _partnerIslandJudge.gs). 전화주문은 받을 때 사람이 정한다.
+ *   여기서 또 도서산간 탭에 세우면 조치를 한 번 더 적어야 하고 출고가 멈춘다.
+ *   (대소문자는 안 가린다 — 「P0921000001」도 전화주문이다)
+ */
+function ssIsHubOrderUid(uid) {
+  var u = ssBaseUid(uid);
+  return /^[pd]\d{10}$/i.test(u) || /^\d{4}(?:\d{2})?-(?:ds|PH)-/i.test(u);
+}
+var SS_HUB_ISLAND_NOTE = '도서산간 패스(전화주문·대리판매)';
+
+/** 도서산간비 줄 — 허브가 판매현황에 싣는 OUT00001. 물건이 아니라 송장을 안 낸다 */
+var SS_ISLAND_FEE_CODE = 'OUT00001';
+
 function ssIsSabangnetUid(uid) {
   var u = ssText(uid);
   if (!u) return false;
@@ -3485,6 +3671,7 @@ if (typeof module !== 'undefined' && module.exports) {
     SS_AIR_FEE_JEJU: SS_AIR_FEE_JEJU, SS_RETURN_BOX_FEE: SS_RETURN_BOX_FEE,
     ssPartnerRow: ssPartnerRow, ssHoldRow: ssHoldRow, ssVendorOf: ssVendorOf,
     ssInvoiceRows: ssInvoiceRows, ssIsSabangnetUid: ssIsSabangnetUid, SS_INVOICE_HEADER: SS_INVOICE_HEADER,
+    ssIsHubOrderUid: ssIsHubOrderUid, SS_HUB_ISLAND_NOTE: SS_HUB_ISLAND_NOTE, SS_ISLAND_FEE_CODE: SS_ISLAND_FEE_CODE,
     ssNonshipRow: ssNonshipRow, ssNonShipReason: ssNonShipReason, SS_NONSHIP_HEADER: SS_NONSHIP_HEADER,
     SS_PARTNER_HEADER: SS_PARTNER_HEADER, SS_MANUAL_HEADER: SS_MANUAL_HEADER, SS_VENDOR_HEADER: SS_VENDOR_HEADER, ssLedgerRow: ssLedgerRow, ssDisplayName: ssDisplayName,
     ssStripName: ssStripName, ssNormAddr: ssNormAddr, ssAddrRegion: ssAddrRegion, ssPad6: ssPad6

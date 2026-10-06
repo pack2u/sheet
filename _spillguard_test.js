@@ -46,7 +46,14 @@ eq("헤더의 (자동) 열 = A·B·D·L·M·N", 자동열_헤더, [1, 2, 4, 12, 
 const gBlk = lib.slice(lib.indexOf("var 자동열 = ["));
 const 가드열 = (gBlk.slice(0, gBlk.indexOf("];")).match(/c:\s*(\d+)/g) || [])
   .map((s) => parseInt(s.replace(/\D/g, ""), 10));
-eq("★ 가드가 보는 열이 헤더의 (자동) 열과 같다", 가드열, 자동열_헤더);
+/*  ★ 2026-10-05 D·L 은 일부러 뺐다 ★
+    > "입력 막은거 삭제해줘.. 그거로 인해 단가와 상품명이 사라지고 마감텝에 제대로 못넘어가는"
+    D·L 은 이제 «줄마다 수식»(_pt_ensureOrderRowFormulasDL_)이라 걷어낼 이유가 없다.
+    걷으면 업체가 적은 품명·단가가 지워져 마감에 빈 채로 넘어간다. */
+const 줄마다수식열 = [4, 12];
+eq("★ 가드가 보는 열 = 헤더의 (자동) 열 − D·L(줄마다 수식)", 가드열,
+  자동열_헤더.filter((c) => 줄마다수식열.indexOf(c) < 0));
+eq("★ D·L 은 가드가 안 본다 — 업체가 쓴 품명·단가를 안 지운다", 가드열.some((c) => 줄마다수식열.indexOf(c) >= 0), false);
 
 // A1/D1/L1/N1 짝도 맞아야 한다 — 열 번호와 셀 주소가 어긋나면 엉뚱한 수식을 본다
 const 글자 = (n) => String.fromCharCode(64 + n);

@@ -772,37 +772,26 @@ function _po_refreshAutofillBeforeCollect_(tab, priceMap, vendorName) {
     lHasF = !!String(tab.getRange("L1").getFormula() || "");
   } catch (_) {}
 
-  // ★ 2026-07-20 (3차): 수집 직전 D/L 스필 막힘 무음 해제 (2계층 백필 — 운영자 확정 무음 복원 정책)
-  //   수식은 있는데 헤더가 #REF!(복붙 값이 스필 차단)이면 해당 열 값만 걷어냄.
-  //   토스트·알림 없음. 수식 재주입 아님(수식은 살아있음) → "자동복구 순환" 문제와 무관.
+  // ★ 2026-10-05: D/L 이 아직 옛 스필이면 «줄마다 수식»으로 바꾼다 (업체가 쓴 값은 남긴다).
+  //   여태는 스필이 막히면(#REF!) 그 열을 통째로 지웠다 — 업체가 적은 품명·단가까지.
+  //   (_pt_ensureOrderRowFormulasDL_ 머리 주석)
   try {
-    if (dHasF || lHasF) {
-      var _spillClr_ = false;
-      if (dHasF && String(tab.getRange("D1").getDisplayValue() || "").indexOf("#REF") !== -1) {
-        var _dEnd_ = 500;
-        try {
-          var _dM_ = String(tab.getRange("D1").getFormula() || "").match(/C2:C(\d+)/);
-          if (_dM_) _dEnd_ = parseInt(_dM_[1], 10);
-        } catch (_) {}
-        tab.getRange(2, 4, _dEnd_ - 1, 1).clearContent();
-        _spillClr_ = true;
-      }
-      if (lHasF && String(tab.getRange("L1").getDisplayValue() || "").indexOf("#REF") !== -1) {
-        var _lEnd_ = 500;
-        try {
-          var _lM_ = String(tab.getRange("L1").getFormula() || "").match(/C2:C(\d+)/);
-          if (_lM_) _lEnd_ = parseInt(_lM_[1], 10);
-        } catch (_) {}
-        tab.getRange(2, 12, _lEnd_ - 1, 1).clearContent();
-        _spillClr_ = true;
-      }
-      if (_spillClr_) SpreadsheetApp.flush();
+    var _d1f_ = String(tab.getRange("D1").getFormula() || "");
+    var _l1f_ = String(tab.getRange("L1").getFormula() || "");
+    if (_d1f_.indexOf("ARRAYFORMULA") !== -1 || _l1f_.indexOf("ARRAYFORMULA") !== -1) {
+      var _safe_ = _pt_resolveViewerTabNameForOrderSpill(tab, null);
+      _pt_ensureOrderRowFormulasDL_(tab, "'" + _safe_.replace(/'/g, "''") + "'", 0);
+      SpreadsheetApp.flush();
+      dHasF = !!String(tab.getRange("D1").getFormula() || "");
+      lHasF = !!String(tab.getRange("L1").getFormula() || "");
     }
   } catch (_) {}
 
   // ★ 2026-07-17: B열(주문일자) 사전 채움 제거 — 수집 성공 행에만 수집일 기록
   var nRows = lr - 1;
   var block = tab.getRange(2, 1, nRows, 14).getValues();
+  //  ★ 2026-10-05 줄마다 수식을 값으로 굳히지 않게 — 안 바꾼 칸은 수식을 그대로 다시 쓴다
+  var fblock = tab.getRange(2, 1, nRows, 14).getFormulas();
   var filled = 0;
   var map = priceMap || {};
   var aCol = [], dCol = [], lCol = [];
@@ -837,9 +826,9 @@ function _po_refreshAutofillBeforeCollect_(tab, priceMap, vendorName) {
       }
     }
 
-    aCol.push([aVal]);
-    dCol.push([dVal]);
-    lCol.push([lVal]);
+    aCol.push([aVal === block[i][0] && fblock[i][0] ? fblock[i][0] : aVal]);
+    dCol.push([dVal === block[i][3] && fblock[i][3] ? fblock[i][3] : dVal]);
+    lCol.push([lVal === block[i][11] && fblock[i][11] ? fblock[i][11] : lVal]);
   }
 
   if (aChanged) tab.getRange(2, 1, nRows, 1).setValues(aCol);
@@ -4471,9 +4460,73 @@ function _po_collectSilentCore_(withSalesRebuild) {
   } catch (e) {
     try { Logger.log("[VOID_INVOICE_TRIGGER_ERR] " + String(e.message || e)); } catch (_) {}
   }
+  // ②-2 ★ 2026-10-05: 도서산간 추가배송비 — 판매현황 갱신 «앞»에 붙인다
+  //   > "발주 수집때 제주도서산간을 인식해서 건당..5000원.. 세트상품일경우 10000원"
+  //   세트분리(뉴) 원장이 도서산간으로 가른 주문에 금액을 넣으면, 바로 뒤 판매현황
+  //   갱신이 OUT00001 줄을 같이 올린다. 곁다리라 실패해도 수집은 그대로 간다.
+  //   ★ 먼저 «주소»로 본다 — 판매현황 전에, 대리판매 허브 주문만 (_partnerIslandJudge.gs)
+  //     > "판매현황전에 확인하자는거야..세트분리 전에 대리판매업체들것만.."
+  //     그 뒤 세트분리 원장으로 놓친 것을 받친다(이미 올라간 옛 줄).
+  //   ★ 시간 예산: 수집이 이미 4분을 썼으면 건너뛴다 — 6분에 끊기면 뒤의 판매현황 갱신이
+  //     통째로 빠진다. 건너뛴 줄은 판정 칸이 비어 있으니 다음 회차나 판매현황 갱신
+  //     (그 앞에서도 판정한다)이 받는다.
+  //  판매현황 갱신을 이어달리기로 넘겼나 — 아래 ③이 이 값을 본다
+  var 판매현황_미룸 = false;
+  var _islElapsed_ = new Date() - startTime;
+  if (_islElapsed_ > 240000) {
+    /*  ★ 건너뛰고 «끝내지» 않는다 ★  (2026-10-06)
+
+        > "상품정보시트 발주 수집시 자동으로 도서산간이 안먹은거 같은데"
+
+        2026-10-06 09:30 회차가 09:35:58 에 끝났다 — 약 6분. 그래서 여기서
+        건너뛰었고, 101줄이 판정 없이 남았다.
+        받침도 없었다 — 자동 판매현황 갱신(silent)은 「바로 앞에서 이미
+        했다」고 보고 판정을 안 한다. 그러니 수집이 늘 4분을 넘기는 동안은
+        «자동으로는 영영» 안 붙었다. 사람이 메뉴를 눌러야만 붙었고,
+        그걸 아무도 모른다 — 오류가 아니라 «안 붙는» 것이라서.
+
+        그래서 일회성 트리거로 이어달린다. 판정만 제 6분을 가지고 돈다.  */
+    var _돌릴말 = "[ISLAND] 수집이 " + Math.round(_islElapsed_ / 1000) +
+      "초를 써서 도서산간 판정을 이번 회차엔 건너뜁니다";
+    var _이어 = { ok: false, why: "이어달리기 함수가 없습니다" };
+    try {
+      /*  ★ 판매현황 갱신도 «같이» 미룬다 ★  (2026-10-06)
+
+          > "발주 수집시 도서산간 확인이 일시 중지되고 판매현황입력으로 넘어가 버리는데"
+
+          그대로 두면 순서가 뒤집힌다 — 판정은 90초 뒤, 판매현황은 지금.
+          판매현황이 먼저 돌면 허브 P열(이카운트업로드)이 채워지고,
+          판정은 P열이 찬 줄을 건너뛴다. 그 줄의 도서산간 금액은 영영 안 붙고
+          OUT00001 줄도 안 올라간다 — 「들어가는 게 있고 없고」의 까닭이다.   */
+      if (typeof _isj_scheduleCatchUp_ === "function") _이어 = _isj_scheduleCatchUp_(null, !!withSalesRebuild);
+    } catch (eSch) { _이어 = { ok: false, why: String(eSch.message || eSch) }; }
+    //  이어달리기를 «걸었을 때만» 판매현황을 미룬다. 못 걸었으면 여태처럼 지금 돌린다 —
+    //  도서산간은 빠지더라도 판매현황이 통째로 빠지는 쪽이 더 나쁘다.
+    if (_이어.ok && withSalesRebuild) 판매현황_미룸 = true;
+    Logger.log(_돌릴말 + (_이어.ok
+      ? (판매현황_미룸
+          ? " — 90초 뒤에 판정 → 원장 받침 → 판매현황 갱신 차례로 돕니다 (partnerIslandCatchUp_)"
+          : " — 90초 뒤에 판정만 따로 돕니다 (partnerIslandCatchUp_)")
+      : " — ★ 이어달리기도 못 걸었습니다: " + _이어.why + " ★"));
+  } else {
+    try {
+      if (typeof _island_judgeHubByAddress_ === "function") _island_judgeHubByAddress_();
+    } catch (eJdg) {
+      try { Logger.log("[ISLAND_JUDGE_ERR] " + String(eJdg.message || eJdg)); } catch (_) {}
+    }
+    if (new Date() - startTime < 270000) {
+      try {
+        if (typeof _trigger_islandShipping_ === "function") _trigger_islandShipping_();
+      } catch (eIsl) {
+        try { Logger.log("[ISLAND_AFTER_COLLECT_ERR] " + String(eIsl.message || eIsl)); } catch (_) {}
+      }
+    }
+  }
   // ③ ★ 2026-07-02: 판매현황 갱신 (발주수집 후 자동 실행)
   //    ★ 2026-09-17: 오후 1시 회차에서만 돈다 (partnerCollectOrdersSilent_)
-  if (!withSalesRebuild) {
+  if (판매현황_미룸) {
+    Logger.log("[SALES_REFRESH] 도서산간 판정을 미뤘으므로 판매현황 갱신도 이어달리기에 맡깁니다");
+  } else if (!withSalesRebuild) {
     Logger.log("[SALES_REFRESH] 이 회차는 판매현황을 안 건드립니다 (오후 1시에만 갱신)");
   } else {
     try {
@@ -4765,6 +4818,17 @@ function partnerRebuildSalesUploadSheet(silent) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) return;
 
+  // ★ 2026-10-05 판매현황 «전에» 도서산간 주소 판정 — 손으로 갱신해도 OUT00001 이 빠지지 않게.
+  //   자동 회차(silent)는 _po_collectSilentCore_ 가 바로 앞에서 시간 예산을 보고 이미 했다 —
+  //   여기서 또 하면 그 예산이 무너진다. 손으로 누를 때만 한다.
+  if (!silent) {
+    try {
+      if (typeof _island_judgeHubByAddress_ === "function") _island_judgeHubByAddress_();
+    } catch (eIsl) {
+      Logger.log("[도서산간 판정] 판매현황 앞 실행 실패(무시): " + eIsl.message);
+    }
+  }
+
   var lock = LockService.getDocumentLock();
   if (!lock.tryLock(45000)) {
     if (ui) {
@@ -4813,6 +4877,33 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
     .getRange(2, 1, hubLr - 1, 16)
     .getValues();
 
+  // 1-2) ★ 2026-10-05 도서산간 OUT00001 — 금액 칸과 «따로 두는» 완료 칸 (_partnerIslandSales.gs)
+  var islFeeVals = null, islFlagVals = null, islFlagCol = 0, islUpdates = [];
+  try {
+    var hubHdr = hubTab.getRange(1, 1, 1, hubTab.getLastColumn()).getDisplayValues()[0];
+    var islFeeCol = typeof _island_findFeeCol1_ === "function" ? _island_findFeeCol1_(hubHdr) : 0;
+    if (islFeeCol > 0 && typeof _po_islandSaleLine_ === "function") {
+      islFeeVals = hubTab.getRange(2, islFeeCol, hubLr - 1, 1).getValues();
+      islFlagCol = _po_islandFlagCol_(hubTab, hubHdr);
+      islFlagVals = hubTab.getRange(2, islFlagCol, hubLr - 1, 1).getValues();
+      //  처음 만든 날 한 번: 이미 올라간 옛 도서산간 줄은 「도입 전」으로 막는다
+      if (_po_islandFlagCol_.만듦) {
+        var 막음 = _po_islandSeedFlags_(hubData, islFeeVals, islFlagVals);
+        if (막음) hubTab.getRange(2, islFlagCol, islFlagVals.length, 1).setValues(islFlagVals);
+        Logger.log("[도서산간 판매] 「" + _PO_ISLAND_FLAG_HEADER_ + "」 칸을 만들고 도입 전 줄 " + 막음 + "개를 막았습니다");
+      }
+    }
+  } catch (eIsl) {
+    Logger.log("[도서산간 판매] 준비 실패 — 이번엔 도서산간 줄 없이 갑니다: " + eIsl.message);
+    islFeeVals = null;
+  }
+  function _islNeed_(r) {
+    if (!islFeeVals || !islFlagVals) return 0;
+    var fee = Number(islFeeVals[r][0]) || 0;
+    if (fee <= 0 || String(islFlagVals[r][0] || "").trim()) return 0;
+    return fee;
+  }
+
   // 2) 업체→거래처코드 매핑 구축
   var vendorMap = _po_buildVendorCustCdMap_();
 
@@ -4859,6 +4950,15 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
 
     // 이미 판매갱신 업 완료된 건 제외 (기존 "이카운트 업 완료", "판매현황 업 완료"도 호환)
     if (ecountUpRaw === "판매갱신 업 완료" || ecountUpRaw === "이카운트 업 완료" || ecountUpRaw === "판매현황 업 완료") {
+      //  ★ 2026-10-05 본 주문은 이미 올라갔어도, 그 뒤에 붙은 도서산간비는 올린다
+      var islFeeLate = _islNeed_(r);
+      if (islFeeLate && !_po_islandCancelLike_(stCompact)) {
+        var custCdLate = _po_resolveVendorCustCd_(String(row[1] || "").trim(), vendorMap);
+        if (custCdLate) {
+          out.push(_po_islandSaleLine_(row, islFeeLate, custCdLate, _shipYmd_, colCount));
+          islUpdates.push(r);
+        }
+      }
       skipCount++;
       _po_countReason_(skipReasons, "이미 판매갱신 업됨");
       continue;
@@ -4993,6 +5093,13 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
     out.push(line);
     // 반영 완료 목록에 현재 행 번호 기록 (2부터 시작하므로 r + 2)
     hubPUpdates.push(r + 2);
+
+    //  ★ 2026-10-05 도서산간비가 이미 붙어 있으면 본 주문 바로 아래에 OUT00001
+    var islFeeNow = _islNeed_(r);
+    if (islFeeNow) {
+      out.push(_po_islandSaleLine_(row, islFeeNow, custCd, _shipYmd_, colCount));
+      islUpdates.push(r);
+    }
   }
 
   // 5) 시트 생성/갱신 (전량 덮어쓰기 + 잔여 행 정리)
@@ -5009,6 +5116,13 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
       }
     }
     hubTab.getRange(2, 16, hubData.length, 1).setValues(pColVals);
+    SpreadsheetApp.flush();
+  }
+
+  // 5-2b) ★ 2026-10-05 도서산간 줄을 올린 행 — 「도서산간 판매갱신」 칸에 완료
+  if (islUpdates.length > 0 && islFlagCol > 0 && islFlagVals) {
+    for (var iu = 0; iu < islUpdates.length; iu++) islFlagVals[islUpdates[iu]][0] = _PO_ISLAND_FLAG_DONE_;
+    hubTab.getRange(2, islFlagCol, islFlagVals.length, 1).setValues(islFlagVals);
     SpreadsheetApp.flush();
   }
 
@@ -5042,7 +5156,9 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
     "\n" +
     "- 반영: " +
     out.length +
-    "건\n" +
+    "건" +
+    (islUpdates.length ? " (그중 도서산간 OUT00001 " + islUpdates.length + "줄)" : "") +
+    "\n" +
     "- 스킵: " +
     skipCount +
     "건\n" +

@@ -4346,13 +4346,29 @@ function csListActiveReturnCases(opt) {
     var todayYmd = _cs_daysAgoYmd_(0);
     var ydayYmd = _cs_daysAgoYmd_(1);
     var intakeToday = 0, intakeYesterday = 0;
+
+    /*  ★ 검색용 추가 목록 — 「완료」만이 아니다 ★  (2026-10-06)
+
+        전에는 `!active` 인 줄만 담았다. 그러면 «진행인데 30일보다 오래된»
+        줄이 두 묶음 어디에도 없어 검색으로 영영 못 찾았다 —
+        rows 는 진행 30일이고, 이 목록은 완료만이었으니까.
+        실측 2026-10-06: 202608 에서 45일 안 96건 가운데 진행 36건이 그랬다.
+
+        그래서 «목록에 없는 줄»을 담는다. 완료든, 오래된 진행이든 한 번만
+        들어간다 — (탭, 행)으로 가려 두 번 보여 주지 않는다.
+        (이름은 doneRows 그대로 둔다 — 화면이 그 이름으로 받는다.)        */
+    var 목록에있나 = {};
+    for (var k = 0; k < rows.length; k++) {
+      목록에있나[String(rows[k].tab) + "|" + String(rows[k].row)] = true;
+    }
     var doneRows = [];
     for (var i = 0; i < allRows.length; i++) {
       var ymd = String(allRows[i].dateYmd || "");
       if (ymd === todayYmd) intakeToday++;
       else if (ymd === ydayYmd) intakeYesterday++;
-      /*  진행 건은 rows 에 이미 있다 — 여기 또 담으면 검색이 두 번 보여 준다. */
-      if (!allRows[i].active) doneRows.push(allRows[i]);
+      if (!목록에있나[String(allRows[i].tab) + "|" + String(allRows[i].row)]) {
+        doneRows.push(allRows[i]);
+      }
     }
 
     return {

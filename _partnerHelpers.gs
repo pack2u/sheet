@@ -1021,20 +1021,12 @@ function _pt_injectOrderSpillFormulas(orderTab, viewerTabName) {
     var _dPrevEnd_ = _pt_formulaSpillEnd_(String(orderTab.getRange("D1").getFormula() || ""));
     if (_dPrevEnd_ >= 2 && _dPrevEnd_ < _PT_ORDER_SPILL_ROWS_) _dlKeepRows_ = _dPrevEnd_;
   } catch (_) {}
+  //  ★ 2026-10-05 D·L 은 «줄마다 수식» — 업체가 쓴 값은 지우지 않는다 (_pt_ensureOrderRowFormulasDL_)
   try {
     orderTab.getRange("D2:D" + _PT_ORDER_SPILL_ROWS_).clearDataValidations();
-    var dClr = Math.min(Math.max(orderTab.getLastRow(), 2), _PT_ORDER_SPILL_ROWS_ + 1);
-    if (dClr >= 2) orderTab.getRange(2, 4, dClr - 1, 1).clearContent();
-    orderTab.getRange("D1").setFormula(_pt_buildOrderItemNameArrayFormula_(sq, _dlKeepRows_));
-  } catch (eD) {}
-
-  // ── L열: 단가/정산금액 (스필 수식) ──
-  try {
     orderTab.getRange("L2:L" + _PT_ORDER_SPILL_ROWS_).clearDataValidations();
-    var lClr = Math.min(Math.max(orderTab.getLastRow(), 2), _PT_ORDER_SPILL_ROWS_ + 1);
-    if (lClr >= 2) orderTab.getRange(2, 12, lClr - 1, 1).clearContent();
-    orderTab.getRange("L1").setFormula(_pt_buildOrderUnitPriceArrayFormula_(sq, _dlKeepRows_));
-  } catch (eL) {}
+    _pt_ensureOrderRowFormulasDL_(orderTab, sq, _dlKeepRows_);
+  } catch (eDL) {}
 
   // ── N열: 상태 ──
   try {
@@ -1242,6 +1234,116 @@ function _pt_buildOrderUnitPriceArrayFormula_(sq, spillRows) {
     '={"정산금액(자동)"; ARRAYFORMULA(IF(C2:C' + r + '="", "", IFERROR(VLOOKUP(' + key + ', ' +
     sq + '!$C$3:$G$' + ve + ', 5, FALSE), "")))}'
   );
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 2026-10-05 D 품목명 · L 정산금액 — «줄마다 수식» ★
+ *
+ *  > "협력업체 시트의 발주 및 송장조회탭에 입력 막은거 삭제해줘.. 그거로 인해
+ *  >  단가와 상품명이 사라지고 마감텝에 제대로 못넘어가는 경우가 생기는거 같아"
+ *
+ *  여태 D1·L1 의 ARRAYFORMULA 하나가 열 전체를 «펼쳤다». 업체가 한 칸에만 써도
+ *  펼칠 자리가 막혀 열 전체가 #REF! 로 사라졌고, 그걸 막으려고 쓴 값을 걷어냈다
+ *  (onEdit·열 때·수집 직전·heal 네 군데). 그러니 단가조회에 없는 품목을 업체가
+ *  손으로 적으면 그 품명·단가가 지워져 마감에 빈 채로 넘어갔다.
+ *
+ *  이제 줄마다 제 수식을 둔다. 업체가 한 칸에 쓰면 그 칸만 그 값이 되고
+ *  나머지 줄은 그대로 자동이다. 걷어낼 이유가 없어져 «막기»를 다 뺐다.
+ *
+ *  이 함수는 몇 번을 불러도 같다:
+ *    · 수식 있는 칸 — 우리 수식이면 최신 모양으로, 남의 수식이면 그대로
+ *    · 값이 있는 칸 — 업체가 쓴 것이면 그대로 (옛 스필이 «멀쩡히» 펼친 값만 수식으로 바꾼다)
+ *    · 빈 칸        — 수식을 넣는다
+ *  범위는 마지막 주문 + 50줄 (최소 100 · 최대 500).
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pt_orderRowFormulaD_(sq, r) {
+  return '=IF(C' + r + '="","",IFERROR(VLOOKUP(TRIM(CLEAN(SUBSTITUTE(C' + r + ',CHAR(160),""))),' +
+    sq + '!$C$3:$G$' + _PT_VIEWER_LOOKUP_END_ + ',2,FALSE),"🚨코드오류"))';
+}
+function _pt_orderRowFormulaL_(sq, r) {
+  return '=IF(C' + r + '="","",IFERROR(VLOOKUP(TRIM(CLEAN(SUBSTITUTE(C' + r + ',CHAR(160),""))),' +
+    sq + '!$C$3:$G$' + _PT_VIEWER_LOOKUP_END_ + ',5,FALSE),""))';
+}
+
+/** 순수 — 한 열의 새 내용. 시험이 직접 부른다. @return {{out:Array, changed:boolean}} */
+function _pt_rowFormulaPlan_(formulas, values, wasSpill, blocked, build) {
+  var out = [], changed = false;
+  function norm(f) { return String(f || "").replace(/\s/g, "").toUpperCase(); }
+  for (var i = 0; i < formulas.length; i++) {
+    var r = i + 2, want = build(r), f = String(formulas[i][0] || "");
+    if (f) {
+      //  우리 수식(VLOOKUP·CHAR(160))이면 최신 모양으로, 남의 수식은 건드리지 않는다
+      if (f.indexOf("VLOOKUP(") !== -1 && f.indexOf("CHAR(160)") !== -1 && norm(f) !== norm(want)) {
+        out.push([want]); changed = true;
+      } else {
+        out.push([f]);
+      }
+      continue;
+    }
+    var v = values[i][0];
+    var 쓴값 = v !== "" && v !== null && v !== undefined && (!wasSpill || blocked);
+    if (쓴값) { out.push([v]); continue; }      //  업체가 쓴 값은 지우지 않는다
+    out.push([want]);
+    changed = true;
+  }
+  return { out: out, changed: changed };
+}
+
+/** @return {{D:boolean, L:boolean}} 바꾼 열 */
+function _pt_ensureOrderRowFormulasDL_(orderTab, sq, keepRows) {
+  var 바꿈 = { D: false, L: false };
+  var lr = orderTab.getLastRow(), lastData = 1;
+  if (lr >= 2) {
+    var cs = orderTab.getRange(2, 3, lr - 1, 1).getDisplayValues();
+    for (var ci = cs.length - 1; ci >= 0; ci--) if (String(cs[ci][0] || "").trim()) { lastData = ci + 2; break; }
+  }
+  var R = Math.min(_PT_ORDER_SPILL_ROWS_, Math.max(_PT_ORDER_AUTOFILL_ROWS_, keepRows || 0, lastData + 50));
+  [
+    { col: 4, key: "D", header: "품목명(자동)", build: function (r) { return _pt_orderRowFormulaD_(sq, r); } },
+    { col: 12, key: "L", header: "정산금액(자동)", build: function (r) { return _pt_orderRowFormulaL_(sq, r); } },
+  ].forEach(function (k) {
+    var c1 = orderTab.getRange(1, k.col);
+    var f1 = String(c1.getFormula() || "");
+    var wasSpill = f1.indexOf("ARRAYFORMULA") !== -1;
+    var blocked = wasSpill && String(c1.getDisplayValue() || "").indexOf("#REF") !== -1;
+    var rng = orderTab.getRange(2, k.col, R - 1, 1);
+    var plan = _pt_rowFormulaPlan_(rng.getFormulas(), rng.getValues(), wasSpill, blocked, k.build);
+    //  머리글을 먼저 글자로 — 스필이 남아 있으면 아래 수식과 부딪힌다
+    if (f1 || String(c1.getValue() || "") !== k.header) c1.setValue(k.header);
+    if (plan.changed || wasSpill) { rng.setValues(plan.out); 바꿈[k.key] = true; }
+  });
+  return 바꿈;
+}
+
+/**
+ * 메뉴: 전 업체 발주탭 D·L 을 «줄마다 수식»으로 한 번에 바꾼다 (업체가 쓴 값은 남긴다).
+ * 업체가 시트를 열 때·발주 수집 때·heal 때도 저절로 바뀌지만, 오늘 다 끝내고 싶을 때.
+ * 4분 30초가 되면 멈추고 남은 업체를 알려 준다 — 다시 누르면 이어서 한다(이미 바뀐 곳은 금방 지나간다).
+ */
+function partnerConvertOrderDLToRowFormulas() {
+  var 시작 = Date.now(), files = _pt_listFiles(), 바꿈 = 0, 이미 = 0, 오류 = [], 남음 = [];
+  for (var i = 0; i < files.length; i++) {
+    if (Date.now() - 시작 > 270000) { 남음 = files.slice(i).map(function (f) { return f.name.replace("[협력업체] ", ""); }); break; }
+    try {
+      var ss = SpreadsheetApp.openById(files[i].id);
+      var ot = ss.getSheetByName("발주 및 송장조회");
+      if (!ot) continue;
+      var safe = _pt_resolveViewerTabNameForOrderSpill(ot, null);
+      var r = _pt_ensureOrderRowFormulasDL_(ot, "'" + safe.replace(/'/g, "''") + "'", 0);
+      if (r.D || r.L) 바꿈++; else 이미++;
+      SpreadsheetApp.flush();
+    } catch (e) {
+      오류.push(files[i].name.replace("[협력업체] ", "") + ": " + e.message);
+    }
+  }
+  var 글 = "발주탭 품목명·단가 «줄마다 수식»\n바꿈 " + 바꿈 + " · 이미 됨 " + 이미 +
+    (남음.length ? "\n⏱ 남은 업체 " + 남음.length + "곳 — 다시 누르면 이어서 합니다" : "") +
+    (오류.length ? "\n⚠ " + 오류.slice(0, 10).join("\n⚠ ") : "");
+  Logger.log(글);
+  try { SpreadsheetApp.getUi().alert(글); } catch (eUi) {}
+  return 글;
 }
 
 /**
@@ -2033,51 +2135,19 @@ function _pt_healOrderSpillFormulas(orderTab, viewerTabName) {
       out.bFixed = true;
     }
   } catch (eb) {}
-  // ── D열: ARRAYFORMULA+VLOOKUP 수식 확인/복구 ──
-  //   ★ 2026-07-20: 업체별 조정 스필 행수 존중 — 2 ≤ 끝행 < 500(구 기본)이면 유지, 그외 100행 기본
+  // ── D·L열: ★ 2026-10-05 줄마다 수식 — 빈 칸만 채우고 업체가 쓴 값은 그대로 ──
+  //   여태 heal 은 스필이 막히면(#REF!) 열을 통째로 지우고 ARRAYFORMULA 를 다시 심었다.
+  //   그게 업체가 적은 품명·단가가 사라지던 길 중 하나다 (_pt_ensureOrderRowFormulasDL_).
   var _healKeepRows_ = 0;
   try {
     var _hPrevEnd_ = _pt_formulaSpillEnd_(String(orderTab.getRange("D1").getFormula() || ""));
     if (_hPrevEnd_ >= 2 && _hPrevEnd_ < _PT_ORDER_SPILL_ROWS_) _healKeepRows_ = _hPrevEnd_;
   } catch (_) {}
   try {
-    var d1 = orderTab.getRange("D1");
-    var dF = String(d1.getFormula() || "");
-    var dOk = dF.indexOf("ARRAYFORMULA") !== -1 &&
-      (dF.indexOf("VLOOKUP") !== -1 || dF.indexOf("XLOOKUP") !== -1);
-    var dEnd = _pt_formulaViewerLookupEnd_(dF);
-    // ★ 2026-07-20: 스필 막힘 감지 — 수식은 살아있는데 D1 표시가 #REF!(값이 스필 차단)
-    var dBlocked = false;
-    try { dBlocked = String(d1.getDisplayValue() || "").indexOf("#REF") !== -1; } catch (_) {}
-    if (!dOk || dHasRefBelow || dBlocked || (dEnd > 0 && dEnd < _PT_VIEWER_LOOKUP_END_)) {
-      orderTab.getRange("D2:D" + _PT_ORDER_SPILL_ROWS_).clearDataValidations();
-      var dLr = orderTab.getLastRow();
-      if (dLr >= 2) {
-        orderTab.getRange(2, 4, Math.min(dLr - 1, _PT_ORDER_SPILL_ROWS_), 1).clearContent();
-      }
-      d1.setFormula(_pt_buildOrderItemNameArrayFormula_(sq, _healKeepRows_));
-      out.dFixed = true;
-    }
-  } catch (ed) {}
-  // ── L열: ARRAYFORMULA+VLOOKUP 수식 확인/복구 ──
-  try {
-    var l1 = orderTab.getRange("L1");
-    var lF = String(l1.getFormula() || "");
-    var lOk = lF.indexOf("ARRAYFORMULA") !== -1 &&
-      (lF.indexOf("VLOOKUP") !== -1 || lF.indexOf("XLOOKUP") !== -1);
-    var lEnd = _pt_formulaViewerLookupEnd_(lF);
-    var lBlocked = false;
-    try { lBlocked = String(l1.getDisplayValue() || "").indexOf("#REF") !== -1; } catch (_) {}
-    if (!lOk || lHasRefBelow || lBlocked || (lEnd > 0 && lEnd < _PT_VIEWER_LOOKUP_END_)) {
-      orderTab.getRange("L2:L" + _PT_ORDER_SPILL_ROWS_).clearDataValidations();
-      var lLr = orderTab.getLastRow();
-      if (lLr >= 2) {
-        orderTab.getRange(2, 12, Math.min(lLr - 1, _PT_ORDER_SPILL_ROWS_), 1).clearContent();
-      }
-      l1.setFormula(_pt_buildOrderUnitPriceArrayFormula_(sq, _healKeepRows_));
-      out.lFixed = true;
-    }
-  } catch (el) {}
+    var _dl_ = _pt_ensureOrderRowFormulasDL_(orderTab, sq, _healKeepRows_);
+    out.dFixed = _dl_.D;
+    out.lFixed = _dl_.L;
+  } catch (edl) {}
   // ── 잘못된 열의 =FALSE 데이터 유효성 검사 정리 ──
   try {
     _pt_cleanupStrayValidations_(orderTab);

@@ -53,21 +53,21 @@ function _island_core_(ui) {
   var uidBoxMap = _island_loadIslandUidBoxMap_();
   if (!uidBoxMap || Object.keys(uidBoxMap).length === 0) {
     ui.alert(
-      "ℹ️ 도서산간 탭에서 UID를 읽지 못했습니다.\n\n" +
+      "ℹ️ 세트분리(뉴) 주문라인원장에서 도서산간 주문을 찾지 못했습니다.\n\n" +
       "확인:\n" +
-      "1) 소스 시트의 도서산간 탭(P열)에 UID가 있는지\n" +
-      "2) 시트/탭 접근 권한"
+      "1) 세트분리(뉴)를 돌렸는지 (원장에 로젠택배-도서산간 경로가 있어야 합니다)\n" +
+      "2) 세트분리(뉴) 시트 접근 권한"
     );
     return;
   }
 
   var totalIslandUids = Object.keys(uidBoxMap).length;
 
-  var hubResult = _island_applyToHub_(uidBoxMap);
+  var hubResult = _island_applyToHub_(uidBoxMap, { reconcile: true });
 
   var partnerResult = { applied: 0, skipped: 0, files: 0, errors: [], unmatchedHint: "" };
   if (hubResult.vendorNames && hubResult.vendorNames.length > 0) {
-    partnerResult = _island_applyToPartnerSheets_(uidBoxMap, hubResult.vendorNames);
+    partnerResult = _island_applyToPartnerSheets_(uidBoxMap, hubResult.vendorNames, hubResult.feeByUid);
   }
 
   var elapsed = Math.round((Date.now() - t0) / 1000);
@@ -75,7 +75,7 @@ function _island_core_(ui) {
 
   var msg = "🏝️ 도서산간 추가배송비 적용 완료 (" + elapsed + "초)\n" +
     "═══════════════════════════════\n" +
-    "도서산간 탭 UID: " + totalIslandUids + "건\n" +
+    "세트분리(뉴) 도서산간 고유ID: " + totalIslandUids + "건 (줄마다 5,000 · 세트 10,000)\n" +
     "허브 매칭: " + hubResult.matched + "건 (열=" + feeColLabel + ")\n\n" +
     "── 허브 도서산간배송비 ──\n" +
     "  적용: " + hubResult.applied + "건 / 이미있음: " + hubResult.skipped + "건\n\n" +
@@ -107,7 +107,177 @@ function _island_normUid_(raw) {
     .trim();
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ v3 (2026-10-05) 세트분리(뉴) 로젠 도서산간과 연동 ★
+ *
+ *  > "발주 수집때 제주도서산간을 인식해서 건당..5000원.. 세트상품일경우 10000원"
+ *  > "세트분리(뉴)에 로젠택배 도서산간이 연동되있어 이부분과 연동시켜줘"
+ *
+ *  ① 누가 도서산간인가 — 세트분리(뉴) 「주문라인원장」이 정한다.
+ *     세트분리는 도선료표·우편번호·확정 지역명으로 섬을 가려 「로젠택배-도서산간」
+ *     (대리발송이면 「…(위탁배송)」)으로 보낸다. 산간은 배가 아니라서 일반 로젠으로
+ *     가지만 추가운임은 붙는다(도서권역=산간) — 그것도 센다.
+ *     사람이 도서산간 탭 조치에 「발송」을 적어 일반으로 뺀 건은 경로가 로젠택배로
+ *     바뀌어 원장에 다시 적힌다 → 같은 고유ID 의 «마지막» 기록을 따른다.
+ *     예전 원천(옛 세트분리 「도서산간」 탭)은 더 안 읽는다.
+ *  ② 얼마인가 — 주문 줄마다 5,000원. 품목명에 한글 「세트」가 있으면 10,000원
+ *     (몸통·뚜껑이 따로 나간다). 영문 SET 은 한 박스라 5,000원.
+ *     ★ 2026-10-06: 그 값은 «박스 한 개» 값이다 — 수량(허브 G열)만큼 곱한다.
+ *       > "박스 수량으로 따지니까 도서산간비도 박스당 가격으로 적용되야되"
+ *     이미 금액이 들어 있는 줄은 그대로 둔다(예전 규칙으로 들어간 것 포함).
+ * ══════════════════════════════════════════════════════════════
+ */
+var _ISLAND_SS_ID_          = "1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo";   // 세트분리(뉴)
+var _ISLAND_LEDGER_TAB_     = "주문라인원장";
+var _ISLAND_LEDGER_TAIL_    = 40000;   // 원장 끝에서 이만큼만 본다 (석 달 남짓)
+/*  ★ 적되, 업체 눈에는 안 보이게 ★  (2026-10-06)
+
+    > "대리발송으로 넘어갈때.. 도서산간 추가비용은 빠져야되"
+    > "그리고 도서산간 추가배송비도 목록으로 뽑히게 해줘"   → ㉮
+
+    한 칸을 두 곳이 쓴다.
+      · 업체가 보는 「발주 및 송장조회」 — 업체가 쓸 일이 없는 숫자다. 보이면 안 된다.
+      · 거래명세표 — 반품배송비·기타정산과 함께 «가산 항목»으로 이 칸을 읽는다.
+    안 적으면 명세서가 읽을 것이 없고, 적으면 업체가 본다.
+    그래서 «적고 숨긴다» — 값은 그대로 두고 열만 감춘다. 명세서는 숨은 열도 읽는다.
+
+    _ISLAND_WRITE_TO_VENDOR_ 를 false 로 두면 아예 안 적는다(㉯ — 명세서에도 안 나온다).
+    _ISLAND_HIDE_VENDOR_COL_ 을 false 로 두면 적고 보여 준다(㉰).                 */
+var _ISLAND_WRITE_TO_VENDOR_ = true;
+var _ISLAND_HIDE_VENDOR_COL_ = true;
+
+var _ISLAND_FEE_LINE_       = 5000;
+//  허브 수량 칸 — 머리글: 수집일시 A · 발주업체 B · 고유ID C · 주문일자 D · 이카운트코드 E
+//  · 품목명 F · 수량 G · 수취인 H … 0-based 로 6 이다.
+var _ISLAND_HUB_QTY_COL0_   = 6;
+var _ISLAND_FEE_SET_        = 10000;
+
+/** 순수 — 원장(받침)이 이 허브 줄에 «새로» 금액을 붙여도 되나: 판매현황 전(P 빈칸) · 주소 판정 전 */
+function _island_ledgerMayCharge_(hubRow, judgeCol0) {
+  if (String(hubRow[15] || "").trim()) return false;
+  if (judgeCol0 >= 0 && String(hubRow[judgeCol0] || "").trim()) return false;
+  return true;
+}
+
+/**
+ * 박스 수 — 허브 G열(수량)이다. 못 읽으면 1박스로 본다.  (2026-10-06)
+ *
+ * > "박스 수량으로 따지니까 도서산간비도 박스당 가격으로 적용되야되"
+ *
+ * ★ 2026-10-05 의 「수량과 상관없다」를 되돌린 것이다 ★
+ *   그때는 한 주문에 한 번만 받기로 했는데, 판매현황이 박스 수량으로
+ *   올라가는 것을 보고 사장님이 박스당으로 바로잡았다.
+ *   「없으면 1」로 받는 것이 중요하다 — 빈 칸을 0으로 읽으면 도서산간비가
+ *   통째로 0원이 되고, 그건 아무도 모르게 조용하다.
+ */
+function _island_boxCount_(qty) {
+  var n = Math.floor(Number(String(qty == null ? "" : qty).replace(/[^0-9.-]/g, "")) || 0);
+  return n > 0 ? n : 1;
+}
+
+/** 박스 «한 개»의 도서산간비 — 한글 「세트」면 10,000, 아니면 5,000 */
+function _island_unitFee_(itemName) {
+  return _island_isSetItem_(itemName) ? _ISLAND_FEE_SET_ : _ISLAND_FEE_LINE_;
+}
+
+/** 주문 줄 하나의 도서산간비 — 박스당 값 × 박스 수 */
+/**
+ * 세트 상품인가 — 도서산간비가 갈리는 «한 곳»의 판정.  (2026-10-06)
+ *
+ * ★ 한글 「세트」만이다 ★ 영문 「SET」은 한 박스로 나가는 완제품이라 한 줄
+ *   값(5,000)이고, 한글 「세트」는 몸통+뚜껑처럼 여러 박스가 따로 나가
+ *   택배비가 두 번 든다(10,000).
+ *   > "한글 세트만 적용 영문 set는 한박스로 나가는것들이야"
+ *
+ * ★ 왜 함수로 떼어 두나 ★
+ *   금액(5,000/10,000)과 이카운트 품목코드(OUT00001/OUT000011)가 «같은
+ *   판정»으로 갈려야 한다. 두 곳에 각각 적으면 한쪽만 고쳐져 금액은
+ *   10,000인데 코드는 OUT00001 로 올라가는 날이 온다 — 그건 조용하다.
+ */
+function _island_isSetItem_(itemName) {
+  return String(itemName == null ? "" : itemName).indexOf("세트") !== -1;
+}
+
+function _island_lineFee_(itemName, qty) {
+  return _island_unitFee_(itemName) * _island_boxCount_(qty);
+}
+
+/**
+ * 고유ID 열쇠 — 「수취인/0901-ds-4581」·「d0930000044_S2」·「…#2」·「…|코드」를 같은 번호로.
+ * (CS _cs_orderUid_ · 허브 _pep_uidFromOrdererCell_ 와 같은 규칙)
+ */
+function _island_uidKey_(raw) {
+  var s = _island_normUid_(raw);
+  var cut = Math.max(s.lastIndexOf("/"), s.lastIndexOf("／"));
+  if (cut >= 0) s = s.slice(cut + 1);
+  s = s.replace(/#\d+$/, "");
+  var bar = s.indexOf("|");
+  if (bar >= 0) s = s.slice(0, bar);
+  return s.replace(/_S\d+$/i, "");
+}
+
+/**
+ * 순수 — 원장 머리글·줄들에서 «지금» 도서산간인 고유ID 를 고른다. 시험이 직접 부른다.
+ * @return {Object} { 고유ID: { 권역, 경로 } }
+ */
+function _island_pickFromLedger_(header, rows) {
+  function col(name) {
+    for (var i = 0; i < header.length; i++) if (String(header[i]).replace(/\s/g, "") === name) return i;
+    return -1;
+  }
+  var cUid = col("고유ID"), cRoute = col("경로"), cZone = col("도서권역");
+  if (cUid < 0 || cRoute < 0) return {};
+  var last = {};
+  for (var r = 0; r < rows.length; r++) {
+    var uid = _island_uidKey_(rows[r][cUid]);
+    if (!uid) continue;
+    var route = String(rows[r][cRoute] || "").trim();
+    var zone = cZone >= 0 ? String(rows[r][cZone] || "").trim() : "";
+    var 섬 = route.indexOf("도서산간") !== -1 || zone === "산간";
+    last[uid] = 섬 ? { 권역: zone || "도서", 경로: route } : null;   //  나중 기록이 이긴다
+  }
+  var out = {};
+  for (var k in last) if (last[k]) out[k] = last[k];
+  return out;
+}
+
+/** 세트분리(뉴) 주문라인원장 → { 고유ID: {권역, 경로} } */
 function _island_loadIslandUidBoxMap_() {
+  try {
+    var ss = SpreadsheetApp.openById(_ISLAND_SS_ID_);
+    var tab = ss.getSheetByName(_ISLAND_LEDGER_TAB_);
+    if (!tab) { Logger.log("[도서산간] 세트분리(뉴)에 " + _ISLAND_LEDGER_TAB_ + " 탭 없음"); return null; }
+    var lr = tab.getLastRow(), lc = tab.getLastColumn();
+    if (lr < 2) return null;
+    var header = tab.getRange(1, 1, 1, lc).getValues()[0];
+    var 시작 = Math.max(2, lr - _ISLAND_LEDGER_TAIL_ + 1);
+    //  필요한 세 칸만 읽는다 (원장은 50칸이 넘는다)
+    var 이름들 = ["고유ID", "경로", "도서권역"], 칸들 = [];
+    for (var n = 0; n < 이름들.length; n++) {
+      var at = -1;
+      for (var h = 0; h < header.length; h++) if (String(header[h]).replace(/\s/g, "") === 이름들[n]) { at = h; break; }
+      칸들.push(at);
+    }
+    if (칸들[0] < 0 || 칸들[1] < 0) { Logger.log("[도서산간] 원장 머리글에 고유ID·경로가 없음"); return null; }
+    var 세로 = 칸들.map(function (c) {
+      return c < 0 ? null : tab.getRange(시작, c + 1, lr - 시작 + 1, 1).getValues();
+    });
+    var rows = [];
+    for (var i = 0; i < lr - 시작 + 1; i++) {
+      rows.push([세로[0][i][0], 세로[1][i][0], 세로[2] ? 세로[2][i][0] : ""]);
+    }
+    var map = _island_pickFromLedger_(이름들, rows);
+    Logger.log("[도서산간] 세트분리(뉴) 원장 " + rows.length + "줄 → 도서산간 고유ID " + Object.keys(map).length + "건");
+    return Object.keys(map).length ? map : null;
+  } catch (e) {
+    Logger.log("[도서산간] 세트분리(뉴) 원장 읽기 실패: " + e.message);
+    return null;
+  }
+}
+
+/** (옛) 옛 세트분리 「도서산간」 탭 — 더 안 쓴다. 되돌릴 때를 위해 남긴다 */
+function _island_loadOldIslandTab_() {
   try {
     var ss = SpreadsheetApp.openById(_ISLAND_SOURCE_SHEET_ID);
     var tab = _pt_getSheetByGid(ss, _ISLAND_SOURCE_TAB_GID);
@@ -165,7 +335,8 @@ function _island_findFeeCol1_(headers) {
   if (!headers || !headers.length) return 0;
   for (var i = 0; i < headers.length; i++) {
     var h = String(headers[i] || "").replace(/\s/g, "");
-    if (h.indexOf("도서산간") !== -1) return i + 1;
+    //  표지 열(도서산간 판매갱신)·판정 열(도서산간판정)은 금액 열이 아니다
+    if (h.indexOf("도서산간") !== -1 && h.indexOf("판매갱신") === -1 && h.indexOf("판정") === -1) return i + 1;
   }
   return 0;
 }
@@ -196,6 +367,16 @@ function _island_findQtyCol0_(headers) {
   return -1;
 }
 
+/** 품목명 열 (0-based) — 「품목명」·「상품명」. 「출력품목명」은 아니다. 없으면 -1 */
+function _island_findItemCol0_(headers) {
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || "").replace(/\s/g, "");
+    if (h.indexOf("출력") !== -1) continue;
+    if (h.indexOf("품목명") !== -1 || h.indexOf("상품명") !== -1) return i;
+  }
+  return -1;
+}
+
 /** ARRAYFORMULA 스필로 lastRow가 부풀어 있을 때 C열(코드) 기준 실데이터 끝행 */
 function _island_findLastDataRow_(tab, codeCol1) {
   var lr = tab.getLastRow();
@@ -214,9 +395,12 @@ function _island_findLastDataRow_(tab, codeCol1) {
 //  허브 적용
 // ═══════════════════════════════════════════
 
-function _island_applyToHub_(uidBoxMap) {
+/** opts.reconcile: 이미 금액이 있는 줄의 업체도 업체 시트를 맞춰 본다 (메뉴에서만 — 느리다) */
+function _island_applyToHub_(uidBoxMap, opts) {
+  opts = opts || {};
   var result = {
-    applied: 0, skipped: 0, matched: 0, errors: [], vendorNames: [], feeCol: 0
+    applied: 0, skipped: 0, matched: 0, errors: [], vendorNames: [], feeCol: 0,
+    feeByUid: {}   //  업체 시트가 허브와 «같은 금액»을 쓰게 넘긴다
   };
 
   try {
@@ -242,8 +426,12 @@ function _island_applyToHub_(uidBoxMap) {
     if (uidCol0 < 0) uidCol0 = 2; // C열
     var statusCol0 = _island_findStatusCol0_(headers);
     if (statusCol0 < 0) statusCol0 = 14; // O열
-    var qtyCol0 = _island_findQtyCol0_(headers);
-    if (qtyCol0 < 0) qtyCol0 = 6; // G열
+    var itemCol0 = _island_findItemCol0_(headers);
+    if (itemCol0 < 0) itemCol0 = 5; // F열 품목명
+    var judgeCol0 = -1;
+    for (var jh = 0; jh < headers.length; jh++) {
+      if (String(headers[jh] || "").replace(/\s/g, "") === "도서산간판정") { judgeCol0 = jh; break; }
+    }
 
     var feeArr = [];
     for (var i = 0; i < hubData.length; i++) {
@@ -254,7 +442,7 @@ function _island_applyToHub_(uidBoxMap) {
     var changedRows = [];
 
     for (var r = 0; r < hubData.length; r++) {
-      var uid = _island_normUid_(hubData[r][uidCol0]);
+      var uid = _island_uidKey_(hubData[r][uidCol0]);
       if (!uid || !uidBoxMap[uid]) continue;
 
       result.matched++;
@@ -263,15 +451,23 @@ function _island_applyToHub_(uidBoxMap) {
       if (existing > 0) {
         result.skipped++;
         var vn0 = String(hubData[r][1] || "").trim();
-        if (vn0) vendorSet[vn0] = true;
+        if (vn0 && opts.reconcile) vendorSet[vn0] = true;
+        result.feeByUid[uid] = existing;   //  업체 시트도 허브와 같은 금액으로
         continue;
       }
 
-      var status = statusCol0 >= 0 ? String(hubData[r][statusCol0] || "").trim() : "";
-      var isCombinedShip = status.indexOf("합배송") !== -1;
-      var qty = parseFloat(hubData[r][qtyCol0]) || 1;
-      var boxes = isCombinedShip ? 1 : (uidBoxMap[uid] * qty);
-      var fee = boxes * _ISLAND_FEE_PER_QTY;
+      //  ★ 2026-10-05 원장은 «받침»일 뿐 — 새 금액은 판매현황 전·주소 판정 전인 줄에만
+      //    · 판매현황에 이미 올라간 줄(P열): 옛 주문에 소급해 붙이면 이미 마감한 달
+      //      (9월 등)에 이카운트 OUT00001 만 뒤늦게 생긴다. 업체 시트에는 줄이 없다.
+      //    · 주소 판정을 한 줄(도서산간판정): 그쪽이 주인이다. 세트분리는 이제
+      //      대리판매를 패스하므로 원장에 남은 옛 「도서산간」 기록이 이길 이유가 없다.
+      if (!_island_ledgerMayCharge_(hubData[r], judgeCol0)) continue;
+
+      var status = statusCol0 >= 0 ? String(hubData[r][statusCol0] || "").replace(/\s/g, "") : "";
+      if (status.indexOf("취소") !== -1 || status.indexOf("반품") !== -1 || status.indexOf("불용") !== -1) continue;
+      //  ★ v4 (2026-10-06): 박스 한 개가 5,000 · 한글 「세트」 10,000 — 수량만큼 곱한다
+      var fee = _island_lineFee_(hubData[r][itemCol0], hubData[r][_ISLAND_HUB_QTY_COL0_]);
+      result.feeByUid[uid] = fee;
 
       feeArr[r][0] = fee;
       changedRows.push(_island_colToLetter_(feeCol) + (r + 2));
@@ -286,11 +482,12 @@ function _island_applyToHub_(uidBoxMap) {
       hubTab.getRangeList(changedRows)
         .setNumberFormat("#,##0")
         .setFontColor(_ISLAND_FONT_COLOR)
-        .setFontWeight("bold")
-        .setBackground(_ISLAND_BG_COLOR);
-      _island_addConditionalFormatRule_(hubTab, "A2:" + _island_colToLetter_(feeCol) + "5000", feeCol);
-      SpreadsheetApp.flush();
+        .setFontWeight("bold");
     }
+    //  칠하기는 «직접» (2026-10-06). 금액이 있는 줄은 다 다시 칠한다
+    _island_dropOurConditionalRule_(hubTab, feeCol);
+    _island_paintIslandRows_(hubTab, feeCol, feeArr);
+    if (changedRows.length > 0) SpreadsheetApp.flush();
 
     for (var vn in vendorSet) result.vendorNames.push(vn);
 
@@ -333,8 +530,19 @@ function _island_ensureHubFeeCol_(hubTab) {
 //  업체 시트 적용
 // ═══════════════════════════════════════════
 
-function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
-  var result = { applied: 0, skipped: 0, files: 0, errors: [] };
+function _island_applyToPartnerSheets_(uidBoxMap, vendorNames, feeByUid) {
+  var result = { applied: 0, skipped: 0, files: 0, errors: [], 꺼짐: false };
+  feeByUid = feeByUid || {};
+
+  /*  업체 발주서에는 도서산간비를 안 적는다 (2026-10-06 — 위 _ISLAND_WRITE_TO_VENDOR_).
+      «안 했다»는 것을 결과에 남긴다. 조용히 0 으로 돌아오면 다음 사람이
+      「왜 업체 시트에 안 붙었지」를 또 처음부터 쫓는다. */
+  if (!_ISLAND_WRITE_TO_VENDOR_) {
+    result.꺼짐 = true;
+    Logger.log("[ISLAND] 업체 시트에 도서산간비를 적지 않습니다 " +
+      "(_ISLAND_WRITE_TO_VENDOR_ = false). 거래명세표도 이 칸을 못 읽습니다.");
+    return result;
+  }
 
   var files = _pt_listFiles();
   if (!files || !files.length) return result;
@@ -359,6 +567,13 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
       if (!orderTab || orderTab.getLastRow() < 2) continue;
 
       var feeCol = _island_ensurePartnerFeeCol_(orderTab);
+      /*  ★ 업체 눈에는 안 보이게 ★  (2026-10-06 — ㉮)
+          값은 명세서가 읽어야 하니 지우지 않는다. 열만 감춘다.
+          이미 감춰져 있어도 다시 불러 탈이 없다. 사람이 펼쳐 보면 그대로 보인다 —
+          감추는 것은 «업체가 쓸 칸이 아니다»라는 표시지, 자물쇠가 아니다.      */
+      if (_ISLAND_HIDE_VENDOR_COL_) {
+        try { orderTab.hideColumns(feeCol); } catch (eHide) {}
+      }
       var dataLr = _island_findLastDataRow_(orderTab, 3); // C=이카운트코드
       if (dataLr < 2) continue;
 
@@ -370,7 +585,6 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
       var uidColIdx = _island_findUidCol0_(headers);
       if (uidColIdx < 0) uidColIdx = 12; // M열 폴백
       var statusColIdx = _island_findStatusCol0_(headers);
-      var qtyColIdx = _island_findQtyCol0_(headers);
 
       var oColArr = [];
       for (var i = 0; i < data.length; i++) {
@@ -380,17 +594,19 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
       var changedRows = [];
 
       for (var r = 0; r < data.length; r++) {
-        var uid = _island_normUid_(data[r][uidColIdx]);
+        var uid = _island_uidKey_(data[r][uidColIdx]);
         if (!uid || !uidBoxMap[uid]) continue;
 
         var existing = Number(data[r][feeCol - 1]) || 0;
         if (existing > 0) { result.skipped++; continue; }
 
-        var status = statusColIdx !== -1 ? String(data[r][statusColIdx] || "").trim() : "";
-        var isCombinedShip = status.indexOf("합배송") !== -1;
-        var qty = qtyColIdx !== -1 ? (parseFloat(data[r][qtyColIdx]) || 1) : 1;
-        var boxes = isCombinedShip ? 1 : (uidBoxMap[uid] * qty);
-        var fee = boxes * _ISLAND_FEE_PER_QTY;
+        var status = statusColIdx !== -1 ? String(data[r][statusColIdx] || "").replace(/\s/g, "") : "";
+        if (status.indexOf("취소") !== -1 || status.indexOf("반품") !== -1 || status.indexOf("불용") !== -1) continue;
+        //  ★ v3: 허브가 정한 금액만 — 허브가 안 붙인 줄(이미 판매현황에 올라갔거나
+        //    주소 판정이 일반이라 한 줄)은 업체 시트에도 안 붙인다. 업체 시트(월마감 정산)와
+        //    이카운트 OUT00001 이 늘 같이 간다.
+        var fee = feeByUid[uid];
+        if (!fee) continue;
 
         oColArr[r][0] = fee;
         changedRows.push(_island_colToLetter_(feeCol) + (r + 2));
@@ -402,14 +618,21 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames) {
           .setNumberFormat("#,##0")
           .setFontColor(_ISLAND_FONT_COLOR)
           .setFontWeight("bold");
-        _island_addConditionalFormatRule_(
-          orderTab,
-          "A2:" + _island_colToLetter_(feeCol) + "5000",
-          feeCol
-        );
         result.files++;
         result.applied += changedRows.length;
       }
+
+      /*  ★ 칠하기는 «열 때마다 · 직접» ★  (2026-10-06)
+
+          > "발주허브는 되는데 업체 발주 시트에는 안되"
+          > "직접 칠하는 쪽으로 바꿔줘"
+
+          여태 조건부 서식을, 그것도 「금액을 새로 쓸 때」 안에서만 걸었다.
+          금액이 이미 적힌 시트는 그 길로 안 들어가 영영 안 고쳐졌다.
+          이제 시트를 연 자리에서 옛 규칙을 걷고 금액 있는 줄을 다 칠한다.  */
+      _island_dropOurConditionalRule_(orderTab, feeCol);
+      var 칠한수 = _island_paintIslandRows_(orderTab, feeCol, oColArr);
+      if (칠한수 && !changedRows.length) result.files++;   //  칠하기만 한 시트도 셈에 든다
 
       SpreadsheetApp.flush();
 
@@ -456,30 +679,70 @@ function _island_findQtyCol_(headers) { return _island_findQtyCol0_(headers); }
 //  조건부서식
 // ═══════════════════════════════════════════
 
-function _island_addConditionalFormatRule_(tab, rangeA1, feeCol) {
+/**
+ * 도서산간 줄을 «직접» 칠한다 — 줄 전체.  (2026-10-06)
+ *
+ * > "직접 칠하는 쪽으로 바꿔줘"
+ *
+ * ★ 조건부 서식을 접은 까닭 ★
+ *   같은 일로 세 번 걸렸다 — 범위가 금액 칸에서 끊겼고, 옛 규칙을 안 갈아
+ *   끼웠고, 업체 시트가 아예 안 열렸다. 게다가 «고쳐졌는지 확인할 길이
+ *   없다» — 서식 규칙은 값이 아니라 읽어 볼 수가 없어 매번 사람에게
+ *   물어야 했다. 직접 칠하면 변수가 하나로 준다.
+ *
+ * ★ 금액이 있는 줄은 «다 다시» 칠한다 ★
+ *   새로 붙은 줄만 칠하면, 전에 붙은 줄은 영영 안 바뀐다 — 그게 이번에
+ *   허브와 업체 시트가 갈렸던 까닭이다. 여러 번 돌아도 결과가 같다.
+ *
+ * @param {Sheet} tab
+ * @param {number} feeCol  도서산간비 칸 (1부터)
+ * @param {Array<Array<*>>} feeVals  2행부터의 도서산간비 값 (한 줄에 한 칸)
+ * @return {number} 칠한 줄 수
+ */
+function _island_paintIslandRows_(tab, feeCol, feeVals) {
+  try {
+    var 끝열 = Math.max(tab.getLastColumn(), feeCol);
+    if (끝열 < 1) return 0;
+    var 끝자 = _island_colToLetter_(끝열);
+    var 줄들 = [];
+    for (var i = 0; i < feeVals.length; i++) {
+      if ((Number(feeVals[i][0]) || 0) > 0) 줄들.push("A" + (i + 2) + ":" + 끝자 + (i + 2));
+    }
+    if (!줄들.length) return 0;
+    //  한 번에 — 줄마다 부르면 백 줄에 백 번 왕복한다
+    tab.getRangeList(줄들).setBackground(_ISLAND_BG_COLOR);
+    return 줄들.length;
+  } catch (e) {
+    try { Logger.log("[ISLAND] 줄 칠하기 실패(" + tab.getName() + "): " + e.message); } catch (_) {}
+    return 0;
+  }
+}
+
+/**
+ * 우리가 걸어 둔 옛 조건부 서식을 걷는다.  (2026-10-06)
+ *
+ * ★ 한 값에 주인은 하나 ★ 직접 칠하기로 옮겼는데 옛 규칙이 남아 있으면,
+ *   규칙이 직접 칠한 것을 덮어 「왜 아직 금액 칸만 보라색이지」가 된다.
+ *   우리 것만 고른다(같은 칸 + >0) — 사람이 걸어 둔 규칙은 안 건드린다.
+ */
+function _island_dropOurConditionalRule_(tab, feeCol) {
   try {
     var colLetter = _island_colToLetter_(feeCol);
-    var formula = '=AND($' + colLetter + '2<>"", $' + colLetter + '2>0)';
-
-    var existingRules = tab.getConditionalFormatRules() || [];
-    for (var i = 0; i < existingRules.length; i++) {
-      var bc = existingRules[i].getBooleanCondition();
+    var 있던것 = tab.getConditionalFormatRules() || [];
+    var 남길것 = [], 뗀것 = 0;
+    for (var i = 0; i < 있던것.length; i++) {
+      var 우리것 = false;
+      var bc = 있던것[i].getBooleanCondition();
       if (bc) {
         var v = bc.getCriteriaValues();
         if (v && v.length > 0 && String(v[0]).indexOf("$" + colLetter + "2") !== -1 &&
-            String(v[0]).indexOf(">0") !== -1) return;
+            String(v[0]).indexOf(">0") !== -1) 우리것 = true;
       }
+      if (우리것) 뗀것++; else 남길것.push(있던것[i]);
     }
-
-    existingRules.unshift(
-      SpreadsheetApp.newConditionalFormatRule()
-        .whenFormulaSatisfied(formula)
-        .setBackground(_ISLAND_BG_COLOR)
-        .setRanges([tab.getRange(rangeA1)])
-        .build()
-    );
-    tab.setConditionalFormatRules(existingRules);
-  } catch (e) {}
+    if (뗀것) tab.setConditionalFormatRules(남길것);
+    return 뗀것;
+  } catch (e) { return 0; }
 }
 
 function _island_colToLetter_(col) {
