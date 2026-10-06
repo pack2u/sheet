@@ -4472,7 +4472,27 @@ function _po_collectSilentCore_(withSalesRebuild) {
   //     (그 앞에서도 판정한다)이 받는다.
   var _islElapsed_ = new Date() - startTime;
   if (_islElapsed_ > 240000) {
-    Logger.log("[ISLAND] 수집이 " + Math.round(_islElapsed_ / 1000) + "초를 써서 도서산간 판정을 이번 회차엔 건너뜁니다");
+    /*  ★ 건너뛰고 «끝내지» 않는다 ★  (2026-10-06)
+
+        > "상품정보시트 발주 수집시 자동으로 도서산간이 안먹은거 같은데"
+
+        2026-10-06 09:30 회차가 09:35:58 에 끝났다 — 약 6분. 그래서 여기서
+        건너뛰었고, 101줄이 판정 없이 남았다.
+        받침도 없었다 — 자동 판매현황 갱신(silent)은 「바로 앞에서 이미
+        했다」고 보고 판정을 안 한다. 그러니 수집이 늘 4분을 넘기는 동안은
+        «자동으로는 영영» 안 붙었다. 사람이 메뉴를 눌러야만 붙었고,
+        그걸 아무도 모른다 — 오류가 아니라 «안 붙는» 것이라서.
+
+        그래서 일회성 트리거로 이어달린다. 판정만 제 6분을 가지고 돈다.  */
+    var _돌릴말 = "[ISLAND] 수집이 " + Math.round(_islElapsed_ / 1000) +
+      "초를 써서 도서산간 판정을 이번 회차엔 건너뜁니다";
+    var _이어 = { ok: false, why: "이어달리기 함수가 없습니다" };
+    try {
+      if (typeof _isj_scheduleCatchUp_ === "function") _이어 = _isj_scheduleCatchUp_();
+    } catch (eSch) { _이어 = { ok: false, why: String(eSch.message || eSch) }; }
+    Logger.log(_돌릴말 + (_이어.ok
+      ? " — 90초 뒤에 판정만 따로 돕니다 (partnerIslandCatchUp_)"
+      : " — ★ 이어달리기도 못 걸었습니다: " + _이어.why + " ★"));
   } else {
     try {
       if (typeof _island_judgeHubByAddress_ === "function") _island_judgeHubByAddress_();

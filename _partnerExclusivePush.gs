@@ -1973,6 +1973,11 @@ var _PEP_RESUME_KINDS_ = [
   { fn: "_par_resume_", key: "_PAR_REFIX_CURSOR" },     // 일일마감 재매칭
   { fn: "_pea_continueResume_", key: "_PEA_RESUME_STATE" }, // 대리공급 마감
   { fn: "_pms_continueResume_", key: "_PMS_RESUME_STATE" }, // 월정산
+  /*  도서산간 판정 이어달리기 (2026-10-06 · _partnerIslandJudge.gs)
+      수집이 4분을 넘겨 판정을 건너뛸 때 걸린다. 깃발(_ISJ_CATCHUP_PENDING)을
+      걸 때 세우고 돌 때 지우므로, 위 「커서가 없으면 다 쓴 것」 규칙이
+      그대로 맞는다 — 살아 있는 것을 치우지 않는다.                    */
+  { fn: "partnerIslandCatchUp_", key: "_ISJ_CATCHUP_PENDING" },
 ];
 
 /** 지금 트리거가 몇 개인가 — 읽기만 한다 */

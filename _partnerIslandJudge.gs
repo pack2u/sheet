@@ -384,3 +384,115 @@ function _isj_judgeCol_(hubTab, hdr) {
   hubTab.setColumnWidth(col, 220);
   return col;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   수집이 시간을 다 써서 «건너뛴» 도서산간을 뒤이어 한다
+   2026-10-06
+
+   > "상품정보시트 발주 수집시 자동으로 도서산간이 안먹은거 같은데"
+
+   ★ 실제로 안 먹었다 ★
+     2026-10-06 09:30 회차가 09:35:58 에 끝났다 — 약 6분, GAS 한도에
+     거의 닿았다. 수집은 「이미 4분을 썼으면 도서산간을 건너뛴다」로
+     되어 있다(뒤의 판매현황 갱신을 지키려고). 그래서 101줄이 판정 없이
+     남았고, 「도서산간판정」 칸도 아예 안 생겼다 — 그 칸은 판정이 돌 때
+     만들어지기 때문이다.
+
+   ★ 받침이 없었다 ★
+     자동 판매현황 갱신(silent)은 「바로 앞에서 이미 했다」고 보고 판정을
+     안 한다. 그러니 수집이 늘 4분을 넘기는 동안은 «자동으로는 영영»
+     안 붙는다. 사람이 메뉴를 눌러야만 붙었다 — 그걸 아무도 모른다.
+
+   ★ 그래서 이어달린다 ★
+     건너뛴 그 자리에서 일회성 트리거를 걸어, 판정만 제 6분을 가지고 돈다.
+     이 저장소가 이미 쓰는 방식이고(_PEP_RESUME_KINDS_), 자리 압박까지
+     그쪽이 다룬다 — 같은 체계에 등록해 쓴다.
+
+   ★ 깃발을 쓰는 까닭 ★
+     그 체계는 「커서가 없으면 다 쓴 트리거」로 보고 치운다. 깃발이 없으면
+     내 «살아 있는» 이어달리기가 남의 자리 확보에 치워질 수 있다.
+     걸 때 세우고, 돌면 지운다.
+   ══════════════════════════════════════════════════════════════ */
+
+var _ISJ_CATCHUP_FN_   = "partnerIslandCatchUp_";
+var _ISJ_CATCHUP_FLAG_ = "_ISJ_CATCHUP_PENDING";
+
+/** 내가 건 일회성 트리거만 지운다 — 남의 것은 안 건드린다 */
+function _isj_dropCatchUpTriggers_() {
+  var k = 0;
+  try {
+    var all = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].getHandlerFunction() === _ISJ_CATCHUP_FN_) { ScriptApp.deleteTrigger(all[i]); k++; }
+    }
+  } catch (e) { Logger.log("[ISLAND] 이어달리기 정리 실패: " + e.message); }
+  return k;
+}
+
+/**
+ * 조금 뒤에 판정만 다시 한다.
+ *
+ * @param {number=} delayMs 기본 90초 — 수집이 끝나고 잠금이 풀릴 만큼
+ * @return {{ok:boolean, why:string}}
+ */
+function _isj_scheduleCatchUp_(delayMs) {
+  var out = { ok: false, why: "" };
+  var props = null;
+  try { props = PropertiesService.getScriptProperties(); } catch (e) {}
+  //  ★ 깃발을 «먼저» 세운다 ★ 걸고 나서 세우면 그 사이에 남이 치울 수 있다
+  if (props) { try { props.setProperty(_ISJ_CATCHUP_FLAG_, String(new Date().getTime())); } catch (e) {} }
+  _isj_dropCatchUpTriggers_();
+
+  function 걸기() {
+    ScriptApp.newTrigger(_ISJ_CATCHUP_FN_).timeBased().after(delayMs || 90 * 1000).create();
+  }
+  try { 걸기(); out.ok = true; return out; }
+  catch (e1) { out.why = String(e1 && e1.message ? e1.message : e1); }
+
+  //  자리가 없을 때가 대부분이다 — 다 쓴 일회성 트리거를 치우고 한 번 더
+  var 치움 = 0;
+  try { if (typeof _pep_sweepDeadResumeTriggers_ === "function") 치움 = _pep_sweepDeadResumeTriggers_(); } catch (e) {}
+  if (치움 > 0) {
+    try { 걸기(); out.ok = true; out.why = ""; return out; }
+    catch (e2) { out.why = String(e2 && e2.message ? e2.message : e2); }
+  }
+
+  /*  ★ 못 걸었으면 «말한다» ★ 조용히 넘어가면 오늘 일이 그대로 되풀이된다.
+      깃발을 지워 둔다 — 안 지우면 남의 자리 확보가 내 것을 「살아 있다」고
+      보고 못 치운다.                                                    */
+  if (props) { try { props.deleteProperty(_ISJ_CATCHUP_FLAG_); } catch (e) {} }
+  Logger.log("[ISLAND] 이어달리기를 못 걸었습니다 (치운 것 " + 치움 + "개): " + out.why +
+    " — 메뉴 「🏝️ 도서산간 주소 판정 (판매현황 전)」을 손으로 눌러 주세요");
+  try {
+    if (typeof _chat_sendText_ === "function") {
+      _chat_sendText_("🏝️ 도서산간 판정을 이번 회차에 못 했고 이어달리기도 못 걸었습니다.\n" +
+        "메뉴 「🏝️ 도서산간 주소 판정 (판매현황 전)」을 눌러 주세요.");
+    }
+  } catch (e) {}
+  return out;
+}
+
+/** 일회성 트리거가 부르는 것 — 판정과 원장 받침을 제 6분으로 돈다 */
+function partnerIslandCatchUp_() {
+  //  깃발을 먼저 지운다 — 여기서 터져도 트리거가 「살아 있는 것」으로 남지 않게
+  try { PropertiesService.getScriptProperties().deleteProperty(_ISJ_CATCHUP_FLAG_); } catch (e) {}
+  _isj_dropCatchUpTriggers_();
+
+  var 글 = [];
+  try {
+    var r = _island_judgeHubByAddress_();
+    글.push("판정 — 본 " + (r && r.본 != null ? r.본 : "?") +
+      " · 섬 " + (r && r.섬 != null ? r.섬 : "?") +
+      " · 일반 " + (r && r.일반 != null ? r.일반 : "?") +
+      " · 미확인 " + (r && r.미확인 != null ? r.미확인 : "?") +
+      (r && r.글 ? " (" + r.글 + ")" : ""));
+  } catch (e) { 글.push("판정 실패: " + (e.message || e)); }
+
+  try {
+    if (typeof _trigger_islandShipping_ === "function") { _trigger_islandShipping_(); 글.push("원장 받침 돌렸습니다"); }
+  } catch (e) { 글.push("원장 받침 실패: " + (e.message || e)); }
+
+  var 말 = "[ISLAND_CATCHUP] " + 글.join(" · ");
+  Logger.log(말);
+  return 말;
+}
