@@ -85,10 +85,10 @@ var _PTS_ISSUER_ROWS_ = [
   ["VAT 기준", "포함"],
   ["품목 표시", "품목별합산"],
   ["PDF 폴더ID", ""],
-  ["메일 제목", "[팩투유] {거래처명} {대상월} 거래명세표"],
+  ["메일 제목", "[팩투유] {거래처명} {기간} 거래명세표"],
   ["메일 본문",
     "안녕하세요, {거래처명} 담당자님.\n\n" +
-    "{대상월} 거래명세표를 첨부로 보내드립니다.\n" +
+    "{기간} 거래명세표를 첨부로 보내드립니다.\n" +
     "합계 {합계}원 (공급가액 {공급가액} / 세액 {세액} / {건수}건)\n\n" +
     "확인 후 회신 부탁드립니다.\n감사합니다.\n\n주식회사 팩투유"],
   ["발신자 표시이름", "주식회사 팩투유"],
@@ -1003,7 +1003,9 @@ function _pts_exportPdf_(ss, tab, fileName, folder) {
     "?format=pdf&size=A4&portrait=true&fitw=true" +
     "&sheetnames=false&printtitle=false&pagenumbers=true" +
     "&gridlines=false&fzr=false&horizontal_alignment=CENTER" +
-    "&top_margin=0.5&bottom_margin=0.5&left_margin=0.4&right_margin=0.4" +
+    /*  좌우 여백 2배 (2026-10-06) — "좌우측 여백을 지금은 2배로".
+        0.4 → 0.8 인치. fitw=true 라 폭이 줄어든 만큼 표가 작게 들어간다.    */
+    "&top_margin=0.5&bottom_margin=0.5&left_margin=0.8&right_margin=0.8" +
     "&gid=" + tab.getSheetId();
 
   var res = UrlFetchApp.fetch(url, {
@@ -1021,10 +1023,23 @@ function _pts_exportPdf_(ss, tab, fileName, folder) {
   return folder.createFile(blob);
 }
 
+/**
+ * 메일 제목·본문의 {…} 을 채운다.
+ *
+ * ★ {대상월} 은 «실제 거래기간»이다 ★  (2026-10-06)
+ *   > "대상월이 아니라 몇월 몇일이어야지.. 일일 거래명세서인데"
+ *
+ *   월 단위로 뽑으면 「2026년 10월」, 하루치로 뽑으면 「2026-10-06」 이 찍힌다.
+ *   이름은 「대상월」로 두었다 — 공급자 탭에 이미 그 이름으로 적혀 있어서,
+ *   토큰을 바꾸면 사장님이 두 칸을 손으로 고쳐야 한다. 뜻만 넓힌다.
+ *   새로 적을 때는 {기간} 을 쓰면 된다 — 같은 값이고 이름이 솔직하다.
+ */
 function _pts_fillTokens_(text, ctx) {
+  var 기간 = ctx.periodLabel || ctx.ymLabel;
   return String(text || "")
     .replace(/\{거래처명\}/g, ctx.vendorName)
-    .replace(/\{대상월\}/g, ctx.ymLabel)
+    .replace(/\{기간\}/g, 기간)
+    .replace(/\{대상월\}/g, 기간)
     .replace(/\{합계\}/g, ctx.total)
     .replace(/\{공급가액\}/g, ctx.supply)
     .replace(/\{세액\}/g, ctx.vat)
@@ -1036,7 +1051,7 @@ function _pts_comma_(n) {
   return String(Math.round(_pms_toNumber_(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-function _pts_sendMail_(issuer, vendor, ym, result, pdfFile) {
+function _pts_sendMail_(issuer, vendor, ym, result, pdfFile, periodLabel) {
   var to = String(vendor.emails || "")
     .split(/[,;\s]+/)
     .filter(function (s) { return s.indexOf("@") !== -1; })
@@ -1047,6 +1062,7 @@ function _pts_sendMail_(issuer, vendor, ym, result, pdfFile) {
   var ctx = {
     vendorName: vendor.name || vendor.fileName,
     ymLabel: p.yyyy + "년 " + p.m + "월",
+    periodLabel: String(periodLabel || "").trim(),
     total: _pts_comma_(result.total),
     supply: _pts_comma_(result.supply),
     vat: _pts_comma_(result.vat),
@@ -1096,7 +1112,7 @@ function _pts_issueWithPack_(ss, vendor, ym, issuer, pack, opts) {
     var pdf = _pts_exportPdf_(ss, result.tab, fname, folder);
     result.pdfUrl = pdf.getUrl();
     if (opts.mail) {
-      var m = _pts_sendMail_(issuer, vendor, ym, result, pdf);
+      var m = _pts_sendMail_(issuer, vendor, ym, result, pdf, pack.periodLabel);
       result.mailNote = m.sent ? "발송 " + m.note : "미발송(" + m.note + ")";
     }
   }
