@@ -262,6 +262,16 @@ function _island_judgeHubByAddress_() {
     var lc = hubTab.getLastColumn();
     var hdr = hubTab.getRange(1, 1, 1, lc).getDisplayValues()[0];
     var judgeCol = _isj_judgeCol_(hubTab, hdr);
+
+    /*  ★ 줄 전체 칠하기 규칙을 «늘» 손본다 ★  (2026-10-06)
+
+        > "현재 도서산간비만 보라색인데 행 전체가 보라색으로 수정해줘"
+
+        아래에서는 «새로 칠할 것이 있을 때»만 규칙을 건다. 그런데 이미 금액이
+        적혀 있는 줄만 남은 날에는 새로 칠할 것이 없어, 좁던 옛 규칙이 영영
+        그대로다 — 오늘 허브가 그 상태였다. 그래서 여기서 한 번 더 부른다.
+        같은 규칙을 다시 넣는 일이라 여러 번 돌아도 결과가 같다.          */
+    _island_addConditionalFormatRule_(hubTab, "A2:" + _island_colToLetter_(feeCol) + "5000", feeCol);
     var lr = _isj_lastRow_(hubTab);
     if (lr < 2) { 결과.글 = "허브에 주문이 없습니다"; return 결과; }
     var n = lr - 1;

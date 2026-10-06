@@ -618,24 +618,46 @@ function _island_addConditionalFormatRule_(tab, rangeA1, feeCol) {
     var colLetter = _island_colToLetter_(feeCol);
     var formula = '=AND($' + colLetter + '2<>"", $' + colLetter + '2>0)';
 
-    var existingRules = tab.getConditionalFormatRules() || [];
-    for (var i = 0; i < existingRules.length; i++) {
-      var bc = existingRules[i].getBooleanCondition();
+    /*  ★ 줄 «전체»를 칠한다 ★  (2026-10-06)
+
+        > "현재 도서산간비만 보라색인데 행 전체가 보라색으로 수정해줘"
+
+        여태 범위를 「A2:<도서산간비 칸>5000」으로 걸어, 그 칸 «뒤»의 열
+        (택배사 등)은 안 칠해졌다. 눈으로는 금액 칸만 보라색으로 보인다.
+        범위를 부르는 쪽이 정하면 자리마다 또 어긋나므로, 여기서 그 시트의
+        «지금 쓰는 너비»로 다시 잡는다 — 열이 늘어도 따라간다.
+        (받은 rangeA1 은 그 시트에 규칙이 없을 때의 대비값으로만 쓴다.)   */
+    var 끝열 = 0;
+    try { 끝열 = tab.getLastColumn(); } catch (e0) {}
+    if (끝열 < feeCol) 끝열 = feeCol;
+    var 범위 = 끝열 > 0 ? ("A2:" + _island_colToLetter_(끝열) + "5000") : rangeA1;
+
+    /*  ★ 옛 규칙은 «갈아 끼운다» ★
+        전에는 「같은 칸을 보는 규칙이 있으면 그냥 돌아간다」였다. 그래서
+        범위가 좁던 옛 규칙이 남아 있는 시트는 고쳐도 영영 안 넓어졌다 —
+        이 글을 쓰는 지금 허브가 그 상태다. 떼고 새로 넣는다.
+        우리가 만든 것만 고른다(같은 칸 + >0) — 사람이 걸어 둔 규칙은 안 건드린다. */
+    var 남길것 = [];
+    var 있던것 = tab.getConditionalFormatRules() || [];
+    for (var i = 0; i < 있던것.length; i++) {
+      var 우리것 = false;
+      var bc = 있던것[i].getBooleanCondition();
       if (bc) {
         var v = bc.getCriteriaValues();
         if (v && v.length > 0 && String(v[0]).indexOf("$" + colLetter + "2") !== -1 &&
-            String(v[0]).indexOf(">0") !== -1) return;
+            String(v[0]).indexOf(">0") !== -1) 우리것 = true;
       }
+      if (!우리것) 남길것.push(있던것[i]);
     }
 
-    existingRules.unshift(
+    남길것.unshift(
       SpreadsheetApp.newConditionalFormatRule()
         .whenFormulaSatisfied(formula)
         .setBackground(_ISLAND_BG_COLOR)
-        .setRanges([tab.getRange(rangeA1)])
+        .setRanges([tab.getRange(범위)])
         .build()
     );
-    tab.setConditionalFormatRules(existingRules);
+    tab.setConditionalFormatRules(남길것);
   } catch (e) {}
 }
 
