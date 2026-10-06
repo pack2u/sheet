@@ -87,6 +87,12 @@ var _PTS_ISSUER_ROWS_ = [
   ["담당자 메일", ""],
   ["입금계좌", "IBK기업은행 458-050724-01-018 (예금주: 주식회사 팩투유)"],
   ["", ""],
+  /*  ★ 글꼴 ★  (2026-10-06)
+      > "폰트를 고딕으로 해줘 둥근 고딕말고"
+      「맑은 고딕」은 구글 시트에 없어 둥근 글씨로 떨어졌다.
+      Noto Sans KR 은 구글 시트 기본 목록에 있는 각진 고딕이다.
+      다른 글꼴을 쓰려면 이 칸만 바꾸면 된다 — 시트 글꼴 목록의 이름 그대로.  */
+  ["글꼴", "Noto Sans KR"],
   ["VAT 기준", "포함"],
   ["품목 표시", "품목별합산"],
   /*  PDF 를 쌓아 둘 드라이브 폴더. 그 안에 「2026-10」 처럼 달 폴더를 만들어 넣는다.
@@ -808,7 +814,11 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
       규격은 거의 늘 비어 있으니 거기서 떼어 품목코드에 준다.
       fitw=true 라 총폭이 조금 달라져도 인쇄는 알아서 맞춘다 — 잘림은 칸 문제지
       인쇄 배율 문제가 아니다. 그래서 «아래 줄바꿈»을 같이 켠다.           */
-  var W = [52, 124, 196, 44, 44, 74, 88, 82]; // A~H ≈ 704px — A4 세로에 맞는 폭
+  /*  ★ D 칸은 품목표에서는 「규격」이지만 요약줄에서는 「공급가액 값」이다 ★
+      2026-10-06 에 규격이 늘 비어 있다고 44px 로 줄였더니 456,546 이 「456,54」로
+      잘렸다. 한 칸을 두 줄이 다르게 쓴다 — 좁은 쪽에 맞춰야 한다.
+      대신 품목명에서 뺀다. 품목명은 줄바꿈이 켜져 있어 좁아도 안 잘린다.      */
+  var W = [52, 124, 170, 70, 44, 74, 88, 82]; // A~H ≈ 704px — A4 세로에 맞는 폭
   for (var c = 0; c < W.length; c++) tab.setColumnWidth(c + 1, W[c]);
 
   // ── 제목 ──
@@ -869,7 +879,9 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   if (직인ID) {
     try {
       var 크기 = Math.max(30, Math.min(120, Number(issuer["직인 크기(px)"]) || 66));
-      var 그림 = tab.insertImage(DriveApp.getFileById(직인ID).getBlob(), 4, 5, 4, 2);
+      /*  D 칸(70px) 안에 들어가게 — 여태 D 가 44px 이라 66px 도장이 오른쪽
+          「공급받는자」 칸까지 넘어가 가운데 선을 타고 앉았다. */
+      var 그림 = tab.insertImage(DriveApp.getFileById(직인ID).getBlob(), 4, 5, 2, 0);
       그림.setWidth(크기).setHeight(크기);
     } catch (eSeal) {
       /*  못 찍었으면 «말한다». 도장이 조용히 빠진 명세서는 다시 보내야 한다. */
@@ -1004,7 +1016,10 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
     .setFontSize(7).setFontColor("#999999");
 
   try { tab.setFrozenRows(0); } catch (e) {}
-  try { tab.getRange(1, 1, footRow + 2, _PTS_COLS).setFontFamily("맑은 고딕"); } catch (e) {}
+  try {
+    var 글꼴 = String(issuer["글꼴"] || "").trim() || "Noto Sans KR";
+    tab.getRange(1, 1, footRow + 2, _PTS_COLS).setFontFamily(글꼴);
+  } catch (e) {}
 
   return {
     rows: items.length,
