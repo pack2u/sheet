@@ -498,7 +498,11 @@ function csLotteReturnPickupFromCard(p) {
       본다(여태 그랬다). 로젠이라고 적혀 있으면 로젠으로 간다.
       ══════════════════════════════════════════════════════════════ */
   var pickup = cell("pickup");
-  var pk = pickup.replace(/s/g, "");
+  /*  ★ 2026-10-07: 역슬래시가 빠져 있었다 ★
+      replace(/s/g) 는 «알파벳 s»를 지운다. 공백을 지우려던 것이다.
+      2026-09-11 에 csOrderSearch.gs 에서 같은 오타를 고쳤는데 여기가 빠졌다.
+      한글 수거입력처에는 해가 없었지만 뜻이 틀렸다. */
+  var pk = pickup.replace(/\s/g, "");
   var 로젠인가 = pk.indexOf("로젠") !== -1;
   if (pk && !로젠인가 && pk.indexOf("롯데") === -1) {
     return { ok: false, error: "롯데·로젠 건이 아닙니다 (수거입력처: " + pickup + ")" };

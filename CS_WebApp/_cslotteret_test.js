@@ -128,9 +128,20 @@ ok("배송불가 지역이면 설정 단계에서 알린다",
 
 console.log("\n[7] 화면 — 확인창과 접수자 (사장님 지시 5번)");
 ok("접수 칸이 있다", html.indexOf('id="lrtOpt"') > -1);
+/*  ★ 2026-10-07: 로젠이 붙으면서 이 두 줄의 «모양»이 바뀌었다 ★
+    지켜야 할 뜻은 그대로다 —
+      ① 받는 곳(창고)이 준비 안 됐으면 칸을 내지 않는다
+      ② 우리가 접수할 수 없는 택배사(CJ·한진·대리판매)면 내지 않는다
+    달라진 것은 「롯데냐」가 아니라 「어느 택배사냐」로 갈린다는 점뿐이다. */
 ok("★ 받는 곳이 없으면 안 보인다 ★",
-   /LRT_READY && LRT_READY\.ready\) && lotte/.test(html));
-ok("롯데 건이 아니면 안 보인다", /isLotteTrack\(r\.source, resolveCarrier\(r\)\)/.test(html));
+   /var on = !!\(rdy && rdy\.ready\)/.test(html));
+ok("택배사에 맞는 준비 상태를 본다",
+   /var rdy = who === '롯데' \? LRT_READY : \(who === '로젠' \? LGR_READY : null\)/.test(html));
+ok("우리가 접수할 수 없는 택배사면 안 보인다",
+   /function ledgerReturnCarrier/.test(html) &&
+   /CJ·한진 등 — 우리가 접수할 수 없다/.test(html));
+ok("★ 로젠 건도 접수 칸이 나온다 ★  (2026-10-07)",
+   /runner\.csLogenReturnPickup\(payload\)/.test(html));
 ok("확인창이 있다", html.indexOf('id="lrtModal"') > -1);
 ok("★ 되돌릴 수 없다고 알린다 ★", /취소는 롯데에 직접 연락해야 합니다/.test(html));
 /*  표를 세 줄로 나눠 그리면서 둘 사이가 멀어졌다. 300자 안에 있어야 할

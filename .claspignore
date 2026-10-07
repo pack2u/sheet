@@ -31,6 +31,12 @@ FileStore/**
 # 업체품목수집도 자체 프로젝트다.
 VendorItems/**
 
+# 입금수신도 자체 프로젝트다 (은행 문자 → 입금대장).
+DepositInbox/**
+
+# 로젠 중계기(PHP) — GAS 프로젝트가 아니다
+_logen_relay/**
+
 # 문서 및 비코드 파일
 *.md
 *.xlsx

@@ -4637,7 +4637,7 @@
       <div class="ledger-field lrt-opt" id="lrtOpt" hidden>
         <label class="lrt-check">
           <input type="checkbox" id="lrtWant">
-          <span>롯데 회수 접수도 같이 보냅니다 <b id="lrtWhen"></b></span>
+          <span><b id="lrtWho">롯데</b> 회수 접수도 같이 보냅니다 <b id="lrtWhen"></b></span>
         </label>
         <div class="lrt-hint">체크하면 기록 전에 한 번 더 확인합니다.</div>
       </div>
@@ -4679,7 +4679,7 @@
     <div class="modal-content" style="max-height:88vh;overflow-y:auto;">
       <div class="modal-handle"></div>
       <div class="modal-title">🚚 롯데 회수 접수</div>
-      <div class="lrt-warn">접수하면 기사가 방문합니다. <b>취소는 롯데에 직접 연락해야 합니다.</b></div>
+      <div class="lrt-warn" id="lrtWarn">접수하면 기사가 방문합니다. <b>취소는 롯데에 직접 연락해야 합니다.</b></div>
       <div class="lrt-body" id="lrtBody"></div>
       <div class="lrt-by">접수자 <b id="lrtBy"></b></div>
       <div class="ledger-btns">
@@ -13399,7 +13399,32 @@
     }
 
     /**
-     * 롯데 화물추적 — 「상태」 버튼을 눌렀을 때만 부른다.
+     * API 로 상태를 바로 볼 수 있는 건인가 — 롯데·로젠 **자사출고**.
+     *
+     * ★ isLotteTrack 과 갈라 둔 까닭 ★  (2026-10-07)
+     *   isLotteTrack 은 **롯데 반품접수 칸**(lrtSyncOpt)도 쓴다.
+     *   거기에 로젠을 섞으면 로젠 건에도 롯데 반품 칸이 뜬다 —
+     *   로젠 반품은 아직 화면에 안 붙었다.
+     *   한 함수에 두 뜻을 담지 않는다([[one-value-one-owner]]).
+     */
+    function isApiTrackable(source, carrier) {
+      var c = String(carrier || '').replace(/\s/g, '');
+      if (c) return c.indexOf('롯데') !== -1 || c.indexOf('로젠') !== -1;
+      var src = String(source || '');
+      if (src.indexOf('로젠') !== -1) return true;   // 자사출고 — 이제 API 로 본다
+      if (src.indexOf('CJ') !== -1 || src.indexOf('대한통운') !== -1) return false;
+      if (src.indexOf('한진') !== -1) return false;
+      if (isProxySource(src)) return false;
+      return true;
+    }
+
+    /**
+     * 화물추적 — 「상태」 버튼을 눌렀을 때만 부른다.
+     *
+     * ★ 2026-10-07: 롯데 전용이 아니다 ★
+     *   csTrack 이 송장 자리수로 택배사를 갈라 준다 — 롯데 12자리 / 로젠 11자리.
+     *   data-carrier 가 붙어 있으면 그 값이 우선한다(「롯데조회」 단추가 그렇게 쓴다).
+     *   두 택배사 응답 모양이 같아서 아래 그리는 코드는 손대지 않았다.
      *
      * ★ 자동 조회를 하지 않는 이유 ★
      *   API 쿼터가 하루 10,000건이다. 검색 결과를 그릴 때마다 송장마다 부르면
@@ -13449,7 +13474,7 @@
           btn.textContent = old;
           toast(String((e && e.message) || '통신 실패'), 3200);
         })
-        .csLotteTrack(inv, {});
+        .csTrack(inv, { carrier: btn.getAttribute('data-carrier') || '' });
     }
 
     /**
@@ -13724,10 +13749,11 @@
         var d = invs[i];
         var url = trackingUrl(d, source, carrier);
         html += '<a class="os-inv" href="' + url + '" target="_blank" rel="noopener" onclick="return openTrack(event,this.href)">' + esc(d) + '</a>';
-        // 롯데 건은 사이트로 나가지 않고 여기서 바로 상태를 볼 수 있다
-        if (isLotteTrack(source, carrier)) {
+        // 롯데·로젠 자사출고는 사이트로 나가지 않고 여기서 바로 상태를 볼 수 있다
+        if (isApiTrackable(source, carrier)) {
           html += '<button class="os-copy os-trk" data-inv="' + esc(d) +
-            '" onclick="lotteTrack(this)">상태</button>';
+            '" data-carrier="' + esc(String(carrier || '')) + '"' +
+            ' onclick="lotteTrack(this)">상태</button>';
         } else {
           /* ★ 아는 택배사를 「롯데조회」라 부르지 않는다 ★  (2026-09-15)
              > "택배사 상관없이 다 롯데 조회라고 뜨니"
@@ -13739,7 +13765,8 @@
               ' onclick="return openTrack(event,this.href)">' +
               esc(String(carrier).split(' ').join('').replace(/택배$/, '')) + '조회</a>'
             : '<button class="os-copy os-trk" data-inv="' + esc(d) +
-              '" title="택배사가 안 적힌 줄입니다. 롯데에 물어봅니다"' +
+              '" data-carrier="롯데"' +   /* 일부러 롯데에 묻는 단추다 — 자리수 판정에 맡기지 않는다 */
+              ' title="택배사가 안 적힌 줄입니다. 롯데에 물어봅니다"' +
               ' onclick="lotteTrack(this)">롯데조회</button>';
         }
         if (proxy) {
@@ -14109,23 +14136,66 @@
         .csLogenReturnReady();
     }
 
-    /** 접수 칸을 보일지 정한다. 롯데 건이 아니면 안 보여준다. */
+    /**
+     * 이 반품 건을 «어느 택배사»로 접수하나.  (2026-10-07)
+     *
+     * 기록된 택배사가 가장 정확하고, 없으면 출처로 가른다 —
+     * **isLotteTrack 과 같은 갈래**를 그대로 따라가되 로젠을 빼내지 않는다.
+     * (전에는 로젠이 false 로 떨어져 단추가 아예 안 나왔다)
+     *
+     * @return {'롯데'|'로젠'|''}  '' 면 우리가 접수할 수 없는 건이다
+     */
+    function ledgerReturnCarrier() {
+      var r = CS_ROWS[LEDGER_IDX] || {};
+      var c = String(resolveCarrier(r) || '').replace(/\s/g, '');
+      if (c.indexOf('롯데') !== -1) return '롯데';
+      if (c.indexOf('로젠') !== -1) return '로젠';
+      if (c) return '';                       // CJ·한진 등 — 우리가 접수할 수 없다
+      var src = String(r.source || '');
+      if (src.indexOf('로젠') !== -1) return '로젠';
+      if (src.indexOf('CJ') !== -1 || src.indexOf('대한통운') !== -1) return '';
+      if (src.indexOf('한진') !== -1) return '';
+      if (isProxySource(src)) return '';
+      return '롯데';                           // 종전 기본값 — isLotteTrack 과 같다
+    }
+
+    /** 접수 칸을 보일지 정한다. 우리가 접수할 수 있는 택배사가 아니면 안 보여준다. */
     function lrtSyncOpt() {
       var box = document.getElementById('lrtOpt');
       if (!box) return;
-      var r = CS_ROWS[LEDGER_IDX] || {};
-      var lotte = isLotteTrack(r.source, resolveCarrier(r));
-      var on = !!(LRT_READY && LRT_READY.ready) && lotte;
+      var who = ledgerReturnCarrier();
+      var rdy = who === '롯데' ? LRT_READY : (who === '로젠' ? LGR_READY : null);
+      var on = !!(rdy && rdy.ready);
       box.hidden = !on;
+      var lab = document.getElementById('lrtWho');
+      if (lab && who) lab.textContent = who;
       if (!on) { var w = document.getElementById('lrtWant'); if (w) w.checked = false; }
     }
 
     /** 확인창을 띄운다. 무엇이 어디로 가는지 다 보여준다. */
     function lrtAsk() {
       var r = CS_ROWS[LEDGER_IDX] || {};
-      var to = (LRT_READY && LRT_READY.to) || {};
+      var who = ledgerReturnCarrier();
+      /*  ★ 받는 곳(창고)은 둘이 같은 설정을 쓴다 ★
+          csLogenReturn.gs 의 _lgr_to_() 가 롯데 것(_lrt_to_)을 그대로 부른다 —
+          창고가 둘일 리 없다. 그래서 화면도 LRT_READY.to 하나만 본다. */
+      var to = (LRT_READY && LRT_READY.to) || (LGR_READY && LGR_READY.to) || {};
       var invs = ledgerReturnInvoices();
+
+      /*  ★ 택배사마다 «취소하는 길»이 다르다 ★  (2026-10-07)
+            롯데 — API 에 취소가 없다. 사람이 롯데에 전화해야 한다.
+            로젠 — cancelReserveState 로 바로 취소된다(10/07 실측).
+                   다만 **아직 화면에 취소 단추가 없다** — 담당자가 돌려야 한다.
+          둘을 같은 문장으로 적으면 한쪽은 거짓말이 된다. */
+      var warn = document.getElementById('lrtWarn');
+      if (warn) {
+        warn.innerHTML = who === '로젠'
+          ? '접수하면 기사가 방문합니다. <b>취소가 필요하면 담당자에게 알려 주세요</b> — 로젠은 전산으로 취소됩니다.'
+          : '접수하면 기사가 방문합니다. <b>취소는 롯데에 직접 연락해야 합니다.</b>';
+      }
+
       var rows = [
+        ['택배사', who || '-'],
         ['보내는 분', (r.name || '-') + ' · ' + (r.phone || '-')],
         ['주소', r.addr || '★ 주소가 없습니다 — 접수가 안 됩니다'],
         ['품목', (r.item || '-') + (r.qty ? ' × ' + r.qty : '')],
@@ -14176,16 +14246,22 @@
      */
     function lrtConfirm() {
       var r = CS_ROWS[LEDGER_IDX] || {};
+      var who = ledgerReturnCarrier();
       var b = document.getElementById('lrtOkBtn');
       b.disabled = true; b.textContent = '접수 중…';
       var invs = ledgerReturnInvoices();
-      google.script.run
+
+      var runner = google.script.run
         .withSuccessHandler(function (res) {
           b.disabled = false; b.textContent = '접수';
-          var got = (res && res.invoices) || (res && res.invoice ? [res.invoice] : []);
+          var slips = (res && res.invoices) || (res && res.invoice ? [res.invoice] : []);
+          /* ★ 로젠은 접수 순간 반품송장이 «없다» ★  (2026-10-07 실측)
+             takeNo(접수번호)만 온다. 송장으로 성공을 판정하면 늘 실패로 읽힌다. */
+          var takes = (res && res.takeNos) || [];
+          var got = slips.length ? slips : takes;
 
           /* ★ 하나도 안 됐을 때만 되돌린다 ★
-             일부라도 됐으면 그 송장을 반드시 대장에 남긴다. 안 남기면
+             일부라도 됐으면 그 결과를 반드시 대장에 남긴다. 안 남기면
              사람이 다시 눌러 **이미 접수된 박스를 두 번 접수한다.** */
           if (!got.length) {
             toast('회수 접수 실패 — ' + ((res && res.error) || '알 수 없음'), 4600);
@@ -14195,28 +14271,58 @@
           if (!res.ok) {
             //  반쯤 됐다 — 조용히 넘기면 안 된다. 길게 띄운다.
             toast('★ 일부만 접수됨 ★ ' + res.error + ' · 된 것: ' + got.join(', '), 9000);
-          } else {
-            toast('회수 접수됨 · 반품송장 ' + got.join(', ') +
-              (got.length > 1 ? ' (' + got.length + '박스)' : '') +
+          } else if (slips.length) {
+            toast('회수 접수됨 · 반품송장 ' + slips.join(', ') +
+              (slips.length > 1 ? ' (' + slips.length + '박스)' : '') +
               ' · 집하 ' + res.pickReqYmd, 4200);
+          } else {
+            //  로젠 — 송장은 로젠이 출력해야 나온다. 그 사실을 숨기지 않는다.
+            toast('회수 접수됨 · 접수번호 ' + takes.join(', ') +
+              (takes.length > 1 ? ' (' + takes.length + '박스)' : '') +
+              ' · 반품송장은 로젠이 출력한 뒤에 나옵니다', 5600);
           }
-          LRT_PICKED_INV = got.join(' ');
+
+          /* ★ 접수번호는 «비고»로 흘린다 ★  (2026-10-07)
+             takeNo 는 12자리 숫자다 — **롯데 송장도 12자리**라 「반품송장」 칸에
+             넣으면 나중에 송장으로 오인된다. 대장은 세 앱이 읽는다
+             ([[return-ledger-tab-spec]]) — 한 번 섞이면 번진다.
+             규격의 「칸이 없으면 비고로 흘린다」를 그대로 따른다. */
+          if (!slips.length && takes.length) {
+            var memo = document.getElementById('ledgerMemo');
+            if (memo) {
+              var add = '로젠접수 ' + takes.join(' ');
+              memo.value = memo.value ? (memo.value + ' / ' + add) : add;
+            }
+          }
+
+          /* 접수가 끝났으니 체크를 끈다. 끄지 않으면 submitLedger 가
+             「아직 접수 안 했네」 하고 확인창을 다시 띄운다 —
+             로젠은 송장이 비어 있어서 그 가드에 걸린다. */
+          var w = document.getElementById('lrtWant');
+          if (w) w.checked = false;
+
+          LRT_PICKED_INV = slips.join(' ');
           submitLedger(false, LRT_PICKED_INV);
         })
         .withFailureHandler(function (e) {
           b.disabled = false; b.textContent = '접수';
           toast('회수 접수 실패 — ' + String((e && e.message) || e), 4200);
-        })
-        .csLotteReturnPickup({
-          name: r.name, phone: r.phone, addr: r.addr,
-          item: r.item, qty: r.qty, orderNo: r.orderNo,
-          /* ★ 박스마다 접수한다 ★  (2026-09-09)
-             여태 invs[0] 하나만 넘겨, 원송장이 둘이어도 한 박스만 회수됐다.
-             회수 운송장은 박스마다 붙으므로 원송장 수만큼 접수해야 한다. */
-          orglInvNos: invs,
-          orglInvNo: invs[0] || '',
-          memo: document.getElementById('ledgerMemo').value
         });
+
+      var payload = {
+        name: r.name, phone: r.phone, addr: r.addr,
+        item: r.item, qty: r.qty, orderNo: r.orderNo,
+        /* ★ 박스마다 접수한다 ★  (2026-09-09)
+           여태 invs[0] 하나만 넘겨, 원송장이 둘이어도 한 박스만 회수됐다.
+           회수 운송장은 박스마다 붙으므로 원송장 수만큼 접수해야 한다. */
+        orglInvNos: invs,
+        orglInvNo: invs[0] || '',
+        memo: document.getElementById('ledgerMemo').value
+      };
+
+      //  택배사에 맞는 곳으로 보낸다. 모양은 둘이 같다(csLogenReturnPickup 머리말).
+      if (who === '로젠') runner.csLogenReturnPickup(payload);
+      else runner.csLotteReturnPickup(payload);
     }
 
     /** 접수로 받은 반품송장 — 기록에 실어 보낸다 */
@@ -14261,7 +14367,11 @@
       for (var k = 0; k < ins.length; k++) ins[k].checked = !anyOn;
       ledgerSyncPick();
       lrtInit();
-      ledgerFillFee(r);
+      /*  ★ 2026-10-07: r 이 선언돼 있지 않았다 ★
+          이 함수 안에도, 전역에도 r 이 없어 여기서 ReferenceError 가 났다.
+          오류는 콘솔에만 남고 **반품비 자동 채우기가 조용히 안 됐다.**
+          다른 곳과 같은 자리에서 줄을 집어 온다. */
+      ledgerFillFee(CS_ROWS[LEDGER_IDX] || {});
     }
 
     /** 고른 개수를 단추와 「전체 해제/선택」 글자에 반영한다. */
@@ -14350,6 +14460,11 @@
       var btn = document.getElementById('ledgerSubmitBtn');
       btn.disabled = false;
       btn.textContent = '기록';
+      /*  ★ 2026-10-07: 여기서 회수 접수 준비 상태를 묻는다 ★
+          여태 lrtInit 은 「전체 해제/선택」 단추에서만 불렸다. 그래서 창을 열어도
+          준비 상태를 물어보지 않아 **접수 칸이 아예 안 떴다** — 롯데도 그랬다.
+          창이 열릴 때 묻는 것이 맞다. 한 번 물으면 답을 기억한다(lrtInit 안쪽). */
+      lrtInit();
       document.getElementById('ledgerModal').classList.add('active');
       draftWatch('ledger');
       draftRestore('ledger');

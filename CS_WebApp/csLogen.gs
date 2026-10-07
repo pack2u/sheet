@@ -61,7 +61,7 @@
  * 운영 키를 받기 전까지는 false 로 둔다(그 사이 실수로 운영을 부르지 않게).
  * 키가 들어오면 true 로 올린다.
  */
-var _LOGEN_USE_PROD_ = false;
+var _LOGEN_USE_PROD_ = true;   // 2026-10-07 운영 전환 — 개발계는 스캔 DB 가 없어 쓸 수 없다
 
 var _LOGEN_HOST_DEV_ = "https://topenapi.ilogen.com";
 var _LOGEN_HOST_PROD_ = "https://openapi.ilogen.com";
@@ -489,9 +489,24 @@ function _logen_buildTrack_(inv, row) {
                ("00" + i).slice(-3),
       branch: String(t.branNm || ""),
       branchTel: "",                  // 이력에는 없다. 최종조회에서 채운다.
+      /* ★ salesNm·acptorTyNm 은 «null» 로 온다 ★ (2026-10-07 운영 실측)
+         빈 문자열이 아니라 null 이다. String(null) 은 "null" 이 되므로
+         `|| ""` 를 반드시 거쳐야 한다. 안 그러면 화면에 "null" 이 찍힌다. */
       empNm: String(t.salesNm || "").trim(),
       empTel: "",
-      msg: String(t.acptorTyNm || "").trim()
+      /* 인수자구분명 자리인데 **배송예정 시간대**가 오기도 한다 ("10시~12시").
+         문서에는 "현관/문앞" 예시뿐이다. 둘 다 CS 에 쓸모 있으니 그대로 흘린다. */
+      msg: String(t.acptorTyNm || "").trim(),
+      /* ★ 구간 ★ (2026-10-07 추가)
+         sndBranNm → rcvBranNm 이 "동수원[305]" → "이천터미널[912]" 형태로 온다.
+         문서는 「배송지점명·수하인지점명」이라고만 적어 두었는데, 실제로는
+         **그 스캔에서 화물이 어디서 어디로 갔는지**다.
+         상담원이 화물 위치를 읽는 데 가장 직관적인 값이라 살려 둔다. */
+      leg: (function () {
+        var from = String(t.sndBranNm || "").trim();
+        var to = String(t.rcvBranNm || "").trim();
+        return (from && to) ? (from + " → " + to) : "";
+      })()
     });
   }
   hist.sort(function (a, b) { return a.sortKey < b.sortKey ? -1 : (a.sortKey > b.sortKey ? 1 : 0); });

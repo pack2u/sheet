@@ -47,13 +47,26 @@ function _lgr_to_() {
  */
 function csLogenReturnReady() {
   var to = _lgr_to_();
-  var key = "";
-  try { key = _logen_key_(); } catch (e) { key = ""; }
 
-  if (!key) {
+  /*  ★ 2026-10-07: 중계기를 거치면 GAS 에 키가 없다 ★
+      로젠은 등록된 공인 IP 에서 온 호출만 받는데 Apps Script 는 고정 IP 가 없다.
+      그래서 siot.com 중계기가 대신 부르고, **인증키는 중계기에만** 둔다
+      (csLogen.gs 머리말 · _logen_call_ 의 proxy 갈래).
+      여기서 _logen_key_() 로 「키가 있나」를 물으면 늘 「없다」가 나와
+      **단추가 영영 안 나온다.** 실제로 그랬다 — 배포 @411 에서 칸이 안 떴다.
+
+      그래서 «중계기 주소가 있으면 그것을 준비된 것으로» 본다.
+      중계기 쪽 키가 틀렸는지는 눌러 봐야 안다 — 그때는 로젠이 401 로 답한다. */
+  var 중계 = _logen_proxyUrl_();
+  var key = "";
+  if (!중계) {
+    try { key = _logen_key_(); } catch (e) { key = ""; }
+  }
+
+  if (!중계 && !key) {
     return { ready: false, to: null,
-      reason: "로젠 인증키가 아직 없습니다. 시스템연동신청서 제출 후 " +
-              "_secrets.gs 의 LOGEN_SECRET_KEY_DEV(또는 PROD)에 넣어 주세요." };
+      reason: "로젠을 부를 길이 없습니다. _secrets.gs 의 LOGEN_PROXY_URL(중계기) 또는 " +
+              "LOGEN_SECRET_KEY_PROD(직접 호출) 중 하나를 채워 주세요." };
   }
   if (!to) {
     return { ready: false, to: null,
@@ -326,7 +339,7 @@ function csLogenReturnPing(testInvoice) {
 function _lgr_pickupMany_(p) {
   p = p || {};
   var origs = p.orglInvNos || [];
-  var out = { ok: false, results: [], invoices: [], pickReqYmd: "", error: "" };
+  var out = { ok: false, results: [], invoices: [], takeNos: [], pickReqYmd: "", error: "" };
   if (!origs.length) { out.error = "접수할 원송장이 없습니다."; return out; }
 
   /*  집하일자는 로젠이 정한다. 우리가 지어내지 않는다 —
@@ -342,18 +355,23 @@ function _lgr_pickupMany_(p) {
     });
     if (r.ok) {
       된것++;
-      /*  ★ 로젠은 접수 순간 반품송장을 «안 줄 수 있다» ★
-          응답은 takeNo(접수번호)가 확실하고, 송장번호(slipNo)는 나중에
+      /*  ★ 로젠은 접수 순간 반품송장을 «안 준다» ★
+          응답은 takeNo(접수번호)뿐이고, 송장번호(slipNo)는 나중에
           inquiryReturnStateMulti 로 나온다(규격 §8.2).
-          그때까지는 takeNo 를 적어 둔다 — 빈칸으로 두면 어느 박스가
-          접수됐는지 알 길이 없다. */
+
+          ★ takeNo 를 «반품송장» 자리에 넣지 않는다 ★  (2026-10-07)
+            takeNo 는 12자리 숫자다 — **롯데 송장도 12자리**라 대장에 섞이면
+            나중에 송장으로 오인된다. 대장은 세 앱이 읽는다([[return-ledger-tab-spec]]) —
+            한 번 오염되면 번진다.
+            그래서 **송장 자리는 비워 두고** takeNo 는 따로 돌려준다.
+            화면이 그것을 «비고»에 적는다 — 규격의 「칸이 없으면 비고로 흘린다」 그대로다. */
       out.results.push({
         ok: true, orglInvNo: origs[i],
-        invoice: String(r.slipNo || r.takeNo || ""),
+        invoice: String(r.slipNo || ""),
         takeNo: r.takeNo, error: ""
       });
       if (r.slipNo) out.invoices.push(String(r.slipNo));
-      else out.invoices.push(String(r.takeNo));
+      out.takeNos.push(String(r.takeNo));
     } else {
       out.results.push({ ok: false, orglInvNo: origs[i], invoice: "", error: r.error });
     }
@@ -370,3 +388,18 @@ function _lgr_pickupMany_(p) {
   return out;
 }
 
+
+/**
+ * 화면이 부르는 자리 — 회수 접수(박스 여럿).
+ *
+ * ★ csLotteReturnPickup 과 «같은 모양»으로 돌려준다 ★
+ *   화면(lrtConfirm)이 한 벌로 다루려면 모양이 같아야 한다.
+ *   다만 **로젠은 invoices 가 빈 채로 온다** — 접수 순간 송장이 없다.
+ *   대신 takeNos 가 찬다. 화면은 그것을 보고 성공을 판정한다.
+ *
+ * @param p {name, phone, addr, item, memo, orglInvNos:[원송장…]}
+ * @return {{ok, results, invoices, takeNos, pickReqYmd, error}}
+ */
+function csLogenReturnPickup(p) {
+  return _lgr_pickupMany_(p);
+}
