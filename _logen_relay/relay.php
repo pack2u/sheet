@@ -42,6 +42,9 @@ if (!is_file($cfgPath)) {
 }
 $CFG = require $cfgPath;
 
+/** 올라간 판을 알아보려고 둔다. 고칠 때마다 올린다. */
+const RELAY_VERSION = '2026-10-07a';
+
 /** 부를 수 있는 로젠 API — 여기 없는 이름은 거절한다 */
 const ALLOWED_APIS = [
     // 계약
@@ -50,6 +53,8 @@ const ALLOWED_APIS = [
     'inquiryCargoTrackingMulti', 'inquiryCargoTrackingMultiLast',
     // 주문·송장
     'inquirySlipNoMulti',
+    // 주소로 지점, 분류코드, 제주/연륙도서/산간 여부를 묻는다 (읽기 전용, 2026-10-07 허용)
+    'integratedInquiry',
     // 반품
     'registReturnRequest', 'reverseChkInfoMulti', 'contRtnFares',
     'inquiryReserveStateMulti', 'inquiryReserveStateFixTakeNo',
@@ -74,8 +79,19 @@ function fail($code, $msg) {
 }
 
 // ── 1. 요청 검사 ────────────────────────────────────────
+/*  GET 으로 열면 «무엇이 올라가 있는지» 말해 준다.
+    올리다 끊겨 0바이트가 되면 화면이 하얗게만 나와 원인을 못 찾는다 —
+    실제로 2026-10-07 에 그랬다. 판 번호가 보이면 올라간 것이 맞는지 바로 안다.
+    비밀은 없다. 토큰도 키도 안 보여 준다. */
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
-    fail(405, 'POST 만 받습니다.');
+    http_response_code(200);
+    echo json_encode([
+        'relay'   => 'logen',
+        'version' => RELAY_VERSION,
+        'apis'    => count(ALLOWED_APIS),
+        'note'    => '실제 호출은 POST 로만 받습니다.',
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
 $token = $_SERVER['HTTP_X_PROXY_TOKEN'] ?? '';
