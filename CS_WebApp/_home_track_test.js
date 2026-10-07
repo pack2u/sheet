@@ -97,9 +97,20 @@ ok("invoiceHtml 에 상태 버튼 분기 존재",
 ok("onclick 이 lotteTrack 을 부른다", html.indexOf('onclick="lotteTrack(this)"') > -1);
 ok("★ 어느 택배사인지 실어 보낸다 (롯데·로젠을 서버가 갈라 본다)",
    html.indexOf(".csTrack(inv") > -1 && /data-carrier="/.test(html));
-/*  ★ 반품접수 칸은 여전히 롯데만이다 ★ 둘이 도로 한 함수가 되면 여기서 운다. */
-ok("★ 롯데 반품접수 칸은 isLotteTrack 이 지킨다",
-   /var lotte = isLotteTrack\(/.test(html));
+/*  ★ 반품접수 칸은 «제 문지기»를 따로 둔다 ★
+    같은 날 오후에 로젠 반품접수가 붙으면서(abf7bec) 이 칸도 롯데만이 아니게 됐다.
+    그래도 「상태」 버튼과 한 함수로 합치면 안 된다 — 상태는 «볼 수 있나»고
+    이 칸은 «접수를 넣을 수 있나»다. CJ·한진은 상태도 못 보고 접수도 못 한다지만,
+    둘이 늘 같다는 보장이 없다. 한 함수에 두 뜻을 담지 않는다.               */
+ok("★ 반품접수 칸은 ledgerReturnCarrier 가 지킨다",
+   /function ledgerReturnCarrier\(\)/.test(html) &&
+   /var who = ledgerReturnCarrier\(\)/.test(html));
+ok("  우리가 접수할 수 있는 곳만 — 롯데·로젠",
+   /if \(c\.indexOf\('롯데'\) !== -1\) return '롯데';/.test(html) &&
+   /if \(c\.indexOf\('로젠'\) !== -1\) return '로젠';/.test(html));
+ok("★ 그 밖(CJ·한진 등)은 칸을 안 보여 준다",
+   /if \(c\) return '';/.test(html),
+   "접수 못 하는 건에 칸이 뜨면 눌러 놓고 안 간다");
 ok("배지 CSS 정의됨", html.indexOf(".os-trk-done") > -1 && html.indexOf(".os-trk-run") > -1);
 
 console.log("\n[4] 배송상태 판 — 툴팁이 아니라 남는 판이어야 한다 (2026-09-08)");

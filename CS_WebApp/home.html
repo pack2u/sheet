@@ -1260,6 +1260,16 @@
     /*  0.7em(≈9px)은 전화 받으며 읽기엔 작았다 → 0.8em(≈10.4px). 사장님이 고른 값. */
     .os-val.os-addr { font-size: 0.8em; line-height: 1.6; }
     .os-val.os-addr .os-copy { font-size: 11px; }
+    /*  주문처 딱지 — 「전화주문」·「대리판매」. 사방넷 몰 이름은 딱지 없이 글자만
+        둔다. 갈래를 아는 것(전화·대리)만 표시한다.  (2026-10-07)  */
+    .os-origin {
+      display: inline-block; padding: 1px 7px; border-radius: 8px;
+      font-size: 10px; font-weight: 700; letter-spacing: .02em;
+      background: rgba(255,255,255,0.14); color: var(--text-bright);
+    }
+    :root[data-theme="light"] .os-origin {
+      background: rgba(0,0,0,0.08); color: var(--text-primary);
+    }
     .os-inv {
       color: var(--text-bright);
       text-decoration: underline;
@@ -14540,6 +14550,57 @@
     }
 
     /*  ══════════════════════════════════════════════════════════
+        ★ 주문처 — 전화주문인가, 어느 발주업체인가 ★  (2026-10-07)
+
+        > "CS웹앱의 주문 조회에서 전화주문인지. 법인/ 배민상회, 등
+        >  발주업체를 볼수 있을까?"
+
+        여태 카드에는 「업체」 줄이 r.vendor 가 «있을 때만» 떴다. 그런데 그 칸은
+        조치업체(대리발송) 자리라 거의 비어 있다 — 그래서 사실상 안 보였다.
+
+        세 갈래를 한 줄로 모은다. 가르는 잣대는 «고유ID 머리»다 —
+        세트분리가 쓰는 ssIsHubOrderUid 와 같은 규칙이다. 한 값에 주인은 하나라
+        여기 또 적지 않고 같은 모양을 그대로 쓴다.
+          p0921000001 · 0921-PH-… · 260902-PH-…   전화주문
+          d0930000044 · 0901-ds-…                 대리판매 (업체명이 있으면 같이)
+          숫자만                                   사방넷 — 어느 몰인지는 품목명 꼬리
+                                                   (「…200개---법인/쿠팡」)
+
+        ★ 지어내지 않는다 ★ 어느 쪽도 아니면 줄을 아예 안 만든다.
+          「모른다」를 「없다」로 적으면 다음 사람이 그것을 믿는다.
+        ══════════════════════════════════════════════════════════ */
+    function orderOriginOf(r) {
+      var uid = String((r && r.orderNo) || '').trim();
+      //  「김미화/2157237902#2」 처럼 붙어 올 수 있다 — 번호 쪽만 떼어 본다
+      var m = uid.match(/(^|[\/\s])([pd]\d{10}|\d{4,6}-(?:ds|PH)-[\w-]+)/i);
+      var 민 = m ? m[2] : uid;
+      var 업체 = String((r && r.vendor) || '').trim();
+
+      if (/^p\d{10}$/i.test(민) || /^\d{4,6}-PH-/i.test(민)) {
+        return { kind: '전화주문', who: 업체 };
+      }
+      if (/^d\d{10}$/i.test(민) || /^\d{4,6}-ds-/i.test(민)) {
+        return { kind: '대리판매', who: 업체 };
+      }
+      //  사방넷 — 어느 몰에서 왔는지는 품목명 꼬리에 있다 (거래처와 같은 규칙)
+      var 몰 = ledgerVendorFromItem(r && r.item);
+      if (몰) return { kind: '', who: 몰 };
+      if (업체) return { kind: '', who: 업체 };
+      return null;
+    }
+
+    function orderOriginRowHtml(r) {
+      var o = orderOriginOf(r);
+      if (!o) return '';
+      var 글 = o.kind
+        ? ('<span class="os-origin">' + esc(o.kind) + '</span>' +
+           (o.who ? ' ' + esc(o.who) : ''))
+        : esc(o.who);
+      return '<div class="os-row"><div class="os-lab">주문처</div>' +
+        '<div class="os-val">' + 글 + '</div></div>';
+    }
+
+    /*  ══════════════════════════════════════════════════════════
         ★ 업체(거래처) 자동 채우기 ★  (2026-10-07)
 
         > "반품대장 기록에 업체도 적을수 있게.. 자동이면 좋고"
@@ -14907,7 +14968,7 @@
         (r.ecountCode ? '<span class="os-item-code">' + esc(r.ecountCode) + '</span>' : '') +
         (r.qty ? ' × ' + esc(r.qty) : '') + '</div></div>' +
         (r.orderNo ? '<div class="os-row"><div class="os-lab">주문</div><div class="os-val">' + esc(r.orderNo) + '</div></div>' : '') +
-        (r.vendor ? '<div class="os-row"><div class="os-lab">업체</div><div class="os-val">' + esc(r.vendor) + '</div></div>' : '') +
+        orderOriginRowHtml(r) +
         returnLinesHtml(r) +
         '<div class="os-actions"><button class="os-reply" onclick="copyReply(' + idx + ')">답변 문구 복사</button>' +
         '<button class="os-ledger" onclick="openLedger(' + idx + ')">반품대장 기록</button>' +
