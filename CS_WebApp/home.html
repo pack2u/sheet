@@ -1257,7 +1257,8 @@
           (.os-row 13px · .ws-pane .os-row 13px · 넓은 표 화면은 또 다르다).
           px 로 박으면 어느 한 자리에서만 70% 가 된다.
         복사 단추는 제 크기를 그대로 둔다 — 작아지면 누르기 어렵다.        */
-    .os-val.os-addr { font-size: 0.7em; line-height: 1.6; }
+    /*  0.7em(≈9px)은 전화 받으며 읽기엔 작았다 → 0.8em(≈10.4px). 사장님이 고른 값. */
+    .os-val.os-addr { font-size: 0.8em; line-height: 1.6; }
     .os-val.os-addr .os-copy { font-size: 11px; }
     .os-inv {
       color: var(--text-bright);
