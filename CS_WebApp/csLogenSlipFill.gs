@@ -40,7 +40,7 @@ var _LSF_DAYS_ = 14;
 var _LSF_BUDGET_MS_ = 150000;   // 2분 30초
 
 /** 접수하고 이 날수가 지나도 송장이 없으면 ★ 로 표시한다 — 사람이 로젠에 물어볼 신호 */
-var _LSF_STALE_DAYS_ = 3;
+var _LSF_STALE_DAYS_ = 2;   // 2026-10-08 3 → 2  (사장님: "2틀이상 안움직이는건 찾아내면 아주 굿이지")
 
 /**
  * 대장을 훑어 «로젠 건인데 반품송장이 빈» 줄을 찾아 채운다.
@@ -152,7 +152,9 @@ function csLogenFillReturnSlips(opt) {
         var 접수번호 = _lsf_takeNoFromMemo_(col.notice >= 0 ? row[col.notice] : "");
         if (접수번호) {
           할것T.push({ tabName: 탭들[t], tab: tab, rowNum: hIdx + 2 + i,
-                       col: col, orig: orig, takeNo: 접수번호 });
+                       col: col, orig: orig, takeNo: 접수번호,
+                       //  공지에 올릴 때 사람이 알아보는 칸은 수취인 이름이다
+                       name: col.name >= 0 ? String(row[col.name] || "").trim() : "" });
         } else {
           열쇠없음.push(탭들[t] + "!" + (hIdx + 2 + i) + "  원송장 " + orig +
             " (" + orig.length + "자리, 로젠 송장 아님) — 비고에 접수번호가 없어 조회할 길이 없습니다");
@@ -166,7 +168,8 @@ function csLogenFillReturnSlips(opt) {
         if (d && d < 기준) continue;
       }
 
-      할것.push({ tabName: 탭들[t], tab: tab, rowNum: hIdx + 2 + i, col: col, orig: orig });
+      할것.push({ tabName: 탭들[t], tab: tab, rowNum: hIdx + 2 + i, col: col, orig: orig,
+                 name: col.name >= 0 ? String(row[col.name] || "").trim() : "" });
       if (할것.length >= 300) break;
     }
   }
@@ -195,6 +198,10 @@ function csLogenFillReturnSlips(opt) {
           응답없음 : 물었는데 그 줄이 응답에 안 실려 왔다 (이상 신호)
         줄마다 원송장을 같이 찍어 사람이 바로 로젠 화면에서 찾아볼 수 있게 한다. */
   var 채움 = 0, 접수없음 = 0, 송장대기 = 0, 응답없음 = 0, 취소 = 0, 실패 = 0, 남김 = 0, 오래됨 = 0;
+  /*  ★ 「몇 개」가 아니라 «어느 줄»을 모은다 ★  (2026-10-08)
+      여태 수만 세어 Logger.log 에 남겼다. 그래서 207 이 5일째 멈춘 것을
+      우연히 알았다. 모아서 csStaleReport_ 가 공지 띠에 올린다. */
+  var 멈춘것 = [];
 
   for (var s = 0; s < 할것.length; s += _LOGEN_BATCH_SIZE_) {
     if (s > 0 && (new Date().getTime() - 시작) > _LSF_BUDGET_MS_) {
@@ -260,7 +267,8 @@ function csLogenFillReturnSlips(opt) {
             실제로 그런 건이 있었다(10/02 접수가 10/07 까지 그대로). */
         var 며칠 = _lsf_ageFromTakeNo_(고른.takeNo);
         var 늦음 = (며칠 !== null && 며칠 >= _LSF_STALE_DAYS_);
-        if (늦음) 오래됨++;
+        if (늦음) { 오래됨++; 멈춘것.push({ 어디: 어디, 이름: it.name || "",
+          takeNo: 고른.takeNo || "", 며칠: 며칠, 상태: 고른.statNm || "" }); }
         L.push((늦음 ? "  ★ " : "  · ") + 어디 + " — 접수는 됐으나 송장 대기" +
                (고른.statNm ? " (" + 고른.statNm + ")" : "") +
                (고른.takeNo ? " · 접수번호 " + 고른.takeNo : "") +
@@ -332,7 +340,8 @@ function csLogenFillReturnSlips(opt) {
         송장대기++;
         var 며칠T = _lsf_ageFromTakeNo_(itT.takeNo);
         var 늦음T = (며칠T !== null && 며칠T >= _LSF_STALE_DAYS_);
-        if (늦음T) 오래됨++;
+        if (늦음T) { 오래됨++; 멈춘것.push({ 어디: 어디T, 이름: itT.name || "",
+          takeNo: itT.takeNo || "", 며칠: 며칠T, 상태: "상태코드 " + 본.statCode }); }
         L.push((늦음T ? "  ★ " : "  · ") + 어디T + " — 송장 대기 (상태코드 " + 본.statCode + ")" +
                (며칠T !== null ? " · " + 며칠T + "일째" : "") +
                (늦음T ? "  ← 로젠에 확인 필요" : ""));
@@ -359,6 +368,14 @@ function csLogenFillReturnSlips(opt) {
          " · 취소건 " + 취소 + " · 응답없음 " + 응답없음 +
          " · 실패 " + 실패 + (남김 ? " · 미룸 " + 남김 : ""));
   if (오래됨) L.push("★ " + _LSF_STALE_DAYS_ + "일 넘게 송장이 안 나온 건 " + 오래됨 + "개 — 로젠에 확인하세요");
+
+  /*  ★ 사람이 보는 곳에 올린다 ★  (csLogenStale.gs)
+      연습(dry)이나 공지안함 일 때는 띠를 건드리지 않는다 — 손으로 돌려 보는
+      것 때문에 실제 공지가 바뀌면 안 된다. */
+  if (!dry && !opt["공지안함"]) {
+    try { L.push(csStaleReport_(멈춘것)); }
+    catch (e) { L.push("★ 공지 처리 실패: " + e.message); }
+  }
   var 끝 = L.join("\n");
   Logger.log(끝);
   return 끝;
