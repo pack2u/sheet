@@ -37,10 +37,22 @@ function cssWidth(src, selector) {
  *   v2 저장소  _cs_hb_storeThumb_(url, 200)   ← 주소는 함수가 만든다
  * 어느 쪽이든 «얼마나 큰 것을 받나»가 지켜야 할 값이다.
  */
-function reqWidth(src, near) {
-  const i = src.indexOf(near);
+function reqWidth(src, near, 안에서) {
+  /*  ★ 어느 함수 «안»에서 찾는지 못 박을 수 있게 했다 ★  (2026-10-07)
+      home.html 에 썸네일을 만드는 함수가 둘이 됐다 —
+        retPhotoItems (반품 이력 · 34px)   ·   csqPhotoItems (After CS · 56px)
+      둘이 같은 글자(`thumbnail?id=`)를 쓰므로, 파일 앞에서부터 찾으면
+      먼저 나온 쪽이 잡힌다. 그러면 56px 짜리를 34px 잣대로 재서
+      «멀쩡한데» 울고, 정작 반품 쪽이 커져도 모른다.                   */
+  let 글 = src;
+  if (안에서) {
+    const f = src.indexOf("function " + 안에서 + "(");
+    if (f < 0) return null;
+    글 = src.slice(f);
+  }
+  const i = 글.indexOf(near);
   if (i < 0) return null;
-  const 조각 = src.slice(i, i + 400);
+  const 조각 = 글.slice(i, i + 400);
   const m = 조각.match(/sz=w'?\s*\+?\s*(\d+)/) ||
             조각.match(/storeThumb_\([^,]+,\s*(\d+)\)/);
   return m ? +m[1] : null;
@@ -59,7 +71,7 @@ console.log("\n[반품 사진 — .ret-proc-thumbs]");
 const drawB = cssWidth(home, ".ret-proc-thumbs button {");
 /* 2026-09-14: 사진이 v2 보관소로 옮겨지면서 thumbUrl 은 변수로 담는다.
    드라이브 사진은 여전히 같은 방식이라 그 줄을 기준으로 잰다. */
-const reqB = reqWidth(home, "thumb = 'https://drive.google.com/thumbnail");
+const reqB = reqWidth(home, "thumb = 'https://drive.google.com/thumbnail", "retPhotoItems");
 ok("그리는 크기를 찾았다", drawB !== null, String(drawB));
 ok("받는 크기를 찾았다", reqB !== null, String(reqB));
 ok("받는 크기가 그리는 크기보다 크다", reqB > drawB, reqB + " vs " + drawB);
@@ -94,6 +106,36 @@ ok("썸네일은 작은 주소로", home.indexOf("thumb = retStoreThumb(urls[i],
 ok("확대보기는 원본으로", home.indexOf("big = urls[i];") > 0);
 ok("★ 작은 주소가 안 되면 원본으로 물러선다", home.indexOf("data-full") > 0);
 ok("남의 서버 주소는 안 받는다", home.indexOf("object/sign/") > 0);
+
+console.log("\n[After CS 사진 — .csq-thumbs]  (2026-10-07)");
+/*  > "애프터cs 에도 사진 올린거 보이게 해줘"
+    여태는 「📎 파일명」 링크였다. 새 창을 열어야 보여서, 전화를 받으며
+    「그 사진 어떤 거예요」에 바로 답을 못 했다.
+    반품보다 칸이 크다(56px) — 펴진 카드 본문이라 34px 로는 안 보인다.  */
+const drawC = cssWidth(home, ".csq-thumbs button {");
+const reqC = reqWidth(home, "thumb = 'https://drive.google.com/thumbnail", "csqPhotoItems");
+ok("그리는 크기를 찾았다", drawC !== null, String(drawC));
+ok("받는 크기를 찾았다", reqC !== null, String(reqC));
+ok("★ 반품(34px)보다 크다 — 무엇을 찍은 것인지 보여야 한다",
+  drawC !== null && drawB !== null && drawC > drawB, drawC + " > " + drawB);
+ok("받는 크기가 그리는 크기보다 크다", reqC > drawC, reqC + " vs " + drawC);
+ok("고화질 화면(3배)까지 감당한다", reqC >= drawC * 3, reqC + " >= " + drawC * 3);
+ok("5배를 넘게 받지 않는다", reqC <= drawC * 5, reqC + " <= " + drawC * 5);
+/*  반품과 «같은 규칙»을 쓴다 — 보관소 주소 모양이 바뀌면 한쪽만 고쳐져 갈린다 */
+const csqFn = home.slice(home.indexOf("function csqPhotoItems("),
+                         home.indexOf("function csqCardHtml("));
+ok("★ 주소 읽는 규칙을 반품과 같이 쓴다",
+  /retIsVideoUrl\(/.test(csqFn) && /retDriveId\(/.test(csqFn) &&
+  /retStoreUrl\(/.test(csqFn) && /retStoreThumb\(/.test(csqFn));
+ok("★ 누르면 같은 확대보기로 띄운다 (창을 둘로 만들지 않는다)",
+  home.indexOf("function openCsqPhotoLb") > 0 &&
+  /openCsqPhotoLb[\s\S]{0,400}openLbImages\(/.test(home));
+ok("  작은 주소가 안 되면 원본으로 물러선다", /data-full[\s\S]{0,400}thumb-fail/.test(csqFn) ||
+  home.indexOf("openCsqPhotoLb") > 0);
+ok("★ 접힌 카드에도 사진이 «있다»고 말한다 (📷 N)",
+  /class="csq-photo-n"/.test(home) && /\.csq-photo-n \{/.test(home));
+ok("  사진이 아닌 주소는 링크로 남긴다 (숨기면 올린 줄도 모른다)",
+  /링크 \+= '<a href="/.test(home));
 
 console.log("\n" + (fail ? `실패 ${fail}건 / 통과 ${pass}건` : `모두 통과 (${pass}건)`));
 process.exit(fail ? 1 : 0);

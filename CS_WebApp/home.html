@@ -3394,6 +3394,21 @@
       font-weight: 700; font-family: inherit; cursor: pointer;
     }
     .csq-acts .ok { background: var(--accent-green); color: var(--on-accent); border-color: transparent; }
+    /*  ★ 문의 사진 썸네일 ★  (2026-10-07)
+        반품 카드의 .ret-proc-thumbs 를 그대로 쓰되 크기만 키운다 —
+        반품은 34px 인데 거기는 좁은 이력 칩 안이고, 여기는 펴진 카드 본문이라
+        그 크기면 무엇을 찍은 것인지 안 보인다.  */
+    .csq-thumbs { margin-top: 6px; gap: 5px; }
+    .csq-thumbs button { width: 56px; height: 56px; }
+    /*  접힌 카드의 「📷 N」 — 열지 않고도 사진이 있는 건을 가려낸다 */
+    .csq-photo-n {
+      padding: 1px 7px; border-radius: 8px; font-weight: 700;
+      font-size: calc(9px * var(--hb-text-scale));
+      background: rgba(255,255,255,0.12); color: var(--text-secondary);
+    }
+    :root[data-theme="light"] .csq-photo-n {
+      background: rgba(0,0,0,0.08); color: var(--text-primary);
+    }
     .csq-photos { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
     .csq-photos a {
       display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px;
@@ -8622,6 +8637,61 @@
       if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
+    /*  ★ After CS 사진을 «보이게» 한다 ★  (2026-10-07)
+        > "애프터cs 에도 사진 올린거 보이게 해줘"
+
+        여태는 「📎 파일명」 링크였다. 새 창을 열어야 보이니, 전화를 받으며
+        「그 사진 어떤 거예요」에 바로 답을 못 했다. 반품 카드와 같이 썸네일로
+        세우고, 누르면 같은 확대보기(openLbImages)로 띄운다.
+
+        ★ 주소를 읽는 규칙은 반품과 «같은 것»을 쓴다 ★
+          retIsVideoUrl · retDriveId · retStoreUrl · retStoreThumb.
+          여기 또 적으면 보관소 주소 모양이 바뀔 때 한쪽만 고쳐져 갈린다.
+          문의 사진은 csFileStorePut("board", …) 이라 v2 보관소 서명 주소다.  */
+    function csqPhotoItems(c) {
+      var 사진 = (c && c.photos) || [];
+      var out = [];
+      for (var i = 0; i < 사진.length; i++) {
+        var u = String((사진[i] && 사진[i].url) || '');
+        if (!u) continue;
+        var 이름 = String((사진[i] && 사진[i].name) || ('사진 ' + (i + 1)));
+        if (retIsVideoUrl(u)) {
+          out.push({ name: 이름, by: '', at: '', isImage: false, isVideo: true,
+                     thumbUrl: '', bigUrl: u, viewUrl: u });
+          continue;
+        }
+        var did = retDriveId(u);
+        var thumb = '', big = '';
+        if (did) {
+          //  56px 칸 — 고화질 화면(3배)을 감당하되 너무 크게 받지 않는다 (_csthumb_test)
+          thumb = 'https://drive.google.com/thumbnail?id=' + did + '&sz=w224';
+          big = 'https://drive.google.com/thumbnail?id=' + did + '&sz=w2048';
+        } else if (retStoreUrl(u)) {
+          thumb = retStoreThumb(u, 224);
+          big = u;
+        } else {
+          /*  사진인지 알 수 없는 주소 — 그래도 «있다»는 것은 보여 준다.
+              링크로 두면 눌러서 확인할 수 있다. 숨기면 올린 줄도 모른다. */
+          out.push({ name: 이름, by: '', at: '', isImage: false, isVideo: false,
+                     thumbUrl: '', bigUrl: u, viewUrl: u });
+          continue;
+        }
+        out.push({ name: 이름, by: '', at: '', isImage: true,
+                   thumbUrl: thumb, bigUrl: big, viewUrl: u });
+      }
+      return out;
+    }
+
+    /** 문의 사진 확대보기 — 보드·반품과 같은 창을 쓴다 */
+    function openCsqPhotoLb(id, imgIdx, ev) {
+      if (ev) ev.stopPropagation();
+      for (var i = 0; i < CSQ_ROWS.length; i++) {
+        if (String(CSQ_ROWS[i].id) !== String(id)) continue;
+        openLbImages(csqPhotoItems(CSQ_ROWS[i]).filter(function (x) { return x.isImage; }), imgIdx);
+        return;
+      }
+    }
+
     function csqCardHtml(c) {
       var id = String(c.id || '');
       var 열림 = (id !== '' && CSQ_OPEN_ID === id);
@@ -8639,6 +8709,11 @@
         /*  ★ 완료인데 왜 보이나 ★ 후처리가 남아서다. 안 적어 두면
             「닫았는데 왜 또 있지」가 된다.  */
         (끝남 ? '<span class="csq-done-tag">완료 · 후처리 남음</span>' : '') +
+        /*  ★ 접힌 카드에도 사진이 «있다»고 말한다 ★  (2026-10-07)
+            이제 한 장만 펴지므로, 접힌 카드에 아무 표시가 없으면 사진이 붙은
+            건을 찾으려고 카드를 하나씩 열어 봐야 한다.  */
+        (사진.length ? '<span class="csq-photo-n" title="사진 ' + 사진.length +
+          '장 — 카드를 열면 보입니다">📷 ' + 사진.length + '</span>' : '') +
         '<span class="csq-when">' + esc(csqWhen(c.created_at)) + '</span>' +
         '</div>';
       /*  ★ 번호가 «보여야» 추적이 된다 ★  (2026-10-02, sql/76)
@@ -8660,12 +8735,28 @@
       h += '<div class="csq-label">문의 내용</div>' +
         '<div class="csq-text">' + esc(글 || '(내용 없음)') + '</div>';
       if (사진.length) {
-        h += '<div class="csq-label">사진 ' + 사진.length + '장</div><div class="csq-photos">';
-        for (var a = 0; a < 사진.length; a++) {
-          h += '<a href="' + esc(사진[a].url || '#') + '" target="_blank" rel="noopener">📎 ' +
-            esc(사진[a].name || ('사진 ' + (a + 1))) + '</a>';
+        h += '<div class="csq-label">사진 ' + 사진.length + '장 — 누르면 크게 봅니다</div>';
+        var 것들 = csqPhotoItems(c);
+        var 썸 = '', 링크 = '';
+        for (var a = 0, im = 0; a < 것들.length; a++) {
+          if (!것들[a].isImage) {
+            //  영상이나 사진인지 알 수 없는 주소 — 링크로 둔다. 숨기면 올린 줄도 모른다.
+            링크 += '<a href="' + esc(것들[a].viewUrl) + '" target="_blank" rel="noopener">' +
+              (것들[a].isVideo ? '▶ ' : '📎 ') + esc(것들[a].name) + '</a>';
+            continue;
+          }
+          썸 += '<button type="button" title="' + esc(것들[a].name) + ' — 크게 보기"' +
+            ' onclick="openCsqPhotoLb(\'' + esc(id) + '\',' + (im++) + ', event)">' +
+            '<img src="' + esc(것들[a].thumbUrl) + '" alt="' + esc(것들[a].name) + '"' +
+            ' loading="lazy" decoding="async" fetchpriority="low"' +
+            ' data-full="' + esc(것들[a].viewUrl) + '"' +
+            /*  작게 받는 주소가 안 되면 «원본»으로 한 번 더 해 본다. 그래도 안 되면
+                그때 자리를 접는다 — 반품 썸네일과 같은 식이다. */
+            ' onerror="var f=this.getAttribute(\'data-full\');if(f&&this.src!==f){this.src=f;return;}this.parentNode.classList.add(\'thumb-fail\');this.remove()">' +
+            '<span class="thumb-alt">사진</span></button>';
         }
-        h += '</div>';
+        if (썸) h += '<div class="ret-proc-thumbs csq-thumbs">' + 썸 + '</div>';
+        if (링크) h += '<div class="csq-photos">' + 링크 + '</div>';
       }
       /*  관련 번호 — 펼쳤을 때만. 접힌 카드에 입력칸을 두면 잘못 눌린다.  */
       h += '<div class="csq-label">관련 번호 — 반품 r… · 발주 d… · 전화주문 p…</div>';
@@ -8701,9 +8792,9 @@
       return h;
     }
 
-    /*  마지막으로 «편» 카드 — 붙여넣기가 어디로 갈지 정한다.
-        여럿 펴 두었을 때 DOM 차례로 첫 것에 붙이면, 방금 연 카드가 아니라
-        위에 있던 카드에 붙어 사람이 못 찾는다.  */
+    /*  펴 둔 카드 하나 — 붙여넣은 사진이 어디로 갈지도 이 값이 정한다.
+        (2026-10-07 전에는 여럿 펴졌고, 그때는 「마지막으로 편 것」을 따로
+         담아야 했다. 한 장뿐이 되면서 그 값이 필요 없어졌다.)  */
     function csqToggle(el) {
       var id = String(el.getAttribute('data-csq') || '');
       //  같은 카드를 또 누르면 접는다. 다른 카드를 누르면 그것만 펴진다.
