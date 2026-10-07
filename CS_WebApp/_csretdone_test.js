@@ -99,6 +99,9 @@ const ctx = {
     : rows.filter((r) => String(r.name || "").indexOf(q) >= 0),
   sortReturnRows: (rows) => rows.slice(),
   clearReturnFocus: () => {},
+  /*  회수 접수 준비 상태를 묻는 일 — 2026-10-07 부터 여기서도 부른다.
+      이 시험이 볼 것은 「무엇을 뒤지나」지 접수 준비가 아니다. 울타리만 둔다. */
+  lrtInit: () => {},
   esc: (v) => String(v == null ? "" : v),
   setReturnStatus: (h) => { ctx.찍힌상태 = h; },
   retCardsHtml: () => "",

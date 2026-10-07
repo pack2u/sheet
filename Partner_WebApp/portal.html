@@ -625,6 +625,15 @@
       background: var(--bg-sunken); color: var(--text-bright); font-size: 12px; font-weight: 600; cursor: pointer;
     }
     .act:active { background: var(--bg-card-hover); }
+    .act[disabled] { opacity: .55; cursor: progress; }
+    /*  반품접수 — 되돌리기 어려운 일이라 다른 단추와 구별되게 둔다.
+        그렇다고 제일 눈에 띄게 하지는 않는다. 자주 누를 단추가 아니다. (2026-10-07) */
+    .act-pick { border-color: var(--accent-orange); color: var(--accent-orange); }
+    /*  못 누를 때는 «왜»를 그 자리에 적는다. 단추가 그냥 없으면 기능이 없는 줄 안다. */
+    .act-why {
+      flex: 1; padding: 9px 6px; font-size: 11px; line-height: 1.35;
+      color: var(--text-muted); text-align: center; align-self: center;
+    }
     .pop { display: none; margin-top: 9px; }
     .pop.on { display: block; }
     .pop textarea {
@@ -1684,6 +1693,18 @@
       h += '<div class="c-foot">';
       h += '<button class="act" type="button" data-act="ask" data-k="' + esc(k) + '">문의</button>';
       h += '<button class="act" type="button" data-act="photo" data-k="' + esc(k) + '">사진 첨부</button>';
+      /*  ★ 반품접수 — 단추줄 «맨 끝» ★  (2026-10-07)
+          > 사장님: "업체가 직접 반품접수 하는거 진행" · "맨끝에 그냥 남겨두면 되"
+          CS웹앱 반품 카드에서도 맨 끝이라 자리를 맞췄다.
+
+          포털은 «요청»만 보낸다. 실제 로젠·롯데 호출은 CS웹앱이 한다
+          (prpPickup.gs 머리말). 그래서 눌러도 몇 분 뒤에 송장이 붙는다 —
+          그 사이를 말해 주지 않으면 업체가 또 누른다. */
+      if (c.pickupCan) {
+        h += '<button class="act act-pick" type="button" data-act="pickup" data-k="' + esc(k) + '">반품접수</button>';
+      } else if (c.pickupWhy) {
+        h += '<span class="act-why" title="' + esc(c.pickupWhy) + '">' + esc(c.pickupWhy) + '</span>';
+      }
       h += '</div>';
 
       h += '<div class="pop' + (OPEN_POP === k ? ' on' : '') + '">';
@@ -1774,6 +1795,39 @@
       if (act === 'photo') {
         ATT_TARGET = { tab: c.tab, row: c.row };
         el('attFile').click();
+        return;
+      }
+
+      /*  ★ 반품접수 요청 ★  (2026-10-07)
+          되돌리기 어려운 일이라 한 번 묻는다 — 누르면 기사가 온다.
+          누른 뒤 단추를 바로 막는다. 응답이 오기 전에 또 누르면
+          **접수가 두 번 나가 기사가 두 번 온다.** */
+      if (act === 'pickup') {
+        var 이름 = (c.name || '(이름 없음)');
+        var 물건 = (c.item || '-');
+        if (!confirm('회수 접수를 요청합니다.\n\n' + 이름 + ' · ' + 물건 +
+                     '\n\n접수되면 기사가 방문합니다. 보낼까요?')) return;
+        btn.disabled = true;
+        btn.textContent = '요청 중…';
+        load('접수를 요청하는 중…');
+        google.script.run
+          .withSuccessHandler(function (res) {
+            unload();
+            if (handled(res)) return;
+            if (!res || !res.ok) {
+              btn.disabled = false; btn.textContent = '반품접수';
+              alert((res && res.error) || '요청 실패');
+              return;
+            }
+            alert(res.message || '접수를 요청했습니다.');
+            loadRows(true);
+          })
+          .withFailureHandler(function (e) {
+            btn.disabled = false; btn.textContent = '반품접수';
+            fail(e);
+          })
+          .prpRequestPickup(SID, { tab: c.tab, row: c.row });
+        return;
       }
     });
 

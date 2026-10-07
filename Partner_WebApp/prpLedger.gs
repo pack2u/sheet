@@ -671,6 +671,17 @@ function prpReadTabCases_(tab, tabName, cutoffYmd, sess) {
       feeNum: col.fee >= 0 ? prpFeeNumber_(row[col.fee]) : 0,
       done: prpIsDoneMark_(status),
       timeline: prpPublicTimeline_(notice, status, staffVal, dateVal, typeVal, sess.vendor),
+      /*  ★ 업체가 「반품접수」를 누를 수 있는 줄인가 ★  (2026-10-07)
+          판정을 «서버에서» 한다 — 화면이 저마다 따지면 조건이 갈린다.
+          못 누를 때는 «왜»를 같이 준다. 단추가 그냥 없으면 기능이 없는 줄 안다.
+          실제 접수는 CS웹앱이 한다(prpPickup.gs 머리말). */
+      pickupCan: (function () {
+        try { return prpPickupState_(row, col).can; } catch (e) { return false; }
+      })(),
+      pickupWhy: (function () {
+        try { var s = prpPickupState_(row, col); return s.can ? "" : s.why; }
+        catch (e) { return ""; }
+      })(),
       sortKey: (dateYmd || "00000000") + "_" + String(100000 - ri)
     });
   }

@@ -49,6 +49,32 @@ var _LSF_STALE_DAYS_ = 3;
  * @return {string} 사람이 읽는 요약 (실행로그에도 찍는다)
  */
 function csLogenFillReturnSlips(opt) {
+  /*  ★ 옛 트리거가 돌면 스스로 옮겨 탄다 ★  (2026-10-07)
+      2026-10-07 전에 걸어 둔 트리거는 이 함수를 바로 부른다. 그 트리거를 그냥
+      두면 «업체 반품접수 요청»을 아무도 집어 가지 않는다 — 요청만 쌓이고
+      업체는 영영 기다린다. 코드만 바꿔 놓고 트리거를 안 바꾸면 그렇게 된다.
+
+      그래서 편집기를 열지 않아도 한 시간 안에 저절로 바뀌게 둔다. 트리거를
+      «정하는 곳»은 그대로 csInstallLogenSlipFillTrigger 하나다 — 여기서는
+      그것을 부르기만 한다([[one-value-one-owner]]).
+
+      되돌이에 빠지지 않는다 — 설치기가 옛 이름 트리거를 지우고 새 이름으로
+      다시 걸므로, 다음 번에는 이 가지에 들어오지 않는다. 설치기가 첫판을
+      돌리니 이번 시간 몫도 거기서 함께 처리된다. */
+  if (!(opt && opt.기존트리거아님)) {
+    try {
+      var 옛것 = ScriptApp.getProjectTriggers();
+      for (var t = 0; t < 옛것.length; t++) {
+        if (옛것[t].getHandlerFunction() === "csLogenFillReturnSlips") {
+          var 옮김 = "옛 트리거를 csReturnHourlyJob 으로 옮겼습니다.\n\n" +
+            csInstallLogenSlipFillTrigger();
+          Logger.log(옮김);
+          return 옮김;
+        }
+      }
+    } catch (e) { /* 트리거를 못 읽어도 제 일은 한다 */ }
+  }
+
   opt = opt || {};
   var days = opt.days > 0 ? opt.days : _LSF_DAYS_;
   var dry = !!opt.dry;
@@ -370,7 +396,13 @@ function csInstallLogenSlipFillTrigger() {
   var all = ScriptApp.getProjectTriggers();
   var 내것 = 0;
   for (var i = 0; i < all.length; i++) {
-    if (all[i].getHandlerFunction() === "csLogenFillReturnSlips") {
+    /*  ★ 옛 이름까지 쓸어낸다 ★  (2026-10-07)
+        2026-10-07 전에는 트리거가 csLogenFillReturnSlips 를 바로 불렀다.
+        그 이름만 남겨 두면 둘이 겹쳐 돌아 **송장 조회가 한 시간에 두 번** 나간다.
+        로젠은 1회 10건·호출 간 수 초를 요청했으니 겹치면 안 된다.
+        갈래를 남기지 않는다 — 트리거는 csReturnHourlyJob «하나»다.          */
+    var h = all[i].getHandlerFunction();
+    if (h === "csReturnHourlyJob" || h === "csLogenFillReturnSlips") {
       ScriptApp.deleteTrigger(all[i]); 내것++;
     }
   }
@@ -382,9 +414,9 @@ function csInstallLogenSlipFillTrigger() {
     Logger.log(꽉); return 꽉;
   }
 
-  ScriptApp.newTrigger("csLogenFillReturnSlips").timeBased().everyHours(1).create();
-  var 첫판 = csLogenFillReturnSlips();
-  var msg = "✅ 로젠 반품송장 자동 채우기 — 1시간마다 봅니다.\n\n" + 첫판 +
+  ScriptApp.newTrigger("csReturnHourlyJob").timeBased().everyHours(1).create();
+  var 첫판 = csReturnHourlyJob();
+  var msg = "✅ 반품 1시간 일감 — 업체 요청 접수 → 송장 채우기.\n\n" + 첫판 +
     "\n\n트리거 " + ScriptApp.getProjectTriggers().length + "개";
   Logger.log(msg);
   return msg;
@@ -395,7 +427,8 @@ function csUninstallLogenSlipFillTrigger() {
   var all = ScriptApp.getProjectTriggers();
   var n = 0;
   for (var i = 0; i < all.length; i++) {
-    if (all[i].getHandlerFunction() === "csLogenFillReturnSlips") {
+    var h = all[i].getHandlerFunction();
+    if (h === "csReturnHourlyJob" || h === "csLogenFillReturnSlips") {
       ScriptApp.deleteTrigger(all[i]); n++;
     }
   }
