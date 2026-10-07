@@ -57,7 +57,11 @@ function csLogenReturnReady() {
 
       그래서 «중계기 주소가 있으면 그것을 준비된 것으로» 본다.
       중계기 쪽 키가 틀렸는지는 눌러 봐야 안다 — 그때는 로젠이 401 로 답한다. */
-  var 중계 = _logen_proxyUrl_();
+  /*  ★ typeof 로 감싼다 ★  _lgr_to_ 와 같은 까닭이다.
+      _logen_proxyUrl_ 은 csLogen.gs 에 있다. 운영에서는 늘 같이 올라가지만,
+      이 파일만 떼어 돌리는 시험(_cslogenret_test.js)에서는 없다 —
+      감싸지 않으면 거기서 터진다. 실제로 터뜨렸다(2026-10-07). */
+  var 중계 = (typeof _logen_proxyUrl_ === "function") ? _logen_proxyUrl_() : "";
   var key = "";
   if (!중계) {
     try { key = _logen_key_(); } catch (e) { key = ""; }

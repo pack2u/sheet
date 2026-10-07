@@ -49,6 +49,9 @@ function 판(응답) {
     _logen_userId_: () => "uid",
     _logen_custCd_: () => "CUST01",
     _logen_key_: () => (응답.키없음 ? "" : "KEY"),
+    /*  중계기 — 2026-10-07 에 생겼다. 기본은 «없음» 으로 둔다.
+        있으면 키가 없어도 쓸 수 있다(키는 중계기에 있다). */
+    _logen_proxyUrl_: () => (응답.중계 ? "https://siot.com/pack2u/relay.php" : ""),
     _logen_arr_: (v) => (Array.isArray(v) ? v : (v ? [v] : [])),
     _logen_ok_: (c) => ["TRUE", "SUCCESS", "Y", "OK"].indexOf(String(c || "").toUpperCase()) >= 0,
     _lrt_to_: () => (응답.받는곳없음 ? null
@@ -76,13 +79,25 @@ const 정상접수 = { ok: true, json: { data: [{ resultCd: "TRUE", takeNo: "T12
 const 고객 = { orgnSlipNo: "451-6945-9705", name: "김철수", tel: "010-1111-2222",
   addr: "서울시 강남구 테헤란로 1", goodsNm: "JH 미니탕 소", msg: "문 앞" };
 
-console.log("\n[1] ★ 지금은 «못 쓴다»고 말한다 — 키가 없다");
+console.log("\n[1] ★ 못 쓰면 «왜»를 말한다 — 중계기도 키도 없을 때");
 {
   const c = 판({ 키없음: true });
   const r = vm.runInContext("csLogenReturnReady()", c);
   check("못 쓴다", r.ready, false);
-  check("★ 까닭이 «키 없음»이다", r.reason.indexOf("인증키가 아직 없습니다") >= 0, true);
-  check("무엇을 해야 하는지 말한다", r.reason.indexOf("LOGEN_SECRET_KEY_DEV") >= 0, true);
+  check("★ 까닭이 «부를 길이 없음»이다", r.reason.indexOf("부를 길이 없습니다") >= 0, true);
+  check("무엇을 해야 하는지 말한다", r.reason.indexOf("LOGEN_PROXY_URL") >= 0, true);
+}
+
+/*  ★ 2026-10-07: 중계기가 생겼다 ★
+    로젠은 등록된 공인 IP 에서 온 호출만 받는데 Apps Script 는 고정 IP 가 없다.
+    그래서 siot.com 중계기가 대신 부르고 **인증키는 중계기에만** 둔다.
+    여기서 키를 찾으면 늘 「없다」가 나와 접수 칸이 영영 안 나온다 — 실제로 그랬다. */
+console.log("\n[1-2] ★ 중계기가 있으면 키가 없어도 쓸 수 있다");
+{
+  const c = 판({ 키없음: true, 중계: true });
+  const r = vm.runInContext("csLogenReturnReady()", c);
+  check("★ 쓸 수 있다", r.ready, true);
+  check("받는 곳도 함께 준다", !!(r.to && r.to.name), true);
 }
 
 console.log("\n[2] 받는 곳이 없어도 못 쓴다");
