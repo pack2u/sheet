@@ -1546,6 +1546,8 @@
       box-sizing: border-box;
     }
     .ret-act-pop textarea { min-height: 52px; resize: vertical; margin-top: 0; }
+    /*  사진에 같이 남길 말 — 곁다리라 낮게 둔다(사진 미리보기가 주인이다).  (2026-10-07) */
+    .ret-act-pop textarea.ret-photo-memo { min-height: 38px; margin-top: 6px; }
     .ret-act-pop .pop-label { font-size: 10px; color: var(--text-muted); margin-bottom: 5px; font-weight: 600; }
     .ret-pop-btns { display: flex; gap: 6px; margin-top: 7px; }
     .ret-pop-btns button {
@@ -8499,7 +8501,17 @@
      *    그래서 목록은 «진행 + 후처리 남은 완료»를 받는다.
      */
     var CSQ_ROWS = [];
-    var CSQ_OPEN = {};        // 펼쳐 둔 카드 — 다시 그려도 그대로 둔다
+    /*  ★ 펴지는 카드는 «하나»다 ★  (2026-10-07)
+        > "after cs도 카드 클릭하면 하나만 펼쳐지고 나머지는 접혀있게..
+        >  다른부분들처럼 해줘"
+        전에는 맵(CSQ_OPEN)이라 여러 장이 동시에 펴졌다. 접힌 카드 목록이
+        그 바람에 길어져 「짧게 보고 고른다」는 뜻이 없어졌다.
+        반품 카드(RETURN_FOCUS_IDX)·보드 카드(HB_OPEN_ID)는 이미 한 장뿐이다.
+
+        ★ 값 하나로 합쳤다 ★ 전에는 CSQ_OPEN(어느 것이 펴졌나)과
+          CSQ_LAST_OPEN(마지막으로 편 것) 둘이 같은 것을 정하고 있었다.
+          한 장뿐이면 둘이 늘 같은 값이라 가를 까닭이 없다. */
+    var CSQ_OPEN_ID = '';     // 펴 둔 카드 하나 — 다시 그려도 그대로 둔다
     var CSQ_AT = 0;
     var csqBusy = false;
 
@@ -8612,7 +8624,7 @@
 
     function csqCardHtml(c) {
       var id = String(c.id || '');
-      var 열림 = !!CSQ_OPEN[id];
+      var 열림 = (id !== '' && CSQ_OPEN_ID === id);
       var 글 = String(c.body || '');
       var 한줄 = 글.replace(/\s+/g, ' ').trim();
       var fu = String(c.followup || '').trim();
@@ -8692,14 +8704,23 @@
     /*  마지막으로 «편» 카드 — 붙여넣기가 어디로 갈지 정한다.
         여럿 펴 두었을 때 DOM 차례로 첫 것에 붙이면, 방금 연 카드가 아니라
         위에 있던 카드에 붙어 사람이 못 찾는다.  */
-    var CSQ_LAST_OPEN = '';
-
     function csqToggle(el) {
-      var id = el.getAttribute('data-csq');
-      CSQ_OPEN[id] = !CSQ_OPEN[id];
-      if (CSQ_OPEN[id]) CSQ_LAST_OPEN = id;
-      else if (CSQ_LAST_OPEN === id) CSQ_LAST_OPEN = '';
+      var id = String(el.getAttribute('data-csq') || '');
+      //  같은 카드를 또 누르면 접는다. 다른 카드를 누르면 그것만 펴진다.
+      CSQ_OPEN_ID = (CSQ_OPEN_ID === id) ? '' : id;
       renderCsq();
+      /*  ★ 누른 카드를 눈에 붙들어 둔다 ★
+          나머지가 접히면 그만큼 아래가 올라와 «누른 카드가 화면 밖으로» 간다.
+          반품 카드(focusReturnCard)와 같은 식으로 끌어다 둔다 —
+          다만 block:'nearest' 다. 이미 보이는 카드를 괜히 움직이지 않는다. */
+      if (!CSQ_OPEN_ID) return;
+      setTimeout(function () {
+        var el2 = document.querySelector('.csq-card[data-csq="' +
+          CSQ_OPEN_ID.replace(/"/g, '\\"') + '"]');
+        if (el2 && el2.scrollIntoView) {
+          el2.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 30);
     }
 
     /**
@@ -8715,8 +8736,8 @@
           retPhotoStage(csqPickList(null), files, function () { csqPhotoRender(null); });
         } };
       }
-      var id = CSQ_LAST_OPEN;
-      if (!id || !CSQ_OPEN[id]) return null;
+      var id = CSQ_OPEN_ID;
+      if (!id) return null;
       if (!document.getElementById('csqPhotoPrev-' + id)) return null;
       var 누구 = '';
       for (var i = 0; i < CSQ_ROWS.length; i++) {
@@ -8969,7 +8990,7 @@
             toast('처리완료 — 후처리가 남아 목록에 둡니다', 2800);
           } else {
             CSQ_ROWS = CSQ_ROWS.filter(function (c) { return String(c.id) !== String(id); });
-            delete CSQ_OPEN[id];
+            if (CSQ_OPEN_ID === String(id)) CSQ_OPEN_ID = '';
             toast('처리완료 — 목록에서 뺐습니다 (자료는 남습니다)', 2600);
           }
           renderCsq();
@@ -10103,7 +10124,7 @@
             '<button type="button" class="ret-pop-save" id="ret-save-intakereq-' + idx + '" onclick="submitReturnCompose(' + idx + ',\x27intakereq\x27)">요청 남기기</button>' +
           '</div></div>' +
         '<div class="ret-act-pop" id="ret-pop-photo-' + idx + '" data-mode="photo">' +
-          '<div class="pop-label">사진 첨부 (최대 ' + RET_PHOTO_MAX + '장 · Ctrl+V 붙여넣기)</div>' +
+          '<div class="pop-label">사진 첨부 (최대 ' + RET_PHOTO_MAX + '장 · Ctrl+V 붙여넣기) · 사진과 글 모두 업체도 봅니다</div>' +
           '<div class="ret-photo-pick">' +
             '<label class="pk">촬영<input type="file" accept="image/*" capture="environment"' +
               ' onchange="retPhotoPick(' + idx + ', this)"></label>' +
@@ -10111,6 +10132,14 @@
               ' onchange="retPhotoPick(' + idx + ', this)"></label>' +
           '</div>' +
           '<div id="ret-photo-prev-' + idx + '"></div>' +
+          /*  ★ 사진에 글을 같이 붙인다 ★  (2026-10-07)
+              > "반품카드 사진 올릴때 글도 같이 올릴수 있게 해줘"
+              여태는 사진만 올라가고, 무엇을 찍은 것인지는 따로 메모 카드를
+              하나 더 써야 알 수 있었다 — 두 카드가 갈려 서면 어느 사진에
+              대한 말인지 모른다. 그래서 «같은 줄»에 적는다.
+              비워 두면 여태처럼 「사진 첨부 N장」만 남는다. */
+          '<textarea id="ret-photo-memo-' + idx + '" class="ret-photo-memo"' +
+            ' placeholder="사진에 같이 남길 말 (선택) — 예: 뚜껑 깨짐 · 수량 48개만 들어옴"></textarea>' +
           '<div class="ret-pop-btns">' +
             '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
             '<button type="button" class="ret-pop-save" id="ret-save-photo-' + idx + '" onclick="submitRetPhotos(' + idx + ')">올리기</button>' +
@@ -11199,6 +11228,9 @@
       if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
       var list = retPhotoList(idx);
       if (!list.length) { toast('먼저 사진을 고르세요'); return; }
+      //  ★ 2026-10-07: 사진에 같이 남길 말 (선택) ★
+      var memoEl = document.getElementById('ret-photo-memo-' + idx);
+      var memo = memoEl ? String(memoEl.value || '').trim() : '';
 
       var btn = document.getElementById('ret-save-photo-' + idx);
       if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
@@ -11220,6 +11252,7 @@
           }
           RET_PHOTO_PEND[idx] = [];
           retPhotoRender(idx);
+          if (memoEl) memoEl.value = '';
           closeReturnCompose(idx);
           hbUpDone(true, String(res.message || ('사진 ' + list.length + '장이 올라갔습니다')),
             null, function () { loadReturnActive(true, false); });
@@ -11234,6 +11267,7 @@
           row: c.row,
           staff: staff,
           name: c.name,
+          memo: memo,
           photos: retPhotoPayload(list)
         });
     }
