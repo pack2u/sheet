@@ -160,20 +160,33 @@ ok("도선료표로 끝난 주소는 카카오에 안 묻는다", 카카오물�
 
     한 칸을 두 곳이 쓴다 — 업체가 보는 「발주 및 송장조회」와 거래명세표다.
     안 적으면 명세서가 읽을 것이 없고, 적으면 업체가 본다.
-    그래서 «적고 숨긴다». 명세서는 숨은 열도 읽는다.                       */
-console.log("\n[2] ★ 업체 시트에 적되 그 열은 숨긴다 ★");
+
+    ★ 2026-10-07 — 뒤집혔다 (㉰ 적고 보여 준다) ★
+      > "발주 허브에는 금액이 자동입력되는데 업체 발주 시트에는 칼라만 칠해지네"
+      값은 멀쩡히 들어가 있었다. 숨은 열이라 «안 보였을 뿐»이다. 그런데 그 칸을
+      제일 자주 보는 사람이 사장님이다 — 볼 때마다 열 숨김을 풀어야 했다.
+      적는 것(_ISLAND_WRITE_TO_VENDOR_)은 그대로다. 숨기기만 껐다.          */
+console.log("\n[2] ★ 업체 시트에 적고 «보여 준다» ★");
 var 업체표 = 업체발주.표, 업금 = 업체표[0].indexOf("도서산간배송비");
 같나("업체 시트 제주 세트 — 10,000 적힌다 (명세서가 읽는다)", 업체표[1][업금], 10000);
 같나("업체 시트 서울 — 안 붙임", 업체표[2][업금], "");
 var 섬글 = 읽기("_partnerIslandShipping.gs");
 ok("적는 스위치는 켜져 있다", /_ISLAND_WRITE_TO_VENDOR_ = true/.test(섬글));
-ok("★ 숨기는 스위치도 켜져 있다 ★", /_ISLAND_HIDE_VENDOR_COL_ = true/.test(섬글),
-  "업체 발주서에 보이면 안 된다");
-ok("★ 칸을 만든 «바로 그 자리»에서 숨긴다 ★",
-  /_island_ensurePartnerFeeCol_\(orderTab\);[\s\S]{0,500}hideColumns\(feeCol\)/.test(섬글),
-  "금액을 새로 쓸 때만 숨기면, 이미 적힌 시트는 영영 안 숨겨진다");
-ok("숨기다 터져도 나머지는 간다", /try \{ orderTab\.hideColumns\(feeCol\); \} catch/.test(섬글),
+ok("★ 숨기는 스위치는 꺼져 있다 ★", /_ISLAND_HIDE_VENDOR_COL_ = false/.test(섬글),
+  "사장님이 제일 자주 보는 칸이다");
+/*  ★ 끄는 것만으로는 안 펴진다 ★
+    이미 숨겨 둔 시트가 스물 몇 곳이다. 스위치만 false 로 두면 그 시트들은
+    «영영 숨은 채»로 남는다 — 조건부 서식 때 똑같이 당했다.               */
+ok("★ 스위치가 꺼져 있으면 «펴 준다»",
+  /_ISLAND_HIDE_VENDOR_COL_\)[\s\S]{0,700}showColumns\(feeCol\)/.test(섬글),
+  "끄기만 하면 이미 숨긴 시트는 영영 숨은 채로 남는다");
+ok("★ 칸을 만든 «바로 그 자리»에서 정한다 ★",
+  /_island_ensurePartnerFeeCol_\(orderTab\);[\s\S]{0,500}(hideColumns|showColumns)\(feeCol\)/.test(섬글),
+  "금액을 새로 쓸 때만 손대면, 이미 적힌 시트는 영영 안 바뀐다");
+ok("펴다 터져도 나머지는 간다", /try \{ orderTab\.showColumns\(feeCol\); \} catch/.test(섬글),
   "곁다리 때문에 금액 쓰기가 멈추면 더 나쁘다");
+ok("숨기는 길도 그대로 남겨 둔다 (되돌릴 수 있게)",
+  /try \{ orderTab\.hideColumns\(feeCol\); \} catch/.test(섬글));
 ok("명세서가 그 칸을 가산 항목으로 읽는다",
   /h === "도서산간배송비"/.test(읽기("_partnerTaxStatement.gs")),
   "여기 이름이 바뀌면 명세서에서 조용히 사라진다");

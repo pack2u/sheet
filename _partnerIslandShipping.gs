@@ -143,9 +143,15 @@ var _ISLAND_LEDGER_TAIL_    = 40000;   // 원장 끝에서 이만큼만 본다 (
     그래서 «적고 숨긴다» — 값은 그대로 두고 열만 감춘다. 명세서는 숨은 열도 읽는다.
 
     _ISLAND_WRITE_TO_VENDOR_ 를 false 로 두면 아예 안 적는다(㉯ — 명세서에도 안 나온다).
-    _ISLAND_HIDE_VENDOR_COL_ 을 false 로 두면 적고 보여 준다(㉰).                 */
+    _ISLAND_HIDE_VENDOR_COL_ 을 false 로 두면 적고 보여 준다(㉰).
+
+    ★ 2026-10-07 — ㉰ 로 바꿨다 ★
+      > "발주 허브에는 금액이 자동입력되는데 업체 발주 시트에는 칼라만 칠해지네"
+      값은 멀쩡히 들어가 있었다. 숨은 열이라 «안 보였을 뿐»이다. 그런데 그 칸을
+      제일 자주 보는 사람이 사장님이다 — 볼 때마다 열 숨김을 풀어야 했다.
+      업체가 보는 것보다 그 수고가 크다. 보여 주기로 한다.                   */
 var _ISLAND_WRITE_TO_VENDOR_ = true;
-var _ISLAND_HIDE_VENDOR_COL_ = true;
+var _ISLAND_HIDE_VENDOR_COL_ = false;
 
 var _ISLAND_FEE_LINE_       = 5000;
 //  허브 수량 칸 — 머리글: 수집일시 A · 발주업체 B · 고유ID C · 주문일자 D · 이카운트코드 E
@@ -573,6 +579,13 @@ function _island_applyToPartnerSheets_(uidBoxMap, vendorNames, feeByUid) {
           감추는 것은 «업체가 쓸 칸이 아니다»라는 표시지, 자물쇠가 아니다.      */
       if (_ISLAND_HIDE_VENDOR_COL_) {
         try { orderTab.hideColumns(feeCol); } catch (eHide) {}
+      } else {
+        /*  ★ 끄는 것만으로는 안 펴진다 ★  (2026-10-07)
+            이미 숨겨 둔 시트는 스물 몇 곳이다. 스위치만 false 로 두면 그 시트들은
+            «영영 숨은 채»로 남는다 — 조건부 서식 때 똑같이 당했다
+            (「금액이 이미 적힌 시트는 그 길로 안 들어가 영영 안 고쳐졌다」).
+            열 때마다 펴 준다. 이미 펴져 있어도 다시 불러 탈이 없다.           */
+        try { orderTab.showColumns(feeCol); } catch (eShow) {}
       }
       var dataLr = _island_findLastDataRow_(orderTab, 3); // C=이카운트코드
       if (dataLr < 2) continue;
