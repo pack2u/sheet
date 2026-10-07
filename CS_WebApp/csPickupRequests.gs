@@ -113,6 +113,12 @@ function csReturnHourlyJob() {
       훑는다(csLogenSlipFill.gs 머리말). 일은 같지만 헛걸음이다. */
   try { L.push(csLogenFillReturnSlips({ 기존트리거아님: true })); }
   catch (e) { L.push("송장 채우기 실패: " + e.message); }
+
+  /*  ★ 출고 지연 — 하루 한 번만 실제로 묻는다 ★  (2026-10-08)
+      csOutboundStaleCheck 안에서 날짜로 거른다. 오늘 몫이 끝났으면 빈 글을
+      돌려주므로 여기서는 붙이지 않는다. 로젠을 하루 종일 두드리면 안 된다. */
+  try { var 출고 = csOutboundStaleCheck(); if (출고) L.push(출고); }
+  catch (e) { L.push("출고 지연 점검 실패: " + e.message); }
   var 글 = L.join("\n\n");
 
   /*  ★ 돌았다는 것을 «읽히는 자리»에 남긴다 ★

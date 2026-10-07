@@ -50,18 +50,10 @@ var _STALE_SHOW_ = 15;
 function csStaleReport_(멈춘것) {
   멈춘것 = 멈춘것 || [];
 
-  var 기존 = _stale_findCard_();
-
   if (!멈춘것.length) {
     /*  다 풀렸다 — 열려 있던 카드를 닫는다.
         안 닫으면 띠에 영영 남아 「또 그 소리」가 되고, 그러면 아무도 안 본다. */
-    if (기존 && 기존.id) {
-      try {
-        csCompleteHandoffCard({ id: 기존.id, staff: _STALE_AUTHOR_ });
-        return "멈춘 건 없음 — 공지 내림";
-      } catch (e) { return "멈춘 건 없음 (공지 못 내림: " + e.message + ")"; }
-    }
-    return "멈춘 건 없음";
+    return _stale_close_(_STALE_SRCKEY_, "멈춘 건 없음");
   }
 
   //  오래 멈춘 것부터
@@ -83,19 +75,41 @@ function csStaleReport_(멈춘것) {
   줄들.push("(이 카드는 자동으로 갱신됩니다. 다 풀리면 저절로 닫힙니다.)");
   var 본문 = 줄들.join("\n");
 
+  return _stale_publish_(_STALE_SRCKEY_, 제목, 본문, 멈춘것.length);
+}
+
+/**
+ * 공지 띠에 «한 장»을 올리거나 갈아 끼운다.
+ *
+ * ★ 반품·출고가 같이 쓴다 ★ srcKey 로 각자의 카드를 가린다.
+ *   올리는 규칙(갈아 끼우기·안 쌓기·사람이 닫은 건 안 건드리기)은 한 곳에만 둔다 —
+ *   두 벌이면 한쪽만 고쳐져 조용히 갈린다([[one-value-one-owner]]).
+ */
+function _stale_publish_(srcKey, 제목, 본문, 건수) {
   try {
+    var 기존 = _stale_findCard_(srcKey);
     if (기존 && 기존.id) {
-      //  ★ 갈아 끼운다 ★ 새로 만들면 하루 24장이 쌓인다
+      //  ★ 갈아 끼운다 ★ 새로 만들면 하루에 여러 장이 쌓여 사람 카드를 덮는다
       csEditHandoffCard({ id: 기존.id, staff: _STALE_AUTHOR_,
                           title: 제목, body: 본문, level: "긴급" });
-      return "공지 갱신 — " + 멈춘것.length + "건";
+      return "공지 갱신 — " + 건수 + "건";
     }
     csCreateHandoffCard({ staff: _STALE_AUTHOR_, level: "긴급",
-                          title: 제목, body: 본문, srcKey: _STALE_SRCKEY_ });
-    return "공지 올림 — " + 멈춘것.length + "건";
+                          title: 제목, body: 본문, srcKey: srcKey });
+    return "공지 올림 — " + 건수 + "건";
   } catch (e) {
-    return "★ 공지 못 올림: " + e.message + " (" + 멈춘것.length + "건 멈춤)";
+    return "★ 공지 못 올림: " + e.message + " (" + 건수 + "건 멈춤)";
   }
+}
+
+/** 다 풀렸다 — 열려 있던 카드를 닫는다. 없으면 아무것도 안 한다. */
+function _stale_close_(srcKey, 말) {
+  var 기존 = _stale_findCard_(srcKey);
+  if (!(기존 && 기존.id)) return 말;
+  try {
+    csCompleteHandoffCard({ id: 기존.id, staff: _STALE_AUTHOR_ });
+    return 말 + " — 공지 내림";
+  } catch (e) { return 말 + " (공지 못 내림: " + e.message + ")"; }
 }
 
 /**
@@ -105,13 +119,13 @@ function csStaleReport_(멈춘것) {
  *   뜻이다. 거기에 다시 쓰면 사람의 판단을 되돌리는 것이 된다. 그때는 새 카드를
  *   만든다 — 새로 멈춘 건이라는 뜻이니까.
  */
-function _stale_findCard_() {
+function _stale_findCard_(srcKey) {
   try {
     var res = csListHandoffCards({});
     if (!res || !res.ok || !res.rows) return null;
     for (var i = 0; i < res.rows.length; i++) {
       var r = res.rows[i];
-      if (String(r.srcKey || "").trim() !== _STALE_SRCKEY_) continue;
+      if (String(r.srcKey || "").trim() !== srcKey) continue;
       if (String(r.status || "").indexOf("완료") !== -1) continue;
       return r;
     }
