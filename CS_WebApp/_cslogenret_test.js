@@ -254,7 +254,19 @@ console.log("\n[14] 카드에서 로젠 건도 접수로 이어진다");
   const lotte = fs.readFileSync("csLotteReturn.gs", "utf8");
 
   check("화면이 로젠 준비 상태를 묻는다", html.indexOf(".csLogenReturnReady();") >= 0, true);
-  check("★ 로젠 건에서도 단추가 나온다", html.indexOf("var 로젠 = pu.indexOf('로젠') !== -1;") >= 0, true);
+  /*  ★ 2026-10-07: 택배사 판정을 «한 곳»으로 모았다 ★
+      카드 쪽 네 군데가 저마다 '롯데'를 글자로 박아 두어, 로젠 건인데
+      「롯데에 회수 접수합니다」라고 묻고 낱개 단추는 아예 안 나왔다.
+      이제 retCardCarrier(c) 하나가 정하고 나머지는 그것을 쓴다. */
+  check("★ 택배사를 한 곳에서 정한다", html.indexOf("function retCardCarrier(") >= 0, true);
+  check("★ 로젠 건에서도 단추가 나온다",
+    html.indexOf("var 로젠 = retCardCarrier(c) === '로젠';") >= 0, true);
+  check("★ 택배사에 맞는 준비 상태를 본다",
+    html.indexOf("var rdy = 로젠 ? LGR_READY : LRT_READY;") >= 0, true);
+  check("★ 낱개 박스 단추도 로젠을 알아본다",
+    html.indexOf("var canPick = retCardCanPick(c);") >= 0, true);
+  check("★ 확인창이 택배사 이름을 바꿔 말한다",
+    html.indexOf("retCardCarrier(c) + '에 회수 접수를 보냅니다") >= 0, true);
   check("★ 못 쓰면 «왜»를 보여 준다",
     html.indexOf("반품접수(로젠 준비중)") >= 0, true);
   check("롯데도 로젠도 아니면 안 낸다",

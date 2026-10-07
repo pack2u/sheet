@@ -10945,8 +10945,10 @@
         return (c.invoice ? '원송장 ' + esc(c.invoice) : '') +
           (c.returnInvoice ? ((c.invoice ? ' · ' : '') + '반품송장 ' + esc(c.returnInvoice)) : '');
       }
-      var pu = String(c.pickup || '').replace(/\s/g, '');
-      var canPick = !!(LRT_READY && LRT_READY.ready) && (!pu || pu.indexOf('롯데') !== -1);
+      /*  ★ 2026-10-07: 낱개 박스 단추도 로젠을 알아본다 ★
+          여태 `pu.indexOf('롯데') !== -1` 이라 **로젠 건은 박스별 단추가 안 나왔다.**
+          박스가 여럿인 로젠 반품은 낱개로 고를 길이 아예 없었다. */
+      var canPick = retCardCanPick(c);
       var h = '<div class="ret-boxes">';
       for (var i = 0; i < boxes.length; i++) {
         var d = boxes[i];
@@ -10967,11 +10969,36 @@
       return h;
     }
 
+    /**
+     * 이 반품 카드는 «어느 택배사»로 접수하나.  (2026-10-07)
+     *
+     * ★ 한 곳에서 정한다 ★
+     *   여태 카드 쪽 네 군데가 저마다 '롯데'를 글자로 박아 두고 있었다 —
+     *   단추 조건 · 낱개 단추 조건 · 확인창 둘. 그래서 로젠 건인데
+     *   「롯데에 회수 접수합니다」라고 묻고, 낱개 단추는 아예 안 나왔다.
+     *   수거입력처가 비면 종전대로 롯데로 본다(서버가 접수할 때 다시 본다).
+     *
+     * @return {'롯데'|'로젠'}
+     */
+    function retCardCarrier(c) {
+      var pu = String((c && c.pickup) || '').replace(/\s/g, '');
+      return pu.indexOf('로젠') !== -1 ? '로젠' : '롯데';
+    }
+
+    /** 이 카드를 지금 접수할 수 있나 — 택배사에 맞는 준비 상태를 본다 */
+    function retCardCanPick(c) {
+      var pu = String((c && c.pickup) || '').replace(/\s/g, '');
+      //  롯데도 로젠도 아니라고 «적혀 있으면» 우리가 접수할 수 없다
+      if (pu && pu.indexOf('로젠') === -1 && pu.indexOf('롯데') === -1) return false;
+      var rdy = retCardCarrier(c) === '로젠' ? LGR_READY : LRT_READY;
+      return !!(rdy && rdy.ready);
+    }
+
     /** 박스 하나만 접수 */
     function retPickupBox(idx, orig, bi) {
       var c = RETURN_ACTIVE_ROWS[idx];
       if (!c) return;
-      if (!confirm('원송장 ' + orig + ' 박스 하나만 롯데에 회수 접수합니다.\n\n' +
+      if (!confirm('원송장 ' + orig + ' 박스 하나만 ' + retCardCarrier(c) + '에 회수 접수합니다.\n\n' +
         (c.name || '(이름 없음)') + ' · ' + (c.item || '-') + '\n\n보낼까요?')) return;
       _retPickupSend_(idx, [orig], document.getElementById('ret-pick-' + idx + '-' + bi));
     }
@@ -10988,28 +11015,37 @@
      */
     function retPickupBtnHtml(idx, c, picked) {
       if (picked) return '';
-      if (!(LRT_READY && LRT_READY.ready)) return '';
       if (!retOrigInvoices(c).length) return '';
       var pu = String(c.pickup || '').replace(/\s/g, '');
       /*  ★ 로젠 건도 접수한다 ★  (2026-09-16)
           수거입력처가 비면 막지 않는다 — 사람이 판단할 일이고, 서버가
           접수할 때 다시 본다. 롯데도 로젠도 아니라고 «적혀 있으면» 안 낸다. */
-      var 로젠 = pu.indexOf('로젠') !== -1;
+      var 로젠 = retCardCarrier(c) === '로젠';
       if (pu && !로젠 && pu.indexOf('롯데') === -1) return '';
+
+      /*  ★ 2026-10-07: 택배사에 «맞는» 준비 상태를 본다 ★
+          여태 맨 앞에서 LRT_READY(롯데)만 보고 막았다. 그래서 **로젠 건은
+          단추가 아예 안 나왔다** — 로젠 쪽이 준비돼 있어도 그랬다.
+          수거입력처가 비면 종전대로 롯데로 본다. */
+      var rdy = 로젠 ? LGR_READY : LRT_READY;
+      if (rdy === null) return '';   // 아직 안 물어봤다 — 답이 오면 lrtAfterReady_ 가 다시 그린다
+
       /*  로젠인데 아직 못 쓰면 «왜»를 단추에 담는다. 단추가 그냥 없으면
-          기능이 없는 줄 안다 — 인증키를 기다리는 중이라는 것을 알려야 한다. */
-      if (로젠 && !(LGR_READY && LGR_READY.ready)) {
-        var 왜 = (LGR_READY && LGR_READY.reason) || '로젠 회수 접수 준비 중입니다';
+          기능이 없는 줄 안다 — 무엇을 기다리는 중인지 알려야 한다. */
+      if (로젠 && !rdy.ready) {
+        var 왜 = rdy.reason || '로젠 회수 접수 준비 중입니다';
         return '<button type="button" class="ret-pickup-btn" disabled' +
           ' title="' + esc(왜) + '">반품접수(로젠 준비중)</button>';
       }
+      if (!로젠 && !rdy.ready) return '';
       /* 박스가 하나면 이 단추 하나로 끝난다. 여럿이면 송장 옆에 낱개 단추가
          이미 있으므로, 여기는 「남은 것 전부」로만 쓴다. */
       var left = retLeftBoxes(c);
       if (!left.length) return '';
       var label = left.length > 1 ? ('반품접수 ' + left.length + '박스') : '반품접수';
       return '<button type="button" class="ret-pickup-btn" id="ret-pick-' + idx + '"' +
-        ' title="롯데에 회수 접수를 보냅니다' + (pu ? '' : ' (수거입력처가 비어 있어 롯데 건인지는 접수할 때 확인합니다)') + '"' +
+        ' title="' + (로젠 ? '로젠' : '롯데') + '에 회수 접수를 보냅니다' +
+        (pu ? '' : ' (수거입력처가 비어 있어 어느 택배사인지는 접수할 때 확인합니다)') + '"' +
         ' onclick="event.stopPropagation(); retPickupFromCard(' + idx + ')">' + label + '</button>';
     }
 
@@ -11025,7 +11061,7 @@
       //  이미 접수된 박스는 빼고 남은 것만 — 두 번 접수하면 기사가 두 번 온다
       var origs = retLeftBoxes(c);
       if (!origs.length) { toast('남은 박스가 없습니다 — 이미 다 접수됐습니다', 3200); return; }
-      var msg = '롯데에 회수 접수를 보냅니다.\n\n' +
+      var msg = retCardCarrier(c) + '에 회수 접수를 보냅니다.\n\n' +
         (c.name || '(이름 없음)') + ' · ' + (c.item || '-') + '\n' +
         '원송장 ' + origs.join(', ') +
         (origs.length > 1 ? '\n\n★ 박스가 ' + origs.length + '개라 접수도 ' + origs.length + '건 나갑니다 ★' : '') +
@@ -12830,6 +12866,11 @@
       var list = document.getElementById('returnActiveList');
       var head = document.getElementById('returnHeadLabel');
       if (!list) return;
+      /*  ★ 2026-10-07: 여기서도 회수 접수 준비 상태를 묻는다 ★
+          여태 lrtInit 은 반품대장 창 쪽에서만 불렸다. 그래서 **반품 카드 화면에서는
+          LRT_READY·LGR_READY 가 null 인 채로 그려져 「반품접수」 단추가 안 나왔다.**
+          한 번 물으면 답을 기억하므로(lrtInit 안쪽) 다시 그릴 때마다 묻지 않는다. */
+      lrtInit();
       if (sourceRows) RETURN_ALL_ROWS = sourceRows.slice();
       RET_PHOTO_PEND = {};   // 카드 index 가 다시 매겨지므로 대기 사진도 비운다
       /*  ★ 검색할 때는 완료된 건도 뒤진다  (2026-09-30)
@@ -14137,13 +14178,29 @@
     function lrtInit() {
       if (LRT_READY !== null) { lrtSyncOpt(); return; }
       google.script.run
-        .withSuccessHandler(function (r) { LRT_READY = r || { ready: false }; lrtSyncOpt(); })
-        .withFailureHandler(function () { LRT_READY = { ready: false }; lrtSyncOpt(); })
+        .withSuccessHandler(function (r) { LRT_READY = r || { ready: false }; lrtAfterReady_(); })
+        .withFailureHandler(function () { LRT_READY = { ready: false }; lrtAfterReady_(); })
         .csLotteReturnReady();
       google.script.run
-        .withSuccessHandler(function (r) { LGR_READY = r || { ready: false }; lrtSyncOpt(); })
-        .withFailureHandler(function () { LGR_READY = { ready: false, reason: '로젠 준비 상태를 못 읽었습니다' }; })
+        .withSuccessHandler(function (r) { LGR_READY = r || { ready: false }; lrtAfterReady_(); })
+        .withFailureHandler(function () { LGR_READY = { ready: false, reason: '로젠 준비 상태를 못 읽었습니다' }; lrtAfterReady_(); })
         .csLogenReturnReady();
+    }
+
+    /**
+     * 준비 상태가 «나중에» 도착했을 때 화면을 다시 맞춘다.  (2026-10-07)
+     *
+     * ★ 왜 다시 그리나 ★
+     *   반품 카드의 「반품접수」 단추는 그릴 때 LRT_READY·LGR_READY 를 본다.
+     *   그런데 서버에 묻는 일이라 **카드를 다 그린 뒤에 답이 온다.**
+     *   다시 그리지 않으면 답이 와도 단추가 끝내 안 나온다 — 실제로 그랬다.
+     */
+    function lrtAfterReady_() {
+      lrtSyncOpt();
+      try {
+        var list = document.getElementById('returnActiveList');
+        if (list && list.children.length) renderReturnActiveList();
+      } catch (e) { /* 다시 그리기 실패로 다른 것을 막지는 않는다 */ }
     }
 
     /**
