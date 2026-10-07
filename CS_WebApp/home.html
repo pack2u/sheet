@@ -1247,6 +1247,18 @@
     .os-lab { width: 52px; flex-shrink: 0; color: var(--text-muted); }
     .os-val { flex: 1; word-break: break-all; }
     .os-val.big { font-size: 16px; font-weight: 700; color: #fff; }
+    /*  ★ 주소만 작게 ★  (2026-10-07)
+        > "주문송장조회에서 주소는 폰트를 작게 보이게 해줘. 지금의70%정도로
+        >  주소가 기니까 2줄이 되니까.."
+        주소는 한 줄에 다 들어가야 눈으로 한 번에 읽힌다. 두 줄이 되면 아래
+        칸들이 밀려 카드가 길어지고, 전화를 받으면서 읽어 주기도 어렵다.
+
+        ★ px 가 아니라 em 이다 ★ 이 줄의 글자 크기는 자리마다 다르다
+          (.os-row 13px · .ws-pane .os-row 13px · 넓은 표 화면은 또 다르다).
+          px 로 박으면 어느 한 자리에서만 70% 가 된다.
+        복사 단추는 제 크기를 그대로 둔다 — 작아지면 누르기 어렵다.        */
+    .os-val.os-addr { font-size: 0.7em; line-height: 1.6; }
+    .os-val.os-addr .os-copy { font-size: 11px; }
     .os-inv {
       color: var(--text-bright);
       text-decoration: underline;
@@ -14686,7 +14698,7 @@
             > "그리고 주문송장조회시 주소도 같이 나오게해줘"
             여태 주소는 카드에 없고 「반품대장 기록」을 열어야 보였다. 전화를 받으면서
             「어디로 갔죠?」를 묻는 일이 제일 잦은데, 그때마다 창을 하나 더 열었다. */
-        (r.addr ? '<div class="os-row"><div class="os-lab">주소</div><div class="os-val">' + esc(r.addr) +
+        (r.addr ? '<div class="os-row"><div class="os-lab">주소</div><div class="os-val os-addr">' + esc(r.addr) +
         '<button class="os-copy" onclick="copyText(\'' + js(r.addr) + '\')">복사</button></div></div>' : '') +
         (shipMsg ? '<div class="os-row"><div class="os-lab">배송메시지</div><div class="os-val">' + esc(shipMsg) +
         '<button class="os-copy" onclick="copyText(\'' + js(shipMsg) + '\')">복사</button></div></div>' : '') +
