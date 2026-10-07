@@ -86,10 +86,20 @@ console.log("\n[2] 택배사 표기 변형");
 });
 
 console.log("\n[3] 버튼 마크업이 실제로 렌더 코드에 들어갔는가");
+/*  ★ 2026-10-07 — 문지기 이름이 갈렸다 ★
+    여태 「상태」 버튼의 문지기는 isLotteTrack 하나였다. 로젠도 API 로 보게
+    되면서 isApiTrackable 이 따로 생겼다. 갈라 둔 까닭이 코드에 적혀 있다 —
+      isLotteTrack 은 «롯데 반품접수 칸»(lrtSyncOpt)도 쓴다. 거기에 로젠을
+      섞으면 로젠 건에도 롯데 반품 칸이 뜬다. 한 함수에 두 뜻을 담지 않는다.
+    그래서 여기서 보는 것도 「상태 버튼의 문지기」로 바꾼다.               */
 ok("invoiceHtml 에 상태 버튼 분기 존재",
-   /isLotteTrack\(source, carrier\)[\s\S]{0,200}os-trk/.test(html));
+   /isApiTrackable\(source, carrier\)[\s\S]{0,200}os-trk/.test(html));
 ok("onclick 이 lotteTrack 을 부른다", html.indexOf('onclick="lotteTrack(this)"') > -1);
-ok("서버 함수 csLotteTrack 을 호출한다", html.indexOf(".csLotteTrack(inv") > -1);
+ok("★ 어느 택배사인지 실어 보낸다 (롯데·로젠을 서버가 갈라 본다)",
+   html.indexOf(".csTrack(inv") > -1 && /data-carrier="/.test(html));
+/*  ★ 반품접수 칸은 여전히 롯데만이다 ★ 둘이 도로 한 함수가 되면 여기서 운다. */
+ok("★ 롯데 반품접수 칸은 isLotteTrack 이 지킨다",
+   /var lotte = isLotteTrack\(/.test(html));
 ok("배지 CSS 정의됨", html.indexOf(".os-trk-done") > -1 && html.indexOf(".os-trk-run") > -1);
 
 console.log("\n[4] 배송상태 판 — 툴팁이 아니라 남는 판이어야 한다 (2026-09-08)");

@@ -4609,6 +4609,18 @@
                  placeholder="우리가 보내며 쓴 돈">
         </div>
       </div>
+      <!--  ★ 업체(거래처) ★  (2026-10-07)
+            > "반품대장 기록에 업체도 적을수 있게.. 자동이면 좋고"
+            대장의 「거래처」 열이다 — 「주문이 어디서 왔나」를 적는 칸으로,
+            9월에 「업체명」 → 「주문지」, 10월에 「거래처」로 이름만 바뀌었다.
+            서버(submitReturnLedger)는 이미 data.vendor 를 그 열에 적고 있었다 —
+            빠진 것은 «적을 칸»뿐이었다. 그래서 이 창에서만 늘 비어 나갔다.
+            자동값은 출발점이지 결론이 아니다. 반품비와 같이 까닭을 적어 둔다. -->
+      <div class="ledger-field">
+        <label>업체 (거래처 · 주문이 어디서 왔나)</label>
+        <input id="ledgerVendor" type="text" placeholder="예: 법인/쿠팡 · 대리발송-리바이">
+        <div class="ledger-fee-why" id="ledgerVendorWhy"></div>
+      </div>
       <div class="ledger-field">
         <label>수거입력처 (대리공급은 택배사 자동)</label>
         <input id="ledgerPickup" type="text" placeholder="예: 로젠택배 (자사출고) · 한진택배 (대리발송)">
@@ -7034,7 +7046,7 @@
         modal: 'ledgerModal', bar: 'ledgerDraftBar', requireScope: true,
         fields: ['ledgerStaff', 'ledgerType', 'ledgerFault', 'ledgerReason',
                  'ledgerStatus', 'ledgerPhone2', 'ledgerPhone2Name',
-                 'ledgerPickup', 'ledgerFee', 'ledgerAccount', 'ledgerMemo'],
+                 'ledgerVendor', 'ledgerPickup', 'ledgerFee', 'ledgerAccount', 'ledgerMemo'],
         /*  retNew 와 같은 까닭 — 되살리기는 값만 넣어 onchange 가 안 돈다.
             목록을 채운 «뒤에» 사유를 다시 넣는다. (2026-09-30)  */
         load: function (v) {
@@ -7042,6 +7054,13 @@
           retFillReasons('ledger');
           var r = document.getElementById('ledgerReason');
           if (r && v && v.ledgerReason) r.value = v.ledgerReason;
+          /*  업체는 자동으로 채워 두었는데 임시저장이 그 위를 덮는다 —
+              그러면 밑의 「자동 — …」이 거짓말이 된다. 되살린 것이라고 적는다. */
+          var vw = document.getElementById('ledgerVendorWhy');
+          if (vw && v && typeof v.ledgerVendor === 'string') {
+            vw.textContent = v.ledgerVendor
+              ? '임시저장에서 되살림 — 다르면 고치세요' : '';
+          }
         },
         scope: function() {
           var r = CS_ROWS[LEDGER_IDX] || {};
@@ -14320,6 +14339,7 @@
       document.getElementById('ledgerPhone2Name').value = '';
       retFillReasons('ledger');
       document.getElementById('ledgerReason').value = '';
+      ledgerFillVendor(r);
       document.getElementById('ledgerPickup').value = resolveCarrier(r) || '';
       document.getElementById('ledgerFee').value = '';
       document.getElementById('ledgerFeeWhy').textContent = '';
@@ -14390,6 +14410,8 @@
         fault: g('ledgerFault'),
         reason: g('ledgerReason'),
         status: g('ledgerStatus') || '접수',
+        //  업체(거래처) — 자동으로 채우되 사람이 고친 값이 이긴다 (2026-10-07)
+        vendor: g('ledgerVendor'),
         pickup: g('ledgerPickup'),
         memo: g('ledgerMemo'),
         account: g('ledgerAccount'),
@@ -14400,6 +14422,68 @@
         reship: g('ledgerReship'),
         reshipFee: g('ledgerReshipFee')
       };
+    }
+
+    /*  ══════════════════════════════════════════════════════════
+        ★ 업체(거래처) 자동 채우기 ★  (2026-10-07)
+
+        > "반품대장 기록에 업체도 적을수 있게.. 자동이면 좋고"
+
+        두 군데서 온다 —
+          ① r.vendor   대장·원장이 이미 아는 값 (조치업체 · 거래처명).
+                       대리발송 건은 여기에 업체가 적혀 있다.
+          ② 품목명 꼬리  「…200개---법인/쿠팡」 의 «---» 뒤.
+                       자사출고 건은 ①이 비어 있고 이쪽에만 있다.
+                       화면 예시가 그랬다 — 미리보기에 「업체」 줄이 아예 안 떴다.
+
+        ★ 꼬리가 다 거래처는 아니다 ★ 같은 자리에 «포장 표지»도 붙는다 —
+          합포장 · 합배송 · 소분 · 몸통만 · 뚜껑만. 그것을 거래처로 적으면
+          「이번 달 쿠팡 반품 몇 건」이 어긋난다. 아는 표지는 걷어낸다.
+          그러고도 남는 것이 없으면 «비워 둔다» — 지어내지 않는다.
+
+        자동값은 출발점이지 결론이 아니다. 어디서 왔는지 밑에 적어 두고,
+        사람이 고치면 그대로 간다 (반품비가 걸어온 길과 같다).
+        ══════════════════════════════════════════════════════════ */
+    var LEDGER_PACK_MARKS = ['합포장', '합배송', '소분', '몸통만', '뚜껑만'];
+
+    /** 품목명 꼬리에서 «거래처로 볼 만한 것»만 남긴다. 없으면 빈 문자열. */
+    function ledgerVendorFromItem(item) {
+      var s = String(item || '');
+      //  --- 와 === 둘 다 꼬리를 연다. 먼저 나오는 쪽부터 잘라 본다.
+      var cut = -1;
+      var a = s.indexOf('---'), b = s.indexOf('===');
+      if (a >= 0 && b >= 0) cut = Math.min(a, b);
+      else cut = (a >= 0) ? a : b;
+      if (cut < 0) return '';
+      var 꼬리들 = s.substring(cut + 3).split(/---|===/);
+      for (var i = 0; i < 꼬리들.length; i++) {
+        var t = String(꼬리들[i] || '').trim();
+        if (!t) continue;
+        var 표지 = false;
+        for (var m = 0; m < LEDGER_PACK_MARKS.length; m++) {
+          if (t.indexOf(LEDGER_PACK_MARKS[m]) !== -1) { 표지 = true; break; }
+        }
+        if (표지) continue;
+        return t;
+      }
+      return '';
+    }
+
+    function ledgerFillVendor(r) {
+      var el = document.getElementById('ledgerVendor');
+      var why = document.getElementById('ledgerVendorWhy');
+      if (!el) return;
+      var v = String((r && r.vendor) || '').trim();
+      var 어디 = v ? '주문 자료의 거래처' : '';
+      if (!v) {
+        v = ledgerVendorFromItem(r && r.item);
+        if (v) 어디 = '품목명 꼬리에서 읽음';
+      }
+      el.value = v;
+      if (why) {
+        why.textContent = v ? ('자동 — ' + 어디 + '. 다르면 고치세요')
+                            : '주문 자료에 거래처가 없습니다 — 아시면 적어 주세요';
+      }
     }
 
     /** 뒤 꾸러미를 앞 꾸러미에 얹는다 (얕게). 뒤가 이긴다. */
