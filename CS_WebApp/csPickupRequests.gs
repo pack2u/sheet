@@ -119,6 +119,12 @@ function csReturnHourlyJob() {
       돌려주므로 여기서는 붙이지 않는다. 로젠을 하루 종일 두드리면 안 된다. */
   try { var 출고 = csOutboundStaleCheck(); if (출고) L.push(출고); }
   catch (e) { L.push("출고 지연 점검 실패: " + e.message); }
+
+  /*  ★ 계약 만료 감시 — 하루 한 번 ★  (2026-10-08)
+      맨 뒤에 둔다. 2026-10-02 처럼 계약이 끊기면 위의 조회들이 먼저 실패해
+      그 자체로 드러난다. 여기는 «끊기기 전에» 알자고 두는 것이라 급하지 않다. */
+  try { var 계약 = csLogenContractWatch(); if (계약) L.push(계약); }
+  catch (e) { L.push("계약 점검 실패: " + e.message); }
   var 글 = L.join("\n\n");
 
   /*  ★ 돌았다는 것을 «읽히는 자리»에 남긴다 ★
