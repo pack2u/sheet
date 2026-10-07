@@ -367,7 +367,7 @@ function csLogenFillReturnSlips(opt) {
   L.push("채움 " + 채움 + " · 접수없음 " + 접수없음 + " · 송장대기 " + 송장대기 +
          " · 취소건 " + 취소 + " · 응답없음 " + 응답없음 +
          " · 실패 " + 실패 + (남김 ? " · 미룸 " + 남김 : ""));
-  if (오래됨) L.push("★ " + _LSF_STALE_DAYS_ + "일 넘게 송장이 안 나온 건 " + 오래됨 + "개 — 로젠에 확인하세요");
+  if (오래됨) L.push("★ " + _LSF_STALE_DAYS_ + "영업일 넘게 송장이 안 나온 건 " + 오래됨 + "개 — 로젠에 확인하세요");
 
   /*  ★ 사람이 보는 곳에 올린다 ★  (csLogenStale.gs)
       연습(dry)이나 공지안함 일 때는 띠를 건드리지 않는다 — 손으로 돌려 보는
@@ -477,7 +477,16 @@ function _lsf_ageFromTakeNo_(takeNo) {
   if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null;
   var t = new Date(y, m - 1, d);
   if (isNaN(t.getTime())) return null;
-  var 일 = Math.floor((new Date().getTime() - t.getTime()) / 86400000);
+  /*  ★ 달력이 아니라 영업일로 센다 ★  (2026-10-08)
+      > 사장님: "연휴 주말도 판단해서 날짜 기준을 잡아줘.. 금요일부터 연휴야.."
+      금요일에 접수한 건은 토·일·연휴에 집하가 안 간다. 달력으로 세면 월요일
+      아침에 금요일 치가 통째로 「2일째 멈춤」으로 뜬다. 한 번 그러면 그 뒤로
+      아무도 이 공지를 안 본다.
+      셈은 csLogenOutStale.gs 의 _ost_bizSince_ 한 곳에만 둔다 — 두 벌이면
+      연말에 한쪽만 고쳐진다([[one-value-one-owner]]). */
+  var 일;
+  try { 일 = _ost_bizSince_(t); }
+  catch (e) { 일 = Math.floor((new Date().getTime() - t.getTime()) / 86400000); }
   return 일 >= 0 && 일 < 400 ? 일 : null;
 }
 

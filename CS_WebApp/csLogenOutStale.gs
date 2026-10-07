@@ -38,7 +38,19 @@
  * ══════════════════════════════════════════════════════════════
  */
 
-/** 며칠 전 하루치를 보나 — 「다음날 도착」이 보통이라 2일이면 이미 늦다 */
+/**
+ * 몇 «영업일» 지난 것을 보나 — 「다음날 도착」이 보통이라 2영업일이면 이미 늦다.
+ *
+ * ★ 달력 날짜로 세면 연휴마다 늑대야 소리를 한다 ★  (2026-10-08)
+ *   > 사장님: "연휴 주말도 판단해서 날짜 기준을 잡아줘.. 금요일부터 연휴야.."
+ *   목요일에 실은 것은 금요일에 닿는 것이 보통인데, 금·토·일이 쉬면 월요일에
+ *   닿는다. 달력으로 세면 월요일 아침에 **목요일 치가 통째로 「2일째 미도착」**
+ *   으로 뜬다. 한 번 그러면 그 뒤로 아무도 이 공지를 안 본다.
+ *
+ *   그래서 «발송일 다음부터 오늘까지의 영업일 수»로 센다.
+ *     목 발송 · 월 오늘 (금토일 쉼) → 1영업일 → 아직 정상, 안 뜬다
+ *     목 발송 · 화 오늘             → 2영업일 → 늦음
+ */
 var _OST_FROM_DAYS_ = 2;
 
 /** 1시간 일감 한 번에 몇 건까지 묻나. 12번 호출 · 2초 간격이면 25초쯤 */
@@ -68,14 +80,19 @@ function csOutboundStaleCheck(opt) {
   var 코호트 = _ost_cohortKey_();
 
   /*  ★ 날이 바뀌면 처음부터 ★ 어제 치는 끝났고 오늘은 새 하루치를 본다. */
+  /*  ★ 날이 바뀌면 «어디까지 봤나»만 되돌린다 ★
+      잡아 둔 것(OST_FOUND)은 지우지 않는다. 한 번 멈춘 건은 도착할 때까지
+      공지에 남아 있어야 한다 — 오늘 치 훑기에서 빠졌다고 사라지면,
+      사흘째 멈춘 건이 조용히 화면에서 없어진다. 도착하면 _ost_dropArrived_
+      가 뺀다. */
   if (opt["처음부터"] || P.getProperty("OST_COHORT") !== 코호트) {
     P.setProperty("OST_COHORT", 코호트);
     P.setProperty("OST_IDX", "0");
-    P.setProperty("OST_FOUND", "[]");
+    if (opt["처음부터"]) P.setProperty("OST_FOUND", "[]");
   }
 
   var 목록;
-  try { 목록 = _ost_collect_(코호트); }
+  try { 목록 = _ost_collect_(); }
   catch (e) { var m = "NG 원장을 못 읽었습니다: " + e.message; Logger.log(m); return m; }
 
   var idx = parseInt(P.getProperty("OST_IDX") || "0", 10) || 0;
@@ -162,6 +179,13 @@ function _ost_dropArrived_(잡은것) {
       it.영업소 = String(t.branch || it.영업소).trim();
       it.마지막 = String(t.lastAt || it.마지막).trim();
     }
+    /*  ★ 날이 지나면 「며칠째」도 늘어야 한다 ★ 어제 잡은 것이 오늘도 2일째로
+        보이면, 보는 사람이 「어제 그거네」 하고 넘긴다. 사흘째면 사흘째로 보여야
+        손이 간다. 발송일을 적어 뒀으니 다시 센다. */
+    if (it.ship) {
+      var 발송 = _ost_ymdToDate_(it.ship);
+      if (발송) it.며칠 = _ost_bizSince_(발송);
+    }
     남김.push(it);
   }
   return 남김;
@@ -185,7 +209,7 @@ function _ost_report_(잡은것, 다봤나) {
 
   잡은것.sort(function (a, b) { return (b.며칠 || 0) - (a.며칠 || 0); });
 
-  var 제목 = "로젠 출고 " + 잡은것.length + "건이 " + _OST_FROM_DAYS_ + "일 넘게 도착하지 않았습니다";
+  var 제목 = "로젠 출고 " + 잡은것.length + "건이 " + _OST_FROM_DAYS_ + "영업일 넘게 도착하지 않았습니다";
   var 줄 = [];
   for (var i = 0; i < 잡은것.length && i < _OST_SHOW_; i++) {
     var s = 잡은것[i];
@@ -193,19 +217,31 @@ function _ost_report_(잡은것, 다봤나) {
         송장만 있으면 그 번호를 또 찾아야 한다. */
     줄.push("· " + _ost_pretty_(s.inv) +
       (s.이름 ? "  " + s.이름 : "") +
-      "  —  " + s.며칠 + "일째 · " + s.상태 +
+      "  —  영업일 " + s.며칠 + "일째 · " + s.상태 +
       (s.영업소 ? " · " + s.영업소 : "") +
       (s.마지막 ? " · 마지막 " + s.마지막 : "") +
       (s.주문 ? "  (" + s.주문 + ")" : ""));
   }
   if (잡은것.length > _OST_SHOW_) 줄.push("… 외 " + (잡은것.length - _OST_SHOW_) + "건");
   줄.push("");
-  줄.push("로젠은 보통 다음날 도착합니다. " + _OST_FROM_DAYS_ + "일이 지났으면 확인이 필요합니다.");
+  줄.push("로젠은 보통 다음날 도착합니다. " + _OST_FROM_DAYS_ +
+          "영업일이 지났으면 확인이 필요합니다. (주말·공휴일은 세지 않습니다.)");
   줄.push(다봤나 ? "(오늘 치는 다 봤습니다.)" : "(아직 보는 중입니다 — 더 늘 수 있습니다.)");
   줄.push("도착하면 그 줄은 저절로 빠지고, 다 도착하면 카드가 닫힙니다.");
 
   return _stale_publish_(_OST_SRCKEY_, 제목, 줄.join("\n"), 잡은것.length);
 }
+
+/** 「yyyyMMdd」 → Date. 못 읽으면 null */
+function _ost_ymdToDate_(s) {
+  var m = String(s || "").match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (!m) return null;
+  var d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/** Date → 「yyyyMMdd」 */
+function _ost_ymd_(d) { return Utilities.formatDate(d, "Asia/Seoul", "yyyyMMdd"); }
 
 /** 보기 좋게 끊는다 — 로젠 11자리는 2-4-5 로 읽는다 */
 function _ost_pretty_(d) {
@@ -213,11 +249,52 @@ function _ost_pretty_(d) {
   return s.length === 11 ? s.slice(0, 2) + "-" + s.slice(2, 6) + "-" + s.slice(6) : s;
 }
 
-/** 지금 볼 코호트 = _OST_FROM_DAYS_ 일 전 날짜 「yyMMdd」 */
+/**
+ * 오늘 몫을 가리는 표 — «오늘 날짜»다.
+ * 코호트를 「며칠 전 그 날짜」로 잡지 않는다. 연휴가 끼면 그 날짜가 며칠씩
+ * 제자리걸음을 해서 같은 날 치를 또 훑게 된다. 오늘로 잡으면 하루 한 바퀴다.
+ */
 function _ost_cohortKey_() {
-  var d = new Date();
-  d.setDate(d.getDate() - _OST_FROM_DAYS_);
-  return Utilities.formatDate(d, "Asia/Seoul", "yyMMdd");
+  return Utilities.formatDate(new Date(), "Asia/Seoul", "yyMMdd");
+}
+
+/**
+ * 그 날 쉬나 — 토·일 · 공휴일 · 임시공휴일.
+ *
+ * ★ csLotteReturn.gs 의 _lrt_isOff_ 를 쓴다 ★ 같은 프로젝트에 이미 있는 표다.
+ *   여기에 또 만들면 공휴일이 두 벌이 되고, 연말에 한쪽만 고쳐진다
+ *   ([[one-value-one-owner]]). 토요일도 쉬는 것으로 본다 — 토요일 배송이
+ *   되는 날도 있지만, 늦게 알리는 쪽이 헛경보보다 낫다.
+ */
+function _ost_isOff_(d) {
+  try { return _lrt_isOff_(d); }
+  catch (e) { var w = d.getDay(); return w === 0 || w === 6; }   // 표를 못 읽어도 주말은 센다
+}
+
+/**
+ * 발송일 «다음»부터 오늘까지의 영업일 수.
+ *   월 발송 · 화 오늘 → 1   (보통 이때 닿는다)
+ *   월 발송 · 수 오늘 → 2   (늦다)
+ *   목 발송 · 월 오늘 (금토일 쉼) → 1  (아직 정상)
+ */
+function _ost_bizSince_(발송일) {
+  var 오늘 = new Date(); 오늘.setHours(0, 0, 0, 0);
+  var d = new Date(발송일.getTime()); d.setHours(0, 0, 0, 0);
+  var n = 0;
+  for (var i = 0; i < 60; i++) {
+    d.setDate(d.getDate() + 1);
+    if (d > 오늘) break;
+    if (!_ost_isOff_(d)) n++;
+  }
+  return n;
+}
+
+/** 회차키 「261006-3」 → 그날 0시의 Date. 못 읽으면 null */
+function _ost_roundDate_(v) {
+  var m = String(v || "").trim().match(/^(\d{2})(\d{2})(\d{2})/);
+  if (!m) return null;
+  var d = new Date(2000 + parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+  return isNaN(d.getTime()) ? null : d;
 }
 
 /**
@@ -230,7 +307,7 @@ function _ost_cohortKey_() {
  *   차례가 흔들리면 어떤 건은 두 번 묻고 어떤 건은 영영 안 묻는다.
  *   그래서 송장번호로 정렬해 못 박는다.
  */
-function _ost_collect_(코호트) {
+function _ost_collect_() {
   var ss = SpreadsheetApp.openById(_CS_LEDGER_SS_ID_);
   var tab = ss.getSheetByName("주문라인원장");
   if (!tab) throw new Error("「주문라인원장」 탭이 없습니다");
@@ -259,8 +336,6 @@ function _ost_collect_(코호트) {
   for (var i = 0; i < 값.length; i++) {
     var r = 값[i];
 
-    //  그날 회차만 — 회차키는 「261006-3」 꼴이다
-    if (String(r[c.round] || "").trim().indexOf(코호트) !== 0) continue;
     //  로젠 건만
     if (c.carrier != null && String(r[c.carrier] || "").indexOf("로젠") === -1) continue;
 
@@ -269,7 +344,15 @@ function _ost_collect_(코호트) {
     if (본것[d]) continue;                   // 합포장 — 한 번만 묻는다
     본것[d] = true;
 
-    out.push({ inv: d, days: _OST_FROM_DAYS_,
+    /*  ★ 「오늘 꼭 2영업일이 된 것」만 집는다 ★
+        >= 2 로 하면 지난 날들이 계속 쌓여 하루에 수천 건을 묻게 된다.
+        한 번 잡힌 건은 도착할 때까지 공지에 «남아 있으므로»(OST_FOUND),
+        여기서 다시 안 집어도 사라지지 않는다. */
+    var 발송 = _ost_roundDate_(r[c.round]);
+    if (!발송) continue;
+    if (_ost_bizSince_(발송) !== _OST_FROM_DAYS_) continue;
+
+    out.push({ inv: d, days: _OST_FROM_DAYS_, ship: _ost_ymd_(발송),
                name: c.name != null ? String(r[c.name] || "").trim() : "",
                order: c.order != null ? String(r[c.order] || "").trim() : "" });
   }

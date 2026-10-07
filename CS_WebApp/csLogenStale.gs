@@ -59,19 +59,19 @@ function csStaleReport_(멈춘것) {
   //  오래 멈춘 것부터
   멈춘것.sort(function (a, b) { return (b.며칠 || 0) - (a.며칠 || 0); });
 
-  var 제목 = "로젠 반품 " + 멈춘것.length + "건이 " + _STALE_DAYS_ + "일 넘게 멈춰 있습니다";
+  var 제목 = "로젠 반품 " + 멈춘것.length + "건이 " + _STALE_DAYS_ + "영업일 넘게 멈춰 있습니다";
   var 줄들 = [];
   for (var i = 0; i < 멈춘것.length && i < _STALE_SHOW_; i++) {
     var s = 멈춘것[i];
     줄들.push("· " + s.어디 +
       (s.이름 ? "  " + s.이름 : "") +
-      "  —  " + (s.며칠 == null ? "?" : s.며칠) + "일째" +
+      "  —  영업일 " + (s.며칠 == null ? "?" : s.며칠) + "일째" +
       (s.상태 ? " · " + s.상태 : "") +
       (s.takeNo ? "  (접수 " + s.takeNo + ")" : ""));
   }
   if (멈춘것.length > _STALE_SHOW_) 줄들.push("… 외 " + (멈춘것.length - _STALE_SHOW_) + "건");
   줄들.push("");
-  줄들.push("로젠에 확인하세요. 접수번호로 물으면 됩니다.");
+  줄들.push("로젠에 확인하세요. 접수번호로 물으면 됩니다. (주말·공휴일은 세지 않습니다.)");
   줄들.push("(이 카드는 자동으로 갱신됩니다. 다 풀리면 저절로 닫힙니다.)");
   var 본문 = 줄들.join("\n");
 
