@@ -164,27 +164,21 @@ function prpSubmitReturn(sid, data) {
     if (col.status >= 0) row[col.status] = PRP_INITIAL_STATUS;
     if (col.date >= 0) row[col.date] = prpToday_("yyMMdd");
 
-    /*  ★ 반품 고유ID 를 여기서 발급한다 ★  (2026-10-04)
-        > "모든 문의 반품 발주관련된 부분에서 항상 고유아이디가 붙게해줘"
+    /*  ★ 고유ID 칸은 «비워 둔다» ★  (2026-10-07)
 
-        여태 포털은 이 칸을 아예 몰라, 업체가 접수한 반품은 번호 없이
-        남았다. 그러면 그 건은 번호로 못 찾는다 — 「모든 반품에 번호」가
-        업체 쪽에서만 새고 있었다 (2026-10-04 에 실측으로 드러났다).
+        2026-10-04 에 여기서 반품 제 번호(r1004000003)를 발급했다. 뜻을 잘못
+        읽은 것이다 — 그 칸은 «원래 주문»의 고유ID 다. 하나의 번호로 주문·송장·
+        반품을 다 찾으려면 같은 번호가 세 곳에 있어야 한다. 반품에 따로 번호를
+        지으면 오히려 끊긴다. CS 쪽은 같은 날 그 길을 걷었다(csReturnUid.gs 머리말).
 
-        ★ 날짜는 오늘이다 ★ 포털 접수는 적는 날이 곧 접수날짜다
-        (바로 위에서 col.date 에 오늘을 넣는다). CS 쪽은 사람이 지난
-        날짜를 적을 수 있어 그 칸을 읽지만, 여기는 늘 오늘이다.
+        포털만 남아 «정의도 없는» prpReturnUidNext_ 를 부르고 있었다. 1b268fe 가
+        그 발급기를 보관만 하고 본체에 안 넣었다 — 업체가 접수하는 순간
+        ReferenceError 로 터질 자리였다. 호출을 걷는다.
 
-        ★ 열이 없으면 조용히 넘어간다 ★ 옛 탭에는 이 칸이 없다.
-        칸이 없다고 접수를 막으면 업체가 아무것도 못 한다.          */
-    if (col.uid >= 0) {
-      var 쓴것 = {};
-      for (var u = headerIdx + 1; u < values.length; u++) {
-        var uu = String((values[u] || [])[col.uid] || "").trim();
-        if (uu) 쓴것[uu] = true;
-      }
-      row[col.uid] = prpReturnUidNext_(prpToday_("MMdd"), 쓴것);
-    }
+        ★ 비워 두면 누가 채우나 ★ CS웹앱 csReturnOrderUidFill 이 원송장으로
+          주문 원장을 찾아 넣는다. 번호를 지어 넣어도 그쪽이 덮으므로,
+          지어 넣는 것은 틀린 값을 잠깐 두는 것일 뿐이다.
+          [[dont-overwrite-what-you-couldnt-read]] — 모르는 것과 비어 있는 것은 다르다. */
     if (col.staff >= 0) row[col.staff] = PRP_STAFF_PREFIX + sess.vendor;
     if (col.vendor >= 0) row[col.vendor] = sess.vendor;
     if (col.name >= 0) row[col.name] = name;
