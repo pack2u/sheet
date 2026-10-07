@@ -31,6 +31,64 @@
 /** 포털이 적는 요청 표시 — Partner_WebApp/prpPickup.gs 의 PRP_PICKUP_MARK_ 와 «같아야» 한다 */
 var _CPR_REQ_MARK_ = "반품접수 요청";
 
+/**
+ * «밖에서 볼 수 있는» 자리 — 반품관리대장의 점검 탭.
+ *
+ * ★ 왜 Logger.log 로는 모자란가 ★  (2026-10-07)
+ *   이 일감은 사람 없이 1시간마다 돈다. 그런데 남는 것이 Logger.log 뿐이라
+ *   «돌았는지·무엇이 바뀌었는지»를 보려면 매번 편집기를 열어야 한다.
+ *   묻는 사람도, 답하는 사람도 그때마다 사장님을 불러야 한다.
+ *
+ *   특히 트리거가 옛 이름에서 옮겨 탔는지는 «일이 도는 것»으로 가려지지 않는다 —
+ *   옛 트리거도 송장 채우기는 똑같이 한다. 바뀌어야 비로소 도는 것은 요청 접수뿐인데,
+ *   요청이 없으면 그것도 아무 일을 안 한다. 밤새 멀쩡해 보여도 안 바뀌었을 수 있다.
+ *   그래서 «지금 걸린 트리거 이름»을 그대로 적는다. 짐작하지 않게.
+ *
+ * ★ 달 탭으로 안 읽힌다 ★ 달 탭은 /^\d{6}$/ 로만 고른다(_cs_isReturnLedgerMonthName_).
+ * ★ 쌓이지 않는다 ★ 항목마다 한 줄이고 제자리에 덮어쓴다.
+ */
+var _CPR_OPS_TAB_ = "_운영점검";
+
+function _cpr_ops_(ss, 항목, 값) {
+  try {
+    var tab = ss.getSheetByName(_CPR_OPS_TAB_);
+    if (!tab) {
+      tab = ss.insertSheet(_CPR_OPS_TAB_);
+      tab.getRange(1, 1, 1, 3).setValues([["항목", "값", "적힌 때"]]);
+      tab.getRange("1:1").setBackground("#1f2937").setFontColor("white")
+        .setFontWeight("bold");
+      tab.setFrozenRows(1);
+      tab.setColumnWidth(1, 150);
+      tab.setColumnWidth(2, 520);
+      tab.setColumnWidth(3, 120);
+      //  맨 뒤로 보낸다 — 매일 쓰는 달 탭을 가리지 않게
+      try { ss.setActiveSheet(tab); ss.moveActiveSheet(ss.getNumSheets()); } catch (e) {}
+    }
+    var 때 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyMMdd HH:mm");
+    var last = tab.getLastRow();
+    var 이름들 = last >= 2
+      ? tab.getRange(2, 1, last - 1, 1).getDisplayValues() : [];
+    for (var i = 0; i < 이름들.length; i++) {
+      if (String(이름들[i][0]).trim() === 항목) {
+        tab.getRange(i + 2, 2, 1, 2).setValues([[String(값), 때]]);
+        return;
+      }
+    }
+    tab.appendRow([항목, String(값), 때]);
+  } catch (e) { /* 적지 못해도 제 일은 한다 */ }
+}
+
+/** 지금 «실제로» 걸려 있는 트리거 이름들 — 짐작하지 않고 그대로 적는다 */
+function _cpr_triggerNames_() {
+  try {
+    var all = ScriptApp.getProjectTriggers();
+    var 이름 = [];
+    for (var i = 0; i < all.length; i++) 이름.push(all[i].getHandlerFunction());
+    이름.sort();
+    return 이름.length ? 이름.join(" · ") : "(없음)";
+  } catch (e) { return "못 읽음: " + e.message; }
+}
+
 /** 이미 처리했다고 볼 흔적 */
 var _CPR_DONE_RE_ = /반품접수\s*(완료|실패)|회수접수\s*·/;
 
@@ -56,6 +114,18 @@ function csReturnHourlyJob() {
   try { L.push(csLogenFillReturnSlips({ 기존트리거아님: true })); }
   catch (e) { L.push("송장 채우기 실패: " + e.message); }
   var 글 = L.join("\n\n");
+
+  /*  ★ 돌았다는 것을 «읽히는 자리»에 남긴다 ★
+      Logger.log 는 편집기를 열어야 보인다. 이 일감은 사람 없이 도는 것이라
+      그러면 「돌았나」를 물을 때마다 사람을 불러야 한다.
+      트리거 이름은 짐작하지 않고 지금 걸린 것을 그대로 적는다 — 옛 이름이
+      남아 있으면 여기서 바로 드러난다.                                */
+  try {
+    var ss2 = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
+    _cpr_ops_(ss2, "반품 1시간 일감", "돌았습니다");
+    _cpr_ops_(ss2, "지금 걸린 트리거", _cpr_triggerNames_());
+  } catch (e) {}
+
   Logger.log(글);
   return 글;
 }
@@ -146,6 +216,7 @@ function csProcessPickupRequests(opt) {
 
   L.push("");
   L.push("접수 " + 됨 + " · 실패 " + 안됨);
+  try { _cpr_ops_(ss, "업체 반품접수 요청", "접수 " + 됨 + " · 실패 " + 안됨); } catch (e) {}
   if (안됨) L.push("★ 실패한 건은 사람이 봐야 합니다 — 업체 화면에도 그 사유가 보입니다");
   var 끝 = L.join("\n");
   Logger.log(끝);

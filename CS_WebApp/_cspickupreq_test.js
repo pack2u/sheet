@@ -158,5 +158,33 @@ console.log("\n[7] 접수는 CS웹앱 «한 곳»에서만 한다");
   ok("그 함수가 택배사를 가른다 (복사하지 않았다)", /로젠인가/.test(lotte));
 }
 
+console.log("\n[9] ★ 밖에서 볼 수 있는가 (편집기를 안 열고)");
+{
+  const fill = fs.readFileSync("csLogenSlipFill.gs", "utf8");
+
+  /*  이 일감은 사람 없이 1시간마다 돈다. 남는 것이 Logger.log 뿐이면
+      「돌았나 · 바뀌었나」를 물을 때마다 사람이 편집기를 열어야 한다.
+      특히 트리거가 옮겨 탔는지는 «일이 도는 것»으로 안 가려진다 —
+      옛 트리거도 송장 채우기는 똑같이 하기 때문이다. */
+
+  ok("점검 탭에 적는다", /var _CPR_OPS_TAB_ = "/.test(cs));
+  ok("★ 돌았다는 것을 남긴다", /_cpr_ops_\(ss2, "반품 1시간 일감"/.test(cs));
+  ok("★ 지금 걸린 트리거를 «그대로» 적는다 (짐작하지 않는다)",
+     /_cpr_ops_\(ss2, "지금 걸린 트리거", _cpr_triggerNames_\(\)\)/.test(cs) &&
+     /getHandlerFunction\(\)\)/.test(cs));
+  ok("★ 옮겨 탄 그 한 번도 남긴다", /"트리거 옮겨탐"/.test(fill));
+  ok("요청 처리 결과도 남긴다", /_cpr_ops_\(ss, "업체 반품접수 요청"/.test(cs));
+
+  //  ★ 달 탭으로 잘못 읽히면 대장을 훑는 코드가 이 탭까지 뒤진다 ★
+  const 탭 = (cs.match(/var _CPR_OPS_TAB_ = "([^"]+)"/) || [])[1];
+  ok("★ 달 탭 이름이 아니다", 탭 && !/^\d{6}$/.test(탭));
+
+  //  ★ 적다가 실패해도 접수·채우기는 돌아야 한다 ★
+  ok("점검 기록은 제 일을 막지 않는다",
+     /catch \(e\) \{ \/\* 적지 못해도 제 일은 한다 \*\/ \}/.test(cs));
+  ok("쌓이지 않는다 (항목마다 한 줄, 제자리에 덮는다)",
+     /setValues\(\[\[String\(값\), 때\]\]\)/.test(cs));
+}
+
 console.log("\n  " + pass + " 통과 / " + fail + " 실패\n");
 process.exit(fail ? 1 : 0);

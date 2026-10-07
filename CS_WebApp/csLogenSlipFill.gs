@@ -66,6 +66,14 @@ function csLogenFillReturnSlips(opt) {
       var 옛것 = ScriptApp.getProjectTriggers();
       for (var t = 0; t < 옛것.length; t++) {
         if (옛것[t].getHandlerFunction() === "csLogenFillReturnSlips") {
+          /*  ★ 옮겨 탄 그 한 번을 «읽히는 자리»에 남긴다 ★
+              이것은 한 번만 일어나고, 일어났는지는 「일이 도는 것」으로
+              가려지지 않는다 — 옛 트리거도 송장 채우기는 똑같이 한다.
+              여기서 안 남기면 편집기 트리거 목록을 여는 수밖에 없다. */
+          try {
+            _cpr_ops_(SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_),
+              "트리거 옮겨탐", "csLogenFillReturnSlips → csReturnHourlyJob");
+          } catch (e) {}
           var 옮김 = "옛 트리거를 csReturnHourlyJob 으로 옮겼습니다.\n\n" +
             csInstallLogenSlipFillTrigger();
           Logger.log(옮김);
