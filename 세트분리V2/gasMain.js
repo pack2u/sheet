@@ -2363,6 +2363,48 @@ function ss_합배송진단() {
  *
  * cells: [{ 행: 0기준 원본 행번호, 값: 이름/ID }]
  */
+/**
+ * ★ 전화 칸은 «글자»로 쓴다 — 앞의 0 이 빠지지 않게 ★  (2026-10-08)
+ *
+ *   > "전화번호 앞에 0이 빠진거 안생기게 수정해줘"
+ *
+ *   이카운트에서 붙여넣으면 전화가 숫자(1062398832)로 들어오거나, 숫자에 «0 을
+ *   붙여 보이는» 서식만 씌워져 온다(화면엔 01062398832). getValues 는 숫자를 주고,
+ *   그걸 그대로 setValues 하면 서식 없는 칸에 1062398832 로 박힌다.
+ *   ssPhoneFix 로 0 을 붙인 «글자»로 바꾸고, 그 칸 서식을 글자(@)로 둔다 —
+ *   서식이 숫자면 시트가 "01062398832" 를 다시 숫자로 읽어 0 을 지운다.
+ *
+ *   세트분리 본체(ssNormalize)는 이미 ssPhoneFix 를 거쳐 송장에는 0 이 붙어 나갔다.
+ *   빠진 것은 사본 탭들(판매현황_고유아이디 · MMDD판매현황)뿐이다.
+ *
+ * @param head  머리글 한 줄(배열)
+ * @param rows  고칠 줄들(제자리에서 고친다)
+ * @return 전화 칸의 자리(0-기준) 목록 — 서식을 씌울 때 쓴다
+ */
+var SS_PHONE_COLS = ['전화', '모바일', '전화번호(사방넷)', '전화번호(주문서)'];
+function ss_전화칸고치기_(head, rows) {
+  var 자리 = [];
+  for (var h = 0; h < (head || []).length; h++) {
+    if (SS_PHONE_COLS.indexOf(ssText(head[h])) >= 0) 자리.push(h);
+  }
+  for (var r = 0; r < (rows || []).length; r++) {
+    for (var k = 0; k < 자리.length; k++) {
+      var v = rows[r][자리[k]];
+      if (v === '' || v == null) continue;
+      rows[r][자리[k]] = ssPhoneFix(typeof v === 'number' ? String(Math.round(v)) : v);
+    }
+  }
+  return 자리;
+}
+
+/** 전화 칸 서식을 글자(@)로 — setValues «전에» 불러야 한다 */
+function ss_전화칸글자서식_(sh, 자리, 첫행, 줄수) {
+  if (!sh || !자리 || !자리.length || 줄수 < 1) return;
+  for (var k = 0; k < 자리.length; k++) {
+    try { sh.getRange(첫행, 자리[k] + 1, 줄수, 1).setNumberFormat('@'); } catch (e) {}
+  }
+}
+
 function ss_판매현황아이디채움(cells) {
   /* ★ 2026-09-09: 붙여넣는 칸을 건드리지 않는다 ★
      > "맨앞텝(판매현황)에 판매현황을 복붙하고 … 판매현황_고유아이디 라는
@@ -2427,6 +2469,15 @@ function ss_판매현황아이디채움(cells) {
   ssio_clearBody(out);
   if (out.getMaxColumns() < width) out.insertColumnsAfter(out.getMaxColumns(), width - out.getMaxColumns());
   if (out.getMaxRows() < grid.length) out.insertRowsAfter(out.getMaxRows(), grid.length - out.getMaxRows() + 10);
+  //  전화 칸 앞의 0 — 머리글 줄을 찾아 그 아래만 고친다 (맨 위에 회사명 머리말이 붙어 온다)
+  var _머리찾음 = ssFindSalesHeader(grid);
+  if (_머리찾음) {
+    var _hr = _머리찾음.headerRow;
+    var _아래 = grid.slice(_hr + 1);
+    var _전화자리 = ss_전화칸고치기_(grid[_hr], _아래);
+    for (var _q = 0; _q < _아래.length; _q++) grid[_hr + 1 + _q] = _아래[_q];
+    ss_전화칸글자서식_(out, _전화자리, _hr + 2, grid.length - _hr - 1);
+  }
   out.getRange(1, 1, grid.length, width).setValues(grid);
   return n;
 }
@@ -2925,6 +2976,8 @@ function ss_그날판매현황쌓기(runKey) {
     return a1 < b1 ? -1 : a1 > b1 ? 1 : 0;
   });
   /*  겹친 줄을 거르고 회차별로 센다 — 규칙은 ss_그날겹침거르기_ 한 곳에 있다 */
+  //  전화 칸 앞의 0 — 옛 줄·새 줄 모두 같은 꼴로 맞춘 «뒤»에 겹침을 거른다(숫자/글자로 갈리면 다른 줄로 본다)
+  var _전화자리2 = ss_전화칸고치기_(head, all);
   var _거른_ = ss_그날겹침거르기_(all, head);
   all = _거른_.rows;
   var 겹쳐버림 = _거른_.버림;
@@ -2938,6 +2991,7 @@ function ss_그날판매현황쌓기(runKey) {
     if (sh.getMaxRows() < all.length + 1) {
       sh.insertRowsAfter(sh.getMaxRows(), all.length + 1 - sh.getMaxRows() + 10);
     }
+    ss_전화칸글자서식_(sh, _전화자리2, 2, all.length);
     sh.getRange(2, 1, all.length, head.length).setValues(all);
   }
   ssio_styleHeader(sh, head.length, { bg: '#2c4f6b' });
