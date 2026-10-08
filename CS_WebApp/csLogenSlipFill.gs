@@ -138,9 +138,21 @@ function csLogenFillReturnSlips(opt) {
       var orig = String(row[col.invoice] || "").replace(/[^0-9]/g, "");
       if (orig.length < 8) continue;                       // 원송장이 없다
 
-      //  로젠 건만 — 수거입력처에 적힌 값이 근거다
+      /*  ★ 로젠 건만 ★ 수거입력처가 있으면 그것이 근거다.
+          ★ 없으면 «건너뛰지 않는다» ★  (2026-10-08)
+            여태 pk 가 비면 indexOf 가 -1 이라 그 줄을 통째로 건너뛰었다.
+            그런데 202610 탭에는 「수거입력처」 열이 **아예 없다** —
+            「원송장번호 / 택배사」와 「반품송장번호 / 택배사」 둘뿐이다.
+            그래서 그 탭에서는 자동 채우기가 **한 줄도 본 적이 없다.**
+            같은 전제로 반품접수도 롯데로 가고 있었다(csLotteReturn.gs 의
+            _lrt_guessCarrier_ 머리말). 두 곳이 같은 자리에서 틀렸다.
+            이제 근거로 가린다 — 판단하는 자는 그 함수 하나다. */
       var pk = String(col.pickup >= 0 ? row[col.pickup] : "").replace(/\s/g, "");
-      if (pk.indexOf("로젠") === -1) continue;
+      if (pk) {
+        if (pk.indexOf("로젠") === -1) continue;
+      } else if (_lsf_guessCarrier_(row[col.returnInvoice], row[col.invoice]) !== "로젠") {
+        continue;
+      }
 
       /*  ★ 원송장이 로젠이 아닐 수 있다 — 그래도 정상이다 ★  (2026-10-07)
           > "롯데에서 수거가 안되서 로젠에 수거 요청한거야"
@@ -512,6 +524,23 @@ function _lsf_ageFromTakeNo_(takeNo) {
   try { 일 = _ost_bizSince_(t); }
   catch (e) { 일 = Math.floor((new Date().getTime() - t.getTime()) / 86400000); }
   return 일 >= 0 && 일 < 400 ? 일 : null;
+}
+
+/**
+ * 수거입력처가 없을 때 택배사를 근거로 가린다.
+ *
+ * 판단하는 자는 csLotteReturn.gs 의 _lrt_guessCarrier_ 하나다 — 여기서 새로
+ * 짜지 않는다([[one-value-one-owner]]). 그것이 없으면 자릿수로 물러선다
+ * (롯데 12자리 · 로젠 11자리).
+ */
+function _lsf_guessCarrier_(반품송장칸, 원송장칸) {
+  try {
+    if (typeof _lrt_guessCarrier_ === "function") {
+      return _lrt_guessCarrier_(반품송장칸, 원송장칸);
+    }
+  } catch (e) {}
+  return String(원송장칸 == null ? "" : 원송장칸).replace(/[^0-9]/g, "").length === 12
+    ? "롯데" : "로젠";
 }
 
 /**

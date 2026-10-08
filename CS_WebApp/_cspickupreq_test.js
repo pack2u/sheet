@@ -250,5 +250,50 @@ console.log("\n[11] ★ 「/ 택배사」만 있는 칸은 «비어 있는» 것
   ok("적기 직전에도 그 자를 쓴다", (fill.match(/_lsf_hasInvoiceNo_\(cell/g) || []).length >= 2);
 }
 
+console.log("\n[12] ★ 수거입력처가 없는 탭에서도 «집는다»");
+{
+  /*  ★ 이 시험이 생긴 까닭 ★  (2026-10-08)
+      자동 채우기는 「로젠 건만」을 수거입력처로 걸렀다. 그런데 202610 탭에는
+      그 열이 **아예 없다** — pk 가 빈 글자가 되어 indexOf 가 -1 이고, 그 탭의
+      **모든 줄을 건너뛰었다.** 그 탭에서는 한 줄도 본 적이 없다.
+
+      같은 전제로 반품접수도 롯데로 가고 있었다(csLotteReturn.gs). 두 곳이
+      같은 자리에서 틀렸다 — 「수거입력처가 있다」는 전제. 그 열의 94%가 비어
+      있다는 것은 csLotteReturn.gs 머리말에 이미 적혀 있었다. */
+  const vm = require("vm");
+  const fill = fs.readFileSync("csLogenSlipFill.gs", "utf8");
+  const lotte = fs.readFileSync("csLotteReturn.gs", "utf8");
+  const ord = fs.readFileSync("csOrderSearch.gs", "utf8");
+  const trk = fs.readFileSync("csTrack.gs", "utf8");
+  function 꺼내(s, n) {
+    const i = s.indexOf("function " + n + "(");
+    if (i < 0) throw new Error(n + " 를 못 찾음");
+    let d = 0, seen = false;
+    for (let k = i; k < s.length; k++) {
+      if (s[k] === "{") { d++; seen = true; }
+      else if (s[k] === "}") { d--; if (seen && d === 0) return s.slice(i, k + 1); }
+    }
+  }
+  const ctx = { console, String, Number, Array, Math, JSON };
+  vm.createContext(ctx);
+  [[ord, "_cs_splitLedgerInvoice_"], [trk, "_trk_carrier_"],
+   [lotte, "_lrt_guessCarrier_"], [fill, "_lsf_guessCarrier_"]]
+    .forEach(([s, n]) => vm.runInContext(꺼내(s, n), ctx));
+  const g = (a, b) => vm.runInContext(
+    "_lsf_guessCarrier_(" + JSON.stringify(a) + "," + JSON.stringify(b) + ")", ctx);
+
+  ok("★ 실제 202610!36 을 로젠으로 본다", g("/ 로젠택배", "45311894913") === "로젠");
+  ok("★ 로젠 11자리만 있어도 로젠", g("", "45311894913") === "로젠");
+  ok("★ 롯데 12자리는 롯데 (안 집는다)", g("", "268334465383") === "롯데");
+  ok("반품송장에 적힌 택배사가 먼저다", g("268334465383 / 롯데택배", "45311894913") === "롯데");
+  ok("근거가 없으면 로젠 (지금 쓰는 택배사)", g("", "") === "로젠");
+
+  ok("★ 수거입처가 비면 건너뛰지 않는다",
+     /} else if \(_lsf_guessCarrier_\(row\[col\.returnInvoice\], row\[col\.invoice\]\) !== "로젠"\)/.test(fill));
+  ok("★ 적혀 있으면 그것이 먼저다", /if \(pk\) \{\s*\n\s*if \(pk\.indexOf\("로젠"\) === -1\) continue;/.test(fill));
+  ok("★ 판단하는 자는 _lrt_guessCarrier_ 하나다 (여기서 다시 안 짠다)",
+     /typeof _lrt_guessCarrier_ === "function"/.test(fill));
+}
+
 console.log("\n  " + pass + " 통과 / " + fail + " 실패\n");
 process.exit(fail ? 1 : 0);
