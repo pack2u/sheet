@@ -21,6 +21,9 @@ const fs = require("fs");
 const vm = require("vm");
 
 const src = fs.readFileSync("csLogenOutStale.gs", "utf8");
+/*  _ls_isLogenRow_ 가 거기 있다 — 「갓 돌린 회차는 택배사가 비어 경로를 본다」는
+    판단은 출고 쪽 둘이 같이 쓴다. 울타리에도 같이 올린다. */
+const ship = fs.readFileSync("csLogenShipSlips.gs", "utf8");
 const stale = fs.readFileSync("csLogenStale.gs", "utf8");
 const hourly = fs.readFileSync("csPickupRequests.gs", "utf8");
 
@@ -53,7 +56,7 @@ const 영업회차 = (n, 휴일 = {}) => {
   return p2(d.getFullYear() % 100) + p2(d.getMonth() + 1) + p2(d.getDate()) + "-1";
 };
 
-const 머리 = ["회차키", "운송장번호", "택배사", "거래처명", "사방넷주문번호"];
+const 머리 = ["회차키", "운송장번호", "택배사", "거래처명", "사방넷주문번호", "경로"];
 
 function 판(줄들, 추적) {
   const 한일 = { 물은것: [], 카드: [] };
@@ -102,6 +105,7 @@ function 판(줄들, 추적) {
   };
   vm.createContext(ctx);
   vm.runInContext(stale, ctx);
+  vm.runInContext(ship, ctx);
   vm.runInContext(src, ctx);
   ctx.한일 = 한일; ctx.속성 = 속성;
   return ctx;
@@ -347,6 +351,51 @@ console.log("\n[12] ★ 한 번 멈춘 건은 도착할 때까지 남는다");
   c2.csOutboundStaleCheck({ "처음부터": true });
   ok("★ 「처음부터」로 부를 때만 비운다 (손으로 되돌릴 길은 남긴다)",
      !/45324003801/.test(String(c2.속성.OST_FOUND || "")));
+}
+
+console.log("\n[13] ★ 갓 돌린 회차 — 택배사가 비어 있다");
+{
+  /*  2026-10-08 실측: 261008-1 은 169줄 모두 택배사·운송장·송장매칭이 빈칸이었다.
+      세트분리가 돌 때 정해지는 것은 「경로」뿐이고, 택배사는 나중에 송장이 붙을 때
+      채워진다. 「택배사」로만 거르면 **오늘 회차를 통째로 건너뛴다** —
+      정작 봐야 할 그 회차를. */
+  const 갓 = (경로) => [영업회차(2), "", "", "손님", "u1", 경로];
+  const c = 판([갓("로젠택배")], 멈춤);
+  c.csOutboundStaleCheck();
+  ok("★ 택배사가 비어도 경로로 집는다", c.한일.물은것.length === 0);  // 운송장이 없어 못 묻는 것은 맞다
+
+  //  경로로 가르는 규칙 자체를 잰다
+  const g = 판([], 멈춤);
+  const 로젠인가 = (경로, 택배사) =>
+    vm.runInContext("_ls_isLogenRow_(" + JSON.stringify(경로) + "," + JSON.stringify(택배사) + ")", g);
+  ok("★ 경로 「로젠택배」 → 우리 것", 로젠인가("로젠택배", "") === true);
+  ok("★ 경로 「로젠택배-도서산간」 → 우리 것", 로젠인가("로젠택배-도서산간", "") === true);
+  ok("★ 「대리발송」 → 아니다 (업체가 직접 보낸다)", 로젠인가("대리발송", "") === false);
+  ok("★ 「합포장동봉」 → 아니다 (제 송장이 없다)", 로젠인가("합포장동봉", "") === false);
+  ok("「보류」 → 아니다", 로젠인가("보류", "") === false);
+  ok("경로가 비면 택배사로 물러선다 (옛 줄)", 로젠인가("", "로젠택배") === true);
+  ok("둘 다 아니면 아니다", 로젠인가("", "롯데택배") === false);
+}
+
+console.log("\n[14] ★ 한 칸에 송장이 여럿 — 다박스가 통째로 빠지고 있었다");
+{
+  /*  2026-10-08 실측: 「45324003174 45324003185」처럼 띄어쓰기로 둘·셋이 들어 있다.
+      칸 전체에서 숫자만 뽑으면 22자리가 되어 **그 줄이 통째로 빠졌다.**
+      10월 회차에만 446줄이 그랬다 — 박스가 여럿인 건이니 더 봐야 할 줄들이다. */
+  const g = 판([], 멈춤);
+  const 쪼갠다 = (v) => vm.runInContext("_ost_splitInvoices_(" + JSON.stringify(v) + ")", g);
+  ok("★ 띄어쓰기로 둘", 쪼갠다("45324003174 45324003185").length === 2);
+  ok("★ 셋도 집는다", 쪼갠다("45324002496 45324002500 45324002511").length === 3);
+  ok("하나면 하나", 쪼갠다("45324003174").length === 1);
+  ok("쉼표·줄바꿈도 집는다", 쪼갠다("45324003174, 45324003185").length === 2);
+  ok("11자리가 아니면 버린다 (롯데 12자리)", 쪼갠다("268334465383").length === 0);
+  ok("빈칸은 빈 것", 쪼갠다("").length === 0);
+
+  //  실제로 두 줄이 되는지
+  const c = 판([[영업회차(2), "45324003174 45324003185", "로젠택배", "다박스", "m1"]], 멈춤);
+  c.csOutboundStaleCheck();
+  ok("★ 다박스는 송장마다 묻는다", c.한일.물은것[0].length === 2);
+  ok("둘 다 카드에 오른다", (마지막카드(c).body.match(/^· /gm) || []).length === 2);
 }
 
 console.log("\n[10] 1시간 일감에 얹혔나");

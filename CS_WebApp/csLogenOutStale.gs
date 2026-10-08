@@ -277,6 +277,20 @@ function _ost_report_(잡은것, 다봤나) {
   return _stale_publish_(_OST_SRCKEY_, 제목, 줄.join("\n"), 잡은것.length);
 }
 
+/**
+ * 한 칸에서 로젠 송장(11자리)을 모두 꺼낸다.
+ * 「45324003174 45324003185」 → ["45324003174","45324003185"]
+ * 띄어쓰기·쉼표·줄바꿈 무엇으로 갈라 놓았든 집는다.
+ */
+function _ost_splitInvoices_(v) {
+  var out = [];
+  var parts = String(v == null ? "" : v).split(/[^0-9]+/);
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i].length === 11) out.push(parts[i]);
+  }
+  return out;
+}
+
 /** 「yyyyMMdd」 → Date. 못 읽으면 null */
 function _ost_ymdToDate_(s) {
   var m = String(s || "").match(/^(\d{4})(\d{2})(\d{2})$/);
@@ -372,6 +386,7 @@ function _ost_collect_() {
     if (nm === "회차키") c.round = h;
     else if (nm === "운송장번호") c.inv = h;
     else if (nm === "택배사") c.carrier = h;
+    else if (nm === "경로") c.path = h;
     else if (nm === "거래처명") c.name = h;
     else if (nm === "사방넷주문번호") c.order = h;
   }
@@ -385,25 +400,33 @@ function _ost_collect_() {
   for (var i = 0; i < 값.length; i++) {
     var r = 값[i];
 
-    //  로젠 건만
-    if (c.carrier != null && String(r[c.carrier] || "").indexOf("로젠") === -1) continue;
+    //  로젠 건만 — 갓 돌린 회차는 택배사가 비어 「경로」를 봐야 한다 (csLogenShipSlips.gs)
+    if (!_ls_isLogenRow_(c.path != null ? r[c.path] : "",
+                         c.carrier != null ? r[c.carrier] : "")) continue;
 
-    var d = String(r[c.inv] || "").replace(/[^0-9]/g, "");
-    if (d.length !== 11) continue;          // 로젠 송장이 아니다
-    if (본것[d]) continue;                   // 합포장 — 한 번만 묻는다
-    본것[d] = true;
+    /*  ★ 한 칸에 송장이 여럿일 수 있다 ★  (2026-10-08 실측)
+        「45324003174 45324003185」처럼 띄어쓰기로 둘·셋이 들어 있다 — 다박스다.
+        여태 칸 전체에서 숫자만 뽑아 11자리인지 봤다. 22자리가 되어 **그 줄이
+        통째로 빠졌다.** 10월 회차에만 446줄이 그랬다 — 박스가 여럿인 건이니
+        오히려 더 봐야 할 줄들이다. */
+    var 발송 = _ost_roundDate_(r[c.round]);
+    if (!발송) continue;
 
     /*  ★ 「오늘 꼭 2영업일이 된 것」만 집는다 ★
         >= 2 로 하면 지난 날들이 계속 쌓여 하루에 수천 건을 묻게 된다.
         한 번 잡힌 건은 도착할 때까지 공지에 «남아 있으므로»(OST_FOUND),
         여기서 다시 안 집어도 사라지지 않는다. */
-    var 발송 = _ost_roundDate_(r[c.round]);
-    if (!발송) continue;
     if (_ost_bizSince_(발송) !== _OST_FROM_DAYS_) continue;
 
-    out.push({ inv: d, days: _OST_FROM_DAYS_, ship: _ost_ymd_(발송),
-               name: c.name != null ? String(r[c.name] || "").trim() : "",
-               order: c.order != null ? String(r[c.order] || "").trim() : "" });
+    var 송장들 = _ost_splitInvoices_(r[c.inv]);
+    for (var z = 0; z < 송장들.length; z++) {
+      var d = 송장들[z];
+      if (본것[d]) continue;                 // 합포장 — 한 번만 묻는다
+      본것[d] = true;
+      out.push({ inv: d, days: _OST_FROM_DAYS_, ship: _ost_ymd_(발송),
+                 name: c.name != null ? String(r[c.name] || "").trim() : "",
+                 order: c.order != null ? String(r[c.order] || "").trim() : "" });
+    }
   }
 
   //  ★ 차례를 못 박는다 ★ 번호로 어디까지 봤는지를 적어 두기 때문이다

@@ -158,6 +158,25 @@ function csLogenCollectShipSlips(opt) {
   return 끝;
 }
 
+/**
+ * 이 줄이 «우리가 로젠으로 보낸» 건인가.
+ *
+ * ★ 갓 돌린 회차는 「택배사」가 비어 있다 ★  (2026-10-08 실측)
+ *   261008-1 을 보니 169줄 모두 택배사·운송장·송장매칭이 빈칸이었다.
+ *   그 칸들은 나중에 송장이 붙을 때 채워진다. 「택배사」로만 거르면
+ *   **오늘 회차를 통째로 건너뛴다** — 정작 송장을 받아 와야 할 그 회차를.
+ *
+ *   세트분리가 돌 때 정해지는 것은 「경로」다. 그것을 먼저 본다.
+ *     로젠택배 · 로젠택배-도서산간(…)  → 우리가 로젠으로 보낸다
+ *     대리발송 · 합포장동봉 · 보류      → 아니다 (제 송장이 없다)
+ *   경로가 비어 있는 옛 줄을 위해 택배사도 같이 본다.
+ */
+function _ls_isLogenRow_(경로, 택배사) {
+  var p = String(경로 || "").trim();
+  if (p) return p.indexOf("로젠택배") === 0;
+  return String(택배사 || "").indexOf("로젠") !== -1;
+}
+
 /** 실적 탭 */
 function _ssl_tab_() {
   var ss = SpreadsheetApp.openById(_CS_TRADE_INVOICE_SS_ID_);
@@ -201,6 +220,7 @@ function _ssl_ordersFromLedger_(days) {
     if (nm === "회차키") c.round = h;
     else if (nm === "운송장번호") c.inv = h;
     else if (nm === "택배사") c.carrier = h;
+    else if (nm === "경로") c.path = h;
     else if (nm === "거래처명") c.name = h;
     else if (nm === "사방넷주문번호") c.uid = h;
   }
@@ -213,7 +233,8 @@ function _ssl_ordersFromLedger_(days) {
   var 본것 = {}, out = [];
   for (var i = 값.length - 1; i >= 0; i--) {
     var r = 값[i];
-    if (c.carrier != null && String(r[c.carrier] || "").indexOf("로젠") === -1) continue;
+    if (!_ls_isLogenRow_(c.path != null ? r[c.path] : "",
+                         c.carrier != null ? r[c.carrier] : "")) continue;
 
     var uid = String(r[c.uid] || "").trim();
     if (!uid || 본것[uid]) continue;      // 합포장 — 주문 하나에 줄이 여럿
