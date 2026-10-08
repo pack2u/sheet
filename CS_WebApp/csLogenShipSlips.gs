@@ -223,8 +223,10 @@ function _ssl_ordersFromLedger_(days) {
     else if (nm === "경로") c.path = h;
     else if (nm === "거래처명") c.name = h;
     else if (nm === "사방넷주문번호") c.uid = h;
+    else if (nm === "송장키") c.key = h;
   }
-  if (c.uid == null || c.round == null) throw new Error("사방넷주문번호·회차키 열을 못 찾았습니다");
+  if (c.key == null && c.uid == null) throw new Error("송장키·사방넷주문번호 열을 못 찾았습니다");
+  if (c.round == null) throw new Error("회차키 열을 못 찾았습니다");
 
   var 오늘 = new Date(); 오늘.setHours(0, 0, 0, 0);
   var from = Math.max(2, lastRow - _SSL_SCAN_ROWS_ + 1);
@@ -236,8 +238,20 @@ function _ssl_ordersFromLedger_(days) {
     if (!_ls_isLogenRow_(c.path != null ? r[c.path] : "",
                          c.carrier != null ? r[c.carrier] : "")) continue;
 
-    var uid = String(r[c.uid] || "").trim();
-    if (!uid || 본것[uid]) continue;      // 합포장 — 주문 하나에 줄이 여럿
+    /*  ★ 로젠에 올라간 번호는 «송장키» 다 ★  (2026-10-08 실측)
+        세트(몸통+뚜껑)는 박스마다 송장이 한 장씩 붙어야 해서 꼬리표가 붙는다 —
+        2167009863 하나가 로젠에는 2167009863_S1 · _S2 로 들어간다.
+        사방넷주문번호로 물으면 **「송장번호 조회 실패」** 가 온다. 실제로 그랬다:
+          2167009863     → 없음
+          2167009863_S1  → 45326800971, 45326800982
+          2167009863_S2  → 45326800993, 45326801004
+        261008-1 에서 못 찾은 21건이 «전부» 세트였다. 송장키로 물으면 다 나온다.
+
+        ★ 그래서 주문이 아니라 «줄»마다 묻는다 ★ 세트는 한 주문이 두 줄이고
+        줄마다 송장이 따로다. 주문으로 묶으면 한쪽을 잃는다. */
+    var uid = String(c.key != null ? (r[c.key] || "") : "").trim();
+    if (!uid) uid = String(c.uid != null ? (r[c.uid] || "") : "").trim();
+    if (!uid || 본것[uid]) continue;      // 같은 송장키가 여러 줄 — 한 번만 묻는다
     본것[uid] = true;
 
     var 발송 = _ost_roundDate_(r[c.round]);
