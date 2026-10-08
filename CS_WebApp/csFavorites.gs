@@ -192,6 +192,7 @@ function _cs_fav_list_() {
   }
 
   var out = _cs_fav_cleanList_(src);
+  out = _cs_fav_addAllPartners_(out);
 
   // JSON 은 멀쩡한데 쓸 수 있는 항목이 하나도 안 남는 경우도 있다(전부 http 아닌
   // 주소 등). 그때도 빈 바보다 기본 목록이 낫다 — 깨진 JSON 과 같은 이유다.
@@ -200,6 +201,122 @@ function _cs_fav_list_() {
     from = "코드 기본 목록 (속성 " + _CS_FAV_PROP_ + " 에 쓸 수 있는 항목이 없음)";
   }
   return { items: out, from: from };
+}
+
+/* ══════════════════════════════════════════════════════════════
+    ★ 협력업체 시트 «전체» — 손으로 안 베낀다 ★  (2026-10-08)
+
+    > "우리 상단에 북마크에 협력업체 시트 전체를 넣어주면 좋겠어"
+
+    ★ 왜 손으로 베끼면 안 되나 ★
+      코드 기본 목록의 「협력업체 시트」는 크롬 북마크바에서 베껴 온 것이고,
+      그 자리에 이렇게 적혀 있다 — 「원본이 바뀌면 여기도 손대야 한다.
+      자동으로 따라오지 않는다」. 실제로 늦었다. 업체는 늘고 줄고,
+      시트 이름도 바뀐다. 사람이 그때마다 옮겨 적는 일은 반드시 빠뜨린다.
+
+    ★ 그래서 드라이브를 본다 ★
+      업체 시트는 두 폴더에 「[협력업체] 이름」으로 산다 — 허브(_partnerDeploy.gs
+      의 _pt_listFiles)가 보는 바로 그 폴더다. 같은 곳을 보니 허브가 미는 곳과
+      사장님이 여는 곳이 어긋나지 않는다. 한 값에 주인은 하나다.
+
+    ★ 손으로 묶은 것은 안 건드린다 ★
+      「대리공급업체 · 대리판매업체 · 직매입」 갈래는 사람이 정한 것이라 쓸모가
+      있다. 그것을 지우지 않고 «전체» 폴더를 맨 앞에 하나 더 둔다.
+      자주 쓰는 길은 그대로 두고, 빠진 곳이 없다는 보장만 더한다.
+
+    ★ 느리면 안 된다 ★ 즐겨찾기는 화면이 뜰 때마다 부른다. 드라이브 훑기는
+      느리므로 여섯 시간 담아 둔다. 못 읽으면 «조용히 넘어간다» —
+      바가 통째로 사라지는 것보다 전체 폴더가 없는 편이 낫다.
+   ══════════════════════════════════════════════════════════════ */
+var _CS_FAV_PARTNER_FOLDERS_ = [
+  "1IqqPLKxBNrqh-u14Op6jKNN7khzE13Cl",
+  "1J0f8HjtartQwixF3xKQf0p7fvr04Ef7v",
+];
+var _CS_FAV_PARTNER_PREFIX_ = "[협력업체]";
+var _CS_FAV_PARTNER_CACHE_ = "CS_FAV_PARTNER_ALL_V1";
+var _CS_FAV_PARTNER_TTL_ = 21600;   // 6시간
+
+/** 드라이브에서 업체 시트를 모은다. 못 읽으면 빈 배열 — 터뜨리지 않는다. */
+function _cs_fav_partnerSheets_() {
+  //  시험은 GAS 바깥에서 돈다 — 드라이브도 캐시도 없다. 그때는 조용히 비운다.
+  if (typeof DriveApp === "undefined") return [];
+
+  try {
+    var cache = (typeof CacheService !== "undefined")
+      ? CacheService.getScriptCache() : null;
+    if (cache) {
+      var hit = cache.get(_CS_FAV_PARTNER_CACHE_);
+      if (hit) {
+        var 담긴것 = JSON.parse(hit);
+        if (담긴것 && 담긴것.length) return 담긴것;
+      }
+    }
+  } catch (eC) {}
+
+  var 본것 = {}, 모음 = [];
+  for (var i = 0; i < _CS_FAV_PARTNER_FOLDERS_.length; i++) {
+    try {
+      var files = DriveApp.getFolderById(_CS_FAV_PARTNER_FOLDERS_[i]).getFiles();
+      while (files.hasNext()) {
+        var f = files.next();
+        var nm = String(f.getName() || "");
+        //  「[협력업체] 」와 「[협력업체]_」 둘 다 쓰인다 (_pt_listFiles 와 같은 규칙)
+        if (nm.indexOf(_CS_FAV_PARTNER_PREFIX_) !== 0) continue;
+        var id = f.getId();
+        if (본것[id]) continue;
+        본것[id] = true;
+        모음.push({
+          icon: "📄",
+          name: nm.substring(_CS_FAV_PARTNER_PREFIX_.length).replace(/^[\s_]+/, "") || nm,
+          url: "https://docs.google.com/spreadsheets/d/" + id + "/edit",
+        });
+      }
+    } catch (eF) {
+      //  한 폴더를 못 읽어도 다른 폴더는 본다. 반쪽이라도 없는 것보다 낫다.
+      try { Logger.log("[CS_FAV] 폴더 " + _CS_FAV_PARTNER_FOLDERS_[i] + " 못 읽음: " + eF.message); } catch (_) {}
+    }
+  }
+  모음.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+
+  try {
+    var c2 = (typeof CacheService !== "undefined") ? CacheService.getScriptCache() : null;
+    if (c2 && 모음.length) {
+      c2.put(_CS_FAV_PARTNER_CACHE_, JSON.stringify(모음), _CS_FAV_PARTNER_TTL_);
+    }
+  } catch (eP2) {}
+  return 모음;
+}
+
+/**
+ * 「협력업체 시트」 폴더 맨 앞에 «전체» 를 끼운다.
+ * 그 폴더가 없으면 맨 뒤에 새로 만든다 — 속성으로 목록을 갈아 끼운 사람도 받는다.
+ */
+function _cs_fav_addAllPartners_(items) {
+  var 전부 = _cs_fav_partnerSheets_();
+  if (!전부.length) return items;      // 못 읽었으면 여태 모습 그대로
+
+  var 전체칸 = {
+    icon: "🗂",
+    name: "전체 (자동 · " + 전부.length + "곳)",
+    children: 전부,
+  };
+
+  for (var i = 0; i < items.length; i++) {
+    if (items[i] && items[i].children && String(items[i].name).indexOf("협력업체") >= 0) {
+      //  두 번 눌러도 두 개가 되지 않게 — 옛 「전체」가 있으면 갈아 끼운다
+      var kids = [];
+      for (var k = 0; k < items[i].children.length; k++) {
+        if (String(items[i].children[k].name).indexOf("전체 (자동") !== 0) {
+          kids.push(items[i].children[k]);
+        }
+      }
+      kids.unshift(전체칸);
+      items[i].children = kids;
+      return items;
+    }
+  }
+  items.push({ icon: "🤝", name: "협력업체 시트", children: [전체칸] });
+  return items;
 }
 
 function _cs_fav_cleanList_(src) {
