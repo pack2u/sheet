@@ -215,7 +215,11 @@ console.log("\n[10] ★ 실패 줄을 «해결됨»으로 고쳐 적는다");
   ok("★ 성공할 때 부른다 (요청 처리기)", /if \(성공\) \{[\s\S]{0,200}_cpr_resolveFailCell_/.test(cs));
   const fill = fs.readFileSync("csLogenSlipFill.gs", "utf8");
   ok("★ 송장을 채울 때도 부른다 (두 경로 다)",
-     (fill.match(/_cpr_resolveFailCell_/g) || []).length >= 2);
+     (fill.match(/_cpr_resolveFailCell_/g) || []).length >= 4);
+  /*  ★ 송장이 아니라 «접수번호»가 나온 순간 고친다 ★ 송장이 늦게 나오는 건은
+      그 사이 내내 「실패」로 보인다. 202610!36 이 접수 상태로 멈춰 그랬다. */
+  ok("★ 접수번호만 나와도 고친다 (송장을 안 기다린다)",
+     /if \(고른\.takeNo\) \{[\s\S]{0,140}_cpr_resolveFailCell_/.test(fill));
   ok("안 바뀌었으면 시트를 안 건드린다", /if \(후 === 전\) return false;/.test(cs));
 }
 

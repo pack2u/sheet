@@ -269,6 +269,15 @@ function csLogenFillReturnSlips(opt) {
             송장은 보통 집하 전후에 나온다. 며칠이 지나도 「접수」에 멈춰 있으면
             집하를 안 갔거나 로젠이 출력을 안 한 것이다 — **사람이 물어봐야 한다.**
             실제로 그런 건이 있었다(10/02 접수가 10/07 까지 그대로). */
+        /*  ★ 접수번호가 나왔으면 그 자체로 「접수됐다」는 뜻이다 ★  (2026-10-08)
+            송장이 나올 때까지 기다리면, 그 사이 내내 비고에 「반품접수 실패」가
+            남아 CS 와 업체가 실패로 믿는다. 접수된 것을 안 순간 고쳐 적는다.
+            (처음엔 송장 적을 때만 고치게 했다가, 202610!36 이 접수 상태로
+             멈춰 있어 영영 안 고쳐지는 것을 보고 여기로 옮겼다.) */
+        if (고른.takeNo) {
+          try { _cpr_resolveFailCell_(it.tab, it.rowNum, it.col.notice, 고른.takeNo); }
+          catch (e) {}
+        }
         var 며칠 = _lsf_ageFromTakeNo_(고른.takeNo);
         var 늦음 = (며칠 !== null && 며칠 >= _LSF_STALE_DAYS_);
         if (늦음) { 오래됨++; 멈춘것.push({ 어디: 어디, 이름: it.name || "",
@@ -347,6 +356,10 @@ function csLogenFillReturnSlips(opt) {
       if (본.cancelled && !본.slipNo) { 취소++; L.push("  · " + 어디T + " — 취소된 접수"); continue; }
       if (!본.slipNo) {
         송장대기++;
+        if (itT.takeNo) {
+          try { _cpr_resolveFailCell_(itT.tab, itT.rowNum, itT.col.notice, itT.takeNo); }
+          catch (e) {}
+        }
         var 며칠T = _lsf_ageFromTakeNo_(itT.takeNo);
         var 늦음T = (며칠T !== null && 며칠T >= _LSF_STALE_DAYS_);
         if (늦음T) { 오래됨++; 멈춘것.push({ 어디: 어디T, 이름: itT.name || "",
