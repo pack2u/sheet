@@ -68,7 +68,7 @@ function 판(응답) {
   };
   vm.createContext(ctx);
   vm.runInContext(["_lgr_to_", "csLogenReturnReady", "csLogenReturnCheck",
-    "_lgr_fareOk_", "csLogenReturnRegister", "csLogenReturnState",
+    "_lgr_fareOk_", "_lgr_contractFare_", "csLogenReturnRegister", "csLogenReturnState",
     "csLogenReturnCancel"].map(grab).join("\n"), ctx);
   return ctx;
 }
@@ -76,6 +76,10 @@ function 판(응답) {
 const 정상조회 = { ok: true, json: { data: [{ resultCd: "TRUE", fareTy: "010", fareTyNm: "선불",
   dlvFare: 3000, dlvBranCd: "B12", branNm: "평택지점" }] } };
 const 정상접수 = { ok: true, json: { data: [{ resultCd: "TRUE", takeNo: "T1234567890", fixTakeNo: "F1" }] } };
+/*  ★ 반품 «계약» 운임 ★ contRtnFares 가 주는 값이다. 지점별 배송운임(정상조회의
+    dlvFare 3000)과 «다르다» — 계약 운임은 2500 하나다. 이 둘을 헷갈려 실패했다. */
+const 계약운임 = { ok: true, json: { data: [{ resultCd: "SUCCESS",
+  data1: [{ boxTyCd: "ZW001", dlvFare: 2500 }] }] } };
 const 고객 = { orgnSlipNo: "451-6945-9705", name: "김철수", tel: "010-1111-2222",
   addr: "서울시 강남구 테헤란로 1", goodsNm: "JH 미니탕 소", msg: "문 앞" };
 
@@ -124,18 +128,47 @@ console.log("\n[4] ★ 운임은 «조회해서» 쓴다 — 지어내지 않는
   check("접수번호를 돌려준다", r.takeNo, "T1234567890");
 
   const 부른API = c.보낸것.map((x) => x.api);
-  check("★ 조회를 «먼저» 부른다", 부른API, ["reverseChkInfoMulti", "registReturnRequest"]);
+  check("★ 조회를 «먼저» 부른다", 부른API, ["reverseChkInfoMulti", "contRtnFares", "registReturnRequest"]);
 
-  const 보낸 = c.보낸것[1].body.data[0];
-  check("★ 조회가 준 운임을 그대로 쓴다", 보낸.dlvFare, 3000);
+  const 보낸 = c.보낸것[c.보낸것.length - 1].body.data[0];
   check("★ 조회가 준 운임타입을 그대로 쓴다", 보낸.fareTy, "010");
+}
+
+console.log("\n[4-2] ★ 운임은 «반품 계약 운임» 이다 — 지점 배송운임이 아니다");
+{
+  /*  ★ 2026-10-08 실측으로 드러난 자리 ★
+      reverseChkInfoMulti 의 dlvFare 는 «그 지점의 배송운임» 이고 지점마다 다르다 —
+      서동작 2,400 · 남강서 2,500 · 서김포 4,000. 반품 계약 운임은 2,500 하나다.
+      계약에 없는 운임을 보내면 로젠이 통째로 거절하는데, 돌려주는 말이
+      「거래처계약정보 조회 오류 ( 거래처코드 : 348782 )」 라 운임 이야기가 없다.
+      그 번호는 우리 거래처코드도 아니라 엉뚱한 데를 보게 만든다. 실제로 그랬다:
+        45311894913 · 2,400 → 거래처계약정보 조회 오류
+        45311894913 · 2,500 → 정상 접수 (takeNo 261008109134)
+      2,500짜리 지점에서만 «우연히» 되고 있었다. 조용히 반이 실패하는 자리였다. */
+  const c = 판({ reverseChkInfoMulti: 정상조회, contRtnFares: 계약운임, registReturnRequest: 정상접수 });
+  vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c);
+  const 보낸 = c.보낸것[c.보낸것.length - 1].body.data[0];
+  check("★ 계약 운임을 보낸다 (지점 배송운임 3000 이 아니다)", 보낸.dlvFare, 2500);
+
+  //  ★ 계약 운임을 못 받으면 접수를 막지 않는다 ★
+  //    막으면 멀쩡한 건까지 못 보낸다. 틀린 값이면 로젠이 거절하고 사유가 보인다.
+  const c2 = 판({ reverseChkInfoMulti: 정상조회, registReturnRequest: 정상접수 });
+  const r2 = vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c2);
+  check("★ 계약 운임을 못 받아도 접수한다", r2.ok, true);
+  check("그때는 조회가 준 값으로 보낸다", c2.보낸것[c2.보낸것.length - 1].body.data[0].dlvFare, 3000);
+
+  //  0 이 오면 쓰지 않는다 — 로젠은 운임 0 인 반품을 안 받는다
+  const 빈계약 = { ok: true, json: { data: [{ resultCd: "SUCCESS", data1: [{ dlvFare: 0 }] }] } };
+  const c3 = 판({ reverseChkInfoMulti: 정상조회, contRtnFares: 빈계약, registReturnRequest: 정상접수 });
+  vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c3);
+  check("★ 계약 운임이 0 이면 안 쓴다", c3.보낸것[c3.보낸것.length - 1].body.data[0].dlvFare, 3000);
 }
 
 console.log("\n[5] ★ 방향이 반대다 — 송하인은 «고객»");
 {
   const c = 판({ reverseChkInfoMulti: 정상조회, registReturnRequest: 정상접수 });
   vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c);
-  const 보낸 = c.보낸것[1].body.data[0];
+  const 보낸 = c.보낸것[c.보낸것.length - 1].body.data[0];
   check("★ 송하인 = 반품 보내는 고객", 보낸.sndCustNm, "김철수");
   check("★ 수하인 = 화주사(우리)", 보낸.rcvCustNm, "주식회사 팩투유");
   check("고객 주소가 송하인 자리에", 보낸.sndCustAddr1, "서울시 강남구 테헤란로 1");
@@ -237,9 +270,13 @@ console.log("\n[13] 규격 문서와 어긋나지 않는가");
   for (const m of src.matchAll(/_logen_call_\("([A-Za-z]+)"/g)) {
     if (부르는API.indexOf(m[1]) < 0) 부르는API.push(m[1]);
   }
-  check("부르는 API 를 찾았다", 부르는API.length, 4);
+  /*  숫자를 못 박지 않는다 — API 를 하나 늘릴 때마다 여기서 걸리는데,
+      그건 이 시험이 보려던 것이 아니다. 「규격에 있는 것만 부르나」가 볼 것이다.
+      (2026-10-08: contRtnFares 를 더하다 4 → 5 로 걸렸다) */
+  check("부르는 API 를 하나라도 찾았다", 부르는API.length > 0, true);
   const 없는것 = 부르는API.filter((a) => 규격.indexOf(a) < 0);
   check("★ 규격에 없는 API 를 부르지 않는다", 없는것, []);
+  check("★ 운임은 반품 계약 운임으로 받는다", 부르는API.indexOf("contRtnFares") >= 0, true);
 
   //  규격이 못 박은 제약이 코드에도 적혀 있는가 (사람이 다시 읽을 수 있게)
   check("010·020 제약을 적어 뒀다", src.indexOf("010") >= 0 && src.indexOf("020") >= 0, true);

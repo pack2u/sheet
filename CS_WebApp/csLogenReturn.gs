@@ -150,6 +150,36 @@ function _lgr_fareOk_(chk) {
 }
 
 /**
+ * 반품 «계약» 운임을 받는다 — contRtnFares (규격 §8.4).
+ *
+ * 못 받으면 0 을 준다. 그때는 reverseChkInfoMulti 의 값을 그대로 쓴다 —
+ * 접수를 막느니 틀릴 수 있는 값으로라도 보내 보는 편이 낫다. 틀리면 로젠이
+ * 거절하고 그 사유가 사람에게 그대로 보인다.
+ *
+ * 박스타입이 여럿 오면 «가장 싼 것»을 쓴다. 지금 계약에는 ZW001 하나뿐이다.
+ */
+function _lgr_contractFare_(orgnSlipNo, fareTy) {
+  try {
+    var r = _logen_call_("contRtnFares", {
+      userId: _logen_userId_(),
+      data: [{ orgnSlipNo: String(orgnSlipNo), fareTy: String(fareTy || "010") }]
+    });
+    if (!r.ok) return 0;
+    var rows = _logen_arr_(r.json && (r.json.data || r.json.data1));
+    var best = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var inner = _logen_arr_(rows[i] && rows[i].data1);
+      for (var j = 0; j < inner.length; j++) {
+        var f = parseInt(String((inner[j] || {}).dlvFare == null ? "" : inner[j].dlvFare)
+                  .replace(/[^0-9]/g, ""), 10);
+        if (f > 0 && (best === 0 || f < best)) best = f;
+      }
+    }
+    return best;
+  } catch (e) { return 0; }
+}
+
+/**
  * 회수 접수 — `registReturnRequest` (규격 §8.1)
  *
  * @param p {orgnSlipNo, name, tel, addr, addr2, goodsNm, msg, staff}
@@ -182,6 +212,22 @@ function csLogenReturnRegister(p) {
   var chk = csLogenReturnCheck(inv);
   var 왜 = _lgr_fareOk_(chk);
   if (왜) return { ok: false, error: 왜, check: chk };
+
+  /*  ★ 운임은 «반품 계약 운임» 이어야 한다 ★  (2026-10-08 실측으로 고침)
+      reverseChkInfoMulti 의 dlvFare 는 «그 지점의 배송운임» 이고 지점마다 다르다 —
+      서동작 2,400 · 남강서 2,500 · 서김포 4,000. 그런데 반품 계약 운임은 2,500
+      하나다(contRtnFares · ZW001).
+
+      계약에 없는 운임을 적어 보내면 로젠이 통째로 거절한다. 그런데 돌려주는 말이
+      **「거래처계약정보 조회 오류 ( 거래처코드 : 348782 )」** 라 운임 이야기가
+      한마디도 없다. 그 번호는 우리 거래처코드(30556066)도 아니다 — 엉뚱한 데를
+      보게 만드는 말이다. 실제로 그랬다:
+        45311894913 · 2,400 → 거래처계약정보 조회 오류
+        45311894913 · 2,500 → 정상 접수 (takeNo 261008109134)
+
+      2,500짜리 지점에서만 우연히 되고 있었다. 지점마다 다르니 조용히 반이 실패한다. */
+  var 계약운임 = _lgr_contractFare_(inv, chk.fareTy);
+  if (계약운임 > 0) chk.dlvFare = 계약운임;
 
   //  ② 접수
   var r = _logen_call_("registReturnRequest", {
