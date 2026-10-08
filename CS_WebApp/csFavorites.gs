@@ -39,15 +39,84 @@ var _CS_FAV_DEFAULT_ = [
     url: "https://docs.google.com/spreadsheets/d/1LlNX-spTs-2WgWD8HEha90PYU0m7s8MqFh84vy_Fi_Q/edit",
   },
   {
+    /*  롯데 ALPS → 로젠으로 갈았다  (2026-10-08)
+        > "현재 롯데 알프스가 들어가있는데 로젠으로 바꿔주고"
+        2026-09 에 택배사를 로젠으로 돌렸는데 북마크만 롯데에 남아 있었다.
+        롯데 건을 되짚을 일이 생기면 그때 다시 넣는다. */
     icon: "🚚",
-    name: "롯데 ALPS",
-    url: "https://partner.alps.llogis.com/main/pages/sec/authentication",
+    name: "로젠택배",
+    url: "https://logis.ilogen.com/common/html/main.html",
   },
   {
     // 계정 목록 시트. 링크만 둔다 — 열람 권한은 시트 공유 설정이 정한다.
     icon: "🔑",
     name: "아이디·패스워드",
     url: "https://docs.google.com/spreadsheets/d/1xziVmMIsQfwyDwleNmB0haRsiE5t24aMu2SHkuI_34U/edit?gid=0#gid=0",
+  },
+  {
+    //  이카운트 — 품목·재고·판매현황이 사는 곳  (2026-10-08)
+    icon: "📒",
+    name: "이카운트",
+    url: "https://login.ecount.com/Login/",
+  },
+  /*  ══════════════════════════════════════════════════════════
+      ★ 쇼핑몰 관리자 ★  (2026-10-08)
+      > "쇼필몰관리자 폴더를 만들어서 이미지의 사이트들 넣어줘"
+
+      사장님이 보여 주신 「쇼핑몰 관리자」 시트를 그대로 옮겼다.
+      시트의 「사이트 · 구분」 두 칸이 여기 「폴더 · 칩」이 된다 —
+      구분이 하나뿐인 곳은 폴더를 안 만들고 칩 하나로 둔다.
+
+      ★ 같은 주소가 여럿인 것은 «일부러» 둔다 ★
+        옥션·지마켓은 esmplus 한 곳으로 들어가고, 쿠팡·배민도 법인과 인더샵이
+        같은 주소다. 다른 것은 «어느 계정으로 들어가느냐»다. 주소가 같다고
+        하나로 합치면 「어느 걸로 들어가야 하지」를 사람이 다시 떠올려야 한다.
+
+      ★ 잘린 주소는 «지어내지 않았다» ★
+        시트 화면에서 뒤가 잘려 보인 것은 확실한 데까지만 적었다
+        (11번가 · 식봄 · 캐시딜 · 인더샵토스 · 개인 스마트스토어).
+        들어가 보시고 다르면 말씀해 주시면 고칩니다 —
+        틀린 주소를 적어 두면 모르는 것보다 나쁘다.
+      ══════════════════════════════════════════════════════════ */
+  {
+    icon: "🛒",
+    name: "쇼핑몰 관리자",
+    children: [
+      { icon: "🅽", name: "네이버페이 판매자센터", url: "https://admin.pay.naver.com/front/m/v2" },
+      { icon: "📁", name: "스마트스토어", children: [
+        { icon: "🏢", name: "법인 팩투유", url: "https://sell.smartstore.naver.com/#/login" },
+        { icon: "👤", name: "개인 팩투유", url: "https://sell.smartstore.naver.com/#/login" },
+        { icon: "🏷", name: "인더샵", url: "https://sell.smartstore.naver.com/#/login" },
+      ]},
+      { icon: "📁", name: "배민상회", children: [
+        { icon: "🏢", name: "법인 배민", url: "https://seller-mart.baemin.com/goods" },
+        { icon: "🏷", name: "인더샵 배민", url: "https://seller-mart.baemin.com/goods" },
+      ]},
+      { icon: "📁", name: "쿠팡", children: [
+        { icon: "🏢", name: "법인 쿠팡", url: "https://wing.coupang.com/" },
+        { icon: "🏷", name: "인더샵 쿠팡", url: "https://wing.coupang.com/" },
+      ]},
+      { icon: "📁", name: "옥션 · 지마켓", children: [
+        { icon: "🏢", name: "법인 옥션", url: "https://www.esmplus.com/Home/Home" },
+        { icon: "🏢", name: "법인 지마켓", url: "https://www.esmplus.com/Home/Home" },
+        { icon: "👤", name: "개인 옥션", url: "https://www.esmplus.com/Home/Home" },
+        { icon: "👤", name: "개인 지마켓", url: "https://www.esmplus.com/Home/Home" },
+        { icon: "🏷", name: "인더샵 옥션", url: "https://signin.esmplus.com/login" },
+        { icon: "🏷", name: "인더샵 지마켓", url: "https://signin.esmplus.com/login" },
+      ]},
+      { icon: "📁", name: "토스", children: [
+        { icon: "🏢", name: "법인토스", url: "https://www.tosspayments.com/" },
+        { icon: "🏷", name: "인더샵토스", url: "https://shopping-seller.toss.im/login" },
+      ]},
+      { icon: "👤", name: "개인 11번가", url: "https://login.11st.co.kr/" },
+      { icon: "🥬", name: "식봄", url: "https://seller.foodspring.co.kr/" },
+      { icon: "🏢", name: "법인 롯데온", url: "https://support.lotteon.com/" },
+      { icon: "🏢", name: "법인 카카오톡스토어", url: "https://store-sell.kakao.com/" },
+      { icon: "🏢", name: "법인 도매꾹", url: "https://domeggook.com/sc/" },
+      { icon: "🏢", name: "법인 텐바이텐", url: "https://scm.10x10.co.kr/" },
+      { icon: "🏢", name: "법인 캐시딜(신)", url: "https://partner.cashdeal.kr/login" },
+      { icon: "🏢", name: "법인 오너클랜", url: "https://ownerclan.com/vender/" },
+    ],
   },
   {
     // 팩투유 크롬(pack2u@pack2u.co.kr, Profile 10) 북마크바의 「협력업체 시트」 폴더.
