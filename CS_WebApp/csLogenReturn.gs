@@ -227,6 +227,7 @@ function csLogenReturnRegister(p) {
 
       2,500짜리 지점에서만 우연히 되고 있었다. 지점마다 다르니 조용히 반이 실패한다. */
   var 계약운임 = _lgr_contractFare_(inv, chk.fareTy);
+  var 지점운임 = chk.dlvFare;
   if (계약운임 > 0) chk.dlvFare = 계약운임;
 
   //  ② 접수
@@ -256,7 +257,16 @@ function csLogenReturnRegister(p) {
   var rows = _logen_arr_(r.json && (r.json.data || r.json.data1));
   var d = rows[0] || {};
   if (!_logen_ok_(d.resultCd)) {
-    return { ok: false, error: String(d.resultMsg || "접수 실패"), check: chk };
+    /*  ★ 무엇을 보냈는지 같이 적는다 ★  (2026-10-08)
+        로젠이 돌려주는 말이 「거래처계약정보 조회 오류 ( 거래처코드 : 348782 )」 처럼
+        원인과 동떨어져 있다. 그 말만 보면 계약이 끊겼나, 남의 송장인가를 의심하게
+        된다 — 실제로는 운임이 계약과 달라서였다. 보낸 값을 적어 두면 다음엔
+        한눈에 갈린다. 고치고도 또 같은 화면을 보며 헤맸다. */
+    var 덧 = " [보낸 운임 " + chk.dlvFare + "원" +
+      (계약운임 > 0 ? " · 계약 " + 계약운임 : " · 계약운임 못 받음") +
+      (지점운임 !== chk.dlvFare ? " · 지점 " + 지점운임 : "") +
+      " · 타입 " + chk.fareTy + "]";
+    return { ok: false, error: String(d.resultMsg || "접수 실패") + 덧, check: chk };
   }
 
   var takeNo = String(d.takeNo || "").trim();

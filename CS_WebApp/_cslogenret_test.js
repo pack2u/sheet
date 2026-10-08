@@ -259,7 +259,14 @@ console.log("\n[12] 로젠이 거절하면 그대로 전한다");
   const c = 판({ reverseChkInfoMulti: 정상조회, registReturnRequest: 거절 });
   const r = vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c);
   check("실패로 본다", r.ok, false);
-  check("★ 로젠이 한 말을 그대로", r.error, "이미 접수된 건입니다");
+  check("★ 로젠이 한 말을 그대로 앞에 둔다", r.error.indexOf("이미 접수된 건입니다") === 0, true);
+  /*  ★ 무엇을 보냈는지 같이 적는다 ★  (2026-10-08)
+      로젠의 말이 원인과 동떨어져 있다 — 「거래처계약정보 조회 오류 ( 거래처코드 :
+      348782 )」 가 실은 운임이 계약과 달라서였다. 그 말만 보고 계약이 끊겼나,
+      남의 송장인가를 의심하며 한참 헤맸다. 보낸 값이 같이 적히면 한눈에 갈린다. */
+  check("★ 보낸 운임을 같이 적는다", /보낸 운임 \d+원/.test(r.error), true);
+  check("계약 운임을 못 받았으면 그것도 말한다", /계약운임 못 받음/.test(r.error), true);
+  check("운임타입도 적는다", /타입 010/.test(r.error), true);
 }
 
 console.log("\n[13] 규격 문서와 어긋나지 않는가");
