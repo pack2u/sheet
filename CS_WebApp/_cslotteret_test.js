@@ -171,5 +171,55 @@ ok("찾은 값을 요청에 쓴다", /snperZipcd: pZip/.test(src));
 ok("★ 회수 불가 지역이면 보내기 전에 막는다 ★",
    /회수 불가 지역입니다/.test(src));
 
+console.log("\n★ 수거입력처가 없을 때 — 롯데로 가면 안 된다");
+{
+  /*  ★ 이 시험이 생긴 까닭 ★  (2026-10-08 · 같은 화면을 다섯 번 봤다)
+      여태 수거입력처가 비면 «롯데»로 봤다. 롯데가 주 택배사이던 때의 규칙이다.
+      그런데 2026-09-11 에 로젠으로 바꿨고 롯데 거래처 계약은 삭제됐다.
+      게다가 202610 탭에는 「수거입력처」 열이 아예 없다 —
+      「원송장번호 / 택배사」와 「반품송장번호 / 택배사」 둘뿐이다.
+
+      그래서 그 탭의 반품접수가 «전부» 롯데로 가서 이렇게 실패했다 —
+        회수 접수 실패 — 45311894913 — 거래처계약정보 조회 오류 ( 거래처코드 : 348782 )
+      348782 는 바로 이 파일의 _LRT_CUST_CD_ — **롯데** 거래처코드다.
+      우리 로젠 거래처코드는 30556066 이다.
+
+      나는 그 글을 보고 로젠 쪽을 다섯 번 고쳤다. 그 줄은 로젠을 부른 적이
+      한 번도 없었다. [[same-symptom-check-the-source-first]] */
+  const vm = require("vm");
+  const cs = fs.readFileSync(__dirname + "/csOrderSearch.gs", "utf8");
+  const trk = fs.readFileSync(__dirname + "/csTrack.gs", "utf8");
+  function 꺼내(s, n) {
+    const i = s.indexOf("function " + n + "(");
+    if (i < 0) throw new Error(n + " 를 못 찾음");
+    let d = 0, seen = false;
+    for (let k = i; k < s.length; k++) {
+      if (s[k] === "{") { d++; seen = true; }
+      else if (s[k] === "}") { d--; if (seen && d === 0) return s.slice(i, k + 1); }
+    }
+  }
+  const ctx = { console, String, Number, Array, Math, JSON };
+  vm.createContext(ctx);
+  vm.runInContext(꺼내(cs, "_cs_splitLedgerInvoice_"), ctx);
+  vm.runInContext(꺼내(trk, "_trk_carrier_"), ctx);
+  vm.runInContext(꺼내(src, "_lrt_guessCarrier_"), ctx);
+  const 가린다 = (a, b) => vm.runInContext(
+    "_lrt_guessCarrier_(" + JSON.stringify(a) + "," + JSON.stringify(b) + ")", ctx);
+
+  ok("★ 실제 202610!36 — 반품송장 「/ 로젠택배」 → 로젠", 가린다("/ 로젠택배", "45311894913") === "로젠");
+  ok("★ 로젠 11자리만 있어도 로젠", 가린다("", "45311894913") === "로젠");
+  ok("★ 롯데 12자리면 롯데", 가린다("", "268334465383") === "롯데");
+  ok("하이픈이 있어도 롯데 12자리는 롯데", 가린다("", "2683-3425-7111") === "롯데");
+  ok("반품송장에 적힌 택배사가 먼저다", 가린다("268334465383 / 롯데택배", "45311894913") === "롯데");
+  ok("★ 아무 근거가 없으면 «로젠» (지금 쓰는 택배사)", 가린다("", "") === "로젠");
+
+  ok("★ 「비면 롯데」 가지가 사라졌다",
+     !/var 로젠인가 = pk\.indexOf\("로젠"\) !== -1;/.test(src));
+  ok("★ 비었을 때 근거로 가린다", /_lrt_guessCarrier_\(cell\("returnInvoice"\), cell\("invoice"\)\)/.test(src));
+  ok("★ 판단하는 자는 _trk_carrier_ 하나다 (여기서 다시 안 짠다)",
+     /_trk_carrier_\(원\.번호, ""\)/.test(src));
+  ok("348782 는 롯데 것이라고 적어 뒀다", /348782/.test(src) && /_LRT_CUST_CD_/.test(src));
+}
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

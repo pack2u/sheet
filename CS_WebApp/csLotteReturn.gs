@@ -472,6 +472,42 @@ function csLotteReturnPickup(p) {
  *
  * @param {Object} p {tab, row, memo, boxType}
  */
+/**
+ * 수거입력처가 없을 때 택배사를 «근거로» 가린다.
+ *
+ * ★ 근거 차례 ★
+ *   ① 반품송장 칸에 적힌 택배사 — 이미 그 택배사로 처리하기로 정해진 건이다
+ *      (「/ 로젠택배」처럼 번호 없이 택배사만 있는 줄이 실제로 있다)
+ *   ② 원송장 칸에 적힌 택배사
+ *   ③ 원송장 자릿수 — 롯데 12자리 · 로젠 11자리
+ *
+ * 판단하는 자는 csTrack.gs 의 _trk_carrier_ 하나다. 여기서 새로 짜지 않는다
+ * ([[one-value-one-owner]]). 못 가리면 «로젠» 이다 — 2026-09-11 에 로젠으로
+ * 바꿨고 롯데 계약은 삭제됐다. 모르면 지금 쓰는 쪽으로 가는 것이 맞다.
+ *
+ * @return {string} "로젠" | "롯데"
+ */
+function _lrt_guessCarrier_(반품송장칸, 원송장칸) {
+  function 쪼개(v) {
+    try {
+      if (typeof _cs_splitLedgerInvoice_ === "function") return _cs_splitLedgerInvoice_(v);
+    } catch (e) {}
+    return { 번호: String(v == null ? "" : v), 택배사: "" };
+  }
+  var 반품 = 쪼개(반품송장칸);
+  if (String(반품.택배사 || "").indexOf("로젠") !== -1) return "로젠";
+  if (String(반품.택배사 || "").indexOf("롯데") !== -1) return "롯데";
+
+  var 원 = 쪼개(원송장칸);
+  if (String(원.택배사 || "").indexOf("로젠") !== -1) return "로젠";
+  if (String(원.택배사 || "").indexOf("롯데") !== -1) return "롯데";
+
+  try {
+    if (typeof _trk_carrier_ === "function") return _trk_carrier_(원.번호, "");
+  } catch (e) {}
+  return String(원.번호 || "").replace(/[^0-9]/g, "").length === 12 ? "롯데" : "로젠";
+}
+
 function csLotteReturnPickupFromCard(p) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return { ok: false, error: "권한이 없습니다." };
   p = p || {};
@@ -503,9 +539,25 @@ function csLotteReturnPickupFromCard(p) {
       2026-09-11 에 csOrderSearch.gs 에서 같은 오타를 고쳤는데 여기가 빠졌다.
       한글 수거입력처에는 해가 없었지만 뜻이 틀렸다. */
   var pk = pickup.replace(/\s/g, "");
-  var 로젠인가 = pk.indexOf("로젠") !== -1;
-  if (pk && !로젠인가 && pk.indexOf("롯데") === -1) {
+  var 로젠인가;
+  if (pk.indexOf("로젠") !== -1) 로젠인가 = true;
+  else if (pk.indexOf("롯데") !== -1) 로젠인가 = false;
+  else if (pk) {
     return { ok: false, error: "롯데·로젠 건이 아닙니다 (수거입력처: " + pickup + ")" };
+  } else {
+    /*  ★ 수거입력처가 없을 때 «롯데로 보지 않는다» ★  (2026-10-08)
+        여태는 비면 롯데로 봤다 — 롯데가 주 택배사이던 때의 규칙이다.
+        그런데 2026-09-11 에 로젠으로 바꿨고, 롯데 거래처 계약은 삭제됐다.
+        게다가 202610 탭에는 **「수거입력처」 열이 아예 없다** — 열이
+        「원송장번호 / 택배사」와 「반품송장번호 / 택배사」 둘뿐이다.
+        그래서 그 탭의 반품접수가 «전부» 롯데로 가서 이렇게 실패했다 —
+          회수 접수 실패 — 45311894913 — 거래처계약정보 조회 오류 ( 거래처코드 : 348782 )
+        348782 는 우리 로젠 거래처코드(30556066)가 아니라 **롯데** 것이다.
+        로젠 쪽을 다섯 번 고치는 동안 이 줄은 로젠을 부른 적이 한 번도 없었다.
+
+        이제 근거로 가린다 — 판단하는 자는 csTrack.gs 의 _trk_carrier_ 하나다
+        (롯데 12자리 · 로젠 11자리). 여기서 새로 짜지 않는다. */
+    로젠인가 = _lrt_guessCarrier_(cell("returnInvoice"), cell("invoice")) === "로젠";
   }
   if (로젠인가) {
     var lgReady = (typeof csLogenReturnReady === "function")
