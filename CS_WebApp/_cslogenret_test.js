@@ -407,6 +407,51 @@ console.log("\n[16] ★ 하나가 실패해도 나머지는 접수한다");
   check("왜 실패했는지 말한다", r.error.indexOf("이미 접수된 건입니다") >= 0, true);
 }
 
+console.log("\n[15-2] ★ 우리 고유ID 를 «같이» 보낸다 — 되찾는 열쇠다");
+{
+  /*  ★ 한 번 틀렸던 판단을 되돌린 자리 ★  (2026-10-08)
+      규격 §8.1 에서 fixTakeNo 는 「원송장 없으면 필수」인 조건부 칸이라,
+      「원송장이 있으니 쓸모없다」고 접었다. 틀렸다.
+
+      원송장 없이 접수된 건은 **어떤 번호로도 되찾을 수 없다.** 202610 탭의
+      유정주·신경순·김신애 세 건이 그랬다 — 로젠 화면에서 단건등록돼 원송장도
+      주문번호도 안 들어갔고, 우리가 가진 번호로는 하나도 안 나왔다.
+      「우리 거래처 반품을 다 달라」는 API 도 없으니, 사람이 로젠 화면을 뒤져
+      접수번호를 손으로 옮겨 적는 수밖에 없었다.
+
+      ★ 실측 (2026-10-08 운영계) ★ 원송장+고유ID 를 같이 보내도 받아들이고,
+      그 고유ID 로 찾힌다 — d1006000007 → takeNo 261008109134 · resvStat 10. */
+  const c = 판({ reverseChkInfoMulti: 정상조회, contRtnFares: 계약운임,
+                 registReturnRequest: 정상접수 });
+  const 보낼것 = Object.assign({}, 고객, { uid: "d1006000007" });
+  vm.runInContext("csLogenReturnRegister(" + JSON.stringify(보낼것) + ")", c);
+  const 보낸 = c.보낸것[c.보낸것.length - 1].body.data[0];
+  check("★ 고유ID 를 fixTakeNo 로 보낸다", 보낸.fixTakeNo, "d1006000007");
+  check("원송장도 그대로 보낸다 (둘 다 간다)", 보낸.orgnSlipNo, "45169459705");
+
+  //  ★ 비면 아예 안 보낸다 ★ 빈 값을 로젠이 어떻게 받는지는 모른다
+  const c2 = 판({ reverseChkInfoMulti: 정상조회, contRtnFares: 계약운임,
+                  registReturnRequest: 정상접수 });
+  vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c2);
+  const 보낸2 = c2.보낸것[c2.보낸것.length - 1].body.data[0];
+  /*  «실제로 나가는 모양»으로 잰다 — undefined 는 객체에는 남아 있지만
+      JSON.stringify 가 빼므로 로젠에는 그 칸이 안 간다. 그것이 하려던 일이다. */
+  check("★ 고유ID 가 없으면 그 칸이 안 나간다",
+    "fixTakeNo" in JSON.parse(JSON.stringify(보낸2)), false);
+  check("있을 때는 나간다", JSON.parse(JSON.stringify(보낸)).fixTakeNo, "d1006000007");
+
+  //  ★ 보내기만 하고 찾지 않으면 반쪽이다 ★
+  const fill = fs.readFileSync("csLogenSlipFill.gs", "utf8");
+  check("★ 자동 채우기도 고유ID 로 찾는다", /inquiryReserveStateFixTakeNo/.test(fill), true);
+  check("원송장으로 못 찾았을 때만 묻는다", /var byUid = _lsf_byUid_\(it\.uid\);/.test(fill), true);
+  check("모을 때 고유ID 도 담는다", /uid: col\.uid >= 0/.test(fill), true);
+
+  //  카드에서 그 번호가 흘러오는가
+  const lotte = fs.readFileSync("csLotteReturn.gs", "utf8");
+  check("★ 카드가 고유ID 를 넘긴다", /uid: cell\("uid"\)/.test(lotte), true);
+  check("묶음 처리가 건별로 넘긴다", /uid: p\.uid/.test(src), true);
+}
+
 console.log("\n[16-2] ★ 실패하는 «두 가지 모두»가 보낸 값을 말해 준다");
 {
   /*  ★ 이 시험이 생긴 까닭 ★  (2026-10-08)

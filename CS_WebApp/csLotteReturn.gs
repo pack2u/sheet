@@ -629,7 +629,15 @@ function csLotteReturnPickupFromCard(p) {
   var res = 로젠인가
     ? _lgr_pickupMany_({
         name: name, phone: phone, addr: addr,
-        item: cell("item"), orglInvNos: origs, memo: p.memo
+        item: cell("item"), orglInvNos: origs, memo: p.memo,
+        /*  ★ 우리 번호를 같이 보낸다 ★  (2026-10-08)
+            원송장 없이 접수된 건은 «어떤 번호로도» 되찾을 수 없다. 실제로
+            유정주·신경순·김신애 세 건이 그랬다 — 로젠 화면에서 단건등록돼
+            원송장도 주문번호도 안 들어가, 우리가 가진 번호로는 하나도 안 나왔다.
+            우리 고유ID 를 실어 보내면 그 번호로 영영 되찾을 수 있다.
+            (2026-10-08 운영계 실측: 원송장+고유ID 를 같이 보내도 받아들이고,
+             그 고유ID 로 inquiryReserveStateFixTakeNo 가 찾아낸다.) */
+        uid: cell("uid")
       })
     : csLotteReturnPickup({
         name: name, phone: phone, addr: addr,

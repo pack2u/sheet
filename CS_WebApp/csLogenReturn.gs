@@ -305,6 +305,25 @@ function csLogenReturnRegister(p) {
     data: [{
       custCd: _logen_custCd_(),
       orgnSlipNo: inv,
+      /*  ★ 우리 번호를 같이 적는다 ★  (2026-10-08)
+          규격 §8.1 에서 fixTakeNo 는 「원송장 없으면 필수」인 조건부 칸이다.
+          그래서 한 번 「원송장이 있으니 쓸모없다」고 접었다 — 틀린 판단이었다.
+
+          원송장 없이 접수된 건은 **어떤 번호로도 되찾을 수 없다.** 실제로
+          202610 탭의 유정주·신경순·김신애 세 건이 그랬다. 로젠 화면에서
+          단건등록돼 원송장도 주문번호도 안 들어갔고, 우리가 가진 번호로는
+          하나도 안 나왔다. 「우리 거래처 반품을 다 달라」는 API 도 없다.
+          그러면 사람이 로젠 화면을 뒤져 접수번호를 손으로 옮겨 적어야 한다.
+
+          우리 고유ID 를 실어 보내면 그 번호로 영영 되찾는다. 원송장이 지워져도,
+          롯데 송장이라 못 넣어도 상관없다.
+
+          ★ 실측 (2026-10-08 운영계) ★
+            원송장 + 고유ID 를 «같이» 보내도 받아들인다 — 응답에 fixTakeNo 가
+            그대로 돌아온다. 그 고유ID 로 inquiryReserveStateFixTakeNo 가 찾아낸다.
+              d1006000007 → takeNo 261008109134 · resvStat 10
+          비면 아예 안 보낸다 — 빈 값을 보내 로젠이 어떻게 받는지는 모른다. */
+      fixTakeNo: String(p.uid || "").trim() || undefined,
       /*  ★ 방향이 반대다 ★  송하인 = 반품 보내는 고객, 수하인 = 화주사(우리).
           뒤집으면 기사가 우리 창고로 물건을 가지러 간다. */
       sndCustNm: 이름.substring(0, 50),
@@ -484,7 +503,8 @@ function _lgr_pickupMany_(p) {
     var r = csLogenReturnRegister({
       orgnSlipNo: origs[i],
       name: p.name, tel: p.phone, addr: p.addr,
-      goodsNm: p.item, msg: p.memo
+      goodsNm: p.item, msg: p.memo,
+      uid: p.uid          // 우리 고유ID — 되찾는 열쇠가 된다
     });
     if (r.ok && r.already) {
       /*  이미 접수돼 있던 건 — 새로 접수한 것이 아니다. 그렇게 말해 준다. */

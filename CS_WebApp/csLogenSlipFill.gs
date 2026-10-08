@@ -185,7 +185,8 @@ function csLogenFillReturnSlips(opt) {
       }
 
       할것.push({ tabName: 탭들[t], tab: tab, rowNum: hIdx + 2 + i, col: col, orig: orig,
-                 name: col.name >= 0 ? String(row[col.name] || "").trim() : "" });
+                 name: col.name >= 0 ? String(row[col.name] || "").trim() : "",
+                 uid: col.uid >= 0 ? String(row[col.uid] || "").trim() : "" });
       if (할것.length >= 300) break;
     }
   }
@@ -265,9 +266,19 @@ function csLogenFillReturnSlips(opt) {
       var 고른 = _lsf_pickSlip_(접수들);
 
       if (!접수들.length) {
-        접수없음++;
-        L.push("  · " + 어디 + " — 로젠에 반품 접수가 없음");
-        continue;
+        /*  ★ 고유ID 로 한 번 더 묻는다 ★  (2026-10-08)
+            원송장 없이 접수된 건은 원송장으로는 영영 안 나온다 — 202610 탭의
+            세 건이 그랬다. 2026-10-08 부터 접수할 때 우리 고유ID 를 같이 실어
+            보내므로(csLogenReturn.gs fixTakeNo), 그 번호로는 찾힌다.
+            보내기만 하고 찾지 않으면 반쪽이다. */
+        var byUid = _lsf_byUid_(it.uid);
+        if (byUid && byUid.slipNo) { 고른 = byUid; }
+        else {
+          접수없음++;
+          L.push("  · " + 어디 + " — 로젠에 반품 접수가 없음" +
+                 (it.uid ? " (고유ID " + it.uid + " 로도 못 찾음)" : ""));
+          continue;
+        }
       }
       if (고른.cancelled && !고른.slipNo) {
         취소++;
@@ -524,6 +535,35 @@ function _lsf_ageFromTakeNo_(takeNo) {
   try { 일 = _ost_bizSince_(t); }
   catch (e) { 일 = Math.floor((new Date().getTime() - t.getTime()) / 86400000); }
   return 일 >= 0 && 일 < 400 ? 일 : null;
+}
+
+/**
+ * 우리 고유ID 로 반품을 찾는다 — inquiryReserveStateFixTakeNo (규격 §8.2).
+ *
+ * 2026-10-08 부터 접수할 때 fixTakeNo 에 고유ID 를 실어 보낸다. 그 전에 접수된
+ * 건은 안 나온다 — 그때는 사람이 로젠 화면에서 접수번호를 찾아 비고에 적어야 한다.
+ *
+ * @return {{takeNo, slipNo, statNm}|null}
+ */
+function _lsf_byUid_(uid) {
+  var u = String(uid == null ? "" : uid).trim();
+  if (!u) return null;
+  try {
+    var r = _logen_call_("inquiryReserveStateFixTakeNo", {
+      userId: _logen_userId_(),
+      data: [{ custCd: _logen_custCd_(), fixTakeNo: u }]
+    });
+    if (!r.ok) return null;
+    var rows = _logen_arr_(r.json && (r.json.data || r.json.data1));
+    for (var i = 0; i < rows.length; i++) {
+      var d = rows[i] || {};
+      if (!_logen_ok_(d.resultCd)) continue;
+      var slip = String(d.slipNo == null ? "" : d.slipNo).replace(/[^0-9]/g, "");
+      return { takeNo: String(d.takeNo == null ? "" : d.takeNo).trim(),
+               slipNo: slip, statNm: String(d.resvStat == null ? "" : d.resvStat).trim() };
+    }
+  } catch (e) {}
+  return null;
 }
 
 /**
