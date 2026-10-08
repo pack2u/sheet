@@ -243,10 +243,14 @@ function _ost_ymdToDate_(s) {
 /** Date → 「yyyyMMdd」 */
 function _ost_ymd_(d) { return Utilities.formatDate(d, "Asia/Seoul", "yyyyMMdd"); }
 
-/** 보기 좋게 끊는다 — 로젠 11자리는 2-4-5 로 읽는다 */
+/**
+ * 보기 좋게 끊는다 — 로젠 11자리는 «3-4-4» 다.
+ * 45303211446 → 453-0321-1446  (로젠 화면·실적 탭이 그렇게 적는다)
+ * 2-4-5 로 끊었다가 고쳤다 — 사람이 화면과 대조할 때 안 맞아 보인다. (2026-10-08)
+ */
 function _ost_pretty_(d) {
-  var s = String(d || "");
-  return s.length === 11 ? s.slice(0, 2) + "-" + s.slice(2, 6) + "-" + s.slice(6) : s;
+  var s = String(d || "").replace(/[^0-9]/g, "");
+  return s.length === 11 ? s.slice(0, 3) + "-" + s.slice(3, 7) + "-" + s.slice(7) : String(d || "");
 }
 
 /**
