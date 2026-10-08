@@ -52,6 +52,46 @@ function prpChatReady_() {
 }
 
 /**
+ * 챗 알림이 제대로 심겼는지 «한 번에» 본다 — 편집기에서 손으로 돌린다.
+ *
+ * ★ 왜 ★  (2026-10-08)
+ *   prpNotifyChat_ 은 속성이 비면 «조용히» 돌아선다. 그래서 주소를 심고도
+ *   되는지 알 길이 없었다 — 업체가 누를 때까지 기다려야 했다.
+ *   실제로 비어 있는 것을 2026-10-08 에야 알았다(대장 36행 「[내부] 챗 알림 미설정」).
+ *
+ *   이 함수는 **실제로 한 줄 보내 본다.** 챗에 글이 뜨면 끝난 것이다.
+ *
+ * ★ 주소는 안 보여 준다 ★ 로그에 찍히면 그 로그가 또 새는 자리가 된다.
+ *   있는지·보냈는지만 말한다.
+ */
+function prpCheckChat() {
+  var 있나 = prpChatReady_();
+  if (!있나) {
+    var 글0 = "★ 아직 비어 있습니다.\n\n" +
+      "프로젝트 설정 → 스크립트 속성에 아래를 넣고 저장한 뒤 다시 돌려 주세요.\n" +
+      "  속성  " + PRP_CHAT_WEBHOOK_PROP + "\n" +
+      "  값    구글 챗 웹훅 주소 (https://chat.googleapis.com/... 로 시작합니다)";
+    Logger.log(글0);
+    return 글0;
+  }
+
+  var 때 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm");
+  try {
+    prpNotifyChat_("업체 포털 알림 시험", "팩투유",
+      때 + " 에 보낸 시험 글입니다. 이 글이 보이면 알림이 살아 있습니다.");
+  } catch (e) {
+    var 글1 = "★ 주소는 있는데 보내다 막혔습니다 — " + e.message;
+    Logger.log(글1); return 글1;
+  }
+
+  var 글 = "✅ 주소가 심겨 있고, 시험 글을 보냈습니다 (" + 때 + ").\n\n" +
+    "챗 스페이스에 「업체 포털 알림 시험」 이 떴으면 끝난 것입니다.\n" +
+    "안 떴으면 주소가 다른 스페이스 것이거나 웹훅이 지워진 것입니다.";
+  Logger.log(글);
+  return 글;
+}
+
+/**
  * 이 줄이 지금 «요청할 수 있는» 상태인가.
  *
  * @return {{can:boolean, why:string}}  can=false 면 why 를 업체에게 보여준다
