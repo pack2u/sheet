@@ -219,21 +219,71 @@ function ssb_addRows(rows, seen, orderNo, invCell, code, res, uidSeen, seenOrd) 
     res.skipMultiBox = (res.skipMultiBox || 0) + 1;
     return 0;
   }
-  var parts = ssText(invCell).split(SSB_INV_SPLIT);
-  for (var i = 0; i < parts.length; i++) {
-    var inv = ssText(parts[i]);
-    if (!inv || ssb_isPlaceholder(inv)) continue;
-    var bare = inv.split(' ').join('');
-    if (bare.indexOf('운송장') !== -1 || bare.indexOf('송장번호') !== -1) continue;
+  if (ssb_isPlaceholder(invCell)) return 0;
+  var 장들 = ssb_parseInvCell(invCell);
+  for (var i = 0; i < 장들.length; i++) {
+    var inv = 장들[i].inv;
+    //  칸에 택배사 이름이 적혀 있으면 그것이 이긴다 — 업체가 한 칸에 로젠·한진을 섞어 적는다
+    var c2 = 장들[i].code || c;
     var key = o + '|' + inv;
     if (seen[key]) continue;
     seen[key] = true;
     if (seenOrd) seenOrd[o] = true;
-    rows.push([o, inv, '', '', c]);
-    res.byCode[c] = (res.byCode[c] || 0) + 1;
+    rows.push([o, inv, '', '', c2]);
+    res.byCode[c2] = (res.byCode[c2] || 0) + 1;
     return 1;              // 첫 장만 — 사방넷 제약
   }
   return 0;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 송장 칸 한 곳을 «송장 장들»로 읽는다 ★  (2026-10-08)
+
+   업체가 이렇게 적어 온다 (HU 후아코리아, 2166790682):
+     로젠 45322906930 / 6926 / 6915   한진 4634-7219-8195 / 8206 / 8210
+
+   여태는 공백·빗금으로 잘라 «첫 조각»을 송장으로 올렸다. 첫 조각이 「로젠」
+   이라 사방넷에 송장 「로젠」이 올라갔다. 허브는 조각을 다 올려 「6926」·「한진」
+   까지 송장이 됐고, 한진 송장에 로젠 코드가 붙었다.
+
+     택배사 이름    다음 번호들의 택배사를 정한다 (로젠·롯데·한진·CJ·대한통운·대신)
+     9자리 이상     온전한 송장
+     2~6자리        «바로 앞 송장의 뒷자리»를 줄여 적은 것 — 앞 송장 끝을 갈아 끼운다
+                    (45322906930 다음 6926 → 45322906926)
+     그 밖의 글자   송장이 아니다 (「운송장」·「송장번호」·메모)
+
+   돌려주는 것: [{ inv: '45322906930', code: '007' }, …]  code 는 이름이 없으면 ''
+   ══════════════════════════════════════════════════════════════ */
+var SSB_CARRIER_WORDS = [
+  { re: /로젠/, code: '007' }, { re: /롯데/, code: '002' }, { re: /한진/, code: '004' },
+  { re: /CJ|씨제이|대한통운/i, code: '001' }, { re: /대신/, code: '037' }
+];
+function ssb_parseInvCell(cell) {
+  //  띄어 적은 한 장(453 1748 8473)은 먼저 잇는다 — 공백도 자르는 자리라 안 이으면 조각난다
+  var 글 = ssText(cell).replace(/(^|[^0-9])(\d{3,4}) (\d{3,4}) (\d{4})(?![0-9])/g, '$1$2-$3-$4');
+  var parts = 글.split(SSB_INV_SPLIT);
+  var out = [], 지금코드 = '', 앞 = '';
+  for (var i = 0; i < parts.length; i++) {
+    var p = ssText(parts[i]);
+    if (!p) continue;
+    var 낱 = false;
+    for (var w = 0; w < SSB_CARRIER_WORDS.length; w++) {
+      if (SSB_CARRIER_WORDS[w].re.test(p)) { 지금코드 = SSB_CARRIER_WORDS[w].code; 앞 = ''; 낱 = true; break; }
+    }
+    //  「로젠45322906930」 처럼 붙여 적은 것 — 이름을 떼고 숫자만 본다
+    var 숫 = p.replace(/^[^0-9]+/, '');
+    if (낱 && !숫) continue;
+    if (!/^[0-9\-]+$/.test(숫)) continue;
+    var d = 숫.replace(/-/g, '');
+    if (d.length >= 9) {
+      out.push({ inv: 숫, code: 지금코드 });
+      앞 = d;
+    } else if (d.length >= 2 && 앞 && 앞.length > d.length) {
+      var 채움 = 앞.slice(0, 앞.length - d.length) + d;
+      out.push({ inv: 채움, code: 지금코드 });
+    }
+  }
+  return out;
 }
 
 /**

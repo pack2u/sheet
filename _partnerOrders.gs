@@ -6046,20 +6046,66 @@ function _po_addSabangBulkRowCoded_(rows, seen, orderNo, invCell, code, result) 
   code = String(code || "").trim();
   if (!orderNo || !code) return 0;
   if (_po_isGeneratedUid_(orderNo)) return 0;
-  var invs = String(invCell || "").split(/[\r\n,;]+/);
+  if (!_po_hasRealInvoice_(invCell)) return 0;
+  var 장들 = _po_parseInvCell_(invCell);
   var added = 0;
-  for (var k = 0; k < invs.length; k++) {
-    var inv = String(invs[k] || "").trim();
-    if (!inv || !_po_hasRealInvoice_(inv)) continue;
-    if (/운송장|송장번호/.test(inv.replace(/\s/g, ""))) continue;
+  for (var k = 0; k < 장들.length; k++) {
+    var inv = 장들[k].inv;
+    //  칸에 적힌 택배사 이름이 업체 기본 택배사를 이긴다 — 한 칸에 로젠·한진을 섞어 적는다
+    var c2 = 장들[k].code || code;
     var key = orderNo + "|" + inv;
     if (seen[key]) continue;
     seen[key] = true;
-    rows.push([orderNo, inv, "", "", code]);
-    result.byCode[code] = (result.byCode[code] || 0) + 1;
+    rows.push([orderNo, inv, "", "", c2]);
+    result.byCode[c2] = (result.byCode[c2] || 0) + 1;
     added++;
   }
   return added;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 송장 칸 한 곳을 «송장 장들»로 읽는다 ★  (2026-10-08)
+   세트분리V2/gasBulk.js 의 ssb_parseInvCell 과 «같은 규칙»이다. 한쪽만 고치면
+   두 대량등록이 다른 파일을 낸다 — 고칠 때는 둘 다.
+
+   업체가 이렇게 적어 온다 (HU 후아코리아, 2166790682):
+     로젠 45322906930 / 6926 / 6915   한진 4634-7219-8195 / 8206 / 8210
+   여태는 줄바꿈·쉼표로만 잘라 「로젠」·「한진」·「6926」 까지 송장으로 올렸고,
+   한진 송장에 업체 기본 코드(로젠 007)가 붙었다.
+
+     택배사 이름    다음 번호들의 택배사 (로젠 007 · 롯데 002 · 한진 004 · CJ/대한통운 001 · 대신 037)
+     9자리 이상     온전한 송장
+     2~6자리        바로 앞 송장의 뒷자리를 줄여 적은 것 → 앞 송장 끝을 갈아 끼운다
+     그 밖의 글자   송장이 아니다
+   ══════════════════════════════════════════════════════════════ */
+var _PO_CARRIER_WORDS_ = [
+  { re: /로젠/, code: "007" }, { re: /롯데/, code: "002" }, { re: /한진/, code: "004" },
+  { re: /CJ|씨제이|대한통운/i, code: "001" }, { re: /대신/, code: "037" }
+];
+function _po_parseInvCell_(cell) {
+  //  띄어 적은 한 장(453 1748 8473)은 먼저 잇는다 — 공백도 자르는 자리라 안 이으면 조각난다
+  var 글 = String(cell == null ? "" : cell).replace(/(^|[^0-9])(\d{3,4}) (\d{3,4}) (\d{4})(?![0-9])/g, "$1$2-$3-$4");
+  var parts = 글.split(/[\r\n\s,;\/|]+/);
+  var out = [], 지금코드 = "", 앞 = "";
+  for (var i = 0; i < parts.length; i++) {
+    var p = String(parts[i] || "").trim();
+    if (!p) continue;
+    var 낱 = false;
+    for (var w = 0; w < _PO_CARRIER_WORDS_.length; w++) {
+      if (_PO_CARRIER_WORDS_[w].re.test(p)) { 지금코드 = _PO_CARRIER_WORDS_[w].code; 앞 = ""; 낱 = true; break; }
+    }
+    var 숫 = p.replace(/^[^0-9]+/, "");
+    if (낱 && !숫) continue;
+    if (!/^[0-9\-]+$/.test(숫)) continue;
+    var d = 숫.replace(/-/g, "");
+    if (d.length >= 9) {
+      out.push({ inv: 숫, code: 지금코드 });
+      앞 = d;
+    } else if (d.length >= 2 && 앞 && 앞.length > d.length) {
+      out.push({ inv: 앞.slice(0, 앞.length - d.length) + d, code: 지금코드 });
+    }
+  }
+  return out;
 }
 
 /**

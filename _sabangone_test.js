@@ -57,6 +57,9 @@ function load() {
     "function ssIsSabangnetUid(u){u=ssText(u);if(!u)return false;" +
     "if(/^\\d{4}(\\d{2})?-[A-Za-z]{2}-/.test(u))return false;return /^\\d+$/.test(u);}\n" +
     grabFrom(coreSrc, "ssBaseUid") + "\n" +
+    //  2026-10-08 — 송장 칸을 «장들»로 읽는 함수와 택배사 이름표가 붙었다
+    src.slice(src.indexOf("var SSB_CARRIER_WORDS"), src.indexOf("];", src.indexOf("var SSB_CARRIER_WORDS")) + 2) + "\n" +
+    grab("ssb_parseInvCell") + "\n" +
     grab("ssb_addRows");
   return new Function(head + "\nreturn ssb_addRows;")();
 }
@@ -126,4 +129,15 @@ test("우리가 만든 UID 는 애초에 안 올라간다", () => {
 test("빈 값·송장 없는 줄은 그냥 넘어간다", () => {
   assert.equal(run([["2161346705", ""]]).length, 0);
   assert.equal(run([["", "268334484434"]]).length, 0);
+});
+
+test("★ 업체가 한 칸에 「택배사 이름 · 줄인 뒷자리」로 적어도 송장만 올린다 ★ (2026-10-08)", () => {
+  //  HU 후아코리아 2166790682 — 사방넷에 송장 「로젠」이 올라갔다
+  const rows = run([["2166790682", "로젠 45322906930 / 6926 / 6915 한진 4634-7219-8195 / 8206 / 8210"]]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0][1], "45322906930", "「로젠」 글자가 송장이 되면 안 된다");
+  assert.equal(rows[0][4], "007", "칸에 적힌 택배사 이름이 이긴다");
+  const 한진 = run([["2166790683", "한진 4634-7219-8195 / 8206"]]);
+  assert.equal(한진[0][4], "004", "한진 송장에 원천 코드(002)가 붙으면 안 된다");
+  assert.equal(run([["2166790684", "로젠"]]).length, 0, "이름만 있고 번호가 없으면 올리지 않는다");
 });
