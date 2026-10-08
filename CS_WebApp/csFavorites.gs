@@ -183,7 +183,9 @@ var _CS_FAV_DEFAULT_ = [
     // 원본 북마크의 ALPS 주소에는 로그인 세션 토큰(JWT)이 통째로 박혀 있었다.
     // 그대로 두면 만료된 토큰으로 로그인 오류가 나고, 무엇보다 자격증명을
     // 저장소에 남기는 짓이다. 로그인 화면 주소만 남긴다.
-    { icon: "🚚", name: "ALPS", url: "https://partner.alps.llogis.com/main/pages/sec/authentication" },
+    //  ALPS → 로젠으로 갈았다 (2026-10-08). 위 「로젠택배」와 같은 곳이다 —
+    //  크롬 북마크바를 베껴 온 이 폴더에만 롯데가 남아 갈래가 둘이었다.
+    { icon: "🚚", name: "로젠택배", url: "https://logis.ilogen.com/common/html/main.html" },
     { icon: "🔗", name: "사방넷", url: "https://www.sabangnet.co.kr/" },
     { icon: "🔗", name: "Pack2U 모바일", url: "https://script.google.com/a/macros/pack2u.co.kr/s/AKfycbxvDzpleqHey7gm0aHILVdALGAuCaymCXlFUfyVKNYt8Je2qhOPbCoKFtgLKMmeXBdpTA/exec" },
     { icon: "📄", name: "Google Sheets", url: "https://docs.google.com/spreadsheets/u/0/?tgif=d" },
