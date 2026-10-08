@@ -186,5 +186,65 @@ console.log("\n[9] ★ 밖에서 볼 수 있는가 (편집기를 안 열고)");
      /setValues\(\[\[String\(값\), 때\]\]\)/.test(cs));
 }
 
+console.log("\n[10] ★ 실패 줄을 «해결됨»으로 고쳐 적는다");
+{
+  /*  ★ 왜 ★ 비고는 쌓이기만 한다. 한 번 실패하면 나중에 접수가 되어도 실패 줄이
+      그대로 남아, CS 카드도 업체 화면도 「실패했다」고 보여 준다. 사람이 다시
+      누르면 중복 접수가 나간다. 2026-10-08 에 실제로 그랬다 — 운임 때문에 실패한
+      건이 고쳐서 접수된 뒤에도 「거래처계약정보 조회 오류」로 보였다. */
+  const vm = require("vm");
+  const ctx = { console, String, Number, Array, Math, JSON };
+  vm.createContext(ctx);
+  vm.runInContext(cs.slice(cs.indexOf("function _cpr_resolveFailLines_")), ctx);
+  const 고친다 = (n, t) => vm.runInContext(
+    "_cpr_resolveFailLines_(" + JSON.stringify(n) + "," + JSON.stringify(t) + ")", ctx);
+
+  const 실제 = "[261008 10:06 업체:당장드림] 반품접수 요청. 1시간 안에 접수됩니다.\n" +
+    "[261008 10:12 CS] 반품접수 실패 — 45311894913 — 거래처계약정보 조회 오류 ( 거래처코드 : 348782 )";
+  const 후 = 고친다(실제, "261008109134");
+  ok("★ 실패 줄에 결말이 붙는다", /→ 해결됨 \(접수 261008109134\)/.test(후));
+  ok("★ 지우지 않는다 (왜 실패했는지가 남는다)", /거래처계약정보 조회 오류/.test(후));
+  ok("요청 줄은 안 건드린다", /반품접수 요청\. 1시간 안에 접수됩니다\.$/m.test(후));
+  ok("★ 두 번 붙지 않는다 (1시간마다 도는 일이다)",
+     (고친다(후, "261008109134").match(/→ 해결됨/g) || []).length === 1);
+  ok("실패가 없으면 그대로 둔다",
+     고친다("[261008 10:00 CS] 잘 됐습니다", "T1") === "[261008 10:00 CS] 잘 됐습니다");
+  ok("접수번호를 모르면 꼬리만 붙인다", /→ 해결됨$/m.test(고친다("반품접수 실패 — 이유", "")));
+  ok("「회수 접수 실패」 꼴도 집는다", /→ 해결됨/.test(고친다("회수 접수 실패 — 이유", "T1")));
+
+  ok("★ 성공할 때 부른다 (요청 처리기)", /if \(성공\) \{[\s\S]{0,200}_cpr_resolveFailCell_/.test(cs));
+  const fill = fs.readFileSync("csLogenSlipFill.gs", "utf8");
+  ok("★ 송장을 채울 때도 부른다 (두 경로 다)",
+     (fill.match(/_cpr_resolveFailCell_/g) || []).length >= 2);
+  ok("안 바뀌었으면 시트를 안 건드린다", /if \(후 === 전\) return false;/.test(cs));
+}
+
+console.log("\n[11] ★ 「/ 택배사」만 있는 칸은 «비어 있는» 것이다");
+{
+  /*  대장 반품송장 칸은 「번호 / 택배사」 꼴이다. 번호 없이 택배사만 남는 일이
+      있다 — 202610!36 의 "/ 로젠택배". 칸이 비었는지로 보면 «차 있다»로 읽혀
+      그 줄은 영영 안 채워지고, 지난 실패 줄도 영영 안 고쳐진다.
+      모르는 것과 비어 있는 것은 다르다 — 그 뒤집힌 꼴이다. */
+  const fill = fs.readFileSync("csLogenSlipFill.gs", "utf8");
+  const vm2 = require("vm");
+  const c2 = { console, String, Number, Array, Math, JSON,
+    _cs_splitLedgerInvoice_: (cell) => {
+      const s2 = String(cell == null ? "" : cell).trim();
+      const at = s2.lastIndexOf("/");
+      if (at < 0) return { 번호: s2, 택배사: "" };
+      return { 번호: s2.slice(0, at).trim(), 택배사: s2.slice(at + 1).trim() };
+    } };
+  vm2.createContext(c2);
+  vm2.runInContext(fill.slice(fill.indexOf("function _lsf_hasInvoiceNo_")), c2);
+  const 있나 = (v) => vm2.runInContext("_lsf_hasInvoiceNo_(" + JSON.stringify(v) + ")", c2);
+
+  ok("★ 「/ 로젠택배」 는 비어 있다", 있나("/ 로젠택배") === false);
+  ok("빈 칸도 비어 있다", 있나("") === false);
+  ok("번호가 있으면 차 있다", 있나("45324003760") === true);
+  ok("「번호 / 택배사」도 차 있다", 있나("45324003760 / 로젠택배") === true);
+  ok("★ 모을 때 그 자를 쓴다", /_lsf_hasInvoiceNo_\(row\[col\.returnInvoice\]\)/.test(fill));
+  ok("적기 직전에도 그 자를 쓴다", (fill.match(/_lsf_hasInvoiceNo_\(cell/g) || []).length >= 2);
+}
+
 console.log("\n  " + pass + " 통과 / " + fail + " 실패\n");
 process.exit(fail ? 1 : 0);

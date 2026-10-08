@@ -128,8 +128,12 @@ function csLogenFillReturnSlips(opt) {
     var 값 = tab.getRange(hIdx + 2, 1, lastRow - (hIdx + 1), lastCol).getDisplayValues();
     for (var i = 0; i < 값.length; i++) {
       var row = 값[i];
-      var ret = String(row[col.returnInvoice] || "").trim();
-      if (ret) continue;                                   // 이미 적혀 있다
+      /*  ★ 「비었나」는 칸 전체가 아니라 «번호»로 본다 ★  (2026-10-08)
+          이 칸은 「송장번호 / 택배사」 꼴로 쓰인다. 번호 없이 택배사만 적힌 줄이
+          실제로 있었다 — 36행의 "/ 로젠택배". 칸 전체로 보면 «차 있다»로 읽혀
+          그 줄은 영영 안 채워지고, 지난 실패 줄도 영영 안 고쳐진다.
+          쪼개는 자는 _cs_splitLedgerInvoice_ 하나뿐이다 — 새로 짜지 않는다. */
+      if (_lsf_hasInvoiceNo_(row[col.returnInvoice])) continue;   // 이미 번호가 있다
 
       var orig = String(row[col.invoice] || "").replace(/[^0-9]/g, "");
       if (orig.length < 8) continue;                       // 원송장이 없다
@@ -287,9 +291,14 @@ function csLogenFillReturnSlips(opt) {
             모으고 나서 여기까지 오는 사이에 사람이 적었을 수 있다.
             덮어쓰면 사람이 적은 값이 조용히 사라진다. */
         var cell = it.tab.getRange(it.rowNum, it.col.returnInvoice + 1);
-        if (String(cell.getDisplayValue() || "").trim()) { L.push("  · " + 어디 + " — 그 사이 사람이 적었음, 두고 감"); continue; }
+        if (_lsf_hasInvoiceNo_(cell.getDisplayValue())) { L.push("  · " + 어디 + " — 그 사이 사람이 적었음, 두고 감"); continue; }
         cell.setValue(고른.slipNo);
         채움++;
+        /*  ★ 송장이 붙었으면 지난 「접수 실패」는 더 이상 사실이 아니다 ★
+            그대로 두면 CS 카드도 업체 화면도 실패로 보인다(csPickupRequests.gs
+            _cpr_resolveFailLines_ 머리말). 2026-10-08 에 실제로 그랬다. */
+        try { _cpr_resolveFailCell_(it.tab, it.rowNum, it.col.notice, 고른.takeNo || ""); }
+        catch (e) {}
         L.push("  " + it.tabName + "!" + it.rowNum + "  " + it.orig + " → " + 고른.slipNo);
       } catch (e) {
         실패++;
@@ -350,11 +359,13 @@ function csLogenFillReturnSlips(opt) {
       if (dry) { L.push("  (연습) " + 어디T + " → " + 본.slipNo); 채움++; continue; }
       try {
         var cellT = itT.tab.getRange(itT.rowNum, itT.col.returnInvoice + 1);
-        if (String(cellT.getDisplayValue() || "").trim()) {
+        if (_lsf_hasInvoiceNo_(cellT.getDisplayValue())) {
           L.push("  · " + 어디T + " — 그 사이 사람이 적었음, 두고 감"); continue;
         }
         cellT.setValue(본.slipNo);
         채움++;
+        try { _cpr_resolveFailCell_(itT.tab, itT.rowNum, itT.col.notice, itT.takeNo || ""); }
+        catch (e) {}
         L.push("  " + 어디T + " → " + 본.slipNo);
       } catch (e) {
         실패++;
@@ -488,6 +499,27 @@ function _lsf_ageFromTakeNo_(takeNo) {
   try { 일 = _ost_bizSince_(t); }
   catch (e) { 일 = Math.floor((new Date().getTime() - t.getTime()) / 86400000); }
   return 일 >= 0 && 일 < 400 ? 일 : null;
+}
+
+/**
+ * 그 칸에 «송장번호»가 있나. 택배사만 적힌 것은 없는 것으로 본다.
+ *
+ * 대장의 반품송장 칸은 「번호 / 택배사」 꼴이라 "/ 로젠택배" 처럼 번호 없이
+ * 택배사만 남는 일이 있다(2026-10-08 · 202610!36). 칸이 비었는지로 보면
+ * 그런 줄은 «차 있다»로 읽혀 영영 안 채워진다 — 모르는 것과 비어 있는 것은 다르다
+ * ([[dont-overwrite-what-you-couldnt-read]] 의 뒤집힌 꼴이다).
+ *
+ * 쪼개는 자는 _cs_splitLedgerInvoice_ 한 곳이다. 없으면 숫자로 물러선다.
+ */
+function _lsf_hasInvoiceNo_(cell) {
+  var raw = String(cell == null ? "" : cell);
+  if (!raw.trim()) return false;
+  try {
+    if (typeof _cs_splitLedgerInvoice_ === "function") {
+      return !!String(_cs_splitLedgerInvoice_(raw).번호 || "").trim();
+    }
+  } catch (e) { /* 아래 숫자 보기로 물러선다 */ }
+  return raw.replace(/[^0-9]/g, "").length >= 8;
 }
 
 /**

@@ -226,6 +226,14 @@ function csProcessPickupRequests(opt) {
          (res.takeNos && res.takeNos.length ? " 접수번호 " + res.takeNos.join(" ") : "") +
          (res.invoices && res.invoices.length ? " 반품송장 " + res.invoices.join(" ") : ""))
       : ("반품접수 실패 — " + 왜);
+    /*  ★ 성공했으면 지난 실패 줄부터 결말을 붙인다 ★ 순서가 중요하다 —
+        먼저 고쳐 놓고 그 위에 성공 줄을 더해야, 성공 줄에도 꼬리가 안 붙는다. */
+    if (성공) {
+      try {
+        _cpr_resolveFailCell_(it.tab, it.rowNum, it.col.notice,
+          (res.takeNos && res.takeNos.length) ? res.takeNos[0] : "");
+      } catch (e) {}
+    }
     try { _cpr_note_(it.tab, it.rowNum, it.col.notice, 줄); } catch (e) {}
 
     if (성공) { 됨++; L.push("  " + 어디 + " → " + 줄); }
@@ -248,6 +256,59 @@ function _cpr_note_(tab, rowNum, noticeCol, body) {
   var now = Utilities.formatDate(new Date(), "Asia/Seoul", "yyMMdd HH:mm");
   var 줄 = "[" + now + " CS] " + body;
   cell.setValue(_cs_appendNoticeLine_(String(cell.getDisplayValue() || ""), 줄));
+}
+
+/**
+ * ★ 지난 「반품접수 실패」 줄을 «해결됨»으로 고쳐 적는다 ★  (2026-10-08)
+ *
+ * ★ 왜 ★
+ *   비고는 쌓이기만 한다. 그래서 한 번 실패하면, 나중에 접수가 되어도
+ *   실패 줄이 그대로 남는다. CS 카드도 업체 화면도 그 줄을 그대로 보여 준다 —
+ *   **둘 다 「실패했다」고 믿는다.**
+ *   실제로 그랬다: 2026-10-08 10:12 에 운임 때문에 실패한 건이, 고쳐서 접수된
+ *   뒤에도 「거래처계약정보 조회 오류」로 보였다. 사람이 다시 누르면 중복
+ *   접수가 나갈 수도 있었다.
+ *
+ * ★ 지우지 않는다 ★
+ *   무슨 일이 있었는지는 남아야 한다. 왜 한 번 실패했는지가 나중에 쓸모 있다.
+ *   그래서 그 줄 «뒤에» 결말을 붙인다 — 읽으면 지금 상태를 안다.
+ *     [261008 10:12 CS] 반품접수 실패 — … → 해결됨 (접수 261008109134)
+ *
+ * ★ 이미 붙은 줄은 다시 안 붙인다 ★ 1시간마다 도는 일이라 안 그러면 꼬리가 쌓인다.
+ *
+ * @return {string} 고친 비고. 고칠 게 없으면 들어온 그대로 (그때는 안 적는다)
+ */
+function _cpr_resolveFailLines_(notice, 접수번호) {
+  var s = String(notice == null ? "" : notice);
+  if (!s) return s;
+  if (s.indexOf("접수 실패") === -1) return s;
+
+  var 꼬리 = " → 해결됨" + (접수번호 ? " (접수 " + 접수번호 + ")" : "");
+  var 줄들 = s.split("\n");
+  var 고침 = 0;
+  for (var i = 0; i < 줄들.length; i++) {
+    if (줄들[i].indexOf("접수 실패") === -1) continue;
+    if (줄들[i].indexOf("→ 해결됨") !== -1) continue;   // 이미 붙었다
+    줄들[i] = 줄들[i] + 꼬리;
+    고침++;
+  }
+  return 고침 ? 줄들.join("\n") : s;
+}
+
+/**
+ * 비고에서 실패 줄을 해결됨으로 고치고, 바뀌었을 때만 적는다.
+ * 안 바뀌었는데 적으면 1시간마다 시트를 쓸데없이 건드린다.
+ */
+function _cpr_resolveFailCell_(tab, rowNum, noticeCol, 접수번호) {
+  if (noticeCol < 0) return false;
+  try {
+    var cell = tab.getRange(rowNum, noticeCol + 1);
+    var 전 = String(cell.getDisplayValue() || "");
+    var 후 = _cpr_resolveFailLines_(전, 접수번호);
+    if (후 === 전) return false;
+    cell.setValue(후);
+    return true;
+  } catch (e) { return false; }
 }
 
 /** 대장의 날짜 글자 → Date. 못 읽으면 null (그때는 거르지 않는다) */
