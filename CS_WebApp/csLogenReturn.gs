@@ -150,6 +150,42 @@ function _lgr_fareOk_(chk) {
 }
 
 /**
+ * 이 원송장이 «이미 접수돼» 있나 — inquiryReturnStateMulti (규격 §8.2).
+ *
+ * ★ 취소된 건은 「없다」로 본다 ★ 취소했으면 다시 접수할 수 있어야 한다.
+ * ★ 못 물으면 「없다」로 본다 ★ 조회가 안 된다고 접수를 막으면, 멀쩡한 건이
+ *   영영 안 나간다. 틀려도 로젠이 같은 접수번호를 돌려줄 뿐 중복은 안 생긴다.
+ *
+ * @return {{있음:boolean, takeNo:string, slipNo:string, 상태:string}}
+ */
+function _lgr_alreadyDone_(orgnSlipNo) {
+  var 빈것 = { 있음: false, takeNo: "", slipNo: "", 상태: "" };
+  try {
+    var r = _logen_call_("inquiryReturnStateMulti", {
+      userId: _logen_userId_(),
+      data: [{ custCd: _logen_custCd_(), orgnSlipNo: String(orgnSlipNo) }]
+    });
+    if (!r.ok) return 빈것;
+    var rows = _logen_arr_(r.json && (r.json.data || r.json.data1));
+    for (var i = 0; i < rows.length; i++) {
+      if (!_logen_ok_(rows[i].resultCd)) continue;
+      var inner = _logen_arr_(rows[i].data1);
+      for (var j = 0; j < inner.length; j++) {
+        var d = inner[j] || {};
+        var takeNo = String(d.takeNo == null ? "" : d.takeNo).trim();
+        if (!takeNo) continue;
+        var 상태 = String(d.resvStatNm == null ? "" : d.resvStatNm).trim();
+        if (상태.indexOf("취소") !== -1) continue;   // 취소된 건은 다시 접수할 수 있다
+        return { 있음: true, takeNo: takeNo,
+                 slipNo: String(d.slipNo == null ? "" : d.slipNo).trim(),
+                 상태: 상태 || "접수" };
+      }
+    }
+  } catch (e) { /* 못 물었으면 없는 것으로 본다 */ }
+  return 빈것;
+}
+
+/**
  * 반품 «계약» 운임을 받는다 — contRtnFares (규격 §8.4).
  *
  * 못 받으면 0 을 준다. 그때는 reverseChkInfoMulti 의 값을 그대로 쓴다 —
@@ -206,6 +242,22 @@ function csLogenReturnRegister(p) {
     return { ok: false, error: "보내는 분 이름·연락처·주소가 다 있어야 접수됩니다. " +
       "(받은 값: " + (이름 || "이름없음") + " / " + (전화 || "연락처없음") + " / " +
       (주소 || "주소없음") + ")" };
+  }
+
+  /*  ★ ⓪ 이미 접수된 건인가부터 본다 ★  (2026-10-08)
+      > 사장님: "이미 접수 되었다고 뜨면 좋겠는데 그게 판별이 가능할까?"
+
+      같은 건을 또 누르는 일이 실제로 생긴다 — 화면이 안 바뀌었거나, 실패로 보여서다.
+      그때 로젠이 돌려주는 말이 사람을 더 헷갈리게 한다. 운임이 맞으면 조용히
+      같은 접수번호를 돌려주고(중복은 안 생긴다), 운임이 어긋나면
+      「거래처계약정보 조회 오류」 라는 엉뚱한 말을 한다.
+
+      그러니 **보내기 전에 묻는다.** 이미 접수돼 있으면 그 번호를 그대로 돌려주고
+      접수는 하지 않는다. 사람은 「이미 접수됨」을 보고, 두 번 나갈 일도 없다. */
+  var 이미 = _lgr_alreadyDone_(inv);
+  if (이미.있음) {
+    return { ok: true, already: true, takeNo: 이미.takeNo, slipNo: 이미.slipNo,
+             fare: 0, error: "", 상태: 이미.상태 };
   }
 
   //  ① 운임을 먼저 받는다 — 지어내지 않는다
@@ -405,14 +457,25 @@ function _lgr_pickupMany_(p) {
   /*  집하일자는 로젠이 정한다. 우리가 지어내지 않는다 —
       화면에는 「오늘 넣었다」는 뜻으로 오늘 날짜를 적어 둔다. */
   out.pickReqYmd = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+  out.already = 0;
 
-  var 된것 = 0;
+  var 된것 = 0, 이미된것 = 0;
   for (var i = 0; i < origs.length; i++) {
     var r = csLogenReturnRegister({
       orgnSlipNo: origs[i],
       name: p.name, tel: p.phone, addr: p.addr,
       goodsNm: p.item, msg: p.memo
     });
+    if (r.ok && r.already) {
+      /*  이미 접수돼 있던 건 — 새로 접수한 것이 아니다. 그렇게 말해 준다. */
+      이미된것++;
+      out.results.push({ ok: true, already: true, orglInvNo: origs[i],
+        invoice: String(r.slipNo || ""), takeNo: r.takeNo,
+        error: "", 상태: r.상태 || "접수" });
+      if (r.slipNo) out.invoices.push(String(r.slipNo));
+      if (r.takeNo) out.takeNos.push(String(r.takeNo));
+      continue;
+    }
     if (r.ok) {
       된것++;
       /*  ★ 로젠은 접수 순간 반품송장을 «안 준다» ★
@@ -437,8 +500,11 @@ function _lgr_pickupMany_(p) {
     }
   }
 
-  out.ok = 된것 > 0;
-  if (된것 < origs.length) {
+  /*  ★ 「이미 접수돼 있던 것」도 성공이다 ★ 새로 보내지 않았을 뿐, 그 건은 접수돼
+      있다. 실패로 치면 화면이 빨갛게 뜨고 사람이 또 누른다. */
+  out.already = 이미된것;
+  out.ok = (된것 + 이미된것) > 0;
+  if (된것 + 이미된것 < origs.length) {
     var 실패 = [];
     for (var k = 0; k < out.results.length; k++) {
       if (!out.results[k].ok) 실패.push(out.results[k].orglInvNo + " — " + out.results[k].error);

@@ -68,7 +68,8 @@ function 판(응답) {
   };
   vm.createContext(ctx);
   vm.runInContext(["_lgr_to_", "csLogenReturnReady", "csLogenReturnCheck",
-    "_lgr_fareOk_", "_lgr_contractFare_", "csLogenReturnRegister", "csLogenReturnState",
+    "_lgr_fareOk_", "_lgr_contractFare_", "_lgr_alreadyDone_",
+    "csLogenReturnRegister", "csLogenReturnState",
     "csLogenReturnCancel"].map(grab).join("\n"), ctx);
   return ctx;
 }
@@ -128,7 +129,10 @@ console.log("\n[4] ★ 운임은 «조회해서» 쓴다 — 지어내지 않는
   check("접수번호를 돌려준다", r.takeNo, "T1234567890");
 
   const 부른API = c.보낸것.map((x) => x.api);
-  check("★ 조회를 «먼저» 부른다", 부른API, ["reverseChkInfoMulti", "contRtnFares", "registReturnRequest"]);
+  /*  차례: ⓪ 이미 접수됐나 → ① 집하지점·타입 → ② 계약 운임 → ③ 접수 */
+  check("★ 묻고 나서 접수한다", 부른API,
+    ["inquiryReturnStateMulti", "reverseChkInfoMulti", "contRtnFares", "registReturnRequest"]);
+  check("★ 접수가 맨 마지막이다", 부른API[부른API.length - 1], "registReturnRequest");
 
   const 보낸 = c.보낸것[c.보낸것.length - 1].body.data[0];
   check("★ 조회가 준 운임타입을 그대로 쓴다", 보낸.fareTy, "010");
@@ -186,7 +190,7 @@ console.log("\n[6] ★ 운임타입이 010·020 이 아니면 «접수하지 않
   const c = 판({ reverseChkInfoMulti: 신용, registReturnRequest: 정상접수 });
   const r = vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c);
   check("★ 접수 안 한다", r.ok, false);
-  check("★ 접수를 아예 안 불렀다", c.보낸것.map((x) => x.api), ["reverseChkInfoMulti"]);
+  check("★ 접수를 아예 안 불렀다", c.보낸것.map((x) => x.api).indexOf("registReturnRequest") < 0, true);
   check("까닭을 말한다", r.error.indexOf("010·020 만 받습니다") >= 0, true);
   check("무엇이 왔는지도 말한다", r.error.indexOf("030") >= 0, true);
 }
@@ -198,7 +202,7 @@ console.log("\n[7] ★ 운임이 0 이면 접수하지 않는다");
   const c = 판({ reverseChkInfoMulti: 영원, registReturnRequest: 정상접수 });
   const r = vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c);
   check("★ 접수 안 한다", r.ok, false);
-  check("★ 접수를 아예 안 불렀다", c.보낸것.length, 1);
+  check("★ 접수를 아예 안 불렀다", c.보낸것.map((x) => x.api).indexOf("registReturnRequest") < 0, true);
   check("까닭을 말한다", r.error.indexOf("운임 0") >= 0, true);
 }
 
@@ -251,6 +255,43 @@ console.log("\n[11] 취소는 응답 코드를 «해석하지 않는다»");
   const 몸 = grab("csLogenReturnCancel").replace(/\/\*[\s\S]*?\*\//g, "");
   check("★ 상태코드를 해석하는 코드가 없다", /resvStat/.test(몸), false);
   check("접수번호로 부른다", c.보낸것[0].body.data[0].takeNo, "T1");
+}
+
+console.log("\n[11-2] ★ 이미 접수된 건이면 «또 보내지 않는다»");
+{
+  /*  > 사장님: "이미 접수 되었다고 뜨면 좋겠는데 그게 판별이 가능할까?"
+      같은 건을 또 누르는 일이 실제로 생긴다 — 화면이 안 바뀌었거나, 앞서 실패로
+      보였기 때문이다. 그때 로젠이 돌려주는 말이 사람을 더 헷갈리게 한다:
+      운임이 맞으면 조용히 같은 접수번호를 주고, 어긋나면 「거래처계약정보 조회
+      오류」 라는 엉뚱한 말을 한다. 그래서 «보내기 전에» 묻는다. */
+  const 이미접수 = { ok: true, json: { data: [{ resultCd: "TRUE",
+    data1: [{ takeNo: "261008109134", slipNo: null, resvStatNm: "접수" }] }] } };
+  const c = 판({ inquiryReturnStateMulti: 이미접수, reverseChkInfoMulti: 정상조회,
+                 registReturnRequest: 정상접수 });
+  const r = vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c);
+  check("★ 실패가 아니다 (그 건은 접수돼 있다)", r.ok, true);
+  check("★ 「이미」라고 말해 준다", r.already, true);
+  check("★ 그 접수번호를 돌려준다", r.takeNo, "261008109134");
+  check("★ 접수를 아예 안 보낸다 (두 번 나가지 않는다)",
+    c.보낸것.map((x) => x.api).indexOf("registReturnRequest") < 0, true);
+  check("운임도 안 묻는다 (헛걸음)", c.보낸것.map((x) => x.api).indexOf("contRtnFares") < 0, true);
+
+  //  ★ 취소된 건은 다시 접수할 수 있어야 한다 ★
+  const 취소됨 = { ok: true, json: { data: [{ resultCd: "TRUE",
+    data1: [{ takeNo: "T9", slipNo: null, resvStatNm: "취소" }] }] } };
+  const c2 = 판({ inquiryReturnStateMulti: 취소됨, reverseChkInfoMulti: 정상조회,
+                  contRtnFares: 계약운임, registReturnRequest: 정상접수 });
+  const r2 = vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c2);
+  check("★ 취소된 건은 새로 접수한다", r2.already === true, false);
+  check("그래서 접수가 나간다", c2.보낸것.map((x) => x.api).indexOf("registReturnRequest") >= 0, true);
+
+  //  ★ 못 물으면 막지 않는다 ★ 조회가 안 된다고 접수를 막으면 멀쩡한 건이 영영 안 나간다
+  const c3 = 판({ inquiryReturnStateMulti: { ok: false, error: "끊김" },
+                  reverseChkInfoMulti: 정상조회, contRtnFares: 계약운임,
+                  registReturnRequest: 정상접수 });
+  const r3 = vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c3);
+  check("★ 못 물어도 접수는 한다", r3.ok, true);
+  check("그때는 「이미」가 아니다", r3.already === true, false);
 }
 
 console.log("\n[12] 로젠이 거절하면 그대로 전한다");

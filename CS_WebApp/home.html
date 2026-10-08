@@ -14338,6 +14338,16 @@
           if (!res.ok) {
             //  반쯤 됐다 — 조용히 넘기면 안 된다. 길게 띄운다.
             toast('★ 일부만 접수됨 ★ ' + res.error + ' · 된 것: ' + got.join(', '), 9000);
+          } else if (res.already && res.already >= got.length) {
+            /* ★ 이미 접수돼 있던 건 ★  (2026-10-08)
+               > 사장님: "이미 접수 되었다고 뜨면 좋겠는데 그게 판별이 가능할까?"
+               같은 건을 또 누르는 일이 실제로 생긴다 — 화면이 안 바뀌었거나
+               앞서 실패로 보였기 때문이다. 그때 「접수됨」이라고만 하면 방금
+               보낸 줄 알고, 실패라고 하면 또 누른다. 사실대로 말한다. */
+            toast('이미 접수된 건입니다 · 접수번호 ' +
+              (takes.length ? takes.join(', ') : '확인 필요') +
+              (slips.length ? ' · 반품송장 ' + slips.join(', ') : '') +
+              ' — 새로 접수하지 않았습니다', 5600);
           } else if (slips.length) {
             toast('회수 접수됨 · 반품송장 ' + slips.join(', ') +
               (slips.length > 1 ? ' (' + slips.length + '박스)' : '') +
