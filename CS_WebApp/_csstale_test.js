@@ -121,9 +121,9 @@ console.log("\n[5] 많으면 줄인다 — 띠가 글자로 뒤덮이지 않게"
   for (let i = 0; i < 40; i++) 많음.push(줄("202609!" + (100 + i), 3));
   c.csStaleReport_(많음);
   const b = c.한일[0].body;
-  ok("★ 줄 수를 자른다", (b.match(/^· /gm) || []).length <= 15);
-  ok("자른 만큼 「외 n건」을 적는다", /외 25건/.test(b));
-  ok("제목에는 전체 건수가 그대로", /40건/.test(c.한일[0].title));
+  ok("★ 40건이면 40줄 다 적는다 (자르지 않는다)", (b.match(/^· /gm) || []).length === 40);
+  ok("「외 n건」이 없다", !/외 d+건/.test(b));
+  ok("제목에도 40건", /40건/.test(c.한일[0].title));
 }
 
 console.log("\n[6] 오래 멈춘 것부터 보여준다");
