@@ -407,6 +407,34 @@ console.log("\n[16] ★ 하나가 실패해도 나머지는 접수한다");
   check("왜 실패했는지 말한다", r.error.indexOf("이미 접수된 건입니다") >= 0, true);
 }
 
+console.log("\n[17] ★ 화면 둘이 «같은 자»로 성공을 재는가");
+{
+  /*  ★ 이 시험이 지키는 자리 ★  (2026-10-08)
+      로젠은 접수 순간에 «반품송장을 안 준다». takeNo 만 온다(규격 §8.2).
+      그런데 반품 카드 쪽 핸들러(_retPickupSend_)가 성공을 invoices 로만 재고
+      있었다 — 그래서 **로젠 접수는 제대로 돼도 늘 「회수 접수 실패」로 보였다.**
+      반품대장 창 쪽 핸들러는 takeNos 를 보고 있었다. 두 벌이라 한쪽만 고쳐져
+      있던 자리다([[one-value-one-owner]]).
+
+      사장님이 같은 화면을 세 번 보여 주셔서 찾았다. 그동안 실패한 줄 알고
+      다시 누르면 접수가 두 번 나갈 뻔했다. */
+  const home = fs.readFileSync("home.html", "utf8");
+
+  //  성공을 재는 자리가 둘 다 takeNos 를 본다
+  check("★ 두 화면 다 접수번호로도 성공을 잰다",
+    (home.match(/var takes = \(res && res\.takeNos\) \|\| \[\];/g) || []).length, 2);
+  check("★ 둘 다 「송장도 접수번호도 없을 때」만 실패로 본다",
+    (home.match(/if \(!got\.length && !takes\.length\)/g) || []).length, 2);
+  check("★ 둘 다 「이미 접수된 건」을 말해 준다",
+    (home.match(/이미 접수된 건입니다 · 접수번호/g) || []).length, 2);
+  check("★ 둘 다 송장이 늦게 나온다는 것을 숨기지 않는다",
+    (home.match(/반품송장은 로젠이 출력한 뒤에 나옵니다/g) || []).length, 2);
+
+  //  서버가 그 둘을 실제로 채워 주는가
+  check("접수번호를 돌려준다", /out\.takeNos\.push/.test(src), true);
+  check("「이미」를 돌려준다", /out\.already = 이미된것;/.test(src), true);
+}
+
 console.log("");
 console.log(fail === 0 ? "다 통과 (" + pass + "건)" : "실패 " + fail + "건 / 통과 " + pass + "건");
 process.exit(fail === 0 ? 0 : 1);
