@@ -137,7 +137,13 @@ console.log("\n[6] 오래 멈춘 것부터 보여준다");
 
 console.log("\n[7] 자동 채우기와 맞물리나");
 {
-  ok("★ 자가 2일이다", /var _LSF_STALE_DAYS_ = 2;/.test(fill));
+  /*  자는 csLogenOutStale.gs 의 _OST_FROM_DAYS_ 와 «같아야» 한다 —
+      출고와 반품이 다른 자로 말하면 보는 사람이 헷갈린다.
+      값이 맞는지는 _csoutstale_test.js [0] 에서 한 번만 못 박는다. */
+  const out = fs.readFileSync("csLogenOutStale.gs", "utf8");
+  const 자 = Number((out.match(/_OST_FROM_DAYS_ = (\d+)/) || [])[1]);
+  ok("★ 반품 자가 출고 자와 같다",
+     new RegExp("_LSF_STALE_DAYS_ = " + 자 + ";").test(fill));
   ok("★ «어느 줄»인지 모은다 (수만 세지 않는다)", /var 멈춘것 = \[\];/.test(fill));
   ok("원송장 경로가 모은다", /멈춘것\.push\(\{ 어디: 어디,/.test(fill));
   ok("접수번호 경로도 모은다", /멈춘것\.push\(\{ 어디: 어디T,/.test(fill));

@@ -30,7 +30,8 @@
  */
 
 /** 며칠 멈춰 있으면 올리나 */
-var _STALE_DAYS_ = 2;
+var _STALE_DAYS_ = 3;   // ★ csLogenSlipFill.gs 의 _LSF_STALE_DAYS_ 와 «같아야» 한다 —
+                        //   여기는 글자용, 저기는 판정용이다. 한쪽만 고치면 글과 실제가 갈린다
 
 /** 그 카드를 알아보는 표 — 이것으로 찾아 갈아 끼운다 */
 var _STALE_SRCKEY_ = "자동점검:로젠반품지연";
