@@ -150,6 +150,23 @@ function _lgr_fareOk_(chk) {
 }
 
 /**
+ * 실패할 때 «무엇을 보냈는지» 한 줄로 — 로젠의 말이 원인과 동떨어져 있어서다.
+ *
+ * 「거래처계약정보 조회 오류 ( 거래처코드 : 348782 )」 가 실은 운임 문제였던
+ * 적이 있다. 그 말만 보면 계약이 끊겼나, 남의 송장인가를 의심하게 된다.
+ * ★ 실패하는 가지가 둘이다 ★ HTTP 단계와 건별 resultCd. 둘 다 이것을 붙인다 —
+ * 한쪽에만 붙이면, 안 붙은 쪽이 꼭 그 쪽이다(2026-10-08 에 그랬다).
+ */
+function _lgr_sentTail_(chk, 계약운임, 지점운임) {
+  try {
+    return " [보낸 운임 " + chk.dlvFare + "원" +
+      (계약운임 > 0 ? " · 계약 " + 계약운임 : " · 계약운임 못 받음") +
+      (지점운임 !== chk.dlvFare ? " · 지점 " + 지점운임 : "") +
+      " · 타입 " + chk.fareTy + "]";
+  } catch (e) { return ""; }
+}
+
+/**
  * 이 원송장이 «이미 접수돼» 있나 — inquiryReturnStateMulti (규격 §8.2).
  *
  * ★ 취소된 건은 「없다」로 본다 ★ 취소했으면 다시 접수할 수 있어야 한다.
@@ -304,7 +321,12 @@ function csLogenReturnRegister(p) {
       sndMsg: String(p.msg || "").substring(0, 500)
     }]
   });
-  if (!r.ok) return { ok: false, error: r.error, check: chk };
+  /*  ★ 꼬리말을 «두 가지 모두»에 붙인다 ★  (2026-10-08)
+      처음엔 아래 resultCd 가지에만 붙였다. 그런데 실제 실패는 «여기» — HTTP
+      단계에서 통째로 거절되는 가지였다. 그래서 꼬리말이 안 붙었고, 나는 그 글을
+      보고도 「내가 고친 자리가 아니다」를 못 알아봤다. 사장님이 같은 화면을
+      네 번 보여 주셨다. 한쪽에만 붙이면 안 붙은 쪽이 꼭 그 쪽이다. */
+  if (!r.ok) return { ok: false, check: chk, error: r.error + _lgr_sentTail_(chk, 계약운임, 지점운임) };
 
   var rows = _logen_arr_(r.json && (r.json.data || r.json.data1));
   var d = rows[0] || {};
@@ -314,11 +336,9 @@ function csLogenReturnRegister(p) {
         원인과 동떨어져 있다. 그 말만 보면 계약이 끊겼나, 남의 송장인가를 의심하게
         된다 — 실제로는 운임이 계약과 달라서였다. 보낸 값을 적어 두면 다음엔
         한눈에 갈린다. 고치고도 또 같은 화면을 보며 헤맸다. */
-    var 덧 = " [보낸 운임 " + chk.dlvFare + "원" +
-      (계약운임 > 0 ? " · 계약 " + 계약운임 : " · 계약운임 못 받음") +
-      (지점운임 !== chk.dlvFare ? " · 지점 " + 지점운임 : "") +
-      " · 타입 " + chk.fareTy + "]";
-    return { ok: false, error: String(d.resultMsg || "접수 실패") + 덧, check: chk };
+    return { ok: false, check: chk,
+             error: String(d.resultMsg || "접수 실패") +
+                    _lgr_sentTail_(chk, 계약운임, 지점운임) };
   }
 
   var takeNo = String(d.takeNo || "").trim();

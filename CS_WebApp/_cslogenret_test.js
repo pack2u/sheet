@@ -68,7 +68,7 @@ function 판(응답) {
   };
   vm.createContext(ctx);
   vm.runInContext(["_lgr_to_", "csLogenReturnReady", "csLogenReturnCheck",
-    "_lgr_fareOk_", "_lgr_contractFare_", "_lgr_alreadyDone_",
+    "_lgr_fareOk_", "_lgr_contractFare_", "_lgr_alreadyDone_", "_lgr_sentTail_",
     "csLogenReturnRegister", "csLogenReturnState",
     "csLogenReturnCancel"].map(grab).join("\n"), ctx);
   return ctx;
@@ -405,6 +405,42 @@ console.log("\n[16] ★ 하나가 실패해도 나머지는 접수한다");
   check("첫째는 됐다", r.results[0].ok, true);
   check("★ 둘째는 실패로 남는다", r.results[1].ok, false);
   check("왜 실패했는지 말한다", r.error.indexOf("이미 접수된 건입니다") >= 0, true);
+}
+
+console.log("\n[16-2] ★ 실패하는 «두 가지 모두»가 보낸 값을 말해 준다");
+{
+  /*  ★ 이 시험이 생긴 까닭 ★  (2026-10-08)
+      로젠의 실패 메시지가 원인과 동떨어져 있어서, 실패할 때 «무엇을 보냈는지»를
+      같이 적게 했다. 그런데 처음엔 건별 resultCd 가지에만 붙였다.
+      실제 실패는 «HTTP 단계»에서 통째로 거절되는 가지였고, 거기엔 안 붙어 있었다.
+      그래서 그 글을 보고도 「내가 고친 자리에서 나온 게 아니다」를 못 알아봤고,
+      사장님이 같은 화면을 네 번 보여 주셔야 했다.
+      한쪽에만 붙이면, 안 붙은 쪽이 꼭 그 쪽이다. */
+
+  //  ① HTTP 단계에서 통째로 거절될 때
+  const 통째거절 = { ok: false, error: "거래처계약정보 조회 오류 ( 거래처코드 : 348782 )" };
+  const c = 판({ reverseChkInfoMulti: 정상조회, contRtnFares: 계약운임,
+                 registReturnRequest: 통째거절 });
+  const r = vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c);
+  check("실패로 본다", r.ok, false);
+  check("★ 로젠이 한 말이 앞에 있다", r.error.indexOf("거래처계약정보 조회 오류") === 0, true);
+  check("★ HTTP 거절에도 보낸 값이 붙는다", /보낸 운임 \d+원/.test(r.error), true);
+  check("계약 운임도 적는다", /계약 2500/.test(r.error), true);
+
+  //  ② 건별 resultCd 가 FALSE 일 때
+  const 건별거절 = { ok: true, json: { data: [{ resultCd: "FALSE", resultMsg: "무슨 오류" }] } };
+  const c2 = 판({ reverseChkInfoMulti: 정상조회, contRtnFares: 계약운임,
+                  registReturnRequest: 건별거절 });
+  const r2 = vm.runInContext("csLogenReturnRegister(" + JSON.stringify(고객) + ")", c2);
+  check("★ 건별 거절에도 붙는다", /보낸 운임 \d+원/.test(r2.error), true);
+
+  //  ★ 두 가지가 «같은 함수»를 쓴다 — 두 벌이면 한쪽만 고쳐진다
+  //  «부르는» 곳만 센다 — 정의 한 줄이 같은 모양이라 같이 걸린다
+  check("★ 두 가지가 같은 함수를 쓴다 (꼬리말이 두 벌이 아니다)",
+    (src.match(/_lgr_sentTail_\(/g) || []).length -
+    (src.match(/function _lgr_sentTail_\(/g) || []).length, 2);
+  check("꼬리말을 만드는 곳은 하나다",
+    (src.match(/function _lgr_sentTail_\(/g) || []).length, 1);
 }
 
 console.log("\n[17] ★ 화면 둘이 «같은 자»로 성공을 재는가");
