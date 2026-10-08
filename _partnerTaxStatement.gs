@@ -507,6 +507,11 @@ function _pts_extraColIdx_(hdr) {
   return idx;
 }
 
+/*  명세서에 실을 수 있는 상태.  (2026-10-08)
+    _pt_buildOrderStatusMapFormula_ 가 짓는 낱말과 «같아야» 한다 —
+    그쪽이 바뀌면 여기도 같이 바꿔야 명세서가 조용히 비지 않는다. */
+var _PTS_OK_STATUS_ = ["접수완료", "발송완료"];
+
 function _pts_isChecked_(v) {
   return v === true || String(v).toUpperCase() === "TRUE";
 }
@@ -604,9 +609,34 @@ function _pts_scanTab_(tab, headerRowHint, kind, filter, acc) {
     if (ex.cancel !== -1 && _pts_isChecked_(row[ex.cancel])) { acc.skipped++; continue; }
     if (ex.ret !== -1 && _pts_isChecked_(row[ex.ret])) { acc.skipped++; continue; }
 
-    // 발주 및 송장조회처럼 아직 안 나간 행이 섞인 탭은 송장 있는 행만 센다
-    if (filter.needInvoice && cMap.invoice !== -1) {
-      if (!String(row[cMap.invoice] || "").trim()) { acc.noInvoice++; continue; }
+    /*  ══════════════════════════════════════════════════════════
+        ★ 아직 안 나간 행이 섞인 탭은 «상태»로 가른다 ★  (2026-10-08)
+
+        > "거래명세서 발행시 우리 접수완료, 발송완료건들만 거래명세서 나가게 해줘"
+
+        업체 시트 N열 「상태(자동)」은 수식이 짓는다 (_pt_buildOrderStatusMapFormula_) —
+          송장(K)이 있으면      발송완료
+          고유ID(M)가 있으면    접수완료
+          그 밖                 🔴코드확인필요 · 🚨단종 · 🚨품절 ·
+                                ⚠재고까지만 · ⚠️입력미완 · 빈칸
+        뒤엣것들은 «우리가 아직 받지도 않은» 줄이다. 그것이 명세서에 실리면
+        업체는 안 보낸 것의 돈을 청구받는다.
+
+        ★ 여태는 「송장 있는 행만」이었다 ★ 그러면 발송완료만 실리고,
+          접수는 했는데 아직 송장이 안 붙은 줄이 통째로 빠졌다. 그날 받은 것을
+          그날 명세로 보내는 일일 명세서에서는 그게 대부분이다.
+
+        ★ 상태 칸이 없으면 여태대로 송장을 본다 ★ 옛 탭에는 그 칸이 없다.
+          칸이 없다고 전부 막으면 명세서가 통째로 빈다 —
+          모르는 것을 「아니다」로 읽지 않는다.
+        ══════════════════════════════════════════════════════════ */
+    if (filter.needInvoice) {
+      if (cMap.status !== -1) {
+        var 상태 = String(row[cMap.status] || "").replace(/\s/g, "");
+        if (_PTS_OK_STATUS_.indexOf(상태) < 0) { acc.noInvoice++; continue; }
+      } else if (cMap.invoice !== -1) {
+        if (!String(row[cMap.invoice] || "").trim()) { acc.noInvoice++; continue; }
+      }
     }
 
     var name = "";
