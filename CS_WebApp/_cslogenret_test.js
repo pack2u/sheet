@@ -424,7 +424,7 @@ console.log("\n[17] ★ 화면 둘이 «같은 자»로 성공을 재는가");
   check("★ 두 화면 다 접수번호로도 성공을 잰다",
     (home.match(/var takes = \(res && res\.takeNos\) \|\| \[\];/g) || []).length, 2);
   check("★ 둘 다 「송장도 접수번호도 없을 때」만 실패로 본다",
-    (home.match(/if \(!got\.length && !takes\.length\)/g) || []).length, 2);
+    (home.match(/if \(!(got|slips)\.length && !takes\.length\)/g) || []).length, 2);
   check("★ 둘 다 「이미 접수된 건」을 말해 준다",
     (home.match(/이미 접수된 건입니다 · 접수번호/g) || []).length, 2);
   check("★ 둘 다 송장이 늦게 나온다는 것을 숨기지 않는다",
