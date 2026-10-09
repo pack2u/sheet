@@ -215,6 +215,11 @@ function csLogenFillReturnSlips(opt) {
           응답없음 : 물었는데 그 줄이 응답에 안 실려 왔다 (이상 신호)
         줄마다 원송장을 같이 찍어 사람이 바로 로젠 화면에서 찾아볼 수 있게 한다. */
   var 채움 = 0, 접수없음 = 0, 송장대기 = 0, 응답없음 = 0, 취소 = 0, 실패 = 0, 남김 = 0, 오래됨 = 0;
+  var 못물음 = 0;
+
+  /*  ★ 되짚기 셈을 되돌린다 ★ 쉼과 한도는 «이번 회차»의 것이다. 한 실행에서
+      두 번 부르면(시험·손 실행) 앞 회차 셈이 남아 엉뚱하게 한도에 걸린다. */
+  _LSF_UID_N_ = 0; _LSF_UID_MEMO_ = {}; _LSF_UID_SKIPPED_ = 0;
   /*  ★ 「몇 개」가 아니라 «어느 줄»을 모은다 ★  (2026-10-08)
       여태 수만 세어 Logger.log 에 남겼다. 그래서 207 이 5일째 멈춘 것을
       우연히 알았다. 모아서 csStaleReport_ 가 공지 띠에 올린다. */
@@ -272,6 +277,16 @@ function csLogenFillReturnSlips(opt) {
             보내므로(csLogenReturn.gs fixTakeNo), 그 번호로는 찾힌다.
             보내기만 하고 찾지 않으면 반쪽이다. */
         var byUid = _lsf_byUid_(it.uid);
+        /*  ★ 「없다」와 「안 물어봤다」를 가른다 ★ 한도에 걸려 못 물은 것을
+            「접수가 없음」으로 적으면, CS 와 업체가 접수가 안 된 줄로 믿는다.
+            못 물은 것은 못 물었다고 적고 다음 시간에 다시 본다.
+            [[dont-overwrite-what-you-couldnt-read]] */
+        if (byUid && byUid["못물음"]) {
+          못물음++;
+          L.push("  · " + 어디 + " — 고유ID 되짚기를 이번 회차 한도(" +
+                 _LSF_UID_MAX_ + "건)로 못 했습니다 — 다음 시간에 다시 봅니다");
+          continue;
+        }
         if (byUid && byUid.slipNo) { 고른 = byUid; }
         else {
           접수없음++;
@@ -413,7 +428,15 @@ function csLogenFillReturnSlips(opt) {
   L.push("");
   L.push("채움 " + 채움 + " · 접수없음 " + 접수없음 + " · 송장대기 " + 송장대기 +
          " · 취소건 " + 취소 + " · 응답없음 " + 응답없음 +
-         " · 실패 " + 실패 + (남김 ? " · 미룸 " + 남김 : ""));
+         " · 실패 " + 실패 + (남김 ? " · 미룸 " + 남김 : "") +
+         //  ★ 못 물은 것은 숨기지 않는다 ★ 0 이면 아예 안 적는다(평소가 그렇다)
+         (못물음 ? " · ★ 되짚기 못함 " + 못물음 : ""));
+  if (못물음) {
+    L.push("★ 고유ID 되짚기를 " + 못물음 + "건 못 했습니다 (한 회차 한도 " +
+           _LSF_UID_MAX_ + "건) — 다음 시간에 이어서 봅니다. " +
+           "매시간 한도에 걸린다면 _LSF_UID_MAX_ 를 올리거나 왜 이렇게 많이 " +
+           "안 찾히는지를 봐야 합니다.");
+  }
   if (오래됨) L.push("★ " + _LSF_STALE_DAYS_ + "영업일 넘게 송장이 안 나온 건 " + 오래됨 + "개 — 로젠에 확인하세요");
 
   /*  ★ 사람이 보는 곳에 올린다 ★  (csLogenStale.gs)
@@ -538,32 +561,82 @@ function _lsf_ageFromTakeNo_(takeNo) {
 }
 
 /**
+ * 고유ID 되짚기를 한 회차에 몇 건까지 묻나.
+ *
+ * ★ 왜 한도가 있나 ★ 이 되짚기는 원송장으로 «못 찾은» 줄에만 돈다. 보통 한 자리
+ *   수다(2026-10-09: 대기 9건). 그런데 어느 날 수백 건이 안 찾히면 그만큼
+ *   연달아 부른다 — 다른 로젠 호출은 모두 10건에 2초씩 쉬어 가는데
+ *   [[one-value-one-owner]] 여기만 혼자 쉼 없이 두드리고 있었다.
+ */
+var _LSF_UID_MAX_ = 60;
+
+/*  ★ 되짚기 상태 — 한 실행 안에서만 ★ 쉼은 «센 횟수»로 넣어야 하므로 상태가
+    필요하다. 묻기 시작할 때 csLogenFillReturnSlips 가 되돌린다.            */
+var _LSF_UID_N_ = 0;         // 이번 회차에 몇 번 물었나
+var _LSF_UID_MEMO_ = {};     // 같은 고유ID 를 두 번 묻지 않는다
+var _LSF_UID_SKIPPED_ = 0;   // 한도에 걸려 «못 물은» 건수
+
+/**
  * 우리 고유ID 로 반품을 찾는다 — inquiryReserveStateFixTakeNo (규격 §8.2).
  *
  * 2026-10-08 부터 접수할 때 fixTakeNo 에 고유ID 를 실어 보낸다. 그 전에 접수된
  * 건은 안 나온다 — 그때는 사람이 로젠 화면에서 접수번호를 찾아 비고에 적어야 한다.
  *
- * @return {{takeNo, slipNo, statNm}|null}
+ * ★ 왜 묶어 보내지 않나 ★ 이 API 는 `data: [...]` 배열을 받는다. 그런데 응답이
+ *   돌려주는 것은 `resvStat · slipNo · delayCd · procDt · takeNo` 뿐이고
+ *   **`fixTakeNo` 를 되돌려주지 않는다**(규격 §8.2 표). 열을 한꺼번에 보내면
+ *   어느 답이 누구 것인지 가릴 길이 없다. 짐작으로 차례를 맞추면 **엉뚱한 줄에
+ *   엉뚱한 송장을 적는다** — 빈칸보다 나쁘다. [[leave-no-ambiguous-branches]]
+ *   그래서 한 건씩 묻고, 대신 다른 호출들과 같은 리듬으로 쉬어 간다.
+ *
+ * @return {Object|null} 찾았으면 {takeNo, slipNo, statNm} ·
+ *                       못 찾았으면 null ·
+ *                       ★ 한도에 걸려 «묻지도 못했으면» {못물음: true}
+ *                       — 「없다」와 「안 물어봤다」는 다르다.
+ *                       [[dont-overwrite-what-you-couldnt-read]]
  */
 function _lsf_byUid_(uid) {
   var u = String(uid == null ? "" : uid).trim();
-  if (!u) return null;
+  if (!u) return null;                       // 물을 것이 없다 ≠ 못 물었다
+
+  //  같은 고유ID 는 한 번만 묻는다 (합포장이면 줄이 여럿일 수 있다)
+  if (_LSF_UID_MEMO_.hasOwnProperty(u)) return _LSF_UID_MEMO_[u];
+
+  if (_LSF_UID_N_ >= _LSF_UID_MAX_) {
+    _LSF_UID_SKIPPED_++;
+    return { "못물음": true };                // ★ 「없다」로 둘러대지 않는다
+  }
+
+  /*  ★ 쉬어 간다 ★ 10건마다 2초 — csLogen.gs 의 상수를 그대로 쓴다.
+      리듬을 여기서 다시 정하면 둘이 갈라진다. */
+  if (_LSF_UID_N_ > 0 && _LSF_UID_N_ % _LOGEN_BATCH_SIZE_ === 0) {
+    try { Utilities.sleep(_LOGEN_BATCH_DELAY_MS_); } catch (e) {}
+  }
+  _LSF_UID_N_++;
+
+  /*  ★ 나가는 길이 하나다 ★ 어느 길로 나가든 외워 둔다 — 중간에 return 하면
+      그 답만 안 외워져서, 같은 고유ID 를 또 묻는다. */
+  var 답 = null;
   try {
     var r = _logen_call_("inquiryReserveStateFixTakeNo", {
       userId: _logen_userId_(),
       data: [{ custCd: _logen_custCd_(), fixTakeNo: u }]
     });
-    if (!r.ok) return null;
-    var rows = _logen_arr_(r.json && (r.json.data || r.json.data1));
-    for (var i = 0; i < rows.length; i++) {
-      var d = rows[i] || {};
-      if (!_logen_ok_(d.resultCd)) continue;
-      var slip = String(d.slipNo == null ? "" : d.slipNo).replace(/[^0-9]/g, "");
-      return { takeNo: String(d.takeNo == null ? "" : d.takeNo).trim(),
+    if (r.ok) {
+      var rows = _logen_arr_(r.json && (r.json.data || r.json.data1));
+      for (var i = 0; i < rows.length; i++) {
+        var d = rows[i] || {};
+        if (!_logen_ok_(d.resultCd)) continue;
+        var slip = String(d.slipNo == null ? "" : d.slipNo).replace(/[^0-9]/g, "");
+        답 = { takeNo: String(d.takeNo == null ? "" : d.takeNo).trim(),
                slipNo: slip, statNm: String(d.resvStat == null ? "" : d.resvStat).trim() };
+        break;
+      }
     }
-  } catch (e) {}
-  return null;
+  } catch (e) { 답 = null; }
+
+  _LSF_UID_MEMO_[u] = 답;
+  return 답;
 }
 
 /**

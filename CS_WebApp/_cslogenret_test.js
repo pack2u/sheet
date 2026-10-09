@@ -516,6 +516,49 @@ console.log("\n[17] ★ 화면 둘이 «같은 자»로 성공을 재는가");
   check("「이미」를 돌려준다", /out\.already = 이미된것;/.test(src), true);
 }
 
+console.log("\n[되짚기] ★ 고유ID 로 묻는 일이 «쉼 없이» 두드리지 않는가");
+{
+  /*  2026-10-09 — 다른 로젠 호출은 모두 10건에 2초씩 쉬어 간다. 이 되짚기만
+      혼자 쉼 없이 연달아 불렀다. 지금은 대기 9건이라 안 보이지만, 어느 날
+      수백 건이 안 찾히면 그만큼 중계를 두드린다.                          */
+  const fill = fs.readFileSync("csLogenSlipFill.gs", "utf8");
+
+  //  ★ 묶어 보내지 않는 «까닭»이 적혀 있어야 한다 ★ 안 적으면 다음 사람이
+  //    「배열이니 묶으면 되지」 하고 묶는다 — 응답에 fixTakeNo 가 없다
+  check("★ 왜 안 묶는지 적어 뒀다 (응답이 fixTakeNo 를 안 준다)",
+        /fixTakeNo` 를 되돌려주지 않는다/.test(fill), true);
+  check("규격도 그렇게 적혀 있다 (위 + `takeNo` 뿐)",
+        /inquiryReserveStateFixTakeNo` \| `custCd` \+ \*\*`fixTakeNo`\*\* \| 위 \+ `takeNo`/.test(규격), true);
+
+  //  쉼 — 리듬은 csLogen.gs 것을 그대로 쓴다. 여기서 다시 정하면 둘이 갈라진다
+  check("★ 10건마다 쉰다", /_LSF_UID_N_ % _LOGEN_BATCH_SIZE_ === 0/.test(fill), true);
+  check("★ 쉼 길이도 csLogen 상수를 쓴다 (여기서 다시 안 정한다)",
+        /Utilities\.sleep\(_LOGEN_BATCH_DELAY_MS_\)/.test(fill), true);
+
+  //  한도 — 한 회차에 무한정 묻지 않는다
+  check("★ 한 회차 한도가 있다", /var _LSF_UID_MAX_ = \d+;/.test(fill), true);
+  const 한도 = Number((fill.match(/var _LSF_UID_MAX_ = (\d+);/) || [])[1]);
+  check("한도가 쓸 만한 크기다 (10건 이상)", 한도 >= 10, true);
+
+  //  같은 고유ID 를 두 번 묻지 않는다 (합포장이면 줄이 여럿일 수 있다)
+  check("★ 외운다", /_LSF_UID_MEMO_\.hasOwnProperty\(u\)/.test(fill), true);
+  check("★ 어느 길로 나가든 외운다 (중간 return 없음)",
+        /_LSF_UID_MEMO_\[u\] = 답;\s*\n\s*return 답;/.test(fill), true);
+
+  //  ★ 「없다」와 「안 물어봤다」를 가른다 ★ 이게 제일 중요하다
+  check("★ 못 물었으면 못 물었다고 돌려준다", /return \{ "못물음": true \};/.test(fill), true);
+  check("★ 부르는 쪽이 그것을 가린다", /if \(byUid && byUid\["못물음"\]\) \{/.test(fill), true);
+  check("★ 그때 「접수가 없음」으로 적지 않는다",
+        fill.indexOf('byUid["못물음"]') < fill.indexOf("로젠에 반품 접수가 없음\" +\n                 (it.uid"), true);
+  check("★ 요약에도 숨기지 않는다", /되짚기 못함 " \+ 못물음/.test(fill), true);
+  check("평소(0건)에는 안 적는다 — 매시간 같은 말이 쌓이면 안 읽힌다",
+        /\(못물음 \? " · ★ 되짚기 못함 "/.test(fill), true);
+
+  //  회차마다 되돌린다 — 안 되돌리면 두 번째 호출이 엉뚱하게 한도에 걸린다
+  check("★ 회차 시작에 셈을 되돌린다",
+        /_LSF_UID_N_ = 0; _LSF_UID_MEMO_ = \{\}; _LSF_UID_SKIPPED_ = 0;/.test(fill), true);
+}
+
 console.log("");
 console.log(fail === 0 ? "다 통과 (" + pass + "건)" : "실패 " + fail + "건 / 통과 " + pass + "건");
 process.exit(fail === 0 ? 0 : 1);
