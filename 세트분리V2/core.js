@@ -1944,6 +1944,11 @@ function ssRoute(units, masters, cfg, warnings) {
   var ferry = masters.ferry || [];
   var islandZip = masters.islandZips || {};
   var addrZip = masters.addrZip || {};
+  /*  ★ 로젠이 답해 준 도서·산간 ★  (2026-10-09)
+      표(도선료표·우편번호)가 «놓친» 섬을 잡는 데만 쓴다. 표가 섬이라 하면
+      표가 이긴다 — 돈이 걸린 쪽이고, 내리는 쪽이 되돌리기 어렵다.
+      묻는 일은 CS웹앱이 한다(csLogenZoneCache.gs). 여기는 읽기만. */
+  var logenZone = masters.logenZone || {};
   var holdIsland = ssText(cfg.도서산간_미확인) !== '일반출고';
   /*  ★ 도선료를 한 값으로 통일한다 ★  (2026-09-21 · ssSurcharge 의 긴 설명 참고)
       로젠 요율표를 못 받은 동안 표의 롯데 금액(1,000~9,900원)을 쓰느니
@@ -2444,6 +2449,10 @@ function ssRoute(units, masters, cfg, warnings) {
       u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
         continue;
       }
+      /*  우편번호는 있는데 표에 없다 = 우리 표로는 「일반」이다.
+          로젠에게 물어 둔 답이 있으면 그것으로 한 번 더 본다 (2026-10-09). */
+      if (ssLogenPromote_(u, addr, logenZone, ferry, 섬옵션, 통일도선료,
+                          면제, _섬세우기, _섬적음, 위탁, warnings)) continue;
       u.route = SS_ROUTE.LOTTE;
       continue;
     }
@@ -2485,6 +2494,15 @@ function ssRoute(units, masters, cfg, warnings) {
       ssWarn(warnings, '주의', 'ISLAND_UNKNOWN', addr,
         '우편번호를 구하지 못해 일반 출고로 보냈습니다. 도서산간이면 추가운임이 누락됩니다.');
     }
+
+    /*  ★ 마지막으로 로젠에게 물어 둔 답을 본다 ★  (2026-10-09)
+        여기까지 왔다는 것은 우리 표가 「일반」이라고 본 것이다. 그런데 로젠은
+        면·리 단위로 가른다 — 강화 읍내는 아니고 교동도·석모도는 맞다. 표로는
+        못 따라간다. 그래서 «표가 놓친 섬»만 여기서 올린다.
+        표가 섬이라 한 것은 위에서 이미 끝났으니 여기로 안 온다 — 내리는 일은 없다. */
+    if (ssLogenPromote_(u, addr, logenZone, ferry, 섬옵션, 통일도선료,
+                        면제, _섬세우기, _섬적음, 위탁, warnings)) continue;
+
     u.route = SS_ROUTE.LOTTE;
   }
 
@@ -2777,6 +2795,69 @@ function ssReturnFee(addr, zone, ferry, opts) {
  *   · 낱말 셋 (시도 · 시군구 · 읍면동)
  * 띄어쓰기가 없는 주소(「강원특별자치도인제군서화면서화길4-11」)는 도로명으로 자른다.
  */
+/**
+ * 표가 「일반」이라 본 줄을, 로젠이 섬·산간이라 하면 올린다.  (2026-10-09)
+ *
+ * > 사장님: "㉮로 해줘" — API 는 «표가 놓친 섬»을 잡는 데만 쓴다.
+ *
+ * ★ 올리기만 한다. 내리지 않는다 ★
+ *   표가 섬이라 한 줄은 애초에 여기로 안 온다. 그러니 이 함수 때문에
+ *   도서산간이 일반으로 «내려가는» 일은 없다. 내리는 쪽이 위험하다 —
+ *   운임이 모자라거나 배송이 거절된다.
+ *
+ * ★ 위쪽 갈래와 «같은 규칙»을 따른다 ★
+ *   산간은 «일반» 로젠으로 간다(배가 아니라 차로 간다). 제주·연륙도서만
+ *   도서산간 탭으로 간다. 면제·세우기도 위와 같이 본다. 여기만 다르면
+ *   같은 섬이 어느 갈래로 잡혔는지에 따라 다르게 나간다.
+ *
+ * @return {boolean} true 면 여기서 경로를 정했다 (부른 쪽은 continue)
+ */
+function ssLogenPromote_(u, addr, logenZone, ferry, 섬옵션, 통일도선료,
+                         면제, 세우기, 적음, 위탁, warnings) {
+  if (!logenZone) return false;
+  var 판정 = ssText(logenZone[ssLogenZoneKey(addr)]);
+  if (!판정 || 판정 === '일반') return false;
+
+  u.도서권역 = 판정;
+  u.도서판정 = '로젠API';
+
+  if (판정 === '산간') {
+    /*  산간은 «일반» 로젠이다 — 우편번호 갈래와 같은 규칙.
+        여기서 안 갈라 주면 강원 산간이 도서산간 탭으로 샌다. */
+    u.도서판정 = '산간(로젠API)';
+    u.도선료 = ssSurcharge(addr, '', ferry, 섬옵션(u)).합계 ||
+      (Number(통일도선료) > 0 ? Number(통일도선료) : 3000);
+    u.route = SS_ROUTE.LOTTE;
+    return true;
+  }
+
+  //  제주 · 연륙도서
+  u.도선료 = ssSurcharge(addr, 판정, ferry, 섬옵션(u)).합계 ||
+    (Number(통일도선료) > 0 ? Number(통일도선료) : 0);
+  if (면제) { ssIslandSkipByManual_(u, warnings); return true; }
+  if (세우기) { ssIslandHoldByManual_(u, 적음); return true; }
+  u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
+  return true;
+}
+
+/**
+ * ★ 지역키 ★ 로젠이 가르는 단위까지만 남긴다 — 「시도 시군구 읍면동(+리)」.
+ *
+ * CS웹앱 csLogenZoneCache.gs 의 csLogenZoneKey 와 «글자 하나까지» 같아야 한다.
+ * 프로젝트가 달라 함수를 못 부르니 두 벌이 된다. 한쪽만 고치면 표를 못 찾아
+ * **조용히 아무 일도 안 일어난다** — 오류도 안 난다.
+ * CS_WebApp/_cszone_test.js 가 두 파일을 같은 주소로 맞대 본다.
+ *
+ * 로젠은 «리» 단위로도 가른다 — 강화 읍내는 아니고 교동도·석모도는 맞다.
+ */
+function ssLogenZoneKey(addr) {
+  var t = String(addr == null ? '' : addr).trim().replace(/\s+/g, ' ').split(' ');
+  if (t.length < 3) return t.join(' ');
+  var k = t[0] + ' ' + t[1] + ' ' + t[2];
+  if (t[3] && /리$/.test(t[3])) k += ' ' + t[3];
+  return k;
+}
+
 function ssAddrRegion(addr) {
   var s = ssText(addr).replace(/\s+/g, ' ').trim();
   if (!s) return '';

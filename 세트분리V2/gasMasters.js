@@ -377,6 +377,7 @@ function ssm_load(회차키) {
   M.override = ssm_loadManual(ssio_config(), 회차키);
 
   M.ferry = ssm_ferryRows();   // 롯데 도선료 표 (주소 문자열로 확정)
+  M.logenZone = ssm_logenZoneRows();   // 로젠이 답해 준 도서·산간 (읽기만)
 
   /* 이미 나간 줄 — core.js ssBlockReship 이 이걸 보고 재출고를 막는다 */
   M.기출고 = ssm_loadShipped(회차키);
@@ -1450,6 +1451,30 @@ function ssm_산간심기_() {
     Logger.log('[산간 심기] 실패: ' + String(e && e.message ? e.message : e));
     return 0;
   }
+}
+
+/**
+ * 로젠이 답해 준 도서·산간 표 — 지역키 → 판정.
+ *
+ * ★ 우리가 안 묻는다 ★ CS웹앱이 묻고 적는다(CS_WebApp/csLogenZoneCache.gs).
+ *   여기서 부르면 큰 회차(1,500줄)에서 10건씩 150번 — 6분 한도를 넘는다.
+ * ★ 표가 없어도 멎지 않는다 ★ 아직 안 만들어졌으면 빈 것으로 돈다. 여태와 같다.
+ *
+ * 머리글: 지역키 · 판정 · 제주 · 연륙도서 · 산간 · 표본주소 · 물은때
+ *   — csLogenZoneCache.gs 의 _ZC_HEADER_ 와 «같아야» 한다.
+ */
+function ssm_logenZoneRows() {
+  var out = {};
+  var body;
+  try { body = ssio_body(SSIO_TABS.로젠권역); }
+  catch (e) { return out; }          // 표가 아직 없다 — 여태처럼 돈다
+  for (var i = 0; i < body.length; i++) {
+    var key = ssText(body[i][0]);
+    var 판정 = ssText(body[i][1]);
+    if (!key || !판정) continue;
+    out[key] = 판정;                 // 제주 · 연륙도서 · 산간 · 일반
+  }
+  return out;
 }
 
 function ssm_ferryRows() {
