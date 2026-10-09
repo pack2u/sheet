@@ -23,6 +23,9 @@
  * ══════════════════════════════════════════════════════════════
  */
 import { execFileSync } from "node:child_process";
+import { readFileSync, readdirSync, existsSync, mkdtempSync, copyFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { 서버먼저보기 } from "../_pullcheck.mjs";
 
 const 설명 = (process.argv[2] || "반품 포털 갱신").trim();
@@ -109,5 +112,48 @@ if (!맞나) {
   console.error("★ 확인 실패 — 그 주소가 목록에 없습니다. 손으로 봐 주세요.");
   process.exit(1);
 }
+/* ── 5) «서버를 다시 당겨» 정말 닿았는지 본다 ──  (2026-10-09)
+      ★ 왜 ★ 2026-10-08·09 에 CS웹앱 배포가 두 번 «조용히» 실패했다. clasp 인증이
+      만료되면(invalid_rapt) push 가 안 되는데, 성공한 줄 알고 넘어가게 된다.
+      그 뒤로 「고쳤는데 왜 그대로지」를 몇 번이나 되풀이했다 — 코드는 멀쩡했고
+      서버에만 안 올라가 있었다.
+
+      배포 목록에 그 주소가 있는지(위 4)만으로는 모자라다. 그것은 «배포가 있다»는
+      뜻이지 «내 파일이 올라갔다»는 뜻이 아니다. 당겨서 맞대 봐야 안다.
+
+      ★ CS웹앱과 자가 다르다 ★ 거기는 CS_BUILD_ 숫자 하나로 보지만 포털에는 그런
+      번호가 없다. 그래서 **파일 내용을 그대로 맞댄다** — .gs 와 .html 전부.
+      (시험용 _*_test.js 는 clasp 가 확장자를 바꿔 되돌려 주므로 뺀다.)
+      [[check-the-result-not-just-the-cause]] */
+try {
+  const tmp = mkdtempSync(join(tmpdir(), "prpverify-"));
+  copyFileSync(".clasp.json", join(tmp, ".clasp.json"));
+  execFileSync("npx", ["clasp", "pull"], { cwd: tmp, encoding: "utf8", shell: true, stdio: "pipe" });
+
+  //  올라가는 것은 .gs 와 .html 뿐이다. 시험(_*_test.js)은 clasp 가 확장자를
+  //  바꿔 되돌려 주므로 애초에 안 걸린다.
+  const 볼것 = readdirSync(".").filter((f) => f.endsWith(".gs") || f.endsWith(".html"));
+  const 어긋남 = [];
+  for (const f of 볼것) {
+    const 서버쪽 = join(tmp, f);
+    if (!existsSync(서버쪽)) { 어긋남.push(f + " — 서버에 없음"); continue; }
+    if (readFileSync(f, "utf8") !== readFileSync(서버쪽, "utf8")) 어긋남.push(f + " — 내용이 다름");
+  }
+
+  if (어긋남.length) {
+    console.error("");
+    console.error("★★ 서버에 안 닿았습니다 ★★");
+    어긋남.forEach((x) => console.error("   · " + x));
+    console.error("   clasp 인증이 만료됐을 수 있습니다 — `npx clasp login` 뒤 다시 올리세요.");
+    process.exit(1);
+  }
+  console.log("서버 확인  " + 볼것.length + "개 파일이 내 쪽과 같습니다 — 당겨서 맞대 봤습니다");
+} catch (e) {
+  console.error("");
+  console.error("★ 올린 뒤 확인을 못 했습니다 — " + (e.message || e));
+  console.error("   배포 자체는 됐을 수 있습니다. 손으로 한 번 보세요.");
+  process.exit(1);
+}
+
 console.log("\n✅ 쓰던 주소 그대로 @" + 새버전 + " 로 올라갔습니다.");
 console.log("   업체는 즐겨찾기를 안 바꿔도 됩니다. 새로고침만 하면 됩니다.");
