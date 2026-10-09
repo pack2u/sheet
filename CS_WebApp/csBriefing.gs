@@ -193,6 +193,21 @@ function _cb_run_(날) {
     날 = Utilities.formatDate(d, "Asia/Seoul", "yyyy-MM-dd");
   }
   var got = _cb_fetch_(날);
+
+  /*  ★ 아직 만들 때가 «안 됐으면» 겁주지 않는다 ★  (2026-10-10)
+      v2 크론은 새벽 3시에 돈다. 그 전에 손으로 돌리면 브리핑이 아직 없는 것이
+      당연한데, 첫날 그것을 「★ 못 받았습니다」로 적어 보드에 주의 글이 올라갔다.
+      없는 것과 «아직인 것»은 다르다. 섞으면 진짜 사고 때 그 글을 흘려 보낸다.
+      3시 전이고 「없다」는 답이면 조용히 끝낸다.                            */
+  if (!got.ok && /브리핑이 없습니다/.test(String(got.error || ""))) {
+    var 시 = Number(Utilities.formatDate(new Date(), "Asia/Seoul", "H"));
+    if (시 < 3) {
+      var 이른 = "아직 만들 때가 안 됐습니다 — v2 크론이 새벽 3시에 만듭니다. (지금 " + 시 + "시)";
+      Logger.log(이른);
+      return 이른;
+    }
+  }
+
   if (!got.ok) {
     /*  ★ 못 받았다는 것도 말한다 ★ 아무 글 없는 아침은 「조용했구나」로 읽힌다. */
     var 글 = "v2 에서 브리핑을 못 받았습니다 — " + got.error +
