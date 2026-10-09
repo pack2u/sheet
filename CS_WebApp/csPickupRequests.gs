@@ -89,6 +89,59 @@ function _cpr_ops_(ss, 항목, 값) {
 }
 
 /** 지금 «실제로» 걸려 있는 트리거 이름들 — 짐작하지 않고 그대로 적는다 */
+/**
+ * ★ 일감 «전체»가 쓸 시간 — 이 값의 주인은 여기 하나다 ★  (2026-10-09)
+ *
+ *   ─ 무슨 일이 있었나 ─
+ *   `_운영점검` 에서 「출고 송장 받아오기」가 16:12, 그 다음 단계인 「출고 지연
+ *   점검」이 16:41 로 찍혔다. 한 런 안에서 **29분**이다. 그리고 그 뒤 단계들
+ *   (도서·산간 · 계약)과 맨 끝의 「돌았습니다」는 **15:33 에 그대로 멈춰 있었다.**
+ *   트리거는 셋뿐이고 겹친 것도 없다(_cpr_triggerNames_ 는 중복을 숨기지 않는다).
+ *   그러니 런이 둘이 아니라, **한 런이 벽에 부딪혀 끝까지 못 간 것**이다.
+ *
+ *   ─ 왜 그랬나 ─
+ *   여섯 단계가 «각자» 2분 30초씩 제 예산을 들고 있다
+ *   (_LOGEN_TIME_BUDGET_MS_ · _LSF_BUDGET_MS_). 저마다 「나 혼자 돈다」고 믿는다.
+ *   **일감 전체의 시간을 가진 주인이 없었다** — [[one-value-one-owner]] 가
+ *   값이 아니라 «시간»에서 깨진 경우다. 여섯이 다 제 몫을 쓰면 15분이고,
+ *   거기에 달 탭 훑기와 원장 8,000줄 읽기가 더 붙는다.
+ *
+ *   ─ 어떻게 하나 ─
+ *   이 예산을 넘겼으면 **뒤쪽 단계를 건너뛰고** 끝까지 간다. 건너뛴 것은
+ *   반드시 적는다 — 조용히 빠지면 「돌았습니다」가 거짓말이 된다.
+ *   뒤쪽 둘(도서·산간 · 계약)은 코드 머리말이 이미 «급하지 않다»고 적어 둔 것들이다.
+ *
+ *   25분이다. 이 계정의 벽은 30분으로 보이므로(위 29분이 실측) 5분을 남긴다.
+ */
+var _CPR_JOB_BUDGET_MS_ = 1500000;
+
+/** 예산을 넘겼나 */
+function _cpr_overBudget_(시작) {
+  return (new Date().getTime() - 시작) > _CPR_JOB_BUDGET_MS_;
+}
+
+/**
+ * 한 단계가 끝날 때마다 «지금까지의 걸음»을 적는다.
+ *
+ * ★ 끝에 한 번만 적으면 안 된다 ★ 벽에 부딪혀 죽으면 그 한 번이 영영 안 온다.
+ *   그게 바로 위의 일이 한 시간 동안 안 보였던 까닭이다. 단계마다 적어야
+ *   «어디까지 갔고 무엇이 오래 걸렸는지»가 시체에 남는다.
+ *   [[edit-scripts-save-each-step]] 와 같은 이야기다.
+ *
+ * @return {number} 다음 단계의 출발 시각
+ */
+function _cpr_step_(ss, 걸음, 이름, t0, 시작) {
+  var 이제 = new Date().getTime();
+  걸음.push(이름 + " " + Math.round((이제 - t0) / 1000) + "초");
+  if (ss) {
+    try {
+      _cpr_ops_(ss, "일감 걸음", 걸음.join(" · ") +
+        " · 합 " + Math.round((이제 - 시작) / 1000) + "초");
+    } catch (e) { /* 적지 못해도 일감은 간다 */ }
+  }
+  return 이제;
+}
+
 function _cpr_triggerNames_() {
   try {
     var all = ScriptApp.getProjectTriggers();
@@ -116,38 +169,63 @@ var _CPR_DAYS_ = 14;
  */
 function csReturnHourlyJob() {
   var L = [];
+
+  /*  ★ 걸음을 단계마다 남긴다 ★ 끝에 한 번만 적으면, 벽에 부딪혀 죽는 날은
+      아무것도 안 남는다 — 실제로 한 시간을 그렇게 잃었다 (_cpr_step_ 머리말). */
+  var 시작 = new Date().getTime();
+  var 걸음 = [];
+  var ss2 = null;
+  try { ss2 = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_); } catch (e) {}
+  var t = 시작;
+
   try { L.push(csProcessPickupRequests()); }
   catch (e) { L.push("요청 접수 실패: " + e.message); }
+  t = _cpr_step_(ss2, 걸음, "요청접수", t, 시작);
   /*  기존트리거아님 — 여기서 부르는 것은 트리거가 «직접» 부른 것이 아니다.
       그 표를 안 주면 csLogenFillReturnSlips 가 옛 트리거를 찾느라 한 번 더
       훑는다(csLogenSlipFill.gs 머리말). 일은 같지만 헛걸음이다. */
   try { L.push(csLogenFillReturnSlips({ 기존트리거아님: true })); }
   catch (e) { L.push("송장 채우기 실패: " + e.message); }
+  t = _cpr_step_(ss2, 걸음, "송장채우기", t, 시작);
 
   /*  ★ 출고 송장 받아오기 ★  (2026-10-08)
       사람이 로젠 실적을 「입력_로젠주문실적」 탭에 붙여넣던 일을 대신한다.
       ★ 출고 지연 점검보다 «먼저» 둔다 ★ 송장이 붙어야 추적할 것이 생긴다. */
   try { var 송장 = csLogenCollectShipSlips(); if (송장) L.push(송장); }
   catch (e) { L.push("출고 송장 받아오기 실패: " + e.message); }
+  t = _cpr_step_(ss2, 걸음, "출고송장", t, 시작);
 
   /*  ★ 출고 지연 — 하루치를 나눠 본다 ★  (2026-10-08)
       csOutboundStaleCheck 안에서 어디까지 봤는지를 적어 둔다. 오늘 몫이
       끝났으면 빈 글을 돌려주므로 여기서는 붙이지 않는다. */
   try { var 출고 = csOutboundStaleCheck(); if (출고) L.push(출고); }
   catch (e) { L.push("출고 지연 점검 실패: " + e.message); }
+  t = _cpr_step_(ss2, 걸음, "지연점검", t, 시작);
 
   /*  ★ 도서·산간 외우기 ★  (2026-10-09)
       로젠에게 «이 지역이 섬이냐»를 물어 세트분리 시트의 표에 적어 둔다.
       세트분리는 그 표를 읽기만 한다 — 회차 중에 부르면 6분 한도를 넘는다.
       하루 새로 생기는 지역이 200~350곳이라 한 시간에 조금씩이면 넉넉하다. */
-  try { var 권역 = csLogenZoneLearn(); if (권역) L.push(권역); }
-  catch (e) { L.push("도서·산간 외우기 실패: " + e.message); }
+  /*  ★ 예산을 넘겼으면 여기서 접는다 ★ 조용히 빠지지 않는다 — 건너뛴 것을
+      적어 둬야 「돌았습니다」가 거짓말이 안 된다. 이 둘은 머리말이 이미
+      «급하지 않다»고 적어 둔 단계다. 내일 아침이 아니라 다음 시간에 돈다. */
+  if (_cpr_overBudget_(시작)) {
+    걸음.push("도서·산간·계약 건너뜀(시간 " +
+              Math.round(_CPR_JOB_BUDGET_MS_ / 60000) + "분 넘김)");
+    L.push("도서·산간 외우기와 계약 점검은 시간이 모자라 건너뜁니다 — 다음 시간에 봅니다");
+    _cpr_step_(ss2, 걸음, "접음", t, 시작);
+  } else {
+    try { var 권역 = csLogenZoneLearn(); if (권역) L.push(권역); }
+    catch (e) { L.push("도서·산간 외우기 실패: " + e.message); }
+    t = _cpr_step_(ss2, 걸음, "도서산간", t, 시작);
 
   /*  ★ 계약 만료 감시 — 하루 한 번 ★  (2026-10-08)
       맨 뒤에 둔다. 2026-10-02 처럼 계약이 끊기면 위의 조회들이 먼저 실패해
       그 자체로 드러난다. 여기는 «끊기기 전에» 알자고 두는 것이라 급하지 않다. */
-  try { var 계약 = csLogenContractWatch(); if (계약) L.push(계약); }
-  catch (e) { L.push("계약 점검 실패: " + e.message); }
+    try { var 계약 = csLogenContractWatch(); if (계약) L.push(계약); }
+    catch (e) { L.push("계약 점검 실패: " + e.message); }
+    t = _cpr_step_(ss2, 걸음, "계약점검", t, 시작);
+  }
   var 글 = L.join("\n\n");
 
   /*  ★ 돌았다는 것을 «읽히는 자리»에 남긴다 ★
@@ -156,8 +234,11 @@ function csReturnHourlyJob() {
       트리거 이름은 짐작하지 않고 지금 걸린 것을 그대로 적는다 — 옛 이름이
       남아 있으면 여기서 바로 드러난다.                                */
   try {
-    var ss2 = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
-    _cpr_ops_(ss2, "반품 1시간 일감", "돌았습니다");
+    if (!ss2) ss2 = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
+    /*  ★ 「돌았습니다」에 «끝까지 갔다»는 뜻을 담는다 ★ 이 줄이 안 적히면
+        중간에 죽은 것이고, 「일감 걸음」 줄이 어디까지 갔는지 말해 준다. */
+    _cpr_ops_(ss2, "반품 1시간 일감",
+      "끝까지 돌았습니다 · " + Math.round((new Date().getTime() - 시작) / 1000) + "초");
     _cpr_ops_(ss2, "지금 걸린 트리거", _cpr_triggerNames_());
   } catch (e) {}
 
