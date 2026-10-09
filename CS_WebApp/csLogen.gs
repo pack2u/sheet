@@ -362,6 +362,12 @@ function _logen_isDone_(statNm) {
  *
  *   조회를 막지 않는다 — 기록만 한다.
  */
+/** 이미 본 화물상태 문자열을 적어 두는 속성 이름 */
+var _LOGEN_STATNM_PROP_ = "LOGEN_STATNM_SEEN";
+
+/** 그 값을 «한 실행에 한 번»만 읽어 외운다 (null = 아직 안 읽음) */
+var _LOGEN_STATNM_SEEN_ = null;
+
 function _logen_noteStatus_(statNm) {
   var s = String(statNm == null ? "" : statNm).trim();
   if (!s) return;
@@ -370,12 +376,30 @@ function _logen_noteStatus_(statNm) {
   for (var f = 0; f < _LOGEN_STATUS_FLOW_.length; f++) {
     if (_LOGEN_STATUS_FLOW_[f] === s) return;
   }
+  /*  ★ 속성은 한 실행에 한 번만 읽는다 ★  (2026-10-09)
+      위의 «아는 7단계» 울타리가 보통은 여기까지 안 오게 막는다. 그런데 정말
+      새 문자열이 나온 날에는, 그 상태를 가진 «줄마다» 속성을 읽었다.
+      한 번에 10~20ms 이고 추적은 한 회차에 수백~천 건이다 —
+      새 상태가 나온 날에만 느려지는, 가장 안 반가운 종류의 함정이다.
+      [[gas-service-calls-in-loops]] 가 25분을 먹은 것과 같은 모양이다.
+
+      ★ 적는 순간에는 다시 읽는다 ★ 외운 것만 믿고 덮으면, 다른 실행이 그 사이
+      적어 둔 새 문자열을 지운다. 적는 일은 새 문자열마다 한 번뿐이라 싸다. */
   try {
+    if (_LOGEN_STATNM_SEEN_ === null) {
+      _LOGEN_STATNM_SEEN_ = PropertiesService.getScriptProperties()
+        .getProperty(_LOGEN_STATNM_PROP_) || "";
+    }
+    if (_LOGEN_STATNM_SEEN_.indexOf("|" + s + "|") !== -1) return;
+
     var props = PropertiesService.getScriptProperties();
-    var key = "LOGEN_STATNM_SEEN";
-    var seen = props.getProperty(key) || "";
-    if (seen.indexOf("|" + s + "|") !== -1) return;
-    props.setProperty(key, seen + "|" + s + "|");
+    var 지금것 = props.getProperty(_LOGEN_STATNM_PROP_) || "";
+    if (지금것.indexOf("|" + s + "|") !== -1) {   // 그 사이 남이 적었다
+      _LOGEN_STATNM_SEEN_ = 지금것;
+      return;
+    }
+    _LOGEN_STATNM_SEEN_ = 지금것 + "|" + s + "|";
+    props.setProperty(_LOGEN_STATNM_PROP_, _LOGEN_STATNM_SEEN_);
     console.warn("[로젠] 새 화물상태 문자열: " + s);
   } catch (e) { /* 기록 실패로 조회를 막지 않는다 */ }
 }

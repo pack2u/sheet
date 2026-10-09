@@ -638,6 +638,73 @@ t("중계 주소가 있으면 그쪽으로 보내고 키는 싣지 않는다", (
   }
 });
 
+// ── 새 화물상태 기록이 «줄마다» 속성을 읽지 않는가 ──────────────
+t("★ 아는 상태는 속성을 아예 안 본다 (보통의 날)", () => {
+  let 읽음 = 0, 씀 = 0;
+  const 본래 = sandbox.PropertiesService;
+  sandbox.PropertiesService = { getScriptProperties: () => ({
+    getProperty: (k) => { 읽음++; return k in PROPS ? PROPS[k] : null; },
+    setProperty: (k, v) => { 씀++; PROPS[k] = String(v); },
+  }) };
+  try {
+    sandbox._LOGEN_STATNM_SEEN_ = null;
+    const 아는것 = vm.runInContext("_LOGEN_STATUS_FLOW_.slice()", sandbox);
+    ok(아는것.length >= 5, "아는 단계 표가 있다");
+    for (let i = 0; i < 300; i++) {
+      for (const s of 아는것) {
+        vm.runInContext("_logen_noteStatus_(" + JSON.stringify(s) + ")", sandbox);
+      }
+    }
+    eq(읽음, 0, "아는 상태 " + (300 * 아는것.length) + "번에 속성 읽기");
+    eq(씀, 0, "쓰기");
+  } finally { sandbox.PropertiesService = 본래; }
+});
+
+t("★ 새 상태가 나와도 속성은 한 번만 읽는다 (느려지던 날)", () => {
+  /*  2026-10-09 — 25분을 먹은 _lrt_isOff_ 와 «같은 모양»이다.
+      아는 7단계 울타리가 보통은 여기까지 안 오게 막지만, 정말 새 문자열이
+      나온 날에는 그 상태를 가진 «줄마다» 속성을 읽었다. 한 회차 추적이
+      수백~천 건이다. 새 상태가 나온 날에만 느려지는, 가장 안 반가운 함정. */
+  let 읽음 = 0, 씀 = 0;
+  const 본래 = sandbox.PropertiesService;
+  sandbox.PropertiesService = { getScriptProperties: () => ({
+    getProperty: (k) => { 읽음++; return k in PROPS ? PROPS[k] : null; },
+    setProperty: (k, v) => { 씀++; PROPS[k] = String(v); },
+  }) };
+  try {
+    sandbox._LOGEN_STATNM_SEEN_ = null;
+    WARNS.length = 0;
+    for (let i = 0; i < 500; i++) {
+      vm.runInContext('_logen_noteStatus_("아주새로운상태")', sandbox);
+    }
+    ok(읽음 <= 2, "500줄에 속성 읽기 " + 읽음 + "번 (2번 이하여야 한다)");
+    eq(씀, 1, "쓰기는 한 번");
+    eq(WARNS.filter((w) => /아주새로운상태/.test(w)).length, 1, "경고도 한 번");
+    ok(/\|아주새로운상태\|/.test(PROPS["LOGEN_STATNM_SEEN"] || ""), "속성에 적혔다");
+  } finally { sandbox.PropertiesService = 본래; }
+});
+
+t("★ 적는 순간에는 다시 읽는다 — 남이 적어 둔 것을 지우지 않는다", () => {
+  /*  외운 것만 믿고 덮으면, 다른 실행이 그 사이 적어 둔 새 문자열이 사라진다.
+      적는 일은 새 문자열마다 한 번뿐이라 다시 읽어도 싸다. */
+  sandbox._LOGEN_STATNM_SEEN_ = "";            // 「비어 있다」고 외운 상태
+  PROPS["LOGEN_STATNM_SEEN"] = "|남이적은것|";   // 그 사이 남이 적었다
+  vm.runInContext('_logen_noteStatus_("내가본것")', sandbox);
+  const v = PROPS["LOGEN_STATNM_SEEN"] || "";
+  ok(/\|남이적은것\|/.test(v), "남이 적은 것이 살아 있다 — 실제: " + v);
+  ok(/\|내가본것\|/.test(v), "내가 본 것도 적혔다 — 실제: " + v);
+});
+
+t("기록이 못 되더라도 조회를 막지 않는다", () => {
+  const 본래 = sandbox.PropertiesService;
+  sandbox.PropertiesService = { getScriptProperties: () => { throw new Error("못 읽음"); } };
+  try {
+    sandbox._LOGEN_STATNM_SEEN_ = null;
+    vm.runInContext('_logen_noteStatus_("무엇이든")', sandbox);   // 터지지 않아야 한다
+    ok(true, "터지지 않았다");
+  } finally { sandbox.PropertiesService = 본래; }
+});
+
 // ── 마무리 ───────────────────────────────────────────────
 console.log("\n  " + pass + " 통과 / " + fail + " 실패\n");
 if (fail) {
