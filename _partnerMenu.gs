@@ -349,6 +349,20 @@ function registerPartnerMenu_() {
     // ─────────── 그 밖 ───────────
     .addSubMenu(
       ui.createMenu("📑 정산 비교 검증")
+        /*  ★ 단가 인상 (2026-10-09) ★
+            업체 단가표가 올 때마다 쓰는 자리다. 새 파트를 안 만들고 여기 넣었다 —
+            관리 메뉴 파트가 이미 열셋이라 더 늘리면 매일 쓰는 것이 묻힌다.
+            「비교하고 확인하고 적용한다」는 이 파트의 결과 같다.              */
+        .addSubMenu(
+          ui.createMenu("💹 단가 인상 (정희·콤콤)")
+            .addItem("📋 ① 비교표 만들기", "partnerPriceRaiseBuild")
+            .addSeparator()
+            .addItem("🧪 ② 미리보기 (안 바꿈)", "partnerPriceRaisePreview")
+            .addItem("💾 ③ 체크한 줄 — 상품정보 단가 적용", "partnerPriceRaiseApply")
+            .addItem("🔗 ④ 체크한 줄 — 누적품목매핑에 쌓기", "partnerPriceRaiseApplyMapping")
+            .addSeparator()
+            .addItem("🧮 세트 = 몸통+뚜껑 점검", "partnerPriceRaiseCheckSets")
+        )
         .addSubMenu(
           ui.createMenu("📦 롯데택배 배송비 비교")
             .addItem("① 비교시트 만들기/열기", "partnerOpenLotteShipCompareSheet")
