@@ -6418,6 +6418,32 @@ function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
       scannedLogs.push("[사방넷대량등록] 세트분리(뉴) 보강 건너뜀: " + String(eV2.message || eV2));
     }
 
+    /*  ★ 주문번호당 «첫 장» 한 줄만 ★  (2026-10-09)
+        > "허브도 첫 장만 적게 맞춰줘"
+        사방넷은 주문번호당 송장 하나만 받는다. 두 줄이면 그 주문을 안 받는다.
+        세트분리(뉴) gasBulk.js 의 ssb_addRows 는 이미 첫 장만 적는다 — 허브만
+        박스마다 한 줄씩 적어 같은 날 파일 둘이 달랐다(10/08 허브 373주문 여러 줄).
+        rows 는 원천 우선순위 차례로 쌓였으므로 «처음 것»이 대표다.
+        원장·일일마감에는 모든 장이 그대로 남는다. 여기만 줄인다. */
+    var _첫장만_ = [], _본주문_ = {};
+    result.skipMultiBox = 0;
+    for (var _ri = 0; _ri < rows.length; _ri++) {
+      var _ord = String(rows[_ri][0] || "").trim();
+      if (_본주문_[_ord]) { result.skipMultiBox++; continue; }
+      _본주문_[_ord] = true;
+      _첫장만_.push(rows[_ri]);
+    }
+    rows = _첫장만_;
+    //  화면의 「코드별 n건」도 남은 줄로 다시 센다 — 줄이기 전 숫자를 보이면 파일과 안 맞는다
+    result.byCode = {};
+    for (var _rc = 0; _rc < rows.length; _rc++) {
+      var _cd = String(rows[_rc][4] || "");
+      result.byCode[_cd] = (result.byCode[_cd] || 0) + 1;
+    }
+    if (result.skipMultiBox) {
+      scannedLogs.push("[사방넷대량등록] 한 주문 여러 장 → 첫 장만: " + result.skipMultiBox + "장 뺌");
+    }
+
     if (tab.getLastRow() >= 2) {
       tab.getRange(2, 1, tab.getLastRow() - 1, 5).clearContent();
     }
@@ -6480,7 +6506,7 @@ function partnerRebuildSabangnetBulkUpload() {
   var result = _po_rebuildSabangnetBulkUpload_(hubData, logs);
   var codeLines = [];
   if (result.byCode) {
-    var names = { "001": "대한통운", "002": "롯데", "007": "로젠", "037": "대신택배" };
+    var names = { "001": "대한통운", "002": "롯데", "004": "한진", "007": "로젠", "037": "대신택배" };
     for (var c in result.byCode) {
       if (!result.byCode.hasOwnProperty(c)) continue;
       codeLines.push("  " + c + "(" + (names[c] || "") + "): " + result.byCode[c] + "건");
@@ -6502,6 +6528,7 @@ function partnerRebuildSabangnetBulkUpload() {
     ((result.ledger || 0) ? " + 송장원장 " + result.ledger + "건" : "") +
     "\n" +
     (codeLines.length ? codeLines.join("\n") + "\n" : "") +
+    (result.skipMultiBox ? "한 주문 여러 장 → 첫 장만 (사방넷은 주문당 한 장): " + result.skipMultiBox + "장 뺌\n" : "") +
     (result.skipGen ? "생성UID(사방넷번호 아님) 제외: " + result.skipGen + "건\n" : "") +
     (result.skipNoCode ? "택배사코드 미지정: " + result.skipNoCode + "건\n" : "") +
     (result.skipOldArch ? "보관·원장에서 15일 넘은 건 제외: " + result.skipOldArch + "건\n" : "") +
