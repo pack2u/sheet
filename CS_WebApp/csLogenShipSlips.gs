@@ -98,7 +98,10 @@ function csLogenCollectShipSlips(opt) {
   var 주문;
   try { 주문 = _ssl_ordersFromLedger_(days); }
   catch (e) { var m = "NG 원장을 못 읽었습니다: " + e.message; Logger.log(m); return m; }
-  if (!주문.length) return "";
+  /*  ★ 조용히 넘어가지 않는다 ★  (2026-10-09 · csLogenOutStale.gs 와 같은 까닭)
+      할 일이 없어서 안 쓰면, 보는 사람은 「안 돈 건가?」를 알 길이 없다.
+      한 줄은 남긴다. 일감 보고에는 안 붙인다 — 매시간 같은 말이 쌓이면 안 읽힌다. */
+  if (!주문.length) { _ssl_note_("최근 " + days + "일에 로젠 출고가 없습니다"); return ""; }
 
   //  ② 실적 탭에 «이미 있는» 주문번호를 뺀다
   var tab, 있는것;
@@ -113,7 +116,10 @@ function csLogenCollectShipSlips(opt) {
     물을것.push(주문[i]);
     if (물을것.length >= _SSL_MAX_) break;
   }
-  if (!물을것.length) return "";   // 다 붙어 있다 — 조용히 넘어간다
+  if (!물을것.length) {
+    _ssl_note_("최근 " + days + "일 " + 주문.length + "건 — 모두 이미 붙어 있습니다");
+    return "";
+  }
 
   L.push("아직 송장이 없는 주문 " + 물을것.length + "건");
   if (dry) {
@@ -151,10 +157,7 @@ function csLogenCollectShipSlips(opt) {
 
   var 끝 = L.join("\n");
   Logger.log(끝);
-  try {
-    _cpr_ops_(SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_), "출고 송장 받아오기",
-      "더함 " + 새줄.length + "줄 · 대기 " + 못찾음);
-  } catch (e) {}
+  _ssl_note_("더함 " + 새줄.length + "줄 · 대기 " + 못찾음);
   return 끝;
 }
 
@@ -175,6 +178,13 @@ function _ls_isLogenRow_(경로, 택배사) {
   var p = String(경로 || "").trim();
   if (p) return p.indexOf("로젠택배") === 0;
   return String(택배사 || "").indexOf("로젠") !== -1;
+}
+
+/** 운영점검 탭에 한 줄 — 할 일이 없을 때도 남긴다(그래야 돌았는지 안다) */
+function _ssl_note_(글) {
+  try {
+    _cpr_ops_(SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_), "출고 송장 받아오기", 글);
+  } catch (e) {}
 }
 
 /** 실적 탭 */
