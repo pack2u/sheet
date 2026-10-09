@@ -549,6 +549,33 @@ function _logen_buildTrack_(inv, row) {
 }
 
 /**
+ * 최종 1건 응답(§7.2)을 화면이 쓰는 모양으로 바꾼다.
+ *
+ * ★ 이력용과 칸 이름을 맞춘다 ★ 부르는 쪽이 둘을 한 벌로 다루려면 같아야 한다.
+ *   다만 history 는 빈 채로 둔다 — 최종 1건만 왔으니 지어내지 않는다.
+ * ★ 전화번호가 여기에만 온다 ★ salesCellNo. 이것 때문에 이 문을 쓴다.
+ */
+function _logen_buildLast_(inv, row) {
+  var nm = String(row.statNm == null ? "" : row.statNm).trim();
+  _logen_noteStatus_(nm);
+  var tel = String(row.salesCellNo == null ? "" : row.salesCellNo).trim();
+  return {
+    ok: true, carrier: "로젠",
+    invoice: _logen_digits_(row.slipNo) || inv,
+    ordNo: "", summary: "", statusCode: "",
+    statusName: nm || "이력 없음",
+    delivered: _logen_isDone_(nm),
+    lastAt: _logen_when_(row.scanDt, row.scanTm),
+    lastMsg: "",
+    branch: String(row.branNm == null ? "" : row.branNm).trim(),
+    branchTel: tel,
+    empNm: String(row.salesNm == null ? "" : row.salesNm).trim(),
+    empTel: tel,
+    itemNm: "", history: []
+  };
+}
+
+/**
  * 최종 화물추적 — 영업소 전화번호만 꺼내 쓴다.
  * 실패해도 조용히 넘어간다. 전화번호가 없다고 배송조회를 죽일 이유가 없다.
  */
@@ -581,13 +608,21 @@ function _logen_lastTel_(inv) {
  *   그래서 10건씩 끊어 2초씩 쉬며 **차례로** 부른다.
  *   UrlFetchApp 은 원래 동기라 「순차」는 저절로 지켜진다.
  *
- * 전화번호(최종조회)는 여기서 부르지 않는다 — 목록에서는 필요 없고,
- * 건당 한 번씩 더 부르면 배치로 아낀 걸 도로 까먹는다.
+ * ★ 전화번호가 필요하면 {최종만:true} 로 부른다 ★  (2026-10-09)
+ *   이력용(§7.1)에는 영업소 전화번호가 «없다». 최종조회(§7.2)에만 salesCellNo 가
+ *   온다 — 「72 하영철(대방) · 010-2841-7324」 꼴. 건당 한 번 더 부르는 것이 아니라
+ *   **같은 묶음 호출로 문만 바꾸는 것**이라 호출 수는 그대로다.
+ *   규격 §7.2 도 「상태 폴링은 7.2 를, 상세 이력 화면은 7.1 을」 이라고 적어 뒀다.
  *
  * @param {Array<string>} invoices
+ * @param {Object} opt { 최종만:boolean }  true 면 최종 1건 + 영업소 전화번호
  * @return {Object} { 송장번호: 결과 }
  */
-function csLogenTrackMany(invoices) {
+function csLogenTrackMany(invoices, opt) {
+  opt = opt || {};
+  var 최종만 = !!opt["최종만"];
+  var API = 최종만 ? "inquiryCargoTrackingMultiLast" : "inquiryCargoTrackingMulti";
+  var 캐시표 = 최종만 ? "L" : "H";   // ★ 캐시를 섞지 않는다 ★ 둘은 모양이 다르다
   var out = {};
   var list = [];
   var seen = {};
@@ -605,7 +640,7 @@ function csLogenTrackMany(invoices) {
   var cache = CacheService.getScriptCache();
   var ask = [];
   for (var c = 0; c < list.length; c++) {
-    var ck = "logenTrk|" + (_LOGEN_USE_PROD_ ? "P" : "D") + "|" + list[c];
+    var ck = "logenTrk|" + (_LOGEN_USE_PROD_ ? "P" : "D") + 캐시표 + "|" + list[c];
     var hit = null;
     try { hit = cache.get(ck); } catch (e) { /* 무시 */ }
     if (hit) {
@@ -644,7 +679,7 @@ function csLogenTrackMany(invoices) {
     var body = { userId: _logen_userId_(), data: [] };
     for (var a = 0; a < chunk.length; a++) body.data.push({ slipNo: chunk[a] });
 
-    var r = _logen_call_("inquiryCargoTrackingMulti", body);
+    var r = _logen_call_(API, body);
 
     if (!r.ok) {
       for (var f = 0; f < chunk.length; f++) {
@@ -673,10 +708,10 @@ function csLogenTrackMany(invoices) {
                     error: _logen_blank_(row.resultMsg) ? "조회 실패" : String(row.resultMsg) };
         continue;
       }
-      var o2 = _logen_buildTrack_(sn, row);
+      var o2 = 최종만 ? _logen_buildLast_(sn, row) : _logen_buildTrack_(sn, row);
       out[sn] = o2;
       try {
-        cache.put("logenTrk|" + (_LOGEN_USE_PROD_ ? "P" : "D") + "|" + sn,
+        cache.put("logenTrk|" + (_LOGEN_USE_PROD_ ? "P" : "D") + 캐시표 + "|" + sn,
           JSON.stringify(o2), o2.delivered ? _LOGEN_CACHE_DONE_SEC_ : _LOGEN_CACHE_SEC_);
       } catch (e) { /* 무시 */ }
     }

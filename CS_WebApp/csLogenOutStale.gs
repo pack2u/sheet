@@ -159,7 +159,9 @@ function csOutboundStaleCheck(opt) {
   var 송장 = [];
   for (var i = 0; i < 조각.length; i++) 송장.push(조각[i].inv);
 
-  var 결과 = csLogenTrackMany(송장);
+  /*  ★ 최종만 ★ 지연 점검은 「지금 어디 있나」만 보면 된다. 그리고 그 문에만
+      영업소 전화번호(salesCellNo)가 온다 — 카드에서 바로 걸 수 있게. */
+  var 결과 = csLogenTrackMany(송장, { "최종만": true });
   var 도착 = 0, 못물음 = 0;
   for (var k = 0; k < 조각.length; k++) {
     var it = 조각[k], r = 결과[it.inv];
@@ -200,6 +202,8 @@ function _ost_mark_(it, r) {
     inv: it.inv, 이름: it.name, 주문: it.order, 며칠: it.days,
     상태: String(r.statusName || "").trim() || "이력 없음",
     영업소: String(r.branch || "").trim(),
+    기사: String(r.empNm || "").trim(),
+    전화: String(r.empTel || r.branchTel || "").trim(),
     마지막: String(r.lastAt || "").trim()
   };
 }
@@ -213,7 +217,7 @@ function _ost_dropArrived_(잡은것) {
   var 송장 = [];
   for (var i = 0; i < 잡은것.length; i++) 송장.push(잡은것[i].inv);
   var r;
-  try { r = csLogenTrackMany(송장); } catch (e) { return 잡은것; }
+  try { r = csLogenTrackMany(송장, { "최종만": true }); } catch (e) { return 잡은것; }
 
   var 남김 = [], 본것 = {};
   for (var k = 0; k < 잡은것.length; k++) {
@@ -225,6 +229,8 @@ function _ost_dropArrived_(잡은것) {
     if (t && t.ok) {                           // 상태가 바뀌었으면 갱신
       it.상태 = String(t.statusName || it.상태).trim();
       it.영업소 = String(t.branch || it.영업소).trim();
+      it.기사 = String(t.empNm || it.기사 || "").trim();
+      it.전화 = String(t.empTel || t.branchTel || it.전화 || "").trim();
       it.마지막 = String(t.lastAt || it.마지막).trim();
     }
     /*  ★ 날이 지나면 「며칠째」도 늘어야 한다 ★ 어제 잡은 것이 오늘도 2일째로
@@ -282,6 +288,9 @@ function _ost_report_(잡은것, 다봤나) {
       (s.이름 ? "  " + s.이름 : "") +
       "  —  영업일 " + s.며칠 + "일째 · " + s.상태 +
       (s.영업소 ? " · " + s.영업소 : "") +
+      /*  ★ 번호를 같이 적는다 ★ CS 가 제일 많이 하는 것이 「영업소에 바로 전화」다.
+          이름만 있으면 그 번호를 또 찾아야 한다. 최종조회가 건마다 같이 준다. */
+      (s.전화 ? " · ☎ " + s.전화 + (s.기사 ? " " + s.기사 : "") : (s.기사 ? " · " + s.기사 : "")) +
       (s.마지막 ? " · 마지막 " + s.마지막 : "") +
       (s.주문 ? "  (" + s.주문 + ")" : ""));
   }

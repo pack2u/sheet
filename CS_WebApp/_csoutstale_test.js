@@ -192,7 +192,7 @@ console.log("\n[4] ★ 로젠을 두드리지 않는다");
   ok("★ 한 번에 묻는 수에 윗한도가 있다", /var _OST_PER_RUN_ = \d+;/.test(src));
   ok("원장도 뒤에서 몇 줄만 훑는다", /var _OST_SCAN_ROWS_ = \d+;/.test(src));
   ok("★ 10건씩 끊는 일은 csLogenTrackMany 에 맡긴다 (여기서 다시 안 짠다)",
-     /csLogenTrackMany\(송장\)/.test(src) && !/_LOGEN_BATCH_SIZE_/.test(src));
+     /csLogenTrackMany\(송장/.test(src) && !/_LOGEN_BATCH_SIZE_/.test(src));
 }
 
 console.log("\n[5] ★ 나눠 보되, 한 건도 빠뜨리지 않는다");
@@ -450,6 +450,48 @@ console.log("\n[15] ★ 할 일이 없어도 «한 줄은 남긴다»");
   const 글2 = c2.csOutboundStaleCheck();         // 두 번째 — 볼 것이 없다
   ok("★ 다 본 날도 한 줄 남긴다", 적힌것2.length === 1 && /다 봤습니다/.test(적힌것2[0][1]));
   ok("그때도 보고에는 안 붙인다", 글2 === "");
+}
+
+console.log("\n[16] ★ 카드에서 «바로 전화»할 수 있게 — 영업소 번호");
+{
+  /*  ★ 왜 ★  (2026-10-09)
+      CS 가 제일 많이 하는 것이 「영업소에 바로 전화」다. 그런데 카드에 영업소
+      «이름»만 있어서 그 번호를 또 찾아야 했다.
+
+      이력용 조회(inquiryCargoTrackingMulti)에는 전화번호가 «없다». 최종조회
+      (…MultiLast)에만 salesCellNo 가 온다. 지연 점검은 「지금 어디 있나」만
+      보면 되니 최종조회가 맞다 — 규격 §7.2 도 그렇게 적어 뒀다.
+      같은 묶음 호출로 문만 바꾸는 것이라 호출 수는 그대로다.
+
+      ★ 실측 (2026-10-09 운영계) ★
+        45311894913 → 서동작 · 72 하영철(대방) · 010-2841-7324
+        45326801796 → 남강서 · 1 심원식 · 010-2230-2791  */
+  const 번호있음 = () => ({ ok: true, delivered: false, statusName: "배송출고",
+    branch: "서동작", empNm: "72 하영철(대방)", empTel: "010-2841-7324",
+    branchTel: "010-2841-7324", lastAt: "10-07 13:50" });
+
+  const c = 판([[영업회차(자), "45311894913", "로젠택배", "서민주", "u1"]], 번호있음);
+  c.csOutboundStaleCheck();
+  const b = 마지막카드(c).body;
+  ok("★ 전화번호가 카드에 찍힌다", /☎ 010-2841-7324/.test(b));
+  ok("기사 이름도 같이", /72 하영철\(대방\)/.test(b));
+  ok("영업소 이름은 그대로", /서동작/.test(b));
+
+  //  ★ 최종조회 문을 쓰는가 ★ 이력용에는 번호가 없다
+  ok("★ 최종만으로 묻는다", /csLogenTrackMany\(송장, \{ "최종만": true \}\)/.test(src));
+  ok("다시 물을 때도 최종만", (src.match(/"최종만": true/g) || []).length >= 2);
+
+  const logen = fs.readFileSync("csLogen.gs", "utf8");
+  ok("★ 최종만이면 다른 API 를 부른다",
+     /최종만 \? "inquiryCargoTrackingMultiLast" : "inquiryCargoTrackingMulti"/.test(logen));
+  ok("★ 캐시를 섞지 않는다 (둘은 모양이 다르다)", /var 캐시표 = 최종만 \? "L" : "H";/.test(logen));
+  ok("이력이 필요한 화면은 그대로다 (부르는 쪽이 고른다)",
+     /csLogenTrackMany\(logen\)/.test(fs.readFileSync("csTrack.gs", "utf8")));
+
+  //  번호가 없을 때도 깨지지 않는다
+  const c2 = 판([[영업회차(자), "45324003760", "로젠택배", "손님", "u2"]], 멈춤);
+  c2.csOutboundStaleCheck();
+  ok("번호가 없으면 그 자리만 빈다", !/☎/.test(마지막카드(c2).body));
 }
 
 console.log("\n[10] 1시간 일감에 얹혔나");
