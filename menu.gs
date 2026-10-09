@@ -29,12 +29,27 @@ function onOpen() {
       );
     } catch (ignore2) {}
   }
+  /*  ★ 쇼핑몰정책 (mallPolicy.gs) — 2026-10-10 ★
+      앞의 둘과 같은 꼴로 따로 감싼다. 하나가 죽어도 나머지 메뉴는 뜬다.  */
+  try {
+    registerMallPolicyMenu_();
+  } catch (eMall) {
+    try {
+      SpreadsheetApp.getUi().alert(
+        "쇼핑몰정책 메뉴 등록 오류",
+        "🏪 쇼핑몰정책 메뉴만 실패했습니다.\n" +
+          String(eMall && eMall.message ? eMall.message : eMall),
+        SpreadsheetApp.getUi().ButtonSet.OK,
+      );
+    } catch (ignore3) {}
+  }
 }
 
 /** 메뉴 강제 재등록 (스크립트 편집기에서 실행) */
 function forceRegisterAllMenus() {
   registerPack2UMenu_();
   registerPartnerMenu_();
+  registerMallPolicyMenu_();
   SpreadsheetApp.getUi().alert("메뉴 재등록 완료", "시트를 새로고침(F5)해 확인하세요.", SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
