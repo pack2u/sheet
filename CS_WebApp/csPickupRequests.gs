@@ -64,7 +64,17 @@ function _cpr_ops_(ss, 항목, 값) {
       //  맨 뒤로 보낸다 — 매일 쓰는 달 탭을 가리지 않게
       try { ss.setActiveSheet(tab); ss.moveActiveSheet(ss.getNumSheets()); } catch (e) {}
     }
-    var 때 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyMMdd HH:mm");
+    /*  ★ «어느 판»이 적었는지 같이 남긴다 ★  (2026-10-09)
+        고친 것을 올리고 다음 런을 봤는데 옛 글이 적혀 있었다. 서버 파일을 당겨
+        보니 새 코드였다 — 그래서 「올라갔나 안 올라갔나」를 20분 동안 짐작으로
+        따졌다. 짐작할 일이 아니다. 적은 쪽이 자기 판 번호를 적으면 끝난다.
+
+        v452 라 적혀 있는데 글이 옛것이면 v452 자체가 옛것이라는 뜻이고,
+        v451 이라 적혀 있으면 그 런이 밀기 전에 돌았다는 뜻이다.
+        둘은 고칠 자리가 완전히 다르다.                                     */
+    var 판 = "";
+    try { 판 = " v" + CS_BUILD_; } catch (e) { 판 = " v?"; }
+    var 때 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyMMdd HH:mm") + 판;
     var last = tab.getLastRow();
     var 이름들 = last >= 2
       ? tab.getRange(2, 1, last - 1, 1).getDisplayValues() : [];
