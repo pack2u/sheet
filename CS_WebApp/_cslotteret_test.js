@@ -221,5 +221,92 @@ console.log("\n★ 수거입력처가 없을 때 — 롯데로 가면 안 된다
   ok("348782 는 롯데 것이라고 적어 뒀다", /348782/.test(src) && /_LRT_CUST_CD_/.test(src));
 }
 
+console.log("\n[11] ★ 하루 판정을 «한 번만» 한다 — 25분을 먹던 자리");
+{
+  /*  ─ 2026-10-09 실측 ─
+      1시간 일감의 「일감 걸음」:
+        요청접수 5초 · 송장채우기 45초 · 출고송장 11초 · **지연점검 1497초**
+      한 단계가 25분을 먹어 일감이 30분 벽에 부딪혀 죽고 있었다.
+
+      까닭: _lrt_isOff_ 가 «부를 때마다» PropertiesService 를 읽었다. 서비스
+      호출은 한 번에 10~20ms 다. 그런데 이 함수는 날짜마다 불린다 —
+      원장 8,000줄 × 발송일부터 오늘까지 하루하루. 수십만 번이다.
+
+      ★ 답은 한 글자도 바뀌면 안 된다. 횟수만 줄어야 한다. ★               */
+
+  const vm2 = require("vm");
+  function 토막(s, n) {
+    const i = s.indexOf("function " + n + "(");
+    if (i < 0) throw new Error(n + " 를 못 찾음");
+    let d = 0, seen = false;
+    for (let k = i; k < s.length; k++) {
+      if (s[k] === "{") { d++; seen = true; }
+      else if (s[k] === "}") { d--; if (seen && d === 0) return s.slice(i, k + 1); }
+    }
+  }
+
+  let 읽은횟수 = 0;
+  const ctx = {
+    console, String, Number, Math, Date, Object, JSON,
+    _LRT_HOLIDAYS_: { "20261003": 1, "20261005": 1, "20261006": 1, "20261007": 1, "20261008": 1 },
+    _LRT_HOLIDAY_PROP_: "LOTTE_EXTRA_HOLIDAYS",
+    _LRT_OFF_MEMO_: {},
+    _LRT_EXTRA_CACHE_: null,
+    Utilities: { formatDate: (d) => {
+      const p = (x) => String(x).padStart(2, "0");
+      return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
+    } },
+    PropertiesService: { getScriptProperties: () => ({
+      getProperty: () => { 읽은횟수++; return "20261231"; },
+    }) },
+  };
+  vm2.createContext(ctx);
+  vm2.runInContext(토막(src, "_lrt_extraHolidays_"), ctx);
+  vm2.runInContext(토막(src, "_lrt_isOff_"), ctx);
+  const 쉬나 = (y, m, d) =>
+    vm2.runInContext("_lrt_isOff_(new Date(" + y + "," + (m - 1) + "," + d + "))", ctx);
+
+  //  ★ 답이 그대로인가 ★ 이게 안 맞으면 빠른 건 아무 뜻이 없다
+  ok("토요일은 쉼", 쉬나(2026, 10, 10) === true);
+  ok("일요일은 쉼", 쉬나(2026, 10, 11) === true);
+  ok("표에 있는 공휴일은 쉼 (10/08)", 쉬나(2026, 10, 8) === true);
+  ok("평일은 안 쉼 (10/09 금)", 쉬나(2026, 10, 9) === false);
+  ok("★ 임시공휴일 속성도 그대로 본다 (12/31)", 쉬나(2026, 12, 31) === true);
+  ok("그 속성에 없는 평일은 안 쉼 (12/30)", 쉬나(2026, 12, 30) === false);
+
+  //  ★ 횟수 ★ 여기까지 평일을 네 번 물었는데 속성은 한 번만 읽혔어야 한다
+  ok("★ 속성은 한 실행에 한 번만 읽는다 (읽은 " + 읽은횟수 + "번)", 읽은횟수 === 1);
+
+  //  같은 날을 수천 번 물어도 더 안 읽는다 — 8,000줄이 같은 날들을 되묻는다
+  for (let i = 0; i < 500; i++) { 쉬나(2026, 10, 9); 쉬나(2026, 12, 30); }
+  ok("★ 1,000번 더 물어도 그대로 (읽은 " + 읽은횟수 + "번)", 읽은횟수 === 1);
+  ok("날짜 판정도 외운다", Object.keys(ctx._LRT_OFF_MEMO_).length > 0);
+  ok("주말은 외울 것도 없다 (바로 돌아선다)",
+     !Object.keys(ctx._LRT_OFF_MEMO_).some((k) => k === "20261010"));
+
+  //  ★ 속성을 못 읽어도 주말 판단은 살아 있어야 한다 ★ (전과 같은 약속)
+  const ctx2 = Object.assign({}, ctx, {
+    _LRT_OFF_MEMO_: {}, _LRT_EXTRA_CACHE_: null,
+    PropertiesService: { getScriptProperties: () => { throw new Error("못 읽음"); } },
+  });
+  vm2.createContext(ctx2);
+  vm2.runInContext(토막(src, "_lrt_extraHolidays_"), ctx2);
+  vm2.runInContext(토막(src, "_lrt_isOff_"), ctx2);
+  const 쉬나2 = (y, m, d) =>
+    vm2.runInContext("_lrt_isOff_(new Date(" + y + "," + (m - 1) + "," + d + "))", ctx2);
+  ok("★ 속성을 못 읽어도 주말은 쉼", 쉬나2(2026, 10, 10) === true);
+  ok("★ 속성을 못 읽어도 표는 본다", 쉬나2(2026, 10, 8) === true);
+  ok("★ 못 읽은 것을 «모른다»로 두지 않는다 (평일은 평일)", 쉬나2(2026, 10, 9) === false);
+
+  //  ★ 값싼 체 ★ 애초에 날을 안 세는 쪽이 제일 싸다 (csLogenOutStale.gs)
+  const ost = fs.readFileSync("csLogenOutStale.gs", "utf8");
+  ok("★ 지연 점검이 값싼 체를 먼저 쓴다", /var _OST_CAL_MAX_ = \d+;/.test(ost));
+  ok("체가 «버릴 것만» 버린다 (영업일 판단은 그대로 뒤에 있다)",
+     ost.indexOf("달력 > _OST_CAL_MAX_") < ost.indexOf("_ost_bizSince_(발송) !== _OST_FROM_DAYS_"));
+  const 체 = Number((ost.match(/var _OST_CAL_MAX_ = (\d+);/) || [])[1]);
+  ok("가장 긴 연휴(아홉 날)보다 넉넉하다", 체 >= 3 + 9);
+  ok("오늘 0시를 줄마다 다시 만들지 않는다", /var 오늘0 = 오늘기준\.getTime\(\);/.test(ost));
+}
+
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

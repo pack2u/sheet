@@ -234,17 +234,59 @@ function csLotteReturnConfig() {
 }
 
 /** yyyyMMdd 가 쉬는 날인가 — 토·일 + 공휴일표 + 임시공휴일 속성 */
+/**
+ * ★ 하루 판정을 «한 번만» 한다 ★  (2026-10-09)
+ *
+ *   ─ 무슨 일이 있었나 ─
+ *   1시간 일감의 「일감 걸음」이 이렇게 찍혔다:
+ *     요청접수 5초 · 송장채우기 45초 · 출고송장 11초 · **지연점검 1497초**
+ *   한 단계가 25분을 먹어 일감이 30분 벽에 부딪혀 죽고 있었다.
+ *
+ *   ─ 왜 그랬나 ─
+ *   _lrt_isOff_ 가 부를 때마다 **PropertiesService 를 읽었다.** 서비스 호출은
+ *   한 번에 10~20ms 다. 그런데 이 함수는 «하루하루» 불린다 —
+ *     _ost_collect_ 가 원장 8,000줄을 훑고,
+ *     줄마다 _ost_bizSince_ 가 발송일부터 오늘까지 날을 하나씩 세고,
+ *     그 날마다 _lrt_isOff_ 를 부른다.
+ *   수십만 번이다. 25분은 그 곱셈이다.
+ *
+ *   ─ 어떻게 하나 ─
+ *   휴일은 돌는 중에 바뀌지 않는다. 그러니 «한 실행에 한 번»만 읽고 외운다.
+ *   날짜별 판정도 외운다 — 같은 날을 수천 줄이 다시 묻기 때문이다.
+ *   답은 한 글자도 안 바뀐다. 횟수만 줄어든다.
+ *
+ *   ★ 파일 맨 위에서 읽지 않는다 ★ 이 두 값은 함수 «안»에서만 쓰인다.
+ *     [[gas-runs-files-in-name-order]]
+ */
+var _LRT_OFF_MEMO_ = {};
+var _LRT_EXTRA_CACHE_ = null;
+
+/** 임시공휴일 속성 — 한 실행에 한 번만 읽는다 */
+function _lrt_extraHolidays_() {
+  if (_LRT_EXTRA_CACHE_ !== null) return _LRT_EXTRA_CACHE_;
+  try {
+    _LRT_EXTRA_CACHE_ = PropertiesService.getScriptProperties()
+      .getProperty(_LRT_HOLIDAY_PROP_) || "";
+  } catch (e) { _LRT_EXTRA_CACHE_ = ""; }   // 못 읽어도 주말 판단은 살아 있다
+  return _LRT_EXTRA_CACHE_;
+}
+
 function _lrt_isOff_(d) {
   var day = d.getDay();
-  if (day === 0 || day === 6) return true;
+  if (day === 0 || day === 6) return true;   // 주말은 물어볼 것도 없다
+
+  /*  외운 것 — 열쇠는 그냥 열쇠다. 값싸게 만든다(formatDate 도 안 쓴다). */
+  var key = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  if (_LRT_OFF_MEMO_.hasOwnProperty(key)) return _LRT_OFF_MEMO_[key];
+
   var ymd = Utilities.formatDate(d, "Asia/Seoul", "yyyyMMdd");
-  if (_LRT_HOLIDAYS_[ymd]) return true;
-  try {
-    var extra = PropertiesService.getScriptProperties()
-      .getProperty(_LRT_HOLIDAY_PROP_) || "";
-    if (extra && extra.indexOf(ymd) !== -1) return true;
-  } catch (e) { /* 속성을 못 읽어도 주말 판단은 살아 있다 */ }
-  return false;
+  var 쉼 = !!_LRT_HOLIDAYS_[ymd];
+  if (!쉼) {
+    var extra = _lrt_extraHolidays_();
+    쉼 = !!extra && extra.indexOf(ymd) !== -1;
+  }
+  _LRT_OFF_MEMO_[key] = 쉼;
+  return 쉼;
 }
 
 /**
