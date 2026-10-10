@@ -3490,6 +3490,14 @@
       border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary);
       border-radius: 7px; padding: 2px 8px; font-size: 11.5px; cursor: pointer;
     }
+    .byto-ord { margin-top: 6px; padding: 5px 8px; border-radius: 8px; background: var(--bg-card); border: 1px solid var(--border); }
+    .byto-ord-head { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+    .byto-ord-row { font-size: calc(12px * var(--hb-text-scale)); color: var(--text-primary);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .byto-ord-d { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .byto-ord-inv { color: var(--text-muted); font-size: 11px; }
+    .byto-ord-more { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .byto-ord-none { margin-top: 5px; font-size: 11px; color: var(--text-muted); }
     .byto-pick { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
     .byto-pick button { text-align: left; border: 1px solid var(--border); background: var(--bg-card);
       color: var(--text-primary); border-radius: 8px; padding: 6px 9px; font-size: 12px; cursor: pointer; }
@@ -8744,6 +8752,24 @@
       list.innerHTML = h;
     }
 
+    /*  ★ 그 번호의 최근 주문 — 일일마감 기준 ★  (2026-10-10)
+        > "전화번호를 불러왔을 때 현재 판매현황을 못 끌어왔는데.. 일단 일일마감에서 불러들여줘"
+        v2 가 마감 파일을 당겨 둔 daily_archive 에서 찾는다(/api/byto/cs). 마감 전인 오늘
+        주문은 아직 없다 — 그래서 「일일마감 기준」이라고 늘 적는다.                    */
+    function bytoOrdersHtml(orders, total, max) {
+      if (!orders.length) return '<div class="byto-ord-none">일일마감에 이 번호 주문 없음</div>';
+      var h = '<div class="byto-ord"><div class="byto-ord-head">최근 주문 ' + total + '건 · 일일마감 기준</div>';
+      orders.slice(0, max).forEach(function (o) {
+        var d = String(o.date || '').slice(5).replace('-', '/');
+        h += '<div class="byto-ord-row"><span class="byto-ord-d">' + esc(d) + '</span> ' +
+          esc(o.item || '(품목명 없음)') + (o.qty ? ' ×' + esc(o.qty) : '') +
+          (o.invoice ? ' <span class="byto-ord-inv">· 송장 ' + esc(o.invoice) + '</span>' : ' <span class="byto-ord-inv">· 송장 없음</span>') +
+          '</div>';
+      });
+      if (total > Math.min(max, orders.length)) h += '<div class="byto-ord-more">외 ' + (total - Math.min(max, orders.length)) + '건 — 「주문 찾기」</div>';
+      return h + '</div>';
+    }
+
     function bycCardHtml(c) {
       var key = 'c' + c.phone;
       var h = '<div class="byc-card" id="byc-' + esc(c.phone) + '"><div class="byc-head">' +
@@ -8754,6 +8780,7 @@
         '<span class="byc-when">' + esc(bytoWhen(c.lastAt)) + '</span></div>';
       if (c.lastBody) h += '<div class="byc-body">' + esc(c.lastBody) + '</div>';
       else if (c.sms && !(c.photos || []).length) h += '<div class="byc-body">(사진 문자 — 사진을 아직 못 받았습니다)</div>';
+      h += bytoOrdersHtml(c.orders || [], c.orderCount || 0, 2);
       if ((c.photos || []).length) {
         h += '<div class="byc-photos">' + c.photos.map(function (u) {
           return '<a href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="고객 사진" loading="lazy"></a>';
@@ -8813,7 +8840,9 @@
         .withSuccessHandler(function (res) {
           if (!res || !res.ok) { box.innerHTML = '<div class="byto-tl-note">못 읽었습니다 — ' + esc((res && res.error) || '까닭 모름') + '</div>'; return; }
           BYTO_TL[key] = { phone: phone, items: res.items || [] };
-          box.innerHTML = bytoTimelineHtml(res.items || [], res.collectedAt, key);
+          /*  주문 카드에서 펼쳤으면 주문은 이미 보고 있다 — 콜백 카드(c…)에서만 위에 얹는다  */
+          box.innerHTML = (String(key).charAt(0) === 'c' ? bytoOrdersHtml(res.orders || [], res.orderCount || 0, 10) : '') +
+            bytoTimelineHtml(res.items || [], res.collectedAt, key);
         })
         .withFailureHandler(function (e) { box.innerHTML = '<div class="byto-tl-note">못 읽었습니다 — ' + esc(String((e && e.message) || e)) + '</div>'; })
         .csBytoTimeline(phone);
