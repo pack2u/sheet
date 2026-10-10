@@ -624,6 +624,19 @@ var _MP_SRC_SABANG_ = "사방넷";
 var _MP_PACK_MARKS_ = ["합포장", "합배송", "소분", "몸통만", "뚜껑만"];
 
 /**
+ * 원장에서만 보이는 «덧붙은» 표지 — 몰이 아니다.
+ *
+ * ★ 원본 목록에 더하지 않는다 ★
+ *   _MP_PACK_MARKS_ 는 home.html 과 «같아야» 한다 (시험이 그것을 본다).
+ *   여기 말들은 CS 화면이 보는 자료에는 안 나오고 원장에만 나온다 —
+ *   세트분리가 출력품목명을 만들며 붙이는 것들이다.
+ *     「…---2개 합포장(완박스)」 → 쪼개면 「(완박스)」 조각이 남는 줄이 있다
+ *   2026-10-10 첫 실행에서 「(완박스)」가 몰 2위(9건)로 올라왔다.
+ *   읽는 쪽(_mp_notAMall_)에서만 걸러 두 목록이 갈라지지 않게 한다.
+ */
+var _MP_EXTRA_MARKS_ = ["완박스"];
+
+/**
  * 품목명 꼬리에서 «거래처로 볼 만한 것»만 남긴다. 없으면 빈 문자열.
  * 원본: home.html 의 ledgerVendorFromItem
  */
@@ -656,6 +669,11 @@ function _mp_notAMall_(name) {
   for (var m = 0; m < _MP_PACK_MARKS_.length; m++) {
     if (t.indexOf(_MP_PACK_MARKS_[m]) !== -1) return true;
   }
+  for (var e = 0; e < _MP_EXTRA_MARKS_.length; e++) {
+    if (t.indexOf(_MP_EXTRA_MARKS_[e]) !== -1) return true;
+  }
+  /*  괄호·숫자뿐인 조각은 이름이 아니다 — 「(1/2)」 「3개」 같은 꼬리  */
+  if (/^[\(\)\d\s\/개]+$/.test(t)) return true;
   return false;
 }
 
@@ -772,7 +790,24 @@ function mpDiscoverMalls() {
   var cUid    = _mp_colOf_(header, ["고유ID", "사방넷주문번호"]);
   var cSrc    = _mp_colOf_(header, ["주문번호출처"]);
   var cVendor = _mp_colOf_(header, ["거래처명"]);
-  var cItem   = _mp_colOf_(header, ["품목명", "출력품목명"]);
+  /*  ★★ 판매처는 「출력품목명」에 있다 ★★  (2026-10-10 고침)
+      처음에 「품목명」을 먼저 읽었다가 8,631건 중 45건만 읽혔다 (0.5%).
+
+      세트분리는 판매처를 u.판매처표기 에 «따로» 담고, 붙이는 일은
+      ssDisplayName 이 한 곳에서 한다 (core.js) —
+          출력품목명 = 품목명 + '---' + 판매처표기 [+ 포장 표지]
+      그래서 원장의 「품목명」은 마스터 이름이라 깨끗하고 판매처가 없다.
+
+      ★ 그 45건은 몰 자료가 아니었다 ★
+        core.js ssDisplayName 주석에 적힌 «판매처가 두 번 붙은» 버그 줄이다 —
+        「원장 실측 8,963줄 가운데 34줄 … 배민상회 11 · 스마트스토어 8 ·
+        자사몰 5 · 쿠팡 5」. 내가 센 숫자와 그대로 겹쳤다.
+        사람이 보류 탭 「새품목명」에 출력에서 본 이름을 붙여넣어 생긴 것이다.
+        그것을 몰 목록으로 쓸 뻔했다.
+
+      둘 다 읽어 출력품목명 → 품목명 차례로 본다.                        */
+  var cOut    = _mp_colOf_(header, ["출력품목명"]);
+  var cItem   = _mp_colOf_(header, ["품목명"]);
   var cWhen   = _mp_colOf_(header, ["실행시각"]);
 
   if (cUid < 0) {
@@ -793,6 +828,7 @@ function mpDiscoverMalls() {
   var uids    = 열(cUid);
   var srcs    = 열(cSrc);
   var vendors = 열(cVendor);
+  var outs    = 열(cOut);
   var items   = 열(cItem);
   var whens   = 열(cWhen);
 
@@ -822,10 +858,16 @@ function mpDiscoverMalls() {
     }
     사방넷++;
 
-    /*  ★ 품목명 꼬리가 주인이다 ★  거래처명은 사업자 구분이 붙었을 때만 거든다.
-        순서를 뒤집었다가 몰 목록이 주문자 이름으로 찼다 (2026-10-10).  */
-    var 몰 = _mp_mallFromItem_(items && items[i] ? items[i][0] : "");
-    var 어디서 = "꼬리";
+    /*  ★ 출력품목명 꼬리가 주인이다 ★
+        ① 출력품목명  판매처가 붙는 자리 (ssDisplayName)
+        ② 품목명      마스터 이름. 거의 없지만 옛 줄에 남아 있을 수 있다
+        ③ 거래처명    사업자 구분이 붙었을 때만. 그 칸은 주문자 이름이다     */
+    var 몰 = _mp_mallFromItem_(outs && outs[i] ? outs[i][0] : "");
+    var 어디서 = "출력품목명";
+    if (_mp_notAMall_(몰)) {
+      몰 = _mp_mallFromItem_(items && items[i] ? items[i][0] : "");
+      어디서 = "품목명";
+    }
     var 거래처 = String(vendors && vendors[i] ? vendors[i][0] : "").trim();
     if (_mp_notAMall_(몰)) {
       몰 = _mp_mallFromVendor_(거래처);
@@ -848,11 +890,14 @@ function mpDiscoverMalls() {
 
     var when = String(whens && whens[i] ? whens[i][0] : "").trim().slice(0, 10);
     if (!센것[몰]) {
-      센것[몰] = { 건수: 0, 처음: when, 마지막: when, 거래처명으로: 0, 꼬리로: 0 };
+      센것[몰] = { 건수: 0, 처음: when, 마지막: when,
+                   출력품목명으로: 0, 품목명으로: 0, 거래처명으로: 0 };
     }
     var rec = 센것[몰];
     rec.건수++;
-    if (어디서 === "거래처명") rec.거래처명으로++; else rec.꼬리로++;
+    if (어디서 === "출력품목명") rec.출력품목명으로++;
+    else if (어디서 === "품목명") rec.품목명으로++;
+    else rec.거래처명으로++;
     if (when) {
       if (!rec.처음 || when < rec.처음) rec.처음 = when;
       if (!rec.마지막 || when > rec.마지막) rec.마지막 = when;
@@ -883,13 +928,13 @@ function mpDiscoverMalls() {
     .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
 
   var H = ["순위", "몰명(그대로)", "구분", "몰", "건수", "줄비중",
-           "처음", "마지막", "꼬리로", "거래처명으로", "메모"];
+           "처음", "마지막", "출력품목명으로", "품목명으로", "거래처명으로", "메모"];
   out.getRange(3, 1, 1, H.length).setValues([H])
     .setBackground(_MP_C_HEAD_).setFontColor("#F0F0F0")
     .setFontWeight("bold").setFontFamily("Arial").setHorizontalAlignment("center").setWrap(true);
   out.setRowHeight(3, 32);
   out.setFrozenRows(3);
-  var ws2 = [55, 190, 65, 150, 80, 75, 95, 95, 85, 100, 300];
+  var ws2 = [55, 190, 65, 150, 80, 75, 95, 95, 105, 90, 100, 280];
   for (var w = 0; w < ws2.length; w++) out.setColumnWidth(w + 1, ws2[w]);
 
   if (목록.length) {
@@ -900,7 +945,7 @@ function mpDiscoverMalls() {
       rows.push([
         j + 1, 목록[j].몰, 쪼갠것.구분, 쪼갠것.몰, d.건수,
         총건 ? d.건수 / 총건 : 0,
-        d.처음, d.마지막, d.꼬리로, d.거래처명으로, ""
+        d.처음, d.마지막, d.출력품목명으로, d.품목명으로, d.거래처명으로, ""
       ]);
     }
     out.getRange(4, 1, rows.length, H.length).setValues(rows)

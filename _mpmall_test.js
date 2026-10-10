@@ -67,10 +67,15 @@ const 베낀표지 = (허브.match(/var _MP_PACK_MARKS_ = \[[^\]]*\];/) || [])[0
 assert.ok(베낀표지, "mallPolicy.gs 에서 _MP_PACK_MARKS_ 를 못 찾았습니다");
 const 베낀것 = 뽑아([베낀표지, 꺼내(허브, "_mp_mallFromItem_")], "_mp_mallFromItem_");
 
+/*  원장에만 나오는 덧붙은 표지 — 원본 목록과 «따로» 둔다 (완박스 등).
+    _MP_PACK_MARKS_ 는 home.html 과 같아야 하므로 여기에 섞지 않는다.  */
+const 추가표지 = (허브.match(/var _MP_EXTRA_MARKS_ = \[[^\]]*\];/) || [])[0];
+assert.ok(추가표지, "mallPolicy.gs 에서 _MP_EXTRA_MARKS_ 를 못 찾았습니다");
+
 /* 허브의 UID 판정 — 베끼지 않고 그대로 쓰는 것 */
 const 주문 = fs.readFileSync(path.join(__dirname, "_partnerOrders.gs"), "utf8");
 const 발급된것인가 = 뽑아([꺼내(주문, "_po_isGeneratedUid_")], "_po_isGeneratedUid_");
-const 몰아님 = 뽑아([베낀표지, 꺼내(허브, "_mp_notAMall_")], "_mp_notAMall_");
+const 몰아님 = 뽑아([베낀표지, 추가표지, 꺼내(허브, "_mp_notAMall_")], "_mp_notAMall_");
 const 바닥 = 뽑아([꺼내(허브, "_mp_baseUid_")], "_mp_baseUid_");
 
 /* ── 실제로 본 품목명들 ──────────────────────────────────
@@ -170,7 +175,7 @@ const 실제줄 = [
 test("★ 실제 판매현황 줄에서 몰을 읽는다 (2026-10-08 회차)", () => {
   for (const [품목명, 바란몰] of 실제줄) {
     const 읽은것 = 베낀것(품목명);
-    const 몰인가 = !뽑아([베낀표지, 꺼내(허브, "_mp_notAMall_")], "_mp_notAMall_")(읽은것);
+    const 몰인가 = !뽑아([베낀표지, 추가표지, 꺼내(허브, "_mp_notAMall_")], "_mp_notAMall_")(읽은것);
     assert.equal(몰인가 ? 읽은것 : "", 바란몰,
       "\n  품목명 : " + 품목명 +
       "\n  읽은것 : " + JSON.stringify(읽은것) +
@@ -190,7 +195,7 @@ test("원본(home.html)도 실제 줄에서 같은 답을 낸다", () => {
 const 구분목록 = (허브.match(/var _MP_BIZ_PREFIXES_ = \[[^\]]*\];/) || [])[0];
 assert.ok(구분목록, "mallPolicy.gs 에서 _MP_BIZ_PREFIXES_ 를 못 찾았습니다");
 const 거래처부품 = [
-  베낀표지, 구분목록,
+  베낀표지, 추가표지, 구분목록,
   꺼내(허브, "_mp_notAMall_"),
   꺼내(허브, "_mp_splitMall_"),
   꺼내(허브, "_mp_hasBizPrefix_"),
