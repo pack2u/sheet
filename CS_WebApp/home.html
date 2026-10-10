@@ -3502,6 +3502,37 @@
     .byto-pick button { text-align: left; border: 1px solid var(--border); background: var(--bg-card);
       color: var(--text-primary); border-radius: 8px; padding: 6px 9px; font-size: 12px; cursor: pointer; }
     .byto-pick button:hover { background: var(--bg-card-hover); }
+    /* ── 작게 (2026-10-10) ──────────────────────────────────────────────
+       > "웹앱에 카드가 너무 커.. 폰트 사이즈 줄이고 카드가 차지하는 영역을 줄여줘"
+       콜백 카드는 하루에 수십 장이 쌓인다. 한 장이 반 화면을 먹으면 훑을 수가 없다.
+       위의 규칙을 «여기서 덮는다» — 크기를 고칠 때는 이 묶음만 보면 된다.        */
+    .byc-list { gap: 4px; }
+    .byc-card { padding: 5px 8px; border-radius: 8px; }
+    .byc-head { gap: 5px; }
+    .byc-phone { font-size: calc(12.5px * var(--hb-text-scale)); }
+    .byc-name { font-size: calc(11px * var(--hb-text-scale)); }
+    .byc-tag { font-size: calc(9.5px * var(--hb-text-scale)); padding: 0 5px; border-radius: 5px; }
+    .byc-when { font-size: calc(9.5px * var(--hb-text-scale)); }
+    .byc-body { margin-top: 2px; font-size: calc(11.5px * var(--hb-text-scale)); -webkit-line-clamp: 2; }
+    .byc-photos { gap: 4px; margin-top: 4px; }
+    .byc-photos img { width: 40px; height: 40px; border-radius: 6px; }
+    .byc-acts { gap: 4px; margin-top: 4px; }
+    .byc-acts button { padding: 1px 7px; border-radius: 6px; font-size: calc(10.5px * var(--hb-text-scale)); }
+    .byc-empty { font-size: 12px; padding: 6px 2px; }
+    .byto-ord { margin-top: 3px; padding: 2px 6px; border-radius: 6px; }
+    .byto-ord-head { font-size: 9.5px; margin-bottom: 0; }
+    .byto-ord-row { font-size: calc(11px * var(--hb-text-scale)); }
+    .byto-ord-inv, .byto-ord-more { font-size: 9.5px; }
+    .byto-ord-none { margin-top: 3px; font-size: 10px; }
+    .byto-ord-one { margin-top: 2px; }
+    .byto-tl { margin-top: 5px; padding-top: 4px; }
+    .byto-tl-row { padding: 3px 0; gap: 1px 6px; }
+    .byto-tl-at { font-size: 10px; }
+    .byto-tl-what, .byto-tl-body { font-size: 11.5px; }
+    .byto-tl-photos img { width: 52px; height: 52px; border-radius: 6px; }
+    .byto-tl-note { font-size: 10.5px; padding: 2px 0; }
+    .byto-tl-acts { gap: 4px; margin-top: 2px; }
+    .byto-tl-acts button { padding: 1px 6px; font-size: 10.5px; }
     .csq-done-tag {
       padding: 1px 7px; border-radius: 8px; font-weight: 700;
       font-size: calc(9px * var(--hb-text-scale));    /* .hb-badge */
@@ -8758,6 +8789,14 @@
         주문은 아직 없다 — 그래서 「일일마감 기준」이라고 늘 적는다.                    */
     function bytoOrdersHtml(orders, total, max) {
       if (!orders.length) return '<div class="byto-ord-none">일일마감에 이 번호 주문 없음</div>';
+      if (max === 1) {
+        /*  카드용 한 줄 — 머리·「외 n건」을 따로 줄로 두면 카드가 세 줄 커진다  */
+        var o1 = orders[0];
+        return '<div class="byto-ord-row byto-ord-one" title="일일마감 기준 · 오늘 마감 전 주문은 아직 없음">' +
+          '<span class="byto-ord-d">최근주문 ' + esc(String(o1.date || '').slice(5).replace('-', '/')) + '</span> ' +
+          esc(o1.item || '(품목명 없음)') + (o1.qty ? ' ×' + esc(o1.qty) : '') +
+          (total > 1 ? ' <span class="byto-ord-inv">· 외 ' + (total - 1) + '건</span>' : '') + '</div>';
+      }
       var h = '<div class="byto-ord"><div class="byto-ord-head">최근 주문 ' + total + '건 · 일일마감 기준</div>';
       orders.slice(0, max).forEach(function (o) {
         var d = String(o.date || '').slice(5).replace('-', '/');
@@ -8780,7 +8819,9 @@
         '<span class="byc-when">' + esc(bytoWhen(c.lastAt)) + '</span></div>';
       if (c.lastBody) h += '<div class="byc-body">' + esc(c.lastBody) + '</div>';
       else if (c.sms && !(c.photos || []).length) h += '<div class="byc-body">(사진 문자 — 사진을 아직 못 받았습니다)</div>';
-      h += bytoOrdersHtml(c.orders || [], c.orderCount || 0, 2);
+      /*  카드에는 최근 주문 «한 줄»만. 없으면 아무것도 안 그린다 — 「없음」 한 줄도 쌓이면 자리다.
+          더 보려면 「통화·문자」(10건) 나 「주문 찾기」.  (2026-10-10 「카드가 너무 커」)  */
+      if ((c.orders || []).length) h += bytoOrdersHtml(c.orders, c.orderCount || 0, 1);
       if ((c.photos || []).length) {
         h += '<div class="byc-photos">' + c.photos.map(function (u) {
           return '<a href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="고객 사진" loading="lazy"></a>';
