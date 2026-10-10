@@ -288,7 +288,12 @@ function _cs_searchDailyArchiveByInvoice_(invDigits) {
   var needle = String(invDigits).replace(/[^0-9]/g, "");
   for (var i = 0; i < pack.rows.length; i++) {
     var r = pack.rows[i];
-    if (String(r.invDigits || "").indexOf(needle) !== -1) {
+    /*  ★ indexOf 로 보면 남의 주문이 뜬다 ★  (2026-10-10)
+        r.invDigits 는 _cs_allInvDigits_ 가 공백으로 이어 놓은 목록이라
+        indexOf 로도 대개 걸린다. 그런데 더 긴 번호 «안»에 들어 있을 때도
+        걸린다 — "1268334484434" 가 "268334484434" 로 걸리는 식이다.
+        위 세 탭과 같은 자로 본다(가른 다음 낱장과 같은지).              */
+    if (_cs_invCellHas_(r.invDigits, needle)) {
       return {
         found: true,
         source: (pack.indexSource === "ledger" ? "원장" : "일일마감")
@@ -1818,6 +1823,40 @@ function _cs_invList_(raw) {
     out.push(d);
   }
   return out;
+}
+
+/**
+ * 이 송장 칸에 찾는 송장이 «들어 있나».
+ *
+ * ★ 칸을 한 덩어리 숫자로 다루면 안 된다 ★  (2026-09-14 사장님)
+ *   > "롯데에서 로젠으로 바뀌면서 주문송장조회의 송장번호가 인식이 안 되고,
+ *   >  이전 롯데 송장들은 숫자들이 붙어 버려"
+ *
+ *   한 칸에 송장이 둘이면(합포장·분할출고는 흔하다)
+ *       "268334484434\n268334484445"
+ *   에서 숫자만 뽑으면 **24자리 한 덩어리**가 된다. 그게 「숫자들이 붙어
+ *   버려」다. 그 덩어리는 어떤 한 장과도 «같지» 않으니 영영 안 걸린다.
+ *
+ * ★ 들어 있나(indexOf)가 아니라 «하나인가»로 본다 ★
+ *   덩어리 안에서 찾으면 걸리기도 하는데, 그러면 엉뚱한 것도 걸린다 —
+ *   "1268334484434" 안에 "268334484434" 가 들어 있다. 남의 주문이 뜬다.
+ *   가른 다음 낱장과 견준다.
+ *
+ * ★ 가르는 규칙은 _cs_invList_ 하나다 ★ 여기에 또 적지 않는다.
+ *   하이픈은 «안» 가른다 — 허브에 "442-4720-4271" 꼴이 있어서 하이픈으로
+ *   가르면 조각난다. 토막마다 숫자만 남기므로 44247204271 이 된다.
+ *
+ * @param {*} 칸 시트의 송장 칸 (한 장일 수도, 여러 장일 수도)
+ * @param {string} 찾는것 찾는 송장 (바코드로 읽은 한 장)
+ */
+function _cs_invCellHas_(칸, 찾는것) {
+  var 찾 = String(찾는것 == null ? "" : 찾는것).replace(/[^0-9]/g, "");
+  if (찾.length < 8) return false;              // _cs_invList_ 와 같은 문턱
+  var 목록 = _cs_invList_(칸);
+  for (var i = 0; i < 목록.length; i++) {
+    if (목록[i] === 찾) return true;
+  }
+  return false;
 }
 
 function _cs_qtyOverMax_(qty, item, invRaw) {

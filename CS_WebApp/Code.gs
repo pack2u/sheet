@@ -522,8 +522,9 @@ function _cs_searchHub_(ss, invDigits) {
 
   var data = hub.getRange(2, 1, hub.getLastRow() - 1, 15).getValues();
   for (var i = 0; i < data.length; i++) {
-    var rowInv = String(data[i][13] || "").trim().replace(/[^0-9]/g, "");
-    if (rowInv === invDigits) {
+    /*  ★ 칸을 덩어리로 만들면 안 된다 ★ 한 칸에 송장이 둘이면 24자리가
+        되어 어떤 한 장과도 안 같다 (csOrderSearch.gs _cs_invCellHas_ 머리말). */
+    if (_cs_invCellHas_(data[i][13], invDigits)) {
       return {
         found: true,
         source: "협력업체_발주허브",
@@ -559,8 +560,8 @@ function _cs_searchUnmatched_(ss, invDigits) {
   var lc = Math.min(tab.getLastColumn(), 37);
   var data = tab.getRange(2, 1, tab.getLastRow() - 1, lc).getValues();
   for (var i = 0; i < data.length; i++) {
-    var rowInv = String(data[i][5] || "").trim().replace(/[^0-9]/g, ""); // F열=운송장번호
-    if (rowInv === invDigits) {
+    //  F열=운송장번호. 한 칸에 여러 장일 수 있어 목록으로 견준다
+    if (_cs_invCellHas_(data[i][5], invDigits)) {
       return {
         found: true,
         source: "사방넷_송장매칭",
@@ -590,8 +591,8 @@ function _cs_searchTempTab_(ss, invDigits) {
   var lc = Math.max(tab.getLastColumn(), 24);
   var data = tab.getRange(2, 1, tab.getLastRow() - 1, lc).getValues();
   for (var i = 0; i < data.length; i++) {
-    var rowInv = String(data[i][23] || "").trim().replace(/[^0-9]/g, ""); // X열=송장번호
-    if (rowInv === invDigits) {
+    //  X열=송장번호. 한 칸에 여러 장일 수 있어 목록으로 견준다
+    if (_cs_invCellHas_(data[i][23], invDigits)) {
       return {
         found: true,
         source: "대리공급_임시기록",
