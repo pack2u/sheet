@@ -25,9 +25,23 @@
  * ══════════════════════════════════════════════════════════════
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, copyFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { 서버먼저보기 } from "../_pullcheck.mjs";
 
 const 설명 = process.argv.slice(2).join(" ").trim() || "CS웹앱 갱신";
+
+/* ── ⓞ 올리기 전에 «서버를 먼저 본다» ──  (2026-10-04)
+     > "수정내용을 편집기로 커밋을 안하면 일이 반복된다고 하네."
+
+     push 는 로컬 파일 목록으로 서버를 «동기화»한다. 편집기에서 고친 것이
+     서버에만 있으면 그대로 덮인다 — 오류 없이, 그냥 없어진다.
+     2026-10-04 에 그럴 뻔했다(서버 382 / 내 쪽 381 · 아홉 파일).
+
+     ★ 빌드 번호를 고치기 «전»에 본다 ★ 고친 뒤에 보면 csPulse.gs 가
+     늘 달라 보여, 정말 다른 파일이 그 속에 묻힌다.                   */
+서버먼저보기();
 
 function 달려(args) {
   return execFileSync("clasp", args, { encoding: "utf8", shell: true });
@@ -106,5 +120,34 @@ if (String(찍힘) !== String(다음)) {
   console.error("   csPulse.gs 를 @" + 찍힘 + " 로 고치고 한 번 더 배포하세요.");
   process.exit(1);
 }
+/* ── ⑤ «서버를 다시 당겨» 정말 닿았는지 본다 ──  (2026-10-09)
+      ★ 왜 ★ 2026-10-08·09 에 배포가 두 번 «조용히» 실패했다. clasp 인증이
+      만료되면(invalid_rapt) push 가 안 되는데, 사장님은 성공한 줄 알고 넘어가셨다.
+      그 뒤로 「고쳤는데 왜 그대로지」를 몇 번이나 되풀이했다.
+
+      번호가 맞는지(위 ④)만으로는 모자란다 — 그것은 «우리가 적은 숫자»를 본 것이지
+      서버가 가진 것을 본 것이 아니다. 당겨서 맞대 봐야 안다.
+      [[check-the-result-not-just-the-cause]] */
+try {
+  const tmp = mkdtempSync(join(tmpdir(), "csverify-"));
+  copyFileSync(".clasp.json", join(tmp, ".clasp.json"));
+  execFileSync("clasp", ["pull"], { cwd: tmp, encoding: "utf8", shell: true, stdio: "pipe" });
+  const 서버 = readFileSync(join(tmp, "csPulse.js"), "utf8");
+  const 서버번호 = (서버.match(/var CS_BUILD_ = "(\d+)"/) || [])[1];
+  if (String(서버번호) !== String(다음)) {
+    console.error("");
+    console.error("★★ 서버에 안 닿았습니다 ★★");
+    console.error("   올리려던 것 CS_BUILD_=" + 다음 + " · 서버는 " + (서버번호 || "(못 읽음)"));
+    console.error("   clasp 인증이 만료됐을 수 있습니다 — `clasp login` 뒤 다시 올리세요.");
+    process.exit(1);
+  }
+  console.log("서버 확인  CS_BUILD_ " + 서버번호 + " — 당겨서 맞대 봤습니다");
+} catch (e) {
+  console.error("");
+  console.error("★ 올린 뒤 확인을 못 했습니다 — " + (e.message || e));
+  console.error("   배포 자체는 됐을 수 있습니다. 손으로 한 번 보세요.");
+  process.exit(1);
+}
+
 console.log("");
 console.log("✅ 배포 @" + 찍힘 + " · CS_BUILD_ " + 다음 + " — 열어 둔 화면에 새 버전 안내가 뜹니다");

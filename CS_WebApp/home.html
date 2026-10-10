@@ -853,6 +853,163 @@
       grid-column: 1 / -1;
     }
 
+    /* ══════════════════════════════════════════════════════════════
+       ★ 크게 보기에서는 «표처럼» 읽는다 ★  (2026-10-01)
+
+       > "전체 화면시에 카드가 웹앱카드랑 똑같은데 전체화면 모드에서는 전체 내용을
+       >  한눈에 잘보이게 … 접힌 카드에도 카드 형식이 아니라 텍스트형식으로
+       >  카드 내용이 정렬되면 더 보기 좋을꺼 같아 … 펼쳤을떄도 무의미한 공간을 없애줘"
+
+       세 칸 격자는 좁은 칸의 카드를 그대로 셋 늘어놓은 것이라, 넓은 화면을
+       쓰면서도 한 장 한 장이 좁았다. 크게 보기의 뜻은 «많이·한눈에» 다.
+
+       ① 접힌 카드 → 한 줄 글줄. 이름·상태 | 품목 | 원송장 | 전화 | 사유 |
+          최근 이력 한 줄 | 날짜·담당 이 가로로 선다. 입력칸·단추줄은 숨긴다.
+       ② 펼친 카드 → 왼쪽 정보 · 오른쪽 이력 «격자». 확대(scale)·큰 글씨를 끄고,
+          맨 앞 이력 한 장을 폭 전체로 늘리던 것(9/17, 좁은 칸용)을 여기선 끈다 —
+          그게 펼친 카드 한복판의 큰 빈 상자였다.
+
+       ★ 크게 보기(.is-max)에서만 ★ 세 칸 화면의 카드는 한 줄도 안 바뀐다.
+       ★ 선택자를 한 겹 무겁게 ★ (.ws-split) 접어 보기·조밀 규칙보다 이긴다.
+       ══════════════════════════════════════════════════════════════ */
+    .ws-split > #pane-returns.is-max #returnActiveList {
+      grid-template-columns: 1fr; gap: 0;
+    }
+    /* ① 접힌 카드 = 시트의 한 줄 + 그 아래 이력 한 줄  (2026-10-01 저녁)
+       > "수정된 반품 카드 내용대로 다 표시되게 해줘..시트랑 거의 똑같이.. 그래야 의미가 있어.
+       >  적요의 카드 내용도 하단 줄에 정렬되고 이미지도 섬네일로"
+       위 줄은 반품관리대장 «협의된 배열» 차례 그대로다(retRowHtml). 머리줄도 시트처럼.
+       아래 줄은 비고에 쌓인 처리 이력을 «전부» 가로로 — 사진은 작은 섬네일(누르면 크게).
+       카드의 왼쪽 칸·단추줄은 이 모드에선 숨긴다 — 같은 값을 두 번 보이면 눈이 갈린다. */
+    /*  ★ 선 색을 따로 둔다 ★ 이 앱의 어두운 테마는 --border 가 투명이라
+        상자·머리줄·점선·편집판 칸막이가 하나도 안 보였다 (2026-10-01). */
+    #pane-returns { --ret-line: rgba(255, 255, 255, 0.12); --ret-zebra: rgba(255, 255, 255, 0.08); }
+    :root[data-theme="light"] #pane-returns { --ret-line: rgba(0, 0, 0, 0.12); --ret-zebra: rgba(0, 0, 0, 0.07); }
+    .ret-row { display: none; }
+    .ws-split > #pane-returns.is-max #returnActiveList { overflow-x: auto; }
+    .ws-split > #pane-returns.is-max .ret-row {
+      display: grid; align-items: start; column-gap: 5px; font-size: 11.5px; line-height: 1.38;
+      /*  상품명·발생원인·적요만 늘고 준다. 단계 칸(이카운트~환불)은 날짜 여섯 자리라 좁게.
+          1920 모니터에선 한 화면, 노트북에선 목록만 옆으로 민다(위 overflow-x). */
+      grid-template-columns: 54px 46px 44px 40px 72px 96px 72px 58px 94px 94px
+                             minmax(150px, 1fr) 28px 96px minmax(90px, 130px) minmax(90px, 150px)
+                             42px 42px 42px 42px 104px;
+      min-width: 1430px;
+    }
+    .ws-split > #pane-returns.is-max .ret-row > span { min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); }
+    .ws-split > #pane-returns.is-max .ret-row .rs { font-size: 10.5px; padding: 1px 6px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-row { display: none; }
+    .ws-split > #pane-returns.is-max .ret-row-head {
+      position: sticky; top: 0; z-index: 4; padding: 6px 11px; margin: 0 0 6px;
+      background: var(--bg-card); border-bottom: 1px solid var(--ret-line); font-weight: 700;
+    }
+    .ws-split > #pane-returns.is-max .ret-row-head > span { color: var(--text-secondary); }
+
+    /*  ★ 한 건씩 상자로 ★  (2026-10-01)
+        > "텍스트만 있어서 구분이 안되네 카드박스로 감싸던 해야 할꺼 같아"
+        글줄만 늘어서면 위 줄의 이력과 아래 건의 칸이 붙어 어디서 끊기는지 안 보였다. */
+    .ws-split > #pane-returns.is-max #returnActiveList > .ret-card:not(.ret-focus) {
+      margin: 0 0 6px; padding: 7px 10px 6px; border-radius: 8px; transform: none; min-width: 1450px;
+      background: var(--bg-secondary); border: 1px solid var(--ret-line);
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus):hover { background: var(--bg-card-hover); }
+    /*  ★ 한 줄 걸러 톤을 살짝 ★  (2026-10-02)
+        > "테두리 상자 내부 칼라를 톤차이를 살짝줘.. 1,3,5,7,9 … 2,4,6,8 이런식으로 교차해서"
+        목록 첫 자식은 머리줄이라, 카드 2·4·6… 번째가 nth-child(odd)다. 바탕색 위에 덧칠만 한다 —
+        색을 박지 않으므로 테마가 바뀌어도 «한 톤 차이»가 그대로 남는다. */
+    .ws-split > #pane-returns.is-max #returnActiveList > .ret-card:not(.ret-focus):nth-child(odd) {
+      background-image: linear-gradient(var(--ret-zebra), var(--ret-zebra));
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-left,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-foot { display: none; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-new-bar { margin: 0 0 3px; padding: 2px 8px; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-body { display: block; }
+    /*  아래 줄 — 처리 이력 전부, 가로로 흐르다 넘치면 다음 줄 */
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-right {
+      display: block; max-width: none; width: auto; margin: 5px 0 0 0;
+      padding-top: 5px; border-top: 1px dashed var(--ret-line);   /* 위는 시트 칸, 아래는 이력 */
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track { display: flex; flex-wrap: wrap; gap: 3px 22px; overflow: visible; padding: 0; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc:first-child,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-tl-track > .ret-proc:first-child.photo {
+      display: flex; flex-direction: row; align-items: center; gap: 6px; flex: 0 1 auto;
+      width: auto; min-width: 0; max-width: 100%; min-height: 0;
+      padding: 0; background: none; border: 0; box-shadow: none;
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-del,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-more { display: none; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-when,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-tag { flex: 0 0 auto; margin: 0; font-size: 11px; white-space: nowrap; color: var(--text-muted); }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-body {
+      flex: 0 1 auto; min-width: 0; max-width: 640px; margin: 0; font-size: 12px;
+      display: block; -webkit-line-clamp: unset; white-space: normal; overflow: visible; color: var(--text-primary);
+    }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs { display: flex; gap: 3px; margin: 0; flex: 0 0 auto; }
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs button,
+    .ws-split > #pane-returns.is-max .ret-card:not(.ret-focus) .ret-proc-thumbs img { width: 34px; height: 34px; }
+
+    /* ③ 편집판 — 크게 보기에서 펼친 카드에만  (2026-10-01)
+       > "펼쳐졌을떄 웹앱카드랑 너무 똑같네.. 전체 모드에서는 디테일한것들을 다보고 수정 추가할수 있어야"
+       왼쪽 요약 · 가운데 편집판 · 오른쪽 처리 이력. 세 칸 화면 카드엔 안 나온다. */
+    .ret-edit { display: none; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit {
+      display: block; flex: 1 1 520px; min-width: 0; font-size: 12px; cursor: default;
+      border-left: 1px solid var(--ret-line); border-right: 1px solid var(--ret-line); padding: 0 14px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-ro { display: flex; flex-wrap: wrap; gap: 2px 14px; color: var(--text-muted); margin-bottom: 8px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-ro b { color: var(--text-primary); font-weight: 600; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px 10px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f.w2 { grid-column: span 2; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f.w4 { grid-column: 1 / -1; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f > label { font-size: 10.5px; color: var(--text-muted); }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f .ret-edit-in {
+      width: 100%; box-sizing: border-box; padding: 4px 7px; font-size: 12px; font-family: inherit;
+      border: 1px solid var(--ret-line); border-radius: 6px;
+      background: var(--bg-secondary); color: var(--text-primary);
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f textarea.ret-edit-in { min-height: 46px; resize: vertical; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f .ret-edit-in:focus { outline: none; border-color: var(--accent-green); }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-f .ret-edit-in.changed { border-color: #ffc107; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-pair { display: flex; gap: 4px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-pair .ret-edit-in { flex: 1 1 auto; min-width: 0; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-today {
+      flex: 0 0 auto; padding: 2px 6px; font-size: 10.5px; cursor: pointer; border-radius: 6px;
+      border: 1px solid var(--ret-line); background: var(--bg-card-hover); color: var(--text-primary);
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-btns { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-edit-hint { font-size: 10.5px; color: var(--text-muted); }
+
+    /* ② 펼친 카드 = 왼쪽 정보 · 오른쪽 이력 격자, 빈자리 없이 */
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus {
+      transform: none; margin: 6px 0 8px; padding: 12px 14px 10px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-body {
+      flex-direction: row; align-items: flex-start; gap: 18px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-left {
+      flex: 0 0 330px; width: auto; max-width: 30%; font-size: 13px;   /* 세 칸 — 편집판이 가운데 (2026-10-01) */
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-left .rn { font-size: 16px; margin-bottom: 4px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-left > div:nth-child(2) { font-size: 13px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-meta { font-size: 13px; margin-top: 3px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-sub { margin-top: 5px; }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-right {
+      flex: 0 1 400px; max-width: none; width: auto; justify-content: flex-start;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 8px; overflow: visible; padding: 0;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track > .ret-proc,
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track > .ret-proc:first-child {
+      width: auto; min-width: 0; min-height: 0; flex: none; padding: 8px 10px;
+    }
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-proc-body { font-size: 12.5px; -webkit-line-clamp: 6; }
+    /*  사진 붙은 맨 앞 이력은 좁은 칸에서 «넓게» 짜던 격자를 쓴다 — 여기선 보통 칸으로 */
+    .ws-split > #pane-returns.is-max .ret-card.ret-focus .ret-tl-track > .ret-proc:first-child.photo { display: block; }
+
     .hb-icon.is-on {
       background: var(--accent, #FDB813);
       color: #1b1e23; border-color: transparent;
@@ -1090,6 +1247,29 @@
     .os-lab { width: 52px; flex-shrink: 0; color: var(--text-muted); }
     .os-val { flex: 1; word-break: break-all; }
     .os-val.big { font-size: 16px; font-weight: 700; color: #fff; }
+    /*  ★ 주소만 작게 ★  (2026-10-07)
+        > "주문송장조회에서 주소는 폰트를 작게 보이게 해줘. 지금의70%정도로
+        >  주소가 기니까 2줄이 되니까.."
+        주소는 한 줄에 다 들어가야 눈으로 한 번에 읽힌다. 두 줄이 되면 아래
+        칸들이 밀려 카드가 길어지고, 전화를 받으면서 읽어 주기도 어렵다.
+
+        ★ px 가 아니라 em 이다 ★ 이 줄의 글자 크기는 자리마다 다르다
+          (.os-row 13px · .ws-pane .os-row 13px · 넓은 표 화면은 또 다르다).
+          px 로 박으면 어느 한 자리에서만 70% 가 된다.
+        복사 단추는 제 크기를 그대로 둔다 — 작아지면 누르기 어렵다.        */
+    /*  0.7em(≈9px)은 전화 받으며 읽기엔 작았다 → 0.8em(≈10.4px). 사장님이 고른 값. */
+    .os-val.os-addr { font-size: 0.8em; line-height: 1.6; }
+    .os-val.os-addr .os-copy { font-size: 11px; }
+    /*  주문처 딱지 — 「전화주문」·「대리판매」. 사방넷 몰 이름은 딱지 없이 글자만
+        둔다. 갈래를 아는 것(전화·대리)만 표시한다.  (2026-10-07)  */
+    .os-origin {
+      display: inline-block; padding: 1px 7px; border-radius: 8px;
+      font-size: 10px; font-weight: 700; letter-spacing: .02em;
+      background: rgba(255,255,255,0.14); color: var(--text-bright);
+    }
+    :root[data-theme="light"] .os-origin {
+      background: rgba(0,0,0,0.08); color: var(--text-primary);
+    }
     .os-inv {
       color: var(--text-bright);
       text-decoration: underline;
@@ -1179,6 +1359,24 @@
     .os-tag.ret-s1 { background: rgba(119, 162, 215,0.18); color: #8cc0ff; }
     .os-tag.ret-s2 { background: rgba(199, 165, 63,0.18); color: #ffc107; }
     .os-tag.ret-s3 { background: rgba(145, 183, 146,0.15); color: #81c784; }
+    /* ★ 2026-10-05 주문 카드 「반품」 줄 — 대장 내용을 그대로. 단계 색은 뱃지와 같다 */
+    .os-ret-line {
+      display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 5px 8px;
+      border: 0; border-radius: 6px; font: inherit; font-size: 12.5px; line-height: 1.45;
+      cursor: pointer; word-break: keep-all; overflow-wrap: anywhere;
+    }
+    .os-ret-line:last-child { margin-bottom: 0; }
+    .os-ret-line:hover { filter: brightness(1.2); }
+    .os-ret-line:focus-visible { outline: 2px solid var(--accent, #ffc107); outline-offset: 1px; }
+    .os-ret-line.ret-s0 { background: rgba(255,255,255,0.09); color: var(--text-secondary); }
+    .os-ret-line.ret-s1 { background: rgba(119, 162, 215,0.18); color: #8cc0ff; }
+    .os-ret-line.ret-s2 { background: rgba(199, 165, 63,0.18); color: #ffc107; }
+    .os-ret-line.ret-s3 { background: rgba(145, 183, 146,0.15); color: #81c784; }
+    .os-ret-by { font-size: 11px; opacity: 0.75; }
+    :root[data-theme="light"] .os-ret-line.ret-s0 { background: rgba(0,0,0,0.06); }
+    :root[data-theme="light"] .os-ret-line.ret-s1 { color: #1b5fa8; }
+    :root[data-theme="light"] .os-ret-line.ret-s2 { color: #8a5300; }
+    :root[data-theme="light"] .os-ret-line.ret-s3 { color: #10714b; }
     .os-return-card {
       background: var(--bg-secondary); border: 1px solid var(--border);
       border-radius: 9px; padding: 9px 10px; margin-bottom: 7px; font-size: 12px;
@@ -1198,6 +1396,21 @@
        또 선. 선이 겹치면 «무엇이 한 덩어리인지»가 되레 안 보인다.
        경계는 «바탕색 차이»로 낸다 — 카드는 밝고 바깥은 어둡다.
        그것으로 충분하고, 눈이 훨씬 조용하다. */
+    /* ★ 상태값 칩 — 그 상태인 것만 보인다 ★  (2026-10-01)
+       > "정렬에서 상태순으로 하라니까 접수부터 나오니까 입고를 보고싶을떈 한참 내려야되..
+       >  상태값(접수, 반품송장등등) 으로 그 상태값의 데이타만 보이게"
+       정렬은 «차례»라 원하는 것이 아래에 있으면 내려가야 한다. 거르기는 «그것만» 남긴다. */
+    .ret-stage-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 6px; }
+    .ret-stage-chips:empty { display: none; }
+    .ret-stage-chip {
+      padding: 3px 10px; border-radius: 999px; font-size: 11.5px; cursor: pointer; font-family: inherit;
+      border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-secondary);
+    }
+    .ret-stage-chip b { margin-left: 4px; font-weight: 700; color: var(--text-primary); }
+    .ret-stage-chip.on { background: var(--accent, #FDB813); border-color: transparent; color: #1b1e23; }
+    .ret-stage-chip.on b { color: #1b1e23; }
+    .ret-stage-chip.zero { opacity: .5; }
+
     .ret-card {
       display: flex; flex-direction: column; gap: 0;
       background: var(--bg-secondary); border: 1px solid transparent;
@@ -1356,6 +1569,8 @@
       box-sizing: border-box;
     }
     .ret-act-pop textarea { min-height: 52px; resize: vertical; margin-top: 0; }
+    /*  사진에 같이 남길 말 — 곁다리라 낮게 둔다(사진 미리보기가 주인이다).  (2026-10-07) */
+    .ret-act-pop textarea.ret-photo-memo { min-height: 38px; margin-top: 6px; }
     .ret-act-pop .pop-label { font-size: 10px; color: var(--text-muted); margin-bottom: 5px; font-weight: 600; }
     .ret-pop-btns { display: flex; gap: 6px; margin-top: 7px; }
     .ret-pop-btns button {
@@ -1405,6 +1620,20 @@
     .ret-case-tl { margin-top: 12px; }
     .ret-tl-track::-webkit-scrollbar { height: 4px; }
     .ret-tl-track::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+    /* ★ PC 에서는 잡을 수 있게 굵게 ★  (2026-10-01)
+       > "반품카드내의 카드 좌우스크롤이 너무 얇아 pc에서 마우스로 클릭하기가 너무 어려워"
+       4px 는 손가락으로 미는 폰 기준이었다. 마우스(pointer: fine)일 때만 10px 로,
+       올리면 진해진다. 폰·태블릿은 그대로 — 거기선 막대를 잡지 않고 민다. */
+    @media (pointer: fine) {
+      .ret-tl-track { padding-bottom: 6px; }
+      .ret-tl-track::-webkit-scrollbar { height: 10px; }
+      .ret-tl-track::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 6px; }
+      .ret-tl-track::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.26); border-radius: 6px; }
+      .ret-tl-track::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.42); }
+      :root[data-theme="light"] .ret-tl-track::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+      :root[data-theme="light"] .ret-tl-track::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.28); }
+      :root[data-theme="light"] .ret-tl-track::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.45); }
+    }
     .ret-proc {
       position: relative;
       flex: 0 0 auto; width: 128px; min-height: 76px;
@@ -1584,6 +1813,9 @@
     }
     .ret-retinv-save[disabled] { opacity: .55; cursor: default; }
     .ret-retinv-edit:hover { background: var(--bg-secondary); }
+    /* 실번호 칸 (2026-10-01) — 반품송장 칸과 같은 꼴. 이름 칸은 번호보다 좁게 */
+    .ret-retinv-in.ret-ph2in-name { flex: 0 1 110px; max-width: 130px; }
+    .ret-metas .ret-ph2-btn { padding: 1px 7px; font-size: 11px; align-self: center; }
 
     .ret-metas {
       display: flex; flex-wrap: wrap; align-items: baseline;
@@ -1889,6 +2121,67 @@
     }
     .ledger-cancel { background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border) !important; }
     .ledger-ok { background: var(--accent-green); color: var(--on-accent); }
+
+    /* ══ 반품대장 기록 창 — 2026-10-01 ═══════════════════════════
+       > "하단부분이 짤리고 하단 아래쪽으로 무분별하게 분리되어 있어"
+
+       증상이 둘인데 원인도 둘이었다.
+         ① 「기록」 단추가 스크롤 맨 끝에 있는데 «스크롤바가 숨겨져»
+            있었다(.modal-content 가 scrollbar-width:none). 더 있는 줄
+            모르니 창이 잘린 것처럼 보인다.
+         ② 칸이 열다섯인데 PC 에서도 420px 한 줄이라 아래로 끝없이
+            늘어졌다. 어디까지가 한 벌인지 안 보인다.
+
+       이 창만 고친다 — 다른 창 여덟 개는 짧아서 탈이 없다.      */
+
+    /* ★ 단추를 바닥에 붙인다 ★ 늘 보여야 한다.
+       창 아래 여백(40px)만큼 끌어내려 바닥에 딱 닿게 한다. */
+    .ledger-sheet .ledger-btns {
+      position: sticky;
+      bottom: -40px;
+      margin-top: 16px;
+      padding: 12px 0 calc(40px + env(safe-area-inset-bottom, 0px));
+      background: var(--bg-card);
+      box-shadow: 0 -10px 12px -8px rgba(0,0,0,0.35);
+      z-index: 2;
+    }
+    /* ★ 이 창은 스크롤바를 보인다 ★ 숨기면 잘린 것처럼 보인다. */
+    .modal-content.ledger-sheet {
+      scrollbar-width: thin;
+      scrollbar-color: var(--text-muted) transparent;
+      -ms-overflow-style: auto;
+      overscroll-behavior: contain;
+    }
+    .modal-content.ledger-sheet::-webkit-scrollbar {
+      display: block; width: 8px; height: 8px;
+    }
+    .modal-content.ledger-sheet::-webkit-scrollbar-thumb {
+      background: var(--text-muted); border-radius: 4px;
+    }
+    .modal-content.ledger-sheet::-webkit-scrollbar-track { background: transparent; }
+
+    /* ★ 넓은 화면에서는 두 칸 ★  (PC 가 기본이다)
+       묶음(.ledger-grid) 안만 접는다 — 미리보기·품목·임시저장·단추는
+       형제라 끌려 들어가지 않는다.
+       길게 적는 칸(메모·사진)은 .wide 로 한 줄을 통째로 쓴다. */
+    @media (min-width: 900px) {
+      .modal-content.ledger-sheet {
+        max-width: 780px;
+        border-radius: 20px;
+        margin-bottom: 4vh;
+        max-height: 92vh;
+      }
+      .ledger-sheet .ledger-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 14px;
+        align-items: start;
+      }
+      .ledger-sheet .ledger-grid > .ledger-field.wide,
+      .ledger-sheet .ledger-grid > .ledger-row2,
+      .ledger-sheet .ledger-grid > .ledger-help,
+      .ledger-sheet .ledger-grid > .lrt-opt { grid-column: 1 / -1; }
+    }
     .os-empty { text-align: center; padding: 48px 16px; color: var(--text-muted); font-size: 14px; }
     .os-toast {
       position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(20px);
@@ -2847,6 +3140,8 @@
     .dep-det-ec.done { border-style: solid; border-color: var(--accent-green); }
     .dep-det-ec.warn { border-style: solid; border-color: var(--accent-orange); }
     .dep-det-ec small { display: block; color: var(--text-muted); font-size: 11px; }
+    .dep-det-order { margin: 6px 0 2px; font-size: 13px; }
+    .dep-det-order b { font-size: 15px; letter-spacing: .02em; }
     .dep-det-ec .row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
     .dep-det-ec input { flex: 1; min-width: 120px; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border);
                         background: var(--bg-secondary); color: var(--text-primary); font-family: inherit; font-size: 12px; }
@@ -3037,11 +3332,257 @@
     .lgw-acts button:disabled { opacity: .4; cursor: default; }
     .lgw-ocr { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-secondary); font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
     .lgw-ocr.err { color: var(--text-muted); }
+    /* ══ CS 문의 (2026-10-02) ══════════════════════════════════
+       접힌 카드가 기본이다. 한 줄에 「거래처 · 상품」, 그 아래 문의 첫 줄.
+       눌러야 펼쳐진다 — 열 건이 다 펼쳐져 있으면 훑을 수가 없다.      */
+    .csq-top { display: flex; gap: 6px; align-items: center; margin: 8px 0 6px; }
+    .csq-top .csq-search { flex: 1; min-width: 0; margin-bottom: 0; }
+    .csq-list { display: flex; flex-direction: column; gap: 6px; }
+    .csq-card {
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg-secondary); padding: 9px 11px; cursor: pointer;
+    }
+    .csq-card:hover { background: var(--bg-card-hover); }
+    .csq-head { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+    .csq-vendor {
+      font-weight: 700; color: var(--text-primary);
+      font-size: calc(13px * var(--hb-text-scale));   /* .hb-title 과 같다 */
+    }
+    /*  펼치면 한 단 키운다 — 보드 카드가 그렇다(.hb-card.open .hb-title) */
+    .csq-card.open .csq-vendor { font-size: calc(15px * var(--hb-text-scale)); }
+    .csq-item {
+      font-size: calc(11px * var(--hb-text-scale));   /* .hb-facts */
+      color: var(--text-secondary); min-width: 0;
+    }
+    .csq-when {
+      margin-left: auto; white-space: nowrap; color: var(--text-muted);
+      font-size: calc(10px * var(--hb-text-scale));   /* .hb-tl-at */
+    }
+    /*  접힌 줄 — 한 줄만. 넘치면 … 로 자른다. 세 줄씩 보이면 못 훑는다. */
+    .csq-one {
+      margin-top: 3px; color: var(--text-secondary);
+      font-size: calc(12px * var(--hb-text-scale));
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /*  후처리요청이 있으면 접힌 채로도 보인다 — 나중에 할 일이라 놓치면 안 된다 */
+    .csq-fu-tag {
+      display: inline-block; margin-top: 4px; padding: 1px 7px; border-radius: 8px;
+      font-size: calc(10px * var(--hb-text-scale)); font-weight: 700;
+      background: rgba(253, 184, 19, 0.14); color: var(--accent, #FDB813);
+    }
+    .csq-body { display: none; margin-top: 8px; }
+    .csq-card.open .csq-body { display: block; }
+    .csq-card.open { background: var(--bg-card-hover); }
+    /*  고유ID 줄 — 번호는 «숫자가 고르게» 보여야 사람이 읽는다.
+        tabular-nums 가 아니라 고정폭을 쓴다 — 표식(r/q)까지 자리가 같아야
+        위아래 카드의 번호가 눈으로 견줘진다. (2026-10-02)              */
+    .csq-uids { display: flex; gap: 6px; align-items: center; margin-top: 3px; flex-wrap: wrap; }
+    .csq-uid, .csq-ref {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: calc(10px * var(--hb-text-scale));
+      padding: 1px 6px; border-radius: 6px; letter-spacing: 0.02em;
+    }
+    .csq-uid { background: var(--bg-primary); color: var(--text-secondary); }
+    /*  ↳ 걸린 건 — 제 번호와 «다른 색»이어야 헷갈리지 않는다 */
+    .csq-ref { background: rgba(253, 184, 19, 0.16); color: var(--text-primary); }
+    .csq-ref-in {
+      width: 100%; margin-top: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: calc(11px * var(--hb-text-scale));
+    }
+    .csq-fu input[type="text"] {
+      width: 100%; padding: 7px 9px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-input, var(--bg-primary));
+      color: var(--text-primary); font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: calc(12px * var(--hb-text-scale));
+    }
+    .csq-label {
+      font-size: calc(10px * var(--hb-text-scale));
+      color: var(--text-muted); margin: 7px 0 3px;
+    }
+    .csq-text {
+      font-size: calc(12px * var(--hb-text-scale)); line-height: 1.55;
+      color: var(--text-primary);
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .csq-fu textarea {
+      width: 100%; min-height: 54px; resize: vertical; padding: 8px 10px;
+      border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-primary); color: var(--text-primary);
+      font-size: calc(12px * var(--hb-text-scale)); font-family: inherit;
+    }
+    .csq-acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .csq-acts button {
+      padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-primary); color: var(--text-secondary);
+      font-size: calc(12px * var(--hb-text-scale));
+      font-weight: 700; font-family: inherit; cursor: pointer;
+    }
+    .csq-acts .ok { background: var(--accent-green); color: var(--on-accent); border-color: transparent; }
+    /*  ★ 문의 사진 썸네일 ★  (2026-10-07)
+        반품 카드의 .ret-proc-thumbs 를 그대로 쓰되 크기만 키운다 —
+        반품은 34px 인데 거기는 좁은 이력 칩 안이고, 여기는 펴진 카드 본문이라
+        그 크기면 무엇을 찍은 것인지 안 보인다.  */
+    .csq-thumbs { margin-top: 6px; gap: 5px; }
+    .csq-thumbs button { width: 56px; height: 56px; }
+    /*  접힌 카드의 「📷 N」 — 열지 않고도 사진이 있는 건을 가려낸다 */
+    .csq-photo-n {
+      padding: 1px 7px; border-radius: 8px; font-weight: 700;
+      font-size: calc(9px * var(--hb-text-scale));
+      background: rgba(255,255,255,0.12); color: var(--text-secondary);
+    }
+    :root[data-theme="light"] .csq-photo-n {
+      background: rgba(0,0,0,0.08); color: var(--text-primary);
+    }
+    .csq-photos { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+    .csq-photos a {
+      display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: var(--bg-primary); color: var(--text-secondary);
+      font-size: calc(11px * var(--hb-text-scale)); text-decoration: none;
+    }
+    /*  완료인데 후처리가 남아 목록에 있는 카드 — 왜 있는지 글로 적어 둔다 */
+    .csq-card.done { opacity: 0.78; }
+
+    /* ══ 바이토 콜백 대기 (2026-10-10) ══ */
+    .byc-list { display: flex; flex-direction: column; gap: 6px; }
+    .byc-card {
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg-secondary); padding: 9px 11px;
+    }
+    .byc-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+    .byc-phone { font-weight: 700; color: var(--text-primary); font-size: calc(14px * var(--hb-text-scale)); }
+    .byc-name { color: var(--text-secondary); font-size: calc(12px * var(--hb-text-scale)); }
+    .byc-tag {
+      font-size: calc(10.5px * var(--hb-text-scale)); font-weight: 700;
+      border-radius: 6px; padding: 1px 6px; white-space: nowrap;
+    }
+    .byc-tag.miss { background: rgba(229, 72, 77, .16); color: #e5484d; }
+    .byc-tag.sms  { background: rgba(253, 184, 19, .22); color: var(--text-primary); }
+    .byc-when { margin-left: auto; white-space: nowrap; color: var(--text-muted); font-size: calc(10.5px * var(--hb-text-scale)); }
+    .byc-body {
+      margin-top: 4px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word;
+      font-size: calc(12.5px * var(--hb-text-scale));
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .byc-photos { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+    .byc-photos img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+    .byc-acts { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+    .byc-acts button {
+      border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary);
+      border-radius: 8px; padding: 4px 10px; font-size: calc(12px * var(--hb-text-scale)); cursor: pointer;
+    }
+    .byc-acts button:hover { background: var(--bg-card-hover); }
+    .byc-acts button.done { margin-left: auto; color: var(--text-muted); }
+    .byc-more { text-align: center; padding: 4px 0; }
+    .byc-empty { color: var(--text-muted); font-size: 13px; padding: 10px 2px; }
+    /* 통화·문자 줄기 — 콜백 카드와 주문 카드가 같이 쓴다 */
+    .byto-tl { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 6px; }
+    .byto-tl-row { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+    .byto-tl-row:last-child { border-bottom: 0; }
+    .byto-tl-at { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+    .byto-tl-what { font-size: 12.5px; color: var(--text-primary); }
+    .byto-tl-what .miss { color: #e5484d; font-weight: 700; }
+    .byto-tl-body { grid-column: 2; white-space: pre-wrap; word-break: break-word; font-size: 12.5px; color: var(--text-secondary); }
+    .byto-tl-photos { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; }
+    .byto-tl-photos img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+    .byto-tl-note { color: var(--text-muted); font-size: 11.5px; padding: 4px 0; }
+    .csq-done-tag {
+      padding: 1px 7px; border-radius: 8px; font-weight: 700;
+      font-size: calc(9px * var(--hb-text-scale));    /* .hb-badge */
+      background: rgba(85, 166, 124, 0.16); color: var(--accent-green);
+    }
+    .csq-by {
+      margin-top: 7px; color: var(--text-muted);
+      font-size: calc(10px * var(--hb-text-scale));
+    }
+    /*  새 문의 — 접혀 있다가 펴진다 */
+    /*  ★ 제목 ★  (2026-10-06)
+        > "타이틀은 너무 작고"
+        .os-dash-title(12px) 로 줄였더니 너무 작았다. 목록을 거느린 칸이라
+        다른 소제목보다는 커야 한다. 14px 굵게, 글자색은 본문색. */
+    .csq-title {
+      font-size: calc(14px * var(--hb-text-scale));
+      font-weight: 700; color: var(--text-primary); letter-spacing: 0.01em;
+    }
+    .csq-title b { color: var(--accent, #FDB813); margin-left: 2px; }
+
+    /*  ★ 검색칸 ★  (2026-10-06)
+        > "CS문의 검색 박스가 너무커"
+        이 칸은 주문 검색창이 아니라 «목록 거르개»다. 작아도 된다. */
+    .csq-search input {
+      height: 28px; font-size: calc(11px * var(--hb-text-scale));
+      padding: 0 10px; border-radius: 8px;
+    }
+
+    /*  ★ 글쓰기 줄 ★ 눌러서 편다. 단추를 따로 두지 않는다 — 하는 일이 같다. */
+    .csq-newbar {
+      cursor: pointer; user-select: none;
+      border: 1px dashed var(--border); border-radius: 8px;
+      padding: 5px 9px; margin-bottom: 6px;
+      color: var(--text-secondary); font-size: calc(11px * var(--hb-text-scale));
+    }
+    .csq-newbar:hover { color: var(--text-primary); background: var(--bg-card-hover); }
+    .csq-newbar.open { border-style: solid; color: var(--text-primary); }
+    .csq-caret { display: inline-block; width: 10px; color: var(--text-muted); }
+    .csq-newbar.open .csq-caret { transform: rotate(90deg); }
+
+    /*  더보기 — 평소엔 일곱 장만. 스무 장이 깔리면 아래 칸이 안 보인다. */
+    .csq-more {
+      margin-top: 6px; text-align: center;
+      font-size: calc(11px * var(--hb-text-scale)); color: var(--text-secondary);
+      padding: 5px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+    }
+    .csq-more:hover { color: var(--text-primary); background: var(--bg-card-hover); }
+
+    /*  ★ 올리기 상자를 더 작게 ★  (2026-10-06)
+        > "단기 올리기 박스도 더 작게"
+        칸이 크면 목록이 아래로 밀린다. 적는 데 모자라지 않을 만큼만 둔다 —
+        내용 칸은 끌어서 늘릴 수 있다(resize: vertical).                  */
+    .csq-new {
+      border: 1px solid var(--border); border-radius: 9px;
+      background: var(--bg-secondary); padding: 7px; margin-bottom: 6px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .csq-new-row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .csq-new input, .csq-new textarea {
+      width: 100%; padding: 5px 8px; border-radius: 7px;
+      border: 1px solid var(--border); background: var(--bg-primary);
+      color: var(--text-primary); font-family: inherit;
+      font-size: calc(11px * var(--hb-text-scale));
+    }
+    .csq-new textarea { min-height: 34px; resize: vertical; }
+    /*  ★ hidden 이 이기게 ★  (2026-10-07)
+        .csq-new 에 display:flex 가 있어 [hidden] 의 display:none 을 이겼다 —
+        접어 둔 글쓰기 칸이 늘 펴져 있었다. #rpmBox 와 «같은 덫»이다.
+        그때는 id 만 훑고 클래스를 안 훑어서 여기를 놓쳤다.                */
+    .csq-new[hidden] { display: none !important; }
+    .csq-new .csq-label { margin-top: 2px; }
+    @media (max-width: 640px) { .csq-new-row { grid-template-columns: 1fr; } }
+    .csq-empty {
+      font-size: calc(12px * var(--hb-text-scale));
+      color: var(--text-muted); padding: 10px 2px;
+    }
+
+    .ret-reship {
+      margin-top: 3px; font-size: 11px; color: var(--accent-green);
+      line-height: 1.4;
+    }
+    .ret-card.ret-focus .ret-reship { font-size: 13px; }
     .ret-intakereq {
       margin-top: 5px; padding: 5px 8px; border-radius: 7px; cursor: pointer;
       background: #fff4d6; color: #6b4a00; font-size: 12px; font-weight: 700; line-height: 1.45;
       border-left: 3px solid #FDB813; word-break: keep-all;
     }
+    /* 반품 영상 칸 (2026-10-01) — 사진 썸네일과 같은 크기로 */
+    .ret-vid {
+      display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+      width: 56px; height: 56px; border-radius: 8px; text-decoration: none;
+      background: #1f1f1f; color: #fff; font-size: 18px; line-height: 1; border: 1px solid var(--border);
+    }
+    .ret-vid span { font-size: 10px; margin-top: 3px; opacity: .85; }
+    .ret-proc-thumbs .ret-vid { width: 34px; height: 34px; font-size: 13px; }
+    .ret-proc-thumbs .ret-vid span { display: none; }
     .lgw-done { font-size: 11px; font-weight: 700; color: var(--accent-orange); margin-left: 4px; }
     .lgw-ocr-t { font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
     .lgw-ocr span { display: inline-block; min-width: 56px; color: var(--text-muted); }
@@ -3054,6 +3595,165 @@
     @media (max-width: 900px) {
       #pane-logistics { display: block; }
     }
+
+    /* ══ 진행 카드 옮기기 (2026-10-06) ══
+       > "오른쪽 버튼을 눌러 이동...이름검색... 맞는지 확인.. 이동"
+       확인을 누르기 «전»에 옮길 줄과 받을 건이 한 화면에 같이 보여야 한다. */
+    #rpmBox { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.55);
+              display: flex; align-items: center; justify-content: center; padding: 16px; }
+    /*  ★ hidden 을 반드시 이기게 둔다 ★  (2026-10-06)
+        [hidden] 의 display:none 은 «UA 기본값»이라 #rpmBox 선택자에 진다.
+        그래서 숨겼는데도 투명한 막이 화면을 통째로 덮어 클릭이 다 막혔다 —
+        화면은 멀쩡히 떠 있고 아무것도 안 눌리는 꼴이 된다.                */
+    #rpmBox[hidden] { display: none !important; }
+    /*  ★ 크게 보기에서 먼저 보여야 하는 셋 ★  (2026-10-07)
+        > "수취인 이름과 주문쇼핑몰 송장번호가 잘 안보여 1포인트 크게 볼드로
+        >  수정해주고 밝은 칼라로 각각 통일시켜줘"
+        칸이 스물이라 다 같은 글씨면 눈이 어디를 봐야 할지 모른다.
+        늘 같은 색이어야 «색만 보고» 찾는다 — 그래서 항목마다 색을 못 박는다.
+        크게 보기(.ret-focus)에서만 — 목록은 빽빽해야 많이 보인다.          */
+    .ret-row .rc-name,
+    .ret-row .rc-vendor,
+    .ret-row .rc-inv,
+    .ret-row .rc-retinv {
+      font-size: calc(1em + 1px); font-weight: 700; letter-spacing: 0.01em;
+    }
+    /*  ★ !important 를 쓴 까닭 ★  (2026-10-07)
+        넓은 표 화면에 .ws-split > #pane-returns.is-max .ret-row > span { color: … } 가 있다.
+        선택자가 훨씬 세서(1,3,1) 여기 색을 덮었다 — 굵기만 먹고 색이 안 들었다.
+        그쪽은 «모든 칸»을 고르게 하려는 것이고 여기 셋은 «일부러» 다르게 두는 것이라
+        이기는 쪽이 맞다. 셋뿐이라 번지지 않는다.                              */
+    .ret-row .rc-name   { color: #FFE9A8 !important; }  /* 수취인 — 파스텔 노랑 */
+    .ret-row .rc-vendor { color: #B3E2FF !important; }  /* 주문 쇼핑몰 — 파스텔 하늘 */
+    .ret-row .rc-inv    { color: #BFEFD2 !important; }  /* 송장번호 — 파스텔 연두 */
+    /*  ★ 반품송장 — 파스텔 분홍 ★  (2026-10-07)  > "반품 송장번호도 잘보이게 해줘"
+        원송장(연두)과 «짝»이라 일부러 먼 색으로 둔다. 노랑·하늘과도 안 겹친다 —
+        네 칸이 색만으로 갈려야 스무 칸 사이에서 눈이 바로 꽂힌다.           */
+    .ret-row .rc-retinv { color: #FFC6D9 !important; }  /* 반품송장 — 파스텔 분홍 */
+    /*  크게 보기(편집판)에서도 같은 색·같은 굵기로.  (2026-10-07)
+        목록의 한 줄과 편집판은 «같은 값»을 보여 준다 — 색이 다르면 다른 것으로 읽힌다. */
+    .ret-edit-in[data-f="name"],
+    .ret-edit-in[data-f="vendor"] {
+      font-size: calc(1em + 1px); font-weight: 700;
+    }
+    .ret-edit-in[data-f="name"]   { color: #FFE9A8; }
+    .ret-edit-in[data-f="vendor"] { color: #B3E2FF; }
+    .ro-inv b { font-size: calc(1em + 1px); font-weight: 700; color: #BFEFD2; }
+    /*  카드의 「반품송장 …」 줄도 같은 색·같은 굵기로. 목록 한 줄과 «같은 값»이다. */
+    .ret-retinv-val { font-size: calc(1em + 1px); font-weight: 700; color: #FFC6D9; }
+
+    /*  ★ 상태값 ★  (2026-10-07)  > "상태값도 잘보이게 해줘"
+        제일 먼저 보는 값이다 — 「지금 어디까지 왔나」. 딱지로 세워 둔다. */
+    .ret-row .rs {
+      font-size: calc(1em + 1px); font-weight: 700; color: #FFFFFF;
+      background: rgba(255,255,255,0.14); border-radius: 7px; padding: 1px 8px;
+    }
+    :root[data-theme="light"] .ret-row .rs {
+      color: #1b1f24; background: rgba(0,0,0,0.10);
+    }
+    :root[data-theme="light"] .ret-edit-in[data-f="name"]   { color: #9A6B00; }
+    :root[data-theme="light"] .ret-edit-in[data-f="vendor"] { color: #0B6E99; }
+    :root[data-theme="light"] .ro-inv b { color: #137A4E; }
+    :root[data-theme="light"] .ret-retinv-val { color: #A01F55; }
+
+    /*  밝은 바탕에서는 그대로 쓰면 글자가 날아간다 — 같은 색을 한 단 내린다 */
+    :root[data-theme="light"] .ret-row .rc-name   { color: #8A5A00 !important; }
+    :root[data-theme="light"] .ret-row .rc-vendor { color: #0A5E85 !important; }
+    :root[data-theme="light"] .ret-row .rc-inv    { color: #10653F !important; }
+    :root[data-theme="light"] .ret-row .rc-retinv { color: #A01F55 !important; }
+
+    /*  ★ 끌어다 놓기 ★  (2026-10-06)  끄는 동안 어디에 놓이는지가 보여야 한다. */
+    .ret-proc[draggable="true"] { cursor: grab; }
+    .ret-proc[draggable="true"]:active { cursor: grabbing; }
+    body.rpm-dragging .ret-card { user-select: none; }
+    body.rpm-dragging .ret-card.rpm-over {
+      outline: 2px dashed var(--accent, #FDB813); outline-offset: -2px;
+      background: rgba(253,184,19,0.08);
+    }
+
+    /*  ★ 끌면 아래에서 쟁반이 올라온다 ★  (2026-10-06)
+        > "드레그시 같은 이름 같은 세트의 카드가 아래쪽에 슥 올라오면
+        >  그곳에 드래그앤 드롭이 되게 … 같은 세트상품이 우선적으로"
+        몸통·뚜껑은 목록에서 멀리 떨어져 있거나 접혀 있다. 찾아 끌고 가는
+        동안 손이 미끄러진다. 받을 만한 건을 «발밑에» 깔아 준다.          */
+    #rpmTray {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 8800;
+      background: var(--bg-secondary); border-top: 2px solid var(--accent, #FDB813);
+      box-shadow: 0 -6px 20px rgba(0,0,0,0.35);
+      padding: 8px 10px 10px; transform: translateY(102%);
+      transition: transform .16s ease-out;
+    }
+    #rpmTray[hidden] { display: none !important; }
+    #rpmTray.up { transform: translateY(0); }
+    .rpmt-h { font-size: 10px; font-weight: 700; color: var(--text-muted);
+      margin-bottom: 6px; letter-spacing: 0.02em; }
+    .rpmt-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+    .rpmt-chip { flex: 0 0 auto; max-width: 240px; padding: 8px 11px; border-radius: 10px;
+      border: 1px dashed var(--border); background: var(--bg-primary);
+      font-size: 11px; color: var(--text-secondary); cursor: copy; }
+    .rpmt-chip b { display: block; color: var(--text-primary); font-size: 12px; }
+    .rpmt-chip.same { border-color: var(--accent, #FDB813); border-style: solid;
+      background: rgba(253,184,19,0.10); }
+    .rpmt-chip.same b { color: var(--accent, #FDB813); }
+    .rpmt-chip.on { outline: 2px solid var(--accent, #FDB813); outline-offset: -2px;
+      background: rgba(253,184,19,0.22); }
+    .rpmt-none { font-size: 11px; color: var(--text-muted); padding: 4px 2px; }
+    /*  ★ 되돌리기 띠 ★  (2026-10-06)
+        > "되돌리기 창이 떠 있으면 잘못 클릭할수도 있으니 하단에 만들어줘"
+        창(모달)으로 띄우면 화면을 덮어 다음 일을 못 하고, 엉뚱한 데를 누른다.
+        아래에 띠로 깔고 한참 두었다가 저절로 걷는다.                     */
+    #rpmUndo {
+      position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 8700;
+      display: flex; align-items: center; gap: 10px;
+      background: var(--bg-secondary); border: 1px solid var(--accent, #FDB813);
+      border-radius: 10px; padding: 9px 12px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+      transform: translateY(140%); transition: transform .18s ease-out;
+    }
+    #rpmUndo[hidden] { display: none !important; }
+    #rpmUndo.up { transform: translateY(0); }
+    .rpmu-txt { flex: 1; min-width: 0; font-size: 12px; color: var(--text-primary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rpmu-txt span { color: var(--text-muted); font-size: 11px; }
+    #rpmUndo button { flex: 0 0 auto; padding: 6px 12px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-primary);
+      color: var(--text-primary); cursor: pointer; font-size: 12px; }
+    #rpmUndo button.undo { border-color: var(--accent, #FDB813);
+      color: var(--accent, #FDB813); font-weight: 700; }
+    @media (min-width: 720px) { #rpmUndo { left: auto; right: 16px; width: 420px; } }
+
+
+    .rpm-card { width: 420px; max-width: 100%; max-height: 86vh; overflow: auto;
+      background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px;
+      padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+    .rpm-h { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+    .rpm-from { font-size: 11px; color: var(--text-secondary); }
+    .rpm-line { font-size: 12px; color: var(--text-primary); background: var(--bg-primary);
+      border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; }
+    #rpmq { width: 100%; height: 32px; padding: 0 10px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-primary);
+      color: var(--text-primary); font-family: inherit; font-size: 12px; }
+    .rpm-hits { max-height: 220px; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+    .rpm-hit { padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px;
+      cursor: pointer; font-size: 12px; color: var(--text-secondary); }
+    .rpm-hit:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+    .rpm-hit b { color: var(--text-primary); margin-right: 5px; }
+    .rpm-uid { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10px;
+      margin-left: 6px; color: var(--text-muted); }
+    .rpm-none { font-size: 11px; color: var(--text-muted); padding: 8px 2px; }
+    /*  같은 이름 묶음 — 세트 몸통·뚜껑이 거의 늘 여기 있다 (2026-10-06) */
+    .rpm-grp { font-size: 10px; font-weight: 700; color: var(--text-muted);
+      margin: 4px 0 1px; letter-spacing: 0.02em; }
+    .rpm-hit.same { border-color: var(--accent, #FDB813);
+      background: rgba(253,184,19,0.08); }
+    .rpm-hit.same b { color: var(--accent, #FDB813); }
+    .rpm-pick { font-size: 12px; color: var(--text-primary);
+      background: rgba(253,184,19,0.14); border-radius: 8px; padding: 7px 9px; }
+    .rpm-acts { display: flex; gap: 6px; justify-content: flex-end; margin-top: 2px; }
+    .rpm-acts button { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font-size: 12px; }
+    .rpm-acts button.ok { background: #1f7a4d; border-color: #1f7a4d; color: #fff; font-weight: 700; }
+    .rpm-acts button:disabled { opacity: 0.45; cursor: default; }
 </style>
 </head>
 <body>
@@ -3238,6 +3938,87 @@
           </div>
           <div class="os-status" id="status">불러오는 중…</div>
           <div id="list"></div>
+          <!-- ══ 바이토 콜백 대기 (2026-10-10) ═══════════════════════════
+               > "1단계 진행하고" — CS 인터넷전화(바이토)의 부재중·받은 문자 중
+                 아직 답하지 않은 것. v2 가 계산한다(/api/byto/cs).
+               ★ 콜백하면 저절로 빠진다 ★ 다음 수집(30분) 때. 카톡으로 답했거나
+                 광고 전화면 「처리함」. 그 뒤에 새로 오면 다시 뜬다. -->
+          <div id="bycBox" class="os-dash">
+            <div class="os-dash-head">
+              <span class="csq-title">📞 콜백 대기 <b id="bycCount">0</b></span>
+              <span class="os-dash-sub" id="bycSub" style="margin-left:8px"></span>
+              <button type="button" class="os-chip ghost" style="margin-left:auto" onclick="loadByto(true)" title="새로 읽기">↻</button>
+            </div>
+            <div id="bycList" class="byc-list"><div class="byc-empty">불러오는 중…</div></div>
+          </div>
+          <!-- ══ CS 문의 (2026-10-02) ═══════════════════════════════
+               > "CS웹앱 입금확인위에 CS문의라는 내용을 만들어줘.
+               >  따로 시트는 만들지 말고 … 카드식으로 … 검색기능도 넣고 …
+               >  접힌 카드 방식으로 클릭하면 펼쳐서 … 처리완료를 누르면
+               >  삭제(화면에서만 데이타는 저장)"
+
+               ★ 새 시트를 안 만든다 ★ 업체 문의는 이미 CS 커뮤니티 보드
+                 (반품관리대장 「CS_커뮤니티보드」 탭)로 들어온다 —
+                 포털 prpBoard.prpPostInquiryToBoard_ 가 넣는다.
+                 여기서는 그 카드를 «문의 보기»로 다시 보여 줄 뿐이다.
+
+               ★ 처리완료는 지우는 게 아니다 ★ 상태만 「완료」로 바꾼다.
+                 줄은 그대로 남고 화면에서만 빠진다. 후처리요청은 완료
+                 뒤에도 살아 있다 — 문의는 끝나도 그 일은 다음 달에 한다. -->
+          <!--  ★ 접히는 것은 «글쓰기»뿐이다 ★  (2026-10-06)
+                > "문의글 쓰기부분만 접혀있는 상태인거지"
+                목록은 늘 보인다 — 처리할 문의가 몇 건인지 눈에 안 띄면 안 본다.
+                글쓰기 칸만 접어 둔다. 늘 펴 두면 목록이 아래로 밀린다. -->
+          <div id="csqBox" class="os-dash">
+            <div class="os-dash-head">
+              <span class="csq-title">💬 After CS <b id="csqCount">0</b></span>
+              <span class="os-dash-sub" id="csqSub"></span>
+            </div>
+            <div class="csq-top">
+              <div class="os-search csq-search">
+                <input id="csqq" type="search" autocomplete="off"
+                       placeholder="거래처·상품·내용"
+                       oninput="renderCsq()">
+              </div>
+              <button type="button" class="os-chip ghost" onclick="loadCsq(true)" title="새로 읽기">↻</button>
+            </div>
+            <!--  ★ 글쓰기 — 한 줄로 접어 둔다 ★
+                  > "바로 글쓸수 있는데 새문의는 왜 있는거지?"
+                  여태 「+ 새 문의」 단추와 접힌 상자가 따로 있었다. 단추가 하는 일이
+                  「상자를 편다」뿐이라 둘일 까닭이 없다. 상자 자체를 눌러 편다. -->
+            <div class="csq-newbar" id="csqNewBar" onclick="csqNewToggle()">
+              <span class="csq-caret">▸</span> 문의 남기기
+            </div>
+            <div class="csq-new" id="csqNew" hidden>
+              <div class="csq-new-row">
+                <input id="csqnVendor" type="text" placeholder="거래처">
+                <input id="csqnItem" type="text" placeholder="상품">
+              </div>
+              <!--  관련 번호 (2026-10-02, sql/76) — 반품·발주 건에 걸린 문의면 그 번호.
+                    ★ 적어 두면 그 번호로 양쪽이 다 찾아진다 ★ 안 적으면 문의는
+                    문의끼리만 남아, 나중에 그 반품 건을 보는 사람은 이 글을 못 본다. -->
+              <input id="csqnRef" type="text" class="csq-ref-in"
+                placeholder="관련 번호 (선택) — 반품 r1002000003 · 발주 d1002000047">
+              <textarea id="csqnBody" placeholder="문의 내용"></textarea>
+              <textarea id="csqnFollowup" placeholder="후처리 요청 (선택) — 나중에 해야 할 일"></textarea>
+              <!--  사진 — 반품 쪽과 같은 길이다. 고르면 줄여서 들고 있다가
+                    「올리기」를 누를 때 v2 보관소로 보내고 링크만 담는다.
+                    스크린샷은 Ctrl+V 로도 붙는다(retHandlePaste). -->
+              <div class="csq-label">사진 (선택 · 스크린샷은 Ctrl+V)</div>
+              <div class="ret-photo-pick">
+                <label class="pk">촬영<input type="file" accept="image/*" capture="environment"
+                  onchange="csqPhotoPick(null, this)"></label>
+                <label class="pk">앨범<input type="file" accept="image/*" multiple
+                  onchange="csqPhotoPick(null, this)"></label>
+              </div>
+              <div id="csqnPhotoPrev"></div>
+              <div class="csq-acts">
+                <button type="button" onclick="csqNewToggle()">닫기</button>
+                <button type="button" class="ok" id="csqnSave" onclick="csqNewSave()">올리기</button>
+              </div>
+            </div>
+            <div id="csqList" class="csq-list"></div>
+          </div>
           <!-- 오늘 입금 (2026-09-29) — "위치를 주문 송장 검색 아래로 바꿔줘"
                검색 결과(#list) «아래»에 둔다. 위에 두면 검색할 때마다 결과가 입금 10줄 밑으로 밀린다. -->
           <div id="depositBox" class="os-dash">
@@ -3277,7 +4058,18 @@
               <option value="chg">최신 변경순</option>
               <option value="gap">빠진 것 먼저</option>
               <option value="vendor">업체순</option>
+              <!-- 접수자순 (2026-10-02) — 「누가 받은 건」끼리 모아 본다.
+                   업체순과 같은 짜임이다: 사람끼리 묶고 그 안에서 최신순. -->
+              <option value="staff">접수자순</option>
               <option value="stage">상태순</option>
+            </select>
+            <!-- 접수자 거르개 (2026-10-02) — 한 사람 것만 본다.
+                 ★ 목록은 코드에 안 박는다 ★ 사람이 들고 나는데 박아 두면
+                 그만둔 사람이 남고 새로 온 사람이 빠진다. 지금 화면에 있는
+                 건들에서 모아 채운다(retFillStaffPick). -->
+            <select id="retStaffPick" class="ret-sort" title="접수자로 거르기"
+                    aria-label="접수자로 거르기" onchange="setReturnStaffFilter(this.value)">
+              <option value="">접수자 전체</option>
             </select>
             <!-- 접기 — 이름·품목·상태만 남긴다. 카드를 눌러 하나씩 펼 수 있다 (2026-09-20) -->
             <button type="button" class="hb-icon" id="retFold" title="접어 보기 (이름·품목·상태만)"
@@ -3295,6 +4087,8 @@
             <button type="button" class="hb-new" title="새 반품 카드" aria-label="새 반품 카드"
                     onclick="openRetNewModal()">＋</button>
           </div>
+          <!-- 상태값으로 거르기 — 그 상태인 것만 (2026-10-01) -->
+          <div class="ret-stage-chips" id="retStageChips"></div>
           <div class="os-status" id="returnStatus">불러오는 중…</div>
           <div id="returnPulseBar" class="cs-pulse-bar" style="display:none"
                onclick="applyPulsePending('ret')"></div>
@@ -3632,8 +4426,27 @@
         </div>
       </div>
       <div class="ledger-field">
-        <label>품목</label>
+        <label>품목 <span style="color:var(--text-muted)">(돌려받는 것)</span></label>
         <input id="retNewItem" type="text" placeholder="품목명">
+      </div>
+      <!--  ★ 둘 다 적는다 ★  (2026-10-02)
+            > "둘다 적으면 좋겠네"
+            세트가 뚜껑만 나가면 두 가지가 같이 움직인다 —
+              고객이 «돌려보내는 것» 뚜껑 4 → 위 「품목」
+              우리가 «다시 보내는 것» 몸통 1 → 이 칸
+            한 칸에 뭉뚱그리면 「이번 달 뚜껑 반품 몇 건」을 셀 수 없다.
+            협의된 배열에는 빈 칸이 없어 비고에 「재출고: …」로 남긴다.  -->
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>재출고 상품 (선택 · 다시 보내는 것)</label>
+          <input id="retNewReship" type="text"
+                 placeholder="예: 220파이 감자탕 중 백색 몸통 1">
+        </div>
+        <div class="ledger-field">
+          <label>재출고 배송비 (선택)</label>
+          <input id="retNewReshipFee" type="text" inputmode="numeric"
+                 placeholder="우리가 보내며 쓴 돈">
+        </div>
       </div>
       <div class="ledger-row2">
         <div class="ledger-field">
@@ -3663,14 +4476,13 @@
         </div>
         <div class="ledger-field">
           <label>상태</label>
-          <select id="retNewStatus">
-            <option value="접수" selected>접수</option>
-            <option value="수거요청">수거요청</option>
-            <option value="수거중">수거중</option>
-            <option value="반품입고">반품입고</option>
-            <option value="입고검수">입고검수</option>
-            <option value="환불처리">환불처리</option>
-          </select>
+          <!--  ★ 시트가 받는 말과 달랐다 ★  (2026-10-01)
+                여기에 「수거요청·수거중·반품입고·환불처리」가 박혀 있었는데,
+                대장 상태 드롭다운은 「접수·반품송장·입고검수·이카운트OK」 넷만
+                받는다(setAllowInvalid(false)). 그 넷 밖을 고르면 시트가
+                «쓰기를 거절»해 카드가 안 만들어진다.
+                목록은 서버 표(_CS_RETURN_STATUS_OPTS_) 하나에서만 온다. -->
+          <select id="retNewStatus"></select>
         </div>
       </div>
       <!--  ★ 귀책과 사유  (2026-09-30)
@@ -3772,7 +4584,7 @@
   </div>
 
   <div class="modal-overlay" id="ledgerModal">
-    <div class="modal-content" style="max-height:88vh;overflow-y:auto;">
+    <div class="modal-content ledger-sheet" style="max-height:88vh;overflow-y:auto;">
       <div class="modal-handle"></div>
       <div class="modal-title">반품관리대장 기록</div>
       <div class="ledger-preview" id="ledgerPreview"></div>
@@ -3790,6 +4602,13 @@
         <span class="dm"></span>
         <button type="button" class="dx" onclick="draftDiscard('ledger')">새로 작성</button>
       </div>
+      <!--  ★ 적는 칸들을 한 묶음으로 ★  (2026-10-01)
+            > "하단부분이 짤리고 하단 아래쪽으로 무분별하게 분리되어 있어"
+            칸이 열다섯인데 420px 한 줄로 세워 두니 아래로 끝없이 늘어졌다.
+            넓은 화면에서는 이 묶음만 두 칸으로 접는다 (.ledger-grid).
+            묶음으로 싸는 까닭은 미리보기·품목·임시저장·단추가 형제라,
+            창 자체를 그리드로 만들면 그것들까지 끌려 들어가기 때문이다.  -->
+      <div class="ledger-grid">
       <div class="ledger-field">
         <label>접수자</label>
         <select id="ledgerStaff"></select>
@@ -3806,10 +4625,70 @@
           <label>귀책</label>
           <select id="ledgerFault" onchange="retFillReasons('ledger')"></select>
         </div>
+        <!--  ★ 2026-10-01 고침 ★ 이 칸의 «여는» 태그와 라벨이 빠져 있었다.
+              그래서 닫는 태그가 하나 남아 .modal-content 가 여기서 «일찍 닫혔고»,
+              뒤따르는 칸들(상태·실번호·수거입력처·반품비·환불계좌·메모·사진)과
+              「기록」 단추가 창 «밖»으로 밀려났다 — 사장님이 본
+              「하단이 잘리고 아래쪽으로 무분별하게 분리된」 모양이 이것이다.
+              접수 창(retNewReason)과 같은 모양으로 되돌린다.  -->
         <div class="ledger-field">
           <label>사유</label>
+          <!-- 빈칸으로 둘 수 있다. 목록에 없는 사유는 아래 메모에 적는다 —
+               「기타」를 골라 대장에 「기타」가 적히면 아무 뜻도 없다. -->
           <select id="ledgerReason"></select>
         </div>
+      </div>
+      <!--  ★ 상태는 «반드시» 있어야 한다 ★  (2026-10-01)
+            이 화면에만 상태 칸이 없어서, 여기서 올린 카드는 대장 상태값이
+            «빈 칸»으로 들어갔다. 상태가 비면 카드 단계가 안 잡히고
+            필터(입고 대기·환불 대기)에서도 샌다.
+            반품탭 접수(retNew)와 같은 목록을 쓴다.  -->
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>상태</label>
+          <select id="ledgerStatus"></select>
+        </div>
+        <div class="ledger-field">
+          <label>실번호 (선택)</label>
+          <input id="ledgerPhone2" type="tel" inputmode="numeric"
+                 placeholder="안심번호면 실제 번호를 받아 적으세요">
+        </div>
+      </div>
+      <div class="ledger-field">
+        <label>실번호 주인 (선택)</label>
+        <!-- 누구 번호인지 — 대신 받아 준 사장님·직원일 때가 많다 -->
+        <input id="ledgerPhone2Name" type="text" maxlength="20" placeholder="예: 가게 사장님">
+      </div>
+      <!--  ★ 둘 다 적는다 ★  (2026-10-02)
+            > "둘다 적으면 좋겠네"
+            세트가 뚜껑만 나가면 두 가지가 같이 움직인다 —
+              고객이 «돌려보내는 것» 뚜껑 4 → 위 「품목」
+              우리가 «다시 보내는 것» 몸통 1 → 이 칸
+            한 칸에 뭉뚱그리면 「이번 달 뚜껑 반품 몇 건」을 셀 수 없다.
+            협의된 배열에는 빈 칸이 없어 비고에 「재출고: …」로 남긴다.  -->
+      <div class="ledger-row2">
+        <div class="ledger-field">
+          <label>재출고 상품 (선택 · 다시 보내는 것)</label>
+          <input id="ledgerReship" type="text"
+                 placeholder="예: 220파이 감자탕 중 백색 몸통 1">
+        </div>
+        <div class="ledger-field">
+          <label>재출고 배송비 (선택)</label>
+          <input id="ledgerReshipFee" type="text" inputmode="numeric"
+                 placeholder="우리가 보내며 쓴 돈">
+        </div>
+      </div>
+      <!--  ★ 업체(거래처) ★  (2026-10-07)
+            > "반품대장 기록에 업체도 적을수 있게.. 자동이면 좋고"
+            대장의 「거래처」 열이다 — 「주문이 어디서 왔나」를 적는 칸으로,
+            9월에 「업체명」 → 「주문지」, 10월에 「거래처」로 이름만 바뀌었다.
+            서버(submitReturnLedger)는 이미 data.vendor 를 그 열에 적고 있었다 —
+            빠진 것은 «적을 칸»뿐이었다. 그래서 이 창에서만 늘 비어 나갔다.
+            자동값은 출발점이지 결론이 아니다. 반품비와 같이 까닭을 적어 둔다. -->
+      <div class="ledger-field">
+        <label>업체 (거래처 · 주문이 어디서 왔나)</label>
+        <input id="ledgerVendor" type="text" placeholder="예: 법인/쿠팡 · 대리발송-리바이">
+        <div class="ledger-fee-why" id="ledgerVendorWhy"></div>
       </div>
       <div class="ledger-field">
         <label>수거입력처 (대리공급은 택배사 자동)</label>
@@ -3827,7 +4706,7 @@
       <div class="ledger-field lrt-opt" id="lrtOpt" hidden>
         <label class="lrt-check">
           <input type="checkbox" id="lrtWant">
-          <span>롯데 회수 접수도 같이 보냅니다 <b id="lrtWhen"></b></span>
+          <span><b id="lrtWho">롯데</b> 회수 접수도 같이 보냅니다 <b id="lrtWhen"></b></span>
         </label>
         <div class="lrt-hint">체크하면 기록 전에 한 번 더 확인합니다.</div>
       </div>
@@ -3839,11 +4718,11 @@
         <!-- 은행·번호·예금주를 한 칸에 그대로 받는다. 쪼개면 은행 표기가
              제각각이라 반드시 틀린다. 돈이 걸린 값은 원문이 안전하다. -->
       </div>
-      <div class="ledger-field">
+      <div class="ledger-field wide">
         <label>메모 (고객요청/유의사항)</label>
         <textarea id="ledgerMemo" placeholder="필요하면 적고, 없으면 비워 두세요"></textarea>
       </div>
-      <div class="ledger-field">
+      <div class="ledger-field wide">
         <label>사진 (선택 · 스크린샷은 Ctrl+V · 기록과 함께 올라갑니다)</label>
         <div class="ret-photo-pick">
           <label class="pk">촬영<input type="file" accept="image/*" capture="environment"
@@ -3853,6 +4732,7 @@
         </div>
         <div id="ledgerPhotoPrev"></div>
       </div>
+      </div><!-- /.ledger-grid -->
       <div class="ledger-btns">
         <button class="ledger-cancel" type="button" onclick="closeLedger(true)">취소</button>
         <button class="ledger-ok" type="button" id="ledgerSubmitBtn" onclick="submitLedger(false)">기록</button>
@@ -3868,7 +4748,7 @@
     <div class="modal-content" style="max-height:88vh;overflow-y:auto;">
       <div class="modal-handle"></div>
       <div class="modal-title">🚚 롯데 회수 접수</div>
-      <div class="lrt-warn">접수하면 기사가 방문합니다. <b>취소는 롯데에 직접 연락해야 합니다.</b></div>
+      <div class="lrt-warn" id="lrtWarn">접수하면 기사가 방문합니다. <b>취소는 롯데에 직접 연락해야 합니다.</b></div>
       <div class="lrt-body" id="lrtBody"></div>
       <div class="lrt-by">접수자 <b id="lrtBy"></b></div>
       <div class="ledger-btns">
@@ -4021,6 +4901,11 @@
       loadReturnActive(false);
       renderOrderDashboard();
       loadStockout();   /* 팩투유 품절상품 — 화면 열 때 한 번 (2026-09-11) */
+      loadCsq();        /* CS 문의 — 열 때 한 번, 10분 지나면 다시 (2026-10-02) */
+      loadByto(true);   /* 바이토 콜백 대기 — 열 때 한 번, 그 뒤 2분마다 (2026-10-10) */
+      /*  수집기가 «새 연락이 오면 바로» 돌게 됐다(byto-watch, 1~2분). 화면이 5분마다
+          읽으면 그게 병목이 된다. v2 한 번 묻는 값이라 2분이어도 가볍다.  */
+      setInterval(function () { if (!document.hidden) loadByto(true); }, 120000);
       renderDeposits(); /* 오늘 입금 — 열 때 한 번, 그 뒤 1분마다 (2026-09-29) */
       depPaintSoundBtn(); /* 입금 소리 켜짐/꺼짐 (2026-09-30) */
       startCsPulse();
@@ -6207,6 +7092,7 @@
         fields: ['retNewStaff', 'retNewName', 'retNewPhone', 'retNewPhone2', 'retNewPhone2Name', 'retNewInvoice', 'retNewQty',
                  'retNewItem', 'retNewVendor', 'retNewPickup', 'retNewRetInvoice',
                  'retNewFee', 'retNewType', 'retNewFault', 'retNewReason',
+                 'retNewReship', 'retNewReshipFee',
                  'retNewStatus', 'retNewAccount', 'retNewMemo'],
         /*  사유 목록은 귀책에 딸려 있다 — 되살릴 때 «순서»가 있다.  (2026-09-30)
             위 칸 되살리기는 값만 넣는다(onchange 가 안 돈다). 그래서 사유
@@ -6232,7 +7118,8 @@
       ledger: {
         modal: 'ledgerModal', bar: 'ledgerDraftBar', requireScope: true,
         fields: ['ledgerStaff', 'ledgerType', 'ledgerFault', 'ledgerReason',
-                 'ledgerPickup', 'ledgerFee', 'ledgerAccount', 'ledgerMemo'],
+                 'ledgerStatus', 'ledgerPhone2', 'ledgerPhone2Name',
+                 'ledgerVendor', 'ledgerPickup', 'ledgerFee', 'ledgerAccount', 'ledgerMemo'],
         /*  retNew 와 같은 까닭 — 되살리기는 값만 넣어 onchange 가 안 돈다.
             목록을 채운 «뒤에» 사유를 다시 넣는다. (2026-09-30)  */
         load: function (v) {
@@ -6240,6 +7127,13 @@
           retFillReasons('ledger');
           var r = document.getElementById('ledgerReason');
           if (r && v && v.ledgerReason) r.value = v.ledgerReason;
+          /*  업체는 자동으로 채워 두었는데 임시저장이 그 위를 덮는다 —
+              그러면 밑의 「자동 — …」이 거짓말이 된다. 되살린 것이라고 적는다. */
+          var vw = document.getElementById('ledgerVendorWhy');
+          if (vw && v && typeof v.ledgerVendor === 'string') {
+            vw.textContent = v.ledgerVendor
+              ? '임시저장에서 되살림 — 다르면 고치세요' : '';
+          }
         },
         scope: function() {
           var r = CS_ROWS[LEDGER_IDX] || {};
@@ -7574,11 +8468,19 @@
     }
 
     function dashFilterReturn(status) {
+      /*  (2026-10-01) 상태 이름을 검색어로 넣던 것을 상태값 거르기로 바꿨다 —
+          검색은 메모에 「접수」 글자만 있어도 걸린다. 칩은 «그 상태인 것만»이다. */
       var rq = document.getElementById('rq');
-      if (rq) rq.value = status;
-      RETURN_QUERY = status;
-      RETURN_SHOW_LIMIT = 30;
-      doReturnSearch(true);
+      if (rq) rq.value = '';
+      RETURN_QUERY = '';
+      RETURN_STAGE_FILTER = '';
+      /*  접수자 거르개도 푼다 (2026-10-02).
+          대시보드에서 「입고검수 12건」을 눌렀는데 3건만 보이면, 왜 그런지
+          모른 채 숫자가 틀렸다고 여긴다. 이 단추는 «그 상태 전부»를 뜻한다.
+          거르개 칸은 「접수자 전체」로 돌아가므로 눈에도 보인다.  */
+      RETURN_STAFF_FILTER = '';
+      try { localStorage.setItem('CS_RET_STAFF', ''); } catch (e) {}
+      setReturnStageFilter(status);
       wsGoToPane(1);
     }
 
@@ -7697,6 +8599,773 @@
         html += '</div>';
       }
       el.innerHTML = html;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+     *  CS 문의  (2026-10-02)
+     *
+     *  > "CS웹앱 입금확인위에 CS문의라는 내용을 만들어줘 … 거래처, 상품,
+     *  >  문의 내용, 후처리요청, 사진등이 나오게 카드식으로 … 검색기능도
+     *  >  넣고 … 접힌 카드 방식으로 클릭하면 펼쳐서 … 처리완료를 누르면
+     *  >  삭제(화면에서만 데이타는 저장)"
+     *  > "CS_커뮤니티보드에서 불러오는게 아니고 이건 별도로 저장해줘
+     *  >  시트말고 바르셀 데이타로.."
+     *
+     *  ★ 저장은 v2 다 (cs_inquiries · sql/74) ★
+     *    시트도 보드도 아니다. 보드는 «오늘 넘길 일»이 사는 곳이고 문의는
+     *    거래처와 상품에 매인 일이다 — 섞으면 둘 다 흐려진다.
+     *    GAS 는 Supabase 를 직접 못 부르므로 csInquiry.gs 가 v2 문으로 간다.
+     *
+     *  ★ 처리완료는 지우는 게 아니다 ★ status 만 「완료」가 되고 줄은 남는다.
+     *    후처리요청은 완료 뒤에도 산다 — 「1000개 되면 추가 발송」은 다음 달 일이다.
+     *    그래서 목록은 «진행 + 후처리 남은 완료»를 받는다.
+     */
+    var CSQ_ROWS = [];
+    /*  ★ 펴지는 카드는 «하나»다 ★  (2026-10-07)
+        > "after cs도 카드 클릭하면 하나만 펼쳐지고 나머지는 접혀있게..
+        >  다른부분들처럼 해줘"
+        전에는 맵(CSQ_OPEN)이라 여러 장이 동시에 펴졌다. 접힌 카드 목록이
+        그 바람에 길어져 「짧게 보고 고른다」는 뜻이 없어졌다.
+        반품 카드(RETURN_FOCUS_IDX)·보드 카드(HB_OPEN_ID)는 이미 한 장뿐이다.
+
+        ★ 값 하나로 합쳤다 ★ 전에는 CSQ_OPEN(어느 것이 펴졌나)과
+          CSQ_LAST_OPEN(마지막으로 편 것) 둘이 같은 것을 정하고 있었다.
+          한 장뿐이면 둘이 늘 같은 값이라 가를 까닭이 없다. */
+    var CSQ_OPEN_ID = '';     // 펴 둔 카드 하나 — 다시 그려도 그대로 둔다
+    var CSQ_AT = 0;
+    var csqBusy = false;
+
+    function csqMatch(c, q) {
+      if (!q) return true;
+      /*  ★ 번호로도 찾는다 ★  (2026-10-02, sql/76)
+          > "다 연결되어 연동..찾기가 가능하고 추적가능하게"
+          c.uid 는 이 문의 번호, c.ref_uid 는 걸린 건의 번호다. 둘 다
+          넣어야 「이 반품 건에 걸린 문의」를 번호로 끌어올 수 있다.  */
+      return [c.vendor, c.item, c.body, c.followup, c.created_by, c.uid, c.ref_uid]
+        .join(' ').toLowerCase().indexOf(q) >= 0;
+    }
+
+    /** 2026-10-02T06:03:53Z → 10-02 15:03 (서울). 자리만 차지하는 초는 뗀다 */
+    function csqWhen(iso) {
+      var d = new Date(String(iso || ''));
+      if (isNaN(d.getTime())) return '';
+      var p = function (n) { return (n < 10 ? '0' : '') + n; };
+      return p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +
+        p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+
+    /*  평소에 보일 카드 수 — 일곱 장 (2026-10-06) */
+    var CSQ_FOLD_N = 7;
+    var CSQ_ALL = false;
+
+    /*  못 읽었을 때 — 까닭과 «무엇을 하면 되는지»를 같이 적는다.
+        까닭만 적으면 사람은 그 글만 보고 기다린다.  (2026-10-06)  */
+    function csqError(까닭) {
+      var el = document.getElementById('csqList');
+      if (!el) return;
+      el.innerHTML =
+        '<div class="csq-empty">문의를 못 읽었습니다 — ' + esc(String(까닭).slice(0, 160)) +
+        '<br><br><button type="button" class="btn" onclick="loadCsq(true)">다시 읽기</button>' +
+        '</div>';
+    }
+
+    /* ══ 바이토 — 콜백 대기 · 통화·문자 (2026-10-10) ══════════════════
+       자료는 v2 에 있다. CS PC 수집기가 30분마다 바이토 「내보내기」를 대신 눌러 올린다.
+       여기서는 csByto.gs 를 거쳐 v2 /api/byto/cs 에 묻기만 한다.                       */
+    var BYC_CARDS = [], BYC_AT = 0, bycBusy = false, BYC_ALL = false, BYC_COLLECTED = '';
+
+    function bytoPhone(d) {
+      var s = String(d || '');
+      if (/^01\d{8,9}$/.test(s)) return s.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
+      if (/^02\d{7,8}$/.test(s)) return s.replace(/^(02)(\d{3,4})(\d{4})$/, '$1-$2-$3');
+      if (/^0\d{9,10}$/.test(s)) return s.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
+      return s;
+    }
+    function bytoWhen(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      var w = '일월화수목금토'.charAt(d.getDay());
+      var hh = ('0' + d.getHours()).slice(-2), mm = ('0' + d.getMinutes()).slice(-2);
+      var today = new Date(); today.setHours(0, 0, 0, 0);
+      if (d >= today) return '오늘 ' + hh + ':' + mm;
+      return (d.getMonth() + 1) + '/' + d.getDate() + '(' + w + ') ' + hh + ':' + mm;
+    }
+
+    function loadByto(force) {
+      if (bycBusy) return;
+      if (!force && BYC_AT && Date.now() - BYC_AT < 300000) { renderByto(); return; }
+      bycBusy = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          bycBusy = false;
+          if (!res || !res.ok) { bycError((res && res.error) || '까닭 모름'); return; }
+          BYC_AT = Date.now();
+          BYC_CARDS = res.cards || [];
+          BYC_COLLECTED = res.collectedAt || '';
+          renderByto();
+        })
+        .withFailureHandler(function (e) { bycBusy = false; bycError(String((e && e.message) || e || '까닭 모름')); })
+        .csBytoCallbacks({ days: 3 });
+    }
+
+    function bycError(까닭) {
+      var el = document.getElementById('bycList');
+      if (!el) return;
+      el.innerHTML = '<div class="byc-empty">콜백 대기를 못 읽었습니다 — ' + esc(String(까닭).slice(0, 160)) +
+        ' <button type="button" class="btn" onclick="loadByto(true)">다시 읽기</button></div>';
+    }
+
+    function renderByto() {
+      var list = document.getElementById('bycList');
+      if (!list) return;
+      var n = BYC_CARDS.length;
+      document.getElementById('bycCount').textContent = n;
+      /*  ★ 몇 분 전 자료인지 말한다 ★ 30분마다 받아 오므로, 방금 콜백한 건이
+          아직 남아 있을 수 있다. 그걸 「안 빠진다」로 오해하지 않게.  */
+      var subEl = document.getElementById('bycSub');
+      subEl.textContent = '최근 3일' + (BYC_COLLECTED ? ' · ' + bytoWhen(BYC_COLLECTED) + ' 기준' : '');
+      subEl.title = '바이토 부재중·받은 문자 중 아직 답하지 않은 것. 30분마다 받아 옵니다 — 콜백하면 다음 수집 때 저절로 빠집니다';
+      if (!n) { list.innerHTML = '<div class="byc-empty">답할 부재중·문자가 없습니다 👍</div>'; return; }
+      var show = BYC_ALL ? BYC_CARDS : BYC_CARDS.slice(0, 6);
+      var h = show.map(bycCardHtml).join('');
+      if (n > show.length) {
+        h += '<div class="byc-more"><button type="button" class="os-chip ghost" onclick="BYC_ALL=true;renderByto()">' +
+             (n - show.length) + '건 더 보기</button></div>';
+      } else if (BYC_ALL && n > 6) {
+        h += '<div class="byc-more"><button type="button" class="os-chip ghost" onclick="BYC_ALL=false;renderByto()">접기</button></div>';
+      }
+      list.innerHTML = h;
+    }
+
+    function bycCardHtml(c) {
+      var key = 'c' + c.phone;
+      var h = '<div class="byc-card" id="byc-' + esc(c.phone) + '"><div class="byc-head">' +
+        '<span class="byc-phone">' + esc(bytoPhone(c.phone)) + '</span>' +
+        (c.contactName ? '<span class="byc-name">' + esc(c.contactName) + '</span>' : '') +
+        (c.missed ? '<span class="byc-tag miss">부재중 ' + c.missed + '</span>' : '') +
+        (c.sms ? '<span class="byc-tag sms">문자 ' + c.sms + '</span>' : '') +
+        '<span class="byc-when">' + esc(bytoWhen(c.lastAt)) + '</span></div>';
+      if (c.lastBody) h += '<div class="byc-body">' + esc(c.lastBody) + '</div>';
+      else if (c.sms && !(c.photos || []).length) h += '<div class="byc-body">(사진 문자 — 사진을 아직 못 받았습니다)</div>';
+      if ((c.photos || []).length) {
+        h += '<div class="byc-photos">' + c.photos.map(function (u) {
+          return '<a href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="고객 사진" loading="lazy"></a>';
+        }).join('') + '</div>';
+      }
+      h += '<div class="byc-acts">' +
+        '<button type="button" onclick="bytoFindOrders(\'' + js(c.phone) + '\')">주문 찾기</button>' +
+        '<button type="button" onclick="bytoToggleTl(\'' + js(key) + '\', \'' + js(c.phone) + '\', this)">통화·문자</button>' +
+        '<button type="button" onclick="copyText(\'' + js(bytoPhone(c.phone)) + '\')">번호 복사</button>' +
+        '<button type="button" class="done" onclick="bytoDone(\'' + js(c.phone) + '\', this)">처리함</button>' +
+        '</div><div class="byto-tl" id="bytoTl-' + esc(key) + '" hidden></div></div>';
+      return h;
+    }
+
+    /*  주문 찾기 — 위 검색칸에 번호를 넣고 그대로 찾는다. 따로 만들지 않는다:
+        결과가 주문 검색과 똑같이 나와야 사람이 헷갈리지 않는다.  */
+    function bytoFindOrders(phone) {
+      var q = document.getElementById('q');
+      if (!q) return;
+      q.value = String(phone || '');
+      if (typeof wsGoToPane === 'function' && window.innerWidth < 900) wsGoToPane(0);
+      doSearch(true);
+      q.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function bytoDone(phone, btn) {
+      if (btn) { btn.disabled = true; btn.textContent = '처리 중…'; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) {
+            if (btn) { btn.disabled = false; btn.textContent = '처리함'; }
+            alert('처리하지 못했습니다 — ' + ((res && res.error) || '까닭 모름'));
+            return;
+          }
+          BYC_CARDS = BYC_CARDS.filter(function (c) { return c.phone !== phone; });
+          renderByto();
+        })
+        .withFailureHandler(function (e) {
+          if (btn) { btn.disabled = false; btn.textContent = '처리함'; }
+          alert('처리하지 못했습니다 — ' + String((e && e.message) || e));
+        })
+        .csBytoDone({ phone: phone, staff: csqStaff() });
+    }
+
+    /*  통화·문자 줄기 — 콜백 카드·주문 카드가 같이 쓴다. 한 번 더 누르면 접는다.  */
+    function bytoToggleTl(key, phone, btn) {
+      var box = document.getElementById('bytoTl-' + key);
+      if (!box) return;
+      if (!box.hidden) { box.hidden = true; return; }
+      box.hidden = false;
+      box.innerHTML = '<div class="byto-tl-note">바이토 기록 읽는 중…</div>';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) { box.innerHTML = '<div class="byto-tl-note">못 읽었습니다 — ' + esc((res && res.error) || '까닭 모름') + '</div>'; return; }
+          box.innerHTML = bytoTimelineHtml(res.items || [], res.collectedAt);
+        })
+        .withFailureHandler(function (e) { box.innerHTML = '<div class="byto-tl-note">못 읽었습니다 — ' + esc(String((e && e.message) || e)) + '</div>'; })
+        .csBytoTimeline(phone);
+    }
+
+    function bytoTimelineHtml(items, collectedAt) {
+      if (!items.length) return '<div class="byto-tl-note">이 번호로 바이토에 남은 통화·문자가 없습니다' +
+        (collectedAt ? ' (' + esc(bytoWhen(collectedAt)) + ' 기준)' : '') + '</div>';
+      var h = items.map(function (it) {
+        var inbound = it.direction !== '발신';
+        var what;
+        if (it.kind === 'call') what = it.missed ? '<span class="miss">부재중</span>' : (inbound ? '받은 전화' : '건 전화');
+        else what = inbound ? '받은 문자' : '보낸 문자';
+        var row = '<div class="byto-tl-row"><div class="byto-tl-at">' + esc(bytoWhen(it.at)) + '</div>' +
+          '<div class="byto-tl-what">' + what + (it.ourLine ? ' <span class="byto-tl-at">· ' + esc(bytoPhone(it.ourLine)) + '</span>' : '') + '</div>';
+        if (it.body) row += '<div class="byto-tl-body">' + esc(it.body) + '</div>';
+        if ((it.photos || []).length) {
+          row += '<div class="byto-tl-photos">' + it.photos.map(function (u) {
+            return '<a href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="고객 사진" loading="lazy"></a>';
+          }).join('') + '</div>';
+        }
+        return row + '</div>';
+      }).join('');
+      return h + '<div class="byto-tl-note">최근 ' + items.length + '건 · 바이토 ' + esc(bytoWhen(collectedAt)) + ' 기준 · 30분마다 받아 옵니다</div>';
+    }
+
+    function loadCsq(force) {
+      if (csqBusy) return;
+      //  10분에 한 번이면 넉넉하다. ↻ 를 누르면 바로 다시 읽는다
+      if (!force && CSQ_AT && Date.now() - CSQ_AT < 600000) { renderCsq(); return; }
+      csqBusy = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          csqBusy = false;
+          if (!res || !res.ok) {
+            /*  ★ 실패한 때를 「읽은 때」로 찍지 않는다 ★  (2026-10-06)
+                여기서 CSQ_AT 을 찍어 두어, 한 번 실패하면 10분 동안 다시 안 읽었다.
+                그 사이 v2 를 고쳐 놔도 화면에는 옛 글이 그대로 남아,
+                「아직도 안 된다」가 된다. 못 읽었으면 다음에 다시 읽는다.       */
+            csqError((res && res.error) || '까닭 모름');
+            return;
+          }
+          CSQ_AT = Date.now();
+          CSQ_ROWS = res.rows || [];
+          renderCsq();
+        })
+        .withFailureHandler(function (e) {
+          csqBusy = false;
+          csqError(String((e && e.message) || e || '까닭 모름'));
+        })
+        .csListInquiries({ limit: 200 });
+    }
+
+    function renderCsq() {
+      var list = document.getElementById('csqList');
+      if (!list) return;
+      var q = String((document.getElementById('csqq') || {}).value || '').trim().toLowerCase();
+      var 볼것 = CSQ_ROWS.filter(function (c) { return csqMatch(c, q); });
+
+      var cnt = document.getElementById('csqCount');
+      if (cnt) cnt.textContent = String(볼것.length);
+      var sub = document.getElementById('csqSub');
+      if (sub) {
+        var fu = CSQ_ROWS.filter(function (c) { return String(c.followup || '').trim(); }).length;
+        sub.textContent = fu ? ('후처리 ' + fu + '건') : '';
+      }
+
+      if (!볼것.length) {
+        list.innerHTML = '<div class="csq-empty">' +
+          (q ? '찾는 문의가 없습니다.' : '처리할 문의가 없습니다.') + '</div>';
+        return;
+      }
+      /*  ★ 평소엔 일곱 장만 ★  (2026-10-06)
+          > "평상시에도 7개정도만 … 더보기버튼으로 더 볼수 있게"
+          스무 장이 깔리면 아래 칸(입금·품절)이 화면 밖으로 밀린다.
+          ★ 검색할 때는 다 보여 준다 ★ 찾으려고 친 글자인데 일곱 장에서 자르면
+            「없다」로 읽힌다. 거른 결과는 원래 짧다.                        */
+      var 끊을까 = !q && !CSQ_ALL && 볼것.length > CSQ_FOLD_N;
+      var 보일것 = 끊을까 ? 볼것.slice(0, CSQ_FOLD_N) : 볼것;
+
+      var h = '';
+      for (var i = 0; i < 보일것.length; i++) h += csqCardHtml(보일것[i]);
+      if (끊을까) {
+        h += '<div class="csq-more" onclick="csqShowAll()">더보기 ' +
+             (볼것.length - CSQ_FOLD_N) + '건 ▾</div>';
+      } else if (!q && CSQ_ALL && 볼것.length > CSQ_FOLD_N) {
+        h += '<div class="csq-more" onclick="csqShowLess()">접기 ▴</div>';
+      }
+      list.innerHTML = h;
+    }
+
+    /*  더보기/접기 — 그때그때다. 새로 읽으면 다시 일곱 장으로 돌아간다. */
+    function csqShowAll() { CSQ_ALL = true; renderCsq(); }
+    function csqShowLess() {
+      CSQ_ALL = false; renderCsq();
+      var box = document.getElementById('csqBox');
+      if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    /*  ★ After CS 사진을 «보이게» 한다 ★  (2026-10-07)
+        > "애프터cs 에도 사진 올린거 보이게 해줘"
+
+        여태는 「📎 파일명」 링크였다. 새 창을 열어야 보이니, 전화를 받으며
+        「그 사진 어떤 거예요」에 바로 답을 못 했다. 반품 카드와 같이 썸네일로
+        세우고, 누르면 같은 확대보기(openLbImages)로 띄운다.
+
+        ★ 주소를 읽는 규칙은 반품과 «같은 것»을 쓴다 ★
+          retIsVideoUrl · retDriveId · retStoreUrl · retStoreThumb.
+          여기 또 적으면 보관소 주소 모양이 바뀔 때 한쪽만 고쳐져 갈린다.
+          문의 사진은 csFileStorePut("board", …) 이라 v2 보관소 서명 주소다.  */
+    function csqPhotoItems(c) {
+      var 사진 = (c && c.photos) || [];
+      var out = [];
+      for (var i = 0; i < 사진.length; i++) {
+        var u = String((사진[i] && 사진[i].url) || '');
+        if (!u) continue;
+        var 이름 = String((사진[i] && 사진[i].name) || ('사진 ' + (i + 1)));
+        if (retIsVideoUrl(u)) {
+          out.push({ name: 이름, by: '', at: '', isImage: false, isVideo: true,
+                     thumbUrl: '', bigUrl: u, viewUrl: u });
+          continue;
+        }
+        var did = retDriveId(u);
+        var thumb = '', big = '';
+        if (did) {
+          //  56px 칸 — 고화질 화면(3배)을 감당하되 너무 크게 받지 않는다 (_csthumb_test)
+          thumb = 'https://drive.google.com/thumbnail?id=' + did + '&sz=w224';
+          big = 'https://drive.google.com/thumbnail?id=' + did + '&sz=w2048';
+        } else if (retStoreUrl(u)) {
+          thumb = retStoreThumb(u, 224);
+          big = u;
+        } else {
+          /*  사진인지 알 수 없는 주소 — 그래도 «있다»는 것은 보여 준다.
+              링크로 두면 눌러서 확인할 수 있다. 숨기면 올린 줄도 모른다. */
+          out.push({ name: 이름, by: '', at: '', isImage: false, isVideo: false,
+                     thumbUrl: '', bigUrl: u, viewUrl: u });
+          continue;
+        }
+        out.push({ name: 이름, by: '', at: '', isImage: true,
+                   thumbUrl: thumb, bigUrl: big, viewUrl: u });
+      }
+      return out;
+    }
+
+    /** 문의 사진 확대보기 — 보드·반품과 같은 창을 쓴다 */
+    function openCsqPhotoLb(id, imgIdx, ev) {
+      if (ev) ev.stopPropagation();
+      for (var i = 0; i < CSQ_ROWS.length; i++) {
+        if (String(CSQ_ROWS[i].id) !== String(id)) continue;
+        openLbImages(csqPhotoItems(CSQ_ROWS[i]).filter(function (x) { return x.isImage; }), imgIdx);
+        return;
+      }
+    }
+
+    function csqCardHtml(c) {
+      var id = String(c.id || '');
+      var 열림 = (id !== '' && CSQ_OPEN_ID === id);
+      var 글 = String(c.body || '');
+      var 한줄 = 글.replace(/\s+/g, ' ').trim();
+      var fu = String(c.followup || '').trim();
+      var 끝남 = String(c.status || '') === '완료';
+      var 사진 = (c.photos && c.photos.length) ? c.photos : [];
+
+      var h = '<div class="csq-card' + (열림 ? ' open' : '') + (끝남 ? ' done' : '') +
+        '" data-csq="' + esc(id) + '" onclick="csqToggle(this)">';
+      h += '<div class="csq-head">' +
+        '<span class="csq-vendor">' + esc(c.vendor || '(거래처 없음)') + '</span>' +
+        (c.item ? '<span class="csq-item">' + esc(c.item) + '</span>' : '') +
+        /*  ★ 완료인데 왜 보이나 ★ 후처리가 남아서다. 안 적어 두면
+            「닫았는데 왜 또 있지」가 된다.  */
+        (끝남 ? '<span class="csq-done-tag">완료 · 후처리 남음</span>' : '') +
+        /*  ★ 접힌 카드에도 사진이 «있다»고 말한다 ★  (2026-10-07)
+            이제 한 장만 펴지므로, 접힌 카드에 아무 표시가 없으면 사진이 붙은
+            건을 찾으려고 카드를 하나씩 열어 봐야 한다.  */
+        (사진.length ? '<span class="csq-photo-n" title="사진 ' + 사진.length +
+          '장 — 카드를 열면 보입니다">📷 ' + 사진.length + '</span>' : '') +
+        '<span class="csq-when">' + esc(csqWhen(c.created_at)) + '</span>' +
+        '</div>';
+      /*  ★ 번호가 «보여야» 추적이 된다 ★  (2026-10-02, sql/76)
+          찾기만 되고 어디에도 안 보이면, 사람이 그 번호를 알 길이 없어
+          다른 화면에 옮겨 적을 수가 없다. 접힌 카드에도 둔다 —
+          전화를 받으며 「문의 번호 뭐예요」에 바로 읽어 줘야 한다.  */
+      if (c.uid || c.ref_uid) {
+        h += '<div class="csq-uids">' +
+          (c.uid ? '<span class="csq-uid">' + esc(c.uid) + '</span>' : '') +
+          (c.ref_uid ? '<span class="csq-ref">↳ ' + esc(c.ref_uid) + '</span>' : '') +
+          '</div>';
+      }
+      if (!열림 && 한줄) h += '<div class="csq-one">' + esc(한줄) + '</div>';
+      if (!열림 && fu) h += '<div class="csq-fu-tag">후처리 ' + esc(fu.replace(/\s+/g, ' ').slice(0, 28)) + '</div>';
+
+      /*  ★ 안쪽을 누를 때 접히면 안 된다 ★ 글자를 끌어 복사하거나
+          후처리를 적다가 접히면 적던 것이 날아간다.  */
+      h += '<div class="csq-body" onclick="event.stopPropagation()">';
+      h += '<div class="csq-label">문의 내용</div>' +
+        '<div class="csq-text">' + esc(글 || '(내용 없음)') + '</div>';
+      if (사진.length) {
+        h += '<div class="csq-label">사진 ' + 사진.length + '장 — 누르면 크게 봅니다</div>';
+        var 것들 = csqPhotoItems(c);
+        var 썸 = '', 링크 = '';
+        for (var a = 0, im = 0; a < 것들.length; a++) {
+          if (!것들[a].isImage) {
+            //  영상이나 사진인지 알 수 없는 주소 — 링크로 둔다. 숨기면 올린 줄도 모른다.
+            링크 += '<a href="' + esc(것들[a].viewUrl) + '" target="_blank" rel="noopener">' +
+              (것들[a].isVideo ? '▶ ' : '📎 ') + esc(것들[a].name) + '</a>';
+            continue;
+          }
+          썸 += '<button type="button" title="' + esc(것들[a].name) + ' — 크게 보기"' +
+            ' onclick="openCsqPhotoLb(\'' + esc(id) + '\',' + (im++) + ', event)">' +
+            '<img src="' + esc(것들[a].thumbUrl) + '" alt="' + esc(것들[a].name) + '"' +
+            ' loading="lazy" decoding="async" fetchpriority="low"' +
+            ' data-full="' + esc(것들[a].viewUrl) + '"' +
+            /*  작게 받는 주소가 안 되면 «원본»으로 한 번 더 해 본다. 그래도 안 되면
+                그때 자리를 접는다 — 반품 썸네일과 같은 식이다. */
+            ' onerror="var f=this.getAttribute(\'data-full\');if(f&&this.src!==f){this.src=f;return;}this.parentNode.classList.add(\'thumb-fail\');this.remove()">' +
+            '<span class="thumb-alt">사진</span></button>';
+        }
+        if (썸) h += '<div class="ret-proc-thumbs csq-thumbs">' + 썸 + '</div>';
+        if (링크) h += '<div class="csq-photos">' + 링크 + '</div>';
+      }
+      /*  관련 번호 — 펼쳤을 때만. 접힌 카드에 입력칸을 두면 잘못 눌린다.  */
+      h += '<div class="csq-label">관련 번호 — 반품 r… · 발주 d… · 전화주문 p…</div>';
+      h += '<div class="csq-fu"><input type="text" id="csqref-' + esc(id) + '"' +
+        ' value="' + esc(String(c.ref_uid || '')) + '"' +
+        ' placeholder="예: r1002000003 (비워 두면 지웁니다)"></div>';
+      h += '<div class="csq-label">후처리 요청 — 나중에 해야 할 일 (완료해도 남습니다)</div>';
+      h += '<div class="csq-fu"><textarea id="csqfu-' + esc(id) + '"' +
+        ' placeholder="예: 불량 100개 — 다음 주문 때 모아 1000개 되면 추가 발송">' +
+        esc(fu) + '</textarea></div>';
+      /*  사진 더 올리기 — 펼쳤을 때만 보인다. 접힌 카드에 두면 잘못 눌린다. */
+      h += '<div class="csq-label">사진 더 올리기 (스크린샷은 Ctrl+V)</div>';
+      h += '<div class="ret-photo-pick">' +
+        '<label class="pk">촬영<input type="file" accept="image/*" capture="environment"' +
+          ' onchange="csqPhotoPick(\'' + esc(id) + '\', this)"></label>' +
+        '<label class="pk">앨범<input type="file" accept="image/*" multiple' +
+          ' onchange="csqPhotoPick(\'' + esc(id) + '\', this)"></label>' +
+        '</div>';
+      h += '<div id="csqPhotoPrev-' + esc(id) + '">' +
+        retPhotoStripHtml(csqPickList(id), "csqPhotoDrop(\x27" + id + "\x27,") + '</div>';
+
+      h += '<div class="csq-acts">' +
+        '<button type="button" id="csqph-' + esc(id) + '" onclick="csqAddPhotos(\'' + esc(id) + '\')">사진 올리기</button>' +
+        '<button type="button" onclick="csqSaveRef(\'' + esc(id) + '\')">번호 저장</button>' +
+        '<button type="button" onclick="csqSaveFollowup(\'' + esc(id) + '\')">후처리 저장</button>' +
+        (끝남
+          ? '<button type="button" onclick="csqReopen(\'' + esc(id) + '\')">다시 열기</button>'
+          : '<button type="button" class="ok" onclick="csqDone(\'' + esc(id) + '\')">처리완료</button>') +
+        '</div>';
+      h += '<div class="csq-by">' + esc(c.created_by || '') +
+        (끝남 && c.done_by ? ' · 완료 ' + esc(c.done_by) : '') + '</div>';
+      h += '</div></div>';
+      return h;
+    }
+
+    /*  펴 둔 카드 하나 — 붙여넣은 사진이 어디로 갈지도 이 값이 정한다.
+        (2026-10-07 전에는 여럿 펴졌고, 그때는 「마지막으로 편 것」을 따로
+         담아야 했다. 한 장뿐이 되면서 그 값이 필요 없어졌다.)  */
+    function csqToggle(el) {
+      var id = String(el.getAttribute('data-csq') || '');
+      //  같은 카드를 또 누르면 접는다. 다른 카드를 누르면 그것만 펴진다.
+      CSQ_OPEN_ID = (CSQ_OPEN_ID === id) ? '' : id;
+      renderCsq();
+      /*  ★ 누른 카드를 눈에 붙들어 둔다 ★
+          나머지가 접히면 그만큼 아래가 올라와 «누른 카드가 화면 밖으로» 간다.
+          반품 카드(focusReturnCard)와 같은 식으로 끌어다 둔다 —
+          다만 block:'nearest' 다. 이미 보이는 카드를 괜히 움직이지 않는다. */
+      if (!CSQ_OPEN_ID) return;
+      setTimeout(function () {
+        var el2 = document.querySelector('.csq-card[data-csq="' +
+          CSQ_OPEN_ID.replace(/"/g, '\\"') + '"]');
+        if (el2 && el2.scrollIntoView) {
+          el2.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 30);
+    }
+
+    /**
+     * 붙여넣은 이미지를 받을 CS 문의 자리.  (2026-10-02)
+     *
+     * ★ 새 문의가 먼저다 ★ 그것을 펴 두었다는 건 지금 거기에 적고 있다는 뜻이다.
+     * 아니면 마지막으로 편 카드. 둘 다 아니면 null — 엉뚱한 데 붙이지 않는다.
+     */
+    function csqPasteTarget() {
+      var 새 = document.getElementById('csqNew');
+      if (새 && !새.hidden) {
+        return { label: 'CS 문의 — 새 문의', stage: function (files) {
+          retPhotoStage(csqPickList(null), files, function () { csqPhotoRender(null); });
+        } };
+      }
+      var id = CSQ_OPEN_ID;
+      if (!id) return null;
+      if (!document.getElementById('csqPhotoPrev-' + id)) return null;
+      var 누구 = '';
+      for (var i = 0; i < CSQ_ROWS.length; i++) {
+        if (String(CSQ_ROWS[i].id) === String(id)) { 누구 = CSQ_ROWS[i].vendor || ''; break; }
+      }
+      return { label: 'CS 문의 — ' + (누구 || '그 건'), stage: function (files) {
+        retPhotoStage(csqPickList(id), files, function () { csqPhotoRender(id); });
+      } };
+    }
+
+    /* ══ CS 문의 사진 ══════════════════════════════════════════
+       반품 쪽 길을 그대로 쓴다 —
+         hbShrinkImage  크기 줄이기 (송장 글자가 읽혀야 해서 2400px)
+         hbToAttachment base64 로
+         csUploadInquiryPhoto  v2 보관소(board-files)에 올리고 링크를 받음
+       ★ 표에는 링크만 담는다 ★ 파일을 두 군데 두지 않는다.
+
+       고른 사진은 «올리기를 누를 때» 보낸다. 고르자마자 올리면 쓰다
+       만 문의의 사진이 보관소에 남는다.                              */
+    var CSQ_PICK = [];        // 새 문의에 달 사진 (아직 안 올린 것)
+    var CSQ_PICK_ON = {};     // 이미 있는 문의에 달 사진 — id 별로
+
+    /** id 가 null 이면 새 문의 쪽, 아니면 그 카드 쪽 */
+    function csqPickList(id) {
+      if (!id) return CSQ_PICK;
+      if (!CSQ_PICK_ON[id]) CSQ_PICK_ON[id] = [];
+      return CSQ_PICK_ON[id];
+    }
+
+    function csqPhotoPick(id, input) {
+      var files = Array.prototype.slice.call(input.files);
+      input.value = '';
+      //  반품 쪽과 같은 줄이기·장수 제한을 그대로 쓴다
+      retPhotoStage(csqPickList(id), files, function () { csqPhotoRender(id); });
+    }
+
+    function csqPhotoRender(id) {
+      var el = document.getElementById(id ? ("csqPhotoPrev-" + id) : "csqnPhotoPrev");
+      if (!el) return;
+      el.innerHTML = retPhotoStripHtml(csqPickList(id),
+        "csqPhotoDrop(" + (id ? "\x27" + id + "\x27" : "null") + ",");
+    }
+
+    function csqPhotoDrop(id, i) {
+      csqPickList(id).splice(i, 1);
+      csqPhotoRender(id);
+    }
+
+    /**
+     * 고른 사진을 하나씩 올린다. 다 되면 링크 목록을 준다.
+     *
+     * ★ 한 장이 실패하면 멈춘다 ★ 반쯤 올라간 채로 넘어가면 어느 것이
+     *   빠졌는지 아무도 모른다. 몇 장째에서 멎었는지 말해 준다.
+     */
+    function csqUploadAll(list, onDone, onFail, 진행) {
+      var 결과 = [];
+      function 다음(n) {
+        if (n >= list.length) { onDone(결과); return; }
+        if (진행) 진행(n + 1, list.length);
+        google.script.run
+          .withSuccessHandler(function (r) {
+            if (!r || !r.ok) {
+              onFail('사진 ' + (n + 1) + '장째 — ' + ((r && r.error) || '올리기 실패'));
+              return;
+            }
+            결과.push({ name: r.name, url: r.url });
+            다음(n + 1);
+          })
+          .withFailureHandler(function (e) {
+            onFail('사진 ' + (n + 1) + '장째 — ' + String((e && e.message) || e));
+          })
+          .csUploadInquiryPhoto({
+            dataB64: list[n].dataB64, mime: list[n].mimeType, name: list[n].name,
+          });
+      }
+      다음(0);
+    }
+
+    /** 이미 있는 문의에 사진을 덧붙인다 */
+    function csqAddPhotos(id) {
+      var list = csqPickList(id);
+      if (!list.length) { toast('올릴 사진을 먼저 고르세요'); return; }
+      var btn = document.getElementById('csqph-' + id);
+      if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
+      csqUploadAll(list, function (사진들) {
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (btn) { btn.disabled = false; btn.textContent = '사진 올리기'; }
+            if (!res || !res.ok) { toast((res && res.error) || '붙이기 실패', 3200); return; }
+            CSQ_PICK_ON[id] = [];
+            for (var i = 0; i < CSQ_ROWS.length; i++) {
+              if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i] = res.row;
+            }
+            toast(사진들.length + '장 올렸습니다');
+            renderCsq();
+          })
+          .withFailureHandler(function (e) {
+            if (btn) { btn.disabled = false; btn.textContent = '사진 올리기'; }
+            toast(String((e && e.message) || e || '붙이기 실패'), 3200);
+          })
+          .csAddInquiryPhotos({ id: id, photos: 사진들, staff: csqStaff() });
+      }, function (말) {
+        if (btn) { btn.disabled = false; btn.textContent = '사진 올리기'; }
+        toast(말, 3600);
+      }, function (n, 전체) {
+        if (btn) btn.textContent = '올리는 중… (' + n + '/' + 전체 + ')';
+      });
+    }
+
+    function csqStaff() {
+      return currentStaff || (document.getElementById('ledgerStaff') || {}).value || '';
+    }
+
+    /* ── 새 문의 ─────────────────────────────────────────────── */
+    /*  글쓰기 펼치기·접기. 「문의 남기기」 줄과 상자가 «한 몸»이다 —
+        줄의 화살표가 상자의 상태를 그대로 말해야 한다. (2026-10-06)  */
+    function csqNewToggle(열까) {
+      var box = document.getElementById('csqNew');
+      if (!box) return;
+      var 열림 = (열까 === undefined) ? !!box.hidden : !!열까;
+      box.hidden = !열림;
+      var bar = document.getElementById('csqNewBar');
+      if (bar) bar.classList.toggle('open', 열림);
+      if (열림) { var v = document.getElementById('csqnVendor'); if (v) v.focus(); }
+    }
+
+    function csqNewSave() {
+      var staff = csqStaff();
+      if (!staff) { toast('담당자를 먼저 고르세요'); return; }
+      var g = function (id) { var e = document.getElementById(id); return e ? e.value : ''; };
+      var p = {
+        staff: staff, vendor: g('csqnVendor'), item: g('csqnItem'),
+        body: g('csqnBody'), followup: g('csqnFollowup'), photos: [],
+        //  관련 번호 — 비어 있으면 그냥 안 적힌다 (2026-10-02, sql/76)
+        refUid: g('csqnRef'),
+      };
+      if (!p.vendor.trim() && !p.item.trim() && !p.body.trim()) {
+        toast('거래처·상품·내용 가운데 하나는 적어 주세요'); return;
+      }
+      var btn = document.getElementById('csqnSave');
+      if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
+
+      /*  사진을 «먼저» 올린다. 문의를 먼저 만들면 사진이 실패했을 때
+          사진 없는 문의가 남아, 다시 올리려면 그 건을 찾아 들어가야 한다. */
+      csqUploadAll(CSQ_PICK, function (사진들) {
+        p.photos = 사진들;
+        csqNewPost(p, btn);
+      }, function (말) {
+        if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
+        toast(말, 3600);
+      }, function (n, 전체) {
+        if (btn) btn.textContent = '사진 올리는 중… (' + n + '/' + 전체 + ')';
+      });
+    }
+
+    function csqNewPost(p, btn) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
+          if (!res || !res.ok) { toast((res && res.error) || '올리기 실패', 3200); return; }
+          ['csqnVendor', 'csqnItem', 'csqnBody', 'csqnFollowup', 'csqnRef'].forEach(function (id) {
+            var e = document.getElementById(id); if (e) e.value = '';
+          });
+          CSQ_PICK = [];
+          csqPhotoRender(null);
+          document.getElementById('csqNew').hidden = true;
+          if (res.row) CSQ_ROWS.unshift(res.row);
+          toast('문의를 올렸습니다');
+          renderCsq();
+        })
+        .withFailureHandler(function (e) {
+          if (btn) { btn.disabled = false; btn.textContent = '올리기'; }
+          toast(String((e && e.message) || e || '올리기 실패'), 3200);
+        })
+        .csSaveInquiry(p);
+    }
+
+    /**
+     * 관련 번호를 저장한다.  (2026-10-02, sql/76)
+     *
+     * ★ 꼴을 미리 본다 ★ 「1002000003」처럼 표식을 빼고 적으면 어느
+     * 쪽 건인지 알 수 없다. 막지는 않는다 — 앞으로 표식이 더 생길 수
+     * 있고, 막으면 사람은 왜 안 되는지 모른다. 알려만 준다.
+     */
+    function csqSaveRef(id) {
+      var inp = document.getElementById('csqref-' + id);
+      if (!inp) return;
+      var staff = csqStaff();
+      if (!staff) { toast('담당자를 먼저 고르세요'); return; }
+      var v = String(inp.value || '').trim();
+      if (v && !/^[rdpq]\d{4}\d{6}$/i.test(v)) {
+        toast('번호 꼴이 다릅니다 — r1002000003 처럼 적어 주세요. 그대로 저장합니다.', 3600);
+      }
+      inp.disabled = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          inp.disabled = false;
+          if (!res || !res.ok) { toast((res && res.error) || '저장 실패', 3200); return; }
+          for (var i = 0; i < CSQ_ROWS.length; i++) {
+            if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i].ref_uid = v;
+          }
+          toast(v ? ('관련 번호를 ' + v + ' 로 두었습니다') : '관련 번호를 지웠습니다');
+          renderCsq();
+        })
+        .withFailureHandler(function (e) {
+          inp.disabled = false;
+          toast(String((e && e.message) || e || '저장 실패'), 3200);
+        })
+        .csSetInquiryRef({ id: id, refUid: v, staff: staff });
+    }
+
+    function csqSaveFollowup(id) {
+      var ta = document.getElementById('csqfu-' + id);
+      if (!ta) return;
+      var staff = csqStaff();
+      if (!staff) { toast('담당자를 먼저 고르세요'); return; }
+      var text = ta.value;
+      ta.disabled = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          ta.disabled = false;
+          if (!res || !res.ok) { toast((res && res.error) || '저장 실패', 3200); return; }
+          for (var i = 0; i < CSQ_ROWS.length; i++) {
+            if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i].followup = text;
+          }
+          toast(String(text).trim() ? '후처리 요청을 저장했습니다' : '후처리 요청을 지웠습니다');
+          renderCsq();
+        })
+        .withFailureHandler(function (e) {
+          ta.disabled = false;
+          toast(String((e && e.message) || e || '저장 실패'), 3200);
+        })
+        .csSetInquiryFollowup({ id: id, text: text, staff: staff });
+    }
+
+    /*  처리완료 — ★ 지우는 게 아니다 ★ status 만 「완료」로 바뀐다.
+        후처리가 남아 있으면 목록에 그대로 있다(딱지가 붙는다) — 그 일은
+        아직 안 끝났기 때문이다. 없으면 화면에서 빠진다.  */
+    function csqDone(id) {
+      var staff = csqStaff();
+      if (!staff) { toast('담당자를 먼저 고르세요'); return; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) { toast((res && res.error) || '처리 실패', 3200); return; }
+          var fu = String((res.row && res.row.followup) || '').trim();
+          if (fu) {
+            for (var i = 0; i < CSQ_ROWS.length; i++) {
+              if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i] = res.row;
+            }
+            toast('처리완료 — 후처리가 남아 목록에 둡니다', 2800);
+          } else {
+            CSQ_ROWS = CSQ_ROWS.filter(function (c) { return String(c.id) !== String(id); });
+            if (CSQ_OPEN_ID === String(id)) CSQ_OPEN_ID = '';
+            toast('처리완료 — 목록에서 뺐습니다 (자료는 남습니다)', 2600);
+          }
+          renderCsq();
+        })
+        .withFailureHandler(function (e) { toast(String((e && e.message) || e || '처리 실패'), 3200); })
+        .csCompleteInquiry({ id: id, staff: staff });
+    }
+
+    function csqReopen(id) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) { toast((res && res.error) || '되돌리기 실패', 3200); return; }
+          for (var i = 0; i < CSQ_ROWS.length; i++) {
+            if (String(CSQ_ROWS[i].id) === String(id)) CSQ_ROWS[i] = res.row;
+          }
+          toast('다시 열었습니다');
+          renderCsq();
+        })
+        .withFailureHandler(function (e) { toast(String((e && e.message) || e || '되돌리기 실패'), 3200); })
+        .csReopenInquiry({ id: id, staff: csqStaff() });
     }
 
     function loadStockout() {
@@ -8303,6 +9972,13 @@
       var urls = String((ev && (ev.raw || ev.text)) || '').match(/https?:\/\/[^\s]+/g) || [];
       var out = [];
       for (var i = 0; i < urls.length; i++) {
+        /*  ★ 동영상 (2026-10-01) ★ v2 물류 입고가 영상도 올린다(sql/70). <img> 로 그리면 깨지니
+            따로 표시해 두고 그리는 쪽이 「▶ 영상」 칸으로 만든다. 가르는 규칙은 서버 _cs_isVideoUrl_ 와 같다. */
+        if (retIsVideoUrl(urls[i])) {
+          out.push({ name: '반품 영상 ' + (i + 1), by: (ev && ev.staff) || '', at: formatProcWhen(ev || {}) || '',
+                     isImage: false, isVideo: true, thumbUrl: '', bigUrl: urls[i], viewUrl: urls[i] });
+          continue;
+        }
         var id = retDriveId(urls[i]);
         var thumb = '', big = '';
         if (id) {
@@ -8334,6 +10010,16 @@
       return out;
     }
 
+    function retIsVideoUrl(u) {
+      return /\.(mp4|mov|m4v|webm|3gp)$/i.test(String(u || '').split('?')[0]);
+    }
+
+    /** 영상 칸 — 누르면 새 창에서 재생한다(앱 안 확대보기는 사진만 다룬다) */
+    function retVideoTileHtml(item) {
+      return '<a class="ret-vid" href="' + esc(item.viewUrl) + '" target="_blank" rel="noopener"' +
+        ' title="영상 재생" onclick="event.stopPropagation()">▶<span>영상</span></a>';
+    }
+
     /** 사진 이력 카드 — 드라이브 썸네일을 깔고 탭하면 앱 안에서 확대한다 */
     function procPhotoHtml(ev, cardIdx, evIdx) {
       var items = retPhotoItems(ev);
@@ -8343,9 +10029,10 @@
       var caption = String(ev.text || '').replace(/https?:\/\/[^\s]+/g, '').trim() || '사진 첨부';
       var html = '<div class="ret-proc-body" style="-webkit-line-clamp:2">' + esc(caption) + '</div>' +
         '<div class="ret-proc-thumbs">';
-      for (var i = 0; i < items.length; i++) {
+      for (var i = 0, im = 0; i < items.length; i++) {
+        if (items[i].isVideo) { html += retVideoTileHtml(items[i]); continue; }
         html += '<button type="button" title="사진 크게 보기"' +
-          ' onclick="openRetPhotoLb(' + cardIdx + ',' + evIdx + ',' + i + ', event)">' +
+          ' onclick="openRetPhotoLb(' + cardIdx + ',' + evIdx + ',' + (im++) + ', event)">' +
           '<img src="' + esc(items[i].thumbUrl) + '" alt="첨부 사진"' +
           ' loading="lazy" decoding="async" fetchpriority="low"' +
           ' data-full="' + esc(items[i].viewUrl) + '"' +
@@ -8363,7 +10050,7 @@
       var visible = returnVisibleTimeline(cardIdx);
       var item = visible[evIdx];
       if (!item) return;
-      openLbImages(retPhotoItems(item), imgIdx);
+      openLbImages(retPhotoItems(item).filter(function (x) { return !x.isVideo; }), imgIdx);
     }
 
     /**
@@ -8437,7 +10124,18 @@
           ? '<span class="ret-proc-more" title="옆으로 밀면 이전 이력이 있습니다">이전 ' +
             (visible.length - 1) + '건 →</span>'
           : '';
-        html += '<div class="ret-proc ' + cls + (retIsInternal(ev) ? ' internal' : '') + '">' + delBtn +
+        /*  ★ 오른쪽 버튼으로 옮긴다 ★  (2026-10-06)
+            > "내부 카드에서 오른쪽 버튼을 눌러 이동...이름검색... 맞는지 확인.. 이동"
+            물류가 사진을 엉뚱한 건에 붙이는 일이 잦다. 여태는 지우고 다시 쓰는
+            수밖에 없었는데, 사진은 다시 못 붙인다. 접수 카드는 그 건 자체라 뺀다. */
+        var 옮길수있나 = ev.kind !== 'access';
+        html += '<div class="ret-proc ' + cls + (retIsInternal(ev) ? ' internal' : '') + '"' +
+          (옮길수있나 ? ' oncontextmenu="return retProcMenu(' + cardIdx + ',' + j + ', event)"' +
+                       /*  끌어다 놓기 — 놓으면 확인 창이 뜬다 (2026-10-06) */
+                       ' draggable="true"' +
+                       ' ondragstart="retProcDragStart(' + cardIdx + ',' + j + ', event)"' +
+                       ' ondragend="retProcDragEnd(event)"' +
+                       ' title="끌어다 다른 건에 놓거나, 오른쪽 버튼으로 옮기기"' : '') + '>' + delBtn +
           (when || moreChip ? '<div class="ret-proc-when">' + esc(when) + moreChip + '</div>' : '') +
           (tag ? '<div class="ret-proc-tag">' + esc(tag) + (ev.staff ? ' · ' + esc(ev.staff) : '') + '</div>' : '') +
           bodyHtml + retShareBadge(ev) + '</div>';
@@ -8594,10 +10292,21 @@
         화면과 시트가 다른 낱말을 쓰면 나중에 세지도 못하고 견주지도 못한다.  */
     var RET_TYPES = ['단순반품', '반품', '교환', '오배송', '오주문', '재출고', '파손', '기타'];
     var RET_FAULTS = ['구매자', '판매자'];
+    /*  ★ 2026-09-30 두 번째 가름 ★
+        > "구매자귀책 -자동반품, 단순변심, 오입력,
+        >  판매자 귀책 -오배송, 제품파손, 사고, 불량, 배송지연,
+        >  정보불일치, 오배송, 중복출고  이렇게 분류가 되야되"
+
+        처음에는 파손·사고·불량·배송지연을 구매자 쪽에 두었는데 뒤집었다 —
+        물건이 깨지거나 늦은 것은 «우리(또는 택배사) 탓»이라 반품비를
+        고객에게 물릴 수 없다. 귀책이 곧 돈이니 이 가름이 값을 정한다.
+        낱말도 짧아졌다 — 택배사고 → 사고, 제품불량 → 불량.
+        「오주문」은 빠졌다(구매자 쪽은 오입력 하나로).  */
     var RET_REASONS = {
-      구매자: ['자동반품', '단순변심', '오입력', '오주문',
-               '제품파손', '택배사고', '제품불량', '배송지연'],
-      판매자: ['정보불일치', '오배송', '중복출고']
+      구매자: ['자동반품', '단순변심', '오입력'],
+      //  품절·상품하자는 협의된 배열(「202609의 테스트 시트」)에 있던 것 (2026-10-01)
+      판매자: ['오배송', '제품파손', '사고', '불량',
+               '배송지연', '정보불일치', '중복출고', '품절', '상품하자']
     };
 
     /**
@@ -8636,6 +10345,9 @@
       var pfx = which === 'ledger' ? 'ledger' : 'retNew';
       retFillSelect(pfx + 'Type', RET_TYPES);
       retFillSelect(pfx + 'Fault', RET_FAULTS);
+      /*  상태 목록은 서버(_CS_RETURN_STATUS_OPTS_)가 내려 준 것을 쓴다.
+          아직 안 왔으면 화면에 박힌 기본값으로 — 두 화면이 같은 목록을 본다. */
+      retFillSelect(pfx + 'Status', RETURN_STATUS_OPTS);
       retFillReasons(which);
     }
 
@@ -8679,6 +10391,24 @@
       if (!c) return '';
       if (c.phoneSubTag === '추가') return c.phoneSub || '';
       return c.phoneTag ? '' : (c.phone || '');
+    }
+
+    /* ★ 실번호를 적은 «그 순간»에도 서버와 같은 순서로 ★  (2026-10-01)
+       > "바로 실번호가 앞에 오게 맞춰줘"
+       서버(_cs_pickPhones_)는 실번호가 있으면 «실번호를 앞», 원래 연락처를
+       뒤에 「안심」(050…) 또는 「주문서」 딱지로 둔다. 화면이 저장 직후에만
+       「안심 · 추가 실번호」로 거꾸로 보이다가 새로 불러오면 뒤집혔다.
+       같은 규칙을 여기서 그대로 따른다 — 카드 칸·팝업 두 길이 다 이것을 쓴다. */
+    function retApplyPhone2(x, val) {
+      var 숫 = function (s) { return String(s || '').replace(/[^0-9]/g, ''); };
+      //  원래 연락처(대장 「연락처」 칸)가 지금 어디 앉아 있나
+      var 주 = (x.phoneSubTag === '안심' || x.phoneSubTag === '주문서') ? (x.phoneSub || '') : (x.phone || '');
+      var 뒤 = (주 && 숫(주) !== 숫(val)) ? 주 : '';
+      x.phone = val; x.phoneTag = '';
+      x.phoneSub = 뒤;
+      x.phoneSubTag = 뒤 ? (/^050[0-9]/.test(숫(뒤)) ? '안심' : '주문서') : '';
+      x.phoneOnlySafe = false;
+      return x;
     }
 
     function returnComposePopHtml(idx, c) {
@@ -8749,7 +10479,7 @@
             '<button type="button" class="ret-pop-save" id="ret-save-intakereq-' + idx + '" onclick="submitReturnCompose(' + idx + ',\x27intakereq\x27)">요청 남기기</button>' +
           '</div></div>' +
         '<div class="ret-act-pop" id="ret-pop-photo-' + idx + '" data-mode="photo">' +
-          '<div class="pop-label">사진 첨부 (최대 ' + RET_PHOTO_MAX + '장 · Ctrl+V 붙여넣기)</div>' +
+          '<div class="pop-label">사진 첨부 (최대 ' + RET_PHOTO_MAX + '장 · Ctrl+V 붙여넣기) · 사진과 글 모두 업체도 봅니다</div>' +
           '<div class="ret-photo-pick">' +
             '<label class="pk">촬영<input type="file" accept="image/*" capture="environment"' +
               ' onchange="retPhotoPick(' + idx + ', this)"></label>' +
@@ -8757,6 +10487,14 @@
               ' onchange="retPhotoPick(' + idx + ', this)"></label>' +
           '</div>' +
           '<div id="ret-photo-prev-' + idx + '"></div>' +
+          /*  ★ 사진에 글을 같이 붙인다 ★  (2026-10-07)
+              > "반품카드 사진 올릴때 글도 같이 올릴수 있게 해줘"
+              여태는 사진만 올라가고, 무엇을 찍은 것인지는 따로 메모 카드를
+              하나 더 써야 알 수 있었다 — 두 카드가 갈려 서면 어느 사진에
+              대한 말인지 모른다. 그래서 «같은 줄»에 적는다.
+              비워 두면 여태처럼 「사진 첨부 N장」만 남는다. */
+          '<textarea id="ret-photo-memo-' + idx + '" class="ret-photo-memo"' +
+            ' placeholder="사진에 같이 남길 말 (선택) — 예: 뚜껑 깨짐 · 수량 48개만 들어옴"></textarea>' +
           '<div class="ret-pop-btns">' +
             '<button type="button" class="ret-pop-cancel" onclick="closeReturnCompose(' + idx + ')">취소</button>' +
             '<button type="button" class="ret-pop-save" id="ret-save-photo-' + idx + '" onclick="submitRetPhotos(' + idx + ')">올리기</button>' +
@@ -8944,6 +10682,299 @@
       if (즉시) toast('반품송장을 적었습니다');
     }
 
+    /* ★ 실번호도 카드에서 «바로» 적는다 ★  (2026-10-01)
+
+       > "반품카드에 전화번호 옆에 전화번호 입력할수 있게 만들어줘
+       >  (안심번호일경우 실 전화번호 입력을 위해).. 송장번호 입력하듯이.."
+
+       9/11 에 「처리상태 변경」 팝업 «안»에 넣었다. 9/18 반품송장이 그랬듯
+       아무도 거기서 찾지 않는다 — 없는 것과 같다. 반품송장 칸과 같은 꼴로 꺼낸다.
+
+       ★ 카드가 길어지지 않게 ★  (반품송장 칸과 같은 규칙)
+         · 안심번호뿐이고 실번호가 없을 때만 칸을 펴 둔다 — 그때가 적을 때다
+         · 아니면 전화 옆 「+ 실번호」/「실번호 고침」을 누를 때 편다
+       ★ 저장하는 길은 하나 ★ 팝업과 같은 updateReturnLedgerStatus.
+         상태는 지금 것을 그대로 보낸다 — 이 칸은 «번호만» 적는 자리다. */
+    function retPh2BtnHtml(idx, c) {
+      var has = !!retCardPhone2(c);
+      return '<button type="button" class="ret-retinv-edit ret-ph2-btn"' +
+        ' onclick="event.stopPropagation(); retPh2Edit(' + idx + ')">' +
+        (has ? '실번호 고침' : '+ 실번호') + '</button>';
+    }
+
+    function retPh2SlotHtml(idx, c) {
+      var 펴기 = !!(c && c.phoneOnlySafe && !retCardPhone2(c));
+      return '<div class="ret-ph2-slot" id="ret-ph2-slot-' + idx + '">' +
+        (펴기 ? retPh2FieldHtml(idx, '', (c && c.phone2Name) || '') : '') + '</div>';
+    }
+
+    /** 칸 + 저장 단추 — 펴진 모습 (번호와 이름은 «같이» 적는다) */
+    function retPh2FieldHtml(idx, val, name) {
+      var 엔터 = ' onclick="event.stopPropagation()"' +
+        ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();event.stopPropagation();retPh2Save(' + idx + ');}"';
+      return '<div class="ret-retinv">' +
+        '<span class="ret-retinv-lbl">실번호</span>' +
+        '<input type="tel" class="ret-retinv-in" id="ret-ph2in-' + idx + '"' +
+          ' placeholder="010-0000-0000" value="' + esc(val) + '"' + 엔터 + '>' +
+        '<input type="text" class="ret-retinv-in ret-ph2in-name" id="ret-ph2nin-' + idx + '"' +
+          ' maxlength="20" placeholder="이름 (주문자와 다르면)" value="' + esc(name) + '"' + 엔터 + '>' +
+        '<button type="button" class="ret-retinv-save" id="ret-ph2-btn-' + idx + '"' +
+          ' onclick="event.stopPropagation(); retPh2Save(' + idx + ')">저장</button>' +
+        '</div>';
+    }
+
+    /** 「+ 실번호」·「실번호 고침」 — 한 번 누르면 펴고, 또 누르면 접는다 */
+    function retPh2Edit(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      var slot = document.getElementById('ret-ph2-slot-' + idx);
+      if (!c || !slot) return;
+      if (slot.innerHTML) { slot.innerHTML = ''; return; }
+      slot.innerHTML = retPh2FieldHtml(idx, retCardPhone2(c), c.phone2Name || '');
+      var el = document.getElementById('ret-ph2in-' + idx);
+      if (el) { el.focus(); el.select(); }
+    }
+
+    /** 저장 — 상태는 그대로, 실번호(와 이름)만 보낸다. 검사는 팝업과 같다. */
+    function retPh2Save(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      if (!c) return;
+      var el = document.getElementById('ret-ph2in-' + idx);
+      var nel = document.getElementById('ret-ph2nin-' + idx);
+      var val = el ? String(el.value || '').trim() : '';
+      var nm = nel ? String(nel.value || '').trim().substring(0, 20) : '';
+      var 숫자 = val.replace(/[^0-9]/g, '');
+      if (!val) { toast('실번호를 입력하세요'); return; }
+      if (/^050[0-9]/.test(숫자)) {
+        toast('실번호 칸에는 안심번호(050…) 말고 실제 번호를 넣어 주세요', 4200);
+        return;
+      }
+      if (숫자.length < 9) { toast('전화번호가 짧습니다 — 다시 확인해 주세요', 3200); return; }
+      var staff = returnStaffName();
+      if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
+
+      var btn = document.getElementById('ret-ph2-btn-' + idx);
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+
+      var 지금상태 = String(c.status || '').trim() || '접수';
+      var 꾸러미 = {
+        tab: c.tab, row: c.row,
+        status: 지금상태, staff: staff,
+        phone2: val, phone2Name: nm
+      };
+
+      var 즉시 = retOptimistic(c,
+        function (x) {
+          //  서버와 같은 순서 — 실번호가 앞, 안심번호는 뒤에 「안심」으로
+          retApplyPhone2(x, val);
+          if (nm) x.phone2Name = nm;
+          return retPrependEvent(x, 'meta', '실번호 ' + val + (nm ? ' (' + nm + ')' : ''), staff);
+        },
+        function (성공, 실패) {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              if (!res || !res.ok) { 실패(String((res && res.error) || '실번호 저장 실패')); return; }
+              성공();
+              retApplyServer(c, res);
+            })
+            .withFailureHandler(function (err) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              실패(String((err && err.message) || err));
+            })
+            .updateReturnLedgerStatus(꾸러미);
+        });
+
+      if (즉시) toast('실번호를 적었습니다');
+    }
+
+    /* ★ 크게 보기 글줄 — 반품관리대장 «협의된 배열» 차례 그대로 ★  (2026-10-01)
+       상태값 | 접수날짜 | 접수자 | 입고여부 | 재검수 사안 | 원송장 | 거래처 | 수취인 | 연락처 |
+       추가연락처 | 상품명 | 수량 | 반품송장 | 발생원인 | 적요 | 이카운트 | 사이트 | 계산서 | 환불 | 환불계좌
+       (비고는 아래 줄 — 처리 이력으로 이미 그린다)
+       세 칸 화면에서는 CSS 가 감춘다(.ret-row 기본 display:none). */
+    var RET_ROW_HEAD = ['상태값', '접수일', '접수자', '입고', '재검수', '원송장', '거래처', '수취인', '연락처',
+      '추가연락처', '상품명', '수량', '반품송장', '발생원인', '적요', '이카운트', '사이트', '계산서', '환불', '환불계좌'];
+
+    function retRowHeadHtml() {
+      return '<div class="ret-row ret-row-head">' +
+        RET_ROW_HEAD.map(function (h) { return '<span>' + esc(h) + '</span>'; }).join('') + '</div>';
+    }
+
+    /** 단계 칸 — 날짜가 있으면 날짜, 됐다는 표시만 있으면 ✔ */
+    function retStageText(v) {
+      if (!v) return '';
+      if (typeof v === 'object') return v.값 || v.날짜 || (v.된 ? '✔' : '');
+      return String(v);
+    }
+
+    /** 시트의 「연락처」(주문서 번호)와 「추가연락처」(실번호)로 되돌린다 */
+    function retSheetPhones(c) {
+      if (c.phoneSubTag === '안심' || c.phoneSubTag === '주문서') return [c.phoneSub || '', c.phone || ''];
+      if (c.phoneSubTag === '추가') return [c.phone || '', c.phoneSub || ''];
+      return [c.phone || '', ''];
+    }
+
+    function retRowHtml(c) {
+      var ph = retSheetPhones(c);
+      var 원인 = [c.fault, c.reason].filter(function (x) { return x; }).join(' / ');
+      var 안심 = ph[0] && /^050/.test(String(ph[0]).replace(/[^0-9]/g, ''));
+      var 칸 = [
+        c.status ? '<span class="rs">' + esc(c.status) + '</span>' : '',
+        esc(c.date || ''), esc(c.staff || ''), esc(retStageText(c.intake)), esc(c.recheck || ''),
+        esc(c.invoice || ''), esc(c.vendor || ''), esc(c.name || ''),
+        esc(ph[0]) + (안심 ? ' <span class="ret-ph-tag">안심</span>' : ''),
+        esc(ph[1]) + (ph[1] && c.phone2Name ? ' ' + esc(c.phone2Name) : ''),
+        esc(c.item || ''), esc(c.qty || ''), esc(c.returnInvoice || ''), esc(원인),
+        esc(c.jeokyo || ''),
+        esc(retStageText(c.ecountDone)), esc(retStageText(c.siteDone)),
+        esc(retStageText(c.taxDone)), esc(retStageText(c.refund)), esc(c.account || '')
+      ];
+      /*  ★ 눈에 먼저 들어와야 하는 셋 ★  (2026-10-07)
+          > "크게보기시 텍스트가 많다보니 수취인 이름과 주문쇼핑몰 송장번호가
+          >  잘 안보여 1포인트 크게 볼드로 … 밝은 칼라로 각각 통일"
+          자리(nth-child)로 집지 않고 «이름표»를 단다 — 칸 차례가 바뀌면
+          자리로 집은 꼴은 엉뚱한 칸을 칠한다.                            */
+      //  ★ 2026-10-07 추가: 반품송장 ★  > "반품 송장번호도 잘보이게 해줘"
+      //    원송장(5)과 «짝»이라 색을 갈라 둔다 — 둘이 같은 색이면 어느 쪽인지 모른다.
+      var 이름표 = { 5: 'rc-inv', 6: 'rc-vendor', 7: 'rc-name', 12: 'rc-retinv' };
+      return '<div class="ret-row">' + 칸.map(function (x, i) {
+        var cl = 이름표[i];
+        return cl ? ('<span class="' + cl + '">' + x + '</span>') : ('<span>' + x + '</span>');
+      }).join('') + '</div>';
+    }
+
+    /* ★ 크게 보기 편집판 ★  (2026-10-01)
+       시트의 칸을 카드에서 바로 고친다. 저장은 updateReturnLedgerFields 하나 —
+       바뀐 칸만 보내고, 서버가 바뀐 칸만 적고 비고에 «앞 → 뒤»를 남긴다.
+       상태·반품송장·실번호·메모는 원래 길(왼쪽 칸·아래 단추)을 그대로 쓴다.
+       키는 서버 _CS_RET_EDITABLE_ 와 같다. 단계 칸은 카드 자료에서 이름이 다르다(ecount↔ecountDone). */
+    var RET_EDIT_FIELDS = [
+      { k: 'name', t: '수취인' }, { k: 'vendor', t: '거래처' },
+      { k: 'qty', t: '수량' }, { k: 'recheck', t: '재검수 사안' },
+      { k: 'item', t: '상품명', w: 'w4' },
+      { k: 'intake', t: '입고', stage: 'intake' }, { k: 'ecount', t: '이카운트', stage: 'ecountDone' },
+      { k: 'siteDone', t: '사이트처리', stage: 'siteDone' }, { k: 'taxDone', t: '계산서', stage: 'taxDone' },
+      { k: 'refund', t: '환불완료', stage: 'refund' }, { k: 'account', t: '환불계좌', w: 'w2' },
+      { k: 'jeokyo', t: '적요', w: 'w4', area: true }
+    ];
+    var RET_FAULTS = ['', '판매자', '구매자', '택배사'];
+
+    function retEditVal(c, f) {
+      return f.stage ? retStageText(c[f.stage]) : String(c[f.k] == null ? '' : c[f.k]);
+    }
+
+    function retEditHtml(idx, c) {
+      var ph = retSheetPhones(c);
+      var ro = [['접수일', c.date], ['접수자', c.staff], ['원송장', c.invoice], ['연락처', ph[0]]]
+        .filter(function (p) { return p[1]; })
+        /*  원송장만 이름표를 단다 — 크게 보기에서 먼저 보여야 하는 것 중 하나.
+            자리(nth-child)로 집지 않는다. 칸 차례가 바뀌면 엉뚱한 칸이 칠해진다. (2026-10-07) */
+        .map(function (p) {
+          var cl = (p[0] === '원송장') ? ' class="ro-inv"' : '';
+          return '<span' + cl + '>' + p[0] + ' <b>' + esc(p[1]) + '</b></span>';
+        }).join('');
+      var 칸 = RET_EDIT_FIELDS.map(function (f) {
+        var v = retEditVal(c, f);
+        var id = 'ret-ed-' + f.k + '-' + idx;
+        /*  data-f — 「이 칸이 무엇인가」를 꼴이 알아보게. 자리(nth-child)로 집으면
+            칸 차례가 바뀔 때 엉뚱한 칸이 칠해진다. (2026-10-07) */
+        var attr = ' id="' + id + '" class="ret-edit-in" data-f="' + f.k + '"' +
+          ' data-orig="' + esc(v) + '" oninput="retEditMark(this)"';
+        var 입력 = f.area
+          ? '<textarea' + attr + '>' + esc(v) + '</textarea>'
+          : '<input type="text"' + attr + ' value="' + esc(v) + '">';
+        if (f.stage) {
+          입력 = '<div class="ret-edit-pair">' + 입력 +
+            '<button type="button" class="ret-edit-today" title="오늘 날짜"' +
+            ' onclick="retEditToday(\'' + id + '\')">오늘</button></div>';
+        }
+        return '<div class="ret-edit-f ' + (f.w || '') + '"><label for="' + id + '">' + f.t + '</label>' + 입력 + '</div>';
+      }).join('');
+      var 귀책 = String(c.fault || '').replace(/귀책$/, '');
+      var 고르개 = RET_FAULTS.map(function (x) {
+        return '<option value="' + x + '"' + (x === 귀책 ? ' selected' : '') + '>' + (x ? x + '귀책' : '(귀책 없음)') + '</option>';
+      }).join('');
+      var 원인 = '<div class="ret-edit-f w4"><label>발생원인 (귀책 / 사유)</label><div class="ret-edit-pair">' +
+        '<select id="ret-ed-fault-' + idx + '" class="ret-edit-in" style="flex:0 0 120px" data-orig="' + esc(귀책) + '" onchange="retEditMark(this)">' + 고르개 + '</select>' +
+        '<input type="text" id="ret-ed-reason-' + idx + '" class="ret-edit-in" data-orig="' + esc(c.reason || '') + '"' +
+        ' oninput="retEditMark(this)" value="' + esc(c.reason || '') + '" placeholder="예: 오배송, 뚜껑 깨짐"></div></div>';
+      return '<div class="ret-edit" id="ret-edit-' + idx + '" onclick="event.stopPropagation()">' +
+        (ro ? '<div class="ret-edit-ro">' + ro + '</div>' : '') +
+        '<div class="ret-edit-grid">' + 칸 + 원인 + '</div>' +
+        '<div class="ret-edit-btns">' +
+          '<button type="button" class="ret-retinv-save" id="ret-edit-btn-' + idx + '" onclick="retEditSave(' + idx + ')">저장</button>' +
+          '<span class="ret-edit-hint">바뀐 칸(노란 테두리)만 시트에 적고, 비고에 «앞 → 뒤»를 남깁니다</span>' +
+        '</div></div>';
+    }
+
+    function retEditMark(el) {
+      if (!el) return;
+      el.classList.toggle('changed', String(el.value).trim() !== String(el.getAttribute('data-orig') || '').trim());
+    }
+
+    /** 단계 칸 「오늘」 — 시트가 쓰는 꼴(YYMMDD) 그대로 */
+    function retEditToday(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var d = new Date();
+      el.value = String(d.getFullYear()).slice(2) + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
+      retEditMark(el);
+    }
+
+    function retEditSave(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      if (!c) return;
+      var staff = returnStaffName();
+      if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
+      var 고칠 = {}, 몇 = 0;
+      RET_EDIT_FIELDS.forEach(function (f) {
+        var el = document.getElementById('ret-ed-' + f.k + '-' + idx);
+        if (!el) return;
+        var v = String(el.value || '').trim();
+        if (v !== String(el.getAttribute('data-orig') || '').trim()) { 고칠[f.k] = v; 몇++; }
+      });
+      var fEl = document.getElementById('ret-ed-fault-' + idx), rEl = document.getElementById('ret-ed-reason-' + idx);
+      var cause = null;
+      if (fEl && rEl && (fEl.value !== (fEl.getAttribute('data-orig') || '') ||
+          String(rEl.value).trim() !== String(rEl.getAttribute('data-orig') || '').trim())) {
+        cause = { fault: fEl.value, reason: String(rEl.value).trim() };
+        if (cause.fault && !cause.reason) { toast('귀책만 적을 수는 없습니다 — 사유도 적어 주세요', 3200); return; }
+        몇++;
+      }
+      if (!몇) { toast('바뀐 칸이 없습니다'); return; }
+
+      var btn = document.getElementById('ret-edit-btn-' + idx);
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+      var 꾸러미 = { tab: c.tab, row: c.row, staff: staff, fields: 고칠, cause: cause };
+      var 즉시 = retOptimistic(c,
+        function (x) {
+          RET_EDIT_FIELDS.forEach(function (f) {
+            if (!(f.k in 고칠)) return;
+            if (f.stage) x[f.stage] = { 된: !!고칠[f.k], 값: 고칠[f.k], 날짜: 고칠[f.k] };
+            else x[f.k] = 고칠[f.k];
+          });
+          if (cause) { x.fault = cause.fault; x.reason = cause.reason; }
+          return retPrependEvent(x, 'meta', '수정 ' + 몇 + '칸', staff);
+        },
+        function (성공, 실패) {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              if (!res || !res.ok) { 실패(String((res && res.error) || '저장 실패')); return; }
+              성공();
+              if (res.missing && res.missing.length) {
+                toast('이 달 탭에 없는 칸이라 못 적었습니다: ' + res.missing.join(', '), 4200);
+              }
+            })
+            .withFailureHandler(function (err) {
+              if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+              실패(String((err && err.message) || err));
+            })
+            .updateReturnLedgerFields(꾸러미);
+        });
+      if (즉시) toast(몇 + '칸을 고쳤습니다');
+    }
+
     function returnCardHtml(c, idx) {
       /* ★ 박스마다 상태를 보여준다 ★  (2026-09-09)
          한 반품에 박스가 둘이면 하나만 접수하고 나머지는 나중에 하는 일이 생긴다.
@@ -8972,8 +11003,17 @@
       return '<div class="ret-card' + (tlHtml ? '' : ' ret-noproc') +
         (c.active === false ? ' ret-closed' : '') +
         (c.needsCheck ? ' ret-new' : '') +
-        '" id="ret-card-' + idx + '" onclick="onReturnCardTap(' + idx + ', event)">' +
+        /*  ★ 진행 카드를 끌어다 놓는 자리 ★  (2026-10-06)
+            > "내부 카드를 드래그앤 드롭으로 다른카드로 이동할수 있게 해줘..
+            >  최종적으로 확인버튼을 눌러야 이동되게."
+            놓는다고 바로 안 옮긴다 — 오른쪽 버튼과 «같은 확인 창»이 뜬다.
+            길을 두 벌 두면 한쪽만 고쳐진다.                                */
+        '" id="ret-card-' + idx + '" onclick="onReturnCardTap(' + idx + ', event)"' +
+        ' ondragover="retProcDragOver(' + idx + ', event)"' +
+        ' ondragleave="retProcDragLeave(' + idx + ', event)"' +
+        ' ondrop="retProcDrop(' + idx + ', event)">' +
         '<div class="ret-focus-badge">집중 보기 · 다시 탭하면 접기</div>' +
+        retRowHtml(c) +
         /* ★ 업체가 새로 올린 것 ★  (2026-09-18)
            > "cs들이 확인을 못할수 있으니까"
            «확인» 을 누르면 대장에 적히고 이 띠가 꺼진다 — 팀이 같이 안다.
@@ -8996,6 +11036,15 @@
               (c.active === false ? '<span class="ret-closed-tag">완료</span>' : '') +
               (picked ? '<span class="ret-done">회수 접수됨</span>' : '') + '</div>' +
             '<div class="ret-item">' + esc(c.item || '-') + (c.qty ? ' × ' + esc(c.qty) : '') + '</div>' +
+            /*  ★ 다시 보내는 것 ★  (2026-10-02)
+                > "둘다 적으면 좋겠네"
+                위 품목은 «돌려받는 것»이다. 세트가 뚜껑만 나가면 우리가 몸통을
+                다시 보내는데, 그게 안 보이면 「이 건 뭘 보내기로 했더라」를
+                비고에서 찾아 읽어야 한다. 품목 바로 밑이 그 자리다. */
+            (c.reship || c.reshipFee
+              ? '<div class="ret-reship">↩ 재출고 ' + esc(c.reship || '-') +
+                  (c.reshipFee ? ' <em>· 배송비 ' + esc(c.reshipFee) + '</em>' : '') + '</div>'
+              : '') +
             /* 📦 입고확인요청 열 (2026-09-30) — 지금 유효한 요청. 누르면 고친다 */
             (c.intakeReq
               ? '<div class="ret-intakereq" onclick="event.stopPropagation(); toggleReturnCompose(' + idx + ',\x27intakereq\x27)"' +
@@ -9030,7 +11079,9 @@
                  (c.phone2Name && c.phoneSubTag === '추가' ? ' ' + esc(c.phone2Name) : '') + '</span>' : '') +
               (c.phoneOnlySafe ? '<span class="ret-ph-warn"> 기간이 지나면 끊깁니다</span>' : '') +
               '</span>' : '') +
+            retPh2BtnHtml(idx, c) +
             '</div>' +
+            retPh2SlotHtml(idx, c) +
             /* ★ 「202609 170행」을 지웠다 ★  (2026-09-17)
                > "굳이 202609 127행 같은 내용은 불필요해"
                시트 몇 행인지는 사람이 카드에서 할 일이 아니다. 자리만 먹었다.
@@ -9038,6 +11089,7 @@
                날짜·담당자는 남기되, 둘 다 없으면 줄 자체를 안 만든다. */
             retSubLine(c) +
           '</div>' +
+          retEditHtml(idx, c) +
           (tlHtml ? '<div class="ret-right">' + tlHtml + '</div>' : '') +
         '</div>' +
         '<div class="ret-foot">' +
@@ -9115,8 +11167,10 @@
         return (c.invoice ? '원송장 ' + esc(c.invoice) : '') +
           (c.returnInvoice ? ((c.invoice ? ' · ' : '') + '반품송장 ' + esc(c.returnInvoice)) : '');
       }
-      var pu = String(c.pickup || '').replace(/\s/g, '');
-      var canPick = !!(LRT_READY && LRT_READY.ready) && (!pu || pu.indexOf('롯데') !== -1);
+      /*  ★ 2026-10-07: 낱개 박스 단추도 로젠을 알아본다 ★
+          여태 `pu.indexOf('롯데') !== -1` 이라 **로젠 건은 박스별 단추가 안 나왔다.**
+          박스가 여럿인 로젠 반품은 낱개로 고를 길이 아예 없었다. */
+      var canPick = retCardCanPick(c);
       var h = '<div class="ret-boxes">';
       for (var i = 0; i < boxes.length; i++) {
         var d = boxes[i];
@@ -9137,11 +11191,36 @@
       return h;
     }
 
+    /**
+     * 이 반품 카드는 «어느 택배사»로 접수하나.  (2026-10-07)
+     *
+     * ★ 한 곳에서 정한다 ★
+     *   여태 카드 쪽 네 군데가 저마다 '롯데'를 글자로 박아 두고 있었다 —
+     *   단추 조건 · 낱개 단추 조건 · 확인창 둘. 그래서 로젠 건인데
+     *   「롯데에 회수 접수합니다」라고 묻고, 낱개 단추는 아예 안 나왔다.
+     *   수거입력처가 비면 종전대로 롯데로 본다(서버가 접수할 때 다시 본다).
+     *
+     * @return {'롯데'|'로젠'}
+     */
+    function retCardCarrier(c) {
+      var pu = String((c && c.pickup) || '').replace(/\s/g, '');
+      return pu.indexOf('로젠') !== -1 ? '로젠' : '롯데';
+    }
+
+    /** 이 카드를 지금 접수할 수 있나 — 택배사에 맞는 준비 상태를 본다 */
+    function retCardCanPick(c) {
+      var pu = String((c && c.pickup) || '').replace(/\s/g, '');
+      //  롯데도 로젠도 아니라고 «적혀 있으면» 우리가 접수할 수 없다
+      if (pu && pu.indexOf('로젠') === -1 && pu.indexOf('롯데') === -1) return false;
+      var rdy = retCardCarrier(c) === '로젠' ? LGR_READY : LRT_READY;
+      return !!(rdy && rdy.ready);
+    }
+
     /** 박스 하나만 접수 */
     function retPickupBox(idx, orig, bi) {
       var c = RETURN_ACTIVE_ROWS[idx];
       if (!c) return;
-      if (!confirm('원송장 ' + orig + ' 박스 하나만 롯데에 회수 접수합니다.\n\n' +
+      if (!confirm('원송장 ' + orig + ' 박스 하나만 ' + retCardCarrier(c) + '에 회수 접수합니다.\n\n' +
         (c.name || '(이름 없음)') + ' · ' + (c.item || '-') + '\n\n보낼까요?')) return;
       _retPickupSend_(idx, [orig], document.getElementById('ret-pick-' + idx + '-' + bi));
     }
@@ -9158,28 +11237,37 @@
      */
     function retPickupBtnHtml(idx, c, picked) {
       if (picked) return '';
-      if (!(LRT_READY && LRT_READY.ready)) return '';
       if (!retOrigInvoices(c).length) return '';
       var pu = String(c.pickup || '').replace(/\s/g, '');
       /*  ★ 로젠 건도 접수한다 ★  (2026-09-16)
           수거입력처가 비면 막지 않는다 — 사람이 판단할 일이고, 서버가
           접수할 때 다시 본다. 롯데도 로젠도 아니라고 «적혀 있으면» 안 낸다. */
-      var 로젠 = pu.indexOf('로젠') !== -1;
+      var 로젠 = retCardCarrier(c) === '로젠';
       if (pu && !로젠 && pu.indexOf('롯데') === -1) return '';
+
+      /*  ★ 2026-10-07: 택배사에 «맞는» 준비 상태를 본다 ★
+          여태 맨 앞에서 LRT_READY(롯데)만 보고 막았다. 그래서 **로젠 건은
+          단추가 아예 안 나왔다** — 로젠 쪽이 준비돼 있어도 그랬다.
+          수거입력처가 비면 종전대로 롯데로 본다. */
+      var rdy = 로젠 ? LGR_READY : LRT_READY;
+      if (rdy === null) return '';   // 아직 안 물어봤다 — 답이 오면 lrtAfterReady_ 가 다시 그린다
+
       /*  로젠인데 아직 못 쓰면 «왜»를 단추에 담는다. 단추가 그냥 없으면
-          기능이 없는 줄 안다 — 인증키를 기다리는 중이라는 것을 알려야 한다. */
-      if (로젠 && !(LGR_READY && LGR_READY.ready)) {
-        var 왜 = (LGR_READY && LGR_READY.reason) || '로젠 회수 접수 준비 중입니다';
+          기능이 없는 줄 안다 — 무엇을 기다리는 중인지 알려야 한다. */
+      if (로젠 && !rdy.ready) {
+        var 왜 = rdy.reason || '로젠 회수 접수 준비 중입니다';
         return '<button type="button" class="ret-pickup-btn" disabled' +
           ' title="' + esc(왜) + '">반품접수(로젠 준비중)</button>';
       }
+      if (!로젠 && !rdy.ready) return '';
       /* 박스가 하나면 이 단추 하나로 끝난다. 여럿이면 송장 옆에 낱개 단추가
          이미 있으므로, 여기는 「남은 것 전부」로만 쓴다. */
       var left = retLeftBoxes(c);
       if (!left.length) return '';
       var label = left.length > 1 ? ('반품접수 ' + left.length + '박스') : '반품접수';
       return '<button type="button" class="ret-pickup-btn" id="ret-pick-' + idx + '"' +
-        ' title="롯데에 회수 접수를 보냅니다' + (pu ? '' : ' (수거입력처가 비어 있어 롯데 건인지는 접수할 때 확인합니다)') + '"' +
+        ' title="' + (로젠 ? '로젠' : '롯데') + '에 회수 접수를 보냅니다' +
+        (pu ? '' : ' (수거입력처가 비어 있어 어느 택배사인지는 접수할 때 확인합니다)') + '"' +
         ' onclick="event.stopPropagation(); retPickupFromCard(' + idx + ')">' + label + '</button>';
     }
 
@@ -9195,7 +11283,7 @@
       //  이미 접수된 박스는 빼고 남은 것만 — 두 번 접수하면 기사가 두 번 온다
       var origs = retLeftBoxes(c);
       if (!origs.length) { toast('남은 박스가 없습니다 — 이미 다 접수됐습니다', 3200); return; }
-      var msg = '롯데에 회수 접수를 보냅니다.\n\n' +
+      var msg = retCardCarrier(c) + '에 회수 접수를 보냅니다.\n\n' +
         (c.name || '(이름 없음)') + ' · ' + (c.item || '-') + '\n' +
         '원송장 ' + origs.join(', ') +
         (origs.length > 1 ? '\n\n★ 박스가 ' + origs.length + '개라 접수도 ' + origs.length + '건 나갑니다 ★' : '') +
@@ -9214,14 +11302,37 @@
         .withSuccessHandler(function (res) {
           if (btn) { btn.disabled = false; btn.textContent = label; }
           var got = (res && res.invoices) || [];
-          if (!got.length) {
+          /*  ★ 로젠은 접수 순간에 «반품송장을 안 준다» ★  (2026-10-08)
+              응답은 takeNo(접수번호)뿐이고 송장은 로젠이 출력한 뒤에 나온다
+              (csLogenReturn.gs 머리말 · 규격 §8.2).
+
+              여기서는 성공을 invoices 로만 재고 있었다. 그래서 **로젠 접수는
+              제대로 돼도 카드에서 늘 「회수 접수 실패」로 보였다.** 사장님이
+              같은 화면을 세 번 보여 주셔서 찾았다 — 그동안 실패한 줄 알고
+              다시 누르면 접수가 두 번 나갈 뻔했다.
+              (반품대장 창 쪽 핸들러는 takeNos 를 보고 있었다. 두 벌이라 한쪽만
+               고쳐져 있던 자리다.) */
+          var takes = (res && res.takeNos) || [];
+          if (!got.length && !takes.length) {
             toast('회수 접수 실패 — ' + ((res && res.error) || '알 수 없음'), 6000);
             return;
           }
-          toast(res.ok
-            ? ('회수 접수됨 · 반품송장 ' + got.join(', ') +
-               (got.length > 1 ? ' (' + got.length + '박스)' : '') + ' · 집하 ' + res.pickReqYmd)
-            : ('★ 일부만 접수됨 ★ ' + res.error), res.ok ? 4200 : 9000);
+          if (!res.ok) {
+            toast('★ 일부만 접수됨 ★ ' + res.error, 9000);
+          } else if (res.already && res.already >= (got.length + takes.length)) {
+            //  이미 접수돼 있던 건 — 새로 보내지 않았다. 사실대로 말한다.
+            toast('이미 접수된 건입니다 · 접수번호 ' + takes.join(', ') +
+              (got.length ? ' · 반품송장 ' + got.join(', ') : '') +
+              ' — 새로 접수하지 않았습니다', 5600);
+          } else if (got.length) {
+            toast('회수 접수됨 · 반품송장 ' + got.join(', ') +
+              (got.length > 1 ? ' (' + got.length + '박스)' : '') +
+              ' · 집하 ' + res.pickReqYmd, 4200);
+          } else {
+            toast('회수 접수됨 · 접수번호 ' + takes.join(', ') +
+              (takes.length > 1 ? ' (' + takes.length + '박스)' : '') +
+              ' · 반품송장은 로젠이 출력한 뒤에 나옵니다', 5600);
+          }
           //  대장에 적혔으니 새로 읽어 박스별 상태가 다시 그려지게 한다
           loadReturnActive(true, false, true);
         })
@@ -9316,7 +11427,7 @@
             //  완료로 바꾸면 「진행 중」 목록에서 내려가야 한다
             x.active = !isReturnCardDone({ status: status, doneFlag: status });
             if (retInvVal) x.returnInvoice = retInvVal;
-            if (ph2Val) { x.phoneSub = ph2Val; x.phoneSubTag = '추가'; }
+            if (ph2Val) retApplyPhone2(x, ph2Val);   // 실번호가 앞 (서버와 같은 순서)
             if (ph2nVal) x.phone2Name = ph2nVal;
             return retPrependEvent(x, 'status', status, staff);
           },
@@ -9531,6 +11642,9 @@
       if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
       var list = retPhotoList(idx);
       if (!list.length) { toast('먼저 사진을 고르세요'); return; }
+      //  ★ 2026-10-07: 사진에 같이 남길 말 (선택) ★
+      var memoEl = document.getElementById('ret-photo-memo-' + idx);
+      var memo = memoEl ? String(memoEl.value || '').trim() : '';
 
       var btn = document.getElementById('ret-save-photo-' + idx);
       if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
@@ -9552,6 +11666,7 @@
           }
           RET_PHOTO_PEND[idx] = [];
           retPhotoRender(idx);
+          if (memoEl) memoEl.value = '';
           closeReturnCompose(idx);
           hbUpDone(true, String(res.message || ('사진 ' + list.length + '장이 올라갔습니다')),
             null, function () { loadReturnActive(true, false); });
@@ -9566,6 +11681,7 @@
           row: c.row,
           staff: staff,
           name: c.name,
+          memo: memo,
           photos: retPhotoPayload(list)
         });
     }
@@ -9643,6 +11759,11 @@
           };
         }
       }
+
+      /*  CS 문의 — 창이 아니라 대시보드 칸이라 위 모달 검사에 안 걸린다.
+          모달이 떠 있으면 그쪽이 위라 먼저다. 그 다음이 여기다. (2026-10-02) */
+      var csq = csqPasteTarget();
+      if (csq) return csq;
 
       var pop = document.querySelector('#pane-returns .ret-act-pop[data-mode="photo"].open');
       if (pop) {
@@ -9758,6 +11879,410 @@
       renderReturnActiveList();
     }
 
+    /* ══ 진행 카드 옮기기 ══════════════════════════════════════
+       > "오른쪽 버튼을 눌러 이동...이름검색... 맞는지 확인.. 이동"
+
+       ★ 확인을 눌러야 움직인다 ★ 고르자마자 옮기면 손이 미끄러진 것과
+         뜻한 것을 못 가른다. 옮길 줄과 받을 건을 «같이 보여 주고» 묻는다.
+       ══════════════════════════════════════════════════════════ */
+    var RPM = null;   // { from:{tab,row}, raw, lineIndex, kind, preview, fromName }
+
+    /* ══ 끌어다 놓기 ══════════════════════════════════════════
+       > "드래그앤 드롭으로 다른카드로 이동 … 최종적으로 확인버튼을 눌러야 이동되게"
+
+       놓는다고 바로 안 옮긴다. 놓으면 오른쪽 버튼과 «같은 확인 창»이 뜨고,
+       받을 건만 미리 골라져 있다. 끌다가 손이 미끄러지는 일이 흔한데,
+       그때마다 대장 두 줄이 바뀌면 안 된다.
+       ══════════════════════════════════════════════════════════ */
+    var RPM_DRAG = null;
+
+    function retProcDragStart(cardIdx, visIdx, ev) {
+      var c = RETURN_ACTIVE_ROWS[cardIdx];
+      var item = c ? (returnVisibleTimeline(cardIdx) || [])[visIdx] : null;
+      if (!c || !item || item.kind === 'access') { if (ev) ev.preventDefault(); return; }
+      var raw = String(item.raw || item.text || '').trim();
+      if (!raw) { if (ev) ev.preventDefault(); return; }
+
+      RPM_DRAG = {
+        from: { tab: c.tab, row: c.row },
+        raw: raw, lineIndex: item.noticeLineIdx, kind: item.kind,
+        preview: String(item.text || raw).trim(),
+        fromName: c.name || '(이름 없음)'
+      };
+      /*  카드 탭(onclick)이 같이 안 돌게 — 끌기는 고르기가 아니다 */
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      try {
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.setData('text/plain', 'ret-proc');   // 파이어폭스는 이게 있어야 끌린다
+      } catch (e) {}
+      document.body.classList.add('rpm-dragging');
+      rpmTrayShow();
+    }
+
+    function retProcDragEnd(ev) {
+      RPM_DRAG = null;
+      document.body.classList.remove('rpm-dragging');
+      var on = document.querySelectorAll('.ret-card.rpm-over');
+      for (var i = 0; i < on.length; i++) on[i].classList.remove('rpm-over');
+      rpmTrayHide();
+    }
+
+    /* ── 쟁반 ──────────────────────────────────────────────────
+       > "같은 이름 같은 세트의 카드가 아래쪽에 슥 올라오면 그곳에 드롭"
+       몸통·뚜껑은 목록에서 멀리 떨어져 있거나 접혀 있다. 찾아 끌고 가는
+       동안 손이 미끄러진다. 받을 만한 건을 발밑에 깔아 준다.
+       ★ 같은 이름이 맨 앞이다 ★ 세트 몸통·뚜껑이 거의 늘 거기 둘이다.
+       ────────────────────────────────────────────────────────── */
+    function rpmTrayShow() {
+      var el = document.getElementById('rpmTray');
+      if (!el || !RPM_DRAG) return;
+      var 내이름 = rpmNameKey(RPM_DRAG.fromName);
+
+      var 같은이름 = [], 나머지 = [];
+      for (var i = 0; i < (RETURN_ACTIVE_ROWS || []).length; i++) {
+        var c = RETURN_ACTIVE_ROWS[i];
+        if (!c) continue;
+        if (c.tab === RPM_DRAG.from.tab && c.row === RPM_DRAG.from.row) continue;
+        (내이름 && rpmNameKey(c.name) === 내이름 ? 같은이름 : 나머지).push({ i: i, c: c });
+      }
+
+      function 조각(x, 같나) {
+        var c2 = x.c;
+        return '<div class="rpmt-chip' + (같나 ? ' same' : '') + '"' +
+          ' ondragover="rpmTrayOver(' + x.i + ', event)"' +
+          ' ondragleave="rpmTrayLeave(' + x.i + ', event)"' +
+          ' ondrop="rpmTrayDrop(' + x.i + ', event)"' +
+          ' id="rpmt-' + x.i + '">' +
+          '<b>' + esc(c2.name || '(이름 없음)') + '</b>' +
+          esc(String(c2.item || '').substring(0, 28)) + '</div>';
+      }
+
+      var h = '<div class="rpmt-h">' +
+        (같은이름.length
+          ? '여기에 놓으세요 — 같은 이름 ' + esc(RPM_DRAG.fromName) + ' (세트 몸통·뚜껑)'
+          : '여기에 놓으세요 — 진행 중 반품') +
+        ' · 놓아도 바로 안 옮깁니다, 확인 창이 뜹니다</div><div class="rpmt-row">';
+      for (var a = 0; a < 같은이름.length; a++) h += 조각(같은이름[a], true);
+      /*  같은 이름은 다 깔고, 나머지는 여덟 장까지. 더 멀리 있는 건은
+          카드에 직접 놓거나 오른쪽 버튼으로 찾는 편이 빠르다. */
+      for (var b = 0; b < 나머지.length && b < 8; b++) h += 조각(나머지[b], false);
+      h += '</div>';
+      if (!같은이름.length && !나머지.length) {
+        h = '<div class="rpmt-none">옮길 만한 다른 반품 건이 없습니다.</div>';
+      }
+      el.innerHTML = h;
+      el.hidden = false;
+      //  한 틱 뒤에 올린다 — 같은 틱에 두면 슥 올라오는 것이 안 보인다
+      setTimeout(function () { el.classList.add('up'); }, 10);
+    }
+
+    function rpmTrayHide() {
+      var el = document.getElementById('rpmTray');
+      if (!el) return;
+      el.classList.remove('up');
+      setTimeout(function () { if (!RPM_DRAG) { el.hidden = true; el.innerHTML = ''; } }, 180);
+    }
+
+    function rpmTrayOver(idx, ev) {
+      if (!RPM_DRAG) return;
+      if (ev) { ev.preventDefault(); try { ev.dataTransfer.dropEffect = 'move'; } catch (e) {} }
+      var el = document.getElementById('rpmt-' + idx);
+      if (el) el.classList.add('on');
+    }
+
+    function rpmTrayLeave(idx, ev) {
+      var el = document.getElementById('rpmt-' + idx);
+      if (el) el.classList.remove('on');
+    }
+
+    function rpmTrayDrop(idx, ev) {
+      if (!RPM_DRAG) return;
+      if (ev) { ev.preventDefault(); if (ev.stopPropagation) ev.stopPropagation(); }
+      var 끌던것 = RPM_DRAG;
+      retProcDragEnd();
+      var c = RETURN_ACTIVE_ROWS[idx];
+      if (!c) return;
+      if (c.tab === 끌던것.from.tab && c.row === 끌던것.row) return;
+      RPM = 끌던것;
+      retProcMoveOpen();
+      retProcMovePick(idx);
+      var q = document.getElementById('rpmq');
+      if (q) q.blur();
+    }
+
+    function retProcDragOver(cardIdx, ev) {
+      if (!RPM_DRAG) return;
+      var c = RETURN_ACTIVE_ROWS[cardIdx];
+      //  제 건 위에서는 받지 않는다 — 같은 건으로 옮길 일이 없다
+      if (!c || (c.tab === RPM_DRAG.from.tab && c.row === RPM_DRAG.from.row)) return;
+      if (ev) { ev.preventDefault(); try { ev.dataTransfer.dropEffect = 'move'; } catch (e) {} }
+      var el = document.getElementById('ret-card-' + cardIdx);
+      if (el) el.classList.add('rpm-over');
+    }
+
+    function retProcDragLeave(cardIdx, ev) {
+      var el = document.getElementById('ret-card-' + cardIdx);
+      if (el) el.classList.remove('rpm-over');
+    }
+
+    function retProcDrop(cardIdx, ev) {
+      if (!RPM_DRAG) return;
+      if (ev) { ev.preventDefault(); if (ev.stopPropagation) ev.stopPropagation(); }
+      var c = RETURN_ACTIVE_ROWS[cardIdx];
+      var 끌던것 = RPM_DRAG;
+      retProcDragEnd();
+      if (!c) return;
+      if (c.tab === 끌던것.from.tab && c.row === 끌던것.row) return;
+
+      /*  오른쪽 버튼과 «같은» 창을 쓴다. 받을 건만 미리 골라 둔다 —
+          사람은 확인만 하면 된다.                                   */
+      RPM = 끌던것;
+      retProcMoveOpen();
+      retProcMovePick(cardIdx);
+      var q = document.getElementById('rpmq');
+      if (q) q.blur();
+    }
+
+    /* ══ 되돌리기 ══════════════════════════════════════════════
+       > "언두 기능 없을까?"
+       > "되돌리기 창이 떠 있으면 잘못 클릭할수도 있으니 하단에 만들어줘"
+
+       창으로 띄우면 화면을 덮어 다음 일을 못 하고, 엉뚱한 데를 누른다.
+       아래 띠로 깔고 2분 뒤 저절로 걷는다. 그 안에 안 누르면 반대로
+       한 번 더 옮기면 된다 — 되돌리기는 «빠른 길»이지 유일한 길이 아니다.
+       ══════════════════════════════════════════════════════════ */
+    var RPM_UNDO = null, RPM_UNDO_T = null;
+
+    function rpmUndoShow(u) {
+      var el = document.getElementById('rpmUndo');
+      if (!el) return;
+      RPM_UNDO = u;
+      el.innerHTML =
+        '<div class="rpmu-txt">옮겼습니다 — <b>' + esc(u.fromName || '') + '</b> → <b>' +
+          esc(u.toName || '') + '</b><br><span>잘못 옮겼으면 되돌릴 수 있습니다</span></div>' +
+        '<button type="button" class="undo" onclick="rpmUndoGo()">되돌리기</button>' +
+        '<button type="button" onclick="rpmUndoHide()">닫기</button>';
+      el.hidden = false;
+      setTimeout(function () { el.classList.add('up'); }, 10);
+      if (RPM_UNDO_T) clearTimeout(RPM_UNDO_T);
+      RPM_UNDO_T = setTimeout(rpmUndoHide, 120000);   // 2분
+    }
+
+    function rpmUndoHide() {
+      if (RPM_UNDO_T) { clearTimeout(RPM_UNDO_T); RPM_UNDO_T = null; }
+      RPM_UNDO = null;
+      var el = document.getElementById('rpmUndo');
+      if (!el) return;
+      el.classList.remove('up');
+      setTimeout(function () { if (!RPM_UNDO) { el.hidden = true; el.innerHTML = ''; } }, 200);
+    }
+
+    function rpmUndoGo() {
+      if (!RPM_UNDO) return;
+      var staff = returnStaffName();
+      if (!staff) { toast('담당자를 먼저 선택하세요'); return; }
+      var u = RPM_UNDO;
+      var el = document.getElementById('rpmUndo');
+      var btn = el ? el.querySelector('button.undo') : null;
+      if (btn) { btn.disabled = true; btn.textContent = '되돌리는 중…'; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) {
+            if (btn) { btn.disabled = false; btn.textContent = '되돌리기'; }
+            toast((res && res.error) || '되돌리기 실패', 3600);
+            return;
+          }
+          rpmUndoHide();
+          toast(res.message || '되돌렸습니다');
+          loadReturnActive(true, false);
+        })
+        .withFailureHandler(function (e) {
+          if (btn) { btn.disabled = false; btn.textContent = '되돌리기'; }
+          toast(String((e && e.message) || e || '되돌리기 실패'), 3600);
+        })
+        /*  방향을 뒤집어 부른다. 흔적 두 줄은 «서버가 적은 그대로» 돌려줘
+            지우게 한다 — 되돌린 자리는 아무 일 없던 것처럼 깨끗해야 한다. */
+        .moveReturnTimelineEvent({
+          from: u.to, to: u.from, raw: u.raw, kind: u.kind, staff: staff,
+          undo: {
+            dropFrom: (u.흔적 && u.흔적.받는쪽) || '',   // 받았던 쪽(지금 보내는 쪽)의 「← …에서 옮겨옴」
+            dropTo: (u.흔적 && u.흔적.보낸쪽) || '',     // 보냈던 쪽(지금 받는 쪽)의 「→ …로 옮김」
+            /*  옮기며 바꾼 상태를 도로 돌린다. 반쪽짜리 되돌리기는 더 헷갈린다.
+                안 바꿨으면 undefined 로 둬 서버가 상태를 안 건드리게 한다. */
+            restoreStatus: (u.상태바꿈 ? (u.상태바꿈.앞 || '') : undefined)
+          }
+        });
+    }
+
+    function retProcMenu(cardIdx, visIdx, ev) {
+      if (ev && ev.preventDefault) ev.preventDefault();
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      var c = RETURN_ACTIVE_ROWS[cardIdx];
+      if (!c) return false;
+      var item = (returnVisibleTimeline(cardIdx) || [])[visIdx];
+      if (!item) return false;
+      if (item.kind === 'access') { toast('접수 카드는 옮길 수 없습니다'); return false; }
+
+      var raw = String(item.raw || item.text || '').trim();
+      if (!raw) { toast('옮길 줄을 못 찾았습니다'); return false; }
+
+      RPM = {
+        from: { tab: c.tab, row: c.row },
+        raw: raw, lineIndex: item.noticeLineIdx, kind: item.kind,
+        preview: String(item.text || raw).trim(),
+        fromName: c.name || '(이름 없음)'
+      };
+      retProcMoveOpen();
+      return false;
+    }
+
+    function retProcMoveOpen() {
+      var el = document.getElementById('rpmBox');
+      if (!el || !RPM) return;
+      var p = RPM.preview.length > 90 ? RPM.preview.substring(0, 90) + '…' : RPM.preview;
+      el.innerHTML =
+        '<div class="rpm-card">' +
+          '<div class="rpm-h">진행 카드 옮기기</div>' +
+          '<div class="rpm-from"><b>' + esc(RPM.fromName) + '</b> 건에서</div>' +
+          '<div class="rpm-line">' + esc(p) + '</div>' +
+          '<input id="rpmq" type="search" autocomplete="off" placeholder="받을 건 — 이름으로 찾기" ' +
+                 'oninput="retProcMoveSearch()">' +
+          '<div id="rpmHits" class="rpm-hits"></div>' +
+          '<div id="rpmPick" class="rpm-pick" hidden></div>' +
+          '<div class="rpm-acts">' +
+            '<button type="button" onclick="retProcMoveClose()">취소</button>' +
+            '<button type="button" class="ok" id="rpmGo" disabled onclick="retProcMoveGo()">확인 — 옮기기</button>' +
+          '</div>' +
+        '</div>';
+      el.hidden = false;
+      var q = document.getElementById('rpmq'); if (q) q.focus();
+      retProcMoveSearch();
+    }
+
+    function retProcMoveClose() {
+      RPM = null;
+      var el = document.getElementById('rpmBox');
+      if (el) { el.hidden = true; el.innerHTML = ''; }
+    }
+
+    /*  이름 견주기 — 「김○○ *」·띄어쓰기·가린 별표를 털고 본다.
+        대장 이름은 손으로 적히는 칸이라 같은 사람도 글자가 조금씩 다르다. */
+    function rpmNameKey(s) {
+      return String(s || '').replace(/[\s*＊·]/g, '').toLowerCase();
+    }
+
+    /*  화면에 이미 들고 있는 진행 반품에서 찾는다 — 서버를 또 부르지 않는다.
+        못 찾으면 그렇게 말한다. 「없다」와 「목록에 안 들어온다」는 다르다.
+
+        ★ 같은 이름이 맨 위다 ★  (2026-10-06)
+        > "기본적으로 옮기기시에 검색에 같은 이름이 우선적으로 뜨게 해줘..
+        >  세트제품에 몸통 뚜껑이 따로라 잘못 올라가는경우가 대부분이라"
+        몸통과 뚜껑은 «같은 손님의 두 줄»이다. 거의 늘 그 둘 사이에서 옮긴다.
+        그러니 창을 열자마자 그 둘이 보여야 한다 — 이름을 또 치게 하면
+        치는 사이에 다른 줄을 고른다.                                     */
+    function retProcMoveSearch() {
+      var box = document.getElementById('rpmHits');
+      if (!box || !RPM) return;
+      var q = String((document.getElementById('rpmq') || {}).value || '').trim().toLowerCase();
+      var 내이름 = rpmNameKey(RPM.fromName);
+
+      var 같은이름 = [], 나머지 = [];
+      for (var i = 0; i < (RETURN_ACTIVE_ROWS || []).length; i++) {
+        var c = RETURN_ACTIVE_ROWS[i];
+        if (!c) continue;
+        if (c.tab === RPM.from.tab && c.row === RPM.from.row) continue;   // 제 건은 뺀다
+        if (q) {
+          var hay = ((c.name || '') + ' ' + (c.item || '') + ' ' + (c.uid || '') + ' ' +
+                     (c.phone || '') + ' ' + (c.invoice || '')).toLowerCase();
+          if (hay.indexOf(q) === -1) continue;
+        }
+        (내이름 && rpmNameKey(c.name) === 내이름 ? 같은이름 : 나머지).push({ i: i, c: c });
+      }
+
+      if (!같은이름.length && !나머지.length) {
+        box.innerHTML = '<div class="rpm-none">' +
+          (q ? '진행 중 반품에서 못 찾았습니다.' : '진행 중인 다른 반품이 없습니다.') + '</div>';
+        return;
+      }
+
+      function 줄(x, 같나) {
+        var c2 = x.c;
+        return '<div class="rpm-hit' + (같나 ? ' same' : '') + '" onclick="retProcMovePick(' + x.i + ')">' +
+          '<b>' + esc(c2.name || '(이름 없음)') + '</b> ' +
+          '<span>' + esc(String(c2.item || '').substring(0, 24)) + '</span>' +
+          (c2.uid ? '<span class="rpm-uid">' + esc(c2.uid) + '</span>' : '') +
+          '</div>';
+      }
+
+      var h = '';
+      if (같은이름.length) {
+        h += '<div class="rpm-grp">같은 이름 — ' + esc(RPM.fromName) + ' (세트 몸통·뚜껑)</div>';
+        for (var a = 0; a < 같은이름.length; a++) h += 줄(같은이름[a], true);
+      }
+      /*  나머지는 열두 장까지만. 같은 이름은 «다» 보여 준다 — 그게 찾는 것이다. */
+      if (나머지.length) {
+        if (같은이름.length) h += '<div class="rpm-grp">그 밖</div>';
+        for (var b = 0; b < 나머지.length && b < 12; b++) h += 줄(나머지[b], false);
+        if (나머지.length > 12) {
+          h += '<div class="rpm-none">그 밖 ' + (나머지.length - 12) +
+               '건 더 있습니다 — 이름이나 번호를 쳐서 좁혀 주세요.</div>';
+        }
+      }
+      box.innerHTML = h;
+    }
+
+    function retProcMovePick(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      if (!c || !RPM) return;
+      RPM.to = { tab: c.tab, row: c.row };
+      RPM.toName = c.name || '(이름 없음)';
+      var el = document.getElementById('rpmPick');
+      if (el) {
+        el.hidden = false;
+        el.innerHTML = '받을 건 : <b>' + esc(RPM.toName) + '</b>' +
+          (c.item ? ' · ' + esc(String(c.item).substring(0, 30)) : '') +
+          (c.uid ? ' · <span class="rpm-uid">' + esc(c.uid) + '</span>' : '');
+      }
+      var go = document.getElementById('rpmGo'); if (go) go.disabled = false;
+    }
+
+    function retProcMoveGo() {
+      if (!RPM || !RPM.to) { toast('받을 건을 먼저 고르세요'); return; }
+      var staff = returnStaffName();
+      if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
+      var go = document.getElementById('rpmGo');
+      if (go) { go.disabled = true; go.textContent = '옮기는 중…'; }
+      var 보냄 = RPM;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) {
+            if (go) { go.disabled = false; go.textContent = '확인 — 옮기기'; }
+            toast((res && res.error) || '옮기기 실패', 3600);
+            return;
+          }
+          retProcMoveClose();
+          toast(res.message || '옮겼습니다');
+          /*  되돌릴 거리를 들고 있는다 — 흔적 두 줄은 «서버가 적은 그대로»
+              받아 둔다. 짐작해서 지우면 남의 줄을 지운다. (2026-10-06) */
+          rpmUndoShow({
+            from: 보냄.from, to: 보냄.to, raw: 보냄.raw, kind: 보냄.kind,
+            fromName: 보냄.fromName, toName: 보냄.toName,
+            흔적: (res && res.흔적) || {},
+            //  옮기며 바꾼 상태 — 되돌릴 때 같이 돌린다 (2026-10-07)
+            상태바꿈: (res && res.상태바꿈) || null
+          });
+          loadReturnActive(true, false);
+        })
+        .withFailureHandler(function (e) {
+          if (go) { go.disabled = false; go.textContent = '확인 — 옮기기'; }
+          toast(String((e && e.message) || e || '옮기기 실패'), 3600);
+        })
+        .moveReturnTimelineEvent({
+          from: 보냄.from, to: 보냄.to, raw: 보냄.raw,
+          lineIndex: 보냄.lineIndex, kind: 보냄.kind, staff: staff
+        });
+    }
+
     function confirmDeleteReturnProc(cardIdx, visIdx, ev) {
       if (ev && ev.stopPropagation) ev.stopPropagation();
       var c = RETURN_ACTIVE_ROWS[cardIdx];
@@ -9855,24 +12380,83 @@
       return c.active ? 0 : 3;   // 서버가 아직 옛 인덱스를 주는 동안의 대비
     }
 
-    function returnBadgeFor(r) {
-      if (!RETURN_CASES.length || !r) return null;
+    /** 주문 고유ID 열쇠 — 서버 _cs_orderUid_ 와 같은 규칙 (마지막 / 뒤 · 띄어쓰기 · #n · |코드 · _S숫자) */
+    function orderUidKey(v) {
+      var s = String(v == null ? '' : v);
+      var cut = Math.max(s.lastIndexOf('/'), s.lastIndexOf('／'));
+      if (cut >= 0) s = s.slice(cut + 1);
+      s = s.replace(/\s+/g, '').replace(/#\d+$/, '');
+      var bar = s.indexOf('|');
+      if (bar >= 0) s = s.slice(0, bar);
+      return s.replace(/_S\d+$/i, '');
+    }
+
+    /**
+     * 이 주문의 반품들 — ★ 2026-10-05 고유ID 가 먼저 ★
+     *   > "주문 카드에 반품 내용 붙여줘"
+     *   반품대장 고유ID 칸이 이제 «원래 주문의 고유ID» 다. 번호가 같으면 그 주문이다.
+     *   대장에 번호가 있는데 다르면 «다른 주문»이다 — 같은 손님이라 전화가 같아도 붙이지 않는다.
+     *   번호가 없는 옛 반품만 예전처럼 송장 → (송장도 없을 때) 전화로 잇는다.
+     * @return {Array<{c:Object, by:string}>} 진행 중 먼저, 같으면 더 나아간 단계 먼저
+     */
+    function returnCasesFor(r) {
+      if (!RETURN_CASES.length || !r) return [];
+      var uid = orderUidKey(r.orderNo);
       var phone = String(r.phoneDigits || '').replace(/[^0-9]/g, '');
       var inv = String(r.invDigits || '');
-      var best = null;
+      var out = [];
       for (var i = 0; i < RETURN_CASES.length; i++) {
         var c = RETURN_CASES[i];
-        var hit = false;
-        if (phone && c.phoneDigits && phone === c.phoneDigits) hit = true;
-        if (!hit && inv && (invDigitsOverlap(inv, c.invDigits) || invDigitsOverlap(inv, c.returnInvDigits))) hit = true;
-        if (!hit) continue;
-        if (!best) { best = c; continue; }
-        /* 같은 사람의 반품이 여러 건일 수 있다. 진행 중인 것을 먼저 보여준다 —
-           지난달 완료건보다 지금 처리해야 할 건이 급하다.
-           둘 다 진행 중이면 더 나아간 단계를 보여준다. */
-        if (c.active !== best.active) { if (c.active) best = c; continue; }
-        if (returnStageOf(c) > returnStageOf(best)) best = c;
+        var by = '';
+        if (c.uid) {
+          if (uid && c.uid === uid) by = '고유ID';
+          else if (!uid && inv && (invDigitsOverlap(inv, c.invDigits) || invDigitsOverlap(inv, c.returnInvDigits))) by = '송장';
+        } else if (inv && (invDigitsOverlap(inv, c.invDigits) || invDigitsOverlap(inv, c.returnInvDigits))) {
+          by = '송장';
+        } else if (phone && c.phoneDigits && phone === c.phoneDigits && !c.invDigits) {
+          by = '전화';
+        }
+        if (by) out.push({ c: c, by: by });
       }
+      /* 같은 사람의 반품이 여러 건일 수 있다. 진행 중인 것을 먼저 보여준다 —
+         지난달 완료건보다 지금 처리해야 할 건이 급하다.
+         둘 다 진행 중이면 더 나아간 단계를 보여준다. */
+      out.sort(function(a, b) {
+        if (a.c.active !== b.c.active) return a.c.active ? -1 : 1;
+        var ds = returnStageOf(b.c) - returnStageOf(a.c);
+        if (ds) return ds;
+        return String(b.c.sortKey || '').localeCompare(String(a.c.sortKey || ''));
+      });
+      return out;
+    }
+
+    /** 주문 카드 「반품」 줄 — 대장에 적힌 내용을 그대로 (시트와 같은 말) */
+    function returnLinesHtml(r) {
+      var hits = returnCasesFor(r);
+      if (!hits.length) return '';
+      var lines = hits.slice(0, 3).map(function(h) {
+        var c = h.c, stage = returnStageOf(c);
+        var st = String(c.status || '').trim() || (stage === 3 ? '완료' : '접수');
+        var 조각 = [];
+        if (c.date) 조각.push(esc(String(c.date).replace(/^\d{4}[-/.]/, '')) + ' 접수');
+        조각.push(RET_STAGE_ICON[stage] + ' ' + esc(st));
+        if (c.type) 조각.push(esc(c.type));
+        if (c.reason) 조각.push(esc(c.reason));
+        if (c.qty) 조각.push('수량 ' + esc(c.qty));
+        if (c.returnInvoice) 조각.push('반품송장 ' + esc(c.returnInvoice));
+        if (c.fee) 조각.push('반품비 ' + esc(c.fee));
+        return '<button type="button" class="os-ret-line ret-s' + stage + '" title="눌러서 반품 조회 · ' +
+          esc(h.by) + '로 찾음" onclick="openReturnFromOrder(\'' + js(c.tab + '|' + c.row) + '\', event)">' +
+          조각.join(' · ') + (h.by !== '고유ID' ? ' <span class="os-ret-by">(' + esc(h.by) + '로 찾음)</span>' : '') +
+          '</button>';
+      }).join('');
+      if (hits.length > 3) lines += '<span class="os-ret-by">… 외 ' + (hits.length - 3) + '건</span>';
+      return '<div class="os-row"><div class="os-lab">반품</div><div class="os-val">' + lines + '</div></div>';
+    }
+
+    function returnBadgeFor(r) {
+      var hits = returnCasesFor(r);
+      var best = hits.length ? hits[0].c : null;
       if (!best) return null;
 
       var stage = returnStageOf(best);
@@ -10019,6 +12603,22 @@
       if (safe) box.textContent = '안심번호입니다 — 배송이 끝나면 끊깁니다. 아래 실번호를 받아 적어 주세요.';
     }
 
+    /*  ★ 송장과 택배사를 한 줄로 ★  (2026-10-04)
+
+        > "택배사 한 칸에 같이 적게 해줘"
+
+        대장 머리글이 「원송장번호 / 택배사」다. 서버는 칸을 갈라 번호와
+        택배사를 따로 준다(조회 주소에 택배사 글자가 붙으면 안 되니까).
+        사람에게는 시트와 같은 모양으로 다시 붙여 보인다 — 시트를 보던
+        사람이 화면에서 못 찾으면 「안 적혔다」고 읽는다.
+        택배사가 없으면 번호만 — 「/」 만 떠 있으면 고장으로 보인다.  */
+    function retInvWithCarrier(번호, 택배사) {
+      var n = String(번호 || '').trim();
+      var c = String(택배사 || '').trim();
+      if (!n) return '';
+      return c ? n + '  /  ' + c : n;
+    }
+
     function retCaseRowHtml(lab, val) {
       if (!val) return '';
       return '<div class="os-row"><div class="os-lab">' + esc(lab) +
@@ -10049,10 +12649,13 @@
         '<div class="os-card-head"><div class="os-name">' + esc(c.name || '(이름 없음)') +
         '<span class="os-tag ret-s' + stage + '">' + esc(RET_STAGE_ICON[stage] + ' ' + (st || '접수')) +
         '</span></div></div>' +
+        retCaseRowHtml('고유ID', c.uid) +
         retCaseRowHtml('접수일', c.date) +
         retCaseRowHtml('품목', (c.item || '') + (c.qty ? ' × ' + c.qty : '')) +
-        retCaseRowHtml('원송장', c.invoice) +
-        retCaseRowHtml('반품송장', c.returnInvoice) +
+        retCaseRowHtml('재출고', c.reship) +
+        retCaseRowHtml('재출고 배송비', c.reshipFee) +
+        retCaseRowHtml('원송장', retInvWithCarrier(c.invoice, c.carrier)) +
+        retCaseRowHtml('반품송장', retInvWithCarrier(c.returnInvoice, c.returnCarrier)) +
         retCaseRowHtml('전화', (c.phone || '') + (c.phoneTag ? ' (' + c.phoneTag + ')' : '') +
           (c.phone2Name && !c.phoneTag ? '  ' + c.phone2Name : '') +
           (c.phoneOnlySafe ? '  — 기간이 지나면 끊깁니다' : '')) +
@@ -10090,7 +12693,11 @@
         c.name, c.item, c.qty, c.phone, c.phoneDigits, c.phoneSub, c.phone2Digits,
         c.invoice, c.invDigits,
         c.returnInvoice, c.returnInvDigits, c.status, c.staff, c.tab, c.type,
-        c.vendor, c.notice, c.fee, c.row, c.date
+        c.vendor, c.notice, c.fee, c.row, c.date,
+        /*  고유ID — 번호 하나로 어느 화면에서든 같은 건에 닿는다 (2026-10-02).
+            발주(d)·전화주문(p)·반품(r) 이 같은 모양이라, 번호만 알면
+            어디서 찾든 그 건이다.  */
+        c.uid
       ].join(' ').toLowerCase();
     }
 
@@ -10267,6 +12874,14 @@
           if (va !== vb) return va.localeCompare(vb);
           return key(b).localeCompare(key(a));
         });
+      } else if (RETURN_SORT === 'staff') {
+        /*  접수자가 같으면 최신순 — 한 사람 것을 모아 놓고 그 안에서 새 것부터.
+            접수자가 빈 건은 맨 뒤로 보낸다('힣'). 업체순과 같은 짜임이다.  */
+        out.sort(function(a, b) {
+          var sa = String((a && a.staff) || '힣'), sb = String((b && b.staff) || '힣');
+          if (sa !== sb) return sa.localeCompare(sb);
+          return key(b).localeCompare(key(a));
+        });
       } else if (RETURN_SORT === 'stage') {
         /*  stage 는 숫자다 — 0 접수 · 1 회수 · 2 입고 · 3 완료.
             «손이 안 간 것부터» 올린다. 같은 단계면 오래된 것이 위다 —
@@ -10282,10 +12897,96 @@
       return 새것.length ? 새것.concat(out) : out;
     }
 
+    /*  고른 상태값 — 그 사람 브라우저에만 기억한다 (선택은 사람마다 다르다) */
+    var RETURN_STAGE_FILTER = '';
+    try { RETURN_STAGE_FILTER = localStorage.getItem('CS_RET_STAGE') || ''; } catch (e) {}
+
+    /*  접수자 거르개 (2026-10-02) — 「내가 받은 것만」을 보려는 것이다.
+        상태 거르개와 같은 짜임. 고른 값은 그 사람 브라우저에만 남는다.  */
+    var RETURN_STAFF_FILTER = '';
+    try { RETURN_STAFF_FILTER = localStorage.getItem('CS_RET_STAFF') || ''; } catch (e) {}
+
+    function setReturnStaffFilter(v) {
+      RETURN_STAFF_FILTER = String(v || '').trim();
+      try { localStorage.setItem('CS_RET_STAFF', RETURN_STAFF_FILTER); } catch (e) {}
+      renderReturnActiveList();
+    }
+
+    /**
+     * 접수자 고르는 칸을 «지금 화면에 있는 건»에서 채운다.
+     *
+     * ★ 이름을 코드에 안 박는다 ★ 사람이 들고 난다. 박아 두면 그만둔
+     *   사람이 남고 새로 온 사람이 안 보인다.
+     * ★ 고른 사람이 목록에 없어도 남겨 둔다 ★ 그 사람 건이 오늘 하나도
+     *   없으면 칸이 저절로 「전체」로 돌아가, 왜 다 보이는지 모르게 된다.
+     */
+    function retFillStaffPick(rows) {
+      var sel = document.getElementById('retStaffPick');
+      if (!sel) return;
+      var 셈 = {};
+      for (var i = 0; i < rows.length; i++) {
+        var who = String((rows[i] && rows[i].staff) || '').trim();
+        if (!who) continue;
+        셈[who] = (셈[who] || 0) + 1;
+      }
+      var 이름들 = Object.keys(셈).sort(function (a, b) { return a.localeCompare(b); });
+      if (RETURN_STAFF_FILTER && 이름들.indexOf(RETURN_STAFF_FILTER) < 0) {
+        이름들.push(RETURN_STAFF_FILTER);
+        셈[RETURN_STAFF_FILTER] = 0;
+      }
+      var h = '<option value="">접수자 전체</option>';
+      for (var k = 0; k < 이름들.length; k++) {
+        h += '<option value="' + esc(이름들[k]) + '">' +
+          esc(이름들[k]) + ' (' + 셈[이름들[k]] + ')</option>';
+      }
+      sel.innerHTML = h;
+      sel.value = RETURN_STAFF_FILTER;
+    }
+
+    /** 「전체 · 접수 n · 반품송장 n …」 — 정해진 단계 차례 먼저, 그 밖의 상태는 뒤에 */
+    function retStageChipsHtml(rows) {
+      var 셈 = {}, 차례 = RETURN_STATUS_OPTS.slice();
+      (rows || []).forEach(function (c) {
+        var st = String(c.status || '').trim() || '(상태 없음)';
+        셈[st] = (셈[st] || 0) + 1;
+        if (차례.indexOf(st) < 0) 차례.push(st);
+      });
+      if (RETURN_STAGE_FILTER && 차례.indexOf(RETURN_STAGE_FILTER) < 0) 차례.push(RETURN_STAGE_FILTER);
+      var 칩 = function (st, label, n) {
+        var on = (RETURN_STAGE_FILTER === st);
+        return '<button type="button" class="ret-stage-chip' + (on ? ' on' : '') + (n ? '' : ' zero') + '"' +
+          ' data-st="' + esc(st) + '" onclick="setReturnStageFilter(this.getAttribute(\'data-st\'))">' +
+          esc(label) + '<b>' + n + '</b></button>';
+      };
+      return 칩('', '전체', (rows || []).length) +
+        차례.map(function (st) { return 칩(st, st, 셈[st] || 0); }).join('');
+    }
+
+    /** 같은 칩을 다시 누르면 풀린다 — 「전체」를 찾으러 가지 않게 */
+    function setReturnStageFilter(st) {
+      st = String(st || '');
+      RETURN_STAGE_FILTER = (st && RETURN_STAGE_FILTER !== st) ? st : '';
+      try { localStorage.setItem('CS_RET_STAGE', RETURN_STAGE_FILTER); } catch (e) {}
+      RETURN_SHOW_LIMIT = 30;
+      renderReturnActiveList();
+      var p = document.getElementById('pane-returns');
+      if (p) p.scrollTop = 0;
+    }
+
     function filterReturnRows(all, q) {
-      all = (all || []).filter(function(c) { return !isReturnCardDone(c); });
       q = String(q || '').trim();
-      if (!q) return all.slice();
+      /*  ★ 찾을 때는 완료도 남긴다 ★  (2026-10-06)
+
+          부르는 쪽(renderReturnActiveList)은 2026-09-30부터 완료 목록을
+          합쳐서 넘기는데, 여기 첫 줄이 그것을 «다시 걷어내고» 있었다.
+          그래서 「검색에서 완료된 것도 보이게」가 넣은 그날부터 막혀 있었다 —
+          9월 반품 276건 가운데 151건이 완료라, 9월을 찾으면 거의 안 나왔다.
+
+          검색이 없을 때의 목록은 그대로 «진행 건»만이다. 완료를 늘 섞으면
+          할 일이 안 보인다. 찾을 때만 넓게 본다.                        */
+      all = q ? (all || []).slice()
+              : (all || []).filter(function (c) { return !isReturnCardDone(c); });
+      if (!q) return all;
       var ql = q.toLowerCase();
       var qd = q.replace(/[^0-9]/g, '');
       var tokens = ql.split(/\s+/).filter(function(t) { return t.length >= 1; });
@@ -10410,6 +13111,11 @@
       var list = document.getElementById('returnActiveList');
       var head = document.getElementById('returnHeadLabel');
       if (!list) return;
+      /*  ★ 2026-10-07: 여기서도 회수 접수 준비 상태를 묻는다 ★
+          여태 lrtInit 은 반품대장 창 쪽에서만 불렸다. 그래서 **반품 카드 화면에서는
+          LRT_READY·LGR_READY 가 null 인 채로 그려져 「반품접수」 단추가 안 나왔다.**
+          한 번 물으면 답을 기억하므로(lrtInit 안쪽) 다시 그릴 때마다 묻지 않는다. */
+      lrtInit();
       if (sourceRows) RETURN_ALL_ROWS = sourceRows.slice();
       RET_PHOTO_PEND = {};   // 카드 index 가 다시 매겨지므로 대기 사진도 비운다
       /*  ★ 검색할 때는 완료된 건도 뒤진다  (2026-09-30)
@@ -10423,6 +13129,21 @@
         ? RETURN_ALL_ROWS.concat(RETURN_DONE_ROWS)
         : RETURN_ALL_ROWS;
       var filtered = sortReturnRows(filterReturnRows(뒤질것, RETURN_QUERY));
+      //  상태값 칩 — 숫자는 «거르기 전»으로 센다. 그래야 다른 상태에 몇 건 있는지 보인다
+      var _칩 = document.getElementById('retStageChips');
+      if (_칩) _칩.innerHTML = retStageChipsHtml(filtered);
+      if (RETURN_STAGE_FILTER) {
+        filtered = filtered.filter(function (c) { return String(c.status || '').trim() === RETURN_STAGE_FILTER; });
+      }
+      /*  접수자 거르개 (2026-10-02) — 고르는 칸은 «거르기 전»으로 채운다.
+          거른 뒤로 채우면 한 사람을 고른 순간 다른 사람이 목록에서 사라져
+          되돌아갈 길이 없어진다.  */
+      retFillStaffPick(filtered);
+      if (RETURN_STAFF_FILTER) {
+        filtered = filtered.filter(function (c) {
+          return String((c && c.staff) || '').trim() === RETURN_STAFF_FILTER;
+        });
+      }
       RETURN_ACTIVE_ROWS = filtered;
       var _sortSel = document.getElementById('retSort');
       if (_sortSel && _sortSel.value !== RETURN_SORT) _sortSel.value = RETURN_SORT;
@@ -10439,7 +13160,9 @@
           ? ('반품 검색 ' + filtered.length + '건' +
              (완료찾음 ? ' (완료 ' + 완료찾음 + ')' : '') +
              ' · 진행 ' + RETURN_ALL_ROWS.length + '건 중')
-          : ('진행 중 반품 (' + RETURN_ALL_ROWS.length + '건)');
+          : (RETURN_STAGE_FILTER
+              ? ('진행 중 반품 (' + filtered.length + '/' + RETURN_ALL_ROWS.length + '건 · ' + RETURN_STAGE_FILTER + ')')
+              : ('진행 중 반품 (' + RETURN_ALL_ROWS.length + '건)'));
       }
       var limit = RETURN_QUERY ? Math.min(filtered.length, 80) : RETURN_SHOW_LIMIT;
       var shown = Math.min(filtered.length, limit);
@@ -10459,7 +13182,7 @@
         renderOrderDashboard();
         return;
       }
-      var html = '';
+      var html = retRowHeadHtml();
       for (var i = 0; i < filtered.length && i < limit; i++) {
         html += returnCardHtml(filtered[i], i);
       }
@@ -10972,7 +13695,32 @@
     }
 
     /**
-     * 롯데 화물추적 — 「상태」 버튼을 눌렀을 때만 부른다.
+     * API 로 상태를 바로 볼 수 있는 건인가 — 롯데·로젠 **자사출고**.
+     *
+     * ★ isLotteTrack 과 갈라 둔 까닭 ★  (2026-10-07)
+     *   isLotteTrack 은 **롯데 반품접수 칸**(lrtSyncOpt)도 쓴다.
+     *   거기에 로젠을 섞으면 로젠 건에도 롯데 반품 칸이 뜬다 —
+     *   로젠 반품은 아직 화면에 안 붙었다.
+     *   한 함수에 두 뜻을 담지 않는다([[one-value-one-owner]]).
+     */
+    function isApiTrackable(source, carrier) {
+      var c = String(carrier || '').replace(/\s/g, '');
+      if (c) return c.indexOf('롯데') !== -1 || c.indexOf('로젠') !== -1;
+      var src = String(source || '');
+      if (src.indexOf('로젠') !== -1) return true;   // 자사출고 — 이제 API 로 본다
+      if (src.indexOf('CJ') !== -1 || src.indexOf('대한통운') !== -1) return false;
+      if (src.indexOf('한진') !== -1) return false;
+      if (isProxySource(src)) return false;
+      return true;
+    }
+
+    /**
+     * 화물추적 — 「상태」 버튼을 눌렀을 때만 부른다.
+     *
+     * ★ 2026-10-07: 롯데 전용이 아니다 ★
+     *   csTrack 이 송장 자리수로 택배사를 갈라 준다 — 롯데 12자리 / 로젠 11자리.
+     *   data-carrier 가 붙어 있으면 그 값이 우선한다(「롯데조회」 단추가 그렇게 쓴다).
+     *   두 택배사 응답 모양이 같아서 아래 그리는 코드는 손대지 않았다.
      *
      * ★ 자동 조회를 하지 않는 이유 ★
      *   API 쿼터가 하루 10,000건이다. 검색 결과를 그릴 때마다 송장마다 부르면
@@ -11022,7 +13770,7 @@
           btn.textContent = old;
           toast(String((e && e.message) || '통신 실패'), 3200);
         })
-        .csLotteTrack(inv, {});
+        .csTrack(inv, { carrier: btn.getAttribute('data-carrier') || '' });
     }
 
     /**
@@ -11297,10 +14045,11 @@
         var d = invs[i];
         var url = trackingUrl(d, source, carrier);
         html += '<a class="os-inv" href="' + url + '" target="_blank" rel="noopener" onclick="return openTrack(event,this.href)">' + esc(d) + '</a>';
-        // 롯데 건은 사이트로 나가지 않고 여기서 바로 상태를 볼 수 있다
-        if (isLotteTrack(source, carrier)) {
+        // 롯데·로젠 자사출고는 사이트로 나가지 않고 여기서 바로 상태를 볼 수 있다
+        if (isApiTrackable(source, carrier)) {
           html += '<button class="os-copy os-trk" data-inv="' + esc(d) +
-            '" onclick="lotteTrack(this)">상태</button>';
+            '" data-carrier="' + esc(String(carrier || '')) + '"' +
+            ' onclick="lotteTrack(this)">상태</button>';
         } else {
           /* ★ 아는 택배사를 「롯데조회」라 부르지 않는다 ★  (2026-09-15)
              > "택배사 상관없이 다 롯데 조회라고 뜨니"
@@ -11312,7 +14061,8 @@
               ' onclick="return openTrack(event,this.href)">' +
               esc(String(carrier).split(' ').join('').replace(/택배$/, '')) + '조회</a>'
             : '<button class="os-copy os-trk" data-inv="' + esc(d) +
-              '" title="택배사가 안 적힌 줄입니다. 롯데에 물어봅니다"' +
+              '" data-carrier="롯데"' +   /* 일부러 롯데에 묻는 단추다 — 자리수 판정에 맡기지 않는다 */
+              ' title="택배사가 안 적힌 줄입니다. 롯데에 물어봅니다"' +
               ' onclick="lotteTrack(this)">롯데조회</button>';
         }
         if (proxy) {
@@ -11475,6 +14225,7 @@
           새로 여는 것이니 지난번에 고른 것은 남기지 않는다.  */
       retFillPicks('retNew');
       document.getElementById('retNewType').value = '단순반품';
+      document.getElementById('retNewStatus').value = '접수';
       document.getElementById('retNewFault').value = '구매자';
       retFillReasons();
       document.getElementById('retNewReason').value = '';
@@ -11600,6 +14351,8 @@
           phone2Name: document.getElementById('retNewPhone2Name').value,
           vendor: document.getElementById('retNewVendor').value,
           item: document.getElementById('retNewItem').value,
+          reship: document.getElementById('retNewReship').value,
+          reshipFee: document.getElementById('retNewReshipFee').value,
           qty: document.getElementById('retNewQty').value,
           invoice: document.getElementById('retNewInvoice').value,
           returnInvoice: document.getElementById('retNewRetInvoice').value,
@@ -11670,32 +14423,91 @@
     function lrtInit() {
       if (LRT_READY !== null) { lrtSyncOpt(); return; }
       google.script.run
-        .withSuccessHandler(function (r) { LRT_READY = r || { ready: false }; lrtSyncOpt(); })
-        .withFailureHandler(function () { LRT_READY = { ready: false }; lrtSyncOpt(); })
+        .withSuccessHandler(function (r) { LRT_READY = r || { ready: false }; lrtAfterReady_(); })
+        .withFailureHandler(function () { LRT_READY = { ready: false }; lrtAfterReady_(); })
         .csLotteReturnReady();
       google.script.run
-        .withSuccessHandler(function (r) { LGR_READY = r || { ready: false }; lrtSyncOpt(); })
-        .withFailureHandler(function () { LGR_READY = { ready: false, reason: '로젠 준비 상태를 못 읽었습니다' }; })
+        .withSuccessHandler(function (r) { LGR_READY = r || { ready: false }; lrtAfterReady_(); })
+        .withFailureHandler(function () { LGR_READY = { ready: false, reason: '로젠 준비 상태를 못 읽었습니다' }; lrtAfterReady_(); })
         .csLogenReturnReady();
     }
 
-    /** 접수 칸을 보일지 정한다. 롯데 건이 아니면 안 보여준다. */
+    /**
+     * 준비 상태가 «나중에» 도착했을 때 화면을 다시 맞춘다.  (2026-10-07)
+     *
+     * ★ 왜 다시 그리나 ★
+     *   반품 카드의 「반품접수」 단추는 그릴 때 LRT_READY·LGR_READY 를 본다.
+     *   그런데 서버에 묻는 일이라 **카드를 다 그린 뒤에 답이 온다.**
+     *   다시 그리지 않으면 답이 와도 단추가 끝내 안 나온다 — 실제로 그랬다.
+     */
+    function lrtAfterReady_() {
+      lrtSyncOpt();
+      try {
+        var list = document.getElementById('returnActiveList');
+        if (list && list.children.length) renderReturnActiveList();
+      } catch (e) { /* 다시 그리기 실패로 다른 것을 막지는 않는다 */ }
+    }
+
+    /**
+     * 이 반품 건을 «어느 택배사»로 접수하나.  (2026-10-07)
+     *
+     * 기록된 택배사가 가장 정확하고, 없으면 출처로 가른다 —
+     * **isLotteTrack 과 같은 갈래**를 그대로 따라가되 로젠을 빼내지 않는다.
+     * (전에는 로젠이 false 로 떨어져 단추가 아예 안 나왔다)
+     *
+     * @return {'롯데'|'로젠'|''}  '' 면 우리가 접수할 수 없는 건이다
+     */
+    function ledgerReturnCarrier() {
+      var r = CS_ROWS[LEDGER_IDX] || {};
+      var c = String(resolveCarrier(r) || '').replace(/\s/g, '');
+      if (c.indexOf('롯데') !== -1) return '롯데';
+      if (c.indexOf('로젠') !== -1) return '로젠';
+      if (c) return '';                       // CJ·한진 등 — 우리가 접수할 수 없다
+      var src = String(r.source || '');
+      if (src.indexOf('로젠') !== -1) return '로젠';
+      if (src.indexOf('CJ') !== -1 || src.indexOf('대한통운') !== -1) return '';
+      if (src.indexOf('한진') !== -1) return '';
+      if (isProxySource(src)) return '';
+      return '롯데';                           // 종전 기본값 — isLotteTrack 과 같다
+    }
+
+    /** 접수 칸을 보일지 정한다. 우리가 접수할 수 있는 택배사가 아니면 안 보여준다. */
     function lrtSyncOpt() {
       var box = document.getElementById('lrtOpt');
       if (!box) return;
-      var r = CS_ROWS[LEDGER_IDX] || {};
-      var lotte = isLotteTrack(r.source, resolveCarrier(r));
-      var on = !!(LRT_READY && LRT_READY.ready) && lotte;
+      var who = ledgerReturnCarrier();
+      var rdy = who === '롯데' ? LRT_READY : (who === '로젠' ? LGR_READY : null);
+      var on = !!(rdy && rdy.ready);
       box.hidden = !on;
+      var lab = document.getElementById('lrtWho');
+      if (lab && who) lab.textContent = who;
       if (!on) { var w = document.getElementById('lrtWant'); if (w) w.checked = false; }
     }
 
     /** 확인창을 띄운다. 무엇이 어디로 가는지 다 보여준다. */
     function lrtAsk() {
       var r = CS_ROWS[LEDGER_IDX] || {};
-      var to = (LRT_READY && LRT_READY.to) || {};
+      var who = ledgerReturnCarrier();
+      /*  ★ 받는 곳(창고)은 둘이 같은 설정을 쓴다 ★
+          csLogenReturn.gs 의 _lgr_to_() 가 롯데 것(_lrt_to_)을 그대로 부른다 —
+          창고가 둘일 리 없다. 그래서 화면도 LRT_READY.to 하나만 본다. */
+      var to = (LRT_READY && LRT_READY.to) || (LGR_READY && LGR_READY.to) || {};
       var invs = ledgerReturnInvoices();
+
+      /*  ★ 택배사마다 «취소하는 길»이 다르다 ★  (2026-10-07)
+            롯데 — API 에 취소가 없다. 사람이 롯데에 전화해야 한다.
+            로젠 — cancelReserveState 로 바로 취소된다(10/07 실측).
+                   다만 **아직 화면에 취소 단추가 없다** — 담당자가 돌려야 한다.
+          둘을 같은 문장으로 적으면 한쪽은 거짓말이 된다. */
+      var warn = document.getElementById('lrtWarn');
+      if (warn) {
+        warn.innerHTML = who === '로젠'
+          ? '접수하면 기사가 방문합니다. <b>취소가 필요하면 담당자에게 알려 주세요</b> — 로젠은 전산으로 취소됩니다.'
+          : '접수하면 기사가 방문합니다. <b>취소는 롯데에 직접 연락해야 합니다.</b>';
+      }
+
       var rows = [
+        ['택배사', who || '-'],
         ['보내는 분', (r.name || '-') + ' · ' + (r.phone || '-')],
         ['주소', r.addr || '★ 주소가 없습니다 — 접수가 안 됩니다'],
         ['품목', (r.item || '-') + (r.qty ? ' × ' + r.qty : '')],
@@ -11746,18 +14558,29 @@
      */
     function lrtConfirm() {
       var r = CS_ROWS[LEDGER_IDX] || {};
+      var who = ledgerReturnCarrier();
       var b = document.getElementById('lrtOkBtn');
       b.disabled = true; b.textContent = '접수 중…';
       var invs = ledgerReturnInvoices();
-      google.script.run
+
+      var runner = google.script.run
         .withSuccessHandler(function (res) {
           b.disabled = false; b.textContent = '접수';
-          var got = (res && res.invoices) || (res && res.invoice ? [res.invoice] : []);
+          var slips = (res && res.invoices) || (res && res.invoice ? [res.invoice] : []);
+          /* ★ 로젠은 접수 순간 반품송장이 «없다» ★  (2026-10-07 실측)
+             takeNo(접수번호)만 온다. 송장으로 성공을 판정하면 늘 실패로 읽힌다. */
+          var takes = (res && res.takeNos) || [];
+          var got = slips.length ? slips : takes;
 
           /* ★ 하나도 안 됐을 때만 되돌린다 ★
-             일부라도 됐으면 그 송장을 반드시 대장에 남긴다. 안 남기면
-             사람이 다시 눌러 **이미 접수된 박스를 두 번 접수한다.** */
-          if (!got.length) {
+             일부라도 됐으면 그 결과를 반드시 대장에 남긴다. 안 남기면
+             사람이 다시 눌러 **이미 접수된 박스를 두 번 접수한다.**
+
+             ★ 반품 카드 쪽(_retPickupSend_)과 «같은 모양»으로 적는다 ★
+             뜻이 같아도 모양이 다르면, 한쪽만 고쳐졌을 때 아무도 모른다.
+             실제로 그랬다 — 저쪽은 invoices 만 보고 있어서 로젠 접수가 늘
+             「실패」로 보였다 (2026-10-08). */
+          if (!slips.length && !takes.length) {
             toast('회수 접수 실패 — ' + ((res && res.error) || '알 수 없음'), 4600);
             return;
           }
@@ -11765,28 +14588,68 @@
           if (!res.ok) {
             //  반쯤 됐다 — 조용히 넘기면 안 된다. 길게 띄운다.
             toast('★ 일부만 접수됨 ★ ' + res.error + ' · 된 것: ' + got.join(', '), 9000);
-          } else {
-            toast('회수 접수됨 · 반품송장 ' + got.join(', ') +
-              (got.length > 1 ? ' (' + got.length + '박스)' : '') +
+          } else if (res.already && res.already >= got.length) {
+            /* ★ 이미 접수돼 있던 건 ★  (2026-10-08)
+               > 사장님: "이미 접수 되었다고 뜨면 좋겠는데 그게 판별이 가능할까?"
+               같은 건을 또 누르는 일이 실제로 생긴다 — 화면이 안 바뀌었거나
+               앞서 실패로 보였기 때문이다. 그때 「접수됨」이라고만 하면 방금
+               보낸 줄 알고, 실패라고 하면 또 누른다. 사실대로 말한다. */
+            toast('이미 접수된 건입니다 · 접수번호 ' +
+              (takes.length ? takes.join(', ') : '확인 필요') +
+              (slips.length ? ' · 반품송장 ' + slips.join(', ') : '') +
+              ' — 새로 접수하지 않았습니다', 5600);
+          } else if (slips.length) {
+            toast('회수 접수됨 · 반품송장 ' + slips.join(', ') +
+              (slips.length > 1 ? ' (' + slips.length + '박스)' : '') +
               ' · 집하 ' + res.pickReqYmd, 4200);
+          } else {
+            //  로젠 — 송장은 로젠이 출력해야 나온다. 그 사실을 숨기지 않는다.
+            toast('회수 접수됨 · 접수번호 ' + takes.join(', ') +
+              (takes.length > 1 ? ' (' + takes.length + '박스)' : '') +
+              ' · 반품송장은 로젠이 출력한 뒤에 나옵니다', 5600);
           }
-          LRT_PICKED_INV = got.join(' ');
+
+          /* ★ 접수번호는 «비고»로 흘린다 ★  (2026-10-07)
+             takeNo 는 12자리 숫자다 — **롯데 송장도 12자리**라 「반품송장」 칸에
+             넣으면 나중에 송장으로 오인된다. 대장은 세 앱이 읽는다
+             ([[return-ledger-tab-spec]]) — 한 번 섞이면 번진다.
+             규격의 「칸이 없으면 비고로 흘린다」를 그대로 따른다. */
+          if (!slips.length && takes.length) {
+            var memo = document.getElementById('ledgerMemo');
+            if (memo) {
+              var add = '로젠접수 ' + takes.join(' ');
+              memo.value = memo.value ? (memo.value + ' / ' + add) : add;
+            }
+          }
+
+          /* 접수가 끝났으니 체크를 끈다. 끄지 않으면 submitLedger 가
+             「아직 접수 안 했네」 하고 확인창을 다시 띄운다 —
+             로젠은 송장이 비어 있어서 그 가드에 걸린다. */
+          var w = document.getElementById('lrtWant');
+          if (w) w.checked = false;
+
+          LRT_PICKED_INV = slips.join(' ');
           submitLedger(false, LRT_PICKED_INV);
         })
         .withFailureHandler(function (e) {
           b.disabled = false; b.textContent = '접수';
           toast('회수 접수 실패 — ' + String((e && e.message) || e), 4200);
-        })
-        .csLotteReturnPickup({
-          name: r.name, phone: r.phone, addr: r.addr,
-          item: r.item, qty: r.qty, orderNo: r.orderNo,
-          /* ★ 박스마다 접수한다 ★  (2026-09-09)
-             여태 invs[0] 하나만 넘겨, 원송장이 둘이어도 한 박스만 회수됐다.
-             회수 운송장은 박스마다 붙으므로 원송장 수만큼 접수해야 한다. */
-          orglInvNos: invs,
-          orglInvNo: invs[0] || '',
-          memo: document.getElementById('ledgerMemo').value
         });
+
+      var payload = {
+        name: r.name, phone: r.phone, addr: r.addr,
+        item: r.item, qty: r.qty, orderNo: r.orderNo,
+        /* ★ 박스마다 접수한다 ★  (2026-09-09)
+           여태 invs[0] 하나만 넘겨, 원송장이 둘이어도 한 박스만 회수됐다.
+           회수 운송장은 박스마다 붙으므로 원송장 수만큼 접수해야 한다. */
+        orglInvNos: invs,
+        orglInvNo: invs[0] || '',
+        memo: document.getElementById('ledgerMemo').value
+      };
+
+      //  택배사에 맞는 곳으로 보낸다. 모양은 둘이 같다(csLogenReturnPickup 머리말).
+      if (who === '로젠') runner.csLogenReturnPickup(payload);
+      else runner.csLotteReturnPickup(payload);
     }
 
     /** 접수로 받은 반품송장 — 기록에 실어 보낸다 */
@@ -11831,7 +14694,11 @@
       for (var k = 0; k < ins.length; k++) ins[k].checked = !anyOn;
       ledgerSyncPick();
       lrtInit();
-      ledgerFillFee(r);
+      /*  ★ 2026-10-07: r 이 선언돼 있지 않았다 ★
+          이 함수 안에도, 전역에도 r 이 없어 여기서 ReferenceError 가 났다.
+          오류는 콘솔에만 남고 **반품비 자동 채우기가 조용히 안 됐다.**
+          다른 곳과 같은 자리에서 줄을 집어 온다. */
+      ledgerFillFee(CS_ROWS[LEDGER_IDX] || {});
     }
 
     /** 고른 개수를 단추와 「전체 해제/선택」 글자에 반영한다. */
@@ -11904,8 +14771,12 @@
       retFillPicks('ledger');
       document.getElementById('ledgerType').value = '단순반품';
       document.getElementById('ledgerFault').value = '구매자';
+      document.getElementById('ledgerStatus').value = '접수';
+      document.getElementById('ledgerPhone2').value = '';
+      document.getElementById('ledgerPhone2Name').value = '';
       retFillReasons('ledger');
       document.getElementById('ledgerReason').value = '';
+      ledgerFillVendor(r);
       document.getElementById('ledgerPickup').value = resolveCarrier(r) || '';
       document.getElementById('ledgerFee').value = '';
       document.getElementById('ledgerFeeWhy').textContent = '';
@@ -11916,6 +14787,11 @@
       var btn = document.getElementById('ledgerSubmitBtn');
       btn.disabled = false;
       btn.textContent = '기록';
+      /*  ★ 2026-10-07: 여기서 회수 접수 준비 상태를 묻는다 ★
+          여태 lrtInit 은 「전체 해제/선택」 단추에서만 불렸다. 그래서 창을 열어도
+          준비 상태를 물어보지 않아 **접수 칸이 아예 안 떴다** — 롯데도 그랬다.
+          창이 열릴 때 묻는 것이 맞다. 한 번 물으면 답을 기억한다(lrtInit 안쪽). */
+      lrtInit();
       document.getElementById('ledgerModal').classList.add('active');
       draftWatch('ledger');
       draftRestore('ledger');
@@ -11957,6 +14833,162 @@
      *     같은 송장으로 여러 줄을 넣는 것이다. 첫 줄에서 한 번만 사람에게 묻고
      *     나머지는 그 답을 따른다 — 품목마다 같은 것을 세 번 묻지 않는다.
      */
+    /**
+     * 기록 창에 «사람이 적은» 값 — 읽는 자리는 여기 하나다.
+     *
+     * ★ 왜 한 곳인가 ★ (2026-10-01)
+     *   전에는 단건(submitLedger)과 여러건(submitLedgerMany)이 각자 읽었다.
+     *   그래서 여러건 쪽에 귀책·사유·상태·추가연락처가 «빠져 있었다» —
+     *   합포장 반품을 기록하면 창에 골라 둔 귀책·사유가 조용히 사라졌다.
+     *   창은 하나인데 읽는 코드가 둘이면 반드시 갈라진다.
+     */
+    function ledgerModalCommon() {
+      var g = function (id) {
+        var e = document.getElementById(id);
+        return e ? e.value : '';
+      };
+      return {
+        type: g('ledgerType'),
+        fault: g('ledgerFault'),
+        reason: g('ledgerReason'),
+        status: g('ledgerStatus') || '접수',
+        //  업체(거래처) — 자동으로 채우되 사람이 고친 값이 이긴다 (2026-10-07)
+        vendor: g('ledgerVendor'),
+        pickup: g('ledgerPickup'),
+        memo: g('ledgerMemo'),
+        account: g('ledgerAccount'),
+        fee: g('ledgerFee'),
+        phone2: g('ledgerPhone2'),
+        phone2Name: g('ledgerPhone2Name'),
+        //  다시 보내는 것 — 품목마다 다를 수 없다. 같은 상자에서 온 것이다
+        reship: g('ledgerReship'),
+        reshipFee: g('ledgerReshipFee')
+      };
+    }
+
+    /*  ══════════════════════════════════════════════════════════
+        ★ 주문처 — 전화주문인가, 어느 발주업체인가 ★  (2026-10-07)
+
+        > "CS웹앱의 주문 조회에서 전화주문인지. 법인/ 배민상회, 등
+        >  발주업체를 볼수 있을까?"
+
+        여태 카드에는 「업체」 줄이 r.vendor 가 «있을 때만» 떴다. 그런데 그 칸은
+        조치업체(대리발송) 자리라 거의 비어 있다 — 그래서 사실상 안 보였다.
+
+        세 갈래를 한 줄로 모은다. 가르는 잣대는 «고유ID 머리»다 —
+        세트분리가 쓰는 ssIsHubOrderUid 와 같은 규칙이다. 한 값에 주인은 하나라
+        여기 또 적지 않고 같은 모양을 그대로 쓴다.
+          p0921000001 · 0921-PH-… · 260902-PH-…   전화주문
+          d0930000044 · 0901-ds-…                 대리판매 (업체명이 있으면 같이)
+          숫자만                                   사방넷 — 어느 몰인지는 품목명 꼬리
+                                                   (「…200개---법인/쿠팡」)
+
+        ★ 지어내지 않는다 ★ 어느 쪽도 아니면 줄을 아예 안 만든다.
+          「모른다」를 「없다」로 적으면 다음 사람이 그것을 믿는다.
+        ══════════════════════════════════════════════════════════ */
+    function orderOriginOf(r) {
+      var uid = String((r && r.orderNo) || '').trim();
+      //  「김미화/2157237902#2」 처럼 붙어 올 수 있다 — 번호 쪽만 떼어 본다
+      var m = uid.match(/(^|[\/\s])([pd]\d{10}|\d{4,6}-(?:ds|PH)-[\w-]+)/i);
+      var 민 = m ? m[2] : uid;
+      var 업체 = String((r && r.vendor) || '').trim();
+
+      if (/^p\d{10}$/i.test(민) || /^\d{4,6}-PH-/i.test(민)) {
+        return { kind: '전화주문', who: 업체 };
+      }
+      if (/^d\d{10}$/i.test(민) || /^\d{4,6}-ds-/i.test(민)) {
+        return { kind: '대리판매', who: 업체 };
+      }
+      //  사방넷 — 어느 몰에서 왔는지는 품목명 꼬리에 있다 (거래처와 같은 규칙)
+      var 몰 = ledgerVendorFromItem(r && r.item);
+      if (몰) return { kind: '', who: 몰 };
+      if (업체) return { kind: '', who: 업체 };
+      return null;
+    }
+
+    function orderOriginRowHtml(r) {
+      var o = orderOriginOf(r);
+      if (!o) return '';
+      var 글 = o.kind
+        ? ('<span class="os-origin">' + esc(o.kind) + '</span>' +
+           (o.who ? ' ' + esc(o.who) : ''))
+        : esc(o.who);
+      return '<div class="os-row"><div class="os-lab">주문처</div>' +
+        '<div class="os-val">' + 글 + '</div></div>';
+    }
+
+    /*  ══════════════════════════════════════════════════════════
+        ★ 업체(거래처) 자동 채우기 ★  (2026-10-07)
+
+        > "반품대장 기록에 업체도 적을수 있게.. 자동이면 좋고"
+
+        두 군데서 온다 —
+          ① r.vendor   대장·원장이 이미 아는 값 (조치업체 · 거래처명).
+                       대리발송 건은 여기에 업체가 적혀 있다.
+          ② 품목명 꼬리  「…200개---법인/쿠팡」 의 «---» 뒤.
+                       자사출고 건은 ①이 비어 있고 이쪽에만 있다.
+                       화면 예시가 그랬다 — 미리보기에 「업체」 줄이 아예 안 떴다.
+
+        ★ 꼬리가 다 거래처는 아니다 ★ 같은 자리에 «포장 표지»도 붙는다 —
+          합포장 · 합배송 · 소분 · 몸통만 · 뚜껑만. 그것을 거래처로 적으면
+          「이번 달 쿠팡 반품 몇 건」이 어긋난다. 아는 표지는 걷어낸다.
+          그러고도 남는 것이 없으면 «비워 둔다» — 지어내지 않는다.
+
+        자동값은 출발점이지 결론이 아니다. 어디서 왔는지 밑에 적어 두고,
+        사람이 고치면 그대로 간다 (반품비가 걸어온 길과 같다).
+        ══════════════════════════════════════════════════════════ */
+    var LEDGER_PACK_MARKS = ['합포장', '합배송', '소분', '몸통만', '뚜껑만'];
+
+    /** 품목명 꼬리에서 «거래처로 볼 만한 것»만 남긴다. 없으면 빈 문자열. */
+    function ledgerVendorFromItem(item) {
+      var s = String(item || '');
+      //  --- 와 === 둘 다 꼬리를 연다. 먼저 나오는 쪽부터 잘라 본다.
+      var cut = -1;
+      var a = s.indexOf('---'), b = s.indexOf('===');
+      if (a >= 0 && b >= 0) cut = Math.min(a, b);
+      else cut = (a >= 0) ? a : b;
+      if (cut < 0) return '';
+      var 꼬리들 = s.substring(cut + 3).split(/---|===/);
+      for (var i = 0; i < 꼬리들.length; i++) {
+        var t = String(꼬리들[i] || '').trim();
+        if (!t) continue;
+        var 표지 = false;
+        for (var m = 0; m < LEDGER_PACK_MARKS.length; m++) {
+          if (t.indexOf(LEDGER_PACK_MARKS[m]) !== -1) { 표지 = true; break; }
+        }
+        if (표지) continue;
+        return t;
+      }
+      return '';
+    }
+
+    function ledgerFillVendor(r) {
+      var el = document.getElementById('ledgerVendor');
+      var why = document.getElementById('ledgerVendorWhy');
+      if (!el) return;
+      var v = String((r && r.vendor) || '').trim();
+      var 어디 = v ? '주문 자료의 거래처' : '';
+      if (!v) {
+        v = ledgerVendorFromItem(r && r.item);
+        if (v) 어디 = '품목명 꼬리에서 읽음';
+      }
+      el.value = v;
+      if (why) {
+        why.textContent = v ? ('자동 — ' + 어디 + '. 다르면 고치세요')
+                            : '주문 자료에 거래처가 없습니다 — 아시면 적어 주세요';
+      }
+    }
+
+    /** 뒤 꾸러미를 앞 꾸러미에 얹는다 (얕게). 뒤가 이긴다. */
+    function retMergeInto(base, extra) {
+      base = base || {};
+      extra = extra || {};
+      for (var k in extra) {
+        if (Object.prototype.hasOwnProperty.call(extra, k)) base[k] = extra[k];
+      }
+      return base;
+    }
+
     function submitLedger(force, pickedInv) {
       /* 회수 접수를 같이 하겠다고 했으면 **먼저 묻는다.**
          되돌릴 수 없는 일이라 기록보다 앞에 둔다. 접수가 끝나면
@@ -11973,7 +15005,8 @@
       if (!staff) { toast('접수자를 선택하세요'); return; }
       currentStaff = staff;
       try { localStorage.setItem('pack2u_staff', staff); } catch (eS) {}
-      if (picked.length > 1) { submitLedgerMany(picked, staff, force); return; }
+      //  pickedInv(방금 접수한 반품송장)도 같이 넘긴다 — 전에는 여기서 사라졌다
+      if (picked.length > 1) { submitLedgerMany(picked, staff, force, pickedInv); return; }
 
       var r = CS_ROWS[picked[0]] || {};
       var btn = document.getElementById('ledgerSubmitBtn');
@@ -12024,15 +15057,8 @@
           btn.textContent = '기록';
           toast(String((err && err.message) || err || '기록 실패'), 3200);
         })
-        .submitReturnLedger({
+        .submitReturnLedger(retMergeInto(ledgerModalCommon(), {
           staff: staff,
-          type: document.getElementById('ledgerType').value,
-          fault: document.getElementById('ledgerFault').value,
-          reason: document.getElementById('ledgerReason').value,
-          pickup: document.getElementById('ledgerPickup').value,
-          memo: document.getElementById('ledgerMemo').value,
-          account: document.getElementById('ledgerAccount').value,
-          fee: document.getElementById('ledgerFee').value,
           returnInvoice: pickedInv || '',
           name: r.name,
           phone: r.phone,
@@ -12045,7 +15071,7 @@
           qty: useQty,
           invoice: useInv,
           force: !!force
-        });
+        }));
     }
 
     /**
@@ -12057,13 +15083,13 @@
      *   차례로 보내는 편이 훨씬 안전하다. 중간에 실패하면 **거기서 멈추고**
      *   몇 건까지 들어갔는지 말해 준다 — 조용히 반만 들어가면 안 된다.
      */
-    function submitLedgerMany(picked, staff, force) {
+    function submitLedgerMany(picked, staff, force, pickedInv) {
       var btn = document.getElementById('ledgerSubmitBtn');
-      var type = document.getElementById('ledgerType').value;
-      var pickup = document.getElementById('ledgerPickup').value;
-      var memo = document.getElementById('ledgerMemo').value;
-      var account = document.getElementById('ledgerAccount').value;
-      var fee = document.getElementById('ledgerFee').value;
+      /*  창에 적은 값은 ledgerModalCommon 한 곳에서만 읽는다 (2026-10-01).
+          전에는 여기서 따로 읽으면서 «귀책·사유·상태·추가연락처»를 빠뜨렸다 —
+          합포장 반품을 기록하면 골라 둔 귀책·사유가 조용히 사라졌다.
+          한 번만 읽어 품목마다 같은 값을 쓴다. 같은 상자에서 온 것이니 같아야 한다. */
+      var 공통 = ledgerModalCommon();
       var done = 0;
       var first = null;
 
@@ -12116,13 +15142,15 @@
               String((err && err.message) || err || '기록 실패') +
               (done ? ' — ' + done + '건까지는 들어갔습니다' : ''), 4200);
           })
-          .submitReturnLedger({
-            staff: staff, type: type, pickup: pickup, memo: memo, account: account, fee: fee,
+          .submitReturnLedger(retMergeInto(retMergeInto({}, 공통), {
+            staff: staff,
+            //  방금 접수한 반품송장 — 전에는 여러건 길에서 아예 안 보냈다
+            returnInvoice: pickedInv || '',
             name: r.name, phone: r.phone, vendor: r.vendor,
             source: r.source, origin: r.origin, carrier: resolveCarrier(r),
             orderNo: r.orderNo, item: r.item, qty: r.qty, invoice: r.invoice,
             force: !!useForce
-          });
+          }));
       }
       step(0, !!force);
     }
@@ -12244,6 +15272,12 @@
         (r.phone ? '<button class="os-copy" onclick="copyText(\'' + js(r.phone) + '\')">복사</button>' : '') +
         (r.phone ? '<a class="os-copy" href="tel:' + esc(String(r.phone).replace(/[^0-9]/g,'')) + '">전화</a>' : '') +
         '</div></div>' +
+        /*  ★ 주소 ★  (2026-10-06)
+            > "그리고 주문송장조회시 주소도 같이 나오게해줘"
+            여태 주소는 카드에 없고 「반품대장 기록」을 열어야 보였다. 전화를 받으면서
+            「어디로 갔죠?」를 묻는 일이 제일 잦은데, 그때마다 창을 하나 더 열었다. */
+        (r.addr ? '<div class="os-row"><div class="os-lab">주소</div><div class="os-val os-addr">' + esc(r.addr) +
+        '<button class="os-copy" onclick="copyText(\'' + js(r.addr) + '\')">복사</button></div></div>' : '') +
         (shipMsg ? '<div class="os-row"><div class="os-lab">배송메시지</div><div class="os-val">' + esc(shipMsg) +
         '<button class="os-copy" onclick="copyText(\'' + js(shipMsg) + '\')">복사</button></div></div>' : '') +
         '<div class="os-row"><div class="os-lab">품목</div><div class="os-val">' +
@@ -12251,10 +15285,58 @@
         (r.ecountCode ? '<span class="os-item-code">' + esc(r.ecountCode) + '</span>' : '') +
         (r.qty ? ' × ' + esc(r.qty) : '') + '</div></div>' +
         (r.orderNo ? '<div class="os-row"><div class="os-lab">주문</div><div class="os-val">' + esc(r.orderNo) + '</div></div>' : '') +
-        (r.vendor ? '<div class="os-row"><div class="os-lab">업체</div><div class="os-val">' + esc(r.vendor) + '</div></div>' : '') +
+        orderOriginRowHtml(r) +
+        returnLinesHtml(r) +
         '<div class="os-actions"><button class="os-reply" onclick="copyReply(' + idx + ')">답변 문구 복사</button>' +
-        '<button class="os-ledger" onclick="openLedger(' + idx + ')">반품대장 기록</button></div>' +
+        '<button class="os-ledger" onclick="openLedger(' + idx + ')">반품대장 기록</button>' +
+        /*  ★ CS 문의로 남기기 ★  (2026-10-06)
+            > "주문 송장조회에서 카드가 나오면 CS문으로 남기기 버튼을 하나 추가해줘"
+            전화를 받다가 「이건 적어 둬야겠다」 싶을 때 그 자리에서 남긴다.
+            거래처·상품·관련 번호를 손으로 옮겨 적게 하면 오타가 나고, 그러면
+            나중에 그 번호로 못 찾는다. */
+        '<button class="os-ledger" onclick="csqFromOrder(' + idx + ')">CS 문의로 남기기</button></div>' +
+        /*  ★ 이 고객의 통화·문자 ★  (2026-10-10 바이토)
+            그 번호로 오간 통화·문자·사진을 카드 안에 편다. 바이토를 따로 안 열어도 된다. */
+        (r.phone && String(r.phone).replace(/[^0-9]/g, '').length >= 9
+          ? '<div class="os-actions" style="margin-top:4px"><button class="os-ledger" onclick="bytoToggleTl(\'o' + idx + '\', \'' +
+            js(String(r.phone).replace(/[^0-9]/g, '')) + '\', this)">📞 통화·문자</button></div>' +
+            '<div class="byto-tl" id="bytoTl-o' + idx + '" hidden></div>'
+          : '') +
         '</div>';
+    }
+
+    /**
+     * 주문 카드 → CS 문의 새 글.  (2026-10-06)
+     * 거래처·상품·관련 번호를 채워 두고 펼친다. 내용은 사람이 적는다 —
+     * 지어낸 문장을 채워 두면 그대로 올리고 만다.
+     */
+    function csqFromOrder(idx) {
+      var r = (typeof CS_ROWS !== 'undefined' && CS_ROWS) ? CS_ROWS[idx] : null;
+      if (!r) { toast('그 건을 못 찾았습니다'); return; }
+
+      csqNewToggle(true);                        // 글쓰기 칸을 편다
+
+      function 넣기(id, v) {
+        var e = document.getElementById(id);
+        if (e && !String(e.value || '').trim()) e.value = String(v || '');
+      }
+      넣기('csqnVendor', r.vendor || r.name || '');
+      넣기('csqnItem', (r.item || '') + (r.qty ? ' × ' + r.qty : ''));
+      /*  관련 번호 — 주문 고유ID 가 있으면 그것, 없으면 주문번호.
+          둘 다 없으면 비워 둔다. 송장번호를 대신 넣지 않는다 —
+          관련 번호는 «주문을 가리키는 번호»지 택배 번호가 아니다. */
+      넣기('csqnRef', r.uid || r.orderNo || '');
+
+      var 보탬 = [];
+      if (r.name) 보탬.push('수취인 ' + r.name);
+      if (r.invoice) 보탬.push('송장 ' + r.invoice);
+      if (r.date) 보탬.push(r.date);
+      넣기('csqnBody', 보탬.length ? '[' + 보탬.join(' · ') + ']\n' : '');
+
+      var box = document.getElementById('csqBox');
+      if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      var 내용 = document.getElementById('csqnBody');
+      if (내용) { try { 내용.focus(); 내용.setSelectionRange(내용.value.length, 내용.value.length); } catch (e) {} }
     }
 
     function dateHtml(dateStr) {
@@ -12701,7 +15783,7 @@
     //   카드는 접수·회수중에 머물고 업체 포털도 사진을 못 봤다.
     //   여기서 건을 골라 붙이면 촬영 때와 같은 길(csLogisticsResolve →
     //   _cs_intakeExistingReturn_)로 입고검수 · 사진 이력 · 업체 포털에 들어간다.
-    var LGW = { rows: [], pick: {}, hits: {}, q: {}, timers: {} };
+    var LGW = { rows: [], pick: {}, hits: {}, q: {}, timers: {}, chain: {}, tried: {} };
 
     function lgwKey(x) { return x.intakeTab + ':' + x.intakeRow; }
 
@@ -12762,8 +15844,9 @@
         h += lgwOcrHtml(x.ocr);
         if (items.length) {
           h += '<div class="lg-thumbs">';
-          for (var p = 0; p < items.length; p++) {
-            h += '<button type="button" title="크게 보기" onclick="lgwLb(' + i + ',' + p + ')">' +
+          for (var p = 0, pim = 0; p < items.length; p++) {
+            if (items[p].isVideo) { h += retVideoTileHtml(items[p]); continue; }
+            h += '<button type="button" title="크게 보기" onclick="lgwLb(' + i + ',' + (pim++) + ')">' +
               '<img src="' + esc(items[p].thumbUrl) + '" alt="입고 사진" loading="lazy"' +
               ' data-full="' + esc(items[p].viewUrl) + '"' +
               ' onerror="var f=this.getAttribute(\'data-full\');if(f&&this.src!==f){this.src=f;return;}this.remove()">' +
@@ -12775,6 +15858,7 @@
         }
         //  무엇으로 먼저 찾아 둘까 — 라벨 글자에서 읽은 것이 있으면 그것부터 (lgwFirstQuery)
         var q0 = LGW.q[k] != null ? LGW.q[k] : lgwFirstQuery(x);
+        if (LGW.q[k] == null && LGW.chain[k] == null) LGW.chain[k] = lgwChain(x).slice(1);
         h += '<input type="search" class="lgw-q" value="' + esc(q0) + '"' +
           ' placeholder="이름 · 가린 이름(김*동) · 전화 뒤4 · 송장 뒤자리"' +
           ' oninput="lgwInput(' + i + ', this)">' +
@@ -12815,21 +15899,31 @@
      *   ② 보낸 분 이름 + 전화 뒤4 — 라벨에 가려져 있어도(김*동) 그대로 찾는다
      *   ③ 바코드로 읽은 송장
      */
-    function lgwFirstQuery(x) {
-      var o = x.ocr || {};
-      if (o.orig && o.orig.length >= 10) return o.orig;
-      //  뒤 4자리가 «보일 때만» 쓴다 — 010-4860-**** 에서 숫자만 모으면 가운데(4860)가 뒤로 온다
-      var tail = (String(o.senderPhone || '').match(/(\d{4})\s*$/) || [])[1] || '';
+    function lgwFirstQuery(x) { return lgwChain(x)[0] || ''; }
+
+    /*  ★ 찾는 차례 — 한 건이 걸릴 때까지 이어서 (2026-10-01) ★
+        > "이사람 이름이 인식이 됐는데.. 자동 검색기능 작동은 안되나?"
+        원송장 하나만 해 보고 0건·오류면 거기서 멈췄다. 라벨에서 이름(문정순)·전화를 읽었는데도.
+        ① 원송장  ② 보낸 분 이름 + 전화 뒤4(보일 때만)  ③ 이름만  ④ 바코드 송장
+        사람이 칸에 직접 치면 이 차례는 버린다 — 사람이 친 것이 먼저다.  */
+    function lgwChain(x) {
+      var o = x.ocr || {}, out = [];
+      var push = function (v) { v = String(v || '').trim(); if (v.length >= 2 && out.indexOf(v) < 0) out.push(v); };
+      if (o.orig && o.orig.length >= 10) push(o.orig);
+      var tail0 = (String(o.senderPhone || '').match(/(\d{4})\s*$/) || [])[1] || '';
       if (o.sender && !/팩투유|팩•유|pack2u/i.test(o.sender)) {
-        return (o.sender + (tail ? ' ' + tail : '')).trim();
+        if (tail0) push(o.sender + ' ' + tail0);
+        push(o.sender);
       }
-      return String(x.invoice || o.inv || '').replace(/[^0-9]/g, '');
+      push(String(x.invoice || o.inv || '').replace(/[^0-9]/g, ''));
+      return out;
     }
 
     function lgwLb(i, p) {
       var x = LGW.rows[i];
       if (!x) return;
-      openLbImages(retPhotoItems({ text: (x.photos || []).join(' '), staff: x.staff }), p);
+      openLbImages(retPhotoItems({ text: (x.photos || []).join(' '), staff: x.staff })
+        .filter(function (it) { return !it.isVideo; }), p);
     }
 
     function lgwHitsHtml(i) {
@@ -12863,6 +15957,8 @@
 
     function lgwInput(i, el) {
       clearTimeout(LGW.timers[i]);
+      var xx = LGW.rows[i];
+      if (xx) { var kk = lgwKey(xx); LGW.chain[kk] = []; LGW.tried[kk] = []; }  // 사람이 친 것이 먼저
       var v = el.value;
       LGW.timers[i] = setTimeout(function () { lgwSearch(i, v); }, 350);
     }
@@ -12877,27 +15973,39 @@
       if (q.length < 2) { delete LGW.hits[k]; lgwPaintHits(i); return; }
       LGW.hits[k] = 'loading';
       lgwPaintHits(i);
+      /*  다음 방법으로 넘어간다 — 차례(lgwChain)가 남았으면 그것, 없으면 「이름 + 뒤4」의 이름만.
+          라벨의 전화(안심번호 등)가 대장 전화와 다른 일이 흔하다 — 고*엽 건이 그랬다.
+          둘 다 준 검색은 한쪽만 맞으면 안 올리므로(엉뚱한 건 방지) 여기서 따로 한다.  */
+      function next(why) {
+        var rest = LGW.chain[k] || [];
+        var nameOnly = (q.match(/^(\S+)\s+\d{4,}$/) || [])[1];
+        var nxt = rest.length ? rest.shift() : (nameOnly && nameOnly !== q ? nameOnly : '');
+        if (!nxt) return false;
+        (LGW.tried[k] = LGW.tried[k] || []).push(q + ' → ' + why);
+        var box = document.querySelector('#lgw-' + i + ' .lgw-q');
+        if (box) box.value = nxt;
+        lgwSearch(i, nxt);
+        return true;
+      }
       google.script.run
         .withSuccessHandler(function (r) {
           if (LGW.q[k] !== q) return; // 그새 다른 걸 쳤다
-          /*  「이름 + 전화 뒤4」로 하나도 안 걸리면 이름만으로 한 번 더 (2026-09-30)
-              라벨의 전화(안심번호 등)가 대장의 전화와 다른 일이 흔하다 — 고*엽 건이 그랬다.
-              둘 다 준 검색은 한쪽만 맞으면 안 올리므로(엉뚱한 건 방지) 여기서 따로 한다.  */
-          var nameOnly = (q.match(/^(\S+)\s+\d{4,}$/) || [])[1];
-          if (nameOnly && (!r || !r.matches || !r.matches.length)) {
-            var box = document.querySelector('#lgw-' + i + ' .lgw-q');
-            if (box) box.value = nameOnly;
-            lgwSearch(i, nameOnly);
-            return;
+          var empty = !r || !r.matches || !r.matches.length;
+          if (empty && next(r && r.error ? '오류' : '0건')) return;
+          if (!r) r = { matches: [], note: '조회 실패 — 서버가 답을 주지 않았습니다' };
+          if (empty && (LGW.tried[k] || []).length) {
+            r.note = (r.note ? r.note + ' · ' : '') + '해 본 것: ' + LGW.tried[k].concat(q).join(' · ');
           }
-          LGW.hits[k] = r || { matches: [], note: '조회 실패' };
+          LGW.hits[k] = r;
           //  하나만 걸리면 골라 둔다 — 붙이는 건 여전히 사람이 누른다
           if (r && r.matches && r.matches.length === 1) LGW.pick[k] = 0;
           lgwPaintHits(i);
         })
-        .withFailureHandler(function () {
+        .withFailureHandler(function (e) {
           if (LGW.q[k] !== q) return;
-          LGW.hits[k] = { matches: [], note: '조회 실패' };
+          if (next('오류')) return;
+          //  「조회 실패」만 띄우면 왜인지 모른다 — 서버가 준 까닭을 그대로 (2026-10-01)
+          LGW.hits[k] = { matches: [], note: '조회 실패 — ' + String((e && e.message) || e || '알 수 없는 오류') };
           lgwPaintHits(i);
         })
         .csLogisticsSearch(q);
@@ -12974,11 +16082,13 @@
       if (!x.result) return '주문서 매칭 전';
       var t = (DEP_ICON[x.result] || '') + ' ' + x.result;
       if (x.cust) t += ' · ' + x.cust;
+      // A안 (2026-10-10): 넘길 주문서를 바로 보이게 — 이카운트에서 이 번호로 찾는다
+      if (x.cust && x.orderNos && !/^후보/.test(x.orderNos) && x.status === '대기') t += ' · 주문서 ' + x.orderNos;
       else if (x.orderNos && /^후보/.test(x.orderNos)) t += ' · ' + x.orderNos.replace(/^후보:\s*/, '').split(/,\s*/).length + '건 중 선택';
       if (x.diff) t += ' · ' + (x.diff > 0 ? '+' : '') + depWon(x.diff);
       if (x.result === '미확인' && x.matchMemo) t += ' · ' + x.matchMemo;
       // 이카운트 반영 상태 (2026-09-29)
-      if (x.status === '반영완료' && x.slipNo === '손으로') t += ' · ✋ 이카운트에 손으로 입력';
+      if (x.status === '반영완료' && (x.slipNo === '판매전환' || x.slipNo === '손으로')) t += ' · ✔ 판매 전환 완료';
       else if (x.status === '반영완료') t += ' · 📒 이카운트 ' + (x.slipNo || '반영');
       else if (x.status === '반영중') t += ' · 📒 반영 중…';
       else if (x.status === '확인필요') t += ' · ⚠ 이카운트 반영 확인 필요';
@@ -13367,14 +16477,26 @@
       var el = document.getElementById('depDetEc');
       if (!el) return;
       var h = '', cls = '';
+      // ★ A안 (2026-10-10) — "A안으로 진행해줘"
+      //   직원은 이카운트에서 주문서를 판매로 넘기며 매출전표 + 입금을 같이 만든다. 시스템은 «넘겨도 되는 주문서» 를 알려 주고,
+      //   처리한 뒤 「✔ 판매 전환 완료」 를 누른다. 9/30 의 「✋ 이미 넣었음(손으로)」 도 같은 뜻으로 보인다.
       var manualBtn = d.canMarkManual
-        ? '<button type="button" onclick="depMarkManual(false)" title="이카운트에 손으로(또는 엑셀로) 이미 입력한 입금 — 시스템이 또 넣지 않게 표시">✋ 이미 이카운트에 넣었음</button>'
+        ? '<button type="button" class="primary" onclick="depMarkManual(false)" title="이카운트에서 이 주문서를 판매로 넘기고 입금도 처리했으면 누릅니다">✔ 판매 전환 완료</button>'
         : '';
-      if (d.status === '반영완료' && d.slipNo === '손으로') {
+      var orderNos = String(d.orderNos || '').replace(/^후보:\s*/, '');
+      if (d.status === '반영완료' && (d.slipNo === '판매전환' || d.slipNo === '손으로')) {
         cls = 'done';
-        h = '✋ 이카운트에 손으로 입력한 입금으로 표시됨' + (d.postedBy ? ' · ' + esc(d.postedBy) : '') +
-            '<small>시스템은 이 입금을 이카운트에 넘기지 않습니다.</small>' +
+        h = '✔ 판매 전환 완료' + (d.postedBy ? ' · ' + esc(d.postedBy) : '') +
+            '<small>이카운트에서 판매 전환 + 입금 처리한 입금입니다.</small>' +
             '<div class="row"><button type="button" onclick="depMarkManual(true)">잘못 눌렀음 — 되돌리기</button></div>';
+      } else if (d.canMarkManual && !d.postOn) {
+        h = '🧾 이카운트에서 이 주문서를 판매로 넘기면서 <b>입금도 함께</b> 처리하세요' +
+            (orderNos ? '<div class="dep-det-order">주문서 <b>' + esc(orderNos) + '</b></div>' : '') +
+            '<small>' + esc(d.cust || '') + ' · ' + esc(depWon(d.amount)) +
+            (d.result && /^부족/.test(d.result) ? ' · 🔴 금액이 모자랍니다 — 들어온 만큼만 입금 처리' : '') +
+            (d.result && /^초과/.test(d.result) ? ' · 🟡 받을 돈보다 많습니다 — 차액 처리 확인' : '') + '</small>' +
+            '<small>처리한 뒤 아래를 누르면 목록에서 끝난 입금으로 보입니다.</small>' +
+            '<div class="row">' + manualBtn + '</div>';
       } else if (d.status === '반영완료') {
         cls = 'done';
         h = '📒 이카운트 반영 완료 · 전표 <b>' + esc(d.slipNo || '?') + '</b>' +
@@ -13441,10 +16563,10 @@
 
     function depMarkManual(undo) {
       if (!DEP_DET) return;
-      if (!undo && !confirm('이 입금은 이카운트에 이미 손으로(또는 엑셀로) 넣으셨나요?\n표시하면 시스템은 이 입금을 이카운트에 넘기지 않습니다.')) return;
+      if (!undo && !confirm('이카운트에서 이 주문서를 판매로 넘기고 입금도 처리하셨나요?\n「판매 전환 완료」 로 표시합니다.')) return;
       google.script.run
         .withSuccessHandler(function (r) {
-          toast(r && r.ok ? (undo ? '되돌렸습니다 — 다시 넘길 수 있습니다' : '✋ 이미 넣은 입금으로 표시했습니다') : ('실패 — ' + ((r && r.error) || '')), 3000);
+          toast(r && r.ok ? (undo ? '되돌렸습니다 — 다시 넘길 수 있습니다' : '✔ 판매 전환 완료로 표시했습니다') : ('실패 — ' + ((r && r.error) || '')), 3000);
           closeDepositDetail(); renderDeposits(true);
         })
         .withFailureHandler(function () { toast('실패 — 다시 시도해 주세요', 2500); })
@@ -13913,6 +17035,13 @@
       if (document.getElementById('dashDeposit')) renderDeposits(true);
     }, 60000);
 </script>
+
+<!-- 진행 카드 옮기기 — 확인을 눌러야 움직인다 (2026-10-06) -->
+<div id="rpmBox" hidden onclick="if(event.target===this)retProcMoveClose()"></div>
+<!-- 끌면 아래에서 올라오는 쟁반 — 같은 세트가 맨 앞 (2026-10-06) -->
+<div id="rpmTray" hidden></div>
+<!-- 되돌리기 — 창이 아니라 아래 띠 (2026-10-06) -->
+<div id="rpmUndo" hidden></div>
 
 </body>
 </html>

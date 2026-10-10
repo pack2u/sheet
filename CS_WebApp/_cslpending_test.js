@@ -120,6 +120,15 @@ vm.runInContext(rd("csLogistics.gs"), ctx);
 vm.runInContext(rd("csReturnIntake.gs"), ctx);
 vm.runInContext([
   fn(OS, "_cs_formatLedgerInvoice_"),
+  /*  ★ 송장 칸 가르기 ★  (2026-10-04)
+      「원송장번호 / 택배사」 한 칸이 되면서 csReturnIntake 가 이 짝을 쓴다.
+      GAS 는 파일이 한 전역을 나눠 쓰므로 운영에서는 그냥 보이지만,
+      시험은 조각만 떼어 돌리므로 여기 적어 줘야 한다.
+      _CS_INV_CARRIER_SEP_ 도 코드에서 꺼낸다 — 시험에 적어 두면 갈라진다.  */
+  (OS.match(/var _CS_INV_CARRIER_SEP_ = "[^"]*";/) || [""])[0],
+  fn(OS, "_cs_splitLedgerInvoice_"),
+  fn(OS, "_cs_ledgerInvoiceCell_"),
+  fn(OS, "_cs_ledgerInvoiceReplaceNo_"),
   fn(OS, "_cs_parseReturnInvFromNotice_"),
   fn(OS, "_cs_appendNoticeLine_"),
   fn(OS, "_cs_isPhotoLine_"),

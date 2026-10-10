@@ -287,9 +287,27 @@ function csAttachReturnPhotos(payload) {
     if (ctx.col.notice >= 0) {
       var urls = [];
       for (var u = 0; u < saved.length; u++) urls.push(saved[u].url);
+      /*  ★ 사진에 같이 남긴 말 ★  (2026-10-07)
+          > "반품카드 사진 올릴때 글도 같이 올릴수 있게 해줘"
+
+          ★ 주소 «앞»에 넣는다 ★ 이 자리가 중요하다 —
+            화면은 사진 카드의 설명을 「줄에서 주소만 걷어낸 나머지」로 만든다
+            (home.html procPhotoHtml 의 caption). 뒤에 붙이면 주소가 가운데
+            끼어 설명이 둘로 갈린다. 앞에 두면 지금 있는 파서·그림이 그대로 받는다.
+
+          ★ 줄바꿈은 빈칸으로 ★ 비고는 «한 줄 = 한 이력»이다. 여러 줄로 적으면
+            뒷줄이 제 이력 카드가 되어 사진과 갈려 선다.
+            「|」도 뺀다 — 포털·v2 가 칸을 가르는 데 쓰는 글자다.          */
+      var memo = String(payload.memo || "")
+        .replace(/[\r\n\t]+/g, " ")
+        .replace(/\|/g, "／")
+        .replace(/\s+/g, " ")
+        .trim()
+        .substring(0, 300);
       notice = _cs_appendNoticeLine_(
         notice,
-        _cs_ledgerStamp_(staff) + " 사진 첨부 " + saved.length + "장. " + urls.join(" ")
+        _cs_ledgerStamp_(staff) + " 사진 첨부 " + saved.length + "장" +
+          (memo ? " · " + memo : ".") + " " + urls.join(" ")
       );
       ctx.tab.getRange(rowNum, ctx.col.notice + 1).setValue(notice);
     }

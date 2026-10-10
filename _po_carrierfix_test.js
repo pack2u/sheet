@@ -35,8 +35,16 @@ check("★ 송장 있는 줄만 본다",
   src.indexOf("if (!_po_hasRealInvoice_(hubData[_ci][13])) continue;") >= 0, true);
 check("★ 빈 판정이면 안 덮는다",
   src.indexOf("if (!_newCar) continue;") >= 0, true);
-check("★ 출처를 아는 척하지 않는다 (빈 문자열)",
-  src.indexOf('_po_carrierForHubRow_("", hubData[_ci])') >= 0, true);
+/*  ★ 2026-10-07 — 약속이 뒤집힌 자리다 ★
+    이 줄은 「출처를 모르니 빈 문자열을 넘긴다」를 못 박고 있었다.
+    2026-09-21 에 뒤집혔다 — 출처를 모른 채 돌리니 발주업체 표의 「롯데택배」가
+    ①②로 맞게 찍힌 「로젠택배」를 덮어써서, 회차가 돌수록 틀린 값으로
+    되돌아갔다(53건). 지금은 이번 회차 송장맵에서 «어느 탭에서 걷었나»를
+    가져오고, 그 근거가 없으면 아예 안 덮는다.                            */
+check("★ 출처를 송장맵에서 가져온다",
+  src.indexOf("(_infoC && _infoC.source) || \"\", hubData[_ci], _infoC)") >= 0, true);
+check("★ 근거가 없으면 덮지 않는다",
+  src.indexOf("if (!_infoC) continue;") >= 0, true);
 check("★ 몇 건 고쳤는지 말한다",
   src.indexOf("이미 찍힌 줄 다시 계산") >= 0, true);
 
@@ -46,18 +54,28 @@ const i1 = src.indexOf("  // ★ 2026-07-09: M/N/O열 배치 쓰기", i0);
 if (i0 < 0 || i1 < 0) { console.error("갈래를 못 떼어 냄"); process.exit(1); }
 const 갈래 = src.slice(i0, i1);
 
-//  N열(13)=송장번호, R열(17)=택배사, B열(1)=발주업체, E열(4)=이카운트코드
-const 행 = (inv, carrier, vendor, code) => {
+//  C열(2)=고유ID, N열(13)=송장번호, R열(17)=택배사, B열(1)=발주업체, E열(4)=이카운트코드
+const 행 = (inv, carrier, vendor, code, uid) => {
   const r = new Array(18).fill("");
   r[13] = inv; r[17] = carrier; r[1] = vendor; r[4] = code;
+  r[2] = uid === undefined ? "U-" + vendor : uid;
   return r;
 };
 //  아주팩=한진택배, 뉴파츠=로젠택배, 모르는업체=판정 불가
 const 표 = { 아주팩: "한진택배", 뉴파츠: "로젠택배" };
 
-function 돌려보기(rows) {
+/*  ★ 2026-10-07 — 송장맵을 껍데기에 들였다 ★
+    2026-09-21 부터 이 갈래는 「이번 회차에 그 송장을 어디서 걷었나」를
+    알 때만 돈다. 맵이 없으면 한 줄도 안 건드리는 것이 «맞는» 동작이다.
+    기본값은 「맵에 다 있다」 — 맵에 없을 때는 아래에서 따로 본다.        */
+function 돌려보기(rows, 송장맵) {
+  const map = 송장맵 !== undefined ? 송장맵 : (function () {
+    const m = {};
+    rows.forEach((r) => { if (r[2]) m[r[2]] = { source: "실적탭" }; });
+    return m;
+  })();
   const ctx = {
-    hubData: rows,
+    hubData: rows, invoiceMap: map,
     carrierChanged: false, hubChanged: false, scannedLogs: [],
     _PO_HUB_CARRIER_COL_: 17,
     _po_hasRealInvoice_: function (v) { return !!String(v || "").trim(); },
@@ -98,6 +116,17 @@ console.log("[동작] 손댈 필요 없는 줄");
   check("★ 송장 없는 줄은 안 본다", rows[0][17], "");
   check("이미 맞은 줄은 그대로", rows[1][17], "한진택배");
   check("쓸 일이 없으면 carrierChanged 도 그대로", c.carrierChanged, false);
+}
+
+console.log("");
+console.log("[동작] ★ 이번 회차 송장맵에 없으면 손대지 않는다 ★");
+{
+  /*  2026-09-21 의 사고가 이 자리다. 근거 없이 돌던 시절에는 발주업체 표의
+      「롯데택배」가 ①②로 맞게 찍힌 「로젠택배」를 회차마다 덮어썼다. */
+  const rows = [행("45161625412", "로젠택배", "아주팩", "AJ1", "U-없는것")];
+  const c = 돌려보기(rows, {});          // 맵이 비어 있다 = 옛 송장
+  check("★ 적힌 값을 그대로 둔다", rows[0][17], "로젠택배");
+  check("쓰지도 않는다", c.carrierChanged, false);
 }
 
 console.log("");

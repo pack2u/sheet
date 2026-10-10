@@ -161,7 +161,10 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
     } else if (ctx.col.returnInvoice >= 0) {
       var cur = String(ctx.row[ctx.col.returnInvoice] || "").replace(/[^0-9]/g, "");
       if (!cur) {
-        ctx.tab.getRange(rowNum, ctx.col.returnInvoice + 1).setValue(formatted);
+        /*  칸이 비어 있어도 택배사만 적혀 있을 수 있다 — 지우지 않는다 (2026-10-04)
+            「/ 롯데」만 있던 칸에 번호를 넣으면 「번호 / 롯데」가 된다.  */
+        ctx.tab.getRange(rowNum, ctx.col.returnInvoice + 1)
+          .setValue(_cs_ledgerInvoiceReplaceNo_(ctx.row[ctx.col.returnInvoice], formatted));
       } else if (cur !== digits) {
         retInvClash = " (대장 반품송장 " + String(ctx.row[ctx.col.returnInvoice]).trim() + " 과 다름)";
       }
@@ -189,7 +192,9 @@ function _cs_intakeExistingReturn_(tabName, rowNum, returnInv, staff, matchVia, 
       retInvClash + (alreadyDone ? " (이미 완료된 건 — 상태 그대로)" : "");
     var links = (photoLinks && photoLinks.length) ? photoLinks : [];
     if (links.length) {
-      noteText += " · 사진 " + links.length + "장";
+      //  동영상은 따로 센다 (2026-10-01) — 「사진 3장」인데 열어 보니 영상이면 헷갈린다
+      var nVid = links.filter(function (u) { return _cs_isVideoUrl_(u); }).length;
+      noteText += " · 사진 " + (links.length - nVid) + "장" + (nVid ? " · 영상 " + nVid + "개" : "");
       for (var pi = 0; pi < links.length; pi++) noteText += "\n" + links[pi];
     }
 
@@ -381,4 +386,14 @@ function csSetReturnIntakeReq(p) {
   } catch (e) {
     return { ok: false, error: e.message || String(e) };
   }
+}
+
+/**
+ * 동영상 주소인가 — 확장자로 가른다 (2026-10-01).
+ * v2 보관소 키는 올린 파일의 확장자를 그대로 쓴다(storageKey). 서명 주소의 «경로» 끝을 본다.
+ * 화면(home.html retIsVideoUrl · portal.html isVideoUrl)도 같은 규칙이다.
+ */
+function _cs_isVideoUrl_(u) {
+  var path = String(u || "").split("?")[0];
+  return /\.(mp4|mov|m4v|webm|3gp)$/i.test(path);
 }

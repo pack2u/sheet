@@ -291,6 +291,16 @@ function dpCsPostResolve_(key, slipNo, by) {
  */
 var DP_MANUAL_SLIP_ = "손으로";
 
+/**
+ * ★ A안 — 「✔ 판매 전환 완료」 (2026-10-10) ★
+ *   > "A안으로 진행해줘"
+ *   직원은 이카운트에서 주문서를 판매로 넘기면서 매출전표 I + 입금보고서를 «같이» 만든다 (지금 방식 그대로).
+ *   시스템은 «이 주문서는 입금 확인됐다» 까지만 알려 주고, 직원이 처리한 뒤 이 표시를 누른다.
+ *   새로 누르는 표시는 전표번호 「판매전환」. 9/30 의 「손으로」 표시도 같은 뜻으로 그대로 쓴다.
+ */
+var DP_SALE_SLIP_ = "판매전환";
+var DP_HAND_SLIPS_ = [DP_MANUAL_SLIP_, DP_SALE_SLIP_];
+
 function dpCsMarkManual_(key, by, undo) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -301,15 +311,15 @@ function dpCsMarkManual_(key, by, undo) {
     var sh = f.sh, c = f.c, g = function (h) { return c[h] ? String(f.row[c[h] - 1]) : ""; };
     var set = function (h, v) { if (c[h]) sh.getRange(f.rowNo, c[h]).setValue(v); };
     if (undo) {
-      if (g("상태") !== "반영완료" || g("전표번호") !== DP_MANUAL_SLIP_) {
-        return { ok: false, error: "「이미 넣었음」 으로 표시한 입금만 되돌립니다" };
+      if (g("상태") !== "반영완료" || DP_HAND_SLIPS_.indexOf(g("전표번호")) < 0) {
+        return { ok: false, error: "「판매 전환 완료」 로 표시한 입금만 되돌립니다" };
       }
-      set("상태", "대기"); set("전표번호", ""); set("반영메모", "「이미 넣었음」 되돌림 · " + (by || "") + " " + _dp_now_());
+      set("상태", "대기"); set("전표번호", ""); set("반영메모", "「판매 전환 완료」 되돌림 · " + (by || "") + " " + _dp_now_());
     } else {
       if (g("상태") !== "대기") return { ok: false, error: "상태가 「" + g("상태") + "」 — 대기인 입금만 표시합니다" };
-      set("상태", "반영완료"); set("전표번호", DP_MANUAL_SLIP_);
+      set("상태", "반영완료"); set("전표번호", DP_SALE_SLIP_);
       set("반영자", by || ""); set("반영시각", _dp_now_());
-      set("반영메모", "이카운트에 손으로 이미 입력함 — 시스템은 넘기지 않음");
+      set("반영메모", "이카운트에서 판매 전환 + 입금 처리함 (직원) — 시스템은 넘기지 않음");
     }
     dpBumpVer_();
     return { status: undo ? "대기" : "반영완료" };

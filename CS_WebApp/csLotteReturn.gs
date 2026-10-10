@@ -234,17 +234,59 @@ function csLotteReturnConfig() {
 }
 
 /** yyyyMMdd 가 쉬는 날인가 — 토·일 + 공휴일표 + 임시공휴일 속성 */
+/**
+ * ★ 하루 판정을 «한 번만» 한다 ★  (2026-10-09)
+ *
+ *   ─ 무슨 일이 있었나 ─
+ *   1시간 일감의 「일감 걸음」이 이렇게 찍혔다:
+ *     요청접수 5초 · 송장채우기 45초 · 출고송장 11초 · **지연점검 1497초**
+ *   한 단계가 25분을 먹어 일감이 30분 벽에 부딪혀 죽고 있었다.
+ *
+ *   ─ 왜 그랬나 ─
+ *   _lrt_isOff_ 가 부를 때마다 **PropertiesService 를 읽었다.** 서비스 호출은
+ *   한 번에 10~20ms 다. 그런데 이 함수는 «하루하루» 불린다 —
+ *     _ost_collect_ 가 원장 8,000줄을 훑고,
+ *     줄마다 _ost_bizSince_ 가 발송일부터 오늘까지 날을 하나씩 세고,
+ *     그 날마다 _lrt_isOff_ 를 부른다.
+ *   수십만 번이다. 25분은 그 곱셈이다.
+ *
+ *   ─ 어떻게 하나 ─
+ *   휴일은 돌는 중에 바뀌지 않는다. 그러니 «한 실행에 한 번»만 읽고 외운다.
+ *   날짜별 판정도 외운다 — 같은 날을 수천 줄이 다시 묻기 때문이다.
+ *   답은 한 글자도 안 바뀐다. 횟수만 줄어든다.
+ *
+ *   ★ 파일 맨 위에서 읽지 않는다 ★ 이 두 값은 함수 «안»에서만 쓰인다.
+ *     [[gas-runs-files-in-name-order]]
+ */
+var _LRT_OFF_MEMO_ = {};
+var _LRT_EXTRA_CACHE_ = null;
+
+/** 임시공휴일 속성 — 한 실행에 한 번만 읽는다 */
+function _lrt_extraHolidays_() {
+  if (_LRT_EXTRA_CACHE_ !== null) return _LRT_EXTRA_CACHE_;
+  try {
+    _LRT_EXTRA_CACHE_ = PropertiesService.getScriptProperties()
+      .getProperty(_LRT_HOLIDAY_PROP_) || "";
+  } catch (e) { _LRT_EXTRA_CACHE_ = ""; }   // 못 읽어도 주말 판단은 살아 있다
+  return _LRT_EXTRA_CACHE_;
+}
+
 function _lrt_isOff_(d) {
   var day = d.getDay();
-  if (day === 0 || day === 6) return true;
+  if (day === 0 || day === 6) return true;   // 주말은 물어볼 것도 없다
+
+  /*  외운 것 — 열쇠는 그냥 열쇠다. 값싸게 만든다(formatDate 도 안 쓴다). */
+  var key = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  if (_LRT_OFF_MEMO_.hasOwnProperty(key)) return _LRT_OFF_MEMO_[key];
+
   var ymd = Utilities.formatDate(d, "Asia/Seoul", "yyyyMMdd");
-  if (_LRT_HOLIDAYS_[ymd]) return true;
-  try {
-    var extra = PropertiesService.getScriptProperties()
-      .getProperty(_LRT_HOLIDAY_PROP_) || "";
-    if (extra && extra.indexOf(ymd) !== -1) return true;
-  } catch (e) { /* 속성을 못 읽어도 주말 판단은 살아 있다 */ }
-  return false;
+  var 쉼 = !!_LRT_HOLIDAYS_[ymd];
+  if (!쉼) {
+    var extra = _lrt_extraHolidays_();
+    쉼 = !!extra && extra.indexOf(ymd) !== -1;
+  }
+  _LRT_OFF_MEMO_[key] = 쉼;
+  return 쉼;
 }
 
 /**
@@ -472,6 +514,42 @@ function csLotteReturnPickup(p) {
  *
  * @param {Object} p {tab, row, memo, boxType}
  */
+/**
+ * 수거입력처가 없을 때 택배사를 «근거로» 가린다.
+ *
+ * ★ 근거 차례 ★
+ *   ① 반품송장 칸에 적힌 택배사 — 이미 그 택배사로 처리하기로 정해진 건이다
+ *      (「/ 로젠택배」처럼 번호 없이 택배사만 있는 줄이 실제로 있다)
+ *   ② 원송장 칸에 적힌 택배사
+ *   ③ 원송장 자릿수 — 롯데 12자리 · 로젠 11자리
+ *
+ * 판단하는 자는 csTrack.gs 의 _trk_carrier_ 하나다. 여기서 새로 짜지 않는다
+ * ([[one-value-one-owner]]). 못 가리면 «로젠» 이다 — 2026-09-11 에 로젠으로
+ * 바꿨고 롯데 계약은 삭제됐다. 모르면 지금 쓰는 쪽으로 가는 것이 맞다.
+ *
+ * @return {string} "로젠" | "롯데"
+ */
+function _lrt_guessCarrier_(반품송장칸, 원송장칸) {
+  function 쪼개(v) {
+    try {
+      if (typeof _cs_splitLedgerInvoice_ === "function") return _cs_splitLedgerInvoice_(v);
+    } catch (e) {}
+    return { 번호: String(v == null ? "" : v), 택배사: "" };
+  }
+  var 반품 = 쪼개(반품송장칸);
+  if (String(반품.택배사 || "").indexOf("로젠") !== -1) return "로젠";
+  if (String(반품.택배사 || "").indexOf("롯데") !== -1) return "롯데";
+
+  var 원 = 쪼개(원송장칸);
+  if (String(원.택배사 || "").indexOf("로젠") !== -1) return "로젠";
+  if (String(원.택배사 || "").indexOf("롯데") !== -1) return "롯데";
+
+  try {
+    if (typeof _trk_carrier_ === "function") return _trk_carrier_(원.번호, "");
+  } catch (e) {}
+  return String(원.번호 || "").replace(/[^0-9]/g, "").length === 12 ? "롯데" : "로젠";
+}
+
 function csLotteReturnPickupFromCard(p) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return { ok: false, error: "권한이 없습니다." };
   p = p || {};
@@ -494,14 +572,37 @@ function csLotteReturnPickupFromCard(p) {
       주소 되짚기·박스 가려내기·대장 적기가 두 군데가 되고, 언젠가
       한쪽만 고치게 된다. 다른 것은 «부르는 API 하나»뿐이므로 거기서만 가른다.
 
-      수거입력처가 비면 막지 않는다 — 사람이 판단할 일이다. 그때는 롯데로
-      본다(여태 그랬다). 로젠이라고 적혀 있으면 로젠으로 간다.
+      수거입력처가 비면 막지 않는다 — 사람이 판단할 일이다.
+      ★ 2026-10-08 고침 ★ 전에는 「그때는 롯데로 본다」였다. 그런데 이 파일
+      머리말에도 적혀 있듯 **수거입력처의 94%가 비어 있고**, 202610 탭에는
+      그 열이 아예 없다. 로젠으로 바꾼 뒤로는 그 기본값이 전부 틀린 답이 된다.
+      이제 비면 «근거로» 가린다 — _lrt_guessCarrier_.
       ══════════════════════════════════════════════════════════════ */
   var pickup = cell("pickup");
-  var pk = pickup.replace(/s/g, "");
-  var 로젠인가 = pk.indexOf("로젠") !== -1;
-  if (pk && !로젠인가 && pk.indexOf("롯데") === -1) {
+  /*  ★ 2026-10-07: 역슬래시가 빠져 있었다 ★
+      replace(/s/g) 는 «알파벳 s»를 지운다. 공백을 지우려던 것이다.
+      2026-09-11 에 csOrderSearch.gs 에서 같은 오타를 고쳤는데 여기가 빠졌다.
+      한글 수거입력처에는 해가 없었지만 뜻이 틀렸다. */
+  var pk = pickup.replace(/\s/g, "");
+  var 로젠인가;
+  if (pk.indexOf("로젠") !== -1) 로젠인가 = true;
+  else if (pk.indexOf("롯데") !== -1) 로젠인가 = false;
+  else if (pk) {
     return { ok: false, error: "롯데·로젠 건이 아닙니다 (수거입력처: " + pickup + ")" };
+  } else {
+    /*  ★ 수거입력처가 없을 때 «롯데로 보지 않는다» ★  (2026-10-08)
+        여태는 비면 롯데로 봤다 — 롯데가 주 택배사이던 때의 규칙이다.
+        그런데 2026-09-11 에 로젠으로 바꿨고, 롯데 거래처 계약은 삭제됐다.
+        게다가 202610 탭에는 **「수거입력처」 열이 아예 없다** — 열이
+        「원송장번호 / 택배사」와 「반품송장번호 / 택배사」 둘뿐이다.
+        그래서 그 탭의 반품접수가 «전부» 롯데로 가서 이렇게 실패했다 —
+          회수 접수 실패 — 45311894913 — 거래처계약정보 조회 오류 ( 거래처코드 : 348782 )
+        348782 는 우리 로젠 거래처코드(30556066)가 아니라 **롯데** 것이다.
+        로젠 쪽을 다섯 번 고치는 동안 이 줄은 로젠을 부른 적이 한 번도 없었다.
+
+        이제 근거로 가린다 — 판단하는 자는 csTrack.gs 의 _trk_carrier_ 하나다
+        (롯데 12자리 · 로젠 11자리). 여기서 새로 짜지 않는다. */
+    로젠인가 = _lrt_guessCarrier_(cell("returnInvoice"), cell("invoice")) === "로젠";
   }
   if (로젠인가) {
     var lgReady = (typeof csLogenReturnReady === "function")
@@ -570,7 +671,15 @@ function csLotteReturnPickupFromCard(p) {
   var res = 로젠인가
     ? _lgr_pickupMany_({
         name: name, phone: phone, addr: addr,
-        item: cell("item"), orglInvNos: origs, memo: p.memo
+        item: cell("item"), orglInvNos: origs, memo: p.memo,
+        /*  ★ 우리 번호를 같이 보낸다 ★  (2026-10-08)
+            원송장 없이 접수된 건은 «어떤 번호로도» 되찾을 수 없다. 실제로
+            유정주·신경순·김신애 세 건이 그랬다 — 로젠 화면에서 단건등록돼
+            원송장도 주문번호도 안 들어가, 우리가 가진 번호로는 하나도 안 나왔다.
+            우리 고유ID 를 실어 보내면 그 번호로 영영 되찾을 수 있다.
+            (2026-10-08 운영계 실측: 원송장+고유ID 를 같이 보내도 받아들이고,
+             그 고유ID 로 inquiryReserveStateFixTakeNo 가 찾아낸다.) */
+        uid: cell("uid")
       })
     : csLotteReturnPickup({
         name: name, phone: phone, addr: addr,
@@ -599,7 +708,13 @@ function csLotteReturnPickupFromCard(p) {
           var d2 = String(okRows[a].invoice).replace(/[^0-9]/g, "");
           if (d2 && prev.indexOf(d2) === -1) prev.push(d2);
         }
-        ctx.tab.getRange(ctx.rowNum, col.returnInvoice + 1).setValue(prev.join(" "));
+        /*  ★ 여기는 택배사를 «안다» ★  (2026-10-04)
+            롯데에 수거를 넣는 자리다. 「반품송장번호 / 택배사」 한 칸이므로
+            번호 뒤에 같이 적는다 — 이미 적혀 있으면 그것을 그대로 둔다.  */
+        var 옛칸 = String(cell("returnInvoice") || "");
+        var 수거사 = _cs_splitLedgerInvoice_(옛칸).택배사 || "롯데";
+        ctx.tab.getRange(ctx.rowNum, col.returnInvoice + 1)
+          .setValue(_cs_ledgerInvoiceCell_(prev.join(" "), 수거사));
       }
       /* ★ 짝을 남긴다 ★ 어느 원송장의 회수송장인지 여기에만 남는다.
          사람이 읽을 수 있는 한 줄이고, 다음 접수 때 이 줄을 읽어

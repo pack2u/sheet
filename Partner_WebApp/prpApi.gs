@@ -163,6 +163,22 @@ function prpSubmitReturn(sid, data) {
 
     if (col.status >= 0) row[col.status] = PRP_INITIAL_STATUS;
     if (col.date >= 0) row[col.date] = prpToday_("yyMMdd");
+
+    /*  ★ 고유ID 칸은 «비워 둔다» ★  (2026-10-07)
+
+        2026-10-04 에 여기서 반품 제 번호(r1004000003)를 발급했다. 뜻을 잘못
+        읽은 것이다 — 그 칸은 «원래 주문»의 고유ID 다. 하나의 번호로 주문·송장·
+        반품을 다 찾으려면 같은 번호가 세 곳에 있어야 한다. 반품에 따로 번호를
+        지으면 오히려 끊긴다. CS 쪽은 같은 날 그 길을 걷었다(csReturnUid.gs 머리말).
+
+        포털만 남아 «정의도 없는» prpReturnUidNext_ 를 부르고 있었다. 1b268fe 가
+        그 발급기를 보관만 하고 본체에 안 넣었다 — 업체가 접수하는 순간
+        ReferenceError 로 터질 자리였다. 호출을 걷는다.
+
+        ★ 비워 두면 누가 채우나 ★ CS웹앱 csReturnOrderUidFill 이 원송장으로
+          주문 원장을 찾아 넣는다. 번호를 지어 넣어도 그쪽이 덮으므로,
+          지어 넣는 것은 틀린 값을 잠깐 두는 것일 뿐이다.
+          [[dont-overwrite-what-you-couldnt-read]] — 모르는 것과 비어 있는 것은 다르다. */
     if (col.staff >= 0) row[col.staff] = PRP_STAFF_PREFIX + sess.vendor;
     if (col.vendor >= 0) row[col.vendor] = sess.vendor;
     if (col.name >= 0) row[col.name] = name;
@@ -186,11 +202,34 @@ function prpSubmitReturn(sid, data) {
     if (col.phone2Name >= 0 && p2NameIn) {
       row[col.phone2Name] = p2NameIn;
     }
-    if (col.pickup >= 0) row[col.pickup] = String(data.pickup || "").trim();
+    /*  ★ 업체가 고른 수거 택배사 ★  (2026-10-04)
+
+        > "택배사 한 칸에 같이 적게 해줘"
+
+        10월 협의안에는 「회수신청」 칸이 없다. 그래서 접수창에서 고른 택배사가
+        10/01 부터 아무 데도 안 적혔다 — 업체는 골랐으니 적힌 줄 알고,
+        CS 는 빈칸을 보고 안 골랐다고 안다. 2026-09-10 과 같은 일이다.
+        머리글이 「반품송장번호 / 택배사」이므로 그 칸에 같이 적는다.
+        번호는 아직 없다 — 「/ CJ대한통운」으로 두면 나중에 번호가 들어올 때
+        prpLedgerInvoiceReplaceNo_ 가 택배사를 지켜 준다.  */
+    var 수거사 = String(data.pickup || "").trim();
+    if (col.pickup >= 0) row[col.pickup] = 수거사;
+    else if (수거사 && col.returnInvoice >= 0) {
+      var 반품칸값 = prpLedgerInvoiceCell_("", 수거사);
+      if (반품칸값) row[col.returnInvoice] = 반품칸값;
+    }
     if (col.item >= 0) row[col.item] = item;
     if (col.qty >= 0) row[col.qty] = String(data.qty || "1").trim();
     if (col.invoice >= 0) row[col.invoice] = invoice;
-    if (col.type >= 0) row[col.type] = String(data.type || "단순반품").trim();
+    /*  ★ 협의된 배열에는 교환반품구분 칸이 없다 ★  (2026-10-01)
+        칸이 없다고 업체가 고른 값을 조용히 버리면, 업체는 적었는데 아무 데도
+        없는 값이 된다. 귀책·실번호가 걸어온 길과 같이 비고에 남긴다.
+        ★ CS웹앱 submitReturnLedger 와 같은 글자 모양이다 — 쌍으로 고친다 ★
+        기본값 「단순반품」은 남기지 않는다 — 줄마다 같은 말이 쌓인다.  */
+    var typeIn = String(data.type || "").trim();
+    var typeToNotice = "";
+    if (col.type >= 0) row[col.type] = typeIn || "단순반품";
+    else if (typeIn && typeIn !== "단순반품") typeToNotice = " 구분: " + typeIn + ".";
 
     /*  사유 — 고객이 «왜» 보냈나. 유형(K열)과 다른 칸(L열)이다. (2026-09-30)
         업체가 목록에서 고른 낱말만 받는다 — 자유 글은 「전달 사항」이 받는다.  */
@@ -202,21 +241,26 @@ function prpSubmitReturn(sid, data) {
       }
       if (!있나) reasonIn = "";
     }
-    if (col.reason >= 0 && reasonIn) row[col.reason] = reasonIn;
-
-    /*  귀책 — 전용 열이 있으면 열에, 없으면 아래 비고 줄에.
-        CS웹앱이 걸어온 길과 같은 글자 모양을 쓴다 — 읽는 쪽이 하나여야 한다.
+    /*  귀책 — 「판매자」 같은 낱말만 받는다.
         ★ 사유가 비면 귀책도 안 적는다 ★ 「판매자」 한 낱말은 아무것도 안 알려 준다.  */
     var faultIn = String(data.fault || "").trim();
     if (PRP_RETURN_FAULTS && PRP_RETURN_FAULTS.indexOf(faultIn) === -1) faultIn = "";
     var faultToNotice = "";
-    if (faultIn && reasonIn) {
-      if (col.fault >= 0) row[col.fault] = faultIn;
-      else faultToNotice = " 귀책: " + faultIn + " (" + reasonIn + ").";
-    }
-    /*  사유 열도 없다 — 위 줄이 사유까지 담으므로 대개 이 줄은 안 쓴다.
-        귀책이 비었을 때만 따로 남긴다. (2026-09-30)  */
-    if (col.reason < 0 && reasonIn && !faultToNotice) {
+
+    /*  ★ 협의된 배열은 「발생원인」 한 칸에 «귀책 / 사유» ★  (2026-10-01)
+            판매자귀책 / 오배송
+        전에는 포털이 사유만 그 칸에 적고 귀책은 비고로 보냈다 — CS웹앱은
+        한 칸에 둘을 함께 적는다. 같은 칸에 두 모양이 섞이면 읽는 쪽이
+        한쪽을 못 가른다. 글자 모양을 CS 와 똑같이 맞춘다(prpMakeCause_).
+        귀책 전용 열이 따로 있으면 그쪽에도 적는다.
+        칸이 아예 없는 옛 탭은 비고에 표시로 남긴다 — 조용히 버리지 않는다.  */
+    if (col.reason >= 0) {
+      var 원인 = prpMakeCause_(col.fault >= 0 ? "" : faultIn, reasonIn);
+      if (원인) row[col.reason] = 원인;
+      if (col.fault >= 0 && faultIn) row[col.fault] = faultIn;
+    } else if (faultIn && reasonIn) {
+      faultToNotice = " 귀책: " + faultIn + " (" + reasonIn + ").";
+    } else if (reasonIn) {
       faultToNotice = " 사유: " + reasonIn + ".";
     }
 
@@ -247,11 +291,21 @@ function prpSubmitReturn(sid, data) {
            (p2NameIn ? " (" + p2NameIn + ")" : "") + "." : "") +
         (!p2Lost && p2NameLost ? " 실번호 " + prpFormatPhone_(p2) +
            " (" + p2NameIn + ")." : "") +
+        typeToNotice +
         faultToNotice +
         (memo ? " " + memo : "");
     }
 
     var dest = prpNextDestRow_(values, headerIdx, col);
+    /*  ★ 주문 고유ID 를 칸에도 적는다 ★  (2026-10-04)
+        > "고유아이디로 주문, 송장, 반품유무등을 한번에 찾을수 있게"
+        업체가 조회로 고른 주문의 고유ID 를 여태 비고에만 「고유ID …」로 적었다.
+        비고는 사람이 읽는 글이라 번호로 찾을 수 없다. 칸이 있으면 칸에도 적는다.
+        업체가 손으로 적은 건(조회를 안 거친 것)은 uid 가 비어 있어 칸도 빈다 —
+        번호를 지어내지 않는다. 비고 표시는 그대로 둔다(옛 화면들이 그걸 읽는다).
+        ★ CS 쪽과 같은 다듬기 ★ prpUidFromCell_ 가 마지막 「/」 뒤만 남기고
+          「#n」·「|코드」·「_S숫자」를 뗀다 — CS _cs_orderUid_ 와 같은 규칙이다. */
+    if (col.uid >= 0 && uid) row[col.uid] = uid;
     tab.getRange(dest, 1, 1, lastCol).setValues([row]);
     // 위 행 서식을 물려받아 대장 모양이 깨지지 않게 한다
     if (dest > headerIdx + 2) {
@@ -351,9 +405,10 @@ function prpAddInquiry(sid, payload) {
       name: ctx.col.name >= 0 ? String(ctx.row[ctx.col.name] || "").trim() : "",
       item: ctx.col.item >= 0 ? String(ctx.row[ctx.col.item] || "").trim() : "",
       status: String(ctx.row[0] || "").trim(),
-      invoice: ctx.col.invoice >= 0 ? String(ctx.row[ctx.col.invoice] || "").trim() : "",
-      returnInvoice: ctx.col.returnInvoice >= 0
-        ? String(ctx.row[ctx.col.returnInvoice] || "").trim() : ""
+      //  한 칸에 담긴 번호와 택배사를 가른다 (2026-10-04)
+      invoice: prpSplitLedgerInvoice_(ctx.col.invoice >= 0 ? ctx.row[ctx.col.invoice] : "").번호,
+      returnInvoice: prpSplitLedgerInvoice_(
+        ctx.col.returnInvoice >= 0 ? ctx.row[ctx.col.returnInvoice] : "").번호,
     });
     if (!board || !board.ok) {
       prpLog_(g.sess.vendor, "보드실패", (board && board.error) || "원인 미상");

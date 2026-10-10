@@ -39,15 +39,84 @@ var _CS_FAV_DEFAULT_ = [
     url: "https://docs.google.com/spreadsheets/d/1LlNX-spTs-2WgWD8HEha90PYU0m7s8MqFh84vy_Fi_Q/edit",
   },
   {
+    /*  롯데 ALPS → 로젠으로 갈았다  (2026-10-08)
+        > "현재 롯데 알프스가 들어가있는데 로젠으로 바꿔주고"
+        2026-09 에 택배사를 로젠으로 돌렸는데 북마크만 롯데에 남아 있었다.
+        롯데 건을 되짚을 일이 생기면 그때 다시 넣는다. */
     icon: "🚚",
-    name: "롯데 ALPS",
-    url: "https://partner.alps.llogis.com/main/pages/sec/authentication",
+    name: "로젠택배",
+    url: "https://logis.ilogen.com/common/html/main.html",
   },
   {
     // 계정 목록 시트. 링크만 둔다 — 열람 권한은 시트 공유 설정이 정한다.
     icon: "🔑",
     name: "아이디·패스워드",
     url: "https://docs.google.com/spreadsheets/d/1xziVmMIsQfwyDwleNmB0haRsiE5t24aMu2SHkuI_34U/edit?gid=0#gid=0",
+  },
+  {
+    //  이카운트 — 품목·재고·판매현황이 사는 곳  (2026-10-08)
+    icon: "📒",
+    name: "이카운트",
+    url: "https://login.ecount.com/Login/",
+  },
+  /*  ══════════════════════════════════════════════════════════
+      ★ 쇼핑몰 관리자 ★  (2026-10-08)
+      > "쇼필몰관리자 폴더를 만들어서 이미지의 사이트들 넣어줘"
+
+      사장님이 보여 주신 「쇼핑몰 관리자」 시트를 그대로 옮겼다.
+      시트의 「사이트 · 구분」 두 칸이 여기 「폴더 · 칩」이 된다 —
+      구분이 하나뿐인 곳은 폴더를 안 만들고 칩 하나로 둔다.
+
+      ★ 같은 주소가 여럿인 것은 «일부러» 둔다 ★
+        옥션·지마켓은 esmplus 한 곳으로 들어가고, 쿠팡·배민도 법인과 인더샵이
+        같은 주소다. 다른 것은 «어느 계정으로 들어가느냐»다. 주소가 같다고
+        하나로 합치면 「어느 걸로 들어가야 하지」를 사람이 다시 떠올려야 한다.
+
+      ★ 잘린 주소는 «지어내지 않았다» ★
+        시트 화면에서 뒤가 잘려 보인 것은 확실한 데까지만 적었다
+        (11번가 · 식봄 · 캐시딜 · 인더샵토스 · 개인 스마트스토어).
+        들어가 보시고 다르면 말씀해 주시면 고칩니다 —
+        틀린 주소를 적어 두면 모르는 것보다 나쁘다.
+      ══════════════════════════════════════════════════════════ */
+  {
+    icon: "🛒",
+    name: "쇼핑몰 관리자",
+    children: [
+      { icon: "🅽", name: "네이버페이 판매자센터", url: "https://admin.pay.naver.com/front/m/v2" },
+      { icon: "📁", name: "스마트스토어", children: [
+        { icon: "🏢", name: "법인 팩투유", url: "https://sell.smartstore.naver.com/#/login" },
+        { icon: "👤", name: "개인 팩투유", url: "https://sell.smartstore.naver.com/#/login" },
+        { icon: "🏷", name: "인더샵", url: "https://sell.smartstore.naver.com/#/login" },
+      ]},
+      { icon: "📁", name: "배민상회", children: [
+        { icon: "🏢", name: "법인 배민", url: "https://seller-mart.baemin.com/goods" },
+        { icon: "🏷", name: "인더샵 배민", url: "https://seller-mart.baemin.com/goods" },
+      ]},
+      { icon: "📁", name: "쿠팡", children: [
+        { icon: "🏢", name: "법인 쿠팡", url: "https://wing.coupang.com/" },
+        { icon: "🏷", name: "인더샵 쿠팡", url: "https://wing.coupang.com/" },
+      ]},
+      { icon: "📁", name: "옥션 · 지마켓", children: [
+        { icon: "🏢", name: "법인 옥션", url: "https://www.esmplus.com/Home/Home" },
+        { icon: "🏢", name: "법인 지마켓", url: "https://www.esmplus.com/Home/Home" },
+        { icon: "👤", name: "개인 옥션", url: "https://www.esmplus.com/Home/Home" },
+        { icon: "👤", name: "개인 지마켓", url: "https://www.esmplus.com/Home/Home" },
+        { icon: "🏷", name: "인더샵 옥션", url: "https://signin.esmplus.com/login" },
+        { icon: "🏷", name: "인더샵 지마켓", url: "https://signin.esmplus.com/login" },
+      ]},
+      { icon: "📁", name: "토스", children: [
+        { icon: "🏢", name: "법인토스", url: "https://www.tosspayments.com/" },
+        { icon: "🏷", name: "인더샵토스", url: "https://shopping-seller.toss.im/login" },
+      ]},
+      { icon: "👤", name: "개인 11번가", url: "https://login.11st.co.kr/" },
+      { icon: "🥬", name: "식봄", url: "https://seller.foodspring.co.kr/" },
+      { icon: "🏢", name: "법인 롯데온", url: "https://support.lotteon.com/" },
+      { icon: "🏢", name: "법인 카카오톡스토어", url: "https://store-sell.kakao.com/" },
+      { icon: "🏢", name: "법인 도매꾹", url: "https://domeggook.com/sc/" },
+      { icon: "🏢", name: "법인 텐바이텐", url: "https://scm.10x10.co.kr/" },
+      { icon: "🏢", name: "법인 캐시딜(신)", url: "https://partner.cashdeal.kr/login" },
+      { icon: "🏢", name: "법인 오너클랜", url: "https://ownerclan.com/vender/" },
+    ],
   },
   {
     // 팩투유 크롬(pack2u@pack2u.co.kr, Profile 10) 북마크바의 「협력업체 시트」 폴더.
@@ -114,7 +183,9 @@ var _CS_FAV_DEFAULT_ = [
     // 원본 북마크의 ALPS 주소에는 로그인 세션 토큰(JWT)이 통째로 박혀 있었다.
     // 그대로 두면 만료된 토큰으로 로그인 오류가 나고, 무엇보다 자격증명을
     // 저장소에 남기는 짓이다. 로그인 화면 주소만 남긴다.
-    { icon: "🚚", name: "ALPS", url: "https://partner.alps.llogis.com/main/pages/sec/authentication" },
+    //  ALPS → 로젠으로 갈았다 (2026-10-08). 위 「로젠택배」와 같은 곳이다 —
+    //  크롬 북마크바를 베껴 온 이 폴더에만 롯데가 남아 갈래가 둘이었다.
+    { icon: "🚚", name: "로젠택배", url: "https://logis.ilogen.com/common/html/main.html" },
     { icon: "🔗", name: "사방넷", url: "https://www.sabangnet.co.kr/" },
     { icon: "🔗", name: "Pack2U 모바일", url: "https://script.google.com/a/macros/pack2u.co.kr/s/AKfycbxvDzpleqHey7gm0aHILVdALGAuCaymCXlFUfyVKNYt8Je2qhOPbCoKFtgLKMmeXBdpTA/exec" },
     { icon: "📄", name: "Google Sheets", url: "https://docs.google.com/spreadsheets/u/0/?tgif=d" },
@@ -192,6 +263,7 @@ function _cs_fav_list_() {
   }
 
   var out = _cs_fav_cleanList_(src);
+  out = _cs_fav_addAllPartners_(out);
 
   // JSON 은 멀쩡한데 쓸 수 있는 항목이 하나도 안 남는 경우도 있다(전부 http 아닌
   // 주소 등). 그때도 빈 바보다 기본 목록이 낫다 — 깨진 JSON 과 같은 이유다.
@@ -200,6 +272,122 @@ function _cs_fav_list_() {
     from = "코드 기본 목록 (속성 " + _CS_FAV_PROP_ + " 에 쓸 수 있는 항목이 없음)";
   }
   return { items: out, from: from };
+}
+
+/* ══════════════════════════════════════════════════════════════
+    ★ 협력업체 시트 «전체» — 손으로 안 베낀다 ★  (2026-10-08)
+
+    > "우리 상단에 북마크에 협력업체 시트 전체를 넣어주면 좋겠어"
+
+    ★ 왜 손으로 베끼면 안 되나 ★
+      코드 기본 목록의 「협력업체 시트」는 크롬 북마크바에서 베껴 온 것이고,
+      그 자리에 이렇게 적혀 있다 — 「원본이 바뀌면 여기도 손대야 한다.
+      자동으로 따라오지 않는다」. 실제로 늦었다. 업체는 늘고 줄고,
+      시트 이름도 바뀐다. 사람이 그때마다 옮겨 적는 일은 반드시 빠뜨린다.
+
+    ★ 그래서 드라이브를 본다 ★
+      업체 시트는 두 폴더에 「[협력업체] 이름」으로 산다 — 허브(_partnerDeploy.gs
+      의 _pt_listFiles)가 보는 바로 그 폴더다. 같은 곳을 보니 허브가 미는 곳과
+      사장님이 여는 곳이 어긋나지 않는다. 한 값에 주인은 하나다.
+
+    ★ 손으로 묶은 것은 안 건드린다 ★
+      「대리공급업체 · 대리판매업체 · 직매입」 갈래는 사람이 정한 것이라 쓸모가
+      있다. 그것을 지우지 않고 «전체» 폴더를 맨 앞에 하나 더 둔다.
+      자주 쓰는 길은 그대로 두고, 빠진 곳이 없다는 보장만 더한다.
+
+    ★ 느리면 안 된다 ★ 즐겨찾기는 화면이 뜰 때마다 부른다. 드라이브 훑기는
+      느리므로 여섯 시간 담아 둔다. 못 읽으면 «조용히 넘어간다» —
+      바가 통째로 사라지는 것보다 전체 폴더가 없는 편이 낫다.
+   ══════════════════════════════════════════════════════════════ */
+var _CS_FAV_PARTNER_FOLDERS_ = [
+  "1IqqPLKxBNrqh-u14Op6jKNN7khzE13Cl",
+  "1J0f8HjtartQwixF3xKQf0p7fvr04Ef7v",
+];
+var _CS_FAV_PARTNER_PREFIX_ = "[협력업체]";
+var _CS_FAV_PARTNER_CACHE_ = "CS_FAV_PARTNER_ALL_V1";
+var _CS_FAV_PARTNER_TTL_ = 21600;   // 6시간
+
+/** 드라이브에서 업체 시트를 모은다. 못 읽으면 빈 배열 — 터뜨리지 않는다. */
+function _cs_fav_partnerSheets_() {
+  //  시험은 GAS 바깥에서 돈다 — 드라이브도 캐시도 없다. 그때는 조용히 비운다.
+  if (typeof DriveApp === "undefined") return [];
+
+  try {
+    var cache = (typeof CacheService !== "undefined")
+      ? CacheService.getScriptCache() : null;
+    if (cache) {
+      var hit = cache.get(_CS_FAV_PARTNER_CACHE_);
+      if (hit) {
+        var 담긴것 = JSON.parse(hit);
+        if (담긴것 && 담긴것.length) return 담긴것;
+      }
+    }
+  } catch (eC) {}
+
+  var 본것 = {}, 모음 = [];
+  for (var i = 0; i < _CS_FAV_PARTNER_FOLDERS_.length; i++) {
+    try {
+      var files = DriveApp.getFolderById(_CS_FAV_PARTNER_FOLDERS_[i]).getFiles();
+      while (files.hasNext()) {
+        var f = files.next();
+        var nm = String(f.getName() || "");
+        //  「[협력업체] 」와 「[협력업체]_」 둘 다 쓰인다 (_pt_listFiles 와 같은 규칙)
+        if (nm.indexOf(_CS_FAV_PARTNER_PREFIX_) !== 0) continue;
+        var id = f.getId();
+        if (본것[id]) continue;
+        본것[id] = true;
+        모음.push({
+          icon: "📄",
+          name: nm.substring(_CS_FAV_PARTNER_PREFIX_.length).replace(/^[\s_]+/, "") || nm,
+          url: "https://docs.google.com/spreadsheets/d/" + id + "/edit",
+        });
+      }
+    } catch (eF) {
+      //  한 폴더를 못 읽어도 다른 폴더는 본다. 반쪽이라도 없는 것보다 낫다.
+      try { Logger.log("[CS_FAV] 폴더 " + _CS_FAV_PARTNER_FOLDERS_[i] + " 못 읽음: " + eF.message); } catch (_) {}
+    }
+  }
+  모음.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+
+  try {
+    var c2 = (typeof CacheService !== "undefined") ? CacheService.getScriptCache() : null;
+    if (c2 && 모음.length) {
+      c2.put(_CS_FAV_PARTNER_CACHE_, JSON.stringify(모음), _CS_FAV_PARTNER_TTL_);
+    }
+  } catch (eP2) {}
+  return 모음;
+}
+
+/**
+ * 「협력업체 시트」 폴더 맨 앞에 «전체» 를 끼운다.
+ * 그 폴더가 없으면 맨 뒤에 새로 만든다 — 속성으로 목록을 갈아 끼운 사람도 받는다.
+ */
+function _cs_fav_addAllPartners_(items) {
+  var 전부 = _cs_fav_partnerSheets_();
+  if (!전부.length) return items;      // 못 읽었으면 여태 모습 그대로
+
+  var 전체칸 = {
+    icon: "🗂",
+    name: "전체 (자동 · " + 전부.length + "곳)",
+    children: 전부,
+  };
+
+  for (var i = 0; i < items.length; i++) {
+    if (items[i] && items[i].children && String(items[i].name).indexOf("협력업체") >= 0) {
+      //  두 번 눌러도 두 개가 되지 않게 — 옛 「전체」가 있으면 갈아 끼운다
+      var kids = [];
+      for (var k = 0; k < items[i].children.length; k++) {
+        if (String(items[i].children[k].name).indexOf("전체 (자동") !== 0) {
+          kids.push(items[i].children[k]);
+        }
+      }
+      kids.unshift(전체칸);
+      items[i].children = kids;
+      return items;
+    }
+  }
+  items.push({ icon: "🤝", name: "협력업체 시트", children: [전체칸] });
+  return items;
 }
 
 function _cs_fav_cleanList_(src) {

@@ -44,6 +44,12 @@ function doGet(e) {
       file = "logistics";
       title = "반품 입고 촬영";
       break;
+    case "zone":
+      /*  도서산간 조회 — 로젠에게 직접 묻는다 (csLogenZone.gs).
+          보기만 하는 화면이다. 세트분리의 판정·도선료는 아직 안 바꿨다. */
+      file = "zone";
+      title = "도서산간 조회";
+      break;
     case "statement":
       // 명세서 올리기 — 판독은 v2 가 한다 (csStatement.gs)
       file = "statement";

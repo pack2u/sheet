@@ -61,7 +61,7 @@
  * 운영 키를 받기 전까지는 false 로 둔다(그 사이 실수로 운영을 부르지 않게).
  * 키가 들어오면 true 로 올린다.
  */
-var _LOGEN_USE_PROD_ = false;
+var _LOGEN_USE_PROD_ = true;   // 2026-10-07 운영 전환 — 개발계는 스캔 DB 가 없어 쓸 수 없다
 
 var _LOGEN_HOST_DEV_ = "https://topenapi.ilogen.com";
 var _LOGEN_HOST_PROD_ = "https://openapi.ilogen.com";
@@ -362,6 +362,12 @@ function _logen_isDone_(statNm) {
  *
  *   조회를 막지 않는다 — 기록만 한다.
  */
+/** 이미 본 화물상태 문자열을 적어 두는 속성 이름 */
+var _LOGEN_STATNM_PROP_ = "LOGEN_STATNM_SEEN";
+
+/** 그 값을 «한 실행에 한 번»만 읽어 외운다 (null = 아직 안 읽음) */
+var _LOGEN_STATNM_SEEN_ = null;
+
 function _logen_noteStatus_(statNm) {
   var s = String(statNm == null ? "" : statNm).trim();
   if (!s) return;
@@ -370,12 +376,30 @@ function _logen_noteStatus_(statNm) {
   for (var f = 0; f < _LOGEN_STATUS_FLOW_.length; f++) {
     if (_LOGEN_STATUS_FLOW_[f] === s) return;
   }
+  /*  ★ 속성은 한 실행에 한 번만 읽는다 ★  (2026-10-09)
+      위의 «아는 7단계» 울타리가 보통은 여기까지 안 오게 막는다. 그런데 정말
+      새 문자열이 나온 날에는, 그 상태를 가진 «줄마다» 속성을 읽었다.
+      한 번에 10~20ms 이고 추적은 한 회차에 수백~천 건이다 —
+      새 상태가 나온 날에만 느려지는, 가장 안 반가운 종류의 함정이다.
+      [[gas-service-calls-in-loops]] 가 25분을 먹은 것과 같은 모양이다.
+
+      ★ 적는 순간에는 다시 읽는다 ★ 외운 것만 믿고 덮으면, 다른 실행이 그 사이
+      적어 둔 새 문자열을 지운다. 적는 일은 새 문자열마다 한 번뿐이라 싸다. */
   try {
+    if (_LOGEN_STATNM_SEEN_ === null) {
+      _LOGEN_STATNM_SEEN_ = PropertiesService.getScriptProperties()
+        .getProperty(_LOGEN_STATNM_PROP_) || "";
+    }
+    if (_LOGEN_STATNM_SEEN_.indexOf("|" + s + "|") !== -1) return;
+
     var props = PropertiesService.getScriptProperties();
-    var key = "LOGEN_STATNM_SEEN";
-    var seen = props.getProperty(key) || "";
-    if (seen.indexOf("|" + s + "|") !== -1) return;
-    props.setProperty(key, seen + "|" + s + "|");
+    var 지금것 = props.getProperty(_LOGEN_STATNM_PROP_) || "";
+    if (지금것.indexOf("|" + s + "|") !== -1) {   // 그 사이 남이 적었다
+      _LOGEN_STATNM_SEEN_ = 지금것;
+      return;
+    }
+    _LOGEN_STATNM_SEEN_ = 지금것 + "|" + s + "|";
+    props.setProperty(_LOGEN_STATNM_PROP_, _LOGEN_STATNM_SEEN_);
     console.warn("[로젠] 새 화물상태 문자열: " + s);
   } catch (e) { /* 기록 실패로 조회를 막지 않는다 */ }
 }
@@ -489,9 +513,24 @@ function _logen_buildTrack_(inv, row) {
                ("00" + i).slice(-3),
       branch: String(t.branNm || ""),
       branchTel: "",                  // 이력에는 없다. 최종조회에서 채운다.
+      /* ★ salesNm·acptorTyNm 은 «null» 로 온다 ★ (2026-10-07 운영 실측)
+         빈 문자열이 아니라 null 이다. String(null) 은 "null" 이 되므로
+         `|| ""` 를 반드시 거쳐야 한다. 안 그러면 화면에 "null" 이 찍힌다. */
       empNm: String(t.salesNm || "").trim(),
       empTel: "",
-      msg: String(t.acptorTyNm || "").trim()
+      /* 인수자구분명 자리인데 **배송예정 시간대**가 오기도 한다 ("10시~12시").
+         문서에는 "현관/문앞" 예시뿐이다. 둘 다 CS 에 쓸모 있으니 그대로 흘린다. */
+      msg: String(t.acptorTyNm || "").trim(),
+      /* ★ 구간 ★ (2026-10-07 추가)
+         sndBranNm → rcvBranNm 이 "동수원[305]" → "이천터미널[912]" 형태로 온다.
+         문서는 「배송지점명·수하인지점명」이라고만 적어 두었는데, 실제로는
+         **그 스캔에서 화물이 어디서 어디로 갔는지**다.
+         상담원이 화물 위치를 읽는 데 가장 직관적인 값이라 살려 둔다. */
+      leg: (function () {
+        var from = String(t.sndBranNm || "").trim();
+        var to = String(t.rcvBranNm || "").trim();
+        return (from && to) ? (from + " → " + to) : "";
+      })()
     });
   }
   hist.sort(function (a, b) { return a.sortKey < b.sortKey ? -1 : (a.sortKey > b.sortKey ? 1 : 0); });
@@ -534,6 +573,33 @@ function _logen_buildTrack_(inv, row) {
 }
 
 /**
+ * 최종 1건 응답(§7.2)을 화면이 쓰는 모양으로 바꾼다.
+ *
+ * ★ 이력용과 칸 이름을 맞춘다 ★ 부르는 쪽이 둘을 한 벌로 다루려면 같아야 한다.
+ *   다만 history 는 빈 채로 둔다 — 최종 1건만 왔으니 지어내지 않는다.
+ * ★ 전화번호가 여기에만 온다 ★ salesCellNo. 이것 때문에 이 문을 쓴다.
+ */
+function _logen_buildLast_(inv, row) {
+  var nm = String(row.statNm == null ? "" : row.statNm).trim();
+  _logen_noteStatus_(nm);
+  var tel = String(row.salesCellNo == null ? "" : row.salesCellNo).trim();
+  return {
+    ok: true, carrier: "로젠",
+    invoice: _logen_digits_(row.slipNo) || inv,
+    ordNo: "", summary: "", statusCode: "",
+    statusName: nm || "이력 없음",
+    delivered: _logen_isDone_(nm),
+    lastAt: _logen_when_(row.scanDt, row.scanTm),
+    lastMsg: "",
+    branch: String(row.branNm == null ? "" : row.branNm).trim(),
+    branchTel: tel,
+    empNm: String(row.salesNm == null ? "" : row.salesNm).trim(),
+    empTel: tel,
+    itemNm: "", history: []
+  };
+}
+
+/**
  * 최종 화물추적 — 영업소 전화번호만 꺼내 쓴다.
  * 실패해도 조용히 넘어간다. 전화번호가 없다고 배송조회를 죽일 이유가 없다.
  */
@@ -566,13 +632,21 @@ function _logen_lastTel_(inv) {
  *   그래서 10건씩 끊어 2초씩 쉬며 **차례로** 부른다.
  *   UrlFetchApp 은 원래 동기라 「순차」는 저절로 지켜진다.
  *
- * 전화번호(최종조회)는 여기서 부르지 않는다 — 목록에서는 필요 없고,
- * 건당 한 번씩 더 부르면 배치로 아낀 걸 도로 까먹는다.
+ * ★ 전화번호가 필요하면 {최종만:true} 로 부른다 ★  (2026-10-09)
+ *   이력용(§7.1)에는 영업소 전화번호가 «없다». 최종조회(§7.2)에만 salesCellNo 가
+ *   온다 — 「72 하영철(대방) · 010-2841-7324」 꼴. 건당 한 번 더 부르는 것이 아니라
+ *   **같은 묶음 호출로 문만 바꾸는 것**이라 호출 수는 그대로다.
+ *   규격 §7.2 도 「상태 폴링은 7.2 를, 상세 이력 화면은 7.1 을」 이라고 적어 뒀다.
  *
  * @param {Array<string>} invoices
+ * @param {Object} opt { 최종만:boolean }  true 면 최종 1건 + 영업소 전화번호
  * @return {Object} { 송장번호: 결과 }
  */
-function csLogenTrackMany(invoices) {
+function csLogenTrackMany(invoices, opt) {
+  opt = opt || {};
+  var 최종만 = !!opt["최종만"];
+  var API = 최종만 ? "inquiryCargoTrackingMultiLast" : "inquiryCargoTrackingMulti";
+  var 캐시표 = 최종만 ? "L" : "H";   // ★ 캐시를 섞지 않는다 ★ 둘은 모양이 다르다
   var out = {};
   var list = [];
   var seen = {};
@@ -590,7 +664,7 @@ function csLogenTrackMany(invoices) {
   var cache = CacheService.getScriptCache();
   var ask = [];
   for (var c = 0; c < list.length; c++) {
-    var ck = "logenTrk|" + (_LOGEN_USE_PROD_ ? "P" : "D") + "|" + list[c];
+    var ck = "logenTrk|" + (_LOGEN_USE_PROD_ ? "P" : "D") + 캐시표 + "|" + list[c];
     var hit = null;
     try { hit = cache.get(ck); } catch (e) { /* 무시 */ }
     if (hit) {
@@ -629,7 +703,7 @@ function csLogenTrackMany(invoices) {
     var body = { userId: _logen_userId_(), data: [] };
     for (var a = 0; a < chunk.length; a++) body.data.push({ slipNo: chunk[a] });
 
-    var r = _logen_call_("inquiryCargoTrackingMulti", body);
+    var r = _logen_call_(API, body);
 
     if (!r.ok) {
       for (var f = 0; f < chunk.length; f++) {
@@ -658,10 +732,10 @@ function csLogenTrackMany(invoices) {
                     error: _logen_blank_(row.resultMsg) ? "조회 실패" : String(row.resultMsg) };
         continue;
       }
-      var o2 = _logen_buildTrack_(sn, row);
+      var o2 = 최종만 ? _logen_buildLast_(sn, row) : _logen_buildTrack_(sn, row);
       out[sn] = o2;
       try {
-        cache.put("logenTrk|" + (_LOGEN_USE_PROD_ ? "P" : "D") + "|" + sn,
+        cache.put("logenTrk|" + (_LOGEN_USE_PROD_ ? "P" : "D") + 캐시표 + "|" + sn,
           JSON.stringify(o2), o2.delivered ? _LOGEN_CACHE_DONE_SEC_ : _LOGEN_CACHE_SEC_);
       } catch (e) { /* 무시 */ }
     }

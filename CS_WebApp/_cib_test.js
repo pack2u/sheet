@@ -68,6 +68,10 @@ vm.runInContext(fs.readFileSync("csIntakeBridge.gs", "utf8"), ctx);
   const L = fs.readFileSync("csLogistics.gs", "utf8");
   const a = L.indexOf("function _csl_ocrPack_("), b = L.indexOf("/** 읽을 칸 수", a);
   vm.runInContext(L.slice(a, b), ctx);
+  //  동영상 가르개 (2026-10-01) — csReturnIntake.gs 의 것
+  const R = fs.readFileSync("csReturnIntake.gs", "utf8");
+  const v = R.indexOf("function _cs_isVideoUrl_(");
+  vm.runInContext(R.slice(v, R.indexOf("\n}", v) + 2), ctx);
 }
 
 const ret = (o) => Object.assign({ src_tab: "202609", src_row: 2, customer_name: "김민동", phone: "01099481234", order_invoice: "440812891733", return_invoice: "" }, o);
@@ -138,6 +142,12 @@ check("체크 줄", calls.filter((x) => x.memo).map((x) => x.memo)[0], "입고 �
 calls.length = 0;
 ctx._cib_apply_(item("99999999-9999-9999-9999-999999999999", { memo: "테이프 뜯김" }), {});
 check("그냥 메모", calls.filter((x) => x.memo).map((x) => x.memo)[0], "물류 메모: 테이프 뜯김");
+
+console.log("\n[⑧] 동영상은 글자 인식을 안 한다");
+{ const seen = []; const keep = ctx.csOcrImageForScan;
+  ctx.UrlFetchApp = { fetch: (u) => { seen.push(u); return { getResponseCode: () => 200, getBlob: () => ({ getBytes: () => [1], getContentType: () => "image/jpeg" }) }; } };
+  ctx._cib_ocr_(["https://x/r/2026/10/a.mp4?token=1", "https://x/r/2026/10/b.jpg?token=2"]);
+  check("영상은 안 받는다 — 사진만", seen, ["https://x/r/2026/10/b.jpg?token=2"]); }
 
 console.log("");
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");

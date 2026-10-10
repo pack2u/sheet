@@ -58,6 +58,17 @@ var _PTS_VENDOR_HEADERS_ = [
   "발행", "파일명", "파일ID", "거래처명", "등록번호", "대표자",
   "사업장주소", "업태", "종목", "담당자", "수신메일(콤마)", "원천", "비고",
   "거래처코드",   // 이카운트 CUST_CD — 사업자정보 자동 매칭 키
+  /*  ★ 문서코드 ★  (2026-10-06)
+      > "문서 번호는 26-1006-AP"
+      문서번호 끝에 붙는 짧은 약자다(올팩 → AP). 비워 두면 거래처명 앞 두 글자를 쓴다.
+      거래처코드(이카운트 CUST_CD)는 사업자번호라 문서번호에 쓰기엔 길고 험하다.  */
+  "문서코드",
+  /*  ★ 매일발송 ★  (2026-10-06)
+      > "내일부터는 3시 40분에 자동 발송되게해줘.. 주문내역이 있을떄만."
+      여기를 켠 거래처에만 15:40 자동 발송이 나간다. 끄면 아무 일도 안 난다.
+      목록을 처음 만들 때는 «수신메일이 이미 적힌 줄»만 켜 둔다 — 메일도 없는
+      곳을 켜 두면 매일 「수신메일 없음」만 쌓인다.                        */
+  "매일발송",
 ];
 
 var _PTS_LOG_HEADERS_ = [
@@ -82,17 +93,43 @@ var _PTS_ISSUER_ROWS_ = [
   ["담당자 메일", ""],
   ["입금계좌", "IBK기업은행 458-050724-01-018 (예금주: 주식회사 팩투유)"],
   ["", ""],
+  /*  ★ 글꼴 ★  (2026-10-06)
+      > "폰트를 고딕으로 해줘 둥근 고딕말고"
+      「맑은 고딕」은 구글 시트에 없어 둥근 글씨로 떨어졌다.
+      Noto Sans KR 은 구글 시트 기본 목록에 있는 각진 고딕이다.
+      다른 글꼴을 쓰려면 이 칸만 바꾸면 된다 — 시트 글꼴 목록의 이름 그대로.  */
+  ["글꼴", "Noto Sans KR"],
   ["VAT 기준", "포함"],
   ["품목 표시", "품목별합산"],
-  ["PDF 폴더ID", ""],
-  ["메일 제목", "[팩투유] {거래처명} {대상월} 거래명세표"],
+  /*  PDF 를 쌓아 둘 드라이브 폴더. 그 안에 「2026-10」 처럼 달 폴더를 만들어 넣는다.
+      ★ 비워 두면 내 드라이브에 「거래명세표」 폴더를 «만들어» 쓰고 그 ID 를 여기에 적는다 ★
+      그래서 한 번 돌린 뒤에는 이 칸이 차 있다 — 자리를 옮기려면 이 칸을 고쳐야 한다.
+      기본값은 사장님이 정해 주신 폴더다. (2026-10-06)                        */
+  ["PDF 폴더ID", "1-vgz0nQ9k9YAWzZH5L_iRS3rBN6bLzPi"],
+  /*  ★ 직인 ★  (2026-10-06)
+      > "그리고 도장도 필요하지?"
+      드라이브에 올린 도장 그림의 파일ID. 비워 두면 안 찍는다 —
+      도장은 «있는 척»하면 안 되는 것이라, 못 읽으면 조용히 건너뛰고 로그에 남긴다.
+      권장: 배경이 투명한 PNG. 흰 배경이면 글자를 가린다.                 */
+  ["직인 이미지ID", ""],
+  /*  도장을 둔 드라이브 폴더. 「🔎 직인 찾기」가 여기서 PNG 를 찾아
+      위 「직인 이미지ID」 를 채운다 — 사람이 주소창에서 ID 를 떼어 올 일이 없다. */
+  ["직인 폴더ID", "1IqqPLKxBNrqh-u14Op6jKNN7khzE13Cl"],
+  ["직인 크기(px)", "66"],
+  ["메일 제목", "[팩투유] {거래처명} {기간} 거래명세표"],
   ["메일 본문",
     "안녕하세요, {거래처명} 담당자님.\n\n" +
-    "{대상월} 거래명세표를 첨부로 보내드립니다.\n" +
+    "{기간} 거래명세표를 첨부로 보내드립니다.\n" +
     "합계 {합계}원 (공급가액 {공급가액} / 세액 {세액} / {건수}건)\n\n" +
     "확인 후 회신 부탁드립니다.\n감사합니다.\n\n주식회사 팩투유"],
   ["발신자 표시이름", "주식회사 팩투유"],
   ["숨은참조(BCC)", ""],
+  /*  ★ 시험 수신메일 ★  (2026-10-06)
+      여기에 주소가 적혀 있으면 «모든» 거래명세표 메일이 업체 대신 그리로만 간다.
+      제목 앞에 [시험] 이 붙고, 본문 맨 위에 원래 받을 사람이 적힌다.
+      업체에게 가는 첫 명세서는 되돌릴 수 없다 — 며칠 여기로 받아 보고 비운다.
+      비우면 그때부터 진짜로 나간다. 그 한 칸이 전부다.                    */
+  ["시험 수신메일", "pack2u@pack2u.co.kr"],
 ];
 
 
@@ -211,9 +248,18 @@ function _pts_initIssuerTab_(tab) {
   _pts_noteByLabel_(tab, "품목 표시",
     "품목별합산 = 같은 품목·단가를 한 줄로 합산 (기본)\n일자별상세 = 마감 행 그대로");
   _pts_noteByLabel_(tab, "PDF 폴더ID",
-    "비워두면 내 드라이브에 「거래명세표」 폴더를 만들고 여기에 ID를 적어 둔다.");
+    "PDF 를 쌓아 둘 폴더. 그 안에 「2026-10」 처럼 달 폴더를 만들어 넣는다.\n" +
+    "비워 두면 내 드라이브에 「거래명세표」 폴더를 만들고 여기에 ID 를 적는다 —\n" +
+    "그래서 한 번 돌린 뒤에는 이 칸이 차 있다. 자리를 옮기려면 이 칸을 고치면 된다.");
   _pts_noteByLabel_(tab, "메일 본문",
-    "치환 토큰: {거래처명} {대상월} {합계} {공급가액} {세액} {건수} {문서번호}");
+    "치환 토큰: {거래처명} {기간} {합계} {공급가액} {세액} {건수} {문서번호}\n" +
+    "{기간} 은 실제 거래기간이다 — 하루치면 26-10-6, 달 안이면 26-10-1~10-30.\n" +
+    "{대상월} 도 같은 값이다 (옛 이름이라 그대로 둔다).");
+  _pts_noteByLabel_(tab, "직인 이미지ID",
+    "「🔎 직인 찾기」를 누르면 아래 폴더에서 찾아 여기에 적는다.\n" +
+    "비워 두면 도장을 안 찍는다. 배경이 투명한 PNG 가 좋다 — 흰 배경은 글자를 가린다.");
+  _pts_noteByLabel_(tab, "직인 폴더ID",
+    "도장 그림을 둔 드라이브 폴더. 이름에 도장·직인·seal 이 든 그림을 찾는다.");
 }
 
 /**
@@ -359,7 +405,7 @@ function _pts_syncVendors_() {
       continue;
     }
     appendRows.push([
-      true, file.name, file.id, name, "", "", "", "", "", "", "", "자동", "", "",
+      true, file.name, file.id, name, "", "", "", "", "", "", "", "자동", "", "", "", false,
     ]);
     added++;
   }
@@ -368,6 +414,8 @@ function _pts_syncVendors_() {
     tab.getRange(start, 1, appendRows.length, _PTS_VENDOR_HEADERS_.length)
       .setValues(appendRows);
     tab.getRange(start, 1, appendRows.length, 1).insertCheckboxes();
+    //  매일발송(P열)도 체크 칸으로 — 글자로 TRUE/FALSE 를 적게 하면 오타가 난다
+    tab.getRange(start, 16, appendRows.length, 1).insertCheckboxes();
   }
   return { files: files.length, added: added, renamed: renamed };
 }
@@ -403,6 +451,8 @@ function _pts_readVendors_() {
       source: String(v[11] || "자동").trim() || "자동",
       memo: String(v[12] || "").trim(),
       custCd: String(v[13] || "").trim(),
+      docCode: String(v[14] || "").trim(),
+      daily: v[15] === true || String(v[15]).toUpperCase() === "TRUE",
     });
   }
   return out;
@@ -456,6 +506,11 @@ function _pts_extraColIdx_(hdr) {
   }
   return idx;
 }
+
+/*  명세서에 실을 수 있는 상태.  (2026-10-08)
+    _pt_buildOrderStatusMapFormula_ 가 짓는 낱말과 «같아야» 한다 —
+    그쪽이 바뀌면 여기도 같이 바꿔야 명세서가 조용히 비지 않는다. */
+var _PTS_OK_STATUS_ = ["접수완료", "발송완료"];
 
 function _pts_isChecked_(v) {
   return v === true || String(v).toUpperCase() === "TRUE";
@@ -554,9 +609,34 @@ function _pts_scanTab_(tab, headerRowHint, kind, filter, acc) {
     if (ex.cancel !== -1 && _pts_isChecked_(row[ex.cancel])) { acc.skipped++; continue; }
     if (ex.ret !== -1 && _pts_isChecked_(row[ex.ret])) { acc.skipped++; continue; }
 
-    // 발주 및 송장조회처럼 아직 안 나간 행이 섞인 탭은 송장 있는 행만 센다
-    if (filter.needInvoice && cMap.invoice !== -1) {
-      if (!String(row[cMap.invoice] || "").trim()) { acc.noInvoice++; continue; }
+    /*  ══════════════════════════════════════════════════════════
+        ★ 아직 안 나간 행이 섞인 탭은 «상태»로 가른다 ★  (2026-10-08)
+
+        > "거래명세서 발행시 우리 접수완료, 발송완료건들만 거래명세서 나가게 해줘"
+
+        업체 시트 N열 「상태(자동)」은 수식이 짓는다 (_pt_buildOrderStatusMapFormula_) —
+          송장(K)이 있으면      발송완료
+          고유ID(M)가 있으면    접수완료
+          그 밖                 🔴코드확인필요 · 🚨단종 · 🚨품절 ·
+                                ⚠재고까지만 · ⚠️입력미완 · 빈칸
+        뒤엣것들은 «우리가 아직 받지도 않은» 줄이다. 그것이 명세서에 실리면
+        업체는 안 보낸 것의 돈을 청구받는다.
+
+        ★ 여태는 「송장 있는 행만」이었다 ★ 그러면 발송완료만 실리고,
+          접수는 했는데 아직 송장이 안 붙은 줄이 통째로 빠졌다. 그날 받은 것을
+          그날 명세로 보내는 일일 명세서에서는 그게 대부분이다.
+
+        ★ 상태 칸이 없으면 여태대로 송장을 본다 ★ 옛 탭에는 그 칸이 없다.
+          칸이 없다고 전부 막으면 명세서가 통째로 빈다 —
+          모르는 것을 「아니다」로 읽지 않는다.
+        ══════════════════════════════════════════════════════════ */
+    if (filter.needInvoice) {
+      if (cMap.status !== -1) {
+        var 상태 = String(row[cMap.status] || "").replace(/\s/g, "");
+        if (_PTS_OK_STATUS_.indexOf(상태) < 0) { acc.noInvoice++; continue; }
+      } else if (cMap.invoice !== -1) {
+        if (!String(row[cMap.invoice] || "").trim()) { acc.noInvoice++; continue; }
+      }
     }
 
     var name = "";
@@ -755,8 +835,7 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   }
   var items = goods.concat(pack.extras);
 
-  var docNo = "P2U-" + p.yyyy + (p.m < 10 ? "0" + p.m : String(p.m)) +
-    (pack.docTag ? "-" + pack.docTag : "") + "-" + _pts_docSuffix_(vendor);
+  var docNo = _pts_docNo_(vendor, pack, p);
 
   var tab = ss.getSheetByName(_PTS_TAB_OUT);
   if (!tab) tab = ss.insertSheet(_PTS_TAB_OUT);
@@ -774,7 +853,17 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
     tab.insertRowsAfter(tab.getMaxRows(), needRows - tab.getMaxRows());
   }
 
-  var W = [70, 92, 210, 70, 55, 78, 92, 82]; // A~H ≈ 749px — A4 세로에 맞는 폭
+  /*  ★ 열 너비 ★  (2026-10-06 고침)
+      > "글자가 짤리고 그런 문제가 발생하네"
+      품목코드가 「JH1914SLSB_1004」처럼 길어 92px 에서 잘렸다(앞 J 까지 날아갔다).
+      규격은 거의 늘 비어 있으니 거기서 떼어 품목코드에 준다.
+      fitw=true 라 총폭이 조금 달라져도 인쇄는 알아서 맞춘다 — 잘림은 칸 문제지
+      인쇄 배율 문제가 아니다. 그래서 «아래 줄바꿈»을 같이 켠다.           */
+  /*  ★ D 칸은 품목표에서는 「규격」이지만 요약줄에서는 「공급가액 값」이다 ★
+      2026-10-06 에 규격이 늘 비어 있다고 44px 로 줄였더니 456,546 이 「456,54」로
+      잘렸다. 한 칸을 두 줄이 다르게 쓴다 — 좁은 쪽에 맞춰야 한다.
+      대신 품목명에서 뺀다. 품목명은 줄바꿈이 켜져 있어 좁아도 안 잘린다.      */
+  var W = [52, 124, 170, 70, 44, 74, 88, 82]; // A~H ≈ 704px — A4 세로에 맞는 폭
   for (var c = 0; c < W.length; c++) tab.setColumnWidth(c + 1, W[c]);
 
   // ── 제목 ──
@@ -823,6 +912,29 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   tab.getRange(4, 7, head.length, 2).setWrap(true);
   tab.setRowHeight(9, 8);
 
+  /*  ★ 직인 ★  (2026-10-06)
+      공급자 「대표자」 줄 오른쪽에 얹는다 — 종이 거래명세표가 늘 그 자리다.
+      ★ 먼저 지운다 ★ tab.clear() 는 «칸»만 지운다. 그림은 칸 위에 떠 있어
+      그냥 두면 다시 그릴 때마다 겹겹이 쌓인다.                           */
+  try {
+    var 옛그림 = tab.getImages();
+    for (var gi = 0; gi < 옛그림.length; gi++) { try { 옛그림[gi].remove(); } catch (e) {} }
+  } catch (e) {}
+  var 직인ID = String(issuer["직인 이미지ID"] || "").trim();
+  if (직인ID) {
+    try {
+      var 크기 = Math.max(30, Math.min(120, Number(issuer["직인 크기(px)"]) || 66));
+      /*  D 칸(70px) 안에 들어가게 — 여태 D 가 44px 이라 66px 도장이 오른쪽
+          「공급받는자」 칸까지 넘어가 가운데 선을 타고 앉았다. */
+      var 그림 = tab.insertImage(DriveApp.getFileById(직인ID).getBlob(), 4, 5, 2, 0);
+      그림.setWidth(크기).setHeight(크기);
+    } catch (eSeal) {
+      /*  못 찍었으면 «말한다». 도장이 조용히 빠진 명세서는 다시 보내야 한다. */
+      Logger.log("[거래명세표] 직인을 못 찍었습니다 (공급자 탭 「직인 이미지ID」 확인): " +
+        (eSeal && eSeal.message ? eSeal.message : eSeal));
+    }
+  }
+
   // ── 요약 ──
   var totals = _pts_totals_(items, vatMode);
   var today = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
@@ -847,15 +959,26 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   tab.getRange(10, 1, 2, _PTS_COLS)
     .setBorder(true, true, true, true, true, true)
     .setFontSize(9).setVerticalAlignment("middle");
+  /*  문서번호(P2U-202610-R10061006-올팩코리아)와 거래기간(2026-10-06 ~ 2026-10-06)은
+      한 칸에 안 들어간다. 줄을 바꿔 다 보이게 한다 — 끊긴 번호는 번호가 아니다. */
+  tab.getRange(11, 2).setWrap(true).setFontSize(8);
+  tab.getRange(11, 4).setWrap(true).setFontSize(8);
+  tab.setRowHeight(11, 30);
   tab.getRange(10, 1, 2, 1).setBackground("#f7f9fc").setFontWeight("bold");
   tab.getRange(10, 3, 2, 1).setBackground("#f7f9fc").setFontWeight("bold");
   tab.getRange(10, 5, 2, 1).setBackground("#f7f9fc").setFontWeight("bold");
   tab.getRange(10, 7, 2, 1).setBackground("#f7f9fc").setFontWeight("bold");
   tab.getRange(10, 4).setNumberFormat("#,##0");
   tab.getRange(10, 6).setNumberFormat("#,##0");
-  tab.getRange(10, 8).setNumberFormat("#,##0").setFontWeight("bold").setFontColor("#c62828");
+  /*  ★ 금액이 먼저 보여야 한다 ★  (2026-10-06)
+      > "금액이 잘보여야되"
+      받는 사람이 제일 먼저 찾는 숫자다. 요약줄 합계와 맨 아래 총합계 둘을 키운다. */
+  tab.getRange(10, 8).setNumberFormat("#,##0").setFontWeight("bold")
+    .setFontColor("#c62828").setFontSize(12);
+  tab.getRange(10, 4).setFontSize(10).setFontWeight("bold");
+  tab.getRange(10, 6).setFontSize(10).setFontWeight("bold");
   tab.setRowHeight(10, 22);
-  tab.setRowHeight(11, 22);
+  //  11행 높이는 위에서 30 으로 잡았다 (문서번호·거래기간 두 줄)
   tab.setRowHeight(12, 8);
 
   // ── 품목 표 ──
@@ -880,9 +1003,13 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
       .setFontSize(9).setVerticalAlignment("middle")
       .setBorder(true, true, true, true, true, true);
     tab.getRange(hr + 1, 1, body.length, 2).setHorizontalAlignment("center");
+    //  품목코드도 줄을 바꾼다 — 넓혀도 「JH1915SL10005-1」 같은 것은 또 넘친다
+    tab.getRange(hr + 1, 2, body.length, 1).setWrap(true);
     tab.getRange(hr + 1, 3, body.length, 1).setWrap(true);
     tab.getRange(hr + 1, 5, body.length, 1).setNumberFormat("#,##0").setHorizontalAlignment("right");
     tab.getRange(hr + 1, 6, body.length, 3).setNumberFormat("#,##0").setHorizontalAlignment("right");
+    //  줄마다의 공급가액도 눈에 들어오게 — 단가·세액보다 한 치 굵다
+    tab.getRange(hr + 1, 7, body.length, 1).setFontWeight("bold");
   } else {
     tab.getRange(hr + 1, 1, 1, _PTS_COLS).merge()
       .setValue("해당 월에 마감된 거래가 없습니다.")
@@ -897,7 +1024,7 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   tab.getRange(sumRow, 7).setValue(totals.supply);
   tab.getRange(sumRow, 8).setValue(totals.vat);
   tab.getRange(sumRow, 7, 1, 2).setNumberFormat("#,##0")
-    .setFontWeight("bold").setHorizontalAlignment("right");
+    .setFontWeight("bold").setFontSize(11).setHorizontalAlignment("right");
   tab.getRange(sumRow, 1, 1, _PTS_COLS)
     .setBackground("#eef3f9").setFontSize(10)
     .setBorder(true, true, true, true, true, true);
@@ -908,12 +1035,12 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
     .setValue("총 합 계 (공급가액 + 세액)").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
   tab.getRange(totRow, 7, 1, 2).merge().setValue(totals.total)
-    .setNumberFormat("#,##0").setFontWeight("bold").setFontSize(12)
+    .setNumberFormat("#,##0").setFontWeight("bold").setFontSize(16)
     .setFontColor("#c62828").setHorizontalAlignment("right");
   tab.getRange(totRow, 1, 1, _PTS_COLS)
     .setBackground("#e8f0fa")
     .setBorder(true, true, true, true, true, true);
-  tab.setRowHeight(totRow, 28);
+  tab.setRowHeight(totRow, 34);
 
   // ── 하단 ──
   var footRow = totRow + 2;
@@ -923,18 +1050,29 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
   tab.getRange(footRow, 6, 1, 3).merge()
     .setValue(_pts_join_(issuer["담당자"], issuer["전화"])).setFontSize(9);
 
-  tab.getRange(footRow + 1, 1, 1, _PTS_COLS).merge()
-    .setValue("· 위와 같이 거래명세를 통지합니다.   · 내역에 이의가 있으면 수령 후 7일 이내에 연락 주십시오.")
-    .setFontSize(8).setFontColor("#666666");
-  tab.getRange(footRow + 2, 1, 1, _PTS_COLS).merge()
-    .setValue("생성 " + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm") +
-      " · 원천 " + (pack.tabs.join(" + ") || "없음") +
-      (pack.skipped ? " · 취소반품 제외 " + pack.skipped + "행" : "") +
-      (pack.noInvoice ? " · 송장미발행 제외 " + pack.noInvoice + "행" : ""))
-    .setFontSize(7).setFontColor("#999999");
+  /*  ★ 아래 두 줄을 지웠다 ★  (2026-10-06)
+      > "· 위와 같이 거래명세를 통지합니다. … 이문구는 삭제해줘"
+
+      ① 「위와 같이 거래명세를 통지합니다 / 7일 이내 연락」 — 통째로 뺐다.
+      ② 「생성 … · 원천 (2026년 10월) 발주 마감 (0행) + …」 — 우리끼리 보는 값이
+         업체에게 가는 종이에 찍히고 있었다. 0행짜리 탭 이름까지 나와 어수선하다.
+
+      ②는 «무엇을 읽었나»를 따질 때 쓰는 값이라 버리지 않고 A1 메모로 옮긴다.
+      메모는 PDF 에 안 나온다 — 종이는 깨끗하고, 따질 거리는 남는다.           */
+  try {
+    tab.getRange(1, 1).setNote(
+      "생성 " + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm") +
+      "\n원천 " + (pack.tabs.join(" + ") || "없음") +
+      (pack.skipped ? "\n취소·반품 제외 " + pack.skipped + "행" : "") +
+      (pack.noInvoice ? "\n송장 미발행 제외 " + pack.noInvoice + "행" : "") +
+      "\n문서번호 " + docNo);
+  } catch (eNote) {}
 
   try { tab.setFrozenRows(0); } catch (e) {}
-  try { tab.getRange(1, 1, footRow + 2, _PTS_COLS).setFontFamily("맑은 고딕"); } catch (e) {}
+  try {
+    var 글꼴 = String(issuer["글꼴"] || "").trim() || "Noto Sans KR";
+    tab.getRange(1, 1, footRow, _PTS_COLS).setFontFamily(글꼴);
+  } catch (e) {}
 
   return {
     rows: items.length,
@@ -943,6 +1081,8 @@ function _pts_render_(ss, issuer, vendor, ym, pack) {
     total: totals.total,
     docNo: docNo,
     tab: tab,
+    //  PDF 를 여기까지만 내보낸다 — 아래는 빈 칸이라 2페이지만 만든다
+    lastRow: footRow,
   };
 }
 
@@ -971,6 +1111,80 @@ function _pts_unmergeAll_(tab) {
 // ═══════════════════════════════════════════
 
 /** 대상월 PDF 폴더 (없으면 만든다). 루트 폴더ID는 설정에 되써 준다 */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  🔎 직인 찾기 — 드라이브 폴더에서 도장 그림을 찾아 ID 를 적는다
+ *  2026-10-06
+ *
+ *  > "도장 파일 어떻게 주면 되나? …에 법인도장 .PNG 화일이야"
+ *
+ *  주소창에서 파일ID 를 떼어 오게 하지 않는다. 폴더만 정해 두면 여기서 찾아
+ *  「직인 이미지ID」 칸에 적는다. 도장을 새로 스캔해 바꿔도 다시 누르면 된다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function partnerFindSealImage() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  var 말 = _pts_findSeal_();
+  Logger.log("[직인 찾기] " + 말);
+  if (ui) ui.alert("🔎 직인 찾기", 말, ui.ButtonSet.OK);
+  return 말;
+}
+
+function _pts_findSeal_() {
+  var hub, tab, issuer;
+  try {
+    hub = _pts_hub_();
+    _pts_ensureHubTabs_(hub);
+    tab = hub.getSheetByName(_PTS_TAB_ISSUER);
+    issuer = _pts_readIssuer_();
+  } catch (e) {
+    return "공급자 탭을 못 읽었습니다: " + (e.message || e);
+  }
+
+  var folderId = String(issuer["직인 폴더ID"] || "").trim();
+  if (!folderId) return "공급자 탭 「직인 폴더ID」 가 비어 있습니다.";
+
+  var folder;
+  try { folder = DriveApp.getFolderById(folderId); }
+  catch (e2) { return "그 폴더를 못 열었습니다 (" + folderId + "): " + (e2.message || e2); }
+
+  /*  이름에 도장·직인·seal 이 든 그림을 먼저 본다. 없으면 폴더의 PNG 아무거나.
+      «아무거나»까지 가면 그 이름을 같이 말한다 — 엉뚱한 그림을 찍으면 안 된다. */
+  var 고른것 = null, 본것 = [], 짐작 = false;
+  var it = folder.getFiles();
+  while (it.hasNext()) {
+    var f = it.next();
+    var nm = f.getName();
+    var mt = String(f.getMimeType() || "");
+    if (mt.indexOf("image/") !== 0) continue;
+    if (본것.length < 12) 본것.push(nm);
+    if (!고른것 && /도장|직인|seal/i.test(nm)) 고른것 = f;
+  }
+  if (!고른것) {
+    it = folder.getFiles();
+    while (it.hasNext()) {
+      var f2 = it.next();
+      if (String(f2.getMimeType() || "").indexOf("image/") !== 0) continue;
+      고른것 = f2; 짐작 = true; break;
+    }
+  }
+  if (!고른것) {
+    return "그 폴더에 그림 파일이 없습니다.\n\n폴더: " + folder.getName() +
+      "\n본 파일: " + (본것.join(", ") || "없음");
+  }
+
+  var r = _pts_issuerRowOf_(tab, "직인 이미지ID");
+  if (r > 0) tab.getRange(r, 2).setValue(고른것.getId());
+
+  return (짐작 ? "★ 이름에 「도장·직인」이 든 그림이 없어 첫 그림을 골랐습니다 ★\n\n" : "") +
+    "찾은 그림 : " + 고른것.getName() + "\n" +
+    "파일ID    : " + 고른것.getId() + "\n\n" +
+    "공급자 탭 「직인 이미지ID」 에 적었습니다. 이제 명세표에 찍힙니다." +
+    (짐작 ? "\n\n다른 그림이면 그 파일 이름에 「도장」을 넣고 다시 누르세요." : "") +
+    "\n\n폴더에 있던 그림: " + 본것.join(", ");
+}
+
 function _pts_pdfFolder_(issuer, ym) {
   var rootId = String(issuer["PDF 폴더ID"] || "").trim();
   var root = null;
@@ -992,13 +1206,32 @@ function _pts_pdfFolder_(issuer, ym) {
 }
 
 /** 「거래명세표」 탭만 A4 세로 PDF 로 뽑는다 */
-function _pts_exportPdf_(ss, tab, fileName, folder) {
+/**
+ * @param {number} [lastRow]  여기까지만 내보낸다. 안 주면 탭 전체 — 빈 아래쪽이
+ *   딸려 나가 쓸데없는 2페이지가 생긴다. (2026-10-06)
+ *   > "pdf가 2페이지로 만들어졌어 … 필요없는 2번쨰 페이지가 만들어졌어"
+ *   시트는 기본 1,000행이고 clear() 는 «값»만 지운다. 테두리·글꼴이 남은 행,
+ *   심지어 아무것도 없는 행까지 인쇄 범위에 들어가 한 장이 더 나온다.
+ *   r1/c1/r2/c2 는 0 부터 세고 끝은 포함하지 않는다.
+ */
+function _pts_exportPdf_(ss, tab, fileName, folder, lastRow) {
+  var 끝행 = Math.max(1, Number(lastRow) || tab.getLastRow() || 1);
   var url = "https://docs.google.com/spreadsheets/d/" + ss.getId() + "/export" +
+    /*  ★ 쪽 번호를 켠다 ★  (2026-10-06)
+        > "건수 가 많은떄는 페이지가 넘어가고 페이지가 나오는건가?"  → "쪽 번호만 켜줘"
+        품목이 많으면 A4 한 장을 넘긴다. 번호가 없으면 받는 쪽에서 몇 장짜리인지,
+        빠진 장이 있는지 알 길이 없다.
+        머리글 반복(fzr)은 «켜지 않았다» — 그건 시트의 고정 행을 바꿔야 하고,
+        한 장짜리 명세서에도 영향이 간다. 따로 정하기로 했다.               */
     "?format=pdf&size=A4&portrait=true&fitw=true" +
-    "&sheetnames=false&printtitle=false&pagenumbers=false" +
+    "&sheetnames=false&printtitle=false&pagenumbers=true" +
     "&gridlines=false&fzr=false&horizontal_alignment=CENTER" +
-    "&top_margin=0.5&bottom_margin=0.5&left_margin=0.4&right_margin=0.4" +
-    "&gid=" + tab.getSheetId();
+    /*  좌우 여백 2배 (2026-10-06) — "좌우측 여백을 지금은 2배로".
+        0.4 → 0.8 인치. fitw=true 라 폭이 줄어든 만큼 표가 작게 들어간다.    */
+    "&top_margin=0.5&bottom_margin=0.5&left_margin=0.8&right_margin=0.8" +
+    "&gid=" + tab.getSheetId() +
+    //  ★ 여기까지만 ★ 0 부터 세고 끝은 포함하지 않는다
+    "&r1=0&c1=0&r2=" + 끝행 + "&c2=" + _PTS_COLS;
 
   var res = UrlFetchApp.fetch(url, {
     headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
@@ -1015,10 +1248,23 @@ function _pts_exportPdf_(ss, tab, fileName, folder) {
   return folder.createFile(blob);
 }
 
+/**
+ * 메일 제목·본문의 {…} 을 채운다.
+ *
+ * ★ {대상월} 은 «실제 거래기간»이다 ★  (2026-10-06)
+ *   > "대상월이 아니라 몇월 몇일이어야지.. 일일 거래명세서인데"
+ *
+ *   월 단위로 뽑으면 「2026년 10월」, 하루치로 뽑으면 「2026-10-06」 이 찍힌다.
+ *   이름은 「대상월」로 두었다 — 공급자 탭에 이미 그 이름으로 적혀 있어서,
+ *   토큰을 바꾸면 사장님이 두 칸을 손으로 고쳐야 한다. 뜻만 넓힌다.
+ *   새로 적을 때는 {기간} 을 쓰면 된다 — 같은 값이고 이름이 솔직하다.
+ */
 function _pts_fillTokens_(text, ctx) {
+  var 기간 = ctx.periodLabel || ctx.ymLabel;
   return String(text || "")
     .replace(/\{거래처명\}/g, ctx.vendorName)
-    .replace(/\{대상월\}/g, ctx.ymLabel)
+    .replace(/\{기간\}/g, 기간)
+    .replace(/\{대상월\}/g, 기간)
     .replace(/\{합계\}/g, ctx.total)
     .replace(/\{공급가액\}/g, ctx.supply)
     .replace(/\{세액\}/g, ctx.vat)
@@ -1030,31 +1276,45 @@ function _pts_comma_(n) {
   return String(Math.round(_pms_toNumber_(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-function _pts_sendMail_(issuer, vendor, ym, result, pdfFile) {
-  var to = String(vendor.emails || "")
+function _pts_sendMail_(issuer, vendor, ym, result, pdfFile, periodLabel) {
+  var 진짜 = String(vendor.emails || "")
     .split(/[,;\s]+/)
     .filter(function (s) { return s.indexOf("@") !== -1; })
     .join(",");
+
+  /*  시험 주소가 적혀 있으면 «업체 대신» 거기로만 간다. 업체 주소가 비어 있어도
+      시험은 보낸다 — 모양을 보려고 쓰는 것이라 여기서 막으면 쓸 수가 없다. */
+  var 시험 = String(issuer["시험 수신메일"] || "").trim();
+  var to = 시험 || 진짜;
   if (!to) return { sent: false, note: "수신메일 없음" };
 
   var p = _pts_parseMonth_(ym);
   var ctx = {
     vendorName: vendor.name || vendor.fileName,
     ymLabel: p.yyyy + "년 " + p.m + "월",
+    periodLabel: String(periodLabel || "").trim(),
     total: _pts_comma_(result.total),
     supply: _pts_comma_(result.supply),
     vat: _pts_comma_(result.vat),
     rows: String(result.rows),
     docNo: result.docNo,
   };
-  var subject = _pts_fillTokens_(issuer["메일 제목"] || "[팩투유] {거래처명} {대상월} 거래명세표", ctx);
+  var subject = _pts_fillTokens_(issuer["메일 제목"] || "[팩투유] {거래처명} {기간} 거래명세표", ctx);
   var body = _pts_fillTokens_(issuer["메일 본문"] || "", ctx);
+  if (시험) {
+    /*  시험인 것을 «제목부터» 알린다. 본문 맨 위에 원래 받을 사람을 적는다 —
+        나중에 이 메일만 보고도 누구에게 갈 것이었는지 알 수 있어야 한다. */
+    subject = "[시험] " + subject;
+    body = "※ 시험 발송입니다. 원래 받는 곳: " + (진짜 || "(거래처 탭에 수신메일 없음)") +
+      "\n※ 공급자 탭 「시험 수신메일」 을 비우면 그때부터 업체로 나갑니다.\n\n" +
+      "────────────────────────\n\n" + body;
+  }
 
   var opts = { attachments: [pdfFile.getAs("application/pdf")] };
   if (issuer["발신자 표시이름"]) opts.name = issuer["발신자 표시이름"];
   if (issuer["숨은참조(BCC)"]) opts.bcc = issuer["숨은참조(BCC)"];
   GmailApp.sendEmail(to, subject, body, opts);
-  return { sent: true, note: to };
+  return { sent: true, note: to + (시험 ? " (시험 — 원래 " + (진짜 || "없음") + ")" : "") };
 }
 
 
@@ -1087,10 +1347,10 @@ function _pts_issueWithPack_(ss, vendor, ym, issuer, pack, opts) {
     var folder = _pts_pdfFolder_(issuer, p.ym);
     var fname = "거래명세표_" + p.ym + (pack.docTag ? "_" + pack.docTag : "") + "_" +
       String(vendor.name || vendor.fileName).replace(/[\\\/:*?"<>|]/g, "");
-    var pdf = _pts_exportPdf_(ss, result.tab, fname, folder);
+    var pdf = _pts_exportPdf_(ss, result.tab, fname, folder, result.lastRow);
     result.pdfUrl = pdf.getUrl();
     if (opts.mail) {
-      var m = _pts_sendMail_(issuer, vendor, ym, result, pdf);
+      var m = _pts_sendMail_(issuer, vendor, ym, result, pdf, pack.periodLabel);
       result.mailNote = m.sent ? "발송 " + m.note : "미발송(" + m.note + ")";
     }
   }
@@ -1445,6 +1705,45 @@ function _pts_ymdNum_(s) {
   return n;
 }
 
+/**
+ * 짧은 날짜 — 26-10-6   (2026-10-06)
+ * > "거래기간은 26-10-6 또는 26-10-1~10-30 이정도로"
+ * 앞의 0 을 떼고 두 자리 해다. 명세서 칸이 좁아 한 줄에 들어가야 한다.
+ */
+function _pts_fmtShort_(n) {
+  var s = String(n);
+  return s.substring(2, 4) + "-" + Number(s.substring(4, 6)) + "-" + Number(s.substring(6, 8));
+}
+
+/** 짧은 거래기간 — 하루면 「26-10-6」, 같은 달이면 「26-10-1~10-30」 */
+function _pts_shortPeriod_(fromNum, toNum) {
+  if (!fromNum) return "";
+  if (!toNum || fromNum === toNum) return _pts_fmtShort_(fromNum);
+  var f = String(fromNum), t = String(toNum);
+  //  해·달이 같으면 뒤쪽은 「월-일」만 — 「26-10-1~10-30」
+  if (f.substring(0, 6) === t.substring(0, 6)) {
+    return _pts_fmtShort_(fromNum) + "~" + Number(t.substring(4, 6)) + "-" + Number(t.substring(6, 8));
+  }
+  return _pts_fmtShort_(fromNum) + "~" + _pts_fmtShort_(toNum);
+}
+
+/**
+ * 문서번호 — 26-1006-AP   (2026-10-06)
+ * > "문서 번호는 26-1006-AP"
+ *   해 두 자리 · 기간 시작 MMDD · 거래처 문서코드.
+ *   문서코드가 비면 거래처명 앞 두 글자를 쓴다 — 비어서 번호가 없는 것보다 낫다.
+ */
+function _pts_docNo_(vendor, pack, p) {
+  var 시작 = pack && pack.fromNum ? String(pack.fromNum)
+    : String(p.yyyy) + (p.m < 10 ? "0" + p.m : String(p.m)) + "01";
+  var 코드 = String(vendor.docCode || "").trim();
+  if (!코드) {
+    코드 = String(vendor.name || vendor.fileName || "")
+      .replace(/[^0-9A-Za-z가-힣]/g, "").substring(0, 2) || "V";
+  }
+  return 시작.substring(2, 4) + "-" + 시작.substring(4, 8) + "-" + 코드;
+}
+
 function _pts_fmtYmd_(n) {
   var s = String(n);
   return s.substring(0, 4) + "-" + s.substring(4, 6) + "-" + s.substring(6, 8);
@@ -1541,7 +1840,18 @@ function partnerIssueTaxStatementFromSelection() {
  * **날짜 구간**으로 거래명세표를 만든다.
  * 구간에 걸치는 마감탭 + 발주 및 송장조회 + 전용양식을 모두 훑는다.
  */
-function partnerIssueTaxStatementByDateRange() {
+/** 메뉴: 📧 날짜 구간으로 발행 + 메일 */
+function partnerIssueTaxStatementByDateRangeMail() {
+  return partnerIssueTaxStatementByDateRange({ mail: true });
+}
+
+/**
+ * @param {{mail:boolean}} [opt]  mail 이 참이면 PDF 를 만들고 메일까지 보낸다.
+ *   메뉴에서 부를 때는 인자가 없다 — 그때는 여태처럼 메일을 «안» 보낸다.
+ */
+function partnerIssueTaxStatementByDateRange(opt) {
+  opt = opt || {};
+  var 보낼까 = !!opt.mail;
   var ui = SpreadsheetApp.getUi();
   var issuer, vendors;
   try {
@@ -1606,33 +1916,55 @@ function partnerIssueTaxStatementByDateRange() {
     ("0" + Math.floor((fromNum % 10000) / 100)).slice(-2);
   pack.forceDetail = true;
   pack.docTag = "R" + String(fromNum).substring(4) + String(toNum).substring(4);
-  pack.periodLabel = _pts_fmtYmd_(fromNum) + " ~ " + _pts_fmtYmd_(toNum);
+  pack.fromNum = fromNum;
+  pack.toNum = toNum;
+  pack.periodLabel = _pts_shortPeriod_(fromNum, toNum);
 
   var tt = _pts_totals_(
     _pts_previewItems_(pack, issuer),
     issuer["VAT 기준"] === "별도" ? "별도" : "포함",
   );
+  /*  ★ 보내기 전에 «받는 사람»을 보여 준다 ★  (2026-10-06)
+      업체에게 간 메일은 되돌릴 수 없다. 주소를 눈으로 보고 누르게 한다. */
+  var 시험주소 = String(issuer["시험 수신메일"] || "").trim();
+  var 업체주소 = String(vendor.emails || "").trim();
+  var 받는곳 = 시험주소 || 업체주소;
+
+  var 꼬리 = 보낼까
+    ? ("\n받는 사람 : " + (받는곳 || "★ 없음 — 못 보냅니다 ★") +
+       (시험주소 ? "\n   (시험 발송 — 업체 " + (업체주소 || "없음") + " 로는 안 갑니다)"
+                 : "\n   ★ 업체에게 실제로 나갑니다 ★") +
+       "\n\n[예] 탭 + PDF + 메일 발송\n[아니오] 탭만 생성 (메일 안 보냄)\n[취소] 중단")
+    : "\n[예] 탭 + PDF 저장\n[아니오] 탭만 생성\n[취소] 중단";
+
   var go = ui.alert(
-    "구간 거래명세표 · " + vendor.name,
+    (보낼까 ? "구간 거래명세표 + 메일 · " : "구간 거래명세표 · ") + vendor.name,
     pack.periodLabel + "\n" +
       "품목 " + pack.lines.length + "줄 · 합계 " + _pts_comma_(tt.total) + "원\n" +
       "원천 " + pack.tabs.join(", ") + "\n" +
       (itemQuery ? "품목 필터 " + itemQuery.join(", ") + "\n" : "") +
       (pack.noInvoice ? "송장 미발행 " + pack.noInvoice + "행 제외\n" : "") +
-      "\n[예] 탭 + PDF 저장\n[아니오] 탭만 생성\n[취소] 중단",
+      꼬리,
     ui.ButtonSet.YES_NO_CANCEL,
   );
   if (go !== ui.Button.YES && go !== ui.Button.NO) return;
 
   try {
-    var r = _pts_issueWithPack_(ss, vendor, ym, issuer, pack, { pdf: go === ui.Button.YES, mail: false });
+    var r = _pts_issueWithPack_(ss, vendor, ym, issuer, pack, {
+      pdf: go === ui.Button.YES,
+      //  [아니오] 는 「탭만」이다 — 메일 회차라도 안 보낸다
+      mail: 보낼까 && go === ui.Button.YES,
+    });
     _pts_log_(ym, vendor, r,
-      "구간 " + pack.periodLabel + (itemQuery ? " · 품목 " + itemQuery.join("/") : ""));
+      (보낼까 ? "구간+메일 " : "구간 ") + pack.periodLabel +
+      (itemQuery ? " · 품목 " + itemQuery.join("/") : ""));
     try { ss.setActiveSheet(r.tab); } catch (e3) {}
     ui.alert(
       "발행 완료",
       vendor.name + "\n기간 " + pack.periodLabel + "\n\n" +
         "품목 " + r.rows + "줄\n합계 " + _pts_comma_(r.total) + "원" +
+        //  «어디로 갔나»를 끝에 보여 준다. 보냈는지 안 보냈는지 모르면 또 누른다.
+        (r.mailNote ? "\n\n메일 " + r.mailNote : "") +
         (r.pdfUrl ? "\n\nPDF: " + r.pdfUrl : ""),
       ui.ButtonSet.OK,
     );

@@ -40,6 +40,7 @@ function registerPartnerMenu_() {
     .addItem("   └ 📥 v2 업체발주 지금 가져오기", "partnerBridgeV2OrdersNow")
     .addItem("2️⃣ 이카운트 업로드용 판매현황 갱신", "partnerRebuildSalesUploadOwner")
     .addItem("   └ 🏝️ 도서산간 추가배송비 확인", "partnerCheckIslandShippingOwner")
+    .addItem("   └ 🏝️ 도서산간 주소 판정 (판매현황 전)", "partnerJudgeIslandByAddress")
     .addItem("3️⃣ 대리공급업체로 발주 Push", "partnerPushOrdersToExclusiveFormsOwner")
     // Push 가 중간에 끊겼을 때 이어서 밀 때 쓴다. 매일 흐름의 일부라 남긴다.
     .addItem("   └ 📋 임시기록 → 전용양식 Push", "partnerPushFromTempTabToExclusiveOwner")
@@ -296,6 +297,8 @@ function registerPartnerMenu_() {
         .addSeparator()
         .addItem("🔄 취소/반품 수식 갱신", "partnerRefreshCancelReturnFormulas")
         .addItem("🔧 월별 마감 탭 레이아웃 보정", "partnerRepairMonthlySettleTabs")
+        .addItem("🔎 월별 마감 탭 점검 (읽기만)", "partnerAuditMonthlySettleTabs")
+        .addItem("✍️ 발주탭 품목명·단가 줄마다 수식으로 (입력 막기 해제)", "partnerConvertOrderDLToRowFormulas")
         .addItem("🔧 마감 정산금액 보정 (단가×수량)", "partnerRepairArchiveLineTotals")
         .addSeparator()
         // ── 여기서부터 명세서 (받은 명세를 대사한다) ──
@@ -313,24 +316,53 @@ function registerPartnerMenu_() {
         .addItem("🗂️ 마감탭에서 골라 발행", "partnerOpenTaxStatementPicker")
         .addItem("🖱️ 선택한 행으로 발행 (현재 탭)", "partnerIssueTaxStatementFromSelection")
         .addItem("📅 날짜 구간으로 발행 (현재 파일)", "partnerIssueTaxStatementByDateRange")
+        .addItem("📧 날짜 구간으로 발행 + 메일", "partnerIssueTaxStatementByDateRangeMail")
         .addItem("📄 월 단위 발행 (현재 파일)", "partnerIssueTaxStatementHere")
         .addSeparator()
         .addItem("📤 전체 거래처 일괄 발행 + 메일", "partnerIssueTaxStatementsAll")
         .addItem("🧪 거래명세표 사전점검", "partnerDiagnoseTaxStatement")
         .addSeparator()
-        .addItem("⚙️ 설정 탭 생성 (허브)", "partnerCreateTaxStatementTabs")
-        .addItem("🔄 거래처 목록 동기화", "partnerSyncTaxStatementVendors")
-        // 사업자정보 손입력을 줄이는 3단계 — 코드 채우기 → 진단 → 자동 채우기
-        .addItem("   └ ① 거래처코드 채우기 (업체 설정탭에서)", "partnerFillVendorCustCodes")
-        .addItem("   └ ② 🧪 이카운트 거래처 조회 진단", "partnerProbeEcountCustomers")
-        .addItem("   └ ③ 🏢 이카운트에서 사업자정보 채우기", "partnerFillVendorInfoFromEcount")
-        .addItem("♻️ 일괄 발행 진행기록 초기화", "partnerResetTaxStatementProgress")
+        .addItem("📮 일일 명세서 지금 보내기", "partnerSendDailyStatements")
+        .addItem("⏰ 일일 명세서 트리거 설치 (15:40)", "partnerInstallDailyStatementTrigger")
+        .addItem("⏹ 일일 명세서 트리거 해제", "partnerRemoveDailyStatementTrigger")
+        .addSeparator()
+        /*  ★ 2026-10-07: 한 번만 쓰는 것들을 한 겹 안으로 넣었다 ★
+            이 파트가 17개가 되어 매일 쓰는 「발행」이 묻혔다.
+            아래 일곱은 처음 차릴 때·사업자정보를 채울 때만 쓴다.
+            지운 것은 하나도 없다 — 자리만 옮겼다.                      */
+        .addSubMenu(
+          ui.createMenu("🛠 차림 · 사업자정보")
+            .addItem("⚙️ 설정 탭 생성 (허브)", "partnerCreateTaxStatementTabs")
+            .addItem("🔄 거래처 목록 동기화", "partnerSyncTaxStatementVendors")
+            .addItem("🔎 직인 찾기 (드라이브에서)", "partnerFindSealImage")
+            .addSeparator()
+            // 사업자정보 손입력을 줄이는 3단계 — 코드 채우기 → 진단 → 자동 채우기
+            .addItem("① 거래처코드 채우기 (업체 설정탭에서)", "partnerFillVendorCustCodes")
+            .addItem("② 🧪 이카운트 거래처 조회 진단", "partnerProbeEcountCustomers")
+            .addItem("③ 🏢 이카운트에서 사업자정보 채우기", "partnerFillVendorInfoFromEcount")
+            .addSeparator()
+            .addItem("♻️ 일괄 발행 진행기록 초기화", "partnerResetTaxStatementProgress")
+        )
     )
     .addSeparator()
 
     // ─────────── 그 밖 ───────────
     .addSubMenu(
       ui.createMenu("📑 정산 비교 검증")
+        /*  ★ 단가 인상 (2026-10-09) ★
+            업체 단가표가 올 때마다 쓰는 자리다. 새 파트를 안 만들고 여기 넣었다 —
+            관리 메뉴 파트가 이미 열셋이라 더 늘리면 매일 쓰는 것이 묻힌다.
+            「비교하고 확인하고 적용한다」는 이 파트의 결과 같다.              */
+        .addSubMenu(
+          ui.createMenu("💹 단가 인상 (정희·콤콤)")
+            .addItem("📋 ① 비교표 만들기", "partnerPriceRaiseBuild")
+            .addSeparator()
+            .addItem("🧪 ② 미리보기 (안 바꿈)", "partnerPriceRaisePreview")
+            .addItem("💾 ③ 체크한 줄 — 상품정보 단가 적용", "partnerPriceRaiseApply")
+            .addItem("🔗 ④ 체크한 줄 — 누적품목매핑에 쌓기", "partnerPriceRaiseApplyMapping")
+            .addSeparator()
+            .addItem("🧮 세트 = 몸통+뚜껑 점검", "partnerPriceRaiseCheckSets")
+        )
         .addSubMenu(
           ui.createMenu("📦 롯데택배 배송비 비교")
             .addItem("① 비교시트 만들기/열기", "partnerOpenLotteShipCompareSheet")

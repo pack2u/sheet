@@ -4,6 +4,14 @@
  *  파일: _purchaseInputV2Mirror.gs
  *  ★ 2026-09-09 신규
  *
+ *  ★★ 2026-10-10: 은퇴 — 아무도 부르지 않는다 ★★
+ *    v2 가 상품정보시트 「이카운트-구매입력변환」 탭을 30분마다 당긴다
+ *    (v2 lib/purchase-input.ts · /api/cron/daily-archive-pull).
+ *    이 파일은 _PIV_HUB_ID_(HUB)를 열었지만 변환은 getActiveSpreadsheet()
+ *    = 상품정보시트에 탭을 쓴다. 그래서 9/9~10/10 내내 0줄이었다.
+ *    _prv_scheduled_ 에서 부르는 줄을 뺐다. 손으로 partnerMirrorPurchaseNow 를
+ *    돌려도 같은 이유로 실패한다 — 고치지 말고 v2 쪽을 본다.
+ *
  *  > "명세서입력된것과 우리 구매입력 내용을 비교해서 택배비 차이 빼고는
  *  >  맞는지 비교확인 할수 있게 해줘"
  *

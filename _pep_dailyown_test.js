@@ -419,20 +419,29 @@ console.log("\n[지난 마감 채우기] 만들어 놓고 안 부르던 것");
   //  _pep_backfillRecentArchives_ 는 이미 있었다. 지난 마감 파일의 «빈 송장
   //  줄»만 골라 그 자리에 채운다(새 줄을 안 더한다). 그런데 일일마감이
   //  안 불렀다 — 바로 앞 하루치만 봤다. 대리발송 송장은 다음날 들어온다.
-  check("★ 일일마감이 14일치 보강을 부른다",
-    push.includes("var bfAll = _pep_backfillRecentArchives_(invoiceMap, _PEP_BACKFILL_DAYS_);"), true);
-  check("★ 직전 하루치 보강도 그대로 둔다",
-    push.includes("_pep_backfillPreviousArchive_(invoiceMap, step2Before)"), true);
-  check("★ 실패해도 마감은 끝난다",
-    push.includes("} catch (eBf2) {"), true);
+  /*  ★ 2026-10-07 — 「어떻게」가 바뀐 자리다 ★
+      «무엇을 지키는가»는 그대로다 — 지난 마감의 빈 송장 줄을 그 자리에 채운다.
+      바뀐 것은 길이다. 마감 «안에서 14일치를 동기로» 훑던 것이(4f49cfb)
+      마감 밖에서 날짜만 예약하고 15초 뒤 따로 깨어나는 식으로 바뀌었다 —
+      마감이 6분 한도에 걸려 보강이 통째로 날아가던 탓이다. 날 수도 7일이 됐다.
+      함수 «이름»을 못 박던 네 줄이 그날부터 울었다. 하는 일로 다시 적는다.  */
+  check("★ 일일마감이 보강할 날짜를 «예약»한다",
+    push.includes("_pep_scheduleUnmatchedPatch_(_bfDates.join(\",\"))"), true);
   check("★ 며칠치를 보는지 상수로 둔다",
-    push.includes("var _PEP_BACKFILL_DAYS_ = 14;"), true);
+    /var _PEP_BACKFILL_DAYS_ = \d+;/.test(push), true);
+  check("★ 날짜는 마감일 «바로 앞»부터 거슬러 센다",
+    push.includes("function _pep_backfillDates_("), true);
+  check("★ 실패해도 마감은 끝난다", push.includes("} catch (eBf) {"), true);
+  check("★ 몇 날치를 예약했는지 결과에 남긴다",
+    push.includes("result.backfillDates = _bfDates.length;"), true);
   check("★ 새 줄을 더하지 않는다 — 그 자리에 쓴다",
     push.includes("all[ri][cols.inv] = invInfo.inv;"), true);
   check("★ 송장이 이미 있는 줄은 안 건드린다",
     push.includes("if (inv && _pep_normInvoiceNo_(inv)) continue;"), true);
   check("★ 송장을 채우면 택배사도 같이",
-    push.includes("_pep_carrierForArchiveRow_(invInfo, all[ri][cols.src], bfVendor, bfCode)"), true);
+    /all\[ri\]\[cols\.carrier\] = _pep_carrierForArchiveRow_\(\s*\n?\s*invInfo,/.test(push), true);
+  check("  이미 적힌 택배사는 안 덮는다",
+    push.includes("cols.carrier >= 0 && !String(all[ri][cols.carrier] || \"\").trim()"), true);
   const web6 = fs.readFileSync("_partnerWebApp.gs", "utf8");
   check("★ 몇 줄 채웠는지 화면에 적는다 (수동·자동 둘 다)",
     (web6.match(/↺ 지난 마감 채움/g) || []).length, 2);

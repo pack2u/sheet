@@ -47,13 +47,30 @@ function _lgr_to_() {
  */
 function csLogenReturnReady() {
   var to = _lgr_to_();
-  var key = "";
-  try { key = _logen_key_(); } catch (e) { key = ""; }
 
-  if (!key) {
+  /*  ★ 2026-10-07: 중계기를 거치면 GAS 에 키가 없다 ★
+      로젠은 등록된 공인 IP 에서 온 호출만 받는데 Apps Script 는 고정 IP 가 없다.
+      그래서 siot.com 중계기가 대신 부르고, **인증키는 중계기에만** 둔다
+      (csLogen.gs 머리말 · _logen_call_ 의 proxy 갈래).
+      여기서 _logen_key_() 로 「키가 있나」를 물으면 늘 「없다」가 나와
+      **단추가 영영 안 나온다.** 실제로 그랬다 — 배포 @411 에서 칸이 안 떴다.
+
+      그래서 «중계기 주소가 있으면 그것을 준비된 것으로» 본다.
+      중계기 쪽 키가 틀렸는지는 눌러 봐야 안다 — 그때는 로젠이 401 로 답한다. */
+  /*  ★ typeof 로 감싼다 ★  _lgr_to_ 와 같은 까닭이다.
+      _logen_proxyUrl_ 은 csLogen.gs 에 있다. 운영에서는 늘 같이 올라가지만,
+      이 파일만 떼어 돌리는 시험(_cslogenret_test.js)에서는 없다 —
+      감싸지 않으면 거기서 터진다. 실제로 터뜨렸다(2026-10-07). */
+  var 중계 = (typeof _logen_proxyUrl_ === "function") ? _logen_proxyUrl_() : "";
+  var key = "";
+  if (!중계) {
+    try { key = _logen_key_(); } catch (e) { key = ""; }
+  }
+
+  if (!중계 && !key) {
     return { ready: false, to: null,
-      reason: "로젠 인증키가 아직 없습니다. 시스템연동신청서 제출 후 " +
-              "_secrets.gs 의 LOGEN_SECRET_KEY_DEV(또는 PROD)에 넣어 주세요." };
+      reason: "로젠을 부를 길이 없습니다. _secrets.gs 의 LOGEN_PROXY_URL(중계기) 또는 " +
+              "LOGEN_SECRET_KEY_PROD(직접 호출) 중 하나를 채워 주세요." };
   }
   if (!to) {
     return { ready: false, to: null,
@@ -133,6 +150,89 @@ function _lgr_fareOk_(chk) {
 }
 
 /**
+ * 실패할 때 «무엇을 보냈는지» 한 줄로 — 로젠의 말이 원인과 동떨어져 있어서다.
+ *
+ * 「거래처계약정보 조회 오류 ( 거래처코드 : 348782 )」 가 실은 운임 문제였던
+ * 적이 있다. 그 말만 보면 계약이 끊겼나, 남의 송장인가를 의심하게 된다.
+ * ★ 실패하는 가지가 둘이다 ★ HTTP 단계와 건별 resultCd. 둘 다 이것을 붙인다 —
+ * 한쪽에만 붙이면, 안 붙은 쪽이 꼭 그 쪽이다(2026-10-08 에 그랬다).
+ */
+function _lgr_sentTail_(chk, 계약운임, 지점운임) {
+  try {
+    return " [보낸 운임 " + chk.dlvFare + "원" +
+      (계약운임 > 0 ? " · 계약 " + 계약운임 : " · 계약운임 못 받음") +
+      (지점운임 !== chk.dlvFare ? " · 지점 " + 지점운임 : "") +
+      " · 타입 " + chk.fareTy + "]";
+  } catch (e) { return ""; }
+}
+
+/**
+ * 이 원송장이 «이미 접수돼» 있나 — inquiryReturnStateMulti (규격 §8.2).
+ *
+ * ★ 취소된 건은 「없다」로 본다 ★ 취소했으면 다시 접수할 수 있어야 한다.
+ * ★ 못 물으면 「없다」로 본다 ★ 조회가 안 된다고 접수를 막으면, 멀쩡한 건이
+ *   영영 안 나간다. 틀려도 로젠이 같은 접수번호를 돌려줄 뿐 중복은 안 생긴다.
+ *
+ * @return {{있음:boolean, takeNo:string, slipNo:string, 상태:string}}
+ */
+function _lgr_alreadyDone_(orgnSlipNo) {
+  var 빈것 = { 있음: false, takeNo: "", slipNo: "", 상태: "" };
+  try {
+    var r = _logen_call_("inquiryReturnStateMulti", {
+      userId: _logen_userId_(),
+      data: [{ custCd: _logen_custCd_(), orgnSlipNo: String(orgnSlipNo) }]
+    });
+    if (!r.ok) return 빈것;
+    var rows = _logen_arr_(r.json && (r.json.data || r.json.data1));
+    for (var i = 0; i < rows.length; i++) {
+      if (!_logen_ok_(rows[i].resultCd)) continue;
+      var inner = _logen_arr_(rows[i].data1);
+      for (var j = 0; j < inner.length; j++) {
+        var d = inner[j] || {};
+        var takeNo = String(d.takeNo == null ? "" : d.takeNo).trim();
+        if (!takeNo) continue;
+        var 상태 = String(d.resvStatNm == null ? "" : d.resvStatNm).trim();
+        if (상태.indexOf("취소") !== -1) continue;   // 취소된 건은 다시 접수할 수 있다
+        return { 있음: true, takeNo: takeNo,
+                 slipNo: String(d.slipNo == null ? "" : d.slipNo).trim(),
+                 상태: 상태 || "접수" };
+      }
+    }
+  } catch (e) { /* 못 물었으면 없는 것으로 본다 */ }
+  return 빈것;
+}
+
+/**
+ * 반품 «계약» 운임을 받는다 — contRtnFares (규격 §8.4).
+ *
+ * 못 받으면 0 을 준다. 그때는 reverseChkInfoMulti 의 값을 그대로 쓴다 —
+ * 접수를 막느니 틀릴 수 있는 값으로라도 보내 보는 편이 낫다. 틀리면 로젠이
+ * 거절하고 그 사유가 사람에게 그대로 보인다.
+ *
+ * 박스타입이 여럿 오면 «가장 싼 것»을 쓴다. 지금 계약에는 ZW001 하나뿐이다.
+ */
+function _lgr_contractFare_(orgnSlipNo, fareTy) {
+  try {
+    var r = _logen_call_("contRtnFares", {
+      userId: _logen_userId_(),
+      data: [{ orgnSlipNo: String(orgnSlipNo), fareTy: String(fareTy || "010") }]
+    });
+    if (!r.ok) return 0;
+    var rows = _logen_arr_(r.json && (r.json.data || r.json.data1));
+    var best = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var inner = _logen_arr_(rows[i] && rows[i].data1);
+      for (var j = 0; j < inner.length; j++) {
+        var f = parseInt(String((inner[j] || {}).dlvFare == null ? "" : inner[j].dlvFare)
+                  .replace(/[^0-9]/g, ""), 10);
+        if (f > 0 && (best === 0 || f < best)) best = f;
+      }
+    }
+    return best;
+  } catch (e) { return 0; }
+}
+
+/**
  * 회수 접수 — `registReturnRequest` (규격 §8.1)
  *
  * @param p {orgnSlipNo, name, tel, addr, addr2, goodsNm, msg, staff}
@@ -161,10 +261,43 @@ function csLogenReturnRegister(p) {
       (주소 || "주소없음") + ")" };
   }
 
+  /*  ★ ⓪ 이미 접수된 건인가부터 본다 ★  (2026-10-08)
+      > 사장님: "이미 접수 되었다고 뜨면 좋겠는데 그게 판별이 가능할까?"
+
+      같은 건을 또 누르는 일이 실제로 생긴다 — 화면이 안 바뀌었거나, 실패로 보여서다.
+      그때 로젠이 돌려주는 말이 사람을 더 헷갈리게 한다. 운임이 맞으면 조용히
+      같은 접수번호를 돌려주고(중복은 안 생긴다), 운임이 어긋나면
+      「거래처계약정보 조회 오류」 라는 엉뚱한 말을 한다.
+
+      그러니 **보내기 전에 묻는다.** 이미 접수돼 있으면 그 번호를 그대로 돌려주고
+      접수는 하지 않는다. 사람은 「이미 접수됨」을 보고, 두 번 나갈 일도 없다. */
+  var 이미 = _lgr_alreadyDone_(inv);
+  if (이미.있음) {
+    return { ok: true, already: true, takeNo: 이미.takeNo, slipNo: 이미.slipNo,
+             fare: 0, error: "", 상태: 이미.상태 };
+  }
+
   //  ① 운임을 먼저 받는다 — 지어내지 않는다
   var chk = csLogenReturnCheck(inv);
   var 왜 = _lgr_fareOk_(chk);
   if (왜) return { ok: false, error: 왜, check: chk };
+
+  /*  ★ 운임은 «반품 계약 운임» 이어야 한다 ★  (2026-10-08 실측으로 고침)
+      reverseChkInfoMulti 의 dlvFare 는 «그 지점의 배송운임» 이고 지점마다 다르다 —
+      서동작 2,400 · 남강서 2,500 · 서김포 4,000. 그런데 반품 계약 운임은 2,500
+      하나다(contRtnFares · ZW001).
+
+      계약에 없는 운임을 적어 보내면 로젠이 통째로 거절한다. 그런데 돌려주는 말이
+      **「거래처계약정보 조회 오류 ( 거래처코드 : 348782 )」** 라 운임 이야기가
+      한마디도 없다. 그 번호는 우리 거래처코드(30556066)도 아니다 — 엉뚱한 데를
+      보게 만드는 말이다. 실제로 그랬다:
+        45311894913 · 2,400 → 거래처계약정보 조회 오류
+        45311894913 · 2,500 → 정상 접수 (takeNo 261008109134)
+
+      2,500짜리 지점에서만 우연히 되고 있었다. 지점마다 다르니 조용히 반이 실패한다. */
+  var 계약운임 = _lgr_contractFare_(inv, chk.fareTy);
+  var 지점운임 = chk.dlvFare;
+  if (계약운임 > 0) chk.dlvFare = 계약운임;
 
   //  ② 접수
   var r = _logen_call_("registReturnRequest", {
@@ -172,6 +305,25 @@ function csLogenReturnRegister(p) {
     data: [{
       custCd: _logen_custCd_(),
       orgnSlipNo: inv,
+      /*  ★ 우리 번호를 같이 적는다 ★  (2026-10-08)
+          규격 §8.1 에서 fixTakeNo 는 「원송장 없으면 필수」인 조건부 칸이다.
+          그래서 한 번 「원송장이 있으니 쓸모없다」고 접었다 — 틀린 판단이었다.
+
+          원송장 없이 접수된 건은 **어떤 번호로도 되찾을 수 없다.** 실제로
+          202610 탭의 유정주·신경순·김신애 세 건이 그랬다. 로젠 화면에서
+          단건등록돼 원송장도 주문번호도 안 들어갔고, 우리가 가진 번호로는
+          하나도 안 나왔다. 「우리 거래처 반품을 다 달라」는 API 도 없다.
+          그러면 사람이 로젠 화면을 뒤져 접수번호를 손으로 옮겨 적어야 한다.
+
+          우리 고유ID 를 실어 보내면 그 번호로 영영 되찾는다. 원송장이 지워져도,
+          롯데 송장이라 못 넣어도 상관없다.
+
+          ★ 실측 (2026-10-08 운영계) ★
+            원송장 + 고유ID 를 «같이» 보내도 받아들인다 — 응답에 fixTakeNo 가
+            그대로 돌아온다. 그 고유ID 로 inquiryReserveStateFixTakeNo 가 찾아낸다.
+              d1006000007 → takeNo 261008109134 · resvStat 10
+          비면 아예 안 보낸다 — 빈 값을 보내 로젠이 어떻게 받는지는 모른다. */
+      fixTakeNo: String(p.uid || "").trim() || undefined,
       /*  ★ 방향이 반대다 ★  송하인 = 반품 보내는 고객, 수하인 = 화주사(우리).
           뒤집으면 기사가 우리 창고로 물건을 가지러 간다. */
       sndCustNm: 이름.substring(0, 50),
@@ -188,12 +340,24 @@ function csLogenReturnRegister(p) {
       sndMsg: String(p.msg || "").substring(0, 500)
     }]
   });
-  if (!r.ok) return { ok: false, error: r.error, check: chk };
+  /*  ★ 꼬리말을 «두 가지 모두»에 붙인다 ★  (2026-10-08)
+      처음엔 아래 resultCd 가지에만 붙였다. 그런데 실제 실패는 «여기» — HTTP
+      단계에서 통째로 거절되는 가지였다. 그래서 꼬리말이 안 붙었고, 나는 그 글을
+      보고도 「내가 고친 자리가 아니다」를 못 알아봤다. 사장님이 같은 화면을
+      네 번 보여 주셨다. 한쪽에만 붙이면 안 붙은 쪽이 꼭 그 쪽이다. */
+  if (!r.ok) return { ok: false, check: chk, error: r.error + _lgr_sentTail_(chk, 계약운임, 지점운임) };
 
   var rows = _logen_arr_(r.json && (r.json.data || r.json.data1));
   var d = rows[0] || {};
   if (!_logen_ok_(d.resultCd)) {
-    return { ok: false, error: String(d.resultMsg || "접수 실패"), check: chk };
+    /*  ★ 무엇을 보냈는지 같이 적는다 ★  (2026-10-08)
+        로젠이 돌려주는 말이 「거래처계약정보 조회 오류 ( 거래처코드 : 348782 )」 처럼
+        원인과 동떨어져 있다. 그 말만 보면 계약이 끊겼나, 남의 송장인가를 의심하게
+        된다 — 실제로는 운임이 계약과 달라서였다. 보낸 값을 적어 두면 다음엔
+        한눈에 갈린다. 고치고도 또 같은 화면을 보며 헤맸다. */
+    return { ok: false, check: chk,
+             error: String(d.resultMsg || "접수 실패") +
+                    _lgr_sentTail_(chk, 계약운임, 지점운임) };
   }
 
   var takeNo = String(d.takeNo || "").trim();
@@ -326,41 +490,61 @@ function csLogenReturnPing(testInvoice) {
 function _lgr_pickupMany_(p) {
   p = p || {};
   var origs = p.orglInvNos || [];
-  var out = { ok: false, results: [], invoices: [], pickReqYmd: "", error: "" };
+  var out = { ok: false, results: [], invoices: [], takeNos: [], pickReqYmd: "", error: "" };
   if (!origs.length) { out.error = "접수할 원송장이 없습니다."; return out; }
 
   /*  집하일자는 로젠이 정한다. 우리가 지어내지 않는다 —
       화면에는 「오늘 넣었다」는 뜻으로 오늘 날짜를 적어 둔다. */
   out.pickReqYmd = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+  out.already = 0;
 
-  var 된것 = 0;
+  var 된것 = 0, 이미된것 = 0;
   for (var i = 0; i < origs.length; i++) {
     var r = csLogenReturnRegister({
       orgnSlipNo: origs[i],
       name: p.name, tel: p.phone, addr: p.addr,
-      goodsNm: p.item, msg: p.memo
+      goodsNm: p.item, msg: p.memo,
+      uid: p.uid          // 우리 고유ID — 되찾는 열쇠가 된다
     });
+    if (r.ok && r.already) {
+      /*  이미 접수돼 있던 건 — 새로 접수한 것이 아니다. 그렇게 말해 준다. */
+      이미된것++;
+      out.results.push({ ok: true, already: true, orglInvNo: origs[i],
+        invoice: String(r.slipNo || ""), takeNo: r.takeNo,
+        error: "", 상태: r.상태 || "접수" });
+      if (r.slipNo) out.invoices.push(String(r.slipNo));
+      if (r.takeNo) out.takeNos.push(String(r.takeNo));
+      continue;
+    }
     if (r.ok) {
       된것++;
-      /*  ★ 로젠은 접수 순간 반품송장을 «안 줄 수 있다» ★
-          응답은 takeNo(접수번호)가 확실하고, 송장번호(slipNo)는 나중에
+      /*  ★ 로젠은 접수 순간 반품송장을 «안 준다» ★
+          응답은 takeNo(접수번호)뿐이고, 송장번호(slipNo)는 나중에
           inquiryReturnStateMulti 로 나온다(규격 §8.2).
-          그때까지는 takeNo 를 적어 둔다 — 빈칸으로 두면 어느 박스가
-          접수됐는지 알 길이 없다. */
+
+          ★ takeNo 를 «반품송장» 자리에 넣지 않는다 ★  (2026-10-07)
+            takeNo 는 12자리 숫자다 — **롯데 송장도 12자리**라 대장에 섞이면
+            나중에 송장으로 오인된다. 대장은 세 앱이 읽는다([[return-ledger-tab-spec]]) —
+            한 번 오염되면 번진다.
+            그래서 **송장 자리는 비워 두고** takeNo 는 따로 돌려준다.
+            화면이 그것을 «비고»에 적는다 — 규격의 「칸이 없으면 비고로 흘린다」 그대로다. */
       out.results.push({
         ok: true, orglInvNo: origs[i],
-        invoice: String(r.slipNo || r.takeNo || ""),
+        invoice: String(r.slipNo || ""),
         takeNo: r.takeNo, error: ""
       });
       if (r.slipNo) out.invoices.push(String(r.slipNo));
-      else out.invoices.push(String(r.takeNo));
+      out.takeNos.push(String(r.takeNo));
     } else {
       out.results.push({ ok: false, orglInvNo: origs[i], invoice: "", error: r.error });
     }
   }
 
-  out.ok = 된것 > 0;
-  if (된것 < origs.length) {
+  /*  ★ 「이미 접수돼 있던 것」도 성공이다 ★ 새로 보내지 않았을 뿐, 그 건은 접수돼
+      있다. 실패로 치면 화면이 빨갛게 뜨고 사람이 또 누른다. */
+  out.already = 이미된것;
+  out.ok = (된것 + 이미된것) > 0;
+  if (된것 + 이미된것 < origs.length) {
     var 실패 = [];
     for (var k = 0; k < out.results.length; k++) {
       if (!out.results[k].ok) 실패.push(out.results[k].orglInvNo + " — " + out.results[k].error);
@@ -370,3 +554,18 @@ function _lgr_pickupMany_(p) {
   return out;
 }
 
+
+/**
+ * 화면이 부르는 자리 — 회수 접수(박스 여럿).
+ *
+ * ★ csLotteReturnPickup 과 «같은 모양»으로 돌려준다 ★
+ *   화면(lrtConfirm)이 한 벌로 다루려면 모양이 같아야 한다.
+ *   다만 **로젠은 invoices 가 빈 채로 온다** — 접수 순간 송장이 없다.
+ *   대신 takeNos 가 찬다. 화면은 그것을 보고 성공을 판정한다.
+ *
+ * @param p {name, phone, addr, item, memo, orglInvNos:[원송장…]}
+ * @return {{ok, results, invoices, takeNos, pickReqYmd, error}}
+ */
+function csLogenReturnPickup(p) {
+  return _lgr_pickupMany_(p);
+}

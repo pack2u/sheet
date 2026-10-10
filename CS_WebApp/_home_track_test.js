@@ -86,10 +86,31 @@ console.log("\n[2] 택배사 표기 변형");
 });
 
 console.log("\n[3] 버튼 마크업이 실제로 렌더 코드에 들어갔는가");
+/*  ★ 2026-10-07 — 문지기 이름이 갈렸다 ★
+    여태 「상태」 버튼의 문지기는 isLotteTrack 하나였다. 로젠도 API 로 보게
+    되면서 isApiTrackable 이 따로 생겼다. 갈라 둔 까닭이 코드에 적혀 있다 —
+      isLotteTrack 은 «롯데 반품접수 칸»(lrtSyncOpt)도 쓴다. 거기에 로젠을
+      섞으면 로젠 건에도 롯데 반품 칸이 뜬다. 한 함수에 두 뜻을 담지 않는다.
+    그래서 여기서 보는 것도 「상태 버튼의 문지기」로 바꾼다.               */
 ok("invoiceHtml 에 상태 버튼 분기 존재",
-   /isLotteTrack\(source, carrier\)[\s\S]{0,200}os-trk/.test(html));
+   /isApiTrackable\(source, carrier\)[\s\S]{0,200}os-trk/.test(html));
 ok("onclick 이 lotteTrack 을 부른다", html.indexOf('onclick="lotteTrack(this)"') > -1);
-ok("서버 함수 csLotteTrack 을 호출한다", html.indexOf(".csLotteTrack(inv") > -1);
+ok("★ 어느 택배사인지 실어 보낸다 (롯데·로젠을 서버가 갈라 본다)",
+   html.indexOf(".csTrack(inv") > -1 && /data-carrier="/.test(html));
+/*  ★ 반품접수 칸은 «제 문지기»를 따로 둔다 ★
+    같은 날 오후에 로젠 반품접수가 붙으면서(abf7bec) 이 칸도 롯데만이 아니게 됐다.
+    그래도 「상태」 버튼과 한 함수로 합치면 안 된다 — 상태는 «볼 수 있나»고
+    이 칸은 «접수를 넣을 수 있나»다. CJ·한진은 상태도 못 보고 접수도 못 한다지만,
+    둘이 늘 같다는 보장이 없다. 한 함수에 두 뜻을 담지 않는다.               */
+ok("★ 반품접수 칸은 ledgerReturnCarrier 가 지킨다",
+   /function ledgerReturnCarrier\(\)/.test(html) &&
+   /var who = ledgerReturnCarrier\(\)/.test(html));
+ok("  우리가 접수할 수 있는 곳만 — 롯데·로젠",
+   /if \(c\.indexOf\('롯데'\) !== -1\) return '롯데';/.test(html) &&
+   /if \(c\.indexOf\('로젠'\) !== -1\) return '로젠';/.test(html));
+ok("★ 그 밖(CJ·한진 등)은 칸을 안 보여 준다",
+   /if \(c\) return '';/.test(html),
+   "접수 못 하는 건에 칸이 뜨면 눌러 놓고 안 간다");
 ok("배지 CSS 정의됨", html.indexOf(".os-trk-done") > -1 && html.indexOf(".os-trk-run") > -1);
 
 console.log("\n[4] 배송상태 판 — 툴팁이 아니라 남는 판이어야 한다 (2026-09-08)");
@@ -140,6 +161,38 @@ ok("★ 줄 다음 것으로 찾지 않는다 ★", html.indexOf("line.nextSibli
 ok("닫을 때도 그 송장의 단추만 되돌린다",
    /querySelector\('\.os-trk\[data-inv="' \+ inv/.test(html));
 ok("어느 송장의 판인지 보여준다", html.indexOf("os-trk-head") > -1);
+
+console.log("\n[주소 줄 — 한 줄에 들어가야 한다]  (2026-10-07)");
+/*  > "주문송장조회에서 주소는 폰트를 작게 보이게 해줘. 지금의70%정도로
+    >  주소가 기니까 2줄이 되니까.."
+    두 줄이 되면 아래 칸들이 밀려 카드가 길어지고, 전화를 받으면서
+    읽어 주기도 어렵다. 화면 손질은 되돌아가도 아무것도 안 울어서 센다 —
+    색 손질이 이미 두 번 조용히 되돌아갔다.                              */
+ok("★ 주소 칸에 제 이름표가 있다", /class="os-val os-addr"/.test(html));
+const 주소줄 = (html.match(/\.os-val\.os-addr \{[^}]*\}/) || [""])[0];
+ok("주소 줄 규칙을 찾았다", 주소줄.length > 0);
+/*  ★ px 가 아니라 em 이다 ★ 이 줄의 글자 크기는 자리마다 다르다
+    (.os-row · .ws-pane .os-row · 넓은 표 화면). px 로 박으면 한 자리에서만
+    70% 가 되고 다른 자리에서는 되레 커지거나 작아진다.                  */
+const 배율 = (주소줄.match(/font-size:\s*([0-9.]+)em/) || [])[1];
+ok("★ em 으로 줄인다 (자리마다 바탕 크기가 다르다)", !!배율, 주소줄);
+/*  ★ 숫자를 못 박지 않는다 ★  (2026-10-07)
+    처음 0.7em 으로 박았더니 그날 「0.8em 으로 조금 크게」에 바로 울었다.
+    지켜야 할 것은 그 숫자가 아니라 «작지만 읽을 수 있다»는 것이다 —
+    1em 이상이면 줄인 뜻이 없고, 0.6em 아래면 전화 받으며 못 읽는다.   */
+ok("  작지만 읽을 수 있는 크기다 (0.6~0.9em)",
+  !!배율 && Number(배율) >= 0.6 && Number(배율) <= 0.9, String(배율) + "em");
+/*  작아진 글자는 줄이 붙어 보인다 — 줄 간격을 조금 벌려 둔다 */
+ok("  줄 간격을 벌려 둔다", /line-height/.test(주소줄));
+/*  복사 단추까지 70% 가 되면 누르기 어렵다 — 제 크기를 돌려준다 */
+ok("★ 복사 단추는 제 크기를 지킨다",
+  /\.os-val\.os-addr \.os-copy \{[^}]*font-size/.test(html),
+  "작아지면 누르기 어렵습니다");
+//  주소보다 센 선택자가 글자 크기를 덮으면 70% 가 안 먹는다 (어제 색이 그랬다)
+const 덮는것 = (html.match(/^[^\n{]*\.os-val(?!\.os-addr)[^\n{]*\{[^}]*font-size[^}]*\}/gm) || [])
+  .filter((s) => !/\.big/.test(s));
+ok("★ os-val 글자 크기를 덮는 다른 규칙이 없다 (.big 빼고)",
+  덮는것.length === 0, 덮는것.join(" / "));
 
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

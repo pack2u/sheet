@@ -75,9 +75,11 @@ const sandbox = {
     sleep: ms => { SLEEPS.push(ms); }   // 실제로 쉬지는 않는다 — 부른 것만 센다
   },
 
-  // _secrets.gs 대신 — 실제 키는 쓰지 않는다
-  LOGEN_SECRET_KEY_DEV: "TEST-KEY",
-  LOGEN_SECRET_KEY_PROD: "",
+  /* _secrets.gs 대신 — 실제 키는 쓰지 않는다.
+     ★ PROD 도 채워 둔다 ★ csLogen.gs 가 2026-10-07 에 운영(_LOGEN_USE_PROD_=true)으로
+       바뀌었다. 여기가 비어 있으면 모든 호출이 「키가 없습니다」로 죽는다. */
+  LOGEN_SECRET_KEY_DEV: "TEST-KEY-DEV",
+  LOGEN_SECRET_KEY_PROD: "TEST-KEY-PROD",
   LOGEN_USER_ID: "30556066",
   LOGEN_CUST_CD: "30556066",
   LOGEN_PROXY_URL: "",
@@ -118,6 +120,77 @@ const FIXTURE_LAST = {
   }]
 };
 
+/**
+ * ★ 실측 응답 ★  2026-10-02 개발계에서 실제로 받은 것.
+ *
+ * 자사출고 송장 5건(10/02 집하)을 조회했더니 전부 이 모양이었다.
+ * 개발계에는 **운영 스캔 데이터가 없다** — 로젠이 "개발계는 화물추적 테스트를
+ * 지원하지 않는다"고 한 것이 이 뜻이었다. API 는 돌지만 DB 가 다르다.
+ *
+ * 그래도 이 모양은 **CS 화면에서 자주 만난다** — 방금 집하된 건은 아직 스캔이 없다.
+ * 눈여겨볼 것:
+ *   - `data1[]` 이 **빈 문자열로 채워진 한 줄**로 온다. 배열이 비는 게 아니다.
+ *   - `sttsCd` 가 `FAIL` 인데 이건 「조회 실패」가 아니라 「0건」이라는 뜻이다.
+ *   - 사람에게 보여줄 사유는 `resultMsg` 에 있다.
+ */
+const FIXTURE_NODATA = {
+  sttsCd: "FAIL",
+  sttsMsg: "처리결과 0건",
+  data: [{
+    slipNo: "45292632652",
+    resultCd: "FALSE",
+    resultMsg: "화물추적 조회 결과 없음 - 스캔정보가 없습니다.",
+    data1: [{
+      rcvBranNm: "", sndBranNm: "", scanTm: "", oppBranCd: "", branCd: "",
+      scanDt: "", branNm: "", acptorTyNm: "", oppBranNm: "",
+      salesCd: "", statNm: "", salesNm: ""
+    }]
+  }]
+};
+
+/**
+ * ★★ 운영 실측 응답 ★★  2026-10-07, 중계기(222.122.39.14) 경유로 받은 그대로.
+ *
+ * 자사출고 송장 `453-0321-1446` (10/06 집하, 춘천행).
+ * **문서 예시와 다른 점이 여럿 있어 이 샘플이 중요하다:**
+ *
+ *   ① **이력이 시간순이 아니다.**  000754 → 043300 → 001009 → 080737
+ *      043300(원주터미널출고)이 001009(이천터미널출고)보다 «먼저» 실려 온다.
+ *      롯데에서 겪은 그 문제가 로젠에도 있다. 정렬하지 않으면 CS 가 화물 위치를 못 읽는다.
+ *   ② **`salesNm`·`acptorTyNm` 이 `null`** 로 온다. 빈 문자열이 아니다.
+ *      String(null) 은 "null" 이 되므로 `|| ""` 를 반드시 거쳐야 한다.
+ *   ③ **`sndBranNm`/`rcvBranNm` 은 «구간»** 이다 — "동수원[305]" → "이천터미널[912]".
+ *      문서의 「배송지점명·수하인지점명」이라는 설명만 보고는 알 수 없다.
+ *   ④ 집하 단계(집하완료·집하입고)가 **안 실려 온다.** 10/06 집하인데 10/07 것만 온다.
+ */
+const FIXTURE_REAL = {
+  sttsCd: "SUCCESS",
+  sttsMsg: "총1건 - 처리결과 : 1건 처리 중 1건 성공",
+  data: [{
+    slipNo: "45303211446",
+    resultCd: "TRUE",
+    resultMsg: null,
+    data1: [
+      { scanDt: "20261007", scanTm: "000754", statNm: "터미널입고",
+        branCd: "912", branNm: "이천터미널", oppBranCd: "305", oppBranNm: "동수원",
+        salesCd: "91210000", salesNm: null,
+        sndBranNm: "동수원[305]", rcvBranNm: "이천터미널[912]", acptorTyNm: null },
+      { scanDt: "20261007", scanTm: "043300", statNm: "터미널출고",
+        branCd: "918", branNm: "원주터미널", oppBranCd: "708", oppBranNm: "남춘천",
+        salesCd: "91810000", salesNm: null,
+        sndBranNm: "원주터미널[918]", rcvBranNm: "남춘천[708]", acptorTyNm: null },
+      { scanDt: "20261007", scanTm: "001009", statNm: "터미널출고",
+        branCd: "912", branNm: "이천터미널", oppBranCd: "918", oppBranNm: "원주터미널",
+        salesCd: "91210000", salesNm: null,
+        sndBranNm: "이천터미널[912]", rcvBranNm: "원주터미널[918]", acptorTyNm: null },
+      { scanDt: "20261007", scanTm: "080737", statNm: "배송입고",
+        branCd: "708", branNm: "남춘천", oppBranCd: "918", oppBranNm: "원주터미널",
+        salesCd: "70810000", salesNm: "춘천 기본",
+        sndBranNm: "원주터미널[918]", rcvBranNm: "남춘천[708]", acptorTyNm: null }
+    ]
+  }]
+};
+
 // ── 테스트 틀 ────────────────────────────────────────────
 let pass = 0, fail = 0;
 function t(name, fn) {
@@ -139,7 +212,7 @@ function eq(got, want, what) {
 }
 function ok(cond, what) { if (!cond) throw new Error(what || "참이어야 합니다"); }
 
-console.log("\ncsLogen.gs 검증 (문서 예시 기준)\n");
+console.log("\ncsLogen.gs 검증  (★ 표시는 운영 실측 응답 기반)\n");
 
 // ── 1. 성공 판정 — 값 체계가 API마다 다르다 ────────────────
 t("resultCd 는 TRUE 와 SUCCESS 를 모두 성공으로 본다", () => {
@@ -241,6 +314,72 @@ t("최종조회가 실패해도 배송조회는 산다", () => {
   eq(r.ok, true, "본 조회는 성공");
   eq(r.statusName, "배송완료", "상태는 나온다");
   eq(r.branchTel, "", "전화번호만 빈다");
+});
+
+// ── 5-1. 실측: 스캔 전 건 (2026-10-02 개발계 실응답) ───────
+t("스캔 전인 건은 로젠이 준 사유를 그대로 전한다 [실측]", () => {
+  FETCH_QUEUE = [reply(FIXTURE_NODATA)];
+  const r = sandbox.csLogenTrack("452-9263-2652", {});
+
+  eq(r.ok, false, "조회 실패로 본다");
+  eq(r.error, "화물추적 조회 결과 없음 - 스캔정보가 없습니다.", "사유를 그대로");
+  eq(r.invoice, "45292632652", "하이픈을 떼고 11자리로");
+  eq(FETCH_LOG.length, 1, "최종조회까지 가지 않는다 (본 조회가 실패했으므로)");
+});
+
+t("빈 문자열로 채워진 data1 을 «이력 있음»으로 착각하지 않는다 [실측]", () => {
+  // resultCd 가 FALSE 라 _logen_buildTrack_ 까지 가지 않아야 한다.
+  // 만약 가 버리면 "(상태 없음)" 이력 한 줄이 생겨 화면에 빈 줄이 뜬다.
+  FETCH_QUEUE = [reply(FIXTURE_NODATA)];
+  const r = sandbox.csLogenTrack("45292632652", {});
+  ok(!r.history || r.history.length === 0, "이력을 만들지 않는다");
+  ok(!r.statusName, "상태도 만들지 않는다");
+});
+
+// ── 5-2. 운영 실측 응답 (2026-10-07) ──────────────────────
+t("운영 실데이터를 시간순으로 세운다 [실측·중요]", () => {
+  FETCH_QUEUE = [reply(FIXTURE_REAL), reply({ sttsCd: "FAIL" })];
+  const r = sandbox.csLogenTrack("453-0321-1446", {});
+
+  eq(r.ok, true, "조회 성공");
+  eq(r.history.length, 4, "이력 4건");
+
+  // 응답 순서는 000754 → 043300 → 001009 → 080737 (뒤섞여 있다)
+  // 제대로 세우면 000754 → 001009 → 043300 → 080737 이어야 한다
+  const at = r.history.map(h => h.at);
+  eq(at.join(" "), "10-07 00:07 10-07 00:10 10-07 04:33 10-07 08:07", "시간순 정렬");
+
+  eq(r.history[1].branch, "이천터미널", "두 번째는 이천터미널 출고");
+  eq(r.history[2].branch, "원주터미널", "세 번째가 원주터미널");
+});
+
+t("대표 상태는 «시간상» 마지막 것이다 [실측]", () => {
+  FETCH_QUEUE = [reply(FIXTURE_REAL), reply({ sttsCd: "FAIL" })];
+  const r = sandbox.csLogenTrack("45303211446", {});
+  eq(r.statusName, "배송입고", "정렬 후 마지막 = 배송입고");
+  eq(r.lastAt, "10-07 08:07", "그 시각");
+  eq(r.delivered, false, "아직 배송완료 아님");
+  eq(r.branch, "남춘천", "그 지점");
+  // 응답 순서 그대로 썼다면 043300 원주터미널출고가 대표가 됐을 것이다
+});
+
+t("null 로 오는 필드를 \"null\" 로 찍지 않는다 [실측]", () => {
+  FETCH_QUEUE = [reply(FIXTURE_REAL), reply({ sttsCd: "FAIL" })];
+  const r = sandbox.csLogenTrack("45303211446", {});
+  r.history.forEach((h, i) => {
+    ok(h.empNm !== "null", i + "번 empNm 이 문자열 null 이면 안 된다");
+    ok(h.msg !== "null", i + "번 msg 가 문자열 null 이면 안 된다");
+  });
+  eq(r.history[0].empNm, "", "salesNm 이 null 이면 빈 문자열");
+  eq(r.history[3].empNm, "춘천 기본", "값이 있으면 그대로");
+  eq(r.empNm, "춘천 기본", "대표 영업소는 «찍힌» 이벤트에서 가져온다");
+});
+
+t("구간(leg)을 만든다 — 상담원이 화물 위치를 읽는 값 [실측]", () => {
+  FETCH_QUEUE = [reply(FIXTURE_REAL), reply({ sttsCd: "FAIL" })];
+  const r = sandbox.csLogenTrack("45303211446", {});
+  eq(r.history[0].leg, "동수원[305] → 이천터미널[912]", "첫 구간");
+  eq(r.history[3].leg, "원주터미널[918] → 남춘천[708]", "마지막 구간");
 });
 
 // ── 6. 이력 정렬 · 대표 상태 ──────────────────────────────
@@ -454,7 +593,7 @@ t("401 이면 IP 미등록 가능성을 알려 준다", () => {
 t("헤더에 secretKey 를 싣는다", () => {
   FETCH_QUEUE = [reply(FIXTURE_TRACK), reply(FIXTURE_LAST)];
   sandbox.csLogenTrack("38010101111", {});
-  eq(FETCH_LOG[0].opt.headers.secretKey, "TEST-KEY", "secretKey 헤더");
+  eq(FETCH_LOG[0].opt.headers.secretKey, "TEST-KEY-PROD", "운영 키를 싣는다");
   eq(FETCH_LOG[0].body.userId, "30556066", "userId");
 });
 
@@ -492,11 +631,78 @@ t("중계 주소가 있으면 그쪽으로 보내고 키는 싣지 않는다", (
     eq(FETCH_LOG[0].opt.headers["X-Proxy-Token"], "PTOKEN", "중계 토큰");
     ok(!FETCH_LOG[0].opt.headers.secretKey, "키는 싣지 않는다 — 중계가 들고 있다");
     eq(FETCH_LOG[0].body.api, "inquiryCargoTrackingMulti", "api 이름을 넘긴다");
-    eq(FETCH_LOG[0].body.env, "dev", "환경도 넘긴다");
+    eq(FETCH_LOG[0].body.env, "prod", "환경도 넘긴다 (지금은 운영)");
   } finally {
     sandbox.LOGEN_PROXY_URL = "";
     sandbox.LOGEN_PROXY_TOKEN = "";
   }
+});
+
+// ── 새 화물상태 기록이 «줄마다» 속성을 읽지 않는가 ──────────────
+t("★ 아는 상태는 속성을 아예 안 본다 (보통의 날)", () => {
+  let 읽음 = 0, 씀 = 0;
+  const 본래 = sandbox.PropertiesService;
+  sandbox.PropertiesService = { getScriptProperties: () => ({
+    getProperty: (k) => { 읽음++; return k in PROPS ? PROPS[k] : null; },
+    setProperty: (k, v) => { 씀++; PROPS[k] = String(v); },
+  }) };
+  try {
+    sandbox._LOGEN_STATNM_SEEN_ = null;
+    const 아는것 = vm.runInContext("_LOGEN_STATUS_FLOW_.slice()", sandbox);
+    ok(아는것.length >= 5, "아는 단계 표가 있다");
+    for (let i = 0; i < 300; i++) {
+      for (const s of 아는것) {
+        vm.runInContext("_logen_noteStatus_(" + JSON.stringify(s) + ")", sandbox);
+      }
+    }
+    eq(읽음, 0, "아는 상태 " + (300 * 아는것.length) + "번에 속성 읽기");
+    eq(씀, 0, "쓰기");
+  } finally { sandbox.PropertiesService = 본래; }
+});
+
+t("★ 새 상태가 나와도 속성은 한 번만 읽는다 (느려지던 날)", () => {
+  /*  2026-10-09 — 25분을 먹은 _lrt_isOff_ 와 «같은 모양»이다.
+      아는 7단계 울타리가 보통은 여기까지 안 오게 막지만, 정말 새 문자열이
+      나온 날에는 그 상태를 가진 «줄마다» 속성을 읽었다. 한 회차 추적이
+      수백~천 건이다. 새 상태가 나온 날에만 느려지는, 가장 안 반가운 함정. */
+  let 읽음 = 0, 씀 = 0;
+  const 본래 = sandbox.PropertiesService;
+  sandbox.PropertiesService = { getScriptProperties: () => ({
+    getProperty: (k) => { 읽음++; return k in PROPS ? PROPS[k] : null; },
+    setProperty: (k, v) => { 씀++; PROPS[k] = String(v); },
+  }) };
+  try {
+    sandbox._LOGEN_STATNM_SEEN_ = null;
+    WARNS.length = 0;
+    for (let i = 0; i < 500; i++) {
+      vm.runInContext('_logen_noteStatus_("아주새로운상태")', sandbox);
+    }
+    ok(읽음 <= 2, "500줄에 속성 읽기 " + 읽음 + "번 (2번 이하여야 한다)");
+    eq(씀, 1, "쓰기는 한 번");
+    eq(WARNS.filter((w) => /아주새로운상태/.test(w)).length, 1, "경고도 한 번");
+    ok(/\|아주새로운상태\|/.test(PROPS["LOGEN_STATNM_SEEN"] || ""), "속성에 적혔다");
+  } finally { sandbox.PropertiesService = 본래; }
+});
+
+t("★ 적는 순간에는 다시 읽는다 — 남이 적어 둔 것을 지우지 않는다", () => {
+  /*  외운 것만 믿고 덮으면, 다른 실행이 그 사이 적어 둔 새 문자열이 사라진다.
+      적는 일은 새 문자열마다 한 번뿐이라 다시 읽어도 싸다. */
+  sandbox._LOGEN_STATNM_SEEN_ = "";            // 「비어 있다」고 외운 상태
+  PROPS["LOGEN_STATNM_SEEN"] = "|남이적은것|";   // 그 사이 남이 적었다
+  vm.runInContext('_logen_noteStatus_("내가본것")', sandbox);
+  const v = PROPS["LOGEN_STATNM_SEEN"] || "";
+  ok(/\|남이적은것\|/.test(v), "남이 적은 것이 살아 있다 — 실제: " + v);
+  ok(/\|내가본것\|/.test(v), "내가 본 것도 적혔다 — 실제: " + v);
+});
+
+t("기록이 못 되더라도 조회를 막지 않는다", () => {
+  const 본래 = sandbox.PropertiesService;
+  sandbox.PropertiesService = { getScriptProperties: () => { throw new Error("못 읽음"); } };
+  try {
+    sandbox._LOGEN_STATNM_SEEN_ = null;
+    vm.runInContext('_logen_noteStatus_("무엇이든")', sandbox);   // 터지지 않아야 한다
+    ok(true, "터지지 않았다");
+  } finally { sandbox.PropertiesService = 본래; }
 });
 
 // ── 마무리 ───────────────────────────────────────────────
@@ -504,6 +710,8 @@ console.log("\n  " + pass + " 통과 / " + fail + " 실패\n");
 if (fail) {
   process.exit(1);
 } else {
-  console.log("  ⚠ 이 통과는 «문서 예시대로면 맞다» 까지만 뜻한다.");
-  console.log("    운영 키를 받으면 «운영» 실응답으로 FIXTURE 를 갈아 끼울 것.\n");
+  console.log("  [실측] 붙은 것은 2026-10-07 «운영계» 실응답으로 검증했다.");
+  console.log("  나머지는 문서 예시 기준이다 — **반품은 아직 실호출로 확인하지 않았다.**");
+  console.log("  반품을 운영에서 부르면 실제로 접수된다. cancelReserveState 로 무를 수 있는");
+  console.log("  것은 확인했지만, 집하 기사가 뜨기 전에 취소되는지는 아직 모른다.\n");
 }

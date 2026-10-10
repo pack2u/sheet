@@ -18,7 +18,7 @@
  *  ★ 2026-09-30 에 업체 유형을 CS 와 맞췄다 ★
  *    전: 단순반품·교환·불량반품·오배송·부분반품 (5개)  →  후: CS 와 같은 8개
  *    없어진 두 낱말은 갈 곳이 있다 —
- *      불량반품 → 유형 「반품」 + 사유 「제품불량」
+ *      불량반품 → 유형 「반품」 + 사유 「불량」(판매자 귀책)
  *      부분반품 → 유형 「반품」 + 전달 사항에 어느 품목인지
  *
  * 실행: node _prpreason_test.js
@@ -85,16 +85,20 @@ Object.keys(C_REASONS).forEach((f) => {
 
 console.log("\n─── ② 사장님이 말한 낱말 그대로인가 ───");
 const 시킨것 = {
-  구매자: ["자동반품", "단순변심", "오입력", "오주문",
-    "제품파손", "택배사고", "제품불량", "배송지연"],
-  판매자: ["정보불일치", "오배송", "중복출고"],
+  구매자: ["자동반품", "단순변심", "오입력"],
+  판매자: ["오배송", "제품파손", "사고", "불량",
+    "배송지연", "정보불일치", "중복출고", "품절", "상품하자"],
 };
 Object.keys(시킨것).forEach((f) => {
   ok(f + " " + 시킨것[f].length + "개", (P_REASONS[f] || []).join("·") === 시킨것[f].join("·"),
     (P_REASONS[f] || []).join("·"));
 });
-ok("구매자는 오주문, 판매자는 오배송", P_REASONS.구매자.indexOf("오배송") < 0 &&
-  P_REASONS.판매자.indexOf("오주문") < 0);
+/*  물건이 깨지거나 늦은 것은 «우리(또는 택배사) 탓»이다 — 구매자 쪽에 두면
+    반품비를 고객에게 물리게 된다. 귀책이 곧 돈이라 이 가름이 값을 정한다.  */
+ok("오배송·파손·사고·불량·배송지연은 판매자 쪽이다", ["오배송", "제품파손", "사고", "불량", "배송지연"]
+  .every((w) => P_REASONS.판매자.indexOf(w) >= 0 && P_REASONS.구매자.indexOf(w) < 0));
+ok("구매자 쪽은 셋뿐 — 자동반품·단순변심·오입력",
+  P_REASONS.구매자.join("·") === "자동반품·단순변심·오입력", P_REASONS.구매자.join("·"));
 ok("두 목록에 겹치는 낱말이 없다",
   P_REASONS.구매자.filter((x) => P_REASONS.판매자.indexOf(x) >= 0).length === 0);
 
@@ -103,7 +107,7 @@ console.log("\n─── ③ 없어진 업체 낱말 ───");
 ["불량반품", "부분반품"].forEach((w) => {
   ok("「" + w + "」은 고르는 목록에서 빠졌다", P_TYPES.indexOf(w) < 0, P_TYPES.join("·"));
 });
-ok("「제품불량」이 사유에 있다 (불량반품이 갈 곳)", P_REASONS.구매자.indexOf("제품불량") >= 0);
+ok("「불량」이 사유에 있다 (불량반품이 갈 곳)", P_REASONS.판매자.indexOf("불량") >= 0);
 ok("바뀐 까닭이 적혀 있다", /불량반품 → 유형은 「반품」/.test(cfg));
 
 console.log("\n─── ④ 서버가 화면에 내려 주는가 ───");
@@ -113,6 +117,17 @@ ok("화면이 서버 것으로 갈아 쓴다",
   /if \(res\.faults && res\.faults\.length\) FAULTS = res\.faults;/.test(portal) &&
   /if \(res\.reasons\) REASONS = res\.reasons;/.test(portal));
 ok("서버가 안 줄 때의 대비값이 있다", /var FAULTS = \['구매자', '판매자'\];/.test(portal));
+/*  ★ 넷째 자리 ★  (2026-09-30)
+    portal.html 의 대비값도 «낱말을 적어 둔 자리»다. 2026-09-30 에 사유를
+    다시 가를 때 prpConfig 만 고치고 이것을 빠뜨렸다 — 여기서 걸렸다.  */
+ok("화면의 대비값이 서버 표와 같다", (function () {
+  const i = portal.indexOf("    var REASONS = {");
+  const ctx2 = {};
+  vm.createContext(ctx2);
+  vm.runInContext(portal.slice(i, portal.indexOf("};", i) + 2), ctx2);
+  return Object.keys(P_REASONS).every((f) =>
+    (ctx2.REASONS[f] || []).join("·") === P_REASONS[f].join("·"));
+})(), "prpConfig 와 portal.html 의 대비값이 갈라졌다");
 
 /* ── 화면 흉내 ───────────────────────────────────────────────── */
 const hctx = { console, esc: (v) => String(v == null ? "" : v) };
@@ -147,13 +162,13 @@ ok("판매자 3개", 고를수있는것(칸.nReason).slice(1).join("·") === 시
   고를수있는것(칸.nReason).slice(1).join("·"));
 
 console.log("\n─── ⑥ 잘못 눌렀다 되돌려도 적은 것이 안 날아간다 ───");
-칸 = 가짜화면("구매자", "제품불량");
+칸 = 가짜화면("구매자", "단순변심");
 hctx.fillReasons();
-ok("같은 귀책이면 그대로", 칸.nReason.value === "제품불량", 칸.nReason.value);
+ok("같은 귀책이면 그대로", 칸.nReason.value === "단순변심", 칸.nReason.value);
 칸.nFault.value = "판매자";
 hctx.fillReasons();
 ok("없는 낱말이면 비워진다", 칸.nReason.value === "", 칸.nReason.value);
-칸 = 가짜화면("아무거나", "제품불량");
+칸 = 가짜화면("아무거나", "단순변심");
 hctx.fillReasons();
 ok("모르는 귀책이면 빈 목록만", 고를수있는것(칸.nReason).join("·") === "");
 ok("칸이 사라지면 조용히 돌아간다", (function () {
@@ -168,7 +183,11 @@ ok("사유를 목록으로 걸러 낸다", /if \(!있나\) reasonIn = "";/.test(
 ok("귀책도 목록으로 걸러 낸다",
   /PRP_RETURN_FAULTS\.indexOf\(faultIn\) === -1\) faultIn = "";/.test(api));
 ok("사유가 비면 귀책도 안 적는다", /if \(faultIn && reasonIn\)/.test(api));
-ok("전용 열이 있으면 열에 적는다", /if \(col\.fault >= 0\) row\[col\.fault\] = faultIn;/.test(api));
+ok("전용 열이 있으면 열에도 적는다",
+  /if \(col\.fault >= 0 && faultIn\) row\[col\.fault\] = faultIn;/.test(api));
+ok("★ 발생원인 한 칸에 «귀책 / 사유»로 적는다 ★",
+  /var 원인 = prpMakeCause_\(col\.fault >= 0 \? "" : faultIn, reasonIn\);/.test(api),
+  "CS웹앱과 글자 모양이 달라지면 같은 칸에 두 모양이 섞인다");
 ok("없으면 비고에 남긴다", /faultToNotice = " 귀책: " \+ faultIn/.test(api));
 ok("비고 줄에 태운다", /faultToNotice \+/.test(api));
 
@@ -213,8 +232,13 @@ ok("「귀책구분」은 귀책 · 그 뒤 사유도 따로", c.fault === 0 && 
   c.fault + "/" + c.reason);
 
 console.log("\n─── ⑩ 업체 카드로 돌려주고 보여 준다 ───");
-ok("열이 있으면 열을, 없으면 비고를 읽는다",
-  /fault: col\.fault >= 0\s*\r?\n\s*\? String\(row\[col\.fault\] \|\| ""\)\.trim\(\)\s*\r?\n\s*: prpFaultFromNotice_\(notice\)/.test(led));
+/*  ★ 2026-10-01 — 찾는 차례가 셋이다 ★
+      ① 「귀책」 전용 열  ② 「발생원인」 칸의 앞부분  ③ 비고 표시
+    CS웹앱 csOrderSearch 와 같은 차례여야 한다.  */
+ok("귀책 — 전용 열을 먼저 본다", /fault: col\.fault >= 0/.test(led));
+ok("귀책 — 그 다음 발생원인 칸의 앞부분",
+  /prpParseCause_\(row\[col\.reason\]\)\.귀책/.test(led));
+ok("귀책 — 마지막으로 비고 표시", /prpFaultFromNotice_\(notice\)/.test(led));
 ok("카드가 귀책을 낸다", (portal.match(/esc\(귀책\) \+ ' 귀책<\/em>/g) || []).length === 2,
   "사유와 함께 · 귀책만 — 두 갈래 다 있어야 한다");
 ok("사유가 없고 귀책만 있어도 낸다", /} else if \(귀책\) \{/.test(portal));
@@ -245,13 +269,14 @@ console.log("\n─── ⑫ 사유도 비고 길을 탄다 · 두 프로젝트�
     적는 데가 둘(CS·포털)이고 읽는 데도 둘이다. 넷이 한 글자 모양을 써야 한다.  */
 vm.runInContext(꺼내(led, "prpReasonFromNotice_"), gctx);
 vm.runInContext(꺼내(csGs, "_cs_reasonFromNotice_"), gctx);
-ok("포털도 열이 없으면 비고에서 사유를 읽는다",
-  /reason: col\.reason >= 0\s*\r?\n\s*\? String\(row\[col\.reason\] \|\| ""\)\.trim\(\)\s*\r?\n\s*: prpReasonFromNotice_\(notice\)/.test(led));
-ok("포털도 귀책이 비었을 때만 「사유: …」를 따로 적는다",
-  /if \(col\.reason < 0 && reasonIn && !faultToNotice\) \{/.test(api));
+ok("사유 — 발생원인 칸의 뒷부분을 읽는다",
+  /reason: col\.reason >= 0\s*\r?\n\s*\? prpParseCause_\(row\[col\.reason\]\)\.사유/.test(led));
+ok("사유 — 칸이 없으면 비고에서", /: prpReasonFromNotice_\(notice\)/.test(led));
+ok("칸이 아예 없으면 비고에 「사유: …」로 남긴다",
+  /\} else if \(reasonIn\) \{\s*\r?\n\s*faultToNotice = " 사유: "/.test(api));
 [["귀책: 판매자 (오배송)", "판매자", "오배송"],
  ["[260930 당장드림] 업체 포털 접수. [출처 확인됨] 장부에서 확인. 귀책: 구매자 (단순변심). 뚜껑 깨짐", "구매자", "단순변심"],
- ["[260930 10:00 김진수] 고객 요청\n귀책: 구매자 (제품불량)", "구매자", "제품불량"],
+ ["[260930 10:00 김진수] 고객 요청\n귀책: 판매자 (불량)", "판매자", "불량"],
  ["업체 포털 접수. 사유: 중복출고.", "", "중복출고"],
  ["반품송장: 600622029800", "", ""],
  ["", "", ""]].forEach(function (t) {
@@ -266,6 +291,70 @@ ok("두 사유 읽기가 같은 정규식이다", (function () {
   const 뽑 = (s) => (s.match(/\/[^/\n]*귀책[^/\n]*\//g) || []).join("|");
   return 뽑(a) === 뽑(b) && 뽑(a).length > 0;
 })());
+
+console.log("\n─── ⑬ 협의된 배열을 두 앱이 같게 다루는가 (2026-10-01) ───");
+/*  같은 대장을 두 앱이 읽고 둘 다 쓴다. 규칙이 한 글자라도 다르면
+    업체 화면과 CS 화면이 다른 말을 한다 — 조용히.                        */
+
+ok("포털이 「발생원인」 머리글을 안다", /\^발생원인\$/.test(led),
+  "모르면 업체 화면에 사유·귀책이 통째로 안 나온다");
+ok("CS웹앱도 같은 이름을 안다", /\^발생원인\$/.test(csGs));
+
+ok("★ A열을 상태로 못 박지 않는다 ★",
+  !/col\.status = 0;\s*\r?\n/.test(led) && /col\.status = _A임자 \? -1 : 0;/.test(led),
+  "10월 탭이 A 를 날짜로 쓰면 날짜가 상태로 보인다 — 10/01 사고의 그 패턴");
+ok("상태값을 머리글 이름으로 찾는다",
+  /col\.status < 0 && \/\^상태값\$/.test(led));
+ok("상태를 row\\[0\\] 으로 직접 읽지 않는다",
+  !/var status = String\(row\[0\]/.test(led) &&
+  /var status = col\.status >= 0 \? String\(row\[col\.status\]/.test(led));
+
+ok("포털도 비고의 「구분: …」을 되읽는다",
+  /function prpTypeFromNotice_/.test(led) && /prpTypeFromNotice_\(notice\)/.test(led));
+ok("포털도 구분 칸이 없으면 비고에 남긴다",
+  /typeToNotice = " 구분: "/.test(api) && /typeToNotice \+/.test(api));
+
+/*  ★ 가장 중요한 것 — 가르는 «결과»가 같은가 ★
+      정규식이 같은지만 보면 모자란다. 실제로 넣어 보고 맞대 본다.  */
+const cctx = { String, console };
+vm.createContext(cctx);
+vm.runInContext(꺼내(led, "prpParseCause_"), cctx);
+vm.runInContext(꺼내(csGs, "_cs_parseCause_"), cctx);
+vm.runInContext(꺼내(led, "prpMakeCause_"), cctx);
+vm.runInContext(꺼내(csGs, "_cs_makeCause_"), cctx);
+
+[["판매자귀책 / 오배송", "판매자", "오배송"],
+ ["구매자귀책 / 단순변심", "구매자", "단순변심"],
+ ["판매자귀책 / 품절", "판매자", "품절"],
+ ["오배송", "", "오배송"],
+ ["오배송> 재출고 되는 건가요?", "", "오배송> 재출고 되는 건가요?"],
+ ["  판매자귀책/상품하자  ", "판매자", "상품하자"],
+ ["", "", ""]].forEach(function (t) {
+  const a = vm.runInContext("prpParseCause_(" + JSON.stringify(t[0]) + ")", cctx);
+  const b = vm.runInContext("_cs_parseCause_(" + JSON.stringify(t[0]) + ")", cctx);
+  ok("「" + (t[0].trim() || "(빈칸)") + "」 둘이 같게 가른다",
+    a.귀책 === t[1] && a.사유 === t[2] && b.귀책 === t[1] && b.사유 === t[2],
+    "포털[" + a.귀책 + "/" + a.사유 + "] CS[" + b.귀책 + "/" + b.사유 + "]");
+});
+
+[["판매자", "오배송", "판매자귀책 / 오배송"],
+ ["", "단순변심", "단순변심"],
+ ["판매자", "", ""]].forEach(function (t) {
+  const a = vm.runInContext("prpMakeCause_(" + JSON.stringify(t[0]) + "," + JSON.stringify(t[1]) + ")", cctx);
+  const b = vm.runInContext("_cs_makeCause_(" + JSON.stringify(t[0]) + "," + JSON.stringify(t[1]) + ")", cctx);
+  ok("「" + (t[0] || "—") + "」+「" + (t[1] || "—") + "」 둘이 같게 적는다",
+    a === t[2] && b === t[2], "포털[" + a + "] CS[" + b + "]");
+});
+
+/*  적고 → 읽으면 그대로 돌아와야 한다. 한쪽만 고치면 여기서 걸린다.  */
+[["판매자", "오배송"], ["구매자", "오입력"], ["", "품절"]].forEach(function (t) {
+  const 적은것 = vm.runInContext("_cs_makeCause_(" +
+    JSON.stringify(t[0]) + "," + JSON.stringify(t[1]) + ")", cctx);
+  const 읽은것 = vm.runInContext("prpParseCause_(" + JSON.stringify(적은것) + ")", cctx);
+  ok("CS가 적은 「" + 적은것 + "」을 포털이 그대로 읽는다",
+    읽은것.귀책 === t[0] && 읽은것.사유 === t[1],
+    "읽은 것 [" + 읽은것.귀책 + "/" + 읽은것.사유 + "]");
+});
 
 console.log("\n" + (fail ? "❌" : "✅") + "  맞음 " + pass + " · 틀림 " + fail + "\n");
 process.exit(fail ? 1 : 0);

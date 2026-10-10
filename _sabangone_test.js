@@ -25,6 +25,19 @@ const path = require("path");
 /** gasBulk.js 에서 ssb_addRows 와 그 이웃을 떼어 온다 — 복사본을 두면 갈라진다 */
 function load() {
   const src = fs.readFileSync(path.join(__dirname, "세트분리V2", "gasBulk.js"), "utf8");
+  /*  ★ 2026-10-07 — ssb_addRows 가 ssBaseUid 를 부르게 됐다 ★
+      그 함수는 core.js 에 산다. 여기 베껴 두면 갈라지므로 «진짜»를 떼어 온다. */
+  const coreSrc = fs.readFileSync(path.join(__dirname, "세트분리V2", "core.js"), "utf8");
+  const grabFrom = (text, name) => {
+    const at = text.indexOf("function " + name + "(");
+    if (at < 0) throw new Error(name + " 을 못 찾았습니다");
+    let depth = 0, i = text.indexOf("{", at);
+    for (; i < text.length; i++) {
+      if (text[i] === "{") depth++;
+      else if (text[i] === "}") { depth--; if (depth === 0) break; }
+    }
+    return text.slice(at, i + 1);
+  };
   const grab = (name) => {
     const at = src.indexOf("function " + name + "(");
     if (at < 0) throw new Error(name + " 을 못 찾았습니다");
@@ -43,6 +56,10 @@ function load() {
     grab("ssb_isPlaceholder") + "\n" +
     "function ssIsSabangnetUid(u){u=ssText(u);if(!u)return false;" +
     "if(/^\\d{4}(\\d{2})?-[A-Za-z]{2}-/.test(u))return false;return /^\\d+$/.test(u);}\n" +
+    grabFrom(coreSrc, "ssBaseUid") + "\n" +
+    //  2026-10-08 — 송장 칸을 «장들»로 읽는 함수와 택배사 이름표가 붙었다
+    src.slice(src.indexOf("var SSB_CARRIER_WORDS"), src.indexOf("];", src.indexOf("var SSB_CARRIER_WORDS")) + 2) + "\n" +
+    grab("ssb_parseInvCell") + "\n" +
     grab("ssb_addRows");
   return new Function(head + "\nreturn ssb_addRows;")();
 }
@@ -112,4 +129,15 @@ test("우리가 만든 UID 는 애초에 안 올라간다", () => {
 test("빈 값·송장 없는 줄은 그냥 넘어간다", () => {
   assert.equal(run([["2161346705", ""]]).length, 0);
   assert.equal(run([["", "268334484434"]]).length, 0);
+});
+
+test("★ 업체가 한 칸에 「택배사 이름 · 줄인 뒷자리」로 적어도 송장만 올린다 ★ (2026-10-08)", () => {
+  //  HU 후아코리아 2166790682 — 사방넷에 송장 「로젠」이 올라갔다
+  const rows = run([["2166790682", "로젠 45322906930 / 6926 / 6915 한진 4634-7219-8195 / 8206 / 8210"]]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0][1], "45322906930", "「로젠」 글자가 송장이 되면 안 된다");
+  assert.equal(rows[0][4], "007", "칸에 적힌 택배사 이름이 이긴다");
+  const 한진 = run([["2166790683", "한진 4634-7219-8195 / 8206"]]);
+  assert.equal(한진[0][4], "004", "한진 송장에 원천 코드(002)가 붙으면 안 된다");
+  assert.equal(run([["2166790684", "로젠"]]).length, 0, "이름만 있고 번호가 없으면 올리지 않는다");
 });

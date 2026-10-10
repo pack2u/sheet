@@ -204,8 +204,15 @@ if (trackAt >= 0) {
 /*  pickPhones 가 쓰는 표 — 소스에서 그대로 가져온다.
     여기에 베껴 적으면 portal.html 이 바뀔 때 조용히 어긋난다. */
 const safeDecl = (portalSrc.match(/var\s+SAFE_PREFIX\s*=[^;]+;/) || ["var SAFE_PREFIX=/^050[0-9]/;"])[0];
+/*  ★ 2026-10-07 — 이번엔 «함수»가 아니라 «변수»가 빠졌다 ★
+    cardHtml 이 freshCount 를 부르게 되면서 LAST_SEEN_KEY 가 딸려 왔다.
+    딸린것까지() 는 function 만 모으므로 윗자리 var 는 못 따라온다.
+    진짜 값은 브라우저가 기억하는 「지난번에 본 때」라 여기선 만들 수 없다 —
+    빈 값(= 처음 보는 사람)으로 못 박는다. 그러면 freshCount 가 늘 0 이라
+    NEW 뱃지가 안 붙고, 아래 검사들은 뱃지와 무관하다.                     */
+const seenDecl = "var LAST_SEEN = ''; var LAST_SEEN_KEY = '';";
 vm.runInContext(
-  [stepsDecl ? stepsDecl[0].trim() : "var STEPS=[];", trackDecl, safeDecl].concat(
+  [stepsDecl ? stepsDecl[0].trim() : "var STEPS=[];", trackDecl, safeDecl, seenDecl].concat(
     /*  cardHtml 이 부르는 것은 «하나도 빠짐없이» 여기 있어야 한다.
         빠지면 ReferenceError 로 터지는데, 이 파일은 그 순간 그냥 죽어서
         실패로 «세지도» 못한 채 끝났다 — 화면에는 통과만 보였다.

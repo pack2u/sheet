@@ -157,11 +157,15 @@ function p2u_partnerOnEdit(e) {
        다 적어 둔다 — 아래에서 «1행이 ARRAYFORMULA 일 때만» 손대므로
        값으로 채우는 열은 저절로 건너뛴다. 나중에 어느 열이 수식으로
        바뀌어도 여기를 안 고쳐도 된다. */
+    /* ★ 2026-10-05 D(품목명)·L(정산금액)은 뺐다 ★
+       > "입력 막은거 삭제해줘.. 그거로 인해 단가와 상품명이 사라지고 마감텝에
+       >  제대로 못넘어가는 경우가 생기는거 같아"
+       D·L 은 이제 «줄마다 수식»이라 업체가 한 칸에 써도 그 칸만 바뀐다
+       (_pt_ensureOrderRowFormulasDL_). 걷어낼 이유가 없다 — 업체가 적은 품명·단가는
+       그대로 마감에 넘어간다. 남은 넷은 여전히 1행 스필일 때만 걷는다. */
     var 자동열 = [
       { c: 1, a1: "A1", 이름: "거래처명" },
       { c: 2, a1: "B1", 이름: "주문일자" },
-      { c: 4, a1: "D1", 이름: "품목명" },
-      { c: 12, a1: "L1", 이름: "정산금액" },
       { c: 13, a1: "M1", 이름: "고유ID" },
       { c: 14, a1: "N1", 이름: "상태" },
     ];
@@ -227,25 +231,17 @@ function p2u_partnerOnOpen() {
       }
     } catch(eRefRepair) {}
 
-    // ★ 2026-07-20: 발주탭 D/L 스필 막힘(#REF!) 무음 복구 (1계층 백필)
-    //   onEdit(0계층)이 이벤트 유실 등으로 못 걷어낸 값을 시트 열 때 정리
+    // ★ 2026-10-05: D/L 이 아직 옛 스필(ARRAYFORMULA)이면 «줄마다 수식»으로 바꾼다.
+    //   여태는 스필이 막히면(#REF!) D/L 열을 통째로 지웠다 — 업체가 적은 품명·단가까지.
+    //   바꾸는 김에 업체가 쓴 값은 남긴다 (_pt_ensureOrderRowFormulasDL_ 머리 주석).
     try {
       var otDL = ss.getSheetByName('발주 및 송장조회');
       if (otDL) {
         var d1fDL = String(otDL.getRange('D1').getFormula() || '');
         var l1fDL = String(otDL.getRange('L1').getFormula() || '');
-        var dBlockedDL = d1fDL.indexOf('ARRAYFORMULA') !== -1 &&
-          String(otDL.getRange('D1').getDisplayValue() || '').indexOf('#REF') !== -1;
-        var lBlockedDL = l1fDL.indexOf('ARRAYFORMULA') !== -1 &&
-          String(otDL.getRange('L1').getDisplayValue() || '').indexOf('#REF') !== -1;
-        if (dBlockedDL || lBlockedDL) {
-          var spillEndDL = 500;
-          try {
-            var mDL = (dBlockedDL ? d1fDL : l1fDL).match(/C2:C(\d+)/);
-            if (mDL) spillEndDL = parseInt(mDL[1], 10);
-          } catch(_) {}
-          if (dBlockedDL) otDL.getRange(2, 4, spillEndDL - 1, 1).clearContent();
-          if (lBlockedDL) otDL.getRange(2, 12, spillEndDL - 1, 1).clearContent();
+        if (d1fDL.indexOf('ARRAYFORMULA') !== -1 || l1fDL.indexOf('ARRAYFORMULA') !== -1) {
+          var safeDL = _pt_resolveViewerTabNameForOrderSpill(otDL, null);
+          _pt_ensureOrderRowFormulasDL_(otDL, "'" + safeDL.replace(/'/g, "''") + "'", 0);
           SpreadsheetApp.flush();
         }
       }

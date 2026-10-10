@@ -377,6 +377,7 @@ function ssm_load(회차키) {
   M.override = ssm_loadManual(ssio_config(), 회차키);
 
   M.ferry = ssm_ferryRows();   // 롯데 도선료 표 (주소 문자열로 확정)
+  M.logenZone = ssm_logenZoneRows();   // 로젠이 답해 준 도서·산간 (읽기만)
 
   /* 이미 나간 줄 — core.js ssBlockReship 이 이걸 보고 재출고를 막는다 */
   M.기출고 = ssm_loadShipped(회차키);
@@ -855,9 +856,22 @@ function ssm_captureManual(회차키) {
             **조치 자체가 통째로 무시된다.** 고친 사람은 이유를 알 길이 없다.
             그래서 고유ID 만으로도 원본코드를 찾을 수 있게 따로 모아 둔다.
             한 주문에 품목이 여럿이면 어느 줄인지 모르므로 그때는 안 쓴다. */
+        /*  ★ 「출력품목명」도 같이 들고 온다 ★  (2026-10-01)
+            보류 탭 품목명 칸에 적히는 것은 «출력이름»이다
+            (ssHoldRow → ssOutRow → `출력품목명 || ssDisplayName(u)` — 판매처가 붙는다).
+            그런데 아래에서 되읽을 때는 원장의 «품목명»(판매처 없음)과 견주었다.
+            두 모양이 같을 수가 없으니 사람이 손도 안 댔는데 늘
+            「이름을 고쳤다」가 되고, 그 이름이 새이름으로 잡혀 돌아왔다.
+            그래서 두 가지가 났다 —
+              ① 쪼개진 세트의 «모든» 구성품 줄에 한 이름이 먹혀
+                 2026-09-28 오은수 건에 뚜껑 4개가 나갔다
+              ② ssDisplayName 이 판매처를 또 붙여
+                 「---법인/배민상회---법인/배민상회」 가 됐다 (원장 34줄, 9/15~)
+            견주는 모양을 맞춘다 — 같은 것끼리 견주어야 «안 고쳤다»가 나온다.  */
         if (_u) (byUid[_u] || (byUid[_u] = [])).push({
           원본: _o, 코드: ssText(lv[r][li['품목코드']]),
-          이름: li['품목명'] !== undefined ? ssText(lv[r][li['품목명']]) : '' });
+          이름: li['품목명'] !== undefined ? ssText(lv[r][li['품목명']]) : '',
+          출력이름: li['출력품목명'] !== undefined ? ssText(lv[r][li['출력품목명']]) : '' });
       }
     }
   }
@@ -991,7 +1005,10 @@ function ssm_captureManual(회차키) {
         if (LL[lj].원본 !== 적힌원본) continue;
         if (!원줄) 원줄 = LL[lj];
         if (code && LL[lj].코드 === code) { 코드그대로 = true; 원줄 = LL[lj]; }
-        if (이름 && LL[lj].이름 === 이름) 이름그대로 = true;
+        /*  ★ 두 모양 다 본다 ★  보류 탭은 출력이름을 보여 주고,
+            원장은 품목명과 출력품목명을 둘 다 들고 있다. 어느 쪽과든 같으면
+            «사람이 안 고친 것»이다. (2026-10-01)  */
+        if (이름 && (LL[lj].이름 === 이름 || LL[lj].출력이름 === 이름)) 이름그대로 = true;
       }
       if (code && code !== 적힌원본 && !코드그대로) 새코드 = code;
       if (이름 && !이름그대로) 새이름 = 이름;
@@ -1000,7 +1017,7 @@ function ssm_captureManual(회차키) {
       if (줄들.length === 1) {
         원본 = 줄들[0].원본;
         새코드 = code;
-        if (이름 && 이름 !== 줄들[0].이름) 새이름 = 이름;
+        if (이름 && 이름 !== 줄들[0].이름 && 이름 !== 줄들[0].출력이름) 새이름 = 이름;
       } else {
         원본 = code;   // 예전 그대로 — 아래에서 키가 안 맞아 조용히 빠진다
         if (줄들.length > 1) {
@@ -1009,10 +1026,14 @@ function ssm_captureManual(회차키) {
       }
     } else {
       //  코드는 그대로고 이름만 고쳤을 수 있다
-      var 원이름 = '';
+      var 원이름 = '', 원출력이름 = '';
       var L0 = byUid[uid] || [];
-      for (var li2 = 0; li2 < L0.length; li2++) if (L0[li2].원본 === 원본) { 원이름 = L0[li2].이름; break; }
-      if (이름 && 원이름 && 이름 !== 원이름) 새이름 = 이름;
+      for (var li2 = 0; li2 < L0.length; li2++) {
+        if (L0[li2].원본 !== 원본) continue;
+        원이름 = L0[li2].이름; 원출력이름 = L0[li2].출력이름; break;
+      }
+      //  두 모양 다 본다 (2026-10-01) — 보류 탭은 출력이름을 보여 준다
+      if (이름 && 원이름 && 이름 !== 원이름 && 이름 !== 원출력이름) 새이름 = 이름;
     }
     //  메모에서 읽은 배송지 — 아무것도 못 읽었으면 넷 다 빈 값이다
     var 새주소 = 메모주소 ? ssText(메모주소.addr) : '';
@@ -1430,6 +1451,30 @@ function ssm_산간심기_() {
     Logger.log('[산간 심기] 실패: ' + String(e && e.message ? e.message : e));
     return 0;
   }
+}
+
+/**
+ * 로젠이 답해 준 도서·산간 표 — 지역키 → 판정.
+ *
+ * ★ 우리가 안 묻는다 ★ CS웹앱이 묻고 적는다(CS_WebApp/csLogenZoneCache.gs).
+ *   여기서 부르면 큰 회차(1,500줄)에서 10건씩 150번 — 6분 한도를 넘는다.
+ * ★ 표가 없어도 멎지 않는다 ★ 아직 안 만들어졌으면 빈 것으로 돈다. 여태와 같다.
+ *
+ * 머리글: 지역키 · 판정 · 제주 · 연륙도서 · 산간 · 표본주소 · 물은때
+ *   — csLogenZoneCache.gs 의 _ZC_HEADER_ 와 «같아야» 한다.
+ */
+function ssm_logenZoneRows() {
+  var out = {};
+  var body;
+  try { body = ssio_body(SSIO_TABS.로젠권역); }
+  catch (e) { return out; }          // 표가 아직 없다 — 여태처럼 돈다
+  for (var i = 0; i < body.length; i++) {
+    var key = ssText(body[i][0]);
+    var 판정 = ssText(body[i][1]);
+    if (!key || !판정) continue;
+    out[key] = 판정;                 // 제주 · 연륙도서 · 산간 · 일반
+  }
+  return out;
 }
 
 function ssm_ferryRows() {

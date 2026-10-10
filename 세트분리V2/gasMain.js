@@ -80,6 +80,7 @@ function onOpen() {
           쪼개기는 한 겹만 하므로, 더 나갔다면 BOM 자료가 그렇게 생긴 것이다. */
       .addItem('🔍 BOM 진단 (구성품이 몇 개 나가나)', 'ss_BOM진단')
       .addItem('🔎 같은 주문에 같은 품목이 두 줄', 'ss_중복품목진단')
+      .addItem('🧪 세트 이름 점검 (최근 7일 원장)', 'ss_세트점검')
       .addItem('합배송 진단', 'ss_합배송진단')
       .addItem('사방넷 진단 (저장 안 함)', 'ss_사방넷진단')
       .addItem('중복발주 의심 점검', 'ss_중복점검')
@@ -752,6 +753,20 @@ function ss_실행(opts) {
       sum.push(['대리발송품목으로 뺀 건', 예외글.join(' · ') +
         '  — 입고되면 「대리발송품목」 탭에서 그 줄을 지우세요']);
     }
+    /*  ★ 세트 이름 점검 — 원장에 적힌 «뒤» 한 번 더 ★  (2026-10-01)
+        9/28 뚜껑만 나간 사고는 코드가 맞아 아무 검사에도 안 걸렸다.
+        ssVerifySplit(내보내기 전)이 막고, 이것이 원장에서 다시 본다.
+        걸리면 실행요약 «맨 앞 쪽 ★★ 줄»과 「세트점검」 탭에 적는다. 곁다리다 — 터져도 실행은 산다. */
+    try {
+      var 세트점검 = ss_세트점검_({ 회차: runKey });
+      if (세트점검.탈수) {
+        sum.push(['★★ 세트 이름 겹침', 세트점검.탈수 + '주문 — 몸통·뚜껑이 같은 이름으로 나갔습니다. 「세트점검」 탭을 보세요']);
+      } else {
+        sum.push(['세트 이름 점검', 'OK — 쪼갠 세트 ' + 세트점검.본주문 + '주문']);
+      }
+    } catch (eAudit) {
+      sum.push(['세트 이름 점검', '못 돌림 — ' + String(eAudit && eAudit.message ? eAudit.message : eAudit).slice(0, 80)]);
+    }
     var 적용조치 = ssm_stampManual(res.units, runKey);
 
     단계 = ss단계_('중복 점검');
@@ -881,7 +896,21 @@ function ss_실행(opts) {
     for (var tg = 0; tg < 시계.length && tg < 3; tg++) {
       구간글 += '\n   ' + 시계[tg][0].replace('  · ', '') + ' ' + 시계[tg][1];
     }
-    var msg = '세트분리 완료 · ' + 총초.toFixed(1) + '초' +
+    /*  ★ 세트 이름 겹침은 완료 창 «맨 위»에 ★  (2026-10-01)
+        > "팝업창으로 뜨게는 안되나? 세트분리 실행, 완료되면.."
+        창을 하나 더 띄우면 두 번 닫아야 하고, 둘째 창은 결국 안 읽힌다.
+        이미 뜨는 완료 창의 첫 줄에 둔다. 없으면 한 줄로 «봤다»고만 말한다. */
+    var 세트글 = '';
+    if (세트점검 && 세트점검.탈수) {
+      세트글 = '⛔ 세트 몸통·뚜껑이 같은 이름으로 나갑니다 — ' + 세트점검.탈수 + '주문\n' +
+        세트점검.요약.slice(0, 8).join('\n') +
+        (세트점검.요약.length > 8 ? '\n   … 외 ' + (세트점검.요약.length - 8) + '주문' : '') +
+        '\n   창고는 이름을 보고 담습니다 — 출력 전에 「세트점검」 탭을 보세요.\n' +
+        '────────────────────────\n\n';
+    } else if (세트점검) {
+      세트글 = '✅ 세트 이름 점검 OK (쪼갠 세트 ' + 세트점검.본주문 + '주문)\n\n';
+    }
+    var msg = 세트글 + '세트분리 완료 · ' + 총초.toFixed(1) + '초' +
       (구간글 ? '   (오래 걸린 곳:' + 구간글 + ')' : '') + '\n' +
       '회차 ' + runKey + (회차.재실행 ? '  (재실행 — 원장 ' + 지운행 + '행 교체)' : '  (신규)') + '\n\n' +
       '입력 ' + res.stats.입력행 + '행 → 분해 ' + res.stats.분해행 + '행\n' +
@@ -900,7 +929,26 @@ function ss_실행(opts) {
       '경고 ' + res.warnings.length + '건' +
       (dup.cross ? '   ⚠ 회차간 중복의심 ' + dup.cross + '그룹' : '') + '\n' +
       '재고 기준 ' + (ssm_stampOf('재고') || '모름');
-    ssio_alert(msg +
+    /*  ★ 로젠택배_출력 탭도 같이 그린다 ★  (2026-10-06)
+
+        > "로젠택배 출력이 제일 중요한데 그게 안바뀌면 아무 의미가 없어"
+
+        이 탭이 실제로 로젠에 올리는 한 장이다. 여태 실행이 안 건드려서,
+        코드를 고치고 재실행해도 사람이 보는 것은 옛 내용 그대로였다.
+        곁다리라 실패해도 실행 결과는 그대로 둔다 — 다만 «조용히 실패»하지는
+        않는다. 못 그렸으면 알림에 적어서 사람이 직접 누를 수 있게 한다.      */
+    var 출력탭말 = '';
+    try {
+      var 사본결과 = ss_로젠출력탭(true);
+      출력탭말 = (사본결과 && 사본결과.ok)
+        ? '\n\n「' + SSIO_TABS.출력사본 + '」 탭도 이번 결과로 다시 그렸습니다 (' + 사본결과.행 + '행).'
+        : '\n\n※ 「' + SSIO_TABS.출력사본 + '」 탭에 실을 것이 없었습니다.';
+    } catch (e출력) {
+      출력탭말 = '\n\n★ 「' + SSIO_TABS.출력사본 + '」 탭을 못 그렸습니다: ' +
+        (e출력 && e출력.message ? e출력.message : e출력) +
+        '\n   「✅ 조치 적용」을 눌러 직접 그려 주세요.';
+    }
+    ssio_alert(msg + 출력탭말 +
       /*  막은 것이 있으면 «그것부터» 말한다. 보류 안내보다 앞이다 —
           판매현황에 지난 회차가 딸려왔다는 뜻이라 붙여넣기를 다시 봐야 한다. */
       (막은줄
@@ -1067,9 +1115,9 @@ function ss_섬입력꾸미기_(sh, rows) {
   sh.getRange(2, cA, last, 1).clearDataValidations();
   try {
     var rule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(['발송', '보류'], true)
+      .requireValueInList(['발송', '보류', '대리발송'], true)
       .setAllowInvalid(true)
-      .setHelpText('발송 = 도서산간에서 빼고 일반으로 보낸다 · 보류 = 보류(미발송)로 세운다')
+      .setHelpText('발송 = 도서산간에서 빼고 일반으로 보낸다 · 보류 = 보류(미발송)로 세운다 · 대리발송/업체코드 = 업체로 넘긴다(⚠대리발송 확인 줄)')
       .build();
     sh.getRange(2, cA, last, 1).setDataValidation(rule);
   } catch (e) {}
@@ -1079,6 +1127,10 @@ function ss_섬입력꾸미기_(sh, rows) {
     '              (추가운임은 못 받습니다 — 경고 탭에 금액이 적힙니다)' + String.fromCharCode(10) +
     '  보류        보류(미발송) 탭으로 세웁니다' + String.fromCharCode(10) +
     '  비워 둠     그대로 도서산간으로 나갑니다' + String.fromCharCode(10) + String.fromCharCode(10) +
+    '판정 칸에 「⚠대리발송 확인」이 붙은 줄은 업체가 보낼 물건입니다 (2026-10-02)' + String.fromCharCode(10) +
+    '  대리발송    기본 업체로 넘깁니다' + String.fromCharCode(10) +
+    '  업체코드    (BW 처럼) 그 업체로 넘깁니다' + String.fromCharCode(10) +
+    '  비워 두면 업체로 안 넘어갑니다' + String.fromCharCode(10) + String.fromCharCode(10) +
     '적은 뒤 메뉴 → ✅ 조치 적용.  적은 말은 다음 실행에도 남습니다.');
   sh.setColumnWidth(cA, 110);
 }
@@ -2311,6 +2363,48 @@ function ss_합배송진단() {
  *
  * cells: [{ 행: 0기준 원본 행번호, 값: 이름/ID }]
  */
+/**
+ * ★ 전화 칸은 «글자»로 쓴다 — 앞의 0 이 빠지지 않게 ★  (2026-10-08)
+ *
+ *   > "전화번호 앞에 0이 빠진거 안생기게 수정해줘"
+ *
+ *   이카운트에서 붙여넣으면 전화가 숫자(1062398832)로 들어오거나, 숫자에 «0 을
+ *   붙여 보이는» 서식만 씌워져 온다(화면엔 01062398832). getValues 는 숫자를 주고,
+ *   그걸 그대로 setValues 하면 서식 없는 칸에 1062398832 로 박힌다.
+ *   ssPhoneFix 로 0 을 붙인 «글자»로 바꾸고, 그 칸 서식을 글자(@)로 둔다 —
+ *   서식이 숫자면 시트가 "01062398832" 를 다시 숫자로 읽어 0 을 지운다.
+ *
+ *   세트분리 본체(ssNormalize)는 이미 ssPhoneFix 를 거쳐 송장에는 0 이 붙어 나갔다.
+ *   빠진 것은 사본 탭들(판매현황_고유아이디 · MMDD판매현황)뿐이다.
+ *
+ * @param head  머리글 한 줄(배열)
+ * @param rows  고칠 줄들(제자리에서 고친다)
+ * @return 전화 칸의 자리(0-기준) 목록 — 서식을 씌울 때 쓴다
+ */
+var SS_PHONE_COLS = ['전화', '모바일', '전화번호(사방넷)', '전화번호(주문서)'];
+function ss_전화칸고치기_(head, rows) {
+  var 자리 = [];
+  for (var h = 0; h < (head || []).length; h++) {
+    if (SS_PHONE_COLS.indexOf(ssText(head[h])) >= 0) 자리.push(h);
+  }
+  for (var r = 0; r < (rows || []).length; r++) {
+    for (var k = 0; k < 자리.length; k++) {
+      var v = rows[r][자리[k]];
+      if (v === '' || v == null) continue;
+      rows[r][자리[k]] = ssPhoneFix(typeof v === 'number' ? String(Math.round(v)) : v);
+    }
+  }
+  return 자리;
+}
+
+/** 전화 칸 서식을 글자(@)로 — setValues «전에» 불러야 한다 */
+function ss_전화칸글자서식_(sh, 자리, 첫행, 줄수) {
+  if (!sh || !자리 || !자리.length || 줄수 < 1) return;
+  for (var k = 0; k < 자리.length; k++) {
+    try { sh.getRange(첫행, 자리[k] + 1, 줄수, 1).setNumberFormat('@'); } catch (e) {}
+  }
+}
+
 function ss_판매현황아이디채움(cells) {
   /* ★ 2026-09-09: 붙여넣는 칸을 건드리지 않는다 ★
      > "맨앞텝(판매현황)에 판매현황을 복붙하고 … 판매현황_고유아이디 라는
@@ -2375,6 +2469,15 @@ function ss_판매현황아이디채움(cells) {
   ssio_clearBody(out);
   if (out.getMaxColumns() < width) out.insertColumnsAfter(out.getMaxColumns(), width - out.getMaxColumns());
   if (out.getMaxRows() < grid.length) out.insertRowsAfter(out.getMaxRows(), grid.length - out.getMaxRows() + 10);
+  //  전화 칸 앞의 0 — 머리글 줄을 찾아 그 아래만 고친다 (맨 위에 회사명 머리말이 붙어 온다)
+  var _머리찾음 = ssFindSalesHeader(grid);
+  if (_머리찾음) {
+    var _hr = _머리찾음.headerRow;
+    var _아래 = grid.slice(_hr + 1);
+    var _전화자리 = ss_전화칸고치기_(grid[_hr], _아래);
+    for (var _q = 0; _q < _아래.length; _q++) grid[_hr + 1 + _q] = _아래[_q];
+    ss_전화칸글자서식_(out, _전화자리, _hr + 2, grid.length - _hr - 1);
+  }
   out.getRange(1, 1, grid.length, width).setValues(grid);
   return n;
 }
@@ -2873,6 +2976,8 @@ function ss_그날판매현황쌓기(runKey) {
     return a1 < b1 ? -1 : a1 > b1 ? 1 : 0;
   });
   /*  겹친 줄을 거르고 회차별로 센다 — 규칙은 ss_그날겹침거르기_ 한 곳에 있다 */
+  //  전화 칸 앞의 0 — 옛 줄·새 줄 모두 같은 꼴로 맞춘 «뒤»에 겹침을 거른다(숫자/글자로 갈리면 다른 줄로 본다)
+  var _전화자리2 = ss_전화칸고치기_(head, all);
   var _거른_ = ss_그날겹침거르기_(all, head);
   all = _거른_.rows;
   var 겹쳐버림 = _거른_.버림;
@@ -2886,6 +2991,7 @@ function ss_그날판매현황쌓기(runKey) {
     if (sh.getMaxRows() < all.length + 1) {
       sh.insertRowsAfter(sh.getMaxRows(), all.length + 1 - sh.getMaxRows() + 10);
     }
+    ss_전화칸글자서식_(sh, _전화자리2, 2, all.length);
     sh.getRange(2, 1, all.length, head.length).setValues(all);
   }
   ssio_styleHeader(sh, head.length, { bg: '#2c4f6b' });
@@ -3870,4 +3976,86 @@ function ss_날짜키_(s) {
     return yy2 + '0' + d;
   }
   return '';
+}
+
+/* ══════════════════════════════════════════════════════════════
+ *  🧪 세트 이름 점검  (2026-10-01)
+ *
+ *  > "이걸 검증하는 시스템을 만들면 좋겠어"  "시트에서도 점검내용이 뜨게 해줘"
+ *
+ *  원장을 읽어 core.js ssAuditSetNames 에 넘기고, 걸린 것을 「세트점검」 탭에 적는다.
+ *  규칙은 거기 한 곳이다 — v2 날마다 점검도 같은 함수를 부른다.
+ *
+ *  · 세트분리를 돌릴 때마다 «그 회차»를 본다 (ss_실행 끝)
+ *  · 메뉴로 누르면 «최근 7일» 원장을 본다
+ *  읽기만 한다. 원장·출력 탭은 한 글자도 안 고친다.
+ * ══════════════════════════════════════════════════════════════ */
+var SS_SETAUDIT_HEADER = ['점검시각', '회차키', '순번', '받는분', '고유ID', '원본코드',
+  '구성품코드', '나간 이름', '경로', '겹친 이름'];
+
+function ss_세트점검() {
+  var r = ss_세트점검_({ 일수: 7 });
+  ssio_alert(r.탈수
+    ? '⚠ 세트 이름 겹침 ' + r.탈수 + '주문 (최근 7일 · 쪼갠 세트 ' + r.본주문 + '주문 중)' + String.fromCharCode(10, 10) +
+      r.요약.join(String.fromCharCode(10)) + String.fromCharCode(10, 10) + '「세트점검」 탭에 줄마다 적었습니다.'
+    : '✅ 세트 이름 점검 — 이상 없음' + String.fromCharCode(10, 10) +
+      '최근 7일 쪼갠 세트 ' + r.본주문 + '주문을 봤습니다.');
+}
+
+/** @param {{회차?:string, 일수?:number}} opt  회차를 주면 그 회차만, 아니면 최근 일수 */
+function ss_세트점검_(opt) {
+  opt = opt || {};
+  var sh = ssio_ss().getSheetByName(SSIO_TABS.원장);
+  var 결과 = { 본주문: 0, 탈수: 0, 요약: [] };
+  if (!sh || sh.getLastRow() < 2) return 결과;
+  var w = sh.getLastColumn();
+  var head = sh.getRange(1, 1, 1, w).getDisplayValues()[0];
+  //  쓸 칸까지만 읽는다 — 원장은 수천 줄 × 수십 칸이다
+  var 쓸칸 = ['회차키', '순번', '원본품목코드', '품목코드', '품목명', '출력품목명', '거래처명', '고유ID', '경로'];
+  var 끝 = 0;
+  for (var h = 0; h < head.length; h++) {
+    if (쓸칸.indexOf(ssText(head[h])) >= 0 && h + 1 > 끝) 끝 = h + 1;
+  }
+  if (!끝) return 결과;
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, 끝).getDisplayValues();
+  var head2 = head.slice(0, 끝);
+
+  var 회차들 = {};
+  if (opt.회차) {
+    회차들[opt.회차] = true;
+  } else {
+    var 일수 = opt.일수 || 7;
+    var 오늘 = new Date();
+    for (var d = 0; d < 일수; d++) {
+      var t = new Date(오늘.getTime() - d * 86400000);
+      회차들['__' + Utilities.formatDate(t, 'Asia/Seoul', 'yyMMdd')] = true;
+    }
+    var iRk = head2.indexOf('회차키');
+    for (var i = 0; i < rows.length; i++) {
+      var rk = ssText(rows[i][iRk]);
+      if (회차들['__' + rk.slice(0, 6)]) 회차들[rk] = true;
+    }
+  }
+  var a = ssAuditSetNames(rows, head2, { 회차들: 회차들 });
+  if (a.못봄) throw new Error(a.못봄);
+  결과.본주문 = a.본주문;
+  결과.탈수 = a.탈.length;
+
+  var now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm');
+  var 줄 = [];
+  for (var k = 0; k < a.탈.length; k++) {
+    var x = a.탈[k];
+    결과.요약.push('· ' + x.회차키 + ' 순번 ' + x.순번 + ' ' + x.받는분 + ' — ' + x.겹친이름[0].slice(0, 30));
+    for (var j = 0; j < x.줄들.length; j++) {
+      줄.push([now, x.회차키, x.순번, x.받는분, x.고유ID, x.원본코드,
+        x.줄들[j].코드, x.줄들[j].이름, x.줄들[j].경로, x.겹친이름.join(' / ')]);
+    }
+  }
+  if (!줄.length) {
+    줄.push([now, opt.회차 || ('최근 ' + (opt.일수 || 7) + '일'), '', '✅ 이상 없음', '',
+      '쪼갠 세트 ' + a.본주문 + '주문', '', '', '', '']);
+  }
+  ssio_write(SSIO_TABS.세트점검, SS_SETAUDIT_HEADER, 줄,
+    { bg: a.탈.length ? '#8b1a1a' : '#2c5f2d' });
+  return 결과;
 }

@@ -263,11 +263,11 @@ function _prv_scheduled_() {
       21:30 에 돌려도 되는 까닭: 구매입력변환 탭은 17:00 저녁 배치
       (runEveningPurchaseAndSync → _ecountPurchaseFromExclusive.gs)가 채우고,
       22:00·23:00 마감은 그 탭을 건드리지 않는다. 21:30 이면 그날 것이 다 있다. */
-  try {
-    if (typeof partnerMirrorPurchaseToV2 === "function") partnerMirrorPurchaseToV2();
-  } catch (e3) {
-    Logger.log("[구매입력미러] 예기치 못한 오류(무시): " + (e3 && e3.message ? e3.message : e3));
-  }
+
+  /*  ★ 2026-10-10: 구매입력은 여기서 빠졌다 — v2 가 30분마다 당긴다 ★
+      이 밀기는 HUB 파일을 열었는데 변환 탭은 상품정보시트에 있어서
+      9/9 부터 한 줄도 못 보냈다(「탭이 없습니다」를 삼켰다).
+      v2 lib/purchase-input.ts 가 상품정보시트를 직접 읽는다. 주인은 그쪽 하나다. */
 }
 
 /**

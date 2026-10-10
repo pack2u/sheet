@@ -1063,14 +1063,6 @@ function _pep_waitingTempRows_(rows, srcLc) {
   var 상태칸 = (typeof _PO_TEMP_STATUS_COL_ !== "undefined") ? _PO_TEMP_STATUS_COL_ : 24;
   var 송장칸 = (typeof _PO_TEMP_INV_COL_ !== "undefined") ? _PO_TEMP_INV_COL_ : 23;
 
-  //  태워도 되는 날 (오늘 포함 최근 N일) 의 MMDD
-  var 허용 = {};
-  for (var d = 0; d <= _PEP_WAIT_MAX_DAYS_; d++) {
-    var dt = new Date();
-    dt.setDate(dt.getDate() - d);
-    허용[Utilities.formatDate(dt, "Asia/Seoul", "MMdd")] = true;
-  }
-
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (String(r[상태칸] || "").trim() !== _PEP_TEMP_WAIT_) continue;
@@ -1080,23 +1072,8 @@ function _pep_waitingTempRows_(rows, srcLc) {
     var code = String(r[3] || "").trim();
     if (!uid || !code) continue;
 
-    var 도장 = String(r[1] || "").trim();
-    var mmdd = "";
-    for (var s = 0; s + 4 <= 도장.length; s++) {
-      var 조각 = 도장.substring(s, s + 4);
-      var 숫자만 = true;
-      for (var k = 0; k < 4; k++) {
-        var ch = 조각.charAt(k);
-        if (ch < "0" || ch > "9") { 숫자만 = false; break; }
-      }
-      if (숫자만) { mmdd = 조각; break; }
-    }
-    if (!mmdd || !허용[mmdd]) {
-      out.tooOld++;
-      if (out.examples.length < 3) out.examples.push(uid + " / " + code + " (도장 " + (도장 || "없음") + ")");
-      continue;
-    }
-
+    /*  ★ 날짜로 거르지 않는다 ★  (2026-10-06)
+        여기서 B열(순번)을 날짜로 읽어 거의 다 버리고 있었다. 위 설명을 보라. */
     var 태울줄 = r.slice(0, 22);
     while (태울줄.length < srcLc) 태울줄.push("");
     out.rows.push(태울줄);
@@ -1747,9 +1724,24 @@ var _PEP_LAST_PUSHED_KEYS_ = {};
 var _PEP_TEMP_WAIT_ = "발주대기";
 var _PEP_TEMP_DONE_ = "발주완료";
 
-/*  되살려 태우는 줄의 나이 한도. 너무 오래된 «발주대기»는 취소됐거나
-    바뀐 건일 수 있다 — 조용히 내보내지 않는다. */
-var _PEP_WAIT_MAX_DAYS_ = 3;
+/*  ★ 나이 한도를 없앴다 ★  (2026-10-06)
+
+    > "1은 발주 대기이면 무조건 푸시시 넘어가는게 맞고"
+
+    여태 «줄의 나이»를 B열에서 4자리 숫자를 뽑아 MMDD 로 읽었다.
+    그런데 B열은 「순번」이다 — 날짜가 아니다.
+      순번 100653 → 「1006」 → 우연히 오늘과 같아 태운다
+      순번 100752 → 「1007」 → 「너무 오래됐다」고 버린다
+      순번 101011 → 「1010」 → 버린다
+    순번 앞 네 자리가 우연히 오늘 날짜와 맞는 줄만 나갔다. 날짜가 맞는지가
+    아니라 «번호가 어쩌다 그렇게 생겼는지»로 갈린 것이다. 그 사이 발주대기
+    줄은 업체로 영영 안 나갔다 — 임시기록에는 남아 있는 채로.
+
+    한도 자체를 없앤다. 「발주대기」는 «아직 안 나갔다»는 뜻이고, 안 나간 것은
+    나가야 한다. 오래된 것이 걱정이면 임시기록에서 상태를 바꾸면 된다 —
+    기계가 날짜로 짐작해 조용히 버리는 것보다 그 편이 낫다.
+    (송장이 붙은 줄은 아래에서 여전히 거른다 — 그건 이미 나간 줄이다.)      */
+var _PEP_WAIT_MAX_DAYS_ = 0;   // 0 = 한도 없음
 
 /**
  * 임시기록 회차 배경색 — 한 번의 Push 가 넣은 행 전체가 같은 색이다.
@@ -1973,6 +1965,11 @@ var _PEP_RESUME_KINDS_ = [
   { fn: "_par_resume_", key: "_PAR_REFIX_CURSOR" },     // 일일마감 재매칭
   { fn: "_pea_continueResume_", key: "_PEA_RESUME_STATE" }, // 대리공급 마감
   { fn: "_pms_continueResume_", key: "_PMS_RESUME_STATE" }, // 월정산
+  /*  도서산간 판정 이어달리기 (2026-10-06 · _partnerIslandJudge.gs)
+      수집이 4분을 넘겨 판정을 건너뛸 때 걸린다. 깃발(_ISJ_CATCHUP_PENDING)을
+      걸 때 세우고 돌 때 지우므로, 위 「커서가 없으면 다 쓴 것」 규칙이
+      그대로 맞는다 — 살아 있는 것을 치우지 않는다.                    */
+  { fn: "partnerIslandCatchUp_", key: "_ISJ_CATCHUP_PENDING" },
 ];
 
 /** 지금 트리거가 몇 개인가 — 읽기만 한다 */
@@ -10681,7 +10678,7 @@ function _pep_deriveSnapOrderDate_(salesRow, salesHeaders, fallbackStr) {
 /** 합포장·소분 품목명 판별 (---/소분, 합포장 등) */
 function _pep_isCombinedPackItem_(itemName) {
   var s = String(itemName || "");
-  return /---\/\s*소분|---\/.*소분|\/소분|합포장|===합배송|---.*합포/.test(s);
+  return /---\/\s*소분|---\/.*소분|\/소분|합포장|===\s*(\d+\s*개\s*)?합배송|---.*합포/.test(s);
 }
 
 /** 일일마감 배치에 송장이 있는 실출고 행이 1건이라도 있는지 */

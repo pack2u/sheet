@@ -39,3 +39,6 @@ backup_*/
 # 서비스 계정 키 자리 (절대 커밋 금지)
 sa-key-temp.json
 *-key*.json
+
+# 로젠 중계기 설정 — 인증키가 들어간다. 견본(relay_config.sample.php)만 올린다
+_logen_relay/relay_config.php

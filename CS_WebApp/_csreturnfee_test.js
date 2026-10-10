@@ -107,8 +107,19 @@ eq("응답이 늦게 와도 안 덮는다",
    /그 사이 사람이 적었으면[\s\S]{0,120}return;/.test(html), true);
 eq("왜 그 금액인지 보여준다", html.indexOf('id="ledgerFeeWhy"') > -1, true);
 eq("표를 못 읽으면 그렇다고 말한다", html.indexOf("도선료 표를 못 읽어 박스비만") > -1, true);
-eq("기록에 실어 보낸다", /fee: document\.getElementById\('ledgerFee'\)/.test(html), true);
-eq("여러 건에도 실어 보낸다", /account: account, fee: fee,/.test(html), true);
+/*  ★ 「두 길이 갈라지지 않는가」가 구조로 풀렸다 ★  (2026-10-04)
+
+    전에는 단건과 여러건이 창을 «각자» 읽어, 여러건 쪽에 귀책·사유·상태가
+    빠져 있었다. 그래서 이 시험은 두 길에 fee 가 적혀 있는지 글자로 찾았다.
+    2026-10-01 에 ledgerModalCommon 한 곳으로 모았다 — 이제 글자를 찾을
+    자리가 없다. 찾을 것은 「한 곳인가」와 「두 길이 다 그 한 곳을 쓰는가」다.
+    글자를 쫓아 고치면 다음 다듬기에 또 깨진다.  */
+eq("창 값을 읽는 곳이 한 곳이다",
+   /function ledgerModalCommon\(\)/.test(html), true);
+eq("그 한 곳이 fee 를 담는다",
+   /function ledgerModalCommon\(\)[\s\S]*?fee: g\('ledgerFee'\)/.test(html), true);
+eq("단건·여러건 두 길이 다 그 한 곳을 쓴다",
+   (html.match(/ledgerModalCommon\(\)/g) || []).length >= 3, true);
 eq("임시저장에도 들어간다", /'ledgerPickup', 'ledgerFee'/.test(html), true);
 eq("주소가 없으면 그렇다고 말한다", html.indexOf("주소가 없어 자동 계산을 못 했습니다") > -1, true);
 

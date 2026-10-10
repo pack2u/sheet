@@ -1,0 +1,129 @@
+/**
+ * csLogenPickupCheck.gs 시험 — 「스캔 없음」과 「못 물음」을 가르는 자리.
+ *
+ * 왜 여기만 시험하나: 이 판정 하나가 헛경보의 갈림길이다.
+ *   못 물은 것을 「집하 안 됨」으로 읽으면 날마다 수백 건을 겁주게 되고,
+ *   집하 안 된 것을 「못 물음」으로 읽으면 박스가 창고에 남은 채 조용하다.
+ *   둘 다 로젠이 ok:false 로 주기 때문에 ok 로는 못 가린다.
+ *
+ * 돌리기:  node CS_WebApp/_pkc_test.js
+ */
+"use strict";
+const fs = require("fs");
+const path = require("path");
+
+const 소스 = fs.readFileSync(path.join(__dirname, "csLogenPickupCheck.gs"), "utf8");
+
+/*  _pkc_judge_ 만 꺼내 돈다. 시트·네트워크를 안 건드리는 함수라
+    통째로 흉내 낼 필요가 없다.                                          */
+const 시작 = 소스.indexOf("function _pkc_judge_");
+const 끝 = 소스.indexOf("/* ──", 시작);
+if (시작 < 0 || 끝 < 0) {
+  console.error("✘ _pkc_judge_ 를 못 찾았습니다 — 파일이 바뀌었으면 이 시험도 고쳐야 합니다");
+  process.exit(1);
+}
+// eslint-disable-next-line no-eval
+const _pkc_judge_ = eval(소스.slice(시작, 끝) + "\n_pkc_judge_");
+
+let 실패 = 0;
+function 같나(이름, 받은것, 바란것) {
+  if (받은것 === 바란것) { console.log("  ✔ " + 이름); return; }
+  console.log("  ✘ " + 이름 + " — 바란 것 「" + 바란것 + "」 받은 것 「" + 받은것 + "」");
+  실패++;
+}
+
+console.log("── 로젠이 「스캔 없음」으로 주는 꼴 (운영계 실응답) ──");
+/*  _cslogen_test.js FIXTURE_NODATA 와 같은 글. csLogenTrackMany 가
+    resultCd FALSE 를 걸러 error 에 resultMsg 를 담아 준다.              */
+같나("스캔정보가 없습니다",
+  _pkc_judge_({ ok: false, error: "화물추적 조회 결과 없음 - 스캔정보가 없습니다." }), "누락");
+같나("조회 결과 없음만 있을 때",
+  _pkc_judge_({ ok: false, error: "조회 결과 없음" }), "누락");
+/*  ★ 이 줄은 처음에 「누락」으로 적어 뒀다 — 틀렸다 ★  (2026-10-10)
+    csLogenTrackMany 는 응답에 안 실려 온 건을 묶음 끝에서
+      error: "응답에 없습니다 (" + r.json.sttsMsg + ")"   (csLogen.gs:743)
+    로 채우는데, 「스캔 없음」 응답의 top-level sttsMsg 가 바로 "처리결과 0건"
+    이다. 그래서 한 묶음이 빈 data 로 오면 그 10건이 통째로 이 글이 되고,
+    「처리결과 0건」을 누락으로 읽으면 ★묻는 데 실패한 10건이 「집하 안 된
+    10건」으로 카드에 올라간다★ — 피하려던 바로 그 헛경보다.
+    「로젠택배 API」 방이 짚어 줬다. 시험이 결함을 떠받치고 있었다.        */
+같나("응답에 없습니다 (처리결과 0건) — ★묶음이 실패한 것★",
+  _pkc_judge_({ ok: false, error: "응답에 없습니다 (처리결과 0건)" }), "못물음");
+/*  ★ 부름은 성공했는데 statNm 이 빈 꼴 ★ _logen_buildLast_ 가
+    「이력 없음」으로 채워 ok:true 로 준다. 이것도 집하 안 된 것이다.      */
+같나("ok 인데 이력 없음", _pkc_judge_({ ok: true, statusName: "이력 없음" }), "누락");
+같나("ok 인데 상태가 빈 칸", _pkc_judge_({ ok: true, statusName: "" }), "누락");
+
+console.log("── 걷어간 꼴 ──");
+같나("집하완료", _pkc_judge_({ ok: true, statusName: "집하완료" }), "스캔됨");
+같나("터미널출고", _pkc_judge_({ ok: true, statusName: "터미널출고" }), "스캔됨");
+같나("배송완료", _pkc_judge_({ ok: true, statusName: "배송완료" }), "스캔됨");
+/*  ★ 처음 보는 상태 이름 ★ 로젠은 통보 없이 단계를 늘릴 수 있다.
+    모르는 이름을 「집하 안 됨」으로 읽으면 이름이 하나 바뀌는 날
+    하루치가 통째로 겁주게 된다. 스캔이 찍혔으면 걷어간 것이다.           */
+같나("처음 보는 상태", _pkc_judge_({ ok: true, statusName: "간선상차" }), "스캔됨");
+
+console.log("── ★ 못 물은 꼴 — 겁주면 안 되는 자리 ★ ──");
+같나("시간 예산에 걸림",
+  _pkc_judge_({ ok: false, error: "한 번에 다 조회하지 못했습니다 — 나눠서 다시 눌러 주세요." }), "못물음");
+같나("하루 호출 한도",
+  _pkc_judge_({ ok: false, error: "일일 호출 한도(9000)에 도달했습니다." }), "못물음");
+같나("호출 실패", _pkc_judge_({ ok: false, error: "호출 실패: timeout" }), "못물음");
+같나("응답을 해석 못 함",
+  _pkc_judge_({ ok: false, error: "응답을 해석하지 못했습니다 (HTTP 502)" }), "못물음");
+같나("응답에 아예 없음", _pkc_judge_({ ok: false, error: "응답에 없습니다 ()" }), "못물음");
+/*  ★ 차례가 중요하다 ★ 「응답에 없습니다」 안에 누락 글자가 들어 있어도
+    못물음이 먼저다. 그 길은 정의상 못 물은 것이다.                       */
+같나("응답에 없습니다 안에 누락 글자가 있어도 못물음",
+  _pkc_judge_({ ok: false, error: "응답에 없습니다 (조회 결과 없음)" }), "못물음");
+같나("답이 없음", _pkc_judge_(undefined), "못물음");
+같나("까닭도 모름", _pkc_judge_({ ok: false }), "못물음");
+
+console.log("── 코호트·자리표가 출고 지연과 섞이지 않나 ──");
+const ost = fs.readFileSync(path.join(__dirname, "csLogenOutStale.gs"), "utf8");
+const 내자리 = (소스.match(/_PKC_SRCKEY_ = "([^"]+)"/) || [])[1];
+const 저자리 = (ost.match(/_OST_SRCKEY_ = "([^"]+)"/) || [])[1];
+같나("공지 자리표가 다르다", 내자리 !== 저자리 && !!내자리 && !!저자리, true);
+/*  머리말에 「OST_FOUND 와 섞지 않는다」고 적어 두었으므로 글에는 나온다.
+    ★ 실제로 그 칸을 «쓰는지»를 본다 ★ 섞이면 출고 지연 점검이 어디까지
+    봤는지를 서로 덮어 둘 다 헛돈다.                                      */
+같나("OST 속성을 안 건드린다", /(set|get)Property\s*\(\s*"OST_/.test(소스), false);
+같나("내 속성 이름을 쓴다", /_PKC_PROP_ = "PKC_STATE"/.test(소스), true);
+/*  ★ 오늘 회차를 집으면 안 된다 ★ 집하는 그날 저녁에 일어난다.
+    오늘 것을 물으면 하루치가 통째로 「집하 안 됨」으로 나온다.           */
+같나("오늘 회차를 뺀다", /m\[1\] >= 오늘/.test(소스), true);
+
+/* ── 1시간 일감의 «내 자리» ───────────────────────────────────────────
+     ★ 이 약속의 주인은 이 파일이다 ★  (2026-10-10)
+
+     처음에 「걸음이 늘면 _cspickupreq_test.js 가 울 테니 거기서 잡힌다」고
+     믿었다. 틀렸다 — 그 시험은 이렇게 돼 있다:
+         ok("★ 여섯 단계 모두", 걸음들.length >= 6);
+     여섯 «아래로 빠지는» 것만 잡는다. 새 단계를 붙이는 길을 막지 않으려고
+     일부러 그렇게 둔 것이라, 늘어나는 것도 사라지는 것도 안 잡는다.
+     「거기서 울 것」이라는 믿음으로 두면 조용히 지나간다.
+
+     그래서 내 약속은 내가 든다. 남의 파일을 읽어서 거는 것이라 그쪽이
+     이 두 줄을 깨면 여기서 울어야 맞다 — 그게 제대로 된 울타리다.
+     ([[one-value-one-owner]])                                          */
+console.log("── 1시간 일감에 내 걸음이 제자리에 있나 ──");
+const 일감소스 = fs.readFileSync(path.join(__dirname, "csPickupRequests.gs"), "utf8");
+const 일감 = 일감소스.slice(일감소스.indexOf("function csReturnHourlyJob"));
+
+같나("csLogenPickupCheck 를 부른다", 일감.indexOf("csLogenPickupCheck()") >= 0, true);
+같나('「집하점검」 걸음을 적는다', /_cpr_step_\(ss2, 걸음, "집하점검"/.test(일감), true);
+/*  ★ 예산 검문 «앞»이어야 한다 ★ 뒤에 두면 바쁜 날 조용히 접힌다.
+    고객은 송장번호를 받아 기다리는 중이라 내일 아침으로 밀 일이 아니다.    */
+같나("예산 검문 «앞»에 있다 (바쁜 날 접히지 않는다)",
+  일감.indexOf('"집하점검"') > 0 &&
+  일감.indexOf('"집하점검"') < 일감.indexOf("_cpr_overBudget_(시작)"), true);
+/*  출고 송장이 붙어야 추적할 것이 생긴다 — 그 뒤여야 한다 */
+같나("「출고송장」 뒤에 있다 (송장이 붙어야 물을 것이 생긴다)",
+  일감.indexOf('"출고송장"') > 0 &&
+  일감.indexOf('"출고송장"') < 일감.indexOf('"집하점검"'), true);
+/*  터져도 일감 전체가 죽지 않아야 한다 — 뒤쪽 단계가 같이 사라진다 */
+같나("try/catch 로 감싸 있다",
+  /try \{ var 집하 = csLogenPickupCheck\(\); [\s\S]{0,80}catch/.test(일감), true);
+
+console.log(실패 ? "\n✘ " + 실패 + "개 틀렸습니다" : "\n✔ 다 맞았습니다");
+process.exit(실패 ? 1 : 0);

@@ -8,6 +8,12 @@
       "port": 3000
     },
     {
+      "name": "cs-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["-e", "const h=require('http'),f=require('fs'),p=require('path');const R='D:/Pack2U_상품정보sheet/CS_WebApp';h.createServer((q,s)=>{const n=decodeURIComponent(q.url.split('?')[0]).replace(/^\\/+/,'')||'_preview_home.html';const fp=p.join(R,n);if(!fp.startsWith(p.normalize(R))||!f.existsSync(fp)){s.writeHead(404);return s.end('no')}s.writeHead(200,{'content-type':fp.endsWith('.html')?'text/html; charset=utf-8':'application/octet-stream'});f.createReadStream(fp).pipe(s)}).listen(3333)"],
+      "port": 3333
+    },
+    {
       "name": "매출분석",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

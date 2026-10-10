@@ -772,37 +772,26 @@ function _po_refreshAutofillBeforeCollect_(tab, priceMap, vendorName) {
     lHasF = !!String(tab.getRange("L1").getFormula() || "");
   } catch (_) {}
 
-  // ★ 2026-07-20 (3차): 수집 직전 D/L 스필 막힘 무음 해제 (2계층 백필 — 운영자 확정 무음 복원 정책)
-  //   수식은 있는데 헤더가 #REF!(복붙 값이 스필 차단)이면 해당 열 값만 걷어냄.
-  //   토스트·알림 없음. 수식 재주입 아님(수식은 살아있음) → "자동복구 순환" 문제와 무관.
+  // ★ 2026-10-05: D/L 이 아직 옛 스필이면 «줄마다 수식»으로 바꾼다 (업체가 쓴 값은 남긴다).
+  //   여태는 스필이 막히면(#REF!) 그 열을 통째로 지웠다 — 업체가 적은 품명·단가까지.
+  //   (_pt_ensureOrderRowFormulasDL_ 머리 주석)
   try {
-    if (dHasF || lHasF) {
-      var _spillClr_ = false;
-      if (dHasF && String(tab.getRange("D1").getDisplayValue() || "").indexOf("#REF") !== -1) {
-        var _dEnd_ = 500;
-        try {
-          var _dM_ = String(tab.getRange("D1").getFormula() || "").match(/C2:C(\d+)/);
-          if (_dM_) _dEnd_ = parseInt(_dM_[1], 10);
-        } catch (_) {}
-        tab.getRange(2, 4, _dEnd_ - 1, 1).clearContent();
-        _spillClr_ = true;
-      }
-      if (lHasF && String(tab.getRange("L1").getDisplayValue() || "").indexOf("#REF") !== -1) {
-        var _lEnd_ = 500;
-        try {
-          var _lM_ = String(tab.getRange("L1").getFormula() || "").match(/C2:C(\d+)/);
-          if (_lM_) _lEnd_ = parseInt(_lM_[1], 10);
-        } catch (_) {}
-        tab.getRange(2, 12, _lEnd_ - 1, 1).clearContent();
-        _spillClr_ = true;
-      }
-      if (_spillClr_) SpreadsheetApp.flush();
+    var _d1f_ = String(tab.getRange("D1").getFormula() || "");
+    var _l1f_ = String(tab.getRange("L1").getFormula() || "");
+    if (_d1f_.indexOf("ARRAYFORMULA") !== -1 || _l1f_.indexOf("ARRAYFORMULA") !== -1) {
+      var _safe_ = _pt_resolveViewerTabNameForOrderSpill(tab, null);
+      _pt_ensureOrderRowFormulasDL_(tab, "'" + _safe_.replace(/'/g, "''") + "'", 0);
+      SpreadsheetApp.flush();
+      dHasF = !!String(tab.getRange("D1").getFormula() || "");
+      lHasF = !!String(tab.getRange("L1").getFormula() || "");
     }
   } catch (_) {}
 
   // ★ 2026-07-17: B열(주문일자) 사전 채움 제거 — 수집 성공 행에만 수집일 기록
   var nRows = lr - 1;
   var block = tab.getRange(2, 1, nRows, 14).getValues();
+  //  ★ 2026-10-05 줄마다 수식을 값으로 굳히지 않게 — 안 바꾼 칸은 수식을 그대로 다시 쓴다
+  var fblock = tab.getRange(2, 1, nRows, 14).getFormulas();
   var filled = 0;
   var map = priceMap || {};
   var aCol = [], dCol = [], lCol = [];
@@ -837,9 +826,9 @@ function _po_refreshAutofillBeforeCollect_(tab, priceMap, vendorName) {
       }
     }
 
-    aCol.push([aVal]);
-    dCol.push([dVal]);
-    lCol.push([lVal]);
+    aCol.push([aVal === block[i][0] && fblock[i][0] ? fblock[i][0] : aVal]);
+    dCol.push([dVal === block[i][3] && fblock[i][3] ? fblock[i][3] : dVal]);
+    lCol.push([lVal === block[i][11] && fblock[i][11] ? fblock[i][11] : lVal]);
   }
 
   if (aChanged) tab.getRange(2, 1, nRows, 1).setValues(aCol);
@@ -2126,7 +2115,8 @@ function partnerFetchInvoices() {
       }
       if (_csUidCol < 0) _csUidCol = 16; // Q열 = 0-based 16 (구 시트)
       for (var _cr2 = 1; _cr2 < _csData.length; _cr2++) {
-        var _csUid = String(_csData[_cr2][_csUidCol] || "").trim();
+        //  쪼갠 세트가 대표면 P칸이 d0930000044_S1 이다 — 허브 C열은 맨 번호 (2026-09-30)
+        var _csUid = String(_csData[_cr2][_csUidCol] || "").trim().replace(/_S\d+$/, "");
         if (!_csUid) continue;
         combinedUidSet[_csUid] = true;
         if (_csGrpCol >= 0) {
@@ -2140,6 +2130,13 @@ function partnerFetchInvoices() {
           "개, UID " + Object.keys(combinedUidSet).length + "개 로드됨" +
           "  (이름칸 " + _csNameIdx + " · UID칸 " + _csUidCol + ")",
       );
+    }
+    /*  ★ 원장 읽기는 합배송 탭이 «비어도» 돈다 ★  (2026-09-30)
+        여태 이 아래가 「합배송 탭에 줄이 있으면」 블록 안에 있었다. 마지막 회차에
+        합포장이 0건이면(9/30 3차) 탭이 비어 원장을 아예 안 읽었고, 그래서 앞 차수의
+        합포장 48건과 「몸통만/뚜껑만」 적요가 통째로 빠졌다 — 바로 아래 주석이
+        막으려던 그 일이다. */
+    {
 
       /*  ══════════════════════════════════════════════════════════
           ★ 합배송은 «차수별»로 쌓인 원장에서도 읽는다 ★  (2026-09-15)
@@ -2288,7 +2285,11 @@ function partnerFetchInvoices() {
                     세트분리가 묶음 내용을 보고 가려 붙인다. 적힌 대로 옮긴다 —
                     여기서 하나로 뭉치면 창고가 박스를 어떻게 쌀지 알 수 없다. */
                 if (_out2.indexOf("===합포장") >= 0) _tails.push("합포장");
-                else if (_out2.indexOf("===합배송") >= 0) _tails.push("합배송");
+                else {
+                  //  「===2개 합배송」 — 같은 품목끼리 묶이면 건수가 끼어 온다 (2026-10-02)
+                  var _mBae = _out2.match(/===\s*(\d+\s*개\s*)?합배송/);
+                  if (_mBae) _tails.push(_mBae[1] ? _mBae[1].replace(/\s+/g, "") + " 합배송" : "합배송");
+                }
                 //  「---2개 합포장」·「---2개 합포장(완박스)」 — 뒤에 다른 꼬리가 안 붙는다
                 var _mHap = _out2.match(/---\s*(\d+\s*개\s*합포장[^-]*)/);
                 if (_mHap) _tails.push(_mHap[1].trim());
@@ -2629,6 +2630,14 @@ function partnerFetchInvoices() {
     var existingInv0 = String(hubData[r][13] || "").trim();
     if (_po_hasRealInvoice_(existingInv0)) {
       alreadyHas++;
+      /*  ★ 송장은 있는데 세트 적요만 비었으면 적요만 채운다 ★  (2026-09-30)
+          원장을 못 읽은 회차에 송장만 붙고 「몸통만/뚜껑만」이 빠진 줄이 있다.
+          송장·상태는 건드리지 않는다 — 적요 칸이 «비어 있을 때만». */
+      var _uidA = String(hubData[r][2] || "").trim();
+      if (_uidA && !String(hubData[r][12] || "").trim() && setDetailByUid[_uidA]) {
+        writeUpdates.push({ row: r + 2, inv: existingInv0, setDetail: setDetailByUid[_uidA],
+          status: "", writeInvoice: false, carrier: "" });
+      }
       continue;
     }
     if (isTerminalOrderStatus_(String(hubData[r][14] || ""))) continue;
@@ -3760,8 +3769,7 @@ function partnerPushInvoices() {
   var hubTab = _po_getHubTab();
   var lastRow = hubTab.getLastRow();
   if (lastRow <= 1) {
-    if (ui)
-      ui.alert("허브에 발주 데이터가 없습니다.\n먼저 발주 수집을 실행하세요.");
+    _po_pushNotice_(ui, "허브에 발주 데이터가 없습니다.\n먼저 발주 수집을 실행하세요.");
     return;
   }
 
@@ -3827,10 +3835,7 @@ function partnerPushInvoices() {
 
   var pendingCount = Object.keys(pendingByUid).length;
   if (pendingCount === 0) {
-    if (ui)
-      ui.alert(
-        "배포할 송장이 없습니다.\n허브 '송장번호' 열에 번호를 입력한 후 실행하세요.",
-      );
+    _po_pushNotice_(ui, "배포할 송장이 없습니다.\n허브 '송장번호' 열에 번호를 입력한 후 실행하세요.");
     return;
   }
 
@@ -4158,7 +4163,23 @@ function partnerPushInvoices() {
          : [])
     );
   } catch (eChat) {}
-  if (ui) ui.alert(msg);
+  _po_pushNotice_(ui, msg);
+}
+
+/*  ★ 송장 배포의 안내 창은 스크립트를 붙잡지 않는다 ★  (2026-10-01)
+    ui.alert 는 「확인」을 누를 때까지 실행을 멈춰 둔다. 9/30 17:47 배포는
+    78건을 4분 만에 다 쓰고도 창이 열린 채 30분을 기다려 «시간 초과»로 끝났다.
+    HTML 창은 띄우고 바로 끝난다 — 송장 수집 결과 창과 같은 방식이다.
+    배포의 세 창(데이터 없음 · 배포할 송장 없음 · 결과)이 모두 이것을 쓴다. */
+function _po_pushNotice_(ui, msg) {
+  if (!ui) return;
+  try {
+    var out = HtmlService.createHtmlOutput(
+      '<pre style="font:13px/1.5 sans-serif;white-space:pre-wrap;margin:0">' +
+        String(msg).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</pre>")
+      .setWidth(520).setHeight(360);
+    ui.showModalDialog(out, "📬 송장 배포");
+  } catch (eUi) {}
 }
 
 // ═══════════════════════════════════════════
@@ -4439,9 +4460,73 @@ function _po_collectSilentCore_(withSalesRebuild) {
   } catch (e) {
     try { Logger.log("[VOID_INVOICE_TRIGGER_ERR] " + String(e.message || e)); } catch (_) {}
   }
+  // ②-2 ★ 2026-10-05: 도서산간 추가배송비 — 판매현황 갱신 «앞»에 붙인다
+  //   > "발주 수집때 제주도서산간을 인식해서 건당..5000원.. 세트상품일경우 10000원"
+  //   세트분리(뉴) 원장이 도서산간으로 가른 주문에 금액을 넣으면, 바로 뒤 판매현황
+  //   갱신이 OUT00001 줄을 같이 올린다. 곁다리라 실패해도 수집은 그대로 간다.
+  //   ★ 먼저 «주소»로 본다 — 판매현황 전에, 대리판매 허브 주문만 (_partnerIslandJudge.gs)
+  //     > "판매현황전에 확인하자는거야..세트분리 전에 대리판매업체들것만.."
+  //     그 뒤 세트분리 원장으로 놓친 것을 받친다(이미 올라간 옛 줄).
+  //   ★ 시간 예산: 수집이 이미 4분을 썼으면 건너뛴다 — 6분에 끊기면 뒤의 판매현황 갱신이
+  //     통째로 빠진다. 건너뛴 줄은 판정 칸이 비어 있으니 다음 회차나 판매현황 갱신
+  //     (그 앞에서도 판정한다)이 받는다.
+  //  판매현황 갱신을 이어달리기로 넘겼나 — 아래 ③이 이 값을 본다
+  var 판매현황_미룸 = false;
+  var _islElapsed_ = new Date() - startTime;
+  if (_islElapsed_ > 240000) {
+    /*  ★ 건너뛰고 «끝내지» 않는다 ★  (2026-10-06)
+
+        > "상품정보시트 발주 수집시 자동으로 도서산간이 안먹은거 같은데"
+
+        2026-10-06 09:30 회차가 09:35:58 에 끝났다 — 약 6분. 그래서 여기서
+        건너뛰었고, 101줄이 판정 없이 남았다.
+        받침도 없었다 — 자동 판매현황 갱신(silent)은 「바로 앞에서 이미
+        했다」고 보고 판정을 안 한다. 그러니 수집이 늘 4분을 넘기는 동안은
+        «자동으로는 영영» 안 붙었다. 사람이 메뉴를 눌러야만 붙었고,
+        그걸 아무도 모른다 — 오류가 아니라 «안 붙는» 것이라서.
+
+        그래서 일회성 트리거로 이어달린다. 판정만 제 6분을 가지고 돈다.  */
+    var _돌릴말 = "[ISLAND] 수집이 " + Math.round(_islElapsed_ / 1000) +
+      "초를 써서 도서산간 판정을 이번 회차엔 건너뜁니다";
+    var _이어 = { ok: false, why: "이어달리기 함수가 없습니다" };
+    try {
+      /*  ★ 판매현황 갱신도 «같이» 미룬다 ★  (2026-10-06)
+
+          > "발주 수집시 도서산간 확인이 일시 중지되고 판매현황입력으로 넘어가 버리는데"
+
+          그대로 두면 순서가 뒤집힌다 — 판정은 90초 뒤, 판매현황은 지금.
+          판매현황이 먼저 돌면 허브 P열(이카운트업로드)이 채워지고,
+          판정은 P열이 찬 줄을 건너뛴다. 그 줄의 도서산간 금액은 영영 안 붙고
+          OUT00001 줄도 안 올라간다 — 「들어가는 게 있고 없고」의 까닭이다.   */
+      if (typeof _isj_scheduleCatchUp_ === "function") _이어 = _isj_scheduleCatchUp_(null, !!withSalesRebuild);
+    } catch (eSch) { _이어 = { ok: false, why: String(eSch.message || eSch) }; }
+    //  이어달리기를 «걸었을 때만» 판매현황을 미룬다. 못 걸었으면 여태처럼 지금 돌린다 —
+    //  도서산간은 빠지더라도 판매현황이 통째로 빠지는 쪽이 더 나쁘다.
+    if (_이어.ok && withSalesRebuild) 판매현황_미룸 = true;
+    Logger.log(_돌릴말 + (_이어.ok
+      ? (판매현황_미룸
+          ? " — 90초 뒤에 판정 → 원장 받침 → 판매현황 갱신 차례로 돕니다 (partnerIslandCatchUp_)"
+          : " — 90초 뒤에 판정만 따로 돕니다 (partnerIslandCatchUp_)")
+      : " — ★ 이어달리기도 못 걸었습니다: " + _이어.why + " ★"));
+  } else {
+    try {
+      if (typeof _island_judgeHubByAddress_ === "function") _island_judgeHubByAddress_();
+    } catch (eJdg) {
+      try { Logger.log("[ISLAND_JUDGE_ERR] " + String(eJdg.message || eJdg)); } catch (_) {}
+    }
+    if (new Date() - startTime < 270000) {
+      try {
+        if (typeof _trigger_islandShipping_ === "function") _trigger_islandShipping_();
+      } catch (eIsl) {
+        try { Logger.log("[ISLAND_AFTER_COLLECT_ERR] " + String(eIsl.message || eIsl)); } catch (_) {}
+      }
+    }
+  }
   // ③ ★ 2026-07-02: 판매현황 갱신 (발주수집 후 자동 실행)
   //    ★ 2026-09-17: 오후 1시 회차에서만 돈다 (partnerCollectOrdersSilent_)
-  if (!withSalesRebuild) {
+  if (판매현황_미룸) {
+    Logger.log("[SALES_REFRESH] 도서산간 판정을 미뤘으므로 판매현황 갱신도 이어달리기에 맡깁니다");
+  } else if (!withSalesRebuild) {
     Logger.log("[SALES_REFRESH] 이 회차는 판매현황을 안 건드립니다 (오후 1시에만 갱신)");
   } else {
     try {
@@ -4733,6 +4818,17 @@ function partnerRebuildSalesUploadSheet(silent) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) return;
 
+  // ★ 2026-10-05 판매현황 «전에» 도서산간 주소 판정 — 손으로 갱신해도 OUT00001 이 빠지지 않게.
+  //   자동 회차(silent)는 _po_collectSilentCore_ 가 바로 앞에서 시간 예산을 보고 이미 했다 —
+  //   여기서 또 하면 그 예산이 무너진다. 손으로 누를 때만 한다.
+  if (!silent) {
+    try {
+      if (typeof _island_judgeHubByAddress_ === "function") _island_judgeHubByAddress_();
+    } catch (eIsl) {
+      Logger.log("[도서산간 판정] 판매현황 앞 실행 실패(무시): " + eIsl.message);
+    }
+  }
+
   var lock = LockService.getDocumentLock();
   if (!lock.tryLock(45000)) {
     if (ui) {
@@ -4781,6 +4877,33 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
     .getRange(2, 1, hubLr - 1, 16)
     .getValues();
 
+  // 1-2) ★ 2026-10-05 도서산간 OUT00001 — 금액 칸과 «따로 두는» 완료 칸 (_partnerIslandSales.gs)
+  var islFeeVals = null, islFlagVals = null, islFlagCol = 0, islUpdates = [];
+  try {
+    var hubHdr = hubTab.getRange(1, 1, 1, hubTab.getLastColumn()).getDisplayValues()[0];
+    var islFeeCol = typeof _island_findFeeCol1_ === "function" ? _island_findFeeCol1_(hubHdr) : 0;
+    if (islFeeCol > 0 && typeof _po_islandSaleLine_ === "function") {
+      islFeeVals = hubTab.getRange(2, islFeeCol, hubLr - 1, 1).getValues();
+      islFlagCol = _po_islandFlagCol_(hubTab, hubHdr);
+      islFlagVals = hubTab.getRange(2, islFlagCol, hubLr - 1, 1).getValues();
+      //  처음 만든 날 한 번: 이미 올라간 옛 도서산간 줄은 「도입 전」으로 막는다
+      if (_po_islandFlagCol_.만듦) {
+        var 막음 = _po_islandSeedFlags_(hubData, islFeeVals, islFlagVals);
+        if (막음) hubTab.getRange(2, islFlagCol, islFlagVals.length, 1).setValues(islFlagVals);
+        Logger.log("[도서산간 판매] 「" + _PO_ISLAND_FLAG_HEADER_ + "」 칸을 만들고 도입 전 줄 " + 막음 + "개를 막았습니다");
+      }
+    }
+  } catch (eIsl) {
+    Logger.log("[도서산간 판매] 준비 실패 — 이번엔 도서산간 줄 없이 갑니다: " + eIsl.message);
+    islFeeVals = null;
+  }
+  function _islNeed_(r) {
+    if (!islFeeVals || !islFlagVals) return 0;
+    var fee = Number(islFeeVals[r][0]) || 0;
+    if (fee <= 0 || String(islFlagVals[r][0] || "").trim()) return 0;
+    return fee;
+  }
+
   // 2) 업체→거래처코드 매핑 구축
   var vendorMap = _po_buildVendorCustCdMap_();
 
@@ -4827,6 +4950,15 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
 
     // 이미 판매갱신 업 완료된 건 제외 (기존 "이카운트 업 완료", "판매현황 업 완료"도 호환)
     if (ecountUpRaw === "판매갱신 업 완료" || ecountUpRaw === "이카운트 업 완료" || ecountUpRaw === "판매현황 업 완료") {
+      //  ★ 2026-10-05 본 주문은 이미 올라갔어도, 그 뒤에 붙은 도서산간비는 올린다
+      var islFeeLate = _islNeed_(r);
+      if (islFeeLate && !_po_islandCancelLike_(stCompact)) {
+        var custCdLate = _po_resolveVendorCustCd_(String(row[1] || "").trim(), vendorMap);
+        if (custCdLate) {
+          out.push(_po_islandSaleLine_(row, islFeeLate, custCdLate, _shipYmd_, colCount));
+          islUpdates.push(r);
+        }
+      }
       skipCount++;
       _po_countReason_(skipReasons, "이미 판매갱신 업됨");
       continue;
@@ -4961,6 +5093,13 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
     out.push(line);
     // 반영 완료 목록에 현재 행 번호 기록 (2부터 시작하므로 r + 2)
     hubPUpdates.push(r + 2);
+
+    //  ★ 2026-10-05 도서산간비가 이미 붙어 있으면 본 주문 바로 아래에 OUT00001
+    var islFeeNow = _islNeed_(r);
+    if (islFeeNow) {
+      out.push(_po_islandSaleLine_(row, islFeeNow, custCd, _shipYmd_, colCount));
+      islUpdates.push(r);
+    }
   }
 
   // 5) 시트 생성/갱신 (전량 덮어쓰기 + 잔여 행 정리)
@@ -4977,6 +5116,13 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
       }
     }
     hubTab.getRange(2, 16, hubData.length, 1).setValues(pColVals);
+    SpreadsheetApp.flush();
+  }
+
+  // 5-2b) ★ 2026-10-05 도서산간 줄을 올린 행 — 「도서산간 판매갱신」 칸에 완료
+  if (islUpdates.length > 0 && islFlagCol > 0 && islFlagVals) {
+    for (var iu = 0; iu < islUpdates.length; iu++) islFlagVals[islUpdates[iu]][0] = _PO_ISLAND_FLAG_DONE_;
+    hubTab.getRange(2, islFlagCol, islFlagVals.length, 1).setValues(islFlagVals);
     SpreadsheetApp.flush();
   }
 
@@ -5010,7 +5156,9 @@ function partnerRebuildSalesUploadSheetCore_(ss, ui, silent) {
     "\n" +
     "- 반영: " +
     out.length +
-    "건\n" +
+    "건" +
+    (islUpdates.length ? " (그중 도서산간 OUT00001 " + islUpdates.length + "줄)" : "") +
+    "\n" +
     "- 스킵: " +
     skipCount +
     "건\n" +
@@ -5898,20 +6046,66 @@ function _po_addSabangBulkRowCoded_(rows, seen, orderNo, invCell, code, result) 
   code = String(code || "").trim();
   if (!orderNo || !code) return 0;
   if (_po_isGeneratedUid_(orderNo)) return 0;
-  var invs = String(invCell || "").split(/[\r\n,;]+/);
+  if (!_po_hasRealInvoice_(invCell)) return 0;
+  var 장들 = _po_parseInvCell_(invCell);
   var added = 0;
-  for (var k = 0; k < invs.length; k++) {
-    var inv = String(invs[k] || "").trim();
-    if (!inv || !_po_hasRealInvoice_(inv)) continue;
-    if (/운송장|송장번호/.test(inv.replace(/\s/g, ""))) continue;
+  for (var k = 0; k < 장들.length; k++) {
+    var inv = 장들[k].inv;
+    //  칸에 적힌 택배사 이름이 업체 기본 택배사를 이긴다 — 한 칸에 로젠·한진을 섞어 적는다
+    var c2 = 장들[k].code || code;
     var key = orderNo + "|" + inv;
     if (seen[key]) continue;
     seen[key] = true;
-    rows.push([orderNo, inv, "", "", code]);
-    result.byCode[code] = (result.byCode[code] || 0) + 1;
+    rows.push([orderNo, inv, "", "", c2]);
+    result.byCode[c2] = (result.byCode[c2] || 0) + 1;
     added++;
   }
   return added;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 송장 칸 한 곳을 «송장 장들»로 읽는다 ★  (2026-10-08)
+   세트분리V2/gasBulk.js 의 ssb_parseInvCell 과 «같은 규칙»이다. 한쪽만 고치면
+   두 대량등록이 다른 파일을 낸다 — 고칠 때는 둘 다.
+
+   업체가 이렇게 적어 온다 (HU 후아코리아, 2166790682):
+     로젠 45322906930 / 6926 / 6915   한진 4634-7219-8195 / 8206 / 8210
+   여태는 줄바꿈·쉼표로만 잘라 「로젠」·「한진」·「6926」 까지 송장으로 올렸고,
+   한진 송장에 업체 기본 코드(로젠 007)가 붙었다.
+
+     택배사 이름    다음 번호들의 택배사 (로젠 007 · 롯데 002 · 한진 004 · CJ/대한통운 001 · 대신 037)
+     9자리 이상     온전한 송장
+     2~6자리        바로 앞 송장의 뒷자리를 줄여 적은 것 → 앞 송장 끝을 갈아 끼운다
+     그 밖의 글자   송장이 아니다
+   ══════════════════════════════════════════════════════════════ */
+var _PO_CARRIER_WORDS_ = [
+  { re: /로젠/, code: "007" }, { re: /롯데/, code: "002" }, { re: /한진/, code: "004" },
+  { re: /CJ|씨제이|대한통운/i, code: "001" }, { re: /대신/, code: "037" }
+];
+function _po_parseInvCell_(cell) {
+  //  띄어 적은 한 장(453 1748 8473)은 먼저 잇는다 — 공백도 자르는 자리라 안 이으면 조각난다
+  var 글 = String(cell == null ? "" : cell).replace(/(^|[^0-9])(\d{3,4}) (\d{3,4}) (\d{4})(?![0-9])/g, "$1$2-$3-$4");
+  var parts = 글.split(/[\r\n\s,;\/|]+/);
+  var out = [], 지금코드 = "", 앞 = "";
+  for (var i = 0; i < parts.length; i++) {
+    var p = String(parts[i] || "").trim();
+    if (!p) continue;
+    var 낱 = false;
+    for (var w = 0; w < _PO_CARRIER_WORDS_.length; w++) {
+      if (_PO_CARRIER_WORDS_[w].re.test(p)) { 지금코드 = _PO_CARRIER_WORDS_[w].code; 앞 = ""; 낱 = true; break; }
+    }
+    var 숫 = p.replace(/^[^0-9]+/, "");
+    if (낱 && !숫) continue;
+    if (!/^[0-9\-]+$/.test(숫)) continue;
+    var d = 숫.replace(/-/g, "");
+    if (d.length >= 9) {
+      out.push({ inv: 숫, code: 지금코드 });
+      앞 = d;
+    } else if (d.length >= 2 && 앞 && 앞.length > d.length) {
+      out.push({ inv: 앞.slice(0, 앞.length - d.length) + d, code: 지금코드 });
+    }
+  }
+  return out;
 }
 
 /**
@@ -6224,6 +6418,32 @@ function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
       scannedLogs.push("[사방넷대량등록] 세트분리(뉴) 보강 건너뜀: " + String(eV2.message || eV2));
     }
 
+    /*  ★ 주문번호당 «첫 장» 한 줄만 ★  (2026-10-09)
+        > "허브도 첫 장만 적게 맞춰줘"
+        사방넷은 주문번호당 송장 하나만 받는다. 두 줄이면 그 주문을 안 받는다.
+        세트분리(뉴) gasBulk.js 의 ssb_addRows 는 이미 첫 장만 적는다 — 허브만
+        박스마다 한 줄씩 적어 같은 날 파일 둘이 달랐다(10/08 허브 373주문 여러 줄).
+        rows 는 원천 우선순위 차례로 쌓였으므로 «처음 것»이 대표다.
+        원장·일일마감에는 모든 장이 그대로 남는다. 여기만 줄인다. */
+    var _첫장만_ = [], _본주문_ = {};
+    result.skipMultiBox = 0;
+    for (var _ri = 0; _ri < rows.length; _ri++) {
+      var _ord = String(rows[_ri][0] || "").trim();
+      if (_본주문_[_ord]) { result.skipMultiBox++; continue; }
+      _본주문_[_ord] = true;
+      _첫장만_.push(rows[_ri]);
+    }
+    rows = _첫장만_;
+    //  화면의 「코드별 n건」도 남은 줄로 다시 센다 — 줄이기 전 숫자를 보이면 파일과 안 맞는다
+    result.byCode = {};
+    for (var _rc = 0; _rc < rows.length; _rc++) {
+      var _cd = String(rows[_rc][4] || "");
+      result.byCode[_cd] = (result.byCode[_cd] || 0) + 1;
+    }
+    if (result.skipMultiBox) {
+      scannedLogs.push("[사방넷대량등록] 한 주문 여러 장 → 첫 장만: " + result.skipMultiBox + "장 뺌");
+    }
+
     if (tab.getLastRow() >= 2) {
       tab.getRange(2, 1, tab.getLastRow() - 1, 5).clearContent();
     }
@@ -6286,7 +6506,7 @@ function partnerRebuildSabangnetBulkUpload() {
   var result = _po_rebuildSabangnetBulkUpload_(hubData, logs);
   var codeLines = [];
   if (result.byCode) {
-    var names = { "001": "대한통운", "002": "롯데", "007": "로젠", "037": "대신택배" };
+    var names = { "001": "대한통운", "002": "롯데", "004": "한진", "007": "로젠", "037": "대신택배" };
     for (var c in result.byCode) {
       if (!result.byCode.hasOwnProperty(c)) continue;
       codeLines.push("  " + c + "(" + (names[c] || "") + "): " + result.byCode[c] + "건");
@@ -6308,6 +6528,7 @@ function partnerRebuildSabangnetBulkUpload() {
     ((result.ledger || 0) ? " + 송장원장 " + result.ledger + "건" : "") +
     "\n" +
     (codeLines.length ? codeLines.join("\n") + "\n" : "") +
+    (result.skipMultiBox ? "한 주문 여러 장 → 첫 장만 (사방넷은 주문당 한 장): " + result.skipMultiBox + "장 뺌\n" : "") +
     (result.skipGen ? "생성UID(사방넷번호 아님) 제외: " + result.skipGen + "건\n" : "") +
     (result.skipNoCode ? "택배사코드 미지정: " + result.skipNoCode + "건\n" : "") +
     (result.skipOldArch ? "보관·원장에서 15일 넘은 건 제외: " + result.skipOldArch + "건\n" : "") +

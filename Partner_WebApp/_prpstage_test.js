@@ -33,8 +33,23 @@ function 꺼내기(src, 이름) {
   }
   throw new Error(이름 + " 끝 못 찾음");
 }
-eval(꺼내기(fs.readFileSync(곳("CS_WebApp/csOrderSearch.gs"), "utf8"), "_cs_returnStage_"));
-eval(꺼내기(fs.readFileSync(곳("Partner_WebApp/portal.html"), "utf8"), "stepIndex"));
+/*  ★ 혼자 안 돈다 ★ _cs_returnStage_ 는 helper 셋을 부른다. 그것까지
+    떠내지 않으면 ReferenceError 로 터지고, 시험이 아예 안 돌았다
+    (2026-10-04 에 발견 — 「_cs_stageWord_ is not defined」).
+    helper 가 더 늘면 여기도 늘려야 한다 — 늘지 않으면 또 터져서 바로 안다. */
+var csSrc = fs.readFileSync(곳("CS_WebApp/csOrderSearch.gs"), "utf8");
+/*  ★ eval 은 «여기서» 불러야 한다 ★ forEach 안에서 부르면 그 함수
+    안에만 만들어지고 바깥에서는 안 보인다 — 그렇게 한 번 헛고쳤다.  */
+eval(꺼내기(csSrc, "_cs_stageWord_"));
+eval(꺼내기(csSrc, "_cs_timelineLastKey_"));
+eval(꺼내기(csSrc, "_cs_stageFromTimeline_"));
+eval(꺼내기(csSrc, "_cs_returnStage_"));
+/*  포털 쪽도 혼자 안 돈다 — stepIndex 가 stageWord 를 부른다. */
+var ptSrc = fs.readFileSync(곳("Partner_WebApp/portal.html"), "utf8");
+eval(꺼내기(ptSrc, "stageWord"));
+eval(꺼내기(ptSrc, "evKey"));
+eval(꺼내기(ptSrc, "stageFromTimeline"));
+eval(꺼내기(ptSrc, "stepIndex"));
 
 /* CS 는 active(진행중) 를, 포털은 done(완료) 를 받는다 — 서로 반대다 */
 function 대장완료(s) {

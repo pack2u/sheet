@@ -86,10 +86,19 @@ console.log("\n[4] ★ 스무 자리를 넘기지 않는다");
 console.log("\n[5] 낮·밤 두 번 돈다");
 {
   const web = fs.readFileSync("_partnerWebApp.gs", "utf8");
+  /*  ★ 글자 사이 «거리»가 아니라 «함수 몸통 안에 있는가»를 본다  (2026-10-07 고침)
+      여태 /A[\s\S]{0,300}B/ 로 재다가, 사이에 주석이 늘어 361자가 되면서 울었다.
+      지켜야 할 것은 「이 두 자리가 미러 트리거를 챙긴다」지, 둘이 몇 자 떨어졌나가 아니다. */
+  function 몸통(이름) {
+    var at = web.indexOf("function " + 이름 + "() {");
+    if (at < 0) return "";
+    var end = web.indexOf("\n}", at);
+    return end < 0 ? web.slice(at) : web.slice(at, end);
+  }
   check("낮(12:30 묶음)에서 부른다",
-    /_trigger_syncDb_[\s\S]{0,400}_pt_ensureMirrorTriggers_\(\)/.test(web), true);
+    몸통("_trigger_syncDb_").indexOf("_pt_ensureMirrorTriggers_()") >= 0, true);
   check("밤(20:00 마감)에서도 부른다",
-    /_pep_unifiedDailyArchiveScheduled_[\s\S]{0,300}_pt_ensureMirrorTriggers_\(\)/.test(web), true);
+    몸통("_pep_unifiedDailyArchiveScheduled_").indexOf("_pt_ensureMirrorTriggers_()") >= 0, true);
 }
 
 console.log("");

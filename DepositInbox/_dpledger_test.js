@@ -564,7 +564,7 @@ console.log('\n[이중 입금 — 손으로 이미 넣은 것 · 시작 전 입�
   ok('시작 전 입금은 안 넘긴다 (손으로 처리했을 수 있다)', r.results[0].outcome === '건너뜀' && ecCalls.length === 0, JSON.stringify(r));
 
   const mk = cs({ action: 'mark_manual', key: keyOf('박병'), by: '고윤서' });
-  ok('「이미 이카운트에 넣었음」 → 반영완료 · 전표 「손으로」', mk.ok && rowOf('박병')[col('상태')] === '반영완료' && rowOf('박병')[col('전표번호')] === '손으로');
+  ok('「✔ 판매 전환 완료」 → 반영완료 · 전표 「판매전환」 (A안)', mk.ok && rowOf('박병')[col('상태')] === '반영완료' && rowOf('박병')[col('전표번호')] === '판매전환');
   r = cs({ action: 'post', keys: [keyOf('박병')] });
   ok('손으로 넣은 입금은 시스템이 또 안 넘긴다', r.results[0].outcome === '건너뜀' && ecCalls.length === 0, JSON.stringify(r));
   r = cs({ action: 'post', keys: [keyOf('이을')] });
@@ -697,6 +697,40 @@ console.log('\n[V2 미러]');
   const res = post({ token: 'tok', action: 'sms', body: SMS2 });
   ok('V2 가 죽어도 수신은 성공', res.ok === true && rows.length === 3);
   ok('V2 가 죽어도 챗 알림은 간다', chats.length === 2, chats.length);
+}
+
+console.log('\n[A안 — 「✔ 판매 전환 완료」 (2026-10-10)]');
+{
+  const { ctx, post, rows } = makeEnv();
+  ctx.DP_ECOUNT_PAUSED_ = true;          // 운영 그대로: 일반전표 자동 입력은 정지
+  ctx.DP_CS_TOKEN = 'cstok';
+  const cs = (o) => ctx.doPost({ parameter: {}, postData: { type: 'application/json', contents: JSON.stringify(Object.assign({ token: 'cstok' }, o)) } });
+  const now = new Date(); const p2 = (n) => String(n).padStart(2, '0');
+  const T = now.getFullYear() + '/' + p2(now.getMonth() + 1) + '/' + p2(now.getDate());
+  cs({ action: 'orders_upload', rows: [['회사명'], ['주문번호', '거래처명', '거래처코드', '금액'],
+    [T + ' -1', '가게갑 김갑', 'A1', '10,000'], [T + ' -2', '가게을 이을', 'B1', '20,000'], [T + ' (화) 오전 8:00:00']] });
+  let bal = 300000;
+  const sms = (hhmm, name, amount) => { bal += amount;
+    return `[Web발신]\n${T}\n${hhmm}\n입금 ${amount.toLocaleString()}원\n잔액 ${bal.toLocaleString()}원\n${name}\n458***12345678\n기업`; };
+  post({ token: 'tok', action: 'sms', body: sms('10:00', '김갑', 10000) });   // ✅ 일치
+  post({ token: 'tok', action: 'sms', body: sms('10:05', '이을', 25000) });   // 🟡 초과
+  const col = (h) => rows[0].indexOf(h);
+  const rowOf = (n) => rows.find((r) => r[col('입금자')] === n);
+  const keyOf = (n) => rowOf(n)[col('고유번호')];
+
+  let d = cs({ action: 'detail', key: keyOf('김갑') });
+  ok('정지 중에도 ✅ 입금은 「판매 전환 완료」 를 누를 수 있다', d.deposit.canMarkManual === true && d.deposit.postOn === false);   // 반영 버튼은 canPost && postOn 일 때만 — postOn 이 꺼져 있다
+  d = cs({ action: 'detail', key: keyOf('이을') });
+  ok('🟡 초과도 판매 전환 대상', rowOf('이을')[col('매칭결과')] === '초과' && d.deposit.canMarkManual === true);
+  const m = cs({ action: 'mark_manual', key: keyOf('김갑'), by: '고윤서' });
+  ok('누르면 반영완료 · 전표 「판매전환」 · 누가', m.ok && rowOf('김갑')[col('전표번호')] === '판매전환' && rowOf('김갑')[col('반영자')] === '고윤서');
+  ok('한 번 더 눌러도 안 바뀐다 (대기만)', cs({ action: 'mark_manual', key: keyOf('김갑') }).ok === false);
+  const l = cs({ action: 'list', limit: 10 });
+  ok('목록에 판매 전환 표시가 실린다', l.rows.find((x) => x.name === '김갑').slipNo === '판매전환');
+  ok('되돌리기 → 대기', cs({ action: 'mark_manual', key: keyOf('김갑'), undo: true }).ok && rowOf('김갑')[col('상태')] === '대기');
+  // 9/30 에 「손으로」 로 표시한 줄도 같은 뜻으로 되돌릴 수 있다
+  rowOf('이을')[col('상태')] = '반영완료'; rowOf('이을')[col('전표번호')] = '손으로';
+  ok('옛 「손으로」 표시도 되돌린다', cs({ action: 'mark_manual', key: keyOf('이을'), undo: true }).ok && rowOf('이을')[col('상태')] === '대기');
 }
 
 console.log('\n' + pass + ' 통과 · ' + fail + ' 실패');

@@ -137,6 +137,10 @@ function _dp_handleCs_(p) {
     case "post_resolve":
       r = dpCsPostResolve_(String(p.key || ""), String(p.slipNo || ""), String(p.by || ""));
       break;
+    case "health":
+      // 폰이 살아 있나 · 마지막으로 무엇이 왔나 (2026-10-10) — 읽기만. 문자 본문은 내보내지 않는다
+      r = dpHealth_();
+      break;
     case "rematch":
       // 규칙이 바뀐 뒤 지난 입금을 다시 판정한다 (사람이 정한 것 · 이카운트에 넘어간 것은 그대로)
       r = { tally: dpMatchNow() };

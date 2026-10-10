@@ -54,6 +54,14 @@ const H202608 = split(
   "비고 및추가처리사항|이카운트 반영|반품송장번호"
 );
 
+/** 10월 — 통째로 다시 설계된 25칸. 운영 대장 202610 탭에서 그대로 읽어 왔다 */
+const H202610 = split(
+  "상태값|반품접수날짜|접수자|입고여부|재검수 사안|원송장번호 / 택배사|거래처|수취인|" +
+  "연락처|추가연락처|상품명|수량|반품송장번호 / 택배사|발생원인|적요|이카운처리 여부|" +
+  "각 사이트처리|계산서발행여부|환불완료|환불 계좌정보|비고 및추가처리사항|" +
+  "재출고상품|재출고배송비|반품비|고유ID"
+);
+
 test("★ 9월 「주문지」를 업체 열로 읽는다 ★ — 접수를 막던 그것", () => {
   const c = prpMapCols_(H202609);
   assert.equal(c.vendor, 3, "col.vendor 가 -1 이면 협력업체가 접수를 못 한다");
@@ -99,9 +107,48 @@ test("반품송장번호를 원송장으로 잡지 않는다", () => {
   assert.notEqual(c.returnInvoice, c.invoice);
 });
 
-test("A열은 늘 처리상태다 — 머리글이 뭐든 자리로 못 박는다", () => {
-  assert.equal(prpMapCols_(H202609).status, 0);
-  assert.equal(prpMapCols_(H202608).status, 0);
+/*  ★ 「A열 고정」은 2026-10-01 에 «일부러» 바뀌었다 ★  (2026-10-04)
+    > "시트에서 열배열을 바꿔도 우리 웹앱에서 인식이 되면 좋겠어"
+    머리글을 먼저 찾고, 못 찾았을 때만 A 로 떨어진다. 이 시험을 안 고쳐
+    빨간 채로 남아 있었고, 그래서 10월 양식이 들어와도 아무도 안 봤다.
+    ★ 「처리상태」는 상태가 아니다 ★ 그 칸엔 이카운트 반영이 들어 있다 — 상태는 빈 A 로 (2026-10-04).  */
+test("상태값은 머리글로 찾는다 — 못 찾을 때만 빈 A 로 떨어진다", () => {
+  const 규칙 = (H) => {
+    const k = H.findIndex((h) => /^(상태값|상태|진행상태)$/.test(String(h).replace(/[ 	]/g, "")));
+    return k >= 0 ? k : (H[0] ? -1 : 0);
+  };
+  for (const [이름, H] of [["202608", H202608], ["202609", H202609], ["202610", H202610]]) {
+    assert.equal(prpMapCols_(H).status, 규칙(H), 이름 + " 상태값 열");
+  }
+});
+
+/*  ★ 10월 — 업체 화면이 통째로 멎던 자리 ★  (2026-10-04)
+
+    col.vendor 가 -1 이면 prpLedger 는 목록을 return [] 로 비우고, 한 건을
+    열 때는 「업체명 열을 찾지 못했습니다」로 던진다. 즉 업체에게는 10월
+    반품이 «없는 것»이 된다. 9월에 「주문지」로 당한 일이 10월에 「거래처」로
+    되풀이됐다. 낱말이 바뀔 때마다 여기 한 줄을 더한다.  */
+test("★ 10월 「거래처」를 업체 열로 읽는다 ★ — 안 읽으면 업체 화면이 빈다", () => {
+  const c = prpMapCols_(H202610);
+  assert.equal(c.vendor, 6, "col.vendor 가 -1 이면 업체가 10월 반품을 못 본다");
+  assert.equal(H202610[c.vendor], "거래처");
+});
+
+test("10월 — 「재출고상품」을 구분으로 읽지 않는다", () => {
+  const c = prpMapCols_(H202610);
+  assert.notEqual(c.type, 21, "업체 화면 「구분」에 다시 보낼 물건 이름이 뜬다");
+  assert.equal(c.type, -1, "협의안에 구분 칸이 없다 — 없으면 없다고 두는 것이 맞다");
+  assert.equal(c.fee, 23, "반품비는 X 열이다");
+});
+
+test("10월 — 자리가 다 밀렸어도 제자리를 찾는다", () => {
+  const c = prpMapCols_(H202610);
+  assert.equal(H202610[c.date], "반품접수날짜");
+  assert.equal(H202610[c.name], "수취인");
+  assert.equal(H202610[c.invoice], "원송장번호 / 택배사");
+  assert.equal(H202610[c.returnInvoice], "반품송장번호 / 택배사");
+  assert.equal(H202610[c.reason], "발생원인");
+  assert.notEqual(c.invoice, c.returnInvoice);
 });
 
 /* ─────────────────────────────────────────────────────────────
@@ -188,4 +235,55 @@ test("다른 이름도 같은 열로 본다 — 상담자 · 통화자", () => {
 
 test("이름 열이 없는 옛 탭은 -1 — 그때는 비고로 흘린다", () => {
   assert.equal(prpMapCols_(H202609).phone2Name, -1);
+});
+
+/* ─────────────────────────────────────────────────────────────
+   「처리상태」는 상태가 아니라 이카운트 반영이다 — 2026-10-04
+   > _prpcols_test 의 「A열은 늘 처리상태다」가 빨개져 드러났다
+
+   옛 탭(202604~08) N열 머리글은 「처리상태」인데 담긴 것은 이카운트다
+   (v2 colMap 이 세어 적어 뒀다 — 「이카운트ok」 33~91건, 같은 탭의
+   「이카운트 반영」 열은 전부 비어 있다).
+
+   ★ 2026-10-01 에 상태를 머리글로 찾게 바꾸면서 이 칸이 상태로 잡혔다 ★
+   그러면 옛 탭 카드의 상태가 「이카운트ok」로 보이고, 상태를 쓰면
+   이카운트 칸에 쓴다. 오류는 안 난다 — 그냥 엉뚱한 칸이다.
+
+   ★ 세 곳이 같은 말을 해야 한다 ★ v2 colMap · CS csOrderSearch · 이 파일.
+   한 곳만 다르면 그 화면만 틀리고, 그 틀림은 조용하다.
+   ───────────────────────────────────────────────────────────── */
+
+test("★ 옛 탭 「처리상태」를 상태로 읽지 않는다 ★", () => {
+  const c = prpMapCols_(H202608);
+  assert.notEqual(H202608[c.status], "처리상태",
+    "「처리상태」를 상태로 읽으면 카드가 이카운트 값을 상태로 보여 준다");
+  assert.equal(c.status, 0, "옛 탭의 상태는 A열이다 (머리글이 비어 폴백이 집는다)");
+});
+
+test("세 곳이 같은 말을 하는가 — v2 · CS · 포털", () => {
+  const fs2 = require("fs");
+  const path2 = require("path");
+  const 뿌리 = path2.join(__dirname, "..");
+  const cs = fs2.readFileSync(path2.join(뿌리, "CS_WebApp", "csOrderSearch.gs"), "utf8");
+  const 나 = fs2.readFileSync(__filename.replace("_prpcols_test.js", "prpLedger.gs"), "utf8");
+
+  //  어느 쪽도 status 정규식에 ^처리상태$ 를 두지 않는다
+  for (const [이름, src] of [["CS csOrderSearch", cs], ["포털 prpLedger", 나]]) {
+    const m = src.match(/col\.status < 0 && \/([^/]+)\//);
+    assert.ok(m, 이름 + " 의 status 정규식을 못 찾았다");
+    assert.ok(m[1].indexOf("처리상태") < 0,
+      이름 + " 가 「처리상태」를 상태로 읽는다: " + m[1]);
+  }
+  //  CS 는 그 칸을 이카운트로 받는다
+  const e = cs.match(/col\.ecount < 0 && \/([^/]+)\//);
+  assert.ok(e && e[1].indexOf("처리상태") >= 0,
+    "CS 가 「처리상태」를 이카운트로 받지 않으면 옛 탭의 이카운트 값이 통째로 빈다");
+
+  //  v2 도 같은 말을 한다
+  const v2길 = "D:/Pack2U_협력업체시스템_v2/app/src/lib/returns-ingest/colMap.js";
+  if (fs2.existsSync(v2길)) {
+    const v2 = fs2.readFileSync(v2길, "utf8");
+    assert.ok(/처리상태:\s*"ecount"/.test(v2),
+      "v2 colMap 이 「처리상태」를 ecount 로 잇지 않는다 — 세 곳이 갈라졌다");
+  }
 });

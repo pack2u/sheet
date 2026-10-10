@@ -48,15 +48,15 @@ function 꺼내(src, name) {
 
 /* ── 사장님이 말한 낱말 그대로 ─────────────────────────────── */
 const 시킨것 = {
-  구매자: ["자동반품", "단순변심", "오입력", "오주문",
-    "제품파손", "택배사고", "제품불량", "배송지연"],
-  판매자: ["정보불일치", "오배송", "중복출고"],
+  구매자: ["자동반품", "단순변심", "오입력"],
+  판매자: ["오배송", "제품파손", "사고", "불량",
+    "배송지연", "정보불일치", "중복출고", "품절", "상품하자"],
 };
 
 /* ── 화면 쪽 ─────────────────────────────────────────────────── */
 const hctx = { console };
 vm.createContext(hctx);
-["RET_TYPES", "RET_FAULTS"].forEach((n) => {
+["RET_TYPES", "RET_FAULTS", "RETURN_STATUS_OPTS"].forEach((n) => {
   const i = html.indexOf("    var " + n + " = [");
   vm.runInContext(html.slice(i, html.indexOf("];", i) + 2), hctx);
 });
@@ -72,9 +72,16 @@ console.log("\n─── ① 목록이 시킨 그대로인가 ───");
   ok(귀책 + " 낱말이 한 글자도 안 다르다", 실제.join("·") === 시킨것[귀책].join("·"),
     "\n         지금: " + 실제.join("·") + "\n         시킨것: " + 시킨것[귀책].join("·"));
 });
-ok("구매자 4번째는 오주문이다 (오배송이 아니다)", hctx.RET_REASONS.구매자[3] === "오주문", hctx.RET_REASONS.구매자[3]);
+/*  ★ 2026-09-30 두 번째 가름 ★
+    물건이 깨지거나 늦은 것은 «우리(또는 택배사) 탓»이다 — 구매자 쪽에 두면
+    반품비를 고객에게 물리게 된다. 귀책이 곧 돈이라 이 가름이 값을 정한다.  */
+ok("구매자 쪽은 셋뿐 — 자동반품·단순변심·오입력",
+  hctx.RET_REASONS.구매자.join("·") === "자동반품·단순변심·오입력",
+  hctx.RET_REASONS.구매자.join("·"));
+ok("오배송·파손·사고·불량·배송지연은 판매자 쪽이다",
+  ["오배송", "제품파손", "사고", "불량", "배송지연"].every((w) =>
+    hctx.RET_REASONS.판매자.indexOf(w) >= 0 && hctx.RET_REASONS.구매자.indexOf(w) < 0));
 ok("구매자 목록에 오배송은 없다", hctx.RET_REASONS.구매자.indexOf("오배송") < 0);
-ok("판매자 목록에 오주문은 없다", hctx.RET_REASONS.판매자.indexOf("오주문") < 0);
 const 겹침 = hctx.RET_REASONS.구매자.filter((x) => hctx.RET_REASONS.판매자.indexOf(x) >= 0);
 ok("두 목록에 겹치는 낱말이 없다", 겹침.length === 0, 겹침.join("·"));
 ok("귀책은 둘뿐", hctx.RET_FAULTS.join("·") === "구매자·판매자", hctx.RET_FAULTS.join("·"));
@@ -136,15 +143,15 @@ ok("retFillReasons() 도 retNew 를 본다",
   고를수있는것(칸.retNewReason).slice(1).join("·") === 시킨것.판매자.join("·"));
 
 console.log("\n─── ⑤ 잘못 눌렀다 되돌려도 적은 것이 안 날아간다 ───");
-칸 = 가짜화면("ledger", "구매자", "제품불량");
+칸 = 가짜화면("ledger", "구매자", "단순변심");
 hctx.retFillReasons("ledger");
-ok("같은 귀책이면 고른 값이 그대로", 칸.ledgerReason.value === "제품불량", 칸.ledgerReason.value);
+ok("같은 귀책이면 고른 값이 그대로", 칸.ledgerReason.value === "단순변심", 칸.ledgerReason.value);
 칸.ledgerFault.value = "판매자";
 hctx.retFillReasons("ledger");
 ok("귀책이 바뀌어 없는 낱말이면 비워진다", 칸.ledgerReason.value === "", 칸.ledgerReason.value);
 
 console.log("\n─── ⑥ 모르는 값이 와도 안 죽는다 ───");
-칸 = 가짜화면("retNew", "아무거나", "제품불량");
+칸 = 가짜화면("retNew", "아무거나", "단순변심");
 hctx.retFillReasons();
 ok("빈 목록만 남는다", 고를수있는것(칸.retNewReason).join("·") === "", JSON.stringify(고를수있는것(칸.retNewReason)));
 ok("칸이 사라지면 조용히 돌아간다", (function () {
@@ -207,23 +214,65 @@ ok("모르는 낱말은 안 받는다", gctx._cs_faultFromNotice_("귀책: 택�
 
 console.log("\n─── ⑩ 적는 규칙 — 사유가 없으면 귀책만 남기지 않는다 ───");
 const 쓰는데 = gs.slice(gs.indexOf("var faultIn = String(data.fault"),
-  gs.indexOf("var faultIn = String(data.fault") + 400);
-ok("귀책은 사유가 있을 때만 적는다", /if \(faultIn && reasonIn\)/.test(쓰는데), 쓰는데.slice(0, 120));
-ok("사유는 값이 있을 때만 적는다", /if \(col\.reason >= 0 && reasonIn\)/.test(gs));
-ok("전용 열이 있으면 열에 적는다", /if \(col\.fault >= 0\) row\[col\.fault\] = faultIn;/.test(쓰는데));
+  gs.indexOf("var faultIn = String(data.fault") + 1200);
+/*  ★ 협의안 — 「발생원인」 한 칸에 «귀책 / 사유» ★  (2026-10-01)
+    귀책 열을 따로 두지 않는다. 칸이 아예 없는 옛 탭만 비고로 흘린다.  */
+ok("발생원인 칸이 있으면 거기에 한 줄로 적는다",
+  /if \(col\.reason >= 0\) \{[\s\S]{0,200}_cs_makeCause_/.test(쓰는데), 쓰는데.slice(0, 160));
+ok("귀책 전용 열이 따로 있으면 그쪽에도 적는다",
+  /if \(col\.fault >= 0 && faultIn\) row\[col\.fault\] = faultIn;/.test(쓰는데));
+ok("칸이 없으면 비고로 — 귀책과 사유를 한 줄에",
+  /\} else if \(faultIn && reasonIn\) \{/.test(쓰는데));
+ok("귀책이 없으면 사유만이라도 남긴다",
+  /\} else if \(reasonIn\) \{/.test(쓰는데));
 ok("비고 줄에 태운다", /if \(faultToNotice\) noticeLines\.push\(faultToNotice\);/.test(gs));
+/*  ★ 협의안에는 반품비 칸이 없다 ★ 돈을 조용히 버리지 않는다  */
+ok("반품비 칸이 없으면 비고로 흘린다",
+  /else feeToNotice = "반품비: " \+ feeIn;/.test(gs) &&
+  /if \(feeToNotice\) noticeLines\.push\(feeToNotice\);/.test(gs));
 
 console.log("\n─── ⑪ 카드로 돌려준다 ───");
-ok("열이 있으면 열을, 없으면 비고를 읽는다",
-  /fault: col\.fault >= 0\s*\r?\n\s*\? String\(row\[col\.fault\] \|\| ""\)\.trim\(\)\s*\r?\n\s*: _cs_faultFromNotice_\(notice\)/.test(gs));
+/*  귀책을 찾는 차례가 셋이다 — 전용 열 · 발생원인 앞부분 · 비고 표시  */
+ok("귀책 — 전용 열을 먼저 본다", /fault: col\.fault >= 0/.test(gs));
+ok("귀책 — 그 다음 발생원인 칸의 앞부분",
+  /_cs_parseCause_\(row\[col\.reason\]\)\.귀책/.test(gs));
+ok("귀책 — 마지막으로 비고 표시", /_cs_faultFromNotice_\(notice\)/.test(gs));
 ok("카드 화면이 귀책을 낸다", /retCaseRowHtml\('귀책', c\.fault\)/.test(html));
 
 console.log("\n─── ⑫ 두 화면이 서버로 같은 값을 보낸다 ───");
+
+/*  ★ 2026-10-01 — 기록 창은 읽는 자리를 하나로 모았다 ★
+      전에는 단건·여러건이 창을 각자 읽었고, 여러건 쪽에 귀책·사유·상태가
+      «빠져» 있었다(합포장 반품에서 조용히 사라졌다). 이제 ledgerModalCommon
+      한 곳에서 읽는다. 그래서 「보내는 낱말」은 그 함수의 낱말 + 그 자리의 낱말이다.
+      접수 창(retNew)은 한 길뿐이라 예전처럼 그 자리에서 바로 읽는다.
+      자리별 길은 _csledgerpath_test.js 가 따로 지킨다.                      */
+const 공통키 = (function () {
+  const i = html.indexOf("function ledgerModalCommon(");
+  if (i < 0) return [];
+  const j = html.indexOf("return {", i);
+  const e = html.indexOf("};", j);
+  return (html.slice(j, e).match(/^\s*(\w+): g\(/gm) || [])
+    .map((x) => x.trim().split(":")[0]);
+})();
+
 ["retNew", "ledger"].forEach((pfx) => {
-  ok(pfx + " 가 fault 를 보낸다",
-    new RegExp("fault: document\\.getElementById\\('" + pfx + "Fault'\\)\\.value").test(html));
-  ok(pfx + " 가 reason 을 보낸다",
-    new RegExp("reason: document\\.getElementById\\('" + pfx + "Reason'\\)\\.value").test(html));
+  const 읽나 = function (칸) {
+    if (pfx === "retNew") {
+      return new RegExp(칸.toLowerCase() +
+        ": document\\.getElementById\\('" + pfx + 칸 + "'\\)\\.value").test(html);
+    }
+    /*  기록 창 — 공통 함수가 그 칸을 읽고, 보내는 자리가 그 함수를 쓰면 된다.
+        ★ 함수 안에 g = function(){…}; 가 있어 첫 「};」로 자르면 안 된다 ★ */
+    const i = html.indexOf("function ledgerModalCommon(");
+    if (i < 0) return false;
+    const j = html.indexOf("return {", i);
+    const 공통몸 = j < 0 ? "" : html.slice(j, html.indexOf("};", j));
+    return 공통몸.indexOf("'ledger" + 칸 + "'") >= 0 &&
+      공통키.indexOf(칸.toLowerCase()) >= 0;
+  };
+  ok(pfx + " 가 fault 를 보낸다", 읽나("Fault"));
+  ok(pfx + " 가 reason 을 보낸다", 읽나("Reason"));
   ok(pfx + " 임시저장에 두 칸이 들어 있다",
     new RegExp("'" + pfx + "Fault', '" + pfx + "Reason'").test(html));
   ok(pfx + " 화면 열 때 채우기가 기본값보다 «먼저»", (function () {
@@ -242,18 +291,83 @@ ok("onchange 가 제 화면을 가리킨다",
   /id="retNewFault" onchange="retFillReasons\(\)"/.test(html) &&
   /id="ledgerFault" onchange="retFillReasons\('ledger'\)"/.test(html));
 
+console.log("\n─── ⑫ 상태 목록 — 시트가 받는 말과 같은가 ───");
+/*  ★ 2026-10-01 ★  반품탭 접수에 「수거요청·수거중·반품입고·환불처리」가
+    박혀 있었는데, 대장 상태 드롭다운은 넷만 받는다(setAllowInvalid(false)).
+    그 넷 밖을 고르면 시트가 쓰기를 «거절»해 카드가 안 만들어진다.
+    목록을 적어 둔 자리가 셋이었다 — 서버 표·화면 대비값·화면 <option>.  */
+ok("화면 대비값이 시트가 받는 넷과 같다",
+  hctx.RETURN_STATUS_OPTS.join("·") === "접수·반품송장·입고검수·이카운트OK",
+  hctx.RETURN_STATUS_OPTS.join("·"));
+ok("서버 표도 그 넷이다",
+  /_CS_RETURN_STATUS_OPTS_ = \[[^\]]*"접수"[^\]]*"반품송장"[^\]]*"입고검수"[^\]]*"이카운트OK"[^\]]*\]/.test(gs));
+["retNewStatus", "ledgerStatus"].forEach(function (id) {
+  const i = html.indexOf('<select id="' + id + '"');
+  ok(id + " 에 option 이 박혀 있지 않다 (표에서 채운다)",
+    i > 0 && !/<option/.test(html.slice(i, html.indexOf("</select>", i))));
+});
+ok("두 화면 다 상태를 서버로 보낸다",
+  /status: document\.getElementById\('retNewStatus'\)\.value/.test(html) &&
+  공통키.indexOf("status") >= 0);
+
+/**
+ * 그 함수가 서버로 보내는 낱말들.
+ *
+ * ★ 두 가지를 조심한다 ★
+ *   ① 한 줄에 낱말이 여럿이다 — 「name: r.name, phone: r.phone」.
+ *      줄머리만 보면 phone 을 놓치고 «빠졌다»고 거짓 경보를 울린다.
+ *   ② 공통 값을 미리 읽어 변수로 들고 가는 길이 있다 —
+ *      여러건 쪽은 var 공통 = ledgerModalCommon() 을 «함수 머리»에서 한다.
+ *      보내는 자리만 보면 그 낱말들을 못 센다. 함수 몸통 전체를 본다.
+ */
+function 보내는낱말(fn) {
+  const s = html.indexOf(fn);
+  if (s < 0) return [];
+  const i = html.indexOf(".submitReturnLedger(", s);
+  if (i < 0) return [];
+  const o = html.indexOf("(", i);
+  let 깊이 = 0, e = -1;
+  for (let k = o; k < html.length; k++) {
+    if (html[k] === "(") 깊이++;
+    else if (html[k] === ")") { 깊이--; if (깊이 === 0) { e = k; break; } }
+  }
+  if (e < 0) return [];
+  const 안 = html.slice(o, e);
+  const 낱 = [];
+  const re = /[{,\s]([A-Za-z_$][\w$]*)\s*:/g;
+  let m;
+  while ((m = re.exec(안))) if (낱.indexOf(m[1]) < 0) 낱.push(m[1]);
+  //  이 함수가 공통 함수를 쓰면(바로 쓰든 변수로 들고 가든) 그 낱말도 센다
+  const 몸 = html.slice(s, e);
+  return /ledgerModalCommon\s*\(/.test(몸) ? 낱.concat(공통키) : 낱;
+}
+
+["submitLedger", "submitLedgerMany"].forEach(function (fn) {
+  ok("★ " + fn + " 이 접수 화면과 «같은 값»을 보낸다 ★", (function () {
+    const a = 보내는낱말("function submitRetNew");
+    if (!a.length) return false;
+    const b = {};
+    보내는낱말("function " + fn).forEach(function (k) { b[k] = 1; });
+    //  source·origin·carrier·orderNo 는 주문에서 오는 것이라 접수 화면엔 없다
+    const 빠진 = a.filter(function (k) { return !b[k]; });
+    if (빠진.length) console.log("      빠진 낱말 — " + 빠진.join(", "));
+    return 빠진.length === 0;
+  })());
+});
+
 console.log("\n─── ⑬ 사유도 비고 길을 탄다 (대장에 사유 열이 없다) ───");
 /*  202609 탭 실측(2026-09-30) — 쓰이는 폭 21칸에 「반품사유」가 없다.
     12번째가 「재출고/단순/오주문입력/오배송」(유형)이고 그 옆은 회수신청이다.
     2026-09-18 에 「L열에 반품사유가 있다」고 알고 고쳤는데 L열은 유형이었다.
     그래서 사유는 그때부터 한 번도 안 적혔고 카드에도 안 떴다.  */
 vm.runInContext(꺼내(gs, "_cs_reasonFromNotice_"), gctx);
-ok("열이 없으면 비고에서 사유를 읽는다",
-  /reason: col\.reason >= 0\s*\r?\n\s*\? String\(row\[col\.reason\] \|\| ""\)\.trim\(\)\s*\r?\n\s*: _cs_reasonFromNotice_\(notice\)/.test(gs));
-ok("귀책이 비었을 때만 「사유: …」를 따로 적는다",
-  /if \(col\.reason < 0 && reasonIn && !faultToNotice\) \{/.test(gs));
+ok("사유 — 발생원인 칸의 뒷부분을 읽는다",
+  /reason: col\.reason >= 0\s*\r?\n\s*\? _cs_parseCause_\(row\[col\.reason\]\)\.사유/.test(gs));
+ok("사유 — 칸이 없으면 비고에서", /: _cs_reasonFromNotice_\(notice\)/.test(gs));
+ok("단계는 상태값이 없으면 Y/N 칸에서 뽑는다",
+  /status: status \|\| _cs_stageFromFlags_\(row, col\)/.test(gs));
 [["귀책: 판매자 (오배송)", "오배송"],
- ["[260930 10:00 김진수] 고객 요청\n귀책: 구매자 (제품불량)\n반품송장: 600622029800", "제품불량"],
+ ["[260930 10:00 김진수] 고객 요청\n귀책: 판매자 (불량)\n반품송장: 600622029800", "불량"],
  ["사유: 제품파손", "제품파손"],
  ["업체 포털 접수. 사유: 중복출고. 덧붙임", "중복출고"]].forEach(function (쌍) {
   ok("「" + 쌍[0].replace(/\n/g, " ").slice(0, 34) + "…」 → " + 쌍[1],

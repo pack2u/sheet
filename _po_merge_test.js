@@ -125,7 +125,13 @@ check("품목명의 --- 꼬리표를 본다", src.indexOf('var _dash = _nm.index
     "===합배송도 ---합포장도.." — 가르지 않고 다 적는다. */
 check("★ === 를 --- 보다 먼저 본다 (둘 다 붙은 줄)",
   src.indexOf("if (_eq >= 0 && (_dash < 0 || _eq < _dash))") >= 0, true);
-check("한 주문에 둘이면 / 로 잇는다", src.indexOf('setDetailByUid[_su] + " / " + _tail') >= 0, true);
+/*  ★ 2026-10-07 — 약속이 바뀐 자리다 ★
+    「 / 로 잇는다」였다. 2026-09-16 에 줄바꿈으로 바뀌었다 —
+      > "-몸통만 / -뚜껑만 … 이렇게 해달라고"
+    송장은 한 칸에 여러 줄로 쌓이는데 적요만 한 줄로 이어 붙어 눈으로
+    맞춰 볼 수가 없었다. 줄 수를 맞춘 것이다.                           */
+check("한 주문에 둘이면 줄바꿈으로 잇는다 (송장 줄 수와 맞춘다)",
+  /setDetailByUid\[_su\] \+ "\\n" \+ _t2/.test(src), true);
 check("같은 꼬리를 두 번 안 적는다", src.indexOf("if (_setSeen[_sk]) continue;") >= 0, true);
 
 {

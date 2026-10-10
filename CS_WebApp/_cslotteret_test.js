@@ -128,9 +128,20 @@ ok("배송불가 지역이면 설정 단계에서 알린다",
 
 console.log("\n[7] 화면 — 확인창과 접수자 (사장님 지시 5번)");
 ok("접수 칸이 있다", html.indexOf('id="lrtOpt"') > -1);
+/*  ★ 2026-10-07: 로젠이 붙으면서 이 두 줄의 «모양»이 바뀌었다 ★
+    지켜야 할 뜻은 그대로다 —
+      ① 받는 곳(창고)이 준비 안 됐으면 칸을 내지 않는다
+      ② 우리가 접수할 수 없는 택배사(CJ·한진·대리판매)면 내지 않는다
+    달라진 것은 「롯데냐」가 아니라 「어느 택배사냐」로 갈린다는 점뿐이다. */
 ok("★ 받는 곳이 없으면 안 보인다 ★",
-   /LRT_READY && LRT_READY\.ready\) && lotte/.test(html));
-ok("롯데 건이 아니면 안 보인다", /isLotteTrack\(r\.source, resolveCarrier\(r\)\)/.test(html));
+   /var on = !!\(rdy && rdy\.ready\)/.test(html));
+ok("택배사에 맞는 준비 상태를 본다",
+   /var rdy = who === '롯데' \? LRT_READY : \(who === '로젠' \? LGR_READY : null\)/.test(html));
+ok("우리가 접수할 수 없는 택배사면 안 보인다",
+   /function ledgerReturnCarrier/.test(html) &&
+   /CJ·한진 등 — 우리가 접수할 수 없다/.test(html));
+ok("★ 로젠 건도 접수 칸이 나온다 ★  (2026-10-07)",
+   /runner\.csLogenReturnPickup\(payload\)/.test(html));
 ok("확인창이 있다", html.indexOf('id="lrtModal"') > -1);
 ok("★ 되돌릴 수 없다고 알린다 ★", /취소는 롯데에 직접 연락해야 합니다/.test(html));
 /*  표를 세 줄로 나눠 그리면서 둘 사이가 멀어졌다. 300자 안에 있어야 할
@@ -159,6 +170,143 @@ ok("주소로 찾는다", /if \(!pZip && pAddr\)[\s\S]{0,140}csLotteRefineAddres
 ok("찾은 값을 요청에 쓴다", /snperZipcd: pZip/.test(src));
 ok("★ 회수 불가 지역이면 보내기 전에 막는다 ★",
    /회수 불가 지역입니다/.test(src));
+
+console.log("\n★ 수거입력처가 없을 때 — 롯데로 가면 안 된다");
+{
+  /*  ★ 이 시험이 생긴 까닭 ★  (2026-10-08 · 같은 화면을 다섯 번 봤다)
+      여태 수거입력처가 비면 «롯데»로 봤다. 롯데가 주 택배사이던 때의 규칙이다.
+      그런데 2026-09-11 에 로젠으로 바꿨고 롯데 거래처 계약은 삭제됐다.
+      게다가 202610 탭에는 「수거입력처」 열이 아예 없다 —
+      「원송장번호 / 택배사」와 「반품송장번호 / 택배사」 둘뿐이다.
+
+      그래서 그 탭의 반품접수가 «전부» 롯데로 가서 이렇게 실패했다 —
+        회수 접수 실패 — 45311894913 — 거래처계약정보 조회 오류 ( 거래처코드 : 348782 )
+      348782 는 바로 이 파일의 _LRT_CUST_CD_ — **롯데** 거래처코드다.
+      우리 로젠 거래처코드는 30556066 이다.
+
+      나는 그 글을 보고 로젠 쪽을 다섯 번 고쳤다. 그 줄은 로젠을 부른 적이
+      한 번도 없었다. [[same-symptom-check-the-source-first]] */
+  const vm = require("vm");
+  const cs = fs.readFileSync(__dirname + "/csOrderSearch.gs", "utf8");
+  const trk = fs.readFileSync(__dirname + "/csTrack.gs", "utf8");
+  function 꺼내(s, n) {
+    const i = s.indexOf("function " + n + "(");
+    if (i < 0) throw new Error(n + " 를 못 찾음");
+    let d = 0, seen = false;
+    for (let k = i; k < s.length; k++) {
+      if (s[k] === "{") { d++; seen = true; }
+      else if (s[k] === "}") { d--; if (seen && d === 0) return s.slice(i, k + 1); }
+    }
+  }
+  const ctx = { console, String, Number, Array, Math, JSON };
+  vm.createContext(ctx);
+  vm.runInContext(꺼내(cs, "_cs_splitLedgerInvoice_"), ctx);
+  vm.runInContext(꺼내(trk, "_trk_carrier_"), ctx);
+  vm.runInContext(꺼내(src, "_lrt_guessCarrier_"), ctx);
+  const 가린다 = (a, b) => vm.runInContext(
+    "_lrt_guessCarrier_(" + JSON.stringify(a) + "," + JSON.stringify(b) + ")", ctx);
+
+  ok("★ 실제 202610!36 — 반품송장 「/ 로젠택배」 → 로젠", 가린다("/ 로젠택배", "45311894913") === "로젠");
+  ok("★ 로젠 11자리만 있어도 로젠", 가린다("", "45311894913") === "로젠");
+  ok("★ 롯데 12자리면 롯데", 가린다("", "268334465383") === "롯데");
+  ok("하이픈이 있어도 롯데 12자리는 롯데", 가린다("", "2683-3425-7111") === "롯데");
+  ok("반품송장에 적힌 택배사가 먼저다", 가린다("268334465383 / 롯데택배", "45311894913") === "롯데");
+  ok("★ 아무 근거가 없으면 «로젠» (지금 쓰는 택배사)", 가린다("", "") === "로젠");
+
+  ok("★ 「비면 롯데」 가지가 사라졌다",
+     !/var 로젠인가 = pk\.indexOf\("로젠"\) !== -1;/.test(src));
+  ok("★ 비었을 때 근거로 가린다", /_lrt_guessCarrier_\(cell\("returnInvoice"\), cell\("invoice"\)\)/.test(src));
+  ok("★ 판단하는 자는 _trk_carrier_ 하나다 (여기서 다시 안 짠다)",
+     /_trk_carrier_\(원\.번호, ""\)/.test(src));
+  ok("348782 는 롯데 것이라고 적어 뒀다", /348782/.test(src) && /_LRT_CUST_CD_/.test(src));
+}
+
+console.log("\n[11] ★ 하루 판정을 «한 번만» 한다 — 25분을 먹던 자리");
+{
+  /*  ─ 2026-10-09 실측 ─
+      1시간 일감의 「일감 걸음」:
+        요청접수 5초 · 송장채우기 45초 · 출고송장 11초 · **지연점검 1497초**
+      한 단계가 25분을 먹어 일감이 30분 벽에 부딪혀 죽고 있었다.
+
+      까닭: _lrt_isOff_ 가 «부를 때마다» PropertiesService 를 읽었다. 서비스
+      호출은 한 번에 10~20ms 다. 그런데 이 함수는 날짜마다 불린다 —
+      원장 8,000줄 × 발송일부터 오늘까지 하루하루. 수십만 번이다.
+
+      ★ 답은 한 글자도 바뀌면 안 된다. 횟수만 줄어야 한다. ★               */
+
+  const vm2 = require("vm");
+  function 토막(s, n) {
+    const i = s.indexOf("function " + n + "(");
+    if (i < 0) throw new Error(n + " 를 못 찾음");
+    let d = 0, seen = false;
+    for (let k = i; k < s.length; k++) {
+      if (s[k] === "{") { d++; seen = true; }
+      else if (s[k] === "}") { d--; if (seen && d === 0) return s.slice(i, k + 1); }
+    }
+  }
+
+  let 읽은횟수 = 0;
+  const ctx = {
+    console, String, Number, Math, Date, Object, JSON,
+    _LRT_HOLIDAYS_: { "20261003": 1, "20261005": 1, "20261006": 1, "20261007": 1, "20261008": 1 },
+    _LRT_HOLIDAY_PROP_: "LOTTE_EXTRA_HOLIDAYS",
+    _LRT_OFF_MEMO_: {},
+    _LRT_EXTRA_CACHE_: null,
+    Utilities: { formatDate: (d) => {
+      const p = (x) => String(x).padStart(2, "0");
+      return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
+    } },
+    PropertiesService: { getScriptProperties: () => ({
+      getProperty: () => { 읽은횟수++; return "20261231"; },
+    }) },
+  };
+  vm2.createContext(ctx);
+  vm2.runInContext(토막(src, "_lrt_extraHolidays_"), ctx);
+  vm2.runInContext(토막(src, "_lrt_isOff_"), ctx);
+  const 쉬나 = (y, m, d) =>
+    vm2.runInContext("_lrt_isOff_(new Date(" + y + "," + (m - 1) + "," + d + "))", ctx);
+
+  //  ★ 답이 그대로인가 ★ 이게 안 맞으면 빠른 건 아무 뜻이 없다
+  ok("토요일은 쉼", 쉬나(2026, 10, 10) === true);
+  ok("일요일은 쉼", 쉬나(2026, 10, 11) === true);
+  ok("표에 있는 공휴일은 쉼 (10/08)", 쉬나(2026, 10, 8) === true);
+  ok("평일은 안 쉼 (10/09 금)", 쉬나(2026, 10, 9) === false);
+  ok("★ 임시공휴일 속성도 그대로 본다 (12/31)", 쉬나(2026, 12, 31) === true);
+  ok("그 속성에 없는 평일은 안 쉼 (12/30)", 쉬나(2026, 12, 30) === false);
+
+  //  ★ 횟수 ★ 여기까지 평일을 네 번 물었는데 속성은 한 번만 읽혔어야 한다
+  ok("★ 속성은 한 실행에 한 번만 읽는다 (읽은 " + 읽은횟수 + "번)", 읽은횟수 === 1);
+
+  //  같은 날을 수천 번 물어도 더 안 읽는다 — 8,000줄이 같은 날들을 되묻는다
+  for (let i = 0; i < 500; i++) { 쉬나(2026, 10, 9); 쉬나(2026, 12, 30); }
+  ok("★ 1,000번 더 물어도 그대로 (읽은 " + 읽은횟수 + "번)", 읽은횟수 === 1);
+  ok("날짜 판정도 외운다", Object.keys(ctx._LRT_OFF_MEMO_).length > 0);
+  ok("주말은 외울 것도 없다 (바로 돌아선다)",
+     !Object.keys(ctx._LRT_OFF_MEMO_).some((k) => k === "20261010"));
+
+  //  ★ 속성을 못 읽어도 주말 판단은 살아 있어야 한다 ★ (전과 같은 약속)
+  const ctx2 = Object.assign({}, ctx, {
+    _LRT_OFF_MEMO_: {}, _LRT_EXTRA_CACHE_: null,
+    PropertiesService: { getScriptProperties: () => { throw new Error("못 읽음"); } },
+  });
+  vm2.createContext(ctx2);
+  vm2.runInContext(토막(src, "_lrt_extraHolidays_"), ctx2);
+  vm2.runInContext(토막(src, "_lrt_isOff_"), ctx2);
+  const 쉬나2 = (y, m, d) =>
+    vm2.runInContext("_lrt_isOff_(new Date(" + y + "," + (m - 1) + "," + d + "))", ctx2);
+  ok("★ 속성을 못 읽어도 주말은 쉼", 쉬나2(2026, 10, 10) === true);
+  ok("★ 속성을 못 읽어도 표는 본다", 쉬나2(2026, 10, 8) === true);
+  ok("★ 못 읽은 것을 «모른다»로 두지 않는다 (평일은 평일)", 쉬나2(2026, 10, 9) === false);
+
+  //  ★ 값싼 체 ★ 애초에 날을 안 세는 쪽이 제일 싸다 (csLogenOutStale.gs)
+  const ost = fs.readFileSync("csLogenOutStale.gs", "utf8");
+  ok("★ 지연 점검이 값싼 체를 먼저 쓴다", /var _OST_CAL_MAX_ = \d+;/.test(ost));
+  ok("체가 «버릴 것만» 버린다 (영업일 판단은 그대로 뒤에 있다)",
+     ost.indexOf("달력 > _OST_CAL_MAX_") < ost.indexOf("_ost_bizSince_(발송) !== _OST_FROM_DAYS_"));
+  const 체 = Number((ost.match(/var _OST_CAL_MAX_ = (\d+);/) || [])[1]);
+  ok("가장 긴 연휴(아홉 날)보다 넉넉하다", 체 >= 3 + 9);
+  ok("오늘 0시를 줄마다 다시 만들지 않는다", /var 오늘0 = 오늘기준\.getTime\(\);/.test(ost));
+}
 
 console.log("\n" + (fail ? "실패 " + fail + "건 / " : "") + "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

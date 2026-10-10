@@ -126,7 +126,9 @@ function dpCsDetail_(key) {
       slipNo: String(g("전표번호") || ""), postMemo: String(g("반영메모") || ""), postedBy: String(g("반영자") || ""),
       canPost: dpCanPost({ result: String(g("매칭결과")), status: String(g("상태")), code: String(g("거래처코드")), amount: amount, txAt: _dp_ts_(g("거래일시")) }, dpPostFrom_()).ok,
       // 시작 전이거나 스위치가 꺼져 있어도, 넘길 만한 판정이면 「이미 이카운트에 넣었음」 은 누를 수 있다
-      canMarkManual: String(g("상태")) === "대기" && DP_POSTABLE_RESULTS_.indexOf(String(g("매칭결과"))) >= 0,
+      // A안 (2026-10-10): 주문이 붙은 입금이면 판매 전환 대상 — 초과도 판매는 넘긴다 (차액만 따로 처리)
+      canMarkManual: String(g("상태")) === "대기" &&
+        DP_POSTABLE_RESULTS_.concat(["초과", "초과(지정)"]).indexOf(String(g("매칭결과"))) >= 0,
       postFrom: dpPostFrom_(),
       postOn: dpPostOn_()
     },
