@@ -3485,6 +3485,15 @@
     .byto-tl-photos { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; }
     .byto-tl-photos img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
     .byto-tl-note { color: var(--text-muted); font-size: 11.5px; padding: 4px 0; }
+    .byto-tl-acts { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
+    .byto-tl-acts button {
+      border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary);
+      border-radius: 7px; padding: 2px 8px; font-size: 11.5px; cursor: pointer;
+    }
+    .byto-pick { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+    .byto-pick button { text-align: left; border: 1px solid var(--border); background: var(--bg-card);
+      color: var(--text-primary); border-radius: 8px; padding: 6px 9px; font-size: 12px; cursor: pointer; }
+    .byto-pick button:hover { background: var(--bg-card-hover); }
     .csq-done-tag {
       padding: 1px 7px; border-radius: 8px; font-weight: 700;
       font-size: calc(9px * var(--hb-text-scale));    /* .hb-badge */
@@ -8754,6 +8763,10 @@
         '<button type="button" onclick="bytoFindOrders(\'' + js(c.phone) + '\')">주문 찾기</button>' +
         '<button type="button" onclick="bytoToggleTl(\'' + js(key) + '\', \'' + js(c.phone) + '\', this)">통화·문자</button>' +
         '<button type="button" onclick="copyText(\'' + js(bytoPhone(c.phone)) + '\')">번호 복사</button>' +
+        '<button type="button" onclick="bytoToInquiry(\'card\', \'' + js(c.phone) + '\')">CS 문의로</button>' +
+        ((c.photos || []).length
+          ? '<button type="button" onclick="bytoToReturn(\'card\', \'' + js(c.phone) + '\', this)">반품에 붙이기</button>'
+          : '') +
         '<button type="button" class="done" onclick="bytoDone(\'' + js(c.phone) + '\', this)">처리함</button>' +
         '</div><div class="byto-tl" id="bytoTl-' + esc(key) + '" hidden></div></div>';
       return h;
@@ -8799,16 +8812,165 @@
       google.script.run
         .withSuccessHandler(function (res) {
           if (!res || !res.ok) { box.innerHTML = '<div class="byto-tl-note">못 읽었습니다 — ' + esc((res && res.error) || '까닭 모름') + '</div>'; return; }
-          box.innerHTML = bytoTimelineHtml(res.items || [], res.collectedAt);
+          BYTO_TL[key] = { phone: phone, items: res.items || [] };
+          box.innerHTML = bytoTimelineHtml(res.items || [], res.collectedAt, key);
         })
         .withFailureHandler(function (e) { box.innerHTML = '<div class="byto-tl-note">못 읽었습니다 — ' + esc(String((e && e.message) || e)) + '</div>'; })
         .csBytoTimeline(phone);
     }
 
-    function bytoTimelineHtml(items, collectedAt) {
+    /* ══ 2단계 — 문자·사진을 CS 문의로 / 반품 건에 붙이기 (2026-10-10) ══════════
+       > "2단계도 진행해줘"
+       ★ 사진은 «다시 고른 것처럼» 넣는다 ★
+         바이토 사진 주소(v2 서명 주소)를 브라우저가 받아 File 로 만들고, 사람이 사진을
+         고를 때와 같은 retPhotoStage 에 태운다. 그 뒤는 지금 길 그대로다 —
+         CS 문의는 「올리기」가 v2 보관소에 올려 오래 사는 링크를 담고, 반품은 대장에 붙인다.
+         새 저장 길을 만들지 않는다. 사람이 마지막에 「올리기」를 누른다.            */
+    var BYTO_TL = {};   // 줄기 상자 key → { phone, items }
+
+    /** 어디서 눌렀나 → { phone, at, body, photos, name } */
+    function bytoPickSource(where, arg) {
+      if (where === 'card') {
+        var c = null;
+        for (var i = 0; i < BYC_CARDS.length; i++) if (BYC_CARDS[i].phone === arg) c = BYC_CARDS[i];
+        if (!c) return null;
+        return { phone: c.phone, at: c.lastAt, body: c.lastBody || '', photos: c.photos || [], name: c.contactName || '' };
+      }
+      var tl = BYTO_TL[where];
+      var it = tl && tl.items[arg];
+      if (!it) return null;
+      return { phone: tl.phone, at: it.at, body: it.body || '', photos: it.photos || [], name: '' };
+    }
+
+    /** 사진 주소 → File. 주소는 두 시간 산다 — 넘으면 ↻ 로 새로 읽어야 한다 */
+    function bytoUrlsToFiles(urls, done) {
+      if (!urls.length) { done([], 0); return; }
+      var files = [], left = urls.length, bad = 0;
+      urls.forEach(function (u, i) {
+        fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status); return r.blob(); })
+          .then(function (b) {
+            var ext = /png/.test(b.type) ? 'png' : 'jpg';
+            files[i] = new File([b], 'byto_' + (i + 1) + '.' + ext, { type: b.type || 'image/jpeg' });
+          })
+          .catch(function () { bad++; })
+          .then(function () { if (--left === 0) done(files.filter(Boolean), bad); });
+      });
+    }
+
+    function bytoHead(src) {
+      return '[바이토 문자 · ' + bytoPhone(src.phone) + ' · ' + bytoWhen(src.at) + ']';
+    }
+
+    /** 「CS 문의로」 — 글쓰기 칸을 펴고 채운다. 이미 쓰던 칸은 덮지 않는다(csqFromOrder 와 같다) */
+    function bytoToInquiry(where, arg) {
+      var src = bytoPickSource(where, arg);
+      if (!src) { toast('그 문자를 못 찾았습니다 — ↻ 로 새로 읽어 주세요'); return; }
+      csqNewToggle(true);
+      var v = document.getElementById('csqnVendor');
+      if (v && !String(v.value || '').trim() && src.name) v.value = src.name;
+      var b = document.getElementById('csqnBody');
+      if (b) {
+        var 글 = bytoHead(src) + '\n' + (src.body || (src.photos.length ? '(사진만 보냄)' : ''));
+        b.value = String(b.value || '').trim() ? b.value.replace(/\s*$/, '') + '\n\n' + 글 : 글;
+      }
+      var box = document.getElementById('csqBox');
+      if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (!src.photos.length) { if (b) b.focus(); return; }
+      toast('사진 ' + src.photos.length + '장 가져오는 중…');
+      bytoUrlsToFiles(src.photos, function (files, bad) {
+        if (!files.length) { toast('사진을 못 가져왔습니다 — ↻ 로 새로 읽은 뒤 다시 눌러 주세요', 3600); return; }
+        retPhotoStage(CSQ_PICK, files, function () {
+          csqPhotoRender(null);
+          toast('사진 ' + files.length + '장을 담았습니다' + (bad ? ' (' + bad + '장 못 가져옴)' : '') + ' — 확인하고 「올리기」', 3200);
+        });
+      });
+    }
+
+    /** 「반품에 붙이기」 — 같은 번호의 진행 중 반품을 찾아 그 카드의 사진 칸에 담는다 */
+    function bytoToReturn(where, arg, btn) {
+      var src = bytoPickSource(where, arg);
+      if (!src) { toast('그 문자를 못 찾았습니다 — ↻ 로 새로 읽어 주세요'); return; }
+      var 후보 = (RETURN_ALL_ROWS || []).filter(function (c) {
+        if (isReturnCardDone(c)) return false;
+        var p1 = String(c.phoneDigits || '').replace(/[^0-9]/g, '');
+        var p2 = String(c.phone2Digits || '').replace(/[^0-9]/g, '');
+        return (p1 && p1 === src.phone) || (p2 && p2 === src.phone);
+      });
+      if (!후보.length) {
+        toast('이 번호(' + bytoPhone(src.phone) + ')로 진행 중인 반품이 없습니다 — 반품 접수를 먼저 해 주세요', 3800);
+        return;
+      }
+      if (후보.length === 1) { bytoAttachToCase(후보[0], src); return; }
+      /*  여러 건이면 고르게 한다 — 눌렀던 단추 바로 밑에  */
+      var host = btn && btn.parentNode;
+      if (!host) { bytoAttachToCase(후보[0], src); return; }
+      var old = host.parentNode.querySelector('.byto-pick');
+      if (old) old.remove();
+      var pick = document.createElement('div');
+      pick.className = 'byto-pick';
+      BYTO_PICK_SRC = src; BYTO_PICK_CASES = 후보;
+      pick.innerHTML = '<div class="byto-tl-note">이 번호의 진행 중 반품이 ' + 후보.length + '건입니다 — 어디에 붙일까요?</div>' +
+        후보.map(function (c, i) {
+          return '<button type="button" onclick="bytoAttachToCase(BYTO_PICK_CASES[' + i + '], BYTO_PICK_SRC)">' +
+            esc((c.name || '') + ' · ' + (c.item || '') + ' · ' + (c.date || c.tab + ' ' + c.row + '행')) + '</button>';
+        }).join('');
+      host.parentNode.insertBefore(pick, host.nextSibling);
+    }
+    var BYTO_PICK_SRC = null, BYTO_PICK_CASES = [];
+
+    function bytoAttachToCase(c, src) {
+      document.querySelectorAll('.byto-pick').forEach(function (e) { e.remove(); });
+      /*  openReturnFromOrder 와 같은 길 — 반품 검색칸을 그 번호로 채워 목록을 좁히고 카드를 편다  */
+      var rq = document.getElementById('rq');
+      if (rq) rq.value = src.phone;
+      RETURN_QUERY = src.phone;
+      renderReturnActiveList();
+      if (wsIsMobileMode()) wsGoToPane(1);
+      var idx = -1;
+      for (var j = 0; j < RETURN_ACTIVE_ROWS.length; j++) {
+        if (RETURN_ACTIVE_ROWS[j].tab === c.tab && RETURN_ACTIVE_ROWS[j].row === c.row) { idx = j; break; }
+      }
+      if (idx < 0) { toast('반품 목록에서 그 건을 못 찾았습니다 — 반품 ↻ 뒤 다시 눌러 주세요', 3600); return; }
+      focusReturnCard(idx);
+      toast('사진 ' + src.photos.length + '장 가져오는 중…');
+      /*  ★ 사진은 «내 손에» 먼저 다 담고, 끝나면 한 번에 카드에 놓는다 ★
+          반품 목록은 다시 그릴 때마다 대기 사진(RET_PHOTO_PEND)을 비우고 펼친 칸을 닫는다.
+          사진을 받고 줄이는 몇 초 사이에 목록이 한 번 더 그려지면(주기 새로 읽기 등)
+          카드 쪽 배열에 담던 것이 통째로 날아갔다 — 미리보기에서 실제로 그랬다.
+          그래서 따로 담아 두었다가, 다 되면 그 건을 «다시 찾아» 놓는다.        */
+      var 담음 = [];
+      bytoUrlsToFiles(src.photos, function (files, bad) {
+        if (!files.length) { toast('사진을 못 가져왔습니다 — ↻ 로 새로 읽은 뒤 다시 눌러 주세요', 3600); return; }
+        retPhotoStage(담음, files, function () {
+          var k = -1;
+          for (var j = 0; j < RETURN_ACTIVE_ROWS.length; j++) {
+            if (RETURN_ACTIVE_ROWS[j].tab === c.tab && RETURN_ACTIVE_ROWS[j].row === c.row) { k = j; break; }
+          }
+          if (k < 0) {   // 그 사이 목록이 다른 검색으로 바뀌었다 — 다시 좁힌다
+            if (rq) rq.value = src.phone;
+            RETURN_QUERY = src.phone;
+            renderReturnActiveList();
+            for (var m = 0; m < RETURN_ACTIVE_ROWS.length; m++) {
+              if (RETURN_ACTIVE_ROWS[m].tab === c.tab && RETURN_ACTIVE_ROWS[m].row === c.row) { k = m; break; }
+            }
+          }
+          if (k < 0) { toast('반품 목록에서 그 건을 못 찾았습니다 — 반품 ↻ 뒤 다시 눌러 주세요', 3600); return; }
+          RET_PHOTO_PEND[k] = retPhotoList(k).concat(담음);
+          focusReturnCard(k);
+          var pop = document.getElementById(retPopId(k, 'photo'));
+          if (!(pop && pop.classList.contains('open'))) toggleReturnCompose(k, 'photo');
+          var memo = document.getElementById('ret-photo-memo-' + k);
+          if (memo && !String(memo.value || '').trim()) memo.value = bytoHead(src) + (src.body ? ' ' + src.body.slice(0, 60) : '');
+          retPhotoRender(k);
+          toast('반품 카드에 사진 ' + 담음.length + '장을 담았습니다' + (bad ? ' (' + bad + '장 못 가져옴)' : '') + ' — 확인하고 「올리기」', 3400);
+        });
+      });
+    }
+
+    function bytoTimelineHtml(items, collectedAt, key) {
       if (!items.length) return '<div class="byto-tl-note">이 번호로 바이토에 남은 통화·문자가 없습니다' +
         (collectedAt ? ' (' + esc(bytoWhen(collectedAt)) + ' 기준)' : '') + '</div>';
-      var h = items.map(function (it) {
+      var h = items.map(function (it, i) {
         var inbound = it.direction !== '발신';
         var what;
         if (it.kind === 'call') what = it.missed ? '<span class="miss">부재중</span>' : (inbound ? '받은 전화' : '건 전화');
@@ -8820,6 +8982,14 @@
           row += '<div class="byto-tl-photos">' + it.photos.map(function (u) {
             return '<a href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="고객 사진" loading="lazy"></a>';
           }).join('') + '</div>';
+        }
+        /*  받은 문자에는 「CS 문의로」·사진이 있으면 「반품에 붙이기」 (2단계)  */
+        if (key && it.kind === 'sms' && inbound && (it.body || (it.photos || []).length)) {
+          row += '<div class="byto-tl-acts">' +
+            '<button type="button" onclick="bytoToInquiry(\'' + js(key) + '\', ' + i + ')">CS 문의로</button>' +
+            ((it.photos || []).length
+              ? '<button type="button" onclick="bytoToReturn(\'' + js(key) + '\', ' + i + ', this)">반품에 붙이기</button>'
+              : '') + '</div>';
         }
         return row + '</div>';
       }).join('');
