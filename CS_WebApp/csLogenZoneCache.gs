@@ -37,8 +37,19 @@ var _ZC_TAB_ = "도서산간_로젠";
 /** 탭 머리글 — 세트분리 core.js 의 ssm_logenZoneRows 와 «같아야» 한다 */
 var _ZC_HEADER_ = ["지역키", "판정", "제주", "연륙도서", "산간", "표본주소", "물은때"];
 
-/** 한 번에 새로 물어볼 지역키 수. 하루 200~350개가 생기니 넉넉하다 */
-var _ZC_MAX_ = 120;
+/**
+ * 한 회차에 새로 물어볼 지역키 수.
+ *
+ * ★ 120 → 40 ★  (2026-10-10 · 한 곳씩 묻기로 바꾸면서)
+ *   한 요청에 한 곳만 실으므로(_zc_askMany_ 머리말) 같은 시간에 보는 곳이
+ *   열 배 줄었다. 요청 간격은 그대로 2초이므로 40곳 = 약 80초다.
+ *   1시간 일감 전체가 108초였고 예산이 25분(_CPR_JOB_BUDGET_MS_)이라 넉넉하다.
+ *
+ *   ★ 느린 것은 한시적이다 ★ 전에는 묻고 전부 버려서 후보가 줄지 않았다
+ *   (매시간 120/120). 지금은 회차마다 40곳이 «진짜로» 줄어든다. 하루 960곳.
+ *   다 외우면 후보가 0 이 되어 이 단계는 3초로 떨어진다 — 그때 올려도 된다.
+ */
+var _ZC_MAX_ = 40;
 
 /** 원장에서 뒤에서 몇 줄까지 훑나 */
 var _ZC_SCAN_ROWS_ = 4000;
@@ -203,19 +214,45 @@ function _zc_candidates_(ss, 있는것, 한도) {
 function _zc_askMany_(items) {
   var out = {};
   var 시작 = new Date().getTime();
+  var Y = function (v) {
+    return String(v == null ? "" : v).trim().toUpperCase() === "Y" ? "Y" : "N";
+  };
 
-  for (var s = 0; s < items.length; s += _LOGEN_BATCH_SIZE_) {
-    if (s > 0) {
+  /*  ★ 한 번에 «한 곳»만 묻는다 ★  (2026-10-10 · 사장님 「㉮로 해줘」)
+      ─ 왜 바꿨나 ─
+      응답에 «보낸 주소»가 안 실려 온다. 전에는 열 곳을 보내고 보낸 «차례»로
+      짝을 맞췄고, 어긋남을 잡으려고 돌려준 dongNm 이 보낸 주소 안에 있는지
+      확인했다. 그런데 지금 주소는 대부분 도로명이다 —
+        「부산광역시 금정구 범어사로 250」  ↔  dongNm 「청룡동」
+      동 이름이 주소에 없으니 **통과할 수가 없다.** 그래서 2026-10-10 에 재 보니
+      후보가 매시간 120/120 꽉 차는데 새로 외우는 것은 0 곳이었다.
+      33초를 들여 묻고 전부 버리고, 다음 시간에 또 같은 것을 묻는 쳇바퀴였다.
+
+      ─ 울타리를 느슨하게 하지 않았다 ─
+      차례를 믿기로 하면 한 번 어긋날 때 **엉뚱한 지역을 섬으로 외운다.**
+      없는 도선료를 물리거나 섬을 일반으로 보낸다. 틀린 판정은 빈칸보다 나쁘다.
+      그래서 울타리를 없애는 대신 **울타리가 필요한 까닭 자체를 없앴다** —
+      한 곳만 보내면 돌아온 답은 그 한 곳의 답이다. 짝이 어긋날 수가 없다.
+
+      ─ 로젠에 가는 부담은 그대로다 ─
+      전에도 «2초에 한 번» 요청이었고 지금도 «2초에 한 번»이다. 한 요청이 열 곳
+      대신 한 곳을 실을 뿐이다. 요청 간격을 내가 새로 정하지 않는다
+      ([[one-value-one-owner]] — 그 리듬의 주인은 csLogen.gs 다).
+      대신 한 회차에 보는 곳 수를 _ZC_MAX_ 로 줄였다.
+      느린 것은 한시적이다 — 쌓이면 후보가 0 이 되고 이 단계는 3초로 떨어진다. */
+  for (var i = 0; i < items.length; i++) {
+    if (i > 0) {
       if ((new Date().getTime() - 시작) > _LOGEN_TIME_BUDGET_MS_) break;  // 남은 건 다음 시간에
       Utilities.sleep(_LOGEN_BATCH_DELAY_MS_);
     }
-    var chunk = items.slice(s, s + _LOGEN_BATCH_SIZE_);
-    var data = [];
-    for (var i = 0; i < chunk.length; i++) {
-      data.push({ custCd: _logen_custCd_(), addr: chunk[i].addr });
-    }
 
-    var r = _logen_call_("integratedInquiry", { userId: _logen_userId_(), data: data });
+    var 보낸 = items[i];
+    if (!보낸 || !보낸.addr) continue;
+
+    var r = _logen_call_("integratedInquiry", {
+      userId: _logen_userId_(),
+      data: [{ custCd: _logen_custCd_(), addr: 보낸.addr }]
+    });
     if (!r.ok) continue;                       // 못 물었다 — 다음 시간에 또 본다
 
     var rows = _logen_arr_(r.json && (r.json.data || r.json.data1));
@@ -225,23 +262,12 @@ function _zc_askMany_(items) {
           _logen_ok_ 가 TRUE·SUCCESS 를 둘 다 참으로 본다. */
       if (d.resultCd != null && String(d.resultCd) !== "" && !_logen_ok_(d.resultCd)) continue;
 
-      /*  ★ 응답에 «보낸 주소»가 안 실려 온다 ★
-          그래서 보낸 차례로 맞춘다. 2026-10-09 실측에서 차례가 지켜졌지만
-          규격이 보장하는 바가 아니다 — 한 번 어긋나면 **엉뚱한 지역을 섬으로
-          외운다.** 틀린 판정은 빈칸보다 나쁘다.
-
-          그래서 돌려준 dongNm(동·면 이름)이 보낸 주소 안에 있는지 확인한다.
-          안 맞으면 그 건은 버린다 — 지어내지 않는다. 다음 시간에 또 묻는다. */
-      var 보낸 = chunk[k];
-      if (!보낸) continue;
-      var dong = String(d.dongNm == null ? "" : d.dongNm).trim();
-      if (dong && 보낸.addr.indexOf(dong) === -1) continue;   // 차례가 어긋났다
-      var Y = function (v) { return String(v == null ? "" : v).trim().toUpperCase() === "Y" ? "Y" : "N"; };
       var 제주 = Y(d.jejuRegYn), 도서 = Y(d.shipYn), 산간 = Y(d.montYn);
       out[보낸.addr] = {
         판정: 제주 === "Y" ? "제주" : (도서 === "Y" ? "연륙도서" : (산간 === "Y" ? "산간" : "일반")),
         제주: 제주, 연륙도서: 도서, 산간: 산간
       };
+      break;        // 한 곳을 물었으니 쓸 만한 첫 줄이 그 답이다
     }
   }
   return out;
