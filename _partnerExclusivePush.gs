@@ -5153,7 +5153,9 @@ var _pep_vcMem_ = null;
  * ══════════════════════════════════════════════════════════════
  */
 function _pep_normalizeCarrierName_(name) {
-  var c = String(name == null ? "" : name).replace(/s/g, "");
+  //  ★ /\s/g — 역슬래시가 벗겨져 /s/g 가 되면 «영문 s» 를 지운다 (2026-10-10 고침).
+  //     _pep_carrier_test.js 의 「이름 맞추기」 줄이 이것을 지킨다.
+  var c = String(name == null ? "" : name).replace(/\s/g, "");
   if (!c) return "";
   if (c.indexOf("로젠") >= 0) return "로젠택배";
   if (c.indexOf("한진") >= 0) return "한진택배";
