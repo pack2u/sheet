@@ -2158,7 +2158,7 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
       트리거가 20/20 으로 꽉 차 이어달리기(.after)가 하나도 안 걸렸다.
       셋 다 시트를 읽어 v2 에 POST 하는 같은 일이고 서로 기다릴 것이 없다.
       각각 try/catch 라 하나가 죽어도 나머지는 돈다. */
-  { fn: "_prv_scheduled_",                               h: 21, m: 30, label: "반품대장 + 보드 + 구매입력 → v2 미러" },
+  { fn: "_prv_scheduled_",                               h: 21, m: 30, label: "반품대장 + 보드 → v2 미러" },
   { fn: "_trigger_monthlySettle_",                       h: 22, m: 0,  label: "대리판매 마감" },
   { fn: "_trigger_exclusiveArchive_",                    h: 23, m: 0,  label: "대리공급 마감" },
 ];

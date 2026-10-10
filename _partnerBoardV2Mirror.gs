@@ -295,7 +295,7 @@ function _pt_ensureMirrorTriggers_() {
       ══════════════════════════════════════════════════════════════ */
   var 표 = (typeof _ALL_SCHEDULED_TRIGGERS_ !== "undefined" && _ALL_SCHEDULED_TRIGGERS_)
     ? _ALL_SCHEDULED_TRIGGERS_
-    : [{ fn: "_prv_scheduled_", h: 21, m: 30, label: "반품대장 + 보드 + 구매입력 → v2" }];
+    : [{ fn: "_prv_scheduled_", h: 21, m: 30, label: "반품대장 + 보드 → v2" }];
   var out = { 건것: [], 이미: [], 오류: [] };
   try {
     var have = {};
