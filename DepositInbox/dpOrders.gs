@@ -231,19 +231,9 @@ function dpSaveAlias_(ss, payer, code, name, by) {
 
 // ── 매칭 돌리기 ───────────────────────────────────
 
-/** 주문 몇 개에 입금액을 오래된 것부터 나눠 담는다 (사람이 고른 주문) */
+/** 주문 몇 개에 입금액을 오래된 것부터 나눠 담는다 — 몸통은 dpMatch.gs dpAllocManual (2026-10-10 옮김) */
 function _dp_allocManual_(amount, picked) {
-  picked.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
-  var left = amount, alloc = [];
-  picked.forEach(function (o) {
-    var remain = o.amount - o.paid;
-    if (left <= 0 || remain <= 0) return;
-    var put = Math.min(left, remain);
-    alloc.push({ no: o.no, apply: put });
-    left -= put;
-  });
-  var need = picked.reduce(function (s, o) { return s + Math.max(0, o.amount - o.paid); }, 0);
-  return { alloc: alloc, diff: amount - need };
+  return dpAllocManual(amount, picked);
 }
 
 /**
@@ -257,74 +247,27 @@ function dpMatchRunLocked_(ss) {
   var out = {};
   if (last < 2) return out;
   var rows = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
-  var orders = dpLoadOrders_(ss);
-  var byNo = {};
-  orders.forEach(function (o) { byNo[o.no] = o; });
-  var aliases = dpLoadAliases_(ss);
-  var since = _dp_daysAgo_(DP_MATCH_DEPOSIT_DAYS_);
   var g = function (r, h) { return c[h] ? r[c[h] - 1] : ""; };
   var s = function (r, h, v) { if (c[h]) r[c[h] - 1] = v; };
 
-  var idx = [];
-  rows.forEach(function (r, i) { if (String(g(r, "구분")) === "입금") idx.push(i); });
-  idx.sort(function (a, b) {
-    var ta = _dp_ts_(g(rows[a], "거래일시")), tb = _dp_ts_(g(rows[b], "거래일시"));
-    return ta < tb ? -1 : ta > tb ? 1 : a - b;
-  });
+  /*  ★ 판정은 dpMatch.gs dpMatchAll 이 한다 (2026-10-10) ★
+      V2 가 같은 함수로 같은 답을 내야 해서 순서까지 그쪽으로 옮겼다.
+      여기는 대장을 읽어 넘기고, 받은 답을 칸에 적기만 한다. */
+  var res = dpMatchAll(dpLedgerDeps_(rows, c), dpLoadOrders_(ss), dpLoadAliases_(ss),
+    { since: _dp_daysAgo_(DP_MATCH_DEPOSIT_DAYS_), frozen: DP_FROZEN_STATES_ });
 
-  var addPaid = function (alloc) {
-    (alloc || []).forEach(function (a) { if (byNo[a.no]) byNo[a.no].paid += Number(a.apply) || 0; });
-  };
-
-  idx.forEach(function (i) {
-    var r = rows[i];
+  rows.forEach(function (r) {
     var key = String(g(r, "고유번호"));
-    var txAt = _dp_ts_(g(r, "거래일시"));
-    var state = String(g(r, "상태"));
-    var pin = String(g(r, "지정") || "");
-    var stored = [];
-    try { stored = JSON.parse(String(g(r, "배분") || "[]")) || []; } catch (e) { stored = []; }
-
-    // 이카운트에 넘어갔거나, 기간 밖이면 — 적어 둔 대로 세기만
-    if (DP_FROZEN_STATES_.indexOf(state) >= 0 || txAt.slice(0, 10) < since) {
-      if (String(g(r, "매칭결과")) !== "제외") addPaid(stored);
-      return;
-    }
-
-    var amount = Number(g(r, "금액")) || 0;
-    var res;
-    if (pin === "제외") {
-      res = { result: "제외", code: "", cust: "", alloc: [], diff: 0, candidates: [], reason: "주문 입금 아님 (사람이 제외)" };
-    } else if (pin) {
-      var want = [];
-      try { want = (JSON.parse(pin).orders || []); } catch (e) { want = []; }
-      var picked = want.map(function (no) { return byNo[no]; }).filter(Boolean);
-      if (!picked.length) {
-        res = { result: "확인필요", code: "", cust: "", alloc: [], diff: 0, candidates: want,
-                reason: "지정한 주문(" + want.join(", ") + ")을 주문서에서 못 찾음 — 기간이 지났거나 주문서를 다시 올려야 함" };
-      } else {
-        var m = _dp_allocManual_(amount, picked);
-        res = { result: m.diff === 0 ? "일치(지정)" : (m.diff < 0 ? "부족(지정)" : "초과(지정)"),
-                code: picked[0].code, cust: picked[0].name, alloc: m.alloc, diff: m.diff, candidates: [], reason: "사람이 지정" };
-      }
-    } else {
-      res = dpMatchDeposit({ name: String(g(r, "입금자")), amount: amount, txAt: txAt },
-        orders.map(function (o) { return { no: o.no, date: o.date, due: o.due, code: o.code, name: o.name, amount: o.amount, paid: o.paid }; }),
-        aliases);
-      if (res.how && res.how !== "이름") res.reason = (res.reason ? res.reason + " · " : "") + "거래처: " + res.how;
-    }
-    addPaid(res.alloc);
-
-    var nos = res.alloc.length ? res.alloc.map(function (a) { return a.no; }).join(", ")
-      : (res.candidates.length ? "후보: " + res.candidates.join(", ") : "");
-    s(r, "매칭결과", res.result);
-    s(r, "거래처", res.cust || "");
-    s(r, "거래처코드", res.code || "");
-    s(r, "주문번호", nos);
-    s(r, "차액", res.diff || "");
-    s(r, "매칭메모", res.reason || "");
-    s(r, "배분", res.alloc.length ? JSON.stringify(res.alloc) : "");
-    out[key] = { result: res.result, cust: res.cust || "", nos: nos, diff: res.diff || 0, reason: res.reason || "" };
+    var m = res[key];
+    if (!m) return;
+    s(r, "매칭결과", m.result);
+    s(r, "거래처", m.cust || "");
+    s(r, "거래처코드", m.code || "");
+    s(r, "주문번호", m.nos);
+    s(r, "차액", m.diff || "");
+    s(r, "매칭메모", m.reason || "");
+    s(r, "배분", m.alloc.length ? JSON.stringify(m.alloc) : "");
+    out[key] = { result: m.result, cust: m.cust || "", nos: m.nos, diff: m.diff || 0, reason: m.reason || "" };
   });
 
   // 매칭 칸만 한 번에 쓴다
@@ -334,6 +277,23 @@ function dpMatchRunLocked_(ss) {
   });
   dpBumpVer_();   // 목록 · 상세 캐시가 새로 읽게
   return out;
+}
+
+/**
+ * 대장 줄 → dpMatchAll 이 받는 모양. V2 미러도 이 모양으로 보낸다 (dpMirror.gs).
+ * 거래일시는 _dp_ts_ 로 글자로 — 날짜 값과 글자가 섞이면 차례가 어긋난다.
+ */
+function dpLedgerDeps_(rows, c) {
+  var g = function (r, h) { return c[h] ? r[c[h] - 1] : ""; };
+  return rows.map(function (r) {
+    var stored = [];
+    try { stored = JSON.parse(String(g(r, "배분") || "[]")) || []; } catch (e) { stored = []; }
+    return {
+      key: String(g(r, "고유번호")), kind: String(g(r, "구분")), txAt: _dp_ts_(g(r, "거래일시")),
+      state: String(g(r, "상태")), pin: String(g(r, "지정") || ""), stored: stored,
+      prevResult: String(g(r, "매칭결과")), name: String(g(r, "입금자")), amount: Number(g(r, "금액")) || 0
+    };
+  });
 }
 
 /** 잠금을 잡고 매칭을 돌린다 */

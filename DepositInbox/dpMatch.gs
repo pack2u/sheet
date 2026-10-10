@@ -370,6 +370,104 @@ function dpParseOrderSheet(rows) {
 }
 
 // ══════════════════════════════════════════════
+//  대장 전체 매칭 — 순수 함수 (2026-10-10 dpOrders.gs dpMatchRunLocked_ 에서 옮김)
+// ══════════════════════════════════════════════
+
+/**
+ * ★ 왜 옮겼나 ★  (2026-10-10 v2 이전)
+ *   입금 «한 건» 판정(dpMatchDeposit)은 여기 있었지만, 대장 «전체»를 도는 순서 —
+ *   거래일시 순으로 돌며 앞 입금이 채운 만큼 주문의 남은 돈을 줄이고, 이카운트에
+ *   넘어간 줄은 적힌 배분대로 세기만 하고, 사람이 지정한 줄은 그대로 따르는 것 —
+ *   은 시트 쪽 dpMatchRunLocked_ 안에 시트 읽기·쓰기와 섞여 있었다.
+ *   V2 가 같은 답을 내려면 이 순서까지 같아야 한다. 두 벌로 짜면 갈라진다.
+ *   그래서 순서만 떼어 여기 둔다 — 시트도 V2 도 이것을 부른다.
+ */
+
+/** 주문 몇 개에 입금액을 오래된 것부터 나눠 담는다 (사람이 고른 주문) */
+function dpAllocManual(amount, picked) {
+  picked.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  var left = amount, alloc = [];
+  picked.forEach(function (o) {
+    var remain = o.amount - o.paid;
+    if (left <= 0 || remain <= 0) return;
+    var put = Math.min(left, remain);
+    alloc.push({ no: o.no, apply: put });
+    left -= put;
+  });
+  var need = picked.reduce(function (s, o) { return s + Math.max(0, o.amount - o.paid); }, 0);
+  return { alloc: alloc, diff: amount - need };
+}
+
+/**
+ * @param {Array} deps  대장 «줄 차례 그대로» —
+ *   {key, kind(구분), txAt("yyyy-MM-dd HH:mm[:ss]"), state(상태), pin(지정), stored(배분 배열),
+ *    prevResult(매칭결과), name(입금자), amount}
+ * @param {Array} orders  {no, date, due, code, name, amount} — paid 는 여기서 0 부터 센다
+ * @param {Object} aliases  정리한 입금자 → 거래처코드
+ * @param {{since:string, frozen:string[]}} opts  since = 이 날 앞의 입금은 다시 안 본다
+ * @return {Object} 고유번호 → {result, code, cust, alloc, diff, candidates, reason, nos}
+ *   기간 밖·이카운트에 넘어간 줄은 «안 돌려준다» (적힌 대로 둔다 — 세기만 한다)
+ */
+function dpMatchAll(deps, orders, aliases, opts) {
+  opts = opts || {};
+  var since = String(opts.since || ""), frozen = opts.frozen || [];
+  var mine = orders.map(function (o) {
+    return { no: o.no, date: o.date, due: o.due, code: o.code, name: o.name, amount: Number(o.amount) || 0, paid: 0 };
+  });
+  var byNo = {};
+  mine.forEach(function (o) { byNo[o.no] = o; });
+  var addPaid = function (alloc) {
+    (alloc || []).forEach(function (a) { if (byNo[a.no]) byNo[a.no].paid += Number(a.apply) || 0; });
+  };
+
+  var idx = [];
+  deps.forEach(function (d, i) { if (String(d.kind) === "입금") idx.push(i); });
+  idx.sort(function (a, b) {
+    var ta = String(deps[a].txAt || ""), tb = String(deps[b].txAt || "");
+    return ta < tb ? -1 : ta > tb ? 1 : a - b;
+  });
+
+  var out = {};
+  idx.forEach(function (i) {
+    var d = deps[i];
+    var txAt = String(d.txAt || "");
+    var pin = String(d.pin || "");
+    var stored = d.stored || [];
+    if (frozen.indexOf(String(d.state || "")) >= 0 || txAt.slice(0, 10) < since) {
+      if (String(d.prevResult || "") !== "제외") addPaid(stored);
+      return;
+    }
+    var amount = Number(d.amount) || 0;
+    var res;
+    if (pin === "제외") {
+      res = { result: "제외", code: "", cust: "", alloc: [], diff: 0, candidates: [], reason: "주문 입금 아님 (사람이 제외)" };
+    } else if (pin) {
+      var want = [];
+      try { want = (JSON.parse(pin).orders || []); } catch (e) { want = []; }
+      var picked = want.map(function (no) { return byNo[no]; }).filter(Boolean);
+      if (!picked.length) {
+        res = { result: "확인필요", code: "", cust: "", alloc: [], diff: 0, candidates: want,
+                reason: "지정한 주문(" + want.join(", ") + ")을 주문서에서 못 찾음 — 기간이 지났거나 주문서를 다시 올려야 함" };
+      } else {
+        var m = dpAllocManual(amount, picked);
+        res = { result: m.diff === 0 ? "일치(지정)" : (m.diff < 0 ? "부족(지정)" : "초과(지정)"),
+                code: picked[0].code, cust: picked[0].name, alloc: m.alloc, diff: m.diff, candidates: [], reason: "사람이 지정" };
+      }
+    } else {
+      res = dpMatchDeposit({ name: String(d.name || ""), amount: amount, txAt: txAt },
+        mine.map(function (o) { return { no: o.no, date: o.date, due: o.due, code: o.code, name: o.name, amount: o.amount, paid: o.paid }; }),
+        aliases);
+      if (res.how && res.how !== "이름") res.reason = (res.reason ? res.reason + " · " : "") + "거래처: " + res.how;
+    }
+    addPaid(res.alloc);
+    res.nos = res.alloc.length ? res.alloc.map(function (a) { return a.no; }).join(", ")
+      : (res.candidates.length ? "후보: " + res.candidates.join(", ") : "");
+    out[String(d.key)] = res;
+  });
+  return out;
+}
+
+// ══════════════════════════════════════════════
 //  이카운트 일반전표 (4단계, 2026-09-29) — 규격: 이카운트_일반전표_API.md
 // ══════════════════════════════════════════════
 
@@ -488,6 +586,8 @@ if (typeof module !== "undefined" && module.exports) {
     dpNormName: dpNormName,
     dpFindCustomer: dpFindCustomer,
     dpMatchDeposit: dpMatchDeposit,
+    dpMatchAll: dpMatchAll,
+    dpAllocManual: dpAllocManual,
     dpParseOrderSheet: dpParseOrderSheet,
     dpIsRecentOrder: dpIsRecentOrder,
     dpIsPlatformPayer: dpIsPlatformPayer

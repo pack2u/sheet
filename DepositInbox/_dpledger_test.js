@@ -668,9 +668,16 @@ console.log('\n[읽기 캐시 — 바뀐 게 없으면 다시 안 읽는다]');
 
 console.log('\n[V2 미러]');
 {
+  //  2026-10-10 — V2 에 받는 문이 생겨 기본이 «켜짐»으로 바뀌었다. 끄는 길은 속성 off.
+  const { post, props, mirrors } = makeEnv();
+  props.DEPOSIT_MIRROR = 'off';
+  post({ token: 'tok', action: 'sms', body: SMS1 });
+  ok('DEPOSIT_MIRROR=off 면 V2 로 안 보낸다', mirrors.length === 0);
+}
+{
   const { post, mirrors } = makeEnv();
   post({ token: 'tok', action: 'sms', body: SMS1 });
-  ok('기본은 꺼짐 — V2 로 안 보낸다', mirrors.length === 0);
+  ok('기본은 켜짐 — 주소·열쇠가 있으면 보낸다', mirrors.length === 1, mirrors.length);
 }
 {
   const { post, props, mirrors, rows, chats, setMirrorFail } = makeEnv();

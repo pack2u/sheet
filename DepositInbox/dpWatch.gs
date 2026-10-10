@@ -22,6 +22,8 @@ function dpTouchSeen_() {
 
 /** 트리거가 30분마다 부른다. */
 function dpWatch() {
+  //  V2 로 대장 상태를 민다 (2026-10-10 · dpMirror.gs dpMirrorSync_). 실패해도 감시는 계속한다.
+  try { dpMirrorSync_(); } catch (eM) { Logger.log("[입금미러] 30분 동기 실패(무시): " + eM.message); }
   var props = PropertiesService.getScriptProperties();
   var seen = Number(props.getProperty("DP_LAST_SEEN") || 0);
   if (!seen) return;                                   // 아직 한 번도 안 붙은 폰
