@@ -4900,8 +4900,10 @@
       renderOrderDashboard();
       loadStockout();   /* 팩투유 품절상품 — 화면 열 때 한 번 (2026-09-11) */
       loadCsq();        /* CS 문의 — 열 때 한 번, 10분 지나면 다시 (2026-10-02) */
-      loadByto(true);   /* 바이토 콜백 대기 — 열 때 한 번, 그 뒤 5분마다 (2026-10-10) */
-      setInterval(function () { if (!document.hidden) loadByto(true); }, 300000);
+      loadByto(true);   /* 바이토 콜백 대기 — 열 때 한 번, 그 뒤 2분마다 (2026-10-10) */
+      /*  수집기가 «새 연락이 오면 바로» 돌게 됐다(byto-watch, 1~2분). 화면이 5분마다
+          읽으면 그게 병목이 된다. v2 한 번 묻는 값이라 2분이어도 가볍다.  */
+      setInterval(function () { if (!document.hidden) loadByto(true); }, 120000);
       renderDeposits(); /* 오늘 입금 — 열 때 한 번, 그 뒤 1분마다 (2026-09-29) */
       depPaintSoundBtn(); /* 입금 소리 켜짐/꺼짐 (2026-09-30) */
       startCsPulse();
