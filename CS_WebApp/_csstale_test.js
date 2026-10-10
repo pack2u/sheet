@@ -250,11 +250,21 @@ console.log("\n[묻어두기] ★ 사람이 닫으면 이레 · 이레 뒤엔 �
   ok("그러니 새 카드가 선다 (다시 멈췄다는 뜻)",
      c4.한일.some((x) => x.무엇 === "만듦"));
 
-  //  ⑤ 열쇠 — 반품에는 송장번호가 없다
+  //  ⑤ ★ 멈춘 것이 없는 날은 보드를 읽지 않는다 ★ 평소가 그런 날이다
+  const c5 = 판();
+  let 읽음 = 0;
+  const 본래 = c5.csListHandoffCards;
+  c5.csListHandoffCards = (p) => { 읽음++; return 본래(p); };
+  c5.csStaleReport_([]);                       // 멈춘 것 0 — 할 일이 없다
+  ok("★ 멈춘 것이 0 이면 보드 읽기가 한 번을 넘지 않는다 (읽음 " + 읽음 + ")",
+     읽음 <= 1);
+  c5.csListHandoffCards = 본래;
+
+  //  ⑥ 열쇠 — 반품에는 송장번호가 없다
   ok("★ 접수번호를 열쇠로 쓴다", /var t = String\(s\.takeNo/.test(src));
   ok("접수번호가 없으면 대장 자리(「202610!36」)로", /t \|\| String\(s\.어디/.test(src));
 
-  //  ⑥ 출고 쪽도 같은 장치를 쓴다 — 두 벌로 만들지 않았다
+  //  ⑦ 출고 쪽도 같은 장치를 쓴다 — 두 벌로 만들지 않았다
   const ost = fs.readFileSync("csLogenOutStale.gs", "utf8");
   ok("★ 출고 쪽은 공용 장치를 부른다 (다시 짜지 않았다)",
      /_stale_muteOnClose_\("OST", _OST_SRCKEY_/.test(ost));

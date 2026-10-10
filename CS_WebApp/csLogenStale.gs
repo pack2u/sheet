@@ -307,6 +307,12 @@ function _stale_ymd_(d) {
  * @return {number} 이번에 새로 묻은 수 (0 이면 아무 일도 없었다)
  */
 function _stale_muteOnClose_(태그, srcKey, 송장들) {
+  /*  ★ 묻을 것이 없으면 보드도 안 읽는다 ★ 아래 _stale_humanClosed_ 는 보드
+      시트를 통째로 읽는다. 멈춘 건이 0 인 날(평소가 그렇다)에 그걸 매시간
+      둘(출고·반품) 치 읽으면, 하는 일 없이 읽기만 한다 —
+      오늘 도서·산간이 33초를 그렇게 쓰고 있었다. [[gas-service-calls-in-loops]] */
+  if (!(송장들 && 송장들.length)) return 0;
+
   var 카드 = _stale_humanClosed_(srcKey);
   if (!(카드 && 카드.id)) return 0;
 
