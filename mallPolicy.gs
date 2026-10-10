@@ -193,6 +193,27 @@ function _mp_sheet_(ss, name) {
   return sh;
 }
 
+/**
+ * 쓸 만큼 줄·칸이 있는지 보고 모자라면 늘린다.
+ *
+ * ★ 왜 필요한가 ★  (2026-10-10)
+ *   몰 칸을 18 → 32 로 늘렸더니 「가격계산_미리보기」가 깨졌다.
+ *   그 탭은 몰 하나당 칸 하나를 쓴다 — 4번 칸부터 32개면 35번 칸이 필요한데
+ *   새 시트는 기본 26칸이다. getRange 가 「해당 열이 범위를 벗어납니다」로 죽는다.
+ *
+ *   ★ 줄·칸 수를 상수에서 뽑아 쓰면 여기서 한 번은 꼭 걸린다 ★
+ *     _MP_ROWS_ 를 또 늘릴 날이 온다. 그때마다 이 사고를 겪지 않도록
+ *     «쓰기 전에 늘리는» 일을 한 곳에 둔다.
+ *
+ *   줄여서 맞추지는 않는다 — 사람이 적어 둔 것이 사라진다.
+ */
+function _mp_ensureSize_(sh, rows, cols) {
+  var r = sh.getMaxRows(), c = sh.getMaxColumns();
+  if (rows > r) sh.insertRowsAfter(r, rows - r);
+  if (cols > c) sh.insertColumnsAfter(c, cols - c);
+  return sh;
+}
+
 /** 머리글 한 줄을 깔고 폭·메모를 맞춘다 */
 function _mp_header_(sh, cols, headerRow) {
   var names = cols.map(function (c) { return c.h; });
@@ -252,6 +273,8 @@ function mpSetupSheets() {
 
   // ── 쇼핑몰정책 ──
   var sh = _mp_sheet_(ss, _MP_TAB_POLICY_);
+  //  예시행(3) + 몰칸 + 아래 메모 몇 줄 · 칸은 _MP_COLS_ 수만큼
+  _mp_ensureSize_(sh, _MP_FIRST_ROW_ + _MP_ROWS_ + 6, _MP_COLS_.length + 1);
   sh.getRange(1, 1).setValue(_MP_TAB_POLICY_)
     .setFontFamily("Arial").setFontSize(13).setFontWeight("bold");
   sh.getRange(1, 5)
@@ -319,6 +342,7 @@ function mpSetupSheets() {
 
   // ── 실효수수료_역산 ──
   var ef = _mp_sheet_(ss, _MP_TAB_EFF_);
+  _mp_ensureSize_(ef, _MP_EFF_FIRST_ + _MP_EFF_ROWS_ + 4, _MP_EFF_COLS_.length + 1);
   ef.getRange(1, 1).setValue(_MP_TAB_EFF_)
     .setFontFamily("Arial").setFontSize(13).setFontWeight("bold");
   ef.getRange(1, 4)
@@ -376,6 +400,8 @@ function mpSetupSheets() {
  */
 function mpBuildPreview_(ss) {
   var sh = _mp_sheet_(ss, _MP_TAB_PREVIEW_);
+  /*  ★ 몰 하나당 칸 하나다 ★  4번 칸부터 _MP_ROWS_ 개 — 기본 26칸으로는 모자란다  */
+  _mp_ensureSize_(sh, 40, 3 + _MP_ROWS_ + 1);
 
   sh.getRange(1, 1).setValue(_MP_TAB_PREVIEW_)
     .setFontFamily("Arial").setFontSize(13).setFontWeight("bold");
@@ -1022,6 +1048,7 @@ function mpDiscoverMalls() {
   // ── 결과 탭에 적는다 ──
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var out = _mp_sheet_(ss, _MP_FOUND_TAB_);
+  _mp_ensureSize_(out, 목록.length + 80, 14);
   out.clear();
 
   out.getRange(1, 1).setValue(_MP_FOUND_TAB_)
@@ -1411,6 +1438,7 @@ function mpSampleLedger() {
   // ── 적는다 ──
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var out = _mp_sheet_(ss, _MP_SAMPLE_TAB_);
+  _mp_ensureSize_(out, _MP_SAMPLE_N_ * 3 + 120, 13);
   out.clear();
 
   out.getRange(1, 1).setValue(_MP_SAMPLE_TAB_)
