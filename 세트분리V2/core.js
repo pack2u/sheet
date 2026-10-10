@@ -77,20 +77,30 @@ var SS_OUT_HEADER = [
  *   사람이 적는 조치·메모 «뒤»에 둔다. 앞에 끼우면 조치 칸 자리가 밀려
  *   지금까지 쓰던 손버릇이 어긋난다.
  */
-var SS_HOLD_HEADER = SS_OUT_HEADER.concat(['보류사유', '상세', '조치', '메모', '원본코드']);
+/*  ★ 맨 끝 「판매처」 ★  (2026-10-10)
+    > "품목명 끝 판매처 부분을 별도 칸으로 빼줘"
+    품목명 끝의 「---법인/자사몰」 같은 꼬리를 따로 뽑은 칸이다(u.판매처표기).
+    ★ 품목명은 그대로 둔다 ★ 송장에 찍히고 업체가 그걸 보고 담는다(ssDisplayName).
+    ★ 인쇄하는 탭(로젠 출력·도서산간)에는 안 넣는다 ★ SS_OUT_HEADER 19열은 로젠 양식과의 약속이다.
+    ★ 맨 «끝»에 둔다 ★ 앞에 끼우면 조치·메모·원본코드 자리가 밀린다 — 읽는 쪽은 모두
+    머리글 이름으로 찾지만, 사람 손버릇은 자리로 기억한다.                          */
+var SS_SELLER_COL = '판매처';
+function ssSellerCell(u) { return ssText(u && u.판매처표기); }
+
+var SS_HOLD_HEADER = SS_OUT_HEADER.concat(['보류사유', '상세', '조치', '메모', '원본코드', SS_SELLER_COL]);
 
 /**
  * 대리발송 탭 — 앞 19열은 다른 출력 탭과 똑같이 두고 뒤에 업체 정보를 붙인다.
  * 그래야 업체 양식으로 복사할 때 열 위치가 어긋나지 않는다. (T=업체코드)
  */
-var SS_PARTNER_HEADER = SS_OUT_HEADER.concat(['업체코드', '업체명', '조치']);
+var SS_PARTNER_HEADER = SS_OUT_HEADER.concat(['업체코드', '업체명', '조치', SS_SELLER_COL]);
 
 /**
  * 비배송 탭 — 물건이 아니라 금액만 오가는 줄.
  * 적립금·반품배송비·할인 같은 것들이다. 송장은 안 나가지만
  * 일일마감 매출 집계에 쓰이므로 버리지 않고 여기에 모아 원장에도 그대로 남긴다.
  */
-var SS_NONSHIP_HEADER = SS_OUT_HEADER.concat(['비배송사유']);
+var SS_NONSHIP_HEADER = SS_OUT_HEADER.concat(['비배송사유', SS_SELLER_COL]);
 
 /** 수동조치 이력 — 보류를 사람이 되살린 기록. 지우지 않는다 */
 /**
@@ -126,7 +136,7 @@ var SS_HOLD_KEEP_WORDS = ['보류', '보류유지', '그대로', '그대로보�
 var SS_VENDOR_HEADER = ['업체코드', '업체명'];
 
 /** 합배송 탭 — 대표행과 동봉행을 한자리에 모아 박스 구성이 보이게 한다 */
-var SS_MERGED_HEADER = ['구분', '조건ID', '실제경로', '합포장키'].concat(SS_OUT_HEADER);
+var SS_MERGED_HEADER = ['구분', '조건ID', '실제경로', '합포장키'].concat(SS_OUT_HEADER).concat([SS_SELLER_COL]);
 
 /** 도서산간 탭 — 택배사 요금 구분(제주연계 / 도선료·산간료)에 맞춘 권역을 앞에 붙인다 */
 /**
@@ -2907,21 +2917,21 @@ function ssIslandRow(u) {
 }
 
 function ssNonshipRow(u) {
-  return ssOutRow(u).concat([u.비배송사유 || '']);
+  return ssOutRow(u).concat([u.비배송사유 || '', ssSellerCell(u)]);
 }
 
 function ssPartnerRow(u) {
-  return ssOutRow(u).concat([u.업체코드 || '', u.업체명 || '', u.수동조치 || '']);
+  return ssOutRow(u).concat([u.업체코드 || '', u.업체명 || '', u.수동조치 || '', ssSellerCell(u)]);
 }
 
 function ssHoldRow(u) {
   return ssOutRow(u).concat([u.보류사유 || '', u.보류상세 || '',
-    u.조치입력 || '', u.메모입력 || '', u.원본코드 || '']);
+    u.조치입력 || '', u.메모입력 || '', u.원본코드 || '', ssSellerCell(u)]);
 }
 
 function ssMergedRow(u) {
   return [u.합포장대표 ? '대표' : '동봉', u.조건ID || '', u.실경로 || '', u.합포장그룹 || '']
-    .concat(ssOutRow(u));
+    .concat(ssOutRow(u)).concat([ssSellerCell(u)]);
 }
 
 function ssLedgerRow(u, runKey, at) {

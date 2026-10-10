@@ -135,6 +135,11 @@ var SSIO_TEXT_COLS = ['전화', '모바일', '보내는분전화', '원연락처
 
 function ssio_write(name, headers, rows, style) {
   var sh = ssio_sheet(name, headers);
+  /*  ★ 칸이 모자라면 늘린다 ★  (2026-10-10 — 보류·대리발송 등에 「판매처」를 맨 끝에 더하면서)
+      누가 탭의 남는 열을 손으로 지워 «딱 옛 너비»로 줄여 놨다면, 늘어난 머리글이
+      격자 밖으로 나가 getRange 가 터진다. 새 탭은 26열이라 평소엔 안 탄다.  */
+  var 열모자람 = headers.length - sh.getMaxColumns();
+  if (열모자람 > 0) sh.insertColumnsAfter(sh.getMaxColumns(), 열모자람);
   sh.getRange(1, 1, 1, headers.length).setValues([headers]);
   ssio_clearBody(sh);
   if (rows && rows.length) {

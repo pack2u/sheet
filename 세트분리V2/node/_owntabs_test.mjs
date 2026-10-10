@@ -952,7 +952,9 @@ console.log("\n[보류 탭] 원본코드 칸이 열쇠를 지킨다");
   );
   const { SS_HOLD_HEADER, SS_OUT_HEADER, ssHoldRow } = 꺼내기(null, null, { log() {} }, undefined);
 
-  eq("★ 맨 뒤가 원본코드", SS_HOLD_HEADER[SS_HOLD_HEADER.length - 1], "원본코드");
+  //  2026-10-10 맨 끝에 「판매처」가 붙었다 — 원본코드는 그 바로 앞(조치·메모 뒤)
+  eq("★ 맨 뒤가 판매처, 그 앞이 원본코드",
+    SS_HOLD_HEADER.slice(-2).join("/"), "원본코드/판매처");
   eq("★ 조치·메모 자리는 안 밀렸다",
     SS_HOLD_HEADER.indexOf("조치") + "/" + SS_HOLD_HEADER.indexOf("메모"),
     (SS_OUT_HEADER.length + 2) + "/" + (SS_OUT_HEADER.length + 3));
@@ -966,7 +968,10 @@ console.log("\n[보류 탭] 원본코드 칸이 열쇠를 지킨다");
   };
   const row = ssHoldRow(u);
   eq("줄 길이가 머리글과 맞는다", row.length, SS_HOLD_HEADER.length);
-  eq("★ 원본코드가 실린다", row[row.length - 1], "BF105PSFTP0003_ORIG");
+  eq("★ 원본코드가 실린다", row[SS_HOLD_HEADER.indexOf("원본코드")], "BF105PSFTP0003_ORIG");
+  eq("판매처표기가 없으면 판매처 칸은 빈칸", row[row.length - 1], "");
+  eq("★ 판매처표기가 맨 끝 칸에 실린다",
+    ssHoldRow(Object.assign({}, u, { 판매처표기: "법인/자사몰" })).slice(-1)[0], "법인/자사몰");
 
   //  ── 담는 쪽이 그 칸을 «먼저» 보는가 ──
   eq("★ 적힌 원본코드를 먼저 쓴다",
