@@ -322,10 +322,22 @@ function partnerArchiveToMonthlySettle() {
     ui.alert("⚠ 백그라운드 예약 실패 → 즉시 처리합니다.\n" +
       "(파일이 많으면 6분 한도에 걸려 또 멈출 수 있습니다.)\n\n" +
       _pt_triggerFailWhy_(_PMS_LAST_TRIGGER_ERR_));
+    //  ★ 2026-10-10 잠금을 쥔 채 돌지 않는다 — 붙이는 자리(_pms_processOneFile_)가 짧게 잠근다.
+    //    다른 길과 같이: 짧게 잠가 «돌고 있다» 깃발만 보고·세우고 바로 푼다.
     var lock2 = LockService.getScriptLock();
+    var props2 = PropertiesService.getScriptProperties();
+    var 돌던것 = null;
     if (lock2.tryLock(5000)) {
-      try { _pms_runBatch_(true); }
-      finally { lock2.releaseLock(); }
+      돌던것 = props2.getProperty("_PMS_BATCH_RUNNING_");
+      var 살아있음 = 돌던것 && (Date.now() - Number(돌던것)) < _PMS_RUNNING_WINDOW_MS_;
+      if (!살아있음) props2.setProperty("_PMS_BATCH_RUNNING_", String(Date.now()));
+      lock2.releaseLock();
+      if (살아있음) {
+        ui.alert("⚠ 마감이 이미 돌고 있습니다. 완료 Chat 을 기다려 주세요.");
+      } else {
+        try { _pms_runBatch_(true); }
+        finally { try { props2.deleteProperty("_PMS_BATCH_RUNNING_"); } catch (_) {} }
+      }
     } else {
       ui.alert("⚠ 다른 자동화가 잠시 실행 중입니다.\n메뉴「🛑 마감 백그라운드 강제 초기화」후 다시 시도하세요.");
     }
@@ -404,7 +416,7 @@ function partnerArchiveToMonthlySilent_() {
   }
   var props = PropertiesService.getScriptProperties();
   var running = props.getProperty("_PMS_BATCH_RUNNING_");
-  if (running && (Date.now() - Number(running)) < 6 * 60 * 1000) {
+  if (running && (Date.now() - Number(running)) < _PMS_RUNNING_WINDOW_MS_) {
     Logger.log("[PMS_SILENT] 이미 배치 실행 중 → 스킵");
     return;
   }
@@ -472,6 +484,19 @@ function partnerDiagnoseMonthlyArchive() {
 var _PMS_RESUME_KEY_ = "_PMS_RESUME_STATE";       // ScriptProperties 상태 저장 키
 var _PMS_RESUME_TRIGGER_ = "_pms_continueResume_"; // 재개 트리거 핸들러명
 var _PMS_TIME_BUDGET_MS_ = 4.5 * 60 * 1000;        // 배치당 시간 예산(4.5분, 6분 한도 안전마진)
+/**
+ * ★ 「돌고 있다」 깃발을 믿는 시간 — 31분 ★  (2026-10-10)
+ *
+ *  > "왜 두 번 복사됐는지 찾아줘"
+ *  10/06 밤 22:17 부터 마감이 두 벌 나란히 돌았다. 옛 DB(settle_partner_sales)에 같은 고유ID 가
+ *  2초 간격으로 두 번 — 엠케이테크 9 · 올팩 11 · 용기창고 6 · 하나팩 23. 하나팩은 시트에 23줄이 두 번 남았다.
+ *
+ *  6분으로 믿었다. 그런데 시간 예산은 파일 «사이»에서만 본다 — 큰 파일 하나면 배치가 6분을 넘긴다
+ *  (실행 한도는 30분이다). 5.5분 안전망이 늦게 울리면 깃발이 «낡았다»고 보고 두 번째 벌이 시작했고,
+ *  큐는 파일이 «끝난 뒤»에야 저장되므로 지금 처리 중인 그 파일부터 같이 옮겼다.
+ *  실행은 30분을 못 넘긴다. 31분이 지난 깃발만 죽은 것으로 본다.
+ */
+var _PMS_RUNNING_WINDOW_MS_ = 31 * 60 * 1000;
 /** 마지막 트리거 생성 실패 — 화면에 까닭을 그대로 보여 주려고 담아 둔다 */
 var _PMS_LAST_TRIGGER_ERR_ = null;
 
@@ -637,9 +662,12 @@ function _pms_continueResume_() {
   // 동시 재개 방지 플래그(속성) 설정 후 즉시 락 해제
   var props = PropertiesService.getScriptProperties();
   var running = props.getProperty("_PMS_BATCH_RUNNING_");
-  if (running && (Date.now() - Number(running)) < 6 * 60 * 1000) {
+  if (running && (Date.now() - Number(running)) < _PMS_RUNNING_WINDOW_MS_) {
     lock.releaseLock();
-    Logger.log("[PMS_RESUME] 이미 배치 실행 중 → 스킵");
+    //  돌던 벌이 끝나면 스스로 다음 재개를 걸거나 트리거를 지운다. 그 벌이 30분에 죽을 때만
+    //  이어 줄 누가 없다 — 10분 뒤 한 번 더 들여다본다(그새 끝났으면 그 벌이 이것을 지운다).
+    Logger.log("[PMS_RESUME] 이미 배치 실행 중 → 10분 뒤 다시 본다");
+    _pms_scheduleResume_(10 * 60 * 1000);
     return;
   }
   props.setProperty("_PMS_BATCH_RUNNING_", String(Date.now()));
@@ -1046,6 +1074,18 @@ function _pms_processOneFile_(ss, todayNum, archivedUids, hubDateByUid) {
 
   var hasArchived = false;
 
+  /*  ★ 붙이기는 한 번에 한 벌만 ★  (2026-10-10, _PMS_RUNNING_WINDOW_MS_ 참고)
+      두 벌이 같은 파일을 같이 읽으면 둘 다 «아직 없다»고 본다. 읽고-견주고-붙이기를 잠금 안에서 한다.
+      못 잡으면 이 파일은 손대지 않고 넘긴다 — 발주탭에 그대로 남아 다음 마감에 옮겨진다.
+      (메뉴의 예약 실패 길은 이제 잠금을 쥔 채 여기로 오지 않는다 — partnerArchiveToMonthlySettle) */
+  var _붙이기잠금_ = null;
+  for (var _t0_ in archiveDataByMonth) {
+    if (archiveDataByMonth[_t0_].length) { _붙이기잠금_ = LockService.getScriptLock(); break; }
+  }
+  if (_붙이기잠금_ && !_붙이기잠금_.tryLock(90 * 1000)) {
+    throw new Error("마감탭 붙이기 잠금을 90초 안에 못 잡음 — 이 업체는 다음 마감에 옮긴다");
+  }
+  try {
   for (var tabName in archiveDataByMonth) {
     var arr = archiveDataByMonth[tabName];
     if (!arr.length) continue;
@@ -1086,6 +1126,26 @@ function _pms_processOneFile_(ss, todayNum, archivedUids, hubDateByUid) {
       if (Ltab.구형) _pms_ensureCheckboxes_(archTab, Ltab.구형.cancel, Ltab.구형.ret);
     }
 
+    /*  ★ 이미 마감탭에 있는 고유ID 는 다시 붙이지 않는다 ★  (2026-10-10)
+        원인(두 벌)을 막는 것과 별개로 «결과»를 본다 — 어떤 길로 또 겹쳐 돌아도 두 번 들어가지 않게.
+        뺀 줄도 «옮긴 것»으로 친다: 이미 마감탭에 있으니 발주탭에서 지워지는 게 맞다.
+        고유ID 열을 못 찾으면 «모른다» — 거르지 않고 예전처럼 붙인다(못 읽은 것을 없는 것으로 치지 않는다). */
+    var _있던ID_ = _pms_existingUids_(archTab);
+    if (_있던ID_) {
+      var _뺀_ = 0;
+      arr = arr.filter(function(row) {
+        var u = String(row[uidColIdx] || "").replace(/\s/g, "");
+        if (u && _있던ID_[u]) { _뺀_++; return false; }
+        return true;
+      });
+      archiveDataByMonth[tabName] = arr;   // 아래 DB 기록도 새로 붙인 줄만
+      if (_뺀_) {
+        Logger.log("[PMS] " + ss.getName() + " / " + tabName + ": 이미 마감탭에 있는 " + _뺀_ + "줄은 다시 안 붙임");
+        result.skippedDup = (result.skippedDup || 0) + _뺀_;
+      }
+      if (!arr.length) continue;
+    }
+
     var padded = arr.map(function(row) {
       return _pms_padRow_(row, Ltab);
     });
@@ -1099,6 +1159,9 @@ function _pms_processOneFile_(ss, todayNum, archivedUids, hubDateByUid) {
     if (Ltab.구형) archTab.getRange(nextRow, Ltab.구형.cancel, padded.length, 2).insertCheckboxes();
 
     result.archived += padded.length;
+  }
+  } finally {
+    if (_붙이기잠금_) { try { _붙이기잠금_.releaseLock(); } catch (_eRl) {} }
   }
 
   if (hasArchived) {
@@ -1193,6 +1256,36 @@ function _pms_processOneFile_(ss, todayNum, archivedUids, hubDateByUid) {
   return result;
 }
 
+
+/**
+ * 마감탭에 이미 있는 고유ID — { "d1006000157": true, ... }
+ * 머리글(4행)에서 「고유ID」 열을 찾는다. 못 찾으면 null(«모른다») — 빈 {} 와 다르다.
+ * 새로 만든 빈 탭은 {} (있는 게 없다).
+ */
+function _pms_existingUids_(archTab) {
+  try {
+    var lr = archTab.getLastRow();
+    if (lr < _PMS_DATA_START) return {};
+    var lc = Math.max(archTab.getLastColumn(), 1);
+    var hdr = archTab.getRange(_PMS_HEADER_ROW, 1, 1, lc).getValues()[0];
+    var col = -1;
+    for (var i = 0; i < hdr.length; i++) {
+      var h = String(hdr[i] || "").replace(/\s/g, "").toLowerCase();
+      if (h.indexOf("고유id") !== -1 || h.indexOf("uniqueid") !== -1) { col = i + 1; break; }
+    }
+    if (col === -1) return null;
+    var vals = archTab.getRange(_PMS_DATA_START, col, lr - _PMS_DATA_START + 1, 1).getValues();
+    var set = {};
+    for (var r = 0; r < vals.length; r++) {
+      var u = String(vals[r][0] || "").replace(/\s/g, "");
+      if (u) set[u] = true;
+    }
+    return set;
+  } catch (e) {
+    Logger.log("[PMS] 마감탭 고유ID 못 읽음 → 거르지 않음: " + e.message);
+    return null;
+  }
+}
 
 /**
  * ★ 허브에서 이동된 행 삭제 (공통 로직)

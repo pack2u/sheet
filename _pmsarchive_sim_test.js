@@ -98,7 +98,12 @@ global._pt_findViewerSheet = function () { return null; };
 global._pt_clearContentAndFormat_ = function (rg) { rg.clearContent(); };
 global._pt_injectOrderSpillFormulas = function () {};
 global._pt_clearSearchInputTab_ = function () {};
-global._sb_syncPartnerSettle_ = function () {};
+global.잠금 = { 잡힘: true, 잡은수: 0, 푼수: 0 };
+global.LockService = { getScriptLock: function () { return {
+  tryLock: function () { if (잠금.잡힘) 잠금.잡은수++; return 잠금.잡힘; },
+  releaseLock: function () { 잠금.푼수++; } }; } };
+global.DB기록 = [];
+global._sb_syncPartnerSettle_ = function (v, m, rows) { DB기록.push.apply(DB기록, rows.map(function (x) { return x.unique_id; })); };
 global._pt_setTabKey_ = function () {};
 global._pt_findTabByKey_ = function () { return null; };
 global._island_findLastDataRow_ = function (tab) { return tab.getLastRow(); };
@@ -160,6 +165,43 @@ _pms_processOneFile_(f4, 20261005, {}, {});
 같나("취소 기록 그대로", 기록탭.표[4][15], true);
 같나("새 줄은 옛 모양대로 (22칸, 뒤쪽 도서산간에도 5,000)", [기록탭.표[5][3], 기록탭.표[5].length, 기록탭.표[5][20]], ["새 줄", 22, 5000]);
 ok("새 줄 취소·반품 칸에 체크박스", 기록탭.체크["6,16"] && 기록탭.체크["6,17"]);
+
+
+console.log("\n[5] ★ 두 벌이 같은 줄을 또 옮기려 하면 — 이미 있는 고유ID 는 안 붙인다 ★  (10/06 하나팩)");
+var 두줄 = [주문(20261006, "MASL0039", "JH 실링", 1, 60900, "d1006000157", ""), 주문(20261006, "FPJUG3", "BF 죽용기", 1, 77700, "d1006000214", "")];
+var 마감5 = 가짜탭("(2026년 10월) 발주 마감", []);
+var 첫벌 = 가짜파일({ "발주 및 송장조회": 발주탭(두줄.map(function (x) { return x.slice(); })), "(2026년 10월) 발주 마감": 마감5 });
+var 둘벌 = 가짜파일({ "발주 및 송장조회": 발주탭(두줄.map(function (x) { return x.slice(); })), "(2026년 10월) 발주 마감": 마감5 });   // 같은 순간에 읽은 발주탭
+DB기록 = [];
+var ra = _pms_processOneFile_(첫벌, 20261006, {}, {});
+var rb = _pms_processOneFile_(둘벌, 20261006, {}, {});
+같나("첫 벌은 두 줄", ra.archived, 2);
+같나("둘째 벌은 0줄 붙임", rb.archived, 0);
+같나("둘째 벌이 거른 수", rb.skippedDup, 2);
+같나("마감탭 데이터는 두 줄뿐", 마감5.표.slice(4).filter(function (r) { return r[2]; }).map(function (r) { return r[12]; }), ["d1006000157", "d1006000214"]);
+같나("옛 DB 에도 한 번씩만", DB기록, ["d1006000157", "d1006000214"]);
+같나("둘째 벌 발주탭도 비워진다 (이미 마감에 있으니)", 둘벌.탭들["발주 및 송장조회"].표.slice(1).filter(function (r) { return r[2]; }).length, 0);
+같나("잠금은 잡은 만큼 풀었다", 잠금.잡은수, 잠금.푼수);
+
+console.log("\n[6] 섞여 있으면 새 줄만 붙인다");
+var 섞임 = 가짜파일({ "발주 및 송장조회": 발주탭([두줄[0].slice(), 주문(20261007, "HR1", "새 주문", 1, 20600, "d1007000068", "")]), "(2026년 10월) 발주 마감": 마감5 });
+var rc = _pms_processOneFile_(섞임, 20261007, {}, {});
+같나("새 줄 하나만", [rc.archived, rc.skippedDup], [1, 1]);
+같나("마감탭 세 줄", 마감5.표.slice(4).filter(function (r) { return r[2]; }).map(function (r) { return r[12]; }), ["d1006000157", "d1006000214", "d1007000068"]);
+
+console.log("\n[7] 마감탭에 고유ID 열을 못 찾으면 «모른다» — 거르지 않는다");
+var 이상탭 = 가짜탭("(2026년 10월) 발주 마감", [["📊"], [], [], ["가", "나", "다"], ["x", "y", "z"]]);
+var 이상 = 가짜파일({ "발주 및 송장조회": 발주탭([두줄[0].slice()]), "(2026년 10월) 발주 마감": 이상탭 });
+같나("모를 땐 예전처럼 붙인다", _pms_processOneFile_(이상, 20261006, {}, {}).archived, 1);
+
+console.log("\n[8] 잠금을 못 잡으면 손대지 않는다 — 발주탭에 그대로 남아 다음 마감에");
+잠금.잡힘 = false;
+var 막힘 = 가짜파일({ "발주 및 송장조회": 발주탭([주문(20261008, "HR2", "막힌 줄", 1, 1000, "d1008000001", "")]), "(2026년 10월) 발주 마감": 마감5 });
+var 던짐 = null; try { _pms_processOneFile_(막힘, 20261008, {}, {}); } catch (e) { 던짐 = e.message; }
+ok("오류로 알린다", 던짐 && 던짐.indexOf("잠금") !== -1, 던짐);
+같나("발주탭 그대로", 막힘.탭들["발주 및 송장조회"].표[1][12], "d1008000001");
+같나("마감탭도 그대로 세 줄", 마감5.표.slice(4).filter(function (r) { return r[2]; }).length, 3);
+잠금.잡힘 = true;
 
 console.log("");
 console.log(실패 ? "★ 실패 " + 실패 + "건 / 통과 " + 통과 + "건" : "모두 통과 (" + 통과 + "건)");

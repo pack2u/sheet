@@ -20,6 +20,8 @@ var _PEA_HEADER_BG     = "#1f4e78";
 var _PEA_RESUME_KEY_     = "_PEA_RESUME_STATE";     // ScriptProperties 상태 저장 키
 var _PEA_RESUME_TRIGGER_ = "_pea_continueResume_";  // 재개 트리거 핸들러명
 var _PEA_PENDING_KEY_    = "_PEA_PENDING_TABNAME";  // 비차단 신규 시작용 tabName 보관 키
+/** 「돌고 있다」 깃발을 믿는 시간 — 대리판매 마감과 같은 병(_PMS_RUNNING_WINDOW_MS_ 참고). 실행 한도 30분 + 1분 (2026-10-10) */
+var _PEA_RUNNING_WINDOW_MS_ = 31 * 60 * 1000;
 
 // ══════════════════════════════════════════════
 //  이동 판정 (core·미리보기·단일파일 처리 공통)
@@ -854,9 +856,11 @@ function _pea_continueResume_() {
   }
   var props = PropertiesService.getScriptProperties();
   var running = props.getProperty("_PEA_BATCH_RUNNING_");
-  if (running && (Date.now() - Number(running)) < 6 * 60 * 1000) {
+  if (running && (Date.now() - Number(running)) < _PEA_RUNNING_WINDOW_MS_) {
     lock.releaseLock();
-    Logger.log("[PEA_RESUME] 이미 배치 실행 중 → 스킵");
+    //  돌던 벌이 30분에 죽을 때만 이어 줄 누가 없다 — 10분 뒤 한 번 더 본다
+    Logger.log("[PEA_RESUME] 이미 배치 실행 중 → 10분 뒤 다시 본다");
+    _pea_scheduleResume_(10 * 60 * 1000);
     return;
   }
   props.setProperty("_PEA_BATCH_RUNNING_", String(Date.now()));
@@ -904,7 +908,7 @@ function partnerDiagnoseExclusiveArchive() {
   if (running) {
     var age = Math.round((Date.now() - Number(running)) / 1000);
     L.push("배치 표시: " + age + "초 전에 켜짐" +
-      (age > 360 ? "  ← 6분이 넘었습니다. 죽은 표시입니다." : "  (도는 중)"));
+      (age > _PEA_RUNNING_WINDOW_MS_ / 1000 ? "  ← 31분이 넘었습니다. 죽은 표시입니다." : "  (도는 중)"));
   } else {
     L.push("배치 표시: 없음 (도는 중이 아님)");
   }
