@@ -205,21 +205,25 @@ function _pkc_pathMap_() {
         조치로 돌린 대리발송은 「조치업체」에 업체코드가 적힌다. */
     else if (nm === "보내는분") c.from = h;
     else if (nm === "조치업체") c.actor = h;
+    else if (nm === "고유ID") c.uid = h;
   }
   if (c.inv == null) throw new Error("운송장번호 열을 못 찾았습니다");
 
   var from = Math.max(2, lastRow - _PKC_SCAN_ROWS_ + 1);
   var 값 = tab.getRange(from, 1, lastRow - from + 1, lastCol).getDisplayValues();
 
-  var map = {};
+  var map = {};        // 송장 → 그 줄
+  var uid = {};        // 고유ID → 그 주문의 송장들 (폐기·재발행 가리기)
   for (var i = 0; i < 값.length; i++) {
     var r = 값[i];
+    var u = c.uid != null ? String(r[c.uid] || "").trim() : "";
     /*  ★ 한 칸에 송장이 여럿일 수 있다 ★ 다박스다.
         2026-10-01 실측: 582줄 → 698송장. 칸 전체에서 숫자만 뽑으면
         22자리가 되어 그 줄이 통째로 빠진다.                              */
     var invs = _ost_splitInvoices_(r[c.inv]);
     for (var k = 0; k < invs.length; k++) {
       if (map[invs[k]]) continue;              // 합포장 — 먼저 본 줄을 쓴다
+      if (u) { if (!uid[u]) uid[u] = []; uid[u].push(invs[k]); }
       map[invs[k]] = {
         경로: c.path != null ? String(r[c.path] || "").trim() : "",
         거래처: c.name != null ? String(r[c.name] || "").trim() : "",
@@ -229,7 +233,16 @@ function _pkc_pathMap_() {
       };
     }
   }
-  return map;
+  /*  ★ 고유ID 는 송장이 하나도 안 붙은 줄에도 있다 ★ 위 되돌이는 송장을
+      기준으로 돌아서 그 줄을 지나친다. 고유ID 를 따로 한 번 더 모은다 —
+      「그 주문이 원장에 있나」를 물으려면 송장이 없어도 알아야 한다.      */
+  if (c.uid != null) {
+    for (var z = 0; z < 값.length; z++) {
+      var u2 = String(값[z][c.uid] || "").trim();
+      if (u2 && !uid[u2]) uid[u2] = [];
+    }
+  }
+  return { inv: map, uid: uid };
 }
 
 /**
@@ -237,11 +250,29 @@ function _pkc_pathMap_() {
  *
  * @return {{어디: string, 업체: string}} 어디 = "우리" | "업체" | "모름"
  */
-function _pkc_whose_(원장줄) {
+function _pkc_whose_(원장줄, 그주문의송장) {
   if (!원장줄) {
-    /*  원장에 없다. 2026-10-08 에 3건 있었다. 「모름」으로 둔다 —
-        업체에 「찾아보세요」 했다가 우리 창고에 있으면 서로 헛걸음이다.
-        우리 카드에 적고 «어딘지 모른다»고 밝힌다.                      */
+    /*  ★ 폐기·재발행 송장을 집하 누락으로 올리면 «없는 박스»를 찾게 한다 ★
+          (2026-10-10 · 첫 실행에서 실제로 올라왔다)
+
+        로젠 탭에 찍혀 거울에는 들어왔는데 원장에는 그 송장이 없다. 그런데
+        **그 주문(고유ID)은 원장에 다른 송장으로 있다.** 2026-10-08 실측
+        — 553건 중 3건이 다 이 꼴이었다:
+          45303216630 정은아    ↔ 원장 45303465981
+          45314497060 올리브푸드 ↔ 원장에 여덟 개(45313910526 …)
+          45314497071 올리브푸드 ↔ 같은 여덟 개
+        실제로 나간 것은 원장에 적힌 쪽이고, 이쪽은 찍었다가 안 쓴 송장으로
+        보인다. 안 쓴 송장은 로젠에 영영 안 올라가므로 ★날마다 집하 누락으로
+        뜬다★ — 그러면 사람이 카드를 안 믿게 된다.
+
+        ★ 「폐기다」라고 단정하지는 않는다 ★ 우리가 아는 것은 「원장에는 다른
+        송장이 적혀 있다」까지다. 그렇게만 적고 카드에서 따로 떼어 둔다.    */
+    if (그주문의송장 && 그주문의송장.length) {
+      return { 어디: "폐기의심", 업체: "", 원장송장: 그주문의송장.slice(0, 8) };
+    }
+    /*  그 주문 자체가 원장에 없다 — 정말 모르는 것이다. 업체에 「찾아보세요」
+        했다가 우리 창고에 있으면 서로 헛걸음이라, 우리 카드에 적고
+        «어딘지 모른다»고 밝힌다.                                        */
     return { 어디: "모름", 업체: "" };
   }
   var p = String(원장줄.경로 || "");
@@ -263,7 +294,8 @@ function _pkc_whose_(원장줄) {
 
 /** 속성에서 읽는다. 깨져 있으면 처음부터 시작한다 */
 function _pkc_load_(P) {
-  var 빈것 = { 날: "", idx: 0, 우리: [], 업체: [], 우리수: 0, 업체수: 0, 막힘: 0, 넘긴것: [] };
+  var 빈것 = { 날: "", idx: 0, 우리: [], 업체: [], 폐기: [],
+                우리수: 0, 업체수: 0, 폐기수: 0, 막힘: 0, 넘긴것: [] };
   try {
     var v = JSON.parse(P.getProperty(_PKC_PROP_) || "null");
     if (!v || typeof v !== "object") return 빈것;
@@ -273,9 +305,10 @@ function _pkc_load_(P) {
     return {
       날: String(v.날 || ""),
       idx: Number(v.idx) || 0,
-      우리: 배열(v.우리), 업체: 배열(v.업체),
+      우리: 배열(v.우리), 업체: 배열(v.업체), 폐기: 배열(v.폐기),
       우리수: Number(v.우리수) || 0,
       업체수: Number(v.업체수) || 0,
+      폐기수: Number(v.폐기수) || 0,
       막힘: Number(v.막힘) || 0,
       넘긴것: 배열(v.넘긴것)
     };
@@ -289,9 +322,9 @@ function _pkc_load_(P) {
  */
 function _pkc_save_(P, st) {
   var 적을것 = {
-    날: st.날, idx: st.idx, 우리수: st.우리수, 업체수: st.업체수,
+    날: st.날, idx: st.idx, 우리수: st.우리수, 업체수: st.업체수, 폐기수: st.폐기수,
     막힘: st.막힘, 넘긴것: (st.넘긴것 || []).slice(0, 40),
-    우리: st.우리, 업체: st.업체
+    우리: st.우리, 업체: st.업체, 폐기: (st.폐기 || []).slice(0, 40)
   };
   var s = JSON.stringify(적을것);
   var 줄이기 = function (arr) {
@@ -305,7 +338,7 @@ function _pkc_save_(P, st) {
   }
   P.setProperty(_PKC_PROP_, s);
   //  잘렸으면 이쪽도 같이 줄인다 — 카드가 없는 줄을 적지 않게
-  st.우리 = 적을것.우리; st.업체 = 적을것.업체;
+  st.우리 = 적을것.우리; st.업체 = 적을것.업체; st.폐기 = 적을것.폐기;
 }
 
 /* ────────────────────────────────────────────────────────────────────
@@ -343,7 +376,8 @@ function csLogenPickupCheck(opt) {
 
   //  날이 바뀌었다 — 처음부터 다시 센다
   if (st.날 !== 날) {
-    st = { 날: 날, idx: 0, 우리: [], 업체: [], 우리수: 0, 업체수: 0, 막힘: 0, 넘긴것: [] };
+    st = { 날: 날, idx: 0, 우리: [], 업체: [], 폐기: [],
+           우리수: 0, 업체수: 0, 폐기수: 0, 막힘: 0, 넘긴것: [] };
   }
 
   if (!목록.length) {
@@ -357,7 +391,8 @@ function csLogenPickupCheck(opt) {
   //  이미 다 봤다 — 조용히 있는다. 카드는 마지막 판으로 서 있다.
   if (st.idx >= 목록.length) {
     _pkc_note_(날 + " 치 " + 목록.length + "건 다 봤습니다 · 집하 안 된 것 우리 " +
-               st.우리수 + " · 업체 " + st.업체수);
+               st.우리수 + " · 업체 " + st.업체수 +
+               (st.폐기수 ? " · 폐기의심 " + st.폐기수 + "(집하누락으로 안 셈)" : ""));
     return "";
   }
 
@@ -388,9 +423,13 @@ function csLogenPickupCheck(opt) {
     누락이번++;
     if (분류표 === null) {
       try { 분류표 = _pkc_pathMap_(); }
-      catch (eM) { 분류표 = {}; _pkc_note_("원장을 못 읽어 분류를 못 했습니다 — " + eM.message); }
+      catch (eM) {
+        분류표 = { inv: {}, uid: {} };
+        _pkc_note_("원장을 못 읽어 분류를 못 했습니다 — " + eM.message);
+      }
     }
-    var 누구 = _pkc_whose_(분류표[inv]);
+    var uid = String(one.고유ID || "");
+    var 누구 = _pkc_whose_(분류표.inv[inv], 분류표.uid[uid]);
     var r = 결과[inv] || {};
     var 적을것 = {
       inv: inv,
@@ -401,7 +440,13 @@ function csLogenPickupCheck(opt) {
       업체: 누구.업체,
       모름: 누구.어디 === "모름" ? 1 : 0
     };
-    if (누구.어디 === "업체") { st.업체.push(적을것); st.업체수++; }
+    if (누구.어디 === "폐기의심") {
+      /*  ★ 집하 누락 셋수에 넣지 않는다 ★ 박스가 창고에 있는 것이 아니다.
+          카드 아래에 따로 적어 사람이 훑어보게만 한다.                   */
+      적을것.원장송장 = (누구.원장송장 || []).join(", ");
+      st.폐기.push(적을것); st.폐기수++;
+      누락이번--;                                    // 위에서 센 것을 되돌린다
+    } else if (누구.어디 === "업체") { st.업체.push(적을것); st.업체수++; }
     else { st.우리.push(적을것); st.우리수++; }
   }
 
@@ -435,7 +480,8 @@ function csLogenPickupCheck(opt) {
   _pkc_note_(날 + " 치 " + st.idx + "/" + 목록.length +
              " · 이번 " + 나아감 + "건(스캔 " + 스캔이번 + " · 집하누락 " + 누락이번 + ")" +
              (못물음 ? " · 못 물어 멈춘 자리부터 다음 시간에" : "") +
-             " · 누적 우리 " + st.우리수 + " · 업체 " + st.업체수);
+             " · 누적 우리 " + st.우리수 + " · 업체 " + st.업체수 +
+             (st.폐기수 ? " · 폐기의심 " + st.폐기수 : ""));
 
   //  일감 보고에는 «다 보고 찾았을 때만» 붙인다 — 매시간 같은 말이 쌓이면 안 읽힌다
   if (다봤나 && (st.우리수 || st.업체수)) {
@@ -478,9 +524,34 @@ function _pkc_report_(날, 전체, st, 다봤나) {
        "건: " + st.넘긴것.slice(0, 10).join(", "))
     : "";
 
+  /*  ★ 폐기·재발행 의심 ★ 집하 누락이 아니라서 셋수에는 안 넣지만, 숨기지도
+      않는다. 「원장에는 다른 송장이 적혀 있다」까지만 적고 사람이 보게 둔다.
+      안 적으면 「왜 이 송장은 아무 데도 안 나오나」가 된다.               */
+  var 폐기줄 = [];
+  if ((st.폐기 || []).length) {
+    폐기줄.push("");
+    폐기줄.push("── 폐기·재발행으로 보이는 송장 " + st.폐기수 + "건 (집하 누락으로 세지 않았습니다) ──");
+    폐기줄.push("로젠 탭에는 찍혔는데 원장에는 그 주문의 송장이 «다른 번호»로 적혀 있습니다.");
+    폐기줄.push("실제로 나간 것은 원장 쪽으로 보입니다 — 찍었다가 안 쓴 송장인 듯합니다.");
+    for (var q = 0; q < st.폐기.length; q++) {
+      var y = st.폐기[q];
+      폐기줄.push("· " + y.inv + (y.name ? " · " + y.name : "") +
+                  (y.order ? " · " + y.order : "") +
+                  (y.원장송장 ? "  ↔ 원장 " + y.원장송장 : ""));
+    }
+  }
+
   /* ── ① 우리 창고 ── */
   if (!st.우리수) {
-    if (다봤나) _stale_close_(_PKC_SRCKEY_, "우리 창고 집하 누락 없음");
+    /*  우리 쪽 누락은 없다. 폐기의심만 있으면 그것만 적은 카드를 세운다 —
+        카드를 닫아 버리면 그 송장들이 아무 데도 안 남는다.                */
+    if (폐기줄.length) {
+      _stale_publish_(_PKC_SRCKEY_,
+        "폐기·재발행으로 보이는 송장 " + st.폐기수 + "건 (" + 날 + " 치)",
+        _stale_fitBody_([보는중].concat(폐기줄), _STALE_BODY_MAX_).join("\n"), st.폐기수);
+    } else if (다봤나) {
+      _stale_close_(_PKC_SRCKEY_, "우리 창고 집하 누락 없음");
+    }
   } else {
     var 줄1 = [];
     줄1.push("송장은 찍혔는데 로젠에 스캔 기록이 아예 없는 건입니다.");
@@ -496,7 +567,7 @@ function _pkc_report_(날, 전체, st, 다봤나) {
     }
     _stale_publish_(_PKC_SRCKEY_,
       "우리 창고 — 로젠이 안 걷어간 것 같은 건 " + st.우리수 + "건 (" + 날 + " 치)",
-      _stale_fitBody_(줄1, _STALE_BODY_MAX_).join("\n"), st.우리수);
+      _stale_fitBody_(줄1.concat(폐기줄), _STALE_BODY_MAX_).join("\n"), st.우리수);
   }
 
   /* ── ② 업체 창고 (대리발송) ── */
