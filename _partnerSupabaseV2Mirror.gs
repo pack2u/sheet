@@ -206,8 +206,27 @@ function _sbv2_deleteDayBefore_(dateStr, beforeId) {
  * ══════════════════════════════════════════════════════════════
  *
  * @param {Array<Object>} archiveRows 19열 구조 (+ 선택 archive_date)
+ *
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 2026-10-10 — 껐다. v2 가 마감 파일을 직접 당긴다 ★
+ *
+ *  위 「하루치 전부를 넘긴다」는 약속이 «지켜지지 않았다».
+ *  마감은 소급분(늦게 붙은 송장)을 _getExistPair_ 로 걸러 «새 줄만» 지난 날짜
+ *  파일에 덧붙인다. 그 몇 줄이 여기 오면 지난 날짜를 «통째로» 덮었다.
+ *    10/07 : 파일 723줄 → v2 18줄 · 9/12 : 1,213줄 → 109줄
+ *  v2 에서 온전한 날은 늘 «마지막 하루»뿐이었다.
+ *
+ *  이제 v2 /api/cron/daily-archive-pull 이 「협력업체_시트/일일마감」 폴더의
+ *  파일을 30분마다 읽어 그 날을 갈아 끼운다 (v2 sql/81). 파일 하나가 그 날
+ *  전부이므로 갈아 끼워도 맞다. daily_archive 의 주인은 그쪽 하나다.
+ *
+ *  여기를 다시 켜면 주인이 둘이 되어 또 지운다. 코드는 되돌릴 길로 남겨 둔다.
+ * ══════════════════════════════════════════════════════════════
  */
+var _SBV2_DAILY_ARCHIVE_PUSH_ = false;
+
 function sbv2MirrorDailyArchive(archiveRows) {
+  if (!_SBV2_DAILY_ARCHIVE_PUSH_) return { ok: true, skipped: true, count: 0, why: "v2 가 마감 파일을 직접 당긴다" };
   try {
     if (!_sbv2_enabled_()) return { ok: true, skipped: true, count: 0 };
     if (!archiveRows || !archiveRows.length) return { ok: true, count: 0 };
@@ -478,6 +497,12 @@ function _sbv2_keyKind_(key) {
  * ══════════════════════════════════════════════════════════════
  */
 function partnerBackfillV2FromLegacy(optDays) {
+  /*  ★ 2026-10-10 막음 ★ 옛 프로젝트는 소급분을 «돈 날»로 찍고 재실행마다 또 쌓았다
+      (8/24 v2 3,300줄 · 파일 1,407줄). v2 가 마감 파일을 직접 당긴 뒤로는 이것을
+      다시 돌리면 그 찌꺼기를 되살린다. 위 _SBV2_DAILY_ARCHIVE_PUSH_ 참고. */
+  if (!_SBV2_DAILY_ARCHIVE_PUSH_) {
+    return _sbv2_out_(["이력 복사는 막혀 있습니다 — v2 가 일일마감 파일을 직접 당깁니다 (2026-10-10)."]);
+  }
   var days = parseInt(optDays, 10) || 30;
   var started = new Date().getTime();
   var BUDGET = 300000; // 5분 — 6분 한도 앞에서 멈춘다
