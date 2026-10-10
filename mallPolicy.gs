@@ -163,6 +163,9 @@ function registerMallPolicyMenu_() {
   ui.createMenu("🏪 쇼핑몰정책")
     .addItem("🛠 시트 설치 / 복구", "mpSetupSheets")
     .addSeparator()
+    .addItem("🔎 몰 찾기 (원장에서 세기)", "mpDiscoverMalls")
+    .addItem("📥 찾은 몰을 쇼핑몰정책에 채우기", "mpSeedPolicyFromDiscovery")
+    .addSeparator()
     .addItem("🔍 설정 점검", "mpDiagnose")
     .addToUi();
 }
@@ -553,6 +556,423 @@ function mpDiagnose() {
   if (!요율없음.length && !확인안됨.length && !하한없음.length && !dup.length) {
     글.push("문제 없습니다.");
   }
+
+  if (ui) ui.alert(글.join("\n"));
+  return 글.join("\n");
+}
+
+// ══════════════════════════════════════════════════════════════
+//  ③ 몰 찾기 — 우리 데이터에서 «사방넷으로 거래하는 몰»을 뽑는다
+//
+//  > 사장님: "판매현황에 법인/쿠팡 이런식으로 주문에 구분되게 되있어..
+//  >  대리판매업체들은 제외하고 전화주문도 제외하면 우리가 사방넷으로
+//  >  거래하는 쇼핑몰을 다 찾을수 있을꺼야.. 주문번호만으로도 구별이 가능하지"
+//
+//  ★ 물어보지 않고 «세어» 본다 ★
+//    몰 목록을 사람 기억으로 적으면 쓰다 만 몰이 빠지거나 없는 몰이 들어온다.
+//    원장에 실제로 주문이 들어온 몰만 센다. 건수가 곧 「쓰고 있나」의 답이다.
+//
+//  ★ 가르는 잣대는 고유ID 다 ★  (주문번호만으로 구별된다 — 사장님 말씀대로)
+//      p0921000001 · 0921-PH-…      전화주문   → 뺀다
+//      d0930000044 · 0901-ds-…      대리판매   → 뺀다
+//      숫자뿐                        사방넷     → 센다
+//    허브의 _po_isGeneratedUid_ 를 «그대로 부른다». 같은 프로젝트라 베낄 일이 없다.
+//
+//  ★ 원천은 주문라인원장이다 ★
+//    세트분리(뉴)의 「주문라인원장」은 누적이고 회차마다 쌓인다.
+//    판매현황은 회차마다 지워져 «지난 몰»이 안 보인다 — 그래서 원장을 본다.
+//
+//  ★★ 몰은 «품목명 꼬리»에만 있다 ★★  (2026-10-10 고침)
+//    처음에 거래처명 칸을 판매처로 읽었다가 틀렸다 —
+//      > 사장님: "지금 찾은 건 주문자 이름이네.. 상품명 뒤에
+//      >  ---법인/쿠팡 ...---법인/자사몰 등이 적혀있는데 쇼핑몰들이야"
+//    원장의 거래처명 칸에는 «주문자 이름»이 들어 있다. 그래서 몰 목록이
+//    사람 이름으로 가득 찼다.
+//
+//    _partnerExclusivePush.gs 에 「거래처명 칸에는 법인/배민상회 같은
+//    판매처가 들어 있다」는 주석이 있는데, 그것은 «일일마감» 이야기다.
+//    같은 이름의 칸이 시트마다 다른 것을 담는다 — 주석을 원장에 그대로
+//    옮겨 읽은 것이 잘못이었다.
+//
+//    그래서 몰은 품목명 꼬리에서만 읽는다 (CS웹앱이 쓰는 그 규칙이다).
+//    거래처명은 「법인/」으로 시작할 때만 거든다 — 꼬리가 떨어진 줄 대비.
+//
+//  ★ 열은 이름으로 찾는다 ★
+//    자리로 찾으면 원장에 칸이 하나 더해지는 날 조용히 엉뚱한 값을 센다.
+// ══════════════════════════════════════════════════════════════
+
+/** 세트분리(뉴) — 주문라인원장이 사는 곳. csReturnFee.gs 가 보는 시트와 같다 */
+var _MP_SS_SHEET_ID_ = "1JuwZjorbBG7tOa92xfAy07eUV-r2j2P8bpbYrgCDAwo";
+var _MP_SS_LEDGER_TAB_ = "주문라인원장";
+var _MP_FOUND_TAB_ = "몰찾기결과";
+
+/** 한 번에 보는 줄 수 상한 — 6분 한도를 넘기지 않으려고 둔다 */
+var _MP_SCAN_MAX_ = 60000;
+
+/** 사방넷 건을 가리키는 「주문번호출처」 값. 세트분리V2 SS_ORDNO_SRC 와 같은 글자 */
+var _MP_SRC_SABANG_ = "사방넷";
+
+/**
+ * 포장 표지 — 몰 이름이 아니다.
+ *
+ * ★ 베낀 것이다 ★
+ *   원본은 CS웹앱 home.html 의 LEDGER_PACK_MARKS 다. Apps Script 프로젝트가
+ *   달라 함수를 못 부른다. 숨기지 않고 적어 둔다 —
+ *   _mpmall_test.js 가 두 구현을 같은 입력으로 돌려 견준다.
+ *   어긋나면 시험이 깨진다 (csReturnFee.gs 와 같은 손버릇).
+ */
+var _MP_PACK_MARKS_ = ["합포장", "합배송", "소분", "몸통만", "뚜껑만"];
+
+/**
+ * 품목명 꼬리에서 «거래처로 볼 만한 것»만 남긴다. 없으면 빈 문자열.
+ * 원본: home.html 의 ledgerVendorFromItem
+ */
+function _mp_mallFromItem_(item) {
+  var s = String(item || "");
+  var cut = -1;
+  var a = s.indexOf("---"), b = s.indexOf("===");
+  if (a >= 0 && b >= 0) cut = Math.min(a, b);
+  else cut = (a >= 0) ? a : b;
+  if (cut < 0) return "";
+  var 꼬리들 = s.substring(cut + 3).split(/---|===/);
+  for (var i = 0; i < 꼬리들.length; i++) {
+    var t = String(꼬리들[i] || "").trim();
+    if (!t) continue;
+    var 표지 = false;
+    for (var m = 0; m < _MP_PACK_MARKS_.length; m++) {
+      if (t.indexOf(_MP_PACK_MARKS_[m]) !== -1) { 표지 = true; break; }
+    }
+    if (표지) continue;
+    return t;
+  }
+  return "";
+}
+
+/** 몰 이름으로 볼 수 없는 값인가 — 빈칸·포장표지·대리발송 */
+function _mp_notAMall_(name) {
+  var t = String(name || "").trim();
+  if (!t) return true;
+  if (t.indexOf("대리발송") === 0) return true;   // 대리발송-당장드림/탁기선
+  for (var m = 0; m < _MP_PACK_MARKS_.length; m++) {
+    if (t.indexOf(_MP_PACK_MARKS_[m]) !== -1) return true;
+  }
+  return false;
+}
+
+/**
+ * 거래처명 칸을 몰로 «거들어» 쓸 수 있나.
+ *
+ * ★ 원장의 거래처명은 주문자 이름이다 ★  (2026-10-10)
+ *   그래서 아무 값이나 받으면 몰 목록이 사람 이름으로 찬다.
+ *   「법인/」으로 시작하는 것만 받는다 — 품목명 꼬리가 떨어진 줄을 메우는 용도다.
+ *   「법인/」이 없는 몰(배민상회 등)은 이 길로는 안 들어온다. 그것이 맞다 —
+ *   사람 이름과 가를 길이 없으면 «모른다»로 두는 편이 낫다.
+ */
+function _mp_mallFromVendor_(vendor) {
+  var t = String(vendor || "").trim();
+  if (t.indexOf("법인/") !== 0) return "";
+  if (_mp_notAMall_(t)) return "";
+  return t;
+}
+
+/** 머리글 이름 → 0-기준 자리. 못 찾으면 -1 */
+function _mp_colOf_(header, names) {
+  for (var n = 0; n < names.length; n++) {
+    for (var i = 0; i < header.length; i++) {
+      if (String(header[i] || "").trim() === names[n]) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * 「김미화/p0921000001#2」 처럼 붙어 온 것에서 고유ID 만 떼어낸다.
+ * (대장·원장이 그런 모양으로 담는다 — _csorigin_test.js [5] 참고)
+ */
+function _mp_baseUid_(uid) {
+  var u = String(uid || "").trim();
+  if (u.indexOf("/") >= 0) u = u.split("/").pop();
+  return u.split("#")[0].trim();
+}
+
+/**
+ * 원장을 훑어 사방넷 몰을 센다.
+ *
+ * ★ 조용히 빈손으로 돌아오지 않는다 ★
+ *   원장을 못 읽으면 「몰이 없다」가 아니라 «못 봤다»다. 그때는 멈추고 말한다.
+ */
+function mpDiscoverMalls() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  var 글 = ["■ 몰 찾기 — 주문라인원장에서 사방넷 몰을 센다", ""];
+
+  var src;
+  try {
+    src = SpreadsheetApp.openById(_MP_SS_SHEET_ID_);
+  } catch (eOpen) {
+    글.push("★ 세트분리(뉴) 시트를 못 열었습니다 — " + eOpen.message);
+    글.push("   권한이나 시트ID(_MP_SS_SHEET_ID_)를 확인하세요.");
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+
+  var tab = src.getSheetByName(_MP_SS_LEDGER_TAB_);
+  if (!tab) {
+    글.push("★ 「" + _MP_SS_LEDGER_TAB_ + "」 탭이 없습니다.");
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+
+  var lastRow = tab.getLastRow();
+  if (lastRow < 2) {
+    글.push("★ 원장이 비어 있습니다 — 세트분리를 한 번 돌린 뒤 다시 보세요.");
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+
+  var header = tab.getRange(1, 1, 1, tab.getLastColumn()).getDisplayValues()[0];
+  var cUid    = _mp_colOf_(header, ["고유ID", "사방넷주문번호"]);
+  var cSrc    = _mp_colOf_(header, ["주문번호출처"]);
+  var cVendor = _mp_colOf_(header, ["거래처명"]);
+  var cItem   = _mp_colOf_(header, ["품목명", "출력품목명"]);
+  var cWhen   = _mp_colOf_(header, ["실행시각"]);
+
+  if (cUid < 0) {
+    글.push("★ 원장에 「고유ID」 칸이 없습니다 — 머리글이 바뀌었는지 보세요.");
+    글.push("   앞쪽 머리글: " + header.slice(0, 8).join(" · "));
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+
+  var n = Math.min(lastRow - 1, _MP_SCAN_MAX_);
+  var 잘림 = (lastRow - 1) > n;
+
+  /*  칸을 하나씩 읽는다 — 원장은 40칸이 넘어 통째로 읽으면 쓸데없이 무겁다  */
+  function 열(ci) {
+    if (ci < 0) return null;
+    return tab.getRange(2, ci + 1, n, 1).getDisplayValues();
+  }
+  var uids    = 열(cUid);
+  var srcs    = 열(cSrc);
+  var vendors = 열(cVendor);
+  var items   = 열(cItem);
+  var whens   = 열(cWhen);
+
+  var 센것 = {};          // 몰명 → { 건수, 처음, 마지막, 거래처명으로, 꼬리로 }
+  var 전화 = 0, 대리 = 0, 모름 = 0, 사방넷 = 0;
+
+  for (var i = 0; i < n; i++) {
+    var uid = String(uids[i][0] || "").trim();
+    if (!uid) continue;
+
+    /*  ★ 잣대는 고유ID 하나다 ★
+        「주문번호출처」 칸은 «있으면» 같이 본다. 옛 줄에는 그 칸이 없어
+        어긋나는 날이 있다 — 그래서 고유ID 를 주인으로 둔다.  */
+    var base = _mp_baseUid_(uid);
+    if (_po_isGeneratedUid_(base)) {
+      if (/^[pP]/.test(base) || /-PH-/i.test(base)) 전화++;
+      else 대리++;
+      continue;
+    }
+    if (cSrc >= 0) {
+      var s = String(srcs[i][0] || "").trim();
+      if (s && s !== _MP_SRC_SABANG_) { 모름++; continue; }   // 「자동발급」 등
+    }
+    사방넷++;
+
+    /*  ★ 품목명 꼬리가 주인이다 ★  거래처명은 「법인/」일 때만 거든다.
+        순서를 뒤집었다가 몰 목록이 주문자 이름으로 찼다 (2026-10-10).  */
+    var 몰 = _mp_mallFromItem_(items && items[i] ? items[i][0] : "");
+    var 어디서 = "꼬리";
+    if (_mp_notAMall_(몰)) {
+      몰 = _mp_mallFromVendor_(vendors && vendors[i] ? vendors[i][0] : "");
+      어디서 = "거래처명";
+    }
+    if (_mp_notAMall_(몰)) { 모름++; continue; }
+
+    var when = String(whens && whens[i] ? whens[i][0] : "").trim().slice(0, 10);
+    if (!센것[몰]) {
+      센것[몰] = { 건수: 0, 처음: when, 마지막: when, 거래처명으로: 0, 꼬리로: 0 };
+    }
+    var rec = 센것[몰];
+    rec.건수++;
+    if (어디서 === "거래처명") rec.거래처명으로++; else rec.꼬리로++;
+    if (when) {
+      if (!rec.처음 || when < rec.처음) rec.처음 = when;
+      if (!rec.마지막 || when > rec.마지막) rec.마지막 = when;
+    }
+  }
+
+  var 목록 = [];
+  for (var k in 센것) {
+    if (Object.prototype.hasOwnProperty.call(센것, k)) {
+      목록.push({ 몰: k, d: 센것[k] });
+    }
+  }
+  목록.sort(function (a, b) { return b.d.건수 - a.d.건수; });
+
+  var 총건 = 0;
+  for (var t2 = 0; t2 < 목록.length; t2++) 총건 += 목록[t2].d.건수;
+
+  // ── 결과 탭에 적는다 ──
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var out = _mp_sheet_(ss, _MP_FOUND_TAB_);
+  out.clear();
+
+  out.getRange(1, 1).setValue(_MP_FOUND_TAB_)
+    .setFontFamily("Arial").setFontSize(13).setFontWeight("bold");
+  out.getRange(1, 4)
+    .setValue("주문라인원장 " + n + "줄에서 셈 · " +
+      Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"))
+    .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
+
+  var H = ["순위", "몰명", "건수", "줄비중", "처음", "마지막", "꼬리로", "거래처명(법인/)으로", "메모"];
+  out.getRange(3, 1, 1, H.length).setValues([H])
+    .setBackground(_MP_C_HEAD_).setFontColor("#F0F0F0")
+    .setFontWeight("bold").setFontFamily("Arial").setHorizontalAlignment("center");
+  out.setFrozenRows(3);
+  var ws2 = [55, 210, 85, 80, 95, 95, 110, 85, 330];
+  for (var w = 0; w < ws2.length; w++) out.setColumnWidth(w + 1, ws2[w]);
+
+  if (목록.length) {
+    var rows = [];
+    for (var j = 0; j < 목록.length; j++) {
+      var d = 목록[j].d;
+      rows.push([
+        j + 1, 목록[j].몰, d.건수,
+        총건 ? d.건수 / 총건 : 0,
+        d.처음, d.마지막, d.꼬리로, d.거래처명으로, ""
+      ]);
+    }
+    out.getRange(4, 1, rows.length, H.length).setValues(rows)
+      .setFontFamily("Arial").setFontSize(10)
+      .setBorder(true, true, true, true, true, true, "#BBBBBB", SpreadsheetApp.BorderStyle.SOLID);
+    out.getRange(4, 3, rows.length, 1).setNumberFormat(_MP_WON_);
+    out.getRange(4, 4, rows.length, 1).setNumberFormat("0.0%");
+    out.getRange(4, 2, rows.length, 1).setHorizontalAlignment("left");
+  }
+
+  var mr2 = 4 + 목록.length + 2;
+  out.getRange(mr2, 1).setValue("셈한 내역").setFontWeight("bold").setFontFamily("Arial");
+  var 내역 = [
+    "사방넷 줄 : " + 사방넷 + "건  → 몰 " + 목록.length + "개",
+    "전화주문  : " + 전화 + "건  (고유ID p… · …-PH-…)  → 뺌",
+    "대리판매  : " + 대리 + "건  (고유ID d… · …-ds-…)  → 뺌",
+    "몰 모름   : " + 모름 + "건  (품목명 꼬리가 없고 거래처명도 「법인/」이 아님)",
+    "",
+    "★ 몰은 «품목명 꼬리»에서 읽는다 — 「…200개---법인/쿠팡」 의 뒷부분이다.",
+    "   원장의 거래처명 칸에는 «주문자 이름»이 들어 있어 몰로 쓰지 않는다.",
+    "   「법인/」으로 시작하는 거래처명만 거든다 (꼬리가 떨어진 줄 대비).",
+    "",
+    "★ 「줄비중」은 주문 «줄» 비중이다 — 매출 비중이 아니다.",
+    "   쇼핑몰정책의 「매출비중」에는 정산 금액 기준으로 따로 넣으세요.",
+    "   줄비중은 건수가 많은 몰을, 매출비중은 돈이 큰 몰을 가리킨다. 둘은 다르다."
+  ];
+  if (잘림) {
+    내역.unshift("⚠ 원장이 " + (lastRow - 1) + "줄인데 앞 " + n + "줄만 봤습니다 " +
+      "(_MP_SCAN_MAX_). 몰이 빠질 수 있습니다.");
+  }
+  for (var x = 0; x < 내역.length; x++) {
+    out.getRange(mr2 + 1 + x, 2).setValue(내역[x])
+      .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
+  }
+
+  글.push("원장 " + n + "줄을 봤습니다.");
+  글.push("");
+  글.push("  사방넷 " + 사방넷 + "건  →  몰 " + 목록.length + "개");
+  글.push("  전화주문 " + 전화 + "건 · 대리판매 " + 대리 + "건  →  뺌");
+  글.push("  몰 모름 " + 모름 + "건");
+  글.push("");
+  if (목록.length) {
+    글.push("찾은 몰 (건수순)");
+    for (var p = 0; p < Math.min(목록.length, 25); p++) {
+      글.push("  " + (p + 1) + ". " + 목록[p].몰 + "   " + 목록[p].d.건수 + "건");
+    }
+    if (목록.length > 25) 글.push("  … 그 외 " + (목록.length - 25) + "개");
+  }
+  글.push("");
+  글.push("「" + _MP_FOUND_TAB_ + "」 탭에 적었습니다.");
+  글.push("쇼핑몰정책에 옮기려면 「📥 찾은 몰을 쇼핑몰정책에 채우기」를 누르세요.");
+
+  if (ui) ui.alert(글.join("\n"));
+  return 글.join("\n");
+}
+
+/**
+ * 찾은 몰을 쇼핑몰정책의 «빈 줄»에만 채운다.
+ *
+ * ★ 적힌 것을 덮지 않는다 ★
+ *   요율을 넣어 둔 줄을 덮으면 그 값이 조용히 사라지고, 가격이 그것을 믿는다.
+ *   이미 있는 몰명은 건너뛴다.
+ */
+function mpSeedPolicyFromDiscovery() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  var 글 = ["■ 찾은 몰을 쇼핑몰정책에 채우기", ""];
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var found = ss.getSheetByName(_MP_FOUND_TAB_);
+  var pol = ss.getSheetByName(_MP_TAB_POLICY_);
+  if (!found) {
+    글.push("★ 「" + _MP_FOUND_TAB_ + "」 탭이 없습니다 — 먼저 「🔎 몰 찾기」를 누르세요.");
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+  if (!pol) {
+    글.push("★ 「" + _MP_TAB_POLICY_ + "」 탭이 없습니다 — 먼저 「🛠 시트 설치 / 복구」를 누르세요.");
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+
+  var fl = found.getLastRow();
+  if (fl < 4) {
+    글.push("★ 찾은 몰이 없습니다.");
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+  var cand = found.getRange(4, 2, fl - 3, 2).getDisplayValues();   // 몰명 · 건수
+
+  // 이미 적힌 몰명 (예시 행까지 본다)
+  var have = {};
+  var cur = pol.getRange(3, 1, _MP_ROWS_ + 1, 2).getDisplayValues();
+  for (var i = 0; i < cur.length; i++) {
+    var nm = String(cur[i][1] || "").trim();
+    if (nm) have[nm] = true;
+  }
+
+  // 빈 줄 목록을 «한 번만» 만든다 — 줄마다 getValue 를 부르면 느리다
+  var 빈줄 = [];
+  for (var r = 0; r < cur.length; r++) {
+    var row = 3 + r;
+    if (row < _MP_FIRST_ROW_) continue;
+    if (!String(cur[r][0] || "").trim() && !String(cur[r][1] || "").trim()) 빈줄.push(row);
+  }
+
+  var 넣음 = 0, 건너뜀 = 0, 자리없음 = 0, 쓴자리 = 0;
+  for (var c = 0; c < cand.length; c++) {
+    var 몰 = String(cand[c][0] || "").trim();
+    if (!몰) continue;
+    if (have[몰]) { 건너뜀++; continue; }
+    if (쓴자리 >= 빈줄.length) { 자리없음++; continue; }
+
+    var 자리 = 빈줄[쓴자리++];
+    pol.getRange(자리, 2).setValue(몰);
+    pol.getRange(자리, 3).setValue("Y");
+    pol.getRange(자리, 14).setValue(1000);
+    pol.getRange(자리, 19).setValue(
+      "몰 찾기로 채움 (원장 " + cand[c][1] + "건). 몰ID·요율·최저허용가를 넣으세요");
+    have[몰] = true;
+    넣음++;
+  }
+
+  글.push("넣음 " + 넣음 + "개 · 이미 있어 건너뜀 " + 건너뜀 + "개");
+  if (자리없음) {
+    글.push("");
+    글.push("⚠ 자리가 없어 못 넣은 몰 " + 자리없음 + "개 — _MP_ROWS_ (" + _MP_ROWS_ + ") 를 늘려야 합니다.");
+  }
+  글.push("");
+  글.push("★ 몰ID 는 비워 뒀습니다 — 영문 약어로 직접 넣으세요.");
+  글.push("   몰ID 가 없으면 「실효수수료_역산」과 이어지지 않습니다.");
 
   if (ui) ui.alert(글.join("\n"));
   return 글.join("\n");
