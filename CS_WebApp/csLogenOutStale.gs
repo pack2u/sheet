@@ -138,6 +138,27 @@ function csOutboundStaleCheck(opt) {
   var idx = parseInt(P.getProperty("OST_IDX") || "0", 10) || 0;
   var 잡은것 = _ost_loadFound_(P);
 
+  /*  ★ 사람이 닫았으면 이레 묻어둔다 ★  (2026-10-10 · 사장님 「중간 길로 해줘」)
+      까닭은 csLogenStale.gs _STALE_MUTE_DAYS_ 머리말에 있다 — 영영 안 풀리는 건이
+      매시간 새 카드로 돌아오면, 정작 새로 멈춘 건을 아무도 안 본다.
+      묻어두되 이레 뒤에는 다시 올린다 — 잘못 닫은 것이 «사라지지는» 않게. */
+  var 묻은송장 = [];
+  for (var mi = 0; mi < 잡은것.length; mi++) 묻은송장.push(잡은것[mi].inv);
+  var 새로묻음 = _stale_muteOnClose_("OST", _OST_SRCKEY_, 묻은송장);
+
+  /*  묻어둔 것은 잡은 목록에서 빼고 적어 둔다 — 안 빼면 다음 런이 또 카드를 세운다 */
+  var 묻힌표 = _stale_muteLoad_("OST");
+  if (Object.keys(묻힌표).length) {
+    var 남은 = [];
+    for (var mj = 0; mj < 잡은것.length; mj++) {
+      if (!묻힌표[잡은것[mj].inv]) 남은.push(잡은것[mj]);
+    }
+    if (남은.length !== 잡은것.length) {
+      잡은것 = 남은;
+      _ost_saveFound_(P, 잡은것);
+    }
+  }
+
   if (opt.dry) {
     return "── 출고 지연 점검 (연습) ──\n" + 코호트 + " 치 " + 목록.length +
            "건 · 본 것 " + idx + "건 · 잡아 둔 것 " + 잡은것.length + "건";
@@ -183,7 +204,10 @@ function csOutboundStaleCheck(opt) {
         " · 멈춤 " + 남은것.length +
         (남은것.length !== 잡은것.length
           ? " (그새 도착 " + (잡은것.length - 남은것.length) + ")" : "") +
-        " · " + 말);
+        " · " + 말
+        //  ★ 묻어둔 것을 숨기지 않는다 ★ 「풀렸다」와 「사람이 닫았다」는 다르다
+        + (새로묻음 ? " · 사람이 닫아 " + 새로묻음 + "건 " + _STALE_MUTE_DAYS_ + "일 묻어둠" : "")
+        + (Object.keys(묻힌표).length ? " · 묻어둔 것 " + Object.keys(묻힌표).length : ""));
     } catch (e) {}
     return "";   // 일감 보고에는 안 붙인다 — 매시간 같은 말이 쌓이면 안 읽힌다
   }
@@ -227,7 +251,9 @@ function csOutboundStaleCheck(opt) {
   Logger.log(끝);
   try {
     _cpr_ops_(SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_), "출고 지연 점검",
-      코호트 + " 치 " + idx + "/" + 목록.length + "건 봄 · 멈춤 " + 잡은것.length);
+      코호트 + " 치 " + idx + "/" + 목록.length + "건 봄 · 멈춤 " + 잡은것.length +
+        (새로묻음 ? " · 사람이 닫아 " + 새로묻음 + "건 묻어둠" : "") +
+        (Object.keys(묻힌표).length ? " · 묻어둔 것 " + Object.keys(묻힌표).length : ""));
   } catch (e) {}
   return 끝;
 }
@@ -465,6 +491,10 @@ function _ost_collect_() {
   var 오늘기준 = new Date(); 오늘기준.setHours(0, 0, 0, 0);
   var 오늘0 = 오늘기준.getTime();
 
+  /*  ★ 묻어둔 송장은 다시 집지 않는다 ★ 잡은 목록에서만 빼면 여기서 또 집어
+      곧바로 되살아난다. 들어오는 문에서도 막아야 이레가 이레다. */
+  var 묻힌 = _stale_muteLoad_("OST");
+
   var 본것 = {}, out = [];
   for (var i = 0; i < 값.length; i++) {
     var r = 값[i];
@@ -502,6 +532,7 @@ function _ost_collect_() {
     for (var z = 0; z < 송장들.length; z++) {
       var d = 송장들[z];
       if (본것[d]) continue;                 // 합포장 — 한 번만 묻는다
+      if (묻힌[d]) continue;                 // 사람이 닫아 묻어둔 것 (이레)
       본것[d] = true;
       out.push({ inv: d, days: _OST_FROM_DAYS_, ship: _ost_ymd_(발송),
                  name: c.name != null ? String(r[c.name] || "").trim() : "",

@@ -56,13 +56,47 @@ var _STALE_BODY_MAX_ = 40000;
  * @param {Array} 멈춘것  [{어디, 이름, takeNo, 며칠, 상태}]  csLogenFillReturnSlips 가 모은 것
  * @return {string} 사람이 읽을 한 줄
  */
+/**
+ * 반품 멈춘 건을 가리는 열쇠.
+ *
+ * ★ 여기엔 송장번호가 없다 ★ 접수 때는 송장이 아직 없기 때문이다
+ *   ([[logen-return-slip-autofill]]). 접수번호가 있으면 그것이 제일 또렷하고,
+ *   없으면 「202610!36」 같은 «대장 자리»가 변하지 않는 유일한 표다.
+ */
+function _stale_retKey_(s) {
+  if (!s) return "";
+  var t = String(s.takeNo == null ? "" : s.takeNo).trim();
+  return t || String(s.어디 == null ? "" : s.어디).trim();
+}
+
 function csStaleReport_(멈춘것) {
   멈춘것 = 멈춘것 || [];
+
+  /*  ★ 사람이 닫았으면 이레 묻어둔다 ★  (2026-10-10 · 사장님 「중간 길로 해줘」)
+      까닭은 아래 _STALE_MUTE_DAYS_ 머리말에 있다. 이쪽이 특히 그렇다 —
+      43856227041 은 2026-02-25 부터 「독촉」에 멈춰 있다. 여덟 달이다.
+      닫아도 다음 런이 다시 세우니 이 카드는 아무도 끝낼 수 없었다. */
+  var 열쇠들 = [];
+  for (var q = 0; q < 멈춘것.length; q++) 열쇠들.push(_stale_retKey_(멈춘것[q]));
+  var 새로묻음 = _stale_muteOnClose_("RET", _STALE_SRCKEY_, 열쇠들);
+
+  var 묻힌 = _stale_muteLoad_("RET");
+  var 묻힌수 = Object.keys(묻힌).length;
+  if (묻힌수) {
+    var 남은 = [];
+    for (var w = 0; w < 멈춘것.length; w++) {
+      if (!묻힌[_stale_retKey_(멈춘것[w])]) 남은.push(멈춘것[w]);
+    }
+    멈춘것 = 남은;
+  }
+  //  ★ 묻어둔 것을 숨기지 않는다 ★ 「풀렸다」와 「사람이 닫았다」는 다르다
+  var 꼬리 = (새로묻음 ? " · 사람이 닫아 " + 새로묻음 + "건 " + _STALE_MUTE_DAYS_ + "일 묻어둠" : "") +
+             (묻힌수 ? " · 묻어둔 것 " + 묻힌수 : "");
 
   if (!멈춘것.length) {
     /*  다 풀렸다 — 열려 있던 카드를 닫는다.
         안 닫으면 띠에 영영 남아 「또 그 소리」가 되고, 그러면 아무도 안 본다. */
-    return _stale_close_(_STALE_SRCKEY_, "멈춘 건 없음");
+    return _stale_close_(_STALE_SRCKEY_, "멈춘 건 없음") + 꼬리;
   }
 
   //  오래 멈춘 것부터
@@ -85,7 +119,7 @@ function csStaleReport_(멈춘것) {
   줄들.push("(이 카드는 자동으로 갱신됩니다. 다 풀리면 저절로 닫힙니다.)");
   var 본문 = 줄들.join("\n");
 
-  return _stale_publish_(_STALE_SRCKEY_, 제목, 본문, 멈춘것.length);
+  return _stale_publish_(_STALE_SRCKEY_, 제목, 본문, 멈춘것.length) + 꼬리;
 }
 
 /**
@@ -162,6 +196,141 @@ function _stale_findCard_(srcKey) {
     }
   } catch (e) {}
   return null;
+}
+
+/* ────────────────────────────────────────────────────────────────────
+   사람이 닫은 것은 «이레 동안» 묻어둔다
+   ──────────────────────────────────────────────────────────────────── */
+
+/**
+ * ★ 왜 이 장치가 있나 ★  (2026-10-10 · 사장님 「중간 길로 해줘」)
+ *
+ *   이 공지들은 「풀릴 때까지 들고 있기」다 — 사흘째 멈춘 건이 조용히 사라지면
+ *   안 되기 때문이다. 그런데 **영영 안 풀리는 건**이 있다:
+ *     · 아예 안 실려 간 건 (2026-10-08 치 7건 — 사장님: "오래되서 이제 처리불가")
+ *     · 분실·취소된 건
+ *     · 반품 「독촉」에 여덟 달 멈춘 43856227041
+ *   사람이 카드를 닫아도 다음 런이 같은 줄로 새 카드를 세운다. 매시간 닫아야 하는
+ *   늑대야가 되고, 그러면 **정작 새로 멈춘 건을 아무도 안 본다.**
+ *
+ *   ★ 그렇다고 영영 묻으면 안 된다 ★ 잘못 닫는 일이 있다. 지금은 잘못 닫아도
+ *   다음 런이 다시 세워 주는데, 「닫으면 끝」으로 바꾸면 그 안전망이 사라진다.
+ *
+ *   그래서 가운데로 간다 — **사람이 닫으면 그때 실려 있던 송장을 이레 묻어두고,
+ *   이레가 지나도 여전히 멈춰 있으면 다시 올린다.**
+ *     · 진짜 끝난 건 → 일주일 조용하고, 그 사이 코호트가 지나가 대개 사라진다
+ *     · 잘못 닫은 건 → 일주일 뒤 돌아온다. 늦지만 «사라지지는» 않는다
+ */
+var _STALE_MUTE_DAYS_ = 7;
+
+/** 묻어둘 송장 윗한도 — 속성 한 칸이 9KB 다 */
+var _STALE_MUTE_MAX_ = 300;
+
+/** 그 칸의 글자 한도 (9KB 에 여유를 두고) */
+var _STALE_MUTE_PROP_MAX_ = 8000;
+
+/**
+ * 사람이 닫은 우리 카드를 찾는다.
+ *
+ * ★ 「사람이」가 중요하다 ★ 우리가 닫은 것(_stale_close_ · 완료자 자동점검)은
+ *   다 풀려서 닫은 것이라 묻어둘 것이 없다. 사람이 닫은 것만 뜻이 있다.
+ *
+ * @return {Object|null} 그 카드 줄 (id·doneBy 가 있다)
+ */
+function _stale_humanClosed_(srcKey) {
+  try {
+    var res = csListHandoffCards({});
+    if (!res || !res.ok || !res.rows) return null;
+    var 찾음 = null;
+    for (var i = 0; i < res.rows.length; i++) {
+      var r = res.rows[i];
+      if (String(r.srcKey || "").trim() !== srcKey) continue;
+      if (String(r.status || "").indexOf("완료") === -1) continue;
+      var 닫은이 = String(r.doneBy || "").trim();
+      if (!닫은이 || 닫은이 === _STALE_AUTHOR_) continue;   // 우리가 닫은 것
+      //  여럿이면 가장 나중 것 — 줄은 등록 순이므로 뒤엣것이 최근이다
+      찾음 = r;
+    }
+    return 찾음;
+  } catch (e) { return null; }
+}
+
+/** 묻어둔 표를 읽는다 — 지난 것은 읽을 때 걸러낸다 */
+function _stale_muteLoad_(태그) {
+  var 표 = {};
+  try {
+    var raw = PropertiesService.getScriptProperties()
+      .getProperty("STALE_MUTE_" + 태그) || "{}";
+    var o = JSON.parse(raw);
+    var 오늘 = _stale_ymd_(new Date());
+    for (var k in o) { if (String(o[k]) > 오늘) 표[k] = String(o[k]); }
+  } catch (e) {}
+  return 표;
+}
+
+/** 묻어둔 표를 적는다 — 한도를 넘으면 «만료가 이른 것»부터 버린다 */
+function _stale_muteSave_(태그, 표) {
+  try {
+    var 키들 = Object.keys(표);
+    if (키들.length > _STALE_MUTE_MAX_) {
+      키들.sort(function (a, b) { return 표[a] < 표[b] ? -1 : (표[a] > 표[b] ? 1 : 0); });
+      var 남길 = {};
+      for (var i = 키들.length - _STALE_MUTE_MAX_; i < 키들.length; i++) 남길[키들[i]] = 표[키들[i]];
+      표 = 남길;
+    }
+    var s = JSON.stringify(표);
+    while (s.length > _STALE_MUTE_PROP_MAX_) {       // 글자로도 막는다
+      var ks = Object.keys(표);
+      if (!ks.length) break;
+      delete 표[ks[0]];
+      s = JSON.stringify(표);
+    }
+    PropertiesService.getScriptProperties().setProperty("STALE_MUTE_" + 태그, s);
+  } catch (e) { /* 못 적어도 공지는 돈다 */ }
+}
+
+/** Date → yyyyMMdd */
+function _stale_ymd_(d) {
+  return Utilities.formatDate(d, "Asia/Seoul", "yyyyMMdd");
+}
+
+/**
+ * 사람이 카드를 닫았으면, 그때 멈춰 있던 송장들을 이레 묻어둔다.
+ *
+ * ★ 한 번만 한다 ★ 매 런마다 다시 묻으면 만료가 끝없이 밀려 «영영 안 뜸»이 된다.
+ *   그건 사장님이 피하라고 한 바로 그것이다. 그래서 처리한 카드 id 를 적어 두고
+ *   같은 카드는 두 번 보지 않는다.
+ *
+ * @param {string} 태그    속성 이름에 쓸 짧은 표 (OST · RET)
+ * @param {string} srcKey  카드 출처키
+ * @param {Array}  송장들  지금 멈춰 있는 송장 목록
+ * @return {number} 이번에 새로 묻은 수 (0 이면 아무 일도 없었다)
+ */
+function _stale_muteOnClose_(태그, srcKey, 송장들) {
+  var 카드 = _stale_humanClosed_(srcKey);
+  if (!(카드 && 카드.id)) return 0;
+
+  var P = PropertiesService.getScriptProperties();
+  var 본것키 = "STALE_MUTE_CARD_" + 태그;
+  var 본것 = "";
+  try { 본것 = P.getProperty(본것키) || ""; } catch (e) {}
+  if (본것 === String(카드.id)) return 0;          // 이미 처리한 카드다
+
+  var 표 = _stale_muteLoad_(태그);
+  var 만료 = new Date();
+  만료.setDate(만료.getDate() + _STALE_MUTE_DAYS_);
+  var 만료ymd = _stale_ymd_(만료);
+
+  var 센것 = 0;
+  for (var i = 0; i < (송장들 || []).length; i++) {
+    var inv = String(송장들[i] || "").trim();
+    if (!inv || 표[inv]) continue;
+    표[inv] = 만료ymd;
+    센것++;
+  }
+  _stale_muteSave_(태그, 표);
+  try { P.setProperty(본것키, String(카드.id)); } catch (e) {}
+  return 센것;
 }
 
 /**
