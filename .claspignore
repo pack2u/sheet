@@ -37,6 +37,24 @@ DepositInbox/**
 # 로젠 중계기(PHP) — GAS 프로젝트가 아니다
 _logen_relay/**
 
+# ══════════════════════════════════════════════════════════
+#  .claude/** — 설정과 «워크트리»가 산다  (2026-10-10)
+#
+#  ★ 왜 빼야 하나 ★
+#    .claude/worktrees/ 안에는 git 워크트리가 들어온다. 그것은 이 저장소의
+#    «사본»이라 0521_backup/productChatbot.gs 같은 파일이 그대로 또 있다.
+#    빼지 않으면 clasp 가 그것까지 올리려 하고, GAS 는 이름이 겹친다며
+#    푸시를 통째로 거절한다 —
+#      A file with this name already exists in the current project:
+#      .claude/worktrees/…/0521_backup/productChatbot
+#    오류 메시지가 워크트리를 가리키지 않으면 원인을 찾기 어렵다.
+#    2026-10-10 에 실제로 막혔다 (워크트리 57MB · .gs 239개).
+#
+#  ★ 워크트리는 지우지 않는다 ★
+#    다른 작업이 쓰고 있을 수 있다 (git worktree list 로 보인다).
+#    여기서 빼기만 하면 된다.
+.claude/**
+
 # 문서 및 비코드 파일
 *.md
 *.xlsx
