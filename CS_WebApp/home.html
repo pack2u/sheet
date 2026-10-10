@@ -3442,6 +3442,34 @@
     /*  완료인데 후처리가 남아 목록에 있는 카드 — 왜 있는지 글로 적어 둔다 */
     .csq-card.done { opacity: 0.78; }
 
+    /* ── After CS 카드 작게 (2026-10-10) ────────────────────────────────
+       > "After CS 카드도 작게 줄여줘"
+       콜백 대기 카드와 같은 크기로 맞춘다. 위의 규칙을 «여기서 덮는다» —
+       크기를 고칠 때는 이 묶음만 보면 된다. 글쓰기 상자(.csq-new)는 그대로.   */
+    .csq-list { gap: 4px; }
+    .csq-card { padding: 5px 8px; border-radius: 8px; }
+    .csq-head { gap: 5px; }
+    .csq-vendor { font-size: calc(12px * var(--hb-text-scale)); }
+    .csq-card.open .csq-vendor { font-size: calc(13.5px * var(--hb-text-scale)); }
+    .csq-item { font-size: calc(10.5px * var(--hb-text-scale)); }
+    .csq-when { font-size: calc(9.5px * var(--hb-text-scale)); }
+    .csq-one { margin-top: 1px; font-size: calc(11px * var(--hb-text-scale)); }
+    .csq-fu-tag { margin-top: 2px; padding: 0 6px; border-radius: 6px; font-size: calc(9.5px * var(--hb-text-scale)); }
+    .csq-uids { gap: 4px; margin-top: 2px; }
+    .csq-uid, .csq-ref { font-size: calc(9.5px * var(--hb-text-scale)); padding: 0 5px; border-radius: 5px; }
+    .csq-body { margin-top: 5px; }
+    .csq-label { font-size: calc(9.5px * var(--hb-text-scale)); margin: 5px 0 2px; }
+    .csq-text { font-size: calc(11.5px * var(--hb-text-scale)); line-height: 1.5; }
+    .csq-fu input[type="text"] { padding: 5px 7px; border-radius: 6px; font-size: calc(11px * var(--hb-text-scale)); }
+    .csq-fu textarea { min-height: 44px; padding: 6px 8px; border-radius: 6px; font-size: calc(11.5px * var(--hb-text-scale)); }
+    .csq-acts { gap: 4px; margin-top: 5px; }
+    .csq-acts button { padding: 4px 9px; border-radius: 6px; font-size: calc(11px * var(--hb-text-scale)); }
+    .csq-thumbs { margin-top: 4px; gap: 4px; }
+    .csq-thumbs button { width: 46px; height: 46px; }
+    /*  촬영·앨범 단추는 반품 화면과 같이 쓴다 — 문의 카드 «안에서만» 작게  */
+    .csq-body .ret-photo-pick { gap: 4px; }
+    .csq-body .ret-photo-pick .pk { padding: 4px 8px; font-size: calc(11px * var(--hb-text-scale)); border-radius: 6px; }
+
     /* ══ 바이토 콜백 대기 (2026-10-10) ══ */
     .byc-list { display: flex; flex-direction: column; gap: 6px; }
     .byc-card {
