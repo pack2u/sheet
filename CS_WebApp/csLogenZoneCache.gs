@@ -87,6 +87,17 @@ function csLogenZoneLearn(opt) {
     새줄.push([후보[i].key, a.판정, a.제주, a.연륙도서, a.산간, 후보[i].addr, 때]);
   }
 
+  /*  ★ 「물을 게 없었다」와 「물었는데 못 받았다」를 가른다 ★  (2026-10-10)
+      여태 _운영점검 에는 「새로 외움 0곳 · 모두 514곳」만 적혔다. 그래서 두 가지가
+      똑같이 보였다 —
+        ① 표가 차서 물을 게 없다 (좋다)
+        ② 120곳을 묻고 하나도 못 받았다 (나쁘다. 33초를 버리고 있다)
+      실제는 ②였는데 한 달이 가도 알 길이 없었다. 지금 상태:
+      후보가 매번 한도(120)에 꽉 차고, 새로 외우는 것은 0 이다.
+      [[dont-overwrite-what-you-couldnt-read]] 와 같은 이야기 — 모르는 것과
+      없는 것은 다르다. 「조용한 것은 괜찮다가 아니다.」                     */
+  var 버림 = 후보.length - 새줄.length;
+
   if (새줄.length) {
     tab.getRange(tab.getLastRow() + 1, 1, 새줄.length, _ZC_HEADER_.length).setValues(새줄);
   }
@@ -99,7 +110,10 @@ function csLogenZoneLearn(opt) {
     (못물음 ? " · 못 물음 " + 못물음 : "");
   Logger.log(글);
   _zc_note_("새로 외움 " + 새줄.length + "곳" + (섬 ? " · 도서산간 " + 섬 : "") +
-            " · 모두 " + (Object.keys(있는것).length + 새줄.length) + "곳");
+            " · 모두 " + (Object.keys(있는것).length + 새줄.length) + "곳" +
+            //  ★ 버린 것을 숨기지 않는다 ★ 0 이면 안 적는다 (평소가 그렇다)
+            (버림 ? " · ★ 물었는데 못 받음 " + 버림 + "/" + 후보.length : "") +
+            (후보.length >= 한도 ? " · 후보 한도(" + 한도 + ")까지 찼다" : ""));
   return 글;
 }
 
