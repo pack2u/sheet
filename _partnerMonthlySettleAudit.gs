@@ -127,7 +127,13 @@ function _pms_auditOne_(ss, y, m) {
   var cMap    = L.cMap;
   var extHdr  = L.extHdr;
   var extLc   = L.extLc;
-  var c = { island: L.islandC, etc: L.etcC };
+  var c = { island: L.islandC, etc: L.etcC, hdr: extHdr };
+  //  ★ 2026-10-10 요약 수식과 같은 규칙으로 센다 — 코드·품명·금액 중 하나라도 있으면 한 줄
+  extHdr.forEach(function (h, i) {
+    var t = String(h == null ? "" : h).replace(/\s/g, "");
+    if (c.code === undefined && t === "이카운트코드") c.code = i;
+    if (c.name === undefined && t.indexOf("품목명") === 0) c.name = i;
+  });
 
   var maxC = Math.max(sh.getMaxColumns(), extLc, 10);
   var 위 = sh.getRange(1, 1, _PMS_HEADER_ROW, maxC);
@@ -208,7 +214,7 @@ function _pms_audit_headerDiff_(row, extHdr) {
 
 /** 보정 코드가 넣을 수식을 그대로 받아 적는다 — 빠른 보정과 같은 것을 쓴다 */
 function _pms_audit_expectedFormulas_(cMap, c) {
-  return _pms_expectedSummaryFormulas_(cMap, c.island, c.etc);
+  return _pms_expectedSummaryFormulas_(cMap, c.island, c.etc, c.hdr);
 }
 
 /** 수식 견주기 — 빠른 보정과 같은 것 */
@@ -218,7 +224,9 @@ function _pms_audit_normF_(f) {
 
 /**
  * 순수 — 데이터로 요약을 다시 셈하고, 칸 밀림·글자 섞임을 찾는다.
- * 수식과 같은 뜻: 일자가 비거나 0 인 줄은 건수·금액에서 뺀다.
+ * 수식과 같은 뜻 (2026-10-10, _pms_summaryFormulas_): 품목코드·품목명·금액 중 하나라도 있으면 한 줄.
+ *   일자가 비어도 센다(손으로 넣은 줄). 쉼표 섞인 글자 금액도 숫자로 읽는다.
+ *   c.code · c.name 은 0부터 센 칸 번호(없으면 undefined).
  */
 function _pms_audit_recalc_(rows, cMap, c) {
   //  ★ 2026-10-05 새 모양 — 취소·반품 없음. 최종 = 정산금액 + 도서산간(O) + 기타정산
@@ -229,7 +237,16 @@ function _pms_audit_recalc_(rows, cMap, c) {
   function 글자(v) {          //  숫자가 아닌 글자 (빈칸·숫자·불린·날짜는 아님)
     return !(v === "" || v == null || typeof v === "number" || typeof v === "boolean" || v instanceof Date);
   }
-  function 수(v) { return typeof v === "number" ? v : 0; }
+  //  수식의 VALUE(SUBSTITUTE(TO_TEXT(x),",","")) 와 같은 뜻
+  function 수(v) {
+    if (typeof v === "number") return v;
+    var t = String(v == null ? "" : v).split(",").join("").trim();
+    if (t === "") return 0;
+    var n = Number(t);
+    return isNaN(n) ? 0 : n;
+  }
+  function 못읽음(v) { return 글자(v) && String(v).split(",").join("").trim() !== "" && isNaN(Number(String(v).split(",").join("").trim())); }
+  function 값(row, k) { return k === undefined ? "" : row[k]; }
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
     for (var k = 0; k < row.length; k++) {
@@ -242,7 +259,7 @@ function _pms_audit_recalc_(rows, cMap, c) {
     //  ★ 2026-10-05 «금액을 넣었는데 최종이 안 바뀐다» — 글자로 들어간 금액은 SUM 이 건너뛴다
     [["도서산간배송비", c.island], ["기타정산", c.etc]].forEach(function (fc) {
       var v = row[fc[1] - 1];
-      if (글자(v)) {
+      if (못읽음(v)) {
         var 칸 = 비용글[fc[0]] || (비용글[fc[0]] = { 수: 0, 예: "" });
         칸.수++;
         if (!칸.예) 칸.예 = _pms_audit_a1_(i + _PMS_DATA_START, fc[1]) + " 「" + v + "」";
@@ -250,26 +267,23 @@ function _pms_audit_recalc_(rows, cMap, c) {
     });
 
     var d = cMap.date !== -1 ? row[cMap.date] : row[0];
-    var 있음 = d !== "" && d !== null && d !== undefined && (cMap.date === -1 || d !== 0);
-    if (!있음) {
-      //  일자 없는 줄의 정산금액은 요약 수식이 세지 않는다 (B5:B<>0)
-      if (cMap.price !== -1) {
-        var 빈금액 = row[cMap.price];
-        if ((typeof 빈금액 === "number" && 빈금액 !== 0) || 글자(빈금액)) {
-          무일자.수++; 무일자.합 += 수(빈금액);
-          if (!무일자.예) 무일자.예 = (i + _PMS_DATA_START) + "행 「" + 빈금액 + "」";
-        }
-      }
-      continue;
+    var 금액 = cMap.price !== -1 ? 수(row[cMap.price]) : 0;
+    var 있음 = String(값(row, c.code) == null ? "" : 값(row, c.code)).trim() !== "" ||
+              String(값(row, c.name) == null ? "" : 값(row, c.name)).trim() !== "" || 금액 !== 0;
+    if (!있음) continue;
+    if (d === "" || d === null || d === undefined || d === 0) {
+      //  일자 없는 줄도 이제 합계에 들어간다 — 일자를 빠뜨린 것인지만 알린다
+      무일자.수++; 무일자.합 += 금액;
+      if (!무일자.예) 무일자.예 = (i + _PMS_DATA_START) + "행";
     }
-    if (cMap.date !== -1 && !(d instanceof Date) && !_pms_audit_dateLike_(d)) {
+    if (cMap.date !== -1 && d !== "" && d !== null && d !== undefined && d !== 0 && !(d instanceof Date) && !_pms_audit_dateLike_(d)) {
       날짜아님++; if (!날짜예) 날짜예 = (i + _PMS_DATA_START) + "행 「" + d + "」";
     }
     o.전체건++;
     if (cMap.qty !== -1 && 글자(row[cMap.qty])) 수량글++;
     if (cMap.price !== -1) {
       var p = row[cMap.price];
-      if (글자(p)) { 금액글++; if (!금액예) 금액예 = (i + _PMS_DATA_START) + "행 「" + p + "」"; }
+      if (못읽음(p)) { 금액글++; if (!금액예) 금액예 = (i + _PMS_DATA_START) + "행 「" + p + "」"; }
       o.전체금액 += 수(p);
     }
   }
@@ -277,15 +291,15 @@ function _pms_audit_recalc_(rows, cMap, c) {
 
   if (날짜아님) o.경고.push("일자 칸에 날짜가 아닌 값 " + 날짜아님 + "줄 (예: " + 날짜예 + ") — 칸이 밀렸을 수 있음");
   if (수량글) o.경고.push("수량 칸에 글자 " + 수량글 + "줄");
-  if (금액글) o.경고.push("금액 칸에 글자 " + 금액글 + "줄 (예: " + 금액예 + ") — 정산금액 합계에 안 들어감");
+  if (금액글) o.경고.push("금액 칸에 숫자로 못 읽는 글자 " + 금액글 + "줄 (예: " + 금액예 + ") — 정산금액 합계에 안 들어감");
   if (오류) o.경고.push("데이터에 오류값 " + 오류 + "칸 (예: " + 오류예 + ")");
   Object.keys(비용글).forEach(function (이름) {
-    o.경고.push(이름 + " 칸에 글자로 된 금액 " + 비용글[이름].수 + "칸 (예: " + 비용글[이름].예 +
+    o.경고.push(이름 + " 칸에 숫자로 못 읽는 글자 " + 비용글[이름].수 + "칸 (예: " + 비용글[이름].예 +
       ") — 합계·최종 정산금액에 안 들어감");
   });
   if (무일자.수) {
-    o.경고.push("일자가 없는 줄의 정산금액 " + 무일자.수 + "줄 (예: " + 무일자.예 +
-      ") — 요약 수식이 일자 있는 줄만 세서 최종 정산금액에 안 들어감");
+    o.경고.push("일자가 없는 줄 " + 무일자.수 + "줄 (예: " + 무일자.예 +
+      ") — 합계에는 들어갑니다. 일자를 빠뜨린 것인지 확인");
   }
   return o;
 }

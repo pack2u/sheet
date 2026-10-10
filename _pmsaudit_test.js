@@ -19,11 +19,12 @@ function 꺼내(src, 이름) {
   throw new Error(이름 + " 끝 못 찾음");
 }
 global._PMS_DATA_START = 5;
+global._PMS_HEADER_ROW = 4;
 global._PMS_OLD_EXT_ = ["취소", "반품", "취소반품사유", "반품송장번호", "반품배송비", "도서산간배송비", "기타정산"];
 ["_pms_audit_headerDiff_", "_pms_audit_expectedFormulas_", "_pms_audit_normF_", "_pms_audit_recalc_",
  "_pms_audit_dateLike_", "_pms_audit_col_", "_pms_audit_a1_", "_pms_audit_fmt_"]
   .forEach(function (n) { eval.call(null, 꺼내(점검, n)); });
-["_pms_applyFormulas_", "_pms_buildExtHeaders_", "_pms_newLayout_", "_pms_expectedSummaryFormulas_", "_pms_normF_"]
+["_pms_applyFormulas_", "_pms_summaryFormulas_", "_pms_buildExtHeaders_", "_pms_newLayout_", "_pms_expectedSummaryFormulas_", "_pms_normF_"]
   .forEach(function (n) { eval.call(null, 꺼내(마감, n)); });
 
 var 통과 = 0, 실패 = 0;
@@ -47,11 +48,21 @@ console.log("\n[0] ★ 새 모양 — 취소·반품 칸이 없다 ★");
   ["일자", "수량", "정산금액", "도서산간배송비", "기타정산"]);
 
 console.log("\n[1] 기대 수식 — 보정 코드에서 그대로 받아 적는다");
-var 기대 = _pms_audit_expectedFormulas_(cMap, c);
-같나("B2 전체 건수", 기대["2,2"], '=IFERROR(COUNTIF(A5:A,"<>0"),0)');
-같나("D2 정산금액 합계", 기대["2,4"], '=IFERROR(SUMIF(A5:A,"<>0",D5:D),0)');
-같나("F2 도서산간 = 원본 O(여기선 E)열 합", 기대["2,6"], "=IFERROR(SUM(E5:E),0)");
-같나("H2 기타정산", 기대["2,8"], "=IFERROR(SUM(F5:F),0)");
+var 기대 = _pms_audit_expectedFormulas_(cMap, { island: c.island, etc: c.etc, hdr: ext });
+//  ★ 2026-10-10 어느 칸인지는 머리글 이름으로 — 여기 머리글엔 코드·품명 칸이 없어 금액(D)만 센다
+같나("B2 전체 건수 — 금액이 있는 줄", 기대["2,2"],
+  '=IFERROR(ARRAYFORMULA(SUMPRODUCT(SIGN(ABS(IFERROR(VALUE(SUBSTITUTE(TO_TEXT(D5:D),",","")),0))))),0)');
+같나("D2 정산금액 — 글자 금액도 숫자로", 기대["2,4"],
+  '=IFERROR(ARRAYFORMULA(SUMPRODUCT(IFERROR(VALUE(SUBSTITUTE(TO_TEXT(D5:D),",","")),0))),0)');
+ok("F2 도서산간 = E열", 기대["2,6"].indexOf("TO_TEXT(E5:E)") !== -1, 기대["2,6"]);
+ok("H2 기타정산 = F열", 기대["2,8"].indexOf("TO_TEXT(F5:F)") !== -1, 기대["2,8"]);
+var 기대2 = _pms_audit_expectedFormulas_(cMap, { island: 15, etc: 17,
+  hdr: ["거래처명", "주문일자", "이카운트코드", "품목명(자동)", "수량", "", "", "", "", "", "송장번호", "정산금액", "고유ID", "상태", "도서산간배송비", "택배사", "기타정산"] });
+ok("표준 모양 — 코드 C · 품명 D · 금액 L 을 이름으로 골라 센다",
+  기대2["2,2"].indexOf("LEN(TO_TEXT(C5:C))+LEN(TO_TEXT(D5:D))+ABS(IFERROR(VALUE(SUBSTITUTE(TO_TEXT(L5:L)") !== -1, 기대2["2,2"]);
+var 밀린머리 = ["거래처명", "주문일자", "새칸", "이카운트코드", "품목명(자동)", "수량", "", "", "", "", "", "송장번호", "정산금액", "고유ID", "상태", "도서산간배송비", "택배사", "기타정산"];
+var 기대3 = _pms_audit_expectedFormulas_(cMap, { island: 16, etc: 18, hdr: 밀린머리 });
+ok("★ 칸이 하나 밀리면 수식도 이름 따라 M열로", 기대3["2,4"].indexOf("TO_TEXT(M5:M)") !== -1 && 기대3["2,2"].indexOf("TO_TEXT(D5:D))+LEN(TO_TEXT(E5:E))") !== -1, 기대3["2,4"] + " / " + 기대3["2,2"]);
 같나("B3 최종 = 정산금액 + 도서산간 + 기타정산", 기대["3,2"], "=IFERROR(D2+F2+H2,0)");
 같나("요약 수식 5칸 (유효 건수·반품배송비 없음)", Object.keys(기대).length, 5);
 ok("취소·반품을 보는 수식이 없다", Object.keys(기대).every(function (k) { return 기대[k].indexOf("TRUE") === -1; }));
@@ -85,8 +96,10 @@ var 나쁜 = [
   줄("홍길동", 2000),
   줄(20260904, "#REF!"),
 ];
-var 경고 = _pms_audit_recalc_(나쁜, cMap, c).경고.join(" | ");
-ok("금액 칸 글자를 잡는다", /금액 칸에 글자 2줄/.test(경고), 경고);
+//  ★ 2026-10-10 줄은 «코드·품명·금액 중 하나»로 센다 — 여기선 B칸(홍길동)을 품명 자리로 친다
+var c품 = { island: c.island, etc: c.etc, name: 1 };
+var 경고 = _pms_audit_recalc_(나쁜, cMap, c품).경고.join(" | ");
+ok("금액 칸 글자(숫자로 못 읽는 것)를 잡는다", 경고.indexOf("금액 칸에 숫자로 못 읽는 글자 2줄") !== -1, 경고);
 ok("일자 칸 밀림을 잡는다", /일자 칸에 날짜가 아닌 값 1줄 \(예: 6행 「홍길동」\)/.test(경고), 경고);
 ok("오류값을 잡는다", /오류값 1칸 \(예: D7 #REF!\)/.test(경고), 경고);
 
@@ -96,10 +109,13 @@ var 안들어감 = [
   줄(20260902, 20000, "", "5000"),           //  기타정산 글자 숫자
   줄("", 7000),                              //  일자 없는 줄의 금액
 ];
-var 경고3 = _pms_audit_recalc_(안들어감, cMap, c).경고.join(" | ");
-ok("도서산간 글자를 잡는다", /도서산간배송비 칸에 글자로 된 금액 1칸 \(예: E5 「3,000원」\)/.test(경고3), 경고3);
-ok("기타정산 글자를 잡는다", /기타정산 칸에 글자로 된 금액 1칸 \(예: F6 「5000」\)/.test(경고3), 경고3);
-ok("일자 없는 줄의 금액을 잡는다", /일자가 없는 줄의 정산금액 1줄 \(예: 7행 「7000」\)/.test(경고3), 경고3);
+var 셈3 = _pms_audit_recalc_(안들어감, cMap, c품);
+var 경고3 = 셈3.경고.join(" | ");
+ok("도서산간 「3,000원」은 숫자로 못 읽는다고 알린다", 경고3.indexOf("도서산간배송비 칸에 숫자로 못 읽는 글자 1칸 (예: E5 「3,000원」)") !== -1, 경고3);
+ok("★ 기타정산 글자 「5000」은 이제 센다 (요약 수식과 같다)", 경고3.indexOf("기타정산 칸") === -1 && 셈3.기타정산 === 5000, 경고3 + " / " + 셈3.기타정산);
+ok("★ 일자 없는 줄의 금액도 합계에 든다 — 일자 빠뜨렸나만 알린다",
+  셈3.전체금액 === 37000 && 경고3.indexOf("일자가 없는 줄 1줄 (예: 7행) — 합계에는 들어갑니다") !== -1, 경고3 + " / " + 셈3.전체금액);
+같나("★ 일자 없는 줄도 건수에", 셈3.전체건, 3);
 
 console.log("\n[5] 날짜 꼴 · 숫자 꼴");
 ok("20260901", _pms_audit_dateLike_(20260901));

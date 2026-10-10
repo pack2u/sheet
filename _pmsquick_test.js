@@ -22,7 +22,7 @@ function 꺼내(이름) {
 global._PMS_HEADER_ROW = 4;
 global._PMS_DATA_START = 5;
 global._PMS_OLD_EXT_ = ["취소", "반품", "취소반품사유", "반품송장번호", "반품배송비", "도서산간배송비", "기타정산"];
-["_pms_quickRepairTab_", "_pms_expectedSummaryFormulas_", "_pms_normF_", "_pms_applyFormulas_",
+["_pms_quickRepairTab_", "_pms_expectedSummaryFormulas_", "_pms_normF_", "_pms_applyFormulas_", "_pms_summaryFormulas_",
  "_pms_isOurRowRule_", "_pms_removeRowRules_", "_pms_migrateOldLayout_",
  "_pms_archiveLayout_", "_pms_archiveLayoutFrom_", "_pms_newLayout_"].forEach(function (n) { eval.call(null, 꺼내(n)); });
 
@@ -98,7 +98,7 @@ var 원본 = ["일자", "수취인", "수량", "정산금액", "도서산간배�
 var 새머리 = 원본.concat(["기타정산"]);
 var 옛머리 = 원본.concat(["취소", "반품", "취소반품사유", "반품송장번호", "반품배송비", "도서산간배송비", "기타정산"]);
 var L새 = _pms_archiveLayoutFrom_(새머리, [], 0, false);
-var 기대식 = _pms_expectedSummaryFormulas_(L새.cMap, L새.islandC, L새.etcC);
+var 기대식 = _pms_expectedSummaryFormulas_(L새.cMap, L새.islandC, L새.etcC, L새.extHdr);
 
 function 새탭(o) {
   o = o || {};

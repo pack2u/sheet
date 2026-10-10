@@ -1159,6 +1159,25 @@ function _pms_processOneFile_(ss, todayNum, archivedUids, hubDateByUid) {
     if (Ltab.구형) archTab.getRange(nextRow, Ltab.구형.cancel, padded.length, 2).insertCheckboxes();
 
     result.archived += padded.length;
+
+    /*  ★ 2026-10-10 붙인 김에 요약 수식과 거래명세서를 머리글 «이름»에 다시 맞춘다 ★
+        사람이 칸을 끼우면 시트가 수식을 스스로 옮기지만, 스크립트가 칸을 바꾸거나 요약만 옛 모양으로
+        남으면(10/06 올팩·용기창고 B3=0) 아무도 못 고쳤다. 다를 때만 쓴다 — 맞으면 읽기 한 번.  */
+    if (!Ltab.구형) {
+      try {
+        var _요약기대_ = _pms_expectedSummaryFormulas_(Ltab.cMap, Ltab.islandC, Ltab.etcC, Ltab.extHdr);
+        var _요약식_ = archTab.getRange(2, 1, 2, 8).getFormulas();
+        var _요약다름_ = Object.keys(_요약기대_).some(function (k) {
+          var rc = k.split(",");
+          return _pms_normF_(_요약식_[+rc[0] - 2][+rc[1] - 1]) !== _pms_normF_(_요약기대_[k]);
+        });
+        if (_요약다름_) {
+          _pms_applyFormulas_(archTab, Ltab.cMap, Ltab.islandC, Ltab.etcC, Ltab.extHdr);
+          Logger.log("[PMS] " + ss.getName() + " / " + tabName + ": 요약 수식을 머리글에 맞춰 다시 씀");
+        }
+      } catch (_eSum) { Logger.log("[PMS] 요약 수식 맞추기 실패(마감은 그대로): " + _eSum.message); }
+      if (typeof _pls_ensure_ === "function") _pls_ensure_(ss, tabName);
+    }
   }
   } finally {
     if (_붙이기잠금_) { try { _붙이기잠금_.releaseLock(); } catch (_eRl) {} }
@@ -1498,7 +1517,7 @@ function _pms_layoutArchiveTab_(tab, L, isNewBlank) {
     tab.setRowHeight(1, 32);
   } catch(e) {}
 
-  _pms_applyFormulas_(tab, L.cMap, L.islandC, L.etcC);
+  _pms_applyFormulas_(tab, L.cMap, L.islandC, L.etcC, L.extHdr);
 
   if (tab.getMaxColumns() < L.extLc) {
     tab.insertColumnsAfter(tab.getMaxColumns(), L.extLc - tab.getMaxColumns());
@@ -1547,42 +1566,80 @@ function _pms_removeRowRules_(tab) {
 
 
 // ──────────────────────────────────────────────────────
-function _pms_applyFormulas_(tab, cMap, islandC, etcC) {
+/**
+ * ★ 요약 수식 — 칸은 머리글 «이름»으로 정하고, 수식은 검증된 꼴(L5:L)로 쓴다 ★  (2026-10-10)
+ *
+ *  > "마감 시트의 포멧을 바꾸더라도 정산이 맞게 바꿔줘.. 수기입력했을떄도 바로 합계금액이 바뀌게"
+ *
+ *  두 구멍이 있었다 —
+ *    · 일자(B열)가 빈 줄은 안 셌다 — 손으로 한 줄 넣고 일자를 안 쓰면 합계에 안 들어갔다
+ *    · 글자로 들어간 금액(「29,200」을 글자로 붙여넣기)은 SUM 이 건너뛰었다
+ *  이제는 «품목코드·품목명·금액 중 하나라도 있으면» 한 줄로 세고, 쉼표 섞인 글자도 숫자로 읽어 더한다.
+ *
+ *  칸이 바뀌어도 맞게 —
+ *    · 어느 칸을 셀지는 4행 머리글 «이름»(이카운트코드·품목명·정산금액·도서산간배송비·기타정산)으로 정한다.
+ *    · 사람이 칸을 끼우거나 옮기면 시트가 수식의 칸 글자를 스스로 따라 옮긴다(L5:L → M5:M).
+ *    · 스크립트가 칸을 바꾼 경우는 밤 마감이 머리글을 다시 읽어 다르면 고쳐 쓴다(_pms_processOneFile_).
+ *  ★ MATCH·OFFSET 으로 그 자리에서 찾게 해 보았다가 접었다 ★ — 시트 폭(26칸)을 넘는 범위(…:AZ)는
+ *    #NAME? 이 되고, $A$5:$AZ 꼴은 읽지도 못했다(2026-10-10 시험 시트로 확인). 검증된 꼴만 쓴다.
+ *
+ * @param {Array} hdr  4행 머리글 (없으면 cMap·표준 자리로)
+ * @param {string} 끝  범위 끝 행 — 보통 "" (열린 범위 L5:L). 시험만 숫자를 준다.
+ * @return {{건수, 정산금액, 도서산간, 기타정산, 최종}}
+ */
+function _pms_summaryFormulas_(cMap, islandC, etcC, hdr, 끝) {
   function Lc(n) {
     var s = "", c = n;
-    while (c > 0) { var m = (c-1)%26; s = String.fromCharCode(65+m)+s; c = Math.floor((c-1)/26); }
+    while (c > 0) { var m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = Math.floor((c - 1) / 26); }
     return s;
   }
-  var dr = String(_PMS_DATA_START);
-  var dO = cMap.date !== -1 ? Lc(cMap.date+1) + dr + ":" + Lc(cMap.date+1) : "";
-  var ifO = Lc(islandC) + dr + ":" + Lc(islandC);
-  var efO = Lc(etcC) + dr + ":" + Lc(etcC);
+  function 찾기(앞) {   //  머리글에서 「앞」으로 시작하는 첫 칸 (1부터) — 없으면 0
+    if (!hdr) return 0;
+    for (var i = 0; i < hdr.length; i++) {
+      if (String(hdr[i] == null ? "" : hdr[i]).replace(/\s/g, "").indexOf(앞) === 0) return i + 1;
+    }
+    return 0;
+  }
+  var e = 끝 ? String(끝) : "";
+  function 범위(col) { return col ? Lc(col) + _PMS_DATA_START + ":" + Lc(col) + e : ""; }
+  function 수(col) { return 'IFERROR(VALUE(SUBSTITUTE(TO_TEXT(' + 범위(col) + '),",","")),0)'; }
+  function 합(col) { return col ? '=IFERROR(ARRAYFORMULA(SUMPRODUCT(' + 수(col) + ')),0)' : "=0"; }
+
+  var code  = 찾기("이카운트코드") || (hdr ? 0 : 3);
+  var name  = 찾기("품목명") || (hdr ? 0 : 4);
+  var price = 찾기("정산금액") || (cMap && cMap.price !== -1 ? cMap.price + 1 : 0);
+  var 칸들 = [];
+  if (code) 칸들.push("LEN(TO_TEXT(" + 범위(code) + "))");
+  if (name) 칸들.push("LEN(TO_TEXT(" + 범위(name) + "))");
+  if (price) 칸들.push("ABS(" + 수(price) + ")");
+  return {
+    건수: 칸들.length ? "=IFERROR(ARRAYFORMULA(SUMPRODUCT(SIGN(" + 칸들.join("+") + "))),0)" : "=0",
+    정산금액: 합(price),
+    도서산간: 합(islandC),
+    기타정산: 합(etcC),
+    최종: "=IFERROR(D2+F2+H2,0)"
+  };
+}
+
+function _pms_applyFormulas_(tab, cMap, islandC, etcC, hdr) {
+  var f = _pms_summaryFormulas_(cMap, islandC, etcC, hdr, "");
 
   //  옛 모양의 요약 칸(유효 건수·반품배송비·옛 최종 자리)을 먼저 비운다
   tab.getRange(2, 1, 2, 10).clearContent();
 
   tab.getRange(2,1).setValue("📦 전체 건수");
-  tab.getRange(2,2).setFormula(dO ? '=IFERROR(COUNTIF(' + dO + ',"<>0"),0)' : '=IFERROR(COUNTA(A' + dr + ':A),0)')
-    .setNumberFormat("#,##0").setFontWeight("bold").setFontSize(11);
-
-  var 최종 = [];
-  if (cMap.price !== -1) {
-    var pO = Lc(cMap.price+1) + dr + ":" + Lc(cMap.price+1);
-    tab.getRange(2,3).setValue("💰 정산금액 합계");
-    tab.getRange(2,4).setFormula(dO ? '=IFERROR(SUMIF(' + dO + ',"<>0",' + pO + '),0)' : '=IFERROR(SUM(' + pO + '),0)')
-      .setNumberFormat("#,##0").setFontWeight("bold");
-    최종.push("D2");
-  }
+  tab.getRange(2,2).setFormula(f.건수).setNumberFormat("#,##0").setFontWeight("bold").setFontSize(11);
+  tab.getRange(2,3).setValue("💰 정산금액 합계");
+  tab.getRange(2,4).setFormula(f.정산금액).setNumberFormat("#,##0").setFontWeight("bold");
   tab.getRange(2,5).setValue("🏝️ 도서산간배송비");
-  tab.getRange(2,6).setFormula('=IFERROR(SUM(' + ifO + '),0)').setNumberFormat("#,##0");
+  tab.getRange(2,6).setFormula(f.도서산간).setNumberFormat("#,##0");
   tab.getRange(2,7).setValue("📋 기타정산");
-  tab.getRange(2,8).setFormula('=IFERROR(SUM(' + efO + '),0)').setNumberFormat("#,##0");
-  최종.push("F2", "H2");
+  tab.getRange(2,8).setFormula(f.기타정산).setNumberFormat("#,##0");
 
   tab.getRange(3,1).setValue("🏷️ 최종 정산금액").setFontWeight("bold").setFontSize(11);
-  tab.getRange(3,2).setFormula("=IFERROR(" + 최종.join("+") + ",0)").setNumberFormat("#,##0")
+  tab.getRange(3,2).setFormula(f.최종).setNumberFormat("#,##0")
     .setFontWeight("bold").setFontColor("#c62828").setFontSize(12);
-  tab.getRange(3,3).setValue("취소·반품은 반품관리대장에서 따로 관리합니다").setFontColor("#757575");
+  tab.getRange(3,3).setValue("취소·반품은 반품관리대장에서 따로 관리합니다 · 손으로 고쳐도 바로 반영 · 일자 없는 줄·글자 금액도 셉니다").setFontColor("#757575");
 
   tab.getRange(2,1,1,8).setBackground("#e3f2fd").setBorder(true,true,true,true,true,true);
   tab.getRange(3,1,1,2).setBackground("#e8f5e9").setBorder(true,true,true,true,true,true);
@@ -1955,7 +2012,7 @@ function _pms_quickRepairTab_(sh, L) {
     }
   }
 
-  var 기대 = _pms_expectedSummaryFormulas_(L.cMap, L.islandC, L.etcC);
+  var 기대 = _pms_expectedSummaryFormulas_(L.cMap, L.islandC, L.etcC, L.extHdr);
   var 수식다름 = Object.keys(기대).some(function(k) {
     var rc = k.split(",");
     var 지금 = (식[+rc[0] - 1] || [])[+rc[1] - 1];
@@ -1966,7 +2023,7 @@ function _pms_quickRepairTab_(sh, L) {
     for (var cc = 8; cc < 10 && !수식다름; cc++) if (식[1][cc] || 식[2][cc]) 수식다름 = true;
   }
   if (수식다름) {
-    _pms_applyFormulas_(sh, L.cMap, L.islandC, L.etcC);
+    _pms_applyFormulas_(sh, L.cMap, L.islandC, L.etcC, L.extHdr);
     고침.push("요약 수식");
   }
 
@@ -1988,7 +2045,7 @@ function _pms_quickRepairTab_(sh, L) {
 }
 
 /** 보정 코드(_pms_applyFormulas_)가 넣을 요약 수식을 받아 적는다 — {"행,열": 수식} */
-function _pms_expectedSummaryFormulas_(cMap, islandC, etcC) {
+function _pms_expectedSummaryFormulas_(cMap, islandC, etcC, hdr) {
   var rec = {};
   function cell(r, col) {
     var o = {};
@@ -1997,7 +2054,7 @@ function _pms_expectedSummaryFormulas_(cMap, islandC, etcC) {
     o.setFormula = function(f) { rec[r + "," + col] = f; return o; };
     return o;
   }
-  _pms_applyFormulas_({ getRange: function(r, col) { return cell(r, col); } }, cMap, islandC, etcC);
+  _pms_applyFormulas_({ getRange: function(r, col) { return cell(r, col); } }, cMap, islandC, etcC, hdr);
   return rec;
 }
 
