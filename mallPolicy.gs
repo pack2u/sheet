@@ -660,17 +660,55 @@ function _mp_notAMall_(name) {
 }
 
 /**
+ * 몰 이름 앞에 붙는 «사업자 구분».
+ *
+ * ★ 법인만이 아니다 ★  (2026-10-10)
+ *   > 사장님: "법인만 찾은거 같은데 개인/인더샵 같이 되있는 쇼핑몰도 있어"
+ *   처음에 「법인/」만 받도록 짰다가 개인 사업자 몰을 통째로 놓쳤다.
+ *
+ * ★ 구분을 떼지 않고 «붙인 채로» 센다 ★
+ *   「법인/쿠팡」과 「개인/쿠팡」은 계약이 다르면 수수료율도 다르다.
+ *   한 줄로 합치면 요율을 하나만 매기게 되고, 그것이 가격으로 나간다.
+ *   그래서 열쇠는 붙인 그대로 쓰고, 보기 좋게 「구분」·「몰」로 쪼개 보여만 준다.
+ *
+ *   여기 없는 구분이 나오면 _mp_mallFromVendor_ 가 돌려주지 않고,
+ *   「모르는 구분」으로 결과 탭에 올라온다 — 조용히 사라지지 않는다.
+ */
+var _MP_BIZ_PREFIXES_ = ["법인", "개인"];
+
+/** 「법인/쿠팡」 → { 구분:"법인", 몰:"쿠팡" } · 구분이 없으면 { 구분:"", 몰:원값 } */
+function _mp_splitMall_(name) {
+  var t = String(name || "").trim();
+  var i = t.indexOf("/");
+  if (i > 0) {
+    var head = t.substring(0, i).trim();
+    for (var p = 0; p < _MP_BIZ_PREFIXES_.length; p++) {
+      if (head === _MP_BIZ_PREFIXES_[p]) {
+        return { 구분: head, 몰: t.substring(i + 1).trim() };
+      }
+    }
+  }
+  return { 구분: "", 몰: t };
+}
+
+/** 「구분/」 으로 시작하는가 — 사업자 구분이 붙은 몰 이름인가 */
+function _mp_hasBizPrefix_(name) {
+  return _mp_splitMall_(name).구분 !== "";
+}
+
+/**
  * 거래처명 칸을 몰로 «거들어» 쓸 수 있나.
  *
  * ★ 원장의 거래처명은 주문자 이름이다 ★  (2026-10-10)
  *   그래서 아무 값이나 받으면 몰 목록이 사람 이름으로 찬다.
- *   「법인/」으로 시작하는 것만 받는다 — 품목명 꼬리가 떨어진 줄을 메우는 용도다.
- *   「법인/」이 없는 몰(배민상회 등)은 이 길로는 안 들어온다. 그것이 맞다 —
+ *   「법인/」·「개인/」처럼 사업자 구분이 붙은 것만 받는다 —
+ *   품목명 꼬리가 떨어진 줄을 메우는 용도다.
+ *   구분이 없는 몰(배민상회 등)은 이 길로 안 들어온다. 그것이 맞다 —
  *   사람 이름과 가를 길이 없으면 «모른다»로 두는 편이 낫다.
  */
 function _mp_mallFromVendor_(vendor) {
   var t = String(vendor || "").trim();
-  if (t.indexOf("법인/") !== 0) return "";
+  if (!_mp_hasBizPrefix_(t)) return "";
   if (_mp_notAMall_(t)) return "";
   return t;
 }
@@ -760,6 +798,10 @@ function mpDiscoverMalls() {
 
   var 센것 = {};          // 몰명 → { 건수, 처음, 마지막, 거래처명으로, 꼬리로 }
   var 전화 = 0, 대리 = 0, 모름 = 0, 사방넷 = 0;
+  /*  ★ 모르는 구분을 조용히 버리지 않는다 ★  (2026-10-10)
+      「법인/」만 받다가 「개인/인더샵」을 통째로 놓쳤다. 그런 일이 또 생기면
+      여기에 모여 결과 탭에 올라온다. 사람이 보고 _MP_BIZ_PREFIXES_ 에 더한다.  */
+  var 모르는구분 = {};
 
   for (var i = 0; i < n; i++) {
     var uid = String(uids[i][0] || "").trim();
@@ -780,15 +822,29 @@ function mpDiscoverMalls() {
     }
     사방넷++;
 
-    /*  ★ 품목명 꼬리가 주인이다 ★  거래처명은 「법인/」일 때만 거든다.
+    /*  ★ 품목명 꼬리가 주인이다 ★  거래처명은 사업자 구분이 붙었을 때만 거든다.
         순서를 뒤집었다가 몰 목록이 주문자 이름으로 찼다 (2026-10-10).  */
     var 몰 = _mp_mallFromItem_(items && items[i] ? items[i][0] : "");
     var 어디서 = "꼬리";
+    var 거래처 = String(vendors && vendors[i] ? vendors[i][0] : "").trim();
     if (_mp_notAMall_(몰)) {
-      몰 = _mp_mallFromVendor_(vendors && vendors[i] ? vendors[i][0] : "");
+      몰 = _mp_mallFromVendor_(거래처);
       어디서 = "거래처명";
     }
-    if (_mp_notAMall_(몰)) { 모름++; continue; }
+    if (_mp_notAMall_(몰)) {
+      /*  둘 다 못 읽었다. 거래처명이 「무엇/무엇」 모양이면 모르는 구분일 수
+          있으니 모아 둔다 — 사람 이름(김미화)에는 「/」가 없다.  */
+      var sl = 거래처.indexOf("/");
+      if (sl > 0 && 거래처.indexOf("대리발송") !== 0 && !/^\d/.test(거래처)) {
+        var head2 = 거래처.substring(0, sl).trim();
+        //  「김미화/2157237902」 꼴(이름+주문번호)은 뒤가 숫자다 — 구분이 아니다
+        if (!/^\d+$/.test(거래처.substring(sl + 1).trim())) {
+          모르는구분[head2] = (모르는구분[head2] || 0) + 1;
+        }
+      }
+      모름++;
+      continue;
+    }
 
     var when = String(whens && whens[i] ? whens[i][0] : "").trim().slice(0, 10);
     if (!센것[몰]) {
@@ -826,20 +882,23 @@ function mpDiscoverMalls() {
       Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"))
     .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
 
-  var H = ["순위", "몰명", "건수", "줄비중", "처음", "마지막", "꼬리로", "거래처명(법인/)으로", "메모"];
+  var H = ["순위", "몰명(그대로)", "구분", "몰", "건수", "줄비중",
+           "처음", "마지막", "꼬리로", "거래처명으로", "메모"];
   out.getRange(3, 1, 1, H.length).setValues([H])
     .setBackground(_MP_C_HEAD_).setFontColor("#F0F0F0")
-    .setFontWeight("bold").setFontFamily("Arial").setHorizontalAlignment("center");
+    .setFontWeight("bold").setFontFamily("Arial").setHorizontalAlignment("center").setWrap(true);
+  out.setRowHeight(3, 32);
   out.setFrozenRows(3);
-  var ws2 = [55, 210, 85, 80, 95, 95, 110, 85, 330];
+  var ws2 = [55, 190, 65, 150, 80, 75, 95, 95, 85, 100, 300];
   for (var w = 0; w < ws2.length; w++) out.setColumnWidth(w + 1, ws2[w]);
 
   if (목록.length) {
     var rows = [];
     for (var j = 0; j < 목록.length; j++) {
       var d = 목록[j].d;
+      var 쪼갠것 = _mp_splitMall_(목록[j].몰);
       rows.push([
-        j + 1, 목록[j].몰, d.건수,
+        j + 1, 목록[j].몰, 쪼갠것.구분, 쪼갠것.몰, d.건수,
         총건 ? d.건수 / 총건 : 0,
         d.처음, d.마지막, d.꼬리로, d.거래처명으로, ""
       ]);
@@ -847,9 +906,10 @@ function mpDiscoverMalls() {
     out.getRange(4, 1, rows.length, H.length).setValues(rows)
       .setFontFamily("Arial").setFontSize(10)
       .setBorder(true, true, true, true, true, true, "#BBBBBB", SpreadsheetApp.BorderStyle.SOLID);
-    out.getRange(4, 3, rows.length, 1).setNumberFormat(_MP_WON_);
-    out.getRange(4, 4, rows.length, 1).setNumberFormat("0.0%");
-    out.getRange(4, 2, rows.length, 1).setHorizontalAlignment("left");
+    out.getRange(4, 5, rows.length, 1).setNumberFormat(_MP_WON_);
+    out.getRange(4, 6, rows.length, 1).setNumberFormat("0.0%");
+    out.getRange(4, 2, rows.length, 2).setHorizontalAlignment("left");
+    out.getRange(4, 4, rows.length, 1).setHorizontalAlignment("left");
   }
 
   var mr2 = 4 + 목록.length + 2;
@@ -858,11 +918,15 @@ function mpDiscoverMalls() {
     "사방넷 줄 : " + 사방넷 + "건  → 몰 " + 목록.length + "개",
     "전화주문  : " + 전화 + "건  (고유ID p… · …-PH-…)  → 뺌",
     "대리판매  : " + 대리 + "건  (고유ID d… · …-ds-…)  → 뺌",
-    "몰 모름   : " + 모름 + "건  (품목명 꼬리가 없고 거래처명도 「법인/」이 아님)",
+    "몰 모름   : " + 모름 + "건  (품목명 꼬리가 없고 거래처명에도 사업자 구분이 없음)",
     "",
     "★ 몰은 «품목명 꼬리»에서 읽는다 — 「…200개---법인/쿠팡」 의 뒷부분이다.",
     "   원장의 거래처명 칸에는 «주문자 이름»이 들어 있어 몰로 쓰지 않는다.",
-    "   「법인/」으로 시작하는 거래처명만 거든다 (꼬리가 떨어진 줄 대비).",
+    "   사업자 구분(" + _MP_BIZ_PREFIXES_.join(" · ") + ")이 붙은 거래처명만 거든다.",
+    "",
+    "★ 「법인/쿠팡」과 「개인/쿠팡」은 «따로» 센다 — 계약이 다르면 수수료율도 다르다.",
+    "   합치면 요율을 하나만 매기게 되고 그것이 가격으로 나간다.",
+    "   「구분」·「몰」 칸은 보기 좋게 쪼개 보여 준 것이고, 열쇠는 「몰명(그대로)」이다.",
     "",
     "★ 「줄비중」은 주문 «줄» 비중이다 — 매출 비중이 아니다.",
     "   쇼핑몰정책의 「매출비중」에는 정산 금액 기준으로 따로 넣으세요.",
@@ -874,6 +938,43 @@ function mpDiscoverMalls() {
   }
   for (var x = 0; x < 내역.length; x++) {
     out.getRange(mr2 + 1 + x, 2).setValue(내역[x])
+      .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
+  }
+
+  /*  ★ 모르는 구분 — 조용히 사라지지 않게 올린다 ★
+      「법인/」만 받다가 「개인/인더샵」을 놓친 일을 다시 겪지 않으려고 둔다.  */
+  var 모름목록 = [];
+  for (var uk in 모르는구분) {
+    if (Object.prototype.hasOwnProperty.call(모르는구분, uk)) {
+      모름목록.push({ 말: uk, 수: 모르는구분[uk] });
+    }
+  }
+  모름목록.sort(function (a, b) { return b.수 - a.수; });
+
+  var ur = mr2 + 내역.length + 3;
+  if (모름목록.length) {
+    out.getRange(ur, 1).setValue("★ 모르는 구분")
+      .setFontWeight("bold").setFontFamily("Arial").setFontColor("#AA0000");
+    out.getRange(ur, 2).setValue(
+      "거래처명이 「무엇/무엇」 모양인데 사업자 구분으로 아는 말(" +
+      _MP_BIZ_PREFIXES_.join(" · ") + ")이 아니어서 세지 않은 것입니다.")
+      .setFontFamily("Arial").setFontSize(10).setFontColor("#AA0000");
+    out.getRange(ur + 1, 2).setValue(
+      "몰이 맞으면 알려 주세요 — mallPolicy.gs 의 _MP_BIZ_PREFIXES_ 에 더하면 다음부터 셉니다.")
+      .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
+    var ukRows = [];
+    for (var u = 0; u < Math.min(모름목록.length, 30); u++) {
+      ukRows.push([모름목록[u].말, 모름목록[u].수]);
+    }
+    out.getRange(ur + 3, 2, 1, 2).setValues([["구분처럼 보이는 말", "건수"]])
+      .setBackground("#252525").setFontColor("#F0F0F0")
+      .setFontWeight("bold").setFontFamily("Arial").setHorizontalAlignment("center");
+    out.getRange(ur + 4, 2, ukRows.length, 2).setValues(ukRows)
+      .setFontFamily("Arial").setFontSize(10)
+      .setBorder(true, true, true, true, true, true, "#BBBBBB", SpreadsheetApp.BorderStyle.SOLID);
+    out.getRange(ur + 4, 3, ukRows.length, 1).setNumberFormat(_MP_WON_);
+  } else {
+    out.getRange(ur, 2).setValue("모르는 구분은 없습니다.")
       .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
   }
 
@@ -889,6 +990,14 @@ function mpDiscoverMalls() {
       글.push("  " + (p + 1) + ". " + 목록[p].몰 + "   " + 목록[p].d.건수 + "건");
     }
     if (목록.length > 25) 글.push("  … 그 외 " + (목록.length - 25) + "개");
+  }
+  if (모름목록.length) {
+    글.push("");
+    글.push("★ 모르는 구분 " + 모름목록.length + "가지 — 몰일 수 있습니다");
+    for (var q = 0; q < Math.min(모름목록.length, 10); q++) {
+      글.push("  · " + 모름목록[q].말 + "/…   " + 모름목록[q].수 + "건");
+    }
+    글.push("  (몰이 맞으면 _MP_BIZ_PREFIXES_ 에 더해야 셉니다)");
   }
   글.push("");
   글.push("「" + _MP_FOUND_TAB_ + "」 탭에 적었습니다.");
