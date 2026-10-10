@@ -51,7 +51,7 @@ var _MP_TAB_PREVIEW_ = "가격계산_미리보기";
 
 /** 몰 칸 수 — 14개 이상이라 여유를 둔다 */
 var _MP_FIRST_ROW_ = 4;    // 3행은 예시
-var _MP_ROWS_      = 18;
+var _MP_ROWS_      = 32;   // 2026-10-10 실측: 17개 조합 + 여유
 
 var _MP_PCT_ = "0.000%";
 var _MP_WON_ = "#,##0";
@@ -695,7 +695,18 @@ function _mp_notAMall_(name) {
  */
 var _MP_BIZ_PREFIXES_ = ["법인", "개인"];
 
-/** 「법인/쿠팡」 → { 구분:"법인", 몰:"쿠팡" } · 구분이 없으면 { 구분:"", 몰:원값 } */
+/**
+ * 보여 주기용 쪼개기.
+ *   「법인/쿠팡」          → { 구분:"법인",            몰:"쿠팡" }
+ *   「대리발송-인더샵/쿠팡」 → { 구분:"대리발송-인더샵", 몰:"쿠팡" }
+ *   그 밖                  → { 구분:"",               몰:원값 }
+ *
+ * ★ 「몰인가」와 「어떻게 보여 줄까」는 다른 물음이다 ★
+ *   여기서 대리발송을 쪼개 준다고 해서 그것이 몰이 되는 것은 아니다.
+ *   받을지 말지는 _mp_mallFromVendor_ · _mp_mallFromProxyVendor_ 가 정한다.
+ *   둘을 한 함수에 섞었다가, 「대리발송-당장드림/탁기선」의 탁기선이
+ *   몰로 샐 뻔했다 (2026-10-10).
+ */
 function _mp_splitMall_(name) {
   var t = String(name || "").trim();
   var i = t.indexOf("/");
@@ -706,13 +717,29 @@ function _mp_splitMall_(name) {
         return { 구분: head, 몰: t.substring(i + 1).trim() };
       }
     }
+    if (head.indexOf("대리발송") === 0) {
+      return { 구분: head, 몰: t.substring(i + 1).trim() };
+    }
   }
   return { 구분: "", 몰: t };
 }
 
-/** 「구분/」 으로 시작하는가 — 사업자 구분이 붙은 몰 이름인가 */
+/**
+ * 사업자 구분(법인·개인)이 붙었는가.
+ *
+ * ★ _mp_splitMall_ 을 쓰지 않는다 ★
+ *   그 함수는 대리발송도 쪼개 준다(보여 주기용). 여기서 그것을 쓰면
+ *   「대리발송-당장드림/탁기선」이 구분 있는 것으로 보여 통과한다.
+ */
 function _mp_hasBizPrefix_(name) {
-  return _mp_splitMall_(name).구분 !== "";
+  var t = String(name || "").trim();
+  var i = t.indexOf("/");
+  if (i <= 0) return false;
+  var head = t.substring(0, i).trim();
+  for (var p = 0; p < _MP_BIZ_PREFIXES_.length; p++) {
+    if (head === _MP_BIZ_PREFIXES_[p]) return true;
+  }
+  return false;
 }
 
 /**
@@ -729,6 +756,37 @@ function _mp_mallFromVendor_(vendor) {
   var t = String(vendor || "").trim();
   if (!_mp_hasBizPrefix_(t)) return "";
   if (_mp_notAMall_(t)) return "";
+  return t;
+}
+
+/**
+ * 「대리발송-업체/뒤」 에서 몰을 가려낸다.
+ *
+ * ★ 접두 모양으로는 못 가른다 ★  (2026-10-10 실측)
+ *   원장 4,000줄의 거래처명을 세어 보니 「슬래시 앞말」이 18가지였고,
+ *   그중 15가지가 «식당 상호»였다 — 「일산복국 영종직영점/전만재」처럼
+ *   뒤에 오는 것은 담당자 이름이다. 대리발송도 둘로 갈렸다:
+ *       대리발송-인더샵/쿠팡        뒤가 몰
+ *       대리발송-당장드림/탁기선    뒤가 사람 이름
+ *   모양이 같으니 「대리발송- 이면 받는다」로 하면 사람 이름이 또 섞인다.
+ *
+ * ★ 그래서 «이미 아는 몰인가»로 가른다 ★
+ *   아는몰은 같은 훑기에서 「법인/X」·「개인/X」로 이미 확인된 X 들이다.
+ *   우리 자료가 스스로 답을 준다 — 내가 몰 이름을 적어 넣지 않는다.
+ *   아는몰에 없으면 받지 않고 「모르는 구분」으로 올라간다.
+ *
+ * @param {string} vendor  거래처명
+ * @param {Object} 아는몰  { 몰이름: true } — 1차 훑기에서 모은 것
+ * @return {string} 받을 수 있으면 거래처명 그대로, 아니면 ""
+ */
+function _mp_mallFromProxyVendor_(vendor, 아는몰) {
+  var t = String(vendor || "").trim();
+  if (t.indexOf("대리발송") !== 0) return "";
+  var sl = t.indexOf("/");
+  if (sl <= 0) return "";
+  var 뒤 = t.substring(sl + 1).trim();
+  if (!뒤 || !아는몰 || !아는몰[뒤]) return "";
+  if (_mp_notAMall_(뒤)) return "";
   return t;
 }
 
@@ -818,6 +876,20 @@ function mpDiscoverMalls() {
     return 글.join("\n");
   }
 
+  /*  ★ 못 찾은 칸은 «그 자리에서» 말한다 ★  (2026-10-10)
+      출력품목명 칸을 못 찾으면 조용히 품목명으로 떨어져, 옛날과 똑같은
+      결과(45건)가 나온다. 「고쳤는데 그대로네」가 되고 원인을 못 찾는다.
+      빈손으로 돌지 않게 여기서 멈춘다.                                   */
+  if (cOut < 0) {
+    글.push("★ 원장에 「출력품목명」 칸이 없습니다 — 판매처가 붙는 자리입니다.");
+    글.push("   이 칸이 없으면 몰을 거의 못 읽습니다.");
+    글.push("");
+    글.push("   찾은 머리글 " + header.length + "개:");
+    글.push("   " + header.slice(0, 20).join(" · "));
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+
   var n = Math.min(lastRow - 1, _MP_SCAN_MAX_);
   var 잘림 = (lastRow - 1) > n;
 
@@ -839,6 +911,31 @@ function mpDiscoverMalls() {
       「법인/」만 받다가 「개인/인더샵」을 통째로 놓쳤다. 그런 일이 또 생기면
       여기에 모여 결과 탭에 올라온다. 사람이 보고 _MP_BIZ_PREFIXES_ 에 더한다.  */
   var 모르는구분 = {};
+
+  /*  ★ 1차 훑기 — «아는 몰»을 우리 자료에서 모은다 ★  (2026-10-10)
+      「법인/쿠팡」·「개인/11번가」처럼 사업자 구분이 붙은 것에서 몰 이름만 뽑는다.
+      이 꾸러미가 2차에서 「대리발송-인더샵/쿠팡」의 쿠팡을 알아보는 근거가 된다.
+      내가 몰 이름을 적어 넣지 않는다 — 자료가 스스로 답을 준다.          */
+  var 아는몰 = {};
+  for (var a = 0; a < n; a++) {
+    var au = String(uids[a][0] || "").trim();
+    if (!au || _po_isGeneratedUid_(_mp_baseUid_(au))) continue;
+    var 후보 = [
+      outs && outs[a] ? outs[a][0] : "",
+      items && items[a] ? items[a][0] : ""
+    ];
+    for (var c2 = 0; c2 < 후보.length; c2++) {
+      var am = _mp_mallFromItem_(후보[c2]);
+      if (_mp_notAMall_(am) || !_mp_hasBizPrefix_(am)) continue;
+      var 몰만 = _mp_splitMall_(am).몰;
+      if (몰만) 아는몰[몰만] = true;
+    }
+    var av = String(vendors && vendors[a] ? vendors[a][0] : "").trim();
+    if (_mp_hasBizPrefix_(av) && !_mp_notAMall_(av)) {
+      var 몰만2 = _mp_splitMall_(av).몰;
+      if (몰만2) 아는몰[몰만2] = true;
+    }
+  }
 
   for (var i = 0; i < n; i++) {
     var uid = String(uids[i][0] || "").trim();
@@ -874,6 +971,11 @@ function mpDiscoverMalls() {
       몰 = _mp_mallFromVendor_(거래처);
       어디서 = "거래처명";
     }
+    /*  ④ 대리발송 경유 — 뒤에 오는 말이 «1차에서 모은 아는 몰»일 때만 받는다  */
+    if (_mp_notAMall_(몰)) {
+      몰 = _mp_mallFromProxyVendor_(거래처, 아는몰);
+      어디서 = "대리발송";
+    }
     if (_mp_notAMall_(몰)) {
       /*  둘 다 못 읽었다. 거래처명이 「무엇/무엇」 모양이면 모르는 구분일 수
           있으니 모아 둔다 — 사람 이름(김미화)에는 「/」가 없다.  */
@@ -892,12 +994,13 @@ function mpDiscoverMalls() {
     var when = String(whens && whens[i] ? whens[i][0] : "").trim().slice(0, 10);
     if (!센것[몰]) {
       센것[몰] = { 건수: 0, 처음: when, 마지막: when,
-                   출력품목명으로: 0, 품목명으로: 0, 거래처명으로: 0 };
+                   출력품목명으로: 0, 품목명으로: 0, 거래처명으로: 0, 대리발송으로: 0 };
     }
     var rec = 센것[몰];
     rec.건수++;
     if (어디서 === "출력품목명") rec.출력품목명으로++;
     else if (어디서 === "품목명") rec.품목명으로++;
+    else if (어디서 === "대리발송") rec.대리발송으로++;
     else rec.거래처명으로++;
     if (when) {
       if (!rec.처음 || when < rec.처음) rec.처음 = when;
@@ -929,13 +1032,13 @@ function mpDiscoverMalls() {
     .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
 
   var H = ["순위", "몰명(그대로)", "구분", "몰", "건수", "줄비중",
-           "처음", "마지막", "출력품목명으로", "품목명으로", "거래처명으로", "메모"];
+           "처음", "마지막", "출력품목명으로", "품목명으로", "거래처명으로", "대리발송으로", "메모"];
   out.getRange(3, 1, 1, H.length).setValues([H])
     .setBackground(_MP_C_HEAD_).setFontColor("#F0F0F0")
     .setFontWeight("bold").setFontFamily("Arial").setHorizontalAlignment("center").setWrap(true);
   out.setRowHeight(3, 32);
   out.setFrozenRows(3);
-  var ws2 = [55, 190, 65, 150, 80, 75, 95, 95, 105, 90, 100, 280];
+  var ws2 = [55, 190, 110, 150, 80, 75, 95, 95, 105, 90, 100, 95, 240];
   for (var w = 0; w < ws2.length; w++) out.setColumnWidth(w + 1, ws2[w]);
 
   if (목록.length) {
@@ -946,7 +1049,7 @@ function mpDiscoverMalls() {
       rows.push([
         j + 1, 목록[j].몰, 쪼갠것.구분, 쪼갠것.몰, d.건수,
         총건 ? d.건수 / 총건 : 0,
-        d.처음, d.마지막, d.출력품목명으로, d.품목명으로, d.거래처명으로, ""
+        d.처음, d.마지막, d.출력품목명으로, d.품목명으로, d.거래처명으로, d.대리발송으로, ""
       ]);
     }
     out.getRange(4, 1, rows.length, H.length).setValues(rows)
@@ -961,6 +1064,10 @@ function mpDiscoverMalls() {
   var mr2 = 4 + 목록.length + 2;
   out.getRange(mr2, 1).setValue("셈한 내역").setFontWeight("bold").setFontFamily("Arial");
   var 내역 = [
+    "읽은 칸   : 출력품목명 " + 칸이름(cOut) + " · 품목명 " + 칸이름(cItem) +
+                " · 거래처명 " + 칸이름(cVendor),
+    "돈 때     : " + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss"),
+    "",
     "사방넷 줄 : " + 사방넷 + "건  → 몰 " + 목록.length + "개",
     "전화주문  : " + 전화 + "건  (고유ID p… · …-PH-…)  → 뺌",
     "대리판매  : " + 대리 + "건  (고유ID d… · …-ds-…)  → 뺌",
@@ -1024,6 +1131,20 @@ function mpDiscoverMalls() {
       .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
   }
 
+  /*  ★ 어느 칸을 읽었는지 알림에 싣는다 ★
+      「고쳤는데 결과가 같다」일 때 칸 문제인지 아닌지를 한눈에 가른다.  */
+  function 칸이름(ci) {
+    return ci < 0 ? "없음" : (ci + 1) + "번(" + String(header[ci] || "") + ")";
+  }
+  글.push("읽은 칸 — 출력품목명 " + 칸이름(cOut) +
+          " · 품목명 " + 칸이름(cItem) +
+          " · 거래처명 " + 칸이름(cVendor));
+  글.push("아는몰 " + (function () {
+    var c = 0;
+    for (var kk in 아는몰) if (Object.prototype.hasOwnProperty.call(아는몰, kk)) c++;
+    return c;
+  })() + "가지를 1차에서 모았습니다.");
+  글.push("");
   글.push("원장 " + n + "줄을 봤습니다.");
   글.push("");
   글.push("  사방넷 " + 사방넷 + "건  →  몰 " + 목록.length + "개");
@@ -1087,40 +1208,100 @@ function mpSeedPolicyFromDiscovery() {
   }
   var cand = found.getRange(4, 2, fl - 3, 2).getDisplayValues();   // 몰명 · 건수
 
-  // 이미 적힌 몰명 (예시 행까지 본다)
-  var have = {};
-  var cur = pol.getRange(3, 1, _MP_ROWS_ + 1, 2).getDisplayValues();
+  /*  ★ 심어 둔 「쿠팡」과 찾아낸 「법인/쿠팡」은 «같은 몰»이다 ★  (2026-10-10)
+
+      설치 때 심은 줄은 구분 없는 맨 이름이고(쿠팡·스마트스토어·11번가·지마켓),
+      몰 찾기가 내놓는 것은 「법인/쿠팡」처럼 구분이 붙은 이름이다.
+      글자가 다르니 그냥 넣으면 «둘 다» 생기고, 내가 찾아 둔 참고요율
+      (쿠팡 7.8% · 스마트스토어 3.003%)은 아무도 안 쓰는 줄에 남는다.
+
+      그래서 맨 이름 줄이 있으면 «그 줄의 이름을 바꿔» 쓴다 — 참고요율·출처·
+      조사일이 그대로 따라온다. 같은 몰이 법인·개인 둘로 갈리면, 둘째는
+      새 줄에 넣되 첫째의 참고요율을 베껴 준다 (출발점은 같다).         */
+  var cur = pol.getRange(3, 1, _MP_ROWS_ + 1, 19).getDisplayValues();
+  function 줄번호(k) { return 3 + k; }
+
+  var 이름그대로 = {};   // 몰명(그대로) → 줄
+  var 맨이름 = {};       // 구분 없는 맨 이름 → 줄  (설치 때 심은 것)
+  var 몰조각 = {};       // 몰 부분 → 줄 (참고요율 베껴 올 곳)
   for (var i = 0; i < cur.length; i++) {
+    var row0 = 줄번호(i);
+    if (row0 < _MP_FIRST_ROW_) continue;          // 예시 행은 건너뛴다
     var nm = String(cur[i][1] || "").trim();
-    if (nm) have[nm] = true;
+    if (!nm) continue;
+    이름그대로[nm] = row0;
+    var sp0 = _mp_splitMall_(nm);
+    if (!sp0.구분) 맨이름[nm] = row0;
+    if (sp0.몰 && !몰조각[sp0.몰]) 몰조각[sp0.몰] = row0;
   }
 
-  // 빈 줄 목록을 «한 번만» 만든다 — 줄마다 getValue 를 부르면 느리다
   var 빈줄 = [];
   for (var r = 0; r < cur.length; r++) {
-    var row = 3 + r;
+    var row = 줄번호(r);
     if (row < _MP_FIRST_ROW_) continue;
     if (!String(cur[r][0] || "").trim() && !String(cur[r][1] || "").trim()) 빈줄.push(row);
   }
 
-  var 넣음 = 0, 건너뜀 = 0, 자리없음 = 0, 쓴자리 = 0;
+  /** 다른 줄의 참고요율·출처·조사일을 베껴 준다 (비어 있을 때만) */
+  function 참고베끼기(받을줄, 준줄) {
+    if (!준줄 || 준줄 === 받을줄) return false;
+    var 원 = pol.getRange(준줄, 5, 1, 3).getDisplayValues()[0];
+    if (!String(원[0] || "").trim()) return false;
+    if (String(pol.getRange(받을줄, 5).getDisplayValue() || "").trim()) return false;
+    pol.getRange(받을줄, 5, 1, 3).setValues([[
+      pol.getRange(준줄, 5).getValue(), 원[1], 원[2]
+    ]]);
+    return true;
+  }
+
+  var 넣음 = 0, 이름바꿈 = 0, 건너뜀 = 0, 자리없음 = 0, 쓴자리 = 0, 요율이어받음 = 0;
   for (var c = 0; c < cand.length; c++) {
     var 몰 = String(cand[c][0] || "").trim();
     if (!몰) continue;
-    if (have[몰]) { 건너뜀++; continue; }
-    if (쓴자리 >= 빈줄.length) { 자리없음++; continue; }
+    if (이름그대로[몰]) { 건너뜀++; continue; }
 
+    var sp = _mp_splitMall_(몰);
+    var 메모 = "몰 찾기로 채움 (원장 " + cand[c][1] + "건). 몰ID·요율·최저허용가를 넣으세요";
+
+    //  ① 맨 이름 줄이 있으면 그 줄을 쓴다 — 참고요율이 따라온다
+    if (sp.몰 && 맨이름[sp.몰]) {
+      var 자리1 = 맨이름[sp.몰];
+      pol.getRange(자리1, 2).setValue(몰);
+      pol.getRange(자리1, 3).setValue("Y");
+      pol.getRange(자리1, 19).setValue(
+        "몰 찾기로 이름을 맞췄습니다 (원장 " + cand[c][1] + "건). " +
+        "참고요율은 설치 때 넣어 둔 값입니다 — 판매자센터 요율을 「확인수수료율」에 넣으세요");
+      delete 맨이름[sp.몰];
+      이름그대로[몰] = 자리1;
+      몰조각[sp.몰] = 자리1;
+      이름바꿈++;
+      continue;
+    }
+
+    //  ② 새 줄
+    if (쓴자리 >= 빈줄.length) { 자리없음++; continue; }
     var 자리 = 빈줄[쓴자리++];
     pol.getRange(자리, 2).setValue(몰);
     pol.getRange(자리, 3).setValue("Y");
     pol.getRange(자리, 14).setValue(1000);
-    pol.getRange(자리, 19).setValue(
-      "몰 찾기로 채움 (원장 " + cand[c][1] + "건). 몰ID·요율·최저허용가를 넣으세요");
-    have[몰] = true;
+    //  같은 몰이 이미 있으면(법인/쿠팡 ↔ 개인/쿠팡) 참고요율을 베껴 출발점을 준다
+    if (sp.몰 && 참고베끼기(자리, 몰조각[sp.몰])) {
+      요율이어받음++;
+      메모 += ". 참고요율은 같은 몰(" + sp.몰 + ") 줄에서 베껴 왔습니다 — 계약이 다르면 요율도 다릅니다";
+    }
+    pol.getRange(자리, 19).setValue(메모);
+    이름그대로[몰] = 자리;
+    if (sp.몰 && !몰조각[sp.몰]) 몰조각[sp.몰] = 자리;
     넣음++;
   }
 
-  글.push("넣음 " + 넣음 + "개 · 이미 있어 건너뜀 " + 건너뜀 + "개");
+  글.push("새로 넣음 " + 넣음 + "개 · 심어 둔 줄 이름 맞춤 " + 이름바꿈 + "개 · " +
+          "이미 있어 건너뜀 " + 건너뜀 + "개");
+  if (요율이어받음) {
+    글.push("");
+    글.push("· 같은 몰의 참고요율을 " + 요율이어받음 + "개 줄에 베껴 왔습니다 " +
+            "(법인/개인처럼 갈린 것). 계약이 다르면 요율도 다르니 각각 확인하세요.");
+  }
   if (자리없음) {
     글.push("");
     글.push("⚠ 자리가 없어 못 넣은 몰 " + 자리없음 + "개 — _MP_ROWS_ (" + _MP_ROWS_ + ") 를 늘려야 합니다.");
@@ -1324,6 +1505,44 @@ function mpSampleLedger() {
   글.push("");
   글.push("  사방넷 " + 통.사방넷.length + "줄 · 전화주문 " + 통.전화주문.length +
           "줄 · 대리판매 " + 통.대리판매.length + "줄 을 떴습니다.");
+  글.push("");
+
+  /*  ★ 「어디서 읽혔나」를 알림에 싣는다 ★  (2026-10-10)
+      처음 판에는 「슬래시 앞말」만 실었다. 정작 알아야 할 것 —
+      사방넷 줄의 출력품목명에 무엇이 들었나 — 가 안 보여서 한 바퀴를 더 돌았다.
+      진단 도구가 «결론에 필요한 것»을 안 보여 주면 진단이 아니다.          */
+  var 적중 = { 출력품목명: 0, 품목명: 0, 거래처명: 0, 못읽음: 0 };
+  var 읽은예 = [], 못읽은예 = [];
+  for (var s2 = 0; s2 < 통.사방넷.length; s2++) {
+    var rr = 통.사방넷[s2];
+    var m2 = _mp_mallFromItem_(rr.출력품목명), w2 = "출력품목명";
+    if (_mp_notAMall_(m2)) { m2 = _mp_mallFromItem_(rr.품목명); w2 = "품목명"; }
+    if (_mp_notAMall_(m2)) { m2 = _mp_mallFromVendor_(rr.거래처명); w2 = "거래처명"; }
+    if (_mp_notAMall_(m2)) {
+      적중.못읽음++;
+      if (못읽은예.length < 6) {
+        못읽은예.push("    출력품목명: " + (rr.출력품목명 || "(빈칸)"));
+        못읽은예.push("    거래처명  : " + (rr.거래처명 || "(빈칸)"));
+        못읽은예.push("    ─");
+      }
+    } else {
+      적중[w2]++;
+      if (읽은예.length < 3) 읽은예.push("    " + m2 + "   ← " + w2);
+    }
+  }
+  글.push("★ 사방넷 " + 통.사방넷.length + "줄에서 몰을 읽어 본 결과");
+  글.push("    출력품목명으로 " + 적중.출력품목명 + " · 품목명으로 " + 적중.품목명 +
+          " · 거래처명으로 " + 적중.거래처명 + " · 못읽음 " + 적중.못읽음);
+  if (읽은예.length) {
+    글.push("");
+    글.push("  읽힌 예");
+    for (var e2 = 0; e2 < 읽은예.length; e2++) 글.push(읽은예[e2]);
+  }
+  if (못읽은예.length) {
+    글.push("");
+    글.push("  못 읽은 줄 — 칸에 무엇이 들었나");
+    for (var e3 = 0; e3 < 못읽은예.length; e3++) 글.push(못읽은예[e3]);
+  }
   글.push("");
   글.push("거래처명 「슬래시 앞말」 " + 앞목록.length + "가지");
   for (var p2 = 0; p2 < Math.min(앞목록.length, 15); p2++) {
