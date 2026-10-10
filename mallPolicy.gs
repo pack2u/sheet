@@ -164,6 +164,7 @@ function registerMallPolicyMenu_() {
     .addItem("🛠 시트 설치 / 복구", "mpSetupSheets")
     .addSeparator()
     .addItem("🔎 몰 찾기 (원장에서 세기)", "mpDiscoverMalls")
+    .addItem("🔬 원장 떠보기 (칸별 내용 확인)", "mpSampleLedger")
     .addItem("📥 찾은 몰을 쇼핑몰정책에 채우기", "mpSeedPolicyFromDiscovery")
     .addSeparator()
     .addItem("🔍 설정 점검", "mpDiagnose")
@@ -1127,6 +1128,211 @@ function mpSeedPolicyFromDiscovery() {
   글.push("");
   글.push("★ 몰ID 는 비워 뒀습니다 — 영문 약어로 직접 넣으세요.");
   글.push("   몰ID 가 없으면 「실효수수료_역산」과 이어지지 않습니다.");
+
+  if (ui) ui.alert(글.join("\n"));
+  return 글.join("\n");
+}
+
+// ══════════════════════════════════════════════════════════════
+//  ④ 원장 떠보기 — 어느 칸에 무엇이 들었는지 «눈으로» 본다
+//
+//  ★ 왜 만들었나 ★  (2026-10-10)
+//    몰 찾기를 두 번 틀렸다. 두 번 다 «어느 칸에 판매처가 있나»를
+//    주석과 짐작으로 정했기 때문이다.
+//      1차 거래처명을 판매처로 봤다      → 주문자 이름이 쏟아졌다
+//      2차 품목명을 봤다                 → 8,631건 중 45건. 그 45건마저
+//                                          판매처가 두 번 붙은 버그 줄이었다
+//    세 번째도 짐작으로 고치면 또 틀린다. 실제 줄을 떠서 보고 정한다.
+//    (로젠 규격서 맨 앞의 「★ 실측 메모 — 문서와 다른 것들」과 같은 손버릇)
+//
+//  ★ 아무것도 바꾸지 않는다 ★
+//    읽기만 하고 「원장샘플」 탭에 적는다.
+// ══════════════════════════════════════════════════════════════
+
+var _MP_SAMPLE_TAB_ = "원장샘플";
+var _MP_SAMPLE_N_ = 60;        // 종류별로 몇 줄씩 뜰까
+
+/**
+ * 원장에서 줄을 떠서 칸별 내용과 «지금 규칙이 읽어내는 값»을 나란히 놓는다.
+ *
+ * 사방넷·전화주문·대리판매를 고루 섞어 뜬다 — 한쪽만 보면 치우친다.
+ */
+function mpSampleLedger() {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  var 글 = ["■ 원장 떠보기", ""];
+
+  var src;
+  try {
+    src = SpreadsheetApp.openById(_MP_SS_SHEET_ID_);
+  } catch (eOpen) {
+    글.push("★ 세트분리(뉴) 시트를 못 열었습니다 — " + eOpen.message);
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+  var tab = src.getSheetByName(_MP_SS_LEDGER_TAB_);
+  if (!tab || tab.getLastRow() < 2) {
+    글.push("★ 「" + _MP_SS_LEDGER_TAB_ + "」 이 없거나 비었습니다.");
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+
+  var header = tab.getRange(1, 1, 1, tab.getLastColumn()).getDisplayValues()[0];
+  var cUid  = _mp_colOf_(header, ["고유ID"]);
+  var cSrc  = _mp_colOf_(header, ["주문번호출처"]);
+  var cOut  = _mp_colOf_(header, ["출력품목명"]);
+  var cItem = _mp_colOf_(header, ["품목명"]);
+  var cVen  = _mp_colOf_(header, ["거래처명"]);
+  var cMemo = _mp_colOf_(header, ["적요"]);
+  var cWhen = _mp_colOf_(header, ["실행시각"]);
+
+  /*  ★ 뒤에서부터 본다 ★  최근 회차가 지금 쓰는 모양이다.
+      앞에서 보면 몇 달 전 형식을 보고 규칙을 정하게 된다.                */
+  var lastRow = tab.getLastRow();
+  var n = Math.min(lastRow - 1, 4000);
+  var from = lastRow - n + 1;
+
+  function 열(ci) {
+    return ci < 0 ? null : tab.getRange(from, ci + 1, n, 1).getDisplayValues();
+  }
+  var uids = 열(cUid), srcs = 열(cSrc), outs = 열(cOut),
+      items = 열(cItem), vens = 열(cVen), memos = 열(cMemo), whens = 열(cWhen);
+
+  function 값(a, i) { return a && a[i] ? String(a[i][0] || "").trim() : ""; }
+
+  var 통 = { 사방넷: [], 전화주문: [], 대리판매: [] };
+  for (var i = n - 1; i >= 0; i--) {
+    var uid = 값(uids, i);
+    if (!uid) continue;
+    var base = _mp_baseUid_(uid);
+    var 갈래;
+    if (_po_isGeneratedUid_(base)) {
+      갈래 = (/^[pP]/.test(base) || /-PH-/i.test(base)) ? "전화주문" : "대리판매";
+    } else {
+      갈래 = "사방넷";
+    }
+    if (통[갈래].length >= _MP_SAMPLE_N_) continue;
+    통[갈래].push({
+      행: from + i,
+      uid: uid,
+      출처: 값(srcs, i),
+      출력품목명: 값(outs, i),
+      품목명: 값(items, i),
+      거래처명: 값(vens, i),
+      적요: 값(memos, i),
+      때: 값(whens, i).slice(0, 10)
+    });
+    if (통.사방넷.length >= _MP_SAMPLE_N_ &&
+        통.전화주문.length >= _MP_SAMPLE_N_ &&
+        통.대리판매.length >= _MP_SAMPLE_N_) break;
+  }
+
+  // ── 적는다 ──
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var out = _mp_sheet_(ss, _MP_SAMPLE_TAB_);
+  out.clear();
+
+  out.getRange(1, 1).setValue(_MP_SAMPLE_TAB_)
+    .setFontFamily("Arial").setFontSize(13).setFontWeight("bold");
+  out.getRange(1, 3).setValue(
+    "원장 뒤에서 " + n + "줄을 훑어 갈래별로 떴습니다 · " +
+    Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm") +
+    "   ※ 읽기만 합니다")
+    .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
+  out.getRange(2, 3).setValue(
+    "「읽은몰」은 지금 규칙이 뽑아내는 값입니다. 비어 있으면 그 줄에서는 몰을 못 읽습니다.")
+    .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#AA5500");
+
+  var H = ["갈래", "행", "고유ID", "출처", "때",
+           "출력품목명", "품목명", "거래처명", "적요",
+           "읽은몰", "어디서"];
+  out.getRange(4, 1, 1, H.length).setValues([H])
+    .setBackground(_MP_C_HEAD_).setFontColor("#F0F0F0")
+    .setFontWeight("bold").setFontFamily("Arial").setHorizontalAlignment("center");
+  out.setFrozenRows(4);
+  var ws = [80, 60, 130, 80, 90, 340, 300, 200, 160, 160, 90];
+  for (var w = 0; w < ws.length; w++) out.setColumnWidth(w + 1, ws[w]);
+
+  var rows = [];
+  var 갈래들 = ["사방넷", "전화주문", "대리판매"];
+  for (var g = 0; g < 갈래들.length; g++) {
+    var 묶음 = 통[갈래들[g]];
+    for (var k = 0; k < 묶음.length; k++) {
+      var r = 묶음[k];
+      var 몰 = _mp_mallFromItem_(r.출력품목명), 어디 = "출력품목명";
+      if (_mp_notAMall_(몰)) { 몰 = _mp_mallFromItem_(r.품목명); 어디 = "품목명"; }
+      if (_mp_notAMall_(몰)) { 몰 = _mp_mallFromVendor_(r.거래처명); 어디 = "거래처명"; }
+      if (_mp_notAMall_(몰)) { 몰 = ""; 어디 = ""; }
+      rows.push([갈래들[g], r.행, r.uid, r.출처, r.때,
+                 r.출력품목명, r.품목명, r.거래처명, r.적요, 몰, 어디]);
+    }
+  }
+  if (rows.length) {
+    out.getRange(5, 1, rows.length, H.length).setValues(rows)
+      .setFontFamily("Arial").setFontSize(10)
+      .setBorder(true, true, true, true, true, true, "#BBBBBB", SpreadsheetApp.BorderStyle.SOLID);
+    out.getRange(5, 6, rows.length, 4).setHorizontalAlignment("left");
+  }
+
+  /*  ★ 거래처명에 어떤 «앞말»이 오는지 세어 본다 ★
+      「법인/」·「대리발송-인더샵/」처럼 슬래시 앞에 오는 말을 모아
+      몇 가지가 있는지 본다. 규칙을 짐작하지 않고 목록으로 확인한다.      */
+  var 앞말 = {};
+  for (var v = 0; v < n; v++) {
+    var t = 값(vens, v);
+    var sl = t.indexOf("/");
+    if (sl <= 0) continue;
+    var head = t.substring(0, sl).trim();
+    var tail = t.substring(sl + 1).trim();
+    if (/^\d+$/.test(tail)) continue;          // 「이름/주문번호」
+    if (!앞말[head]) 앞말[head] = { 수: 0, 예: [] };
+    앞말[head].수++;
+    if (앞말[head].예.length < 4 && 앞말[head].예.indexOf(tail) < 0) 앞말[head].예.push(tail);
+  }
+  var 앞목록 = [];
+  for (var hk in 앞말) {
+    if (Object.prototype.hasOwnProperty.call(앞말, hk)) 앞목록.push({ 말: hk, d: 앞말[hk] });
+  }
+  앞목록.sort(function (a, b) { return b.d.수 - a.d.수; });
+
+  var hr = 5 + rows.length + 2;
+  out.getRange(hr, 1).setValue("거래처명의 「슬래시 앞말」 — 무엇이 있나")
+    .setFontWeight("bold").setFontFamily("Arial");
+  out.getRange(hr + 1, 1).setValue(
+    "아는 구분(" + _MP_BIZ_PREFIXES_.join(" · ") + ")이 아닌 앞말이 보이면 알려 주세요. " +
+    "뒤에 오는 말이 «몰»인지 «사람 이름»인지는 예시로 가려야 합니다.")
+    .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
+
+  out.getRange(hr + 3, 1, 1, 4)
+    .setValues([["앞말", "건수", "아는 구분인가", "뒤에 오는 말 (예시)"]])
+    .setBackground(_MP_C_HEAD_).setFontColor("#F0F0F0")
+    .setFontWeight("bold").setFontFamily("Arial").setHorizontalAlignment("center");
+  if (앞목록.length) {
+    var hrows = [];
+    for (var h2 = 0; h2 < Math.min(앞목록.length, 60); h2++) {
+      var 아는가 = _MP_BIZ_PREFIXES_.indexOf(앞목록[h2].말) >= 0 ? "예" : "";
+      hrows.push([앞목록[h2].말, 앞목록[h2].d.수, 아는가, 앞목록[h2].d.예.join("  ·  ")]);
+    }
+    out.getRange(hr + 4, 1, hrows.length, 4).setValues(hrows)
+      .setFontFamily("Arial").setFontSize(10)
+      .setBorder(true, true, true, true, true, true, "#BBBBBB", SpreadsheetApp.BorderStyle.SOLID);
+    out.getRange(hr + 4, 4, hrows.length, 1).setHorizontalAlignment("left");
+    out.getRange(hr + 4, 2, hrows.length, 1).setNumberFormat(_MP_WON_);
+  }
+
+  글.push("원장 뒤에서 " + n + "줄을 훑었습니다.");
+  글.push("");
+  글.push("  사방넷 " + 통.사방넷.length + "줄 · 전화주문 " + 통.전화주문.length +
+          "줄 · 대리판매 " + 통.대리판매.length + "줄 을 떴습니다.");
+  글.push("");
+  글.push("거래처명 「슬래시 앞말」 " + 앞목록.length + "가지");
+  for (var p2 = 0; p2 < Math.min(앞목록.length, 15); p2++) {
+    글.push("  · " + 앞목록[p2].말 + "/…   " + 앞목록[p2].d.수 + "건   예: " +
+            앞목록[p2].d.예.slice(0, 3).join(" · "));
+  }
+  글.push("");
+  글.push("「" + _MP_SAMPLE_TAB_ + "」 탭을 보시고, 「읽은몰」이 비어 있는 줄의");
+  글.push("출력품목명·거래처명을 보여 주시면 규칙을 맞추겠습니다.");
 
   if (ui) ui.alert(글.join("\n"));
   return 글.join("\n");
