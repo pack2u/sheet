@@ -2467,3 +2467,54 @@ function _pms_addOrderArchiveToInvoiceMap_(invoiceMap, throughDateStr) {
     (out.errors.length ? " 오류=" + out.errors.length : ""));
   return out;
 }
+
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 임시 — 올팩·용기창고 10월 마감탭 요약 고치기 ★  (2026-10-10, 끝나면 지운다)
+ *
+ *  > "올팩 용기창고 B3 0 된 것도 고쳐줘"
+ *  두 탭은 4행 머리글은 새 모양(16칸, 취소·반품 없음)인데 «기타정산» 칸이 없고,
+ *  2~3행 요약은 옛 모양(반품배송비·유효 건수·최종 F3) 그대로였다. 옛 요약은 지워진
+ *  취소·반품 칸을 세므로 유효·최종이 0. 10/06 밤 두 벌이 겹쳐 돈 두 업체이기도 하다
+ *  (옛 모양 → 새 모양 바꾸기가 겹쳐 돌았을 가능성 — 확인은 못 함).
+ *
+ *  고치는 것은 보정 메뉴(partnerRepairMonthlySettleTabs)와 같은 _pms_quickRepairTab_ —
+ *  머리글 Q열에 「기타정산」, 요약을 새 수식(B3 = D2+F2+H2)으로. 데이터 줄은 안 건드린다.
+ *  ★ 칸 배치가 예상(지금 4행 16칸 + 기타정산)과 조금이라도 다르면 손대지 않고 멈춘다.
+ * ══════════════════════════════════════════════════════════════
+ */
+function pms임시_올팩용기창고10월요약고침() {
+  var 대상 = [
+    { 이름: "올팩",     id: "1TfDyW1EG-m4JrDgsxLcr0D0bGGCNVr6tJ1MfvvGLZD8" },
+    { 이름: "용기창고", id: "1cqZqatp0DlYBnD0KL8XhBpw7_CG7D6wONoeXAvlzrno" }
+  ];
+  var 탭이름 = "(2026년 10월) 발주 마감";
+  대상.forEach(function (v) {
+    try {
+      var ss = SpreadsheetApp.openById(v.id);
+      var sh = ss.getSheetByName(탭이름);
+      if (!sh) { Logger.log("✗ " + v.이름 + ": 탭 없음"); return; }
+      var L = _pms_archiveLayout_(sh, ss.getSheetByName(_PMS_ORDER_TAB));
+      if (!L) { Logger.log("✗ " + v.이름 + ": 칸 배치를 못 읽음 — 안 고침"); return; }
+      if (L.구형) { Logger.log("✗ " + v.이름 + ": 아직 옛 모양(취소·반품 칸) — 안 고침"); return; }
+      var row4 = sh.getRange(_PMS_HEADER_ROW, 1, 1, 16).getDisplayValues()[0];
+      var 같다 = L.extLc === 17 && String(L.extHdr[16]).trim() === "기타정산" &&
+        row4.every(function (h, i) { return String(h).trim() === String(L.extHdr[i]).trim(); });
+      if (!같다) {
+        Logger.log("✗ " + v.이름 + ": 예상과 다른 칸 배치 — 안 고침\n  지금 4행: " + row4.join("|") +
+          "\n  만들 것: " + L.extHdr.join("|"));
+        return;
+      }
+      var 전 = sh.getRange(2, 1, 2, 10).getDisplayValues();
+      var 고친것 = _pms_quickRepairTab_(sh, L);
+      SpreadsheetApp.flush();
+      var 후 = sh.getRange(2, 1, 2, 8).getDisplayValues();
+      Logger.log("✓ " + v.이름 + ": " + (고친것.join("·") || "고칠 것 없음") +
+        "\n  전: " + 전[0].join("|") + " / " + 전[1].join("|") +
+        "\n  후: " + 후[0].join("|") + " / " + 후[1].join("|"));
+    } catch (e) {
+      Logger.log("✗ " + v.이름 + ": " + e.message);
+    }
+  });
+}
