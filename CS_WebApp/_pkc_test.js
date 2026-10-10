@@ -236,5 +236,47 @@ const 일감 = 일감소스.slice(일감소스.indexOf("function csReturnHourlyJ
 같나("try/catch 로 감싸 있다",
   /try \{ var 집하 = csLogenPickupCheck\(\); [\s\S]{0,80}catch/.test(일감), true);
 
+/* ── 남의 공용 함수를 부르는 «모양» ────────────────────────────────────
+     ★ 조용히 깨질 자리다 ★  (2026-10-10 · 「로젠택배 API」 방이 권했다)
+
+     카드를 세우고 내리고 자르는 셋은 csLogenStale.gs 것이다. 그쪽 것이니
+     그쪽이 모양을 바꿀 수 있는데, 바뀌면 이 파일은 **오류 없이** 엉뚱하게
+     돈다 — 인자 하나가 밀리면 제목 자리에 본문이 들어가는 식이다.
+     그 방이 「고치기 전에 말하겠다」고 했지만, 사람 약속만으로 두면
+     잊히는 날 조용히 깨진다. 그래서 글자로 못 박는다.
+
+     ★ 이 약속의 주인은 이 파일이다 ★ 내가 부르는 모양이니 내가 든다.
+     그쪽이 모양을 바꾸면 여기서 먼저 울어야 맞다 ([[one-value-one-owner]]).  */
+console.log("── 남의 공용 함수를 부르는 모양이 그대로인가 ──");
+const stale = fs.readFileSync(path.join(__dirname, "csLogenStale.gs"), "utf8");
+function 인자들(이름) {
+  const m = stale.match(new RegExp("function " + 이름 + "\\(([^)]*)\\)"));
+  return m ? m[1].split(",").map((s) => s.trim()).filter(Boolean) : null;
+}
+같나("_stale_publish_(srcKey, 제목, 본문, 건수) 넷을 받는다",
+  (인자들("_stale_publish_") || []).length, 4);
+같나("_stale_close_(srcKey, 말) 둘을 받는다",
+  (인자들("_stale_close_") || []).length, 2);
+같나("_stale_fitBody_(줄들, 한도) 둘을 받는다",
+  (인자들("_stale_fitBody_") || []).length, 2);
+/*  _stale_fitBody_ 의 답에 .join 을 건다 — 줄 배열이어야 한다.
+    글 한 덩어리로 바뀌면 .join 이 없어 그 자리에서 터진다.              */
+같나("_stale_fitBody_ 가 배열을 돌려준다",
+  /function _stale_fitBody_[\s\S]{0,600}?return 줄들\.slice/.test(stale), true);
+/*  내가 부르는 자리도 그 수와 맞아야 한다 */
+const 부름 = (소스.match(/_stale_publish_\(/g) || []).length;
+같나("_stale_publish_ 를 부르는 자리가 셋이다 (우리·업체·폐기만)", 부름, 3);
+/*  ★ 수만 세면 인자가 밀린 것을 못 잡는다 ★ 깨서 확인했다 — 첫 인자
+    (_PKC_SRCKEY_)를 지워도 수는 셋 그대로라 조용히 통과했다.
+    인자가 하나 밀리면 자리표 칸에 제목이 들어가고, 카드를 찾지 못해
+    ★날마다 새 카드가 쌓인다★. 그래서 첫 인자가 자리표인지 본다.        */
+같나("세 자리 다 첫 인자가 _PKC_SRCKEY 다",
+  (소스.match(/_stale_publish_\(\s*_PKC_SRCKEY_(?:V_)?\s*,/g) || []).length, 3);
+같나("_stale_close_ 도 첫 인자가 자리표다",
+  (소스.match(/_stale_close_\(/g) || []).length ===
+  (소스.match(/_stale_close_\(\s*_PKC_SRCKEY_(?:V_)?\s*,/g) || []).length, true);
+같나("_STALE_BODY_MAX_ 를 csLogenStale 에서 가져다 쓴다",
+  /var _STALE_BODY_MAX_ =/.test(stale) && /_STALE_BODY_MAX_/.test(소스), true);
+
 console.log(실패 ? "\n✘ " + 실패 + "개 틀렸습니다" : "\n✔ 다 맞았습니다");
 process.exit(실패 ? 1 : 0);
