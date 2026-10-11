@@ -362,6 +362,11 @@ function registerPartnerMenu_() {
             .addItem("🧪 ⓞ 비교표 미리보기 (안 만듦)", "partnerPriceRaiseBuildPreview")
             .addItem("📋 ① 비교표 만들기", "partnerPriceRaiseBuild")
             .addSeparator()
+            /*  ★ 못 찾은 줄을 단가로 찾아 준다 ★  (2026-10-12)
+                이름으로 맞추다 사고가 났다. 이름은 업체와 우리가 다르게
+                부르지만 ★단가는 같은 물건을 가리킨다★.                   */
+            .addItem("🔎 ①-1 못 찾은 줄 — 단가가 같은 품목 찾기", "partnerPriceRaiseSuggest")
+            .addSeparator()
             .addItem("🧪 ② 미리보기 (안 바꿈)", "partnerPriceRaisePreview")
             .addItem("💾 ③ 체크한 줄 — 상품정보 단가 적용", "partnerPriceRaiseApply")
             .addItem("🔗 ④ 체크한 줄 — 누적품목매핑에 쌓기", "partnerPriceRaiseApplyMapping")

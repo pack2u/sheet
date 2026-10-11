@@ -1503,3 +1503,116 @@ function partnerPriceRaiseCheckSets() {
   Logger.log(말.join("\n"));
   _pr_say_(말.join("\n").substring(0, 1400));
 }
+
+/* ─────────────────────────────────────────────────────────────
+   ⑥ 못 찾은 줄에 «후보» 찾아주기 — 단가로 찾는다
+   ───────────────────────────────────────────────────────────── */
+/**
+ * 못 찾은 줄(주황)에 ★종전단가가 같은 품목★ 을 찾아 적어 준다.
+ *
+ * ★ 왜 이것이 맞나 ★  (2026-10-12)
+ * 이름으로 맞추다 사고가 났다 — 「1호」가 「71호」 안에 들어 있었다.
+ * 이름은 업체와 우리가 서로 다르게 부르지만, ★단가는 같은 물건을 가리킨다★.
+ * 업체가 적어 준 종전단가와 우리 개당매입별도가가 같고 구매처도 같으면
+ * 같은 물건일 가능성이 아주 크다.
+ *
+ * ★ 그래도 사람이 본다 ★
+ *   · 후보가 ★하나뿐일 때만★ 우리코드 칸을 채운다
+ *   · 그래도 ★적용 체크는 켜지 않는다★ — 사람이 보고 켜야 한다
+ *   · 여럿이면 적용결과 칸에 늘어놓기만 한다. 고르는 것은 사람 몫이다
+ *   · 이미 적힌 코드는 건드리지 않는다. 「미판매」도 건드리지 않는다
+ *
+ * 박스수량이 적혀 있으면 한 겹 더 거른다 — 같은 단가라도 박스가 다르면
+ * 다른 물건이다.
+ */
+function partnerPriceRaiseSuggest() { _pr_suggest_(false); }
+/*  편집기에서 쓰는 이름 — 이 이름을 고르는 것이 「예」를 누르는 것이다 */
+function partnerPriceRaiseSuggestNow() { _pr_suggest_(true); }
+
+function _pr_suggest_(정말) {
+  var ss = _pr_ss_();
+  var tab = ss.getSheetByName(_PR_TAB_);
+  if (!tab) { _pr_say_("「" + _PR_TAB_ + "」 탭이 없습니다. 먼저 비교표를 만드십시오."); return; }
+  var last = tab.getLastRow();
+  if (last < 2) { _pr_say_("비교표가 비어 있습니다."); return; }
+
+  var prods = _pr_loadProducts_();
+  var vals = tab.getRange(2, 1, last - 1, _PR_HEADERS_.length).getValues();
+
+  var 채움 = [], 여럿 = [], 없음 = 0, 건너 = 0;
+  for (var i = 0; i < vals.length; i++) {
+    var v = vals[i], 행 = i + 2;
+    //  짝을 이미 찾은 줄·손으로 적은 줄·미판매는 건드리지 않는다
+    if (String(v[_PR_C.근거 - 1] || "").indexOf("✖") !== 0) { 건너++; continue; }
+    if (String(v[_PR_C.우리코드 - 1] || "").trim()) { 건너++; continue; }
+
+    var 업체 = String(v[_PR_C.업체 - 1] || "").trim();
+    var 종전 = _pr_num_(v[_PR_C.종전 - 1]);
+    var 박스 = _pr_num_(v[_PR_C.박스 - 1]);
+    if (종전 == null) { 없음++; continue; }
+
+    var 후보 = [];
+    for (var j = 0; j < prods.length; j++) {
+      var u = prods[j];
+      if (!_pr_isVendor_(u, 업체)) continue;
+      if (u.net == null || Math.abs(Number(u.net) - 종전) >= 0.51) continue;
+      /*  박스수량이 적혀 있으면 한 겹 더 거른다 — 같은 단가라도 박스가
+          다르면 다른 물건이다. 수량을 모르는 줄은 거르지 않는다.        */
+      if (박스 != null && u.qty != null && Number(u.qty) !== 박스) continue;
+      후보.push(u);
+    }
+
+    if (!후보.length) { 없음++; continue; }
+    if (후보.length === 1) 채움.push({ 행: 행, 업체: 업체, 품명: String(v[_PR_C.업체품명 - 1] || ""), u: 후보[0] });
+    else 여럿.push({ 행: 행, 업체: 업체, 품명: String(v[_PR_C.업체품명 - 1] || ""), 들: 후보 });
+  }
+
+  if (!채움.length && !여럿.length) {
+    _pr_say_("단가가 같은 품목을 못 찾았습니다.\n\n본 줄 " + (vals.length - 건너) +
+      " · 후보 없음 " + 없음 + "\n\n단가표의 종전단가와 우리 개당매입별도가가 같은 것이 없다는 뜻입니다.");
+    return;
+  }
+
+  var 글 = ["후보 하나뿐 " + 채움.length + "줄 (우리코드를 채웁니다) · 여럿 " + 여럿.length + "줄 (적어만 둡니다)", ""];
+  for (i = 0; i < Math.min(채움.length, 20); i++) {
+    글.push("  " + 채움[i].업체 + " · " + 채움[i].품명 + "  →  " +
+      채움[i].u.code + " " + 채움[i].u.name.substring(0, 24) + " (" + 채움[i].u.net + "원)");
+  }
+  if (채움.length > 20) 글.push("  … 그리고 " + (채움.length - 20) + "줄 더");
+  if (여럿.length) {
+    글.push("", "── 여럿이라 고르셔야 하는 줄 ──");
+    for (i = 0; i < Math.min(여럿.length, 10); i++) {
+      글.push("  " + 여럿[i].업체 + " · " + 여럿[i].품명 + "  →  " +
+        여럿[i].들.map(function (x) { return x.code; }).slice(0, 5).join(" / "));
+    }
+    if (여럿.length > 10) 글.push("  … 그 밖 " + (여럿.length - 10) + "줄");
+  }
+
+  if (!_pr_ask_("🔎 단가가 같은 품목 찾기",
+    글.join("\n").substring(0, 1200) + "\n\n★ 적용 체크는 켜지 않습니다 ★ 보시고 직접 켜셔야 합니다.",
+    정말, "partnerPriceRaiseSuggestNow")) return;
+  _pr_suggestWrite_(tab, 채움, 여럿, 글);
+}
+
+
+
+function _pr_suggestWrite_(tab, 채움, 여럿, 글) {
+  var i;
+  for (i = 0; i < 채움.length; i++) {
+    var c = 채움[i];
+    tab.getRange(c.행, _PR_C.우리코드).setValue(c.u.code);
+    tab.getRange(c.행, _PR_C.우리상품명).setValue(c.u.name);
+    tab.getRange(c.행, _PR_C.현재별도).setValue(c.u.net);
+    tab.getRange(c.행, _PR_C.값일치).setValue("O");
+    tab.getRange(c.행, _PR_C.결과).setValue("🔎 단가가 같은 품목 하나 — 보시고 체크해 주세요");
+  }
+  for (i = 0; i < 여럿.length; i++) {
+    var m = 여럿[i];
+    tab.getRange(m.행, _PR_C.결과).setValue("🔎 단가가 같은 것 " + m.들.length + "개: " +
+      m.들.map(function (x) { return x.code + "(" + x.name.substring(0, 14) + ")"; }).slice(0, 4).join(" / "));
+  }
+  SpreadsheetApp.flush();
+  _pr_recolor_(tab);
+  _pr_say_("🔎 끝났습니다\n\n" + 글.join("\n") +
+    "\n\n★ 적용 체크는 켜지 않았습니다 ★ 보시고 직접 켜 주십시오.");
+}
