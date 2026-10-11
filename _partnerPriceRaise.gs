@@ -412,7 +412,7 @@ function _pr_kind_(name) {
    상품정보 읽기
    ───────────────────────────────────────────────────────────── */
 function _pr_loadProducts_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = _pr_ss_();
   var tab = ss.getSheetByName(_PR_PRODUCT_TAB_);
   if (!tab) throw new Error("「" + _PR_PRODUCT_TAB_ + "」 탭을 못 찾았습니다.");
   var lastRow = tab.getLastRow();
@@ -533,13 +533,81 @@ function _pr_setPrice_(비고) {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   편집기에서도 돌게 — 창과 활성시트에 기대지 않는다
+
+   ★ 2026-10-11 에 여기서 멈췄다 ★
+     Exception: Cannot call SpreadsheetApp.getUi() from this context.
+     사장님이 편집기에서 partnerPriceRaiseBuild 를 눌렀는데 539행에서
+     터졌다. 메뉴에서 부를 때만 창이 있다 — 편집기에는 창이 없다.
+     getActiveSpreadsheet() 도 같은 꼴로 null 이 될 수 있다.
+
+     이 일은 «한 번 눌러서 끝내는» 일이라 편집기에서 돌리는 것이 정상이다.
+     그러니 창이 없으면 실행로그에 적고, 시트는 ID 로 연다.
+   ───────────────────────────────────────────────────────────── */
+
+/** 창이 있으면 창에, 없으면 실행로그에 */
+function _pr_say_(글) {
+  Logger.log(글);
+  try { SpreadsheetApp.getUi().alert(글); } catch (e) { /* 편집기 — 로그로 충분하다 */ }
+}
+
+/**
+ * 「진행할까요?」 — 창이 있으면 묻고, 없으면 ★안 하고 멈춘다★.
+ *
+ * ★ 창이 없을 때 그냥 진행하면 안 된다 ★ 편집기에서 ▶ 를 잘못 누르면
+ *   341줄이 그대로 바뀐다. 묻는 자리가 없어졌다고 묻기를 그만두는 것은
+ *   안전을 빼서 편함에 주는 바꿈이다.
+ *   대신 편집기에서 쓸 «다른 이름»을 알려 준다 — 그 이름을 고르는 것이
+ *   편집기에서의 「예」 다. (묵은건 종결의 DryRun/Apply 와 같은 결)
+ *
+ * @param {boolean} 정말 편집기용 함수가 true 로 넘긴다
+ * @return {boolean} 진행해도 되나
+ */
+function _pr_ask_(제목, 본문, 정말, 편집기이름) {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) { ui = null; }
+  if (ui) {
+    var 답 = ui.alert(제목, 본문 + "\n\n진행할까요?", ui.ButtonSet.YES_NO);
+    return 답 === ui.Button.YES;
+  }
+  if (정말) { Logger.log("[" + 제목 + "] 편집기에서 «정말» 로 불렀습니다 — 진행합니다."); return true; }
+  Logger.log("■ " + 제목 + "\n" + 본문 +
+    "\n\n★ 아무것도 안 했습니다 ★ 편집기에는 「예」를 누를 창이 없습니다.\n" +
+    "   정말 하시려면 함수 «" + 편집기이름 + "» 을 골라 실행하십시오.");
+  return false;
+}
+
+/** 상품정보시트. 활성시트에 기대지 않는다 — 편집기에서는 없다 */
+function _pr_ss_() {
+  try {
+    var a = SpreadsheetApp.getActiveSpreadsheet();
+    if (a) return a;
+  } catch (e) { /* 편집기 */ }
+  return SpreadsheetApp.openById(_PT.INFO_SS_ID);
+}
+/* ─────────────────────────────────────────────────────────────
    ① 비교표 만들기
    ───────────────────────────────────────────────────────────── */
-function partnerPriceRaiseBuild() {
-  var ui = SpreadsheetApp.getUi();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+/**
+ * 비교표 만들기.
+ *
+ * ★ 미리 보고 나서 돌린다 ★  (2026-10-11 · 사장님: 「일단 확인하고 돌려야지」)
+ *   이 함수는 상품정보시트에 341줄을 «쓴다». 그리고 탭이 이미 있으면
+ *   tab.clear() 로 지우고 다시 만든다 — ★체크해 둔 것이 다 날아간다★.
+ *   그래서 셋으로 갈랐다:
+ *     partnerPriceRaiseBuildPreview  아무것도 안 쓰고 무엇이 들어갈지 본다
+ *     partnerPriceRaiseBuild         체크가 남아 있으면 ★멈추고 묻는다★
+ *     partnerPriceRaiseBuildNow      편집기에서 「예」 대신 고르는 이름
+ */
+function partnerPriceRaiseBuildPreview() { _pr_build_(true); }
+function partnerPriceRaiseBuild() { _pr_build_(false, false); }
+/*  편집기에서 쓰는 이름 — 체크를 지우고 다시 만드는 것을 «안다»는 표시다 */
+function partnerPriceRaiseBuildNow() { _pr_build_(false, true); }
+function _pr_build_(미리, 정말) {
+  //  창이 없을 수도 있다(편집기) — _pr_say_ 가 알아서 로그로 간다
+  var ss = _pr_ss_();
   var prods = _pr_loadProducts_();
-  if (!prods.length) { ui.alert("상품정보에서 품목을 못 읽었습니다."); return; }
+  if (!prods.length) { _pr_say_("상품정보에서 품목을 못 읽었습니다."); return; }
 
   var rows = [], 셈 = { 배움: 0, 이름: 0, 값: 0, 없음: 0, 줄: 0 };
 
@@ -592,6 +660,48 @@ function partnerPriceRaiseBuild() {
   }
 
   var tab = ss.getSheetByName(_PR_TAB_);
+
+  /*  ★ 미리보기는 여기서 돌아간다 ★ 위 셈은 다 읽기만 한 것이다.
+      무엇이 들어갈지 적어 주고 아무것도 안 쓴다.                       */
+  if (미리) {
+    var 표본 = [];
+    for (var v = 0; v < rows.length && v < 15; v++) {
+      var q = rows[v];
+      표본.push('  ' + (q[_PR_C.업체 - 1] || '') + ' · ' + (q[_PR_C.업체품명 - 1] || '')
+        + ' · 종전 ' + (q[_PR_C.종전단가 - 1] || '') + ' → ' + (q[_PR_C.인상단가 - 1] || '')
+        + ' · ' + (q[_PR_C.우리코드 - 1] || '(코드 못 찾음)')
+        + ' · ' + (q[_PR_C.매칭근거 - 1] || ''));
+    }
+    _pr_say_(
+      '🧪 미리보기 — ★아무것도 쓰지 않았습니다★\n\n' +
+      '단가표 ' + _PR_PRICE_.length + '줄 → 비교 ' + 셈.줄 + '줄이 들어갑니다\n\n' +
+      '  ①배운짝 ' + 셈.배움 + '  ·  ②이름·낱말 ' + 셈.이름 +
+      '  ·  ③값만 ' + 셈.값 + '  ·  못 찾음 ' + 셈.없음 + '\n\n' +
+      (tab ? '※ 「' + _PR_TAB_ + '」 탭이 이미 있습니다 — 다시 만들면 체크가 지워집니다\n\n' : '') +
+      '── 처음 15줄 ──\n' + 표본.join('\n') +
+      '\n\n괜찮으면 partnerPriceRaiseBuild 를 돌리십시오.'
+    );
+    return;
+  }
+
+  /*  ★ 체크해 둔 것을 말없이 지우지 않는다 ★ tab.clear() 는 체크박스까지
+      지운다. 200줄을 체크해 둔 뒤 누가 다시 돌리면 그 수고가 사라진다.   */
+  if (tab) {
+    var 체크수 = 0;
+    try {
+      var lr0 = tab.getLastRow();
+      if (lr0 >= 2) {
+        var 칸 = tab.getRange(2, _PR_C.적용, lr0 - 1, 1).getValues();
+        for (var c2 = 0; c2 < 칸.length; c2++) if (칸[c2][0] === true) 체크수++;
+      }
+    } catch (e) {}
+    if (체크수 && !_pr_ask_(
+      '📋 비교표 다시 만들기',
+      '「' + _PR_TAB_ + '」 탭에 체크가 ' + 체크수 + '개 있습니다.\n' +
+      '다시 만들면 그 체크가 ★모두 지워집니다★.',
+      정말, 'partnerPriceRaiseBuildNow')) return;
+  }
+
   if (tab) tab.clear(); else tab = ss.insertSheet(_PR_TAB_);
   tab.getRange(1, 1, 1, _PR_HEADERS_.length).setValues([_PR_HEADERS_])
     .setBackground("#1f4e79").setFontColor("white").setFontWeight("bold")
@@ -614,7 +724,7 @@ function partnerPriceRaiseBuild() {
   tab.setColumnWidth(_PR_C.업체품명, 170);
   tab.activate();
 
-  ui.alert(
+  _pr_say_(
     "📋 비교표를 만들었습니다 — 「" + _PR_TAB_ + "」\n\n" +
     "단가표 " + _PR_PRICE_.length + "줄 → 비교 " + 셈.줄 + "줄\n\n" +
     "  ①배운짝 " + 셈.배움 + "  ·  ②이름·낱말 " + 셈.이름 +
@@ -629,7 +739,7 @@ function partnerPriceRaiseBuild() {
    ②③ 적용
    ───────────────────────────────────────────────────────────── */
 function _pr_readChecked_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = _pr_ss_();
   var tab = ss.getSheetByName(_PR_TAB_);
   if (!tab) throw new Error("먼저 「📋 비교표 만들기」를 눌러 주세요.");
   var last = tab.getLastRow();
@@ -644,14 +754,17 @@ function _pr_readChecked_() {
 }
 
 function partnerPriceRaisePreview() { _pr_applyProduct_(true); }
-function partnerPriceRaiseApply() { _pr_applyProduct_(false); }
+function partnerPriceRaiseApply() { _pr_applyProduct_(false, false); }
+/*  편집기에서 쓰는 이름 — 이 이름을 고르는 것이 「예」를 누르는 것과 같다.
+    메뉴에서 쓸 때는 partnerPriceRaiseApply 가 창으로 묻는다.            */
+function partnerPriceRaiseApplyNow() { _pr_applyProduct_(false, true); }
 
-function _pr_applyProduct_(미리) {
-  var ui = SpreadsheetApp.getUi();
+function _pr_applyProduct_(미리, 정말) {
+  //  창이 없을 수도 있다(편집기) — _pr_say_ 가 알아서 로그로 간다
   var got = _pr_readChecked_();
-  if (!got.줄.length) { ui.alert("체크된 줄이 없습니다. A열 「적용」을 켜 주세요."); return; }
+  if (!got.줄.length) { _pr_say_("체크된 줄이 없습니다. A열 「적용」을 켜 주세요."); return; }
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = _pr_ss_();
   var ptab = ss.getSheetByName(_PR_PRODUCT_TAB_);
   var prods = _pr_loadProducts_();
   var byCode = {};
@@ -682,46 +795,58 @@ function _pr_applyProduct_(미리) {
         "   " + 바꿀것[i].p.net + " → " + 바꿀것[i].새값);
     }
     if (바꿀것.length > 25) 글.push("  … 그리고 " + (바꿀것.length - 25) + "줄 더");
-    ui.alert(글.join("\n"));
+    _pr_say_(글.join("\n"));
     return;
   }
 
-  var 답 = ui.alert("💾 상품정보에 적용",
+  if (!_pr_ask_("💾 상품정보에 적용",
     바꿀것.length + "줄의 개당매입별도가를 바꿉니다.\n" +
     "개당매입가(부가세 포함)는 별도 × " + _PR_VAT_ + " 로 같이 바꿉니다.\n\n" +
-    "바꾸기 전 값은 「" + _PR_LOG_TAB_ + "」 탭에 남깁니다.\n\n진행할까요?",
-    ui.ButtonSet.YES_NO);
-  if (답 !== ui.Button.YES) return;
+    "바꾸기 전 값은 「" + _PR_LOG_TAB_ + "」 탭에 남깁니다.",
+    정말, "partnerPriceRaiseApplyNow")) return;
 
   /*  ★ 바꾸기 «전»에 적어 둔다 ★ 덮어쓰고 나면 옛 값을 되짚을 데가 없다.
-      실제로 단가는 여러 곳이 믿는 값이라, 잘못 바꿨을 때 되돌릴 길이 있어야 한다. */
+      실제로 단가는 여러 곳이 믿는 값이라, 잘못 바꿨을 때 되돌릴 길이 있어야 한다.
+
+      ★ 2026-10-11 에 고쳤다 ★ 주석은 「전」이라고 적어 두고 코드는 ★다 바꾼
+      뒤에★ 이력을 적고 있었다. 옛 값을 되돌이 안에서 모으기만 하고 탭에는
+      마지막에 한 번 썼다. 341줄을 한 칸씩 쓰다 실행 한도에 걸려 죽으면
+      ★바뀐 줄의 옛 값이 아무 데도 안 남는다★ — 되돌릴 길이 사라진다.
+      이력을 먼저 통째로 적고, 그다음에 단가를 바꾼다.
+      (「고치는 스크립트는 단계마다 저장」과 같은 결이다)                  */
   var 이력 = [];
   var 도장 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
   var 누구 = "";
   try { 누구 = Session.getActiveUser().getEmail() || ""; } catch (e) {}
 
   for (i = 0; i < 바꿀것.length; i++) {
+    var b0 = 바꿀것[i];
+    이력.push([도장, 누구, b0.p.code, b0.p.name, b0.p.net, b0.새값,
+      Math.round(b0.새값 * _PR_VAT_ * 100) / 100, "정희·콤콤 2026.10.12 인상"]);
+  }
+  //  ★ 먼저 남긴다 ★ 이 한 줄이 「되돌릴 수 있나」를 가른다
+  _pr_writeLog_(이력);
+  SpreadsheetApp.flush();
+
+  for (i = 0; i < 바꿀것.length; i++) {
     var b = 바꿀것[i];
-    이력.push([도장, 누구, b.p.code, b.p.name, b.p.net, b.새값,
-      Math.round(b.새값 * _PR_VAT_ * 100) / 100, "정희·콤콤 2026.10.12 인상"]);
     ptab.getRange(b.p.row, _PR_P_NET_).setValue(b.새값);
     ptab.getRange(b.p.row, _PR_P_GROSS_).setValue(Math.round(b.새값 * _PR_VAT_ * 100) / 100);
     got.tab.getRange(b.행, _PR_C.결과).setValue("✅ " + b.p.net + " → " + b.새값);
   }
-  _pr_writeLog_(이력);
 
   //  건너뛴 줄도 까닭을 적는다 — 조용히 넘어가면 「됐겠지」가 된다
   for (i = 0; i < got.줄.length; i++) {
     if (결과[i][0]) got.tab.getRange(got.줄[i].행, _PR_C.결과).setValue(결과[i][0]);
   }
   SpreadsheetApp.flush();
-  ui.alert("✅ 끝났습니다\n\n바꾼 줄 " + 바꿀것.length + " · 건너뛴 줄 " + 건너뜀.length +
+  _pr_say_("✅ 끝났습니다\n\n바꾼 줄 " + 바꿀것.length + " · 건너뛴 줄 " + 건너뜀.length +
     "\n\n옛 값은 「" + _PR_LOG_TAB_ + "」 탭에 남겼습니다.");
 }
 
 function _pr_writeLog_(이력) {
   if (!이력.length) return;
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = _pr_ss_();
   var t = ss.getSheetByName(_PR_LOG_TAB_);
   if (!t) {
     t = ss.insertSheet(_PR_LOG_TAB_);
@@ -736,14 +861,17 @@ function _pr_writeLog_(이력) {
 /* ─────────────────────────────────────────────────────────────
    ⑤ 누적품목매핑에 쌓기
    ───────────────────────────────────────────────────────────── */
-function partnerPriceRaiseApplyMapping() {
-  var ui = SpreadsheetApp.getUi();
+function partnerPriceRaiseApplyMapping() { _pr_mapping_(false); }
+/*  편집기에서 쓰는 이름 — 위 적용과 같은 결이다 */
+function partnerPriceRaiseApplyMappingNow() { _pr_mapping_(true); }
+function _pr_mapping_(정말) {
+  //  창이 없을 수도 있다(편집기) — _pr_say_ 가 알아서 로그로 간다
   var got = _pr_readChecked_();
-  if (!got.줄.length) { ui.alert("체크된 줄이 없습니다."); return; }
+  if (!got.줄.length) { _pr_say_("체크된 줄이 없습니다."); return; }
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = _pr_ss_();
   var t = ss.getSheetByName(_PR_MAP_TAB_);
-  if (!t) { ui.alert("「" + _PR_MAP_TAB_ + "」 탭을 못 찾았습니다."); return; }
+  if (!t) { _pr_say_("「" + _PR_MAP_TAB_ + "」 탭을 못 찾았습니다."); return; }
 
   var last = Math.max(t.getLastRow(), 1);
   var 기존 = last > 1 ? t.getRange(2, 1, last - 1, 6).getValues() : [];
@@ -768,16 +896,15 @@ function partnerPriceRaiseApplyMapping() {
     더할것.push([code, 우리명, 업체명, "", (단가 === "" || 단가 == null) ? "" : 단가, ""]);
   }
 
-  if (!더할것.length) { ui.alert("새로 쌓을 짝이 없습니다 (이미 있거나 업체명이 비었습니다).\n건너뜀 " + 건너); return; }
-  var 답 = ui.alert("🔗 누적품목매핑에 쌓기",
+  if (!더할것.length) { _pr_say_("새로 쌓을 짝이 없습니다 (이미 있거나 업체명이 비었습니다).\n건너뜀 " + 건너); return; }
+  if (!_pr_ask_("🔗 누적품목매핑에 쌓기",
     더할것.length + "개의 「우리품목 ↔ 업체품명」 짝을 더합니다.\n" +
     "이미 있는 짝은 건너뜁니다 (" + 건너 + "개).\n\n" +
-    "이 표는 다음 달 정산에서 품목을 맞출 때 쓰입니다.\n\n진행할까요?",
-    ui.ButtonSet.YES_NO);
-  if (답 !== ui.Button.YES) return;
+    "이 표는 다음 달 정산에서 품목을 맞출 때 쓰입니다.",
+    정말, "partnerPriceRaiseApplyMappingNow")) return;
 
   t.getRange(t.getLastRow() + 1, 1, 더할것.length, 6).setValues(더할것);
-  ui.alert("✅ " + 더할것.length + "개를 쌓았습니다.\n\n" +
+  _pr_say_("✅ " + 더할것.length + "개를 쌓았습니다.\n\n" +
     "정희·콤콤은 여태 이 표에 «한 줄도» 없었습니다 — 다음 달부터 품목 맞추기가 쉬워집니다.");
 }
 
@@ -792,7 +919,7 @@ function partnerPriceRaiseApplyMapping() {
  *   세트로 파는 값이 틀리면 마진이 그만큼 사라진다.
  */
 function partnerPriceRaiseCheckSets() {
-  var ui = SpreadsheetApp.getUi();
+  //  창이 없을 수도 있다(편집기) — _pr_say_ 가 알아서 로그로 간다
   var prods = _pr_loadProducts_();
   var 몸통 = {}, 뚜껑 = {}, i;
   for (i = 0; i < prods.length; i++) {
@@ -822,5 +949,5 @@ function partnerPriceRaiseCheckSets() {
   말.push("견준 세트 " + 본것 + "개 · 어긋남 " + 어긋남 + "개");
   if (!본것) 말.push("(몸통·뚜껑 이름이 세트와 달라 짝을 못 지었습니다)");
   Logger.log(말.join("\n"));
-  ui.alert(말.join("\n").substring(0, 1400));
+  _pr_say_(말.join("\n").substring(0, 1400));
 }
