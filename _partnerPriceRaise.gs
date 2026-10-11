@@ -555,6 +555,24 @@ var _PR_FIX_ = {
   "콤콤|냉면(대)": ["FPNMTANG00010"]
 };
 
+/**
+ * 원장에 적힌 단가가 업체 단가표의 ★종전단가★ 와 맞나.
+ *
+ * 원장 단가 칸에는 「93 / 95」처럼 여럿이 들어 있을 때가 있다(달마다 달랐다).
+ * 그중 하나라도 맞으면 그 ★짝★ 은 맞는 것으로 본다.
+ * 종전단가를 모르면(null) 잴 수 없으니 ★안 맞는 것으로★ 친다 —
+ * 모르는 것과 맞는 것은 다르다([[dont-overwrite-what-you-couldnt-read]]).
+ */
+function _pr_ledgerPriceOk_(원장단가, 종전) {
+  if (종전 == null || 종전 === "") return false;
+  var parts = String(원장단가 == null ? "" : 원장단가).split(" / ");
+  for (var q = 0; q < parts.length; q++) {
+    var n = Number(String(parts[q]).replace(/,/g, "").trim());
+    if (!isNaN(n) && Math.abs(n - Number(종전)) < 0.51) return true;
+  }
+  return false;
+}
+
 function _pr_match_(p, prods) {
   var 업체 = p[0], 품명 = p[2], 종전 = p[4];
   var key = _pr_norm_(품명);
@@ -592,6 +610,13 @@ function _pr_match_(p, prods) {
   if (짝.length) {
     var 본 = [], 봤다 = {};
     for (i = 0; i < 짝.length; i++) {
+      /*  ★★ 짝마다 단가를 본다 ★★  (2026-10-12)
+          앞서 고친 것이 반만 고친 것이었다. 「단가가 맞나」를 ★짝 하나라도
+          맞으면 참★ 으로 재 놓고, 목록에는 ★그 짝들이 가리키는 전부★ 를
+          담았다. 그래서 단가표 「4호」(종전 32)가 원장 「84호…」까지 끌고 와
+          JH2318SL00012(23186 84호, 97원)가 ①배운짝+단가확인 으로 나왔다.
+          맞는 짝 하나가 안 맞는 짝들의 보증을 서면 안 된다.               */
+      if (!_pr_ledgerPriceOk_(짝[i][4], 종전)) continue;
       for (var j = 0; j < prods.length; j++) {
         if (prods[j].name !== 짝[i][3]) continue;
         if (봤다[prods[j].code]) continue;
@@ -600,21 +625,13 @@ function _pr_match_(p, prods) {
       }
     }
     if (본.length) {
-      //  업체가 적어 준 단가가 종전단가와 맞으면 한 겹 더 믿는다
-      var 단가맞 = false;
-      for (i = 0; i < 짝.length && !단가맞; i++) {
-        var parts = String(짝[i][4]).split(" / ");
-        for (var q = 0; q < parts.length; q++) {
-          if (종전 != null && Math.abs(Number(parts[q]) - 종전) < 0.51) { 단가맞 = true; break; }
-        }
-      }
       /*  ★★ 단가가 맞을 때만 ①로 친다 ★★  (2026-10-12)
           짝 고르기가 ★글자 들어 있기★ 다(아래 indexOf). 단가표 「1호」가
           원장 「71호/검정」 안에 들어 있어 71호(112원)가 1호(75원)로 잡혔고,
           그대로 적용돼 112 를 75 로 내렸다. 4호↔84호, 5호↔25호도 같다.
           업체가 적어 준 종전단가와 맞지 않으면 ★다른 물건★ 이다 —
           ①로 치지 않고 ②이름·③값 셈으로 넘긴다.                        */
-      if (단가맞) return { 근거: "①배운짝+단가확인", 목록: 본 };
+      return { 근거: "①배운짝+단가확인", 목록: 본 };
     }
   }
 
