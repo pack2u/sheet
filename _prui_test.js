@@ -147,6 +147,32 @@ const 사이 = 빌드.slice(미리자리, 쓰기자리);
   빌드.indexOf("체크수 && !_pr_ask_") < 쓰기자리, true);
 같나("편집기에서 쓸 이름을 안내한다", /partnerPriceRaiseBuildNow'\)\) return;|partnerPriceRaiseBuildNow"\)\) return;/.test(빌드), true);
 
+/* ══════════════════════════════════════════════════════════════
+   _PR_C 에 «없는 키»를 집지 않나  (2026-10-11)
+
+   미리보기가 「종전  →  」 로 빈칸을 찍었다. 머리글은 「종전단가·인상단가·
+   매칭근거」인데 _PR_C 의 키는 「종전·인상·근거」다. 없는 키를 집으면
+   undefined - 1 = NaN 이고 q[NaN] 은 undefined — ★오류 없이 빈칸★ 이다.
+   머리글 이름과 키 이름이 다르다는 것을 잊으면 또 그런다.
+   ══════════════════════════════════════════════════════════════ */
+console.log("── _PR_C 에 있는 키만 집나 ──");
+const PRC = (() => {
+  const i = 소스.indexOf("var _PR_C = {");
+  const j = 소스.indexOf("};", i);
+  const 몸 = 소스.slice(i + "var _PR_C = {".length, j);
+  const 키 = [];
+  for (const m of 몸.matchAll(/([가-힣A-Za-z_][가-힣A-Za-z0-9_]*)s*:/g)) 키.push(m[1]);
+  return 키;
+})();
+같나("_PR_C 키를 읽었다 (" + PRC.length + "개)", PRC.length >= 15, true);
+/*  ★ 점을 꼭 escape 한다 ★ /_PR_C.(…)/ 는 점이 「아무 글자」라서 주석의
+    「_PR_C 의 키는」까지 잡아 ★없는 키 「의」★ 를 찾아냈다고 울었다.
+    코드는 멀쩡했다. 이 줄을 고치는 스크립트에서 백슬래시가 먹혔다 —
+    escape 가 든 글은 Edit 로 고친다.                                   */
+const 쓴키 = [...new Set([...소스.matchAll(/_PR_C\.([가-힣A-Za-z_][가-힣A-Za-z0-9_]*)/g)].map((m) => m[1]))];
+같나("쓴 키를 읽었다 (" + 쓴키.length + "개)", 쓴키.length > 0, true);
+const 없는키 = 쓴키.filter((k) => PRC.indexOf(k) < 0);
+같나("★ _PR_C 에 없는 키를 집는 자리가 없다 ★", 없는키.join(",") , "");
 /*  ★ 끝맺음은 파일 «맨 끝»에 둔다 ★  (2026-10-11)
     시험을 더하면서 이 두 줄 «뒤»에 붙였더니 그 뒤가 아예 안 돌았다.
     Build 울타리 열 줄이 한 번도 실행되지 않았는데 「다 맞았습니다」가
