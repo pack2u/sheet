@@ -543,6 +543,27 @@ function _pr_loadProducts_() {
  * 막지 않는다 — 대신 ★자동 체크를 켜지 않는다★(아래 켜기 조건).
  * 짝은 보여 주되 돈은 사람이 켤 때만 움직인다.
  */
+/**
+ * 구매처가 ★적힌★ 짝이 하나라도 있으면 그것만 남긴다.
+ *
+ * ★ 왜 생겼나 ★  (2026-10-12)
+ * 구매처 빈칸을 막지 않게 했더니 ②이름 후보가 불어나 「16개 넘으면 포기」
+ * 빗장에 걸렸다. 그래서 ★맞던 짝이 사라졌다★ —
+ *   콤콤 · 19153 → BF1915SL00001 「BF 실링 19153 화이트 900개」
+ *   콤콤 · 105파이(소)/PP → BF105PP0004
+ * 느슨하게 했더니 좋은 짝을 잃은 것이다.
+ *
+ * ★ 모르는 것이 아는 것을 밀어내면 안 된다 ★ 구매처가 적힌 짝이 있으면
+ * 그것이 답이다. 빈칸짜리는 ★아는 것이 하나도 없을 때만★ 쓴다.
+ */
+function _pr_preferKnown_(들, 업체) {
+  var 아는것 = [];
+  for (var i = 0; i < 들.length; i++) {
+    if (_pr_vendorFit_(들[i].u, 업체) === "같음") 아는것.push(들[i]);
+  }
+  return 아는것.length ? 아는것 : 들;
+}
+
 function _pr_isVendor_(u, 업체) {
   if (!u.vendor) return true;          // 모른다 — 막지 않는다
   return u.vendor.indexOf(업체) >= 0;
@@ -673,6 +694,7 @@ function _pr_match_(p, prods) {
     if (!_pr_isVendor_(u, 업체)) continue;
     if (key && u.norm.indexOf(key) >= 0) 이름후.push({ u: u, 원장: "" });
   }
+  이름후 = _pr_preferKnown_(이름후, 업체);
   if (이름후.length && 이름후.length <= 16) return { 근거: "②이름", 목록: 이름후 };
 
   //  ②' 낱말이 겹치고 값도 같다 (크기는 반드시 같아야 한다)
@@ -689,6 +711,7 @@ function _pr_match_(p, prods) {
       if (sz && sz2 && sz !== sz2) continue;
       낱후.push({ u: u, 원장: "" });
     }
+    낱후 = _pr_preferKnown_(낱후, 업체);
     if (낱후.length && 낱후.length <= 16) return { 근거: "②'낱말+값", 목록: 낱후 };
   }
 
@@ -700,6 +723,7 @@ function _pr_match_(p, prods) {
       if (!_pr_isVendor_(u, 업체)) continue;
       if (u.net != null && Math.abs(u.net - 종전) < 0.51) 값후.push({ u: u, 원장: "" });
     }
+    값후 = _pr_preferKnown_(값후, 업체);
     if (값후.length && 값후.length <= 3) return { 근거: "③값만(약함)", 목록: 값후 };
     if (이름후.length) return { 근거: "✖ 후보 " + 이름후.length + "줄 — 너무 많음", 목록: [] };
   }
