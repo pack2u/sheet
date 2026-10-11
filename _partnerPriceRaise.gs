@@ -52,6 +52,16 @@ var _PR_MISS_BG_ = "#FCE5CD";   // 우리코드를 못 찾음 — 손으로 넣�
 var _PR_NA_BG_   = "#D9D9D9";   // 우리가 안 파는 품목 — 못 붙어도 맞다
 
 /**
+ * ★ 후보 표시 ★  (2026-10-12)
+ * > 「후보인 상품의 매입가부분에 밝은 파란색으로 표시를 해주면(단가는 안바뀜)
+ * >  찾기가 더 수월할꺼 같네」
+ *
+ * ★상품정보의 매입가 칸★ 에 칠한다. 단가는 하나도 안 바꾼다 — 찾기 쉽게만
+ * 한다. 노랑(실제로 바꾼 칸)과 섞이면 안 되므로 노랑은 덮지 않는다.
+ */
+var _PR_CAND_BG_ = "#CFE2F3";   // 밝은 파랑 — 「후보」일 뿐, 바뀐 것이 아니다
+
+/**
  * 「우리가 안 파는 품목」이라고 적어 두는 낱말.
  * > 「미매칭건은 상품정보시트에 없는 경우도 많아.. 우리가 판매하지 않는 품목」
  *
@@ -1577,14 +1587,14 @@ function _pr_suggest_(정말) {
   var prods = _pr_loadProducts_();
   var vals = tab.getRange(2, 1, last - 1, _PR_HEADERS_.length).getValues();
 
-  var 채움 = [], 여럿 = [], 없음 = 0, 건너 = 0;
+  var 찾음 = [], 없음 = 0, 건너 = 0;
+  var 파랑줄 = {};          // 상품정보에서 파랗게 칠할 줄
   for (var i = 0; i < vals.length; i++) {
     var v = vals[i], 행 = i + 2;
-    //  짝을 이미 찾은 줄·손으로 적은 줄·미판매는 건드리지 않는다
+    //  짝을 이미 찾은 줄·사람이 손으로 적은 줄·미판매는 건드리지 않는다
     if (String(v[_PR_C.근거 - 1] || "").indexOf("✖") !== 0) { 건너++; continue; }
-    /*  ★ 내가 채운 줄은 다시 볼 수 있어야 한다 ★ 규칙을 고쳤는데 「이미
-        코드가 있다」고 건너뛰면 틀린 채움이 영영 남는다. 내가 적은 표시(🔎)가
-        있고 아직 체크를 안 켜신 줄만 다시 본다 — 사람이 손댄 줄은 안 건드린다. */
+    /*  내가 적어 둔 표시(🔎)는 다시 봐도 된다 — 규칙이 바뀔 수 있다.
+        사람이 적은 코드는 안 건드린다.                                  */
     var 내가적은것 = String(v[_PR_C.결과 - 1] || "").indexOf("🔎") === 0 &&
       v[_PR_C.적용 - 1] !== true;
     if (String(v[_PR_C.우리코드 - 1] || "").trim() && !내가적은것) { 건너++; continue; }
@@ -1592,6 +1602,7 @@ function _pr_suggest_(정말) {
     var 업체 = String(v[_PR_C.업체 - 1] || "").trim();
     var 종전 = _pr_num_(v[_PR_C.종전 - 1]);
     var 박스 = _pr_num_(v[_PR_C.박스 - 1]);
+    var 품명0 = String(v[_PR_C.업체품명 - 1] || "");
     if (종전 == null) { 없음++; continue; }
 
     var 후보 = [];
@@ -1605,92 +1616,104 @@ function _pr_suggest_(정말) {
       후보.push(u);
     }
 
-    /*  ★ 이름이 한 낱말도 안 겹치면 채우지 않는다 ★
-        단가·박스가 같은 것은 우연히도 생긴다(밀폐20155 → 158파이 삼계탕).
-        겹치는 것이 있으면 그쪽만 쓰고, 하나도 없으면 「적어만 두는」 쪽으로. */
-    var 품명0 = String(v[_PR_C.업체품명 - 1] || "");
-    var 겹친것 = [];
+    /*  이름이 겹치는 것을 앞에 세운다 — 「단가만 같음」은 우연일 수 있다
+        (밀폐20155 가 158파이 삼계탕을 집었다).                          */
+    var 겹친것 = [], 단가만 = [];
     for (var z = 0; z < 후보.length; z++) {
       var 같은낱말 = _pr_shareTokens_(품명0, 후보[z].name);
       if (같은낱말.length) 겹친것.push({ u: 후보[z], 낱말: 같은낱말 });
+      else 단가만.push({ u: 후보[z], 낱말: [] });
     }
 
+    /*  ★ 내가 전에 채운 코드는 지운다 ★  (2026-10-12)
+        > 「후보는 적용안하는게 맞을꺼 같고」
+        이제 아무것도 채우지 않는다. 전에 채운 것이 남아 있으면 지운다.  */
     if (!후보.length) {
       없음++;
-      /*  전에 채웠는데 이제 후보가 하나도 없다 — 그 채움은 틀린 것이다 */
-      if (내가적은것) 여럿.push({ 행: 행, 업체: 업체, 품명: 품명0,
-        내가적은것: true, 들: [], 까닭: "후보 없음 — 전에 채운 것을 지웁니다" });
+      if (내가적은것) 찾음.push({ 행: 행, 업체: 업체, 품명: 품명0, 내가적은것: true, 들: [] });
       continue;
     }
-    if (겹친것.length === 1) {
-      채움.push({ 행: 행, 업체: 업체, 품명: 품명0, u: 겹친것[0].u, 낱말: 겹친것[0].낱말 });
-    } else if (겹친것.length > 1) {
-      여럿.push({ 행: 행, 업체: 업체, 품명: 품명0, 내가적은것: 내가적은것,
-        들: 겹친것.map(function (x) { return x.u; }), 까닭: "이름도 겹침" });
-    } else {
-      /*  단가·박스만 같다 — 우연일 수 있다. 채우지 않고 적어만 둔다 */
-      여럿.push({ 행: 행, 업체: 업체, 품명: 품명0, 내가적은것: 내가적은것,
-        들: 후보, 까닭: "단가만 같음" });
-    }
+    for (z = 0; z < 후보.length; z++) 파랑줄[후보[z].row] = true;
+    찾음.push({ 행: 행, 업체: 업체, 품명: 품명0, 내가적은것: 내가적은것,
+      들: 겹친것.concat(단가만) });
   }
 
-  if (!채움.length && !여럿.length) {
-    _pr_say_("단가가 같은 품목을 못 찾았습니다.\n\n본 줄 " + (vals.length - 건너) +
-      " · 후보 없음 " + 없음 + "\n\n단가표의 종전단가와 우리 개당매입별도가가 같은 것이 없다는 뜻입니다.");
+  if (!찾음.length) {
+    _pr_say_("후보를 못 찾았습니다.\n\n본 줄 " + (vals.length - 건너) + " · 후보 없음 " + 없음 +
+      "\n\n단가표의 종전단가와 우리 개당매입별도가가 같은 것이 없다는 뜻입니다.");
     return;
   }
 
-  var 글 = ["후보 하나뿐 " + 채움.length + "줄 (우리코드를 채웁니다) · 여럿 " + 여럿.length + "줄 (적어만 둡니다)", ""];
-  for (i = 0; i < Math.min(채움.length, 20); i++) {
-    글.push("  " + 채움[i].업체 + " · " + 채움[i].품명 + "  →  " +
-      채움[i].u.code + " " + 채움[i].u.name.substring(0, 24) + " (" + 채움[i].u.net + "원)");
+  var 칠할수 = 0;
+  for (var k in 파랑줄) 칠할수++;
+  var 글 = ["후보가 있는 줄 " + 찾음.length + " · 상품정보에서 파랗게 칠할 칸 " + 칠할수, ""];
+  for (i = 0; i < Math.min(찾음.length, 15); i++) {
+    var f = 찾음[i];
+    글.push("  " + f.업체 + " · " + f.품명 + "  →  " +
+      (f.들.length ? f.들.map(function (x) {
+        return x.u.code + (x.낱말.length ? "(이름겹침 " + x.낱말.slice(0, 2).join("·") + ")" : "(단가만)");
+      }).slice(0, 4).join(" / ") : "후보 없음 — 전에 적은 것을 지웁니다"));
   }
-  if (채움.length > 20) 글.push("  … 그리고 " + (채움.length - 20) + "줄 더");
-  if (여럿.length) {
-    글.push("", "── 여럿이라 고르셔야 하는 줄 ──");
-    for (i = 0; i < Math.min(여럿.length, 10); i++) {
-      글.push("  " + 여럿[i].업체 + " · " + 여럿[i].품명 + "  →  " +
-        여럿[i].들.map(function (x) { return x.code; }).slice(0, 5).join(" / "));
-    }
-    if (여럿.length > 10) 글.push("  … 그 밖 " + (여럿.length - 10) + "줄");
-  }
+  if (찾음.length > 15) 글.push("  … 그리고 " + (찾음.length - 15) + "줄 더");
 
-  if (!_pr_ask_("🔎 단가가 같은 품목 찾기",
-    글.join("\n").substring(0, 1200) + "\n\n★ 적용 체크는 켜지 않습니다 ★ 보시고 직접 켜셔야 합니다.",
+  if (!_pr_ask_("🔎 후보를 찾아 파랗게 칠하기",
+    글.join("\n").substring(0, 1200) +
+    "\n\n★ 아무 단가도 바꾸지 않습니다 ★ 우리코드도 채우지 않습니다.\n" +
+    "상품정보의 ★매입가 칸★ 을 밝은 파랑으로 칠해 찾기 쉽게만 합니다.",
     정말, "partnerPriceRaiseSuggestNow")) return;
-  _pr_suggestWrite_(tab, 채움, 여럿, 글);
+  _pr_suggestWrite_(ss, tab, 찾음, 파랑줄, 글);
 }
 
-
-
-function _pr_suggestWrite_(tab, 채움, 여럿, 글) {
+/**
+ * 비교표에는 후보를 «적어만» 두고, 상품정보의 매입가 칸을 파랗게 칠한다.
+ *
+ * > 「후보인 상품의 매입가부분에 밝은 파란색으로 표시를 해주면(단가는 안바뀜)
+ * >  찾기가 더 수월할꺼 같네」
+ *
+ * ★ 노랑은 덮지 않는다 ★ 노랑은 「단가를 실제로 바꾼 칸」이다. 파랑으로
+ * 덮으면 무엇을 바꿨는지 잃는다. 이미 노랑인 칸은 건너뛴다.
+ * ★ 지난번 파랑은 지운다 ★ 후보에서 빠진 칸이 파랗게 남으면 거짓말이 된다.
+ */
+function _pr_suggestWrite_(ss, tab, 찾음, 파랑줄, 글) {
   var i;
-  for (i = 0; i < 채움.length; i++) {
-    var c = 채움[i];
-    tab.getRange(c.행, _PR_C.우리코드).setValue(c.u.code);
-    tab.getRange(c.행, _PR_C.우리상품명).setValue(c.u.name);
-    tab.getRange(c.행, _PR_C.현재별도).setValue(c.u.net);
-    tab.getRange(c.행, _PR_C.값일치).setValue("O");
-    tab.getRange(c.행, _PR_C.결과).setValue("🔎 단가·이름이 맞는 품목 하나 (겹친 낱말: " +
-      (c.낱말 || []).slice(0, 4).join("·") + ") — 보시고 체크해 주세요");
-  }
-  for (i = 0; i < 여럿.length; i++) {
-    var m = 여럿[i];
-    /*  ★ 전에 내가 잘못 채운 것을 지운다 ★  (2026-10-12)
-        규칙을 고쳤는데 옛 채움이 그대로 남으면 틀린 코드가 영영 남는다.
-        내가 적은 줄(🔎)이고 아직 체크를 안 켜신 줄만 지운다 —
-        사장님이 손대신 줄은 건드리지 않는다.                           */
-    if (m.내가적은것) {
-      tab.getRange(m.행, _PR_C.우리코드).clearContent();
-      tab.getRange(m.행, _PR_C.우리상품명).clearContent();
-      tab.getRange(m.행, _PR_C.현재별도).clearContent();
-      tab.getRange(m.행, _PR_C.값일치).clearContent();
+  for (i = 0; i < 찾음.length; i++) {
+    var f = 찾음[i];
+    /*  이제 아무것도 채우지 않는다. 전에 내가 채운 것이 있으면 지운다. */
+    if (f.내가적은것) {
+      tab.getRange(f.행, _PR_C.우리코드).clearContent();
+      tab.getRange(f.행, _PR_C.우리상품명).clearContent();
+      tab.getRange(f.행, _PR_C.현재별도).clearContent();
+      tab.getRange(f.행, _PR_C.값일치).clearContent();
     }
-    tab.getRange(m.행, _PR_C.결과).setValue("🔎 " + (m.까닭 || "후보") + " " + m.들.length + "개: " +
-      m.들.map(function (x) { return x.code + "(" + x.name.substring(0, 14) + ")"; }).slice(0, 4).join(" / "));
+    tab.getRange(f.행, _PR_C.결과).setValue(f.들.length
+      ? "🔎 후보 " + f.들.length + "개 (상품정보에서 파란 칸): " +
+        f.들.map(function (x) {
+          return x.u.code + "·" + x.u.name.substring(0, 16) +
+            (x.낱말.length ? "(이름겹침)" : "(단가만)");
+        }).slice(0, 3).join(" / ")
+      : "🔎 후보 없음");
   }
+
+  var ptab = ss.getSheetByName(_PR_PRODUCT_TAB_);
+  var 첫줄 = _PR_P_HEADER_ROW_ + 1;
+  var 끝줄 = ptab.getLastRow();
+  var 칸 = ptab.getRange(첫줄, _PR_P_BUY_, 끝줄 - 첫줄 + 1, 1);
+  var 바탕 = 칸.getBackgrounds();
+  var 칠함 = 0, 지움 = 0;
+  for (i = 0; i < 바탕.length; i++) {
+    var 행 = 첫줄 + i;
+    var 지금 = String(바탕[i][0] || "").toLowerCase();
+    var 후보인가 = !!파랑줄[행];
+    //  ★ 노랑은 그대로 둔다 ★ 「단가를 실제로 바꾼 칸」을 덮으면 안 된다
+    if (지금 === _PR_DONE_BG_.toLowerCase()) continue;
+    if (후보인가 && 지금 !== _PR_CAND_BG_.toLowerCase()) { 바탕[i][0] = _PR_CAND_BG_; 칠함++; }
+    else if (!후보인가 && 지금 === _PR_CAND_BG_.toLowerCase()) { 바탕[i][0] = null; 지움++; }
+  }
+  칸.setBackgrounds(바탕);
+
   SpreadsheetApp.flush();
   _pr_recolor_(tab);
-  _pr_say_("🔎 끝났습니다\n\n" + 글.join("\n") +
-    "\n\n★ 적용 체크는 켜지 않았습니다 ★ 보시고 직접 켜 주십시오.");
+  _pr_say_("🔎 끝났습니다 — ★단가는 하나도 안 바꿨습니다★\n\n" + 글.join("\n") +
+    "\n\n상품정보 매입가 칸: 파랗게 칠함 " + 칠함 + " · 지운 파랑 " + 지움 +
+    "\n(노랑 = 실제로 바꾼 칸은 그대로 두었습니다)");
 }
