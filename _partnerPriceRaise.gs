@@ -739,6 +739,53 @@ function _pr_oldHand_(tab) {
   } catch (e) { Logger.log("[옛 손글씨] 못 읽었습니다 — " + e.message); }
   return 광;
 }
+/**
+ * 옛 탭에서 ★짝지은 줄에 적혀 있던 코드★ 를 열쇠별로 모은다.
+ *
+ * ★ 왜 따로 세나 ★  (2026-10-12)
+ * > 「매칭 잘못된거도 수정해놨어」
+ *
+ * 짝을 «못» 찾은 줄의 손글씨는 _pr_oldHand_ 가 되살린다. 그런데 짝을
+ * ★잘못★ 찾은 줄을 사람이 고친 것은 되살릴 데가 없다 — 다시 만들면
+ * _PR_PAIR_ 와 이름·값 셈으로 ★그 틀린 짝이 그대로 돌아온다★.
+ * 누적품목매핑에 쌓아도 소용없다. 매칭은 그 탭을 «읽지 않는다»
+ * (①배운짝은 파일에 박힌 _PR_PAIR_ 를 본다).
+ *
+ * 그래서 덮지도 않고 말없이 버리지도 않는다 — ★세어서 말하고★, 옛 탭을
+ * 통째로 남긴다. 어느 쪽이 맞는지는 사람이 안다([[leave-no-ambiguous-branches]]).
+ */
+function _pr_oldCodes_(tab) {
+  var 광 = {};
+  if (!tab) return 광;
+  try {
+    var last = tab.getLastRow();
+    if (last < 2) return 광;
+    var vals = tab.getRange(2, 1, last - 1, _PR_HEADERS_.length).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      var 코드 = String(vals[i][_PR_C.우리코드 - 1] || "").trim();
+      if (!코드 || _pr_isNA_(코드)) continue;
+      var k = _pr_handKey_(vals[i][_PR_C.업체 - 1], vals[i][_PR_C.업체품명 - 1], vals[i][_PR_C.박스 - 1]);
+      if (!광[k]) 광[k] = [];
+      광[k].push({ 코드: 코드, 이름: String(vals[i][_PR_C.우리상품명 - 1] || "") });
+    }
+  } catch (e) { Logger.log("[옛 코드] 못 읽었습니다 — " + e.message); }
+  return 광;
+}
+
+/**  다시 만들기 전에 옛 탭을 통째로 남긴다. 사라지는 것이 없게. */
+function _pr_backupTab_(ss, tab) {
+  if (!tab) return "";
+  try {
+    var 이름 = _PR_TAB_ + "_이전";
+    var 옛 = ss.getSheetByName(이름);
+    if (옛) ss.deleteSheet(옛);
+    var 새 = tab.copyTo(ss);
+    새.setName(이름);
+    새.hideSheet();
+    return 이름;
+  } catch (e) { Logger.log("[백업] 못 남겼습니다 — " + e.message); return ""; }
+}
+
 function _pr_handKey_(업체, 품명, 박스) {
   return [업체, 품명, 박스].map(function (x) { return String(x == null ? "" : x).trim(); }).join("|");
 }
@@ -758,6 +805,7 @@ function _pr_build_(미리, 정말) {
       손으로 적어 둔 코드와 「미판매」를 읽을 데가 없다.                */
   var tab = ss.getSheetByName(_PR_TAB_);
   var 옛손 = _pr_oldHand_(tab);
+  var 옛코드 = _pr_oldCodes_(tab);   // 짝지은 줄에 사람이 고쳐 둔 코드까지
 
   for (var i = 0; i < _PR_PRICE_.length; i++) {
     var p = _PR_PRICE_[i];
@@ -823,6 +871,27 @@ function _pr_build_(미리, 정말) {
     }
   }
 
+  /*  ★ 사람이 고쳐 둔 짝이 새 셈에 없나 ★  (2026-10-12)
+      있으면 다시 만들 때 그 손질이 사라진다. 세어서 말한다 — 덮어쓸지
+      말지는 사람이 정한다.                                            */
+  var 새코드 = {};
+  for (i = 0; i < rows.length; i++) {
+    var k0 = _pr_handKey_(rows[i][_PR_C.업체 - 1], rows[i][_PR_C.업체품명 - 1], rows[i][_PR_C.박스 - 1]);
+    var c0 = String(rows[i][_PR_C.우리코드 - 1] || "").trim();
+    if (!새코드[k0]) 새코드[k0] = {};
+    if (c0) 새코드[k0][c0] = true;
+  }
+  var 사라질것 = [];
+  for (var k1 in 옛코드) {
+    /*  짝을 못 찾는 열쇠는 _pr_oldHand_ 가 이미 되살린다 — 두 번 세지 않는다 */
+    if (!새코드[k1] || !Object.keys(새코드[k1]).length) continue;
+    for (var z = 0; z < 옛코드[k1].length; z++) {
+      if (새코드[k1][옛코드[k1][z].코드]) continue;
+      사라질것.push(k1.split("|").slice(0, 2).join(" · ") + " → " +
+        옛코드[k1][z].코드 + " " + 옛코드[k1][z].이름.substring(0, 20));
+    }
+  }
+
   /*  ★ 미리보기는 여기서 돌아간다 ★ 위 셈은 다 읽기만 한 것이다.
       무엇이 들어갈지 적어 주고 아무것도 안 쓴다.                       */
   if (미리) {
@@ -846,6 +915,12 @@ function _pr_build_(미리, 정말) {
       '  ·  ③값만 ' + 셈.값 + '  ·  못 찾음 ' + 셈.없음 +
       (셈.미판매 ? '  (그중 미판매 표시 ' + 셈.미판매 + ' — 그대로 옮겨 옵니다)' : '') + '\n\n' +
       (tab ? '※ 「' + _PR_TAB_ + '」 탭이 이미 있습니다 — 다시 만들면 체크가 지워집니다\n\n' : '') +
+      (사라질것.length
+        ? '★ 손으로 고치신 짝 ' + 사라질것.length + '개가 새 셈에 없습니다 ★\n' +
+          '   다시 만들면 원래의 (틀린) 짝으로 돌아갑니다. 옛 탭은 남깁니다.\n' +
+          '   ' + 사라질것.slice(0, 15).join('\n   ') +
+          (사라질것.length > 15 ? '\n   … 그 밖 ' + (사라질것.length - 15) + '개' : '') + '\n\n'
+        : '') +
       '── 처음 15줄 ──\n' + 표본.join('\n') +
       '\n\n괜찮으면 partnerPriceRaiseBuild 를 돌리십시오.'
     );
@@ -863,12 +938,24 @@ function _pr_build_(미리, 정말) {
         for (var c2 = 0; c2 < 칸.length; c2++) if (칸[c2][0] === true) 체크수++;
       }
     } catch (e) {}
-    if (체크수 && !_pr_ask_(
+    /*  ★ 체크만 보고 물으면 안 된다 ★  (2026-10-12)
+        손으로 고친 짝이 사라지는데 체크가 0이면 묻지 않고 지웠다.
+        둘 중 하나라도 있으면 묻는다.                                    */
+    if ((체크수 || 사라질것.length) && !_pr_ask_(
       '📋 비교표 다시 만들기',
-      '「' + _PR_TAB_ + '」 탭에 체크가 ' + 체크수 + '개 있습니다.\n' +
-      '다시 만들면 그 체크가 ★모두 지워집니다★.',
+      (체크수 ? '「' + _PR_TAB_ + '」 탭에 체크가 ' + 체크수 + '개 있습니다 — 다시 만들면 ★지워집니다★.\n\n' : '') +
+      (사라질것.length
+        ? '★ 손으로 고치신 짝 ' + 사라질것.length + '개가 새 셈에 없습니다 ★\n' +
+          '   다시 만들면 ★원래의 (틀린) 짝으로 돌아갑니다★.\n' +
+          '   ' + 사라질것.slice(0, 15).join('\n   ') +
+          (사라질것.length > 15 ? '\n   … 그 밖 ' + (사라질것.length - 15) + '개' : '') + '\n\n'
+        : '') +
+      '옛 탭은 「' + _PR_TAB_ + '_이전」 에 숨겨 남깁니다 — 거기서 다시 옮기실 수 있습니다.',
       정말, 'partnerPriceRaiseBuildNow')) return;
   }
+
+  //  ★ 지우기 전에 통째로 남긴다 ★ 사라지는 것이 없게
+  var 백업이름 = _pr_backupTab_(ss, tab);
 
   if (tab) tab.clear(); else tab = ss.insertSheet(_PR_TAB_);
   tab.getRange(1, 1, 1, _PR_HEADERS_.length).setValues([_PR_HEADERS_])
@@ -897,6 +984,10 @@ function _pr_build_(미리, 정말) {
 
   _pr_say_(
     "📋 비교표를 만들었습니다 — 「" + _PR_TAB_ + "」\n\n" +
+    (백업이름 ? "이전 탭은 「" + 백업이름 + "」 에 숨겨 두었습니다.\n" : "") +
+    (사라질것.length ? "그중 손으로 고치신 짝 " + 사라질것.length + "개는 새 셈으로 돌아갔습니다 —\n" +
+      "거기서 다시 옮기십시오.\n" : "") +
+    (백업이름 ? "\n" : "") +
     "단가표 " + _PR_PRICE_.length + "줄 → 비교 " + 셈.줄 + "줄\n\n" +
     "  ①배운짝 " + 셈.배움 + "  ·  ②이름·낱말 " + 셈.이름 +
     "  ·  ③값만 " + 셈.값 + "  ·  못 찾음 " + 셈.없음 +
