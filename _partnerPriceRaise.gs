@@ -526,27 +526,6 @@ function _pr_loadProducts_() {
   return out;
 }
 
-/**
- * 이 품목이 그 업체 것인가.
- *
- * ★ 코드 머리로 짐작하지 않는다 ★  (2026-10-12)
- * > 「jh만 있는게 아니니까 BF도 FP도 있으니까 … 콤콤은 CC 도 있어」
- *
- * 전에는 「구매처가 비면 정희 + JH 코드만」이라고 가렸다. 구매처가 적힌
- * 품목을 세어 보니 그 짐작이 셋 다 틀렸다 —
- *   JH   정희 67 · 콤콤 1   ★섞여 있다★ (JHNMSET 은 콤콤 구냉면이다)
- *   BF   정희  4 · 콤콤 22  ★섞여 있다★ (오히려 콤콤이 많다)
- *   MASL 정희 27 · 콤콤 0   정희인데 JH 가 아니다 — 통째로 놓쳤다
- *   CC·FP 콤콤만            콤콤은 아예 통과가 불가능했다
- *
- * ★ 모르는 것과 아닌 것은 다르다 ★ 구매처가 비었으면 ★모르는★ 것이다.
- * 막지 않는다 — 대신 ★자동 체크를 켜지 않는다★(아래 켜기 조건).
- * 짝은 보여 주되 돈은 사람이 켤 때만 움직인다.
- */
-function _pr_isVendor_(u, 업체) {
-  if (!u.vendor) return true;          // 모른다 — 막지 않는다
-  return u.vendor.indexOf(업체) >= 0;
-}
 
 /* ─────────────────────────────────────────────────────────────
    맞대기 — 길 셋
@@ -623,20 +602,70 @@ function _pr_ledgerPriceOk_(원장단가, 종전) {
  * ②로 찾은 것은 근거에 「구매처모름」을 달아 눈에 띄게 하고, 켜기 조건이
  * 저절로 안 켜 준다.
  */
+/**  정희와 콤콤은 품목이 섞여 있다 — 서로 자매로 본다. */
+function _pr_isSister_(구매처) {
+  var v = String(구매처 || "");
+  return v.indexOf("정희") >= 0 || v.indexOf("콤콤") >= 0;
+}
+
+/**
+ * ⓞ고친짝 — 사람이 못 박은 짝. ★어떤 거르기보다 앞선다★.
+ * 못 찾으면 null 을 돌려주어 보통 셈으로 넘어간다.
+ */
+function _pr_matchFix_(p, prods) {
+  var 업체 = p[0], 품명 = p[2];
+  var 고친 = _PR_FIX_[업체 + "|" + String(품명 == null ? "" : 품명).trim()];
+  if (!고친 || !고친.length) return null;
+  var 본0 = [], 빠진 = [];
+  for (var i = 0; i < 고친.length; i++) {
+    var 찾 = null;
+    for (var j = 0; j < prods.length; j++) {
+      if (prods[j].code === 고친[i]) { 찾 = prods[j]; break; }
+    }
+    if (찾) 본0.push({ u: 찾, 원장: "" }); else 빠진.push(고친[i]);
+  }
+  /*  ★ 못 찾은 코드를 조용히 버리지 않는다 ★ 상품정보에서 코드가 바뀌면
+      여기만 옛 코드로 남는다. 로그에 적어 두면 다음에 보인다.        */
+  if (빠진.length) Logger.log("[ⓞ고친짝] 상품정보에 없는 코드 — " +
+    업체 + " · " + 품명 + " · " + 빠진.join(", "));
+  return 본0.length ? { 근거: "ⓞ고친짝", 목록: 본0 } : null;
+}
+
 function _pr_match_(p, prods) {
   var 업체0 = p[0];
-  var 아는것 = [], 빈칸 = [];
+
+  /*  ★★ ⓞ고친짝은 어떤 거르기보다 앞선다 ★★  (2026-10-12)
+      겉을 씌우면서 구매처 거르기가 ⓞ보다 앞서 버렸다. 그래서 내가
+      _PR_FIX_ 에 못 박은 「감자탕뚜껑 → MAJHG0022」가 ★새 셈에서 사라졌다★
+      — MAJHG0022 의 구매처가 콤콤인데 단가표 「감자탕뚜껑」은 정희다.
+      사람이 못 박은 것은 거르지 않는다. 그게 ⓞ의 뜻이다.            */
+  var 고친짝 = _pr_matchFix_(p, prods);
+  if (고친짝) return 고친짝;
+
+  /*  ★ 정희와 콤콤은 섞여 있다 ★  상품정보 구매처가 단가표 업체와 자주
+      어긋난다 — 정희 단가표의 짝이 콤콤 품목이고 그 반대도 있다
+      (69호·84호·21호가 그래서 통째로 사라질 뻔했다).
+      그래서 ★세 번★ 돌린다. 뒤 단계는 앞이 못 찾을 때만 — 보태기만 한다. */
+  var 같음 = [], 자매 = [], 빈칸 = [];
   for (var t = 0; t < prods.length; t++) {
     var 맞 = _pr_vendorFit_(prods[t], 업체0);
-    if (맞 === "같음") 아는것.push(prods[t]);
+    if (맞 === "같음") 같음.push(prods[t]);
     else if (맞 === "빈칸") 빈칸.push(prods[t]);
+    else if (_pr_isSister_(prods[t].vendor)) 자매.push(prods[t]);
   }
-  var 첫 = _pr_match1_(p, 아는것);
-  if (첫.목록.length) return 첫;
-  if (!빈칸.length) return 첫;
-  var 둘 = _pr_match1_(p, 아는것.concat(빈칸));
-  if (!둘.목록.length) return 첫;      // 넓혀도 못 찾으면 처음 까닭을 그대로
-  return { 근거: 둘.근거 + "(구매처모름)", 목록: 둘.목록 };
+  var 판들 = [
+    { 들: 같음, 꼬리: "" },
+    { 들: 같음.concat(자매), 꼬리: "(구매처 " + (업체0 === "정희" ? "콤콤" : "정희") + ")" },
+    { 들: 같음.concat(자매).concat(빈칸), 꼬리: "(구매처모름)" },
+  ];
+  var 첫 = null;
+  for (var g = 0; g < 판들.length; g++) {
+    if (!판들[g].들.length) continue;
+    var r = _pr_match1_(p, 판들[g].들);
+    if (!첫) 첫 = r;
+    if (r.목록.length) return 판들[g].꼬리 ? { 근거: r.근거 + 판들[g].꼬리, 목록: r.목록 } : r;
+  }
+  return 첫 || { 근거: "✖ 못 찾음", 목록: [] };
 }
 
 function _pr_match1_(p, prods) {
@@ -644,24 +673,6 @@ function _pr_match1_(p, prods) {
   var key = _pr_norm_(품명);
   var i, u;
 
-  /*  ⓞ 사람이 바로잡은 짝 — 셈보다 앞선다. 한 값에 주인은 하나고,
-      이 값의 주인은 사람이다([[one-value-one-owner]]).               */
-  var 고친 = _PR_FIX_[업체 + "|" + String(품명 == null ? "" : 품명).trim()];
-  if (고친 && 고친.length) {
-    var 본0 = [], 빠진 = [];
-    for (i = 0; i < 고친.length; i++) {
-      var 찾 = null;
-      for (var j0 = 0; j0 < prods.length; j0++) {
-        if (prods[j0].code === 고친[i]) { 찾 = prods[j0]; break; }
-      }
-      if (찾) 본0.push({ u: 찾, 원장: "" }); else 빠진.push(고친[i]);
-    }
-    /*  ★ 못 찾은 코드를 조용히 버리지 않는다 ★ 상품정보에서 코드가 바뀌면
-        여기만 옛 코드로 남는다. 로그에 적어 두면 다음에 보인다.        */
-    if (빠진.length) Logger.log("[ⓞ고친짝] 상품정보에 없는 코드 — " +
-      업체 + " · " + 품명 + " · " + 빠진.join(", "));
-    if (본0.length) return { 근거: "ⓞ고친짝", 목록: 본0 };
-  }
 
   //  ① 배운짝
   var 짝 = [];
@@ -705,7 +716,6 @@ function _pr_match1_(p, prods) {
   var 이름후 = [];
   for (i = 0; i < prods.length; i++) {
     u = prods[i];
-    if (!_pr_isVendor_(u, 업체)) continue;
     if (key && u.norm.indexOf(key) >= 0) 이름후.push({ u: u, 원장: "" });
   }
   if (이름후.length && 이름후.length <= 16) return { 근거: "②이름", 목록: 이름후 };
@@ -715,8 +725,7 @@ function _pr_match1_(p, prods) {
     var ws = _pr_words_(품명), sz = _pr_size_(품명), 낱후 = [];
     for (i = 0; i < prods.length; i++) {
       u = prods[i];
-      if (!_pr_isVendor_(u, 업체)) continue;
-      if (u.net == null || Math.abs(u.net - 종전) >= 0.51) continue;
+        if (u.net == null || Math.abs(u.net - 종전) >= 0.51) continue;
       var 겹 = false;
       for (var k2 = 0; k2 < ws.length; k2++) if (u.norm.indexOf(ws[k2]) >= 0) { 겹 = true; break; }
       if (!겹) continue;
@@ -732,8 +741,7 @@ function _pr_match1_(p, prods) {
     var 값후 = [];
     for (i = 0; i < prods.length; i++) {
       u = prods[i];
-      if (!_pr_isVendor_(u, 업체)) continue;
-      if (u.net != null && Math.abs(u.net - 종전) < 0.51) 값후.push({ u: u, 원장: "" });
+        if (u.net != null && Math.abs(u.net - 종전) < 0.51) 값후.push({ u: u, 원장: "" });
     }
     if (값후.length && 값후.length <= 3) return { 근거: "③값만(약함)", 목록: 값후 };
     if (이름후.length) return { 근거: "✖ 후보 " + 이름후.length + "줄 — 너무 많음", 목록: [] };
