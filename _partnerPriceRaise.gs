@@ -36,6 +36,17 @@
  * ══════════════════════════════════════════════════════════════
  */
 
+/**
+ * 줄 색.
+ * > 「이게 적용된것들은 셀칼라가 노란색으로 표시 되게 해줘」 (2026-10-11)
+ *
+ * 적용 결과는 「적용결과」 칸 글만으로는 357줄 속에서 안 보인다. 줄째로 칠한다.
+ * 노랑은 자사몰 로고에서 뽑은 브랜드색이다([[pack2u-brand-yellow]]).
+ * 못 찾은 줄은 따로 칠한다 — 체크해도 «적용이 안 되는» 줄이라 미리 보여야 한다.
+ */
+var _PR_DONE_BG_ = "#FDB813";   // 적용됨 — 브랜드 노랑
+var _PR_MISS_BG_ = "#FCE5CD";   // 우리코드를 못 찾음 — 손으로 넣어야 한다
+
 var _PR_TAB_ = "10월인상단가";
 var _PR_LOG_TAB_ = "단가변경이력";
 var _PR_PRODUCT_TAB_ = "상품정보";
@@ -545,6 +556,23 @@ function _pr_setPrice_(비고) {
      그러니 창이 없으면 실행로그에 적고, 시트는 ID 로 연다.
    ───────────────────────────────────────────────────────────── */
 
+/** 1 → A · 19 → S. 줄을 범위 글로 칠할 때 쓴다 */
+function _pr_colLetter_(n) {
+  var t = "";
+  while (n > 0) { var m = (n - 1) % 26; t = String.fromCharCode(65 + m) + t; n = (n - m - 1) / 26; }
+  return t;
+}
+
+/** 줄 여럿을 한 번에 칠한다. 한 줄씩 부르면 357번이라 느리다 */
+function _pr_paint_(tab, 줄들, 색) {
+  if (!줄들 || !줄들.length) return;
+  var 끝열 = _pr_colLetter_(_PR_HEADERS_.length);
+  var 자리 = [];
+  for (var i = 0; i < 줄들.length; i++) 자리.push("A" + 줄들[i] + ":" + 끝열 + 줄들[i]);
+  try { tab.getRangeList(자리).setBackground(색); }
+  catch (e) { Logger.log("[색] 칠하지 못했습니다 — " + e.message); }
+}
+
 /** 창이 있으면 창에, 없으면 실행로그에 */
 function _pr_say_(글) {
   Logger.log(글);
@@ -609,6 +637,9 @@ function _pr_build_(미리, 정말) {
   var prods = _pr_loadProducts_();
   if (!prods.length) { _pr_say_("상품정보에서 품목을 못 읽었습니다."); return; }
 
+  /*  못 찾은 줄의 «자리»와, 그중 단가가 «오른» 것. 오른 것은 그대로 두면
+      우리가 옛 단가로 사게 된다 — 보고에서 따로 말한다.                  */
+  var 못찾은줄 = [], 못찾고오름 = [];
   var rows = [], 셈 = { 배움: 0, 이름: 0, 값: 0, 없음: 0, 줄: 0 };
 
   for (var i = 0; i < _PR_PRICE_.length; i++) {
@@ -625,8 +656,14 @@ function _pr_build_(미리, 정말) {
     else 셈.없음++;
 
     if (!m.목록.length) {
+      /*  ★ 못 찾은 줄도 표에 넣는다 ★ 빼 버리면 「없는 일」이 된다.
+          체크해도 적용은 안 된다(쓸 자리가 없다) — 사장님이 우리코드를
+          손으로 넣으면 그때 적용된다. 그 줄을 따로 칠해 눈에 띄게 한다.   */
       rows.push([false, 업체, 품명, 박스, 종전, 인상, 차, 율, 동결 ? "동결" : "",
-        비고, "", "", "", "", "", "", m.근거, "", ""]);
+        비고, "", "", "", "", "", "", m.근거, "", "코드를 넣어 주세요"]);
+      못찾은줄.push(rows.length + 1);          // 머리글이 1행이라 +1
+      if (차 !== "" && Number(차) > 0) 못찾고오름.push(
+        업체 + " · " + 품명 + " · " + (박스 || "") + " · " + 종전 + " → " + 인상 + " (+" + 차 + ")");
       셈.줄++;
       continue;
     }
@@ -724,6 +761,9 @@ function _pr_build_(미리, 정말) {
     tab.getRange(2, _PR_C.차액, rows.length, 1).setFontColors(색);
     tab.getRange(2, _PR_C.인상률, rows.length, 1).setNumberFormat("0.0");
   }
+  //  ★ 못 찾은 줄을 칠한다 ★ 체크해도 적용이 안 되는 줄이라 먼저 보여야 한다
+  _pr_paint_(tab, 못찾은줄, _PR_MISS_BG_);
+
   tab.autoResizeColumns(1, _PR_HEADERS_.length);
   tab.setColumnWidth(_PR_C.우리상품명, 300);
   tab.setColumnWidth(_PR_C.업체품명, 170);
@@ -736,6 +776,14 @@ function _pr_build_(미리, 정말) {
     "  ·  ③값만 " + 셈.값 + "  ·  못 찾음 " + 셈.없음 + "\n\n" +
     "A열 「적용」에 ①②만 미리 켜 두었습니다.\n" +
     "③값만·못 찾음·소분·세트는 꺼져 있습니다 — 보시고 켜 주세요.\n\n" +
+    (못찾고오름.length
+      ? "★ 못 찾았는데 단가가 오른 것 " + 못찾고오름.length + "개 ★\n" +
+        "   그대로 두면 옛 단가로 사게 됩니다. 우리코드를 손으로 넣어 주세요.\n" +
+        못찾고오름.slice(0, 20).join("\n   ") +
+        (못찾고오름.length > 20 ? "\n   … 그 밖 " + (못찾고오름.length - 20) + "개" : "") + "\n\n"
+      : "") +
+    "못 찾은 줄은 연한 주황으로 칠했습니다 — 「우리코드」 칸에 이카운트코드를\n" +
+    "넣고 체크하시면 적용됩니다(적용후 단가는 인상단가로 저절로 셉니다).\n\n" +
     "켠 뒤 🧪 미리보기로 먼저 확인하시면 좋습니다."
   );
 }
@@ -780,15 +828,41 @@ function _pr_applyProduct_(미리, 정말) {
     var v = got.줄[i].v;
     var code = String(v[_PR_C.우리코드 - 1] || "").trim();
     var 적용후 = v[_PR_C.적용후 - 1];
+    var 손으로 = false;
+
+    /*  ★ 못 찾은 줄에 우리코드를 «손으로» 넣었을 때 ★  (2026-10-11)
+        > 「미확인을 내가 찾아서 적용시키고 싶으면 … 이카운트코드를 넣어주면
+        >  적용되게 해줘」
+
+        Build 가 못 찾은 줄은 우리코드·적용후를 다 비워 둔다. 사장님이
+        우리코드만 넣으면 그다음 검사(「적용후 단가가 비어 있습니다」)에서
+        또 걸렸다 — 코드를 넣어도 안 되는 셈이었다.
+        적용후가 비어 있으면 ★인상단가★ 로 셈한다. 단가표의 인상단가는
+        낱개값이다(MASLJH0005: 종전 57 = 우리 개당별도가 57, 종전단가일치 O).
+
+        ★ 세트·소분은 셈이 다르다 ★ 세트는 몸통+뚜껑 합이고 소분은 따로
+        센다. 그 둘은 인상단가를 그대로 쓰면 틀린다 — 아래에서 막는다.      */
+    if ((적용후 === "" || 적용후 == null) && code) {
+      var 인상칸 = v[_PR_C.인상 - 1];
+      if (인상칸 !== "" && 인상칸 != null && Number(인상칸) > 0) {
+        적용후 = Number(인상칸);
+        손으로 = true;
+      }
+    }
+
     var 사유 = "";
     if (!code) 사유 = "우리코드가 없습니다";
     else if (!byCode[code]) 사유 = "상품정보에서 " + code + " 를 못 찾았습니다";
+    /*  ★ 손으로 넣은 코드가 세트·소분이면 멈춘다 ★ 인상단가를 그대로 쓰면
+        틀린 값이 들어간다. 모르면 쓰지 않는다 — 사람이 값을 정해야 한다.   */
+    else if (손으로 && (byCode[code].kind === "세트" || byCode[code].kind === "소분"))
+      사유 = byCode[code].kind + " 는 셈이 달라 인상단가를 그대로 못 씁니다 — 적용후 칸에 값을 직접 넣어 주세요";
     else if (적용후 === "" || 적용후 == null) 사유 = "적용후 단가가 비어 있습니다";
     else if (!(Number(적용후) > 0)) 사유 = "적용후 단가가 0 이하입니다";
     else if (byCode[code].net != null && Number(byCode[code].net) === Number(적용후)) 사유 = "이미 같은 값입니다";
 
     if (사유) { 건너뜀.push(사유); 결과.push([("건너뜀 — " + 사유)]); continue; }
-    바꿀것.push({ 행: got.줄[i].행, p: byCode[code], 새값: Number(적용후) });
+    바꿀것.push({ 행: got.줄[i].행, p: byCode[code], 새값: Number(적용후), 손으로: 손으로 });
     결과.push([""]);
   }
 
@@ -797,7 +871,8 @@ function _pr_applyProduct_(미리, 정말) {
       "체크 " + got.줄.length + "줄 중 바꿀 것 " + 바꿀것.length + "줄 · 건너뜀 " + 건너뜀.length + "줄", ""];
     for (i = 0; i < Math.min(바꿀것.length, 25); i++) {
       글.push("  " + 바꿀것[i].p.code + "  " + 바꿀것[i].p.name.substring(0, 28) +
-        "   " + 바꿀것[i].p.net + " → " + 바꿀것[i].새값);
+        "   " + 바꿀것[i].p.net + " → " + 바꿀것[i].새값 +
+        (바꿀것[i].손으로 ? "   ← 손으로 넣은 코드" : ""));
     }
     if (바꿀것.length > 25) 글.push("  … 그리고 " + (바꿀것.length - 25) + "줄 더");
     _pr_say_(글.join("\n"));
@@ -833,12 +908,21 @@ function _pr_applyProduct_(미리, 정말) {
   _pr_writeLog_(이력);
   SpreadsheetApp.flush();
 
+  var 칠할줄 = [];
   for (i = 0; i < 바꿀것.length; i++) {
     var b = 바꿀것[i];
     ptab.getRange(b.p.row, _PR_P_NET_).setValue(b.새값);
     ptab.getRange(b.p.row, _PR_P_GROSS_).setValue(Math.round(b.새값 * _PR_VAT_ * 100) / 100);
-    got.tab.getRange(b.행, _PR_C.결과).setValue("✅ " + b.p.net + " → " + b.새값);
+    /*  손으로 코드를 넣어 셈한 줄은 그 값을 칸에도 적어 둔다 — 무엇이
+        들어갔는지 나중에 되짚을 수 있어야 한다.                          */
+    if (b.손으로) got.tab.getRange(b.행, _PR_C.적용후).setValue(b.새값);
+    got.tab.getRange(b.행, _PR_C.결과).setValue("✅ " + b.p.net + " → " + b.새값 +
+      (b.손으로 ? " (손으로 넣은 코드)" : ""));
+    칠할줄.push(b.행);
   }
+
+  //  ★ 적용된 줄을 노랗게 ★ 「적용결과」 글만으로는 357줄 속에서 안 보인다
+  _pr_paint_(got.tab, 칠할줄, _PR_DONE_BG_);
 
   //  건너뛴 줄도 까닭을 적는다 — 조용히 넘어가면 「됐겠지」가 된다
   for (i = 0; i < got.줄.length; i++) {
