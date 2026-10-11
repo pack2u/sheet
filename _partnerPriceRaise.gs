@@ -1525,6 +1525,44 @@ function partnerPriceRaiseCheckSets() {
  * 박스수량이 적혀 있으면 한 겹 더 거른다 — 같은 단가라도 박스가 다르면
  * 다른 물건이다.
  */
+/**
+ * 두 이름이 ★낱말 하나라도★ 겹치나.
+ *
+ * ★ 왜 생겼나 ★  (2026-10-12)
+ * 단가와 박스수량만 보고 채웠더니 이런 것이 나왔다 —
+ *   정희 · 밀폐20155  →  JH 158파이 삼계탕 중 400개---몸통  (73원 · 400개)
+ * 밀폐용기인데 삼계탕을 집었다. 단가 73 과 박스 400 이 ★우연히★ 같았다.
+ * 180줄 × 3,000품목이면 우연은 반드시 나온다.
+ *
+ * 숫자 덩어리(20155·4칸)와 두 글자 이상 낱말(소스·용기·뚜껑)을 뽑아
+ * 하나라도 겹치는지 본다. 안 겹치면 ★채우지 않고 적어만 둔다★ —
+ * 없애지는 않는다. 맞는 것일 수도 있고, 그건 사람이 안다.
+ */
+function _pr_tokens_(글) {
+  var t = String(글 == null ? "" : 글).toLowerCase();
+  var 모음 = {};
+  /*  ★ 숫자 덩어리는 세 자리부터 ★ 20155·1200 은 뜻이 있고 1·4 는 없다 */
+  var 숫자 = t.match(/[0-9]{3,}/g) || [];
+  for (var i = 0; i < 숫자.length; i++) 모음[숫자[i]] = true;
+  /*  ★ 한글은 띄어쓰기가 없다 ★  (2026-10-12)
+      처음엔 낱말 통째로 재다가 「칸사각소스용기」와 「칸소스용기」가
+      한 덩어리씩이라 안 겹쳤다 — 맞는 짝을 떨어뜨릴 뻔했다.
+      두 글자씩 겹쳐 가며 나눈다: 소스·용기·사각 같은 것이 걸린다.      */
+  var 낱말 = t.match(/[가-힣a-z]{2,}/g) || [];
+  for (i = 0; i < 낱말.length; i++) {
+    var w = 낱말[i];
+    for (var j = 0; j + 2 <= w.length; j++) 모음[w.substring(j, j + 2)] = true;
+  }
+  return 모음;
+}
+
+/**  겹치는 낱말을 돌려준다. 없으면 빈 배열. */
+function _pr_shareTokens_(가, 나) {
+  var A = _pr_tokens_(가), B = _pr_tokens_(나), 같은 = [];
+  for (var k in A) if (B[k]) 같은.push(k);
+  return 같은;
+}
+
 function partnerPriceRaiseSuggest() { _pr_suggest_(false); }
 /*  편집기에서 쓰는 이름 — 이 이름을 고르는 것이 「예」를 누르는 것이다 */
 function partnerPriceRaiseSuggestNow() { _pr_suggest_(true); }
@@ -1544,7 +1582,12 @@ function _pr_suggest_(정말) {
     var v = vals[i], 행 = i + 2;
     //  짝을 이미 찾은 줄·손으로 적은 줄·미판매는 건드리지 않는다
     if (String(v[_PR_C.근거 - 1] || "").indexOf("✖") !== 0) { 건너++; continue; }
-    if (String(v[_PR_C.우리코드 - 1] || "").trim()) { 건너++; continue; }
+    /*  ★ 내가 채운 줄은 다시 볼 수 있어야 한다 ★ 규칙을 고쳤는데 「이미
+        코드가 있다」고 건너뛰면 틀린 채움이 영영 남는다. 내가 적은 표시(🔎)가
+        있고 아직 체크를 안 켜신 줄만 다시 본다 — 사람이 손댄 줄은 안 건드린다. */
+    var 내가적은것 = String(v[_PR_C.결과 - 1] || "").indexOf("🔎") === 0 &&
+      v[_PR_C.적용 - 1] !== true;
+    if (String(v[_PR_C.우리코드 - 1] || "").trim() && !내가적은것) { 건너++; continue; }
 
     var 업체 = String(v[_PR_C.업체 - 1] || "").trim();
     var 종전 = _pr_num_(v[_PR_C.종전 - 1]);
@@ -1562,9 +1605,33 @@ function _pr_suggest_(정말) {
       후보.push(u);
     }
 
-    if (!후보.length) { 없음++; continue; }
-    if (후보.length === 1) 채움.push({ 행: 행, 업체: 업체, 품명: String(v[_PR_C.업체품명 - 1] || ""), u: 후보[0] });
-    else 여럿.push({ 행: 행, 업체: 업체, 품명: String(v[_PR_C.업체품명 - 1] || ""), 들: 후보 });
+    /*  ★ 이름이 한 낱말도 안 겹치면 채우지 않는다 ★
+        단가·박스가 같은 것은 우연히도 생긴다(밀폐20155 → 158파이 삼계탕).
+        겹치는 것이 있으면 그쪽만 쓰고, 하나도 없으면 「적어만 두는」 쪽으로. */
+    var 품명0 = String(v[_PR_C.업체품명 - 1] || "");
+    var 겹친것 = [];
+    for (var z = 0; z < 후보.length; z++) {
+      var 같은낱말 = _pr_shareTokens_(품명0, 후보[z].name);
+      if (같은낱말.length) 겹친것.push({ u: 후보[z], 낱말: 같은낱말 });
+    }
+
+    if (!후보.length) {
+      없음++;
+      /*  전에 채웠는데 이제 후보가 하나도 없다 — 그 채움은 틀린 것이다 */
+      if (내가적은것) 여럿.push({ 행: 행, 업체: 업체, 품명: 품명0,
+        내가적은것: true, 들: [], 까닭: "후보 없음 — 전에 채운 것을 지웁니다" });
+      continue;
+    }
+    if (겹친것.length === 1) {
+      채움.push({ 행: 행, 업체: 업체, 품명: 품명0, u: 겹친것[0].u, 낱말: 겹친것[0].낱말 });
+    } else if (겹친것.length > 1) {
+      여럿.push({ 행: 행, 업체: 업체, 품명: 품명0, 내가적은것: 내가적은것,
+        들: 겹친것.map(function (x) { return x.u; }), 까닭: "이름도 겹침" });
+    } else {
+      /*  단가·박스만 같다 — 우연일 수 있다. 채우지 않고 적어만 둔다 */
+      여럿.push({ 행: 행, 업체: 업체, 품명: 품명0, 내가적은것: 내가적은것,
+        들: 후보, 까닭: "단가만 같음" });
+    }
   }
 
   if (!채움.length && !여럿.length) {
@@ -1604,11 +1671,22 @@ function _pr_suggestWrite_(tab, 채움, 여럿, 글) {
     tab.getRange(c.행, _PR_C.우리상품명).setValue(c.u.name);
     tab.getRange(c.행, _PR_C.현재별도).setValue(c.u.net);
     tab.getRange(c.행, _PR_C.값일치).setValue("O");
-    tab.getRange(c.행, _PR_C.결과).setValue("🔎 단가가 같은 품목 하나 — 보시고 체크해 주세요");
+    tab.getRange(c.행, _PR_C.결과).setValue("🔎 단가·이름이 맞는 품목 하나 (겹친 낱말: " +
+      (c.낱말 || []).slice(0, 4).join("·") + ") — 보시고 체크해 주세요");
   }
   for (i = 0; i < 여럿.length; i++) {
     var m = 여럿[i];
-    tab.getRange(m.행, _PR_C.결과).setValue("🔎 단가가 같은 것 " + m.들.length + "개: " +
+    /*  ★ 전에 내가 잘못 채운 것을 지운다 ★  (2026-10-12)
+        규칙을 고쳤는데 옛 채움이 그대로 남으면 틀린 코드가 영영 남는다.
+        내가 적은 줄(🔎)이고 아직 체크를 안 켜신 줄만 지운다 —
+        사장님이 손대신 줄은 건드리지 않는다.                           */
+    if (m.내가적은것) {
+      tab.getRange(m.행, _PR_C.우리코드).clearContent();
+      tab.getRange(m.행, _PR_C.우리상품명).clearContent();
+      tab.getRange(m.행, _PR_C.현재별도).clearContent();
+      tab.getRange(m.행, _PR_C.값일치).clearContent();
+    }
+    tab.getRange(m.행, _PR_C.결과).setValue("🔎 " + (m.까닭 || "후보") + " " + m.들.length + "개: " +
       m.들.map(function (x) { return x.code + "(" + x.name.substring(0, 14) + ")"; }).slice(0, 4).join(" / "));
   }
   SpreadsheetApp.flush();
