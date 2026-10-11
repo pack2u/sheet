@@ -82,8 +82,16 @@ function _orc_scan_(날짜없는것도) {
       if (!이름칸 && !품목칸) continue;
 
       /*  ★ 반품송장이 붙은 줄은 닫지 않는다 ★ 수거가 돌고 있던 건이다.
-          (실측으로는 이 일곱 탭에 0건이지만, 생기면 사람이 봐야 한다)    */
-      var 송장 = col.invoice >= 0 ? String(row[col.invoice] || "").trim() : "";
+
+          ★★ col.invoice 가 아니다 ★★  (2026-10-11 · 마른 돌리기에서 걸렸다)
+            col.invoice       = /원송장|송장번호/ (반품송장 제외) → ★원주문★ 송장
+            col.returnInvoice = /반품송장|회수송장/              → 반품 송장
+          처음에 col.invoice 를 봤다. 원주문 송장은 거의 다 차 있어서
+          ★1,083줄이 통째로 건너뛰어졌다★ — 591 을 찾아야 하는데 9줄만 나왔다.
+          202601~04 가 0줄이던 것도 같은 까닭이다.
+          마른 돌리기를 먼저 돌린 덕에 ★쓰기 전에★ 잡았다.               */
+      if (col.returnInvoice < 0) { 탭별[이름] = { 반품송장칸못찾음: true }; break; }
+      var 송장 = String(row[col.returnInvoice] || "").trim();
       if (송장) { 송장있음++; continue; }
 
       var ymd = col.date >= 0 ? _cs_ledgerYmdFromCell_(row[col.date]) : "";
@@ -92,10 +100,17 @@ function _orc_scan_(날짜없는것도) {
         if (!날짜없는것도) continue;      // 기본은 안 넣는다 — 사장님이 591 이라 하셨다
       }
 
+      /*  ★ 옛 값을 지우지 않는다 ★  (2026-10-11 · 표본에서 보였다)
+          옛 탭의 상태 칸(A열)에는 업체코드가 들어 있는 줄이 있다 —
+          「뉴파츠」·「태양」·「아주팩」. 그 건을 어느 업체로 돌렸나를 적어
+          둔 것이다([[hold-action-cell-grammar]]). 덮으면 그 정보가 사라진다.
+          그래서 괄호로 데리고 간다: 「완료-묵은건종결(뉴파츠)」.
+          앞이 「완료」로 시작하니 완료 판정은 그대로 걸린다.              */
+      var 적을말 = 상태 ? (_ORC_MARK_ + "(" + 상태 + ")") : _ORC_MARK_;
       n++;
       모두.push({
         탭: 이름, 행: r + 1, 상태칸: col.status + 1, 날짜칸: col.date + 1,
-        옛상태: 상태, 날: ymd, 이름: 이름칸, 품목: 품목칸.slice(0, 24)
+        옛상태: 상태, 적을말: 적을말, 날: ymd, 이름: 이름칸, 품목: 품목칸.slice(0, 24)
       });
     }
     탭별[이름] = { n: n };
@@ -111,6 +126,7 @@ function _orc_report_(결과, 머리) {
     if (o.없는탭) { L.push("  " + k + " — 탭이 없습니다"); continue; }
     if (o.머리글못찾음) { L.push("  " + k + " — ★머리글(반품접수날짜)을 못 찾았습니다 (건너뜀)"); continue; }
     if (o.상태칸못찾음) { L.push("  " + k + " — ★상태 칸을 못 찾았습니다 (건너뜀)"); continue; }
+    if (o.반품송장칸못찾음) { L.push("  " + k + " — ★반품송장 칸을 못 찾았습니다 (건너뜀)"); continue; }
     L.push("  " + k + " — " + o.n + "줄");
   }
   L.push("");
@@ -127,7 +143,7 @@ function _orc_report_(결과, 머리) {
   for (var i = 0; i < 결과.모두.length && i < 10; i++) {
     var x = 결과.모두[i];
     L.push("  " + x.탭 + "!" + x.행 + " · " + (x.날 || "(날짜없음)") + " · " + x.이름 +
-           " · 상태「" + (x.옛상태 || "(빈칸)") + "」→「" + _ORC_MARK_ + "」· " + x.품목);
+           " · 상태「" + (x.옛상태 || "(빈칸)") + "」→「" + x.적을말 + "」· " + x.품목);
   }
   return L.join("\n");
 }
@@ -192,7 +208,7 @@ function csOldReturnCloseApply(opt) {
   for (var j = 0; j < 결과.모두.length; j++) {
     var y = 결과.모두[j];
     try {
-      ss.getSheetByName(y.탭).getRange(y.행, y.상태칸).setValue(_ORC_MARK_);
+      ss.getSheetByName(y.탭).getRange(y.행, y.상태칸).setValue(y.적을말 || _ORC_MARK_);
       쓴것++;
     } catch (e) { 실패.push(y.탭 + "!" + y.행 + " " + e.message); }
     if (쓴것 % 100 === 0) SpreadsheetApp.flush();
@@ -239,7 +255,10 @@ function csOldReturnCloseUndo(opt) {
       var cell = ss.getSheetByName(탭).getRange(행, 칸);
       /*  ★ 지금 값이 우리가 적은 낱말일 때만 되돌린다 ★ 그 사이에 사람이
           다른 값을 넣었으면 그것을 덮으면 안 된다.                      */
-      if (String(cell.getDisplayValue() || "").trim() !== _ORC_MARK_) { 건너뜀++; continue; }
+      /*  괄호로 옛 값을 데려갔으므로 「완료-묵은건종결」로 ★시작하는지★ 로 본다.
+          그냽 같은지로 보면 「완료-묵은건종결(뉴파츠)」를 못 알아보고 안 되돌린다. */
+      var 지금 = String(cell.getDisplayValue() || "").trim();
+      if (지금.indexOf(_ORC_MARK_) !== 0) { 건너뜀++; continue; }
       cell.setValue(옛);       // 빈칸이었으면 빈칸으로
       되돌림++;
     } catch (e) { 건너뜀++; }
