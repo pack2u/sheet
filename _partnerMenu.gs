@@ -355,6 +355,11 @@ function registerPartnerMenu_() {
             「비교하고 확인하고 적용한다」는 이 파트의 결과 같다.              */
         .addSubMenu(
           ui.createMenu("💹 단가 인상 (정희·콤콤)")
+            /*  ★ 미리보기를 ① 위에 둔다 ★  (2026-10-12)
+                메뉴에 없어서 사장님이 편집기에서 돌리셨다. 편집기에는 창이
+                없어 로그로만 나오고, 「실행 중」 표시가 남아 끝난 줄을 모른다.
+                먼저 볼 것이니 먼저 둔다.                                   */
+            .addItem("🧪 ⓞ 비교표 미리보기 (안 만듦)", "partnerPriceRaiseBuildPreview")
             .addItem("📋 ① 비교표 만들기", "partnerPriceRaiseBuild")
             .addSeparator()
             .addItem("🧪 ② 미리보기 (안 바꿈)", "partnerPriceRaisePreview")
