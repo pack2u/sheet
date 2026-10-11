@@ -361,6 +361,7 @@ function registerPartnerMenu_() {
             .addItem("💾 ③ 체크한 줄 — 상품정보 단가 적용", "partnerPriceRaiseApply")
             .addItem("🔗 ④ 체크한 줄 — 누적품목매핑에 쌓기", "partnerPriceRaiseApplyMapping")
             .addSeparator()
+            .addItem("🎨 색 다시 칠하기 (값은 안 바꿈)", "partnerPriceRaiseRecolor")
             .addItem("🧮 세트 = 몸통+뚜껑 점검", "partnerPriceRaiseCheckSets")
         )
         .addSubMenu(
