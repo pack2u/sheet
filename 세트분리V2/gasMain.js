@@ -503,6 +503,12 @@ function ss_실행(opts) {
       : ss_회차확정(지문, grid.length);
     var runKey = 회차.key;
 
+    //  도서산간 조치를 회차 안에서 기억한다 — 옮겨 간 줄의 조치가 사라지지 않게 (ss_섬조치기억_)
+    단계 = ss단계_('도서산간 조치 기억');
+    try { cfg._섬조치 = ss_섬조치기억_(runKey, cfg._섬조치 || {}); } catch (eK) {
+      Logger.log('[도서산간 조치 기억] 실패(탭에 적힌 것만 씀): ' + String(eK && eK.message ? eK.message : eK));
+    }
+
     단계 = ss단계_('보류 조치 걷기');
     var 걷은조치 = ssm_captureManual(runKey);
 
@@ -1073,8 +1079,12 @@ var SS_ROUND_HEADER = ['회차키', '지문', '일자', '회차', '입력행', '
  *
  * ★ 자리는 이름으로 찾는다 ★ SS_ISLAND_HEADER 앞에 네 칸이 더 있다.
  */
+/*  지금 도서산간 두 탭에 «줄이 있는» 열쇠들 — ss_섬조치기억_ 이 「지운 조치」를 가리는 데 쓴다 */
+var SS_섬본열쇠_ = {};
+
 function ss_섬조치걷기_() {
   var out = {};
+  SS_섬본열쇠_ = {};
   var 탭들 = [SS_ROUTE.LOTTE_ISLAND, SS_ROUTE.LOTTE_ISLAND_CONSIGN];
   var iSeq = SS_ISLAND_HEADER.indexOf('순번');
   var iCode = SS_ISLAND_HEADER.indexOf('품목코드');
@@ -1087,16 +1097,108 @@ function ss_섬조치걷기_() {
       var w = Math.max(sh.getLastColumn(), SS_ISLAND_HEADER.length);
       var v = sh.getRange(2, 1, sh.getLastRow() - 1, w).getDisplayValues();
       for (var r = 0; r < v.length; r++) {
-        var a = ssText(v[r][iAct]);
-        if (!a) continue;
         var k = ssText(v[r][iSeq]) + '|' + ssText(v[r][iCode]);
-        if (k !== '|') out[k] = a;
+        if (k === '|') continue;
+        SS_섬본열쇠_[k] = true;
+        var a = ssText(v[r][iAct]);
+        if (a) out[k] = a;
       }
     } catch (e) {
       //  못 읽어도 실행은 계속한다. 조치를 한 번 더 적는 수고일 뿐이다.
     }
   }
   return out;
+}
+
+/**
+ * ★ 도서산간 조치를 «회차 안에서» 기억한다 ★  (2026-10-12)
+ *
+ *   도서산간 탭에 「발송」·「보류」를 적고 ✅ 조치 적용을 누르면 그 줄은 로젠·보류 탭으로
+ *   옮겨 간다. 조치 글자는 도서산간 탭에만 있었으므로 «같이 사라진다». 그래서 같은
+ *   회차를 한 번 더 돌리면(다른 보류를 풀려고 조치 적용을 또 누르면) 그 줄이 다시
+ *   도서산간으로 돌아왔다. v2 자동 실행이 맞대기에서 처음 보여 줬다(261012-1, 14줄).
+ *
+ *   숨김 탭 「도서산간조치기억」에 [회차키 · 열쇠(순번|품목코드) · 조치 · 적은때] 를 둔다.
+ *     · 같은 회차면 기억 + 지금 탭 조치를 합친다
+ *     · 지금 탭에 줄이 «있는» 열쇠는 탭이 이긴다 — 조치를 지우면 기억에서도 지운다
+ *     · 탭에서 사라진 줄(옮겨 간 줄)은 기억이 지킨다
+ *     · 새 회차(새 판매현황)면 기억은 안 쓴다 — 지금까지와 같다
+ *   v2(setsplit-auto)도 이 탭을 같은 규칙으로 읽는다.
+ *
+ * @return 합친 조치표 { 순번|품목코드 : 조치 }
+ */
+var SS_섬조치기억탭 = '도서산간조치기억';
+var SS_섬조치기억머리 = ['회차키', '열쇠', '조치', '적은때'];
+
+function ss_섬조치기억_(runKey, 지금) {
+  var 합 = {};
+  if (!runKey) return 지금 || {};
+  var sh = ssio_sheet(SS_섬조치기억탭, SS_섬조치기억머리);
+  try { if (!sh.isSheetHidden()) sh.hideSheet(); } catch (eH) {}
+  var body = sh.getLastRow() > 1
+    ? sh.getRange(2, 1, sh.getLastRow() - 1, SS_섬조치기억머리.length).getDisplayValues() : [];
+
+  var 남길 = [];
+  var 오늘 = String(runKey).slice(0, 6);
+  for (var i = 0; i < body.length; i++) {
+    var rk = ssText(body[i][0]);
+    if (rk === runKey) { 합[ssText(body[i][1])] = ssText(body[i][2]); continue; }
+    //  다른 회차 것은 그날·전날만 남긴다 — 쌓이기만 하면 탭이 무거워진다
+    if (rk.slice(0, 6) >= ss_전날6_(오늘)) 남길.push(body[i]);
+  }
+  /*  ★ 기억이 비어도 원장이 안다 ★  — 이 탭이 생기기 전 회차(261012-1)나 탭을 지운 경우.
+      그 회차 원장에서 «조치로 갈린 흔적»을 읽어 되찾는다:
+        도서판정이 적혔는데 경로가 로젠택배  → 「발송」 (산간은 원래 일반이라 뺀다)
+        경로 보류 · 보류사유 「도서산간확인」 → 「보류」
+      지금 탭에 줄이 있는 열쇠는 아래에서 탭이 다시 정한다. */
+  try {
+    var 원장 = ssio_ss().getSheetByName(SSIO_TABS.원장);
+    if (원장 && 원장.getLastRow() > 1) {
+      var lh = 원장.getRange(1, 1, 1, 원장.getLastColumn()).getValues()[0];
+      var li = {};
+      for (var h = 0; h < lh.length; h++) { var hn = ssText(lh[h]); if (hn && li[hn] === undefined) li[hn] = h; }
+      var 필요 = ['회차키', '순번', '품목코드', '경로', '보류사유', '도서판정'];
+      var 다있음 = true, 끝칸 = 0;
+      for (var n = 0; n < 필요.length; n++) {
+        if (li[필요[n]] === undefined) { 다있음 = false; break; }
+        if (li[필요[n]] + 1 > 끝칸) 끝칸 = li[필요[n]] + 1;
+      }
+      if (다있음) {
+        var lv = 원장.getRange(2, 1, 원장.getLastRow() - 1, 끝칸).getDisplayValues();
+        for (var q = 0; q < lv.length; q++) {
+          if (ssText(lv[q][li['회차키']]) !== runKey) continue;
+          var 열쇠 = ssText(lv[q][li['순번']]) + '|' + ssText(lv[q][li['품목코드']]);
+          if (합[열쇠]) continue;
+          var 경로 = ssText(lv[q][li['경로']]), 판정 = ssText(lv[q][li['도서판정']]);
+          if (경로 === SS_ROUTE.LOTTE && 판정 && 판정.indexOf('산간') !== 0) 합[열쇠] = '발송';
+          //  섬 주소 대리발송 줄을 조치 「대리발송」으로 넘긴 것 (core 섬대리검문 — 육지 대리발송엔 판정이 없다)
+          else if (경로 === SS_ROUTE.PARTNER && 판정 && 판정.indexOf('산간') !== 0) 합[열쇠] = '대리발송';
+          else if (경로 === SS_ROUTE.HOLD && ssText(lv[q][li['보류사유']]) === '도서산간확인') 합[열쇠] = '보류';
+        }
+      }
+    }
+  } catch (eL) {
+    Logger.log('[도서산간 조치 기억] 원장에서 되찾기 실패(건너뜀): ' + String(eL && eL.message ? eL.message : eL));
+  }
+
+  for (var k in SS_섬본열쇠_) {
+    if (!Object.prototype.hasOwnProperty.call(SS_섬본열쇠_, k)) continue;
+    if (지금 && 지금[k]) 합[k] = 지금[k]; else delete 합[k];
+  }
+  var 때 = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm');
+  for (var k2 in 합) {
+    if (Object.prototype.hasOwnProperty.call(합, k2) && 합[k2]) 남길.push([runKey, k2, 합[k2], 때]);
+  }
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, SS_섬조치기억머리.length).clearContent();
+  if (남길.length) sh.getRange(2, 1, 남길.length, SS_섬조치기억머리.length).setValues(남길);
+  return 합;
+}
+
+/** yyMMdd 하루 전 */
+function ss_전날6_(d6) {
+  var d = new Date(2000 + Number(d6.slice(0, 2)), Number(d6.slice(2, 4)) - 1, Number(d6.slice(4, 6)));
+  d.setDate(d.getDate() - 1);
+  return Utilities.formatDate(d, 'Asia/Seoul', 'yyMMdd');
 }
 
 /**
