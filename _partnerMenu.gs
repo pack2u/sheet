@@ -366,10 +366,11 @@ function registerPartnerMenu_() {
             .addItem("💾 ③ 체크한 줄 — 상품정보 단가 적용", "partnerPriceRaiseApply")
             .addItem("🔗 ④ 체크한 줄 — 누적품목매핑에 쌓기", "partnerPriceRaiseApplyMapping")
             .addSeparator()
-            /*  ★ 2026-10-12 사고 ★ 엉뚱한 품목 단가가 바뀌어 되돌릴 길을 뒀다 */
-            .addItem("🧪 ↩️ 되돌리기 미리보기 (안 바꿈)", "partnerPriceRaiseUndoPreview")
-            .addItem("↩️ 2026-10-12 인상 되돌리기", "partnerPriceRaiseUndo")
-            .addSeparator()
+            /*  ★ 되돌리기 메뉴를 뺐다 ★  (2026-10-12)
+                개당매입별도가·개당매입가는 ★매입가에서 나오는 수식★ 이다.
+                되돌리기는 «숫자»를 쓰므로 수식이 안 살아난다 — 누르면 두 번째
+                사고가 난다. 복원은 구글 버전 기록으로 한다.
+                편집기에 partnerPriceRaiseUndoNow 는 남겨 둔다(마지막 수단). */
             .addItem("🎨 색 다시 칠하기 (값은 안 바꿈)", "partnerPriceRaiseRecolor")
             .addItem("🧮 세트 = 몸통+뚜껑 점검", "partnerPriceRaiseCheckSets")
         )

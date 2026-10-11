@@ -82,7 +82,26 @@ var _PR_P_NAME_ = 3;      // 이카운트상품명 / 옵션명
 var _PR_P_CODE_ = 5;      // 이카운트코드
 var _PR_P_VENDOR_ = 6;    // 구매처
 var _PR_P_NET_ = 21;      // 개당매입별도가
-var _PR_P_GROSS_ = 22;    // 개당매입가 (별도 × 1.1)
+var _PR_P_GROSS_ = 22;    // 개당매입가 (별도 × 1.1) — ★읽기만★
+
+/**
+ * ★★ 단가는 «매입가»에 쓴다 ★★  (2026-10-12)
+ *
+ * > 「매입가를 바꿔야 자동으로 개별단가가 수식으로 바뀌는거야」
+ *
+ * 개당매입별도가(U)·개당매입가(V)는 ★매입가(W)에서 나오는 수식★ 이다.
+ * 거기에 숫자를 setValue 하면 수식이 지워진다. 10/12 00:22 에 109개
+ * 품목에서 그 일이 났고 U·V 두 열이 통째로 죽었다(5행 #REF!).
+ *
+ * ★ 실제 자료로 확인한 셈 ★  818줄 중 703줄이 딱 맞았고, 어긋난 115줄도
+ *   ±2원이다 — U 가 화면에 반올림되어 보일 뿐이다.
+ *     매입가(W) = 개당매입별도가 × 1.1 × 수량(N)
+ *   보기) 71호 블랙 400개: 112 × 1.1 × 400 = 49,280 = W ✓
+ *         1496(4호) 2400개: 32 × 1.1 × 2400 = 84,480 = W ✓
+ *         구냉면 소 200set: 119 × 1.1 × 200 = 26,180 = W ✓
+ */
+var _PR_P_QTY_ = 14;      // N 수량 (한 박스에 몇 개)
+var _PR_P_BUY_ = 23;      // W 매입가 — ★여기에 쓴다★
 
 var _PR_VAT_ = 1.1;
 
@@ -446,14 +465,27 @@ function _pr_kind_(name) {
 /* ─────────────────────────────────────────────────────────────
    상품정보 읽기
    ───────────────────────────────────────────────────────────── */
+/**  「49,280」처럼 쉼표가 든 수를 읽는다. 못 읽으면 null — 0 이 아니다. */
+function _pr_num_(x) {
+  var t = String(x == null ? "" : x).replace(/,/g, "").trim();
+  if (!t) return null;
+  var n = Number(t);
+  return isNaN(n) ? null : n;
+}
+
 function _pr_loadProducts_() {
   var ss = _pr_ss_();
   var tab = ss.getSheetByName(_PR_PRODUCT_TAB_);
   if (!tab) throw new Error("「" + _PR_PRODUCT_TAB_ + "」 탭을 못 찾았습니다.");
   var lastRow = tab.getLastRow();
   if (lastRow <= _PR_P_HEADER_ROW_) return [];
-  var w = Math.max(tab.getLastColumn(), _PR_P_GROSS_);
+  var w = Math.max(tab.getLastColumn(), _PR_P_BUY_);
   var vals = tab.getRange(_PR_P_HEADER_ROW_ + 1, 1, lastRow - _PR_P_HEADER_ROW_, w).getValues();
+  /*  ★ 매입가가 «수식»인 줄이 있나 ★  (_bwNewPurchaseW.gs 에서 배운 것)
+      수식을 숫자로 덮으면 그 줄의 셈이 영영 사라진다. 미리 읽어 두고
+      그런 줄은 아예 손대지 않는다.                                   */
+  var buyFm = tab.getRange(_PR_P_HEADER_ROW_ + 1, _PR_P_BUY_,
+    lastRow - _PR_P_HEADER_ROW_, 1).getFormulas();
   var out = [];
   for (var i = 0; i < vals.length; i++) {
     var r = vals[i];
@@ -462,11 +494,16 @@ function _pr_loadProducts_() {
     if (!code || !name) continue;
     if (/\[샘플\]/.test(name)) continue;          // 샘플은 재고가 아니라 전시용이다
     var net = r[_PR_P_NET_ - 1];
+    var qty = r[_PR_P_QTY_ - 1];
+    var buy = r[_PR_P_BUY_ - 1];
     out.push({
       row: _PR_P_HEADER_ROW_ + 1 + i,
       code: code, name: name,
       vendor: String(r[_PR_P_VENDOR_ - 1] || "").trim(),
       net: (net === "" || net == null) ? null : Number(net),
+      qty: _pr_num_(qty),
+      buy: _pr_num_(buy),
+      buy수식: String(buyFm[i][0] || "").trim(),
       kind: _pr_kind_(name),
       norm: _pr_norm_(name),
     });
@@ -571,7 +608,13 @@ function _pr_match_(p, prods) {
           if (종전 != null && Math.abs(Number(parts[q]) - 종전) < 0.51) { 단가맞 = true; break; }
         }
       }
-      return { 근거: 단가맞 ? "①배운짝+단가확인" : "①배운짝", 목록: 본 };
+      /*  ★★ 단가가 맞을 때만 ①로 친다 ★★  (2026-10-12)
+          짝 고르기가 ★글자 들어 있기★ 다(아래 indexOf). 단가표 「1호」가
+          원장 「71호/검정」 안에 들어 있어 71호(112원)가 1호(75원)로 잡혔고,
+          그대로 적용돼 112 를 75 로 내렸다. 4호↔84호, 5호↔25호도 같다.
+          업체가 적어 준 종전단가와 맞지 않으면 ★다른 물건★ 이다 —
+          ①로 치지 않고 ②이름·③값 셈으로 넘긴다.                        */
+      if (단가맞) return { 근거: "①배운짝+단가확인", 목록: 본 };
     }
   }
 
@@ -936,9 +979,15 @@ function _pr_build_(미리, 정말) {
       /*  ★ 기본 체크 ★ 믿을 만한 것만 켠다.
           · ①②  켠다 (다만 바뀌는 값이 있고, 지금 값과 다를 때만)
           · ③·못찾음·소분·값 없는 세트  끈다 — 사람이 보고 켜야 한다  */
+      /*  ★★ 「지금 값과 다르다」로 켜면 안 된다 ★★  (2026-10-12)
+          10/12 사고의 절반이 이 줄이다. 종전 75 → 인상 75(동결)인데 짝이
+          틀려 현재가가 112 였다. 75 ≠ 112 라 ★켜졌고★ 112 를 75 로 내렸다.
+          짝이 틀릴수록 「지금 값과 다르다」가 참이 된다 — ★틀린 짝을 켜 주는
+          조건★ 이었다. 켤 까닭은 하나뿐이다: ★단가가 올랐나★.              */
       var 켜기 = (m.근거.indexOf("ⓞ") === 0 || m.근거.indexOf("①") === 0 ||
         m.근거.indexOf("②") === 0) &&
-        적용후 !== "" && u.net != null && Number(적용후) !== Number(u.net);
+        차 !== "" && Number(차) > 0 &&
+        적용후 !== "" && u.net != null && Number(적용후) > Number(u.net);
 
       rows.push([켜기, 업체, 품명, 박스, 종전, 인상, 차, 율, 동결 ? "동결" : "",
         비고, u.kind, m.목록[j].원장, u.code, u.name, u.net, 적용후, m.근거, 값맞, ""]);
@@ -1131,7 +1180,40 @@ function partnerPriceRaiseApply() { _pr_applyProduct_(false, false); }
     메뉴에서 쓸 때는 partnerPriceRaiseApply 가 창으로 묻는다.            */
 function partnerPriceRaiseApplyNow() { _pr_applyProduct_(false, true); }
 
+/**
+ * ★★ 적용을 막아 두었다 ★★  (2026-10-12)
+ *
+ * > 「매입가를 바꿔야 자동으로 개별단가가 수식으로 바뀌는거야」
+ *
+ * 개당매입별도가(U)·개당매입가(V)는 ★매입가(W)에서 나오는 수식★ 이다.
+ * 그런데 이 함수는 U·V 에 ★숫자★ 를 setValue 했다 — 수식을 지운 것이다.
+ * 2026-10-12 00:22 에 109개 품목에서 그 일이 났고 5행 U·V 가 #REF! 가 됐다.
+ * 옛 값으로 보이던 26.999999999999996 · 47.99999999999999 같은 수도
+ * ★수식이 셈한 값★ 이었다 — 그것을 숫자로 되쓰면 수식은 영영 안 돌아온다.
+ *
+ * ★ 바른 길 ★ 매입가(W)를 고치고 U·V 는 시트가 셈하게 둔다.
+ * 그 셈이 어떤 모양인지 아직 모른다. ★모르면 쓰지 않는다★ —
+ * 수식을 확인하기 전까지 여기서 멈춘다([[leave-no-ambiguous-branches]]).
+ *
+ * 미리보기는 아무것도 안 쓰므로 그대로 돌아간다.
+ */
+/*  ★ 빗장을 풀었다 ★  (2026-10-12) 세 까닭을 다 막고, 열세 가지로 깨서
+    다 우는 것을 보고 풀었다. 다시 수상하면 여기를 true 로 올리면 멈춘다. */
+var _PR_APPLY_STOP_ = false;
+
 function _pr_applyProduct_(미리, 정말) {
+  if (!미리 && _PR_APPLY_STOP_) {
+    _pr_say_(
+      "★ 적용을 막아 두었습니다 ★\n\n" +
+      "개당매입별도가·개당매입가는 ★매입가에서 나오는 수식★ 인데,\n" +
+      "이 기능은 거기에 «숫자»를 써서 수식을 지웠습니다.\n" +
+      "2026-10-12 00:22 에 109개 품목에서 그 일이 났습니다.\n\n" +
+      "복원은 ★구글 버전 기록★ 으로 하십시오 — 수식까지 돌아옵니다.\n" +
+      "  파일 → 버전 기록 → 이전 버전 보기 → 10/12 00:22 «이전» 판\n\n" +
+      "매입가를 고치도록 바꾼 뒤에 이 빗장을 풉니다.\n" +
+      "미리보기(partnerPriceRaisePreview)는 그대로 쓰실 수 있습니다.");
+    return;
+  }
   //  창이 없을 수도 있다(편집기) — _pr_say_ 가 알아서 로그로 간다
   var got = _pr_readChecked_();
   if (!got.줄.length) { _pr_say_("체크된 줄이 없습니다. A열 「적용」을 켜 주세요."); return; }
@@ -1184,8 +1266,32 @@ function _pr_applyProduct_(미리, 정말) {
     else if (!(Number(적용후) > 0)) 사유 = "적용후 단가가 0 이하입니다";
     else if (byCode[code].net != null && Number(byCode[code].net) === Number(적용후)) 사유 = "이미 같은 값입니다";
 
+    /*  ★ 동결 줄은 적용하지 않는다 ★  (2026-10-12)
+        10/12 사고의 절반이 이것이다. 종전 75 → 인상 75 인데 짝이 틀려
+        현재가가 112 였고, 「지금 값과 다르다」는 까닭으로 112 를 75 로
+        ★내렸다★. 안 오른 줄은 바꿀 까닭이 없다 — 바꾸면 그건 사고다.  */
+    var 종전칸 = _pr_num_(v[_PR_C.종전 - 1]);
+    if (!사유 && 종전칸 != null && Number(적용후) <= 종전칸) {
+      사유 = "안 오른 줄입니다 (종전 " + 종전칸 + " → " + 적용후 + ") — 바꾸지 않습니다";
+    }
+
+    /*  ★ 새 매입가를 여기서 셈한다 ★ 못 셈하면 멈춘다 — 모르면 쓰지 않는다 */
+    var 새매입가 = null;
+    if (!사유) {
+      /*  ★ 매입가가 수식인 줄은 손대지 않는다 ★ 숫자로 덮으면 셈이 사라진다 */
+      if (byCode[code].buy수식) {
+        사유 = "매입가가 수식입니다 (" + byCode[code].buy수식.substring(0, 30) + ") — 손대지 않습니다";
+      } else {
+        var 수량 = byCode[code].qty;
+        if (!(수량 > 0)) 사유 = "수량(N열)이 없어 매입가를 못 셉니다";
+        else if (byCode[code].buy == null) 사유 = "지금 매입가를 못 읽었습니다";
+        else 새매입가 = Math.round(Number(적용후) * _PR_VAT_ * 수량);
+      }
+    }
+
     if (사유) { 건너뜀.push(사유); 결과.push([("건너뜀 — " + 사유)]); continue; }
-    바꿀것.push({ 행: got.줄[i].행, p: byCode[code], 새값: Number(적용후), 손으로: 손으로 });
+    바꿀것.push({ 행: got.줄[i].행, p: byCode[code], 새값: Number(적용후),
+      새매입가: 새매입가, 손으로: 손으로 });
     결과.push([""]);
   }
 
@@ -1193,9 +1299,10 @@ function _pr_applyProduct_(미리, 정말) {
     var 글 = ["🧪 미리보기 — 아무것도 바꾸지 않았습니다", "",
       "체크 " + got.줄.length + "줄 중 바꿀 것 " + 바꿀것.length + "줄 · 건너뜀 " + 건너뜀.length + "줄", ""];
     for (i = 0; i < Math.min(바꿀것.length, 25); i++) {
-      글.push("  " + 바꿀것[i].p.code + "  " + 바꿀것[i].p.name.substring(0, 28) +
-        "   " + 바꿀것[i].p.net + " → " + 바꿀것[i].새값 +
-        (바꿀것[i].손으로 ? "   ← 손으로 넣은 코드" : ""));
+      글.push("  " + 바꿀것[i].p.code + "  " + 바꿀것[i].p.name.substring(0, 24) +
+        "   매입가 " + 바꿀것[i].p.buy + " → " + 바꿀것[i].새매입가 +
+        "  (개당 " + 바꿀것[i].p.net + " → " + 바꿀것[i].새값 + ")" +
+        (바꿀것[i].손으로 ? " ← 손으로" : ""));
     }
     if (바꿀것.length > 25) 글.push("  … 그리고 " + (바꿀것.length - 25) + "줄 더");
     _pr_say_(글.join("\n"));
@@ -1224,8 +1331,10 @@ function _pr_applyProduct_(미리, 정말) {
 
   for (i = 0; i < 바꿀것.length; i++) {
     var b0 = 바꿀것[i];
-    이력.push([도장, 누구, b0.p.code, b0.p.name, b0.p.net, b0.새값,
-      Math.round(b0.새값 * _PR_VAT_ * 100) / 100, "정희·콤콤 2026.10.12 인상"]);
+    /*  ★ 되돌릴 수 있는 값을 남긴다 ★ 우리가 «쓰는» 칸은 매입가다.
+        개당별도가는 그 결과라서, 그것만 남기면 되돌릴 때 또 수식을 지운다. */
+    이력.push([도장, 누구, b0.p.code, b0.p.name, b0.p.buy, b0.새매입가,
+      b0.새값, "정희·콤콤 2026.10.12 인상 (매입가)"]);
   }
   //  ★ 먼저 남긴다 ★ 이 한 줄이 「되돌릴 수 있나」를 가른다
   _pr_writeLog_(이력);
@@ -1233,13 +1342,18 @@ function _pr_applyProduct_(미리, 정말) {
 
   for (i = 0; i < 바꿀것.length; i++) {
     var b = 바꿀것[i];
-    ptab.getRange(b.p.row, _PR_P_NET_).setValue(b.새값);
-    ptab.getRange(b.p.row, _PR_P_GROSS_).setValue(Math.round(b.새값 * _PR_VAT_ * 100) / 100);
+    /*  ★★ 개당매입별도가·개당매입가에는 쓰지 않는다 ★★
+        그 둘은 매입가에서 나오는 ★수식★ 이다. 숫자를 쓰면 수식이 지워지고
+        열이 통째로 죽는다(10/12 00:22 사고).                            */
+    /*  ★ 바꾼 칸을 노랗게 ★  (2026-10-11 「적용된것들은 셀칼라가 노란색으로」)
+        비교표가 아니라 ★상품정보의 그 칸★ 이다. 부원 때도 그렇게 했다
+        (_bwNewPurchaseW.gs). 어디가 바뀌었는지 시트에서 바로 보인다.   */
+    ptab.getRange(b.p.row, _PR_P_BUY_).setValue(b.새매입가).setBackground(_PR_DONE_BG_);
     /*  손으로 코드를 넣어 셈한 줄은 그 값을 칸에도 적어 둔다 — 무엇이
         들어갔는지 나중에 되짚을 수 있어야 한다.                          */
     if (b.손으로) got.tab.getRange(b.행, _PR_C.적용후).setValue(b.새값);
-    got.tab.getRange(b.행, _PR_C.결과).setValue("✅ " + b.p.net + " → " + b.새값 +
-      (b.손으로 ? " (손으로 넣은 코드)" : ""));
+    got.tab.getRange(b.행, _PR_C.결과).setValue("✅ 매입가 " + b.p.buy + " → " + b.새매입가 +
+      " (개당 " + b.p.net + " → " + b.새값 + ")" + (b.손으로 ? " ← 손으로 넣은 코드" : ""));
   }
 
 
@@ -1263,8 +1377,10 @@ function _pr_writeLog_(이력) {
   var t = ss.getSheetByName(_PR_LOG_TAB_);
   if (!t) {
     t = ss.insertSheet(_PR_LOG_TAB_);
+    /*  ★ 「매입가」로 적는다 ★  (2026-10-12) 우리가 «쓰는» 칸이 매입가다.
+        개당별도가는 그 결과라, 그것만 남기면 되돌릴 때 또 수식을 지운다.  */
     t.getRange(1, 1, 1, 8).setValues([["바꾼때", "바꾼사람", "이카운트코드", "상품명",
-      "옛 개당별도가", "새 개당별도가", "새 개당매입가", "까닭"]])
+      "옛 매입가", "새 매입가", "새 개당별도가", "까닭"]])
       .setBackground("#1f4e79").setFontColor("white").setFontWeight("bold");
     t.setFrozenRows(1);
   }
@@ -1363,113 +1479,4 @@ function partnerPriceRaiseCheckSets() {
   if (!본것) 말.push("(몸통·뚜껑 이름이 세트와 달라 짝을 못 지었습니다)");
   Logger.log(말.join("\n"));
   _pr_say_(말.join("\n").substring(0, 1400));
-}
-
-/* ─────────────────────────────────────────────────────────────
-   ⑥ 되돌리기 — 2026-10-12 인상을 통째로 물린다
-   ───────────────────────────────────────────────────────────── */
-/**
- * 「단가변경이력」을 읽어 상품정보의 개당매입별도가·개당매입가를 ★되돌린다★.
- *
- * ★ 왜 생겼나 ★  (2026-10-12)
- * > 「돌리고 적용했는데 셀칼라도 안바뀌고 바뀐건 전혀 엄한거 같은데」
- *
- * 128줄이 바뀌었고 그중 여럿이 엉뚱한 품목이었다. 까닭은 둘이다 —
- *   ① ①배운짝이 ★글자 들어 있기★ 로 맞췄다. 단가표 「1호」가 원장
- *      「71호/검정」 안에 들어 있어 71호 물건이 1호로 잡혔다.
- *   ② ★동결 줄을 적용했다★. 75 → 75 인데 짝이 틀려 현재가가 112 였고,
- *      「지금 값과 다르다」는 까닭으로 체크가 켜져 112 를 75 로 ★내렸다★.
- *
- * ★ 한 코드가 여러 번 바뀐 것이 있다 ★ MASL0036 은 세 번 적혔다.
- *   되돌릴 값은 ★맨 처음 줄의 옛 값★ 이다(그게 진짜 원래 값이다).
- *
- * ★ 사람이 그 뒤에 고친 것은 안 건드린다 ★ 지금 값이 「내가 마지막으로
- *   쓴 값」과 다르면 누군가 손을 댄 것이다. 덮지 않고 건너뛰고 알린다
- *   ([[dont-overwrite-what-you-couldnt-read]]).
- */
-var _PR_UNDO_WHY_ = "정희·콤콤 2026.10.12 인상";
-
-function partnerPriceRaiseUndo() { _pr_undo_(false); }
-/*  편집기에서 쓰는 이름 — 이 이름을 고르는 것이 「예」를 누르는 것이다 */
-function partnerPriceRaiseUndoNow() { _pr_undo_(true); }
-/*  무엇이 되돌아가는지만 본다. 아무것도 쓰지 않는다 */
-function partnerPriceRaiseUndoPreview() { _pr_undo_(false, true); }
-
-function _pr_undo_(정말, 미리) {
-  var ss = _pr_ss_();
-  var t = ss.getSheetByName(_PR_LOG_TAB_);
-  if (!t) { _pr_say_("「" + _PR_LOG_TAB_ + "」 탭이 없습니다 — 되돌릴 기록이 없습니다."); return; }
-  var last = t.getLastRow();
-  if (last < 2) { _pr_say_("이력이 비어 있습니다."); return; }
-
-  var 이력 = t.getRange(2, 1, last - 1, 8).getValues();
-  var 처음 = {}, 마지막 = {}, 차례 = [];
-  for (var i = 0; i < 이력.length; i++) {
-    if (String(이력[i][7] || "").trim() !== _PR_UNDO_WHY_) continue;
-    var code = String(이력[i][2] || "").trim();
-    if (!code) continue;
-    if (!처음[code]) { 처음[code] = { 옛: 이력[i][4], 이름: 이력[i][3] }; 차례.push(code); }
-    마지막[code] = Number(이력[i][5]);
-  }
-  if (!차례.length) { _pr_say_("「" + _PR_UNDO_WHY_ + "」 기록을 못 찾았습니다."); return; }
-
-  var prods = _pr_loadProducts_();
-  var byCode = {};
-  for (i = 0; i < prods.length; i++) byCode[prods[i].code] = prods[i];
-
-  var 바꿀것 = [], 건너뜀 = [];
-  for (i = 0; i < 차례.length; i++) {
-    var c = 차례[i], p = byCode[c], 옛 = Number(처음[c].옛);
-    if (!p) { 건너뜀.push(c + " — 상품정보에서 못 찾았습니다"); continue; }
-    if (!(옛 > 0)) { 건너뜀.push(c + " — 옛 값이 비어 있습니다"); continue; }
-    if (Number(p.net) === 옛) { 건너뜀.push(c + " — 이미 옛 값입니다"); continue; }
-    /*  ★ 내가 쓴 값 그대로일 때만 되돌린다 ★ 다르면 그 뒤에 사람이
-        고친 것이다. 모르는 칸을 덮지 않는다.                          */
-    if (Number(p.net) !== 마지막[c]) {
-      건너뜀.push(c + " — 지금 " + p.net + " 인데 제가 쓴 값은 " +
-        마지막[c] + " 입니다. 누가 고친 것 같아 두었습니다");
-      continue;
-    }
-    바꿀것.push({ p: p, 옛: 옛, 이름: 처음[c].이름 });
-  }
-
-  var 글 = ["되돌릴 줄 " + 바꿀것.length + " · 건너뛸 줄 " + 건너뜀.length, ""];
-  for (i = 0; i < Math.min(바꿀것.length, 20); i++) {
-    글.push("  " + 바꿀것[i].p.code + "  " + String(바꿀것[i].이름).substring(0, 26) +
-      "   " + 바꿀것[i].p.net + " → " + 바꿀것[i].옛);
-  }
-  if (바꿀것.length > 20) 글.push("  … 그리고 " + (바꿀것.length - 20) + "줄 더");
-  if (건너뜀.length) {
-    글.push("", "── 건너뛸 것 ──");
-    for (i = 0; i < Math.min(건너뜀.length, 15); i++) 글.push("  " + 건너뜀[i]);
-    if (건너뜀.length > 15) 글.push("  … 그 밖 " + (건너뜀.length - 15) + "개");
-  }
-
-  if (미리) { _pr_say_("🧪 되돌리기 미리보기 — ★아무것도 쓰지 않았습니다★\n\n" + 글.join("\n")); return; }
-  if (!바꿀것.length) { _pr_say_("되돌릴 줄이 없습니다.\n\n" + 글.join("\n")); return; }
-  if (!_pr_ask_("↩️ 2026-10-12 인상 되돌리기",
-    바꿀것.length + "줄을 원래 값으로 되돌립니다.\n\n" + 글.slice(2).join("\n").substring(0, 1200),
-    정말, "partnerPriceRaiseUndoNow")) return;
-
-  /*  되돌린 것도 이력에 남긴다 — 무엇을 언제 물렸는지 남아야 한다 */
-  var 도장 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
-  var 누구 = "";
-  try { 누구 = Session.getActiveUser().getEmail() || ""; } catch (e) {}
-  var 적을것 = [];
-  for (i = 0; i < 바꿀것.length; i++) {
-    적을것.push([도장, 누구, 바꿀것[i].p.code, 바꿀것[i].이름, 바꿀것[i].p.net, 바꿀것[i].옛,
-      Math.round(바꿀것[i].옛 * _PR_VAT_ * 100) / 100, "되돌림 — " + _PR_UNDO_WHY_]);
-  }
-  _pr_writeLog_(적을것);
-  SpreadsheetApp.flush();
-
-  var ptab = ss.getSheetByName(_PR_PRODUCT_TAB_);
-  for (i = 0; i < 바꿀것.length; i++) {
-    var b = 바꿀것[i];
-    ptab.getRange(b.p.row, _PR_P_NET_).setValue(b.옛);
-    ptab.getRange(b.p.row, _PR_P_GROSS_).setValue(Math.round(b.옛 * _PR_VAT_ * 100) / 100);
-  }
-  SpreadsheetApp.flush();
-  _pr_say_("↩️ 되돌렸습니다\n\n되돌린 줄 " + 바꿀것.length + " · 건너뛴 줄 " + 건너뜀.length +
-    "\n\n기록은 「" + _PR_LOG_TAB_ + "」 탭에 「되돌림」으로 남겼습니다.");
 }
