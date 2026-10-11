@@ -57,8 +57,18 @@ console.log("── ★ 안 써야 할 때 안 쓰나 ★ ──");
 같나("이미 완료된 줄은 건너뛴다",
   /_cs_isReturnLedgerDone_\([\s\S]{0,40}continue;/.test(소스), true);
 /*  반품송장이 붙은 줄은 수거가 돌던 건이다 — 사람이 봐야 한다 */
-같나("반품송장이 붙은 줄은 건너뛴다",
-  /if \(송장\) \{ 송장있음\+\+; continue; \}/.test(소스), true);
+/*  ★ 2026-10-11 결정이 바뀌었다 ★ 처음엔 반품송장이 붙은 줄을 건너뛰었다.
+    그런데 시트를 보니 미완료 1,107줄 가운데 ★885줄이 송장을 들고 있었다★ —
+    일곱 달이 다 석 달 넘게 지난 달이고, 송장이 있다는 것은 오히려 「처리는
+    됐고 상태만 안 바꿨다」는 뜻에 가깝다. 사장님이 「전부」로 정하셨다.
+    그래서 ★건너뛰지 않고 갈래만 센다★.                                */
+같나("반품송장이 있어도 닫는다 (건너뛰지 않는다)",
+  /if \(송장\) 송장있음\+\+;/.test(소스), true);
+같나("건너뛰던 옛 줄이 남아 있지 않다",
+  /if \(송장\) \{ 송장있음\+\+; continue; \}/.test(소스), false);
+/*  ★ 다만 반품송장 칸 자체는 안 건드린다 ★ 번호가 지워지면 수거 이력이 사라진다 */
+같나("반품송장 칸에 쓰는 자리가 없다",
+  /getRange\([^)]*col\.returnInvoice[^)]*\)\.setValue|y\.송장칸/.test(소스), false);
 /*  ★★ 여기서 한 번 틀렸다 ★★  (2026-10-11 · 마른 돌리기가 잡아 줬다)
       col.invoice       = /원송장|송장번호/ (반품송장 제외) → ★원주문★ 송장
       col.returnInvoice = /반품송장|회수송장/              → 반품 송장
@@ -86,8 +96,12 @@ console.log("── ★ 안 써야 할 때 안 쓰나 ★ ──");
 같나("빈 줄·안내문 줄은 건너뛴다",
   /if \(!이름칸 && !품목칸\) continue;/.test(소스), true);
 /*  ★ 날짜 빈 줄은 기본으로 안 넣는다 ★ 사장님이 591 이라 하셨다 */
-같나("접수날짜 빈 줄은 기본으로 안 넣는다",
-  /if \(!날짜없는것도\) continue;/.test(소스), true);
+/*  접수날짜 없는 줄도 같은 까닭으로 닫는다 — 이 일곱 탭은 다 지난 달이고,
+    날짜가 없다고 그 줄이 살아 있는 건은 아니다. 세기는 한다(보고에 적힌다). */
+같나("접수날짜가 없어도 닫는다", /if \(!ymd\) 날짜없음\+\+;/.test(소스), true);
+같나("날짜 없으면 건너뛰던 옛 줄이 없다", /if \(!날짜없는것도\) continue;/.test(소스), false);
+같나("쓰이지 않는 WithUndated 함수를 지웠다",
+  /csOldReturnCloseDryRunWithUndated/.test(소스), false);
 /*  ★ A열을 못 박지 않는다 ★ 그 자리에서 사고가 났다 */
 같나("상태 칸을 _cs_mapReturnLedgerCols_ 로 찾는다",
   /_cs_mapReturnLedgerCols_\(/.test(소스), true);
@@ -123,8 +137,12 @@ console.log("── 되돌릴 수 있나 ──");
 
 /* ── ⑤ 마른 돌리기가 정말 안 쓰나 ───────────────────────────────── */
 console.log("── 마른 돌리기가 아무것도 안 쓰나 ──");
-const 마른 = 소스.slice(소스.indexOf("function csOldReturnCloseDryRun()"),
-                       소스.indexOf("function csOldReturnCloseDryRunWithUndated"));
+/*  ★ 재는 자리를 함수 «이름»으로 못 박으면 그 함수를 지우는 날 깨진다 ★
+    처음엔 끝 경계를 csOldReturnCloseDryRunWithUndated 로 잡았다. 그 함수를
+    지우니 indexOf 가 -1 이 되어 slice(시작, -1) 이 되고, Apply 까지 같이
+    잘려 「마른 돌리기에 setValue 가 있다」로 울었다 — 코드는 멀쩡했다.
+    다음 함수가 무엇이든 되게, 여는 중괄호를 세어 함수 끝을 찾는다.      */
+const 마른 = 떼기(소스, "csOldReturnCloseDryRun");
 같나("마른 돌리기에 setValue 가 없다", /setValue/.test(마른), false);
 같나("마른 돌리기에 insertSheet 가 없다", /insertSheet/.test(마른), false);
 const 훑기 = 소스.slice(소스.indexOf("function _orc_scan_"), 소스.indexOf("function _orc_report_"));

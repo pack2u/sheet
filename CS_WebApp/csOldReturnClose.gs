@@ -46,10 +46,9 @@ var _ORC_BACKUP_PREFIX_ = "_묵은건종결_백업_";
 /**
  * 바꿀 줄을 모은다. ★아무것도 쓰지 않는다★
  *
- * @param {boolean} 날짜없는것도 접수날짜가 빈 줄도 넣을지
  * @return {{탭별: Object, 모두: Array, 날짜없음: number, 송장있음: number}}
  */
-function _orc_scan_(날짜없는것도) {
+function _orc_scan_() {
   var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
   var 모두 = [], 탭별 = {}, 날짜없음 = 0, 송장있음 = 0;
 
@@ -90,15 +89,21 @@ function _orc_scan_(날짜없는것도) {
           ★1,083줄이 통째로 건너뛰어졌다★ — 591 을 찾아야 하는데 9줄만 나왔다.
           202601~04 가 0줄이던 것도 같은 까닭이다.
           마른 돌리기를 먼저 돌린 덕에 ★쓰기 전에★ 잡았다.               */
+      /*  ★ 반품송장이 있어도 닫는다 ★  (2026-10-11 · 사장님이 「전부」로 정하셨다)
+          처음엔 「수거가 돌던 건이니 사람이 봐야 한다」며 건너뛰었다. 그런데
+          시트를 보니 미완료 1,107줄 가운데 ★885줄이 송장을 들고 있었다★ —
+          일곱 달이 다 석 달 넘게 지난 달이고, 송장이 있다는 것은 오히려
+          「처리는 됐고 상태만 안 바꿨다」는 뜻에 가깝다.
+          건너뛰지 않고 ★갈래만 적어 둔다★ — 보고에서 185/885 로 갈라 보인다.
+          반품송장 칸 자체는 안 건드리므로 번호는 그대로 남는다.           */
       if (col.returnInvoice < 0) { 탭별[이름] = { 반품송장칸못찾음: true }; break; }
       var 송장 = String(row[col.returnInvoice] || "").trim();
-      if (송장) { 송장있음++; continue; }
+      if (송장) 송장있음++;
 
+      /*  ★ 접수날짜가 없어도 닫는다 ★ 같은 까닭이다 — 이 일곱 탭은 다 지난
+          달이고, 날짜가 없다고 그 줄이 살아 있는 건은 아니다.             */
       var ymd = col.date >= 0 ? _cs_ledgerYmdFromCell_(row[col.date]) : "";
-      if (!ymd) {
-        날짜없음++;
-        if (!날짜없는것도) continue;      // 기본은 안 넣는다 — 사장님이 591 이라 하셨다
-      }
+      if (!ymd) 날짜없음++;
 
       /*  ★ 옛 값을 지우지 않는다 ★  (2026-10-11 · 표본에서 보였다)
           옛 탭의 상태 칸(A열)에는 업체코드가 들어 있는 줄이 있다 —
@@ -110,7 +115,8 @@ function _orc_scan_(날짜없는것도) {
       n++;
       모두.push({
         탭: 이름, 행: r + 1, 상태칸: col.status + 1, 날짜칸: col.date + 1,
-        옛상태: 상태, 적을말: 적을말, 날: ymd, 이름: 이름칸, 품목: 품목칸.slice(0, 24)
+        옛상태: 상태, 적을말: 적을말, 날: ymd, 이름: 이름칸, 품목: 품목칸.slice(0, 24),
+        송장: 송장
       });
     }
     탭별[이름] = { n: n };
@@ -131,13 +137,10 @@ function _orc_report_(결과, 머리) {
   }
   L.push("");
   L.push("합 " + 결과.모두.length + "줄 · 적을 낱말 「" + _ORC_MARK_ + "」");
-  if (결과.송장있음) {
-    L.push("※ 반품송장이 붙어 있어 ★안 닫은★ 줄 " + 결과.송장있음 + "건 — 수거가 돌던 건입니다");
-  }
-  if (결과.날짜없음) {
-    L.push("※ 접수날짜가 빈 줄 " + 결과.날짜없음 + "건은 ★안 넣었습니다★ — " +
-           "넣으려면 csOldReturnCloseDryRunWithUndated 로 보세요");
-  }
+  L.push("  ├ 반품송장 없음 " + (결과.모두.length - 결과.송장있음) + "건 — 접수에서 한 걸음도 못 나간 건");
+  L.push("  └ 반품송장 있음 " + 결과.송장있음 + "건 — 수거는 돌았고 상태만 안 닫힌 건");
+  if (결과.날짜없음) L.push("  (그중 접수날짜가 빈 줄 " + 결과.날짜없음 + "건 — 같이 닫습니다)");
+  L.push("※ 반품송장 칸은 ★안 건드립니다★ — 번호는 그대로 남습니다");
   L.push("");
   L.push("── 표본 10줄 ──");
   for (var i = 0; i < 결과.모두.length && i < 10; i++) {
@@ -153,31 +156,21 @@ function _orc_report_(결과, 머리) {
  * 실행로그에 무엇을 바꿀지 적는다.
  */
 function csOldReturnCloseDryRun() {
-  var 결과 = _orc_scan_(false);
+  var 결과 = _orc_scan_();
   var 글 = _orc_report_(결과, "【마른 돌리기】 아무것도 쓰지 않았습니다. 바꿀 줄은 이렇습니다:");
   Logger.log(글);
   try { _cpr_ops_(SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_), "묵은건 종결(마른)", 글.split("\n")[2] + " … 합 " + 결과.모두.length + "줄"); } catch (e) {}
   return 글;
 }
 
-/** ①-2 접수날짜가 빈 줄까지 넣어 본다 (마른 돌리기) */
-function csOldReturnCloseDryRunWithUndated() {
-  var 결과 = _orc_scan_(true);
-  var 글 = _orc_report_(결과, "【마른 돌리기 · 날짜 빈 줄 포함】 아무것도 쓰지 않았습니다:");
-  Logger.log(글);
-  return 글;
-}
-
 /**
  * ② 실제로 적는다. ★백업을 먼저 남긴다★
  *
- * @param {Object=} opt { 날짜없는것도: true } 로 날짜 빈 줄까지
  */
 function csOldReturnCloseApply(opt) {
   opt = opt || {};
-  var 날짜없는것도 = !!opt["날짜없는것도"];
   var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
-  var 결과 = _orc_scan_(날짜없는것도);
+  var 결과 = _orc_scan_();
   if (!결과.모두.length) {
     var 없다 = "닫을 줄이 없습니다 — 이미 다 닫혔거나 조건에 맞는 줄이 없습니다.";
     Logger.log(없다); return 없다;
@@ -204,8 +197,15 @@ function csOldReturnCloseApply(opt) {
 
   /*  ★ 한 칸씩 쓴다 ★ 범위로 쓰면 사이에 끼인 줄(안내문·빈 줄)까지 덮는다.
       591칸이면 느리지만, 이 일은 한 번뿐이다. 빠른 쪽이 위험한 쪽이다.   */
-  var 쓴것 = 0, 실패 = [];
+  /*  ★ 시간 예산 ★ 1,107칸을 한 칸씩 쓰면 길다. 실행 한도에 걸려 죽으면
+      어디까지 썼는지가 안 남는다. 25분에서 곱게 멈추고 적어 둔다 —
+      ★다시 돌리면 이어진다★. 이미 닫힌 줄은 위 완료 검사가 걸러 내므로
+      두 번 쓰이지 않는다.                                              */
+  var 시작때 = new Date().getTime();
+  var 예산 = 25 * 60 * 1000;
+  var 쓴것 = 0, 실패 = [], 남김 = 0;
   for (var j = 0; j < 결과.모두.length; j++) {
+    if (new Date().getTime() - 시작때 > 예산) { 남김 = 결과.모두.length - j; break; }
     var y = 결과.모두[j];
     try {
       ss.getSheetByName(y.탭).getRange(y.행, y.상태칸).setValue(y.적을말 || _ORC_MARK_);
@@ -217,7 +217,8 @@ function csOldReturnCloseApply(opt) {
 
   var 글 = "【적었습니다】 " + 쓴것 + "줄에 「" + _ORC_MARK_ + "」\n" +
     "백업 탭: " + bk.getName() + " (되돌리려면 csOldReturnCloseUndo)\n" +
-    (실패.length ? "★ 실패 " + 실패.length + "줄: " + 실패.slice(0, 5).join(" / ") : "실패 없음");
+    (실패.length ? "★ 실패 " + 실패.length + "줄: " + 실패.slice(0, 5).join(" / ") : "실패 없음") +
+    (남김 ? "\n★ 시간이 모자라 " + 남김 + "줄 남겼습니다 — 같은 함수를 다시 돌리면 이어집니다" : "");
   Logger.log(글);
   try {
     _cpr_ops_(ss, "묵은건 종결", 쓴것 + "줄 적었습니다 · 백업 " + bk.getName() +
