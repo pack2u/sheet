@@ -1565,6 +1565,13 @@ function _pr_tokens_(글) {
   /*  ★ 숫자 덩어리는 세 자리부터 ★ 20155·1200 은 뜻이 있고 1·4 는 없다 */
   var 숫자 = t.match(/[0-9]{3,}/g) || [];
   for (var i = 0; i < 숫자.length; i++) 모음[숫자[i]] = true;
+  /*  ★ 「25호」·「4칸」은 한 덩어리다 ★  (2026-10-12)
+      「25호」는 숫자 두 자리 + 한 글자라 위 두 가지에 다 걸러졌다 —
+      「JH 실링 191465 (25호) 화이트」와 한 낱말도 안 겹쳤다.
+      숫자가 앞에 다 붙으므로 「1호」가 「71호」를 집는 일은 없다
+      (71호는 「71호」 한 덩어리로 나온다).                             */
+  var 호칸 = t.match(/[0-9]+[가-힣]/g) || [];
+  for (i = 0; i < 호칸.length; i++) 모음[호칸[i]] = true;
   /*  ★ 한글은 띄어쓰기가 없다 ★  (2026-10-12)
       처음엔 낱말 통째로 재다가 「칸사각소스용기」와 「칸소스용기」가
       한 덩어리씩이라 안 겹쳤다 — 맞는 짝을 떨어뜨릴 뻔했다.
@@ -1642,21 +1649,43 @@ function _pr_suggest_(정말) {
     var 겹친것 = [], 단가만 = [];
     for (var z = 0; z < 후보.length; z++) {
       var 같은낱말 = _pr_shareTokens_(품명0, 후보[z].name);
-      if (같은낱말.length) 겹친것.push({ u: 후보[z], 낱말: 같은낱말 });
-      else 단가만.push({ u: 후보[z], 낱말: [] });
+      if (같은낱말.length) 겹친것.push({ u: 후보[z], 낱말: 같은낱말, 꼬리: "단가·이름" });
+      else 단가만.push({ u: 후보[z], 낱말: [], 꼬리: "단가만" });
+    }
+
+    /*  ★ 단가로 못 찾으면 이름으로 찾는다 ★  (2026-10-12)
+        우리 단가가 이미 달라진 품목은 「종전단가 = 현재단가」로 안 걸린다.
+        「미니탕용기(대)투톤」·「12144 뚜껑」 같은 것이 그렇다 — 이름은
+        또렷한데 단가만 다르다. 그때는 이름으로 찾아 ★보여만 준다★.
+        단가가 안 맞으니 더 약한 후보다 — 꼬리에 「이름만」이라 적는다.
+        겹친 낱말이 많을수록, 박스수량이 같을수록 앞에 세운다.          */
+    var 이름만 = [];
+    if (!후보.length) {
+      var 모음 = [];
+      for (z = 0; z < prods.length; z++) {
+        var w = prods[z];
+        if (!_pr_isVendor_(w, 업체)) continue;
+        var 낱 = _pr_shareTokens_(품명0, w.name);
+        if (!낱.length) continue;
+        var 점수 = 낱.length;
+        if (박스 != null && w.qty != null && Number(w.qty) === 박스) 점수 += 2;
+        모음.push({ u: w, 낱말: 낱, 꼬리: "이름만", 점수: 점수 });
+      }
+      모음.sort(function (가, 나) { return 나.점수 - 가.점수; });
+      이름만 = 모음.slice(0, 5);   // 너무 많으면 고르기 어렵다
     }
 
     /*  ★ 내가 전에 채운 코드는 지운다 ★  (2026-10-12)
         > 「후보는 적용안하는게 맞을꺼 같고」
         이제 아무것도 채우지 않는다. 전에 채운 것이 남아 있으면 지운다.  */
-    if (!후보.length) {
+    var 모두 = 겹친것.concat(단가만).concat(이름만);
+    if (!모두.length) {
       없음++;
       if (내가적은것) 찾음.push({ 행: 행, 업체: 업체, 품명: 품명0, 내가적은것: true, 들: [] });
       continue;
     }
-    for (z = 0; z < 후보.length; z++) 파랑줄[후보[z].row] = true;
-    찾음.push({ 행: 행, 업체: 업체, 품명: 품명0, 내가적은것: 내가적은것,
-      들: 겹친것.concat(단가만) });
+    for (z = 0; z < 모두.length; z++) 파랑줄[모두[z].u.row] = true;
+    찾음.push({ 행: 행, 업체: 업체, 품명: 품명0, 내가적은것: 내가적은것, 들: 모두 });
   }
 
   if (!찾음.length) {
@@ -1672,7 +1701,7 @@ function _pr_suggest_(정말) {
     var f = 찾음[i];
     글.push("  " + f.업체 + " · " + f.품명 + "  →  " +
       (f.들.length ? f.들.map(function (x) {
-        return x.u.code + (x.낱말.length ? "(이름겹침 " + x.낱말.slice(0, 2).join("·") + ")" : "(단가만)");
+        return x.u.code + "(" + x.꼬리 + (x.낱말.length ? " " + x.낱말.slice(0, 2).join("·") : "") + ")";
       }).slice(0, 4).join(" / ") : "후보 없음 — 전에 적은 것을 지웁니다"));
   }
   if (찾음.length > 15) 글.push("  … 그리고 " + (찾음.length - 15) + "줄 더");
@@ -1709,8 +1738,7 @@ function _pr_suggestWrite_(ss, tab, 찾음, 파랑줄, 글) {
     tab.getRange(f.행, _PR_C.결과).setValue(f.들.length
       ? "🔎 후보 " + f.들.length + "개 (상품정보에서 파란 칸): " +
         f.들.map(function (x) {
-          return x.u.code + "·" + x.u.name.substring(0, 16) +
-            (x.낱말.length ? "(이름겹침)" : "(단가만)");
+          return x.u.code + "·" + x.u.name.substring(0, 16) + "(" + x.꼬리 + ")";
         }).slice(0, 3).join(" / ")
       : "🔎 후보 없음");
   }
