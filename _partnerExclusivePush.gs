@@ -986,6 +986,16 @@ function _pep_loadArchiveDedupCounts_(ss) {
   return counts;
 }
 
+/**
+ * 이 회차에서 n번째로 본 지문(1부터)이 임시기록에 «이미 있는» 줄인가.  (2026-10-11)
+ *   임시기록에 같은 지문 줄이 k개 있으면 이 회차의 1~k번째는 이미 적힌 것, k+1번째부터 새 줄이다.
+ *   고유ID 재사용(있으면 그 ID)과 임시기록 적기(있으면 안 적음)가 «이 한 규칙»을 같이 쓴다 —
+ *   둘이 갈려 같은 줄이 같은 고유ID로 두 번 적혔다(09/01). 시험: _pep_tempfp_test.js
+ */
+function _pep_tempFpAlreadyThere_(occInRun, existingCount) {
+  return occInRun >= 1 && occInRun <= existingCount;
+}
+
 /** 임시기록 중복 판별용 — 코드+품목명+수취인+전화(동명·동품목 UID 재사용 방지) */
 function _pep_tempFingerprintKey_(code, name, row) {
   var c = String(code || "").replace(/\s/g, "").trim();
@@ -2411,14 +2421,14 @@ function _pep_pushCore_(silent) {
       _tempFpOccInRun_[_fpKey_] = (_tempFpOccInRun_[_fpKey_] || 0) + 1;
       var _fpOcc_ = _tempFpOccInRun_[_fpKey_];
       var _fpExisting_ = (_tempFingerprintRows_[_fpKey_] || []).length;
-      if (_fpKey_ && _fpOcc_ <= _fpExisting_) {
+      if (_fpKey_ && _pep_tempFpAlreadyThere_(_fpOcc_, _fpExisting_)) {
         // 임시기록에 동일 (코드+품목명) 이미 있음 → 기존 UID 재사용 (신규 생성 금지)
         _rowUid_ = String(_tempFingerprintRows_[_fpKey_][_fpOcc_ - 1].uid || "").trim();
       }
       if (!_rowUid_) {
         _rowUid_ = _pep_deriveDeterministicUid_(row, today.replace(/-/g, ""));
         Logger.log("[PEP] R" + (ri + 1) + " 고유ID 없음 → UID 생성: " + _rowUid_);
-      } else if (_fpKey_ && _fpOcc_ <= _fpExisting_) {
+      } else if (_fpKey_ && _pep_tempFpAlreadyThere_(_fpOcc_, _fpExisting_)) {
         Logger.log(
           "[PEP] R" +
             (ri + 1) +
@@ -2435,8 +2445,13 @@ function _pep_pushCore_(silent) {
       var _fpKeyT_ = _pep_tempFingerprintKey_(rawCode, rawName, row);
       var _fpOccT_ = _tempFpOccInRun_[_fpKeyT_] || 0;
       var _fpCntT_ = (_tempFingerprintRows_[_fpKeyT_] || []).length;
-      // ★ 2026-07-06: <= → < 수정 (0 <= 0 = true 버그 — 빈 임시기록에서 전체 스킵됨)
-      if (_fpKeyT_ && _fpOccT_ < _fpCntT_) {
+      /* ★ 2026-10-11 위(고유ID 재사용)와 «같은 규칙»으로 본다 — _pep_tempFpAlreadyThere_ ★
+         여기만 `<` 였다(07-15). _fpOccT_ 는 위에서 이미 1부터 센 값이라, 임시기록에 같은 줄이 하나 있을 때
+         위는 「있다 → 그 고유ID 재사용」, 여기는 「1 < 1 아님 → 없다 → 또 적기」로 갈렸다.
+         그래서 고유ID 없는 줄(MMDD-ph-)이 «같은 고유ID로» 임시기록에 두 번 들어갔다 —
+         09/01 10줄(누림트레이딩 6품목 등)·09/02·09/07, 이카운트 구매전표도 두 번(낱장 8쌍 3,248,210원).
+         (07-06 의 「0 <= 0」 은 지금은 생길 수 없다 — 지문이 있으면 위에서 반드시 1 이상 센다.) */
+      if (_fpKeyT_ && _pep_tempFpAlreadyThere_(_fpOccT_, _fpCntT_)) {
         _skipTempAppend_ = true; // 코드+품목명 기준 이미 임시기록에 있음
       }
     } else {
