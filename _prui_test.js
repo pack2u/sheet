@@ -458,6 +458,31 @@ console.log("── 10/12 사고 ③ 수식에 숫자를 썼다 ──");
   /if \(!사유 && 새매입가 != null && byCode\[code\]\.buy != null &&[\s\S]{0,80}Number\(새매입가\) === Number\(byCode\[code\]\.buy\)\) \{[\s\S]{0,120}매입가가 그대로입니다/.test(소스), true);
 같나("★ 개당별도가로만 재지 않는다 ★",
   소스.indexOf("매입가가 그대로입니다") > 소스.indexOf("이미 같은 값입니다"), true);
+
+console.log("── 단가를 「같다」고 볼 틈 ──");
+/*  ★★ ±0.51 이 「소」에 「대」 단가를 씌울 뻔했다 ★★  (2026-10-12)
+    정희 「75*70(3번)」 종전 20 이 JH 신형 75파이 ★소★ (현재 19.5)를 집고
+    「종전단가일치 O」로 찍혔다 — |19.5-20| = 0.5 < 0.51.
+    75파이 소와 대의 ★진짜 차이가 0.5원★ 이다. 68파이(8.2/8.7)·
+    95파이(21.5/22.5)도 간격이 그만하다.
+
+    우리는 getValues() 로 진짜 값을 읽으니 화면 반올림이 안 낀다. 남는 틈은
+      · 수식 찌꺼기 1e-14
+      · 매입가 원 단위 반올림 = 0.5 ÷ (1.1 × 수량) — 수량 10 이면 0.045
+    0.05 면 둘 다 덮고 0.5 짜리 진짜 차이는 안 덮는다.                   */
+같나("틈에 이름이 붙어 있다", /var _PR_NEAR_ = 0\.05;/.test(소스), true);
+같나("★ 0.51 을 쓰는 자리가 없다 ★", /Math\.abs\([^)]*\) [<>]=? 0\.51/.test(소스), false);
+같나("여섯 자리 모두 _PR_NEAR_ 를 쓴다",
+  (소스.match(/_PR_NEAR_/g) || []).length >= 7, true);   // 선언 1 + 쓰는 곳 6
+const 판7 = new Function("Logger", "SpreadsheetApp",
+  소스 + "; return { _pr_ledgerPriceOk_: _pr_ledgerPriceOk_, _PR_NEAR_: _PR_NEAR_ };")({ log() {} }, {});
+같나("★ 「대」 20 과 「소」 19.5 는 다르다 ★", 판7._pr_ledgerPriceOk_("20", 19.5), false);
+같나("68파이 8.2 ↔ 8.7 다르다", 판7._pr_ledgerPriceOk_("8.2", 8.7), false);
+같나("95파이 21.5 ↔ 22.5 다르다", 판7._pr_ledgerPriceOk_("21.5", 22.5), false);
+/*  ★ 그래도 찌꺼기는 같다고 봐야 한다 ★ 안 그러면 멀쩡한 짝을 다 떨어뜨린다 */
+같나("32.99999999999999 ↔ 33 은 같다", 판7._pr_ledgerPriceOk_("33", 32.99999999999999), true);
+같나("매입가 반올림 틈(0.045)도 같다", 판7._pr_ledgerPriceOk_("57", 57.045), true);
+같나("0.1 차이는 다르다", 판7._pr_ledgerPriceOk_("57", 57.1), false);
 /*  「적용된것들은 셀칼라가 노란색으로」 — 비교표가 아니라 ★상품정보의 그 칸★ */
 같나("바꾼 매입가 칸을 노랗게 칠한다",
   /_PR_P_BUY_\)\.setValue\(b\.새매입가\)\.setBackground\(_PR_DONE_BG_\)/.test(소스), true);
@@ -596,7 +621,7 @@ console.log("── 못 찾은 줄을 단가로 찾아 주나 ──");
 같나("후보 찾는 길이 있다", /function _pr_suggest_\(정말\)/.test(소스), true);
 같나("편집기용 이름도 있다", /function partnerPriceRaiseSuggestNow\(\) \{ _pr_suggest_\(true\); \}/.test(소스), true);
 같나("단가가 같은 것만 고른다",
-  /Math\.abs\(Number\(u\.net\) - 종전\) >= 0\.51\) continue;/.test(소스), true);
+  /Math\.abs\(Number\(u\.net\) - 종전\) >= _PR_NEAR_\) continue;/.test(소스), true);
 /*  ★ 깨 봤더니 안 울었다 ★ _pr_isVendor_ 는 ②③ 셈에도 있어서, 후보찾기
     쪽을 지워도 다른 자리에 맞아 통과했다. 그 함수 몸통 안에서만 잰다.   */
 /*  위에서 이미 떼었다(후보찾기0 = 후보찾기) — 두 번 선언하지 않는다 */

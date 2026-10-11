@@ -81,6 +81,25 @@ function _pr_isNA_(글) {
   return false;
 }
 
+/**
+ * ★ 단가를 「같다」고 볼 틈 ★  (2026-10-12)
+ *
+ * 여태 ±0.51 이었다. 반올림 오차를 봐주려던 값인데 ★너무 넓었다★ —
+ * 사장님 미리보기에서 이렇게 걸렸다:
+ *   정희 「75*70(3번)」 종전 20 → JH 신형 75파이 ★소★ (현재 19.5)
+ *   |19.5 - 20| = 0.5 < 0.51  →  「종전단가일치 O」
+ * 75파이 소(19.5)와 대(20)의 ★진짜 차이가 0.5원★ 이다. 소에 대의 단가를
+ * 씌울 뻔했다. 68파이(8.2/8.7)·95파이(21.5/22.5)도 간격이 그만하다.
+ *
+ * ★ 얼마가 맞나 ★ 우리는 getValues() 로 ★진짜 값★ 을 읽는다 — 화면
+ * 반올림이 끼지 않는다. 남는 것은 두 가지뿐이다:
+ *   · 수식이 내는 찌꺼기 (32.99999999999999 — 1e-14 쯤)
+ *   · 매입가를 원 단위로 반올림해서 생기는 틈 = 0.5 ÷ (1.1 × 수량)
+ *     수량 50 이면 0.009, 수량 10 이면 0.045.
+ * 0.05 면 둘 다 덮고, 0.5 짜리 진짜 차이는 ★안 덮는다★ (열 배 여유).
+ */
+var _PR_NEAR_ = 0.05;
+
 var _PR_TAB_ = "10월인상단가";
 var _PR_LOG_TAB_ = "단가변경이력";
 var _PR_PRODUCT_TAB_ = "상품정보";
@@ -578,7 +597,7 @@ function _pr_ledgerPriceOk_(원장단가, 종전) {
   var parts = String(원장단가 == null ? "" : 원장단가).split(" / ");
   for (var q = 0; q < parts.length; q++) {
     var n = Number(String(parts[q]).replace(/,/g, "").trim());
-    if (!isNaN(n) && Math.abs(n - Number(종전)) < 0.51) return true;
+    if (!isNaN(n) && Math.abs(n - Number(종전)) < _PR_NEAR_) return true;
   }
   return false;
 }
@@ -774,7 +793,7 @@ function _pr_match1_(p, prods) {
     var ws = _pr_words_(품명), sz = _pr_size_(품명), 낱후 = [];
     for (i = 0; i < prods.length; i++) {
       u = prods[i];
-        if (u.net == null || Math.abs(u.net - 종전) >= 0.51) continue;
+        if (u.net == null || Math.abs(u.net - 종전) >= _PR_NEAR_) continue;
       var 겹 = false;
       for (var k2 = 0; k2 < ws.length; k2++) if (u.norm.indexOf(ws[k2]) >= 0) { 겹 = true; break; }
       if (!겹) continue;
@@ -790,7 +809,7 @@ function _pr_match1_(p, prods) {
     var 값후 = [];
     for (i = 0; i < prods.length; i++) {
       u = prods[i];
-        if (u.net != null && Math.abs(u.net - 종전) < 0.51) 값후.push({ u: u, 원장: "" });
+        if (u.net != null && Math.abs(u.net - 종전) < _PR_NEAR_) 값후.push({ u: u, 원장: "" });
     }
     if (값후.length && 값후.length <= 3) return { 근거: "③값만(약함)", 목록: 값후 };
     if (이름후.length) return { 근거: "✖ 후보 " + 이름후.length + "줄 — 너무 많음", 목록: [] };
@@ -1102,7 +1121,7 @@ function _pr_build_(미리, 정말) {
       } else {
         적용후 = (인상 == null) ? "" : 인상;
       }
-      var 값맞 = (종전 != null && u.net != null && Math.abs(u.net - 종전) < 0.51) ? "O" : "";
+      var 값맞 = (종전 != null && u.net != null && Math.abs(u.net - 종전) < _PR_NEAR_) ? "O" : "";
 
       /*  ★ 손으로 볼 것을 좁힌다 ★  (2026-10-12 · 「일일히 다 매칭해야되는거야?」)
           ②이름·③값만 은 ★짐작★ 이다. 그중 우리 개당매입별도가가 업체가 적어
@@ -1639,7 +1658,7 @@ function partnerPriceRaiseCheckSets() {
     if (!b || !l) continue;
     본것++;
     var 합 = Math.round((b.net + l.net) * 100) / 100;
-    if (Math.abs(합 - prods[i].net) < 0.51) continue;
+    if (Math.abs(합 - prods[i].net) < _PR_NEAR_) continue;
     어긋남++;
     if (어긋남 <= 25) {
       말.push("  " + prods[i].code + "  " + prods[i].name.substring(0, 30));
@@ -1812,7 +1831,7 @@ function _pr_suggest_(정말) {
       var u = prods[j];
       var 맞나 = _pr_vendorFit_(u, 업체);
       if (맞나 === "다름") continue;        // 빈칸은 「모른다」 — 막지 않는다
-      if (u.net == null || Math.abs(Number(u.net) - 종전) >= 0.51) continue;
+      if (u.net == null || Math.abs(Number(u.net) - 종전) >= _PR_NEAR_) continue;
       /*  박스수량이 적혀 있으면 한 겹 더 거른다 — 같은 단가라도 박스가
           다르면 다른 물건이다. 수량을 모르는 줄은 거르지 않는다.        */
       if (박스 != null && u.qty != null && Number(u.qty) !== 박스) continue;
