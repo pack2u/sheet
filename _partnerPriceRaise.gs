@@ -1364,3 +1364,112 @@ function partnerPriceRaiseCheckSets() {
   Logger.log(말.join("\n"));
   _pr_say_(말.join("\n").substring(0, 1400));
 }
+
+/* ─────────────────────────────────────────────────────────────
+   ⑥ 되돌리기 — 2026-10-12 인상을 통째로 물린다
+   ───────────────────────────────────────────────────────────── */
+/**
+ * 「단가변경이력」을 읽어 상품정보의 개당매입별도가·개당매입가를 ★되돌린다★.
+ *
+ * ★ 왜 생겼나 ★  (2026-10-12)
+ * > 「돌리고 적용했는데 셀칼라도 안바뀌고 바뀐건 전혀 엄한거 같은데」
+ *
+ * 128줄이 바뀌었고 그중 여럿이 엉뚱한 품목이었다. 까닭은 둘이다 —
+ *   ① ①배운짝이 ★글자 들어 있기★ 로 맞췄다. 단가표 「1호」가 원장
+ *      「71호/검정」 안에 들어 있어 71호 물건이 1호로 잡혔다.
+ *   ② ★동결 줄을 적용했다★. 75 → 75 인데 짝이 틀려 현재가가 112 였고,
+ *      「지금 값과 다르다」는 까닭으로 체크가 켜져 112 를 75 로 ★내렸다★.
+ *
+ * ★ 한 코드가 여러 번 바뀐 것이 있다 ★ MASL0036 은 세 번 적혔다.
+ *   되돌릴 값은 ★맨 처음 줄의 옛 값★ 이다(그게 진짜 원래 값이다).
+ *
+ * ★ 사람이 그 뒤에 고친 것은 안 건드린다 ★ 지금 값이 「내가 마지막으로
+ *   쓴 값」과 다르면 누군가 손을 댄 것이다. 덮지 않고 건너뛰고 알린다
+ *   ([[dont-overwrite-what-you-couldnt-read]]).
+ */
+var _PR_UNDO_WHY_ = "정희·콤콤 2026.10.12 인상";
+
+function partnerPriceRaiseUndo() { _pr_undo_(false); }
+/*  편집기에서 쓰는 이름 — 이 이름을 고르는 것이 「예」를 누르는 것이다 */
+function partnerPriceRaiseUndoNow() { _pr_undo_(true); }
+/*  무엇이 되돌아가는지만 본다. 아무것도 쓰지 않는다 */
+function partnerPriceRaiseUndoPreview() { _pr_undo_(false, true); }
+
+function _pr_undo_(정말, 미리) {
+  var ss = _pr_ss_();
+  var t = ss.getSheetByName(_PR_LOG_TAB_);
+  if (!t) { _pr_say_("「" + _PR_LOG_TAB_ + "」 탭이 없습니다 — 되돌릴 기록이 없습니다."); return; }
+  var last = t.getLastRow();
+  if (last < 2) { _pr_say_("이력이 비어 있습니다."); return; }
+
+  var 이력 = t.getRange(2, 1, last - 1, 8).getValues();
+  var 처음 = {}, 마지막 = {}, 차례 = [];
+  for (var i = 0; i < 이력.length; i++) {
+    if (String(이력[i][7] || "").trim() !== _PR_UNDO_WHY_) continue;
+    var code = String(이력[i][2] || "").trim();
+    if (!code) continue;
+    if (!처음[code]) { 처음[code] = { 옛: 이력[i][4], 이름: 이력[i][3] }; 차례.push(code); }
+    마지막[code] = Number(이력[i][5]);
+  }
+  if (!차례.length) { _pr_say_("「" + _PR_UNDO_WHY_ + "」 기록을 못 찾았습니다."); return; }
+
+  var prods = _pr_loadProducts_();
+  var byCode = {};
+  for (i = 0; i < prods.length; i++) byCode[prods[i].code] = prods[i];
+
+  var 바꿀것 = [], 건너뜀 = [];
+  for (i = 0; i < 차례.length; i++) {
+    var c = 차례[i], p = byCode[c], 옛 = Number(처음[c].옛);
+    if (!p) { 건너뜀.push(c + " — 상품정보에서 못 찾았습니다"); continue; }
+    if (!(옛 > 0)) { 건너뜀.push(c + " — 옛 값이 비어 있습니다"); continue; }
+    if (Number(p.net) === 옛) { 건너뜀.push(c + " — 이미 옛 값입니다"); continue; }
+    /*  ★ 내가 쓴 값 그대로일 때만 되돌린다 ★ 다르면 그 뒤에 사람이
+        고친 것이다. 모르는 칸을 덮지 않는다.                          */
+    if (Number(p.net) !== 마지막[c]) {
+      건너뜀.push(c + " — 지금 " + p.net + " 인데 제가 쓴 값은 " +
+        마지막[c] + " 입니다. 누가 고친 것 같아 두었습니다");
+      continue;
+    }
+    바꿀것.push({ p: p, 옛: 옛, 이름: 처음[c].이름 });
+  }
+
+  var 글 = ["되돌릴 줄 " + 바꿀것.length + " · 건너뛸 줄 " + 건너뜀.length, ""];
+  for (i = 0; i < Math.min(바꿀것.length, 20); i++) {
+    글.push("  " + 바꿀것[i].p.code + "  " + String(바꿀것[i].이름).substring(0, 26) +
+      "   " + 바꿀것[i].p.net + " → " + 바꿀것[i].옛);
+  }
+  if (바꿀것.length > 20) 글.push("  … 그리고 " + (바꿀것.length - 20) + "줄 더");
+  if (건너뜀.length) {
+    글.push("", "── 건너뛸 것 ──");
+    for (i = 0; i < Math.min(건너뜀.length, 15); i++) 글.push("  " + 건너뜀[i]);
+    if (건너뜀.length > 15) 글.push("  … 그 밖 " + (건너뜀.length - 15) + "개");
+  }
+
+  if (미리) { _pr_say_("🧪 되돌리기 미리보기 — ★아무것도 쓰지 않았습니다★\n\n" + 글.join("\n")); return; }
+  if (!바꿀것.length) { _pr_say_("되돌릴 줄이 없습니다.\n\n" + 글.join("\n")); return; }
+  if (!_pr_ask_("↩️ 2026-10-12 인상 되돌리기",
+    바꿀것.length + "줄을 원래 값으로 되돌립니다.\n\n" + 글.slice(2).join("\n").substring(0, 1200),
+    정말, "partnerPriceRaiseUndoNow")) return;
+
+  /*  되돌린 것도 이력에 남긴다 — 무엇을 언제 물렸는지 남아야 한다 */
+  var 도장 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
+  var 누구 = "";
+  try { 누구 = Session.getActiveUser().getEmail() || ""; } catch (e) {}
+  var 적을것 = [];
+  for (i = 0; i < 바꿀것.length; i++) {
+    적을것.push([도장, 누구, 바꿀것[i].p.code, 바꿀것[i].이름, 바꿀것[i].p.net, 바꿀것[i].옛,
+      Math.round(바꿀것[i].옛 * _PR_VAT_ * 100) / 100, "되돌림 — " + _PR_UNDO_WHY_]);
+  }
+  _pr_writeLog_(적을것);
+  SpreadsheetApp.flush();
+
+  var ptab = ss.getSheetByName(_PR_PRODUCT_TAB_);
+  for (i = 0; i < 바꿀것.length; i++) {
+    var b = 바꿀것[i];
+    ptab.getRange(b.p.row, _PR_P_NET_).setValue(b.옛);
+    ptab.getRange(b.p.row, _PR_P_GROSS_).setValue(Math.round(b.옛 * _PR_VAT_ * 100) / 100);
+  }
+  SpreadsheetApp.flush();
+  _pr_say_("↩️ 되돌렸습니다\n\n되돌린 줄 " + 바꿀것.length + " · 건너뛴 줄 " + 건너뜀.length +
+    "\n\n기록은 「" + _PR_LOG_TAB_ + "」 탭에 「되돌림」으로 남겼습니다.");
+}

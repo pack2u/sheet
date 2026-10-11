@@ -366,6 +366,10 @@ function registerPartnerMenu_() {
             .addItem("💾 ③ 체크한 줄 — 상품정보 단가 적용", "partnerPriceRaiseApply")
             .addItem("🔗 ④ 체크한 줄 — 누적품목매핑에 쌓기", "partnerPriceRaiseApplyMapping")
             .addSeparator()
+            /*  ★ 2026-10-12 사고 ★ 엉뚱한 품목 단가가 바뀌어 되돌릴 길을 뒀다 */
+            .addItem("🧪 ↩️ 되돌리기 미리보기 (안 바꿈)", "partnerPriceRaiseUndoPreview")
+            .addItem("↩️ 2026-10-12 인상 되돌리기", "partnerPriceRaiseUndo")
+            .addSeparator()
             .addItem("🎨 색 다시 칠하기 (값은 안 바꿈)", "partnerPriceRaiseRecolor")
             .addItem("🧮 세트 = 몸통+뚜껑 점검", "partnerPriceRaiseCheckSets")
         )
