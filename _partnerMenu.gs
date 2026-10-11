@@ -359,7 +359,9 @@ function registerPartnerMenu_() {
                 메뉴에 없어서 사장님이 편집기에서 돌리셨다. 편집기에는 창이
                 없어 로그로만 나오고, 「실행 중」 표시가 남아 끝난 줄을 모른다.
                 먼저 볼 것이니 먼저 둔다.                                   */
-            .addItem("🧪 ⓞ 비교표 미리보기 (안 만듦)", "partnerPriceRaiseBuildPreview")
+            /*  ★ 이름을 갈랐다 ★  (2026-10-12) 둘 다 「미리보기」라 지어서
+                사장님이 ⓞ 를 눌러 놓고 ② 를 기다리셨다. 무엇을 보는지로 적는다. */
+            .addItem("🧪 ⓞ 비교표를 만들면 어떻게 되나 (안 만듦)", "partnerPriceRaiseBuildPreview")
             .addItem("📋 ① 비교표 만들기", "partnerPriceRaiseBuild")
             .addSeparator()
             /*  ★ 못 찾은 줄을 단가로 찾아 준다 ★  (2026-10-12)
@@ -367,7 +369,7 @@ function registerPartnerMenu_() {
                 부르지만 ★단가는 같은 물건을 가리킨다★.                   */
             .addItem("🔎 ①-1 못 찾은 줄 — 단가가 같은 품목 찾기", "partnerPriceRaiseSuggest")
             .addSeparator()
-            .addItem("🧪 ② 미리보기 (안 바꿈)", "partnerPriceRaisePreview")
+            .addItem("🧪 ② 체크한 줄이 어떻게 바뀌나 (안 바꿈)", "partnerPriceRaisePreview")
             .addItem("💾 ③ 체크한 줄 — 상품정보 단가 적용", "partnerPriceRaiseApply")
             .addItem("🔗 ④ 체크한 줄 — 누적품목매핑에 쌓기", "partnerPriceRaiseApplyMapping")
             .addSeparator()
