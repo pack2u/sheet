@@ -1620,6 +1620,33 @@ function _pr_shareTokens_(가, 나) {
   return 같은;
 }
 
+/**
+ * 구매처가 ★같나·비었나·다른가★.  (후보찾기에서만 쓴다)
+ *
+ * ★ 왜 생겼나 ★  (2026-10-12)
+ * 「12144 뚜껑」·「미니탕용기(대)투톤」이 「후보 없음」으로 나왔다. 이름도
+ * 또렷하고 품번도 맞는데 하나도 안 걸렸다. 까닭은 구매처였다 —
+ *   · HPKAN00002 「JH 반찬용기 12144-4칸 600세트」 구매처 ★빈칸★
+ *   · MATYG0054 「JH 미니탕 소」 구매처 ★정희화학★ (단가표는 콤콤)
+ * _pr_isVendor_ 는 구매처가 비면 「정희 + JH 코드」만 통과시킨다 —
+ * 콤콤은 영영 못 통과한다.
+ *
+ * ★ 비어 있는 것과 다른 것은 다르다 ★ 비었으면 ★모르는★ 것이지 아닌 것이
+ * 아니다([[dont-overwrite-what-you-couldnt-read]]). 막지 않고 표시만 한다.
+ * 다르면 막되, 품번이 겹치는 센 짝(3점 이상)은 보여 준다 — 상품정보의
+ * 구매처가 틀려 있을 수도 있다.
+ *
+ * ★ ②③ 셈은 건드리지 않는다 ★ 거기는 체크가 저절로 켜지는 길이라
+ * 느슨하게 하면 틀린 짝이 적용된다. 여기는 ★보여만 주는★ 길이다.
+ */
+/**  꼬리에 붙일 구매처 쪽지. 같으면 아무것도 안 붙인다. */
+function _pr_vendorTail_(맞나) { return 맞나 === "다름" ? "·구매처다름" : ""; }
+
+function _pr_vendorFit_(u, 업체) {
+  if (!u.vendor) return "빈칸";
+  return u.vendor.indexOf(업체) >= 0 ? "같음" : "다름";
+}
+
 function partnerPriceRaiseSuggest() { _pr_suggest_(false); }
 /*  편집기에서 쓰는 이름 — 이 이름을 고르는 것이 「예」를 누르는 것이다 */
 function partnerPriceRaiseSuggestNow() { _pr_suggest_(true); }
@@ -1655,7 +1682,8 @@ function _pr_suggest_(정말) {
     var 후보 = [];
     for (var j = 0; j < prods.length; j++) {
       var u = prods[j];
-      if (!_pr_isVendor_(u, 업체)) continue;
+      var 맞나 = _pr_vendorFit_(u, 업체);
+      if (맞나 === "다름") continue;        // 빈칸은 「모른다」 — 막지 않는다
       if (u.net == null || Math.abs(Number(u.net) - 종전) >= 0.51) continue;
       /*  박스수량이 적혀 있으면 한 겹 더 거른다 — 같은 단가라도 박스가
           다르면 다른 물건이다. 수량을 모르는 줄은 거르지 않는다.        */
@@ -1668,8 +1696,9 @@ function _pr_suggest_(정말) {
     var 겹친것 = [], 단가만 = [];
     for (var z = 0; z < 후보.length; z++) {
       var 같은낱말 = _pr_shareTokens_(품명0, 후보[z].name);
-      if (같은낱말.length) 겹친것.push({ u: 후보[z], 낱말: 같은낱말, 꼬리: "단가·이름" });
-      else 단가만.push({ u: 후보[z], 낱말: [], 꼬리: "단가만" });
+      var 터 = _pr_vendorFit_(후보[z], 업체) === "빈칸" ? "·구매처빈칸" : "";
+      if (같은낱말.length) 겹친것.push({ u: 후보[z], 낱말: 같은낱말, 꼬리: "단가·이름" + 터 });
+      else 단가만.push({ u: 후보[z], 낱말: [], 꼬리: "단가만" + 터 });
     }
 
     /*  ★ 단가로 못 찾으면 이름으로 찾는다 ★  (2026-10-12)
@@ -1683,16 +1712,20 @@ function _pr_suggest_(정말) {
       var 모음 = [];
       for (z = 0; z < prods.length; z++) {
         var w = prods[z];
-        if (!_pr_isVendor_(w, 업체)) continue;
+        var 터2 = _pr_vendorFit_(w, 업체);
         var 낱 = _pr_shareTokens_(품명0, w.name);
         if (!낱.length) continue;
         /*  ★ 흔한 한글 하나로는 안 걸린다 ★ 「파이」 하나로 걸리면 수백 개가
             올라온다. 숫자(품번)는 하나라도 세다.                         */
         var 낱점 = _pr_tokenScore_(낱);
         if (낱점 < 2) continue;
-        var 점수 = 낱점;
+        /*  구매처가 ★다르면★ 품번이 겹치는 센 짝만 본다 — 상품정보의
+            구매처가 틀려 있을 수도 있다(미니탕: 단가표 콤콤 · 시트 정희화학). */
+        if (터2 === "다름" && 낱점 < 3) continue;
+        var 점수 = 낱점 + (터2 === "같음" ? 1 : 0);
         if (박스 != null && w.qty != null && Number(w.qty) === 박스) 점수 += 2;
-        모음.push({ u: w, 낱말: 낱, 꼬리: "이름만", 점수: 점수 });
+        모음.push({ u: w, 낱말: 낱, 점수: 점수,
+          꼬리: "이름만" + (터2 === "빈칸" ? "·구매처빈칸" : _pr_vendorTail_(터2)) });
       }
       모음.sort(function (가, 나) { return 나.점수 - 가.점수; });
       이름만 = 모음.slice(0, 5);   // 너무 많으면 고르기 어렵다
