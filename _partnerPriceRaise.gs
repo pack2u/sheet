@@ -543,27 +543,6 @@ function _pr_loadProducts_() {
  * 막지 않는다 — 대신 ★자동 체크를 켜지 않는다★(아래 켜기 조건).
  * 짝은 보여 주되 돈은 사람이 켤 때만 움직인다.
  */
-/**
- * 구매처가 ★적힌★ 짝이 하나라도 있으면 그것만 남긴다.
- *
- * ★ 왜 생겼나 ★  (2026-10-12)
- * 구매처 빈칸을 막지 않게 했더니 ②이름 후보가 불어나 「16개 넘으면 포기」
- * 빗장에 걸렸다. 그래서 ★맞던 짝이 사라졌다★ —
- *   콤콤 · 19153 → BF1915SL00001 「BF 실링 19153 화이트 900개」
- *   콤콤 · 105파이(소)/PP → BF105PP0004
- * 느슨하게 했더니 좋은 짝을 잃은 것이다.
- *
- * ★ 모르는 것이 아는 것을 밀어내면 안 된다 ★ 구매처가 적힌 짝이 있으면
- * 그것이 답이다. 빈칸짜리는 ★아는 것이 하나도 없을 때만★ 쓴다.
- */
-function _pr_preferKnown_(들, 업체) {
-  var 아는것 = [];
-  for (var i = 0; i < 들.length; i++) {
-    if (_pr_vendorFit_(들[i].u, 업체) === "같음") 아는것.push(들[i]);
-  }
-  return 아는것.length ? 아는것 : 들;
-}
-
 function _pr_isVendor_(u, 업체) {
   if (!u.vendor) return true;          // 모른다 — 막지 않는다
   return u.vendor.indexOf(업체) >= 0;
@@ -625,7 +604,42 @@ function _pr_ledgerPriceOk_(원장단가, 종전) {
   return false;
 }
 
+/**
+ * 짝 찾기 — ★조인 쪽을 먼저, 못 찾으면 넓혀서 한 번 더★.
+ *
+ * ★ 왜 이렇게 바꿨나 ★  (2026-10-12)
+ * > 「jh만 있는게 아니니까 BF도 FP도 있으니까 … 콤콤은 CC 도 있어」
+ *
+ * 코드 머리 짐작을 버리고 「구매처가 비면 막지 않는다」로 풀었더니,
+ * 후보가 불어나 ③값만의 「3개 이하」·②의 「16개 이하」 빗장을 터뜨렸다.
+ * 그래서 ★되던 짝이 못 찾음으로 갔다★ — 못찾고오름 18 → 26.
+ *   신삼계탕(대·중·소) · 220파이탕(소·중·대·뚜껑) · 12144 뚜껑 …
+ * 조이면 못 찾고, 풀면 빗장이 터진다. 어느 쪽도 답이 아니다.
+ *
+ * ★ 그래서 두 번 돌린다 ★
+ *   ① 구매처가 ★그 업체로 적힌★ 품목만으로 찾는다  ← 여태 되던 그대로
+ *   ② 못 찾았을 때만 ★구매처 빈칸★ 까지 넣어 한 번 더
+ * 이러면 ★전에 되던 것은 반드시 그대로 된다★. 넓히기는 보태기만 한다.
+ * ②로 찾은 것은 근거에 「구매처모름」을 달아 눈에 띄게 하고, 켜기 조건이
+ * 저절로 안 켜 준다.
+ */
 function _pr_match_(p, prods) {
+  var 업체0 = p[0];
+  var 아는것 = [], 빈칸 = [];
+  for (var t = 0; t < prods.length; t++) {
+    var 맞 = _pr_vendorFit_(prods[t], 업체0);
+    if (맞 === "같음") 아는것.push(prods[t]);
+    else if (맞 === "빈칸") 빈칸.push(prods[t]);
+  }
+  var 첫 = _pr_match1_(p, 아는것);
+  if (첫.목록.length) return 첫;
+  if (!빈칸.length) return 첫;
+  var 둘 = _pr_match1_(p, 아는것.concat(빈칸));
+  if (!둘.목록.length) return 첫;      // 넓혀도 못 찾으면 처음 까닭을 그대로
+  return { 근거: 둘.근거 + "(구매처모름)", 목록: 둘.목록 };
+}
+
+function _pr_match1_(p, prods) {
   var 업체 = p[0], 품명 = p[2], 종전 = p[4];
   var key = _pr_norm_(품명);
   var i, u;
@@ -694,7 +708,6 @@ function _pr_match_(p, prods) {
     if (!_pr_isVendor_(u, 업체)) continue;
     if (key && u.norm.indexOf(key) >= 0) 이름후.push({ u: u, 원장: "" });
   }
-  이름후 = _pr_preferKnown_(이름후, 업체);
   if (이름후.length && 이름후.length <= 16) return { 근거: "②이름", 목록: 이름후 };
 
   //  ②' 낱말이 겹치고 값도 같다 (크기는 반드시 같아야 한다)
@@ -711,7 +724,6 @@ function _pr_match_(p, prods) {
       if (sz && sz2 && sz !== sz2) continue;
       낱후.push({ u: u, 원장: "" });
     }
-    낱후 = _pr_preferKnown_(낱후, 업체);
     if (낱후.length && 낱후.length <= 16) return { 근거: "②'낱말+값", 목록: 낱후 };
   }
 
@@ -723,7 +735,6 @@ function _pr_match_(p, prods) {
       if (!_pr_isVendor_(u, 업체)) continue;
       if (u.net != null && Math.abs(u.net - 종전) < 0.51) 값후.push({ u: u, 원장: "" });
     }
-    값후 = _pr_preferKnown_(값후, 업체);
     if (값후.length && 값후.length <= 3) return { 근거: "③값만(약함)", 목록: 값후 };
     if (이름후.length) return { 근거: "✖ 후보 " + 이름후.length + "줄 — 너무 많음", 목록: [] };
   }
