@@ -167,6 +167,9 @@ function registerMallPolicyMenu_() {
     .addItem("🔬 원장 떠보기 (칸별 내용 확인)", "mpSampleLedger")
     .addItem("📥 찾은 몰을 쇼핑몰정책에 채우기", "mpSeedPolicyFromDiscovery")
     .addSeparator()
+    .addItem("🧹 몰 아닌 줄 찾기 (미리보기)", "mpCleanPolicy")
+    .addItem("🧹 정말 비우기", "mpCleanPolicyApply")
+    .addSeparator()
     .addItem("🔍 설정 점검", "mpDiagnose")
     .addToUi();
 }
@@ -1117,7 +1120,7 @@ function mpDiscoverMalls() {
       "(_MP_SCAN_MAX_). 몰이 빠질 수 있습니다.");
   }
   for (var x = 0; x < 내역.length; x++) {
-    out.getRange(mr2 + 1 + x, 2).setValue(내역[x])
+    out.getRange(mr2 + 1 + x, 3).setValue(내역[x])
       .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
   }
 
@@ -1135,24 +1138,24 @@ function mpDiscoverMalls() {
   if (모름목록.length) {
     out.getRange(ur, 1).setValue("★ 모르는 구분")
       .setFontWeight("bold").setFontFamily("Arial").setFontColor("#AA0000");
-    out.getRange(ur, 2).setValue(
+    out.getRange(ur, 3).setValue(
       "거래처명이 「무엇/무엇」 모양인데 사업자 구분으로 아는 말(" +
       _MP_BIZ_PREFIXES_.join(" · ") + ")이 아니어서 세지 않은 것입니다.")
       .setFontFamily("Arial").setFontSize(10).setFontColor("#AA0000");
-    out.getRange(ur + 1, 2).setValue(
+    out.getRange(ur + 1, 3).setValue(
       "몰이 맞으면 알려 주세요 — mallPolicy.gs 의 _MP_BIZ_PREFIXES_ 에 더하면 다음부터 셉니다.")
       .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
     var ukRows = [];
     for (var u = 0; u < Math.min(모름목록.length, 30); u++) {
       ukRows.push([모름목록[u].말, 모름목록[u].수]);
     }
-    out.getRange(ur + 3, 2, 1, 2).setValues([["구분처럼 보이는 말", "건수"]])
+    out.getRange(ur + 3, 3, 1, 2).setValues([["구분처럼 보이는 말", "건수"]])
       .setBackground("#252525").setFontColor("#F0F0F0")
       .setFontWeight("bold").setFontFamily("Arial").setHorizontalAlignment("center");
-    out.getRange(ur + 4, 2, ukRows.length, 2).setValues(ukRows)
+    out.getRange(ur + 4, 3, ukRows.length, 2).setValues(ukRows)
       .setFontFamily("Arial").setFontSize(10)
       .setBorder(true, true, true, true, true, true, "#BBBBBB", SpreadsheetApp.BorderStyle.SOLID);
-    out.getRange(ur + 4, 3, ukRows.length, 1).setNumberFormat(_MP_WON_);
+    out.getRange(ur + 4, 4, ukRows.length, 1).setNumberFormat(_MP_WON_);
   } else {
     out.getRange(ur, 2).setValue("모르는 구분은 없습니다.")
       .setFontFamily("Arial").setFontSize(10).setFontStyle("italic").setFontColor("#555555");
@@ -1233,7 +1236,24 @@ function mpSeedPolicyFromDiscovery() {
     if (ui) ui.alert(글.join("\n"));
     return 글.join("\n");
   }
-  var cand = found.getRange(4, 2, fl - 3, 2).getDisplayValues();   // 몰명 · 건수
+  /*  ★ 몰 목록이 «어디서 끝나는지»를 알아야 한다 ★  (2026-10-11)
+
+      처음에 4행부터 마지막 행까지 통째로 읽었다. 그 아래에는 「셈한 내역」
+      메모가 있고, 그 메모를 하필 «2번 칸»에 적어 두었다 — 몰명과 같은 칸이다.
+      그래서 「읽은 칸 : 출력품목명 14번…」 같은 설명 문장이 몰 이름으로
+      쇼핑몰정책에 들어갔다. 17개를 넣으려다 33개를 넣은 셈이다.
+
+      몰 줄에는 1번 칸에 순위(1,2,3…)가 있고 메모 줄에는 없다.
+      숫자가 끊기는 데서 멈춘다 — 표가 어디까지인지는 표 자신이 안다.       */
+  var 원표 = found.getRange(4, 1, Math.max(fl - 3, 1), 5).getDisplayValues();
+  var cand = [];
+  for (var q = 0; q < 원표.length; q++) {
+    var 순위 = String(원표[q][0] || "").trim();
+    if (!/^\d+$/.test(순위)) break;              // 숫자가 아니면 표가 끝난 것이다
+    var 몰명q = String(원표[q][1] || "").trim();
+    if (!몰명q) break;
+    cand.push([몰명q, String(원표[q][4] || "").trim()]);   // 몰명 · 건수
+  }
 
   /*  ★ 심어 둔 「쿠팡」과 찾아낸 「법인/쿠팡」은 «같은 몰»이다 ★  (2026-10-10)
 
@@ -1581,6 +1601,149 @@ function mpSampleLedger() {
   글.push("「" + _MP_SAMPLE_TAB_ + "」 탭을 보시고, 「읽은몰」이 비어 있는 줄의");
   글.push("출력품목명·거래처명을 보여 주시면 규칙을 맞추겠습니다.");
 
+  if (ui) ui.alert(글.join("\n"));
+  return 글.join("\n");
+}
+
+// ══════════════════════════════════════════════════════════════
+//  ⑤ 쇼핑몰정책 치우기 — 몰이 아닌 줄을 비운다
+//
+//  ★ 왜 필요해졌나 ★  (2026-10-11)
+//    「몰찾기결과」의 설명 메모를 하필 2번 칸(몰명과 같은 칸)에 적어 두었고,
+//    📥 가 4행부터 끝까지 통째로 읽는 바람에
+//      「읽은 칸 : 출력품목명 14번…」 · 「★ 몰은 «품목명 꼬리»에서…」
+//    같은 «문장»이 몰 이름으로 쇼핑몰정책에 들어갔다. 17개를 넣으려다 33개.
+//
+//    원인(메모 칸·읽는 범위)은 고쳤지만, 이미 들어간 줄은 손으로 지워야 한다.
+//    서른 줄을 눈으로 고르게 두면 쓸 줄을 같이 지운다. 도구가 골라 준다.
+//
+//  ★ 바로 지우지 않는다 ★
+//    먼저 «무엇을 비울지» 보여 주고, 사람이 예를 눌러야 비운다.
+//    사람이 요율을 적어 둔 줄은 «후보로도» 올리지 않는다 — 그 줄은
+//    이름이 이상해 보여도 누군가 뜻이 있어 적은 것이다.
+//
+//  ★ 지우지 않고 «비운다» ★
+//    줄을 삭제하면 아래가 올라와 서식·수식 자리가 어긋난다.
+//    입력 칸만 비워 «빈 자리»로 되돌린다. K·L 은 수식이라 건드리지 않는다.
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * 몰 이름으로 보기 어려운가 — 치울 «후보»인지 본다.
+ *
+ * 실제 몰 이름은 짧고 공백이 거의 없다 (법인/배민상회 · 법인/(주)텐바이텐 ·
+ * 법인/도매꾹/지앤지커머스). 들어간 쓰레기는 설명 «문장» 이다.
+ */
+function _mp_looksLikeJunk_(name) {
+  var t = String(name || "").trim();
+  if (!t) return false;                 // 빈 줄은 치울 것이 없다
+
+  //  메모에서 실제로 들어간 말머리들
+  var 말머리 = ["★", "·", "읽은 칸", "돈 때", "사방넷 줄", "전화주문", "대리판매",
+                "몰 모름", "셈한 내역", "구분처럼", "거래처명이", "몰이 맞으면",
+                "모르는 구분", "여기부터", "원장이"];
+  for (var i = 0; i < 말머리.length; i++) {
+    if (t.indexOf(말머리[i]) === 0) return true;
+  }
+
+  //  문장은 길고 공백이 많다. 몰 이름은 그렇지 않다.
+  if (t.length > 30) return true;
+  var 공백 = t.split(/\s+/).length - 1;
+  if (공백 >= 3) return true;
+
+  //  문장 부호가 섞이면 이름이 아니다 (괄호는 「(주)텐바이텐」 때문에 뺀다)
+  if (/[:：「」«»…]/.test(t)) return true;
+
+  return false;
+}
+
+/**
+ * 쇼핑몰정책에서 몰이 아닌 줄을 비운다.
+ *
+ * @param {boolean} 진짜로  true 면 비운다. 기본은 «미리보기»다.
+ */
+function mpCleanPolicy() {
+  _mp_cleanPolicy_(false);
+}
+
+/** 메뉴에서 부르는 「정말 비우기」 */
+function mpCleanPolicyApply() {
+  _mp_cleanPolicy_(true);
+}
+
+function _mp_cleanPolicy_(진짜로) {
+  var ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) {}
+  var 글 = ["■ 쇼핑몰정책 치우기" + (진짜로 ? "" : "  (미리보기 · 아직 안 바꿉니다)"), ""];
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pol = ss.getSheetByName(_MP_TAB_POLICY_);
+  if (!pol) {
+    글.push("★ 「" + _MP_TAB_POLICY_ + "」 탭이 없습니다.");
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+
+  var 끝 = _MP_FIRST_ROW_ + _MP_ROWS_ - 1;
+  var 값 = pol.getRange(_MP_FIRST_ROW_, 1, _MP_ROWS_, 19).getDisplayValues();
+
+  var 치울것 = [], 지킨것 = [];
+  for (var i = 0; i < 값.length; i++) {
+    var row = _MP_FIRST_ROW_ + i;
+    var 몰명 = String(값[i][1] || "").trim();
+    if (!_mp_looksLikeJunk_(몰명)) continue;
+
+    /*  ★ 사람이 적어 둔 줄은 건드리지 않는다 ★
+        확인수수료율·결제수수료율·최저허용가 중 하나라도 적혀 있으면
+        누군가 뜻이 있어 만든 줄이다. 이름이 이상해도 사람이 정한다.      */
+    var 손댄것 = String(값[i][7] || "").trim() || String(값[i][8] || "").trim() ||
+                 String(값[i][15] || "").trim();
+    if (손댄것) { 지킨것.push(row + "행  " + 몰명.slice(0, 40)); continue; }
+
+    치울것.push({ 행: row, 이름: 몰명 });
+  }
+
+  if (!치울것.length) {
+    글.push("치울 줄이 없습니다 — 몰 이름 같지 않은 줄을 못 찾았습니다.");
+    if (지킨것.length) {
+      글.push("");
+      글.push("※ 이름이 이상하지만 값이 적혀 있어 «그대로 둔» 줄 " + 지킨것.length + "개:");
+      for (var g = 0; g < Math.min(지킨것.length, 10); g++) 글.push("   " + 지킨것[g]);
+    }
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+
+  글.push("몰 이름 같지 않은 줄 " + 치울것.length + "개를 찾았습니다.");
+  글.push("");
+  for (var c = 0; c < Math.min(치울것.length, 40); c++) {
+    글.push("  " + 치울것[c].행 + "행  " + 치울것[c].이름.slice(0, 56));
+  }
+  if (치울것.length > 40) 글.push("  … 그 외 " + (치울것.length - 40) + "개");
+
+  if (지킨것.length) {
+    글.push("");
+    글.push("※ 값이 적혀 있어 «그대로 둔» 줄 " + 지킨것.length + "개 — 손으로 보세요:");
+    for (var g2 = 0; g2 < Math.min(지킨것.length, 10); g2++) 글.push("   " + 지킨것[g2]);
+  }
+
+  if (!진짜로) {
+    글.push("");
+    글.push("비우려면 「🧹 정말 비우기」를 누르세요.");
+    글.push("줄을 삭제하지 않고 «입력 칸만» 비웁니다 — 서식·수식 자리는 그대로입니다.");
+    if (ui) ui.alert(글.join("\n"));
+    return 글.join("\n");
+  }
+
+  /*  입력 칸만 비운다. K(11)·L(12) 는 수식이라 건드리지 않는다.  */
+  for (var d = 0; d < 치울것.length; d++) {
+    var r = 치울것[d].행;
+    pol.getRange(r, 1, 1, 10).clearContent();     // A~J
+    pol.getRange(r, 13, 1, 7).clearContent();     // M~S
+  }
+
+  글.push("");
+  글.push("비웠습니다 — " + 치울것.length + "개 줄.");
+  글.push("이어서 「📥 찾은 몰을 쇼핑몰정책에 채우기」를 다시 누르세요.");
   if (ui) ui.alert(글.join("\n"));
   return 글.join("\n");
 }
