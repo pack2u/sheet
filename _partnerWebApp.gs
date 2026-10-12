@@ -1691,6 +1691,9 @@ function _trigger_monthlySettle_() {
 function _trigger_exclusiveArchive_() {
   // ★ 2026-06-27: 주말 차단
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 대리공급 마감 스킵"); return; }
+  //  ★ 2026-10-12 — 마감 «전에» 늦게 돈 세트분리 3차를 임시기록에 담는다 (_pep_tempCatchUp_)
+  //  내일 아침 1차가 대리발송 탭을 덮어쓰기 전 마지막 기회다.
+  _pep_tempCatchUp_("23:00 대리공급 마감 앞");
   try {
     Logger.log("[TRIGGER 23:30] 대리공급 마감 시작");
     // ★ 2026-06-30: 디버깅 — 파일 목록 확인
@@ -1906,6 +1909,8 @@ function _trigger_NK_Gmail_() {
 function _trigger_fetchInvoices_() {
   // ★ 2026-06-27: 주말 차단
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 송장 수집 스킵"); return; }
+  //  ★ 2026-10-12 — 15:40 담기보다 늦게 돈 세트분리 3차를 여기서 한 번 더 담는다 (_pep_tempCatchUp_)
+  _pep_tempCatchUp_("16:40 송장 수집 앞");
   try {
     Logger.log("[TRIGGER 16:05] 허브 송장 수집 시작");
     partnerFetchInvoices();

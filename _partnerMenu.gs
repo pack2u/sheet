@@ -44,6 +44,7 @@ function registerPartnerMenu_() {
     .addItem("3️⃣ 대리공급업체로 발주 Push", "partnerPushOrdersToExclusiveFormsOwner")
     // Push 가 중간에 끊겼을 때 이어서 밀 때 쓴다. 매일 흐름의 일부라 남긴다.
     .addItem("   └ 📋 임시기록 → 전용양식 Push", "partnerPushFromTempTabToExclusiveOwner")
+    .addItem("   └ 📥 임시기록에만 담기 (업체 발주 안 나감)", "partnerPushTempOnlyOwner")   // 2026-10-12 늦은 3차용
     .addItem("   └ 🧪 임시기록 Push 예행 점검", "partnerDiagnoseTempPush")
     .addSeparator()
 

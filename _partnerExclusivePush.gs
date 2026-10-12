@@ -3877,6 +3877,40 @@ function partnerPushTempOnlySilent_() {
   } catch (_) {}
 }
 
+/**
+ * ★ 뒤늦은 세트분리 3차를 임시기록에 담는다 ★  (2026-10-12)
+ *
+ * > "원래 3차에서 푸시시 임시기록에 저장이 되게 되있는데 임시기록에도 없네 이유를 찾아줘"
+ *
+ * 15:40 「임시기록에만 담기」는 세트분리 대리발송 탭을 읽는다. 그런데 10/12 3차 세트분리는
+ * 15:51 에 돌았다 — 15:40 담기는 그 전(2차) 탭을 봤고, 3차 19줄은 어디에도 안 담겼다.
+ * 그대로 두면 다음 날 1차 세트분리(08:30 무렵)가 대리발송 탭을 덮어써 영영 사라진다.
+ *
+ * 새 트리거를 안 만든다(한도 18 — [[gas-trigger-slots-reserve-two]]). 이미 도는 두 자리에 얹는다:
+ *   16:40 송장 수집 앞 · 23:00 대리공급 마감 앞
+ * 같은 줄은 두 번 안 담긴다(임시기록 고유ID+품목코드로 접는다) — 여러 번 불러도 안전하다.
+ * 업체 파일은 안 연다. 담긴 줄은 「발주대기」로 남고 다음 13:50 푸시가 태운다.
+ * 실패해도 부른 쪽(수집·마감)은 계속 돈다.
+ *
+ * @param {string} 어디서  로그용
+ */
+function _pep_tempCatchUp_(어디서) {
+  if (_pt_isWeekendBlackout_()) return;
+  try {
+    partnerPushOrdersToExclusiveForms(true, true);
+    Logger.log("[PEP_CATCHUP] " + 어디서 + " — 임시기록 담기 확인 끝 (새 줄이 있으면 「" + _PEP_TEMP_WAIT_ + "」로 담김)");
+  } catch (e) {
+    Logger.log("[PEP_CATCHUP] " + 어디서 + " — 임시기록 담기 실패(무시): " + (e && e.message ? e.message : e));
+  }
+}
+
+/** 메뉴 — 지금 대리발송 탭을 임시기록에만 담는다 (업체 발주 안 나감) */
+function partnerPushTempOnlyOwner() {
+  _owner_runWithNotify_("임시기록에만 담기", function () {
+    partnerPushOrdersToExclusiveForms(false, true);
+  });
+}
+
 function partnerPushOrdersToExclusiveFormsSilent_() {
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말/공휴일 차단 → 대리공급 Push 스킵"); return; }
   var startTime = new Date();
