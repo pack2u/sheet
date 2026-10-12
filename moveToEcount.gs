@@ -241,7 +241,7 @@ function moveToEcount(targetSheetName, injectedSS) {
                 else if (clsStr === '9003') sVal = '품절';
                 else if (clsStr === '9002') sVal = '판매중(재고까지만)';
                 else if (clsStr === '9005') sVal = '특판/할인';
-                else if (clsStr === '9006') sVal = '상세제작종';
+                else if (clsStr === '9006') sVal = '상세제작중';   // ★ v2 어휘는 「중」이다 (sql/45)
                 else if (clsStr === '9007') sVal = '소싱중';
                 else sVal = '판매중';
             }
@@ -555,7 +555,7 @@ function moveToEcountSelectedCodes_(codes, targetSheetName, injectedSS) {
           else if (clsStr === "9003") newVal = "품절";
           else if (clsStr === "9002") newVal = "판매중(재고까지만)";
           else if (clsStr === "9005") newVal = "특판/할인";
-          else if (clsStr === "9006") newVal = "상세제작종";
+          else if (clsStr === "9006") newVal = "상세제작중";   // ★ v2 어휘는 「중」이다 (sql/45)
           else if (clsStr === "9007") newVal = "소싱중";
           else newVal = "판매중";
         } else if (rule.ecKey === "CLASS_CD2") {

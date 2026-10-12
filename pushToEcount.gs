@@ -80,7 +80,7 @@ function _pushDataToEcount(mode) {
     if (status === '품절') return '9003';
     if (status === '판매중(재고까지만)') return '9002';
     if (status === '특판/할인') return '9005';
-    if (status === '상세제작종') return '9006';
+    if (status === '상세제작중') return '9006';   // ★ 시트·v2 가 쓰는 낱말은 「중」이다
     if (status === '소싱중') return '9007';
     if (status === '판매중') return '9001';
     return ''; 
