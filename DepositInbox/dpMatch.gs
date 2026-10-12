@@ -36,7 +36,7 @@
  * ══════════════════════════════════════════════════════════════
  */
 
-var DP_MATCH_VERSION = "1.1.0";
+var DP_MATCH_VERSION = "1.2.0";
 
 /**
  * ★ 플랫폼 정산금 (2026-09-29 첫날 실입금) ★
@@ -99,6 +99,44 @@ function dpIsRecentOrder(o, depDay) {
   return inWin(String(o.date || "").slice(0, 10)) || inWin(String(o.due || "").slice(0, 10));
 }
 
+/**
+ * ★ 잘린 입금자 이름 ↔ 거래처명 겹침 (2026-10-12 · ERP 방 규칙, 근거 _docs/2026-10-12_입금매칭_잘린이름_규칙.md) ★
+ *   은행은 「노종진(광양매돈)」 「신경순365」 「아제국밥김해직영점」 처럼 이름을 붙이거나 잘라 보낸다.
+ *   9/28~10/04 미확인·후보 49건 중 36건이 «같은 금액 + 이름 겹침» 으로 거래처가 하나로 나왔다.
+ *
+ *   loose (같은 금액일 때만):
+ *     띄어 쓴 조각(2글자 이상)이 상대 이름 안에 통째로 있거나 — 양쪽 다 본다
+ *     아니면 두 글자 묶음이 둘 이상 같다 (「성지족발」 ↔ 「성지왕족발」)
+ *   strict (금액이 다를 때): 조각 통째로만 — 두 글자로 보면 「감자탕」 집끼리 다 붙는다
+ *   v2 app/src/lib/phone-pay-shadow.ts 「이름겹침」 과 같은 규칙.
+ */
+function _dp_nameParts_(s) {
+  return String(s == null ? "" : s).split(/[()\[\]{}\/,·&\s]+/)
+    .map(dpNormName).filter(function (x) { return x.length >= 2; });
+}
+
+function dpNameOverlap(payer, custName, loose) {
+  var p = dpNormName(payer), c = dpNormName(custName);
+  if (p.length < 2 || c.length < 2) return false;
+  var pp = _dp_nameParts_(payer), cp = _dp_nameParts_(custName);
+  var whole = pp.some(function (x) { return c.indexOf(x) >= 0; }) ||
+              cp.some(function (x) { return p.indexOf(x) >= 0; });
+  if (whole || !loose) return whole;
+  var bi = function (s) { var o = {}; for (var i = 0; i + 1 < s.length; i++) o[s.substr(i, 2)] = 1; return o; };
+  var pb = bi(p), cb = bi(c), same = 0;
+  for (var k in pb) if (cb[k]) same++;
+  return same >= 2;
+}
+
+/** 이름 겹침으로 볼 주문 — 입금일 앞뒤 7일 (주문일이나 납기일). 단골의 옛 같은 금액 주문을 안 가져오게 */
+var DP_OVERLAP_DAYS_ = 7;
+function _dp_nearDeposit_(o, depDay) {
+  if (!depDay) return true;
+  var from = _dp_dayShift_(depDay, -DP_OVERLAP_DAYS_), to = _dp_dayShift_(depDay, DP_OVERLAP_DAYS_);
+  var inWin = function (x) { return x && x >= from && x <= to; };
+  return inWin(String(o.date || "").slice(0, 10)) || inWin(String(o.due || "").slice(0, 10));
+}
+
 /** 합산 조합을 찾을 때 볼 주문 수 한도 — 2^n 이라 크게 잡으면 느려진다 */
 var DP_MATCH_MAX_COMBO_ = 12;
 
@@ -157,11 +195,19 @@ function dpFindCustomer(payer, customers, aliases) {
     parts.forEach(function (part) {
       codes.forEach(function (k) {
         var n = dpNormName(byCode[k].name);
-        if (tokensOf[k].indexOf(part) >= 0 || (part.length >= 3 && n.length >= 3 && n.indexOf(part) >= 0)) seen[k] = 1;
+        var exact = tokensOf[k].indexOf(part) >= 0;
+        if (exact || (part.length >= 3 && n.length >= 3 && n.indexOf(part) >= 0)) {
+          seen[k] = seen[k] || { exact: false, n: 0 };
+          seen[k].n++;
+          if (exact) seen[k].exact = true;
+        }
       });
     });
     var partHits = Object.keys(seen);
-    if (partHits.length === 1) return one(partHits, "이름 조각");
+    // ★ 상호 조각만 «품어서» 맞은 것은 안 믿는다 (2026-10-12) ★
+    //   「최유나(바다양푼이동」 이 «바다양푼이동태탕 서형숙» (다른 지점)에 붙었다 — 제 가게 주문이 아직 안 올라와 있었다.
+    //   조각 하나가 거래처명의 낱말과 «통째로» 같거나(대표자 이름 등), 조각이 다 맞을 때만 붙인다.
+    if (partHits.length === 1 && (seen[partHits[0]].exact || seen[partHits[0]].n === parts.length)) return one(partHits, "이름 조각");
   }
   return null;
 }
@@ -216,9 +262,36 @@ function dpMatchDeposit(dep, orders, aliases) {
 
   var cust = dpFindCustomer(dep.name, customers, aliases);
 
+  var depDay = String((dep && dep.txAt) || "").slice(0, 10);
   if (!cust) {
+    // 같은 금액 + 잘린 이름 겹침 → 거래처가 «하나»로 모이면 일치 (2026-10-12 · dpNameOverlap)
+    var near = open.filter(function (o) { return o.remain === amt && _dp_nearDeposit_(o, depDay); });
+    var byCust = {};
+    near.forEach(function (o) {
+      if (o.code && dpNameOverlap(dep.name, o.name, true)) (byCust[o.code] = byCust[o.code] || []).push(o);
+    });
+    var custHits = Object.keys(byCust);
+    // 금액이 달라도 이름 조각이 «통째로» 겹치는 다른 거래처가 있으면 (육쌈냉면 산본점 / 다른 점) 짐작하지 않는다
+    //   넘겨받은 주문 «전부» 를 본다 — 다 받은 주문 · 7일 밖 주문도. 신또바기 영광점(9/21 주문) 입금이
+    //   선운점의 같은 금액 주문에 붙을 뻔했다 (2026-10-12 실데이터, 규칙 ③)
+    var rival = custHits.length === 1 && (orders || []).some(function (o) {
+      return o && o.code && String(o.code) !== custHits[0] && dpNameOverlap(dep.name, o.name, false);
+    });
+    if (custHits.length === 1 && !rival) {
+      var hitOrders = byCust[custHits[0]];   // 오래된 것부터 (open 차례)
+      out.result = "일치";
+      out.code = custHits[0]; out.cust = hitOrders[0].name; out.how = "이름 겹침 + 같은 금액";
+      out.alloc = [{ no: hitOrders[0].no, apply: amt }];
+      return out;
+    }
+    if (custHits.length > 1) {
+      // 규칙 ④ — 둘 이상이면 짐작하지 않는다. 겹친 주문만 후보로
+      out.result = "후보";
+      custHits.forEach(function (k) { byCust[k].forEach(function (o) { out.candidates.push(o.no); }); });
+      out.reason = "입금자 「" + (dep.name || "?") + "」 이름이 거래처 " + custHits.length + "곳과 겹침 — 같은 금액";
+      return out;
+    }
     // 후보는 당일 · 전날 주문만, 최신순 (DP_CANDIDATE_DAYS_)
-    var depDay = String((dep && dep.txAt) || "").slice(0, 10);
     var same = open.filter(function (o) { return o.remain === amt && dpIsRecentOrder(o, depDay); })
       .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : (a.no < b.no ? 1 : -1); });
     if (same.length) {
@@ -454,8 +527,11 @@ function dpMatchAll(deps, orders, aliases, opts) {
                 code: picked[0].code, cust: picked[0].name, alloc: m.alloc, diff: m.diff, candidates: [], reason: "사람이 지정" };
       }
     } else {
+      // opts.orderDays — 이 입금일 앞 며칠 안의 주문만 (주문일이나 납기일). 없으면 넘긴 것 전부
+      var oFrom = opts.orderDays ? _dp_dayShift_(txAt.slice(0, 10), -opts.orderDays) : "";
       res = dpMatchDeposit({ name: String(d.name || ""), amount: amount, txAt: txAt },
-        mine.map(function (o) { return { no: o.no, date: o.date, due: o.due, code: o.code, name: o.name, amount: o.amount, paid: o.paid }; }),
+        mine.filter(function (o) { return !oFrom || String(o.date) >= oFrom || String(o.due) >= oFrom; })
+          .map(function (o) { return { no: o.no, date: o.date, due: o.due, code: o.code, name: o.name, amount: o.amount, paid: o.paid }; }),
         aliases);
       if (res.how && res.how !== "이름") res.reason = (res.reason ? res.reason + " · " : "") + "거래처: " + res.how;
     }
@@ -584,6 +660,7 @@ if (typeof module !== "undefined" && module.exports) {
     dpReadJournalResult: dpReadJournalResult,
     DP_MATCH_VERSION: DP_MATCH_VERSION,
     dpNormName: dpNormName,
+    dpNameOverlap: dpNameOverlap,
     dpFindCustomer: dpFindCustomer,
     dpMatchDeposit: dpMatchDeposit,
     dpMatchAll: dpMatchAll,

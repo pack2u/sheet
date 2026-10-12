@@ -182,15 +182,16 @@ function dpUpsertOrders_(ss, parsed, by) {
 
 /** 매칭에 쓸 주문 — 최근 DP_ORDER_DAYS_ 일 (주문일이나 납기일 기준) */
 /** 매칭에 쓸 주문 — 판 번호 캐시 (올리기가 판 번호를 올린다) */
-function dpLoadOrders_(ss) {
-  return dpCached_("orders:" + _dp_daysAgo_(DP_ORDER_DAYS_), function () { return _dp_loadOrdersRaw_(ss); });
+function dpLoadOrders_(ss, days) {
+  days = days || DP_ORDER_DAYS_;
+  return dpCached_("orders:" + _dp_daysAgo_(days), function () { return _dp_loadOrdersRaw_(ss, days); });
 }
 
-function _dp_loadOrdersRaw_(ss) {
+function _dp_loadOrdersRaw_(ss, days) {
   var sh = ss.getSheetByName(DP_ORDERS_SHEET_);
   if (!sh) return [];
   var t = _dp_readTab_(sh), c = t.cols;
-  var since = _dp_daysAgo_(DP_ORDER_DAYS_);
+  var since = _dp_daysAgo_(days || DP_ORDER_DAYS_);
   return t.rows.map(function (r) {
     return {
       no: String(r[c["주문번호"] - 1]),
@@ -253,8 +254,12 @@ function dpMatchRunLocked_(ss) {
   /*  ★ 판정은 dpMatch.gs dpMatchAll 이 한다 (2026-10-10) ★
       V2 가 같은 함수로 같은 답을 내야 해서 순서까지 그쪽으로 옮겼다.
       여기는 대장을 읽어 넘기고, 받은 답을 칸에 적기만 한다. */
-  var res = dpMatchAll(dpLedgerDeps_(rows, c), dpLoadOrders_(ss), dpLoadAliases_(ss),
-    { since: _dp_daysAgo_(DP_MATCH_DEPOSIT_DAYS_), frozen: DP_FROZEN_STATES_ });
+  // ★ 주문 창은 «입금마다» 그 입금일 앞 14일 (2026-10-12) ★
+  //   오늘 기준 14일로 자르니, 날이 지나면서 10/01 입금이 붙어 있던 9/21 주문이 창 밖으로 밀려나
+  //   다시 돌릴 때마다 «부족 → 미확인» 이 되고, 신또바기 영광점 입금이 다른 지점에 붙었다.
+  //   그래서 넉넉히(입금 30일 + 14일) 읽고, dpMatchAll 이 입금마다 잘라 준다.
+  var res = dpMatchAll(dpLedgerDeps_(rows, c), dpLoadOrders_(ss, DP_MATCH_DEPOSIT_DAYS_ + DP_ORDER_DAYS_), dpLoadAliases_(ss),
+    { since: _dp_daysAgo_(DP_MATCH_DEPOSIT_DAYS_), frozen: DP_FROZEN_STATES_, orderDays: DP_ORDER_DAYS_ });
 
   rows.forEach(function (r) {
     var key = String(g(r, "고유번호"));

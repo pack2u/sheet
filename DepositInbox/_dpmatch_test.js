@@ -261,5 +261,76 @@ console.log('\n[이카운트 주문서조회 엑셀 읽기]');
   } else console.log('  (실파일 없음 — 건너뜀)');
 }
 
+{
+  // ★ 잘린 이름 겹침 (2026-10-12 · ERP 방 표본 36건 + 후보 둘 1건) ★
+  //   근거 _docs/2026-10-12_입금매칭_잘린이름_규칙.md — 문서의 표본 줄을 그대로 읽어 돌린다
+  const docPath = __dirname + '/../_docs/2026-10-12_입금매칭_잘린이름_규칙.md';
+  const doc = require('fs').existsSync(docPath) ? require('fs').readFileSync(docPath, 'utf8') : '';
+  if (!doc) console.log('  (표본 문서 없음 — 표본 36건 건너뜀)');
+  else {
+  const sec = doc.split('## 표본')[1].split('## 이름만 겹침')[0];
+  const lines = sec.split('\n').filter(l => /^- \d{4}-/.test(l));
+  ok('표본 37줄을 읽었다', lines.length === 37, lines.length);
+  // 같은 날 주문서 — 표본 거래처 모두 + 엉뚱한 같은 금액 주문 하나씩
+  const samples = lines.map((l, i) => {
+    const m = l.match(/^- (\S+) (\S+) (.+) (\d+) → (.+)$/);
+    const custs = m[5].split(' / ').map(s => s.replace(/\(\d{2}-\d{2}\)$/, '').trim());
+    return { day: m[1], payer: m[3], amount: +m[4], custs };
+  });
+  let auto = 0, two = 0, wrong = [];
+  samples.forEach((s, i) => {
+    const orders = s.custs.map((c, j) => ({ no: s.day.replace(/-/g, '/') + '-' + (j + 1), date: s.day, due: '', code: 'C' + i + '_' + j, name: c, amount: s.amount, paid: 0 }))
+      .concat([{ no: s.day.replace(/-/g, '/') + '-9', date: s.day, due: '', code: 'X' + i, name: '무관상회 홍길동', amount: s.amount, paid: 0 }]);
+    const r = m.dpMatchDeposit({ name: s.payer, amount: s.amount, txAt: s.day + ' 12:00' }, orders, {});
+    if (s.custs.length === 1) {
+      if (r.result === '일치' && r.code === 'C' + i + '_0') auto++; else wrong.push(s.payer + ' → ' + r.result + ' ' + r.cust);
+    } else if ((r.result === '후보' && r.candidates.length === s.custs.length) ||
+               (r.result === '일치' && s.custs.some(c => c.includes(r.cust) && r.cust && s.payer.includes(r.cust.split(' ').pop())))) two++;
+    else wrong.push(s.payer + ' (후보 둘이어야) → ' + r.result);
+  });
+  ok('같은 금액 + 이름 겹침 36건이 제 거래처에 붙는다', auto === 36, auto + ' ' + wrong.join(' | '));
+  // 「이금희(진팔팔감자탕」 은 이름 조각 「이금희」 가 한 거래처에만 통째로 있어 기존 규칙이 먼저 바로 찾는다 — 그쪽이 더 정확하다
+  ok('겹치는 거래처가 둘인 표본 — 후보로, 또는 대표자 이름이 통째로 맞는 쪽에 일치', two === 1, wrong.join(' | '));
+  }
+
+  const o = (code, name, amount, date) => ({ no: date.replace(/-/g, '/') + '-' + code, date, due: '', code, name, amount, paid: 0 });
+  let r = m.dpMatchDeposit({ name: '이바돔감자탕', amount: 50000, txAt: '2026-10-02 12:00' },
+    [o('A', '남다른감자탕 명곡광장점 최정애', 61000, '2026-10-02')], {});
+  ok('금액이 다르면 두 글자 겹침으로 안 붙는다 (감자탕)', r.result === '미확인', r.result + ' ' + r.cust);
+  r = m.dpMatchDeposit({ name: '성지족발', amount: 121700, txAt: '2026-10-01 12:00' },
+    [o('A', '성지왕족발 김지윤 정성용', 121700, '2026-09-10')], {});
+  ok('입금일에서 7일 넘게 떨어진 같은 금액 주문은 안 가져온다', r.result !== '일치', r.result);
+  r = m.dpMatchDeposit({ name: '성지족발', amount: 121700, txAt: '2026-10-01 12:00' },
+    [o('A', '성지왕족발 김지윤 정성용', 121700, '2026-09-25')], {});
+  ok('7일 안이면 붙는다', r.result === '일치' && r.how === '이름 겹침 + 같은 금액', r.result + ' ' + r.how);
+  r = m.dpMatchDeposit({ name: '박상식', amount: 1, txAt: '2026-09-28 23:55' }, [o('A', '성지왕족발 김지윤', 1, '2026-09-28')], {});
+  ok('겹침이 없으면 예전처럼 후보', r.result === '후보', r.result);
+  // 규칙 ③ — 실데이터 10-12: 영광점 주문(9/21)이 다 받았거나 7일 밖이어도, 선운점의 같은 금액 주문에 붙으면 안 된다
+  const yg = { no: '2026/09/21-34', date: '2026-09-21', due: '', code: 'YG', name: '신또바기 영광점 김현정', amount: 132200, paid: 132200 };
+  const sw = { no: '2026/09/28-3', date: '2026-09-28', due: '', code: 'SW', name: '신또바기 박정란', amount: 132200, paid: 0 };
+  r = m.dpMatchDeposit({ name: '김현정(신또바기감자', amount: 132200, txAt: '2026-10-01 14:33' }, [yg, sw], {});
+  ok('같은 상호 다른 지점이 있으면 (다 받은 주문이어도) 자동으로 안 붙인다', r.result !== '일치', r.result + ' ' + r.cust);
+  r = m.dpMatchDeposit({ name: '김현정(신또바기감자', amount: 132200, txAt: '2026-10-01 14:33' }, [Object.assign({}, yg, { paid: 0 }), sw], {});
+  ok('영광점 주문이 열려 있으면 대표자 이름으로 영광점', r.result === '일치' && r.code === 'YG', r.result + ' ' + r.cust);
+
+  // 주문 창은 입금마다 — 오늘이 아니라 입금일 앞 14일
+  const deps = [{ key: 'k1', kind: '입금', txAt: '2026-10-01 14:33', state: '대기', pin: '', stored: [], prevResult: '', name: '김현정(신또바기감자', amount: 132200 }];
+  let all = m.dpMatchAll(deps, [Object.assign({}, yg, { paid: 0 }), sw], {}, { since: '2026-09-01', frozen: [], orderDays: 14 });
+  ok('입금일 앞 14일 안의 주문 (9/21 ← 10/01) 은 본다', all.k1.result === '일치' && all.k1.code === 'YG', JSON.stringify(all.k1));
+  all = m.dpMatchAll(deps, [Object.assign({}, yg, { date: '2026-09-10', paid: 0 })], {}, { since: '2026-09-01', frozen: [], orderDays: 14 });
+  ok('입금일 앞 14일보다 오래된 주문은 안 본다', all.k1.result === '미확인', all.k1.result);
+
+  // 실데이터 10-12: 상호 조각만 품어서 다른 지점(다른 대표자)에 붙으면 안 된다
+  r = m.dpMatchDeposit({ name: '최유나(바다양푼이동', amount: 42000, txAt: '2026-10-02 14:50' },
+    [{ no: '2026/09/18-27', date: '2026-09-18', due: '', code: 'SH', name: '바다양푼이동태탕 서형숙', amount: 85000, paid: 0 }], {});
+  ok('상호 조각만 품고 대표자가 다르면 거래처로 안 붙인다', r.code === '', r.result + ' ' + r.cust);
+  r = m.dpMatchDeposit({ name: '박상현(신의주찹쌀순', amount: 40200, txAt: '2026-10-01 10:46' },
+    [{ no: '2026/09/30-1', date: '2026-09-30', due: '', code: 'PS', name: '신의주찹쌀순대 박상현', amount: 50000, paid: 0 }], {});
+  ok('대표자 이름이 통째로 맞으면 금액이 달라도 그 거래처 (부족)', r.code === 'PS' && r.result === '부족', r.result + ' ' + r.cust);
+
+  ok('strict 는 조각 통째로만', m.dpNameOverlap('신경순365', '365청정산나물 신경순', false) &&
+     !m.dpNameOverlap('성지족발', '성지왕족발 김지윤', false));
+}
+
 console.log('\n' + pass + ' 통과 · ' + fail + ' 실패');
 process.exit(fail ? 1 : 0);
