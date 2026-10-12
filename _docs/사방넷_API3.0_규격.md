@@ -427,3 +427,99 @@ POST /v3/sb/product/upsert
 > **짐작해서 박지 말 것.** 응답이 `data.page` 를 **되돌려 준다** —
 > 첫 호출에서 그 값을 읽어 기준을 «알아내는» 쪽이 맞다.
 > 0 을 보냈는데 `page: 1` 이 오면 1 부터인 것이다.
+
+---
+
+## 2-F. SKU 세팅 · 상세페이지 — 실측 (2026-10-12)
+
+운영계 상품 한 건(`JCCR00002`·`BF105PPSET0001`)을 **칸 끝까지** 읽었다.
+쓰기는 샌드박스로만 찔러 봤다.
+
+### 상세페이지 — 칸은 있다. 그런데 ★ 한 벌뿐이다 ★
+
+| 칸 | 실제 |
+|---|---|
+| `productDetailDescription` | **HTML 11,936자** 가 그대로 온다 |
+| `additionalDetailDescription1` · `2` | 추가 설명 140자씩 (둘이 같은 내용이었다) |
+| `imageInfo[]` | **14건** · `imageSrno` + `imagePath` (사방넷 호스팅 `pic.sabangnet.co.kr`) |
+
+> ★★ **「몰별 최적화 상세페이지」는 이 API 로 안 된다** ★★
+> 상품 한 건에 상세설명 칸이 **하나**다. 쿠팡용·스마트스토어용을 따로 둘 자리가 없다.
+> 몰별로 다르게 하려면 **사방넷의 몰 전송 설정** 쪽이어야 하고, 그 API 는 아직 못 봤다.
+> 앞서 「몰별 배포 가능」으로 적어 둔 것은 **근거가 없었다.**
+
+### 판매가도 한 벌뿐이다
+
+`sellingPrice` 19,400 · `consumerPrice` 25,000 · `costPrice` 1 · `managementCostPrice` 0
+
+> **「몰별 판매가 수정」도 이 칸으로는 안 된다.** 같은 이유다.
+> 몰별 가격은 사방넷 몰 설정의 마진율·가격규칙 영역이다.
+
+### SKU 세팅 — 구조는 있고, 지금은 안 쓰고 있다
+
+```
+optionInfo
+  stockUseYn      "N"            ← 재고관리를 안 쓴다
+  optionEditCode  "MODIFIABLE"   ← ★★ 읽을 때도 이 값이 온다 ★★
+  options[1]
+    optionName / optionDetailName  "단품" / "단품"   ← 옵션을 안 쓴다
+    skuCode                        null            ← ★ 칸은 있는데 비어 있다
+    abbreviationName               "JCCR00002"     ← 이카운트 품목코드 (어떤 건 null)
+    barcode                        "2110408800015"
+    stockQuantity                  999             ← stockUseYn=N 이라 더미
+    ea / setDivisionCode           1 / "G"
+    safetyStockQuantity            0
+    location / optionSupplyStatusCode / optionCollectionProductCode   null / null / "-"
+```
+
+> ★★ 가장 위험한 함정 ★★
+> `optionEditCode` 가 **읽을 때도 `MODIFIABLE`** 로 온다.
+> 「읽어서 한 칸 고쳐 되돌려 보내기」를 하면 **그 상품의 옵션이 전멸한다.**
+> 재고송신이 `optionInfo` 를 아예 안 보내는 까닭이 이것이다.
+
+### 그 밖에 읽히는 것
+
+`productName`(마케팅 긴 이름) · `productAbbreviation` · `prtProductName`(송장 인쇄용) ·
+`productTag`(검색 키워드 10개) · `brandName` · `manufacturerName` · `originName`(031) ·
+`myCategoryCodeL/M/S` · `attributeInfo[27]`(상품고시정보 017) · `productCertifications[]` ·
+`deliveryCostCode`(FREE) · `taxCode`(TAXABLE) · `returnLocationNo` · `salesRegionCode` ·
+`packagingExceptYn` · `productDivisionCode`(PURCHASE) · `productCode`(사방넷 내부 104088)
+
+> `modelName` 에 **「97원」**이 들어 있다 — 개당 단가를 모델명 칸에 적어 쓰고 있다.
+> 자동화가 그 칸을 건드리면 그 관용이 깨진다. **손대지 않는다.**
+
+### ★ 쓰기는 아직 못 한다 — 묶음 키 이름을 모른다 ★
+
+`POST /v3/sb/product/upsert` 에 몸통을 보내면 건별 오류가 이렇게 온다:
+
+```
+[상품 목록] 필수 입력값입니다.
+```
+
+**키 이름을 23개 쳐 봤고 전부 같은 답이다.**
+`products` · `productList` · `productInfoList` · `productInfo` · `items` · `itemList` ·
+`list` · `datas` · `data` · `goodsList` · `prodList` · `prdList` · `goodsInfoList` ·
+`productMasterList` · `basicProductList` · `productBasicList` · `productRegList` ·
+`productUpsertList` · `upsertList` · `masterList` · `productInfos` · `goods` · `product` ·
+맨 배열.
+
+> 규격서 §2 에 `{"products": [...]}` 로 적어 뒀던 것은 **틀렸다.**
+> 재고송신 설계의 보내는 모양도 같이 틀렸다. 1단계(드라이런)는 영향 없지만
+> **2단계는 개발자센터의 「요청 본문」 표가 있어야 열린다.**
+
+### ★★ 샌드박스 성공은 증거가 아니다 ★★
+
+통하는 `waybill` 로 버릇을 확인했다:
+
+| 보낸 것 | 응답 |
+|---|---|
+| 온전한 줄 | `200 status=true` |
+| 줄 속 칸 하나 뺌(택배사 없이) | **`200 status=true`** |
+| **빈 줄 `{}` 하나** | **`200 status=true`** |
+| 키 이름 틀림 | `400 [송장 리스트] 필수 입력값입니다.` |
+
+**빈 줄에도 성공이라고 답한다.** 샌드박스는 묶음 키만 보고 속은 안 본다.
+
+> 그래서 재고송신 설계의 **2단계(샌드박스로 보내 보기)는 「전송 경로가 산다」만
+> 증명한다.** 몸통이 맞는지는 **아무것도** 증명하지 않는다.
+> 「샌드박스 통과했으니 됐다」로 운영계에 가면 안 된다.
