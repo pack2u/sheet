@@ -214,6 +214,102 @@ GAS(sabangApi.gs) → sabang.php @222.122.39.14 → sandbox.sabangnet.co.kr → 
 
 ---
 
+---
+
+## 2-D. 개발자센터 실측 (2026-10-12) — PDF 보다 최신이다
+
+`https://developer.sabangnet.co.kr/docs/` (로그인 필요). PDF 는 2026-07-01 자라 **뒤처져 있다.**
+
+### PDF 에 없던 것
+
+| | |
+|---|---|
+| **SKU 상품** (2항목) | `GET /v3/sb/sku` · `POST /v3/sb/sku/upsert` |
+| **주문보정** | `modify-order` |
+| **워크플로우** 섹션 | `/docs/workflow/sabangnet/product` — 절차 안내 |
+
+### ★★ 재고송신은 «된다» — 앞선 판단을 뒤집는다 ★★
+
+`sku/upsert` 문서에는 이렇게 적혀 있다.
+
+> **재고(quantity)는 API를 통해 직접 등록/수정할 수 없습니다**
+
+그래서 한때 「재고송신 불가」로 적었다. **틀렸다.** 그것은 SKU 레벨 이야기고,
+**상품(product) 의 옵션(단품) 레벨에는 재고가 있다.**
+
+```jsonc
+POST /v3/sb/product/upsert
+{ "products": [{
+    "customProductCode": "PRD-001",
+    "optionInfo": {
+      "stockUseYn": "Y",
+      "optionEditCode": "RESET",            // ★ 아래 함정 참고
+      "options": [{
+        "optionDetailName": "블랙/L",
+        "stockQuantity": 0,                 // ★ 가상재고수량
+        "safetyStockQuantity": 0,           // 안전재고
+        "optionSupplyStatusCode": "SOLD_OUT", // SALE · SOLD_OUT
+        "additionalAmount": 0,              // 옵션 추가금
+        "skuCode": "…", "barcode": "…"
+      }]
+    }
+  }] }
+```
+
+→ **몰 14개 과판매 문제를 사방넷 API 로 풀 수 있다.** 재고송신이 1순위로 돌아온다.
+
+### ★ 품절은 숫자만 0으로 해서는 «안 된다» ★
+
+문서 원문:
+
+> `stockQuantity`(가상재고수량)를 0으로 설정하는 것은 **재고 숫자만 0으로 만드는 것**이며,
+> 옵션 공급상태가 `SALE` 이면 **여전히 판매 중 상태**입니다.
+> 따라서 품절 처리 시에는 `optionSupplyStatusCode=SOLD_OUT` 과 `stockQuantity=0` 을 **함께** 설정하는 것을 권장합니다.
+
+| 하려는 것 | 방법 |
+|---|---|
+| 옵션(단품) 품절 | `optionSupplyStatusCode: "SOLD_OUT"` **+** `stockQuantity: 0` |
+| 상품 전체 품절 | `productSupplyStatusCode: "OUT_OF_STOCK"` |
+| **몰별 품절** | **없다.** `channels-product` 에도 품절 기능이 없다 |
+
+몰별 품절이 없는 것은 우리에게 오히려 맞다 — 재고가 바닥나면 **전 몰에서 동시에** 내려야 한다.
+
+### ★★ optionEditCode — 하나만 고치려다 나머지를 다 지운다 ★★
+
+| 값 | 동작 | 기존 옵션 | 옵션 1개만 보낼 때 |
+|---|---|---|---|
+| **`RESET`** | 매칭 기반 **부분 수정** | 유지 | 요청한 옵션만 수정 |
+| `MODIFIABLE` | **전체 삭제 후 재구성** | **삭제됨** | **보낸 1개만 남고 나머지 전멸** |
+| `IMMODIFIABLE` | RESET 과 같다 | 유지 | |
+
+`RESET` 은 `optionDetailName` 으로 기존 단품을 찾아 그것만 고치고,
+요청에 없는 옵션은 건드리지 않는다. 매칭 실패하면 새 옵션으로 넣는다.
+
+> **재고 밀기에는 반드시 `RESET` 을 쓴다.**
+> `MODIFIABLE` 로 품절 하나를 보내는 순간 그 상품의 다른 옵션이 모두 사라진다.
+> 「한 값만 고치려다 전부 날리는」 자리다 — [[dont-overwrite-what-you-couldnt-read]] 와 같은 결이다.
+> (`MODIFIABLE` 은 `stockUseYn=Y` 인 상품에는 아예 못 쓴다)
+
+### 상품 본문 — 쓸 만한 칸
+
+| | |
+|---|---|
+| 가격 | `sellingPrice`(판매가) · `consumerPrice`(소비자가) · `costPrice`(원가) · `managementCostPrice` |
+| 상세 | `productDetailDescription` · `additionalDetailDescription1~3` · `imageInfo[{imageSrno, imagePath}]` |
+| 고시 | `attributeInfo[{attributeClassificationCode, attributeSrno, attributeText}]` |
+| 배송 | `deliveryCostCode`(FREE 등) · `deliveryCost` · `salesRegionCode` |
+| 분류 | `standardCategoryCode` · `myCategoryCodeL/M/S/D` |
+| 원산지 | `originName` · `foodIngredientOriginName` (「갈비/호주산,양념/국내산」) |
+
+### ★ 정산 API 는 «없다»
+
+개발자센터 첫 화면에 「정산 내역」이 연동 가능 데이터로 적혀 있으나,
+**주문관리·창고관리 어느 쪽 목록에도 정산 API 가 없다.** 마케팅 문구다.
+
+→ `실효수수료_역산` 탭은 **당분간 손으로 채운다.** 몰·월당 판매액·실입금액 두 숫자다.
+
+---
+
 ## 3. 아직 안 해 본 것
 - [ ] `GET /v3/sb/order` — ★ `updateOrderStsYn:"N"` 없이 부르면 **신규주문이 주문확인으로 바뀐다**
 - [ ] `GET /v3/sb/claim` · `GET /v3/sb/cs`
