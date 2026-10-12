@@ -443,7 +443,7 @@ POST /v3/sb/product/upsert
 | `additionalDetailDescription1` · `2` | 추가 설명 140자씩 (둘이 같은 내용이었다) |
 | `imageInfo[]` | **14건** · `imageSrno` + `imagePath` (사방넷 호스팅 `pic.sabangnet.co.kr`) |
 
-> ★★ **「몰별 최적화 상세페이지」는 이 API 로 안 된다** ★★
+> ~~★★ 「몰별 최적화 상세페이지」는 이 API 로 안 된다 ★★~~  **← 2-G 에서 취소했다**
 > 상품 한 건에 상세설명 칸이 **하나**다. 쿠팡용·스마트스토어용을 따로 둘 자리가 없다.
 > 몰별로 다르게 하려면 **사방넷의 몰 전송 설정** 쪽이어야 하고, 그 API 는 아직 못 봤다.
 > 앞서 「몰별 배포 가능」으로 적어 둔 것은 **근거가 없었다.**
@@ -452,7 +452,7 @@ POST /v3/sb/product/upsert
 
 `sellingPrice` 19,400 · `consumerPrice` 25,000 · `costPrice` 1 · `managementCostPrice` 0
 
-> **「몰별 판매가 수정」도 이 칸으로는 안 된다.** 같은 이유다.
+> ~~**「몰별 판매가 수정」도 이 칸으로는 안 된다.**~~  **← 2-G 에서 취소했다** (channels-product)
 > 몰별 가격은 사방넷 몰 설정의 마진율·가격규칙 영역이다.
 
 ### SKU 세팅 — 구조는 있고, 지금은 안 쓰고 있다
@@ -488,7 +488,7 @@ optionInfo
 > `modelName` 에 **「97원」**이 들어 있다 — 개당 단가를 모델명 칸에 적어 쓰고 있다.
 > 자동화가 그 칸을 건드리면 그 관용이 깨진다. **손대지 않는다.**
 
-### ★ 쓰기는 아직 못 한다 — 묶음 키 이름을 모른다 ★
+### ~~★ 쓰기는 아직 못 한다 — 묶음 키 이름을 모른다 ★~~  **← 2-G 에서 풀렸다. 키는 `products` 가 맞다**
 
 `POST /v3/sb/product/upsert` 에 몸통을 보내면 건별 오류가 이렇게 온다:
 
@@ -523,3 +523,110 @@ optionInfo
 > 그래서 재고송신 설계의 **2단계(샌드박스로 보내 보기)는 「전송 경로가 산다」만
 > 증명한다.** 몸통이 맞는지는 **아무것도** 증명하지 않는다.
 > 「샌드박스 통과했으니 됐다」로 운영계에 가면 안 된다.
+
+---
+
+## 2-G. ★ 2-F 를 바로잡는다 — 내가 두 군데 틀렸다 (2026-10-12)
+
+### ① 「몰별은 이 API 로 안 된다」가 틀렸다
+
+**`POST /v3/sb/channels-product` — 「채널별 상품관리 · 몰별 가격·상세」가 따로 있다.**
+
+`2026-10-12_사방넷API3.0_실측정리.md` 의 엔드포인트 표(118~127행)에 **이미 적혀 있었다.**
+나는 `GET /v3/sb/product` 응답에 상세설명 칸이 하나뿐인 것만 보고 「몰별은 안 된다」고
+결론지었다. **엔드포인트 목록을 안 보고 한 결론이었다.**
+
+그 문서 279행은 이렇게 적어 뒤 있다 — 「①몰별 판매가 · ③몰별 상세페이지가
+사방넷 경로로 성립한다」. 2-F 의 「몰별 최적화 상세페이지는 안 된다」는 **취소한다.**
+
+아직 안 떠 본 엔드포인트가 더 있다:
+
+| | |
+|---|---|
+| `POST /v3/sb/channels-product` | **몰별 가격·상세** ← 이것 |
+| `POST /v3/sb/additional-product` | 추가상품 |
+| `POST /v3/sb/order-status` | 주문 상태변경 (취소접수·클레임) |
+| `POST /v3/sb/cs/answer` | 문의 답변 저장 |
+| `GET·POST /v3/sb/category` | 마이카테고리 |
+| `GET /v3/sb/product-info-notice/:noticeType` | 상품정보제공고시 |
+
+### ② 「upsert 묶음 키를 모른다」가 틀렸다 — `products` 가 맞다
+
+★★ **오류 문장이 거짓말을 한다** ★★
+
+```
+[상품 목록] 필수 입력값입니다.
+```
+
+이 말은 「목록이 없다」가 아니다. **줄 속 필수 칸이 하나라도 모자라면 똑같이 이 말을 한다.**
+그래서 키 이름을 23개나 헛짚었다. 어느 칸이 모자란지 **한 마디도 안 알려준다.**
+
+증명 — 샌드박스 `GET /v3/sb/product` 가 돌려준 표본 객체를 **그대로** 되돌려 보냈다:
+
+| 보낸 것 | 응답 |
+|---|---|
+| `{products:[{customProductCode, productSupplyStatusCode}]}` | `400 [상품 목록] 필수 입력값입니다.` |
+| `{products:[ …표본 29칸 그대로… ]}` | **`200 status=true`** |
+
+### ★ 필수 칸 16개 (한 칸씩 빼 보며 가려냈다) ★
+
+```jsonc
+POST /v3/sb/product/upsert
+{ "products": [ {
+    "productName":              "샘플상품",
+    "customProductCode":        "MALL-PRD-001",
+    "productDivisionCode":      "CONSIGN",
+    "myCategoryCodeL":          "01",
+    "myCategoryCodeM":          "0101",
+    "myCategoryCodeS":          "010101",
+    "manufacturerName":         "샘플 제조사",
+    "originName":               "KR",
+    "productTargetCode":        "UNISEX",
+    "productSupplyStatusCode":  "IN_SUPPLY",
+    "deliveryCostCode":         "FREE",
+    "taxCode":                  "TAXABLE",
+    "costPrice":                15000,
+    "sellingPrice":             29900,
+    "consumerPrice":            39900,
+    "productDetailDescription": "샘플 상품 상세설명"
+} ] }
+```
+
+빼도 되는 칸 11개 — `productCertifications` · `attributeInfo` · **`optionInfo`** ·
+`imageInfo` · `productCode` · `packagingExceptYn` · `seasonCode` · `salesRegionCode` ·
+`deliveryCost` · `managementCostPrice` · `addProductGroupId`
+
+> ★ **`optionInfo` 가 필수가 아니다** ★ 그래서 `optionEditCode: MODIFIABLE` 함정을
+> 계속 피할 수 있다. 상태만 바꿀 때 옵션을 건드릴 이유가 없다.
+
+### 그래서 재고송신은 「읽고 나서 보낸다」
+
+`productDetailDescription` 이 **필수**라 「상태 한 칸만 보내는 부분수정」이
+샌드박스에서는 **안 통한다.** 그러니 보낼 품목을 **먼저 한 번 읽어** 16칸을 채운다 —
+70건이면 `GET` 70번, TPS 10 에 **9초**다. 할 만하다.
+
+> ★ 다만 PDF 는 「필드 누락/`null` 은 컬럼 미수정」이라고 적었다 ★
+> **샌드박스 검사기가 운영계보다 엄할 수 있다.** 어느 쪽이 맞는지는 3단계에서
+> 두 건으로 확인한다 — 먼저 두 칸만 보내 보고, 400 이면 16칸으로 보낸다.
+
+### 사방넷이 내 말을 확인해 줬다 — 샌드박스는 값의 증거가 아니다
+
+개발자센터 가이드 원문:
+
+> 「API 응답은 실제 계정 데이터가 아닌 **미리 정의된 고정 응답**이므로,
+> **응답 데이터의 값이 아닌 요청/응답 구조와 인증 흐름을 검증하는 용도로** 사용하세요.」
+
+2-F 에 적어 둔 「샌드박스 성공은 증거가 아니다」가 공식 안내와 같다.
+그리고 샌드박스 `GET /v3/sb/product` 는 **어떤 코드를 물어도** `MALL-PRD-001`
+「샘플상품」을 돌려준다.
+
+### 개발자센터 — 들어가는 길
+
+| | |
+|---|---|
+| 로그인 | **https://developer.sabangnet.co.kr/auth/login** — 아이디·비밀번호 (구글 아님) |
+| 문서 | `/docs/` — **로그인해야 열린다** (로그인 화면으로 넘어간다) |
+| 가이드 | `/guide` — **로그인 없이 열린다** |
+| 가입 | **초대 기반.** 사방넷 홈페이지 **[마이페이지 > 연동관리]** 에서 최초 개발자에게 초대 메일 발송 → 그 링크로 가입 → 최초 가입자가 **오너**, 오너가 팀원 추가 초대 |
+| 앱 만들기·인증키·IP | **개발자센터 안**이다 (가이드 Step 01). 「관리자 콘솔에서 한다」고 적어 뒀던 것은 틀렸다 |
+| 심사 | **앱(App)은 심사 생략** — 샌드박스 시험 끝나면 즉시 라이브 전환 |
