@@ -135,9 +135,56 @@ X-Svc-Acnt-Id: mw57640
 
 ---
 
-## 3. 아직 안 해 본 것
+---
 
-- [ ] `POST /v3/sb/waybill` — **샌드박스로** 먼저. 1단계
+## 2-B. 운송장 저장/수정 — 실측 (2026-10-12 샌드박스)
+
+```
+POST {host}/v3/sb/waybill
+Authorization: Bearer {JWT} · X-Svc-Acnt-Id: mw57640 · Content-Type: application/json
+
+{ "forceUpdateYn": "N",
+  "waybillList": [ { "sbOrderNo": 2014010837, "deliveryCompanyCode": "001",
+                     "wayBillNo": 20250526172700, "hopeDeliveryDate": 20260114 } ] }
+```
+
+응답 (`HTTP 200`)
+```json
+{ "code": 200, "message": "OK",
+  "data": { "totalCount": 1, "successCount": 1, "failCount": 0,
+            "results": [ { "sbOrderNo": "2014010837", "status": true, "errorMessage": null } ] } }
+```
+
+### ★ 수용시험 S2 충족 — 건별 성공/실패를 식별할 수 있다
+
+`results[]` 가 **주문번호 · `status`(boolean) · `errorMessage`** 를 건별로 돌려준다.
+지금 엑셀 업로드는 결과를 화면으로만 보지만, API 는 **어느 주문이 왜 튕겼는지 코드가 안다.**
+→ 1단계를 할 값어치가 있다.
+
+### 우리 데이터와 그대로 맞는다 — 변환이 없다
+
+| 사방넷 | 우리 |
+|---|---|
+| `sbOrderNo` | 사방넷주문번호 = **고유ID** (시스템 전역 키) |
+| `deliveryCompanyCode` | `_PEP_CARRIER_SABANG_CODE_` (001 CJ · 002 롯데 · 007 로젠 · 037 대신) |
+| `wayBillNo` | 운송장번호 |
+
+`ss_사방넷엑셀저장`(세트분리V2 `gasBulk.js`)이 만드는 행이 그대로 `waybillList` 가 된다.
+[_sabangone_test.js](../_sabangone_test.js)(주문번호당 송장 1개) ·
+[_sabanguid_test.js](../_sabanguid_test.js)(우리 UID `PH-`·`ds-` 섞임 차단)가 그대로 지킨다.
+
+### ★ 아직 모르는 것 — 실패 «사유»의 모양
+
+`errorMessage` 는 **코드가 아니라 문자열**이다. 샌드박스는 성공만 돌려주므로
+실패 메시지가 어떻게 생겼는지 못 봤다.
+
+> **재시도를 문자열로 가르게 될 수 있다.** 어떤 실패는 다시 보내도 되고(일시 오류),
+> 어떤 것은 안 된다(이미 쇼핑몰로 송신됨·강제완료). 모양을 보기 전에는 가르지 않는다.
+> **그때까지 실패 건은 무조건 보류 + 알림**으로 둔다 — 조용히 재시도하지 않는다.
+
+---
+
+## 3. 아직 안 해 본 것
 - [ ] `GET /v3/sb/order` — ★ `updateOrderStsYn:"N"` 없이 부르면 **신규주문이 주문확인으로 바뀐다**
 - [ ] `GET /v3/sb/claim` · `GET /v3/sb/cs`
 - [ ] `POST /v3/sb/product/upsert` 본문에 **재고 수량 필드**가 있는가 → 재고송신 가능 여부
