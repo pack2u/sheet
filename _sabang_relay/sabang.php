@@ -68,7 +68,7 @@ const RELAY_VERSION = '2026-10-12a';
  *   같은 경로라도 GET 은 읽기, POST 는 쓰기다. 쓰기를 늘릴 때는
  *   «의식해서» 이 표를 고치게 둔다.
  *
- * ★ GET /v3/sb/order 를 아직 열지 않았다 ★
+ * ★ POST /v3/sb/order 를 아직 열지 않았다 ★ (문서는 GET 이라 적었다 — 실측은 POST 전용)
  *   그 API 는 부르는 것만으로 «신규주문을 주문확인으로 바꾼다».
  *   updateOrderStsYn:"N" 을 빠뜨린 호출 한 번이 쇼핑몰 흐름을 어긋나게 한다.
  *   아래 ORDER_GUARD 가 그 값을 강제하도록 만든 뒤에 연다.
@@ -79,8 +79,17 @@ const ALLOWED = [
     'GET /v3/sb/mall/CHOP'    => true,
     'GET /v3/sb/mall/GLOBAL'  => true,
     'GET /v3/sb/product'      => true,
-    'GET /v3/sb/claim'        => true,
-    'GET /v3/sb/cs'           => true,
+    /*  ★ claim·cs 는 «죽은 줄»이었다 ★  (2026-10-12 샌드박스 실측)
+        GET 으로 부르면 405 GW_REQ_005 다 — order 와 마찬가지로 POST 전용이다.
+        문서(PDF 247쪽)가 GET 이라고 적어 둔 것을 그대로 옮겨 적었던 것이다.
+
+        ★ POST 로 «고치지 않고» 닫아 둔다 ★
+          order 가 부르는 것만으로 신규주문을 주문확인으로 바꾸는 API 였다.
+          claim·cs 도 수집하면서 「확인」 표시를 남기는지 모른다. 모르는 채
+          POST 를 열면 그 한 번이 쇼핑몰 흐름을 바꿀 수 있다.
+          개발자센터 규격을 보고 「읽기만 한다」를 확인한 뒤에 연다.         */
+    // 'POST /v3/sb/claim'    => true,   ← 규격 확인 뒤
+    // 'POST /v3/sb/cs'       => true,   ← 규격 확인 뒤
 
     // 쓰기 — 1단계
     'POST /v3/sb/waybill'     => true,
