@@ -1980,3 +1980,98 @@ function _pr_suggestWrite_(ss, tab, 찾음, 파랑줄, 글) {
     "\n\n상품정보 매입가 칸: 파랗게 칠함 " + 칠함 + " · 지운 파랑 " + 지움 +
     "\n(노랑 = 실제로 바꾼 칸은 그대로 두었습니다)");
 }
+
+/* ─────────────────────────────────────────────────────────────
+   ⑦ 지금 상품정보와 견주어 체크를 다시 켠다
+   ───────────────────────────────────────────────────────────── */
+/**
+ * 비교표의 「현재 개당별도가」를 ★지금 값★ 으로 새로 읽고, 아직 안 오른 줄의
+ * 체크를 다시 켠다.
+ *
+ * ★ 왜 생겼나 ★  (2026-10-12)
+ * > 「비교표 단가 적용을 전부 다시 적용되게 해줘」
+ *
+ * 적용을 하고 나서 비교표를 다시 만들었더니 「현재 개당별도가」가 ★이미 오른
+ * 값★ 으로 적혔고, 켜기 조건(적용후 > 현재)이 거짓이 되어 체크가 다 꺼졌다.
+ * 그 뒤 이카운트 동기화가 매입가를 ★옛 값으로 되돌렸다★ — 상품정보 W 의
+ * 주인은 이카운트다(moveToEcount 동기화매핑: IN_PRICE → W).
+ * 그래서 「적용이 안 된다」가 됐다. 표는 옛 이야기를 하고 있었다.
+ *
+ * ★ 체크만 켠다 ★ 단가는 하나도 안 바꾼다. 적용은 ③ 에서 사람이 누른다.
+ * 켜는 줄은 ★지금 매입가와 새 매입가가 다른 줄★ 뿐이다 — 이미 반영된 줄,
+ * 안 오른 줄, 수식인 줄, 미판매는 끈다.
+ */
+function partnerPriceRaiseRecheck() { _pr_recheck_(false); }
+/*  편집기에서 쓰는 이름 */
+function partnerPriceRaiseRecheckNow() { _pr_recheck_(true); }
+
+function _pr_recheck_(정말) {
+  var ss = _pr_ss_();
+  var tab = ss.getSheetByName(_PR_TAB_);
+  if (!tab) { _pr_say_("「" + _PR_TAB_ + "」 탭이 없습니다."); return; }
+  var last = tab.getLastRow();
+  if (last < 2) { _pr_say_("비교표가 비어 있습니다."); return; }
+
+  var prods = _pr_loadProducts_();
+  var byCode = {};
+  for (var i = 0; i < prods.length; i++) byCode[prods[i].code] = prods[i];
+
+  var vals = tab.getRange(2, 1, last - 1, _PR_HEADERS_.length).getValues();
+  var 켤것 = [], 끌것 = [], 새현재 = [], 까닭 = {};
+
+  for (i = 0; i < vals.length; i++) {
+    var v = vals[i], 행 = i + 2;
+    var code = String(v[_PR_C.우리코드 - 1] || "").trim();
+    var 종전 = _pr_num_(v[_PR_C.종전 - 1]);
+    var 적용후 = _pr_num_(v[_PR_C.적용후 - 1]);
+    var 지금체크 = v[_PR_C.적용 - 1] === true;
+    var u = code ? byCode[code] : null;
+
+    //  「현재 개당별도가」는 늘 지금 값으로 맞춘다 — 표가 옛 이야기를 하면 안 된다
+    새현재.push([u && u.net != null ? u.net : ""]);
+
+    var 켜나 = false, 왜 = "";
+    if (!code) 왜 = "우리코드 없음";
+    else if (_pr_isNA_(code)) 왜 = "미판매";
+    else if (!u) 왜 = "상품정보에 없음";
+    else if (적용후 == null || !(적용후 > 0)) 왜 = "적용후 비었음";
+    else if (종전 != null && 적용후 <= 종전) 왜 = "안 오른 줄";
+    else if (u.buy수식) 왜 = "매입가가 수식";
+    else if (!(u.qty > 0)) 왜 = "수량 없음";
+    else if (u.buy == null) 왜 = "매입가 못 읽음";
+    else if (Math.round(적용후 * _PR_VAT_ * u.qty) === Number(u.buy)) 왜 = "이미 반영돼 있음";
+    else 켜나 = true;
+
+    if (왜) 까닭[왜] = (까닭[왜] || 0) + 1;
+    if (켜나 && !지금체크) 켤것.push(행);
+    if (!켜나 && 지금체크) 끌것.push(행);
+  }
+
+  var 글 = ["켤 줄 " + 켤것.length + " · 끌 줄 " + 끌것.length, ""];
+  var 키 = Object.keys(까닭).sort(function (가, 나) { return 까닭[나] - 까닭[가]; });
+  for (i = 0; i < 키.length; i++) 글.push("  안 켜는 까닭 — " + 키[i] + " " + 까닭[키[i]] + "줄");
+
+  if (!_pr_ask_("🔄 지금 값과 견주어 체크 다시 켜기",
+    글.join("\n") + "\n\n★ 단가는 하나도 안 바꿉니다 ★ 체크와 「현재 개당별도가」만 맞춥니다.",
+    정말, "partnerPriceRaiseRecheckNow")) return;
+
+  //  현재 개당별도가를 한 번에 새로 쓴다
+  tab.getRange(2, _PR_C.현재별도, 새현재.length, 1).setValues(새현재);
+  if (켤것.length) _pr_setChecks_(tab, 켤것, true);
+  if (끌것.length) _pr_setChecks_(tab, 끌것, false);
+  SpreadsheetApp.flush();
+  _pr_recolor_(tab);
+
+  _pr_say_("🔄 끝났습니다 — ★단가는 안 바꿨습니다★\n\n" + 글.join("\n") +
+    "\n\n이제 🧪 ② 미리보기로 보신 뒤 💾 ③ 적용을 누르십시오.");
+}
+
+/**  줄 여럿의 체크를 한 번에. 한 줄씩 부르면 수백 번이 된다. */
+function _pr_setChecks_(tab, 줄들, 켜나) {
+  if (!줄들 || !줄들.length) return;
+  var 자리 = [];
+  for (var i = 0; i < 줄들.length; i++) {
+    자리.push(_pr_colLetter_(_PR_C.적용) + 줄들[i]);
+  }
+  tab.getRangeList(자리).setValue(켜나);
+}

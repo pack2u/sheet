@@ -369,6 +369,11 @@ function registerPartnerMenu_() {
                 부르지만 ★단가는 같은 물건을 가리킨다★.                   */
             .addItem("🔎 ①-1 못 찾은 줄 — 단가가 같은 품목 찾기", "partnerPriceRaiseSuggest")
             .addSeparator()
+            /*  ★ 적용 뒤 이카운트 동기화가 매입가를 되돌린다 ★  (2026-10-12)
+                상품정보 W 의 주인은 이카운트다(동기화매핑 IN_PRICE → W).
+                그래서 표의 체크가 옛 이야기를 한다 — 지금 값으로 다시 켠다. */
+            .addItem("🔄 ①-2 지금 값과 견주어 체크 다시 켜기 (안 바꿈)", "partnerPriceRaiseRecheck")
+            .addSeparator()
             .addItem("🧪 ② 체크한 줄이 어떻게 바뀌나 (안 바꿈)", "partnerPriceRaisePreview")
             .addItem("💾 ③ 체크한 줄 — 상품정보 단가 적용", "partnerPriceRaiseApply")
             .addItem("🔗 ④ 체크한 줄 — 누적품목매핑에 쌓기", "partnerPriceRaiseApplyMapping")
