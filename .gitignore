@@ -42,3 +42,8 @@ sa-key-temp.json
 
 # 로젠 중계기 설정 — 인증키가 들어간다. 견본(relay_config.sample.php)만 올린다
 _logen_relay/relay_config.php
+
+# 사방넷 중계기 설정 — clientCd·시크릿이 들어간다. 견본(sabang_config.sample.php)만 올린다
+_sabang_relay/sabang_config.php
+# 중계기가 캐시한 JWT
+_sabang_relay/.token_*.json

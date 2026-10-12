@@ -171,6 +171,8 @@ function registerMallPolicyMenu_() {
     .addItem("🧹 정말 비우기", "mpCleanPolicyApply")
     .addSeparator()
     .addItem("🔍 설정 점검", "mpDiagnose")
+    .addSeparator()
+    .addItem("🔌 사방넷 연결 점검", "sabPing")
     .addToUi();
 }
 
