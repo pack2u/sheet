@@ -67,6 +67,37 @@ const 스텁 = `<script>
         return function () {
           var 답 = null;
           if (String(k).indexOf('StaffList') >= 0) 답 = 담당자;
+          // 오늘 입금 (2026-09-29) — 12건: 대시보드 10건 + 「더보기」 가 보이게
+          else if (k === 'csDepositList') {
+            var 이름 = ['(주)태양포장', '콤콤', '홍길동', '부원산업', '김철수', '아주상사', '이영희', '뉴파츠', '정희화학', '와이에스', '코라마', '후아'];
+            var 줄 = 이름.map(function (n, i) {
+              var hh = 16 - Math.floor(i / 2), mm = i % 2 ? '05' : '42';
+              return { key: 'k' + i, txAt: '2026-09-29 ' + hh + ':' + mm, time: hh + ':' + mm, name: n,
+                       amount: [500000, 320000, 88000, 1250000, 50000, 214500, 30000, 990000, 45000, 132000, 77000, 1000][i],
+                       bank: '기업', acct: '1018', status: '대기', check: i === 3 ? '불연속' : '정상', memo: '',
+                       result: ['일치', '부족', '후보', '일치(합산)', '미확인', '일치(지정)', '초과', '일치', '일치', '제외', '일치', '미확인'][i],
+                       cust: [n + ' 대표', n, '', n, '', n, n, n, n, '', n, ''][i],
+                       orderNos: i === 2 ? '후보: 2026/09/28-3, 2026/09/28-9' : '2026/09/28-' + (i + 1),
+                       diff: i === 1 ? -20000 : (i === 6 ? 2000 : 0),
+                       matchMemo: i === 4 ? '입금자 「김철수」 를 거래처로 못 찾고, 같은 금액 주문도 없음' : '', pinned: i === 5 };
+            });
+            var 한도 = arguments[1] || 0;
+            줄.forEach(function (x, i) { x.day = i < 3 ? '2026-09-30' : '2026-09-29'; x.txAt = x.day + x.txAt.slice(10); });
+            var 합 = function (d) { return 줄.filter(function (x) { return x.day === d; }).reduce(function (a, x) { return a + x.amount; }, 0); };
+            답 = { ok: true, date: '2026-09-30', from: '2026-09-29', count: 줄.length,
+                   byDay: { '2026-09-30': { total: 3, sum: 합('2026-09-30') }, '2026-09-29': { total: 9, sum: 합('2026-09-29') } },
+                   total: 3, unparsed: 0,
+                   sum: 합('2026-09-30'),
+                   rows: 한도 ? 줄.slice(0, 한도) : 줄 };
+          }
+          else if (k === 'csDepositDetail') 답 = { ok: true,
+            deposit: { key: 'k2', txAt: '2026-09-29 15:42', name: '홍길동', amount: 88000, bank: '기업', acct: '1018', status: '대기',
+                       result: '후보', cust: '', orderNos: '후보: 2026/09/28-3, 2026/09/28-9', diff: 0,
+                       memo: '입금자 「홍길동」 를 거래처로 못 찾음 — 같은 금액 주문 2건', pinned: '', frozen: false },
+            options: [{ no: '2026/09/28-3', date: '2026-09-28', name: '본가참순대 이령', code: '1', amount: 88000, remain: 88000, tag: '후보' },
+                      { no: '2026/09/28-9', date: '2026-09-28', name: '아주상사 김아주', code: '2', amount: 88000, remain: 88000, tag: '후보' },
+                      { no: '2026/09/27-4', date: '2026-09-27', name: '홍길동식당 홍길동', code: '3', amount: 120000, remain: 32000, tag: '같은 금액' }] };
+          else if (k === 'csDepositSearch') 답 = { ok: true, rows: [] };
           else if (/List|All|Search|Rows|Cards|Items/i.test(String(k))) 답 = [];
           else 답 = {};
           if (t._ok) setTimeout(function () { t._ok(답); }, 0);
