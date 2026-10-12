@@ -245,6 +245,9 @@ function moveToEcount(targetSheetName, injectedSS) {
                 else if (clsStr === '9007') sVal = '소싱중';
                 else sVal = '판매중';
             }
+            /* ★ 세 가지로 접는다 (_statusThree.gs) — 「상태」 탭이 답한 뒤다 ★
+               탭이 폴백보다 우선하므로 위 가지만 줄이면 아무 일도 안 일어난다. */
+            sVal = _st3_fold_(sVal);
           } else if (rule.ecKey === "CLASS_CD2") {
             var cStr = String(sVal).trim().toUpperCase();
             if (cStr === '8003') sVal = '대리발송';
@@ -558,6 +561,7 @@ function moveToEcountSelectedCodes_(codes, targetSheetName, injectedSS) {
           else if (clsStr === "9006") newVal = "상세제작중";   // ★ v2 어휘는 「중」이다 (sql/45)
           else if (clsStr === "9007") newVal = "소싱중";
           else newVal = "판매중";
+          newVal = _st3_fold_(newVal);   // ★ 세 가지로 접는다 (_statusThree.gs)
         } else if (rule.ecKey === "CLASS_CD2") {
           var cStr = String(newVal || "").trim().toUpperCase();
           if (cStr === "8003") newVal = "대리발송";

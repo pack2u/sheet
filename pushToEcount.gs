@@ -75,14 +75,28 @@ function _pushDataToEcount(mode) {
   var errorMessages = [];
   
   // 상태 한글 -> 이카운트 코드(CLASS_CD3) 매핑
+  /*  상태 한글 → 이카운트 코드(CLASS_CD3)
+
+      ★ 세 가지만 쓴다 ★  (2026-10-12 · _statusThree.gs)
+        읽기 쪽이 판매중·품절·단종품 셋으로 접으므로, 미는 쪽도 셋이 본줄이다.
+        밀 때마다 이카운트 CLASS_CD3 가 9001·9003·9004 로 정리된다.
+
+      ★ 옛 낱말도 그대로 남겨 둔다 ★
+        다음 배치가 시트를 다시 쓰기 전까지 옛 낱말이 남아 있다. 그 사이에
+        밀면 «아무것도 안 쓰고 조용히 지나가던» 일이 있었다 — 상세제작중
+        4건이 그렇게 넘어갔고 아무도 몰랐다. 아는 낱말은 다 받아 둔다.      */
   function mapStatusToClassCd3(status) {
-    if (status === '단종품') return '9004';
-    if (status === '품절') return '9003';
-    if (status === '판매중(재고까지만)') return '9002';
-    if (status === '특판/할인') return '9005';
-    if (status === '상세제작중') return '9006';   // ★ 시트·v2 가 쓰는 낱말은 「중」이다
-    if (status === '소싱중') return '9007';
+    /* 지금 쓰는 셋 */
     if (status === '판매중') return '9001';
+    if (status === '품절') return '9003';
+    if (status === '단종품') return '9004';
+    /* 옛 낱말 — 접히기 전 줄을 밀어도 조용히 지나가지 않게 */
+    if (status === '판매중(재고까지만)') return '9002';
+    if (status === '품절임박') return '9001';   // 아직 판다 → 판매중과 같은 코드
+    if (status === '특판/할인') return '9005';
+    if (status === '상세제작중') return '9006';
+    if (status === '상세제작종') return '9006';
+    if (status === '소싱중') return '9007';
     return ''; 
   }
 
