@@ -61,9 +61,16 @@ console.log("\n[2] 1달 단추가 있다");
 console.log("\n[3] ★ 새로고침해도 다시 «안» 불러온다");
 {
   const 몸 = 코드만(grab(html, "showWorkspace"));
-  const i되살림 = 몸.indexOf("loadLocalIndex()");
-  const 뒤 = 몸.slice(i되살림, i되살림 + 400);
+  /*  ★ 이름이 바뀌어 네 줄이 한꺼번에 울었다 ★  (2026-10-12)
+      되살리기가 IndexedDB 로 옮겨 가면서 loadLocalIndex() → loadLocalIndexAsync(
+      가 됐다. 시험은 옛 이름을 들고 있었고, 못 찾으면 i되살림 = -1 인데
+      그대로 slice 해서 ★엉뚱한 자리★ 를 보고 네 줄이 다 울었다.
+      찾았는지 먼저 묻고, 못 찾으면 거기서 멈춘다 — 한 가지가 틀렸는데
+      네 가지가 우는 것은 어디가 틀렸는지 가린다.
+      ※ 코드 쪽은 멀쩡하다. 두 걸음(조용히 받아 합치기)은 그대로다.        */
+  const i되살림 = 몸.indexOf("loadLocalIndexAsync(");
   check("★ 되살림을 먼저 본다", i되살림 >= 0, true);
+  const 뒤 = i되살림 >= 0 ? 몸.slice(i되살림, i되살림 + 400) : "";
   //  되살린 갈래 «안»에 warm 이 없어야 한다
   const 갈래 = 뒤.slice(0, 뒤.indexOf("} else {"));
   /*  ★ 2026-09-16 고침 ★  처음엔 「되살렸으면 아무것도 안 부른다」로 했다.
