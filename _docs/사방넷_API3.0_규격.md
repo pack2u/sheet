@@ -734,7 +734,7 @@ POST /v3/sb/product/upsert
 (`products` · `productName` · `customProductCode` · `productDivisionCode` ·
 `myCategoryCodeL/M/S` …).
 
-> 그러니 **「상태 한 칸만 보내는 부분수정」은 안 된다.** PDF 의 「필드 누락은 컬럼
+> ~~그러니 「상태 한 칸만 보내는 부분수정」은 안 된다.~~  **← 2-J 에서 취소. 된다** PDF 의 「필드 누락은 컬럼
 > 미수정」은 **선택 필드에만** 해당한다. 필수 16개는 늘 실어야 한다.
 > → 재고송신은 **보낼 품목을 먼저 `GET` 해서** 16칸을 채워 보낸다.
 > `optionInfo` 는 선택이라 빼면 되고, 그래서 `MODIFIABLE` 함정을 계속 피한다.
@@ -799,3 +799,39 @@ s.replace(/('secretProduction' => ')[^']*(')/, (_all, a, b) => a + 시크릿 + b
 
 > 한글·백틱·`$` 가 섞인 글은 **셸을 거치지 않고** 파일로 먼저 쓰고 붙인다.
 > [[bash-korean-identifiers-break]] 와 같은 자리다.
+
+---
+
+## 2-J. ★★ 부분수정이 된다 — 운영계 실측 (2026-10-12) ★★
+
+> 사장님 결정: 「값이 안 바뀌는 시험 1건」. 이미 `IN_SUPPLY` 인 품목에
+> `IN_SUPPLY` 를 보냈다. 몰에 보이는 값은 하나도 안 바뀌는 시험이다.
+
+```jsonc
+POST /v3/sb/product/upsert          // 운영계
+{ "products": [ { "customProductCode": "JPCR00002",
+                  "productSupplyStatusCode": "IN_SUPPLY" } ] }   // ← 두 칸뿐
+```
+
+```json
+HTTP 200
+{ "mode": "U", "status": true, "errorMessage": null,
+  "productCode": "106268", "customProductCode": "JPCR00002" }
+```
+
+**보내기 전후를 37칸 전부 견줬다 — 하나도 안 바뀌었다** (상세설명 14,853자 포함).
+
+### 무엇이 풀렸나
+
+| | |
+|---|---|
+| **필수 16칸은 «등록(I)»에만 걸린다** | 문서의 `required` 표시는 생성 기준이다. 수정(U)은 **코드 + 바꿀 칸**이면 된다 |
+| **보낼 대상이 34건 → 70건** | `productTargetCode`·`myCategoryCodeS` 가 비어 있어도 상관없다 |
+| **훨씬 안전해졌다** | 16칸 왕복은 상세설명 **14,853자**를 포함해 15칸을 **다시 써야** 했다. 두 칸만 보내면 **건드릴 것이 없다** |
+| `mode` 가 운영계에서 쓸 만하다 | 수정은 `U`, 등록은 `I`. 샌드박스는 늘 `I` 였다 |
+
+> ★ 2-G 의 「상태 한 칸만 보내는 부분수정은 안 된다」를 **취소한다.**
+> 그 결론은 **샌드박스만 보고** 낸 것이었다. 샌드박스는 늘 등록처럼 검사하므로
+> 그 질문에 답할 수 없었고, 나는 그걸 알면서도 「안 된다」로 적었다.
+>
+> **운영계가 답했다. 되는 쪽이다.**
