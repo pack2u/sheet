@@ -630,3 +630,119 @@ POST /v3/sb/product/upsert
 | 가입 | **초대 기반.** 사방넷 홈페이지 **[마이페이지 > 연동관리]** 에서 최초 개발자에게 초대 메일 발송 → 그 링크로 가입 → 최초 가입자가 **오너**, 오너가 팀원 추가 초대 |
 | 앱 만들기·인증키·IP | **개발자센터 안**이다 (가이드 Step 01). 「관리자 콘솔에서 한다」고 적어 뒀던 것은 틀렸다 |
 | 심사 | **앱(App)은 심사 생략** — 샌드박스 시험 끝나면 즉시 라이브 전환 |
+
+---
+
+## 2-H. 개발자센터 공식 문서 — 실물 (2026-10-12)
+
+사장님이 크롬에 개발자센터를 로그인해 띄워 주셔서 `/docs/` 를 읽었다.
+**짐작으로 23번 헛짚었던 것이 여기 다 적혀 있었다.**
+
+> 문서 주소: `https://developer.sabangnet.co.kr/docs/sabangnet-api/`
+> **샘플코드(공개 깃허브)**: https://github.com/sabangnet-api/sabangnet-api
+
+### 엔드포인트 문서 쪽 (주문관리 API)
+
+| 쪽 | 경로 |
+|---|---|
+| `get-product-1` | `GET /v3/sb/product` |
+| **`upsert-product-list-1`** | **`POST /v3/sb/product/upsert`** |
+| **`update-malls-product-1`** | **`POST /v3/sb/channels-product`** ← 몰별 |
+| `get-sku-1` | `GET /v3/sb/sku` |
+| **`search-orders-1`** | **`POST /v3/sb/order`** |
+| `modify-order-1` · `change-order-status-1` | 주문보정 · 주문 상태변경 |
+| `save-way-bill-1` | `POST /v3/sb/waybill` |
+| `search-claims-1` · `search-cs-info-1` · `save-cs-answer-1` | 클레임 · 문의 · 답변 |
+| `save-additional-product-list-1` · `get-all-my-categories-1` · `get-product-info-notice-1` | |
+
+---
+
+### ★ 주문 수집 `POST /v3/sb/order` — 빠진 필수 칸이 셋이었다
+
+```jsonc
+{
+  "dateSearchCondition": 2,        // 2=주문일 · 미지정이면 수집일. 1 배송희망일 · 7 출고완료일 · 10 송장등록일 …
+  "startDate": "20261011",         // yyyyMMdd 또는 yyyyMMddHHmmss (00:00:00 보정)
+  "endDate":   "20261012",         // (23:59:59 보정)
+  "shopCodeList": ["shop0055"],
+  "orderStatusList": ["NEW_ORDER","ORDER_CONFIRM"],
+  "updateOrderStsYn": "N",         // ★ 몸통에 싣는다 (쿼리가 아니다)
+  "responseItems": ["SB_ORD_NO"],  // ★ REQUIRED — 받을 필드를 직접 나열
+  "page": 1,                       // ★ REQUIRED · >= 1   ← 0 이 아니다
+  "perPage": 100                   // ★ REQUIRED · >= 50 이고 <= 1000
+}
+```
+
+> **`responseItems`·`page`·`perPage` 셋이 필수다.** 그걸 몰라 열한 가지 몸통이 전부
+> 400 이었고, 오류는 「[상품 목록] 필수 입력값입니다」 꼴로 **부모만 탓했다.**
+
+★★ 운영에 더 중요한 두 가지 ★★
+
+| | |
+|---|---|
+| **확정된 주문만 조회된다** | 「확정되지 않은 신규주문은 조회 결과에 포함되지 않으므로, 조회 결과가 0건인 경우 대상 주문의 확정 여부를 먼저 확인」 → **0건을 「주문이 없다」로 읽으면 안 된다.** 자동 확정으로 바꾸려면 사방넷 고객센터 문의 |
+| **조회기간이 `responseItems` 에 달렸다** | `ETC_FLD_*` 를 **하나라도** 넣으면 **60일**, 안 넣으면 **180일**. 모르고 6개월 걸면 400 |
+
+주문상태 18종: `NEW_ORDER` → `ORDER_CONFIRM` → `DELIVERY_WAITING` → `DELIVERY_COMPLETED` ·
+`DELIVERY_PENDING`(배송보류, 희망배송일 필요) · 취소 `CANCEL_RECEIPT`→`CANCEL_COMPLETED` ·
+교환 `EXCHANGE_RECEIPT`→`EXCHANGE_COMPLETED`(+회수/발송 준비·완료) ·
+반품 `RETURN_RECEIPT`→`RETURN_COMPLETED`(+회수 준비·완료) · `DISCARD`.
+
+`responseItems` 100여 개 중 우리에게 쓸 것 — `SB_ORD_NO` · `SHOP_ORD_NO` · `SHOP_NM` ·
+**`SHOP_LOGIN_ID`**(법인/개인 구분이 여기 있을 수 있다) · `CUSTOM_PRD_CD` · `SB_SKU_CD` ·
+`SKU_CD` · `ORD_CNT` · `EA` · `PAY_TOT_AMT` · `CT_SALE_COST` · `SHOP_SUPPLY_UNIT_PRICE` ·
+`RECEIVER_NM/TEL/CEL/ADDR/ZIPCODE` · `DELIVERY_MSG` · `ETC_MSG` · `ORDER_DT` ·
+`WAYBILL_NO` · `PCSCP_CD` · **`SET_DIV_CD`·`SET_SPRT_DIV_CD`**(세트구분·세트분리주문구분).
+
+---
+
+### ★★ 몰별이 된다 — `POST /v3/sb/channels-product` ★★
+
+> 「쇼핑몰별 상품정보(판매가, 상품명, 상세설명, 재고비율, 인증정보 등)를 등록 및 수정」
+> 관련메뉴: 사방넷 > 상품관리 > **판매채널별 상품관리**
+
+```jsonc
+{ "products": [ {
+    "shopCode":                  "shop0001",        // ★ 몰마다 한 줄
+    "customProductCode":         "PRD001",
+    "salePrice":                 15000,             // ★ 몰별 판매가
+    "productName":               "반팔티셔츠",       // ★ 몰별 상품명
+    "productDetailDescription":  "면 100% 반팔티셔츠", // ★★ 몰별 상세설명
+    "shopMallStockRate":         50,                // ★★★ 몰별 «재고비율»
+    "shopMallShippingPolicyId":  "B0000001",
+    "productAttributeClassificationCode": "001",
+    "productAuthorizationNumber": "CB1234567", "authorizationNumberIssueDate": 20260101,
+    "authorizationDate": 20260101, "authorizationExpiryDateFrom": 20260101,
+    "authorizationExpiryDateTo": 20261231,
+    "authorizationOrganizationName": "한국인증기관", "authorizationSphereName": "품질인증"
+} ] }
+```
+
+응답 `200` 전체성공 / **`206` 부분성공** / 400 / 500 + `results[]` 건별.
+
+> **2-F 의 「몰별은 안 된다」는 완전히 틀렸다.** 몰별 판매가·상품명·상세설명이 다 된다.
+>
+> ★ `shopMallStockRate` 가 뜻밖의 수확이다 ★ 재고를 **몰마다 비율로 나눠** 내보낼 수 있다.
+> 「재고 3개가 14개 몰에 3개씩」 문제에 켜고/끄기보다 나은 수가 될 수 있다 —
+> 단 우리는 `stockUseYn="N"`(재고관리 안 씀)이라 적용되는지는 떠 봐야 안다.
+
+---
+
+### 상품 등록·수정 `POST /v3/sb/product/upsert` — 필수 16개가 맞았다
+
+공식 문서의 `required` 표시가 **2-G 에서 샌드박스로 가려낸 16개와 같다**
+(`products` · `productName` · `customProductCode` · `productDivisionCode` ·
+`myCategoryCodeL/M/S` …).
+
+> 그러니 **「상태 한 칸만 보내는 부분수정」은 안 된다.** PDF 의 「필드 누락은 컬럼
+> 미수정」은 **선택 필드에만** 해당한다. 필수 16개는 늘 실어야 한다.
+> → 재고송신은 **보낼 품목을 먼저 `GET` 해서** 16칸을 채워 보낸다.
+> `optionInfo` 는 선택이라 빼면 되고, 그래서 `MODIFIABLE` 함정을 계속 피한다.
+
+### SKU — 조회만 있다
+
+`GET /v3/sb/sku?skuCode=SKU-001` — **`skuCode` 가 필수 쿼리다.**
+등록·수정 API 는 목록에 없다. 우리 상품은 `optionInfo.options[].skuCode` 가
+**전부 `null`** 이라 SKU 를 안 쓰고 있고, 그래서 **이 조회를 부를 열쇠조차 없다.**
+SKU 세팅을 하려면 `product/upsert` 의 `optionInfo` 로 넣어야 하고,
+그 길은 `optionEditCode` 함정 위에 있다.
