@@ -4949,16 +4949,20 @@
             그런데 되살려 놓고 곧바로 warm 을 또 불러서, 30일이면 파일
             서른 개를 다시 읽었다. 되살렸으면 그것으로 끝낸다 —
             새 자료가 필요하면 사람이 새로고침 단추를 누른다.  */
-        if (loadLocalIndex()) {
-          setIndexStatus('메모리 ' + INDEX.length.toLocaleString() + '건');
-          /*  ★ 보여 준 «뒤에» 조용히 최신을 받는다 ★
-              되살린 것만 쓰면 새로고침해도 옛 자료가 그대로다.
-              여기서 받아 합치면 기다림 없이 최신이 된다.
-              한 박자 늦춰 부른다 — 화면이 먼저 그려져야 «즉시»로 느껴진다.  */
-          setTimeout(function () { warm(false, true); }, 300);
-        } else {
-          warm(false);
-        }
+        //  (2026-10-12) 되살리기가 IndexedDB 라 기다렸다 이어 간다 — loadLocalIndexAsync
+        loadLocalIndexAsync(function (되살림) {
+          if (되살림) {
+            setIndexStatus('메모리 ' + INDEX.length.toLocaleString() + '건');
+            /*  ★ 보여 준 «뒤에» 조용히 최신을 받는다 ★
+                되살린 것만 쓰면 새로고침해도 옛 자료가 그대로다.
+                여기서 받아 합치면 기다림 없이 최신이 된다.
+                한 박자 늦춰 부른다 — 화면이 먼저 그려져야 «즉시»로 느껴진다.  */
+            setTimeout(function () { warm(false, true); }, 300);
+          } else {
+            warm(false);
+          }
+          renderOrderDashboard();
+        });
         renderOrderDashboard();
         // 처리가이드는 기본 접힘. 접혀 있으면 색인을 미리 받지 않고 펼칠 때 받는다.
         var accOpen = false;
@@ -8424,14 +8428,86 @@
         실패하면 「메모리」라고 적어 두고도 새로고침마다 서른 개를 다시
         읽게 된다 — 사람은 왜 느린지 모른다.  */
     var IDX_SAVE_FAIL = false;
-    function saveLocalIndex() {
+
+    /*  ★ 큰 저장소(IndexedDB)로 옮긴다 ★  (2026-10-12)
+        > "2026-09-14 ~ 2026-10-12 · 12,297건 · 서버캐시 검색 · ⚠ 저장 한도 초과"
+        30일치가 12,000건을 넘자 sessionStorage(약 5MB)에 안 들어갔다. 그러면 새로고침마다
+        서버에서 다시 받는다. IndexedDB 는 한도가 수백 MB 라 넉넉하다.
+        못 여는 브라우저면 sessionStorage 로 떨어진다(여태와 같다).
+        6시간 지나면 버리는 규칙(IDX_TTL)은 그대로다 — 탭을 닫아도 남는 대신 그 규칙이 막는다. */
+    var IDX_DB = 'pack2u_cs', IDX_STORE = 'kv';
+    function idxDb(cb) {
       try {
-        sessionStorage.setItem(IDX_KEY, JSON.stringify({ at: Date.now(), rows: INDEX }));
-        IDX_SAVE_FAIL = false;
-      } catch (e) {
-        IDX_SAVE_FAIL = true;
-        try { sessionStorage.removeItem(IDX_KEY); } catch (e2) {}
-      }
+        if (!window.indexedDB) return cb(null);
+        var req = indexedDB.open(IDX_DB, 1);
+        req.onupgradeneeded = function () {
+          try { req.result.createObjectStore(IDX_STORE); } catch (e) {}
+        };
+        req.onsuccess = function () { cb(req.result); };
+        req.onerror = function () { cb(null); };
+        req.onblocked = function () { cb(null); };
+      } catch (e) { cb(null); }
+    }
+    function idxDbPut(key, val, cb) {
+      idxDb(function (db) {
+        if (!db) return cb(false);
+        try {
+          var tx = db.transaction(IDX_STORE, 'readwrite');
+          tx.objectStore(IDX_STORE).put(val, key);
+          tx.oncomplete = function () { cb(true); };
+          tx.onerror = tx.onabort = function () { cb(false); };
+        } catch (e) { cb(false); }
+      });
+    }
+    function idxDbGet(key, cb) {
+      idxDb(function (db) {
+        if (!db) return cb(null);
+        try {
+          var r = db.transaction(IDX_STORE, 'readonly').objectStore(IDX_STORE).get(key);
+          r.onsuccess = function () { cb(r.result || null); };
+          r.onerror = function () { cb(null); };
+        } catch (e) { cb(null); }
+      });
+    }
+    function idxDbDel(key) {
+      idxDb(function (db) {
+        if (!db) return;
+        try { db.transaction(IDX_STORE, 'readwrite').objectStore(IDX_STORE).delete(key); } catch (e) {}
+      });
+    }
+
+    /** 되살리기 — sessionStorage(옛 자리)를 먼저 보고, 없으면 IndexedDB. cb(되살렸나) */
+    function loadLocalIndexAsync(cb) {
+      if (loadLocalIndex()) return cb(true);
+      idxDbGet(IDX_KEY, function (pack) {
+        if (!pack || !pack.at || (Date.now() - pack.at) > IDX_TTL || !pack.rows || !pack.rows.length) return cb(false);
+        INDEX = pack.rows;
+        cb(true);
+      });
+    }
+
+    function saveLocalIndex() {
+      var pack = { at: Date.now(), rows: INDEX };
+      var 앞 = IDX_SAVE_FAIL;
+      //  저장은 이제 나중에 끝난다 — 결과가 바뀌었으면 상태 줄의 「저장 한도 초과」 꼬리를 다시 그린다
+      var 끝 = function () { if (앞 !== IDX_SAVE_FAIL && IDX_LAST_WHERE) setIndexStatus(IDX_LAST_WHERE); };
+      idxDbPut(IDX_KEY, pack, function (ok) {
+        if (ok) {
+          IDX_SAVE_FAIL = false;
+          //  옛 자리에 남은 것은 지운다 — 두 곳에 있으면 어느 쪽이 최신인지 헷갈린다
+          try { sessionStorage.removeItem(IDX_KEY); } catch (e0) {}
+          return 끝();
+        }
+        //  IndexedDB 를 못 쓰는 브라우저 — 여태처럼 sessionStorage
+        try {
+          sessionStorage.setItem(IDX_KEY, JSON.stringify(pack));
+          IDX_SAVE_FAIL = false;
+        } catch (e) {
+          IDX_SAVE_FAIL = true;
+          try { sessionStorage.removeItem(IDX_KEY); } catch (e2) {}
+        }
+        끝();
+      });
     }
 
     function mergeRows(rows) {
@@ -9774,7 +9850,9 @@
         '';
     }
 
+    var IDX_LAST_WHERE = '';
     function setIndexStatus(where) {
+      IDX_LAST_WHERE = where;
       var dates = dateList(DAYS);
       var n = visibleRows().length;
       /*  저장이 안 되면 새로고침마다 다시 읽는다 — 그 사실을 적는다 (2026-09-16)  */
@@ -9804,6 +9882,7 @@
       if (refresh) {
         INDEX = [];
         try { sessionStorage.removeItem(IDX_KEY); } catch (e) {}
+        idxDbDel(IDX_KEY);
       }
       if (!quiet) {
         setStatus('<span class="os-spin"></span>서버 캐시에서 불러오는 중… (불러온 뒤엔 즉시 검색)');
