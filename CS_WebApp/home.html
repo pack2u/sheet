@@ -3539,6 +3539,11 @@
     .byc-head { gap: 5px; }
     .byc-phone { font-size: calc(12.5px * var(--hb-text-scale)); }
     .byc-name { font-size: calc(11px * var(--hb-text-scale)); }
+    .byc-vendor {
+      font-size: calc(10px * var(--hb-text-scale)); color: var(--text-secondary);
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 5px; padding: 0 5px;
+      max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     .byc-tag { font-size: calc(9.5px * var(--hb-text-scale)); padding: 0 5px; border-radius: 5px; }
     .byc-when { font-size: calc(9.5px * var(--hb-text-scale)); }
     .byc-body { margin-top: 2px; font-size: calc(11.5px * var(--hb-text-scale)); -webkit-line-clamp: 2; }
@@ -8815,7 +8820,25 @@
         > "전화번호를 불러왔을 때 현재 판매현황을 못 끌어왔는데.. 일단 일일마감에서 불러들여줘"
         v2 가 마감 파일을 당겨 둔 daily_archive 에서 찾는다(/api/byto/cs). 마감 전인 오늘
         주문은 아직 없다 — 그래서 「일일마감 기준」이라고 늘 적는다.                    */
-    function bytoOrdersHtml(orders, total, max) {
+    /*  ★ 업체 딱지 — 일일마감 「거래처」에서 ★  (2026-10-12)
+        > "전화번호로 일일마감에서 업체 정보도 불러오면 좋겠는데"
+        v2 가 그 번호에서 가장 많이 나온 거래처를 준다(직거래 > 대리발송 > 몰 순으로 먼저).
+          직거래   「뼈대있는집 충장점 조소」   — 전화주문 고객의 가게 그대로
+          대리발송 「대리발송-당장드림/탁기선」 → 「대리발송 · 당장드림/탁기선」
+          몰       「법인/배민상회」           → 「몰 · 배민상회」                       */
+    function bytoVendorText(v) {
+      if (!v || !v.name) return '';
+      if (v.kind === '대리발송') return '대리발송 · ' + String(v.name).replace(/^대리발송-/, '');
+      if (v.kind === '몰') return '몰 · ' + String(v.name).replace(/^(법인|개인)\//, '');
+      return String(v.name);
+    }
+    function bytoVendorTag(v) {
+      var t = bytoVendorText(v);
+      if (!t) return '';
+      return '<span class="byc-vendor" title="일일마감 거래처 · ' + esc(v.name) + ' (' + (v.count || 0) + '줄)">🏷 ' + esc(t) + '</span>';
+    }
+
+    function bytoOrdersHtml(orders, total, max, vendor) {
       if (!orders.length) return '<div class="byto-ord-none">일일마감에 이 번호 주문 없음</div>';
       if (max === 1) {
         /*  카드용 한 줄 — 머리·「외 n건」을 따로 줄로 두면 카드가 세 줄 커진다  */
@@ -8825,9 +8848,14 @@
           esc(o1.item || '(품목명 없음)') + (o1.qty ? ' ×' + esc(o1.qty) : '') +
           (total > 1 ? ' <span class="byto-ord-inv">· 외 ' + (total - 1) + '건</span>' : '') + '</div>';
       }
-      var h = '<div class="byto-ord"><div class="byto-ord-head">최근 주문 ' + total + '건 · 일일마감 기준</div>';
+      var h = '<div class="byto-ord"><div class="byto-ord-head">최근 주문 ' + total + '건 · 일일마감 기준' +
+        (vendor && vendor.name ? ' · ' + bytoVendorTag(vendor) : '') + '</div>';
       orders.slice(0, max).forEach(function (o) {
         var d = String(o.date || '').slice(5).replace('-', '/');
+        /*  대표 업체와 거래처가 다른 줄(같은 가게가 몰에서도 샀다 등)만 거래처를 붙인다  */
+        var 다른거래처 = o.seller && !(vendor && vendor.name === o.seller)
+          ? ' <span class="byto-ord-inv">· ' + esc(bytoVendorText({ name: o.seller, kind: /^대리발송-/.test(o.seller) ? '대리발송' : /^(법인|개인)\//.test(o.seller) ? '몰' : '직거래' })) + '</span>'
+          : '';
         h += '<div class="byto-ord-row"><span class="byto-ord-d">' + esc(d) + '</span> ' +
           esc(o.item || '(품목명 없음)') + (o.qty ? ' ×' + esc(o.qty) : '') +
           (o.invoice ? ' <span class="byto-ord-inv">· 송장 ' + esc(o.invoice) + '</span>' : ' <span class="byto-ord-inv">· 송장 없음</span>') +
@@ -8842,6 +8870,7 @@
       var h = '<div class="byc-card" id="byc-' + esc(c.phone) + '"><div class="byc-head">' +
         '<span class="byc-phone">' + esc(bytoPhone(c.phone)) + '</span>' +
         (c.contactName ? '<span class="byc-name">' + esc(c.contactName) + '</span>' : '') +
+        bytoVendorTag(c.vendor) +
         (c.missed ? '<span class="byc-tag miss">부재중 ' + c.missed + '</span>' : '') +
         (c.sms ? '<span class="byc-tag sms">문자 ' + c.sms + '</span>' : '') +
         '<span class="byc-when">' + esc(bytoWhen(c.lastAt)) + '</span></div>';
@@ -8910,7 +8939,7 @@
           if (!res || !res.ok) { box.innerHTML = '<div class="byto-tl-note">못 읽었습니다 — ' + esc((res && res.error) || '까닭 모름') + '</div>'; return; }
           BYTO_TL[key] = { phone: phone, items: res.items || [] };
           /*  주문 카드에서 펼쳤으면 주문은 이미 보고 있다 — 콜백 카드(c…)에서만 위에 얹는다  */
-          box.innerHTML = (String(key).charAt(0) === 'c' ? bytoOrdersHtml(res.orders || [], res.orderCount || 0, 10) : '') +
+          box.innerHTML = (String(key).charAt(0) === 'c' ? bytoOrdersHtml(res.orders || [], res.orderCount || 0, 10, res.vendor) : '') +
             bytoTimelineHtml(res.items || [], res.collectedAt, key);
         })
         .withFailureHandler(function (e) { box.innerHTML = '<div class="byto-tl-note">못 읽었습니다 — ' + esc(String((e && e.message) || e)) + '</div>'; })
