@@ -21,6 +21,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const 파일들 = fs.readdirSync(here).filter((f) => f.endsWith(".php")).map((f) => path.join(here, f));
@@ -87,14 +88,31 @@ const 규칙 = [
     왜: "isset() 은 변수에만 쓴다. 호출 결과에 쓰면 같은 오류로 죽는다",
     대신: "결과를 변수에 받아 두고 isset() 하거나 array_key_exists 를 쓴다",
   },
-  {
-    이름: "설정 파일이 저장소에 올라갈 모양",
-    무늬: /^(?!.*sample).*_config\.php$/,
-    파일이름검사: true,
-    왜: "시크릿이 든 설정은 .gitignore 에 있어야 한다",
-    대신: "견본(*_config.sample.php)만 올린다",
-  },
 ];
+
+/**
+ * 시크릿이 든 설정이 «정말로» git 에 올라갈 상태인가.
+ *
+ * ★ 이름으로 보면 거짓 경보가 난다 ★  (2026-10-12 — 만들자마자 겪었다)
+ *   처음엔 「*_config.php 면 경고」로 두었다. 그런데 그 파일은 이미
+ *   .gitignore 에 들어 있어 추적되지 않는 상태였다 — 멀쩡한데 빨갛게 울었다.
+ *   물어야 할 것은 이름이 아니라 «git 이 이 파일을 무시하는가» 다.
+ *   git 에게 직접 묻는다.
+ */
+function 설정이새나(파일들) {
+  const 새는것 = [];
+  for (const f of 파일들) {
+    const 이름 = path.basename(f);
+    if (!/_config\.php$/.test(이름) || /sample/.test(이름)) continue;
+    let 무시됨 = false;
+    try {
+      execFileSync("git", ["check-ignore", "-q", f], { stdio: "ignore" });
+      무시됨 = true;                       // 종료코드 0 = 무시된다
+    } catch (_) { 무시됨 = false; }        // 0 이 아니면 추적 대상이다
+    if (!무시됨) 새는것.push(이름);
+  }
+  return 새는것;
+}
 
 let 터진것 = 0;
 
@@ -105,10 +123,6 @@ for (const f of 파일들) {
   const 본 = [];
 
   for (const r of 규칙) {
-    if (r.파일이름검사) {
-      if (r.무늬.test(이름)) 본.push({ r, 줄: 0, 글: 이름 });
-      continue;
-    }
     r.무늬.lastIndex = 0;
     let m;
     while ((m = r.무늬.exec(src)) !== null) {
@@ -139,6 +153,16 @@ try {
   console.log("\n(문법 검사: php-parser 로 " + 파일들.length + "개)");
 } catch (_) {
   console.log("\n(문법 검사 건너뜀 — php-parser 가 없습니다. npm i php-parser)");
+}
+
+/*  ★ 마지막 관문 — 시크릿이 든 설정이 git 에 올라갈 상태인가 ★
+    2026-10-12: 이 호출을 «빠뜨린 채» 「문제 없습니다」를 보고 있었다.
+    함수는 있는데 아무도 안 불렀다. 깨 보지 않았으면 몰랐다.             */
+const 새는설정 = 설정이새나(파일들);
+if (새는설정.length) {
+  터진것 += 새는설정.length;
+  console.log("\n❌ 시크릿이 든 설정이 git 에 올라갑니다 — " + 새는설정.join(" · "));
+  console.log("   .gitignore 에 넣으세요. 견본(*_config.sample.php)만 올린다.");
 }
 
 console.log(터진것 ? "\n★ " + 터진것 + "곳" : "\n문제 없습니다.");
