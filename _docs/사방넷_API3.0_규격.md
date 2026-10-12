@@ -15,6 +15,7 @@
 | `clientCd` | **Base62 20자리** | **UUID 36자** — 개발자센터의 「앱 코드」 그대로 |
 | TPS | 기본 **20** tokens/sec | **`X-RateLimit-Limit: 10`** — 절반이다 |
 | 응답 포맷 | "공통 래퍼 **없이** 리소스 스키마가 직접 반환" | **`{code, message, data:{…}}`** 로 감싼다 |
+| 주문 수집 메서드 | **`GET /v3/sb/order`** | **`POST` 만 받는다** — GET·PUT·PATCH·DELETE 전부 `405 GW_REQ_005` |
 
 > ★ 응답 래퍼를 문서대로 짰으면 파서가 전부 깨졌다 ★
 >   `totalCount` 는 최상위가 아니라 `data.totalCount` 다. 목록도 `data.malls` 다.
@@ -104,7 +105,7 @@ X-Svc-Acnt-Id: mw57640
 
 `GET /v3/sb/mall/{SHOP|CHOP|GLOBAL}` → 제휴 21 · 일반 1 · 해외 1 = **23개**
 
-`GET /v3/sb/order` 의 `shopCodeList` 에 넣을 값이다.
+`POST /v3/sb/order` 의 `shopCodeList` 에 넣을 값이다 (문서는 GET 이라고 적었다 — 2-E).
 
 | 우리 원장 표기 | shopCode | 사방넷 몰 이름 | 원장 건수(9/14~10/8) |
 |---|---|---|---|
@@ -311,11 +312,12 @@ POST /v3/sb/product/upsert
 ---
 
 ## 3. 아직 안 해 본 것
-- [ ] `GET /v3/sb/order` — ★ `updateOrderStsYn:"N"` 없이 부르면 **신규주문이 주문확인으로 바뀐다**
+- [ ] `POST /v3/sb/order` **본문 필수 칸** — 2-E 참조. 메서드는 밝혔고 칸 이름을 모른다
+      ★ `updateOrderStsYn:"N"` 없이 부르면 **신규주문이 주문확인으로 바뀐다** (몸통에 싣는다)
 - [ ] `GET /v3/sb/claim` · `GET /v3/sb/cs`
 - [ ] `POST /v3/sb/product/upsert` 본문에 **재고 수량 필드**가 있는가 → 재고송신 가능 여부
 - [ ] `waybill` 의 `results[]` 에 실패 사유 코드가 오는가
-- [ ] 샌드박스 시크릿으로 토큰 발급 (`authMode=SANDBOX`)
+- [x] 샌드박스 시크릿으로 토큰 발급 (`authMode=SANDBOX`) — 된다 (2026-10-12)
 
 ## 4. 실측 도구
 
@@ -333,3 +335,68 @@ POST /v3/sb/product/upsert
 - [ ] **프로덕션 시크릿 재발급** — 2026-10-12 대화 기록에 노출됐다. 개발자센터 > 앱 > 인증 정보
 - [ ] 실측이 끝나면 사무실 IP(`14.34.200.225`) 를 허용 목록에서 뺄지 정한다
 - [ ] **자동화 서비스**(쇼핑몰 송장 자동송신) 금액·과금단위 — 아직 못 받았다
+
+---
+
+## 2-E. 주문 수집 — 샌드박스 실측 (2026-10-12)
+
+> 사장님 결정: **샌드박스에서만 먼저.** 운영계 주문 엔드포인트는 열지 않았다.
+
+### ★ 메서드는 `POST` 다. 문서(와 우리 문서)가 틀렸다 ★
+
+서버에게 직접 물었다 — 샌드박스 `/v3/sb/order` 에 메서드를 하나씩 넣어 봤다:
+
+| 메서드 | 응답 |
+|---|---|
+| `GET` | `405` · `GW_REQ_005 허용되지 않은 HTTP 메서드입니다` |
+| **`POST`** | **`400 BAD_REQUEST`** ← 검사 단계까지 들어간다. 이것뿐이다 |
+| `PUT` · `PATCH` · `DELETE` | `405` |
+
+`OPTIONS` 는 `Allow` 헤더를 안 준다(모든 경로가 405). 그래서 하나씩 쳐 봤다.
+
+> **「`GET /v3/sb/order` 를 조심해라」고 두 문서에 적어 뒀던 것을 고쳤다.**
+> `updateOrderStsYn:"N"` 은 쿼리가 아니라 **몸통에** 싣는다. 위험 자체는 그대로다 —
+> 안 실으면 신규주문이 주문확인으로 넘어간다.
+
+### 응답 봉투 — 페이지 방식이다. 한 건 단위가 아니다
+
+실패(400)에도 봉투는 온다:
+
+```json
+{ "code": 400, "message": "BAD_REQUEST",
+  "data": { "page": 0, "perPage": 0, "totalItemCnt": 0, "totalPage": 0,
+            "curItemCnt": 0, "hasNext": false, "hasPrev": false,
+            "isFirst": true, "isLast": true, "results": [] } }
+```
+
+**상품 조회와 다르다** — 상품은 코드 하나씩만 받는데(목록·페이지 전부 400),
+주문은 `page`·`perPage`·`totalPage`·`hasNext` 를 갖춘 **페이지 응답**이다.
+전수를 돌려 받을 수 있다는 뜻이다.
+
+### 게이트웨이 오류는 봉투가 또 다르다
+
+```json
+{ "requestId": "...", "code": "GW_REQ_005", "message": "...",
+  "timestamp": 1791797039712, "status": 405, "path": "/v3/sb/order" }
+```
+
+`code` 가 **숫자가 아니라 문자열**이고 `data` 가 없다. 앱 오류(`{code:400,…,data:{…}}`)와
+섞어 파싱하면 깨진다. **`data` 가 있나로 가른다.**
+
+### ★ 못 알아낸 것 — 본문 필수 칸 ★
+
+몸통을 **열한 가지**로 바꿔 넣어 봤는데 전부 같은 `400 BAD_REQUEST` 다.
+어느 칸이 모자란지 **한 마디도 안 알려준다**(`results[]` 가 비어 있다).
+
+시도한 것: 빈 몸통 · `updateOrderStsYn` 만 · `startDate`/`endDate`(`yyyyMMdd`·하이픈) ·
+`startDateTime`/`endDateTime` · `orderStartDate`/`orderEndDate` · `ordStartDate`/`ordEndDate` ·
+`ordDateType` · `dateType` · `searchType` · `shopCodeList` · `shopCode` · `mallCodeList` ·
+`orderStatusCode(s)` · `sbOrderNo` · `sbOrderNoList` · `page`/`perPage`.
+
+**이름을 더 찍어 보는 것은 낭비다.** 개발자센터의 주문 수집 규격(요청 본문 표)이
+있어야 한다 — 로그인이 필요해 내가 못 본다. 사장님이 그 쪽을 열어 주시거나
+화면을 주시면 바로 붙인다.
+
+### 덤으로 확인된 것
+
+`X-RateLimit-Limit: 10` — 주문 쪽에서도 **TPS 10** 이다 (문서 20).
