@@ -177,6 +177,64 @@ console.log("\n[6] ★ 엉뚱한 지역을 섬으로 외우지 않는다 — 한
   const 한도 = Number((cs.match(/var _ZC_MAX_ = (\d+);/) || [])[1]);
   ok("★ 한 회차 한도가 2초 간격에 맞게 줄었다 (" + 한도 + "곳 ≒ " + (한도 * 2) + "초)",
      한도 > 0 && 한도 <= 60);
+}
+
+console.log("\n[8] ★ 밤에 많이, 낮에 조금 — 낮 일감을 가볍게 둔다");
+{
+  /*  ─ 2026-10-12 · 사장님 「도서산간 조회 줄여줘」 ─
+      한 곳씩 묻게 바꾼 뒤 이 단계가 135초를 쓰고 하루 960 호출을 했다.
+      그런데 이건 «한시적인» 짐이다 — 실측: 지역키 4,628가지 · 외운 것 1,962 ·
+      남은 것 2,666. 날마다 새로 생기는 것은 200~350곳이라, 밀린 것만 넘기면
+      저절로 작아진다. **숫자를 통째로 내리면 밀린 짐을 세 배 오래 진다.**
+      그래서 사람이 쓰는 낮에만 줄이고 아무도 없는 밤에 많이 묻는다.          */
+
+  const 밤 = Number((cs.match(/var _ZC_MAX_ = (\d+);/) || [])[1]);
+  const 낮 = Number((cs.match(/var _ZC_MAX_DAY_ = (\d+);/) || [])[1]);
+  ok("★ 낮 한도가 따로 있다", 낮 > 0);
+  ok("★ 낮이 밤보다 적다 (" + 낮 + " < " + 밤 + ")", 낮 < 밤);
+  ok("낮에도 0 은 아니다 — 아예 멈추면 밀린 짐이 안 줄어든다", 낮 >= 5);
+
+  //  ★ 서울 시각으로 봐야 한다 ★ getHours() 면 시간대가 어긋날 때 밤낮이 뒤바뀐다
+  ok("★ 서울 시각으로 낮을 가린다",
+     /Utilities\.formatDate\(new Date\(\), "Asia\/Seoul", "H"\)/.test(cs));
+  ok("getHours() 를 그냥 쓰지 않는다", !/new Date\(\)\.getHours\(\)/.test(cs));
+
+  //  실제로 갈리는지 돌려 본다
+  const vm2 = require("vm");
+  function 토막(s, n) {
+    const i = s.indexOf("function " + n + "(");
+    let d = 0, seen = false;
+    for (let k = i; k < s.length; k++) {
+      if (s[k] === "{") { d++; seen = true; }
+      else if (s[k] === "}") { d--; if (seen && d === 0) return s.slice(i, k + 1); }
+    }
+  }
+  const 돌려 = (시) => {
+    const c = { String, Number, parseInt, Math,
+      _ZC_MAX_: 밤, _ZC_MAX_DAY_: 낮,
+      _ZC_DAY_FROM_: Number((cs.match(/var _ZC_DAY_FROM_ = (\d+);/) || [])[1]),
+      _ZC_DAY_TO_: Number((cs.match(/var _ZC_DAY_TO_ = (\d+);/) || [])[1]),
+      Utilities: { formatDate: () => String(시) } };
+    vm2.createContext(c);
+    vm2.runInContext(토막(cs, "_zc_isDaytime_"), c);
+    vm2.runInContext(토막(cs, "_zc_maxNow_"), c);
+    return vm2.runInContext("_zc_maxNow_()", c);
+  };
+  ok("★ 새벽 3시 → 밤 몫 (" + 돌려(3) + ")", 돌려(3) === 밤);
+  ok("★ 오전 11시 → 낮 몫 (" + 돌려(11) + ")", 돌려(11) === 낮);
+  ok("★ 밤 10시 → 밤 몫 (" + 돌려(22) + ")", 돌려(22) === 밤);
+  ok("경계: 8시는 낮 · 20시는 밤 (한 시간이 두 쪽에 들지 않는다)",
+     돌려(8) === 낮 && 돌려(20) === 밤);
+  ok("0시도 밤", 돌려(0) === 밤);
+
+  //  ★ 어느 한도였는지 적어야 한다 ★ 안 적으면 「왜 어제보다 적게 외웠나」를 짐작한다
+  ok("★ 운영점검에 낮·밤을 적는다",
+     /_zc_isDaytime_\(\) \? "낮" : "밤"/.test(cs));
+  ok("한도 숫자도 같이 적는다", /후보 한도\(" \+ 한도 \+ "·"/.test(cs));
+
+  //  손으로 돌릴 때는 그대로 고를 수 있어야 한다
+  ok("opt.max 가 여전히 먼저다 (손으로 돌려 볼 길을 막지 않는다)",
+     /opt\.max > 0 \? opt\.max : _zc_maxNow_\(\)/.test(cs));
 
   ok("성공값을 _logen_ok_ 로 본다 (이 API 는 SUCCESS 다)", /_logen_ok_\(d\.resultCd\)/.test(cs));
 }
@@ -191,8 +249,10 @@ console.log("\n[7] ★ 「물을 게 없었다」와 「물었는데 못 받았�
   ok("★ 운영점검에 적는다", /물었는데 못 받음 " \+ 버림/.test(cs));
   ok("몇 곳 중 몇인지 같이 적는다 (비율이 보여야 한다)",
      /버림 \+ "\/" \+ 후보\.length/.test(cs));
+  /*  줄바꿈에 기대지 않는다 — 2026-10-12 에 이 줄을 다듬다가 시험이 깨졌다.
+      볼 것은 «한도까지 찼으면 적는다»는 뜻이지 글자 모양이 아니다. */
   ok("★ 후보가 한도까지 찼으면 그것도 적는다 (아직 할 일이 남았다는 뜻)",
-     /후보\.length >= 한도 \? " · 후보 한도\(/.test(cs));
+     /후보\.length >= 한도/.test(cs) && /후보 한도\(" \+ 한도/.test(cs));
   ok("평소(0건)에는 안 적는다 — 매시간 같은 말이 쌓이면 안 읽힌다",
      /\(버림 \? " · ★ 물었는데 못 받음 "/.test(cs));
 }
