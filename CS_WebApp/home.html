@@ -4999,7 +4999,9 @@
       loadByto(true);   /* 바이토 콜백 대기 — 열 때 한 번, 그 뒤 2분마다 (2026-10-10) */
       /*  수집기가 «새 연락이 오면 바로» 돌게 됐다(byto-watch, 1~2분). 화면이 5분마다
           읽으면 그게 병목이 된다. v2 한 번 묻는 값이라 2분이어도 가볍다.  */
-      setInterval(function () { if (!document.hidden) loadByto(true); }, 120000);
+      /*  2026-10-13 2분 → 30초. 수집기가 «누르지 않고 읽게» 바뀌어 새 연락이 20~30초 안에 v2 에 든다.
+          > "새로운 전화나 문자가 온것이 실시간 반영이 안된다는거야. 화면이"  */
+      setInterval(function () { if (!document.hidden) loadByto(true); }, 30000);
       renderDeposits(); /* 오늘 입금 — 열 때 한 번, 그 뒤 1분마다 (2026-09-29) */
       depPaintSoundBtn(); /* 입금 소리 켜짐/꺼짐 (2026-09-30) */
       startCsPulse();
@@ -8869,9 +8871,33 @@
           BYC_CARDS = res.cards || [];
           BYC_COLLECTED = res.collectedAt || '';
           renderByto();
+          bytoRefreshOpenTl();
         })
         .withFailureHandler(function (e) { bycBusy = false; bycError(String((e && e.message) || e || '까닭 모름')); })
         .csBytoCallbacks({ days: 3 });
+    }
+
+    /*  펼쳐 둔 「통화·문자」 줄기도 콜백 대기와 같이 새로 읽는다 (2026-10-13).
+        ★ 듣는 중·읽는 중은 건드리지 않는다 ★ 녹음이 재생 중이거나 받아쓰기를 펼쳐 둔 상자는
+        다시 그리면 끊기거나 접힌다 — 그 상자는 이번엔 건너뛴다.  */
+    function bytoRefreshOpenTl() {
+      Object.keys(BYTO_TL).forEach(function (key) {
+        var box = document.getElementById('bytoTl-' + key);
+        if (!box || box.hidden) return;
+        var 듣는중 = Array.prototype.some.call(box.querySelectorAll('audio'), function (a) { return !a.paused; });
+        if (듣는중 || box.querySelector('details[open]')) return;
+        var phone = BYTO_TL[key].phone;
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (!res || !res.ok || box.hidden) return;
+            var 듣는중2 = Array.prototype.some.call(box.querySelectorAll('audio'), function (a) { return !a.paused; });
+            if (듣는중2 || box.querySelector('details[open]')) return;
+            BYTO_TL[key] = { phone: phone, items: res.items || [] };
+            box.innerHTML = (String(key).charAt(0) === 'c' ? bytoOrdersHtml(res.orders || [], res.orderCount || 0, 10, res.vendor) : '') +
+              bytoTimelineHtml(res.items || [], res.collectedAt, key);
+          })
+          .csBytoTimeline(phone);
+      });
     }
 
     function bycError(까닭) {
@@ -8886,11 +8912,11 @@
       if (!list) return;
       var n = BYC_CARDS.length;
       document.getElementById('bycCount').textContent = n;
-      /*  ★ 몇 분 전 자료인지 말한다 ★ 30분마다 받아 오므로, 방금 콜백한 건이
-          아직 남아 있을 수 있다. 그걸 「안 빠진다」로 오해하지 않게.  */
+      /*  ★ 몇 분 전 자료인지 말한다 ★ 새 연락은 30초 안에 들어오지만, 방금 콜백한 건이
+          잠깐 남아 있을 수 있다. 그걸 「안 빠진다」로 오해하지 않게.  */
       var subEl = document.getElementById('bycSub');
       subEl.textContent = '최근 3일' + (BYC_COLLECTED ? ' · ' + bytoWhen(BYC_COLLECTED) + ' 기준' : '');
-      subEl.title = '바이토 부재중·받은 문자 중 아직 답하지 않은 것. 30분마다 받아 옵니다 — 콜백하면 다음 수집 때 저절로 빠집니다';
+      subEl.title = '바이토 부재중·받은 문자 중 아직 답하지 않은 것. 새 연락은 30초 안에 들어옵니다 — 콜백하면 다음 수집 때 저절로 빠집니다';
       if (!n) { list.innerHTML = '<div class="byc-empty">답할 부재중·문자가 없습니다 👍</div>'; return; }
       var show = BYC_ALL ? BYC_CARDS : BYC_CARDS.slice(0, 6);
       var h = show.map(bycCardHtml).join('');
