@@ -68,10 +68,13 @@ const RELAY_VERSION = '2026-10-12a';
  *   같은 경로라도 GET 은 읽기, POST 는 쓰기다. 쓰기를 늘릴 때는
  *   «의식해서» 이 표를 고치게 둔다.
  *
- * ★ POST /v3/sb/order 를 아직 열지 않았다 ★ (문서는 GET 이라 적었다 — 실측은 POST 전용)
+ * ★ POST /v3/sb/order 를 열었다 ★ (2026-10-13 · 문서는 GET 이라 적었지만 실측은 POST 전용)
  *   그 API 는 부르는 것만으로 «신규주문을 주문확인으로 바꾼다».
- *   updateOrderStsYn:"N" 을 빠뜨린 호출 한 번이 쇼핑몰 흐름을 어긋나게 한다.
- *   아래 ORDER_GUARD 가 그 값을 강제하도록 만든 뒤에 연다.
+ *   updateOrderStsYn:"N" 을 빠뜨린 호출 한 번이 쇼핑몰 흐름을 어긋나게 하고,
+ *   되돌릴 API 가 없다. 그래서 세 가지를 «같이» 넣었다 —
+ *     ① ALLOWED 에 경로        ② READ_POST (읽기인 POST 를 운영계 잠금에서 뺌)
+ *     ③ ORDER_GUARD ($body 를 읽은 뒤에서 「N」을 못박음)
+ *   ★ 셋 중 하나만 빼고 올리지 말 것 ★ 특히 ③ 없이 ①만 넣으면 울타리가 없는 채 열린다.
  */
 const ALLOWED = [
     // 조회 — 아무것도 바꾸지 않는다
@@ -93,6 +96,23 @@ const ALLOWED = [
 
     // 쓰기 — 1단계
     'POST /v3/sb/waybill'     => true,
+
+    /*  ★ 주문 수집 ★  (2026-10-13)
+        문서는 GET 이라고 적었지만 실측은 POST 전용이다(GET 은 405).
+        부르는 것만으로 신규주문을 「주문확인」으로 바꾸는 API 라 여태 닫아 뒀다.
+        아래 ORDER_GUARD 가 updateOrderStsYn 을 「N」으로 못박으므로 이제 연다.
+        ★ 가드 없이 이 줄만 넣지 말 것 ★ 되돌릴 API 가 없다. */
+    'POST /v3/sb/order'       => true,
+];
+
+/*  ★ POST 지만 «읽기»인 것 ★  (2026-10-13)
+    아래 운영계 쓰기 잠금은 「GET 이 아니면 쓰기」로 보고 막는다. 주문 수집은
+    읽기인데 POST 라 거기 걸린다. 그렇다고 allowProdWrite 를 통째로 켜면
+    상품·송장 쓰기까지 같이 열린다 — 그건 잠금을 둔 까닭을 지우는 일이다.
+    그래서 «이 경로 하나»만 읽기로 빼 준다. 늘릴 때는 그 API 가 정말 아무것도
+    안 바꾸는지 규격으로 확인하고 늘린다(claim·cs 는 아직 모른다). */
+const READ_POST = [
+    'POST /v3/sb/order' => true,
 ];
 
 const HOSTS = [
@@ -161,7 +181,9 @@ if (!array_key_exists($key, ALLOWED)) {   // 상수 배열 — isset() 을 쓰�
 /*  ★ 쓰기는 운영계에서 «한 번 더» 막는다 ★
     config 의 allowProdWrite 가 true 일 때만 운영계 쓰기를 통과시킨다.
     설치 직후 기본값은 false 다 — 샌드박스로 먼저 돌려 보고 사람이 연다. */
-if ($env === 'PRODUCTION' && $method !== 'GET' && empty($CFG['allowProdWrite'])) {
+if ($env === 'PRODUCTION' && $method !== 'GET'
+    && !array_key_exists($key, READ_POST)              // 읽기인 POST 는 뺀다 (위 참고)
+    && empty($CFG['allowProdWrite'])) {
     fail(403, 'RELAY_PROD_WRITE_LOCKED',
          '운영계 쓰기가 잠겨 있습니다. sabang_config.php 의 allowProdWrite 를 켜세요.');
 }
@@ -269,6 +291,31 @@ $jwt = 사방넷토큰($CFG, $env);
 // ── 3. 사방넷 호출 ──────────────────────────────────────
 $url  = HOSTS[$env] . $path;
 $body = array_key_exists('body', $req) ? $req['body'] : null;
+
+/*  ══ ORDER_GUARD ══  (2026-10-13)
+    주문 수집은 몸통에 updateOrderStsYn 이 없거나 「Y」면, 조회하는 것만으로
+    «신규주문이 주문확인으로 바뀐다». 되돌릴 API 가 없다.
+
+    ★ 반드시 $body 를 읽은 «뒤»에 둔다 ★ 앞에 두면 아래 한 줄이 통째로 덮어써
+    가드가 아무 일도 안 한 채 조용히 지나간다. 처음에 그렇게 짰다가 찾았다.
+
+    ★ 부르는 쪽을 믿지 않는다 ★ v2 든 GAS 든 사람 손이든 여기서 한 번 더 박는다.
+      · 빠뜨렸으면 → 「N」으로 채운다. 흔한 실수이고 안전한 쪽이 분명하다.
+      · 「N」이 아닌 값을 «일부러» 보냈으면 → 막는다.
+        조용히 고쳐 주면 「상태를 바꾸려던 코드」가 살아남아 다음에 또 온다.
+        그런 뜻이 담긴 호출은 여기서 터뜨려 사람이 찾게 한다. */
+if ($key === 'POST /v3/sb/order') {
+    if (!is_array($body)) $body = [];
+    if (array_key_exists('updateOrderStsYn', $body)) {
+        $v = strtoupper(trim((string)$body['updateOrderStsYn']));
+        if ($v !== 'N') {
+            fail(400, 'RELAY_ORDER_STS_GUARD',
+                 'updateOrderStsYn 은 「N」이어야 합니다 (보낸 값: ' . $v . '). '
+               . '조회만으로 신규주문이 「주문확인」으로 바뀌는 것을 막는 울타리입니다.');
+        }
+    }
+    $body['updateOrderStsYn'] = 'N';
+}
 
 $headers = [
     'Authorization: Bearer ' . $jwt,
