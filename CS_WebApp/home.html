@@ -9223,6 +9223,8 @@
             녹음 주소는 두 시간 산다 — 넘으면 ↻ 로 다시 읽는다(사진과 같다).  */
         if (it.kind === 'call') {
           if (it.audio) row += '<div class="byto-tl-rec"><audio controls preload="none" src="' + esc(it.audio) + '"></audio></div>';
+          /*  90일 지나 NAS 로 옮긴 녹음 — 웹에서는 못 튼다(브라우저가 내 PC 파일을 막는다). 자리만 보인다  */
+          else if (it.nasPath) row += '<div class="byto-tl-rec byto-tl-at" title="90일 지나 NAS 로 옮겼습니다">🗄 NAS 보관 · ' + esc(it.nasPath) + '</div>';
           if (it.summary) row += '<div class="byto-tl-sum">📝 ' + esc(it.summary) + '</div>';
           var tr = it.transcript || [];
           if (tr.length) {
