@@ -3513,6 +3513,15 @@
     .byto-tl-what .miss { color: #e5484d; font-weight: 700; }
     .byto-tl-body { grid-column: 2; white-space: pre-wrap; word-break: break-word; font-size: 12.5px; color: var(--text-secondary); }
     .byto-tl-photos { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; }
+    /* 받아쓰기·녹음 (2026-10-13) */
+    .byto-tl-rec { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .byto-tl-rec audio { height: 28px; max-width: 260px; }
+    .byto-tl-sum { grid-column: 2; font-size: 12.5px; white-space: pre-wrap; }
+    .byto-tl-tr { grid-column: 2; font-size: 12.5px; }
+    .byto-tl-tr summary { cursor: pointer; color: var(--text-secondary); }
+    .byto-tl-tr .lines { margin-top: 4px; max-height: 260px; overflow-y: auto; padding: 6px 8px; border-radius: 8px; background: var(--bg-secondary, rgba(0,0,0,.04)); line-height: 1.55; }
+    .byto-tl-tr .us { color: var(--accent-green, #16a34a); font-weight: 700; }
+    .byto-tl-tr .them { color: var(--accent-orange, #ea580c); font-weight: 700; }
     .byto-tl-photos img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
     .byto-tl-note { color: var(--text-muted); font-size: 11.5px; padding: 4px 0; }
     .byto-tl-acts { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
@@ -9183,6 +9192,22 @@
         var row = '<div class="byto-tl-row"><div class="byto-tl-at">' + esc(bytoWhen(it.at)) + '</div>' +
           '<div class="byto-tl-what">' + what + (it.ourLine ? ' <span class="byto-tl-at">· ' + esc(bytoPhone(it.ourLine)) + '</span>' : '') + '</div>';
         if (it.body) row += '<div class="byto-tl-body">' + esc(it.body) + '</div>';
+        /*  ★ 받아쓰기·녹음 (2026-10-13) ★  > "CS웹앱에 받아쓰기랑 녹음 재생 붙여줘"
+            v2 /api/byto/cs 가 통화마다 문장(우리/상대)·요약·녹음 서명 주소를 준다.
+            녹음 주소는 두 시간 산다 — 넘으면 ↻ 로 다시 읽는다(사진과 같다).  */
+        if (it.kind === 'call') {
+          if (it.audio) row += '<div class="byto-tl-rec"><audio controls preload="none" src="' + esc(it.audio) + '"></audio></div>';
+          if (it.summary) row += '<div class="byto-tl-sum">📝 ' + esc(it.summary) + '</div>';
+          var tr = it.transcript || [];
+          if (tr.length) {
+            var 앞 = tr.slice(0, 2).map(function (l) { return l.text; }).join(' / ');
+            row += '<details class="byto-tl-tr"><summary>받아쓰기 ' + (it.transcriptCount || tr.length) + '줄 — ' + esc(앞.length > 60 ? 앞.slice(0, 60) + '…' : 앞) + '</summary><div class="lines">' +
+              tr.map(function (l) {
+                var w = l.who === 'us' ? '<span class="us">우리</span>' : l.who === 'them' ? '<span class="them">상대</span>' : '?';
+                return '<div>' + w + ' ' + esc(l.text) + '</div>';
+              }).join('') + '</div></details>';
+          }
+        }
         if ((it.photos || []).length) {
           row += '<div class="byto-tl-photos">' + it.photos.map(function (u) {
             return '<a href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="고객 사진" loading="lazy"></a>';
@@ -9198,7 +9223,7 @@
         }
         return row + '</div>';
       }).join('');
-      return h + '<div class="byto-tl-note">최근 ' + items.length + '건 · 바이토 ' + esc(bytoWhen(collectedAt)) + ' 기준 · 30분마다 받아 옵니다</div>';
+      return h + '<div class="byto-tl-note">최근 ' + items.length + '건 · 바이토 ' + esc(bytoWhen(collectedAt)) + ' 기준 · 새 연락은 1분 안에 들어옵니다</div>';
     }
 
     function loadCsq(force) {
