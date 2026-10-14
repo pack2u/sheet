@@ -41,7 +41,23 @@
 var _GMA_AJ_PREFIX = "AJ";
 var _GMA_SEARCH_QUERY = "from:hspack2020@naver.com 택배송장 has:attachment";
 var _GMA_PROCESSED_LABEL = "P2U_아주팩송장처리완료";
-var _GMA_LOOKBACK_DAYS = 2; // 날짜 경계(자정 직후 실행 등)에 안전하게
+/*  ★ 당일 메일만 본다 ★  (2026-10-14)
+ *  > "당일 이메일만 검사를 해야지"
+ *
+ *  전에는 2일치를 봤다. 그래서 어제 메일이 같이 걸려 「이미 입력됨 10건」이
+ *  섞였고, 예행 결과에서 오늘 것이 묻혔다.
+ *
+ *  ★ 날짜는 두 번 거른다 ★
+ *    ① 검색어 after:오늘   — Gmail 이 1차로 거른다
+ *    ② 메일 한 통씩 날짜   — 한 스레드에 어제 메일이 같이 들어 있으면
+ *       검색은 통과하고 메시지 루프가 그것까지 읽는다. 거기서 한 번 더 막는다.
+ *
+ *  ★ 하루를 건너뛰면 그날 것은 안 들어온다 ★ 휴무·실패로 못 돌린 날은
+ *    메뉴에서 손으로 돌려야 한다. 이미 들어간 송장은 다시 안 넣으므로
+ *    여러 번 돌려도 탈이 없다.
+ */
+var _GMA_TODAY_ONLY_ = true;
+var _GMA_LOOKBACK_DAYS = 2; // _GMA_TODAY_ONLY_ 를 끄면 쓰는 날수
 
 // ═════════════════════════════════════════════════════════════════
 //  1. 진입점
@@ -136,12 +152,14 @@ function _gma_triggerFetchAJInvoice_() {
 function _gma_processAJInvoiceMails_(opt) {
   opt = opt || {};
   var res = {
-    mailCount: 0, parsedCount: 0, alreadyIn: 0,
+    mailCount: 0, parsedCount: 0, alreadyIn: 0, skippedOld: 0, tabInfo: "",
     written: [], unmatched: [], stillEmpty: [], errors: [], headerInfo: []
   };
 
   // ── 1) 메일 찾기 ──
-  var query = _GMA_SEARCH_QUERY + " newer_than:" + _GMA_LOOKBACK_DAYS + "d";
+  var 오늘 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy/MM/dd");
+  var query = _GMA_SEARCH_QUERY + " " +
+    (_GMA_TODAY_ONLY_ ? "after:" + 오늘 : "newer_than:" + _GMA_LOOKBACK_DAYS + "d");
   // 수동/예행은 처리완료 라벨이 붙은 것도 다시 본다 (재실행해도 안전 — 중복 입력 안 함)
   if (!opt.manual) query += " -label:" + _GMA_PROCESSED_LABEL;
 
@@ -161,6 +179,12 @@ function _gma_processAJInvoiceMails_(opt) {
     for (var mi = 0; mi < msgs.length; mi++) {
       var msg = msgs[mi];
       if (String(msg.getFrom() || "").toLowerCase().indexOf("hspack2020") === -1) continue;
+      /*  ★ 한 통씩 날짜를 본다 ★ 한 스레드에 어제 메일이 같이 들어 있으면
+          검색(after:)은 통과하고 여기까지 온다. (2026-10-14)  */
+      if (_GMA_TODAY_ONLY_) {
+        var 온날 = Utilities.formatDate(msg.getDate(), "Asia/Seoul", "yyyy/MM/dd");
+        if (온날 !== 오늘) { res.skippedOld = (res.skippedOld || 0) + 1; continue; }
+      }
       res.mailCount++;
       var atts = msg.getAttachments() || [];
       for (var ai = 0; ai < atts.length; ai++) {
@@ -218,12 +242,25 @@ function _gma_processAJInvoiceMails_(opt) {
   }
 
   // 빈 A열 후보 줄
-  var cands = [];
+  var cands = [], 이미찬줄 = 0, 이름없는줄 = 0;
   for (var r = 0; r < body.length; r++) {
-    if (_gma_trackingsIn_(colA[r][0]).length) continue;
+    if (_gma_trackingsIn_(colA[r][0]).length) { 이미찬줄++; continue; }
     var nmv = _gma_normName_(body[r][col.name]);
-    if (!nmv) continue;
+    if (!nmv) { 이름없는줄++; continue; }
     cands.push(_gma_makeCand_(r, body[r], col));
+  }
+
+  /*  ★ 전용양식에서 무엇을 봤는지 남긴다 ★  (2026-10-14)
+      예행에서 23건이 「이름이 맞는 줄 없음」으로 떨어졌는데, 그 까닭이
+      «후보 줄이 없어서»인지 «이름이 달라서»인지 화면만 보고는 알 수 없었다.
+      본 것을 그대로 적는다 — 이름 몇 개를 곁들이면 바로 견줄 수 있다.  */
+  res.tabInfo = "전용양식 " + body.length + "줄 · 이름 칸 " + _gma_colName_(col.name) +
+    " · 송장 이미 있는 줄 " + 이미찬줄 + " · 이름 빈 줄 " + 이름없는줄 +
+    " · 붙일 수 있는 줄 " + cands.length;
+  if (cands.length) {
+    res.tabInfo += "\n      전용양식 이름: " +
+      cands.slice(0, 8).map(function (c) { return c.rawName; }).join(", ") +
+      (cands.length > 8 ? " 외 " + (cands.length - 8) + "줄" : "");
   }
 
   // ── 4) 매칭 ──
@@ -692,8 +729,11 @@ function _gma_oneLine_(r) {
 
 function _gma_summaryText_(r, dryRun) {
   var L = [(dryRun ? "🧪 아주팩 송장 예행 (시트에 쓰지 않음)" : "📧 아주팩 Gmail 송장 수집"), ""];
-  L.push("메일 " + r.mailCount + "건 · 엑셀 송장 " + r.parsedCount + "개");
+  L.push("메일 " + r.mailCount + "건 · 엑셀 송장 " + r.parsedCount + "개" +
+    (r.skippedOld ? "  (오늘 것이 아니라 건너뛴 메일 " + r.skippedOld + "건)" : ""));
   r.headerInfo.forEach(function (h) { L.push("  " + h); });
+  //  전용양식에서 무엇을 봤나 — 안 붙을 때 까닭이 여기 있다
+  if (r.tabInfo) { L.push(""); L.push("  " + r.tabInfo); }
   L.push("");
   L.push((dryRun ? "넣을 것 " : "A열 입력 ") + r.written.length + "건 · 이미 입력됨 " + r.alreadyIn + "건");
   r.written.slice(0, 15).forEach(function (w) {
@@ -713,6 +753,11 @@ function _gma_summaryText_(r, dryRun) {
     r.stillEmpty.slice(0, 10).forEach(function (x) { L.push("  " + x.row + "행 " + x.name + " / " + x.item); });
   }
   if (r.errors.length) { L.push(""); L.push("⚠ " + r.errors.join("\n⚠ ")); }
-  if (!r.mailCount) { L.push(""); L.push("최근 " + _GMA_LOOKBACK_DAYS + "일 안에 hspack2020 송장 메일이 없습니다."); }
+  if (!r.mailCount) {
+    L.push("");
+    L.push(_GMA_TODAY_ONLY_
+      ? "오늘 온 hspack2020 송장 메일이 없습니다."
+      : "최근 " + _GMA_LOOKBACK_DAYS + "일 안에 hspack2020 송장 메일이 없습니다.");
+  }
   return L.join("\n");
 }
