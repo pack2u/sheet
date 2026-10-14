@@ -6,23 +6,30 @@
  */
 
 var _PSTMT_GMAIL_PROCESSED_LABEL_ = "P2U_명세처리완료";
-/*  ★ 2026-10-14: 명세서가 아닌 메일이 섞여 들어와 덜어낸다 ★
-    · -in:sent -from:me        우리가 업체에 보낸 「[팩투유] ○○ 거래명세표」
-    · hspack2020@naver.com     아주팩 택배송장 엑셀 — _partnerGmailInvoiceAJ.gs 가 따로 본다
-    · hometax.go.kr            홈택스 전자세금계산서 발급 안내 (명세서가 아니다)
-    · ilogen.com               로젠택배 IP 등록 같은 업무 메일
-    · allpack7@naver.com       올팩코리아 안내 메일
-      ★ 올팩코리아는 우리가 명세표를 «보내는» 쪽이라 받을 일이 없다.
-        저쪽이 명세서를 보내기 시작하면 이 줄을 지워야 한다 — 안 지우면 조용히 묻힌다.
+/*  ★ 2026-10-14: 보내는 사람이 아니라 «제목»으로 고른다 ★
+    > "제목으로 판단을 해줘.. 명세서, 명세표 등이 들어갔을때를 찾으면 될꺼 같은데"
+    > "받은 편지만"
 
-    Gmail 에 직접 물어 견줬다: 45 → 32 → 26건.
-    빠진 것은 다 위 갈래이고 진짜 명세서(로엔그린·후아코리아·준테크)와
-    업체 자료(더조은팩 마감·부원KH 단가표)는 그대로 남았다.
+    보내는 사람을 하나씩 막는 방식은 끝이 없었다(택배송장·홈택스·로젠·영업메일…).
+    제목에 「명세서」나 「명세표」가 든 것만 보면 한 줄로 끝난다.
+
+    · in:inbox -from:me   받은 편지만.
+      ★ 꼭 있어야 한다 ★ — 우리가 업체에 보내는 「[팩투유] ○○ 거래명세표」도
+        제목에 명세표가 들어서, 이게 없으면 우리 메일을 우리가 다시 읽는다.
+    · subject:명세서 OR subject:명세표
+      「거래명세표입니다」·「전자거래명세표가 도착하였습니다」처럼 말이 붙어 있어도
+      Gmail 이 가운데 토막을 찾아낸다 — 실제로 물어서 확인했다.
+
+    ★ 이 방식으로 안 걸리는 것 ★ 제목에 명세라는 말이 없는 업체 자료는 안 들어온다.
+      예: 더조은팩 「9월 팩투유(더조은팩).xlsx」(마감자료), 부원KH 단가표.
+      그런 업체가 생기면 낱말을 늘리거나 그 업체만 따로 받아야 한다.
+
+    Gmail 에 직접 물어 견줬다 — 14일치 19건, 전부 진짜 명세서였다(잡것 0).
 
     점검(partnerDiagnoseStatementGmail)도 이 상수를 쓴다. 검색어의 주인은 여기 하나다.  */
-var _PSTMT_GMAIL_SEARCH_BASE_ = "has:attachment -label:P2U_명세처리완료 newer_than:14d" +
-  " -in:sent -from:me" +
-  " -from:hspack2020@naver.com -from:hometax.go.kr -from:ilogen.com -from:allpack7@naver.com";
+var _PSTMT_GMAIL_SEARCH_BASE_ = "in:inbox -from:me has:attachment" +
+  " -label:P2U_명세처리완료 newer_than:14d" +
+  " (subject:명세서 OR subject:명세표)";
 
 /** 메뉴 — 현재 스프레드시트에 Gmail 명세 첨부 적재 */
 function partnerFetchStatementFromGmail() {
