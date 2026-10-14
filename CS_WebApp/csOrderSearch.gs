@@ -2743,7 +2743,8 @@ function _cs_stageFromFlags_(row, col) {
 function _cs_faultFromNotice_(notice) {
   var s = String(notice == null ? "" : notice);
   if (!s) return "";
-  var m = s.match(/귀책\s*[:：]\s*(구매자|판매자)/);
+  //  택배사 — 화면 귀책 목록에는 있었는데 여기서 못 읽어 늘 빈 값이었다 (2026-10-14)
+  var m = s.match(/귀책\s*[:：]\s*(구매자|판매자|택배사)/);
   return m ? m[1] : "";
 }
 

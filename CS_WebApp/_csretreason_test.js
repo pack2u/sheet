@@ -51,6 +51,9 @@ const 시킨것 = {
   구매자: ["자동반품", "단순변심", "오입력"],
   판매자: ["오배송", "제품파손", "사고", "불량",
     "배송지연", "정보불일치", "중복출고", "품절", "상품하자"],
+  /*  2026-10-14 — 귀책 목록에는 있었는데 사유 칸이 없어 빈 채로 떴다.
+      쓰던 낱말에서 골랐고 「분실」만 새로 넣었다.  */
+  택배사: ["사고", "제품파손", "분실", "배송지연", "오배송"],
 };
 
 /* ── 화면 쪽 ─────────────────────────────────────────────────── */
@@ -84,10 +87,18 @@ ok("오배송·파손·사고·불량·배송지연은 판매자 쪽이다",
 ok("구매자 목록에 오배송은 없다", hctx.RET_REASONS.구매자.indexOf("오배송") < 0);
 const 겹침 = hctx.RET_REASONS.구매자.filter((x) => hctx.RET_REASONS.판매자.indexOf(x) >= 0);
 ok("두 목록에 겹치는 낱말이 없다", 겹침.length === 0, 겹침.join("·"));
-ok("귀책은 둘뿐", hctx.RET_FAULTS.join("·") === "구매자·판매자", hctx.RET_FAULTS.join("·"));
-ok("사유 표의 열쇠가 귀책 목록과 같다",
-  Object.keys(hctx.RET_REASONS).sort().join("·") === hctx.RET_FAULTS.slice().sort().join("·"),
+/*  ★ 2026-10-14 ★ 이 시험은 「귀책은 둘뿐」이라 통과하고 있었지만 화면은
+    줄곧 셋을 보여 줬다 — RET_FAULTS 가 두 번 선언돼 있었고 이 시험은
+    «첫 번째»만 읽었기 때문이다. 선언을 하나로 합치자 드러났다.
+    맨 앞 빈 값은 «안 고름»이다 — 귀책이 곧 돈이라 기본값을 두지 않는다.  */
+ok("귀책은 셋 + 안 고름",
+  hctx.RET_FAULTS.join("·") === "·판매자·구매자·택배사", hctx.RET_FAULTS.join("·"));
+ok("사유 표의 열쇠가 귀책 목록과 같다 (빈 값 빼고)",
+  Object.keys(hctx.RET_REASONS).sort().join("·") ===
+    hctx.RET_FAULTS.filter(Boolean).sort().join("·"),
   Object.keys(hctx.RET_REASONS).join("·"));
+ok("택배사 사유가 비어 있지 않다",
+  (hctx.RET_REASONS.택배사 || []).length > 0, (hctx.RET_REASONS.택배사 || []).join("·"));
 
 console.log("\n─── ② 낱말이 «한 곳»에만 적혀 있는가 ───");
 /*  HTML 에 <option> 을 두 벌 적어 두었던 것이 이번 어긋남의 뿌리다.  */
@@ -118,19 +129,24 @@ console.log("\n─── ③ 두 화면이 똑같이 도는가 ───");
 ["retNew", "ledger"].forEach((pfx) => {
   const 칸 = 가짜화면(pfx);
   hctx.retFillPicks(pfx);
-  ok(pfx + " 유형 8개가 표대로", 고를수있는것(칸[pfx + "Type"]).join("·") === hctx.RET_TYPES.join("·"),
+  ok(pfx + " 유형이 표대로", 고를수있는것(칸[pfx + "Type"]).join("·") === hctx.RET_TYPES.join("·"),
     고를수있는것(칸[pfx + "Type"]).join("·"));
+  ok(pfx + " 유형에 「사고」가 있다", hctx.RET_TYPES.indexOf("사고") >= 0, hctx.RET_TYPES.join("·"));
   ok(pfx + " 유형 기본값 = 단순반품", 칸[pfx + "Type"].value === "단순반품", 칸[pfx + "Type"].value);
-  ok(pfx + " 귀책 기본값 = 구매자", 칸[pfx + "Fault"].value === "구매자", 칸[pfx + "Fault"].value);
+  /*  귀책은 기본값을 두지 않는다 — 귀책이 곧 반품비다. 사람이 고르게 한다.  */
+  ok(pfx + " 귀책 기본값은 비어 있다 (안 고름)", 칸[pfx + "Fault"].value === "", 칸[pfx + "Fault"].value);
   const 사유 = 고를수있는것(칸[pfx + "Reason"]);
   ok(pfx + " 사유 맨 앞은 빈 값 (비워 둘 수 있다)", 사유[0] === "", JSON.stringify(사유[0]));
   ok(pfx + " 사유 기본값은 비어 있다", 칸[pfx + "Reason"].value === "", 칸[pfx + "Reason"].value);
-  ok(pfx + " 구매자 사유 8개", 사유.slice(1).join("·") === 시킨것.구매자.join("·"), 사유.slice(1).join("·"));
 
-  칸[pfx + "Fault"].value = "판매자";
-  hctx.retFillReasons(pfx);
-  ok(pfx + " 판매자로 바꾸면 3개로", 고를수있는것(칸[pfx + "Reason"]).slice(1).join("·") === 시킨것.판매자.join("·"),
-    고를수있는것(칸[pfx + "Reason"]).slice(1).join("·"));
+  [["구매자", 시킨것.구매자], ["판매자", 시킨것.판매자], ["택배사", 시킨것.택배사]].forEach(function (쌍) {
+    칸[pfx + "Fault"].value = 쌍[0];
+    hctx.retFillReasons(pfx);
+    const 본것 = 고를수있는것(칸[pfx + "Reason"]).slice(1);
+    ok(pfx + " " + 쌍[0] + " 사유 " + 쌍[1].length + "개", 본것.join("·") === 쌍[1].join("·"), 본것.join("·"));
+    //  ★ 빈 목록이 통과하지 않게 ★ — 택배사가 바로 그 꼴이었다
+    ok(pfx + " " + 쌍[0] + " 사유가 비어 있지 않다", 본것.length > 0);
+  });
 });
 
 console.log("\n─── ④ which 를 안 주면 retNew 다 ───");
@@ -210,7 +226,10 @@ ok("여러 줄 비고에서도 찾는다", gctx._cs_faultFromNotice_(
 ok("전각 콜론도 받는다", gctx._cs_faultFromNotice_("귀책： 구매자 (오입력)") === "구매자");
 ok("귀책이 없으면 빈 값", gctx._cs_faultFromNotice_("반품송장: 600622029800") === "");
 ok("빈 비고도 탈 없다", gctx._cs_faultFromNotice_("") === "" && gctx._cs_faultFromNotice_(null) === "");
-ok("모르는 낱말은 안 받는다", gctx._cs_faultFromNotice_("귀책: 택배사") === "");
+/*  택배사는 이제 «받는» 낱말이다 (2026-10-14). 화면 귀책 목록에는 줄곧
+    있었는데 여기서 못 읽어 늘 빈 값이었다. 모르는 낱말 시험은 다른 말로.  */
+ok("택배사도 받는다", gctx._cs_faultFromNotice_("귀책: 택배사 (분실)") === "택배사");
+ok("모르는 낱말은 안 받는다", gctx._cs_faultFromNotice_("귀책: 물류팀") === "");
 
 console.log("\n─── ⑩ 적는 규칙 — 사유가 없으면 귀책만 남기지 않는다 ───");
 const 쓰는데 = gs.slice(gs.indexOf("var faultIn = String(data.fault"),
