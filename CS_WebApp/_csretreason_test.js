@@ -181,9 +181,17 @@ ok("빈칸 안내가 없는 칸은 첫 낱말을 고른다", (function () {
 })());
 
 /* ── 대장 쪽 ─────────────────────────────────────────────────── */
-const gctx = { String, Number, Array, Math, console, Logger: { log: () => {} } };
+const gctx = { String, Number, Array, Math, RegExp, console, Logger: { log: () => {} } };
 vm.createContext(gctx);
+/*  귀책 낱말 표 — 세 함수가 다 여기서 가져간다. 먼저 넣어야 한다. (2026-10-14) */
+{
+  const i = gs.indexOf("var _CS_FAULT_WORDS_ = [");
+  vm.runInContext(gs.slice(i, gs.indexOf("];", i) + 2), gctx);
+}
+vm.runInContext(꺼내(gs, "_cs_faultAlt_"), gctx);
 vm.runInContext(꺼내(gs, "_cs_faultFromNotice_"), gctx);
+vm.runInContext(꺼내(gs, "_cs_reasonFromNotice_"), gctx);
+vm.runInContext(꺼내(gs, "_cs_parseCause_"), gctx);
 vm.runInContext(꺼내(gs, "_cs_mapReturnLedgerCols_"), gctx);
 
 console.log("\n─── ⑦ 대장 머리글에서 귀책을 찾는다 ───");
@@ -230,6 +238,22 @@ ok("빈 비고도 탈 없다", gctx._cs_faultFromNotice_("") === "" && gctx._cs_
     있었는데 여기서 못 읽어 늘 빈 값이었다. 모르는 낱말 시험은 다른 말로.  */
 ok("택배사도 받는다", gctx._cs_faultFromNotice_("귀책: 택배사 (분실)") === "택배사");
 ok("모르는 낱말은 안 받는다", gctx._cs_faultFromNotice_("귀책: 물류팀") === "");
+
+/*  ★ 읽는 자리가 셋이다 ★  (2026-10-14)
+    _cs_faultFromNotice_ 하나만 고쳤더니 사유를 못 읽었다. 셋이 «같은 낱말»을
+    쓰는지 낱말마다 한 바퀴 돌려서 본다 — 한 곳만 고치면 여기서 운다.  */
+hctx.RET_FAULTS.filter(Boolean).forEach(function (f) {
+  ok("세 자리가 「" + f + "」를 같이 안다 — 귀책",
+    gctx._cs_faultFromNotice_("귀책: " + f + " (오배송)") === f);
+  ok("세 자리가 「" + f + "」를 같이 안다 — 사유",
+    gctx._cs_reasonFromNotice_("귀책: " + f + " (오배송)") === "오배송");
+  ok("세 자리가 「" + f + "」를 같이 안다 — 발생원인",
+    gctx._cs_parseCause_(f + "귀책 / 오배송").귀책 === f);
+});
+ok("서버 낱말 표가 화면 귀책과 같다 (차례는 상관없다)",
+  gctx._CS_FAULT_WORDS_.slice().sort().join("·") ===
+    hctx.RET_FAULTS.filter(Boolean).slice().sort().join("·"),
+  gctx._CS_FAULT_WORDS_.join("·") + " ↔ " + hctx.RET_FAULTS.filter(Boolean).join("·"));
 
 console.log("\n─── ⑩ 적는 규칙 — 사유가 없으면 귀책만 남기지 않는다 ───");
 const 쓰는데 = gs.slice(gs.indexOf("var faultIn = String(data.fault"),

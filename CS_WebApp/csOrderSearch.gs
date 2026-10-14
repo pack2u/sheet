@@ -2581,7 +2581,8 @@ function _cs_colLetter_(idx) {
 function _cs_reasonFromNotice_(notice) {
   var s = String(notice == null ? "" : notice);
   if (!s) return "";
-  var m = s.match(/귀책\s*[:：]\s*(?:구매자|판매자)\s*\(([^)]{1,20})\)/);
+  //  귀책 낱말은 _CS_FAULT_WORDS_ 하나에서 — 택배사를 몰라 사유를 놓쳤다 (2026-10-14)
+  var m = s.match(new RegExp("귀책\\s*[:：]\\s*(?:" + _cs_faultAlt_() + ")\\s*\\(([^)]{1,20})\\)"));
   if (m) return String(m[1]).trim();
   m = s.match(/(?:^|[\s·.])사유\s*[:：]\s*([^\s·.,()]{1,20})/);
   return m ? String(m[1]).trim() : "";
@@ -2668,7 +2669,8 @@ function _cs_parseCause_(v) {
   var i = s.indexOf("/");
   if (i < 0) return { 귀책: "", 사유: s };
   var 앞 = s.slice(0, i).trim(), 뒤 = s.slice(i + 1).trim();
-  var m = 앞.replace(/\s/g, "").match(/^(구매자|판매자)귀책$/);
+  //  귀책 낱말은 _CS_FAULT_WORDS_ 하나에서 (2026-10-14)
+  var m = 앞.replace(/\s/g, "").match(new RegExp("^(" + _cs_faultAlt_() + ")귀책$"));
   //  앞이 귀책 낱말이 아니면 통째로 사유다 (「오배송> 재출고 되는 건가요?」 같은 줄)
   if (!m) return { 귀책: "", 사유: s };
   return { 귀책: m[1], 사유: 뒤 };
@@ -2740,11 +2742,28 @@ function _cs_stageFromFlags_(row, col) {
   return "";
 }
 
+/*  ★ 귀책 낱말의 주인은 여기 하나다 ★  (2026-10-14)
+ *
+ *  읽는 자리가 셋이었고 셋이 낱말을 따로 들고 있었다 —
+ *    _cs_faultFromNotice_   비고의 「귀책: ○○」
+ *    _cs_reasonFromNotice_  그 괄호 안의 사유
+ *    _cs_parseCause_        발생원인 칸의 「○○귀책 / 사유」
+ *  화면(RET_FAULTS)에는 「택배사」가 있는데 셋 다 몰라서 늘 빈 값이었고,
+ *  한 곳만 고쳤더니 이번엔 사유를 못 읽었다. 그래서 낱말을 한 곳에 두고
+ *  셋이 여기서 가져간다 — 네 번째가 생겨도 같은 곳을 본다.
+ *
+ *  ★ 화면 home.html 의 RET_FAULTS 와 같은 낱말이어야 한다 ★
+ *    빈 값('')은 «안 고름»이라 여기엔 없다.
+ */
+var _CS_FAULT_WORDS_ = ["구매자", "판매자", "택배사"];
+
+/** 「구매자|판매자|택배사」 — 정규식 안에 끼워 쓴다 */
+function _cs_faultAlt_() { return _CS_FAULT_WORDS_.join("|"); }
+
 function _cs_faultFromNotice_(notice) {
   var s = String(notice == null ? "" : notice);
   if (!s) return "";
-  //  택배사 — 화면 귀책 목록에는 있었는데 여기서 못 읽어 늘 빈 값이었다 (2026-10-14)
-  var m = s.match(/귀책\s*[:：]\s*(구매자|판매자|택배사)/);
+  var m = s.match(new RegExp("귀책\\s*[:：]\\s*(" + _cs_faultAlt_() + ")"));
   return m ? m[1] : "";
 }
 
