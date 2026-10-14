@@ -296,11 +296,13 @@ console.log("\n─── ⑫ 상태 목록 — 시트가 받는 말과 같은가
     박혀 있었는데, 대장 상태 드롭다운은 넷만 받는다(setAllowInvalid(false)).
     그 넷 밖을 고르면 시트가 쓰기를 «거절»해 카드가 안 만들어진다.
     목록을 적어 둔 자리가 셋이었다 — 서버 표·화면 대비값·화면 <option>.  */
-ok("화면 대비값이 시트가 받는 넷과 같다",
-  hctx.RETURN_STATUS_OPTS.join("·") === "접수·반품송장·입고검수·이카운트OK",
+/*  ★ 2026-10-14 「완료」를 더했다 ★ 이카운트OK 와 나란한 끝이다.
+    이카운트에 넣을 것이 없는 건을 완료처리 단추로 닫는다.  */
+ok("화면 대비값이 시트가 받는 다섯과 같다",
+  hctx.RETURN_STATUS_OPTS.join("·") === "접수·반품송장·입고검수·이카운트OK·완료",
   hctx.RETURN_STATUS_OPTS.join("·"));
-ok("서버 표도 그 넷이다",
-  /_CS_RETURN_STATUS_OPTS_ = \[[^\]]*"접수"[^\]]*"반품송장"[^\]]*"입고검수"[^\]]*"이카운트OK"[^\]]*\]/.test(gs));
+ok("서버 표도 그 다섯이다",
+  /_CS_RETURN_STATUS_OPTS_ = \[[^\]]*"접수"[^\]]*"반품송장"[^\]]*"입고검수"[^\]]*"이카운트OK"[^\]]*"완료"[^\]]*\]/.test(gs));
 ["retNewStatus", "ledgerStatus"].forEach(function (id) {
   const i = html.indexOf('<select id="' + id + '"');
   ok(id + " 에 option 이 박혀 있지 않다 (표에서 채운다)",

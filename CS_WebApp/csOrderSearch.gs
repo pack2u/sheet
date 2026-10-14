@@ -3237,8 +3237,22 @@ var _CS_RETURN_GEN_PROP_ = "_CS_RET_CACHE_GEN_";
  * 옛 값도 화면에 보여야 하므로 이 목록으로 필터링하지 말 것.
  * 완료 판정은 _cs_isReturnDoneMark_ 가 하며 "이카운트OK"·"이카운트 ok" 둘 다 잡는다.
  */
+/*  ★ 2026-10-14: 「완료」를 더한다 ★
+ *
+ *  > "이카운트 ok 를 완료로 보면되고 이카운트 입력이 필요없는 경우가 있어서
+ *  >  처리완료 버튼이 필요한거야"
+ *
+ *  이카운트OK 와 «나란한 끝»이다. 다음 단계가 아니다.
+ *  이카운트에 넣을 것이 없는 건을 닫을 때 쓴다 — 여태는 닫을 말이 없어
+ *  이카운트를 안 했는데도 「이카운트OK」를 고르거나, 그냥 열어 두었다.
+ *
+ *  판정·단계는 손댈 것이 없다 — 둘 다 이미 완료로 읽는다.
+ *    _cs_isReturnDoneMark_  "완료"로 시작하면 완료
+ *    _cs_stageWord_         /완료|환불/ → 3단계
+ *    협력업체 포털 stepIndex 도 같은 규칙이라 갈라지지 않는다.
+ */
 var _CS_RETURN_STATUS_OPTS_ = [
-  "접수", "반품송장", "입고검수", "이카운트OK"
+  "접수", "반품송장", "입고검수", "이카운트OK", "완료"
 ];
 
 /**
@@ -3261,7 +3275,12 @@ var _CS_RETURN_STATUS_OPTS_ = [
  *   목록을 띄울 때마다 걸면 느려진다. 스크립트 속성에 탭 이름을 적어 두고
  *   그 탭은 다시 안 건다. 실패해도 목록은 그대로 뜬다 — 곁다리다.
  */
-var _CS_RET_DV_PROP_ = "CS_RET_DV_";
+/*  ★ 2026-10-14: 열쇠 이름을 올렸다 (CS_RET_DV_ → CS_RET_DV2_) ★
+ *  목록에 「완료」를 더해도, 이미 규칙을 건 달 탭은 «걸었음» 표시 때문에
+ *  다시 안 건다. 그러면 시트가 setAllowInvalid(false) 로 「완료」를 거절해
+ *  단추를 눌러도 저장이 안 된다 — 목록만 늘리고 끝낼 수 없는 까닭이다.
+ *  이름을 올리면 탭마다 한 번씩 새 규칙을 다시 건다. 지난 값은 안 건드린다.  */
+var _CS_RET_DV_PROP_ = "CS_RET_DV2_";
 
 function _cs_ensureReturnStatusDropdown_(tab, tabName) {
   if (!tab || !tabName) return false;
@@ -3294,7 +3313,8 @@ function _cs_ensureReturnStatusDropdown_(tab, tabName) {
       .setAllowInvalid(false)
       .setHelpText(
         "접수 → 반품송장 → 입고검수 → 이카운트OK\n" +
-          "이 넷만 씁니다. 그 밖의 말은 카드 위쪽 단계가 「접수」로 보입니다.\n" +
+          "이카운트에 넣을 것이 없는 건은 「완료」로 닫습니다.\n" +
+          "이 다섯만 씁니다. 그 밖의 말은 카드 위쪽 단계가 「접수」로 보입니다.\n" +
           "덧붙일 말은 「비고 및 추가처리사항」 칸에 적어 주세요.")
       .build();
     tab.getRange(시작, 1, last - 시작 + 1, 1).setDataValidation(rule);

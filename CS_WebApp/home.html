@@ -2925,6 +2925,12 @@
       border-radius: 8px; padding: 3px 9px; cursor: pointer;
     }
     .ret-pickup-btn:disabled { opacity: 0.5; cursor: default; }
+    /*  완료처리 — 반품접수(주황) 옆에 서므로 색을 달리한다. 끝내는 단추라
+        눈에 띄되 앞서지 않게 초록 계열로 두고, 두 밝기 모두에서 읽히게
+        글자색을 따로 못 박는다(테마 토큰이 없는 색이다). (2026-10-14)  */
+    .ret-done-btn { background: rgba(76,175,80,0.14); color: #4caf50; }
+    .ret-done-btn:hover { background: rgba(76,175,80,0.24); }
+    :root[data-theme="light"] .ret-done-btn { color: #2e7d32; }
     .ret-boxes { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
     .ret-box { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .ret-box .bi { font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
@@ -10216,7 +10222,10 @@
     var RETURN_ACTIVE_ROWS = [];
     var RETURN_QUERY = '';
     var returnSearchTimer = null;
-    var RETURN_STATUS_OPTS = ['접수','반품송장','입고검수','이카운트OK']; // 서버 statusOptions 로 덮인다
+    /*  서버 statusOptions 로 덮인다. 여기 값은 그 전까지 쓰는 대비값이라
+        서버 표(_CS_RETURN_STATUS_OPTS_)와 «같아야» 한다 — 갈라지면 완료처리
+        단추가 「목록에 완료가 없습니다」로 멈춘다. (2026-10-14 완료 추가)  */
+    var RETURN_STATUS_OPTS = ['접수','반품송장','입고검수','이카운트OK','완료'];
     var RETURN_LOADING = false;
     var RETURN_SHOW_LIMIT = 30;
     var RETURN_FOCUS_IDX = -1;
@@ -11544,6 +11553,7 @@
             returnActBtnHtml(idx, 'photo', '사진') +
             returnActBtnHtml(idx, 'intakereq', '입고 요청') +
             returnGoOrderBtnHtml(idx) +
+            retDoneBtnHtml(idx, c) +
             retPickupBtnHtml(idx, c, picked) +
           '</div>' +
           returnComposePopHtml(idx, c) +
@@ -11664,6 +11674,48 @@
      *   정작 필요한 건에서 단추가 안 나온다. 눌렀을 때 서버가 다시 본다.
      *   수거입력처에 다른 택배사가 적혀 있으면 그때는 안 보여준다.
      */
+    /* ══ 완료처리 단추 ══════════════════════════════════════════
+       > "이카운트 ok 를 완료로 보면되고 이카운트 입력이 필요없는 경우가
+       >  있어서 처리완료 버튼이 필요한거야"
+
+       이카운트에 넣을 것이 없는 건을 «한 번에» 닫는다. 여태는 닫을 말이
+       없어서 이카운트를 안 했는데도 「이카운트OK」를 고르거나 열어 뒀다.
+
+       ★ 쓰는 길은 상태 팝업과 «같은 길» ★ 따로 서버를 부르지 않는다.
+         상태를 적는 주인은 submitReturnCompose(…, 'status') 하나다.
+         두 군데서 따로 적으면 언젠가 한쪽만 고쳐진다.
+       ══════════════════════════════════════════════════════════ */
+    function retDoneBtnHtml(idx, c) {
+      //  이미 끝난 건에는 안 보인다 — 진행 목록에만 뜨지만 돌다리도 두드린다
+      if (!c || isReturnCardDone(c)) return '';
+      return '<button type="button" class="ret-pickup-btn ret-done-btn"' +
+        ' id="ret-done-' + idx + '" onclick="retCompleteNow(' + idx + ')"' +
+        ' title="이카운트 입력 없이 이 건을 닫습니다">완료처리</button>';
+    }
+
+    function retCompleteNow(idx) {
+      var c = RETURN_ACTIVE_ROWS[idx];
+      if (!c) return;
+      if (!returnStaffName()) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
+
+      var 누구 = String(c.name || '').trim() || '이름 없음';
+      if (!confirm('「' + 누구 + '」 건을 완료로 바꿉니다.\n' +
+                   '이카운트 입력 없이 닫는 건에 씁니다.\n\n완료처리할까요?')) return;
+
+      var sel = document.getElementById('ret-status-' + idx);
+      if (!sel) { toast('상태 칸을 찾지 못했습니다'); return; }
+      sel.value = '완료';
+      /*  ★ 조용히 엉뚱한 상태로 저장되는 것을 막는다 ★
+          서버가 내려 준 상태 목록에 「완료」가 없으면(옛 배포) 위 대입이
+          먹지 않고 값은 그대로 남는다. 그 채로 보내면 «누른 적 없는 상태»가
+          저장된다. 안 먹었으면 여기서 멈춘다.  */
+      if (String(sel.value || '').trim() !== '완료') {
+        toast('상태 목록에 「완료」가 없습니다 — 배포를 확인해 주세요', 4200);
+        return;
+      }
+      submitReturnCompose(idx, 'status');
+    }
+
     function retPickupBtnHtml(idx, c, picked) {
       if (picked) return '';
       if (!retOrigInvoices(c).length) return '';
