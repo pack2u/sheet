@@ -1,6 +1,6 @@
 /*  ★ 새로 세운 울타리를 일부러 깨 본다 ★  안 울면 울타리가 없는 것이다.
     원본은 반드시 되돌린다 — sha256 으로 확인한다.
-    node _csretfault_break.js                                        2026-10-14  */
+    node _csretfault_break_test.js                                        2026-10-14  */
 const fs = require("fs"), crypto = require("crypto"), { execSync } = require("child_process");
 
 const 파일 = { html: __dirname + "/home.html", gs: __dirname + "/csOrderSearch.gs" };
