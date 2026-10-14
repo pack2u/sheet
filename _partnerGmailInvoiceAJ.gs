@@ -425,6 +425,20 @@ function _gma_parseInvoiceRows_(rows) {
     " · 송장=" + _gma_colName_(col.tracking) + " 이름=" + _gma_colName_(col.name) +
     " 전화=" + _gma_colName_(col.phone) + " 품목=" + _gma_colName_(col.item) +
     " 수량=" + _gma_colName_(col.qty);
+
+  /*  ★ 못 찾았으면 «무엇을 봤는지» 말한다 ★  (2026-10-14)
+      첫 예행에서 이름·전화 열을 못 찾아 23건이 전부 미매칭이 됐다. 그런데
+      화면은 「이름=-」라고만 해서, 엑셀 머리글이 무슨 낱말인지 알 길이 없었다.
+      낱말을 몰라 고칠 수가 없으니, 못 찾은 칸이 있으면 머리글 줄을 그대로
+      보여 준다. 짐작해서 낱말을 더하지 않는다.  */
+  if (hdrRow >= 0 && (col.name === -1 || col.phone === -1 || col.tracking === -1)) {
+    var 본것 = [];
+    for (var hc = 0; hc < rows[hdrRow].length; hc++) {
+      var hw = String(rows[hdrRow][hc] == null ? "" : rows[hdrRow][hc]).trim();
+      if (hw) 본것.push(_gma_colName_(hc) + "=" + hw);
+    }
+    if (본것.length) out.headerDesc += "\n      머리글 줄: " + 본것.join(" | ");
+  }
   if (col.tracking === -1) return out;
 
   for (var r4 = hdrRow + 1; r4 < rows.length; r4++) {
