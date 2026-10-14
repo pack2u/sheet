@@ -6,7 +6,11 @@
  */
 
 var _PSTMT_GMAIL_PROCESSED_LABEL_ = "P2U_명세처리완료";
-var _PSTMT_GMAIL_SEARCH_BASE_ = "has:attachment -label:P2U_명세처리완료 newer_than:14d";
+/*  ★ 2026-10-14: 명세서가 아닌 메일이 섞여 들어와 둘을 덜어낸다 ★
+    · -in:sent -from:me        우리가 업체에 보낸 「[팩투유] ○○ 거래명세표」
+    · -from:hspack2020...      아주팩 택배송장 엑셀 — _partnerGmailInvoiceAJ.gs 가 따로 본다
+    점검(partnerDiagnoseStatementGmail)도 이 상수를 쓴다. 검색어의 주인은 여기 하나다.  */
+var _PSTMT_GMAIL_SEARCH_BASE_ = "has:attachment -label:P2U_명세처리완료 newer_than:14d -in:sent -from:me -from:hspack2020@naver.com";
 
 /** 메뉴 — 현재 스프레드시트에 Gmail 명세 첨부 적재 */
 function partnerFetchStatementFromGmail() {
