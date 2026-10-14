@@ -235,6 +235,72 @@ function ssz_addrCandidates(addr) {
  *
  * @return {{tried:number, filled:number, island:number, failed:Array}}
  */
+/* ══════════════════════════════════════════════════════════════
+   ★ 이름으로 먼저 거르고, 섬·산간 «후보»만 우편번호를 묻는다 ★  (2026-10-14)
+
+   > "도서산간을 …제주운임_연륙도서_산간지역list(260801) 내용으로 이름 검색을 우선적으로 하는거 어떄?
+   >  우편번호를 일일히 검색하는것은 시간이 많이 걸리니까 우선 이름검색후 추린것들만 우편번호 검색이 되면"
+
+   우편번호는 도서산간 판정에만 쓴다. 그런데 새 주소마다 다 물었다 — 10/12 1차는 새 주소 100곳에 15초.
+   섬·산간이 될 수 있는 시·군은 정해져 있다. 그 이름이 «행정구역 부분»에 없으면 묻지 않는다.
+
+   후보 이름은 셋에서 모은다 (하나만 믿으면 그 표가 놓친 섬을 영영 못 본다):
+     ① 로젠 「연륙/도서지역 현황」(2026-08-01 기준) · 「산간지역 세부 list」 의 시·군  ← 아래 SSZ_로젠섬시군
+     ② 시트 「도서산간_도선료」 시군 칸 · 「도서산간_시군」 키워드
+     ③ 주소사전에서 이미 섬·산간(권역 칸)으로 판정된 주소의 시·군 — 한 번 잡힌 곳은 계속 후보
+   묻지 않은 줄은 메모에 「이름검색: 섬·산간 후보 아님」을 남긴다. 대기로 세지 않는다.
+   후보 목록이 넓어지면(③) 다음 실행에서 다시 판단한다 — 메모를 믿고 건너뛰지 않는다.
+   ══════════════════════════════════════════════════════════════ */
+var SSZ_로젠섬시군 = [
+  //  연륙/도서 (로젠 2026-08-01)
+  '강화', '옹진', '영종', '무의', '화성', '보령', '통영', '거제', '남해', '사천', '울릉',
+  '목포', '무안', '신안', '고흥', '군산', '보성', '부안', '영광', '여수', '완도', '강진', '장흥', '진도', '제주',
+  //  산간 (로젠 산간지역 세부 list — 강원)
+  '양양', '횡성', '영월', '정선', '고성', '홍천', '철원', '양구', '평창', '화천', '인제'
+];
+var SSZ_후보아님메모 = '이름검색: 섬·산간 후보 아님 (우편번호 안 물음)';
+var SSZ_뭉뚱이름 = { '중구': 1, '동구': 1, '서구': 1, '남구': 1, '북구': 1 };
+
+/** 주소에서 시·군 이름 하나 (「경남 통영시 산양읍 …」 → 「통영」). 못 찾으면 '' */
+function ssz_시군이름_(addr) {
+  var t = ssText(addr).replace(/\s+/g, ' ').split(' ');
+  for (var i = 0; i < Math.min(t.length, 3); i++) {
+    var m = t[i].match(/^([가-힣]{1,4})(시|군)$/);
+    if (m && !/(특별|광역|자치)/.test(t[i])) return m[1];
+  }
+  return '';
+}
+
+/** 후보 이름 목록 (중복 없이) — 실행마다 한 번 만든다 */
+function ssz_섬후보이름_(dictRows) {
+  var 본 = {}, out = [];
+  var 넣기 = function (s) {
+    s = ssText(s).replace(/(특별자치도|특별자치시|광역시|특별시)$/, '').replace(/(시|군)$/, '');
+    if (s.length < 2 || SSZ_뭉뚱이름[s + '구'] || SSZ_뭉뚱이름[s] || 본[s]) return;
+    본[s] = 1; out.push(s);
+  };
+  for (var i = 0; i < SSZ_로젠섬시군.length; i++) 넣기(SSZ_로젠섬시군[i]);
+  try {
+    var fe = ssio_body(SSIO_TABS.도선료);
+    for (var f = 0; f < fe.length; f++) 넣기(fe[f][1]);
+  } catch (e1) {}
+  try {
+    var kw = ssio_body(SSIO_TABS.도서산간시군);
+    for (var k = 0; k < kw.length; k++) 넣기(kw[k][0]);
+  } catch (e2) {}
+  for (var d = 0; d < (dictRows || []).length; d++) {
+    if (ssText(dictRows[d][2])) 넣기(ssz_시군이름_(dictRows[d][0]));
+  }
+  return out;
+}
+
+/** 이 주소가 섬·산간 «후보»인가 — 행정구역 부분(ssAddrRegion)에 후보 이름이 있나 */
+function ssz_섬후보인가_(addr, 후보) {
+  var 앞 = ssAddrRegion(addr);
+  for (var i = 0; i < 후보.length; i++) if (앞.indexOf(후보[i]) >= 0) return true;
+  return false;
+}
+
 function ssz_fillDictionary(limit, retryFailed) {
   var apiKey = ssz_key();
   var out = { tried: 0, filled: 0, island: 0, failed: [], reasons: {}, noKey: !apiKey, stopped: '' };
@@ -265,14 +331,24 @@ function ssz_fillDictionary(limit, retryFailed) {
       쉬는 시간만 36초, 왕복까지 합치면 1~2분을 이 한 군데서 썼다.
       이제 물어볼 주소를 먼저 다 모아 fetchAll 로 «나란히» 보낸다. */
   var 볼자리 = [], 볼주소 = [];
+  var 후보 = ssz_섬후보이름_(v);   // 이름으로 먼저 거른다 (위 「이름으로 먼저 거르고」)
+  out.skippedName = 0;
   for (var r0 = 0; r0 < v.length && 볼자리.length < cap; r0++) {
     var a0 = ssText(v[r0][0]);
     if (!a0 || ssText(v[r0][1])) continue;
     if (!retryFailed && ssz_isPermanentFail(v[r0][4])) continue; // 주소 자체 문제만 건너뛴다
+    if (!ssz_섬후보인가_(a0, 후보)) {
+      out.skippedName++;
+      if (ssText(v[r0][4]) !== SSZ_후보아님메모) { v[r0][4] = SSZ_후보아님메모; changed = true; }
+      continue;
+    }
     볼자리.push(r0);
     볼주소.push(a0);
   }
-  if (!볼자리.length) return out;
+  if (!볼자리.length) {
+    if (changed) rng.setValues(v);   // 「후보 아님」 메모는 남긴다
+    return out;
+  }
 
   //  첫판은 한꺼번에. 대부분 여기서 맞는다.
   var 첫판 = ssz_zipBatch_(볼주소, apiKey);
@@ -362,6 +438,7 @@ function ssz_dictCounts() {
   for (var i = 0; i < body.length; i++) {
     if (!ssText(body[i][0])) continue;      // 주소 없는 줄
     if (ssText(body[i][1])) continue;       // 이미 채워진 줄
+    if (ssText(body[i][4]) === SSZ_후보아님메모) continue;   // 이름으로 거른 줄 — 물을 것이 아니다 (2026-10-14)
     if (ssz_isPermanentFail(body[i][4])) 영구++;
     else 대기++;
   }

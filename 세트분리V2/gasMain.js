@@ -558,6 +558,8 @@ function ss_실행(opts) {
       } else if (!zr.noKey && zr.tried && !zr.filled) {
         재실행 = '신규 주소 ' + zr.tried + '건 조회했으나 전부 실패';
       }
+      //  이름으로 거른 수를 늘 붙인다 — 「왜 이것밖에 안 물었나」를 바로 안다 (2026-10-14 ssz_섬후보인가_)
+      if (zr.skippedName) 재실행 += ' · 섬·산간 후보 아님(이름검색) ' + zr.skippedName + '건 안 물음';
       if (zr.stopped) {
         재실행 = '우편번호 조회 중단 — ' + zr.stopped;
         ssWarn(res.warnings, '오류', 'ZIP_BLOCKED', zr.stopped,
