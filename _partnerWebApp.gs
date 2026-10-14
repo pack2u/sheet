@@ -2121,7 +2121,7 @@ var _ALL_SCHEDULED_TRIGGERS_ = [
   { fn: "partnerPushTempOnlySilent_",                    h: 15, m: 40, label: "임시기록에만 담기 (3회전 · 발주 안 나감)" },
 
   // ─── 송장 처리 (★ 2026-08-10: 냅킨 16:00 → 송장수집 16:05) ───
-  { fn: "_gmi_triggerFetchNKInvoice_",                   h: 16, m: 0,  label: "냅킨코리아 Gmail 송장수집" },
+  { fn: "_gmi_triggerFetchNKInvoice_",                   h: 16, m: 0,  label: "냅킨코리아 + 아주팩 Gmail 송장수집" },
   /*  ★ 2026-09-14: 수집 16:05 → 16:40, 배포 16:20 → 16:50 ★
       > "송장 수집시간을 4시5분에서 4시40분으로 / 송장 배포를 … 4시 50분으로"
       업체 송장이 늦게 들어오는 날이 잦아 수집이 빈손으로 돌았다.

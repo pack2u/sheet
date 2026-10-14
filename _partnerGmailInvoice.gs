@@ -177,6 +177,16 @@ function _gmi_triggerFetchNKInvoice_() {
 
         _chat_sendCard_(titleText, subtitleText, kv);
       } catch (_) {}
+
+      /* ★ 2026-10-14: 아주팩 송장도 같은 자리에서 이어서 돈다 ★
+         트리거 자리를 하나 더 쓰지 않으려고 냅킨 트리거에 붙였다.
+         16:40 송장수집이 전용양식 A열을 읽기 전에 끝나야 한다.
+         냅킨 쪽이 실패해도 아주팩은 돌도록 따로 감싼다. */
+      try {
+        _gma_triggerFetchAJInvoice_();
+      } catch (ajErr) {
+        Logger.log("[TRIGGER] AJ Gmail 송장수집 에러: " + ajErr.message);
+      }
     } finally {
       lock.releaseLock();
     }
