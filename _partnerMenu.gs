@@ -342,6 +342,12 @@ function registerPartnerMenu_() {
             .addItem("② 🧪 이카운트 거래처 조회 진단", "partnerProbeEcountCustomers")
             .addItem("③ 🏢 이카운트에서 사업자정보 채우기", "partnerFillVendorInfoFromEcount")
             .addSeparator()
+            // 이카운트가 거래처를 안 내주므로, 받은 명세서에서 읽어 둔 값으로 채운다
+            .addItem("🧪 ④ 명세서에서 채우면 어떻게 되나 (안 바꿈)",
+              "partnerPreviewVendorInfoFromStatements")
+            .addItem("📄 ④ 명세서에서 사업자정보 채우기 (빈 칸만)",
+              "partnerFillVendorInfoFromStatements")
+            .addSeparator()
             .addItem("♻️ 일괄 발행 진행기록 초기화", "partnerResetTaxStatementProgress")
         )
     )
