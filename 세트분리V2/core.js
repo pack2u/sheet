@@ -220,6 +220,8 @@ var SS_DEFAULT_CONFIG = {
   도선료_세트금액: 10000,
   도서산간_미확인: '보류',
   세트_송장꼬리표: '끔',
+  //  섬 쇼핑몰 주문이 2박스 이상이면 보류 (ssIslandMultiBoxHold) — 끄려면 「끔」
+  도서산간_여러박스_보류: '켬',
   도서산간_판정: '우편번호우선',
   전화주문_고유ID: '주문번호칸에채움',
   재고부족_자동대리발송: '사용',
@@ -1487,6 +1489,66 @@ function ssVendorOf(u, vendors) {
 }
 
 /* ── 4단계 · 합배송 조건ID 판정 ───────────────────────── */
+
+/**
+ * ★ 섬으로 가는 쇼핑몰 주문이 «2박스 이상»이면 보류한다 ★  (2026-10-14)
+ *
+ * > "주문건이 1개일경우는 쇼핑몰에서 자동 도서산간비가 붙는데 2개이상일때는 1건의 도서산간비만
+ * >  붙기떄문에 일단 보류로 빠져야 되.. 추가 배송비를 받아야되는데..지금은 그냥 넘어가는 일이 발생을 해"
+ *
+ * 쇼핑몰은 도서산간비를 한 번만 붙인다. 로젠은 송장(박스)마다 물린다. 그래서 같은 받는분·주소로
+ * 가는 섬 주문이 박스 둘 이상이 되면 모자란 만큼 사람이 받아야 한다 — 그냥 나가면 우리가 문다.
+ *
+ *   · 세는 것은 «박스»다(u.박스수). 주문 둘이 합포장으로 한 박스면 송장 1장이라 안 세운다.
+ *     주문 하나가 두 박스로 나가도(수량이 많아서) 세운다.
+ *   · 쇼핑몰(사방넷) 주문만 — 전화주문은 직원이 도서산간비 줄(OUT000011)을 따로 넣는다.
+ *   · 우리가 내보내는 도서산간 탭(로젠택배-도서산간)만. 위탁(대리발송 섬)은 이미 따로 선다.
+ *   · 합포장 대표를 세우면 그 박스에 동봉된 줄도 같이 세운다 — 안 그러면 동봉 줄이 갈 곳을 잃는다.
+ *   · 보류 탭 조치 「발송」으로 풀면 그 줄은 도서산간에서 빠져 일반으로 나간다(ssIslandSkipByManual_) —
+ *     다음 실행에서 다시 안 걸린다.
+ *   끄기: 설정 「도서산간_여러박스_보류」 = 끔
+ */
+function ssIslandMultiBoxHold(units, cfg, warnings) {
+  if (ssText(cfg && cfg.도서산간_여러박스_보류) === '끔') return 0;
+  var 묶음 = {};
+  for (var i = 0; i < units.length; i++) {
+    var u = units[i];
+    if (u.route !== SS_ROUTE.LOTTE_ISLAND) continue;
+    if (u.주문번호출처 !== SS_ORDNO_SRC.사방넷) continue;
+    var k = ssDeliveryKey(u);
+    (묶음[k] || (묶음[k] = [])).push(u);
+  }
+  var 세운 = 0;
+  for (var key in 묶음) {
+    if (!Object.prototype.hasOwnProperty.call(묶음, key)) continue;
+    var g = 묶음[key], 박스 = 0, 주문 = {};
+    for (var j = 0; j < g.length; j++) {
+      박스 += Math.max(0, Number(g[j].박스수) || 0);
+      주문[ssText(g[j].고유ID)] = true;
+    }
+    if (박스 < 2) continue;
+    var 주문수 = Object.keys(주문).length;
+    //  도선료는 묶음에서 가장 큰 값 — 첫 줄이 비어 있을 수 있다. 끝내 모르면 금액을 안 적는다(0원이라 적지 않는다)
+    var 료 = 0;
+    for (var q = 0; q < g.length; q++) 료 = Math.max(료, Number(g[q].도선료) || 0);
+    var 상세 = '섬 주소로 같은 받는분 ' + 박스 + '박스(주문 ' + 주문수 + '건) — 쇼핑몰 도서산간비는 1건분만 붙습니다. 추가 배송비' +
+      (료 ? ' ' + ((박스 - 1) * 료).toLocaleString() + '원쯤' : '') + '을 받은 뒤 조치에 「발송」';
+    var 그룹 = {};
+    for (var m = 0; m < g.length; m++) {
+      if (g[m].합포장그룹) 그룹[g[m].합포장그룹] = true;
+      g[m].route = SS_ROUTE.HOLD; g[m].보류사유 = '도서산간추가비'; g[m].보류상세 = 상세; 세운++;
+    }
+    //  세운 대표의 동봉 줄도 같이
+    for (var n = 0; n < units.length; n++) {
+      var w = units[n];
+      if (w.route === SS_ROUTE.MERGED && w.합포장그룹 && 그룹[w.합포장그룹]) {
+        w.route = SS_ROUTE.HOLD; w.보류사유 = '도서산간추가비'; w.보류상세 = 상세; 세운++;
+      }
+    }
+    ssWarn(warnings, '주의', 'ISLAND_MULTI_BOX', ssText(g[0].받는분) + ' / ' + ssText(g[0].주소1).slice(0, 30), 상세);
+  }
+  return 세운;
+}
 
 function ssDeliveryKey(u) {
   return ssNorm(u.받는분) + '♦' + ssNorm(u.주소1) + '♦' + ssNorm(u.보내는분);
@@ -3233,6 +3295,8 @@ function ssRun(grid, masters, cfg) {
 
   for (var i = 0; i < units.length; i++) ssShippingFee(units[i], masters, warnings);
   ssMerge(units, cfg);
+  //  합포장으로 박스가 정해진 «뒤»에 센다 — 한 박스로 묶이면 송장 1장이라 보류할 일이 없다 (2026-10-14)
+  ssIslandMultiBoxHold(units, cfg, warnings);
   for (var sk = 0; sk < units.length; sk++) units[sk].송장키 = ssShipKey(units[sk], cfg);
 
   var buckets = {};
@@ -3731,7 +3795,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssApplyManualEdits: ssApplyManualEdits,
     ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship, ssAuditSetNames: ssAuditSetNames,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, SS_HOLD_KEEP_WORDS: SS_HOLD_KEEP_WORDS, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssShipKey: ssShipKey, ssBaseUid: ssBaseUid, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
+    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, SS_HOLD_KEEP_WORDS: SS_HOLD_KEEP_WORDS, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssShipKey: ssShipKey, ssBaseUid: ssBaseUid, ssIslandMultiBoxHold: ssIslandMultiBoxHold, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
     ssItemBase: ssItemBase, ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssDupRunGroups: ssDupRunGroups, SS_ORDNO_SRC: SS_ORDNO_SRC,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,
