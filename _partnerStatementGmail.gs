@@ -73,11 +73,27 @@ function partnerFetchStatementFromGmail_(isManual) {
     if (result.errors.length) {
       msg += "\n\n⚠️ " + result.errors.slice(0, 5).join("\n");
     }
-    if (result.mailCount === 0) {
+    /*  ★ 2026-10-14 ★ 예전엔 mailCount===0 이면 무조건 「메일이 없습니다」였다.
+        그런데 mailCount 는 «메일을 15건 열었어도 하나도 못 담으면» 0 이다.
+        실제로 점검은 20건이라는데 수집은 「없습니다」라고 해서 어긋났다 —
+        첨부가 전부 PDF·JPG 라 읽지 못하고 조용히 지나친 것이었다.
+        없는 것과 못 읽은 것은 다르다. 갈라서 말한다.  */
+    if (result.mailCount === 0 && result.threadCount === 0) {
       msg =
         "📧 Gmail 명세 수집\n\n" +
         "미처리 첨부 메일이 없습니다.\n" +
         "(라벨 「" + _PSTMT_GMAIL_PROCESSED_LABEL_ + "」 제외, 최근 14일)";
+    } else if (result.mailCount === 0) {
+      var 갈래 = [];
+      for (var k in result.skipKinds) 갈래.push(k.toUpperCase() + " " + result.skipKinds[k] + "건");
+      msg =
+        "📧 Gmail 명세 수집\n\n" +
+        "메일 " + result.threadCount + "건을 열었지만 담은 것이 없습니다.\n" +
+        "스킵 " + result.skipped + "건" +
+        (갈래.length ? " — " + 갈래.join(" · ") : "") + "\n\n" +
+        "읽을 수 있는 첨부는 xlsx · xls · csv · txt 입니다.\n" +
+        "PDF·이미지 명세서는 이 기능으로 못 읽습니다.";
+      if (result.errors.length) msg += "\n\n⚠️ " + result.errors.slice(0, 5).join("\n");
     }
 
     _pstmt_log_(ss, "gmail", "mail=" + result.mailCount + " rows=" + result.rowCount);
@@ -130,12 +146,15 @@ function _pstmt_processStatementMails_(ss, isManual) {
     mailCount: 0,
     rowCount: 0,
     skipped: 0,
+    threadCount: 0,      // ★ 「메일이 없다」와 「못 읽었다」를 가르는 수 ★
+    skipKinds: {},       // 스킵한 첨부가 무슨 갈래였나 (pdf·jpg…)
     details: [],
     errors: [],
   };
 
   var processedLabel = _pstmt_getOrCreateGmailLabel_(_PSTMT_GMAIL_PROCESSED_LABEL_);
   var threads = GmailApp.search(_PSTMT_GMAIL_SEARCH_BASE_, 0, isManual ? 15 : 5);
+  out.threadCount = threads.length;
 
   for (var ti = 0; ti < threads.length; ti++) {
     var thread = threads[ti];
@@ -147,6 +166,11 @@ function _pstmt_processStatementMails_(ss, isManual) {
       var parsed = _pstmt_extractStatementFromMessage_(msg);
       if (!parsed.rows.length) {
         out.skipped++;
+        /*  무엇 때문에 못 읽었는지 남긴다 — 「없습니다」로 덮지 않으려고  */
+        for (var si = 0; si < (parsed.kinds || []).length; si++) {
+          var kk = parsed.kinds[si];
+          out.skipKinds[kk] = (out.skipKinds[kk] || 0) + 1;
+        }
         continue;
       }
 
@@ -192,6 +216,7 @@ function _pstmt_extractStatementFromMessage_(msg) {
     fileName: "",
   };
   var rows = [];
+  var kinds = [];   // 못 읽고 지나친 첨부의 갈래 (pdf·jpg…) — 화면에 그대로 보여 준다
 
   var attachments = msg.getAttachments();
   for (var ai = 0; ai < attachments.length; ai++) {
@@ -209,6 +234,10 @@ function _pstmt_extractStatementFromMessage_(msg) {
     ) {
       data = _pstmt_readTextAttachmentAsRows_(att);
     } else if (lower.indexOf(".pdf") !== -1 || lower.indexOf(".png") !== -1 || lower.indexOf(".jpg") !== -1) {
+      /*  ★ 못 읽는다 ★ 로엔그린은 JPG, 후아코리아·준테크는 PDF 로 보낸다.
+          지나치되 «무엇을 지나쳤는지»는 남긴다 — 예전엔 조용히 넘어가서
+          화면이 「미처리 첨부 메일이 없습니다」라고만 했다 (2026-10-14).  */
+      kinds.push((lower.match(/\.(pdf|png|jpg)/) || [, "?"])[1]);
       continue;
     }
 
@@ -227,7 +256,7 @@ function _pstmt_extractStatementFromMessage_(msg) {
     }
   }
 
-  return { rows: rows, meta: meta };
+  return { rows: rows, meta: meta, kinds: kinds };
 }
 
 function _pstmt_readSpreadsheetAttachment_(blob) {
