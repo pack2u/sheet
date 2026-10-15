@@ -235,7 +235,11 @@ function ss_v2_전화줄_(opts) {
     }
     var 주문 = j.주문 || [], 줄 = j.줄 || [];
     if (j.mode === 'off') return { mode: 'off', 붙임: 0, 글: '' };
-    if (!주문.length) return { mode: j.mode, 붙임: 0, 글: '전화주문 v2(' + j.mode + '): 나갈 것 0' };
+    if (!주문.length) {
+      //  0건이어도 한 줄 — 「이 회차에 v2 에 물었다」가 탭에 보여야 한다 (10-15 2차 확인 때 증거가 없었다)
+      _ss_phone_기록_('물음 · 0건', '', '', '', '', '', 'v2(' + j.mode + ') — 입금확인 · 안 나간 전화주문 없음');
+      return { mode: j.mode, 붙임: 0, 글: '전화주문 v2(' + j.mode + '): 나갈 것 0' };
+    }
     if (j.mode === 'shadow') {
       for (var i = 0; i < 주문.length; i++) {
         var o = 주문[i];
@@ -252,7 +256,9 @@ function ss_v2_전화줄_(opts) {
         (r.건너뜀 ? ' (이미 붙어 있던 ' + r.건너뜀 + '건은 안 붙임)' : '')
     };
   } catch (e) {
-    return { mode: '', 붙임: 0, 글: '전화주문 v2 오류 — ' + String(e && e.message ? e.message : e).slice(0, 200) + ' (판매현황은 그대로 돕니다)' };
+    var 오류 = String(e && e.message ? e.message : e).slice(0, 200);
+    _ss_phone_기록_('오류', '', '', '', '', '', 오류 + ' — 판매현황은 그대로 돌았음. 전화주문은 다음 회차에');
+    return { mode: '', 붙임: 0, 글: '전화주문 v2 오류 — ' + 오류 + ' (판매현황은 그대로 돕니다)' };
   }
 }
 
