@@ -152,3 +152,188 @@ function _ss_v2_기록_(at, runKey, 결과, code, 초, 입력줄, 원장줄, 내
   try { Logger.log(글); } catch (e) {}
   return { 결과: 결과, 글: 글, code: code, 초: 초 };
 }
+
+/* ══════════════════════════════════════════════════════════════
+ *  전화주문 → 세트분리 다리   (2026-10-15 · v2 sql/132 · /api/setsplit/phone-lines)
+ *
+ *  > "내부 시스템부터 잡아 나가자" — 전화주문 → 입금 → 출고, 「v2 → 세트분리 직접」
+ *
+ *  판매현황을 읽은 «직후» v2 에 묻는다: 입금확인 · 아직 안 나간 전화주문.
+ *    off     — 아무것도 안 한다
+ *    shadow  — 「전화주문v2기록」 탭에만 적는다. 판매현황엔 안 넣는다 (직원은 이카운트로 그대로)
+ *    live    — 판매현황 탭 끝에 머리글 «이름»으로 맞춰 붙인다(칸 차례를 믿지 않는다).
+ *              순번은 탭의 마지막 순번 다음부터. 전화번호 앞 0 이 안 날아가게 글자 칸으로.
+ *              「일자-No.」 에 V2P+주문번호 표시 — 이미 붙어 있는 주문은 다시 안 붙인다.
+ *  ★ 나갔다는 확인은 «성공한 회차»에서만 ★  ss_실행 끝(v2 올리기 예약 옆)에서 보낸다.
+ *    회차가 멈추면 확인을 안 보낸다 → v2 는 그 주문을 다음에 또 준다(탭에 이미 있으면 표시로 걸러진다).
+ *    확인 보내기가 실패하면 속성에 남겨 두고 다음 회차 첫머리에 다시 보낸다.
+ *  ★ 재실행·조치 적용은 묻지 않는다 ★  탭에 적힌 그대로 다시 돈다 — 같은 회차는 같은 자료.
+ *  ★ 곁다리다 ★  절대 던지지 않는다. 여기서 실패해도 판매현황은 그대로 돈다(전화주문은 다음 회차에).
+ * ══════════════════════════════════════════════════════════════ */
+var SS_PHONE_TAB_ = '전화주문v2기록';
+var SS_PHONE_HEADER_ = ['시각', '갈래', '회차', '거래처', '주문', '줄', '합계', '내용'];
+var SS_PHONE_TAKEN_ = 'SS_PHONE_TAKEN';      // 이번 회차에 판매현황에 올라간 주문 id (JSON 배열)
+var SS_PHONE_CONFIRM_ = 'SS_PHONE_CONFIRM';  // 못 보낸 확인 {회차, 주문:[]}
+
+function _ss_phone_표시_(id) { return 'V2P' + String(id || '').replace(/-/g, '').slice(0, 12); }
+
+function _ss_phone_기록_(갈래, 회차, 거래처, 주문, 줄, 합계, 내용) {
+  try {
+    var at = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+    ssio_append(SS_PHONE_TAB_, SS_PHONE_HEADER_, [[at, 갈래, 회차 || '', 거래처 || '', 주문 || '', 줄 || '', 합계 || '', 내용 || '']]);
+    var sh = ssio_ss().getSheetByName(SS_PHONE_TAB_);
+    if (sh && sh.getLastRow() <= 2) ssio_styleHeader(sh, SS_PHONE_HEADER_.length, { bg: '#2c4f6b' });
+  } catch (e) {}
+}
+
+function _ss_phone_post_(body) {
+  var base = _ss_v2_url_(), token = _ss_v2_token_();
+  if (!base || !token) return { ok: false, j: null, code: 0 };
+  var res = UrlFetchApp.fetch(base + '/api/setsplit/phone-lines', {
+    method: 'post', contentType: 'application/json', payload: JSON.stringify(body),
+    headers: { 'x-ingest-token': token }, muteHttpExceptions: true, followRedirects: true
+  });
+  var j = null;
+  try { j = JSON.parse(res.getContentText() || ''); } catch (e) {}
+  return { ok: res.getResponseCode() === 200 && !!(j && j.ok), j: j, code: res.getResponseCode() };
+}
+
+/** 지난 회차에서 못 보낸 확인부터 — 다음 회차 첫머리에 */
+function _ss_phone_확인다시_() {
+  var p = PropertiesService.getScriptProperties();
+  var raw = p.getProperty(SS_PHONE_CONFIRM_);
+  if (!raw) return;
+  try {
+    var c = JSON.parse(raw);
+    var r = _ss_phone_post_({ 회차: c.회차, 주문: c.주문 });
+    if (r.ok) {
+      p.deleteProperty(SS_PHONE_CONFIRM_);
+      _ss_phone_기록_('확인(다시)', c.회차, '', c.주문.length + '건', '', '', '지난번 못 보낸 「나갔음」을 보냄');
+    }
+  } catch (e) {}
+}
+
+/**
+ * 판매현황을 읽은 직후 부른다 (ss_실행). 절대 던지지 않는다.
+ * @return {{mode:string, 붙임:number, 글:string}}  붙였으면(live) 부르는 쪽이 판매현황을 다시 읽는다
+ */
+function ss_v2_전화줄_(opts) {
+  try {
+    if (opts && (opts.mirrorOnly || opts.회차유지)) return { mode: '', 붙임: 0, 글: '' };
+    var base = _ss_v2_url_(), token = _ss_v2_token_();
+    if (!base || !token) return { mode: '', 붙임: 0, 글: '' };
+    _ss_phone_확인다시_();
+    var res = UrlFetchApp.fetch(base + '/api/setsplit/phone-lines', {
+      method: 'get', headers: { 'x-ingest-token': token }, muteHttpExceptions: true, followRedirects: true
+    });
+    var code = res.getResponseCode(), j = null;
+    try { j = JSON.parse(res.getContentText() || ''); } catch (e) {}
+    if (code !== 200 || !j || !j.ok) {
+      var 왜 = 'HTTP ' + code + ' ' + String((j && j.error) || '').slice(0, 200);
+      _ss_phone_기록_('못 가져옴', '', '', '', '', '', 왜);
+      return { mode: '', 붙임: 0, 글: '전화주문 v2 를 못 가져왔습니다 (' + 왜 + ') — 다음 회차에 다시' };
+    }
+    var 주문 = j.주문 || [], 줄 = j.줄 || [];
+    if (j.mode === 'off') return { mode: 'off', 붙임: 0, 글: '' };
+    if (!주문.length) return { mode: j.mode, 붙임: 0, 글: '전화주문 v2(' + j.mode + '): 나갈 것 0' };
+    if (j.mode === 'shadow') {
+      for (var i = 0; i < 주문.length; i++) {
+        var o = 주문[i];
+        _ss_phone_기록_('그림자', '', o.거래처, String(o.id).slice(0, 8), o.줄수, o.합계,
+          '입금확인 — 켜면 이 회차에 나갔을 주문 (판매현황엔 안 넣음)');
+      }
+      return { mode: 'shadow', 붙임: 0, 글: '전화주문 v2(그림자): ' + 주문.length + '건 ' + 줄.length + '줄 — 판매현황엔 안 넣음' };
+    }
+    var r = _ss_phone_붙이기_(j);
+    PropertiesService.getScriptProperties().setProperty(SS_PHONE_TAKEN_, JSON.stringify(r.주문));
+    return {
+      mode: 'live', 붙임: r.줄,
+      글: '전화주문 v2: ' + r.주문.length + '건 · 새로 붙인 줄 ' + r.줄 +
+        (r.건너뜀 ? ' (이미 붙어 있던 ' + r.건너뜀 + '건은 안 붙임)' : '')
+    };
+  } catch (e) {
+    return { mode: '', 붙임: 0, 글: '전화주문 v2 오류 — ' + String(e && e.message ? e.message : e).slice(0, 200) + ' (판매현황은 그대로 돕니다)' };
+  }
+}
+
+/** live — 판매현황 탭 끝에 머리글 이름으로 맞춰 붙인다 */
+function _ss_phone_붙이기_(j) {
+  var sh = ssio_sheet(SSIO_TABS.입력);
+  var 값 = sh.getLastRow() ? sh.getRange(1, 1, sh.getLastRow(), Math.max(1, sh.getLastColumn())).getDisplayValues() : [];
+  //  머리 줄 — 이카운트 엑셀은 위에 제목 줄이 있다. 「순번」과 「품목코드」가 같이 있는 첫 줄
+  var 머리줄 = -1;
+  for (var r = 0; r < Math.min(값.length, 15); r++) {
+    if (값[r].indexOf('순번') >= 0 && 값[r].indexOf('품목코드') >= 0) { 머리줄 = r; break; }
+  }
+  var 머리;
+  if (머리줄 < 0) {
+    var 빈탭 = !값.some(function (row) { return row.join('') !== ''; });
+    if (!빈탭) throw new Error('판매현황 머리글(순번·품목코드)을 못 찾아 전화주문을 붙이지 않았습니다');
+    머리 = j.머리;
+    sh.getRange(1, 1, 1, 머리.length).setValues([머리]);
+    값 = [머리]; 머리줄 = 0;
+  } else {
+    머리 = 값[머리줄];
+  }
+  var 순번칸 = 머리.indexOf('순번'), 일자칸 = 머리.indexOf('일자-No.');
+  var 있던 = {}, 마지막 = 0;
+  for (var k = 머리줄 + 1; k < 값.length; k++) {
+    var s = String(값[k][순번칸] || '').trim();
+    if (/^[0-9]+$/.test(s) && Number(s) > 마지막) 마지막 = Number(s);
+    var 표 = 일자칸 >= 0 ? String(값[k][일자칸] || '') : '';
+    var m = 표.match(/V2P[0-9a-f]{12}/);
+    if (m) 있던[m[0]] = true;
+  }
+  var 오늘 = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy/MM/dd');
+  var 줄들 = [], 붙인주문 = [], 건너뜀 = 0, 줄i = 0;
+  var 주문 = j.주문 || [], 줄 = j.줄 || [];
+  for (var a = 0; a < 주문.length; a++) {
+    var o = 주문[a], 표시 = _ss_phone_표시_(o.id);
+    var 이것 = 줄.slice(줄i, 줄i + o.줄수);
+    줄i += o.줄수;
+    붙인주문.push(o.id);
+    if (있던[표시]) { 건너뜀++; continue; }
+    for (var b = 0; b < 이것.length; b++) {
+      var c = 이것[b];
+      마지막++;
+      줄들.push(머리.map(function (h) {
+        if (h === '순번') return String(마지막);
+        if (h === '일자-No.') return 오늘 + ' -' + 표시;
+        return c[h] == null ? '' : String(c[h]);
+      }));
+    }
+    _ss_phone_기록_('붙임', '', o.거래처, String(o.id).slice(0, 8), o.줄수, o.합계,
+      '판매현황 ' + (마지막 - 이것.length + 1) + '~' + 마지막 + '번');
+  }
+  if (줄들.length) {
+    var 칸 = sh.getRange(sh.getLastRow() + 1, 1, 줄들.length, 머리.length);
+    칸.setNumberFormat('@');   // 전화 010… 의 앞 0 · 합계 글자 그대로
+    칸.setValues(줄들);
+  }
+  return { 주문: 붙인주문, 줄: 줄들.length, 건너뜀: 건너뜀 };
+}
+
+/** 회차가 끝까지 성공한 뒤 (ss_실행 끝) — 붙였던 주문을 «나갔음»으로. 절대 던지지 않는다 */
+function ss_v2_전화확인_(runKey) {
+  var p = PropertiesService.getScriptProperties();
+  var raw = '';
+  try { raw = p.getProperty(SS_PHONE_TAKEN_) || ''; } catch (e) {}
+  if (!raw) return '';
+  var ids = [];
+  try { ids = JSON.parse(raw) || []; } catch (e) {}
+  try { p.deleteProperty(SS_PHONE_TAKEN_); } catch (e) {}
+  if (!ids.length) return '';
+  try {
+    var r = _ss_phone_post_({ 회차: runKey, 주문: ids });
+    if (r.ok) {
+      _ss_phone_기록_('나감', runKey, '', ids.length + '건', '', '', '적음 ' + (r.j.적음 || 0) + ' · 이미 ' + (r.j.이미 || 0));
+      return '전화주문 ' + ids.length + '건 나감으로 적음';
+    }
+    throw new Error('HTTP ' + r.code + ' ' + String((r.j && (r.j.error || (r.j.실패 || []).join(' / '))) || '').slice(0, 200));
+  } catch (e) {
+    try { p.setProperty(SS_PHONE_CONFIRM_, JSON.stringify({ 회차: runKey, 주문: ids })); } catch (e2) {}
+    _ss_phone_기록_('확인 실패', runKey, '', ids.length + '건', '', '',
+      String(e && e.message ? e.message : e).slice(0, 300) + ' — 다음 회차에 다시 보냄');
+    return '전화주문 나감 확인을 못 보냈습니다 — 다음 회차에 다시 보냅니다';
+  }
+}

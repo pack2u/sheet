@@ -415,6 +415,14 @@ function ss_실행(opts) {
       return;
     }
     var grid = sales.grid;
+
+    /*  ★ 전화주문 v2 — 입금확인된 것을 판매현황 끝에 ★  (2026-10-15 · gasV2.js ss_v2_전화줄_)
+        v2 깃발(phone_ship)이 shadow 면 기록 탭에만 적고 안 붙인다. live 면 붙이고 판매현황을 다시 읽는다.
+        재실행·조치 적용은 묻지 않는다(탭 그대로). 여기서 무엇이 잘못돼도 던지지 않는다. */
+    단계 = ss단계_('전화주문 v2');
+    var 전화v2 = ss_v2_전화줄_(opts);
+    if (전화v2.붙임 > 0) grid = ssio_values(SSIO_TABS.입력);
+
     if (grid.length < 2) { ssio_alert('판매현황이 비어 있습니다. (' + sales.원천 + ')'); return; }
 
     // 재고는 실행 시점 값이어야 한다 (구 시트의 IMPORTRANGE 와 같은 신선도)
@@ -888,6 +896,12 @@ function ss_실행(opts) {
     var v2예약 = ss_v2_예약_(runKey);
     if (v2예약) sum.push(['v2 올리기', v2예약]);
 
+    /*  ★ 전화주문 v2 «나갔음» — 여기까지 왔으면 이 회차는 성공이다 ★  (2026-10-15)
+        붙였던 주문만 v2 에 알린다. 못 보내면 다음 회차 첫머리에 다시 보낸다. */
+    var 전화확인 = ss_v2_전화확인_(runKey);
+    if (전화v2 && 전화v2.글) sum.push(['전화주문 v2', 전화v2.글]);
+    if (전화확인) sum.push(['전화주문 v2 나감', 전화확인]);
+
     /*  ★ 규칙이 못 읽은 적요를 AI 에게 물어본다 ★  (2026-09-22 · gasAi.js)
         여기도 예약만 한다 — 실행이 끝난 뒤 5초 뒤에 따로 깨어난다.
         세트분리를 한 톨도 늦추지 않고, 거기서 실패해도 이 실행은 이미 끝나 있다.
@@ -895,7 +909,7 @@ function ss_실행(opts) {
     var ai예약 = ss_적요AI_예약_(runKey);
     if (ai예약) sum.push(['적요 AI', ai예약]);
 
-    if (v2예약 || ai예약) ssio_write(SSIO_TABS.요약, SS_SUMMARY_HEADER, sum);
+    if (v2예약 || ai예약 || (전화v2 && 전화v2.글) || 전화확인) ssio_write(SSIO_TABS.요약, SS_SUMMARY_HEADER, sum);
 
     var 대표 = (res.합배송뷰 || []).length - res.stats.합포장흡수;
     /*  사람이 견주는 숫자는 «누른 뒤 뜰 때까지»다. 원장 적재까지만 센 값을
