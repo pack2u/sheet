@@ -893,6 +893,54 @@ function _pep_v2PartnerShadow_(srcTab, 어디서) {
   }
 }
 
+/**
+ * 시트 세트분리가 멈췄으면 v2 대리발송 줄을 받아 온다.
+ * @return {{rows:Array|null, header:Array|null, 글:string}}
+ *   rows 가 있으면 그것이 원천이다. 글 은 결과 글에 붙일 한 줄(안 바꿨으면 "").
+ *   v2 를 못 부르면 시트로 간다 — 지금까지와 같다. 그때는 말하지 않는다(병행 줄이 따로 말한다).
+ */
+function _pep_v2SourceIfSheetStalled_() {
+  var 안바꿈 = { rows: null, header: null, 글: "" };
+  if (_pep_srcMode_() === "시트") return 안바꿈;
+  try {
+    if (typeof _v2ob_url_ !== "function" || !_v2ob_url_() || !_v2ob_token_()) return 안바꿈;
+    var res = UrlFetchApp.fetch(_v2ob_url_() + "/api/setsplit/partner-shadow?%EC%9B%90%EC%B2%9C=1", {
+      method: "get",
+      headers: { "x-ingest-token": _v2ob_token_() },
+      muteHttpExceptions: true,
+    });
+    if (res.getResponseCode() !== 200) return 안바꿈;
+    var j = JSON.parse(res.getContentText());
+    if (!j || j.ok !== true || !j.멈춤) return 안바꿈;
+    if (!j.줄 || !j.줄.length || !j.머리 || !j.머리.length) {
+      return { rows: null, header: null,
+        글: "시트 세트분리 " + j.멈춘회차 + " 가 끝나지 않았고 v2 결과도 없습니다 — 대리발송 탭(" + j.탭회차 +
+          ")으로 갑니다. " + (j.왜 || "") + " · " + j.멈춘회차 + " 대리발송 줄은 이번에 안 나갑니다" };
+    }
+    //  v2 는 칸을 글자로 준다. 시트(getValues)처럼 숫자 칸은 숫자로 — 안 그러면 「2」+「3」이 「23」이 된다
+    var 숫자칸 = {};
+    for (var h = 0; h < j.머리.length; h++) {
+      if (/^(순번|택배박스수량|수량|합계|단품배송비)$/.test(String(j.머리[h]))) 숫자칸[h] = true;
+    }
+    var rows = j.줄.map(function (r) {
+      return r.map(function (c, i) {
+        var s = String(c == null ? "" : c);
+        if (숫자칸[i]) {
+          var t = s.replace(/,/g, "");
+          if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+        }
+        return s;
+      });
+    });
+    return { rows: rows, header: j.머리,
+      글: "원천을 v2 로 바꿨습니다 — 시트 세트분리 " + j.멈춘회차 + " 가 끝나지 않아(대리발송 탭은 " + j.탭회차 +
+        " 것) v2 " + j.v2회차 + " 의 대리발송 " + rows.length + "줄로 보냅니다" };
+  } catch (e) {
+    Logger.log("[PEP] v2 원천 확인 실패 — 시트로 갑니다: " + (e.message || e));
+    return 안바꿈;
+  }
+}
+
 /** 0 → A, 15 → P */
 function _pep_colLetter_(i) {
   if (i < 0) return "-";
@@ -2335,6 +2383,22 @@ function _pep_pushCore_(silent) {
   var srcAll = srcTab.getRange(1, 1, srcLr, srcLc).getValues();
   var srcHdr = srcAll[0];
 
+  /*  ★ 시트 세트분리가 멈췄으면 v2 회차로 ★  (2026-10-16)
+      > 사장님: "시트 세트분리가 오류로 진행이 안되었을떄 V2에서 진행된 세트분리값으로
+      >          대리공급 푸시가 이루어 지면 좋겠어"
+      회차는 확정됐는데(사람이 눌렀다) 실행이력에 없으면(출력 탭을 다 못 썼다) 대리발송 탭은
+      앞 회차 것이다. 그때만 v2 가 같은 판매현황으로 돈 대리발송 줄을 원천으로 쓴다.
+      판단은 v2 한 곳(lib/setsplit/partner-shadow.ts 대리발송원천)이 한다. */
+  var _v2원천_ = _pep_v2SourceIfSheetStalled_();
+  if (_v2원천_.rows) {
+    srcAll = [_v2원천_.header].concat(_v2원천_.rows);
+    srcLc = Math.max(srcLc, _v2원천_.header.length);
+    srcHdr = srcAll[0];
+    Logger.log("[PEP] 원천을 v2 로 — " + _v2원천_.글);
+  } else if (_v2원천_.글) {
+    Logger.log("[PEP] " + _v2원천_.글);
+  }
+
   /*  ★ 자리로 읽기 전에 «자리가 맞는지» 본다 ★  (2026-09-14)
       D·E·P 를 자리로 읽는다. 열이 하나 끼면 전부 밀리는데 오류는 안 난다 —
       엉뚱한 발주가 업체로 나간 뒤에야 안다. 그 전에 멈춘다. */
@@ -3013,7 +3077,12 @@ function _pep_pushCore_(silent) {
     _대조글_ = "\n\n(원본 대조를 못 했습니다: " + e대조.message + ")";
   }
   //  v2 병행 — 이어달리기 조각(중간부터)에서는 안 잰다. 처음 한 번만.
-  if (_시작행_ <= 1) _대조글_ += _pep_v2PartnerShadow_(srcTab, tempOnly ? "담기" : "푸시");
+  //  원천을 v2 로 바꿨으면 맞대기는 뜻이 없다(시트 탭은 앞 회차) — 바꾼 사실을 맨 먼저 말한다
+  if (_v2원천_.글) {
+    _대조글_ = "\n\n" + (_v2원천_.rows ? "🔀 " : "⚠ ") + _v2원천_.글 + _대조글_;
+  } else if (_시작행_ <= 1) {
+    _대조글_ += _pep_v2PartnerShadow_(srcTab, tempOnly ? "담기" : "푸시");
+  }
 
   var _이어붙임_ = "";
   if (_멈춘행_ > 0) {
