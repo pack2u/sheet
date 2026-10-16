@@ -319,6 +319,11 @@ function registerPartnerMenu_() {
               · partnerFetchStatementFromGmail
               · partnerDiagnoseStatementGmail
             편집기에서 함수 이름으로 직접 돌릴 수는 있다.  */
+        /*  명세서 메일 → v2 (2026-10-16). 나르기만 하고 판독은 v2 가 한다.
+            자동으로는 16:00 Gmail 수집 트리거에 이어 돈다.  */
+        .addItem("🧪 명세서 메일 → v2 예행 (안 보냄)", "partnerPreviewStatementsToV2")
+        .addItem("📄 명세서 메일 → v2 보내기", "partnerSendStatementsToV2")
+        .addSeparator()
         .addItem("🧪 명세서 사전점검", "partnerDiagnoseStatementReconcile")
         .addItem("📋 명세서 탭 일괄 생성 (전체 업체)", "partnerCreateStatementTabsAll")
     )

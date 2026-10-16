@@ -187,6 +187,17 @@ function _gmi_triggerFetchNKInvoice_() {
       } catch (ajErr) {
         Logger.log("[TRIGGER] AJ Gmail 송장수집 에러: " + ajErr.message);
       }
+
+      /* ★ 2026-10-16: 명세서 메일도 여기서 이어 돈다 ★
+         「Gmail 에서 걷는 것」을 한 자리에 모은다. 트리거 스무 자리가
+         이미 차 있어 새로 못 만든다 — 아주팩이 걸어온 길과 같다.
+         이것도 따로 감싼다. 송장수집이 실패해도 명세서는 가야 한다.
+         나르기만 하고 판독은 v2 가 한다(_partnerStatementToV2.gs). */
+      try {
+        if (typeof _sv2_triggerSendStatements_ === "function") _sv2_triggerSendStatements_();
+      } catch (svErr) {
+        Logger.log("[TRIGGER] 명세서 → v2 에러: " + svErr.message);
+      }
     } finally {
       lock.releaseLock();
     }
