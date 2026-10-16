@@ -2702,6 +2702,10 @@ function _pep_pushCore_(silent) {
     if (_dedupOccurrence_ <= _existingDedupCount_) {
       skipUid++;
       _줄결과_[ri] = "이미";
+      /*  업체 파일에 이미 있다 = 나간 줄이다. 「발주대기」 표시도 지울 근거다 (2026-10-16)
+          10/16 13:50 푸시가 쓰기 뒤에 멈춰 되살린 30줄의 표시가 남았다. 다음 푸시에서
+          그 줄들은 여기로 빠지는데, 여기서 안 지우면 표시가 영영 남아 매번 되살아난다. */
+      if (_runRowKey_) _PEP_LAST_PUSHED_KEYS_[_runRowKey_] = true;
       continue; // 이미 발주된 UID → 스킵
     }
 
