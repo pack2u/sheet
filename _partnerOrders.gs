@@ -159,10 +159,33 @@ var _PO_HUB_CARRIER_COL_ = 17;        // 0-based. 허브 R열
  * 합배송 송장 복사는 같은 쪽 줄끼리만 한다.
  */
 var _PO_SIDE_SKIP_ = 0;
+/*  세트분리 「대리발송품목」 — 출고지는 평택이어도 업체로 넘기는 품목(사장님이 적는 표).
+    상품정보 출고지만 보면 이 품목이 «자사»로 보인다. 한 실행에 한 번만 읽는다. */
+var _PO_PARTNER_ITEMS_ = null;
+function _po_partnerItems_() {
+  if (_PO_PARTNER_ITEMS_) return _PO_PARTNER_ITEMS_;
+  _PO_PARTNER_ITEMS_ = {};
+  try {
+    var sid = typeof _PEP_SOURCE_SHEET_ID !== "undefined" ? _PEP_SOURCE_SHEET_ID : "";
+    var tab = sid ? SpreadsheetApp.openById(sid).getSheetByName("대리발송품목") : null;
+    if (tab && tab.getLastRow() >= 2) {
+      var v = tab.getRange(2, 1, tab.getLastRow() - 1, 1).getDisplayValues();
+      for (var i = 0; i < v.length; i++) {
+        var c = String(v[i][0] || "").trim().toUpperCase();
+        if (c) _PO_PARTNER_ITEMS_[c] = true;
+      }
+    }
+  } catch (e) {
+    Logger.log("[합배송] 대리발송품목 못 읽음(출고지로만 가름): " + (e.message || e));
+  }
+  return _PO_PARTNER_ITEMS_;
+}
 function _po_shipSide_(hubRow) {
   try {
     var code = String((hubRow || [])[4] || "").trim().toUpperCase();
-    if (!code || typeof _pep_loadItemShipOriginIndex_ !== "function") return "자사";
+    if (!code) return "자사";
+    if (_po_partnerItems_()[code]) return "업체";
+    if (typeof _pep_loadItemShipOriginIndex_ !== "function") return "자사";
     var origin = (_pep_loadItemShipOriginIndex_(false).map || {})[code] || "";
     return _pep_isProxyShipOrigin_(origin) ? "업체" : "자사";
   } catch (e) {
