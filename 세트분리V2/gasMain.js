@@ -504,7 +504,22 @@ function ss_실행(opts) {
     }
 
     단계 = ss단계_('회차 확정');
-    var 지문 = ssFingerprint(ssNormalize(grid, cfg, []));
+    var 정리줄 = ssNormalize(grid, cfg, []);
+    var 지문 = ssFingerprint(정리줄);
+    /*  ★ 도서산간 탭 조치는 «같은 줄»일 때만 믿는다 ★  (2026-10-16)
+        탭은 지난 실행이 쓴 것이고 순번은 날마다 다시 센다 — 어제 「100036」의 조치가
+        오늘 다른 주문에 먹을 수 있다. 일자-No. 가 같은 줄만 남긴다 (core.js ssIslandTabKeep).
+        안 믿는 열쇠는 «탭에 있는 줄»에서도 뺀다 — 그 빈 칸이 기억을 지우지 않게.
+        v2 도 같은 함수로 거른다. */
+    try {
+      var 섬믿음 = ssIslandTabKeep(SS_섬탭일자_, 정리줄), 섬거름 = 0;
+      for (var 섬k in SS_섬본열쇠_) {
+        if (!Object.prototype.hasOwnProperty.call(SS_섬본열쇠_, 섬k) || 섬믿음[섬k]) continue;
+        delete SS_섬본열쇠_[섬k];
+        if (cfg._섬조치 && cfg._섬조치[섬k]) { delete cfg._섬조치[섬k]; 섬거름++; }
+      }
+      if (섬거름) Logger.log('[도서산간 조치] 다른 날 같은 순번의 조치라 안 씀: ' + 섬거름);
+    } catch (eKeep) { Logger.log('[도서산간 조치] 같은 줄 확인 실패(그대로 씀): ' + eKeep.message); }
     /*  🔂 재실행이면 마지막 회차를 그대로 쓴다 (2026-09-16).
         판매현황 O열에 고유아이디를 적고 나면 지문이 달라져 새 회차가 되는데,
         사람 눈에는 같은 판매현황이다. 그 헛 회차를 만들지 않는다. */
@@ -1102,14 +1117,18 @@ var SS_ROUND_HEADER = ['회차키', '지문', '일자', '회차', '입력행', '
  */
 /*  지금 도서산간 두 탭에 «줄이 있는» 열쇠들 — ss_섬조치기억_ 이 「지운 조치」를 가리는 데 쓴다 */
 var SS_섬본열쇠_ = {};
+/** 열쇠 → 그 탭 줄의 일자-No. (core ssIslandTabKeep 이 지금 판매현황과 견준다) */
+var SS_섬탭일자_ = {};
 
 function ss_섬조치걷기_() {
   var out = {};
   SS_섬본열쇠_ = {};
+  SS_섬탭일자_ = {};
   var 탭들 = [SS_ROUTE.LOTTE_ISLAND, SS_ROUTE.LOTTE_ISLAND_CONSIGN];
   var iSeq = SS_ISLAND_HEADER.indexOf('순번');
   var iCode = SS_ISLAND_HEADER.indexOf('품목코드');
   var iAct = SS_ISLAND_HEADER.indexOf('조치');
+  var iDate = SS_ISLAND_HEADER.indexOf('일자-No.');
   if (iSeq < 0 || iCode < 0 || iAct < 0) return out;
   for (var t = 0; t < 탭들.length; t++) {
     try {
@@ -1121,6 +1140,7 @@ function ss_섬조치걷기_() {
         var k = ssText(v[r][iSeq]) + '|' + ssText(v[r][iCode]);
         if (k === '|') continue;
         SS_섬본열쇠_[k] = true;
+        if (iDate >= 0) SS_섬탭일자_[k] = ssText(v[r][iDate]);
         var a = ssText(v[r][iAct]);
         if (a) out[k] = a;
       }
@@ -1989,7 +2009,8 @@ function ssInvPut_(map, key, raw, carrier) {
       한 장도 안 남으면 그 주문은 없는 것으로 둔다(빈 칸으로 덮지 않는다). */
   var 산 = [];
   for (var v = 0; v < got.length; v++) {
-    if (ssb_isVoid_(got[v])) SS_VOID_HITS_++;
+    //  gasBulk.js 에 있다 — 그 파일 없이 이 함수만 불러 시험할 때도 돌게 (node/_invall_test.mjs)
+    if (typeof ssb_isVoid_ === 'function' && ssb_isVoid_(got[v])) SS_VOID_HITS_++;
     else 산.push(got[v]);
   }
   got = 산;

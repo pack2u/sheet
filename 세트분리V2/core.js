@@ -749,6 +749,38 @@ function ssSalesIdCells(lines) {
  * 판매현황 내용의 지문. 같은 자료를 다시 돌리면 같은 값이 나온다.
  * 이걸로 「같은 회차 재실행」과 「새 회차」를 구분한다.
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 도서산간 탭의 조치 칸을 «이 판매현황의 그 줄»로 믿어도 되나 ★  (2026-10-16)
+ *
+ *  탭은 지난 실행이 쓴 것이다. 열쇠(순번|품목코드)의 순번은 하루 단위로 다시 센다
+ *  (100001~). 그래서 어제 탭의 「100036 · X」 조치가 오늘 다른 주문의 「100036 · X」에
+ *  먹을 수 있다 — 원장에 다른 날 같은 열쇠가 실제로 있다(10/14~16 사이 8건).
+ *
+ *  같은 줄인지는 「일자-No.」(이카운트 전표번호 — 날짜가 들어 있다)로 본다. 같은 순번의
+ *  지금 판매현황 줄과 일자-No. 가 같을 때만 믿는다. 같은 줄이 다음 회차에 다시 올라오면
+ *  전표번호가 같으니 조치가 그대로 이어진다 — 원래 뜻(ss_섬조치걷기_ 주석)은 지킨다.
+ *
+ *  시트(gasMain.js ss_실행)와 v2(setsplit-auto.ts 돌리기)가 이 함수 하나로 거른다.
+ *
+ *  @param 탭일자 {순번|품목코드: 탭의 일자-No.}
+ *  @param lines  ssNormalize 결과 (지금 판매현황)
+ *  @return {Object<string,boolean>} 믿을 열쇠
+ * ══════════════════════════════════════════════════════════════
+ */
+function ssIslandTabKeep(탭일자, lines) {
+  var 붙여 = function (s) { return ssText(s).split(' ').join(''); };
+  var 지금 = {};
+  for (var i = 0; i < (lines || []).length; i++) 지금[ssText(lines[i].순번)] = 붙여(lines[i].일자);
+  var keep = {};
+  for (var k in 탭일자) {
+    if (!Object.prototype.hasOwnProperty.call(탭일자, k)) continue;
+    var seq = k.split('|')[0];
+    if (지금[seq] !== undefined && 지금[seq] === 붙여(탭일자[k])) keep[k] = true;
+  }
+  return keep;
+}
+
 function ssFingerprint(lines) {
   var parts = [];
   for (var i = 0; i < lines.length; i++) {
@@ -3795,7 +3827,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssApplyManualEdits: ssApplyManualEdits,
     ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship, ssAuditSetNames: ssAuditSetNames,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, SS_HOLD_KEEP_WORDS: SS_HOLD_KEEP_WORDS, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssShipKey: ssShipKey, ssBaseUid: ssBaseUid, ssIslandMultiBoxHold: ssIslandMultiBoxHold, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssSalesIdCells: ssSalesIdCells,
+    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, SS_HOLD_KEEP_WORDS: SS_HOLD_KEEP_WORDS, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssShipKey: ssShipKey, ssBaseUid: ssBaseUid, ssIslandMultiBoxHold: ssIslandMultiBoxHold, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssIslandTabKeep: ssIslandTabKeep, ssSalesIdCells: ssSalesIdCells,
     ssItemBase: ssItemBase, ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssDupRunGroups: ssDupRunGroups, SS_ORDNO_SRC: SS_ORDNO_SRC,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,
