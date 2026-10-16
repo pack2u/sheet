@@ -2378,7 +2378,9 @@ function ss_송장전파() {
             여태는 뚜껑만 업체로 간 줄이 업체 송장을 기다리는 동안, 같은 주소의
             몸통 로젠 송장을 여기서 받아 버렸다 — «엇갈려 붙던» 또 한 갈래다. */
         var 업체줄 = function (row) {
-          return li['경로'] !== undefined && ssText(row[li['경로']]) === SS_ROUTE.PARTNER;
+          //  도서산간(위탁배송)도 업체 물건이다 (2026-10-16 — 대리발송은 합배송 안 함)
+          var 경 = li['경로'] !== undefined ? ssText(row[li['경로']]) : '';
+          return 경 === SS_ROUTE.PARTNER || 경 === SS_ROUTE.LOTTE_ISLAND_CONSIGN;
         };
         for (var s1 = 0; s1 < lv.length; s1++) {
           var w4 = ssText(lv[s1][li['운송장번호']]);

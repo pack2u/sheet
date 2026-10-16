@@ -1721,6 +1721,12 @@ function ssMerge(units, cfg) {
        업체 창고에서 나가는 물건과 우리 창고에서 나가는 물건이 한 박스에
        담길 리가 없다. 출고지가 같아 보여도 «나가는 곳»이 다르다.  */
     if (u.route === SS_ROUTE.PARTNER) continue;
+    /*  ★ 도서산간(위탁배송)도 업체 물건이다 ★  (2026-10-16)
+        > "합포장 합배송이 대리발송 업체것과 우리 출고것이 합쳐지는 경우가 있어.."
+        대리발송 품목이 섬 주소라 조치를 기다리며 선 줄이다(섬대리검문). 경로 이름이
+        PARTNER 가 아닐 뿐 업체 창고에서 나갈 물건이다 — 우리 박스에 담지 않는다.
+        조치 「발송」을 받으면 그때는 로젠택배 경로라 여기 걸리지 않는다. */
+    if (u.route === SS_ROUTE.LOTTE_ISLAND_CONSIGN) continue;
 
     if (u.출고지 !== cfg.합배송출고지) continue;
     if (!u.조건ID) continue;

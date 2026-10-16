@@ -149,6 +149,26 @@ var _PO_HUB_HEADERS = [
 //    업체 발주탭 P열(16) — 허브 R열을 그대로 배포 (재판정 없음)
 // ═══════════════════════════════════════════
 var _PO_HUB_CARRIER_COL_ = 17;        // 0-based. 허브 R열
+
+/**
+ * ★ 허브 줄은 누가 보내나 — 「업체」 · 「자사」 ★  (2026-10-16)
+ *   > "대리발송의 경우는 합배송이 안되.."
+ * 품목의 출고지(상품정보 탭 「출고지」)가 대리발송·대리공급이면 업체가 보낸다.
+ * 판정은 송장 택배사를 정하는 엔진(_partnerExclusivePush.gs _pep_loadItemShipOriginIndex_)
+ * 을 그대로 쓴다 — 규칙을 여기 또 적지 않는다. 표에 없는 코드는 자사로 본다(지금까지와 같다).
+ * 합배송 송장 복사는 같은 쪽 줄끼리만 한다.
+ */
+var _PO_SIDE_SKIP_ = 0;
+function _po_shipSide_(hubRow) {
+  try {
+    var code = String((hubRow || [])[4] || "").trim().toUpperCase();
+    if (!code || typeof _pep_loadItemShipOriginIndex_ !== "function") return "자사";
+    var origin = (_pep_loadItemShipOriginIndex_(false).map || {})[code] || "";
+    return _pep_isProxyShipOrigin_(origin) ? "업체" : "자사";
+  } catch (e) {
+    return "자사";
+  }
+}
 var _PO_HUB_CARRIER_HEADER_ = "택배사";
 var _PO_VENDOR_CARRIER_COL_ = 16;     // 1-based. 업체 발주탭 P열
 var _PO_VENDOR_CARRIER_HEADER_ = "택배사";
@@ -2791,27 +2811,34 @@ function partnerFetchInvoices() {
       var cGrpRows = combNameGroups[cGrpName];
       if (cGrpRows.length < 2) continue; // 1건이면 합배송 아님
 
-      // 그룹 내 송장 있는 행 찾기
-      var sourceInv = "";
-      var sourceCarrier = ""; // 합배송은 같은 송장 = 같은 택배사
+      /*  ★ 보내는 쪽마다 따로 ★  (2026-10-16)
+          > "합포장 합배송이 대리발송 업체것과 우리 출고것이 합쳐지는 경우가 있어..
+          >  대리발송의 경우는 합배송이 안되.."
+          같은 묶음(손님)이라도 업체가 보내는 줄과 우리 창고가 보내는 줄은 박스가 다르다.
+          예전에는 묶음에서 «아무» 송장이나 집어 나머지에 복사했다 — 우리 로젠 송장이
+          업체 발주 줄에 붙거나, 업체 송장이 우리 줄에 붙었다. 쪽마다 제 송장만 옮긴다. */
+      var sourceBySide = {}; // 쪽 → {inv, carrier}
       for (var ci = 0; ci < cGrpRows.length; ci++) {
         var cInv = String(hubData[cGrpRows[ci]][13] || "").trim();
-        if (_po_hasRealInvoice_(cInv)) {
-          sourceInv = cInv;
-          sourceCarrier = String(
-            hubData[cGrpRows[ci]][_PO_HUB_CARRIER_COL_] || "",
-          ).trim();
-          break;
+        var cSide = _po_shipSide_(hubData[cGrpRows[ci]]);
+        if (_po_hasRealInvoice_(cInv) && !sourceBySide[cSide]) {
+          sourceBySide[cSide] = {
+            inv: cInv,
+            carrier: String(hubData[cGrpRows[ci]][_PO_HUB_CARRIER_COL_] || "").trim(),
+          };
         }
       }
-      if (!sourceInv) continue; // 그룹 내 송장 없음
+      if (!Object.keys(sourceBySide).length) continue; // 그룹 내 송장 없음
 
-      // 송장 없는 행에 동일 송장 복사 → 합배송
+      // 송장 없는 행에 «같은 쪽» 송장 복사 → 합배송
       for (var ci2 = 0; ci2 < cGrpRows.length; ci2++) {
         var ridx = cGrpRows[ci2];
         var existInv = String(hubData[ridx][13] || "").trim();
         if (_po_hasRealInvoice_(existInv)) continue;
         if (isTerminalOrderStatus_(String(hubData[ridx][14] || ""))) continue;
+        var 같은쪽 = sourceBySide[_po_shipSide_(hubData[ridx])];
+        if (!같은쪽) { _PO_SIDE_SKIP_++; continue; }
+        var sourceInv = 같은쪽.inv, sourceCarrier = 같은쪽.carrier;
 
         hubData[ridx][13] = sourceInv;
         writeUpdates.push({
@@ -2998,6 +3025,11 @@ function partnerFetchInvoices() {
         }
         if (isRep) continue;
         if (_po_hasRealInvoice_(hubData[otherIdx][13])) continue;
+        //  업체가 보내는 줄과 우리가 보내는 줄은 한 박스가 아니다 — 송장을 안 옮긴다 (2026-10-16)
+        if (_po_shipSide_(hubData[otherIdx]) !== _po_shipSide_(hubData[assignedRep[0].idx])) {
+          _PO_SIDE_SKIP_++;
+          continue;
+        }
         // ★ 합배송 전용 시트에 등록된 키만 합배송 처리 (오매칭 방지)
         if (!combinedShipmentKeySet[groupKey]) {
           noMatch++;
@@ -3161,6 +3193,11 @@ function partnerFetchInvoices() {
         }
         if (isR2) continue;
         if (_po_hasRealInvoice_(hubData[oi2][13])) continue;
+        //  업체가 보내는 줄과 우리가 보내는 줄은 한 박스가 아니다 — 송장을 안 옮긴다 (2026-10-16)
+        if (_po_shipSide_(hubData[oi2]) !== _po_shipSide_(hubData[assigned2[0].idx])) {
+          _PO_SIDE_SKIP_++;
+          continue;
+        }
         // ★ 합배송 전용 시트에 등록된 키만 합배송 처리 (오매칭 방지)
         if (!combinedShipmentKeySet[uGroup.key]) {
           noMatch++;
@@ -3177,6 +3214,7 @@ function partnerFetchInvoices() {
     }
   }
   scannedLogs.push("2차 재검색 매칭: " + pass2Matched + "건");
+  if (_PO_SIDE_SKIP_) scannedLogs.push("[합배송] 업체·자사가 달라 송장을 안 옮긴 줄: " + _PO_SIDE_SKIP_ + "건 (대리발송은 합배송 안 함)");
 
   // ── ★ 2026-07-09 성능최적화: 허브 M/N/O열 배치 쓰기 ──
   // 기존: 매 건마다 setValue(송장) + setValue(상태) + setValue(적요) = 행당 2~3 API 호출
