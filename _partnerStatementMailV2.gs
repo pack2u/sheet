@@ -31,7 +31,8 @@ var _PSM_PROP_LAST_ = "_PSM_LAST_RUN_";
 var _PSM_WINDOW_FROM_ = 1530;     // 15:30
 var _PSM_WINDOW_TO_ = 1700;       // 17:00
 var _PSM_EVERY_MIN_ = 10;         // 창 안에서 10분에 한 번
-var _PSM_MAX_FILES_ = 4;          // 한 차례에 보낼 장 수
+var _PSM_MAX_FILES_ = 4;          // 자동 한 차례에 보낼 장 수 (발주 수집 끝에 붙어 돈다 — 길게 잡으면 수집이 밀린다)
+var _PSM_MAX_FILES_MANUAL_ = 40;  // 손으로 누를 땐 한 번에 다 (30분 한도 · 한 장 10~60초)
 var _PSM_MIN_BYTES_ = 15 * 1024;  // 서명·로고 같은 작은 그림은 명세서가 아니다
 
 /** 자동 수집이 부른다. 창 밖이거나 10분이 안 지났으면 바로 돌아간다. */
@@ -95,8 +96,8 @@ function psmSendMailStatementsToV2_(manual) {
   var q = base.replace(/-label:\S+/g, "").replace(/newer_than:\d+d/, "newer_than:3d") +
     " -label:" + _PSM_LABEL_;
   var label = GmailApp.getUserLabelByName(_PSM_LABEL_) || GmailApp.createLabel(_PSM_LABEL_);
-  var threads = GmailApp.search(q, 0, 30);
-  var budget = _PSM_MAX_FILES_;
+  var threads = GmailApp.search(q, 0, manual ? 60 : 30);
+  var budget = manual ? _PSM_MAX_FILES_MANUAL_ : _PSM_MAX_FILES_;
   for (var t = 0; t < threads.length; t++) {
     var msgs = threads[t].getMessages();
     var allOk = true, touched = false;
