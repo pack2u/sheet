@@ -31,5 +31,18 @@ const 돌 = (units, cfg) => { const w = []; C.ssIslandMultiBoxHold(units, cfg ||
 { const r = 돌([줄({ 고유ID: '1', 도선료: '' }), 줄({ 고유ID: '2', 도선료: '' })]); eq('끝내 모르면 금액 안 적음', /원쯤/.test(r.units[0].보류상세), false); }
 { const cfg = Object.assign({}, C.SS_DEFAULT_CONFIG, { 도서산간_여러박스_보류: '끔' });
   const r = 돌([줄({ 고유ID: '1' }), 줄({ 고유ID: '2' })], cfg); eq('설정 끔이면 안 세운다', r.units[0].route, R.LOTTE_ISLAND); }
+/* ── 2026-10-16 수량 2개 이상 ── */
+{ const r = 돌([줄({ 고유ID: '1', 주문수량: 2, 원본코드: 'A' })]);
+  eq('★ 한 주문 수량 2개(1박스)도 보류', r.units[0].route, R.HOLD);
+  eq('  상세에 수량', r.units[0].보류상세.indexOf('한 주문 수량 2개') >= 0, true);
+  eq('  추가 금액 5,000원쯤', r.units[0].보류상세.indexOf('5,000원쯤') >= 0, true); }
+{ const r = 돌([줄({ 고유ID: '1', 주문수량: 1, 원본코드: 'A' })]); eq('수량 1·1박스는 그대로', r.units[0].route, R.LOTTE_ISLAND); }
+{ const r = 돌([줄({ 고유ID: '1', 주문수량: 1, 원본코드: 'A', 품목코드: 'A-몸통' }), 줄({ 고유ID: '1', 주문수량: 1, 원본코드: 'A', 품목코드: 'A-뚜껑', 박스수: 0 })]);
+  eq('쪼갠 세트 1박스·수량 1은 그대로(원본코드 한 번만 셈)', r.units[0].route, R.LOTTE_ISLAND); }
+{ const r = 돌([줄({ 고유ID: '1', 주문수량: 1, 원본코드: 'A' }), 줄({ 고유ID: '1', 주문수량: 1, 원본코드: 'B', 박스수: 0 })]);
+  eq('★ 한 주문에 품목 둘(각 1개)이면 수량 2 → 보류', r.units[0].route, R.HOLD); }
+{ const 대표 = 줄({ 고유ID: '1', 합포장그룹: 'G1', 주문수량: 1, 원본코드: 'A' }), 동봉 = 줄({ 고유ID: '2', route: R.MERGED, 합포장그룹: 'G1', 박스수: 0, 주문수량: 1 });
+  돌([대표, 동봉]); eq('주문 둘이 한 박스(각 1개)는 여전히 안 세운다', 대표.route, R.LOTTE_ISLAND); }
+{ const r = 돌([줄({ 고유ID: 'p1', 주문번호출처: '자동발급', 주문수량: 3 })]); eq('전화주문은 수량이 많아도 안 세운다', r.units[0].route, R.LOTTE_ISLAND); }
 console.log(fail ? '✗ ' + fail + '건 실패' : '✓ 모두 통과 (' + pass + ')');
 process.exit(fail ? 1 : 0);
