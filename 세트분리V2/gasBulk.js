@@ -200,6 +200,46 @@ function ssb_isPlaceholder(v) {
 }
 
 /** 한 셀의 송장을 여러 행으로 편다. 중복은 주문번호|송장 으로 막는다. */
+/* ══════════════════════════════════════════════════════════════
+   ★ 폐기송장은 세트분리도 뺀다 ★  (2026-10-16)
+   10/15 4차에 로젠 등록이 두 번 되어 38건이 송장을 두 장 받았다
+   (453-7639 → 453-7663). 로젠이 집은 것은 뒤 번호뿐이다.
+   허브 송장수집이 앞 번호를 상품정보 「대리판매_폐기송장」 탭에 적는다
+   (_partnerHelpers.gs _pt_findRozenReprints_ 가 고르는 단 한 곳).
+
+   세트분리는 「입력_로젠주문실적」을 직접 읽어서, 앞 번호까지 붙였다.
+   대량등록은 «주문당 첫 장»만 올리는데, 먼저 읽히는 것이 바로 앞 번호다 —
+   사방넷에 로젠이 모르는 번호가 올라간다.
+
+   규칙을 여기 또 적지 않는다. 그 탭이 주인이다 — 읽어서 뺀다.
+   못 읽으면 빈 목록(지금까지와 같음)이고, 못 읽었다고 남긴다.
+   ══════════════════════════════════════════════════════════════ */
+var SSB_VOID_ = null;
+var SSB_VOID_WHY_ = '';
+function ssb_voidSet_() {
+  if (SSB_VOID_) return SSB_VOID_;
+  SSB_VOID_ = {};
+  try {
+    var cfg = ssio_config();
+    var ss = SpreadsheetApp.openById(ssText(cfg['이카운트시트ID']));
+    var tab = ss.getSheetByName('대리판매_폐기송장') || ss.getSheetByName('폐기송장');
+    if (!tab) { SSB_VOID_WHY_ = '폐기송장 탭 없음'; return SSB_VOID_; }
+    if (tab.getLastRow() < 2) return SSB_VOID_;
+    var v = tab.getRange(2, 1, tab.getLastRow() - 1, 1).getDisplayValues();
+    for (var i = 0; i < v.length; i++) {
+      var d = String(v[i][0] || '').replace(/[^0-9]/g, '');
+      if (d) SSB_VOID_[d] = true;
+    }
+  } catch (e) {
+    SSB_VOID_WHY_ = '폐기송장 못 읽음: ' + String(e.message || e);
+  }
+  return SSB_VOID_;
+}
+function ssb_isVoid_(inv) {
+  var d = String(inv || '').replace(/[^0-9]/g, '');
+  return !!d && !!ssb_voidSet_()[d];
+}
+
 function ssb_addRows(rows, seen, orderNo, invCell, code, res, uidSeen, seenOrd) {
   //  쪼갠 줄은 2314556_S2 로 나가 그 번호로 송장이 온다. 사방넷은 맨 번호만 안다 (2026-09-29)
   var o = ssBaseUid(orderNo);
@@ -225,6 +265,8 @@ function ssb_addRows(rows, seen, orderNo, invCell, code, res, uidSeen, seenOrd) 
     var inv = 장들[i].inv;
     //  칸에 택배사 이름이 적혀 있으면 그것이 이긴다 — 업체가 한 칸에 로젠·한진을 섞어 적는다
     var c2 = 장들[i].code || c;
+    //  폐기송장이면 건너뛴다 — 뒤 번호(같은 칸이든 다음 줄이든)가 첫 장이 된다
+    if (ssb_isVoid_(inv)) { res.skipVoid = (res.skipVoid || 0) + 1; continue; }
     var key = o + '|' + inv;
     if (seen[key]) continue;
     seen[key] = true;
@@ -810,7 +852,9 @@ function ss_사방넷엑셀저장() {
     ' / 임시기록보관 ' + n5 + ' / 송장원장 ' + n6 +
     ' / 합포장 전파 ' + n7 +
     (res.자사탭 && res.자사탭.length ? '  [' + res.자사탭.join(' · ') + ']' : '') + NL +
-    '    (중복은 주문번호+송장 기준으로 이미 뺀 숫자입니다)';
+    '    (중복은 주문번호+송장 기준으로 이미 뺀 숫자입니다)' +
+    (res.skipVoid ? NL + '  · 폐기송장이라 뺀 장 : ' + res.skipVoid + '장 (로젠 재출력 앞 번호)' : '') +
+    (SSB_VOID_WHY_ ? NL + '  ⚠ ' + SSB_VOID_WHY_ + ' — 폐기송장을 못 걸렀습니다' : '');
 
   /* ★ 「전파는 385건인데 저장은 91건」에 그 자리에서 답한다 ★  (2026-09-11)
        송장 전파가 만든 「사방넷등록」 탭과 견준다. 두 기능은 보는 범위가

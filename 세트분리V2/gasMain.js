@@ -1904,9 +1904,21 @@ function ssInvAll_(raw) {
  * 주문번호 → 송장들. 덮지 않고 **모은다.**
  * 여기가 이번 고침의 핵심이다 — 예전에는 map[key] = w 라 마지막 1장만 남았다.
  */
+var SS_VOID_HITS_ = 0;
 function ssInvPut_(map, key, raw, carrier) {
   if (!key) return;
   var got = ssInvAll_(raw);
+  if (!got.length) return;
+  /*  ★ 폐기송장은 안 담는다 ★  (2026-10-16)
+      로젠 재출력의 앞 번호(10/15 4차 38건)가 원장 운송장번호에 같이 붙었다.
+      주인은 상품정보 「대리판매_폐기송장」 탭 — gasBulk.js ssb_voidSet_ 가 읽는다.
+      한 장도 안 남으면 그 주문은 없는 것으로 둔다(빈 칸으로 덮지 않는다). */
+  var 산 = [];
+  for (var v = 0; v < got.length; v++) {
+    if (ssb_isVoid_(got[v])) SS_VOID_HITS_++;
+    else 산.push(got[v]);
+  }
+  got = 산;
   if (!got.length) return;
   var cur = map[key] || { list: [], c: '' };
   for (var i = 0; i < got.length; i++) {
@@ -2020,6 +2032,8 @@ function ss_송장전파() {
   }
   //  한 탭이라도 읽혔으면 실패가 아니다
   if (읽은탭.length) lotteErr = '';
+  if (SS_VOID_HITS_) 읽은탭.push('폐기송장 ' + SS_VOID_HITS_ + '장 뺌(로젠 재출력 앞 번호)');
+  if (SSB_VOID_WHY_) 읽은탭.push('⚠ ' + SSB_VOID_WHY_);
 
   // ── 1b) 대리공급_임시기록 → 협력업체가 보낸 건의 송장 ──
   // 상품정보 시트에 살고, P열 사방넷주문번호 · V열 택배사 · X열 송장번호다.
@@ -2140,7 +2154,7 @@ function ss_송장전파() {
   ssio_migrateHeader(SSIO_TABS.원장, SS_LEDGER_HEADER);
   var 원장직접 = 0, 원장전파 = 0, 원장기채움 = 0;
   //  사람이 출력에서 합친 박스를 주소로 구해 낸 수 / 송장이 여럿이라 못 구한 수
-  var 원장주소전파 = 0, 주소전파보류 = 0;
+  var 원장주소전파 = 0, 주소전파보류 = 0, 원장폐기걷음 = 0;
   /*  ★ 아직 송장을 못 받은 주문 — 그게 「대기 명부」다 ★  (2026-09-15)
       > "품절이나 재고부족으로 1~7일, 최대 20일(주문인쇄 제작등)의 경우가 있어."
       > "빠져있는 데이타만 따로 모아서 … 주문날짜와 고유아이디만 찾아 삽입하면"
@@ -2168,9 +2182,24 @@ function ss_송장전파() {
     if (li['고유ID'] !== undefined && li['운송장번호'] !== undefined) {
       var lv = lg.getRange(2, 1, lg.getLastRow() - 1, lcols).getValues();
 
+      ssb_voidSet_();   // 아래 걷기 전에 폐기송장을 읽어 둔다(못 읽으면 SSB_VOID_WHY_)
       var groupInv = {}, groupCar = {};
       for (var a = 0; a < lv.length; a++) {
         var uid = ssText(lv[a][li['고유ID']]);
+        /*  ★ 이미 붙은 폐기송장을 걷는다 ★  (2026-10-16)
+            10/15 4차 38건은 앞 번호가 이미 원장에 앉았다. 원장은 «빈 칸만» 채우니
+            그대로 두면 영영 남는다. 폐기 번호만 빼고, 다 빠져 비면 바로 아래에서
+            새로 채운다. 폐기송장 탭을 못 읽었으면 손대지 않는다. */
+        var 앉은 = ssText(lv[a][li['운송장번호']]);
+        if (앉은 && !SSB_VOID_WHY_) {
+          var 장전 = ssInvAll_(앉은), 장후 = [];
+          for (var vz = 0; vz < 장전.length; vz++) if (!ssb_isVoid_(장전[vz])) 장후.push(장전[vz]);
+          if (장후.length !== 장전.length) {
+            lv[a][li['운송장번호']] = 장후.join(' ');
+            if (!장후.length && li['택배사'] !== undefined) lv[a][li['택배사']] = '';
+            원장폐기걷음++;
+          }
+        }
         if (ssText(lv[a][li['운송장번호']])) 원장기채움++;
         if (!ssText(lv[a][li['운송장번호']])) {
           //  쪼갠 줄은 제 송장키로만 (위 사방넷송장과 같은 규칙)
@@ -2346,6 +2375,7 @@ function ss_송장전파() {
     (전화미매칭 ? ' (+전화주문 ' + 전화미매칭 + ')' : '') + NL +
     '  · 원장 기록 · 신규 ' + (원장직접 + 원장전파 + 원장주소전파) +
     ' · 이미 채워짐 ' + 원장기채움 + NL +
+    (원장폐기걷음 ? '  · 원장에서 폐기송장(로젠 재출력 앞 번호)을 걷은 줄 ' + 원장폐기걷음 + NL : '') +
     /*  사람이 출력에서 합친 박스를 주소로 구해 낸 것. 0 이면 아예 안 적는다 —
         늘 뜨는 줄은 안 보게 된다. */
     (원장주소전파 || 주소전파보류
