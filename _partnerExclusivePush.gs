@@ -876,11 +876,14 @@ function _pep_v2PartnerShadow_(srcTab, 어디서) {
       return NL + NL + "🔁 v2 병행: 못 맞댐 — HTTP " + code + " " +
         String((j && (j.error || j.why)) || res.getContentText()).substring(0, 160);
     }
-    if (j.못봄) return NL + NL + "🔁 v2 병행: 못 맞댐 — " + j.못봄;
+    if (j.못봄) return NL + NL + "🔁 v2 병행: 못 맞댐 — " + j.못봄 +
+      ((j.경고 && j.경고.length) ? NL + "    ⚠ " + j.경고.join(NL + "    ⚠ ") : "");
     var 머리 = "🔁 v2 병행 (시트 " + j.시트회차 + " " + j.줄.시트 + "줄 ↔ v2 " + j.v2회차 + " " + j.줄.v2 + "줄): ";
-    if (j.같다) return NL + NL + 머리 + "✅ 같음 " + j.같음 + "줄";
+    //  탭이 앞 회차 것이거나(돌다 멈춤) 세트분리 뒤에 손으로 바뀌었으면 맨 먼저 말한다
+    var 경고 = (j.경고 && j.경고.length) ? NL + "    ⚠ " + j.경고.join(NL + "    ⚠ ") : "";
+    if (j.같다) return NL + NL + 머리 + "✅ 같음 " + j.같음 + "줄" + 경고;
     var 글 = NL + NL + 머리 + "⚠ 다름 " + j.다름 + " · 시트만 " + j.시트만 + " · v2만 " + j.v2만 +
-      " (같음 " + j.같음 + ")";
+      " (같음 " + j.같음 + ")" + 경고;
     var 보기 = [].concat(j.보기 || [], (j.시트만줄 || []).map(function (k) { return "시트에만 " + k; }),
       (j.v2만줄 || []).map(function (k) { return "v2에만 " + k; }));
     if (보기.length) 글 += NL + "    " + 보기.slice(0, 8).join(NL + "    ");
