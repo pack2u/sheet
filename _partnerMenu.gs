@@ -309,9 +309,17 @@ function registerPartnerMenu_() {
         .addItem("② 원본 → 파싱", "partnerParseStatementFromRaw")
         .addItem("③ 비교·정리 실행", "partnerRunStatementReconcile")
         .addSeparator()
-        .addItem("📧 Gmail 첨부 수집 (현재 파일)", "partnerFetchStatementFromGmail")
+        /*  ★ Gmail 명세 수집은 v2 가 맡는다 — 메뉴에서 뺐다 ★  (2026-10-16)
+            > "1번 v2에서 실행하게 하면 되. 시트에서는 굳이 필요없는 부분이야"
+
+            우리 명세서는 거의 다 PDF·JPG 인데 _partnerStatementGmail.gs 는
+            xlsx·xls·csv·txt 만 읽는다. 눌러도 「메일 N건을 열었지만 담은 것이
+            없습니다」로 끝나는 단추라 두면 오해만 낳는다.
+            코드는 남겨 둔다 — 지우는 것은 v2 쪽이 자리를 잡은 뒤에.
+              · partnerFetchStatementFromGmail
+              · partnerDiagnoseStatementGmail
+            편집기에서 함수 이름으로 직접 돌릴 수는 있다.  */
         .addItem("🧪 명세서 사전점검", "partnerDiagnoseStatementReconcile")
-        .addItem("🧪 Gmail 미처리 점검", "partnerDiagnoseStatementGmail")
         .addItem("📋 명세서 탭 일괄 생성 (전체 업체)", "partnerCreateStatementTabsAll")
     )
     .addSubMenu(
