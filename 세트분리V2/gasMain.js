@@ -238,6 +238,8 @@ function ss_판매현황비우기() {
  * 탭 만들기가 실패해도 조치 적용은 이미 끝났다. 그 사실을 덮지 않는다.
  */
 function ss_보류조치반영() {
+  //  멈춘 회차 위에 조치를 얹으면 앞 회차 거울로 다시 그린다 — 재실행부터 (2026-10-16)
+  if (ss_미완료검문_('조치 적용')) return;
   var r = ss_실행({ mirrorOnly: true });
   try {
     ss_로젠출력탭();
@@ -510,6 +512,8 @@ function ss_실행(opts) {
       ? ss_회차유지확정(opts.회차유지, 지문, grid.length)
       : ss_회차확정(지문, grid.length);
     var runKey = 회차.key;
+    //  여기서부터 멈추면 출력이 섞인다 — 로젠에 올리는 탭을 빨갛게 (끝까지 가면 원래대로)
+    ss_출력탭표시_(true);
 
     //  도서산간 조치를 회차 안에서 기억한다 — 옮겨 간 줄의 조치가 사라지지 않게 (ss_섬조치기억_)
     단계 = ss단계_('도서산간 조치 기억');
@@ -962,6 +966,7 @@ function ss_실행(opts) {
     var 출력탭말 = '';
     try {
       var 사본결과 = ss_로젠출력탭(true);
+      ss_출력탭표시_(false);
       출력탭말 = (사본결과 && 사본결과.ok)
         ? '\n\n「' + SSIO_TABS.출력사본 + '」 탭도 이번 결과로 다시 그렸습니다 (' + 사본결과.행 + '행).'
         : '\n\n※ 「' + SSIO_TABS.출력사본 + '」 탭에 실을 것이 없었습니다.';
@@ -1265,6 +1270,75 @@ function ss_섬조치되돌리기_(rows, 섬조치) {
     if (섬조치[k]) rows[i][iAct] = 섬조치[k];
   }
   return rows;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 끝나지 않은 회차 검문 ★  (2026-10-16)
+ *
+ *  > 사장님: "시트에서 타임아웃이 되더라도 세트분리에 문제는 없는거야?" →
+ *  >         (출력·전파 메뉴에도 검문을) "응 그 검문도 넣어줘"
+ *
+ *  ss_실행 은 회차 확정(회차 탭 마지막실행) → 원장 회차 비우기 → 출력 탭 쓰기 →
+ *  원장 적재 → 실행이력 차례다. 타임아웃은 catch 를 안 거치고 그냥 죽는다.
+ *  그러면 «회차 탭의 마지막실행»이 «실행이력의 마지막 실행시각»보다 늦다.
+ *  같은 회차를 재실행하다 멈춘 것도 이것으로 잡힌다(회차키만 보면 못 잡는다).
+ *
+ *  v2 (lib/setsplit/partner-round.ts 탭의회차) 도 같은 자로 잰다 — 대리공급 푸시가 그걸 본다.
+ *
+ *  @return {{회차:string, 확정:string, 이력끝:string}|null}  멈춘 회차, 없으면 null
+ * ══════════════════════════════════════════════════════════════
+ */
+function ss_때값_(v) {
+  if (v instanceof Date) return v.getTime();
+  var m = String(v == null ? '' : v).match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})\D+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+  if (!m) return 0;
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime();
+}
+
+function ss_미완료회차_() {
+  var 회 = ssio_body(SSIO_TABS.회차);
+  var 이 = ssio_body(SSIO_TABS.실행이력);
+  var 회끝 = null, 이끝 = 0, 이끝키 = '';
+  for (var i = 0; i < 회.length; i++) {
+    var t = ss_때값_(회[i][6]);
+    if (ssText(회[i][0]) && (!회끝 || t >= 회끝.t)) 회끝 = { key: ssText(회[i][0]), t: t };
+  }
+  for (var j = 0; j < 이.length; j++) {
+    var u = ss_때값_(이[j][1]);
+    if (ssText(이[j][0]) && u >= 이끝) { 이끝 = u; 이끝키 = ssText(이[j][0]); }
+  }
+  if (!회끝 || !회끝.t || 회끝.t <= 이끝) return null;
+  var 꼴 = function (ms) { return ms ? Utilities.formatDate(new Date(ms), 'Asia/Seoul', 'MM/dd HH:mm') : '없음'; };
+  return { 회차: 회끝.key, 확정: 꼴(회끝.t), 이력끝: 이끝키 + ' ' + 꼴(이끝) };
+}
+
+/**
+ * 메뉴 앞의 검문. 멈춘 회차가 있으면 막고 까닭을 말한다.
+ * @param {string} 무엇  막는 메뉴 이름
+ * @param {boolean=} 조용  트리거면 창 대신 로그
+ * @return {string} 막았으면 그 말, 지나가면 ""
+ */
+function ss_미완료검문_(무엇, 조용) {
+  var 멈춤 = null;
+  try { 멈춤 = ss_미완료회차_(); } catch (e) { Logger.log('[검문] 회차를 못 읽어 지나갑니다: ' + e.message); }
+  if (!멈춤) return '';
+  var NL = String.fromCharCode(10);
+  var 말 = '⏸ 「' + 무엇 + '」을 멈췄습니다' + NL + NL +
+    '세트분리 ' + 멈춤.회차 + ' 가 끝나지 않았습니다 (회차 확정 ' + 멈춤.확정 +
+    ' · 마지막으로 끝난 실행 ' + 멈춤.이력끝 + ').' + NL +
+    '타임아웃·오류로 중간에 멈춘 것입니다. 출력 탭이 앞 회차와 섞여 있거나 원장에 이 회차가 없습니다.' + NL + NL +
+    '판매현황은 그대로 두고 「🔂 세트분리 재실행」(또는 ▶ 실행)을 «완료» 창이 뜰 때까지 다시 돌린 뒤 누르세요.';
+  if (조용) Logger.log(말); else ssio_alert(말);
+  return 말;
+}
+
+/** 로젠택배_출력 탭 색 — 실행 중(멈추면 그대로 남는다)은 빨강, 끝나면 원래대로 */
+function ss_출력탭표시_(도는중) {
+  try {
+    var sh = ssio_ss().getSheetByName(SSIO_TABS.출력사본);
+    if (sh) sh.setTabColor(도는중 ? '#d93025' : null);
+  } catch (e) {}
 }
 
 function ss_회차확정(지문, 입력행) {
@@ -1933,6 +2007,9 @@ function ssInvJoin_(entry) {
   return entry && entry.list ? entry.list.join(' ') : '';
 }
 function ss_송장전파() {
+  //  원장에 그 회차가 없으면 송장을 붙일 자리가 없다 — 재실행부터 (2026-10-16)
+  var 막음 = ss_미완료검문_('송장 전파', !ssio_hasUi_());
+  if (막음) return 막음;
   var inv = ssio_ss().getSheetByName(SSIO_TABS.사방넷송장);
   if (!inv || inv.getLastRow() < 2) {
     return ssio_alert('「사방넷송장」 탭이 비어 있습니다. 세트분리를 먼저 실행하세요.');
@@ -3480,6 +3557,8 @@ function ss_마감줄_(g, at) {
  * @return {object} 센 것
  */
 function ss_일일마감(날앞, 조용) {
+  //  원장에 멈춘 회차가 빠져 있으면 마감표도 빠진다 — 재실행부터 (2026-10-16)
+  if (ss_미완료검문_('일일마감', 조용 || !ssio_hasUi_())) return { 총: 0, 매칭: 0, 미매칭: 0, 막음: true };
   var 오늘 = ssText(날앞) || Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMdd');
   var at = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
   var NL = String.fromCharCode(10);

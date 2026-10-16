@@ -91,6 +91,11 @@ function ssio_ss() {
 }
 
 /** UI가 없는 환경(clasp run·트리거)에서는 로그로 대신한다 */
+/** 사람이 메뉴로 눌렀나(창을 띄울 수 있나) — 트리거로 돌면 false */
+function ssio_hasUi_() {
+  try { SpreadsheetApp.getUi(); return true; } catch (e) { return false; }
+}
+
 function ssio_alert(msg) {
   try { SpreadsheetApp.getUi().alert(msg); }
   catch (e) { Logger.log(msg); }

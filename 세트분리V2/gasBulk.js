@@ -789,6 +789,8 @@ function ssb_collect() {
 }
 
 function ss_사방넷엑셀저장() {
+  //  멈춘 회차는 송장 전파도 못 했다 — 재실행부터 (2026-10-16)
+  if (ss_미완료검문_('사방넷 송장대량등록')) return;
   var NL = String.fromCharCode(10);
   var C = ssb_collect();
   var rows = C.rows, res = C.res, errs = C.errs;
