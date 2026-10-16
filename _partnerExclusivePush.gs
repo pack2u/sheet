@@ -3081,7 +3081,7 @@ function _pep_pushCore_(silent) {
   if (_v2원천_.글) {
     _대조글_ = "\n\n" + (_v2원천_.rows ? "🔀 " : "⚠ ") + _v2원천_.글 + _대조글_;
   } else if (_시작행_ <= 1) {
-    _대조글_ += _pep_v2PartnerShadow_(srcTab, tempOnly ? "담기" : "푸시");
+    _대조글_ += _pep_v2PartnerShadow_(srcTab, _PEP_TEMP_ONLY_ ? "담기" : "푸시");
   }
 
   var _이어붙임_ = "";
