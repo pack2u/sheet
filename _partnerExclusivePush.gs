@@ -828,6 +828,68 @@ function _pep_checkSourceCols_(hdr) {
   return { ok: true, why: "" };
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 대리발송 원천 병행 — 시트 탭 ↔ v2 자동 회차 ★  (2026-10-16)
+ *
+ *  > 사장님: "상품정보에서 지금은 시트에서 가져가게 되있어 V2 에서 가져갈수 있게
+ *  >          가능한가? 병행또는 선택일 가능할지" → "병행부터 만들어줘"
+ *
+ *  푸시가 읽은 대리발송 탭을 «표시값 그대로» v2 로 보낸다. 맞대기는 v2 가 한다
+ *  (/api/setsplit/partner-shadow → ss_partner_shadow · 화면 /setsplit/partner-shadow).
+ *
+ *  ★ 업체로 나가는 것은 안 바뀐다 ★  여전히 시트 탭이다. 이 함수는 «재기만» 한다.
+ *    v2 가 느리거나 죽어도 푸시는 그대로 간다 — 실패는 한 줄로 남길 뿐이다.
+ *
+ *  스크립트 속성 「대리발송원천」:  병행(기본) · 시트(재지도 않음)
+ *    v2 원천(업체로 v2 줄을 내보내기)은 병행이 며칠 «같음»이면 그때 만든다.
+ *
+ *  @return {string} 결과 글에 붙일 한 단락 (안 쟀으면 "")
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pep_srcMode_() {
+  var m = "";
+  try { m = String(PropertiesService.getScriptProperties().getProperty("대리발송원천") || "").trim(); } catch (e) {}
+  return m || "병행";
+}
+
+function _pep_v2PartnerShadow_(srcTab, 어디서) {
+  if (_pep_srcMode_() === "시트") return "";
+  var NL = String.fromCharCode(10);
+  try {
+    if (typeof _v2ob_url_ !== "function" || !_v2ob_url_() || !_v2ob_token_()) {
+      return NL + NL + "🔁 v2 병행: 못 함 — v2 주소·토큰이 없습니다 (_secrets.gs V2_URL · V2_INGEST_TOKEN)";
+    }
+    var lr = srcTab.getLastRow(), lc = srcTab.getLastColumn();
+    var 표 = lr >= 1 ? srcTab.getRange(1, 1, lr, lc).getDisplayValues() : [];
+    var res = UrlFetchApp.fetch(_v2ob_url_() + "/api/setsplit/partner-shadow", {
+      method: "post",
+      contentType: "application/json",
+      headers: { "x-ingest-token": _v2ob_token_() },
+      payload: JSON.stringify({ rows: 표, where: 어디서 }),
+      muteHttpExceptions: true,
+    });
+    var code = res.getResponseCode();
+    var j = null;
+    try { j = JSON.parse(res.getContentText()); } catch (eJ) {}
+    if (code !== 200 || !j || j.ok !== true) {
+      return NL + NL + "🔁 v2 병행: 못 맞댐 — HTTP " + code + " " +
+        String((j && (j.error || j.why)) || res.getContentText()).substring(0, 160);
+    }
+    if (j.못봄) return NL + NL + "🔁 v2 병행: 못 맞댐 — " + j.못봄;
+    var 머리 = "🔁 v2 병행 (시트 " + j.시트회차 + " " + j.줄.시트 + "줄 ↔ v2 " + j.v2회차 + " " + j.줄.v2 + "줄): ";
+    if (j.같다) return NL + NL + 머리 + "✅ 같음 " + j.같음 + "줄";
+    var 글 = NL + NL + 머리 + "⚠ 다름 " + j.다름 + " · 시트만 " + j.시트만 + " · v2만 " + j.v2만 +
+      " (같음 " + j.같음 + ")";
+    var 보기 = [].concat(j.보기 || [], (j.시트만줄 || []).map(function (k) { return "시트에만 " + k; }),
+      (j.v2만줄 || []).map(function (k) { return "v2에만 " + k; }));
+    if (보기.length) 글 += NL + "    " + 보기.slice(0, 8).join(NL + "    ");
+    return 글 + NL + "    자세히: v2 /setsplit/partner-shadow";
+  } catch (e) {
+    return NL + NL + "🔁 v2 병행: 못 맞댐 — " + String(e.message || e).substring(0, 160);
+  }
+}
+
 /** 0 → A, 15 → P */
 function _pep_colLetter_(i) {
   if (i < 0) return "-";
@@ -2947,6 +3009,8 @@ function _pep_pushCore_(silent) {
   } catch (e대조) {
     _대조글_ = "\n\n(원본 대조를 못 했습니다: " + e대조.message + ")";
   }
+  //  v2 병행 — 이어달리기 조각(중간부터)에서는 안 잰다. 처음 한 번만.
+  if (_시작행_ <= 1) _대조글_ += _pep_v2PartnerShadow_(srcTab, tempOnly ? "담기" : "푸시");
 
   var _이어붙임_ = "";
   if (_멈춘행_ > 0) {
