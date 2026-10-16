@@ -10166,6 +10166,20 @@ function _pep_loadSetsplitLedgerInvoices_(invoiceMap, result, srcSS) {
 }
 
 function _pep_loadOwnCarrierInvoices_(invoiceMap, result) {
+  /*  ★ 로젠 재출력부터 가린다 ★  (2026-10-16)
+      마감이 허브 수집보다 먼저 돌아도 앞 출력 번호가 안 섞이게 — 판정과 기록은
+      _partnerOrders.gs `_po_autoVoidRozenReprints_` 한 곳. 적은 뒤엔 모음을 다시 읽는다. */
+  try {
+    if (typeof _po_autoVoidRozenReprints_ === "function") {
+      var _rpLogs = [];
+      var _rp = _po_autoVoidRozenReprints_(_rpLogs);
+      if (_rp.added > 0) _PEP_VOID_SET_ = null;
+      if (result && result.detail) {
+        result.detail.reprintVoided = _rp.added;
+        result.detail.reprintConfirm = _rp.confirm;
+      }
+    }
+  } catch (eRp) {}
   var 자사원천 = [
     {
       이름: "로젠",
@@ -10449,6 +10463,17 @@ function _pep_qtyOverMax_(qty, itemName, invCell) {
 var _PEP_MAP_REFUSED_ = 0;
 
 /** picked = 집하일(yyyymmdd 숫자 또는 화면값). 같은 송장에 이미 날짜가 있으면 유지 */
+/** 폐기송장 번호 모음 — 한 실행에 한 번만 읽는다 (맵에 넣을 때마다 시트를 열지 않게) */
+var _PEP_VOID_SET_ = null;
+function _pep_voidSet_() {
+  if (_PEP_VOID_SET_ === null) {
+    try {
+      _PEP_VOID_SET_ = (typeof _po_loadVoidInvoiceSet_ === "function") ? _po_loadVoidInvoiceSet_() : {};
+    } catch (e) { _PEP_VOID_SET_ = {}; }
+  }
+  return _PEP_VOID_SET_;
+}
+
 function _pep_addInvoiceMap_(map, key, inv, source, carrier, picked) {
   if (!map || !key) return;
   key = String(key).trim();
@@ -10478,6 +10503,11 @@ function _pep_addInvoiceMap_(map, key, inv, source, carrier, picked) {
     return;
   }
   var parts = _pep_splitInvNos_(inv);
+  /*  ★ 폐기송장은 여기서도 뺀다 ★  (2026-10-16)
+      허브 수집은 「대리판매_폐기송장」을 보는데 일일마감은 안 봤다. 재출력된 앞
+      번호가 허브에서는 빠지고 마감에는 남으면 두 장부가 갈린다. 주인은 그 탭 하나다. */
+  var 폐기 = (typeof _pep_voidSet_ === "function") ? _pep_voidSet_() : {};
+  parts = parts.filter(function (p) { return !폐기[p]; });
   if (!parts.length) return;
   if (!map[key]) {
     map[key] = { inv: "", source: source || "", carrier: carrier || "", _set: {}, _dates: {} };

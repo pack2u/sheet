@@ -2016,12 +2016,20 @@ function partnerFetchInvoices() {
     return;
   }
 
+  var scannedLogs = [];
+
+  // ── ★ 로젠 재출력 → 앞 출력은 폐기송장으로 (2026-10-16) ──
+  //  폐기송장을 읽기 «전에» 돌아야 이번 수집부터 앞 번호가 빠진다.
+  var _reprint_ = _po_autoVoidRozenReprints_(scannedLogs);
+  //  이미 붙어 있던 앞 번호는 수집이 다시 안 본다(발송완료 줄은 건너뛴다) —
+  //  새로 적은 것이 있으면 폐기송장 적용으로 허브·업체 파일에서 걷어 낸다.
+  if (_reprint_.added > 0) partnerApplyVoidedInvoicesSilent_();
+
   // ── 폐기송장 목록 로드 ──
   var voidSet = _po_loadVoidInvoiceSet_();
   var voidKeyCount = Object.keys(voidSet).length;
 
   var invoiceMap = {};
-  var scannedLogs = [];
   // ★ 2026-08-26: 원천 읽기 실적·배정 근거를 이번 실행 단위로 모은다.
   //   근거를 남기지 않으면 나중에 점검해도 '근거없음'만 나온다.
   if (typeof _pt_ingestStatReset_ === "function") _pt_ingestStatReset_();
@@ -5823,6 +5831,62 @@ function partnerApplyVoidedInvoicesSilent_() {
   }
 }
 
+/**
+ * ★ 로젠 재출력 → 폐기송장 자동 기록 ★  (2026-10-16)
+ *
+ * 판정은 _partnerHelpers.gs `_pt_findRozenReprints_` 한 곳이다.
+ * 여기서는 «앞 출력» 번호를 폐기송장 탭에 적기만 한다 — 그 탭이 주인이다.
+ * 허브 송장수집·사방넷 push·폐기송장 적용·일일마감(_pep_)이 모두 그 탭을 본다.
+ *
+ * ★ 이미 적힌 번호는 다시 안 적는다 ★  수집은 하루에 여러 번 돈다.
+ * ★ 뒤 묶음이 적은 것은 적지 않는다 ★  로그에 「확인 필요」로만 남긴다.
+ *
+ * @return {{added:number, confirm:number}}
+ */
+function _po_autoVoidRozenReprints_(logs) {
+  var res = { added: 0, confirm: 0 };
+  logs = logs || [];
+  try {
+    var invSS = SpreadsheetApp.openById(_PT_INVOICE_SHEET_ID);
+    var tab = _pt_getSheetByGidOrName_(invSS, _PT_PRIMARY_INVOICE_GID, "입력_로젠주문실적", "재출력", logs);
+    if (!tab || tab.getLastRow() < 1) return res;
+    var col = _PT_ROZEN_FIXED_COL;
+    var w = Math.max(col.uid, col.invoice, col.date) + 1;
+    var rows = tab.getRange(1, 1, tab.getLastRow(), w).getValues();
+    var found = _pt_findRozenReprints_(rows, col);
+
+    for (var c = 0; c < found.confirm.length; c++) {
+      var f = found.confirm[c];
+      logs.push("[재출력] ⚠ 확인 필요 " + f.key + " (" + f.date + ") 앞 " + f.drop.join(",") +
+        " / 뒤 " + f.keep.join(",") + " — 뒤 묶음이 더 적어 자동 폐기 안 함");
+    }
+    res.confirm = found.confirm.length;
+    if (!found.voids.length) return res;
+
+    var voidSet = _po_loadVoidInvoiceSet_();
+    var vTab = _po_getVoidInvoiceTab();
+    var now = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
+    var add = [];
+    for (var i = 0; i < found.voids.length; i++) {
+      var v = found.voids[i];
+      for (var j = 0; j < v.drop.length; j++) {
+        if (voidSet[v.drop[j]]) continue;
+        voidSet[v.drop[j]] = true;
+        add.push([v.drop[j], "", "", "", "",
+          "재출력 자동 — 주문 " + v.key + " (" + v.date + ") 뒤 출력 " + v.keep.join(",") + " 이 맞음", now]);
+      }
+    }
+    if (add.length) {
+      vTab.getRange(vTab.getLastRow() + 1, 1, add.length, add[0].length).setValues(add);
+      res.added = add.length;
+      logs.push("[재출력] 앞 출력 송장 " + add.length + "개를 폐기송장에 적음 (주문 " + found.voids.length + "건)");
+    }
+  } catch (e) {
+    logs.push("[재출력] 오류: " + String(e && e.message || e));
+  }
+  return res;
+}
+
 /** 폐기송장 탭 열기 (메뉴에서 실행 시 탭 생성 + 활성화) */
 function partnerOpenVoidInvoiceTab() {
   var tab = _po_getVoidInvoiceTab();
@@ -6037,6 +6101,9 @@ function _po_addSabangBulkRow_(rows, seen, orderNo, invCell, vendorHint, result)
   return _po_addSabangBulkRowCoded_(rows, seen, orderNo, invCell, code, result);
 }
 
+/** 사방넷 대량등록이 한 번 실행에 한 번만 읽는 폐기송장 모음 */
+var _PO_BULK_VOID_SET_ = null;
+
 function _po_addSabangBulkRowCoded_(rows, seen, orderNo, invCell, code, result) {
   /*  ★ 세트분리(뉴)가 쪼갠 줄은 2314556_S2 로 나간다 ★  (2026-09-29)
       몸통·뚜껑 송장이 따로 돌아오게 로젠·업체에 꼬리표 번호를 보낸다.
@@ -6048,9 +6115,19 @@ function _po_addSabangBulkRowCoded_(rows, seen, orderNo, invCell, code, result) 
   if (_po_isGeneratedUid_(orderNo)) return 0;
   if (!_po_hasRealInvoice_(invCell)) return 0;
   var 장들 = _po_parseInvCell_(invCell);
+  /*  ★ 폐기송장은 사방넷에도 안 보낸다 ★  (2026-10-16)
+      10/15 4차 재출력 17건이 «앞» 번호로 사방넷 엑셀에 실렸다 — 집하된 것은 뒤 번호뿐이었다.
+      허브 수집은 폐기송장을 보는데 이 길은 로젠 탭을 직접 읽어 안 봤다. */
+  if (_PO_BULK_VOID_SET_ === null) {
+    try { _PO_BULK_VOID_SET_ = _po_loadVoidInvoiceSet_(); } catch (eV) { _PO_BULK_VOID_SET_ = {}; }
+  }
   var added = 0;
   for (var k = 0; k < 장들.length; k++) {
     var inv = 장들[k].inv;
+    if (_PO_BULK_VOID_SET_[inv] || _PO_BULK_VOID_SET_[String(inv).replace(/[^0-9]/g, "")]) {
+      result.skipVoided = (result.skipVoided || 0) + 1;
+      continue;
+    }
     //  칸에 적힌 택배사 이름이 업체 기본 택배사를 이긴다 — 한 칸에 로젠·한진을 섞어 적는다
     var c2 = 장들[k].code || code;
     var key = orderNo + "|" + inv;
@@ -6122,6 +6199,9 @@ function _po_parseInvCell_(cell) {
  */
 function _po_rebuildSabangnetBulkUpload_(hubData, scannedLogs) {
   scannedLogs = scannedLogs || [];
+  //  재출력 앞 번호를 먼저 폐기송장에 적고, 모음을 새로 읽게 비운다 (2026-10-16)
+  try { _po_autoVoidRozenReprints_(scannedLogs); } catch (eRp) {}
+  _PO_BULK_VOID_SET_ = null;
     var result = { written: 0, skipGen: 0, skipNoCode: 0, skipNoInv: 0, tempWithInv: 0, lotteOwn: 0, matchTab: 0,
       tempArch: 0, ledger: 0, skipOldArch: 0, ledgerNoVendor: 0, byCode: {} };
     var LOTTE_CODE = _po_sabangCode_("롯데택배", "002");

@@ -3164,6 +3164,91 @@ function _pt_getRequiredParcelSlots(hubRow) {
   return qty;
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 로젠 재출력 가르기 ★  (2026-10-16)
+ *
+ *  > "같은 주문 송장을 2번 출력해서 생긴 일이야..
+ *  >  이럴경우 보통 이후에 출력된 송장이 맞아.."
+ *
+ *  10/15 4차에 38건이 로젠에 두 번 등록됐다(453-7639 → 453-7663).
+ *  송장 수집은 고유ID 에 걸린 송장을 «찾은 만큼» 붙이므로 몸통만 1개 줄에
+ *  송장이 둘씩 들어갔다. 다음 날 배송조회로 보니 47개 전부 «뒤» 번호만 집하됐다.
+ *
+ *  ★ 묶음으로 가른다 ★
+ *    같은 날 · 같은 주문번호(J칸 그대로 — _S 꼬리를 벗기지 않는다)의 송장을
+ *    번호 차례로 늘어놓고, 검사자리를 뺀 번호가 _PT_REPRINT_GAP_ 보다 벌어지면
+ *    다른 출력으로 본다. 한 출력 안의 이웃 번호는 여러 상자다 — 그대로 둔다.
+ *
+ *  ★ 날짜도 열쇠다 ★  다른 날 같은 주문번호는 재발송일 수 있다. 재출력이 아니다.
+ *
+ *  ★ 뒤 묶음이 앞 묶음보다 적으면 «안 건드린다» ★
+ *    5상자 중 찢어진 1장만 다시 뽑은 것일 수 있다. 그때 앞 4장을 버리면
+ *    멀쩡히 나간 상자를 지운다. 그런 묶음은 confirm 에 담아 사람에게 보인다.
+ *
+ *  @param {Array<Array>} rows  입력_로젠주문실적 값 (머리글 없음)
+ *  @param {Object=} col       {uid, invoice, date} — 기본 _PT_ROZEN_FIXED_COL
+ *  @return {{voids:Array, confirm:Array}}  voids/confirm 원소: {key, date, keep[], drop[]}
+ * ══════════════════════════════════════════════════════════════
+ */
+var _PT_REPRINT_GAP_ = 30;
+/*  ★ 하루 넘게 벌어지면 재출력이 아니라 «재발송»이다 ★  (2026-10-16 실측)
+      탭의 날짜 칸은 두 줄 다 같은 날로 찍혀 날짜로는 못 가른다(p0928000026 은
+      9/28 송장과 10/06 송장이 둘 다 10/06 줄로 왔다 — 둘 다 배송완료). 번호로 가른다.
+      로젠 번호는 하루 약 90만씩 는다. 재출력은 같은 날 몇 시간 안이라 차이가 작다
+      (10/15 4차 24만 · 10/07 65만). 재발송은 수백만 (5백만~1천만). */
+var _PT_REPRINT_MAX_SPAN_ = 1000000;
+
+function _pt_reprintDateKey_(v) {
+  if (v instanceof Date && !isNaN(v)) {
+    return v.getFullYear() + "-" + ("0" + (v.getMonth() + 1)).slice(-2) + "-" + ("0" + v.getDate()).slice(-2);
+  }
+  var d = String(v == null ? "" : v).replace(/[^0-9]/g, "");
+  return d.length >= 8 ? d.slice(0, 4) + "-" + d.slice(4, 6) + "-" + d.slice(6, 8) : "";
+}
+
+function _pt_findRozenReprints_(rows, col) {
+  col = col || _PT_ROZEN_FIXED_COL;
+  var 무리 = {};
+  for (var i = 0; i < (rows || []).length; i++) {
+    var r = rows[i] || [];
+    var key = String(r[col.uid] == null ? "" : r[col.uid]).trim();
+    var inv = String(r[col.invoice] == null ? "" : r[col.invoice]).replace(/[^0-9]/g, "");
+    if (!key || inv.length < 10) continue;
+    var d = (col.date !== undefined && col.date >= 0) ? _pt_reprintDateKey_(r[col.date]) : "";
+    var gk = key + "|" + d;
+    if (!무리[gk]) 무리[gk] = { key: key, date: d, invs: {} };
+    무리[gk].invs[inv] = true;
+  }
+  var 몸 = function (s) { return Number(s.slice(0, -1)); };   // 검사자리 뺀 번호
+  var out = { voids: [], confirm: [] };
+  for (var gk2 in 무리) {
+    var g = 무리[gk2];
+    var invs = Object.keys(g.invs).sort(function (a, b) { return 몸(a) - 몸(b); });
+    if (invs.length < 2) continue;
+    var 묶음 = [[invs[0]]];
+    for (var k = 1; k < invs.length; k++) {
+      if (몸(invs[k]) - 몸(invs[k - 1]) > _PT_REPRINT_GAP_) 묶음.push([invs[k]]);
+      else 묶음[묶음.length - 1].push(invs[k]);
+    }
+    if (묶음.length < 2) continue;
+    //  묶음 사이가 하루치 넘게 벌어지면 다른 날 보낸 것(재발송) — 재출력이 아니다
+    var 재발송 = false;
+    for (var m = 1; m < 묶음.length; m++) {
+      if (몸(묶음[m][0]) - 몸(묶음[m - 1][묶음[m - 1].length - 1]) > _PT_REPRINT_MAX_SPAN_) 재발송 = true;
+    }
+    if (재발송) continue;
+    var keep = 묶음[묶음.length - 1];
+    var drop = [].concat.apply([], 묶음.slice(0, -1));
+    var 앞최대 = 0;
+    for (var b = 0; b < 묶음.length - 1; b++) 앞최대 = Math.max(앞최대, 묶음[b].length);
+    var item = { key: g.key, date: g.date, keep: keep, drop: drop };
+    if (keep.length >= 앞최대) out.voids.push(item);
+    else out.confirm.push(item);
+  }
+  return out;
+}
+
 // ═══════════════════════════════════════════
 //  협력업체 허브 전용: 송장 후보 중 best 선택
 //  품목명 열 = index 5 (독립배포는 6)
