@@ -3386,7 +3386,7 @@ function partnerPushFromTempTabToExclusive() {
   // 팩투유 기본 보내는분 (수동 행에 Q/R/S 비어있을 때)
   var _DEFAULT_SENDER_NAME_ = "팩투유";
   var _DEFAULT_SENDER_PHONE_ = "031-923-7795";
-  var _DEFAULT_SENDER_ADDR_ = "경기 평택시 포승읍 석정리 369";
+  var _DEFAULT_SENDER_ADDR_ = "경기도 평택시 성해홍원로 91";   // 2026-10-18 사장님 — 옛 지번 주소(석정리 369)에서 바꿈
 
   for (var ri = 1; ri < srcAll.length; ri++) {
     var row = srcAll[ri];
