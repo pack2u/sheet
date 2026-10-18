@@ -34,6 +34,9 @@ var _PSM_EVERY_MIN_ = 10;         // 창 안에서 10분에 한 번
 var _PSM_MAX_FILES_ = 4;          // 자동 한 차례에 보낼 장 수 (발주 수집 끝에 붙어 돈다 — 길게 잡으면 수집이 밀린다)
 var _PSM_MAX_FILES_MANUAL_ = 40;  // 손으로 누를 땐 한 번에 다 (30분 한도 · 한 장 10~60초)
 var _PSM_MIN_BYTES_ = 15 * 1024;  // 서명·로고 같은 작은 그림은 명세서가 아니다
+/*  ★ 3일 → 14일 (2026-10-18) ★  「특정 업체는 안 읽은 것들이 존재」 — 처음 돌린 10/16 에 3일만 봐서
+    10/13 이전 로엔그린·후아·준테크 메일이 영영 빠졌다. 같은 것은 라벨로 한 번만 보내고, v2 가 사람이 올린 것과 겹치면 «중복»으로 가린다. */
+var _PSM_DAYS_ = 14;
 
 /** 자동 수집이 부른다. 창 밖이거나 10분이 안 지났으면 바로 돌아간다. */
 function _psm_tick_() {
@@ -93,9 +96,10 @@ function psmSendMailStatementsToV2_(manual) {
   var base = (typeof _PSTMT_GMAIL_SEARCH_BASE_ !== "undefined") ? _PSTMT_GMAIL_SEARCH_BASE_
     : "in:inbox -from:me has:attachment newer_than:14d (subject:명세서 OR subject:명세표 OR 마감)";
   //  시트 적재용 라벨(P2U_명세처리완료)은 상관없다 — v2 로 보냈는지는 우리 라벨로 본다
-  var q = base.replace(/-label:\S+/g, "").replace(/newer_than:\d+d/, "newer_than:3d") +
+  var q = base.replace(/-label:\S+/g, "").replace(/newer_than:\d+d/, "newer_than:" + _PSM_DAYS_ + "d") +
     " -label:" + _PSM_LABEL_;
   var label = GmailApp.getUserLabelByName(_PSM_LABEL_) || GmailApp.createLabel(_PSM_LABEL_);
+  try { out.links = _psm_collectEcountLinks_(tok, label); } catch (eL) { out.errors.push("이카운트 링크: " + String(eL && eL.message || eL)); }
   var threads = GmailApp.search(q, 0, manual ? 60 : 30);
   var budget = manual ? _PSM_MAX_FILES_MANUAL_ : _PSM_MAX_FILES_;
   for (var t = 0; t < threads.length; t++) {
@@ -127,11 +131,48 @@ function psmSendMailStatementsToV2_(manual) {
     else if (allOk && !touched) threads[t].addLabel(label);   // 명세서 첨부가 없던 메일 — 다시 안 본다
     if (budget <= 0 && out.more) break;
   }
-  if (out.items.length) {
+  if (out.items.length || (out.links && out.links.added)) {
     try { if (typeof _chat_sendText_ === "function") _chat_sendText_(_psm_summary_(out)); } catch (eC) {}
   }
-  Logger.log("[PSM] " + JSON.stringify({ mails: out.mails, sent: out.sent, dup: out.dup, failed: out.failed, more: out.more }));
+  Logger.log("[PSM] " + JSON.stringify({ mails: out.mails, sent: out.sent, dup: out.dup, failed: out.failed, more: out.more, links: out.links || null }));
   return out;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  이카운트 「수신문서보기」 링크 메일 (2026-10-18, v2 sql/139)
+ *  > "거래명세서 메일에서 읽는데 특정 업체는 안읽은것들이 존재하는데 확인해줘"  > "링크 들어가서 확인해야되"
+ *
+ *  아주팩·부원KH·인터웍스는 ecount@ecount.com 이 보낸다. 첨부가 없어서 위 has:attachment 검색에 영영 안 걸렸다.
+ *  링크 안쪽은 자바스크립트가 그려서 GAS 는 못 연다 → 링크만 뽑아 v2 에 적고, 사장님 PC 예약 작업이 크롬으로 연다.
+ *  같은 메일은 라벨(_PSM_LABEL_)로 한 번만. v2 가 못 받으면 라벨을 안 붙여 다음 차례에 다시.
+ * ══════════════════════════════════════════════════════════════
+ */
+function _psm_collectEcountLinks_(tok, label) {
+  var q = "from:ecount@ecount.com newer_than:30d 거래명세서 -label:" + _PSM_LABEL_;
+  var threads = GmailApp.search(q, 0, 50);
+  var links = [], byThread = [];
+  for (var t = 0; t < threads.length; t++) {
+    var msgs = threads[t].getMessages(), n0 = links.length;
+    for (var m = 0; m < msgs.length; m++) {
+      var body = msgs[m].getBody();
+      var u = /href="(https:\/\/l\.ecount\.com\/[A-Za-z0-9_\-]+)"[^>]*>\s*수신문서보기/.exec(body);
+      if (!u) continue;
+      var who = /\[([^\]]+)\]의 \[[^\]]*\]님이/.exec(body);
+      links.push({ gmail_msg_id: msgs[m].getId(), url: u[1], vendor_hint: who ? who[1] : "",
+        subject: msgs[m].getSubject(), received_at: msgs[m].getDate().toISOString() });
+    }
+    byThread.push({ th: threads[t], n: links.length - n0 });
+  }
+  if (!links.length) return { found: 0, added: 0 };
+  var res = UrlFetchApp.fetch(_psm_v2url_() + "/api/statements/mail-links", {
+    method: "post", contentType: "application/json", headers: { "x-ingest-token": tok },
+    payload: JSON.stringify({ links: links }), muteHttpExceptions: true,
+  });
+  if (res.getResponseCode() !== 200) throw new Error("v2 응답 " + res.getResponseCode());   // ★ 표는 싣지 않는다
+  var j = JSON.parse(res.getContentText());
+  for (var i = 0; i < byThread.length; i++) if (byThread[i].n > 0) byThread[i].th.addLabel(label);
+  return { found: links.length, added: j.added || 0 };
 }
 
 function _psm_postOne_(att, tok) {
@@ -159,7 +200,8 @@ function _psm_postOne_(att, tok) {
 
 function _psm_summary_(r) {
   var L = ["📧 메일 거래명세서 → v2 정산",
-    "보냄 " + r.sent + " · 이미 있음(중복) " + r.dup + " · 실패 " + r.failed + (r.more ? " · 남은 것 다음 차례(10분)" : "")];
+    "보냄 " + r.sent + " · 이미 있음(중복) " + r.dup + " · 실패 " + r.failed + (r.more ? " · 남은 것 다음 차례(10분)" : "") +
+      (r.links && r.links.found ? " · 이카운트 링크 " + r.links.found + "건(새로 " + r.links.added + ") — 17:15 크롬이 연다" : "")];
   for (var i = 0; i < r.items.length && i < 12; i++) {
     var it = r.items[i];
     L.push((it.ok ? (it.dup ? "↺ " : "✓ ") : "✗ ") + (it.vendor || it.subject) +
