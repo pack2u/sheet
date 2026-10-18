@@ -101,17 +101,34 @@ function partnerBuildPriceCheckTab(fromYmd) {
     if (String(L.date) >= m.날) { m.날 = String(L.date); m.L = L; m.개당 = 개당; m.단위 = 단위; }
   }
 
-  //  ④ 업체 단가표 — 「10월인상단가」: 업체(2) 업체품명(3) 박스(4) 인상단가(6, 개당 별도) 우리코드(13)
-  var 단가표 = {};
+  //  ④ 업체 단가표 — 「10월인상단가」: 업체(2) 업체품명(3) 박스(4) 인상단가(6, 개당 별도) 업체비고(10) 우리코드(13)
+  /*  ★ 한글 「세트」 = 몸통 + 뚜껑 ★ (2026-10-18 정희 84줄이 「짝 확인」 — 미니사각찜 23193 세트 191 = 몸통 98 + 「밀폐2319뚜껑」 93)
+      단가표에는 몸통 단가만 있다. 우리 상품이 세트면 ① 비고의 「셋 12.9」 값, 없으면 ② 같은 업체 뚜껑 단가를 더해 견준다. */
+  var 단가표 = {}, 뚜껑들 = {};
   var rt = ss.getSheetByName(_PC_RAISE_TAB_);
   if (rt && rt.getLastRow() > 1) {
     var rv = rt.getRange(2, 1, rt.getLastRow() - 1, 13).getValues();
     for (var j = 0; j < rv.length; j++) {
-      var c = String(rv[j][12] || "").trim(), 인상 = Number(rv[j][5]);
+      var 업 = String(rv[j][1] || ""), 품 = String(rv[j][2] || ""), 인상 = Number(rv[j][5]);
+      if (인상 && /뚜껑|캡|리드/.test(품)) (뚜껑들[업] = 뚜껑들[업] || []).push({ 품명: 품, 개당: 인상 });
+      var c = String(rv[j][12] || "").trim();
       if (!c || !(c in 코드행) || !인상 || /^(미판매|미취급|안씀|안함)$/.test(c)) continue;
-      단가표[코드행[c]] = { 업체: String(rv[j][1] || ""), 품명: String(rv[j][2] || ""), 개당: 인상 };
+      var 셋 = /셋\s*([\d.]+)/.exec(String(rv[j][9] || ""));
+      단가표[코드행[c]] = { 업체: 업, 품명: 품, 개당: 인상, 셋: 셋 ? Number(셋[1]) : null };
     }
   }
+  var 세트품 = function (row) { return /세트|SET|set|셋/.test(String(vals[row][_PC_COL_NAME_ - 1] || "")); };
+  //  세트면 견줄 값을 바꾼다 — {개당, 품명, 덧말}
+  var 세트로 = function (row, t, u) {
+    if (!세트품(row) || isNaN(u)) return null;
+    if (t.셋) return { 개당: t.셋, 품명: t.품명 + " (비고 셋)", 판: null };
+    var ls = 뚜껑들[t.업체] || [];
+    for (var k = 0; k < ls.length; k++) {
+      var 합 = Math.round((t.개당 + ls[k].개당) * 100) / 100;
+      if (Math.abs(합 - u) <= 허용(u)) return { 개당: 합, 품명: t.품명 + " + " + ls[k].품명, 판: "같음(몸통+뚜껑)" };
+    }
+    return null;
+  };
 
   //  ⑤ 새 탭 — 상품정보를 그대로 옮기고(값·꼴) 오른쪽에 견준 칸을 붙인다
   var 이름 = "단가대조_" + Utilities.formatDate(new Date(), "Asia/Seoul", "MMdd");
@@ -135,6 +152,11 @@ function partnerBuildPriceCheckTab(fromYmd) {
   for (var r2 = _PC_HEADER_ROWS_; r2 < lastRow; r2++) {
     var U2 = U_(r2), m2 = 명세[r2], t2 = 단가표[r2];
     var 명판 = m2 ? 판정(m2.개당, U2) : "", 표판 = t2 ? 판정(t2.개당, U2) : "";
+    var 표값 = t2 ? t2.개당 : "", 표품 = t2 ? t2.품명 : "";
+    if (t2 && 표판 !== "같음" && 표판 !== "같음(부가세 포함 단가)") {
+      var s2 = 세트로(r2, t2, U2);
+      if (s2) { 표값 = s2.개당; 표품 = s2.품명; 표판 = s2.판 || 판정(s2.개당, U2); }
+    }
     var 다른 = function (x) { return x === "다름" || x === "짝 확인"; };
     var 종합 = !m2 && !t2 ? "비교 단가 없음" : 다른(명판) || 다른(표판) ? (명판 === "짝 확인" || 표판 === "짝 확인" ? "짝 확인" : "다름") : "같음";
     if (종합 === "같음") 셈.같음++; else if (종합 === "다름") 셈.다름++; else if (종합 === "짝 확인") 셈.짝++; else 셈.없음++;
@@ -142,7 +164,7 @@ function partnerBuildPriceCheckTab(fromYmd) {
     덧값.push([isNaN(U2) ? "" : U2,
       m2 ? m2.L.vendor_name : "", m2 ? m2.날 : "", m2 ? m2.L.item : "", m2 ? m2.L.price : "", m2 ? m2.단위 : "", m2 ? m2.개당 : "",
       m2 && !isNaN(U2) ? Math.round((m2.개당 - U2) * 100) / 100 : "", 명판, m2 ? m2.횟수 + "회 · " + 값가짓수 + "가지" : "",
-      t2 ? t2.업체 : "", t2 ? t2.품명 : "", t2 ? t2.개당 : "", t2 && !isNaN(U2) ? Math.round((t2.개당 - U2) * 100) / 100 : "", 표판, 종합]);
+      t2 ? t2.업체 : "", 표품, 표값, t2 && !isNaN(U2) ? Math.round((Number(표값) - U2) * 100) / 100 : "", 표판, 종합]);
     var Y = _PC_YELLOW_, 줄색 = new Array(덧수).fill(null);
     if (다른(명판)) { 줄색[0] = Y; 줄색[6] = Y; 줄색[7] = Y; 줄색[8] = Y; }
     if (다른(표판)) { 줄색[0] = Y; 줄색[12] = Y; 줄색[13] = Y; 줄색[14] = Y; }
