@@ -1503,18 +1503,41 @@ function ssDisplayName(u) {
  *   앞글자 길이를 4→3→2 로 좁혀 가며 «가장 긴 것»을 고른다.
  *   두 글자 코드(JM·JH)와 세 글자 코드가 섞여 있어도 긴 쪽이 이긴다.
  */
+/**
+ * ★ 품목 앞글자 → 업체코드 별칭 ★  (2026-10-19)
+ * > 사장님: "허브로스팅(HR)을 뉴파츠(NP)로 … 대리발송 HR이 NP로 바뀌는거야"
+ * > "이카운트 품목코드는 그대로 HR이야"
+ *
+ * 품목코드·품목명 앞글자는 HR 그대로인데 「대리발송업체」 표의 코드는 NP 다.
+ * 별칭이 없으면 HR 품목은 업체코드가 빈칸이 된다(대리발송으론 가지만 탭 업체 칸이 빈다).
+ * 표에 앞글자가 «그대로» 있으면 그것이 이긴다 — 별칭은 표에 없을 때만 쓴다.
+ * 사람이 조치 칸에 옛 코드(HR)를 적어도 같은 별칭으로 받는다.
+ * 허브 푸시는 거꾸로 NP → HR 별칭을 둔다(_partnerExclusivePush.gs _PEP_VENDOR_PREFIX_ALIAS_).
+ */
+var SS_VENDOR_PREFIX_ALIAS = { HR: 'NP' };
+
+/** 적힌 코드(또는 앞글자)를 표에 있는 업체코드로. 못 찾으면 받은 그대로(대문자) 돌려준다 */
+function ssVendorCode_(k, vendors) {
+  var up = ssText(k).toUpperCase();
+  if (!up || !vendors) return up;
+  if (vendors[up]) return up;
+  var a = SS_VENDOR_PREFIX_ALIAS[up];
+  if (a && vendors[a]) return a;
+  return up;
+}
+
 function ssVendorOf(u, vendors) {
   if (!vendors) return '';
 
   var name = ssText(u.품목명) || ssText(u.원본품목명);
-  var head = name.split(' ')[0];
+  var head = ssVendorCode_(name.split(' ')[0], vendors);
   if (head && vendors[head]) return head;
 
   var code = ssText(u.품목코드) || ssText(u.원본코드);
   if (!code) return '';
   for (var len = 4; len >= 2; len--) {
     if (code.length < len) continue;
-    var pre = code.substring(0, len).toUpperCase();
+    var pre = ssVendorCode_(code.substring(0, len), vendors);
     if (vendors[pre]) return pre;
   }
   return '';
@@ -2168,7 +2191,8 @@ function ssRoute(units, masters, cfg, warnings) {
     }
     if (적음 === '발송') { ssIslandSkipByManual_(u, warnings); return true; }
     if (민 === '대리발송') return false;
-    if (vendors[민]) { u.업체코드 = 민; u.업체명 = vendors[민]; return false; }
+    var 민업 = ssVendorCode_(민, vendors);   // 옛 코드(HR)를 적어도 표의 코드(NP)로
+    if (vendors[민업]) { u.업체코드 = 민업; u.업체명 = vendors[민업]; return false; }
     //  알아들을 수 없는 말은 «보내지 않는다» — 잘못 보내면 되돌릴 수 없다
     u.route = SS_ROUTE.HOLD;
     u.보류사유 = '도서산간확인';
@@ -2239,6 +2263,7 @@ function ssRoute(units, masters, cfg, warnings) {
     u.조치입력 = ''; u.업체코드입력 = ''; u.메모입력 = '';
     if (ov) {
       u.수동조치 = ov.조치;
+      if (ov.업체코드) ov.업체코드 = ssVendorCode_(ov.업체코드, vendors);   // HR → NP
       if (ov.업체코드) { u.업체코드 = ov.업체코드; u.업체명 = vendors[ov.업체코드] || ''; }
       if (ov.조치 === '대리발송') {
         // 「대리발송업체」 표에 등록된 코드일 때만 넘긴다.
@@ -2413,7 +2438,7 @@ function ssRoute(units, masters, cfg, warnings) {
            버리면 업체코드가 빈칸이 되고, 푸시는 품목 앞 두 글자로 되돌아간다.
            재고가 없어 남에게 맡기는 물건일수록 코드가 «우리 것»이라(MATYG…)
            앞 두 글자로는 아무 데도 안 걸려 미분류로 남는다. */
-        var 예업 = 예외.업체코드;
+        var 예업 = 예외.업체코드 ? ssVendorCode_(예외.업체코드, vendors) : '';   // HR → NP
         if (예업) {
           u.업체코드 = 예업;
           u.업체명 = vendors[예업] || '';
