@@ -137,7 +137,8 @@ function partnerBuildPriceCheckTab(fromYmd) {
   var sh = ss.insertSheet(이름);
   var 덧 = ["상품정보 개당매입별도가(U)",
     "명세서 업체", "명세서 날짜(최근)", "명세서 품목명", "명세서 단가(별도)", "단위", "명세서 개당(별도)", "명세서 차이", "명세서 판정", "명세서 나온 횟수 · 단가 가짓수",
-    "단가표 업체", "단가표 품목명", "단가표 개당(인상단가)", "단가표 차이", "단가표 판정", "종합"];
+    "단가표 업체", "단가표 품목명", "단가표 개당(인상단가)", "단가표 차이", "단가표 판정", "종합",
+    "상품정보 개당매입가(V)", "상품정보 매입가(W)", "U·V·W 에 넣은 단가"];
   var 덧수 = 덧.length, 전체열 = lastCol + 덧수;
   var 아래 = 없음.length ? 없음.length + 2 : 0;
   if (sh.getMaxColumns() < 전체열) sh.insertColumnsAfter(sh.getMaxColumns(), 전체열 - sh.getMaxColumns());
@@ -147,7 +148,11 @@ function partnerBuildPriceCheckTab(fromYmd) {
   원본.copyTo(sh.getRange(1, 1), SpreadsheetApp.CopyPasteType.PASTE_VALUES, false);
   for (var cc = 1; cc <= lastCol; cc++) sh.setColumnWidth(cc, src.getColumnWidth(cc));
 
-  var 덧값 = [], 덧색 = [], U색 = [], W색 = [];
+  /*  ★ 2026-10-18 셋째 판 ★ > "상품정보시트는 놔두고 단가 비교탭에 차이가 나는 부분은 노란색 셀칼라로 바꾸고
+      거래명세서 단가를 넣어주면 찾아서 확인후 바꿀꺼야"
+      다른 줄은 이 탭의 U·V·W 칸에 «업체 단가 기준 값»을 넣고 노랑. 상품정보 원래 값은 오른쪽 칸에 남긴다.
+      명세서가 다르면 명세서 단가, 아니면 단가표 단가. W = 개당 × 1.1 × 수량(N) — 상품정보와 같은 셈. */
+  var 덧값 = [], 덧색 = [], U색 = [], W색 = [], U값 = [], V값 = [], W값 = [];
   var 셈 = { 같음: 0, 다름: 0, 짝: 0, 없음: 0 };
   for (var r2 = _PC_HEADER_ROWS_; r2 < lastRow; r2++) {
     var U2 = U_(r2), m2 = 명세[r2], t2 = 단가표[r2];
@@ -172,14 +177,25 @@ function partnerBuildPriceCheckTab(fromYmd) {
     덧색.push(줄색);
     var 칠 = 다른(명판) || 다른(표판) ? Y : null;
     U색.push([칠]); W색.push([칠]);
+    var 원U = vals[r2][_PC_COL_NET_ - 1], 원V = vals[r2][_PC_COL_NET_], 원W = vals[r2][_PC_COL_BUY_ - 1];
+    var 새개당 = null, 출처 = "";
+    if (다른(명판) && m2) { 새개당 = m2.개당; 출처 = "명세서 " + m2.L.vendor_name + " " + m2.날 + (명판 === "짝 확인" ? " (짝 확인)" : ""); }
+    else if (다른(표판) && t2) { 새개당 = Number(표값); 출처 = "단가표 " + t2.업체 + " " + 표품 + (표판 === "짝 확인" ? " (짝 확인)" : ""); }
+    var N2 = Number(vals[r2][_PC_COL_QTY_ - 1]) || 0;
+    if (새개당 != null) {
+      U값.push([새개당]); V값.push([Math.round(새개당 * 1.1 * 100) / 100]); W값.push([N2 ? Math.round(새개당 * 1.1 * N2) : 원W]);
+    } else { U값.push([원U]); V값.push([원V]); W값.push([원W]); }
+    덧값[덧값.length - 1].push(원V, 원W, 출처);
+    줄색[덧수 - 1] = 칠;
   }
   var 첫 = _PC_HEADER_ROWS_ + 1, 줄수 = lastRow - _PC_HEADER_ROWS_;
   sh.getRange(_PC_HEADER_ROWS_, lastCol + 1, 1, 덧수).setValues([덧]).setFontWeight("bold").setBackground("#FFF2CC").setWrap(true);
   if (줄수 > 0) {
     sh.getRange(첫, lastCol + 1, 줄수, 덧수).setValues(덧값).setBackgrounds(덧색);
     //  상품정보에서 옮겨 온 U·W 칸의 옛 색은 지우고 «다른 줄»만 노랑
-    sh.getRange(첫, _PC_COL_NET_, 줄수, 1).setBackgrounds(U색);
-    sh.getRange(첫, _PC_COL_BUY_, 줄수, 1).setBackgrounds(W색);
+    sh.getRange(첫, _PC_COL_NET_, 줄수, 1).setValues(U값).setBackgrounds(U색);
+    sh.getRange(첫, _PC_COL_NET_ + 1, 줄수, 1).setValues(V값).setBackgrounds(U색);
+    sh.getRange(첫, _PC_COL_BUY_, 줄수, 1).setValues(W값).setBackgrounds(W색);
   }
   //  상품정보에서 못 찾은 명세서 품목 — 맨 아래
   if (없음.length) {
@@ -272,6 +288,43 @@ function partnerApplyJH1018Prices() {
     바꿀.map(function (b) { return b.code + " " + b.옛 + " → " + b.새; }).join("\n") +
     (건너뜀.length ? "\n건너뜀:\n" + 건너뜀.join("\n") : "") +
     "\n\n※ 이카운트 품목 입고단가는 그대로입니다 — 고치지 않으면 다음 동기화 때 W 가 옛 값으로 돌아갑니다.";
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * 위 적용을 되돌린다 — 2026-10-18
+ * > "상품 정보시트는 놔두고 단가 비교탭에 차이가나는 부분은 노란색 셀칼라로 바꾸고 거래명세서 단가를 넣어주면 찾아서 확인후 바꿀꺼야"
+ * 「단가변경이력」에 먼저 남긴 옛 매입가로 W 를 돌리고 노랑을 지운다. 되돌린 것도 이력에 남긴다.
+ * ★ 지금 W 가 우리가 넣은 값일 때만 ★ — 그사이 사람이나 동기화가 바꿨으면 건드리지 않는다.
+ */
+function partnerRevertJH1018Prices() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var p = ss.getSheetByName("상품정보"), lg = ss.getSheetByName("단가변경이력");
+  var lv = lg.getRange(2, 1, lg.getLastRow() - 1, 8).getValues();
+  var 옛 = {};
+  for (var i = 0; i < lv.length; i++) {
+    if (String(lv[i][7]).indexOf("단가대조_1018 에서 적용") < 0) continue;
+    옛[String(lv[i][2])] = { 옛: lv[i][4], 새: Number(lv[i][5]), 이름: lv[i][3] };
+  }
+  var lastRow = p.getLastRow();
+  var codes = p.getRange(1, _PC_COL_CODE_, lastRow, 1).getValues();
+  var buys = p.getRange(1, _PC_COL_BUY_, lastRow, 1).getValues();
+  var 되돌림 = [], 건너뜀 = [];
+  for (var r = _PC_HEADER_ROWS_; r < lastRow; r++) {
+    var c = String(codes[r][0] || "").trim(), o = 옛[c];
+    if (!o || o.done) continue;
+    o.done = true;
+    if (Number(buys[r][0]) !== o.새) { 건너뜀.push(c + " — 지금 " + buys[r][0] + " (우리가 넣은 " + o.새 + " 아님)"); continue; }
+    되돌림.push({ row: r + 1, code: c, 이름: o.이름, 옛: o.옛, 새: o.새 });
+  }
+  var 도장 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss"), 누구 = "";
+  try { 누구 = Session.getActiveUser().getEmail() || ""; } catch (e) {}
+  _pr_writeLog_(되돌림.map(function (b) { return [도장, 누구, b.code, b.이름, b.새, b.옛, "", "되돌림 — 상품정보는 놔두고 단가대조 탭에서 사람이 확인 후 바꾼다"]; }));
+  SpreadsheetApp.flush();
+  for (var k = 0; k < 되돌림.length; k++) p.getRange(되돌림[k].row, _PC_COL_BUY_).setValue(되돌림[k].옛).setBackground(null);
+  SpreadsheetApp.flush();
+  var msg = "되돌림 " + 되돌림.length + "줄 · 건너뜀 " + 건너뜀.length + (건너뜀.length ? "\n" + 건너뜀.join("\n") : "");
   Logger.log(msg);
   return msg;
 }
