@@ -208,3 +208,70 @@ function partnerBuildPriceCheckTab(fromYmd) {
   try { SpreadsheetApp.getUi().alert(msg); } catch (e) { Logger.log(msg); }
   return msg;
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  정희화학 단가표 «다름» 적용 — 2026-10-18 한 번 쓰는 것
+ *  > "정희화학 단가표 다른 28줄 상품정보에 적용해줘" → 「짝 확실한 24줄만」·「상품정보만」(이카운트는 따로)
+ *
+ *  ★ 매입가(W)에만 쓴다 ★  U·V 는 W 에서 나오는 수식이다. W = 새 개당별도가 × 1.1 × 수량(N).
+ *  ★ W 가 수식인 줄은 건너뛴다 ★  ★ 이력을 먼저 남긴다 ★(단가변경이력 — 되돌릴 값)  ★ 바꾼 칸은 노랑 ★
+ *  ★ 이카운트 입고단가는 안 바꿨다 ★  W 의 주인은 이카운트(동기화매핑 IN_PRICE → W)라 다음 동기화 때
+ *    옛 값으로 돌아갈 수 있다 — 이카운트 품목 입고단가를 사람이 같이 고쳐야 남는다.
+ *  빠진 4줄(짝 의심): BFKANSSC30004 정사각 3칸/4칸 공용뚜껑 ↔ 「75*60(3-1번)」 · MASL0033 실링 1496(4호) ↔ 「사각반죽용기(3칸)」
+ *                    · JH1218B0001/0002 실링 12183 소분 ↔ 「사각반죽용기(300)」
+ * ══════════════════════════════════════════════════════════════
+ */
+var _PC_JH1018_ = [
+  //  68파이 SET — 단가표 비고의 셋 단가
+  ["JHN70SAUCE00001", 12.9], ["JHN70SAUCE00003", 16.1], ["JHN70SAUCE_B00001", 12.9], ["JHN70SAUCE_B00003", 16.1],
+  //  68파이 소분 (100·500·1500 세트)
+  ["JH68SAUCE_SB1001", 12.9], ["JH70SAUCE10003", 13.8], ["JH70SAUCE90002", 16.1],
+  ["JH68SAUCE_SB1002", 12.9], ["JH70SAUCEB10001", 13.8], ["JH68SAUCE_SB1003", 16.1],
+  ["JH68SAUCE_SB5001", 12.9], ["JH70SAUCE00010", 13.8], ["JH70SAUCE00012", 16.1],
+  ["JH68SAUCE_SB5002", 12.9], ["JH70SAUCE00011", 13.8], ["JH68SAUCE_SB5003", 16.1],
+  ["JH68SAUCE_SB1501", 12.9], ["JH70SAUCE15001", 13.8], ["JH70SAUCE15003", 16.1],
+  ["JH68SAUCE_SB1502", 12.9], ["JH70SAUCE15002", 13.8], ["JH68SAUCE_SB1503", 16.1],
+  //  75파이 소 몸통 — 단가표 「75*70(3번)」
+  ["JH75SAUCE00005", 21], ["JH75SAUCE00007", 21],
+];
+
+function partnerApplyJH1018Prices() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var p = ss.getSheetByName("상품정보");
+  var lastRow = p.getLastRow();
+  var codes = p.getRange(1, _PC_COL_CODE_, lastRow, 1).getValues();
+  var names = p.getRange(1, _PC_COL_NAME_, lastRow, 1).getValues();
+  var qtys = p.getRange(1, _PC_COL_QTY_, lastRow, 1).getValues();
+  var buyR = p.getRange(1, _PC_COL_BUY_, lastRow, 1);
+  var buys = buyR.getValues(), buyF = buyR.getFormulas();
+  var 행 = {};
+  for (var r = _PC_HEADER_ROWS_; r < lastRow; r++) { var c = String(codes[r][0] || "").trim(); if (c && !(c in 행)) 행[c] = r; }
+
+  var 바꿀 = [], 건너뜀 = [];
+  for (var i = 0; i < _PC_JH1018_.length; i++) {
+    var code = _PC_JH1018_[i][0], 개당 = _PC_JH1018_[i][1];
+    if (!(code in 행)) { 건너뜀.push(code + " — 상품정보에 없음"); continue; }
+    var rr = 행[code], N = Number(qtys[rr][0]) || 0;
+    if (buyF[rr][0]) { 건너뜀.push(code + " — 매입가가 수식"); continue; }
+    if (!N) { 건너뜀.push(code + " — 수량(N) 없음"); continue; }
+    var 새 = Math.round(개당 * 1.1 * N);
+    if (Number(buys[rr][0]) === 새) { 건너뜀.push(code + " — 이미 " + 새); continue; }
+    바꿀.push({ row: rr + 1, code: code, name: String(names[rr][0]), 옛: buys[rr][0], 새: 새, 개당: 개당 });
+  }
+  //  ★ 이력 먼저 ★
+  var 도장 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss"), 누구 = "";
+  try { 누구 = Session.getActiveUser().getEmail() || ""; } catch (e) {}
+  _pr_writeLog_(바꿀.map(function (b) {
+    return [도장, 누구, b.code, b.name, b.옛, b.새, b.개당, "정희 단가표(10월인상단가) ↔ 상품정보 다름 — 단가대조_1018 에서 적용"];
+  }));
+  SpreadsheetApp.flush();
+  for (var k = 0; k < 바꿀.length; k++) p.getRange(바꿀[k].row, _PC_COL_BUY_).setValue(바꿀[k].새).setBackground(_PC_YELLOW_);
+  SpreadsheetApp.flush();
+  var msg = "매입가(W) 바꿈 " + 바꿀.length + "줄 · 건너뜀 " + 건너뜀.length + "\n" +
+    바꿀.map(function (b) { return b.code + " " + b.옛 + " → " + b.새; }).join("\n") +
+    (건너뜀.length ? "\n건너뜀:\n" + 건너뜀.join("\n") : "") +
+    "\n\n※ 이카운트 품목 입고단가는 그대로입니다 — 고치지 않으면 다음 동기화 때 W 가 옛 값으로 돌아갑니다.";
+  Logger.log(msg);
+  return msg;
+}
