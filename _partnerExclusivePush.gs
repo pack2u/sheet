@@ -901,7 +901,14 @@ function _pep_v2PartnerShadow_(srcTab, 어디서) {
  */
 function _pep_v2SourceIfSheetStalled_() {
   var 안바꿈 = { rows: null, header: null, 글: "" };
-  if (_pep_srcMode_() === "시트") return 안바꿈;
+  var 모드 = _pep_srcMode_();
+  if (모드 === "시트") return 안바꿈;
+  /*  ★ 「v2」 모드 (2026-10-19) ★  > 사장님: "v2 모드 만들어줘"
+      스크립트 속성 대리발송원천 = v2 이면 평소에도 v2 대리발송 줄로 보낸다.
+      v2 가 탭 회차(멈췄으면 멈춘 회차)를 «시트 마지막 실행 뒤에» 다시 돈 것일 때만 준다
+      (조치 적용 직후 못 따라온 v2 로 보내면 조치 전 판정이 나간다 — partner-shadow.ts 대리발송원천v2).
+      못 주면 시트 탭으로 보내고 그 사실을 결과 글 맨 앞에 적는다 — 업체 발주를 멈추는 것보다 낫다. */
+  if (모드 === "v2") return _pep_v2SourceAlways_();
   try {
     if (typeof _v2ob_url_ !== "function" || !_v2ob_url_() || !_v2ob_token_()) return 안바꿈;
     var res = UrlFetchApp.fetch(_v2ob_url_() + "/api/setsplit/partner-shadow?%EC%9B%90%EC%B2%9C=1", {
@@ -938,6 +945,63 @@ function _pep_v2SourceIfSheetStalled_() {
   } catch (e) {
     Logger.log("[PEP] v2 원천 확인 실패 — 시트로 갑니다: " + (e.message || e));
     return 안바꿈;
+  }
+}
+
+/** v2 는 칸을 글자로 준다. 시트(getValues)처럼 숫자 칸은 숫자로 — 안 그러면 「2」+「3」이 「23」이 된다 */
+function _pep_v2RowsTyped_(머리, 줄) {
+  var 숫자칸 = {};
+  for (var h = 0; h < 머리.length; h++) {
+    if (/^(순번|택배박스수량|수량|합계|단품배송비)$/.test(String(머리[h]))) 숫자칸[h] = true;
+  }
+  return 줄.map(function (r) {
+    return r.map(function (c, i) {
+      var s = String(c == null ? "" : c);
+      if (숫자칸[i]) {
+        var t = s.replace(/,/g, "");
+        if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+      }
+      return s;
+    });
+  });
+}
+
+/** 「v2」 모드 — 늘 v2 를 먼저. 못 쓰면 시트 탭 + 맨 앞에 까닭 */
+function _pep_v2SourceAlways_() {
+  var 시트로 = function (왜) {
+    return { rows: null, header: null, 글: "⚠ v2 모드인데 이번엔 시트 대리발송 탭으로 보냅니다 — " + 왜 };
+  };
+  try {
+    if (typeof _v2ob_url_ !== "function" || !_v2ob_url_() || !_v2ob_token_()) {
+      return 시트로("v2 주소·토큰이 없습니다 (_secrets.gs V2_URL · V2_INGEST_TOKEN)");
+    }
+    var res = UrlFetchApp.fetch(_v2ob_url_() + "/api/setsplit/partner-shadow?%EC%9B%90%EC%B2%9C=v2", {
+      method: "get",
+      headers: { "x-ingest-token": _v2ob_token_() },
+      muteHttpExceptions: true,
+    });
+    var code = res.getResponseCode();
+    var j = null;
+    try { j = JSON.parse(res.getContentText()); } catch (eJ) {}
+    if (code !== 200 || !j || j.ok !== true) {
+      return 시트로("v2 를 못 불렀습니다 (HTTP " + code + " " +
+        String((j && (j.error || j.why)) || res.getContentText()).substring(0, 120) + ")");
+    }
+    if (!j.줄 || !j.줄.length || !j.머리 || !j.머리.length) {
+      //  줄 0 은 «대리발송이 없는 회차»일 수도 있다 — 까닭이 없으면 그대로 v2(빈 원천)로 간다
+      if (!j.왜 && j.v2회차 && j.머리 && j.머리.length) {
+        return { rows: [], header: j.머리,
+          글: "🔀 원천 v2 (v2 모드) — v2 " + j.v2회차 + " 에 대리발송 줄이 없습니다 (시트 탭 " + j.탭회차 + ")" };
+      }
+      return 시트로(j.왜 || ("v2 결과가 없습니다 (탭 회차 " + j.탭회차 + ")"));
+    }
+    var rows = _pep_v2RowsTyped_(j.머리, j.줄);
+    return { rows: rows, header: j.머리,
+      글: "🔀 원천 v2 (v2 모드) — v2 " + j.v2회차 + " 의 대리발송 " + rows.length + "줄로 보냅니다" +
+        (j.멈춤 ? " · 시트 세트분리 " + j.멈춘회차 + " 는 끝나지 않았습니다(대리발송 탭은 " + j.탭회차 + " 것)" : " (시트 탭 " + j.탭회차 + ")") +
+        (j.다름 ? " · ⚠ 시트와 맞대 다른 줄 " + j.다름 + " — v2 /setsplit/auto 맞대기를 보세요" : "") };
+  } catch (e) {
+    return 시트로("v2 확인 실패: " + String(e.message || e).substring(0, 120));
   }
 }
 
