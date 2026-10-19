@@ -110,13 +110,21 @@ function csListInquiries(opts) {
    ══════════════════════════════════════════════════════════════ */
 var _CFU_PATH_ = "/api/byto/followups";
 
-/** 오늘(또는 day=YYYY-MM-DD) 치 — 아직 안 고른 것만 */
+/**
+ * 오늘(또는 day=YYYY-MM-DD) 치 — 아직 안 고른 것만.
+ *
+ * all:true 면 ★지난 것까지★ 전부 — 화면이 「지난 것 N건」을 눌렀을 때만 쓴다.
+ * 기본을 전부로 하지 않는 까닭: 그림자로 돌던 때의 지난 판정이 135건 쌓여 있어
+ * 오늘 것이 묻힌다. 그래도 ★조용히 사라지면 안 되니★ v2 가 older(지난 건수)를
+ * 늘 함께 준다.
+ */
 function csListCallFollowups(opts) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   opts = opts || {};
-  var q = _CFU_PATH_;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(opts.day || ""))) q += "?day=" + opts.day;
-  return _csq_call_("get", q, null);
+  var qs = [];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(opts.day || ""))) qs.push("day=" + opts.day);
+  if (opts.all) qs.push("all=1");
+  return _csq_call_("get", _CFU_PATH_ + (qs.length ? "?" + qs.join("&") : ""), null);
 }
 
 /**

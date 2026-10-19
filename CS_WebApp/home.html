@@ -2961,6 +2961,18 @@
     .cfu-acts .ok2 { background: rgba(255,255,255,0.08); color: var(--text-secondary); }
     .cfu-acts button:disabled { opacity: 0.45; cursor: default; }
     .cfu-empty { font-size: 12px; color: var(--text-muted); padding: 4px 2px; }
+    /*  지난 날짜 딱지 — 오늘 것과 ★눈으로 구분★되어야 한다 */
+    .cfu-old {
+      flex: 0 0 auto; font-size: 11px; font-weight: 700; padding: 1px 5px;
+      border-radius: 4px; background: rgba(255,167,38,0.18); color: #ffa726;
+      font-variant-numeric: tabular-nums;
+    }
+    :root[data-theme="light"] .cfu-old { color: #e65100; }
+    .cfu-more {
+      font-size: 11px; padding: 2px 7px; margin-left: 2px; border: 0; cursor: pointer;
+      border-radius: 5px; background: rgba(33,150,243,0.16); color: #42a5f5;
+    }
+    :root[data-theme="light"] .cfu-more { color: #1565c0; }
     @media (max-width: 560px) {
       /*  폰에서는 두 줄로 — 가로로 밀어 넣으면 요약이 두 글자만 남는다 */
       .cfu-row { flex-wrap: wrap; }
@@ -4152,7 +4164,10 @@
                 이제 v2 는 판정만 쌓고(byto_call_followups), 고르는 일은 사람이 한다 —
                   「애프터 CS로」 → After CS 문의가 만들어진다
                   「확인」        → 이 목록에서만 내려간다 (판정 줄은 안 지운다)
-                둘 다 안 누르면 그대로 남는다. ★조용히 사라지지 않는다★ -->
+                둘 다 안 누르면 그대로 남는다. ★조용히 사라지지 않는다★
+                오늘 못 고른 것은 꼬리의 「지난 것 N건 · 보기」로 꺼낸다 —
+                목록은 오늘 치로 좁혀 두되(그림자 시절 판정 135건에 묻히지
+                않게) 남은 건수는 늘 보인다.                  (2026-10-20) -->
           <div id="cfuBox" class="os-dash" hidden>
             <div class="os-dash-head">
               <span class="csq-title">📞 금일 할 내용 <b id="cfuCount">0</b></span>
@@ -9394,6 +9409,12 @@
          여기서 또 고르면 목록에 보이던 글과 After CS 에 적히는 글이 달라진다.
        ══════════════════════════════════════════════════════════ */
     var CFU_ROWS = [], CFU_AT = 0, cfuBusy = false;
+    /*  ★ 「오늘 치」로 좁혀 놓으면 어제 늦게 판정된 건이 조용히 사라진다 ★
+        그래서 v2 가 older(오늘보다 앞선 미처리 건수)를 늘 함께 준다. 쌓인 게
+        있으면 꼬리에 「지난 것 N건 — 보기」가 서고, 눌러야 그때 다 읽는다.
+        기본을 전부로 하지 않는 까닭: 그림자로 돌던 때의 판정이 135건 있어
+        오늘 것이 묻힌다.                                        (2026-10-20)  */
+    var CFU_OLDER = 0, CFU_ALL = false, CFU_DAY = '';
 
     function loadCfu(force) {
       if (cfuBusy) return;
@@ -9406,13 +9427,31 @@
           if (!res || !res.ok) { renderCfu(String((res && res.error) || '까닭 모름')); return; }
           CFU_AT = Date.now();
           CFU_ROWS = res.rows || [];
+          CFU_DAY = String(res.day || '');
+          /*  전부 보기일 때 v2 는 older 를 세지 않는다(다 준 터라 0 이다).
+              그 0 으로 덮으면 「오늘 것만 보기」로 돌아왔을 때 꼬리가 사라진다.  */
+          if (!res.all) CFU_OLDER = Number(res.older || 0);
           renderCfu();
         })
         .withFailureHandler(function (e) {
           cfuBusy = false;
           renderCfu(String((e && e.message) || e || '까닭 모름'));
         })
-        .csListCallFollowups({});
+        .csListCallFollowups({ all: CFU_ALL });
+    }
+
+    /** 오늘 것만 ↔ 지난 것까지. 고른 것은 다시 읽어야 한다 */
+    function cfuScope(all) {
+      CFU_ALL = !!all;
+      CFU_AT = 0;          // 묵힌 것으로 그리면 범위가 안 바뀐 듯 보인다
+      loadCfu(true);
+    }
+
+    /** ISO 시각 → 서울 YYYY-MM-DD. 서버와 같은 셈(+9h)이라야 날이 어긋나지 않는다 */
+    function cfuDay(iso) {
+      var t = Date.parse(String(iso || ''));
+      if (!t) return '';
+      return new Date(t + 9 * 3600000).toISOString().slice(0, 10);
     }
 
     function renderCfu(err) {
@@ -9428,13 +9467,20 @@
         list.innerHTML = '<div class="cfu-empty">못 읽었습니다 — ' + esc(err) + '</div>';
         return;
       }
-      if (!CFU_ROWS.length) { box.hidden = true; if (n) n.textContent = '0'; list.innerHTML = ''; return; }
+      /*  오늘 것이 없어도 ★지난 것이 남아 있으면 상자를 세운다★ —
+          숨기면 그 N건이 아무 자취 없이 사라진다.                        */
+      if (!CFU_ROWS.length && !CFU_OLDER) {
+        box.hidden = true; if (n) n.textContent = '0'; list.innerHTML = ''; return;
+      }
       box.hidden = false;
       if (n) n.textContent = String(CFU_ROWS.length);
       list.innerHTML = CFU_ROWS.map(function (r) {
         var s = String(r.call_serial || '');
         var 클레임 = String(r.verdict || '') === '클레임';
+        var 날 = cfuDay(r.at);
+        var 지난 = !!(날 && CFU_DAY && 날 !== CFU_DAY);
         return '<div class="cfu-row" id="cfu-' + esc(s) + '">' +
+          (지난 ? '<span class="cfu-old" title="' + esc(날) + '">' + esc(날.slice(5).replace('-', '/')) + '</span>' : '') +
           '<span class="cfu-kind' + (클레임 ? ' claim' : '') + '">' + esc(r.verdict || '') + '</span>' +
           '<span class="cfu-sum" title="' + esc(r.summary || '') + '">' + esc(r.summary || '(내용 없음)') + '</span>' +
           '<span class="cfu-who" title="' + esc(r.who || '') + '">' + esc(r.who || '(모름)') + '</span>' +
@@ -9443,7 +9489,20 @@
             '<button type="button" class="ok2" onclick="cfuPick(\'' + js(s) + '\', \'확인\', this)">확인</button>' +
           '</span>' +
         '</div>';
-      }).join('');
+      }).join('') + cfuTailHtml();
+    }
+
+    /** 꼬리 — 「지난 것 N건 · 보기」 / 「오늘 것만 보기」 */
+    function cfuTailHtml() {
+      if (CFU_ALL) {
+        return '<div class="cfu-empty">지난 것까지 보고 있습니다 ' +
+          '<button type="button" class="cfu-more" onclick="cfuScope(false)">오늘 것만 보기</button></div>';
+      }
+      if (CFU_OLDER > 0) {
+        return '<div class="cfu-empty">지난 것 <b>' + CFU_OLDER + '건</b>이 아직 남아 있습니다 ' +
+          '<button type="button" class="cfu-more" onclick="cfuScope(true)">보기</button></div>';
+      }
+      return '';
     }
 
     function cfuPick(serial, action, btn) {
@@ -9460,6 +9519,13 @@
             return;
           }
           //  목록에서 내린다 — 서버가 「이미 누군가 골랐다」고 해도 마찬가지다
+          /*  내린 줄이 «지난 것»이었으면 남은 수도 같이 줄인다 — 안 줄이면
+              꼬리의 N 이 다 처리한 뒤에도 그대로 서 있는다.                 */
+          CFU_ROWS.forEach(function (x) {
+            if (String(x.call_serial) !== String(serial)) return;
+            var 날 = cfuDay(x.at);
+            if (날 && CFU_DAY && 날 !== CFU_DAY && CFU_OLDER > 0) CFU_OLDER--;
+          });
           CFU_ROWS = CFU_ROWS.filter(function (x) { return String(x.call_serial) !== String(serial); });
           renderCfu();
           if (res.already) toast('이미 ' + res.already + ' 된 건입니다', 2600);

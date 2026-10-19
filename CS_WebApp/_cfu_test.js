@@ -34,7 +34,7 @@ function 틀(html) {
   const i = html.indexOf("var CFU_ROWS = []");
   const j = html.indexOf("function loadCsq(force) {", i);
   if (i < 0 || j < 0) return null;
-  const 본것 = { 보낸것: [], 토스트: [], 그린것: "" };
+  const 본것 = { 보낸것: [], 물은것: [], 토스트: [], 그린것: "" };
   const 단추들 = [];
   const el = (id) => ({
     id, textContent: "", innerHTML: "", hidden: false,
@@ -58,11 +58,12 @@ function 틀(html) {
     google: { script: { run: {
       withSuccessHandler(f) { this._s = f; return this; },
       withFailureHandler(f) { this._f = f; return this; },
-      csListCallFollowups() { return this; },
+      csListCallFollowups(p) { 본것.물은것.push(p || {}); if (ctx.__목록답) this._s(ctx.__목록답); return this; },
       csPickCallFollowup(p) { 본것.보낸것.push(p); if (ctx.__답) this._s(ctx.__답); return this; },
     } } },
     __담당자: "김CS",
     __답: { ok: true },
+    __목록답: null,
     __본것: 본것, __단추들: 단추들, __상자: 상자, __목록: 목록, __셈: 셈,
   };
   vm.createContext(ctx);
@@ -140,6 +141,51 @@ function 재보기(고침) {
       ctx.cfuPick("A2", "확인", b1);
       if (ctx.__본것.보낸것.length !== 0) 운것.push("⑤담당자없이보냄");
       if (!/담당자/.test(ctx.__본것.토스트.join(" "))) 운것.push("⑤담당자를말함");
+
+      /*  ⑨ ★ 지난 것이 조용히 사라지지 않는다 ★   (2026-10-20)
+       *
+       *  목록을 「오늘 치」로 좁혀 놓았더니 어제 늦게 판정된 16건과 그림자
+       *  시절 135건이 아무 자취 없이 묻혀 있었다. 「확인을 눌러야 사라진다」고
+       *  적어 두고 정작 날짜로 사라지게 만든 꼴이다.
+       */
+      ctx.__목록답 = { ok: true, day: "2026-10-20", rows: [], older: 16 };
+      ctx.CFU_AT = 0;
+      ctx.loadCfu(true);
+      if (ctx.__상자.hidden) 운것.push("⑨지난것이있는데숨김");
+      if (!/지난 것 <b>16건<\/b>/.test(ctx.__목록.innerHTML)) 운것.push("⑨지난것을안알림");
+
+      //  「보기」를 누르면 전부를 묻는다
+      ctx.__본것.물은것.length = 0;
+      ctx.cfuScope(true);
+      if (!(ctx.__본것.물은것[0] && ctx.__본것.물은것[0].all)) 운것.push("⑨보기가전부를안물음");
+
+      //  지난 줄에는 날짜 딱지가 붙는다 — 오늘 것과 섞이면 안 된다
+      ctx.__목록답 = {
+        ok: true, day: "2026-10-20", all: true, older: 0,
+        rows: [{ call_serial: "B1", verdict: "약속", summary: "지난 약속", who: "가게",
+                 at: "2026-10-16T05:00:00+00:00" }],
+      };
+      ctx.CFU_AT = 0;
+      ctx.loadCfu(true);
+      if (!/cfu-old/.test(ctx.__목록.innerHTML)) 운것.push("⑨지난날짜딱지가없음");
+      if (!/>10\/16</.test(ctx.__목록.innerHTML)) 운것.push("⑨날짜가틀림");
+      //  전부 보기에서는 되돌아갈 길이 보여야 한다
+      if (!/오늘 것만 보기/.test(ctx.__목록.innerHTML)) 운것.push("⑨돌아갈길이없음");
+    }
+
+    /* ⑨' v2 와 다리도 「지난 것」을 나른다 */
+    {
+      const api = g("api");
+      if (!/rows: 줄, older/.test(api)) 운것.push("⑨'older를안줌");
+      if (!/searchParams\.get\("all"\) === "1"/.test(api)) 운것.push("⑨'전부보기가없음");
+      /*  ★ 두 물음이 같은 잣대여야 한다 ★ 목록과 「지난 것 N건」이 어긋나면
+          눌러도 안 나오거나, 0 건인데 꼬리가 서 있는 꼴이 된다.            */
+      const 잣대 = api.match(
+        /\.in\("verdict", \["약속", "클레임"\]\)\s*\.is\("cs_inquiry_id", null\)\s*\.is\("dismissed_at", null\)/g
+      ) || [];
+      if (잣대.length < 2) 운것.push("⑨'두물음의잣대가다름(" + 잣대.length + ")");
+      const gs = g("gs");
+      if (!/qs\.push\("all=1"\)/.test(gs)) 운것.push("⑨'다리가all을안나름");
     }
 
     /* ⑦ 확인해도 줄은 안 지운다 */
@@ -195,7 +241,17 @@ const 깨기 = [
   ["판정에 상품을 안 적는다", { fu: FU.replace("item: read.item || null,", "") }],
   ["★ 누르고도 안 잠근다 ★", { home: H.replace(/if \(row\) \{ var bs = row\.querySelectorAll\('button'\);[^\n]*\n/, "") }],
   ["담당자 검사를 뺀다", { home: H.replace("if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }", "") }],
-  ["비어도 상자를 세워 둔다", { home: H.replace("if (!CFU_ROWS.length) { box.hidden = true;", "if (false) { box.hidden = true;") }],
+  ["비어도 상자를 세워 둔다", { home: H.replace("if (!CFU_ROWS.length && !CFU_OLDER) {", "if (false) {") }],
+  /*  ★ 이 넷이 10/20 의 결함을 문다 ★ 「확인을 눌러야 사라진다」고 적어 두고
+      정작 날짜로 사라지게 만들어 151건이 묻혀 있었다.                      */
+  ["★ 지난 것이 있어도 상자를 숨긴다 ★", { home: H.replace(" && !CFU_OLDER", "") }],
+  ["꼬리를 안 그린다", { home: H.replace("}).join('') + cfuTailHtml();", "}).join('');") }],
+  ["★ v2 가 지난 건수를 안 준다 ★", { api: API.replace("rows: 줄, older, all: 전부", "rows: 줄") }],
+  ["다리가 전부 보기를 안 나른다", { gs: GS.replace('if (opts.all) qs.push("all=1");', "") }],
+  ["「보기」가 범위를 안 바꾼다", { home: H.replace("CFU_ALL = !!all;", "") }],
+  ["지난 줄에 날짜를 안 붙인다", { home: H.replace("(지난 ? '<span class=\"cfu-old\"", "(false ? '<span class=\"cfu-old\"") }],
+  ["두 물음의 잣대가 어긋난다", { api: API.replace(
+    /\.is\("dismissed_at", null\)(\s*)\.lt\("processed_at", 시작\)/, '$1.lt("processed_at", 시작)') }],
   ["못 읽어도 숨긴다", { home: H.replace(/if \(err\) \{\s*\n\s*box\.hidden = false;/, "if (err) {\n        box.hidden = true;") }],
   ["화면이 요약을 제 맘대로 고른다", { api: API.replace(/summary: String\(r\.extract \|\| r\.reason \|\| ""\)/, 'summary: ""') }],
   ["보낼 때 다른 이름을 쓴다", { api: API.replace(/vendor: 보일이름\([^)]*\),/, "vendor: null,") }],
