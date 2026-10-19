@@ -2928,6 +2928,45 @@
     /*  완료처리 — 반품접수(주황) 옆에 서므로 색을 달리한다. 끝내는 단추라
         눈에 띄되 앞서지 않게 초록 계열로 두고, 두 밝기 모두에서 읽히게
         글자색을 따로 못 박는다(테마 토큰이 없는 색이다). (2026-10-14)  */
+    /*  ★ 금일 할 내용 ★  (2026-10-19) — 통화에서 추린 것, 고르면 After CS 로.
+        한 줄에 「요약 · 누구 · 단추 둘」. 줄이 길어지면 요약만 줄인다 —
+        누구인지와 단추는 늘 보여야 한다.                                   */
+    .cfu-list { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+    .cfu-row {
+      display: flex; align-items: center; gap: 8px; min-width: 0;
+      padding: 7px 9px; border-radius: 8px;
+      background: var(--bg-secondary); border: 1px solid var(--border);
+    }
+    .cfu-kind {
+      flex: 0 0 auto; font-size: 10.5px; font-weight: 700; padding: 1px 6px;
+      border-radius: 6px; background: rgba(255,255,255,0.10); color: var(--text-secondary);
+    }
+    .cfu-kind.claim { background: rgba(229,115,115,0.18); color: #e57373; }
+    :root[data-theme="light"] .cfu-kind.claim { color: #c62828; }
+    .cfu-sum {
+      flex: 1 1 auto; min-width: 0; font-size: 12.5px; color: var(--text-primary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .cfu-who {
+      flex: 0 0 auto; max-width: 180px; font-size: 11.5px; color: var(--text-secondary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .cfu-acts { flex: 0 0 auto; display: flex; gap: 4px; }
+    .cfu-acts button {
+      font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+      padding: 4px 9px; border-radius: 7px; border: 1px solid transparent;
+    }
+    .cfu-acts .go { background: rgba(33,150,243,0.16); color: #42a5f5; }
+    :root[data-theme="light"] .cfu-acts .go { color: #1565c0; }
+    .cfu-acts .ok2 { background: rgba(255,255,255,0.08); color: var(--text-secondary); }
+    .cfu-acts button:disabled { opacity: 0.45; cursor: default; }
+    .cfu-empty { font-size: 12px; color: var(--text-muted); padding: 4px 2px; }
+    @media (max-width: 560px) {
+      /*  폰에서는 두 줄로 — 가로로 밀어 넣으면 요약이 두 글자만 남는다 */
+      .cfu-row { flex-wrap: wrap; }
+      .cfu-sum { flex: 1 1 100%; white-space: normal; }
+    }
+
     .ret-done-btn { background: rgba(76,175,80,0.14); color: #4caf50; }
     .ret-done-btn:hover { background: rgba(76,175,80,0.24); }
     :root[data-theme="light"] .ret-done-btn { color: #2e7d32; }
@@ -3933,6 +3972,20 @@
       <div class="menu-arrow">›</div>
     </a>
 
+    <!-- ★ 2026-10-19 업종별 개업 추천 — v2 /recommend ★
+         「CS들이 고객에게 추천할수 있는 시스템… 쇼핑몰 이미지 섬네일… 문자로 클릭하면 해당 링크로」
+         사진·고르기·링크 만들기는 v2 한 곳에만 둔다(두 벌이면 한쪽만 고쳐진다). 여기는 가는 길만.
+         발주 카드와 같은 까닭으로 <a target="_blank"> 다. -->
+    <a class="menu-card" href="<?= v2Url ?>/recommend" target="_blank" rel="noopener"
+       style="border-color: rgba(253, 184, 19,0.3); text-decoration:none; color:inherit;">
+      <div class="menu-icon" style="background: linear-gradient(135deg, rgba(253, 184, 19,0.2), rgba(253, 184, 19,0.06)); color: #FDB813;">🏪</div>
+      <div class="menu-text">
+        <div class="menu-title">업종별 개업 추천 <span style="font-size:10px;color:#c98d00;background:rgba(253, 184, 19,0.14);padding:2px 6px;border-radius:6px;margin-left:6px;">v2</span></div>
+        <div class="menu-desc">감자탕·카페·쌀국수… 업종 고르고 사진 보며 담기 → 문자 링크로 손님께</div>
+      </div>
+      <div class="menu-arrow">›</div>
+    </a>
+
     <div class="menu-card cs" onclick="openPage('return_intake')" style="border-color: rgba(85, 166, 124,0.25);">
       <div class="menu-icon" style="background: linear-gradient(135deg, rgba(85, 166, 124,0.18), rgba(85, 166, 124,0.06)); color: #34c77b;">📥</div>
       <div class="menu-text">
@@ -4089,6 +4142,28 @@
                 > "문의글 쓰기부분만 접혀있는 상태인거지"
                 목록은 늘 보인다 — 처리할 문의가 몇 건인지 눈에 안 띄면 안 본다.
                 글쓰기 칸만 접어 둔다. 늘 펴 두면 목록이 아래로 밀린다. -->
+          <!--  ★ 금일 할 내용 ★  (2026-10-19)
+                > "전화 통화 내용중에 추후에 할내용이 있는것이 다들어오는데.
+                >  이부분은 따로 만드는게 나을꺼 같아.. 그중에 골라서 애프터 cs 로
+                >  직원들이 옮기는것이 좋을꺼 같아"
+
+                바이토 통화를 읽어 약속·클레임으로 뽑은 것이 여기 선다.
+                여태는 After CS 에 ★바로★ 들어가 사람 문의가 그 사이에 묻혔다.
+                이제 v2 는 판정만 쌓고(byto_call_followups), 고르는 일은 사람이 한다 —
+                  「애프터 CS로」 → After CS 문의가 만들어진다
+                  「확인」        → 이 목록에서만 내려간다 (판정 줄은 안 지운다)
+                둘 다 안 누르면 그대로 남는다. ★조용히 사라지지 않는다★ -->
+          <div id="cfuBox" class="os-dash" hidden>
+            <div class="os-dash-head">
+              <span class="csq-title">📞 금일 할 내용 <b id="cfuCount">0</b></span>
+              <span class="os-dash-sub" id="cfuSub">통화에서 추린 것 — 고르면 After CS 로 갑니다</span>
+            </div>
+            <div class="csq-top">
+              <button type="button" class="os-chip ghost" onclick="loadCfu(true)" title="새로 읽기">↻</button>
+            </div>
+            <div id="cfuList" class="cfu-list"></div>
+          </div>
+
           <div id="csqBox" class="os-dash">
             <div class="os-dash-head">
               <span class="csq-title">💬 After CS <b id="csqCount">0</b></span>
@@ -5026,6 +5101,7 @@
       renderOrderDashboard();
       loadStockout();   /* 팩투유 품절상품 — 화면 열 때 한 번 (2026-09-11) */
       loadCsq();        /* CS 문의 — 열 때 한 번, 10분 지나면 다시 (2026-10-02) */
+      loadCfu();        /* 금일 할 내용 — 통화에서 추린 것, 5분 지나면 다시 (2026-10-19) */
       loadByto(true);   /* 바이토 콜백 대기 — 열 때 한 번, 그 뒤 2분마다 (2026-10-10) */
       /*  수집기가 «새 연락이 오면 바로» 돌게 됐다(byto-watch, 1~2분). 화면이 5분마다
           읽으면 그게 병목이 된다. v2 한 번 묻는 값이라 2분이어도 가볍다.  */
@@ -9309,6 +9385,92 @@
         return row + '</div>';
       }).join('');
       return h + '<div class="byto-tl-note">최근 ' + items.length + '건 · 바이토 ' + esc(bytoWhen(collectedAt)) + ' 기준 · 새 연락은 1분 안에 들어옵니다</div>';
+    }
+
+    /* ══ 금일 할 내용 ══════════════════════════════════════════
+       통화에서 추린 약속·클레임. 고르면 After CS 로 가고, 확인하면 내려간다.
+
+       ★ 화면이 판단하지 않는다 ★ 한 줄 요약도 「누구」도 v2 가 정해서 준다.
+         여기서 또 고르면 목록에 보이던 글과 After CS 에 적히는 글이 달라진다.
+       ══════════════════════════════════════════════════════════ */
+    var CFU_ROWS = [], CFU_AT = 0, cfuBusy = false;
+
+    function loadCfu(force) {
+      if (cfuBusy) return;
+      if (!force && CFU_AT && Date.now() - CFU_AT < 300000) { renderCfu(); return; }
+      cfuBusy = true;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          cfuBusy = false;
+          //  못 읽었으면 읽은 때를 안 찍는다 — 찍으면 5분간 옛 글이 그대로 남는다
+          if (!res || !res.ok) { renderCfu(String((res && res.error) || '까닭 모름')); return; }
+          CFU_AT = Date.now();
+          CFU_ROWS = res.rows || [];
+          renderCfu();
+        })
+        .withFailureHandler(function (e) {
+          cfuBusy = false;
+          renderCfu(String((e && e.message) || e || '까닭 모름'));
+        })
+        .csListCallFollowups({});
+    }
+
+    function renderCfu(err) {
+      var box = document.getElementById('cfuBox');
+      var list = document.getElementById('cfuList');
+      var n = document.getElementById('cfuCount');
+      if (!box || !list) return;
+      /*  ★ 없으면 상자째 숨긴다 ★ 빈 상자가 늘 서 있으면 자리만 먹고,
+          있을 때 눈에 안 띈다. 오류일 때는 보여 줘야 고칠 수 있다.  */
+      if (err) {
+        box.hidden = false;
+        if (n) n.textContent = '?';
+        list.innerHTML = '<div class="cfu-empty">못 읽었습니다 — ' + esc(err) + '</div>';
+        return;
+      }
+      if (!CFU_ROWS.length) { box.hidden = true; if (n) n.textContent = '0'; list.innerHTML = ''; return; }
+      box.hidden = false;
+      if (n) n.textContent = String(CFU_ROWS.length);
+      list.innerHTML = CFU_ROWS.map(function (r) {
+        var s = String(r.call_serial || '');
+        var 클레임 = String(r.verdict || '') === '클레임';
+        return '<div class="cfu-row" id="cfu-' + esc(s) + '">' +
+          '<span class="cfu-kind' + (클레임 ? ' claim' : '') + '">' + esc(r.verdict || '') + '</span>' +
+          '<span class="cfu-sum" title="' + esc(r.summary || '') + '">' + esc(r.summary || '(내용 없음)') + '</span>' +
+          '<span class="cfu-who" title="' + esc(r.who || '') + '">' + esc(r.who || '(모름)') + '</span>' +
+          '<span class="cfu-acts">' +
+            '<button type="button" class="go" onclick="cfuPick(\'' + js(s) + '\', \'보내기\', this)">애프터 CS로</button>' +
+            '<button type="button" class="ok2" onclick="cfuPick(\'' + js(s) + '\', \'확인\', this)">확인</button>' +
+          '</span>' +
+        '</div>';
+      }).join('');
+    }
+
+    function cfuPick(serial, action, btn) {
+      var staff = returnStaffName ? returnStaffName() : '';
+      if (!staff) { toast('담당자를 먼저 선택하세요 (홈에서 CS 접수)'); return; }
+      var row = document.getElementById('cfu-' + serial);
+      /*  ★ 두 단추를 같이 잠근다 ★ 보내기를 누르고 확인을 또 누르면 두 번 간다  */
+      if (row) { var bs = row.querySelectorAll('button'); for (var i = 0; i < bs.length; i++) bs[i].disabled = true; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.ok) {
+            if (row) { var b2 = row.querySelectorAll('button'); for (var j = 0; j < b2.length; j++) b2[j].disabled = false; }
+            toast((res && res.error) || '처리 실패', 3000);
+            return;
+          }
+          //  목록에서 내린다 — 서버가 「이미 누군가 골랐다」고 해도 마찬가지다
+          CFU_ROWS = CFU_ROWS.filter(function (x) { return String(x.call_serial) !== String(serial); });
+          renderCfu();
+          if (res.already) toast('이미 ' + res.already + ' 된 건입니다', 2600);
+          else if (action === '보내기') { toast('After CS 로 보냈습니다'); loadCsq(true); }
+          else toast('확인했습니다');
+        })
+        .withFailureHandler(function (e) {
+          if (row) { var b3 = row.querySelectorAll('button'); for (var k = 0; k < b3.length; k++) b3[k].disabled = false; }
+          toast(String((e && e.message) || e), 3000);
+        })
+        .csPickCallFollowup({ call_serial: serial, action: action, staff: staff });
     }
 
     function loadCsq(force) {

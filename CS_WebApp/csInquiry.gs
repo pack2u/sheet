@@ -98,6 +98,43 @@ function csListInquiries(opts) {
  * @param {{id:string=, vendor:string, item:string, body:string,
  *          followup:string=, photos:Array=, staff:string}} p
  */
+/* ══════════════════════════════════════════════════════════════
+   금일 할 내용 — 바이토 통화에서 추린 약속·클레임   (2026-10-19)
+
+   > 사장님: "통화 내용중에 추후에 할내용이 있는것이 다들어오는데 … 따로 만드는게
+   >  나을꺼 같아.. 그중에 골라서 애프터 cs 로 직원들이 옮기는것이 좋을꺼 같아"
+
+   v2 가 판정만 쌓고(byto_call_followups), 고르는 일은 여기서 사람이 한다.
+   ★ 여기는 나르기만 한다 ★ 무엇을 보여 줄지·누구로 적을지는 v2 가 정한다 —
+   두 군데서 정하면 「보내기」로 만든 문의와 목록에 보이던 글이 달라진다.
+   ══════════════════════════════════════════════════════════════ */
+var _CFU_PATH_ = "/api/byto/followups";
+
+/** 오늘(또는 day=YYYY-MM-DD) 치 — 아직 안 고른 것만 */
+function csListCallFollowups(opts) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  opts = opts || {};
+  var q = _CFU_PATH_;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(opts.day || ""))) q += "?day=" + opts.day;
+  return _csq_call_("get", q, null);
+}
+
+/**
+ * 한 줄을 고른다.
+ * @param {{call_serial:string, action:string, staff:string}} p  action: "보내기" | "확인"
+ */
+function csPickCallFollowup(p) {
+  var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  p = p || {};
+  var staff = String(p.staff || "").trim();
+  if (!staff) return { ok: false, error: "담당자를 먼저 선택하세요." };
+  var serial = String(p.call_serial || "").trim();
+  if (!serial) return { ok: false, error: "어느 통화인지 알 수 없습니다." };
+  var action = String(p.action || "").trim();
+  if (action !== "보내기" && action !== "확인") return { ok: false, error: "보내기 또는 확인만 됩니다." };
+  return _csq_call_("post", _CFU_PATH_, { call_serial: serial, action: action, staff: staff });
+}
+
 function csSaveInquiry(p) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
   p = p || {};
