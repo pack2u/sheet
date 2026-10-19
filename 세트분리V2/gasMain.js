@@ -341,6 +341,14 @@ var SS_STEP = { 이름: '', at: 0, 목록: [] };
 function ss단계_(새이름) {
   var now = new Date().getTime();
   if (SS_STEP.이름 && SS_STEP.at) SS_STEP.목록.push([SS_STEP.이름, now - SS_STEP.at]);
+  /*  ★ 단계마다 실행 로그에도 찍는다 ★  (2026-10-19)
+      > 사장님: "세트분리시트에서 자꾸 타임아웃이 뜨는데 이유를 찾아줘"
+      메뉴 실행은 6분에서 끊기고, 끊기면 실행요약(끝에 한 번 적는 표)이 안 남는다.
+      10/19 1차가 그랬다 — 로그에 「산간 우편번호 심기」 한 줄 뒤 4분 45초가 빈칸이었다.
+      여기 찍어 두면 Apps Script 「실행」 화면에서 어디서 멈췄는지 바로 보인다. */
+  if (SS_STEP.이름) {
+    try { Logger.log('[단계] ' + SS_STEP.이름 + ' ' + ((now - SS_STEP.at) / 1000).toFixed(1) + '초 → ' + (새이름 || '끝')); } catch (_) {}
+  }
   SS_STEP.이름 = 새이름;
   SS_STEP.at = now;
   return 새이름;
