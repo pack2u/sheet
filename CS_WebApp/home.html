@@ -3553,6 +3553,18 @@
        위의 규칙을 «여기서 덮는다» — 크기를 고칠 때는 이 묶음만 보면 된다.        */
     .byc-list { gap: 4px; }
     .byc-card { padding: 5px 8px; border-radius: 8px; }
+    /* 번호로 통화·문자 보기 (2026-10-14) */
+    .byc-find { display: flex; gap: 6px; margin: 6px 0; }
+    .byc-find input {
+      flex: 1; min-width: 0; padding: 6px 9px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-input, var(--bg-primary));
+      color: var(--text-primary); font-size: calc(12.5px * var(--hb-text-scale));
+    }
+    .byc-find button {
+      padding: 6px 12px; border-radius: 8px; border: 1px solid transparent;
+      background: var(--accent-green); color: var(--on-accent);
+      font-weight: 700; font-size: calc(12px * var(--hb-text-scale)); cursor: pointer;
+    }
     .byc-head { gap: 5px; }
     .byc-phone { font-size: calc(12.5px * var(--hb-text-scale)); }
     .byc-name { font-size: calc(11px * var(--hb-text-scale)); }
@@ -4045,6 +4057,18 @@
               <span class="os-dash-sub" id="bycSub" style="margin-left:8px"></span>
               <button type="button" class="os-chip ghost" style="margin-left:auto" onclick="loadByto(true)" title="새로 읽기">↻</button>
             </div>
+            <!--  ★ 번호로 통화·문자 보기 (2026-10-14) ★
+                  > "우리가 전화건 내용은 안나오던데 … 번호로 통화·문자 보기 칸 넣어줘"
+                  콜백 대기는 «답할 것»(부재중·받은 문자)만 모은다 — 우리가 건 전화는 안 뜬다.
+                  여기에 번호를 넣으면 그 고객의 통화(받은·건·부재중)·문자·녹음을 바로 꺼낸다.
+                  같은 bytoToggleTl 을 쓰되 key 접두는 s(검색) — c(콜백)·o(주문)과 안 겹친다. -->
+            <div class="byc-find">
+              <input id="bycFindQ" type="search" inputmode="tel" autocomplete="off"
+                     placeholder="번호로 통화·문자 보기 (예: 010-1234-5678)"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();bytoFindByPhone();}">
+              <button type="button" class="ok" onclick="bytoFindByPhone()">보기</button>
+            </div>
+            <div class="byto-tl" id="bytoTl-sFind" hidden></div>
             <div id="bycList" class="byc-list"><div class="byc-empty">불러오는 중…</div></div>
           </div>
           <!-- ══ CS 문의 (2026-10-02) ═══════════════════════════════
@@ -6189,8 +6213,20 @@
         : '<div class="hb-tl-empty">내용 없이 제목만 등록됨</div>';
 
       if (c.link) {
-        h += '<button type="button" class="hb-link-btn" onclick="hbGoOrder(event, \'' + js(c.link) + '\')">' +
-          '주문 검색: ' + esc(c.link) + '</button>';
+        /*  ★ 주소면 «열기», 아니면 «주문 검색» ★  (2026-10-19)
+            > 사장님: "링크는 안보이게 시트보기 버튼으로 보이게해줘"
+            이 칸은 원래 주문검색 키워드 자리다. 새벽 브리핑이 시트 주소를
+            넣으면서, 주소를 통째로 검색어로 삼는 단추가 떠 있었다 —
+            눌러도 아무것도 안 나온다. 주소는 주소로 다룬다.
+            긴 주소를 글자로 보이지 않는다. 단추 하나면 된다.             */
+        if (/^https?:\/\//i.test(String(c.link))) {
+          h += '<button type="button" class="hb-link-btn" ' +
+            'onclick="event.stopPropagation();window.open(\'' + js(c.link) + '\',\'_blank\',\'noopener\')">' +
+            '📄 시트 보기</button>';
+        } else {
+          h += '<button type="button" class="hb-link-btn" onclick="hbGoOrder(event, \'' + js(c.link) + '\')">' +
+            '주문 검색: ' + esc(c.link) + '</button>';
+        }
       }
       h += '</div>';
 
@@ -9047,6 +9083,20 @@
     }
 
     /*  통화·문자 줄기 — 콜백 카드·주문 카드가 같이 쓴다. 한 번 더 누르면 접는다.  */
+    /*  번호로 통화·문자 보기 — 콜백 대기 위 검색칸. (2026-10-14)
+        우리가 «건» 전화만 있는 고객은 콜백 대기에 안 뜬다 — 여기로 번호를 넣어 꺼낸다.
+        bytoTl-sFind 상자에 bytoToggleTl 로 편다. key 가 s… 라 주문·업체·녹음까지 얹혀 나온다. */
+    function bytoFindByPhone() {
+      var el = document.getElementById('bycFindQ');
+      var digits = String((el || {}).value || '').replace(/[^0-9]/g, '');
+      var box = document.getElementById('bytoTl-sFind');
+      if (digits.length < 9) { if (box) { box.hidden = false; box.innerHTML = '<div class="byto-tl-note">전화번호를 9자리 이상 넣어 주세요</div>'; } return; }
+      /*  다시 펴지게 — bytoToggleTl 은 열려 있으면 접는다. 늘 «열기»로 쓰려고 먼저 접어 둔다  */
+      if (box) box.hidden = true;
+      bytoToggleTl('sFind', digits, null);
+      if (box) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
     function bytoToggleTl(key, phone, btn) {
       var box = document.getElementById('bytoTl-' + key);
       if (!box) return;
@@ -9057,8 +9107,9 @@
         .withSuccessHandler(function (res) {
           if (!res || !res.ok) { box.innerHTML = '<div class="byto-tl-note">못 읽었습니다 — ' + esc((res && res.error) || '까닭 모름') + '</div>'; return; }
           BYTO_TL[key] = { phone: phone, items: res.items || [] };
-          /*  주문 카드에서 펼쳤으면 주문은 이미 보고 있다 — 콜백 카드(c…)에서만 위에 얹는다  */
-          box.innerHTML = (String(key).charAt(0) === 'c' ? bytoOrdersHtml(res.orders || [], res.orderCount || 0, 10, res.vendor) : '') +
+          /*  주문 카드(o…)에서 펼쳤으면 주문은 이미 보고 있다 — 콜백(c…)·번호검색(s…)에서만 위에 얹는다  */
+          var 머리 = String(key).charAt(0);
+          box.innerHTML = ((머리 === 'c' || 머리 === 's') ? bytoOrdersHtml(res.orders || [], res.orderCount || 0, 10, res.vendor) : '') +
             bytoTimelineHtml(res.items || [], res.collectedAt, key);
         })
         .withFailureHandler(function (e) { box.innerHTML = '<div class="byto-tl-note">못 읽었습니다 — ' + esc(String((e && e.message) || e)) + '</div>'; })
