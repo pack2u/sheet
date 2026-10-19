@@ -2675,7 +2675,7 @@ function _pep_pushCore_(silent) {
       // 어느 차수에 들어온 행인지가 훨씬 쓸모 있으므로 회차 도장으로 바꾼다.
       if (_PEP_PUSH_STAMP_) _tRow_[1] = _PEP_PUSH_STAMP_;
       //  안 나간 줄은 «안 나갔다»고 적는다. 13:50 푸시가 이 말을 보고 집어 간다.
-      _tempPendingRows_.push(_tRow_.concat([pfx, "",
+      _tempPendingRows_.push(_tRow_.concat([_pep_tempWPrefix_(pfx), "",
         _PEP_TEMP_ONLY_ ? _PEP_TEMP_WAIT_ : _PEP_TEMP_DONE_]));
     }
 
@@ -3255,7 +3255,7 @@ function _pep_pushCore_(silent) {
   try {
     if (_tempPendingRows_.length > 0) {
       var dbPushRows = _tempPendingRows_.map(function(row) {
-        var pfxName = String(row[22] || "").trim(); // prefix = 업체접두
+        var pfxName = _pep_resolvePrefixAlias_(String(row[22] || "").trim()); // prefix = 업체접두 (NP→HR)
         // prefix → 업체명 변환 시도
         var vName = pfxName;
         try {
@@ -3488,11 +3488,12 @@ function partnerPushFromTempTabToExclusive() {
     if (!prefixToFile[pfx]) { skipNoFile++; continue; }
 
     // W열에 정규화된 접두 되쓰기 (준테크 → JT)
-    if (String(row[22] || "").trim().toUpperCase() !== pfx) {
+    var _wShow_ = _pep_tempWPrefix_(pfx);   // HR → NP (2026-10-19)
+    if (String(row[22] || "").trim().toUpperCase() !== _wShow_) {
       try {
-        tempTab.getRange(ri + 1, 23).setValue(pfx); // W열 1-based=23
+        tempTab.getRange(ri + 1, 23).setValue(_wShow_); // W열 1-based=23
       } catch (eWset) {}
-      row[22] = pfx;
+      row[22] = _wShow_;
     }
 
     // UID: P열(15)
@@ -3987,7 +3988,7 @@ function _pep_appendToNonPartnerTempTab_(row, pfx, tab, uidSet, nowStr) {
   }
   // B열(순번) → 회차 도장. 위 배치 경로와 같은 규칙을 쓴다.
   if (_PEP_PUSH_STAMP_) srcRow[1] = _PEP_PUSH_STAMP_;
-  var newRow = srcRow.concat([pfx, "", "발주완료"]); // 소스행 + 업체prefix(W) + 송장번호빈칸(X) + 진행상태(Y)
+  var newRow = srcRow.concat([_pep_tempWPrefix_(pfx), "", "발주완료"]); // 소스행 + 업체prefix(W) + 송장번호빈칸(X) + 진행상태(Y)
   var nextRow = tab.getLastRow() + 1;
   if (nextRow < 2) nextRow = 2;
   tab.getRange(nextRow, 1, 1, newRow.length).setValues([newRow]);
@@ -5394,6 +5395,7 @@ var _PEP_VENDOR_NAME_ = {
   HP: "하나팩",
   SI: "삼일",
   GS: "지에스",
+  NP: "뉴파츠",   // 2026-10-19 임시기록 W 에 NP 가 적힌다(_pep_tempWPrefix_)
 };
 
 // ─────────────────────────────────────────────────────
@@ -6324,6 +6326,19 @@ var _PEP_VENDOR_PREFIX_ALIAS_ = {
       NP 를 HR 로 읽어 뉴파츠 파일·양식·공급가(HR 설정) 그대로 간다. 품목코드가 HR 이라 HR 이 대표다. */
   NP: "HR",
 };
+
+/*  ★ 임시기록 W(업체prefix)에 «적는» 접두 ★  (2026-10-19)
+    > 사장님: "시트에는 업체prefix 부분이 안바뀐거 같은데 문제가 없을까? 이것도 바꿔줘"
+    속은 HR(뉴파츠 파일·양식·공급가 설정의 열쇠)로 돌고, 사람이 보는 W 칸에는 NP 를 적는다.
+    W 를 읽는 곳은 모두 _pep_resolvePrefixAlias_ 를 거쳐 NP→HR 로 되읽는다
+    (택배사 _pep_carrierForVendor_·사방넷 코드·임시기록 메뉴 푸시 _pep_normalizeTempVendorPrefix_·DB 동기화).
+    v2 도 둘 다 받는다(vendor-v2 HR:["HR","NP"] · sheet-mirror NP→HR).
+    준테크(JH→JT)는 그대로 JT 를 적는다 — 그쪽은 대표 접두가 이름이다. */
+var _PEP_TEMP_W_SHOW_ = { HR: "NP" };
+function _pep_tempWPrefix_(pfx) {
+  var up = String(pfx == null ? "" : pfx).trim().toUpperCase();
+  return _PEP_TEMP_W_SHOW_[up] || up;
+}
 
 /** 보조 접두 → 대표 접두. 별칭이 없으면 대문자 정규화만 하여 반환 */
 function _pep_resolvePrefixAlias_(pfx) {
@@ -8614,7 +8629,7 @@ function partnerRebuildTempRecords() {
       tRow.push(ci < row.length ? row[ci] : "");
     }
     tRow[15] = rowUid;
-    tRow.push(pfx); // ★ 2026-07-14: codePfx 대신 검증된 pfx 사용
+    tRow.push(_pep_tempWPrefix_(pfx)); // ★ 2026-07-14 검증된 pfx · 2026-10-19 HR→NP 로 적음
     tRow.push("");
     tRow.push("발주완료");
     pendingRows.push(tRow);
