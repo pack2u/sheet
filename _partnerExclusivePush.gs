@@ -2300,6 +2300,47 @@ function _pep_resume_() {
 }
 
 /**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 세트분리가 도는 중이면 푸시하지 않는다 ★  (2026-10-19)
+ *  > 사장님: "세트분리 진행 중이면 푸시 멈추게 넣어줘"
+ *
+ *  세트분리는 10/19 부터 예약(트리거)으로 돌아 완료 창이 없다. 그날 14:08 에 2차를 누르고
+ *  14:11:57 에 푸시를 눌렀는데 세트분리는 14:12:38 에 끝났다 — 「261019-2 가 끝나지 않았다」.
+ *  대리발송 탭·실행이력이 반쯤 쓰인 때 읽으면 무엇이 나갈지 모른다.
+ *
+ *  세트분리 「실행요약」 상태 칸이 ⏳(예약됨·진행 중)이면 도는 중이다 (✅ 완료 · ❌ 실패 는 아님).
+ *  그 표시가 35분 넘게 남아 있으면 실행이 죽은 것으로 보고 막지 않는다 — 그다음은 «멈춘 회차» 검문 몫.
+ *  @return {{도는중:boolean, 상태:string, 분:number}}
+ * ══════════════════════════════════════════════════════════════
+ */
+function _pep_setsplitRunning_() {
+  var 답 = { 도는중: false, 상태: "", 분: 0 };
+  try {
+    var sh = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID).getSheetByName("실행요약");
+    if (!sh || sh.getLastRow() < 2) return 답;
+    var v = sh.getRange(1, 1, Math.min(8, sh.getLastRow()), 2).getDisplayValues();
+    var 상태 = "", 때 = "";
+    for (var i = 0; i < v.length; i++) {
+      var k = String(v[i][0]).trim();
+      if (k === "상태") 상태 = String(v[i][1]).trim();
+      if ((k === "시작" || k === "누름") && !때) 때 = String(v[i][1]).trim();
+    }
+    답.상태 = 상태;
+    if (상태.indexOf("⏳") !== 0) return 답;
+    var m = 때.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{1,2}):(\d{2}):(\d{2})/);
+    if (m) {
+      var t = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+      답.분 = Math.round((new Date().getTime() - t) / 60000);
+      if (답.분 > 35) { Logger.log("[PEP_GUARD] 세트분리 표시가 " + 답.분 + "분째 ⏳ — 죽은 실행으로 보고 막지 않습니다"); return 답; }
+    }
+    답.도는중 = true;
+  } catch (e) {
+    Logger.log("[PEP_GUARD] 세트분리 실행요약을 못 읽어 지나갑니다: " + (e.message || e));
+  }
+  return 답;
+}
+
+/**
  * @param {boolean=} silent  대화상자 없이
  * @param {boolean=} tempOnly  ★ 임시기록에만 담고 업체 파일은 «안 건드린다»
  *   10:30 · 15:40 이 이 모드로 돈다 (2026-09-17 사장님 일정 변경).
@@ -2309,6 +2350,33 @@ function partnerPushOrdersToExclusiveForms(silent, tempOnly) {
   _PEP_TEMP_ROUND_ = "";   // 이번 실행의 세트분리 회차 도장 — _pep_pushCore_ 가 정한다
   _PEP_WAIT_CLEARED_ = null;   // 발주대기→발주완료 바꾼 줄 수 (null = 아직 안 함)
   _PEP_LAST_PUSHED_KEYS_ = {};
+
+  //  세트분리가 도는 중이면 — 사람이 누른 것은 멈추고, 자동은 끝날 때까지 기다린다(최대 10분)
+  var _돌기_ = _pep_setsplitRunning_();
+  if (_돌기_.도는중) {
+    var _NLg_ = String.fromCharCode(10);
+    if (!silent) {
+      var _멈춤말_ = "⏸ 대리공급 푸시를 멈췄습니다" + _NLg_ + _NLg_ +
+        "세트분리가 아직 도는 중입니다 — 「" + _돌기_.상태 + "」" + _NLg_ + _NLg_ +
+        "세트분리 시트 「실행요약」 탭의 상태가 ✅ 완료 로 바뀐 뒤 다시 누르세요 (보통 2~4분).";
+      Logger.log("[PEP_GUARD] " + _멈춤말_);
+      try { SpreadsheetApp.getUi().alert(_멈춤말_); } catch (_) {}
+      return;
+    }
+    var _기다림_ = 0;
+    while (_돌기_.도는중 && _기다림_ < 20) {
+      Logger.log("[PEP_GUARD] 세트분리가 도는 중 — 30초 기다립니다 (" + (_기다림_ + 1) + "/20) · " + _돌기_.상태);
+      Utilities.sleep(30 * 1000);
+      _기다림_++;
+      _돌기_ = _pep_setsplitRunning_();
+    }
+    if (_돌기_.도는중) {
+      Logger.log("[PEP_GUARD] 10분을 기다려도 세트분리가 안 끝났습니다 — 그대로 진행합니다(멈춘 회차 검문이 판단)");
+    } else if (_기다림_) {
+      Logger.log("[PEP_GUARD] 세트분리가 끝났습니다 — " + (_기다림_ * 30) + "초 기다린 뒤 진행");
+    }
+  }
+
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) {
     var lockMsg = "⚠ 대리공급 Push가 이미 실행 중입니다. 잠시 후 다시 시도하세요.";
