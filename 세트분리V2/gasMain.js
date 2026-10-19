@@ -43,7 +43,7 @@ function onOpen() {
      스물한 개가 한 줄로 늘어서 있으니 매일 쓰는 것을 눈으로 찾아야 했다.
      나머지는 넷으로 묶어 접는다 — 자료 준비 · 송장 매칭 · 점검 · 설정. */
   ui.createMenu('🧩 세트분리 V2')
-    .addItem('▶ 세트분리 실행', 'ss_실행')
+    .addItem('▶ 세트분리 실행', 'ss_실행예약')   // 2026-10-19 예약 → 트리거(30분 한도)
     .addItem('🔂 세트분리 재실행 (회차 그대로)', 'ss_재실행')
     .addItem('✅ 조치 적용 (보류 → 발송·대리발송)', 'ss_보류조치반영')
     .addSeparator()
@@ -226,6 +226,114 @@ function ss_판매현황비우기() {
 
 /** 보류 탭에 적은 조치만 반영해 다시 계산한다 (원천을 다시 읽지 않아 회차가 그대로다) */
 /**
+ * ══════════════════════════════════════════════════════════════
+ *  ★ 메뉴는 «예약»만, 실행은 트리거에서 ★  (2026-10-19)
+ *
+ *  > 사장님: "세트분리시트에서 자꾸 타임아웃이 뜨는데 이유를 찾아줘" → "트리거 예약 방식으로 바꿔줘"
+ *
+ *  메뉴로 누른 실행은 6분(360초)에서 끊긴다 — 10/19 08:23 ▶ 실행, 10/16 15:40 ✅ 조치 적용이
+ *  둘 다 정확히 360초에 「시간이 초과되었습니다」. 같은 일을 다시 누르면 2~3분이라
+ *  평소에도 벽 가까이 돈다(원장 1.7만 줄을 통째로 읽고 쓰고, 첫 실행은 마스터도 다시 받는다).
+ *  시간 트리거로 돈 실행은 30분이다 — v2 올리기·적요 AI 가 이미 「예약됨 (5초 뒤)」로 돈다.
+ *
+ *  그래서 세 메뉴(▶ 실행 · 🔂 재실행 · ✅ 조치 적용)는 확인 창까지만 보이고,
+ *  일감을 스크립트 속성에 적은 뒤 1회용 트리거를 건다. 트리거가 ss_실행 을 돌린다.
+ *
+ *  ★ 끝났는지는 실행요약 탭이 말한다 ★  트리거에는 화면이 없어 완료 창이 안 뜬다
+ *    (ssio_alert 는 로그로 간다). 실행요약 「상태」가  ⏳ 예약됨 → ⏳ 진행 중 → ✅ 완료  로 바뀐다.
+ *  ★ 겹쳐 누르면 막는다 ★  예약·실행 중인 일감이 있으면 새로 안 건다(35분 지나면 죽은 것으로 본다).
+ *  ★ 트리거를 못 걸면 바로 돈다 ★  예전처럼(6분 한도) — 못 돌리는 것보다 낫다. 그렇다고 창에 적는다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var SS_JOB_PROP_ = 'SS_예약일감';
+var SS_JOB_FN_ = 'ss_예약실행_';
+var SS_JOB_STALE_MS_ = 35 * 60 * 1000;
+
+function ss_예약_(종류, opts) {
+  var NL = String.fromCharCode(10);
+  var props = PropertiesService.getScriptProperties();
+  var 지금 = new Date().getTime();
+  var 있던 = null;
+  try { 있던 = JSON.parse(props.getProperty(SS_JOB_PROP_) || 'null'); } catch (e) {}
+  if (있던 && 있던.at && 지금 - 있던.at < SS_JOB_STALE_MS_) {
+    ssio_alert('⏳ 이미 「' + 있던.종류 + '」이 ' + (있던.상태 || '예약') + ' 중입니다 (' +
+      Math.round((지금 - 있던.at) / 1000) + '초 전 누름).' + NL + NL +
+      '「실행요약」 탭의 상태가 ✅ 완료 로 바뀐 뒤 다시 누르세요.');
+    return null;
+  }
+  var 일감 = { 종류: 종류, opts: opts || {}, at: 지금, 상태: '예약',
+    누가: (function () { try { return Session.getActiveUser().getEmail(); } catch (e) { return ''; } })() };
+  try {
+    props.setProperty(SS_JOB_PROP_, JSON.stringify(일감));
+    ss_예약트리거정리_();
+    ScriptApp.newTrigger(SS_JOB_FN_).timeBased().after(2 * 1000).create();
+  } catch (eT) {
+    props.deleteProperty(SS_JOB_PROP_);
+    ssio_alert('예약을 못 걸어 바로 돌립니다 (6분 한도) — ' + (eT && eT.message ? eT.message : eT));
+    return ss_일감돌리기_(일감);
+  }
+  try {
+    ssio_write(SSIO_TABS.요약, SS_SUMMARY_HEADER, [
+      ['상태', '⏳ 예약됨 — 곧 시작합니다 (「' + 종류 + '」)'],
+      ['누름', Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss')],
+      ['안내', '트리거로 돌아 30분까지 기다릴 수 있습니다. 완료 창은 안 뜹니다 — 이 칸이 ✅ 완료 로 바뀌면 끝입니다']
+    ], { bg: '#7a5b12' });
+    ss_출력탭표시_(true);
+  } catch (eW) {}
+  try {
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      '「' + 종류 + '」을 예약했습니다. 「실행요약」 탭이 ✅ 완료 로 바뀌면 끝입니다 (보통 2~4분).',
+      '🧩 세트분리', 8);
+  } catch (eToast) {}
+  return '예약됨';
+}
+
+/** 1회용 트리거를 전부 지운다 — 남기면 자리만 먹는다 */
+function ss_예약트리거정리_() {
+  var n = 0;
+  try {
+    var ts = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < ts.length; i++) {
+      if (ts[i].getHandlerFunction() === SS_JOB_FN_) { ScriptApp.deleteTrigger(ts[i]); n++; }
+    }
+  } catch (e) {}
+  return n;
+}
+
+/** 트리거가 부르는 자리 */
+function ss_예약실행_() {
+  ss_예약트리거정리_();
+  var props = PropertiesService.getScriptProperties();
+  var 일감 = null;
+  try { 일감 = JSON.parse(props.getProperty(SS_JOB_PROP_) || 'null'); } catch (e) {}
+  if (!일감) { Logger.log('[예약] 일감이 없습니다 — 할 일 없음'); return; }
+  일감.상태 = '실행';
+  일감.at = new Date().getTime();
+  props.setProperty(SS_JOB_PROP_, JSON.stringify(일감));
+  Logger.log('[예약] 「' + 일감.종류 + '」 시작 · 누른 사람 ' + (일감.누가 || '?'));
+  try {
+    return ss_일감돌리기_(일감);
+  } finally {
+    props.deleteProperty(SS_JOB_PROP_);
+  }
+}
+
+function ss_일감돌리기_(일감) {
+  if (일감.종류 === '조치 적용') {
+    var r = ss_실행({ mirrorOnly: true });
+    try { ss_로젠출력탭(); }
+    catch (e) { Logger.log('[예약] 조치는 적용했고 「' + SSIO_TABS.출력사본 + '」 탭 만들기는 실패: ' + (e && e.message ? e.message : e)); }
+    return r;
+  }
+  return ss_실행(일감.opts || {});
+}
+
+/** ▶ 세트분리 실행 — 메뉴 */
+function ss_실행예약() {
+  return ss_예약_('세트분리 실행', {});
+}
+
+/**
  * 조치 적용 — 보류 탭에 적은 조치를 반영하고, 나갈 한 장을 탭에 담는다.
  *
  * > "세트분리시 조치적용시 시트가 로젠송장출력을 누른 상태로 바뀌게 해줘"
@@ -240,15 +348,9 @@ function ss_판매현황비우기() {
 function ss_보류조치반영() {
   //  멈춘 회차 위에 조치를 얹으면 앞 회차 거울로 다시 그린다 — 재실행부터 (2026-10-16)
   if (ss_미완료검문_('조치 적용')) return;
-  var r = ss_실행({ mirrorOnly: true });
-  try {
-    ss_로젠출력탭();
-  } catch (e) {
-    ssio_alert('조치는 적용했습니다.' + String.fromCharCode(10) +
-      '「' + SSIO_TABS.출력사본 + '」 탭 만들기는 실패했습니다: ' +
-      (e && e.message ? e.message : e));
-  }
-  return r;
+  //  ★ 2026-10-19 바로 돌리지 않고 예약한다 — 메뉴 실행은 6분에서 끊긴다(ss_예약_ 설명)
+  //    실제 일(ss_실행 mirrorOnly + 로젠출력 탭)은 ss_일감돌리기_ 가 한다.
+  return ss_예약_('조치 적용', { mirrorOnly: true });
 }
 
 /**
@@ -300,7 +402,8 @@ function ss_재실행() {
       '계속할까요?', ui.ButtonSet.YES_NO);
     if (ans !== ui.Button.YES) return;
   }
-  return ss_실행({ 회차유지: 마지막.key });
+  //  ★ 2026-10-19 바로 돌리지 않고 예약한다 — 메뉴 실행은 6분에서 끊긴다(ss_예약_ 설명)
+  return ss_예약_('세트분리 재실행', { 회차유지: 마지막.key });
 }
 
 /**
@@ -374,6 +477,9 @@ function ss시계표_() {
 }
 
 function ss_실행(opts) {
+  //  인자 없이 불렸다 = 사람이 메뉴·단추로 눌렀다 → 예약으로 (2026-10-19, ss_예약_ 설명)
+  //  트리거·재실행·조치 적용은 늘 opts 를 넘기므로 여기로 되돌아오지 않는다.
+  if (opts === undefined) return ss_실행예약();
   opts = opts || {};
   var t0 = new Date().getTime();
   var lock = LockService.getDocumentLock();
