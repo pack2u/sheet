@@ -949,6 +949,7 @@ function _pep_v2SourceIfSheetStalled_() {
 }
 
 var _PEP_TEMP_ROUND_ = "";
+var _PEP_WAIT_CLEARED_ = null;
 /** 세트분리 회차키 «261016-3» → 「1016-3차」. 못 알아보면 "" */
 function _pep_roundStamp_(key) {
   var m = String(key == null ? "" : key).trim().match(/^\d{2}(\d{2})(\d{2})-(\d+)$/);
@@ -2306,6 +2307,7 @@ function _pep_resume_() {
 function partnerPushOrdersToExclusiveForms(silent, tempOnly) {
   _PEP_TEMP_ONLY_ = !!tempOnly;
   _PEP_TEMP_ROUND_ = "";   // 이번 실행의 세트분리 회차 도장 — _pep_pushCore_ 가 정한다
+  _PEP_WAIT_CLEARED_ = null;   // 발주대기→발주완료 바꾼 줄 수 (null = 아직 안 함)
   _PEP_LAST_PUSHED_KEYS_ = {};
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) {
@@ -2334,7 +2336,8 @@ function partnerPushOrdersToExclusiveForms(silent, tempOnly) {
       /*  ★ 나간 줄의 「발주대기」를 지운다 ★  (2026-09-17)
           «다 끝났을 때만» 지운다. 조각으로 끊긴 상태에서 지우면 다음
           조각이 그 줄을 못 되살려 영영 안 나간다. */
-      if (!_PEP_TEMP_ONLY_) {
+      //  보통은 _pep_pushCore_ 가 완료 창 전에 이미 바꿨다(2026-10-19). 못 바꿨을 때만 여기서.
+      if (!_PEP_TEMP_ONLY_ && _PEP_WAIT_CLEARED_ === null) {
         try { _pep_clearWaitingMarks_(_PEP_LAST_PUSHED_KEYS_); }
         catch (eCw) { Logger.log("[PEP_WAIT] 상태 지우기 실패: " + (eCw.message || eCw)); }
       }
@@ -3307,10 +3310,23 @@ function _pep_pushCore_(silent) {
     }
   } catch (eDb) { Logger.log("[SB] 전용양식 DB 동기화 오류: " + eDb.message); }
 
+  /*  ★ 「발주대기 → 발주완료」는 완료 창보다 먼저 ★  (2026-10-19)
+      > 사장님: "2차분만 발주완료가 뜨고 나머지가 발주대기로 되있어서 푸시가 안된거로 인식했던거야"
+      여태는 완료 창(14:15:52)이 뜬 «뒤에» 바깥(partnerPushOrdersToExclusiveForms)에서 표시를 바꿨다(14:15:57).
+      창을 보고 임시기록을 열면 되살려 보낸 줄이 아직 발주대기라, 안 나간 줄로 보고 다시 눌렀다.
+      다 끝났을 때만(조각으로 끊기지 않았을 때) 바꾸는 규칙은 그대로다. */
+  if (!_PEP_LAST_INCOMPLETE_ && !_PEP_TEMP_ONLY_) {
+    try { _PEP_WAIT_CLEARED_ = _pep_clearWaitingMarks_(_PEP_LAST_PUSHED_KEYS_); }
+    catch (eCw0) { Logger.log("[PEP_WAIT] 상태 지우기 실패: " + (eCw0.message || eCw0)); }
+  }
 
   if (ui) {
     try {
-      var htmlOut = HtmlService.createHtmlOutput(
+      var _대기글_ = _PEP_WAIT_CLEARED_
+        ? '<div style="margin:0 0 8px;padding:8px 10px;background:#e8f5e9;border-radius:6px;font-size:13px">' +
+          '✅ 지난 회차 「발주대기」 ' + _PEP_WAIT_CLEARED_ + '줄도 함께 보냈습니다 — 임시기록 진행상태를 「발주완료」로 바꿨습니다</div>'
+        : '';
+      var htmlOut = HtmlService.createHtmlOutput(_대기글_ +
         _pep_buildPushSummaryHtml_({
           pushed: pushed,
           pushedByPfx: pushedByPfx,
