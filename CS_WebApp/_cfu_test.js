@@ -152,6 +152,20 @@ function 재보기(고침) {
       if (!/add column if not exists item/.test(sql)) 운것.push("⑦상품칸이없음");
     }
 
+    /* ⑦' ★ 문이 열려 있나 ★  (2026-10-19 — 이것을 빼먹어 307 로 튕겼다)
+     *
+     *  v2 는 로그인 안 한 요청을 기본으로 로그인 화면으로 보낸다. 표(x-ingest-token)로
+     *  여는 길은 proxy.ts 목록에 ★이름을 적어야★ 한다. 코드·시험이 다 멀쩡한데
+     *  화면만 안 되는 꼴이라, 배포하고 불러 보기 전에는 안 보였다.
+     */
+    {
+      const px = (고침.proxy !== undefined ? 고침.proxy : (() => {
+        try { return fs.readFileSync("D:/Pack2U_협력업체시스템_v2/app/src/proxy.ts", "utf8"); } catch (e) { return ""; }
+      })());
+      if (!px) 운것.push("⑦'proxy를못읽음");
+      else if (!/"\/api\/byto\/followups"/.test(px)) 운것.push("⑦'문이안열림");
+    }
+
     /* ⑧ GAS 다리는 나르기만 한다 */
     {
       const gs = g("gs");
@@ -174,6 +188,7 @@ console.log(fail ? "✘ " + fail + "개 틀림" : "✔ 확인 " + pass + "가지
 
 console.log("\n─ 일부러 깨 보기 (우는 게 맞다) ─\n");
 const H = 읽기("home"), FU = 읽기("fu"), API = 읽기("api"), GS = 읽기("gs"), SQL = 읽기("sql");
+const PX = (function () { try { return fs.readFileSync("D:/Pack2U_협력업체시스템_v2/app/src/proxy.ts", "utf8"); } catch (e) { return ""; } })();
 const 깨기 = [
   ["★ v2 가 다시 자동으로 넣는다 ★", { fu: FU.replace("await record(c, {\n        ...base, verdict: read.verdict",
     'await c.from("cs_inquiries").insert({});\n      await record(c, {\n        ...base, verdict: read.verdict') }],
@@ -188,6 +203,9 @@ const 깨기 = [
     ".delete()") }],
   ["GAS 가 아무 action 이나 받는다", { gs: GS.replace('if (action !== "보내기" && action !== "확인") return { ok: false, error: "보내기 또는 확인만 됩니다." };', "") }],
   ["칸을 안 만든다", { sql: SQL.replace(/add column if not exists dismissed_at timestamptz;/, "") }],
+  /*  ★ 이 깨기가 실제 사고를 재현한다 ★ 목록에서 빼면 v2 가 307 로 로그인에
+      튕겨, 코드가 다 멀쩡해도 화면이 「못 읽었습니다」만 띄운다.  */
+  ["★ 표로 여는 문을 안 연다 ★", { proxy: PX.replace(`"/api/byto/followups",`, "") }],
 ];
 
 let 안움 = 0;
