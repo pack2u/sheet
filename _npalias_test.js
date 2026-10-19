@@ -47,16 +47,36 @@ function 재보기(고침) {
     else if (!/NP:\s*"HR"/.test(s)) 운것.push("②NP→HR로되읽기");
   }
 
-  /* ③ 씨앗 이름이 「뉴파츠」다 — 「허브로스팅」은 옛 이름 */
+  /* ③ 씨앗은 ★NP★ 로, 이름은 「뉴파츠」
+   *
+   *  ★ 내가 여기서 틀렸다 (2026-10-19) ★ 「코드는 HR 그대로 두어야 환산이
+   *    두 번 안 일어난다」고 생각해 ['HR','뉴파츠'] 로 뒀다. 그런데 core.js
+   *    ssVendorCode_ 는 이렇게 생겼다 —
+   *        if (vendors[up]) return up;              // 표에 HR 이 있으면 그대로 HR
+   *        var a = SS_VENDOR_PREFIX_ALIAS[up];
+   *        if (a && vendors[a]) return a;           // ★표에 없을 때만★ 별칭
+   *    ssm_seedVendors 는 씨앗에 있는 코드를 매 회차 표에 되살린다. 그래서
+   *    씨앗에 HR 이 있으면 「대리발송업체」 탭에 HR 줄이 다시 생기고,
+   *    표의 HR 이 별칭을 이겨 ★HR→NP 환산이 아예 안 걸린다★.
+   *    씨앗이 NP 면 vendors["HR"] 가 없으니 별칭이 딱 한 번 걸린다.
+   *    (세트분리 방이 ddfdb0b 로 바로잡아 주었다)
+   */
   {
     const s = g("seed");
     if (!s) 운것.push("③씨앗을못읽음");
     else {
-      if (!/\['HR',\s*'뉴파츠'\]/.test(s)) 운것.push("③씨앗이름이뉴파츠");
-      //  주석이 아니라 «자료»에 옛 이름이 남았으면 운다
+      if (!/\['NP',\s*'뉴파츠'\]/.test(s)) 운것.push("③씨앗이NP뉴파츠");
+      //  ★ 씨앗에 HR 이 남으면 표가 별칭을 이긴다 ★
       const 자료 = s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      if (/\['HR',/.test(자료)) 운것.push("③씨앗에HR이남음");
       if (/허브로스팅/.test(자료)) 운것.push("③자료에옛이름남음");
     }
+  }
+
+  /* ③' 별칭이 걸리려면 표에 HR 이 없어야 한다 — 그 규칙을 코드에서 확인한다 */
+  {
+    const c = g("core");
+    if (c && !/if \(vendors\[up\]\) return up;/.test(c)) 운것.push("③'표우선규칙이바뀜");
   }
 
   /* ④ v2 받은 발주 — HR 로 물으면 둘 다 찾는다 */
@@ -105,7 +125,12 @@ console.log("\n─ 일부러 깨 보기 (우는 게 맞다) ─\n");
 const 깨기 = [
   ["세트분리가 NP 로 안 찍는다", { core: 읽기("core").replace(/SS_VENDOR_PREFIX_ALIAS\s*=\s*\{\s*HR:\s*'NP'\s*\}/, "SS_VENDOR_PREFIX_ALIAS = {}") }],
   ["대리공급이 NP 를 못 읽는다", { push: 읽기("push").replace(/NP:\s*"HR",/, "") }],
-  ["씨앗에 옛 이름이 남는다", { seed: 읽기("seed").replace(/\['HR', '뉴파츠'\]/, "['HR', '허브로스팅']") }],
+  /*  ★ 이것이 제일 중요한 깨기다 ★ 씨앗에 HR 을 되돌리면 ssm_seedVendors 가
+      매 회차 표에 HR 줄을 되살리고, 표의 HR 이 별칭을 이겨 환산이 죽는다.
+      겉으로는 아무 오류도 안 난다 — 그냥 계속 HR 로 찍힐 뿐이다.  */
+  ["★ 씨앗에 HR 을 되돌린다 ★", { seed: 읽기("seed").replace(/\['NP', '뉴파츠'\]/, "['HR', '뉴파츠']") }],
+  ["씨앗에 옛 이름이 남는다", { seed: 읽기("seed").replace(/\['NP', '뉴파츠'\]/, "['NP', '허브로스팅']") }],
+  ["표 우선 규칙이 바뀐다", { core: 읽기("core").replace("if (vendors[up]) return up;", "if (false) return up;") }],
   ["★ v2 받은 발주가 HR 만 본다 ★", { v2push: 읽기("v2push").replace(/HR:\s*\["HR",\s*"NP"\],/, "") }],
   ["v2 가 준테크를 잃는다", { v2push: 읽기("v2push").replace(/JT:\s*\["JT", "JH", "BF", "NS"\],/, "") }],
   ["v2 거울이 NP 를 모른다", { v2mirror: 읽기("v2mirror").replace(/const 같은접두[^;]*;/, "const 같은접두: Record<string, string> = {};") }],
