@@ -939,13 +939,30 @@ function _pep_v2SourceIfSheetStalled_() {
         return s;
       });
     });
-    return { rows: rows, header: j.머리,
+    return { rows: rows, header: j.머리, 회차: j.멈춘회차,
       글: "원천을 v2 로 바꿨습니다 — 시트 세트분리 " + j.멈춘회차 + " 가 끝나지 않아(대리발송 탭은 " + j.탭회차 +
         " 것) v2 " + j.v2회차 + " 의 대리발송 " + rows.length + "줄로 보냅니다" };
   } catch (e) {
     Logger.log("[PEP] v2 원천 확인 실패 — 시트로 갑니다: " + (e.message || e));
     return 안바꿈;
   }
+}
+
+var _PEP_TEMP_ROUND_ = "";
+/** 세트분리 회차키 «261016-3» → 「1016-3차」. 못 알아보면 "" */
+function _pep_roundStamp_(key) {
+  var m = String(key == null ? "" : key).trim().match(/^\d{2}(\d{2})(\d{2})-(\d+)$/);
+  return m ? (m[1] + m[2] + "-" + m[3] + "차") : "";
+}
+/** 대리발송 탭의 주인 — 세트분리 「실행이력」 마지막 회차키 (출력 탭을 다 쓴 뒤 적히는 줄) */
+function _pep_tabRoundKey_(srcSS) {
+  try {
+    var sh = srcSS.getSheetByName("실행이력");
+    if (!sh || sh.getLastRow() < 2) return "";
+    var v = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getDisplayValues();
+    for (var i = v.length - 1; i >= 0; i--) if (String(v[i][0]).trim()) return String(v[i][0]).trim();
+  } catch (e) { Logger.log("[PEP_STAMP] 실행이력을 못 읽음: " + (e.message || e)); }
+  return "";
 }
 
 /** v2 는 칸을 글자로 준다. 시트(getValues)처럼 숫자 칸은 숫자로 — 안 그러면 「2」+「3」이 「23」이 된다 */
@@ -990,13 +1007,13 @@ function _pep_v2SourceAlways_() {
     if (!j.줄 || !j.줄.length || !j.머리 || !j.머리.length) {
       //  줄 0 은 «대리발송이 없는 회차»일 수도 있다 — 까닭이 없으면 그대로 v2(빈 원천)로 간다
       if (!j.왜 && j.v2회차 && j.머리 && j.머리.length) {
-        return { rows: [], header: j.머리,
+        return { rows: [], header: j.머리, 회차: j.탭회차,
           글: "🔀 원천 v2 (v2 모드) — v2 " + j.v2회차 + " 에 대리발송 줄이 없습니다 (시트 탭 " + j.탭회차 + ")" };
       }
       return 시트로(j.왜 || ("v2 결과가 없습니다 (탭 회차 " + j.탭회차 + ")"));
     }
     var rows = _pep_v2RowsTyped_(j.머리, j.줄);
-    return { rows: rows, header: j.머리,
+    return { rows: rows, header: j.머리, 회차: j.멈춤 ? j.멈춘회차 : j.탭회차,
       글: "🔀 원천 v2 (v2 모드) — v2 " + j.v2회차 + " 의 대리발송 " + rows.length + "줄로 보냅니다" +
         (j.멈춤 ? " · 시트 세트분리 " + j.멈춘회차 + " 는 끝나지 않았습니다(대리발송 탭은 " + j.탭회차 + " 것)" : " (시트 탭 " + j.탭회차 + ")") +
         (j.다름 ? " · ⚠ 시트와 맞대 다른 줄 " + j.다름 + " — v2 /setsplit/auto 맞대기를 보세요" : "") };
@@ -2288,6 +2305,7 @@ function _pep_resume_() {
  */
 function partnerPushOrdersToExclusiveForms(silent, tempOnly) {
   _PEP_TEMP_ONLY_ = !!tempOnly;
+  _PEP_TEMP_ROUND_ = "";   // 이번 실행의 세트분리 회차 도장 — _pep_pushCore_ 가 정한다
   _PEP_LAST_PUSHED_KEYS_ = {};
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) {
@@ -2454,6 +2472,14 @@ function _pep_pushCore_(silent) {
       앞 회차 것이다. 그때만 v2 가 같은 판매현황으로 돈 대리발송 줄을 원천으로 쓴다.
       판단은 v2 한 곳(lib/setsplit/partner-shadow.ts 대리발송원천)이 한다. */
   var _v2원천_ = _pep_v2SourceIfSheetStalled_();
+  /*  ★ 임시기록 B열 = 세트분리 회차 ★  (2026-10-19)
+      > 사장님: "푸시시 임시기록의 Ｂ열 순번 １０１６－３차 이런식으로 들어가게 해줘"
+      여태 B열은 «그날 몇 번째 푸시»(_PEP_PUSH_STAMP_)였다. 1차 주문이 세 번째 푸시에 실리면 「1019-3차」로
+      찍혀 세트분리 3차 것처럼 보였다(10/19 실제 혼란). 이제 그 줄을 낸 세트분리 회차를 적는다 —
+      대리발송 탭의 주인은 실행이력 마지막 회차, v2 로 보내면 그 v2 회차의 시트 회차.
+      업체 시트의 도장 칸은 그대로 푸시 도장이다. 되살린 「발주대기」 줄은 원래 B열을 둔다. */
+  _PEP_TEMP_ROUND_ = _pep_roundStamp_(_v2원천_.rows ? _v2원천_.회차 : _pep_tabRoundKey_(srcSS));
+  Logger.log("[PEP_STAMP] 임시기록 B열 회차: " + (_PEP_TEMP_ROUND_ || "(못 정함 → 푸시 도장 " + _PEP_PUSH_STAMP_ + ")"));
   if (_v2원천_.rows) {
     srcAll = [_v2원천_.header].concat(_v2원천_.rows);
     srcLc = Math.max(srcLc, _v2원천_.header.length);
@@ -2673,7 +2699,7 @@ function _pep_pushCore_(silent) {
       }
       // B열(순번)은 소스에서 온 값인데 우리 쪽에서 쓰임새가 없다.
       // 어느 차수에 들어온 행인지가 훨씬 쓸모 있으므로 회차 도장으로 바꾼다.
-      if (_PEP_PUSH_STAMP_) _tRow_[1] = _PEP_PUSH_STAMP_;
+      if (_PEP_TEMP_ROUND_ || _PEP_PUSH_STAMP_) _tRow_[1] = _PEP_TEMP_ROUND_ || _PEP_PUSH_STAMP_;   // 세트분리 회차 (2026-10-19)
       //  안 나간 줄은 «안 나갔다»고 적는다. 13:50 푸시가 이 말을 보고 집어 간다.
       _tempPendingRows_.push(_tRow_.concat([_pep_tempWPrefix_(pfx), "",
         _PEP_TEMP_ONLY_ ? _PEP_TEMP_WAIT_ : _PEP_TEMP_DONE_]));
@@ -3987,7 +4013,7 @@ function _pep_appendToNonPartnerTempTab_(row, pfx, tab, uidSet, nowStr) {
     srcRow.push(ci < row.length ? row[ci] : "");
   }
   // B열(순번) → 회차 도장. 위 배치 경로와 같은 규칙을 쓴다.
-  if (_PEP_PUSH_STAMP_) srcRow[1] = _PEP_PUSH_STAMP_;
+  if (_PEP_TEMP_ROUND_ || _PEP_PUSH_STAMP_) srcRow[1] = _PEP_TEMP_ROUND_ || _PEP_PUSH_STAMP_;   // 세트분리 회차 (2026-10-19)
   var newRow = srcRow.concat([_pep_tempWPrefix_(pfx), "", "발주완료"]); // 소스행 + 업체prefix(W) + 송장번호빈칸(X) + 진행상태(Y)
   var nextRow = tab.getLastRow() + 1;
   if (nextRow < 2) nextRow = 2;
