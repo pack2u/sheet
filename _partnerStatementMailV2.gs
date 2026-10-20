@@ -284,3 +284,11 @@ function psmEveningRun_() {
     lock.releaseLock();
   }
 }
+
+/** 편집기에서 손으로 — 16:00 자리를 놓친 날, 지금 링크를 걷고 오늘 19:00 한 번을 건다 (끝에 _ 가 붙으면 실행 목록에 안 나온다) */
+function partnerStatementLinksNowAndEvening() {
+  var r = psmAfterGmail_();
+  var ts = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === _PSM_EVENING_FN_; });
+  Logger.log("링크 " + JSON.stringify(r) + " · 19:00 트리거 " + ts.length + "개");
+  return r;
+}
