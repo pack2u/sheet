@@ -343,3 +343,74 @@ function ss_v2_전화확인_(runKey) {
     return '전화주문 나감 확인을 못 보냈습니다 — 다음 회차에 다시 보냅니다';
   }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   v2 회차를 시트 「주문라인원장」에 들인다  (2026-10-20 · 1단계)
+
+   > 사장님: "이제 세트분리 시트는 사용안할꺼야" · "응 진행해줘"
+   시트 세트분리가 타임아웃으로 멈춘 동안 2·3차는 v2 에서만 돌았다(M261020-2 · M261020-4).
+   원장에 없으니 CS웹앱 매시간 로젠 송장 수집(csLogenCollectShipSlips — 원장을 보고 묻는다)이
+   2·3차 송장을 한 건도 안 가져왔고, 사방넷 송장대량등록·허브 일일마감도 못 본다.
+   그래서 v2 가 낸 원장 줄을 «시트가 원장을 쓰는 방식 그대로»(ssio_append · setValues) 붙인다.
+
+   · 회차키는 시트 모양으로 바꾼다 (M261020-2 → 261020-2)
+   · 「이미출고」 보류 줄은 안 넣는다 — 하루치를 통째로 넣고 돈 회차라 1·2차 줄이 섞여 있다
+   · 그 회차키가 원장에 이미 있으면 멈춘다 — 두 번 안 들어가게
+   · 회차·실행이력 탭은 안 건드린다 — 대리공급 원천 판단(v2 partner-shadow)이 그 탭을 본다
+   ══════════════════════════════════════════════════════════════ */
+function ss_v2원장들이기_(v2라벨, 시트회차키) {
+  var url = _ss_v2_url_(), tok = _ss_v2_token_();
+  if (!url || !tok) throw new Error('v2 주소·토큰이 없습니다 (_secrets.gs V2_URL · V2_INGEST_TOKEN)');
+  if (!/^\d{6}-\d+$/.test(String(시트회차키))) throw new Error('시트 회차키 모양이 아닙니다: ' + 시트회차키);
+  var 받기 = function (q) {
+    var res = UrlFetchApp.fetch(url + '/api/setsplit/auto' + q, { method: 'get', headers: { 'x-ingest-token': tok }, muteHttpExceptions: true });
+    var j = null; try { j = JSON.parse(res.getContentText()); } catch (e) {}
+    if (res.getResponseCode() !== 200 || !j || j.ok === false) throw new Error('v2 HTTP ' + res.getResponseCode() + ' ' + String(res.getContentText()).slice(0, 200));
+    return j;
+  };
+  var 목록 = 받기('').회차 || [];
+  var run = null;
+  for (var i = 0; i < 목록.length; i++) if (String(목록[i].label) === String(v2라벨)) { run = 목록[i]; break; }
+  if (!run) throw new Error('v2 회차 ' + v2라벨 + ' 를 못 찾았습니다');
+  var d = 받기('?id=' + run.id);
+  if (JSON.stringify(d.원장머리) !== JSON.stringify(SS_LEDGER_HEADER)) {
+    throw new Error('v2 원장 칸이 시트와 다릅니다 — core 판이 갈렸습니다. 멈춥니다.');
+  }
+  var c회차 = SS_LEDGER_HEADER.indexOf('회차키'), c사유 = SS_LEDGER_HEADER.indexOf('보류사유');
+
+  //  이미 들어갔나
+  var sh = ssio_ss().getSheetByName(SSIO_TABS.원장);
+  if (sh && sh.getLastRow() > 1) {
+    var 키들 = sh.getRange(2, c회차 + 1, sh.getLastRow() - 1, 1).getDisplayValues();
+    for (var k = 키들.length - 1; k >= 0 && k >= 키들.length - 20000; k--) {
+      if (String(키들[k][0]).trim() === 시트회차키) throw new Error('원장에 ' + 시트회차키 + ' 줄이 이미 있습니다 — 멈춥니다');
+    }
+  }
+  var 줄들 = [], 뺌 = 0;
+  for (var n = 0; n < (d.줄 || []).length; n++) {
+    var g = (d.줄[n].ledger || []).slice(0, SS_LEDGER_HEADER.length);
+    while (g.length < SS_LEDGER_HEADER.length) g.push('');
+    if (String(g[c사유]) === '이미출고') { 뺌++; continue; }
+    g[c회차] = 시트회차키;
+    줄들.push(g.map(function (v) { return v === null || v === undefined ? '' : v; }));
+  }
+  ssio_migrateHeader(SSIO_TABS.원장, SS_LEDGER_HEADER);
+  var 시작 = (ssio_ss().getSheetByName(SSIO_TABS.원장) || { getLastRow: function () { return 1; } }).getLastRow() + 1;
+  //  전화·주문번호 칸은 «넣기 전에» 텍스트로 — 앞 0 이 안 빠지게 (ssio_write 와 같은 순서)
+  var 원장탭 = ssio_sheet(SSIO_TABS.원장, SS_LEDGER_HEADER);
+  var 모자람 = (시작 + 줄들.length - 1) - 원장탭.getMaxRows();
+  if (모자람 > 0) 원장탭.insertRowsAfter(원장탭.getMaxRows(), 모자람 + 500);
+  for (var h = 0; h < SS_LEDGER_HEADER.length; h++) {
+    if (SSIO_TEXT_COLS.indexOf(SS_LEDGER_HEADER[h]) >= 0 && 줄들.length) 원장탭.getRange(시작, h + 1, 줄들.length, 1).setNumberFormat('@');
+  }
+  if (줄들.length) 원장탭.getRange(시작, 1, 줄들.length, SS_LEDGER_HEADER.length).setValues(줄들);
+  var 글 = 'v2 ' + v2라벨 + ' → 원장 ' + 시트회차키 + ' ' + 줄들.length + '줄 넣음 (이미출고 ' + 뺌 + '줄 뺌) · ' + 시작 + '행부터';
+  Logger.log(글);
+  return 글;
+}
+
+/** 2026-10-20 하루치 — 편집기에서 한 번 돌리고 지운다 (임시) */
+function ss_v2원장들이기_1020() {
+  Logger.log(ss_v2원장들이기_('M261020-2', '261020-2'));
+  Logger.log(ss_v2원장들이기_('M261020-4', '261020-3'));
+}
