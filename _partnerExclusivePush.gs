@@ -861,6 +861,28 @@ function pep_원천v2로() {
   PropertiesService.getScriptProperties().setProperty("대리발송원천", "v2");
   Logger.log("대리발송원천 = " + _pep_srcMode_());
 }
+/*  ★ 원천 점검 — 보내지 않고 «푸시가 무엇을 원천으로 쓸지»만 본다 ★  (2026-10-20)
+    > 사장님: "검증해볼수 있어?"  — 푸시와 같은 함수(_pep_v2SourceIfSheetStalled_ · _pep_checkSourceCols_ ·
+    _pep_setsplitRunning_)를 부르고 로그에 적는다. 업체 시트·임시기록은 안 건드린다. */
+function pep_원천점검() {
+  var NL = String.fromCharCode(10);
+  var 도는 = _pep_setsplitRunning_();
+  var s = _pep_v2SourceIfSheetStalled_();
+  var 줄 = [];
+  줄.push("모드: " + _pep_srcMode_());
+  줄.push("세트분리 도는 중 검문: " + (도는.도는중 ? "⛔ 걸림 (" + 도는.상태 + ")" : "통과 (" + 도는.상태 + ")"));
+  줄.push("원천: " + (s.rows ? "v2 " + s.rows.length + "줄 · 회차 " + s.회차 + " → 임시기록 B열 " + _pep_roundStamp_(s.회차) : "시트 대리발송 탭"));
+  줄.push("글: " + (s.글 || "(없음)"));
+  if (s.rows) {
+    var chk = _pep_checkSourceCols_(s.header);
+    줄.push("열 검사: " + (chk.ok ? "통과" : "⛔ " + chk.why));
+    var iv = s.header.indexOf("업체코드"), by = {};
+    for (var i = 0; i < s.rows.length; i++) { var k = String(s.rows[i][iv] || ""); by[k] = (by[k] || 0) + 1; }
+    줄.push("업체별: " + JSON.stringify(by));
+    줄.push("첫 줄: " + JSON.stringify(s.rows[0]).substring(0, 300));
+  }
+  Logger.log(줄.join(NL));
+}
 function pep_원천병행으로() {
   PropertiesService.getScriptProperties().deleteProperty("대리발송원천");
   Logger.log("대리발송원천 = " + _pep_srcMode_());
