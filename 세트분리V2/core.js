@@ -1477,9 +1477,35 @@ function ssDisplayName(u) {
         품목명에 판매처가 들어오는 길은 여럿이다(새품목명·마스터 오염·
         옛 자료). 들어오는 길마다 막으면 하나를 빠뜨린다. 붙이는 자리는
         여기 한 곳이니, 여기서 «이미 붙었나»를 보는 것이 빠짐이 없다.  */
+  /*  ★ 샘플은 적요가 곧 품목이다 ★  (2026-10-20)
+      > 사장님: "코드명이 SAMPLE일 경우 … 적요의 내용을 상품명에 이식 … [샘플] 적요내용"
+      코드가 «그냥» SAMPLE 인 줄은 품목명이 늘 「[샘플] 샘플 발송요청」이라 무엇을 담을지 송장에 없다.
+      적요(무엇을 보낼지)를 품목명 자리에 넣는다. SAMPLE-JJIM3 처럼 이름 있는 샘플 세트는 그대로. */
+  var 적요 = ssText(u.적요);
+  if (/^SAMPLE$/i.test(ssText(u.품목코드)) && 적요 && !/^\*\*/.test(적요)) {
+    name = '[샘플] ' + 적요 + (표기 ? '---' + 표기 : '');
+    return name;
+  }
   if (표기 && name.slice(-(표기.length + 3)) !== '---' + 표기) name += '---' + 표기;
-  if (/^\*\*/.test(ssText(u.적요))) name += u.적요;
+  if (/^\*\*/.test(적요)) name += u.적요;
+  /*  ★ 재출고·오배송 같은 «출고 사유»는 품목명 뒤에 ★  (2026-10-20)
+      > 사장님: "적요에 이미출고/ 오배송 재출고 등의 내용이 적혀있는경우는 상품명 뒤에 - 적요의 출고내용이 적히게"
+      적요에서 그 말이 든 낱말만 떼어 붙인다(「오배송/재출고」 → 「 - 오배송/재출고」). 주소·전화 같은 나머지는 안 붙인다.
+      담는 사람이 송장만 보고 「다시 보내는 건」인 줄 알게. 이미 붙어 있으면 또 안 붙인다(새품목명 복사). */
+  var 사유 = ssShipReasonOf(적요);
+  if (사유 && name.slice(-(사유.length + 3)) !== ' - ' + 사유) name += ' - ' + 사유;
   return name;
+}
+
+/** 적요에서 출고 사유 낱말만 — 재출고·재발송·오배송·오출고·오주문·불량·교환·누락·추가발송 */
+var SS_SHIP_REASON_RE = /(재출고|재발송|재배송|오배송|오출고|오발송|오주문|불량|파손|교환|누락|추가발송|추가출고)/;
+function ssShipReasonOf(memo) {
+  var 낱말 = ssText(memo).split(/\s+/), 고른 = [];
+  for (var i = 0; i < 낱말.length; i++) {
+    var w = 낱말[i].replace(/^[\[\(（【]+|[\]\)）】,.:;]+$/g, '');
+    if (w && SS_SHIP_REASON_RE.test(w) && 고른.indexOf(w) < 0) 고른.push(w);
+  }
+  return 고른.join(' ');
 }
 
 /**
@@ -3923,7 +3949,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssApplyManualEdits: ssApplyManualEdits,
     ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship, ssAuditSetNames: ssAuditSetNames,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, SS_HOLD_KEEP_WORDS: SS_HOLD_KEEP_WORDS, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssShipKey: ssShipKey, ssBaseUid: ssBaseUid, ssIslandMultiBoxHold: ssIslandMultiBoxHold, ssIslandAllHold: ssIslandAllHold, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssIslandTabKeep: ssIslandTabKeep, ssSalesIdCells: ssSalesIdCells,
+    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, SS_HOLD_KEEP_WORDS: SS_HOLD_KEEP_WORDS, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssShipKey: ssShipKey, ssBaseUid: ssBaseUid, ssIslandMultiBoxHold: ssIslandMultiBoxHold, ssIslandAllHold: ssIslandAllHold, ssShipReasonOf: ssShipReasonOf, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssIslandTabKeep: ssIslandTabKeep, ssSalesIdCells: ssSalesIdCells,
     ssItemBase: ssItemBase, ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssDupRunGroups: ssDupRunGroups, SS_ORDNO_SRC: SS_ORDNO_SRC,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,
