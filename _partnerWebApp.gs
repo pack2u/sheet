@@ -1942,6 +1942,14 @@ function _trigger_fetchInvoices_() {
 function _trigger_pushInvoices_() {
   // ★ 2026-06-27: 주말 차단
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 송장 배포 스킵"); return; }
+  /*  ★ 2026-10-20: 송장 배포 주인이 v2 면 건너뛴다 ★
+      > 사장님 "각 업체 시트는 그대로고 구동만 V2에서 … 응 송장 배포부터 v2로 바꿔줘"
+      v2 가 16:52 에 같은 일을 한다(v2 lib/invoice-push.ts). 스위치는 v2 app_flags invoice_push 하나 — 여기서 묻는다.
+      물어보지 못하면(v2 장애) 예전처럼 GAS 가 배포한다 — 둘이 같은 값을 쓰므로 덮어도 해가 작다. */
+  if (_pt_invoicePushOwner_() === "v2") {
+    Logger.log("[TRIGGER 16:50] 송장 배포 주인 = v2 → GAS 배포 건너뜀");
+    return;
+  }
   try {
     Logger.log("[TRIGGER 16:30] 송장 배포 시작");
     partnerPushInvoices();
@@ -1951,6 +1959,31 @@ function _trigger_pushInvoices_() {
     Logger.log("[TRIGGER 16:30] 송장 배포 에러: " + e.message);
     try { _chat_sendCard_("❌ 자동 송장 배포 에러", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(e.message).substring(0, 200) }]); } catch (_) {}
   }
+}
+
+/** 송장 배포 주인 — v2 /api/setsplit/invoice-push (GET) 에 묻는다. 못 물으면 "시트" (2026-10-20) */
+function _pt_invoicePushOwner_() {
+  try {
+    var tok = (typeof _psm_token_ === "function") ? _psm_token_() : "";
+    var base = (typeof _psm_v2url_ === "function") ? _psm_v2url_() : "https://pack2u-partner.vercel.app";
+    if (!tok) return "시트";
+    var res = UrlFetchApp.fetch(base + "/api/setsplit/invoice-push", {
+      method: "get", headers: { "x-ingest-token": tok }, muteHttpExceptions: true,
+    });
+    if (res.getResponseCode() !== 200) return "시트";
+    var j = JSON.parse(res.getContentText());
+    return String(j && j["주인"] || "시트");
+  } catch (e) {
+    Logger.log("[송장배포 주인] 못 물음 → 시트: " + (e && e.message ? e.message : e));
+    return "시트";
+  }
+}
+
+/** 편집기에서 — 지금 송장 배포 주인이 누구인지 */
+function partnerInvoicePushOwnerCheck() {
+  var o = _pt_invoicePushOwner_();
+  Logger.log("송장 배포 주인: " + o);
+  return o;
 }
 
 /** ★ 2026-07-02: Supabase DB 동기화 (17:00) — Silent */
