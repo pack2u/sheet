@@ -853,6 +853,19 @@ function _pep_srcMode_() {
   return m || "병행";
 }
 
+/*  ★ 원천 바꾸기 — 편집기에서 실행 ★  (2026-10-20)
+    > 사장님: "v2 세트분리에서 푸시되게 수정해줘"
+    속성이 50개를 넘어 「프로젝트 설정」 화면에서는 읽기만 된다. 그래서 함수로 바꾼다.
+    메뉴에는 안 넣는다 — 자주 바꿀 것이 아니다. */
+function pep_원천v2로() {
+  PropertiesService.getScriptProperties().setProperty("대리발송원천", "v2");
+  Logger.log("대리발송원천 = " + _pep_srcMode_());
+}
+function pep_원천병행으로() {
+  PropertiesService.getScriptProperties().deleteProperty("대리발송원천");
+  Logger.log("대리발송원천 = " + _pep_srcMode_());
+}
+
 function _pep_v2PartnerShadow_(srcTab, 어디서) {
   if (_pep_srcMode_() === "시트") return "";
   var NL = String.fromCharCode(10);
