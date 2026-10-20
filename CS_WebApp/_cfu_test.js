@@ -188,6 +188,36 @@ function 재보기(고침) {
       if (!/qs\.push\("all=1"\)/.test(gs)) 운것.push("⑨'다리가all을안나름");
     }
 
+    /* ⑩ ★ 하루는 「통화한 때」로 가른다 ★   (2026-10-20)
+     *
+     *  판독(processed_at)은 몰아서 돌기도 한다. 그 값으로 하루를 가르면
+     *  열흘 전 통화가 「오늘 할 일」로 서고 날짜 딱지도 거짓이 된다 —
+     *  518줄 가운데 ★256줄(49%)★ 이 통화한 날과 판독한 날이 달랐다.
+     *  10/19 에 뜬 16건이 실은 10/13 통화였다.
+     */
+    {
+      const api = g("api");
+      //  목록·꼬리 셈·정렬이 다 called_at 이어야 한다
+      if (/\.(gte|lt)\("processed_at"/.test(api)) 운것.push("⑩판독때로하루를가름");
+      if (!/\.order\("called_at"/.test(api)) 운것.push("⑩통화때로안줄세움");
+      if (!/\.lt\("called_at", 끝\)/.test(api)) 운것.push("⑩끝이판독때");
+      if (!/\.lt\("called_at", 시작\)/.test(api)) 운것.push("⑩꼬리셈이판독때");
+      //  화면 날짜 딱지가 읽는 값
+      if (!/at: String\(r\.called_at\)/.test(api)) 운것.push("⑩딱지가판독때");
+      //  보낼 때 본문 머리의 시각도 통화한 때
+      /*  [^)]* 로 쓰면 String(...) 의 닫는 괄호에서 멈춘다 — 늘 실패해서
+          깨기 줄마다 가짜 울음이 섞였다. 벌써 여섯 번째다.                */
+      if (!/문의본문\([\s\S]*?cur\.data\.called_at/.test(api)) 운것.push("⑩본문시각이판독때");
+
+      //  판정을 쌓을 때 called_at 을 적어야 한다 — 안 적으면 위가 다 빈값이 된다
+      const fu = g("fu");
+      if (!/called_at: call\?\.called_at \?\? new Date\(\)\.toISOString\(\)/.test(fu)) {
+        운것.push("⑩통화때를안적음");
+      }
+      //  ★ null 로 두면 하루를 가를 때 조용히 빠진다 ★
+      if (/called_at: call\?\.called_at \?\? null/.test(fu)) 운것.push("⑩빈칸을남김");
+    }
+
     /* ⑦ 확인해도 줄은 안 지운다 */
     {
       const api = g("api");
@@ -250,8 +280,15 @@ const 깨기 = [
   ["다리가 전부 보기를 안 나른다", { gs: GS.replace('if (opts.all) qs.push("all=1");', "") }],
   ["「보기」가 범위를 안 바꾼다", { home: H.replace("CFU_ALL = !!all;", "") }],
   ["지난 줄에 날짜를 안 붙인다", { home: H.replace("(지난 ? '<span class=\"cfu-old\"", "(false ? '<span class=\"cfu-old\"") }],
+  /*  ★ 이 넷이 10/20 두 번째 결함을 문다 ★ 판독한 때로 하루를 가르면
+      열흘 전 통화가 「오늘 할 일」로 선다 (16건이 실은 10/13 통화였다).  */
+  ["★ 판독한 때로 하루를 가른다 ★", { api: API.split('.lt("called_at", 끝)').join('.lt("processed_at", 끝)')
+    .split('.gte("called_at", 시작)').join('.gte("processed_at", 시작)') }],
+  ["날짜 딱지가 판독한 때를 읽는다", { api: API.replace("at: String(r.called_at)", "at: String(r.processed_at)") }],
+  ["보낸 문의 머리 시각이 판독한 때", { api: API.replace("cur.data.called_at ?? \"\"", "cur.data.processed_at ?? \"\"") }],
+  ["★ 통화한 때를 빈칸으로 둔다 ★", { fu: FU.replace("called_at: call?.called_at ?? new Date().toISOString(),", "called_at: call?.called_at ?? null,") }],
   ["두 물음의 잣대가 어긋난다", { api: API.replace(
-    /\.is\("dismissed_at", null\)(\s*)\.lt\("processed_at", 시작\)/, '$1.lt("processed_at", 시작)') }],
+    /\.is\("dismissed_at", null\)(\s*)\.lt\("called_at", 시작\)/, '$1.lt("called_at", 시작)') }],
   ["못 읽어도 숨긴다", { home: H.replace(/if \(err\) \{\s*\n\s*box\.hidden = false;/, "if (err) {\n        box.hidden = true;") }],
   ["화면이 요약을 제 맘대로 고른다", { api: API.replace(/summary: String\(r\.extract \|\| r\.reason \|\| ""\)/, 'summary: ""') }],
   ["보낼 때 다른 이름을 쓴다", { api: API.replace(/vendor: 보일이름\([^)]*\),/, "vendor: null,") }],
