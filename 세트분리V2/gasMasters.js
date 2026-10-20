@@ -1635,3 +1635,13 @@ function ss_마스터자동트리거설치() {
     '  이 프로젝트 트리거 ' + 남은 + '개 / 한도 20' + String.fromCharCode(10) + String.fromCharCode(10) +
     '기록은 숨김 탭 「마스터자동기록」 · 끄려면 스크립트 속성 SS_MASTER_AUTO = off');
 }
+
+/** 원천 직접 읽기(v2 세트분리 · 세트분리 이식 방)가 끝나면 — 메뉴 ⚙ 설정·설치 → 「마스터 자동 새로고침 트리거 지우기」 */
+function ss_마스터자동트리거지우기() {
+  var all = ScriptApp.getProjectTriggers();
+  var 지움 = 0;
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].getHandlerFunction() === SS_MASTER_AUTO_FN_) { ScriptApp.deleteTrigger(all[i]); 지움++; }
+  }
+  return ssio_alert('마스터 자동 새로고침 트리거 ' + 지움 + '개를 지웠습니다. 이 프로젝트 트리거 ' + ScriptApp.getProjectTriggers().length + '개 남음.');
+}
