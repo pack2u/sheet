@@ -15,6 +15,10 @@ eq('★ 수량 −1 · 금액 0 → 안 나감', C.ssNonShipReason(줄({ 수량:
 eq('주문수량만 음수여도 안 나감', C.ssNonShipReason(줄({ 주문수량: -2 }), cfg), '수량 음수 (-2)');
 eq('금액 음수는 예전대로', C.ssNonShipReason(줄({ 합계: -3000 }), cfg), '금액 음수 (-3000)');
 eq('정상 줄은 나감', C.ssNonShipReason(줄({}), cfg), '');
+/*  OUT 비용 코드 셋 다 도서산간비 줄 (2026-10-21) — OUT00002·OUT000011 이 상태보류로 갔다 */
+for (const code of ['OUT00001', 'OUT00002', 'OUT000011']) {
+  eq('★ ' + code + ' 는 도서산간비 줄', C.ssNonShipReason(줄({ 품목코드: code, 원본코드: code, 품목명: '도서산간 단품 추가비용' }), cfg), '도서산간비 줄 (' + code + ')');
+}
 
 console.log(fail ? `\n❌ 실패 ${fail}건 / 통과 ${pass}건` : `\n✅ 통과 ${pass}건`);
 process.exit(fail ? 1 : 0);

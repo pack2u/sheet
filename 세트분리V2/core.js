@@ -2150,7 +2150,10 @@ function ssNonShipReason(u, cfg) {
     }
   }
   //  ★ 2026-10-05 허브가 판매현황에 싣는 도서산간비 줄 — 이름이 무엇이든 코드로 뺀다
-  if (code === SS_ISLAND_FEE_CODE) return '도서산간비 줄 (' + code + ')';
+  /*  ★ OUT 비용 코드는 다 도서산간비 줄이다 ★  (2026-10-21 · ERP 방 발견)
+      OUT00001(제주 단품)만 알아서, 같은 비용 줄인 OUT00002(도서산간 단품)·OUT000011(제주 세트)는
+      상태 칸이 빈칸이라 「상태보류」로 갔다(최근 7일 3줄). 셋 다 물건이 아니다. */
+  if (code === SS_ISLAND_FEE_CODE || /^OUT\d{5,}$/i.test(code)) return '도서산간비 줄 (' + code + ')';
   var pat = ssText(cfg && cfg.비배송_품목패턴);
   if (pat) {
     var words = pat.split('|');

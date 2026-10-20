@@ -69,7 +69,11 @@ eq('사방넷 + 대리발송 출고지 — 여태처럼 도서산간(위탁배�
 console.log('\n[4] OUT00001(도서산간비 줄)은 물건이 아니다 — 송장 안 냄');
 //  ssNonShipReason 은 내보내지 않았다 — 코드 문자열로 확인한다
 const src = require('node:fs').readFileSync(new URL('../core.js', import.meta.url), 'utf8');
-eq('ssNonShipReason 이 OUT00001 을 비배송으로', /if \(code === SS_ISLAND_FEE_CODE\) return/.test(src), true);
+//  (2026-10-21) 글자 찾기 대신 실제로 불러 본다 — 지금은 내보낸다. OUT 비용 코드 전부가 비배송
+void src;
+eq('ssNonShipReason 이 OUT00001 을 비배송으로',
+  C.ssNonShipReason({ 품목코드: 'OUT00001', 원본코드: 'OUT00001', 품목명: '제주 도서산간 단품 추가비용', 수량: 1, 주문수량: 1, 합계: 5000, 적요: '' }, C.SS_DEFAULT_CONFIG),
+  '도서산간비 줄 (OUT00001)');
 eq('그 코드는 OUT00001', C.SS_ISLAND_FEE_CODE, 'OUT00001');
 
 console.log('');
