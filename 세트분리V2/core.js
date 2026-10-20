@@ -222,6 +222,8 @@ var SS_DEFAULT_CONFIG = {
   세트_송장꼬리표: '끔',
   //  섬 쇼핑몰 주문이 2박스 이상이면 보류 (ssIslandMultiBoxHold) — 끄려면 「끔」
   도서산간_여러박스_보류: '켬',
+  //  도서산간 줄을 «전부» 보류(미발송)로 — 탭을 따로 두지 않는다 (ssIslandAllHold). 시트는 끔, v2 만 켬 (2026-10-20)
+  도서산간_전부보류: '끔',
   도서산간_판정: '우편번호우선',
   전화주문_고유ID: '주문번호칸에채움',
   재고부족_자동대리발송: '사용',
@@ -1619,6 +1621,51 @@ function ssIslandMultiBoxHold(units, cfg, warnings) {
     }
     ssWarn(warnings, '주의', 'ISLAND_MULTI_BOX', ssText(g[0].받는분) + ' / ' + ssText(g[0].주소1).slice(0, 30), 상세);
   }
+  return 세운;
+}
+
+/**
+ * ★ 도서산간 줄을 전부 보류(미발송)로 ★  (2026-10-20)
+ *
+ * > 사장님: "도서산간도 다 미발송으로 보내버리면 될꺼 같아 사유만 적히면 될꺼 같아
+ * >          굳이 텝을 만들 필요는 없을꺼 같네(V2에서만)"
+ *
+ * 설정 「도서산간_전부보류」= 켬 일 때만 돈다. 시트는 끔(기본) — 지금처럼 도서산간 탭으로 나간다.
+ * v2 만 켠다(setsplit-auto 돌리기). 2박스 보류(ssIslandMultiBoxHold) «뒤»라 그쪽 사유가 먼저 남는다.
+ *
+ * 푸는 말 (도서산간 조치 = 도서산간조치기억 · 시트 도서산간 탭 조치 칸과 같은 자리):
+ *   도서발송            도서산간으로 내보낸다(도선료 그대로) — 시트에선 빈칸과 같은 뜻이라 안전하다
+ *   발송                도서산간에서 빼고 일반으로 (ssIslandSkipByManual_ — 이미 위에서 풀려 여기 안 온다)
+ *   대리발송·업체코드    위탁(업체) 섬 줄 — 이미 대리발송으로 가 여기 안 온다
+ *   보류 · 비움          그대로 세워 둔다
+ * 합포장 대표를 세우면 그 박스 동봉 줄도 같이 세운다(2박스 보류와 같은 규칙).
+ */
+function ssIslandAllHold(units, cfg, warnings) {
+  if (ssText(cfg && cfg.도서산간_전부보류) !== '켬') return 0;
+  var 섬조치 = (cfg && cfg._섬조치) || {};
+  var 그룹 = {}, 세운 = 0;
+  for (var i = 0; i < units.length; i++) {
+    var u = units[i];
+    var 위탁 = u.route === SS_ROUTE.LOTTE_ISLAND_CONSIGN;
+    if (u.route !== SS_ROUTE.LOTTE_ISLAND && !위탁) continue;
+    var 말 = ssText(섬조치[ssText(u.순번) + '|' + ssText(u.품목코드)]).split(' ').join('');
+    if (!위탁 && 말 === '도서발송') continue;   // 사람이 «도서산간으로 보내라» 했다
+    if (u.합포장그룹) 그룹[u.합포장그룹] = true;
+    u.route = SS_ROUTE.HOLD;
+    u.보류사유 = 위탁 ? '도서산간(위탁)' : '도서산간';
+    u.보류상세 = [ssText(u.도서권역) || '도서', ssText(u.도서판정),
+      (Number(u.도선료) > 0 ? '도선료 ' + Number(u.도선료).toLocaleString() + '원' : '')].filter(Boolean).join(' · ') +
+      (위탁 ? ' — 업체(대리발송) 섬 주문. 조치: 대리발송·업체코드·발송(우리 일반)·보류'
+            : ' — 조치: 도서발송(도서산간으로) · 발송(일반으로) · 보류');
+    세운++;
+  }
+  for (var n = 0; n < units.length; n++) {
+    var w = units[n];
+    if (w.route === SS_ROUTE.MERGED && w.합포장그룹 && 그룹[w.합포장그룹]) {
+      w.route = SS_ROUTE.HOLD; w.보류사유 = '도서산간'; w.보류상세 = '도서산간 박스에 동봉된 줄 — 대표 줄과 같이 조치하세요'; 세운++;
+    }
+  }
+  if (세운) ssWarn(warnings, '정보', 'ISLAND_ALL_HOLD', 세운 + '줄', '도서산간 줄을 미발송(보류)으로 세웠습니다 — 조치로 내보내세요');
   return 세운;
 }
 
@@ -3377,6 +3424,7 @@ function ssRun(grid, masters, cfg) {
   ssMerge(units, cfg);
   //  합포장으로 박스가 정해진 «뒤»에 센다 — 한 박스로 묶이면 송장 1장이라 보류할 일이 없다 (2026-10-14)
   ssIslandMultiBoxHold(units, cfg, warnings);
+  ssIslandAllHold(units, cfg, warnings);   // v2 만 켬 (2026-10-20)
   for (var sk = 0; sk < units.length; sk++) units[sk].송장키 = ssShipKey(units[sk], cfg);
 
   var buckets = {};
@@ -3875,7 +3923,7 @@ if (typeof module !== 'undefined' && module.exports) {
     ssApplyManualEdits: ssApplyManualEdits,
     ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship, ssAuditSetNames: ssAuditSetNames,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
-    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, SS_HOLD_KEEP_WORDS: SS_HOLD_KEEP_WORDS, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssShipKey: ssShipKey, ssBaseUid: ssBaseUid, ssIslandMultiBoxHold: ssIslandMultiBoxHold, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssIslandTabKeep: ssIslandTabKeep, ssSalesIdCells: ssSalesIdCells,
+    ssParseAddrOverride: ssParseAddrOverride, ssMemoLooksAddr: ssMemoLooksAddr, SS_HOLD_KEEP_WORDS: SS_HOLD_KEEP_WORDS, ssLooksPhone: ssLooksPhone, ssPhoneFix: ssPhoneFix, ssMakeOrderId: ssMakeOrderId, ssShipKey: ssShipKey, ssBaseUid: ssBaseUid, ssIslandMultiBoxHold: ssIslandMultiBoxHold, ssIslandAllHold: ssIslandAllHold, ssOrderSeed: ssOrderSeed, SS_ID_SHORT_FROM: SS_ID_SHORT_FROM, ssHash4: ssHash4, ssHashN: ssHashN, ssFingerprint: ssFingerprint, ssIslandTabKeep: ssIslandTabKeep, ssSalesIdCells: ssSalesIdCells,
     ssItemBase: ssItemBase, ssFindDuplicates: ssFindDuplicates, ssDupRows: ssDupRows, SS_DUP_HEADER: SS_DUP_HEADER,
     ssDupRunGroups: ssDupRunGroups, SS_ORDNO_SRC: SS_ORDNO_SRC,
     ssOutRow: ssOutRow, ssMergedRow: ssMergedRow, ssIslandRow: ssIslandRow, ssFerryMatch: ssFerryMatch, SS_FERRY_HEADER: SS_FERRY_HEADER,

@@ -141,7 +141,7 @@ console.log("\n[7] 메뉴에 걸려 있다");
 {
   eq("메뉴 항목", main.indexOf("🔂 세트분리 재실행 (회차 그대로)") >= 0, true);
   eq("ss_재실행 이 있다", main.indexOf("function ss_재실행()") >= 0, true);
-  eq("ss_실행 에 회차유지를 넘긴다", main.indexOf("ss_실행({ 회차유지: 마지막.key })") >= 0, true);
+  eq("ss_실행 에 회차유지를 넘긴다 (예약으로)", main.indexOf("{ 회차유지: 마지막.key }") >= 0, true);
   eq("요약에 표시된다", main.indexOf("🔂 재실행 (회차 그대로)") >= 0, true);
 }
 
