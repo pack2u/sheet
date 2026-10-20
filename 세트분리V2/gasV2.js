@@ -414,3 +414,89 @@ function ss_v2원장들이기_1020() {
   Logger.log(ss_v2원장들이기_('M261020-2', '261020-2'));
   Logger.log(ss_v2원장들이기_('M261020-4', '261020-3'));
 }
+
+/* ══════════════════════════════════════════════════════════════
+   v2 회차 판매현황을 시트 「MMDD판매현황」 탭에 덧붙인다  (2026-10-20 · 1단계)
+
+   > 사장님: "진행해줘" — 허브 20:00 통합 일일마감이 이 탭을 읽는데 시트가 1차만 돌아 2·3차 판매분이 빠진다.
+   ss_그날판매현황쌓기 와 같은 모양: 판매현황 칸들 + 자료출처 · 회차키.
+   · 그 회차키 줄이 탭에 이미 있으면 멈춘다
+   · 이미 있는 줄(일자-No.·품목코드·수량·합계·주문자명(사방넷))은 뺀다 — 하루치를 통째로 넣은 회차(M261020-4)에서 3차만 남는다
+   · 합계·계 줄은 안 넣는다 · 숫자 칸은 숫자로(1차 줄과 같게) · 전화 칸은 텍스트로
+   ══════════════════════════════════════════════════════════════ */
+function ss_v2판매현황들이기_(v2라벨, 시트회차키) {
+  var url = _ss_v2_url_(), tok = _ss_v2_token_();
+  if (!url || !tok) throw new Error('v2 주소·토큰이 없습니다');
+  var m = String(시트회차키).match(/^\d{2}(\d{2})(\d{2})-\d+$/);
+  if (!m) throw new Error('시트 회차키 모양이 아닙니다: ' + 시트회차키);
+  var 탭이름 = m[1] + m[2] + '판매현황';
+  var 받기 = function (q) {
+    var res = UrlFetchApp.fetch(url + '/api/setsplit/auto' + q, { method: 'get', headers: { 'x-ingest-token': tok }, muteHttpExceptions: true });
+    var j = null; try { j = JSON.parse(res.getContentText()); } catch (e) {}
+    if (res.getResponseCode() !== 200 || !j || j.ok === false) throw new Error('v2 HTTP ' + res.getResponseCode() + ' ' + String(res.getContentText()).slice(0, 200));
+    return j;
+  };
+  var 목록 = 받기('').회차 || [], run = null;
+  for (var i = 0; i < 목록.length; i++) if (String(목록[i].label) === String(v2라벨)) { run = 목록[i]; break; }
+  if (!run) throw new Error('v2 회차 ' + v2라벨 + ' 를 못 찾았습니다');
+  var g = 받기('?id=' + run.id + '&input=1').input || [];
+
+  var sh = ssio_ss().getSheetByName(탭이름);
+  if (!sh || sh.getLastRow() < 1) throw new Error('「' + 탭이름 + '」 탭이 없습니다');
+  var 탭 = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
+  var H = 탭[0].map(function (h) { return ssText(h); });
+  var c = function (n) { return H.indexOf(n); };
+  var c회차 = c('회차키'), c출처 = c('자료출처');
+  if (c회차 < 0) throw new Error('「' + 탭이름 + '」 탭에 회차키 칸이 없습니다');
+  var 수 = function (v) { var s = String(v == null ? '' : v).replace(/[,\s]/g, ''); return s === '' ? '' : (isNaN(Number(s)) ? s : Number(s)); };
+  var 열쇠 = function (일, 코드, 수량, 합계, 주문자) { return [ssText(일), ssText(코드), 수(수량), 수(합계), ssText(주문자)].join('|'); };
+  var 있음 = {};
+  for (var r = 1; r < 탭.length; r++) {
+    if (ssText(탭[r][c회차]) === 시트회차키) throw new Error('「' + 탭이름 + '」에 ' + 시트회차키 + ' 줄이 이미 있습니다 — 멈춥니다');
+    있음[열쇠(탭[r][c('일자-No.')], 탭[r][c('품목코드')], 탭[r][c('수량')], 탭[r][c('합계')], 탭[r][c('주문자명(사방넷)')])] = true;
+  }
+
+  var h = -1;
+  for (var k = 0; k < g.length; k++) { if ((g[k] || []).some(function (x) { return ssText(x) === '일자-No.'; })) { h = k; break; } }
+  if (h < 0) throw new Error('v2 판매현황에서 머리글(일자-No.)을 못 찾았습니다');
+  var GH = g[h].map(function (x) { return ssText(x); });
+  var gi = function (n) { return GH.indexOf(n); };
+  var 숫자칸 = { '순번': 1, '수량': 1, '합계': 1, '단품배송비': 1 };
+  var 줄들 = [], 뺌 = 0;
+  for (var q = h + 1; q < g.length; q++) {
+    var row = g[q] || [];
+    var 일 = ssText(row[gi('일자-No.')]);
+    if (!/\d{4}\/\d{2}\/\d{2}\s*-\s*\d+/.test(일)) continue;   // 합계·계·빈 줄
+    var key = 열쇠(일, row[gi('품목코드')], row[gi('수량')], row[gi('합계')], row[gi('주문자명(사방넷)')]);
+    if (있음[key]) { 뺌++; continue; }
+    있음[key] = true;
+    var out = [];
+    for (var j = 0; j < H.length; j++) {
+      if (j === c회차) out.push(시트회차키);
+      else if (j === c출처) out.push('판매현황(v2)');
+      else {
+        var v = gi(H[j]) >= 0 ? row[gi(H[j])] : '';
+        out.push(숫자칸[H[j]] ? 수(v) : (v == null ? '' : String(v)));
+      }
+    }
+    줄들.push(out);
+  }
+  if (줄들.length) {
+    var 시작 = sh.getLastRow() + 1;
+    var 모자람 = (시작 + 줄들.length - 1) - sh.getMaxRows();
+    if (모자람 > 0) sh.insertRowsAfter(sh.getMaxRows(), 모자람 + 100);
+    for (var t = 0; t < H.length; t++) {
+      if (/전화|모바일/.test(H[t])) sh.getRange(시작, t + 1, 줄들.length, 1).setNumberFormat('@');
+    }
+    sh.getRange(시작, 1, 줄들.length, H.length).setValues(줄들);
+  }
+  var 글 = 'v2 ' + v2라벨 + ' → 「' + 탭이름 + '」 ' + 시트회차키 + ' ' + 줄들.length + '줄 넣음 (이미 있던 줄 ' + 뺌 + ' 뺌)';
+  Logger.log(글);
+  return 글;
+}
+
+/** 2026-10-20 하루치 — 편집기에서 한 번 돌리고 지운다 (임시) */
+function ss_v2판매현황들이기_1020() {
+  Logger.log(ss_v2판매현황들이기_('M261020-2', '261020-2'));
+  Logger.log(ss_v2판매현황들이기_('M261020-4', '261020-3'));
+}
