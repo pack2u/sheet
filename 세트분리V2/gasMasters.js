@@ -1565,3 +1565,73 @@ function _sssrc_retireOldSource_() {
   }
   return 자국.join(' · ');
 }
+
+/* ══════════════════════════════════════════════════════════════
+ *  마스터 자동 새로고침 — 30분마다   (2026-10-20)
+ *
+ *  ★ 왜 ★  10/20 세트분리 시트가 은퇴하고 v2(/setsplit/auto)가 회차를 돈다. v2 는 회차마다 이 시트의
+ *    M_품목 · M_재고 · M_BOM 을 «읽기만» 한다. 그 탭을 새로 고치던 것은 ss_실행 직전의 ssm_refreshBeforeRun
+ *    하나였는데, 시트를 안 돌리니 아무도 안 고친다 — 10/20 09:52 값이 그대로 남았고, 반나절 만에 원천과
+ *    표본 11% 가 달라졌다(JHBJUG0028 원천 37.9 · M_재고 7.9). 재고가 낡으면 자사출고/대리발송 판정이 틀린다.
+ *
+ *  ★ 급한 불이다 ★  제대로는 v2 가 원천(상품정보시트 「이카운트-재고/품목정보/BOM현황」)을 직접 읽는 것.
+ *    그게 되면 이 트리거는 지운다.
+ *
+ *  · 07~21시에만 · 다른 실행이 돌고 있으면 건너뜀(문서 잠금) · 실패해도 앞 값 그대로(ssm_refreshAll 이 그렇다)
+ *  · 끄려면 스크립트 속성 SS_MASTER_AUTO = off · 「마스터자동기록」 탭(숨김)에 한 줄씩
+ * ══════════════════════════════════════════════════════════════ */
+var SS_MASTER_AUTO_FN_ = 'ss_마스터자동';
+var SS_MASTER_AUTO_TAB_ = '마스터자동기록';
+var SS_MASTER_AUTO_HEADER_ = ['시각', '결과', '걸린초', '내용'];
+
+function ss_마스터자동() {
+  var at = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+  var 기록 = function (결과, 초, 내용) {
+    try {
+      ssio_append(SS_MASTER_AUTO_TAB_, SS_MASTER_AUTO_HEADER_, [[at, 결과, 초, 내용]]);
+      var sh = ssio_ss().getSheetByName(SS_MASTER_AUTO_TAB_);
+      if (sh && !sh.isSheetHidden() && sh.getLastRow() <= 2) sh.hideSheet();
+    } catch (e) {}
+  };
+  try {
+    if (String(PropertiesService.getScriptProperties().getProperty('SS_MASTER_AUTO') || '').toLowerCase() === 'off') return;
+  } catch (e) {}
+  var 시 = Number(Utilities.formatDate(new Date(), 'Asia/Seoul', 'H'));
+  if (시 < 7 || 시 >= 21) return;
+  var lock = LockService.getDocumentLock();
+  if (!lock.tryLock(3000)) { 기록('건너뜀', '', '다른 실행이 돌고 있음 — 30분 뒤 다시'); return; }
+  var t0 = new Date().getTime();
+  try {
+    var r = ssm_refreshAll();
+    var 줄 = (r.report || []).map(function (x) { return x[0] + ' ' + x[1]; }).join(' · ');
+    var 경고 = (r.warnings || []).length;
+    기록(경고 ? '⚠ 경고 ' + 경고 : '✅ 새로 고침', ((new Date().getTime() - t0) / 1000).toFixed(1),
+      줄 + (경고 ? ' / ' + (r.warnings || []).slice(0, 2).map(function (w) { return w[3] || w.join(' '); }).join(' / ') : ''));
+  } catch (e) {
+    기록('❌ 실패', ((new Date().getTime() - t0) / 1000).toFixed(1), String(e && e.message ? e.message : e).slice(0, 400) + ' — 앞 값 그대로');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** 메뉴 ⚙ 설정 · 설치 → 「⏰ 마스터 자동 새로고침 트리거 설치 (1회 · 30분)」 */
+function ss_마스터자동트리거설치() {
+  var all = ScriptApp.getProjectTriggers();
+  var 지움 = 0;
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].getHandlerFunction() === SS_MASTER_AUTO_FN_) { ScriptApp.deleteTrigger(all[i]); 지움++; }
+  }
+  //  자리는 18개까지만 — 스물 중 둘은 이어달리기(.after) 몫이다
+  var 지금 = ScriptApp.getProjectTriggers().length;
+  if (지금 >= 18) {
+    return ssio_alert('트리거 자리가 모자랍니다 (' + 지금 + '개 / 18개까지). 안 쓰는 트리거를 먼저 지워 주세요.');
+  }
+  ScriptApp.newTrigger(SS_MASTER_AUTO_FN_).timeBased().everyMinutes(30).create();
+  ss_마스터자동();   // 설치하면서 한 번 바로
+  var 남은 = ScriptApp.getProjectTriggers().length;
+  return ssio_alert('마스터 자동 새로고침 트리거 설치' + String.fromCharCode(10) + String.fromCharCode(10) +
+    '  30분마다 · 07~21시 — M_품목 · M_재고 · M_BOM · 도서산간을 이카운트 원천에서 다시 읽습니다' + String.fromCharCode(10) +
+    '  (같은 트리거 ' + 지움 + '개를 지우고 새로 걸었습니다 · 방금 한 번 돌렸습니다)' + String.fromCharCode(10) +
+    '  이 프로젝트 트리거 ' + 남은 + '개 / 한도 20' + String.fromCharCode(10) + String.fromCharCode(10) +
+    '기록은 숨김 탭 「마스터자동기록」 · 끄려면 스크립트 속성 SS_MASTER_AUTO = off');
+}
