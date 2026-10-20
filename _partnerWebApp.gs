@@ -1912,9 +1912,17 @@ function _trigger_fetchInvoices_() {
   //  ★ 2026-10-12 — 15:40 담기보다 늦게 돈 세트분리 3차를 여기서 한 번 더 담는다 (_pep_tempCatchUp_)
   _pep_tempCatchUp_("16:40 송장 수집 앞");
   try {
+    /*  ★ 2026-10-21: 송장 수집 주인이 v2 면 수집 본체만 건너뛴다 ★
+        > 사장님 "송장 수집도 v2로 넘길 준비 해줘"
+        v2 가 16:42 에 허브 N·O·R·M · 임시기록 X·Y 를 붙인다(v2 lib/invoice-fetch.ts). 스위치는 v2 app_flags invoice_fetch.
+        앞의 담기(_pep_tempCatchUp_)와 뒤의 소유권 점검(_iod_afterFetch_)은 그대로 돈다 — 허브만 본다. 못 물으면 예전처럼 GAS 가 수집. */
+    if (_pt_v2Owner_("/api/setsplit/invoice-fetch") === "v2") {
+      Logger.log("[TRIGGER 16:40] 송장 수집 주인 = v2 → GAS 수집 본체 건너뜀");
+    } else {
     Logger.log("[TRIGGER 16:05] 허브 송장 수집 시작");
     partnerFetchInvoices();
     Logger.log("[TRIGGER 16:05] 허브 송장 수집 완료");
+    }
 
     /*  ★ 걷은 «직후»에 남의 송장이 붙었는지 본다 ★  (2026-09-16)
 
@@ -1962,19 +1970,22 @@ function _trigger_pushInvoices_() {
 }
 
 /** 송장 배포 주인 — v2 /api/setsplit/invoice-push (GET) 에 묻는다. 못 물으면 "시트" (2026-10-20) */
-function _pt_invoicePushOwner_() {
+function _pt_invoicePushOwner_() { return _pt_v2Owner_("/api/setsplit/invoice-push"); }
+
+/** v2 일 주인 — 그 길(GET)에 묻는다 (송장 배포 invoice-push · 송장 수집 invoice-fetch). 못 물으면 "시트" */
+function _pt_v2Owner_(path) {
   try {
     var tok = (typeof _psm_token_ === "function") ? _psm_token_() : "";
     var base = (typeof _psm_v2url_ === "function") ? _psm_v2url_() : "https://pack2u-partner.vercel.app";
     if (!tok) return "시트";
-    var res = UrlFetchApp.fetch(base + "/api/setsplit/invoice-push", {
+    var res = UrlFetchApp.fetch(base + path, {
       method: "get", headers: { "x-ingest-token": tok }, muteHttpExceptions: true,
     });
     if (res.getResponseCode() !== 200) return "시트";
     var j = JSON.parse(res.getContentText());
     return String(j && j["주인"] || "시트");
   } catch (e) {
-    Logger.log("[송장배포 주인] 못 물음 → 시트: " + (e && e.message ? e.message : e));
+    Logger.log("[v2 주인 " + path + "] 못 물음 → 시트: " + (e && e.message ? e.message : e));
     return "시트";
   }
 }
@@ -1982,8 +1993,9 @@ function _pt_invoicePushOwner_() {
 /** 편집기에서 — 지금 송장 배포 주인이 누구인지 */
 function partnerInvoicePushOwnerCheck() {
   var o = _pt_invoicePushOwner_();
-  Logger.log("송장 배포 주인: " + o);
-  return o;
+  var f = _pt_v2Owner_("/api/setsplit/invoice-fetch");
+  Logger.log("송장 배포 주인: " + o + " · 송장 수집 주인: " + f);
+  return o + " / " + f;
 }
 
 /** ★ 2026-07-02: Supabase DB 동기화 (17:00) — Silent */
