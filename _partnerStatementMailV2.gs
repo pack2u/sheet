@@ -211,3 +211,76 @@ function _psm_summary_(r) {
   L.push(_psm_v2url_() + "/settlement");
   return L.join("\n");
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  16:00 · 19:00 두 차례 (2026-10-20)
+ *  > "거래명세서 못읽는 부분도 있는데 확인해줘"  > "명세서 저녁 7시에도 한번 더 돌게 해줘"
+ *
+ *  ★ 10/19·10/20 이카운트 링크 메일 9통이 v2 에 안 갔다 ★
+ *    위 _psm_tick_ 은 «5분마다 도는 발주 수집» 끝에 붙인 줄 알았는데, 그 수집은 09:30·13:00·15:00 에만 돈다.
+ *    15:30~17:00 창 안에서 한 번도 불리지 않았다. 10/13~16 링크는 10/18 에 손으로 돌린 것이었다.
+ *    첨부 명세서는 16:00 Gmail 수집(_partnerGmailInvoice.gs → _partnerStatementToV2.gs `_sv2_run_`)이 날라서 멀쩡했다.
+ *  → 링크도 그 16:00 자리에서 걷는다(psmAfterGmail_). 첨부의 주인은 _sv2_run_ 하나 그대로 — 여기선 링크만.
+ *
+ *  ★ 19:00 은 일회용 트리거 ★  상시 트리거 18자리가 다 찼다(gas-trigger-slots-reserve-two).
+ *    16:00 이 그날 19:00 한 번짜리를 걸고, 19:00 에 돌면 스스로 지운다 — 20:00 마감의 이어달리기 자리를 안 먹는다.
+ *    19:00 에는 첨부(_sv2_run_)와 링크를 둘 다 다시 본다. 이미 간 것은 라벨·sha256 으로 걸러진다.
+ * ══════════════════════════════════════════════════════════════
+ */
+var _PSM_EVENING_FN_ = "psmEveningRun_";
+var _PSM_EVENING_HOUR_ = 19;
+
+/** 16:00 Gmail 수집 끝에서 부른다 — 링크 걷기 + 오늘 19:00 한 번 걸기 */
+function psmAfterGmail_() {
+  var r = _psm_linksOnly_("16:00");
+  try { _psm_scheduleEvening_(); } catch (e) { Logger.log("[PSM] 19:00 걸기 실패: " + String(e && e.message || e)); }
+  return r;
+}
+
+/** 링크 메일만 걷는다 — 실패해도 위로 던지지 않는다(송장 수집을 깨면 안 된다) */
+function _psm_linksOnly_(when) {
+  var tok = _psm_token_();
+  if (!tok) { Logger.log("[PSM] " + when + " 링크: V2_INGEST_TOKEN 없음"); return null; }
+  try {
+    var label = GmailApp.getUserLabelByName(_PSM_LABEL_) || GmailApp.createLabel(_PSM_LABEL_);
+    var r = _psm_collectEcountLinks_(tok, label);
+    Logger.log("[PSM] " + when + " 이카운트 링크 " + JSON.stringify(r));
+    return r;
+  } catch (e) {
+    Logger.log("[PSM] " + when + " 이카운트 링크 실패: " + String(e && e.message || e));
+    try { if (typeof _chat_sendText_ === "function") _chat_sendText_("⚠ 이카운트 링크 명세서 걷기 실패 (" + when + "): " + String(e && e.message || e)); } catch (_) {}
+    return null;
+  }
+}
+
+/** 오늘 19:00 한 번짜리 — 이미 걸려 있으면 지우고 다시(하루 하나만) */
+function _psm_scheduleEvening_() {
+  var now = new Date();
+  var at = new Date(Utilities.formatDate(now, "Asia/Seoul", "yyyy-MM-dd") + "T" + (_PSM_EVENING_HOUR_ < 10 ? "0" : "") + _PSM_EVENING_HOUR_ + ":00:00+09:00");
+  if (at.getTime() <= now.getTime()) return;
+  _psm_dropEvening_();
+  ScriptApp.newTrigger(_PSM_EVENING_FN_).timeBased().at(at).create();
+  Logger.log("[PSM] 19:00 한 번 걸었다: " + at.toISOString());
+}
+function _psm_dropEvening_() {
+  var ts = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < ts.length; i++) if (ts[i].getHandlerFunction() === _PSM_EVENING_FN_) ScriptApp.deleteTrigger(ts[i]);
+}
+
+/** 19:00 — 첨부와 링크를 한 번 더. 돌고 나면 제 트리거를 지운다 */
+function psmEveningRun_() {
+  try { _psm_dropEvening_(); } catch (e) {}
+  if (typeof _pt_isWeekendBlackout_ === "function" && _pt_isWeekendBlackout_()) return;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(60000)) { Logger.log("[PSM] 19:00 잠금 못 잡음 — 건너뜀"); return; }
+  try {
+    try {
+      var r = _sv2_run_({ dryRun: false });
+      try { _gmi_log_("19:00 명세서 → v2: " + _sv2_oneLine_(r)); } catch (_) {}
+    } catch (e) { Logger.log("[PSM] 19:00 첨부 실패: " + String(e && e.message || e)); }
+    _psm_linksOnly_("19:00");
+  } finally {
+    lock.releaseLock();
+  }
+}

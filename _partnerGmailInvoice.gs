@@ -198,6 +198,13 @@ function _gmi_triggerFetchNKInvoice_() {
       } catch (svErr) {
         Logger.log("[TRIGGER] 명세서 → v2 에러: " + svErr.message);
       }
+      /* ★ 2026-10-20: 이카운트 «링크» 명세서도 여기서 걷고, 오늘 19:00 한 번 더 도는 일회용 트리거를 건다 ★
+         (_partnerStatementMailV2.gs psmAfterGmail_ — 링크 걷기는 15:30 창에서 한 번도 안 불렸다) */
+      try {
+        if (typeof psmAfterGmail_ === "function") psmAfterGmail_();
+      } catch (psmErr) {
+        Logger.log("[TRIGGER] 이카운트 링크 명세서 에러: " + psmErr.message);
+      }
     } finally {
       lock.releaseLock();
     }

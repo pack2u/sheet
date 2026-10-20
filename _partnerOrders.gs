@@ -4680,8 +4680,9 @@ function _po_collectSilentCore_(withSalesRebuild) {
   /*  ★ 메일 거래명세서 → v2 정산 (2026-10-16) ★
       평일 15:30~17:00 에만, 10분에 한 번 — 판정은 _partnerStatementMailV2.gs `_psm_tick_`.
       새 트리거를 안 만들려고 여기 붙였다. 수집이 «끝난 뒤»라 수집을 늦추지 않는다. */
-  try { if (typeof _psm_tick_ === "function") _psm_tick_(); }
-  catch (ePsm) { Logger.log("[PSM] " + String(ePsm && ePsm.message || ePsm)); }
+  /*  ★ 2026-10-20 ★ 여기서 부르던 _psm_tick_ 을 뺐다 — 이 수집은 09:30·13:00·15:00 에만 돌아
+      15:30~17:00 창에 한 번도 안 걸렸다. 명세서는 16:00 Gmail 수집(_partnerGmailInvoice.gs)과
+      그날 19:00 일회용 트리거(_partnerStatementMailV2.gs psmEveningRun_)가 맡는다. */
 }
 
 /** 대리발주 자동 Push ON */
