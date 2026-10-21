@@ -2495,24 +2495,49 @@ function _pep_pushCore_(silent) {
     } catch (e) {}
   }
 
-  // 1) 소스 탭 확인 (외부 스프레드시트에서 로드)
-  var srcSS = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
-  var srcTab = null;
-  // GID 우선 탐색
-  var srcSheets = srcSS.getSheets();
-  for (var gsi = 0; gsi < srcSheets.length; gsi++) {
-    if (srcSheets[gsi].getSheetId() === _PEP_SOURCE_TAB_GID) {
-      srcTab = srcSheets[gsi];
-      break;
-    }
+  /*  ★ 원천을 먼저 정한다 — 시트 탭은 그다음 ★  (2026-10-21 · 3단계-4)
+      > 사장님: "이제 세트분리 시트는 사용안할꺼야"
+      시트 세트분리가 은퇴해 대리발송 탭은 더 이상 새로 안 써진다(마지막 시트 회차 것으로 굳음).
+      그래서 v2 모드(대리발송원천=v2)에서
+        · v2 줄을 받았으면 시트 탭이 없거나 비어도 그대로 간다.
+        · v2 줄을 못 받았으면 «멈춘다». 굳은 탭으로 보내면 새 주문은 하나도 안 나가는데
+          오류도 안 난다 — 조용히 발주가 빠진다. 멈추고 챗으로 알린다. */
+  var _v2원천_ = _pep_v2SourceIfSheetStalled_();
+  if (_pep_srcMode_() === "v2" && !_v2원천_.rows) {
+    var _멈춤글_ = "⛔ 대리공급 " + (_PEP_TEMP_ONLY_ ? "담기" : "푸시") + "를 멈췄습니다 — v2 대리발송 줄을 못 받았습니다.\n" +
+      String(_v2원천_.글 || "").replace(/^⚠ v2 모드인데 이번엔 시트 대리발송 탭으로 보냅니다 — /, "까닭: ") + "\n" +
+      "세트분리 시트는 은퇴해서 대리발송 탭은 지난 회차 것입니다 — 그것으로는 보내지 않습니다.\n" +
+      "→ v2 세트분리(/setsplit/auto)에서 회차가 끝났는지 보고, 상품정보 메뉴에서 푸시를 다시 누르세요.";
+    Logger.log("[PEP] " + _멈춤글_);
+    try { _chat_sendText_(_멈춤글_); } catch (e멈춤) {}
+    if (!silent && ui) ui.alert(_멈춤글_);
+    return;
   }
-  // 이름 폴백 — PropertiesService 저장값 우선, 없으면 상수
-  if (!srcTab) srcTab = srcSS.getSheetByName(_pep_getSourceTabName_());
-  /*  저장해 둔 이름이 «이 시트에는» 없을 수 있다 — 소스를 옮기면 그렇다.
-      그럴 때 상수 이름으로 한 번 더 찾는다. 안 그러면 「탭을 못 찾음」만
-      뜨고, 사람은 스크립트 속성에 옛 이름이 남아 있는 줄을 모른다. */
-  if (!srcTab) srcTab = srcSS.getSheetByName(_PEP_SOURCE_TAB_NAME);
-  if (!srcTab) {
+
+  // 1) 소스 탭 확인 (외부 스프레드시트에서 로드) — v2 줄이 있으면 없어도 된다
+  var srcSS = null;
+  var srcTab = null;
+  try {
+    srcSS = SpreadsheetApp.openById(_PEP_SOURCE_SHEET_ID);
+    // GID 우선 탐색
+    var srcSheets = srcSS.getSheets();
+    for (var gsi = 0; gsi < srcSheets.length; gsi++) {
+      if (srcSheets[gsi].getSheetId() === _PEP_SOURCE_TAB_GID) {
+        srcTab = srcSheets[gsi];
+        break;
+      }
+    }
+    // 이름 폴백 — PropertiesService 저장값 우선, 없으면 상수
+    if (!srcTab) srcTab = srcSS.getSheetByName(_pep_getSourceTabName_());
+    /*  저장해 둔 이름이 «이 시트에는» 없을 수 있다 — 소스를 옮기면 그렇다.
+        그럴 때 상수 이름으로 한 번 더 찾는다. 안 그러면 「탭을 못 찾음」만
+        뜨고, 사람은 스크립트 속성에 옛 이름이 남아 있는 줄을 모른다. */
+    if (!srcTab) srcTab = srcSS.getSheetByName(_PEP_SOURCE_TAB_NAME);
+  } catch (eSrc) {
+    if (!_v2원천_.rows) throw eSrc;
+    Logger.log("[PEP] 세트분리 시트를 못 열었지만 v2 줄로 갑니다 — " + eSrc.message);
+  }
+  if (!srcTab && !_v2원천_.rows) {
     if (!silent && ui)
       ui.alert(
         "소스 탭을 찾을 수 없습니다.\n" +
@@ -2526,7 +2551,7 @@ function _pep_pushCore_(silent) {
       );
     return;
   }
-  if (srcTab.getLastRow() < 2) {
+  if (!_v2원천_.rows && srcTab.getLastRow() < 2) {
     if (!silent && ui) ui.alert("소스 탭에 데이터가 없습니다.");
     return;
   }
@@ -2566,9 +2591,10 @@ function _pep_pushCore_(silent) {
   );
 
   // 4) 소스 데이터 읽기
-  var srcLr = srcTab.getLastRow();
-  var srcLc = Math.max(srcTab.getLastColumn(), 20);
-  var srcAll = srcTab.getRange(1, 1, srcLr, srcLc).getValues();
+  //  v2 줄로 갈 때는 시트 탭을 안 읽는다 (아래에서 v2 줄로 갈아 끼운다)
+  var srcLr = srcTab && !_v2원천_.rows ? srcTab.getLastRow() : 0;
+  var srcLc = srcTab ? Math.max(srcTab.getLastColumn(), 20) : 20;
+  var srcAll = srcLr ? srcTab.getRange(1, 1, srcLr, srcLc).getValues() : [[]];
   var srcHdr = srcAll[0];
 
   /*  ★ 시트 세트분리가 멈췄으면 v2 회차로 ★  (2026-10-16)
@@ -2577,7 +2603,7 @@ function _pep_pushCore_(silent) {
       회차는 확정됐는데(사람이 눌렀다) 실행이력에 없으면(출력 탭을 다 못 썼다) 대리발송 탭은
       앞 회차 것이다. 그때만 v2 가 같은 판매현황으로 돈 대리발송 줄을 원천으로 쓴다.
       판단은 v2 한 곳(lib/setsplit/partner-shadow.ts 대리발송원천)이 한다. */
-  var _v2원천_ = _pep_v2SourceIfSheetStalled_();
+  //  _v2원천_ 은 맨 앞에서 정했다 (2026-10-21)
   /*  ★ 임시기록 B열 = 세트분리 회차 ★  (2026-10-19)
       > 사장님: "푸시시 임시기록의 Ｂ열 순번 １０１６－３차 이런식으로 들어가게 해줘"
       여태 B열은 «그날 몇 번째 푸시»(_PEP_PUSH_STAMP_)였다. 1차 주문이 세 번째 푸시에 실리면 「1019-3차」로
@@ -3317,7 +3343,7 @@ function _pep_pushCore_(silent) {
   }
 
   // ★ 진단: Push 전후 소스 탭 행 수 비교 (소스 탭 초기화 여부 감지용)
-  var _srcRowsAfterPush_ = srcTab.getLastRow();
+  var _srcRowsAfterPush_ = srcTab && srcLr ? srcTab.getLastRow() : srcLr;
   Logger.log("[PEP] 소스 탭 행 수 — Push 전: " + srcLr + " / Push 후: " + _srcRowsAfterPush_ +
     (_srcRowsAfterPush_ < srcLr ? "  ⚠ 행 감소! 소스탭이 외부에서 변경됐을 수 있음" : " (정상)"));
 
