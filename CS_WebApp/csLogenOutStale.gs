@@ -462,15 +462,10 @@ function _ost_roundDate_(v) {
  *   그래서 송장번호로 정렬해 못 박는다.
  */
 function _ost_collect_() {
-  var ss = SpreadsheetApp.openById(_CS_LEDGER_SS_ID_);
-  var tab = ss.getSheetByName("주문라인원장");
-  if (!tab) throw new Error("「주문라인원장」 탭이 없습니다");
-
-  var lastRow = tab.getLastRow();
-  if (lastRow < 2) return [];
-  var lastCol = tab.getLastColumn();
-
-  var head = tab.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  //  원장은 시트 또는 v2 창구에서 (csLedgerSource.gs · 스크립트 속성 원장원천 · 2026-10-21)
+  var 원장 = _cs_ledgerTail_(_OST_SCAN_ROWS_);
+  if (!원장.rows.length) return [];
+  var head = 원장.head;
   var c = {};
   for (var h = 0; h < head.length; h++) {
     var nm = String(head[h] || "").trim();
@@ -484,8 +479,7 @@ function _ost_collect_() {
   if (c.inv == null || c.round == null) throw new Error("운송장번호·회차키 열을 못 찾았습니다");
 
   //  최근 것만 본다 — 원장은 회차 순으로 쌓이니 아래가 최근이다
-  var from = Math.max(2, lastRow - _OST_SCAN_ROWS_ + 1);
-  var 값 = tab.getRange(from, 1, lastRow - from + 1, lastCol).getDisplayValues();
+  var 값 = 원장.rows;
 
   //  값싼 체에 쓸 오늘 0시 — 줄마다 다시 만들지 않는다
   var 오늘기준 = new Date(); 오늘기준.setHours(0, 0, 0, 0);

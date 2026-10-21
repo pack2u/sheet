@@ -204,14 +204,10 @@ function _pkc_fetchDay_(날) {
  *   지난 회차 송장이 늦게 걷히는 일이 있어 회차로 좁히면 못 찾는다.
  */
 function _pkc_pathMap_() {
-  var ss = SpreadsheetApp.openById(_CS_LEDGER_SS_ID_);
-  var tab = ss.getSheetByName("주문라인원장");
-  if (!tab) throw new Error("「주문라인원장」 탭이 없습니다");
-  var lastRow = tab.getLastRow();
-  if (lastRow < 2) return {};
-  var lastCol = tab.getLastColumn();
-
-  var head = tab.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  //  원장은 시트 또는 v2 창구에서 (csLedgerSource.gs · 스크립트 속성 원장원천 · 2026-10-21)
+  var 원장 = _cs_ledgerTail_(_PKC_SCAN_ROWS_);
+  if (!원장.rows.length) return {};
+  var head = 원장.head;
   var c = {};
   for (var h = 0; h < head.length; h++) {
     var nm = String(head[h] || "").trim();
@@ -229,8 +225,7 @@ function _pkc_pathMap_() {
   }
   if (c.inv == null) throw new Error("운송장번호 열을 못 찾았습니다");
 
-  var from = Math.max(2, lastRow - _PKC_SCAN_ROWS_ + 1);
-  var 값 = tab.getRange(from, 1, lastRow - from + 1, lastCol).getDisplayValues();
+  var 값 = 원장.rows;
 
   var map = {};        // 송장 → 그 줄
   var uid = {};        // 고유ID → 그 주문의 송장들 (폐기·재발행 가리기)

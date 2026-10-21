@@ -258,15 +258,10 @@ function _lsr_contractFare_() {
  *   ③ 필수 칸이 비었다      → 지어내지 않는다. 사람이 봐야 한다
  */
 function _lsr_collect_(회차, 한도) {
-  var ss = SpreadsheetApp.openById(_CS_LEDGER_SS_ID_);
-  var tab = ss.getSheetByName("주문라인원장");
-  if (!tab) throw new Error("「주문라인원장」 탭이 없습니다");
-
-  var lastRow = tab.getLastRow();
-  if (lastRow < 2) return { 회차: "", 로젠: 0, 줄: [], 송장있음: 0, 등록함: 0, 빈칸: 0, 빈칸모습: [] };
-  var lastCol = tab.getLastColumn();
-
-  var head = tab.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  //  원장은 시트 또는 v2 창구에서 (csLedgerSource.gs · 스크립트 속성 원장원천 · 2026-10-21)
+  var 원장 = _cs_ledgerTail_(8000);
+  if (!원장.rows.length) return { 회차: "", 로젠: 0, 줄: [], 송장있음: 0, 등록함: 0, 빈칸: 0, 빈칸모습: [] };
+  var head = 원장.head;
   var c = {};
   for (var h = 0; h < head.length; h++) {
     var nm = String(head[h] || "").trim();
@@ -291,8 +286,7 @@ function _lsr_collect_(회차, 한도) {
   if (c.key == null) throw new Error("「송장키」 열을 못 찾았습니다");
   if (c.round == null) throw new Error("「회차키」 열을 못 찾았습니다");
 
-  var from = Math.max(2, lastRow - 8000 + 1);
-  var 값 = tab.getRange(from, 1, lastRow - from + 1, lastCol).getDisplayValues();
+  var 값 = 원장.rows;
 
   //  회차를 안 주면 «마지막» 회차
   var 그회차 = String(회차 || "").trim();
