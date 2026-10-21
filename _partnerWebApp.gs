@@ -1954,6 +1954,21 @@ function _trigger_pushInvoices_() {
       > 사장님 "각 업체 시트는 그대로고 구동만 V2에서 … 응 송장 배포부터 v2로 바꿔줘"
       v2 가 16:52 에 같은 일을 한다(v2 lib/invoice-push.ts). 스위치는 v2 app_flags invoice_push 하나 — 여기서 묻는다.
       물어보지 못하면(v2 장애) 예전처럼 GAS 가 배포한다 — 둘이 같은 값을 쓰므로 덮어도 해가 작다. */
+  /*  ★ 2026-10-21: 송장 수집이 v2 면 사방넷 송장대량등록은 여기서 ★
+      예전엔 16:40 수집 끝(_po_rebuildSabangnetBulkUpload_)에서 만들었다. 수집을 v2(16:42)가 맡으면 그 끝이 없다 —
+      v2 가 허브를 채운 «뒤»인 이 자리(16:50)에서 메뉴 「사방넷 송장대량등록 엑셀 저장」과 같은 일을 조용히 한다. */
+  if (_pt_v2Owner_("/api/setsplit/invoice-fetch") === "v2") {
+    try {
+      var _bhTab = _po_getHubTab();
+      var _bhLr = _bhTab ? _bhTab.getLastRow() : 0;
+      var _bhData = _bhLr >= 2 ? _bhTab.getRange(2, 1, _bhLr - 1, Math.max(_bhTab.getLastColumn(), 15)).getValues() : [];
+      var _bhLogs = [];
+      var _bhRes = _po_rebuildSabangnetBulkUpload_(_bhData, _bhLogs);
+      Logger.log("[TRIGGER 16:50] 사방넷 송장대량등록 " + (_bhRes && _bhRes.written) + "행 (수집 주인 v2)");
+    } catch (eBh) {
+      Logger.log("[TRIGGER 16:50] 사방넷 송장대량등록 실패: " + (eBh && eBh.message ? eBh.message : eBh));
+    }
+  }
   if (_pt_invoicePushOwner_() === "v2") {
     Logger.log("[TRIGGER 16:50] 송장 배포 주인 = v2 → GAS 배포 건너뜀");
     return;
