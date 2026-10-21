@@ -4111,31 +4111,6 @@
           </div>
           <div class="os-status" id="status">불러오는 중…</div>
           <div id="list"></div>
-          <!-- ══ 바이토 콜백 대기 (2026-10-10) ═══════════════════════════
-               > "1단계 진행하고" — CS 인터넷전화(바이토)의 부재중·받은 문자 중
-                 아직 답하지 않은 것. v2 가 계산한다(/api/byto/cs).
-               ★ 콜백하면 저절로 빠진다 ★ 다음 수집(30분) 때. 카톡으로 답했거나
-                 광고 전화면 「처리함」. 그 뒤에 새로 오면 다시 뜬다. -->
-          <div id="bycBox" class="os-dash">
-            <div class="os-dash-head">
-              <span class="csq-title">📞 콜백 대기 <b id="bycCount">0</b></span>
-              <span class="os-dash-sub" id="bycSub" style="margin-left:8px"></span>
-              <button type="button" class="os-chip ghost" style="margin-left:auto" onclick="loadByto(true)" title="새로 읽기">↻</button>
-            </div>
-            <!--  ★ 번호로 통화·문자 보기 (2026-10-14) ★
-                  > "우리가 전화건 내용은 안나오던데 … 번호로 통화·문자 보기 칸 넣어줘"
-                  콜백 대기는 «답할 것»(부재중·받은 문자)만 모은다 — 우리가 건 전화는 안 뜬다.
-                  여기에 번호를 넣으면 그 고객의 통화(받은·건·부재중)·문자·녹음을 바로 꺼낸다.
-                  같은 bytoToggleTl 을 쓰되 key 접두는 s(검색) — c(콜백)·o(주문)과 안 겹친다. -->
-            <div class="byc-find">
-              <input id="bycFindQ" type="search" inputmode="tel" autocomplete="off"
-                     placeholder="번호로 통화·문자 보기 (예: 010-1234-5678)"
-                     onkeydown="if(event.key==='Enter'){event.preventDefault();bytoFindByPhone();}">
-              <button type="button" class="ok" onclick="bytoFindByPhone()">보기</button>
-            </div>
-            <div class="byto-tl" id="bytoTl-sFind" hidden></div>
-            <div id="bycList" class="byc-list"><div class="byc-empty">불러오는 중…</div></div>
-          </div>
           <!-- ══ CS 문의 (2026-10-02) ═══════════════════════════════
                > "CS웹앱 입금확인위에 CS문의라는 내용을 만들어줘.
                >  따로 시트는 만들지 말고 … 카드식으로 … 검색기능도 넣고 …
@@ -4154,31 +4129,6 @@
                 > "문의글 쓰기부분만 접혀있는 상태인거지"
                 목록은 늘 보인다 — 처리할 문의가 몇 건인지 눈에 안 띄면 안 본다.
                 글쓰기 칸만 접어 둔다. 늘 펴 두면 목록이 아래로 밀린다. -->
-          <!--  ★ 금일 할 내용 ★  (2026-10-19)
-                > "전화 통화 내용중에 추후에 할내용이 있는것이 다들어오는데.
-                >  이부분은 따로 만드는게 나을꺼 같아.. 그중에 골라서 애프터 cs 로
-                >  직원들이 옮기는것이 좋을꺼 같아"
-
-                바이토 통화를 읽어 약속·클레임으로 뽑은 것이 여기 선다.
-                여태는 After CS 에 ★바로★ 들어가 사람 문의가 그 사이에 묻혔다.
-                이제 v2 는 판정만 쌓고(byto_call_followups), 고르는 일은 사람이 한다 —
-                  「애프터 CS로」 → After CS 문의가 만들어진다
-                  「확인」        → 이 목록에서만 내려간다 (판정 줄은 안 지운다)
-                둘 다 안 누르면 그대로 남는다. ★조용히 사라지지 않는다★
-                오늘 못 고른 것은 꼬리의 「지난 것 N건 · 보기」로 꺼낸다 —
-                목록은 오늘 치로 좁혀 두되(그림자 시절 판정 135건에 묻히지
-                않게) 남은 건수는 늘 보인다.                  (2026-10-20) -->
-          <div id="cfuBox" class="os-dash" hidden>
-            <div class="os-dash-head">
-              <span class="csq-title">📞 금일 할 내용 <b id="cfuCount">0</b></span>
-              <span class="os-dash-sub" id="cfuSub">통화에서 추린 것 — 고르면 After CS 로 갑니다</span>
-            </div>
-            <div class="csq-top">
-              <button type="button" class="os-chip ghost" onclick="loadCfu(true)" title="새로 읽기">↻</button>
-            </div>
-            <div id="cfuList" class="cfu-list"></div>
-          </div>
-
           <div id="csqBox" class="os-dash">
             <div class="os-dash-head">
               <span class="csq-title">💬 After CS <b id="csqCount">0</b></span>
@@ -4228,6 +4178,63 @@
               </div>
             </div>
             <div id="csqList" class="csq-list"></div>
+          </div>
+
+          <!-- ══ 바이토 콜백 대기 (2026-10-10) ═══════════════════════════
+               > "1단계 진행하고" — CS 인터넷전화(바이토)의 부재중·받은 문자 중
+                 아직 답하지 않은 것. v2 가 계산한다(/api/byto/cs).
+               ★ 콜백하면 저절로 빠진다 ★ 다음 수집(30분) 때. 카톡으로 답했거나
+                 광고 전화면 「처리함」. 그 뒤에 새로 오면 다시 뜬다. -->
+          <div id="bycBox" class="os-dash">
+            <div class="os-dash-head">
+              <span class="csq-title">📞 콜백 대기 <b id="bycCount">0</b></span>
+              <span class="os-dash-sub" id="bycSub" style="margin-left:8px"></span>
+              <button type="button" class="os-chip ghost" style="margin-left:auto" onclick="loadByto(true)" title="새로 읽기">↻</button>
+            </div>
+            <!--  ★ 번호로 통화·문자 보기 (2026-10-14) ★
+                  > "우리가 전화건 내용은 안나오던데 … 번호로 통화·문자 보기 칸 넣어줘"
+                  콜백 대기는 «답할 것»(부재중·받은 문자)만 모은다 — 우리가 건 전화는 안 뜬다.
+                  여기에 번호를 넣으면 그 고객의 통화(받은·건·부재중)·문자·녹음을 바로 꺼낸다.
+                  같은 bytoToggleTl 을 쓰되 key 접두는 s(검색) — c(콜백)·o(주문)과 안 겹친다. -->
+            <div class="byc-find">
+              <input id="bycFindQ" type="search" inputmode="tel" autocomplete="off"
+                     placeholder="번호로 통화·문자 보기 (예: 010-1234-5678)"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();bytoFindByPhone();}">
+              <button type="button" class="ok" onclick="bytoFindByPhone()">보기</button>
+            </div>
+            <div class="byto-tl" id="bytoTl-sFind" hidden></div>
+            <div id="bycList" class="byc-list"><div class="byc-empty">불러오는 중…</div></div>
+          </div>
+
+          <!--  ★ 금일 할 내용 ★  (2026-10-19)
+                > "전화 통화 내용중에 추후에 할내용이 있는것이 다들어오는데.
+                >  이부분은 따로 만드는게 나을꺼 같아.. 그중에 골라서 애프터 cs 로
+                >  직원들이 옮기는것이 좋을꺼 같아"
+
+                바이토 통화를 읽어 약속·클레임으로 뽑은 것이 여기 선다.
+                여태는 After CS 에 ★바로★ 들어가 사람 문의가 그 사이에 묻혔다.
+                이제 v2 는 판정만 쌓고(byto_call_followups), 고르는 일은 사람이 한다 —
+                  「애프터 CS로」 → After CS 문의가 만들어진다
+                  「확인」        → 이 목록에서만 내려간다 (판정 줄은 안 지운다)
+                둘 다 안 누르면 그대로 남는다. ★조용히 사라지지 않는다★
+                오늘 못 고른 것은 꼬리의 「지난 것 N건 · 보기」로 꺼낸다 —
+                목록은 오늘 치로 좁혀 두되(그림자 시절 판정 135건에 묻히지
+                않게) 남은 건수는 늘 보인다.                  (2026-10-20)
+
+                ★ 자리 — After CS «아래» ★  (2026-10-21)
+                > "콜백이랑 금일할일을 애프터 CS아래로 내려줘"
+                처음엔 위에 뒀다(10/19 「애프터 CS 위쪽에 따로 탭을」). 하루
+                써 보고 내렸다 — 사람이 올린 문의가 먼저 보여야 한다.
+                차례: After CS → 콜백 대기 → 금일 할 내용. -->
+          <div id="cfuBox" class="os-dash" hidden>
+            <div class="os-dash-head">
+              <span class="csq-title">📞 금일 할 내용 <b id="cfuCount">0</b></span>
+              <span class="os-dash-sub" id="cfuSub">통화에서 추린 것 — 고르면 After CS 로 갑니다</span>
+            </div>
+            <div class="csq-top">
+              <button type="button" class="os-chip ghost" onclick="loadCfu(true)" title="새로 읽기">↻</button>
+            </div>
+            <div id="cfuList" class="cfu-list"></div>
           </div>
           <!-- 오늘 입금 (2026-09-29) — "위치를 주문 송장 검색 아래로 바꿔줘"
                검색 결과(#list) «아래»에 둔다. 위에 두면 검색할 때마다 결과가 입금 10줄 밑으로 밀린다. -->

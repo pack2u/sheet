@@ -218,6 +218,26 @@ function 재보기(고침) {
       if (/called_at: call\?\.called_at \?\? null/.test(fu)) 운것.push("⑩빈칸을남김");
     }
 
+    /* ⑪ ★ 자리 — After CS 가 먼저다 ★   (2026-10-21)
+     *
+     *  > "콜백이랑 금일할일을 애프터 CS아래로 내려줘"
+     *
+     *  처음엔 금일 할 내용을 After CS «위»에 뒀다(10/19 사장님 말). 하루 써
+     *  보고 내렸다 — 사람이 올린 문의가 자동 추림보다 먼저 보여야 한다.
+     *  자리는 눈에만 보이는 것이라 ★울타리가 없으면 조용히 되돌아간다★.
+     */
+    {
+      const home = g("home");
+      const 곳 = (t) => home.indexOf(t);
+      const cs = 곳('id="csqBox"'), byc = 곳('id="bycBox"'), cfu = 곳('id="cfuBox"');
+      if (cs < 0 || byc < 0 || cfu < 0) 운것.push("⑪상자를못찾음");
+      else {
+        if (!(cs < byc)) 운것.push("⑪콜백이AfterCS위에");
+        if (!(cs < cfu)) 운것.push("⑪금일할내용이AfterCS위에");
+        if (!(byc < cfu)) 운것.push("⑪콜백·금일차례가뒤바뀜");
+      }
+    }
+
     /* ⑦ 확인해도 줄은 안 지운다 */
     {
       const api = g("api");
@@ -287,6 +307,11 @@ const 깨기 = [
   ["날짜 딱지가 판독한 때를 읽는다", { api: API.replace("at: String(r.called_at)", "at: String(r.processed_at)") }],
   ["보낸 문의 머리 시각이 판독한 때", { api: API.replace("cur.data.called_at ?? \"\"", "cur.data.processed_at ?? \"\"") }],
   ["★ 통화한 때를 빈칸으로 둔다 ★", { fu: FU.replace("called_at: call?.called_at ?? new Date().toISOString(),", "called_at: call?.called_at ?? null,") }],
+  /*  자리를 되돌려 본다 — 상자 id 만 맞바꾸면 차례가 거꾸로 선다  */
+  ["★ 금일 할 내용을 After CS 위로 되돌린다 ★", { home: H
+    .split('id="csqBox"').join('id="__TMP__"')
+    .split('id="cfuBox"').join('id="csqBox"')
+    .split('id="__TMP__"').join('id="cfuBox"') }],
   ["두 물음의 잣대가 어긋난다", { api: API.replace(
     /\.is\("dismissed_at", null\)(\s*)\.lt\("called_at", 시작\)/, '$1.lt("called_at", 시작)') }],
   ["못 읽어도 숨긴다", { home: H.replace(/if \(err\) \{\s*\n\s*box\.hidden = false;/, "if (err) {\n        box.hidden = true;") }],
