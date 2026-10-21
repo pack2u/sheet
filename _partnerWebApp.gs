@@ -127,7 +127,25 @@ function _owner_runWithNotify_(label, fn) {
   }
 }
 
+/*  ★ 주인이 v2 인 일을 메뉴로 누르면 한 번 묻는다 ★  (2026-10-21 · 3단계-4)
+    트리거는 v2 주인을 묻고 건너뛰지만 메뉴는 묻지 않았다. 그런데 GAS 쪽은 은퇴한 세트분리 시트의
+    「합배송」 탭을 읽는다 — 시트 세트분리가 멈춘 뒤로 안 바뀌어 합포장 송장이 빠진다.
+    막지는 않는다(v2 가 멈춘 날의 손 예비). 고르게 한다. */
+function _pt_okToRunGasWhenV2Owns_(path, 이름) {
+  if (_pt_v2Owner_(path) !== "v2") return true;
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.alert(
+    이름 + " — 지금 주인은 v2 입니다",
+    "v2 가 정해진 시각에 이 일을 합니다.\n\n" +
+      "여기서 GAS 로 돌리면 은퇴한 세트분리 시트의 「합배송」 탭(시트 세트분리가 멈춘 뒤로 안 바뀜)을 읽어\n" +
+      "합포장 송장이 빠지거나 지난 것이 붙을 수 있습니다.\n\n" +
+      "v2 가 멈춘 날의 예비로만 쓰세요. 그래도 GAS 로 돌릴까요?",
+    ui.ButtonSet.YES_NO);
+  return r === ui.Button.YES;
+}
+
 function partnerFetchInvoicesOwner() {
+  if (!_pt_okToRunGasWhenV2Owns_("/api/setsplit/invoice-fetch", "허브 송장 수집")) return;
   _owner_runWithNotify_("허브 송장 수집", partnerFetchInvoices);
 }
 function partnerPushInvoicesOwner() {
@@ -199,6 +217,7 @@ function partnerDailyArchiveAllOwner() {
  */
 function partnerUnifiedDailyArchiveManual() {
   var ui = SpreadsheetApp.getUi();
+  if (!_pt_okToRunGasWhenV2Owns_("/api/setsplit/daily-close", "통합 일일마감 (수동)")) return;
   try {
     var result = _pep_archiveUnifiedDaily_();
     if (result.error) {
@@ -351,6 +370,7 @@ function partnerUnifiedDailyArchiveManual() {
  */
 function partnerUnifiedDailyArchiveForDate() {
   var ui = SpreadsheetApp.getUi();
+  if (!_pt_okToRunGasWhenV2Owns_("/api/setsplit/daily-close", "일일마감 재처리")) return;
   var now = new Date();
   var defaultDate = new Date(now.getTime());
   if (now.getHours() < 6) defaultDate.setDate(defaultDate.getDate() - 1);
