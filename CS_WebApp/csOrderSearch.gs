@@ -383,12 +383,13 @@ function _cs_loadLedgerView_(days, refresh) {
   }
 
   try {
-    var ss = SpreadsheetApp.openById(_CS_LEDGER_SS_ID_);
-    var tab = ss.getSheetByName(_CS_LEDGER_TAB_);
-    if (!tab || tab.getLastRow() < 2) return out;
+    var fromN = _cs_dateList_(days);
+    var minN = fromN[fromN.length - 1].replace(/-/g, "");
 
-    var cols = tab.getLastColumn();
-    var data = tab.getRange(1, 1, tab.getLastRow(), cols).getDisplayValues();
+    //  원장은 시트 또는 v2 창구에서 (csLedgerSource.gs · 스크립트 속성 원장원천 · 2026-10-21)
+    var 원장 = _cs_ledgerFrom_(fromN[fromN.length - 1]);
+    if (!원장.rows.length) return out;
+    var data = [원장.head].concat(원장.rows);
 
     //  ★ 이름으로 찾는다 ★ 원장은 46열이고 사람이 계속 손댄다.
     var ix = {};
@@ -404,9 +405,6 @@ function _cs_loadLedgerView_(days, refresh) {
       }
     }
     var G = function (row, name) { return ix[name] === undefined ? "" : String(row[ix[name]] || "").trim(); };
-
-    var fromN = _cs_dateList_(days);
-    var minN = fromN[fromN.length - 1].replace(/-/g, "");
 
     for (var i = 1; i < data.length; i++) {
       var row = data[i];

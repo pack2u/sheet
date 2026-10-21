@@ -210,26 +210,21 @@ function _zc_existingKeys_(tab) {
  * 지역키마다 주소 하나만 표본으로 쓴다 — 로젠에는 주소로 물어야 한다.
  */
 function _zc_candidates_(ss, 있는것, 한도) {
-  var tab = ss.getSheetByName("주문라인원장");
-  if (!tab) throw new Error("「주문라인원장」 탭이 없습니다");
-
-  var lastRow = tab.getLastRow();
-  if (lastRow < 2) return [];
-  var lastCol = tab.getLastColumn();
-
-  var head = tab.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  //  원장은 시트 또는 v2 창구에서 (csLedgerSource.gs · 스크립트 속성 원장원천 · 2026-10-21)
+  var 원장 = _cs_ledgerTail_(_ZC_SCAN_ROWS_);
+  if (!원장.rows.length) return [];
+  var head = 원장.head;
   var addrCol = -1;
   for (var h = 0; h < head.length; h++) {
     if (String(head[h] || "").trim() === "주소1") { addrCol = h; break; }
   }
   if (addrCol < 0) throw new Error("「주소1」 열을 못 찾았습니다");
 
-  var from = Math.max(2, lastRow - _ZC_SCAN_ROWS_ + 1);
-  var 값 = tab.getRange(from, addrCol + 1, lastRow - from + 1, 1).getDisplayValues();
+  var 값 = 원장.rows;
 
   var 봤다 = {}, out = [];
   for (var i = 값.length - 1; i >= 0; i--) {     // 최근 것부터
-    var addr = String(값[i][0] || "").trim();
+    var addr = String(값[i][addrCol] || "").trim();
     if (!addr) continue;
     var key = csLogenZoneKey(addr);
     if (!key || 봤다[key] || 있는것[key]) continue;
