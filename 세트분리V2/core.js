@@ -3570,6 +3570,75 @@ var SS_INVOICE_HEADER = ['주문번호', '품목코드', '구분', '합포장키
  *   여기서 또 도서산간 탭에 세우면 조치를 한 번 더 적어야 하고 출고가 멈춘다.
  *   (대소문자는 안 가린다 — 「P0921000001」도 전화주문이다)
  */
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  회차 검문 — 결과가 «나가기 전에» 사고 꼴인지 본다  (2026-10-22)
+ *
+ *  > 사장님: "세트분리 문제발생시 대처하는 기능도 넣어줘.. 물론 문제발생하면 안되게 검증해주고"
+ *
+ *  10/19 2차·10/21 2차 — 다시 돈 회차가 «제 줄»을 이미 나간 줄로 세어 전부 보류가 됐다.
+ *  하루치를 통째로 붙여넣은 회차(10/20 3·4차)도 이미출고가 수백 줄이지만 그것은 «다른 회차»와 겹친 것 — 정상이다.
+ *  그래서 «얼마나 많이»가 아니라 «무엇과 겹쳤나»로 가른다.
+ *
+ *  rows  [{ route, 보류사유, 보류상세, 라인ID, 고유ID }]
+ *  opts  { 자기회차: ['261021-2','M261021-2',…]   이 회차와 같은 판매현황 회차의 키·라벨
+ *          직전: { 라인ID: route } | null          다시 돌기 전 경로 (처음 도는 회차는 null)
+ *          조치고유ID: ['2169…',…] }              그날 사람이 조치를 적은 고유ID — 그 줄이 바뀐 것은 사람 뜻
+ *  돌려줌 { 의심: bool, 까닭: [글], 셈: {…} }
+ *
+ *  ㉮ 자기 회차와 겹친 이미출고 1줄이라도 → 의심  (사고 두 번이 다 이것. 정상 회차 31개 중 0)
+ *  ㉯ 이미출고·제품아님을 뺀 보류가 25% 넘음(20줄 이상) → 의심  (정상은 0~8% · 마스터를 못 읽으면 이렇게 된다)
+ *  ㉰ 다시 돈 회차에서, 조치 안 한 줄이 배송 → 보류로 바뀐 것이 5줄 넘고 5% 넘음 → 의심
+ *  ㉱ 줄이 0 → 의심
+ * ══════════════════════════════════════════════════════════════
+ */
+function ssRunGuard(rows, opts) {
+  opts = opts || {};
+  rows = rows || [];
+  var 까닭 = [];
+  var 자기 = {};
+  (opts.자기회차 || []).forEach(function (k) {
+    var t = ssText(k);
+    if (!t) return;
+    자기[t] = true;
+    자기[t.replace(/^[A-Za-z]+/, '')] = true;   // M261021-2 ↔ 261021-2
+  });
+  var 조치 = {};
+  (opts.조치고유ID || []).forEach(function (u) { if (ssText(u)) 조치[ssText(u)] = true; });
+  var n = rows.length, 보류 = 0, 이미 = 0, 제품아님 = 0, 자기겹침 = 0, 자기예 = '', 바뀜 = 0, 바뀜예 = [];
+  for (var i = 0; i < n; i++) {
+    var r = rows[i] || {};
+    var 길 = ssText(r.route);
+    var 왜 = ssText(r.보류사유);
+    if (길 === SS_ROUTE.HOLD) {
+      보류++;
+      if (왜 === '이미출고') {
+        이미++;
+        var 상대 = ssText(r.보류상세).split(' ')[0];
+        if (상대 && 자기[상대.replace(/^[A-Za-z]+/, '')]) { 자기겹침++; if (!자기예) 자기예 = 상대; }
+      } else if (왜 === '제품아님') 제품아님++;
+    }
+    if (opts.직전 && 길 === SS_ROUTE.HOLD && !조치[ssText(r.고유ID)]) {
+      var 전 = ssText(opts.직전[ssText(r.라인ID)]);
+      if (전 && 전 !== SS_ROUTE.HOLD && 전 !== SS_ROUTE.NONSHIP) {
+        바뀜++;
+        if (바뀜예.length < 3) 바뀜예.push(ssText(r.라인ID) + '(' + (왜 || '보류') + ')');
+      }
+    }
+  }
+  if (!n) 까닭.push('줄이 0입니다');
+  if (자기겹침) 까닭.push('이 회차(' + 자기예 + ')의 제 줄을 «이미 나간 줄»로 세어 ' + 자기겹침 + '줄을 막았습니다');
+  var 그밖보류 = 보류 - 이미 - 제품아님;
+  if (n >= 20 && 그밖보류 / n > 0.25) {
+    까닭.push('이미출고·제품아님을 뺀 보류가 ' + 그밖보류 + '줄(' + Math.round(그밖보류 * 100 / n) + '%)입니다 — 평소 0~8%');
+  }
+  if (opts.직전 && 바뀜 > 5 && 바뀜 / Math.max(1, n) > 0.05) {
+    까닭.push('다시 돌며 조치하지 않은 ' + 바뀜 + '줄이 배송 → 보류로 바뀌었습니다 (' + 바뀜예.join(', ') + ' …)');
+  }
+  return { 의심: 까닭.length > 0, 까닭: 까닭,
+    셈: { 줄: n, 보류: 보류, 이미출고: 이미, 제품아님: 제품아님, 자기겹침: 자기겹침, 배송에서보류로: 바뀜 } };
+}
+
 function ssIsHubOrderUid(uid) {
   var u = ssBaseUid(uid);
   return /^[pd]\d{10}$/i.test(u) || /^\d{4}(?:\d{2})?-(?:ds|PH)-/i.test(u);
@@ -3978,7 +4047,7 @@ if (typeof module !== 'undefined' && module.exports) {
     SS_AIR_FEE_JEJU: SS_AIR_FEE_JEJU, SS_RETURN_BOX_FEE: SS_RETURN_BOX_FEE,
     ssPartnerRow: ssPartnerRow, ssHoldRow: ssHoldRow, ssVendorOf: ssVendorOf,
     ssInvoiceRows: ssInvoiceRows, ssIsSabangnetUid: ssIsSabangnetUid, SS_INVOICE_HEADER: SS_INVOICE_HEADER,
-    ssIsHubOrderUid: ssIsHubOrderUid, SS_HUB_ISLAND_NOTE: SS_HUB_ISLAND_NOTE, SS_ISLAND_FEE_CODE: SS_ISLAND_FEE_CODE,
+    ssRunGuard: ssRunGuard, ssIsHubOrderUid: ssIsHubOrderUid, SS_HUB_ISLAND_NOTE: SS_HUB_ISLAND_NOTE, SS_ISLAND_FEE_CODE: SS_ISLAND_FEE_CODE,
     ssNonshipRow: ssNonshipRow, ssNonShipReason: ssNonShipReason, SS_NONSHIP_HEADER: SS_NONSHIP_HEADER,
     SS_PARTNER_HEADER: SS_PARTNER_HEADER, SS_MANUAL_HEADER: SS_MANUAL_HEADER, SS_VENDOR_HEADER: SS_VENDOR_HEADER, ssLedgerRow: ssLedgerRow, ssDisplayName: ssDisplayName,
     ssStripName: ssStripName, ssNormAddr: ssNormAddr, ssAddrRegion: ssAddrRegion, ssPad6: ssPad6
