@@ -1594,10 +1594,14 @@ function ssVendorOf(u, vendors) {
 function ssIslandMultiBoxHold(units, cfg, warnings) {
   if (ssText(cfg && cfg.도서산간_여러박스_보류) === '끔') return 0;
   var 묶음 = {};
+  var 섬조치0 = (cfg && cfg._섬조치) || {};
   for (var i = 0; i < units.length; i++) {
     var u = units[i];
     if (u.route !== SS_ROUTE.LOTTE_ISLAND) continue;
     if (u.주문번호출처 !== SS_ORDNO_SRC.사방넷) continue;
+    //  사람이 「도서발송」(도서산간으로 발송)을 적었으면 추가비는 이미 정한 것이다 — 세우지 않는다 (2026-10-21)
+    //  > 사장님: "도서산간 발송 눌러도 … 미발송에서 사라져야되는데"
+    if (ssText(섬조치0[ssText(u.순번) + '|' + ssText(u.품목코드)]).split(' ').join('') === '도서발송') continue;
     var k = ssDeliveryKey(u);
     (묶음[k] || (묶음[k] = [])).push(u);
   }
@@ -2717,6 +2721,13 @@ function ssRoute(units, masters, cfg, warnings) {
       continue;
     }
     if (후보) {
+      //  사람이 「도서발송」을 적었으면 도서산간으로 낸다 — 우편번호를 못 구해 도선료는 모른다 (2026-10-21)
+      if (!_섬세우기 && ssNorm(_섬적음).split(' ').join('') === '도서발송') {
+        u.도서권역 = '도서';
+        u.도서판정 = '사람확인(도서발송)';
+        u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
+        continue;
+      }
       if (holdIsland && !면제) {
         u.route = SS_ROUTE.HOLD; u.보류사유 = '도서산간미확인';
         u.보류상세 = addr;
