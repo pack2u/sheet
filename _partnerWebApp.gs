@@ -588,6 +588,26 @@ function _pep_unifiedDailyArchiveScheduled_() {
     Logger.log("[SCHEDULED] 송장원장 전체 갱신 오류(마감은 계속): " + eLedgerFull.message);
   }
 
+  /*  ★ 2026-10-21: 일일마감 주인이 v2 면 v2 줄을 받아 적는다 (_partnerDailyCloseV2.gs) ★
+      > 사장님 "일일마감도 v2로 넘길 준비 해줘"
+      v2 가 실패하면 여기서 멈추지 않고 아래 예전 GAS 마감으로 넘어간다 — 그날 파일이 비는 것이 제일 나쁘다. */
+  if (typeof _pep_dailyCloseFromV2_ === "function" && _pt_v2Owner_("/api/setsplit/daily-close") === "v2") {
+    if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 일일마감(v2) 스킵"); return; }
+    try {
+      var rv2 = _pep_dailyCloseFromV2_();
+      try {
+        _chat_sendCard_("📊 일일마감 완료 (v2)", Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm"), [
+          { label: "적은 날", value: rv2.만든날.join(" · ") || "없음" },
+          { label: "빈 송장 채움", value: rv2.채운날.join(" · ") || "없음" },
+        ].concat(rv2.오류.length ? [{ label: "⚠ 오류", value: rv2.오류.slice(0, 3).join(" / ") }] : []));
+      } catch (eCv) {}
+      return;
+    } catch (eV2) {
+      Logger.log("[일일마감 v2] 실패 → 예전 GAS 마감으로: " + (eV2 && eV2.message ? eV2.message : eV2));
+      try { _chat_sendCard_("⚠ 일일마감 v2 실패 — 시트 마감으로 대신", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(eV2 && eV2.message || eV2).substring(0, 200) }]); } catch (eCf) {}
+    }
+  }
+
   try {
     var now = new Date();
     // ★ 2026-08-03: 당일 22:00 실행 → 당일 날짜 그대로 사용 (yesterday 계산 불필요)
