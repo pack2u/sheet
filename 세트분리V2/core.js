@@ -2721,10 +2721,12 @@ function ssRoute(units, masters, cfg, warnings) {
       continue;
     }
     if (후보) {
-      //  사람이 「도서발송」을 적었으면 도서산간으로 낸다 — 우편번호를 못 구해 도선료는 모른다 (2026-10-21)
+      //  사람이 「도서발송」을 적었으면 도서산간으로 낸다 (2026-10-21)
+      //  도선료는 통일금액(5,000)으로 — > 사장님: "운임은 신경안써도되 무조건 5000원으로 책정했으니까"
       if (!_섬세우기 && ssNorm(_섬적음).split(' ').join('') === '도서발송') {
         u.도서권역 = '도서';
         u.도서판정 = '사람확인(도서발송)';
+        u.도선료 = ssSurcharge(addr, '도서', ferry, 섬옵션(u)).합계;
         u.route = 위탁 ? SS_ROUTE.LOTTE_ISLAND_CONSIGN : SS_ROUTE.LOTTE_ISLAND;
         continue;
       }
