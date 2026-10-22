@@ -25,6 +25,11 @@ const 자리 = {
   gs: path.join(__dirname, "csInquiry.gs"),
   fu: "D:/Pack2U_협력업체시스템_v2/app/src/lib/byto-call-followup.ts",
   api: "D:/Pack2U_협력업체시스템_v2/app/src/app/api/byto/followups/route.ts",
+  /*  ★ 2026-10-22 — 「아직 안 고른 것」을 고르는 잣대가 여기로 옮겨 왔다 ★
+      읽는 쪽이 셋이 되어(문·/cs 첫 그림·꼬리 셈) 한 곳으로 모았다.
+      시험도 주인을 따라간다 — 안 따라가면 멀쩡한 코드를 틀렸다고 한다.  */
+  cfu: "D:/Pack2U_협력업체시스템_v2/app/src/lib/cfu-list.ts",
+  page: "D:/Pack2U_협력업체시스템_v2/app/src/app/cs/page.tsx",
   sql: "D:/Pack2U_협력업체시스템_v2/sql/148_byto_call_fu_triage.sql",
 };
 const 읽기 = (k) => { try { return fs.readFileSync(자리[k], "utf8"); } catch (e) { return ""; } };
@@ -87,13 +92,13 @@ function 재보기(고침) {
       if (!/item: read\.item \|\| null/.test(자료)) 운것.push("①상품을안적음");
     }
 
-    /* ② 요약·누구는 v2 가 정한다 */
+    /* ② 요약·누구는 v2 가 정한다 — 목록은 cfu-list, 보내기는 route */
     {
-      const api = g("api");
-      if (!/summary: String\(r\.extract \|\| r\.reason \|\| ""\)/.test(api)) 운것.push("②요약은v2가");
-      if (!/who: 보일이름\(/.test(api)) 운것.push("②누구는v2가");
+      const cfu = g("cfu"), api = g("api");
+      if (!/summary: String\(r\.extract \|\| r\.reason \|\| ""\)/.test(cfu)) 운것.push("②요약은v2가");
+      if (!/who: 보일이름\(/.test(cfu)) 운것.push("②누구는v2가");
       //  보낼 때도 ★같은★ 보일이름을 쓴다 — 목록과 다르면 안 된다
-      if ((api.match(/보일이름\(/g) || []).length < 2) 운것.push("②같은규칙으로보냄");
+      if (!/보일이름\(/.test(api)) 운것.push("②같은규칙으로보냄");
       if (!/문의본문\(/.test(api)) 운것.push("②본문도한곳에서");
     }
 
@@ -175,15 +180,31 @@ function 재보기(고침) {
 
     /* ⑨' v2 와 다리도 「지난 것」을 나른다 */
     {
-      const api = g("api");
-      if (!/rows: 줄, older/.test(api)) 운것.push("⑨'older를안줌");
+      const cfu = g("cfu"), api = g("api");
+      if (!/older/.test(cfu)) 운것.push("⑨'older를안줌");
+      if (!/\.\.\.답/.test(api)) 운것.push("⑨'문이그대로안넘김");
       if (!/searchParams\.get\("all"\) === "1"/.test(api)) 운것.push("⑨'전부보기가없음");
-      /*  ★ 두 물음이 같은 잣대여야 한다 ★ 목록과 「지난 것 N건」이 어긋나면
-          눌러도 안 나오거나, 0 건인데 꼬리가 서 있는 꼴이 된다.            */
-      const 잣대 = api.match(
-        /\.in\("verdict", \["약속", "클레임"\]\)\s*\.is\("cs_inquiry_id", null\)\s*\.is\("dismissed_at", null\)/g
+      /*  ★ 잣대의 주인은 하나다 ★   (2026-10-22)
+       *
+       *  읽는 쪽이 셋이 됐다 — 문(GET) · /cs 첫 그림 · 꼬리 셈.
+       *  전에는 route.ts 에 두 벌 적어 두고 「두 벌이 같은지」를 봤는데,
+       *  같게 지키는 것보다 ★한 벌로 만드는★ 쪽이 옳다. 그래서 이제는
+       *  cfu-list 에만 있고 route.ts·page.tsx 에는 ★없어야★ 한다 —
+       *  어느 쪽이 몰래 제 잣대를 적으면 두 화면이 다른 수를 말한다.
+       */
+      const 잣대 = /\.in\("verdict"/;
+      if (!잣대.test(cfu)) 운것.push("⑨'잣대가주인한테없음");
+      /*  주인 ★안에서도★ 두 물음(목록·꼬리 셈)이 같은 잣대여야 한다.
+          한 벌로 모았어도 그 안에 두 질의가 있다 — 한쪽만 고치면
+          「지난 것 N건」을 눌러도 안 나오거나, 0 건인데 꼬리가 선다.      */
+      const 세짝 = cfu.match(
+        /\.in\("verdict", 볼판정\)\s*\.is\("cs_inquiry_id", null\)\s*\.is\("dismissed_at", null\)/g
       ) || [];
-      if (잣대.length < 2) 운것.push("⑨'두물음의잣대가다름(" + 잣대.length + ")");
+      if (세짝.length < 2) 운것.push("⑨'주인안에서잣대가갈라짐(" + 세짝.length + ")");
+      if (잣대.test(api)) 운것.push("⑨'문이제잣대를또적음");
+      if (잣대.test(g("page"))) 운것.push("⑨'화면이제잣대를또적음");
+      //  /cs 화면도 ★같은★ 주인을 쓴다
+      if (!/아직안고른줄/.test(g("page"))) 운것.push("⑨'화면이주인을안씀");
       const gs = g("gs");
       if (!/qs\.push\("all=1"\)/.test(gs)) 운것.push("⑨'다리가all을안나름");
     }
@@ -196,14 +217,14 @@ function 재보기(고침) {
      *  10/19 에 뜬 16건이 실은 10/13 통화였다.
      */
     {
-      const api = g("api");
-      //  목록·꼬리 셈·정렬이 다 called_at 이어야 한다
-      if (/\.(gte|lt)\("processed_at"/.test(api)) 운것.push("⑩판독때로하루를가름");
-      if (!/\.order\("called_at"/.test(api)) 운것.push("⑩통화때로안줄세움");
-      if (!/\.lt\("called_at", 끝\)/.test(api)) 운것.push("⑩끝이판독때");
-      if (!/\.lt\("called_at", 시작\)/.test(api)) 운것.push("⑩꼬리셈이판독때");
+      const cfu = g("cfu"), api = g("api");
+      //  목록·꼬리 셈·정렬이 다 called_at 이어야 한다 (주인은 cfu-list)
+      if (/\.(gte|lt)\("processed_at"/.test(cfu)) 운것.push("⑩판독때로하루를가름");
+      if (!/\.order\("called_at"/.test(cfu)) 운것.push("⑩통화때로안줄세움");
+      if (!/\.lt\("called_at", 끝\)/.test(cfu)) 운것.push("⑩끝이판독때");
+      if (!/\.lt\("called_at", 시작\)/.test(cfu)) 운것.push("⑩꼬리셈이판독때");
       //  화면 날짜 딱지가 읽는 값
-      if (!/at: String\(r\.called_at\)/.test(api)) 운것.push("⑩딱지가판독때");
+      if (!/at: String\(r\.called_at\)/.test(cfu)) 운것.push("⑩딱지가판독때");
       //  보낼 때 본문 머리의 시각도 통화한 때
       /*  [^)]* 로 쓰면 String(...) 의 닫는 괄호에서 멈춘다 — 늘 실패해서
           깨기 줄마다 가짜 울음이 섞였다. 벌써 여섯 번째다.                */
@@ -284,6 +305,8 @@ console.log(fail ? "✘ " + fail + "개 틀림" : "✔ 확인 " + pass + "가지
 
 console.log("\n─ 일부러 깨 보기 (우는 게 맞다) ─\n");
 const H = 읽기("home"), FU = 읽기("fu"), API = 읽기("api"), GS = 읽기("gs"), SQL = 읽기("sql");
+//  2026-10-22 — 잣대의 주인이 cfu-list 로 옮겨 왔다. 깨기도 주인을 따라간다
+const CFU = 읽기("cfu"), PAGE = 읽기("page");
 const PX = (function () { try { return fs.readFileSync("D:/Pack2U_협력업체시스템_v2/app/src/proxy.ts", "utf8"); } catch (e) { return ""; } })();
 const 깨기 = [
   ["★ v2 가 다시 자동으로 넣는다 ★", { fu: FU.replace("await record(c, {\n        ...base, verdict: read.verdict",
@@ -296,15 +319,21 @@ const 깨기 = [
       정작 날짜로 사라지게 만들어 151건이 묻혀 있었다.                      */
   ["★ 지난 것이 있어도 상자를 숨긴다 ★", { home: H.replace(" && !CFU_OLDER", "") }],
   ["꼬리를 안 그린다", { home: H.replace("}).join('') + cfuTailHtml();", "}).join('');") }],
-  ["★ v2 가 지난 건수를 안 준다 ★", { api: API.replace("rows: 줄, older, all: 전부", "rows: 줄") }],
+  ["★ v2 가 지난 건수를 안 준다 ★", { cfu: CFU.replace("return { day: 날, rows, older, all };", "return { day: 날, rows, older: 0, all };").replace(/older/g, "oldr") }],
+  ["문이 받은 것을 그대로 안 넘긴다", { api: API.replace("...답", "ok: true") }],
+  ["★ 문이 제 잣대를 또 적는다 ★", { api: API.replace(
+    "  try {\n    const 답 = await 아직안고른줄(g.db, {",
+    '  try {\n    g.db.from("x").in("verdict", ["약속"]);\n    const 답 = await 아직안고른줄(g.db, {') }],
+  ["★ 화면이 주인을 안 쓴다 ★", { page: PAGE.replace("아직안고른줄(supabase)", "Promise.resolve({ day: 서울날(), rows: [], older: 0, all: false })").replace("import { 아직안고른줄, 서울날", "import { 서울날") }],
   ["다리가 전부 보기를 안 나른다", { gs: GS.replace('if (opts.all) qs.push("all=1");', "") }],
   ["「보기」가 범위를 안 바꾼다", { home: H.replace("CFU_ALL = !!all;", "") }],
   ["지난 줄에 날짜를 안 붙인다", { home: H.replace("(지난 ? '<span class=\"cfu-old\"", "(false ? '<span class=\"cfu-old\"") }],
   /*  ★ 이 넷이 10/20 두 번째 결함을 문다 ★ 판독한 때로 하루를 가르면
       열흘 전 통화가 「오늘 할 일」로 선다 (16건이 실은 10/13 통화였다).  */
-  ["★ 판독한 때로 하루를 가른다 ★", { api: API.split('.lt("called_at", 끝)').join('.lt("processed_at", 끝)')
-    .split('.gte("called_at", 시작)').join('.gte("processed_at", 시작)') }],
-  ["날짜 딱지가 판독한 때를 읽는다", { api: API.replace("at: String(r.called_at)", "at: String(r.processed_at)") }],
+  ["★ 판독한 때로 하루를 가른다 ★", { cfu: CFU.split('.lt("called_at", 끝)').join('.lt("processed_at", 끝)')
+    .split('.gte("called_at", 시작)').join('.gte("processed_at", 시작)')
+    .split('.order("called_at"').join('.order("processed_at"') }],
+  ["날짜 딱지가 판독한 때를 읽는다", { cfu: CFU.replace("at: String(r.called_at)", "at: String(r.processed_at)") }],
   ["보낸 문의 머리 시각이 판독한 때", { api: API.replace("cur.data.called_at ?? \"\"", "cur.data.processed_at ?? \"\"") }],
   ["★ 통화한 때를 빈칸으로 둔다 ★", { fu: FU.replace("called_at: call?.called_at ?? new Date().toISOString(),", "called_at: call?.called_at ?? null,") }],
   /*  자리를 되돌려 본다 — 상자 id 만 맞바꾸면 차례가 거꾸로 선다  */
@@ -312,10 +341,11 @@ const 깨기 = [
     .split('id="csqBox"').join('id="__TMP__"')
     .split('id="cfuBox"').join('id="csqBox"')
     .split('id="__TMP__"').join('id="cfuBox"') }],
-  ["두 물음의 잣대가 어긋난다", { api: API.replace(
+  /*  주인 안에서 두 물음(목록·꼬리 셈)의 잣대가 갈라지는 경우  */
+  ["두 물음의 잣대가 어긋난다", { cfu: CFU.replace(
     /\.is\("dismissed_at", null\)(\s*)\.lt\("called_at", 시작\)/, '$1.lt("called_at", 시작)') }],
   ["못 읽어도 숨긴다", { home: H.replace(/if \(err\) \{\s*\n\s*box\.hidden = false;/, "if (err) {\n        box.hidden = true;") }],
-  ["화면이 요약을 제 맘대로 고른다", { api: API.replace(/summary: String\(r\.extract \|\| r\.reason \|\| ""\)/, 'summary: ""') }],
+  ["화면이 요약을 제 맘대로 고른다", { cfu: CFU.replace(/summary: String\(r\.extract \|\| r\.reason \|\| ""\)/, 'summary: ""') }],
   ["보낼 때 다른 이름을 쓴다", { api: API.replace(/vendor: 보일이름\([^)]*\),/, "vendor: null,") }],
   ["★ 확인이 줄을 지운다 ★", { api: API.replace(/\.update\(\{ dismissed_at: new Date\(\)\.toISOString\(\), dismissed_by: staff \}\)/,
     ".delete()") }],
