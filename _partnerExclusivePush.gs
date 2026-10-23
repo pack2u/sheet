@@ -2376,11 +2376,60 @@ function _pep_setsplitRunning_() {
 }
 
 /**
+ * v2 에 대리공급 푸시·담기를 맡기고 끝을 기다린다 (2026-10-23).
+ * UrlFetch 는 오래 못 기다리므로 v2 는 회차 id 만 바로 주고 뒤에서 돈다 → 10초마다 GET ?id= 로 본다(최대 5분).
+ * @return {Object} v2 회차 (status 끝·실패·멈춤)
+ */
+function _pep_runOnV2_(tempOnly, silent) {
+  var 종류 = tempOnly ? "담기" : "푸시";
+  var tok = (typeof _psm_token_ === "function") ? _psm_token_() : "";
+  var base = (typeof _psm_v2url_ === "function") ? _psm_v2url_() : "https://pack2u-partner.vercel.app";
+  if (!tok) throw new Error("v2 대리공급 " + 종류 + " — 열쇠(토큰)가 없습니다");
+  var res = UrlFetchApp.fetch(base + "/api/po/push", {
+    method: "post", contentType: "application/json; charset=utf-8", muteHttpExceptions: true,
+    headers: { "x-ingest-token": tok },
+    payload: JSON.stringify({ "작업": 종류, "비동기": true }),
+  });
+  var j = {};
+  try { j = JSON.parse(res.getContentText()); } catch (_) {}
+  if (res.getResponseCode() === 409 && j["이미"]) {
+    Logger.log("[PEP_V2] 다른 쓰기(회차 " + j["이미"].id + ")가 도는 중 — 이번은 건너뜀");
+    return { status: "건너뜀" };
+  }
+  if (res.getResponseCode() !== 200 || !j.id) throw new Error("v2 대리공급 " + 종류 + " 시작 실패 — HTTP " + res.getResponseCode() + " " + res.getContentText().slice(0, 200));
+  Logger.log("[PEP_V2] v2 대리공급 " + 종류 + " 시작 — 회차 " + j.id);
+  var 회차 = null;
+  for (var k = 0; k < 30; k++) {
+    Utilities.sleep(10000);
+    try {
+      var g = UrlFetchApp.fetch(base + "/api/po/push?id=" + j.id, { method: "get", headers: { "x-ingest-token": tok }, muteHttpExceptions: true });
+      var gj = JSON.parse(g.getContentText());
+      회차 = gj && gj["회차"];
+      if (회차 && 회차.status && 회차.status !== "쓰는중") break;
+    } catch (eG) { Logger.log("[PEP_V2] 상태 묻기 실패(다시): " + (eG.message || eG)); }
+  }
+  var st = 회차 ? String(회차.status) : "모름";
+  Logger.log("[PEP_V2] v2 대리공급 " + 종류 + " 회차 " + j.id + " → " + st + (회차 && 회차.stamp ? " · " + 회차.stamp : "") + (회차 && 회차.error ? " · " + 회차.error : ""));
+  if (!silent) {
+    try { SpreadsheetApp.getUi().alert("v2 대리공급 " + 종류 + " — " + st + (회차 && 회차.stamp ? " (" + 회차.stamp + ")" : "") + (회차 && 회차.error ? "\n\n" + 회차.error : "") + "\n\n자세한 것은 v2 /po/push 화면·챗 알림"); } catch (_) {}
+  }
+  if (st === "쓰는중" || st === "모름") throw new Error("v2 대리공급 " + 종류 + " 회차 " + j.id + " — 5분 안에 안 끝남(" + st + "). v2 /po/push 에서 확인");
+  if (st === "실패" || st === "멈춤") throw new Error("v2 대리공급 " + 종류 + " " + st + " — " + String(회차.error || "").slice(0, 200));
+  return 회차;
+}
+
+/**
  * @param {boolean=} silent  대화상자 없이
  * @param {boolean=} tempOnly  ★ 임시기록에만 담고 업체 파일은 «안 건드린다»
  *   10:30 · 15:40 이 이 모드로 돈다 (2026-09-17 사장님 일정 변경).
  */
 function partnerPushOrdersToExclusiveForms(silent, tempOnly) {
+  /*  ★ 2026-10-23: 대리공급 푸시 주인이 v2 면 v2 가 쓴다 ★  (v2 lib/partner-push-write.ts · sql/184)
+      > 사장님: "10월 달까지만 시트를 사용하고 11월부터는 업체 시트는 보기용이고 나머지는 V2에서 읽어들이고 시트에 옮겨 적고"
+      10:30·13:50·15:40 트리거, 16:40·23:00 담기 확인, 메뉴가 모두 이 문으로 들어온다 — 여기 한 곳에서 갈린다.
+      v2 가 업체 전용양식·임시기록을 쓰고 끝날 때까지 기다린다. 뒤의 도서산간·우편번호(래퍼)는 그대로 GAS 가 잇는다.
+      v2 가 실패하면 여기서 던진다 — 래퍼가 「❌ 대리공급 Push 에러」로 알린다. GAS 가 대신 쓰지 않는다(두 손이 쓰면 두 번 나간다). */
+  if (_pt_v2Owner_("/api/po/push") === "v2") { _pep_runOnV2_(!!tempOnly, !!silent); return; }
   _PEP_TEMP_ONLY_ = !!tempOnly;
   _PEP_TEMP_ROUND_ = "";   // 이번 실행의 세트분리 회차 도장 — _pep_pushCore_ 가 정한다
   _PEP_WAIT_CLEARED_ = null;   // 발주대기→발주완료 바꾼 줄 수 (null = 아직 안 함)
