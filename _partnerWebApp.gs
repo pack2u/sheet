@@ -1710,9 +1710,86 @@ function _trigger_dailyArchiveAll_() {
 /** 대리판매 마감 (23:00) — Silent
  *  ★ partnerArchiveToMonthlySettle은 UI 의존적이므로,
  *  기존 Silent 래퍼 partnerArchiveToMonthlySilent_ 호출 */
+/**
+ * ★ 2026-10-23: 밤 마감 주인이 v2 면 v2 가 옮긴다 ★  (v2 lib/night-close-write.ts · sql/188)
+ * > 사장님: "응 5단계 밤 마감 쓰기도 만들어줘"
+ * v2 는 회차 id 만 바로 주고 뒤에서 읽기 → 쓰기(업체마다 이어 감)를 한다 → 15초마다 GET ?id= 로 끝을 기다린다(최대 25분).
+ * 대리판매: 새 달 탭이 없어 v2 가 남긴 업체는 GAS 가 탭(서식·요약 수식·거래명세서·취소반품 수식)을 만들고 v2 를 한 번 더 부른다.
+ * @return {boolean} v2 가 맡았나 (false 면 GAS 가 그대로 돈다)
+ */
+function _pt_runCloseOnV2_(종류) {
+  if (_pt_v2Owner_("/api/po/close?" + encodeURIComponent("종류") + "=" + encodeURIComponent(종류)) !== "v2") return false;
+  var tok = (typeof _psm_token_ === "function") ? _psm_token_() : "";
+  var base = (typeof _psm_v2url_ === "function") ? _psm_v2url_() : "https://pack2u-partner.vercel.app";
+  var 한번 = function () {
+    var res = UrlFetchApp.fetch(base + "/api/po/close", {
+      method: "post", contentType: "application/json; charset=utf-8", muteHttpExceptions: true,
+      headers: { "x-ingest-token": tok }, payload: JSON.stringify({ "종류": 종류, "작업": "옮기기" }),
+    });
+    var j = {};
+    try { j = JSON.parse(res.getContentText()); } catch (_) {}
+    if (res.getResponseCode() !== 200 || !j.id) throw new Error("v2 " + 종류 + " 마감 시작 실패 — HTTP " + res.getResponseCode() + " " + res.getContentText().slice(0, 200));
+    Logger.log("[CLOSE_V2] v2 " + 종류 + " 마감 시작 — 회차 " + j.id);
+    var 회차 = null;
+    for (var k = 0; k < 100; k++) {
+      Utilities.sleep(15000);
+      try {
+        var g = UrlFetchApp.fetch(base + "/api/po/close?id=" + j.id, { method: "get", headers: { "x-ingest-token": tok }, muteHttpExceptions: true });
+        회차 = (JSON.parse(g.getContentText()) || {})["회차"];
+        if (회차 && 회차.status && 회차.status !== "계획중" && 회차.status !== "쓰는중") break;
+      } catch (eG) { Logger.log("[CLOSE_V2] 상태 묻기 실패(다시): " + (eG.message || eG)); }
+    }
+    Logger.log("[CLOSE_V2] " + 종류 + " 회차 " + j.id + " → " + (회차 ? 회차.status : "모름") + (회차 && 회차.error ? " · " + 회차.error : ""));
+    if (!회차 || 회차.status === "계획중" || 회차.status === "쓰는중") throw new Error("v2 " + 종류 + " 마감 회차 " + j.id + " — 25분 안에 안 끝남. v2 /po/close 에서 확인");
+    if (회차.status === "실패") throw new Error("v2 " + 종류 + " 마감 실패 — " + String(회차.error || "").slice(0, 200));
+    return 회차;
+  };
+  var 회차 = 한번();
+  if (종류 === "대리판매" && 회차 && 회차.wrote && 회차.wrote["업체"]) {
+    var 만든 = 0, 업체들 = 회차.wrote["업체"];
+    for (var fid in 업체들) {
+      var 없음 = (업체들[fid] && 업체들[fid]["탭없음"]) || [];
+      for (var t = 0; t < 없음.length; t++) {
+        try { if (_pms_makeMonthTabForV2_(fid, 없음[t]) === "만듦") 만든++; }
+        catch (eT) { Logger.log("[CLOSE_V2] 달 탭 만들기 실패 " + fid + " " + 없음[t] + ": " + eT.message); }
+      }
+    }
+    if (만든) { Logger.log("[CLOSE_V2] 새 달 탭 " + 만든 + "개를 만들고 v2 를 한 번 더 부릅니다"); 한번(); }
+  }
+  return true;
+}
+
+/** v2 가 남긴 업체의 새 달 「(yyyy년 M월) 발주 마감」 탭 — _pms_processOneFile_ 의 새 탭 길과 같게 (서식·열쇠·보호·거래명세서·취소반품 수식) */
+function _pms_makeMonthTabForV2_(fileId, tabName) {
+  var ss = SpreadsheetApp.openById(fileId);
+  var monthKey = _PMS_KEY_PREFIX + tabName;
+  if (ss.getSheetByName(tabName) || _pms_findTabByKey_(ss, monthKey)) return "있음";
+  var orderTab = ss.getSheetByName(_PMS_ORDER_TAB);
+  if (!orderTab) return "발주탭 없음";
+  var lc = Math.min(orderTab.getLastColumn(), 20);
+  if (lc < 15) lc = 15;
+  var headers = orderTab.getRange(1, 1, 1, lc).getValues()[0];
+  var Lord = _pms_layoutFromOrder_(headers, lc);
+  var archTab = ss.insertSheet(tabName);
+  _pms_layoutArchiveTab_(archTab, Lord, true);
+  _pms_setKey_(archTab, monthKey);
+  _pms_applyProtection_(archTab);
+  SpreadsheetApp.flush();
+  try { if (typeof _pls_ensure_ === "function") _pls_ensure_(ss, tabName); } catch (eS) { Logger.log("[CLOSE_V2] 거래명세서 실패: " + eS.message); }
+  try { var crTab = ss.getSheetByName(_CR_TAB_NAME); if (crTab) _cr_applyFormulas_(crTab); } catch (eC) {}
+  return "만듦";
+}
+
 function _trigger_monthlySettle_() {
   // ★ 2026-06-27: 주말 차단
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 대리판매 마감 스킵"); return; }
+  try {
+    if (_pt_runCloseOnV2_("대리판매")) return;
+  } catch (eV2) {
+    Logger.log("[TRIGGER 22:00] v2 대리판매 마감 에러: " + eV2.message);
+    try { _chat_sendCard_("❌ v2 대리판매 마감 에러", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(eV2.message).substring(0, 200) }]); } catch (_) {}
+    return;   //  GAS 가 대신 옮기지 않는다 — 두 손이 옮기면 두 번 붙는다
+  }
   try {
     Logger.log("[TRIGGER 23:00] 대리판매 마감 시작");
     // ★ 2026-07-16: 연속 실행 구조 — 완료 알림은 _pms_runBatch_ 내부에서
@@ -1734,6 +1811,13 @@ function _trigger_exclusiveArchive_() {
   //  ★ 2026-10-12 — 마감 «전에» 늦게 돈 세트분리 3차를 임시기록에 담는다 (_pep_tempCatchUp_)
   //  내일 아침 1차가 대리발송 탭을 덮어쓰기 전 마지막 기회다.
   _pep_tempCatchUp_("23:00 대리공급 마감 앞");
+  try {
+    if (_pt_runCloseOnV2_("대리공급")) return;
+  } catch (eV2) {
+    Logger.log("[TRIGGER 23:00] v2 대리공급 마감 에러: " + eV2.message);
+    try { _chat_sendCard_("❌ v2 대리공급 마감 에러", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(eV2.message).substring(0, 200) }]); } catch (_) {}
+    return;
+  }
   try {
     Logger.log("[TRIGGER 23:30] 대리공급 마감 시작");
     // ★ 2026-06-30: 디버깅 — 파일 목록 확인
