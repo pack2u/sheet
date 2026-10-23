@@ -881,10 +881,63 @@ function _po_refreshAutofillBeforeCollect_(tab, priceMap, vendorName) {
 }
 
 /**
+ * v2 에 발주 수집을 맡기고 끝을 기다린다 (2026-10-23).
+ * v2 는 회차 id 만 바로 주고 뒤에서 읽기(~2분) → 쓰기를 한다 → 10초마다 GET ?id= 로 본다(최대 8분).
+ * 끝나면 v2 가 건너뛴 줄을 「중복의심_수집」 탭에 적고(_dse_record_), 카드용 숫자(_PO_LAST_COLLECT_STAT_)를 채운다.
+ */
+function _po_runOnV2_() {
+  var tok = (typeof _psm_token_ === "function") ? _psm_token_() : "";
+  var base = (typeof _psm_v2url_ === "function") ? _psm_v2url_() : "https://pack2u-partner.vercel.app";
+  if (!tok) throw new Error("v2 발주 수집 — 열쇠(토큰)가 없습니다");
+  var res = UrlFetchApp.fetch(base + "/api/po/collect", {
+    method: "post", contentType: "application/json; charset=utf-8", muteHttpExceptions: true,
+    headers: { "x-ingest-token": tok }, payload: JSON.stringify({ "작업": "수집" }),
+  });
+  var j = {};
+  try { j = JSON.parse(res.getContentText()); } catch (_) {}
+  if (res.getResponseCode() === 409 && j["이미"]) {
+    Logger.log("[COLLECT_V2] 다른 수집(회차 " + j["이미"].id + ")이 도는 중 — 이번은 건너뜀");
+    return;
+  }
+  if (res.getResponseCode() !== 200 || !j.id) throw new Error("v2 발주 수집 시작 실패 — HTTP " + res.getResponseCode() + " " + res.getContentText().slice(0, 200));
+  Logger.log("[COLLECT_V2] v2 발주 수집 시작 — 회차 " + j.id);
+  var 회차 = null;
+  for (var k = 0; k < 48; k++) {
+    Utilities.sleep(10000);
+    try {
+      var g = UrlFetchApp.fetch(base + "/api/po/collect?id=" + j.id + "&건너뜀=1", { method: "get", headers: { "x-ingest-token": tok }, muteHttpExceptions: true });
+      var gj = JSON.parse(g.getContentText());
+      회차 = gj && gj["회차"];
+      if (회차 && 회차.status && 회차.status !== "계획중" && 회차.status !== "쓰는중") break;
+    } catch (eG) { Logger.log("[COLLECT_V2] 상태 묻기 실패(다시): " + (eG.message || eG)); }
+  }
+  var st = 회차 ? String(회차.status) : "모름";
+  var s = (회차 && 회차.summary) || {};
+  var 허브 = (회차 && 회차.wrote && 회차.wrote["허브"]) || {};
+  Logger.log("[COLLECT_V2] 회차 " + j.id + " → " + st + " · 신규 " + (허브["붙임"] || 0) + (회차 && 회차.error ? " · " + 회차.error : ""));
+  _PO_LAST_COLLECT_STAT_ = {
+    newCount: Number(허브["붙임"] || 0), skipped: Number(s.skipped || 0), missing: Number(s.skippedByMissing || 0),
+    codeErr: Number(s.skippedByCodeErr || 0), errors: (s.errors || []).length, filesSeen: Number(s.filesSeen || 0),
+    filesAll: Number(s.filesAll || 0), dupIn: Number(s.dupIn || 0), dupOut: Number(s.dupOut || 0),
+    newId: Number(s["새ID건수"] || 0), seenAgain: Number(s["같은줄또봄"] || 0),
+  };
+  try {
+    if (회차 && 회차.skipped && 회차.skipped.length && typeof _dse_record_ === "function") _dse_record_(회차.skipped);
+  } catch (eDse) { Logger.log("[COLLECT_V2] 중복의심 탭 적재 실패: " + eDse.message); }
+  if (st === "계획중" || st === "쓰는중" || st === "모름") throw new Error("v2 발주 수집 회차 " + j.id + " — 8분 안에 안 끝남(" + st + "). v2 /po/collect 에서 확인");
+  if (st === "실패" || st === "멈춤") throw new Error("v2 발주 수집 " + st + " — " + String((회차 && 회차.error) || "").slice(0, 200));
+}
+
+/**
  * @param {boolean} [opt_noWriteBack] - true이면 허브 수집은 하되 업체시트에 "접수완료" 역기록 안 함
  *   (자동 트리거 전용)
  */
 function partnerCollectOrders(opt_noWriteBack) {
+  /*  ★ 2026-10-23: 발주 수집 주인이 v2 면 v2 가 걷는다 ★  (v2 lib/order-collect-write.ts · sql/186)
+      > 사장님: "업체는 지금처럼 시트에 넣고 v2가 읽어가게 해줘"
+      09:30·13:00·15:00(_po_collectSilentCore_)과 메뉴가 모두 이 문으로 들어온다. 앞(v2 다리)·뒤(폐기송장·도서산간·
+      판매현황)는 부른 쪽이 그대로 GAS 로 돈다. v2 가 실패하면 던진다 — GAS 가 대신 걷지 않는다(두 손이 걷으면 두 번 들어간다). */
+  if (_pt_v2Owner_("/api/po/collect") === "v2") { _po_runOnV2_(); return; }
   var ui = null;
   try {
     ui = SpreadsheetApp.getUi();
