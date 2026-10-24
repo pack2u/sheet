@@ -103,6 +103,13 @@ function _v2ob_setUids_(pairs) {
  * @return {{ok:boolean, moved:number, failed:number, msg:string}}
  */
 function partnerBridgeV2Orders() {
+  /*  ★ 2026-10-25: 발주 수집 주인이 v2 면 다리도 v2 가 한다 ★  (v2 lib/collect-extras.ts 다리옮기기)
+      v2 수집(09:30·13:00·15:00)이 읽기 앞에서, v2 푸시(10:30·13:50·15:40)가 쓰기 앞에서 부른다.
+      고유ID 도 수집과 같은 번호표(d+MMdd+6자리)다 — 여기 「MMdd-ds-4자리 난수」는 9/21 처럼 겹칠 수 있다. */
+  if (typeof _pt_v2Owner_ === "function" && _pt_v2Owner_("/api/po/collect") === "v2") {
+    Logger.log("[V2발주다리] 발주 수집 주인 = v2 → v2 가 옮긴다 · 여기선 건너뜀");
+    return { ok: true, moved: 0, failed: 0, msg: "v2 가 한다" };
+  }
   if (!_v2ob_ready_()) {
     var m = "v2 주소나 토큰이 없습니다 (_secrets.gs V2_URL · V2_INGEST_TOKEN)";
     Logger.log("[V2발주다리] " + m);

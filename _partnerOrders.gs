@@ -921,9 +921,7 @@ function _po_runOnV2_() {
     filesAll: Number(s.filesAll || 0), dupIn: Number(s.dupIn || 0), dupOut: Number(s.dupOut || 0),
     newId: Number(s["새ID건수"] || 0), seenAgain: Number(s["같은줄또봄"] || 0),
   };
-  try {
-    if (회차 && 회차.skipped && 회차.skipped.length && typeof _dse_record_ === "function") _dse_record_(회차.skipped);
-  } catch (eDse) { Logger.log("[COLLECT_V2] 중복의심 탭 적재 실패: " + eDse.message); }
+  //  2026-10-25: 「중복의심_수집」 탭은 v2 가 적는다(v2 lib/collect-extras.ts 중복의심적기) — 여기서 또 적으면 두 번 쌓인다
   if (st === "계획중" || st === "쓰는중" || st === "모름") throw new Error("v2 발주 수집 회차 " + j.id + " — 8분 안에 안 끝남(" + st + "). v2 /po/collect 에서 확인");
   if (st === "실패" || st === "멈춤") throw new Error("v2 발주 수집 " + st + " — " + String((회차 && 회차.error) || "").slice(0, 200));
 }
@@ -4576,8 +4574,9 @@ function _po_collectSilentCore_(withSalesRebuild) {
     try { Logger.log("[PARTNER_COLLECT_TRIGGER_ERR] " + errorMsg); } catch (_) {}
   }
   // ② 폐기송장 적용 (폐기송장 탭에 등록된 송장번호를 허브에서 자동 제거)
+  //  2026-10-25: 발주 수집 주인이 v2 면 v2 가 수집 뒤에 한다(lib/collect-extras.ts 폐기반영) — 여기선 건너뜀
   try {
-    if (typeof partnerApplyVoidedInvoicesSilent_ === "function")
+    if (typeof partnerApplyVoidedInvoicesSilent_ === "function" && _pt_v2Owner_("/api/po/collect") !== "v2")
       partnerApplyVoidedInvoicesSilent_();
   } catch (e) {
     try { Logger.log("[VOID_INVOICE_TRIGGER_ERR] " + String(e.message || e)); } catch (_) {}
