@@ -4372,8 +4372,23 @@ function partnerPushOrdersToExclusiveFormsSilent_() {
     try { Logger.log("[ISLAND_ERR] " + String(eIsland.message || eIsland)); } catch (_) {}
   }
   // ③ 우편번호/택배비 채우기
+  //  2026-10-25: 푸시 주인이 v2 면 v2 /api/po/jm-zip 이 채운다(lib/jm-zip.ts · 칸만·글자 그대로).
+  //  v2 에 카카오 키가 아직 없으면(키없음) 아래 GAS 가 예전처럼 채운다 — 빠지지 않게.
+  var _jmV2_ = false;
   try {
-    if (typeof _trigger_fillZipAndShipping_ === "function") {
+    if (_pt_v2Owner_("/api/po/push") === "v2") {
+      var _jr_ = UrlFetchApp.fetch(((typeof _psm_v2url_ === "function") ? _psm_v2url_() : "https://pack2u-partner.vercel.app") + "/api/po/jm-zip", {
+        method: "post", contentType: "application/json; charset=utf-8", muteHttpExceptions: true,
+        headers: { "x-ingest-token": (typeof _psm_token_ === "function") ? _psm_token_() : "" }, payload: "{}",
+      });
+      var _jj_ = {};
+      try { _jj_ = JSON.parse(_jr_.getContentText()); } catch (_) {}
+      Logger.log("[ZIP_FILL] v2 제이엠 우편번호: HTTP " + _jr_.getResponseCode() + " " + _jr_.getContentText().slice(0, 200));
+      _jmV2_ = _jr_.getResponseCode() === 200 && _jj_.ok === true && !_jj_["키없음"];
+    }
+  } catch (eJv) { Logger.log("[ZIP_FILL] v2 제이엠 우편번호 실패 → GAS 가 채움: " + (eJv.message || eJv)); }
+  try {
+    if (!_jmV2_ && typeof _trigger_fillZipAndShipping_ === "function") {
       _trigger_fillZipAndShipping_();
       Logger.log("[ZIP_FILL] Push 후 우편번호 채우기 자동 실행 완료");
     }
