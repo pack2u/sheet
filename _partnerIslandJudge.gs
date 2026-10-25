@@ -249,7 +249,37 @@ function partnerJudgeIslandByAddress() {
  * 발주 수집 안에서 부른다(판매현황 갱신 앞). 곁다리 — 실패해도 수집은 간다.
  * @return {{섬:number, 일반:number, 미확인:number, 본:number, 글:string}}
  */
+/**
+ * ★ 2026-10-25: 도서산간 주인이 v2 면 v2 「돌기」(판정·원장 받침·칠하기·업체 발주탭)를 부른다 ★  (v2 lib/island-hub.ts)
+ * > 사장님: "응 도서산간 진행해줘"
+ * v2 가 실패하면 false — 부른 쪽(GAS)이 예전처럼 한다. 빈 칸에만 쓰는 일이라 두 번 돌아도 같다.
+ * @return {Object|null} v2 결과 (못 맡겼으면 null)
+ */
+function _island_runOnV2_() {
+  try {
+    if (typeof _pt_v2Owner_ !== "function" || _pt_v2Owner_("/api/po/island") !== "v2") return null;
+    var base = (typeof _psm_v2url_ === "function") ? _psm_v2url_() : "https://pack2u-partner.vercel.app";
+    var res = UrlFetchApp.fetch(base + "/api/po/island", {
+      method: "post", contentType: "application/json; charset=utf-8", muteHttpExceptions: true,
+      headers: { "x-ingest-token": (typeof _psm_token_ === "function") ? _psm_token_() : "" },
+      payload: JSON.stringify({ "작업": "돌기" }),
+    });
+    var j = {};
+    try { j = JSON.parse(res.getContentText()); } catch (_) {}
+    Logger.log("[도서산간 v2] HTTP " + res.getResponseCode() + " " + res.getContentText().slice(0, 300));
+    return res.getResponseCode() === 200 && j.ok === true && !j["멈춤"] ? j : null;
+  } catch (e) {
+    Logger.log("[도서산간 v2] 실패 → GAS 가 한다: " + (e.message || e));
+    return null;
+  }
+}
+
 function _island_judgeHubByAddress_() {
+  var _v2_ = _island_runOnV2_();
+  if (_v2_) {
+    var _p_ = _v2_["판정"] || {};
+    return { 섬: Number(_p_["섬"] || 0), 일반: Number(_p_["일반"] || 0), 미확인: Number(_p_["미확인"] || 0), 본: Number(_p_["본"] || 0), 업체: 0, 글: "v2 가 했습니다 — " + JSON.stringify(_v2_).slice(0, 300) };
+  }
   var 결과 = { 섬: 0, 일반: 0, 미확인: 0, 본: 0, 업체: 0, 글: "" };
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) { 결과.글 = "다른 작업 중이라 건너뜀"; return 결과; }

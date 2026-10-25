@@ -1852,6 +1852,8 @@ function _trigger_exclusiveArchive_() {
 function _trigger_islandShipping_() {
   // ★ 2026-06-27: 주말 차단
   if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 도서산간 스킵"); return; }
+  //  2026-10-25: 도서산간 주인이 v2 면 v2 「돌기」가 원장 받침까지 한다 (실패하면 아래 GAS 가 한다)
+  if (typeof _island_runOnV2_ === "function" && _island_runOnV2_()) { Logger.log("[TRIGGER] 도서산간 원장 받침 — v2 가 했습니다"); return; }
   try {
     Logger.log("[TRIGGER] 도서산간 추가배송비 시작");
     var lock = LockService.getScriptLock();
