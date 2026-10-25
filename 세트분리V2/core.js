@@ -2849,8 +2849,12 @@ function ssStatusOk(status, allow) {
  * 묶음: 합포장그룹(같은 날·같은 주문자 합배송) 하나, 또는 묶이지 않은 한 줄. 로젠 출고 경로(일반·도서산간)만 본다.
  * 셈: 같은 완박스로 이어지는 소분을 «한 묶음씩» 펴서, 합이 완박스 수량과 정확히 같아지는 조합을 되는 만큼 찾는다.
  *     쪼개지 않는다(딱 맞을 때만). 남는 묶음은 소분 그대로.
- * 바뀌는 것: 대표 줄의 출력품목명만 — 「완박스 이름×N 완박스(소분 150개×4)」 + 「+ 남은 소분×n」. 합배송 꼬리(===…합배송)는 그대로 둔다
- *     (다른 시스템이 그 글자를 읽는다). 품목코드·수량·배송비·박스수·판매현황·이카운트는 안 바뀐다(출고만 완박스).
+ * 바뀌는 것: 대표 줄의 출력품목명 — 「완박스 이름×N 완박스(소분 150개×4)」 + 「+ 남은 소분×n」. 합배송 꼬리(===…합배송)는 그대로 둔다
+ *     (다른 시스템이 그 글자를 읽는다).
+ *   박스수(택배박스수량)도 맞춘다 — > 사장님: "박스수도 완박스에 맞춰줘"
+ *     완박스 하나 = 1박스(큰 박스라 다른 것과 안 묶인다) + 남은 것: 원래 한 박스로 잡히던 대표(배송비 규칙·합배송)면 남은 게 있을 때 1,
+ *     원래 묶음마다 박스였던 한 줄이면 남은 묶음 수만큼.
+ *   품목코드·수량·배송비·판매현황·이카운트는 안 바뀐다(출고만 완박스).
  * 짝이 없으면 아무 일도 안 한다.
  */
 function ssFullBox(units, masters, warnings) {
@@ -2881,7 +2885,7 @@ function ssFullBox(units, masters, warnings) {
       var 갈 = 갈래[p.full] || (갈래[p.full] = { p: p, 묶: [] });
       for (var c = 0; c < n; c++) 갈.묶.push({ u: g[b], size: p.size });
     }
-    var 쓴 = [], 완글 = [];
+    var 쓴 = [], 완글 = [], 완박스수 = 0;
     for (var full in 갈래) {
       if (!Object.prototype.hasOwnProperty.call(갈래, full)) continue;
       var G = 갈래[full], 남은 = G.묶.slice(), 박스 = 0, 구성 = {};
@@ -2904,6 +2908,7 @@ function ssFullBox(units, masters, warnings) {
         남은 = 남은.filter(function (_, idx) { return !뺄[idx]; });
       }
       if (!박스) continue;
+      완박스수 += 박스;
       var 구성글 = Object.keys(구성).sort(function (x, y) { return Number(y) - Number(x); })
         .map(function (sz) { return sz + '×' + 구성[sz]; }).join('+');
       완글.push(ssText(G.p.fullName) + '×' + 박스 + ' 완박스(소분 ' + 구성글 + ')');
@@ -2912,11 +2917,12 @@ function ssFullBox(units, masters, warnings) {
     //  남은 것 — 줄마다 (쓴 묶음 수를 뺀) 나머지
     var 쓴수 = new Map();
     for (var w = 0; w < 쓴.length; w++) 쓴수.set(쓴[w], (쓴수.get(쓴[w]) || 0) + 1);
-    var 남글 = [];
+    var 남글 = [], 남묶음 = 0;
     for (var r = 0; r < g.length; r++) {
       var 원 = Math.floor(Number(g[r].수량) || 0);
       var 남 = 원 - (쓴수.get(g[r]) || 0);
       if (남 <= 0) continue;
+      남묶음 += 남;
       남글.push(ssStripName(g[r].품목명) + (남 > 1 || 쓴수.has(g[r]) ? '×' + 남 : ''));
     }
     var 원글 = ssText(대표.출력품목명);
@@ -2925,6 +2931,9 @@ function ssFullBox(units, masters, warnings) {
     if (m) 꼬리 = ' ' + m[0].trim();
     대표.출력품목명 = 완글.join(', ') + (남글.length ? ' + ' + 남글.join(', ') : '') + 꼬리;
     대표.완박스묶음 = 완글.join(', ');
+    var 원박스 = Math.max(0, Number(대표.박스수) || 0);
+    대표.완박스원박스수 = 원박스;
+    대표.박스수 = 완박스수 + (원박스 <= 1 ? (남글.length ? 1 : 0) : 남묶음);
     대표.배송비산출 = ssText(대표.배송비산출) + ' · 완박스 출고 ' + 완글.length + '갈래';
     if (warnings) ssWarn(warnings, '정보', 'FULL_BOX', ssText(대표.사방넷주문번호 || 대표.고유ID), '소분을 완박스로 묶어 출고 — ' + 대표.출력품목명);
   }
