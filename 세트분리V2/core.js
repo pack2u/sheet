@@ -2837,6 +2837,100 @@ function ssStatusOk(status, allow) {
   return false;
 }
 
+/* ── 완박스 묶기 ─────────────────────────────────────── */
+
+/**
+ * ★ 소분이 모여 완박스 하나를 «딱» 채우면 완박스로 출고 ★  (2026-10-25)
+ * > 사장님: "합포장의 경우 같은 제품의 소분이 여러개 같이 있을떄는 상품정보시트를 확인하고 완박스로 나갈수 있는건 완박스로"
+ * > "가) 출고만 완박스로, 딱 맞을 때만, 크기가 달라도 1개의 완박스가 완성되면 완박스로 나가고 그외 추가는 소분으로..
+ * >  같은날 같은 주문자일 경우 합배송으로" · "응 한 줄 여러개도 완박스로 해줘"
+ *
+ * 짝: masters.subunPairs = { 소분코드: { full, fullName, size(소분 한 묶음 수량), fullQty } } — v2 「소분→완박스 짝」에서 «확인»한 것만.
+ * 묶음: 합포장그룹(같은 날·같은 주문자 합배송) 하나, 또는 묶이지 않은 한 줄. 로젠 출고 경로(일반·도서산간)만 본다.
+ * 셈: 같은 완박스로 이어지는 소분을 «한 묶음씩» 펴서, 합이 완박스 수량과 정확히 같아지는 조합을 되는 만큼 찾는다.
+ *     쪼개지 않는다(딱 맞을 때만). 남는 묶음은 소분 그대로.
+ * 바뀌는 것: 대표 줄의 출력품목명만 — 「완박스 이름×N 완박스(소분 150개×4)」 + 「+ 남은 소분×n」. 합배송 꼬리(===…합배송)는 그대로 둔다
+ *     (다른 시스템이 그 글자를 읽는다). 품목코드·수량·배송비·박스수·판매현황·이카운트는 안 바뀐다(출고만 완박스).
+ * 짝이 없으면 아무 일도 안 한다.
+ */
+function ssFullBox(units, masters, warnings) {
+  var 짝 = (masters && masters.subunPairs) || null;
+  if (!짝) return units;
+  var 출고 = {}; 출고[SS_ROUTE.LOTTE] = 1; 출고[SS_ROUTE.LOTTE_ISLAND] = 1; 출고[SS_ROUTE.LOTTE_ISLAND_CONSIGN] = 1;
+  var 묶음 = {};
+  for (var i = 0; i < units.length; i++) {
+    var u = units[i];
+    var 길 = u.실경로 || u.route;
+    if (!출고[길]) continue;
+    var k = u.합포장그룹 ? 'G|' + u.합포장그룹 : 'U|' + i;
+    (묶음[k] || (묶음[k] = [])).push(u);
+  }
+  for (var key in 묶음) {
+    if (!Object.prototype.hasOwnProperty.call(묶음, key)) continue;
+    var g = 묶음[key];
+    var 대표 = null;
+    for (var a = 0; a < g.length; a++) if (g[a].합포장대표) { 대표 = g[a]; break; }
+    if (!대표) 대표 = g[0];
+    //  완박스별 소분 묶음 펴기
+    var 갈래 = {};
+    for (var b = 0; b < g.length; b++) {
+      var p = 짝[ssText(g[b].품목코드)];
+      if (!p || !(p.size > 0) || !(p.fullQty > p.size)) continue;
+      var n = Math.floor(Number(g[b].수량) || 0);
+      if (n < 1) continue;
+      var 갈 = 갈래[p.full] || (갈래[p.full] = { p: p, 묶: [] });
+      for (var c = 0; c < n; c++) 갈.묶.push({ u: g[b], size: p.size });
+    }
+    var 쓴 = [], 완글 = [];
+    for (var full in 갈래) {
+      if (!Object.prototype.hasOwnProperty.call(갈래, full)) continue;
+      var G = 갈래[full], 남은 = G.묶.slice(), 박스 = 0, 구성 = {};
+      for (;;) {
+        //  부분합이 정확히 fullQty 가 되는 조합 (작은 DP — 큰 묶음부터)
+        남은.sort(function (x, y) { return y.size - x.size; });
+        var 길표 = {}; 길표[0] = [];
+        for (var q = 0; q < 남은.length && !길표[G.p.fullQty]; q++) {
+          var 합들 = Object.keys(길표);
+          for (var h = 0; h < 합들.length; h++) {
+            var t = Number(합들[h]) + 남은[q].size;
+            if (t <= G.p.fullQty && !길표[t]) 길표[t] = 길표[합들[h]].concat([q]);
+          }
+        }
+        var 고른 = 길표[G.p.fullQty];
+        if (!고른) break;
+        박스++;
+        var 뺄 = {};
+        for (var z = 0; z < 고른.length; z++) { 뺄[고른[z]] = 1; var sz = 남은[고른[z]].size; 구성[sz] = (구성[sz] || 0) + 1; 쓴.push(남은[고른[z]].u); }
+        남은 = 남은.filter(function (_, idx) { return !뺄[idx]; });
+      }
+      if (!박스) continue;
+      var 구성글 = Object.keys(구성).sort(function (x, y) { return Number(y) - Number(x); })
+        .map(function (sz) { return sz + '×' + 구성[sz]; }).join('+');
+      완글.push(ssText(G.p.fullName) + '×' + 박스 + ' 완박스(소분 ' + 구성글 + ')');
+    }
+    if (!완글.length) continue;
+    //  남은 것 — 줄마다 (쓴 묶음 수를 뺀) 나머지
+    var 쓴수 = new Map();
+    for (var w = 0; w < 쓴.length; w++) 쓴수.set(쓴[w], (쓴수.get(쓴[w]) || 0) + 1);
+    var 남글 = [];
+    for (var r = 0; r < g.length; r++) {
+      var 원 = Math.floor(Number(g[r].수량) || 0);
+      var 남 = 원 - (쓴수.get(g[r]) || 0);
+      if (남 <= 0) continue;
+      남글.push(ssStripName(g[r].품목명) + (남 > 1 || 쓴수.has(g[r]) ? '×' + 남 : ''));
+    }
+    var 원글 = ssText(대표.출력품목명);
+    var 꼬리 = '';
+    var m = 원글.match(/\s*===.*$/);
+    if (m) 꼬리 = ' ' + m[0].trim();
+    대표.출력품목명 = 완글.join(', ') + (남글.length ? ' + ' + 남글.join(', ') : '') + 꼬리;
+    대표.완박스묶음 = 완글.join(', ');
+    대표.배송비산출 = ssText(대표.배송비산출) + ' · 완박스 출고 ' + 완글.length + '갈래';
+    if (warnings) ssWarn(warnings, '정보', 'FULL_BOX', ssText(대표.사방넷주문번호 || 대표.고유ID), '소분을 완박스로 묶어 출고 — ' + 대표.출력품목명);
+  }
+  return units;
+}
+
 /* ── 출력 행 만들기 ───────────────────────────────────── */
 
 function ssOutRow(u) {
@@ -3501,6 +3595,8 @@ function ssRun(grid, masters, cfg) {
 
   for (var i = 0; i < units.length; i++) ssShippingFee(units[i], masters, warnings);
   ssMerge(units, cfg);
+  //  합배송 묶음이 정해진 «뒤»에 — 같은 날 같은 주문자 묶음 안의 소분이 완박스를 딱 채우면 출력품목명만 완박스로 (2026-10-25)
+  ssFullBox(units, masters, warnings);
   //  합포장으로 박스가 정해진 «뒤»에 센다 — 한 박스로 묶이면 송장 1장이라 보류할 일이 없다 (2026-10-14)
   ssIslandMultiBoxHold(units, cfg, warnings);
   ssIslandAllHold(units, cfg, warnings);   // v2 만 켬 (2026-10-20)
@@ -4067,7 +4163,7 @@ if (typeof module !== 'undefined' && module.exports) {
     SS_FEE_RULE_HEADER: SS_FEE_RULE_HEADER, SS_DEFAULT_CONFIG: SS_DEFAULT_CONFIG,
     ssRun: ssRun, ssNormalize: ssNormalize, ssExplode: ssExplode, ssEnrich: ssEnrich,
     ssAssignCondition: ssAssignCondition, ssAllocateStock: ssAllocateStock,
-    ssRoute: ssRoute, ssMerge: ssMerge, ssShippingFee: ssShippingFee,
+    ssRoute: ssRoute, ssMerge: ssMerge, ssShippingFee: ssShippingFee, ssFullBox: ssFullBox,
     ssApplyManualEdits: ssApplyManualEdits,
     ssVerifySplit: ssVerifySplit, ssBlockReship: ssBlockReship, ssAuditSetNames: ssAuditSetNames,
     ssCompressNames: ssCompressNames, ssParseFeeRule: ssParseFeeRule,
