@@ -47,3 +47,7 @@ _logen_relay/relay_config.php
 _sabang_relay/sabang_config.php
 # 중계기가 캐시한 JWT
 _sabang_relay/.token_*.json
+
+# 쿠팡 중계기 설정 — 중계기 열쇠가 들어간다. 견본(coupang_config.sample.php)만 올린다
+# (쿠팡 비밀키는 여기 없다 — 서명은 v2 가 만든다)
+_coupang_relay/coupang_config.php
