@@ -104,6 +104,10 @@ const ALLOWED = [
         사장님 「답변 쓰는 것도 붙여줘」. 저장하면 사방넷이 **몰로 송신**한다 —
         손님에게 그대로 나가는 글이다. 아래 CS_ANSWER_GUARD 가 본다.  */
     'POST /v3/sb/cs/answer'   => true,
+    /*  ★ 몰별 가격·상세페이지 ★  (2026-10-27)
+        사장님 「Html을 만들었어.. 이걸 사방넷에 올리는 탭을 만들어줘」
+        손님이 보는 상세페이지를 «덮어쓴다». 아래 CHANNEL_GUARD 가 본다.  */
+    'POST /v3/sb/channels-product' => true,
 
     /*  ★ 주문 수집 ★  (2026-10-13)
         문서는 GET 이라고 적었지만 실측은 POST 전용이다(GET 은 405).
@@ -145,6 +149,7 @@ const STOCK_WRITE = [
         ★ 가드 없이 이 줄만 넣지 말 것 ★ 송장은 한 번 나가면 쇼핑몰까지 번진다. */
     'POST /v3/sb/waybill' => true,
     'POST /v3/sb/cs/answer' => true,   // 2026-10-26 — CS_ANSWER_GUARD 가 본다
+    'POST /v3/sb/channels-product' => true,  // 2026-10-27 — CHANNEL_GUARD 가 본다
 ];
 
 const HOSTS = [
@@ -157,7 +162,7 @@ header('Content-Type: application/json; charset=utf-8');
     올렸는지 «짐작»하지 않으려고 둔다. 모든 응답 머리에 실린다 —
     올리고 나서 이 값이 안 바뀌면 다른 자리에 올라간 것이다.
     [[ops-tab-carries-the-build-number]] 와 같은 뜻이다. */
-header('X-Relay-Build: 20261026-claim-read-fix');
+header('X-Relay-Build: 20261027-channel-guard');
 
 /** 오류를 사방넷 응답과 «같은 모양» 으로 돌려준다 — 부르는 쪽이 한 갈래로 읽게 */
 function fail($http, $code, $msg) {
@@ -406,6 +411,77 @@ if ($key === 'POST /v3/sb/product/upsert') {
             fail(400, 'RELAY_STOCK_GUARD',
                  ($i + 1) . '번째 줄의 상태값이 IN_SUPPLY · OUT_OF_STOCK 이 아닙니다: ' . $st);
         }
+    }
+}
+
+/*  ══ CHANNEL_GUARD ══  (2026-10-27)
+    ★ 이 길로 나간 글은 손님이 상세페이지에서 읽는다 ★
+      `productDetailDescription` 은 그 몰의 상세페이지를 **통째로 덮는다.**
+      되돌리려면 예전 HTML 을 우리가 갖고 있어야 한다 — 사방넷은 되돌려 주지 않는다.
+      `salePrice` 도 그 몰의 판매가를 덮는다. 둘 다 돈과 손님에 바로 닿는다.
+
+    ★ 다섯 칸만 지나간다 ★
+      shopCode · customProductCode · salePrice · productName · productDetailDescription
+      규격에는 재고비율(shopMallStockRate)·인증정보도 있지만 **안 연다.**
+      재고비율은 우리가 stockUseYn="N" 이라 듣는지도 모르고,
+      인증정보는 잘못 덮으면 몰에서 상품이 내려간다. 쓸 일이 생기면 그때 «하나씩» 연다.
+
+    ★ 한 번에 조금만 ★ 50건. 상세페이지는 한 건이 수만 자다.
+      묶음으로 많이 나가는 길을 아예 안 낸다 — 잘못 쓰면 몰 전체가 같이 틀어진다.  */
+if ($key === 'POST /v3/sb/channels-product') {
+    if (!is_array($body) || !isset($body['products']) || !is_array($body['products'])) {
+        fail(400, 'RELAY_CHANNEL_GUARD', '몸통에 products 배열이 있어야 합니다.');
+    }
+    foreach (array_keys($body) as $k) {
+        if ($k !== 'products') {
+            fail(400, 'RELAY_CHANNEL_GUARD', '몸통에 허용되지 않은 칸이 있습니다: ' . $k);
+        }
+    }
+    $n = count($body['products']);
+    if ($n === 0) fail(400, 'RELAY_CHANNEL_GUARD', 'products 가 비어 있습니다.');
+    if ($n > 50)  fail(400, 'RELAY_CHANNEL_GUARD', '한 번에 50건까지만 보냅니다 (' . $n . '건).');
+
+    $칸 = ['shopCode' => true, 'customProductCode' => true, 'salePrice' => true,
+           'productName' => true, 'productDetailDescription' => true];
+    $총 = 0;
+    foreach ($body['products'] as $i4 => $pd) {
+        $자리 = ($i4 + 1) . '번째 줄';
+        if (!is_array($pd)) fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '이 객체가 아닙니다.');
+        foreach (array_keys($pd) as $k4) {
+            if (!isset($칸[$k4])) {
+                fail(400, 'RELAY_CHANNEL_GUARD',
+                     $자리 . '에 허용되지 않은 칸이 있습니다: ' . $k4
+                   . ' — 이 길로는 shopCode · customProductCode · salePrice · productName · productDetailDescription 만 보냅니다.');
+            }
+        }
+        $shop = isset($pd['shopCode']) ? trim((string)$pd['shopCode']) : '';
+        $code = isset($pd['customProductCode']) ? trim((string)$pd['customProductCode']) : '';
+        if ($shop === '' || !preg_match('/^shop[0-9]{1,8}$/', $shop)) {
+            fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 shopCode 가 이상합니다: ' . $shop);
+        }
+        if ($code === '') fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 customProductCode 가 비었습니다.');
+
+        /*  ★ 가격이 0 이거나 음수면 막는다 ★ 0원짜리가 몰에 걸리는 사고를 미리 끊는다.
+            「안 바꿀 거면 칸을 아예 빼라」가 이 길의 규칙이다 — 빈 값으로 덮지 않는다. */
+        if (array_key_exists('salePrice', $pd)) {
+            $pr = $pd['salePrice'];
+            if (!is_numeric($pr) || (int)$pr <= 0) {
+                fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 salePrice 가 0 이하이거나 숫자가 아닙니다. 안 바꿀 거면 칸을 빼세요.');
+            }
+            if ((int)$pr > 100000000) fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 salePrice 가 너무 큽니다.');
+        }
+        foreach (['productName', 'productDetailDescription'] as $글칸) {
+            if (!array_key_exists($글칸, $pd)) continue;
+            $글 = (string)$pd[$글칸];
+            if (trim($글) === '') {
+                fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 ' . $글칸 . ' 이 비어 있습니다. 안 바꿀 거면 칸을 빼세요.');
+            }
+            $총 += strlen($글);
+        }
+    }
+    /*  한 번에 보내는 글의 총량 — 2MB. 넘으면 사방넷이 통째로 거절해 무엇이 문제인지 안 보인다 */
+    if ($총 > 2 * 1024 * 1024) {
+        fail(400, 'RELAY_CHANNEL_GUARD', '보내는 글이 너무 많습니다 (' . round($총 / 1024) . 'KB). 2MB 까지입니다.');
     }
 }
 
