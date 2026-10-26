@@ -119,7 +119,16 @@ try {
   }
 } catch (e) {
   console.error(`\n★ 못 했습니다 — ${e.message}`);
-  if (/530|login/i.test(String(e.message))) console.error("  아이디·비밀번호를 다시 봐 주세요 (_ftp.json).");
+  if (/530|login/i.test(String(e.message))) {
+    /*  530 은 «서버까지 닿아서 거절당한 것»이다 — 방화벽·접속범위·포트는 다 멀쩡하다.
+        남은 것은 아이디와 비밀번호뿐. 흔한 까닭을 적어 둔다(2026-10-26 에 여기서 막혔다). */
+    console.error("  서버까지는 닿았고 «로그인만» 거절당했습니다 — 방화벽·포트·접속범위는 멀쩡합니다.");
+    console.error("  흔한 까닭 둘:");
+    console.error("    · ★ FTP 비밀번호가 호스팅 관리페이지 로그인 비밀번호와 «다를» 수 있습니다 ★");
+    console.error("      관리페이지의 「FTP 비밀번호 변경」에서 새로 정하고 그 값을 넣으면 확실합니다.");
+    console.error("    · 아이디가 siot00 이 아닐 수 있습니다 (_ftp.json 의 user).");
+    console.error("  ※ 여러 번 틀리면 잠길 수 있으니 짐작으로 되풀이하지 않습니다.");
+  }
   if (/timeout|ETIMEDOUT/i.test(String(e.message))) console.error("  시간초과입니다 — 호스팅에서 접속 범위를 「국내」로 열어야 할 수 있습니다.");
   process.exitCode = 1;
 } finally {
