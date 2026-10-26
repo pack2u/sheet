@@ -162,7 +162,7 @@ header('Content-Type: application/json; charset=utf-8');
     올렸는지 «짐작»하지 않으려고 둔다. 모든 응답 머리에 실린다 —
     올리고 나서 이 값이 안 바뀌면 다른 자리에 올라간 것이다.
     [[ops-tab-carries-the-build-number]] 와 같은 뜻이다. */
-header('X-Relay-Build: 20261027-channel-guard');
+header('X-Relay-Build: 20261027-channel-fields');
 
 /** 오류를 사방넷 응답과 «같은 모양» 으로 돌려준다 — 부르는 쪽이 한 갈래로 읽게 */
 function fail($http, $code, $msg) {
@@ -420,11 +420,25 @@ if ($key === 'POST /v3/sb/product/upsert') {
       되돌리려면 예전 HTML 을 우리가 갖고 있어야 한다 — 사방넷은 되돌려 주지 않는다.
       `salePrice` 도 그 몰의 판매가를 덮는다. 둘 다 돈과 손님에 바로 닿는다.
 
-    ★ 다섯 칸만 지나간다 ★
-      shopCode · customProductCode · salePrice · productName · productDetailDescription
-      규격에는 재고비율(shopMallStockRate)·인증정보도 있지만 **안 연다.**
-      재고비율은 우리가 stockUseYn="N" 이라 듣는지도 모르고,
-      인증정보는 잘못 덮으면 몰에서 상품이 내려간다. 쓸 일이 생기면 그때 «하나씩» 연다.
+    ★ 2026-10-27 저녁 — 규격의 열다섯 칸을 다 연다 ★
+      사장님 「몰별로 추가적으로 넣어야 되는 것들이 있는지 확인해주고 있으면 그부분도 세팅에」.
+      규격(_docs/사방넷_API3.0_규격.md 「채널별 상품」)이 적은 칸은 이게 전부다:
+        shopCode · customProductCode · salePrice · productName · productDetailDescription
+        shopMallStockRate · shopMallShippingPolicyId · productAttributeClassificationCode
+        productAuthorizationNumber · authorizationNumberIssueDate · authorizationDate
+        authorizationExpiryDateFrom · authorizationExpiryDateTo
+        authorizationOrganizationName · authorizationSphereName
+
+      ★ 열되, 칸마다 «모양»을 본다 ★ 여는 것과 아무거나 받는 것은 다르다.
+        재고비율은 0~100 정수, 날짜는 YYYYMMDD 여덟 자리, 코드는 글자·숫자만.
+        사방넷은 **모르는 칸을 조용히 버리므로** 이름에 오타가 나도 아무 말이 없다 —
+        통과시키면 「보냈는데 안 바뀐다」가 되고 까닭을 영영 못 찾는다. 여기서 돌려보낸다.
+
+      ★ 인증 칸은 혼자 가지 않는다 ★ 발급일·기관만 덮고 번호가 없으면 몰에서
+        인증정보가 반쪽이 된다. 하나라도 있으면 productAuthorizationNumber 를 같이 받는다.
+
+      ★ 재고비율은 듣는지 아직 모른다 ★ 우리는 stockUseYn="N"(재고관리 안 씀)이다.
+        길은 열되, 먹히는지는 보내 보고 사방넷 화면에서 확인해야 안다.
 
     ★ 한 번에 조금만 ★ 50건. 상세페이지는 한 건이 수만 자다.
       묶음으로 많이 나가는 길을 아예 안 낸다 — 잘못 쓰면 몰 전체가 같이 틀어진다.  */
@@ -441,8 +455,28 @@ if ($key === 'POST /v3/sb/channels-product') {
     if ($n === 0) fail(400, 'RELAY_CHANNEL_GUARD', 'products 가 비어 있습니다.');
     if ($n > 50)  fail(400, 'RELAY_CHANNEL_GUARD', '한 번에 50건까지만 보냅니다 (' . $n . '건).');
 
-    $칸 = ['shopCode' => true, 'customProductCode' => true, 'salePrice' => true,
-           'productName' => true, 'productDetailDescription' => true];
+    /*  여기 없는 이름은 통과 못 한다 — 값의 «모양»을 칸마다 아래에서 본다. */
+    $칸 = [
+        'shopCode'                            => true,
+        'customProductCode'                   => true,
+        'salePrice'                           => true,
+        'productName'                         => true,
+        'productDetailDescription'            => true,
+        'shopMallStockRate'                   => true,
+        'shopMallShippingPolicyId'            => true,
+        'productAttributeClassificationCode'  => true,
+        'productAuthorizationNumber'          => true,
+        'authorizationNumberIssueDate'        => true,
+        'authorizationDate'                   => true,
+        'authorizationExpiryDateFrom'         => true,
+        'authorizationExpiryDateTo'           => true,
+        'authorizationOrganizationName'       => true,
+        'authorizationSphereName'             => true,
+    ];
+    /*  인증 묶음 — 하나라도 오면 번호를 같이 받는다 */
+    $인증칸 = ['authorizationNumberIssueDate', 'authorizationDate',
+               'authorizationExpiryDateFrom', 'authorizationExpiryDateTo',
+               'authorizationOrganizationName', 'authorizationSphereName'];
     $총 = 0;
     foreach ($body['products'] as $i4 => $pd) {
         $자리 = ($i4 + 1) . '번째 줄';
@@ -451,7 +485,7 @@ if ($key === 'POST /v3/sb/channels-product') {
             if (!isset($칸[$k4])) {
                 fail(400, 'RELAY_CHANNEL_GUARD',
                      $자리 . '에 허용되지 않은 칸이 있습니다: ' . $k4
-                   . ' — 이 길로는 shopCode · customProductCode · salePrice · productName · productDetailDescription 만 보냅니다.');
+                   . ' — 이 길로 보낼 수 있는 칸은 ' . implode(' · ', array_keys($칸)) . ' 입니다.');
             }
         }
         $shop = isset($pd['shopCode']) ? trim((string)$pd['shopCode']) : '';
@@ -470,11 +504,63 @@ if ($key === 'POST /v3/sb/channels-product') {
             }
             if ((int)$pr > 100000000) fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 salePrice 가 너무 큽니다.');
         }
-        foreach (['productName', 'productDetailDescription'] as $글칸) {
+        /*  ★ 재고비율 ★ 0~100 정수. 0 은 뜻이 있다(그 몰에 재고를 안 돌림) —
+            품절 수단은 «아니다»(규격이 못박았다). 그래서 0 을 막지 않는다. */
+        if (array_key_exists('shopMallStockRate', $pd)) {
+            $rt = $pd['shopMallStockRate'];
+            if (!is_int($rt) && !(is_string($rt) && preg_match('/^[0-9]{1,3}$/', $rt))) {
+                fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 shopMallStockRate 는 0~100 정수여야 합니다: ' . var_export($rt, true));
+            }
+            if ((int)$rt < 0 || (int)$rt > 100) {
+                fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 shopMallStockRate 는 0~100 입니다: ' . (int)$rt);
+            }
+        }
+
+        /*  ★ 사방넷이 발급한 아이디·코드 ★ 글자·숫자·밑줄·붙임표만. 사람이 옮겨 적다
+            공백이나 한글이 섞이면 사방넷이 조용히 버린다 — 여기서 돌려보낸다. */
+        foreach (['shopMallShippingPolicyId', 'productAttributeClassificationCode'] as $id칸) {
+            if (!array_key_exists($id칸, $pd)) continue;
+            $v = trim((string)$pd[$id칸]);
+            if ($v === '') fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 ' . $id칸 . ' 이 비었습니다. 안 바꿀 거면 칸을 빼세요.');
+            if (!preg_match('/^[A-Za-z0-9_-]{1,50}$/', $v)) {
+                fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 ' . $id칸 . ' 모양이 이상합니다(글자·숫자만): ' . $v);
+            }
+        }
+
+        /*  ★ 날짜는 YYYYMMDD 여덟 자리 ★ 2026-01-01 처럼 보내면 사방넷이 버린다.
+            달·날까지 실제로 있는 날인지 본다 — 20260230 은 막는다. */
+        foreach (['authorizationNumberIssueDate', 'authorizationDate',
+                  'authorizationExpiryDateFrom', 'authorizationExpiryDateTo'] as $날칸) {
+            if (!array_key_exists($날칸, $pd)) continue;
+            $d = (string)$pd[$날칸];
+            if (!preg_match('/^[0-9]{8}$/', $d)
+                || !checkdate((int)substr($d, 4, 2), (int)substr($d, 6, 2), (int)substr($d, 0, 4))) {
+                fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 ' . $날칸 . ' 은 YYYYMMDD 여덟 자리여야 합니다: ' . $d);
+            }
+        }
+        if (array_key_exists('authorizationExpiryDateFrom', $pd) && array_key_exists('authorizationExpiryDateTo', $pd)
+            && (string)$pd['authorizationExpiryDateFrom'] > (string)$pd['authorizationExpiryDateTo']) {
+            fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 인증 유효기간이 거꾸로입니다.');
+        }
+
+        /*  ★ 인증 칸은 혼자 가지 않는다 ★ 번호 없이 발급일·기관만 덮으면
+            몰에서 인증정보가 반쪽이 된다. */
+        foreach ($인증칸 as $인) {
+            if (array_key_exists($인, $pd) && !array_key_exists('productAuthorizationNumber', $pd)) {
+                fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '에 ' . $인 . ' 만 있고 productAuthorizationNumber 가 없습니다.');
+            }
+        }
+
+        foreach (['productName', 'productDetailDescription',
+                  'productAuthorizationNumber', 'authorizationOrganizationName', 'authorizationSphereName'] as $글칸) {
             if (!array_key_exists($글칸, $pd)) continue;
             $글 = (string)$pd[$글칸];
             if (trim($글) === '') {
                 fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 ' . $글칸 . ' 이 비어 있습니다. 안 바꿀 거면 칸을 빼세요.');
+            }
+            /*  상세설명만 길다. 이름·인증기관에 수만 자가 들어오면 어딘가 잘못 담은 것이다. */
+            if ($글칸 !== 'productDetailDescription' && mb_strlen($글, 'UTF-8') > 200) {
+                fail(400, 'RELAY_CHANNEL_GUARD', $자리 . '의 ' . $글칸 . ' 이 너무 깁니다 (' . mb_strlen($글, 'UTF-8') . '자, 200자까지).');
             }
             $총 += strlen($글);
         }
