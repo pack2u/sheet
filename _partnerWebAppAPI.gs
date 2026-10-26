@@ -433,8 +433,26 @@ function _api_runTask_(params) {
     // try-catch로 UI 관련 에러를 무시합니다.
     var taskMap = {
       collectOrders:  { label: "발주 수집",      fn: function() { partnerCollectOrders(true); } },
-      fetchInvoices:  { label: "송장 수집",      fn: function() { partnerFetchInvoices(); } },
-      pushInvoices:   { label: "송장 배포",      fn: function() { partnerPushInvoices(); } },
+      /*  ★ 2026-10-26: 주인이 v2 면 GAS 본체를 안 돌린다 ★
+          > 사장님: "판매 및 공급 택배사의 경우 다른 공급업체의 택배사가 붙어야 되는데.. 그업체 택배사가 붙네"
+          16:40·16:50 트리거는 주인을 묻는데 이 단추는 안 물었다. 누르면 GAS 가 허브 R 을 발주업체(판매처) 표로 채우고
+          (하나팩 → 롯데) 그 값이 판매 업체 시트로 배포됐다. v2 가 주인이면 수집은 v2 에 맡기고, 배포는 v2 화면으로 보낸다
+          (배포는 2분 넘게 걸려 여기서 기다릴 수 없다 — 세트분리 › 송장 탭 「📥 지금 수집·배포」). */
+      fetchInvoices:  { label: "송장 수집",      fn: function() {
+        if (_pt_v2Owner_("/api/setsplit/invoice-fetch") === "v2") {
+          var res = UrlFetchApp.fetch(_psm_v2url_() + "/api/setsplit/invoice-fetch", { method: "post", contentType: "application/json",
+            headers: { "x-ingest-token": _psm_token_() }, payload: JSON.stringify({ "작업": "수집" }), muteHttpExceptions: true });
+          var j = {}; try { j = JSON.parse(res.getContentText()); } catch (e) {}
+          return "v2 가 수집했습니다 — 붙임 " + (j["붙임"] || 0) + "줄 · 택배사 바로잡음 " + (j["택배사고침"] || 0) + "줄" + (j.ok === false ? " (오류: " + j.error + ")" : "");
+        }
+        partnerFetchInvoices();
+      } },
+      pushInvoices:   { label: "송장 배포",      fn: function() {
+        if (_pt_v2Owner_("/api/setsplit/invoice-push") === "v2") {
+          return "송장 배포 주인이 v2 입니다 — 평일 10:00·14:30·16:00·16:52 저절로 돌고, 지금 돌리려면 세트분리 › 송장 탭 「📥 지금 수집·배포」를 누르세요";
+        }
+        partnerPushInvoices();
+      } },
       exclusivePush:  { label: "대리공급 Push",  fn: function() { partnerPushOrdersToExclusiveForms(); } },
       syncDb:         { label: "DB 동기화",      fn: function() { var o = _sb_syncOrders_(); var v = _sb_syncVendors_(); return { orders: o, vendors: v }; } },
 
