@@ -51,3 +51,7 @@ _sabang_relay/.token_*.json
 # 쿠팡 중계기 설정 — 중계기 열쇠가 들어간다. 견본(coupang_config.sample.php)만 올린다
 # (쿠팡 비밀키는 여기 없다 — 서명은 v2 가 만든다)
 _coupang_relay/coupang_config.php
+
+# FTP 접속 정보 — 비밀번호가 들어간다. 절대 올리지 않는다
+_sabang_relay/_ftp.json
+_coupang_relay/_ftp.json
