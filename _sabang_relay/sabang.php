@@ -126,6 +126,11 @@ const ALLOWED = [
     안 바꾸는지 규격으로 확인하고 늘린다(claim·cs 는 아직 모른다). */
 const READ_POST = [
     'POST /v3/sb/order' => true,
+    /*  ★ 2026-10-26 ★ claim·cs 는 POST 지만 «읽기»다. 두 번 불러 숫자가 그대로였다.
+        ALLOWED 에만 넣고 여기를 빼먹어 운영계 잠금(RELAY_PROD_WRITE_LOCKED)에 걸렸다 —
+        이 파일 머리글의 「셋 중 하나만 빼고 올리지 말 것」이 그 말이었다. */
+    'POST /v3/sb/claim' => true,
+    'POST /v3/sb/cs'    => true,
 ];
 
 /*  ★ 좁게 연 쓰기 ★  (2026-10-22)
@@ -152,7 +157,7 @@ header('Content-Type: application/json; charset=utf-8');
     올렸는지 «짐작»하지 않으려고 둔다. 모든 응답 머리에 실린다 —
     올리고 나서 이 값이 안 바뀌면 다른 자리에 올라간 것이다.
     [[ops-tab-carries-the-build-number]] 와 같은 뜻이다. */
-header('X-Relay-Build: 20261026-waybill-reprint');
+header('X-Relay-Build: 20261026-claim-read-fix');
 
 /** 오류를 사방넷 응답과 «같은 모양» 으로 돌려준다 — 부르는 쪽이 한 갈래로 읽게 */
 function fail($http, $code, $msg) {

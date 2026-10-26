@@ -1,0 +1,584 @@
+<?php
+/**
+ * ══════════════════════════════════════════════════════════════
+ *  사방넷 API 3.0 중계기
+ *
+ *  ★ 왜 있나 ★
+ *    두 가지 때문에 GAS 가 사방넷을 직접 못 부른다.
+ *
+ *    ① secretSign 이 BCrypt 다
+ *       Apps Script Utilities 에는 BCrypt 가 없다(MD5·SHA·HMAC 뿐).
+ *       손으로 짠 암호 코드를 돈이 걸린 자리에 두지 않는다.
+ *       PHP 는 crypt() 가 bcrypt 를 기본으로 한다.
+ *
+ *    ② 허용 IP 가 아니면 «토큰 발급부터» 거부된다
+ *       GAS 발신 IP 는 구글 대역에서 유동 배정되고 PTR 도 없어 등록할 수 없다.
+ *       이 호스팅의 고정 IP(222.122.39.14)를 사방넷에 등록해 두었다.
+ *
+ *        [GAS 허브] → https://siot.com/pack2u/sabang/sabang.php → api.sabangnet.co.kr
+ *
+ *    로젠 중계기(_logen_relay/relay.php)와 «같은 꼴»이다. 새로 발명하지 않았다.
+ *
+ *  ★ 얇게 간다 ★
+ *    사방넷 응답을 그대로 통과시킨다. 해석·정규화는 부르는 쪽(GAS)이 한다.
+ *    여기에 로직을 넣으면 배포처가 둘로 갈려 유지보수가 나빠진다.
+ *    다만 «토큰 발급»만은 여기서 한다 — BCrypt 가 여기에만 있기 때문이다.
+ *
+ *  ★ 토큰을 캐시한다 ★
+ *    JWT 는 3시간이다. 호출마다 새로 받으면 TPS(10/초)를 토큰 발급이 먹는다.
+ *    파일에 담아 두고 만료 5분 전부터 새로 받는다.
+ *
+ *  ★ 비밀은 여기 없다 ★
+ *    clientCd·시크릿은 sabang_config.php 에 둔다. 이 파일은 git 에 올라가고
+ *    config 는 안 올라간다(.gitignore). _secrets.gs 와 같은 규칙이다.
+ *
+ *  ★ 아무 데나 못 부르게 한다 ★
+ *    경로를 화이트리스트로 막는다. 안 막으면 이 파일이 «아무 주소나 대신
+ *    불러 주는 도구» 가 된다 — 토큰이 새는 날 남의 서버를 때리는 데 쓰인다.
+ *
+ *  ★ 쓰기는 따로 허락한다 ★
+ *    조회(GET)와 달리 POST 는 사방넷 데이터를 바꾼다. 화이트리스트에
+ *    메서드까지 적어 두고, 적힌 메서드가 아니면 거절한다.
+ *
+ *  설치: sabang.php + sabang_config.php 를 같은 폴더에 올린다.
+ *        예) /siot00/www/pack2u/sabang/
+ *        주소) https://siot.com/pack2u/sabang/sabang.php
+ *
+ *  실측 근거: _docs/사방넷_API3.0_규격.md
+ * ══════════════════════════════════════════════════════════════
+ */
+
+$cfgPath = __DIR__ . '/sabang_config.php';
+if (!is_file($cfgPath)) {
+    http_response_code(500);
+    echo json_encode(['code' => 'RELAY_NO_CONFIG',
+                      'message' => 'sabang_config.php 가 없습니다'],
+                     JSON_UNESCAPED_UNICODE);
+    exit;
+}
+$CFG = require $cfgPath;
+
+/** 올라간 판을 알아보려고 둔다. 고칠 때마다 올린다. */
+const RELAY_VERSION = '2026-10-12a';
+
+/**
+ * 부를 수 있는 사방넷 경로 — 여기 없는 것은 거절한다.
+ *
+ * ★ 메서드까지 적는다 ★
+ *   같은 경로라도 GET 은 읽기, POST 는 쓰기다. 쓰기를 늘릴 때는
+ *   «의식해서» 이 표를 고치게 둔다.
+ *
+ * ★ POST /v3/sb/order 를 열었다 ★ (2026-10-13 · 문서는 GET 이라 적었지만 실측은 POST 전용)
+ *   그 API 는 부르는 것만으로 «신규주문을 주문확인으로 바꾼다».
+ *   updateOrderStsYn:"N" 을 빠뜨린 호출 한 번이 쇼핑몰 흐름을 어긋나게 하고,
+ *   되돌릴 API 가 없다. 그래서 세 가지를 «같이» 넣었다 —
+ *     ① ALLOWED 에 경로        ② READ_POST (읽기인 POST 를 운영계 잠금에서 뺌)
+ *     ③ ORDER_GUARD ($body 를 읽은 뒤에서 「N」을 못박음)
+ *   ★ 셋 중 하나만 빼고 올리지 말 것 ★ 특히 ③ 없이 ①만 넣으면 울타리가 없는 채 열린다.
+ */
+const ALLOWED = [
+    // 조회 — 아무것도 바꾸지 않는다
+    'GET /v3/sb/mall/SHOP'    => true,
+    'GET /v3/sb/mall/CHOP'    => true,
+    'GET /v3/sb/mall/GLOBAL'  => true,
+    'GET /v3/sb/product'      => true,
+    /*  ★ 읽기만 하는 것들 ★  (2026-10-23) 아무것도 안 바꾼다.
+        물음표 뒤를 떼고 견주게 고쳤으므로 이제 값까지 넘길 수 있다. */
+    'GET /v3/sb/category'          => true,
+    'GET /v3/sb/standard-category' => true,
+    /*  ★ claim·cs 는 «죽은 줄»이었다 ★  (2026-10-12 샌드박스 실측)
+        GET 으로 부르면 405 GW_REQ_005 다 — order 와 마찬가지로 POST 전용이다.
+        문서(PDF 247쪽)가 GET 이라고 적어 둔 것을 그대로 옮겨 적었던 것이다.
+
+        ★ POST 로 «고치지 않고» 닫아 둔다 ★
+          order 가 부르는 것만으로 신규주문을 주문확인으로 바꾸는 API 였다.
+          claim·cs 도 수집하면서 「확인」 표시를 남기는지 모른다. 모르는 채
+          POST 를 열면 그 한 번이 쇼핑몰 흐름을 바꿀 수 있다.
+          개발자센터 규격을 보고 「읽기만 한다」를 확인한 뒤에 연다.         */
+    'POST /v3/sb/claim'       => true,   // 2026-10-26 열었다 — 두 번 불러도 숫자가 그대로였다(읽기만 한다)
+    'POST /v3/sb/cs'          => true,   // 2026-10-26 열었다 — 두 번 불러도 숫자가 그대로였다(읽기만 한다)
+
+    // 쓰기 — 1단계
+    'POST /v3/sb/waybill'     => true,
+    /*  ★ 문의 답변 저장 ★  (2026-10-26)
+        사장님 「답변 쓰는 것도 붙여줘」. 저장하면 사방넷이 **몰로 송신**한다 —
+        손님에게 그대로 나가는 글이다. 아래 CS_ANSWER_GUARD 가 본다.  */
+    'POST /v3/sb/cs/answer'   => true,
+
+    /*  ★ 주문 수집 ★  (2026-10-13)
+        문서는 GET 이라고 적었지만 실측은 POST 전용이다(GET 은 405).
+        부르는 것만으로 신규주문을 「주문확인」으로 바꾸는 API 라 여태 닫아 뒀다.
+        아래 ORDER_GUARD 가 updateOrderStsYn 을 「N」으로 못박으므로 이제 연다.
+        ★ 가드 없이 이 줄만 넣지 말 것 ★ 되돌릴 API 가 없다. */
+    'POST /v3/sb/order'       => true,
+
+    /*  ★ 품절·판매 보내기 ★  (2026-10-22)
+        재고·품절을 사방넷에 적는 길. 아래 STOCK_GUARD 가 «두 칸만» 통과시킨다.
+        ★ 가드 없이 이 줄만 넣지 말 것 ★ upsert 는 상품 전체를 덮어쓸 수 있는 API 다. */
+    'POST /v3/sb/product/upsert' => true,
+];
+
+/*  ★ POST 지만 «읽기»인 것 ★  (2026-10-13)
+    아래 운영계 쓰기 잠금은 「GET 이 아니면 쓰기」로 보고 막는다. 주문 수집은
+    읽기인데 POST 라 거기 걸린다. 그렇다고 allowProdWrite 를 통째로 켜면
+    상품·송장 쓰기까지 같이 열린다 — 그건 잠금을 둔 까닭을 지우는 일이다.
+    그래서 «이 경로 하나»만 읽기로 빼 준다. 늘릴 때는 그 API 가 정말 아무것도
+    안 바꾸는지 규격으로 확인하고 늘린다(claim·cs 는 아직 모른다). */
+const READ_POST = [
+    'POST /v3/sb/order' => true,
+];
+
+/*  ★ 좁게 연 쓰기 ★  (2026-10-22)
+    품절·판매 보내기는 «진짜 쓰기»다. 그렇다고 allowProdWrite 를 통째로 켜면
+    송장 올리기까지 같이 열린다 — 송장은 한 번 나가면 쇼핑몰까지 번진다.
+    그래서 이 경로 하나만 잠금에서 빼고, 대신 STOCK_GUARD 가 몸통을 샅샅이 본다.
+    allowProdWrite 는 false 로 둔다. */
+const STOCK_WRITE = [
+    'POST /v3/sb/product/upsert' => true,
+    /*  ★ 송장 올리기 ★  (2026-10-23)
+        매일 1,700줄짜리 엑셀을 손으로 올리던 일. 아래 WAYBILL_GUARD 가 본다.
+        ★ 가드 없이 이 줄만 넣지 말 것 ★ 송장은 한 번 나가면 쇼핑몰까지 번진다. */
+    'POST /v3/sb/waybill' => true,
+    'POST /v3/sb/cs/answer' => true,   // 2026-10-26 — CS_ANSWER_GUARD 가 본다
+];
+
+const HOSTS = [
+    'SANDBOX'    => 'https://sandbox.sabangnet.co.kr',
+    'PRODUCTION' => 'https://api.sabangnet.co.kr',
+];
+
+header('Content-Type: application/json; charset=utf-8');
+/*  ★ 판 번호 ★  (2026-10-22)
+    올렸는지 «짐작»하지 않으려고 둔다. 모든 응답 머리에 실린다 —
+    올리고 나서 이 값이 안 바뀌면 다른 자리에 올라간 것이다.
+    [[ops-tab-carries-the-build-number]] 와 같은 뜻이다. */
+header('X-Relay-Build: 20261026-waybill-reprint');
+
+/** 오류를 사방넷 응답과 «같은 모양» 으로 돌려준다 — 부르는 쪽이 한 갈래로 읽게 */
+function fail($http, $code, $msg) {
+    http_response_code($http);
+    echo json_encode(['code' => $code, 'message' => $msg,
+                      'timestamp' => round(microtime(true) * 1000),
+                      'status' => $http],
+                     JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// ── 1. 요청 검사 ────────────────────────────────────────
+/*  GET 으로 열면 «무엇이 올라가 있는지» 말해 준다.
+    올리다 끊겨 0바이트가 되면 화면이 하얗게만 나와 원인을 못 찾는다 —
+    로젠 중계기에서 2026-10-07 에 실제로 그랬다. 비밀은 보여 주지 않는다. */
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    http_response_code(200);
+    echo json_encode([
+        'relay'   => 'sabang',
+        'version' => RELAY_VERSION,
+        'paths'   => count(ALLOWED),
+        'note'    => '실제 호출은 POST 로만 받습니다.',
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+$token = $_SERVER['HTTP_X_PROXY_TOKEN'] ?? '';
+if (($CFG['token'] ?? '') === '' || !hash_equals($CFG['token'], $token)) {
+    /* 토큰이 틀리면 «404 처럼» 굴지 않는다 — 부르는 쪽이 원인을 알아야 한다. */
+    fail(401, 'RELAY_BAD_TOKEN', '중계기 토큰이 맞지 않습니다.');
+}
+
+$raw = file_get_contents('php://input');
+$req = json_decode($raw, true);
+if (!is_array($req)) fail(400, 'RELAY_BAD_BODY', '요청 본문을 읽지 못했습니다.');
+
+$method = strtoupper((string)($req['method'] ?? 'GET'));
+$path   = (string)($req['path'] ?? '');
+$env    = strtoupper((string)($req['env'] ?? 'SANDBOX'));
+
+/*  ★ 상수 배열에는 isset() 을 못 쓴다 ★
+    isset(HOSTS[$env]) 은 PHP 가 «Cannot use isset() on the result of an expression»
+    으로 죽인다. 파서는 통과시키고 실행 때 터진다 — array_key_exists 를 쓴다. */
+if (!array_key_exists($env, HOSTS)) fail(400, 'RELAY_BAD_ENV', 'env 는 SANDBOX 또는 PRODUCTION 입니다.');
+
+/*  ★ 경로를 그대로 믿지 않는다 ★
+    「/v3/sb/mall/SHOP/../../etc」 같은 것을 막는다. 화이트리스트가 1차 방어지만,
+    경로 조작이 끼면 키가 달라져 어차피 걸린다 — 그래도 둘 다 둔다. */
+if (strpos($path, '..') !== false || strpos($path, "\0") !== false) {
+    fail(400, 'RELAY_BAD_PATH', '허용되지 않은 경로 모양입니다.');
+}
+
+/*  ★ 물음표 뒤는 떼고 견준다 ★  (2026-10-23)
+    `GET /v3/sb/product?customProductCode=JPCR00002` 를 보냈더니 RELAY_PATH_DENIED 였다.
+    ALLOWED 에는 `GET /v3/sb/product` 가 있는데, 열쇠에 질의글자까지 붙여 만드니
+    영영 안 맞는다. **GET 으로 값을 넘기는 API 가 통째로 막혀 있었다** —
+    상품 조회·카테고리·고시 모두. 사방넷에 보낼 때는 $path 를 그대로 쓴다. */
+$key = $method . ' ' . explode('?', $path, 2)[0];
+if (!array_key_exists($key, ALLOWED)) {   // 상수 배열 — isset() 을 쓰면 안 된다 (위 참고)
+    fail(403, 'RELAY_PATH_DENIED', '허용되지 않은 경로입니다: ' . $key);
+}
+
+/*  ★ 쓰기는 운영계에서 «한 번 더» 막는다 ★
+    config 의 allowProdWrite 가 true 일 때만 운영계 쓰기를 통과시킨다.
+    설치 직후 기본값은 false 다 — 샌드박스로 먼저 돌려 보고 사람이 연다. */
+if ($env === 'PRODUCTION' && $method !== 'GET'
+    && !array_key_exists($key, READ_POST)              // 읽기인 POST 는 뺀다 (위 참고)
+    && !array_key_exists($key, STOCK_WRITE)            // 좁게 연 쓰기 (STOCK_GUARD 가 본다)
+    && empty($CFG['allowProdWrite'])) {
+    fail(403, 'RELAY_PROD_WRITE_LOCKED',
+         '운영계 쓰기가 잠겨 있습니다. sabang_config.php 의 allowProdWrite 를 켜세요.');
+}
+
+// ── 2. 토큰 발급 (캐시) ─────────────────────────────────
+/**
+ * 사방넷 JWT 를 받는다. 3시간짜리라 파일에 담아 두고 다시 쓴다.
+ *
+ * ★ secretSign = Base64( bcrypt("{clientCd}_{timestamp}", secret) ) ★
+ *   시크릿이 곧 bcrypt salt 다 ($2a$10$ + 22자).
+ *   PHP crypt() 는 salt 를 그대로 받아 자바 BCrypt.hashpw 와 같은 값을 낸다.
+ *   (2026-10-12 Node bcryptjs 로 같은 식을 써서 운영계·샌드박스 둘 다 200 을 받았다)
+ */
+function 사방넷토큰($CFG, $env) {
+    $cacheFile = __DIR__ . '/.token_' . strtolower($env) . '.json';
+
+    if (is_file($cacheFile)) {
+        $c = json_decode((string)file_get_contents($cacheFile), true);
+        /* 만료 5분 전부터 새로 받는다 — 쓰는 도중에 끊기지 않게 */
+        if (is_array($c) && !empty($c['token']) && ($c['exp'] ?? 0) > time() + 300) {
+            return $c['token'];
+        }
+    }
+
+    $secret = $env === 'SANDBOX' ? ($CFG['secretSandbox'] ?? '') : ($CFG['secretProduction'] ?? '');
+    if ($secret === '') fail(500, 'RELAY_NO_SECRET', $env . ' 시크릿이 중계기에 없습니다.');
+
+    $clientCd = (string)($CFG['clientCd'] ?? '');
+    if ($clientCd === '') fail(500, 'RELAY_NO_CLIENTCD', 'clientCd 가 중계기에 없습니다.');
+
+    $ts   = (string)round(microtime(true) * 1000);   // Unix milliseconds · 서버 시각 ±5분 30초
+    $hash = crypt($clientCd . '_' . $ts, $secret);
+
+    /*  ★ crypt() 가 실패하면 «짧은 문자열»을 돌려준다 ★
+        salt 가 깨졌을 때 PHP 는 예외를 던지지 않고 "*0" 같은 것을 준다.
+        그대로 보내면 사방넷이 AUTH_003(서명 오류)을 주고, 원인을 엉뚱한 데서 찾게 된다. */
+    if (!is_string($hash) || strlen($hash) < 20 || strpos($hash, $secret) !== 0) {
+        fail(500, 'RELAY_BAD_SIGN',
+             'BCrypt 서명을 만들지 못했습니다. 시크릿이 $2a$10$+22자 모양인지 보세요.');
+    }
+
+    $post = http_build_query([
+        'grant_type' => 'client_credentials',
+        'clientType' => $CFG['clientType'] ?? 'SB_APP',
+        'clientCd'   => $clientCd,
+        'timestamp'  => $ts,
+        'secretSign' => base64_encode($hash),
+        'authMode'   => $env,
+    ]);
+
+    $ch = curl_init(HOSTS[$env] . '/oauth2/token');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $post,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/x-www-form-urlencoded'],
+        CURLOPT_TIMEOUT        => (int)($CFG['timeout'] ?? 20),
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+    $res  = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $cerr = curl_error($ch);
+    curl_close($ch);
+
+    if ($res === false || $code === 0) {
+        fail(502, 'RELAY_TOKEN_UNREACHABLE',
+             '사방넷 인증 서버에 연결하지 못했습니다 (' . ($cerr !== '' ? $cerr : 'timeout') . ').');
+    }
+    $j = json_decode((string)$res, true);
+    if ($code !== 200 || !is_array($j) || empty($j['access_token'])) {
+        /*  ★ 사방넷이 준 말을 그대로 얹는다 ★
+            AUTH_008/009 는 「이 서버 IP 가 등록 안 됐다」는 뜻이다.
+            중계기가 제 말로 바꿔 버리면 그 단서가 사라진다. */
+        $m = is_array($j) ? ($j['message'] ?? '') : substr((string)$res, 0, 200);
+        $c = is_array($j) ? ($j['code'] ?? '') : '';
+        /*  ★ 사방넷이 준 코드별로 어디를 보라고 짚어 준다 ★
+            같은 「토큰 발급 실패」라도 원인이 셋이고 고치는 자리가 다르다. */
+        $짚기 = '';
+        if ($c === 'AUTH_008' || $c === 'AUTH_009') {
+            $짚기 = ' — 이 서버 IP 가 사방넷 「연동 설정」에 등록돼 있는지 보세요.';
+        } elseif ($c === 'AUTH_003') {
+            /*  PHP crypt() 와 자바 BCrypt.hashpw 가 같은 값을 내야 한다.
+                2026-10-12 Node bcryptjs 로는 운영계·샌드박스 둘 다 200 이었다.
+                여기서만 AUTH_003 이면 crypt() 쪽을 의심한다. */
+            $짚기 = ' — 서명(BCrypt)이 어긋났습니다. 시크릿이 $2a$10$+22자 모양인지,' .
+                    ' 이 PHP 의 crypt() 가 bcrypt 를 지원하는지 보세요.';
+        } elseif ($c === 'AUTH_006') {
+            $짚기 = ' — 이 서버 시계가 ±5분 30초를 벗어났습니다. NTP 를 보세요.';
+        }
+        fail(502, 'RELAY_TOKEN_FAILED',
+             '토큰 발급 실패 (' . $code . ' ' . $c . ') ' . $m . $짚기);
+    }
+
+    $exp = time() + (int)($j['expires_in'] ?? 10800);
+    @file_put_contents($cacheFile,
+        json_encode(['token' => $j['access_token'], 'exp' => $exp]), LOCK_EX);
+    @chmod($cacheFile, 0600);
+    return $j['access_token'];
+}
+
+$jwt = 사방넷토큰($CFG, $env);
+
+// ── 3. 사방넷 호출 ──────────────────────────────────────
+$url  = HOSTS[$env] . $path;
+$body = array_key_exists('body', $req) ? $req['body'] : null;
+
+/*  ══ ORDER_GUARD ══  (2026-10-13)
+    주문 수집은 몸통에 updateOrderStsYn 이 없거나 「Y」면, 조회하는 것만으로
+    «신규주문이 주문확인으로 바뀐다». 되돌릴 API 가 없다.
+
+    ★ 반드시 $body 를 읽은 «뒤»에 둔다 ★ 앞에 두면 아래 한 줄이 통째로 덮어써
+    가드가 아무 일도 안 한 채 조용히 지나간다. 처음에 그렇게 짰다가 찾았다.
+
+    ★ 부르는 쪽을 믿지 않는다 ★ v2 든 GAS 든 사람 손이든 여기서 한 번 더 박는다.
+      · 빠뜨렸으면 → 「N」으로 채운다. 흔한 실수이고 안전한 쪽이 분명하다.
+      · 「N」이 아닌 값을 «일부러» 보냈으면 → 막는다.
+        조용히 고쳐 주면 「상태를 바꾸려던 코드」가 살아남아 다음에 또 온다.
+        그런 뜻이 담긴 호출은 여기서 터뜨려 사람이 찾게 한다. */
+if ($key === 'POST /v3/sb/order') {
+    if (!is_array($body)) $body = [];
+    if (array_key_exists('updateOrderStsYn', $body)) {
+        $v = strtoupper(trim((string)$body['updateOrderStsYn']));
+        if ($v !== 'N') {
+            fail(400, 'RELAY_ORDER_STS_GUARD',
+                 'updateOrderStsYn 은 「N」이어야 합니다 (보낸 값: ' . $v . '). '
+               . '조회만으로 신규주문이 「주문확인」으로 바뀌는 것을 막는 울타리입니다.');
+        }
+    }
+    $body['updateOrderStsYn'] = 'N';
+}
+
+/*  ══ STOCK_GUARD ══  (2026-10-22)
+    upsert 는 상품 «전체»를 덮어쓸 수 있는 API 다. 상세설명 14,853자까지 들어 있는
+    물건이라, 몸통을 잘못 만들면 상품이 통째로 망가진다.
+
+    그래서 이 길로는 «두 칸만» 지나가게 한다 —
+      customProductCode · productSupplyStatusCode
+    그 밖의 칸이 하나라도 섞여 있으면 막는다. 상태값도 둘만 받는다.
+
+    ★ 부르는 쪽을 믿지 않는다 ★ v2 가 맞게 만들어도 여기서 한 번 더 본다.
+      화면이 바뀌거나 누가 손으로 부를 때 이 울타리만 남는다. */
+if ($key === 'POST /v3/sb/product/upsert') {
+    if (!is_array($body) || !isset($body['products']) || !is_array($body['products'])) {
+        fail(400, 'RELAY_STOCK_GUARD', '몸통에 products 배열이 있어야 합니다.');
+    }
+    if (count($body['products']) === 0) {
+        fail(400, 'RELAY_STOCK_GUARD', 'products 가 비어 있습니다.');
+    }
+    if (count($body['products']) > 200) {
+        fail(400, 'RELAY_STOCK_GUARD', '한 번에 200건까지만 보냅니다 (' . count($body['products']) . '건).');
+    }
+    if (count($body) !== 1) {
+        fail(400, 'RELAY_STOCK_GUARD',
+             '몸통에는 products 만 있어야 합니다. 들어온 칸: ' . implode(', ', array_keys($body)));
+    }
+    $둘 = ['customProductCode' => true, 'productSupplyStatusCode' => true];
+    $상태 = ['IN_SUPPLY' => true, 'OUT_OF_STOCK' => true];
+    foreach ($body['products'] as $i => $p) {
+        if (!is_array($p)) {
+            fail(400, 'RELAY_STOCK_GUARD', ($i + 1) . '번째 줄이 객체가 아닙니다.');
+        }
+        foreach (array_keys($p) as $k) {
+            if (!isset($둘[$k])) {
+                fail(400, 'RELAY_STOCK_GUARD',
+                     ($i + 1) . '번째 줄에 허용되지 않은 칸이 있습니다: ' . $k
+                   . ' — 이 길로는 customProductCode 와 productSupplyStatusCode 만 보냅니다.');
+            }
+        }
+        $code = isset($p['customProductCode']) ? trim((string)$p['customProductCode']) : '';
+        $st   = isset($p['productSupplyStatusCode']) ? trim((string)$p['productSupplyStatusCode']) : '';
+        if ($code === '') {
+            fail(400, 'RELAY_STOCK_GUARD', ($i + 1) . '번째 줄에 customProductCode 가 없습니다.');
+        }
+        if (!isset($상태[$st])) {
+            fail(400, 'RELAY_STOCK_GUARD',
+                 ($i + 1) . '번째 줄의 상태값이 IN_SUPPLY · OUT_OF_STOCK 이 아닙니다: ' . $st);
+        }
+    }
+}
+
+/*  ══ CS_ANSWER_GUARD ══  (2026-10-26)
+    ★ 이 길로 나간 글은 손님이 읽는다 ★
+      사방넷에 저장된 답변은 **원본 쇼핑몰로 송신**된다(csStatus=ANSWER_SENT).
+      지우거나 고칠 길이 우리 쪽에 없다. 그래서 여태 만든 울타리 중 제일 좁게 짠다.
+
+    규격은 떠서 알아냈다 (개발자센터 세션이 만료돼 문서를 못 읽었다) —
+      { "items": [ { "csSrno": 숫자, "answerContent": "글" } ] }
+      답은 data.results[{csSrno, status, errorMessage}] 건별로 온다.
+      ★ 전부 실패하면 HTTP 400 이 온다 ★ HTTP 로 성패를 가르지 말 것.
+
+    ★ 두 칸만 지나간다 ★ csSrno · answerContent.
+      csStatus 같은 칸을 열어 두면 「강제전환」처럼 뜻 모를 상태가 끼어들 수 있다.
+
+    ★ 한 번에 조금만 ★ 20건. 답변은 사람이 한 건씩 읽고 쓰는 일이다 —
+      묶음으로 많이 나가는 길을 아예 안 낸다. 잘못 쓰면 손님 스무 명이 읽는다. */
+if ($key === 'POST /v3/sb/cs/answer') {
+    if (!is_array($body) || !isset($body['items']) || !is_array($body['items'])) {
+        fail(400, 'RELAY_CS_ANSWER_GUARD', '몸통에 items 배열이 있어야 합니다.');
+    }
+    foreach (array_keys($body) as $k) {
+        if ($k !== 'items') {
+            fail(400, 'RELAY_CS_ANSWER_GUARD', '몸통에 허용되지 않은 칸이 있습니다: ' . $k);
+        }
+    }
+    $n = count($body['items']);
+    if ($n === 0)  fail(400, 'RELAY_CS_ANSWER_GUARD', 'items 가 비어 있습니다.');
+    if ($n > 20)   fail(400, 'RELAY_CS_ANSWER_GUARD', '한 번에 20건까지만 보냅니다 (' . $n . '건). 답변은 한 건씩 읽고 쓰는 일입니다.');
+
+    foreach ($body['items'] as $i3 => $it) {
+        $자리 = ($i3 + 1) . '번째 줄';
+        if (!is_array($it)) fail(400, 'RELAY_CS_ANSWER_GUARD', $자리 . '이 객체가 아닙니다.');
+        foreach (array_keys($it) as $k3) {
+            if ($k3 !== 'csSrno' && $k3 !== 'answerContent') {
+                fail(400, 'RELAY_CS_ANSWER_GUARD',
+                     $자리 . '에 허용되지 않은 칸이 있습니다: ' . $k3
+                   . ' — 이 길로는 csSrno 와 answerContent 만 보냅니다.');
+            }
+        }
+        $no = isset($it['csSrno']) ? trim((string)$it['csSrno']) : '';
+        if ($no === '' || !ctype_digit($no)) {
+            fail(400, 'RELAY_CS_ANSWER_GUARD', $자리 . '의 csSrno 가 숫자가 아닙니다: ' . $no);
+        }
+        $글 = isset($it['answerContent']) ? (string)$it['answerContent'] : '';
+        $길이 = function_exists('mb_strlen') ? mb_strlen($글, 'UTF-8') : strlen($글);
+        if (trim($글) === '') {
+            fail(400, 'RELAY_CS_ANSWER_GUARD', $자리 . '의 answerContent 가 비어 있습니다. 빈 답변은 보내지 않습니다.');
+        }
+        if ($길이 > 2000) {
+            fail(400, 'RELAY_CS_ANSWER_GUARD', $자리 . '의 answerContent 가 너무 깁니다 (' . $길이 . '자). 2000자까지입니다.');
+        }
+    }
+}
+
+/*  ══ WAYBILL_GUARD ══  (2026-10-23)
+    송장은 사방넷에 적히는 순간 쇼핑몰로 번진다. 되돌리기가 제일 비싼 쓰기다.
+    그래서 이 길로는 «네 칸만» 지나가게 한다 —
+      sbOrderNo · deliveryCompanyCode · wayBillNo · (hopeDeliveryDate)
+
+    ★ forceUpdateYn 은 「N」으로 못박는다 ★
+      「Y」면 이미 붙은 송장을 덮어쓴다. 재출력 자리에서 조용히 바뀌면 어느 송장이
+      진짜인지 아무도 모른다. 덮어써야 할 때는 사람이 사방넷 화면에서 한다.
+
+    ★ 단 하나의 예외 — 「재출력 상황」 (2026-10-26) ★
+      > 사장님: "재출력이 발생하는 경우 재출력상황 버튼을 만들어주면 그거 클릭하면 되디 않을까?"
+      사람이 v2 화면에서 «고른» 주문만 온다. 그래서 Y 는 셋을 다 갖췄을 때만 연다 —
+        reprint: true 표시(사방넷엔 안 보낸다) · 50건 이하 · 택배사 전부 로젠(007).
+      표시 없이 Y 를 보내면 예전처럼 막힌다.
+
+    ★ 부르는 쪽을 믿지 않는다 ★ v2 가 맞게 만들어도 여기서 한 번 더 본다. */
+if ($key === 'POST /v3/sb/waybill') {
+    if (!is_array($body) || !isset($body['waybillList']) || !is_array($body['waybillList'])) {
+        fail(400, 'RELAY_WAYBILL_GUARD', '몸통에 waybillList 배열이 있어야 합니다.');
+    }
+    $n = count($body['waybillList']);
+    if ($n === 0) fail(400, 'RELAY_WAYBILL_GUARD', 'waybillList 가 비어 있습니다.');
+    if ($n > 500) fail(400, 'RELAY_WAYBILL_GUARD', '한 번에 500건까지만 보냅니다 (' . $n . '건).');
+
+    foreach (array_keys($body) as $k) {
+        if ($k !== 'waybillList' && $k !== 'forceUpdateYn' && $k !== 'reprint') {
+            fail(400, 'RELAY_WAYBILL_GUARD', '몸통에 허용되지 않은 칸이 있습니다: ' . $k);
+        }
+    }
+    $재출력 = array_key_exists('reprint', $body) && $body['reprint'] === true;
+    unset($body['reprint']);
+    $force = 'N';
+    if (array_key_exists('forceUpdateYn', $body)) {
+        $v = strtoupper(trim((string)$body['forceUpdateYn']));
+        if ($v === 'Y' && $재출력) {
+            if ($n > 50) fail(400, 'RELAY_WAYBILL_GUARD', '재출력 덮어쓰기는 한 번에 50건까지만 (' . $n . '건).');
+            foreach ($body['waybillList'] as $i3 => $w3) {
+                $c3 = is_array($w3) && isset($w3['deliveryCompanyCode']) ? trim((string)$w3['deliveryCompanyCode']) : '';
+                if ($c3 !== '007') fail(400, 'RELAY_WAYBILL_GUARD', '재출력 덮어쓰기는 로젠(007)만 — ' . ($i3 + 1) . '번째 줄: ' . $c3);
+            }
+            $force = 'Y';
+        } elseif ($v !== 'N') {
+            fail(400, 'RELAY_WAYBILL_GUARD',
+                 'forceUpdateYn 은 「N」이어야 합니다 (보낸 값: ' . $v . '). '
+               . '이미 붙은 송장을 덮어쓰는 것을 막는 울타리입니다 — 재출력 상황에서 고른 것만 예외.');
+        }
+    }
+    $body['forceUpdateYn'] = $force;
+
+    $칸 = ['sbOrderNo' => true, 'deliveryCompanyCode' => true, 'wayBillNo' => true, 'hopeDeliveryDate' => true];
+    foreach ($body['waybillList'] as $i2 => $w) {
+        if (!is_array($w)) fail(400, 'RELAY_WAYBILL_GUARD', ($i2 + 1) . '번째 줄이 객체가 아닙니다.');
+        foreach (array_keys($w) as $k2) {
+            if (!isset($칸[$k2])) {
+                fail(400, 'RELAY_WAYBILL_GUARD',
+                     ($i2 + 1) . '번째 줄에 허용되지 않은 칸이 있습니다: ' . $k2
+                   . ' — 이 길로는 sbOrderNo · deliveryCompanyCode · wayBillNo · hopeDeliveryDate 만 보냅니다.');
+            }
+        }
+        $ord  = isset($w['sbOrderNo']) ? trim((string)$w['sbOrderNo']) : '';
+        $car  = isset($w['deliveryCompanyCode']) ? trim((string)$w['deliveryCompanyCode']) : '';
+        $wbno = isset($w['wayBillNo']) ? trim((string)$w['wayBillNo']) : '';
+        if ($ord === '' || !ctype_digit($ord)) {
+            fail(400, 'RELAY_WAYBILL_GUARD', ($i2 + 1) . '번째 줄의 sbOrderNo 가 숫자가 아닙니다: ' . $ord);
+        }
+        if (!preg_match('/^[0-9]{1,5}$/', $car)) {
+            fail(400, 'RELAY_WAYBILL_GUARD', ($i2 + 1) . '번째 줄의 deliveryCompanyCode 가 택배사 코드 꼴이 아닙니다: ' . $car);
+        }
+        /*  송장번호는 10~14자리 숫자다. 하이픈이 섞여 오면 여기서 터뜨린다 —
+            조용히 고쳐 주면 「하이픈을 넣는 코드」가 살아남아 다음에 또 온다. */
+        if (!preg_match('/^[0-9]{9,16}$/', $wbno)) {
+            fail(400, 'RELAY_WAYBILL_GUARD', ($i2 + 1) . '번째 줄의 wayBillNo 가 숫자 9~16자리가 아닙니다: ' . $wbno);
+        }
+    }
+}
+
+$headers = [
+    'Authorization: Bearer ' . $jwt,
+    'X-Svc-Acnt-Id: ' . (string)($CFG['svcAcntId'] ?? ''),
+    'Accept: */*',
+];
+
+$ch = curl_init($url);
+$opt = [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_CUSTOMREQUEST  => $method,
+    CURLOPT_TIMEOUT        => (int)($CFG['timeout'] ?? 20),
+    CURLOPT_CONNECTTIMEOUT => 10,
+    CURLOPT_SSL_VERIFYPEER => true,
+    CURLOPT_SSL_VERIFYHOST => 2,
+    CURLOPT_HEADER         => true,   // TPS 헤더를 되돌려 주려고 받는다
+];
+/*  ★ GET 에도 본문이 붙는다 ★
+    사방넷 claim·order 는 GET 인데 JSON 본문을 받는다(실측). 흔치 않다.
+    본문이 있으면 메서드와 상관없이 실어 보낸다. */
+if ($body !== null) {
+    $json = json_encode($body, JSON_UNESCAPED_UNICODE);
+    if ($json === false) fail(400, 'RELAY_BAD_JSON', '본문을 JSON 으로 만들지 못했습니다.');
+    $opt[CURLOPT_POSTFIELDS] = $json;
+    $headers[] = 'Content-Type: application/json;charset=UTF-8';
+}
+$opt[CURLOPT_HTTPHEADER] = $headers;
+curl_setopt_array($ch, $opt);
+
+$res     = curl_exec($ch);
+$code    = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$hdrSize = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+$cerr    = curl_error($ch);
+curl_close($ch);
+
+if ($res === false || $code === 0) {
+    fail(502, 'RELAY_UNREACHABLE',
+         '사방넷에 연결하지 못했습니다 (' . ($cerr !== '' ? $cerr : 'timeout') . ').');
+}
+
+/*  ★ TPS 헤더를 되돌려 준다 ★
+    버스트가 없어 남은 토큰이 중요하다. 부르는 쪽이 속도를 늦출 수 있어야 한다. */
+$rawHdr = substr((string)$res, 0, $hdrSize);
+$payload = substr((string)$res, $hdrSize);
+foreach (explode("\n", $rawHdr) as $line) {
+    if (stripos($line, 'x-ratelimit-') === 0) header(trim($line));
+}
+
+http_response_code($code);
+echo $payload;

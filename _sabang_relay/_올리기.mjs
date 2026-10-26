@@ -152,7 +152,7 @@ if (나감) {
     /*  ★ 판 번호를 «박아 두지» 않는다 ★  (2026-10-26)
         남의 작업이 같은 파일에 섞이면 판 번호가 바뀐다 — 박아 두면 멀쩡히 올라간 것을
         「안 올라갔다」고 말한다. 내 파일의 판과 견준다.  */
-    const 내판 = String(readFileSync(path.join(여기, "sabang.php"))).match(/X-Relay-Build:s*([w.+-]+)/)?.[1];
+    const 내판 = String(readFileSync(path.join(여기, "sabang.php"))).match(/X-Relay-Build:\s*([\w.+-]+)/)?.[1];
     if (판 && 내판 && 판 === 내판) {
       console.log("\n  ✅ 새 판이 돌고 있습니다. 이제 깨보기를 돌리세요:");
       console.log("     node _sabang_relay/_cs_answer_guard_check.mjs");
