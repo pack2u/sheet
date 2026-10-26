@@ -82,6 +82,10 @@ const ALLOWED = [
     'GET /v3/sb/mall/CHOP'    => true,
     'GET /v3/sb/mall/GLOBAL'  => true,
     'GET /v3/sb/product'      => true,
+    /*  ★ 읽기만 하는 것들 ★  (2026-10-23) 아무것도 안 바꾼다.
+        물음표 뒤를 떼고 견주게 고쳤으므로 이제 값까지 넘길 수 있다. */
+    'GET /v3/sb/category'          => true,
+    'GET /v3/sb/standard-category' => true,
     /*  ★ claim·cs 는 «죽은 줄»이었다 ★  (2026-10-12 샌드박스 실측)
         GET 으로 부르면 405 GW_REQ_005 다 — order 와 마찬가지로 POST 전용이다.
         문서(PDF 247쪽)가 GET 이라고 적어 둔 것을 그대로 옮겨 적었던 것이다.
@@ -91,8 +95,8 @@ const ALLOWED = [
           claim·cs 도 수집하면서 「확인」 표시를 남기는지 모른다. 모르는 채
           POST 를 열면 그 한 번이 쇼핑몰 흐름을 바꿀 수 있다.
           개발자센터 규격을 보고 「읽기만 한다」를 확인한 뒤에 연다.         */
-    // 'POST /v3/sb/claim'    => true,   ← 규격 확인 뒤
-    // 'POST /v3/sb/cs'       => true,   ← 규격 확인 뒤
+    'POST /v3/sb/claim'       => true,   // 2026-10-26 열었다 — 두 번 불러도 숫자가 그대로였다(읽기만 한다)
+    'POST /v3/sb/cs'          => true,   // 2026-10-26 열었다 — 두 번 불러도 숫자가 그대로였다(읽기만 한다)
 
     // 쓰기 — 1단계
     'POST /v3/sb/waybill'     => true,
@@ -103,6 +107,11 @@ const ALLOWED = [
         아래 ORDER_GUARD 가 updateOrderStsYn 을 「N」으로 못박으므로 이제 연다.
         ★ 가드 없이 이 줄만 넣지 말 것 ★ 되돌릴 API 가 없다. */
     'POST /v3/sb/order'       => true,
+
+    /*  ★ 품절·판매 보내기 ★  (2026-10-22)
+        재고·품절을 사방넷에 적는 길. 아래 STOCK_GUARD 가 «두 칸만» 통과시킨다.
+        ★ 가드 없이 이 줄만 넣지 말 것 ★ upsert 는 상품 전체를 덮어쓸 수 있는 API 다. */
+    'POST /v3/sb/product/upsert' => true,
 ];
 
 /*  ★ POST 지만 «읽기»인 것 ★  (2026-10-13)
@@ -115,12 +124,30 @@ const READ_POST = [
     'POST /v3/sb/order' => true,
 ];
 
+/*  ★ 좁게 연 쓰기 ★  (2026-10-22)
+    품절·판매 보내기는 «진짜 쓰기»다. 그렇다고 allowProdWrite 를 통째로 켜면
+    송장 올리기까지 같이 열린다 — 송장은 한 번 나가면 쇼핑몰까지 번진다.
+    그래서 이 경로 하나만 잠금에서 빼고, 대신 STOCK_GUARD 가 몸통을 샅샅이 본다.
+    allowProdWrite 는 false 로 둔다. */
+const STOCK_WRITE = [
+    'POST /v3/sb/product/upsert' => true,
+    /*  ★ 송장 올리기 ★  (2026-10-23)
+        매일 1,700줄짜리 엑셀을 손으로 올리던 일. 아래 WAYBILL_GUARD 가 본다.
+        ★ 가드 없이 이 줄만 넣지 말 것 ★ 송장은 한 번 나가면 쇼핑몰까지 번진다. */
+    'POST /v3/sb/waybill' => true,
+];
+
 const HOSTS = [
     'SANDBOX'    => 'https://sandbox.sabangnet.co.kr',
     'PRODUCTION' => 'https://api.sabangnet.co.kr',
 ];
 
 header('Content-Type: application/json; charset=utf-8');
+/*  ★ 판 번호 ★  (2026-10-22)
+    올렸는지 «짐작»하지 않으려고 둔다. 모든 응답 머리에 실린다 —
+    올리고 나서 이 값이 안 바뀌면 다른 자리에 올라간 것이다.
+    [[ops-tab-carries-the-build-number]] 와 같은 뜻이다. */
+header('X-Relay-Build: 20261026-claim-cs-open');
 
 /** 오류를 사방넷 응답과 «같은 모양» 으로 돌려준다 — 부르는 쪽이 한 갈래로 읽게 */
 function fail($http, $code, $msg) {
@@ -173,7 +200,12 @@ if (strpos($path, '..') !== false || strpos($path, "\0") !== false) {
     fail(400, 'RELAY_BAD_PATH', '허용되지 않은 경로 모양입니다.');
 }
 
-$key = $method . ' ' . $path;
+/*  ★ 물음표 뒤는 떼고 견준다 ★  (2026-10-23)
+    `GET /v3/sb/product?customProductCode=JPCR00002` 를 보냈더니 RELAY_PATH_DENIED 였다.
+    ALLOWED 에는 `GET /v3/sb/product` 가 있는데, 열쇠에 질의글자까지 붙여 만드니
+    영영 안 맞는다. **GET 으로 값을 넘기는 API 가 통째로 막혀 있었다** —
+    상품 조회·카테고리·고시 모두. 사방넷에 보낼 때는 $path 를 그대로 쓴다. */
+$key = $method . ' ' . explode('?', $path, 2)[0];
 if (!array_key_exists($key, ALLOWED)) {   // 상수 배열 — isset() 을 쓰면 안 된다 (위 참고)
     fail(403, 'RELAY_PATH_DENIED', '허용되지 않은 경로입니다: ' . $key);
 }
@@ -183,6 +215,7 @@ if (!array_key_exists($key, ALLOWED)) {   // 상수 배열 — isset() 을 쓰�
     설치 직후 기본값은 false 다 — 샌드박스로 먼저 돌려 보고 사람이 연다. */
 if ($env === 'PRODUCTION' && $method !== 'GET'
     && !array_key_exists($key, READ_POST)              // 읽기인 POST 는 뺀다 (위 참고)
+    && !array_key_exists($key, STOCK_WRITE)            // 좁게 연 쓰기 (STOCK_GUARD 가 본다)
     && empty($CFG['allowProdWrite'])) {
     fail(403, 'RELAY_PROD_WRITE_LOCKED',
          '운영계 쓰기가 잠겨 있습니다. sabang_config.php 의 allowProdWrite 를 켜세요.');
@@ -315,6 +348,115 @@ if ($key === 'POST /v3/sb/order') {
         }
     }
     $body['updateOrderStsYn'] = 'N';
+}
+
+/*  ══ STOCK_GUARD ══  (2026-10-22)
+    upsert 는 상품 «전체»를 덮어쓸 수 있는 API 다. 상세설명 14,853자까지 들어 있는
+    물건이라, 몸통을 잘못 만들면 상품이 통째로 망가진다.
+
+    그래서 이 길로는 «두 칸만» 지나가게 한다 —
+      customProductCode · productSupplyStatusCode
+    그 밖의 칸이 하나라도 섞여 있으면 막는다. 상태값도 둘만 받는다.
+
+    ★ 부르는 쪽을 믿지 않는다 ★ v2 가 맞게 만들어도 여기서 한 번 더 본다.
+      화면이 바뀌거나 누가 손으로 부를 때 이 울타리만 남는다. */
+if ($key === 'POST /v3/sb/product/upsert') {
+    if (!is_array($body) || !isset($body['products']) || !is_array($body['products'])) {
+        fail(400, 'RELAY_STOCK_GUARD', '몸통에 products 배열이 있어야 합니다.');
+    }
+    if (count($body['products']) === 0) {
+        fail(400, 'RELAY_STOCK_GUARD', 'products 가 비어 있습니다.');
+    }
+    if (count($body['products']) > 200) {
+        fail(400, 'RELAY_STOCK_GUARD', '한 번에 200건까지만 보냅니다 (' . count($body['products']) . '건).');
+    }
+    if (count($body) !== 1) {
+        fail(400, 'RELAY_STOCK_GUARD',
+             '몸통에는 products 만 있어야 합니다. 들어온 칸: ' . implode(', ', array_keys($body)));
+    }
+    $둘 = ['customProductCode' => true, 'productSupplyStatusCode' => true];
+    $상태 = ['IN_SUPPLY' => true, 'OUT_OF_STOCK' => true];
+    foreach ($body['products'] as $i => $p) {
+        if (!is_array($p)) {
+            fail(400, 'RELAY_STOCK_GUARD', ($i + 1) . '번째 줄이 객체가 아닙니다.');
+        }
+        foreach (array_keys($p) as $k) {
+            if (!isset($둘[$k])) {
+                fail(400, 'RELAY_STOCK_GUARD',
+                     ($i + 1) . '번째 줄에 허용되지 않은 칸이 있습니다: ' . $k
+                   . ' — 이 길로는 customProductCode 와 productSupplyStatusCode 만 보냅니다.');
+            }
+        }
+        $code = isset($p['customProductCode']) ? trim((string)$p['customProductCode']) : '';
+        $st   = isset($p['productSupplyStatusCode']) ? trim((string)$p['productSupplyStatusCode']) : '';
+        if ($code === '') {
+            fail(400, 'RELAY_STOCK_GUARD', ($i + 1) . '번째 줄에 customProductCode 가 없습니다.');
+        }
+        if (!isset($상태[$st])) {
+            fail(400, 'RELAY_STOCK_GUARD',
+                 ($i + 1) . '번째 줄의 상태값이 IN_SUPPLY · OUT_OF_STOCK 이 아닙니다: ' . $st);
+        }
+    }
+}
+
+/*  ══ WAYBILL_GUARD ══  (2026-10-23)
+    송장은 사방넷에 적히는 순간 쇼핑몰로 번진다. 되돌리기가 제일 비싼 쓰기다.
+    그래서 이 길로는 «네 칸만» 지나가게 한다 —
+      sbOrderNo · deliveryCompanyCode · wayBillNo · (hopeDeliveryDate)
+
+    ★ forceUpdateYn 은 「N」으로 못박는다 ★
+      「Y」면 이미 붙은 송장을 덮어쓴다. 재출력 자리에서 조용히 바뀌면 어느 송장이
+      진짜인지 아무도 모른다. 덮어써야 할 때는 사람이 사방넷 화면에서 한다.
+
+    ★ 부르는 쪽을 믿지 않는다 ★ v2 가 맞게 만들어도 여기서 한 번 더 본다. */
+if ($key === 'POST /v3/sb/waybill') {
+    if (!is_array($body) || !isset($body['waybillList']) || !is_array($body['waybillList'])) {
+        fail(400, 'RELAY_WAYBILL_GUARD', '몸통에 waybillList 배열이 있어야 합니다.');
+    }
+    $n = count($body['waybillList']);
+    if ($n === 0) fail(400, 'RELAY_WAYBILL_GUARD', 'waybillList 가 비어 있습니다.');
+    if ($n > 500) fail(400, 'RELAY_WAYBILL_GUARD', '한 번에 500건까지만 보냅니다 (' . $n . '건).');
+
+    foreach (array_keys($body) as $k) {
+        if ($k !== 'waybillList' && $k !== 'forceUpdateYn') {
+            fail(400, 'RELAY_WAYBILL_GUARD', '몸통에 허용되지 않은 칸이 있습니다: ' . $k);
+        }
+    }
+    if (array_key_exists('forceUpdateYn', $body)) {
+        $v = strtoupper(trim((string)$body['forceUpdateYn']));
+        if ($v !== 'N') {
+            fail(400, 'RELAY_WAYBILL_GUARD',
+                 'forceUpdateYn 은 「N」이어야 합니다 (보낸 값: ' . $v . '). '
+               . '이미 붙은 송장을 덮어쓰는 것을 막는 울타리입니다.');
+        }
+    }
+    $body['forceUpdateYn'] = 'N';
+
+    $칸 = ['sbOrderNo' => true, 'deliveryCompanyCode' => true, 'wayBillNo' => true, 'hopeDeliveryDate' => true];
+    foreach ($body['waybillList'] as $i2 => $w) {
+        if (!is_array($w)) fail(400, 'RELAY_WAYBILL_GUARD', ($i2 + 1) . '번째 줄이 객체가 아닙니다.');
+        foreach (array_keys($w) as $k2) {
+            if (!isset($칸[$k2])) {
+                fail(400, 'RELAY_WAYBILL_GUARD',
+                     ($i2 + 1) . '번째 줄에 허용되지 않은 칸이 있습니다: ' . $k2
+                   . ' — 이 길로는 sbOrderNo · deliveryCompanyCode · wayBillNo · hopeDeliveryDate 만 보냅니다.');
+            }
+        }
+        $ord  = isset($w['sbOrderNo']) ? trim((string)$w['sbOrderNo']) : '';
+        $car  = isset($w['deliveryCompanyCode']) ? trim((string)$w['deliveryCompanyCode']) : '';
+        $wbno = isset($w['wayBillNo']) ? trim((string)$w['wayBillNo']) : '';
+        if ($ord === '' || !ctype_digit($ord)) {
+            fail(400, 'RELAY_WAYBILL_GUARD', ($i2 + 1) . '번째 줄의 sbOrderNo 가 숫자가 아닙니다: ' . $ord);
+        }
+        if (!preg_match('/^[0-9]{1,5}$/', $car)) {
+            fail(400, 'RELAY_WAYBILL_GUARD', ($i2 + 1) . '번째 줄의 deliveryCompanyCode 가 택배사 코드 꼴이 아닙니다: ' . $car);
+        }
+        /*  송장번호는 10~14자리 숫자다. 하이픈이 섞여 오면 여기서 터뜨린다 —
+            조용히 고쳐 주면 「하이픈을 넣는 코드」가 살아남아 다음에 또 온다. */
+        if (!preg_match('/^[0-9]{9,16}$/', $wbno)) {
+            fail(400, 'RELAY_WAYBILL_GUARD', ($i2 + 1) . '번째 줄의 wayBillNo 가 숫자 9~16자리가 아닙니다: ' . $wbno);
+        }
+    }
 }
 
 $headers = [
