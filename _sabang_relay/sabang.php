@@ -100,6 +100,10 @@ const ALLOWED = [
 
     // 쓰기 — 1단계
     'POST /v3/sb/waybill'     => true,
+    /*  ★ 문의 답변 저장 ★  (2026-10-26)
+        사장님 「답변 쓰는 것도 붙여줘」. 저장하면 사방넷이 **몰로 송신**한다 —
+        손님에게 그대로 나가는 글이다. 아래 CS_ANSWER_GUARD 가 본다.  */
+    'POST /v3/sb/cs/answer'   => true,
 
     /*  ★ 주문 수집 ★  (2026-10-13)
         문서는 GET 이라고 적었지만 실측은 POST 전용이다(GET 은 405).
@@ -135,6 +139,7 @@ const STOCK_WRITE = [
         매일 1,700줄짜리 엑셀을 손으로 올리던 일. 아래 WAYBILL_GUARD 가 본다.
         ★ 가드 없이 이 줄만 넣지 말 것 ★ 송장은 한 번 나가면 쇼핑몰까지 번진다. */
     'POST /v3/sb/waybill' => true,
+    'POST /v3/sb/cs/answer' => true,   // 2026-10-26 — CS_ANSWER_GUARD 가 본다
 ];
 
 const HOSTS = [
@@ -147,7 +152,7 @@ header('Content-Type: application/json; charset=utf-8');
     올렸는지 «짐작»하지 않으려고 둔다. 모든 응답 머리에 실린다 —
     올리고 나서 이 값이 안 바뀌면 다른 자리에 올라간 것이다.
     [[ops-tab-carries-the-build-number]] 와 같은 뜻이다. */
-header('X-Relay-Build: 20261026-claim-cs-open');
+header('X-Relay-Build: 20261026-waybill-reprint');
 
 /** 오류를 사방넷 응답과 «같은 모양» 으로 돌려준다 — 부르는 쪽이 한 갈래로 읽게 */
 function fail($http, $code, $msg) {
@@ -399,6 +404,59 @@ if ($key === 'POST /v3/sb/product/upsert') {
     }
 }
 
+/*  ══ CS_ANSWER_GUARD ══  (2026-10-26)
+    ★ 이 길로 나간 글은 손님이 읽는다 ★
+      사방넷에 저장된 답변은 **원본 쇼핑몰로 송신**된다(csStatus=ANSWER_SENT).
+      지우거나 고칠 길이 우리 쪽에 없다. 그래서 여태 만든 울타리 중 제일 좁게 짠다.
+
+    규격은 떠서 알아냈다 (개발자센터 세션이 만료돼 문서를 못 읽었다) —
+      { "items": [ { "csSrno": 숫자, "answerContent": "글" } ] }
+      답은 data.results[{csSrno, status, errorMessage}] 건별로 온다.
+      ★ 전부 실패하면 HTTP 400 이 온다 ★ HTTP 로 성패를 가르지 말 것.
+
+    ★ 두 칸만 지나간다 ★ csSrno · answerContent.
+      csStatus 같은 칸을 열어 두면 「강제전환」처럼 뜻 모를 상태가 끼어들 수 있다.
+
+    ★ 한 번에 조금만 ★ 20건. 답변은 사람이 한 건씩 읽고 쓰는 일이다 —
+      묶음으로 많이 나가는 길을 아예 안 낸다. 잘못 쓰면 손님 스무 명이 읽는다. */
+if ($key === 'POST /v3/sb/cs/answer') {
+    if (!is_array($body) || !isset($body['items']) || !is_array($body['items'])) {
+        fail(400, 'RELAY_CS_ANSWER_GUARD', '몸통에 items 배열이 있어야 합니다.');
+    }
+    foreach (array_keys($body) as $k) {
+        if ($k !== 'items') {
+            fail(400, 'RELAY_CS_ANSWER_GUARD', '몸통에 허용되지 않은 칸이 있습니다: ' . $k);
+        }
+    }
+    $n = count($body['items']);
+    if ($n === 0)  fail(400, 'RELAY_CS_ANSWER_GUARD', 'items 가 비어 있습니다.');
+    if ($n > 20)   fail(400, 'RELAY_CS_ANSWER_GUARD', '한 번에 20건까지만 보냅니다 (' . $n . '건). 답변은 한 건씩 읽고 쓰는 일입니다.');
+
+    foreach ($body['items'] as $i3 => $it) {
+        $자리 = ($i3 + 1) . '번째 줄';
+        if (!is_array($it)) fail(400, 'RELAY_CS_ANSWER_GUARD', $자리 . '이 객체가 아닙니다.');
+        foreach (array_keys($it) as $k3) {
+            if ($k3 !== 'csSrno' && $k3 !== 'answerContent') {
+                fail(400, 'RELAY_CS_ANSWER_GUARD',
+                     $자리 . '에 허용되지 않은 칸이 있습니다: ' . $k3
+                   . ' — 이 길로는 csSrno 와 answerContent 만 보냅니다.');
+            }
+        }
+        $no = isset($it['csSrno']) ? trim((string)$it['csSrno']) : '';
+        if ($no === '' || !ctype_digit($no)) {
+            fail(400, 'RELAY_CS_ANSWER_GUARD', $자리 . '의 csSrno 가 숫자가 아닙니다: ' . $no);
+        }
+        $글 = isset($it['answerContent']) ? (string)$it['answerContent'] : '';
+        $길이 = function_exists('mb_strlen') ? mb_strlen($글, 'UTF-8') : strlen($글);
+        if (trim($글) === '') {
+            fail(400, 'RELAY_CS_ANSWER_GUARD', $자리 . '의 answerContent 가 비어 있습니다. 빈 답변은 보내지 않습니다.');
+        }
+        if ($길이 > 2000) {
+            fail(400, 'RELAY_CS_ANSWER_GUARD', $자리 . '의 answerContent 가 너무 깁니다 (' . $길이 . '자). 2000자까지입니다.');
+        }
+    }
+}
+
 /*  ══ WAYBILL_GUARD ══  (2026-10-23)
     송장은 사방넷에 적히는 순간 쇼핑몰로 번진다. 되돌리기가 제일 비싼 쓰기다.
     그래서 이 길로는 «네 칸만» 지나가게 한다 —
@@ -407,6 +465,12 @@ if ($key === 'POST /v3/sb/product/upsert') {
     ★ forceUpdateYn 은 「N」으로 못박는다 ★
       「Y」면 이미 붙은 송장을 덮어쓴다. 재출력 자리에서 조용히 바뀌면 어느 송장이
       진짜인지 아무도 모른다. 덮어써야 할 때는 사람이 사방넷 화면에서 한다.
+
+    ★ 단 하나의 예외 — 「재출력 상황」 (2026-10-26) ★
+      > 사장님: "재출력이 발생하는 경우 재출력상황 버튼을 만들어주면 그거 클릭하면 되디 않을까?"
+      사람이 v2 화면에서 «고른» 주문만 온다. 그래서 Y 는 셋을 다 갖췄을 때만 연다 —
+        reprint: true 표시(사방넷엔 안 보낸다) · 50건 이하 · 택배사 전부 로젠(007).
+      표시 없이 Y 를 보내면 예전처럼 막힌다.
 
     ★ 부르는 쪽을 믿지 않는다 ★ v2 가 맞게 만들어도 여기서 한 번 더 본다. */
 if ($key === 'POST /v3/sb/waybill') {
@@ -418,19 +482,29 @@ if ($key === 'POST /v3/sb/waybill') {
     if ($n > 500) fail(400, 'RELAY_WAYBILL_GUARD', '한 번에 500건까지만 보냅니다 (' . $n . '건).');
 
     foreach (array_keys($body) as $k) {
-        if ($k !== 'waybillList' && $k !== 'forceUpdateYn') {
+        if ($k !== 'waybillList' && $k !== 'forceUpdateYn' && $k !== 'reprint') {
             fail(400, 'RELAY_WAYBILL_GUARD', '몸통에 허용되지 않은 칸이 있습니다: ' . $k);
         }
     }
+    $재출력 = array_key_exists('reprint', $body) && $body['reprint'] === true;
+    unset($body['reprint']);
+    $force = 'N';
     if (array_key_exists('forceUpdateYn', $body)) {
         $v = strtoupper(trim((string)$body['forceUpdateYn']));
-        if ($v !== 'N') {
+        if ($v === 'Y' && $재출력) {
+            if ($n > 50) fail(400, 'RELAY_WAYBILL_GUARD', '재출력 덮어쓰기는 한 번에 50건까지만 (' . $n . '건).');
+            foreach ($body['waybillList'] as $i3 => $w3) {
+                $c3 = is_array($w3) && isset($w3['deliveryCompanyCode']) ? trim((string)$w3['deliveryCompanyCode']) : '';
+                if ($c3 !== '007') fail(400, 'RELAY_WAYBILL_GUARD', '재출력 덮어쓰기는 로젠(007)만 — ' . ($i3 + 1) . '번째 줄: ' . $c3);
+            }
+            $force = 'Y';
+        } elseif ($v !== 'N') {
             fail(400, 'RELAY_WAYBILL_GUARD',
                  'forceUpdateYn 은 「N」이어야 합니다 (보낸 값: ' . $v . '). '
-               . '이미 붙은 송장을 덮어쓰는 것을 막는 울타리입니다.');
+               . '이미 붙은 송장을 덮어쓰는 것을 막는 울타리입니다 — 재출력 상황에서 고른 것만 예외.');
         }
     }
-    $body['forceUpdateYn'] = 'N';
+    $body['forceUpdateYn'] = $force;
 
     $칸 = ['sbOrderNo' => true, 'deliveryCompanyCode' => true, 'wayBillNo' => true, 'hopeDeliveryDate' => true];
     foreach ($body['waybillList'] as $i2 => $w) {
