@@ -3062,6 +3062,9 @@ function _cs_ledgerDate_() {
 
 function _cs_formatLedgerPhone_(raw) {
   var d = String(raw || "").replace(/[^0-9]/g, "");
+  /*  ★ 맨 앞 0 이 빠진 휴대폰 ★  (2026-10-28) 시트에 숫자로 들어가면 010… 의 0 이 사라진다(「1051637987」).
+      1 로 시작하는 10자리만 0 을 되붙인다. 반품 포털 prpLedger.gs prpFormatPhone_ 와 같은 규칙 — 쌍으로 고칠 것 */
+  if (d.length === 10 && d.charAt(0) === "1") d = "0" + d;
   if (d.length === 11) return d.substring(0, 3) + "-" + d.substring(3, 7) + "-" + d.substring(7);
   if (d.length === 10) return d.substring(0, 3) + "-" + d.substring(3, 6) + "-" + d.substring(6);
   return String(raw || "").trim();

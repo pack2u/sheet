@@ -219,6 +219,10 @@ function prpFeeNumber_(v) {
 
 function prpFormatPhone_(raw) {
   var d = prpDigits_(raw);
+  /*  ★ 맨 앞 0 이 빠진 휴대폰 ★  (2026-10-28 제이엠 전용발주 마감 「1051637987」 → 105-163-7987 로 보였다)
+      시트에 숫자로 들어가면 010… 의 0 이 사라진다. 우리 번호에 1 로 시작하는 10자리는 없다(10자리는 02·031… 처럼 0 으로 시작).
+      그래서 «1 로 시작하는 10자리»만 0 을 되붙인다. CS 웹앱 _cs_formatLedgerPhone_ 와 같은 규칙 — 쌍으로 고칠 것 */
+  if (d.length === 10 && d.charAt(0) === "1") d = "0" + d;
   if (d.length === 11) return d.substring(0, 3) + "-" + d.substring(3, 7) + "-" + d.substring(7);
   if (d.length === 10) return d.substring(0, 3) + "-" + d.substring(3, 6) + "-" + d.substring(6);
   return String(raw || "").trim();
