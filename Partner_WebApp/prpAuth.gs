@@ -169,6 +169,7 @@ function prpIssueSession_(account) {
     key: account.key,
     prefix: account.prefix,
     aliases: account.aliases,
+    fileId: account.fileId || "",   // v2 문(prpV2.gs)만 채운다 — prpFindVendorFileId_
     at: prpNow_().getTime()
   };
   try {

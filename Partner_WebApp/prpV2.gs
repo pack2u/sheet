@@ -56,8 +56,10 @@ function prpV2Account_(v) {
   var 남 = {};
   for (var j = 0; j < all.length; j++) if (all[j].key !== 내키) 남[all[j].key] = true;
   var 합 = (me ? (me.aliases || []) : []).concat(별).filter(function (k, ix, arr) { return k && k !== 내키 && !남[k] && arr.indexOf(k) === ix; });
-  if (me) return { vendor: me.vendor, key: me.key, prefix: me.prefix, aliases: 합 };
-  return { vendor: name, key: key, prefix: String(v.prefix || ""), aliases: 합 };
+  //  그 업체 파일 — v2 vendors.legacy_sheet_id (모양만 본다: 드라이브 ID)
+  var fileId = /^[\w-]{25,}$/.test(String(v.fileId || "")) ? String(v.fileId) : "";
+  if (me) return { vendor: me.vendor, key: me.key, prefix: me.prefix, aliases: 합, fileId: fileId };
+  return { vendor: name, key: key, prefix: String(v.prefix || ""), aliases: 합, fileId: fileId };
 }
 
 function doPost(e) {

@@ -229,6 +229,10 @@ function prpVendorSearchLabels_(sess) {
  * 파일명으로만 고른다. 폴더를 다 열거나 설정 B5 를 전수 대조하지 않는다.
  */
 function prpFindVendorFileId_(sess) {
+  /*  ★ 2026-10-27 v2 업체 화면은 파일을 안다 ★  (prpV2.gs)
+      v2 vendors.legacy_sheet_id 가 그 업체 파일이다 — 이름으로 찾다 못 찾는 업체(제이엠·태양 등)가 있었다.
+      v2 문으로 들어온 세션에만 있다. 옛 포털 링크 세션은 아래 이름 찾기 그대로.  */
+  if (sess.fileId) return String(sess.fileId);
   var ck = PRP_CACHE_VER + "_vf2_" + sess.key;
   try {
     var hit = CacheService.getScriptCache().get(ck);
