@@ -149,6 +149,24 @@ console.log("\n[⑧] 동영상은 글자 인식을 안 한다");
   ctx._cib_ocr_(["https://x/r/2026/10/a.mp4?token=1", "https://x/r/2026/10/b.jpg?token=2"]);
   check("영상은 안 받는다 — 사진만", seen, ["https://x/r/2026/10/b.jpg?token=2"]); }
 
+/*  ★ v2 「반품대장 기록」 요청 (2026-10-27, v2 sql/226) ★
+    다리가 claim → 본체(_cs_submitReturnLedger_) → done 을 하고, 결과(중복·탭·행)를 그대로 돌려주나.
+    본체를 부르는지 본다 — 접근 검사가 붙은 submitReturnLedger 를 부르면 트리거에서 막힐 수 있다. */
+{ const posts = []; const keepF = ctx.UrlFetchApp, keepU = ctx._cs_v2_url_, keepT = ctx._cs_v2_token_, keepW = ctx._cs_submitReturnLedger_, keepG = ctx.submitReturnLedger;
+  ctx._cs_v2_url_ = () => "https://v2"; ctx._cs_v2_token_ = () => "t";
+  ctx.UrlFetchApp = { fetch: (u, o) => { const b = JSON.parse(o.payload); posts.push([u, b]);
+    const out = b.op === "claim" ? { ok: true, items: [{ id: "a", staff: "김진수", force: false, data: { name: "손소희", invoice: "268334089111" } }, { id: "b", staff: "고윤서", force: true, data: { name: "x" } }] } : { ok: true };
+    return { getResponseCode: () => 200, getContentText: () => JSON.stringify(out) }; } };
+  const got = [];
+  ctx.submitReturnLedger = () => { throw new Error("접근 검사 길을 탔다"); };
+  ctx._cs_submitReturnLedger_ = (d) => { got.push(d); return d.force ? { success: true, row: 57, sheet: "202610", message: "202610 탭 57행에 기록했습니다." } : { success: false, duplicate: true, message: "같은 송장이 있습니다" }; };
+  const r = ctx._cib_ledgerQueue_();
+  check("대장 요청 — 본체로 두 건", got.map((d) => [d.staff, d.force]), [["김진수", false], ["고윤서", true]]);
+  check("대장 요청 — 주소는 ledger-queue", posts.map((p) => [p[0], p[1].op]), [["https://v2/api/returns/ledger-queue", "claim"], ["https://v2/api/returns/ledger-queue", "done"]]);
+  check("대장 요청 — 결과를 그대로 돌려준다", posts[1][1].results.map((x) => [x.id, x.success, x.duplicate, x.row, x.sheet]), [["a", false, true, null, ""], ["b", true, false, 57, "202610"]]);
+  check("대장 요청 — 셈", r.n, 2);
+  ctx.UrlFetchApp = keepF; ctx._cs_v2_url_ = keepU; ctx._cs_v2_token_ = keepT; ctx._cs_submitReturnLedger_ = keepW; ctx.submitReturnLedger = keepG; }
+
 console.log("");
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");
 process.exit(fail ? 1 : 0);

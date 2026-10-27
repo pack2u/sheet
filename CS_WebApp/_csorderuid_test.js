@@ -161,7 +161,7 @@ console.log("\n[9] ★ 새 반품 — r 번호를 짓지 않고 주문 번호를
 /*  > "웹앱에서 주문송장조회를 통해 주문건을 확인하고 바로 반품대장기록을
     >  통해 흘러가는 시스템으로"
     기록 단추는 이미 orderNo 를 보낸다. 서버가 그걸 버리고 r 번호를 짓던 것을 고쳤다. */
-var 기록함수 = 꺼내(주문검색, "submitReturnLedger");
+var 기록함수 = 꺼내(주문검색, "_cs_submitReturnLedger_");   // 2026-10-27 쓰는 코드는 본체로 옮겼다
 ok("submitReturnLedger 가 r 번호를 짓지 않는다",
    기록함수.indexOf("_cs_returnUidNext_") === -1);
 ok("주문송장조회에서 받은 orderNo 를 다듬어 적는다",

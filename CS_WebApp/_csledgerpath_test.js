@@ -118,8 +118,9 @@ ok("submitRetNew 이 있다", !!접수);
 console.log("\n─── ⑤ 서버가 칸이 없을 때도 버리지 않는다 ───");
 
 const GS = fs.readFileSync(path.join(__dirname, "csOrderSearch.gs"), "utf8");
-const 쓰는것 = GS.slice(GS.indexOf("function submitReturnLedger("),
-  GS.indexOf("function submitReturnLedger(") + 9000);
+// 2026-10-27 쓰는 코드는 본체 _cs_submitReturnLedger_ 로 옮겼다(submitReturnLedger 는 접근 검사만) — v2 다리도 본체를 탄다
+const 쓰는것 = GS.slice(GS.indexOf("function _cs_submitReturnLedger_("),
+  GS.indexOf("function _cs_submitReturnLedger_(") + 9000);
 
 [["귀책·사유", "faultToNotice"], ["반품비", "feeToNotice"],
   ["반품송장", "retInvToNotice"], ["환불계좌", "acctToNotice"],

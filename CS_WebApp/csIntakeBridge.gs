@@ -234,18 +234,57 @@ function _cib_backfillOcr_(maxN) {
   return n;
 }
 
+/**
+ * v2 주문·송장 「반품대장 기록」 요청 → 대장   (2026-10-27, v2 sql/226 · /api/returns/ledger-queue)
+ * > 사장님: "CS 문의로 남기기랑 반품대장 기록도 옮겨줘"
+ * 입고와 같은 다리를 탄다(새 트리거 없음). 적는 것은 _cs_submitReturnLedger_ — 이 웹앱 「반품대장 기록」과 같은 함수.
+ * 같은 송장이 있으면 duplicate 로 돌려준다 — v2 화면이 「그래도 추가」(force)로 다시 보낸다.
+ */
+function _cib_ledgerQueue_() {
+  var url = _cs_v2_url_(), tok = _cs_v2_token_();
+  if (!url || !tok) return { ok: false, error: "v2 주소나 토큰이 없습니다" };
+  var post = function (body) {
+    var res = UrlFetchApp.fetch(url + "/api/returns/ledger-queue", {
+      method: "post", contentType: "application/json", headers: { "x-ingest-token": tok },
+      muteHttpExceptions: true, payload: JSON.stringify(body)
+    });
+    if (res.getResponseCode() !== 200) return { ok: false, error: "v2 HTTP " + res.getResponseCode() + " " + res.getContentText().substring(0, 200) };
+    try { return JSON.parse(res.getContentText()); } catch (e) { return { ok: false, error: "v2 응답을 읽지 못함" }; }
+  };
+  var claim = post({ op: "claim", limit: 5 });
+  if (!claim.ok) { Logger.log("[CIB 대장] claim 실패: " + claim.error); return claim; }
+  var items = claim.items || [];
+  if (!items.length) return { ok: true, n: 0 };
+  var results = [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i], d = it.data || {};
+    d.staff = String(it.staff || d.staff || "").trim();
+    d.force = !!it.force;
+    var r;
+    try { r = _cs_submitReturnLedger_(d) || {}; }
+    catch (e) { r = { success: false, error: String((e && e.message) || e) }; }
+    results.push({ id: it.id, success: !!r.success, duplicate: !!r.duplicate, message: r.message || "", error: r.error || "", row: r.row || null, sheet: r.sheet || "" });
+  }
+  var done = post({ op: "done", results: results });
+  Logger.log("[CIB 대장] " + JSON.stringify({ n: items.length, results: results, done: done }).substring(0, 500));
+  return { ok: true, n: items.length, results: results };
+}
+
 /** 1분 트리거가 부른다. 손으로 불러도 된다 (결과를 돌려준다). */
 function csIntakeBridgePull() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(2000)) return { ok: true, skipped: "다른 실행이 돌고 있음" };
   try {
+    //  v2 「반품대장 기록」 요청 먼저 — 사람이 화면에서 기다린다. 실패해도 입고 다리는 그대로 돈다
+    var ledgerQ = null;
+    try { ledgerQ = _cib_ledgerQueue_(); } catch (eQ) { Logger.log("[CIB 대장] 오류: " + ((eQ && eQ.message) || eQ)); }
     var claim = _cib_post_({ op: "claim", limit: 10, recheck: true }); // recheck: 재검수 결과 줄도 받는다 (v2 sql/74) // 한 건에 글자 인식 3~5초 — 1분 안에 끝나게
     if (!claim.ok) { Logger.log("[CIB] claim 실패: " + claim.error); return claim; }
     var items = claim.items || [];
     //  새로 온 것이 없는 한가한 때에만 — 확인 대기 줄의 빠진 글자를 두 건씩 채운다
     if (!items.length) {
       try { _csl_ensureIntakeTab_(); } catch (eE) {}
-      return { ok: true, n: 0, ocrFilled: _cib_backfillOcr_(2) };
+      return { ok: true, n: 0, ocrFilled: _cib_backfillOcr_(2), ledger: ledgerQ };
     }
 
     var applied = _cib_appliedIds_(), results = [];
@@ -257,7 +296,7 @@ function csIntakeBridgePull() {
     try { csInvalidateReturnLedgerCache_(); } catch (eC) {}
     _csl_dropPendingCache_();
     Logger.log("[CIB] " + JSON.stringify({ n: items.length, done: done }));
-    return { ok: true, n: items.length, results: results, done: done };
+    return { ok: true, n: items.length, results: results, done: done, ledger: ledgerQ };
   } finally {
     lock.releaseLock();
   }

@@ -2165,6 +2165,18 @@ function _cs_getReturnLedgerTab_(ss) {
 
 function submitReturnLedger(data) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  return _cs_submitReturnLedger_(data);
+}
+
+/**
+ * 반품대장 한 줄 쓰기 — 본체.  (2026-10-27 검사와 갈랐다)
+ * > 사장님: "CS 문의로 남기기랑 반품대장 기록도 옮겨줘"
+ * 화면(submitReturnLedger)은 접근 검사를 거쳐 여기로 온다. v2 주문·송장의 「반품대장 기록」은
+ * csIntakeBridge.gs 1분 다리(_cib_ledgerQueue_)가 여기로 바로 온다 — 트리거에서는 접근 검사가
+ * 로그인 계정을 못 읽어 막힐 수 있다(_cib_apply_ recheck 주석). v2 가 직원 로그인을 이미 확인했다.
+ * ★ 적는 코드는 이것 하나 ★ 두 길이 같은 함수를 탄다 — 대장 주인이 둘이 되지 않는다.
+ */
+function _cs_submitReturnLedger_(data) {
   data = data || {};
   try {
     var ss = SpreadsheetApp.openById(_CS_RETURN_LEDGER_ID_);
