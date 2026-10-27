@@ -241,17 +241,18 @@ function prpScanTabByKey_(tab, source, out, 열들, 맞나, 종류) {
     var last = tab.getLastRow();
     lc = Math.max(Math.min(tab.getLastColumn(), 20), 15);
     try {
-      if (last < 2) { if (담을) prpCachePutJson_(담을, { empty: true }, PRP_KEYCOL_CACHE_SEC_); return; }
+      if (last < 2) { if (담을) prpCachePutJson_(담을, { empty: true }, prpKeyColsCacheSec_(tab)); return; }
       var head = tab.getRange(1, 1, Math.min(last, 6), lc).getDisplayValues();
       lay = prpTabLayout_(tab, head);
       var keys = 열들(lay.cols).filter(function (c) { return c >= 0 && c < lc; });
-      if (!keys.length || lay.start >= last) { if (담을) prpCachePutJson_(담을, { empty: true }, PRP_KEYCOL_CACHE_SEC_); return; }
+      if (!keys.length || lay.start >= last) { if (담을) prpCachePutJson_(담을, { empty: true }, prpKeyColsCacheSec_(tab)); return; }
       lo = Math.min.apply(null, keys);
       hi = Math.max.apply(null, keys);
       block = tab.getRange(lay.start + 1, lo + 1, last - lay.start, hi - lo + 1).getDisplayValues();
     } catch (e) { return; }
-    if (담을) prpCachePutJson_(담을, { lay: lay, lo: lo, hi: hi, block: block, lc: lc }, PRP_KEYCOL_CACHE_SEC_);
+    if (담을) prpCachePutJson_(담을, { lay: lay, lo: lo, hi: hi, block: block, lc: lc }, prpKeyColsCacheSec_(tab));
   }
+  var 메모리판 = !!(hit && hit.block);
   var hits = [];
   for (var i = 0; i < block.length; i++) {
     var row = new Array(lc);
@@ -270,6 +271,15 @@ function prpScanTabByKey_(tab, source, out, 열들, 맞나, 종류) {
       rows = hits.map(function (k) { return span[k - a]; });
     }
   } catch (e2) { return; }
+  //  ★ 새로 읽은 줄로 다시 견준다 ★ 메모리로 고른 줄이 지금은 안 맞으면(줄이 옮겨졌거나 송장이 고쳐졌다) 이 탭은 새로 읽는다
+  for (var v = 0; v < rows.length; v++) {
+    if (맞나(rows[v], lay.cols)) continue;
+    if (!메모리판) { rows.splice(v, 1); v--; continue; }
+    var 전 = PRP_KEYCACHE_LIVE_;
+    PRP_KEYCACHE_LIVE_ = true;
+    try { prpScanTabByKey_(tab, source, out, 열들, 맞나, 종류); } finally { PRP_KEYCACHE_LIVE_ = 전; }
+    return;
+  }
   for (var j = 0; j < rows.length; j++) out.push(prpRowToMatch_(rows[j], lay.cols, source));
 }
 
@@ -292,27 +302,34 @@ function prpScanTabForInvoice_(tab, wantDigits, source, out) {
    ★ 메모리(CacheService)에 올려 두기 ★  (2026-10-28)
    > 사장님: "전체적으로 데이타양이 많으니 메모리에 많이 저장할수 있게 만들어 로딩이 빠르게 만들어줘"
 
-   ① 닫힌 달 마감 탭의 열쇠 칸(송장 · 고유ID·적요) — 6시간. 이번 달 이전 탭만. 이번 달·발주 탭·전용양식은 늘 새로 읽는다.
-      열쇠에 «줄 수»가 들어 있어 줄이 늘거나 줄면 저절로 새로 읽는다.
+   ① 탭마다 열쇠 칸(송장 · 고유ID·적요) — 닫힌 달 6시간, 이번 달·발주 탭·전용양식 10분. 메모리에 있으면 탭을 건드리지 않는다.
+      메모리가 낡았을 때의 울타리 둘: 열쇠로 0건이면 책 전체를 새로 읽고(prpScanVendorBook_),
+      고른 줄을 새로 읽어 다시 견줘 안 맞으면 그 탭을 새로 읽는다(prpScanTabByKey_).
    ② 찾은 결과(업체 파일 + 고유ID/송장) — 10분. 찾기 뒤 접수(prpVerifyOrigin_)가 장부를 또 훑지 않게. 못 찾은 것은 안 담는다.
    ★ 맞은 줄의 내용(받는 분·품목)은 ①에서 안 꺼낸다 ★ — 줄 번호만 메모리로 고르고 그 줄은 시트에서 새로 읽는다.
    메모리가 비거나(구글이 비울 수 있다) 못 쓰면 그냥 시트를 읽는다 — 느려질 뿐 답은 같다.
    ══════════════════════════════════════════════════════════════ */
-var PRP_KEYCOL_CACHE_SEC_ = 21600;   // 6시간 (CacheService 최대)
+var PRP_KEYCOL_CACHE_SEC_ = 21600;   // 6시간 (CacheService 최대) — 닫힌 달
+var PRP_KEYCOL_LIVE_CACHE_SEC_ = 600; // 10분 — 이번 달 마감·발주 및 송장조회·전용양식
 var PRP_RESULT_CACHE_SEC_ = 600;     // 10분
 var PRP_KEYCACHE_LIVE_ = false;      // true 면 ① 메모리를 안 믿고 탭을 새로 읽는다 (못 찾았을 때 다시 보는 판)
 
-/** 닫힌 달 탭(「(YYYY년 M월) …마감」 중 이번 달보다 앞)일 때만 열쇠를 준다 */
+/** 열쇠 칸 메모리 열쇠 — 탭마다 (업체 파일 + 탭 이름 + 송장/고유ID) */
 function prpKeyColsCacheKey_(tab, 종류) {
   if (!종류) return "";
   try {
-    var nm = String(tab.getName() || "");
-    var m = nm.match(/^\((\d{4})년 (\d{1,2})월\)/);
-    if (!m) return "";
-    var now = typeof prpNow_ === "function" ? prpNow_() : new Date();
-    if (Number(m[1]) * 12 + Number(m[2]) >= now.getFullYear() * 12 + now.getMonth() + 1) return "";
-    return "kc2|" + tab.getParent().getId() + "|" + nm + "|" + 종류;
+    return "kc2|" + tab.getParent().getId() + "|" + String(tab.getName() || "") + "|" + 종류;
   } catch (e) { return ""; }
+}
+
+/** 얼마나 두나 — 닫힌 달(이번 달보다 앞 「(YYYY년 M월) …」) 6시간 · 이번 달·발주 탭·전용양식은 10분(낮에도 줄이 붙는다) */
+function prpKeyColsCacheSec_(tab) {
+  var nm = "";
+  try { nm = String(tab.getName() || ""); } catch (e) {}
+  var m = nm.match(/^\((\d{4})년 (\d{1,2})월\)/);
+  if (!m) return PRP_KEYCOL_LIVE_CACHE_SEC_;
+  var now = typeof prpNow_ === "function" ? prpNow_() : new Date();
+  return Number(m[1]) * 12 + Number(m[2]) < now.getFullYear() * 12 + now.getMonth() + 1 ? PRP_KEYCOL_CACHE_SEC_ : PRP_KEYCOL_LIVE_CACHE_SEC_;
 }
 
 function prpCacheHash_(s) {

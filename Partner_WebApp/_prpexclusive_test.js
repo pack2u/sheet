@@ -14,14 +14,14 @@ function check(label, got, want) {
   else { fail++; console.log("  FAIL " + label + "  ->  " + g + "   (기대: " + w + ")"); }
 }
 //  메모리(CacheService)는 [7] 전까지 없다 — 없으면 시트를 읽는 길이 그대로 도는지도 앞 시험이 본다
-const ctx = { console, Logger: { log() {} }, PRP_CACHE_VER: "t", PRP_KEYCOL_CACHE_SEC_: 21600, PRP_KEYCACHE_LIVE_: false, PRP_RESULT_CACHE_SEC_: 600, PRP_LOOKUP_MONTHS_: 12,
+const ctx = { console, Logger: { log() {} }, PRP_CACHE_VER: "t", PRP_KEYCOL_CACHE_SEC_: 21600, PRP_KEYCOL_LIVE_CACHE_SEC_: 600, PRP_KEYCACHE_LIVE_: false, PRP_RESULT_CACHE_SEC_: 600, PRP_LOOKUP_MONTHS_: 12,
   PRP_ORDER_TAB_NAME_: "발주 및 송장조회", PRP_ARCHIVE_TAB_SUFFIX_: "발주 마감", PRP_EXCLUSIVE_ARCHIVE_SUFFIX_: "전용발주 마감", PRP_EXCLUSIVE_TAB_NAME_: "전용양식" };
 vm.createContext(ctx);
 for (const f of ["prpLookup.gs", "prpConfig.gs", "prpLedger.gs"]) {
   const s = fs.readFileSync(f, "utf8");
   //  필요한 함수만 꺼낸다 — 파일 전체를 돌리면 서비스(SpreadsheetApp …)를 부르는 맨 위 코드가 있다
   const names = f === "prpLookup.gs"
-    ? ["prpUidFromCell_", "prpUidNorm_", "prpFindOrderHeaderRow_", "prpMapOrderCols_", "prpFindExclusiveHeaderRow_", "prpMapExclusiveCols_", "prpTabLayout_", "prpScanTabByKey_", "prpScanVendorBook_", "prpFindVendorFileId_", "prpRecentArchiveTabNames_", "prpArchiveTabName_", "prpKeyColsCacheKey_", "prpCacheHash_", "prpCacheGetJson_", "prpCachePutJson_",
+    ? ["prpUidFromCell_", "prpUidNorm_", "prpFindOrderHeaderRow_", "prpMapOrderCols_", "prpFindExclusiveHeaderRow_", "prpMapExclusiveCols_", "prpTabLayout_", "prpScanTabByKey_", "prpScanVendorBook_", "prpFindVendorFileId_", "prpRecentArchiveTabNames_", "prpArchiveTabName_", "prpKeyColsCacheKey_", "prpKeyColsCacheSec_", "prpCacheHash_", "prpCacheGetJson_", "prpCachePutJson_",
        "prpRowMatchesUid_", "prpRowToMatch_", "prpScanTab_", "prpScanTabForUid_", "prpScanTabForInvoice_"]
     : f === "prpConfig.gs" ? ["prpDigits_"] : ["prpFormatPhone_", "prpFormatInvoice_"];
   for (const n of names) {
@@ -129,7 +129,8 @@ check("합포장 12줄(한 번에 읽는 길)", 찾기(합, "463400009999").map(
 
 console.log("[7] 메모리(CacheService) — 닫힌 달만 담고, 맞은 줄은 시트에서 새로 읽는다");
 const 메모 = new Map();
-ctx.CacheService = { getScriptCache: () => ({ get: (k) => (메모.has(k) ? 메모.get(k) : null), put: (k, v) => { 메모.set(k, v); } }) };
+ctx.CacheService = { getScriptCache: () => ({ get: (k) => (메모.has(k) ? 메모.get(k) : null), put: (k, v, sec) => { 메모.set(k, v); 둔시간.push(sec); } }) };
+const 둔시간 = [];
 ctx.Utilities = { DigestAlgorithm: { MD5: 1 }, Charset: { UTF_8: 1 }, computeDigest: (_a, s) => [...Buffer.from(require("crypto").createHash("md5").update(s).digest())], base64EncodeWebSafe: (b) => Buffer.from(b).toString("base64url") };
 ctx.prpNow_ = () => new Date(2026, 9, 28);
 let 줄물음 = 0;
@@ -150,12 +151,21 @@ ctx.PRP_KEYCACHE_LIVE_ = true; 읽은칸 = 0; const h4 = 찾기(지난, "4520999
 check("새로 읽는 판 — 붙은 줄을 찾는다", [h4.length, h4[0] && h4[0].name, 읽은칸 > 2000], [1, "새분", true]);
 읽은칸 = 0; const h5 = 찾기(지난, "45209999999");
 check("새로 읽은 판으로 메모리가 갈렸다 — 다음엔 메모리로 찾는다", [h5.length, 읽은칸], [1, 16]);
-const 이번 = 센탭("(2026년 10월) 발주 마감", [["📊"], ["📦"], ["🏷️"], ...큰줄]);
-찾기(이번, "45201001234"); 읽은칸 = 0; 찾기(이번, "45201001234");
-check("이번 달 탭은 안 담는다 — 늘 새로 읽는다", 읽은칸 > 2000, true);
+둔시간.length = 0;
+const 이번줄 = [["📊"], ["📦"], ["🏷️"], ...큰줄.map((r) => r.slice())];
+const 이번 = 센탭("(2026년 10월) 발주 마감", 이번줄);
+찾기(이번, "45201001234"); 읽은칸 = 0; const i2 = 찾기(이번, "45201001234");
+check("이번 달 탭 — 담되 10분 (닫힌 달은 6시간)", [i2.length, 읽은칸, 둔시간[0]], [1, 16, 600]);
+check("닫힌 달은 6시간", ctx.prpKeyColsCacheSec_(지난), 21600);
 const 양식 = 센탭("전용양식", NK양식.getRange(1, 1, 2, 13).getDisplayValues());
-찾기(양식, "260000999001"); 읽은칸 = 0; 찾기(양식, "260000999001");
-check("전용양식(마감 전)도 안 담는다", 읽은칸 > 13, true);
+check("전용양식 — 10분", ctx.prpKeyColsCacheSec_(양식), 600);
+//  메모리로 고른 줄이 지금은 다른 송장(낮에 줄이 지워져 밀렸다) — 그 탭을 새로 읽어 옮겨 간 자리에서 찾는다
+const 옮긴 = 이번줄.splice(3 + 1, 1)[0];   // 맨 앞 자료 줄을 지워 한 칸씩 밀린다
+이번줄.push(옮긴);
+읽은칸 = 0; const i3 = 찾기(이번, "45201001234");
+check("고른 줄이 안 맞으면 그 탭을 새로 읽는다 — 밀린 자리에서 찾는다", [i3.length, i3[0] && i3[0].name, 읽은칸 > 2000], [1, "수취인1234", true]);
+const i4 = 찾기(이번, "45201000000");
+check("맨 뒤로 옮긴 줄도 찾는다", [i4.length, i4[0] && i4[0].name], [1, "수취인0"]);
 
 console.log("[8] 책 전체 — 메모리로 못 찾으면 새로 읽어 한 번 더 (「없다」는 시트가 준다)");
 {
