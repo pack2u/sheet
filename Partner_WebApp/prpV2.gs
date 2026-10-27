@@ -37,18 +37,27 @@ function prpV2Account_(v) {
   if (!name) return null;
   var key = prpVendorKey_(name);
   var 별 = (v.aliases || []).map(function (a) { return prpVendorKey_(a); }).filter(function (a) { return a; });
-  try {
-    var all = prpLoadAccounts_(false) || [];
-    for (var i = 0; i < all.length; i++) {
-      var a = all[i];
-      if (a.active === false) {
-        if (a.key === key) return null;     // 꺼 둔 계정 — 이름으로 새 세션을 만들어 우회하지 않는다
-        continue;
-      }
-      if (a.key === key || 별.indexOf(a.key) >= 0) return { vendor: a.vendor, key: a.key, prefix: a.prefix, aliases: a.aliases || [] };
+  /*  ★ 2026-10-27 별칭은 v2 가 고른 «대장 글자» ★  (v2 lib/portal-vendor.ts)
+      대장 「업체」 칸은 줄여 적힌다(「당장」·「대리발송-준테크」). 어느 칸이 어느 업체 것인지는 v2 가 정하고
+      그 글자를 별칭으로 실어 보낸다. 계정이 있는 업체도 계정 별칭에 «더한다».
+      ★ 남의 업체 이름은 뺀다 ★ — prpLoadAccounts_ 의 2026-09-20 울타리와 같은 뜻. 다른 계정 이름과 같은 글자는 버린다. */
+  var all = [];
+  try { all = prpLoadAccounts_(false) || []; } catch (e) {}
+  var me = null;
+  for (var i = 0; i < all.length; i++) {
+    var a = all[i];
+    if (a.active === false) {
+      if (a.key === key) return null;     // 꺼 둔 계정 — 이름으로 새 세션을 만들어 우회하지 않는다
+      continue;
     }
-  } catch (e) {}
-  return { vendor: name, key: key, prefix: String(v.prefix || ""), aliases: 별 };
+    if (!me && a.key === key) me = a;     // 계정은 이름으로만 — 별칭(대장 글자)으로 남의 계정을 집지 않는다
+  }
+  var 내키 = me ? me.key : key;
+  var 남 = {};
+  for (var j = 0; j < all.length; j++) if (all[j].key !== 내키) 남[all[j].key] = true;
+  var 합 = (me ? (me.aliases || []) : []).concat(별).filter(function (k, ix, arr) { return k && k !== 내키 && !남[k] && arr.indexOf(k) === ix; });
+  if (me) return { vendor: me.vendor, key: me.key, prefix: me.prefix, aliases: 합 };
+  return { vendor: name, key: key, prefix: String(v.prefix || ""), aliases: 합 };
 }
 
 function doPost(e) {
