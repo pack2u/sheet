@@ -19,7 +19,7 @@ for (const f of ["prpLookup.gs", "prpConfig.gs", "prpLedger.gs"]) {
   const s = fs.readFileSync(f, "utf8");
   //  필요한 함수만 꺼낸다 — 파일 전체를 돌리면 서비스(SpreadsheetApp …)를 부르는 맨 위 코드가 있다
   const names = f === "prpLookup.gs"
-    ? ["prpUidFromCell_", "prpUidNorm_", "prpFindOrderHeaderRow_", "prpMapOrderCols_", "prpFindExclusiveHeaderRow_", "prpMapExclusiveCols_",
+    ? ["prpUidFromCell_", "prpUidNorm_", "prpFindOrderHeaderRow_", "prpMapOrderCols_", "prpFindExclusiveHeaderRow_", "prpMapExclusiveCols_", "prpTabLayout_", "prpScanTabByKey_",
        "prpRowMatchesUid_", "prpRowToMatch_", "prpScanTab_", "prpScanTabForUid_", "prpScanTabForInvoice_"]
     : f === "prpConfig.gs" ? ["prpDigits_"] : ["prpFormatPhone_", "prpFormatInvoice_"];
   for (const n of names) {
@@ -109,6 +109,21 @@ check("일반 마감 — 고유ID 도 그대로", e2.length, 1);
 //  이름에 「전용」이 없으면 「이슈」 머리글이 있어도 일반 배치 (탭 이름이 문지기)
 const 이름만 = tab("발주 및 송장조회", [["", "", "이슈", "받는사람"], ["x", "999988887777", "a", "b"]]);
 check("이름에 「전용」이 없으면 전용 배치를 안 쓴다 (B열을 송장으로 안 본다)", 찾기(이름만, "999988887777").length, 0);
+
+console.log("[6] 열쇠 칸만 먼저 읽는다 — 탭 전체를 읽지 않는다 (10/28 업체 화면 30~58초)");
+const 큰줄 = [일반.getRange(4, 1, 1, 16).getDisplayValues()[0]];
+for (let i = 0; i < 2000; i++) 큰줄.push(["대리발송-냅킨코리아", "20261001", "X", "품목" + i, "1", "수취인" + i, "010-0000-" + String(i).padStart(4, "0"), "주소", "", "", "4520" + String(1000000 + i), "", "수취인" + i + "/d1001" + String(100000 + i), "", "", "로젠"]);
+const 큰 = tab("(2026년 9월) 발주 마감", [["📊 월별 마감 요약"], ["📦"], ["🏷️"], ...큰줄]);
+let 읽은칸 = 0;
+const 센 = { ...큰, getName: 큰.getName, getRange: (r, c, nr, nc) => { 읽은칸 += nr * nc; return 큰.getRange(r, c, nr, nc); } };
+const f = 찾기(센, "45201001234");
+check("2,000줄 — 송장으로 한 줄 · 받는 분", [f.length, f[0] && f[0].name], [1, "수취인1234"]);
+check("읽은 칸이 전체(2,004줄×16칸)의 1/8 아래", 읽은칸 < (2004 * 16) / 8, true);
+읽은칸 = 0;
+const g2 = []; ctx.prpScanTabForUid_(센, "d1001101999", 센.getName(), g2);
+check("2,000줄 — 고유ID 로 한 줄 · 품목", [g2.length, g2[0] && g2[0].item], [1, "품목1999"]);
+const 합 = tab("(2026년 8월) 발주 마감", [큰줄[0], ...Array.from({ length: 12 }, (_, i) => ["", "", "", "합" + i, "1", "같은분", "", "", "", "", "463400009999"])]);
+check("합포장 12줄(한 번에 읽는 길)", 찾기(합, "463400009999").map((m) => m.item).join(","), Array.from({ length: 12 }, (_, i) => "합" + i).join(","));
 
 console.log("");
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");

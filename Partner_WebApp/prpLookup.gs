@@ -196,35 +196,80 @@ function prpScanTab_(tab, source, out, 맞나) {
   var all;
   try { all = tab.getRange(1, 1, tab.getLastRow(), lc).getDisplayValues(); }
   catch (e) { return; }
-  //  전용양식·전용발주 마감은 칸 배치가 다르다 — 이름에 「전용」이 있고 「이슈」 머리글이 있을 때만 그 배치로 (2026-10-28)
-  var ex = /전용/.test(String(tab.getName() || "")) ? prpFindExclusiveHeaderRow_(all) : -1;
-  if (ex >= 0) {
-    var exCols = prpMapExclusiveCols_(all[ex]);
-    for (var k = ex + 1; k < all.length; k++) {
-      if (!맞나(all[k], exCols)) continue;
-      out.push(prpRowToMatch_(all[k], exCols, source));
-    }
-    return;
-  }
-  var hi = prpFindOrderHeaderRow_(all);
-  var cols = prpMapOrderCols_(all[hi]);
-  var start = hi + 1;
-  if (hi >= 3) start = Math.max(start, 4);
-  for (var i = start; i < all.length; i++) {
-    if (!맞나(all[i], cols)) continue;
-    out.push(prpRowToMatch_(all[i], cols, source));
+  var lay = prpTabLayout_(tab, all);
+  for (var i = lay.start; i < all.length; i++) {
+    if (!맞나(all[i], lay.cols)) continue;
+    out.push(prpRowToMatch_(all[i], lay.cols, source));
   }
 }
 
+/**
+ * 탭의 칸 배치와 첫 자료 줄(0부터) — 머리글은 맨 위 6줄 안에 있다.
+ * 통째로 훑기(prpScanTab_)와 열쇠로 찾기(prpScanTabByKey_)가 같은 판단을 쓰게 하나로 둔다.
+ */
+function prpTabLayout_(tab, head) {
+  //  전용양식·전용발주 마감은 칸 배치가 다르다 — 이름에 「전용」이 있고 「이슈」 머리글이 있을 때만 그 배치로 (2026-10-28)
+  var ex = /전용/.test(String(tab.getName() || "")) ? prpFindExclusiveHeaderRow_(head) : -1;
+  if (ex >= 0) return { cols: prpMapExclusiveCols_(head[ex]), start: ex + 1 };
+  var hi = prpFindOrderHeaderRow_(head);
+  var start = hi + 1;
+  if (hi >= 3) start = Math.max(start, 4);
+  return { cols: prpMapOrderCols_(head[hi]), start: start };
+}
+
+/**
+ * ★ 열쇠 칸만 먼저 읽는다 ★  (2026-10-28)
+ * > 사장님: "두 가지 다 고쳐줘" (업체 화면 송장 찾기가 30~58초)
+ *
+ * 탭 전체(줄 수 × 20칸)를 보이는 글자로 읽던 것을 12달 + 전용 탭만큼 되풀이해 느렸다.
+ * 머리글 6줄 → 송장(또는 고유ID·적요) 칸만 → 맞은 줄만 통째로. 고르는 규칙(맞나)과 칸 배치는 그대로다.
+ * 열들(cols) — 맞나가 보는 칸 번호들. 그 밖의 칸은 비어 있는 줄로 맞나에 넘긴다.
+ */
+function prpScanTabByKey_(tab, source, out, 열들, 맞나) {
+  if (!tab) return;
+  var last = tab.getLastRow();
+  if (last < 2) return;
+  var lc = Math.max(Math.min(tab.getLastColumn(), 20), 15);
+  var head, lay, keys, lo, hi, block;
+  try {
+    head = tab.getRange(1, 1, Math.min(last, 6), lc).getDisplayValues();
+    lay = prpTabLayout_(tab, head);
+    keys = 열들(lay.cols).filter(function (c) { return c >= 0 && c < lc; });
+    if (!keys.length || lay.start >= last) return;
+    lo = Math.min.apply(null, keys);
+    hi = Math.max.apply(null, keys);
+    block = tab.getRange(lay.start + 1, lo + 1, last - lay.start, hi - lo + 1).getDisplayValues();
+  } catch (e) { return; }
+  var hits = [];
+  for (var i = 0; i < block.length; i++) {
+    var row = new Array(lc);
+    for (var c = lo; c <= hi; c++) row[c] = block[i][c - lo];
+    if (맞나(row, lay.cols)) hits.push(i);
+  }
+  if (!hits.length) return;
+  //  맞은 줄이 몇 안 되면 한 줄씩, 많으면(합포장이 길게) 그 사이를 한 번에
+  var rows;
+  try {
+    if (hits.length <= 10) {
+      rows = hits.map(function (k) { return tab.getRange(lay.start + 1 + k, 1, 1, lc).getDisplayValues()[0]; });
+    } else {
+      var a = hits[0], b = hits[hits.length - 1];
+      var span = tab.getRange(lay.start + 1 + a, 1, b - a + 1, lc).getDisplayValues();
+      rows = hits.map(function (k) { return span[k - a]; });
+    }
+  } catch (e2) { return; }
+  for (var j = 0; j < rows.length; j++) out.push(prpRowToMatch_(rows[j], lay.cols, source));
+}
+
 function prpScanTabForUid_(tab, want, source, out) {
-  prpScanTab_(tab, source, out, function (row, cols) {
+  prpScanTabByKey_(tab, source, out, function (cols) { return [cols.uid, cols.note]; }, function (row, cols) {
     return prpRowMatchesUid_(row, cols, want);
   });
 }
 
 /** 송장번호로 고른다 — 숫자만 견준다 (하이픈·공백이 제각각이다) */
 function prpScanTabForInvoice_(tab, wantDigits, source, out) {
-  prpScanTab_(tab, source, out, function (row, cols) {
+  prpScanTabByKey_(tab, source, out, function (cols) { return [cols.inv]; }, function (row, cols) {
     if (cols.inv < 0) return false;
     var d = prpDigits_(row[cols.inv]);
     return !!(d && wantDigits && d === wantDigits);
