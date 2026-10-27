@@ -162,7 +162,7 @@ header('Content-Type: application/json; charset=utf-8');
     올렸는지 «짐작»하지 않으려고 둔다. 모든 응답 머리에 실린다 —
     올리고 나서 이 값이 안 바뀌면 다른 자리에 올라간 것이다.
     [[ops-tab-carries-the-build-number]] 와 같은 뜻이다. */
-header('X-Relay-Build: 20261027-channel-fields');
+header('X-Relay-Build: 20261027-product-create-c');
 
 /** 오류를 사방넷 응답과 «같은 모양» 으로 돌려준다 — 부르는 쪽이 한 갈래로 읽게 */
 function fail($http, $code, $msg) {
@@ -369,9 +369,32 @@ if ($key === 'POST /v3/sb/order') {
     upsert 는 상품 «전체»를 덮어쓸 수 있는 API 다. 상세설명 14,853자까지 들어 있는
     물건이라, 몸통을 잘못 만들면 상품이 통째로 망가진다.
 
-    그래서 이 길로는 «두 칸만» 지나가게 한다 —
-      customProductCode · productSupplyStatusCode
-    그 밖의 칸이 하나라도 섞여 있으면 막는다. 상태값도 둘만 받는다.
+    그래서 이 길은 «두 갈래»로만 열어 둔다.
+
+    ① 품절 갈래 — customProductCode · productSupplyStatusCode «두 칸만». 200건까지.
+       이미 있는 상품의 파는가/안 파는가만 바꾼다. 상태값도 둘만 받는다.
+
+    ② 등록 갈래 — 2026-10-27. 사장님 「상세페이지 올리는데 이게 상품등록까지 안되는건가?」
+       사방넷에 «없는» 품목을 새로 만든다(자체상품코드가 없으면 I, 있으면 U).
+       필수 16칸을 «정확히» 받는다. 하나라도 빠지거나 하나라도 더 오면 막는다.
+
+       ★ 한 번에 한 건 ★ 등록은 사람이 눈으로 보며 하나씩 한다. 묶음으로 나가는
+         길을 아예 안 낸다 — 틀린 몸통이 200건을 한꺼번에 망치는 자리를 없앤다.
+       ★ optionInfo 는 «RESET 만» 받는다 ★  (2026-10-27 저녁에 고쳤다)
+         처음에는 아예 안 받았는데, 운영계가 등록을 거절했다 —
+           results[{ mode:"I", errorMessage:"[재고관리사용여부] 필수 입력" }]
+         규격의 「필수 16칸」은 **샌드박스에서 가려낸 것**이라 운영계 등록에는 모자랐다.
+         재고관리사용여부(stockUseYn)는 optionInfo 안에 있다.
+
+         그래서 열되, 함정만 막는다:
+           optionEditCode 는 **RESET 만** 받는다. MODIFIABLE 은 기존 단품을 전부
+           지우고 다시 만든다 — 혹시 그 코드가 이미 있으면(U) 옵션이 전멸한다.
+           RESET 은 optionDetailName 으로 찾아 그것만 고치고 나머지는 둔다.
+         options 는 5개까지, 칸도 정해진 것만 받는다.
+       ★ 이미 있는 코드인지는 여기서 모른다 ★ 그건 v2 가 보내기 «전에» GET 으로 본다.
+         여기서 보는 것은 «몸통의 모양»이다. 둘 다 있어야 한다.
+
+    두 갈래를 한 몸통에 섞지 못한다 — 섞이면 어느 울타리로 볼지 갈라진다.
 
     ★ 부르는 쪽을 믿지 않는다 ★ v2 가 맞게 만들어도 여기서 한 번 더 본다.
       화면이 바뀌거나 누가 손으로 부를 때 이 울타리만 남는다. */
@@ -391,6 +414,167 @@ if ($key === 'POST /v3/sb/product/upsert') {
     }
     $둘 = ['customProductCode' => true, 'productSupplyStatusCode' => true];
     $상태 = ['IN_SUPPLY' => true, 'OUT_OF_STOCK' => true];
+
+    /*  ★ 등록 갈래의 필수 16칸 ★ (규격 「필수 칸 16개 — 한 칸씩 빼 보며 가려냈다」)
+        값의 «모양»을 함께 적어 둔다. 여기 없는 이름은 통과 못 한다. */
+    $등록칸 = [
+        'productName'              => '글',   'customProductCode'       => '코드',
+        'productDivisionCode'      => '갈래', 'myCategoryCodeL'         => '분류',
+        'myCategoryCodeM'          => '분류', 'myCategoryCodeS'         => '분류',
+        'manufacturerName'         => '글',   'originName'              => '글',
+        'productTargetCode'        => '글',   'productSupplyStatusCode' => '상태',
+        'deliveryCostCode'         => '글',   'taxCode'                 => '글',
+        'costPrice'                => '돈',   'sellingPrice'            => '돈',
+        'consumerPrice'            => '돈',   'productDetailDescription' => '긴글',
+        /*  ★ 운영계가 더 달라고 한 것 ★ 아래에서 따로 본다.
+            규격의 「필수 16칸」은 샌드박스에서 가려낸 것이라 운영계 등록에는 모자랐다.
+            거절 글을 하나씩 받아 가며 늘렸다 (2026-10-27):
+              [재고관리사용여부] 필수 입력      → optionInfo
+              상품이미지 정보가 존재하지 않습니다. [필수]대표이미지 → imageInfo        */
+        'optionInfo'               => '옵션',
+        'imageInfo'                => '사진',
+        'attributeInfo'            => '고시',
+    ];
+    /*  사진 한 줄 · 고시 한 줄에 받을 칸 */
+    $사진칸 = ['imageSrno' => true, 'imagePath' => true];
+    $고시칸 = ['attributeClassificationCode' => true, 'attributeSrno' => true, 'attributeText' => true];
+    /*  옵션 한 줄에 받을 칸 — 이 밖은 막는다 */
+    $옵션칸 = ['optionName' => true, 'optionDetailName' => true, 'stockQuantity' => true,
+               'safetyStockQuantity' => true, 'optionSupplyStatusCode' => true,
+               'additionalAmount' => true, 'barcode' => true, 'ea' => true];
+
+    /*  갈래를 «첫 줄»로 정하고, 나머지 줄도 같은 갈래인지 본다 */
+    $첫 = $body['products'][0];
+    if (!is_array($첫)) fail(400, 'RELAY_STOCK_GUARD', '1번째 줄이 객체가 아닙니다.');
+    $등록인가 = false;
+    foreach (array_keys($첫) as $k0) { if (!isset($둘[$k0])) { $등록인가 = true; break; } }
+
+    if ($등록인가) {
+        /*  ══ 등록 갈래 ══ */
+        if (count($body['products']) !== 1) {
+            fail(400, 'RELAY_STOCK_GUARD', '등록은 한 번에 한 건만 보냅니다 (' . count($body['products']) . '건).');
+        }
+        $p = $첫;
+        foreach (array_keys($p) as $k) {
+            if (!isset($등록칸[$k])) {
+                fail(400, 'RELAY_STOCK_GUARD',
+                     '등록에 허용되지 않은 칸이 있습니다: ' . $k
+                   . ' — 필수 16칸만 보냅니다 (optionInfo 는 옵션을 전멸시켜 영영 안 받습니다).');
+            }
+        }
+        /*  ★ 없어도 되는 칸 ★ optionInfo·imageInfo·attributeInfo 는 «있으면 모양을 본다».
+            꼭 있어야 하는지는 사방넷이 정한다 — 우리가 한 겹 더 막아 봐야 거절 글만 가린다. */
+        $없어도됨 = ['optionInfo' => true, 'imageInfo' => true, 'attributeInfo' => true];
+        foreach (array_keys($등록칸) as $k) {
+            if (!array_key_exists($k, $p) && !isset($없어도됨[$k])) {
+                fail(400, 'RELAY_STOCK_GUARD', '등록에 빠진 칸이 있습니다: ' . $k . ' — 필수 16칸을 다 보내야 합니다.');
+            }
+        }
+        foreach ($등록칸 as $k => $꼴) {
+            if (!array_key_exists($k, $p)) continue;   // 위에서 «없어도 됨»으로 통과한 칸
+            $v = $p[$k];
+            if ($꼴 === '옵션') {
+                if (!is_array($v)) fail(400, 'RELAY_STOCK_GUARD', 'optionInfo 가 객체가 아닙니다.');
+                foreach (array_keys($v) as $ok) {
+                    if ($ok !== 'stockUseYn' && $ok !== 'optionEditCode' && $ok !== 'options') {
+                        fail(400, 'RELAY_STOCK_GUARD', 'optionInfo 에 허용되지 않은 칸이 있습니다: ' . $ok);
+                    }
+                }
+                $use = isset($v['stockUseYn']) ? (string)$v['stockUseYn'] : '';
+                if ($use !== 'Y' && $use !== 'N') {
+                    fail(400, 'RELAY_STOCK_GUARD', 'optionInfo.stockUseYn 은 Y · N 만 됩니다: ' . $use);
+                }
+                /*  ★ 여기가 이 울타리의 심장이다 ★ MODIFIABLE 은 옵션을 전멸시킨다 */
+                $ed = isset($v['optionEditCode']) ? (string)$v['optionEditCode'] : '';
+                if ($ed !== 'RESET') {
+                    fail(400, 'RELAY_STOCK_GUARD',
+                         'optionInfo.optionEditCode 는 RESET 만 됩니다 (받은 값: ' . $ed . ')'
+                       . ' — MODIFIABLE 은 그 상품의 단품을 전부 지우고 다시 만듭니다.');
+                }
+                $ops = isset($v['options']) ? $v['options'] : null;
+                if (!is_array($ops) || count($ops) === 0) {
+                    fail(400, 'RELAY_STOCK_GUARD', 'optionInfo.options 가 비었습니다.');
+                }
+                if (count($ops) > 5) {
+                    fail(400, 'RELAY_STOCK_GUARD', 'optionInfo.options 는 5개까지입니다 (' . count($ops) . '개).');
+                }
+                foreach ($ops as $oi => $o) {
+                    if (!is_array($o)) fail(400, 'RELAY_STOCK_GUARD', ($oi + 1) . '번째 옵션이 객체가 아닙니다.');
+                    foreach (array_keys($o) as $okk) {
+                        if (!isset($옵션칸[$okk])) {
+                            fail(400, 'RELAY_STOCK_GUARD', ($oi + 1) . '번째 옵션에 허용되지 않은 칸이 있습니다: ' . $okk);
+                        }
+                    }
+                    $dn = isset($o['optionDetailName']) ? trim((string)$o['optionDetailName']) : '';
+                    if ($dn === '') {
+                        fail(400, 'RELAY_STOCK_GUARD', ($oi + 1) . '번째 옵션에 optionDetailName 이 없습니다 — RESET 이 이 이름으로 찾습니다.');
+                    }
+                }
+                continue;
+            }
+            if ($꼴 === '사진') {
+                if (!is_array($v) || count($v) === 0) {
+                    fail(400, 'RELAY_STOCK_GUARD', 'imageInfo 가 비었습니다 — 사방넷은 대표이미지를 꼭 받습니다.');
+                }
+                if (count($v) > 20) fail(400, 'RELAY_STOCK_GUARD', 'imageInfo 는 20장까지입니다 (' . count($v) . '장).');
+                $대표 = false;
+                foreach ($v as $ii => $im) {
+                    if (!is_array($im)) fail(400, 'RELAY_STOCK_GUARD', ($ii + 1) . '번째 사진이 객체가 아닙니다.');
+                    foreach (array_keys($im) as $ik) {
+                        if (!isset($사진칸[$ik])) fail(400, 'RELAY_STOCK_GUARD', ($ii + 1) . '번째 사진에 허용되지 않은 칸: ' . $ik);
+                    }
+                    $srno = isset($im['imageSrno']) ? trim((string)$im['imageSrno']) : '';
+                    $path = isset($im['imagePath']) ? trim((string)$im['imagePath']) : '';
+                    if (!preg_match('/^[0-9]{1,2}$/', $srno)) {
+                        fail(400, 'RELAY_STOCK_GUARD', ($ii + 1) . '번째 사진의 imageSrno 가 숫자가 아닙니다: ' . $srno);
+                    }
+                    /*  ★ https 주소만 ★ 몰이 http 를 막기도 하고, 주소가 아니면 사방넷이 조용히 버린다 */
+                    if (!preg_match('#^https://[^\s"\']+$#', $path)) {
+                        fail(400, 'RELAY_STOCK_GUARD', ($ii + 1) . '번째 사진의 imagePath 가 https 주소가 아닙니다: ' . mb_substr($path, 0, 60));
+                    }
+                    if ($srno === '1') $대표 = true;
+                }
+                if (!$대표) fail(400, 'RELAY_STOCK_GUARD', '대표이미지(imageSrno 1)가 없습니다.');
+                continue;
+            }
+            if ($꼴 === '고시') {
+                if (!is_array($v)) fail(400, 'RELAY_STOCK_GUARD', 'attributeInfo 가 배열이 아닙니다.');
+                if (count($v) > 50) fail(400, 'RELAY_STOCK_GUARD', 'attributeInfo 는 50줄까지입니다.');
+                foreach ($v as $ai => $at) {
+                    if (!is_array($at)) fail(400, 'RELAY_STOCK_GUARD', ($ai + 1) . '번째 고시가 객체가 아닙니다.');
+                    foreach (array_keys($at) as $ak) {
+                        if (!isset($고시칸[$ak])) fail(400, 'RELAY_STOCK_GUARD', ($ai + 1) . '번째 고시에 허용되지 않은 칸: ' . $ak);
+                    }
+                }
+                continue;
+            }
+            if ($꼴 === '돈') {
+                if (!is_numeric($v) || (int)$v < 0 || (int)$v > 100000000) {
+                    fail(400, 'RELAY_STOCK_GUARD', $k . ' 가 돈이 아닙니다: ' . var_export($v, true));
+                }
+                continue;
+            }
+            $g = trim((string)$v);
+            if ($g === '') fail(400, 'RELAY_STOCK_GUARD', $k . ' 가 비었습니다. 필수 칸은 빈 값으로 못 보냅니다.');
+            if ($꼴 === '분류' && !preg_match('/^[A-Z][0-9]{1,4}$/', $g)) {
+                fail(400, 'RELAY_STOCK_GUARD', $k . ' 모양이 이상합니다(A05·B47·C02 꼴): ' . $g);
+            }
+            if ($꼴 === '상태' && !isset($상태[$g])) {
+                fail(400, 'RELAY_STOCK_GUARD', 'productSupplyStatusCode 가 IN_SUPPLY · OUT_OF_STOCK 이 아닙니다: ' . $g);
+            }
+            /*  상품구분은 우리가 쓰는 두 가지만 — 위탁(CONSIGN)·사입(PURCHASE) */
+            if ($k === 'productDivisionCode' && $g !== 'PURCHASE' && $g !== 'CONSIGN') {
+                fail(400, 'RELAY_STOCK_GUARD', 'productDivisionCode 는 PURCHASE · CONSIGN 만 됩니다: ' . $g);
+            }
+            if ($꼴 === '글' && mb_strlen($g, 'UTF-8') > 200) {
+                fail(400, 'RELAY_STOCK_GUARD', $k . ' 이 너무 깁니다 (' . mb_strlen($g, 'UTF-8') . '자, 200자까지).');
+            }
+            if ($꼴 === '긴글' && strlen($g) > 2 * 1024 * 1024) {
+                fail(400, 'RELAY_STOCK_GUARD', 'productDetailDescription 이 2MB 를 넘습니다.');
+            }
+        }
+    } else {
+    /*  ══ 품절 갈래 ══ (2026-10-22 부터 돌던 그대로) */
     foreach ($body['products'] as $i => $p) {
         if (!is_array($p)) {
             fail(400, 'RELAY_STOCK_GUARD', ($i + 1) . '번째 줄이 객체가 아닙니다.');
@@ -399,7 +583,8 @@ if ($key === 'POST /v3/sb/product/upsert') {
             if (!isset($둘[$k])) {
                 fail(400, 'RELAY_STOCK_GUARD',
                      ($i + 1) . '번째 줄에 허용되지 않은 칸이 있습니다: ' . $k
-                   . ' — 이 길로는 customProductCode 와 productSupplyStatusCode 만 보냅니다.');
+                   . ' — 품절·판매중 갈래로는 customProductCode 와 productSupplyStatusCode 만 보냅니다'
+                   . ' (등록 갈래는 필수 16칸을 한 건으로 보냅니다).');
             }
         }
         $code = isset($p['customProductCode']) ? trim((string)$p['customProductCode']) : '';
@@ -411,6 +596,7 @@ if ($key === 'POST /v3/sb/product/upsert') {
             fail(400, 'RELAY_STOCK_GUARD',
                  ($i + 1) . '번째 줄의 상태값이 IN_SUPPLY · OUT_OF_STOCK 이 아닙니다: ' . $st);
         }
+    }
     }
 }
 
