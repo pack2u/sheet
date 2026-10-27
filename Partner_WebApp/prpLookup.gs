@@ -227,26 +227,30 @@ function prpTabLayout_(tab, head) {
  */
 function prpScanTabByKey_(tab, source, out, 열들, 맞나, 종류) {
   if (!tab) return;
-  var last = tab.getLastRow();
-  if (last < 2) return;
-  var lc = Math.max(Math.min(tab.getLastColumn(), 20), 15);
-  var lay, lo, hi, block;
-  //  닫힌 달 탭이면 열쇠 칸을 메모리에서 (prpKeyColsCache_) — 맞은 줄은 아래에서 늘 시트로 새로 읽는다
-  var 열쇠 = prpKeyColsCacheKey_(tab, 종류, last, lc);
+  var lay, lo, hi, block, lc;
+  /*  닫힌 달 탭이면 열쇠 칸을 메모리에서 — 메모리에 있으면 탭을 «건드리지도» 않는다(getLastRow 조차).
+      10/28 재 보니 수식 많은 업체 파일은 탭을 건드리기만 해도 탭마다 4~6초(14탭 66초). 칸 한 줄만 읽어도 같았다.
+      그래서 메모리 열쇠에 줄 수를 넣지 않는다 — 대신 «못 찾으면» 책 전체를 새로 읽어 한 번 더 본다(prpScanVendorBook_). */
+  var 열쇠 = PRP_KEYCACHE_LIVE_ ? "" : prpKeyColsCacheKey_(tab, 종류);
   var hit = 열쇠 ? prpCacheGetJson_(열쇠) : null;
+  if (hit && hit.empty) return;
   if (hit && hit.block && hit.lay) {
-    lay = hit.lay; lo = hit.lo; hi = hit.hi; block = hit.block;
+    lay = hit.lay; lo = hit.lo; hi = hit.hi; block = hit.block; lc = hit.lc;
   } else {
+    var 담을 = PRP_KEYCACHE_LIVE_ ? prpKeyColsCacheKey_(tab, 종류) : 열쇠;   // 새로 읽은 판으로 메모리를 갈아 둔다
+    var last = tab.getLastRow();
+    lc = Math.max(Math.min(tab.getLastColumn(), 20), 15);
     try {
+      if (last < 2) { if (담을) prpCachePutJson_(담을, { empty: true }, PRP_KEYCOL_CACHE_SEC_); return; }
       var head = tab.getRange(1, 1, Math.min(last, 6), lc).getDisplayValues();
       lay = prpTabLayout_(tab, head);
       var keys = 열들(lay.cols).filter(function (c) { return c >= 0 && c < lc; });
-      if (!keys.length || lay.start >= last) return;
+      if (!keys.length || lay.start >= last) { if (담을) prpCachePutJson_(담을, { empty: true }, PRP_KEYCOL_CACHE_SEC_); return; }
       lo = Math.min.apply(null, keys);
       hi = Math.max.apply(null, keys);
       block = tab.getRange(lay.start + 1, lo + 1, last - lay.start, hi - lo + 1).getDisplayValues();
     } catch (e) { return; }
-    if (열쇠) prpCachePutJson_(열쇠, { lay: lay, lo: lo, hi: hi, block: block }, PRP_KEYCOL_CACHE_SEC_);
+    if (담을) prpCachePutJson_(담을, { lay: lay, lo: lo, hi: hi, block: block, lc: lc }, PRP_KEYCOL_CACHE_SEC_);
   }
   var hits = [];
   for (var i = 0; i < block.length; i++) {
@@ -296,9 +300,10 @@ function prpScanTabForInvoice_(tab, wantDigits, source, out) {
    ══════════════════════════════════════════════════════════════ */
 var PRP_KEYCOL_CACHE_SEC_ = 21600;   // 6시간 (CacheService 최대)
 var PRP_RESULT_CACHE_SEC_ = 600;     // 10분
+var PRP_KEYCACHE_LIVE_ = false;      // true 면 ① 메모리를 안 믿고 탭을 새로 읽는다 (못 찾았을 때 다시 보는 판)
 
 /** 닫힌 달 탭(「(YYYY년 M월) …마감」 중 이번 달보다 앞)일 때만 열쇠를 준다 */
-function prpKeyColsCacheKey_(tab, 종류, last, lc) {
+function prpKeyColsCacheKey_(tab, 종류) {
   if (!종류) return "";
   try {
     var nm = String(tab.getName() || "");
@@ -306,7 +311,7 @@ function prpKeyColsCacheKey_(tab, 종류, last, lc) {
     if (!m) return "";
     var now = typeof prpNow_ === "function" ? prpNow_() : new Date();
     if (Number(m[1]) * 12 + Number(m[2]) >= now.getFullYear() * 12 + now.getMonth() + 1) return "";
-    return "kc|" + tab.getParent().getId() + "|" + nm + "|" + 종류 + "|" + last + "|" + lc;
+    return "kc2|" + tab.getParent().getId() + "|" + nm + "|" + 종류;
   } catch (e) { return ""; }
 }
 
@@ -544,6 +549,16 @@ function prpScanVendorBook_(sess, 훑기, 결과열쇠) {
     seen[k] = true;
     uniq.push(r);
   }
+  /*  ★ 메모리만 보고 「없다」고 하지 않는다 ★ 닫힌 달 메모리에는 그 뒤 붙은 줄이 없을 수 있다.
+      열쇠로 찾는 길(결과열쇠)에서 못 찾았으면 메모리를 끄고 한 번 더 — 느리지만 「없다」는 답은 시트가 준다. */
+  if (rk && !uniq.length && !PRP_KEYCACHE_LIVE_) {
+    PRP_KEYCACHE_LIVE_ = true;
+    try {
+      var again = prpScanVendorBook_(sess, 재며, 결과열쇠);
+      again.timing = { first: { open: tOpen, ms: Date.now() - t0, tabs: 탭시간 }, live: again.timing };
+      return again;
+    } finally { PRP_KEYCACHE_LIVE_ = false; }
+  }
   if (rk && uniq.length) prpCachePutJson_(rk, uniq, PRP_RESULT_CACHE_SEC_);
   //  어디서 시간이 드나 — 화면은 안 쓰고 재는 사람이 본다
   return { ok: true, matches: uniq, timing: { open: tOpen, ms: Date.now() - t0, tabs: 탭시간 } };
@@ -568,7 +583,7 @@ function prpLookupByUid(sid, uidRaw) {
       return {
         ok: false,
         error: "최근 " + PRP_LOOKUP_MONTHS_ + "개월 발주 마감에서 이 고유아이디를 찾지 못했습니다.",
-        matches: []
+        matches: [], timing: res.timing
       };
     }
     return { ok: true, uid: uid, matches: res.matches, timing: res.timing };
@@ -601,7 +616,7 @@ function prpLookupByInvoice(sid, invRaw) {
       return {
         ok: false,
         error: "최근 " + PRP_LOOKUP_MONTHS_ + "개월 발주 마감에서 이 송장번호를 찾지 못했습니다.",
-        matches: []
+        matches: [], timing: res.timing
       };
     }
     return { ok: true, invoice: prpFormatInvoice_(invRaw), matches: res.matches, timing: res.timing };
