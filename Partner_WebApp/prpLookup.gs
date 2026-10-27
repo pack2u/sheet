@@ -6,7 +6,8 @@
  *    1. 「(YYYY년 M월) 발주 마감」 최근 몇 달
  *    2. 「발주 및 송장조회」 — 아직 마감 안 된 건
  *
- *  전용양식·전용발주 마감은 대리공급 양식이라 여기서 보지 않는다.
+ *    3. 「(YYYY년 M월) 전용발주 마감」·「전용양식」 — 전용발주 업체. 송장으로만 찾는다 (2026-10-28, prpMapExclusiveCols_)
+ *       (전에는 «대리공급 양식이라» 안 봤다 — 그래서 냅킨코리아 전용발주 송장이 조회에서 안 나왔다)
  *  배포파일을 전부 열어 B5 를 대조하지 않는다 — 파일명으로 고른다.
  *
  *  열 매핑은 허브 `_pms_orderArchiveCols_` 와 같다.
@@ -21,6 +22,8 @@ var PRP_VENDOR_FOLDER_IDS_ = [
 var PRP_VENDOR_FILE_PREFIX_ = "[협력업체]";
 var PRP_ORDER_TAB_NAME_ = "발주 및 송장조회";
 var PRP_ARCHIVE_TAB_SUFFIX_ = "발주 마감";
+var PRP_EXCLUSIVE_ARCHIVE_SUFFIX_ = "전용발주 마감";   // 「(2026년 10월) 전용발주 마감」 (2026-10-28)
+var PRP_EXCLUSIVE_TAB_NAME_ = "전용양식";
 /*  ★ 6 → 12 ★  (2026-09-20)
     > "12개월로 늘린다"
     조회에서 안 나오면 업체는 손으로 적는다. 손으로 적은 건이 곧 「출처 미확인」이
@@ -108,6 +111,49 @@ function prpMapOrderCols_(hdr) {
   return cols;
 }
 
+/**
+ * ══ 전용양식 · (YYYY년 M월) 전용발주 마감 ══   (2026-10-28)
+ * > 사장님: "냅킨코리아 전용발주 송장은 A열이야"
+ *
+ * 전용 탭은 그 업체 택배사 양식이라 「발주 및 송장조회」와 칸 배치가 다르다. 세 업체(냅킨코리아·제이엠·태양)를 열어 보니 —
+ *   전용양식            A 송장번호 · B 이슈 · …            (머리글 「송장번호」가 있다)
+ *   전용발주 마감(달마다) A 마감 시각 · B 송장 · C 이슈 · …  (A·B 머리글이 비어 있다 — 마감이 앞에 시각 칸을 붙인다)
+ *   → 송장은 「송장번호」 머리글, 없으면 «「이슈」 바로 왼쪽». 자리(A·B)로 박지 않는다 — 양식이 한 칸 밀려도 따라간다.
+ *   v2 일일마감과 맞대 확인: 냅킨코리아 10월 마감 B열 260000391615 = 일일마감 그 송장(중앙즉석닭발).
+ * 받는 분·전화·품목 머리글은 업체마다 다르다(받는사람/수화주명/고객명 · 상품명/품명/품목명). 못 찾으면 비워 둔다 — 지어내지 않는다.
+ * 고유ID 칸이 없다 — 고유ID 로는 안 걸리고(uid·note = -1) 송장으로만 찾는다.
+ */
+function prpFindExclusiveHeaderRow_(all) {
+  var max = Math.min(all ? all.length : 0, 6);
+  for (var i = 0; i < max; i++) {
+    var row = all[i] || [];
+    for (var j = 0; j < row.length; j++) if (String(row[j] || "").replace(/\s/g, "") === "이슈") return i;
+  }
+  return -1;
+}
+
+function prpMapExclusiveCols_(hdr) {
+  function find(re) {
+    for (var j = 0; j < (hdr || []).length; j++) if (re.test(String(hdr[j] || "").replace(/\s/g, ""))) return j;
+    return -1;
+  }
+  var inv = find(/^송장번호$|^운송장번호$/);
+  var issue = find(/^이슈$/);
+  if (inv < 0 && issue > 0) inv = issue - 1;
+  //  마감 탭은 송장 왼쪽이 마감 시각이다 — 머리글이 빈 칸일 때만 날짜로 본다
+  var date = inv > 0 && !String((hdr || [])[inv - 1] || "").trim() ? inv - 1 : -1;
+  return {
+    inv: inv,
+    uid: -1,
+    note: -1,
+    name: find(/^받는사람$|^수화주명$|^고객명$|^수취인$|^받는분$/),
+    phone: find(/^전화번호$|^수하인번호$|^수화주전화1?$|^수취인전화(번호)?$/),
+    item: find(/^상품명$|^품명$|^품목명$/),
+    qty: find(/^수량$|^박스수량$/),
+    date: date
+  };
+}
+
 function prpRowMatchesUid_(row, cols, want) {
   var key = prpUidNorm_(want);
   if (!key || !row || !cols) return false;
@@ -146,6 +192,16 @@ function prpScanTab_(tab, source, out, 맞나) {
   var all;
   try { all = tab.getRange(1, 1, tab.getLastRow(), lc).getDisplayValues(); }
   catch (e) { return; }
+  //  전용양식·전용발주 마감은 칸 배치가 다르다 — 이름에 「전용」이 있고 「이슈」 머리글이 있을 때만 그 배치로 (2026-10-28)
+  var ex = /전용/.test(String(tab.getName() || "")) ? prpFindExclusiveHeaderRow_(all) : -1;
+  if (ex >= 0) {
+    var exCols = prpMapExclusiveCols_(all[ex]);
+    for (var k = ex + 1; k < all.length; k++) {
+      if (!맞나(all[k], exCols)) continue;
+      out.push(prpRowToMatch_(all[k], exCols, source));
+    }
+    return;
+  }
   var hi = prpFindOrderHeaderRow_(all);
   var cols = prpMapOrderCols_(all[hi]);
   var start = hi + 1;
@@ -352,6 +408,16 @@ function prpScanVendorBook_(sess, 훑기) {
 
   var live = ss.getSheetByName(PRP_ORDER_TAB_NAME_);
   if (live) 훑기(live, PRP_ORDER_TAB_NAME_, matches);
+
+  //  전용발주 업체(냅킨코리아·제이엠·태양 …) — 「전용발주 마감」 달 탭 + 아직 마감 안 된 「전용양식」 (2026-10-28)
+  //  칸 배치는 prpScanTab_ 가 탭 이름·「이슈」 머리글로 알아본다. 없는 업체는 getSheetByName 이 null 이라 지나간다.
+  for (var e = 0; e < monthNames.length; e++) {
+    var exName = monthNames[e].replace(PRP_ARCHIVE_TAB_SUFFIX_, PRP_EXCLUSIVE_ARCHIVE_SUFFIX_);
+    var exArch = ss.getSheetByName(exName);
+    if (exArch) 훑기(exArch, exName, matches);
+  }
+  var exLive = ss.getSheetByName(PRP_EXCLUSIVE_TAB_NAME_);
+  if (exLive) 훑기(exLive, PRP_EXCLUSIVE_TAB_NAME_, matches);
 
   var seen = {};
   var uniq = [];
