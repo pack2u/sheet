@@ -140,6 +140,63 @@ function _cs_attSafeName_(s) {
 }
 
 /**
+ * 올린 사진을 «적는다» — 첨부 로그 탭 한 줄씩 + 대장 비고에 「사진 첨부 N장 · 말 주소…」 한 줄.  (2026-10-28 뗐다)
+ * > 사장님: "사진 붙이기랑 합포장 품목 고르기도 해줘"
+ * 이 웹앱 csAttachReturnPhotos(올리기 → 적기)와 v2 주문·송장 「반품대장 기록」(v2 가 이미 보관소에 올림 →
+ * csIntakeBridge.gs _cib_ledgerQueue_ 가 적기만)이 같은 함수를 탄다 — 비고 사진 줄 모양의 주인은 여기 하나.
+ * @param {Object} ctx _cs_openReturnLedgerRow_ 결과
+ * @param {Array} saved [{fileName, url}]
+ * @return {string} 바뀐 비고
+ */
+function _cs_attRecord_(ctx, tabName, rowNum, staff, who, saved, memoIn) {
+  var nowText = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
+  var logRows = [];
+  for (var s = 0; s < saved.length; s++) {
+    logRows.push([nowText, staff, tabName, rowNum, who, saved[s].fileName, saved[s].url]);
+  }
+  try {
+    var logTab = _cs_ensureAttTab_();
+    logTab.getRange(logTab.getLastRow() + 1, 1, logRows.length, _CS_ATT_HEADER_.length)
+      .setValues(logRows);
+  } catch (eLog) {
+    Logger.log("[CS_ATTACH] 로그 탭 기록 실패: " + eLog.message);
+  }
+
+  // 타임라인에 사진 카드로 보이게 N열에 한 줄로 남긴다
+  var notice = ctx.col.notice >= 0 ? String(ctx.row[ctx.col.notice] || "").trim() : "";
+  if (ctx.col.notice >= 0) {
+    var urls = [];
+    for (var u = 0; u < saved.length; u++) urls.push(saved[u].url);
+    /*  ★ 사진에 같이 남긴 말 ★  (2026-10-07)
+        > "반품카드 사진 올릴때 글도 같이 올릴수 있게 해줘"
+
+        ★ 주소 «앞»에 넣는다 ★ 이 자리가 중요하다 —
+          화면은 사진 카드의 설명을 「줄에서 주소만 걷어낸 나머지」로 만든다
+          (home.html procPhotoHtml 의 caption). 뒤에 붙이면 주소가 가운데
+          끼어 설명이 둘로 갈린다. 앞에 두면 지금 있는 파서·그림이 그대로 받는다.
+
+        ★ 줄바꿈은 빈칸으로 ★ 비고는 «한 줄 = 한 이력»이다. 여러 줄로 적으면
+          뒷줄이 제 이력 카드가 되어 사진과 갈려 선다.
+          「|」도 뺀다 — 포털·v2 가 칸을 가르는 데 쓰는 글자다.          */
+    var memo = String(memoIn || "")
+      .replace(/[\r\n\t]+/g, " ")
+      .replace(/\|/g, "／")
+      .replace(/\s+/g, " ")
+      .trim()
+      .substring(0, 300);
+    notice = _cs_appendNoticeLine_(
+      notice,
+      _cs_ledgerStamp_(staff) + " 사진 첨부 " + saved.length + "장" +
+        (memo ? " · " + memo : ".") + " " + urls.join(" ")
+    );
+    ctx.tab.getRange(rowNum, ctx.col.notice + 1).setValue(notice);
+  }
+
+  csInvalidateReturnLedgerCache_();
+  return notice;
+}
+
+/**
  * 반품 건에 사진 첨부.
  * @param {Object} payload {tab, row, staff, name, photos:[{dataB64, mimeType, name}]}
  * @return {{ok:boolean, files:Array, message:string}}
@@ -269,50 +326,7 @@ function csAttachReturnPhotos(payload) {
       saved.push({ fileId: file.getId(), fileName: fname, url: file.getUrl() });
     }
 
-    var nowText = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
-    var logRows = [];
-    for (var s = 0; s < saved.length; s++) {
-      logRows.push([nowText, staff, tabName, rowNum, who, saved[s].fileName, saved[s].url]);
-    }
-    try {
-      var logTab = _cs_ensureAttTab_();
-      logTab.getRange(logTab.getLastRow() + 1, 1, logRows.length, _CS_ATT_HEADER_.length)
-        .setValues(logRows);
-    } catch (eLog) {
-      Logger.log("[CS_ATTACH] 로그 탭 기록 실패: " + eLog.message);
-    }
-
-    // 타임라인에 사진 카드로 보이게 N열에 한 줄로 남긴다
-    var notice = ctx.col.notice >= 0 ? String(ctx.row[ctx.col.notice] || "").trim() : "";
-    if (ctx.col.notice >= 0) {
-      var urls = [];
-      for (var u = 0; u < saved.length; u++) urls.push(saved[u].url);
-      /*  ★ 사진에 같이 남긴 말 ★  (2026-10-07)
-          > "반품카드 사진 올릴때 글도 같이 올릴수 있게 해줘"
-
-          ★ 주소 «앞»에 넣는다 ★ 이 자리가 중요하다 —
-            화면은 사진 카드의 설명을 「줄에서 주소만 걷어낸 나머지」로 만든다
-            (home.html procPhotoHtml 의 caption). 뒤에 붙이면 주소가 가운데
-            끼어 설명이 둘로 갈린다. 앞에 두면 지금 있는 파서·그림이 그대로 받는다.
-
-          ★ 줄바꿈은 빈칸으로 ★ 비고는 «한 줄 = 한 이력»이다. 여러 줄로 적으면
-            뒷줄이 제 이력 카드가 되어 사진과 갈려 선다.
-            「|」도 뺀다 — 포털·v2 가 칸을 가르는 데 쓰는 글자다.          */
-      var memo = String(payload.memo || "")
-        .replace(/[\r\n\t]+/g, " ")
-        .replace(/\|/g, "／")
-        .replace(/\s+/g, " ")
-        .trim()
-        .substring(0, 300);
-      notice = _cs_appendNoticeLine_(
-        notice,
-        _cs_ledgerStamp_(staff) + " 사진 첨부 " + saved.length + "장" +
-          (memo ? " · " + memo : ".") + " " + urls.join(" ")
-      );
-      ctx.tab.getRange(rowNum, ctx.col.notice + 1).setValue(notice);
-    }
-
-    csInvalidateReturnLedgerCache_();
+    var notice = _cs_attRecord_(ctx, tabName, rowNum, staff, who, saved, payload.memo);
     return {
       ok: true,
       files: saved,

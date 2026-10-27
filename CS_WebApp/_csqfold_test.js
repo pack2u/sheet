@@ -110,7 +110,8 @@ const 주소자리 = 줄짓기.indexOf("urls.join");
 ok("★ 글이 주소 «앞»에 온다", 글자리 > 0 && 주소자리 > 0 && 글자리 < 주소자리,
   "글 " + 글자리 + " · 주소 " + 주소자리);
 
-const 다듬기 = (ATT.match(/var memo = String\(payload\.memo[\s\S]{0,420}?;/) || [""])[0];
+//  2026-10-28 적기는 _cs_attRecord_(…, memoIn) 로 뗐다 — 웹앱 올리기·v2 대장 기록이 같이 쓴다
+const 다듬기 = (ATT.match(/var memo = String\(memoIn[\s\S]{0,420}?;/) || [""])[0];
 ok("글을 다듬는 자리를 찾았다", 다듬기.length > 0);
 ok("★ 줄바꿈을 빈칸으로 바꾼다 (비고는 한 줄 = 한 이력)",
   /\[\\r\\n\\t\]\+/.test(다듬기),

@@ -163,9 +163,32 @@ console.log("\n[⑧] 동영상은 글자 인식을 안 한다");
   const r = ctx._cib_ledgerQueue_();
   check("대장 요청 — 본체로 두 건", got.map((d) => [d.staff, d.force]), [["김진수", false], ["고윤서", true]]);
   check("대장 요청 — 주소는 ledger-queue", posts.map((p) => [p[0], p[1].op]), [["https://v2/api/returns/ledger-queue", "claim"], ["https://v2/api/returns/ledger-queue", "done"]]);
-  check("대장 요청 — 결과를 그대로 돌려준다", posts[1][1].results.map((x) => [x.id, x.success, x.duplicate, x.row, x.sheet]), [["a", false, true, null, ""], ["b", true, false, 57, "202610"]]);
+  check("대장 요청 — 결과를 그대로 돌려준다", posts[1][1].results.map((x) => [x.id, !!x.success, !!x.duplicate, x.row ?? null, x.sheet ?? ""]), [["a", false, true, null, ""], ["b", true, false, 57, "202610"]]);
   check("대장 요청 — 셈", r.n, 2);
   ctx.UrlFetchApp = keepF; ctx._cs_v2_url_ = keepU; ctx._cs_v2_token_ = keepT; ctx._cs_submitReturnLedger_ = keepW; ctx.submitReturnLedger = keepG; }
+
+/*  ★ 합포장 · 사진 (2026-10-28) ★ — home.html submitLedgerMany 와 같은 규칙
+    첫 줄만 중복을 묻고 둘째부터 force · 중간 실패면 거기서 멈추고 몇 건 들어갔나 말함 · 사진은 첫 줄에만 _cs_attRecord_ */
+{ const keepW = ctx._cs_submitReturnLedger_, keepO = ctx._cs_openReturnLedgerRow_, keepA = ctx._cs_attRecord_;
+  let 행 = 56; const got = [], att = [];
+  ctx._cs_submitReturnLedger_ = (d) => { got.push([d.item, d.force, d.type, d.staff]); return d.item === "깨짐" ? { success: false, error: "칸 없음" } : { success: true, row: ++행, sheet: "202610", message: "202610 탭 " + 행 + "행에 기록했습니다." }; };
+  ctx._cs_openReturnLedgerRow_ = (t, r) => ({ tab: t, row: r });
+  ctx._cs_attRecord_ = (c, t, r, staff, who, saved, memo) => { att.push([t, r, staff, who, saved.map((s) => s.url), memo]); return ""; };
+  const r1 = ctx._cib_ledgerOne_({ id: "m", staff: "김진수", force: false, data: { type: "교환", name: "손소희", photos: ["https://p/1.jpg", "javascript:x", "https://p/2.jpg"], photoMemo: "뚜껑 깨짐",
+    items: [{ item: "뚜껑", qty: "1" }, { item: "몸통", qty: "2" }] } });
+  check("합포장 — 품목마다 한 줄, 공통 칸(유형)은 둘 다", got, [["뚜껑", false, "교환", "김진수"], ["몸통", true, "교환", "김진수"]]);
+  check("합포장 — 성공 · 첫 줄 자리", [r1.success, r1.sheet, r1.row], [true, "202610", 57]);
+  check("합포장 — 두 줄을 말한다", r1.message.indexOf("2건 기록") === 0 && r1.message.indexOf("57행·58행") > 0, true);
+  check("사진 — 첫 줄에만, https 만, 말 같이", att, [["202610", 57, "김진수", "손소희", ["https://p/1.jpg", "https://p/2.jpg"], "뚜껑 깨짐"]]);
+  got.length = 0; att.length = 0;
+  const r2 = ctx._cib_ledgerOne_({ id: "n", staff: "고윤서", force: false, data: { items: [{ item: "앞" }, { item: "깨짐" }, { item: "뒤" }], photos: ["https://p/3.jpg"] } });
+  check("중간 실패 — 거기서 멈춘다(뒤는 안 씀)", got.map((g) => g[0]), ["앞", "깨짐"]);
+  check("중간 실패 — 몇 건 들어갔나 말한다", [r2.success, /2\/3/.test(r2.error), /1건까지는/.test(r2.error)], [false, true, true]);
+  check("중간 실패 — 사진은 안 붙인다", att.length, 0);
+  ctx._cs_submitReturnLedger_ = (d) => (d.force ? { success: true, row: 1, sheet: "x" } : { success: false, duplicate: true, message: "같은 송장" });
+  const r3 = ctx._cib_ledgerOne_({ id: "o", staff: "a", force: false, data: { items: [{ item: "1" }, { item: "2" }] } });
+  check("첫 줄이 중복이면 아무것도 안 쓰고 묻는다", [r3.duplicate, r3.success], [true, false]);
+  ctx._cs_submitReturnLedger_ = keepW; ctx._cs_openReturnLedgerRow_ = keepO; ctx._cs_attRecord_ = keepA; }
 
 console.log("");
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");

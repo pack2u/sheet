@@ -257,17 +257,64 @@ function _cib_ledgerQueue_() {
   if (!items.length) return { ok: true, n: 0 };
   var results = [];
   for (var i = 0; i < items.length; i++) {
-    var it = items[i], d = it.data || {};
-    d.staff = String(it.staff || d.staff || "").trim();
-    d.force = !!it.force;
-    var r;
-    try { r = _cs_submitReturnLedger_(d) || {}; }
-    catch (e) { r = { success: false, error: String((e && e.message) || e) }; }
-    results.push({ id: it.id, success: !!r.success, duplicate: !!r.duplicate, message: r.message || "", error: r.error || "", row: r.row || null, sheet: r.sheet || "" });
+    try { results.push(_cib_ledgerOne_(items[i])); }
+    catch (e) { results.push({ id: items[i].id, success: false, error: String((e && e.message) || e) }); }
   }
   var done = post({ op: "done", results: results });
   Logger.log("[CIB 대장] " + JSON.stringify({ n: items.length, results: results, done: done }).substring(0, 500));
   return { ok: true, n: items.length, results: results };
+}
+
+/**
+ * 요청 한 건 — 품목이 여럿(합포장)이면 차례로, 사진은 첫 줄에.   (2026-10-28)
+ * > 사장님: "사진 붙이기랑 합포장 품목 고르기도 해줘"
+ * home.html submitLedgerMany 와 같은 규칙:
+ *   첫 줄만 중복을 묻는다(그 요청의 force). 둘째부터는 같은 송장이라 force — 안 그러면 첫 줄 때문에 늘 「중복」이다.
+ *   중간에 실패하면 거기서 멈추고 몇 건까지 들어갔는지 말한다 — 조용히 반만 들어가면 안 된다.
+ *   사진은 첫 줄에만(같은 상자를 찍은 것) — 적는 건 csAttach.gs _cs_attRecord_ (이 웹앱 사진 첨부와 같은 줄 모양).
+ * d.items 가 없으면 d 하나가 한 줄이다(예전 요청).
+ */
+function _cib_ledgerOne_(it) {
+  var d = it.data || {};
+  var staff = String(it.staff || d.staff || "").trim();
+  var 줄들 = Array.isArray(d.items) && d.items.length ? d.items : [{}];
+  var 공통 = {};
+  for (var k in d) if (Object.prototype.hasOwnProperty.call(d, k) && k !== "items" && k !== "photos" && k !== "photoMemo") 공통[k] = d[k];
+  var 적힌 = [], first = null;
+  for (var n = 0; n < 줄들.length; n++) {
+    var one = {};
+    for (var a in 공통) one[a] = 공통[a];
+    for (var b in 줄들[n]) if (Object.prototype.hasOwnProperty.call(줄들[n], b)) one[b] = 줄들[n][b];
+    one.staff = staff;
+    one.force = n === 0 ? !!it.force : true;
+    var r = _cs_submitReturnLedger_(one) || {};
+    if (n === 0 && r.duplicate && !one.force) {
+      return { id: it.id, success: false, duplicate: true, message: r.message || "같은 송장이 대장에 있습니다" };
+    }
+    if (!r.success) {
+      return { id: it.id, success: false, error: "(" + (n + 1) + "/" + 줄들.length + ") " + (r.error || r.message || "기록 실패") +
+        (적힌.length ? " — " + 적힌.length + "건까지는 들어갔습니다 (" + 적힌.join(", ") + ")" : ""), sheet: first ? first.sheet : "", row: first ? first.row : null };
+    }
+    if (!first) first = r;
+    적힌.push(r.sheet + " " + r.row + "행");
+  }
+  var 말 = 줄들.length > 1 ? 줄들.length + "건 기록했습니다 — " + first.sheet + " 탭 " + 적힌.map(function (x) { return x.split(" ")[1]; }).join("·") : (first.message || "");
+
+  //  사진 — v2 가 보관소(return-photos)에 이미 올렸다. 주소만 받아 적는다
+  var photos = (d.photos || []).filter(function (u) { return /^https:\/\//.test(String(u || "")); }).slice(0, 12);
+  if (photos.length) {
+    try {
+      var ctx = _cs_openReturnLedgerRow_(first.sheet, first.row);
+      var who = String(줄들[0].name || 공통.name || "").replace(/[\\/:*?"<>|\[\]\s]/g, "").substring(0, 20) || "반품";
+      var saved = photos.map(function (u, ix) { return { fileName: who + "_" + first.sheet + "_" + first.row + "_v2_" + (ix + 1), url: u }; });
+      _cs_attRecord_(ctx, first.sheet, first.row, staff, who, saved, d.photoMemo || "");
+      말 += " · 사진 " + photos.length + "장 첨부";
+    } catch (eP) {
+      //  대장 줄은 들어갔다 — 실패로 돌리면 「그래도 추가」로 한 줄 더 생긴다. 성공으로 두고 사진만 못 붙었다고 말한다
+      말 += " · ⚠ 사진은 못 붙였습니다: " + ((eP && eP.message) || eP) + " — CS 웹앱 반품 탭에서 붙여 주세요";
+    }
+  }
+  return { id: it.id, success: true, message: 말, row: first.row, sheet: first.sheet, rows: 적힌 };
 }
 
 /** 1분 트리거가 부른다. 손으로 불러도 된다 (결과를 돌려준다). */
