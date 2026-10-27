@@ -13,13 +13,14 @@ function check(label, got, want) {
   if (g === w) { pass++; console.log("  ok   " + label); }
   else { fail++; console.log("  FAIL " + label + "  ->  " + g + "   (기대: " + w + ")"); }
 }
-const ctx = { console, Logger: { log() {} } };
+//  메모리(CacheService)는 [7] 전까지 없다 — 없으면 시트를 읽는 길이 그대로 도는지도 앞 시험이 본다
+const ctx = { console, Logger: { log() {} }, PRP_CACHE_VER: "t", PRP_KEYCOL_CACHE_SEC_: 21600 };
 vm.createContext(ctx);
 for (const f of ["prpLookup.gs", "prpConfig.gs", "prpLedger.gs"]) {
   const s = fs.readFileSync(f, "utf8");
   //  필요한 함수만 꺼낸다 — 파일 전체를 돌리면 서비스(SpreadsheetApp …)를 부르는 맨 위 코드가 있다
   const names = f === "prpLookup.gs"
-    ? ["prpUidFromCell_", "prpUidNorm_", "prpFindOrderHeaderRow_", "prpMapOrderCols_", "prpFindExclusiveHeaderRow_", "prpMapExclusiveCols_", "prpTabLayout_", "prpScanTabByKey_",
+    ? ["prpUidFromCell_", "prpUidNorm_", "prpFindOrderHeaderRow_", "prpMapOrderCols_", "prpFindExclusiveHeaderRow_", "prpMapExclusiveCols_", "prpTabLayout_", "prpScanTabByKey_", "prpKeyColsCacheKey_", "prpCacheHash_", "prpCacheGetJson_", "prpCachePutJson_",
        "prpRowMatchesUid_", "prpRowToMatch_", "prpScanTab_", "prpScanTabForUid_", "prpScanTabForInvoice_"]
     : f === "prpConfig.gs" ? ["prpDigits_"] : ["prpFormatPhone_", "prpFormatInvoice_"];
   for (const n of names) {
@@ -124,6 +125,30 @@ const g2 = []; ctx.prpScanTabForUid_(센, "d1001101999", 센.getName(), g2);
 check("2,000줄 — 고유ID 로 한 줄 · 품목", [g2.length, g2[0] && g2[0].item], [1, "품목1999"]);
 const 합 = tab("(2026년 8월) 발주 마감", [큰줄[0], ...Array.from({ length: 12 }, (_, i) => ["", "", "", "합" + i, "1", "같은분", "", "", "", "", "463400009999"])]);
 check("합포장 12줄(한 번에 읽는 길)", 찾기(합, "463400009999").map((m) => m.item).join(","), Array.from({ length: 12 }, (_, i) => "합" + i).join(","));
+
+console.log("[7] 메모리(CacheService) — 닫힌 달만 담고, 맞은 줄은 시트에서 새로 읽는다");
+const 메모 = new Map();
+ctx.CacheService = { getScriptCache: () => ({ get: (k) => (메모.has(k) ? 메모.get(k) : null), put: (k, v) => { 메모.set(k, v); } }) };
+ctx.Utilities = { DigestAlgorithm: { MD5: 1 }, Charset: { UTF_8: 1 }, computeDigest: (_a, s) => [...Buffer.from(require("crypto").createHash("md5").update(s).digest())], base64EncodeWebSafe: (b) => Buffer.from(b).toString("base64url") };
+ctx.prpNow_ = () => new Date(2026, 9, 28);
+const 센탭 = (name, rows) => { const t = tab(name, rows); return { ...t, getName: t.getName, getParent: () => ({ getId: () => "FILE1" }), getRange: (r, c, nr, nc) => { 읽은칸 += nr * nc; return t.getRange(r, c, nr, nc); } }; };
+const 지난줄 = [["📊"], ["📦"], ["🏷️"], ...큰줄.map((r) => r.slice())];   // 탭이 이 배열을 그대로 본다
+const 지난 = 센탭("(2026년 9월) 발주 마감", 지난줄);
+읽은칸 = 0; const h1 = 찾기(지난, "45201001234"); const 처음 = 읽은칸;
+읽은칸 = 0; const h2 = 찾기(지난, "45201000007"); const 둘째 = 읽은칸;
+check("닫힌 달 — 두 번째는 맞은 줄만 읽는다(16칸)", [h1.length, h2.length, 처음 > 2000, 둘째], [1, 1, true, 16]);
+지난줄[3 + 8][5] = "바뀐이름";   // 송장 …0007 줄의 받는 분을 시트에서 고친다
+check("메모리에서 골라도 받는 분은 시트 지금 값", 찾기(지난, "45201000007")[0].name, "바뀐이름");
+check("고유ID 는 따로 담는다(송장 메모리를 쓰지 않는다)", (() => { 읽은칸 = 0; const u2 = []; ctx.prpScanTabForUid_(지난, "d1001100005", 지난.getName(), u2); return [u2.length, 읽은칸 > 2000]; })(), [1, true]);
+지난줄.push(["", "", "", "새줄", "1", "새분", "", "", "", "", "45209999999"]);
+읽은칸 = 0; const h3 = 찾기(지난, "45209999999");
+check("줄이 늘면 새로 읽는다 — 새로 붙은 송장도 찾는다", [h3.length, h3[0] && h3[0].name, 읽은칸 > 2000], [1, "새분", true]);
+const 이번 = 센탭("(2026년 10월) 발주 마감", [["📊"], ["📦"], ["🏷️"], ...큰줄]);
+찾기(이번, "45201001234"); 읽은칸 = 0; 찾기(이번, "45201001234");
+check("이번 달 탭은 안 담는다 — 늘 새로 읽는다", 읽은칸 > 2000, true);
+const 양식 = 센탭("전용양식", NK양식.getRange(1, 1, 2, 13).getDisplayValues());
+찾기(양식, "260000999001"); 읽은칸 = 0; 찾기(양식, "260000999001");
+check("전용양식(마감 전)도 안 담는다", 읽은칸 > 13, true);
 
 console.log("");
 console.log(fail ? "실패 " + fail + "건" : "통과 " + pass + "건");

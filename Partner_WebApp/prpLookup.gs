@@ -225,21 +225,29 @@ function prpTabLayout_(tab, head) {
  * 머리글 6줄 → 송장(또는 고유ID·적요) 칸만 → 맞은 줄만 통째로. 고르는 규칙(맞나)과 칸 배치는 그대로다.
  * 열들(cols) — 맞나가 보는 칸 번호들. 그 밖의 칸은 비어 있는 줄로 맞나에 넘긴다.
  */
-function prpScanTabByKey_(tab, source, out, 열들, 맞나) {
+function prpScanTabByKey_(tab, source, out, 열들, 맞나, 종류) {
   if (!tab) return;
   var last = tab.getLastRow();
   if (last < 2) return;
   var lc = Math.max(Math.min(tab.getLastColumn(), 20), 15);
-  var head, lay, keys, lo, hi, block;
-  try {
-    head = tab.getRange(1, 1, Math.min(last, 6), lc).getDisplayValues();
-    lay = prpTabLayout_(tab, head);
-    keys = 열들(lay.cols).filter(function (c) { return c >= 0 && c < lc; });
-    if (!keys.length || lay.start >= last) return;
-    lo = Math.min.apply(null, keys);
-    hi = Math.max.apply(null, keys);
-    block = tab.getRange(lay.start + 1, lo + 1, last - lay.start, hi - lo + 1).getDisplayValues();
-  } catch (e) { return; }
+  var lay, lo, hi, block;
+  //  닫힌 달 탭이면 열쇠 칸을 메모리에서 (prpKeyColsCache_) — 맞은 줄은 아래에서 늘 시트로 새로 읽는다
+  var 열쇠 = prpKeyColsCacheKey_(tab, 종류, last, lc);
+  var hit = 열쇠 ? prpCacheGetJson_(열쇠) : null;
+  if (hit && hit.block && hit.lay) {
+    lay = hit.lay; lo = hit.lo; hi = hit.hi; block = hit.block;
+  } else {
+    try {
+      var head = tab.getRange(1, 1, Math.min(last, 6), lc).getDisplayValues();
+      lay = prpTabLayout_(tab, head);
+      var keys = 열들(lay.cols).filter(function (c) { return c >= 0 && c < lc; });
+      if (!keys.length || lay.start >= last) return;
+      lo = Math.min.apply(null, keys);
+      hi = Math.max.apply(null, keys);
+      block = tab.getRange(lay.start + 1, lo + 1, last - lay.start, hi - lo + 1).getDisplayValues();
+    } catch (e) { return; }
+    if (열쇠) prpCachePutJson_(열쇠, { lay: lay, lo: lo, hi: hi, block: block }, PRP_KEYCOL_CACHE_SEC_);
+  }
   var hits = [];
   for (var i = 0; i < block.length; i++) {
     var row = new Array(lc);
@@ -264,7 +272,7 @@ function prpScanTabByKey_(tab, source, out, 열들, 맞나) {
 function prpScanTabForUid_(tab, want, source, out) {
   prpScanTabByKey_(tab, source, out, function (cols) { return [cols.uid, cols.note]; }, function (row, cols) {
     return prpRowMatchesUid_(row, cols, want);
-  });
+  }, "uid");
 }
 
 /** 송장번호로 고른다 — 숫자만 견준다 (하이픈·공백이 제각각이다) */
@@ -273,7 +281,56 @@ function prpScanTabForInvoice_(tab, wantDigits, source, out) {
     if (cols.inv < 0) return false;
     var d = prpDigits_(row[cols.inv]);
     return !!(d && wantDigits && d === wantDigits);
-  });
+  }, "inv");
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 메모리(CacheService)에 올려 두기 ★  (2026-10-28)
+   > 사장님: "전체적으로 데이타양이 많으니 메모리에 많이 저장할수 있게 만들어 로딩이 빠르게 만들어줘"
+
+   ① 닫힌 달 마감 탭의 열쇠 칸(송장 · 고유ID·적요) — 6시간. 이번 달 이전 탭만. 이번 달·발주 탭·전용양식은 늘 새로 읽는다.
+      열쇠에 «줄 수»가 들어 있어 줄이 늘거나 줄면 저절로 새로 읽는다.
+   ② 찾은 결과(업체 파일 + 고유ID/송장) — 10분. 찾기 뒤 접수(prpVerifyOrigin_)가 장부를 또 훑지 않게. 못 찾은 것은 안 담는다.
+   ★ 맞은 줄의 내용(받는 분·품목)은 ①에서 안 꺼낸다 ★ — 줄 번호만 메모리로 고르고 그 줄은 시트에서 새로 읽는다.
+   메모리가 비거나(구글이 비울 수 있다) 못 쓰면 그냥 시트를 읽는다 — 느려질 뿐 답은 같다.
+   ══════════════════════════════════════════════════════════════ */
+var PRP_KEYCOL_CACHE_SEC_ = 21600;   // 6시간 (CacheService 최대)
+var PRP_RESULT_CACHE_SEC_ = 600;     // 10분
+
+/** 닫힌 달 탭(「(YYYY년 M월) …마감」 중 이번 달보다 앞)일 때만 열쇠를 준다 */
+function prpKeyColsCacheKey_(tab, 종류, last, lc) {
+  if (!종류) return "";
+  try {
+    var nm = String(tab.getName() || "");
+    var m = nm.match(/^\((\d{4})년 (\d{1,2})월\)/);
+    if (!m) return "";
+    var now = typeof prpNow_ === "function" ? prpNow_() : new Date();
+    if (Number(m[1]) * 12 + Number(m[2]) >= now.getFullYear() * 12 + now.getMonth() + 1) return "";
+    return "kc|" + tab.getParent().getId() + "|" + nm + "|" + 종류 + "|" + last + "|" + lc;
+  } catch (e) { return ""; }
+}
+
+function prpCacheHash_(s) {
+  var d = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s, Utilities.Charset.UTF_8);
+  return PRP_CACHE_VER + "_m_" + Utilities.base64EncodeWebSafe(d);
+}
+
+function prpCacheGetJson_(key) {
+  try {
+    var s = CacheService.getScriptCache().get(prpCacheHash_(key));
+    return s ? JSON.parse(s) : null;
+  } catch (e) { return null; }
+}
+
+/** 한 값 100KB 한도 — 넘으면 안 담는다(조용히 시트로) */
+function prpCachePutJson_(key, v, sec) {
+  try {
+    var s = JSON.stringify(v);
+    var 바이트 = s.length + ((s.match(/[^\x00-\x7f]/g) || []).length * 2);   // 한글은 3바이트
+    if (바이트 > 95000) return false;
+    CacheService.getScriptCache().put(prpCacheHash_(key), s, sec);
+    return true;
+  } catch (e) { return false; }
 }
 
 function prpArchiveTabName_(yyyy, m) {
@@ -436,7 +493,8 @@ function prpListVendorFiles_() {
  *
  * @return {{ok:boolean, matches:Array, error?:string}}
  */
-function prpScanVendorBook_(sess, 훑기) {
+function prpScanVendorBook_(sess, 훑기, 결과열쇠) {
+  var t0 = Date.now();
   var fileId = prpFindVendorFileId_(sess);
   if (!fileId) {
     return {
@@ -446,8 +504,17 @@ function prpScanVendorBook_(sess, 훑기) {
     };
   }
 
+  //  ② 방금 찾은 결과 (10분) — 찾기 → 접수가 같은 장부를 두 번 훑지 않게
+  var rk = 결과열쇠 ? "kr|" + fileId + "|" + 결과열쇠 : "";
+  var 저장 = rk ? prpCacheGetJson_(rk) : null;
+  if (저장 && 저장.length) return { ok: true, matches: 저장, timing: { cached: true, ms: Date.now() - t0 } };
+
   var ss = SpreadsheetApp.openById(fileId);
+  var tOpen = Date.now() - t0;
   var matches = [];
+  var 탭시간 = [];
+  var 재며 = 훑기;
+  훑기 = function (tab, src, out) { var a = Date.now(); 재며(tab, src, out); 탭시간.push(src + " " + (Date.now() - a)); };
 
   var monthNames = prpRecentArchiveTabNames_(prpNow_(), PRP_LOOKUP_MONTHS_);
   for (var m = 0; m < monthNames.length; m++) {
@@ -477,7 +544,9 @@ function prpScanVendorBook_(sess, 훑기) {
     seen[k] = true;
     uniq.push(r);
   }
-  return { ok: true, matches: uniq };
+  if (rk && uniq.length) prpCachePutJson_(rk, uniq, PRP_RESULT_CACHE_SEC_);
+  //  어디서 시간이 드나 — 화면은 안 쓰고 재는 사람이 본다
+  return { ok: true, matches: uniq, timing: { open: tOpen, ms: Date.now() - t0, tabs: 탭시간 } };
 }
 
 /**
@@ -493,7 +562,7 @@ function prpLookupByUid(sid, uidRaw) {
   try {
     var res = prpScanVendorBook_(g.sess, function (tab, src, out) {
       prpScanTabForUid_(tab, uid, src, out);
-    });
+    }, "uid:" + prpUidNorm_(uid));
     if (!res.ok) return res;
     if (!res.matches.length) {
       return {
@@ -502,7 +571,7 @@ function prpLookupByUid(sid, uidRaw) {
         matches: []
       };
     }
-    return { ok: true, uid: uid, matches: res.matches };
+    return { ok: true, uid: uid, matches: res.matches, timing: res.timing };
   } catch (e) {
     return { ok: false, error: e.message || String(e), matches: [] };
   }
@@ -526,7 +595,7 @@ function prpLookupByInvoice(sid, invRaw) {
   try {
     var res = prpScanVendorBook_(g.sess, function (tab, src, out) {
       prpScanTabForInvoice_(tab, digits, src, out);
-    });
+    }, "inv:" + digits);
     if (!res.ok) return res;
     if (!res.matches.length) {
       return {
@@ -535,7 +604,7 @@ function prpLookupByInvoice(sid, invRaw) {
         matches: []
       };
     }
-    return { ok: true, invoice: prpFormatInvoice_(invRaw), matches: res.matches };
+    return { ok: true, invoice: prpFormatInvoice_(invRaw), matches: res.matches, timing: res.timing };
   } catch (e) {
     return { ok: false, error: e.message || String(e), matches: [] };
   }
@@ -578,14 +647,14 @@ function prpVerifyOrigin_(sess, data) {
     if (uid) {
       var a = prpScanVendorBook_(sess, function (tab, src, out) {
         prpScanTabForUid_(tab, uid, src, out);
-      });
+      }, "uid:" + prpUidNorm_(uid));
       if (!a.ok) return { level: PRP_ORIGIN_UNKNOWN_, why: a.error, hit: null };
       found = a.matches;
     }
     if (!found.length && invDigits.length >= 8) {
       var b = prpScanVendorBook_(sess, function (tab, src, out) {
         prpScanTabForInvoice_(tab, invDigits, src, out);
-      });
+      }, "inv:" + invDigits);
       if (b.ok) found = b.matches;
     }
   } catch (e) {
