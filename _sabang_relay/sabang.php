@@ -162,7 +162,7 @@ header('Content-Type: application/json; charset=utf-8');
     올렸는지 «짐작»하지 않으려고 둔다. 모든 응답 머리에 실린다 —
     올리고 나서 이 값이 안 바뀌면 다른 자리에 올라간 것이다.
     [[ops-tab-carries-the-build-number]] 와 같은 뜻이다. */
-header('X-Relay-Build: 20261027-product-create-c');
+header('X-Relay-Build: 20261028-waybill-fixfake');
 
 /** 오류를 사방넷 응답과 «같은 모양» 으로 돌려준다 — 부르는 쪽이 한 갈래로 읽게 */
 function fail($http, $code, $msg) {
@@ -464,7 +464,12 @@ if ($key === 'POST /v3/sb/product/upsert') {
         }
         /*  ★ 없어도 되는 칸 ★ optionInfo·imageInfo·attributeInfo 는 «있으면 모양을 본다».
             꼭 있어야 하는지는 사방넷이 정한다 — 우리가 한 겹 더 막아 봐야 거절 글만 가린다. */
-        $없어도됨 = ['optionInfo' => true, 'imageInfo' => true, 'attributeInfo' => true];
+        /*  ★ 소분류가 없는 분류가 있다 ★  (2026-10-27 실측)
+            「포장용기 > 도시락용기」는 두 단뿐이다(A01/B10). 사방넷에 이미 있는
+            도시락 상품들도 myCategoryCodeS 가 전부 null 이다 — 102919·AJ5B00001·AJDSL00001.
+            S 를 꼭 받으면 도시락·종이도시락 같은 두 단 분류를 아예 못 올린다. */
+        $없어도됨 = ['optionInfo' => true, 'imageInfo' => true, 'attributeInfo' => true,
+                     'myCategoryCodeS' => true];
         foreach (array_keys($등록칸) as $k) {
             if (!array_key_exists($k, $p) && !isset($없어도됨[$k])) {
                 fail(400, 'RELAY_STOCK_GUARD', '등록에 빠진 칸이 있습니다: ' . $k . ' — 필수 16칸을 다 보내야 합니다.');
@@ -835,16 +840,45 @@ if ($key === 'POST /v3/sb/waybill') {
     if ($n > 500) fail(400, 'RELAY_WAYBILL_GUARD', '한 번에 500건까지만 보냅니다 (' . $n . '건).');
 
     foreach (array_keys($body) as $k) {
-        if ($k !== 'waybillList' && $k !== 'forceUpdateYn' && $k !== 'reprint') {
+        if ($k !== 'waybillList' && $k !== 'forceUpdateYn' && $k !== 'reprint' && $k !== 'fixFake') {
             fail(400, 'RELAY_WAYBILL_GUARD', '몸통에 허용되지 않은 칸이 있습니다: ' . $k);
         }
     }
     $재출력 = array_key_exists('reprint', $body) && $body['reprint'] === true;
     unset($body['reprint']);
+    /*  ★ 가짜 송장 덮기 ★  (2026-10-28 · 사장님 「울타리 열어서 네가 고쳐줘」)
+        사방넷에 1111·2222·44444 같은 가짜 송장이 박힌 주문이 11건 있었다(10/13~10/22 수집일).
+        그 자리에 «진짜» 송장을 넣으려면 forceUpdateYn=Y 가 필요한데 재출력 갈래는 로젠(007)만 연다.
+        여기서 다른 택배사도 열되 셋을 박는다 —
+          ⓐ 20건까지  ⓑ 택배사 코드는 우리가 쓰는 다섯 개만
+          ⓒ ★ 넣는 송장이 «진짜 꼴»이어야 한다 ★ 10~16자리 · 같은 숫자 반복 아님
+             → 이 길로도 «가짜를 쓰는» 것은 못 한다. 열면서 같이 막는다. */
+    $가짜고치기 = array_key_exists('fixFake', $body) && $body['fixFake'] === true;
+    unset($body['fixFake']);
+    if ($재출력 && $가짜고치기) {
+        fail(400, 'RELAY_WAYBILL_GUARD', 'reprint 와 fixFake 를 같이 보낼 수 없습니다 — 어느 울타리로 가는지가 갈립니다.');
+    }
+    $쓰는택배사 = ['001' => true, '002' => true, '004' => true, '007' => true, '037' => true];
     $force = 'N';
     if (array_key_exists('forceUpdateYn', $body)) {
         $v = strtoupper(trim((string)$body['forceUpdateYn']));
-        if ($v === 'Y' && $재출력) {
+        if ($v === 'Y' && $가짜고치기) {
+            if ($n > 20) fail(400, 'RELAY_WAYBILL_GUARD', '가짜 송장 덮기는 한 번에 20건까지만 (' . $n . '건).');
+            foreach ($body['waybillList'] as $i4 => $w4) {
+                $c4 = is_array($w4) && isset($w4['deliveryCompanyCode']) ? trim((string)$w4['deliveryCompanyCode']) : '';
+                $b4 = is_array($w4) && isset($w4['wayBillNo']) ? trim((string)$w4['wayBillNo']) : '';
+                if (!isset($쓰는택배사[$c4])) {
+                    fail(400, 'RELAY_WAYBILL_GUARD', '가짜 송장 덮기는 우리가 쓰는 택배사만 (001·002·004·007·037) — ' . ($i4 + 1) . '번째 줄: ' . $c4);
+                }
+                if (!preg_match('/^[0-9]{10,16}$/', $b4)) {
+                    fail(400, 'RELAY_WAYBILL_GUARD', '가짜 송장 덮기는 10~16자리 송장만 — ' . ($i4 + 1) . '번째 줄: ' . $b4);
+                }
+                if (count(array_unique(str_split($b4))) === 1) {
+                    fail(400, 'RELAY_WAYBILL_GUARD', '같은 숫자만 이어진 송장은 덮어쓸 값이 아닙니다 — ' . ($i4 + 1) . '번째 줄: ' . $b4);
+                }
+            }
+            $force = 'Y';
+        } elseif ($v === 'Y' && $재출력) {
             if ($n > 50) fail(400, 'RELAY_WAYBILL_GUARD', '재출력 덮어쓰기는 한 번에 50건까지만 (' . $n . '건).');
             foreach ($body['waybillList'] as $i3 => $w3) {
                 $c3 = is_array($w3) && isset($w3['deliveryCompanyCode']) ? trim((string)$w3['deliveryCompanyCode']) : '';
