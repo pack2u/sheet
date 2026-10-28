@@ -62,6 +62,16 @@ function prpV2Account_(v) {
   return { vendor: name, key: key, prefix: String(v.prefix || ""), aliases: 합, fileId: fileId };
 }
 
+var PRP_V2_ORIGIN_ = null;
+
+/** v2 출처 판정 — 글자를 포털 것(확인됨·미확인·어긋남)으로만 받는다. 모르는 값이면 null(포털이 직접 본다) */
+function prpV2Origin_(o) {
+  if (!o || typeof o !== "object") return null;
+  var lv = String(o.level || "");
+  if (lv !== PRP_ORIGIN_OK_ && lv !== PRP_ORIGIN_UNKNOWN_ && lv !== PRP_ORIGIN_MISMATCH_) return null;
+  return { level: lv, why: String(o.why || "").substring(0, 200), hit: null };
+}
+
 function doPost(e) {
   var body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || "{}"); } catch (x) { return prpV2Json_({ ok: false, error: "본문을 못 읽었습니다" }); }
@@ -71,6 +81,11 @@ function doPost(e) {
   var sid = prpIssueSession_(acct);
   if (!sid) return prpV2Json_({ ok: false, error: "세션을 못 만들었습니다" });
   var d = body.data || {};
+  /*  ★ v2 가 판정한 접수 출처 ★  (2026-10-28 > 사장님: "우리 V2에서 연동이 되게 해줘 시트사용은 이제 최대한 배재할꺼야")
+      v2 는 자기 표(세트분리 원장·대리공급·송장원장)로 출처를 보고 넘긴다 — 포털이 업체 시트를 다시 훑지 않게(prpSubmitReturn).
+      열쇠(토큰)로 들어온 이 문에서만 받는다. 브라우저 포털(google.script.run)은 이 전역을 못 건드린다 — 실행이 따로다. */
+  PRP_V2_ORIGIN_ = prpV2Origin_(d.__originV2);
+  delete d.__originV2;
   var r;
   try {
     switch (String(body.op || "")) {

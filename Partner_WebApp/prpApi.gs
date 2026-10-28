@@ -101,7 +101,9 @@ function prpSubmitReturn(sid, data) {
        CS 가 사진 한 장으로 우리 물건인지 바로 안다.
      ══════════════════════════════════════════════════════════════ */
   var 출처 = { level: PRP_ORIGIN_UNKNOWN_, why: "확인하지 못했습니다", hit: null };
-  try { 출처 = prpVerifyOrigin_(sess, data); } catch (eOrg) {}
+  //  v2 업체 화면에서 온 접수는 v2 가 이미 판정했다(prpV2.gs PRP_V2_ORIGIN_) — 시트를 다시 훑지 않는다 (2026-10-28)
+  if (typeof PRP_V2_ORIGIN_ !== "undefined" && PRP_V2_ORIGIN_) 출처 = PRP_V2_ORIGIN_;
+  else { try { 출처 = prpVerifyOrigin_(sess, data); } catch (eOrg) {} }
 
   if (출처.level !== PRP_ORIGIN_OK_) {
     var 사진수 = parseInt(data.photoCount, 10) || 0;
