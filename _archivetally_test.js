@@ -134,9 +134,7 @@ console.log("\n[7] ★ 「미매칭」이라고 적지 않는다");
   check("★ 색칠도 빈칸을 알아본다",
     pep.indexOf('source === "미매칭" || !source') >= 0, true);
 
-  const und = fs.readFileSync("_partnerUnmatchedDiag.gs", "utf8");
-  check("★ 미매칭 진단이 빈칸을 잡는다",
-    /if \(_src_ && _src_ !== "미매칭"\) continue;/.test(und), true);
+  //  「미매칭 진단」(_partnerUnmatchedDiag.gs)은 2026-10-28 지웠다 — 마감 매칭은 v2 가 한다
 }
 
 console.log("\n[8] ★ 허브에서 송장을 «가져오지 않는다»");

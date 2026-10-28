@@ -106,19 +106,15 @@ console.log("\n⑥ ★ 지금 바로 돌리는 길  (2026-09-28)");
 
       마감 끝의 예약은 «다음 마감»부터다. 오늘 것은 손으로 한 번 돌린다. */
   const menu = fs.readFileSync(path.join(__dirname, "_partnerMenu.gs"), "utf8");
-  ok("메뉴 함수가 있다", /function partnerFillUnmatchedRecent\(\)/.test(src));
-  ok("  메뉴에 걸려 있다",
-    /addItem\("⏪ 지난 7일 미매칭 송장 채우기 \(지금\)", "partnerFillUnmatchedRecent"\)/.test(menu));
-  ok("★ 오늘 파일도 본다 (마감이 이미 끝났다)",
-    /\[오늘\]\.concat\(_pep_backfillDates_\(오늘\)\)/.test(src));
+  //  메뉴 「⏪ 지난 7일 미매칭 송장 채우기 (지금)」은 2026-10-28 뺐다 — 마감은 v2 가 하고 빈 칸은 17:00·20:00 이 채운다
+  ok("메뉴 함수는 없다", !/function partnerFillUnmatchedRecent\(/.test(src) && !/partnerFillUnmatchedRecent/.test(menu));
 
   const 쓰임 = (src.match(/_pep_fillUnmatchedDays_\(/g) || []).length;
-  ok("★ 예약 실행과 «같은 함수»를 쓴다 (결과가 갈릴 일이 없다)", 쓰임 >= 3, String(쓰임));
+  ok("★ 예약 실행과 «같은 함수»를 쓴다 (결과가 갈릴 일이 없다)", 쓰임 >= 2, String(쓰임));
 
   ok("★ 송장맵을 «한 번만» 만든다 (7일이면 일곱 번이었다)",
     /function _pep_fillUnmatchedDays_[\s\S]{0,1200}_puv_buildInvoiceMap_\(stat\)[\s\S]{0,400}for \(var i = 0; i < dates\.length/.test(src));
   ok("  시간을 재며 돈다 (GAS 는 6분에 끊긴다)", /out\.remain\.push\(d\)/.test(src));
-  ok("  못 본 날을 알려 준다", /시간이 모자라 못 본 날/.test(src));
   ok("  파일이 없는 날은 조용히 넘어간다 (주말·휴일)", /그날 마감 파일이 없다/.test(src));
 }
 
@@ -158,7 +154,6 @@ console.log("\n⑦ ★ 빈 송장을 셋으로 가른다  (2026-09-28)");
   ok("갈래 셋을 따로 센다", /비배송: 0, 대기: 0, 미매칭: 0/.test(src));
   ok("  세 자리 모두에서 센다", (src.match(/out\[갈래\]\+\+/g) || []).length === 3,
     String((src.match(/out\[갈래\]\+\+/g) || []).length));
-  ok("  화면에 갈라 적는다", /★ 진짜 미매칭/.test(src) && /송장이 있을 수 없다/.test(src));
 }
 
 console.log("\n⑧ ★ 스냅샷이 TEL 로 굳는 것을 순번으로 막는다  (2026-09-28)");

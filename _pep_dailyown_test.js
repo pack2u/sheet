@@ -28,7 +28,7 @@ function check(label, got, want) {
 
 const push = fs.readFileSync("_partnerExclusivePush.gs", "utf8");
 const web = fs.readFileSync("_partnerWebApp.gs", "utf8");
-const diag = fs.readFileSync("_partnerUnmatchedDiag.gs", "utf8");
+//  _partnerUnmatchedDiag.gs(미매칭 진단)는 2026-10-28 지웠다 — 마감 매칭은 v2 가 한다. 그 파일을 보던 검사도 뺐다.
 const help = fs.readFileSync("_partnerHelpers.gs", "utf8");
 
 console.log("\n[일일마감] 자사출고 송장원이 둘인가");
@@ -81,16 +81,6 @@ check("★ 로젠 0건이면 경고가 뜬다",
   web.includes("⚠ 로젠탭 송장 0건 — 탭/열 확인 필요"), true);
 check("★ 읽은 탭을 화면에 적는다",
   web.includes('"    읽은 탭: " + (result.detail.ownTabs || "(없음)")'), true);
-
-console.log("\n[진단 도구] 표가 거짓이면 진단도 거짓이다");
-check("★ 로젠이 usedByDaily:true 가 됐다",
-  diag.includes('{ key: "로젠",            usedByDaily: true },'), true);
-check("★ 옛 false 가 사라졌다",
-  diag.includes('{ key: "로젠",            usedByDaily: false },'), false);
-check("★ 진단은 자리표 대신 «이름 찾기»를 쓴다 (2차 고침)",
-  diag.includes("readCarrier(") && !diag.includes("? _PT_ROZEN_FIXED_COL"), true);
-check("★ 옛 로젠 양식 숫자가 사라졌다",
-  diag.includes("{ name: 9, phone: 12, invoice: 5, uid: 4 }, 1)"), false);
 
 console.log("\n[상수] 자리는 한 군데에만 적는다");
 check("_PT_ROZEN_FIXED_COL 이 있다", help.includes("var _PT_ROZEN_FIXED_COL = {"), true);
@@ -218,20 +208,9 @@ console.log("[진단 도구] 부를 데가 없으면 없는 것과 같다");
       「diagnoseUnmatched」로 걸어서 partnerDiagnose«Unified»Unmatched 를
       못 봤다. 「한 번만」이 이 시험의 요점이다 — 같은 항목이 두 곳에 있으면
       직원이 어느 쪽을 눌러야 하는지 매번 고민한다. */
-  check("★ 미매칭 진단이 메뉴에 «한 번만» 있다",
-    (menu.match(/일일마감 미매칭 원인 진단/g) || []).length, 1);
-  /*  서랍 이름을 통째로 적지 않는다 — 2026-09-16 에 「점검·정비」가
-      「점검 (읽기만)」으로 갈리면서 이 검사가 깨졌다. 지켜야 할 것은
-      이름이 아니라 «읽기만 하는 서랍에 들어 있는가»다. 이건 읽기 도구다. */
-  const 읽기서랍 = menu.indexOf("🧭 송장 매칭 점검");
-  check("★ 「🧭 송장 매칭 점검」 서랍이 있다", 읽기서랍 >= 0, true);
-  const 서랍끝 = menu.indexOf("    )", 읽기서랍);
-  check("★ 그 서랍 «안»에 있다",
-    menu.slice(읽기서랍, 서랍끝).includes("partnerDiagnoseUnifiedUnmatched"), true);
-  check("★ 그 함수가 실제로 있다",
-    diag.includes("function partnerDiagnoseUnifiedUnmatched() {"), true);
-  check("★ 읽기만 한다 (결과 탭만 만든다)",
-    diag.includes("운영 데이터는 쓰지 않는다"), true);
+  check("★ 미매칭 진단은 메뉴에서 빠졌다 (2026-10-28)",
+    (menu.match(/일일마감 미매칭 원인 진단/g) || []).length, 0);
+  check("★ 「🧭 송장 매칭 점검」 서랍은 남는다", menu.indexOf("🧭 송장 매칭 점검") >= 0, true);
 }
 
 console.log("[계측] 주문번호가 몇 줄에 있었나");
@@ -279,26 +258,6 @@ console.log("\n[이름] 뭉쳐 세면 숫자가 거짓말을 한다");
   const web3 = fs.readFileSync("_partnerWebApp.gs", "utf8");
   check("★ 화면이 넷을 갈라 보여 준다",
     web3.includes("· 1주출고 ") && web3.includes("· 합포장 "), true);
-}
-
-
-console.log("\n[진단] 마감과 «같은 눈»으로 읽는다");
-{
-  //  같은 날 같은 탭인데 마감은 887줄, 진단은 0건이었다. 읽는 길이 둘이었다.
-  check("★ 진단이 마감의 머리글 찾기를 쓴다",
-    diag.includes("_po_findInvoiceHeader_(tab)"), true);
-  check("★ 칸 자리도 마감의 이름표를 쓴다",
-    diag.includes("_pep_mapCarrierCols_(hv)"), true);
-  check("★ 로젠은 readCarrier 로 읽는다",
-    diag.includes("readCarrier(\"로젠\", _pt_getSheetByGid(invSS, _PT_PRIMARY_INVOICE_GID));"), true);
-  check("★ 자리표를 진단에 또 적지 않는다",
-    diag.includes("? _PT_ROZEN_FIXED_COL"), false);
-  check("★ 옛 로젠 양식 숫자도 없다",
-    diag.includes("{ name: 9, phone: 12, invoice: 5, uid: 4 }"), false);
-  check("★ 머리글을 못 찾으면 «못 찾았다»고 적는다 (자리로 넘겨짚지 않는다)",
-    diag.includes("idx.state[src] = \"머리글못찾음\";"), true);
-  check("★ 고른 칸을 진단 메모에 남긴다",
-    diag.includes("idx.notes.push(src + \" 칸: \" +"), true);
 }
 
 

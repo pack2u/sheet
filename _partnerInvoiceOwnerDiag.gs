@@ -350,8 +350,16 @@ function _iod_collectLedger_(reg, stat) {
   }
 }
 
-/** 최근 N일 일일마감 파일 */
+/**
+ * 최근 N일 일일마감
+ *   ★ 2026-10-28: 주인이 v2 면 파일을 열지 않고 v2 마감 줄(GET /api/setsplit/daily-close?날=)을 읽는다 ★
+ *   파일은 그 줄을 그대로 받아 적은 것이라 머리글·칸이 같다(적요도 있다). 날마다 파일 하나 여는 4~6초가 없어진다.
+ *   주인을 못 물으면 마감 대조만 건너뛰고 적어 둔다(파일로 돌아가지 않는다).
+ */
 function _iod_collectArchives_(reg, days, stat, started) {
+  var 주인 = typeof _dcv2_owner_ === "function" ? _dcv2_owner_() : "시트";
+  if (주인 === "모름") { stat.notes.push("v2 에 일일마감 주인을 못 물어 마감 대조는 건너뜀"); return; }
+  var v2 = 주인 !== "시트";
   var today = new Date();
   for (var d = 1; d <= days; d++) {
     if (new Date().getTime() - started > _IOD_TIME_BUDGET_MS_) {
@@ -370,13 +378,19 @@ function _iod_collectArchives_(reg, days, stat, started) {
     }
 
     try {
-      var ss = _unified_findExistingArchiveSs_(_UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")");
-      if (!ss) continue;
-      var tab = ss.getSheetByName("일일마감") || ss.getSheets()[0];
-      if (!tab || tab.getLastRow() < 2) continue;
-
-      var lc = Math.max(tab.getLastColumn(), 1);
-      var all = tab.getRange(1, 1, tab.getLastRow(), lc).getDisplayValues();
+      var all;
+      if (v2) {
+        var j = _dcv2_call_("get", "?날=" + dateStr);
+        if (!j.줄 || !j.줄.length) continue;
+        all = [j.머리].concat(j.줄);
+      } else {
+        var ss = _unified_findExistingArchiveSs_(_UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")");
+        if (!ss) continue;
+        var tab = ss.getSheetByName("일일마감") || ss.getSheets()[0];
+        if (!tab || tab.getLastRow() < 2) continue;
+        var lc = Math.max(tab.getLastColumn(), 1);
+        all = tab.getRange(1, 1, tab.getLastRow(), lc).getDisplayValues();
+      }
       var cols = _pep_mapArchiveMatchCols_(all[0]);
       stat.files++;
 

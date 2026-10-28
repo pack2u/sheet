@@ -14,7 +14,8 @@
  *           (이미 있는 줄은 그 함수가 거른다 · 서식·합계 줄도 같다)
  *           ③ 지난 7영업일 — 파일이 있으면 송장이 빈 줄만 v2 값으로 채운다(GAS 「소급 보강」과 같은 일),
  *              파일이 없으면 v2 줄로 만든다(GAS 「미생성 과거」와 같은 일)
- *    v2 가 실패하면 위로 던진다 — 부르는 쪽이 예전 GAS 마감으로 넘어간다.
+ *    v2 가 실패하면 위로 던진다 — 부르는 쪽은 알리고 멈춘다(2026-10-28 부터 · 예전 GAS 마감으로 안 넘어간다).
+ *    다음 20:00 이 지난 7영업일의 없는 파일을 v2 줄로 만든다. 급하면 메뉴 「통합 일일마감 (수동)」.
  *  ★ 안 하는 것 ★  판매현황_임시기록 스냅샷(매칭이 v2 로 갔다) · v1 Supabase daily_archive(v2 는 파일을 당겨 간다) ·
  *    세트분리 사방넷_송장매칭 비우기(세트분리 시트 은퇴).
  * ══════════════════════════════════════════════════════════════
@@ -97,6 +98,42 @@ function _dcv2_patchDay_(dateStr, v2rows, 미리보기) {
   return { 채움: 채움 };
 }
 
+/**
+ * 일일마감 주인 — "v2" · "시트" · "모름"(v2 에 못 물음)   (2026-10-28)
+ *   _pt_v2Owner_ 는 못 물으면 «시트»라고 답한다. 일일마감은 그러면 안 된다 — v2 가 잠깐 안 받은 날
+ *   은퇴한 시트 마감이 돌아 그날 파일을 옛 셈으로 만든다. 지난 날 파일은 v2 가 빈 송장만 채우므로
+ *   그 옛 셈 줄이 영영 남는다. 못 물었으면 «모름»으로 따로 답하고, 부르는 쪽이 멈춘다.
+ */
+function _dcv2_owner_() {
+  try {
+    return String(_dcv2_call_("get").주인 || "시트");
+  } catch (e) {
+    Logger.log("[일일마감 주인] 못 물음: " + (e && e.message ? e.message : e));
+    return "모름";
+  }
+}
+
+/**
+ * 하루치 — v2 줄을 파일에 적는다. 20:00 과 메뉴(재처리)가 같은 이 함수를 쓴다.
+ *   오늘이거나 파일이 없으면: v2 줄로 적는다(이미 있는 줄은 _pep_appendArchiveRows_ 가 거른다)
+ *   지난 날 파일이 있으면: 송장이 빈 줄만 v2 값으로 채운다
+ */
+function _dcv2_closeDay_(ss, dateStr, 오늘, out) {
+  var j = _dcv2_call_("get", "?날=" + dateStr);
+  var rows = _dcv2_numberize_(j.줄 || []);
+  if (!rows.length) return;
+  var 있음 = 오늘 ? null : _unified_findExistingArchiveSs_(_UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")");
+  if (오늘 || !있음) {
+    var ar = _pep_appendArchiveRows_(ss, dateStr, j.머리, rows, {});
+    if (ar.written) { out.적음 += ar.written; out.만든날.push(dateStr + " " + ar.written + "줄" + (ar.skippedDup ? "(이미 " + ar.skippedDup + ")" : "")); }
+    else if (ar.skippedDup) out.만든날.push(dateStr + " 새 줄 없음(이미 " + ar.skippedDup + ")");
+  } else {
+    var p = _dcv2_patchDay_(dateStr, rows);
+    if (p && p.채움) { out.채움 += p.채움; out.채운날.push(dateStr + " " + p.채움 + "줄"); }
+    if (p && p.못함) out.오류.push(dateStr + ": " + p.못함);
+  }
+}
+
 /** 20:00 — v2 가 주인일 때 마감 한 판 */
 function _pep_dailyCloseFromV2_() {
   var out = { 만든날: [], 채운날: [], 적음: 0, 채움: 0, 오류: [] };
@@ -108,18 +145,7 @@ function _pep_dailyCloseFromV2_() {
     if (d > 0 && typeof _pt_isNonBusinessDate_ === "function" && _pt_isNonBusinessDate_(dateStr)) continue;
     본++;
     try {
-      var j = _dcv2_call_("get", "?날=" + dateStr);
-      var rows = _dcv2_numberize_(j.줄 || []);
-      if (!rows.length) continue;
-      var 있음 = d === 0 ? null : _unified_findExistingArchiveSs_(_UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")");
-      if (d === 0 || !있음) {
-        var ar = _pep_appendArchiveRows_(ss, dateStr, j.머리, rows, {});
-        if (ar.written) { out.적음 += ar.written; out.만든날.push(dateStr + " " + ar.written + "줄" + (ar.skippedDup ? "(이미 " + ar.skippedDup + ")" : "")); }
-      } else {
-        var p = _dcv2_patchDay_(dateStr, rows);
-        if (p && p.채움) { out.채움 += p.채움; out.채운날.push(dateStr + " " + p.채움 + "줄"); }
-        if (p && p.못함) out.오류.push(dateStr + ": " + p.못함);
-      }
+      _dcv2_closeDay_(ss, dateStr, d === 0, out);
     } catch (e) {
       out.오류.push(dateStr + ": " + (e && e.message ? e.message : e));
     }
@@ -129,30 +155,31 @@ function _pep_dailyCloseFromV2_() {
 }
 
 /**
- * 편집기에서 — 미리보기. 시트에 아무것도 안 쓰고, 스위치를 v2 로 켜면 무엇이 적히고 채워질지 센다.
- *   v2 에 다시 만들게(POST) 한 번은 한다(v2 표만 바뀐다).
+ * 메뉴 「재처리 (날짜 지정)」 — v2 가 주인일 때 그 하루만   (2026-10-28)
+ *   v2 에 그날까지 다시 만들게 하고(일수 = 오늘부터 그날까지, 21일까지) 20:00 과 같은 규칙으로 적는다.
  */
-function partnerDailyCloseV2DryRun() {
-  _dcv2_call_("post");
-  var now = new Date(), L = [];
-  for (var d = 0, 본 = 0; 본 <= _DCV2_BACK_DAYS_ && d <= 14; d++) {
-    var dateStr = Utilities.formatDate(new Date(now.getTime() - d * 86400000), "Asia/Seoul", "yyyy-MM-dd");
-    if (d > 0 && _pt_isNonBusinessDate_(dateStr)) continue;
-    본++;
-    var rows = _dcv2_numberize_(_dcv2_call_("get", "?날=" + dateStr).줄 || []);
-    var 있음 = _unified_findExistingArchiveSs_(_UNIFIED_ARCHIVE_PREFIX_ + "(" + dateStr + ")");
-    if (!있음) { L.push(dateStr + ": 파일 없음 → v2 " + rows.length + "줄로 만든다"); continue; }
-    var p = _dcv2_patchDay_(dateStr, rows, true);
-    L.push(dateStr + ": v2 " + rows.length + "줄 · " + (d === 0 ? "오늘(없는 줄만 붙임) · " : "") + "빈 송장 채울 줄 " + (p ? p.채움 : 0) + (p && p.못함 ? " · " + p.못함 : ""));
-  }
-  var msg = "일일마감 v2 미리보기 (시트에 안 씀)\n" + L.join("\n");
-  Logger.log(msg);
-  return msg;
+function _dcv2_closeOneDate_(dateStr) {
+  var 오늘 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+  var 일수 = Math.round((new Date(오늘 + "T00:00:00Z").getTime() - new Date(dateStr + "T00:00:00Z").getTime()) / 86400000) + 1;
+  if (일수 < 1) throw new Error("앞날은 마감할 수 없습니다: " + dateStr);
+  if (일수 > 21) throw new Error("v2 는 21일 전까지만 다시 만듭니다: " + dateStr);
+  var tok = (typeof _psm_token_ === "function") ? _psm_token_() : "";
+  var base = (typeof _psm_v2url_ === "function") ? _psm_v2url_() : "https://pack2u-partner.vercel.app";
+  var res = UrlFetchApp.fetch(base + "/api/setsplit/daily-close", {
+    method: "post", contentType: "application/json", payload: JSON.stringify({ 일수: 일수 }),
+    headers: { "x-ingest-token": tok }, muteHttpExceptions: true,
+  });
+  if (res.getResponseCode() !== 200) throw new Error("v2 일일마감 post HTTP " + res.getResponseCode() + " " + res.getContentText().slice(0, 200));
+  var jp = JSON.parse(res.getContentText());
+  if (!jp.ok) throw new Error("v2 일일마감: " + (jp.error || "실패"));
+  var out ={ 만든날: [], 채운날: [], 적음: 0, 채움: 0, 오류: [] };
+  _dcv2_closeDay_(SpreadsheetApp.getActiveSpreadsheet(), dateStr, dateStr === 오늘, out);
+  return out;
 }
 
 /** 편집기에서 — 지금 일일마감 주인 */
 function partnerDailyCloseOwnerCheck() {
-  var o = _pt_v2Owner_("/api/setsplit/daily-close");
+  var o = _dcv2_owner_();
   Logger.log("일일마감 주인: " + o);
   return o;
 }

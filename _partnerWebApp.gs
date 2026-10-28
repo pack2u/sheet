@@ -217,7 +217,22 @@ function partnerDailyArchiveAllOwner() {
  */
 function partnerUnifiedDailyArchiveManual() {
   var ui = SpreadsheetApp.getUi();
-  if (!_pt_okToRunGasWhenV2Owns_("/api/setsplit/daily-close", "통합 일일마감 (수동)")) return;
+  /*  ★ 2026-10-28: 주인이 v2 면 20:00 과 같은 v2 마감을 돌린다 ★ (예전엔 「그래도 GAS 로?」를 물었다)
+      v2 가 멈춘 날의 손 예비가 예전 셈이면 그날 파일이 옛 셈으로 굳는다 — 20:00 과 같은 까닭으로 안 고른다. */
+  var 주인 = _dcv2_owner_();
+  if (주인 === "모름") { ui.alert("v2 에 일일마감 주인을 못 물었습니다", "잠시 뒤 다시 눌러 주세요. 예전 시트 마감으로는 돌리지 않습니다.", ui.ButtonSet.OK); return; }
+  if (주인 !== "시트") {
+    try {
+      var rv = _pep_dailyCloseFromV2_();
+      ui.alert("📋 통합 일일마감 완료 (v2)",
+        "적은 날: " + (rv.만든날.join(" · ") || "없음") + "\n" +
+        "빈 송장 채움: " + (rv.채운날.join(" · ") || "없음") +
+        (rv.오류.length ? "\n\n⚠ " + rv.오류.slice(0, 3).join("\n") : ""), ui.ButtonSet.OK);
+    } catch (eV) {
+      ui.alert("❌ 일일마감 (v2) 실패", String(eV && eV.message || eV).substring(0, 300), ui.ButtonSet.OK);
+    }
+    return;
+  }
   try {
     var result = _pep_archiveUnifiedDaily_();
     if (result.error) {
@@ -370,7 +385,30 @@ function partnerUnifiedDailyArchiveManual() {
  */
 function partnerUnifiedDailyArchiveForDate() {
   var ui = SpreadsheetApp.getUi();
-  if (!_pt_okToRunGasWhenV2Owns_("/api/setsplit/daily-close", "일일마감 재처리")) return;
+  //  ★ 2026-10-28: 주인이 v2 면 v2 로 그 하루만 (partnerUnifiedDailyArchiveManual 과 같은 까닭)
+  var 주인 = _dcv2_owner_();
+  if (주인 === "모름") { ui.alert("v2 에 일일마감 주인을 못 물었습니다", "잠시 뒤 다시 눌러 주세요. 예전 시트 마감으로는 돌리지 않습니다.", ui.ButtonSet.OK); return; }
+  if (주인 !== "시트") {
+    var 기본 = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+    var rq = ui.prompt("일일마감 재처리 (v2)",
+      "다시 적을 날을 yyyy-MM-dd 로 입력하세요 (21일 전까지).\n" +
+        "파일이 없으면 v2 줄로 만들고, 있으면 송장이 빈 줄만 v2 값으로 채웁니다.\n\n기본: " + 기본,
+      ui.ButtonSet.OK_CANCEL);
+    if (!rq || rq.getSelectedButton() !== ui.Button.OK) return;
+    var 날 = String(rq.getResponseText() || "").trim() || 기본;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(날)) { ui.alert("날짜 형식이 아닙니다. yyyy-MM-dd 로 입력하세요. (예: " + 기본 + ")"); return; }
+    try {
+      var r1 = _dcv2_closeOneDate_(날);
+      ui.alert("📋 일일마감 재처리 완료 (v2 · " + 날 + ")",
+        (r1.만든날.length ? "적음: " + r1.만든날.join(" · ") : "") +
+        (r1.채운날.length ? "빈 송장 채움: " + r1.채운날.join(" · ") : "") +
+        (!r1.만든날.length && !r1.채운날.length ? "바꿀 것이 없었습니다 (v2 줄이 없거나 파일에 빈 송장이 없음)" : "") +
+        (r1.오류.length ? "\n\n⚠ " + r1.오류.join("\n") : ""), ui.ButtonSet.OK);
+    } catch (eD) {
+      ui.alert("❌ 일일마감 재처리 (v2) 실패", String(eD && eD.message || eD).substring(0, 300), ui.ButtonSet.OK);
+    }
+    return;
+  }
   var now = new Date();
   var defaultDate = new Date(now.getTime());
   if (now.getHours() < 6) defaultDate.setDate(defaultDate.getDate() - 1);
@@ -610,9 +648,20 @@ function _pep_unifiedDailyArchiveScheduled_() {
 
   /*  ★ 2026-10-21: 일일마감 주인이 v2 면 v2 줄을 받아 적는다 (_partnerDailyCloseV2.gs) ★
       > 사장님 "일일마감도 v2로 넘길 준비 해줘"
-      v2 가 실패하면 여기서 멈추지 않고 아래 예전 GAS 마감으로 넘어간다 — 그날 파일이 비는 것이 제일 나쁘다. */
-  if (typeof _pep_dailyCloseFromV2_ === "function" && _pt_v2Owner_("/api/setsplit/daily-close") === "v2") {
+      ★ 2026-10-28: v2 가 실패하거나 주인을 못 물어도 예전 GAS 마감으로 «안» 넘어간다 ★
+        > 사장님 "남은 정리 두 가지도 해줘" (일일마감 전부 v2 로 — 시트 파일은 사람이 보는 용)
+        예전 마감은 은퇴한 세트분리 시트·판매현황 스냅샷으로 셈한다. 그날 파일을 그 셈으로 만들어 두면
+        다음 날부터 v2 는 지난 파일의 빈 송장만 채우므로 옛 셈 줄이 영영 남는다. 시스템(daily_archive)은
+        이미 v2 가 채우니 파일 하루 늦는 것보다 그쪽이 나쁘다. 알리고 멈춘다 — 다음 20:00 이 없는 날을
+        v2 줄로 만든다. 주인이 «시트»(스위치를 되돌렸을 때)일 때만 아래 예전 마감이 돈다. */
+  var 마감주인 = typeof _dcv2_owner_ === "function" ? _dcv2_owner_() : "시트";
+  if (마감주인 !== "시트") {
     if (_pt_isWeekendBlackout_()) { Logger.log("[BLACKOUT] 주말 차단 → 일일마감(v2) 스킵"); return; }
+    if (마감주인 === "모름") {
+      try { _chat_sendCard_("⚠ 일일마감 — v2 에 못 물어 오늘은 건너뜀", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [
+        { label: "다음", value: "내일 20:00 에 오늘 파일까지 v2 줄로 만듭니다 · 급하면 메뉴 「📋 통합 일일마감 (수동)」" }]); } catch (eCm) {}
+      return;
+    }
     try {
       var rv2 = _pep_dailyCloseFromV2_();
       try {
@@ -623,8 +672,11 @@ function _pep_unifiedDailyArchiveScheduled_() {
       } catch (eCv) {}
       return;
     } catch (eV2) {
-      Logger.log("[일일마감 v2] 실패 → 예전 GAS 마감으로: " + (eV2 && eV2.message ? eV2.message : eV2));
-      try { _chat_sendCard_("⚠ 일일마감 v2 실패 — 시트 마감으로 대신", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [{ label: "오류", value: String(eV2 && eV2.message || eV2).substring(0, 200) }]); } catch (eCf) {}
+      Logger.log("[일일마감 v2] 실패 — 멈춤(예전 마감으로 안 넘어감): " + (eV2 && eV2.message ? eV2.message : eV2));
+      try { _chat_sendCard_("⚠ 일일마감 v2 실패 — 파일을 안 만들었습니다", Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm"), [
+        { label: "오류", value: String(eV2 && eV2.message || eV2).substring(0, 200) },
+        { label: "다음", value: "내일 20:00 에 오늘 파일까지 v2 줄로 만듭니다 · 급하면 메뉴 「📋 통합 일일마감 (수동)」" }]); } catch (eCf) {}
+      return;
     }
   }
 

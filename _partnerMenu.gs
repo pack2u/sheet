@@ -104,11 +104,8 @@ function registerPartnerMenu_() {
             .addItem("📋 재처리 (날짜 지정)", "partnerUnifiedDailyArchiveForDate")
             /*  파일 이름을 손으로 바꾸면 마감이 «엉뚱한 파일»에 조용히 쓴다.
                 2026-09-17 에 실제로 그랬다 — 완료창은 떴는데 파일이 없었다. */
-            .addItem("📁 파일 기억 점검 (이름이 바뀐 것)", "partnerCheckDailyArchiveMemory")
-            /*  찾아만 주지 않는다 — 찾고 «옮기고» 말한다. 한 번 누르면 끝난다.
-                2026-09-17: 주문일이 뒤로 밀려 어제 것이 오늘 파일에 앉아 있었다. */
-            .addItem("🩹 날짜 바로잡기 (제자리로 옮김)", "partnerFixArchiveWrongDate")
-            .addItem("🗂️ 파일 폴더 정리 (일회성)", "partnerMoveDailyCloseFilesToSubFolder"))
+            .addItem("📁 파일 기억 점검 (이름이 바뀐 것)", "partnerCheckDailyArchiveMemory"))
+            /*  2026-10-28 뺌: 「날짜 바로잡기」(마감 날짜는 v2 가 정한다) · 「파일 폴더 정리」(일회성 · 끝남) */
         .addItem("🔁 중복 발주 점검 (임시기록 차수)", "partnerCheckDuplicateOrders")
         .addItem("🔍 중복 발주 감지 (발주탭+전용양식)", "partnerCheckDuplicateOrdersOwner")
         .addItem("🕵️ 오전/오후 판매현황 중복 점검", "partnerCheckSalesDuplicatesOwner")
@@ -206,11 +203,11 @@ function registerPartnerMenu_() {
     .addSubMenu(
       ui.createMenu("🚚 송장·택배사 설정·정비")
         .addItem("🚚 업체 택배사 표 생성/점검", "partnerEnsureVendorCarrierTable")
-        .addItem("📦 일일마감 택배사 채움률 점검", "partnerDiagnoseArchiveCarrier")
         .addItem("🏭 출고지 마스터 점검 (평택=롯데 / 대리발송=업체)", "partnerDiagnoseShipOrigin")
-        .addItem("⏪ 지난 일일마감에 택배사 채우기", "partnerBackfillArchiveCarrier")
-        .addItem("⏪ 지난 7일 미매칭 송장 채우기 (지금)", "partnerFillUnmatchedRecent")
-        .addItem("🧪 마감 미매칭 × 세트분리 원장 대조 (읽기만)", "partnerDiagnoseLedgerCoverage")
+        /*  2026-10-28 뺌 — 일일마감 파일을 열어 옛 셈을 보거나 고치던 넷. 마감은 v2 가 셈한다.
+              택배사 채움률·채우기 → v2 POST /api/setsplit/daily-close {작업:"택배사보기"|"택배사채우기"}
+              지난 7일 미매칭 송장 채우기 → 17:00 「📮 늦은 송장 채우기」(아래)와 20:00 v2 마감이 빈 칸을 채운다
+              마감 미매칭 × 세트분리 원장 대조 → 세트분리 시트 은퇴 */
         .addSeparator()
         .addItem("📋 사방넷 송장대량등록 탭 갱신", "partnerRebuildSabangnetBulkUpload")
         .addItem("🔧 사방넷_송장매칭 열배열(롯데) 적용", "partnerApplySabangnetLotteHeaders")
@@ -224,8 +221,6 @@ function registerPartnerMenu_() {
     .addSubMenu(
       ui.createMenu("🧭 송장 매칭 점검 (읽기만)")
         // ── 왜 안 붙었나 (읽기 전용) ──
-        .addItem("🪪 고유ID 인식 점검", "partnerDiagnoseUidRecognition")
-        .addItem("🔎 일일마감 미매칭 원인 진단", "partnerDiagnoseUnifiedUnmatched")
         .addItem("⚖️ 허브 송장 배정 근거 점검", "partnerDiagnoseCollectEvidence")
         .addItem("📋 대리공급_임시기록 송장 점검", "partnerDiagnoseTempInvoiceData")
         .addSeparator()
@@ -233,10 +228,8 @@ function registerPartnerMenu_() {
         .addItem("🧭 송장 소유권 점검 (남의 송장 붙었는지)", "partnerDiagnoseInvoiceOwnership")
         .addItem("   └ 📅 기간 지정 점검", "partnerDiagnoseInvoiceOwnershipForDays")
         .addSeparator()
-        // 2026-09-02: 발주시스템 메뉴에 있던 감사·보강을 옮겼다.
-        .addItem("📊 송장 매칭 감사", "partnerAuditInvoiceMatching")
-        .addItem("🔍 미매칭 성격 분석", "partnerAnalyzeUnmatched")
-        .addItem("   └ 🆔 고유ID 미매칭 판정", "partnerDiagnoseUidUnmatched")
+        /*  2026-10-28 뺌 — 일일마감 파일을 열어 옛 GAS 매칭을 진단하던 다섯(고유ID 인식 · 미매칭 원인 ·
+            매칭 감사 · 미매칭 성격 · 고유ID 미매칭). 마감 매칭은 v2 가 한다 — 미매칭은 v2 /matching(daily_archive 를 분류)에서 본다. */
         .addItem("⏳ 송장 없이 남은 행", "partnerListStaleNoInvoice")
     )
     .addSeparator()
