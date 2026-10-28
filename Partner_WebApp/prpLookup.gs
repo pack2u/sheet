@@ -330,6 +330,7 @@ var PRP_RESULT_CACHE_SEC_ = 600;     // 10분
 var PRP_KEYCACHE_LIVE_ = false;      // true 면 ① 메모리를 안 믿고 탭을 새로 읽는다 (못 찾았을 때 다시 보는 판)
 var PRP_KEYCACHE_TRUST_ = false;     // true 면 파일 수정 시각이 메모리와 같다 — 메모리만으로 답한다 (prpStampedBook_)
 var PRP_KEYCACHE_STALE_ = false;     // TRUST 판에서 메모리가 시트와 다른 걸 봤다
+var PRP_BATCH_ERR_ = "";             // 한 번에 읽기가 왜 막혔나 (timing.batchErr)
 var PRP_KEYCACHE_STAMPED_ = false;   // 수정 시각이 지키는 판 — 이번 달·발주 탭도 6시간 둔다(바뀌면 시각이 알려 준다)
 
 /** 열쇠 칸 메모리 열쇠 — 탭마다 (업체 파일 + 탭 이름 + 송장/고유ID) */
@@ -459,6 +460,7 @@ function prpBatchTabs_(fileId, 차례) {
     return { names: names, tabs: tabs };
   } catch (e) {
     Logger.log("[PRP] 한 번에 읽기 실패: " + e.message);
+    PRP_BATCH_ERR_ = String(e.message || e).substring(0, 200);   // 재는 사람이 timing 에서 본다
     return null;
   }
 }
@@ -725,7 +727,7 @@ function prpScanVendorBook_(sess, 훑기, 결과열쇠) {
   }
   //  (옛 길의 결과는 메모리에 안 담는다 — 수정 시각을 못 재는 판이라 ②의 확인을 못 한다)
   //  어디서 시간이 드나 — 화면은 안 쓰고 재는 사람이 본다
-  return { ok: true, matches: uniq, timing: { open: tOpen, ms: Date.now() - t0, tabs: 탭시간 } };
+  return { ok: true, matches: uniq, timing: { open: tOpen, ms: Date.now() - t0, tabs: 탭시간, batchErr: PRP_BATCH_ERR_ || undefined } };
 }
 
 /** 훑는 탭 차례 — 마감 12달 · 발주 및 송장조회 · 전용발주 마감 12달 · 전용양식 */
