@@ -521,6 +521,20 @@ function _cs_loadSearchIndex_(days, refresh, cacheOnly) {
       ══════════════════════════════════════════════════════════ */
   if (!lgv.found) {
     if (lgv.error) errors.push("원장: " + lgv.error + " → 일일마감 파일로 폴백");
+    //  메모리에 없는 날들을 v2 에서 한 번에(31일씩) 받아 둔다 — 날마다 따로 부르면 200일 찾기가 느리다 (2026-10-28)
+    if (!cacheOnly) {
+      var 받을 = dates;
+      if (!refresh) {
+        try {
+          var 있음 = CacheService.getScriptCache().getAll(dates.map(_cs_daCacheKey_));
+          받을 = dates.filter(function (d) { return !있음[_cs_daCacheKey_(d)]; });
+        } catch (eAll) {}
+      }
+      if (받을.length) {
+        var 못받음 = _cs_v2DailyFetch_(받을);
+        if (못받음) errors.push("v2 일일마감: " + 못받음);
+      }
+    }
     for (var i = 0; i < dates.length; i++) {
       var day = _cs_loadDay_(dates[i], refresh, cacheOnly);
       if (day.error) errors.push(dates[i] + ": " + day.error);
@@ -658,25 +672,30 @@ function _cs_loadDay_(dateStr, refresh, cacheOnly) {
 
   if (cacheOnly) return { found: false, fromCache: false, rows: [], error: "" };
 
-  var file = _cs_findDailyFile_(dateStr);
-  if (!file) {
-    /*  ★ 없는 날은 «없다»고 기억한다 ★  (2026-09-16)
-        공휴일·아직 안 만들어진 날은 찾아도 없다. 기억해 두지 않으면
-        새로고침마다 드라이브를 다시 뒤진다 — 늘 헛걸음이다.
-        30분만 기억한다. 오늘치는 곧 생기므로 오래 붙들면 안 된다.  */
+  /*  ══════════════════════════════════════════════════════════
+      ★ 일일마감은 v2 에서 받는다 ★  (2026-10-28)
+      > 사장님: "CS웹앱 네 곳도 v2로 옮겨줘"
+
+      예전엔 「일일마감_(날짜)」 시트 파일을 열었다. 그 파일은 v2 가 만든 줄을 GAS 가 받아 적은 «사본»이다
+      (10/21~ 마감 주인 v2 · 10/28~ daily_archive 도 v2 가 바로 채운다). 이제 v2 창구(/api/cs/daily)가
+      파일과 «같은 꼴»(직접 양식 머리글 + 보이는 글자 줄)로 주니 아래 읽기 규칙은 그대로다.
+      ★ 파일로 되돌아가지 않는다 ★ v2 가 답을 못 하면 오류를 그대로 보인다 — 갈래를 남기면 어느 답이 맞는지 모른다.
+      파일은 사람이 보는 용으로 계속 만들어진다(GAS 20:00).
+      ══════════════════════════════════════════════════════════ */
+  var pack = _CS_V2_DAY_PACK_[dateStr];
+  if (!pack) {
+    var 못함 = _cs_v2DailyFetch_([dateStr]);
+    pack = _CS_V2_DAY_PACK_[dateStr];
+    if (!pack) return { found: false, fromCache: false, rows: [], error: "v2 일일마감: " + (못함 || "답이 없습니다") };
+  }
+  if (!pack.줄 || !pack.줄.length) {
+    /*  ★ 없는 날은 «없다»고 기억한다 ★  (2026-09-16) 공휴일·아직 마감 전인 날. 30분만 — 오늘치는 곧 생긴다.  */
     try { cache.put(key, JSON.stringify({ rows: [] }), 1800); } catch (eN) {}
     return { found: true, fromCache: false, rows: [], error: "" };
   }
 
   try {
-    var ss = SpreadsheetApp.open(file);
-    var tab = ss.getSheetByName("일일마감") || ss.getSheets()[0];
-    if (!tab || tab.getLastRow() < 2) {
-      return { found: true, fromCache: false, rows: [], error: "데이터 없음" };
-    }
-    var lc = tab.getLastColumn();
-    var lr = tab.getLastRow();
-    var vals = tab.getRange(1, 1, lr, lc).getDisplayValues();
+    var vals = [pack.머리].concat(pack.줄);
     var hdr = vals[0];
     var map = _cs_mapArchiveHeaders_(hdr);
     var isDirectDaily = _cs_isDirectDailyArchiveHeader_(hdr);
@@ -697,6 +716,33 @@ function _cs_loadDay_(dateStr, refresh, cacheOnly) {
   } catch (e) {
     return { found: false, fromCache: false, rows: [], error: e.message };
   }
+}
+
+/** 이번 실행에서 v2 로 받아 둔 날들 {날: {머리, 줄}} — _cs_loadSearchIndex_ 가 한 번에 받아 채운다 */
+var _CS_V2_DAY_PACK_ = {};
+
+/**
+ * v2 일일마감 창구에서 날들을 받는다(31개씩 한 번에) — 받은 것은 _CS_V2_DAY_PACK_ 에.
+ * @return {string} 못 한 까닭 (다 됐으면 "")
+ */
+function _cs_v2DailyFetch_(dates) {
+  var url = _cs_v2_url_(), tok = _cs_v2_token_();
+  if (!url || !tok) return "v2 주소나 토큰이 없습니다 (_secrets.gs V2_URL · V2_INGEST_TOKEN)";
+  var 못함 = "";
+  for (var i = 0; i < dates.length; i += 31) {
+    try {
+      var res = UrlFetchApp.fetch(url + "/api/cs/daily", {
+        method: "post", contentType: "application/json", headers: { "x-ingest-token": tok },
+        muteHttpExceptions: true, payload: JSON.stringify({ 날들: dates.slice(i, i + 31) })
+      });
+      var code = res.getResponseCode(), text = res.getContentText();
+      if (code !== 200) { 못함 = "HTTP " + code + " " + text.substring(0, 160); continue; }
+      var j = JSON.parse(text);
+      if (!j.ok) { 못함 = String(j.error || "v2 가 실패를 돌려줌"); continue; }
+      for (var d in j.날들) _CS_V2_DAY_PACK_[d] = j.날들[d];
+    } catch (e) { 못함 = String(e && e.message || e); }
+  }
+  return 못함;
 }
 
 /** 허브가 일일마감을 모아 두는 하위폴더 (허브 _UNIFIED_DAILY_SUBFOLDER_ 와 같은 이름) */
