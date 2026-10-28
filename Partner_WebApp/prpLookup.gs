@@ -275,6 +275,8 @@ function prpScanTabByKey_(tab, source, out, 열들, 맞나, 종류) {
   for (var v = 0; v < rows.length; v++) {
     if (맞나(rows[v], lay.cols)) continue;
     if (!메모리판) { rows.splice(v, 1); v--; continue; }
+    //  「파일이 안 바뀌었다」고 믿고 도는 판(prpStampedBook_)인데 안 맞는다 — 믿음이 틀렸다. 책 전체를 새로 읽게 알린다
+    if (PRP_KEYCACHE_TRUST_) { PRP_KEYCACHE_STALE_ = true; return; }
     var 전 = PRP_KEYCACHE_LIVE_;
     PRP_KEYCACHE_LIVE_ = true;
     try { prpScanTabByKey_(tab, source, out, 열들, 맞나, 종류); } finally { PRP_KEYCACHE_LIVE_ = 전; }
@@ -326,6 +328,9 @@ var PRP_KEYCOL_CACHE_SEC_ = 21600;   // 6시간 (CacheService 최대) — 닫힌
 var PRP_KEYCOL_LIVE_CACHE_SEC_ = 600; // 10분 — 이번 달 마감·발주 및 송장조회·전용양식
 var PRP_RESULT_CACHE_SEC_ = 600;     // 10분
 var PRP_KEYCACHE_LIVE_ = false;      // true 면 ① 메모리를 안 믿고 탭을 새로 읽는다 (못 찾았을 때 다시 보는 판)
+var PRP_KEYCACHE_TRUST_ = false;     // true 면 파일 수정 시각이 메모리와 같다 — 메모리만으로 답한다 (prpStampedBook_)
+var PRP_KEYCACHE_STALE_ = false;     // TRUST 판에서 메모리가 시트와 다른 걸 봤다
+var PRP_KEYCACHE_STAMPED_ = false;   // 수정 시각이 지키는 판 — 이번 달·발주 탭도 6시간 둔다(바뀌면 시각이 알려 준다)
 
 /** 열쇠 칸 메모리 열쇠 — 탭마다 (업체 파일 + 탭 이름 + 송장/고유ID) */
 function prpKeyColsCacheKey_(tab, 종류) {
@@ -339,6 +344,7 @@ function prpKeyColsCacheKey_(tab, 종류) {
 function prpKeyColsCacheSec_(tab) {
   var nm = "";
   try { nm = String(tab.getName() || ""); } catch (e) {}
+  if (PRP_KEYCACHE_STAMPED_) return PRP_KEYCOL_CACHE_SEC_;
   var m = nm.match(/^\((\d{4})년 (\d{1,2})월\)/);
   if (!m) return PRP_KEYCOL_LIVE_CACHE_SEC_;
   var now = typeof prpNow_ === "function" ? prpNow_() : new Date();
@@ -366,6 +372,126 @@ function prpCachePutJson_(key, v, sec) {
     CacheService.getScriptCache().put(prpCacheHash_(key), s, sec);
     return true;
   } catch (e) { return false; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 파일이 바뀌었나 먼저 묻는다 ★  (2026-10-28)
+   > 사장님: "없는 송장도 빨리 나오게 해줘" · "송장정보가 새로 수집되면 메모리에도 업데이트 되게 못하나?"
+
+   메모리는 이 포털 프로젝트 안에만 있어 송장 수집·밤 마감(다른 프로젝트)이 갈아 넣을 수 없고,
+   업체가 손으로 적는 송장은 알릴 길도 없다. 대신 드라이브 «마지막 수정 시각»은 누가 고치든 바뀐다.
+     · 시각이 메모리를 만들 때와 같다 → 메모리 = 시트. 없는 송장도 메모리만 보고 바로 「없다」.
+     · 바뀌었다(또는 메모리가 비었다) → Sheets API 한 번으로 모든 탭 값을 받아 메모리를 새로 만든다.
+       탭을 하나씩 열면 탭마다 4~6초(14탭 1분 남짓) — API 는 탭을 «열지» 않는다.
+   찾은 줄은 늘 API 로 그 줄만 새로 읽어 다시 견준다. 안 맞으면 믿음이 틀린 것 → 새로 읽는다.
+   API·드라이브가 막히면 null → 옛 길(탭 하나씩) 그대로. 느려질 뿐 답은 같다.
+   ══════════════════════════════════════════════════════════════ */
+function prpFileStamp_(fileId) {
+  try { return DriveApp.getFileById(fileId).getLastUpdated().getTime(); } catch (e) { return 0; }
+}
+
+function prpSheetsApi_(fileId, path) {
+  var res = UrlFetchApp.fetch("https://sheets.googleapis.com/v4/spreadsheets/" + fileId + path, {
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) throw new Error("Sheets API " + res.getResponseCode() + " " + String(res.getContentText()).substring(0, 120));
+  return JSON.parse(res.getContentText());
+}
+
+function prpA1Tab_(name) { return "'" + String(name).replace(/'/g, "''") + "'"; }
+function prpColLetter_(n) { var s = ""; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+
+/** 받아 온 값으로 탭 흉내 — prpScanTabByKey_ 가 그대로 쓴다 */
+function prpRowsTab_(fileId, name, rows) {
+  var lc = 0;
+  for (var i = 0; i < rows.length; i++) if (rows[i].length > lc) lc = rows[i].length;
+  return {
+    getName: function () { return name; },
+    getParent: function () { return { getId: function () { return fileId; } }; },
+    getLastRow: function () { return rows.length; },
+    getLastColumn: function () { return lc; },
+    getRange: function (r, c, nr, nc) {
+      return { getDisplayValues: function () {
+        var out = [];
+        for (var k = 0; k < nr; k++) {
+          var src = rows[r - 1 + k] || [], y = [];
+          for (var j = 0; j < nc; j++) { var x = src[c - 1 + j]; y.push(x == null ? "" : String(x)); }
+          out.push(y);
+        }
+        return out;
+      } };
+    }
+  };
+}
+
+/** 메모리만 믿는 판의 탭 — 줄을 읽을 때만 API 로 그 줄을. 줄 수를 묻는 건 메모리가 빈 것이라 던진다 */
+function prpLazyTab_(fileId, name) {
+  return {
+    getName: function () { return name; },
+    getParent: function () { return { getId: function () { return fileId; } }; },
+    getLastRow: function () { throw new Error("메모리 없음"); },
+    getLastColumn: function () { throw new Error("메모리 없음"); },
+    getRange: function (r, c, nr, nc) {
+      return { getDisplayValues: function () {
+        var a1 = prpA1Tab_(name) + "!" + prpColLetter_(c) + r + ":" + prpColLetter_(c + nc - 1) + (r + nr - 1);
+        var j = prpSheetsApi_(fileId, "/values/" + encodeURIComponent(a1) + "?valueRenderOption=FORMATTED_VALUE");
+        return prpRowsTab_(fileId, name, j.values || []).getRange(1, 1, nr, nc).getDisplayValues();
+      } };
+    }
+  };
+}
+
+/** 있는 탭만 골라 한 번에 — {names, tabs} · 못 하면 null */
+function prpBatchTabs_(fileId, 차례) {
+  try {
+    var meta = prpSheetsApi_(fileId, "?fields=sheets.properties.title");
+    var 있는 = {};
+    (meta.sheets || []).forEach(function (s) { 있는[s.properties.title] = true; });
+    var names = 차례.filter(function (n) { return 있는[n]; });
+    var tabs = {};
+    if (names.length) {
+      var q = names.map(function (n) { return "ranges=" + encodeURIComponent(prpA1Tab_(n) + "!A1:T"); }).join("&");
+      var j = prpSheetsApi_(fileId, "/values:batchGet?valueRenderOption=FORMATTED_VALUE&majorDimension=ROWS&" + q);
+      var vr = j.valueRanges || [];
+      if (vr.length !== names.length) return null;
+      for (var i = 0; i < names.length; i++) tabs[names[i]] = prpRowsTab_(fileId, names[i], vr[i].values || []);
+    }
+    return { names: names, tabs: tabs };
+  } catch (e) {
+    Logger.log("[PRP] 한 번에 읽기 실패: " + e.message);
+    return null;
+  }
+}
+
+/**
+ * 열쇠(송장·고유ID) 찾기 — 수정 시각으로 메모리를 믿거나, 한 번에 새로 읽는다.
+ * @return {{matches:Array, how:string}|null}  null 이면 옛 길로
+ */
+function prpStampedBook_(fileId, 종류, 차례, 훑기) {
+  var stamp = prpFileStamp_(fileId);
+  var stKey = "st|" + fileId + "|" + 종류;
+  var st = stamp ? prpCacheGetJson_(stKey) : null;
+  if (st && st.stamp === stamp && st.names) {
+    var lazy = st.names.map(function (n) { return prpLazyTab_(fileId, n); });
+    var 다있나 = lazy.every(function (tb) { return !!prpCacheGetJson_(prpKeyColsCacheKey_(tb, 종류)); });
+    if (다있나) {
+      var out = [];
+      PRP_KEYCACHE_TRUST_ = true; PRP_KEYCACHE_STALE_ = false;
+      try { for (var i = 0; i < lazy.length; i++) 훑기(lazy[i], st.names[i], out); }
+      catch (e) { PRP_KEYCACHE_STALE_ = true; }
+      finally { PRP_KEYCACHE_TRUST_ = false; }
+      if (!PRP_KEYCACHE_STALE_) return { matches: out, how: "메모리(파일 안 바뀜)" };
+    }
+  }
+  var b = prpBatchTabs_(fileId, 차례);
+  if (!b) return null;
+  var out2 = [];
+  PRP_KEYCACHE_LIVE_ = true; PRP_KEYCACHE_STAMPED_ = !!stamp;
+  try { for (var k = 0; k < b.names.length; k++) 훑기(b.tabs[b.names[k]], b.names[k], out2); }
+  finally { PRP_KEYCACHE_LIVE_ = false; PRP_KEYCACHE_STAMPED_ = false; }
+  //  수정 시각은 읽기 «전»에 잰 것 — 읽는 사이 고쳐졌으면 다음 찾기에서 시각이 달라 다시 읽는다
+  if (stamp) prpCachePutJson_(stKey, { stamp: stamp, names: b.names }, PRP_KEYCOL_CACHE_SEC_);
+  return { matches: out2, how: "한 번에 새로 읽음" };
 }
 
 function prpArchiveTabName_(yyyy, m) {
@@ -539,10 +665,26 @@ function prpScanVendorBook_(sess, 훑기, 결과열쇠) {
     };
   }
 
-  //  ② 방금 찾은 결과 (10분) — 찾기 → 접수가 같은 장부를 두 번 훑지 않게
+  //  ② 방금 찾은 결과 (10분) — 찾기 → 접수가 같은 장부를 두 번 훑지 않게. 파일이 그 사이 고쳐졌으면 안 쓴다
   var rk = 결과열쇠 ? "kr|" + fileId + "|" + 결과열쇠 : "";
-  var 저장 = rk ? prpCacheGetJson_(rk) : null;
-  if (저장 && 저장.length) return { ok: true, matches: 저장, timing: { cached: true, ms: Date.now() - t0 } };
+  var 저장 = rk && !PRP_KEYCACHE_LIVE_ ? prpCacheGetJson_(rk) : null;
+  if (저장 && 저장.matches && 저장.matches.length && 저장.stamp && 저장.stamp === prpFileStamp_(fileId)) {
+    return { ok: true, matches: 저장.matches, timing: { cached: true, ms: Date.now() - t0 } };
+  }
+
+  //  ③ 열쇠 찾기는 수정 시각으로 메모리를 믿거나, 한 번에 새로 읽는다 (prpStampedBook_). 못 하면 아래 옛 길
+  if (rk && !PRP_KEYCACHE_LIVE_) {
+    var 종류 = String(결과열쇠).split(":")[0];
+    var tS = Date.now();
+    var 판 = null;
+    try { 판 = prpStampedBook_(fileId, 종류, prpBookTabNames_(), 훑기); } catch (eS) { 판 = null; }
+    if (판) {
+      var 답 = prpUniqMatches_(판.matches);
+      var 시각 = prpFileStamp_(fileId);
+      if (답.length && 시각) prpCachePutJson_(rk, { stamp: 시각, matches: 답 }, PRP_RESULT_CACHE_SEC_);
+      return { ok: true, matches: 답, timing: { how: 판.how, ms: Date.now() - t0, book: Date.now() - tS } };
+    }
+  }
 
   var ss = SpreadsheetApp.openById(fileId);
   var tOpen = Date.now() - t0;
@@ -570,15 +712,7 @@ function prpScanVendorBook_(sess, 훑기, 결과열쇠) {
   var exLive = ss.getSheetByName(PRP_EXCLUSIVE_TAB_NAME_);
   if (exLive) 훑기(exLive, PRP_EXCLUSIVE_TAB_NAME_, matches);
 
-  var seen = {};
-  var uniq = [];
-  for (var u = 0; u < matches.length; u++) {
-    var r = matches[u];
-    var k = [prpUidNorm_(r.uid), r.name, r.item, prpDigits_(r.invoice)].join("|");
-    if (seen[k]) continue;
-    seen[k] = true;
-    uniq.push(r);
-  }
+  var uniq = prpUniqMatches_(matches);
   /*  ★ 메모리만 보고 「없다」고 하지 않는다 ★ 닫힌 달 메모리에는 그 뒤 붙은 줄이 없을 수 있다.
       열쇠로 찾는 길(결과열쇠)에서 못 찾았으면 메모리를 끄고 한 번 더 — 느리지만 「없다」는 답은 시트가 준다. */
   if (rk && !uniq.length && !PRP_KEYCACHE_LIVE_) {
@@ -589,9 +723,29 @@ function prpScanVendorBook_(sess, 훑기, 결과열쇠) {
       return again;
     } finally { PRP_KEYCACHE_LIVE_ = false; }
   }
-  if (rk && uniq.length) prpCachePutJson_(rk, uniq, PRP_RESULT_CACHE_SEC_);
+  //  (옛 길의 결과는 메모리에 안 담는다 — 수정 시각을 못 재는 판이라 ②의 확인을 못 한다)
   //  어디서 시간이 드나 — 화면은 안 쓰고 재는 사람이 본다
   return { ok: true, matches: uniq, timing: { open: tOpen, ms: Date.now() - t0, tabs: 탭시간 } };
+}
+
+/** 훑는 탭 차례 — 마감 12달 · 발주 및 송장조회 · 전용발주 마감 12달 · 전용양식 */
+function prpBookTabNames_() {
+  var monthNames = prpRecentArchiveTabNames_(prpNow_(), PRP_LOOKUP_MONTHS_);
+  var exNames = monthNames.map(function (n) { return n.replace(PRP_ARCHIVE_TAB_SUFFIX_, PRP_EXCLUSIVE_ARCHIVE_SUFFIX_); });
+  return monthNames.concat([PRP_ORDER_TAB_NAME_], exNames, [PRP_EXCLUSIVE_TAB_NAME_]);
+}
+
+/** 같은 줄이 두 탭에서 걸리면 하나로 (고유ID·받는 분·품목·송장) */
+function prpUniqMatches_(matches) {
+  var seen = {}, uniq = [];
+  for (var u = 0; u < matches.length; u++) {
+    var r = matches[u];
+    var k = [prpUidNorm_(r.uid), r.name, r.item, prpDigits_(r.invoice)].join("|");
+    if (seen[k]) continue;
+    seen[k] = true;
+    uniq.push(r);
+  }
+  return uniq;
 }
 
 /**

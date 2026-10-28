@@ -14,14 +14,14 @@ function check(label, got, want) {
   else { fail++; console.log("  FAIL " + label + "  ->  " + g + "   (기대: " + w + ")"); }
 }
 //  메모리(CacheService)는 [7] 전까지 없다 — 없으면 시트를 읽는 길이 그대로 도는지도 앞 시험이 본다
-const ctx = { console, Logger: { log() {} }, PRP_CACHE_VER: "t", PRP_KEYCOL_CACHE_SEC_: 21600, PRP_KEYCOL_LIVE_CACHE_SEC_: 600, PRP_KEYCACHE_LIVE_: false, PRP_RESULT_CACHE_SEC_: 600, PRP_LOOKUP_MONTHS_: 12,
+const ctx = { console, Logger: { log() {} }, PRP_CACHE_VER: "t", PRP_KEYCOL_CACHE_SEC_: 21600, PRP_KEYCOL_LIVE_CACHE_SEC_: 600, PRP_KEYCACHE_LIVE_: false, PRP_KEYCACHE_TRUST_: false, PRP_KEYCACHE_STALE_: false, PRP_KEYCACHE_STAMPED_: false, PRP_RESULT_CACHE_SEC_: 600, PRP_LOOKUP_MONTHS_: 12,
   PRP_ORDER_TAB_NAME_: "발주 및 송장조회", PRP_ARCHIVE_TAB_SUFFIX_: "발주 마감", PRP_EXCLUSIVE_ARCHIVE_SUFFIX_: "전용발주 마감", PRP_EXCLUSIVE_TAB_NAME_: "전용양식" };
 vm.createContext(ctx);
 for (const f of ["prpLookup.gs", "prpConfig.gs", "prpLedger.gs"]) {
   const s = fs.readFileSync(f, "utf8");
   //  필요한 함수만 꺼낸다 — 파일 전체를 돌리면 서비스(SpreadsheetApp …)를 부르는 맨 위 코드가 있다
   const names = f === "prpLookup.gs"
-    ? ["prpUidFromCell_", "prpUidNorm_", "prpFindOrderHeaderRow_", "prpMapOrderCols_", "prpFindExclusiveHeaderRow_", "prpMapExclusiveCols_", "prpTabLayout_", "prpScanTabByKey_", "prpInvoiceCellHas_", "prpScanVendorBook_", "prpFindVendorFileId_", "prpRecentArchiveTabNames_", "prpArchiveTabName_", "prpKeyColsCacheKey_", "prpKeyColsCacheSec_", "prpCacheHash_", "prpCacheGetJson_", "prpCachePutJson_",
+    ? ["prpUidFromCell_", "prpUidNorm_", "prpFindOrderHeaderRow_", "prpMapOrderCols_", "prpFindExclusiveHeaderRow_", "prpMapExclusiveCols_", "prpTabLayout_", "prpScanTabByKey_", "prpInvoiceCellHas_", "prpFileStamp_", "prpSheetsApi_", "prpA1Tab_", "prpColLetter_", "prpRowsTab_", "prpLazyTab_", "prpBatchTabs_", "prpStampedBook_", "prpBookTabNames_", "prpUniqMatches_", "prpScanVendorBook_", "prpFindVendorFileId_", "prpRecentArchiveTabNames_", "prpArchiveTabName_", "prpKeyColsCacheKey_", "prpKeyColsCacheSec_", "prpCacheHash_", "prpCacheGetJson_", "prpCachePutJson_",
        "prpRowMatchesUid_", "prpRowToMatch_", "prpScanTab_", "prpScanTabForUid_", "prpScanTabForInvoice_"]
     : f === "prpConfig.gs" ? ["prpDigits_"] : ["prpFormatPhone_", "prpFormatInvoice_"];
   for (const n of names) {
@@ -194,6 +194,57 @@ console.log("[8] 책 전체 — 메모리로 못 찾으면 새로 읽어 한 번
   const r2 = ctx.prpScanVendorBook_(sess, 훑("45207777777"), "inv:45207777777");
   check("정말 없는 송장 — 다시 읽고도 0 (메모리 판에서 끝내지 않는다)", [r2.matches.length, !!(r2.timing && r2.timing.live)], [0, true]);
   check("다시 보는 판은 한 번만 (끝나면 메모리 판으로 돌아온다)", ctx.PRP_KEYCACHE_LIVE_, false);
+}
+
+console.log("[9] 수정 시각 + 한 번에 읽기 — 파일이 안 바뀌면 메모리만으로 «없다»까지, 바뀌면 한 번에 새로");
+{
+  메모.clear();
+  //  흉내 낸 업체 파일 — 9월 마감(닫힌 달) · 10월 마감(이번 달). 값은 지어냄
+  const 머리 = 큰줄[0];
+  const 책 = {
+    "(2026년 9월) 발주 마감": [["📊"], ["📦"], ["🏷️"], 머리, ["", "", "", "구월품목", "1", "구월분", "010-0000-0901", "", "", "", "45200000901"]],
+    "(2026년 10월) 발주 마감": [["📊"], ["📦"], ["🏷️"], 머리, ["", "", "", "시월품목", "2", "시월분", "010-0000-1001", "", "", "", "45200001001"]],
+  };
+  let 시각 = 1000, api = 0, 막힘 = false;
+  ctx.DriveApp = { getFileById: () => ({ getLastUpdated: () => new Date(시각) }) };
+  ctx.ScriptApp = { getOAuthToken: () => "t" };
+  const 범위 = (a1) => { const m = a1.match(/^'(.*)'!([A-Z]+)(\d+)?:([A-Z]+)(\d+)?$/); return { name: m[1].replace(/''/g, "'"), r1: m[3] ? +m[3] : 1, r2: m[5] ? +m[5] : null }; };
+  const 답 = (o, code = 200) => ({ getResponseCode: () => code, getContentText: () => JSON.stringify(o) });
+  ctx.UrlFetchApp = { fetch: (url) => {
+    api++;
+    if (막힘) return 답({ error: "PERMISSION_DENIED" }, 403);
+    if (url.includes("?fields=sheets.properties.title")) return 답({ sheets: Object.keys(책).map((t) => ({ properties: { title: t } })) });
+    if (url.includes("/values:batchGet")) {
+      const rs = url.split("&").filter((p) => p.startsWith("ranges=")).map((p) => 범위(decodeURIComponent(p.slice(7))));
+      return 답({ valueRanges: rs.map((r) => ({ values: 책[r.name].map((x) => x.slice()) })) });
+    }
+    const r = 범위(decodeURIComponent(url.split("/values/")[1].split("?")[0]));
+    return 답({ values: 책[r.name].slice(r.r1 - 1, r.r2).map((x) => x.slice()) });
+  } };
+  ctx.SpreadsheetApp = { openById: () => { throw new Error("옛 길로 왔다"); } };
+  const 훑 = (inv) => (tab, src, out) => ctx.prpScanTabForInvoice_(tab, inv, src, out);
+  const sess = { fileId: "FILE9" };
+  const 찾아 = (inv) => { api = 0; const r = ctx.prpScanVendorBook_(sess, 훑(inv), "inv:" + inv); return { n: r.matches.length, name: r.matches[0] && r.matches[0].name, how: r.timing && (r.timing.how || (r.timing.cached ? "결과메모리" : "옛길")), api }; };
+
+  check("처음 — 한 번에 새로 읽어 찾는다(API 2번: 탭 목록·값)", 찾아("45200000901"), { n: 1, name: "구월분", how: "한 번에 새로 읽음", api: 2 });
+  check("파일 안 바뀜 · 없는 송장 — 메모리만으로 바로 0 (API 0번)", 찾아("45299999999"), { n: 0, name: undefined, how: "메모리(파일 안 바뀜)", api: 0 });
+  check("파일 안 바뀜 · 다른 송장 — 메모리로 고르고 그 줄만 API 로(1번)", 찾아("45200001001"), { n: 1, name: "시월분", how: "메모리(파일 안 바뀜)", api: 1 });
+  check("방금 찾은 송장 — 결과 메모리 (파일 안 바뀜 확인 뒤)", 찾아("45200001001").how, "결과메모리");
+  //  송장이 새로 수집됐다 — 줄이 붙고 수정 시각이 바뀐다
+  책["(2026년 10월) 발주 마감"].push(["", "", "", "새품목", "1", "새분", "010-0000-1002", "", "", "", "45200001002"]);
+  시각 = 2000;
+  check("새로 수집된 송장 — 시각이 바뀌어 한 번에 새로 읽고 찾는다", 찾아("45200001002"), { n: 1, name: "새분", how: "한 번에 새로 읽음", api: 2 });
+  check("그 뒤로는 다시 메모리만 (없는 송장 API 0번)", 찾아("45299999998"), { n: 0, name: undefined, how: "메모리(파일 안 바뀜)", api: 0 });
+  //  시각은 그대로인데 줄이 밀렸다(믿음이 틀린 경우) — 고른 줄이 안 맞으면 알아채고 새로 읽는다
+  책["(2026년 10월) 발주 마감"].splice(4, 1);
+  책["(2026년 10월) 발주 마감"].push(["", "", "", "시월품목", "2", "시월분", "010-0000-1001", "", "", "", "45200001001"]);
+  메모.forEach((v, k) => { if (v.includes("matches")) 메모.delete(k); });   // 결과 메모리는 비우고 탭 메모리만으로
+  const 밀림 = 찾아("45200001002");
+  check("시각이 그대로여도 고른 줄이 안 맞으면 새로 읽어 맞는 줄을 준다", [밀림.n, 밀림.name, 밀림.how], [1, "새분", "한 번에 새로 읽음"]);
+  //  API 가 막히면 옛 길 — 여기선 옛 길이 openById 에서 던진다(옛 길로 갔다는 표시)
+  막힘 = true; 시각 = 3000;
+  let 옛길 = false; try { 찾아("45200000901"); } catch (e) { 옛길 = /옛 길로 왔다/.test(e.message); }
+  check("API 가 막히면 옛 길(탭 하나씩)로 간다", 옛길, true);
 }
 
 console.log("");
