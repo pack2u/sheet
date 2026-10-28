@@ -293,9 +293,22 @@ function prpScanTabForUid_(tab, want, source, out) {
 function prpScanTabForInvoice_(tab, wantDigits, source, out) {
   prpScanTabByKey_(tab, source, out, function (cols) { return [cols.inv]; }, function (row, cols) {
     if (cols.inv < 0) return false;
-    var d = prpDigits_(row[cols.inv]);
-    return !!(d && wantDigits && d === wantDigits);
+    return prpInvoiceCellHas_(row[cols.inv], wantDigits);
   }, "inv");
+}
+
+/**
+ * 송장 칸에 그 송장이 있나 — 한 칸에 송장이 여럿일 수 있다 (2026-10-28 태양 「45287424394 45287424405 45287424416」)
+ * 칸 전체 숫자를 이어 붙여 견주면 가운데 것 하나로는 못 찾았다. 빈칸·쉼표·줄바꿈·/ 로 나눠 하나씩 본다.
+ * 하이픈은 한 송장 안의 구분(4634-6108-5990)이라 나누지 않는다.
+ */
+function prpInvoiceCellHas_(cell, wantDigits) {
+  if (!wantDigits) return false;
+  var s = String(cell == null ? "" : cell);
+  if (prpDigits_(s) === wantDigits) return true;
+  var parts = s.split(/[\s,，、\/;|]+/);
+  for (var i = 0; i < parts.length; i++) if (parts[i] && prpDigits_(parts[i]) === wantDigits) return true;
+  return false;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -636,7 +649,14 @@ function prpLookupByInvoice(sid, invRaw) {
         matches: [], timing: res.timing
       };
     }
-    return { ok: true, invoice: prpFormatInvoice_(invRaw), matches: res.matches, timing: res.timing };
+    //  한 칸에 송장이 여럿이면 그 줄의 「송장」은 찾은 그 송장으로 — 칸 채우기가 맨 앞 송장으로 바꿔 적지 않게
+    var matches = res.matches.map(function (m) {
+      if (prpDigits_(m.invoice) === digits) return m;
+      var c = {}; for (var k in m) c[k] = m[k];
+      c.invoice = prpFormatInvoice_(digits);
+      return c;
+    });
+    return { ok: true, invoice: prpFormatInvoice_(invRaw), matches: matches, timing: res.timing };
   } catch (e) {
     return { ok: false, error: e.message || String(e), matches: [] };
   }

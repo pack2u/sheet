@@ -21,7 +21,7 @@ for (const f of ["prpLookup.gs", "prpConfig.gs", "prpLedger.gs"]) {
   const s = fs.readFileSync(f, "utf8");
   //  필요한 함수만 꺼낸다 — 파일 전체를 돌리면 서비스(SpreadsheetApp …)를 부르는 맨 위 코드가 있다
   const names = f === "prpLookup.gs"
-    ? ["prpUidFromCell_", "prpUidNorm_", "prpFindOrderHeaderRow_", "prpMapOrderCols_", "prpFindExclusiveHeaderRow_", "prpMapExclusiveCols_", "prpTabLayout_", "prpScanTabByKey_", "prpScanVendorBook_", "prpFindVendorFileId_", "prpRecentArchiveTabNames_", "prpArchiveTabName_", "prpKeyColsCacheKey_", "prpKeyColsCacheSec_", "prpCacheHash_", "prpCacheGetJson_", "prpCachePutJson_",
+    ? ["prpUidFromCell_", "prpUidNorm_", "prpFindOrderHeaderRow_", "prpMapOrderCols_", "prpFindExclusiveHeaderRow_", "prpMapExclusiveCols_", "prpTabLayout_", "prpScanTabByKey_", "prpInvoiceCellHas_", "prpScanVendorBook_", "prpFindVendorFileId_", "prpRecentArchiveTabNames_", "prpArchiveTabName_", "prpKeyColsCacheKey_", "prpKeyColsCacheSec_", "prpCacheHash_", "prpCacheGetJson_", "prpCachePutJson_",
        "prpRowMatchesUid_", "prpRowToMatch_", "prpScanTab_", "prpScanTabForUid_", "prpScanTabForInvoice_"]
     : f === "prpConfig.gs" ? ["prpDigits_"] : ["prpFormatPhone_", "prpFormatInvoice_"];
   for (const n of names) {
@@ -111,6 +111,16 @@ check("일반 마감 — 고유ID 도 그대로", e2.length, 1);
 //  이름에 「전용」이 없으면 「이슈」 머리글이 있어도 일반 배치 (탭 이름이 문지기)
 const 이름만 = tab("발주 및 송장조회", [["", "", "이슈", "받는사람"], ["x", "999988887777", "a", "b"]]);
 check("이름에 「전용」이 없으면 전용 배치를 안 쓴다 (B열을 송장으로 안 본다)", 찾기(이름만, "999988887777").length, 0);
+
+console.log("[5-1] 한 칸에 송장 여럿 (태양 10월 모양 · 번호는 지어냄)");
+const 여럿 = tab("(2026년 10월) 전용발주 마감", [TY.getRange(1, 1, 1, 14).getDisplayValues()[0],
+  ["2026-10-02 23:12", "45200000101 45200000112 45200000123", "발송완료", "시험고객3", "", "서울 시험구", "010-0000-4455", "", "3", "", "", "포크 1매 /백색", "", ""],
+  ["2026-10-03 23:12", "45200000201,45200000212\n45200000223", "발송완료", "시험고객4", "", "부산", "010-0000-6677", "", "2", "", "", "숟가락", "", ""]]);
+check("가운데 송장으로 찾는다", [찾기(여럿, "45200000112").length, 찾기(여럿, "45200000112")[0].name], [1, "시험고객3"]);
+check("맨 뒤 송장 · 쉼표·줄바꿈 칸", [찾기(여럿, "45200000123").length, 찾기(여럿, "45200000223")[0] && 찾기(여럿, "45200000223")[0].name], [1, "시험고객4"]);
+check("앞자리만 같은 번호는 안 걸린다", 찾기(여럿, "4520000011").length, 0);
+check("하이픈 송장은 그대로 한 송장", ctx.prpInvoiceCellHas_("4634-6108-5990", "463461085990"), true);
+check("하이픈 조각으로는 안 걸린다", ctx.prpInvoiceCellHas_("4634-6108-5990", "4634"), false);
 
 console.log("[6] 열쇠 칸만 먼저 읽는다 — 탭 전체를 읽지 않는다 (10/28 업체 화면 30~58초)");
 const 큰줄 = [일반.getRange(4, 1, 1, 16).getDisplayValues()[0]];
