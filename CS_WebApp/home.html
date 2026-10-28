@@ -10239,14 +10239,15 @@
         setStatus('<span class="os-spin"></span>서버 캐시에서 불러오는 중… (불러온 뒤엔 즉시 검색)');
       }
       renderOrderDashboard();
-      if (refresh) {
-        /*  ★ 통합조회 갈래를 지웠다 ★  (2026-09-16)
-            이제 원장(파일 1개) 아니면 일일마감(날짜별)이다.
-            원장이 읽히면 아래 csGetSearchIndex 한 번에 다 오고,
-            안 읽히면 missingDays 를 보고 날짜별 예열로 내려간다.  */
-        warmDays(dateList(DAYS), true, quiet);
-        return;
-      }
+      /*  ★ 통합조회 갈래를 지웠다 ★  (2026-09-16)
+          이제 원장(파일 1개) 아니면 일일마감(날짜별)이다.
+          원장이 읽히면 아래 csGetSearchIndex 한 번에 다 오고,
+          안 읽히면 missingDays 를 보고 날짜별 예열로 내려간다.
+
+          ★ ↻ 도 이 길로 ★  (2026-10-28 · 사장님 "새로고침 중복 건수도 정리해줘")
+            ↻ 만 날짜별 일일마감 30일을 먼저 받고 그 뒤 원장을 합쳤다. 두 쪽은 이름 칸 꼴이
+            달라(원장 「홍길동」 · 일일마감 「홍길동/고유ID」 → mergeRows 열쇠가 다름) 같은 주문이
+            두 줄이 됐다 — 14,224 → 24,910건. 평소 검색은 원장만 쓰므로 ↻ 도 원장만 새로 받는다. */
       google.script.run
         .withSuccessHandler(function (res) {
           if (res && res.ok && res.rows && res.rows.length) mergeRows(res.rows);
