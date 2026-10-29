@@ -172,7 +172,12 @@ export function 서버먼저보기(선택 = {}) {
 
       그래서 «온 파일 수»를 센다. 내 쪽 스크립트 수의 절반도 안 되면
       당기기가 샌 것으로 보고 멈춘다. 모르면 멈춘다.                */
-  const 온것 = fs.readdirSync(받을곳).filter((f) => f !== ".clasp.json");
+  /*  ★ 하위 폴더도 연다 (2026-10-29) ★ 상품정보시트(뿌리) 프로젝트는 서버에 폴더가 있다 —
+      전에는 맨 위만 보아 폴더를 파일로 읽다가 EISDIR 로 넘어졌다(CS·포털은 폴더가 없어 몰랐다).
+      이름은 «받을곳 기준 상대 경로»(a/b.js) — 아래에서 내 쪽 같은 자리와 견준다.  */
+  const 모두파일 = (d, 앞 = "") => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? 모두파일(path.join(d, e.name), 앞 + e.name + "/") : [앞 + e.name]);
+  const 온것 = 모두파일(받을곳).filter((f) => f !== ".clasp.json");
   const 내스크립트 = fs.readdirSync(process.cwd())
     .filter((f) => /\.(gs|js|html)$/.test(f) && !/_test\.js$/.test(f));
   if (온것.length === 0 || 온것.length * 2 < 내스크립트.length) {

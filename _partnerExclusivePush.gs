@@ -3011,6 +3011,8 @@ function _pep_pushCore_(silent) {
           ) {
             sv = _pep_restoreLeadingZero_(sv);
           }
+          // 앞 글자 (2026-10-29 태양 송하인 「5팩투유」) — 이미 그 글자로 시작하면 또 안 붙인다. v2 partner-push.ts 와 같다
+          if (stm.prefix && String(sv).indexOf(stm.prefix) !== 0) sv = stm.prefix + String(sv);
           outRow[stm.targetCol] = sv;
         }
       }
@@ -3789,6 +3791,8 @@ function partnerPushFromTempTabToExclusive() {
               _pep_isPhoneTargetCol_(stm.targetCol, directMap.phoneTargetCols)) {
             sv = _pep_restoreLeadingZero_(sv);
           }
+          // 앞 글자 (2026-10-29 태양 송하인 「5팩투유」) — 이미 그 글자로 시작하면 또 안 붙인다. v2 partner-push.ts 와 같다
+          if (stm.prefix && String(sv).indexOf(stm.prefix) !== 0) sv = stm.prefix + String(sv);
           outRow[stm.targetCol] = sv;
         }
       }
@@ -6453,7 +6457,7 @@ var _PEP_VENDOR_DIRECT_MAP_ = {
       { sourceCol: 6, targetCol: 7, label: "G(수량)→H(박스수량)" },
       { sourceCol: 4, targetCol: 10, label: "E(품목명)→K(품목명)" },
       { sourceCol: 10, targetCol: 12, label: "K(배송메세지)→M(배송메세지)" },
-      { sourceCol: 16, targetCol: 20, label: "Q(보내는분)→U(송하인명)" },
+      { sourceCol: 16, targetCol: 20, label: "Q(보내는분)→U(송하인명)", prefix: "5" }, // 10/29 사장님 「송하인 앞에 5 — 5팩투유」
       { sourceCol: 18, targetCol: 21, label: "S(보내는분주소)→V(송하인주소)" },
       { sourceCol: 17, targetCol: 22, label: "R(보내는분전화)→W(송하인번호)" },
     ],
