@@ -67,6 +67,11 @@
 
   .thumbs { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
   .thumbs img { width: 62px; height: 62px; object-fit: cover; border-radius: 8px; border: 1px solid var(--bd); }
+  /* 잘못 찍은 사진 빼기 (2026-10-29) — 사진마다 ✕ · 「＋ 한 장 더」 */
+  .thumbs .th { position: relative; }
+  .thumbs .th .del { position: absolute; right: -6px; top: -6px; width: 22px; height: 22px; border-radius: 50%; border: 0;
+    background: #d33; color: #fff; font-size: 12px; font-weight: 700; line-height: 22px; padding: 0; }
+  .thumbs .more { width: 62px; height: 62px; border-radius: 8px; border: 1px dashed var(--bd); background: transparent; color: var(--tx2); font-size: 12px; }
 
   input[type=text], #manualInv {
     width: 100%; background: var(--bg2); border: 1px solid var(--bd); border-radius: 10px;
@@ -445,13 +450,26 @@
      붙이는 경우에 handleFiles 를 그냥 부르면 LAST·PICKED 를 지워
      방금 검색해 고른 건이 날아간다. */
   var ATTACH_ONLY = false;
+  /*  「＋ 한 장 더」 — 지금 사진 뒤에 덧붙인다(바꾸지 않는다) (2026-10-29)  */
+  var ATTACH_MORE = false;
 
   document.getElementById("fileCap").addEventListener("change", function (ev) {
     var files = Array.prototype.slice.call(ev.target.files || []);
-    if (!files.length) return;
+    if (!files.length) { ATTACH_MORE = false; return; }
+    if (ATTACH_MORE) { moreFiles(files); return; }
     if (ATTACH_ONLY) { attachFiles(files); return; }
     handleFiles(files);
   });
+
+  function moreFiles(files) {
+    ATTACH_MORE = false;
+    Promise.all(files.map(shrink)).then(function (list) {
+      PENDING = PENDING.concat(list);
+      render();
+    }).catch(function (e) {
+      toast("사진 처리 실패: " + (e && e.message ? e.message : e), 3200);
+    });
+  }
 
   /** 검색으로 찾은 건에 사진만 더한다. 번호 인식은 하지 않는다 —
       어느 건인지 이미 사람이 골랐다. */
@@ -738,9 +756,15 @@
     else if (LAST.fromLabel) h += '<div class="via">라벨 글자로 다시 찾은 결과</div>';
 
     // 사진 미리보기
+    /*  ★ 잘못 찍은 사진만 뺀다 (2026-10-29 사장님 「잘못 찍었을때 취소를 할수있는 버튼」) ★
+        전에는 「취소」 하나뿐이라 한 장이 흔들려도 고른 건까지 통째로 날렸다.
+        사진마다 ✕ · 「＋ 한 장 더」(고른 건·인식 결과는 그대로 두고 사진만 더한다).  */
     if (PENDING.length) {
       h += '<div class="thumbs">';
-      PENDING.forEach(function (p) { h += '<img src="' + p.url + '">'; });
+      PENDING.forEach(function (p, i) {
+        h += '<span class="th"><img src="' + p.url + '"><button type="button" class="del" data-del="' + i + '" aria-label="이 사진 빼기" title="이 사진 빼기">✕</button></span>';
+      });
+      h += '<button type="button" class="more" id="btnMorePhoto" title="사진을 더 찍어 붙입니다">＋ 한 장 더</button>';
       h += '</div>';
     }
 
@@ -809,6 +833,24 @@
     });
     document.getElementById("btnCancel").addEventListener("click", reset);
     document.getElementById("btnSave").addEventListener("click", save);
+
+    //  사진 하나 빼기 — 마지막 한 장까지 빼면 「사진 찍어 붙이기」가 다시 보인다(고른 건은 그대로)
+    Array.prototype.forEach.call(document.querySelectorAll(".thumbs .del[data-del]"), function (b) {
+      b.addEventListener("click", function () {
+        var i = parseInt(b.getAttribute("data-del"), 10);
+        if (i >= 0 && i < PENDING.length) PENDING.splice(i, 1);
+        render();
+      });
+    });
+    var moreBtn = document.getElementById("btnMorePhoto");
+    if (moreBtn) {
+      moreBtn.addEventListener("click", function () {
+        ATTACH_MORE = true;
+        var f = document.getElementById("fileCap");
+        f.value = "";
+        f.click();
+      });
+    }
 
     var addBtn = document.getElementById("btnAddPhoto");
     if (addBtn) {
