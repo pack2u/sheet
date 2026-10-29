@@ -368,6 +368,8 @@ function _cib_ledgerOne_(it) {
     catch (eB) { return { id: it.id, success: false, error: "보드: " + ((eB && eB.message) || eB) }; }
     finally { _CS_AC_TRUSTED_ = false; }
   }
+  //  v2 작업화면 「📷 입고 확인」 (2026-10-29) — 이 웹앱 lgwResolve 와 같은 본체(csLogisticsResolve)
+  if (d.kind === "lgw") return _cib_lgw_(it, d, staff);
   if (d.kind === "note") {
     //  상담·메모·전화 — 이 웹앱 카드(appendReturnConsultation)와 같은 본체. 비고에 한 줄 쌓인다
     var rn = _cs_appendReturnConsultation_({ tab: d.tab, row: d.row, text: d.text || "", staff: staff || "CS" }) || {};
@@ -443,6 +445,58 @@ function _cib_cardPickup_(it, d, staff) {
   return { id: it.id, success: true, message: 말, sheet: d.tab, row: d.row };
 }
 
+/**
+ * v2 작업화면 「📷 입고 확인」 — 확인 대기 사진을 반품 건에 붙이거나(attach) 대상 아님으로 닫는다(dismiss)   (2026-10-29)
+ * 이 웹앱 lgwResolve → csLogisticsResolve 와 같은 본체 · 같은 잠금 · 같은 「아직 대기인가」 검사.
+ * ★ 붙일 줄은 v2 가 아는 (탭, 행)을 그대로 믿지 않는다 ★ _cib_locate_ 로 이름 + 원송장·반품송장·전화 뒤4 를 확인한다
+ *   (밤 미러 뒤 줄이 밀렸을 수 있다 — 남의 반품에 입고검수를 찍는 것이 제일 나쁜 일이다).
+ */
+function _cib_lgw_(it, d, staff) {
+  var p = { intakeTab: d.intakeTab, intakeRow: d.intakeRow, action: d.action, staff: staff || "CS", reason: d.reason || "" };
+  if (d.action === "attach") {
+    var loc = _cib_locate_(d.ret || null);
+    if (!loc.tab) return { id: it.id, success: false, error: "대장에서 그 건을 못 정했습니다 — " + loc.miss };
+    p.tab = loc.tab; p.row = loc.row;
+  }
+  var r;
+  _CS_AC_TRUSTED_ = true;
+  try { r = csLogisticsResolve(p) || {}; }
+  catch (eL) { r = { ok: false, error: (eL && eL.message) || String(eL) }; }
+  finally { _CS_AC_TRUSTED_ = false; }
+  try { csIntakeWaitPushToV2(true); } catch (eP) {}
+  try { csInvalidateReturnLedgerCache_(); } catch (eC) {}
+  return r.ok ? { id: it.id, success: true, message: r.message || "처리했습니다", sheet: p.tab || "", row: p.row || null }
+              : { id: it.id, success: false, error: r.error || "처리하지 못했습니다" };
+}
+
+/*  ★ 확인 대기 목록 → v2 (2026-10-29 작업화면 「📷 입고 확인」) ★
+    목록의 주인은 이 시트(입고_yyyyMM K열)다 — 이 웹앱에서 붙여도, v2 에서 붙여도 여기 한 곳이 바뀐다.
+    v2 는 시트를 못 읽으므로 csLogisticsPending 결과를 5분마다(붙이거나 새 입고가 오면 바로) 민다.
+    못 읽었으면 밀지 않는다 — 빈 목록으로 덮으면 «대기 0건»으로 보인다.  */
+var _CIB_WAIT_PUSH_KEY_ = "cib_wait_push_at";
+var _CIB_WAIT_PUSH_EVERY_ = 5 * 60 * 1000;
+function csIntakeWaitPushToV2(force) {
+  var props = PropertiesService.getScriptProperties();
+  var last = Number(props.getProperty(_CIB_WAIT_PUSH_KEY_) || 0);
+  if (!force && Date.now() - last < _CIB_WAIT_PUSH_EVERY_) return { ok: true, skipped: "아직 5분 안 됨" };
+  var url = _cs_v2_url_(), tok = _cs_v2_token_();
+  if (!url || !tok) return { ok: false, error: "v2 주소나 토큰이 없습니다" };
+  var r;
+  _CS_AC_TRUSTED_ = true;
+  try { r = csLogisticsPending(true); } finally { _CS_AC_TRUSTED_ = false; }
+  props.setProperty(_CIB_WAIT_PUSH_KEY_, String(Date.now()));
+  if (!r || !r.ok) return { ok: false, error: (r && r.error) || "확인 대기를 못 읽었습니다 — 밀지 않습니다" };
+  var res = UrlFetchApp.fetch(url + "/api/intake/wait", {
+    method: "post", contentType: "application/json", headers: { "x-ingest-token": tok },
+    payload: JSON.stringify({ count: r.count, days: r.days, rows: r.rows || [] }), muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) {
+    Logger.log("[CIB 입고확인] v2 밀기 실패 " + res.getResponseCode() + " " + res.getContentText().substring(0, 200));
+    return { ok: false, error: "v2 HTTP " + res.getResponseCode() };
+  }
+  return { ok: true, count: r.count };
+}
+
 /** 1분 트리거가 부른다. 손으로 불러도 된다 (결과를 돌려준다). */
 function csIntakeBridgePull() {
   var lock = LockService.getScriptLock();
@@ -453,6 +507,8 @@ function csIntakeBridgePull() {
     try { ledgerQ = _cib_ledgerQueue_(); } catch (eQ) { Logger.log("[CIB 대장] 오류: " + ((eQ && eQ.message) || eQ)); }
     //  처리가이드·CS사례 색인 → v2 (6시간마다 · 2026-10-29 작업화면 ⑥). 실패해도 다리는 그대로
     try { csManualPushToV2(false); } catch (eM) { Logger.log("[CIB 매뉴얼] 오류: " + ((eM && eM.message) || eM)); }
+    //  입고 확인 대기 → v2 (5분마다 · 2026-10-29). 실패해도 다리는 그대로
+    try { csIntakeWaitPushToV2(false); } catch (eW) { Logger.log("[CIB 입고확인] 오류: " + ((eW && eW.message) || eW)); }
     var claim = _cib_post_({ op: "claim", limit: 10, recheck: true }); // recheck: 재검수 결과 줄도 받는다 (v2 sql/74) // 한 건에 글자 인식 3~5초 — 1분 안에 끝나게
     if (!claim.ok) { Logger.log("[CIB] claim 실패: " + claim.error); return claim; }
     var items = claim.items || [];
@@ -470,6 +526,8 @@ function csIntakeBridgePull() {
     var done = _cib_post_({ op: "done", results: results });
     try { csInvalidateReturnLedgerCache_(); } catch (eC) {}
     _csl_dropPendingCache_();
+    //  새 입고가 대기로 갔을 수 있다 — v2 목록도 바로
+    try { csIntakeWaitPushToV2(true); } catch (eW2) {}
     Logger.log("[CIB] " + JSON.stringify({ n: items.length, done: done }));
     return { ok: true, n: items.length, results: results, done: done, ledger: ledgerQ };
   } finally {
