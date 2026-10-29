@@ -280,6 +280,15 @@ function _cib_ledgerOne_(it) {
   //  v2 작업화면 반품 카드 단추 (2026-10-29) — 새 줄이 아니라 «있는 줄»을 고친다. 이 웹앱 카드 단추와 같은 본체
   if (d.kind === "edit") return _cib_cardEdit_(it, d, staff);
   if (d.kind === "pickup") return _cib_cardPickup_(it, d, staff);
+  //  v2 가 보드에 올려 달라는 글 (2026-10-29 「취소건이 들어오면 커뮤니티보드에」) — 새벽 브리핑과 같은 csCreateHandoffCard
+  if (d.kind === "board") {
+    var rb = csCreateHandoffCard({
+      board: d.board || "cs", level: d.level || "주의", staff: "자동",
+      title: String(d.title || "").slice(0, 200), body: String(d.body || ""), link: d.link || "",
+    }) || {};
+    return rb.ok === false ? { id: it.id, success: false, error: rb.error || "보드에 못 올렸습니다" }
+                           : { id: it.id, success: true, message: "보드에 올렸습니다" };
+  }
   if (d.kind === "note") {
     //  상담·메모·전화 — 이 웹앱 카드(appendReturnConsultation)와 같은 본체. 비고에 한 줄 쌓인다
     var rn = _cs_appendReturnConsultation_({ tab: d.tab, row: d.row, text: d.text || "", staff: staff || "CS" }) || {};
