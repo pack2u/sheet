@@ -390,3 +390,38 @@ function _cs_filterManualRows_(rows, query) {
   }
   return out;
 }
+
+/* ══════════════════════════════════════════════════════════════
+ *  색인을 v2 로 민다 — v2 작업화면 「처리가이드 · CS사례」 (2026-10-29)
+ *  v2 는 이 웹앱을 못 부른다(보는 사람 권한으로 돈다). 그래서 1분 다리(csIntakeBridgePull)가
+ *  6시간마다 이걸 부른다 — 색인 캐시 TTL(_CS_MANUAL_CACHE_TTL_)과 같은 간격.
+ *  몸은 gzip — 줄 수천 · 본문 1,200자라 Vercel 4.5MB 를 넘을 수 있다.
+ *  색인의 주인은 여기 하나다. v2 는 받은 것을 그대로 보인다.
+ * ══════════════════════════════════════════════════════════════ */
+var _CS_MANUAL_PUSH_KEY_ = "CS_MANUAL_PUSHED_AT";
+var _CS_MANUAL_PUSH_EVERY_ = 6 * 3600 * 1000;
+
+function csManualPushToV2(force) {
+  var props = PropertiesService.getScriptProperties();
+  var last = Number(props.getProperty(_CS_MANUAL_PUSH_KEY_) || 0);
+  if (!force && Date.now() - last < _CS_MANUAL_PUSH_EVERY_) return { ok: true, skipped: "아직 6시간 안 됨" };
+  var url = _cs_v2_url_(), tok = _cs_v2_token_();
+  if (!url || !tok) return { ok: false, error: "v2 주소나 토큰이 없습니다" };
+  var idx = csWarmManualIndex(!!force);
+  if (!idx.rows || !idx.rows.length) return { ok: false, error: "색인이 비었습니다 — 밀지 않습니다" };
+  var body = JSON.stringify({ rows: idx.rows, manualCount: idx.manualCount, caseCount: idx.caseCount, guideCount: idx.guideCount });
+  var gz = Utilities.gzip(Utilities.newBlob(body, "application/json"));
+  var res = UrlFetchApp.fetch(url + "/api/cs/manual", {
+    method: "post", contentType: "application/gzip", headers: { "x-ingest-token": tok },
+    payload: gz.getBytes(), muteHttpExceptions: true
+  });
+  var code = res.getResponseCode();
+  if (code !== 200) {
+    Logger.log("[CS_MANUAL] v2 밀기 실패 " + code + " " + res.getContentText().substring(0, 200));
+    //  실패하면 30분 뒤에 다시 — 1분마다 색인(시트 셋)을 다시 만들지 않게
+    props.setProperty(_CS_MANUAL_PUSH_KEY_, String(Date.now() - _CS_MANUAL_PUSH_EVERY_ + 30 * 60 * 1000));
+    return { ok: false, error: "v2 HTTP " + code };
+  }
+  props.setProperty(_CS_MANUAL_PUSH_KEY_, String(Date.now()));
+  return { ok: true, rows: idx.rows.length };
+}

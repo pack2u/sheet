@@ -372,6 +372,8 @@ function csIntakeBridgePull() {
     //  v2 「반품대장 기록」 요청 먼저 — 사람이 화면에서 기다린다. 실패해도 입고 다리는 그대로 돈다
     var ledgerQ = null;
     try { ledgerQ = _cib_ledgerQueue_(); } catch (eQ) { Logger.log("[CIB 대장] 오류: " + ((eQ && eQ.message) || eQ)); }
+    //  처리가이드·CS사례 색인 → v2 (6시간마다 · 2026-10-29 작업화면 ⑥). 실패해도 다리는 그대로
+    try { csManualPushToV2(false); } catch (eM) { Logger.log("[CIB 매뉴얼] 오류: " + ((eM && eM.message) || eM)); }
     var claim = _cib_post_({ op: "claim", limit: 10, recheck: true }); // recheck: 재검수 결과 줄도 받는다 (v2 sql/74) // 한 건에 글자 인식 3~5초 — 1분 안에 끝나게
     if (!claim.ok) { Logger.log("[CIB] claim 실패: " + claim.error); return claim; }
     var items = claim.items || [];
