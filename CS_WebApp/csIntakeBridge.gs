@@ -280,6 +280,17 @@ function _cib_ledgerOne_(it) {
   //  v2 작업화면 반품 카드 단추 (2026-10-29) — 새 줄이 아니라 «있는 줄»을 고친다. 이 웹앱 카드 단추와 같은 본체
   if (d.kind === "edit") return _cib_cardEdit_(it, d, staff);
   if (d.kind === "pickup") return _cib_cardPickup_(it, d, staff);
+  //  v2 반품 카드 「업체가 새로 올렸습니다 · 확인」 · 「입고 요청」 (2026-10-29 작업화면 ⑦) — 이 웹앱 카드와 같은 본체
+  if (d.kind === "check") {
+    var rc = _cs_markReturnChecked_({ tab: d.tab, row: d.row, staff: staff || "CS" }) || {};
+    return rc.ok ? { id: it.id, success: true, message: rc.already ? "이미 다른 분이 확인했습니다" : "CS 확인을 적었습니다", sheet: d.tab, row: d.row }
+                 : { id: it.id, success: false, error: rc.error || "확인을 못 적었습니다", sheet: d.tab, row: d.row };
+  }
+  if (d.kind === "intakereq") {
+    var ri = _cs_setReturnIntakeReq_({ tab: d.tab, row: d.row, text: d.text || "", staff: staff || "CS" }) || {};
+    return ri.ok ? { id: it.id, success: true, message: ri.message || "입고 요청을 남겼습니다", sheet: d.tab, row: d.row }
+                 : { id: it.id, success: false, error: ri.error || "입고 요청을 못 남겼습니다", sheet: d.tab, row: d.row };
+  }
   //  v2 가 보드에 올려 달라는 글 (2026-10-29 「취소건이 들어오면 커뮤니티보드에」) — 새벽 브리핑과 같은 csCreateHandoffCard
   if (d.kind === "board") {
     var rb = csCreateHandoffCard({

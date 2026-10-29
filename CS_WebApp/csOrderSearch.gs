@@ -5097,6 +5097,11 @@ function _cs_needsCsCheck_(staff, notice, status) {
  */
 function markReturnChecked(payload) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  return _cs_markReturnChecked_(payload);
+}
+
+/*  본체 — 문지기 없이. v2 반품 카드 「업체가 새로 올렸습니다 · 확인」이 1분 다리(kind check)로 부른다 (2026-10-29)  */
+function _cs_markReturnChecked_(payload) {
   payload = payload || {};
   var tabName = String(payload.tab || "").trim();
   var rowNum = parseInt(payload.row, 10);

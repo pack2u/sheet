@@ -364,6 +364,12 @@ function _cs_ensureIntakeReqCol_(tab) {
  */
 function csSetReturnIntakeReq(p) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  return _cs_setReturnIntakeReq_(p);
+}
+
+/*  본체 — 문지기(_cs_ac_guard_) 없이. v2 작업화면 반품 카드 「입고 요청」이 1분 다리(kind intakereq)로 부른다 (2026-10-29).
+    다리는 트리거라 «보는 사람»이 없다 — 문지기를 거치면 늘 막힌다. 문지기는 위 화면 함수가 맡는다.  */
+function _cs_setReturnIntakeReq_(p) {
   p = p || {};
   var tabName = String(p.tab || "").trim(), rowNum = parseInt(p.row, 10);
   var text = String(p.text || "").replace(/\s+/g, " ").trim();
@@ -377,7 +383,7 @@ function csSetReturnIntakeReq(p) {
     var before = String(cell.getDisplayValue() || "").trim();
     if (before === text) return { ok: true, intakeReq: text, unchanged: true };
     cell.setValue(text);
-    appendReturnConsultation({
+    _cs_appendReturnConsultation_({
       tab: tabName, row: rowNum, staff: staff,
       text: "[내부] 입고확인요청" + (text ? ": " + text : " 지움 (전: " + before + ")")
     });
