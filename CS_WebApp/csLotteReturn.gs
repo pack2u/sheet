@@ -552,6 +552,11 @@ function _lrt_guessCarrier_(반품송장칸, 원송장칸) {
 
 function csLotteReturnPickupFromCard(p) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return { ok: false, error: "권한이 없습니다." };
+  return _cs_returnPickupFromCard_(p);
+}
+
+/** 본체 — 권한 확인은 부르는 쪽이 한다 (2026-10-29 · v2 반품 카드 「반품접수」 다리가 부른다) */
+function _cs_returnPickupFromCard_(p) {
   p = p || {};
 
   var ctx;
@@ -735,7 +740,8 @@ function csLotteReturnPickupFromCard(p) {
           상태·비고는 updateReturnLedgerStatus 가 임자이므로 거기로 넘긴다 —
           여기서 직접 적으면 같은 값에 주인이 둘이 된다.  */
       if (col.status >= 0 && _cs_isBeforePickup_(cell("status"))) {
-        var 올림 = updateReturnLedgerStatus({
+        //  본체를 부른다 — v2 다리(시간 트리거)로 와도 권한 확인에 막히지 않게 (2026-10-29)
+        var 올림 = _cs_updateReturnLedgerStatus_({
           tab: p.tab, row: p.row,
           status: _CS_STATUS_PICKUP_,
           staff: p.staff || "CS"

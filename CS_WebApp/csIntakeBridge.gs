@@ -277,6 +277,15 @@ function _cib_ledgerQueue_() {
 function _cib_ledgerOne_(it) {
   var d = it.data || {};
   var staff = String(it.staff || d.staff || "").trim();
+  //  v2 작업화면 반품 카드 단추 (2026-10-29) — 새 줄이 아니라 «있는 줄»을 고친다. 이 웹앱 카드 단추와 같은 본체
+  if (d.kind === "edit") return _cib_cardEdit_(it, d, staff);
+  if (d.kind === "pickup") return _cib_cardPickup_(it, d, staff);
+  if (d.kind === "note") {
+    //  상담·메모·전화 — 이 웹앱 카드(appendReturnConsultation)와 같은 본체. 비고에 한 줄 쌓인다
+    var rn = _cs_appendReturnConsultation_({ tab: d.tab, row: d.row, text: d.text || "", staff: staff || "CS" }) || {};
+    return rn.ok ? { id: it.id, success: true, message: rn.message || "남겼습니다", sheet: d.tab, row: d.row }
+                 : { id: it.id, success: false, error: rn.error || "대장에 못 남겼습니다", sheet: d.tab, row: d.row };
+  }
   var 줄들 = Array.isArray(d.items) && d.items.length ? d.items : [{}];
   var 공통 = {};
   for (var k in d) if (Object.prototype.hasOwnProperty.call(d, k) && k !== "items" && k !== "photos" && k !== "photoMemo") 공통[k] = d[k];
@@ -315,6 +324,35 @@ function _cib_ledgerOne_(it) {
     }
   }
   return { id: it.id, success: true, message: 말, row: first.row, sheet: first.sheet, rows: 적힌 };
+}
+
+/**
+ * v2 반품 카드 — 반품송장 저장 · 실번호 고침 · 완료처리 · 상태 바꾸기   (2026-10-29)
+ * > 사장님: "작업화면 구조를 CS웹앱(V1)의 모양 그대로 … 기능도"
+ * 이 웹앱 카드 단추(retInvSave · retPh2 · retCompleteNow)가 부르는 updateReturnLedgerStatus 본체 그대로다.
+ * v2 는 대장에 못 쓰고, v2 에서 상태를 바꾸면 밤 미러가 되돌린다(v2 sql/59) — 그래서 여기로 온다.
+ */
+function _cib_cardEdit_(it, d, staff) {
+  var r = _cs_updateReturnLedgerStatus_({
+    tab: d.tab, row: d.row, status: d.status, staff: staff || "CS",
+    returnInvoice: d.returnInvoice || "", phone2: d.phone2 || "", phone2Name: d.phone2Name || ""
+  }) || {};
+  if (!r.ok) return { id: it.id, success: false, error: r.error || "대장에 못 적었습니다", sheet: d.tab, row: d.row };
+  return { id: it.id, success: true, message: r.message || "적었습니다", sheet: d.tab, row: d.row };
+}
+
+/**
+ * v2 반품 카드 「반품접수」 — 택배사에 회수 기사를 부른다   (2026-10-29)
+ * 이 웹앱 카드 단추(_retPickupSend_)가 부르는 csLotteReturnPickupFromCard 본체 그대로다(로젠·롯데를 거기서 가른다).
+ * ★ 두 번 나가면 기사가 두 번 온다 ★ 이 요청 줄은 한 번만 잡힌다(claim 잠금) — 실패면 다시 잡지 않게 실패로 닫는다.
+ */
+function _cib_cardPickup_(it, d, staff) {
+  var r = _cs_returnPickupFromCard_({ tab: d.tab, row: d.row, only: d.only || null, staff: staff || "CS" }) || {};
+  var 송장 = r.invoices || [], 접수 = r.takeNos || [];
+  if (!송장.length && !접수.length) return { id: it.id, success: false, error: r.error || "회수 접수 실패", sheet: d.tab, row: d.row };
+  var 말 = 송장.length ? "회수 접수 — 반품송장 " + 송장.join(", ") : "회수 접수 — 접수번호 " + 접수.join(", ") + " (로젠은 출력 뒤 송장이 나옵니다)";
+  if (r.error) 말 += " · ⚠ " + r.error;
+  return { id: it.id, success: true, message: 말, sheet: d.tab, row: d.row };
 }
 
 /** 1분 트리거가 부른다. 손으로 불러도 된다 (결과를 돌려준다). */

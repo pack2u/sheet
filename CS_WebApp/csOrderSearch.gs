@@ -3669,6 +3669,15 @@ function _cs_openReturnLedgerRow_(tabName, rowNum) {
 /** 처리상태(A열) 변경 + 비고 이력 */
 function updateReturnLedgerStatus(payload) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  return _cs_updateReturnLedgerStatus_(payload);
+}
+
+/**
+ * 본체 — 권한 확인은 부르는 쪽이 한다 (2026-10-29)
+ * 이 웹앱 화면은 위 updateReturnLedgerStatus(구글 계정 확인)로, v2 작업화면 반품 카드는
+ * 다리(csIntakeBridge.gs _cib_ledgerOne_ · v2 직원 로그인이 문지기)로 온다. 대장에 적는 길은 하나다.
+ */
+function _cs_updateReturnLedgerStatus_(payload) {
   payload = payload || {};
   var tabName = String(payload.tab || "").trim();
   var rowNum = parseInt(payload.row, 10);
@@ -4013,6 +4022,11 @@ function deleteReturnTimelineEvent(payload) {
 /** 상담 내용 N열 append */
 function appendReturnConsultation(payload) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  return _cs_appendReturnConsultation_(payload);
+}
+
+/** 본체 — 권한 확인은 부르는 쪽이 한다 (2026-10-29 · v2 반품 카드 상담·메모·전화가 다리로 온다) */
+function _cs_appendReturnConsultation_(payload) {
   payload = payload || {};
   var tabName = String(payload.tab || "").trim();
   var rowNum = parseInt(payload.row, 10);
