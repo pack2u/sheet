@@ -210,7 +210,13 @@ function _cs_ac_isLogistics_(email) {
  * 쓰기 함수용 가드. 통과하면 null, 막히면 에러 객체를 돌려준다.
  * 이 프로젝트는 {ok:...} 와 {success:...} 두 규약이 섞여 있어 둘 다 채운다.
  */
+/*  ★ 믿는 부름 (2026-10-29) ★ v2 → 1분 다리(csIntakeBridgePull, 트리거)가 보드·대장 함수를 부를 때만 켠다.
+    트리거에는 «보는 사람»이 없어 _cs_ac_check_ 가 빈 메일로 막는다. 요청은 v2 가 직원 로그인으로 확인하고 토큰으로 넘긴 것이다.
+    한 실행 안에서만 켜고(다리가 finally 로 끈다) 화면 부름(google.script.run)은 따로 도는 실행이라 늘 false.  */
+var _CS_AC_TRUSTED_ = false;
+
 function _cs_ac_guard_() {
+  if (_CS_AC_TRUSTED_) return null;
   var chk = _cs_ac_check_();
   if (chk.allowed) return null;
   return {

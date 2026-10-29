@@ -274,6 +274,75 @@ function _cib_ledgerQueue_() {
  *   사진은 첫 줄에만(같은 상자를 찍은 것) — 적는 건 csAttach.gs _cs_attRecord_ (이 웹앱 사진 첨부와 같은 줄 모양).
  * d.items 가 없으면 d 하나가 한 줄이다(예전 요청).
  */
+/**
+ * 보드 요청 한 줄 — v2 작업화면 보드(2026-10-29 작업화면 ⑨). 시트 보드가 주인이고, 밤 미러가 v2 로 다시 가져간다.
+ *   board          자동 글(취소 클레임 등) — 작성자 「자동」
+ *   board_create   새 카드 → 결과 ref = 시트 카드 ID (v2 가 그 카드의 src_key 를 「이관:보드:ID」로 묶는다 — 두 장 안 되게)
+ *   board_note · board_edit · board_note_edit · board_note_delete · board_done · board_delete · board_mention
+ * 전달 고치기·지우기는 시트의 «그 줄 전체»(raw)로 찾는다 — v2 는 시각(yyMMdd HH:mm)·작성자·본문을 보내고 여기서 그 줄을 찾는다.
+ */
+function _cib_board_(it, d, staff) {
+  var k = String(d.kind), r;
+  var who = staff || "CS";
+  var 끝 = function (res, okMsg) {
+    res = res || {};
+    return res.ok === false ? { id: it.id, success: false, error: res.error || "보드에 못 적었습니다" }
+                            : { id: it.id, success: true, message: res.message || okMsg, ref: res.id || "" };
+  };
+  if (k === "board") {
+    r = csCreateHandoffCard({ board: d.board || "cs", level: d.level || "주의", staff: "자동",
+      title: String(d.title || "").slice(0, 200), body: String(d.body || ""), link: d.link || "" });
+    return 끝(r, "보드에 올렸습니다");
+  }
+  if (k === "board_create") {
+    r = csCreateHandoffCard({ board: d.board || "cs", level: d.level || "일반", staff: who, title: d.title || "", body: d.body || "",
+      link: d.link || "", custName: d.custName || "", phone: d.phone || "", invoice: d.invoice || "", item: d.item || "", to: d.to || [] });
+    return 끝(r, "카드를 올렸습니다");
+  }
+  var ref = { board: d.board || "", id: d.id || "", staff: who };
+  if (!ref.id) return { id: it.id, success: false, error: "시트 카드 ID 가 없습니다 (v2 에만 있는 카드)" };
+  if (k === "board_note") { ref.text = d.text || ""; return 끝(csAddHandoffNote(ref), "전달 내용을 적었습니다"); }
+  if (k === "board_edit") {
+    ["title", "body", "level", "link"].forEach(function (f) { if (d[f] !== undefined && d[f] !== null) ref[f] = d[f]; });
+    return 끝(csEditHandoffCard(ref), "카드를 고쳤습니다");
+  }
+  if (k === "board_done") return 끝(d.done ? csCompleteHandoffCard(ref) : csReopenHandoffCard(ref), d.done ? "완료로 내렸습니다" : "다시 열었습니다");
+  if (k === "board_delete") return 끝(csDeleteHandoffCard(ref), "카드를 지웠습니다");
+  if (k === "board_mention") { ref.to = d.to || []; return 끝(csSetHandoffMention(ref), "지목을 바꿨습니다"); }
+  if (k === "board_note_edit" || k === "board_note_delete") {
+    var raw = _cib_noteRaw_(ref.board, ref.id, d.at || "", d.oldBody || "");
+    if (!raw) return { id: it.id, success: false, error: "시트에서 그 전달 줄을 못 찾았습니다 (이미 고쳤거나 지웠을 수 있습니다)" };
+    ref.raw = raw;
+    if (k === "board_note_edit") { ref.text = d.text || ""; return 끝(csEditHandoffNote(ref), "전달 내용을 고쳤습니다"); }
+    return 끝(csDeleteHandoffNote(ref), "전달 내용을 지웠습니다");
+  }
+  return { id: it.id, success: false, error: "모르는 보드 요청: " + k };
+}
+
+/** 전달 줄 찾기 — 「[yyMMdd HH:mm 작성자] 본문」 중 시각이 같고 본문이 같은 줄 (본문은 공백을 눌러 견준다) */
+function _cib_noteRaw_(board, id, at, body) {
+  var b = board || _cs_hb_boardOfId_(id);
+  var tab = _cs_hb_getTab_(b);
+  var sheetRow = _cs_hb_findRow_(tab, id);
+  if (sheetRow < 2) return "";
+  var cell = String(tab.getRange(sheetRow, _CS_HB_COL_.notes + 1).getDisplayValue() || "");
+  var 눌러 = function (s) { return String(s || "").replace(/\s+/g, " ").trim(); };
+  var lines = cell.split(/\r?\n/), want = 눌러(body);
+  var 같은글 = [];
+  for (var i = 0; i < lines.length; i++) {
+    var m = lines[i].trim().match(/^\[(\d{6}\s+\d{1,2}:\d{2})\s+[^\]]*\]\s*(.*)$/);
+    if (!m) continue;
+    //  여러 줄짜리 전달은 다음 머리 줄 전까지 이어 붙여 견준다
+    var 본문 = m[2];
+    for (var j = i + 1; j < lines.length && !/^\[\d{6}\s+\d{1,2}:\d{2}/.test(lines[j].trim()); j++) 본문 += " " + lines[j].trim();
+    if (눌러(본문) !== want) continue;
+    if (!at || 눌러(m[1]) === 눌러(at)) return lines[i].trim();
+    같은글.push(lines[i].trim());
+  }
+  //  시각이 1분쯤 어긋난다(v2 에서 쓴 줄은 다리가 시트에 적은 때가 찍힌다) — 같은 글이 «하나뿐»이면 그 줄
+  return 같은글.length === 1 ? 같은글[0] : "";
+}
+
 function _cib_ledgerOne_(it) {
   var d = it.data || {};
   var staff = String(it.staff || d.staff || "").trim();
@@ -291,14 +360,13 @@ function _cib_ledgerOne_(it) {
     return ri.ok ? { id: it.id, success: true, message: ri.message || "입고 요청을 남겼습니다", sheet: d.tab, row: d.row }
                  : { id: it.id, success: false, error: ri.error || "입고 요청을 못 남겼습니다", sheet: d.tab, row: d.row };
   }
-  //  v2 가 보드에 올려 달라는 글 (2026-10-29 「취소건이 들어오면 커뮤니티보드에」) — 새벽 브리핑과 같은 csCreateHandoffCard
-  if (d.kind === "board") {
-    var rb = csCreateHandoffCard({
-      board: d.board || "cs", level: d.level || "주의", staff: "자동",
-      title: String(d.title || "").slice(0, 200), body: String(d.body || ""), link: d.link || "",
-    }) || {};
-    return rb.ok === false ? { id: it.id, success: false, error: rb.error || "보드에 못 올렸습니다" }
-                           : { id: it.id, success: true, message: "보드에 올렸습니다" };
+  //  ★ 보드 — v2 작업화면에서 쓴 것을 «시트 보드»(주인)에 (2026-10-29) ★ 이 웹앱 보드 단추와 같은 함수(cs…HandoffCard)
+  //    그 함수들 맨 앞 문지기는 트리거에서 늘 막힌다 — 이 실행 동안만 «믿는 부름»으로 연다
+  if (/^board/.test(String(d.kind || ""))) {
+    _CS_AC_TRUSTED_ = true;
+    try { return _cib_board_(it, d, staff); }
+    catch (eB) { return { id: it.id, success: false, error: "보드: " + ((eB && eB.message) || eB) }; }
+    finally { _CS_AC_TRUSTED_ = false; }
   }
   if (d.kind === "note") {
     //  상담·메모·전화 — 이 웹앱 카드(appendReturnConsultation)와 같은 본체. 비고에 한 줄 쌓인다
