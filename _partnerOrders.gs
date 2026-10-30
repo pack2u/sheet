@@ -4946,6 +4946,16 @@ function partnerRebuildSalesUploadSheet(silent) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) return;
 
+  /*  ★ 2026-10-30 주인이 v2 면 아무것도 안 한다 ★  (v2 sql/263 · lib/hub-ecount-sale.ts)
+      > "V2 허브에서 업체 수집된것이 판매현황으로 넘어가는데... 시트에도 판매갱신 업 완료를 적게" · "v2가 이카운트에도 올림"
+      v2 예약 작업이 허브 P열이 빈 줄을 이카운트 판매 웹자료올리기로 넣고 P열(도서산간 판매갱신 칸)에 적는다.
+      여기서 탭을 또 만들고 P열을 채우면 같은 줄이 두 길로 올라간다. 못 물으면 «시트» — 여태처럼 돈다. */
+  if (_pt_v2Owner_("/api/sales/hub-ecount") === "v2") {
+    Logger.log("[SALES_REFRESH] 판매현황 갱신 주인이 v2 — 건너뜁니다(v2 가 이카운트에 넣고 P열에 적는다)");
+    if (ui) ui.alert("판매현황 갱신은 이제 v2 가 합니다.\n\nv2 가 10분마다 허브의 새 줄을 이카운트 판매에 넣고 P열에 「판매갱신 업 완료」를 적습니다.\n이 탭을 이카운트에 올리지 마세요(두 번 들어갑니다).");
+    return;
+  }
+
   // ★ 2026-10-05 판매현황 «전에» 도서산간 주소 판정 — 손으로 갱신해도 OUT00001 이 빠지지 않게.
   //   자동 회차(silent)는 _po_collectSilentCore_ 가 바로 앞에서 시간 예산을 보고 이미 했다 —
   //   여기서 또 하면 그 예산이 무너진다. 손으로 누를 때만 한다.
