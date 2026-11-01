@@ -183,6 +183,8 @@ function doPost(e) {
  * @param {Object} body {token, action:"erpSheet", menu, name, dataB64(xlsx)}
  */
 var FS_ERP_ROOT = "ERP";
+/** ERP 시트는 사진보다 크다 — 판매현황 6개월이 압축 엑셀로 29MB (11/1 잼). GAS 가 받는 본문 끝(50MB)보다 아래로 */
+var FS_ERP_MAX_BYTES = 36 * 1024 * 1024;
 
 function _fs_erpFolder_(menu) {
   var top = DriveApp.getRootFolder();
@@ -197,7 +199,7 @@ function _fs_erpSheet_(body) {
   var b64 = String(body.dataB64 || "");
   if (!b64) return { ok: false, error: "파일 내용이 없습니다" };
   var bytes = Utilities.base64Decode(b64);
-  if (bytes.length > FS_MAX_BYTES) return { ok: false, error: "파일이 너무 큽니다 (" + Math.round(bytes.length / 1024 / 1024 * 10) / 10 + "MB)" };
+  if (bytes.length > FS_ERP_MAX_BYTES) return { ok: false, error: "파일이 너무 큽니다 — 기간을 줄여 주세요 (" + Math.round(bytes.length / 1024 / 1024 * 10) / 10 + "MB)" };
   var folder = _fs_erpFolder_(body.menu);
   var name = String(body.name || "").trim() || ("저장_" + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd-HHmm"));
 
