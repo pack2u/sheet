@@ -121,6 +121,8 @@ function doPost(e) {
       return _fs_json_({ ok: false, error: "토큰이 맞지 않습니다" });
     }
 
+    if (body.action === "erpSheet") return _fs_json_(_fs_erpSheet_(body));
+
     var b64 = String(body.dataB64 || "");
     if (!b64) return _fs_json_({ ok: false, error: "파일 내용이 없습니다" });
 
@@ -166,6 +168,61 @@ function doPost(e) {
   } catch (err) {
     return _fs_json_({ ok: false, error: String((err && err.message) || err) });
   }
+}
+
+/**
+ * ★ v2 ERP 화면 → 「ERP / 메뉴」 폴더에 구글 시트로 저장 ★  (2026-11-01)
+ *
+ * > 사장님: "구글드라이브에도 ERP 폴더내에 각 메뉴들의 폴더를 만들어서 저장날자와 조회기간을 이름에 넣어 저장하게 해줘"
+ *
+ * v2 서비스 계정은 드라이브 저장 공간이 없어 파일을 못 만든다 — 그래서 늘 pack2u 로 도는 여기서 만든다.
+ * 폴더는 pack2u 「내 드라이브」 맨 위 「ERP」, 그 안에 메뉴 이름 폴더(없으면 만든다).
+ * v2 가 xlsx 를 보내면 Drive API 로 «구글 시트로 바꿔» 올린다(새 권한 없음 — drive 와 external_request 는 이미 있다).
+ * 부르는 쪽: v2 lib/erp-drive.ts erp시트저장
+ *
+ * @param {Object} body {token, action:"erpSheet", menu, name, dataB64(xlsx)}
+ */
+var FS_ERP_ROOT = "ERP";
+
+function _fs_erpFolder_(menu) {
+  var top = DriveApp.getRootFolder();
+  var it = top.getFoldersByName(FS_ERP_ROOT);
+  var erp = it.hasNext() ? it.next() : top.createFolder(FS_ERP_ROOT);
+  var name = String(menu || "").replace(/[\\/]/g, " ").trim() || "기타";
+  var it2 = erp.getFoldersByName(name);
+  return it2.hasNext() ? it2.next() : erp.createFolder(name);
+}
+
+function _fs_erpSheet_(body) {
+  var b64 = String(body.dataB64 || "");
+  if (!b64) return { ok: false, error: "파일 내용이 없습니다" };
+  var bytes = Utilities.base64Decode(b64);
+  if (bytes.length > FS_MAX_BYTES) return { ok: false, error: "파일이 너무 큽니다 (" + Math.round(bytes.length / 1024 / 1024 * 10) / 10 + "MB)" };
+  var folder = _fs_erpFolder_(body.menu);
+  var name = String(body.name || "").trim() || ("저장_" + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd-HHmm"));
+
+  //  multipart 올리기 — 메타의 mimeType 을 구글 시트로 주면 xlsx 가 시트로 바뀐다
+  var 경계 = "p2u" + Utilities.getUuid().replace(/-/g, "");
+  var 메타 = JSON.stringify({ name: name, parents: [folder.getId()], mimeType: "application/vnd.google-apps.spreadsheet" });
+  var 앞 = Utilities.newBlob("--" + 경계 + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + 메타 +
+    "\r\n--" + 경계 + "\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n").getBytes();
+  var 뒤 = Utilities.newBlob("\r\n--" + 경계 + "--").getBytes();
+  var res = UrlFetchApp.fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink", {
+    method: "post",
+    contentType: "multipart/related; boundary=" + 경계,
+    payload: 앞.concat(bytes, 뒤),
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  });
+  var code = res.getResponseCode(), text = res.getContentText();
+  if (code >= 300) return { ok: false, error: "드라이브 올리기 실패 (HTTP " + code + ") " + text.slice(0, 300) };
+  var f = JSON.parse(text);
+  return {
+    ok: true, fileId: f.id, fileName: f.name,
+    url: f.webViewLink || ("https://docs.google.com/spreadsheets/d/" + f.id + "/edit"),
+    folder: folder.getUrl(),
+    owner: Session.getEffectiveUser().getEmail()
+  };
 }
 
 /** 살아 있는지만 본다. 토큰이 필요 없다 — 아무것도 안 알려 주기 때문이다. */
