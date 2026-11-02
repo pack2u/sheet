@@ -349,6 +349,8 @@ function _cib_ledgerOne_(it) {
   //  v2 작업화면 반품 카드 단추 (2026-10-29) — 새 줄이 아니라 «있는 줄»을 고친다. 이 웹앱 카드 단추와 같은 본체
   if (d.kind === "edit") return _cib_cardEdit_(it, d, staff);
   if (d.kind === "pickup") return _cib_cardPickup_(it, d, staff);
+  //  v2 반품 카드 「✏ 수정」 (2026-11-02) — 이 웹앱 크게 보기 편집판(updateReturnLedgerFields)과 같은 본체
+  if (d.kind === "fields") return _cib_cardFields_(it, d, staff);
   //  v2 반품 카드 「업체가 새로 올렸습니다 · 확인」 · 「입고 요청」 (2026-10-29 작업화면 ⑦) — 이 웹앱 카드와 같은 본체
   if (d.kind === "check") {
     var rc = _cs_markReturnChecked_({ tab: d.tab, row: d.row, staff: staff || "CS" }) || {};
@@ -429,6 +431,21 @@ function _cib_cardEdit_(it, d, staff) {
   }) || {};
   if (!r.ok) return { id: it.id, success: false, error: r.error || "대장에 못 적었습니다", sheet: d.tab, row: d.row };
   return { id: it.id, success: true, message: r.message || "적었습니다", sheet: d.tab, row: d.row };
+}
+
+/**
+ * v2 반품 카드 「✏ 수정」 — 대장 여러 칸을 한 번에   (2026-11-02)
+ * > 사장님: "반품 카드 오른쪽 상단에 수정할수 있는 것들을 넣어줘(반품대장까지 갈 필요 없이)"
+ * 이 웹앱 retEditSave 가 부르는 updateReturnLedgerFields 본체 그대로다 — 바뀐 칸만 적고 비고에 «앞 → 뒤».
+ */
+function _cib_cardFields_(it, d, staff) {
+  var r = _cs_updateReturnLedgerFields_({
+    tab: d.tab, row: d.row, staff: staff || "CS", fields: d.fields || {}, cause: d.cause || null
+  }) || {};
+  if (!r.ok) return { id: it.id, success: false, error: r.error || "대장에 못 적었습니다", sheet: d.tab, row: d.row };
+  var 말 = r.changed ? r.changed + "칸 고쳤습니다" : "바뀐 칸이 없습니다";
+  if (r.missing && r.missing.length) 말 += " · 이 달 탭에 없는 칸이라 못 적음: " + r.missing.join(", ");
+  return { id: it.id, success: true, message: 말, sheet: d.tab, row: d.row };
 }
 
 /**

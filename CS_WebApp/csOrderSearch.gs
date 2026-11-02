@@ -3837,6 +3837,14 @@ var _CS_RET_EDITABLE_ = {
 
 function updateReturnLedgerFields(payload) {
   var _acg_ = _cs_ac_guard_(); if (_acg_) return _acg_;
+  return _cs_updateReturnLedgerFields_(payload);
+}
+
+/**
+ * 본체 — 권한 확인은 부르는 쪽이 한다 (2026-11-02)
+ * v2 반품 카드 「✏ 수정」도 1분 다리(csIntakeBridge.gs _cib_cardFields_)로 이것을 부른다 — 적는 코드는 하나.
+ */
+function _cs_updateReturnLedgerFields_(payload) {
   payload = payload || {};
   var tabName = String(payload.tab || "").trim();
   var rowNum = parseInt(payload.row, 10);
