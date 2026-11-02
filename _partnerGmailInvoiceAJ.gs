@@ -77,6 +77,22 @@ function _gma_runWithUi_(dryRun) {
   var ui = null;
   try { ui = SpreadsheetApp.getUi(); } catch (e) {}
 
+  /* ★ 2026-11-02 주인이 v2 면 메뉴(수동·예행)도 v2 로 나른다 (_partnerGmailInvoiceV2.gs) ★ */
+  if (_gmv2_ownerIsV2_()) {
+    var rv = _gmv2_runOne_("AJ", { manual: true, "예행": !!dryRun });
+    var L = rv.ok
+      ? [(dryRun ? "🧪 아주팩 송장 예행 (v2 · 시트에 안 씀)" : "📧 아주팩 Gmail 송장 (v2)"), "",
+         "메일 " + (rv.mailCount || 0) + "건 · 엑셀 송장 " + (rv.parsedCount || 0) + "개"]
+          .concat((rv.info || []).map(function (s) { return "  " + s; }))
+          .concat(["", (dryRun ? "넣을 것 " + (rv.written || []).length : "A열 입력 " + (rv.쓴칸 || 0) + "칸") + " · 이미 입력됨 " + (rv.alreadyIn || 0) + "건"])
+          .concat((rv.written || []).slice(0, 15).map(function (w) { return "  " + w.row + "행 " + w.name + " / " + w.item + " ← " + w.tracking; }))
+          .concat((rv.unmatched || []).length ? ["", "❌ 미매칭 " + rv.unmatched.length + "건"].concat(rv.unmatched.slice(0, 10).map(function (u) { return "  " + (u.name || "?") + " / " + (u.item || "?") + " (" + u.tracking + ") — " + u.why; })) : [])
+          .concat((rv.errors || []).length ? ["", "⚠ " + rv.errors.join("\n⚠ ")] : [])
+      : ["❌ v2 가 못 받았습니다:", String(rv.error)];
+    if (ui) ui.alert(L.join("\n")); else _gmi_log_(L.join(" | "));
+    return;
+  }
+
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
     if (ui) ui.alert("⚠️ 다른 작업이 실행 중입니다. 잠시 후 다시 시도하세요.");
@@ -115,7 +131,7 @@ function _gma_triggerFetchAJInvoice_() {
   _gmi_log_("AJ 자동: " + _gma_oneLine_(r));
 
   // 메일이 없으면 조용히 끝낸다 (휴무일 등)
-  if (r.mailCount === 0 && !r.errors.length) return;
+  if (r.mailCount === 0 && !r.errors.length) return r;
 
   try {
     var timeStr = Utilities.formatDate(new Date(), "Asia/Seoul", "HH:mm");
@@ -138,6 +154,7 @@ function _gma_triggerFetchAJInvoice_() {
     _chat_sendCard_(icon + " 아주팩 Gmail 송장수집",
       "입력 " + r.written.length + " · 미매칭 " + r.unmatched.length + " (" + timeStr + ")", kv);
   } catch (_) {}
+  return r;   // ★ 2026-11-02 v2 견줌이 넣은 자리(r.written)를 받는다
 }
 
 // ═════════════════════════════════════════════════════════════════

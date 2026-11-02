@@ -46,6 +46,17 @@ function partnerFetchInvoiceFromGmail_NK(isManual) {
     } catch (e) {}
   }
 
+  /* ★ 2026-11-02 주인이 v2 면 메뉴도 v2 로 나른다 (_partnerGmailInvoiceV2.gs) ★ */
+  if (_gmv2_ownerIsV2_()) {
+    var rv = _gmv2_runOne_("NK", { manual: true });
+    var msgV2 = rv.ok
+      ? "📧 냅킨코리아 Gmail 송장 (v2)\n\n메일 " + (rv.mailCount || 0) + "건 · 읽은 송장 " + (rv.parsedCount || 0) + "개\nA열 입력 " + (rv.쓴칸 || 0) + "칸 · 이미 입력됨 " + (rv.alreadyIn || 0) + " · 미매칭 " + (rv.unmatched || []).length +
+        ((rv.unmatched || []).length ? "\n\n" + rv.unmatched.slice(0, 10).map(function (u) { return (u.name || u.item || "?") + " / " + u.tracking + " — " + u.why; }).join("\n") : "")
+      : "❌ v2 가 못 받았습니다:\n" + rv.error;
+    if (ui) ui.alert(msgV2); else _gmi_log_(msgV2);
+    return;
+  }
+
   // ── Lock 확보 (동시 실행 방지) ──
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
@@ -141,6 +152,16 @@ function _gmi_triggerFetchNKInvoice_() {
       return;
     }
     try {
+      /* ★ 2026-11-02 판독·매칭·A열 기록을 v2 로 옮김 (_partnerGmailInvoiceV2.gs · v2 sql/290) ★
+         주인이 v2 면 메일을 나르기만 하고 아래 옛 판독(냅킨·아주팩)은 안 돈다.
+         주인이 시트면 옛 판독이 적고, 같은 메일을 v2 에 «견줌»으로 보낸다 — 모으기는 라벨이 붙기 «전»에. */
+      var 주인v2 = false;
+      try { 주인v2 = _gmv2_ownerIsV2_(); } catch (oe) {}
+      if (주인v2) {
+        _gmv2_runAll_();
+      } else {
+      var preNK = null;
+      try { preNK = _gmv2_collect_("NK", false); } catch (pe) { Logger.log("[GMV2 견줌] NK 모으기 실패: " + pe.message); }
       var result = _gmi_processNKInvoiceMails_(false);
       // ★ 2026-06-30: Chat 알림에 상세 정보 추가
       try {
@@ -177,16 +198,21 @@ function _gmi_triggerFetchNKInvoice_() {
 
         _chat_sendCard_(titleText, subtitleText, kv);
       } catch (_) {}
+      _gmv2_shadow_("NK", preNK, result.written);
 
       /* ★ 2026-10-14: 아주팩 송장도 같은 자리에서 이어서 돈다 ★
          트리거 자리를 하나 더 쓰지 않으려고 냅킨 트리거에 붙였다.
          16:40 송장수집이 전용양식 A열을 읽기 전에 끝나야 한다.
          냅킨 쪽이 실패해도 아주팩은 돌도록 따로 감싼다. */
+      var preAJ = null;
+      try { preAJ = _gmv2_collect_("AJ", false); } catch (pe) { Logger.log("[GMV2 견줌] AJ 모으기 실패: " + pe.message); }
       try {
-        _gma_triggerFetchAJInvoice_();
+        var rAJ = _gma_triggerFetchAJInvoice_();
+        if (rAJ) _gmv2_shadow_("AJ", preAJ, rAJ.written);
       } catch (ajErr) {
         Logger.log("[TRIGGER] AJ Gmail 송장수집 에러: " + ajErr.message);
       }
+      } // 주인이 시트
 
       /* ★ 2026-10-16: 명세서 메일도 여기서 이어 돈다 ★
          「Gmail 에서 걷는 것」을 한 자리에 모은다. 트리거 스무 자리가
@@ -226,6 +252,7 @@ function _gmi_processNKInvoiceMails_(isManual) {
     unmatchedCount: 0,
     unmatchedDetails: [],
     errors: [],
+    written: [],   // ★ 2026-11-02 v2 견줌용 — 넣은 자리 {row, tracking}
   };
 
   // ── 1) Gmail에서 오늘자 냅킨코리아 메일 검색 ──
@@ -505,6 +532,7 @@ function _gmi_processNKInvoiceMails_(isManual) {
       var existVal = String(data[wm.rows[wri]][0] || "").trim();
       if (existVal.length >= 10 && /^\d+$/.test(existVal)) continue;
       data[wm.rows[wri]][0] = String(wm.tracking);
+      result.written.push({ row: wm.rows[wri] + 2, tracking: String(wm.tracking) });
       writeCount++;
     }
   }
