@@ -207,6 +207,12 @@ function _epd_readTemp_(ss, ymd) {
 
     // 일자 — 비어 있으면 당일로 본다(임시기록은 당일 입력이 원칙)
     var rowYmd = _epx_toYmd_(row[_EPD_C_DATE_], yyyy, mm) || String(ymd);
+    /*  ★ 「MMDD-0차」는 그 날 치 ★  (2026-11-02)
+        > 사장님: "3시 수집건은 다음날 1103-0차 로 이슈에 적히게 해주고 다음날 거래명세서에 붙게해줘"
+        15시 뒤 푸시·담기는 v2(lib/partner-push)가 B 순번을 «다음 영업일-0차»로 적는다.
+        C 일자-No. 는 판매 전표라 못 바꾼다 — 구매입력은 B 의 날로 본다(연 넘김: 1월 도장을 12월에 보면 다음 해). */
+    var zero = String(row[1] || "").trim().match(/^(\d{2})(\d{2})-0차$/);
+    if (zero) rowYmd = String(parseInt(zero[1], 10) < mm ? yyyy + 1 : yyyy) + zero[1] + zero[2];
     if (rowYmd !== String(ymd)) { out.stats.otherDay++; continue; }
 
     var rawName = String(row[_EPD_C_ITEM_] || "").trim();
